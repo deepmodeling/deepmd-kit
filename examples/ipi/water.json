@@ -1,0 +1,13 @@
+{
+    "verbose":		false,
+    "use_unix":		true,
+    "port":		31415,
+    "host":		"localhost",
+    "graph_file":	"graph.pb",
+    "coord_file":	"conf.xyz",
+    "atom_type" : {
+	"OW":		0, 
+	"HW1":		1,
+	"HW2":		1
+    }
+}

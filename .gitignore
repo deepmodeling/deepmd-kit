@@ -1,0 +1,16 @@
+*~
+*.d
+*.o
+*.aux
+*.dvi
+*.pdf
+*.so
+*.bin
+*.intbin
+*.meta
+*.log
+*.gz
+*.bz2
+*.pyc
+CMakeCache.txt
+CMakeFiles

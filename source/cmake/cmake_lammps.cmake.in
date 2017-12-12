@@ -1,0 +1,17 @@
+set (LMP_INSTALL_PREFIX "@CMAKE_BINARY_DIR@/USER-DEEPMD")
+file(READ "@CMAKE_BINARY_DIR@/lmp/lammps_install_list.txt" files)
+string(REGEX REPLACE "\n" "" files "${files}")
+
+foreach (cur_file ${files})
+  file (
+    INSTALL DESTINATION "${LMP_INSTALL_PREFIX}" 
+    TYPE FILE
+    FILES "${cur_file}"
+    )
+endforeach ()
+
+file (
+  INSTALL DESTINATION "${LMP_INSTALL_PREFIX}" 
+  TYPE FILE 
+  FILES "@CMAKE_BINARY_DIR@/lmp/env.sh"
+)
