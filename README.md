@@ -5,8 +5,9 @@
 	- [Prepare data](#prepare-data)
 	- [Train a model](#train-a-model)
 	- [Freeze the model](#freeze-the-model)
-	- [Run MD with native code](#run-md-with-native)
 	- [Run MD with Lammps](#run-md-with-lammps)
+	- [Run path-integral MD with i-PI](#run-path-integral-md-with-i-pi)
+	- [Run MD with native code](#run-md-with-native-code)
 - [License](#license)
 
 # Install DeePMD
@@ -321,6 +322,45 @@ $ $deepmd_root/bin/dp_frz -o graph.pb
 in the folder where the model is trained. The output database is called `graph.pb`.
 
 
+## Run MD with Lammps
+Run an MD simulation with Lammps is simpler. In the Lammps input file, one needs to specify the pair style as follows
+```bash
+pair_style     deepmd graph.pb
+pair_coeff     
+```
+where `graph.pb` is the file name of the frozen model. The `pair_coeff` should be left blank. It should be noted that Lammps counts atom types starting from 1, therefore, all Lammps atom type will be firstly substracted by 1, and then passed into the DeePMD engine to compute the interactions.
+
+
+## Run path-integral MD with i-PI
+The i-PI works in a client-server model. The i-PI provides the server for integrating the replica positions of atoms, while the DeePMD provides a client named `dp_ipi` that computes the interactions (including energy, force and virial). The server and client communicates via the Unix domain socket or the Internet socket. The client can be started by
+```bash
+$ dp_ipi water.json
+```
+It is noted that multiple instances of the client is allow for computing, in parallel, the interactions of multiple replica of the path-integral MD.
+
+`water.json` is the parameter file for the client `dp_ipi`, and [an example](./examples/ipi/water.json) is provided:
+```json
+{
+    "verbose":		false,
+    "use_unix":		true,
+    "port":		31415,
+    "host":		"localhost",
+    "graph_file":	"graph.pb",
+    "coord_file":	"conf.xyz",
+    "atom_type" : {
+	"OW":		0, 
+	"HW1":		1,
+	"HW2":		1
+    }
+}
+```
+The option **`use_unix`** is set to `true` to activate the Unix domain socket, otherwise, the Internet socket is used.
+
+The option **`graph_file`** provides the file name of the frozen model.
+
+The `dp_ipi` gets the atom names from an [XYZ file](https://en.wikipedia.org/wiki/XYZ_file_format) provided by **`coord_file`** (meanwhile ignores all coordinates in it), and translates the names to atom types by rules provided by **`atom_type`**.
+
+
 ## Run MD with native code
 DeePMD provides a simple MD implementation that runs under either NVE or NVT ensemble. One needs to provide the following input files
 ```bash
@@ -374,15 +414,6 @@ If the option **`print_force`** is set to `true`, then the atomic force will be 
 The option **`T`** specifies the temperature of the simulation, and the option **`tau_T`** specifies the timescale of the thermostat. We implement the Langevin thermostat for the NVT simulation. **`rand_seed`** set the random seed of the random generator in the thermostat.
 
 The **`atom_type`** set the type for the atoms in the system. The names of the atoms are those provided in the `conf_file` file. The **`atom_mass`** set the mass for the atoms. Again, the name of the atoms are those provided in the `conf_file`.
-
-
-## Run MD with Lammps
-Run an MD simulation with Lammps is simpler. In the Lammps input file, one needs to specify the pair style as follows
-```bash
-pair_style     deepmd graph.pb
-pair_coeff     
-```
-where `graph.pb` is the file name of the frozen model. The `pair_coeff` should be left blank. It should be noted that Lammps counts atom types starting from 1, therefore, all Lammps atom type will be firstly substracted by 1, and then passed into the DeePMD engine to compute the interactions.
 
 
 # License
