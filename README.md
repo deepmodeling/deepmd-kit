@@ -1,17 +1,18 @@
 # Table of contents
 
-- [Install DeePMD](#install-deepmd)
-- [Use DeePMD](#use-deepmd)
+- [Install DeePMD-kit](#install-deepmd-kit)
+- [Use DeePMD-kit](#use-deepmd-kit)
 	- [Prepare data](#prepare-data)
 	- [Train a model](#train-a-model)
 	- [Freeze the model](#freeze-the-model)
 	- [Run MD with Lammps](#run-md-with-lammps)
 	- [Run path-integral MD with i-PI](#run-path-integral-md-with-i-pi)
 	- [Run MD with native code](#run-md-with-native-code)
+- [Code structure](#code-structure)
 - [License](#license)
 
-# Install DeePMD
-The installtion of the DeePMD is lengthy, but do not be panic. Just follow step by step. Wish you good luck..
+# Install DeePMD-kit
+The installation of the DeePMD-kit is lengthy, but do not be panic. Just follow step by step. Wish you good luck..
 
 ## Install tensorflow 
 
@@ -20,14 +21,14 @@ Firstly get the source code of the tensorflow
 cd /some/workspace
 git clone https://github.com/tensorflow/tensorflow tensorflow
 ```
-Currently the DeePMD only works with tensorflow r1.4. Higher and lower versions of tensorflow may not work in the same way. Now checkout version r1.4.
+Currently the DeePMD-kit only works with tensorflow r1.4. Higher and lower versions of tensorflow may not work in the same way. Now checkout version r1.4.
 ```bash
 cd tensorflow
 git checkout r1.4
 ```
 Please make sure you have the Bazel higher than version 0.5.4, otherwise, please [install it](https://docs.bazel.build/versions/master/install.html).
 
-DeePMD is compiled by cmake, so we need to compile and integrate tensorflow with cmake projects. The rest of this section basically follows [the instruction provided by Tuatini](http://tuatini.me/building-tensorflow-as-a-standalone-project/). Now execute
+DeePMD-kit is compiled by cmake, so we need to compile and integrate tensorflow with cmake projects. The rest of this section basically follows [the instruction provided by Tuatini](http://tuatini.me/building-tensorflow-as-a-standalone-project/). Now execute
 ```bash
 ./configure
 ```
@@ -121,13 +122,13 @@ make
 make install
 ```
 
-## Install DeePMD
-Firstly clone the DeePMD source code
+## Install DeePMD-kit
+Firstly clone the DeePMD-kit source code
 ```bash
 cd /some/workspace
 git clone https://github.com/deepmodeling/deepmd-kit.git deepmd-kit
 ```
-For convenience, you may want to record the localtion of source to a variable, saying `deepmd_source_dir` by
+For convenience, you may want to record the location of source to a variable, saying `deepmd_source_dir` by
 ```bash
 cd deepmd-kit
 deepmd_source_dir=`pwd`
@@ -138,7 +139,7 @@ cd $deepmd_source_dir/source
 mkdir build 
 cd build
 ```
-Excute cmake, and I assume you want to install DeePMD into `$deepmd_root`
+Execute cmake, and I assume you want to install DeePMD-kit into `$deepmd_root`
 ```bash
 cmake -DXDRFILE_ROOT=$xdrfile_root -DTENSORFLOW_ROOT=$tensorflow_root -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
 ```
@@ -151,24 +152,24 @@ If the cmake has executed successfully, then
 make
 make install
 ```
-If everthing works fine, you will have the following executables installed in `$deepmd_root/bin`
+If everything works fine, you will have the following executables installed in `$deepmd_root/bin`
 ```bash
 $ ls $deepmd_root/bin
 dp_frz  dp_ipi  dp_mdnn  dp_test  dp_train
 ```
 
-## Install Lammps' DeePMD module
-DeePMD provide module for running serial MD simulation with Lammps. Notice that the parallel running is not support at this moment. Now make the DeePMD module for lammps.
+## Install Lammps' DeePMD-kit module
+DeePMD-kit provide module for running serial MD simulation with Lammps. Notice that the parallel running is not support at this moment. Now make the DeePMD-kit module for lammps.
 ```bash
 cd $deepmd_source_dir/source/build
 make lammps
 ```
-If everything works fine, DeePMD will generate a module called `USER-DEEPMD` in the `build` directory. Now download your favorite Lammps code, and uncompress it (I assume that you have downloaded the tar `lammps-stable.tar.gz`)
+If everything works fine, DeePMD-kit will generate a module called `USER-DEEPMD` in the `build` directory. Now download your favorite Lammps code, and uncompress it (I assume that you have downloaded the tar `lammps-stable.tar.gz`)
 ```bash
 cd /some/workspace
 tar xf lammps-stable.tar.gz
 ```
-The source code of Lammps is store in directory, for example `lammps-31Mar17`. Now go into the lammps code and copy the DeePMD module like this
+The source code of Lammps is store in directory, for example `lammps-31Mar17`. Now go into the lammps code and copy the DeePMD-kit module like this
 ```bash
 cd lammps-31Mar17/src/
 cp -r $deepmd_source_dir/source/build/USER-DEEPMD .
@@ -181,8 +182,8 @@ make serial -j4
 The option `-j4` means using 4 processes in parallel. You may want to be use a different number according to your hardware. If everything works fine, you will end up with an executable
 `lmp_serial`.
 
-# Use DeePMD
-In this text, we will call the deep neural network that is used to represent the interatomic interactions (Deep Potential) the **model**. The typical procedure of using DeePMD is 
+# Use DeePMD-kit
+In this text, we will call the deep neural network that is used to represent the interatomic interactions (Deep Potential) the **model**. The typical procedure of using DeePMD-kit is 
 
 1. Prepare data
 2. Train a model
@@ -207,11 +208,11 @@ $ cat force.raw
  6.737  1.554 -5.587 -2.803  0.062  2.222
 -1.968 -0.163  1.020 -0.225 -0.789  0.343
 ```
-This `force.raw` contains 3 frames with each frame having the forces of 2 atoms, thus it has 3 lines and 6 columes. Each line provides all the 3 force components of 2 atoms in 1 frame. The first three numbers are the 3 force components of the first atom, while the second three numbers are the 3 force components of the second atom. The coordinate file `coord.raw` is organized similarly. In `box.raw`, the 9 components of the box vectors should be provided on each line. In `virial.raw`, the 9 components of the virial tensor should be provided on each line. The number of lines of all raw files should be identical.
+This `force.raw` contains 3 frames with each frame having the forces of 2 atoms, thus it has 3 lines and 6 columns. Each line provides all the 3 force components of 2 atoms in 1 frame. The first three numbers are the 3 force components of the first atom, while the second three numbers are the 3 force components of the second atom. The coordinate file `coord.raw` is organized similarly. In `box.raw`, the 9 components of the box vectors should be provided on each line. In `virial.raw`, the 9 components of the virial tensor should be provided on each line. The number of lines of all raw files should be identical.
 
-We assume that the atom types do not change in all frames. It is provide by `type.raw`, which has one line with the typies of atoms written one by one. The atom typies should be integers.
+We assume that the atom types do not change in all frames. It is provide by `type.raw`, which has one line with the types of atoms written one by one. The atom types should be integers.
 
-The second format is the data sets of `numpy` binary data that are directly used by the trainig program. User can use the script `$deepmd_source_dir/data/raw/raw_to_set.sh` to convert the prepared raw files to data sets. For example, if we have raw files that contains 6000 frames, 
+The second format is the data sets of `numpy` binary data that are directly used by the training program. User can use the script `$deepmd_source_dir/data/raw/raw_to_set.sh` to convert the prepared raw files to data sets. For example, if we have raw files that contains 6000 frames, 
 ```bash
 $ ls 
 box.raw  coord.raw  energy.raw  force.raw  type.raw  virial.raw
@@ -250,7 +251,7 @@ $ $deepmd_root/bin/dp_train water.json
     "_comment": "                    [0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0]",
     "n_neuron":		[240, 120, 60, 30, 10],
 
-    "_comment": " traing controls",
+    "_comment": " training controls",
     "systems":		["../data/water/"],
     "set_prefix":	"set",    
     "stop_batch":	1000000,
@@ -287,11 +288,11 @@ $ $deepmd_root/bin/dp_train water.json
 
 The option **`rcut_r`** is the cut-off radius for neighbor searching. The `sel_a` and `sel_r` are the maximum selected numbers of fully-local-coordinate and radial-only-coordinate atoms from the neighbor list, respectively. `sel_a + sel_r` should larger than the maximum possible number of neighbors in the cut-off radius. `sel_a` and `sel_r` are vectors, the length of the vectors are same as the number of atom types in the system. `sel_a[i]` and `sel_r[i]` denote the selected number of neighbors of type `i`.
 
-The option **`axis_rule`** specifies how to make the axis for the local coordinate of each atom. For each atom type, 6 integers should be provided. The first three for the first axis, while the last three for the second axis. Within the three integers, the first one specifies if the axis atom is fully-local-coordinated (`0`) or radial-only-coordinated (`1`). The second integer specifies the type of the axis atom. If this number is less than 0, saying `t < 0`, then this axis exclude atom of type `-(t+1)`. If the third integer is, saying `s`, then the axis atom is the `s`th nearst neighbor satisfying the previous two conditions. 
+The option **`axis_rule`** specifies how to make the axis for the local coordinate of each atom. For each atom type, 6 integers should be provided. The first three for the first axis, while the last three for the second axis. Within the three integers, the first one specifies if the axis atom is fully-local-coordinated (`0`) or radial-only-coordinated (`1`). The second integer specifies the type of the axis atom. If this number is less than 0, saying `t < 0`, then this axis exclude atom of type `-(t+1)`. If the third integer is, saying `s`, then the axis atom is the `s`th nearest neighbor satisfying the previous two conditions. 
 
 The option **`n_neuron`** is an integer vector that determines the shape the neural network. The size of the vector is identical to the number of hidden layers of the network. From left to right the members denotes the size of each hidden layers from input end to the output end, respectively.
 
-The option **`systems`** provide location of the systems (path to `set.*` and `type.raw`). It is a vector, thus DeePMD allows you provide multiple systems. DeePMD will train the model with the systems in the vector one by one in a cyclic manner.
+The option **`systems`** provide location of the systems (path to `set.*` and `type.raw`). It is a vector, thus DeePMD-kit allows you provide multiple systems. DeePMD-kit will train the model with the systems in the vector one by one in a cyclic manner.
 
 The option **`batch_size`** specifies the number of frames in each batch. 
 The option **`stop_batch`** specifies the total number of batches will be used in the training.
@@ -315,7 +316,7 @@ Checkpoints will be written to files with prefix **`save_ckpt`** every **`save_f
 
 
 ## Freeze the model
-The trained neural network is substracted from a checkpoint and dumped into a database. This process is called "freeze" a model. Typically one does
+The trained neural network is extracted from a checkpoint and dumped into a database. This process is called "freeze" a model. Typically one does
 ```bash
 $ $deepmd_root/bin/dp_frz -o graph.pb
 ```
@@ -328,11 +329,11 @@ Run an MD simulation with Lammps is simpler. In the Lammps input file, one needs
 pair_style     deepmd graph.pb
 pair_coeff     
 ```
-where `graph.pb` is the file name of the frozen model. The `pair_coeff` should be left blank. It should be noted that Lammps counts atom types starting from 1, therefore, all Lammps atom type will be firstly substracted by 1, and then passed into the DeePMD engine to compute the interactions.
+where `graph.pb` is the file name of the frozen model. The `pair_coeff` should be left blank. It should be noted that Lammps counts atom types starting from 1, therefore, all Lammps atom type will be firstly subtracted by 1, and then passed into the DeePMD-kit engine to compute the interactions.
 
 
 ## Run path-integral MD with i-PI
-The i-PI works in a client-server model. The i-PI provides the server for integrating the replica positions of atoms, while the DeePMD provides a client named `dp_ipi` that computes the interactions (including energy, force and virial). The server and client communicates via the Unix domain socket or the Internet socket. The client can be started by
+The i-PI works in a client-server model. The i-PI provides the server for integrating the replica positions of atoms, while the DeePMD-kit provides a client named `dp_ipi` that computes the interactions (including energy, force and virial). The server and client communicates via the Unix domain socket or the Internet socket. The client can be started by
 ```bash
 $ dp_ipi water.json
 ```
@@ -362,12 +363,12 @@ The `dp_ipi` gets the atom names from an [XYZ file](https://en.wikipedia.org/wik
 
 
 ## Run MD with native code
-DeePMD provides a simple MD implementation that runs under either NVE or NVT ensemble. One needs to provide the following input files
+DeePMD-kit provides a simple MD implementation that runs under either NVE or NVT ensemble. One needs to provide the following input files
 ```bash
 $ ls
 conf.gro  graph.pb  water.json
 ```
-`conf.gro` is the file that provides the inital coordinates and/or velocities of all atoms in the system. It is of Gromacs `gro` format. Details of this format can be find in [this website](http://manual.gromacs.org/current/online/gro.html). It should be notice that the length unit of the `gro` format is **nm** rather than A.
+`conf.gro` is the file that provides the initial coordinates and/or velocities of all atoms in the system. It is of Gromacs `gro` format. Details of this format can be find in [this website](http://manual.gromacs.org/current/online/gro.html). It should be notice that the length unit of the `gro` format is **nm** rather than A.
 
 `graph.pb` is the frozen model.
 
@@ -416,8 +417,23 @@ The option **`T`** specifies the temperature of the simulation, and the option *
 The **`atom_type`** set the type for the atoms in the system. The names of the atoms are those provided in the `conf_file` file. The **`atom_mass`** set the mass for the atoms. Again, the name of the atoms are those provided in the `conf_file`.
 
 
+# Code structure
+The code is organized as following:
+* `data/raw`: tools manipulating the raw data files.
+* `examples`: example json parameter files.
+* `source/3rdparty`: third-party packages used by DeePMD-kit.
+* `source/cmake`: cmake scripts for building.
+* `source/ipi`: source code of i-PI client.
+* `source/lib`: source code of DeePMD-kit library.
+* `source/lmp`: source code of Lammps module.
+* `source/md`: source code of native MD.
+* `source/op`: tensorflow op implementation. working with library.
+* `source/scripts`: Python script for model freezing.
+* `source/train`: Python modules and scripts for training and testing.
+
+
 # License
-The project DeePMD is licensed under [GNU LGPLv3.0](./LICENSE)
+The project DeePMD-kit is licensed under [GNU LGPLv3.0](./LICENSE)
 
 
 [1]: https://arxiv.org/pdf/1707.09571.pdf
