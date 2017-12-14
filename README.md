@@ -418,7 +418,7 @@ The **`atom_type`** set the type for the atoms in the system. The names of the a
 
 
 # Code structure
-The code is organized as following:
+The code is organized as follows:
 * `data/raw`: tools manipulating the raw data files.
 * `examples`: example json parameter files.
 * `source/3rdparty`: third-party packages used by DeePMD-kit.
