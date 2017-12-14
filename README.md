@@ -124,11 +124,11 @@ make install
 Firstly clone the DeePMD source code
 ```bash
 cd /some/workspace
-git clone git@bitbucket.org:jscl-pub/deep.pot.git deep.pot
+git clone https://github.com/deepmodeling/deepmd-kit.git deepmd-kit
 ```
 For convenience, you may want to record the localtion of source to a variable, saying `deepmd_source_dir` by
 ```bash
-cd deep.pot
+cd deepmd-kit
 deepmd_source_dir=`pwd`
 ```
 Then goto the source code directory and make a build directory.
