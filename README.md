@@ -128,7 +128,7 @@ Firstly clone the DeePMD-kit source code
 cd /some/workspace
 git clone https://github.com/deepmodeling/deepmd-kit.git deepmd-kit
 ```
-For convenience, you may want to record the location of source to a variable, saying `deepmd_source_dir` by
+If one downloads the .zip file from the github, then the default folder of source code would be `deepmd-kit-master` rather than `deepmd-kit`. For convenience, you may want to record the location of source to a variable, saying `deepmd_source_dir` by
 ```bash
 cd deepmd-kit
 deepmd_source_dir=`pwd`
@@ -139,7 +139,7 @@ cd $deepmd_source_dir/source
 mkdir build 
 cd build
 ```
-Execute cmake, and I assume you want to install DeePMD-kit into `$deepmd_root`
+I assume you want to install DeePMD-kit into path `$deepmd_root`, then execute cmake
 ```bash
 cmake -DXDRFILE_ROOT=$xdrfile_root -DTENSORFLOW_ROOT=$tensorflow_root -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
 ```
