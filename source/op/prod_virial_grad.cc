@@ -155,7 +155,7 @@ public:
 	      for (int dd0 = 0; dd0 < 3; ++dd0){
 		for (int dd1 = 0; dd1 < 3; ++dd1){
 		  grad_net (grad_net_iter + i_idx * ndescrpt + aa) += 
-		      0.5 * grad (grad_iter + dd0 * 3 + dd1) * rij (rij_iter + i_idx * nnei * 3 + jj * 3 + dd0) * in_deriv (in_iter + i_idx * ndescrpt * 12 + aa * 12 + 3 + dd1);
+		      -1.0 * grad (grad_iter + dd0 * 3 + dd1) * rij (rij_iter + i_idx * nnei * 3 + jj * 3 + dd0) * in_deriv (in_iter + i_idx * ndescrpt * 12 + aa * 12 + 3 + dd1);
 		}
 	      }
 	    }
@@ -165,7 +165,7 @@ public:
 	      for (int dd0 = 0; dd0 < 3; ++dd0){
 		for (int dd1 = 0; dd1 < 3; ++dd1){
 		  grad_net (grad_net_iter + i_idx * ndescrpt + aa) += 
-		      0.5 * grad (grad_iter + dd0 * 3 + dd1) * rij (rij_iter + i_idx * nnei * 3 + jj * 3 + dd0) * in_deriv (in_iter + i_idx * ndescrpt * 12 + aa * 12 + 6 + dd1);
+		      -1.0 * grad (grad_iter + dd0 * 3 + dd1) * rij (rij_iter + i_idx * nnei * 3 + jj * 3 + dd0) * in_deriv (in_iter + i_idx * ndescrpt * 12 + aa * 12 + 6 + dd1);
 		}
 	      }
 	    }
@@ -177,7 +177,7 @@ public:
 	      for (int dd0 = 0; dd0 < 3; ++dd0){
 		for (int dd1 = 0; dd1 < 3; ++dd1){
 		  grad_net (grad_net_iter + i_idx * ndescrpt + aa) += 
-		      0.5 * grad (grad_iter + dd0 * 3 + dd1) * rij (rij_iter + i_idx * nnei * 3 + jj * 3 + dd0) * in_deriv (in_iter + i_idx * ndescrpt * 12 + aa * 12 + 9 + dd1);
+		      -1.0 * grad (grad_iter + dd0 * 3 + dd1) * rij (rij_iter + i_idx * nnei * 3 + jj * 3 + dd0) * in_deriv (in_iter + i_idx * ndescrpt * 12 + aa * 12 + 9 + dd1);
 		}
 	      }
 	    }

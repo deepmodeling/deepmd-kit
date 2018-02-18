@@ -80,12 +80,12 @@ void PairNNP::compute(int eflag, int vflag)
   // accumulate energy and virial
   if (eflag) eng_vdwl += dener;
   if (vflag) {
-    virial[0] += -2. * dvirial[0];
-    virial[1] += -2. * dvirial[4];
-    virial[2] += -2. * dvirial[8];
-    virial[3] += -2. * dvirial[3];
-    virial[4] += -2. * dvirial[6];
-    virial[5] += -2. * dvirial[7];
+    virial[0] += 1.0 * dvirial[0];
+    virial[1] += 1.0 * dvirial[4];
+    virial[2] += 1.0 * dvirial[8];
+    virial[3] += 1.0 * dvirial[3];
+    virial[4] += 1.0 * dvirial[6];
+    virial[5] += 1.0 * dvirial[7];
   }
 }
 

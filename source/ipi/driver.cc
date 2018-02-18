@@ -187,7 +187,7 @@ int main(int argc, char * argv[])
 	msg_buff[ii] = dforce[ii] * icvt_f;
       }
       for (int ii = 0; ii < 9; ++ii){
-	virial[ii] = dvirial[ii] * icvt_ener * (-2.);
+	virial[ii] = dvirial[ii] * icvt_ener * (1.0);
       }
       if (b_verb) cout << "# energy of sys. : " << scientific << setprecision(10) << dener << endl;
       writebuffer_ (&socket, "FORCEREADY  ", MSGLEN);

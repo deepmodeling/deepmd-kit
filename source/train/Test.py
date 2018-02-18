@@ -323,16 +323,16 @@ class Model (object) :
         energy = self.sess.run (t_energy , feed_dict = feed_dict_box)
 
         print ("printing virial")
-        ana_vir3 = (virial[0][0] + virial[0][4] + virial[0][8])/3. / self.comp_vol(dbox[0]) * 2.
-        num_vir3 = (energy[1] - energy[2]) / (self.comp_vol(dbox[1]) - self.comp_vol(dbox[2]))
+        ana_vir3 = (virial[0][0] + virial[0][4] + virial[0][8])/3. / self.comp_vol(dbox[0])
+        num_vir3 = -(energy[1] - energy[2]) / (self.comp_vol(dbox[1]) - self.comp_vol(dbox[2]))
         print ( "all-dir:  ana %14.5e  num %14.5e  diff %.2e" % (ana_vir3, num_vir3, np.abs(ana_vir3 - num_vir3)) )
         vir_idx = [0, 4, 8]
         ana_v = []
         num_v = []
         for dd in range (3) :
-            ana_v.append (virial[0][vir_idx[dd]] / self.comp_vol(dbox[0]) * 2.)
+            ana_v.append (virial[0][vir_idx[dd]] / self.comp_vol(dbox[0]))
             idx = 2 * (dd+1) + 1
-            num_v.append ( (energy[idx] - energy[idx+1]) / (self.comp_vol(dbox[idx]) - self.comp_vol(dbox[idx+1])) )
+            num_v.append ( -(energy[idx] - energy[idx+1]) / (self.comp_vol(dbox[idx]) - self.comp_vol(dbox[idx+1])) )
         for dd in range (3) :
             print ( "dir   %d:  ana %14.5e  num %14.5e  diff %.2e" % (dd, ana_v[dd], num_v[dd], np.abs(ana_v[dd] - num_v[dd])) )
 

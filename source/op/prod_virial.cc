@@ -141,7 +141,7 @@ class ProdVirialOp : public OpKernel {
 	  if (j_idx < 0) continue;
 	  if (jj == axis_0) {
 	    for (int aa = 0; aa < ndescrpt; ++aa){
-	      VALUETYPE pref = 0.5 * net_deriv (net_iter + i_idx * ndescrpt + aa);
+	      VALUETYPE pref = -1.0 * net_deriv (net_iter + i_idx * ndescrpt + aa);
 	      for (int dd0 = 0; dd0 < 3; ++dd0){
 		for (int dd1 = 0; dd1 < 3; ++dd1){
 		  virial (virial_iter + dd0 * 3 + dd1) += pref * rij (rij_iter + i_idx * nnei * 3 + jj * 3 + dd0) *  in_deriv (in_iter + i_idx * ndescrpt * 12 + aa * 12 + 3 + dd1);
@@ -151,7 +151,7 @@ class ProdVirialOp : public OpKernel {
 	  }
 	  else if (jj == axis_1) {
 	    for (int aa = 0; aa < ndescrpt; ++aa){
-	      VALUETYPE pref = 0.5 * net_deriv (net_iter + i_idx * ndescrpt + aa);
+	      VALUETYPE pref = -1.0 * net_deriv (net_iter + i_idx * ndescrpt + aa);
 	      for (int dd0 = 0; dd0 < 3; ++dd0){
 		for (int dd1 = 0; dd1 < 3; ++dd1){
 		  virial (virial_iter + dd0 * 3 + dd1) += pref * rij (rij_iter + i_idx * nnei * 3 + jj * 3 + dd0) *  in_deriv (in_iter + i_idx * ndescrpt * 12 + aa * 12 + 6 + dd1);
@@ -163,7 +163,7 @@ class ProdVirialOp : public OpKernel {
 	    int aa_start, aa_end;
 	    make_descript_range (aa_start, aa_end, jj);
 	    for (int aa = aa_start; aa < aa_end; ++aa) {
-	      VALUETYPE pref = 0.5 * net_deriv (net_iter + i_idx * ndescrpt + aa);
+	      VALUETYPE pref = -1.0 * net_deriv (net_iter + i_idx * ndescrpt + aa);
 	      for (int dd0 = 0; dd0 < 3; ++dd0){
 		for (int dd1 = 0; dd1 < 3; ++dd1){
 		  virial (virial_iter + dd0 * 3 + dd1) += pref * rij (rij_iter + i_idx * nnei * 3 + jj * 3 + dd0) *  in_deriv (in_iter + i_idx * ndescrpt * 12 + aa * 12 + 9 + dd1);

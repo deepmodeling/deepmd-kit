@@ -26,8 +26,8 @@
     "limit_pref_e":	8,
     "start_pref_f":	1000,
     "limit_pref_f":	1,
-    "start_pref_v":	0.02,
-    "limit_pref_v":	8,
+    "start_pref_v":	0,
+    "limit_pref_v":	0,
 
     "num_threads":	4,
     "seed":		1,
