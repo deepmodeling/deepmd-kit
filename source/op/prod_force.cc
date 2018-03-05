@@ -96,19 +96,13 @@ class ProdForceOp : public OpKernel {
     auto force = force_tensor->flat<VALUETYPE>();
 
     // loop over samples
-    int net_iter = 0;
-    int in_iter = 0;
-    int force_iter = 0;
-    int nlist_iter = 0;
-    int axis_iter = 0;
-    
 #pragma omp parallel for num_threads (num_threads)
     for (int kk = 0; kk < nframes; ++kk){
-      force_iter	= kk * nloc * 3;
-      net_iter		= kk * nloc * ndescrpt;
-      in_iter		= kk * nloc * ndescrpt * 12;
-      nlist_iter	= kk * nloc * nnei;
-      axis_iter		= kk * nloc * 4;
+      int force_iter	= kk * nloc * 3;
+      int net_iter	= kk * nloc * ndescrpt;
+      int in_iter	= kk * nloc * ndescrpt * 12;
+      int nlist_iter	= kk * nloc * nnei;
+      int axis_iter	= kk * nloc * 4;
 
       for (int ii = 0; ii < nloc; ++ii){
 	int i_idx = ii;

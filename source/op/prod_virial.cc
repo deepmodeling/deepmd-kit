@@ -103,21 +103,14 @@ class ProdVirialOp : public OpKernel {
     auto virial = virial_tensor->flat<VALUETYPE>();
 
     // loop over samples
-    int net_iter = 0;
-    int in_iter = 0;
-    int rij_iter = 0;
-    int nlist_iter = 0;
-    int axis_iter = 0;
-    int virial_iter = 0;
-    
 #pragma omp parallel for num_threads (num_threads)
     for (int kk = 0; kk < nframes; ++kk){
-      net_iter		= kk * nloc * ndescrpt;
-      in_iter		= kk * nloc * ndescrpt * 12;
-      rij_iter		= kk * nloc * nnei * 3;
-      nlist_iter	= kk * nloc * nnei;
-      axis_iter		= kk * nloc * 4;
-      virial_iter	= kk * 9;
+      int net_iter	= kk * nloc * ndescrpt;
+      int in_iter	= kk * nloc * ndescrpt * 12;
+      int rij_iter	= kk * nloc * nnei * 3;
+      int nlist_iter	= kk * nloc * nnei;
+      int axis_iter	= kk * nloc * 4;
+      int virial_iter	= kk * 9;
 
       for (int ii = 0; ii < 9; ++ ii){
 	virial (virial_iter + ii) = 0.;
