@@ -28,7 +28,7 @@ Firstly get the source code of the tensorflow
 cd /some/workspace
 git clone https://github.com/tensorflow/tensorflow tensorflow
 ```
-Currently the DeePMD-kit only works with tensorflow r1.4. Higher and lower versions of tensorflow may not work in the same way. Now checkout version r1.4.
+The DeePMD-kit works with tensorflow r1.4 -- r1.6. Now taking r1.4 for example:
 ```bash
 cd tensorflow
 git checkout r1.4
@@ -130,6 +130,8 @@ make install
 ```
 
 ## Install DeePMD-kit
+The DeePMD-kit was tested with compiler gcc >= 4.9.
+
 Firstly clone the DeePMD-kit source code
 ```bash
 cd /some/workspace
