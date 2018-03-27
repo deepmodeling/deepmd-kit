@@ -5,6 +5,8 @@
 
 #include "Convert.h"
 #include "pair_nnp.h"
+#include "atom.h"
+#include "domain.h"
 
 using namespace LAMMPS_NS;
 using namespace std;
