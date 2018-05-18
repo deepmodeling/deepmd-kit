@@ -21,7 +21,6 @@ REGISTER_OP("ProdForce")
 .Input("natoms: int32")
 .Attr("n_a_sel: int")
 .Attr("n_r_sel: int")
-.Attr("num_threads: int = 1")
 .Output("force: double");
 #else
 REGISTER_OP("ProdForce")
@@ -32,7 +31,6 @@ REGISTER_OP("ProdForce")
 .Input("natoms: int32")
 .Attr("n_a_sel: int")
 .Attr("n_r_sel: int")
-.Attr("num_threads: int = 1")
 .Output("force: float");
 #endif
 
@@ -43,7 +41,6 @@ class ProdForceOp : public OpKernel {
   explicit ProdForceOp(OpKernelConstruction* context) : OpKernel(context) {
     OP_REQUIRES_OK(context, context->GetAttr("n_a_sel", &n_a_sel));
     OP_REQUIRES_OK(context, context->GetAttr("n_r_sel", &n_r_sel));
-    OP_REQUIRES_OK(context, context->GetAttr("num_threads", &num_threads));
     n_a_shift = n_a_sel * 4;
   }
 
@@ -96,15 +93,15 @@ class ProdForceOp : public OpKernel {
     auto force = force_tensor->flat<VALUETYPE>();
 
     // loop over samples
-#pragma omp parallel for num_threads (num_threads)
+#pragma omp parallel for 
     for (int kk = 0; kk < nframes; ++kk){
-      int force_iter	= kk * nloc * 3;
+      int force_iter	= kk * nall * 3;
       int net_iter	= kk * nloc * ndescrpt;
       int in_iter	= kk * nloc * ndescrpt * 12;
       int nlist_iter	= kk * nloc * nnei;
       int axis_iter	= kk * nloc * 4;
 
-      for (int ii = 0; ii < nloc; ++ii){
+      for (int ii = 0; ii < nall; ++ii){
 	int i_idx = ii;
 	force (force_iter + i_idx * 3 + 0) = 0;
 	force (force_iter + i_idx * 3 + 1) = 0;
@@ -133,7 +130,7 @@ class ProdForceOp : public OpKernel {
 	// deriv wrt neighbors
 	for (int jj = 0; jj < nnei; ++jj){
 	  int j_idx = nlist (nlist_iter + i_idx * nnei + jj);
-	  if (j_idx > nloc) j_idx = j_idx % nloc;
+	  // if (j_idx > nloc) j_idx = j_idx % nloc;
 	  if (j_idx < 0) continue;
 	  if (jj == axis_0) {
 	    for (int aa = 0; aa < ndescrpt; ++aa){
@@ -163,7 +160,7 @@ class ProdForceOp : public OpKernel {
     }
   }
 private:
-  int n_r_sel, n_a_sel, n_a_shift, num_threads;
+  int n_r_sel, n_a_sel, n_a_shift;
   inline void 
   make_descript_range (int & idx_start,
 		       int & idx_end,

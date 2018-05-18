@@ -22,6 +22,5 @@ def _prod_force_grad_cc (op, grad):
                                                         op.inputs[3], 
                                                         op.inputs[4], 
                                                         n_a_sel = op.get_attr("n_a_sel"),
-                                                        n_r_sel = op.get_attr("n_r_sel"),
-                                                        num_threads = op.get_attr("num_threads"))
+                                                        n_r_sel = op.get_attr("n_r_sel"))
     return [net_grad, None, None, None, None]

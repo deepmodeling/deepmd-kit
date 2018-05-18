@@ -16,8 +16,8 @@ op_module = tf.load_op_library(module_path + "libop_abi.so")
 
 # load grad of force module
 sys.path.append (module_path )
-import _prod_force_grad
-import _prod_virial_grad
+import _prod_force_norot_grad
+import _prod_virial_norot_grad
 
 class DataSets (object):
     def __init__ (self, 
@@ -132,9 +132,10 @@ class Model (object) :
         self.sess = sess
         self.natoms = data.get_natoms()
         self.comp = comp
-        self.sel_a = [12,24]
-        self.sel_r = [12,24]
+        self.sel_a = [12, 24]
+        self.sel_r = [0,0]
         self.rcut_a = -1
+        self.rcut_r_smth = 2.45
         self.rcut_r = 3.45     
         self.axis_rule = [0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0]
         self.nnei_a = np.cumsum(self.sel_a)[-1]
@@ -165,6 +166,27 @@ class Model (object) :
                            tf.reshape (net_w, [self.ndescrpt, 1]))
         return tf.reshape (dot_v, [-1])
 
+    def comp_descrpt (self, 
+                      dcoord, 
+                      dbox, 
+                      dtype,
+                      tnatoms,
+                      name) :
+        descrpt, descrpt_deriv, rij, nlist, \
+            = op_module.descrpt_norot (dcoord, 
+                                       dtype,
+                                       tnatoms,
+                                       dbox, 
+                                       tf.constant(self.default_mesh),
+                                       self.t_avg,
+                                       self.t_std,
+                                       rcut_a = self.rcut_a, 
+                                       rcut_r = self.rcut_r, 
+                                       rcut_r_smth = self.rcut_r_smth,
+                                       sel_a = self.sel_a, 
+                                       sel_r = self.sel_r)
+        return descrpt, descrpt_deriv
+
     def comp_ef (self, 
                  dcoord, 
                  dbox, 
@@ -172,19 +194,19 @@ class Model (object) :
                  tnatoms,
                  name,
                  reuse = None) :
-        descrpt, descrpt_deriv, rij, nlist, axis \
-            = op_module.descrpt (dcoord, 
-                                 dtype,
-                                 tnatoms,
-                                 dbox, 
-                                 tf.constant(self.default_mesh),
-                                 self.t_avg,
-                                 self.t_std,
-                                 rcut_a = self.rcut_a, 
-                                 rcut_r = self.rcut_r, 
-                                 sel_a = self.sel_a, 
-                                 sel_r = self.sel_r, 
-                                 axis_rule = self.axis_rule)
+        descrpt, descrpt_deriv, rij, nlist, \
+            = op_module.descrpt_norot (dcoord, 
+                                       dtype,
+                                       tnatoms,
+                                       dbox, 
+                                       tf.constant(self.default_mesh),
+                                       self.t_avg,
+                                       self.t_std,
+                                       rcut_a = self.rcut_a, 
+                                       rcut_r = self.rcut_r, 
+                                       rcut_r_smth = self.rcut_r_smth,
+                                       sel_a = self.sel_a, 
+                                       sel_r = self.sel_r)
         inputs_reshape = tf.reshape (descrpt, [-1, self.ndescrpt])
         atom_ener = self.net (inputs_reshape, name, reuse = reuse)
         atom_ener_reshape = tf.reshape(atom_ener, [-1, self.natoms[0]])        
@@ -193,21 +215,19 @@ class Model (object) :
         net_deriv = net_deriv_[0]
         net_deriv_reshape = tf.reshape (net_deriv, [-1, self.natoms[0] * self.ndescrpt]) 
 
-        force = op_module.prod_force (net_deriv_reshape, 
-                                      descrpt_deriv, 
-                                      nlist, 
-                                      axis, 
-                                      tnatoms,
-                                      n_a_sel = self.nnei_a, 
-                                      n_r_sel = self.nnei_r)
-        virial, atom_vir = op_module.prod_virial (net_deriv_reshape, 
-                                                  descrpt_deriv, 
-                                                  rij,
-                                                  nlist, 
-                                                  axis, 
-                                                  tnatoms,
-                                                  n_a_sel = self.nnei_a, 
-                                                  n_r_sel = self.nnei_r)
+        force = op_module.prod_force_norot (net_deriv_reshape, 
+                                            descrpt_deriv, 
+                                            nlist, 
+                                            tnatoms,
+                                            n_a_sel = self.nnei_a, 
+                                            n_r_sel = self.nnei_r)
+        virial, atom_vir = op_module.prod_virial_norot (net_deriv_reshape, 
+                                                        descrpt_deriv, 
+                                                        rij,
+                                                        nlist, 
+                                                        tnatoms,
+                                                        n_a_sel = self.nnei_a, 
+                                                        n_r_sel = self.nnei_r)
         return energy, force, virial
 
     def comp_fl (self, 
@@ -264,6 +284,24 @@ class Model (object) :
                 self.tnatoms:   self.natoms,
         }
 
+    def test_descrpt (self, 
+                      data) :
+        self.make_place ()
+        feed_dict_test = self.make_feed_dict (data)
+        feed_dict_test0 = self.make_feed_dict0 (data)
+
+        self.net_w_i = 1 * np.ones (self.ndescrpt)
+        t_descrpt, t_descrpt_deriv = self.comp_descrpt (self.coord, self.box, self.type, self.tnatoms,  name = "test_0")
+
+        self.sess.run (tf.global_variables_initializer())
+        [mydescrpt, mydescrpt_deriv] = self.sess.run ([t_descrpt, t_descrpt_deriv], feed_dict = feed_dict_test)
+        
+        print (mydescrpt)
+        print (mydescrpt.shape)
+        print (mydescrpt_deriv)
+        print (mydescrpt_deriv.shape)
+        
+
     def test_force (self, 
                     data) :
         self.make_place ()
@@ -271,10 +309,10 @@ class Model (object) :
         feed_dict_test0 = self.make_feed_dict0 (data)
 
         self.net_w_i = 1 * np.ones (self.ndescrpt)
-        t_energy, t_force, t_virial = self.comp_ef (self.coord, self.box, self.type, self.tnatoms,  name = "test_0")        
+        t_energy, t_force, t_virial = self.comp_ef (self.coord, self.box, self.type, self.tnatoms,  name = "test_0")                
         self.sess.run (tf.global_variables_initializer())
         energy = self.sess.run (t_energy, feed_dict = feed_dict_test)
-        force  = self.sess.run (t_force , feed_dict = feed_dict_test)        
+        force  = self.sess.run (t_force , feed_dict = feed_dict_test)
         # virial = self.sess.run (t_virial , feed_dict = feed_dict_test)        
         
         hh2 = data.get_h() * 2.
@@ -290,7 +328,7 @@ class Model (object) :
             diff = np.abs(num_force - ana_force)
             absolut_e.append (diff)
             relativ_e.append (diff / np.abs(ana_force))
-            print ("component  %6u \t value %12.5e \t diff: %10.2e \t relat: %10.2e" % (ii, ana_force, diff, np.abs(diff/ana_force)))
+            print ("component  %6u \t value %12.5e numerical %12.5e \t diff: %10.2e \t relat: %10.2e" % (ii, ana_force, num_force, diff, np.abs(diff/ana_force)))
 
         print ("max absolute %e" % np.max(absolut_e))
         print ("max relative %e" % np.max(relativ_e))        

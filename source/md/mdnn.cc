@@ -121,6 +121,8 @@ int main(int argc, char * argv[])
   normalize_coord<VALUETYPE> (dcoord, region);
 
   vector<VALUETYPE > dforce (nloc * 3, 0.);
+  vector<VALUETYPE > dae (nloc * 1, 0.);
+  vector<VALUETYPE > dav (nloc * 9, 0.);
   vector<VALUETYPE > dvirial (9, 0.0);
   VALUETYPE dener = 0;
 
@@ -169,7 +171,7 @@ int main(int argc, char * argv[])
     thm.stepOU (dveloc, dmass, dt, freez);
     inte.stepCoord (dcoord, dveloc, 0.5*dt);
     normalize_coord<VALUETYPE> (dcoord, region);
-    nnp.compute (dener, dforce, dvirial, dcoord, dtype, dbox);
+    nnp.compute (dener, dforce, dvirial, dae, dav, dcoord, dtype, dbox);
     // change virial to gromacs convention
     for (int ii = 0; ii < 9; ++ii) dvirial[ii] *= -0.5;
     inte.stepVeloc (dveloc, dforce, dmass, 0.5*dt, freez);

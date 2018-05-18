@@ -1,6 +1,6 @@
 # train
 
-file(GLOB LIB_PY  Data.py Model.py Test.py)
+file(GLOB LIB_PY  Data.py DataSystem.py Model.py Test.py TestNorot.py RunOptions.py)
 
 install(
   FILES		${LIB_PY} 

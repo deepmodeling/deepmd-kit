@@ -92,8 +92,10 @@ build_clist (vector<vector<int > > &	clist,
       idx[dd] = (inter[dd] - nat_orig[dd]) / cell_size[dd];
       if (inter[dd] - nat_orig[dd] < 0.) idx[dd] --;
       if (idx[dd] < ext_stt[dd]) {
-	cerr << "# warning: ghost idx out of lower bound " << endl;
 	idx[dd] = ext_stt[dd];
+	if (inter[dd] - nat_orig[dd] < ext_stt[dd] * cell_size[dd]) {
+	  cerr << "# warning: ghost idx out of lower bound " << endl;
+	}
       }
       else if (idx[dd] >= ext_end[dd]) {
 	cerr << "# warning: ghost idx out of upper bound " << endl;
@@ -170,7 +172,7 @@ build_nlist_cell (vector<vector<int> > &	nlist0,
   // loop over c (current) cell
   for (unsigned ii = 0; ii < clist[cidx].size(); ++ii){
     int i_idx = clist[cidx][ii];
-    assert (i_idx < nloc);
+    // assert (i_idx < nloc);
     // loop over t (target) cell
     for (unsigned jj = 0; jj < clist[tidx].size(); ++jj){
       int j_idx = clist[tidx][jj];
@@ -184,11 +186,11 @@ build_nlist_cell (vector<vector<int> > &	nlist0,
       }
       double r2 = MathUtilities::dot<double> (diff, diff);
       if (r2 < rc02) {
-	nlist0[i_idx].push_back (j_idx);
+	if (i_idx < nloc) nlist0[i_idx].push_back (j_idx);
 	if (j_idx < nloc) nlist0[j_idx].push_back (i_idx);
       }
       else if (r2 < rc12) {
-	nlist1[i_idx].push_back (j_idx);
+	if (i_idx < nloc) nlist1[i_idx].push_back (j_idx);
 	if (j_idx < nloc) nlist1[j_idx].push_back (i_idx);
       }      
     }
@@ -211,6 +213,7 @@ build_nlist_cell (vector<vector<int> > &	nlist0,
   // loop over c (current) cell
   for (unsigned ii = 0; ii < clist0[cidx].size(); ++ii){
     int i_idx = clist0[cidx][ii];
+    if (i_idx >= nlist0.size()) continue;
     // loop over t (target) cell
     for (unsigned jj = 0; jj < clist1[tidx].size(); ++jj){
       int j_idx = clist1[tidx][jj];
@@ -281,16 +284,20 @@ build_nlist (vector<vector<int > > &	nlist0,
   }
 
   // allocate the nlists
-  double density = nall / region.getVolume();
+  double density = nloc / region.getVolume();
   nlist0.resize (nloc);
   for (int ii = 0; ii < nloc; ++ii){
     nlist0[ii].clear();
-    nlist0[ii].reserve ( 4./3. * 3.14 * (rc0*rc0*rc0) * density * 1.5 + 20);
+    int esti = 4./3. * 3.14 * (rc0*rc0*rc0) * density * 1.5 + 20;
+    if (esti < 0) esti = 10;
+    nlist0[ii].reserve ( esti );
   }  
   nlist1.resize (nloc);
   for (int ii = 0; ii < nloc; ++ii){
     nlist1[ii].clear();
-    nlist1[ii].reserve ( 4./3. * 3.14 * (rc1*rc1*rc1 - rc0*rc0*rc0) * density * 1.5 + 20);
+    int esti = 4./3. * 3.14 * (rc1*rc1*rc1 - rc0*rc0*rc0) * density * 1.5 + 20;
+    if (esti < 0) esti = 10;
+    nlist1[ii].reserve ( esti );
   }
 
   // shift of the idx origin
@@ -336,6 +343,7 @@ build_nlist (vector<vector<int > > &	nlist0,
 	     const vector<int > &	grid,
 	     const SimulationRegion<double> & region)
 {
+  // assuming nloc == nall
   int nloc = coord.size() / 3;
   // compute the clist
   vector<int> nat_stt(3, 0);
@@ -385,10 +393,28 @@ build_nlist (vector<vector<int > > &	nlist0,
   double rc02 = 0;
   if (rc0 > 0) rc02 = rc0 * rc0;
   double rc12 = rc1 * rc1;
+
+#ifdef HALF_NEIGHBOR_LIST
   vector<int> cidx(3);
   for (cidx[0] = nat_stt[0]; cidx[0] < nat_end[0]; ++cidx[0]){
     for (cidx[1] = nat_stt[1]; cidx[1] < nat_end[1]; ++cidx[1]){
       for (cidx[2] = nat_stt[2]; cidx[2] < nat_end[2]; ++cidx[2]){
+#else
+  int idx_range[3];
+  idx_range[0] = nat_end[0] - nat_stt[0];
+  idx_range[1] = nat_end[1] - nat_stt[1];
+  idx_range[2] = nat_end[2] - nat_stt[2];
+  int idx_total = idx_range[0] * idx_range[1] * idx_range[2];
+#pragma omp parallel for
+  for (int tmpidx = 0; tmpidx < idx_total; ++tmpidx) {
+    vector<int> cidx(3);
+    cidx[0] = nat_stt[0] + tmpidx / (idx_range[1] * idx_range[2]);
+    int tmpidx1 = tmpidx - cidx[0] * idx_range[1] * idx_range[2];
+    cidx[1] = nat_stt[1] + tmpidx1 / idx_range[2];
+    cidx[2] = nat_stt[2] + tmpidx1 - cidx[1] * idx_range[2];
+    {
+      {
+#endif
 	int clp_cidx = collapse_index (cidx, nat_ncell);
 	vector<int> tidx(3);
 	vector<int> stidx(3);
@@ -409,8 +435,12 @@ build_nlist (vector<vector<int > > &	nlist0,
 	      else if (tidx[2] >= nat_ncell[2])	shift[2] -= 1;
 	      stidx[2] = tidx[2] + shift[2] * nat_ncell[2];
 	      int clp_tidx = collapse_index (stidx, nat_ncell);
+#ifdef HALF_NEIGHBOR_LIST
 	      if (clp_tidx < clp_cidx) continue;
 	      build_nlist_cell (nlist0, nlist1, clp_cidx, clp_tidx, clist, coord, rc02, rc12, shift, phys_cs);
+#else
+	      build_nlist_cell (nlist0, nlist1, clp_cidx, clp_tidx, clist, clist, coord, rc02, rc12, shift, phys_cs);
+#endif
 	    }
 	  }
 	}
@@ -512,7 +542,123 @@ build_nlist (vector<vector<int > > &	nlist0,
       }
     }
   }
+}   
+
+static int compute_pbc_shift (int idx, 
+			      int ncell)
+{
+  int shift = 0;
+  if (idx < 0) {
+    shift = 1;
+    while (idx + shift * ncell < 0) shift ++;
+  }
+  else if (idx >= ncell) {
+    shift = -1;
+    while (idx + shift * ncell >= ncell) shift --;
+  }
+  assert (idx + shift * ncell >= 0 && idx + shift * ncell < ncell);
+  return shift;
 }
 
-   
+void 
+copy_coord (vector<double > & out_c, 
+	    vector<int > & out_t, 
+	    vector<int > & mapping,
+	    vector<int> & ncell,
+	    vector<int> & ngcell,
+	    const vector<double > & in_c,
+	    const vector<int > & in_t,
+	    const double & rc,
+	    const SimulationRegion<double > & region)
+{
+  int nloc = in_c.size() / 3;
+  assert(nloc == in_t.size());
+
+  ncell.resize(3);
+  ngcell.resize(3);
+  double to_face [3];
+  double cell_size [3];
+  region.toFaceDistance (to_face);
+  for (int dd = 0; dd < 3; ++dd){
+    ncell[dd]  = to_face[dd] / rc;
+    if (ncell[dd] == 0) ncell[dd] = 1;
+    cell_size[dd] = to_face[dd] / ncell[dd];
+    ngcell[dd] = int(rc / cell_size[dd]) + 1;
+    assert(cell_size[dd] * ngcell[dd] >= rc);
+  }
+  int total_ncell = (2 * ngcell[0] + ncell[0]) * (2 * ngcell[1] + ncell[1]) * (2 * ngcell[2] + ncell[2]);
+  int loc_ncell = (ncell[0]) * (ncell[1]) * (ncell[2]);
+  int esti_ntotal = total_ncell / loc_ncell * nloc + 10;
+
+  // alloc
+  out_c.reserve(esti_ntotal * 6);
+  out_t.reserve(esti_ntotal * 2);
+  mapping.reserve(esti_ntotal * 2);
+  
+  // build cell list
+  vector<vector<int > > clist;
+  vector<int> nat_stt(3, 0);
+  build_clist (clist, in_c, nloc, nat_stt, ncell, nat_stt, ncell, region, ncell);
+
+  // copy local atoms
+  out_c.resize(nloc * 3);
+  out_t.resize(nloc);
+  mapping.resize(nloc);
+  copy(in_c.begin(), in_c.end(), out_c.begin());
+  copy(in_t.begin(), in_t.end(), out_t.begin());
+  for (int ii = 0; ii < nloc; ++ii) mapping[ii] = ii;
+
+  // push ghost
+  vector<int> ii(3), jj(3), pbc_shift(3, 0);
+  double pbc_shift_d[3];
+  for (ii[0] = -ngcell[0]; ii[0] < ncell[0] + ngcell[0]; ++ii[0]){
+    pbc_shift[0] = compute_pbc_shift(ii[0], ncell[0]);
+    pbc_shift_d[0] = pbc_shift[0];
+    jj[0] = ii[0] + pbc_shift[0] * ncell[0];
+    for (ii[1] = -ngcell[1]; ii[1] < ncell[1] + ngcell[1]; ++ii[1]){
+      pbc_shift[1] = compute_pbc_shift(ii[1], ncell[1]);
+      pbc_shift_d[1] = pbc_shift[1];
+      jj[1] = ii[1] + pbc_shift[1] * ncell[1];
+      for (ii[2] = -ngcell[2]; ii[2] < ncell[2] + ngcell[2]; ++ii[2]){
+	pbc_shift[2] = compute_pbc_shift(ii[2], ncell[2]);
+	pbc_shift_d[2] = pbc_shift[2];
+	jj[2] = ii[2] + pbc_shift[2] * ncell[2];
+	// local cell, continue
+	if (ii[0] >= 0 && ii[0] < ncell[0] &&
+	    ii[1] >= 0 && ii[1] < ncell[1] &&
+	    ii[2] >= 0 && ii[2] < ncell[2] ){
+	  continue;
+	}
+	double shift_v [3];
+	region.inter2Phys(shift_v, pbc_shift_d);
+	int cell_idx = collapse_index(jj, ncell);
+	vector<int> & cur_clist = clist[cell_idx];
+	for (int kk = 0; kk < cur_clist.size(); ++kk){
+	  int p_idx = cur_clist[kk];
+	  double shifted_coord [3];
+	  out_c.push_back(in_c[p_idx*3+0] - shift_v[0]);
+	  out_c.push_back(in_c[p_idx*3+1] - shift_v[1]);
+	  out_c.push_back(in_c[p_idx*3+2] - shift_v[2]);
+	  out_t.push_back(in_t[p_idx]);
+	  mapping.push_back(p_idx);
+	  // double phys[3];
+	  // for (int dd = 0; dd < 3; ++dd) phys[dd] = in_c[p_idx*3+dd] - shift_v[dd];
+	  // double inter[3];
+	  // region.phys2Inter(inter, phys);
+	  // if (  inter[0] >= 0 && inter[0] < 1 &&
+	  // 	inter[1] >= 0 && inter[1] < 1 &&
+	  // 	inter[2] >= 0 && inter[2] < 1 ){
+	  //   cout << out_c.size()  / 3 << " "
+	  // 	 << inter[0] << " " 
+	  // 	 << inter[1] << " " 
+	  // 	 << inter[2] << " " 
+	  // 	 << endl;
+	  //   cout << "err here inner" << endl;
+	  //   exit(1);
+	  // }	  
+	}
+      }
+    }
+  }
+}
 

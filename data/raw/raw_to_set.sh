@@ -6,6 +6,7 @@ if test $# -ge 1; then
     nline_per_set=$1
 fi
 
+rm -fr set.*
 echo nframe is `cat energy.raw | wc -l`
 echo nline per set is $nline_per_set
 

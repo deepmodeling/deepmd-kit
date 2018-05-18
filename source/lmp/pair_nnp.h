@@ -22,6 +22,8 @@ PairStyle(deepmd,PairNNP)
 
 #include "pair.h"
 #include "NNPInter.h"
+#include <iostream>
+#include <fstream>
 
 namespace LAMMPS_NS {
 
@@ -32,14 +34,23 @@ class PairNNP : public Pair {
   virtual void compute(int, int);
   void settings(int, char **);
   void coeff(int, char **);
+  void init_style();
   double init_one(int i, int j);
+  int pack_reverse_comm(int, int, double *);
+  void unpack_reverse_comm(int, int *, double *);
 
- protected:
-  
-  NNPInter nnp_inter;
-  double cutoff;
-  
+ protected:  
   virtual void allocate();
+
+private:  
+  NNPInter nnp_inter;
+  NNPInterModelDevi nnp_inter_model_devi;
+  unsigned numb_models;
+  double cutoff;
+  vector<vector<double > > all_force;
+  ofstream fp;
+  int out_freq;
+  string out_file;
 };
 
 }

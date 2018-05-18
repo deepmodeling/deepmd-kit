@@ -38,3 +38,13 @@ build_nlist (vector<vector<int > > &	nlist0,
 	     const double &		rc1,
 	     const vector<int > &	grid,
 	     const SimulationRegion<double> & region);
+void 
+copy_coord (vector<double > & out_c, 
+	    vector<int > & out_t, 
+	    vector<int > & mapping,
+	    vector<int> & ncell,
+	    vector<int> & ngcell,
+	    const vector<double > & in_c,
+	    const vector<int > & in_t,
+	    const double & rc,
+	    const SimulationRegion<double > & region);

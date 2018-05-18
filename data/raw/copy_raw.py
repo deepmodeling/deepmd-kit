@@ -7,9 +7,9 @@ import os.path
 def copy (in_dir,
           out_dir,
           ncopies = [1,1,1]) :
-    has_energy = os.path.isfile (in_dir + "energy.raw")
-    has_force  = os.path.isfile (in_dir + "force.raw")
-    has_virial = os.path.isfile (in_dir + "virial.raw")
+    has_energy = os.path.isfile (in_dir + "/energy.raw")
+    has_force  = os.path.isfile (in_dir + "/force.raw")
+    has_virial = os.path.isfile (in_dir + "/virial.raw")
 
     i_box       = np.loadtxt (in_dir + "/box.raw")
     i_coord     = np.loadtxt (in_dir + "/coord.raw")
@@ -65,7 +65,7 @@ def copy (in_dir,
         np.savetxt (out_dir + "/force.raw",         o_force)
     if has_virial :
         np.savetxt (out_dir + "/virial.raw",        o_virial)
-    np.savetxt (out_dir + "/type.raw",          o_type)
+    np.savetxt (out_dir + "/type.raw",          o_type, fmt = '%d')
     np.savetxt (out_dir + "/ncopies.raw",       ncopies, fmt = "%d")
     
 def _main () :

@@ -6,32 +6,6 @@ import random
 import numpy as np
 import os.path
 
-class DataScan (object) :
-    def __init__ (self, 
-                  sys_path,
-                  set_prefix) :
-
-        self.dirs = glob.glob (sys_path + "/" + set_prefix + ".*")
-        self.dirs.sort()        
-        if os.path.isfile (sys_path + "/ncopies.raw") :
-            self.ncopies = np.loadtxt (sys_path + "/ncopies.raw", dtype=np.int32)
-        else :
-            self.ncopies = [1]
-        e = np.load (self.dirs[0] + "/energy.npy")
-        self.set_ndata = e.shape[0]        
-
-    def get_set_numb_batch (self, batch_size) :
-        return self.set_ndata // batch_size
-
-    def get_numb_train_set (self) :
-        return ( len(self.dirs) - 1 )
-    
-    def get_sys_numb_batch (self, batch_size) :
-        return self.get_set_numb_batch(batch_size) * self.get_numb_train_set()
-
-    def get_ncopies (self) :
-        return self.ncopies                           
-
 class DataSets (object):
     def __init__ (self, 
                   sys_path,
@@ -63,8 +37,24 @@ class DataSets (object):
         self.load_batch_set (self.train_dirs[self.set_count % self.get_numb_set()])
         self.load_test_set (self.test_dir)
 
+    def check_batch_size (self, batch_size) :
+        for ii in self.train_dirs :
+            tmpe = np.load(os.path.join(ii, "coord.npy"))
+            if tmpe.shape[0] < batch_size :
+                return ii, tmpe.shape[0]
+        return None
+
+    def check_test_size (self, test_size) :
+        tmpe = np.load(os.path.join(self.test_dir, "coord.npy"))
+        if tmpe.shape[0] < test_size :
+            return self.test_dir, tmpe.shape[0]
+        else :
+            return None
+
     def load_type (self, sys_path) :
         atom_type = np.loadtxt (sys_path + "/type.raw", dtype=np.int32)
+        if atom_type.shape == () :
+            atom_type = np.array([atom_type])
         natoms = atom_type.shape[0]
         idx = np.arange (natoms)
         idx_map = np.lexsort ((idx, atom_type))
@@ -174,11 +164,15 @@ class DataSets (object):
     def get_batch (self,
                    batch_size) :
         set_size = self.energy_batch.shape[0]
-        assert (batch_size <= set_size), "batch size should be no more than set size"
+        # assert (batch_size <= set_size), "batch size should be no more than set size"
         if self.iterator + batch_size > set_size :
             self.load_batch_set (self.train_dirs[self.set_count % self.get_numb_set()])
+            set_size = self.energy_batch.shape[0]
         # print ("%d %d %d" % (self.iterator, self.iterator + batch_size, set_size))
-        idx = np.arange (self.iterator, self.iterator + batch_size)
+        iterator_1 = self.iterator + batch_size
+        if iterator_1 >= set_size :
+            iterator_1 = set_size
+        idx = np.arange (self.iterator, iterator_1)
         self.iterator += batch_size
         return self.prop_c_batch.astype(np.float32), self.energy_batch[idx].astype(np.float64), self.force_batch[idx, :].astype(np.float64), self.virial_batch[idx, :].astype(np.float64), self.coord_batch[idx, :].astype(np.float64), self.box_batch[idx, :].astype(np.float64), self.type_batch[idx, :]
     

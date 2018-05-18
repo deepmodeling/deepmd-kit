@@ -14,7 +14,7 @@ assert (os.path.isfile (virial_module_path  + "libprod_virial_grad.so" )), "viri
 prod_virial_grad_module = tf.load_op_library(virial_module_path + 'libprod_virial_grad.so')
      
 @ops.RegisterGradient("ProdVirial")
-def _prod_virial_grad_cc (op, grad):    
+def _prod_virial_grad_cc (op, grad, grad_atom):    
     net_grad =  prod_virial_grad_module.prod_virial_grad (grad, 
                                                           op.inputs[0], 
                                                           op.inputs[1], 
@@ -23,6 +23,5 @@ def _prod_virial_grad_cc (op, grad):
                                                           op.inputs[4], 
                                                           op.inputs[5], 
                                                           n_a_sel = op.get_attr("n_a_sel"),
-                                                          n_r_sel = op.get_attr("n_r_sel"),
-                                                          num_threads = op.get_attr("num_threads"))
+                                                          n_r_sel = op.get_attr("n_r_sel"))
     return [net_grad, None, None, None, None, None]

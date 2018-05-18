@@ -33,7 +33,7 @@ action () {
 # all package files with no dependencies
 
 for file in *.cpp *.h; do
-  action $file
+    test -f ${file} && action $file
 done
 
 # edit 2 Makefile.package files to include/exclude package info
@@ -44,6 +44,14 @@ if (test $1 = 1) then
     sed -i -e "s|^PKG_INC =[ \t].*|& $NNP_INC|" ../Makefile.package
     sed -i -e "s|^PKG_PATH =[ \t].*|& $NNP_PATH|" ../Makefile.package
     sed -i -e "s|^PKG_LIB =[ \t].*|& $NNP_LIB|" ../Makefile.package
+  fi
+
+elif (test $mode = 0) then
+
+  if (test -e ../Makefile.package) then
+    sed -i -e "s|$NNP_INC||g" ../Makefile.package
+    sed -i -e "s|$NNP_PATH||g" ../Makefile.package
+    sed -i -e "s|$NNP_LIB||g" ../Makefile.package
   fi
 
 fi

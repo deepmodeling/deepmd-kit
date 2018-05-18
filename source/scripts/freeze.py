@@ -19,6 +19,8 @@ op_module = tf.load_op_library(module_path + "deepmd/libop_abi.so")
 sys.path.append (module_path )
 import deepmd._prod_force_grad
 import deepmd._prod_virial_grad
+import deepmd._prod_force_norot_grad
+import deepmd._prod_virial_norot_grad
 
 def freeze_graph(model_folder, 
                  output, 
@@ -65,7 +67,7 @@ def freeze_graph(model_folder,
 
 if __name__ == '__main__':
 
-    default_frozen_nodes = "energy_test,force_test,virial_test,t_rcut"
+    default_frozen_nodes = "energy_test,force_test,virial_test,atom_energy_test,atom_virial_test,t_rcut"
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-d", "--folder", type=str, default = ".", 

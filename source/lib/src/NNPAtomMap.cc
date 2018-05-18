@@ -5,18 +5,22 @@
 
 template <typename VALUETYPE>
 NNPAtomMap<VALUETYPE>::
-NNPAtomMap(const vector<int > & in_atom_type)
+NNPAtomMap(const vector<int >::const_iterator in_begin, 
+	   const vector<int >::const_iterator in_end)
 {
-  int natoms = in_atom_type.size();
+  int natoms = in_end - in_begin;
   atype.resize (natoms);
   vector<pair<int, int > > sorting (natoms);
+  vector<int >::const_iterator iter = in_begin;
   for (unsigned ii = 0; ii < sorting.size(); ++ii){
-    sorting[ii] = pair<int, int > (in_atom_type[ii], ii);
+    sorting[ii] = pair<int, int > (*(iter++), ii);
   }
   sort (sorting.begin(), sorting.end());
   idx_map.resize(natoms);
+  fwd_idx_map.resize(natoms);
   for (unsigned ii = 0; ii < idx_map.size(); ++ii){
     idx_map[ii] = sorting[ii].second;
+    fwd_idx_map[sorting[ii].second] = ii;
     atype[ii] = sorting[ii].first;
   }
 }
@@ -24,17 +28,16 @@ NNPAtomMap(const vector<int > & in_atom_type)
 template <typename VALUETYPE>
 void
 NNPAtomMap<VALUETYPE>::
-forward (vector<VALUETYPE > & out,
-	 const vector<VALUETYPE > & in, 
+forward (typename vector<VALUETYPE >::iterator out,
+	 const typename vector<VALUETYPE >::const_iterator in, 
 	 const int stride) const 
 {
-  assert (in.size() == stride * idx_map.size());
   int natoms = idx_map.size();
-  out.resize (stride * natoms);
   for (int ii = 0; ii < natoms; ++ii){
     int gro_i = idx_map[ii];
     for (int dd = 0; dd < stride; ++dd){
-      out[ii*stride+dd] = in[gro_i*stride+dd];
+      // out[ii*stride+dd] = in[gro_i*stride+dd];
+      *(out + ii*stride + dd) = *(in + gro_i*stride + dd);
     }
   }
 }
@@ -42,17 +45,16 @@ forward (vector<VALUETYPE > & out,
 template <typename VALUETYPE>
 void
 NNPAtomMap<VALUETYPE>::
-backward (vector<VALUETYPE > & out,
-	  const vector<VALUETYPE > & in,
+backward (typename vector<VALUETYPE >::iterator out,
+	  const typename vector<VALUETYPE >::const_iterator in, 
 	  const int stride) const 
 {
   int natoms = idx_map.size();
-  assert (in.size() == stride * idx_map.size());
-  out.resize(stride * natoms);
   for (int ii = 0; ii < natoms; ++ii){
     int gro_i = idx_map[ii];
     for (int dd = 0; dd < stride; ++dd){
-      out[gro_i*stride+dd] = in[ii*stride+dd];
+      // out[gro_i*stride+dd] = in[ii*stride+dd];
+      *(out + gro_i*stride + dd) = *(in + ii*stride + dd);
     }
   }
 }

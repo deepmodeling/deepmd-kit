@@ -40,7 +40,6 @@ def load_graph(frozen_graph_filename,
             input_map=None, 
             return_elements=None, 
             name=prefix, 
-            op_dict=None, 
             producer_op_list=None
         )
     return graph
@@ -67,7 +66,7 @@ def analyze_ntype (graph) :
 def l2err (diff) :
     return np.sqrt(np.average (diff*diff))
 
-def test (sess, data, numb_test = None) :
+def test (sess, data, numb_test = None, detail_file = None) :
     graph = sess.graph
     ntypes = analyze_ntype (graph)
 
@@ -75,6 +74,10 @@ def test (sess, data, numb_test = None) :
     natoms_vec = natoms_vec.astype(np.int32)
     
     test_prop_c, test_energy, test_force, test_virial, test_coord, test_box, test_type = data.get_test ()
+    if numb_test > test_coord.shape[0] :
+        print ("# numb_test %d larger than size of dataset %d, is set to %d" 
+               % (numb_test, test_coord.shape[0], test_coord.shape[0]) )
+        numb_test = test_coord.shape[0]
 
     ncell = np.ones (3, dtype=np.int32)
     avg_box = np.average (test_box, axis = 0)
@@ -98,15 +101,23 @@ def test (sess, data, numb_test = None) :
     t_force  = graph.get_tensor_by_name ('load/force_test:0')
     t_virial = graph.get_tensor_by_name ('load/virial_test:0')
 
-    feed_dict_test = {t_coord:         np.reshape(test_coord   [:numb_test, :], [-1]),
-                      t_box:           test_box                [:numb_test, :],
-                      t_type:          np.reshape(test_type    [:numb_test, :], [-1]),
-                      t_natoms:        natoms_vec,
-                      t_mesh:          default_mesh}
+    energy = []
+    force = []
+    virial = []
+    for ii in range(numb_test) :
+        feed_dict_test = {t_coord:         np.reshape(test_coord   [ii:ii+1, :], [-1]),
+                          t_box:           test_box                [ii:ii+1, :],
+                          t_type:          np.reshape(test_type    [ii:ii+1, :], [-1]),
+                          t_natoms:        natoms_vec,
+                          t_mesh:          default_mesh}
+        tmp_energy, tmp_force, tmp_virial = sess.run ([t_energy, t_force, t_virial], feed_dict = feed_dict_test)
+        energy.append(tmp_energy)
+        force .append(tmp_force)
+        virial.append(tmp_virial)        
 
-    energy = sess.run (t_energy, feed_dict = feed_dict_test)
-    force  = sess.run (t_force,  feed_dict = feed_dict_test)
-    virial = sess.run (t_virial, feed_dict = feed_dict_test)
+    energy = np.reshape (energy, [numb_test])
+    force  = np.reshape (force , [numb_test, -1])
+    virial = np.reshape (virial, [numb_test, -1])
 
     l2e = (l2err (energy - test_energy[:numb_test]))
     l2f = (l2err (force  - test_force [:numb_test]))
@@ -118,6 +129,23 @@ def test (sess, data, numb_test = None) :
     print ("F : %e" % l2f)
     print ("V : %e" % l2v)
 
+    if detail_file is not None :
+        pe = np.concatenate((np.reshape(test_energy[:numb_test], [-1,1]),
+                             np.reshape(energy, [-1,1])), 
+                            axis = 1)
+        np.savetxt(detail_file+".e.out", pe, 
+                   header = 'data_e pred_e')
+        pf = np.concatenate((np.reshape(test_force [:numb_test], [-1,3]), 
+                             np.reshape(force,  [-1,3])), 
+                            axis = 1)
+        np.savetxt(detail_file+".f.out", pf,
+                   header = 'data_fx data_fy data_fz pred_fx pred_fy pred_fz')
+        pv = np.concatenate((np.reshape(test_virial[:numb_test], [-1,9]), 
+                             np.reshape(virial, [-1,9])), 
+                            axis = 1)
+        np.savetxt(detail_file+".v.out", pv,
+                   header = 'data_vxx data_vxy data_vxz data_vyx data_vyy data_vyz data_vzx data_vzy data_vzz pred_vxx pred_vxy pred_vxz pred_vyx pred_vyy pred_vyz pred_vzx pred_vzy pred_vzz')        
+
 def _main () :
     parser = argparse.ArgumentParser()
     parser.add_argument("-m", "--model", default="frozen_model.pb", type=str, 
@@ -128,13 +156,15 @@ def _main () :
                         help="The set prefix")
     parser.add_argument("-n", "--numb-test", default=100, type=int, 
                         help="The number of data for test")
+    parser.add_argument("-d", "--detail-file", type=str, 
+                        help="The file containing details of energy force and virial accuracy")
     args = parser.parse_args()
 
     graph = load_graph(args.model)
     data = DataSets (args.system, args.set_prefix)
 
     with tf.Session(graph = graph) as sess:        
-        test (sess, data, args.numb_test)
+        test (sess, data, args.numb_test, args.detail_file)
 
     # for op in graph.get_operations():
     #     print (op.name)

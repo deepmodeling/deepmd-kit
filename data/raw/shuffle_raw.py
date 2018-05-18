@@ -42,17 +42,25 @@ def _main () :
         print ("# no file to shuffle, exit")
         return
 
+    assert ("box.raw" in raws)
+    tmp = np.loadtxt(os.path.join(inpath, "box.raw"))
+    tmp = np.reshape(tmp, [-1, 9])
+    nframe = tmp.shape[0]
+    print(nframe)
+
     print ("# will shuffle raw files " + str(raws) + 
            " in dir " + inpath +
            " and output to dir " + outpath)
 
     tmp = np.loadtxt (inpath + "/" + raws[0])
+    tmp = np.reshape(tmp, [nframe, -1])
     nframe = tmp.shape[0]
     idx = np.arange (nframe)
     np.random.shuffle(idx)
     
     for ii in raws : 
         data = np.loadtxt(inpath + "/" + ii)
+        data = np.reshape(data, [nframe, -1])
         data = data [idx]
         np.savetxt (outpath + "/" + ii, data)
 

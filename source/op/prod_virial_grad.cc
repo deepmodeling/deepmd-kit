@@ -23,7 +23,6 @@ REGISTER_OP("ProdVirialGrad")
 .Input("natoms: int32")
 .Attr("n_a_sel: int")
 .Attr("n_r_sel: int")
-.Attr("num_threads: int = 1")
 .Output("grad_net: double");
 #else
 REGISTER_OP("ProdVirialGrad")
@@ -36,7 +35,6 @@ REGISTER_OP("ProdVirialGrad")
 .Input("natoms: int32")
 .Attr("n_a_sel: int")
 .Attr("n_r_sel: int")
-.Attr("num_threads: int = 1")
 .Output("grad_net: float");
 #endif
 
@@ -46,7 +44,6 @@ public:
   explicit ProdVirialGradOp(OpKernelConstruction* context) : OpKernel(context) {
     OP_REQUIRES_OK(context, context->GetAttr("n_a_sel", &n_a_sel));    
     OP_REQUIRES_OK(context, context->GetAttr("n_r_sel", &n_r_sel));    
-    OP_REQUIRES_OK(context, context->GetAttr("num_threads", &num_threads));
     n_a_shift = n_a_sel * 4;
   }
 
@@ -116,7 +113,7 @@ public:
     auto grad_net	= grad_net_tensor	->flat<VALUETYPE>();
 
     // loop over frames
-#pragma omp parallel for num_threads (num_threads)
+#pragma omp parallel for
     for (int kk = 0; kk < nframes; ++kk){
 
       int grad_iter	= kk * 9;
@@ -187,7 +184,7 @@ public:
     }
   }
 private:
-  int n_r_sel, n_a_sel, n_a_shift, num_threads;
+  int n_r_sel, n_a_sel, n_a_shift;
   inline void 
   make_descript_range (int & idx_start,
 		       int & idx_end,
