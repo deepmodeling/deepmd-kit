@@ -397,14 +397,12 @@ where `graph.pb` is the file name of the frozen model. The `pair_coeff` should b
 ### With long-range interaction
 The reciprocal space part of the long-range interaction can be calculated by lammps command `kspace_style`. To use it with DeePMD-kit, one writes 
 ```bash
-pair_style	hybrid/overlay deepmd graph.pb coul/long 9.0
-pair_coeff	* * deepmd
-pair_coeff	* * coul/long
-pair_modify	pair coul/long compute no
+pair_style	deepmd graph.pb
+pair_coeff
 kspace_style	pppm 1.0e-5
 kspace_modify	gewald 0.45
 ```
-In this setting, the direct space part of the long-range interaction is ignored by the `pair_modify` command, because this part is fitted in the DeePMD model. The splitting parameter `gewald` is modified by the `kspace_modify` command.
+Please notice that the DeePMD does nothing to the direct space part of the electrostatic interaction, because this part is assumed to be fitted in the DeePMD model (the direct space cut-off is thus the cut-off of the DeePMD model). The splitting parameter `gewald` is modified by the `kspace_modify` command.
 
 ## Run path-integral MD with i-PI
 The i-PI works in a client-server model. The i-PI provides the server for integrating the replica positions of atoms, while the DeePMD-kit provides a client named `dp_ipi` that computes the interactions (including energy, force and virial). The server and client communicates via the Unix domain socket or the Internet socket. The client can be started by
