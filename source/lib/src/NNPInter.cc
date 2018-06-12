@@ -11,7 +11,7 @@ checkStatus(const tensorflow::Status& status) {
   }
 }
 
-static int 
+static void
 convert_nlist_lmp_internal (InternalNeighborList & list,
 			    const LammpsNeighborList & lmp_list) 
 {
@@ -34,7 +34,7 @@ convert_nlist_lmp_internal (InternalNeighborList & list,
   }
 }
 
-static int
+static void
 shuffle_nlist (InternalNeighborList & list, 
 	       const NNPAtomMap<VALUETYPE> & map)
 {
@@ -55,6 +55,7 @@ shuffle_nlist (InternalNeighborList & list,
 static int
 make_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 		    const vector<VALUETYPE> &	dcoord_,
+		    const int &			ntypes,
 		    const vector<int> &		datype_,
 		    const vector<VALUETYPE> &	dbox, 
 		    const VALUETYPE &		cell_size, 
@@ -71,7 +72,6 @@ make_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
   assert (nall == datype_.size());
 
   vector<int > datype = nnpmap.get_type();
-  int ntypes = datype.back () + 1;
   vector<int > type_count (ntypes, 0);
   for (unsigned ii = 0; ii < datype.size(); ++ii){
     type_count[datype[ii]] ++;
@@ -182,6 +182,7 @@ make_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 static int
 make_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 		    const vector<VALUETYPE> &	dcoord_,
+		    const int &			ntypes,
 		    const vector<int> &		datype_,
 		    const vector<VALUETYPE> &	dbox,		    
 		    InternalNeighborList &	dlist, 
@@ -196,8 +197,6 @@ make_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
   assert (nall == datype_.size());
 
   vector<int > datype = nnpmap.get_type();
-
-  int ntypes = datype.back () + 1;
   vector<int > type_count (ntypes, 0);
   for (unsigned ii = 0; ii < datype.size(); ++ii){
     type_count[datype[ii]] ++;
@@ -394,6 +393,7 @@ NNPInter (const string & model)
   checkStatus (session->Create(graph_def));  
   rcut = get_rcut();
   cell_size = rcut;
+  ntypes = get_ntypes();
   inited = true;
 }
 
@@ -407,6 +407,7 @@ init (const string & model)
   checkStatus (session->Create(graph_def));  
   rcut = get_rcut();
   cell_size = rcut;
+  ntypes = get_ntypes();
   inited = true;
 }
 
@@ -421,6 +422,20 @@ get_rcut () const
 			    &output_tensors));
   Tensor output_rc = output_tensors[0];
   auto orc = output_rc.flat <VALUETYPE> ();
+  return orc(0);
+}
+
+int
+NNPInter::
+get_ntypes () const
+{
+  std::vector<Tensor> output_tensors;
+  checkStatus (session->Run(std::vector<std::pair<string, Tensor>> ({}), 
+			    {"t_ntypes"}, 
+			    {}, 
+			    &output_tensors));
+  Tensor output_rc = output_tensors[0];
+  auto orc = output_rc.flat <int> ();
   return orc(0);
 }
 
@@ -440,7 +455,7 @@ compute (VALUETYPE &			dener,
   assert (nloc == nnpmap.get_type().size());
 
   std::vector<std::pair<string, Tensor>> input_tensors;
-  int ret = make_input_tensors (input_tensors, dcoord_, datype_, dbox, cell_size, nnpmap, nghost);
+  int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, nnpmap, nghost);
   assert (ret == nloc);
 
   run_model (dener, dforce_, dvirial, session, input_tensors, nnpmap, nghost);
@@ -467,7 +482,7 @@ compute (VALUETYPE &			dener,
   shuffle_nlist (nlist, nnpmap);
 
   std::vector<std::pair<string, Tensor>> input_tensors;
-  int ret = make_input_tensors (input_tensors, dcoord_, datype_, dbox, nlist, nnpmap, nghost);
+  int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, nnpmap, nghost);
   assert (nloc == ret);
 
   run_model (dener, dforce_, dvirial, session, input_tensors, nnpmap, nghost);
@@ -488,7 +503,7 @@ compute (VALUETYPE &			dener,
   NNPAtomMap<VALUETYPE> nnpmap (datype_.begin(), datype_.end());
 
   std::vector<std::pair<string, Tensor>> input_tensors;
-  int nloc = make_input_tensors (input_tensors, dcoord_, datype_, dbox, cell_size, nnpmap);
+  int nloc = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, nnpmap);
 
   run_model (dener, dforce_, dvirial, datom_energy_, datom_virial_, session, input_tensors, nnpmap);
 }
@@ -518,7 +533,7 @@ compute (VALUETYPE &			dener,
   shuffle_nlist (nlist, nnpmap);
 
   std::vector<std::pair<string, Tensor>> input_tensors;
-  int ret = make_input_tensors (input_tensors, dcoord_, datype_, dbox, nlist, nnpmap, nghost);
+  int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, nnpmap, nghost);
   assert (nloc == ret);
 
   run_model (dener, dforce_, dvirial, datom_energy_, datom_virial_, session, input_tensors, nnpmap, nghost);
@@ -547,6 +562,7 @@ NNPInterModelDevi (const vector<string> & models)
   }
   rcut = get_rcut();
   cell_size = rcut;
+  ntypes = get_ntypes();
   inited = true;
 }
 
@@ -565,6 +581,7 @@ init (const vector<string> & models)
   }
   rcut = get_rcut();
   cell_size = rcut;
+  ntypes = get_ntypes();
   inited = true;
 }
 
@@ -591,6 +608,28 @@ get_rcut () const
   return myrcut;
 }
 
+int
+NNPInterModelDevi::
+get_ntypes () const
+{
+  int myntypes = 0;
+  for (unsigned ii = 0; ii < numb_models; ++ii){
+    std::vector<Tensor> output_tensors;
+    checkStatus (sessions[ii]->Run(std::vector<std::pair<string, Tensor>> ({}), 
+				   {"t_ntypes"}, 
+				   {}, 
+				   &output_tensors));
+    Tensor output_rc = output_tensors[0];
+    auto orc = output_rc.flat <int> ();
+    if (ii == 0){
+      myntypes = orc(0);
+    }
+    else {
+      assert (myntypes == orc(0));
+    }
+  }
+  return myntypes;
+}
 
 void
 NNPInterModelDevi::
@@ -607,7 +646,7 @@ compute (VALUETYPE &			dener,
   NNPAtomMap<VALUETYPE> nnpmap (datype_.begin(), datype_.end());
 
   std::vector<std::pair<string, Tensor>> input_tensors;
-  int nloc = make_input_tensors (input_tensors, dcoord_, datype_, dbox, cell_size, nnpmap);
+  int nloc = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, nnpmap);
 
   vector<VALUETYPE > all_energy (numb_models);
   vector<vector<VALUETYPE > > all_force (numb_models);
@@ -659,7 +698,7 @@ compute (vector<VALUETYPE> &		all_energy,
   shuffle_nlist (nlist, nnpmap);
 
   std::vector<std::pair<string, Tensor>> input_tensors;
-  int ret = make_input_tensors (input_tensors, dcoord_, datype_, dbox, nlist, nnpmap, nghost);
+  int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, nnpmap, nghost);
   assert (nloc == ret);
 
   all_energy.resize (numb_models);
@@ -668,6 +707,45 @@ compute (vector<VALUETYPE> &		all_energy,
 
   for (unsigned ii = 0; ii < numb_models; ++ii){
     run_model (all_energy[ii], all_force[ii], all_virial[ii], sessions[ii], input_tensors, nnpmap, nghost);
+  }
+}
+
+void
+NNPInterModelDevi::
+compute (vector<VALUETYPE> &			all_energy,
+	 vector<vector<VALUETYPE>> &		all_force,
+	 vector<vector<VALUETYPE>> &		all_virial,
+	 vector<vector<VALUETYPE>> &		all_atom_energy,
+	 vector<vector<VALUETYPE>> &		all_atom_virial,
+	 const vector<VALUETYPE> &		dcoord_,
+	 const vector<int> &			datype_,
+	 const vector<VALUETYPE> &		dbox,
+	 const int				nghost,
+	 const LammpsNeighborList &		lmp_list)
+{
+  if (numb_models == 0) return;
+  
+  int nall = dcoord_.size() / 3;
+  int nloc = nall - nghost;
+  NNPAtomMap<VALUETYPE> nnpmap (datype_.begin(), datype_.begin() + nloc);
+  assert (nloc == nnpmap.get_type().size());
+
+  InternalNeighborList nlist;
+  convert_nlist_lmp_internal (nlist, lmp_list);
+  shuffle_nlist (nlist, nnpmap);
+
+  std::vector<std::pair<string, Tensor>> input_tensors;
+  int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, nnpmap, nghost);
+  assert (nloc == ret);
+
+  all_energy.resize (numb_models);
+  all_force .resize (numb_models);
+  all_virial.resize (numb_models);
+  all_atom_energy.resize (numb_models);
+  all_atom_virial.resize (numb_models);  
+
+  for (unsigned ii = 0; ii < numb_models; ++ii){
+    run_model (all_energy[ii], all_force[ii], all_virial[ii], all_atom_energy[ii], all_atom_virial[ii], sessions[ii], input_tensors, nnpmap, nghost);
   }
 }
 
@@ -709,6 +787,52 @@ compute_avg (vector<VALUETYPE> &		avg,
   }
 }
 
+
+void
+NNPInterModelDevi::
+compute_std (VALUETYPE &		std, 
+	     const VALUETYPE &		avg, 
+	     const vector<VALUETYPE >&	xx)
+{
+  std = 0;
+  assert(xx.size() == numb_models);
+  for (unsigned jj = 0; jj < xx.size(); ++jj){
+    std += (xx[jj] - avg) * (xx[jj] - avg);
+  }
+  std = sqrt(std / VALUETYPE(numb_models));
+  // std = sqrt(std / VALUETYPE(numb_models-));
+}
+
+void
+NNPInterModelDevi::
+compute_std_e (vector<VALUETYPE> &		std, 
+	       const vector<VALUETYPE> &	avg, 
+	       const vector<vector<VALUETYPE> >&xx)  
+{
+  assert (xx.size() == numb_models);
+  if (numb_models == 0) return;
+
+  unsigned ndof = avg.size();
+  unsigned nloc = ndof;
+  assert (nloc == ndof);
+  
+  std.resize(nloc);
+  fill (std.begin(), std.end(), VALUETYPE(0.));
+  
+  for (unsigned ii = 0; ii < numb_models; ++ii) {
+    for (unsigned jj = 0 ; jj < nloc; ++jj){
+      const VALUETYPE * tmp_f = &(xx[ii][jj]);
+      const VALUETYPE * tmp_avg = &(avg[jj]);
+      VALUETYPE vdiff = xx[ii][jj] - avg[jj];
+      std[jj] += vdiff * vdiff;
+    }
+  }
+
+  for (unsigned jj = 0; jj < nloc; ++jj){
+    std[jj] = sqrt(std[jj] / VALUETYPE(numb_models));
+    // std[jj] = sqrt(std[jj] / VALUETYPE(numb_models-1));
+  }
+}
 
 void
 NNPInterModelDevi::

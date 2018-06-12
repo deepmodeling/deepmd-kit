@@ -37,6 +37,7 @@ e_corr (const vector<VALUETYPE> & charge) const
 {
   double sum = 0;
   sum += potzm.energyCorr (charge);
+  return sum;
 }
 
 inline void 

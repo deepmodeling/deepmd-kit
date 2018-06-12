@@ -51,6 +51,8 @@ def _main () :
     numb_sys = len(systems)
     seed = None
     if 'seed' in jdata.keys() : seed = jdata['seed']
+    seed = seed % (2**32)
+    np.random.seed (seed)
     batch_size = j_must_have(jdata, 'batch_size')
     test_size = j_must_have(jdata, 'numb_test')
     stop_batch = j_must_have(jdata, 'stop_batch')

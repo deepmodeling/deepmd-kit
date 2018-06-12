@@ -14,8 +14,7 @@ class DataSystem (object) :
                   batch_size,
                   test_size,
                   rcut,
-                  do_norm = False, 
-                  seed = None ) : 
+                  do_norm = False) : 
         self.system_dirs = systems
         self.nsystems = len(self.system_dirs)
         self.batch_size = batch_size
@@ -30,7 +29,7 @@ class DataSystem (object) :
         self.nbatches = []
         self.ncopies = []
         for ii in self.system_dirs :
-            self.data_systems.append(DataSets(ii, set_prefix, do_norm, seed))
+            self.data_systems.append(DataSets(ii, set_prefix, do_norm))
             sys_all_types = np.loadtxt(os.path.join(ii, "type.raw")).astype(int)
             self.ntypes.append(np.max(sys_all_types) + 1)
         self.sys_ntypes = max(self.ntypes)
@@ -85,17 +84,35 @@ class DataSystem (object) :
             default_mesh[5] = ncell[2]
             self.default_mesh.append(default_mesh)
         self.pick_idx = 0
-    
+
+    def process_sys_weights(self, sys_weights) :
+        sys_weights = np.array(sys_weights)
+        type_filter = sys_weights >= 0
+        assigned_sum_prob = np.sum(type_filter * sys_weights)
+        assert assigned_sum_prob <= 1, "the sum of assigned probability should be less than 1"
+        rest_sum_prob = 1. - assigned_sum_prob
+        rest_nbatch = (1 - type_filter) * self.nbatches
+        rest_prob = rest_sum_prob * rest_nbatch / np.sum(rest_nbatch)
+        ret_prob = rest_prob + type_filter * sys_weights
+        assert np.sum(ret_prob) == 1, "sum of probs should be 1"
+        return ret_prob
+
     def get_batch (self, 
                    sys_idx = None,
+                   sys_weights = None,
                    style = "prob_sys_size") :
         if sys_idx is not None :
             self.pick_idx = sys_idx
         else :
-            if style == "prob_sys_size" :
-                prob = self.prob_nbatches
-            elif style == "prob_uniform" :
-                prob = None
+            if sys_weights is None :
+                if style == "prob_sys_size" :
+                    prob = self.prob_nbatches
+                elif style == "prob_uniform" :
+                    prob = None
+                else :
+                    raise RuntimeError("unkown get_batch style")
+            else :
+                prob = self.process_sys_weights(sys_weights)
             self.pick_idx = np.random.choice(np.arange(self.nsystems), p = prob)
         b_prop_c, b_energy, b_force, b_virial, b_coord, b_box, b_type \
             = self.data_systems[self.pick_idx].get_batch(self.batch_size[self.pick_idx])

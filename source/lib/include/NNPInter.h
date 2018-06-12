@@ -92,8 +92,10 @@ private:
   GraphDef graph_def;
   bool inited;
   VALUETYPE get_rcut () const;
+  int get_ntypes () const;
   VALUETYPE rcut;
   VALUETYPE cell_size;
+  int ntypes;
 };
 
 class NNPInterModelDevi
@@ -118,12 +120,28 @@ public:
 		const vector<VALUETYPE> &	box,
 		const int			nghost,
 		const LammpsNeighborList &	lmp_list);
+  void compute (vector<VALUETYPE> &		all_ener,
+		vector<vector<VALUETYPE> > &	all_force,
+		vector<vector<VALUETYPE> > &	all_virial,
+		vector<vector<VALUETYPE> > &	all_atom_energy,
+		vector<vector<VALUETYPE> > &	all_atom_virial,
+		const vector<VALUETYPE> &	coord,
+		const vector<int> &		atype,
+		const vector<VALUETYPE> &	box,
+		const int			nghost,
+		const LammpsNeighborList &	lmp_list);
   VALUETYPE cutoff () const {return rcut;};
-  void compute_avg (VALUETYPE &			dener, 
+  void compute_avg (VALUETYPE &			dener,
 		    const vector<VALUETYPE > &	all_energy);
-  void compute_avg (vector<VALUETYPE> &			avg, 
+  void compute_avg (vector<VALUETYPE> &			avg,
 		    const vector<vector<VALUETYPE> > &	xx);
-  void compute_std_f (vector<VALUETYPE> &		std, 
+  void compute_std   (VALUETYPE &			std,
+		      const VALUETYPE &			avg,
+		      const vector<VALUETYPE >&		xx);
+  void compute_std_e (vector<VALUETYPE> &		std,
+		      const vector<VALUETYPE> &		avg,
+		      const vector<vector<VALUETYPE> >&	xx);
+  void compute_std_f (vector<VALUETYPE> &		std,
 		      const vector<VALUETYPE> &		avg,
 		      const vector<vector<VALUETYPE> >& xx);
 private:
@@ -132,8 +150,10 @@ private:
   vector<GraphDef> graph_defs;
   bool inited;
   VALUETYPE get_rcut () const;
+  int get_ntypes () const;
   VALUETYPE rcut;
   VALUETYPE cell_size;
+  int ntypes;
 };
 
 

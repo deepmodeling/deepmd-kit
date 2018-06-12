@@ -39,6 +39,7 @@ PairNNP::PairNNP(LAMMPS *lmp)
     : Pair(lmp)
       
 {
+  pppmflag = 1;
   respa_enable = 0;
   writedata = 0;
   cutoff = 0.;
@@ -128,17 +129,34 @@ void PairNNP::compute(int eflag, int vflag)
       }
     }
     else {
-      if ( (eflag_atom || vflag_atom) ) {
-	error->all(FLERR,"Model devi mode does not compute atomic energy nor virial");
-      }
       vector<double> 		all_energy;
       vector<vector<double>> 	all_virial;	       
-      nnp_inter_model_devi.compute(all_energy, all_force, all_virial, dcoord, dtype, dbox, nghost, lmp_list);      
+      vector<vector<double>> 	all_atom_energy;
+      vector<vector<double>> 	all_atom_virial;
+      nnp_inter_model_devi.compute(all_energy, all_force, all_virial, all_atom_energy, all_atom_virial, dcoord, dtype, dbox, nghost, lmp_list);
       nnp_inter_model_devi.compute_avg (dener, all_energy);
       nnp_inter_model_devi.compute_avg (dforce, all_force);
       nnp_inter_model_devi.compute_avg (dvirial, all_virial);
+      vector<double > deatom (nall * 1, 0);
+      vector<double > dvatom (nall * 9, 0);
+      nnp_inter_model_devi.compute_avg (deatom, all_atom_energy);
+      nnp_inter_model_devi.compute_avg (dvatom, all_atom_virial);
+      if (eflag_atom) {
+	for (int ii = 0; ii < nlocal; ++ii) eatom[ii] += deatom[ii];
+      }
+      if (vflag_atom) {
+	for (int ii = 0; ii < nall; ++ii){
+	  vatom[ii][0] += 1.0 * dvatom[9*ii+0];
+	  vatom[ii][1] += 1.0 * dvatom[9*ii+4];
+	  vatom[ii][2] += 1.0 * dvatom[9*ii+8];
+	  vatom[ii][3] += 1.0 * dvatom[9*ii+3];
+	  vatom[ii][4] += 1.0 * dvatom[9*ii+6];
+	  vatom[ii][5] += 1.0 * dvatom[9*ii+7];
+	}
+      }      
       if (out_freq > 0 && update->ntimestep % out_freq == 0) {
 	int rank = comm->me;
+	// std force 
 	if (newton_pair) {
 	  comm->reverse_comm_pair(this);
 	}
@@ -146,20 +164,44 @@ void PairNNP::compute(int eflag, int vflag)
 	vector<double> std_f;
 	nnp_inter_model_devi.compute_avg (tmp_avg_f, all_force);  
 	nnp_inter_model_devi.compute_std_f (std_f, tmp_avg_f, all_force);
-	double min = 0, max = 0, avg = 0;      
+	double min = 0, max = 0, avg = 0;
 	ana_st(max, min, avg, std_f, nlocal);
-	double all_min = 0, all_max = 0, all_avg = 0;
 	int all_nlocal = 0;
-	MPI_Reduce (&min, &all_min, 1, MPI_DOUBLE, MPI_MIN, 0, world);
-	MPI_Reduce (&max, &all_max, 1, MPI_DOUBLE, MPI_MAX, 0, world);
-	MPI_Reduce (&avg, &all_avg, 1, MPI_DOUBLE, MPI_SUM, 0, world);
 	MPI_Reduce (&nlocal, &all_nlocal, 1, MPI_INT, MPI_SUM, 0, world);
-	all_avg /= double(all_nlocal);
+	double all_f_min = 0, all_f_max = 0, all_f_avg = 0;
+	MPI_Reduce (&min, &all_f_min, 1, MPI_DOUBLE, MPI_MIN, 0, world);
+	MPI_Reduce (&max, &all_f_max, 1, MPI_DOUBLE, MPI_MAX, 0, world);
+	MPI_Reduce (&avg, &all_f_avg, 1, MPI_DOUBLE, MPI_SUM, 0, world);
+	all_f_avg /= double(all_nlocal);
+	// std energy
+	vector<double > tmp_avg_e;
+	vector<double > std_e;
+	nnp_inter_model_devi.compute_avg (tmp_avg_e, all_atom_energy);
+	nnp_inter_model_devi.compute_std_e (std_e, tmp_avg_e, all_atom_energy);
+	min = max = avg = 0;
+	ana_st(max, min, avg, std_e, nlocal);
+	double all_e_min = 0, all_e_max = 0, all_e_avg = 0;
+	MPI_Reduce (&min, &all_e_min, 1, MPI_DOUBLE, MPI_MIN, 0, world);
+	MPI_Reduce (&max, &all_e_max, 1, MPI_DOUBLE, MPI_MAX, 0, world);
+	MPI_Reduce (&avg, &all_e_avg, 1, MPI_DOUBLE, MPI_SUM, 0, world);
+	all_e_avg /= double(all_nlocal);
+	// // total e
+	// vector<double > sum_e(numb_models, 0.);
+	// MPI_Reduce (&all_energy[0], &sum_e[0], numb_models, MPI_DOUBLE, MPI_SUM, 0, world);
 	if (rank == 0) {
+	  // double avg_e = 0;
+	  // nnp_inter_model_devi.compute_avg(avg_e, sum_e);
+	  // double std_e_1 = 0;
+	  // nnp_inter_model_devi.compute_std(std_e_1, avg_e, sum_e);	
 	  fp << setw(12) << update->ntimestep 
-	     << " " << setw(18) << all_max 
-	     << " " << setw(18) << all_min
-	     << " " << setw(18) << all_avg
+	     << " " << setw(18) << all_e_max 
+	     << " " << setw(18) << all_e_min
+	     << " " << setw(18) << all_e_avg
+	     << " " << setw(18) << all_f_max 
+	     << " " << setw(18) << all_f_min
+	     << " " << setw(18) << all_f_avg
+	     // << " " << setw(18) << avg_e
+	     // << " " << setw(18) << std_e_1 / all_nlocal
 	     << endl;
 	}
       }
@@ -233,14 +275,19 @@ void PairNNP::settings(int narg, char **arg)
     nnp_inter_model_devi.init(models);
     cutoff = nnp_inter_model_devi.cutoff();
     numb_models = models.size();
-    fp.open (out_file);
-    fp << scientific;
-    fp << "#"
-       << setw(12-1) << "step" 
-       << setw(18+1) << "max"
-       << setw(18+1) << "min"
-       << setw(18+1) << "avg"
-       << endl;
+    if (comm->me == 0){
+      fp.open (out_file);
+      fp << scientific;
+      fp << "#"
+	 << setw(12-1) << "step" 
+	 << setw(18+1) << "max_devi_e"
+	 << setw(18+1) << "min_devi_e"
+	 << setw(18+1) << "avg_devi_e"
+	 << setw(18+1) << "max_devi_f"
+	 << setw(18+1) << "min_devi_f"
+	 << setw(18+1) << "avg_devi_f"
+	 << endl;
+    }
   }  
   comm_reverse = numb_models * 3;
   all_force.resize(numb_models);
@@ -306,4 +353,11 @@ void PairNNP::unpack_reverse_comm(int n, int *list, double *buf)
       all_force[dd][3*j+2] += buf[m++];
     }
   }
+}
+
+void *PairNNP::extract(const char *str, int &dim)
+{
+  dim = 0;
+  if (strcmp(str,"cut_coul") == 0) return (void *) &cutoff;
+  return NULL;
 }

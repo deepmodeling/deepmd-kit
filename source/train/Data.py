@@ -12,8 +12,6 @@ class DataSets (object):
                   set_prefix,
                   do_norm = False,
                   seed = None) :
-
-        np.random.seed (seed)
         self.dirs = glob.glob (sys_path + "/" + set_prefix + ".*")
         self.dirs.sort()
         if os.path.isfile (sys_path + "/ncopies.raw") :

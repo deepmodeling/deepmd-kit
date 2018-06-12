@@ -67,7 +67,7 @@ def freeze_graph(model_folder,
 
 if __name__ == '__main__':
 
-    default_frozen_nodes = "energy_test,force_test,virial_test,atom_energy_test,atom_virial_test,t_rcut"
+    default_frozen_nodes = "energy_test,force_test,virial_test,atom_energy_test,atom_virial_test,t_rcut,t_ntypes"
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-d", "--folder", type=str, default = ".", 

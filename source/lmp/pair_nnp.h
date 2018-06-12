@@ -32,6 +32,7 @@ class PairNNP : public Pair {
   PairNNP(class LAMMPS *);
   virtual ~PairNNP();
   virtual void compute(int, int);
+  virtual void *extract(const char *, int &);
   void settings(int, char **);
   void coeff(int, char **);
   void init_style();

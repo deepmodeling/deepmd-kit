@@ -92,10 +92,12 @@ build_clist (vector<vector<int > > &	clist,
       idx[dd] = (inter[dd] - nat_orig[dd]) / cell_size[dd];
       if (inter[dd] - nat_orig[dd] < 0.) idx[dd] --;
       if (idx[dd] < ext_stt[dd]) {
-	idx[dd] = ext_stt[dd];
-	if (inter[dd] - nat_orig[dd] < ext_stt[dd] * cell_size[dd]) {
+	if (fabs((inter[dd] - nat_orig[dd]) - (ext_stt[dd] * cell_size[dd]))
+	    > fabs(ext_stt[dd] * cell_size[dd]) * numeric_limits<double>::epsilon() * 5.
+	    ) {
 	  cerr << "# warning: ghost idx out of lower bound " << endl;
 	}
+	idx[dd] = ext_stt[dd];
       }
       else if (idx[dd] >= ext_end[dd]) {
 	cerr << "# warning: ghost idx out of upper bound " << endl;

@@ -133,6 +133,10 @@ class NNPModel (object):
             if self.profiling :
                 self.profiling_file = j_must_have (jdata, 'profiling_file')
 
+        self.sys_weights = None
+        if j_have(jdata, 'sys_weights') :
+            self.sys_weights = jdata['sys_weights']
+
         self.null_mesh = tf.constant ([-1])
 
         self.verbose = True
@@ -159,17 +163,18 @@ class NNPModel (object):
         self.numb_batch_size_value = len(self.batch_size_value)
 
         test_prop_c, test_energy, test_force, test_virial, test_coord, test_box, test_type, natoms_vec, default_mesh, ncopies \
-            = data.get_test (0)
+            = data.get_batch (sys_idx = 0)
         self.ncopies = np.cumprod(ncopies)[-1]
         natoms_vec = natoms_vec.astype(np.int32)
         t_rcut = tf.constant(np.max([self.rcut_r, self.rcut_a]), name = 't_rcut', dtype = tf.float64)
+        t_ntypes = tf.constant(self.ntypes, name = 't_ntypes', dtype = tf.int32)
 
-        test_coord_ = test_coord[:self.numb_test,:]
-        test_box_ = test_box[:self.numb_test,:]
-        test_type_ = test_type[:self.numb_test,:]
+        test_coord_ = test_coord
+        test_box_ = test_box
+        test_type_ = test_type
 
         self.compute_stats (test_coord_, test_box_, test_type_, natoms_vec, default_mesh)
-        print ("# computed test stats")
+        print ("# computed stats")
         sys.stdout.flush()
 
         bias_atom_e = data.get_sys(0).get_bias_atom_e()
@@ -289,7 +294,7 @@ class NNPModel (object):
             prf_run_metadata = tf.RunMetadata()
 
         while cur_batch < stop_batch :
-            batch_prop_c, batch_energy, batch_force, batch_virial, batch_coord, batch_box, batch_type, natoms_vec, default_mesh, ncopies = data.get_batch ()
+            batch_prop_c, batch_energy, batch_force, batch_virial, batch_coord, batch_box, batch_type, natoms_vec, default_mesh, ncopies = data.get_batch (sys_weights = self.sys_weights)
             cur_batch_size = batch_energy.shape[0]
             cur_bs_idx = self.batch_size_value.index(cur_batch_size)
             feed_dict_batch = {self.t_prop_c:        batch_prop_c,

@@ -114,6 +114,11 @@ int main(int argc, char * argv[])
   double * msg_buff = NULL;
   double ener;
   double virial[9];
+  char msg_needinit[]	= "NEEDINIT    ";
+  char msg_havedata[]	= "HAVEDATA    ";
+  char msg_ready[]	= "READY       ";
+  char msg_forceready[] = "FORCEREADY  ";
+  char msg_nothing[]	= "nothing";
   
   open_socket_ (&socket, &inet, &port, host);
   
@@ -126,15 +131,15 @@ int main(int argc, char * argv[])
 
     if (header_str == "STATUS"){
       if (! isinit) {
-	writebuffer_ (&socket, "NEEDINIT    ", MSGLEN);
+	writebuffer_ (&socket, msg_needinit, MSGLEN);
 	if (b_verb) cout << "# send back  " << "NEEDINIT" << endl;
       }
       else if (hasdata) {
-	writebuffer_ (&socket, "HAVEDATA    ", MSGLEN);
+	writebuffer_ (&socket, msg_havedata, MSGLEN);
 	if (b_verb) cout << "# send back  " << "HAVEDATA" << endl;
       }
       else {
-	writebuffer_ (&socket, "READY       ", MSGLEN);
+	writebuffer_ (&socket, msg_ready, MSGLEN);
 	if (b_verb) cout << "# send back  " << "READY" << endl;
       }
     }
@@ -190,14 +195,14 @@ int main(int argc, char * argv[])
 	virial[ii] = dvirial[ii] * icvt_ener * (1.0);
       }
       if (b_verb) cout << "# energy of sys. : " << scientific << setprecision(10) << dener << endl;
-      writebuffer_ (&socket, "FORCEREADY  ", MSGLEN);
+      writebuffer_ (&socket, msg_forceready, MSGLEN);
       writebuffer_ (&socket, (char *)(&ener), sizeof(double));
       writebuffer_ (&socket, (char *)(&natoms), sizeof(int32_t));
       writebuffer_ (&socket, (char *)(msg_buff), 3 * natoms * sizeof(double));
       writebuffer_ (&socket, (char *)(virial), 9 * sizeof(double));
       cbuf = 7;
       writebuffer_ (&socket, (char *)(&cbuf), sizeof(int32_t));
-      writebuffer_ (&socket, "nothing", 7);
+      writebuffer_ (&socket, msg_nothing, 7);
       hasdata = false;
     }
     else {

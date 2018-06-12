@@ -278,7 +278,7 @@ public:
 	// set axis
 	vector<int> d_axis_type (2);
 	vector<int> d_axis_idx  (2);
-	make_axis (d_axis_type, d_axis_idx, d_type[ii], axis_rule, ii, fmt_nlist_a, fmt_nlist_r, d_coord3, region);
+	make_axis (d_axis_type, d_axis_idx, d_type[ii], axis_rule, ii, fmt_nlist_a, fmt_nlist_r, d_coord3, region, b_pbc);
 	// cout << ii  << " type " << d_type[ii] 
 	//      << " axis 0: " << d_axis_type[0] << " " << d_axis_idx[0] 
 	//      << " axis 1: " << d_axis_type[1] << " " << d_axis_idx[1] << endl;
@@ -431,7 +431,8 @@ private:
 	     const vector<int> & nlist_a,
 	     const vector<int> & nlist_r,
 	     const vector<compute_t> & coord3,
-	     const SimulationRegion<compute_t > & region) const {
+	     const SimulationRegion<compute_t > & region, 
+	     const bool b_pbc) const {
     int backup_axis = -1;
     if (rule.size() == 0){
       make_axis_default (axis_type, axis_idx);
@@ -448,14 +449,14 @@ private:
 	make_one_axis (axis_type[0], axis_idx[0], iter);
       }
       else {
-	make_one_axis (axis_type[0], axis_idx[0], iter, ii, nlist_a, nlist_r, coord3, region);
+	make_one_axis (axis_type[0], axis_idx[0], iter, ii, nlist_a, nlist_r, coord3, region, b_pbc);
       }
       iter = rule.begin() + type * 6 + 3;
       if (*(iter+1) >= 0) {      
 	make_one_axis (axis_type[1], axis_idx[1], iter);
       }
       else {
-	make_one_axis (axis_type[1], axis_idx[1], iter, ii, nlist_a, nlist_r, coord3, region);
+	make_one_axis (axis_type[1], axis_idx[1], iter, ii, nlist_a, nlist_r, coord3, region, b_pbc);
       }
       vector<int > backup_rule (3);
       copy (iter, iter+3, backup_rule.begin());
@@ -464,10 +465,10 @@ private:
 	make_one_axis (axis_type[1], backup_axis, backup_rule.begin());
       }
       else {
-	make_one_axis (axis_type[1], backup_axis, backup_rule.begin(), ii, nlist_a, nlist_r, coord3, region);
+	make_one_axis (axis_type[1], backup_axis, backup_rule.begin(), ii, nlist_a, nlist_r, coord3, region, b_pbc);
       }      
     }
-    if (! check_axis (axis_type, axis_idx, ii, nlist_a, nlist_r, coord3, region)){
+    if (! check_axis (axis_type, axis_idx, ii, nlist_a, nlist_r, coord3, region, b_pbc)){
       if (backup_axis >= 0){
 	axis_idx[1] = backup_axis;
       }
@@ -486,7 +487,7 @@ private:
       }
     }
   }	     
-  int 
+  void
   make_one_axis (int & axis_type, 
 		 int & axis_idx,
 		 vector<int>::const_iterator info_i) const {
@@ -498,7 +499,7 @@ private:
       axis_idx = sec_r[*(info_i+1)] + *(info_i+2);
     }
   }		 
-  int 
+  void
   make_one_axis (int & axis_type, 
 		 int & axis_idx,
 		 vector<int>::const_iterator info_i, 
@@ -506,7 +507,8 @@ private:
 		 const vector<int> & nlist_a,
 		 const vector<int> & nlist_r,
 		 const vector<compute_t> & coord3,
-		 const SimulationRegion<compute_t > & region) const {
+		 const SimulationRegion<compute_t > & region, 
+		 const bool b_pbc) const {
     axis_type = *info_i;
     if (axis_type == 0){
       vector<pair<compute_t, int> > sort_info;
@@ -522,9 +524,16 @@ private:
 	  if (list_idx >= sec_a[ii+1]) continue;
 	  jd = nlist_a[list_idx];
 	  if (jd < 0) continue;
-	  region.diffNearestNeighbor (coord3[3*id+0], coord3[3*id+1], coord3[3*id+2],
-				      coord3[3*jd+0], coord3[3*jd+1], coord3[3*jd+2],
-				      diff[0], diff[1], diff[2]);
+	  if (b_pbc){
+	    region.diffNearestNeighbor (coord3[3*id+0], coord3[3*id+1], coord3[3*id+2],
+					coord3[3*jd+0], coord3[3*jd+1], coord3[3*jd+2],
+					diff[0], diff[1], diff[2]);
+	  }
+	  else {
+	    for (int dd = 0; dd < 3; ++dd){
+	      diff[dd] = coord3[3*id+dd] - coord3[3*jd+dd];
+	    }
+	  }
 	  sort_info.push_back (pair<compute_t, int> 
 			       (MathUtilities::dot<compute_t> (diff, diff), list_idx) );
 	}
@@ -547,9 +556,16 @@ private:
 	  if (list_idx >= sec_r[ii+1]) continue;
 	  jd = nlist_r[list_idx];
 	  if (jd < 0) continue;
-	  region.diffNearestNeighbor (coord3[3*id+0], coord3[3*id+1], coord3[3*id+2],
-				      coord3[3*jd+0], coord3[3*jd+1], coord3[3*jd+2],
-				      diff[0], diff[1], diff[2]);
+	  if (b_pbc) {
+	    region.diffNearestNeighbor (coord3[3*id+0], coord3[3*id+1], coord3[3*id+2],
+					coord3[3*jd+0], coord3[3*jd+1], coord3[3*jd+2],
+					diff[0], diff[1], diff[2]);
+	  }
+	  else {
+	    for (int dd = 0; dd < 3; ++dd){
+	      diff[dd] = coord3[3*id+dd] - coord3[3*jd+dd];
+	    }
+	  }
 	  sort_info.push_back (pair<compute_t, int> 
 			       (MathUtilities::dot<compute_t> (diff, diff), list_idx) );
 	}
@@ -584,7 +600,8 @@ private:
 	      const vector<int> & nlist_a,
 	      const vector<int> & nlist_r,
 	      const vector<compute_t> & coord3,
-	      const SimulationRegion<compute_t > & region) const {
+	      const SimulationRegion<compute_t > & region, 
+	      const bool b_pbc) const {
     compute_t diff[2][3];
     for (int ii = 0; ii < 2; ++ii){
       int jd = 0;
@@ -594,7 +611,14 @@ private:
       else {
 	jd = nlist_r[axis_idx[ii]];
       }
-      region.diffNearestNeighbor (&coord3[3*id], &coord3[3*jd], diff[ii]);
+      if (b_pbc){
+	region.diffNearestNeighbor (&coord3[3*id], &coord3[3*jd], diff[ii]);
+      }
+      else {
+	for (int dd = 0; dd < 3; ++dd){
+	  diff[ii][dd] = coord3[3*id+dd] - coord3[3*jd+dd];
+	}
+      }
     }
     compute_t rij = MathUtilities::dot (diff[0], diff[1]);
     compute_t rii = MathUtilities::dot (diff[0], diff[0]);
