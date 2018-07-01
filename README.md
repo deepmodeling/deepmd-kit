@@ -19,7 +19,7 @@
 # Install DeePMD-kit
 The installation of the DeePMD-kit is lengthy, but do not be panic. Just follow step by step. Wish you good luck.. 
 
-A docker for installing the DeePMD-kit on CentOS 7 is available [here](https://github.com/TimChen314/deepmd-kit_docker).
+A docker for installing the DeePMD-kit on CentOS 7 is available [here](https://github.com/frankhan91/deepmd-kit_docker).
 
 ## Install tensorflow's Python interface 
 There are two ways of installing the Python interface of tensorflow, either [using google's binary](https://www.tensorflow.org/install/install_linux), or [installing from sources](https://www.tensorflow.org/install/install_sources). When you are using google's binary, do not forget to add the option `-DTF_GOOGLE_BIN=true` when building DeePMD-kit.
