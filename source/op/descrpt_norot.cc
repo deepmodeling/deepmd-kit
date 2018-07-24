@@ -73,6 +73,7 @@ public:
     nnei_r = sec_r.back();
     nnei = nnei_a + nnei_r;
     fill_nei_a = (rcut_a < 0);
+    count_nei_idx_overflow = 0;
   }
 
   void Compute(OpKernelContext* context) override {
@@ -92,8 +93,8 @@ public:
     OP_REQUIRES (context, (natoms_tensor.shape().dims() == 1),	errors::InvalidArgument ("Dim of natoms should be 1"));
     OP_REQUIRES (context, (box_tensor.shape().dims() == 2),	errors::InvalidArgument ("Dim of box should be 2"));
     OP_REQUIRES (context, (mesh_tensor.shape().dims() == 1),	errors::InvalidArgument ("Dim of mesh should be 1"));
-    OP_REQUIRES (context, (avg_tensor.shape().dims() == 1),	errors::InvalidArgument ("Dim of avg should be 1"));
-    OP_REQUIRES (context, (std_tensor.shape().dims() == 1),	errors::InvalidArgument ("Dim of std should be 1"));
+    OP_REQUIRES (context, (avg_tensor.shape().dims() == 2),	errors::InvalidArgument ("Dim of avg should be 2"));
+    OP_REQUIRES (context, (std_tensor.shape().dims() == 2),	errors::InvalidArgument ("Dim of std should be 2"));
     OP_REQUIRES (context, (fill_nei_a),				errors::InvalidArgument ("Rotational free descriptor only support the case rcut_a < 0"));
     OP_REQUIRES (context, (sec_r.back() == 0),			errors::InvalidArgument ("Rotational free descriptor only support all-angular information: sel_r should be all zero."));
 
@@ -101,17 +102,20 @@ public:
     auto natoms	= natoms_tensor	.flat<int>();
     int nloc = natoms(0);
     int nall = natoms(1);
+    int ntypes = natoms_tensor.shape().dim_size(0) - 2;
     int nsamples = coord_tensor.shape().dim_size(0);
 
     // check the sizes
     OP_REQUIRES (context, (nsamples == type_tensor.shape().dim_size(0)),	errors::InvalidArgument ("number of samples should match"));
     OP_REQUIRES (context, (nsamples == box_tensor.shape().dim_size(0)),		errors::InvalidArgument ("number of samples should match"));
-    OP_REQUIRES (context, (ndescrpt == avg_tensor.shape().dim_size(0)),		errors::InvalidArgument ("number of avg should be ndescrpt"));
-    OP_REQUIRES (context, (ndescrpt == std_tensor.shape().dim_size(0)),		errors::InvalidArgument ("number of std should be ndescrpt"));
+    OP_REQUIRES (context, (ntypes == avg_tensor.shape().dim_size(0)),		errors::InvalidArgument ("number of avg should be ntype"));
+    OP_REQUIRES (context, (ntypes == std_tensor.shape().dim_size(0)),		errors::InvalidArgument ("number of std should be ntype"));
 
     OP_REQUIRES (context, (nall * 3 == coord_tensor.shape().dim_size(1)),	errors::InvalidArgument ("number of atoms should match"));
     OP_REQUIRES (context, (nall == type_tensor.shape().dim_size(1)),		errors::InvalidArgument ("number of atoms should match"));
     OP_REQUIRES (context, (9 == box_tensor.shape().dim_size(1)),		errors::InvalidArgument ("number of box should be 9"));
+    OP_REQUIRES (context, (ndescrpt == avg_tensor.shape().dim_size(1)),		errors::InvalidArgument ("number of avg should be ndescrpt"));
+    OP_REQUIRES (context, (ndescrpt == std_tensor.shape().dim_size(1)),		errors::InvalidArgument ("number of std should be ndescrpt"));
 
     int nei_mode = 0;
     if (mesh_tensor.shape().dim_size(0) == 16) {
@@ -161,8 +165,8 @@ public:
     auto type	= type_tensor	.matrix<int>();
     auto box	= box_tensor	.matrix<VALUETYPE>();
     auto mesh	= mesh_tensor	.flat<int>();
-    auto avg	= avg_tensor	.flat<VALUETYPE>();
-    auto std	= std_tensor	.flat<VALUETYPE>();
+    auto avg	= avg_tensor	.matrix<VALUETYPE>();
+    auto std	= std_tensor	.matrix<VALUETYPE>();
     auto descrpt	= descrpt_tensor	->matrix<VALUETYPE>();
     auto descrpt_deriv	= descrpt_deriv_tensor	->matrix<VALUETYPE>();
     auto rij		= rij_tensor		->matrix<VALUETYPE>();
@@ -174,7 +178,6 @@ public:
     //   if (type(0, ii) > max_type_v) max_type_v = type(0, ii);
     // }
     // int ntypes = max_type_v + 1;
-    int ntypes = natoms_tensor.shape().dim_size(0) - 2;
     OP_REQUIRES (context, (ntypes == int(sel_a.size())),	errors::InvalidArgument ("number of types should match the length of sel array"));
     OP_REQUIRES (context, (ntypes == int(sel_r.size())),	errors::InvalidArgument ("number of types should match the length of sel array"));
 
@@ -274,8 +277,11 @@ public:
 	int ret = -1;
 	if (fill_nei_a){
 	  if ((ret = format_nlist_fill_a (fmt_nlist_a, fmt_nlist_r, d_coord3, ntypes, d_type, region, b_pbc, ii, d_nlist_a[ii], d_nlist_r[ii], rcut_r, sec_a, sec_r)) != -1){
-	    cout << "Radial neighbor list length of type " << ret << " is not enough" << endl;
-	    exit(1);
+	    if (count_nei_idx_overflow == 0) {
+	      cout << "WARNING: Radial neighbor list length of type " << ret << " is not enough" << endl;
+	      flush(cout);
+	      count_nei_idx_overflow ++;
+	    }
 	  }
 	}
 
@@ -306,10 +312,10 @@ public:
 	assert (int(fmt_nlist_a.size()) == nnei_a);
 	// record outputs
 	for (int jj = 0; jj < ndescrpt_a; ++jj) {
-	  descrpt(kk, ii * ndescrpt + jj) = (d_descrpt_a[jj] - avg(jj)) / std(jj);
+	  descrpt(kk, ii * ndescrpt + jj) = (d_descrpt_a[jj] - avg(d_type[ii], jj)) / std(d_type[ii], jj);
 	}
 	for (int jj = 0; jj < ndescrpt_a * 3; ++jj) {
-	  descrpt_deriv(kk, ii * ndescrpt * 3 + jj) = d_descrpt_a_deriv[jj] / std(jj/3);
+	  descrpt_deriv(kk, ii * ndescrpt * 3 + jj) = d_descrpt_a_deriv[jj] / std(d_type[ii], jj/3);
 	}
 	for (int jj = 0; jj < nnei_a * 3; ++jj){
 	  rij (kk, ii * nnei * 3 + jj) = d_rij_a[jj];
@@ -335,6 +341,7 @@ private:
   int ndescrpt, ndescrpt_a, ndescrpt_r;
   int nnei, nnei_a, nnei_r;
   bool fill_nei_a;
+  int count_nei_idx_overflow;
   void 
   cum_sum (vector<int> & sec,
 	   const vector<int32> & n_sel) const {

@@ -10,27 +10,20 @@ class DataSets (object):
     def __init__ (self, 
                   sys_path,
                   set_prefix,
-                  do_norm = False,
                   seed = None) :
-        self.dirs = glob.glob (sys_path + "/" + set_prefix + ".*")
+        self.dirs = glob.glob (os.path.join(sys_path, set_prefix + ".*"))
         self.dirs.sort()
-        if os.path.isfile (sys_path + "/ncopies.raw") :
-            self.ncopies = np.loadtxt (sys_path + "/ncopies.raw", dtype=np.int32)
-        else :
-            self.ncopies = [1]
-
         # load atom type
         self.atom_type, self.idx_map, self.idx3_map = self.load_type (sys_path)
-        
-        self.do_norm = do_norm
-        self.eavg = self.stats_energy()
-        # print ("avg is ",self.eavg)
-
+        # train dirs
         self.test_dir   = self.dirs[-1]
         if len(self.dirs) == 1 :
             self.train_dirs = self.dirs
         else :
             self.train_dirs = self.dirs[:-1]
+        # energy norm
+        self.eavg = self.stats_energy()
+        # load sets
         self.set_count = 0
         self.load_batch_set (self.train_dirs[self.set_count % self.get_numb_set()])
         self.load_test_set (self.test_dir)
@@ -65,11 +58,11 @@ class DataSets (object):
         return len (self.train_dirs)
     
     def stats_energy (self) :
-        eners = []
-        for ii in self.dirs:
-            ei = np.load (ii + "/energy.npy")
-            eners.append (np.average(ei))
-        return np.average (eners)
+        eners = np.array([])
+        for ii in self.train_dirs:
+            ei = np.load(os.path.join(ii, "energy.npy"))
+            eners = np.append(eners, ei)
+        return np.average(eners)
     
     def cond_load_vec (self, 
                        nframes,
@@ -119,7 +112,6 @@ class DataSets (object):
         self.box_batch = self.box_batch[idx]
         self.type_batch = np.tile (self.atom_type, (nframe, 1))
         self.reset_iter ()
-        if self.do_norm: self.normalization (self.energy_batch)
         # sort according to type
         self.type_batch = self.type_batch[:, self.idx_map]
         self.coord_batch = self.coord_batch[:, self.idx3_map]
@@ -146,7 +138,6 @@ class DataSets (object):
         self.coord_test = self.coord_test[idx]
         self.box_test = self.box_test[idx]
         self.type_test = np.tile (self.atom_type, (nframe, 1))
-        if self.do_norm: self.normalization (self.energy_test)
         self.type_test = self.type_test[:, self.idx_map]
         self.coord_test = self.coord_test[:, self.idx3_map]
         self.force_test = self.force_test[:, self.idx3_map]
@@ -174,12 +165,6 @@ class DataSets (object):
         self.iterator += batch_size
         return self.prop_c_batch.astype(np.float32), self.energy_batch[idx].astype(np.float64), self.force_batch[idx, :].astype(np.float64), self.virial_batch[idx, :].astype(np.float64), self.coord_batch[idx, :].astype(np.float64), self.box_batch[idx, :].astype(np.float64), self.type_batch[idx, :]
     
-    def normalization (self, 
-                       energy) :
-        if self.do_norm : 
-            for ii in range (energy.shape[0]) :
-                energy[ii] -= self.eavg
-
     def get_natoms (self) :
         sample_type = self.type_batch[0]
         natoms = len(sample_type)
@@ -199,9 +184,6 @@ class DataSets (object):
         tmp = np.append (tmp, natoms_vec)
         return tmp.astype(np.int32)
 
-    def get_ncopies (self) :
-        return self.ncopies
-
     def set_numb_batch (self, 
                         batch_size) :
         return self.energy_batch.shape[0] // batch_size
@@ -209,12 +191,11 @@ class DataSets (object):
     def get_sys_numb_batch (self, batch_size) :
         return self.set_numb_batch(batch_size) * self.get_numb_set()
 
-    def get_bias_atom_e (self) :
-        natoms = self.get_natoms ()
-        return self.eavg / natoms
+    def get_ener (self) :
+        return self.eavg
 
 if __name__ == '__main__':
-    data = DataSets (".", "set", do_norm = False)
+    data = DataSets (".", "set")
     energy, force, virial, coord, box, ttype = data.get_batch(1)
     print (energy.shape)
     print (force.shape)

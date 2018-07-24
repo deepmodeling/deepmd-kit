@@ -13,8 +13,7 @@ class DataSystem (object) :
                   set_prefix,
                   batch_size,
                   test_size,
-                  rcut,
-                  do_norm = False) : 
+                  rcut) : 
         self.system_dirs = systems
         self.nsystems = len(self.system_dirs)
         self.batch_size = batch_size
@@ -27,9 +26,8 @@ class DataSystem (object) :
         self.natoms = []
         self.natoms_vec = []
         self.nbatches = []
-        self.ncopies = []
         for ii in self.system_dirs :
-            self.data_systems.append(DataSets(ii, set_prefix, do_norm))
+            self.data_systems.append(DataSets(ii, set_prefix))
             sys_all_types = np.loadtxt(os.path.join(ii, "type.raw")).astype(int)
             self.ntypes.append(np.max(sys_all_types) + 1)
         self.sys_ntypes = max(self.ntypes)
@@ -37,7 +35,6 @@ class DataSystem (object) :
             self.natoms.append(self.data_systems[ii].get_natoms())
             self.natoms_vec.append(self.data_systems[ii].get_natoms_vec(self.sys_ntypes).astype(int))
             self.nbatches.append(self.data_systems[ii].get_sys_numb_batch(self.batch_size[ii]))
-            self.ncopies.append(self.data_systems[ii].get_ncopies())
 
         # check the size of data if they satisfy the requirement of batch and test
         for ii in range(self.nsystems) :
@@ -49,8 +46,8 @@ class DataSystem (object) :
                 raise RuntimeError(" required test size %d is larger than the size %d of the dataset %s" % (test_size, chk_ret[1], chk_ret[0]))
 
         for ii in range(self.nsystems) :
-            print ("# find system %s :\t %6d atoms\t %10d batches copied by %s" % 
-                   (self.system_dirs[ii], self.natoms[ii], self.nbatches[ii], self.ncopies[ii]) )
+            print ("# find system %s :\t %6d atoms\t %10d batches" % 
+                   (self.system_dirs[ii], self.natoms[ii], self.nbatches[ii]) )
         self.prob_nbatches = self.nbatches / np.sum(self.nbatches)
 
         self.test_prop_c = []
@@ -85,6 +82,17 @@ class DataSystem (object) :
             self.default_mesh.append(default_mesh)
         self.pick_idx = 0
 
+    def compute_energy_shift(self) :
+        sys_ener = np.array([])
+        for ss in self.data_systems :
+            sys_ener = np.append(sys_ener, ss.get_ener())
+        sys_tynatom = np.array(self.natoms_vec, dtype = float)
+        sys_tynatom = np.reshape(sys_tynatom, [self.nsystems,-1])
+        sys_tynatom = sys_tynatom[:,2:]
+        energy_shift,resd,rank,s_value \
+            = np.linalg.lstsq(sys_tynatom, sys_ener, rcond = -1)
+        return energy_shift
+
     def process_sys_weights(self, sys_weights) :
         sys_weights = np.array(sys_weights)
         type_filter = sys_weights >= 0
@@ -116,7 +124,7 @@ class DataSystem (object) :
             self.pick_idx = np.random.choice(np.arange(self.nsystems), p = prob)
         b_prop_c, b_energy, b_force, b_virial, b_coord, b_box, b_type \
             = self.data_systems[self.pick_idx].get_batch(self.batch_size[self.pick_idx])
-        return b_prop_c, b_energy, b_force, b_virial, b_coord, b_box, b_type, self.natoms_vec[self.pick_idx], self.default_mesh[self.pick_idx], self.ncopies[self.pick_idx]
+        return b_prop_c, b_energy, b_force, b_virial, b_coord, b_box, b_type, self.natoms_vec[self.pick_idx], self.default_mesh[self.pick_idx]
 
     def get_test (self, 
                   sys_idx = None) :
@@ -125,13 +133,16 @@ class DataSystem (object) :
         else :
             idx = self.pick_idx
         
-        return self.test_prop_c[idx], self.test_energy[idx], self.test_force[idx], self.test_virial[idx], self.test_coord[idx], self.test_box[idx], self.test_type[idx], self.natoms_vec[idx], self.default_mesh[idx], self.ncopies[idx]
+        return self.test_prop_c[idx], self.test_energy[idx], self.test_force[idx], self.test_virial[idx], self.test_coord[idx], self.test_box[idx], self.test_type[idx], self.natoms_vec[idx], self.default_mesh[idx]
             
     def get_nbatches (self) : 
         return self.nbatches
     
     def get_ntypes (self) :
         return self.sys_ntypes
+
+    def get_nsystems (self) :
+        return self.nsystems
 
     def get_sys (self, idx) :
         return self.data_systems[idx]

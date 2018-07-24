@@ -11,7 +11,7 @@
     "_comment":	"                    if type < 0, exclude type -(type+1)",
     "_comment": "                    for water (O:0, H:1) it can be",
     "_comment": "                    [0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0]",
-    "n_neuron":		[240, 120, 60, 30, 10],
+    "fitting_neuron":	[240, 120, 60, 30, 10],
 
     "_comment": " traing controls",
     "systems":		["../data/water/"],

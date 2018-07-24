@@ -2,6 +2,7 @@
 import os
 import sys
 import time
+import warnings
 import numpy as np
 import tensorflow as tf
 
@@ -24,6 +25,17 @@ from deepmd.RunOptions import RunOptions
 def j_must_have (jdata, key) :
     if not key in jdata.keys() :
         raise RuntimeError ("json database must provide key " + key )
+    else :
+        return jdata[key]
+
+def j_must_have_d (jdata, key, deprecated_key) :
+    if not key in jdata.keys() :
+        # raise RuntimeError ("json database must provide key " + key )
+        for ii in deprecated_key :
+            if ii in jdata.keys() :
+                warnings.warn("the key \"%s\" is deprecated, please use \"%s\" instead" % (ii,key))
+                return jdata[ii]
+        raise RuntimeError ("json database must provide key " + key )        
     else :
         return jdata[key]
 
@@ -70,8 +82,7 @@ class NNPModel (object):
             self.sel_r = j_must_have (jdata, 'sel_r')
         else :
             if j_have (jdata, 'sel_r') :
-                self.warning ('ignoring key sel_r in the json database and set sel_r to %s' % 
-                              str(self.sel_r))
+                warnings.warn ('ignoring key sel_r in the json database and set sel_r to %s' % str(self.sel_r))
         self.rcut_a = -1
         self.rcut_r = j_must_have (jdata, 'rcut')
         if j_have(jdata, 'rcut_smth') :
@@ -84,8 +95,12 @@ class NNPModel (object):
             self.axis_rule = jdata['axis_rule']
         # filter of smooth version
         if self.use_smooth :
+            if j_have(jdata, 'coord_norm') :
+                self.coord_norm = jdata['coord_norm']
+            else :
+                self.coord_norm = True
             self.filter_neuron = j_must_have (jdata, 'filter_neuron')
-            self.n_axis_neuron = j_must_have (jdata, 'n_axis_neuron')
+            self.n_axis_neuron = j_must_have_d (jdata, 'axis_neuron', ['n_axis_neuron'])
             self.filter_resnet_dt = False
             if j_have(jdata, 'filter_resnet_dt') :
                 self.filter_resnet_dt = jdata['filter_resnet_dt']        
@@ -97,10 +112,18 @@ class NNPModel (object):
         self.ndescrpt_r = self.nnei_r * 1
         self.ndescrpt = self.ndescrpt_a + self.ndescrpt_r
         # network size
-        self.n_neuron = j_must_have (jdata, 'n_neuron')
+        self.n_neuron = j_must_have_d (jdata, 'fitting_neuron', ['n_neuron'])
         self.resnet_dt = True
         if j_have(jdata, 'resnet_dt') :
+            warnings.warn("the key \"%s\" is deprecated, please use \"%s\" instead" % ('resnet_dt','fitting_resnet_dt'))
             self.resnet_dt = jdata['resnet_dt']
+        if j_have(jdata, 'fitting_resnet_dt') :
+            self.resnet_dt = jdata['fitting_resnet_dt']
+        if self.use_smooth :            
+            if j_have(jdata, 'type_fitting_net') :
+                self.type_fitting_net = jdata['type_fitting_net']
+            else :
+                self.type_fitting_net = False            
 
         self.numb_test = j_must_have (jdata, 'numb_test')
         self.useBN = False
@@ -141,11 +164,6 @@ class NNPModel (object):
 
         self.verbose = True
 
-    def warning (self, msg) :
-        print ("# ")
-        print ("# WARNING: " + str(msg))
-        print ("# ")
-
     def message (self, msg) :
         if self.verbose :
             print ("# " + str(msg))
@@ -162,22 +180,35 @@ class NNPModel (object):
         self.batch_size_value.sort()
         self.numb_batch_size_value = len(self.batch_size_value)
 
-        test_prop_c, test_energy, test_force, test_virial, test_coord, test_box, test_type, natoms_vec, default_mesh, ncopies \
-            = data.get_batch (sys_idx = 0)
-        self.ncopies = np.cumprod(ncopies)[-1]
-        natoms_vec = natoms_vec.astype(np.int32)
         t_rcut = tf.constant(np.max([self.rcut_r, self.rcut_a]), name = 't_rcut', dtype = tf.float64)
         t_ntypes = tf.constant(self.ntypes, name = 't_ntypes', dtype = tf.int32)
 
-        test_coord_ = test_coord
-        test_box_ = test_box
-        test_type_ = test_type
+        all_stat_coord = []
+        all_stat_box = []
+        all_stat_type = []
+        all_natoms_vec = []
+        all_default_mesh = []
+        for ii in range(data.get_nsystems()) :
+            stat_prop_c, stat_energy, stat_force, stat_virial, stat_coord, stat_box, stat_type, natoms_vec, default_mesh \
+                = data.get_batch (sys_idx = ii)
+            natoms_vec = natoms_vec.astype(np.int32)
+            all_stat_coord.append(stat_coord)
+            all_stat_box.append(stat_box)
+            all_stat_type.append(stat_type)
+            all_natoms_vec.append(natoms_vec)
+            all_default_mesh.append(default_mesh)
 
-        self.compute_stats (test_coord_, test_box_, test_type_, natoms_vec, default_mesh)
-        print ("# computed stats")
+        if self.use_smooth and not self.coord_norm :
+            self.no_norm_dstats ()
+            print ("# skipped coord/descrpt stats")
+        else :
+            self.compute_dstats (all_stat_coord, all_stat_box, all_stat_type, all_natoms_vec, all_default_mesh)
+            print ("# computed coord/descrpt stats")
         sys.stdout.flush()
 
-        bias_atom_e = data.get_sys(0).get_bias_atom_e()
+        bias_atom_e = data.compute_energy_shift()
+        print ("# computed energy bias")
+        sys.stdout.flush()
 
         self.t_prop_c           = tf.placeholder(tf.float32, [3],    name='t_prop_c')
         self.t_energy           = tf.placeholder(tf.float64, [None], name='t_energy')
@@ -226,14 +257,14 @@ class NNPModel (object):
             self.virial_bch.append(tmp_virial_bch)
 
         self.l2_l_tst, self.l2_el_tst, self.l2_fl_tst, self.l2_vl_tst \
-            = self.loss (self.ncopies, self.t_natoms, self.t_prop_c, self.t_energy, self.energy_tst, self.t_force, self.force_tst, self.t_virial, self.virial_tst, suffix = "train_test")
+            = self.loss (self.t_natoms, self.t_prop_c, self.t_energy, self.energy_tst, self.t_force, self.force_tst, self.t_virial, self.virial_tst, suffix = "train_test")
         self.l2_l_bch = []
         self.l2_el_bch = []
         self.l2_fl_bch = []
         self.l2_vl_bch = []
         for ii in range(self.numb_batch_size_value) :                    
             tmp_l2_l_bch, tmp_l2_el_bch, tmp_l2_fl_bch, tmp_l2_vl_bch \
-                = self.loss (self.ncopies, self.t_natoms, self.t_prop_c, self.t_energy, self.energy_bch[ii], self.t_force, self.force_bch[ii], self.t_virial, self.virial_bch[ii], suffix = "train_batch_" + str(self.batch_size_value[ii]))
+                = self.loss (self.t_natoms, self.t_prop_c, self.t_energy, self.energy_bch[ii], self.t_force, self.force_bch[ii], self.t_virial, self.virial_bch[ii], suffix = "train_batch_" + str(self.batch_size_value[ii]))
             self.l2_l_bch.append(tmp_l2_l_bch)
             self.l2_el_bch.append(tmp_l2_el_bch)
             self.l2_fl_bch.append(tmp_l2_fl_bch)
@@ -294,7 +325,7 @@ class NNPModel (object):
             prf_run_metadata = tf.RunMetadata()
 
         while cur_batch < stop_batch :
-            batch_prop_c, batch_energy, batch_force, batch_virial, batch_coord, batch_box, batch_type, natoms_vec, default_mesh, ncopies = data.get_batch (sys_weights = self.sys_weights)
+            batch_prop_c, batch_energy, batch_force, batch_virial, batch_coord, batch_box, batch_type, natoms_vec, default_mesh = data.get_batch (sys_weights = self.sys_weights)
             cur_batch_size = batch_energy.shape[0]
             cur_bs_idx = self.batch_size_value.index(cur_batch_size)
             feed_dict_batch = {self.t_prop_c:        batch_prop_c,
@@ -348,7 +379,7 @@ class NNPModel (object):
                          data,
                          feed_dict_batch, 
                          ii) :
-        test_prop_c, test_energy, test_force, test_virial, test_coord, test_box, test_type, natoms_vec, default_mesh, ncopies \
+        test_prop_c, test_energy, test_force, test_virial, test_coord, test_box, test_type, natoms_vec, default_mesh \
             = data.get_test ()
         # natoms_t  :   [0] : n_loc
         #               [1] : n_all
@@ -382,15 +413,15 @@ class NNPModel (object):
                    current_lr))
         fp.flush ()
 
-    def compute_stats (self, 
-                       data_coord, 
-                       data_box, 
-                       data_atype, 
-                       natoms_vec,
-                       mesh,
-                       reuse = None) :    
-        avg_zero = np.zeros(self.ndescrpt).astype(np.float64)
-        std_ones = np.ones (self.ndescrpt).astype(np.float64)
+    def compute_dstats_sys_smth (self,
+                                 data_coord, 
+                                 data_box, 
+                                 data_atype, 
+                                 natoms_vec,
+                                 mesh,
+                                 reuse = None) :    
+        avg_zero = np.zeros([self.ntypes,self.ndescrpt]).astype(np.float64)
+        std_ones = np.ones ([self.ntypes,self.ndescrpt]).astype(np.float64)
         if self.use_smooth :
             descrpt, descrpt_deriv, rij, nlist \
                 = op_module.descrpt_norot (tf.constant(data_coord),
@@ -420,29 +451,180 @@ class NNPModel (object):
                                      sel_r = self.sel_r,
                                      axis_rule = self.axis_rule)
         # self.sess.run(tf.global_variables_initializer())
-        dd = self.sess.run (descrpt)
-        if self.use_smooth :
+        dd_all = self.sess.run (descrpt)
+        natoms = natoms_vec
+        dd_all = np.reshape(dd_all, [-1, self.ndescrpt * natoms[0]])
+        start_index = 0
+        sysr = []
+        sysa = []
+        sysn = []
+        sysr2 = []
+        sysa2 = []
+        for type_i in range(self.ntypes):
+            end_index = start_index + self.ndescrpt * natoms[2+type_i]
+            dd = dd_all[:, start_index:end_index]
+            dd = np.reshape(dd, [-1, self.ndescrpt])
+            start_index = end_index        
+            # compute
             dd = np.reshape (dd, [-1, 4])
             ddr = dd[:,:1]
             dda = dd[:,1:]
-            davgr = np.average(ddr)
-            davga = np.average(dda)
-            dstdr = np.std(ddr)
-            dstda = np.std(dda)
-            # davgunit = [davgr, davga, davga, davga]
-            davgunit = [davgr, 0, 0, 0]
-            dstdunit = [dstdr, dstda, dstda, dstda]
-            davg = np.tile(davgunit, self.ndescrpt // 4)
-            dstd = np.tile(dstdunit, self.ndescrpt // 4)
+            sumr = np.sum(ddr)
+            suma = np.sum(dda) / 3.
+            sumn = dd.shape[0]
+            sumr2 = np.sum(np.multiply(ddr, ddr))
+            suma2 = np.sum(np.multiply(dda, dda)) / 3.
+            sysr.append(sumr)
+            sysa.append(suma)
+            sysn.append(sumn)
+            sysr2.append(sumr2)
+            sysa2.append(suma2)
+        return sysr, sysr2, sysa, sysa2, sysn
+
+    def compute_dstats_sys_nonsmth (self,
+                                    data_coord, 
+                                    data_box, 
+                                    data_atype, 
+                                    natoms_vec,
+                                    mesh,
+                                    reuse = None) :    
+        avg_zero = np.zeros([self.ntypes,self.ndescrpt]).astype(np.float64)
+        std_ones = np.ones ([self.ntypes,self.ndescrpt]).astype(np.float64)
+        if self.use_smooth :
+            descrpt, descrpt_deriv, rij, nlist \
+                = op_module.descrpt_norot (tf.constant(data_coord),
+                                           tf.constant(data_atype),
+                                           tf.constant(natoms_vec, dtype = tf.int32),
+                                           tf.constant(data_box),
+                                           tf.constant(mesh),
+                                           tf.constant(avg_zero),
+                                           tf.constant(std_ones),
+                                           rcut_a = self.rcut_a,
+                                           rcut_r = self.rcut_r,
+                                           rcut_r_smth = self.rcut_r_smth,
+                                           sel_a = self.sel_a,
+                                           sel_r = self.sel_r)
         else :
-            dd = np.reshape (dd, [-1, self.ndescrpt])
-            davg = np.average (dd, axis = 0)
-            dstd = np.std     (dd, axis = 0)
-            for ii in range (len(dstd)) :
-                if (np.abs(dstd[ii]) < 1e-2) :
-                    dstd[ii] = 1e-2            
-        np.savetxt ("stat.avg.out", davg)
-        np.savetxt ("stat.std.out", dstd)        
+            descrpt, descrpt_deriv, rij, nlist, axis \
+                = op_module.descrpt (tf.constant(data_coord),
+                                     tf.constant(data_atype),
+                                     tf.constant(natoms_vec, dtype = tf.int32),
+                                     tf.constant(data_box),
+                                     tf.constant(mesh),
+                                     tf.constant(avg_zero),
+                                     tf.constant(std_ones),
+                                     rcut_a = self.rcut_a,
+                                     rcut_r = self.rcut_r,
+                                     sel_a = self.sel_a,
+                                     sel_r = self.sel_r,
+                                     axis_rule = self.axis_rule)
+        # self.sess.run(tf.global_variables_initializer())
+        dd_all = self.sess.run (descrpt)
+        natoms = natoms_vec
+        dd_all = np.reshape(dd_all, [-1, self.ndescrpt * natoms[0]])
+        start_index = 0
+        sysv = []
+        sysn = []
+        sysv2 = []
+        for type_i in range(self.ntypes):
+            end_index = start_index + self.ndescrpt * natoms[2+type_i]
+            dd = dd_all[:, start_index:end_index]
+            dd = np.reshape(dd, [-1, self.ndescrpt])
+            start_index = end_index        
+            # compute
+            sumv = np.sum(dd, axis = 0)
+            sumn = dd.shape[0]
+            sumv2 = np.sum(np.multiply(dd,dd), axis = 0)            
+            sysv.append(sumv)
+            sysn.append(sumn)
+            sysv2.append(sumv2)
+        return sysv, sysv2, sysn
+
+
+    def compute_std (self,sumv2, sumv, sumn) :
+        return np.sqrt(sumv2/sumn - np.multiply(sumv/sumn, sumv/sumn))
+
+    def compute_dstats (self,
+                        data_coord, 
+                        data_box, 
+                        data_atype, 
+                        natoms_vec,
+                        mesh,
+                        reuse = None) :    
+        all_davg = []
+        all_dstd = []
+        if self.use_smooth:
+            sumr = []
+            suma = []
+            sumn = []
+            sumr2 = []
+            suma2 = []
+            for cc,bb,tt,nn,mm in zip(data_coord,data_box,data_atype,natoms_vec,mesh) :
+                sysr,sysr2,sysa,sysa2,sysn \
+                    = self.compute_dstats_sys_smth(cc,bb,tt,nn,mm,reuse)
+                sumr.append(sysr)
+                suma.append(sysa)
+                sumn.append(sysn)
+                sumr2.append(sysr2)
+                suma2.append(sysa2)
+            sumr = np.sum(sumr, axis = 0)
+            suma = np.sum(suma, axis = 0)
+            sumn = np.sum(sumn, axis = 0)
+            sumr2 = np.sum(sumr2, axis = 0)
+            suma2 = np.sum(suma2, axis = 0)
+            for type_i in range(self.ntypes) :
+                davgunit = [sumr[type_i]/sumn[type_i], 0, 0, 0]
+                dstdunit = [self.compute_std(sumr2[type_i], sumr[type_i], sumn[type_i]), 
+                            self.compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
+                            self.compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
+                            self.compute_std(suma2[type_i], suma[type_i], sumn[type_i])
+                            ]
+                davg = np.tile(davgunit, self.ndescrpt // 4)
+                dstd = np.tile(dstdunit, self.ndescrpt // 4)
+                all_davg.append(davg)
+                all_dstd.append(dstd)
+        else :
+            sumv = []
+            sumn = []
+            sumv2 = []
+            for cc,bb,tt,nn,mm in zip(data_coord,data_box,data_atype,natoms_vec,mesh) :
+                sysv,sysv2,sysn \
+                    = self.compute_dstats_sys_nonsmth(cc,bb,tt,nn,mm,reuse)
+                sumv.append(sysv)
+                sumn.append(sysn)
+                sumv2.append(sysv2)
+            sumv = np.sum(sumv, axis = 0)
+            sumn = np.sum(sumn, axis = 0)
+            sumv2 = np.sum(sumv2, axis = 0)
+            for type_i in range(self.ntypes) :
+                davg = sumv[type_i] /  sumn[type_i]
+                dstd = self.compute_std(sumv2[type_i], sumv[type_i], sumn[type_i])
+                for ii in range (len(dstd)) :
+                    if (np.abs(dstd[ii]) < 1e-2) :
+                        dstd[ii] = 1e-2            
+                all_davg.append(davg)
+                all_dstd.append(dstd)
+        
+        davg = np.array(all_davg)
+        dstd = np.array(all_dstd)
+        np.savetxt ("stat.avg.out", davg.T)
+        np.savetxt ("stat.std.out", dstd.T)
+        self.t_avg = tf.get_variable('t_avg', 
+                                     davg.shape, 
+                                     dtype = tf.float64,
+                                     trainable = False,
+                                     initializer = tf.constant_initializer(davg, dtype = tf.float64))
+        self.t_std = tf.get_variable('t_std', 
+                                     dstd.shape, 
+                                     dtype = tf.float64,
+                                     trainable = False,
+                                     initializer = tf.constant_initializer(dstd, dtype = tf.float64))
+
+    def no_norm_dstats (self, avgv = 0, stdv = 1) :
+        davg = np.zeros([self.ntypes, self.ndescrpt]) + avgv
+        dstd = np.ones ([self.ntypes, self.ndescrpt]) * stdv
+        np.savetxt ("stat.avg.out", davg.T)
+        np.savetxt ("stat.std.out", dstd.T)
         self.t_avg = tf.get_variable('t_avg', 
                                      davg.shape, 
                                      dtype = tf.float64,
@@ -455,7 +637,6 @@ class NNPModel (object):
                                      initializer = tf.constant_initializer(dstd, dtype = tf.float64))
 
     def loss (self, 
-              ncopies,
               natoms,
               prop_c,
               energy, 
@@ -477,7 +658,6 @@ class NNPModel (object):
         l2_virial_loss = tf.reduce_mean (tf.square(virial_hat_reshape - virial_reshape), name = "l2_virial_" + suffix)
 
         atom_norm  = 1./ tf.to_double(natoms[0]) 
-        atom_norm *= 1./ tf.to_double(ncopies * ncopies)
         pref_e = tf.to_double(prop_c[0] * (self.limit_pref_e + (self.start_pref_e - self.limit_pref_e) * self.learning_rate / self.starter_learning_rate) )
         pref_f = tf.to_double(prop_c[1] * (self.limit_pref_f + (self.start_pref_f - self.limit_pref_f) * self.learning_rate / self.starter_learning_rate) )
         pref_v = tf.to_double(prop_c[2] * (self.limit_pref_v + (self.start_pref_v - self.limit_pref_v) * self.learning_rate / self.starter_learning_rate) )
@@ -500,7 +680,7 @@ class NNPModel (object):
                            box, 
                            mesh,
                            suffix, 
-                           bias_atom_e = 0.0,
+                           bias_atom_e = None,
                            reuse = None):        
         coord = tf.reshape (coord_, [-1, natoms[1] * 3])
         atype = tf.reshape (atype_, [-1, natoms[1]])
@@ -590,11 +770,13 @@ class NNPModel (object):
                         nframes,
                         inputs, 
                         natoms,
-                        bias_atom_e = 0.0,
+                        bias_atom_e = None,
                         reuse = None) :
         start_index = 0
         inputs = tf.reshape(inputs, [-1, self.ndescrpt * natoms[0]])
-        shape = inputs.get_shape().as_list()        
+        shape = inputs.get_shape().as_list()
+        if bias_atom_e is not None :
+            assert(len(bias_atom_e) == self.ntypes)
 
         for type_i in range(self.ntypes):
             # cut-out inputs
@@ -603,10 +785,17 @@ class NNPModel (object):
                                  [-1, natoms[2+type_i]* self.ndescrpt] )
             inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
             start_index += natoms[2+type_i]
+            if bias_atom_e is None :
+                type_bias_ae = 0.0
+            else :
+                type_bias_ae = bias_atom_e[type_i]
 
             # compute atom energy
             if self.use_smooth :
-                layer = self._DS_layer(inputs_i, name='DS_layer_type_'+str(type_i), natoms=natoms, reuse=reuse, seed = self.seed)
+                if self.type_fitting_net :
+                    layer = self._DS_layer_type_ext(inputs_i, name='DS_layer_type_'+str(type_i), natoms=natoms, reuse=reuse, seed = self.seed)
+                else :
+                    layer = self._DS_layer(inputs_i, name='DS_layer_type_'+str(type_i), natoms=natoms, reuse=reuse, seed = self.seed)
                 for ii in range(0,len(self.n_neuron)) :
                     if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
                         layer+= self._one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i), reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt)
@@ -616,7 +805,7 @@ class NNPModel (object):
                 layer = self._one_layer(inputs_i, self.n_neuron[0], name='layer_0_type_'+str(type_i), reuse=reuse, seed = self.seed)
                 for ii in range(1,len(self.n_neuron)) :
                     layer = self._one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i), reuse=reuse, seed = self.seed)
-            final_layer = self._one_layer(layer, 1, activation_fn = None, bavg = bias_atom_e, name='final_layer_type_'+str(type_i), reuse=reuse, seed = self.seed)
+            final_layer = self._one_layer(layer, 1, activation_fn = None, bavg = type_bias_ae, name='final_layer_type_'+str(type_i), reuse=reuse, seed = self.seed)
             final_layer = tf.reshape(final_layer, [nframes, natoms[2+type_i]])
             # final_layer = tf.cond (tf.equal(natoms[2+type_i], 0), lambda: tf.zeros((0, 0), dtype=tf.float64), lambda : tf.reshape(final_layer, [-1, natoms[2+type_i]]))
 
@@ -745,3 +934,90 @@ class NNPModel (object):
           result = tf.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
 
         return result
+
+    def _DS_layer_type_ext(self, 
+                           inputs, 
+                           natoms,
+                           activation_fn=tf.nn.tanh, 
+                           stddev=1.0,
+                           bavg=0.0,
+                           name='linear', 
+                           reuse=None,
+                           seed=None):
+        # natom x (nei x 4)
+        shape = inputs.get_shape().as_list()
+        outputs_size = [1] + self.filter_neuron
+        outputs_size_2 = self.n_axis_neuron
+        with tf.variable_scope(name, reuse=reuse):
+          start_index = 0
+          result_all = []
+          xyz_scatter_1_all = []
+          xyz_scatter_2_all = []
+          for type_i in range(self.ntypes):
+            # cut-out inputs
+            # with natom x (nei_type_i x 4)  
+            inputs_i = tf.slice (inputs,
+                                 [ 0, start_index*      4],
+                                 [-1, self.sel_a[type_i]* 4] )
+            start_index += self.sel_a[type_i]
+            shape_i = inputs_i.get_shape().as_list()
+            # with (natom x nei_type_i) x 4  
+            inputs_reshape = tf.reshape(inputs_i, [-1, 4])
+            xyz_scatter = tf.reshape(tf.slice(inputs_reshape, [0,0],[-1,1]),[-1,1])
+            for ii in range(1, len(outputs_size)):
+              w = tf.get_variable('matrix_'+str(ii)+'_'+str(type_i), 
+                                [outputs_size[ii - 1], outputs_size[ii]], 
+                                tf.float64,
+                                tf.random_normal_initializer(stddev=stddev/np.sqrt(outputs_size[ii]+outputs_size[ii-1]), seed = seed))
+              b = tf.get_variable('bias_'+str(ii)+'_'+str(type_i), 
+                                [1, outputs_size[ii]], 
+                                tf.float64,
+                                tf.random_normal_initializer(stddev=stddev, mean = bavg, seed = seed))
+              if self.filter_resnet_dt :
+                  idt = tf.get_variable('idt_'+str(ii)+'_'+str(type_i), 
+                                        [1, outputs_size[ii]], 
+                                        tf.float64,
+                                        tf.random_normal_initializer(stddev=0.001, mean = 1.0, seed = seed))
+              if outputs_size[ii] == outputs_size[ii-1]:
+                  if self.filter_resnet_dt :
+                      xyz_scatter += activation_fn(tf.matmul(xyz_scatter, w) + b) * idt
+                  else :
+                      xyz_scatter += activation_fn(tf.matmul(xyz_scatter, w) + b)
+              elif outputs_size[ii] == outputs_size[ii-1] * 2: 
+                  if self.filter_resnet_dt :
+                      xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + activation_fn(tf.matmul(xyz_scatter, w) + b) * idt
+                  else :
+                      xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + activation_fn(tf.matmul(xyz_scatter, w) + b)
+              else:
+                  xyz_scatter = activation_fn(tf.matmul(xyz_scatter, w) + b)
+            # natom x nei_type_i x out_size
+            xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1]//4, outputs_size[-1]))
+            # natom x nei_type_i x 4  
+            inputs_i_reshape = tf.reshape(inputs_i, [-1, shape_i[1]//4, 4])
+            # natom x 4 x outputs_size
+            xyz_scatter_1 = tf.matmul(inputs_i_reshape, xyz_scatter, transpose_a = True)
+            xyz_scatter_1 = xyz_scatter_1 * (4.0 / shape_i[1])
+            # natom x 4 x outputs_size_2
+            xyz_scatter_2 = tf.slice(xyz_scatter_1, [0,0,0],[-1,-1,outputs_size_2])
+            xyz_scatter_1_all.append(xyz_scatter_1)
+            xyz_scatter_2_all.append(xyz_scatter_2)
+
+          # for type_i in range(self.ntypes):
+          #   for type_j in range(type_i, self.ntypes):
+          #     # natom x outputs_size x outputs_size_2
+          #     result = tf.matmul(xyz_scatter_1_all[type_i], xyz_scatter_2_all[type_j], transpose_a = True)
+          #     # natom x (outputs_size x outputs_size_2)
+          #     result = tf.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
+          #     result_all.append(tf.identity(result))
+          xyz_scatter_2_coll = tf.concat(xyz_scatter_2_all, axis = 2)
+          for type_i in range(self.ntypes) :
+              # natom x outputs_size x (outputs_size_2 x ntypes)
+              result = tf.matmul(xyz_scatter_1_all[type_i], xyz_scatter_2_coll, transpose_a = True)
+              # natom x (outputs_size x outputs_size_2 x ntypes)
+              result = tf.reshape(result, [-1, outputs_size_2 * self.ntypes * outputs_size[-1]])
+              result_all.append(tf.identity(result))              
+
+          # natom x (ntypes x outputs_size x outputs_size_2 x ntypes)
+          result_all = tf.concat(result_all, axis = 1)
+
+        return result_all
