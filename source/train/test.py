@@ -122,12 +122,16 @@ def test (sess, data, numb_test = None, detail_file = None) :
     l2e = (l2err (energy - test_energy[:numb_test]))
     l2f = (l2err (force  - test_force [:numb_test]))
     l2v = (l2err (virial - test_virial[:numb_test]))
+    l2ea= l2e/natoms_vec[0]
+    l2va= l2v/natoms_vec[0]
 
     # print ("# energies: %s" % energy)
     print ("# number of test data : %d " % numb_test)
-    print ("E : %e" % l2e)
-    print ("F : %e" % l2f)
-    print ("V : %e" % l2v)
+    print ("Energy L2err        : %e eV" % l2e)
+    print ("Energy L2err/Natoms : %e eV" % l2ea)
+    print ("Force  L2err        : %e eV/A" % l2f)
+    print ("Virial L2err        : %e eV" % l2v)
+    print ("Virial L2err/Natoms : %e eV" % l2va)
 
     if detail_file is not None :
         pe = np.concatenate((np.reshape(test_energy[:numb_test], [-1,1]),
@@ -156,9 +160,14 @@ def _main () :
                         help="The set prefix")
     parser.add_argument("-n", "--numb-test", default=100, type=int, 
                         help="The number of data for test")
+    parser.add_argument("-r", "--rand-seed", type=int, 
+                        help="The random seed")
     parser.add_argument("-d", "--detail-file", type=str, 
                         help="The file containing details of energy force and virial accuracy")
     args = parser.parse_args()
+
+    if args.rand_seed is not None :
+        np.random.seed(args.rand_seed % (2**32))
 
     graph = load_graph(args.model)
     data = DataSets (args.system, args.set_prefix)

@@ -865,6 +865,54 @@ cos_switch (double & vv,
   }
 }
 
+inline void
+spline3_switch (double & vv,
+		double & dd,
+		const double & xx, 
+		const double & rmin, 
+		const double & rmax) 
+{
+  if (xx < rmin) {
+    dd = 0;
+    vv = 1;
+  }
+  else if (xx < rmax) {
+    double uu = (xx - rmin) / (rmax - rmin) ;
+    double du = 1. / (rmax - rmin) ;
+    // s(u) = (1+2u)(1-u)^2
+    // s'(u) = 2(2u+1)(u-1) + 2(u-1)^2
+    vv = (1 + 2*uu) * (1-uu) * (1-uu);
+    dd = (2 * (2*uu + 1) * (uu-1) + 2 * (uu-1) * (uu-1) ) * du;
+  }
+  else {
+    dd = 0;
+    vv = 0;
+  }
+}
+
+inline void
+spline5_switch (double & vv,
+		double & dd,
+		const double & xx, 
+		const double & rmin, 
+		const double & rmax) 
+{
+  if (xx < rmin) {
+    dd = 0;
+    vv = 1;
+  }
+  else if (xx < rmax) {
+    double uu = (xx - rmin) / (rmax - rmin) ;
+    double du = 1. / (rmax - rmin) ;
+    vv = uu*uu*uu * (-6 * uu*uu + 15 * uu - 10) + 1;
+    dd = ( 3 * uu*uu * (-6 * uu*uu + 15 * uu - 10) + uu*uu*uu * (-12 * uu + 15) ) * du;
+  }
+  else {
+    dd = 0;
+    vv = 0;
+  }
+}
+
 // output deriv size: n_sel_a_nei x 4 x 12				    
 //		      (1./rr, cos_theta, cos_phi, sin_phi)  x 4 x (x, y, z) 
 void compute_descriptor_norot (vector<double > &			descrpt_a,

@@ -1,41 +1,109 @@
-# Table of contents
+<span style="font-size:larger;">DeePMD-kit Manual</span>
+========
 
-- [Install DeePMD-kit](#install-deepmd-kit)
-	- [Install tensorflow's Python interface](#install-tensorflows-python-interface)
-	- [Install tensorflow's C++ interface](#install-tensorflows-c-interface)
-	- [Install xdrfile](#install-xdrfile)
-	- [Install DeePMD-kit](#install-deepmd-kit)
-	- [Install Lammps' DeePMD-kit module](#install-lammps-deepmd-kit-module)
+
+# Table of contents
+- [About DeePMD-kit](#about-deepmd-kit)
+ 	- [Highlighted features](#highlighted-features)
+ 	- [Code structure](#code-structure)
+ 	- [License and credits](#license-and-credits)
+ 	- [Deep Potential in a nutshell](#deep-potential-in-a-nutshell)
+- [Download and install](#download-and-install)
+    - [Easy installation methods](#easy-installation-methods)
+    - [Install DeePMD-kit from scratch](#install-deepmd-kit-from-scratch)
+	    - [Install tensorflow's Python interface](#install-tensorflows-python-interface)
+	    - [Install tensorflow's C++ interface](#install-tensorflows-c-interface)
+	    - [Install xdrfile](#install-xdrfile)
+	    - [Install DeePMD-kit](#install-deepmd-kit)
+	    - [Install LAMMPS's DeePMD-kit module](#install-lammps-deepmd-kit-module)
+	    - [Build DeePMD-kit with GPU support](#build-deepmd-kit-with-gpu-support)
 - [Use DeePMD-kit](#use-deepmd-kit)
 	- [Prepare data](#prepare-data)
 	- [Train a model](#train-a-model)
-	- [Freeze the model](#freeze-the-model)
+	    - [The DeePMD model](#the-deepmd-model)
+	    - [The DeepPot-SE model](#the-deeppot-se-model)
+	- [Freeze and test a model](#freeze-and-test-a-model)
 	- [Run MD with Lammps](#run-md-with-lammps)
+	    - [Include deepmd in the pair style](#include-deepmd-in-the-pair-style)
+	    - [Long-range interaction](#long-range-interaction)
 	- [Run path-integral MD with i-PI](#run-path-integral-md-with-i-pi)
 	- [Run MD with native code](#run-md-with-native-code)
-- [Code structure](#code-structure)
-- [License](#license)
+- [Troubleshooting](#troubleshooting)
 
-# Install DeePMD-kit
-The installation of the DeePMD-kit is lengthy, but do not be panic. Just follow step by step. Wish you good luck.. 
+# About DeePMD-kit
+DeePMD-kit is a package written in Python/C++, designed to minimize the effort required to build deep learning based model of interatomic potential energy and force field and to perform molecular dynamics (MD). This brings new hopes to addressing the accuracy-versus-efficiency dilemma in molecular simulations. Applications of DeePMD-kit span from finite molecules to extended systems and from metallic systems to chemically bonded systems. 
 
-A docker for installing the DeePMD-kit on CentOS 7 is available [here](https://github.com/frankhan91/deepmd-kit_docker).
+## Highlighted features
+* **interfaced with TensorFlow**, one of the most popular deep learning frameworks, making the training process highly automatic and efficient.
+* **interfaced with high-performance classical MD and quantum (path-integral) MD packages**, i.e., LAMMPS and i-PI, respectively. 
+* **implements the Deep Potential series models**, which have been successfully applied to  finite and extended systems including organic molecules, metals, semiconductors, and insulators, etc.
+* **implements MPI and GPU supports**, makes it highly efficient for high performance parallel and distributed computing.
+* **highly modularized**, easy to adapt to different descriptors for deep learning based potential energy models.
 
-## Install tensorflow's Python interface 
+## Code structure
+The code is organized as follows:
+
+* `data/raw`: tools manipulating the raw data files.
+
+* `examples`: example json parameter files.
+
+* `source/3rdparty`: third-party packages used by DeePMD-kit.
+
+* `source/cmake`: cmake scripts for building.
+
+* `source/ipi`: source code of i-PI client.
+
+* `source/lib`: source code of DeePMD-kit library.
+
+* `source/lmp`: source code of Lammps module.
+
+* `source/md`: source code of native MD.
+
+* `source/op`: tensorflow op implementation. working with library.
+
+* `source/scripts`: Python script for model freezing.
+
+* `source/train`: Python modules and scripts for training and testing.
+
+
+## License and credits
+The project DeePMD-kit is licensed under [GNU LGPLv3.0](./LICENSE).
+If you use this code in any future publications, please cite this using 
+``Han Wang, Linfeng Zhang, Jiequn Han, and Weinan E. "DeePMD-kit: A deep learning package for many-body potential energy representation and molecular dynamics." Computer Physics Communications 228 (2018): 178-184.``
+
+## Deep Potential in a nutshell
+The goal of Deep Potential is to employ deep learning techniques and realize an inter-atomic potential energy model that is general, accurate, computationally efficient and scalable. The key component is to respect the extensive and symmetry-invariant properties of a potential energy model by assigning a local reference frame and a local environment to each atom. Each environment contains a finite number of atoms, whose local coordinates are arranged in a symmetry preserving way. These local coordinates are then transformed, through a sub-network, to a so-called *atomic energy*. Summing up all the atomic energies gives the potential energy of the system.
+
+The initial proof of concept is in the [Deep Potential][1] paper, which employed an approach that was devised to train the neural network model with the potential energy only. With typical *ab initio* molecular dynamics (AIMD) datasets this is insufficient to reproduce the trajectories. The Deep Potential Molecular Dynamics ([DeePMD][2]) model overcomes this limitation. In addition, the learning process in DeePMD improves significantly over the Deep Potential method thanks to the introduction of a flexible family of loss functions. The NN potential constructed in this way reproduces accurately the AIMD trajectories, both classical and quantum (path integral), in extended and finite systems, at a cost that scales linearly with system size and is always several orders of magnitude lower than that of equivalent AIMD simulations.
+
+Although being highly efficient, the original Deep Potential model satisfies the extensive and symmetry-invariant properties of a potential energy model at the price of introducing discontinuities in the model. This has negligible influence on a trajectory from canonical sampling but might not be sufficient for calculations of dynamical and mechanical properties. These points motivated us to develop the Deep Potential-Smooth Edition ([DeepPot-SE][3]) model, which replaces the non-smooth local frame with a smooth and adaptive embedding network. DeepPot-SE shows great ability in modelling many kinds of systems that are of interests in the fields of physics, chemistry, biology, and materials science.
+
+In addition to building up potential energy models, DeePMD-kit can also be used to build up coarse-grained models. In these models, the quantity that we want to parametrize is the free energy, or the coarse-grained potential, of the coarse-grained particles. See the [DeePCG paper][4] for more details.
+
+# Download and install
+Please follow our [github](https://github.com/deepmodeling/deepmd-kit) webpage to see the latest released version and development version.
+## Easy installation methods
+A docker for installing the DeePMD-kit on CentOS 7 is available [here](https://github.com/frankhan91/deepmd-kit_docker). We are currently working on installation methods using the `conda` package management system and `pip` tools. Hope these will come out soon.
+
+## Install DeePMD-kit from scratch
+Installing DeePMD-kit from scratch is lengthy, but do not be panic. Just follow step by step. Wish you good luck.. 
+
+### Install tensorflow's Python interface 
 There are two ways of installing the Python interface of tensorflow, either [using google's binary](https://www.tensorflow.org/install/install_linux), or [installing from sources](https://www.tensorflow.org/install/install_sources). When you are using google's binary, do not forget to add the option `-DTF_GOOGLE_BIN=true` when building DeePMD-kit.
 
-## Install tensorflow's C++ interface
+### Install tensorflow's C++ interface
+The tensorflow's C++ interface will be compiled from the source code. Before starting compilation, it may be a good idea to check the environment requirement of tensorflow by the [officially tested configurations](https://www.tensorflow.org/install/install_sources#tested_source_configurations). If you do not have `bazel`, please [install it](https://docs.bazel.build/versions/master/install.html). 
+
 Firstly get the source code of the tensorflow
 ```bash
 cd /some/workspace
 git clone https://github.com/tensorflow/tensorflow tensorflow
 ```
-The DeePMD-kit works with tensorflow r1.4 -- r1.6. Now taking r1.4 for example:
+The DeePMD-kit works with tensorflow r1.4 and later versions. Now taking r1.8 for example:
 ```bash
 cd tensorflow
-git checkout r1.4
+git checkout r1.8
 ```
-Please make sure you have the Bazel higher than version 0.5.4, otherwise, please [install it](https://docs.bazel.build/versions/master/install.html).
 
 DeePMD-kit is compiled by cmake, so we need to compile and integrate tensorflow with cmake projects. The rest of this section basically follows [the instruction provided by Tuatini](http://tuatini.me/building-tensorflow-as-a-standalone-project/). Now execute
 ```bash
@@ -116,8 +184,8 @@ The temporary installation directories for the dependencies can be removed:
 rm -fr /tmp/proto /tmp/eigen /tmp/nsync
 ```
 
-## Install xdrfile
-xdrfile is a lib that read, compress and write the MD trajectories. Firstly get the source:
+### Install xdrfile
+xdrfile is a lib that reads, compresses and writes the MD trajectories. Firstly get the source:
 ```bash
 cd /some/workspace
 wget ftp://ftp.gromacs.org/pub/contrib/xdrfile-1.1.4.tar.gz
@@ -131,7 +199,8 @@ make
 make install
 ```
 
-## Install DeePMD-kit
+
+### Install DeePMD-kit
 The DeePMD-kit was tested with compiler gcc >= 4.9.
 
 Firstly clone the DeePMD-kit source code
@@ -152,11 +221,13 @@ cd build
 ```
 I assume you want to install DeePMD-kit into path `$deepmd_root`, then execute cmake
 ```bash
-cmake -DXDRFILE_ROOT=$xdrfile_root -DTENSORFLOW_ROOT=$tensorflow_root -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
+cmake -DXDRFILE_ROOT=$xdrfile_root -DTENSORFLOW_ROOT=$tensorflow_root \
+-DCMAKE_INSTALL_PREFIX=$deepmd_root ..
 ```
 If you are using google binary for tensorflow python interface, then you need to specify
 ```bash
-cmake -DXDRFILE_ROOT=$xdrfile_root -DTENSORFLOW_ROOT=$tensorflow_root -DCMAKE_INSTALL_PREFIX=$deepmd_root -DTF_GOOGLE_BIN=true ..
+cmake -DXDRFILE_ROOT=$xdrfile_root -DTENSORFLOW_ROOT=$tensorflow_root \
+-DCMAKE_INSTALL_PREFIX=$deepmd_root -DTF_GOOGLE_BIN=true ..
 ```
 If the cmake has executed successfully, then 
 ```bash
@@ -169,34 +240,59 @@ $ ls $deepmd_root/bin
 dp_frz  dp_ipi  dp_mdnn  dp_test  dp_train
 ```
 
-## Install Lammps' DeePMD-kit module
-DeePMD-kit provide module for running MD simulation with Lammps. Now make the DeePMD-kit module for lammps.
+### Install LAMMPS's DeePMD-kit module
+DeePMD-kit provide module for running MD simulation with LAMMPS. Now make the DeePMD-kit module for LAMMPS.
 ```bash
 cd $deepmd_source_dir/source/build
 make lammps
 ```
-DeePMD-kit will generate a module called `USER-DEEPMD` in the `build` directory. Now download your favorite Lammps code, and uncompress it (I assume that you have downloaded the tar `lammps-stable.tar.gz`)
+DeePMD-kit will generate a module called `USER-DEEPMD` in the `build` directory. Now download your favorite LAMMPS code, and uncompress it (I assume that you have downloaded the tar `lammps-stable.tar.gz`)
 ```bash
 cd /some/workspace
 tar xf lammps-stable.tar.gz
 ```
-The source code of Lammps is store in directory, for example `lammps-31Mar17`. Now go into the lammps code and copy the DeePMD-kit module like this
+The source code of LAMMPS is stored in directory, for example `lammps-31Mar17`. Now go into the LAMMPS code and copy the DeePMD-kit module like this
 ```bash
 cd lammps-31Mar17/src/
 cp -r $deepmd_source_dir/source/build/USER-DEEPMD .
 ```
-Now build Lammps
+Now build LAMMPS
 ```bash
 make yes-user-deepmd
 make mpi -j4
 ```
-The option `-j4` means using 4 processes in parallel. You may want to be use a different number according to your hardware. 
+The option `-j4` means using 4 processes in parallel. You may want to use a different number according to your hardware. 
 
 If everything works fine, you will end up with an executable `lmp_mpi`.
 
-The DeePMD-kit module can be removed from Lammps source code by 
+The DeePMD-kit module can be removed from LAMMPS source code by 
 ```bash
 make no-user-deepmd
+```
+
+### Build DeePMD-kit with GPU support
+If your system has a NVIDIA GPU, you can build TensorFlow with GPU support, which will be inherited by DeePMD-kit and LAMMPS. To achieve this, please carefully check the webpage [Install TensorFlow from Source](https://www.tensorflow.org/install/install_sources) and look for the GPU version. In particular, you have to make sure that the required NVIDIA softwares, namely [CUDA Toolkit](https://developer.nvidia.com/cuda-zone), [GPU drivers](https://www.nvidia.com/driver), and [cuDNN SDK](https://developer.nvidia.com/cudnn), must be installed on your system.
+
+To install TensorFlow with GPU support, all the installation steps will be the same as the non-GPU version, except that one may allow the GPU option when doing `configure`, e.g.,
+```bash
+Do you wish to build TensorFlow with CUDA support? [y/N] Y
+CUDA support will be enabled for TensorFlow
+Do you want to use clang as CUDA compiler? [y/N]
+nvcc will be used as CUDA compiler
+Please specify the CUDA SDK version you want to use. [Leave empty to default to CUDA 9.0]: 9.0
+Please specify the location where CUDA 9.0 toolkit is installed. Refer to README.md for more details. [Default is /usr/local/cuda]:
+Please specify which gcc should be used by nvcc as the host compiler. [Default is /usr/bin/gcc]:
+Please specify the cuDNN version you want to use. [Leave empty to default to cuDNN 7.0]: 7
+Please specify the location where cuDNN 7 library is installed. Refer to README.md for more details. [Default is /usr/local/cuda]:
+Please specify a list of comma-separated CUDA compute capabilities you want to build with.
+You can find the compute capability of your device at: https://developer.nvidia.com/cuda-gpus.
+Please note that each additional compute capability significantly increases your build time and binary size.
+```
+
+After sucessfully installing TensorFlow with GPU support, you should install DeePMD, LAMMPS, etc., in the same way of the non-GPU version. Sometimes you may need to explicitly tell the compiler the place of the CUDA Toolkit and cuDNN libraries, i.e.,
+```bash
+ $ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/path/to/cuda_toolkit/lib64
+ $ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/path/to/cudnn/lib64
 ```
 
 # Use DeePMD-kit
@@ -205,7 +301,7 @@ In this text, we will call the deep neural network that is used to represent the
 1. Prepare data
 2. Train a model
 3. Freeze the model
-4. MD runs with the model (Native MD code or Lammps)
+4. MD runs with the model (Native MD code or LAMMPS)
 
 ## Prepare data
 One needs to provide the following information to train a model: the atom type, the simulation box, the atom coordinate, the atom force, system energy and virial. A snapshot of a system that contains these information is called a **frame**. We use the following convention of units:
@@ -213,9 +309,9 @@ One needs to provide the following information to train a model: the atom type, 
 Property| Unit
 ---	| :---:
 Time	| ps
-Length	| A
+Length	| Å
 Energy	| eV
-Force	| eV/A
+Force	| eV/Å
 Pressure| Bar
 
 The frames of the system are stored in two formats. A raw file is a plain text file with each information item written in one file and one frame written on one line. The default files that provide box, coordinate, force, energy and virial are `box.raw`, `coord.raw`, `force.raw`, `energy.raw` and `virial.raw`, respectively. *We recommend you use these file names*. Here is an example of force.raw:
@@ -227,9 +323,9 @@ $ cat force.raw
 ```
 This `force.raw` contains 3 frames with each frame having the forces of 2 atoms, thus it has 3 lines and 6 columns. Each line provides all the 3 force components of 2 atoms in 1 frame. The first three numbers are the 3 force components of the first atom, while the second three numbers are the 3 force components of the second atom. The coordinate file `coord.raw` is organized similarly. In `box.raw`, the 9 components of the box vectors should be provided on each line. In `virial.raw`, the 9 components of the virial tensor should be provided on each line. The number of lines of all raw files should be identical.
 
-We assume that the atom types do not change in all frames. It is provide by `type.raw`, which has one line with the types of atoms written one by one. The atom types should be integers.
+We assume that the atom types do not change in all frames. It is provided by `type.raw`, which has one line with the types of atoms written one by one. The atom types should be integers.
 
-The second format is the data sets of `numpy` binary data that are directly used by the training program. User can use the script `$deepmd_source_dir/data/raw/raw_to_set.sh` to convert the prepared raw files to data sets. For example, if we have raw files that contains 6000 frames, 
+The second format is the data sets of `numpy` binary data that are directly used by the training program. User can use the script `$deepmd_source_dir/data/raw/raw_to_set.sh` to convert the prepared raw files to data sets. For example, if we have a raw file that contains 6000 frames, 
 ```bash
 $ ls 
 box.raw  coord.raw  energy.raw  force.raw  type.raw  virial.raw
@@ -243,11 +339,11 @@ making set 2 ...
 $ ls 
 box.raw  coord.raw  energy.raw  force.raw  set.000  set.001  set.002  type.raw  virial.raw
 ```
-It generates two sets `set.000`, `set.001` and `set.002`, with each set contains 2000 frames. The last set (`set.002`) is used as testing set, while the rest sets (`set.000` and `set.001`) are used as training sets. One do not need to take care the binary data files in each of the `set.*` directories. The path containing `set.*` and `type.raw` is called a *system*. 
+It generates three sets `set.000`, `set.001` and `set.002`, with each set contains 2000 frames. The last set (`set.002`) is used as testing set, while the rest sets (`set.000` and `set.001`) are used as training sets. One do not need to take care of the binary data files in each of the `set.*` directories. The path containing `set.*` and `type.raw` is called a *system*. 
 
 ## Train a model
-### The standard DeePMD model
-The method of training is explained in our [DeePMD paper][1]. With the source code we provide a small training dataset taken from 400 frames generated by NVT ab-initio water MD trajectory with 300 frames for training and 100 for testing. [An example training parameter file](./examples/train/water.json) is provided. One can try with the training by
+### The DeePMD model
+The method of training is explained in our [DeePMD paper][2]. With the source code we provide a small training dataset taken from 400 frames generated by NVT ab-initio water MD trajectory with 300 frames for training and 100 for testing. [An example training parameter file](./examples/train/water.json) is provided. One can try with the training by
 ```bash
 $ cd $deepmd_source_dir/examples/train/
 $ $deepmd_root/bin/dp_train water.json
@@ -267,14 +363,14 @@ $ $deepmd_root/bin/dp_train water.json
     "_comment":	"                    if type < 0, exclude type -(type+1)",
     "_comment": "                    for water (O:0, H:1) it can be",
     "_comment": "                    [0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0]",
-    "n_neuron":		[240, 120, 60, 30, 10],
+    "fitting_neuron":	[240, 120, 60, 30, 10],
 
     "_comment": " training controls",
     "systems":		["../data/water/"],
     "set_prefix":	"set",    
     "stop_batch":	1000000,
     "batch_size":	4,
-    "start_lr":		0.001,
+    "start_lr":	0.001,
     "decay_steps":	5000,
     "decay_rate":	0.95,
 
@@ -298,17 +394,17 @@ $ $deepmd_root/bin/dp_train water.json
     "disp_training":	true,
     "time_training":	true,
 
-    "_comment":		"that's all"
+    "_comment":	"that's all"
 }
 ```
 
-The option **`rcut`** is the cut-off radius for neighbor searching. The `sel_a` and `sel_r` are the maximum selected numbers of fully-local-coordinate and radial-only-coordinate atoms from the neighbor list, respectively. `sel_a + sel_r` should larger than the maximum possible number of neighbors in the cut-off radius. `sel_a` and `sel_r` are vectors, the length of the vectors are same as the number of atom types in the system. `sel_a[i]` and `sel_r[i]` denote the selected number of neighbors of type `i`.
+The option **`rcut`** is the cut-off radius for neighbor searching. The `sel_a` and `sel_r` are the maximum selected numbers of fully-local-coordinate and radial-only-coordinate atoms from the neighbor list, respectively. `sel_a + sel_r` should be larger than the maximum possible number of neighbors in the cut-off radius. `sel_a` and `sel_r` are vectors, the length of the vectors are same as the number of atom types in the system. `sel_a[i]` and `sel_r[i]` denote the selected number of neighbors of type `i`.
 
 The option **`axis_rule`** specifies how to make the axis for the local coordinate of each atom. For each atom type, 6 integers should be provided. The first three for the first axis, while the last three for the second axis. Within the three integers, the first one specifies if the axis atom is fully-local-coordinated (`0`) or radial-only-coordinated (`1`). The second integer specifies the type of the axis atom. If this number is less than 0, saying `t < 0`, then this axis exclude atom of type `-(t+1)`. If the third integer is, saying `s`, then the axis atom is the `s`th nearest neighbor satisfying the previous two conditions. 
 
-The option **`n_neuron`** is an integer vector that determines the shape the neural network. The size of the vector is identical to the number of hidden layers of the network. From left to right the members denotes the size of each hidden layers from input end to the output end, respectively.
+The option **`fitting_neuron`** (deprecated name **`n_neuron`**) is an integer vector that determines the shape the neural network. The size of the vector is identical to the number of hidden layers of the network. From left to right the members denote the sizes of each hidden layers from input end to the output end, respectively. If two neighboring layers are of the same size, then a [ResNet architecture](https://arxiv.org/abs/1512.03385) is build between them. If the option **`fitting_resnet_dt`** is set `true`, then a timestep is used in the ResNet.
 
-The option **`systems`** provide location of the systems (path to `set.*` and `type.raw`). It is a vector, thus DeePMD-kit allows you provide multiple systems. DeePMD-kit will train the model with the systems in the vector one by one in a cyclic manner.
+The option **`systems`** provide location of the systems (path to `set.*` and `type.raw`). It is a vector, thus DeePMD-kit allows you to provide multiple systems. DeePMD-kit will train the model with the systems in the vector one by one in a cyclic manner.
 
 The option **`batch_size`** specifies the number of frames in each batch. 
 The option **`stop_batch`** specifies the total number of batches will be used in the training.
@@ -317,7 +413,7 @@ The option **`start_lr`**, **`decay_rate`** and **`decay_steps`** specify how th
 lr(t) = start_lr * decay_rate ^ ( t / decay_steps )
 ```
 
-The options **`start_pref_e`**, **`limit_pref_e`**, **`start_pref_f`**, **`limit_pref_f`**, **`start_pref_v`** and **`limit_pref_v`** determine how the prefactors of energy error, force error and virial error changes in the loss function (see the appendix of the [DeePMD paper][1] for details). Taking the prefactor of force error for example, the prefactor at batch `t` is
+The options **`start_pref_e`**, **`limit_pref_e`**, **`start_pref_f`**, **`limit_pref_f`**, **`start_pref_v`** and **`limit_pref_v`** determine how the prefactors of energy error, force error and virial error changes in the loss function (see the appendix of the [DeePMD paper][2] for details). Taking the prefactor of force error for example, the prefactor at batch `t` is
 ```math
 w_f(t) = start_pref_f * ( lr(t) / start_lr ) + limit_pref_f * ( 1 - lr(t) / start_lr )
 ```
@@ -329,7 +425,7 @@ During the training, the error of the model is tested every **`disp_freq`** batc
 
 Checkpoints will be written to files with prefix **`save_ckpt`** every **`save_freq`** batches. If **`restart`** is set to `true`, then the training will start from the checkpoint named **`load_ckpt`**, rather than from scratch.
 
-Several command line options can be passed to `dp_train`, this can be checked with
+Several command line options can be passed to `dp_train`, which can be checked with
 ```bash
 $ $deepmd_root/bin/dp_train --help
 ```
@@ -352,50 +448,79 @@ The keys `intra_op_parallelism_threads` and `inter_op_parallelism_threads` are T
 
 **`--restart model.ckpt`**, continues the training from the checkpoint `model.ckpt`.
 
-### The smooth DeePMD model
-The smooth version of DeePMD can be trained by the DeePMD-kit. [An example training parameter file](./examples/train/water_smth.json) is provided. One can try with the training by
+### The DeepPot-SE model
+The smooth version of DeePMD, or the [DeepPot-SE model][3], can also be trained by DeePMD-kit. [An example training parameter file](./examples/train/water_smth.json) is provided. One can try with the training by
 ```bash
 $ cd $deepmd_source_dir/examples/train/
 $ $deepmd_root/bin/dp_train water_smth.json
 ```
 The difference between the standard and smooth DeePMD models lies in the model parameters:
 ```json
-    "use_smooth":	true,
-    "sel_a":		[46, 92],
-    "rcut_smth":	5.80,
-    "rcut":		6.00,
-    "filter_neuron":	[25, 50, 100],
-    "filter_resnet_dt":	false,
-    "n_axis_neuron":	16,
-    "n_neuron":		[240, 240, 240],
-    "resnet_dt":	true,
+{
+    "use_smooth":        true,
+    "sel_a":             [46, 92],
+    "rcut_smth":         5.80,
+    "rcut":              6.00,
+    "filter_neuron":     [25, 50, 100],
+    "filter_resnet_dt":  false,
+    "axis_neuron":       16,
+    "fitting_neuron":    [240, 240, 240],
+    "fitting_resnet_dt": true,
+    "_comment":          "that's all"
+}
 ```
 The `sel_r` option is skipped by the smooth version and the model use fully-local-coordinate for all neighboring atoms. The `sel_a` should larger than the maximum possible number of neighbors in the cut-off radius `rcut`. 
 
 The descriptors will decay smoothly from **`rcut_smth`** to the cutoff radius `rcut`.
 
-**`filter_neuron`** provides the size of the filter network (also called local-embedding network). If the size of the next layer is the same or twice as the previous layer, then a skip connection is build (ResNet). **`filter_resnet_dt`** tells if a timestep is used in the skip connection. By default it is `false`. **`n_axis_neuron`** specifies the number of axis filter, which should be much smaller than the size of the last layer of the filter network.
+The **`filter_neuron`** provides the size of the filter network (also called local-embedding network). If the size of the next layer is the same or twice as the previous layer, then a skip connection is build (ResNet). The **`filter_resnet_dt`** tells if a timestep is used in the skip connection. By default it is `false`. **`axis_neuron`** (deprecated name `n_axis_neuron`) specifies the number of axis filter, which should be much smaller than the size of the last layer of the filter network.
 
-**`n_neuron`** specifies the fitting network. If the size of the next layer is the same as the previous layer, then a skip connection is build (ResNet). **`resnet_dt`** tells if a timestep is used in the skip connection. By default it is `true`. 
+**`fitting_neuron`** (deprecated name `n_neuron`) specifies the fitting network. If the size of the next layer is the same as the previous layer, then a skip connection is build (ResNet). **`fitting_resnet_dt`** (deprecated name `resnet_dt`) tells if a timestep is used in the skip connection. By default it is `true`. 
 
 
-## Freeze the model
-The trained neural network is extracted from a checkpoint and dumped into a database. This process is called "freeze" a model. Typically one does
+## Freeze and test a model
+The trained neural network is extracted from a checkpoint and dumped into a database. This process is called "freezing" a model. The idea and part of our code are from [Morgan](https://blog.metaflow.fr/tensorflow-how-to-freeze-a-model-and-serve-it-with-a-python-api-d4f3596b3adc). To freeze a model, typically one does
 ```bash
 $ $deepmd_root/bin/dp_frz -o graph.pb
 ```
 in the folder where the model is trained. The output database is called `graph.pb`.
 
-## Run MD with Lammps
-Run an MD simulation with Lammps is simpler. In the Lammps input file, one needs to specify the pair style as follows
+The frozen model can be used in many ways. The most straightforward test can be performed using `dp_test`. Several command line options can be passed to `dp_test`, which can be checked with
+```bash
+$ $deepmd_root/bin/dp_test --help
+```
+An explanation will be provided
+```
+usage: dp_test [-h] [-m MODEL] [-s SYSTEM] [-S SET_PREFIX] [-n NUMB_TEST]
+               [-d DETAIL_FILE]
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -m MODEL, --model MODEL
+                        Frozen model file to import
+  -s SYSTEM, --system SYSTEM
+                        The system dir
+  -S SET_PREFIX, --set-prefix SET_PREFIX
+                        The set prefix
+  -n NUMB_TEST, --numb-test NUMB_TEST
+                        The number of data for test
+  -d DETAIL_FILE, --detail-file DETAIL_FILE
+                        The file containing details of energy force and virial
+                        accuracy
+```
+The files `dp_frz` and `dp_test` may also serve as a python template for further analyses and more user-specific applications.
+
+## Run MD with LAMMPS
+### Include deepmd in the pair style
+Running an MD simulation with LAMMPS is simpler. In the LAMMPS input file, one needs to specify the pair style as follows
 ```bash
 pair_style     deepmd graph.pb
 pair_coeff     
 ```
-where `graph.pb` is the file name of the frozen model. The `pair_coeff` should be left blank. It should be noted that Lammps counts atom types starting from 1, therefore, all Lammps atom type will be firstly subtracted by 1, and then passed into the DeePMD-kit engine to compute the interactions.
+where `graph.pb` is the file name of the frozen model. The `pair_coeff` should be left blank. It should be noted that LAMMPS counts atom types starting from 1, therefore, all LAMMPS atom type will be firstly subtracted by 1, and then passed into the DeePMD-kit engine to compute the interactions.
 
-### With long-range interaction
-The reciprocal space part of the long-range interaction can be calculated by lammps command `kspace_style`. To use it with DeePMD-kit, one writes 
+### Long-range interaction
+The reciprocal space part of the long-range interaction can be calculated by LAMMPS command `kspace_style`. To use it with DeePMD-kit, one writes 
 ```bash
 pair_style	deepmd graph.pb
 pair_coeff
@@ -488,28 +613,68 @@ The option **`T`** specifies the temperature of the simulation, and the option *
 
 The **`atom_type`** set the type for the atoms in the system. The names of the atoms are those provided in the `conf_file` file. The **`atom_mass`** set the mass for the atoms. Again, the name of the atoms are those provided in the `conf_file`.
 
+# Troubleshooting
+In consequence of various differences of computers or systems, problems may occur. Some common circumstances are listed as follows. 
+If other unexpected problems occur, you're welcome to contact us for help.
 
-# Code structure
-The code is organized as follows:
-* `data/raw`: tools manipulating the raw data files.
-* `examples`: example json parameter files.
-* `source/3rdparty`: third-party packages used by DeePMD-kit.
-* `source/cmake`: cmake scripts for building.
-* `source/ipi`: source code of i-PI client.
-* `source/lib`: source code of DeePMD-kit library.
-* `source/lmp`: source code of Lammps module.
-* `source/md`: source code of native MD.
-* `source/op`: tensorflow op implementation. working with library.
-* `source/scripts`: Python script for model freezing.
-* `source/train`: Python modules and scripts for training and testing.
+## Installation: inadequate versions of gcc/g++
+Sometimes you may use a gcc/g++ of version <4.9. If you have a gcc/g++ of version > 4.9, say, 7.2.0, you may choose to use it by doing 
+```bash
+export CC=/path/to/gcc-7.2.0/bin/gcc
+export CXX=/path/to/gcc-7.2.0/bin/g++
+```
+
+If, for any reason, for example, you only have a gcc/g++ of version 4.8.5, you can still compile all the parts of TensorFlow and most of the parts of DeePMD-kit. In this case, follow the following steps.
+
+First, goto the source code directory, open the file `CMakeLists.txt`
+```bash
+cd $deepmd_source_dir/source
+vi CMakeLists.txt
+```
+Next, comment the following 4 lines out:
+```
+# set (LIB_DEEPMD_NATIVE  "deepmd_native_md")
+# set (LIB_DEEPMD_IPI     "deepmd_ipi")
+# add_subdirectory (md/)
+# add_subdirectory (ipi/)
+```
+
+Then you may continue with the installation procedure.
+
+## Installation: build files left in DeePMD-kit
+When you try to build a second time when installing DeePMD-kit, files produced before may contribute to failure. Thus, you may clear them by
+```bash
+cd build
+rm -r *
+```
+and redo the `cmake` process.
+
+## Training: TensorFlow abi binary cannot be found when doing training
+If you confront such kind of error: 
+
+```
+$deepmd_root/lib/deepmd/libop_abi.so: undefined symbol:
+_ZN10tensorflow8internal21CheckOpMessageBuilder9NewStringB5cxx11Ev
+```
+
+you may set `-DTF_GOOGLE_BIN=true` in the process of `cmake`.
+
+Another possible reason might be the large gap between the python version of TensorFlow and the TensorFlow c++ interface.
 
 
-# License
-The project DeePMD-kit is licensed under [GNU LGPLv3.0](./LICENSE)
+## MD: cannot run LAMMPS after installing a new version of DeePMD-kit
+This typically happens when you install a new version of DeePMD-kit and copy directly the generated `USER-DEEPMD` to a LAMMPS source code folder and re-install LAMMPS.
+
+To solve this problem, it suffices to first remove `USER-DEEPMD` from LAMMPS source code by 
+```bash
+make no-user-deepmd
+```
+and then install the new `USER-DEEPMD`.
+
+If this does not solve your problem, try to decompress the LAMMPS source tarball and install LAMMPS from scratch again, which typically should be very fast.
 
 
-[1]: https://arxiv.org/pdf/1707.09571.pdf
-
-
-
-
+[1]: http://www.global-sci.com/galley/CiCP-2017-0213.pdf
+[2]: https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.120.143001
+[3]:https://arxiv.org/abs/1805.09003
+[4]:https://aip.scitation.org/doi/full/10.1063/1.5027645
