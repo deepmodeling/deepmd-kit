@@ -48,7 +48,28 @@ PairNNP::PairNNP(LAMMPS *lmp)
 
   // set comm size needed by this Pair
   comm_reverse = 1;
+
+  print_summary("  ");
 }
+
+void
+PairNNP::print_summary(const string pre) const
+{
+  if (comm->me == 0){
+    cout << "Summary of lammps deepmd module ..." << endl;
+    cout << pre << ">>> Info of deepmd-kit:" << endl;
+    nnp_inter.print_summary(pre);
+    cout << pre << ">>> Info of lammps module:" << endl;
+    cout << pre << "use deepmd-kit at:  " << STR_DEEPMD_ROOT << endl;
+    cout << pre << "source branch:      " << STR_GIT_BRANCH << endl;
+    cout << pre << "source commit:      " << STR_GIT_HASH << endl;
+    cout << pre << "source commit at:   " << STR_GIT_DATE << endl;
+    cout << pre << "build float prec:   " << STR_FLOAT_PREC << endl;
+    cout << pre << "build with tf inc:  " << STR_TensorFlow_INCLUDE_DIRS << endl;
+    cout << pre << "build with tf lib:  " << STR_TensorFlow_LIBRARY_PATH << endl;
+  }
+}
+
 
 PairNNP::~PairNNP()
 {
@@ -115,7 +136,7 @@ void PairNNP::compute(int eflag, int vflag)
 	for (unsigned dd = 0; dd < dbox.size(); ++dd) dbox_[dd] = dbox[dd];
 	vector<float> dforce_(dforce.size(), 0);
 	vector<float> dvirial_(dvirial.size(), 0);
-	float dener_ = 0;
+	double dener_ = 0;
 	nnp_inter.compute (dener_, dforce_, dvirial_, dcoord_, dtype, dbox_, nghost, lmp_list);
 	for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];	
 	for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	
@@ -137,7 +158,7 @@ void PairNNP::compute(int eflag, int vflag)
 	vector<float> dvirial_(dvirial.size(), 0);
 	vector<float> deatom_(dforce.size(), 0);
 	vector<float> dvatom_(dforce.size(), 0);
-	float dener_ = 0;
+	double dener_ = 0;
 	nnp_inter.compute (dener_, dforce_, dvirial_, deatom_, dvatom_, dcoord_, dtype, dbox_, nghost, lmp_list);
 	for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];	
 	for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	
@@ -183,8 +204,8 @@ void PairNNP::compute(int eflag, int vflag)
       vector<float> dvirial_(dvirial.size(), 0);
       vector<float> deatom_(dforce.size(), 0);
       vector<float> dvatom_(dforce.size(), 0);
-      float dener_ = 0;
-      vector<float> 		all_energy_;
+      double dener_ = 0;
+      vector<double> 		all_energy_;
       vector<vector<float>>	all_force_;
       vector<vector<float>> 	all_virial_;	       
       vector<vector<float>> 	all_atom_energy_;
@@ -306,7 +327,7 @@ void PairNNP::compute(int eflag, int vflag)
       for (unsigned dd = 0; dd < dbox.size(); ++dd) dbox_[dd] = dbox[dd];
       vector<float> dforce_(dforce.size(), 0);
       vector<float> dvirial_(dvirial.size(), 0);
-      float dener_ = 0;
+      double dener_ = 0;
       nnp_inter.compute (dener_, dforce_, dvirial_, dcoord_, dtype, dbox_, nghost);
       for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];	
       for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	

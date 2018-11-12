@@ -7,11 +7,24 @@ import deepmd.cluster.Local as Local
 if "@PREC_DEF@" == "-DHIGH_PREC" :
     global_tf_float_precision = tf.float64
     global_np_float_precision = np.float64
+    global_ener_float_precision = np.float64
     global_cvt_2_tf_float = tf.to_double
+    global_cvt_2_ener_float = tf.to_double
+    global_float_prec = 'double'
 else :
     global_tf_float_precision = tf.float32
     global_np_float_precision = np.float32
+    global_ener_float_precision = np.float64
     global_cvt_2_tf_float = tf.to_float
+    global_cvt_2_ener_float = tf.to_double
+    global_float_prec = 'float'
+
+global_install_prefix='@CMAKE_INSTALL_PREFIX@'
+global_git_hash='@GIT_HASH@'
+global_git_date='@GIT_DATE@'
+global_git_branch='@GIT_BRANCH@'
+global_tf_include_dir='@TensorFlow_INCLUDE_DIRS@'
+global_tf_libs='@TensorFlow_LIBRARY@'
 
 def _get_threads_env () :
     num_intra_threads = None
@@ -144,9 +157,25 @@ class RunOptions (object) :
         msg += "Wang, Zhang, Han and E, Comput.Phys.Comm. 228, 178-184 (2018)\n"
         self.message(msg)        
 
+    def print_build(self): 
+        msg = ''
+        msg += 'source code %s at brach %s commit at %s' % (global_git_hash, global_git_branch, global_git_date)
+        self.message(msg)
+
     def print_summary(self) :
         msg = ""
-        msg += "---Summary of RunOptions-----------------------------------------\n"
+        msg += "---Summary of the training---------------------------------------\n"
+        msg += 'installed to:       %s\n' % global_install_prefix
+        msg += 'source brach:       %s\n' % global_git_branch
+        msg += 'source commit:      %s\n' % global_git_hash
+        msg += 'source commit at:   %s\n' % global_git_date
+        msg += 'build float prec:   %s\n' % global_float_prec
+        msg += 'build with tf inc:  %s\n' % global_tf_include_dir
+        for idx,ii in enumerate(global_tf_libs.split(';')) :
+            if idx == 0 :
+                msg += 'build with tf lib:  %s\n' % ii
+            else :
+                msg += '                    %s\n' % ii
         if self.is_distrib:
             msg += "distributed\n" 
             msg += "ps list:            %s\n" % str(self.cluster['ps'])

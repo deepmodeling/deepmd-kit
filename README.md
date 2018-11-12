@@ -15,7 +15,7 @@
 	    - [Install tensorflow's C++ interface](#install-tensorflows-c-interface)
 	    - [Install xdrfile](#install-xdrfile)
 	    - [Install DeePMD-kit](#install-deepmd-kit)
-	    - [Install LAMMPS's DeePMD-kit module](#install-lammps-deepmd-kit-module)
+	    - [Install LAMMPS's DeePMD-kit module](#install-lammpss-deepmd-kit-module)
 	    - [Build DeePMD-kit with GPU support](#build-deepmd-kit-with-gpu-support)
 - [Use DeePMD-kit](#use-deepmd-kit)
 	- [Prepare data](#prepare-data)
@@ -323,7 +323,11 @@ $ cat force.raw
 ```
 This `force.raw` contains 3 frames with each frame having the forces of 2 atoms, thus it has 3 lines and 6 columns. Each line provides all the 3 force components of 2 atoms in 1 frame. The first three numbers are the 3 force components of the first atom, while the second three numbers are the 3 force components of the second atom. The coordinate file `coord.raw` is organized similarly. In `box.raw`, the 9 components of the box vectors should be provided on each line. In `virial.raw`, the 9 components of the virial tensor should be provided on each line. The number of lines of all raw files should be identical.
 
-We assume that the atom types do not change in all frames. It is provided by `type.raw`, which has one line with the types of atoms written one by one. The atom types should be integers.
+We assume that the atom types do not change in all frames. It is provided by `type.raw`, which has one line with the types of atoms written one by one. The atom types should be integers. For example the `tyep.raw` of a system that has 2 atoms with 0 and 1:
+```bash
+$ cat type.raw
+0 1
+```
 
 The second format is the data sets of `numpy` binary data that are directly used by the training program. User can use the script `$deepmd_source_dir/data/raw/raw_to_set.sh` to convert the prepared raw files to data sets. For example, if we have a raw file that contains 6000 frames, 
 ```bash

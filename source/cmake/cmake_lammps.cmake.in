@@ -15,3 +15,9 @@ file (
   TYPE FILE 
   FILES "@CMAKE_BINARY_DIR@/lmp/env.sh"
 )
+
+file (
+  INSTALL DESTINATION "${LMP_INSTALL_PREFIX}" 
+  TYPE FILE 
+  FILES "@CMAKE_BINARY_DIR@/lmp/pair_nnp.h"
+)

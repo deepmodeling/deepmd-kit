@@ -7,7 +7,7 @@ if test $# -ge 1; then
 fi
 
 rm -fr set.*
-echo nframe is `cat energy.raw | wc -l`
+echo nframe is `cat box.raw | wc -l`
 echo nline per set is $nline_per_set
 
 split box.raw	 -l $nline_per_set -d -a 3 box.raw
@@ -15,6 +15,7 @@ split coord.raw	 -l $nline_per_set -d -a 3 coord.raw
 test -f energy.raw && split energy.raw -l $nline_per_set -d -a 3 energy.raw
 test -f force.raw  && split force.raw  -l $nline_per_set -d -a 3 force.raw
 test -f virial.raw && split virial.raw -l $nline_per_set -d -a 3 virial.raw
+test -f atom_ener.raw && split atom_ener.raw -l $nline_per_set -d -a 3 atom_ener.raw
 
 nset=`ls | grep box.raw[0-9] | wc -l`
 nset_1=$(($nset-1))
@@ -30,6 +31,7 @@ do
   test -f energy.raw$pi && mv energy.raw$pi set.$pi/energy.raw
   test -f force.raw$pi  && mv force.raw$pi  set.$pi/force.raw
   test -f virial.raw$pi && mv virial.raw$pi set.$pi/virial.raw
+  test -f atom_ener.raw$pi && mv atom_ener.raw$pi set.$pi/atom_ener.raw
 
   cd set.$pi
   python -c 'import numpy as np; data = np.loadtxt("box.raw"   ); data = data.astype (np.float32); np.save ("box",    data)'
@@ -54,6 +56,13 @@ if os.path.isfile("virial.raw"):
    data = np.loadtxt("virial.raw"); 
    data = data.astype (np.float32); 
    np.save ("virial", data)
+'
+  python -c \
+'import numpy as np; import os.path; 
+if os.path.isfile("atom_ener.raw"): 
+   data = np.loadtxt("atom_ener.raw"); 
+   data = data.astype (np.float32); 
+   np.save ("atom_ener", data)
 '
   rm *.raw
   cd ../

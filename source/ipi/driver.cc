@@ -192,7 +192,7 @@ int main(int argc, char * argv[])
       for (unsigned dd = 0; dd < dbox.size(); ++dd) dbox_[dd] = dbox[dd];
       vector<float> dforce_(dforce.size(), 0);
       vector<float> dvirial_(dvirial.size(), 0);
-      float dener_ = 0;
+      double dener_ = 0;
       nnp_inter.compute (dener_, dforce_, dvirial_, dcoord_, dtype, dbox_);   
       for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce_tmp[dd] = dforce_[dd];	
       for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	

@@ -25,6 +25,27 @@ PairStyle(deepmd,PairNNP)
 #include <iostream>
 #include <fstream>
 
+#define GIT_HASH @GIT_HASH@
+#define GIT_BRANCH @GIT_BRANCH@
+#define GIT_DATE @GIT_DATE@
+#ifdef HIGH_PREC
+#define FLOAT_PREC double
+#else
+#define FLOAT_PREC float
+#endif
+#define DEEPMD_ROOT @CMAKE_INSTALL_PREFIX@
+#define TensorFlow_INCLUDE_DIRS @TensorFlow_INCLUDE_DIRS@
+#define TensorFlow_LIBRARY_PATH @TensorFlow_LIBRARY_PATH@
+#define DPMD_CVT_STR(x) #x
+#define DPMD_CVT_ASSTR(X) DPMD_CVT_STR(X)
+#define STR_GIT_HASH DPMD_CVT_ASSTR(GIT_HASH)
+#define STR_GIT_BRANCH DPMD_CVT_ASSTR(GIT_BRANCH)
+#define STR_GIT_DATE DPMD_CVT_ASSTR(GIT_DATE)
+#define STR_FLOAT_PREC DPMD_CVT_ASSTR(FLOAT_PREC)
+#define STR_DEEPMD_ROOT DPMD_CVT_ASSTR(DEEPMD_ROOT)
+#define STR_TensorFlow_INCLUDE_DIRS DPMD_CVT_ASSTR(TensorFlow_INCLUDE_DIRS)
+#define STR_TensorFlow_LIBRARY_PATH DPMD_CVT_ASSTR(TensorFlow_LIBRARY_PATH)
+
 namespace LAMMPS_NS {
 
 class PairNNP : public Pair {
@@ -39,6 +60,7 @@ class PairNNP : public Pair {
   double init_one(int i, int j);
   int pack_reverse_comm(int, int, double *);
   void unpack_reverse_comm(int, int *, double *);
+  void print_summary(const string pre) const;
 
  protected:  
   virtual void allocate();

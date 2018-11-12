@@ -1,4 +1,5 @@
 {
+    "with_distrib":	false,
     "_comment": " model parameters",
     "use_smooth":	false,
     "sel_a":		[16, 32],
@@ -35,8 +36,8 @@
     "_comment": " frequencies counted in batch",
     "disp_file":	"lcurve.out",
     "disp_freq":	100,
-    "numb_test":	100,
-    "save_freq":	100,
+    "numb_test":	10,
+    "save_freq":	1000,
     "save_ckpt":	"model.ckpt",
     "load_ckpt":	"model.ckpt",
     "disp_training":	true,

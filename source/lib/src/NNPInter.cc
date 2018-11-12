@@ -283,7 +283,7 @@ make_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 }
 
 static void 
-run_model (VALUETYPE &			dener,
+run_model (ENERGYTYPE &			dener,
 	   vector<VALUETYPE> &		dforce_,
 	   vector<VALUETYPE> &		dvirial,	   
 	   Session *			session, 
@@ -305,7 +305,7 @@ run_model (VALUETYPE &			dener,
   Tensor output_f = output_tensors[1];
   Tensor output_v = output_tensors[2];
 
-  auto oe = output_e.flat <VALUETYPE> ();
+  auto oe = output_e.flat <ENERGYTYPE> ();
   auto of = output_f.flat <VALUETYPE> ();
   auto ov = output_v.flat <VALUETYPE> ();
 
@@ -323,7 +323,7 @@ run_model (VALUETYPE &			dener,
 }
 
 static void 
-run_model (VALUETYPE &			dener,
+run_model (ENERGYTYPE &			dener,
 	   vector<VALUETYPE> &		dforce_,
 	   vector<VALUETYPE> &		dvirial,	   
 	   vector<VALUETYPE> &		datom_energy_,
@@ -349,7 +349,7 @@ run_model (VALUETYPE &			dener,
   Tensor output_ae = output_tensors[3];
   Tensor output_av = output_tensors[4];
 
-  auto oe = output_e.flat <VALUETYPE> ();
+  auto oe = output_e.flat <ENERGYTYPE> ();
   auto of = output_f.flat <VALUETYPE> ();
   auto ov = output_v.flat <VALUETYPE> ();
   auto oae = output_ae.flat <VALUETYPE> ();
@@ -413,6 +413,20 @@ init (const string & model)
   inited = true;
 }
 
+void 
+NNPInter::
+print_summary(const string &pre) const
+{
+  cout << pre << "installed to:       " + global_install_prefix << endl;
+  cout << pre << "source brach:       " + global_git_branch << endl;
+  cout << pre << "source commit:      " + global_git_hash << endl;
+  cout << pre << "source commit at:   " + global_git_date << endl;
+  cout << pre << "build float prec:   " + global_float_prec << endl;
+  cout << pre << "build with tf inc:  " + global_tf_include_dir << endl;
+  cout << pre << "build with tf lib:  " + global_tf_lib_dir << endl;
+}
+
+
 VALUETYPE
 NNPInter::
 get_rcut () const
@@ -443,7 +457,7 @@ get_ntypes () const
 
 void
 NNPInter::
-compute (VALUETYPE &			dener,
+compute (ENERGYTYPE &			dener,
 	 vector<VALUETYPE> &		dforce_,
 	 vector<VALUETYPE> &		dvirial,
 	 const vector<VALUETYPE> &	dcoord_,
@@ -465,7 +479,7 @@ compute (VALUETYPE &			dener,
 
 void
 NNPInter::
-compute (VALUETYPE &			dener,
+compute (ENERGYTYPE &			dener,
 	 vector<VALUETYPE> &		dforce_,
 	 vector<VALUETYPE> &		dvirial,
 	 const vector<VALUETYPE> &	dcoord_,
@@ -493,7 +507,7 @@ compute (VALUETYPE &			dener,
 
 void
 NNPInter::
-compute (VALUETYPE &			dener,
+compute (ENERGYTYPE &			dener,
 	 vector<VALUETYPE> &		dforce_,
 	 vector<VALUETYPE> &		dvirial,
 	 vector<VALUETYPE> &		datom_energy_,
@@ -514,7 +528,7 @@ compute (VALUETYPE &			dener,
 
 void
 NNPInter::
-compute (VALUETYPE &			dener,
+compute (ENERGYTYPE &			dener,
 	 vector<VALUETYPE> &		dforce_,
 	 vector<VALUETYPE> &		dvirial,
 	 vector<VALUETYPE> &		datom_energy_,
@@ -635,7 +649,7 @@ get_ntypes () const
 
 void
 NNPInterModelDevi::
-compute (VALUETYPE &			dener,
+compute (ENERGYTYPE &			dener,
 	 vector<VALUETYPE> &		dforce_,
 	 vector<VALUETYPE> &		dvirial,
 	 vector<VALUETYPE> &		model_devi,
@@ -650,7 +664,7 @@ compute (VALUETYPE &			dener,
   std::vector<std::pair<string, Tensor>> input_tensors;
   int nloc = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, nnpmap);
 
-  vector<VALUETYPE > all_energy (numb_models);
+  vector<ENERGYTYPE > all_energy (numb_models);
   vector<vector<VALUETYPE > > all_force (numb_models);
   vector<vector<VALUETYPE > > all_virial (numb_models);
 
@@ -679,7 +693,7 @@ compute (VALUETYPE &			dener,
 
 void
 NNPInterModelDevi::
-compute (vector<VALUETYPE> &		all_energy,
+compute (vector<ENERGYTYPE> &		all_energy,
 	 vector<vector<VALUETYPE>> &	all_force,
 	 vector<vector<VALUETYPE>> &	all_virial,
 	 const vector<VALUETYPE> &	dcoord_,
@@ -714,7 +728,7 @@ compute (vector<VALUETYPE> &		all_energy,
 
 void
 NNPInterModelDevi::
-compute (vector<VALUETYPE> &			all_energy,
+compute (vector<ENERGYTYPE> &			all_energy,
 	 vector<vector<VALUETYPE>> &		all_force,
 	 vector<vector<VALUETYPE>> &		all_virial,
 	 vector<vector<VALUETYPE>> &		all_atom_energy,
@@ -751,7 +765,6 @@ compute (vector<VALUETYPE> &			all_energy,
   }
 }
 
-
 void
 NNPInterModelDevi::
 compute_avg (VALUETYPE &		dener, 
@@ -764,8 +777,25 @@ compute_avg (VALUETYPE &		dener,
   for (unsigned ii = 0; ii < numb_models; ++ii){
     dener += all_energy[ii];
   }
-  dener /= double(numb_models);  
+  dener /= (VALUETYPE)(numb_models);  
 }
+
+#ifndef HIGH_PREC
+void
+NNPInterModelDevi::
+compute_avg (ENERGYTYPE &		dener, 
+	     const vector<ENERGYTYPE >&	all_energy) 
+{
+  assert (all_energy.size() == numb_models);
+  if (numb_models == 0) return;
+
+  dener = 0;
+  for (unsigned ii = 0; ii < numb_models; ++ii){
+    dener += all_energy[ii];
+  }
+  dener /= (ENERGYTYPE)(numb_models);  
+}
+#endif
 
 void
 NNPInterModelDevi::
@@ -790,20 +820,20 @@ compute_avg (vector<VALUETYPE> &		avg,
 }
 
 
-void
-NNPInterModelDevi::
-compute_std (VALUETYPE &		std, 
-	     const VALUETYPE &		avg, 
-	     const vector<VALUETYPE >&	xx)
-{
-  std = 0;
-  assert(xx.size() == numb_models);
-  for (unsigned jj = 0; jj < xx.size(); ++jj){
-    std += (xx[jj] - avg) * (xx[jj] - avg);
-  }
-  std = sqrt(std / VALUETYPE(numb_models));
-  // std = sqrt(std / VALUETYPE(numb_models-));
-}
+// void
+// NNPInterModelDevi::
+// compute_std (VALUETYPE &		std, 
+// 	     const VALUETYPE &		avg, 
+// 	     const vector<VALUETYPE >&	xx)
+// {
+//   std = 0;
+//   assert(xx.size() == numb_models);
+//   for (unsigned jj = 0; jj < xx.size(); ++jj){
+//     std += (xx[jj] - avg) * (xx[jj] - avg);
+//   }
+//   std = sqrt(std / VALUETYPE(numb_models));
+//   // std = sqrt(std / VALUETYPE(numb_models-));
+// }
 
 void
 NNPInterModelDevi::

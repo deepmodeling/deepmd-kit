@@ -7,14 +7,17 @@
 #include "tensorflow/core/framework/shape_inference.h"
 
 #include <vector>
+#include "version.h"
 
 using namespace tensorflow;
 using namespace std;
 
 #ifdef HIGH_PREC
 typedef double VALUETYPE;
+typedef double ENERGYTYPE;
 #else 
 typedef float  VALUETYPE;
+typedef double ENERGYTYPE;
 #endif
 
 struct LammpsNeighborList 
@@ -52,15 +55,16 @@ public:
   NNPInter () ;
   NNPInter  (const string & model);
   void init (const string & model);
+  void print_summary(const string &pre) const;
 public:
-  void compute (VALUETYPE &			ener,
+  void compute (ENERGYTYPE &			ener,
 		vector<VALUETYPE> &		force,
 		vector<VALUETYPE> &		virial,
 		const vector<VALUETYPE> &	coord,
 		const vector<int> &		atype,
 		const vector<VALUETYPE> &	box, 
 		const int			nghost = 0);
-  void compute (VALUETYPE &			ener,
+  void compute (ENERGYTYPE &			ener,
 		vector<VALUETYPE> &		force,
 		vector<VALUETYPE> &		virial,
 		const vector<VALUETYPE> &	coord,
@@ -68,7 +72,7 @@ public:
 		const vector<VALUETYPE> &	box, 
 		const int			nghost,
 		const LammpsNeighborList &	lmp_list);
-  void compute (VALUETYPE &			ener,
+  void compute (ENERGYTYPE &			ener,
 		vector<VALUETYPE> &		force,
 		vector<VALUETYPE> &		virial,
 		vector<VALUETYPE> &		atom_energy,
@@ -76,7 +80,7 @@ public:
 		const vector<VALUETYPE> &	coord,
 		const vector<int> &		atype,
 		const vector<VALUETYPE> &	box);
-  void compute (VALUETYPE &			ener,
+  void compute (ENERGYTYPE &			ener,
 		vector<VALUETYPE> &		force,
 		vector<VALUETYPE> &		virial,
 		vector<VALUETYPE> &		atom_energy,
@@ -105,14 +109,14 @@ public:
   NNPInterModelDevi  (const vector<string> & models);
   void init (const vector<string> & models);
 public:
-  void compute (VALUETYPE &			ener,
+  void compute (ENERGYTYPE &			ener,
   		vector<VALUETYPE> &		force,
   		vector<VALUETYPE> &		virial,
   		vector<VALUETYPE> &		model_devi,
   		const vector<VALUETYPE> &	coord,
   		const vector<int> &		atype,
   		const vector<VALUETYPE> &	box);
-  void compute (vector<VALUETYPE> &		all_ener,
+  void compute (vector<ENERGYTYPE> &		all_ener,
 		vector<vector<VALUETYPE> > &	all_force,
 		vector<vector<VALUETYPE> > &	all_virial,
 		const vector<VALUETYPE> &	coord,
@@ -120,7 +124,7 @@ public:
 		const vector<VALUETYPE> &	box,
 		const int			nghost,
 		const LammpsNeighborList &	lmp_list);
-  void compute (vector<VALUETYPE> &		all_ener,
+  void compute (vector<ENERGYTYPE> &		all_ener,
 		vector<vector<VALUETYPE> > &	all_force,
 		vector<vector<VALUETYPE> > &	all_virial,
 		vector<vector<VALUETYPE> > &	all_atom_energy,
@@ -131,13 +135,14 @@ public:
 		const int			nghost,
 		const LammpsNeighborList &	lmp_list);
   VALUETYPE cutoff () const {return rcut;};
+#ifndef HIGH_PREC
+  void compute_avg (ENERGYTYPE &		dener,
+		    const vector<ENERGYTYPE > &	all_energy);
+#endif
   void compute_avg (VALUETYPE &			dener,
 		    const vector<VALUETYPE > &	all_energy);
-  void compute_avg (vector<VALUETYPE> &			avg,
+  void compute_avg (vector<VALUETYPE> &		avg,
 		    const vector<vector<VALUETYPE> > &	xx);
-  void compute_std   (VALUETYPE &			std,
-		      const VALUETYPE &			avg,
-		      const vector<VALUETYPE >&		xx);
   void compute_std_e (vector<VALUETYPE> &		std,
 		      const vector<VALUETYPE> &		avg,
 		      const vector<vector<VALUETYPE> >&	xx);

@@ -1,9 +1,32 @@
 cmake_minimum_required(VERSION 3.0)
 project(DeePMD)
 
+find_package(Git)
+if(GIT_FOUND)
+  execute_process(
+    COMMAND git log -1 --format=%h
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_HASH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+  execute_process(
+    COMMAND git rev-parse --abbrev-ref HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_BRANCH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+  execute_process(
+    COMMAND git show -s --format=%ci ${GIT_HASH}
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_DATE
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+endif(GIT_FOUND)
+
 # set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0")
 # set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -O0")
 
+# global defines
 list (APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/)
 list (APPEND CMAKE_CXX_FLAGS "-std=c++11 -Wno-ignored-attributes")
 
@@ -61,6 +84,7 @@ set (LIB_DEEPMD_OP	"deepmd_op")
 set (LIB_DEEPMD_NATIVE	"deepmd_native_md")
 set (LIB_DEEPMD_IPI	"deepmd_ipi")
 
+include_directories(${CMAKE_BINARY_DIR}/lib/)
 add_subdirectory (lib/)
 add_subdirectory (op/)
 add_subdirectory (train/)

@@ -7,8 +7,10 @@ import warnings
 import numpy as np
 import tensorflow as tf
 from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_cvt_2_tf_float
 from deepmd.RunOptions import global_np_float_precision
+from deepmd.RunOptions import global_ener_float_precision
+from deepmd.RunOptions import global_cvt_2_tf_float
+from deepmd.RunOptions import global_cvt_2_ener_float
 
 from tensorflow.python.framework import ops
 from tensorflow.python.client import timeline
@@ -266,7 +268,7 @@ class NNPModel (object):
         t_ntypes = tf.constant(self.ntypes, name = 't_ntypes', dtype = tf.int32)
 
         self.t_prop_c           = tf.placeholder(tf.float32, [4],    name='t_prop_c')
-        self.t_energy           = tf.placeholder(global_tf_float_precision, [None], name='t_energy')
+        self.t_energy           = tf.placeholder(global_ener_float_precision, [None], name='t_energy')
         self.t_force            = tf.placeholder(global_tf_float_precision, [None], name='t_force')
         self.t_virial           = tf.placeholder(global_tf_float_precision, [None], name='t_virial')
         self.t_atom_ener        = tf.placeholder(global_tf_float_precision, [None], name='t_atom_ener')
@@ -813,20 +815,21 @@ class NNPModel (object):
         l2_atom_ener_loss = tf.reduce_mean (tf.square(atom_ener_hat_reshape - atom_ener_reshape), name = "l2_atom_ener_" + suffix)
 
         atom_norm  = 1./ global_cvt_2_tf_float(natoms[0]) 
-        pref_e = global_cvt_2_tf_float(prop_c[0] * (self.limit_pref_e + (self.start_pref_e - self.limit_pref_e) * self.learning_rate / self.starter_learning_rate) )
+        atom_norm_ener  = 1./ global_cvt_2_ener_float(natoms[0]) 
+        pref_e = global_cvt_2_ener_float(prop_c[0] * (self.limit_pref_e + (self.start_pref_e - self.limit_pref_e) * self.learning_rate / self.starter_learning_rate) )
         pref_f = global_cvt_2_tf_float(prop_c[1] * (self.limit_pref_f + (self.start_pref_f - self.limit_pref_f) * self.learning_rate / self.starter_learning_rate) )
         pref_v = global_cvt_2_tf_float(prop_c[2] * (self.limit_pref_v + (self.start_pref_v - self.limit_pref_v) * self.learning_rate / self.starter_learning_rate) )
         pref_ae= global_cvt_2_tf_float(prop_c[3] * (self.limit_pref_ae+ (self.start_pref_ae-self.limit_pref_ae) * self.learning_rate / self.starter_learning_rate) )
 
         l2_loss = 0
         if self.has_e :
-            l2_loss += atom_norm * (pref_e * l2_ener_loss)
+            l2_loss += atom_norm_ener * (pref_e * l2_ener_loss)
         if self.has_f :
-            l2_loss += pref_f * l2_force_loss
+            l2_loss += global_cvt_2_ener_float(pref_f * l2_force_loss)
         if self.has_v :
-            l2_loss += atom_norm * (pref_v * l2_virial_loss)
+            l2_loss += global_cvt_2_ener_float(atom_norm * (pref_v * l2_virial_loss))
         if self.has_ae :
-            l2_loss += pref_ae * l2_atom_ener_loss
+            l2_loss += global_cvt_2_ener_float(pref_ae * l2_atom_ener_loss)
 
         return l2_loss, l2_ener_loss, l2_force_loss, l2_virial_loss, l2_atom_ener_loss
 
@@ -877,7 +880,7 @@ class NNPModel (object):
         atom_ener = self.build_atom_net (nframes, descrpt_reshape, natoms, bias_atom_e = bias_atom_e, reuse = reuse)
 
         energy_raw = tf.reshape(atom_ener, [-1, natoms[0]], name = 'atom_energy_'+suffix)
-        energy = tf.reduce_sum(energy_raw, axis=1, name='energy_'+suffix)        
+        energy = tf.reduce_sum(global_cvt_2_ener_float(energy_raw), axis=1, name='energy_'+suffix)
 
         net_deriv_tmp = tf.gradients (atom_ener, descrpt_reshape)
         net_deriv = net_deriv_tmp[0]
