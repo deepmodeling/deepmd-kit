@@ -73,7 +73,7 @@ def test (sess, data, numb_test = None, detail_file = None) :
     natoms_vec = data.get_natoms_vec (ntypes)
     natoms_vec = natoms_vec.astype(np.int32)
     
-    test_prop_c, test_energy, test_force, test_virial, test_coord, test_box, test_type = data.get_test ()
+    test_prop_c, test_energy, test_force, test_virial, test_ae, test_coord, test_box, test_type = data.get_test ()
     if numb_test > test_coord.shape[0] :
         print ("# numb_test %d larger than size of dataset %d, is set to %d" 
                % (numb_test, test_coord.shape[0], test_coord.shape[0]) )

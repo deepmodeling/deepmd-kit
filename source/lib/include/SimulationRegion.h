@@ -30,8 +30,8 @@ public:
 public:
     void		toFaceDistance	(double * dd) const;
 public:
-    void phys2Inter (double * i_v, const double * p_v) const;
-    void inter2Phys (double * p_v, const double * i_v) const;
+    void phys2Inter (double * i_v, const VALUETYPE * p_v) const;
+    void inter2Phys (VALUETYPE * p_v, const double * i_v) const;
 public:
     bool		isPeriodic	(const int dim) const {return is_periodic[dim];}
     static int		compactIndex	(const int * idx) ;

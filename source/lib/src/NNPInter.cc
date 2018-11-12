@@ -79,7 +79,9 @@ make_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
   datype.insert (datype.end(), datype_.begin() + nloc, datype_.end());
 
   SimulationRegion<VALUETYPE> region;
-  region.reinitBox (&dbox[0]);
+  vector<double > dbox_(9);
+  for (int dd = 0; dd < 9; ++dd) dbox_[dd] = dbox[dd];
+  region.reinitBox (&dbox_[0]);
   double box_l[3];
   region.toFaceDistance (box_l);
   

@@ -106,13 +106,45 @@ void PairNNP::compute(int eflag, int vflag)
     LammpsNeighborList lmp_list (list->inum, list->ilist, list->numneigh, list->firstneigh);
     if (numb_models == 1) {
       if ( ! (eflag_atom || vflag_atom) ) {      
+#ifdef HIGH_PREC
 	nnp_inter.compute (dener, dforce, dvirial, dcoord, dtype, dbox, nghost, lmp_list);
+#else
+	vector<float> dcoord_(dcoord.size());
+	vector<float> dbox_(dbox.size());
+	for (unsigned dd = 0; dd < dcoord.size(); ++dd) dcoord_[dd] = dcoord[dd];
+	for (unsigned dd = 0; dd < dbox.size(); ++dd) dbox_[dd] = dbox[dd];
+	vector<float> dforce_(dforce.size(), 0);
+	vector<float> dvirial_(dvirial.size(), 0);
+	float dener_ = 0;
+	nnp_inter.compute (dener_, dforce_, dvirial_, dcoord_, dtype, dbox_, nghost, lmp_list);
+	for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];	
+	for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	
+	dener = dener_;
+#endif
       }
       // do atomic energy and virial
       else {
 	vector<double > deatom (nall * 1, 0);
 	vector<double > dvatom (nall * 9, 0);
+#ifdef HIGH_PREC
 	nnp_inter.compute (dener, dforce, dvirial, deatom, dvatom, dcoord, dtype, dbox, nghost, lmp_list);
+#else 
+	vector<float> dcoord_(dcoord.size());
+	vector<float> dbox_(dbox.size());
+	for (unsigned dd = 0; dd < dcoord.size(); ++dd) dcoord_[dd] = dcoord[dd];
+	for (unsigned dd = 0; dd < dbox.size(); ++dd) dbox_[dd] = dbox[dd];
+	vector<float> dforce_(dforce.size(), 0);
+	vector<float> dvirial_(dvirial.size(), 0);
+	vector<float> deatom_(dforce.size(), 0);
+	vector<float> dvatom_(dforce.size(), 0);
+	float dener_ = 0;
+	nnp_inter.compute (dener_, dforce_, dvirial_, deatom_, dvatom_, dcoord_, dtype, dbox_, nghost, lmp_list);
+	for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];	
+	for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	
+	for (unsigned dd = 0; dd < deatom.size(); ++dd) deatom[dd] = deatom_[dd];	
+	for (unsigned dd = 0; dd < dvatom.size(); ++dd) dvatom[dd] = dvatom_[dd];	
+	dener = dener_;
+#endif	
 	if (eflag_atom) {
 	  for (int ii = 0; ii < nlocal; ++ii) eatom[ii] += deatom[ii];
 	}
@@ -129,6 +161,9 @@ void PairNNP::compute(int eflag, int vflag)
       }
     }
     else {
+      vector<double > deatom (nall * 1, 0);
+      vector<double > dvatom (nall * 9, 0);
+#ifdef HIGH_PREC
       vector<double> 		all_energy;
       vector<vector<double>> 	all_virial;	       
       vector<vector<double>> 	all_atom_energy;
@@ -137,10 +172,42 @@ void PairNNP::compute(int eflag, int vflag)
       nnp_inter_model_devi.compute_avg (dener, all_energy);
       nnp_inter_model_devi.compute_avg (dforce, all_force);
       nnp_inter_model_devi.compute_avg (dvirial, all_virial);
-      vector<double > deatom (nall * 1, 0);
-      vector<double > dvatom (nall * 9, 0);
       nnp_inter_model_devi.compute_avg (deatom, all_atom_energy);
       nnp_inter_model_devi.compute_avg (dvatom, all_atom_virial);
+#else 
+      vector<float> dcoord_(dcoord.size());
+      vector<float> dbox_(dbox.size());
+      for (unsigned dd = 0; dd < dcoord.size(); ++dd) dcoord_[dd] = dcoord[dd];
+      for (unsigned dd = 0; dd < dbox.size(); ++dd) dbox_[dd] = dbox[dd];
+      vector<float> dforce_(dforce.size(), 0);
+      vector<float> dvirial_(dvirial.size(), 0);
+      vector<float> deatom_(dforce.size(), 0);
+      vector<float> dvatom_(dforce.size(), 0);
+      float dener_ = 0;
+      vector<float> 		all_energy_;
+      vector<vector<float>>	all_force_;
+      vector<vector<float>> 	all_virial_;	       
+      vector<vector<float>> 	all_atom_energy_;
+      vector<vector<float>> 	all_atom_virial_;
+      nnp_inter_model_devi.compute(all_energy_, all_force_, all_virial_, all_atom_energy_, all_atom_virial_, dcoord_, dtype, dbox_, nghost, lmp_list);
+      nnp_inter_model_devi.compute_avg (dener_, all_energy_);
+      nnp_inter_model_devi.compute_avg (dforce_, all_force_);
+      nnp_inter_model_devi.compute_avg (dvirial_, all_virial_);
+      nnp_inter_model_devi.compute_avg (deatom_, all_atom_energy_);
+      nnp_inter_model_devi.compute_avg (dvatom_, all_atom_virial_);
+      dener = dener_;
+      for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];	
+      for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	
+      for (unsigned dd = 0; dd < deatom.size(); ++dd) deatom[dd] = deatom_[dd];	
+      for (unsigned dd = 0; dd < dvatom.size(); ++dd) dvatom[dd] = dvatom_[dd];	
+      all_force.resize(all_force_.size());
+      for (unsigned ii = 0; ii < all_force_.size(); ++ii){
+	all_force[ii].resize(all_force_[ii].size());
+	for (unsigned jj = 0; jj < all_force_[ii].size(); ++jj){
+	  all_force[ii][jj] = all_force_[ii][jj];
+	}
+      }
+#endif
       if (eflag_atom) {
 	for (int ii = 0; ii < nlocal; ++ii) eatom[ii] += deatom[ii];
       }
@@ -160,10 +227,23 @@ void PairNNP::compute(int eflag, int vflag)
 	if (newton_pair) {
 	  comm->reverse_comm_pair(this);
 	}
-	vector<double> tmp_avg_f;
 	vector<double> std_f;
+#ifdef HIGH_PREC
+	vector<double> tmp_avg_f;
 	nnp_inter_model_devi.compute_avg (tmp_avg_f, all_force);  
 	nnp_inter_model_devi.compute_std_f (std_f, tmp_avg_f, all_force);
+#else 
+	vector<float> tmp_avg_f_, std_f_;
+	for (unsigned ii = 0; ii < all_force_.size(); ++ii){
+	  for (unsigned jj = 0; jj < all_force_[ii].size(); ++jj){
+	    all_force_[ii][jj] = all_force[ii][jj];
+	  }
+	}
+	nnp_inter_model_devi.compute_avg (tmp_avg_f_, all_force_);  
+	nnp_inter_model_devi.compute_std_f (std_f_, tmp_avg_f_, all_force_);
+	std_f.resize(std_f_.size());
+	for (int dd = 0; dd < std_f_.size(); ++dd) std_f[dd] = std_f_[dd];
+#endif
 	double min = 0, max = 0, avg = 0;
 	ana_st(max, min, avg, std_f, nlocal);
 	int all_nlocal = 0;
@@ -174,10 +254,18 @@ void PairNNP::compute(int eflag, int vflag)
 	MPI_Reduce (&avg, &all_f_avg, 1, MPI_DOUBLE, MPI_SUM, 0, world);
 	all_f_avg /= double(all_nlocal);
 	// std energy
-	vector<double > tmp_avg_e;
 	vector<double > std_e;
+#ifdef HIGH_PREC
+	vector<double > tmp_avg_e;
 	nnp_inter_model_devi.compute_avg (tmp_avg_e, all_atom_energy);
 	nnp_inter_model_devi.compute_std_e (std_e, tmp_avg_e, all_atom_energy);
+#else 
+	vector<float> tmp_avg_e_, std_e_;
+	nnp_inter_model_devi.compute_avg (tmp_avg_e_, all_atom_energy_);
+	nnp_inter_model_devi.compute_std_e (std_e_, tmp_avg_e_, all_atom_energy_);
+	std_e.resize(std_e_.size());
+	for (int dd = 0; dd < std_e_.size(); ++dd) std_e[dd] = std_e_[dd];
+#endif	
 	min = max = avg = 0;
 	ana_st(max, min, avg, std_e, nlocal);
 	double all_e_min = 0, all_e_max = 0, all_e_avg = 0;
@@ -209,7 +297,21 @@ void PairNNP::compute(int eflag, int vflag)
   }
   else {
     if (numb_models == 1) {
+#ifdef HIGH_PREC
       nnp_inter.compute (dener, dforce, dvirial, dcoord, dtype, dbox, nghost);
+#else
+      vector<float> dcoord_(dcoord.size());
+      vector<float> dbox_(dbox.size());
+      for (unsigned dd = 0; dd < dcoord.size(); ++dd) dcoord_[dd] = dcoord[dd];
+      for (unsigned dd = 0; dd < dbox.size(); ++dd) dbox_[dd] = dbox[dd];
+      vector<float> dforce_(dforce.size(), 0);
+      vector<float> dvirial_(dvirial.size(), 0);
+      float dener_ = 0;
+      nnp_inter.compute (dener_, dforce_, dvirial_, dcoord_, dtype, dbox_, nghost);
+      for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];	
+      for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	
+      dener = dener_;      
+#endif
     }
     else {
       error->all(FLERR,"Serial version does not support model devi");

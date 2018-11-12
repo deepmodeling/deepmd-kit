@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.0)
 project(DeePMD)
 
+# set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0")
+# set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -O0")
+
 list (APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/)
 list (APPEND CMAKE_CXX_FLAGS "-std=c++11 -Wno-ignored-attributes")
 
@@ -22,14 +25,17 @@ if ((NOT DEFINED CMAKE_BUILD_TYPE) OR CMAKE_BUILD_TYPE STREQUAL "")
 endif ()
 
 # set op prec
-if (DEFINED OP_PREC)
-  string ( TOLOWER ${OP_PREC} lower_op_prec )
-  if (lower_op_prec STREQUAL "high")
-    add_definitions (-DHIGH_PREC)
+if (DEFINED FLOAT_PREC)
+  string ( TOLOWER ${FLOAT_PREC} lower_float_prec )
+  if (lower_float_prec STREQUAL "high")
+    set(PREC_DEF "-DHIGH_PREC")
+  else ()
+    set(PREC_DEF "")    
   endif ()
 else ()
-    add_definitions (-DHIGH_PREC)
+    set(PREC_DEF "-DHIGH_PREC")
 endif()
+add_definitions (${PREC_DEF})
 
 # find openmp
 find_package(OpenMP)
@@ -58,7 +64,7 @@ set (LIB_DEEPMD_IPI	"deepmd_ipi")
 add_subdirectory (lib/)
 add_subdirectory (op/)
 add_subdirectory (train/)
-add_subdirectory (md/)
+# add_subdirectory (md/)
 add_subdirectory (ipi/)
 add_subdirectory (scripts/)
 add_subdirectory (lmp/)

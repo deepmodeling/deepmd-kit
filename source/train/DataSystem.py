@@ -13,7 +13,8 @@ class DataSystem (object) :
                   set_prefix,
                   batch_size,
                   test_size,
-                  rcut) : 
+                  rcut, 
+                  run_opt = None) : 
         self.system_dirs = systems
         self.nsystems = len(self.system_dirs)
         self.batch_size = batch_size
@@ -45,26 +46,28 @@ class DataSystem (object) :
             if chk_ret is not None :
                 raise RuntimeError(" required test size %d is larger than the size %d of the dataset %s" % (test_size, chk_ret[1], chk_ret[0]))
 
-        for ii in range(self.nsystems) :
-            print ("# find system %s :\t %6d atoms\t %10d batches" % 
-                   (self.system_dirs[ii], self.natoms[ii], self.nbatches[ii]) )
-        self.prob_nbatches = self.nbatches / np.sum(self.nbatches)
+        if run_opt is not None:
+            self.print_summary(run_opt)
+
+        self.prob_nbatches = [ float(i) for i in self.nbatches] / np.sum(self.nbatches)
 
         self.test_prop_c = []
         self.test_energy = []
         self.test_force = []
         self.test_virial = []
+        self.test_atom_ener = []
         self.test_coord = []
         self.test_box = []
         self.test_type = []
         self.default_mesh = []
         for ii in range(self.nsystems) :
-            test_prop_c, test_energy, test_force, test_virial, test_coord, test_box, test_type \
+            test_prop_c, test_energy, test_force, test_virial, test_atom_ener, test_coord, test_box, test_type \
                 = self.data_systems[ii].get_test ()
             self.test_prop_c.append(test_prop_c)
             self.test_energy.append(test_energy)
             self.test_force.append(test_force)
             self.test_virial.append(test_virial)
+            self.test_atom_ener.append(test_atom_ener)
             self.test_coord.append(test_coord)
             self.test_box.append(test_box)
             self.test_type.append(test_type)
@@ -81,6 +84,31 @@ class DataSystem (object) :
             default_mesh[5] = ncell[2]
             self.default_mesh.append(default_mesh)
         self.pick_idx = 0
+
+    def format_name_length(self, name, width) :
+        if len(name) <= width:
+            return '{: >{}}'.format(name, width)
+        else :
+            name = name[-(width-3):]
+            name = '-- ' + name
+            return name 
+
+    def print_summary(self, run_opt) :
+        tmp_msg = ""
+        # width 65
+        sys_width = 42
+        tmp_msg += "---Summary of DataSystem-----------------------------------------\n"
+        tmp_msg += "find %d system(s):\n" % self.nsystems
+        tmp_msg += "%s  " % self.format_name_length('system', sys_width)
+        tmp_msg += "%s  %s  %s\n" % ('natoms', 'bch_sz', 'n_bch')
+        for ii in range(self.nsystems) :
+            tmp_msg += ("%s  %6d  %6d  %5d\n" % 
+                        (self.format_name_length(self.system_dirs[ii], sys_width),
+                         self.natoms[ii], 
+                         self.batch_size[ii], 
+                         self.nbatches[ii]) )
+        tmp_msg += "-----------------------------------------------------------------\n"
+        run_opt.message(tmp_msg)
 
     def compute_energy_shift(self) :
         sys_ener = np.array([])
@@ -122,9 +150,14 @@ class DataSystem (object) :
             else :
                 prob = self.process_sys_weights(sys_weights)
             self.pick_idx = np.random.choice(np.arange(self.nsystems), p = prob)
-        b_prop_c, b_energy, b_force, b_virial, b_coord, b_box, b_type \
+        b_prop_c, b_energy, b_force, b_virial, b_atom_ener, b_coord, b_box, b_type \
             = self.data_systems[self.pick_idx].get_batch(self.batch_size[self.pick_idx])
-        return b_prop_c, b_energy, b_force, b_virial, b_coord, b_box, b_type, self.natoms_vec[self.pick_idx], self.default_mesh[self.pick_idx]
+        return \
+            b_prop_c, \
+            b_energy, b_force, b_virial, b_atom_ener, \
+            b_coord, b_box, b_type, \
+            self.natoms_vec[self.pick_idx], \
+            self.default_mesh[self.pick_idx]
 
     def get_test (self, 
                   sys_idx = None) :
@@ -133,7 +166,17 @@ class DataSystem (object) :
         else :
             idx = self.pick_idx
         
-        return self.test_prop_c[idx], self.test_energy[idx], self.test_force[idx], self.test_virial[idx], self.test_coord[idx], self.test_box[idx], self.test_type[idx], self.natoms_vec[idx], self.default_mesh[idx]
+        return \
+            self.test_prop_c[idx], \
+            self.test_energy[idx], \
+            self.test_force[idx], \
+            self.test_virial[idx], \
+            self.test_atom_ener[idx], \
+            self.test_coord[idx], \
+            self.test_box[idx], \
+            self.test_type[idx], \
+            self.natoms_vec[idx], \
+            self.default_mesh[idx]
             
     def get_nbatches (self) : 
         return self.nbatches

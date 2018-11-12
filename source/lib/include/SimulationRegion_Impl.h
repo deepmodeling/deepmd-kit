@@ -82,7 +82,6 @@ inline void
 SimulationRegion<VALUETYPE>::
 affineTransform (const double * affine_map)
 {
-  
   tensorDotVector (boxt+SPACENDIM*0, affine_map, boxt+SPACENDIM*0);
   tensorDotVector (boxt+SPACENDIM*1, affine_map, boxt+SPACENDIM*1);
   tensorDotVector (boxt+SPACENDIM*2, affine_map, boxt+SPACENDIM*2);
@@ -129,7 +128,8 @@ computeShiftVec ()
 	inter_posi[0] = ii;
 	inter_posi[1] = jj;
 	inter_posi[2] = kk;
-	inter2Phys (posi, inter_posi);
+	// inter2Phys (posi, inter_posi);
+	tensorTransDotVector (posi, boxt, inter_posi);
       }
     }
   }
@@ -302,7 +302,7 @@ diffNearestNeighbor (const VALUETYPE x0,
   // diffNearestNeighbor (0, x0, x1, dx);
   // diffNearestNeighbor (1, y0, y1, dy);
   // diffNearestNeighbor (2, z0, z1, dz);
-  double phys [3];
+  VALUETYPE phys [3];
   double inter[3];
   phys[0] = x0 - x1;
   phys[1] = y0 - y1;
@@ -336,7 +336,7 @@ diffNearestNeighbor (const VALUETYPE x0,
   // diffNearestNeighbor (0, x0, x1, dx, shift_x);
   // diffNearestNeighbor (1, y0, y1, dy, shift_y);
   // diffNearestNeighbor (2, z0, z1, dz, shift_z);
-  double phys [3];
+  VALUETYPE phys [3];
   double inter[3];
   phys[0] = x0 - x1;
   phys[1] = y0 - y1;
@@ -370,7 +370,7 @@ diffNearestNeighbor (const VALUETYPE x0,
   // diffNearestNeighbor (0, x0, x1, dx, shift_x);
   // diffNearestNeighbor (1, y0, y1, dy, shift_y);
   // diffNearestNeighbor (2, z0, z1, dz, shift_z);
-  double phys [3];
+  VALUETYPE phys [3];
   double inter[3];
   phys[0] = x0 - x1;
   phys[1] = y0 - y1;
@@ -393,17 +393,21 @@ diffNearestNeighbor (const VALUETYPE x0,
 template <typename VALUETYPE>
 inline void
 SimulationRegion<VALUETYPE>::
-phys2Inter (double * i_v, const double * p_v) const
+phys2Inter (double * i_v, const VALUETYPE * p_v_) const
 {
+  double p_v[3];
+  for (int dd = 0; dd < 3; ++dd) p_v[dd] = p_v_[dd];
   tensorDotVector (i_v, rec_boxt, p_v);
 }
 
 template <typename VALUETYPE>
 inline void
 SimulationRegion<VALUETYPE>::
-inter2Phys (double * p_v, const double * i_v) const
+inter2Phys (VALUETYPE * p_v_, const double * i_v) const
 {
+  double p_v[3];
   tensorTransDotVector (p_v, boxt, i_v);
+  for (int dd = 0; dd < 3; ++dd) p_v_[dd] = p_v[dd];
 }
 
 template <typename VALUETYPE>

@@ -4,5 +4,6 @@
 #include "SimulationRegion_Impl.h"
 
 template class SimulationRegion<double>;
+template class SimulationRegion<float>;
 
 #endif

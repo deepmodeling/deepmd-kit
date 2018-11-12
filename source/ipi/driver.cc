@@ -38,13 +38,13 @@ char *trimwhitespace(char *str)
 }
 
 void 
-normalize_coord (vector<VALUETYPE > & coord,
-		 const SimulationRegion<VALUETYPE > & region)
+normalize_coord (vector<double > & coord,
+		 const SimulationRegion<double > & region)
 {
   int natoms = coord.size() / 3;
 
   for (int ii = 0; ii < natoms; ++ii){
-    VALUETYPE inter[3];
+    double inter[3];
     region.phys2Inter (inter, &coord[3*ii]);
     for (int dd = 0; dd < 3; ++dd){
       inter[dd] -= int(floor(inter[dd]));
@@ -182,7 +182,22 @@ int main(int argc, char * argv[])
       normalize_coord (dcoord, region);
 
       // nnp over writes ener, force and virial
+#ifdef HIGH_PREC
       nnp_inter.compute (dener, dforce_tmp, dvirial, dcoord, dtype, dbox);   
+#else 
+      // model in float prec
+      vector<float> dcoord_(dcoord.size());
+      vector<float> dbox_(dbox.size());
+      for (unsigned dd = 0; dd < dcoord.size(); ++dd) dcoord_[dd] = dcoord[dd];
+      for (unsigned dd = 0; dd < dbox.size(); ++dd) dbox_[dd] = dbox[dd];
+      vector<float> dforce_(dforce.size(), 0);
+      vector<float> dvirial_(dvirial.size(), 0);
+      float dener_ = 0;
+      nnp_inter.compute (dener_, dforce_, dvirial_, dcoord_, dtype, dbox_);   
+      for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce_tmp[dd] = dforce_[dd];	
+      for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	
+      dener = dener_;      
+#endif
       cvt.backward (dforce, dforce_tmp, 3);
       hasdata = true;
     }
