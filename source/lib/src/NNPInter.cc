@@ -293,6 +293,13 @@ run_model (ENERGYTYPE &			dener,
 {
   unsigned nloc = nnpmap.get_type().size();
   unsigned nall = nloc + nghost;
+  if (nloc == 0) {
+    dener = 0;
+    dforce_.clear();
+    dvirial.resize(9);
+    fill(dvirial.begin(), dvirial.end(), 0.0);
+    return;
+  }
 
   std::vector<Tensor> output_tensors;
 
@@ -335,6 +342,15 @@ run_model (ENERGYTYPE &			dener,
 {
   unsigned nloc = nnpmap.get_type().size();
   unsigned nall = nloc + nghost;
+  if (nloc == 0) {
+    dener = 0;
+    dforce_.clear();
+    dvirial.resize(9);
+    fill(dvirial.begin(), dvirial.end(), 0.0);
+    datom_energy_.clear();
+    datom_virial_.clear();    
+    return;
+  }
 
   std::vector<Tensor> output_tensors;
 
