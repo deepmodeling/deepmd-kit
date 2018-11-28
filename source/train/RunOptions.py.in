@@ -20,6 +20,7 @@ else :
     global_float_prec = 'float'
 
 global_install_prefix='@CMAKE_INSTALL_PREFIX@'
+global_git_summ='@GIT_SUMM@'
 global_git_hash='@GIT_HASH@'
 global_git_date='@GIT_DATE@'
 global_git_branch='@GIT_BRANCH@'
@@ -166,6 +167,7 @@ class RunOptions (object) :
         msg = ""
         msg += "---Summary of the training---------------------------------------\n"
         msg += 'installed to:       %s\n' % global_install_prefix
+        msg += 'source :            %s\n' % global_git_summ
         msg += 'source brach:       %s\n' % global_git_branch
         msg += 'source commit:      %s\n' % global_git_hash
         msg += 'source commit at:   %s\n' % global_git_date

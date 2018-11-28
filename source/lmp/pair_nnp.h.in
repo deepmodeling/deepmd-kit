@@ -25,6 +25,7 @@ PairStyle(deepmd,PairNNP)
 #include <iostream>
 #include <fstream>
 
+#define GIT_SUMM @GIT_SUMM@
 #define GIT_HASH @GIT_HASH@
 #define GIT_BRANCH @GIT_BRANCH@
 #define GIT_DATE @GIT_DATE@
@@ -35,16 +36,17 @@ PairStyle(deepmd,PairNNP)
 #endif
 #define DEEPMD_ROOT @CMAKE_INSTALL_PREFIX@
 #define TensorFlow_INCLUDE_DIRS @TensorFlow_INCLUDE_DIRS@
-#define TensorFlow_LIBRARY_PATH @TensorFlow_LIBRARY_PATH@
+#define TensorFlow_LIBRARY @TensorFlow_LIBRARY@
 #define DPMD_CVT_STR(x) #x
 #define DPMD_CVT_ASSTR(X) DPMD_CVT_STR(X)
+#define STR_GIT_SUMM DPMD_CVT_ASSTR(GIT_SUMM)
 #define STR_GIT_HASH DPMD_CVT_ASSTR(GIT_HASH)
 #define STR_GIT_BRANCH DPMD_CVT_ASSTR(GIT_BRANCH)
 #define STR_GIT_DATE DPMD_CVT_ASSTR(GIT_DATE)
 #define STR_FLOAT_PREC DPMD_CVT_ASSTR(FLOAT_PREC)
 #define STR_DEEPMD_ROOT DPMD_CVT_ASSTR(DEEPMD_ROOT)
 #define STR_TensorFlow_INCLUDE_DIRS DPMD_CVT_ASSTR(TensorFlow_INCLUDE_DIRS)
-#define STR_TensorFlow_LIBRARY_PATH DPMD_CVT_ASSTR(TensorFlow_LIBRARY_PATH)
+#define STR_TensorFlow_LIBRARY DPMD_CVT_ASSTR(TensorFlow_LIBRARY)
 
 namespace LAMMPS_NS {
 
@@ -55,7 +57,7 @@ class PairNNP : public Pair {
   virtual void compute(int, int);
   virtual void *extract(const char *, int &);
   void settings(int, char **);
-  void coeff(int, char **);
+  virtual void coeff(int, char **);
   void init_style();
   double init_one(int i, int j);
   int pack_reverse_comm(int, int, double *);
@@ -64,6 +66,7 @@ class PairNNP : public Pair {
 
  protected:  
   virtual void allocate();
+  double **scale;
 
 private:  
   NNPInter nnp_inter;

@@ -968,7 +968,7 @@ void compute_descriptor_norot (vector<double > &			descrpt_a,
       double inr4 = inr2 * inr2;
       double inr3 = inr4 * nr;
       double sw, dsw;
-      cos_switch(sw, dsw, nr, rmin, rmax);
+      spline5_switch(sw, dsw, nr, rmin, rmax);
       int idx_deriv = nei_iter * 4 * 3;	// 4 components time 3 directions
       int idx_value = nei_iter * 4;	// 4 components
       // 4 value components

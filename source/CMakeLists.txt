@@ -4,6 +4,12 @@ project(DeePMD)
 find_package(Git)
 if(GIT_FOUND)
   execute_process(
+    COMMAND git describe --tags --dirty
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_SUMM
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+  execute_process(
     COMMAND git log -1 --format=%h
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     OUTPUT_VARIABLE GIT_HASH

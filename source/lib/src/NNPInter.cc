@@ -293,6 +293,13 @@ run_model (ENERGYTYPE &			dener,
 {
   unsigned nloc = nnpmap.get_type().size();
   unsigned nall = nloc + nghost;
+  if (nloc == 0) {
+    dener = 0;
+    dforce_.clear();
+    dvirial.resize(9);
+    fill(dvirial.begin(), dvirial.end(), 0.0);
+    return;
+  }
 
   std::vector<Tensor> output_tensors;
 
@@ -335,6 +342,15 @@ run_model (ENERGYTYPE &			dener,
 {
   unsigned nloc = nnpmap.get_type().size();
   unsigned nall = nloc + nghost;
+  if (nloc == 0) {
+    dener = 0;
+    dforce_.clear();
+    dvirial.resize(9);
+    fill(dvirial.begin(), dvirial.end(), 0.0);
+    datom_energy_.clear();
+    datom_virial_.clear();    
+    return;
+  }
 
   std::vector<Tensor> output_tensors;
 
@@ -418,12 +434,13 @@ NNPInter::
 print_summary(const string &pre) const
 {
   cout << pre << "installed to:       " + global_install_prefix << endl;
+  cout << pre << "source:             " + global_git_summ << endl;
   cout << pre << "source brach:       " + global_git_branch << endl;
   cout << pre << "source commit:      " + global_git_hash << endl;
   cout << pre << "source commit at:   " + global_git_date << endl;
   cout << pre << "build float prec:   " + global_float_prec << endl;
   cout << pre << "build with tf inc:  " + global_tf_include_dir << endl;
-  cout << pre << "build with tf lib:  " + global_tf_lib_dir << endl;
+  cout << pre << "build with tf lib:  " + global_tf_lib << endl;
 }
 
 

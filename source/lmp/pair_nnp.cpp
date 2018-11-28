@@ -45,6 +45,7 @@ PairNNP::PairNNP(LAMMPS *lmp)
   cutoff = 0.;
   numb_models = 0;
   out_freq = 0;
+  scale = NULL;
 
   // set comm size needed by this Pair
   comm_reverse = 1;
@@ -61,12 +62,13 @@ PairNNP::print_summary(const string pre) const
     nnp_inter.print_summary(pre);
     cout << pre << ">>> Info of lammps module:" << endl;
     cout << pre << "use deepmd-kit at:  " << STR_DEEPMD_ROOT << endl;
+    cout << pre << "source:             " << STR_GIT_SUMM << endl;
     cout << pre << "source branch:      " << STR_GIT_BRANCH << endl;
     cout << pre << "source commit:      " << STR_GIT_HASH << endl;
     cout << pre << "source commit at:   " << STR_GIT_DATE << endl;
     cout << pre << "build float prec:   " << STR_FLOAT_PREC << endl;
     cout << pre << "build with tf inc:  " << STR_TensorFlow_INCLUDE_DIRS << endl;
-    cout << pre << "build with tf lib:  " << STR_TensorFlow_LIBRARY_PATH << endl;
+    cout << pre << "build with tf lib:  " << STR_TensorFlow_LIBRARY << endl;
   }
 }
 
@@ -76,6 +78,7 @@ PairNNP::~PairNNP()
   if (allocated) {
     memory->destroy(setflag);
     memory->destroy(cutsq);
+    memory->destroy(scale);
   }
 }
 
@@ -342,19 +345,19 @@ void PairNNP::compute(int eflag, int vflag)
   // get force
   for (int ii = 0; ii < nall; ++ii){
     for (int dd = 0; dd < 3; ++dd){
-      f[ii][dd] += dforce[3*ii+dd];
+      f[ii][dd] += scale[1][1] * dforce[3*ii+dd];
     }
   }
   
   // accumulate energy and virial
-  if (eflag) eng_vdwl += dener;
+  if (eflag) eng_vdwl += scale[1][1] * dener;
   if (vflag) {
-    virial[0] += 1.0 * dvirial[0];
-    virial[1] += 1.0 * dvirial[4];
-    virial[2] += 1.0 * dvirial[8];
-    virial[3] += 1.0 * dvirial[3];
-    virial[4] += 1.0 * dvirial[6];
-    virial[5] += 1.0 * dvirial[7];
+    virial[0] += 1.0 * dvirial[0] * scale[1][1];
+    virial[1] += 1.0 * dvirial[4] * scale[1][1];
+    virial[2] += 1.0 * dvirial[8] * scale[1][1];
+    virial[3] += 1.0 * dvirial[3] * scale[1][1];
+    virial[4] += 1.0 * dvirial[6] * scale[1][1];
+    virial[5] += 1.0 * dvirial[7] * scale[1][1];
   }
 }
 
@@ -372,6 +375,7 @@ void PairNNP::allocate()
     setflag[i][i] = 1;
 
   memory->create(cutsq,n+1,n+1,"pair:cutsq");
+  memory->create(scale,n+1,n+1,"pair:scale");
 }
 
 void PairNNP::settings(int narg, char **arg)
@@ -425,6 +429,28 @@ void PairNNP::coeff(int narg, char **arg)
   if (!allocated) {
     allocate();
   }
+
+  int n = atom->ntypes;
+  int ilo,ihi,jlo,jhi;
+  ilo = 0;
+  jlo = 0;
+  ihi = n;
+  jhi = n;
+  if (narg == 2) {
+    force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+    force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
+    if (ilo != 0 || jlo != 0 || ihi != n || jhi != n) {
+      error->all(FLERR,"deepmd requires that the scale should be set to all atom types, i.e. pair_coeff * *.");
+    }
+  }  
+  for (int i = ilo; i <= ihi; i++) {
+    for (int j = MAX(jlo,i); j <= jhi; j++) {
+      if (i == j) {
+        setflag[i][i] = 1;
+      }
+      scale[i][j] = 1.0;
+    }
+  }  
 }
 
 
@@ -439,6 +465,9 @@ void PairNNP::init_style()
 
 double PairNNP::init_one(int i, int j)
 {
+  if (setflag[i][j] == 0) scale[i][j] = 1.0;
+  scale[j][i] = scale[i][j];
+
   return cutoff;
 }
 
@@ -480,7 +509,13 @@ void PairNNP::unpack_reverse_comm(int n, int *list, double *buf)
 
 void *PairNNP::extract(const char *str, int &dim)
 {
-  dim = 0;
-  if (strcmp(str,"cut_coul") == 0) return (void *) &cutoff;
+  if (strcmp(str,"cut_coul") == 0) {
+    dim = 0;
+    return (void *) &cutoff;
+  }
+  if (strcmp(str,"scale") == 0) {
+    dim = 2;
+    return (void *) scale;
+  }
   return NULL;
 }
