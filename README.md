@@ -110,15 +110,10 @@ cd build
 ```
 I assume you want to install DeePMD-kit into path `$deepmd_root`, then execute cmake
 ```bash
-cmake -DXDRFILE_ROOT=$xdrfile_root -DTENSORFLOW_ROOT=$tensorflow_root \
+cmake -DTF_GOOGLE_BIN=true -DTENSORFLOW_ROOT=$tensorflow_root \
 -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
 ```
-If you are using google binary for tensorflow python interface, then you need to specify
-```bash
-cmake -DXDRFILE_ROOT=$xdrfile_root -DTENSORFLOW_ROOT=$tensorflow_root \
--DCMAKE_INSTALL_PREFIX=$deepmd_root -DTF_GOOGLE_BIN=true ..
-```
-If the cmake has executed successfully, then 
+If you built the tensorflow's Python interface by gcc>=5.0, then remove the option `-DTF_GOOGLE_BIN=true`. If the cmake has executed successfully, then 
 ```bash
 make
 make install
