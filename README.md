@@ -121,7 +121,7 @@ make install
 If everything works fine, you will have the following executables installed in `$deepmd_root/bin`
 ```bash
 $ ls $deepmd_root/bin
-dp_frz  dp_ipi  dp_mdnn  dp_test  dp_train
+dp_frz  dp_ipi  dp_test  dp_train
 ```
 
 ### Install LAMMPS's DeePMD-kit module
