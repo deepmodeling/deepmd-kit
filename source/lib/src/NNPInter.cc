@@ -295,7 +295,11 @@ run_model (ENERGYTYPE &			dener,
   unsigned nall = nloc + nghost;
   if (nloc == 0) {
     dener = 0;
-    dforce_.clear();
+    // no backward map needed
+    // dforce of size nall * 3
+    dforce_.resize(nall * 3);
+    fill(dforce_.begin(), dforce_.end(), 0.0);
+    // dvirial of size 9
     dvirial.resize(9);
     fill(dvirial.begin(), dvirial.end(), 0.0);
     return;
@@ -344,11 +348,19 @@ run_model (ENERGYTYPE &			dener,
   unsigned nall = nloc + nghost;
   if (nloc == 0) {
     dener = 0;
-    dforce_.clear();
+    // no backward map needed
+    // dforce of size nall * 3
+    dforce_.resize(nall * 3);
+    fill(dforce_.begin(), dforce_.end(), 0.0);
+    // dvirial of size 9
     dvirial.resize(9);
     fill(dvirial.begin(), dvirial.end(), 0.0);
-    datom_energy_.clear();
-    datom_virial_.clear();    
+    // datom_energy_ of size nall
+    datom_energy_.resize(nall);
+    fill(datom_energy_.begin(), datom_energy_.end(), 0.0);
+    // datom_virial_ of size nall * 9
+    datom_virial_.resize(nall * 9);
+    fill(datom_virial_.begin(), datom_virial_.end(), 0.0);
     return;
   }
 
