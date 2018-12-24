@@ -408,17 +408,44 @@ run_model (ENERGYTYPE &			dener,
   nnpmap.backward (datom_virial_.begin(), datom_virial.begin(), 9);
 }
 
+static void
+get_env_nthreads(int & num_intra_nthreads,
+		 int & num_inter_nthreads)
+{
+  num_intra_nthreads = 0;
+  num_inter_nthreads = 0;
+  const char* env_intra_nthreads = std::getenv("OMP_NUM_THREADS");
+  const char* env_inter_nthreads = std::getenv("TF_INTER_OP_PARALLELISM_THREADS");
+  if (env_intra_nthreads && 
+      string(env_intra_nthreads) != string("") && 
+      atoi(env_intra_nthreads) >= 0
+      ) {
+    num_intra_nthreads = atoi(env_intra_nthreads);
+  }
+  if (env_inter_nthreads && 
+      string(env_inter_nthreads) != string("") &&
+      atoi(env_inter_nthreads) >= 0
+      ) {
+    num_inter_nthreads = atoi(env_inter_nthreads);
+  }
+}
+
 
 NNPInter::
 NNPInter ()
     : inited (false)
 {
+  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
 }
 
 NNPInter::
 NNPInter (const string & model)
 {
-  checkStatus (NewSession(SessionOptions(), &session));
+  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
+  SessionOptions options;
+  options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
+  options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
+  checkStatus (NewSession(options, &session));
   checkStatus (ReadBinaryProto(Env::Default(), model, &graph_def));
   checkStatus (session->Create(graph_def));  
   rcut = get_rcut();
@@ -432,7 +459,10 @@ NNPInter::
 init (const string & model)
 {
   assert (!inited);
-  checkStatus (NewSession(SessionOptions(), &session));
+  SessionOptions options;
+  options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
+  options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
+  checkStatus (NewSession(options, &session));
   checkStatus (ReadBinaryProto(Env::Default(), model, &graph_def));
   checkStatus (session->Create(graph_def));  
   rcut = get_rcut();
@@ -453,6 +483,8 @@ print_summary(const string &pre) const
   cout << pre << "build float prec:   " + global_float_prec << endl;
   cout << pre << "build with tf inc:  " + global_tf_include_dir << endl;
   cout << pre << "build with tf lib:  " + global_tf_lib << endl;
+  cout << pre << "set tf intra_op_parallelism_threads: " <<  num_intra_nthreads << endl;
+  cout << pre << "set tf inter_op_parallelism_threads: " <<  num_inter_nthreads << endl;
 }
 
 
@@ -592,16 +624,21 @@ NNPInterModelDevi ()
     : inited (false), 
       numb_models (0)
 {
+  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
 }
 
 NNPInterModelDevi::
 NNPInterModelDevi (const vector<string> & models)
 {
+  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   numb_models = models.size();
   sessions.resize(numb_models);
   graph_defs.resize(numb_models);
+  SessionOptions options;
+  options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
+  options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
   for (unsigned ii = 0; ii < numb_models; ++ii){
-    checkStatus (NewSession(SessionOptions(), &(sessions[ii])));
+    checkStatus (NewSession(options, &(sessions[ii])));
     checkStatus (ReadBinaryProto(Env::Default(), models[ii], &graph_defs[ii]));
     checkStatus (sessions[ii]->Create(graph_defs[ii]));
   }
@@ -619,8 +656,11 @@ init (const vector<string> & models)
   numb_models = models.size();
   sessions.resize(numb_models);
   graph_defs.resize(numb_models);
+  SessionOptions options;
+  options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
+  options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
   for (unsigned ii = 0; ii < numb_models; ++ii){
-    checkStatus (NewSession(SessionOptions(), &(sessions[ii])));
+    checkStatus (NewSession(options, &(sessions[ii])));
     checkStatus (ReadBinaryProto(Env::Default(), models[ii], &graph_defs[ii]));
     checkStatus (sessions[ii]->Create(graph_defs[ii]));
   }

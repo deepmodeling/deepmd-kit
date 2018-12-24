@@ -93,6 +93,7 @@ public:
   VALUETYPE cutoff () const {return rcut;};
 private:
   Session* session;
+  int num_intra_nthreads, num_inter_nthreads;
   GraphDef graph_def;
   bool inited;
   VALUETYPE get_rcut () const;
@@ -152,6 +153,7 @@ public:
 private:
   unsigned numb_models;
   vector<Session*> sessions;
+  int num_intra_nthreads, num_inter_nthreads;
   vector<GraphDef> graph_defs;
   bool inited;
   VALUETYPE get_rcut () const;
