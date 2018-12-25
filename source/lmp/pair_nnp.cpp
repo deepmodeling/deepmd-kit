@@ -439,7 +439,7 @@ void PairNNP::coeff(int narg, char **arg)
   if (narg == 2) {
     force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
     force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
-    if (ilo != 0 || jlo != 0 || ihi != n || jhi != n) {
+    if (ilo != 1 || jlo != 1 || ihi != n || jhi != n) {
       error->all(FLERR,"deepmd requires that the scale should be set to all atom types, i.e. pair_coeff * *.");
     }
   }  
