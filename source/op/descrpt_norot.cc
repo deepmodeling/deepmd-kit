@@ -73,6 +73,7 @@ public:
     nnei_r = sec_r.back();
     nnei = nnei_a + nnei_r;
     fill_nei_a = (rcut_a < 0);
+    count_nei_idx_overflow = 0;
   }
 
   void Compute(OpKernelContext* context) override {
@@ -274,8 +275,11 @@ public:
 	int ret = -1;
 	if (fill_nei_a){
 	  if ((ret = format_nlist_fill_a (fmt_nlist_a, fmt_nlist_r, d_coord3, ntypes, d_type, region, b_pbc, ii, d_nlist_a[ii], d_nlist_r[ii], rcut_r, sec_a, sec_r)) != -1){
-	    cout << "Radial neighbor list length of type " << ret << " is not enough" << endl;
-	    exit(1);
+	    if (count_nei_idx_overflow == 0) {
+	      cout << "WARNING: Radial neighbor list length of type " << ret << " is not enough" << endl;
+	      flush(cout);
+	      count_nei_idx_overflow ++;
+	    }
 	  }
 	}
 
@@ -335,6 +339,7 @@ private:
   int ndescrpt, ndescrpt_a, ndescrpt_r;
   int nnei, nnei_a, nnei_r;
   bool fill_nei_a;
+  int count_nei_idx_overflow;
   void 
   cum_sum (vector<int> & sec,
 	   const vector<int32> & n_sel) const {

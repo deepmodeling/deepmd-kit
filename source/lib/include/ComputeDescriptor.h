@@ -335,21 +335,25 @@ int format_nlist_fill_a (vector<int > &				fmt_nei_idx_a,
   sort (sel_nei.begin(), sel_nei.end());  
   
   vector<int > nei_iter = sec_a;
+  int overflowed = -1;
   for (unsigned kk = 0; kk < sel_nei.size(); ++kk){
     const int & nei_type = sel_nei[kk].type;
     if (nei_iter[nei_type] >= sec_a[nei_type+1]) {
       int r_idx_iter = (nei_iter[nei_type] ++) - sec_a[nei_type+1] + sec_r[nei_type];
       if (r_idx_iter >= sec_r[nei_type+1]) {
-	return nei_type;
+	// return nei_type;
+	overflowed = nei_type;
       }
-      fmt_nei_idx_r[r_idx_iter] = sel_nei[kk].index;
+      else {
+	fmt_nei_idx_r[r_idx_iter] = sel_nei[kk].index;
+      }
     }
     else {
       fmt_nei_idx_a[nei_iter[nei_type] ++] = sel_nei[kk].index;
     }
   }
   
-  return -1;
+  return overflowed;
 }
 
 

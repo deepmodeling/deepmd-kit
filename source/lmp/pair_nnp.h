@@ -34,7 +34,7 @@ class PairNNP : public Pair {
   virtual void compute(int, int);
   virtual void *extract(const char *, int &);
   void settings(int, char **);
-  void coeff(int, char **);
+  virtual void coeff(int, char **);
   void init_style();
   double init_one(int i, int j);
   int pack_reverse_comm(int, int, double *);
@@ -42,6 +42,7 @@ class PairNNP : public Pair {
 
  protected:  
   virtual void allocate();
+  double **scale;
 
 private:  
   NNPInter nnp_inter;
