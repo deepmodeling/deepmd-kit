@@ -90,7 +90,8 @@ public:
 		const vector<VALUETYPE> &	box, 
 		const int			nghost, 
 		const LammpsNeighborList &	lmp_list);
-  VALUETYPE cutoff () const {return rcut;};
+  VALUETYPE cutoff () const {assert(inited); return rcut;};
+  int numb_types () const {assert(inited); return ntypes;};
 private:
   Session* session;
   int num_intra_nthreads, num_inter_nthreads;
@@ -135,7 +136,8 @@ public:
 		const vector<VALUETYPE> &	box,
 		const int			nghost,
 		const LammpsNeighborList &	lmp_list);
-  VALUETYPE cutoff () const {return rcut;};
+  VALUETYPE cutoff () const {assert(inited); return rcut;};
+  int numb_types () const {assert(inited); return ntypes;};
 #ifndef HIGH_PREC
   void compute_avg (ENERGYTYPE &		dener,
 		    const vector<ENERGYTYPE > &	all_energy);

@@ -43,6 +43,7 @@ PairNNP::PairNNP(LAMMPS *lmp)
   respa_enable = 0;
   writedata = 0;
   cutoff = 0.;
+  numb_types = 0;
   numb_models = 0;
   out_freq = 0;
   scale = NULL;
@@ -368,14 +369,23 @@ void PairNNP::allocate()
   int n = atom->ntypes;
 
   memory->create(setflag,n+1,n+1,"pair:setflag");
-  for (int i = 1; i <= n; i++)
-    for (int j = i; j <= n; j++)
-      setflag[i][j] = 0;
-  for (int i = 1; i <= n; i++)
-    setflag[i][i] = 1;
-
   memory->create(cutsq,n+1,n+1,"pair:cutsq");
   memory->create(scale,n+1,n+1,"pair:scale");
+
+  for (int i = 1; i <= n; i++){
+    for (int j = i; j <= n; j++){
+      setflag[i][j] = 0;
+      scale[i][j] = 0;
+    }
+  }
+  for (int i = 1; i <= numb_types; ++i) {
+    if (i > n) continue;
+    for (int j = i; j <= numb_types; ++j) {
+      if (j > n) continue;
+      setflag[i][j] = 1;
+      scale[i][j] = 1;
+    }
+  }
 }
 
 void PairNNP::settings(int narg, char **arg)
@@ -385,6 +395,7 @@ void PairNNP::settings(int narg, char **arg)
   if (narg == 1) {
     nnp_inter.init (arg[0]);
     cutoff = nnp_inter.cutoff ();
+    numb_types = nnp_inter.numb_types();
     numb_models = 1;
   }
   else {
@@ -401,6 +412,7 @@ void PairNNP::settings(int narg, char **arg)
 
     nnp_inter_model_devi.init(models);
     cutoff = nnp_inter_model_devi.cutoff();
+    numb_types = nnp_inter_model_devi.numb_types();
     numb_models = models.size();
     if (comm->me == 0){
       fp.open (out_file);
@@ -416,6 +428,24 @@ void PairNNP::settings(int narg, char **arg)
 	 << endl;
     }
   }  
+  
+  if (comm->me == 0){
+    string pre = "  ";
+    cout << pre << ">>> Info of model(s):" << endl
+	 << pre << "using " << setw(3) << numb_models << " model(s): ";
+    if (narg == 1) {
+      cout << arg[0] << " ";
+    }
+    else {
+      for (int ii = 0; ii < narg-2; ++ii){
+	cout << arg[ii] << " ";
+      }
+    }
+    cout << endl
+	 << pre << "rcut in model:      " << cutoff << endl
+	 << pre << "ntypes in model:    " << numb_types << endl;
+  }
+  
   comm_reverse = numb_models * 3;
   all_force.resize(numb_models);
 }
@@ -445,12 +475,15 @@ void PairNNP::coeff(int narg, char **arg)
   }  
   for (int i = ilo; i <= ihi; i++) {
     for (int j = MAX(jlo,i); j <= jhi; j++) {
-      if (i == j) {
-        setflag[i][i] = 1;
-      }
+      setflag[i][j] = 1;
       scale[i][j] = 1.0;
+      if (i > numb_types || j > numb_types) {
+	char warning_msg[1024];
+	sprintf(warning_msg, "Interaction between types %d and %d is set with deepmd, but will be ignored.\n Deepmd model has only %d types, it only computes the mulitbody interaction of types: 1-%d.", i, j, numb_types, numb_types);
+	error->warning(FLERR, warning_msg);
+      }
     }
-  }  
+  }
 }
 
 
@@ -465,6 +498,12 @@ void PairNNP::init_style()
 
 double PairNNP::init_one(int i, int j)
 {
+  if (i > numb_types || j > numb_types) {
+    char warning_msg[1024];
+    sprintf(warning_msg, "Interaction between types %d and %d is set with deepmd, but will be ignored.\n Deepmd model has only %d types, it only computes the mulitbody interaction of types: 1-%d.", i, j, numb_types, numb_types);
+    error->warning(FLERR, warning_msg);
+  }
+
   if (setflag[i][j] == 0) scale[i][j] = 1.0;
   scale[j][i] = scale[i][j];
 
