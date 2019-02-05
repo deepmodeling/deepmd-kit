@@ -28,9 +28,8 @@ export PATH=`pwd`/output:$PATH
 Firstly get the source code of the tensorflow
 ```bash
 cd /some/workspace
-git clone https://github.com/tensorflow/tensorflow tensorflow
+git clone https://github.com/tensorflow/tensorflow tensorflow -b v1.12.0 --depth=1
 cd tensorflow
-git checkout v1.12.0
 ```
 
 DeePMD-kit is compiled by cmake, so we need to compile and integrate tensorflow with cmake projects. The rest of this section basically follows [the instruction provided by Tuatini](http://tuatini.me/building-tensorflow-as-a-standalone-project/). Now execute
