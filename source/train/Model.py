@@ -26,7 +26,10 @@ import deepmd._prod_force_grad
 import deepmd._prod_virial_grad
 import deepmd._prod_force_norot_grad
 import deepmd._prod_virial_norot_grad
+import deepmd._soft_min_force_grad
+import deepmd._soft_min_virial_grad
 from deepmd.RunOptions import RunOptions
+from deepmd.TabInter import TabInter
 
 def j_must_have (jdata, key) :
     if not key in jdata.keys() :
@@ -144,6 +147,14 @@ class NNPModel (object):
         self.numb_test = j_must_have (jdata, 'numb_test')
         self.useBN = False
 
+        if 'use_srtab' in jdata :
+            self.srtab = TabInter(jdata['use_srtab'])
+            self.smin_alpha = j_must_have(jdata, 'smin_alpha')
+            self.sw_rmin = j_must_have(jdata, 'sw_rmin')
+            self.sw_rmax = j_must_have(jdata, 'sw_rmax')
+        else :
+            self.srtab = None
+
         self.start_pref_e = j_must_have (jdata, 'start_pref_e')
         self.limit_pref_e = j_must_have (jdata, 'limit_pref_e')
         self.start_pref_f = j_must_have (jdata, 'start_pref_f')
@@ -197,11 +208,22 @@ class NNPModel (object):
 
         self.batch_size = data.get_batch_size()
 
+        self.numb_fparam = data.numb_fparam()
+        if self.numb_fparam > 0 :
+            self._message("training with %d frame parameter(s)" % self.numb_fparam)
+        elif self.numb_fparam < 0 :
+            self._message("training without frame parameter")
+        else :
+            raise RuntimeError("number of frame parameter == 0")
+
+        t_tmap = tf.constant(' '.join(data.get_type_map()), name = 't_tmap', dtype = tf.string)
+
         davg, dstd, bias_e = self._data_stat(data)
 
         worker_device = "/job:%s/task:%d/%s" % (self.run_opt.my_job_name,
                                                 self.run_opt.my_task_index,
                                                 self.run_opt.my_device)
+
         with tf.device(tf.train.replica_device_setter(worker_device = worker_device,
                                                       cluster = self.run_opt.cluster_spec)):
             self._build_lr(lr)
@@ -217,7 +239,7 @@ class NNPModel (object):
         for ii in range(data.get_nsystems()) :
             stat_prop_c, \
                 stat_energy, stat_force, stat_virial, start_atom_ener, \
-                stat_coord, stat_box, stat_type, natoms_vec, default_mesh \
+                stat_coord, stat_box, stat_type, stat_fparam, natoms_vec, default_mesh \
                 = data.get_batch (sys_idx = ii)
             natoms_vec = natoms_vec.astype(np.int32)            
             all_stat_coord.append(stat_coord)
@@ -266,6 +288,20 @@ class NNPModel (object):
 
         t_rcut = tf.constant(np.max([self.rcut_r, self.rcut_a]), name = 't_rcut', dtype = global_tf_float_precision)
         t_ntypes = tf.constant(self.ntypes, name = 't_ntypes', dtype = tf.int32)
+        t_dfparam = tf.constant(self.numb_fparam, name = 't_dfparam', dtype = tf.int32)
+
+        if self.srtab is not None :
+            tab_info, tab_data = self.srtab.get()
+            self.tab_info = tf.get_variable('t_tab_info',
+                                            tab_info.shape,
+                                            dtype = tf.float64,
+                                            trainable = False,
+                                            initializer = tf.constant_initializer(tab_info, dtype = tf.float64))
+            self.tab_data = tf.get_variable('t_tab_data',
+                                            tab_data.shape,
+                                            dtype = tf.float64,
+                                            trainable = False,
+                                            initializer = tf.constant_initializer(tab_data, dtype = tf.float64))
 
         self.t_prop_c           = tf.placeholder(tf.float32, [4],    name='t_prop_c')
         self.t_energy           = tf.placeholder(global_ener_float_precision, [None], name='t_energy')
@@ -278,6 +314,10 @@ class NNPModel (object):
         self.t_box              = tf.placeholder(global_tf_float_precision, [None, 9], name='t_box')
         self.t_mesh             = tf.placeholder(tf.int32,   [None], name='t_mesh')
         self.is_training        = tf.placeholder(tf.bool)
+        if self.numb_fparam > 0 :
+            self.t_fparam       = tf.placeholder(global_tf_float_precision, [None], name='t_fparam')
+        else :
+            self.t_fparam       = None
 
         self.batch_size_value = list(set(self.batch_size))
         self.batch_size_value.sort()
@@ -289,7 +329,8 @@ class NNPModel (object):
                                       self.t_type, 
                                       self.t_natoms, 
                                       self.t_box, 
-                                      self.t_mesh, 
+                                      self.t_mesh,
+                                      self.t_fparam,
                                       bias_atom_e = bias_atom_e, 
                                       suffix = "test", 
                                       reuse = False)
@@ -300,6 +341,7 @@ class NNPModel (object):
                                       self.t_natoms, 
                                       self.t_box, 
                                       self.t_mesh, 
+                                      self.t_fparam,
                                       bias_atom_e = bias_atom_e, 
                                       suffix = "train_test", 
                                       reuse = True)
@@ -315,6 +357,7 @@ class NNPModel (object):
                                           self.t_natoms, 
                                           self.t_box, 
                                           self.t_mesh, 
+                                          self.t_fparam,
                                           bias_atom_e = bias_atom_e, 
                                           suffix = "train_batch_" + str(self.batch_size_value[ii]), 
                                           reuse = True)
@@ -478,7 +521,7 @@ class NNPModel (object):
         while cur_batch < stop_batch :
             batch_prop_c, \
                 batch_energy, batch_force, batch_virial, batch_atom_ener, \
-                batch_coord, batch_box, batch_type, \
+                batch_coord, batch_box, batch_type, batch_fparam, \
                 natoms_vec, \
                 default_mesh \
                 = data.get_batch (sys_weights = self.sys_weights)
@@ -495,6 +538,8 @@ class NNPModel (object):
                                self.t_natoms:        natoms_vec,
                                self.t_mesh:          default_mesh,
                                self.is_training:     True}
+            if self.numb_fparam > 0 :
+                feed_dict_batch[self.t_fparam] = np.reshape(batch_fparam, [-1])
             if self.display_in_training and cur_batch == 0 :
                 self.test_on_the_fly(fp, data, feed_dict_batch, cur_bs_idx)
             if self.timing_in_training : tic = time.time()
@@ -553,7 +598,7 @@ class NNPModel (object):
                          ii) :
         test_prop_c, \
             test_energy, test_force, test_virial, test_atom_ener, \
-            test_coord, test_box, test_type, \
+            test_coord, test_box, test_type, test_fparam, \
             natoms_vec, \
             default_mesh \
             = data.get_test ()
@@ -568,6 +613,8 @@ class NNPModel (object):
                           self.t_natoms:        natoms_vec,
                           self.t_mesh:          default_mesh,
                           self.is_training:     False}
+        if self.numb_fparam > 0 :
+            feed_dict_test[self.t_fparam] = np.reshape(test_fparam  [:self.numb_test, :], [-1])
         error_test, error_e_test, error_f_test, error_v_test, error_ae_test \
             = self.sess.run([self.l2_l_tst, \
                              self.l2_el_tst, \
@@ -603,7 +650,7 @@ class NNPModel (object):
     def compute_dstats_sys_smth (self,
                                  data_coord, 
                                  data_box, 
-                                 data_atype, 
+                                 data_atype,                             
                                  natoms_vec,
                                  mesh,
                                  reuse = None) :    
@@ -847,7 +894,8 @@ class NNPModel (object):
                            natoms,
                            box, 
                            mesh,
-                           suffix, 
+                           fparam,
+                           suffix = 'inter', 
                            bias_atom_e = None,
                            reuse = None):        
         coord = tf.reshape (coord_, [-1, natoms[1] * 3])
@@ -884,9 +932,41 @@ class NNPModel (object):
 
         descrpt_reshape = tf.reshape(descrpt, [-1, self.ndescrpt])
         
-        atom_ener = self.build_atom_net (nframes, descrpt_reshape, natoms, bias_atom_e = bias_atom_e, reuse = reuse)
+        atom_ener = self.build_atom_net (nframes, descrpt_reshape, fparam, natoms, bias_atom_e = bias_atom_e, reuse = reuse)
 
-        energy_raw = tf.reshape(atom_ener, [-1, natoms[0]], name = 'atom_energy_'+suffix)
+        if self.srtab is not None :
+            sw_lambda, sw_deriv \
+                = op_module.soft_min_switch(atype, 
+                                            rij, 
+                                            nlist,
+                                            natoms,
+                                            sel_a = self.sel_a,
+                                            sel_r = self.sel_r,
+                                            alpha = self.smin_alpha,
+                                            rmin = self.sw_rmin,
+                                            rmax = self.sw_rmax)            
+            inv_sw_lambda = 1.0 - sw_lambda
+            # NOTICE:
+            # atom energy is not scaled, 
+            # force and virial are scaled
+            tab_atom_ener, tab_force, tab_atom_virial \
+                = op_module.tab_inter(self.tab_info,
+                                      self.tab_data,
+                                      atype,
+                                      rij,
+                                      nlist,
+                                      natoms,
+                                      sw_lambda,
+                                      sel_a = self.sel_a,
+                                      sel_r = self.sel_r)
+            energy_diff = tab_atom_ener - tf.reshape(atom_ener, [-1, natoms[0]])
+            tab_atom_ener = tf.reshape(sw_lambda, [-1]) * tf.reshape(tab_atom_ener, [-1])
+            atom_ener = tf.reshape(inv_sw_lambda, [-1]) * atom_ener
+            energy_raw = tab_atom_ener + atom_ener
+        else :
+            energy_raw = atom_ener
+
+        energy_raw = tf.reshape(energy_raw, [-1, natoms[0]], name = 'atom_energy_'+suffix)
         energy = tf.reduce_sum(global_cvt_2_ener_float(energy_raw), axis=1, name='energy_'+suffix)
 
         net_deriv_tmp = tf.gradients (atom_ener, descrpt_reshape)
@@ -908,6 +988,16 @@ class NNPModel (object):
                                           natoms,
                                           n_a_sel = self.nnei_a,
                                           n_r_sel = self.nnei_r)
+        if self.srtab is not None :
+            sw_force \
+                = op_module.soft_min_force(energy_diff, 
+                                           sw_deriv,
+                                           nlist, 
+                                           natoms,
+                                           n_a_sel = self.nnei_a,
+                                           n_r_sel = self.nnei_r)
+            force = force + sw_force + tab_force
+
         force = tf.reshape (force, [-1, 3 * natoms[1]], name = "force_"+suffix)
 
         if self.use_smooth :
@@ -929,6 +1019,19 @@ class NNPModel (object):
                                          natoms,
                                          n_a_sel = self.nnei_a,
                                          n_r_sel = self.nnei_r)
+        if self.srtab is not None :
+            sw_virial, sw_atom_virial \
+                = op_module.soft_min_virial (energy_diff,
+                                             sw_deriv,
+                                             rij,
+                                             nlist,
+                                             natoms,
+                                             n_a_sel = self.nnei_a,
+                                             n_r_sel = self.nnei_r)
+            atom_virial = atom_virial + sw_atom_virial + tab_atom_virial
+            virial = virial + sw_virial \
+                     + tf.reduce_sum(tf.reshape(tab_atom_virial, [-1, natoms[1], 9]), axis = 1)
+
         virial = tf.reshape (virial, [-1, 9], name = "virial_"+suffix)
         atom_virial = tf.reshape (atom_virial, [-1, 9 * natoms[1]], name = "atom_virial_"+suffix)
 
@@ -936,7 +1039,8 @@ class NNPModel (object):
     
     def build_atom_net (self, 
                         nframes,
-                        inputs, 
+                        inputs,
+                        fparam,
                         natoms,
                         bias_atom_e = None,
                         reuse = None) :
@@ -964,12 +1068,22 @@ class NNPModel (object):
                     layer = self._DS_layer_type_ext(inputs_i, name='DS_layer_type_'+str(type_i), natoms=natoms, reuse=reuse, seed = self.seed)
                 else :
                     layer = self._DS_layer(inputs_i, name='DS_layer_type_'+str(type_i), natoms=natoms, reuse=reuse, seed = self.seed)
+                if self.numb_fparam > 0 :
+                    ext_fparam = tf.reshape(fparam, [-1, self.numb_fparam])
+                    ext_fparam = tf.tile(ext_fparam, [1, natoms[0]])
+                    ext_fparam = tf.reshape(ext_fparam, [-1, self.numb_fparam])
+                    layer = tf.concat([layer, ext_fparam], axis = 1)
                 for ii in range(0,len(self.n_neuron)) :
                     if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
                         layer+= self._one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i), reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt)
                     else :
                         layer = self._one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i), reuse=reuse, seed = self.seed)
             else :
+                if self.numb_fparam > 0 :
+                    ext_fparam = tf.reshape(fparam, [-1, self.numb_fparam])
+                    ext_fparam = tf.tile(ext_fparam, [1, natoms[0]])
+                    ext_fparam = tf.reshape(ext_fparam, [-1, self.numb_fparam])
+                    layer = tf.concat([layer, ext_fparam], axis = 1)
                 layer = self._one_layer(inputs_i, self.n_neuron[0], name='layer_0_type_'+str(type_i), reuse=reuse, seed = self.seed)
                 for ii in range(1,len(self.n_neuron)) :
                     layer = self._one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i), reuse=reuse, seed = self.seed)

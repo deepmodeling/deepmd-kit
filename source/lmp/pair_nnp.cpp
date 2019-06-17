@@ -39,6 +39,9 @@ PairNNP::PairNNP(LAMMPS *lmp)
     : Pair(lmp)
       
 {
+  if (strcmp(update->unit_style,"metal") != 0) {
+    error->all(FLERR,"Pair deepmd requires metal unit, please set it by \"units metal\"");
+  }
   pppmflag = 1;
   respa_enable = 0;
   writedata = 0;
@@ -127,12 +130,15 @@ void PairNNP::compute(int eflag, int vflag)
   }
   
   // compute
+  bool single_model = (numb_models == 1);
+  bool multi_models_no_mod_devi = (numb_models > 1 && (out_freq == 0 || update->ntimestep % out_freq != 0));
+  bool multi_models_mod_devi = (numb_models > 1 && (out_freq > 0 && update->ntimestep % out_freq == 0));
   if (do_ghost) {
     LammpsNeighborList lmp_list (list->inum, list->ilist, list->numneigh, list->firstneigh);
-    if (numb_models == 1) {
+    if (single_model || multi_models_no_mod_devi) {
       if ( ! (eflag_atom || vflag_atom) ) {      
 #ifdef HIGH_PREC
-	nnp_inter.compute (dener, dforce, dvirial, dcoord, dtype, dbox, nghost, lmp_list);
+	nnp_inter.compute (dener, dforce, dvirial, dcoord, dtype, dbox, nghost, lmp_list, fparam);
 #else
 	vector<float> dcoord_(dcoord.size());
 	vector<float> dbox_(dbox.size());
@@ -141,7 +147,7 @@ void PairNNP::compute(int eflag, int vflag)
 	vector<float> dforce_(dforce.size(), 0);
 	vector<float> dvirial_(dvirial.size(), 0);
 	double dener_ = 0;
-	nnp_inter.compute (dener_, dforce_, dvirial_, dcoord_, dtype, dbox_, nghost, lmp_list);
+	nnp_inter.compute (dener_, dforce_, dvirial_, dcoord_, dtype, dbox_, nghost, lmp_list, fparam);
 	for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];	
 	for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	
 	dener = dener_;
@@ -152,7 +158,7 @@ void PairNNP::compute(int eflag, int vflag)
 	vector<double > deatom (nall * 1, 0);
 	vector<double > dvatom (nall * 9, 0);
 #ifdef HIGH_PREC
-	nnp_inter.compute (dener, dforce, dvirial, deatom, dvatom, dcoord, dtype, dbox, nghost, lmp_list);
+	nnp_inter.compute (dener, dforce, dvirial, deatom, dvatom, dcoord, dtype, dbox, nghost, lmp_list, fparam);
 #else 
 	vector<float> dcoord_(dcoord.size());
 	vector<float> dbox_(dbox.size());
@@ -163,7 +169,7 @@ void PairNNP::compute(int eflag, int vflag)
 	vector<float> deatom_(dforce.size(), 0);
 	vector<float> dvatom_(dforce.size(), 0);
 	double dener_ = 0;
-	nnp_inter.compute (dener_, dforce_, dvirial_, deatom_, dvatom_, dcoord_, dtype, dbox_, nghost, lmp_list);
+	nnp_inter.compute (dener_, dforce_, dvirial_, deatom_, dvatom_, dcoord_, dtype, dbox_, nghost, lmp_list, fparam);
 	for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];	
 	for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	
 	for (unsigned dd = 0; dd < deatom.size(); ++dd) deatom[dd] = deatom_[dd];	
@@ -185,7 +191,7 @@ void PairNNP::compute(int eflag, int vflag)
 	}
       }
     }
-    else {
+    else if (multi_models_mod_devi) {
       vector<double > deatom (nall * 1, 0);
       vector<double > dvatom (nall * 9, 0);
 #ifdef HIGH_PREC
@@ -193,12 +199,17 @@ void PairNNP::compute(int eflag, int vflag)
       vector<vector<double>> 	all_virial;	       
       vector<vector<double>> 	all_atom_energy;
       vector<vector<double>> 	all_atom_virial;
-      nnp_inter_model_devi.compute(all_energy, all_force, all_virial, all_atom_energy, all_atom_virial, dcoord, dtype, dbox, nghost, lmp_list);
-      nnp_inter_model_devi.compute_avg (dener, all_energy);
-      nnp_inter_model_devi.compute_avg (dforce, all_force);
-      nnp_inter_model_devi.compute_avg (dvirial, all_virial);
-      nnp_inter_model_devi.compute_avg (deatom, all_atom_energy);
-      nnp_inter_model_devi.compute_avg (dvatom, all_atom_virial);
+      nnp_inter_model_devi.compute(all_energy, all_force, all_virial, all_atom_energy, all_atom_virial, dcoord, dtype, dbox, nghost, lmp_list, fparam);
+      // nnp_inter_model_devi.compute_avg (dener, all_energy);
+      // nnp_inter_model_devi.compute_avg (dforce, all_force);
+      // nnp_inter_model_devi.compute_avg (dvirial, all_virial);
+      // nnp_inter_model_devi.compute_avg (deatom, all_atom_energy);
+      // nnp_inter_model_devi.compute_avg (dvatom, all_atom_virial);
+      dener = all_energy[0];
+      dforce = all_force[0];
+      dvirial = all_virial[0];
+      deatom = all_atom_energy[0];
+      dvatom = all_atom_virial[0];
 #else 
       vector<float> dcoord_(dcoord.size());
       vector<float> dbox_(dbox.size());
@@ -214,12 +225,17 @@ void PairNNP::compute(int eflag, int vflag)
       vector<vector<float>> 	all_virial_;	       
       vector<vector<float>> 	all_atom_energy_;
       vector<vector<float>> 	all_atom_virial_;
-      nnp_inter_model_devi.compute(all_energy_, all_force_, all_virial_, all_atom_energy_, all_atom_virial_, dcoord_, dtype, dbox_, nghost, lmp_list);
-      nnp_inter_model_devi.compute_avg (dener_, all_energy_);
-      nnp_inter_model_devi.compute_avg (dforce_, all_force_);
-      nnp_inter_model_devi.compute_avg (dvirial_, all_virial_);
-      nnp_inter_model_devi.compute_avg (deatom_, all_atom_energy_);
-      nnp_inter_model_devi.compute_avg (dvatom_, all_atom_virial_);
+      nnp_inter_model_devi.compute(all_energy_, all_force_, all_virial_, all_atom_energy_, all_atom_virial_, dcoord_, dtype, dbox_, nghost, lmp_list, fparam);
+      // nnp_inter_model_devi.compute_avg (dener_, all_energy_);
+      // nnp_inter_model_devi.compute_avg (dforce_, all_force_);
+      // nnp_inter_model_devi.compute_avg (dvirial_, all_virial_);
+      // nnp_inter_model_devi.compute_avg (deatom_, all_atom_energy_);
+      // nnp_inter_model_devi.compute_avg (dvatom_, all_atom_virial_);
+      dener_ = all_energy_[0];
+      dforce_ = all_force_[0];
+      dvirial_ = all_virial_[0];
+      deatom_ = all_atom_energy_[0];
+      dvatom_ = all_atom_virial_[0];
       dener = dener_;
       for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];	
       for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	
@@ -319,6 +335,9 @@ void PairNNP::compute(int eflag, int vflag)
 	}
       }
     }
+    else {
+      error->all(FLERR,"unknown computational branch");
+    }
   }
   else {
     if (numb_models == 1) {
@@ -388,33 +407,90 @@ void PairNNP::allocate()
   }
 }
 
+
+static bool 
+is_key (const string& input) 
+{
+  vector<string> keys ;
+  keys.push_back("out_freq");
+  keys.push_back("out_file");
+  keys.push_back("fparam");
+
+  for (int ii = 0; ii < keys.size(); ++ii){
+    if (input == keys[ii]) {
+      return true;
+    }
+  }
+  return false;
+}
+
+
 void PairNNP::settings(int narg, char **arg)
 {
   if (narg <= 0) error->all(FLERR,"Illegal pair_style command");
 
-  if (narg == 1) {
+  vector<string> models;
+  int iarg = 0;
+  while (iarg < narg){
+    if (is_key(arg[iarg])) {
+      break;
+    }
+    iarg ++;
+  }
+  for (int ii = 0; ii < iarg; ++ii){
+    models.push_back(arg[ii]);
+  }
+  numb_models = models.size();
+  if (numb_models == 1) {
     nnp_inter.init (arg[0]);
     cutoff = nnp_inter.cutoff ();
     numb_types = nnp_inter.numb_types();
-    numb_models = 1;
+    dim_fparam = nnp_inter.dim_fparam();
   }
   else {
-    if (narg < 4) {
-      error->all(FLERR,"Illegal pair_style command\nusage:\npair_style deepmd model1 model2 [models...] out_freq out_file\n");
-    }    
-    vector<string> models;
-    for (int ii = 0; ii < narg-2; ++ii){
-      models.push_back(arg[ii]);
-    }
-    out_freq = atoi(arg[narg-2]);
-    if (out_freq < 0) error->all(FLERR,"Illegal out_freq, should be >= 0");
-    out_file = string(arg[narg-1]);
-
+    nnp_inter.init (arg[0]);
     nnp_inter_model_devi.init(models);
     cutoff = nnp_inter_model_devi.cutoff();
     numb_types = nnp_inter_model_devi.numb_types();
-    numb_models = models.size();
-    if (comm->me == 0){
+    dim_fparam = nnp_inter_model_devi.dim_fparam();
+    assert(cutoff == nnp_inter.cutoff());
+    assert(numb_types == nnp_inter.numb_types());
+    assert(dim_fparam == nnp_inter.dim_fparam());
+  }
+
+  out_freq = 100;
+  out_file = "model_devi.out";
+  fparam.clear();
+  while (iarg < narg) {
+    if (! is_key(arg[iarg])) {
+      error->all(FLERR,"Illegal pair_style command\nwrong number of parameters\n");
+    }
+    if (string(arg[iarg]) == string("out_freq")) {
+      if (iarg+1 >= narg) error->all(FLERR,"Illegal out_freq, not provided");
+      out_freq = atoi(arg[iarg+1]);
+      iarg += 2;
+    }
+    else if (string(arg[iarg]) == string("out_file")) {
+      if (iarg+1 >= narg) error->all(FLERR,"Illegal out_file, not provided");
+      out_file = string(arg[iarg+1]);	
+      iarg += 2;
+    }
+    else if (string(arg[iarg]) == string("fparam")) {
+      for (int ii = 0; ii < dim_fparam; ++ii){
+	if (iarg+1+ii >= narg || is_key(arg[iarg+1+ii])) {
+	  char tmp[1024];
+	  sprintf(tmp, "Illegal fparam, the dimension should be %d", dim_fparam);		  
+	  error->all(FLERR, tmp);
+	}
+	fparam.push_back(atof(arg[iarg+1+ii]));
+      }
+      iarg += 1 + dim_fparam ;
+    }
+  }
+  if (out_freq < 0) error->all(FLERR,"Illegal out_freq, should be >= 0");  
+  
+  if (comm->me == 0){
+    if (numb_models > 1 && out_freq > 0){
       fp.open (out_file);
       fp << scientific;
       fp << "#"
@@ -427,9 +503,6 @@ void PairNNP::settings(int narg, char **arg)
 	 << setw(18+1) << "avg_devi_f"
 	 << endl;
     }
-  }  
-  
-  if (comm->me == 0){
     string pre = "  ";
     cout << pre << ">>> Info of model(s):" << endl
 	 << pre << "using " << setw(3) << numb_models << " model(s): ";
@@ -437,13 +510,20 @@ void PairNNP::settings(int narg, char **arg)
       cout << arg[0] << " ";
     }
     else {
-      for (int ii = 0; ii < narg-2; ++ii){
-	cout << arg[ii] << " ";
+      for (int ii = 0; ii < models.size(); ++ii){
+      	cout << models[ii] << " ";
       }
     }
     cout << endl
 	 << pre << "rcut in model:      " << cutoff << endl
 	 << pre << "ntypes in model:    " << numb_types << endl;
+    if (dim_fparam > 0) {
+      cout << pre << "using fparam(s):    " ;
+      for (int ii = 0; ii < dim_fparam; ++ii){
+	cout << fparam[ii] << "  " ;
+      }
+      cout << endl;
+    }
   }
   
   comm_reverse = numb_models * 3;

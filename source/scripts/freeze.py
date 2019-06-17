@@ -11,7 +11,7 @@ dir = os.path.dirname(os.path.realpath(__file__))
 from tensorflow.python.framework import ops
 
 # load force module
-module_path = os.path.dirname(os.path.realpath(__file__)) + "/../lib/"
+module_path = os.path.dirname(os.path.realpath(__file__)) + "/../"
 assert (os.path.isfile (module_path  + "deepmd/libop_abi.so" )), "force module does not exist"
 op_module = tf.load_op_library(module_path + "deepmd/libop_abi.so")
 
@@ -21,6 +21,8 @@ import deepmd._prod_force_grad
 import deepmd._prod_virial_grad
 import deepmd._prod_force_norot_grad
 import deepmd._prod_virial_norot_grad
+import deepmd._soft_min_force_grad
+import deepmd._soft_min_virial_grad
 
 def freeze_graph(model_folder, 
                  output, 
@@ -65,17 +67,5 @@ def freeze_graph(model_folder,
         print("%d ops in the final graph." % len(output_graph_def.node))
 
 
-if __name__ == '__main__':
-
-    default_frozen_nodes = "energy_test,force_test,virial_test,atom_energy_test,atom_virial_test,t_rcut,t_ntypes"
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-d", "--folder", type=str, default = ".", 
-                        help="path to checkpoint folder")
-    parser.add_argument("-o", "--output", type=str, default = "frozen_model.pb", 
-                        help="name of graph, will output to the checkpoint folder")
-    parser.add_argument("-n", "--nodes", type=str, default = default_frozen_nodes,
-                        help="the frozen nodes, defaults is " + default_frozen_nodes)
-    args = parser.parse_args()
-
+def freeze (args):
     freeze_graph(args.folder, args.output, args.nodes)

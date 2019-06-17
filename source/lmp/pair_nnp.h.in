@@ -78,6 +78,12 @@ private:
   ofstream fp;
   int out_freq;
   string out_file;
+  int dim_fparam;
+#ifdef HIGH_PREC
+  vector<double > fparam;
+#else
+  vector<float > fparam;
+#endif
 };
 
 }

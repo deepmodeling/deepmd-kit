@@ -32,19 +32,31 @@ class DataSystem (object) :
             sys_all_types = np.loadtxt(os.path.join(ii, "type.raw")).astype(int)
             self.ntypes.append(np.max(sys_all_types) + 1)
         self.sys_ntypes = max(self.ntypes)
+        type_map = []
         for ii in range(self.nsystems) :
             self.natoms.append(self.data_systems[ii].get_natoms())
             self.natoms_vec.append(self.data_systems[ii].get_natoms_vec(self.sys_ntypes).astype(int))
             self.nbatches.append(self.data_systems[ii].get_sys_numb_batch(self.batch_size[ii]))
+            type_map.append(self.data_systems[ii].get_type_map())
+        self.type_map = self.check_type_map_consistency(type_map)
+
+        # check frame parameters
+        has_fparam = [ii.numb_fparam() for ii in self.data_systems]
+        for ii in has_fparam :
+            if ii != has_fparam[0] :
+                raise RuntimeError("if any system has frame parameter, then all systems should have the same number of frame parameter")
+        self.has_fparam = has_fparam[0]
 
         # check the size of data if they satisfy the requirement of batch and test
         for ii in range(self.nsystems) :
             chk_ret = self.data_systems[ii].check_batch_size(self.batch_size[ii])
             if chk_ret is not None :
-                raise RuntimeError(" required batch size %d is larger than the size %d of the dataset %s" % (self.batch_size[ii], chk_ret[1], chk_ret[0]))
+                raise RuntimeError ("system %s required batch size %d is larger than the size %d of the dataset %s" % \
+                                    (self.system_dirs[ii], self.batch_size[ii], chk_ret[1], chk_ret[0]))
             chk_ret = self.data_systems[ii].check_test_size(test_size)
             if chk_ret is not None :
-                raise RuntimeError(" required test size %d is larger than the size %d of the dataset %s" % (test_size, chk_ret[1], chk_ret[0]))
+                print("WARNNING: system %s required test size %d is larger than the size %d of the dataset %s" % \
+                      (self.system_dirs[ii], test_size, chk_ret[1], chk_ret[0]))
 
         if run_opt is not None:
             self.print_summary(run_opt)
@@ -59,9 +71,10 @@ class DataSystem (object) :
         self.test_coord = []
         self.test_box = []
         self.test_type = []
+        self.test_fparam = []
         self.default_mesh = []
         for ii in range(self.nsystems) :
-            test_prop_c, test_energy, test_force, test_virial, test_atom_ener, test_coord, test_box, test_type \
+            test_prop_c, test_energy, test_force, test_virial, test_atom_ener, test_coord, test_box, test_type, test_fparam \
                 = self.data_systems[ii].get_test ()
             self.test_prop_c.append(test_prop_c)
             self.test_energy.append(test_energy)
@@ -71,6 +84,7 @@ class DataSystem (object) :
             self.test_coord.append(test_coord)
             self.test_box.append(test_box)
             self.test_type.append(test_type)
+            self.test_fparam.append(test_fparam)
             ncell = np.ones (3, dtype=np.int32)
             cell_size = np.max (rcut)
             avg_box = np.average (test_box, axis = 0)
@@ -84,6 +98,24 @@ class DataSystem (object) :
             default_mesh[5] = ncell[2]
             self.default_mesh.append(default_mesh)
         self.pick_idx = 0
+
+
+    def check_type_map_consistency(self, type_map_list):
+        ret = []
+        for ii in type_map_list:
+            if ii is not None:
+                min_len = min([len(ii), len(ret)])
+                for idx in range(min_len) :
+                    if ii[idx] != ret[idx] :
+                        raise RuntimeError('inconsistent type map: %s %s' % (str(ret), str(ii)))
+                if len(ii) > len(ret) :
+                    ret = ii
+        return ret
+
+
+    def get_type_map(self):
+        return self.type_map
+
 
     def format_name_length(self, name, width) :
         if len(name) <= width:
@@ -150,12 +182,12 @@ class DataSystem (object) :
             else :
                 prob = self.process_sys_weights(sys_weights)
             self.pick_idx = np.random.choice(np.arange(self.nsystems), p = prob)
-        b_prop_c, b_energy, b_force, b_virial, b_atom_ener, b_coord, b_box, b_type \
+        b_prop_c, b_energy, b_force, b_virial, b_atom_ener, b_coord, b_box, b_type, b_fparam \
             = self.data_systems[self.pick_idx].get_batch(self.batch_size[self.pick_idx])
         return \
             b_prop_c, \
             b_energy, b_force, b_virial, b_atom_ener, \
-            b_coord, b_box, b_type, \
+            b_coord, b_box, b_type, b_fparam, \
             self.natoms_vec[self.pick_idx], \
             self.default_mesh[self.pick_idx]
 
@@ -175,6 +207,7 @@ class DataSystem (object) :
             self.test_coord[idx], \
             self.test_box[idx], \
             self.test_type[idx], \
+            self.test_fparam[idx], \
             self.natoms_vec[idx], \
             self.default_mesh[idx]
             
@@ -192,6 +225,9 @@ class DataSystem (object) :
 
     def get_batch_size(self) :
         return self.batch_size
+
+    def numb_fparam(self) :
+        return self.has_fparam
 
 def _main () :
     sys =  ['/home/wanghan/study/deep.md/results.01/data/mos2/only_raws/20', 
