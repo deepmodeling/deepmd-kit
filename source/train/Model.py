@@ -319,13 +319,8 @@ class NNPModel (object):
         else :
             self.t_fparam       = None
 
-        self.batch_size_value = list(set(self.batch_size))
-        self.batch_size_value.sort()
-        self.numb_batch_size_value = len(self.batch_size_value)
-
-        self.energy_frz, self.force_frz, self.virial_frz, self.atom_ener_frz \
-            = self.build_interaction (1,
-                                      self.t_coord, 
+        self.energy, self.force, self.virial, self.atom_ener \
+            = self.build_interaction (self.t_coord, 
                                       self.t_type, 
                                       self.t_natoms, 
                                       self.t_box, 
@@ -334,70 +329,19 @@ class NNPModel (object):
                                       bias_atom_e = bias_atom_e, 
                                       suffix = "test", 
                                       reuse = False)
-        self.energy_tst, self.force_tst, self.virial_tst, self.atom_ener_tst \
-            = self.build_interaction (self.numb_test,   
-                                      self.t_coord, 
-                                      self.t_type, 
-                                      self.t_natoms, 
-                                      self.t_box, 
-                                      self.t_mesh, 
-                                      self.t_fparam,
-                                      bias_atom_e = bias_atom_e, 
-                                      suffix = "train_test", 
-                                      reuse = True)
-        self.energy_bch = []
-        self.force_bch = []
-        self.virial_bch = []
-        self.atom_ener_bch = []
-        for ii in range(self.numb_batch_size_value) :
-            tmp_energy_bch, tmp_force_bch, tmp_virial_bch, tmp_atom_ener_bch \
-                = self.build_interaction (self.batch_size_value[ii],  
-                                          self.t_coord, 
-                                          self.t_type, 
-                                          self.t_natoms, 
-                                          self.t_box, 
-                                          self.t_mesh, 
-                                          self.t_fparam,
-                                          bias_atom_e = bias_atom_e, 
-                                          suffix = "train_batch_" + str(self.batch_size_value[ii]), 
-                                          reuse = True)
-            self.energy_bch.append(tmp_energy_bch)
-            self.force_bch.append(tmp_force_bch)
-            self.virial_bch.append(tmp_virial_bch)
-            self.atom_ener_bch.append(tmp_atom_ener_bch)
 
-        self.l2_l_tst, self.l2_el_tst, self.l2_fl_tst, self.l2_vl_tst, self.l2_ael_tst \
+        self.l2_l, self.l2_el, self.l2_fl, self.l2_vl, self.l2_ael \
             = self.loss (self.t_natoms, \
                          self.t_prop_c, \
-                         self.t_energy, self.energy_tst, \
-                         self.t_force, self.force_tst, \
-                         self.t_virial, self.virial_tst, \
-                         self.t_atom_ener, self.atom_ener_tst, \
-                         suffix = "train_test")
-        self.l2_l_bch = []
-        self.l2_el_bch = []
-        self.l2_fl_bch = []
-        self.l2_vl_bch = []
-        self.l2_ael_bch = []
-        for ii in range(self.numb_batch_size_value) :                    
-            tmp_l2_l_bch, tmp_l2_el_bch, tmp_l2_fl_bch, tmp_l2_vl_bch, tmp_l2_ael_bch \
-                = self.loss (self.t_natoms, \
-                             self.t_prop_c, \
-                             self.t_energy, self.energy_bch[ii], \
-                             self.t_force, self.force_bch[ii], \
-                             self.t_virial, self.virial_bch[ii], \
-                             self.t_atom_ener, self.atom_ener_bch[ii], \
-                             suffix = "train_batch_" + str(self.batch_size_value[ii]))
-            self.l2_l_bch.append(tmp_l2_l_bch)
-            self.l2_el_bch.append(tmp_l2_el_bch)
-            self.l2_fl_bch.append(tmp_l2_fl_bch)
-            self.l2_vl_bch.append(tmp_l2_vl_bch)
-            self.l2_ael_bch.append(tmp_l2_ael_bch)
+                         self.t_energy, self.energy, \
+                         self.t_force, self.force, \
+                         self.t_virial, self.virial, \
+                         self.t_atom_ener, self.atom_ener, \
+                         suffix = "test")
 
         self._message("built network")
 
     def _build_training(self):
-        self.train_op = []
         trainable_variables = tf.trainable_variables()
         optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate)
         if self.run_opt.is_distrib :
@@ -407,13 +351,12 @@ class NNPModel (object):
                 total_num_replicas = self.run_opt.cluster_spec.num_tasks("worker"),
                 name = "sync_replicas")
             self.sync_replicas_hook = optimizer.make_session_run_hook(self.run_opt.is_chief)            
-        for ii in range(self.numb_batch_size_value) :
-            grads = tf.gradients(self.l2_l_bch[ii], trainable_variables)
-            apply_op = optimizer.apply_gradients (zip (grads, trainable_variables),
-                                                  global_step=self.global_step,
-                                                  name='train_step')
-            train_ops = [apply_op] + self._extra_train_ops
-            self.train_op.append(tf.group(*train_ops))
+        grads = tf.gradients(self.l2_l, trainable_variables)
+        apply_op = optimizer.apply_gradients (zip (grads, trainable_variables),
+                                              global_step=self.global_step,
+                                              name='train_step')
+        train_ops = [apply_op] + self._extra_train_ops
+        self.train_op = tf.group(*train_ops)
         self._message("built training")
 
     def _init_sess_serial(self) :
@@ -526,7 +469,6 @@ class NNPModel (object):
                 default_mesh \
                 = data.get_batch (sys_weights = self.sys_weights)
             cur_batch_size = batch_energy.shape[0]
-            cur_bs_idx = self.batch_size_value.index(cur_batch_size)
             feed_dict_batch = {self.t_prop_c:        batch_prop_c,
                                self.t_energy:        batch_energy, 
                                self.t_force:         np.reshape(batch_force, [-1]),
@@ -541,9 +483,9 @@ class NNPModel (object):
             if self.numb_fparam > 0 :
                 feed_dict_batch[self.t_fparam] = np.reshape(batch_fparam, [-1])
             if self.display_in_training and cur_batch == 0 :
-                self.test_on_the_fly(fp, data, feed_dict_batch, cur_bs_idx)
+                self.test_on_the_fly(fp, data, feed_dict_batch)
             if self.timing_in_training : tic = time.time()
-            self.sess.run([self.train_op[cur_bs_idx]], feed_dict = feed_dict_batch, options=prf_options, run_metadata=prf_run_metadata)
+            self.sess.run([self.train_op], feed_dict = feed_dict_batch, options=prf_options, run_metadata=prf_run_metadata)
             if self.timing_in_training : toc = time.time()
             if self.timing_in_training : train_time += toc - tic
             cur_batch = self.sess.run(self.global_step)
@@ -551,7 +493,7 @@ class NNPModel (object):
 
             if self.display_in_training and (cur_batch % self.disp_freq == 0) :
                 tic = time.time()
-                self.test_on_the_fly(fp, data, feed_dict_batch, cur_bs_idx)
+                self.test_on_the_fly(fp, data, feed_dict_batch)
                 toc = time.time()
                 test_time = toc - tic
                 if self.timing_in_training :
@@ -594,8 +536,7 @@ class NNPModel (object):
     def test_on_the_fly (self,
                          fp,
                          data,
-                         feed_dict_batch, 
-                         ii) :
+                         feed_dict_batch) :
         test_prop_c, \
             test_energy, test_force, test_virial, test_atom_ener, \
             test_coord, test_box, test_type, test_fparam, \
@@ -616,18 +557,18 @@ class NNPModel (object):
         if self.numb_fparam > 0 :
             feed_dict_test[self.t_fparam] = np.reshape(test_fparam  [:self.numb_test, :], [-1])
         error_test, error_e_test, error_f_test, error_v_test, error_ae_test \
-            = self.sess.run([self.l2_l_tst, \
-                             self.l2_el_tst, \
-                             self.l2_fl_tst, \
-                             self.l2_vl_tst, \
-                             self.l2_ael_tst], 
+            = self.sess.run([self.l2_l, \
+                             self.l2_el, \
+                             self.l2_fl, \
+                             self.l2_vl, \
+                             self.l2_ael], 
                             feed_dict=feed_dict_test)
         error_train, error_e_train, error_f_train, error_v_train, error_ae_train \
-            = self.sess.run([self.l2_l_bch[ii], \
-                             self.l2_el_bch[ii], \
-                             self.l2_fl_bch[ii], \
-                             self.l2_vl_bch[ii], \
-                             self.l2_ael_bch[ii]], 
+            = self.sess.run([self.l2_l, \
+                             self.l2_el, \
+                             self.l2_fl, \
+                             self.l2_vl, \
+                             self.l2_ael], 
                             feed_dict=feed_dict_batch)
         cur_batch = self.cur_batch
         current_lr = self.sess.run(self.learning_rate)
@@ -888,7 +829,6 @@ class NNPModel (object):
         return l2_loss, l2_ener_loss, l2_force_loss, l2_virial_loss, l2_atom_ener_loss
 
     def build_interaction (self, 
-                           nframes,
                            coord_, 
                            atype_,
                            natoms,
@@ -932,7 +872,7 @@ class NNPModel (object):
 
         descrpt_reshape = tf.reshape(descrpt, [-1, self.ndescrpt])
         
-        atom_ener = self.build_atom_net (nframes, descrpt_reshape, fparam, natoms, bias_atom_e = bias_atom_e, reuse = reuse)
+        atom_ener = self.build_atom_net (descrpt_reshape, fparam, natoms, bias_atom_e = bias_atom_e, reuse = reuse)
 
         if self.srtab is not None :
             sw_lambda, sw_deriv \
@@ -1038,7 +978,6 @@ class NNPModel (object):
         return energy, force, virial, energy_raw
     
     def build_atom_net (self, 
-                        nframes,
                         inputs,
                         fparam,
                         natoms,
@@ -1088,7 +1027,7 @@ class NNPModel (object):
                 for ii in range(1,len(self.n_neuron)) :
                     layer = self._one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i), reuse=reuse, seed = self.seed)
             final_layer = self._one_layer(layer, 1, activation_fn = None, bavg = type_bias_ae, name='final_layer_type_'+str(type_i), reuse=reuse, seed = self.seed)
-            final_layer = tf.reshape(final_layer, [nframes, natoms[2+type_i]])
+            final_layer = tf.reshape(final_layer, [-1, natoms[2+type_i]])
             # final_layer = tf.cond (tf.equal(natoms[2+type_i], 0), lambda: tf.zeros((0, 0), dtype=global_tf_float_precision), lambda : tf.reshape(final_layer, [-1, natoms[2+type_i]]))
 
             # concat the results
