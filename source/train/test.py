@@ -22,11 +22,17 @@ def test (args) :
     test_prop_c, test_energy, test_force, test_virial, test_ae, test_coord, test_box, test_type, test_fparam = data.get_test ()
     numb_test = args.numb_test
     natoms = len(test_type[0])
+    nframes = test_box.shape[0]
     dp = DeepPot(args.model)
     coord = test_coord[:numb_test].reshape([numb_test, -1])
     box = test_box[:numb_test]
     atype = test_type[0]
     energy, force, virial, ae, av = dp.eval(coord, box, atype, fparam = test_fparam, atomic = True)
+    energy = energy.reshape([nframes,1])
+    force = force.reshape([nframes,-1])
+    virial = virial.reshape([nframes,9])
+    ae = ae.reshape([nframes,-1])
+    av = av.reshape([nframes,-1])
 
     l2e = (l2err (energy - test_energy[:numb_test]))
     l2f = (l2err (force  - test_force [:numb_test]))

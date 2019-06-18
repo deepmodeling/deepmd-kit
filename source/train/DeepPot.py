@@ -109,24 +109,31 @@ class DeepPot () :
         coords = np.array(coords)
         cells = np.array(cells)
         atom_types = np.array(atom_types, dtype = int)
-        if coords.ndim == 1:
-            coords = np.array([coords])
-        if cells.ndim == 1:
-            cells = np.array([cells])
+        if self.has_fparam :
+            assert(fparam is not None)
+            fparam = np.array(fparam)
+
+        # reshape the inputs 
+        cells = np.reshape(cells, [-1, 9])
+        nframes = cells.shape[0]
+        coords = np.reshape(coords, [nframes, -1])
+        natoms = coords.shape[1] // 3
+        if self.has_fparam :
+            fdim = self.get_dim_fparam()
+            if fparam.size == nframes * fdim :
+                fparam = np.reshape(fparam, [nframes, fdim])
+            elif fparam.size == fdim :
+                fparam = np.tile(fparam.reshape([-1]), [nframes, 1])
+            else :
+                raise RuntimeError('got wrong size of frame param, should be either %d x %d or %d' % (nframes, fdim, fdim))
 
         # sort inputs
         coords, atom_types, imap = self._sort_input(coords, atom_types)
 
-        # check nframe
-        nframes = cells.shape[0]
-        assert(nframes == coords.shape[0])
-
         # make natoms_vec and default_mesh
         natoms_vec = self._make_natoms_vec(atom_types)
+        assert(natoms_vec[0] == natoms)
         default_mesh = _make_default_mesh(cells)
-
-        if self.has_fparam :
-            assert(fparam is not None)
 
         # evaluate
         energy = []
@@ -146,13 +153,13 @@ class DeepPot () :
                       self.t_av]
         for ii in range(nframes) :
             feed_dict_test[self.t_coord] = np.reshape(coords[ii:ii+1, :], [-1])
-            feed_dict_test[self.t_box  ] = cells[ii:ii+1, :]            
+            feed_dict_test[self.t_box  ] = cells[ii:ii+1, :]
             if self.has_fparam:
                 feed_dict_test[self.t_fparam] = np.reshape(fparam[ii:ii+1, :], [-1])
             v_out = self.sess.run (t_out, feed_dict = feed_dict_test)
             energy.append(v_out[0])
             force .append(v_out[1])
-            virial.append(v_out[2])     
+            virial.append(v_out[2])
             if atomic:
                 ae.append(v_out[3])
                 av.append(v_out[4])
@@ -163,15 +170,12 @@ class DeepPot () :
             ae  = self._reverse_map(np.reshape(ae, [nframes,-1,1]), imap)
             av  = self._reverse_map(np.reshape(av, [nframes,-1,9]), imap)
 
-        # standarize the shape of outputs
-        energy = np.reshape(energy, [nframes])
-        force  = np.reshape(force,  [nframes, -1])
-        virial = np.reshape(virial, [nframes, -1])
-        if atomic :
-            ae = np.reshape(ae, [nframes, -1])
-            av = np.reshape(av, [nframes, -1])
-
+        energy = np.reshape(energy, [nframes, 1])
+        force = np.reshape(force, [nframes, natoms, 3])
+        virial = np.reshape(virial, [nframes, 9])
         if atomic:
+            ae = np.reshape(ae, [nframes, natoms, 1])
+            av = np.reshape(av, [nframes, natoms, 9])
             return energy, force, virial, ae, av
         else :
             return energy, force, virial
