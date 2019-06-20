@@ -179,7 +179,11 @@ def force_dw_test (inter,
     relativ_e = []
     test_list = range (inter.ndescrpt) 
     ntest = 3
-    test_list = np.concatenate((np.arange(0,ntest), np.arange(inter.sel_a[0]*4, inter.sel_a[0]*4+ntest)))
+    if inter.sel_a[0] != 0:
+        test_list = np.concatenate((np.arange(0,ntest), np.arange(inter.sel_a[0]*4, inter.sel_a[0]*4+ntest)))
+    else :
+        test_list = np.arange(0,ntest)
+
     for ii in test_list:
         inter.net_w_i = np.copy (w0)
         inter.net_w_i[ii] += hh
@@ -221,7 +225,11 @@ def virial_dw_test (inter,
     relativ_e = []
     test_list = range (inter.ndescrpt) 
     ntest = 3
-    test_list = np.concatenate((np.arange(0,ntest), np.arange(inter.sel_a[0]*4, inter.sel_a[0]*4+ntest)))
+    if inter.sel_a[0] != 0 :
+        test_list = np.concatenate((np.arange(0,ntest), np.arange(inter.sel_a[0]*4, inter.sel_a[0]*4+ntest)))
+    else :
+        test_list = np.arange(0,ntest)
+        
     for ii in test_list:
         inter.net_w_i = np.copy (w0)
         inter.net_w_i[ii] += hh
