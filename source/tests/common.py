@@ -1,13 +1,17 @@
+import os, sys
 import tensorflow as tf
 import numpy as np
 
 
 class Data():
-    def __init__ (self) :
+    def __init__ (self, 
+                  rand_pert = 0.1, 
+                  seed = 1) :
         coord = [[0.0, 0.0, 0.1], [1.1, 0.0, 0.1], [0.0, 1.1, 0.1], 
                  [4.0, 0.0, 0.0], [5.1, 0.0, 0.0], [4.0, 1.1, 0.0]]
         self.coord = np.array(coord)
-        self.coord += 0.1 * np.random.random(self.coord.shape)
+        np.random.seed(seed)
+        self.coord += rand_pert * np.random.random(self.coord.shape)
         self.atype = np.array([0, 1, 1, 0, 1, 1], dtype = int)
         self.cell = 20 * np.eye(3)
         self.nframes = 1

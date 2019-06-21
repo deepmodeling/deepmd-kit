@@ -59,26 +59,27 @@ class DeepPot () :
         self.model_file = model_file
         self.graph = _load_graph (self.model_file)
         # checkout input/output tensors from graph
-        self.t_ntypes = self.graph.get_tensor_by_name ('load/t_ntypes:0')
-        self.t_rcut   = self.graph.get_tensor_by_name ('load/t_rcut:0')
-        self.t_dfparam= self.graph.get_tensor_by_name ('load/t_dfparam:0')
-        self.t_tmap   = self.graph.get_tensor_by_name ('load/t_tmap:0')
-
-        self.t_coord  = self.graph.get_tensor_by_name ('load/t_coord:0')
-        self.t_type   = self.graph.get_tensor_by_name ('load/t_type:0')
-        self.t_natoms = self.graph.get_tensor_by_name ('load/t_natoms:0')
-        self.t_box    = self.graph.get_tensor_by_name ('load/t_box:0')
-        self.t_mesh   = self.graph.get_tensor_by_name ('load/t_mesh:0')
-        self.t_energy = self.graph.get_tensor_by_name ('load/energy_test:0')
-        self.t_force  = self.graph.get_tensor_by_name ('load/force_test:0')
-        self.t_virial = self.graph.get_tensor_by_name ('load/virial_test:0')
-        self.t_ae     = self.graph.get_tensor_by_name ('load/atom_energy_test:0')
-        self.t_av     = self.graph.get_tensor_by_name ('load/atom_virial_test:0')
+        self.t_ntypes = self.graph.get_tensor_by_name ('load/model_attr/ntypes:0')
+        self.t_rcut   = self.graph.get_tensor_by_name ('load/model_attr/rcut:0')
+        self.t_dfparam= self.graph.get_tensor_by_name ('load/model_attr/dfparam:0')
+        self.t_tmap   = self.graph.get_tensor_by_name ('load/model_attr/tmap:0')
+        # inputs
+        self.t_coord  = self.graph.get_tensor_by_name ('load/i_coord:0')
+        self.t_type   = self.graph.get_tensor_by_name ('load/i_type:0')
+        self.t_natoms = self.graph.get_tensor_by_name ('load/i_natoms:0')
+        self.t_box    = self.graph.get_tensor_by_name ('load/i_box:0')
+        self.t_mesh   = self.graph.get_tensor_by_name ('load/i_mesh:0')
+        # outputs
+        self.t_energy = self.graph.get_tensor_by_name ('load/o_energy:0')
+        self.t_force  = self.graph.get_tensor_by_name ('load/o_force:0')
+        self.t_virial = self.graph.get_tensor_by_name ('load/o_virial:0')
+        self.t_ae     = self.graph.get_tensor_by_name ('load/o_atom_energy:0')
+        self.t_av     = self.graph.get_tensor_by_name ('load/o_atom_virial:0')
         self.t_fparam = None
         # check if the graph has fparam
         for op in self.graph.get_operations():
-            if op.name == 'load/t_fparam' :
-                self.t_fparam = self.graph.get_tensor_by_name ('load/t_fparam:0')        
+            if op.name == 'load/i_fparam' :
+                self.t_fparam = self.graph.get_tensor_by_name ('load/i_fparam:0')
         self.has_fparam = self.t_fparam is not None
         # start a tf session associated to the graph
         self.sess = tf.Session (graph = self.graph)        

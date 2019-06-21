@@ -179,21 +179,21 @@ make_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 
   if (fparam_.size() == 0) {
     input_tensors = {
-      {"t_coord",	coord_tensor}, 
-      {"t_type",	type_tensor},
-      {"t_box",		box_tensor},
-      {"t_mesh",	mesh_tensor},
-      {"t_natoms",	natoms_tensor},
+      {"i_coord",	coord_tensor}, 
+      {"i_type",	type_tensor},
+      {"i_box",		box_tensor},
+      {"i_mesh",	mesh_tensor},
+      {"i_natoms",	natoms_tensor},
     };  
   }
   else {
     input_tensors = {
-      {"t_coord",	coord_tensor}, 
-      {"t_type",	type_tensor},
-      {"t_box",		box_tensor},
-      {"t_mesh",	mesh_tensor},
-      {"t_natoms",	natoms_tensor},
-      {"t_fparam",	fparam_tensor},
+      {"i_coord",	coord_tensor}, 
+      {"i_type",	type_tensor},
+      {"i_box",		box_tensor},
+      {"i_mesh",	mesh_tensor},
+      {"i_natoms",	natoms_tensor},
+      {"i_fparam",	fparam_tensor},
     };  
   }
 
@@ -299,21 +299,21 @@ make_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 
   if (fparam_.size() == 0) {
     input_tensors = {
-      {"t_coord",	coord_tensor}, 
-      {"t_type",	type_tensor},
-      {"t_box",		box_tensor},
-      {"t_mesh",	mesh_tensor},
-      {"t_natoms",	natoms_tensor},
+      {"i_coord",	coord_tensor}, 
+      {"i_type",	type_tensor},
+      {"i_box",		box_tensor},
+      {"i_mesh",	mesh_tensor},
+      {"i_natoms",	natoms_tensor},
     };  
   }
   else {
     input_tensors = {
-      {"t_coord",	coord_tensor}, 
-      {"t_type",	type_tensor},
-      {"t_box",		box_tensor},
-      {"t_mesh",	mesh_tensor},
-      {"t_natoms",	natoms_tensor},
-      {"t_fparam",	fparam_tensor},
+      {"i_coord",	coord_tensor}, 
+      {"i_type",	type_tensor},
+      {"i_box",		box_tensor},
+      {"i_mesh",	mesh_tensor},
+      {"i_natoms",	natoms_tensor},
+      {"i_fparam",	fparam_tensor},
     };  
   }
 
@@ -346,7 +346,7 @@ run_model (ENERGYTYPE &			dener,
   std::vector<Tensor> output_tensors;
 
   checkStatus (session->Run(input_tensors, 
-			    {"energy_test", "force_test", "virial_test"}, 
+			    {"o_energy", "o_force", "o_virial"}, 
 			    {}, 
 			    &output_tensors));
   
@@ -405,7 +405,7 @@ run_model (ENERGYTYPE &			dener,
   std::vector<Tensor> output_tensors;
 
   checkStatus (session->Run(input_tensors, 
-			    {"energy_test", "force_test", "virial_test", "atom_energy_test", "atom_virial_test"}, 
+			    {"o_energy", "o_force", "o_virial", "o_atom_energy", "o_atom_virial"}, 
 			    {}, 
 			    &output_tensors));
 
@@ -486,10 +486,10 @@ NNPInter (const string & model)
   checkStatus (NewSession(options, &session));
   checkStatus (ReadBinaryProto(Env::Default(), model, &graph_def));
   checkStatus (session->Create(graph_def));  
-  rcut = get_scalar<VALUETYPE>("t_rcut");
+  rcut = get_scalar<VALUETYPE>("model_attr/t_rcut");
   cell_size = rcut;
-  ntypes = get_scalar<int>("t_ntypes");
-  dfparam = get_scalar<int>("t_dfparam");
+  ntypes = get_scalar<int>("model_attr/t_ntypes");
+  dfparam = get_scalar<int>("model_attr/t_dfparam");
   assert(rcut == get_rcut());
   assert(ntypes == get_ntypes());
   if (dfparam < 0) dfparam = 0;
@@ -510,10 +510,10 @@ init (const string & model)
   checkStatus (NewSession(options, &session));
   checkStatus (ReadBinaryProto(Env::Default(), model, &graph_def));
   checkStatus (session->Create(graph_def));  
-  rcut = get_scalar<VALUETYPE>("t_rcut");
+  rcut = get_scalar<VALUETYPE>("model_attr/t_rcut");
   cell_size = rcut;
-  ntypes = get_scalar<int>("t_ntypes");
-  dfparam = get_scalar<int>("t_dfparam");
+  ntypes = get_scalar<int>("model_attr/t_ntypes");
+  dfparam = get_scalar<int>("model_attr/t_dfparam");
   assert(rcut == get_rcut());
   assert(ntypes == get_ntypes());      
   if (dfparam < 0) dfparam = 0;
@@ -552,34 +552,6 @@ get_scalar (const string & name) const
 			    &output_tensors));
   Tensor output_rc = output_tensors[0];
   auto orc = output_rc.flat <VT> ();
-  return orc(0);
-}
-
-VALUETYPE
-NNPInter::
-get_rcut () const
-{
-  std::vector<Tensor> output_tensors;
-  checkStatus (session->Run(std::vector<std::pair<string, Tensor>> ({}), 
-			    {"t_rcut"}, 
-			    {}, 
-			    &output_tensors));
-  Tensor output_rc = output_tensors[0];
-  auto orc = output_rc.flat <VALUETYPE> ();
-  return orc(0);
-}
-
-int
-NNPInter::
-get_ntypes () const
-{
-  std::vector<Tensor> output_tensors;
-  checkStatus (session->Run(std::vector<std::pair<string, Tensor>> ({}), 
-			    {"t_ntypes"}, 
-			    {}, 
-			    &output_tensors));
-  Tensor output_rc = output_tensors[0];
-  auto orc = output_rc.flat <int> ();
   return orc(0);
 }
 
@@ -725,10 +697,10 @@ NNPInterModelDevi (const vector<string> & models)
     checkStatus (ReadBinaryProto(Env::Default(), models[ii], &graph_defs[ii]));
     checkStatus (sessions[ii]->Create(graph_defs[ii]));
   }
-  rcut = get_scalar<VALUETYPE>("t_rcut");
+  rcut = get_scalar<VALUETYPE>("model_attr/t_rcut");
   cell_size = rcut;
-  ntypes = get_scalar<int>("t_ntypes");
-  dfparam = get_scalar<int>("t_dfparam");
+  ntypes = get_scalar<int>("model_attr/t_ntypes");
+  dfparam = get_scalar<int>("model_attr/t_dfparam");
   if (dfparam < 0) dfparam = 0;
   // rcut = get_rcut();
   // cell_size = rcut;
@@ -752,10 +724,10 @@ init (const vector<string> & models)
     checkStatus (ReadBinaryProto(Env::Default(), models[ii], &graph_defs[ii]));
     checkStatus (sessions[ii]->Create(graph_defs[ii]));
   }
-  rcut = get_scalar<VALUETYPE>("t_rcut");
+  rcut = get_scalar<VALUETYPE>("model_attr/t_rcut");
   cell_size = rcut;
-  ntypes = get_scalar<int>("t_ntypes");
-  dfparam = get_scalar<int>("t_dfparam");
+  ntypes = get_scalar<int>("model_attr/t_ntypes");
+  dfparam = get_scalar<int>("model_attr/t_dfparam");
   if (dfparam < 0) dfparam = 0;
   // rcut = get_rcut();
   // cell_size = rcut;
@@ -786,54 +758,6 @@ get_scalar(const string name) const
   }
   return myrcut;
 }
-
-
-VALUETYPE
-NNPInterModelDevi::
-get_rcut () const
-{
-  VALUETYPE myrcut = 0;
-  for (unsigned ii = 0; ii < numb_models; ++ii){
-    std::vector<Tensor> output_tensors;
-    checkStatus (sessions[ii]->Run(std::vector<std::pair<string, Tensor>> ({}), 
-				   {"t_rcut"}, 
-				   {}, 
-				   &output_tensors));
-    Tensor output_rc = output_tensors[0];
-    auto orc = output_rc.flat <VALUETYPE> ();
-    if (ii == 0){
-      myrcut = orc(0);
-    }
-    else {
-      assert (myrcut == orc(0));
-    }
-  }
-  return myrcut;
-}
-
-int
-NNPInterModelDevi::
-get_ntypes () const
-{
-  int myntypes = 0;
-  for (unsigned ii = 0; ii < numb_models; ++ii){
-    std::vector<Tensor> output_tensors;
-    checkStatus (sessions[ii]->Run(std::vector<std::pair<string, Tensor>> ({}), 
-				   {"t_ntypes"}, 
-				   {}, 
-				   &output_tensors));
-    Tensor output_rc = output_tensors[0];
-    auto orc = output_rc.flat <int> ();
-    if (ii == 0){
-      myntypes = orc(0);
-    }
-    else {
-      assert (myntypes == orc(0));
-    }
-  }
-  return myntypes;
-}
-
 
 void
 NNPInterModelDevi::

@@ -11,6 +11,8 @@ from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
 from deepmd.RunOptions import global_cvt_2_tf_float
 from deepmd.RunOptions import global_cvt_2_ener_float
+# from ModelSeA import ModelSeA
+# from ModelLocFrame import ModelLocFrame
 
 from tensorflow.python.framework import ops
 from tensorflow.python.client import timeline
@@ -31,25 +33,7 @@ import deepmd._soft_min_virial_grad
 from deepmd.RunOptions import RunOptions
 from deepmd.TabInter import TabInter
 
-def j_must_have (jdata, key) :
-    if not key in jdata.keys() :
-        raise RuntimeError ("json database must provide key " + key )
-    else :
-        return jdata[key]
-
-def j_must_have_d (jdata, key, deprecated_key) :
-    if not key in jdata.keys() :
-        # raise RuntimeError ("json database must provide key " + key )
-        for ii in deprecated_key :
-            if ii in jdata.keys() :
-                warnings.warn("the key \"%s\" is deprecated, please use \"%s\" instead" % (ii,key))
-                return jdata[ii]
-        raise RuntimeError ("json database must provide key " + key )        
-    else :
-        return jdata[key]
-
-def j_have (jdata, key) :
-    return key in jdata.keys() 
+from deepmd.common import j_must_have, j_must_have_d, j_have
 
 def _is_subdir(path, directory):
     path = os.path.realpath(path)
@@ -88,7 +72,6 @@ class NNPModel (object):
                  run_opt):
         self.run_opt = run_opt
         self._init_param(jdata)
-        self.null_mesh = tf.constant ([-1])
 
     def _init_param(self, jdata):
         # descrpt config
@@ -216,7 +199,7 @@ class NNPModel (object):
         else :
             raise RuntimeError("number of frame parameter == 0")
 
-        t_tmap = tf.constant(' '.join(data.get_type_map()), name = 't_tmap', dtype = tf.string)
+        self.type_map = data.get_type_map()
 
         davg, dstd, bias_e = self._data_stat(data)
 
@@ -275,47 +258,20 @@ class NNPModel (object):
         self._message("built lr")
 
     def _build_network(self, davg, dstd, bias_atom_e):
-        self.t_avg = tf.get_variable('t_avg', 
-                                     davg.shape, 
-                                     dtype = global_tf_float_precision,
-                                     trainable = False,
-                                     initializer = tf.constant_initializer(davg, dtype = global_tf_float_precision))
-        self.t_std = tf.get_variable('t_std', 
-                                     dstd.shape, 
-                                     dtype = global_tf_float_precision,
-                                     trainable = False,
-                                     initializer = tf.constant_initializer(dstd, dtype = global_tf_float_precision))
-
-        t_rcut = tf.constant(np.max([self.rcut_r, self.rcut_a]), name = 't_rcut', dtype = global_tf_float_precision)
-        t_ntypes = tf.constant(self.ntypes, name = 't_ntypes', dtype = tf.int32)
-        t_dfparam = tf.constant(self.numb_fparam, name = 't_dfparam', dtype = tf.int32)
-
-        if self.srtab is not None :
-            tab_info, tab_data = self.srtab.get()
-            self.tab_info = tf.get_variable('t_tab_info',
-                                            tab_info.shape,
-                                            dtype = tf.float64,
-                                            trainable = False,
-                                            initializer = tf.constant_initializer(tab_info, dtype = tf.float64))
-            self.tab_data = tf.get_variable('t_tab_data',
-                                            tab_data.shape,
-                                            dtype = tf.float64,
-                                            trainable = False,
-                                            initializer = tf.constant_initializer(tab_data, dtype = tf.float64))
 
         self.t_prop_c           = tf.placeholder(tf.float32, [4],    name='t_prop_c')
         self.t_energy           = tf.placeholder(global_ener_float_precision, [None], name='t_energy')
         self.t_force            = tf.placeholder(global_tf_float_precision, [None], name='t_force')
         self.t_virial           = tf.placeholder(global_tf_float_precision, [None], name='t_virial')
         self.t_atom_ener        = tf.placeholder(global_tf_float_precision, [None], name='t_atom_ener')
-        self.t_coord            = tf.placeholder(global_tf_float_precision, [None], name='t_coord')
-        self.t_type             = tf.placeholder(tf.int32,   [None], name='t_type')
-        self.t_natoms           = tf.placeholder(tf.int32,   [self.ntypes+2], name='t_natoms')
-        self.t_box              = tf.placeholder(global_tf_float_precision, [None, 9], name='t_box')
-        self.t_mesh             = tf.placeholder(tf.int32,   [None], name='t_mesh')
+        self.t_coord            = tf.placeholder(global_tf_float_precision, [None], name='i_coord')
+        self.t_type             = tf.placeholder(tf.int32,   [None], name='i_type')
+        self.t_natoms           = tf.placeholder(tf.int32,   [self.ntypes+2], name='i_natoms')
+        self.t_box              = tf.placeholder(global_tf_float_precision, [None, 9], name='i_box')
+        self.t_mesh             = tf.placeholder(tf.int32,   [None], name='i_mesh')
         self.is_training        = tf.placeholder(tf.bool)
         if self.numb_fparam > 0 :
-            self.t_fparam       = tf.placeholder(global_tf_float_precision, [None], name='t_fparam')
+            self.t_fparam       = tf.placeholder(global_tf_float_precision, [None], name='i_fparam')
         else :
             self.t_fparam       = None
 
@@ -326,8 +282,10 @@ class NNPModel (object):
                                       self.t_box, 
                                       self.t_mesh,
                                       self.t_fparam,
+                                      davg = davg,
+                                      dstd = dstd,
                                       bias_atom_e = bias_atom_e, 
-                                      suffix = "test", 
+                                      suffix = "", 
                                       reuse = False)
 
         self.l2_l, self.l2_el, self.l2_fl, self.l2_vl, self.l2_ael \
@@ -700,7 +658,6 @@ class NNPModel (object):
             sysv2.append(sumv2)
         return sysv, sysv2, sysn
 
-
     def compute_std (self,sumv2, sumv, sumn) :
         return np.sqrt(sumv2/sumn - np.multiply(sumv/sumn, sumv/sumn))
 
@@ -835,9 +792,51 @@ class NNPModel (object):
                            box, 
                            mesh,
                            fparam,
-                           suffix = 'inter', 
+                           davg = None, 
+                           dstd = None,
                            bias_atom_e = None,
-                           reuse = None):        
+                           suffix = '', 
+                           reuse = None):
+        with tf.variable_scope('model_attr' + suffix, reuse = reuse) :
+            if davg is None:
+                davg = np.zeros([self.ntypes, self.ndescrpt]) 
+            if dstd is None:
+                dstd = np.ones ([self.ntypes, self.ndescrpt])
+            t_rcut = tf.constant(np.max([self.rcut_r, self.rcut_a]), 
+                                 name = 'rcut', 
+                                 dtype = global_tf_float_precision)
+            t_ntypes = tf.constant(self.ntypes, 
+                                   name = 'ntypes', 
+                                   dtype = tf.int32)
+            t_dfparam = tf.constant(self.numb_fparam, 
+                                    name = 'dfparam', 
+                                    dtype = tf.int32)
+            t_tmap = tf.constant(' '.join(self.type_map), 
+                                 name = 'tmap', 
+                                 dtype = tf.string)
+            self.t_avg = tf.get_variable('t_avg', 
+                                         davg.shape, 
+                                         dtype = global_tf_float_precision,
+                                         trainable = False,
+                                         initializer = tf.constant_initializer(davg, dtype = global_tf_float_precision))
+            self.t_std = tf.get_variable('t_std', 
+                                         dstd.shape, 
+                                         dtype = global_tf_float_precision,
+                                         trainable = False,
+                                         initializer = tf.constant_initializer(dstd, dtype = global_tf_float_precision))
+            if self.srtab is not None :
+                tab_info, tab_data = self.srtab.get()
+                self.tab_info = tf.get_variable('t_tab_info',
+                                                tab_info.shape,
+                                                dtype = tf.float64,
+                                                trainable = False,
+                                                initializer = tf.constant_initializer(tab_info, dtype = tf.float64))
+                self.tab_data = tf.get_variable('t_tab_data',
+                                                tab_data.shape,
+                                                dtype = tf.float64,
+                                                trainable = False,
+                                                initializer = tf.constant_initializer(tab_data, dtype = tf.float64))
+
         coord = tf.reshape (coord_, [-1, natoms[1] * 3])
         atype = tf.reshape (atype_, [-1, natoms[1]])
 
@@ -906,8 +905,8 @@ class NNPModel (object):
         else :
             energy_raw = atom_ener
 
-        energy_raw = tf.reshape(energy_raw, [-1, natoms[0]], name = 'atom_energy_'+suffix)
-        energy = tf.reduce_sum(global_cvt_2_ener_float(energy_raw), axis=1, name='energy_'+suffix)
+        energy_raw = tf.reshape(energy_raw, [-1, natoms[0]], name = 'o_atom_energy'+suffix)
+        energy = tf.reduce_sum(global_cvt_2_ener_float(energy_raw), axis=1, name='o_energy'+suffix)
 
         net_deriv_tmp = tf.gradients (atom_ener, descrpt_reshape)
         net_deriv = net_deriv_tmp[0]
@@ -938,7 +937,7 @@ class NNPModel (object):
                                            n_r_sel = self.nnei_r)
             force = force + sw_force + tab_force
 
-        force = tf.reshape (force, [-1, 3 * natoms[1]], name = "force_"+suffix)
+        force = tf.reshape (force, [-1, 3 * natoms[1]], name = "o_force"+suffix)
 
         if self.use_smooth :
             virial, atom_virial \
@@ -972,8 +971,8 @@ class NNPModel (object):
             virial = virial + sw_virial \
                      + tf.reduce_sum(tf.reshape(tab_atom_virial, [-1, natoms[1], 9]), axis = 1)
 
-        virial = tf.reshape (virial, [-1, 9], name = "virial_"+suffix)
-        atom_virial = tf.reshape (atom_virial, [-1, 9 * natoms[1]], name = "atom_virial_"+suffix)
+        virial = tf.reshape (virial, [-1, 9], name = "o_virial"+suffix)
+        atom_virial = tf.reshape (atom_virial, [-1, 9 * natoms[1]], name = "o_atom_virial"+suffix)
 
         return energy, force, virial, energy_raw
     
