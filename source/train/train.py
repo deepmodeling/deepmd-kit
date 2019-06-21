@@ -13,8 +13,8 @@ sys.path.append (lib_path)
 
 from deepmd.RunOptions import RunOptions
 from deepmd.DataSystem import DataSystem
-from deepmd.Model import NNPModel
-from deepmd.Model import LearingRate
+from deepmd.Trainer import NNPTrainer
+from deepmd.Trainer import LearingRate
 
 def create_done_queue(cluster_spec, task_index):
    with tf.device("/job:ps/task:%d" % (task_index)):
@@ -96,7 +96,7 @@ def _do_work(jdata, run_opt):
     tot_numb_batches = sum(data.get_nbatches())
     lr = LearingRate (jdata, tot_numb_batches)
     # init the model
-    model = NNPModel (jdata, run_opt = run_opt)
+    model = NNPTrainer (jdata, run_opt = run_opt)
     # build the model with stats from the first system
     model.build (data, lr)
     # train the model with the provided systems in a cyclic way
