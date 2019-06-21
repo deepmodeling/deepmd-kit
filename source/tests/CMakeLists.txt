@@ -1,4 +1,4 @@
-file(GLOB LIB_PY *py)
+file(GLOB LIB_PY *py *json)
 
 install(
   FILES		${LIB_PY}

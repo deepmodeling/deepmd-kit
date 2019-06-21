@@ -5,13 +5,8 @@ import unittest
 
 from tensorflow.python.framework import ops
 
-# load force module
-module_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..")
-so_file = os.path.join(module_path, "libop_abi.so")
-assert (os.path.isfile ( so_file )), "op module does not exist"
-op_module = tf.load_op_library( so_file )
-
 # load grad of force module
+module_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..")
 sys.path.append (module_path)
 import _prod_force_grad
 import _prod_virial_grad
@@ -28,6 +23,7 @@ from common import virial_dw_test
 from common import Data
 from test_descrpt_nonsmth import Inter 
 
+from deepmd.ModelLocFrame import op_module
 
 def _make_tab(ntype) :
     xx = np.arange(0,9,0.001)
