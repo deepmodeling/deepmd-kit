@@ -91,7 +91,7 @@ A docker for installing the DeePMD-kit on CentOS 7 is available [here](https://g
 ### Install the Tensorflow's python interface
 We follow the virtual environment approach to install the tensorflow's Python interface. The full instruction can be found on [the tensorflow's official website](https://www.tensorflow.org/install/pip). Now we assume that the Python interface will be installed to virtual environment directory `$tensorflow_venv`
 ```bash
-virtualenv --system-site-packages -p python3 $tensorflow_venv
+virtualenv -p python3 $tensorflow_venv
 source $tensorflow_venv/bin/activate
 pip install --upgrade pip
 pip install --upgrade tensorflow==1.8.0
