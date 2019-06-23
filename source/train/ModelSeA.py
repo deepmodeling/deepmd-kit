@@ -26,6 +26,7 @@ class ModelSeA (Model):
         assert(self.ntypes == len(self.sel_r))
         self.rcut_a = -1
         self.rcut_r = j_must_have (jdata, 'rcut')
+        self.rcut = self.rcut_r
         if j_have(jdata, 'rcut_smth') :
             self.rcut_r_smth = jdata['rcut_smth']
         else :
@@ -82,6 +83,18 @@ class ModelSeA (Model):
             self.seed = jdata['seed']
         self.useBN = False
 
+
+    def get_rcut (self) :
+        return self.rcut
+
+    def get_ntypes (self) :
+        return self.ntypes
+
+    def get_numb_fparam (self) :
+        return self.numb_fparam
+
+    def get_type_map (self) :
+        return self.type_map
 
     def compute_dstats (self,
                         data_coord, 
@@ -289,7 +302,7 @@ class ModelSeA (Model):
         virial = tf.reshape (virial, [-1, 9], name = "o_virial"+suffix)
         atom_virial = tf.reshape (atom_virial, [-1, 9 * natoms[1]], name = "o_atom_virial"+suffix)
 
-        return energy, force, virial, energy_raw
+        return energy, force, virial, energy_raw, atom_virial
 
 
 

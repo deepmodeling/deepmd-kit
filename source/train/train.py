@@ -80,23 +80,24 @@ def train (args) :
         _do_work(jdata, run_opt)
 
 def _do_work(jdata, run_opt):
+    # init the model
+    model = NNPTrainer (jdata, run_opt = run_opt)
+    rcut = model.model.get_rcut()
     # init params and run options
     systems = j_must_have(jdata, 'systems')
     set_pfx = j_must_have(jdata, 'set_prefix')
     numb_sys = len(systems)
     seed = None
     if 'seed' in jdata.keys() : seed = jdata['seed']
-    seed = seed % (2**32)
+    if seed is not None:
+       seed = seed % (2**32)
     np.random.seed (seed)
     batch_size = j_must_have(jdata, 'batch_size')
     test_size = j_must_have(jdata, 'numb_test')
     stop_batch = j_must_have(jdata, 'stop_batch')
-    rcut = j_must_have (jdata, 'rcut')
     data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt)
     tot_numb_batches = sum(data.get_nbatches())
     lr = LearingRate (jdata, tot_numb_batches)
-    # init the model
-    model = NNPTrainer (jdata, run_opt = run_opt)
     # build the model with stats from the first system
     model.build (data, lr)
     # train the model with the provided systems in a cyclic way

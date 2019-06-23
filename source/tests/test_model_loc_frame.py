@@ -76,7 +76,7 @@ class TestModel(unittest.TestCase):
         is_training        = tf.placeholder(tf.bool)
         t_fparam = None
 
-        energy, force, virial, atom_ener \
+        energy, force, virial, atom_ener, atom_virial \
             = model.build_interaction (t_coord, 
                                        t_type, 
                                        t_natoms, 

@@ -8,7 +8,7 @@ sys.path.append (lib_path)
 
 from deepmd.RunOptions import RunOptions
 from deepmd.DataSystem import DataSystem
-from deepmd.ModelSeA import ModelSeA
+from deepmd.ModelSeR import ModelSeR
 from deepmd.common import j_must_have, j_must_have_d, j_have
 
 global_ener_float_precision = tf.float64
@@ -35,7 +35,7 @@ class TestModel(unittest.TestCase):
         gen_data()
 
     def test_model(self):
-        jfile = 'water_se_a.json'
+        jfile = 'water_se_r.json'
         with open(jfile) as fp:
             jdata = json.load (fp)
         run_opt = RunOptions(None) 
@@ -60,7 +60,7 @@ class TestModel(unittest.TestCase):
         
         bias_atom_e = data.compute_energy_shift()
 
-        model = ModelSeA(jdata)
+        model = ModelSeR(jdata)
         davg, dstd = model.compute_dstats([test_coord], [test_box], [test_type], [natoms_vec], [default_mesh])
 
         t_prop_c           = tf.placeholder(tf.float32, [4],    name='t_prop_c')
@@ -86,7 +86,7 @@ class TestModel(unittest.TestCase):
                                        davg = davg,
                                        dstd = dstd,
                                        bias_atom_e = bias_atom_e, 
-                                       suffix = "se_a", 
+                                       suffix = "se_r", 
                                        reuse_attr = False,
                                        reuse_weights = False)
 
@@ -110,14 +110,14 @@ class TestModel(unittest.TestCase):
         e = e.reshape([-1])
         f = f.reshape([-1])
         v = v.reshape([-1])
-        refe = [6.135449167779321300e+01]
-        reff = [7.799691562262310585e-02,9.423098804815030483e-02,3.790560997388224204e-03,1.432522403799846578e-01,1.148392791403983204e-01,-1.321871172563671148e-02,-7.318966526325138000e-02,6.516069212737778116e-02,5.406418483320515412e-04,5.870713761026503247e-02,-1.605402669549013672e-01,-5.089516979826595386e-03,-2.554593467731766654e-01,3.092063507347833987e-02,1.510355029451411479e-02,4.869271842355533952e-02,-1.446113274345035005e-01,-1.126524434771078789e-03]
-        refv = [-6.076776685178300053e-01,1.103174323630009418e-01,1.984250991380156690e-02,1.103174323630009557e-01,-3.319759402259439551e-01,-6.007404107650986258e-03,1.984250991380157036e-02,-6.007404107650981921e-03,-1.200076017439753642e-03]
+        refe = [6.152085988309423925e+01]
+        reff = [-1.714443151616400110e-04,-1.315836609370952051e-04,-5.584120460897444674e-06,-7.197863450669731334e-05,-1.384609799994930676e-04,8.856091902774708468e-06,1.120578238869146797e-04,-7.428703645877488470e-05,9.370560731488587317e-07,-1.048347129617610465e-04,1.977876923815685781e-04,7.522050342771599598e-06,2.361772659657814205e-04,-5.774651813388292487e-05,-1.233143271630744828e-05,2.257277740226381951e-08,2.042905031476775584e-04,6.003548585097267914e-07]
+        refv = [1.035180911513190792e-03,-1.118982949050497126e-04,-2.383287813436022850e-05,-1.118982949050497126e-04,4.362023915782403281e-04,8.119543218224559240e-06,-2.383287813436022850e-05,8.119543218224559240e-06,1.201142938802945237e-06]
         refe = np.reshape(refe, [-1])
         reff = np.reshape(reff, [-1])
         refv = np.reshape(refv, [-1])
 
-        places = 10
+        places = 6
         for ii in range(e.size) :
             self.assertAlmostEqual(e[ii], refe[ii], places = places)
         for ii in range(f.size) :

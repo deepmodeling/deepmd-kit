@@ -12,6 +12,8 @@ from deepmd.RunOptions import global_ener_float_precision
 from deepmd.RunOptions import global_cvt_2_tf_float
 from deepmd.RunOptions import global_cvt_2_ener_float
 from ModelSeA import ModelSeA
+from ModelSeR import ModelSeR
+from ModelHyb import ModelHyb
 from ModelLocFrame import ModelLocFrame
 
 from tensorflow.python.framework import ops
@@ -28,6 +30,8 @@ import deepmd._prod_force_grad
 import deepmd._prod_virial_grad
 import deepmd._prod_force_norot_grad
 import deepmd._prod_virial_norot_grad
+import deepmd._prod_force_se_r_grad
+import deepmd._prod_virial_se_r_grad
 import deepmd._soft_min_force_grad
 import deepmd._soft_min_virial_grad
 from deepmd.RunOptions import RunOptions
@@ -75,13 +79,22 @@ class NNPTrainer (object):
 
     def _init_param(self, jdata):
         # descrpt config
-        self.use_smooth = False
-        if j_have (jdata, "use_smooth") :
-            self.use_smooth = jdata["use_smooth"]
-        if self.use_smooth:
-            self.model = ModelSeA(jdata)
+        model_type = j_must_have(jdata, 'model_type')
+        if model_type == 'loc_frame':
+            model_param = j_must_have(jdata, 'model')
+            self.model = ModelLocFrame(model_param)
+        elif model_type == 'se_a' :
+            model_param = j_must_have(jdata, 'model')
+            self.model = ModelSeA(model_param)
+        elif model_type == 'se_r' :
+            model_param = j_must_have(jdata, 'model')
+            self.model = ModelSeR(model_param)
+        elif model_type == 'se_ar' :
+            model_param_a = j_must_have(jdata, 'model_a')
+            model_param_r = j_must_have(jdata, 'model_r')
+            self.model = ModelHyb(model_param_a, model_param_r)
         else :
-            self.model = ModelLocFrame(jdata)
+            raise RuntimeError('unknow model type ' + model_type)
 
         self.numb_test = j_must_have (jdata, 'numb_test')
         self.useBN = False
@@ -129,7 +142,7 @@ class NNPTrainer (object):
                data, 
                lr) :
         self.lr = lr
-        self.ntypes = self.model.ntypes
+        self.ntypes = self.model.get_ntypes()
         assert (self.ntypes == data.get_ntypes()), "ntypes should match that found in data"
 
         self.batch_size = data.get_batch_size()
@@ -186,7 +199,7 @@ class NNPTrainer (object):
         else :
             self.t_fparam       = None
 
-        self.energy, self.force, self.virial, self.atom_ener \
+        self.energy, self.force, self.virial, self.atom_ener, self.atom_virial\
             = self.model.build_interaction (self.t_coord, 
                                             self.t_type, 
                                             self.t_natoms, 
