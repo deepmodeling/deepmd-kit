@@ -290,7 +290,6 @@ public:
 				  rcut);
 
 	// check sizes
-	assert (d_descrpt.size() == ndescrpt_a);
 	assert (d_descrpt_deriv.size() == ndescrpt * 3);
 	assert (d_rij.size() == nnei * 3);
 	assert (int(fmt_nlist.size()) == nnei);
