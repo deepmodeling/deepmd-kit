@@ -8,7 +8,9 @@ sys.path.append (lib_path)
 
 from deepmd.RunOptions import RunOptions
 from deepmd.DataSystem import DataSystem
-from deepmd.ModelLocFrame import ModelLocFrame
+from deepmd.DescrptLocFrame import DescrptLocFrame
+from deepmd.EnerFitting import EnerFitting
+from deepmd.Model import Model
 from deepmd.common import j_must_have, j_must_have_d, j_have
 
 global_ener_float_precision = tf.float64
@@ -60,7 +62,10 @@ class TestModel(unittest.TestCase):
         
         bias_atom_e = data.compute_energy_shift()
 
-        model = ModelLocFrame(jdata)
+        descrpt = DescrptLocFrame(jdata)
+        fitting = EnerFitting(jdata, descrpt)
+        model = Model(jdata, descrpt, fitting)
+
         davg, dstd = model.compute_dstats([test_coord], [test_box], [test_type], [natoms_vec], [default_mesh])
 
         t_prop_c           = tf.placeholder(tf.float32, [4],    name='t_prop_c')
@@ -87,8 +92,7 @@ class TestModel(unittest.TestCase):
                                        dstd = dstd,
                                        bias_atom_e = bias_atom_e, 
                                        suffix = "loc_frame", 
-                                       reuse_attr = False,
-                                       reuse_weights = False)
+                                       reuse = False)
 
         feed_dict_test = {t_prop_c:        test_prop_c,
                           t_energy:        test_energy              [:numb_test],
