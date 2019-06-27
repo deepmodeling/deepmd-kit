@@ -26,10 +26,7 @@ class Model() :
             all_natoms_vec.append(natoms_vec)
             all_default_mesh.append(default_mesh)
 
-        if not self.coord_norm :
-            davg, dstd = self.no_norm_dstats ()
-        else :
-            davg, dstd = self.compute_dstats (all_stat_coord, all_stat_box, all_stat_type, all_natoms_vec, all_default_mesh)
+        davg, dstd = self.compute_dstats (all_stat_coord, all_stat_box, all_stat_type, all_natoms_vec, all_default_mesh)
         # if self.run_opt.is_chief:
         #     np.savetxt ("stat.avg.out", davg.T)
         #     np.savetxt ("stat.std.out", dstd.T)
