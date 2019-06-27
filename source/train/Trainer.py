@@ -83,25 +83,26 @@ class NNPTrainer (object):
         self._init_param(jdata)
 
     def _init_param(self, jdata):
-        # descrpt config
-        model_type = j_must_have(jdata, 'model_type')
-        if model_type == 'loc_frame':
-            model_param = j_must_have(jdata, 'model')
-            self.descrpt = DescrptLocFrame(model_param)
-        elif model_type == 'se_a' :
-            model_param = j_must_have(jdata, 'model')
-            self.descrpt = DescrptSeA(model_param)
-        elif model_type == 'se_r' :
-            model_param = j_must_have(jdata, 'model')
-            self.descrpt = DescrptSeR(model_param)
+        # model config        
+        model_param = j_must_have(jdata, 'model')
+        descrpt_param = j_must_have(model_param, 'descriptor')
+        fitting_param = j_must_have(model_param, 'fitting_net')
+        # descriptor
+        descrpt_type = j_must_have(descrpt_param, 'type')
+        if descrpt_type == 'loc_frame':
+            self.descrpt = DescrptLocFrame(descrpt_param)
+        elif descrpt_type == 'se_a' :
+            self.descrpt = DescrptSeA(descrpt_param)
+        elif descrpt_type == 'se_r' :
+            self.descrpt = DescrptSeR(descrpt_param)
         # elif model_type == 'se_ar' :
         #     model_param_a = j_must_have(jdata, 'model_a')
         #     model_param_r = j_must_have(jdata, 'model_r')
         #     self.model = ModelHyb(model_param_a, model_param_r)
         else :
             raise RuntimeError('unknow model type ' + model_type)
-
-        self.fitting = EnerFitting(model_param, self.descrpt)
+        # fitting net
+        self.fitting = EnerFitting(fitting_param, self.descrpt)
         self.model = Model(model_param, self.descrpt, self.fitting)
 
         self.numb_test = j_must_have (jdata, 'numb_test')

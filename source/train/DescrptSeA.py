@@ -16,11 +16,8 @@ op_module = tf.load_op_library(module_path + "libop_abi.so")
 class DescrptSeA ():
     def __init__ (self, jdata):
         # descrpt config
-        self.use_smooth = False
-        self.sel_a = j_must_have (jdata, 'sel_a')
+        self.sel_a = j_must_have (jdata, 'sel')
         self.sel_r = [ 0 for ii in range(len(self.sel_a)) ]
-        if j_have (jdata, 'sel_r') :
-            warnings.warn ('ignoring key sel_r in the json database and set sel_r to %s' % str(self.sel_r))
         self.ntypes = len(self.sel_a)
         assert(self.ntypes == len(self.sel_r))
         self.rcut_a = -1
@@ -30,24 +27,12 @@ class DescrptSeA ():
             self.rcut_r_smth = jdata['rcut_smth']
         else :
             self.rcut_r_smth = self.rcut_r
-        # fparam
-        self.numb_fparam = 0
-        if j_have(jdata, 'numb_fparam') :
-            self.numb_fparam = jdata['numb_fparam']
-	# type_map
-        self.type_map = []
-        if j_have(jdata, 'type_map') :
-            self.numb_fparam = jdata['type_map']
         # filter of smooth version
-        if j_have(jdata, 'coord_norm') :
-            self.coord_norm = jdata['coord_norm']
-        else :
-            self.coord_norm = True
-        self.filter_neuron = j_must_have (jdata, 'filter_neuron')
+        self.filter_neuron = j_must_have (jdata, 'neuron')
         self.n_axis_neuron = j_must_have_d (jdata, 'axis_neuron', ['n_axis_neuron'])
         self.filter_resnet_dt = False
-        if j_have(jdata, 'filter_resnet_dt') :
-            self.filter_resnet_dt = jdata['filter_resnet_dt']        
+        if j_have(jdata, 'resnet_dt') :
+            self.filter_resnet_dt = jdata['resnet_dt']        
         # numb of neighbors and numb of descrptors
         self.nnei_a = np.cumsum(self.sel_a)[-1]
         self.nnei_r = np.cumsum(self.sel_r)[-1]

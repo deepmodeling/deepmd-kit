@@ -20,13 +20,10 @@ class EnerFitting ():
         if j_have(jdata, 'numb_fparam') :
             self.numb_fparam = jdata['numb_fparam']
         # network size
-        self.n_neuron = j_must_have_d (jdata, 'fitting_neuron', ['n_neuron'])
+        self.n_neuron = j_must_have_d (jdata, 'neuron', ['n_neuron'])
         self.resnet_dt = True
         if j_have(jdata, 'resnet_dt') :
-            warnings.warn("the key \"%s\" is deprecated, please use \"%s\" instead" % ('resnet_dt','fitting_resnet_dt'))
             self.resnet_dt = jdata['resnet_dt']
-        if j_have(jdata, 'fitting_resnet_dt') :
-            self.resnet_dt = jdata['fitting_resnet_dt']
         
         self.seed = None
         if j_have (jdata, 'seed') :

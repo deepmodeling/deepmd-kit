@@ -48,7 +48,7 @@ class TestModel(unittest.TestCase):
         batch_size = 1
         test_size = 1
         stop_batch = j_must_have(jdata, 'stop_batch')
-        rcut = j_must_have (jdata, 'rcut')
+        rcut = j_must_have (jdata['model']['descriptor'], 'rcut')
         
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt = None)
         
@@ -62,9 +62,9 @@ class TestModel(unittest.TestCase):
         
         bias_atom_e = data.compute_energy_shift()
 
-        descrpt = DescrptSeA(jdata)
-        fitting = EnerFitting(jdata, descrpt)
-        model = Model(jdata, descrpt, fitting)
+        descrpt = DescrptSeA(jdata['model']['descriptor'])
+        fitting = EnerFitting(jdata['model']['fitting_net'], descrpt)
+        model = Model(jdata['model'], descrpt, fitting)
 
         davg, dstd = model.compute_dstats([test_coord], [test_box], [test_type], [natoms_vec], [default_mesh])
 

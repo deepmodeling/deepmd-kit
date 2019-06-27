@@ -2,15 +2,24 @@
     "_comment": " model parameters",
     "model_type":	"se_r",
     "model":	{
-	"sel_r":		[46, 92],
-	"rcut_smth":		1.00,
-	"rcut":			6.00,
-	"filter_neuron":	[5, 10, 20],
-	"filter_resnet_dt":	false,
-	"fitting_neuron":	[120, 120, 120],
-	"fitting_resnet_dt":	true,
-	"seed":			1,
-	"_comment":		"that's all"
+	"type_map":		["O", "H"],
+	"descriptor": {
+	    "type":		"se_r",
+	    "sel":		[46, 92],
+	    "rcut_smth":	1.00,
+	    "rcut":		6.00,
+	    "neuron":		[5, 10, 20],
+	    "resnet_dt":	false,
+	    "seed":		1,
+	    "_comment": " that's all"
+	},
+	"fitting_net" :{
+	    "neuron":		[120, 120, 120],
+	    "resnet_dt":	true,
+	    "seed":		1,
+	    "_comment":		"that's all"
+	},
+	"_comment": " that's all"
     },
 
     "_comment": " traing controls",

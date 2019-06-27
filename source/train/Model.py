@@ -14,18 +14,13 @@ class Model() :
         self.descrpt = descrpt
         self.rcut = self.descrpt.get_rcut()
         self.ntypes = self.descrpt.get_ntypes()
-        # fparam
-        self.numb_fparam = 0
-        if j_have(jdata, 'numb_fparam') :
-            self.numb_fparam = jdata['numb_fparam']
 	# type_map
         self.type_map = []
         if j_have(jdata, 'type_map') :
-            self.numb_fparam = jdata['type_map']
+            self.type_map = jdata['type_map']
         # fitting
         self.fitting = fitting
         self.numb_fparam = self.fitting.get_numb_fparam()
-
         # short-range tab
         if 'use_srtab' in jdata :
             self.srtab = TabInter(jdata['use_srtab'])
@@ -34,11 +29,6 @@ class Model() :
             self.sw_rmax = j_must_have(jdata, 'sw_rmax')
         else :
             self.srtab = None
-
-        self.seed = None
-        if j_have (jdata, 'seed') :
-            self.seed = jdata['seed']
-        self.useBN = False
 
 
     def get_rcut (self) :

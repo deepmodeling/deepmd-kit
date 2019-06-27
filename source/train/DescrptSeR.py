@@ -16,12 +16,9 @@ op_module = tf.load_op_library(module_path + "libop_abi.so")
 class DescrptSeR ():
     def __init__ (self, jdata):
         # descrpt config
-        self.use_smooth = False
-        self.sel_r = j_must_have (jdata, 'sel_r')
+        self.sel_r = j_must_have (jdata, 'sel')
         self.sel_a = [ 0 for ii in range(len(self.sel_r)) ]
         self.sel = self.sel_r
-        if j_have (jdata, 'sel_a') :
-            warnings.warn ('ignoring key sel_a in the json database and set sel_r to %s' % str(self.sel_a))
         self.ntypes = len(self.sel_r)
         self.rcut = j_must_have (jdata, 'rcut')
         if j_have(jdata, 'rcut_smth') :
@@ -29,14 +26,10 @@ class DescrptSeR ():
         else :
             self.rcut_smth = self.rcut
         # filter of smooth version
-        if j_have(jdata, 'coord_norm') :
-            self.coord_norm = jdata['coord_norm']
-        else :
-            self.coord_norm = True
-        self.filter_neuron = j_must_have (jdata, 'filter_neuron')
+        self.filter_neuron = j_must_have (jdata, 'neuron')
         self.filter_resnet_dt = False
-        if j_have(jdata, 'filter_resnet_dt') :
-            self.filter_resnet_dt = jdata['filter_resnet_dt']        
+        if j_have(jdata, 'resnet_dt') :
+            self.filter_resnet_dt = jdata['resnet_dt']        
         # numb of neighbors and numb of descrptors
         self.nnei_a = np.cumsum(self.sel_a)[-1]
         self.nnei_r = np.cumsum(self.sel_r)[-1]
