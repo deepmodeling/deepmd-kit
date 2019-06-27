@@ -2,7 +2,6 @@ import os,warnings
 import numpy as np
 import tensorflow as tf
 from deepmd.common import j_must_have, j_must_have_d, j_have
-from deepmd.Model import Model
 
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
@@ -14,7 +13,7 @@ module_path = os.path.dirname(os.path.realpath(__file__)) + "/"
 assert (os.path.isfile (module_path  + "libop_abi.so" )), "op module does not exist"
 op_module = tf.load_op_library(module_path + "libop_abi.so")
 
-class DescrptSeA (Model):
+class DescrptSeA ():
     def __init__ (self, jdata):
         # descrpt config
         self.use_smooth = False
@@ -67,9 +66,6 @@ class DescrptSeA (Model):
 
     def get_ntypes (self) :
         return self.ntypes
-
-    def get_type_map (self) :
-        return self.type_map
 
     def get_dim_out (self) :
         return self.filter_neuron[-1] * self.n_axis_neuron
@@ -129,10 +125,9 @@ class DescrptSeA (Model):
                davg = None, 
                dstd = None,
                suffix = '', 
-               reuse_attr = None,
-               reuse_weights = None):
+               reuse = None):
 
-        with tf.variable_scope('model_attr' + suffix, reuse = reuse_attr) :
+        with tf.variable_scope('model_attr' + suffix, reuse = reuse) :
             if davg is None:
                 davg = np.zeros([self.ntypes, self.ndescrpt]) 
             if dstd is None:
@@ -171,7 +166,7 @@ class DescrptSeA (Model):
                                        sel_a = self.sel_a,
                                        sel_r = self.sel_r)
 
-        self.dout = self._pass_filter(self.descrpt, natoms, suffix = suffix, reuse = reuse_weights)
+        self.dout = self._pass_filter(self.descrpt, natoms, suffix = suffix, reuse = reuse)
 
         return self.dout
 

@@ -11,10 +11,15 @@ from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
 from deepmd.RunOptions import global_cvt_2_tf_float
 from deepmd.RunOptions import global_cvt_2_ener_float
-from ModelSeA import ModelSeA
-from ModelSeR import ModelSeR
-from ModelHyb import ModelHyb
-from ModelLocFrame import ModelLocFrame
+# from ModelSeA import ModelSeA
+# from ModelSeR import ModelSeR
+# from ModelHyb import ModelHyb
+# from ModelLocFrame import ModelLocFrame
+from EnerFitting import EnerFitting
+from DescrptLocFrame import DescrptLocFrame
+from DescrptSeA import DescrptSeA
+from DescrptSeR import DescrptSeR
+from Model import Model
 
 from tensorflow.python.framework import ops
 from tensorflow.python.client import timeline
@@ -82,19 +87,22 @@ class NNPTrainer (object):
         model_type = j_must_have(jdata, 'model_type')
         if model_type == 'loc_frame':
             model_param = j_must_have(jdata, 'model')
-            self.model = ModelLocFrame(model_param)
+            self.descrpt = DescrptLocFrame(model_param)
         elif model_type == 'se_a' :
             model_param = j_must_have(jdata, 'model')
-            self.model = ModelSeA(model_param)
+            self.descrpt = DescrptSeA(model_param)
         elif model_type == 'se_r' :
             model_param = j_must_have(jdata, 'model')
-            self.model = ModelSeR(model_param)
-        elif model_type == 'se_ar' :
-            model_param_a = j_must_have(jdata, 'model_a')
-            model_param_r = j_must_have(jdata, 'model_r')
-            self.model = ModelHyb(model_param_a, model_param_r)
+            self.descrpt = DescrptSeR(model_param)
+        # elif model_type == 'se_ar' :
+        #     model_param_a = j_must_have(jdata, 'model_a')
+        #     model_param_r = j_must_have(jdata, 'model_r')
+        #     self.model = ModelHyb(model_param_a, model_param_r)
         else :
             raise RuntimeError('unknow model type ' + model_type)
+
+        self.fitting = EnerFitting(model_param, self.descrpt)
+        self.model = Model(model_param, self.descrpt, self.fitting)
 
         self.numb_test = j_must_have (jdata, 'numb_test')
         self.useBN = False
@@ -210,8 +218,7 @@ class NNPTrainer (object):
                                             dstd = dstd,
                                             bias_atom_e = bias_atom_e, 
                                             suffix = "", 
-                                            reuse_attr = False, 
-                                            reuse_weights = False)
+                                            reuse = False)
 
         self.l2_l, self.l2_el, self.l2_fl, self.l2_vl, self.l2_ael \
             = self.loss (self.t_natoms, \

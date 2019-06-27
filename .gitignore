@@ -14,3 +14,5 @@
 *.pyc
 CMakeCache.txt
 CMakeFiles
+*.bk
+
