@@ -66,7 +66,7 @@ class EnerFitting ():
             layer = inputs_i
             if self.numb_fparam > 0 :
                 ext_fparam = tf.reshape(fparam, [-1, self.numb_fparam])
-                ext_fparam = tf.tile(ext_fparam, [1, natoms[0]])
+                ext_fparam = tf.tile(ext_fparam, [1, natoms[2+type_i]])
                 ext_fparam = tf.reshape(ext_fparam, [-1, self.numb_fparam])
                 layer = tf.concat([layer, ext_fparam], axis = 1)
             for ii in range(0,len(self.n_neuron)) :
