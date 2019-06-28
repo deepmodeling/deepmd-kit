@@ -1,6 +1,7 @@
-import os,warnings
+import os,sys,warnings
 import numpy as np
 import tensorflow as tf
+from deepmd.TabInter import TabInter
 from deepmd.common import j_must_have, j_must_have_d, j_have
 
 from deepmd.RunOptions import global_tf_float_precision
@@ -8,6 +9,10 @@ from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
 from deepmd.RunOptions import global_cvt_2_tf_float
 from deepmd.RunOptions import global_cvt_2_ener_float
+
+module_path = os.path.dirname(os.path.realpath(__file__)) + "/"
+assert (os.path.isfile (module_path  + "libop_abi.so" )), "op module does not exist"
+op_module = tf.load_op_library(module_path + "libop_abi.so")
 
 class Model() :
     def __init__ (self, jdata, descrpt, fitting):
@@ -114,17 +119,23 @@ class Model() :
         coord = tf.reshape (coord_, [-1, natoms[1] * 3])
         atype = tf.reshape (atype_, [-1, natoms[1]])
 
-        descrpt = self.descrpt.build(coord_, 
-                                     atype_, 
-                                     natoms, 
-                                     box, 
-                                     mesh, 
-                                     davg = davg, 
-                                     dstd = dstd, 
-                                     suffix = suffix, 
-                                     reuse = reuse)
+        dout \
+            = self.descrpt.build(coord_,
+                                 atype_,
+                                 natoms,
+                                 box,
+                                 mesh,
+                                 davg = davg,
+                                 dstd = dstd,
+                                 suffix = suffix,
+                                 reuse = reuse)
 
-        atom_ener = self.fitting.build (descrpt, 
+        if self.srtab is not None :
+            nlist, rij, sel_a, sel_r = self.descrpt.get_nlist()
+            nnei_a = np.cumsum(sel_a)[-1]
+            nnei_r = np.cumsum(sel_r)[-1]
+
+        atom_ener = self.fitting.build (dout, 
                                         fparam, 
                                         natoms, 
                                         bias_atom_e = bias_atom_e, 
@@ -137,8 +148,8 @@ class Model() :
                                             rij, 
                                             nlist,
                                             natoms,
-                                            sel_a = self.sel_a,
-                                            sel_r = self.sel_r,
+                                            sel_a = sel_a,
+                                            sel_r = sel_r,
                                             alpha = self.smin_alpha,
                                             rmin = self.sw_rmin,
                                             rmax = self.sw_rmax)            
@@ -154,8 +165,8 @@ class Model() :
                                       nlist,
                                       natoms,
                                       sw_lambda,
-                                      sel_a = self.sel_a,
-                                      sel_r = self.sel_r)
+                                      sel_a = sel_a,
+                                      sel_r = sel_r)
             energy_diff = tab_atom_ener - tf.reshape(atom_ener, [-1, natoms[0]])
             tab_atom_ener = tf.reshape(sw_lambda, [-1]) * tf.reshape(tab_atom_ener, [-1])
             atom_ener = tf.reshape(inv_sw_lambda, [-1]) * atom_ener
@@ -175,8 +186,8 @@ class Model() :
                                            sw_deriv,
                                            nlist, 
                                            natoms,
-                                           n_a_sel = self.nnei_a,
-                                           n_r_sel = self.nnei_r)
+                                           n_a_sel = nnei_a,
+                                           n_r_sel = nnei_r)
             force = force + sw_force + tab_force
 
         force = tf.reshape (force, [-1, 3 * natoms[1]], name = "o_force"+suffix)
@@ -188,8 +199,8 @@ class Model() :
                                              rij,
                                              nlist,
                                              natoms,
-                                             n_a_sel = self.nnei_a,
-                                             n_r_sel = self.nnei_r)
+                                             n_a_sel = nnei_a,
+                                             n_r_sel = nnei_r)
             atom_virial = atom_virial + sw_atom_virial + tab_atom_virial
             virial = virial + sw_virial \
                      + tf.reduce_sum(tf.reshape(tab_atom_virial, [-1, natoms[1], 9]), axis = 1)

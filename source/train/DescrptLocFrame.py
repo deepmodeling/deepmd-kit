@@ -42,6 +42,9 @@ class DescrptLocFrame () :
     def get_dim_out (self) :
         return self.ndescrpt
 
+    def get_nlist (self) :
+        return self.nlist, self.rij, self.sel_a, self.sel_r
+
     def compute_dstats (self,
                         data_coord, 
                         data_box, 

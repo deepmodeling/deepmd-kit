@@ -1,4 +1,4 @@
-import os,warnings
+import os,sys,warnings
 import numpy as np
 import tensorflow as tf
 from deepmd.common import j_must_have, j_must_have_d, j_have
@@ -54,6 +54,9 @@ class DescrptSeA ():
 
     def get_dim_out (self) :
         return self.filter_neuron[-1] * self.n_axis_neuron
+
+    def get_nlist (self) :
+        return self.nlist, self.rij, self.sel_a, self.sel_r
 
     def compute_dstats (self,
                         data_coord, 
@@ -151,13 +154,15 @@ class DescrptSeA ():
                                        sel_a = self.sel_a,
                                        sel_r = self.sel_r)
 
-        self.dout = self._pass_filter(self.descrpt, natoms, suffix = suffix, reuse = reuse)
+        self.descrpt_reshape = tf.reshape(self.descrpt, [-1, self.ndescrpt])
+
+        self.dout = self._pass_filter(self.descrpt_reshape, natoms, suffix = suffix, reuse = reuse)
 
         return self.dout
 
 
     def prod_force_virial(self, atom_ener, natoms) :
-        [net_deriv] = tf.gradients (atom_ener, self.descrpt)
+        [net_deriv] = tf.gradients (atom_ener, self.descrpt_reshape)
         net_deriv_reshape = tf.reshape (net_deriv, [-1, natoms[0] * self.ndescrpt])        
         force \
             = op_module.prod_force_norot (net_deriv_reshape,

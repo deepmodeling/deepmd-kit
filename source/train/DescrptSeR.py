@@ -52,6 +52,9 @@ class DescrptSeR ():
     def get_dim_out (self) :
         return self.filter_neuron[-1]
 
+    def get_nlist (self) :
+        return self.nlist, self.rij, self.sel_a, self.sel_r
+
     def compute_dstats (self,
                         data_coord, 
                         data_box, 
@@ -133,13 +136,15 @@ class DescrptSeR ():
                                       rcut_smth = self.rcut_smth,
                                       sel = self.sel_r)
 
-        self.dout = self._pass_filter(self.descrpt, natoms, suffix = suffix, reuse = reuse)
+        self.descrpt_reshape = tf.reshape(self.descrpt, [-1, self.ndescrpt])
+
+        self.dout = self._pass_filter(self.descrpt_reshape, natoms, suffix = suffix, reuse = reuse)
 
         return self.dout
 
 
     def prod_force_virial(self, atom_ener, natoms) :
-        [net_deriv] = tf.gradients (atom_ener, self.descrpt)
+        [net_deriv] = tf.gradients (atom_ener, self.descrpt_reshape)
         net_deriv_reshape = tf.reshape (net_deriv, [-1, natoms[0] * self.ndescrpt])        
         force \
             = op_module.prod_force_se_r (net_deriv_reshape,
