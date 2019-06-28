@@ -101,7 +101,7 @@ class TestModel(unittest.TestCase):
                                        davg = davg,
                                        dstd = dstd,
                                        bias_atom_e = bias_atom_e, 
-                                       suffix = "se_a", 
+                                       suffix = "se_a_srtab", 
                                        reuse = False)
 
         feed_dict_test = {t_prop_c:        test_prop_c,
