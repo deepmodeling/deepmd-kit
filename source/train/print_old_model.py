@@ -3,6 +3,8 @@ import numpy as np
 import tensorflow as tf
 from common import Data
 
+# hash: b721960c9d5c61ee161f9e929c7d76f77673bc10
+
 lib_path = os.path.dirname(os.path.realpath(__file__)) + ".."
 sys.path.append (lib_path)
 
@@ -27,6 +29,7 @@ def gen_data() :
     sys.data['forces'] = np.zeros([nframes,natoms,3])
     sys.data['virials'] = []
     sys.to_deepmd_npy('system', prec=np.float64)    
+    np.save('system/set.000/fparam.npy', tmpdata.fparam)
 
 def compute_efv(jfile):
     fp = open (jfile, 'r')
@@ -55,6 +58,7 @@ def compute_efv(jfile):
         natoms_vec, \
         default_mesh \
         = data.get_test ()
+
     feed_dict_test = {model.t_prop_c:        test_prop_c,
                       model.t_energy:        test_energy              [:model.numb_test],
                       model.t_force:         np.reshape(test_force    [:model.numb_test, :], [-1]),
@@ -65,6 +69,7 @@ def compute_efv(jfile):
                       model.t_type:          np.reshape(test_type     [:model.numb_test, :], [-1]),
                       model.t_natoms:        natoms_vec,
                       model.t_mesh:          default_mesh,
+                      model.t_fparam:        np.reshape(test_fparam   [:model.numb_test, :], [-1]),
                       model.is_training:     False}
 
     sess = tf.Session()

@@ -12,6 +12,7 @@ class Data():
         self.coord = np.array(coord)
         np.random.seed(seed)
         self.coord += rand_pert * np.random.random(self.coord.shape)
+        self.fparam = np.array([[0.1, 0.2]])
         self.atype = np.array([0, 1, 1, 0, 1, 1], dtype = int)
         self.cell = 20 * np.eye(3)
         self.nframes = 1
