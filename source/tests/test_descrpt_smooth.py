@@ -10,8 +10,8 @@ module_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..")
 sys.path.append (module_path)
 import _prod_force_grad
 import _prod_virial_grad
-import _prod_force_norot_grad
-import _prod_virial_norot_grad
+import _prod_force_se_a_grad
+import _prod_virial_se_a_grad
 import _soft_min_force_grad
 import _soft_min_virial_grad
 
@@ -76,7 +76,7 @@ class Inter():
                  name,
                  reuse = None) :
         descrpt, descrpt_deriv, rij, nlist \
-            = op_module.descrpt_norot (dcoord, 
+            = op_module.descrpt_se_a (dcoord, 
                                        dtype,
                                        tnatoms,
                                        dbox, 
@@ -96,13 +96,13 @@ class Inter():
         net_deriv = net_deriv_[0]
         net_deriv_reshape = tf.reshape (net_deriv, [-1, self.natoms[0] * self.ndescrpt]) 
 
-        force = op_module.prod_force_norot (net_deriv_reshape, 
+        force = op_module.prod_force_se_a (net_deriv_reshape, 
                                             descrpt_deriv, 
                                             nlist, 
                                             tnatoms,
                                             n_a_sel = self.nnei_a, 
                                             n_r_sel = self.nnei_r)
-        virial, atom_vir = op_module.prod_virial_norot (net_deriv_reshape, 
+        virial, atom_vir = op_module.prod_virial_se_a (net_deriv_reshape, 
                                                         descrpt_deriv, 
                                                         rij,
                                                         nlist, 

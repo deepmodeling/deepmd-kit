@@ -141,7 +141,7 @@ class DescrptSeA ():
         atype = tf.reshape (atype_, [-1, natoms[1]])
 
         self.descrpt, self.descrpt_deriv, self.rij, self.nlist \
-            = op_module.descrpt_norot (coord,
+            = op_module.descrpt_se_a (coord,
                                        atype,
                                        natoms,
                                        box,
@@ -165,14 +165,14 @@ class DescrptSeA ():
         [net_deriv] = tf.gradients (atom_ener, self.descrpt_reshape)
         net_deriv_reshape = tf.reshape (net_deriv, [-1, natoms[0] * self.ndescrpt])        
         force \
-            = op_module.prod_force_norot (net_deriv_reshape,
+            = op_module.prod_force_se_a (net_deriv_reshape,
                                           self.descrpt_deriv,
                                           self.nlist,
                                           natoms,
                                           n_a_sel = self.nnei_a,
                                           n_r_sel = self.nnei_r)
         virial, atom_virial \
-            = op_module.prod_virial_norot (net_deriv_reshape,
+            = op_module.prod_virial_se_a (net_deriv_reshape,
                                            self.descrpt_deriv,
                                            self.rij,
                                            self.nlist,
@@ -216,7 +216,7 @@ class DescrptSeA ():
         sub_graph = tf.Graph()
         with sub_graph.as_default():
             descrpt, descrpt_deriv, rij, nlist \
-                = op_module.descrpt_norot (tf.constant(data_coord),
+                = op_module.descrpt_se_a (tf.constant(data_coord),
                                            tf.constant(data_atype),
                                            tf.constant(natoms_vec, dtype = tf.int32),
                                            tf.constant(data_box),
