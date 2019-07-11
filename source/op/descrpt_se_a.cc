@@ -19,7 +19,7 @@ typedef float  VALUETYPE ;
 #endif
 
 #ifdef HIGH_PREC
-REGISTER_OP("DescrptNorot")
+REGISTER_OP("DescrptSeA")
 .Input("coord: double")
 .Input("type: int32")
 .Input("natoms: int32")
@@ -37,7 +37,7 @@ REGISTER_OP("DescrptNorot")
 .Output("rij: double")
 .Output("nlist: int32");
 #else
-REGISTER_OP("DescrptNorot")
+REGISTER_OP("DescrptSeA")
 .Input("coord: float")
 .Input("type: int32")
 .Input("natoms: int32")
@@ -56,9 +56,9 @@ REGISTER_OP("DescrptNorot")
 .Output("nlist: int32");
 #endif
 
-class DescrptNorotOp : public OpKernel {
+class DescrptSeAOp : public OpKernel {
 public:
-  explicit DescrptNorotOp(OpKernelConstruction* context) : OpKernel(context) {
+  explicit DescrptSeAOp(OpKernelConstruction* context) : OpKernel(context) {
     OP_REQUIRES_OK(context, context->GetAttr("rcut_a", &rcut_a));
     OP_REQUIRES_OK(context, context->GetAttr("rcut_r", &rcut_r));
     OP_REQUIRES_OK(context, context->GetAttr("rcut_r_smth", &rcut_r_smth));
@@ -291,19 +291,19 @@ public:
 	vector<compute_t > d_descrpt_r_deriv;
 	vector<compute_t > d_rij_a;
 	vector<compute_t > d_rij_r;      
-	compute_descriptor_norot (d_descrpt_a,
-				  d_descrpt_a_deriv,
-				  d_rij_a,
-				  d_coord3,
-				  ntypes, 
-				  d_type,
-				  region, 
-				  b_pbc,
-				  ii, 
-				  fmt_nlist_a,
-				  sec_a, 
-				  rcut_r_smth, 
-				  rcut_r);
+	compute_descriptor_se_a (d_descrpt_a,
+				 d_descrpt_a_deriv,
+				 d_rij_a,
+				 d_coord3,
+				 ntypes, 
+				 d_type,
+				 region, 
+				 b_pbc,
+				 ii, 
+				 fmt_nlist_a,
+				 sec_a, 
+				 rcut_r_smth, 
+				 rcut_r);
 
 	// check sizes
 	assert (d_descrpt_a.size() == ndescrpt_a);
@@ -395,5 +395,5 @@ private:
   }
 };
 
-REGISTER_KERNEL_BUILDER(Name("DescrptNorot").Device(DEVICE_CPU), DescrptNorotOp);
+REGISTER_KERNEL_BUILDER(Name("DescrptSeA").Device(DEVICE_CPU), DescrptSeAOp);
 

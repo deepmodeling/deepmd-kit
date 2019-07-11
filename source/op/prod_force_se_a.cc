@@ -13,7 +13,7 @@ typedef float  VALUETYPE;
 #endif
 
 #ifdef HIGH_PREC
-REGISTER_OP("ProdForceNorot")
+REGISTER_OP("ProdForceSeA")
 .Input("net_deriv: double")
 .Input("in_deriv: double")
 .Input("nlist: int32")
@@ -22,7 +22,7 @@ REGISTER_OP("ProdForceNorot")
 .Attr("n_r_sel: int")
 .Output("force: double");
 #else
-REGISTER_OP("ProdForceNorot")
+REGISTER_OP("ProdForceSeA")
 .Input("net_deriv: float")
 .Input("in_deriv: float")
 .Input("nlist: int32")
@@ -34,9 +34,9 @@ REGISTER_OP("ProdForceNorot")
 
 using namespace tensorflow;
 
-class ProdForceNorotOp : public OpKernel {
+class ProdForceSeAOp : public OpKernel {
  public:
-  explicit ProdForceNorotOp(OpKernelConstruction* context) : OpKernel(context) {
+  explicit ProdForceSeAOp(OpKernelConstruction* context) : OpKernel(context) {
     OP_REQUIRES_OK(context, context->GetAttr("n_a_sel", &n_a_sel));
     OP_REQUIRES_OK(context, context->GetAttr("n_r_sel", &n_r_sel));
     n_a_shift = n_a_sel * 4;
@@ -155,7 +155,7 @@ private:
   }
 };
 
-REGISTER_KERNEL_BUILDER(Name("ProdForceNorot").Device(DEVICE_CPU), ProdForceNorotOp);
+REGISTER_KERNEL_BUILDER(Name("ProdForceSeA").Device(DEVICE_CPU), ProdForceSeAOp);
 
 
 

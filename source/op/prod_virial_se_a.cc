@@ -13,7 +13,7 @@ typedef float  VALUETYPE;
 #endif
 
 #ifdef HIGH_PREC
-REGISTER_OP("ProdVirialNorot")
+REGISTER_OP("ProdVirialSeA")
 .Input("net_deriv: double")
 .Input("in_deriv: double")
 .Input("rij: double")
@@ -25,7 +25,7 @@ REGISTER_OP("ProdVirialNorot")
 .Output("atom_virial: double")
 ;
 #else
-REGISTER_OP("ProdVirialNorot")
+REGISTER_OP("ProdVirialSeA")
 .Input("net_deriv: float")
 .Input("in_deriv: float")
 .Input("rij: float")
@@ -40,9 +40,9 @@ REGISTER_OP("ProdVirialNorot")
 
 using namespace tensorflow;
 
-class ProdVirialNorotOp : public OpKernel {
+class ProdVirialSeAOp : public OpKernel {
  public:
-  explicit ProdVirialNorotOp(OpKernelConstruction* context) : OpKernel(context) {
+  explicit ProdVirialSeAOp(OpKernelConstruction* context) : OpKernel(context) {
     OP_REQUIRES_OK(context, context->GetAttr("n_a_sel", &n_a_sel));
     OP_REQUIRES_OK(context, context->GetAttr("n_r_sel", &n_r_sel));
     n_a_shift = n_a_sel * 4;
@@ -161,7 +161,7 @@ private:
   }
 };
 
-REGISTER_KERNEL_BUILDER(Name("ProdVirialNorot").Device(DEVICE_CPU), ProdVirialNorotOp);
+REGISTER_KERNEL_BUILDER(Name("ProdVirialSeA").Device(DEVICE_CPU), ProdVirialSeAOp);
 
 
 
