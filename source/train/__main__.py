@@ -30,7 +30,7 @@ def _main () :
                               help=
                               'Restart the training from the provided checkpoint.')
     
-    default_frozen_nodes = "o_energy,o_force,o_virial,o_atom_energy,o_atom_virial,model_attr/rcut,model_attr/ntypes,model_attr/dfparam,model_attr/tmap"
+    default_frozen_nodes = "o_energy,o_force,o_virial,o_atom_energy,o_atom_virial,descrpt_attr/rcut,descrpt_attr/ntypes,fitting_attr/dfparam,model_attr/tmap"
     parser_frz = subparsers.add_parser('freeze', help='freeze the model')
     parser_frz.add_argument("-d", "--folder", type=str, default = ".", 
                             help="path to checkpoint folder")
