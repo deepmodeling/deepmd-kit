@@ -11,15 +11,13 @@ from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
 from deepmd.RunOptions import global_cvt_2_tf_float
 from deepmd.RunOptions import global_cvt_2_ener_float
-# from ModelSeA import ModelSeA
-# from ModelSeR import ModelSeR
-# from ModelHyb import ModelHyb
-# from ModelLocFrame import ModelLocFrame
-from EnerFitting import EnerFitting
+from Fitting import EnerFitting
 from DescrptLocFrame import DescrptLocFrame
 from DescrptSeA import DescrptSeA
 from DescrptSeR import DescrptSeR
 from Model import Model
+from Loss import LossStd
+from LearningRate import LearningRateExp
 
 from tensorflow.python.framework import ops
 from tensorflow.python.client import timeline
@@ -52,28 +50,6 @@ def _is_subdir(path, directory):
     relative = os.path.relpath(path, directory) + os.sep
     return not relative.startswith(os.pardir + os.sep)
 
-class LearingRate (object) :
-    def __init__ (self, 
-                  jdata, 
-                  tot_numb_batches) :
-        self.decay_steps_ = j_must_have(jdata, 'decay_steps')
-        self.decay_rate_ = j_must_have(jdata, 'decay_rate')
-        self.start_lr_ = j_must_have(jdata, 'start_lr')        
-        self.tot_numb_batches = tot_numb_batches
-
-    def value (self, 
-              batch) :
-        return self.start_lr_ * np.power (self.decay_rate_, (batch // self.decay_steps()))
-
-    def decay_steps (self) :
-#        return self.decay_steps_ * self.tot_numb_batches
-        return self.decay_steps_
-    
-    def decay_rate (self) : 
-        return self.decay_rate_
-
-    def start_lr (self) :
-        return self.start_lr_
 
 class NNPTrainer (object):
     def __init__(self, 
@@ -87,6 +63,7 @@ class NNPTrainer (object):
         model_param = j_must_have(jdata, 'model')
         descrpt_param = j_must_have(model_param, 'descriptor')
         fitting_param = j_must_have(model_param, 'fitting_net')
+
         # descriptor
         descrpt_type = j_must_have(descrpt_param, 'type')
         if descrpt_type == 'loc_frame':
@@ -95,62 +72,74 @@ class NNPTrainer (object):
             self.descrpt = DescrptSeA(descrpt_param)
         elif descrpt_type == 'se_r' :
             self.descrpt = DescrptSeR(descrpt_param)
-        # elif model_type == 'se_ar' :
-        #     model_param_a = j_must_have(jdata, 'model_a')
-        #     model_param_r = j_must_have(jdata, 'model_r')
-        #     self.model = ModelHyb(model_param_a, model_param_r)
         else :
             raise RuntimeError('unknow model type ' + model_type)
+
         # fitting net
-        self.fitting = EnerFitting(fitting_param, self.descrpt)
+        try: 
+            fitting_type = fitting_param['type']
+        except:
+            fitting_type = 'ener'
+        if fitting_type == 'ener':
+            self.fitting = EnerFitting(fitting_param, self.descrpt)
+        else :
+            raise RuntimeError('unknow fitting type ' + fitting_type)
+
+        # init model
         self.model = Model(model_param, self.descrpt, self.fitting)
 
-        self.numb_test = j_must_have (jdata, 'numb_test')
+        # learning rate
+        lr_param = j_must_have(jdata, 'learning_rate')
+        try: 
+            lr_type = lr_param['type']
+        except:
+            lr_type = 'exp'
+        if lr_type == 'exp':
+            self.lr = LearningRateExp(lr_param)
+        else :
+            raise RuntimeError('unknow learning_rate type ' + lr_type)        
+
+        # loss
+        loss_param = j_must_have(jdata, 'loss')
+        try: 
+            loss_type = loss_param['type']
+        except:
+            loss_type = 'std'
+        if loss_type == 'std':
+            self.loss = LossStd(loss_param, self.lr.start_lr())
+        else :
+            raise RuntimeError('unknow loss type ' + loss_type)
+
+        # training
+        training_param = j_must_have(jdata, 'training')
+        
+        self.numb_test = j_must_have (training_param, 'numb_test')
         self.useBN = False
 
-        self.start_pref_e = j_must_have (jdata, 'start_pref_e')
-        self.limit_pref_e = j_must_have (jdata, 'limit_pref_e')
-        self.start_pref_f = j_must_have (jdata, 'start_pref_f')
-        self.limit_pref_f = j_must_have (jdata, 'limit_pref_f')
-        self.start_pref_v = j_must_have (jdata, 'start_pref_v')
-        self.limit_pref_v = j_must_have (jdata, 'limit_pref_v')
-        self.start_pref_ae = 0
-        if j_have(jdata, 'start_pref_ae') :
-            self.start_pref_ae = jdata['start_pref_ae']
-        self.limit_pref_ae = 0
-        if j_have(jdata, 'limit_pref_ae') :
-            self.limit_pref_ae = jdata['limit_pref_ae']
-        self.has_e = (self.start_pref_e != 0 or self.limit_pref_e != 0)
-        self.has_f = (self.start_pref_f != 0 or self.limit_pref_f != 0)
-        self.has_v = (self.start_pref_v != 0 or self.limit_pref_v != 0)
-        self.has_ae = (self.start_pref_ae != 0 or self.limit_pref_ae != 0)
-
         self.disp_file = "lcurve.out"
-        if j_have (jdata, "disp_file") : self.disp_file = jdata["disp_file"]
-        self.disp_freq = j_must_have (jdata, 'disp_freq')
-        self.save_freq = j_must_have (jdata, 'save_freq')
-        self.save_ckpt = j_must_have (jdata, 'save_ckpt')
+        if j_have (training_param, "disp_file") : self.disp_file = training_param["disp_file"]
+        self.disp_freq = j_must_have (training_param, 'disp_freq')
+        self.save_freq = j_must_have (training_param, 'save_freq')
+        self.save_ckpt = j_must_have (training_param, 'save_ckpt')
 
-        self.display_in_training = j_must_have (jdata, 'disp_training')
-        self.timing_in_training = j_must_have (jdata, 'time_training')
+        self.display_in_training = j_must_have (training_param, 'disp_training')
+        self.timing_in_training = j_must_have (training_param, 'time_training')
         self.profiling = False
-        if j_have (jdata, 'profiling') :
-            self.profiling = jdata['profiling']
+        if j_have (training_param, 'profiling') :
+            self.profiling = training_param['profiling']
             if self.profiling :
-                self.profiling_file = j_must_have (jdata, 'profiling_file')
+                self.profiling_file = j_must_have (training_param, 'profiling_file')
 
         self.sys_weights = None
-        if j_have(jdata, 'sys_weights') :
-            self.sys_weights = jdata['sys_weights']
+        if j_have(training_param, 'sys_weights') :
+            self.sys_weights = training_param['sys_weights']
 
 
     def _message (self, msg) :
         self.run_opt.message(msg)
 
     def build (self, 
-               data, 
-               lr) :
-        self.lr = lr
+               data) :
         self.ntypes = self.model.get_ntypes()
         assert (self.ntypes == data.get_ntypes()), "ntypes should match that found in data"
 
@@ -174,20 +163,15 @@ class NNPTrainer (object):
 
         with tf.device(tf.train.replica_device_setter(worker_device = worker_device,
                                                       cluster = self.run_opt.cluster_spec)):
-            self._build_lr(lr)
+            self._build_lr()
             self._build_network(davg, dstd, bias_e)
             self._build_training()
 
 
-    def _build_lr(self, lr):
+    def _build_lr(self):
         self._extra_train_ops   = []
         self.global_step = tf.train.get_or_create_global_step()
-        self.starter_learning_rate = lr.start_lr()
-        self.learning_rate = tf.train.exponential_decay(lr.start_lr(), 
-                                                        self.global_step,
-                                                        lr.decay_steps(),
-                                                        lr.decay_rate(), 
-                                                        staircase=True)
+        self.learning_rate = self.lr.build(self.global_step)
         self._message("built lr")
 
     def _build_network(self, davg, dstd, bias_atom_e):
@@ -209,26 +193,27 @@ class NNPTrainer (object):
             self.t_fparam       = None
 
         self.energy, self.force, self.virial, self.atom_ener, self.atom_virial\
-            = self.model.build_interaction (self.t_coord, 
-                                            self.t_type, 
-                                            self.t_natoms, 
-                                            self.t_box, 
-                                            self.t_mesh,
-                                            self.t_fparam,
-                                            davg = davg,
-                                            dstd = dstd,
-                                            bias_atom_e = bias_atom_e, 
-                                            suffix = "", 
-                                            reuse = False)
+            = self.model.build (self.t_coord, 
+                                self.t_type, 
+                                self.t_natoms, 
+                                self.t_box, 
+                                self.t_mesh,
+                                self.t_fparam,
+                                davg = davg,
+                                dstd = dstd,
+                                bias_atom_e = bias_atom_e, 
+                                suffix = "", 
+                                reuse = False)
 
         self.l2_l, self.l2_el, self.l2_fl, self.l2_vl, self.l2_ael \
-            = self.loss (self.t_natoms, \
-                         self.t_prop_c, \
-                         self.t_energy, self.energy, \
-                         self.t_force, self.force, \
-                         self.t_virial, self.virial, \
-                         self.t_atom_ener, self.atom_ener, \
-                         suffix = "test")
+            = self.loss.build (self.learning_rate,
+                               self.t_natoms, \
+                               self.t_prop_c, \
+                               self.t_energy, self.energy, \
+                               self.t_force, self.force, \
+                               self.t_virial, self.virial, \
+                               self.t_atom_ener, self.atom_ener, \
+                               suffix = "test")
 
         self._message("built network")
 
@@ -412,13 +397,13 @@ class NNPTrainer (object):
             print_str = "# %5s" % 'batch'
             prop_fmt = '   %9s %9s'
             print_str += prop_fmt % ('l2_tst', 'l2_trn')
-            if self.has_e :
+            if self.loss.has_e :
                 print_str += prop_fmt % ('l2_e_tst', 'l2_e_trn')
-            if self.has_ae :
+            if self.loss.has_ae :
                 print_str += prop_fmt % ('l2_ae_tst', 'l2_ae_trn')
-            if self.has_f :
+            if self.loss.has_f :
                 print_str += prop_fmt % ('l2_f_tst', 'l2_f_trn')
-            if self.has_v :
+            if self.loss.has_v :
                 print_str += prop_fmt % ('l2_v_tst', 'l2_v_trn')
             print_str += '   %8s\n' % 'lr'
             fp.write(print_str)
@@ -467,60 +452,16 @@ class NNPTrainer (object):
             print_str = "%7d" % cur_batch
             prop_fmt = "   %9.2e %9.2e"
             print_str += prop_fmt % (np.sqrt(error_test), np.sqrt(error_train))
-            if self.has_e :
+            if self.loss.has_e :
                 print_str += prop_fmt % (np.sqrt(error_e_test) / natoms_vec[0], np.sqrt(error_e_train) / natoms_vec[0])
-            if self.has_ae :
+            if self.loss.has_ae :
                 print_str += prop_fmt % (np.sqrt(error_ae_test), np.sqrt(error_ae_train))
-            if self.has_f :
+            if self.loss.has_f :
                 print_str += prop_fmt % (np.sqrt(error_f_test), np.sqrt(error_f_train))
-            if self.has_v :
+            if self.loss.has_v :
                 print_str += prop_fmt % (np.sqrt(error_v_test) / natoms_vec[0], np.sqrt(error_v_train) / natoms_vec[0])
             print_str += "   %8.1e\n" % current_lr
             fp.write(print_str)
             fp.flush ()
 
-    def loss (self, 
-              natoms,
-              prop_c,
-              energy, 
-              energy_hat,
-              force,
-              force_hat, 
-              virial,
-              virial_hat, 
-              atom_ener,
-              atom_ener_hat, 
-              suffix):
-        l2_ener_loss = tf.reduce_mean( tf.square(energy - energy_hat), name='l2_'+suffix)
-
-        force_reshape = tf.reshape (force, [-1])
-        force_hat_reshape = tf.reshape (force_hat, [-1])
-        l2_force_loss = tf.reduce_mean (tf.square(force_hat_reshape - force_reshape), name = "l2_force_" + suffix)
-
-        virial_reshape = tf.reshape (virial, [-1])
-        virial_hat_reshape = tf.reshape (virial_hat, [-1])
-        l2_virial_loss = tf.reduce_mean (tf.square(virial_hat_reshape - virial_reshape), name = "l2_virial_" + suffix)
-
-        atom_ener_reshape = tf.reshape (atom_ener, [-1])
-        atom_ener_hat_reshape = tf.reshape (atom_ener_hat, [-1])
-        l2_atom_ener_loss = tf.reduce_mean (tf.square(atom_ener_hat_reshape - atom_ener_reshape), name = "l2_atom_ener_" + suffix)
-
-        atom_norm  = 1./ global_cvt_2_tf_float(natoms[0]) 
-        atom_norm_ener  = 1./ global_cvt_2_ener_float(natoms[0]) 
-        pref_e = global_cvt_2_ener_float(prop_c[0] * (self.limit_pref_e + (self.start_pref_e - self.limit_pref_e) * self.learning_rate / self.starter_learning_rate) )
-        pref_f = global_cvt_2_tf_float(prop_c[1] * (self.limit_pref_f + (self.start_pref_f - self.limit_pref_f) * self.learning_rate / self.starter_learning_rate) )
-        pref_v = global_cvt_2_tf_float(prop_c[2] * (self.limit_pref_v + (self.start_pref_v - self.limit_pref_v) * self.learning_rate / self.starter_learning_rate) )
-        pref_ae= global_cvt_2_tf_float(prop_c[3] * (self.limit_pref_ae+ (self.start_pref_ae-self.limit_pref_ae) * self.learning_rate / self.starter_learning_rate) )
-
-        l2_loss = 0
-        if self.has_e :
-            l2_loss += atom_norm_ener * (pref_e * l2_ener_loss)
-        if self.has_f :
-            l2_loss += global_cvt_2_ener_float(pref_f * l2_force_loss)
-        if self.has_v :
-            l2_loss += global_cvt_2_ener_float(atom_norm * (pref_v * l2_virial_loss))
-        if self.has_ae :
-            l2_loss += global_cvt_2_ener_float(pref_ae * l2_atom_ener_loss)
-
-        return l2_loss, l2_ener_loss, l2_force_loss, l2_virial_loss, l2_atom_ener_loss
 
