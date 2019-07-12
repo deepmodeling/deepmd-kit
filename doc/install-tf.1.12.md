@@ -1,18 +1,3 @@
-# Install tensorflow's Python interface 
-We follow the virtual environment approach to install the tensorflow's Python interface. The full instruction can be found on [the tensorflow's official website](https://www.tensorflow.org/install/pip). Now we assume that the Python interface will be installed to virtual environment directory `$tensorflow_venv`
-```bash
-virtualenv --system-site-packages -p python3 $tensorflow_venv
-source $tensorflow_venv/bin/activate
-pip install --upgrade pip
-pip install --upgrade tensorflow==1.12.0
-```
-To verify the installation, 
-```bash
-python -c "import tensorflow as tf; tf.enable_eager_execution(); print(tf.reduce_sum(tf.random_normal([1000, 1000])))"
-```
-
-One should remember to activate the virtual environment every time he/she runs deepmd training program `dp_train`.
-
 # Install tensorflow's C++ interface 
 The tensorflow's C++ interface will be compiled from the source code. Firstly one installs bazel. It is highly recommended that the bazel version 0.15.0 is used. A full instruction of bazel installation can be found [here](https://docs.bazel.build/versions/master/install.html).
 ```bash

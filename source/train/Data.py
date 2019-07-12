@@ -12,23 +12,36 @@ class DataSets (object):
     def __init__ (self, 
                   sys_path,
                   set_prefix,
-                  seed = None) :
+                  seed = None, 
+                  shuffle_test = True) :
         self.dirs = glob.glob (os.path.join(sys_path, set_prefix + ".*"))
         self.dirs.sort()
         # load atom type
         self.atom_type, self.idx_map, self.idx3_map = self.load_type (sys_path)
+        # load atom type map
+        self.type_map = self.load_type_map(sys_path)
+        if self.type_map is not None:
+            assert(len(self.type_map) >= max(self.atom_type)+1)
         # train dirs
         self.test_dir   = self.dirs[-1]
         if len(self.dirs) == 1 :
             self.train_dirs = self.dirs
         else :
             self.train_dirs = self.dirs[:-1]
+        # check fparam
+        has_fparam = [ os.path.isfile(os.path.join(ii, 'fparam.npy')) for ii in self.dirs ]
+        if any(has_fparam) and (not all(has_fparam)) :
+            raise RuntimeError("system %s: if any set has frame parameter, then all sets should have frame parameter" % sys_path)
+        if all(has_fparam) :
+            self.has_fparam = 0
+        else :
+            self.has_fparam = -1
         # energy norm
         self.eavg = self.stats_energy()
         # load sets
         self.set_count = 0
         self.load_batch_set (self.train_dirs[self.set_count % self.get_numb_set()])
-        self.load_test_set (self.test_dir)
+        self.load_test_set (self.test_dir, shuffle_test)
 
     def check_batch_size (self, batch_size) :
         for ii in self.train_dirs :
@@ -55,6 +68,17 @@ class DataSets (object):
         idx3 = np.arange (natoms * 3)
         idx3_map = np.lexsort ((idx3, atom_type3))
         return atom_type, idx_map, idx3_map
+
+    def load_type_map(self, sys_path) :
+        fname = os.path.join(sys_path, 'type_map.raw')
+        if os.path.isfile(fname) :            
+            with open(os.path.join(sys_path, 'type_map.raw')) as fp:
+                return fp.read().split()                
+        else :
+            return None
+
+    def get_type_map(self) :
+        return self.type_map
 
     def get_numb_set (self) :
         return len (self.train_dirs)
@@ -138,6 +162,13 @@ class DataSets (object):
         nframe = self.box_batch.shape[0]
         self.coord_batch = np.reshape(self.coord_batch, [nframe, -1])
         ncoord = self.coord_batch.shape[1]        
+        if self.has_fparam >= 0:
+            self.fparam_batch = np.load(os.path.join(set_name, 'fparam.npy'))
+            self.fparam_batch = np.reshape(self.fparam_batch, [nframe, -1])
+            if self.has_fparam == 0 :
+                self.has_fparam = self.fparam_batch.shape[1]
+            else :
+                assert self.has_fparam == self.fparam_batch.shape[1]
         self.prop_c_batch = np.zeros (4)
         self.prop_c_batch[0], self.energy_batch, self.prop_c_batch[3], self.atom_ener_batch \
             = self.load_energy (nframe, ncoord // 3,
@@ -160,6 +191,8 @@ class DataSets (object):
         self.coord_batch = self.coord_batch[idx]
         self.box_batch = self.box_batch[idx]
         self.type_batch = np.tile (self.atom_type, (nframe, 1))
+        if self.has_fparam >= 0 :
+            self.fparam_batch = self.fparam_batch[idx]
         self.reset_iter ()
         # sort according to type
         self.type_batch = self.type_batch[:, self.idx_map]
@@ -169,7 +202,8 @@ class DataSets (object):
         end_time = time.time()
 
     def load_test_set (self,
-                       set_name) :
+                       set_name, 
+                       shuffle_test) :
         start_time = time.time()
         self.coord_test = np.load(os.path.join(set_name, "coord.npy"))
         self.box_test = np.load(os.path.join(set_name, "box.npy"))
@@ -177,6 +211,14 @@ class DataSets (object):
         nframe = self.box_test.shape[0]
         self.coord_test = np.reshape(self.coord_test, [nframe, -1])
         ncoord = self.coord_test.shape[1]
+        fparam_file = os.path.join(set_name, 'fparam.npy')
+        if self.has_fparam >= 0 :
+            self.fparam_test = np.load(fparam_file)
+            self.fparam_test = np.reshape(self.fparam_test, [nframe, -1])
+            if self.has_fparam == 0 :
+                self.has_fparam = self.fparam_test.shape[1]
+            else :
+                assert self.has_fparam == self.fparam_test.shape[1]
         self.prop_c_test = np.zeros (4)
         self.prop_c_test[0], self.energy_test, self.prop_c_test[3], self.atom_ener_test \
             = self.load_energy (nframe, ncoord // 3,
@@ -191,7 +233,8 @@ class DataSets (object):
                                   os.path.join(set_name, "virial.npy"))
         # shuffle data
         idx = np.arange (nframe)
-        np.random.shuffle (idx)
+        if shuffle_test:
+            np.random.shuffle (idx)
         self.energy_test = self.energy_test[idx]
         self.force_test = self.force_test[idx]
         self.virial_test = self.virial_test[idx]
@@ -199,6 +242,8 @@ class DataSets (object):
         self.coord_test = self.coord_test[idx]
         self.box_test = self.box_test[idx]
         self.type_test = np.tile (self.atom_type, (nframe, 1))
+        if self.has_fparam >= 0 :
+            self.fparam_test = self.fparam_test[idx]
         # sort according to type
         self.type_test = self.type_test[:, self.idx_map]
         self.atom_ener_test = self.atom_ener_test[:, self.idx_map]
@@ -215,6 +260,10 @@ class DataSets (object):
         returned property prefector [4] in order: 
         energy, force, virial, atom_ener
         """
+        if self.has_fparam >= 0 :
+            ret_fparam = self.fparam_test.astype(global_np_float_precision)
+        else :
+            ret_fparam = None
         return \
             self.prop_c_test.astype(np.float32), \
             self.energy_test.astype(global_np_float_precision), \
@@ -223,7 +272,8 @@ class DataSets (object):
             self.atom_ener_test.astype(global_np_float_precision), \
             self.coord_test.astype(global_np_float_precision), \
             self.box_test.astype(global_np_float_precision), \
-            self.type_test
+            self.type_test,\
+            ret_fparam
     
     def get_batch (self,
                    batch_size) :
@@ -242,6 +292,10 @@ class DataSets (object):
             iterator_1 = set_size
         idx = np.arange (self.iterator, iterator_1)
         self.iterator += batch_size
+        if self.has_fparam >= 0 :
+            ret_fparam = self.fparam_batch[idx, :].astype(global_np_float_precision)
+        else :
+            ret_fparam = None
         return \
             self.prop_c_batch.astype(np.float32), \
             self.energy_batch[idx].astype(global_np_float_precision), \
@@ -250,7 +304,8 @@ class DataSets (object):
             self.atom_ener_batch[idx, :].astype(global_np_float_precision), \
             self.coord_batch[idx, :].astype(global_np_float_precision), \
             self.box_batch[idx, :].astype(global_np_float_precision), \
-            self.type_batch[idx, :]
+            self.type_batch[idx, :],\
+            ret_fparam
     
     def get_natoms (self) :
         sample_type = self.type_batch[0]
@@ -281,14 +336,6 @@ class DataSets (object):
     def get_ener (self) :
         return self.eavg
 
-if __name__ == '__main__':
-    data = DataSets (".", "set")
-    prop_c, energy, force, virial, atom_ener, coord, box, ttype = data.get_batch(1)
-    print (energy.shape)
-    print (force.shape)
-    print (coord.shape)
-    print (box.shape)
-    print (ttype.shape)
-    # energy, force, coord, box, ttype = data.get_test()
-    print (energy)
-    
+    def numb_fparam(self) :
+        return self.has_fparam
+

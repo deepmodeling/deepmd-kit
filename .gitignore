@@ -14,3 +14,9 @@
 *.pyc
 CMakeCache.txt
 CMakeFiles
+*.bk
+build
+_skbuild
+deepmd.egg-info
+dist
+

@@ -1,6 +1,14 @@
 cmake_minimum_required(VERSION 3.0)
 project(DeePMD)
 
+# build cpp or python interfaces
+if (NOT DEFINED BUILD_CPP_IF) 
+  set(BUILD_CPP_IF TRUE)
+endif (NOT DEFINED BUILD_CPP_IF)
+if (NOT DEFINED BUILD_PY_IF) 
+  set(BUILD_PY_IF FALSE)
+endif (NOT DEFINED BUILD_PY_IF)
+
 find_package(Git)
 if(GIT_FOUND)
   execute_process(
@@ -28,9 +36,6 @@ if(GIT_FOUND)
     OUTPUT_STRIP_TRAILING_WHITESPACE
     )
 endif(GIT_FOUND)
-
-# set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0")
-# set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -O0")
 
 # global defines
 list (APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/)
@@ -85,19 +90,26 @@ include_directories(${DeePMD_INCLUDE_DIRS})
 include_directories(${TensorFlow_INCLUDE_DIRS})
 
 # define names of libs
-set (LIB_DEEPMD		"deepmd")
-set (LIB_DEEPMD_OP	"deepmd_op")
-set (LIB_DEEPMD_NATIVE	"deepmd_native_md")
-set (LIB_DEEPMD_IPI	"deepmd_ipi")
+if (BUILD_CPP_IF)
+  set (LIB_DEEPMD		"deepmd")
+  set (LIB_DEEPMD_OP		"deepmd_op")
+  set (LIB_DEEPMD_NATIVE	"deepmd_native_md")
+  set (LIB_DEEPMD_IPI		"deepmd_ipi")
+endif (BUILD_CPP_IF)
 
 include_directories(${CMAKE_BINARY_DIR}/lib/)
-add_subdirectory (lib/)
 add_subdirectory (op/)
-add_subdirectory (train/)
+if (BUILD_PY_IF)
+  add_subdirectory (train/)
+  add_subdirectory (scripts/)
+  add_subdirectory (tests/)
+endif (BUILD_PY_IF)
+if (BUILD_CPP_IF) 
+  add_subdirectory (lib/)
+  add_subdirectory (lmp/)
 # add_subdirectory (md/)
-add_subdirectory (ipi/)
-add_subdirectory (scripts/)
-add_subdirectory (lmp/)
+  add_subdirectory (ipi/)
+endif (BUILD_CPP_IF)
 
 # uninstall target
 configure_file(

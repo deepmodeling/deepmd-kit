@@ -3,6 +3,9 @@
 // #include <iomanip> 
 
 using namespace std;
+enum {
+  MAX_WARN_IDX_OUT_OF_BOUND = 10,
+};
 
 bool 
 is_loc (const vector<int> & idx, 
@@ -44,6 +47,10 @@ build_clist (vector<vector<int > > &	clist,
 	     const SimulationRegion<double> & region,
 	     const vector<int > &	global_grid)
 {
+  static int count_warning_loc_idx_lower = 0;
+  static int count_warning_loc_idx_upper = 0;
+  static int count_warning_ghost_idx_lower = 0;
+  static int count_warning_ghost_idx_upper = 0;
   // compute region info, in terms of internal coord
   int nall = coord.size() / 3;
   vector<int> ext_ncell(3);
@@ -72,12 +79,16 @@ build_clist (vector<vector<int > > &	clist,
     for (int dd = 0; dd < 3; ++dd){
       idx[dd] = (inter[dd] - nat_orig[dd]) / cell_size[dd];
       if (inter[dd] - nat_orig[dd] < 0.) idx[dd] --;
-      if (idx[dd] < nat_stt[dd]) {
-	cerr << "# warning: loc idx out of lower bound " << endl;
+      if (idx[dd] < nat_stt[dd] &&
+	  count_warning_loc_idx_lower < MAX_WARN_IDX_OUT_OF_BOUND) {
+	cerr << "# warning: loc idx out of lower bound (ignored if warned for more than " << MAX_WARN_IDX_OUT_OF_BOUND << " times) " << endl;
+	count_warning_loc_idx_lower ++;
 	idx[dd] = nat_stt[dd];
       }
-      else if (idx[dd] >= nat_end[dd]) {
-	cerr << "# warning: loc idx out of upper bound " << endl;
+      else if (idx[dd] >= nat_end[dd] &&
+	       count_warning_loc_idx_upper < MAX_WARN_IDX_OUT_OF_BOUND) {
+	cerr << "# warning: loc idx out of upper bound (ignored if warned for more than " << MAX_WARN_IDX_OUT_OF_BOUND << " times) " << endl;
+	count_warning_loc_idx_upper ++;
 	idx[dd] = nat_end[dd] - 1;
       }
       idx[dd] += idx_orig_shift[dd];
@@ -91,16 +102,20 @@ build_clist (vector<vector<int > > &	clist,
     for (int dd = 0; dd < 3; ++dd){
       idx[dd] = (inter[dd] - nat_orig[dd]) / cell_size[dd];
       if (inter[dd] - nat_orig[dd] < 0.) idx[dd] --;
-      if (idx[dd] < ext_stt[dd]) {
+      if (idx[dd] < ext_stt[dd] &&
+	  count_warning_ghost_idx_lower < MAX_WARN_IDX_OUT_OF_BOUND) {
 	if (fabs((inter[dd] - nat_orig[dd]) - (ext_stt[dd] * cell_size[dd]))
 	    > fabs(ext_stt[dd] * cell_size[dd]) * numeric_limits<double>::epsilon() * 5.
 	    ) {
-	  cerr << "# warning: ghost idx out of lower bound " << endl;
+	  cerr << "# warning: ghost idx out of lower bound (ignored if warned for more than " << MAX_WARN_IDX_OUT_OF_BOUND << " times) " << endl;
+	  count_warning_ghost_idx_lower ++;
 	}
 	idx[dd] = ext_stt[dd];
       }
-      else if (idx[dd] >= ext_end[dd]) {
-	cerr << "# warning: ghost idx out of upper bound " << endl;
+      else if (idx[dd] >= ext_end[dd] &&
+	       count_warning_ghost_idx_upper < MAX_WARN_IDX_OUT_OF_BOUND) {
+	cerr << "# warning: ghost idx out of upper bound (ignored if warned for more than " << MAX_WARN_IDX_OUT_OF_BOUND << " times) " << endl;
+	count_warning_ghost_idx_upper ++;
 	idx[dd] = ext_end[dd] - 1;
       }
       idx[dd] += idx_orig_shift[dd];
@@ -117,6 +132,8 @@ build_clist (vector<vector<int > > &	clist,
 	     const vector<int > &	nat_end,
 	     const SimulationRegion<double> & region)
 {
+  static int count_warning_loc_idx_lower = 0;
+  static int count_warning_loc_idx_upper = 0;
   // compute region info, in terms of internal coord
   int nall = coord.size() / 3;
   vector<int> nat_ncell(3);
@@ -144,12 +161,16 @@ build_clist (vector<vector<int > > &	clist,
     for (int dd = 0; dd < 3; ++dd){
       idx[dd] = (inter[dd] - nat_orig[dd]) / cell_size[dd];
       if (inter[dd] - nat_orig[dd] < 0.) idx[dd] --;
-      if (idx[dd] < nat_stt[dd]) {
-	cerr << "# warning: loc idx out of lower bound " << endl;
+      if (idx[dd] < nat_stt[dd] &&
+	  count_warning_loc_idx_lower < MAX_WARN_IDX_OUT_OF_BOUND) {
+	cerr << "# warning: loc idx out of lower bound (ignored if warned for more than " << MAX_WARN_IDX_OUT_OF_BOUND << " times) " << endl;
+	count_warning_loc_idx_lower ++;
 	idx[dd] = nat_stt[dd];
       }
-      else if (idx[dd] >= nat_end[dd]) {
-	cerr << "# warning: loc idx out of upper bound " << endl;
+      else if (idx[dd] >= nat_end[dd] &&
+	       count_warning_loc_idx_upper < MAX_WARN_IDX_OUT_OF_BOUND) {
+	cerr << "# warning: loc idx out of upper bound (ignored if warned for more than " << MAX_WARN_IDX_OUT_OF_BOUND << " times) " << endl;
+	count_warning_loc_idx_upper ++;
 	idx[dd] = nat_end[dd] - 1;
       }
     }

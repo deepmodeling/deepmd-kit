@@ -1,0 +1,25 @@
+# bulk water
+
+units           metal
+boundary        p p p
+atom_style      atomic
+
+neighbor        2.0 bin
+neigh_modify    every 10 delay 0 check no
+
+read_data	conf.lmp
+mass 		1 16
+
+# pair_style	deepmd frozen_model.pb fparam 0.68938740
+pair_style	deepmd frozen_model.pb fparam 0.25852028
+pair_coeff	
+
+velocity        all create 2000 23456789
+
+fix             1 all nvt temp 2000 2000 0.5
+timestep        0.0005
+thermo_style    custom step pe ke etotal temp press vol
+thermo          100
+dump		1 all custom 100 traj.dump id type x y z fx fy fz
+
+run             1000

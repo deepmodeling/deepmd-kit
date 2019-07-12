@@ -1,5 +1,6 @@
 # Input:
 # TENSORFLOW_ROOT 
+# BUILD_CPP_IF
 #
 # Output:
 # TensorFlow_FOUND        
@@ -32,27 +33,33 @@ if (NOT TensorFlow_INCLUDE_DIRS AND tensorflow_FIND_REQUIRED)
     "You can manually set the tensorflow install path by -DTENSORFLOW_ROOT ")
 endif ()
 
-# tensorflow_cc and tensorflow_framework
-if (NOT TensorFlow_FIND_COMPONENTS)
-  set(TensorFlow_FIND_COMPONENTS tensorflow_cc tensorflow_framework)
-endif ()
-# the lib
-set (TensorFlow_LIBRARY_PATH "")
-foreach (module ${TensorFlow_FIND_COMPONENTS})
-  find_library(TensorFlow_LIBRARY_${module}
-    NAMES ${module}
-    PATHS ${TensorFlow_search_PATHS} PATH_SUFFIXES lib NO_DEFAULT_PATH
-    )
-  if (TensorFlow_LIBRARY_${module})
-    list(APPEND TensorFlow_LIBRARY ${TensorFlow_LIBRARY_${module}})
-    get_filename_component(TensorFlow_LIBRARY_PATH_${module} ${TensorFlow_LIBRARY_${module}} PATH)
-    list(APPEND TensorFlow_LIBRARY_PATH ${TensorFlow_LIBRARY_PATH_${module}})
-  elseif (tensorflow_FIND_REQUIRED)
-    message(FATAL_ERROR 
-      "Not found lib/'${module}' in '${TensorFlow_search_PATHS}' "
-      "You can manually set the tensorflow install path by -DTENSORFLOW_ROOT ")
+if (BUILD_CPP_IF)
+  message (STATUS "Enabled cpp interface build, looking for tensorflow_cc and tensorflow_framework")
+  # tensorflow_cc and tensorflow_framework
+  if (NOT TensorFlow_FIND_COMPONENTS)
+    set(TensorFlow_FIND_COMPONENTS tensorflow_cc tensorflow_framework)
   endif ()
-endforeach ()
+  # the lib
+  set (TensorFlow_LIBRARY_PATH "")
+  foreach (module ${TensorFlow_FIND_COMPONENTS})
+    find_library(TensorFlow_LIBRARY_${module}
+      NAMES ${module}
+      PATHS ${TensorFlow_search_PATHS} PATH_SUFFIXES lib NO_DEFAULT_PATH
+      )
+    if (TensorFlow_LIBRARY_${module})
+      list(APPEND TensorFlow_LIBRARY ${TensorFlow_LIBRARY_${module}})
+      get_filename_component(TensorFlow_LIBRARY_PATH_${module} ${TensorFlow_LIBRARY_${module}} PATH)
+      list(APPEND TensorFlow_LIBRARY_PATH ${TensorFlow_LIBRARY_PATH_${module}})
+    elseif (tensorflow_FIND_REQUIRED)
+      message(FATAL_ERROR 
+	"Not found lib/'${module}' in '${TensorFlow_search_PATHS}' "
+	"You can manually set the tensorflow install path by -DTENSORFLOW_ROOT ")
+    endif ()
+  endforeach ()
+else (BUILD_CPP_IF)
+  message (STATUS "Disabled cpp interface build, looking for tensorflow_framework")
+endif (BUILD_CPP_IF)
+
 
 # tensorflow_framework
 if (NOT TensorFlowFramework_FIND_COMPONENTS)
@@ -76,12 +83,20 @@ foreach (module ${TensorFlowFramework_FIND_COMPONENTS})
   endif ()
 endforeach ()
 
-# define the output variable
-if (TensorFlow_INCLUDE_DIRS AND TensorFlow_LIBRARY AND TensorFlowFramework_LIBRARY)
-  set(TensorFlow_FOUND TRUE)
-else ()
-  set(TensorFlow_FOUND FALSE)
-endif ()
+if (BUILD_CPP_IF)
+  # define the output variable
+  if (TensorFlow_INCLUDE_DIRS AND TensorFlow_LIBRARY AND TensorFlowFramework_LIBRARY)
+    set(TensorFlow_FOUND TRUE)
+  else ()
+    set(TensorFlow_FOUND FALSE)
+  endif ()
+else (BUILD_CPP_IF)
+  if (TensorFlow_INCLUDE_DIRS AND TensorFlowFramework_LIBRARY)
+    set(TensorFlow_FOUND TRUE)
+  else ()
+    set(TensorFlow_FOUND FALSE)
+  endif ()
+endif (BUILD_CPP_IF)
 
 # print message
 if (NOT TensorFlow_FIND_QUIETLY)
