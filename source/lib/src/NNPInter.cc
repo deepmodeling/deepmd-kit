@@ -486,10 +486,10 @@ NNPInter (const string & model)
   checkStatus (NewSession(options, &session));
   checkStatus (ReadBinaryProto(Env::Default(), model, &graph_def));
   checkStatus (session->Create(graph_def));  
-  rcut = get_scalar<VALUETYPE>("model_attr/t_rcut");
+  rcut = get_scalar<VALUETYPE>("descrpt_attr/t_rcut");
   cell_size = rcut;
-  ntypes = get_scalar<int>("model_attr/t_ntypes");
-  dfparam = get_scalar<int>("model_attr/t_dfparam");
+  ntypes = get_scalar<int>("descrpt_attr/t_ntypes");
+  dfparam = get_scalar<int>("fitting_attr/t_dfparam");
   assert(rcut == get_rcut());
   assert(ntypes == get_ntypes());
   if (dfparam < 0) dfparam = 0;
@@ -510,10 +510,10 @@ init (const string & model)
   checkStatus (NewSession(options, &session));
   checkStatus (ReadBinaryProto(Env::Default(), model, &graph_def));
   checkStatus (session->Create(graph_def));  
-  rcut = get_scalar<VALUETYPE>("model_attr/t_rcut");
+  rcut = get_scalar<VALUETYPE>("descrpt_attr/t_rcut");
   cell_size = rcut;
-  ntypes = get_scalar<int>("model_attr/t_ntypes");
-  dfparam = get_scalar<int>("model_attr/t_dfparam");
+  ntypes = get_scalar<int>("descrpt_attr/t_ntypes");
+  dfparam = get_scalar<int>("fitting_attr/t_dfparam");
   assert(rcut == get_rcut());
   assert(ntypes == get_ntypes());      
   if (dfparam < 0) dfparam = 0;
@@ -697,10 +697,10 @@ NNPInterModelDevi (const vector<string> & models)
     checkStatus (ReadBinaryProto(Env::Default(), models[ii], &graph_defs[ii]));
     checkStatus (sessions[ii]->Create(graph_defs[ii]));
   }
-  rcut = get_scalar<VALUETYPE>("model_attr/t_rcut");
+  rcut = get_scalar<VALUETYPE>("descrpt_attr/t_rcut");
   cell_size = rcut;
-  ntypes = get_scalar<int>("model_attr/t_ntypes");
-  dfparam = get_scalar<int>("model_attr/t_dfparam");
+  ntypes = get_scalar<int>("descrpt_attr/t_ntypes");
+  dfparam = get_scalar<int>("fitting_attr/t_dfparam");
   if (dfparam < 0) dfparam = 0;
   // rcut = get_rcut();
   // cell_size = rcut;
@@ -724,10 +724,10 @@ init (const vector<string> & models)
     checkStatus (ReadBinaryProto(Env::Default(), models[ii], &graph_defs[ii]));
     checkStatus (sessions[ii]->Create(graph_defs[ii]));
   }
-  rcut = get_scalar<VALUETYPE>("model_attr/t_rcut");
+  rcut = get_scalar<VALUETYPE>("descrpt_attr/t_rcut");
   cell_size = rcut;
-  ntypes = get_scalar<int>("model_attr/t_ntypes");
-  dfparam = get_scalar<int>("model_attr/t_dfparam");
+  ntypes = get_scalar<int>("descrpt_attr/t_ntypes");
+  dfparam = get_scalar<int>("fitting_attr/t_dfparam");
   if (dfparam < 0) dfparam = 0;
   // rcut = get_rcut();
   // cell_size = rcut;
