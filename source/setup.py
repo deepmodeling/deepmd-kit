@@ -17,11 +17,12 @@ tf_install_dir = imp.find_module('tensorflow')[1]
 install_requires=[]
 
 setup(
-    name="deepmd",
-    version_format='{tag}.dev{commitcount}+{gitsha}',
+    name="deepmd-kit",
+    setup_requires=['setuptools-git-version'],
+    version_format='{tag}.dev{commitcount}_{gitsha}',
     author="Han Wang",
     author_email="wang_han@iapcm.ac.cn",
-    description="Manipulating DeePMD-kit, VASP and LAMMPS data formats",
+    description="A deep learning package for many-body potential energy representation and molecular dynamics",
     long_description=readme,
     long_description_content_type="text/markdown",
     url="https://github.com/deepmodeling/deepmd-kit",

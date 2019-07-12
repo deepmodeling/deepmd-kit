@@ -1,20 +1,28 @@
 {
+    "with_distrib":	false,
     "_comment": " model parameters",
-    "model": {
+    "model":{
 	"type_map":	["O", "H"],
-	"descriptor" :{
-	    "type":		"se_a",
-	    "sel":		[46, 92],
-	    "rcut_smth":	5.80,
+	"use_srtab":	"your_tab",
+	"smin_alpha":	float_alpha,
+	"sw_rmin":	float_rmin,
+	"sw_rmax":	float_rmax,
+	"descriptor": {
+	    "type":		"loc_frame",
+	    "sel_a":		[16, 32],
+	    "sel_r":		[30, 60],
 	    "rcut":		6.00,
-	    "neuron":		[25, 50, 100],
-	    "resnet_dt":	false,
-	    "axis_neuron":	16,
-	    "seed":		1,
-	    "_comment":		" that's all"
+	    "axis_rule":	[0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0],
+	    "_comment":	" default rule: []",
+	    "_comment":	" user defined rule: for each type provides two axes, ",
+	    "_comment":	"                    for each axis: (a_or_r, type, idx)",
+	    "_comment":	"                    if type < 0, exclude type -(type+1)",
+	    "_comment":	"                    for water (O:0, H:1) it can be",
+	    "_comment":	"                    [0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0]",
+	    "_comment": " that's all"
 	},
-	"fitting_net" : {
-	    "neuron":		[240, 240, 240],
+	"fitting_net": {
+	    "neuron":		[240, 120, 60, 30, 10],
 	    "resnet_dt":	true,
 	    "seed":		1,
 	    "_comment":		" that's all"
@@ -24,15 +32,15 @@
 
     "learning_rate" :{
 	"type":		"exp",
-	"start_lr":	0.005,
+	"start_lr":	0.001,
 	"decay_steps":	5000,
 	"decay_rate":	0.95,
 	"_comment":	"that's all"
     },
 
-    "loss" :{
+    "loss" : {
 	"start_pref_e":	0.02,
-	"limit_pref_e":	1,
+	"limit_pref_e":	8,
 	"start_pref_f":	1000,
 	"limit_pref_f":	1,
 	"start_pref_v":	0,
@@ -40,12 +48,12 @@
 	"_comment":	" that's all"
     },
 
-    "_comment": " traing controls",
+    "_comment": " training controls",
     "training" : {
 	"systems":	["../data/water/"],
 	"set_prefix":	"set",    
 	"stop_batch":	1000000,
-	"batch_size":	1,
+	"batch_size":	4,
 
 	"seed":		1,
 
@@ -59,11 +67,8 @@
 	"load_ckpt":	"model.ckpt",
 	"disp_training":true,
 	"time_training":true,
-	"profiling":	false,
-	"profiling_file":"timeline.json",
 	"_comment":	"that's all"
     },
-
     "_comment":		"that's all"
 }
 

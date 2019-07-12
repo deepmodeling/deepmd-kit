@@ -13,7 +13,7 @@ typedef float  VALUETYPE;
 #endif
 
 #ifdef HIGH_PREC
-REGISTER_OP("ProdVirialNorotGrad")
+REGISTER_OP("ProdVirialSeAGrad")
 .Input("grad: double")
 .Input("net_deriv: double")
 .Input("in_deriv: double")
@@ -24,7 +24,7 @@ REGISTER_OP("ProdVirialNorotGrad")
 .Attr("n_r_sel: int")
 .Output("grad_net: double");
 #else
-REGISTER_OP("ProdVirialNorotGrad")
+REGISTER_OP("ProdVirialSeAGrad")
 .Input("grad: float")
 .Input("net_deriv: float")
 .Input("in_deriv: float")
@@ -36,10 +36,10 @@ REGISTER_OP("ProdVirialNorotGrad")
 .Output("grad_net: float");
 #endif
 
-class ProdVirialNorotGradOp : public OpKernel 
+class ProdVirialSeAGradOp : public OpKernel 
 {
 public:
-  explicit ProdVirialNorotGradOp(OpKernelConstruction* context) : OpKernel(context) {
+  explicit ProdVirialSeAGradOp(OpKernelConstruction* context) : OpKernel(context) {
     OP_REQUIRES_OK(context, context->GetAttr("n_a_sel", &n_a_sel));    
     OP_REQUIRES_OK(context, context->GetAttr("n_r_sel", &n_r_sel));    
     n_a_shift = n_a_sel * 4;
@@ -162,4 +162,4 @@ private:
   }
 };
 
-REGISTER_KERNEL_BUILDER(Name("ProdVirialNorotGrad").Device(DEVICE_CPU), ProdVirialNorotGradOp);
+REGISTER_KERNEL_BUILDER(Name("ProdVirialSeAGrad").Device(DEVICE_CPU), ProdVirialSeAGradOp);

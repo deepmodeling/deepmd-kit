@@ -85,18 +85,18 @@ class Model() :
                         reuse = None) :        
         return self.descrpt.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh, reuse)
     
-    def build_interaction (self, 
-                           coord_, 
-                           atype_,
-                           natoms,
-                           box, 
-                           mesh,
-                           fparam,
-                           davg = None, 
-                           dstd = None,
-                           bias_atom_e = None,
-                           suffix = '', 
-                           reuse = None):
+    def build (self, 
+               coord_, 
+               atype_,
+               natoms,
+               box, 
+               mesh,
+               fparam,
+               davg = None, 
+               dstd = None,
+               bias_atom_e = None,
+               suffix = '', 
+               reuse = None):
 
         with tf.variable_scope('model_attr' + suffix, reuse = reuse) :
             t_tmap = tf.constant(' '.join(self.type_map), 

@@ -10,8 +10,8 @@ module_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..")
 sys.path.append (module_path)
 import _prod_force_grad
 import _prod_virial_grad
-import _prod_force_norot_grad
-import _prod_virial_norot_grad
+import _prod_force_se_a_grad
+import _prod_virial_se_a_grad
 import _soft_min_force_grad
 import _soft_min_virial_grad
 from TabInter import TabInter

@@ -15,7 +15,7 @@ assert (os.path.isfile(module_file)), 'module op_grads does not exist'
 op_grads_module = tf.load_op_library(module_file)
      
 @ops.RegisterGradient("ProdVirialSeR")
-def _prod_virial_norot_grad_cc (op, grad, grad_atom):    
+def _prod_virial_se_a_grad_cc (op, grad, grad_atom):    
     net_grad =  op_grads_module.prod_virial_se_r_grad (grad, 
                                                        op.inputs[0], 
                                                        op.inputs[1], 

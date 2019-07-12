@@ -3,8 +3,8 @@
 set(OP_LIB ${PROJECT_SOURCE_DIR}/lib/src/SimulationRegion.cpp ${PROJECT_SOURCE_DIR}/lib/src/NeighborList.cpp)
 
 set (OP_CXX_FLAG -D_GLIBCXX_USE_CXX11_ABI=${OP_ABI} )
-file(GLOB OP_SRC prod_force.cc prod_virial.cc descrpt.cc descrpt_norot.cc descrpt_se_r.cc tab_inter.cc prod_force_norot.cc prod_virial_norot.cc prod_force_se_r.cc prod_virial_se_r.cc soft_min.cc soft_min_force.cc soft_min_virial.cc )
-file(GLOB OP_GRADS_SRC prod_force_grad.cc prod_force_norot_grad.cc prod_force_se_r_grad.cc prod_virial_grad.cc prod_virial_norot_grad.cc prod_virial_se_r_grad.cc soft_min_force_grad.cc soft_min_virial_grad.cc )
+file(GLOB OP_SRC prod_force.cc prod_virial.cc descrpt.cc descrpt_se_a.cc descrpt_se_r.cc tab_inter.cc prod_force_se_a.cc prod_virial_se_a.cc prod_force_se_r.cc prod_virial_se_r.cc soft_min.cc soft_min_force.cc soft_min_virial.cc )
+file(GLOB OP_GRADS_SRC prod_force_grad.cc prod_force_se_a_grad.cc prod_force_se_r_grad.cc prod_virial_grad.cc prod_virial_se_a_grad.cc prod_virial_se_r_grad.cc soft_min_force_grad.cc soft_min_virial_grad.cc )
 file(GLOB OP_PY *.py)
 
 if (BUILD_CPP_IF)

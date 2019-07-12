@@ -83,17 +83,17 @@ class TestModel(unittest.TestCase):
         is_training        = tf.placeholder(tf.bool)
 
         energy, force, virial, atom_ener, atom_virial \
-            = model.build_interaction (t_coord, 
-                                       t_type, 
-                                       t_natoms, 
-                                       t_box, 
-                                       t_mesh,
-                                       t_fparam,
-                                       davg = davg,
-                                       dstd = dstd,
-                                       bias_atom_e = bias_atom_e, 
-                                       suffix = "se_a_fparam", 
-                                       reuse = False)
+            = model.build (t_coord, 
+                           t_type, 
+                           t_natoms, 
+                           t_box, 
+                           t_mesh,
+                           t_fparam,
+                           davg = davg,
+                           dstd = dstd,
+                           bias_atom_e = bias_atom_e, 
+                           suffix = "se_a_fparam", 
+                           reuse = False)
 
         feed_dict_test = {t_prop_c:        test_prop_c,
                           t_energy:        test_energy              [:numb_test],

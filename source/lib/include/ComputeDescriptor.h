@@ -68,7 +68,7 @@ void compute_descriptor (vector<double > &			descrpt_a,
 			 const int				axis1_idx);
 
 inline
-void compute_descriptor_norot (vector<double > &			descrpt_a,
+void compute_descriptor_se_a (vector<double > &			descrpt_a,
 			       vector<double > &			descrpt_a_deriv,
 			       vector<double > &			rij_a,
 			       const vector<double > &			posi,
@@ -930,7 +930,7 @@ spline5_switch (double & vv,
 
 // output deriv size: n_sel_a_nei x 4 x 12				    
 //		      (1./rr, cos_theta, cos_phi, sin_phi)  x 4 x (x, y, z) 
-void compute_descriptor_norot (vector<double > &			descrpt_a,
+void compute_descriptor_se_a (vector<double > &			descrpt_a,
 			       vector<double > &			descrpt_a_deriv,
 			       vector<double > &			rij_a,
 			       const vector<double > &			posi,
