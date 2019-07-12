@@ -19,7 +19,7 @@ install_requires=[]
 setup(
     name="deepmd-kit",
     setup_requires=['setuptools-git-version'],
-    version_format='{tag}.dev{commitcount}+{gitsha}',
+    version_format='{tag}.dev{commitcount}_{gitsha}',
     author="Han Wang",
     author_email="wang_han@iapcm.ac.cn",
     description="A deep learning package for many-body potential energy representation and molecular dynamics",
