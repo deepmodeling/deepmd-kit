@@ -343,8 +343,8 @@ class NNPTrainer (object):
             cur_batch_size = batch_data["energy"].shape[0]
             feed_dict_batch = {self.t_prop_c:        batch_data["prop_c"],
                                self.t_energy:        batch_data["energy"], 
-                               self.t_force:         np.reshape(batch_data["batch_force"], [-1]),
-                               self.t_virial:        np.reshape(batch_data["batch_virial"], [-1]),
+                               self.t_force:         np.reshape(batch_data["force"], [-1]),
+                               self.t_virial:        np.reshape(batch_data["virial"], [-1]),
                                self.t_atom_ener:     np.reshape(batch_data["atom_ener"], [-1]),
                                self.t_atom_pref:     np.reshape(batch_data["atom_pref"], [-1]),
                                self.t_coord:         np.reshape(batch_data["coord"], [-1]),
