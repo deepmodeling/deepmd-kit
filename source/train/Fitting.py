@@ -40,7 +40,7 @@ class EnerFitting ():
                bias_atom_e = None,
                reuse = None,
                suffix = '') :
-        with tf.variable_scope('model_attr' + suffix, reuse = reuse) :
+        with tf.variable_scope('fitting_attr' + suffix, reuse = reuse) :
             t_dfparam = tf.constant(self.numb_fparam, 
                                     name = 'dfparam', 
                                     dtype = tf.int32)

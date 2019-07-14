@@ -99,7 +99,7 @@ class DescrptSeR ():
                dstd = None,
                suffix = '', 
                reuse = None):
-        with tf.variable_scope('model_attr' + suffix, reuse = reuse) :
+        with tf.variable_scope('descrpt_attr' + suffix, reuse = reuse) :
             if davg is None:
                 davg = np.zeros([self.ntypes, self.ndescrpt]) 
             if dstd is None:
