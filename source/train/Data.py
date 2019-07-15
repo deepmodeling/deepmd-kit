@@ -103,7 +103,7 @@ class DataSets (object):
         return : coeff_ener, ener, coeff_atom_ener, atom_ener
         """
         # load atom_energy
-        atom_ener, coeff_atom_ener = self.load_data(set_name, atom_energy_file, [nframes, nvalues], False)
+        coeff_atom_ener, atom_ener = self.load_data(set_name, atom_energy_file, [nframes, nvalues], False)
         # ignore energy_file
         if coeff_atom_ener == 1:
             ener = np.sum(atom_ener, axis = 1)
@@ -120,12 +120,12 @@ class DataSets (object):
             data = np.reshape(data, shape)
             if is_necessary:
                 return data
-            return data, 1
+            return 1, data
         elif is_necessary:
             raise OSError("%s not found!" % path)
         else:
             data = np.zeros(shape)
-        return data, 0
+        return 0, data
 
     def load_set(self, set_name, shuffle = True):
         start_time = time.time()
@@ -146,6 +146,7 @@ class DataSets (object):
         data["prop_c"][1], data["force"] = self.load_data(set_name, "force", [nframe, ncoord], False)
         data["prop_c"][2], data["virial"] = self.load_data(set_name, "virial", [nframe, 9], False)
         data["prop_c"][4], data["atom_pref"] = self.load_data(set_name, "atom_pref", [nframe, ncoord//3], False)
+        data["atom_pref"] = np.repeat(data["atom_pref"], 3, axis=1)
         # shuffle data
         if shuffle:
             idx = np.arange (nframe)
@@ -155,9 +156,9 @@ class DataSets (object):
                     data[ii] = data[ii][idx]
         data["type"] = np.tile (self.atom_type, (nframe, 1))
         # sort according to type
-        for ii in ["type", "atom_ener", "atom_pref"]:
+        for ii in ["type", "atom_ener"]:
             data[ii] = data[ii][:, self.idx_map]
-        for ii in ["coord", "force"]:
+        for ii in ["coord", "force", "atom_pref"]:
             data[ii] = data[ii][:, self.idx3_map]
         end_time = time.time()
         return data
@@ -189,6 +190,7 @@ class DataSets (object):
                     new_data[ii] = dd
                 else:
                     new_data[ii] = dd.astype(global_np_float_precision)
+        return new_data
 
     def get_test (self) :
         """

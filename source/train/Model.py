@@ -1,6 +1,7 @@
 import os,sys,warnings
 import numpy as np
 import tensorflow as tf
+from collections import defaultdict
 from deepmd.TabInter import TabInter
 from deepmd.common import j_must_have, j_must_have_d, j_have
 
@@ -49,24 +50,15 @@ class Model() :
         return self.type_map
 
     def data_stat(self, data):
-        all_stat_coord = []
-        all_stat_box = []
-        all_stat_type = []
-        all_natoms_vec = []
-        all_default_mesh = []
+        all_stat = defaultdict(list)
         for ii in range(data.get_nsystems()) :
-            stat_prop_c, \
-                stat_energy, stat_force, stat_virial, start_atom_ener, \
-                stat_coord, stat_box, stat_type, stat_fparam, natoms_vec, default_mesh \
-                = data.get_batch (sys_idx = ii)
-            natoms_vec = natoms_vec.astype(np.int32)            
-            all_stat_coord.append(stat_coord)
-            all_stat_box.append(stat_box)
-            all_stat_type.append(stat_type)
-            all_natoms_vec.append(natoms_vec)
-            all_default_mesh.append(default_mesh)
+            stat_data = data.get_batch (sys_idx = ii)
+            for dd in stat_data:
+                if dd == "natoms_vec":
+                    stat_data[dd] = stat_data[dd].astype(np.int32) 
+                all_stat[dd].append(stat_data[dd])
 
-        davg, dstd = self.compute_dstats (all_stat_coord, all_stat_box, all_stat_type, all_natoms_vec, all_default_mesh)
+        davg, dstd = self.compute_dstats (all_stat['coord'], all_stat['box'], all_stat['type'], all_stat['natoms_vec'], all_stat['default_mesh'])
         # if self.run_opt.is_chief:
         #     np.savetxt ("stat.avg.out", davg.T)
         #     np.savetxt ("stat.std.out", dstd.T)

@@ -59,9 +59,9 @@ class DeepPot () :
         self.model_file = model_file
         self.graph = _load_graph (self.model_file)
         # checkout input/output tensors from graph
-        self.t_ntypes = self.graph.get_tensor_by_name ('load/model_attr/ntypes:0')
-        self.t_rcut   = self.graph.get_tensor_by_name ('load/model_attr/rcut:0')
-        self.t_dfparam= self.graph.get_tensor_by_name ('load/model_attr/dfparam:0')
+        self.t_ntypes = self.graph.get_tensor_by_name ('load/descrpt_attr/ntypes:0')
+        self.t_rcut   = self.graph.get_tensor_by_name ('load/descrpt_attr/rcut:0')
+        self.t_dfparam= self.graph.get_tensor_by_name ('load/fitting_attr/dfparam:0')
         self.t_tmap   = self.graph.get_tensor_by_name ('load/model_attr/tmap:0')
         # inputs
         self.t_coord  = self.graph.get_tensor_by_name ('load/i_coord:0')

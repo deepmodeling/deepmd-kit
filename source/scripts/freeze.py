@@ -20,8 +20,8 @@ sys.path.append (module_path )
 import deepmd._prod_force_grad
 import deepmd._prod_virial_grad
 import deepmd._prod_force_se_a_grad
-import deepmd._prod_force_se_r_grad
 import deepmd._prod_virial_se_a_grad
+import deepmd._prod_force_se_r_grad
 import deepmd._prod_virial_se_r_grad
 import deepmd._soft_min_force_grad
 import deepmd._soft_min_virial_grad

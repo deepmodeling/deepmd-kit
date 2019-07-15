@@ -34,7 +34,7 @@ setup(
     keywords='deepmd',
     install_requires=install_requires,        
     cmake_args=['-DTENSORFLOW_ROOT:STRING=%s' % tf_install_dir, 
-                '-DTF_GOOGLE_BIN:BOOL=TRUE', 
+                '-DTF_GOOGLE_BIN:BOOL=FALSE', 
                 '-DBUILD_PY_IF:BOOL=TRUE', 
                 '-DBUILD_CPP_IF:BOOL=FALSE',
     ],
