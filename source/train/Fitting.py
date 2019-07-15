@@ -75,7 +75,7 @@ class EnerFitting ():
                 else :
                     layer = self._one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
             final_layer = self._one_layer(layer, 1, activation_fn = None, bavg = type_bias_ae, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
-            final_layer = tf.reshape(final_layer, [-1, natoms[2+type_i]])
+            final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i]])
 
             # concat the results
             if type_i == 0:

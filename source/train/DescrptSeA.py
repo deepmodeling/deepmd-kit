@@ -197,7 +197,7 @@ class DescrptSeA ():
                                  [-1, natoms[2+type_i]* self.ndescrpt] )
             inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
             layer = self._filter(inputs_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, seed = self.seed)
-            layer = tf.reshape(layer, [-1, natoms[2+type_i] * self.get_dim_out()])
+            layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_out()])
             output.append(layer)
             start_index += natoms[2+type_i]
         output = tf.concat(output, axis = 1)
