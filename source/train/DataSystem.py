@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os, sys
+import collections
 import numpy as np
 
 module_path = os.path.dirname(os.path.realpath(__file__)) + "/"
@@ -63,39 +64,19 @@ class DataSystem (object) :
 
         self.prob_nbatches = [ float(i) for i in self.nbatches] / np.sum(self.nbatches)
 
-        self.test_prop_c = []
-        self.test_energy = []
-        self.test_force = []
-        self.test_virial = []
-        self.test_atom_ener = []
-        self.test_coord = []
-        self.test_box = []
-        self.test_type = []
-        self.test_fparam = []
+        self.test_data = collections.defaultdict(list)
         self.default_mesh = []
         for ii in range(self.nsystems) :
-            test_prop_c, test_energy, test_force, test_virial, test_atom_ener, test_coord, test_box, test_type, test_fparam \
-                = self.data_systems[ii].get_test ()
-            self.test_prop_c.append(test_prop_c)
-            self.test_energy.append(test_energy)
-            self.test_force.append(test_force)
-            self.test_virial.append(test_virial)
-            self.test_atom_ener.append(test_atom_ener)
-            self.test_coord.append(test_coord)
-            self.test_box.append(test_box)
-            self.test_type.append(test_type)
-            self.test_fparam.append(test_fparam)
-            ncell = np.ones (3, dtype=np.int32)
+            test_system_data = self.data_systems[ii].get_test ()
+            for nn in test_system_data:
+                self.test_data[nn].append(test_system_data[nn])
             cell_size = np.max (rcut)
-            avg_box = np.average (test_box, axis = 0)
+            avg_box = np.average (test_system_data["box"], axis = 0)
             avg_box = np.reshape (avg_box, [3,3])
-            for ii in range (3) :
-                ncell[ii] = int ( np.linalg.norm(avg_box[ii]) / cell_size )
-                if (ncell[ii] < 2) : ncell[ii] = 2
+            ncell = (np.linalg.norm(avg_box, axis=1)/ cell_size).astype(np.int32)
+            ncell[ncell < 2] = 2
             default_mesh = np.zeros (6, dtype = np.int32)
-            default_mesh[3] = ncell[0]
-            default_mesh[4] = ncell[1]
-            default_mesh[5] = ncell[2]
+            default_mesh[3:6] = ncell
             self.default_mesh.append(default_mesh)
         self.pick_idx = 0
 
@@ -182,14 +163,10 @@ class DataSystem (object) :
             else :
                 prob = self.process_sys_weights(sys_weights)
             self.pick_idx = np.random.choice(np.arange(self.nsystems), p = prob)
-        b_prop_c, b_energy, b_force, b_virial, b_atom_ener, b_coord, b_box, b_type, b_fparam \
-            = self.data_systems[self.pick_idx].get_batch(self.batch_size[self.pick_idx])
-        return \
-            b_prop_c, \
-            b_energy, b_force, b_virial, b_atom_ener, \
-            b_coord, b_box, b_type, b_fparam, \
-            self.natoms_vec[self.pick_idx], \
-            self.default_mesh[self.pick_idx]
+        b_data = self.data_systems[self.pick_idx].get_batch(self.batch_size[self.pick_idx])
+        b_data["natoms_vec"] = self.natoms_vec[self.pick_idx]
+        b_data["default_mesh"] = self.default_mesh[self.pick_idx]
+        return b_data
 
     def get_test (self, 
                   sys_idx = None) :
@@ -197,19 +174,12 @@ class DataSystem (object) :
             idx = sys_idx
         else :
             idx = self.pick_idx
-        
-        return \
-            self.test_prop_c[idx], \
-            self.test_energy[idx], \
-            self.test_force[idx], \
-            self.test_virial[idx], \
-            self.test_atom_ener[idx], \
-            self.test_coord[idx], \
-            self.test_box[idx], \
-            self.test_type[idx], \
-            self.test_fparam[idx], \
-            self.natoms_vec[idx], \
-            self.default_mesh[idx]
+        test_system_data = {}
+        for nn in self.test_data:
+            test_system_data[nn] = self.test_data[nn][idx]
+        test_system_data["natoms_vec"] = self.natoms_vec[idx]
+        test_system_data["default_mesh"] = self.default_mesh[idx]
+        return test_system_data
             
     def get_nbatches (self) : 
         return self.nbatches

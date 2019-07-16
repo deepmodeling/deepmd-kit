@@ -52,24 +52,20 @@ def compute_efv(jfile):
     model = NNPModel (jdata, run_opt = run_opt)
     model.build (data, lr)
 
-    test_prop_c, \
-        test_energy, test_force, test_virial, test_atom_ener, \
-        test_coord, test_box, test_type, test_fparam, \
-        natoms_vec, \
-        default_mesh \
-        = data.get_test ()
+    test_data = data.get_test ()
 
-    feed_dict_test = {model.t_prop_c:        test_prop_c,
-                      model.t_energy:        test_energy              [:model.numb_test],
-                      model.t_force:         np.reshape(test_force    [:model.numb_test, :], [-1]),
-                      model.t_virial:        np.reshape(test_virial   [:model.numb_test, :], [-1]),
-                      model.t_atom_ener:     np.reshape(test_atom_ener[:model.numb_test, :], [-1]),
-                      model.t_coord:         np.reshape(test_coord    [:model.numb_test, :], [-1]),
-                      model.t_box:           test_box                 [:model.numb_test, :],
-                      model.t_type:          np.reshape(test_type     [:model.numb_test, :], [-1]),
-                      model.t_natoms:        natoms_vec,
-                      model.t_mesh:          default_mesh,
-                      model.t_fparam:        np.reshape(test_fparam   [:model.numb_test, :], [-1]),
+    feed_dict_test = {model.t_prop_c:        test_data["prop_c"],
+                      model.t_energy:        test_data["energy"]              [:model.numb_test],
+                      model.t_force:         np.reshape(test_data["force"]    [:model.numb_test, :], [-1]),
+                      model.t_virial:        np.reshape(test_data["virial"]   [:model.numb_test, :], [-1]),
+                      model.t_atom_ener:     np.reshape(test_data["atom_ener"][:model.numb_test, :], [-1]),
+                      model.t_atom_pref:     np.reshape(test_data["atom_pref"][:model.numb_test, :], [-1]),
+                      model.t_coord:         np.reshape(test_data["coord"]    [:model.numb_test, :], [-1]),
+                      model.t_box:           test_data["box"]                 [:model.numb_test, :],
+                      model.t_type:          np.reshape(test_data["type"]     [:model.numb_test, :], [-1]),
+                      model.t_natoms:        test_data["natoms_vec"],
+                      model.t_mesh:          test_data["default_mesh"],
+                      model.t_fparam:        np.reshape(test_data["fparam"]   [:model.numb_test, :], [-1]),
                       model.is_training:     False}
 
     sess = tf.Session()

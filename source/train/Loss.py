@@ -24,10 +24,17 @@ class LossStd () :
         self.limit_pref_ae = 0
         if j_have(jdata, 'limit_pref_ae') :
             self.limit_pref_ae = jdata['limit_pref_ae']
+        self.start_pref_pf = 0
+        if j_have(jdata, 'limit_pref_pf') :
+            self.start_pref_pf = jdata['start_pref_pf']
+        self.limit_pref_pf = 0
+        if j_have(jdata, 'limit_pref_pf') :
+            self.limit_pref_pf = jdata['limit_pref_pf']
         self.has_e = (self.start_pref_e != 0 or self.limit_pref_e != 0)
         self.has_f = (self.start_pref_f != 0 or self.limit_pref_f != 0)
         self.has_v = (self.start_pref_v != 0 or self.limit_pref_v != 0)
         self.has_ae = (self.start_pref_ae != 0 or self.limit_pref_ae != 0)
+        self.has_pf = (self.start_pref_pf != 0 or self.limit_pref_pf != 0)
 
     def build (self, 
                learning_rate,
@@ -41,12 +48,15 @@ class LossStd () :
                virial_hat, 
                atom_ener,
                atom_ener_hat, 
+               atom_pref,
                suffix):
         l2_ener_loss = tf.reduce_mean( tf.square(energy - energy_hat), name='l2_'+suffix)
 
         force_reshape = tf.reshape (force, [-1])
         force_hat_reshape = tf.reshape (force_hat, [-1])
+        atom_pref_reshape = tf.reshape (atom_pref, [-1])
         l2_force_loss = tf.reduce_mean (tf.square(force_hat_reshape - force_reshape), name = "l2_force_" + suffix)
+        l2_pref_force_loss = tf.reduce_mean (tf.multiply(tf.square(force_hat_reshape - force_reshape), atom_pref_reshape), name = "l2_pref_force_" + suffix)
 
         virial_reshape = tf.reshape (virial, [-1])
         virial_hat_reshape = tf.reshape (virial_hat, [-1])
@@ -62,6 +72,7 @@ class LossStd () :
         pref_f = global_cvt_2_tf_float(prop_c[1] * (self.limit_pref_f + (self.start_pref_f - self.limit_pref_f) * learning_rate / self.starter_learning_rate) )
         pref_v = global_cvt_2_tf_float(prop_c[2] * (self.limit_pref_v + (self.start_pref_v - self.limit_pref_v) * learning_rate / self.starter_learning_rate) )
         pref_ae= global_cvt_2_tf_float(prop_c[3] * (self.limit_pref_ae+ (self.start_pref_ae-self.limit_pref_ae) * learning_rate / self.starter_learning_rate) )
+        pref_pf= global_cvt_2_tf_float(prop_c[4] * (self.limit_pref_pf+ (self.start_pref_pf-self.limit_pref_pf) * learning_rate / self.starter_learning_rate) )
 
         l2_loss = 0
         if self.has_e :
@@ -72,5 +83,7 @@ class LossStd () :
             l2_loss += global_cvt_2_ener_float(atom_norm * (pref_v * l2_virial_loss))
         if self.has_ae :
             l2_loss += global_cvt_2_ener_float(pref_ae * l2_atom_ener_loss)
+        if self.has_pf :
+            l2_loss += global_cvt_2_ener_float(pref_pf * l2_pref_force_loss)
 
-        return l2_loss, l2_ener_loss, l2_force_loss, l2_virial_loss, l2_atom_ener_loss
+        return l2_loss, l2_ener_loss, l2_force_loss, l2_virial_loss, l2_atom_ener_loss, l2_pref_force_loss
