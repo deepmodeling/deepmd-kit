@@ -49,6 +49,7 @@ PairNNP::PairNNP(LAMMPS *lmp)
   numb_types = 0;
   numb_models = 0;
   out_freq = 0;
+  out_each = 0;
   scale = NULL;
 
   // set comm size needed by this Pair
@@ -328,10 +329,13 @@ void PairNNP::compute(int eflag, int vflag)
 	     << " " << setw(18) << all_e_avg
 	     << " " << setw(18) << all_f_max 
 	     << " " << setw(18) << all_f_min
-	     << " " << setw(18) << all_f_avg
+	     << " " << setw(18) << all_f_avg;
 	     // << " " << setw(18) << avg_e
 	     // << " " << setw(18) << std_e_1 / all_nlocal
-	     << endl;
+	  if (out_each == 1){
+	      for (int dd = 0; dd < all_nlocal; ++dd) fp << " " << setw(18) << std_f[dd];	
+	  }
+	  fp << endl;
 	}
       }
     }
@@ -415,6 +419,7 @@ is_key (const string& input)
   keys.push_back("out_freq");
   keys.push_back("out_file");
   keys.push_back("fparam");
+  keys.push_back("out_each");
 
   for (int ii = 0; ii < keys.size(); ++ii){
     if (input == keys[ii]) {
@@ -460,6 +465,7 @@ void PairNNP::settings(int narg, char **arg)
 
   out_freq = 100;
   out_file = "model_devi.out";
+  out_each = 0;
   fparam.clear();
   while (iarg < narg) {
     if (! is_key(arg[iarg])) {
@@ -486,6 +492,10 @@ void PairNNP::settings(int narg, char **arg)
       }
       iarg += 1 + dim_fparam ;
     }
+	else if (string(arg[iarg]) == string("out_each")) {
+	  out_each = 1;
+	  iarg += 1;
+	}
   }
   if (out_freq < 0) error->all(FLERR,"Illegal out_freq, should be >= 0");  
   
