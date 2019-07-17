@@ -333,6 +333,9 @@ void PairNNP::compute(int eflag, int vflag)
 	     // << " " << setw(18) << avg_e
 	     // << " " << setw(18) << std_e_1 / all_nlocal
 	  if (out_each == 1){
+	      // TODO: Fix two problems:
+	      // 1. If the atom_style is not atomic (e.g. charge), the order of std_f is different from that of atom ids.
+              // 2. std_f is not gathered by MPI.
 	      for (int dd = 0; dd < all_nlocal; ++dd) fp << " " << setw(18) << std_f[dd];	
 	  }
 	  fp << endl;
