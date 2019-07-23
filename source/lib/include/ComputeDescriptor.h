@@ -905,12 +905,13 @@ spline3_switch (double & vv,
   }
 }
 
+template <typename TYPE>
 inline void
-spline5_switch (double & vv,
-		double & dd,
-		const double & xx, 
-		const double & rmin, 
-		const double & rmax) 
+spline5_switch (TYPE & vv,
+		TYPE & dd,
+		const TYPE & xx, 
+		const TYPE & rmin, 
+		const TYPE & rmax) 
 {
   if (xx < rmin) {
     dd = 0;
