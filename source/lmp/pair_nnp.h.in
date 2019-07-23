@@ -79,6 +79,7 @@ private:
   int out_freq;
   string out_file;
   int dim_fparam;
+  int out_each;
 #ifdef HIGH_PREC
   vector<double > fparam;
 #else
