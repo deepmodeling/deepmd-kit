@@ -1,0 +1,13 @@
+language: python
+python: "3.6"
+env:
+  matrix:
+  - TENSORFLOW_VERSION=1.8
+  - TENSORFLOW_VERSION=1.12
+  - TENSORFLOW_VERSION=1.14
+install:
+  - pip install numpy>=1.16 --upgrade
+  - pip install scikit-build cmake tensorflow==$TENSORFLOW_VERSION dpdata
+  - cd source && python setup.py install -j$(nproc)
+script:
+  - cd tests && python -m unittest

@@ -6,14 +6,12 @@ import unittest
 from tensorflow.python.framework import ops
 
 # load grad of force module
-module_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..")
-sys.path.append (module_path)
-import _prod_force_grad
-import _prod_virial_grad
-import _prod_force_se_a_grad
-import _prod_virial_se_a_grad
-import _soft_min_force_grad
-import _soft_min_virial_grad
+import deepmd._prod_force_grad
+import deepmd._prod_virial_grad
+import deepmd._prod_force_se_a_grad
+import deepmd._prod_virial_se_a_grad
+import deepmd._soft_min_force_grad
+import deepmd._soft_min_virial_grad
 
 from common import force_test
 from common import virial_test
@@ -21,7 +19,7 @@ from common import force_dw_test
 from common import virial_dw_test
 from common import Data
 
-from deepmd.ModelLocFrame import op_module
+from deepmd.DescrptLocFrame import op_module
 
 class Inter():
     def __init__ (self, 
