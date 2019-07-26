@@ -145,7 +145,7 @@ class SoftMinSwitchOp : public OpKernel {
 	}
 	VALUETYPE smin = bb / aa;
 	VALUETYPE vv, dd;
-	spline5_switch(vv, dd, smin, rmin, rmax);
+	spline5_switch(vv, dd, smin, static_cast<VALUETYPE>(rmin), static_cast<VALUETYPE>(rmax));
 	// value of switch
 	sw_value(kk, i_idx) = vv;
 	// deriv of switch distributed as force
