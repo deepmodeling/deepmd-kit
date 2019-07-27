@@ -66,6 +66,7 @@ if (NOT TensorFlowFramework_FIND_COMPONENTS)
   set(TensorFlowFramework_FIND_COMPONENTS tensorflow_framework)
 endif ()
 # the lib
+list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.1)
 set (TensorFlowFramework_LIBRARY_PATH "")
 foreach (module ${TensorFlowFramework_FIND_COMPONENTS})
   find_library(TensorFlowFramework_LIBRARY_${module}

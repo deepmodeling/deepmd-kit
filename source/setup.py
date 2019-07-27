@@ -14,7 +14,7 @@ except ImportError:
 tf_install_dir = imp.find_module('tensorflow')[1] 
 
 # install_requires = ['xml']
-install_requires=['numpy','scipy']
+install_requires=['numpy', 'scipy']
 
 setup(
     name="deepmd-kit",

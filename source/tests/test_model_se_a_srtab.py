@@ -3,13 +3,10 @@ import numpy as np
 import tensorflow as tf
 from common import Data
 
-lib_path = os.path.dirname(os.path.realpath(__file__)) + ".."
-sys.path.append (lib_path)
-
 from deepmd.RunOptions import RunOptions
 from deepmd.DataSystem import DataSystem
 from deepmd.DescrptSeA import DescrptSeA
-from deepmd.EnerFitting import EnerFitting
+from deepmd.Fitting import EnerFitting
 from deepmd.Model import Model
 from deepmd.common import j_must_have, j_must_have_d, j_have
 
@@ -62,12 +59,7 @@ class TestModel(unittest.TestCase):
         
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt = None)
         
-        test_prop_c, \
-            test_energy, test_force, test_virial, test_atom_ener, \
-            test_coord, test_box, test_type, test_fparam, \
-            natoms_vec, \
-            default_mesh \
-            = data.get_test ()
+        test_data = data.get_test ()
         numb_test = 1
         
         bias_atom_e = data.compute_energy_shift()
@@ -76,9 +68,9 @@ class TestModel(unittest.TestCase):
         fitting = EnerFitting(jdata['model']['fitting_net'], descrpt)
         model = Model(jdata['model'], descrpt, fitting)
 
-        davg, dstd = model.compute_dstats([test_coord], [test_box], [test_type], [natoms_vec], [default_mesh])
+        davg, dstd = model.compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
 
-        t_prop_c           = tf.placeholder(tf.float32, [4],    name='t_prop_c')
+        t_prop_c           = tf.placeholder(tf.float32, [5],    name='t_prop_c')
         t_energy           = tf.placeholder(global_ener_float_precision, [None], name='t_energy')
         t_force            = tf.placeholder(global_tf_float_precision, [None], name='t_force')
         t_virial           = tf.placeholder(global_tf_float_precision, [None], name='t_virial')
@@ -104,16 +96,16 @@ class TestModel(unittest.TestCase):
                            suffix = "se_a_srtab", 
                            reuse = False)
 
-        feed_dict_test = {t_prop_c:        test_prop_c,
-                          t_energy:        test_energy              [:numb_test],
-                          t_force:         np.reshape(test_force    [:numb_test, :], [-1]),
-                          t_virial:        np.reshape(test_virial   [:numb_test, :], [-1]),
-                          t_atom_ener:     np.reshape(test_atom_ener[:numb_test, :], [-1]),
-                          t_coord:         np.reshape(test_coord    [:numb_test, :], [-1]),
-                          t_box:           test_box                 [:numb_test, :],
-                          t_type:          np.reshape(test_type     [:numb_test, :], [-1]),
-                          t_natoms:        natoms_vec,
-                          t_mesh:          default_mesh,
+        feed_dict_test = {t_prop_c:        test_data['prop_c'],
+                          t_energy:        test_data['energy']              [:numb_test],
+                          t_force:         np.reshape(test_data['force']    [:numb_test, :], [-1]),
+                          t_virial:        np.reshape(test_data['virial']   [:numb_test, :], [-1]),
+                          t_atom_ener:     np.reshape(test_data['atom_ener'][:numb_test, :], [-1]),
+                          t_coord:         np.reshape(test_data['coord']    [:numb_test, :], [-1]),
+                          t_box:           test_data['box']                 [:numb_test, :],
+                          t_type:          np.reshape(test_data['type']     [:numb_test, :], [-1]),
+                          t_natoms:        test_data['natoms_vec'],
+                          t_mesh:          test_data['default_mesh'],
                           is_training:     False}
 
         sess = tf.Session()

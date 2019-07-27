@@ -73,7 +73,7 @@ class NNPTrainer (object):
         elif descrpt_type == 'se_r' :
             self.descrpt = DescrptSeR(descrpt_param)
         else :
-            raise RuntimeError('unknow model type ' + model_type)
+            raise RuntimeError('unknow model type ' + descrpt_type)
 
         # fitting net
         try: 
@@ -176,11 +176,12 @@ class NNPTrainer (object):
 
     def _build_network(self, davg, dstd, bias_atom_e):
 
-        self.t_prop_c           = tf.placeholder(tf.float32, [4],    name='t_prop_c')
+        self.t_prop_c           = tf.placeholder(tf.float32, [5],    name='t_prop_c')
         self.t_energy           = tf.placeholder(global_ener_float_precision, [None], name='t_energy')
         self.t_force            = tf.placeholder(global_tf_float_precision, [None], name='t_force')
         self.t_virial           = tf.placeholder(global_tf_float_precision, [None], name='t_virial')
         self.t_atom_ener        = tf.placeholder(global_tf_float_precision, [None], name='t_atom_ener')
+        self.t_atom_pref        = tf.placeholder(global_tf_float_precision, [None], name='t_atom_pref')
         self.t_coord            = tf.placeholder(global_tf_float_precision, [None], name='i_coord')
         self.t_type             = tf.placeholder(tf.int32,   [None], name='i_type')
         self.t_natoms           = tf.placeholder(tf.int32,   [self.ntypes+2], name='i_natoms')
@@ -205,14 +206,14 @@ class NNPTrainer (object):
                                 suffix = "", 
                                 reuse = False)
 
-        self.l2_l, self.l2_el, self.l2_fl, self.l2_vl, self.l2_ael \
+        self.l2_l, self.l2_el, self.l2_fl, self.l2_vl, self.l2_ael, self.l2_pfl \
             = self.loss.build (self.learning_rate,
                                self.t_natoms, \
                                self.t_prop_c, \
                                self.t_energy, self.energy, \
                                self.t_force, self.force, \
                                self.t_virial, self.virial, \
-                               self.t_atom_ener, self.atom_ener, \
+                               self.t_atom_ener, self.atom_ener, self.t_atom_pref, \
                                suffix = "test")
 
         self._message("built network")
@@ -338,26 +339,22 @@ class NNPTrainer (object):
 
         train_time = 0
         while cur_batch < stop_batch :
-            batch_prop_c, \
-                batch_energy, batch_force, batch_virial, batch_atom_ener, \
-                batch_coord, batch_box, batch_type, batch_fparam, \
-                natoms_vec, \
-                default_mesh \
-                = data.get_batch (sys_weights = self.sys_weights)
-            cur_batch_size = batch_energy.shape[0]
-            feed_dict_batch = {self.t_prop_c:        batch_prop_c,
-                               self.t_energy:        batch_energy, 
-                               self.t_force:         np.reshape(batch_force, [-1]),
-                               self.t_virial:        np.reshape(batch_virial, [-1]),
-                               self.t_atom_ener:     np.reshape(batch_atom_ener, [-1]),
-                               self.t_coord:         np.reshape(batch_coord, [-1]),
-                               self.t_box:           batch_box,
-                               self.t_type:          np.reshape(batch_type, [-1]),
-                               self.t_natoms:        natoms_vec,
-                               self.t_mesh:          default_mesh,
+            batch_data = data.get_batch (sys_weights = self.sys_weights)
+            cur_batch_size = batch_data["energy"].shape[0]
+            feed_dict_batch = {self.t_prop_c:        batch_data["prop_c"],
+                               self.t_energy:        batch_data["energy"], 
+                               self.t_force:         np.reshape(batch_data["force"], [-1]),
+                               self.t_virial:        np.reshape(batch_data["virial"], [-1]),
+                               self.t_atom_ener:     np.reshape(batch_data["atom_ener"], [-1]),
+                               self.t_atom_pref:     np.reshape(batch_data["atom_pref"], [-1]),
+                               self.t_coord:         np.reshape(batch_data["coord"], [-1]),
+                               self.t_box:           batch_data["box"],
+                               self.t_type:          np.reshape(batch_data["type"], [-1]),
+                               self.t_natoms:        batch_data["natoms_vec"],
+                               self.t_mesh:          batch_data["default_mesh"],
                                self.is_training:     True}
             if self.numb_fparam > 0 :
-                feed_dict_batch[self.t_fparam] = np.reshape(batch_fparam, [-1])
+                feed_dict_batch[self.t_fparam] = np.reshape(batch_data["fparam"], [-1])
             if self.display_in_training and cur_batch == 0 :
                 self.test_on_the_fly(fp, data, feed_dict_batch)
             if self.timing_in_training : tic = time.time()
@@ -405,6 +402,8 @@ class NNPTrainer (object):
                 print_str += prop_fmt % ('l2_f_tst', 'l2_f_trn')
             if self.loss.has_v :
                 print_str += prop_fmt % ('l2_v_tst', 'l2_v_trn')
+            if self.loss.has_pf :
+                print_str += prop_fmt % ('l2_pf_tst', 'l2_pf_trn')
             print_str += '   %8s\n' % 'lr'
             fp.write(print_str)
             fp.close ()
@@ -413,38 +412,36 @@ class NNPTrainer (object):
                          fp,
                          data,
                          feed_dict_batch) :
-        test_prop_c, \
-            test_energy, test_force, test_virial, test_atom_ener, \
-            test_coord, test_box, test_type, test_fparam, \
-            natoms_vec, \
-            default_mesh \
-            = data.get_test ()
-        feed_dict_test = {self.t_prop_c:        test_prop_c,
-                          self.t_energy:        test_energy              [:self.numb_test],
-                          self.t_force:         np.reshape(test_force    [:self.numb_test, :], [-1]),
-                          self.t_virial:        np.reshape(test_virial   [:self.numb_test, :], [-1]),
-                          self.t_atom_ener:     np.reshape(test_atom_ener[:self.numb_test, :], [-1]),
-                          self.t_coord:         np.reshape(test_coord    [:self.numb_test, :], [-1]),
-                          self.t_box:           test_box                 [:self.numb_test, :],
-                          self.t_type:          np.reshape(test_type     [:self.numb_test, :], [-1]),
-                          self.t_natoms:        natoms_vec,
-                          self.t_mesh:          default_mesh,
+        test_data = data.get_test ()
+        feed_dict_test = {self.t_prop_c:        test_data["prop_c"],
+                          self.t_energy:        test_data["energy"]              [:self.numb_test],
+                          self.t_force:         np.reshape(test_data["force"]    [:self.numb_test, :], [-1]),
+                          self.t_virial:        np.reshape(test_data["virial"]   [:self.numb_test, :], [-1]),
+                          self.t_atom_ener:     np.reshape(test_data["atom_ener"][:self.numb_test, :], [-1]),
+                          self.t_atom_pref:     np.reshape(test_data["atom_pref"][:self.numb_test, :], [-1]),
+                          self.t_coord:         np.reshape(test_data["coord"]    [:self.numb_test, :], [-1]),
+                          self.t_box:           test_data["box"]                 [:self.numb_test, :],
+                          self.t_type:          np.reshape(test_data["type"]     [:self.numb_test, :], [-1]),
+                          self.t_natoms:        test_data["natoms_vec"],
+                          self.t_mesh:          test_data["default_mesh"],
                           self.is_training:     False}
         if self.numb_fparam > 0 :
-            feed_dict_test[self.t_fparam] = np.reshape(test_fparam  [:self.numb_test, :], [-1])
-        error_test, error_e_test, error_f_test, error_v_test, error_ae_test \
+            feed_dict_test[self.t_fparam] = np.reshape(test_data["fparam"]  [:self.numb_test, :], [-1])
+        error_test, error_e_test, error_f_test, error_v_test, error_ae_test, error_pf_test \
             = self.sess.run([self.l2_l, \
                              self.l2_el, \
                              self.l2_fl, \
                              self.l2_vl, \
-                             self.l2_ael], 
+                             self.l2_ael,\
+                             self.l2_pfl], 
                             feed_dict=feed_dict_test)
-        error_train, error_e_train, error_f_train, error_v_train, error_ae_train \
+        error_train, error_e_train, error_f_train, error_v_train, error_ae_train, error_pf_train \
             = self.sess.run([self.l2_l, \
                              self.l2_el, \
                              self.l2_fl, \
                              self.l2_vl, \
-                             self.l2_ael], 
+                             self.l2_ael,\
+                             self.l2_pfl], 
                             feed_dict=feed_dict_batch)
         cur_batch = self.cur_batch
         current_lr = self.sess.run(self.learning_rate)
@@ -453,13 +450,15 @@ class NNPTrainer (object):
             prop_fmt = "   %9.2e %9.2e"
             print_str += prop_fmt % (np.sqrt(error_test), np.sqrt(error_train))
             if self.loss.has_e :
-                print_str += prop_fmt % (np.sqrt(error_e_test) / natoms_vec[0], np.sqrt(error_e_train) / natoms_vec[0])
+                print_str += prop_fmt % (np.sqrt(error_e_test) / test_data["natoms_vec"][0], np.sqrt(error_e_train) / test_data["natoms_vec"][0])
             if self.loss.has_ae :
                 print_str += prop_fmt % (np.sqrt(error_ae_test), np.sqrt(error_ae_train))
             if self.loss.has_f :
                 print_str += prop_fmt % (np.sqrt(error_f_test), np.sqrt(error_f_train))
             if self.loss.has_v :
-                print_str += prop_fmt % (np.sqrt(error_v_test) / natoms_vec[0], np.sqrt(error_v_train) / natoms_vec[0])
+                print_str += prop_fmt % (np.sqrt(error_v_test) / test_data["natoms_vec"][0], np.sqrt(error_v_train) / test_data["natoms_vec"][0])
+            if self.loss.has_pf:
+                print_str += prop_fmt % (np.sqrt(error_pf_test) / test_data["natoms_vec"][0], np.sqrt(error_pf_train) / test_data["natoms_vec"][0])
             print_str += "   %8.1e\n" % current_lr
             fp.write(print_str)
             fp.flush ()
