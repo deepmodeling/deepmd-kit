@@ -3,13 +3,10 @@ import numpy as np
 import tensorflow as tf
 from common import Data
 
-lib_path = os.path.dirname(os.path.realpath(__file__)) + ".."
-sys.path.append (lib_path)
-
 from deepmd.RunOptions import RunOptions
 from deepmd.DataSystem import DataSystem
 from deepmd.DescrptLocFrame import DescrptLocFrame
-from deepmd.EnerFitting import EnerFitting
+from deepmd.Fitting import EnerFitting
 from deepmd.Model import Model
 from deepmd.common import j_must_have, j_must_have_d, j_have
 
