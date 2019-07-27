@@ -131,7 +131,7 @@ class DataSystem (object) :
         sys_tynatom = np.reshape(sys_tynatom, [self.nsystems,-1])
         sys_tynatom = sys_tynatom[:,2:]
         energy_shift,resd,rank,s_value \
-            = np.linalg.lstsq(sys_tynatom, sys_ener, rcond = -1)
+            = np.linalg.lstsq(sys_tynatom, sys_ener, rcond = 1e-3)
         return energy_shift
 
     def process_sys_weights(self, sys_weights) :
