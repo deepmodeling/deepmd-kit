@@ -6,7 +6,6 @@ env:
   - TENSORFLOW_VERSION=1.12
   - TENSORFLOW_VERSION=1.14
 install:
-  - pip install numpy>=1.16 --upgrade
   - pip install scikit-build cmake tensorflow==$TENSORFLOW_VERSION dpdata
   - cd source && python setup.py install -j$(nproc)
 script:
