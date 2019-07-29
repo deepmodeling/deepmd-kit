@@ -1,7 +1,7 @@
 import os,warnings
 import numpy as np
 import tensorflow as tf
-from deepmd.common import j_must_have, j_must_have_d, j_have
+from deepmd.common import ClassArg
 
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
@@ -15,33 +15,34 @@ op_module = tf.load_op_library(module_path + "libop_abi.so")
 
 class DescrptSeR ():
     def __init__ (self, jdata):
+        args = ClassArg()\
+               .add('sel',      list,   must = True) \
+               .add('rcut',     float,  default = 6.0) \
+               .add('rcut_smth',float,  default = 5.5) \
+               .add('neuron',   list,   default = [10, 20, 40]) \
+               .add('resnet_dt',bool,   default = False) \
+               .add('seed',     int) 
+        class_data = args.parse(jdata)
+        self.sel_r = class_data['sel']
+        self.rcut = class_data['rcut']
+        self.rcut_smth = class_data['rcut_smth']
+        self.filter_neuron = class_data['neuron']
+        self.filter_resnet_dt = class_data['resnet_dt']
+        self.seed = class_data['seed']        
+
         # descrpt config
-        self.sel_r = j_must_have (jdata, 'sel')
         self.sel_a = [ 0 for ii in range(len(self.sel_r)) ]
-        self.sel = self.sel_r
         self.ntypes = len(self.sel_r)
-        self.rcut = j_must_have (jdata, 'rcut')
-        if j_have(jdata, 'rcut_smth') :
-            self.rcut_smth = jdata['rcut_smth']
-        else :
-            self.rcut_smth = self.rcut
-        # filter of smooth version
-        self.filter_neuron = j_must_have (jdata, 'neuron')
-        self.filter_resnet_dt = False
-        if j_have(jdata, 'resnet_dt') :
-            self.filter_resnet_dt = jdata['resnet_dt']        
         # numb of neighbors and numb of descrptors
         self.nnei_a = np.cumsum(self.sel_a)[-1]
         self.nnei_r = np.cumsum(self.sel_r)[-1]
-        self.nnei = np.cumsum(self.sel)[-1]
+        self.nnei = self.nnei_a + self.nnei_r
         self.ndescrpt_a = self.nnei_a * 4
         self.ndescrpt_r = self.nnei_r * 1
         self.ndescrpt = self.nnei_r
 
-        self.seed = None
-        if j_have (jdata, 'seed') :
-            self.seed = jdata['seed']
         self.useBN = False
+
 
     def get_rcut (self) :
         return self.rcut
@@ -202,7 +203,7 @@ class DescrptSeR ():
                                            tf.constant(std_ones),
                                            rcut = self.rcut,
                                            rcut_smth = self.rcut_smth,
-                                           sel = self.sel)
+                                           sel = self.sel_r)
         # sub_sess = tf.Session(graph = sub_graph,
         #                       config=tf.ConfigProto(intra_op_parallelism_threads=self.run_opt.num_intra_threads, 
         #                                             inter_op_parallelism_threads=self.run_opt.num_inter_threads

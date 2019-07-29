@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import tensorflow as tf
-from deepmd.common import j_must_have, j_must_have_d, j_have
+from deepmd.common import ClassArg
 
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
@@ -16,15 +16,20 @@ op_module = tf.load_op_library(module_path + "libop_abi.so")
 
 class DescrptLocFrame () :
     def __init__(self, jdata):
-        # descrpt config
-        self.sel_a = j_must_have (jdata, 'sel_a')
-        self.sel_r = j_must_have (jdata, 'sel_r')
+        args = ClassArg()\
+               .add('sel_a',    list,   must = True) \
+               .add('sel_r',    list,   must = True) \
+               .add('rcut',     float,  default = 6.0) \
+               .add('axis_rule',list,   must = True)
+        class_data = args.parse(jdata)
+        self.sel_a = class_data['sel_a']
+        self.sel_r = class_data['sel_r']
+        self.axis_rule = class_data['axis_rule']
+        self.rcut_r = class_data['rcut']
+        # ntypes and rcut_a === -1
         self.ntypes = len(self.sel_a)
         assert(self.ntypes == len(self.sel_r))
         self.rcut_a = -1
-        self.rcut_r = j_must_have (jdata, 'rcut')
-        # axis
-        self.axis_rule = j_must_have (jdata, 'axis_rule')
         # numb of neighbors and numb of descrptors
         self.nnei_a = np.cumsum(self.sel_a)[-1]
         self.nnei_r = np.cumsum(self.sel_r)[-1]
@@ -32,6 +37,7 @@ class DescrptLocFrame () :
         self.ndescrpt_a = self.nnei_a * 4
         self.ndescrpt_r = self.nnei_r * 1
         self.ndescrpt = self.ndescrpt_a + self.ndescrpt_r
+
 
     def get_rcut (self) :
         return self.rcut_r

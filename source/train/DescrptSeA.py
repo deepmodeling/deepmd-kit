@@ -1,7 +1,7 @@
 import os,sys,warnings
 import numpy as np
 import tensorflow as tf
-from deepmd.common import j_must_have, j_must_have_d, j_have
+from deepmd.common import ClassArg
 
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
@@ -15,24 +15,28 @@ op_module = tf.load_op_library(module_path + "libop_abi.so")
 
 class DescrptSeA ():
     def __init__ (self, jdata):
+        args = ClassArg()\
+               .add('sel',      list,   must = True) \
+               .add('rcut',     float,  default = 6.0) \
+               .add('rcut_smth',float,  default = 5.5) \
+               .add('neuron',   list,   default = [10, 20, 40]) \
+               .add('axis_neuron', int, default = 4, alias = 'n_axis_neuron') \
+               .add('resnet_dt',bool,   default = False) \
+               .add('seed',     int) 
+        class_data = args.parse(jdata)
+        self.sel_a = class_data['sel']
+        self.rcut_r = class_data['rcut']
+        self.rcut_r_smth = class_data['rcut_smth']
+        self.filter_neuron = class_data['neuron']
+        self.n_axis_neuron = class_data['axis_neuron']
+        self.filter_resnet_dt = class_data['resnet_dt']
+        self.seed = class_data['seed']
+
         # descrpt config
-        self.sel_a = j_must_have (jdata, 'sel')
         self.sel_r = [ 0 for ii in range(len(self.sel_a)) ]
         self.ntypes = len(self.sel_a)
         assert(self.ntypes == len(self.sel_r))
         self.rcut_a = -1
-        self.rcut_r = j_must_have (jdata, 'rcut')
-        self.rcut = self.rcut_r
-        if j_have(jdata, 'rcut_smth') :
-            self.rcut_r_smth = jdata['rcut_smth']
-        else :
-            self.rcut_r_smth = self.rcut_r
-        # filter of smooth version
-        self.filter_neuron = j_must_have (jdata, 'neuron')
-        self.n_axis_neuron = j_must_have_d (jdata, 'axis_neuron', ['n_axis_neuron'])
-        self.filter_resnet_dt = False
-        if j_have(jdata, 'resnet_dt') :
-            self.filter_resnet_dt = jdata['resnet_dt']        
         # numb of neighbors and numb of descrptors
         self.nnei_a = np.cumsum(self.sel_a)[-1]
         self.nnei_r = np.cumsum(self.sel_r)[-1]
@@ -41,13 +45,11 @@ class DescrptSeA ():
         self.ndescrpt_r = self.nnei_r * 1
         self.ndescrpt = self.ndescrpt_a + self.ndescrpt_r
 
-        self.seed = None
-        if j_have (jdata, 'seed') :
-            self.seed = jdata['seed']
         self.useBN = False
 
+
     def get_rcut (self) :
-        return self.rcut
+        return self.rcut_r
 
     def get_ntypes (self) :
         return self.ntypes
