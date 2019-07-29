@@ -1,7 +1,7 @@
 import os,sys,warnings
 import numpy as np
 import tensorflow as tf
-from deepmd.common import j_must_have, j_must_have_d, j_have
+from deepmd.common import ClassArg
 
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
@@ -12,24 +12,28 @@ from deepmd.RunOptions import global_cvt_2_ener_float
 class LossStd () :
     def __init__ (self, jdata, starter_learning_rate) :
         self.starter_learning_rate = starter_learning_rate
-        self.start_pref_e = j_must_have (jdata, 'start_pref_e')
-        self.limit_pref_e = j_must_have (jdata, 'limit_pref_e')
-        self.start_pref_f = j_must_have (jdata, 'start_pref_f')
-        self.limit_pref_f = j_must_have (jdata, 'limit_pref_f')
-        self.start_pref_v = j_must_have (jdata, 'start_pref_v')
-        self.limit_pref_v = j_must_have (jdata, 'limit_pref_v')
-        self.start_pref_ae = 0
-        if j_have(jdata, 'start_pref_ae') :
-            self.start_pref_ae = jdata['start_pref_ae']
-        self.limit_pref_ae = 0
-        if j_have(jdata, 'limit_pref_ae') :
-            self.limit_pref_ae = jdata['limit_pref_ae']
-        self.start_pref_pf = 0
-        if j_have(jdata, 'limit_pref_pf') :
-            self.start_pref_pf = jdata['start_pref_pf']
-        self.limit_pref_pf = 0
-        if j_have(jdata, 'limit_pref_pf') :
-            self.limit_pref_pf = jdata['limit_pref_pf']
+        args = ClassArg()\
+            .add('start_pref_e',        float,  default = 0.02)\
+            .add('limit_pref_e',        float,  default = 1.00)\
+            .add('start_pref_f',        float,  default = 1000)\
+            .add('limit_pref_f',        float,  default = 1.00)\
+            .add('start_pref_v',        float,  default = 0)\
+            .add('limit_pref_v',        float,  default = 0)\
+            .add('start_pref_ae',       float,  default = 0)\
+            .add('limit_pref_ae',       float,  default = 0)\
+            .add('start_pref_pf',       float,  default = 0)\
+            .add('limit_pref_pf',       float,  default = 0)        
+        class_data = args.parse(jdata)
+        self.start_pref_e = class_data['start_pref_e']
+        self.limit_pref_e = class_data['limit_pref_e']
+        self.start_pref_f = class_data['start_pref_f']
+        self.limit_pref_f = class_data['limit_pref_f']
+        self.start_pref_v = class_data['start_pref_v']
+        self.limit_pref_v = class_data['limit_pref_v']
+        self.start_pref_ae = class_data['start_pref_ae']
+        self.limit_pref_ae = class_data['limit_pref_ae']
+        self.start_pref_pf = class_data['start_pref_pf']
+        self.limit_pref_pf = class_data['limit_pref_pf']
         self.has_e = (self.start_pref_e != 0 or self.limit_pref_e != 0)
         self.has_f = (self.start_pref_f != 0 or self.limit_pref_f != 0)
         self.has_v = (self.start_pref_v != 0 or self.limit_pref_v != 0)

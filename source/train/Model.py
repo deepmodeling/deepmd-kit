@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 from collections import defaultdict
 from deepmd.TabInter import TabInter
-from deepmd.common import j_must_have, j_must_have_d, j_have
+from deepmd.common import ClassArg
 
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
@@ -20,19 +20,25 @@ class Model() :
         self.descrpt = descrpt
         self.rcut = self.descrpt.get_rcut()
         self.ntypes = self.descrpt.get_ntypes()
-	# type_map
-        self.type_map = []
-        if j_have(jdata, 'type_map') :
-            self.type_map = jdata['type_map']
         # fitting
         self.fitting = fitting
         self.numb_fparam = self.fitting.get_numb_fparam()
-        # short-range tab
-        if 'use_srtab' in jdata :
-            self.srtab = TabInter(jdata['use_srtab'])
-            self.smin_alpha = j_must_have(jdata, 'smin_alpha')
-            self.sw_rmin = j_must_have(jdata, 'sw_rmin')
-            self.sw_rmax = j_must_have(jdata, 'sw_rmax')
+
+        args = ClassArg()\
+               .add('type_map',         list,   default = []) \
+               .add('use_srtab',        str)
+        class_data = args.parse(jdata)
+        self.type_map = class_data['type_map']
+        self.srtab_name = class_data['use_srtab']
+        if self.srtab_name is not None :
+            self.srtab = TabInter(self.srtab_name)
+            args.add('smin_alpha',      float,  must = True)\
+                .add('sw_rmin',         float,  must = True)\
+                .add('sw_rmax',         float,  must = True)
+            class_data = args.parse(jdata)
+            self.smin_alpha = class_data['smin_alpha']
+            self.sw_rmin = class_data['sw_rmin']
+            self.sw_rmax = class_data['sw_rmax']
         else :
             self.srtab = None
 

@@ -40,7 +40,7 @@ import deepmd._soft_min_virial_grad
 from deepmd.RunOptions import RunOptions
 from deepmd.TabInter import TabInter
 
-from deepmd.common import j_must_have, j_must_have_d, j_have
+from deepmd.common import j_must_have, ClassArg
 
 def _is_subdir(path, directory):
     path = os.path.realpath(path)
@@ -112,27 +112,30 @@ class NNPTrainer (object):
 
         # training
         training_param = j_must_have(jdata, 'training')
-        
-        self.numb_test = j_must_have (training_param, 'numb_test')
+
+        tr_args = ClassArg()\
+                  .add('numb_test',     int,    default = 1)\
+                  .add('disp_file',     str,    default = 'lcurve.out')\
+                  .add('disp_freq',     int,    default = 100)\
+                  .add('save_freq',     int,    default = 1000)\
+                  .add('save_ckpt',     str,    default = 'model.ckpt')\
+                  .add('display_in_training', bool, default = True)\
+                  .add('timing_in_training',  bool, default = True)\
+                  .add('profiling',     bool,   default = False)\
+                  .add('profiling_file',str,    default = 'timeline.json')\
+                  .add('sys_weights',   list    )
+        tr_data = tr_args.parse(training_param)
+        self.numb_test = tr_data['numb_test']
+        self.disp_file = tr_data['disp_file']
+        self.disp_freq = tr_data['disp_freq']
+        self.save_freq = tr_data['save_freq']
+        self.save_ckpt = tr_data['save_ckpt']
+        self.display_in_training = tr_data['display_in_training']
+        self.timing_in_training  = tr_data['timing_in_training']
+        self.profiling = tr_data['profiling']
+        self.profiling_file = tr_data['profiling_file']
+        self.sys_weights = tr_data['sys_weights']        
         self.useBN = False
-
-        self.disp_file = "lcurve.out"
-        if j_have (training_param, "disp_file") : self.disp_file = training_param["disp_file"]
-        self.disp_freq = j_must_have (training_param, 'disp_freq')
-        self.save_freq = j_must_have (training_param, 'save_freq')
-        self.save_ckpt = j_must_have (training_param, 'save_ckpt')
-
-        self.display_in_training = j_must_have (training_param, 'disp_training')
-        self.timing_in_training = j_must_have (training_param, 'time_training')
-        self.profiling = False
-        if j_have (training_param, 'profiling') :
-            self.profiling = training_param['profiling']
-            if self.profiling :
-                self.profiling_file = j_must_have (training_param, 'profiling_file')
-
-        self.sys_weights = None
-        if j_have(training_param, 'sys_weights') :
-            self.sys_weights = training_param['sys_weights']
 
 
     def _message (self, msg) :

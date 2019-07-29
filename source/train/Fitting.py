@@ -2,7 +2,7 @@ import os,warnings
 import numpy as np
 import tensorflow as tf
 
-from deepmd.common import j_must_have, j_must_have_d, j_have
+from deepmd.common import ClassArg
 
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
@@ -15,19 +15,17 @@ class EnerFitting ():
         # model param
         self.ntypes = descrpt.get_ntypes()
         self.dim_descrpt = descrpt.get_dim_out()
-        # fparam
-        self.numb_fparam = 0
-        if j_have(jdata, 'numb_fparam') :
-            self.numb_fparam = jdata['numb_fparam']
-        # network size
-        self.n_neuron = j_must_have_d (jdata, 'neuron', ['n_neuron'])
-        self.resnet_dt = True
-        if j_have(jdata, 'resnet_dt') :
-            self.resnet_dt = jdata['resnet_dt']
-        
-        self.seed = None
-        if j_have (jdata, 'seed') :
-            self.seed = jdata['seed']
+        args = ClassArg()\
+               .add('numb_fparam',      int,    default = 0)\
+               .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\
+               .add('resnet_dt',        bool,   default = True)\
+               .add('seed',             int)               
+        class_data = args.parse(jdata)
+        self.numb_fparam = class_data['numb_fparam']
+        self.n_neuron = class_data['neuron']
+        self.resnet_dt = class_data['resnet_dt']
+        self.seed = class_data['seed']
+
         self.useBN = False
 
     def get_numb_fparam(self) :
