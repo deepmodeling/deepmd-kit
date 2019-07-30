@@ -6,6 +6,7 @@ env:
   - TENSORFLOW_VERSION=1.12
   - TENSORFLOW_VERSION=1.14
 before_install:
+  - pip install --upgrade pip
   - pip install tensorflow==$TENSORFLOW_VERSION
 install:
   - pip install .
