@@ -106,11 +106,6 @@ python -c "import tensorflow as tf; sess=tf.Session(); print(sess.run(tf.reduce_
 ```
 One should remember to activate the virtual environment every time he/she uses deepmd-kit.
 
-One may also need the follow dependencies that are installed by
-```bash
-pip install --upgrade cmake scikit-build dpdata
-```
-
 ### Install the DeePMD-kit's python interface
 Firstly clone the DeePMD-kit source code
 ```bash
