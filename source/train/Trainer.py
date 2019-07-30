@@ -15,6 +15,7 @@ from Fitting import EnerFitting
 from DescrptLocFrame import DescrptLocFrame
 from DescrptSeA import DescrptSeA
 from DescrptSeR import DescrptSeR
+from DescrptSeAR import DescrptSeAR
 from Model import Model
 from Loss import LossStd
 from LearningRate import LearningRateExp
@@ -72,6 +73,8 @@ class NNPTrainer (object):
             self.descrpt = DescrptSeA(descrpt_param)
         elif descrpt_type == 'se_r' :
             self.descrpt = DescrptSeR(descrpt_param)
+        elif descrpt_type == 'se_ar' :
+            self.descrpt = DescrptSeAR(descrpt_param)
         else :
             raise RuntimeError('unknow model type ' + descrpt_type)
 
