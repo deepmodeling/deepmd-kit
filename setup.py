@@ -21,7 +21,7 @@ except ImportError:
 
 # install_requires = ['xml']
 install_requires=['numpy', 'scipy']
-setup_requires=['setuptools-git-version']
+setup_requires=['setuptools_scm']
 
 # add cmake as a build requirement if cmake>3.0 is not installed
 try:
@@ -38,7 +38,7 @@ except OSError:
 setup(
     name="deepmd-kit",
     setup_requires=setup_requires,
-    version_format='{tag}.dev{commitcount}_{gitsha}',
+    use_scm_version={'write_to': 'source/train/_version.py'},
     author="Han Wang",
     author_email="wang_han@iapcm.ac.cn",
     description="A deep learning package for many-body potential energy representation and molecular dynamics",
