@@ -9,6 +9,6 @@ before_install:
   - pip install --upgrade pip
   - pip install tensorflow==$TENSORFLOW_VERSION
 install:
-  - pip install .
+  - pip install .[test]
 script:
   - cd source/tests && python -m unittest
