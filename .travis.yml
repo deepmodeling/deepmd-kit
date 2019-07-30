@@ -1,6 +1,16 @@
 language: python
 python: "3.6"
+addons:
+  apt:
+    sources:
+    - ubuntu-toolchain-r-test
+    packages:
+    - gcc-4.8
+    - g++-4.8
 env:
+  global:
+  - CC=gcc-4.8
+  - CXX=g++-4.8
   matrix:
   - TENSORFLOW_VERSION=1.8
   - TENSORFLOW_VERSION=1.12
