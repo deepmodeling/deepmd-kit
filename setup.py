@@ -1,8 +1,11 @@
 from skbuild import setup
-from os import path
+from skbuild.exceptions import SKBuildError
+from skbuild.cmaker import get_cmake_version
+from packaging.version import LegacyVersion
+from os import path, makedirs
 import imp
 
-readme_file = path.join(path.dirname(path.abspath(__file__)), '..', 'README.md')
+readme_file = path.join(path.dirname(path.abspath(__file__)), 'README.md')
 try:
     from m2r import parse_from_file
     readme = parse_from_file(readme_file)
@@ -10,15 +13,31 @@ except ImportError:
     with open(readme_file) as f:
         readme = f.read()
 
-
-tf_install_dir = imp.find_module('tensorflow')[1] 
+try:
+    tf_install_dir = imp.find_module('tensorflow')[1] 
+except ImportError:
+    site_packages_path = path.join(path.dirname(path.__file__), 'site-packages')
+    tf_install_dir = imp.find_module('tensorflow', [site_packages_path])[1]
 
 # install_requires = ['xml']
 install_requires=['numpy', 'scipy']
+setup_requires=['setuptools-git-version']
+
+# add cmake as a build requirement if cmake>3.0 is not installed
+try:
+    if LegacyVersion(get_cmake_version()) < LegacyVersion("3.0"):
+        setup_requires.append('cmake')
+except SKBuildError:
+    setup_requires.append('cmake')
+
+try:
+    makedirs('deepmd')
+except OSError:
+    pass
 
 setup(
     name="deepmd-kit",
-    setup_requires=['setuptools-git-version'],
+    setup_requires=setup_requires,
     version_format='{tag}.dev{commitcount}_{gitsha}',
     author="Han Wang",
     author_email="wang_han@iapcm.ac.cn",
@@ -38,4 +57,9 @@ setup(
                 '-DBUILD_PY_IF:BOOL=TRUE', 
                 '-DBUILD_CPP_IF:BOOL=FALSE',
     ],
+    cmake_source_dir='source',
+    cmake_minimum_required_version='3.0',
+    extras_require={
+        'test': 'dpdata',
+    },
 )

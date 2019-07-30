@@ -122,10 +122,9 @@ If one downloads the .zip file from the github, then the default folder of sourc
 cd deepmd-kit
 deepmd_source_dir=`pwd`
 ```
-Then goto the source code directory and execute
+Then execute
 ```bash
-cd $deepmd_source_dir/source
-python setup.py install	
+pip install .
 ```
 To test the installation, one may execute
 ```bash

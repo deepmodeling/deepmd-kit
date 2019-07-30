@@ -5,8 +5,9 @@ env:
   - TENSORFLOW_VERSION=1.8
   - TENSORFLOW_VERSION=1.12
   - TENSORFLOW_VERSION=1.14
+before_install:
+  - pip install tensorflow==$TENSORFLOW_VERSION
 install:
-  - pip install scikit-build cmake tensorflow==$TENSORFLOW_VERSION dpdata
-  - cd source && python setup.py install -j$(nproc)
+  - pip install .
 script:
-  - cd tests && python -m unittest
+  - cd source/tests && python -m unittest
