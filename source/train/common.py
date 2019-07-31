@@ -11,6 +11,8 @@ class ClassArg () :
              must = False) :
         if type(types_) is not list :
             types = [types_]
+        else :
+            types = types_
         if alias is not None :
             if type(alias) is not list :
                 alias_ = [alias]
