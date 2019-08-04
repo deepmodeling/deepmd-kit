@@ -7,6 +7,236 @@ import numpy as np
 import os.path
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
+from deepmd.RunOptions import global_ener_float_precision
+
+class DeepmdData() :
+    def __init__ (self, 
+                  sys_path, 
+                  set_prefix = 'set',
+                  seed = None,
+                  shuffle_test = True) :
+        self.dirs = glob.glob (os.path.join(sys_path, set_prefix + ".*"))
+        self.dirs.sort()
+        # load atom type
+        self.atom_type, self.idx_map = self._load_type (sys_path)
+        self.natoms = len(self.atom_type)
+        # load atom type map
+        self.type_map = self._load_type_map(sys_path)
+        if self.type_map is not None:
+            assert(len(self.type_map) >= max(self.atom_type)+1)
+        # train dirs
+        self.test_dir = self.dirs[-1]
+        if len(self.dirs) == 1 :
+            self.train_dirs = self.dirs
+        else :
+            self.train_dirs = self.dirs[:-1]
+        self.data_dict = {}        
+        # add box and coord
+        self.add('box', 9, must = True)
+        self.add('coord', 3, atomic = True, must = True)
+
+
+    def add(self, 
+            key, 
+            ndof, 
+            atomic = False, 
+            must = False, 
+            high_prec = False,
+            repeat = 1) :
+        self.data_dict[key] = {'ndof': ndof, 
+                               'atomic': atomic,
+                               'must': must, 
+                               'high_prec': high_prec,
+                               'repeat': repeat,
+                               'reduce': None,
+        }
+        return self
+
+    
+    def reduce(self, 
+               key_out,
+               key_in) :
+        assert (key_in in self.data_dict), 'cannot find input key'
+        assert (self.data_dict[key_in]['atomic']), 'reduced property should be atomic'
+        assert (not(key_out in self.data_dict)), 'output key should not have been added'
+        assert (self.data_dict[key_in]['repeat'] == 1), 'reduced proerties should not have been repeated'
+
+        self.data_dict[key_out] = {'ndof': self.data_dict[key_in]['ndof'],
+                                   'atomic': False,
+                                   'must': True,
+                                   'high_prec': True,
+                                   'repeat': 1,
+                                   'reduce': key_in,
+        }
+        return self
+
+    def load_batch_set (self,
+                        set_name) :
+        self.batch_set = self._load_set(set_name)
+        self._shuffle_data(self.batch_set)
+        self.reset_iter ()
+
+    def load_test_set (self,
+                       set_name, 
+                       shuffle_test) :
+        self.test_set = self._load_set(set_name)        
+        if shuffle_test :
+            self._shuffle_data(self.test_set)
+
+    def check_batch_size (self, batch_size) :
+        for ii in self.train_dirs :
+            if self.data_dict['coord']['high_prec'] :
+                tmpe = np.load(os.path.join(ii, "coord.npy")).astype(global_ener_float_precision)
+            else:
+                tmpe = np.load(os.path.join(ii, "coord.npy")).astype(global_np_float_precision)
+            if tmpe.shape[0] < batch_size :
+                return ii, tmpe.shape[0]
+        return None
+
+    def check_test_size (self, test_size) :
+        if self.data_dict['coord']['high_prec'] :
+            tmpe = np.load(os.path.join(ii, "coord.npy")).astype(global_ener_float_precision)
+        else:
+            tmpe = np.load(os.path.join(ii, "coord.npy")).astype(global_np_float_precision)            
+        if tmpe.shape[0] < test_size :
+            return self.test_dir, tmpe.shape[0]
+        else :
+            return None
+
+    # def get_set(self, data) :
+    #     new_data = {}
+    #     for kk in data.keys():
+    #         dd = data[kk]
+    #         if 'find_' in kk:
+    #             new_data[kk] = dd.astype(np.float32)
+    #         else:
+    #             if idx is not None:
+    #                 dd = dd[idx]
+    #             if kk == "type":
+    #                 new_data[kk] = dd
+    #             else:
+    #                 new_data[kk] = dd.astype(global_np_float_precision)
+    #     return new_data
+
+    def get_type_map(self) :
+        return self.type_map
+
+    def get_numb_set (self) :
+        return len (self.train_dirs)
+    
+    def avg(self, key) :
+        if key not in self.data_dict.keys() :
+            raise RuntimeError('key %s has not been added' % key)
+        info = self.data_dict[key]  
+        ndof = info['ndof']
+        eners = np.array([])
+        for ii in self.train_dirs:
+            data = self._load_set(ii)
+            ei = data[key].reshape([-1, ndof])
+            if eners.size  == 0 :
+                eners = ei
+            else :
+                eners = np.concatenate((eners, ei), axis = 0)
+        if eners.size == 0 :
+            return 0
+        else :
+            return np.average(eners, axis = 0)
+
+
+    def _shuffle_data (self,
+                      data) :
+        ret = {}
+        nframes = data['coord'].shape[0]
+        idx = np.arange (nframes)
+        np.random.shuffle (idx)
+        for kk in data :
+            if type(data[kk]) == np.ndarray and data[kk].shape[0] == nframes :
+                ret[kk] = data[kk][idx]
+            else :
+                ret[kk] = data[kk]
+        return ret, idx
+
+    def _load_set(self, set_name) :
+        ret = {}
+        # get nframes
+        path = os.path.join(set_name, "coord.npy")
+        if self.data_dict['coord']['high_prec'] :
+            coord = np.load(path).astype(global_ener_float_precision)
+        else:
+            coord = np.load(path).astype(global_np_float_precision)            
+        nframes = coord.shape[0]
+        assert(coord.shape[1] == self.data_dict['coord']['ndof'] * self.natoms)
+        # load keys
+        data = {}
+        data['type'] = self.atom_type[self.idx_map]
+        for kk in self.data_dict.keys():
+            if self.data_dict[kk]['reduce'] is None :
+                ndof = self.data_dict[kk]['ndof']
+                idx_map = None
+                if self.data_dict[kk]['atomic'] :
+                    ndof *= self.natoms
+                    idx_map = self.idx_map
+                data['find_'+kk], data[kk] \
+                    = self._load_data(set_name, 
+                                      kk, 
+                                      [nframes, ndof], 
+                                      high_prec = self.data_dict[kk]['high_prec'],
+                                      must = self.data_dict[kk]['must'], 
+                                      repeat = self.data_dict[kk]['repeat'], 
+                                      idx_map = idx_map)
+        for kk in self.data_dict.keys():
+            if self.data_dict[kk]['reduce'] is not None :
+                k_in = self.data_dict[kk]['reduce']
+                ndof = self.data_dict[kk]['ndof']
+                data['find_'+kk] = data['find_'+k_in]
+                tmp_in = data[k_in].astype(global_ener_float_precision)
+                data[kk] = np.sum(np.reshape(tmp_in, [nframes, self.natoms, ndof]), axis = 1)
+                
+        return data
+
+
+    def _load_data(self, set_name, key, shape, must = True, repeat = 1, idx_map = None, high_prec = False):
+        path = os.path.join(set_name, key+".npy")
+        nframes = shape[0]
+        if os.path.isfile (path) :
+            if high_prec :
+                data = np.load(path).astype(global_ener_float_precision)
+            else:
+                data = np.load(path).astype(global_np_float_precision)
+            if idx_map is not None :
+                data = data.reshape([nframes, self.natoms, -1])
+                data = data[:,idx_map,:]
+                data = data.reshape([nframes, -1])
+            data = np.reshape(data, shape)
+            if repeat != 1:
+                data = np.repeat(data, repeat).reshape([nframes, -1])
+            return 1, data
+        elif must:
+            raise RuntimeError("%s not found!" % path)
+        else:
+            if high_prec :
+                data = np.zeros(shape).astype(global_ener_float_precision)                
+            else :
+                data = np.zeros(shape).astype(global_np_float_precision)
+            if repeat != 1:
+                data = np.repeat(data, repeat).reshape([nframes, -1])
+            return 0, data
+        
+    def _load_type (self, sys_path) :
+        atom_type = np.loadtxt (os.path.join(sys_path, "type.raw"), dtype=np.int32, ndmin=1)
+        natoms = atom_type.shape[0]
+        idx = np.arange (natoms)
+        idx_map = np.lexsort ((idx, atom_type))
+        return atom_type, idx_map
+
+    def _load_type_map(self, sys_path) :
+        fname = os.path.join(sys_path, 'type_map.raw')
+        if os.path.isfile(fname) :            
+            with open(os.path.join(sys_path, 'type_map.raw')) as fp:
+                return fp.read().split()                
+        else :
+            return None
+
 
 class DataSets (object):
     def __init__ (self, 
