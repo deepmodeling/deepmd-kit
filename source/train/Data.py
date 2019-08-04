@@ -123,6 +123,16 @@ class DeepmdData() :
     def get_numb_set (self) :
         return len (self.train_dirs)
 
+    def get_numb_batch (self, batch_size, set_idx) :
+        data = self._load_set(self.train_dirs[set_idx])
+        return data["coord"].shape[0] // batch_size
+
+    def get_sys_numb_batch (self, batch_size) :
+        ret = 0
+        for ii in range(len(self.train_dirs)) :
+            ret += self.get_numb_batch(batch_size, ii)
+        return ret
+
     def get_natoms (self) :
         return len(self.atom_type)
 
@@ -191,7 +201,10 @@ class DeepmdData() :
         idx = np.arange (nframes)
         np.random.shuffle (idx)
         for kk in data :
-            if type(data[kk]) == np.ndarray and data[kk].shape[0] == nframes :
+            if type(data[kk]) == np.ndarray and \
+               data[kk].shape[0] == nframes and \
+               not('find_' in kk) and \
+               'type' != kk:
                 ret[kk] = data[kk][idx]
             else :
                 ret[kk] = data[kk]

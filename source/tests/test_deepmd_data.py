@@ -189,6 +189,13 @@ class TestData (unittest.TestCase) :
         data = dd.get_test()
         self._comp_np_mat2(np.sort(data['coord'], axis = 0), 
                            np.sort(self.coord_tar, axis = 0))
+
+    def test_get_nbatch(self):
+        dd = DeepmdData(self.data_name)
+        nb = dd.get_numb_batch(1, idx = 0)
+        self.assertEqual(nb, 5)
+        nb = dd.get_numb_batch(2, idx = 0)
+        self.assertEqual(nb, 2)
         
     def _comp_np_mat2(self, first, second) :
         for ii in range(first.shape[0]) :
