@@ -36,6 +36,16 @@ class TestData (unittest.TestCase) :
         path = os.path.join(self.data_name, 'set.bar', 'coord.npy')
         self.coord_bar = np.random.random([self.nframes, 3 * self.natoms])
         np.save(path, self.coord_bar)
+        self.coord_bar = self.coord_bar.reshape([self.nframes, self.natoms, 3])
+        self.coord_bar = self.coord_bar[:,[1,0],:]
+        self.coord_bar = self.coord_bar.reshape([self.nframes, -1])
+        # coord tar
+        path = os.path.join(self.data_name, 'set.tar', 'coord.npy')
+        self.coord_tar = np.random.random([2, 3 * self.natoms])
+        np.save(path, self.coord_tar)
+        self.coord_tar = self.coord_tar.reshape([2, self.natoms, 3])
+        self.coord_tar = self.coord_tar[:,[1,0],:]
+        self.coord_tar = self.coord_tar.reshape([2, -1])
         # box
         path = os.path.join(self.data_name, 'set.foo', 'box.npy')
         self.box = np.random.random([self.nframes, 9])
@@ -44,6 +54,10 @@ class TestData (unittest.TestCase) :
         path = os.path.join(self.data_name, 'set.bar', 'box.npy')
         self.box_bar = np.random.random([self.nframes, 9])
         np.save(path, self.box_bar)
+        # box tar
+        path = os.path.join(self.data_name, 'set.tar', 'box.npy')
+        self.box_tar = np.random.random([2, 9])
+        np.save(path, self.box_tar)
         # t a
         path = os.path.join(self.data_name, 'set.foo', 'test_atomic.npy')
         self.test_atomic = np.random.random([self.nframes, self.natoms, 7])
@@ -78,6 +92,10 @@ class TestData (unittest.TestCase) :
              .add('test_frame', 5, atomic=False, must=True)\
              .add('test_null', 2, atomic=True, must=False)
         data = dd._load_set(os.path.join(self.data_name, 'set.foo'))
+        self.assertEqual(dd.get_numb_set(), 2)
+        self.assertEqual(dd.get_type_map(), ['foo', 'bar'])
+        self.assertEqual(dd.get_natoms(), 2)
+        self.assertEqual(list(dd.get_natoms_vec(3)), [2,2,1,1,0])
         self.assertEqual(data['type'][0], 0)
         self.assertEqual(data['type'][1], 1)
         self.assertEqual(data['find_coord'], 1)
@@ -136,6 +154,41 @@ class TestData (unittest.TestCase) :
         fcmp = np.average(np.concatenate((self.test_frame, self.test_frame_bar), axis = 0), axis = 0)
         for ii in range(favg.size) :
             self.assertAlmostEqual((favg[ii]), (fcmp[ii]), places = places)
+
+    def test_check_batch_size(self) :
+        dd = DeepmdData(self.data_name)
+        ret = dd.check_batch_size(10)
+        self.assertEqual(ret, (os.path.join(self.data_name,'set.bar'), 5))
+        ret = dd.check_batch_size(5)
+        self.assertEqual(ret, None)
+
+    def test_check_test_size(self):
+        dd = DeepmdData(self.data_name)
+        ret = dd.check_test_size(10)
+        self.assertEqual(ret, (os.path.join(self.data_name,'set.tar'), 2))
+        ret = dd.check_test_size(2)
+        self.assertEqual(ret, None)
+
+    def test_get_batch(self) :
+        dd = DeepmdData(self.data_name)
+        data = dd.get_batch(5)
+        self._comp_np_mat2(np.sort(data['coord'], axis = 0), 
+                           np.sort(self.coord_bar, axis = 0))
+        data = dd.get_batch(5)
+        self._comp_np_mat2(np.sort(data['coord'], axis = 0), 
+                           np.sort(self.coord, axis = 0))
+        data = dd.get_batch(5)
+        self._comp_np_mat2(np.sort(data['coord'], axis = 0), 
+                           np.sort(self.coord_bar, axis = 0))
+        data = dd.get_batch(5)
+        self._comp_np_mat2(np.sort(data['coord'], axis = 0), 
+                           np.sort(self.coord, axis = 0))
+
+    def test_get_test(self) :
+        dd = DeepmdData(self.data_name)
+        data = dd.get_test()
+        self._comp_np_mat2(np.sort(data['coord'], axis = 0), 
+                           np.sort(self.coord_tar, axis = 0))
         
     def _comp_np_mat2(self, first, second) :
         for ii in range(first.shape[0]) :

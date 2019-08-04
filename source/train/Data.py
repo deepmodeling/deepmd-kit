@@ -13,7 +13,6 @@ class DeepmdData() :
     def __init__ (self, 
                   sys_path, 
                   set_prefix = 'set',
-                  seed = None,
                   shuffle_test = True) :
         self.dirs = glob.glob (os.path.join(sys_path, set_prefix + ".*"))
         self.dirs.sort()
@@ -34,6 +33,10 @@ class DeepmdData() :
         # add box and coord
         self.add('box', 9, must = True)
         self.add('coord', 3, atomic = True, must = True)
+        # set counters
+        self.set_count = 0
+        self.iterator = 0
+        self.shuffle_test = shuffle_test
 
 
     def add(self, 
@@ -70,19 +73,6 @@ class DeepmdData() :
         }
         return self
 
-    def load_batch_set (self,
-                        set_name) :
-        self.batch_set = self._load_set(set_name)
-        self._shuffle_data(self.batch_set)
-        self.reset_iter ()
-
-    def load_test_set (self,
-                       set_name, 
-                       shuffle_test) :
-        self.test_set = self._load_set(set_name)        
-        if shuffle_test :
-            self._shuffle_data(self.test_set)
-
     def check_batch_size (self, batch_size) :
         for ii in self.train_dirs :
             if self.data_dict['coord']['high_prec'] :
@@ -95,34 +85,52 @@ class DeepmdData() :
 
     def check_test_size (self, test_size) :
         if self.data_dict['coord']['high_prec'] :
-            tmpe = np.load(os.path.join(ii, "coord.npy")).astype(global_ener_float_precision)
+            tmpe = np.load(os.path.join(self.test_dir, "coord.npy")).astype(global_ener_float_precision)
         else:
-            tmpe = np.load(os.path.join(ii, "coord.npy")).astype(global_np_float_precision)            
+            tmpe = np.load(os.path.join(self.test_dir, "coord.npy")).astype(global_np_float_precision)            
         if tmpe.shape[0] < test_size :
             return self.test_dir, tmpe.shape[0]
         else :
             return None
 
-    # def get_set(self, data) :
-    #     new_data = {}
-    #     for kk in data.keys():
-    #         dd = data[kk]
-    #         if 'find_' in kk:
-    #             new_data[kk] = dd.astype(np.float32)
-    #         else:
-    #             if idx is not None:
-    #                 dd = dd[idx]
-    #             if kk == "type":
-    #                 new_data[kk] = dd
-    #             else:
-    #                 new_data[kk] = dd.astype(global_np_float_precision)
-    #     return new_data
+    def get_batch(self, batch_size) :
+        if hasattr(self, 'batch_set') :
+            set_size = self.batch_set["coord"].shape[0]
+        else :
+            set_size = 0
+        if self.iterator + batch_size > set_size :
+            self._load_batch_set (self.train_dirs[self.set_count % self.get_numb_set()])
+            self.set_count += 1
+            set_size = self.batch_set["coord"].shape[0]
+        iterator_1 = self.iterator + batch_size
+        if iterator_1 >= set_size :
+            iterator_1 = set_size
+        idx = np.arange (self.iterator, iterator_1)
+        self.iterator += batch_size
+        return self._get_subdata(self.batch_set, idx)
+
+    def get_test (self) :
+        if not hasattr(self, 'test_set') :
+            self._load_test_set(self.test_dir, self.shuffle_test)
+        return self._get_subdata(self.test_set)        
 
     def get_type_map(self) :
         return self.type_map
 
+    def get_atom_type(self) :
+        return self.atom_type
+
     def get_numb_set (self) :
         return len (self.train_dirs)
+
+    def get_natoms (self) :
+        return len(self.atom_type)
+
+    def get_natoms_vec (self, ntypes) :
+        natoms, natoms_vec = self._get_natoms_2 (ntypes)
+        tmp = [natoms, natoms]
+        tmp = np.append (tmp, natoms_vec)
+        return tmp.astype(np.int32)
     
     def avg(self, key) :
         if key not in self.data_dict.keys() :
@@ -142,6 +150,39 @@ class DeepmdData() :
         else :
             return np.average(eners, axis = 0)
 
+    def _get_natoms_2 (self, ntypes) :
+        sample_type = self.atom_type
+        natoms = len(sample_type)
+        natoms_vec = np.zeros (ntypes).astype(int)
+        for ii in range (ntypes) :
+            natoms_vec[ii] = np.count_nonzero(sample_type == ii)
+        return natoms, natoms_vec
+
+    def _get_subdata(self, data, idx = None) :
+        new_data = {}
+        for ii in data:
+            dd = data[ii]
+            if 'find_' in ii or 'type' == ii:
+                new_data[ii] = dd                
+            else:
+                if idx is not None:
+                    new_data[ii] = dd[idx]
+                else :
+                    new_data[ii] = dd
+        return new_data
+
+    def _load_batch_set (self,
+                         set_name) :
+        self.batch_set = self._load_set(set_name)
+        self.batch_set, sf_idx = self._shuffle_data(self.batch_set)
+        self.iterator = 0
+
+    def _load_test_set (self,
+                       set_name, 
+                       shuffle_test) :
+        self.test_set = self._load_set(set_name)        
+        if shuffle_test :
+            self.test_set, sf_idx = self._shuffle_data(self.test_set)
 
     def _shuffle_data (self,
                       data) :
@@ -210,7 +251,7 @@ class DeepmdData() :
             data = np.reshape(data, shape)
             if repeat != 1:
                 data = np.repeat(data, repeat).reshape([nframes, -1])
-            return 1, data
+            return 1.0, data
         elif must:
             raise RuntimeError("%s not found!" % path)
         else:
@@ -220,7 +261,8 @@ class DeepmdData() :
                 data = np.zeros(shape).astype(global_np_float_precision)
             if repeat != 1:
                 data = np.repeat(data, repeat).reshape([nframes, -1])
-            return 0, data
+            return 0.0, data
+
         
     def _load_type (self, sys_path) :
         atom_type = np.loadtxt (os.path.join(sys_path, "type.raw"), dtype=np.int32, ndmin=1)
