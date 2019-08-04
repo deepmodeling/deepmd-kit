@@ -192,9 +192,9 @@ class TestData (unittest.TestCase) :
 
     def test_get_nbatch(self):
         dd = DeepmdData(self.data_name)
-        nb = dd.get_numb_batch(1, idx = 0)
+        nb = dd.get_numb_batch(1, 0)
         self.assertEqual(nb, 5)
-        nb = dd.get_numb_batch(2, idx = 0)
+        nb = dd.get_numb_batch(2, 0)
         self.assertEqual(nb, 2)
         
     def _comp_np_mat2(self, first, second) :

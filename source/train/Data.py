@@ -202,6 +202,7 @@ class DeepmdData() :
         np.random.shuffle (idx)
         for kk in data :
             if type(data[kk]) == np.ndarray and \
+               len(data[kk].shape) == 2 and \
                data[kk].shape[0] == nframes and \
                not('find_' in kk) and \
                'type' != kk:
