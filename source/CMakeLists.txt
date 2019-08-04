@@ -39,7 +39,7 @@ endif(GIT_FOUND)
 
 # global defines
 list (APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/)
-list (APPEND CMAKE_CXX_FLAGS "-std=c++11 -Wno-ignored-attributes")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wno-ignored-attributes")
 
 # define the abi
 if (NOT DEFINED TF_GOOGLE_BIN) 
@@ -93,8 +93,12 @@ include_directories(${TensorFlow_INCLUDE_DIRS})
 if (BUILD_CPP_IF)
   set (LIB_DEEPMD		"deepmd")
   set (LIB_DEEPMD_OP		"deepmd_op")
-  set (LIB_DEEPMD_NATIVE	"deepmd_native_md")
-  set (LIB_DEEPMD_IPI		"deepmd_ipi")
+  if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 4.9)
+    set (LIB_DEEPMD_NATIVE	"deepmd_native_md")
+    set (LIB_DEEPMD_IPI		"deepmd_ipi")
+  else ()
+    message (STATUS "Your gcc/g++ version is ${CMAKE_CXX_COMPILER_VERSION}, so native MD and ipi are disabled. To enable them, use gcc/g++ >= 4.9.")
+  endif ()
 endif (BUILD_CPP_IF)
 
 include_directories(${CMAKE_BINARY_DIR}/lib/)
@@ -107,8 +111,10 @@ endif (BUILD_PY_IF)
 if (BUILD_CPP_IF) 
   add_subdirectory (lib/)
   add_subdirectory (lmp/)
-# add_subdirectory (md/)
-  add_subdirectory (ipi/)
+  if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 4.9)
+#   add_subdirectory (md/)
+    add_subdirectory (ipi/)
+  endif ()
 endif (BUILD_CPP_IF)
 
 # uninstall target

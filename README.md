@@ -542,22 +542,7 @@ export CC=/path/to/gcc-7.2.0/bin/gcc
 export CXX=/path/to/gcc-7.2.0/bin/g++
 ```
 
-If, for any reason, for example, you only have a gcc/g++ of version 4.8.5, you can still compile all the parts of TensorFlow and most of the parts of DeePMD-kit. In this case, follow the following steps.
-
-First, goto the source code directory, open the file `CMakeLists.txt`
-```bash
-cd $deepmd_source_dir/source
-vi CMakeLists.txt
-```
-Next, comment the following 4 lines out:
-```
-# set (LIB_DEEPMD_NATIVE  "deepmd_native_md")
-# set (LIB_DEEPMD_IPI     "deepmd_ipi")
-# add_subdirectory (md/)
-# add_subdirectory (ipi/)
-```
-
-Then you may continue with the installation procedure.
+If, for any reason, for example, you only have a gcc/g++ of version 4.8.5, you can still compile all the parts of TensorFlow and most of the parts of DeePMD-kit. Native MD and i-Pi will be disabled automatically.
 
 ## Installation: build files left in DeePMD-kit
 When you try to build a second time when installing DeePMD-kit, files produced before may contribute to failure. Thus, you may clear them by
