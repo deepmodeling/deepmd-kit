@@ -77,7 +77,23 @@ class TestDataSystem (unittest.TestCase) :
                        ds.get_sys(sys_idx).idx_map,
                        self.test_ndof,
                        data['test'])
-        self.assertAlmostEqual(np.linalg.norm(np.zeros([test_size,
+        self.assertAlmostEqual(np.linalg.norm(np.zeros([self.nframes[sys_idx]+2,
+                                                        self.natoms[sys_idx]*self.test_ndof])
+                                              -
+                                              data['null']
+        ), 0.0)
+        sys_idx = 2
+        data = ds.get_test(sys_idx=sys_idx)
+        self.assertEqual(list(data['type']), list(np.sort(self.atom_type[sys_idx])))
+        self._in_array(np.load('sys_2/set.002/coord.npy'),
+                       ds.get_sys(sys_idx).idx_map,
+                       3, 
+                       data['coord'])
+        self._in_array(np.load('sys_2/set.002/test.npy'),
+                       ds.get_sys(sys_idx).idx_map,
+                       self.test_ndof,
+                       data['test'])
+        self.assertAlmostEqual(np.linalg.norm(np.zeros([self.nframes[sys_idx]+2,
                                                         self.natoms[sys_idx]*self.test_ndof])
                                               -
                                               data['null']

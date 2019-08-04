@@ -19,6 +19,7 @@ class DeepmdDataSystem() :
                   shuffle_test = True,
                   run_opt = None) :
         # init data
+        self.rcut = rcut
         self.system_dirs = systems
         self.nsystems = len(self.system_dirs)
         self.data_systems = []
@@ -78,14 +79,15 @@ class DeepmdDataSystem() :
         if run_opt is not None:
             self.print_summary(run_opt)
 
-        # test_data and default mesh
+
+    def _load_test(self):
         self.test_data = collections.defaultdict(list)
         self.default_mesh = []
         for ii in range(self.nsystems) :
             test_system_data = self.data_systems[ii].get_test ()
             for nn in test_system_data:
                 self.test_data[nn].append(test_system_data[nn])
-            cell_size = np.max (rcut)
+            cell_size = np.max (self.rcut)
             avg_box = np.average (test_system_data["box"], axis = 0)
             avg_box = np.reshape (avg_box, [3,3])
             ncell = (np.linalg.norm(avg_box, axis=1)/ cell_size).astype(np.int32)
@@ -127,6 +129,8 @@ class DeepmdDataSystem() :
                    sys_idx = None,
                    sys_weights = None,
                    style = "prob_sys_size") :
+        if not hasattr(self, 'default_mesh') :
+            self._load_test()
         if sys_idx is not None :
             self.pick_idx = sys_idx
         else :
@@ -147,6 +151,8 @@ class DeepmdDataSystem() :
 
     def get_test (self, 
                   sys_idx = None) :
+        if not hasattr(self, 'default_mesh') :
+            self._load_test()
         if sys_idx is not None :
             idx = sys_idx
         else :
