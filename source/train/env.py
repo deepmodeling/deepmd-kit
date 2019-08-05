@@ -1,5 +1,7 @@
 import os
 import logging
+import numpy as np
+from imp import reload
 
 def set_env_if_empty(key, value):
     if os.environ.get(key) is None:
@@ -11,5 +13,7 @@ def set_mkl():
     https://www.tensorflow.org/guide/performance/overview
     """
 
-    set_env_if_empty("KMP_BLOCKTIME", "0")
-    set_env_if_empty("KMP_AFFINITY", "granularity=fine,verbose,compact,1,0")
+    if 'mkl_info' in np.__config__.__dict__:
+        set_env_if_empty("KMP_BLOCKTIME", "0")
+        set_env_if_empty("KMP_AFFINITY", "granularity=fine,verbose,compact,1,0")
+        reload(np)
