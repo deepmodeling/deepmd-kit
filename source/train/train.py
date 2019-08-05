@@ -15,6 +15,9 @@ from deepmd.RunOptions import RunOptions
 from deepmd.DataSystem import DataSystem
 from deepmd.Model import NNPModel
 from deepmd.Model import LearingRate
+from deepmd.env import set_mkl
+
+set_mkl()
 
 def create_done_queue(cluster_spec, task_index):
    with tf.device("/job:ps/task:%d" % (task_index)):
