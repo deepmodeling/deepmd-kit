@@ -127,6 +127,7 @@ class Model() :
                                  dstd = dstd,
                                  suffix = suffix,
                                  reuse = reuse)
+        dout = tf.identity(dout, name='o_descriptor')
 
         if self.srtab is not None :
             nlist, rij, sel_a, sel_r = self.descrpt.get_nlist()
