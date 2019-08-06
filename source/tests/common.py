@@ -2,6 +2,18 @@ import os, sys
 import tensorflow as tf
 import numpy as np
 
+from deepmd.RunOptions import global_tf_float_precision
+from deepmd.RunOptions import global_np_float_precision
+from deepmd.RunOptions import global_ener_float_precision
+
+if global_np_float_precision == np.float32 :
+    global_default_fv_hh = 1e-2
+    global_default_dw_hh = 1e-2
+    global_default_places = 3
+else :
+    global_default_fv_hh = 1e-6
+    global_default_dw_hh = 1e-4
+    global_default_places = 5
 
 class Data():
     def __init__ (self, 
@@ -75,8 +87,8 @@ class Data():
 
 def force_test (inter, 
                 testCase, 
-                places = 6, 
-                hh = 1e-6, 
+                places = global_default_places, 
+                hh = global_default_fv_hh, 
                 suffix = '') :
     # set weights
     w0 = np.ones (inter.ndescrpt)
@@ -127,8 +139,8 @@ def comp_vol (box) :
 
 def virial_test (inter, 
                  testCase, 
-                 places = 6, 
-                 hh = 1e-6, 
+                 places = global_default_places, 
+                 hh = global_default_fv_hh, 
                  suffix = '') :
     # set weights
     w0 = np.ones (inter.ndescrpt)
@@ -151,19 +163,19 @@ def virial_test (inter,
     # check
     ana_vir3 = (virial[0][0] + virial[0][4] + virial[0][8])/3. / comp_vol(dbox[0])
     num_vir3 = -(energy[1] - energy[2]) / (comp_vol(dbox[1]) - comp_vol(dbox[2]))
-    testCase.assertAlmostEqual(ana_vir3, num_vir3)
+    testCase.assertAlmostEqual(ana_vir3, num_vir3, places=places)
     vir_idx = [0, 4, 8]
     for dd in range (3) :
         ana_v = (virial[0][vir_idx[dd]] / comp_vol(dbox[0]))
         idx = 2 * (dd+1) + 1
         num_v = ( -(energy[idx] - energy[idx+1]) / (comp_vol(dbox[idx]) - comp_vol(dbox[idx+1])) )
-        testCase.assertAlmostEqual(ana_v, num_v)
+        testCase.assertAlmostEqual(ana_v, num_v, places=places)
 
 
 def force_dw_test (inter, 
                    testCase,
-                   places = 6,
-                   hh = 1e-4, 
+                   places = global_default_places,
+                   hh = global_default_dw_hh, 
                    suffix = '') :
     dcoord, dbox, dtype = inter.data.get_data()
     feed_dict_test0 = {
@@ -208,8 +220,8 @@ def force_dw_test (inter,
 
 def virial_dw_test (inter, 
                    testCase,
-                   places = 6,
-                   hh = 1e-4, 
+                   places = global_default_places,
+                   hh = global_default_dw_hh, 
                    suffix = '') :
     dcoord, dbox, dtype = inter.data.get_data()
     feed_dict_test0 = {

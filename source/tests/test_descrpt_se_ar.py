@@ -21,6 +21,10 @@ from common import Data
 
 from deepmd.DescrptSeAR import DescrptSeAR
 
+from deepmd.RunOptions import global_tf_float_precision
+from deepmd.RunOptions import global_np_float_precision
+from deepmd.RunOptions import global_ener_float_precision
+
 class Inter():
     def __init__ (self, 
                   data) :
@@ -60,8 +64,8 @@ class Inter():
         self.default_mesh[4] = 2
         self.default_mesh[5] = 2
         # make place holder
-        self.coord      = tf.placeholder(tf.float64, [None, self.natoms[0] * 3], name='t_coord')
-        self.box        = tf.placeholder(tf.float64, [None, 9], name='t_box')
+        self.coord      = tf.placeholder(global_tf_float_precision, [None, self.natoms[0] * 3], name='t_coord')
+        self.box        = tf.placeholder(global_tf_float_precision, [None, 9], name='t_box')
         self.type       = tf.placeholder(tf.int32,   [None, self.natoms[0]], name = "t_type")
         self.tnatoms    = tf.placeholder(tf.int32,   [None], name = "t_natoms")
         
@@ -72,7 +76,7 @@ class Inter():
         with tf.variable_scope(name, reuse=reuse):
             net_w = tf.get_variable ('net_w', 
                                      [self.descrpt.get_dim_out()], 
-                                     tf.float64,
+                                     global_tf_float_precision,
                                      tf.constant_initializer (self.net_w_i))
         dot_v = tf.matmul (tf.reshape (inputs, [-1, self.descrpt.get_dim_out()]),
                            tf.reshape (net_w, [self.descrpt.get_dim_out(), 1]))
@@ -96,17 +100,16 @@ class Inter():
 
 class TestDescrptAR(Inter, unittest.TestCase):
     def __init__ (self, *args, **kwargs):
-        self.places = 5
         data = Data()
         Inter.__init__(self, data)
         unittest.TestCase.__init__(self, *args, **kwargs)
         self.controller = object()
 
     def test_force (self) :
-        force_test(self, self, places=5, suffix = '_se_ar')
+        force_test(self, self, suffix = '_se_ar')
 
     def test_virial (self) :
-        virial_test(self, self, places=5, suffix = '_se_ar')
+        virial_test(self, self, suffix = '_se_ar')
 
 
 if __name__ == '__main__':
