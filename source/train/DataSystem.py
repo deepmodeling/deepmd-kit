@@ -39,6 +39,8 @@ class DeepmdDataSystem() :
                 if len(words) == 2 :
                     rule = int(words[1])
             self.batch_size = self._make_auto_bs(rule)
+        elif isinstance(self.batch_size, list):
+            pass
         else :
             raise RuntimeError('invalid batch_size')            
         assert(isinstance(self.batch_size, (list,np.ndarray)))
@@ -108,6 +110,15 @@ class DeepmdDataSystem() :
             = np.linalg.lstsq(sys_tynatom, sys_ener, rcond = 1e-3)
         return energy_shift
 
+
+    def add_dict(self, adict) :
+        for kk in adict :
+            self.add(kk, 
+                     adict[kk]['ndof'], 
+                     atomic=adict[kk]['atomic'], 
+                     must=adict[kk]['must'], 
+                     high_prec=adict[kk]['high_prec'], 
+                     repeat=adict[kk]['repeat'])
 
     def add(self, 
             key, 
@@ -183,10 +194,6 @@ class DeepmdDataSystem() :
     def get_batch_size(self) :
         return self.batch_size
 
-    def numb_fparam(self) :
-        return self.has_fparam
-
-
     def _format_name_length(self, name, width) :
         if len(name) <= width:
             return '{: >{}}'.format(name, width)
@@ -201,7 +208,7 @@ class DeepmdDataSystem() :
         sys_width = 42
         tmp_msg += "---Summary of DataSystem-----------------------------------------\n"
         tmp_msg += "find %d system(s):\n" % self.nsystems
-        tmp_msg += "%s  " % self.format_name_length('system', sys_width)
+        tmp_msg += "%s  " % self._format_name_length('system', sys_width)
         tmp_msg += "%s  %s  %s\n" % ('natoms', 'bch_sz', 'n_bch')
         for ii in range(self.nsystems) :
             tmp_msg += ("%s  %6d  %6d  %5d\n" % 
