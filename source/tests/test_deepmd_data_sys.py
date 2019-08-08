@@ -68,7 +68,7 @@ class TestDataSystem (unittest.TestCase) :
         ds.add('null', self.test_ndof, atomic = True, must = False)
         sys_idx = 0
         data = ds.get_test(sys_idx=sys_idx)
-        self.assertEqual(list(data['type']), list(np.sort(self.atom_type[sys_idx])))
+        self.assertEqual(list(data['type'][0]), list(np.sort(self.atom_type[sys_idx])))
         self._in_array(np.load('sys_0/set.002/coord.npy'),
                        ds.get_sys(sys_idx).idx_map,
                        3, 
@@ -84,7 +84,7 @@ class TestDataSystem (unittest.TestCase) :
         ), 0.0)
         sys_idx = 2
         data = ds.get_test(sys_idx=sys_idx)
-        self.assertEqual(list(data['type']), list(np.sort(self.atom_type[sys_idx])))
+        self.assertEqual(list(data['type'][0]), list(np.sort(self.atom_type[sys_idx])))
         self._in_array(np.load('sys_2/set.002/coord.npy'),
                        ds.get_sys(sys_idx).idx_map,
                        3, 
@@ -108,7 +108,7 @@ class TestDataSystem (unittest.TestCase) :
         ds.add('null', self.test_ndof, atomic = True, must = False)
         sys_idx = 0
         data = ds.get_batch(sys_idx=sys_idx)
-        self.assertEqual(list(data['type']), list(np.sort(self.atom_type[sys_idx])))
+        self.assertEqual(list(data['type'][0]), list(np.sort(self.atom_type[sys_idx])))
         self._in_array(np.load('sys_0/set.000/coord.npy'),
                        ds.get_sys(sys_idx).idx_map,
                        3, 
@@ -123,7 +123,7 @@ class TestDataSystem (unittest.TestCase) :
                                               data['null']
         ), 0.0)
         data = ds.get_batch(sys_idx=sys_idx)
-        self.assertEqual(list(data['type']), list(np.sort(self.atom_type[sys_idx])))
+        self.assertEqual(list(data['type'][0]), list(np.sort(self.atom_type[sys_idx])))
         self._in_array(np.load('sys_0/set.001/coord.npy'),
                        ds.get_sys(sys_idx).idx_map,
                        3, 
@@ -138,7 +138,7 @@ class TestDataSystem (unittest.TestCase) :
                                               data['null']
         ), 0.0)
         data = ds.get_batch(sys_idx=sys_idx)
-        self.assertEqual(list(data['type']), list(np.sort(self.atom_type[sys_idx])))
+        self.assertEqual(list(data['type'][0]), list(np.sort(self.atom_type[sys_idx])))
         self._in_array(np.load('sys_0/set.000/coord.npy'),
                        ds.get_sys(sys_idx).idx_map,
                        3, 
@@ -154,7 +154,7 @@ class TestDataSystem (unittest.TestCase) :
         ), 0.0)
         sys_idx = 2
         data = ds.get_batch(sys_idx=sys_idx)
-        self.assertEqual(list(data['type']), list(np.sort(self.atom_type[sys_idx])))
+        self.assertEqual(list(data['type'][0]), list(np.sort(self.atom_type[sys_idx])))
         self._in_array(np.load('sys_2/set.000/coord.npy'),
                        ds.get_sys(sys_idx).idx_map,
                        3, 
@@ -169,7 +169,7 @@ class TestDataSystem (unittest.TestCase) :
                                               data['null']
         ), 0.0)
         data = ds.get_batch(sys_idx=sys_idx)
-        self.assertEqual(list(data['type']), list(np.sort(self.atom_type[sys_idx])))
+        self.assertEqual(list(data['type'][0]), list(np.sort(self.atom_type[sys_idx])))
         self._in_array(np.load('sys_2/set.001/coord.npy'),
                        ds.get_sys(sys_idx).idx_map,
                        3, 
@@ -184,7 +184,7 @@ class TestDataSystem (unittest.TestCase) :
                                               data['null']
         ), 0.0)
         data = ds.get_batch(sys_idx=sys_idx)
-        self.assertEqual(list(data['type']), list(np.sort(self.atom_type[sys_idx])))
+        self.assertEqual(list(data['type'][0]), list(np.sort(self.atom_type[sys_idx])))
         self._in_array(np.load('sys_2/set.001/coord.npy'),
                        ds.get_sys(sys_idx).idx_map,
                        3, 
@@ -199,7 +199,7 @@ class TestDataSystem (unittest.TestCase) :
                                               data['null']
         ), 0.0)
         data = ds.get_batch(sys_idx=sys_idx)
-        self.assertEqual(list(data['type']), list(np.sort(self.atom_type[sys_idx])))
+        self.assertEqual(list(data['type'][0]), list(np.sort(self.atom_type[sys_idx])))
         self._in_array(np.load('sys_2/set.000/coord.npy'),
                        ds.get_sys(sys_idx).idx_map,
                        3, 

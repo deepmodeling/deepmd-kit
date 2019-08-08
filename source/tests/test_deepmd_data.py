@@ -92,12 +92,14 @@ class TestData (unittest.TestCase) :
              .add('test_frame', 5, atomic=False, must=True)\
              .add('test_null', 2, atomic=True, must=False)
         data = dd._load_set(os.path.join(self.data_name, 'set.foo'))
+        nframes = data['coord'].shape[0]
         self.assertEqual(dd.get_numb_set(), 2)
         self.assertEqual(dd.get_type_map(), ['foo', 'bar'])
         self.assertEqual(dd.get_natoms(), 2)
         self.assertEqual(list(dd.get_natoms_vec(3)), [2,2,1,1,0])
-        self.assertEqual(data['type'][0], 0)
-        self.assertEqual(data['type'][1], 1)
+        for ii in range(nframes) :
+            self.assertEqual(data['type'][ii][0], 0)
+            self.assertEqual(data['type'][ii][1], 1)
         self.assertEqual(data['find_coord'], 1)
         self._comp_np_mat2(data['coord'], self.coord)
         self.assertEqual(data['find_test_atomic'], 1)

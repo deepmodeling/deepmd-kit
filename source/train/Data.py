@@ -110,7 +110,7 @@ class DeepmdData() :
         return self._get_subdata(self.batch_set, idx)
 
     def get_test (self) :
-        if not hasattr(self, 'test_set') :
+        if not hasattr(self, 'test_set') :            
             self._load_test_set(self.test_dir, self.shuffle_test)
         return self._get_subdata(self.test_set)        
 
@@ -172,7 +172,7 @@ class DeepmdData() :
         new_data = {}
         for ii in data:
             dd = data[ii]
-            if 'find_' in ii or 'type' == ii:
+            if 'find_' in ii:
                 new_data[ii] = dd                
             else:
                 if idx is not None:
@@ -223,7 +223,7 @@ class DeepmdData() :
         assert(coord.shape[1] == self.data_dict['coord']['ndof'] * self.natoms)
         # load keys
         data = {}
-        data['type'] = self.atom_type[self.idx_map]
+        data['type'] = np.tile (self.atom_type[self.idx_map], (nframes, 1))
         for kk in self.data_dict.keys():
             if self.data_dict[kk]['reduce'] is None :
                 ndof = self.data_dict[kk]['ndof']
@@ -265,7 +265,7 @@ class DeepmdData() :
             data = np.reshape(data, shape)
             if repeat != 1:
                 data = np.repeat(data, repeat).reshape([nframes, -1])
-            return 1.0, data
+            return np.float32(1.0), data
         elif must:
             raise RuntimeError("%s not found!" % path)
         else:
@@ -275,7 +275,7 @@ class DeepmdData() :
                 data = np.zeros(shape).astype(global_np_float_precision)
             if repeat != 1:
                 data = np.repeat(data, repeat).reshape([nframes, -1])
-            return 0.0, data
+            return np.float32(0.0), data
 
         
     def _load_type (self, sys_path) :
