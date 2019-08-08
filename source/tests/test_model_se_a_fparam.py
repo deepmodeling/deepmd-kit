@@ -73,6 +73,8 @@ class TestModel(unittest.TestCase):
         t_mesh             = tf.placeholder(tf.int32,   [None], name='i_mesh')
         t_fparam           = tf.placeholder(global_tf_float_precision, [None], name='i_fparam')
         is_training        = tf.placeholder(tf.bool)
+        input_dict = {}
+        input_dict['fparam'] = t_fparam
 
         energy, force, virial, atom_ener, atom_virial \
             = model.build (t_coord, 
@@ -80,7 +82,7 @@ class TestModel(unittest.TestCase):
                            t_natoms, 
                            t_box, 
                            t_mesh,
-                           t_fparam,
+                           input_dict,
                            davg = davg,
                            dstd = dstd,
                            bias_atom_e = bias_atom_e, 

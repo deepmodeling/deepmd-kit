@@ -49,9 +49,6 @@ class Model() :
     def get_ntypes (self) :
         return self.ntypes
 
-    def get_numb_fparam (self) :
-        return self.numb_fparam
-
     def get_type_map (self) :
         return self.type_map
 
@@ -64,6 +61,7 @@ class Model() :
                     stat_data[dd] = stat_data[dd].astype(np.int32) 
                 all_stat[dd].append(stat_data[dd])
 
+        
         davg, dstd = self.compute_dstats (all_stat['coord'], all_stat['box'], all_stat['type'], all_stat['natoms_vec'], all_stat['default_mesh'])
         # if self.run_opt.is_chief:
         #     np.savetxt ("stat.avg.out", davg.T)
@@ -89,7 +87,7 @@ class Model() :
                natoms,
                box, 
                mesh,
-               fparam,
+               input_dict,
                davg = None, 
                dstd = None,
                bias_atom_e = None,
@@ -134,7 +132,7 @@ class Model() :
             nnei_r = np.cumsum(sel_r)[-1]
 
         atom_ener = self.fitting.build (dout, 
-                                        fparam, 
+                                        input_dict, 
                                         natoms, 
                                         bias_atom_e = bias_atom_e, 
                                         reuse = reuse, 

@@ -35,7 +35,6 @@
     },
 
     "loss" : {
-	"type":		"std",		
 	"start_pref_e":	0.02,
 	"limit_pref_e":	8,
 	"start_pref_f":	1000,

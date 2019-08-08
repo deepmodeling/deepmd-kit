@@ -12,8 +12,9 @@ lib_path = os.path.dirname(os.path.realpath(__file__)) + "/../lib/"
 sys.path.append (lib_path)
 
 from deepmd.RunOptions import RunOptions
-from deepmd.DataSystem import DataSystem
+from deepmd.DataSystem import DataSystem, DeepmdDataSystem
 from deepmd.Trainer import NNPTrainer
+from deepmd.common import data_requirement
 
 def create_done_queue(cluster_spec, task_index):
    with tf.device("/job:ps/task:%d" % (task_index)):
@@ -95,7 +96,8 @@ def _do_work(jdata, run_opt):
     batch_size = j_must_have(jdata['training'], 'batch_size')
     test_size = j_must_have(jdata['training'], 'numb_test')
     stop_batch = j_must_have(jdata['training'], 'stop_batch')
-    data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt)
+    data = DeepmdDataSystem(systems, batch_size, test_size, rcut, set_prefix=set_pfx, run_opt=run_opt)
+    data.add_dict(data_requirement)
     # build the model with stats from the first system
     model.build (data)
     # train the model with the provided systems in a cyclic way

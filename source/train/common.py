@@ -1,3 +1,19 @@
+data_requirement = {}
+
+def add_data_requirement(key, 
+                         ndof, 
+                         atomic = False, 
+                         must = False, 
+                         high_prec = False,
+                         repeat = 1) :
+    data_requirement[key] = {'ndof': ndof, 
+                             'atomic': atomic,
+                             'must': must, 
+                             'high_prec': high_prec,
+                             'repeat': repeat,
+    }
+    
+
 class ClassArg () : 
     def __init__ (self) :
         self.arg_dict = {}
@@ -67,7 +83,6 @@ class ClassArg () :
         for kk in self.arg_dict.keys() :
             ret[kk] = self.arg_dict[kk]['value']
         return ret
-
 
 def j_must_have (jdata, key) :
     if not key in jdata.keys() :

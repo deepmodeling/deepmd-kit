@@ -2,7 +2,7 @@ import os,warnings
 import numpy as np
 import tensorflow as tf
 
-from deepmd.common import ClassArg
+from deepmd.common import ClassArg, add_data_requirement
 
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
@@ -25,15 +25,17 @@ class EnerFitting ():
         self.n_neuron = class_data['neuron']
         self.resnet_dt = class_data['resnet_dt']
         self.seed = class_data['seed']
-
         self.useBN = False
+        # data requirement
+        if self.numb_fparam > 0 :
+            add_data_requirement('fparam', self.numb_fparam, atomic=False, must=False, high_prec=False)        
 
     def get_numb_fparam(self) :
         return self.numb_fparam
 
     def build (self, 
                inputs,
-               fparam,
+               input_dict,
                natoms,
                bias_atom_e = None,
                reuse = None,
@@ -63,6 +65,7 @@ class EnerFitting ():
 
             layer = inputs_i
             if self.numb_fparam > 0 :
+                fparam = input_dict['fparam']
                 ext_fparam = tf.reshape(fparam, [-1, self.numb_fparam])
                 ext_fparam = tf.tile(ext_fparam, [1, natoms[2+type_i]])
                 ext_fparam = tf.reshape(ext_fparam, [-1, self.numb_fparam])
