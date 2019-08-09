@@ -136,6 +136,9 @@ class DeepmdDataSystem() :
         for ii in self.data_systems:
             ii.reduce(key_out, k_in)
 
+    def get_data_dict(self) :
+        return self.data_systems[0].get_data_dict()
+
     def get_batch (self, 
                    sys_idx = None,
                    sys_weights = None,

@@ -73,6 +73,9 @@ class DeepmdData() :
         }
         return self
 
+    def get_data_dict(self):
+        return self.data_dict
+
     def check_batch_size (self, batch_size) :
         for ii in self.train_dirs :
             if self.data_dict['coord']['high_prec'] :

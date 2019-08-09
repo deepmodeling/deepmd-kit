@@ -183,20 +183,20 @@ class NNPTrainer (object):
 
     def _build_network(self, data, davg, dstd, bias_atom_e):        
         self.place_holders = {}
-        for kk in data_requirement:
-            if kk == 'coord' or kk == 'box' or kk == 'type':
+        data_dict = data.get_data_dict()
+        for kk in data_dict.keys():
+            print(kk)
+            if kk == 'type':
                 continue
             prec = global_tf_float_precision
-            if data_requirement[kk]['high_prec'] :
+            if data_dict[kk]['high_prec'] :
                 prec = global_ener_float_precision
             self.place_holders[kk] = tf.placeholder(prec, [None], name = 't_' + kk)
             self.place_holders['find_'+kk] = tf.placeholder(tf.float32, name = 't_find_' + kk)
 
-        self.place_holders['coord']     = tf.placeholder(global_tf_float_precision, [None], name='i_coord')
-        self.place_holders['box']       = tf.placeholder(global_tf_float_precision, [None, 9], name='i_box')
-        self.place_holders['type']      = tf.placeholder(tf.int32,   [None], name='i_type')
-        self.place_holders['natoms_vec']        = tf.placeholder(tf.int32,   [self.ntypes+2], name='i_natoms')
-        self.place_holders['default_mesh']      = tf.placeholder(tf.int32,   [None], name='i_mesh')
+        self.place_holders['type']      = tf.placeholder(tf.int32,   [None], name='t_type')
+        self.place_holders['natoms_vec']        = tf.placeholder(tf.int32,   [self.ntypes+2], name='t_natoms')
+        self.place_holders['default_mesh']      = tf.placeholder(tf.int32,   [None], name='t_mesh')
         self.place_holders['is_training']       = tf.placeholder(tf.bool)
 
         self.energy, self.force, self.virial, self.atom_ener, self.atom_virial\
@@ -349,16 +349,15 @@ class NNPTrainer (object):
             cur_batch_size = batch_data["energy"].shape[0]
             feed_dict_batch = {}
             for kk in batch_data.keys():
-                if kk == 'coord' or kk == 'box' or kk == 'type' or \
-                   kk == 'find_coord' or kk == 'find_box' or kk == 'find_type' :
+                if kk == 'find_type' or kk == 'type' :
                     continue
                 if 'find_' in kk :
                     feed_dict_batch[self.place_holders[kk]] = batch_data[kk]
                 else:
                     feed_dict_batch[self.place_holders[kk]] = np.reshape(batch_data[kk], [-1])
-            for ii in ['coord', 'type'] :
+            for ii in ['type'] :
                 feed_dict_batch[self.place_holders[ii]] = np.reshape(batch_data[ii], [-1])
-            for ii in ['box', 'natoms_vec', 'default_mesh'] :
+            for ii in ['natoms_vec', 'default_mesh'] :
                 feed_dict_batch[self.place_holders[ii]] = batch_data[ii]
             feed_dict_batch[self.place_holders['is_training']] = True
 
@@ -422,18 +421,15 @@ class NNPTrainer (object):
         test_data = data.get_test ()
         feed_dict_test = {}
         for kk in test_data.keys():
-            if kk == 'coord' or kk == 'box' or kk == 'type' or \
-               kk == 'find_coord' or kk == 'find_box' or kk == 'find_type' :
+            if kk == 'find_type' or kk == 'type' :
                 continue
             if 'find_' in kk:
                 feed_dict_test[self.place_holders[kk]] = test_data[kk]
             else:
                 feed_dict_test[self.place_holders[kk]] = np.reshape(test_data[kk][:self.numb_test], [-1])
-        for ii in ['coord', 'type'] :
+        for ii in ['type'] :
             feed_dict_test[self.place_holders[ii]] = np.reshape(test_data[ii][:self.numb_test], [-1])            
-        for ii in ['box'] :
-            feed_dict_test[self.place_holders[ii]] = test_data[ii][:self.numb_test]
-        for ii in [ 'natoms_vec', 'default_mesh'] :
+        for ii in ['natoms_vec', 'default_mesh'] :
             feed_dict_test[self.place_holders[ii]] = test_data[ii]
         feed_dict_test[self.place_holders['is_training']] = False
 

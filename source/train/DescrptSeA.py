@@ -110,7 +110,7 @@ class DescrptSeA ():
                coord_, 
                atype_,
                natoms,
-               box, 
+               box_, 
                mesh,
                davg = None, 
                dstd = None,
@@ -140,6 +140,7 @@ class DescrptSeA ():
                                          initializer = tf.constant_initializer(dstd, dtype = global_tf_float_precision))
 
         coord = tf.reshape (coord_, [-1, natoms[1] * 3])
+        box   = tf.reshape (box_, [-1, 9])
         atype = tf.reshape (atype_, [-1, natoms[1]])
 
         self.descrpt, self.descrpt_deriv, self.rij, self.nlist \
