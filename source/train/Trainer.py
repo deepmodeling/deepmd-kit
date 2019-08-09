@@ -162,7 +162,7 @@ class NNPTrainer (object):
 
         self.type_map = data.get_type_map()
 
-        davg, dstd, bias_e = self.model.data_stat(data)
+        self.model.data_stat(data)
 
         worker_device = "/job:%s/task:%d/%s" % (self.run_opt.my_job_name,
                                                 self.run_opt.my_task_index,
@@ -171,7 +171,7 @@ class NNPTrainer (object):
         with tf.device(tf.train.replica_device_setter(worker_device = worker_device,
                                                       cluster = self.run_opt.cluster_spec)):
             self._build_lr()
-            self._build_network(data, davg, dstd, bias_e)
+            self._build_network(data)
             self._build_training()
 
 
@@ -181,11 +181,10 @@ class NNPTrainer (object):
         self.learning_rate = self.lr.build(self.global_step)
         self._message("built lr")
 
-    def _build_network(self, data, davg, dstd, bias_atom_e):        
+    def _build_network(self, data):        
         self.place_holders = {}
         data_dict = data.get_data_dict()
         for kk in data_dict.keys():
-            print(kk)
             if kk == 'type':
                 continue
             prec = global_tf_float_precision
@@ -206,9 +205,6 @@ class NNPTrainer (object):
                                 self.place_holders['box'], 
                                 self.place_holders['default_mesh'],
                                 self.place_holders,
-                                davg = davg,
-                                dstd = dstd,
-                                bias_atom_e = bias_atom_e, 
                                 suffix = "", 
                                 reuse = False)
 

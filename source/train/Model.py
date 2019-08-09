@@ -26,10 +26,12 @@ class Model() :
 
         args = ClassArg()\
                .add('type_map',         list,   default = []) \
+               .add('rcond',            float,  default = 1e-3) \
                .add('use_srtab',        str)
         class_data = args.parse(jdata)
         self.type_map = class_data['type_map']
         self.srtab_name = class_data['use_srtab']
+        self.rcond = class_data['rcond']
         if self.srtab_name is not None :
             self.srtab = TabInter(self.srtab_name)
             args.add('smin_alpha',      float,  must = True)\
@@ -60,25 +62,23 @@ class Model() :
                 if dd == "natoms_vec":
                     stat_data[dd] = stat_data[dd].astype(np.int32) 
                 all_stat[dd].append(stat_data[dd])
-
         
-        davg, dstd = self.compute_dstats (all_stat['coord'], all_stat['box'], all_stat['type'], all_stat['natoms_vec'], all_stat['default_mesh'])
-        # if self.run_opt.is_chief:
-        #     np.savetxt ("stat.avg.out", davg.T)
-        #     np.savetxt ("stat.std.out", dstd.T)
+        self.davg, self.dstd \
+            = self._compute_dstats (all_stat['coord'], 
+                                    all_stat['box'], 
+                                    all_stat['type'], 
+                                    all_stat['natoms_vec'], 
+                                    all_stat['default_mesh'])
+        self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
-        bias_atom_e = data.compute_energy_shift()
-        # self._message("computed energy bias")
 
-        return davg, dstd, bias_atom_e
-
-    def compute_dstats (self,
-                        data_coord, 
-                        data_box, 
-                        data_atype, 
-                        natoms_vec,
-                        mesh,
-                        reuse = None) :        
+    def _compute_dstats (self,
+                         data_coord, 
+                         data_box, 
+                         data_atype, 
+                         natoms_vec,
+                         mesh,
+                         reuse = None) :        
         return self.descrpt.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh, reuse)
     
     def build (self, 
@@ -88,9 +88,6 @@ class Model() :
                box, 
                mesh,
                input_dict,
-               davg = None, 
-               dstd = None,
-               bias_atom_e = None,
                suffix = '', 
                reuse = None):
 
@@ -121,8 +118,8 @@ class Model() :
                                  natoms,
                                  box,
                                  mesh,
-                                 davg = davg,
-                                 dstd = dstd,
+                                 davg = self.davg,
+                                 dstd = self.dstd,
                                  suffix = suffix,
                                  reuse = reuse)
 
@@ -134,7 +131,7 @@ class Model() :
         atom_ener = self.fitting.build (dout, 
                                         input_dict, 
                                         natoms, 
-                                        bias_atom_e = bias_atom_e, 
+                                        bias_atom_e = self.bias_atom_e, 
                                         reuse = reuse, 
                                         suffix = suffix)
 

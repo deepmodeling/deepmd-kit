@@ -99,7 +99,7 @@ class DeepmdDataSystem() :
             self.default_mesh.append(default_mesh)
 
 
-    def compute_energy_shift(self, key = 'energy') :
+    def compute_energy_shift(self, rcond = 1e-3, key = 'energy') :
         sys_ener = np.array([])
         for ss in self.data_systems :
             sys_ener = np.append(sys_ener, ss.avg(key))
@@ -107,7 +107,7 @@ class DeepmdDataSystem() :
         sys_tynatom = np.reshape(sys_tynatom, [self.nsystems,-1])
         sys_tynatom = sys_tynatom[:,2:]
         energy_shift,resd,rank,s_value \
-            = np.linalg.lstsq(sys_tynatom, sys_ener, rcond = 1e-3)
+            = np.linalg.lstsq(sys_tynatom, sys_ener, rcond = rcond)
         return energy_shift
 
 
