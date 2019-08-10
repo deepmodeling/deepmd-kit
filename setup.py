@@ -56,6 +56,7 @@ setup(
                 '-DTF_GOOGLE_BIN:BOOL=FALSE', 
                 '-DBUILD_PY_IF:BOOL=TRUE', 
                 '-DBUILD_CPP_IF:BOOL=FALSE',
+                '-DFLOAT_PREC:STRING=high',
     ],
     cmake_source_dir='source',
     cmake_minimum_required_version='3.0',

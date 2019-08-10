@@ -179,21 +179,21 @@ make_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 
   if (fparam_.size() == 0) {
     input_tensors = {
-      {"i_coord",	coord_tensor}, 
-      {"i_type",	type_tensor},
-      {"i_box",		box_tensor},
-      {"i_mesh",	mesh_tensor},
-      {"i_natoms",	natoms_tensor},
+      {"t_coord",	coord_tensor}, 
+      {"t_type",	type_tensor},
+      {"t_box",		box_tensor},
+      {"t_mesh",	mesh_tensor},
+      {"t_natoms",	natoms_tensor},
     };  
   }
   else {
     input_tensors = {
-      {"i_coord",	coord_tensor}, 
-      {"i_type",	type_tensor},
-      {"i_box",		box_tensor},
-      {"i_mesh",	mesh_tensor},
-      {"i_natoms",	natoms_tensor},
-      {"i_fparam",	fparam_tensor},
+      {"t_coord",	coord_tensor}, 
+      {"t_type",	type_tensor},
+      {"t_box",		box_tensor},
+      {"t_mesh",	mesh_tensor},
+      {"t_natoms",	natoms_tensor},
+      {"t_fparam",	fparam_tensor},
     };  
   }
 
@@ -299,21 +299,21 @@ make_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 
   if (fparam_.size() == 0) {
     input_tensors = {
-      {"i_coord",	coord_tensor}, 
-      {"i_type",	type_tensor},
-      {"i_box",		box_tensor},
-      {"i_mesh",	mesh_tensor},
-      {"i_natoms",	natoms_tensor},
+      {"t_coord",	coord_tensor}, 
+      {"t_type",	type_tensor},
+      {"t_box",		box_tensor},
+      {"t_mesh",	mesh_tensor},
+      {"t_natoms",	natoms_tensor},
     };  
   }
   else {
     input_tensors = {
-      {"i_coord",	coord_tensor}, 
-      {"i_type",	type_tensor},
-      {"i_box",		box_tensor},
-      {"i_mesh",	mesh_tensor},
-      {"i_natoms",	natoms_tensor},
-      {"i_fparam",	fparam_tensor},
+      {"t_coord",	coord_tensor}, 
+      {"t_type",	type_tensor},
+      {"t_box",		box_tensor},
+      {"t_mesh",	mesh_tensor},
+      {"t_natoms",	natoms_tensor},
+      {"t_fparam",	fparam_tensor},
     };  
   }
 

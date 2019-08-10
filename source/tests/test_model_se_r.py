@@ -52,13 +52,12 @@ class TestModel(unittest.TestCase):
         test_data = data.get_test ()
         numb_test = 1
         
-        bias_atom_e = data.compute_energy_shift()
-
         descrpt = DescrptSeR(jdata['model']['descriptor'])
         fitting = EnerFitting(jdata['model']['fitting_net'], descrpt)
         model = Model(jdata['model'], descrpt, fitting)
 
-        davg, dstd = model.compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
+        model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
+        model.bias_atom_e = data.compute_energy_shift()
 
         t_prop_c           = tf.placeholder(tf.float32, [5],    name='t_prop_c')
         t_energy           = tf.placeholder(global_ener_float_precision, [None], name='t_energy')
@@ -80,9 +79,6 @@ class TestModel(unittest.TestCase):
                            t_box, 
                            t_mesh,
                            t_fparam,
-                           davg = davg,
-                           dstd = dstd,
-                           bias_atom_e = bias_atom_e, 
                            suffix = "se_r", 
                            reuse = False)
 

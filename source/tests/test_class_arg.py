@@ -25,6 +25,14 @@ class TestClassArg (unittest.TestCase) :
         ca.parse(test_dict)
         self.assertEqual(ca.get_dict(), {'test1':'foo', 'test':10})
 
+    def test_add_multi_types (self) :
+        ca = ClassArg()\
+             .add('test',  [str, list])\
+             .add('test1',  [str, list])
+        test_dict = {'test' : [10,20], 'test1' : 10} 
+        ca.parse(test_dict)
+        self.assertEqual(ca.get_dict(), {'test':[10,20], 'test1':'10'})
+
     def test_add_type_cvt (self) :
         ca = ClassArg().add('test', float)
         test_dict = {'test' :  '10'} 

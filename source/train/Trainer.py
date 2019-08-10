@@ -17,7 +17,7 @@ from DescrptSeA import DescrptSeA
 from DescrptSeR import DescrptSeR
 from DescrptSeAR import DescrptSeAR
 from Model import Model
-from Loss import LossStd
+from Loss import EnerStdLoss
 from LearningRate import LearningRateExp
 
 from tensorflow.python.framework import ops
@@ -41,7 +41,7 @@ import deepmd._soft_min_virial_grad
 from deepmd.RunOptions import RunOptions
 from deepmd.TabInter import TabInter
 
-from deepmd.common import j_must_have, ClassArg
+from deepmd.common import j_must_have, ClassArg, add_data_requirement, data_requirement
 
 def _is_subdir(path, directory):
     path = os.path.realpath(path)
@@ -107,9 +107,9 @@ class NNPTrainer (object):
         try: 
             loss_type = loss_param['type']
         except:
-            loss_type = 'std'
-        if loss_type == 'std':
-            self.loss = LossStd(loss_param, self.lr.start_lr())
+            loss_type = 'ener-std'
+        if loss_type == 'ener-std':
+            self.loss = EnerStdLoss(loss_param, self.lr.start_lr())
         else :
             raise RuntimeError('unknow loss type ' + loss_type)
 
@@ -139,6 +139,10 @@ class NNPTrainer (object):
         self.profiling_file = tr_data['profiling_file']
         self.sys_weights = tr_data['sys_weights']        
         self.useBN = False
+        if fitting_type == 'ener' and  self.fitting.get_numb_fparam() > 0 :
+            self.numb_fparam = self.fitting.get_numb_fparam()
+        else :
+            self.numb_fparam = 0
 
 
     def _message (self, msg) :
@@ -151,17 +155,14 @@ class NNPTrainer (object):
 
         self.batch_size = data.get_batch_size()
 
-        self.numb_fparam = data.numb_fparam()
         if self.numb_fparam > 0 :
             self._message("training with %d frame parameter(s)" % self.numb_fparam)
-        elif self.numb_fparam < 0 :
+        else:
             self._message("training without frame parameter")
-        else :
-            raise RuntimeError("number of frame parameter == 0")
 
         self.type_map = data.get_type_map()
 
-        davg, dstd, bias_e = self.model.data_stat(data)
+        self.model.data_stat(data)
 
         worker_device = "/job:%s/task:%d/%s" % (self.run_opt.my_job_name,
                                                 self.run_opt.my_task_index,
@@ -170,7 +171,7 @@ class NNPTrainer (object):
         with tf.device(tf.train.replica_device_setter(worker_device = worker_device,
                                                       cluster = self.run_opt.cluster_spec)):
             self._build_lr()
-            self._build_network(davg, dstd, bias_e)
+            self._build_network(data)
             self._build_training()
 
 
@@ -180,46 +181,41 @@ class NNPTrainer (object):
         self.learning_rate = self.lr.build(self.global_step)
         self._message("built lr")
 
-    def _build_network(self, davg, dstd, bias_atom_e):
+    def _build_network(self, data):        
+        self.place_holders = {}
+        data_dict = data.get_data_dict()
+        for kk in data_dict.keys():
+            if kk == 'type':
+                continue
+            prec = global_tf_float_precision
+            if data_dict[kk]['high_prec'] :
+                prec = global_ener_float_precision
+            self.place_holders[kk] = tf.placeholder(prec, [None], name = 't_' + kk)
+            self.place_holders['find_'+kk] = tf.placeholder(tf.float32, name = 't_find_' + kk)
 
-        self.t_prop_c           = tf.placeholder(tf.float32, [5],    name='t_prop_c')
-        self.t_energy           = tf.placeholder(global_ener_float_precision, [None], name='t_energy')
-        self.t_force            = tf.placeholder(global_tf_float_precision, [None], name='t_force')
-        self.t_virial           = tf.placeholder(global_tf_float_precision, [None], name='t_virial')
-        self.t_atom_ener        = tf.placeholder(global_tf_float_precision, [None], name='t_atom_ener')
-        self.t_atom_pref        = tf.placeholder(global_tf_float_precision, [None], name='t_atom_pref')
-        self.t_coord            = tf.placeholder(global_tf_float_precision, [None], name='i_coord')
-        self.t_type             = tf.placeholder(tf.int32,   [None], name='i_type')
-        self.t_natoms           = tf.placeholder(tf.int32,   [self.ntypes+2], name='i_natoms')
-        self.t_box              = tf.placeholder(global_tf_float_precision, [None, 9], name='i_box')
-        self.t_mesh             = tf.placeholder(tf.int32,   [None], name='i_mesh')
-        self.is_training        = tf.placeholder(tf.bool)
-        if self.numb_fparam > 0 :
-            self.t_fparam       = tf.placeholder(global_tf_float_precision, [None], name='i_fparam')
-        else :
-            self.t_fparam       = None
+        self.place_holders['type']      = tf.placeholder(tf.int32,   [None], name='t_type')
+        self.place_holders['natoms_vec']        = tf.placeholder(tf.int32,   [self.ntypes+2], name='t_natoms')
+        self.place_holders['default_mesh']      = tf.placeholder(tf.int32,   [None], name='t_mesh')
+        self.place_holders['is_training']       = tf.placeholder(tf.bool)
 
         self.energy, self.force, self.virial, self.atom_ener, self.atom_virial\
-            = self.model.build (self.t_coord, 
-                                self.t_type, 
-                                self.t_natoms, 
-                                self.t_box, 
-                                self.t_mesh,
-                                self.t_fparam,
-                                davg = davg,
-                                dstd = dstd,
-                                bias_atom_e = bias_atom_e, 
+            = self.model.build (self.place_holders['coord'], 
+                                self.place_holders['type'], 
+                                self.place_holders['natoms_vec'], 
+                                self.place_holders['box'], 
+                                self.place_holders['default_mesh'],
+                                self.place_holders,
                                 suffix = "", 
                                 reuse = False)
 
-        self.l2_l, self.l2_el, self.l2_fl, self.l2_vl, self.l2_ael, self.l2_pfl \
+        self.l2_l, self.l2_more\
             = self.loss.build (self.learning_rate,
-                               self.t_natoms, \
-                               self.t_prop_c, \
-                               self.t_energy, self.energy, \
-                               self.t_force, self.force, \
-                               self.t_virial, self.virial, \
-                               self.t_atom_ener, self.atom_ener, self.t_atom_pref, \
+                               self.place_holders['natoms_vec'], 
+                               self.energy,
+                               self.force,
+                               self.virial,
+                               self.atom_ener,
+                               self.place_holders,
                                suffix = "test")
 
         self._message("built network")
@@ -347,20 +343,20 @@ class NNPTrainer (object):
         while cur_batch < stop_batch :
             batch_data = data.get_batch (sys_weights = self.sys_weights)
             cur_batch_size = batch_data["energy"].shape[0]
-            feed_dict_batch = {self.t_prop_c:        batch_data["prop_c"],
-                               self.t_energy:        batch_data["energy"], 
-                               self.t_force:         np.reshape(batch_data["force"], [-1]),
-                               self.t_virial:        np.reshape(batch_data["virial"], [-1]),
-                               self.t_atom_ener:     np.reshape(batch_data["atom_ener"], [-1]),
-                               self.t_atom_pref:     np.reshape(batch_data["atom_pref"], [-1]),
-                               self.t_coord:         np.reshape(batch_data["coord"], [-1]),
-                               self.t_box:           batch_data["box"],
-                               self.t_type:          np.reshape(batch_data["type"], [-1]),
-                               self.t_natoms:        batch_data["natoms_vec"],
-                               self.t_mesh:          batch_data["default_mesh"],
-                               self.is_training:     True}
-            if self.numb_fparam > 0 :
-                feed_dict_batch[self.t_fparam] = np.reshape(batch_data["fparam"], [-1])
+            feed_dict_batch = {}
+            for kk in batch_data.keys():
+                if kk == 'find_type' or kk == 'type' :
+                    continue
+                if 'find_' in kk :
+                    feed_dict_batch[self.place_holders[kk]] = batch_data[kk]
+                else:
+                    feed_dict_batch[self.place_holders[kk]] = np.reshape(batch_data[kk], [-1])
+            for ii in ['type'] :
+                feed_dict_batch[self.place_holders[ii]] = np.reshape(batch_data[ii], [-1])
+            for ii in ['natoms_vec', 'default_mesh'] :
+                feed_dict_batch[self.place_holders[ii]] = batch_data[ii]
+            feed_dict_batch[self.place_holders['is_training']] = True
+
             if self.display_in_training and cur_batch == 0 :
                 self.test_on_the_fly(fp, data, feed_dict_batch)
             if self.timing_in_training : tic = time.time()
@@ -419,35 +415,35 @@ class NNPTrainer (object):
                          data,
                          feed_dict_batch) :
         test_data = data.get_test ()
-        feed_dict_test = {self.t_prop_c:        test_data["prop_c"],
-                          self.t_energy:        test_data["energy"]              [:self.numb_test],
-                          self.t_force:         np.reshape(test_data["force"]    [:self.numb_test, :], [-1]),
-                          self.t_virial:        np.reshape(test_data["virial"]   [:self.numb_test, :], [-1]),
-                          self.t_atom_ener:     np.reshape(test_data["atom_ener"][:self.numb_test, :], [-1]),
-                          self.t_atom_pref:     np.reshape(test_data["atom_pref"][:self.numb_test, :], [-1]),
-                          self.t_coord:         np.reshape(test_data["coord"]    [:self.numb_test, :], [-1]),
-                          self.t_box:           test_data["box"]                 [:self.numb_test, :],
-                          self.t_type:          np.reshape(test_data["type"]     [:self.numb_test, :], [-1]),
-                          self.t_natoms:        test_data["natoms_vec"],
-                          self.t_mesh:          test_data["default_mesh"],
-                          self.is_training:     False}
-        if self.numb_fparam > 0 :
-            feed_dict_test[self.t_fparam] = np.reshape(test_data["fparam"]  [:self.numb_test, :], [-1])
+        feed_dict_test = {}
+        for kk in test_data.keys():
+            if kk == 'find_type' or kk == 'type' :
+                continue
+            if 'find_' in kk:
+                feed_dict_test[self.place_holders[kk]] = test_data[kk]
+            else:
+                feed_dict_test[self.place_holders[kk]] = np.reshape(test_data[kk][:self.numb_test], [-1])
+        for ii in ['type'] :
+            feed_dict_test[self.place_holders[ii]] = np.reshape(test_data[ii][:self.numb_test], [-1])            
+        for ii in ['natoms_vec', 'default_mesh'] :
+            feed_dict_test[self.place_holders[ii]] = test_data[ii]
+        feed_dict_test[self.place_holders['is_training']] = False
+
         error_test, error_e_test, error_f_test, error_v_test, error_ae_test, error_pf_test \
             = self.sess.run([self.l2_l, \
-                             self.l2_el, \
-                             self.l2_fl, \
-                             self.l2_vl, \
-                             self.l2_ael,\
-                             self.l2_pfl], 
+                             self.l2_more['l2_ener_loss'], \
+                             self.l2_more['l2_force_loss'], \
+                             self.l2_more['l2_virial_loss'], \
+                             self.l2_more['l2_atom_ener_loss'],\
+                             self.l2_more['l2_pref_force_loss']],
                             feed_dict=feed_dict_test)
         error_train, error_e_train, error_f_train, error_v_train, error_ae_train, error_pf_train \
             = self.sess.run([self.l2_l, \
-                             self.l2_el, \
-                             self.l2_fl, \
-                             self.l2_vl, \
-                             self.l2_ael,\
-                             self.l2_pfl], 
+                             self.l2_more['l2_ener_loss'], \
+                             self.l2_more['l2_force_loss'], \
+                             self.l2_more['l2_virial_loss'], \
+                             self.l2_more['l2_atom_ener_loss'],\
+                             self.l2_more['l2_pref_force_loss']], 
                             feed_dict=feed_dict_batch)
         cur_batch = self.cur_batch
         current_lr = self.sess.run(self.learning_rate)

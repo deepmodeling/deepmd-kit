@@ -21,6 +21,10 @@ from common import Data
 
 from deepmd.DescrptLocFrame import op_module
 
+from deepmd.RunOptions import global_tf_float_precision
+from deepmd.RunOptions import global_np_float_precision
+from deepmd.RunOptions import global_ener_float_precision
+
 class Inter():
     def __init__ (self, 
                   data) :
@@ -41,15 +45,15 @@ class Inter():
         self.ndescrpt = self.ndescrpt_a + self.ndescrpt_r
         davg = np.zeros ([self.ntypes, self.ndescrpt])
         dstd = np.ones  ([self.ntypes, self.ndescrpt])
-        self.t_avg = tf.constant(davg.astype(np.float64))
-        self.t_std = tf.constant(dstd.astype(np.float64))
+        self.t_avg = tf.constant(davg.astype(global_np_float_precision))
+        self.t_std = tf.constant(dstd.astype(global_np_float_precision))
         self.default_mesh = np.zeros (6, dtype = np.int32)
         self.default_mesh[3] = 2
         self.default_mesh[4] = 2
         self.default_mesh[5] = 2
         # make place holder
-        self.coord      = tf.placeholder(tf.float64, [None, self.natoms[0] * 3], name='t_coord')
-        self.box        = tf.placeholder(tf.float64, [None, 9], name='t_box')
+        self.coord      = tf.placeholder(global_tf_float_precision, [None, self.natoms[0] * 3], name='t_coord')
+        self.box        = tf.placeholder(global_tf_float_precision, [None, 9], name='t_box')
         self.type       = tf.placeholder(tf.int32,   [None, self.natoms[0]], name = "t_type")
         self.tnatoms    = tf.placeholder(tf.int32,   [None], name = "t_natoms")
         
@@ -60,7 +64,7 @@ class Inter():
         with tf.variable_scope(name, reuse=reuse):
             net_w = tf.get_variable ('net_w', 
                                      [self.ndescrpt], 
-                                     tf.float64,
+                                     global_tf_float_precision,
                                      tf.constant_initializer (self.net_w_i))
         dot_v = tf.matmul (tf.reshape (inputs, [-1, self.ndescrpt]),
                            tf.reshape (net_w, [self.ndescrpt, 1]))
@@ -119,7 +123,7 @@ class Inter():
                    reuse = None) :
         energy, force, virial = self.comp_ef (dcoord, dbox, dtype, tnatoms, name, reuse)
         with tf.variable_scope(name, reuse=True):
-            net_w = tf.get_variable ('net_w', [self.ndescrpt], tf.float64, tf.constant_initializer (self.net_w_i))
+            net_w = tf.get_variable ('net_w', [self.ndescrpt], global_tf_float_precision, tf.constant_initializer (self.net_w_i))
         f_mag = tf.reduce_sum (tf.nn.tanh(force))
         f_mag_dw = tf.gradients (f_mag, net_w)
         assert (len(f_mag_dw) == 1), "length of dw is wrong"        
@@ -135,7 +139,7 @@ class Inter():
                    reuse = None) :
         energy, force, virial = self.comp_ef (dcoord, dbox, dtype, tnatoms, name, reuse)
         with tf.variable_scope(name, reuse=True):
-            net_w = tf.get_variable ('net_w', [self.ndescrpt], tf.float64, tf.constant_initializer (self.net_w_i))
+            net_w = tf.get_variable ('net_w', [self.ndescrpt], global_tf_float_precision, tf.constant_initializer (self.net_w_i))
         v_mag = tf.reduce_sum (virial)
         v_mag_dw = tf.gradients (v_mag, net_w)
         assert (len(v_mag_dw) == 1), "length of dw is wrong"        
@@ -145,23 +149,22 @@ class Inter():
 
 class TestSmooth(Inter, unittest.TestCase):
     def __init__ (self, *args, **kwargs):
-        self.places = 5
         data = Data()
         Inter.__init__(self, data)
         unittest.TestCase.__init__(self, *args, **kwargs)
         self.controller = object()
 
     def test_force (self) :
-        force_test(self, self, places=5, suffix = '_smth')
+        force_test(self, self, suffix = '_smth')
 
     def test_virial (self) :
-        virial_test(self, self, places=5, suffix = '_smth')
+        virial_test(self, self, suffix = '_smth')
 
     def test_force_dw (self) :
-        force_dw_test(self, self, places=5, suffix = '_smth')
+        force_dw_test(self, self, suffix = '_smth')
 
     def test_virial_dw (self) :
-        virial_dw_test(self, self, places=5, suffix = '_smth')
+        virial_dw_test(self, self, suffix = '_smth')
 
 
 if __name__ == '__main__':
