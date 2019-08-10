@@ -63,12 +63,11 @@ class Model() :
                     stat_data[dd] = stat_data[dd].astype(np.int32) 
                 all_stat[dd].append(stat_data[dd])
         
-        self.davg, self.dstd \
-            = self._compute_dstats (all_stat['coord'], 
-                                    all_stat['box'], 
-                                    all_stat['type'], 
-                                    all_stat['natoms_vec'], 
-                                    all_stat['default_mesh'])
+        self._compute_dstats (all_stat['coord'], 
+                              all_stat['box'], 
+                              all_stat['type'], 
+                              all_stat['natoms_vec'], 
+                              all_stat['default_mesh'])
         self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
 
@@ -79,7 +78,8 @@ class Model() :
                          natoms_vec,
                          mesh,
                          reuse = None) :        
-        return self.descrpt.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh, reuse)
+        self.davg, self.dstd \
+            = self.descrpt.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh, reuse)
     
     def build (self, 
                coord_, 
