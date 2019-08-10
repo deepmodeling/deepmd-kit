@@ -40,6 +40,7 @@ if (BUILD_CPP_IF)
     set(TensorFlow_FIND_COMPONENTS tensorflow_cc tensorflow_framework)
   endif ()
   # the lib
+  list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.1)
   set (TensorFlow_LIBRARY_PATH "")
   foreach (module ${TensorFlow_FIND_COMPONENTS})
     find_library(TensorFlow_LIBRARY_${module}
