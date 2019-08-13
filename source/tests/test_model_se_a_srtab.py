@@ -82,7 +82,7 @@ class TestModel(unittest.TestCase):
         is_training        = tf.placeholder(tf.bool)
         t_fparam = None
 
-        energy, force, virial, atom_ener, atom_virial \
+        model_pred\
             = model.build (t_coord, 
                            t_type, 
                            t_natoms, 
@@ -91,6 +91,10 @@ class TestModel(unittest.TestCase):
                            t_fparam,
                            suffix = "se_a_srtab", 
                            reuse = False)
+        energy = model_pred['energy']
+        force  = model_pred['force']
+        virial = model_pred['virial']
+        atom_ener =  model_pred['atom_ener']
 
         feed_dict_test = {t_prop_c:        test_data['prop_c'],
                           t_energy:        test_data['energy']              [:numb_test],

@@ -202,5 +202,106 @@ class Model() :
         virial = tf.reshape (virial, [-1, 9], name = "o_virial"+suffix)
         atom_virial = tf.reshape (atom_virial, [-1, 9 * natoms[1]], name = "o_atom_virial"+suffix)
 
-        return energy, force, virial, energy_raw, atom_virial
+        model_dict = {}
+        model_dict['energy'] = energy
+        model_dict['force'] = force
+        model_dict['virial'] = virial
+        model_dict['atom_ener'] = energy_raw
+        model_dict['atom_virial'] = atom_virial
+        
+        return model_dict
+
     
+
+class WannierModel() :
+    def __init__ (self, jdata, descrpt, fitting):
+        self.descrpt = descrpt
+        self.rcut = self.descrpt.get_rcut()
+        self.ntypes = self.descrpt.get_ntypes()
+        # fitting
+        self.fitting = fitting
+
+        args = ClassArg()\
+               .add('type_map',         list,   default = [])
+        class_data = args.parse(jdata)
+        self.type_map = class_data['type_map']
+
+    def get_rcut (self) :
+        return self.rcut
+
+    def get_ntypes (self) :
+        return self.ntypes
+
+    def get_type_map (self) :
+        return self.type_map
+
+    def data_stat(self, data):
+        all_stat = defaultdict(list)
+        for ii in range(data.get_nsystems()) :
+            stat_data = data.get_batch (sys_idx = ii)
+            for dd in stat_data:
+                if dd == "natoms_vec":
+                    stat_data[dd] = stat_data[dd].astype(np.int32) 
+                all_stat[dd].append(stat_data[dd])
+        
+        self._compute_dstats (all_stat['coord'], 
+                              all_stat['box'], 
+                              all_stat['type'], 
+                              all_stat['natoms_vec'], 
+                              all_stat['default_mesh'])
+
+
+    def _compute_dstats (self,
+                         data_coord, 
+                         data_box, 
+                         data_atype, 
+                         natoms_vec,
+                         mesh,
+                         reuse = None) :        
+        self.davg, self.dstd \
+            = self.descrpt.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh, reuse)
+    
+    def get_wfc_type(self):
+        return self.fitting.get_wfc_type()
+
+    def get_wfc_numb(self):
+        return self.fitting.get_wfc_numb()
+
+    def build (self, 
+               coord_, 
+               atype_,
+               natoms,
+               box, 
+               mesh,
+               input_dict,
+               suffix = '', 
+               reuse = None):
+
+        with tf.variable_scope('model_attr' + suffix, reuse = reuse) :
+            t_tmap = tf.constant(' '.join(self.type_map), 
+                                 name = 'tmap', 
+                                 dtype = tf.string)
+
+        coord = tf.reshape (coord_, [-1, natoms[1] * 3])
+        atype = tf.reshape (atype_, [-1, natoms[1]])
+
+        dout \
+            = self.descrpt.build(coord_,
+                                 atype_,
+                                 natoms,
+                                 box,
+                                 mesh,
+                                 davg = self.davg,
+                                 dstd = self.dstd,
+                                 suffix = suffix,
+                                 reuse = reuse)
+        dout = tf.identity(dout, name='o_descriptor')
+        rot_mat = self.descrpt.get_rot_mat()
+
+        wfc = self.fitting.build (dout, 
+                                  rot_mat,
+                                  natoms, 
+                                  reuse = reuse, 
+                                  suffix = suffix)
+
+        return wfc

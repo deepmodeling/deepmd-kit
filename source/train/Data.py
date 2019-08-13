@@ -45,11 +45,13 @@ class DeepmdData() :
             atomic = False, 
             must = False, 
             high_prec = False,
+            type_sel = None,
             repeat = 1) :
         self.data_dict[key] = {'ndof': ndof, 
                                'atomic': atomic,
                                'must': must, 
                                'high_prec': high_prec,
+                               'type_sel': type_sel,
                                'repeat': repeat,
                                'reduce': None,
         }
@@ -68,6 +70,7 @@ class DeepmdData() :
                                    'atomic': False,
                                    'must': True,
                                    'high_prec': True,
+                                   'type_sel': None,
                                    'repeat': 1,
                                    'reduce': key_in,
         }
@@ -163,6 +166,17 @@ class DeepmdData() :
         else :
             return np.average(eners, axis = 0)
 
+    def _idx_map_sel(self, atom_type, type_sel) :
+        new_types = []
+        for ii in atom_type :
+            if ii in type_sel:
+                new_types.append(ii)
+        new_types = np.array(new_types, dtype = int)
+        natoms = new_types.shape[0]
+        idx = np.arange(natoms)
+        idx_map = np.lexsort((idx, new_types))
+        return idx_map
+
     def _get_natoms_2 (self, ntypes) :
         sample_type = self.atom_type
         natoms = len(sample_type)
@@ -198,7 +212,7 @@ class DeepmdData() :
             self.test_set, sf_idx = self._shuffle_data(self.test_set)
 
     def _shuffle_data (self,
-                      data) :
+                       data) :
         ret = {}
         nframes = data['coord'].shape[0]
         idx = np.arange (nframes)
@@ -229,19 +243,16 @@ class DeepmdData() :
         data['type'] = np.tile (self.atom_type[self.idx_map], (nframes, 1))
         for kk in self.data_dict.keys():
             if self.data_dict[kk]['reduce'] is None :
-                ndof = self.data_dict[kk]['ndof']
-                idx_map = None
-                if self.data_dict[kk]['atomic'] :
-                    ndof *= self.natoms
-                    idx_map = self.idx_map
                 data['find_'+kk], data[kk] \
                     = self._load_data(set_name, 
                                       kk, 
-                                      [nframes, ndof], 
+                                      nframes, 
+                                      self.data_dict[kk]['ndof'],
+                                      atomic = self.data_dict[kk]['atomic'],
                                       high_prec = self.data_dict[kk]['high_prec'],
                                       must = self.data_dict[kk]['must'], 
-                                      repeat = self.data_dict[kk]['repeat'], 
-                                      idx_map = idx_map)
+                                      type_sel = self.data_dict[kk]['type_sel'],
+                                      repeat = self.data_dict[kk]['repeat'])
         for kk in self.data_dict.keys():
             if self.data_dict[kk]['reduce'] is not None :
                 k_in = self.data_dict[kk]['reduce']
@@ -253,19 +264,30 @@ class DeepmdData() :
         return data
 
 
-    def _load_data(self, set_name, key, shape, must = True, repeat = 1, idx_map = None, high_prec = False):
+    def _load_data(self, set_name, key, nframes, ndof_, atomic = False, must = True, repeat = 1, high_prec = False, type_sel = None):
+        if atomic:
+            natoms = self.natoms
+            idx_map = self.idx_map
+            # if type_sel, then revise natoms and idx_map
+            if type_sel is not None:
+                natoms = 0
+                for jj in type_sel :
+                    natoms += np.sum(self.atom_type == jj)                
+                idx_map = self._idx_map_sel(self.atom_type, type_sel)
+            ndof = ndof_ * natoms
+        else:
+            ndof = ndof_
         path = os.path.join(set_name, key+".npy")
-        nframes = shape[0]
         if os.path.isfile (path) :
             if high_prec :
                 data = np.load(path).astype(global_ener_float_precision)
             else:
                 data = np.load(path).astype(global_np_float_precision)
-            if idx_map is not None :
-                data = data.reshape([nframes, self.natoms, -1])
+            if atomic :
+                data = data.reshape([nframes, natoms, -1])
                 data = data[:,idx_map,:]
                 data = data.reshape([nframes, -1])
-            data = np.reshape(data, shape)
+            data = np.reshape(data, [nframes, ndof])
             if repeat != 1:
                 data = np.repeat(data, repeat).reshape([nframes, -1])
             return np.float32(1.0), data
@@ -273,9 +295,9 @@ class DeepmdData() :
             raise RuntimeError("%s not found!" % path)
         else:
             if high_prec :
-                data = np.zeros(shape).astype(global_ener_float_precision)                
+                data = np.zeros([nframes,ndof]).astype(global_ener_float_precision)                
             else :
-                data = np.zeros(shape).astype(global_np_float_precision)
+                data = np.zeros([nframes,ndof]).astype(global_np_float_precision)
             if repeat != 1:
                 data = np.repeat(data, repeat).reshape([nframes, -1])
             return np.float32(0.0), data
@@ -351,9 +373,6 @@ class DataSets (object):
         natoms = atom_type.shape[0]
         idx = np.arange (natoms)
         idx_map = np.lexsort ((idx, atom_type))
-        atom_type3 = np.repeat(atom_type, 3)
-        idx3 = np.arange (natoms * 3)
-        idx3_map = np.lexsort ((idx3, atom_type3))
         return atom_type, idx_map, idx3_map
 
     def load_type_map(self, sys_path) :

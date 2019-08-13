@@ -11,13 +11,13 @@ from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
 from deepmd.RunOptions import global_cvt_2_tf_float
 from deepmd.RunOptions import global_cvt_2_ener_float
-from Fitting import EnerFitting
+from Fitting import EnerFitting, WannierFitting
 from DescrptLocFrame import DescrptLocFrame
 from DescrptSeA import DescrptSeA
 from DescrptSeR import DescrptSeR
 from DescrptSeAR import DescrptSeAR
-from Model import Model
-from Loss import EnerStdLoss
+from Model import Model, WannierModel
+from Loss import EnerStdLoss, WannierLoss
 from LearningRate import LearningRateExp
 
 from tensorflow.python.framework import ops
@@ -85,11 +85,22 @@ class NNPTrainer (object):
             fitting_type = 'ener'
         if fitting_type == 'ener':
             self.fitting = EnerFitting(fitting_param, self.descrpt)
+        elif fitting_type == 'wannier':
+            self.fitting = WannierFitting(fitting_param, self.descrpt)
         else :
             raise RuntimeError('unknow fitting type ' + fitting_type)
 
         # init model
-        self.model = Model(model_param, self.descrpt, self.fitting)
+        try: 
+            model_type = model_param['type']
+        except:
+            model_type = 'ener'
+        if model_type == 'ener':
+            self.model = Model(model_param, self.descrpt, self.fitting)
+        elif model_type == 'wannier':
+            self.model = WannierModel(model_param, self.descrpt, self.fitting)
+        else :
+            raise RuntimeError('unknow model type ' + fitting_type)
 
         # learning rate
         lr_param = j_must_have(jdata, 'learning_rate')
@@ -107,9 +118,11 @@ class NNPTrainer (object):
         try: 
             loss_type = loss_param['type']
         except:
-            loss_type = 'ener-std'
-        if loss_type == 'ener-std':
-            self.loss = EnerStdLoss(loss_param, self.lr.start_lr())
+            loss_type = 'ener'
+        if loss_type == 'ener':
+            self.loss = EnerStdLoss(loss_param, starter_learning_rate = self.lr.start_lr())
+        elif loss_type == 'wannier':
+            self.loss = WannierLoss(loss_param, model = self.model)
         else :
             raise RuntimeError('unknow loss type ' + loss_type)
 
@@ -198,7 +211,7 @@ class NNPTrainer (object):
         self.place_holders['default_mesh']      = tf.placeholder(tf.int32,   [None], name='t_mesh')
         self.place_holders['is_training']       = tf.placeholder(tf.bool)
 
-        self.energy, self.force, self.virial, self.atom_ener, self.atom_virial\
+        self.model_pred\
             = self.model.build (self.place_holders['coord'], 
                                 self.place_holders['type'], 
                                 self.place_holders['natoms_vec'], 
@@ -211,10 +224,7 @@ class NNPTrainer (object):
         self.l2_l, self.l2_more\
             = self.loss.build (self.learning_rate,
                                self.place_holders['natoms_vec'], 
-                               self.energy,
-                               self.force,
-                               self.virial,
-                               self.atom_ener,
+                               self.model_pred,
                                self.place_holders,
                                suffix = "test")
 
@@ -342,7 +352,7 @@ class NNPTrainer (object):
         train_time = 0
         while cur_batch < stop_batch :
             batch_data = data.get_batch (sys_weights = self.sys_weights)
-            cur_batch_size = batch_data["energy"].shape[0]
+            cur_batch_size = batch_data["coord"].shape[0]
             feed_dict_batch = {}
             for kk in batch_data.keys():
                 if kk == 'find_type' or kk == 'type' :
@@ -394,18 +404,7 @@ class NNPTrainer (object):
         if self.run_opt.is_chief:
             fp = open(self.disp_file, "a")
             print_str = "# %5s" % 'batch'
-            prop_fmt = '   %9s %9s'
-            print_str += prop_fmt % ('l2_tst', 'l2_trn')
-            if self.loss.has_e :
-                print_str += prop_fmt % ('l2_e_tst', 'l2_e_trn')
-            if self.loss.has_ae :
-                print_str += prop_fmt % ('l2_ae_tst', 'l2_ae_trn')
-            if self.loss.has_f :
-                print_str += prop_fmt % ('l2_f_tst', 'l2_f_trn')
-            if self.loss.has_v :
-                print_str += prop_fmt % ('l2_v_tst', 'l2_v_trn')
-            if self.loss.has_pf :
-                print_str += prop_fmt % ('l2_pf_tst', 'l2_pf_trn')
+            print_str += self.loss.print_header()
             print_str += '   %8s\n' % 'lr'
             fp.write(print_str)
             fp.close ()
@@ -429,38 +428,14 @@ class NNPTrainer (object):
             feed_dict_test[self.place_holders[ii]] = test_data[ii]
         feed_dict_test[self.place_holders['is_training']] = False
 
-        error_test, error_e_test, error_f_test, error_v_test, error_ae_test, error_pf_test \
-            = self.sess.run([self.l2_l, \
-                             self.l2_more['l2_ener_loss'], \
-                             self.l2_more['l2_force_loss'], \
-                             self.l2_more['l2_virial_loss'], \
-                             self.l2_more['l2_atom_ener_loss'],\
-                             self.l2_more['l2_pref_force_loss']],
-                            feed_dict=feed_dict_test)
-        error_train, error_e_train, error_f_train, error_v_train, error_ae_train, error_pf_train \
-            = self.sess.run([self.l2_l, \
-                             self.l2_more['l2_ener_loss'], \
-                             self.l2_more['l2_force_loss'], \
-                             self.l2_more['l2_virial_loss'], \
-                             self.l2_more['l2_atom_ener_loss'],\
-                             self.l2_more['l2_pref_force_loss']], 
-                            feed_dict=feed_dict_batch)
         cur_batch = self.cur_batch
         current_lr = self.sess.run(self.learning_rate)
         if self.run_opt.is_chief:
             print_str = "%7d" % cur_batch
-            prop_fmt = "   %9.2e %9.2e"
-            print_str += prop_fmt % (np.sqrt(error_test), np.sqrt(error_train))
-            if self.loss.has_e :
-                print_str += prop_fmt % (np.sqrt(error_e_test) / test_data["natoms_vec"][0], np.sqrt(error_e_train) / test_data["natoms_vec"][0])
-            if self.loss.has_ae :
-                print_str += prop_fmt % (np.sqrt(error_ae_test), np.sqrt(error_ae_train))
-            if self.loss.has_f :
-                print_str += prop_fmt % (np.sqrt(error_f_test), np.sqrt(error_f_train))
-            if self.loss.has_v :
-                print_str += prop_fmt % (np.sqrt(error_v_test) / test_data["natoms_vec"][0], np.sqrt(error_v_train) / test_data["natoms_vec"][0])
-            if self.loss.has_pf:
-                print_str += prop_fmt % (np.sqrt(error_pf_test) / test_data["natoms_vec"][0], np.sqrt(error_pf_train) / test_data["natoms_vec"][0])
+            print_str += self.loss.print_on_training(self.sess,
+                                                     test_data['natoms_vec'],
+                                                     feed_dict_test,
+                                                     feed_dict_batch)
             print_str += "   %8.1e\n" % current_lr
             fp.write(print_str)
             fp.flush ()

@@ -36,7 +36,8 @@ REGISTER_OP("Descrpt")
 .Output("descrpt_deriv: double")
 .Output("rij: double")
 .Output("nlist: int32")
-.Output("axis: int32");
+.Output("axis: int32")
+.Output("rot_mat: double");
 #else
 REGISTER_OP("Descrpt")
 .Input("coord: float")
@@ -55,7 +56,8 @@ REGISTER_OP("Descrpt")
 .Output("descrpt_deriv: float")
 .Output("rij: float")
 .Output("nlist: int32")
-.Output("axis: int32");
+.Output("axis: int32")
+.Output("rot_mat: float");
 #endif
 
 class DescrptOp : public OpKernel {
@@ -144,6 +146,9 @@ public:
     TensorShape axis_shape ;
     axis_shape.AddDim (nsamples);
     axis_shape.AddDim (nloc * 4);
+    TensorShape rot_mat_shape ;
+    rot_mat_shape.AddDim (nsamples);
+    rot_mat_shape.AddDim (nloc * 9);
 
     Tensor* descrpt_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(0, descrpt_shape, &descrpt_tensor));
@@ -155,6 +160,8 @@ public:
     OP_REQUIRES_OK(context, context->allocate_output(3, nlist_shape, &nlist_tensor));
     Tensor* axis_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(4, axis_shape, &axis_tensor));
+    Tensor* rot_mat_tensor = NULL;
+    OP_REQUIRES_OK(context, context->allocate_output(5, rot_mat_shape, &rot_mat_tensor));
     
     auto coord	= coord_tensor	.matrix<VALUETYPE>();
     auto type	= type_tensor	.matrix<int>();
@@ -167,6 +174,7 @@ public:
     auto rij		= rij_tensor		->matrix<VALUETYPE>();
     auto nlist		= nlist_tensor		->matrix<int>();
     auto axis		= axis_tensor		->matrix<int>();
+    auto rot_mat	= rot_mat_tensor		->matrix<VALUETYPE>();
 
     // // check the types
     // int max_type_v = 0;
@@ -338,6 +346,9 @@ public:
 	}
 	for (int jj = 0; jj < ndescrpt_r * 12; ++jj) {
 	  descrpt_deriv(kk, ii * ndescrpt * 12 + ndescrpt_a * 12 + jj) = d_descrpt_r_deriv[jj] / std(d_type[ii], jj/12 + ndescrpt_a);
+	}
+	for (int jj = 0; jj < 9; ++jj){
+	  rot_mat(kk, ii * 9 + jj) = rot[jj];
 	}
 	for (int jj = 0; jj < nnei_a * 3; ++jj){
 	  rij (kk, ii * nnei * 3 + jj) = d_rij_a[jj];

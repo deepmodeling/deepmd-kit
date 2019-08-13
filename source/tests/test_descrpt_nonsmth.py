@@ -77,7 +77,7 @@ class Inter():
                  tnatoms,
                  name,
                  reuse = None) :
-        descrpt, descrpt_deriv, rij, nlist, axis \
+        descrpt, descrpt_deriv, rij, nlist, axis, rot_mat \
             = op_module.descrpt (dcoord, 
                                  dtype,
                                  tnatoms,
