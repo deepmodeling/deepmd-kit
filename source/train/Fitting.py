@@ -153,6 +153,8 @@ class WannierFitting () :
             final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], self.wfc_numb, 3])
             # (nframes x natoms) x nwfc(wc) x 3(coord)
             final_layer = tf.matmul(final_layer, rot_mat_i)
+            # nframes x natoms x nwfc(wc) x 3(coord_local)
+            final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i], self.wfc_numb, 3])
 
             # concat the results
             if count == 0:
@@ -164,3 +166,6 @@ class WannierFitting () :
         ret = {}
         ret['wannier'] =  tf.reshape(outs, [-1])        
         return ret
+
+
+
