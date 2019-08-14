@@ -373,6 +373,9 @@ class DataSets (object):
         natoms = atom_type.shape[0]
         idx = np.arange (natoms)
         idx_map = np.lexsort ((idx, atom_type))
+        atom_type3 = np.repeat(atom_type, 3)
+        idx3 = np.arange (natoms * 3)
+        idx3_map = np.lexsort ((idx3, atom_type3))
         return atom_type, idx_map, idx3_map
 
     def load_type_map(self, sys_path) :
