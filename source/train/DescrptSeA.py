@@ -57,6 +57,9 @@ class DescrptSeA ():
     def get_dim_out (self) :
         return self.filter_neuron[-1] * self.n_axis_neuron
 
+    def get_dim_axis (self) :
+        return self.n_axis_neuron
+
     def get_nlist (self) :
         return self.nlist, self.rij, self.sel_a, self.sel_r
 
@@ -159,9 +162,13 @@ class DescrptSeA ():
 
         self.descrpt_reshape = tf.reshape(self.descrpt, [-1, self.ndescrpt])
 
-        self.dout = self._pass_filter(self.descrpt_reshape, natoms, suffix = suffix, reuse = reuse)
+        self.dout, self.qmat = self._pass_filter(self.descrpt_reshape, natoms, suffix = suffix, reuse = reuse)
 
         return self.dout
+
+    
+    def get_rot_mat(self) :
+        return self.qmat
 
 
     def prod_force_virial(self, atom_ener, natoms) :
@@ -194,17 +201,21 @@ class DescrptSeA ():
         inputs = tf.reshape(inputs, [-1, self.ndescrpt * natoms[0]])
         shape = inputs.get_shape().as_list()
         output = []
+        output_qmat = []
         for type_i in range(self.ntypes):
             inputs_i = tf.slice (inputs,
                                  [ 0, start_index*      self.ndescrpt],
                                  [-1, natoms[2+type_i]* self.ndescrpt] )
             inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
-            layer = self._filter(inputs_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, seed = self.seed)
+            layer, qmat = self._filter(inputs_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, seed = self.seed)
             layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_out()])
+            qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_axis() * 3])
             output.append(layer)
+            output_qmat.append(qmat)
             start_index += natoms[2+type_i]
         output = tf.concat(output, axis = 1)
-        return output
+        output_qmat = tf.concat(output_qmat, axis = 1)
+        return output, output_qmat
 
 
     def _compute_dstats_sys_smth (self,
@@ -340,12 +351,16 @@ class DescrptSeA ():
           xyz_scatter_1 = xyz_scatter_1 * (4.0 / shape[1])
           # natom x 4 x outputs_size_2
           xyz_scatter_2 = tf.slice(xyz_scatter_1, [0,0,0],[-1,-1,outputs_size_2])
+          # natom x 3 x outputs_size_2
+          qmat = tf.slice(xyz_scatter_2, [0,1,0], [-1, 3, -1])
+          # natom x outputs_size_2 x 3
+          qmat = tf.transpose(qmat, perm = [0, 2, 1])
           # natom x outputs_size x outputs_size_2
           result = tf.matmul(xyz_scatter_1, xyz_scatter_2, transpose_a = True)
           # natom x (outputs_size x outputs_size_2)
           result = tf.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
 
-        return result
+        return result, qmat
 
     def _filter_type_ext(self, 
                            inputs, 

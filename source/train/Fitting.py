@@ -5,6 +5,7 @@ import tensorflow as tf
 from deepmd.common import ClassArg, add_data_requirement
 from deepmd.Network import one_layer
 from DescrptLocFrame import DescrptLocFrame
+from DescrptSeA import DescrptSeA
 
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
@@ -169,10 +170,10 @@ class WannierFitting () :
 
 
 
-class PolarFitting () :
+class PolarFittingLocFrame () :
     def __init__ (self, jdata, descrpt) :
         if not isinstance(descrpt, DescrptLocFrame) :
-            raise RuntimeError('Polarizability only supports DescrptLocFrame')
+            raise RuntimeError('PolarFittingLocFrame only supports DescrptLocFrame')
         self.ntypes = descrpt.get_ntypes()
         self.dim_descrpt = descrpt.get_dim_out()
         args = ClassArg()\
@@ -228,6 +229,83 @@ class PolarFitting () :
             # (nframes x natoms) x 3 x 3
             final_layer = final_layer + tf.transpose(final_layer, perm = [0,2,1])
             # (nframes x natoms) x 3 x 3(coord)
+            final_layer = tf.matmul(final_layer, rot_mat_i)
+            # (nframes x natoms) x 3(coord) x 3(coord)
+            final_layer = tf.matmul(rot_mat_i, final_layer, transpose_a = True)
+            # nframes x natoms x 3 x 3
+            final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i], 3, 3])
+
+            # concat the results
+            if count == 0:
+                outs = final_layer
+            else:
+                outs = tf.concat([outs, final_layer], axis = 1)
+            count += 1
+
+        return tf.reshape(outs, [-1])
+
+
+class PolarFittingSeA () :
+    def __init__ (self, jdata, descrpt) :
+        if not isinstance(descrpt, DescrptSeA) :
+            raise RuntimeError('PolarFittingSeA only supports DescrptSeA')
+        self.ntypes = descrpt.get_ntypes()
+        self.dim_descrpt = descrpt.get_dim_out()
+        args = ClassArg()\
+               .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\
+               .add('resnet_dt',        bool,   default = True)\
+               .add('pol_type',         [list,int],   default = [ii for ii in range(self.ntypes)])\
+               .add('seed',             int)
+        class_data = args.parse(jdata)
+        self.n_neuron = class_data['neuron']
+        self.resnet_dt = class_data['resnet_dt']
+        self.pol_type = class_data['pol_type']
+        self.seed = class_data['seed']
+        self.dim_axis = descrpt.get_dim_axis()
+        self.dim_rot_mat = self.dim_axis * 3
+        self.useBN = False
+
+    def get_pol_type(self):
+        return self.pol_type
+
+    def build (self, 
+               input_d,
+               rot_mat,
+               natoms,
+               reuse = None,
+               suffix = '') :
+        start_index = 0
+        inputs = tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]])
+        rot_mat = tf.reshape(rot_mat, [-1, self.dim_rot_mat * natoms[0]])
+        shape = inputs.get_shape().as_list()
+
+        count = 0
+        for type_i in range(self.ntypes):
+            # cut-out inputs
+            inputs_i = tf.slice (inputs,
+                                 [ 0, start_index*      self.dim_descrpt],
+                                 [-1, natoms[2+type_i]* self.dim_descrpt] )
+            inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
+            rot_mat_i = tf.slice (rot_mat,
+                                  [ 0, start_index*      self.dim_rot_mat],
+                                  [-1, natoms[2+type_i]* self.dim_rot_mat] )
+            rot_mat_i = tf.reshape(rot_mat_i, [-1, self.dim_axis, 3])
+            start_index += natoms[2+type_i]
+            if not type_i in self.pol_type :
+                continue
+            layer = inputs_i
+            for ii in range(0,len(self.n_neuron)) :
+                if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
+                    layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt)
+                else :
+                    layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
+            # (nframes x natoms) x (naxis x naxis)
+            final_layer = one_layer(layer, self.dim_axis*self.dim_axis, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
+            # (nframes x natoms) x naxis x naxis
+            final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], self.dim_axis, self.dim_axis])
+            # (nframes x natoms) x naxis x naxis
+            final_layer = final_layer + tf.transpose(final_layer, perm = [0,2,1])
+            # (nframes x natoms) x naxis x 3(coord)
             final_layer = tf.matmul(final_layer, rot_mat_i)
             # (nframes x natoms) x 3(coord) x 3(coord)
             final_layer = tf.matmul(rot_mat_i, final_layer, transpose_a = True)

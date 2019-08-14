@@ -11,7 +11,7 @@ from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
 from deepmd.RunOptions import global_cvt_2_tf_float
 from deepmd.RunOptions import global_cvt_2_ener_float
-from Fitting import EnerFitting, WannierFitting, PolarFitting
+from Fitting import EnerFitting, WannierFitting, PolarFittingLocFrame, PolarFittingSeA
 from DescrptLocFrame import DescrptLocFrame
 from DescrptSeA import DescrptSeA
 from DescrptSeR import DescrptSeR
@@ -85,10 +85,15 @@ class NNPTrainer (object):
             fitting_type = 'ener'
         if fitting_type == 'ener':
             self.fitting = EnerFitting(fitting_param, self.descrpt)
-        elif fitting_type == 'wannier':
+        elif fitting_type == 'wannier':            
             self.fitting = WannierFitting(fitting_param, self.descrpt)
         elif fitting_type == 'polar':
-            self.fitting = PolarFitting(fitting_param, self.descrpt)
+            if descrpt_type == 'loc_frame':
+                self.fitting = PolarFittingLocFrame(fitting_param, self.descrpt)
+            elif descrpt_type == 'se_a':
+                self.fitting = PolarFittingSeA(fitting_param, self.descrpt)
+            else :
+                raise RuntimeError('fitting polar only supports descrptors: loc_frame and se_a')
         else :
             raise RuntimeError('unknow fitting type ' + fitting_type)
 
