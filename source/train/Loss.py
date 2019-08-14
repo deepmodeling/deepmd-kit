@@ -217,3 +217,53 @@ class WannierLoss () :
         print_str += prop_fmt % (np.sqrt(error_test), np.sqrt(error_train))
 
         return print_str
+
+
+
+class PolarLoss () :
+    def __init__ (self, jdata, **kwarg) :
+        model = kwarg['model']
+        # data required
+        add_data_requirement('polarizability', 
+                             9, 
+                             atomic=True,  
+                             must=True, 
+                             high_prec=False, 
+                             type_sel = model.get_pol_type())
+
+    def build (self, 
+               learning_rate,
+               natoms,
+               model_dict,
+               label_dict,
+               suffix):        
+        polar_hat = label_dict['polarizability']
+        polar = model_dict['polar']
+        l2_loss = tf.reduce_mean( tf.square(polar - polar_hat), name='l2_'+suffix)
+        self.l2_l = l2_loss
+        more_loss = {}
+
+        return l2_loss, more_loss
+
+    def print_header(self) :
+        prop_fmt = '   %9s %9s'
+        print_str = ''
+        print_str += prop_fmt % ('l2_tst', 'l2_trn')
+        return print_str
+
+    def print_on_training(self, 
+                          sess, 
+                          natoms,
+                          feed_dict_test,
+                          feed_dict_batch) :
+        error_test\
+            = sess.run([self.l2_l], \
+                       feed_dict=feed_dict_test)
+        error_train\
+            = sess.run([self.l2_l], \
+                       feed_dict=feed_dict_batch)
+        print_str = ""
+        prop_fmt = "   %9.2e %9.2e"
+        print_str += prop_fmt % (np.sqrt(error_test), np.sqrt(error_train))
+
+        return print_str

@@ -11,13 +11,13 @@ from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
 from deepmd.RunOptions import global_cvt_2_tf_float
 from deepmd.RunOptions import global_cvt_2_ener_float
-from Fitting import EnerFitting, WannierFitting
+from Fitting import EnerFitting, WannierFitting, PolarFitting
 from DescrptLocFrame import DescrptLocFrame
 from DescrptSeA import DescrptSeA
 from DescrptSeR import DescrptSeR
 from DescrptSeAR import DescrptSeAR
-from Model import Model, WannierModel
-from Loss import EnerStdLoss, WannierLoss
+from Model import Model, WannierModel, PolarModel
+from Loss import EnerStdLoss, WannierLoss, PolarLoss
 from LearningRate import LearningRateExp
 
 from tensorflow.python.framework import ops
@@ -87,6 +87,8 @@ class NNPTrainer (object):
             self.fitting = EnerFitting(fitting_param, self.descrpt)
         elif fitting_type == 'wannier':
             self.fitting = WannierFitting(fitting_param, self.descrpt)
+        elif fitting_type == 'polar':
+            self.fitting = PolarFitting(fitting_param, self.descrpt)
         else :
             raise RuntimeError('unknow fitting type ' + fitting_type)
 
@@ -99,6 +101,8 @@ class NNPTrainer (object):
             self.model = Model(model_param, self.descrpt, self.fitting)
         elif model_type == 'wannier':
             self.model = WannierModel(model_param, self.descrpt, self.fitting)
+        elif model_type == 'polar':
+            self.model = PolarModel(model_param, self.descrpt, self.fitting)
         else :
             raise RuntimeError('unknow model type ' + fitting_type)
 
@@ -123,6 +127,8 @@ class NNPTrainer (object):
             self.loss = EnerStdLoss(loss_param, starter_learning_rate = self.lr.start_lr())
         elif loss_type == 'wannier':
             self.loss = WannierLoss(loss_param, model = self.model)
+        elif loss_type == 'polar':
+            self.loss = PolarLoss(loss_param, model = self.model)
         else :
             raise RuntimeError('unknow loss type ' + loss_type)
 
