@@ -57,7 +57,7 @@ class DescrptSeA ():
     def get_dim_out (self) :
         return self.filter_neuron[-1] * self.n_axis_neuron
 
-    def get_dim_axis (self) :
+    def get_dim_rot_mat_1 (self) :
         return self.n_axis_neuron
 
     def get_nlist (self) :
@@ -209,7 +209,7 @@ class DescrptSeA ():
             inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
             layer, qmat = self._filter(inputs_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, seed = self.seed)
             layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_out()])
-            qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_axis() * 3])
+            qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_rot_mat_1() * 3])
             output.append(layer)
             output_qmat.append(qmat)
             start_index += natoms[2+type_i]

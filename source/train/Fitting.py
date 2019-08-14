@@ -261,8 +261,8 @@ class PolarFittingSeA () :
         self.resnet_dt = class_data['resnet_dt']
         self.pol_type = class_data['pol_type']
         self.seed = class_data['seed']
-        self.dim_axis = descrpt.get_dim_axis()
-        self.dim_rot_mat = self.dim_axis * 3
+        self.dim_rot_mat_1 = descrpt.get_dim_rot_mat_1()
+        self.dim_rot_mat = self.dim_rot_mat_1 * 3
         self.useBN = False
 
     def get_pol_type(self):
@@ -289,7 +289,7 @@ class PolarFittingSeA () :
             rot_mat_i = tf.slice (rot_mat,
                                   [ 0, start_index*      self.dim_rot_mat],
                                   [-1, natoms[2+type_i]* self.dim_rot_mat] )
-            rot_mat_i = tf.reshape(rot_mat_i, [-1, self.dim_axis, 3])
+            rot_mat_i = tf.reshape(rot_mat_i, [-1, self.dim_rot_mat_1, 3])
             start_index += natoms[2+type_i]
             if not type_i in self.pol_type :
                 continue
@@ -300,9 +300,9 @@ class PolarFittingSeA () :
                 else :
                     layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
             # (nframes x natoms) x (naxis x naxis)
-            final_layer = one_layer(layer, self.dim_axis*self.dim_axis, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
+            final_layer = one_layer(layer, self.dim_rot_mat_1*self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
             # (nframes x natoms) x naxis x naxis
-            final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], self.dim_axis, self.dim_axis])
+            final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], self.dim_rot_mat_1, self.dim_rot_mat_1])
             # (nframes x natoms) x naxis x naxis
             final_layer = final_layer + tf.transpose(final_layer, perm = [0,2,1])
             # (nframes x natoms) x naxis x 3(coord)
