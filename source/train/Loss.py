@@ -10,8 +10,8 @@ from deepmd.RunOptions import global_cvt_2_tf_float
 from deepmd.RunOptions import global_cvt_2_ener_float
 
 class EnerStdLoss () :
-    def __init__ (self, jdata, starter_learning_rate) :
-        self.starter_learning_rate = starter_learning_rate
+    def __init__ (self, jdata, **kwarg) :
+        self.starter_learning_rate = kwarg['starter_learning_rate']
         args = ClassArg()\
             .add('start_pref_e',        float,  default = 0.02)\
             .add('limit_pref_e',        float,  default = 1.00)\
@@ -49,12 +49,13 @@ class EnerStdLoss () :
     def build (self, 
                learning_rate,
                natoms,
-               energy, 
-               force,
-               virial,
-               atom_ener, 
+               model_dict,
                label_dict,
                suffix):        
+        energy = model_dict['energy']
+        force = model_dict['force']
+        virial = model_dict['virial']
+        atom_ener = model_dict['atom_ener']
         energy_hat = label_dict['energy']
         force_hat = label_dict['force']
         virial_hat = label_dict['virial']
@@ -108,4 +109,161 @@ class EnerStdLoss () :
             l2_loss += global_cvt_2_ener_float(pref_pf * l2_pref_force_loss)
         more_loss['l2_pref_force_loss'] = l2_pref_force_loss
 
+        self.l2_l = l2_loss
+        self.l2_more = more_loss
         return l2_loss, more_loss
+
+
+    def print_header(self) :
+        prop_fmt = '   %9s %9s'
+        print_str = ''
+        print_str += prop_fmt % ('l2_tst', 'l2_trn')
+        if self.has_e :
+            print_str += prop_fmt % ('l2_e_tst', 'l2_e_trn')
+        if self.has_ae :
+            print_str += prop_fmt % ('l2_ae_tst', 'l2_ae_trn')
+        if self.has_f :
+            print_str += prop_fmt % ('l2_f_tst', 'l2_f_trn')
+        if self.has_v :
+            print_str += prop_fmt % ('l2_v_tst', 'l2_v_trn')
+        if self.has_pf :
+            print_str += prop_fmt % ('l2_pf_tst', 'l2_pf_trn')
+        return print_str
+
+
+    def print_on_training(self, 
+                          sess, 
+                          natoms,
+                          feed_dict_test,
+                          feed_dict_batch) :
+        error_test, error_e_test, error_f_test, error_v_test, error_ae_test, error_pf_test \
+            = sess.run([self.l2_l, \
+                        self.l2_more['l2_ener_loss'], \
+                        self.l2_more['l2_force_loss'], \
+                        self.l2_more['l2_virial_loss'], \
+                        self.l2_more['l2_atom_ener_loss'],\
+                        self.l2_more['l2_pref_force_loss']],
+                       feed_dict=feed_dict_test)
+        error_train, error_e_train, error_f_train, error_v_train, error_ae_train, error_pf_train \
+            = sess.run([self.l2_l, \
+                        self.l2_more['l2_ener_loss'], \
+                        self.l2_more['l2_force_loss'], \
+                        self.l2_more['l2_virial_loss'], \
+                        self.l2_more['l2_atom_ener_loss'],\
+                        self.l2_more['l2_pref_force_loss']], 
+                       feed_dict=feed_dict_batch)
+        print_str = ""
+        prop_fmt = "   %9.2e %9.2e"
+        print_str += prop_fmt % (np.sqrt(error_test), np.sqrt(error_train))
+        if self.has_e :
+            print_str += prop_fmt % (np.sqrt(error_e_test) / natoms[0], np.sqrt(error_e_train) / natoms[0])
+        if self.has_ae :
+            print_str += prop_fmt % (np.sqrt(error_ae_test), np.sqrt(error_ae_train))
+        if self.has_f :
+            print_str += prop_fmt % (np.sqrt(error_f_test), np.sqrt(error_f_train))
+        if self.has_v :
+            print_str += prop_fmt % (np.sqrt(error_v_test) / natoms[0], np.sqrt(error_v_train) / natoms[0])
+        if self.has_pf:
+            print_str += prop_fmt % (np.sqrt(error_pf_test) / natoms[0], np.sqrt(error_pf_train) / natoms[0])
+
+        return print_str
+        
+        
+
+class WannierLoss () :
+    def __init__ (self, jdata, **kwarg) :
+        model = kwarg['model']
+        # data required
+        add_data_requirement('wannier', 
+                             model.get_wfc_numb() * 3, 
+                             atomic=True,  
+                             must=True, 
+                             high_prec=False, 
+                             type_sel = model.get_wfc_type())
+
+    def build (self, 
+               learning_rate,
+               natoms,
+               model_dict,
+               label_dict,
+               suffix):        
+        wannier_hat = label_dict['wannier']
+        wannier = model_dict['wannier']
+        l2_loss = tf.reduce_mean( tf.square(wannier - wannier_hat), name='l2_'+suffix)
+        self.l2_l = l2_loss
+        more_loss = {}
+
+        return l2_loss, more_loss
+
+    def print_header(self) :
+        prop_fmt = '   %9s %9s'
+        print_str = ''
+        print_str += prop_fmt % ('l2_tst', 'l2_trn')
+        return print_str
+
+    def print_on_training(self, 
+                          sess, 
+                          natoms,
+                          feed_dict_test,
+                          feed_dict_batch) :
+        error_test\
+            = sess.run([self.l2_l], \
+                       feed_dict=feed_dict_test)
+        error_train\
+            = sess.run([self.l2_l], \
+                       feed_dict=feed_dict_batch)
+        print_str = ""
+        prop_fmt = "   %9.2e %9.2e"
+        print_str += prop_fmt % (np.sqrt(error_test), np.sqrt(error_train))
+
+        return print_str
+
+
+
+class PolarLoss () :
+    def __init__ (self, jdata, **kwarg) :
+        model = kwarg['model']
+        # data required
+        add_data_requirement('polarizability', 
+                             9, 
+                             atomic=True,  
+                             must=True, 
+                             high_prec=False, 
+                             type_sel = model.get_pol_type())
+
+    def build (self, 
+               learning_rate,
+               natoms,
+               model_dict,
+               label_dict,
+               suffix):        
+        polar_hat = label_dict['polarizability']
+        polar = model_dict['polar']
+        l2_loss = tf.reduce_mean( tf.square(polar - polar_hat), name='l2_'+suffix)
+        self.l2_l = l2_loss
+        more_loss = {}
+
+        return l2_loss, more_loss
+
+    def print_header(self) :
+        prop_fmt = '   %9s %9s'
+        print_str = ''
+        print_str += prop_fmt % ('l2_tst', 'l2_trn')
+        return print_str
+
+    def print_on_training(self, 
+                          sess, 
+                          natoms,
+                          feed_dict_test,
+                          feed_dict_batch) :
+        error_test\
+            = sess.run([self.l2_l], \
+                       feed_dict=feed_dict_test)
+        error_train\
+            = sess.run([self.l2_l], \
+                       feed_dict=feed_dict_batch)
+        print_str = ""
+        prop_fmt = "   %9.2e %9.2e"
+        print_str += prop_fmt % (np.sqrt(error_test), np.sqrt(error_train))
+
+        return print_str

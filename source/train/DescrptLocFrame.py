@@ -122,7 +122,7 @@ class DescrptLocFrame () :
         box   = tf.reshape (box_, [-1, 9])
         atype = tf.reshape (atype_, [-1, natoms[1]])
 
-        self.descrpt, self.descrpt_deriv, self.rij, self.nlist, self.axis \
+        self.descrpt, self.descrpt_deriv, self.rij, self.nlist, self.axis, self.rot_mat \
             = op_module.descrpt (coord,
                                  atype,
                                  natoms,
@@ -138,6 +138,8 @@ class DescrptLocFrame () :
         self.descrpt = tf.reshape(self.descrpt, [-1, self.ndescrpt])
         return self.descrpt
 
+    def get_rot_mat(self) :
+        return self.rot_mat
 
     def prod_force_virial(self, atom_ener, natoms) :
         [net_deriv] = tf.gradients (atom_ener, self.descrpt)
@@ -173,7 +175,7 @@ class DescrptLocFrame () :
         std_ones = np.ones ([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
         sub_graph = tf.Graph()
         with sub_graph.as_default():
-            descrpt, descrpt_deriv, rij, nlist, axis \
+            descrpt, descrpt_deriv, rij, nlist, axis, rot_mat \
                 = op_module.descrpt (tf.constant(data_coord),
                                      tf.constant(data_atype),
                                      tf.constant(natoms_vec, dtype = tf.int32),

@@ -118,6 +118,7 @@ class DeepmdDataSystem() :
                      atomic=adict[kk]['atomic'], 
                      must=adict[kk]['must'], 
                      high_prec=adict[kk]['high_prec'], 
+                     type_sel=adict[kk]['type_sel'], 
                      repeat=adict[kk]['repeat'])
 
     def add(self, 
@@ -126,9 +127,10 @@ class DeepmdDataSystem() :
             atomic = False, 
             must = False, 
             high_prec = False,
+            type_sel = None,
             repeat = 1) :
         for ii in self.data_systems:
-            ii.add(key, ndof, atomic=atomic, must=must, high_prec=high_prec, repeat=repeat)
+            ii.add(key, ndof, atomic=atomic, must=must, high_prec=high_prec, repeat=repeat, type_sel=type_sel)
 
     def reduce(self, 
                key_out,

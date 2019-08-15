@@ -5,11 +5,13 @@ def add_data_requirement(key,
                          atomic = False, 
                          must = False, 
                          high_prec = False,
+                         type_sel = None,
                          repeat = 1) :
     data_requirement[key] = {'ndof': ndof, 
                              'atomic': atomic,
                              'must': must, 
                              'high_prec': high_prec,
+                             'type_sel': type_sel,
                              'repeat': repeat,
     }
     

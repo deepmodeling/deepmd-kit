@@ -75,7 +75,7 @@ class TestModel(unittest.TestCase):
         input_dict = {}
         input_dict['fparam'] = t_fparam
 
-        energy, force, virial, atom_ener, atom_virial \
+        model_pred\
             = model.build (t_coord, 
                            t_type, 
                            t_natoms, 
@@ -84,6 +84,10 @@ class TestModel(unittest.TestCase):
                            input_dict,
                            suffix = "se_a_fparam", 
                            reuse = False)
+        energy = model_pred['energy']
+        force  = model_pred['force']
+        virial = model_pred['virial']
+        atom_ener =  model_pred['atom_ener']
 
         feed_dict_test = {t_prop_c:        test_data['prop_c'],
                           t_energy:        test_data['energy']              [:numb_test],
