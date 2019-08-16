@@ -58,7 +58,7 @@ class DescrptSeA ():
         return self.filter_neuron[-1] * self.n_axis_neuron
 
     def get_dim_rot_mat_1 (self) :
-        return self.n_axis_neuron
+        return self.filter_neuron[-1]
 
     def get_nlist (self) :
         return self.nlist, self.rij, self.sel_a, self.sel_r
@@ -351,8 +351,10 @@ class DescrptSeA ():
           xyz_scatter_1 = xyz_scatter_1 * (4.0 / shape[1])
           # natom x 4 x outputs_size_2
           xyz_scatter_2 = tf.slice(xyz_scatter_1, [0,0,0],[-1,-1,outputs_size_2])
-          # natom x 3 x outputs_size_2
-          qmat = tf.slice(xyz_scatter_2, [0,1,0], [-1, 3, -1])
+          # # natom x 3 x outputs_size_2
+          # qmat = tf.slice(xyz_scatter_2, [0,1,0], [-1, 3, -1])
+          # natom x 3 x outputs_size_1
+          qmat = tf.slice(xyz_scatter_1, [0,1,0], [-1, 3, -1])
           # natom x outputs_size_2 x 3
           qmat = tf.transpose(qmat, perm = [0, 2, 1])
           # natom x outputs_size x outputs_size_2
