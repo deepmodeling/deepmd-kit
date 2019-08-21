@@ -625,7 +625,11 @@ class NNPModel (object):
                                            sel_a = self.sel_a,
                                            sel_r = self.sel_r)
         # self.sess.run(tf.global_variables_initializer())
-        sub_sess = tf.Session(graph = sub_graph)
+        sub_sess = tf.Session(graph = sub_graph,
+                              config=tf.ConfigProto(intra_op_parallelism_threads=self.run_opt.num_intra_threads, 
+                                                    inter_op_parallelism_threads=self.run_opt.num_inter_threads
+
+                              ))
         dd_all = sub_sess.run(descrpt)
         sub_sess.close()
         natoms = natoms_vec
@@ -682,7 +686,10 @@ class NNPModel (object):
                                      sel_r = self.sel_r,
                                      axis_rule = self.axis_rule)
         # self.sess.run(tf.global_variables_initializer())
-        sub_sess = tf.Session(graph = sub_graph)
+        sub_sess = tf.Session(graph = sub_graph, 
+                              config=tf.ConfigProto(intra_op_parallelism_threads=self.run_opt.num_intra_threads, 
+                                                    inter_op_parallelism_threads=self.run_opt.num_inter_threads
+                              ))
         dd_all = sub_sess.run(descrpt)
         sub_sess.close()
         natoms = natoms_vec
