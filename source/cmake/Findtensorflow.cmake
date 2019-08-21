@@ -32,6 +32,8 @@ if (NOT TensorFlow_INCLUDE_DIRS AND tensorflow_FIND_REQUIRED)
     "You can manually set the tensorflow install path by -DTENSORFLOW_ROOT ")
 endif ()
 
+list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.1)
+
 # tensorflow_cc and tensorflow_framework
 if (NOT TensorFlow_FIND_COMPONENTS)
   set(TensorFlow_FIND_COMPONENTS tensorflow_cc tensorflow_framework)
@@ -52,31 +54,6 @@ foreach (module ${TensorFlow_FIND_COMPONENTS})
       "Not found lib/'${module}' in '${TensorFlow_search_PATHS}' "
       "You can manually set the tensorflow install path by -DTENSORFLOW_ROOT ")
   endif ()
-endforeach ()
-
-# tensorflow_cc and tensorflow_framework with ".so.1" ending
-if (NOT TensorFlow_FIND_COMPONENTS)
-  set(TensorFlow_FIND_COMPONENTS tensorflow_cc tensorflow_framework)
-endif ()
-# the lib
-list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.1)
-set (TensorFlow_LIBRARY_PATH "")
-foreach (module ${TensorFlow_FIND_COMPONENTS})
-  if (NOT TensorFlow_LIBRARY_${module})
-    find_library(TensorFlow_LIBRARY_${module}
-      NAMES ${module}
-      PATHS ${TensorFlow_search_PATHS} PATH_SUFFIXES lib NO_DEFAULT_PATH
-      )
-    if (TensorFlow_LIBRARY_${module})
-      list(APPEND TensorFlow_LIBRARY ${TensorFlow_LIBRARY_${module}})
-      get_filename_component(TensorFlow_LIBRARY_PATH_${module} ${TensorFlow_LIBRARY_${module}} PATH)
-      list(APPEND TensorFlow_LIBRARY_PATH ${TensorFlow_LIBRARY_PATH_${module}})
-    elseif (tensorflow_FIND_REQUIRED)
-      message(FATAL_ERROR 
-	"Not found lib/'${module}' in '${TensorFlow_search_PATHS}' "
-	"You can manually set the tensorflow install path by -DTENSORFLOW_ROOT ")
-    endif ()
-  endif (NOT TensorFlow_LIBRARY_${module})
 endforeach ()
 
 # tensorflow_framework
