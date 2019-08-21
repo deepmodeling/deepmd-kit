@@ -95,7 +95,7 @@ The DeePMD-kit was tested with compiler gcc >= 4.9.
 Firstly clone the DeePMD-kit source code
 ```bash
 cd /some/workspace
-git clone https://github.com/deepmodeling/deepmd-kit.git deepmd-kit
+git clone https://github.com/deepmodeling/deepmd-kit.git deepmd-kit -b r0.12
 ```
 If one downloads the .zip file from the github, then the default folder of source code would be `deepmd-kit-master` rather than `deepmd-kit`. For convenience, you may want to record the location of source to a variable, saying `deepmd_source_dir` by
 ```bash
