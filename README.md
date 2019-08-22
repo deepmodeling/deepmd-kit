@@ -74,9 +74,9 @@ The goal of Deep Potential is to employ deep learning techniques and realize an 
 
 The initial proof of concept is in the [Deep Potential][1] paper, which employed an approach that was devised to train the neural network model with the potential energy only. With typical *ab initio* molecular dynamics (AIMD) datasets this is insufficient to reproduce the trajectories. The Deep Potential Molecular Dynamics ([DeePMD][2]) model overcomes this limitation. In addition, the learning process in DeePMD improves significantly over the Deep Potential method thanks to the introduction of a flexible family of loss functions. The NN potential constructed in this way reproduces accurately the AIMD trajectories, both classical and quantum (path integral), in extended and finite systems, at a cost that scales linearly with system size and is always several orders of magnitude lower than that of equivalent AIMD simulations.
 
-Although being highly efficient, the original Deep Potential model satisfies the extensive and symmetry-invariant properties of a potential energy model at the price of introducing discontinuities in the model. This has negligible influence on a trajectory from canonical sampling but might not be sufficient for calculations of dynamical and mechanical properties. These points motivated us to develop the Deep Potential-Smooth Edition ([DeepPot-SE][3]) model, which replaces the non-smooth local frame with a smooth and adaptive embedding network. DeepPot-SE shows great ability in modelling many kinds of systems that are of interests in the fields of physics, chemistry, biology, and materials science.
+Although being highly efficient, the original Deep Potential model satisfies the extensive and symmetry-invariant properties of a potential energy model at the price of introducing discontinuities in the model. This has negligible influence on a trajectory from canonical sampling but might not be sufficient for calculations of dynamical and mechanical properties. These points motivated us to develop the Deep Potential-Smooth Edition ([DeepPot-SE][3]) model, which replaces the non-smooth local frame with a smooth and adaptive embedding network. DeepPot-SE shows great ability in modeling many kinds of systems that are of interests in the fields of physics, chemistry, biology, and materials science.
 
-In addition to building up potential energy models, DeePMD-kit can also be used to build up coarse-grained models. In these models, the quantity that we want to parametrize is the free energy, or the coarse-grained potential, of the coarse-grained particles. See the [DeePCG paper][4] for more details.
+In addition to building up potential energy models, DeePMD-kit can also be used to build up coarse-grained models. In these models, the quantity that we want to parameterize is the free energy, or the coarse-grained potential, of the coarse-grained particles. See the [DeePCG paper][4] for more details.
 
 # Download and install
 Please follow our [github](https://github.com/deepmodeling/deepmd-kit) webpage to see the latest released version and development version.
@@ -173,7 +173,7 @@ You can find the compute capability of your device at: https://developer.nvidia.
 Please note that each additional compute capability significantly increases your build time and binary size.
 ```
 
-After sucessfully installing TensorFlow with GPU support, you should install DeePMD, LAMMPS, etc., in the same way of the non-GPU version. Sometimes you may need to explicitly tell the compiler the place of the CUDA Toolkit and cuDNN libraries, i.e.,
+After successfully installing TensorFlow with GPU support, you should install DeePMD, LAMMPS, etc., in the same way of the non-GPU version. Sometimes you may need to explicitly tell the compiler the place of the CUDA Toolkit and cuDNN libraries, i.e.,
 ```bash
  $ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/path/to/cuda_toolkit/lib64
  $ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/path/to/cudnn/lib64
@@ -207,7 +207,7 @@ $ cat force.raw
 ```
 This `force.raw` contains 3 frames with each frame having the forces of 2 atoms, thus it has 3 lines and 6 columns. Each line provides all the 3 force components of 2 atoms in 1 frame. The first three numbers are the 3 force components of the first atom, while the second three numbers are the 3 force components of the second atom. The coordinate file `coord.raw` is organized similarly. In `box.raw`, the 9 components of the box vectors should be provided on each line. In `virial.raw`, the 9 components of the virial tensor should be provided on each line. The number of lines of all raw files should be identical.
 
-We assume that the atom types do not change in all frames. It is provided by `type.raw`, which has one line with the types of atoms written one by one. The atom types should be integers. For example the `tyep.raw` of a system that has 2 atoms with 0 and 1:
+We assume that the atom types do not change in all frames. It is provided by `type.raw`, which has one line with the types of atoms written one by one. The atom types should be integers. For example the `type.raw` of a system that has 2 atoms with 0 and 1:
 ```bash
 $ cat type.raw
 0 1
@@ -453,7 +453,7 @@ DeePMD-kit provides a simple MD implementation that runs under either NVE or NVT
 $ ls
 conf.gro  graph.pb  water.json
 ```
-`conf.gro` is the file that provides the initial coordinates and/or velocities of all atoms in the system. It is of Gromacs `gro` format. Details of this format can be find in [this website](http://manual.gromacs.org/current/online/gro.html). It should be notice that the length unit of the `gro` format is **nm** rather than A.
+`conf.gro` is the file that provides the initial coordinates and/or velocities of all atoms in the system. It is of Gromacs `gro` format. Details of this format can be found in [this website](http://manual.gromacs.org/current/online/gro.html). It should be noticed that the length unit of the `gro` format is **nm** rather than A.
 
 `graph.pb` is the frozen model.
 
