@@ -50,6 +50,8 @@ PairNNP::PairNNP(LAMMPS *lmp)
   numb_models = 0;
   out_freq = 0;
   out_each = 0;
+  out_rel = 0;
+  eps = 0.;
   scale = NULL;
 
   // set comm size needed by this Pair
@@ -336,7 +338,18 @@ void PairNNP::compute(int eflag, int vflag)
 	      // TODO: Fix two problems:
 	      // 1. If the atom_style is not atomic (e.g. charge), the order of std_f is different from that of atom ids.
               // 2. std_f is not gathered by MPI.
-	      for (int dd = 0; dd < all_nlocal; ++dd) fp << " " << setw(18) << std_f[dd];	
+	      for (int dd = 0; dd < all_nlocal; ++dd) {
+          if (out_rel == 1){
+            // relative std = std/(abs(f)+1)
+#ifdef HIGH_PREC
+            fp << " " << setw(18) << std_f[dd] / (fabs(tmp_avg_f_[dd]) + eps);
+#else
+            fp << " " << setw(18) << std_f[dd] / (fabsf(tmp_avg_f_[dd]) + eps);
+#endif
+          } else {
+            fp << " " << setw(18) << std_f[dd];	
+          }
+        }
 	  }
 	  fp << endl;
 	}
@@ -423,6 +436,7 @@ is_key (const string& input)
   keys.push_back("out_file");
   keys.push_back("fparam");
   keys.push_back("out_each");
+  keys.push_back("out_rel")
 
   for (int ii = 0; ii < keys.size(); ++ii){
     if (input == keys[ii]) {
@@ -469,6 +483,8 @@ void PairNNP::settings(int narg, char **arg)
   out_freq = 100;
   out_file = "model_devi.out";
   out_each = 0;
+  out_rel = 0;
+  eps = 0.;
   fparam.clear();
   while (iarg < narg) {
     if (! is_key(arg[iarg])) {
@@ -498,6 +514,15 @@ void PairNNP::settings(int narg, char **arg)
 	else if (string(arg[iarg]) == string("out_each")) {
 	  out_each = 1;
 	  iarg += 1;
+	}
+	else if (string(arg[iarg]) == string("out_rel")) {
+	  out_rel = 1;
+#ifdef HIGH_PREC
+    eps = atof(arg[iarg+1]);
+#else
+    eps = strtof(arg[iarg+1]);
+#endif
+	  iarg += 2;
 	}
   }
   if (out_freq < 0) error->all(FLERR,"Illegal out_freq, should be >= 0");  
