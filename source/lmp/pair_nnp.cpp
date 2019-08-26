@@ -342,7 +342,7 @@ void PairNNP::compute(int eflag, int vflag)
           if (out_rel == 1){
             // relative std = std/(abs(f)+1)
 #ifdef HIGH_PREC
-            fp << " " << setw(18) << std_f[dd] / (fabs(tmp_avg_f_[dd]) + eps);
+            fp << " " << setw(18) << std_f[dd] / (fabs(tmp_avg_f[dd]) + eps);
 #else
             fp << " " << setw(18) << std_f[dd] / (fabsf(tmp_avg_f_[dd]) + eps);
 #endif
@@ -436,7 +436,7 @@ is_key (const string& input)
   keys.push_back("out_file");
   keys.push_back("fparam");
   keys.push_back("out_each");
-  keys.push_back("out_rel")
+  keys.push_back("out_rel");
 
   for (int ii = 0; ii < keys.size(); ++ii){
     if (input == keys[ii]) {
