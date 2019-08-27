@@ -435,8 +435,8 @@ is_key (const string& input)
   keys.push_back("out_freq");
   keys.push_back("out_file");
   keys.push_back("fparam");
-  keys.push_back("out_each");
-  keys.push_back("out_rel");
+  keys.push_back("atomic");
+  keys.push_back("relative");
 
   for (int ii = 0; ii < keys.size(); ++ii){
     if (input == keys[ii]) {
@@ -511,11 +511,11 @@ void PairNNP::settings(int narg, char **arg)
       }
       iarg += 1 + dim_fparam ;
     }
-	else if (string(arg[iarg]) == string("out_each")) {
+	else if (string(arg[iarg]) == string("atomic")) {
 	  out_each = 1;
 	  iarg += 1;
 	}
-	else if (string(arg[iarg]) == string("out_rel")) {
+	else if (string(arg[iarg]) == string("relative")) {
 	  out_rel = 1;
 #ifdef HIGH_PREC
     eps = atof(arg[iarg+1]);
