@@ -80,10 +80,13 @@ private:
   string out_file;
   int dim_fparam;
   int out_each;
+  int out_rel;
 #ifdef HIGH_PREC
   vector<double > fparam;
+  double eps;
 #else
   vector<float > fparam;
+  float eps;
 #endif
 };
 
