@@ -162,6 +162,8 @@ def _main () :
                         help="The number of data for test")
     parser.add_argument("-r", "--rand-seed", type=int, 
                         help="The random seed")
+    parser.add_argument("--no-shuffle", action = 'store_false',
+                        help="Do not shuffle the test data (the frame order in the test data is preserved)")
     parser.add_argument("-d", "--detail-file", type=str, 
                         help="The file containing details of energy force and virial accuracy")
     args = parser.parse_args()
@@ -170,7 +172,7 @@ def _main () :
         np.random.seed(args.rand_seed % (2**32))
 
     graph = load_graph(args.model)
-    data = DataSets (args.system, args.set_prefix)
+    data = DataSets (args.system, args.set_prefix, no_shuffle = args.no_shuffle)
 
     with tf.Session(graph = graph) as sess:        
         test (sess, data, args.numb_test, args.detail_file)

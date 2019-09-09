@@ -12,9 +12,11 @@ class DataSets (object):
     def __init__ (self, 
                   sys_path,
                   set_prefix,
-                  seed = None) :
+                  seed = None, 
+                  no_shuffle = False) :
         self.dirs = glob.glob (os.path.join(sys_path, set_prefix + ".*"))
         self.dirs.sort()
+        self.no_shuffle = no_shuffle
         # load atom type
         self.atom_type, self.idx_map, self.idx3_map = self.load_type (sys_path)
         # train dirs
@@ -152,7 +154,8 @@ class DataSets (object):
                                   os.path.join(set_name, "virial.npy"))
         # shuffle data
         idx = np.arange (nframe)
-        np.random.shuffle (idx)
+        if not self.no_shuffle:
+            np.random.shuffle (idx)
         self.energy_batch = self.energy_batch[idx]
         self.force_batch = self.force_batch[idx]
         self.virial_batch = self.virial_batch[idx]
@@ -191,7 +194,8 @@ class DataSets (object):
                                   os.path.join(set_name, "virial.npy"))
         # shuffle data
         idx = np.arange (nframe)
-        np.random.shuffle (idx)
+        if not self.no_shuffle:
+            np.random.shuffle (idx)
         self.energy_test = self.energy_test[idx]
         self.force_test = self.force_test[idx]
         self.virial_test = self.virial_test[idx]
