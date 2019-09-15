@@ -81,7 +81,14 @@ In addition to building up potential energy models, DeePMD-kit can also be used 
 # Download and install
 Please follow our [github](https://github.com/deepmodeling/deepmd-kit) webpage to see the latest released version and development version.
 ## Easy installation methods
-A docker for installing the DeePMD-kit on CentOS 7 is available [here](https://github.com/frankhan91/deepmd-kit_docker). We are currently working on installation methods using the `conda` package management system and `pip` tools. Hope these will come out soon.
+A docker for installing the DeePMD-kit on CentOS 7 is available [here](https://github.com/frankhan91/deepmd-kit_docker).
+
+The [pre-compiled conda packages](https://anaconda.org/conda-forge/deepmd-kit) can be installed into an existing [Anaconda](https://www.anaconda.com/distribution/) or [Miniconda](https://conda.io/en/latest/miniconda.html) distribution. Locally, install into a conda environment as below. 
+
+```bash
+conda create deepmd-kit -n deepmd -c conda-forge
+conda activate deepmd
+```
 
 ## Install DeePMD-kit from scratch
 Installing DeePMD-kit from scratch is lengthy, but do not be panic. Just follow step by step. Wish you good luck.. 
