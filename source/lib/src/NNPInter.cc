@@ -2,6 +2,12 @@
 #include "NNPAtomMap.h"
 #include "SimulationRegion.h"
 
+#include "cuda_runtime.h"
+
+#include <tensorflow/core/public/session.h>
+#include <tensorflow/core/graph/default_device.h>
+#include <tensorflow/core/graph/graph_def_builder.h>
+
 static
 void
 checkStatus(const tensorflow::Status& status) {
