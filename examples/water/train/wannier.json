@@ -2,7 +2,7 @@
     "with_distrib":	false,
     "_comment": " model parameters",
     "model":{
-	"type":			"wannier",
+	"type":			"wfc",
 	"type_map":		["O", "H"],
 	"descriptor": {
 	    "type":		"loc_frame",
@@ -19,9 +19,9 @@
 	    "_comment": " that's all"
 	},
 	"fitting_net": {
-	    "type":		"wannier",
+	    "type":		"wfc",
 	    "wfc_numb":		4,
-	    "wfc_type":		[0],
+	    "sel_type":		[0],
 	    "neuron":		[100, 100, 100],
 	    "resnet_dt":	true,
 	    "seed":		1,
@@ -39,7 +39,7 @@
     },
 
     "loss" : {
-	"type":		"wannier",
+	"type":		"wfc",
 	"_comment":	"that's all"
     },
 

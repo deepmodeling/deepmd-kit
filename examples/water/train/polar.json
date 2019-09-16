@@ -20,7 +20,7 @@
 	},
 	"fitting_net": {
 	    "type":		"polar",
-	    "pol_type":		[0],
+	    "sel_type":		[0],
 	    "neuron":		[100, 100, 100],
 	    "resnet_dt":	true,
 	    "seed":		1,
