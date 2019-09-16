@@ -17,6 +17,65 @@
 using namespace LAMMPS_NS;
 using namespace std;
 
+static int stringCmp(const void *a, const void* b)
+{
+    char* m = (char*)a;
+    char* n = (char*)b;
+    int i, sum = 0;
+
+    for(i = 0; i < MPI_MAX_PROCESSOR_NAME; i++)
+        if (m[i] == n[i])
+            continue;
+        else
+        {
+            sum = m[i] - n[i];
+            break;
+        }
+    return sum;
+}
+
+int PairNNP::get_device() {
+    char host_name[MPI_MAX_PROCESSOR_NAME];
+    char (*host_names)[MPI_MAX_PROCESSOR_NAME];
+    int n, namelen, color, rank, nprocs, myrank;
+    size_t bytes;
+    MPI_Comm nodeComm;
+    
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+    MPI_Get_processor_name(host_name,&namelen);
+
+    bytes = nprocs * sizeof(char[MPI_MAX_PROCESSOR_NAME]);
+    host_names = (char (*)[MPI_MAX_PROCESSOR_NAME]) malloc(bytes);
+    strcpy(host_names[rank], host_name);
+
+    for (n=0; n<nprocs; n++)
+        MPI_Bcast(&(host_names[n]),MPI_MAX_PROCESSOR_NAME, MPI_CHAR, n, MPI_COMM_WORLD);
+    qsort(host_names, nprocs,  sizeof(char[MPI_MAX_PROCESSOR_NAME]), stringCmp);
+
+    color = 0;
+    for (n=0; n<nprocs-1; n++)
+    {
+        if(strcmp(host_name, host_names[n]) == 0)
+        {
+            break;
+        }
+        if(strcmp(host_names[n], host_names[n+1]))
+        {
+            color++;
+        }
+    }
+
+    MPI_Comm_split(MPI_COMM_WORLD, color, 0, &nodeComm);
+    MPI_Comm_rank(nodeComm, &myrank);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    int looprank=myrank;
+    printf (" Assigning device %d  to process on node %s rank %d, OK\n",looprank,  host_name, rank );
+    free(host_names);
+    return looprank;
+}
+
 static void 
 ana_st (double & max, 
 	double & min, 
@@ -465,6 +524,10 @@ void PairNNP::settings(int narg, char **arg)
   numb_models = models.size();
   if (numb_models == 1) {
     nnp_inter.init (arg[0]);
+=======
+  if (narg == 1) {
+    nnp_inter.init (arg[0], get_device());
+>>>>>>> 72f815f... Add multiple-GPU support
     cutoff = nnp_inter.cutoff ();
     numb_types = nnp_inter.numb_types();
     dim_fparam = nnp_inter.dim_fparam();

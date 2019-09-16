@@ -501,16 +501,31 @@ NNPInter (const string & model)
 
 void
 NNPInter::
-init (const string & model)
+init (const string & model, const int & gpu_rank)
 {
   assert (!inited);
   SessionOptions options;
   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
-  checkStatus (NewSession(options, &session));
+  options.config.set_allow_soft_placement(true);
+  options.config.mutable_gpu_options()->set_per_process_gpu_memory_fraction(0.9);
+  options.config.mutable_gpu_options()->set_allow_growth(true);
+
   checkStatus (ReadBinaryProto(Env::Default(), model, &graph_def));
+
   checkStatus (session->Create(graph_def));  
+=======
+  int gpu_num = 4;
+  cudaGetDeviceCount(&gpu_num);
+  std::string str = "/gpu:";
+  str += std::to_string(gpu_rank % gpu_num);
+  graph::SetDefaultDevice(str, &graph_def);
+  std::cout << "current device rank: " << str << std::endl;
+
+  checkStatus (NewSession(options, &session));
+  checkStatus (session->Create(graph_def));
   rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
+>>>>>>> 72f815f... Add multiple-GPU support
   cell_size = rcut;
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
   dfparam = get_scalar<int>("fitting_attr/dfparam");
@@ -522,7 +537,26 @@ init (const string & model)
   // ntypes = get_ntypes();
   // dfparam = get_dfparam();
   inited = true;
+  //cudaGetDeviceCount(&_gpu_rank);
+  std::cout << "current device number: " << gpu_num << std::endl;
 }
+
+// void
+// NNPInter::
+// init (const string & model)
+// {
+//   assert (!inited);
+//   SessionOptions options;
+//   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
+//   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
+//   checkStatus (NewSession(options, &session));
+//   checkStatus (ReadBinaryProto(Env::Default(), model, &graph_def));
+//   checkStatus (session->Create(graph_def));  
+//   rcut = get_rcut();
+//   cell_size = rcut;
+//   ntypes = get_ntypes();
+//   inited = true;
+// }
 
 void 
 NNPInter::
