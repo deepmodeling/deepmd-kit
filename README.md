@@ -3,13 +3,11 @@
 
 
 # Table of contents
-- [DeePMD-kit Manual](#deepmd-kit-manual)
-- [Table of contents](#table-of-contents)
 - [About DeePMD-kit](#about-deepmd-kit)
-  - [Highlighted features](#highlighted-features)
-  - [Code structure](#code-structure)
-  - [License and credits](#license-and-credits)
-  - [Deep Potential in a nutshell](#deep-potential-in-a-nutshell)
+ 	- [Highlighted features](#highlighted-features)
+ 	- [Code structure](#code-structure)
+ 	- [License and credits](#license-and-credits)
+ 	- [Deep Potential in a nutshell](#deep-potential-in-a-nutshell)
 - [Download and install](#download-and-install)
     - [Easy installation methods](#easy-installation-methods)
     - [Install the python interaction](#install-the-python-interface)
@@ -32,10 +30,6 @@
 	    - [Long-range interaction](#long-range-interaction)
 	- [Run path-integral MD with i-PI](#run-path-integral-md-with-i-pi)
 - [Troubleshooting](#troubleshooting)
-  - [Installation: inadequate versions of gcc/g++](#installation-inadequate-versions-of-gccg)
-  - [Installation: build files left in DeePMD-kit](#installation-build-files-left-in-deepmd-kit)
-  - [Training: TensorFlow abi binary cannot be found when doing training](#training-tensorflow-abi-binary-cannot-be-found-when-doing-training)
-  - [MD: cannot run LAMMPS after installing a new version of DeePMD-kit](#md-cannot-run-lammps-after-installing-a-new-version-of-deepmd-kit)
 
 # About DeePMD-kit
 DeePMD-kit is a package written in Python/C++, designed to minimize the effort required to build deep learning based model of interatomic potential energy and force field and to perform molecular dynamics (MD). This brings new hopes to addressing the accuracy-versus-efficiency dilemma in molecular simulations. Applications of DeePMD-kit span from finite molecules to extended systems and from metallic systems to chemically bonded systems. 
