@@ -17,7 +17,7 @@ def _main () :
     default_num_inter_threads = 0
     parser_train = subparsers.add_parser('train', help='train a model')
     parser_train.add_argument('INPUT', 
-                              help='the input json database ')
+                              help='the input parameter file in json format')
     parser_train.add_argument('-t','--inter-threads', type = int, default = default_num_inter_threads,
                               help=
                               'With default value %d. ' % default_num_inter_threads + 
@@ -30,14 +30,13 @@ def _main () :
                               help=
                               'Restart the training from the provided checkpoint.')
     
-    default_frozen_nodes = "o_energy,o_force,o_virial,o_atom_energy,o_atom_virial,descrpt_attr/rcut,descrpt_attr/ntypes,fitting_attr/dfparam,model_attr/tmap"
     parser_frz = subparsers.add_parser('freeze', help='freeze the model')
     parser_frz.add_argument("-d", "--folder", type=str, default = ".", 
                             help="path to checkpoint folder")
     parser_frz.add_argument("-o", "--output", type=str, default = "frozen_model.pb", 
                             help="name of graph, will output to the checkpoint folder")
-    parser_frz.add_argument("-n", "--nodes", type=str, default = default_frozen_nodes,
-                            help="the frozen nodes, defaults is " + default_frozen_nodes)
+    parser_frz.add_argument("-n", "--nodes", type=str, 
+                            help="the frozen nodes, if not set, determined from the model type")
 
     parser_tst = subparsers.add_parser('test', help='test the model')
     parser_tst.add_argument("-m", "--model", default="frozen_model.pb", type=str, 

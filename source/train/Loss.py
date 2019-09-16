@@ -170,16 +170,16 @@ class EnerStdLoss () :
         
         
 
-class WannierLoss () :
+class WFCLoss () :
     def __init__ (self, jdata, **kwarg) :
         model = kwarg['model']
         # data required
-        add_data_requirement('wannier', 
+        add_data_requirement('wfc', 
                              model.get_wfc_numb() * 3, 
                              atomic=True,  
                              must=True, 
                              high_prec=False, 
-                             type_sel = model.get_wfc_type())
+                             type_sel = model.get_sel_type())
 
     def build (self, 
                learning_rate,
@@ -187,9 +187,9 @@ class WannierLoss () :
                model_dict,
                label_dict,
                suffix):        
-        wannier_hat = label_dict['wannier']
-        wannier = model_dict['wannier']
-        l2_loss = tf.reduce_mean( tf.square(wannier - wannier_hat), name='l2_'+suffix)
+        wfc_hat = label_dict['wfc']
+        wfc = model_dict['wfc']
+        l2_loss = tf.reduce_mean( tf.square(wfc - wfc_hat), name='l2_'+suffix)
         self.l2_l = l2_loss
         more_loss = {}
 
@@ -229,7 +229,7 @@ class PolarLoss () :
                              atomic=True,  
                              must=True, 
                              high_prec=False, 
-                             type_sel = model.get_pol_type())
+                             type_sel = model.get_sel_type())
 
     def build (self, 
                learning_rate,

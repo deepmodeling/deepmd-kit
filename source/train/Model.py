@@ -16,6 +16,8 @@ assert (os.path.isfile (module_path  + "libop_abi.so" )), "op module does not ex
 op_module = tf.load_op_library(module_path + "libop_abi.so")
 
 class Model() :
+    model_type = 'ener'
+
     def __init__ (self, jdata, descrpt, fitting):
         self.descrpt = descrpt
         self.rcut = self.descrpt.get_rcut()
@@ -95,6 +97,9 @@ class Model() :
             t_tmap = tf.constant(' '.join(self.type_map), 
                                  name = 'tmap', 
                                  dtype = tf.string)
+            t_mt = tf.constant(self.model_type, 
+                               name = 'model_type', 
+                               dtype = tf.string)
 
             if self.srtab is not None :
                 tab_info, tab_data = self.srtab.get()
@@ -213,7 +218,9 @@ class Model() :
 
     
 
-class WannierModel() :
+class WFCModel() :
+    model_type = 'wfc'
+
     def __init__ (self, jdata, descrpt, fitting):
         self.descrpt = descrpt
         self.rcut = self.descrpt.get_rcut()
@@ -261,8 +268,8 @@ class WannierModel() :
         self.davg, self.dstd \
             = self.descrpt.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh, reuse)
     
-    def get_wfc_type(self):
-        return self.fitting.get_wfc_type()
+    def get_sel_type(self):
+        return self.fitting.get_sel_type()
 
     def get_wfc_numb(self):
         return self.fitting.get_wfc_numb()
@@ -281,6 +288,12 @@ class WannierModel() :
             t_tmap = tf.constant(' '.join(self.type_map), 
                                  name = 'tmap', 
                                  dtype = tf.string)
+            t_st = tf.constant(self.get_sel_type(), 
+                               name = 'sel_type',
+                               dtype = tf.int32)
+            t_mt = tf.constant(self.model_type, 
+                               name = 'model_type', 
+                               dtype = tf.string)
 
         coord = tf.reshape (coord_, [-1, natoms[1] * 3])
         atype = tf.reshape (atype_, [-1, natoms[1]])
@@ -297,18 +310,21 @@ class WannierModel() :
                                  reuse = reuse)
         dout = tf.identity(dout, name='o_descriptor')
         rot_mat = self.descrpt.get_rot_mat()
+        rot_mat = tf.identity(rot_mat, name = 'o_rot_mat')
 
         wfc = self.fitting.build (dout, 
                                   rot_mat,
                                   natoms, 
                                   reuse = reuse, 
                                   suffix = suffix)
+        wfc = tf.identity(wfc, name = 'o_wfc')
 
-        return wfc
-
+        return {'wfc': wfc}
 
 
 class PolarModel() :
+    model_type = 'polar'
+
     def __init__ (self, jdata, descrpt, fitting):
         self.descrpt = descrpt
         self.rcut = self.descrpt.get_rcut()
@@ -356,8 +372,8 @@ class PolarModel() :
         self.davg, self.dstd \
             = self.descrpt.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh, reuse)
     
-    def get_pol_type(self):
-        return self.fitting.get_pol_type()
+    def get_sel_type(self):
+        return self.fitting.get_sel_type()
 
     def build (self, 
                coord_, 
@@ -373,6 +389,12 @@ class PolarModel() :
             t_tmap = tf.constant(' '.join(self.type_map), 
                                  name = 'tmap', 
                                  dtype = tf.string)
+            t_st = tf.constant(self.get_sel_type(), 
+                               name = 'sel_type',
+                               dtype = tf.int32)
+            t_mt = tf.constant(self.model_type, 
+                               name = 'model_type', 
+                               dtype = tf.string)
 
         coord = tf.reshape (coord_, [-1, natoms[1] * 3])
         atype = tf.reshape (atype_, [-1, natoms[1]])
@@ -389,12 +411,14 @@ class PolarModel() :
                                  reuse = reuse)
         dout = tf.identity(dout, name='o_descriptor')
         rot_mat = self.descrpt.get_rot_mat()
+        rot_mat = tf.identity(rot_mat, name = 'o_rot_mat')
 
         polar = self.fitting.build (dout, 
                                     rot_mat,
                                     natoms, 
                                     reuse = reuse, 
                                     suffix = suffix)
+        polar = tf.identity(polar, name = 'o_polar')
 
         return {'polar': polar}
 

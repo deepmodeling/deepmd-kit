@@ -90,7 +90,7 @@ class EnerFitting ():
         return tf.reshape(outs, [-1])        
 
 
-class WannierFitting () :
+class WFCFitting () :
     def __init__ (self, jdata, descrpt) :
         if not isinstance(descrpt, DescrptLocFrame) :
             raise RuntimeError('WFC only supports DescrptLocFrame')
@@ -100,19 +100,19 @@ class WannierFitting () :
                .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\
                .add('resnet_dt',        bool,   default = True)\
                .add('wfc_numb',         int,    must = True)\
-               .add('wfc_type',         [list,int],   default = [ii for ii in range(self.ntypes)])\
+               .add('sel_type',         [list,int],   default = [ii for ii in range(self.ntypes)], alias = 'wfc_type')\
                .add('seed',             int)
         class_data = args.parse(jdata)
         self.n_neuron = class_data['neuron']
         self.resnet_dt = class_data['resnet_dt']
         self.wfc_numb = class_data['wfc_numb']
-        self.wfc_type = class_data['wfc_type']
+        self.sel_type = class_data['sel_type']
         self.seed = class_data['seed']
         self.useBN = False
 
 
-    def get_wfc_type(self):
-        return self.wfc_type
+    def get_sel_type(self):
+        return self.sel_type
 
     def get_wfc_numb(self):
         return self.wfc_numb
@@ -140,7 +140,7 @@ class WannierFitting () :
                                   [-1, natoms[2+type_i]* 9] )
             rot_mat_i = tf.reshape(rot_mat_i, [-1, 3, 3])
             start_index += natoms[2+type_i]
-            if not type_i in self.wfc_type :
+            if not type_i in self.sel_type :
                 continue
             layer = inputs_i
             for ii in range(0,len(self.n_neuron)) :
@@ -164,9 +164,7 @@ class WannierFitting () :
                 outs = tf.concat([outs, final_layer], axis = 1)
             count += 1
 
-        ret = {}
-        ret['wannier'] =  tf.reshape(outs, [-1])        
-        return ret
+        return tf.reshape(outs, [-1])
 
 
 
@@ -177,19 +175,19 @@ class PolarFittingLocFrame () :
         self.ntypes = descrpt.get_ntypes()
         self.dim_descrpt = descrpt.get_dim_out()
         args = ClassArg()\
-               .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\
-               .add('resnet_dt',        bool,   default = True)\
-               .add('pol_type',         [list,int],   default = [ii for ii in range(self.ntypes)])\
+               .add('neuron',           list, default = [120,120,120], alias = 'n_neuron')\
+               .add('resnet_dt',        bool, default = True)\
+               .add('sel_type',         [list,int], default = [ii for ii in range(self.ntypes)], alias = 'pol_type')\
                .add('seed',             int)
         class_data = args.parse(jdata)
         self.n_neuron = class_data['neuron']
         self.resnet_dt = class_data['resnet_dt']
-        self.pol_type = class_data['pol_type']
+        self.sel_type = class_data['sel_type']
         self.seed = class_data['seed']
         self.useBN = False
 
-    def get_pol_type(self):
-        return self.pol_type
+    def get_sel_type(self):
+        return self.sel_type
 
     def build (self, 
                input_d,
@@ -214,7 +212,7 @@ class PolarFittingLocFrame () :
                                   [-1, natoms[2+type_i]* 9] )
             rot_mat_i = tf.reshape(rot_mat_i, [-1, 3, 3])
             start_index += natoms[2+type_i]
-            if not type_i in self.pol_type :
+            if not type_i in self.sel_type :
                 continue
             layer = inputs_i
             for ii in range(0,len(self.n_neuron)) :
@@ -254,19 +252,19 @@ class PolarFittingSeA () :
         args = ClassArg()\
                .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\
                .add('resnet_dt',        bool,   default = True)\
-               .add('pol_type',         [list,int],   default = [ii for ii in range(self.ntypes)])\
+               .add('sel_type',         [list,int],   default = [ii for ii in range(self.ntypes)], alias = 'pol_type')\
                .add('seed',             int)
         class_data = args.parse(jdata)
         self.n_neuron = class_data['neuron']
         self.resnet_dt = class_data['resnet_dt']
-        self.pol_type = class_data['pol_type']
+        self.sel_type = class_data['sel_type']
         self.seed = class_data['seed']
         self.dim_rot_mat_1 = descrpt.get_dim_rot_mat_1()
         self.dim_rot_mat = self.dim_rot_mat_1 * 3
         self.useBN = False
 
-    def get_pol_type(self):
-        return self.pol_type
+    def get_sel_type(self):
+        return self.sel_type
 
     def build (self, 
                input_d,
@@ -291,7 +289,7 @@ class PolarFittingSeA () :
                                   [-1, natoms[2+type_i]* self.dim_rot_mat] )
             rot_mat_i = tf.reshape(rot_mat_i, [-1, self.dim_rot_mat_1, 3])
             start_index += natoms[2+type_i]
-            if not type_i in self.pol_type :
+            if not type_i in self.sel_type :
                 continue
             layer = inputs_i
             for ii in range(0,len(self.n_neuron)) :
