@@ -523,17 +523,13 @@ void PairNNP::settings(int narg, char **arg)
   }
   numb_models = models.size();
   if (numb_models == 1) {
-    nnp_inter.init (arg[0]);
-=======
-  if (narg == 1) {
     nnp_inter.init (arg[0], get_device());
->>>>>>> 72f815f... Add multiple-GPU support
     cutoff = nnp_inter.cutoff ();
     numb_types = nnp_inter.numb_types();
     dim_fparam = nnp_inter.dim_fparam();
   }
   else {
-    nnp_inter.init (arg[0]);
+    nnp_inter.init (arg[0], get_device());
     nnp_inter_model_devi.init(models);
     cutoff = nnp_inter_model_devi.cutoff();
     numb_types = nnp_inter_model_devi.numb_types();

@@ -512,9 +512,6 @@ init (const string & model, const int & gpu_rank)
   options.config.mutable_gpu_options()->set_allow_growth(true);
 
   checkStatus (ReadBinaryProto(Env::Default(), model, &graph_def));
-
-  checkStatus (session->Create(graph_def));  
-=======
   int gpu_num = 4;
   cudaGetDeviceCount(&gpu_num);
   std::string str = "/gpu:";
@@ -525,7 +522,6 @@ init (const string & model, const int & gpu_rank)
   checkStatus (NewSession(options, &session));
   checkStatus (session->Create(graph_def));
   rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
->>>>>>> 72f815f... Add multiple-GPU support
   cell_size = rcut;
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
   dfparam = get_scalar<int>("fitting_attr/dfparam");
