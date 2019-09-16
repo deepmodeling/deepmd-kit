@@ -2,11 +2,12 @@
 #include "NNPAtomMap.h"
 #include "SimulationRegion.h"
 
+#ifdef  USE_CUDA_TOOLKIT
 #include "cuda_runtime.h"
-
 #include <tensorflow/core/public/session.h>
 #include <tensorflow/core/graph/default_device.h>
 #include <tensorflow/core/graph/graph_def_builder.h>
+#endif
 
 static
 void
@@ -460,52 +461,54 @@ NNPInter (const string & model)
   inited = true;
 }
 
-void
-NNPInter::
-init (const string & model, const int & gpu_rank)
-{
-  assert (!inited);
-  SessionOptions options;
-  options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
-  options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
-  options.config.set_allow_soft_placement(true);
-  options.config.mutable_gpu_options()->set_per_process_gpu_memory_fraction(0.9);
-  options.config.mutable_gpu_options()->set_allow_growth(true);
+#ifdef USE_CUDA_TOOLKIT
+  void
+  NNPInter::
+  init (const string & model, const int & gpu_rank)
+  {
+    assert (!inited);
+    SessionOptions options;
+    options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
+    options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
+    options.config.set_allow_soft_placement(true);
+    options.config.mutable_gpu_options()->set_per_process_gpu_memory_fraction(0.9);
+    options.config.mutable_gpu_options()->set_allow_growth(true);
 
-  checkStatus (ReadBinaryProto(Env::Default(), model, &graph_def));
-  int gpu_num = 4;
-  cudaGetDeviceCount(&gpu_num);
-  std::string str = "/gpu:";
-  str += std::to_string(gpu_rank % gpu_num);
-  graph::SetDefaultDevice(str, &graph_def);
-  std::cout << "current device rank: " << str << std::endl;
+    checkStatus (ReadBinaryProto(Env::Default(), model, &graph_def));
+    int gpu_num = 4;
+    cudaGetDeviceCount(&gpu_num);
+    std::string str = "/gpu:";
+    str += std::to_string(gpu_rank % gpu_num);
+    graph::SetDefaultDevice(str, &graph_def);
+    std::cout << "current device rank: " << str << std::endl;
 
-  checkStatus (NewSession(options, &session));
-  checkStatus (session->Create(graph_def));
-  rcut = get_rcut();
-  cell_size = rcut;
-  ntypes = get_ntypes();
-  inited = true;
-  //cudaGetDeviceCount(&_gpu_rank);
-  std::cout << "current device number: " << gpu_num << std::endl;
-}
-
-// void
-// NNPInter::
-// init (const string & model)
-// {
-//   assert (!inited);
-//   SessionOptions options;
-//   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
-//   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
-//   checkStatus (NewSession(options, &session));
-//   checkStatus (ReadBinaryProto(Env::Default(), model, &graph_def));
-//   checkStatus (session->Create(graph_def));  
-//   rcut = get_rcut();
-//   cell_size = rcut;
-//   ntypes = get_ntypes();
-//   inited = true;
-// }
+    checkStatus (NewSession(options, &session));
+    checkStatus (session->Create(graph_def));
+    rcut = get_rcut();
+    cell_size = rcut;
+    ntypes = get_ntypes();
+    inited = true;
+    //cudaGetDeviceCount(&_gpu_rank);
+    std::cout << "current device number: " << gpu_num << std::endl;
+  }
+#else
+  void
+  NNPInter::
+  init (const string & model, const int & gpu_rank)
+  {
+    assert (!inited);
+    SessionOptions options;
+    options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
+    options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
+    checkStatus (NewSession(options, &session));
+    checkStatus (ReadBinaryProto(Env::Default(), model, &graph_def));
+    checkStatus (session->Create(graph_def));  
+    rcut = get_rcut();
+    cell_size = rcut;
+    ntypes = get_ntypes();
+    inited = true;
+  }
+#endif
 
 void 
 NNPInter::
