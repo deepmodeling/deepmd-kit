@@ -3,30 +3,36 @@
 
 
 # Table of contents
+- [DeePMD-kit Manual](#deepmd-kit-manual)
+- [Table of contents](#table-of-contents)
 - [About DeePMD-kit](#about-deepmd-kit)
- 	- [Highlighted features](#highlighted-features)
- 	- [Code structure](#code-structure)
- 	- [License and credits](#license-and-credits)
- 	- [Deep Potential in a nutshell](#deep-potential-in-a-nutshell)
+  - [Highlighted features](#highlighted-features)
+  - [Code structure](#code-structure)
+  - [License and credits](#license-and-credits)
+  - [Deep Potential in a nutshell](#deep-potential-in-a-nutshell)
 - [Download and install](#download-and-install)
-    - [Easy installation methods](#easy-installation-methods)
-    - [Install DeePMD-kit from scratch](#install-deepmd-kit-from-scratch)
-	    - [Install tensorflow](#install-tensorflow)
-	    - [Install DeePMD-kit](#install-deepmd-kit)
-	    - [Install LAMMPS's DeePMD-kit module](#install-lammpss-deepmd-kit-module)
-	    - [Build DeePMD-kit with GPU support](#build-deepmd-kit-with-gpu-support)
+  - [Easy installation methods](#easy-installation-methods)
+  - [Install DeePMD-kit from scratch](#install-deepmd-kit-from-scratch)
+    - [Install tensorflow](#install-tensorflow)
+    - [Install DeePMD-kit](#install-deepmd-kit)
+    - [Install LAMMPS's DeePMD-kit module](#install-lammpss-deepmd-kit-module)
+    - [Build DeePMD-kit with GPU support](#build-deepmd-kit-with-gpu-support)
 - [Use DeePMD-kit](#use-deepmd-kit)
-	- [Prepare data](#prepare-data)
-	- [Train a model](#train-a-model)
-	    - [The DeePMD model](#the-deepmd-model)
-	    - [The DeepPot-SE model](#the-deeppot-se-model)
-	- [Freeze and test a model](#freeze-and-test-a-model)
-	- [Run MD with Lammps](#run-md-with-lammps)
-	    - [Include deepmd in the pair style](#include-deepmd-in-the-pair-style)
-	    - [Long-range interaction](#long-range-interaction)
-	- [Run path-integral MD with i-PI](#run-path-integral-md-with-i-pi)
-	- [Run MD with native code](#run-md-with-native-code)
+  - [Prepare data](#prepare-data)
+  - [Train a model](#train-a-model)
+    - [The DeePMD model](#the-deepmd-model)
+    - [The DeepPot-SE model](#the-deeppot-se-model)
+  - [Freeze and test a model](#freeze-and-test-a-model)
+  - [Run MD with LAMMPS](#run-md-with-lammps)
+    - [Include deepmd in the pair style](#include-deepmd-in-the-pair-style)
+    - [Long-range interaction](#long-range-interaction)
+  - [Run path-integral MD with i-PI](#run-path-integral-md-with-i-pi)
+  - [Run MD with native code](#run-md-with-native-code)
 - [Troubleshooting](#troubleshooting)
+  - [Installation: inadequate versions of gcc/g++](#installation-inadequate-versions-of-gccg)
+  - [Installation: build files left in DeePMD-kit](#installation-build-files-left-in-deepmd-kit)
+  - [Training: TensorFlow abi binary cannot be found when doing training](#training-tensorflow-abi-binary-cannot-be-found-when-doing-training)
+  - [MD: cannot run LAMMPS after installing a new version of DeePMD-kit](#md-cannot-run-lammps-after-installing-a-new-version-of-deepmd-kit)
 
 # About DeePMD-kit
 DeePMD-kit is a package written in Python/C++, designed to minimize the effort required to build deep learning based model of interatomic potential energy and force field and to perform molecular dynamics (MD). This brings new hopes to addressing the accuracy-versus-efficiency dilemma in molecular simulations. Applications of DeePMD-kit span from finite molecules to extended systems and from metallic systems to chemically bonded systems. 
@@ -94,7 +100,7 @@ conda activate deepmd
 Installing DeePMD-kit from scratch is lengthy, but do not be panic. Just follow step by step. Wish you good luck.. 
 
 ### Install tensorflow
-We tested two tensorflow installation options. You may follow either [tf-1.8](doc/install-tf.1.8.md), [tf-1.12](doc/install-tf.1.12.md) or [tf-1.14](doc/install-tf.1.14.md). Click one of the links and follow the instructions therein. Of course, other installation options are not forbidden. It is noticed that if you are using python==3.7, the tensorflow 1.14 is enforced. 
+We tested two tensorflow installation options. You may follow either [tf-1.8](doc/install-tf.1.8.md), [tf-1.12](doc/install-tf.1.12.md) or [tf-1.14](doc/install-tf.1.14.md). Or [tf-1.14-gpu](doc/install-tf.1.14-gpu.md) for gpu support(cuda toolkit is needed). Click one of the links and follow the instructions therein. Of course, other installation options are not forbidden. It is noticed that if you are using python==3.7, the tensorflow 1.14 is enforced. 
 
 ### Install DeePMD-kit
 The DeePMD-kit was tested with compiler gcc >= 4.9.
