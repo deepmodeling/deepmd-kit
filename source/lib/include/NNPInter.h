@@ -54,7 +54,7 @@ class NNPInter
 public:
   NNPInter () ;
   NNPInter  (const string & model);
-  void init (const string & model);
+  void init (const string & model, const int & gpu_rank);
   void print_summary(const string &pre) const;
 public:
   void compute (ENERGYTYPE &			ener,
