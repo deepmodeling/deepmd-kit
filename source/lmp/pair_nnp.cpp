@@ -530,7 +530,7 @@ void PairNNP::settings(int narg, char **arg)
   }
   else {
     nnp_inter.init (arg[0], get_device());
-    nnp_inter_model_devi.init(models);
+    nnp_inter_model_devi.init(models, get_node_rank());
     cutoff = nnp_inter_model_devi.cutoff();
     numb_types = nnp_inter_model_devi.numb_types();
     dim_fparam = nnp_inter_model_devi.dim_fparam();
