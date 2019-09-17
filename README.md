@@ -94,7 +94,7 @@ conda activate deepmd
 Installing DeePMD-kit from scratch is lengthy, but do not be panic. Just follow step by step. Wish you good luck.. 
 
 ### Install tensorflow
-We tested two tensorflow installation options. You may follow either [tf-1.8](doc/install-tf.1.8.md), [tf-1.12](doc/install-tf.1.12.md) or [tf-1.14](doc/install-tf.1.14.md). Click one of the links and follow the instructions therein. Of course, other installation options are not forbidden. It is noticed that if you are using python==3.7, the tensorflow 1.14 is enforced. 
+We tested two tensorflow installation options. You may follow either [tf-1.8](doc/install-tf.1.8.md), [tf-1.12](doc/install-tf.1.12.md), [tf-1.14](doc/install-tf.1.14.md) or [tf-1.14-gpu](doc/install-tf.1.14-gpu.md). Click one of the links and follow the instructions therein. Of course, other installation options are not forbidden. It is noticed that if you are using python==3.7, the tensorflow 1.14 is enforced. 
 
 ### Install DeePMD-kit
 The DeePMD-kit was tested with compiler gcc >= 4.9.
@@ -118,6 +118,11 @@ cd build
 I assume you want to install DeePMD-kit into path `$deepmd_root`, then execute cmake
 ```bash
 cmake -DTF_GOOGLE_BIN=true -DTENSORFLOW_ROOT=$tensorflow_root \
+-DCMAKE_INSTALL_PREFIX=$deepmd_root ..
+```
+If you want to build deepmd-kit with cuda-toolkit support, then execute cmake
+```bash
+cmake -DTF_GOOGLE_BIN=true -DUSE_CUDA_TOOLKIT=true -DTENSORFLOW_ROOT=$tensorflow_root \
 -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
 ```
 If you built the tensorflow's Python interface by gcc>=5.0, then remove the option `-DTF_GOOGLE_BIN=true`. If the cmake has executed successfully, then 
