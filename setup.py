@@ -61,6 +61,6 @@ setup(
     cmake_source_dir='source',
     cmake_minimum_required_version='3.0',
     extras_require={
-        'test': 'dpdata',
+        'test': 'dpdata>=0.1.6',
     },
 )
