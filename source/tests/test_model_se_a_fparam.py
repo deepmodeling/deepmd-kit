@@ -26,7 +26,6 @@ def gen_data() :
     sys.data['cells'] = sys.data['cells'].reshape([nframes,3,3])
     sys.data['energies'] = np.zeros([nframes,1])
     sys.data['forces'] = np.zeros([nframes,natoms,3])
-    sys.data['virials'] = []
     sys.to_deepmd_npy('system', prec=np.float64)    
     np.save('system/set.000/fparam.npy', tmpdata.fparam)
 

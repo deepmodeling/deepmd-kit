@@ -4,8 +4,8 @@ import tensorflow as tf
 
 from deepmd.common import ClassArg, add_data_requirement
 from deepmd.Network import one_layer
-from DescrptLocFrame import DescrptLocFrame
-from DescrptSeA import DescrptSeA
+from deepmd.DescrptLocFrame import DescrptLocFrame
+from deepmd.DescrptSeA import DescrptSeA
 
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
