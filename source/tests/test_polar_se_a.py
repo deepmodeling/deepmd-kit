@@ -77,7 +77,7 @@ class TestModel(unittest.TestCase):
                            t_box, 
                            t_mesh,
                            t_fparam,
-                           suffix = "se_a", 
+                           suffix = "polar_se_a", 
                            reuse = False)
         polar = model_pred['polar']
 
@@ -99,3 +99,6 @@ class TestModel(unittest.TestCase):
         places = 6
         for ii in range(p.size) :
             self.assertAlmostEqual(p[ii], refp[ii], places = places)
+
+
+        
