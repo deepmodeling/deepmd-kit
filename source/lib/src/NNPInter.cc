@@ -709,7 +709,7 @@ NNPInterModelDevi (const vector<string> & models, const int & gpu_rank)
       numb_models (0)
 {
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
-  init(models, gpu_rank)
+  init(models, gpu_rank);
 }
 
 #ifdef USE_CUDA_TOOLKIT
@@ -739,7 +739,7 @@ init (const vector<string> & models, const int & gpu_rank)
     if (gpu_num > 0) {
       std::string str = "/gpu:";
       str += std::to_string(gpu_rank % gpu_num);
-      graph::SetDefaultDevice(str, &graph_def[ii]);
+      graph::SetDefaultDevice(str, &graph_defs[ii]);
       // std::cout << "current device rank: " << str << std::endl;
     }
     checkStatus (NewSession(options, &(sessions[ii])));
