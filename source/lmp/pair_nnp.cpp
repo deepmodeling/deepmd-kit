@@ -470,7 +470,7 @@ void PairNNP::settings(int narg, char **arg)
     if (out_freq < 0) error->all(FLERR,"Illegal out_freq, should be >= 0");
     out_file = string(arg[narg-1]);
 
-    nnp_inter_model_devi.init(models);
+    nnp_inter_model_devi.init(models, get_node_rank());
     cutoff = nnp_inter_model_devi.cutoff();
     numb_types = nnp_inter_model_devi.numb_types();
     numb_models = models.size();
