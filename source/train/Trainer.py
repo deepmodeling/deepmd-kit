@@ -11,14 +11,14 @@ from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
 from deepmd.RunOptions import global_cvt_2_tf_float
 from deepmd.RunOptions import global_cvt_2_ener_float
-from Fitting import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA
-from DescrptLocFrame import DescrptLocFrame
-from DescrptSeA import DescrptSeA
-from DescrptSeR import DescrptSeR
-from DescrptSeAR import DescrptSeAR
-from Model import Model, WFCModel, PolarModel
-from Loss import EnerStdLoss, WFCLoss, PolarLoss
-from LearningRate import LearningRateExp
+from deepmd.Fitting import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA
+from deepmd.DescrptLocFrame import DescrptLocFrame
+from deepmd.DescrptSeA import DescrptSeA
+from deepmd.DescrptSeR import DescrptSeR
+from deepmd.DescrptSeAR import DescrptSeAR
+from deepmd.Model import Model, WFCModel, PolarModel
+from deepmd.Loss import EnerStdLoss, WFCLoss, PolarLoss
+from deepmd.LearningRate import LearningRateExp
 
 from tensorflow.python.framework import ops
 from tensorflow.python.client import timeline
