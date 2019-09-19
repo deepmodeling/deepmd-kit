@@ -513,6 +513,100 @@ The option **`T`** specifies the temperature of the simulation, and the option *
 
 The **`atom_type`** set the type for the atoms in the system. The names of the atoms are those provided in the `conf_file` file. The **`atom_mass`** set the mass for the atoms. Again, the name of the atoms are those provided in the `conf_file`.
 
+# Multi-GPU support
+Recently, we updated code for multi-GPU support. The main changes are focused on the interface part of lammps and tensorflow,
+while the lammps package was also minorly modified. Here, we'll give you a brief overview of this upgrade and provide a simple test. First, you need to install the GPU support environment for deepmd-kit.
+## Install GPU support environments for deepmd-kit
+First, you need a CUDA environment, and CUDA-10.0 is required. If you have a higher version of CUDA, such as CUDA-10.1, you can use it when compiling or running the deepmd-kit's c-plus-plus interface. However, when you use the deepmd-kit's python interface, the CUDA-10.0 environment is required. Lower versions of CUDAs are not recommended for use.
+
+For a successful installation, we strongly recommend that you use bazel-0.24.1, tensorflow-1.14.0-gpu, as well as higher versions of cmake and git. Sometimes you may also report an error due to a low python version or a GCC version issue. When you have a compilation problem, it may be helpful to try to upgrade the software version.
+
+Detailed installation process can be referred to [tf-1.14-gpu](doc/install-tf.1.14-gpu.md).
+## Code upgrade
+We'll briefly describe this upgrade in three parts.
+### Allocate GPU resources to tensorflow
+Tensorflow uses all available GPU resources by default. So in the original code, when we run parallel programs, multiple processors apply for memory resources will conflict and report errors. So we use the tensorflow graph API to assign a specific GPU to each tensorflow graph based on the device ranks, while limiting the default memory usage of tensorflow in multiple GPU cases. The code can be viewed [here](source/lib/src/NNPInter.cc), focusing mainly on the init function.
+### Get the processor's node rank
+When working on platforms across nodes, we need to consider how to get the device rank mentioned in the previous section. If you're using openmpi, it comes with a node-rank API, but if you use an Intel impi, you may need to use another method to specify node-rank. At present, we think it is a good way to be compatible with multi-platforms by dividing the MPI communicator based on the processor name. The code can be viewed [here](source/lmp/pair_nnp.cpp), focusing mainly on the get_node_rank function.
+### Cmake conditional compilation
+We introduced THE USE-CUDA-TOOLKIT parameter as a control variable for whether to compile using the cuda environment. If you want to build deepmd-kit with cuda-toolkit support, then execute cmake
+```bash
+cmake -DTF_GOOGLE_BIN=true -DUSE_CUDA_TOOLKIT=true -DTENSORFLOW_ROOT=$tensorflow_root \
+-DCMAKE_INSTALL_PREFIX=$deepmd_root ..
+```
+## Simple test for multi-GPU support
+We tested the water sample provided by deepmd-kit on up to 8 NVIDIA GV100 devices, as follows:
+### Signal processor with Signal GPU with 12288 atoms
+```bash
+Loop time of 230.028 on 1 procs for 1000 steps with 12288 atoms
+
+Performance: 0.188 ns/day, 127.793 hours/ns, 4.347 timesteps/s
+218.9% CPU use with 1 MPI tasks x no OpenMP threads
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Pair    | 222.29     | 222.29     | 222.29     |   0.0 | 96.64
+Neigh   | 7.1514     | 7.1514     | 7.1514     |   0.0 |  3.11
+Comm    | 0.15155    | 0.15155    | 0.15155    |   0.0 |  0.07
+Output  | 0.15792    | 0.15792    | 0.15792    |   0.0 |  0.07
+Modify  | 0.21998    | 0.21998    | 0.21998    |   0.0 |  0.10
+Other   |            | 0.05425    |            |       |  0.02
+```
+### Two processors with two GPUs with 12288 atoms
+```bash
+Loop time of 103.86 on 2 procs for 1000 steps with 12288 atoms
+
+Performance: 0.416 ns/day, 57.700 hours/ns, 9.628 timesteps/s
+184.9% CPU use with 2 MPI tasks x no OpenMP threads
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Pair    | 99.374     | 99.479     | 99.584     |   1.1 | 95.78
+Neigh   | 3.5141     | 3.5171     | 3.5201     |   0.2 |  3.39
+Comm    | 0.50469    | 0.61397    | 0.72326    |  13.9 |  0.59
+Output  | 0.083435   | 0.083471   | 0.083507   |   0.0 |  0.08
+Modify  | 0.12354    | 0.12436    | 0.12519    |   0.2 |  0.12
+Other   |            | 0.04167    |            |       |  0.04
+```
+### Four processors with four GPUs with 12288 atoms
+```bash
+Loop time of 63.6919 on 4 procs for 1000 steps with 12288 atoms
+
+Performance: 0.678 ns/day, 35.384 hours/ns, 15.701 timesteps/s
+157.1% CPU use with 4 MPI tasks x no OpenMP threads
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Pair    | 60.436     | 60.917     | 61.278     |   4.6 | 95.64
+Neigh   | 1.8222     | 1.8335     | 1.8443     |   0.7 |  2.88
+Comm    | 0.42573    | 0.79821    | 1.2909     |  41.1 |  1.25
+Output  | 0.048915   | 0.048949   | 0.049043   |   0.0 |  0.08
+Modify  | 0.071305   | 0.071748   | 0.072062   |   0.1 |  0.11
+Other   |            | 0.02293    |            |       |  0.04
+```
+### Eight processors with four GPUs with 12288 atoms
+```bash
+Loop time of 56.4938 on 8 procs for 1000 steps with 12288 atoms
+
+Performance: 0.765 ns/day, 31.385 hours/ns, 17.701 timesteps/s
+96.7% CPU use with 8 MPI tasks x no OpenMP threads
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Pair    | 47.533     | 52.937     | 54.317     |  28.8 | 93.70
+Neigh   | 0.9133     | 0.92132    | 0.92819    |   0.5 |  1.63
+Comm    | 1.1607     | 2.5475     | 7.9455     | 131.0 |  4.51
+Output  | 0.029628   | 0.029649   | 0.029759   |   0.0 |  0.05
+Modify  | 0.047173   | 0.048659   | 0.051697   |   0.7 |  0.09
+Other   |            | 0.01016    |            |       |  0.02
+```
+### Eight processors with Eight GPUs with 12288 atoms
+```bash
+```
 # Troubleshooting
 In consequence of various differences of computers or systems, problems may occur. Some common circumstances are listed as follows. 
 If other unexpected problems occur, you're welcome to contact us for help.
