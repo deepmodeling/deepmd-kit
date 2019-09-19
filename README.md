@@ -535,7 +535,7 @@ cmake -DTF_GOOGLE_BIN=true -DUSE_CUDA_TOOLKIT=true -DTENSORFLOW_ROOT=$tensorflow
 -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
 ```
 ## Simple test for multi-GPU support
-We tested the water sample provided by deepmd-kit on up to 8 NVIDIA GV100 devices, as follows:
+We tested the water sample provided by deepmd-kit on up to 24 NVIDIA GV100 devices, as follows:
 ### Signal processor with Signal GPU with 12288 atoms
 ```bash
 Loop time of 230.028 on 1 procs for 1000 steps with 12288 atoms
@@ -587,25 +587,56 @@ Output  | 0.048915   | 0.048949   | 0.049043   |   0.0 |  0.08
 Modify  | 0.071305   | 0.071748   | 0.072062   |   0.1 |  0.11
 Other   |            | 0.02293    |            |       |  0.04
 ```
-### Eight processors with four GPUs with 12288 atoms
+### Eight processors with Eight GPUs with 12288 atoms
 ```bash
-Loop time of 56.4938 on 8 procs for 1000 steps with 12288 atoms
+Loop time of 32.2646 on 8 procs for 1000 steps with 12288 atoms
 
-Performance: 0.765 ns/day, 31.385 hours/ns, 17.701 timesteps/s
-96.7% CPU use with 8 MPI tasks x no OpenMP threads
+Performance: 1.339 ns/day, 17.925 hours/ns, 30.994 timesteps/s
+163.6% CPU use with 8 MPI tasks x no OpenMP threads
 
 MPI task timing breakdown:
 Section |  min time  |  avg time  |  max time  |%varavg| %total
 ---------------------------------------------------------------
-Pair    | 47.533     | 52.937     | 54.317     |  28.8 | 93.70
-Neigh   | 0.9133     | 0.92132    | 0.92819    |   0.5 |  1.63
-Comm    | 1.1607     | 2.5475     | 7.9455     | 131.0 |  4.51
-Output  | 0.029628   | 0.029649   | 0.029759   |   0.0 |  0.05
-Modify  | 0.047173   | 0.048659   | 0.051697   |   0.7 |  0.09
-Other   |            | 0.01016    |            |       |  0.02
+Pair    | 30.148     | 30.552     | 30.796     |   3.6 | 94.69
+Neigh   | 0.89673    | 0.90676    | 0.91457    |   0.6 |  2.81
+Comm    | 0.4564     | 0.70866    | 1.1179     |  24.1 |  2.20
+Output  | 0.029983   | 0.03001    | 0.03012    |   0.0 |  0.09
+Modify  | 0.053134   | 0.055055   | 0.057796   |   0.6 |  0.17
+Other   |            | 0.01217    |            |       |  0.04
 ```
-### Eight processors with Eight GPUs with 12288 atoms
+### Sixteen processors with sixteen GPUs with 12288 atoms
 ```bash
+Loop time of 17.583 on 16 procs for 1000 steps with 12288 atoms
+
+Performance: 2.457 ns/day, 9.768 hours/ns, 56.873 timesteps/s
+164.8% CPU use with 16 MPI tasks x no OpenMP threads
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Pair    | 16.082     | 16.367     | 16.524     |   3.1 | 93.09
+Neigh   | 0.44881    | 0.45388    | 0.46047    |   0.5 |  2.58
+Comm    | 0.47882    | 0.64386    | 0.93547    |  16.0 |  3.66
+Output  | 0.02269    | 0.022706   | 0.022812   |   0.0 |  0.13
+Modify  | 0.077578   | 0.086789   | 0.096221   |   1.8 |  0.49
+Other   |            | 0.008571   |            |       |  0.05
+```
+### 24 processors with 24 GPUs with 12288 atoms
+```bash
+Loop time of 12.4446 on 24 procs for 1000 steps with 12288 atoms
+
+Performance: 3.471 ns/day, 6.914 hours/ns, 80.356 timesteps/s
+165.9% CPU use with 24 MPI tasks x no OpenMP threads
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Pair    | 11.055     | 11.404     | 11.609     |   3.6 | 91.64
+Neigh   | 0.29447    | 0.30082    | 0.31717    |   0.8 |  2.42
+Comm    | 0.42714    | 0.61319    | 0.96846    |  15.4 |  4.93
+Output  | 0.024538   | 0.024569   | 0.0247     |   0.0 |  0.20
+Modify  | 0.071891   | 0.095517   | 0.12622    |   5.8 |  0.77
+Other   |            | 0.00627    |            |       |  0.05
 ```
 # Troubleshooting
 In consequence of various differences of computers or systems, problems may occur. Some common circumstances are listed as follows. 
