@@ -529,7 +529,7 @@ Tensorflow uses all available GPU resources by default. So in the original code,
 ### Get the processor's node rank
 When working on platforms across nodes, we need to consider how to get the device rank mentioned in the previous section. If you're using Open MPI, it comes with a node-rank API, but if you use an Intel impi, you may need to use another method to specify node-rank. At present, we think it is a good way to be compatible with multi-platforms by dividing the MPI communicator based on the processor name. The code can be viewed [here](source/lmp/pair_nnp.cpp), focusing mainly on the get_node_rank function.
 ### Cmake conditional compilation
-We introduced THE USE-CUDA-TOOLKIT parameter as a control variable for whether to compile using the CUDA environment. If you want to build DeePMD-kit with CUDA-toolkit support, then execute cmake
+We introduced the USE-CUDA-TOOLKIT parameter as a control variable for whether to compile using the CUDA environment. If you want to build DeePMD-kit with CUDA-toolkit support, then execute cmake
 ```bash
 cmake -DTF_GOOGLE_BIN=true -DUSE_CUDA_TOOLKIT=true -DTENSORFLOW_ROOT=$tensorflow_root \
 -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
