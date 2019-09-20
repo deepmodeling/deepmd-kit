@@ -514,29 +514,29 @@ The option **`T`** specifies the temperature of the simulation, and the option *
 The **`atom_type`** set the type for the atoms in the system. The names of the atoms are those provided in the `conf_file` file. The **`atom_mass`** set the mass for the atoms. Again, the name of the atoms are those provided in the `conf_file`.
 
 # Multi-GPU support
-Recently, we updated code for multi-GPU support. The main changes are focused on the interface part of lammps and tensorflow,
-while the lammps package was also minorly modified. Here, we'll give you a brief overview of this upgrade and provide a simple test. First, you need to install the GPU support environment for deepmd-kit.
-## Install GPU support environments for deepmd-kit
-First, you need a CUDA environment, and CUDA-10.0 is required. If you have a higher version of CUDA, such as CUDA-10.1, you can use it when compiling or running the deepmd-kit's c-plus-plus interface. However, when you use the deepmd-kit's python interface, the CUDA-10.0 environment is required. Lower versions of CUDAs are not recommended for use.
+Recently, we updated code for multi-GPU support. The main changes are focused on the interface part of LAMMPS and TensorFlow,
+while the LAMMPS package was also minorly modified. Here, we'll give you a brief overview of this upgrade and provide a simple test. First, you need to install the GPU support environment for DeePMD-kit.
+## Install GPU support environments for DeePMD-kit
+First, you need a CUDA environment, and CUDA-10.0 is required. If you have a higher version of CUDA, such as CUDA-10.1, you can use it when compiling or running the DeePMD-kit's c-plus-plus interface. However, when you use the DeePMD-kit's python interface, the CUDA-10.0 environment is required. Lower versions of CUDAs are not recommended for use.
 
-For a successful installation, we strongly recommend that you use bazel-0.24.1, tensorflow-1.14.0-gpu, as well as higher versions of cmake and git. Sometimes you may also report an error due to a low python version or a GCC version issue. When you have a compilation problem, it may be helpful to try to upgrade the software version.
+For a successful installation, we strongly recommend that you use Bazel-0.24.1, TensorFlow-1.14.0-GPU, as well as higher versions of CMake and git. Sometimes you may also report an error due to a low python version or a GCC version issue. When you have a compilation problem, it may be helpful to try to upgrade the software version.
 
 Detailed installation process can be referred to [tf-1.14-gpu](doc/install-tf.1.14-gpu.md).
 ## Code upgrade
 We'll briefly describe this upgrade in three parts.
-### Allocate GPU resources to tensorflow
-Tensorflow uses all available GPU resources by default. So in the original code, when we run parallel programs, multiple processors apply for memory resources will conflict and report errors. So we use the tensorflow graph API to assign a specific GPU to each tensorflow graph based on the device ranks, while limiting the default memory usage of tensorflow in multiple GPU cases. The code can be viewed [here](source/lib/src/NNPInter.cc), focusing mainly on the init function.
+### Allocate GPU resources to TensorFlow
+Tensorflow uses all available GPU resources by default. So in the original code, when we run parallel programs, multiple processors apply for memory resources will conflict and report errors. So we use the TensorFlow graph API to assign a specific GPU to each TensorFlow graph based on the device ranks while limiting the default memory usage of TensorFlow in multiple GPU cases. The code can be viewed [here](source/lib/src/NNPInter.cc), focusing mainly on the init function.
 ### Get the processor's node rank
-When working on platforms across nodes, we need to consider how to get the device rank mentioned in the previous section. If you're using openmpi, it comes with a node-rank API, but if you use an Intel impi, you may need to use another method to specify node-rank. At present, we think it is a good way to be compatible with multi-platforms by dividing the MPI communicator based on the processor name. The code can be viewed [here](source/lmp/pair_nnp.cpp), focusing mainly on the get_node_rank function.
+When working on platforms across nodes, we need to consider how to get the device rank mentioned in the previous section. If you're using Open MPI, it comes with a node-rank API, but if you use an Intel impi, you may need to use another method to specify node-rank. At present, we think it is a good way to be compatible with multi-platforms by dividing the MPI communicator based on the processor name. The code can be viewed [here](source/lmp/pair_nnp.cpp), focusing mainly on the get_node_rank function.
 ### Cmake conditional compilation
-We introduced THE USE-CUDA-TOOLKIT parameter as a control variable for whether to compile using the cuda environment. If you want to build deepmd-kit with cuda-toolkit support, then execute cmake
+We introduced THE USE-CUDA-TOOLKIT parameter as a control variable for whether to compile using the CUDA environment. If you want to build DeePMD-kit with CUDA-toolkit support, then execute cmake
 ```bash
 cmake -DTF_GOOGLE_BIN=true -DUSE_CUDA_TOOLKIT=true -DTENSORFLOW_ROOT=$tensorflow_root \
 -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
 ```
 ## Simple test for multi-GPU support
-We tested the water sample provided by deepmd-kit on up to 24 NVIDIA GV100 devices, as follows:
-### Signal processor with Signal GPU with 12288 atoms
+We tested the water sample provided by DeePMD-kit on up to 24 NVIDIA GV100 devices, as follows:
+### Signal processor with signal GPU with 12288 atoms
 ```bash
 Loop time of 230.028 on 1 procs for 1000 steps with 12288 atoms
 
