@@ -34,7 +34,7 @@ static int stringCmp(const void *a, const void* b)
     return sum;
 }
 
-int PairNNP::get_device() {
+int PairNNP::get_node_rank() {
     char host_name[MPI_MAX_PROCESSOR_NAME];
     char (*host_names)[MPI_MAX_PROCESSOR_NAME];
     int n, namelen, color, rank, nprocs, myrank;
@@ -71,7 +71,7 @@ int PairNNP::get_device() {
 
     MPI_Barrier(MPI_COMM_WORLD);
     int looprank=myrank;
-    printf (" Assigning device %d  to process on node %s rank %d, OK\n",looprank,  host_name, rank );
+    // printf (" Assigning device %d  to process on node %s rank %d, OK\n",looprank,  host_name, rank );
     free(host_names);
     return looprank;
 }
@@ -523,13 +523,13 @@ void PairNNP::settings(int narg, char **arg)
   }
   numb_models = models.size();
   if (numb_models == 1) {
-    nnp_inter.init (arg[0], get_device());
+    nnp_inter.init (arg[0], get_node_rank());
     cutoff = nnp_inter.cutoff ();
     numb_types = nnp_inter.numb_types();
     dim_fparam = nnp_inter.dim_fparam();
   }
   else {
-    nnp_inter.init (arg[0], get_device());
+    nnp_inter.init (arg[0], get_node_rank());
     nnp_inter_model_devi.init(models, get_node_rank());
     cutoff = nnp_inter_model_devi.cutoff();
     numb_types = nnp_inter_model_devi.numb_types();

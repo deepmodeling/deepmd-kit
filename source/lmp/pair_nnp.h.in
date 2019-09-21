@@ -63,7 +63,7 @@ class PairNNP : public Pair {
   int pack_reverse_comm(int, int, double *);
   void unpack_reverse_comm(int, int *, double *);
   void print_summary(const string pre) const;
-  int get_device();
+  int get_node_rank();
  protected:  
   virtual void allocate();
   double **scale;

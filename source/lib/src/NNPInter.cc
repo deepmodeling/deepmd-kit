@@ -2,6 +2,12 @@
 #include "NNPAtomMap.h"
 #include "SimulationRegion.h"
 #include <stdexcept>	
+#ifdef  USE_CUDA_TOOLKIT
+#include "cuda_runtime.h"
+#include <tensorflow/core/public/session.h>
+#include <tensorflow/core/graph/default_device.h>
+#include <tensorflow/core/graph/graph_def_builder.h>
+#endif
 
 static
 void
@@ -539,6 +545,7 @@ init (const string & model, const int & gpu_rank)
   assert(ntypes == get_ntypes());
   if (dfparam < 0) dfparam = 0;
   // rcut = get_rcut();
+  // cell_size = rcut;
   // ntypes = get_ntypes();
   // dfparam = get_dfparam();
   inited = true;
