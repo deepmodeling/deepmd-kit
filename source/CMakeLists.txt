@@ -53,6 +53,11 @@ else ()
   message (STATUS "Not assuming google tensorflow binary, use abi = 1")
 endif ()
 
+# define USE_CUDA_TOOLKIT
+if (USE_CUDA_TOOLKIT)
+  add_definitions("-DUSE_CUDA_TOOLKIT")
+endif()
+
 # define build type
 if ((NOT DEFINED CMAKE_BUILD_TYPE) OR CMAKE_BUILD_TYPE STREQUAL "")
    set (CMAKE_BUILD_TYPE release)
