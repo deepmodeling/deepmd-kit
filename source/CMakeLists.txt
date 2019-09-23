@@ -37,6 +37,11 @@ if(GIT_FOUND)
     )
 endif(GIT_FOUND)
 
+# define USE_CUDA_TOOLKIT
+if (USE_CUDA_TOOLKIT)
+  add_definitions("-DUSE_CUDA_TOOLKIT")
+endif()
+
 # global defines
 list (APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/)
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wno-ignored-attributes")
