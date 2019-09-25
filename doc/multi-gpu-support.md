@@ -6,13 +6,13 @@ First, you need a CUDA environment, and CUDA-10.0 is required. If you have a hig
 
 For a successful installation, we strongly recommend that you use Bazel-0.24.1, TensorFlow-1.14.0-GPU, as well as higher versions of CMake and git. Sometimes you may also report an error due to a low python version or a GCC version issue. When you have a compilation problem, it may be helpful to try to upgrade the software version.
 
-Detailed installation process can be referred to [tf-1.14-gpu](doc/install-tf.1.14-gpu.md).
+Detailed installation process can be referred to [tf-1.14-gpu](install-tf.1.14-gpu.md).
 ## Code upgrade
 We'll briefly describe this upgrade in three parts.
 ### Allocate GPU resources to TensorFlow
-Tensorflow uses all available GPU resources by default. So in the original code, when we run parallel programs, multiple processors apply for memory resources will conflict and report errors. So we use the TensorFlow graph API to assign a specific GPU to each TensorFlow graph based on the device ranks while limiting the default memory usage of TensorFlow in multiple GPU cases. The code can be viewed [here](source/lib/src/NNPInter.cc), focusing mainly on the init function.
+Tensorflow uses all available GPU resources by default. So in the original code, when we run parallel programs, multiple processors apply for memory resources will conflict and report errors. So we use the TensorFlow graph API to assign a specific GPU to each TensorFlow graph based on the device ranks while limiting the default memory usage of TensorFlow in multiple GPU cases. The code can be viewed [here](../source/lib/src/NNPInter.cc), focusing mainly on the init function.
 ### Get the processor's node rank
-When working on platforms across nodes, we need to consider how to get the device rank mentioned in the previous section. If you're using Open MPI, it comes with a node-rank API, but if you use an Intel impi, you may need to use another method to specify node-rank. At present, we think it is a good way to be compatible with multi-platforms by dividing the MPI communicator based on the processor name. The code can be viewed [here](source/lmp/pair_nnp.cpp), focusing mainly on the get_node_rank function.
+When working on platforms across nodes, we need to consider how to get the device rank mentioned in the previous section. If you're using Open MPI, it comes with a node-rank API, but if you use an Intel impi, you may need to use another method to specify node-rank. At present, we think it is a good way to be compatible with multi-platforms by dividing the MPI communicator based on the processor name. The code can be viewed [here](../source/lmp/pair_nnp.cpp), focusing mainly on the get_node_rank function.
 ### Cmake conditional compilation
 We introduced the USE-CUDA-TOOLKIT parameter as a control variable for whether to compile using the CUDA environment. If you want to build DeePMD-kit with CUDA-toolkit support, then execute cmake
 ```bash
