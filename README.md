@@ -189,7 +189,7 @@ After sucessfully installing TensorFlow with GPU support, you should install Dee
  $ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/path/to/cuda_toolkit/lib64
  $ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/path/to/cudnn/lib64
 ```
-
+Recently, we updated the code for multi-GPU support. For more details, please check [multi-gpu-support](doc/multi-gpu-support.md).
 # Use DeePMD-kit
 In this text, we will call the deep neural network that is used to represent the interatomic interactions (Deep Potential) the **model**. The typical procedure of using DeePMD-kit is 
 
