@@ -25,7 +25,6 @@
 	    - [Include deepmd in the pair style](#include-deepmd-in-the-pair-style)
 	    - [Long-range interaction](#long-range-interaction)
 	- [Run path-integral MD with i-PI](#run-path-integral-md-with-i-pi)
-	- [Run MD with native code](#run-md-with-native-code)
 - [Troubleshooting](#troubleshooting)
 
 # About DeePMD-kit
@@ -197,7 +196,7 @@ In this text, we will call the deep neural network that is used to represent the
 1. Prepare data
 2. Train a model
 3. Freeze the model
-4. MD runs with the model (Native MD code or LAMMPS)
+4. MD runs with the model (LAMMPS)
 
 ## Prepare data
 One needs to provide the following information to train a model: the atom type, the simulation box, the atom coordinate, the atom force, system energy and virial. A snapshot of a system that contains these information is called a **frame**. We use the following convention of units:
@@ -458,60 +457,6 @@ The option **`graph_file`** provides the file name of the frozen model.
 
 The `dp_ipi` gets the atom names from an [XYZ file](https://en.wikipedia.org/wiki/XYZ_file_format) provided by **`coord_file`** (meanwhile ignores all coordinates in it), and translates the names to atom types by rules provided by **`atom_type`**.
 
-
-## Run MD with native code
-DeePMD-kit provides a simple MD implementation that runs under either NVE or NVT ensemble. One needs to provide the following input files
-```bash
-$ ls
-conf.gro  graph.pb  water.json
-```
-`conf.gro` is the file that provides the initial coordinates and/or velocities of all atoms in the system. It is of Gromacs `gro` format. Details of this format can be find in [this website](http://manual.gromacs.org/current/online/gro.html). It should be notice that the length unit of the `gro` format is **nm** rather than A.
-
-`graph.pb` is the frozen model.
-
-`water.json` is the parameter file that specifies how the MD runs. [An example parameter file](./examples/md/water.json) for water NVT simulation is provided. 
-```json
-{
-    "conf_file":	"conf.gro",
-    "conf_format":	"gro",
-    "graph_file":	"graph.pb",
-    "nsteps":		500000,
-    "dt": 		5e-4,
-    "ener_freq":	20,
-    "ener_file":	"energy.out",
-    "xtc_freq":		20,
-    "xtc_file":		"traj.xtc",
-    "trr_freq":		20,
-    "trr_file":		"traj.trr",
-    "print_force":	false,
-    "T":		300,
-    "tau_T":		0.1,
-    "rand_seed":	2017,
-    "atom_type" : {
-	"OW":		0, 
-	"HW1":		1,
-	"HW2":		1
-    },
-    "atom_mass" : {
-	"OW":		16, 
-	"HW1":		1,
-	"HW2":		1
-    }
-}
-```
-The options **`conf_file`**, **`conf_format`** and **`graph_file`** are self-explanatory. It should be noticed, again, the length unit is nm in the `gro` format file.
-
-The option **`nsteps`** specifies the number of time steps of the MD simulation. The option **`dt`** specifies the timestep of the simulation. 
-
-The options **`ener_file`** and **`ener_freq`** specify the energy output file and frequency. 
-
-The options **`xtc_file`**, **`xtc_freq`**, **`trr_file`** and **`trr_freq`** are similar options that specify the output files and frequencies of the xtc and trr trajectory, respectively. When the frequencies are set to 0, the corresponding file will not be output. The instructions of the xtc and trr formats can be found in [xtc manual](http://manual.gromacs.org/online/xtc.html) and [trr manual](http://manual.gromacs.org/online/trr.html). It is noticed that the length unit in the xtc and trr files is **nm**.
-
-If the option **`print_force`** is set to `true`, then the atomic force will be output.
-
-The option **`T`** specifies the temperature of the simulation, and the option **`tau_T`** specifies the timescale of the thermostat. We implement the Langevin thermostat for the NVT simulation. **`rand_seed`** set the random seed of the random generator in the thermostat.
-
-The **`atom_type`** set the type for the atoms in the system. The names of the atoms are those provided in the `conf_file` file. The **`atom_mass`** set the mass for the atoms. Again, the name of the atoms are those provided in the `conf_file`.
 
 # Troubleshooting
 In consequence of various differences of computers or systems, problems may occur. Some common circumstances are listed as follows. 
