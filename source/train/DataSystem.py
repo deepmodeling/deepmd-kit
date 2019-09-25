@@ -38,6 +38,8 @@ class DeepmdDataSystem() :
                 rule = 32
                 if len(words) == 2 :
                     rule = int(words[1])
+            else:
+                raise RuntimeError('unknown batch_size rule ' + words[0])
             self.batch_size = self._make_auto_bs(rule)
         elif isinstance(self.batch_size, list):
             pass
@@ -227,7 +229,7 @@ class DeepmdDataSystem() :
         
     def _make_auto_bs(self, rule) :
         bs = []
-        for ii in self.system_dirs:
+        for ii in self.data_systems:
             ni = ii.get_natoms()
             bsi = rule // ni
             if bsi * ni < rule:
