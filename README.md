@@ -306,7 +306,7 @@ The option **`fitting_neuron`** (deprecated name **`n_neuron`**) is an integer v
 
 The option **`systems`** provide location of the systems (path to `set.*` and `type.raw`). It is a vector, thus DeePMD-kit allows you to provide multiple systems. DeePMD-kit will train the model with the systems in the vector one by one in a cyclic manner.
 
-The option **`batch_size`** specifies the number of frames in each batch. 
+The option **`batch_size`** specifies the number of frames in each batch. It can be set to "auto" for an automatic determination of the `batch_size`, which should work for most of the trainings.
 The option **`stop_batch`** specifies the total number of batches will be used in the training.
 The option **`start_lr`**, **`decay_rate`** and **`decay_steps`** specify how the learning rate changes. For example, the `t`th batch will be trained with learning rate:
 ```math
