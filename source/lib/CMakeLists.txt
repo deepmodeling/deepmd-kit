@@ -18,7 +18,7 @@ file(GLOB INC_SRC include/*.h ${CMAKE_CURRENT_BINARY_DIR}/version.h)
 add_library(${libname} SHARED ${LIB_SRC})
 
 if (USE_CUDA_TOOLKIT)
-  target_link_libraries (${libname} libcudart.so)
+  target_link_libraries (${libname} ${CUDA_LIBRARIES})
 endif()
 
 install(TARGETS ${libname} DESTINATION lib/)
