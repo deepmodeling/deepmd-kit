@@ -17,11 +17,7 @@ class DataSystem (object) :
                   run_opt = None) : 
         self.system_dirs = systems
         self.nsystems = len(self.system_dirs)
-        self.batch_size = batch_size
-        if isinstance(self.batch_size, int) :
-            self.batch_size = self.batch_size * np.ones(self.nsystems, dtype=int)
-        assert(isinstance(self.batch_size, (list,np.ndarray)))
-        assert(len(self.batch_size) == self.nsystems)
+
         self.data_systems = []
         self.ntypes = []
         self.natoms = []
@@ -31,6 +27,26 @@ class DataSystem (object) :
             self.data_systems.append(DataSets(ii, set_prefix))
             sys_all_types = np.loadtxt(os.path.join(ii, "type.raw")).astype(int)
             self.ntypes.append(np.max(sys_all_types) + 1)
+        # batch size
+        self.batch_size = batch_size
+        if isinstance(self.batch_size, int) :
+            self.batch_size = self.batch_size * np.ones(self.nsystems, dtype=int)
+        elif isinstance(self.batch_size, str):
+            words = self.batch_size.split(':')
+            if 'auto' == words[0] :
+                rule = 32
+                if len(words) == 2 :
+                    rule = int(words[1])
+            else:
+                raise RuntimeError('unknown batch_size rule ' + words[0])
+            self.batch_size = self._make_auto_bs(rule)
+        elif isinstance(self.batch_size, list):
+            pass
+        else :
+            raise RuntimeError('invalid batch_size')            
+        assert(isinstance(self.batch_size, (list,np.ndarray)))
+        assert(len(self.batch_size) == self.nsystems)
+        # ntypes, natoms, nbatches
         self.sys_ntypes = max(self.ntypes)
         for ii in range(self.nsystems) :
             self.natoms.append(self.data_systems[ii].get_natoms())
@@ -192,6 +208,17 @@ class DataSystem (object) :
 
     def get_batch_size(self) :
         return self.batch_size
+
+    def _make_auto_bs(self, rule) :
+        bs = []
+        for ii in self.data_systems:
+            ni = ii.get_natoms()
+            bsi = rule // ni
+            if bsi * ni < rule:
+                bsi += 1
+            bs.append(bsi)
+        return bs
+
 
 def _main () :
     sys =  ['/home/wanghan/study/deep.md/results.01/data/mos2/only_raws/20', 
