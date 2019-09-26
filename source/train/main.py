@@ -5,7 +5,7 @@ from .freeze import freeze
 from .config import config
 from .test import test
 
-def _main () :    
+def main () :    
     parser = argparse.ArgumentParser(
 	description="deepmd-kit")
     subparsers = parser.add_subparsers(title='Valid subcommands', dest='command')    
@@ -69,5 +69,3 @@ def _main () :
         test(args)
     else :
         raise RuntimeError('unknown command ' + args.command)
-
-_main()

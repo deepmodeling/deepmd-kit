@@ -17,7 +17,7 @@ from deepmd.DescrptSeA import DescrptSeA
 from deepmd.DescrptSeR import DescrptSeR
 from deepmd.DescrptSeAR import DescrptSeAR
 from deepmd.Model import Model, WFCModel, PolarModel
-from deepmd.Loss import EnerStdLoss, WFCLoss, PolarLoss
+from deepmd.Loss import EnerStdLoss, WFCLoss, TensorLoss
 from deepmd.LearningRate import LearningRateExp
 
 from tensorflow.python.framework import ops
@@ -98,18 +98,15 @@ class NNPTrainer (object):
             raise RuntimeError('unknow fitting type ' + fitting_type)
 
         # init model
-        try: 
-            model_type = model_param['type']
-        except:
-            model_type = Model.model_type
-        if model_type == Model.model_type:
+        # infer model type by fitting_type
+        if fitting_type == Model.model_type:
             self.model = Model(model_param, self.descrpt, self.fitting)
-        elif model_type == WFCModel.model_type:
+        elif fitting_type == WFCModel.model_type:
             self.model = WFCModel(model_param, self.descrpt, self.fitting)
-        elif model_type == PolarModel.model_type:
+        elif fitting_type == PolarModel.model_type:
             self.model = PolarModel(model_param, self.descrpt, self.fitting)
         else :
-            raise RuntimeError('unknow model type ' + fitting_type)
+            raise RuntimeError('get unknown fitting type when building model')
 
         # learning rate
         lr_param = j_must_have(jdata, 'learning_rate')
@@ -120,22 +117,26 @@ class NNPTrainer (object):
         if lr_type == 'exp':
             self.lr = LearningRateExp(lr_param)
         else :
-            raise RuntimeError('unknow learning_rate type ' + lr_type)        
+            raise RuntimeError('unknown learning_rate type ' + lr_type)        
 
         # loss
-        loss_param = j_must_have(jdata, 'loss')
-        try: 
-            loss_type = loss_param['type']
+        # infer loss type by fitting_type
+        try :
+            loss_param = jdata['loss']
         except:
-            loss_type = 'ener'
-        if loss_type == 'ener':
+            loss_param = None
+        if fitting_type == 'ener':
             self.loss = EnerStdLoss(loss_param, starter_learning_rate = self.lr.start_lr())
-        elif loss_type == 'wfc':
+        elif fitting_type == 'wfc':
             self.loss = WFCLoss(loss_param, model = self.model)
-        elif loss_type == 'polar':
-            self.loss = PolarLoss(loss_param, model = self.model)
+        elif fitting_type == 'polar':
+            self.loss = TensorLoss(loss_param, 
+                                   model = self.model, 
+                                   tensor_name = 'polar',
+                                   tensor_size = 9,
+                                   label_name = 'polarizability')
         else :
-            raise RuntimeError('unknow loss type ' + loss_type)
+            raise RuntimeError('get unknown fitting type when building loss function')
 
         # training
         training_param = j_must_have(jdata, 'training')

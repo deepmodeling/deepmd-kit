@@ -63,4 +63,7 @@ setup(
     extras_require={
         'test': 'dpdata>=0.1.6',
     },
+    entry_points={
+          'console_scripts': ['dp = deepmd.main:main']
+   }
 )

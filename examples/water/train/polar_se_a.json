@@ -2,7 +2,6 @@
     "with_distrib":	false,
     "_comment": " model parameters",
     "model":{
-	"type":			"polar",
 	"type_map":		["O", "H"],
 	"descriptor" :{
 	    "type":		"se_a",
@@ -31,11 +30,6 @@
 	"start_lr":	0.001,
 	"decay_steps":	5000,
 	"decay_rate":	0.95,
-	"_comment":	"that's all"
-    },
-
-    "loss" : {
-	"type":		"polar",
 	"_comment":	"that's all"
     },
 
