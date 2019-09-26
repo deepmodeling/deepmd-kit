@@ -169,7 +169,12 @@ I assume you want to install DeePMD-kit into path `$deepmd_root`, then execute c
 ```bash
 cmake -DTENSORFLOW_ROOT=$tensorflow_root -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
 ```
-If the cmake has executed successfully, then 
+If you want to build deepmd-kit with cuda-toolkit support, then execute cmake
+```bash
+cmake -DTF_GOOGLE_BIN=true -DUSE_CUDA_TOOLKIT=true -DTENSORFLOW_ROOT=$tensorflow_root \
+-DCMAKE_INSTALL_PREFIX=$deepmd_root ..
+```
+If you built the tensorflow's Python interface by gcc>=5.0, then remove the option `-DTF_GOOGLE_BIN=true`. If the cmake has executed successfully, then 
 ```bash
 make
 make install

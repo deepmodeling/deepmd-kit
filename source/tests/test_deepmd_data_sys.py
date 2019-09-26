@@ -59,6 +59,23 @@ class TestDataSystem (unittest.TestCase) :
         self.assertEqual(ds.get_nsystems(), self.nsys)
         self.assertEqual(list(ds.get_batch_size()), [batch_size]*4)
         
+    def test_batch_size_5(self):
+        batch_size = 'auto:5'
+        test_size = 2
+        ds = DeepmdDataSystem(self.sys_name, batch_size, test_size, 2.0)
+        self.assertEqual(ds.batch_size, [2, 2, 1, 1])
+        
+    def test_batch_size_null(self):
+        batch_size = 'auto:3'
+        test_size = 2
+        ds = DeepmdDataSystem(self.sys_name, batch_size, test_size, 2.0)
+        self.assertEqual(ds.batch_size, [1, 1, 1, 1])
+
+    def test_batch_size_raise(self):
+        batch_size = 'foo'
+        test_size = 2
+        with self.assertRaises(RuntimeError):
+            ds = DeepmdDataSystem(self.sys_name, batch_size, test_size, 2.0)
 
     def test_get_test(self):
         batch_size = 3

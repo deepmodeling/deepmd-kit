@@ -53,8 +53,8 @@ class NNPInter
 {
 public:
   NNPInter () ;
-  NNPInter  (const string & model);
-  void init (const string & model);
+  NNPInter  (const string & model, const int & gpu_rank = 0);
+  void init (const string & model, const int & gpu_rank = 0);
   void print_summary(const string &pre) const;
 public:
   void compute (ENERGYTYPE &			ener,
@@ -115,8 +115,8 @@ class NNPInterModelDevi
 {
 public:
   NNPInterModelDevi () ;
-  NNPInterModelDevi  (const vector<string> & models);
-  void init (const vector<string> & models);
+  NNPInterModelDevi  (const vector<string> & models, const int & gpu_rank = 0);
+  void init (const vector<string> & models, const int & gpu_rank = 0);
 public:
   void compute (ENERGYTYPE &			ener,
   		vector<VALUETYPE> &		force,

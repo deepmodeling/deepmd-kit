@@ -38,7 +38,7 @@ except OSError:
 setup(
     name="deepmd-kit",
     setup_requires=setup_requires,
-    use_scm_version={'write_to': 'source/train/_version.py'},
+    use_scm_version={'write_to': 'deepmd/_version.py'},
     author="Han Wang",
     author_email="wang_han@iapcm.ac.cn",
     description="A deep learning package for many-body potential energy representation and molecular dynamics",
