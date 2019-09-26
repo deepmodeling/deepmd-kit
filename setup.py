@@ -46,6 +46,7 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/deepmodeling/deepmd-kit",
     packages=['deepmd'],
+    python_requires="~=3.6",
     classifiers=[
         "Programming Language :: Python :: 3.6",
         "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
@@ -65,5 +66,5 @@ setup(
     },
     entry_points={
           'console_scripts': ['dp = deepmd.main:main']
-   }
+    }
 )
