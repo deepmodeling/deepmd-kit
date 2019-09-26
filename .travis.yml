@@ -15,12 +15,14 @@ env:
 matrix:
   include:
     - python: 3.6
-      matrix:
+      env:
+        matrix:
         - TENSORFLOW_VERSION=1.8
         - TENSORFLOW_VERSION=1.12
         - TENSORFLOW_VERSION=1.14
     - python: 3.7
-      matrix:
+      env:
+        matrix:
         - TENSORFLOW_VERSION=1.14
 before_install:
   - pip install --upgrade pip
