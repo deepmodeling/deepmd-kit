@@ -24,6 +24,7 @@ if sys.version_info >= (3,7):
     tf_google_bin = 'TRUE'
 else :
     tf_google_bin = 'FALSE'
+tf_google_bin = 'TRUE'
 
 # install_requires = ['xml']
 install_requires=['numpy', 'scipy']
