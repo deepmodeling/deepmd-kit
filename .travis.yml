@@ -1,7 +1,6 @@
 language: python
 python: 
   - "3.6"
-  - "3.7"
 addons:
   apt:
     sources:
@@ -13,10 +12,16 @@ env:
   global:
   - CC=gcc-4.8
   - CXX=g++-4.8
-  matrix:
-  - TENSORFLOW_VERSION=1.8
-  - TENSORFLOW_VERSION=1.12
-  - TENSORFLOW_VERSION=1.14
+matrix:
+  include:
+    - python: 3.6
+      matrix:
+        - TENSORFLOW_VERSION=1.8
+        - TENSORFLOW_VERSION=1.12
+        - TENSORFLOW_VERSION=1.14
+    - python: 3.7
+      matrix:
+        - TENSORFLOW_VERSION=1.14
 before_install:
   - pip install --upgrade pip
   - pip install tensorflow==$TENSORFLOW_VERSION
