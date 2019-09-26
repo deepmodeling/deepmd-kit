@@ -219,13 +219,19 @@ class WFCLoss () :
         return print_str
 
 
-
-class PolarLoss () :
+class TensorLoss () :
     def __init__ (self, jdata, **kwarg) :
-        model = kwarg['model']
+        try:
+            model = kwarg['model']
+            type_sel = model.get_sel_type()
+        except :
+            type_sel = None
+        self.tensor_name = kwarg['tensor_name']
+        self.tensor_size = kwarg['tensor_size']
+        self.label_name = kwarg['label_name']
         # data required
-        add_data_requirement('polarizability', 
-                             9, 
+        add_data_requirement(self.label_name, 
+                             self.tensor_size, 
                              atomic=True,  
                              must=True, 
                              high_prec=False, 
@@ -237,8 +243,8 @@ class PolarLoss () :
                model_dict,
                label_dict,
                suffix):        
-        polar_hat = label_dict['polarizability']
-        polar = model_dict['polar']
+        polar_hat = label_dict[self.label_name]
+        polar = model_dict[self.tensor_name]
         l2_loss = tf.reduce_mean( tf.square(polar - polar_hat), name='l2_'+suffix)
         self.l2_l = l2_loss
         more_loss = {}
@@ -267,3 +273,5 @@ class PolarLoss () :
         print_str += prop_fmt % (np.sqrt(error_test), np.sqrt(error_train))
 
         return print_str
+
+
