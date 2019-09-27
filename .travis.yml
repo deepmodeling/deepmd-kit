@@ -76,6 +76,6 @@ before_install:
   - pip install --upgrade setuptools
   - pip install tensorflow==$TENSORFLOW_VERSION
 install:
-  - pip install .[test]
+  - pip install --verbose .[test]
 script:
   - cd source/tests && python -m unittest
