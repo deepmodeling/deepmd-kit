@@ -51,11 +51,17 @@ find_package(tensorflow REQUIRED)
 # auto op_cxx_abi
 if (NOT DEFINED OP_CXX_ABI)
   if (BUILD_PY_IF) 
+    message("-------------------------" ${PYTHON_EXECUTABLE})
     execute_process(
       COMMAND ${PYTHON_EXECUTABLE} "-c" "import tensorflow; print(tensorflow.CXX11_ABI_FLAG, end = '')"
       WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
       OUTPUT_VARIABLE PY_CXX_ABI
+      RESULT_VARIABLE PY_CXX_ABI_RESULT_VAR
+      ERROR_VARIABLE PY_CXX_ABI_ERROR_VAR
       )
+    if (NOT ${PY_CXX_ABI_RESULT_VAR} EQUAL 0)
+      message(FATAL_ERROR "Cannot determine cxx abi, error message: ${PY_CXX_ABI_ERROR_VAR}")
+    endif()
     set(OP_CXX_ABI ${PY_CXX_ABI})
   endif()
   if (BUILD_CPP_IF)
