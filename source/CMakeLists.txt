@@ -52,11 +52,12 @@ find_package(tensorflow REQUIRED)
 if (NOT DEFINED OP_CXX_ABI)
   if (BUILD_PY_IF) 
     if (DEFINED TENSORFLOW_ROOT)
-      message("=----------------" "$ENV{PYTHONPATH}")
-      set(ENV{PYTHONPATH} "${TENSORFLOW_ROOT}/../:$ENV{PYTHONPATH}")
+      set(FIND_ABI_CMD "import sys,os; sys.path.insert(0, os.path.join('${TENSORFLOW_ROOT}', '..')); import tensorflow; print(tensorflow.CXX11_ABI_FLAG, end = '')" )
+    else()
+      set(FIND_ABI_CMD "import tensorflow; print(tensorflow.CXX11_ABI_FLAG, end = '')" )
     endif()
     execute_process(
-      COMMAND ${PYTHON_EXECUTABLE} "-c" "import tensorflow; print(tensorflow.CXX11_ABI_FLAG, end = '')"
+      COMMAND ${PYTHON_EXECUTABLE} "-c" "${FIND_ABI_CMD}"
       WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
       OUTPUT_VARIABLE PY_CXX_ABI
       RESULT_VARIABLE PY_CXX_ABI_RESULT_VAR
@@ -69,14 +70,20 @@ if (NOT DEFINED OP_CXX_ABI)
   endif()
   if (BUILD_CPP_IF)
     try_run(
-      RUN_RES COMPILE_VAR
+      CPP_CXX_ABI_RUN_RESULT_VAR CPP_CXX_ABI_COMPILE_RESULT_VAR
       ${CMAKE_CURRENT_BINARY_DIR}/tf_cxx_abi
       "${CMAKE_CURRENT_SOURCE_DIR}/cmake/tf_cxx_abi.cpp"
       LINK_LIBRARIES ${TensorFlowFramework_LIBRARY}
       CMAKE_FLAGS "-DINCLUDE_DIRECTORIES:STRING=${TensorFlow_INCLUDE_DIRS}"
       RUN_OUTPUT_VARIABLE CPP_CXX_ABI
-      COMPILE_OUTPUT_VARIABLE OUTPUT
+      COMPILE_OUTPUT_VARIABLE CPP_CXX_ABI_COMPILE_OUTPUT_VAR
       )
+    if (NOT ${CPP_CXX_ABI_COMPILE_RESULT_VAR})
+      message(FATAL_ERROR "Failed to compile: \n ${CPP_CXX_ABI_COMPILE_OUTPUT_VAR}" )
+    endif()
+    if (NOT ${CPP_CXX_ABI_RUN_RESULT_VAR} EQUAL "0")
+      message(FATAL_ERROR "Failed to run, return code: ${CPP_CXX_ABI}" )
+    endif()
     if (DEFINED PY_CXX_ABI)
       if (NOT (${CPP_CXX_ABI} EQUAL ${PY_CXX_ABI}))
 	message (WARNNING "NOT consistent CXX_ABIs: python interface of tf uses ${PY_CXX_ABI}, while c++ interface of tf uses ${CPP_CXX_ABI}, we follow c++ interface ")
