@@ -3,8 +3,7 @@ from skbuild.exceptions import SKBuildError
 from skbuild.cmaker import get_cmake_version
 from packaging.version import LegacyVersion
 from os import path, makedirs
-import imp
-import sys
+import imp,sys
 
 readme_file = path.join(path.dirname(path.abspath(__file__)), 'README.md')
 try:
@@ -19,8 +18,6 @@ try:
 except ImportError:
     site_packages_path = path.join(path.dirname(path.__file__), 'site-packages')
     tf_install_dir = imp.find_module('tensorflow', [site_packages_path])[1]
-
-tf_google_bin = 'FALSE'
 
 install_requires=['numpy', 'scipy']
 setup_requires=['setuptools_scm']
@@ -56,7 +53,6 @@ setup(
     keywords='deepmd',
     install_requires=install_requires,        
     cmake_args=['-DTENSORFLOW_ROOT:STRING=%s' % tf_install_dir, 
-                '-DTF_GOOGLE_BIN:BOOL=%s' % tf_google_bin, 
                 '-DBUILD_PY_IF:BOOL=TRUE', 
                 '-DBUILD_CPP_IF:BOOL=FALSE',
                 '-DFLOAT_PREC:STRING=high',
