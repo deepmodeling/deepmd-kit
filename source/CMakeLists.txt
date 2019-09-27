@@ -51,7 +51,9 @@ find_package(tensorflow REQUIRED)
 # auto op_cxx_abi
 if (NOT DEFINED OP_CXX_ABI)
   if (BUILD_PY_IF) 
-    message("-------------------------" ${PYTHON_EXECUTABLE})
+    if (DEFINED TENSORFLOW_ROOT)
+      set(ENV{PYTHONPATH} "${TENSORFLOW_ROOT}/../")
+    endif()
     execute_process(
       COMMAND ${PYTHON_EXECUTABLE} "-c" "import tensorflow; print(tensorflow.CXX11_ABI_FLAG, end = '')"
       WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}

@@ -18,8 +18,6 @@ try:
 except ImportError:
     site_packages_path = path.join(path.dirname(path.__file__), 'site-packages')
     tf_install_dir = imp.find_module('tensorflow', [site_packages_path])[1]
-print('-------------------- tries import tf')
-import tensorflow
 
 install_requires=['numpy', 'scipy']
 setup_requires=['setuptools_scm']
