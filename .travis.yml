@@ -8,6 +8,12 @@ addons:
     - g++-4.8
     - gcc-5
     - g++-5
+    - gcc-6
+    - g++-6
+    - gcc-7
+    - g++-7
+    - gcc-8
+    - g++-8
 matrix:
   include:
     - python: 3.6
@@ -25,11 +31,46 @@ matrix:
       - CC=gcc-4.8
       - CXX=g++-4.8
       - TENSORFLOW_VERSION=1.14
+    - python: 3.6
+      env: 
+      - CC=gcc-5
+      - CXX=g++-5
+      - TENSORFLOW_VERSION=1.14
+    - python: 3.6
+      env: 
+      - CC=gcc-6
+      - CXX=g++-6
+      - TENSORFLOW_VERSION=1.14
+    - python: 3.6
+      env: 
+      - CC=gcc-7
+      - CXX=g++-7
+      - TENSORFLOW_VERSION=1.14
+    - python: 3.6
+      env: 
+      - CC=gcc-8
+      - CXX=g++-8
+      - TENSORFLOW_VERSION=1.14
     - python: 3.7
       env: 
       - CC=gcc-5
       - CXX=g++-5
-      env: TENSORFLOW_VERSION=1.14
+      - TENSORFLOW_VERSION=1.14
+    - python: 3.7
+      env: 
+      - CC=gcc-6
+      - CXX=g++-6
+      - TENSORFLOW_VERSION=1.14
+    - python: 3.7
+      env: 
+      - CC=gcc-7
+      - CXX=g++-7
+      - TENSORFLOW_VERSION=1.14
+    - python: 3.7
+      env: 
+      - CC=gcc-8
+      - CXX=g++-8
+      - TENSORFLOW_VERSION=1.14
 before_install:
   - pip install --upgrade pip
   - pip install tensorflow==$TENSORFLOW_VERSION
