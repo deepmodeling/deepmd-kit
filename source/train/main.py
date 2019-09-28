@@ -7,12 +7,12 @@ from .test import test
 
 def main () :    
     parser = argparse.ArgumentParser(
-	description="deepmd-kit")
+	description="DeePMD-kit: A deep learning package for many-body potential energy representation and molecular dynamics")
     subparsers = parser.add_subparsers(title='Valid subcommands', dest='command')    
 
-    parser_cfig = subparsers.add_parser('config', help='fast configuration of parameter file for smooth model')
-    parser_cfig.add_argument("-o", "--output", type=str, default = "input.json", 
-                             help="the output json file")    
+    # parser_cfig = subparsers.add_parser('config', help='fast configuration of parameter file for smooth model')
+    # parser_cfig.add_argument("-o", "--output", type=str, default = "input.json", 
+    #                          help="the output json file")    
     
     default_num_inter_threads = 0
     parser_train = subparsers.add_parser('train', help='train a model')
