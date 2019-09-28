@@ -22,7 +22,8 @@
 	- [Train a model](#train-a-model)
 	    - [The DeePMD model](#the-deepmd-model)
 	    - [The DeepPot-SE model](#the-deeppot-se-model)
-	- [Freeze and test a model](#freeze-and-test-a-model)
+	- [Freeze a model](#freeze-a-model)
+	- [Test a model](#test-a-model)
 	- [Model inference](#model-inference)
 	- [Run MD with Lammps](#run-md-with-lammps)
 	    - [Include deepmd in the pair style](#include-deepmd-in-the-pair-style)
@@ -283,7 +284,6 @@ where `water_se_a.json` is the `json` format parameter file that controls the tr
 
 The `model` section specify how the deep potential model is built. An example of the smooth-edition is provided as follows
 ```json
-{
     "model": {
 	"type_map":	["O", "H"],
 	"descriptor" :{
@@ -305,7 +305,6 @@ The `model` section specify how the deep potential model is built. An example of
 	},
 	"_comment":	" that's all"
     }
-}
 ```
 The **`type_map`** is optional, which provide the element names (but not restricted to) for corresponding atom types.
 
@@ -315,7 +314,6 @@ The construction of the fitting net is give by **`fitting_net`**. The key **`neu
 
 An example of the `learning_rate` is given as follows
 ```json
-{
     "learning_rate" :{
 	"type":		"exp",
 	"start_lr":	0.005,
@@ -323,7 +321,6 @@ An example of the `learning_rate` is given as follows
 	"decay_rate":	0.95,
 	"_comment":	"that's all"
     }
-}
 ```
 The option **`start_lr`**, **`decay_rate`** and **`decay_steps`** specify how the learning rate changes. For example, the `t`th batch will be trained with learning rate:
 ```math
@@ -332,7 +329,6 @@ lr(t) = start_lr * decay_rate ^ ( t / decay_steps )
 
 An example of the `loss` is 
 ```json
-{
     "loss" : {
 	"start_pref_e":	0.02,
 	"limit_pref_e":	1,
@@ -342,7 +338,6 @@ An example of the `loss` is
 	"limit_pref_v":	0,
 	"_comment":	" that's all"
     }
-}
 ```
 The options **`start_pref_e`**, **`limit_pref_e`**, **`start_pref_f`**, **`limit_pref_f`**, **`start_pref_v`** and **`limit_pref_v`** determine how the prefactors of energy error, force error and virial error changes in the loss function (see the appendix of the [DeePMD paper][2] for details). Taking the prefactor of force error for example, the prefactor at batch `t` is
 ```math
@@ -352,7 +347,6 @@ Since we do not have virial data, the virial prefactors `start_pref_v` and `limi
 
 An example of `training` is
 ```json
-{
     "training" : {
 	"systems":	["../data/"],
 	"set_prefix":	"set",    
@@ -375,7 +369,6 @@ An example of `training` is
 	"profiling_file":"timeline.json",
 	"_comment":	"that's all"
     }
-}
 ```
 The option **`systems`** provide location of the systems (path to `set.*` and `type.raw`). It is a vector, thus DeePMD-kit allows you to provide multiple systems. DeePMD-kit will train the model with the systems in the vector one by one in a cyclic manner. **It is warned that the example water data (in folder `examples/data/water`) is of very limited amount, is provided only for testing purpose, and should not be used to train a productive model.**
 
@@ -427,12 +420,16 @@ The keys `intra_op_parallelism_threads` and `inter_op_parallelism_threads` are T
 **`--restart model.ckpt`**, continues the training from the checkpoint `model.ckpt`.
 
 
-## Freeze and test a model
+## Freeze a model
+
 The trained neural network is extracted from a checkpoint and dumped into a database. This process is called "freezing" a model. The idea and part of our code are from [Morgan](https://blog.metaflow.fr/tensorflow-how-to-freeze-a-model-and-serve-it-with-a-python-api-d4f3596b3adc). To freeze a model, typically one does
 ```bash
 $ dp freeze -o graph.pb
 ```
 in the folder where the model is trained. The output database is called `graph.pb`.
+
+
+## Test a model
 
 The frozen model can be used in many ways. The most straightforward test can be performed using `dp test`. A typical usage of `dp test` is 
 ```bash
@@ -531,6 +528,16 @@ The `dp_ipi` gets the atom names from an [XYZ file](https://en.wikipedia.org/wik
 # Troubleshooting
 In consequence of various differences of computers or systems, problems may occur. Some common circumstances are listed as follows. 
 If other unexpected problems occur, you're welcome to contact us for help.
+
+## Model compatability
+
+When the version of DeePMD-kit used to training model is different from the that of DeePMD-kit running MDs, one has the problem of model compatability.
+
+DeePMD-kit guarantees that the codes with the same major and minor revisions are compatible. That is to say v0.12.5 is compatible to v0.12.0, but is not compatible to v0.11.0. When way of fixing it is to restart the training with the new revisions and a slightly increased `stop_batch`, say 1,000,000 to 1,001,000 if the `save_freq` was set to 1,000. Typically one runs
+```bash
+dp train --restart model.ckpt revised_input.json
+```
+and freeze the new model.
 
 ## Installation: inadequate versions of gcc/g++
 Sometimes you may use a gcc/g++ of version <4.9. If you have a gcc/g++ of version > 4.9, say, 7.2.0, you may choose to use it by doing 
