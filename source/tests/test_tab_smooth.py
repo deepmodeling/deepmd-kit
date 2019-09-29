@@ -1,6 +1,6 @@
 import os,sys
 import numpy as np
-import tensorflow as tf
+from deepmd.env import tf
 import unittest
 
 from tensorflow.python.framework import ops

@@ -6,8 +6,7 @@
 import os, argparse, json
 import sys
 
-import tensorflow as tf
-from tensorflow.python.framework import graph_util
+from deepmd.env import tf
 
 dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -75,7 +74,7 @@ def freeze_graph(model_folder,
         print('The following nodes will be frozen: %s' % output_node_names)
 
         # We use a built-in TF helper to export variables to constants
-        output_graph_def = graph_util.convert_variables_to_constants(
+        output_graph_def = tf.graph_util.convert_variables_to_constants(
             sess, # The session is used to retrieve the weights
             input_graph_def, # The graph_def is used to retrieve the nodes 
             output_node_names.split(",") # The output node names are used to select the usefull nodes

@@ -2,7 +2,8 @@
 
 import os,sys
 import numpy as np
-import tensorflow as tf
+
+from deepmd.env import tf
 
 from tensorflow.python.framework import ops
 module_path = os.path.dirname(os.path.realpath(__file__))

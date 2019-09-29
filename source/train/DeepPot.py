@@ -2,7 +2,7 @@
 
 import os,sys
 import numpy as np
-import tensorflow as tf
+from deepmd.env import tf
 from deepmd.DeepEval import DeepEval
 
 class DeepPot (DeepEval) :
