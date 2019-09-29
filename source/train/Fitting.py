@@ -1,7 +1,7 @@
 import os,warnings
 import numpy as np
-import tensorflow as tf
 
+from deepmd.env import tf
 from deepmd.common import ClassArg, add_data_requirement
 from deepmd.Network import one_layer
 from deepmd.DescrptLocFrame import DescrptLocFrame

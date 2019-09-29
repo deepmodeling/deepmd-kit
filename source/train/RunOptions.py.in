@@ -8,16 +8,17 @@ if "@PREC_DEF@" == "-DHIGH_PREC" :
     global_tf_float_precision = tf.float64
     global_np_float_precision = np.float64
     global_ener_float_precision = np.float64
-    global_cvt_2_tf_float = tf.to_double
-    global_cvt_2_ener_float = tf.to_double
     global_float_prec = 'double'
 else :
     global_tf_float_precision = tf.float32
     global_np_float_precision = np.float32
     global_ener_float_precision = np.float64
-    global_cvt_2_tf_float = tf.to_float
-    global_cvt_2_ener_float = tf.to_double
     global_float_prec = 'float'
+
+def global_cvt_2_tf_float(xx) :
+    return tf.cast(xx, global_tf_float_precision)
+def global_cvt_2_ener_float(xx) :
+    return tf.cast(xx, global_ener_float_precision)
 
 global_install_prefix='@CMAKE_INSTALL_PREFIX@'
 global_git_summ='@GIT_SUMM@'

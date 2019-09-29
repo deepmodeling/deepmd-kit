@@ -2,7 +2,6 @@
 
 import os,sys
 import numpy as np
-import tensorflow as tf
 from deepmd.DeepEval import DeepTensor
 
 class DeepWFC (DeepTensor) :

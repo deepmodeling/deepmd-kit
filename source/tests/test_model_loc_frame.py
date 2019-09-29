@@ -1,6 +1,6 @@
 import dpdata,os,sys,json,unittest
 import numpy as np
-import tensorflow as tf
+from deepmd.env import tf
 from common import Data
 
 from deepmd.RunOptions import RunOptions

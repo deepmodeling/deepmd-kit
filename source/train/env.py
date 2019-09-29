@@ -3,6 +3,12 @@ import logging
 import numpy as np
 from imp import reload
 
+# import tensorflow v1 compatability
+try:
+    import tensorflow.compat.v1 as tf
+except ImportError:
+    import tensorflow as tf
+
 def set_env_if_empty(key, value):
     if os.environ.get(key) is None:
         os.environ[key] = value

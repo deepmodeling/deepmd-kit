@@ -5,7 +5,7 @@ import time
 import shutil
 import warnings
 import numpy as np
-import tensorflow as tf
+from deepmd.env import tf
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision

@@ -1,8 +1,8 @@
 import os,sys
 import numpy as np
-import tensorflow as tf
 import unittest
 
+from deepmd.env import tf
 from tensorflow.python.framework import ops
 
 # load grad of force module

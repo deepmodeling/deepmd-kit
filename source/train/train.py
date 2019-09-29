@@ -6,7 +6,7 @@ import time
 import numpy as np
 import argparse
 import json
-import tensorflow as tf
+from deepmd.env import tf
 
 lib_path = os.path.dirname(os.path.realpath(__file__)) + "/../lib/"
 sys.path.append (lib_path)
