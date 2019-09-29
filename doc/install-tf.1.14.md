@@ -37,51 +37,11 @@ Now I assume you want to install tensorflow in directory `$tensorflow_root`. Cre
 ```bash
 mkdir -p $tensorflow_root
 ```
-Before moving on, we need to compile the dependencies of tensorflow, including Protobuf, Eigen, nsync and absl. Firstly, protobuf
-```bash
-mkdir /tmp/proto
-tensorflow/contrib/makefile/download_dependencies.sh
-cd tensorflow/contrib/makefile/downloads/protobuf/
-./autogen.sh
-./configure --prefix=/tmp/proto/
-make
-make install
-```
-Then Eigen
-```bash
-mkdir /tmp/eigen
-cd ../eigen
-mkdir build_dir
-cd build_dir
-cmake -DCMAKE_INSTALL_PREFIX=/tmp/eigen/ ../
-make install
-```
-nsync
-```bash
-mkdir /tmp/nsync
-cd ../../nsync
-mkdir build_dir
-cd build_dir
-cmake -DCMAKE_INSTALL_PREFIX=/tmp/nsync/ ../
-make
-make install
-```
-And absl
-```bash
-cd ../../absl
-bazel build
-mkdir -p $tensorflow_root/include/
-rsync -avzh --include '*/' --include '*.h' --exclude '*' absl $tensorflow_root/include/
-touch $tensorflow_root/include/absl/numeric/int128_have_intrinsic.inc
-cd ../../../../..
-```
 Now, copy the libraries to the tensorflow's installation directory:
 ```bash
 mkdir $tensorflow_root/lib
 cp -d bazel-bin/tensorflow/libtensorflow_cc.so* $tensorflow_root/lib/
 cp -d bazel-bin/tensorflow/libtensorflow_framework.so* $tensorflow_root/lib/
-cp /tmp/proto/lib/libprotobuf.a $tensorflow_root/lib/
-cp /tmp/nsync/lib64/libnsync.a $tensorflow_root/lib/
 ```
 Then copy the headers
 ```bash
@@ -90,17 +50,13 @@ cp -r bazel-genfiles/* $tensorflow_root/include/
 cp -r tensorflow/cc $tensorflow_root/include/tensorflow
 cp -r tensorflow/core $tensorflow_root/include/tensorflow
 cp -r third_party $tensorflow_root/include
-cp -r /tmp/proto/include/* $tensorflow_root/include
-cp -r /tmp/eigen/include/eigen3/* $tensorflow_root/include
-cp -r /tmp/nsync/include/*h $tensorflow_root/include
+cp -r bazel-tensorflow/external/eigen_archive/Eigen/ $tensorflow_root/include
+cp -r bazel-tensorflow/external/eigen_archive/unsupported/ $tensorflow_root/include
+rsync -avzh --include '*/' --include '*.h' --include '*.inc' --exclude '*' bazel-tensorflow/external/protobuf_archive/src/ $tensorflow_root/include/
+rsync -avzh --include '*/' --include '*.h' --include '*.inc' --exclude '*' bazel-tensorflow/external/com_google_absl/absl/ $tensorflow_root/include/absl
 ```
 Now clean up the source files in the header directories:
 ```bash
 cd $tensorflow_root/include
 find . -name "*.cc" -type f -delete
 ```
-The temporary installation directories for the dependencies can be removed:
-```bash
-rm -fr /tmp/proto /tmp/eigen /tmp/nsync
-```
-
