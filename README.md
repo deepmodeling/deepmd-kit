@@ -10,10 +10,10 @@
  	- [Deep Potential in a nutshell](#deep-potential-in-a-nutshell)
 - [Download and install](#download-and-install)
     - [Install the python interaction](#install-the-python-interface)
-            - [Easy installation methods](#easy-installation-methods)
-	    - [Install the Tensorflow's python interface](#install-the-tensorflows-python-interface)
-	    - [Install the DeePMD-kit's python interface](#install-the-deepmd-kits-python-interface)
-    - [Install the C++ interaction](#install-the-c-interface)
+      - [Easy installation methods](#easy-installation-methods)
+      - [Install the Tensorflow's python interface](#install-the-tensorflows-python-interface)
+      - [Install the DeePMD-kit's python interface](#install-the-deepmd-kits-python-interface)
+    - [Install the C++ interface](#install-the-c-interface)
 	    - [Install the Tensorflow's C++ interface](#install-the-tensorflows-c-interface)    
 	    - [Install the DeePMD-kit's C++ interface](#install-the-deepmd-kits-c-interface)
 	    - [Install LAMMPS's DeePMD-kit module](#install-lammpss-deepmd-kit-module)
@@ -483,7 +483,7 @@ Running an MD simulation with LAMMPS is simpler. In the LAMMPS input file, one n
 pair_style     deepmd graph.pb
 pair_coeff     
 ```
-where `graph.pb` is the file name of the frozen model. The `pair_coeff` should be left blank. It should be noted that LAMMPS counts atom types starting from 1, therefore, all LAMMPS atom type will be firstly subtracted by 1, and then passed into the DeePMD-kit engine to compute the interactions.
+where `graph.pb` is the file name of the frozen model. The `pair_coeff` should be left blank. It should be noted that LAMMPS counts atom types starting from 1, therefore, all LAMMPS atom type will be firstly subtracted by 1, and then passed into the DeePMD-kit engine to compute the interactions. A detailed documentation of this pair style is [here](doc/lammps-pair-style-deepmd.md).
 
 ### Long-range interaction
 The reciprocal space part of the long-range interaction can be calculated by LAMMPS command `kspace_style`. To use it with DeePMD-kit, one writes 
