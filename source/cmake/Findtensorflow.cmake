@@ -41,6 +41,7 @@ if (BUILD_CPP_IF)
   endif ()
   # the lib
   list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.1)
+  list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.2)
   set (TensorFlow_LIBRARY_PATH "")
   foreach (module ${TensorFlow_FIND_COMPONENTS})
     find_library(TensorFlow_LIBRARY_${module}
@@ -68,6 +69,7 @@ if (NOT TensorFlowFramework_FIND_COMPONENTS)
 endif ()
 # the lib
 list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.1)
+list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.2)
 set (TensorFlowFramework_LIBRARY_PATH "")
 foreach (module ${TensorFlowFramework_FIND_COMPONENTS})
   find_library(TensorFlowFramework_LIBRARY_${module}
