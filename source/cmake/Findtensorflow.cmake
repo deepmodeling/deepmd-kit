@@ -12,6 +12,7 @@
 
 # define the search path
 list(APPEND TensorFlow_search_PATHS ${TENSORFLOW_ROOT})
+list(APPEND TensorFlow_search_PATHS "${TENSORFLOW_ROOT}/../tensorflow_core")
 list(APPEND TensorFlow_search_PATHS "/usr/")
 list(APPEND TensorFlow_search_PATHS "/usr/local/")
 
