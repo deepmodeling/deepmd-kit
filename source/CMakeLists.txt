@@ -52,9 +52,11 @@ find_package(tensorflow REQUIRED)
 if (NOT DEFINED OP_CXX_ABI)
   if (BUILD_PY_IF) 
     if (DEFINED TENSORFLOW_ROOT)
-      set(FIND_ABI_CMD "import sys,os; sys.path.insert(0, os.path.join('${TENSORFLOW_ROOT}', '..')); import tensorflow; print(tensorflow.sysconfig.CXX11_ABI_FLAG, end = '')" )
+      set(FIND_ABI_CMD "import sys,os; sys.path.insert(0, os.path.join('${TENSORFLOW_ROOT}', '..')); import tensorflow; try:print(tensorflow.CXX11_ABI_FLAG, end = '')
+except NameError:print(tensorflow.sysconfig.CXX11_ABI_FLAG, end = '')" )
     else()
-      set(FIND_ABI_CMD "import tensorflow; print(tensorflow.sysconfig.CXX11_ABI_FLAG, end = '')" )
+      set(FIND_ABI_CMD "import tensorflow; try:print(tensorflow.sysconfig.CXX11_ABI_FLAG, end = '')
+except NameError:print(tensorflow.sysconfig.CXX11_ABI_FLAG, end = '')")
     endif()
     execute_process(
       COMMAND ${PYTHON_EXECUTABLE} "-c" "${FIND_ABI_CMD}"
