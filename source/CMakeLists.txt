@@ -57,7 +57,7 @@ if (NOT DEFINED OP_CXX_ABI)
       set(FIND_ABI_CMD "import tensorflow; try:print(tensorflow.sysconfig.CXX11_ABI_FLAG, end = '');\nexcept NameError:print(tensorflow.sysconfig.CXX11_ABI_FLAG, end = '')")
     endif()
     execute_process(
-      COMMAND ${PYTHON_EXECUTABLE} "-c" "$${FIND_ABI_CMD}"
+      COMMAND ${PYTHON_EXECUTABLE} "-c" "exec(\"${FIND_ABI_CMD}\")"
       WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
       OUTPUT_VARIABLE PY_CXX_ABI
       RESULT_VARIABLE PY_CXX_ABI_RESULT_VAR
