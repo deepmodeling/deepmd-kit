@@ -60,7 +60,7 @@ setup(
     cmake_source_dir='source',
     cmake_minimum_required_version='3.0',
     extras_require={
-        'test': 'dpdata>=0.1.6',
+        'test': ['dpdata>=0.1.9'],
     },
     entry_points={
           'console_scripts': ['dp = deepmd.main:main']

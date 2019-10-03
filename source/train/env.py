@@ -6,6 +6,7 @@ from imp import reload
 # import tensorflow v1 compatability
 try:
     import tensorflow.compat.v1 as tf
+    tf.disable_v2_behavior()
 except ImportError:
     import tensorflow as tf
 
