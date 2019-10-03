@@ -13,16 +13,25 @@ class DeepmdData() :
     def __init__ (self, 
                   sys_path, 
                   set_prefix = 'set',
-                  shuffle_test = True) :
+                  shuffle_test = True, 
+                  type_map = None) :
         self.dirs = glob.glob (os.path.join(sys_path, set_prefix + ".*"))
         self.dirs.sort()
         # load atom type
-        self.atom_type, self.idx_map = self._load_type (sys_path)
+        self.atom_type = self._load_type(sys_path)
         self.natoms = len(self.atom_type)
         # load atom type map
         self.type_map = self._load_type_map(sys_path)
         if self.type_map is not None:
             assert(len(self.type_map) >= max(self.atom_type)+1)
+        # enforce type_map if necessary
+        if type_map is not None and self.type_map is not None:
+            atom_type_ = [type_map.index(self.type_map[ii]) for ii in self.atom_type]
+            self.atom_type = np.array(atom_type_, dtype = np.int32)
+            ntypes = len(self.type_map)
+            self.type_map = type_map[:ntypes]
+        # make idx map
+        self.idx_map = self._make_idx_map(self.atom_type)
         # train dirs
         self.test_dir = self.dirs[-1]
         if len(self.dirs) == 1 :
@@ -305,10 +314,13 @@ class DeepmdData() :
         
     def _load_type (self, sys_path) :
         atom_type = np.loadtxt (os.path.join(sys_path, "type.raw"), dtype=np.int32, ndmin=1)
+        return atom_type
+
+    def _make_idx_map(self, atom_type):
         natoms = atom_type.shape[0]
         idx = np.arange (natoms)
         idx_map = np.lexsort ((idx, atom_type))
-        return atom_type, idx_map
+        return idx_map
 
     def _load_type_map(self, sys_path) :
         fname = os.path.join(sys_path, 'type_map.raw')
