@@ -9,6 +9,7 @@ sys.path.append (module_path)
 from Data import DataSets
 from Data import DeepmdData
 
+
 class DeepmdDataSystem() :
     def __init__ (self,
                   systems, 
@@ -17,7 +18,8 @@ class DeepmdDataSystem() :
                   rcut,
                   set_prefix = 'set',
                   shuffle_test = True,
-                  run_opt = None) :
+                  run_opt = None, 
+                  type_map = None) :
         # init data
         self.rcut = rcut
         self.system_dirs = systems
@@ -26,7 +28,8 @@ class DeepmdDataSystem() :
         for ii in self.system_dirs :
             self.data_systems.append(DeepmdData(ii, 
                                                 set_prefix=set_prefix, 
-                                                shuffle_test=shuffle_test))
+                                                shuffle_test=shuffle_test, 
+                                                type_map = type_map))
 
         # batch size
         self.batch_size = batch_size

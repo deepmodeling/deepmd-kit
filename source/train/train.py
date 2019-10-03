@@ -83,6 +83,7 @@ def _do_work(jdata, run_opt):
     # init the model
     model = NNPTrainer (jdata, run_opt = run_opt)
     rcut = model.model.get_rcut()
+    type_map = model.model.get_type_map()
     # init params and run options
     assert('training' in jdata)
     systems = j_must_have(jdata['training'], 'systems')
@@ -96,7 +97,12 @@ def _do_work(jdata, run_opt):
     batch_size = j_must_have(jdata['training'], 'batch_size')
     test_size = j_must_have(jdata['training'], 'numb_test')
     stop_batch = j_must_have(jdata['training'], 'stop_batch')
-    data = DeepmdDataSystem(systems, batch_size, test_size, rcut, set_prefix=set_pfx, run_opt=run_opt)
+    if len(type_map) == 0:
+       # empty type_map
+       ipt_type_map = None
+    else:
+       ipt_type_map = type_map
+    data = DeepmdDataSystem(systems, batch_size, test_size, rcut, set_prefix=set_pfx, run_opt=run_opt, type_map = ipt_type_map)
     data.add_dict(data_requirement)
     # build the model with stats from the first system
     model.build (data)
