@@ -24,6 +24,11 @@ if (BUILD_PY_IF)
     PROPERTIES 
     COMPILE_FLAGS ${OP_CXX_FLAG}
     )
+  set_target_properties(
+    op_grads
+    PROPERTIES
+    COMPILE_FLAGS ${OP_CXX_FLAG}
+    )
 endif (BUILD_PY_IF)
 
 if (BUILD_CPP_IF)
