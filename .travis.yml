@@ -51,6 +51,16 @@ matrix:
       - CC=gcc-8
       - CXX=g++-8
       - TENSORFLOW_VERSION=1.14
+    - python: 3.7
+      env:
+      - CC=gcc-5
+      - CXX=g++-5
+      - TENSORFLOW_VERSION=2.0
+    - python: 3.7
+      env:
+      - CC=gcc-8
+      - CXX=g++-8
+      - TENSORFLOW_VERSION=2.0
 before_install:
   - pip install --upgrade pip
   - pip install --upgrade setuptools
