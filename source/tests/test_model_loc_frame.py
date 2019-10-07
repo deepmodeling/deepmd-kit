@@ -1,7 +1,7 @@
 import dpdata,os,sys,json,unittest
 import numpy as np
 from deepmd.env import tf
-from common import Data
+from common import Data,gen_data
 
 from deepmd.RunOptions import RunOptions
 from deepmd.DataSystem import DataSystem
@@ -14,19 +14,6 @@ global_ener_float_precision = tf.float64
 global_tf_float_precision = tf.float64
 global_np_float_precision = np.float64
 
-def gen_data() :
-    tmpdata = Data(rand_pert = 0.1, seed = 1)
-    sys = dpdata.LabeledSystem()
-    sys.data['coords'] = tmpdata.coord
-    sys.data['atom_types'] = tmpdata.atype
-    sys.data['cells'] = tmpdata.cell
-    nframes = tmpdata.nframes
-    natoms = tmpdata.natoms
-    sys.data['coords'] = sys.data['coords'].reshape([nframes,natoms,3])
-    sys.data['cells'] = sys.data['cells'].reshape([nframes,3,3])
-    sys.data['energies'] = np.zeros([nframes,1])
-    sys.data['forces'] = np.zeros([nframes,natoms,3])
-    sys.to_deepmd_npy('system', prec=np.float64)    
 
 class TestModel(unittest.TestCase):
     def setUp(self) :

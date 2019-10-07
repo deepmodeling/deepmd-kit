@@ -1,4 +1,4 @@
-import os, sys
+import os, sys, dpdata
 import numpy as np
 
 from deepmd.env import tf
@@ -14,6 +14,22 @@ else :
     global_default_fv_hh = 1e-6
     global_default_dw_hh = 1e-4
     global_default_places = 5
+
+def gen_data() :
+    tmpdata = Data(rand_pert = 0.1, seed = 1)
+    sys = dpdata.LabeledSystem()
+    sys.data['atom_names'] = ['foo', 'bar']
+    sys.data['coords'] = tmpdata.coord
+    sys.data['atom_types'] = tmpdata.atype
+    sys.data['cells'] = tmpdata.cell
+    nframes = tmpdata.nframes
+    natoms = tmpdata.natoms
+    sys.data['coords'] = sys.data['coords'].reshape([nframes,natoms,3])
+    sys.data['cells'] = sys.data['cells'].reshape([nframes,3,3])
+    sys.data['energies'] = np.zeros([nframes,1])
+    sys.data['forces'] = np.zeros([nframes,natoms,3])
+    sys.to_deepmd_npy('system', prec=np.float64)    
+    np.save('system/set.000/fparam.npy', tmpdata.fparam)
 
 class Data():
     def __init__ (self, 
