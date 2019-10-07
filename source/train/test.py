@@ -49,7 +49,7 @@ def test_ener (args) :
     ae = ae.reshape([numb_test,-1])
     av = av.reshape([numb_test,-1])
 
-    l2e = (l2err (energy - test_data["energy"][:numb_test]))
+    l2e = (l2err (energy - test_data["energy"][:numb_test].reshape([-1,1])))
     l2f = (l2err (force  - test_data["force"] [:numb_test]))
     l2v = (l2err (virial - test_data["virial"][:numb_test]))
     l2ea= l2e/natoms
