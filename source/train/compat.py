@@ -57,11 +57,11 @@ def _smth_descriptor(jdata):
         seed = jdata['seed']
     descriptor['type'] = 'se_a'
     descriptor['sel'] = jdata['sel_a']
-    descriptor['rcut'] = jdata['rcut']
     if j_have(jdata, 'rcut_smth') :
-        descriptor['rcut_r_smth'] = jdata['rcut_smth']
+        descriptor['rcut_smth'] = jdata['rcut_smth']
     else :
-        descriptor['rcut_r_smth'] = descriptor['rcut']
+        descriptor['rcut_smth'] = descriptor['rcut']
+    descriptor['rcut'] = jdata['rcut']
     descriptor['neuron'] = j_must_have (jdata, 'filter_neuron')
     descriptor['axis_neuron'] = j_must_have_d (jdata, 'axis_neuron', ['n_axis_neuron'])
     descriptor['resnet_dt'] = False
@@ -128,9 +128,8 @@ def _training(jdata):
     training['numb_test'] = j_must_have (jdata, 'numb_test')
     training['save_freq'] = j_must_have (jdata, 'save_freq')
     training['save_ckpt'] = j_must_have (jdata, 'save_ckpt')
-    training['display_in_training'] = j_must_have (jdata, 'disp_training')
-    training['timing_in_training'] = j_must_have (jdata, 'time_training')
-    training['profiling'] = False
+    training['disp_training'] = j_must_have (jdata, 'disp_training')
+    training['time_training'] = j_must_have (jdata, 'time_training')
     if j_have (jdata, 'profiling') :
         training['profiling'] = jdata['profiling']
         if training['profiling'] :
