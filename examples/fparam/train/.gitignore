@@ -1,0 +1,5 @@
+*out
+model.ckpt*
+frozen_model.pb
+checkpoint
+

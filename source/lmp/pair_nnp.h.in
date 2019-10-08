@@ -63,7 +63,7 @@ class PairNNP : public Pair {
   int pack_reverse_comm(int, int, double *);
   void unpack_reverse_comm(int, int *, double *);
   void print_summary(const string pre) const;
-
+  int get_node_rank();
  protected:  
   virtual void allocate();
   double **scale;
@@ -78,6 +78,16 @@ private:
   ofstream fp;
   int out_freq;
   string out_file;
+  int dim_fparam;
+  int out_each;
+  int out_rel;
+#ifdef HIGH_PREC
+  vector<double > fparam;
+  double eps;
+#else
+  vector<float > fparam;
+  float eps;
+#endif
 };
 
 }

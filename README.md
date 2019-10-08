@@ -9,23 +9,26 @@
  	- [License and credits](#license-and-credits)
  	- [Deep Potential in a nutshell](#deep-potential-in-a-nutshell)
 - [Download and install](#download-and-install)
-    - [Easy installation methods](#easy-installation-methods)
-    - [Install DeePMD-kit from scratch](#install-deepmd-kit-from-scratch)
-	    - [Install tensorflow](#install-tensorflow)
-	    - [Install DeePMD-kit](#install-deepmd-kit)
+    - [Install the python interaction](#install-the-python-interface)
+      - [Easy installation methods](#easy-installation-methods)
+      - [Install the Tensorflow's python interface](#install-the-tensorflows-python-interface)
+      - [Install the DeePMD-kit's python interface](#install-the-deepmd-kits-python-interface)
+    - [Install the C++ interface](#install-the-c-interface)
+	    - [Install the Tensorflow's C++ interface](#install-the-tensorflows-c-interface)    
+	    - [Install the DeePMD-kit's C++ interface](#install-the-deepmd-kits-c-interface)
 	    - [Install LAMMPS's DeePMD-kit module](#install-lammpss-deepmd-kit-module)
-	    - [Build DeePMD-kit with GPU support](#build-deepmd-kit-with-gpu-support)
 - [Use DeePMD-kit](#use-deepmd-kit)
 	- [Prepare data](#prepare-data)
 	- [Train a model](#train-a-model)
 	    - [The DeePMD model](#the-deepmd-model)
 	    - [The DeepPot-SE model](#the-deeppot-se-model)
-	- [Freeze and test a model](#freeze-and-test-a-model)
+	- [Freeze a model](#freeze-a-model)
+	- [Test a model](#test-a-model)
+	- [Model inference](#model-inference)
 	- [Run MD with Lammps](#run-md-with-lammps)
 	    - [Include deepmd in the pair style](#include-deepmd-in-the-pair-style)
 	    - [Long-range interaction](#long-range-interaction)
 	- [Run path-integral MD with i-PI](#run-path-integral-md-with-i-pi)
-	- [Run MD with native code](#run-md-with-native-code)
 - [Troubleshooting](#troubleshooting)
 
 # About DeePMD-kit
@@ -55,8 +58,6 @@ The code is organized as follows:
 
 * `source/lmp`: source code of Lammps module.
 
-* `source/md`: source code of native MD.
-
 * `source/op`: tensorflow op implementation. working with library.
 
 * `source/scripts`: Python script for model freezing.
@@ -79,20 +80,45 @@ Although being highly efficient, the original Deep Potential model satisfies the
 In addition to building up potential energy models, DeePMD-kit can also be used to build up coarse-grained models. In these models, the quantity that we want to parameterize is the free energy, or the coarse-grained potential, of the coarse-grained particles. See the [DeePCG paper][4] for more details.
 
 # Download and install
+
 Please follow our [github](https://github.com/deepmodeling/deepmd-kit) webpage to see the latest released version and development version.
-## Easy installation methods
+
+## Install the python interface 
+
+### Easy installation methods
 A docker for installing the DeePMD-kit on CentOS 7 is available [here](https://github.com/frankhan91/deepmd-kit_docker). We are currently working on installation methods using the `conda` package management system and `pip` tools. Hope these will come out soon.
 
-## Install DeePMD-kit from scratch
-Installing DeePMD-kit from scratch is lengthy, but do not be panic. Just follow step by step. Wish you good luck.. 
+### Install the Tensorflow's python interface
+First, check the python version and compiler version on your machine 
+```bash
+python --version; gcc --version
+```
+If your python version is 3.6.x, it is highly recommended to use a GNU C/C++ compiler of version lower than 5.0. If your python version is 3.7.x, it is highly recommended that the GNU C/C++ compiler is higher than or equal to 5.0.
 
-### Install tensorflow
-We tested two tensorflow installation options. You may follow either [tf-1.8](doc/install-tf.1.8.md) or [tf-1.12](doc/install-tf.1.12.md). Click one of the links and follow the instructions therein. Of course, other installation options are not forbidden.
+We follow the virtual environment approach to install the tensorflow's Python interface. The full instruction can be found on [the tensorflow's official website](https://www.tensorflow.org/install/pip). Now we assume that the Python interface will be installed to virtual environment directory `$tensorflow_venv`
+```bash
+virtualenv -p python3 $tensorflow_venv
+source $tensorflow_venv/bin/activate
+pip install --upgrade pip
+pip install --upgrade tensorflow==1.14.0
+```
+If one has multiple python interpreters named like python3.x, it can be specified by, for example
+```bash
+virtualenv -p python3.7 $tensorflow_venv
+```
+If one needs the GPU support of deepmd-kit, the GPU version of tensorflow should be installed by
+```bash
+pip install --upgrade tensorflow-gpu==1.14.0
+```
+To verify the installation, run
+```bash
+python -c "import tensorflow as tf; sess=tf.Session(); print(sess.run(tf.reduce_sum(tf.random_normal([1000, 1000]))))"
+```
+One should remember to activate the virtual environment every time he/she uses deepmd-kit.
 
-### Install DeePMD-kit
-The DeePMD-kit was tested with compiler gcc >= 4.9.
+### Install the DeePMD-kit's python interface
 
-Firstly clone the DeePMD-kit source code
+Clone the DeePMD-kit source code
 ```bash
 cd /some/workspace
 git clone https://github.com/deepmodeling/deepmd-kit.git deepmd-kit
@@ -102,7 +128,43 @@ If one downloads the .zip file from the github, then the default folder of sourc
 cd deepmd-kit
 deepmd_source_dir=`pwd`
 ```
-Then goto the source code directory and make a build directory.
+Then execute
+```bash
+pip install .
+```
+To test the installation, one may execute
+```bash
+dp -h
+```
+It will print the help information like
+```text
+usage: dp [-h] {train,freeze,test} ...
+
+DeePMD-kit: A deep learning package for many-body potential energy
+representation and molecular dynamics
+
+optional arguments:
+  -h, --help           show this help message and exit
+
+Valid subcommands:
+  {train,freeze,test}
+    train              train a model
+    freeze             freeze the model
+    test               test the model
+```
+
+## Install the C++ interface 
+
+If one does not need to use DeePMD-kit with Lammps or I-Pi, then the python interface installed in the previous section does everything and he/she can safely skip this section. 
+
+### Install the Tensorflow's C++ interface
+
+It is highly recommended that one keeps the same C/C++ compiler as the python interface. The C++ interface of DeePMD-kit was tested with compiler gcc >= 4.8. It is noticed that the I-Pi support is only compiled with gcc >= 4.9.
+
+First the C++ interface of Tensorflow should be installed. It is noted that the version of Tensorflow should be in consistent with the python interface. We assume that you have followed our instruction and installed tensorflow python interface 1.14.0 with, then you may follow [the instruction for CPU](doc/install-tf.1.14.md) to install the corresponding C++ interface (CPU only). If one wants GPU supports, he/she should follow [the instruction for GPU](doc/install-tf.1.14-gpu.md) to install the C++ interface.
+
+### Install the DeePMD-kit's C++ interface
+Now goto the source code directory of DeePMD-kit and make a build place.
 ```bash
 cd $deepmd_source_dir/source
 mkdir build 
@@ -110,18 +172,23 @@ cd build
 ```
 I assume you want to install DeePMD-kit into path `$deepmd_root`, then execute cmake
 ```bash
-cmake -DTF_GOOGLE_BIN=true -DTENSORFLOW_ROOT=$tensorflow_root \
--DCMAKE_INSTALL_PREFIX=$deepmd_root ..
+cmake -DTENSORFLOW_ROOT=$tensorflow_root -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
 ```
-If you built the tensorflow's Python interface by gcc>=5.0, then remove the option `-DTF_GOOGLE_BIN=true`. If the cmake has executed successfully, then 
+where the variable `tensorflow_root` stores the location where the tensorflow's C++ interface is installed. The DeePMD-kit will automatically detect if a CUDA tool-kit is available on your machine and build the GPU support accordingly. If you want to force the cmake to find CUDA tool-kit, you can speicify the key `USE_CUDA_TOOLKIT`, 
+```bash
+cmake -DUSE_CUDA_TOOLKIT=true -DTENSORFLOW_ROOT=$tensorflow_root -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
+```
+and you may further asked to provide `CUDA_TOOLKIT_ROOT_DIR`. If the cmake has executed successfully, then 
 ```bash
 make
 make install
 ```
-If everything works fine, you will have the following executables installed in `$deepmd_root/bin`
+If everything works fine, you will have the following executable and libraries installed in `$deepmd_root/bin` and `$deepmd_root/lib`
 ```bash
 $ ls $deepmd_root/bin
-dp_frz  dp_ipi  dp_test  dp_train
+dp_ipi
+$ ls $deepmd_root/lib
+libdeepmd_ipi.so  libdeepmd_op.so  libdeepmd.so
 ```
 
 ### Install LAMMPS's DeePMD-kit module
@@ -152,31 +219,6 @@ If everything works fine, you will end up with an executable `lmp_mpi`.
 The DeePMD-kit module can be removed from LAMMPS source code by 
 ```bash
 make no-user-deepmd
-```
-
-### Build DeePMD-kit with GPU support
-If your system has a NVIDIA GPU, you can build TensorFlow with GPU support, which will be inherited by DeePMD-kit and LAMMPS. To achieve this, please carefully check the webpage [Install TensorFlow from Source](https://www.tensorflow.org/install/install_sources) and look for the GPU version. In particular, you have to make sure that the required NVIDIA softwares, namely [CUDA Toolkit](https://developer.nvidia.com/cuda-zone), [GPU drivers](https://www.nvidia.com/driver), and [cuDNN SDK](https://developer.nvidia.com/cudnn), must be installed on your system.
-
-To install TensorFlow with GPU support, all the installation steps will be the same as the non-GPU version, except that one may allow the GPU option when doing `configure`, e.g.,
-```bash
-Do you wish to build TensorFlow with CUDA support? [y/N] Y
-CUDA support will be enabled for TensorFlow
-Do you want to use clang as CUDA compiler? [y/N]
-nvcc will be used as CUDA compiler
-Please specify the CUDA SDK version you want to use. [Leave empty to default to CUDA 9.0]: 9.0
-Please specify the location where CUDA 9.0 toolkit is installed. Refer to README.md for more details. [Default is /usr/local/cuda]:
-Please specify which gcc should be used by nvcc as the host compiler. [Default is /usr/bin/gcc]:
-Please specify the cuDNN version you want to use. [Leave empty to default to cuDNN 7.0]: 7
-Please specify the location where cuDNN 7 library is installed. Refer to README.md for more details. [Default is /usr/local/cuda]:
-Please specify a list of comma-separated CUDA compute capabilities you want to build with.
-You can find the compute capability of your device at: https://developer.nvidia.com/cuda-gpus.
-Please note that each additional compute capability significantly increases your build time and binary size.
-```
-
-After successfully installing TensorFlow with GPU support, you should install DeePMD, LAMMPS, etc., in the same way of the non-GPU version. Sometimes you may need to explicitly tell the compiler the place of the CUDA Toolkit and cuDNN libraries, i.e.,
-```bash
- $ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/path/to/cuda_toolkit/lib64
- $ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/path/to/cudnn/lib64
 ```
 
 # Use DeePMD-kit
@@ -230,92 +272,133 @@ box.raw  coord.raw  energy.raw  force.raw  set.000  set.001  set.002  type.raw  
 It generates three sets `set.000`, `set.001` and `set.002`, with each set contains 2000 frames. The last set (`set.002`) is used as testing set, while the rest sets (`set.000` and `set.001`) are used as training sets. One do not need to take care of the binary data files in each of the `set.*` directories. The path containing `set.*` and `type.raw` is called a *system*. 
 
 ## Train a model
-### The DeePMD model
-The method of training is explained in our [DeePMD paper][2]. With the source code we provide a small training dataset taken from 400 frames generated by NVT ab-initio water MD trajectory with 300 frames for training and 100 for testing. [An example training parameter file](./examples/train/water.json) is provided. One can try with the training by
+
+### Write the input script
+
+The method of training is explained in our [DeePMD][2] and [DeepPot-SE][3] papers. With the source code we provide a small training dataset taken from 400 frames generated by NVT ab-initio water MD trajectory with 300 frames for training and 100 for testing. [An example training parameter file](./examples/water/train/water_se_a.json) is provided. One can try with the training by
 ```bash
-$ cd $deepmd_source_dir/examples/train/
-$ $deepmd_root/bin/dp_train water.json
+$ cd $deepmd_source_dir/examples/water/train/
+$ dp train water_se_a.json
 ```
-`$deepmd_root/bin/dp_train` is the training program, and `water.json` is the `json` format parameter file that controls the training. The components of the `water.json` are
+where `water_se_a.json` is the `json` format parameter file that controls the training. The components of the `water.json` contains three parts, `model`, `learning_rate`, `loss` and `training`.
+
+The `model` section specify how the deep potential model is built. An example of the smooth-edition is provided as follows
 ```json
-{
-    "_comment": " model parameters",
-    "use_smooth":	false,
-    "sel_a":		[16, 32],
-    "sel_r":		[30, 60],
-    "rcut":		6.00,
-    "axis_rule":	[0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0],
-    "_comment":	" default rule: []",
-    "_comment":	" user defined rule: for each type provides two axes, ",
-    "_comment":	"                    for each axis: (a_or_r, type, idx)",
-    "_comment":	"                    if type < 0, exclude type -(type+1)",
-    "_comment": "                    for water (O:0, H:1) it can be",
-    "_comment": "                    [0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0]",
-    "fitting_neuron":	[240, 120, 60, 30, 10],
-
-    "_comment": " training controls",
-    "systems":		["../data/water/"],
-    "set_prefix":	"set",    
-    "stop_batch":	1000000,
-    "batch_size":	4,
-    "start_lr":	0.001,
-    "decay_steps":	5000,
-    "decay_rate":	0.95,
-
-    "start_pref_e":	0.02,
-    "limit_pref_e":	8,
-    "start_pref_f":	1000,
-    "limit_pref_f":	1,
-    "start_pref_v":	0,
-    "limit_pref_v":	0,
-
-    "seed":		1,
-
-    "_comment": " display and restart",
-    "_comment": " frequencies counted in batch",
-    "disp_file":	"lcurve.out",
-    "disp_freq":	100,
-    "numb_test":	100,
-    "save_freq":	100,
-    "save_ckpt":	"model.ckpt",
-    "load_ckpt":	"model.ckpt",
-    "disp_training":	true,
-    "time_training":	true,
-
-    "_comment":	"that's all"
-}
+    "model": {
+	"type_map":	["O", "H"],
+	"descriptor" :{
+	    "type":		"se_a",
+	    "rcut_smth":	5.80,
+	    "rcut":		6.00,
+	    "sel":		[46, 92],
+	    "neuron":		[25, 50, 100],
+	    "axis_neuron":	16,
+	    "resnet_dt":	false,
+	    "seed":		1,
+	    "_comment":		" that's all"
+	},
+	"fitting_net" : {
+	    "neuron":		[240, 240, 240],
+	    "resnet_dt":	true,	    
+	    "seed":		1,
+	    "_comment":		" that's all"
+	},
+	"_comment":	" that's all"
+    }
 ```
+The **`type_map`** is optional, which provide the element names (but not restricted to) for corresponding atom types.
 
-The option **`rcut`** is the cut-off radius for neighbor searching. The `sel_a` and `sel_r` are the maximum selected numbers of fully-local-coordinate and radial-only-coordinate atoms from the neighbor list, respectively. `sel_a + sel_r` should be larger than the maximum possible number of neighbors in the cut-off radius. `sel_a` and `sel_r` are vectors, the length of the vectors are same as the number of atom types in the system. `sel_a[i]` and `sel_r[i]` denote the selected number of neighbors of type `i`.
+The construction of the descriptor is given by option **`descriptor`**. The **`type`** of the descriptor is set to `"se_a"`, which means smooth-edition, angular infomation. The  **`rcut`** is the cut-off radius for neighbor searching, and the **`rcut_smth`** gives where the smoothing starts. **`sel`** gives the maximum possible number of neighbors in the cut-off radius. It is a list, the length of which is the same as the number of atom types in the system, and `sel[i]` denote the maximum possible number of neighbors with type `i`. The **`neuron`** specifies the size of the embedding net. From left to right the members denote the sizes of each hidden layers from input end to the output end, respectively. The **`axis_neuron`** specifies the size of submatrix of the embedding matrix, the axis matrix as explained in the [DeepPot-SE paper][3]. If the outer layer is of twice size as the inner layer, then the inner layer is copied and concatenated, then a [ResNet architecture](https://arxiv.org/abs/1512.03385) is build between them. If the option **`resnet_dt`** is set `true`, then a timestep is used in the ResNet. **`seed`** gives the random seed that is used to generate random numbers when initializing the model parameters.
 
-The option **`axis_rule`** specifies how to make the axis for the local coordinate of each atom. For each atom type, 6 integers should be provided. The first three for the first axis, while the last three for the second axis. Within the three integers, the first one specifies if the axis atom is fully-local-coordinated (`0`) or radial-only-coordinated (`1`). The second integer specifies the type of the axis atom. If this number is less than 0, saying `t < 0`, then this axis exclude atom of type `-(t+1)`. If the third integer is, saying `s`, then the axis atom is the `s`th nearest neighbor satisfying the previous two conditions. 
+The construction of the fitting net is give by **`fitting_net`**. The key **`neuron`** specifies the size of the fitting net. If two neighboring layers are of the same size, then a [ResNet architecture](https://arxiv.org/abs/1512.03385) is build between them. If the option **`resnet_dt`** is set `true`, then a timestep is used in the ResNet. **`seed`** gives the random seed that is used to generate random numbers when initializing the model parameters.
 
-The option **`fitting_neuron`** (deprecated name **`n_neuron`**) is an integer vector that determines the shape the neural network. The size of the vector is identical to the number of hidden layers of the network. From left to right the members denote the sizes of each hidden layers from input end to the output end, respectively. If two neighboring layers are of the same size, then a [ResNet architecture](https://arxiv.org/abs/1512.03385) is build between them. If the option **`fitting_resnet_dt`** is set `true`, then a timestep is used in the ResNet.
-
-The option **`systems`** provide location of the systems (path to `set.*` and `type.raw`). It is a vector, thus DeePMD-kit allows you to provide multiple systems. DeePMD-kit will train the model with the systems in the vector one by one in a cyclic manner.
-
-The option **`batch_size`** specifies the number of frames in each batch. 
-The option **`stop_batch`** specifies the total number of batches will be used in the training.
+An example of the `learning_rate` is given as follows
+```json
+    "learning_rate" :{
+	"type":		"exp",
+	"start_lr":	0.005,
+	"decay_steps":	5000,
+	"decay_rate":	0.95,
+	"_comment":	"that's all"
+    }
+```
 The option **`start_lr`**, **`decay_rate`** and **`decay_steps`** specify how the learning rate changes. For example, the `t`th batch will be trained with learning rate:
 ```math
 lr(t) = start_lr * decay_rate ^ ( t / decay_steps )
 ```
 
+An example of the `loss` is 
+```json
+    "loss" : {
+	"start_pref_e":	0.02,
+	"limit_pref_e":	1,
+	"start_pref_f":	1000,
+	"limit_pref_f":	1,
+	"start_pref_v":	0,
+	"limit_pref_v":	0,
+	"_comment":	" that's all"
+    }
+```
 The options **`start_pref_e`**, **`limit_pref_e`**, **`start_pref_f`**, **`limit_pref_f`**, **`start_pref_v`** and **`limit_pref_v`** determine how the prefactors of energy error, force error and virial error changes in the loss function (see the appendix of the [DeePMD paper][2] for details). Taking the prefactor of force error for example, the prefactor at batch `t` is
 ```math
 w_f(t) = start_pref_f * ( lr(t) / start_lr ) + limit_pref_f * ( 1 - lr(t) / start_lr )
 ```
 Since we do not have virial data, the virial prefactors `start_pref_v` and `limit_pref_v` are set to 0.
 
-The option **`seed`** specifies the random seed for neural network initialization. If not provided, the `seed` will be initialized with `None`.
+An example of `training` is
+```json
+    "training" : {
+	"systems":	["../data/"],
+	"set_prefix":	"set",    
+	"stop_batch":	1000000,
+	"batch_size":	1,
 
-During the training, the error of the model is tested every **`disp_freq`** batches with **`numb_test`** frames from the last set in the **`systems`** directory on the fly, and the results are output to **`disp_file`**. 
+	"seed":		1,
+
+	"_comment": " display and restart",
+	"_comment": " frequencies counted in batch",
+	"disp_file":	"lcurve.out",
+	"disp_freq":	100,
+	"numb_test":	10,
+	"save_freq":	1000,
+	"save_ckpt":	"model.ckpt",
+	"load_ckpt":	"model.ckpt",
+	"disp_training":true,
+	"time_training":true,
+	"profiling":	false,
+	"profiling_file":"timeline.json",
+	"_comment":	"that's all"
+    }
+```
+The option **`systems`** provide location of the systems (path to `set.*` and `type.raw`). It is a vector, thus DeePMD-kit allows you to provide multiple systems. DeePMD-kit will train the model with the systems in the vector one by one in a cyclic manner. **It is warned that the example water data (in folder `examples/data/water`) is of very limited amount, is provided only for testing purpose, and should not be used to train a productive model.**
+
+The option **`batch_size`** specifies the number of frames in each batch. It can be set to `"auto"` to enable a automatic batch size.
+The option **`stop_batch`** specifies the total number of batches will be used in the training.
+
+
+### Training
+
+The training can be invoked by
+```bash
+$ dp train water_se_a.json
+```
+
+During the training, the error of the model is tested every **`disp_freq`** batches with **`numb_test`** frames from the last set in the **`systems`** directory on the fly, and the results are output to **`disp_file`**. A typical `disp_file` looks like
+```bash
+# batch      l2_tst    l2_trn    l2_e_tst  l2_e_trn    l2_f_tst  l2_f_trn         lr
+      0    2.67e+01  2.57e+01    2.21e-01  2.22e-01    8.44e-01  8.12e-01    1.0e-03
+    100    6.14e+00  5.40e+00    3.01e-01  2.99e-01    1.93e-01  1.70e-01    1.0e-03
+    200    5.02e+00  4.49e+00    1.53e-01  1.53e-01    1.58e-01  1.42e-01    1.0e-03
+    300    4.36e+00  3.71e+00    7.32e-02  7.27e-02    1.38e-01  1.17e-01    1.0e-03
+    400    4.04e+00  3.29e+00    3.16e-02  3.22e-02    1.28e-01  1.04e-01    1.0e-03
+```
+The first column displays the number of batches. The second and third columns display the loss function evaluated by `numb_test` frames randomly chosen from the test set and that evaluated by the current training batch, respectively. The fourth and fifth columns display the RMS energy error (normalized by number of atoms) evaluated by `numb_test` frames randomly chosen from the test set and that evaluated by the current training batch, respectively. The sixth and seventh columns display the RMS force error (component-wise) evaluated by `numb_test` frames randomly chosen from the test set and that evaluated by the current training batch, respectively. The last column displays the current learning rate.
 
 Checkpoints will be written to files with prefix **`save_ckpt`** every **`save_freq`** batches. If **`restart`** is set to `true`, then the training will start from the checkpoint named **`load_ckpt`**, rather than from scratch.
 
-Several command line options can be passed to `dp_train`, which can be checked with
+Several command line options can be passed to `dp train`, which can be checked with
 ```bash
-$ $deepmd_root/bin/dp_train --help
+$ dp train --help
 ```
 An explanation will be provided
 ```
@@ -336,51 +419,30 @@ The keys `intra_op_parallelism_threads` and `inter_op_parallelism_threads` are T
 
 **`--restart model.ckpt`**, continues the training from the checkpoint `model.ckpt`.
 
-### The DeepPot-SE model
-The smooth version of DeePMD, or the [DeepPot-SE model][3], can also be trained by DeePMD-kit. [An example training parameter file](./examples/train/water_smth.json) is provided. One can try with the training by
-```bash
-$ cd $deepmd_source_dir/examples/train/
-$ $deepmd_root/bin/dp_train water_smth.json
-```
-The difference between the standard and smooth DeePMD models lies in the model parameters:
-```json
-{
-    "use_smooth":        true,
-    "sel_a":             [46, 92],
-    "rcut_smth":         5.80,
-    "rcut":              6.00,
-    "filter_neuron":     [25, 50, 100],
-    "filter_resnet_dt":  false,
-    "axis_neuron":       16,
-    "fitting_neuron":    [240, 240, 240],
-    "fitting_resnet_dt": true,
-    "_comment":          "that's all"
-}
-```
-The `sel_r` option is skipped by the smooth version and the model use fully-local-coordinate for all neighboring atoms. The `sel_a` should larger than the maximum possible number of neighbors in the cut-off radius `rcut`. 
 
-The descriptors will decay smoothly from **`rcut_smth`** to the cutoff radius `rcut`.
+## Freeze a model
 
-The **`filter_neuron`** provides the size of the filter network (also called local-embedding network). If the size of the next layer is the same or twice as the previous layer, then a skip connection is build (ResNet). The **`filter_resnet_dt`** tells if a timestep is used in the skip connection. By default it is `false`. **`axis_neuron`** (deprecated name `n_axis_neuron`) specifies the number of axis filter, which should be much smaller than the size of the last layer of the filter network.
-
-**`fitting_neuron`** (deprecated name `n_neuron`) specifies the fitting network. If the size of the next layer is the same as the previous layer, then a skip connection is build (ResNet). **`fitting_resnet_dt`** (deprecated name `resnet_dt`) tells if a timestep is used in the skip connection. By default it is `true`. 
-
-
-## Freeze and test a model
 The trained neural network is extracted from a checkpoint and dumped into a database. This process is called "freezing" a model. The idea and part of our code are from [Morgan](https://blog.metaflow.fr/tensorflow-how-to-freeze-a-model-and-serve-it-with-a-python-api-d4f3596b3adc). To freeze a model, typically one does
 ```bash
-$ $deepmd_root/bin/dp_frz -o graph.pb
+$ dp freeze -o graph.pb
 ```
 in the folder where the model is trained. The output database is called `graph.pb`.
 
-The frozen model can be used in many ways. The most straightforward test can be performed using `dp_test`. Several command line options can be passed to `dp_test`, which can be checked with
+
+## Test a model
+
+The frozen model can be used in many ways. The most straightforward test can be performed using `dp test`. A typical usage of `dp test` is 
 ```bash
-$ $deepmd_root/bin/dp_test --help
+dp test -m graph.pb -s /path/to/system -n 30
+```
+where `-m` gives the tested model, `-s` the path to the tested system and `-n` the number of tested frames. Several other command line options can be passed to `dp test`, which can be checked with
+```bash
+$ dp test --help
 ```
 An explanation will be provided
 ```
-usage: dp_test [-h] [-m MODEL] [-s SYSTEM] [-S SET_PREFIX] [-n NUMB_TEST]
-               [-d DETAIL_FILE]
+usage: dp test [-h] [-m MODEL] [-s SYSTEM] [-S SET_PREFIX] [-n NUMB_TEST]
+               [-r RAND_SEED] [--shuffle-test] [-d DETAIL_FILE]
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -392,11 +454,27 @@ optional arguments:
                         The set prefix
   -n NUMB_TEST, --numb-test NUMB_TEST
                         The number of data for test
+  -r RAND_SEED, --rand-seed RAND_SEED
+                        The random seed
+  --shuffle-test        Shuffle test data
   -d DETAIL_FILE, --detail-file DETAIL_FILE
                         The file containing details of energy force and virial
                         accuracy
 ```
-The files `dp_frz` and `dp_test` may also serve as a python template for further analyses and more user-specific applications.
+
+## Model inference 
+One may use the python interface of DeePMD-kit for model inference, an example is given as follows
+```python
+import deepmd.DeepPot as DP
+import numpy as np
+dp = DP('graph.pb')
+coord = np.array([[1,0,0], [0,0,1.5], [1,0,3]]).reshape([1, -1])
+cell = np.diag(10 * np.ones(3)).reshape([1, -1])
+atype = [1,0,1]
+e, f, v = dp.eval(coord, cell, atype)
+```
+where `e`, `f` and `v` are predicted energy, force and virial of the system, respectively.
+
 
 ## Run MD with LAMMPS
 ### Include deepmd in the pair style
@@ -405,7 +483,7 @@ Running an MD simulation with LAMMPS is simpler. In the LAMMPS input file, one n
 pair_style     deepmd graph.pb
 pair_coeff     
 ```
-where `graph.pb` is the file name of the frozen model. The `pair_coeff` should be left blank. It should be noted that LAMMPS counts atom types starting from 1, therefore, all LAMMPS atom type will be firstly subtracted by 1, and then passed into the DeePMD-kit engine to compute the interactions.
+where `graph.pb` is the file name of the frozen model. The `pair_coeff` should be left blank. It should be noted that LAMMPS counts atom types starting from 1, therefore, all LAMMPS atom type will be firstly subtracted by 1, and then passed into the DeePMD-kit engine to compute the interactions. A detailed documentation of this pair style is [here](doc/lammps-pair-style-deepmd.md).
 
 ### Long-range interaction
 The reciprocal space part of the long-range interaction can be calculated by LAMMPS command `kspace_style`. To use it with DeePMD-kit, one writes 
@@ -447,63 +525,19 @@ The option **`graph_file`** provides the file name of the frozen model.
 The `dp_ipi` gets the atom names from an [XYZ file](https://en.wikipedia.org/wiki/XYZ_file_format) provided by **`coord_file`** (meanwhile ignores all coordinates in it), and translates the names to atom types by rules provided by **`atom_type`**.
 
 
-## Run MD with native code
-DeePMD-kit provides a simple MD implementation that runs under either NVE or NVT ensemble. One needs to provide the following input files
-```bash
-$ ls
-conf.gro  graph.pb  water.json
-```
-`conf.gro` is the file that provides the initial coordinates and/or velocities of all atoms in the system. It is of Gromacs `gro` format. Details of this format can be found in [this website](http://manual.gromacs.org/current/online/gro.html). It should be noticed that the length unit of the `gro` format is **nm** rather than A.
-
-`graph.pb` is the frozen model.
-
-`water.json` is the parameter file that specifies how the MD runs. [An example parameter file](./examples/md/water.json) for water NVT simulation is provided. 
-```json
-{
-    "conf_file":	"conf.gro",
-    "conf_format":	"gro",
-    "graph_file":	"graph.pb",
-    "nsteps":		500000,
-    "dt": 		5e-4,
-    "ener_freq":	20,
-    "ener_file":	"energy.out",
-    "xtc_freq":		20,
-    "xtc_file":		"traj.xtc",
-    "trr_freq":		20,
-    "trr_file":		"traj.trr",
-    "print_force":	false,
-    "T":		300,
-    "tau_T":		0.1,
-    "rand_seed":	2017,
-    "atom_type" : {
-	"OW":		0, 
-	"HW1":		1,
-	"HW2":		1
-    },
-    "atom_mass" : {
-	"OW":		16, 
-	"HW1":		1,
-	"HW2":		1
-    }
-}
-```
-The options **`conf_file`**, **`conf_format`** and **`graph_file`** are self-explanatory. It should be noticed, again, the length unit is nm in the `gro` format file.
-
-The option **`nsteps`** specifies the number of time steps of the MD simulation. The option **`dt`** specifies the timestep of the simulation. 
-
-The options **`ener_file`** and **`ener_freq`** specify the energy output file and frequency. 
-
-The options **`xtc_file`**, **`xtc_freq`**, **`trr_file`** and **`trr_freq`** are similar options that specify the output files and frequencies of the xtc and trr trajectory, respectively. When the frequencies are set to 0, the corresponding file will not be output. The instructions of the xtc and trr formats can be found in [xtc manual](http://manual.gromacs.org/online/xtc.html) and [trr manual](http://manual.gromacs.org/online/trr.html). It is noticed that the length unit in the xtc and trr files is **nm**.
-
-If the option **`print_force`** is set to `true`, then the atomic force will be output.
-
-The option **`T`** specifies the temperature of the simulation, and the option **`tau_T`** specifies the timescale of the thermostat. We implement the Langevin thermostat for the NVT simulation. **`rand_seed`** set the random seed of the random generator in the thermostat.
-
-The **`atom_type`** set the type for the atoms in the system. The names of the atoms are those provided in the `conf_file` file. The **`atom_mass`** set the mass for the atoms. Again, the name of the atoms are those provided in the `conf_file`.
-
 # Troubleshooting
 In consequence of various differences of computers or systems, problems may occur. Some common circumstances are listed as follows. 
 If other unexpected problems occur, you're welcome to contact us for help.
+
+## Model compatability
+
+When the version of DeePMD-kit used to training model is different from the that of DeePMD-kit running MDs, one has the problem of model compatability.
+
+DeePMD-kit guarantees that the codes with the same major and minor revisions are compatible. That is to say v0.12.5 is compatible to v0.12.0, but is not compatible to v0.11.0. When way of fixing it is to restart the training with the new revisions and a slightly increased `stop_batch`, say 1,000,000 to 1,001,000 if the `save_freq` was set to 1,000. Typically one runs
+```bash
+dp train --restart model.ckpt revised_input.json
+```
+and freeze the new model.
 
 ## Installation: inadequate versions of gcc/g++
 Sometimes you may use a gcc/g++ of version <4.9. If you have a gcc/g++ of version > 4.9, say, 7.2.0, you may choose to use it by doing 
@@ -512,22 +546,7 @@ export CC=/path/to/gcc-7.2.0/bin/gcc
 export CXX=/path/to/gcc-7.2.0/bin/g++
 ```
 
-If, for any reason, for example, you only have a gcc/g++ of version 4.8.5, you can still compile all the parts of TensorFlow and most of the parts of DeePMD-kit. In this case, follow the following steps.
-
-First, goto the source code directory, open the file `CMakeLists.txt`
-```bash
-cd $deepmd_source_dir/source
-vi CMakeLists.txt
-```
-Next, comment the following 4 lines out:
-```
-# set (LIB_DEEPMD_NATIVE  "deepmd_native_md")
-# set (LIB_DEEPMD_IPI     "deepmd_ipi")
-# add_subdirectory (md/)
-# add_subdirectory (ipi/)
-```
-
-Then you may continue with the installation procedure.
+If, for any reason, for example, you only have a gcc/g++ of version 4.8.5, you can still compile all the parts of TensorFlow and most of the parts of DeePMD-kit. i-Pi will be disabled automatically.
 
 ## Installation: build files left in DeePMD-kit
 When you try to build a second time when installing DeePMD-kit, files produced before may contribute to failure. Thus, you may clear them by
@@ -545,10 +564,9 @@ $deepmd_root/lib/deepmd/libop_abi.so: undefined symbol:
 _ZN10tensorflow8internal21CheckOpMessageBuilder9NewStringB5cxx11Ev
 ```
 
-you may set `-DTF_GOOGLE_BIN=true` in the process of `cmake`.
+This may happen if you are using a gcc >= 5.0, and tensorflow was compiled with gcc < 5.0. You may set `-DOP_CXX_ABI=0` in the process of `cmake`.
 
 Another possible reason might be the large gap between the python version of TensorFlow and the TensorFlow c++ interface.
-
 
 ## MD: cannot run LAMMPS after installing a new version of DeePMD-kit
 This typically happens when you install a new version of DeePMD-kit and copy directly the generated `USER-DEEPMD` to a LAMMPS source code folder and re-install LAMMPS.
