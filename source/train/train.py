@@ -7,6 +7,7 @@ import numpy as np
 import argparse
 import json
 from deepmd.env import tf
+from deepmd.compat import convert_input_v0_v1
 
 lib_path = os.path.dirname(os.path.realpath(__file__)) + "/../lib/"
 sys.path.append (lib_path)
@@ -54,6 +55,10 @@ def train (args) :
     # load json database
     fp = open (args.INPUT, 'r')
     jdata = json.load (fp)
+    if not 'model' in jdata.keys():
+       jdata = convert_input_v0_v1(jdata, 
+                                   warning = True, 
+                                   dump = 'input_v1_compat.json')
     # run options
     with_distrib = False 
     if 'with_distrib' in jdata:
