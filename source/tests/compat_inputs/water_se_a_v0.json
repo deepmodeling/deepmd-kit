@@ -1,0 +1,47 @@
+{
+    "_comment": " model parameters",
+    "use_smooth":	true,
+    "sel_a":		[46, 92],
+    "rcut_smth":	5.80,
+    "rcut":		6.00,
+    "filter_neuron":	[25, 50, 100],
+    "filter_resnet_dt":	false,
+    "axis_neuron":	16,
+    "fitting_neuron":	[240, 240, 240],
+    "fitting_resnet_dt":true,
+    "coord_norm":	true,
+    "type_fitting_net":	false,
+
+    "_comment": " traing controls",
+    "systems":		["../data/"],
+    "set_prefix":	"set",    
+    "stop_batch":	1000000,
+    "batch_size":	[1],
+    "start_lr":		0.001,
+    "decay_steps":	5000,
+    "decay_rate":	0.95,
+
+    "start_pref_e":	0.02,
+    "limit_pref_e":	1,
+    "start_pref_f":	1000,
+    "limit_pref_f":	1,
+    "start_pref_v":	0,
+    "limit_pref_v":	0,
+
+    "seed":		1,
+
+    "_comment": " display and restart",
+    "_comment": " frequencies counted in batch",
+    "disp_file":	"lcurve.out",
+    "disp_freq":	100,
+    "numb_test":	10,
+    "save_freq":	1000,
+    "save_ckpt":	"model.ckpt",
+    "disp_training":	true,
+    "time_training":	true,
+    "profiling":	true,
+    "profiling_file":	"timeline.json",
+
+    "_comment":		"that's all"
+}
+
