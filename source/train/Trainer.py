@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import platform
 import sys
 import time
 import shutil
@@ -24,9 +25,15 @@ from tensorflow.python.framework import ops
 from tensorflow.python.client import timeline
 
 # load force module
+if platform.system() == "Windows":
+    ext = "dll"
+elif platform.system() == "Darwin":
+    ext = "dylib"
+else:
+    ext = "so"
 module_path = os.path.dirname(os.path.realpath(__file__)) + "/"
-assert (os.path.isfile (module_path  + "libop_abi.so" )), "op module does not exist"
-op_module = tf.load_op_library(module_path + "libop_abi.so")
+assert (os.path.isfile (module_path  + "libop_abi.{}".format(ext) )), "op module does not exist"
+op_module = tf.load_op_library(module_path + "libop_abi.{}".format(ext))
 
 # load grad of force module
 sys.path.append (module_path )

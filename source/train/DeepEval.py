@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
-
+import platform
 import os,sys
 import numpy as np
 
 from deepmd.env import tf
 
 from tensorflow.python.framework import ops
+
+if platform.system() == "Windows":
+    ext = "dll"
+elif platform.system() == "Darwin":
+    ext = "dylib"
+else:
+    ext = "so"
 module_path = os.path.dirname(os.path.realpath(__file__))
-assert (os.path.isfile (os.path.join(module_path, "libop_abi.so"))), "op module does not exist"
-op_module = tf.load_op_library(os.path.join(module_path, "libop_abi.so"))
+assert (os.path.isfile (os.path.join(module_path, "libop_abi.{}".format(ext)))), "op module does not exist"
+op_module = tf.load_op_library(os.path.join(module_path, "libop_abi.{}".format(ext)))
 
 class DeepEval():
     """
