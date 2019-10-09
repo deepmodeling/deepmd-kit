@@ -1,3 +1,4 @@
+import platform
 import os,sys,warnings
 import numpy as np
 from deepmd.env import tf
@@ -11,9 +12,15 @@ from deepmd.RunOptions import global_cvt_2_ener_float
 from deepmd.DescrptSeA import DescrptSeA
 from deepmd.DescrptSeR import DescrptSeR
 
+if platform.system() == "Windows":
+    ext = "dll"
+elif platform.system() == "Darwin":
+    ext = "dylib"
+else:
+    ext = "so"
 module_path = os.path.dirname(os.path.realpath(__file__)) + "/"
-assert (os.path.isfile (module_path  + "libop_abi.so" )), "op module does not exist"
-op_module = tf.load_op_library(module_path + "libop_abi.so")
+assert (os.path.isfile (module_path  + "libop_abi.{}".format(ext) )), "op module does not exist"
+op_module = tf.load_op_library(module_path + "libop_abi.{}".format(ext))
 
 class DescrptSeAR ():
     def __init__ (self, jdata):
