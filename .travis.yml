@@ -31,6 +31,16 @@ matrix:
       - CC=gcc-4.8
       - CXX=g++-4.8
       - TENSORFLOW_VERSION=1.14
+    - python: 3.6
+      env: 
+      - CC=gcc-5.0
+      - CXX=g++-5.0
+      - TENSORFLOW_VERSION=1.14
+    - python: 3.6
+      env: 
+      - CC=gcc-8.0
+      - CXX=g++-8.0
+      - TENSORFLOW_VERSION=1.14
     - python: 3.7
       env: 
       - CC=gcc-5
