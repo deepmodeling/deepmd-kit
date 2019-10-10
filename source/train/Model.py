@@ -29,11 +29,15 @@ class Model() :
         args = ClassArg()\
                .add('type_map',         list,   default = []) \
                .add('rcond',            float,  default = 1e-3) \
+               .add('data_stat_nbatch', int,    default = 10) \
+               .add('data_stat_protect',float,  default = 1e-2) \
                .add('use_srtab',        str)
         class_data = args.parse(jdata)
         self.type_map = class_data['type_map']
         self.srtab_name = class_data['use_srtab']
         self.rcond = class_data['rcond']
+        self.data_stat_nbatch = class_data['data_stat_nbatch']
+        self.data_stat_protect = class_data['data_stat_protect']
         if self.srtab_name is not None :
             self.srtab = TabInter(self.srtab_name)
             args.add('smin_alpha',      float,  must = True)\
@@ -56,16 +60,16 @@ class Model() :
     def get_type_map (self) :
         return self.type_map
 
-    def data_stat(self, data, nbatch = 1, protection = 1e-2):
+    def data_stat(self, data):
         all_stat = defaultdict(list)
         for ii in range(data.get_nsystems()) :
-            for jj in range(nbatch) :
+            for jj in range(self.data_stat_nbatch) :
                 stat_data = data.get_batch (sys_idx = ii)
                 for dd in stat_data:
                     if dd == "natoms_vec":
                         stat_data[dd] = stat_data[dd].astype(np.int32) 
                     all_stat[dd].append(stat_data[dd])        
-        self._compute_dstats (all_stat, protection = protection)
+        self._compute_dstats (all_stat, protection = self.data_stat_protect)
         self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
 
@@ -224,9 +228,11 @@ class WFCModel() :
         self.fitting = fitting
 
         args = ClassArg()\
-               .add('type_map',         list,   default = [])
+               .add('type_map',         list,   default = []) \
+               .add('data_stat_nbatch', int,    default = 10)
         class_data = args.parse(jdata)
         self.type_map = class_data['type_map']
+        self.data_stat_nbatch = class_data['data_stat_nbatch']
 
     def get_rcut (self) :
         return self.rcut
@@ -240,11 +246,12 @@ class WFCModel() :
     def data_stat(self, data):
         all_stat = defaultdict(list)
         for ii in range(data.get_nsystems()) :
-            stat_data = data.get_batch (sys_idx = ii)
-            for dd in stat_data:
-                if dd == "natoms_vec":
-                    stat_data[dd] = stat_data[dd].astype(np.int32) 
-                all_stat[dd].append(stat_data[dd])
+            for jj in range(self.data_stat_nbatch) :
+                stat_data = data.get_batch (sys_idx = ii)
+                for dd in stat_data:
+                    if dd == "natoms_vec":
+                        stat_data[dd] = stat_data[dd].astype(np.int32) 
+                    all_stat[dd].append(stat_data[dd])
         self._compute_dstats(all_stat)
 
 
@@ -321,9 +328,11 @@ class PolarModel() :
         self.fitting = fitting
 
         args = ClassArg()\
-               .add('type_map',         list,   default = [])
+               .add('type_map',         list,   default = []) \
+               .add('data_stat_nbatch', int,    default = 10)
         class_data = args.parse(jdata)
         self.type_map = class_data['type_map']
+        self.data_stat_nbatch = class_data['data_stat_nbatch']
 
     def get_rcut (self) :
         return self.rcut
@@ -337,11 +346,12 @@ class PolarModel() :
     def data_stat(self, data):
         all_stat = defaultdict(list)
         for ii in range(data.get_nsystems()) :
-            stat_data = data.get_batch (sys_idx = ii)
-            for dd in stat_data:
-                if dd == "natoms_vec":
-                    stat_data[dd] = stat_data[dd].astype(np.int32) 
-                all_stat[dd].append(stat_data[dd])        
+            for jj in range(self.data_stat_nbatch) :
+                stat_data = data.get_batch (sys_idx = ii)
+                for dd in stat_data:
+                    if dd == "natoms_vec":
+                        stat_data[dd] = stat_data[dd].astype(np.int32) 
+                    all_stat[dd].append(stat_data[dd])        
         self._compute_dstats (all_stat)
 
 
