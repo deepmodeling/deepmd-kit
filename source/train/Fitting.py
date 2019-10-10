@@ -31,10 +31,25 @@ class EnerFitting ():
         self.useBN = False
         # data requirement
         if self.numb_fparam > 0 :
-            add_data_requirement('fparam', self.numb_fparam, atomic=False, must=False, high_prec=False)        
+            add_data_requirement('fparam', self.numb_fparam, atomic=False, must=False, high_prec=False)
+            self.avg = None
+            self.std = None
+            self.inv_std = None
 
     def get_numb_fparam(self) :
         return self.numb_fparam
+
+    def compute_dstats(self, all_stat, protection = 1e-2):
+        # stat fparam
+        if self.numb_fparam > 0:
+            stat = np.zeros([self.numb_fparam])
+            cat_data = np.concatenate(all_stat['fparam'], axis = 0)
+            self.avg = np.average(cat_data, axis = 0)
+            self.std = np.std(cat_data, axis = 0)
+            for ii in range(self.std.size):
+                if self.std[ii] < protection:
+                    self.std[ii] = protection
+            self.inv_std = 1./self.std
 
     def build (self, 
                inputs,
@@ -43,10 +58,24 @@ class EnerFitting ():
                bias_atom_e = None,
                reuse = None,
                suffix = '') :
+        if self.avg is None or self.inv_std is None :
+            raise RuntimeError('No data stat result. one should do data statisitic, before build')
+
         with tf.variable_scope('fitting_attr' + suffix, reuse = reuse) :
             t_dfparam = tf.constant(self.numb_fparam, 
                                     name = 'dfparam', 
                                     dtype = tf.int32)
+            t_fparam_avg = tf.get_variable('t_fparam_avg', 
+                                           self.numb_fparam,
+                                           dtype = global_tf_float_precision,
+                                           trainable = False,
+                                           initializer = tf.constant_initializer(self.avg))
+            t_fparam_istd = tf.get_variable('t_fparam_istd', 
+                                            self.numb_fparam,
+                                            dtype = global_tf_float_precision,
+                                            trainable = False,
+                                            initializer = tf.constant_initializer(self.inv_std))
+            
         start_index = 0
         inputs = tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]])
         shape = inputs.get_shape().as_list()
@@ -70,6 +99,7 @@ class EnerFitting ():
             if self.numb_fparam > 0 :
                 fparam = input_dict['fparam']
                 ext_fparam = tf.reshape(fparam, [-1, self.numb_fparam])
+                ext_fparam = (ext_fparam - t_fparam_avg) * t_fparam_istd
                 ext_fparam = tf.tile(ext_fparam, [1, natoms[2+type_i]])
                 ext_fparam = tf.reshape(ext_fparam, [-1, self.numb_fparam])
                 layer = tf.concat([layer, ext_fparam], axis = 1)

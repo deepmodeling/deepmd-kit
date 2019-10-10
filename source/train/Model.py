@@ -56,32 +56,27 @@ class Model() :
     def get_type_map (self) :
         return self.type_map
 
-    def data_stat(self, data):
+    def data_stat(self, data, nbatch = 1):
         all_stat = defaultdict(list)
         for ii in range(data.get_nsystems()) :
-            stat_data = data.get_batch (sys_idx = ii)
-            for dd in stat_data:
-                if dd == "natoms_vec":
-                    stat_data[dd] = stat_data[dd].astype(np.int32) 
-                all_stat[dd].append(stat_data[dd])
-        
-        self._compute_dstats (all_stat['coord'], 
-                              all_stat['box'], 
-                              all_stat['type'], 
-                              all_stat['natoms_vec'], 
-                              all_stat['default_mesh'])
+            for jj in range(nbatch) :
+                stat_data = data.get_batch (sys_idx = ii)
+                for dd in stat_data:
+                    if dd == "natoms_vec":
+                        stat_data[dd] = stat_data[dd].astype(np.int32) 
+                    all_stat[dd].append(stat_data[dd])        
+        self._compute_dstats (all_stat)
         self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
 
-    def _compute_dstats (self,
-                         data_coord, 
-                         data_box, 
-                         data_atype, 
-                         natoms_vec,
-                         mesh,
-                         reuse = None) :        
+    def _compute_dstats (self, all_stat) :        
         self.davg, self.dstd \
-            = self.descrpt.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh, reuse)
+            = self.descrpt.compute_dstats(all_stat['coord'],
+                                          all_stat['box'],
+                                          all_stat['type'],
+                                          all_stat['natoms_vec'],
+                                          all_stat['default_mesh'])        
+        self.fitting.compute_dstats(all_stat)
     
     def build (self, 
                coord_, 
@@ -250,23 +245,16 @@ class WFCModel() :
                 if dd == "natoms_vec":
                     stat_data[dd] = stat_data[dd].astype(np.int32) 
                 all_stat[dd].append(stat_data[dd])
-        
-        self._compute_dstats (all_stat['coord'], 
-                              all_stat['box'], 
-                              all_stat['type'], 
-                              all_stat['natoms_vec'], 
-                              all_stat['default_mesh'])
+        self._compute_dstats(all_stat)
 
 
-    def _compute_dstats (self,
-                         data_coord, 
-                         data_box, 
-                         data_atype, 
-                         natoms_vec,
-                         mesh,
-                         reuse = None) :        
+    def _compute_dstats (self, all_stat) :        
         self.davg, self.dstd \
-            = self.descrpt.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh, reuse)
+            = self.descrpt.compute_dstats(all_stat['coord'],
+                                          all_stat['box'],
+                                          all_stat['type'],
+                                          all_stat['natoms_vec'],
+                                          all_stat['default_mesh'])
     
     def get_sel_type(self):
         return self.fitting.get_sel_type()
@@ -353,24 +341,17 @@ class PolarModel() :
             for dd in stat_data:
                 if dd == "natoms_vec":
                     stat_data[dd] = stat_data[dd].astype(np.int32) 
-                all_stat[dd].append(stat_data[dd])
-        
-        self._compute_dstats (all_stat['coord'], 
-                              all_stat['box'], 
-                              all_stat['type'], 
-                              all_stat['natoms_vec'], 
-                              all_stat['default_mesh'])
+                all_stat[dd].append(stat_data[dd])        
+        self._compute_dstats (all_stat)
 
 
-    def _compute_dstats (self,
-                         data_coord, 
-                         data_box, 
-                         data_atype, 
-                         natoms_vec,
-                         mesh,
-                         reuse = None) :        
+    def _compute_dstats (self, all_stat) :        
         self.davg, self.dstd \
-            = self.descrpt.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh, reuse)
+            = self.descrpt.compute_dstats(all_stat['coord'],
+                                          all_stat['box'],
+                                          all_stat['type'],
+                                          all_stat['natoms_vec'],
+                                          all_stat['default_mesh'])
     
     def get_sel_type(self):
         return self.fitting.get_sel_type()

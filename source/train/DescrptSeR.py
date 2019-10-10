@@ -60,8 +60,7 @@ class DescrptSeR ():
                         data_box, 
                         data_atype, 
                         natoms_vec,
-                        mesh,
-                        reuse = None) :    
+                        mesh) :    
         all_davg = []
         all_dstd = []
         sumr = []
@@ -69,7 +68,7 @@ class DescrptSeR ():
         sumr2 = []
         for cc,bb,tt,nn,mm in zip(data_coord,data_box,data_atype,natoms_vec,mesh) :
             sysr,sysr2,sysn \
-                = self._compute_dstats_sys_se_r(cc,bb,tt,nn,mm,reuse)
+                = self._compute_dstats_sys_se_r(cc,bb,tt,nn,mm)
             sumr.append(sysr)
             sumn.append(sysn)
             sumr2.append(sysr2)
@@ -114,12 +113,12 @@ class DescrptSeR ():
                                          davg.shape, 
                                          dtype = global_tf_float_precision,
                                          trainable = False,
-                                         initializer = tf.constant_initializer(davg, dtype = global_tf_float_precision))
+                                         initializer = tf.constant_initializer(davg))
             self.t_std = tf.get_variable('t_std', 
                                          dstd.shape, 
                                          dtype = global_tf_float_precision,
                                          trainable = False,
-                                         initializer = tf.constant_initializer(dstd, dtype = global_tf_float_precision))
+                                         initializer = tf.constant_initializer(dstd))
 
         coord = tf.reshape (coord_, [-1, natoms[1] * 3])
         box   = tf.reshape (box_, [-1, 9])
@@ -187,8 +186,7 @@ class DescrptSeR ():
                                   data_box, 
                                   data_atype,                             
                                   natoms_vec,
-                                  mesh,
-                                  reuse = None) :    
+                                  mesh) :    
         avg_zero = np.zeros([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
         std_ones = np.ones ([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
         sub_graph = tf.Graph()

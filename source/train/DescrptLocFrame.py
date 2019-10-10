@@ -54,8 +54,7 @@ class DescrptLocFrame () :
                         data_box, 
                         data_atype, 
                         natoms_vec,
-                        mesh, 
-                        reuse = None) :
+                        mesh) :
         all_davg = []
         all_dstd = []
         if True:
@@ -64,7 +63,7 @@ class DescrptLocFrame () :
             sumv2 = []
             for cc,bb,tt,nn,mm in zip(data_coord,data_box,data_atype,natoms_vec,mesh) :
                 sysv,sysv2,sysn \
-                    = self._compute_dstats_sys_nonsmth(cc,bb,tt,nn,mm,reuse)
+                    = self._compute_dstats_sys_nonsmth(cc,bb,tt,nn,mm)
                 sumv.append(sysv)
                 sumn.append(sysn)
                 sumv2.append(sysv2)
@@ -167,8 +166,7 @@ class DescrptLocFrame () :
                                     data_box, 
                                     data_atype, 
                                     natoms_vec,
-                                    mesh,
-                                    reuse = None) :    
+                                    mesh) :    
         avg_zero = np.zeros([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
         std_ones = np.ones ([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
         sub_graph = tf.Graph()
