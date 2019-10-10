@@ -39,7 +39,7 @@ class EnerFitting ():
     def get_numb_fparam(self) :
         return self.numb_fparam
 
-    def compute_dstats(self, all_stat, protection = 1e-2):
+    def compute_dstats(self, all_stat, protection):
         # stat fparam
         if self.numb_fparam > 0:
             stat = np.zeros([self.numb_fparam])
@@ -58,23 +58,24 @@ class EnerFitting ():
                bias_atom_e = None,
                reuse = None,
                suffix = '') :
-        if self.avg is None or self.inv_std is None :
+        if self.numb_fparam > 0 and ( self.avg is None or self.inv_std is None ):
             raise RuntimeError('No data stat result. one should do data statisitic, before build')
 
         with tf.variable_scope('fitting_attr' + suffix, reuse = reuse) :
             t_dfparam = tf.constant(self.numb_fparam, 
                                     name = 'dfparam', 
                                     dtype = tf.int32)
-            t_fparam_avg = tf.get_variable('t_fparam_avg', 
-                                           self.numb_fparam,
-                                           dtype = global_tf_float_precision,
-                                           trainable = False,
-                                           initializer = tf.constant_initializer(self.avg))
-            t_fparam_istd = tf.get_variable('t_fparam_istd', 
-                                            self.numb_fparam,
-                                            dtype = global_tf_float_precision,
-                                            trainable = False,
-                                            initializer = tf.constant_initializer(self.inv_std))
+            if self.numb_fparam > 0: 
+                t_fparam_avg = tf.get_variable('t_fparam_avg', 
+                                               self.numb_fparam,
+                                               dtype = global_tf_float_precision,
+                                               trainable = False,
+                                               initializer = tf.constant_initializer(self.avg))
+                t_fparam_istd = tf.get_variable('t_fparam_istd', 
+                                                self.numb_fparam,
+                                                dtype = global_tf_float_precision,
+                                                trainable = False,
+                                                initializer = tf.constant_initializer(self.inv_std))
             
         start_index = 0
         inputs = tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]])

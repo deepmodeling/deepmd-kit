@@ -56,7 +56,7 @@ class Model() :
     def get_type_map (self) :
         return self.type_map
 
-    def data_stat(self, data, nbatch = 1):
+    def data_stat(self, data, nbatch = 1, protection = 1e-2):
         all_stat = defaultdict(list)
         for ii in range(data.get_nsystems()) :
             for jj in range(nbatch) :
@@ -65,18 +65,18 @@ class Model() :
                     if dd == "natoms_vec":
                         stat_data[dd] = stat_data[dd].astype(np.int32) 
                     all_stat[dd].append(stat_data[dd])        
-        self._compute_dstats (all_stat)
+        self._compute_dstats (all_stat, protection = protection)
         self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
 
-    def _compute_dstats (self, all_stat) :        
+    def _compute_dstats (self, all_stat, protection = 1e-2) :
         self.davg, self.dstd \
             = self.descrpt.compute_dstats(all_stat['coord'],
                                           all_stat['box'],
                                           all_stat['type'],
                                           all_stat['natoms_vec'],
                                           all_stat['default_mesh'])        
-        self.fitting.compute_dstats(all_stat)
+        self.fitting.compute_dstats(all_stat, protection = protection)
     
     def build (self, 
                coord_, 
