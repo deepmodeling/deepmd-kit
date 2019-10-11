@@ -47,10 +47,9 @@ class DescrptSeAR ():
                         data_box, 
                         data_atype, 
                         natoms_vec,
-                        mesh,
-                        reuse = None) :    
-        davg_a, dstd_a = self.descrpt_a.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh, reuse)
-        davg_r, dstd_r = self.descrpt_r.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh, reuse)
+                        mesh) :    
+        davg_a, dstd_a = self.descrpt_a.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh)
+        davg_r, dstd_r = self.descrpt_r.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh)
         return [davg_a, davg_r], [dstd_a, dstd_r]
 
 

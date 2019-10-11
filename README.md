@@ -533,11 +533,7 @@ If other unexpected problems occur, you're welcome to contact us for help.
 
 When the version of DeePMD-kit used to training model is different from the that of DeePMD-kit running MDs, one has the problem of model compatability.
 
-DeePMD-kit guarantees that the codes with the same major and minor revisions are compatible. That is to say v0.12.5 is compatible to v0.12.0, but is not compatible to v0.11.0. When way of fixing it is to restart the training with the new revisions and a slightly increased `stop_batch`, say 1,000,000 to 1,001,000 if the `save_freq` was set to 1,000. Typically one runs
-```bash
-dp train --restart model.ckpt revised_input.json
-```
-and freeze the new model.
+DeePMD-kit guarantees that the codes with the same major and minor revisions are compatible. That is to say v0.12.5 is compatible to v0.12.0, but is not compatible to v0.11.0 nor v1.0.0. 
 
 ## Installation: inadequate versions of gcc/g++
 Sometimes you may use a gcc/g++ of version <4.9. If you have a gcc/g++ of version > 4.9, say, 7.2.0, you may choose to use it by doing 

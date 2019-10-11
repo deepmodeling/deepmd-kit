@@ -51,7 +51,14 @@ class TestModel(unittest.TestCase):
         fitting = EnerFitting(jdata['model']['fitting_net'], descrpt)
         model = Model(jdata['model'], descrpt, fitting)
 
-        model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
+        # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
+        input_data = {'coord' : [test_data['coord']], 
+                      'box': [test_data['box']], 
+                      'type': [test_data['type']],
+                      'natoms_vec' : [test_data['natoms_vec']],
+                      'default_mesh' : [test_data['default_mesh']]
+        }
+        model._compute_dstats(input_data)
         model.bias_atom_e = data.compute_energy_shift()
 
         t_prop_c           = tf.placeholder(tf.float32, [5],    name='t_prop_c')
