@@ -93,7 +93,7 @@ First, check the python version and compiler version on your machine
 ```bash
 python --version; gcc --version
 ```
-If your python version is 3.6.x, it is highly recommended to use a GNU C/C++ compiler of version lower than 5.0. If your python version is 3.7.x, it is highly recommended that the GNU C/C++ compiler is higher than or equal to 5.0.
+If your python version is 3.7.x, it is highly recommended that the GNU C/C++ compiler is higher than or equal to 5.0.
 
 We follow the virtual environment approach to install the tensorflow's Python interface. The full instruction can be found on [the tensorflow's official website](https://www.tensorflow.org/install/pip). Now we assume that the Python interface will be installed to virtual environment directory `$tensorflow_venv`
 ```bash
