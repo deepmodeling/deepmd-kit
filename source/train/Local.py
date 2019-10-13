@@ -8,6 +8,6 @@ def get_resource ():
         if gpus != "" :
             gpus = gpus.split(",")
             gpus = [int(ii) for ii in gpus]
-        else gpus == "":
+        else :
             gpus = []
     return nodename, nodelist, gpus
