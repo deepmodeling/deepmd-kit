@@ -5,6 +5,9 @@ def get_resource ():
     nodelist = [nodename]
     gpus = os.getenv('CUDA_VISIBLE_DEVICES')
     if gpus is not None :
-        gpus = gpus.split(",")
-        gpus = [int(ii) for ii in gpus]
+        if gpus != "" :
+            gpus = gpus.split(",")
+            gpus = [int(ii) for ii in gpus]
+        else gpus == "":
+            gpus = []
     return nodename, nodelist, gpus
