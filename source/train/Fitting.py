@@ -20,21 +20,29 @@ class EnerFitting ():
         self.dim_descrpt = descrpt.get_dim_out()
         args = ClassArg()\
                .add('numb_fparam',      int,    default = 0)\
+               .add('numb_aparam',      int,    default = 0)\
                .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\
                .add('resnet_dt',        bool,   default = True)\
                .add('seed',             int)               
         class_data = args.parse(jdata)
         self.numb_fparam = class_data['numb_fparam']
+        self.numb_aparam = class_data['numb_aparam']
         self.n_neuron = class_data['neuron']
         self.resnet_dt = class_data['resnet_dt']
         self.seed = class_data['seed']
         self.useBN = False
         # data requirement
         if self.numb_fparam > 0 :
-            add_data_requirement('fparam', self.numb_fparam, atomic=False, must=False, high_prec=False)
-            self.avg = None
-            self.std = None
-            self.inv_std = None
+            add_data_requirement('fparam', self.numb_fparam, atomic=False, must=True, high_prec=False)
+            self.fparam_avg = None
+            self.fparam_std = None
+            self.fparam_inv_std = None
+        if self.numb_aparam > 0:
+            add_data_requirement('aparam', self.numb_aparam, atomic=True,  must=True, high_prec=False)
+            self.aparam_avg = None
+            self.aparam_std = None
+            self.aparam_inv_std = None
+            
 
     def get_numb_fparam(self) :
         return self.numb_fparam
@@ -42,14 +50,13 @@ class EnerFitting ():
     def compute_dstats(self, all_stat, protection):
         # stat fparam
         if self.numb_fparam > 0:
-            stat = np.zeros([self.numb_fparam])
             cat_data = np.concatenate(all_stat['fparam'], axis = 0)
-            self.avg = np.average(cat_data, axis = 0)
-            self.std = np.std(cat_data, axis = 0)
-            for ii in range(self.std.size):
-                if self.std[ii] < protection:
-                    self.std[ii] = protection
-            self.inv_std = 1./self.std
+            self.fparam_avg = np.average(cat_data, axis = 0)
+            self.fparam_std = np.std(cat_data, axis = 0)
+            for ii in range(self.fparam_std.size):
+                if self.fparam_std[ii] < protection:
+                    self.fparam_std[ii] = protection
+            self.fparam_inv_std = 1./self.fparam_std
 
     def build (self, 
                inputs,
@@ -58,7 +65,7 @@ class EnerFitting ():
                bias_atom_e = None,
                reuse = None,
                suffix = '') :
-        if self.numb_fparam > 0 and ( self.avg is None or self.inv_std is None ):
+        if self.numb_fparam > 0 and ( self.fparam_avg is None or self.fparam_inv_std is None ):
             raise RuntimeError('No data stat result. one should do data statisitic, before build')
 
         with tf.variable_scope('fitting_attr' + suffix, reuse = reuse) :
@@ -70,12 +77,12 @@ class EnerFitting ():
                                                self.numb_fparam,
                                                dtype = global_tf_float_precision,
                                                trainable = False,
-                                               initializer = tf.constant_initializer(self.avg))
+                                               initializer = tf.constant_initializer(self.fparam_avg))
                 t_fparam_istd = tf.get_variable('t_fparam_istd', 
                                                 self.numb_fparam,
                                                 dtype = global_tf_float_precision,
                                                 trainable = False,
-                                                initializer = tf.constant_initializer(self.inv_std))
+                                                initializer = tf.constant_initializer(self.fparam_inv_std))
             
         start_index = 0
         inputs = tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]])
