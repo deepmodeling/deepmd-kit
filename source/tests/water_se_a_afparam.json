@@ -14,6 +14,7 @@
 	"fitting_net" : {
 	    "neuron":		[240, 240, 240],
 	    "resnet_dt":	true,
+	    "numb_fparam":	2,
 	    "numb_aparam":	2,
 	    "seed":		1
 	}

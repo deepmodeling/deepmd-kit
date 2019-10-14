@@ -6,7 +6,7 @@ from collections import defaultdict
 from deepmd.DescrptSeA import DescrptSeA
 from deepmd.Fitting import EnerFitting
 
-input_json = 'water_se_a_aparam.json'
+input_json = 'water_se_a_afparam.json'
 
 def _make_fake_data(sys_natoms, sys_nframes, avgs, stds):
     all_stat = defaultdict(list)
