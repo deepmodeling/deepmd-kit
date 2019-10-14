@@ -42,21 +42,47 @@ class EnerFitting ():
             self.aparam_avg = None
             self.aparam_std = None
             self.aparam_inv_std = None
-            
 
     def get_numb_fparam(self) :
+        return self.numb_fparam
+
+    def get_numb_aparam(self) :
         return self.numb_fparam
 
     def compute_dstats(self, all_stat, protection):
         # stat fparam
         if self.numb_fparam > 0:
             cat_data = np.concatenate(all_stat['fparam'], axis = 0)
+            cat_data = np.reshape(cat_data, [-1, self.numb_fparam])
             self.fparam_avg = np.average(cat_data, axis = 0)
             self.fparam_std = np.std(cat_data, axis = 0)
             for ii in range(self.fparam_std.size):
                 if self.fparam_std[ii] < protection:
                     self.fparam_std[ii] = protection
             self.fparam_inv_std = 1./self.fparam_std
+        # stat aparam
+        if self.numb_aparam > 0:
+            sys_sumv = []
+            sys_sumv2 = []
+            sys_sumn = []
+            for ss_ in all_stat['aparam'] : 
+                ss = np.reshape(ss_, [-1, self.numb_aparam])
+                sys_sumv.append(np.sum(ss, axis = 0))
+                sys_sumv2.append(np.sum(np.multiply(ss, ss), axis = 0))
+                sys_sumn.append(ss.shape[0])
+            sumv = np.sum(sys_sumv, axis = 0)
+            sumv2 = np.sum(sys_sumv2, axis = 0)
+            sumn = np.sum(sys_sumn)
+            self.aparam_avg = (sumv)/sumn
+            self.aparam_std = self._compute_std(sumv2, sumv, sumn)
+            for ii in range(self.aparam_std.size):
+                if self.aparam_std[ii] < protection:
+                    self.aparam_std[ii] = protection
+            self.aparam_inv_std = 1./self.aparam_std                
+
+    def _compute_std (self, sumv2, sumv, sumn) :
+        return np.sqrt(sumv2/sumn - np.multiply(sumv/sumn, sumv/sumn))
+            
 
     def build (self, 
                inputs,
@@ -67,10 +93,15 @@ class EnerFitting ():
                suffix = '') :
         if self.numb_fparam > 0 and ( self.fparam_avg is None or self.fparam_inv_std is None ):
             raise RuntimeError('No data stat result. one should do data statisitic, before build')
+        if self.numb_aparam > 0 and ( self.aparam_avg is None or self.aparam_inv_std is None ):
+            raise RuntimeError('No data stat result. one should do data statisitic, before build')
 
         with tf.variable_scope('fitting_attr' + suffix, reuse = reuse) :
             t_dfparam = tf.constant(self.numb_fparam, 
                                     name = 'dfparam', 
+                                    dtype = tf.int32)
+            t_daparam = tf.constant(self.numb_aparam, 
+                                    name = 'daparam', 
                                     dtype = tf.int32)
             if self.numb_fparam > 0: 
                 t_fparam_avg = tf.get_variable('t_fparam_avg', 
@@ -83,6 +114,17 @@ class EnerFitting ():
                                                 dtype = global_tf_float_precision,
                                                 trainable = False,
                                                 initializer = tf.constant_initializer(self.fparam_inv_std))
+            if self.numb_aparam > 0: 
+                t_aparam_avg = tf.get_variable('t_aparam_avg', 
+                                               self.numb_aparam,
+                                               dtype = global_tf_float_precision,
+                                               trainable = False,
+                                               initializer = tf.constant_initializer(self.aparam_avg))
+                t_aparam_istd = tf.get_variable('t_aparam_istd', 
+                                                self.numb_aparam,
+                                                dtype = global_tf_float_precision,
+                                                trainable = False,
+                                                initializer = tf.constant_initializer(self.aparam_inv_std))
             
         start_index = 0
         inputs = tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]])
@@ -91,26 +133,40 @@ class EnerFitting ():
         if bias_atom_e is not None :
             assert(len(bias_atom_e) == self.ntypes)
 
+        if self.numb_fparam > 0 :
+            fparam = input_dict['fparam']
+            fparam = tf.reshape(fparam, [-1, self.numb_fparam])
+            fparam = (fparam - t_fparam_avg) * t_fparam_istd            
+        if self.numb_aparam > 0 :
+            aparam = input_dict['aparam']
+            aparam = tf.reshape(aparam, [-1, self.numb_aparam])
+            aparam = (aparam - t_aparam_avg) * t_aparam_istd
+            aparam = tf.reshape(aparam, [-1, self.numb_aparam * natoms[0]])
+
         for type_i in range(self.ntypes):
             # cut-out inputs
             inputs_i = tf.slice (inputs,
                                  [ 0, start_index*      self.dim_descrpt],
                                  [-1, natoms[2+type_i]* self.dim_descrpt] )
             inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
+            layer = inputs_i
+            if self.numb_fparam > 0 :
+                ext_fparam = tf.tile(fparam, [1, natoms[2+type_i]])
+                ext_fparam = tf.reshape(ext_fparam, [-1, self.numb_fparam])
+                layer = tf.concat([layer, ext_fparam], axis = 1)
+            if self.numb_aparam > 0 :
+                ext_aparam = tf.slice(aparam, 
+                                      [ 0, start_index      * self.numb_aparam],
+                                      [-1, natoms[2+type_i] * self.numb_aparam])
+                ext_aparam = tf.reshape(ext_aparam, [-1, self.numb_aparam])
+                layer = tf.concat([layer, ext_aparam], axis = 1)
             start_index += natoms[2+type_i]
+                
             if bias_atom_e is None :
                 type_bias_ae = 0.0
             else :
                 type_bias_ae = bias_atom_e[type_i]
 
-            layer = inputs_i
-            if self.numb_fparam > 0 :
-                fparam = input_dict['fparam']
-                ext_fparam = tf.reshape(fparam, [-1, self.numb_fparam])
-                ext_fparam = (ext_fparam - t_fparam_avg) * t_fparam_istd
-                ext_fparam = tf.tile(ext_fparam, [1, natoms[2+type_i]])
-                ext_fparam = tf.reshape(ext_fparam, [-1, self.numb_fparam])
-                layer = tf.concat([layer, ext_fparam], axis = 1)
             for ii in range(0,len(self.n_neuron)) :
                 if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
                     layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt)
