@@ -64,7 +64,7 @@ public:
 		const vector<int> &		atype,
 		const vector<VALUETYPE> &	box, 
 		const int			nghost = 0,
-		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
+		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>());
   void compute (ENERGYTYPE &			ener,
 		vector<VALUETYPE> &		force,
 		vector<VALUETYPE> &		virial,
@@ -73,7 +73,7 @@ public:
 		const vector<VALUETYPE> &	box, 
 		const int			nghost,
 		const LammpsNeighborList &	lmp_list,
-		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
+		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>());
   void compute (ENERGYTYPE &			ener,
 		vector<VALUETYPE> &		force,
 		vector<VALUETYPE> &		virial,
@@ -82,7 +82,7 @@ public:
 		const vector<VALUETYPE> &	coord,
 		const vector<int> &		atype,
 		const vector<VALUETYPE> &	box,
-		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
+		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>());
   void compute (ENERGYTYPE &			ener,
 		vector<VALUETYPE> &		force,
 		vector<VALUETYPE> &		virial,
@@ -93,7 +93,7 @@ public:
 		const vector<VALUETYPE> &	box, 
 		const int			nghost, 
 		const LammpsNeighborList &	lmp_list,
-		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
+		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>());
   VALUETYPE cutoff () const {assert(inited); return rcut;};
   int numb_types () const {assert(inited); return ntypes;};
   int dim_fparam () const {assert(inited); return dfparam;};
@@ -125,7 +125,7 @@ public:
   		const vector<VALUETYPE> &	coord,
   		const vector<int> &		atype,
   		const vector<VALUETYPE> &	box,
-		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
+		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>());
   void compute (vector<ENERGYTYPE> &		all_ener,
 		vector<vector<VALUETYPE> > &	all_force,
 		vector<vector<VALUETYPE> > &	all_virial,
@@ -134,7 +134,7 @@ public:
 		const vector<VALUETYPE> &	box,
 		const int			nghost,
 		const LammpsNeighborList &	lmp_list,
-		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
+		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>());
   void compute (vector<ENERGYTYPE> &		all_ener,
 		vector<vector<VALUETYPE> > &	all_force,
 		vector<vector<VALUETYPE> > &	all_virial,
@@ -145,7 +145,7 @@ public:
 		const vector<VALUETYPE> &	box,
 		const int			nghost,
 		const LammpsNeighborList &	lmp_list,
-		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
+		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>());
   VALUETYPE cutoff () const {assert(inited); return rcut;};
   int numb_types () const {assert(inited); return ntypes;};
   int dim_fparam () const {assert(inited); return dfparam;};

@@ -66,7 +66,7 @@ make_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 		    const vector<int> &		datype_,
 		    const vector<VALUETYPE> &	dbox, 
 		    const VALUETYPE &		cell_size,
-    		    const vector<VALUETYPE>	fparam_,
+    		    const vector<VALUETYPE> &	fparam_,
 		    const NNPAtomMap<VALUETYPE>&nnpmap,
 		    const int			nghost = 0)
 {
@@ -213,7 +213,7 @@ make_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 		    const vector<int> &		datype_,
 		    const vector<VALUETYPE> &	dbox,		    
 		    InternalNeighborList &	dlist, 
-    		    const vector<VALUETYPE>	fparam_,
+    		    const vector<VALUETYPE> &	fparam_,
 		    const NNPAtomMap<VALUETYPE>&nnpmap,
     		    const int			nghost)
 {
@@ -592,7 +592,7 @@ compute (ENERGYTYPE &			dener,
 	 const vector<int> &		datype_,
 	 const vector<VALUETYPE> &	dbox, 
 	 const int			nghost,
-	 const vector<VALUETYPE>	fparam)
+	 const vector<VALUETYPE> &	fparam)
 {
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
@@ -619,7 +619,7 @@ compute (ENERGYTYPE &			dener,
 	 const vector<VALUETYPE> &	dbox, 
 	 const int			nghost,
 	 const LammpsNeighborList &	lmp_list,
-	 const vector<VALUETYPE>	fparam)
+	 const vector<VALUETYPE> &	fparam)
 {
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
@@ -651,7 +651,7 @@ compute (ENERGYTYPE &			dener,
 	 const vector<VALUETYPE> &	dcoord_,
 	 const vector<int> &		datype_,
 	 const vector<VALUETYPE> &	dbox,
-	 const vector<VALUETYPE>	fparam)
+	 const vector<VALUETYPE> &	fparam)
 {
   NNPAtomMap<VALUETYPE> nnpmap (datype_.begin(), datype_.end());
   if (fparam.size() != dfparam) {
@@ -678,7 +678,7 @@ compute (ENERGYTYPE &			dener,
 	 const vector<VALUETYPE> &	dbox, 
 	 const int			nghost, 
 	 const LammpsNeighborList &	lmp_list,
-	 const vector<VALUETYPE>	fparam)
+	 const vector<VALUETYPE> &	fparam)
 {
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
@@ -824,7 +824,7 @@ compute (ENERGYTYPE &			dener,
 	 const vector<VALUETYPE> &	dcoord_,
 	 const vector<int> &		datype_,
 	 const vector<VALUETYPE> &	dbox,
-	 const vector<VALUETYPE>	fparam)
+	 const vector<VALUETYPE> &	fparam)
 {
   if (numb_models == 0) return;
   if (fparam.size() != dfparam) {
@@ -873,7 +873,7 @@ compute (vector<ENERGYTYPE> &		all_energy,
 	 const vector<VALUETYPE> &	dbox,
 	 const int			nghost,
 	 const LammpsNeighborList &	lmp_list,
-	 const vector<VALUETYPE>	fparam)
+	 const vector<VALUETYPE> &	fparam)
 {
   if (numb_models == 0) return;
   if (fparam.size() != dfparam) {
@@ -914,7 +914,7 @@ compute (vector<ENERGYTYPE> &			all_energy,
 	 const vector<VALUETYPE> &		dbox,
 	 const int				nghost,
 	 const LammpsNeighborList &		lmp_list,
-	 const vector<VALUETYPE>		fparam)
+	 const vector<VALUETYPE> &	 	fparam)
 {
   if (numb_models == 0) return;
   if (fparam.size() != dfparam) {
