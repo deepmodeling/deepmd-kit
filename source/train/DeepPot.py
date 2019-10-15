@@ -14,6 +14,7 @@ class DeepPot (DeepEval) :
         self.t_ntypes = self.graph.get_tensor_by_name ('load/descrpt_attr/ntypes:0')
         self.t_rcut   = self.graph.get_tensor_by_name ('load/descrpt_attr/rcut:0')
         self.t_dfparam= self.graph.get_tensor_by_name ('load/fitting_attr/dfparam:0')
+        self.t_daparam= self.graph.get_tensor_by_name ('load/fitting_attr/daparam:0')
         self.t_tmap   = self.graph.get_tensor_by_name ('load/model_attr/tmap:0')
         # inputs
         self.t_coord  = self.graph.get_tensor_by_name ('load/t_coord:0')
@@ -28,14 +29,20 @@ class DeepPot (DeepEval) :
         self.t_ae     = self.graph.get_tensor_by_name ('load/o_atom_energy:0')
         self.t_av     = self.graph.get_tensor_by_name ('load/o_atom_virial:0')
         self.t_fparam = None
+        self.t_aparam = None
         # check if the graph has fparam
         for op in self.graph.get_operations():
             if op.name == 'load/t_fparam' :
                 self.t_fparam = self.graph.get_tensor_by_name ('load/t_fparam:0')
         self.has_fparam = self.t_fparam is not None
+        # check if the graph has aparam
+        for op in self.graph.get_operations():
+            if op.name == 'load/t_aparam' :
+                self.t_aparam = self.graph.get_tensor_by_name ('load/t_aparam:0')
+        self.has_aparam = self.t_aparam is not None
         # start a tf session associated to the graph
         self.sess = tf.Session (graph = self.graph)        
-        [self.ntypes, self.rcut, self.dfparam, self.tmap] = self.sess.run([self.t_ntypes, self.t_rcut, self.t_dfparam, self.t_tmap])
+        [self.ntypes, self.rcut, self.dfparam, self.daparam, self.tmap] = self.sess.run([self.t_ntypes, self.t_rcut, self.t_dfparam, self.t_daparam, self.t_tmap])
         self.tmap = self.tmap.decode('UTF-8').split()
 
 
@@ -48,6 +55,9 @@ class DeepPot (DeepEval) :
     def get_dim_fparam(self) :
         return self.dfparam
 
+    def get_dim_aparam(self) :
+        return self.daparam
+
     def get_type_map(self):
         return self.tmap
 
@@ -57,6 +67,7 @@ class DeepPot (DeepEval) :
              cells, 
              atom_types, 
              fparam = None, 
+             aparam = None, 
              atomic = False) :
         # standarize the shape of inputs
         coords = np.array(coords)
@@ -65,6 +76,9 @@ class DeepPot (DeepEval) :
         if self.has_fparam :
             assert(fparam is not None)
             fparam = np.array(fparam)
+        if self.has_aparam :
+            assert(aparam is not None)
+            aparam = np.array(aparam)
 
         # reshape the inputs 
         cells = np.reshape(cells, [-1, 9])
@@ -79,6 +93,16 @@ class DeepPot (DeepEval) :
                 fparam = np.tile(fparam.reshape([-1]), [nframes, 1])
             else :
                 raise RuntimeError('got wrong size of frame param, should be either %d x %d or %d' % (nframes, fdim, fdim))
+        if self.has_aparam :
+            fdim = self.get_dim_aparam()
+            if aparam.size == nframes * natoms * fdim:
+                aparam = np.reshape(aparam, [nframes, natoms * fdim])
+            elif aparam.size == natoms * fdim :
+                aparam = np.tile(aparam.reshape([-1]), [nframes, 1])
+            elif aparam.size == fdim :
+                aparam = np.tile(aparam.reshape([-1]), [nframes, natoms])
+            else :
+                raise RuntimeError('got wrong size of frame param, should be either %d x %d x %d or %d x %d or %d' % (nframes, natoms, fdim, natoms, fdim, fdim))
 
         # sort inputs
         coords, atom_types, imap = self.sort_input(coords, atom_types)
@@ -109,6 +133,8 @@ class DeepPot (DeepEval) :
             feed_dict_test[self.t_box  ] = np.reshape(cells [ii:ii+1, :], [-1])
             if self.has_fparam:
                 feed_dict_test[self.t_fparam] = np.reshape(fparam[ii:ii+1, :], [-1])
+            if self.has_aparam:
+                feed_dict_test[self.t_aparam] = np.reshape(aparam[ii:ii+1, :], [-1])
             v_out = self.sess.run (t_out, feed_dict = feed_dict_test)
             energy.append(v_out[0])
             force .append(v_out[1])
