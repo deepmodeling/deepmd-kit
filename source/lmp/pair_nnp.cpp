@@ -11,6 +11,9 @@
 #include "neighbor.h"
 #include "neigh_list.h"
 #include "neigh_request.h"
+#include "modify.h"
+#include "fix.h"
+#include "fix_ttm_mod.h"
 
 #include "pair_nnp.h"
 
@@ -116,6 +119,58 @@ make_uniform_aparam(
   }
 }
 
+void PairNNP::make_ttm_aparam(
+#ifdef HIGH_PREC
+    vector<double > & daparam
+#else
+    vector<float > & daparam
+#endif
+    )
+{
+  assert(do_ttm);
+  // get ttm_fix
+  const FixTTMMod * ttm_fix = NULL;
+  for (int ii = 0; ii < modify->nfix; ii++) {
+    if (string(modify->fix[ii]->id) == ttm_fix_id){
+      ttm_fix = dynamic_cast<FixTTMMod*>(modify->fix[ii]);
+    }
+  }
+  assert(ttm_fix);
+  // modify
+  double **x = atom->x;
+  int *mask = atom->mask;
+  int nlocal = atom->nlocal;
+  vector<int> nnodes = ttm_fix->get_nodes();
+  int nxnodes = nnodes[0];
+  int nynodes = nnodes[1];
+  int nznodes = nnodes[2];
+  double *** const T_electron = ttm_fix->get_T_electron();
+  double dx = domain->xprd/nxnodes;
+  double dy = domain->yprd/nynodes;
+  double dz = domain->zprd/nynodes;
+  // resize daparam
+  daparam.resize(nlocal);
+  // loop over atoms to assign aparam
+  for (int ii = 0; ii < nlocal; ii++) {
+    if (mask[ii] & ttm_fix->groupbit) {
+      double xscale = (x[ii][0] - domain->boxlo[0])/domain->xprd;
+      double yscale = (x[ii][1] - domain->boxlo[1])/domain->yprd;
+      double zscale = (x[ii][2] - domain->boxlo[2])/domain->zprd;
+      int ixnode = static_cast<int>(xscale*nxnodes);
+      int iynode = static_cast<int>(yscale*nynodes);
+      int iznode = static_cast<int>(zscale*nznodes);
+      while (ixnode > nxnodes-1) ixnode -= nxnodes;
+      while (iynode > nynodes-1) iynode -= nynodes;
+      while (iznode > nznodes-1) iznode -= nznodes;
+      while (ixnode < 0) ixnode += nxnodes;
+      while (iynode < 0) iynode += nynodes;
+      while (iznode < 0) iznode += nznodes;
+      daparam[ii] = T_electron[ixnode][iynode][iznode];
+    }
+  }
+}
+
+
 PairNNP::PairNNP(LAMMPS *lmp) 
     : Pair(lmp)
       
@@ -134,6 +189,7 @@ PairNNP::PairNNP(LAMMPS *lmp)
   out_rel = 0;
   eps = 0.;
   scale = NULL;
+  do_ttm = false;
 
   // set comm size needed by this Pair
   comm_reverse = 1;
@@ -219,7 +275,12 @@ void PairNNP::compute(int eflag, int vflag)
   }
 
   // uniform aparam
-  make_uniform_aparam(daparam, aparam, nlocal);
+  if (aparam.size() > 0){
+    make_uniform_aparam(daparam, aparam, nlocal);
+  }
+  else if (do_ttm) {
+    make_ttm_aparam(daparam);
+  }
 
   // compute
   bool single_model = (numb_models == 1);
@@ -525,6 +586,7 @@ is_key (const string& input)
   keys.push_back("out_file");
   keys.push_back("fparam");
   keys.push_back("aparam");
+  keys.push_back("ttm");
   keys.push_back("atomic");
   keys.push_back("relative");
 
@@ -616,6 +678,16 @@ void PairNNP::settings(int narg, char **arg)
       }      
       iarg += 1 + dim_aparam ;
     }
+    else if (string(arg[iarg]) == string("ttm")) {
+      for (int ii = 0; ii < 1; ++ii){
+	if (iarg+1+ii >= narg || is_key(arg[iarg+1+ii])) {
+	  error->all(FLERR, "invalid ttm key: should be ttm ttm_fix_id(str)");
+	}
+      }	
+      do_ttm = true;
+      ttm_fix_id = arg[iarg+1];
+      iarg += 1 + 1;
+    }
     else if (string(arg[iarg]) == string("atomic")) {
       out_each = 1;
       iarg += 1;
@@ -630,7 +702,10 @@ void PairNNP::settings(int narg, char **arg)
       iarg += 2;
     }
   }
-  if (out_freq < 0) error->all(FLERR,"Illegal out_freq, should be >= 0");  
+  if (out_freq < 0) error->all(FLERR,"Illegal out_freq, should be >= 0");
+  if (do_ttm && aparam.size() > 0) {
+    error->all(FLERR,"aparam and ttm should NOT be set simultaneously");
+  }
   
   if (comm->me == 0){
     if (numb_models > 1 && out_freq > 0){
@@ -667,9 +742,9 @@ void PairNNP::settings(int narg, char **arg)
       }
       cout << endl;
     }
-    if (dim_aparam > 0) {
+    if (aparam.size() > 0) {
       cout << pre << "using aparam(s):    " ;
-      for (int ii = 0; ii < dim_aparam; ++ii){
+      for (int ii = 0; ii < aparam.size(); ++ii){
 	cout << aparam[ii] << "  " ;
       }
       cout << endl;
