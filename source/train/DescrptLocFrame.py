@@ -1,18 +1,23 @@
+import platform
 import os
 import numpy as np
-import tensorflow as tf
+from deepmd.env import tf
 from deepmd.common import ClassArg
-
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
 from deepmd.RunOptions import global_cvt_2_tf_float
 from deepmd.RunOptions import global_cvt_2_ener_float
 
+if platform.system() == "Windows":
+    ext = "dll"
+elif platform.system() == "Darwin":
+    ext = "dylib"
+else:
+    ext = "so"
 module_path = os.path.dirname(os.path.realpath(__file__)) + "/"
-assert (os.path.isfile (module_path  + "libop_abi.so" )), "op module does not exist"
-op_module = tf.load_op_library(module_path + "libop_abi.so")
-
+assert (os.path.isfile (module_path  + "libop_abi.{}".format(ext) )), "op module does not exist"
+op_module = tf.load_op_library(module_path + "libop_abi.{}".format(ext))
 
 class DescrptLocFrame () :
     def __init__(self, jdata):
@@ -56,8 +61,7 @@ class DescrptLocFrame () :
                         data_box, 
                         data_atype, 
                         natoms_vec,
-                        mesh, 
-                        reuse = None) :
+                        mesh) :
         all_davg = []
         all_dstd = []
         if True:
@@ -66,7 +70,7 @@ class DescrptLocFrame () :
             sumv2 = []
             for cc,bb,tt,nn,mm in zip(data_coord,data_box,data_atype,natoms_vec,mesh) :
                 sysv,sysv2,sysn \
-                    = self._compute_dstats_sys_nonsmth(cc,bb,tt,nn,mm,reuse)
+                    = self._compute_dstats_sys_nonsmth(cc,bb,tt,nn,mm)
                 sumv.append(sysv)
                 sumn.append(sysn)
                 sumv2.append(sysv2)
@@ -111,12 +115,12 @@ class DescrptLocFrame () :
                                          davg.shape, 
                                          dtype = global_tf_float_precision,
                                          trainable = False,
-                                         initializer = tf.constant_initializer(davg, dtype = global_tf_float_precision))
+                                         initializer = tf.constant_initializer(davg))
             self.t_std = tf.get_variable('t_std', 
                                          dstd.shape, 
                                          dtype = global_tf_float_precision,
                                          trainable = False,
-                                         initializer = tf.constant_initializer(dstd, dtype = global_tf_float_precision))
+                                         initializer = tf.constant_initializer(dstd))
 
         coord = tf.reshape (coord_, [-1, natoms[1] * 3])
         box   = tf.reshape (box_, [-1, 9])
@@ -169,8 +173,7 @@ class DescrptLocFrame () :
                                     data_box, 
                                     data_atype, 
                                     natoms_vec,
-                                    mesh,
-                                    reuse = None) :    
+                                    mesh) :    
         avg_zero = np.zeros([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
         std_ones = np.ones ([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
         sub_graph = tf.Graph()

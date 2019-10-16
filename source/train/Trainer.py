@@ -1,32 +1,39 @@
 #!/usr/bin/env python3
 import os
+import platform
 import sys
 import time
 import shutil
 import warnings
 import numpy as np
-import tensorflow as tf
+from deepmd.env import tf
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
 from deepmd.RunOptions import global_cvt_2_tf_float
 from deepmd.RunOptions import global_cvt_2_ener_float
-from Fitting import EnerFitting, WannierFitting, PolarFittingLocFrame, PolarFittingSeA
-from DescrptLocFrame import DescrptLocFrame
-from DescrptSeA import DescrptSeA
-from DescrptSeR import DescrptSeR
-from DescrptSeAR import DescrptSeAR
-from Model import Model, WannierModel, PolarModel
-from Loss import EnerStdLoss, WannierLoss, PolarLoss
-from LearningRate import LearningRateExp
+from deepmd.Fitting import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA
+from deepmd.DescrptLocFrame import DescrptLocFrame
+from deepmd.DescrptSeA import DescrptSeA
+from deepmd.DescrptSeR import DescrptSeR
+from deepmd.DescrptSeAR import DescrptSeAR
+from deepmd.Model import Model, WFCModel, PolarModel
+from deepmd.Loss import EnerStdLoss, WFCLoss, TensorLoss
+from deepmd.LearningRate import LearningRateExp
 
 from tensorflow.python.framework import ops
 from tensorflow.python.client import timeline
 
 # load force module
+if platform.system() == "Windows":
+    ext = "dll"
+elif platform.system() == "Darwin":
+    ext = "dylib"
+else:
+    ext = "so"
 module_path = os.path.dirname(os.path.realpath(__file__)) + "/"
-assert (os.path.isfile (module_path  + "libop_abi.so" )), "op module does not exist"
-op_module = tf.load_op_library(module_path + "libop_abi.so")
+assert (os.path.isfile (module_path  + "libop_abi.{}".format(ext) )), "op module does not exist"
+op_module = tf.load_op_library(module_path + "libop_abi.{}".format(ext))
 
 # load grad of force module
 sys.path.append (module_path )
@@ -85,8 +92,8 @@ class NNPTrainer (object):
             fitting_type = 'ener'
         if fitting_type == 'ener':
             self.fitting = EnerFitting(fitting_param, self.descrpt)
-        elif fitting_type == 'wannier':            
-            self.fitting = WannierFitting(fitting_param, self.descrpt)
+        elif fitting_type == 'wfc':            
+            self.fitting = WFCFitting(fitting_param, self.descrpt)
         elif fitting_type == 'polar':
             if descrpt_type == 'loc_frame':
                 self.fitting = PolarFittingLocFrame(fitting_param, self.descrpt)
@@ -98,18 +105,15 @@ class NNPTrainer (object):
             raise RuntimeError('unknow fitting type ' + fitting_type)
 
         # init model
-        try: 
-            model_type = model_param['type']
-        except:
-            model_type = 'ener'
-        if model_type == 'ener':
+        # infer model type by fitting_type
+        if fitting_type == Model.model_type:
             self.model = Model(model_param, self.descrpt, self.fitting)
-        elif model_type == 'wannier':
-            self.model = WannierModel(model_param, self.descrpt, self.fitting)
-        elif model_type == 'polar':
+        elif fitting_type == WFCModel.model_type:
+            self.model = WFCModel(model_param, self.descrpt, self.fitting)
+        elif fitting_type == PolarModel.model_type:
             self.model = PolarModel(model_param, self.descrpt, self.fitting)
         else :
-            raise RuntimeError('unknow model type ' + fitting_type)
+            raise RuntimeError('get unknown fitting type when building model')
 
         # learning rate
         lr_param = j_must_have(jdata, 'learning_rate')
@@ -120,22 +124,26 @@ class NNPTrainer (object):
         if lr_type == 'exp':
             self.lr = LearningRateExp(lr_param)
         else :
-            raise RuntimeError('unknow learning_rate type ' + lr_type)        
+            raise RuntimeError('unknown learning_rate type ' + lr_type)        
 
         # loss
-        loss_param = j_must_have(jdata, 'loss')
-        try: 
-            loss_type = loss_param['type']
+        # infer loss type by fitting_type
+        try :
+            loss_param = jdata['loss']
         except:
-            loss_type = 'ener'
-        if loss_type == 'ener':
+            loss_param = None
+        if fitting_type == 'ener':
             self.loss = EnerStdLoss(loss_param, starter_learning_rate = self.lr.start_lr())
-        elif loss_type == 'wannier':
-            self.loss = WannierLoss(loss_param, model = self.model)
-        elif loss_type == 'polar':
-            self.loss = PolarLoss(loss_param, model = self.model)
+        elif fitting_type == 'wfc':
+            self.loss = WFCLoss(loss_param, model = self.model)
+        elif fitting_type == 'polar':
+            self.loss = TensorLoss(loss_param, 
+                                   model = self.model, 
+                                   tensor_name = 'polar',
+                                   tensor_size = 9,
+                                   label_name = 'polarizability')
         else :
-            raise RuntimeError('unknow loss type ' + loss_type)
+            raise RuntimeError('get unknown fitting type when building loss function')
 
         # training
         training_param = j_must_have(jdata, 'training')

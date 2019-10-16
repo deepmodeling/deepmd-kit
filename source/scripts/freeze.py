@@ -1,19 +1,28 @@
 #!/usr/bin/env python3
 
-import os, argparse
+# freeze.py :
+# see https://blog.metaflow.fr/tensorflow-how-to-freeze-a-model-and-serve-it-with-a-python-api-d4f3596b3adc
+
+import platform
+import os, argparse, json
 import sys
 
-import tensorflow as tf
-from tensorflow.python.framework import graph_util
+from deepmd.env import tf
 
 dir = os.path.dirname(os.path.realpath(__file__))
 
 from tensorflow.python.framework import ops
 
 # load force module
+if platform.system() == "Windows":
+    ext = "dll"
+elif platform.system() == "Darwin":
+    ext = "dylib"
+else:
+    ext = "so"
 module_path = os.path.dirname(os.path.realpath(__file__)) + "/../"
-assert (os.path.isfile (module_path  + "deepmd/libop_abi.so" )), "force module does not exist"
-op_module = tf.load_op_library(module_path + "deepmd/libop_abi.so")
+assert (os.path.isfile (module_path  + "deepmd/libop_abi.{}".format(ext) )), "force module does not exist"
+op_module = tf.load_op_library(module_path + "deepmd/libop_abi.{}".format(ext))
 
 # load grad of force module
 sys.path.append (module_path )
@@ -26,9 +35,20 @@ import deepmd._prod_virial_se_r_grad
 import deepmd._soft_min_force_grad
 import deepmd._soft_min_virial_grad
 
+def _make_node_names(model_type = None) : 
+    if model_type == 'ener':
+        nodes = "o_energy,o_force,o_virial,o_atom_energy,o_atom_virial,descrpt_attr/rcut,descrpt_attr/ntypes,fitting_attr/dfparam,fitting_attr/daparam,model_attr/tmap,model_attr/model_type"
+    elif model_type == 'wfc':
+        nodes = "o_wfc,descrpt_attr/rcut,descrpt_attr/ntypes,model_attr/tmap,model_attr/sel_type,model_attr/model_type"
+    elif model_type == 'polar':
+        nodes = "o_polar,descrpt_attr/rcut,descrpt_attr/ntypes,model_attr/tmap,model_attr/sel_type,model_attr/model_type"
+    else:
+        raise RuntimeError('unknow model type ' + model_type)
+    return nodes
+
 def freeze_graph(model_folder, 
                  output, 
-                 output_node_names):
+                 output_node_names = None):
     # We retrieve our checkpoint fullpath
     checkpoint = tf.train.get_checkpoint_state(model_folder)
     input_checkpoint = checkpoint.model_checkpoint_path
@@ -55,9 +75,13 @@ def freeze_graph(model_folder,
     # We start a session and restore the graph weights
     with tf.Session() as sess:
         saver.restore(sess, input_checkpoint)
+        model_type = sess.run('model_attr/model_type:0', feed_dict = {}).decode('utf-8')
+        if output_node_names is None :
+            output_node_names = _make_node_names(model_type)
+        print('The following nodes will be frozen: %s' % output_node_names)
 
         # We use a built-in TF helper to export variables to constants
-        output_graph_def = graph_util.convert_variables_to_constants(
+        output_graph_def = tf.graph_util.convert_variables_to_constants(
             sess, # The session is used to retrieve the weights
             input_graph_def, # The graph_def is used to retrieve the nodes 
             output_node_names.split(",") # The output node names are used to select the usefull nodes
@@ -71,3 +95,4 @@ def freeze_graph(model_folder,
 
 def freeze (args):
     freeze_graph(args.folder, args.output, args.nodes)
+

@@ -1,8 +1,8 @@
+import platform
 import os,sys,warnings
 import numpy as np
-import tensorflow as tf
+from deepmd.env import tf
 from deepmd.common import ClassArg
-
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
@@ -12,9 +12,15 @@ from deepmd.RunOptions import global_cvt_2_ener_float
 from deepmd.DescrptSeA import DescrptSeA
 from deepmd.DescrptSeR import DescrptSeR
 
+if platform.system() == "Windows":
+    ext = "dll"
+elif platform.system() == "Darwin":
+    ext = "dylib"
+else:
+    ext = "so"
 module_path = os.path.dirname(os.path.realpath(__file__)) + "/"
-assert (os.path.isfile (module_path  + "libop_abi.so" )), "op module does not exist"
-op_module = tf.load_op_library(module_path + "libop_abi.so")
+assert (os.path.isfile (module_path  + "libop_abi.{}".format(ext) )), "op module does not exist"
+op_module = tf.load_op_library(module_path + "libop_abi.{}".format(ext))
 
 class DescrptSeAR ():
     def __init__ (self, jdata):
@@ -48,10 +54,9 @@ class DescrptSeAR ():
                         data_box, 
                         data_atype, 
                         natoms_vec,
-                        mesh,
-                        reuse = None) :    
-        davg_a, dstd_a = self.descrpt_a.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh, reuse)
-        davg_r, dstd_r = self.descrpt_r.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh, reuse)
+                        mesh) :    
+        davg_a, dstd_a = self.descrpt_a.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh)
+        davg_r, dstd_r = self.descrpt_r.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh)
         return [davg_a, davg_r], [dstd_a, dstd_r]
 
 

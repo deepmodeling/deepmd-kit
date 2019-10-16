@@ -1,7 +1,7 @@
 import dpdata,os,sys,json,unittest
 import numpy as np
-import tensorflow as tf
-from common import Data
+from deepmd.env import tf
+from common import Data,gen_data
 
 from deepmd.RunOptions import RunOptions
 from deepmd.DataSystem import DataSystem
@@ -13,22 +13,6 @@ from deepmd.common import j_must_have, j_must_have_d, j_have
 global_ener_float_precision = tf.float64
 global_tf_float_precision = tf.float64
 global_np_float_precision = np.float64
-
-def gen_data() :
-    tmpdata = Data(rand_pert = 0.1, seed = 1)
-    sys = dpdata.LabeledSystem()
-    sys.data['coords'] = tmpdata.coord
-    sys.data['atom_types'] = tmpdata.atype
-    sys.data['cells'] = tmpdata.cell
-    nframes = tmpdata.nframes
-    natoms = tmpdata.natoms
-    sys.data['coords'] = sys.data['coords'].reshape([nframes,natoms,3])
-    sys.data['cells'] = sys.data['cells'].reshape([nframes,3,3])
-    sys.data['energies'] = np.zeros([nframes,1])
-    sys.data['forces'] = np.zeros([nframes,natoms,3])
-    sys.data['virials'] = []
-    sys.to_deepmd_npy('system', prec=np.float64)    
-    np.save('system/set.000/fparam.npy', tmpdata.fparam)
 
 class TestModel(unittest.TestCase):
     def setUp(self) :
@@ -57,7 +41,15 @@ class TestModel(unittest.TestCase):
         fitting = EnerFitting(jdata['model']['fitting_net'], descrpt)
         model = Model(jdata['model'], descrpt, fitting)
 
-        model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
+        # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
+        input_data = {'coord' : [test_data['coord']], 
+                      'box': [test_data['box']], 
+                      'type': [test_data['type']],
+                      'natoms_vec' : [test_data['natoms_vec']],
+                      'default_mesh' : [test_data['default_mesh']],
+                      'fparam': [test_data['fparam']],
+        }
+        model._compute_dstats(input_data)
         model.bias_atom_e = data.compute_energy_shift()
 
         t_prop_c           = tf.placeholder(tf.float32, [5],    name='t_prop_c')
@@ -110,9 +102,9 @@ class TestModel(unittest.TestCase):
         e = e.reshape([-1])
         f = f.reshape([-1])
         v = v.reshape([-1])
-        refe = [6.135136929183754972e+01]
-        reff = [7.761477777656561328e-02,9.383013575207051205e-02,3.776776376267230399e-03,1.428268971463224069e-01,1.143858253900619654e-01,-1.318441687719179231e-02,-7.271897092708884403e-02,6.494907553857684479e-02,5.355599592111062821e-04,5.840910251709752199e-02,-1.599042555763417750e-01,-5.067165555590445389e-03,-2.546246315216804113e-01,3.073296814647456451e-02,1.505994759166155023e-02,4.849282500878367153e-02,-1.439937492508420736e-01,-1.120701494357654411e-03]
-        refv = [-6.054303146013112480e-01,1.097859194719944115e-01,1.977605183964963390e-02,1.097859194719943976e-01,-3.306167096812382966e-01,-5.978855662865613894e-03,1.977605183964964083e-02,-5.978855662865616497e-03,-1.196331922996723236e-03]
+        refe = [61.35473702079649]
+        reff = [7.789591210641927388e-02,9.411176646369459609e-02,3.785806413688173194e-03,1.430830954178063386e-01,1.146964190520970150e-01,-1.320340288927138173e-02,-7.308720494747594776e-02,6.508269338140809657e-02,5.398739145542804643e-04,5.863268336973800898e-02,-1.603409523950408699e-01,-5.083084610994957619e-03,-2.551569799443983988e-01,3.087934885732580501e-02,1.508590526622844222e-02,4.863249399791078065e-02,-1.444292753594846324e-01,-1.125098094204559241e-03]
+        refv = [-6.069498397488943819e-01,1.101778888191114192e-01,1.981907430646132409e-02,1.101778888191114608e-01,-3.315612988100872793e-01,-5.999739184898976799e-03,1.981907430646132756e-02,-5.999739184898974197e-03,-1.198656608172396325e-03]
         refe = np.reshape(refe, [-1])
         reff = np.reshape(reff, [-1])
         refv = np.reshape(refv, [-1])

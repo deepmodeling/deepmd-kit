@@ -1,11 +1,11 @@
 import os,warnings
 import numpy as np
-import tensorflow as tf
 
+from deepmd.env import tf
 from deepmd.common import ClassArg, add_data_requirement
 from deepmd.Network import one_layer
-from DescrptLocFrame import DescrptLocFrame
-from DescrptSeA import DescrptSeA
+from deepmd.DescrptLocFrame import DescrptLocFrame
+from deepmd.DescrptSeA import DescrptSeA
 
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
@@ -20,21 +20,69 @@ class EnerFitting ():
         self.dim_descrpt = descrpt.get_dim_out()
         args = ClassArg()\
                .add('numb_fparam',      int,    default = 0)\
+               .add('numb_aparam',      int,    default = 0)\
                .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\
                .add('resnet_dt',        bool,   default = True)\
                .add('seed',             int)               
         class_data = args.parse(jdata)
         self.numb_fparam = class_data['numb_fparam']
+        self.numb_aparam = class_data['numb_aparam']
         self.n_neuron = class_data['neuron']
         self.resnet_dt = class_data['resnet_dt']
         self.seed = class_data['seed']
         self.useBN = False
         # data requirement
         if self.numb_fparam > 0 :
-            add_data_requirement('fparam', self.numb_fparam, atomic=False, must=False, high_prec=False)        
+            add_data_requirement('fparam', self.numb_fparam, atomic=False, must=True, high_prec=False)
+            self.fparam_avg = None
+            self.fparam_std = None
+            self.fparam_inv_std = None
+        if self.numb_aparam > 0:
+            add_data_requirement('aparam', self.numb_aparam, atomic=True,  must=True, high_prec=False)
+            self.aparam_avg = None
+            self.aparam_std = None
+            self.aparam_inv_std = None
 
     def get_numb_fparam(self) :
         return self.numb_fparam
+
+    def get_numb_aparam(self) :
+        return self.numb_fparam
+
+    def compute_dstats(self, all_stat, protection):
+        # stat fparam
+        if self.numb_fparam > 0:
+            cat_data = np.concatenate(all_stat['fparam'], axis = 0)
+            cat_data = np.reshape(cat_data, [-1, self.numb_fparam])
+            self.fparam_avg = np.average(cat_data, axis = 0)
+            self.fparam_std = np.std(cat_data, axis = 0)
+            for ii in range(self.fparam_std.size):
+                if self.fparam_std[ii] < protection:
+                    self.fparam_std[ii] = protection
+            self.fparam_inv_std = 1./self.fparam_std
+        # stat aparam
+        if self.numb_aparam > 0:
+            sys_sumv = []
+            sys_sumv2 = []
+            sys_sumn = []
+            for ss_ in all_stat['aparam'] : 
+                ss = np.reshape(ss_, [-1, self.numb_aparam])
+                sys_sumv.append(np.sum(ss, axis = 0))
+                sys_sumv2.append(np.sum(np.multiply(ss, ss), axis = 0))
+                sys_sumn.append(ss.shape[0])
+            sumv = np.sum(sys_sumv, axis = 0)
+            sumv2 = np.sum(sys_sumv2, axis = 0)
+            sumn = np.sum(sys_sumn)
+            self.aparam_avg = (sumv)/sumn
+            self.aparam_std = self._compute_std(sumv2, sumv, sumn)
+            for ii in range(self.aparam_std.size):
+                if self.aparam_std[ii] < protection:
+                    self.aparam_std[ii] = protection
+            self.aparam_inv_std = 1./self.aparam_std                
+
+    def _compute_std (self, sumv2, sumv, sumn) :
+        return np.sqrt(sumv2/sumn - np.multiply(sumv/sumn, sumv/sumn))
+            
 
     def build (self, 
                inputs,
@@ -43,10 +91,41 @@ class EnerFitting ():
                bias_atom_e = None,
                reuse = None,
                suffix = '') :
+        if self.numb_fparam > 0 and ( self.fparam_avg is None or self.fparam_inv_std is None ):
+            raise RuntimeError('No data stat result. one should do data statisitic, before build')
+        if self.numb_aparam > 0 and ( self.aparam_avg is None or self.aparam_inv_std is None ):
+            raise RuntimeError('No data stat result. one should do data statisitic, before build')
+
         with tf.variable_scope('fitting_attr' + suffix, reuse = reuse) :
             t_dfparam = tf.constant(self.numb_fparam, 
                                     name = 'dfparam', 
                                     dtype = tf.int32)
+            t_daparam = tf.constant(self.numb_aparam, 
+                                    name = 'daparam', 
+                                    dtype = tf.int32)
+            if self.numb_fparam > 0: 
+                t_fparam_avg = tf.get_variable('t_fparam_avg', 
+                                               self.numb_fparam,
+                                               dtype = global_tf_float_precision,
+                                               trainable = False,
+                                               initializer = tf.constant_initializer(self.fparam_avg))
+                t_fparam_istd = tf.get_variable('t_fparam_istd', 
+                                                self.numb_fparam,
+                                                dtype = global_tf_float_precision,
+                                                trainable = False,
+                                                initializer = tf.constant_initializer(self.fparam_inv_std))
+            if self.numb_aparam > 0: 
+                t_aparam_avg = tf.get_variable('t_aparam_avg', 
+                                               self.numb_aparam,
+                                               dtype = global_tf_float_precision,
+                                               trainable = False,
+                                               initializer = tf.constant_initializer(self.aparam_avg))
+                t_aparam_istd = tf.get_variable('t_aparam_istd', 
+                                                self.numb_aparam,
+                                                dtype = global_tf_float_precision,
+                                                trainable = False,
+                                                initializer = tf.constant_initializer(self.aparam_inv_std))
+            
         start_index = 0
         inputs = tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]])
         shape = inputs.get_shape().as_list()
@@ -54,25 +133,40 @@ class EnerFitting ():
         if bias_atom_e is not None :
             assert(len(bias_atom_e) == self.ntypes)
 
+        if self.numb_fparam > 0 :
+            fparam = input_dict['fparam']
+            fparam = tf.reshape(fparam, [-1, self.numb_fparam])
+            fparam = (fparam - t_fparam_avg) * t_fparam_istd            
+        if self.numb_aparam > 0 :
+            aparam = input_dict['aparam']
+            aparam = tf.reshape(aparam, [-1, self.numb_aparam])
+            aparam = (aparam - t_aparam_avg) * t_aparam_istd
+            aparam = tf.reshape(aparam, [-1, self.numb_aparam * natoms[0]])
+
         for type_i in range(self.ntypes):
             # cut-out inputs
             inputs_i = tf.slice (inputs,
                                  [ 0, start_index*      self.dim_descrpt],
                                  [-1, natoms[2+type_i]* self.dim_descrpt] )
             inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
+            layer = inputs_i
+            if self.numb_fparam > 0 :
+                ext_fparam = tf.tile(fparam, [1, natoms[2+type_i]])
+                ext_fparam = tf.reshape(ext_fparam, [-1, self.numb_fparam])
+                layer = tf.concat([layer, ext_fparam], axis = 1)
+            if self.numb_aparam > 0 :
+                ext_aparam = tf.slice(aparam, 
+                                      [ 0, start_index      * self.numb_aparam],
+                                      [-1, natoms[2+type_i] * self.numb_aparam])
+                ext_aparam = tf.reshape(ext_aparam, [-1, self.numb_aparam])
+                layer = tf.concat([layer, ext_aparam], axis = 1)
             start_index += natoms[2+type_i]
+                
             if bias_atom_e is None :
                 type_bias_ae = 0.0
             else :
                 type_bias_ae = bias_atom_e[type_i]
 
-            layer = inputs_i
-            if self.numb_fparam > 0 :
-                fparam = input_dict['fparam']
-                ext_fparam = tf.reshape(fparam, [-1, self.numb_fparam])
-                ext_fparam = tf.tile(ext_fparam, [1, natoms[2+type_i]])
-                ext_fparam = tf.reshape(ext_fparam, [-1, self.numb_fparam])
-                layer = tf.concat([layer, ext_fparam], axis = 1)
             for ii in range(0,len(self.n_neuron)) :
                 if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
                     layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt)
@@ -90,7 +184,7 @@ class EnerFitting ():
         return tf.reshape(outs, [-1])        
 
 
-class WannierFitting () :
+class WFCFitting () :
     def __init__ (self, jdata, descrpt) :
         if not isinstance(descrpt, DescrptLocFrame) :
             raise RuntimeError('WFC only supports DescrptLocFrame')
@@ -100,19 +194,19 @@ class WannierFitting () :
                .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\
                .add('resnet_dt',        bool,   default = True)\
                .add('wfc_numb',         int,    must = True)\
-               .add('wfc_type',         [list,int],   default = [ii for ii in range(self.ntypes)])\
+               .add('sel_type',         [list,int],   default = [ii for ii in range(self.ntypes)], alias = 'wfc_type')\
                .add('seed',             int)
         class_data = args.parse(jdata)
         self.n_neuron = class_data['neuron']
         self.resnet_dt = class_data['resnet_dt']
         self.wfc_numb = class_data['wfc_numb']
-        self.wfc_type = class_data['wfc_type']
+        self.sel_type = class_data['sel_type']
         self.seed = class_data['seed']
         self.useBN = False
 
 
-    def get_wfc_type(self):
-        return self.wfc_type
+    def get_sel_type(self):
+        return self.sel_type
 
     def get_wfc_numb(self):
         return self.wfc_numb
@@ -140,7 +234,7 @@ class WannierFitting () :
                                   [-1, natoms[2+type_i]* 9] )
             rot_mat_i = tf.reshape(rot_mat_i, [-1, 3, 3])
             start_index += natoms[2+type_i]
-            if not type_i in self.wfc_type :
+            if not type_i in self.sel_type :
                 continue
             layer = inputs_i
             for ii in range(0,len(self.n_neuron)) :
@@ -164,9 +258,7 @@ class WannierFitting () :
                 outs = tf.concat([outs, final_layer], axis = 1)
             count += 1
 
-        ret = {}
-        ret['wannier'] =  tf.reshape(outs, [-1])        
-        return ret
+        return tf.reshape(outs, [-1])
 
 
 
@@ -177,19 +269,19 @@ class PolarFittingLocFrame () :
         self.ntypes = descrpt.get_ntypes()
         self.dim_descrpt = descrpt.get_dim_out()
         args = ClassArg()\
-               .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\
-               .add('resnet_dt',        bool,   default = True)\
-               .add('pol_type',         [list,int],   default = [ii for ii in range(self.ntypes)])\
+               .add('neuron',           list, default = [120,120,120], alias = 'n_neuron')\
+               .add('resnet_dt',        bool, default = True)\
+               .add('sel_type',         [list,int], default = [ii for ii in range(self.ntypes)], alias = 'pol_type')\
                .add('seed',             int)
         class_data = args.parse(jdata)
         self.n_neuron = class_data['neuron']
         self.resnet_dt = class_data['resnet_dt']
-        self.pol_type = class_data['pol_type']
+        self.sel_type = class_data['sel_type']
         self.seed = class_data['seed']
         self.useBN = False
 
-    def get_pol_type(self):
-        return self.pol_type
+    def get_sel_type(self):
+        return self.sel_type
 
     def build (self, 
                input_d,
@@ -214,7 +306,7 @@ class PolarFittingLocFrame () :
                                   [-1, natoms[2+type_i]* 9] )
             rot_mat_i = tf.reshape(rot_mat_i, [-1, 3, 3])
             start_index += natoms[2+type_i]
-            if not type_i in self.pol_type :
+            if not type_i in self.sel_type :
                 continue
             layer = inputs_i
             for ii in range(0,len(self.n_neuron)) :
@@ -254,19 +346,19 @@ class PolarFittingSeA () :
         args = ClassArg()\
                .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\
                .add('resnet_dt',        bool,   default = True)\
-               .add('pol_type',         [list,int],   default = [ii for ii in range(self.ntypes)])\
+               .add('sel_type',         [list,int],   default = [ii for ii in range(self.ntypes)], alias = 'pol_type')\
                .add('seed',             int)
         class_data = args.parse(jdata)
         self.n_neuron = class_data['neuron']
         self.resnet_dt = class_data['resnet_dt']
-        self.pol_type = class_data['pol_type']
+        self.sel_type = class_data['sel_type']
         self.seed = class_data['seed']
         self.dim_rot_mat_1 = descrpt.get_dim_rot_mat_1()
         self.dim_rot_mat = self.dim_rot_mat_1 * 3
         self.useBN = False
 
-    def get_pol_type(self):
-        return self.pol_type
+    def get_sel_type(self):
+        return self.sel_type
 
     def build (self, 
                input_d,
@@ -291,7 +383,7 @@ class PolarFittingSeA () :
                                   [-1, natoms[2+type_i]* self.dim_rot_mat] )
             rot_mat_i = tf.reshape(rot_mat_i, [-1, self.dim_rot_mat_1, 3])
             start_index += natoms[2+type_i]
-            if not type_i in self.pol_type :
+            if not type_i in self.sel_type :
                 continue
             layer = inputs_i
             for ii in range(0,len(self.n_neuron)) :

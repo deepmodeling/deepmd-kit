@@ -1,6 +1,5 @@
 import os,sys,shutil,copy
 import numpy as np
-import tensorflow as tf
 import unittest
 
 from deepmd.Data import DeepmdData
@@ -85,6 +84,14 @@ class TestData (unittest.TestCase) :
         self.assertEqual(dd.type_map, ['foo', 'bar'])
         self.assertEqual(dd.test_dir, 'test_data/set.tar')
         self.assertEqual(dd.train_dirs, ['test_data/set.bar', 'test_data/set.foo'])
+
+    def test_init_type_map (self) :
+        dd = DeepmdData(self.data_name, type_map = ['bar', 'foo', 'tar'])
+        self.assertEqual(dd.idx_map[0], 0)
+        self.assertEqual(dd.idx_map[1], 1)
+        self.assertEqual(dd.atom_type[0], 0)
+        self.assertEqual(dd.atom_type[1], 1)
+        self.assertEqual(dd.type_map, ['bar', 'foo'])
 
     def test_load_set(self) :
         dd = DeepmdData(self.data_name)\

@@ -1,6 +1,6 @@
 import os,sys
 import numpy as np
-import tensorflow as tf
+from deepmd.env import tf
 import unittest
 
 from tensorflow.python.framework import ops
@@ -50,12 +50,12 @@ class IntplInter(Inter):
                                             tab_info.shape,
                                             dtype = tf.float64,
                                             trainable = False,
-                                            initializer = tf.constant_initializer(tab_info, dtype = tf.float64))
+                                            initializer = tf.constant_initializer(tab_info))
             self.tab_data = tf.get_variable('t_tab_data',
                                             tab_data.shape,
                                             dtype = tf.float64,
                                             trainable = False,
-                                            initializer = tf.constant_initializer(tab_data, dtype = tf.float64))
+                                            initializer = tf.constant_initializer(tab_data))
         
     def comp_ef (self, 
                  dcoord, 
