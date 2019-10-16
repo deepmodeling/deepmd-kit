@@ -1,5 +1,6 @@
 #include <iostream>
 #include <iomanip>
+#include <limits>
 #include "atom.h"
 #include "domain.h"
 #include "comm.h"
@@ -86,7 +87,7 @@ ana_st (double & max,
 	const vector<double> & vec, 
 	const int & nloc) 
 {
-  if (vec.size() == 0) return;
+  if (nloc == 0) return;
   max = vec[0];
   min = vec[0];
   sum = vec[0];
@@ -438,7 +439,7 @@ void PairNNP::compute(int eflag, int vflag)
 	std_f.resize(std_f_.size());
 	for (int dd = 0; dd < std_f_.size(); ++dd) std_f[dd] = std_f_[dd];
 #endif
-	double min = 0, max = 0, avg = 0;
+	double min = numeric_limits<double>::max(), max = 0, avg = 0;
 	ana_st(max, min, avg, std_f, nlocal);
 	int all_nlocal = 0;
 	MPI_Reduce (&nlocal, &all_nlocal, 1, MPI_INT, MPI_SUM, 0, world);
@@ -460,7 +461,8 @@ void PairNNP::compute(int eflag, int vflag)
 	std_e.resize(std_e_.size());
 	for (int dd = 0; dd < std_e_.size(); ++dd) std_e[dd] = std_e_[dd];
 #endif	
-	min = max = avg = 0;
+	max = avg = 0;
+	min = numeric_limits<double>::max();
 	ana_st(max, min, avg, std_e, nlocal);
 	double all_e_min = 0, all_e_max = 0, all_e_avg = 0;
 	MPI_Reduce (&min, &all_e_min, 1, MPI_DOUBLE, MPI_MIN, 0, world);
