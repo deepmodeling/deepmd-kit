@@ -1,0 +1,34 @@
+diff '--color=auto' -Naur lammps-16Mar18/src/USER-MISC/fix_ttm_mod.h lammps-16Mar18.new/src/USER-MISC/fix_ttm_mod.h
+--- lammps-16Mar18/src/USER-MISC/fix_ttm_mod.h	2017-06-22 21:57:19.000000000 +0800
++++ lammps-16Mar18.new/src/USER-MISC/fix_ttm_mod.h	2019-10-16 09:58:38.228813486 +0800
+@@ -21,6 +21,7 @@
+ #define LMP_FIX_TTM_MOD_H
+ 
+ #include "fix.h"
++#include <vector>
+ 
+ namespace LAMMPS_NS {
+ 
+@@ -51,6 +52,22 @@
+   double memory_usage();
+   void grow_arrays(int);
+   double compute_vector(int);
++  //////////////////////////////////////////////////
++  // added by deepmd-kit
++  std::vector<int> get_nodes() const
++      {
++	std::vector<int> tmp(3);
++	tmp[0] = nxnodes;
++	tmp[1] = nynodes;
++	tmp[2] = nznodes;
++	return tmp;
++      };
++  double *** const get_T_electron()const 
++      {
++	return T_electron;
++      }
++  // added by deepmd-kit
++  //////////////////////////////////////////////////
+ 
+  private:
+   int me;
