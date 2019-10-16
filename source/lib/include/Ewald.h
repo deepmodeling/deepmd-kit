@@ -15,8 +15,6 @@ struct EwaldParameters
   VALUETYPE spacing = 4;
 };
 
-
-
 template<typename VALUETYPE> 
 VALUETYPE
 dir_err_esti(const VALUETYPE & test_q,
@@ -69,7 +67,11 @@ rec_err_esti(const VALUETYPE & test_q,
     }
   }
   VALUETYPE vol = region.getVolume();
-  // cout << sqrt(sum) << " " << KK[0] << " " << rec_box[0] << " " << c2 << " " << vol << endl;
+  // cout << "sum: " << sqrt(sum) 
+  //      << " KK: " << KK[0] 
+  //      << " rbox: " << rec_box[0] 
+  //      << " c2: " << c2 
+  //      << " vol: " << vol << endl;
   sum = test_q * 2 * sqrt(sum) * sqrt(c2) / vol * ElectrostaticConvertion;
   return sum;
 }
