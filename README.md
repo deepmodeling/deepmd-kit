@@ -102,6 +102,14 @@ source $tensorflow_venv/bin/activate
 pip install --upgrade pip
 pip install --upgrade tensorflow==1.14.0
 ```
+It is notice that everytime a new shell is started and one wants to use `DeePMD-kit`, the virtual environment should be activated by 
+```bash
+source $tensorflow_venv/bin/activate
+```
+if one wants to skip out of the virtual environment, he/she can do
+```bash
+deactivate
+```
 If one has multiple python interpreters named like python3.x, it can be specified by, for example
 ```bash
 virtualenv -p python3.7 $tensorflow_venv
@@ -483,7 +491,7 @@ Running an MD simulation with LAMMPS is simpler. In the LAMMPS input file, one n
 pair_style     deepmd graph.pb
 pair_coeff     
 ```
-where `graph.pb` is the file name of the frozen model. The `pair_coeff` should be left blank. It should be noted that LAMMPS counts atom types starting from 1, therefore, all LAMMPS atom type will be firstly subtracted by 1, and then passed into the DeePMD-kit engine to compute the interactions. A detailed documentation of this pair style is [here](doc/lammps-pair-style-deepmd.md).
+where `graph.pb` is the file name of the frozen model. The `pair_coeff` should be left blank. It should be noted that LAMMPS counts atom types starting from 1, therefore, all LAMMPS atom type will be firstly subtracted by 1, and then passed into the DeePMD-kit engine to compute the interactions. [A detailed documentation of this pair style is available.](doc/lammps-pair-style-deepmd.md).
 
 ### Long-range interaction
 The reciprocal space part of the long-range interaction can be calculated by LAMMPS command `kspace_style`. To use it with DeePMD-kit, one writes 

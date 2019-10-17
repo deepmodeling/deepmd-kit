@@ -105,7 +105,11 @@ endif ()
 
 # define USE_CUDA_TOOLKIT
 if (DEFINED USE_CUDA_TOOLKIT)
-  find_package(CUDA REQUIRED)
+  if (USE_CUDA_TOOLKIT)
+    find_package(CUDA REQUIRED)
+  else()
+    message(STATUS "Will not build nv GPU support")
+  endif()
 else()
   find_package(CUDA QUIET)  
   if (CUDA_FOUND)
