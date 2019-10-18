@@ -10,6 +10,7 @@ from deepmd.Data import DataSets
 from deepmd.Data import DeepmdData
 from deepmd import DeepEval
 from deepmd import DeepPot
+from deepmd import DeepDipole
 from deepmd import DeepPolar
 from deepmd import DeepWFC
 from tensorflow.python.framework import ops
@@ -18,6 +19,8 @@ def test (args):
     de = DeepEval(args.model)
     if de.model_type == 'ener':
         test_ener(args)
+    elif de.model_type == 'dipole':
+        test_dipole(args)
     elif de.model_type == 'polar':
         test_polar(args)
     elif de.model_type == 'wfc':
@@ -154,3 +157,36 @@ def test_polar (args) :
                             axis = 1)
         np.savetxt(detail_file+".out", pe, 
                    header = 'data_pxx data_pxy data_pxz data_pyx data_pyy data_pyz data_pzx data_pzy data_pzz pred_pxx pred_pxy pred_pxz pred_pyx pred_pyy pred_pyz pred_pzx pred_pzy pred_pzz')
+
+
+def test_dipole (args) :
+    if args.rand_seed is not None :
+        np.random.seed(args.rand_seed % (2**32))
+
+    dp = DeepDipole(args.model)    
+    data = DeepmdData(args.system, args.set_prefix, shuffle_test = args.shuffle_test)
+    data.add('dipole', 3, atomic=True, must=True, high_prec=False, type_sel = dp.get_sel_type())
+    test_data = data.get_test ()
+    numb_test = args.numb_test
+    natoms = len(test_data["type"][0])
+    nframes = test_data["box"].shape[0]
+    numb_test = min(nframes, numb_test)
+                      
+    coord = test_data["coord"][:numb_test].reshape([numb_test, -1])
+    box = test_data["box"][:numb_test]
+    atype = test_data["type"][0]
+    dipole = dp.eval(coord, box, atype)
+
+    dipole = dipole.reshape([numb_test,-1])
+    l2f = (l2err (dipole  - test_data["dipole"] [:numb_test]))
+
+    print ("# number of test data : %d " % numb_test)
+    print ("Dipole  L2err         : %e eV/A" % l2f)
+
+    detail_file = args.detail_file
+    if detail_file is not None :
+        pe = np.concatenate((np.reshape(test_data["dipole"][:numb_test], [-1,3]),
+                             np.reshape(dipole, [-1,3])), 
+                            axis = 1)
+        np.savetxt(detail_file+".out", pe, 
+                   header = 'data_x data_y data_z pred_x pred_y pred_z')
