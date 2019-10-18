@@ -325,6 +325,11 @@ class WFCModel(TensorModel):
         TensorModel.__init__(self, jdata, descrpt, fitting, 'wfc')
 
 
+class DipoleModel(TensorModel):
+    def __init__(self, jdata, descrpt, fitting) :
+        TensorModel.__init__(self, jdata, descrpt, fitting, 'dipole')
+
+
 class PolarModel(TensorModel):
     def __init__(self, jdata, descrpt, fitting) :
         TensorModel.__init__(self, jdata, descrpt, fitting, 'polar')
