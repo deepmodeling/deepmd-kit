@@ -99,7 +99,6 @@ cmpt_k(vector<int> & KK,
     assert((KK[dd] / 2) * 2 == KK[dd]);
   }
 }
-       
 
 // compute the reciprocal part of the Ewald sum.
 // outputs: energy force virial
@@ -174,9 +173,12 @@ EwaldReciprocal(VALUETYPE &			ener,
 	// \bm m and \vert m \vert^2
 	VALUETYPE rm[3] = {0,0,0};	  
 	for (int dd = 0; dd < 3; ++dd){
-	  rm[0] += mm[dd] * rec_box[dd*3+0];
-	  rm[1] += mm[dd] * rec_box[dd*3+1];
-	  rm[2] += mm[dd] * rec_box[dd*3+2];
+	  rm[0] += mm[dd] * rec_box[0*3+dd];
+	  rm[1] += mm[dd] * rec_box[1*3+dd];
+	  rm[2] += mm[dd] * rec_box[2*3+dd];
+	  // rm[0] += mm[dd] * rec_box[dd*3+0];
+	  // rm[1] += mm[dd] * rec_box[dd*3+1];
+	  // rm[2] += mm[dd] * rec_box[dd*3+2];
 	}
 	VALUETYPE mm2 = rm[0] * rm[0] + rm[1] * rm[1] + rm[2] * rm[2];
 	// energy
