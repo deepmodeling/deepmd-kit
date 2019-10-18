@@ -166,57 +166,8 @@ class EnerStdLoss () :
         if self.has_pf:
             print_str += prop_fmt % (np.sqrt(error_pf_test) / natoms[0], np.sqrt(error_pf_train) / natoms[0])
 
-        return print_str
-        
-        
+        return print_str        
 
-class WFCLoss () :
-    def __init__ (self, jdata, **kwarg) :
-        model = kwarg['model']
-        # data required
-        add_data_requirement('wfc', 
-                             model.get_wfc_numb() * 3, 
-                             atomic=True,  
-                             must=True, 
-                             high_prec=False, 
-                             type_sel = model.get_sel_type())
-
-    def build (self, 
-               learning_rate,
-               natoms,
-               model_dict,
-               label_dict,
-               suffix):        
-        wfc_hat = label_dict['wfc']
-        wfc = model_dict['wfc']
-        l2_loss = tf.reduce_mean( tf.square(wfc - wfc_hat), name='l2_'+suffix)
-        self.l2_l = l2_loss
-        more_loss = {}
-
-        return l2_loss, more_loss
-
-    def print_header(self) :
-        prop_fmt = '   %9s %9s'
-        print_str = ''
-        print_str += prop_fmt % ('l2_tst', 'l2_trn')
-        return print_str
-
-    def print_on_training(self, 
-                          sess, 
-                          natoms,
-                          feed_dict_test,
-                          feed_dict_batch) :
-        error_test\
-            = sess.run([self.l2_l], \
-                       feed_dict=feed_dict_test)
-        error_train\
-            = sess.run([self.l2_l], \
-                       feed_dict=feed_dict_batch)
-        print_str = ""
-        prop_fmt = "   %9.2e %9.2e"
-        print_str += prop_fmt % (np.sqrt(error_test), np.sqrt(error_train))
-
-        return print_str
 
 
 class TensorLoss () :
@@ -235,7 +186,7 @@ class TensorLoss () :
                              atomic=True,  
                              must=True, 
                              high_prec=False, 
-                             type_sel = model.get_sel_type())
+                             type_sel = type_sel)
 
     def build (self, 
                learning_rate,

@@ -42,7 +42,15 @@ def test_ener (args) :
     coord = test_data["coord"][:numb_test].reshape([numb_test, -1])
     box = test_data["box"][:numb_test]
     atype = test_data["type"][0]
-    energy, force, virial, ae, av = dp.eval(coord, box, atype, fparam = (test_data["fparam"] if "fparam" in test_data else None), atomic = True)
+    if dp.get_dim_fparam() > 0:
+        fparam = test_data["fparam"][:numb_test] 
+    else :
+        fparam = None
+    if dp.get_dim_aparam() > 0:
+        aparam = test_data["aparam"][:numb_test] 
+    else :
+        aparam = None
+    energy, force, virial, ae, av = dp.eval(coord, box, atype, fparam = fparam, aparam = aparam, atomic = True)
     energy = energy.reshape([numb_test,1])
     force = force.reshape([numb_test,-1])
     virial = virial.reshape([numb_test,9])
