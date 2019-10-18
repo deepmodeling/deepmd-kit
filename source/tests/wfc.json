@@ -2,9 +2,9 @@
     "with_distrib":	false,
     "_comment": " model parameters",
     "model":{
+	"type":			"polar",
 	"type_map":		["O", "H"],
-	"data_stat_nbatch":	1,
-	"descriptor": {
+	"descriptor" :{
 	    "type":		"loc_frame",
 	    "sel_a":		[16, 32],
 	    "sel_r":		[30, 60],
@@ -19,7 +19,8 @@
 	    "_comment": " that's all"
 	},
 	"fitting_net": {
-	    "type":		"polar",
+	    "type":		"wfc",
+	    "wfc_numb":		4,
 	    "sel_type":		[0],
 	    "neuron":		[100, 100, 100],
 	    "resnet_dt":	true,
@@ -38,26 +39,23 @@
     },
 
     "_comment": " traing controls",
-    "training": {
-	"systems":	["/home/wanghan/study/deep.md/data/polar/bulk"], 
-	"set_prefix":	"set",    
-	"stop_batch":	1000000,
-	"batch_size":	[4],
+    "systems":		["system"],
+    "set_prefix":	"set",    
+    "stop_batch":	1000000,
+    "batch_size":	[1],
 
-	"seed":		1,
+    "seed":		1,
 
-	"_comment": " display and restart",
-	"_comment": " frequencies counted in batch",
-	"disp_file":	"lcurve.out",
-	"disp_freq":	100,
-	"numb_test":	10,
-	"save_freq":	1000,
-	"save_ckpt":	"model.ckpt",
-	"load_ckpt":	"model.ckpt",
-	"disp_training":true,
-	"time_training":true,
-	"_comment":	"that's all"
-    },
+    "_comment": " display and restart",
+    "_comment": " frequencies counted in batch",
+    "disp_file":	"lcurve.out",
+    "disp_freq":	100,
+    "numb_test":	10,
+    "save_freq":	1000,
+    "save_ckpt":	"model.ckpt",
+    "load_ckpt":	"model.ckpt",
+    "disp_training":true,
+    "time_training":true,
 
     "_comment":		"that's all"
 }

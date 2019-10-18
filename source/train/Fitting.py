@@ -211,6 +211,9 @@ class WFCFitting () :
     def get_wfc_numb(self):
         return self.wfc_numb
 
+    def get_out_size(self):
+        return self.wfc_numb * 3
+
     def build (self, 
                input_d,
                rot_mat,
@@ -282,6 +285,9 @@ class PolarFittingLocFrame () :
 
     def get_sel_type(self):
         return self.sel_type
+
+    def get_out_size(self):
+        return 9
 
     def build (self, 
                input_d,
@@ -360,6 +366,9 @@ class PolarFittingSeA () :
     def get_sel_type(self):
         return self.sel_type
 
+    def get_out_size(self):
+        return 9
+
     def build (self, 
                input_d,
                rot_mat,
@@ -403,6 +412,79 @@ class PolarFittingSeA () :
             final_layer = tf.matmul(rot_mat_i, final_layer, transpose_a = True)
             # nframes x natoms x 3 x 3
             final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i], 3, 3])
+
+            # concat the results
+            if count == 0:
+                outs = final_layer
+            else:
+                outs = tf.concat([outs, final_layer], axis = 1)
+            count += 1
+
+        return tf.reshape(outs, [-1])
+
+
+class DipoleFittingSeA () :
+    def __init__ (self, jdata, descrpt) :
+        if not isinstance(descrpt, DescrptSeA) :
+            raise RuntimeError('DipoleFittingSeA only supports DescrptSeA')
+        self.ntypes = descrpt.get_ntypes()
+        self.dim_descrpt = descrpt.get_dim_out()
+        args = ClassArg()\
+               .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\
+               .add('resnet_dt',        bool,   default = True)\
+               .add('sel_type',         [list,int],   default = [ii for ii in range(self.ntypes)], alias = 'dipole_type')\
+               .add('seed',             int)
+        class_data = args.parse(jdata)
+        self.n_neuron = class_data['neuron']
+        self.resnet_dt = class_data['resnet_dt']
+        self.sel_type = class_data['sel_type']
+        self.seed = class_data['seed']
+        self.dim_rot_mat_1 = descrpt.get_dim_rot_mat_1()
+        self.dim_rot_mat = self.dim_rot_mat_1 * 3
+        self.useBN = False
+
+    def get_sel_type(self):
+        return self.sel_type
+
+    def build (self, 
+               input_d,
+               rot_mat,
+               natoms,
+               reuse = None,
+               suffix = '') :
+        start_index = 0
+        inputs = tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]])
+        rot_mat = tf.reshape(rot_mat, [-1, self.dim_rot_mat * natoms[0]])
+        shape = inputs.get_shape().as_list()
+
+        count = 0
+        for type_i in range(self.ntypes):
+            # cut-out inputs
+            inputs_i = tf.slice (inputs,
+                                 [ 0, start_index*      self.dim_descrpt],
+                                 [-1, natoms[2+type_i]* self.dim_descrpt] )
+            inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
+            rot_mat_i = tf.slice (rot_mat,
+                                  [ 0, start_index*      self.dim_rot_mat],
+                                  [-1, natoms[2+type_i]* self.dim_rot_mat] )
+            rot_mat_i = tf.reshape(rot_mat_i, [-1, self.dim_rot_mat_1, 3])
+            start_index += natoms[2+type_i]
+            if not type_i in self.sel_type :
+                continue
+            layer = inputs_i
+            for ii in range(0,len(self.n_neuron)) :
+                if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
+                    layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt)
+                else :
+                    layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
+            # (nframes x natoms) x naxis
+            final_layer = one_layer(layer, self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
+            # (nframes x natoms) x 1 * naxis
+            final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], 1, self.dim_rot_mat_1])
+            # (nframes x natoms) x 1 x 3(coord)
+            final_layer = tf.matmul(final_layer, rot_mat_i)
+            # nframes x natoms x 3
+            final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i], 3])
 
             # concat the results
             if count == 0:

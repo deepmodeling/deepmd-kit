@@ -12,13 +12,13 @@ from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
 from deepmd.RunOptions import global_cvt_2_tf_float
 from deepmd.RunOptions import global_cvt_2_ener_float
-from deepmd.Fitting import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA
+from deepmd.Fitting import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, DipoleFittingSeA
 from deepmd.DescrptLocFrame import DescrptLocFrame
 from deepmd.DescrptSeA import DescrptSeA
 from deepmd.DescrptSeR import DescrptSeR
 from deepmd.DescrptSeAR import DescrptSeAR
-from deepmd.Model import Model, WFCModel, PolarModel
-from deepmd.Loss import EnerStdLoss, WFCLoss, TensorLoss
+from deepmd.Model import Model, WFCModel, DipoleModel, PolarModel
+from deepmd.Loss import EnerStdLoss, TensorLoss
 from deepmd.LearningRate import LearningRateExp
 
 from tensorflow.python.framework import ops
@@ -101,6 +101,11 @@ class NNPTrainer (object):
                 self.fitting = PolarFittingSeA(fitting_param, self.descrpt)
             else :
                 raise RuntimeError('fitting polar only supports descrptors: loc_frame and se_a')
+        elif fitting_type == 'dipole':
+            if descrpt_type == 'se_a':
+                self.fitting = DipoleFittingSeA(fitting_param, self.descrpt)
+            else :
+                raise RuntimeError('fitting dipole only supports descrptors: se_a')
         else :
             raise RuntimeError('unknow fitting type ' + fitting_type)
 
@@ -108,10 +113,12 @@ class NNPTrainer (object):
         # infer model type by fitting_type
         if fitting_type == Model.model_type:
             self.model = Model(model_param, self.descrpt, self.fitting)
-        elif fitting_type == WFCModel.model_type:
+        elif fitting_type == 'wfc':
             self.model = WFCModel(model_param, self.descrpt, self.fitting)
-        elif fitting_type == PolarModel.model_type:
+        elif fitting_type == 'polar':
             self.model = PolarModel(model_param, self.descrpt, self.fitting)
+        elif fitting_type == 'dipole':
+            self.model = DipoleModel(model_param, self.descrpt, self.fitting)
         else :
             raise RuntimeError('get unknown fitting type when building model')
 
@@ -135,7 +142,17 @@ class NNPTrainer (object):
         if fitting_type == 'ener':
             self.loss = EnerStdLoss(loss_param, starter_learning_rate = self.lr.start_lr())
         elif fitting_type == 'wfc':
-            self.loss = WFCLoss(loss_param, model = self.model)
+            self.loss = TensorLoss(loss_param, 
+                                   model = self.model, 
+                                   tensor_name = 'wfc',
+                                   tensor_size = self.model.get_out_size(),
+                                   label_name = 'wfc')
+        elif fitting_type == 'dipole':
+            self.loss = TensorLoss(loss_param, 
+                                   model = self.model, 
+                                   tensor_name = 'dipole',
+                                   tensor_size = 3,
+                                   label_name = 'dipole')
         elif fitting_type == 'polar':
             self.loss = TensorLoss(loss_param, 
                                    model = self.model, 
