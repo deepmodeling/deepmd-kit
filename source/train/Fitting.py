@@ -211,6 +211,9 @@ class WFCFitting () :
     def get_wfc_numb(self):
         return self.wfc_numb
 
+    def get_out_size(self):
+        return self.wfc_numb * 3
+
     def build (self, 
                input_d,
                rot_mat,
@@ -282,6 +285,9 @@ class PolarFittingLocFrame () :
 
     def get_sel_type(self):
         return self.sel_type
+
+    def get_out_size(self):
+        return 9
 
     def build (self, 
                input_d,
@@ -359,6 +365,9 @@ class PolarFittingSeA () :
 
     def get_sel_type(self):
         return self.sel_type
+
+    def get_out_size(self):
+        return 9
 
     def build (self, 
                input_d,

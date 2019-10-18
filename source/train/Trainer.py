@@ -18,7 +18,7 @@ from deepmd.DescrptSeA import DescrptSeA
 from deepmd.DescrptSeR import DescrptSeR
 from deepmd.DescrptSeAR import DescrptSeAR
 from deepmd.Model import Model, WFCModel, PolarModel
-from deepmd.Loss import EnerStdLoss, WFCLoss, TensorLoss
+from deepmd.Loss import EnerStdLoss, TensorLoss
 from deepmd.LearningRate import LearningRateExp
 
 from tensorflow.python.framework import ops
@@ -108,9 +108,9 @@ class NNPTrainer (object):
         # infer model type by fitting_type
         if fitting_type == Model.model_type:
             self.model = Model(model_param, self.descrpt, self.fitting)
-        elif fitting_type == WFCModel.model_type:
+        elif fitting_type == 'wfc':
             self.model = WFCModel(model_param, self.descrpt, self.fitting)
-        elif fitting_type == PolarModel.model_type:
+        elif fitting_type == 'polar':
             self.model = PolarModel(model_param, self.descrpt, self.fitting)
         else :
             raise RuntimeError('get unknown fitting type when building model')
@@ -135,7 +135,11 @@ class NNPTrainer (object):
         if fitting_type == 'ener':
             self.loss = EnerStdLoss(loss_param, starter_learning_rate = self.lr.start_lr())
         elif fitting_type == 'wfc':
-            self.loss = WFCLoss(loss_param, model = self.model)
+            self.loss = TensorLoss(loss_param, 
+                                   model = self.model, 
+                                   tensor_name = 'wfc',
+                                   tensor_size = self.model.get_out_size(),
+                                   label_name = 'wfc')
         elif fitting_type == 'polar':
             self.loss = TensorLoss(loss_param, 
                                    model = self.model, 

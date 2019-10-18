@@ -3,6 +3,7 @@
     "_comment": " model parameters",
     "model":{
 	"type_map":		["O", "H"],
+	"data_stat_nbatch":	1,
 	"descriptor" :{
 	    "type":		"se_a",
 	    "sel":		[46, 92],
