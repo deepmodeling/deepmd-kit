@@ -22,7 +22,8 @@ class EnerStdLoss () :
             .add('start_pref_ae',       float,  default = 0)\
             .add('limit_pref_ae',       float,  default = 0)\
             .add('start_pref_pf',       float,  default = 0)\
-            .add('limit_pref_pf',       float,  default = 0)        
+            .add('limit_pref_pf',       float,  default = 0)\
+            .add('relative_f',          float)
         class_data = args.parse(jdata)
         self.start_pref_e = class_data['start_pref_e']
         self.limit_pref_e = class_data['limit_pref_e']
@@ -34,6 +35,7 @@ class EnerStdLoss () :
         self.limit_pref_ae = class_data['limit_pref_ae']
         self.start_pref_pf = class_data['start_pref_pf']
         self.limit_pref_pf = class_data['limit_pref_pf']
+        self.relative_f = class_data['relative_f']
         self.has_e = (self.start_pref_e != 0 or self.limit_pref_e != 0)
         self.has_f = (self.start_pref_f != 0 or self.limit_pref_f != 0)
         self.has_v = (self.start_pref_v != 0 or self.limit_pref_v != 0)
@@ -72,8 +74,15 @@ class EnerStdLoss () :
         force_reshape = tf.reshape (force, [-1])
         force_hat_reshape = tf.reshape (force_hat, [-1])
         atom_pref_reshape = tf.reshape (atom_pref, [-1])
-        l2_force_loss = tf.reduce_mean (tf.square(force_hat_reshape - force_reshape), name = "l2_force_" + suffix)
-        l2_pref_force_loss = tf.reduce_mean (tf.multiply(tf.square(force_hat_reshape - force_reshape), atom_pref_reshape), name = "l2_pref_force_" + suffix)
+        diff_f = force_hat_reshape - force_reshape
+        if self.relative_f is not None:
+            force_hat_3 = tf.reshape(force_hat, [-1, 3])
+            norm_f = tf.reshape(tf.norm(force_hat_3, axis = 1), [-1, 1]) + self.relative_f
+            diff_f_3 = tf.reshape(diff_f, [-1, 3])
+            diff_f_3 = diff_f_3 / norm_f
+            diff_f = tf.reshape(diff_f_3, [-1])
+        l2_force_loss = tf.reduce_mean(tf.square(diff_f), name = "l2_force_" + suffix)
+        l2_pref_force_loss = tf.reduce_mean(tf.multiply(tf.square(diff_f), atom_pref_reshape), name = "l2_pref_force_" + suffix)
 
         virial_reshape = tf.reshape (virial, [-1])
         virial_hat_reshape = tf.reshape (virial_hat, [-1])
