@@ -24,7 +24,9 @@ def set_mkl():
     https://github.com/numpy/numpy/issues/12374
     """
 
-    if 'mkl_info' in np.__config__.__dict__ or 'mkl_rt' in np.__config__.blas_mkl_info['libraries']:
+    # check whether the numpy is built by mkl, see
+    # https://github.com/numpy/numpy/issues/14751
+    if 'mkl_rt' in np.__config__.get_info("blas_mkl_info").get('libraries', []):
         set_env_if_empty("KMP_BLOCKTIME", "0")
         set_env_if_empty("KMP_AFFINITY", "granularity=fine,verbose,compact,1,0")
         reload(np)
