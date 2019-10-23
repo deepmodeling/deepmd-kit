@@ -7,6 +7,7 @@ from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
 from deepmd.EwaldRecp import op_module
+from deepmd.EwaldRecp import EwaldRecp
 
 if global_np_float_precision == np.float32 :
     global_default_fv_hh = 1e-2
@@ -57,6 +58,40 @@ class TestEwaldRecp (unittest.TestCase) :
         self.charge     = tf.placeholder(global_tf_float_precision, [None, self.natoms], name='t_charge')
         self.box        = tf.placeholder(global_tf_float_precision, [None, 9], name='t_box')
         self.nloc    = tf.placeholder(tf.int32, [1], name = "t_nloc")        
+
+    def test_py_interface(self):
+        hh = 1e-4
+        places = 4
+        sess = tf.Session()
+        t_energy, t_force, t_virial \
+            = op_module.ewald_recp(self.coord, self.charge, self.nloc, self.box, 
+                                   ewald_h = self.ewald_h,
+                                   ewald_beta = self.ewald_beta)
+        [e, f, v] = sess.run([t_energy, t_force, t_virial], 
+                           feed_dict = {
+                               self.coord:  self.dcoord,
+                               self.charge: self.dcharge,
+                               self.box:    self.dbox,
+                               self.nloc:   [self.natoms],
+                           })
+        er = EwaldRecp(self.ewald_h, self.ewald_beta)
+        e1, f1, v1 = er.eval(self.dcoord, self.dcharge, self.dbox)        
+        for ff in range(self.nframes):
+            self.assertAlmostEqual(e[ff], e1[ff], 
+                                   places = places,
+                                   msg = "frame %d energy failed" % (ff))
+            for idx in range(self.natoms):
+                for dd in range(3):
+                    self.assertAlmostEqual(f[ff, idx*3+dd], f1[ff,idx*3+dd], 
+                                           places = places,
+                                           msg = "frame %d force component [%d,%d] failed" % (ff, idx, dd))
+            for d0 in range(3):
+                for d1 in range(3):
+                    self.assertAlmostEqual(v[ff, d0*3+d1], v[ff,d0*3+d1], 
+                                           places = places,
+                                           msg = "frame %d virial component [%d,%d] failed" % (ff, d0, d1))
+
+
 
     def test_force(self):
         hh = 1e-4

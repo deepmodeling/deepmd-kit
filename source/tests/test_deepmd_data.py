@@ -10,6 +10,62 @@ if global_np_float_precision == np.float32 :
 else:
     places = 12
 
+class TestDataTypeSel(unittest.TestCase):
+    def setUp(self):
+        self.data_name = 'test_data'
+        os.makedirs(self.data_name, exist_ok = True)
+        os.makedirs(os.path.join(self.data_name,'set.foo'), exist_ok = True)
+        np.savetxt(os.path.join(self.data_name, 'type.raw'), 
+                   np.array([0, 1, 1, 0, 1, 1]), 
+                   fmt = '%d')
+        self.nframes = 3
+        self.natoms = 6
+        # coord
+        path = os.path.join(self.data_name, 'set.foo', 'coord.npy')
+        self.coord = np.random.random([self.nframes, self.natoms, 3])
+        np.save(path, np.reshape(self.coord, [self.nframes, -1]))
+        self.coord = self.coord[:,[0,3,1,2,4,5],:]
+        self.coord = self.coord.reshape([self.nframes, -1])
+        # box
+        path = os.path.join(self.data_name, 'set.foo', 'box.npy')
+        self.box = np.random.random([self.nframes, 9])
+        np.save(path, self.box)
+        # value
+        path = os.path.join(self.data_name, 'set.foo', 'value_1.npy')
+        self.value_1 = np.arange(self.nframes * 2)
+        self.value_1 = np.reshape(self.value_1, [self.nframes, 2])
+        np.save(path, self.value_1)
+        # value
+        path = os.path.join(self.data_name, 'set.foo', 'value_2.npy')
+        self.value_2 = np.arange(self.nframes * 4)
+        self.value_2 = np.reshape(self.value_2, [self.nframes, 4])
+        np.save(path, self.value_2)
+
+    def tearDown(self) :
+        shutil.rmtree(self.data_name)
+
+    def test_load_set_1(self) :
+        dd = DeepmdData(self.data_name)\
+             .add('value_1', 1, atomic=True, must=True, type_sel = [0])
+        data = dd._load_set(os.path.join(self.data_name, 'set.foo'))
+        self.assertEqual(data['value_1'].shape, (self.nframes, 2))
+        for ii in range(self.nframes):
+            for jj in range(2):
+                self.assertAlmostEqual(data['value_1'][ii][jj],
+                                       self.value_1[ii][jj])
+                
+
+    def test_load_set_2(self) :
+        dd = DeepmdData(self.data_name)\
+             .add('value_2', 1, atomic=True, must=True, type_sel = [1])
+        data = dd._load_set(os.path.join(self.data_name, 'set.foo'))
+        self.assertEqual(data['value_2'].shape, (self.nframes, 4))
+        for ii in range(self.nframes):
+            for jj in range(4):
+                self.assertAlmostEqual(data['value_2'][ii][jj],
+                                       self.value_2[ii][jj])                
+
+
 class TestData (unittest.TestCase) :
     def setUp (self) :
         self.data_name = 'test_data'
