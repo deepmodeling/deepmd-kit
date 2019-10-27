@@ -5,6 +5,7 @@
 
 #include "SimulationRegion.h"
 
+// 8.988e9 / pc.electron_volt / pc.angstrom * (1.602e-19)**2
 const double ElectrostaticConvertion = 14.39964535475696995031;
 
 template <typename VALUETYPE>

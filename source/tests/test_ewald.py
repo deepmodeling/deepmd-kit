@@ -209,7 +209,7 @@ class TestEwaldRecp (unittest.TestCase) :
                 for jj in range(3):                
                     self.assertAlmostEqual(t_esti[ff][ii][jj], virial[ff,ii*3+jj], 
                                            places = places,
-                                           msg = "frame %d forcvirial component [%d,%d] failed" % (ff, ii, jj))
+                                           msg = "frame %d virial component [%d,%d] failed" % (ff, ii, jj))
             
                 
 

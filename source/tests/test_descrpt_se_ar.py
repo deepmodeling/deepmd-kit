@@ -26,8 +26,8 @@ from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
 
 class Inter():
-    def __init__ (self, 
-                  data) :
+    def setUp (self, 
+               data) :
         self.sess = tf.Session()
         self.data = data
         self.natoms = self.data.get_natoms()
@@ -99,11 +99,16 @@ class Inter():
 
 
 class TestDescrptAR(Inter, unittest.TestCase):
-    def __init__ (self, *args, **kwargs):
+    # def __init__ (self, *args, **kwargs):
+    #     data = Data()
+    #     Inter.__init__(self, data)
+    #     unittest.TestCase.__init__(self, *args, **kwargs)
+    #     self.controller = object()
+
+    def setUp(self):
+        self.places = 5
         data = Data()
-        Inter.__init__(self, data)
-        unittest.TestCase.__init__(self, *args, **kwargs)
-        self.controller = object()
+        Inter.setUp(self, data)
 
     def test_force (self) :
         force_test(self, self, suffix = '_se_ar')
