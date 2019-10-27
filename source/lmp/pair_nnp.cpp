@@ -699,7 +699,7 @@ void PairNNP::settings(int narg, char **arg)
 #ifdef HIGH_PREC
       eps = atof(arg[iarg+1]);
 #else
-      eps = strtof(arg[iarg+1]);
+      eps = strtof(arg[iarg+1], NULL);
 #endif
       iarg += 2;
     }
