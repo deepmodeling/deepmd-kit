@@ -1,3 +1,5 @@
+import numpy as np
+
 data_requirement = {}
 
 def add_data_requirement(key, 
@@ -15,6 +17,15 @@ def add_data_requirement(key,
                              'repeat': repeat,
     }
     
+
+def select_idx_map(atom_type, 
+                   type_sel):
+    sort_type_sel = np.sort(type_sel)
+    idx_map = np.array([], dtype = int)
+    for ii in sort_type_sel:
+        idx_map = np.append(idx_map, np.where(atom_type == ii))
+    return idx_map
+
 
 class ClassArg () : 
     def __init__ (self) :

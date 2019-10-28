@@ -14,7 +14,8 @@ class DeepmdData() :
                   sys_path, 
                   set_prefix = 'set',
                   shuffle_test = True, 
-                  type_map = None) :
+                  type_map = None, 
+                  modifier = None) :
         self.dirs = glob.glob (os.path.join(sys_path, set_prefix + ".*"))
         self.dirs.sort()
         # load atom type
@@ -46,6 +47,8 @@ class DeepmdData() :
         self.set_count = 0
         self.iterator = 0
         self.shuffle_test = shuffle_test
+        # set modifier
+        self.modifier = modifier
 
 
     def add(self, 
@@ -139,7 +142,7 @@ class DeepmdData() :
         return len (self.train_dirs)
 
     def get_numb_batch (self, batch_size, set_idx) :
-        data = self._load_set(self.train_dirs[set_idx])
+        data = self._load_set(self.train_dirs[set_idx], modify = False)
         return data["coord"].shape[0] // batch_size
 
     def get_sys_numb_batch (self, batch_size) :
@@ -237,7 +240,7 @@ class DeepmdData() :
                 ret[kk] = data[kk]
         return ret, idx
 
-    def _load_set(self, set_name) :
+    def _load_set(self, set_name, modify = True) :
         ret = {}
         # get nframes
         path = os.path.join(set_name, "coord.npy")
@@ -269,7 +272,10 @@ class DeepmdData() :
                 data['find_'+kk] = data['find_'+k_in]
                 tmp_in = data[k_in].astype(global_ener_float_precision)
                 data[kk] = np.sum(np.reshape(tmp_in, [nframes, self.natoms, ndof]), axis = 1)
-                
+
+        if modify and self.modifier is not None:
+            self.modifier.modify(data)
+
         return data
 
 

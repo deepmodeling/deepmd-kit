@@ -136,6 +136,12 @@ class DescrptSeA ():
             t_ntypes = tf.constant(self.ntypes, 
                                    name = 'ntypes', 
                                    dtype = tf.int32)
+            t_ndescrpt = tf.constant(self.ndescrpt, 
+                                     name = 'ndescrpt', 
+                                     dtype = tf.int32)            
+            t_sel = tf.constant(self.sel_a, 
+                                name = 'sel', 
+                                dtype = tf.int32)            
             self.t_avg = tf.get_variable('t_avg', 
                                          davg.shape, 
                                          dtype = global_tf_float_precision,
@@ -166,6 +172,10 @@ class DescrptSeA ():
                                        sel_r = self.sel_r)
 
         self.descrpt_reshape = tf.reshape(self.descrpt, [-1, self.ndescrpt])
+        self.descrpt_reshape = tf.identity(self.descrpt_reshape, name = 'o_rmat')
+        self.descrpt_deriv = tf.identity(self.descrpt_deriv, name = 'o_rmat_deriv')
+        self.rij = tf.identity(self.rij, name = 'o_rij')
+        self.nlist = tf.identity(self.nlist, name = 'o_nlist')
 
         self.dout, self.qmat = self._pass_filter(self.descrpt_reshape, natoms, suffix = suffix, reuse = reuse)
 

@@ -52,17 +52,17 @@ class DeepEval():
         return graph
 
     def make_default_mesh(self, test_box) :
-        ncell = np.ones (3, dtype=np.int32)
-        avg_box = np.average (test_box, axis = 0)
         cell_size = 3
-        avg_box = np.reshape (avg_box, [3,3])
-        for ii in range (3) :
-            ncell[ii] = int ( np.linalg.norm(avg_box[ii]) / cell_size )
-            if (ncell[ii] < 2) : ncell[ii] = 2
-        default_mesh = np.zeros (6, dtype = np.int32)
-        default_mesh[3] = ncell[0]
-        default_mesh[4] = ncell[1]
-        default_mesh[5] = ncell[2]
+        nframes = test_box.shape[0]
+        default_mesh = np.zeros([nframes, 6], dtype = np.int32)
+        for ff in range(nframes):
+            ncell = np.ones (3, dtype=np.int32)
+            for ii in range(3) :
+                ncell[ii] = int ( np.linalg.norm(test_box[ff][ii]) / cell_size )
+                if (ncell[ii] < 2) : ncell[ii] = 2
+            default_mesh[ff][3] = ncell[0]
+            default_mesh[ff][4] = ncell[1]
+            default_mesh[ff][5] = ncell[2]
         return default_mesh
 
     def sort_input(self, coord, atom_type, sel_atoms = None) :
@@ -173,12 +173,12 @@ class DeepTensor(DeepEval) :
         tensor = []
         feed_dict_test = {}
         feed_dict_test[self.t_natoms] = natoms_vec
-        feed_dict_test[self.t_mesh  ] = default_mesh
         feed_dict_test[self.t_type  ] = atom_types
         t_out = [self.t_tensor]
         for ii in range(nframes) :
             feed_dict_test[self.t_coord] = np.reshape(coords[ii:ii+1, :], [-1])
             feed_dict_test[self.t_box  ] = np.reshape(cells [ii:ii+1, :], [-1])
+            feed_dict_test[self.t_mesh ] = default_mesh[ii]
             v_out = self.sess.run (t_out, feed_dict = feed_dict_test)
             tensor.append(v_out[0])
 

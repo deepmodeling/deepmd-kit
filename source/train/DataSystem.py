@@ -19,7 +19,8 @@ class DeepmdDataSystem() :
                   set_prefix = 'set',
                   shuffle_test = True,
                   run_opt = None, 
-                  type_map = None) :
+                  type_map = None, 
+                  modifier = None) :
         # init data
         self.rcut = rcut
         self.system_dirs = systems
@@ -29,8 +30,8 @@ class DeepmdDataSystem() :
             self.data_systems.append(DeepmdData(ii, 
                                                 set_prefix=set_prefix, 
                                                 shuffle_test=shuffle_test, 
-                                                type_map = type_map))
-
+                                                type_map = type_map, 
+                                                modifier = modifier))
         # batch size
         self.batch_size = batch_size
         if isinstance(self.batch_size, int) :
