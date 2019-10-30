@@ -53,8 +53,8 @@ class NNPInter
 {
 public:
   NNPInter () ;
-  NNPInter  (const string & model);
-  void init (const string & model);
+  NNPInter  (const string & model, const int & gpu_rank = 0);
+  void init (const string & model, const int & gpu_rank = 0);
   void print_summary(const string &pre) const;
 public:
   void compute (ENERGYTYPE &			ener,
@@ -63,7 +63,8 @@ public:
 		const vector<VALUETYPE> &	coord,
 		const vector<int> &		atype,
 		const vector<VALUETYPE> &	box, 
-		const int			nghost = 0);
+		const int			nghost = 0,
+		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
   void compute (ENERGYTYPE &			ener,
 		vector<VALUETYPE> &		force,
 		vector<VALUETYPE> &		virial,
@@ -71,7 +72,8 @@ public:
 		const vector<int> &		atype,
 		const vector<VALUETYPE> &	box, 
 		const int			nghost,
-		const LammpsNeighborList &	lmp_list);
+		const LammpsNeighborList &	lmp_list,
+		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
   void compute (ENERGYTYPE &			ener,
 		vector<VALUETYPE> &		force,
 		vector<VALUETYPE> &		virial,
@@ -79,7 +81,8 @@ public:
 		vector<VALUETYPE> &		atom_virial,
 		const vector<VALUETYPE> &	coord,
 		const vector<int> &		atype,
-		const vector<VALUETYPE> &	box);
+		const vector<VALUETYPE> &	box,
+		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
   void compute (ENERGYTYPE &			ener,
 		vector<VALUETYPE> &		force,
 		vector<VALUETYPE> &		virial,
@@ -89,27 +92,31 @@ public:
 		const vector<int> &		atype,
 		const vector<VALUETYPE> &	box, 
 		const int			nghost, 
-		const LammpsNeighborList &	lmp_list);
+		const LammpsNeighborList &	lmp_list,
+		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
   VALUETYPE cutoff () const {assert(inited); return rcut;};
   int numb_types () const {assert(inited); return ntypes;};
+  int dim_fparam () const {assert(inited); return dfparam;};
 private:
   Session* session;
   int num_intra_nthreads, num_inter_nthreads;
   GraphDef graph_def;
   bool inited;
+  template<class VT> VT get_scalar(const string & name) const;
   VALUETYPE get_rcut () const;
   int get_ntypes () const;
   VALUETYPE rcut;
   VALUETYPE cell_size;
   int ntypes;
+  int dfparam;
 };
 
 class NNPInterModelDevi
 {
 public:
   NNPInterModelDevi () ;
-  NNPInterModelDevi  (const vector<string> & models);
-  void init (const vector<string> & models);
+  NNPInterModelDevi  (const vector<string> & models, const int & gpu_rank = 0);
+  void init (const vector<string> & models, const int & gpu_rank = 0);
 public:
   void compute (ENERGYTYPE &			ener,
   		vector<VALUETYPE> &		force,
@@ -117,7 +124,8 @@ public:
   		vector<VALUETYPE> &		model_devi,
   		const vector<VALUETYPE> &	coord,
   		const vector<int> &		atype,
-  		const vector<VALUETYPE> &	box);
+  		const vector<VALUETYPE> &	box,
+		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
   void compute (vector<ENERGYTYPE> &		all_ener,
 		vector<vector<VALUETYPE> > &	all_force,
 		vector<vector<VALUETYPE> > &	all_virial,
@@ -125,7 +133,8 @@ public:
 		const vector<int> &		atype,
 		const vector<VALUETYPE> &	box,
 		const int			nghost,
-		const LammpsNeighborList &	lmp_list);
+		const LammpsNeighborList &	lmp_list,
+		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
   void compute (vector<ENERGYTYPE> &		all_ener,
 		vector<vector<VALUETYPE> > &	all_force,
 		vector<vector<VALUETYPE> > &	all_virial,
@@ -135,9 +144,11 @@ public:
 		const vector<int> &		atype,
 		const vector<VALUETYPE> &	box,
 		const int			nghost,
-		const LammpsNeighborList &	lmp_list);
+		const LammpsNeighborList &	lmp_list,
+		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
   VALUETYPE cutoff () const {assert(inited); return rcut;};
   int numb_types () const {assert(inited); return ntypes;};
+  int dim_fparam () const {assert(inited); return dfparam;};
 #ifndef HIGH_PREC
   void compute_avg (ENERGYTYPE &		dener,
 		    const vector<ENERGYTYPE > &	all_energy);
@@ -158,11 +169,13 @@ private:
   int num_intra_nthreads, num_inter_nthreads;
   vector<GraphDef> graph_defs;
   bool inited;
+  template<class VT> VT get_scalar(const string name) const;
   VALUETYPE get_rcut () const;
   int get_ntypes () const;
   VALUETYPE rcut;
   VALUETYPE cell_size;
   int ntypes;
+  int dfparam;
 };
 
 

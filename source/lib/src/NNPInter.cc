@@ -1,6 +1,13 @@
 #include "NNPInter.h"
 #include "NNPAtomMap.h"
 #include "SimulationRegion.h"
+#include <stdexcept>	
+#ifdef  USE_CUDA_TOOLKIT
+#include "cuda_runtime.h"
+#include <tensorflow/core/public/session.h>
+#include <tensorflow/core/graph/default_device.h>
+#include <tensorflow/core/graph/graph_def_builder.h>
+#endif
 
 static
 void
@@ -58,7 +65,8 @@ make_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 		    const int &			ntypes,
 		    const vector<int> &		datype_,
 		    const vector<VALUETYPE> &	dbox, 
-		    const VALUETYPE &		cell_size, 
+		    const VALUETYPE &		cell_size,
+    		    const vector<VALUETYPE>	fparam_,
 		    const NNPAtomMap<VALUETYPE>&nnpmap,
 		    const int			nghost = 0)
 {
@@ -116,27 +124,29 @@ make_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
   }
   TensorShape natoms_shape ;
   natoms_shape.AddDim (2 + ntypes);
+  TensorShape fparam_shape ;
+  fparam_shape.AddDim (nframes);
+  fparam_shape.AddDim (fparam_.size());
   
 #ifdef HIGH_PREC
   Tensor coord_tensor	(DT_DOUBLE, coord_shape);
-  Tensor type_tensor	(DT_INT32, type_shape);
   Tensor box_tensor	(DT_DOUBLE, box_shape);
-  Tensor mesh_tensor	(DT_INT32, mesh_shape);
-  Tensor natoms_tensor	(DT_INT32, natoms_shape);
+  Tensor fparam_tensor  (DT_DOUBLE, fparam_shape);
 #else
   Tensor coord_tensor	(DT_FLOAT, coord_shape);
-  Tensor type_tensor	(DT_INT32, type_shape);
   Tensor box_tensor	(DT_FLOAT, box_shape);
+  Tensor fparam_tensor  (DT_FLOAT, fparam_shape);
+#endif
+  Tensor type_tensor	(DT_INT32, type_shape);
   Tensor mesh_tensor	(DT_INT32, mesh_shape);
   Tensor natoms_tensor	(DT_INT32, natoms_shape);
-#endif
 
   auto coord = coord_tensor.matrix<VALUETYPE> ();
   auto type = type_tensor.matrix<int> ();
   auto box = box_tensor.matrix<VALUETYPE> ();
   auto mesh = mesh_tensor.flat<int> ();
-  auto natoms = natoms_tensor.flat<int> ();
-
+  auto natoms = natoms_tensor.flat<int> ();  
+  auto fparam = fparam_tensor.matrix<VALUETYPE> ();
 
   vector<VALUETYPE> dcoord (dcoord_);
   nnpmap.forward (dcoord.begin(), dcoord_.begin(), 3);
@@ -150,6 +160,9 @@ make_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
     }
     for (int jj = 0; jj < nall; ++jj){
       type(ii, jj) = datype[jj];
+    }
+    for (int jj = 0; jj < fparam_.size(); ++jj){
+      fparam(ii, jj) = fparam_[jj];
     }
   }
   mesh (1-1) = 0;
@@ -170,13 +183,25 @@ make_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
   natoms (1) = nall;
   for (int ii = 0; ii < ntypes; ++ii) natoms(ii+2) = type_count[ii];
 
-  input_tensors = {
-    {"t_coord",	coord_tensor}, 
-    {"t_type",	type_tensor},
-    {"t_box",	box_tensor},
-    {"t_mesh",	mesh_tensor},
-    {"t_natoms", natoms_tensor},
-  };  
+  if (fparam_.size() == 0) {
+    input_tensors = {
+      {"t_coord",	coord_tensor}, 
+      {"t_type",	type_tensor},
+      {"t_box",		box_tensor},
+      {"t_mesh",	mesh_tensor},
+      {"t_natoms",	natoms_tensor},
+    };  
+  }
+  else {
+    input_tensors = {
+      {"t_coord",	coord_tensor}, 
+      {"t_type",	type_tensor},
+      {"t_box",		box_tensor},
+      {"t_mesh",	mesh_tensor},
+      {"t_natoms",	natoms_tensor},
+      {"t_fparam",	fparam_tensor},
+    };  
+  }
 
   return nloc;
 }
@@ -188,6 +213,7 @@ make_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 		    const vector<int> &		datype_,
 		    const vector<VALUETYPE> &	dbox,		    
 		    InternalNeighborList &	dlist, 
+    		    const vector<VALUETYPE>	fparam_,
 		    const NNPAtomMap<VALUETYPE>&nnpmap,
     		    const int			nghost)
 {
@@ -218,26 +244,29 @@ make_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
   mesh_shape.AddDim (16);
   TensorShape natoms_shape ;
   natoms_shape.AddDim (2 + ntypes);
+  TensorShape fparam_shape ;
+  fparam_shape.AddDim (nframes);
+  fparam_shape.AddDim (fparam_.size());
   
 #ifdef HIGH_PREC
   Tensor coord_tensor	(DT_DOUBLE, coord_shape);
-  Tensor type_tensor	(DT_INT32, type_shape);
   Tensor box_tensor	(DT_DOUBLE, box_shape);
-  Tensor mesh_tensor	(DT_INT32, mesh_shape);
-  Tensor natoms_tensor	(DT_INT32, natoms_shape);
+  Tensor fparam_tensor  (DT_DOUBLE, fparam_shape);
 #else
   Tensor coord_tensor	(DT_FLOAT, coord_shape);
-  Tensor type_tensor	(DT_INT32, type_shape);
   Tensor box_tensor	(DT_FLOAT, box_shape);
+  Tensor fparam_tensor  (DT_FLOAT, fparam_shape);
+#endif
+  Tensor type_tensor	(DT_INT32, type_shape);
   Tensor mesh_tensor	(DT_INT32, mesh_shape);
   Tensor natoms_tensor	(DT_INT32, natoms_shape);
-#endif
 
   auto coord = coord_tensor.matrix<VALUETYPE> ();
   auto type = type_tensor.matrix<int> ();
   auto box = box_tensor.matrix<VALUETYPE> ();
   auto mesh = mesh_tensor.flat<int> ();
   auto natoms = natoms_tensor.flat<int> ();
+  auto fparam = fparam_tensor.matrix<VALUETYPE> ();
 
   vector<VALUETYPE> dcoord (dcoord_);
   nnpmap.forward (dcoord.begin(), dcoord_.begin(), 3);
@@ -251,6 +280,9 @@ make_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
     }
     for (int jj = 0; jj < nall; ++jj){
       type(ii, jj) = datype[jj];
+    }
+    for (int jj = 0; jj < fparam_.size(); ++jj){
+      fparam(ii, jj) = fparam_[jj];
     }
   }
   
@@ -271,13 +303,25 @@ make_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
   natoms (1) = nall;
   for (int ii = 0; ii < ntypes; ++ii) natoms(ii+2) = type_count[ii];
 
-  input_tensors = {
-    {"t_coord",	coord_tensor}, 
-    {"t_type",	type_tensor},
-    {"t_box",	box_tensor},
-    {"t_mesh",	mesh_tensor},
-    {"t_natoms", natoms_tensor},
-  };  
+  if (fparam_.size() == 0) {
+    input_tensors = {
+      {"t_coord",	coord_tensor}, 
+      {"t_type",	type_tensor},
+      {"t_box",		box_tensor},
+      {"t_mesh",	mesh_tensor},
+      {"t_natoms",	natoms_tensor},
+    };  
+  }
+  else {
+    input_tensors = {
+      {"t_coord",	coord_tensor}, 
+      {"t_type",	type_tensor},
+      {"t_box",		box_tensor},
+      {"t_mesh",	mesh_tensor},
+      {"t_natoms",	natoms_tensor},
+      {"t_fparam",	fparam_tensor},
+    };  
+  }
 
   return nloc;
 }
@@ -308,7 +352,7 @@ run_model (ENERGYTYPE &			dener,
   std::vector<Tensor> output_tensors;
 
   checkStatus (session->Run(input_tensors, 
-			    {"energy_test", "force_test", "virial_test"}, 
+			    {"o_energy", "o_force", "o_virial"}, 
 			    {}, 
 			    &output_tensors));
   
@@ -367,7 +411,7 @@ run_model (ENERGYTYPE &			dener,
   std::vector<Tensor> output_tensors;
 
   checkStatus (session->Run(input_tensors, 
-			    {"energy_test", "force_test", "virial_test", "atom_energy_test", "atom_virial_test"}, 
+			    {"o_energy", "o_force", "o_virial", "o_atom_energy", "o_atom_virial"}, 
 			    {}, 
 			    &output_tensors));
 
@@ -439,24 +483,52 @@ NNPInter ()
 }
 
 NNPInter::
-NNPInter (const string & model)
+NNPInter (const string & model, const int & gpu_rank)
+    : inited (false)
 {
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
+  init(model, gpu_rank);  
+}
+
+#ifdef USE_CUDA_TOOLKIT
+void
+NNPInter::
+init (const string & model, const int & gpu_rank)
+{
+  assert (!inited);
   SessionOptions options;
   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
-  checkStatus (NewSession(options, &session));
+  options.config.set_allow_soft_placement(true);
+  options.config.mutable_gpu_options()->set_per_process_gpu_memory_fraction(0.9);
+  options.config.mutable_gpu_options()->set_allow_growth(true);
+
   checkStatus (ReadBinaryProto(Env::Default(), model, &graph_def));
-  checkStatus (session->Create(graph_def));  
-  rcut = get_rcut();
+  int gpu_num = -1;
+  cudaGetDeviceCount(&gpu_num);
+  // std::cout << "current number of devices: " << gpu_num << std::endl;
+  // set device to GPU only when at least GPU is found
+  if (gpu_num > 0) {
+    std::string str = "/gpu:";
+    str += std::to_string(gpu_rank % gpu_num);
+    graph::SetDefaultDevice(str, &graph_def);
+    // std::cout << "current device rank: " << str << std::endl;
+  }
+  checkStatus (NewSession(options, &session));
+  checkStatus (session->Create(graph_def));
+  rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
   cell_size = rcut;
-  ntypes = get_ntypes();
+  ntypes = get_scalar<int>("descrpt_attr/ntypes");
+  dfparam = get_scalar<int>("fitting_attr/dfparam");
+  assert(rcut == get_rcut());
+  assert(ntypes == get_ntypes());
+  if (dfparam < 0) dfparam = 0;
   inited = true;
 }
-
+#else
 void
 NNPInter::
-init (const string & model)
+init (const string & model, const int & gpu_rank)
 {
   assert (!inited);
   SessionOptions options;
@@ -465,11 +537,20 @@ init (const string & model)
   checkStatus (NewSession(options, &session));
   checkStatus (ReadBinaryProto(Env::Default(), model, &graph_def));
   checkStatus (session->Create(graph_def));  
-  rcut = get_rcut();
+  rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
   cell_size = rcut;
-  ntypes = get_ntypes();
+  ntypes = get_scalar<int>("descrpt_attr/ntypes");
+  dfparam = get_scalar<int>("fitting_attr/dfparam");
+  assert(rcut == get_rcut());
+  assert(ntypes == get_ntypes());
+  if (dfparam < 0) dfparam = 0;
+  // rcut = get_rcut();
+  // cell_size = rcut;
+  // ntypes = get_ntypes();
+  // dfparam = get_dfparam();
   inited = true;
 }
+#endif
 
 void 
 NNPInter::
@@ -487,32 +568,18 @@ print_summary(const string &pre) const
   cout << pre << "set tf inter_op_parallelism_threads: " <<  num_inter_nthreads << endl;
 }
 
-
-VALUETYPE
+template<class VT>
+VT
 NNPInter::
-get_rcut () const
+get_scalar (const string & name) const
 {
   std::vector<Tensor> output_tensors;
   checkStatus (session->Run(std::vector<std::pair<string, Tensor>> ({}), 
-			    {"t_rcut"}, 
+			    {name.c_str()}, 
 			    {}, 
 			    &output_tensors));
   Tensor output_rc = output_tensors[0];
-  auto orc = output_rc.flat <VALUETYPE> ();
-  return orc(0);
-}
-
-int
-NNPInter::
-get_ntypes () const
-{
-  std::vector<Tensor> output_tensors;
-  checkStatus (session->Run(std::vector<std::pair<string, Tensor>> ({}), 
-			    {"t_ntypes"}, 
-			    {}, 
-			    &output_tensors));
-  Tensor output_rc = output_tensors[0];
-  auto orc = output_rc.flat <int> ();
+  auto orc = output_rc.flat <VT> ();
   return orc(0);
 }
 
@@ -524,15 +591,19 @@ compute (ENERGYTYPE &			dener,
 	 const vector<VALUETYPE> &	dcoord_,
 	 const vector<int> &		datype_,
 	 const vector<VALUETYPE> &	dbox, 
-	 const int			nghost)
+	 const int			nghost,
+	 const vector<VALUETYPE>	fparam)
 {
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
   NNPAtomMap<VALUETYPE> nnpmap (datype_.begin(), datype_.begin() + nloc);
   assert (nloc == nnpmap.get_type().size());
+  if (fparam.size() != dfparam) {
+    throw std::runtime_error("the dim of frame parameter provided is not consistent with what the model uses");
+  }
 
   std::vector<std::pair<string, Tensor>> input_tensors;
-  int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, nnpmap, nghost);
+  int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, nnpmap, nghost);
   assert (ret == nloc);
 
   run_model (dener, dforce_, dvirial, session, input_tensors, nnpmap, nghost);
@@ -547,19 +618,23 @@ compute (ENERGYTYPE &			dener,
 	 const vector<int> &		datype_,
 	 const vector<VALUETYPE> &	dbox, 
 	 const int			nghost,
-	 const LammpsNeighborList &	lmp_list)
+	 const LammpsNeighborList &	lmp_list,
+	 const vector<VALUETYPE>	fparam)
 {
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
   NNPAtomMap<VALUETYPE> nnpmap (datype_.begin(), datype_.begin() + nloc);
   assert (nloc == nnpmap.get_type().size());
+  if (fparam.size() != dfparam) {
+    throw std::runtime_error("the dim of frame parameter provided is not consistent with what the model uses");
+  }
 
   InternalNeighborList nlist;
   convert_nlist_lmp_internal (nlist, lmp_list);
   shuffle_nlist (nlist, nnpmap);
 
   std::vector<std::pair<string, Tensor>> input_tensors;
-  int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, nnpmap, nghost);
+  int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, nnpmap, nghost);
   assert (nloc == ret);
 
   run_model (dener, dforce_, dvirial, session, input_tensors, nnpmap, nghost);
@@ -575,12 +650,16 @@ compute (ENERGYTYPE &			dener,
 	 vector<VALUETYPE> &		datom_virial_,
 	 const vector<VALUETYPE> &	dcoord_,
 	 const vector<int> &		datype_,
-	 const vector<VALUETYPE> &	dbox)
+	 const vector<VALUETYPE> &	dbox,
+	 const vector<VALUETYPE>	fparam)
 {
   NNPAtomMap<VALUETYPE> nnpmap (datype_.begin(), datype_.end());
+  if (fparam.size() != dfparam) {
+    throw std::runtime_error("the dim of frame parameter provided is not consistent with what the model uses");
+  }
 
   std::vector<std::pair<string, Tensor>> input_tensors;
-  int nloc = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, nnpmap);
+  int nloc = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, nnpmap);
 
   run_model (dener, dforce_, dvirial, datom_energy_, datom_virial_, session, input_tensors, nnpmap);
 }
@@ -598,19 +677,23 @@ compute (ENERGYTYPE &			dener,
 	 const vector<int> &		datype_,
 	 const vector<VALUETYPE> &	dbox, 
 	 const int			nghost, 
-	 const LammpsNeighborList &	lmp_list)
+	 const LammpsNeighborList &	lmp_list,
+	 const vector<VALUETYPE>	fparam)
 {
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
   NNPAtomMap<VALUETYPE> nnpmap (datype_.begin(), datype_.begin() + nloc);
   assert (nloc == nnpmap.get_type().size());
+  if (fparam.size() != dfparam) {
+    throw std::runtime_error("the dim of frame parameter provided is not consistent with what the model uses");
+  }
 
   InternalNeighborList nlist;
   convert_nlist_lmp_internal (nlist, lmp_list);
   shuffle_nlist (nlist, nnpmap);
 
   std::vector<std::pair<string, Tensor>> input_tensors;
-  int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, nnpmap, nghost);
+  int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, nnpmap, nghost);
   assert (nloc == ret);
 
   run_model (dener, dforce_, dvirial, datom_energy_, datom_virial_, session, input_tensors, nnpmap, nghost);
@@ -628,29 +711,61 @@ NNPInterModelDevi ()
 }
 
 NNPInterModelDevi::
-NNPInterModelDevi (const vector<string> & models)
+NNPInterModelDevi (const vector<string> & models, const int & gpu_rank)
+    : inited (false), 
+      numb_models (0)
 {
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
+  init(models, gpu_rank);
+}
+
+#ifdef USE_CUDA_TOOLKIT
+void
+NNPInterModelDevi::
+init (const vector<string> & models, const int & gpu_rank)
+{
+  assert (!inited);
   numb_models = models.size();
   sessions.resize(numb_models);
   graph_defs.resize(numb_models);
   SessionOptions options;
   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
+  options.config.set_allow_soft_placement(true);
+  options.config.mutable_gpu_options()->set_per_process_gpu_memory_fraction(0.9);
+  options.config.mutable_gpu_options()->set_allow_growth(true);
+  
   for (unsigned ii = 0; ii < numb_models; ++ii){
-    checkStatus (NewSession(options, &(sessions[ii])));
     checkStatus (ReadBinaryProto(Env::Default(), models[ii], &graph_defs[ii]));
+  }
+  int gpu_num = -1;
+  cudaGetDeviceCount(&gpu_num);
+  // std::cout << "current number of devices: " << gpu_num << std::endl;
+  for (unsigned ii = 0; ii < numb_models; ++ii){
+    // set device to GPU only when at least GPU is found
+    if (gpu_num > 0) {
+      std::string str = "/gpu:";
+      str += std::to_string(gpu_rank % gpu_num);
+      graph::SetDefaultDevice(str, &graph_defs[ii]);
+      // std::cout << "current device rank: " << str << std::endl;
+    }
+    checkStatus (NewSession(options, &(sessions[ii])));
     checkStatus (sessions[ii]->Create(graph_defs[ii]));
   }
-  rcut = get_rcut();
+  rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
   cell_size = rcut;
-  ntypes = get_ntypes();
+  ntypes = get_scalar<int>("descrpt_attr/ntypes");
+  dfparam = get_scalar<int>("fitting_attr/dfparam");
+  if (dfparam < 0) dfparam = 0;
+  // rcut = get_rcut();
+  // cell_size = rcut;
+  // ntypes = get_ntypes();
   inited = true;
 }
-
+#else
 void
 NNPInterModelDevi::
-init (const vector<string> & models)
+init (const vector<string> & models, const int & gpu_rank)
 {
   assert (!inited);
   numb_models = models.size();
@@ -664,25 +779,32 @@ init (const vector<string> & models)
     checkStatus (ReadBinaryProto(Env::Default(), models[ii], &graph_defs[ii]));
     checkStatus (sessions[ii]->Create(graph_defs[ii]));
   }
-  rcut = get_rcut();
+  rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
   cell_size = rcut;
-  ntypes = get_ntypes();
+  ntypes = get_scalar<int>("descrpt_attr/ntypes");
+  dfparam = get_scalar<int>("fitting_attr/dfparam");
+  if (dfparam < 0) dfparam = 0;
+  // rcut = get_rcut();
+  // cell_size = rcut;
+  // ntypes = get_ntypes();
   inited = true;
 }
+#endif
 
-VALUETYPE
+template<class VT>
+VT
 NNPInterModelDevi::
-get_rcut () const
+get_scalar(const string name) const 
 {
-  VALUETYPE myrcut = 0;
+  VT myrcut = 0;
   for (unsigned ii = 0; ii < numb_models; ++ii){
     std::vector<Tensor> output_tensors;
     checkStatus (sessions[ii]->Run(std::vector<std::pair<string, Tensor>> ({}), 
-				   {"t_rcut"}, 
+				   {name.c_str()}, 
 				   {}, 
 				   &output_tensors));
     Tensor output_rc = output_tensors[0];
-    auto orc = output_rc.flat <VALUETYPE> ();
+    auto orc = output_rc.flat <VT> ();
     if (ii == 0){
       myrcut = orc(0);
     }
@@ -693,29 +815,6 @@ get_rcut () const
   return myrcut;
 }
 
-int
-NNPInterModelDevi::
-get_ntypes () const
-{
-  int myntypes = 0;
-  for (unsigned ii = 0; ii < numb_models; ++ii){
-    std::vector<Tensor> output_tensors;
-    checkStatus (sessions[ii]->Run(std::vector<std::pair<string, Tensor>> ({}), 
-				   {"t_ntypes"}, 
-				   {}, 
-				   &output_tensors));
-    Tensor output_rc = output_tensors[0];
-    auto orc = output_rc.flat <int> ();
-    if (ii == 0){
-      myntypes = orc(0);
-    }
-    else {
-      assert (myntypes == orc(0));
-    }
-  }
-  return myntypes;
-}
-
 void
 NNPInterModelDevi::
 compute (ENERGYTYPE &			dener,
@@ -724,14 +823,18 @@ compute (ENERGYTYPE &			dener,
 	 vector<VALUETYPE> &		model_devi,
 	 const vector<VALUETYPE> &	dcoord_,
 	 const vector<int> &		datype_,
-	 const vector<VALUETYPE> &	dbox)
+	 const vector<VALUETYPE> &	dbox,
+	 const vector<VALUETYPE>	fparam)
 {
   if (numb_models == 0) return;
+  if (fparam.size() != dfparam) {
+    throw std::runtime_error("the dim of frame parameter provided is not consistent with what the model uses");
+  }
 
   NNPAtomMap<VALUETYPE> nnpmap (datype_.begin(), datype_.end());
 
   std::vector<std::pair<string, Tensor>> input_tensors;
-  int nloc = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, nnpmap);
+  int nloc = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, nnpmap);
 
   vector<ENERGYTYPE > all_energy (numb_models);
   vector<vector<VALUETYPE > > all_force (numb_models);
@@ -769,9 +872,13 @@ compute (vector<ENERGYTYPE> &		all_energy,
 	 const vector<int> &		datype_,
 	 const vector<VALUETYPE> &	dbox,
 	 const int			nghost,
-	 const LammpsNeighborList &	lmp_list)
+	 const LammpsNeighborList &	lmp_list,
+	 const vector<VALUETYPE>	fparam)
 {
   if (numb_models == 0) return;
+  if (fparam.size() != dfparam) {
+    throw std::runtime_error("the dim of frame parameter provided is not consistent with what the model uses");
+  }
   
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
@@ -783,7 +890,7 @@ compute (vector<ENERGYTYPE> &		all_energy,
   shuffle_nlist (nlist, nnpmap);
 
   std::vector<std::pair<string, Tensor>> input_tensors;
-  int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, nnpmap, nghost);
+  int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, nnpmap, nghost);
   assert (nloc == ret);
 
   all_energy.resize (numb_models);
@@ -806,9 +913,13 @@ compute (vector<ENERGYTYPE> &			all_energy,
 	 const vector<int> &			datype_,
 	 const vector<VALUETYPE> &		dbox,
 	 const int				nghost,
-	 const LammpsNeighborList &		lmp_list)
+	 const LammpsNeighborList &		lmp_list,
+	 const vector<VALUETYPE>		fparam)
 {
   if (numb_models == 0) return;
+  if (fparam.size() != dfparam) {
+    throw std::runtime_error("the dim of frame parameter provided is not consistent with what the model uses");
+  }
   
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
@@ -820,7 +931,7 @@ compute (vector<ENERGYTYPE> &			all_energy,
   shuffle_nlist (nlist, nnpmap);
 
   std::vector<std::pair<string, Tensor>> input_tensors;
-  int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, nnpmap, nghost);
+  int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, nnpmap, nghost);
   assert (nloc == ret);
 
   all_energy.resize (numb_models);

@@ -12,5 +12,14 @@
 *.gz
 *.bz2
 *.pyc
+tmp*
 CMakeCache.txt
 CMakeFiles
+*.bk
+build
+_skbuild
+deepmd_kit.egg-info/
+dist
+.eggs
+_version.py
+venv*

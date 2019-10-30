@@ -1,5 +1,5 @@
 install(
-  PROGRAMS	freeze.py 
-  DESTINATION	bin/
-  RENAME	dp_frz
+  FILES		freeze.py config.py 
+  DESTINATION	deepmd/
 )
+
