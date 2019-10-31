@@ -423,6 +423,34 @@ class PolarFittingSeA () :
         return tf.reshape(outs, [-1])
 
 
+class GlobalPolarFittingSeA () :
+    def __init__ (self, jdata, descrpt) :
+        if not isinstance(descrpt, DescrptSeA) :
+            raise RuntimeError('GlobalPolarFittingSeA only supports DescrptSeA')
+        self.ntypes = descrpt.get_ntypes()
+        self.dim_descrpt = descrpt.get_dim_out()
+        self.polar_fitting = PolarFittingSeA(jdata, descrpt)
+
+    def get_sel_type(self):
+        return self.polar_fitting.get_sel_type()
+
+    def get_out_size(self):
+        return self.polar_fitting.get_out_size()
+
+    def build (self,
+               input_d,
+               rot_mat,
+               natoms,
+               reuse = None,
+               suffix = '') :
+        inputs = tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]])
+        outs = self.polar_fitting.build(input_d, rot_mat, natoms, reuse, suffix)
+        # nframes x natoms x 9
+        outs = tf.reshape(outs, [tf.shape(inputs)[0], -1, 9])
+        outs = tf.reduce_sum(outs, axis = 1)
+        return tf.reshape(outs, [-1])
+
+
 class DipoleFittingSeA () :
     def __init__ (self, jdata, descrpt) :
         if not isinstance(descrpt, DescrptSeA) :
