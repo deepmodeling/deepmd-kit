@@ -18,6 +18,7 @@
 	"fitting_net": {
 	    "type":		"polar",
 	    "pol_type":		[0],
+	    "fit_diag":		false,
 	    "neuron":		[100, 100, 100],
 	    "resnet_dt":	true,
 	    "seed":		1,
