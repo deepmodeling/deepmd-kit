@@ -5,9 +5,9 @@ from common import Data,gen_data
 
 from deepmd.RunOptions import RunOptions
 from deepmd.DataSystem import DataSystem
-from deepmd.DescrptSeA import DescrptSeA
-from deepmd.Fitting import PolarFittingSeA
-from deepmd.Model import PolarModel
+from deepmd.DescrptLocFrame import DescrptLocFrame
+from deepmd.Fitting import WFCFitting
+from deepmd.Model import WFCModel
 from deepmd.common import j_must_have, j_must_have_d, j_have
 
 global_ener_float_precision = tf.float64
@@ -19,7 +19,7 @@ class TestModel(unittest.TestCase):
         gen_data()
 
     def test_model(self):
-        jfile = 'polar_se_a.json'
+        jfile = 'wfc.json'
         with open(jfile) as fp:
             jdata = json.load (fp)
         run_opt = RunOptions(None) 
@@ -37,11 +37,10 @@ class TestModel(unittest.TestCase):
         test_data = data.get_test ()
         numb_test = 1
         
-        descrpt = DescrptSeA(jdata['model']['descriptor'])
-        fitting = PolarFittingSeA(jdata['model']['fitting_net'], descrpt)
-        model = PolarModel(jdata['model'], descrpt, fitting)
+        descrpt = DescrptLocFrame(jdata['model']['descriptor'])
+        fitting = WFCFitting(jdata['model']['fitting_net'], descrpt)
+        model = WFCModel(jdata['model'], descrpt, fitting)
 
-        # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
         input_data = {'coord' : [test_data['coord']], 
                       'box': [test_data['box']], 
                       'type': [test_data['type']],
@@ -71,9 +70,9 @@ class TestModel(unittest.TestCase):
                            t_box, 
                            t_mesh,
                            t_fparam,
-                           suffix = "polar_se_a", 
+                           suffix = "wfc", 
                            reuse = False)
-        polar = model_pred['polar']
+        wfc = model_pred['wfc']
 
         feed_dict_test = {t_prop_c:        test_data['prop_c'],
                           t_coord:         np.reshape(test_data['coord']    [:numb_test, :], [-1]),
@@ -85,10 +84,10 @@ class TestModel(unittest.TestCase):
 
         sess = tf.Session()
         sess.run(tf.global_variables_initializer())
-        [p] = sess.run([polar], feed_dict = feed_dict_test)
+        [p] = sess.run([wfc], feed_dict = feed_dict_test)
 
         p = p.reshape([-1])
-        refp = [3.39695248e+01,  2.16564043e+01,  8.18501479e-01,  2.16564043e+01,  1.38211789e+01,  5.22775159e-01,  8.18501479e-01,  5.22775159e-01, 1.97847218e-02, 8.08467431e-01,  3.42081126e+00, -2.01072261e-01,  3.42081126e+00, 1.54924596e+01, -9.06153697e-01, -2.01072261e-01, -9.06153697e-01,  5.30193262e-02]
+        refp = [-9.105016838228578990e-01,7.196284362034099935e-01,-9.548516928185298014e-02,2.764615027095288724e+00,2.661319598995644520e-01,7.579512949131941846e-02,-2.107409067376114997e+00,-1.299080016614967414e-01,-5.962778584850070285e-01,2.913899917663253514e-01,-1.226917174638697094e+00,1.829523069930876655e+00,1.015704024959750873e+00,-1.792333611099589386e-01,5.032898080485321834e-01,1.808561721292949453e-01,2.468863482075112081e+00,-2.566442546384765100e-01,-1.467453783795173994e-01,-1.822963931552128658e+00,5.843600156865462747e-01,-1.493875280832117403e+00,1.693322352814763398e-01,-1.877325443995481624e+00]
 
         places = 6
         for ii in range(p.size) :

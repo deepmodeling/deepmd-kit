@@ -12,6 +12,11 @@
 #include "neighbor.h"
 #include "neigh_list.h"
 #include "neigh_request.h"
+#include "modify.h"
+#include "fix.h"
+#ifdef USE_TTM
+#include "fix_ttm_mod.h"
+#endif
 
 #include "pair_nnp.h"
 
@@ -95,6 +100,81 @@ ana_st (double & max,
   }
 }
 
+static void 
+make_uniform_aparam(
+#ifdef HIGH_PREC    
+    vector<double > & daparam,
+    const vector<double > & aparam,
+    const int & nlocal
+#else
+    vector<float > & daparam,
+    const vector<float > & aparam,
+    const int & nlocal
+#endif
+    )
+{
+  unsigned dim_aparam = aparam.size();
+  daparam.resize(dim_aparam * nlocal);
+  for (int ii = 0; ii < nlocal; ++ii){
+    for (int jj = 0; jj < dim_aparam; ++jj){
+      daparam[ii*dim_aparam+jj] = aparam[jj];
+    }
+  }
+}
+
+#ifdef USE_TTM
+void PairNNP::make_ttm_aparam(
+#ifdef HIGH_PREC
+    vector<double > & daparam
+#else
+    vector<float > & daparam
+#endif
+    )
+{
+  assert(do_ttm);
+  // get ttm_fix
+  const FixTTMMod * ttm_fix = NULL;
+  for (int ii = 0; ii < modify->nfix; ii++) {
+    if (string(modify->fix[ii]->id) == ttm_fix_id){
+      ttm_fix = dynamic_cast<FixTTMMod*>(modify->fix[ii]);
+    }
+  }
+  assert(ttm_fix);
+  // modify
+  double **x = atom->x;
+  int *mask = atom->mask;
+  int nlocal = atom->nlocal;
+  vector<int> nnodes = ttm_fix->get_nodes();
+  int nxnodes = nnodes[0];
+  int nynodes = nnodes[1];
+  int nznodes = nnodes[2];
+  double *** const T_electron = ttm_fix->get_T_electron();
+  double dx = domain->xprd/nxnodes;
+  double dy = domain->yprd/nynodes;
+  double dz = domain->zprd/nynodes;
+  // resize daparam
+  daparam.resize(nlocal);
+  // loop over atoms to assign aparam
+  for (int ii = 0; ii < nlocal; ii++) {
+    if (mask[ii] & ttm_fix->groupbit) {
+      double xscale = (x[ii][0] - domain->boxlo[0])/domain->xprd;
+      double yscale = (x[ii][1] - domain->boxlo[1])/domain->yprd;
+      double zscale = (x[ii][2] - domain->boxlo[2])/domain->zprd;
+      int ixnode = static_cast<int>(xscale*nxnodes);
+      int iynode = static_cast<int>(yscale*nynodes);
+      int iznode = static_cast<int>(zscale*nznodes);
+      while (ixnode > nxnodes-1) ixnode -= nxnodes;
+      while (iynode > nynodes-1) iynode -= nynodes;
+      while (iznode > nznodes-1) iznode -= nznodes;
+      while (ixnode < 0) ixnode += nxnodes;
+      while (iynode < 0) iynode += nynodes;
+      while (iznode < 0) iznode += nznodes;
+      daparam[ii] = T_electron[ixnode][iynode][iznode];
+    }
+  }
+}
+#endif
+
 PairNNP::PairNNP(LAMMPS *lmp) 
     : Pair(lmp)
       
@@ -113,6 +193,7 @@ PairNNP::PairNNP(LAMMPS *lmp)
   out_rel = 0;
   eps = 0.;
   scale = NULL;
+  do_ttm = false;
 
   // set comm size needed by this Pair
   comm_reverse = 1;
@@ -176,6 +257,11 @@ void PairNNP::compute(int eflag, int vflag)
   vector<double > dvirial (9, 0);
   vector<double > dcoord (nall * 3, 0.);
   vector<double > dbox (9, 0) ;
+#ifdef HIGH_PREC
+  vector<double > daparam;
+#else 
+  vector<float > daparam;
+#endif
 
   // get box
   dbox[0] = domain->h[0];	// xx
@@ -191,7 +277,17 @@ void PairNNP::compute(int eflag, int vflag)
       dcoord[ii*3+dd] = x[ii][dd] - domain->boxlo[dd];
     }
   }
-  
+
+  // uniform aparam
+  if (aparam.size() > 0){
+    make_uniform_aparam(daparam, aparam, nlocal);
+  }
+  else if (do_ttm) {
+#ifdef USE_TTM
+    make_ttm_aparam(daparam);
+#endif
+  }
+
   // compute
   bool single_model = (numb_models == 1);
   bool multi_models_no_mod_devi = (numb_models > 1 && (out_freq == 0 || update->ntimestep % out_freq != 0));
@@ -201,7 +297,7 @@ void PairNNP::compute(int eflag, int vflag)
     if (single_model || multi_models_no_mod_devi) {
       if ( ! (eflag_atom || vflag_atom) ) {      
 #ifdef HIGH_PREC
-	nnp_inter.compute (dener, dforce, dvirial, dcoord, dtype, dbox, nghost, lmp_list, fparam);
+	nnp_inter.compute (dener, dforce, dvirial, dcoord, dtype, dbox, nghost, lmp_list, fparam, daparam);
 #else
 	vector<float> dcoord_(dcoord.size());
 	vector<float> dbox_(dbox.size());
@@ -210,7 +306,7 @@ void PairNNP::compute(int eflag, int vflag)
 	vector<float> dforce_(dforce.size(), 0);
 	vector<float> dvirial_(dvirial.size(), 0);
 	double dener_ = 0;
-	nnp_inter.compute (dener_, dforce_, dvirial_, dcoord_, dtype, dbox_, nghost, lmp_list, fparam);
+	nnp_inter.compute (dener_, dforce_, dvirial_, dcoord_, dtype, dbox_, nghost, lmp_list, fparam, daparam);
 	for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];	
 	for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	
 	dener = dener_;
@@ -221,7 +317,7 @@ void PairNNP::compute(int eflag, int vflag)
 	vector<double > deatom (nall * 1, 0);
 	vector<double > dvatom (nall * 9, 0);
 #ifdef HIGH_PREC
-	nnp_inter.compute (dener, dforce, dvirial, deatom, dvatom, dcoord, dtype, dbox, nghost, lmp_list, fparam);
+	nnp_inter.compute (dener, dforce, dvirial, deatom, dvatom, dcoord, dtype, dbox, nghost, lmp_list, fparam, daparam);
 #else 
 	vector<float> dcoord_(dcoord.size());
 	vector<float> dbox_(dbox.size());
@@ -232,7 +328,7 @@ void PairNNP::compute(int eflag, int vflag)
 	vector<float> deatom_(dforce.size(), 0);
 	vector<float> dvatom_(dforce.size(), 0);
 	double dener_ = 0;
-	nnp_inter.compute (dener_, dforce_, dvirial_, deatom_, dvatom_, dcoord_, dtype, dbox_, nghost, lmp_list, fparam);
+	nnp_inter.compute (dener_, dforce_, dvirial_, deatom_, dvatom_, dcoord_, dtype, dbox_, nghost, lmp_list, fparam, daparam);
 	for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];	
 	for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	
 	for (unsigned dd = 0; dd < deatom.size(); ++dd) deatom[dd] = deatom_[dd];	
@@ -262,7 +358,7 @@ void PairNNP::compute(int eflag, int vflag)
       vector<vector<double>> 	all_virial;	       
       vector<vector<double>> 	all_atom_energy;
       vector<vector<double>> 	all_atom_virial;
-      nnp_inter_model_devi.compute(all_energy, all_force, all_virial, all_atom_energy, all_atom_virial, dcoord, dtype, dbox, nghost, lmp_list, fparam);
+      nnp_inter_model_devi.compute(all_energy, all_force, all_virial, all_atom_energy, all_atom_virial, dcoord, dtype, dbox, nghost, lmp_list, fparam, daparam);
       // nnp_inter_model_devi.compute_avg (dener, all_energy);
       // nnp_inter_model_devi.compute_avg (dforce, all_force);
       // nnp_inter_model_devi.compute_avg (dvirial, all_virial);
@@ -288,7 +384,7 @@ void PairNNP::compute(int eflag, int vflag)
       vector<vector<float>> 	all_virial_;	       
       vector<vector<float>> 	all_atom_energy_;
       vector<vector<float>> 	all_atom_virial_;
-      nnp_inter_model_devi.compute(all_energy_, all_force_, all_virial_, all_atom_energy_, all_atom_virial_, dcoord_, dtype, dbox_, nghost, lmp_list, fparam);
+      nnp_inter_model_devi.compute(all_energy_, all_force_, all_virial_, all_atom_energy_, all_atom_virial_, dcoord_, dtype, dbox_, nghost, lmp_list, fparam, daparam);
       // nnp_inter_model_devi.compute_avg (dener_, all_energy_);
       // nnp_inter_model_devi.compute_avg (dforce_, all_force_);
       // nnp_inter_model_devi.compute_avg (dvirial_, all_virial_);
@@ -496,6 +592,8 @@ is_key (const string& input)
   keys.push_back("out_freq");
   keys.push_back("out_file");
   keys.push_back("fparam");
+  keys.push_back("aparam");
+  keys.push_back("ttm");
   keys.push_back("atomic");
   keys.push_back("relative");
 
@@ -529,6 +627,7 @@ void PairNNP::settings(int narg, char **arg)
     cutoff = nnp_inter.cutoff ();
     numb_types = nnp_inter.numb_types();
     dim_fparam = nnp_inter.dim_fparam();
+    dim_aparam = nnp_inter.dim_aparam();
   }
   else {
     nnp_inter.init (arg[0], get_node_rank());
@@ -536,9 +635,11 @@ void PairNNP::settings(int narg, char **arg)
     cutoff = nnp_inter_model_devi.cutoff();
     numb_types = nnp_inter_model_devi.numb_types();
     dim_fparam = nnp_inter_model_devi.dim_fparam();
+    dim_aparam = nnp_inter_model_devi.dim_aparam();
     assert(cutoff == nnp_inter.cutoff());
     assert(numb_types == nnp_inter.numb_types());
     assert(dim_fparam == nnp_inter.dim_fparam());
+    assert(dim_aparam == nnp_inter.dim_aparam());
   }
 
   out_freq = 100;
@@ -547,6 +648,7 @@ void PairNNP::settings(int narg, char **arg)
   out_rel = 0;
   eps = 0.;
   fparam.clear();
+  aparam.clear();
   while (iarg < narg) {
     if (! is_key(arg[iarg])) {
       error->all(FLERR,"Illegal pair_style command\nwrong number of parameters\n");
@@ -572,21 +674,49 @@ void PairNNP::settings(int narg, char **arg)
       }
       iarg += 1 + dim_fparam ;
     }
-	else if (string(arg[iarg]) == string("atomic")) {
-	  out_each = 1;
-	  iarg += 1;
+    else if (string(arg[iarg]) == string("aparam")) {
+      for (int ii = 0; ii < dim_aparam; ++ii){
+	if (iarg+1+ii >= narg || is_key(arg[iarg+1+ii])) {
+	  char tmp[1024];
+	  sprintf(tmp, "Illegal aparam, the dimension should be %d", dim_aparam);		  
+	  error->all(FLERR, tmp);
 	}
-	else if (string(arg[iarg]) == string("relative")) {
-	  out_rel = 1;
-#ifdef HIGH_PREC
-    eps = atof(arg[iarg+1]);
+	aparam.push_back(atof(arg[iarg+1+ii]));
+      }      
+      iarg += 1 + dim_aparam ;
+    }
+    else if (string(arg[iarg]) == string("ttm")) {
+#ifdef USE_TTM
+      for (int ii = 0; ii < 1; ++ii){
+	if (iarg+1+ii >= narg || is_key(arg[iarg+1+ii])) {
+	  error->all(FLERR, "invalid ttm key: should be ttm ttm_fix_id(str)");
+	}
+      }	
+      do_ttm = true;
+      ttm_fix_id = arg[iarg+1];
+      iarg += 1 + 1;
 #else
-    eps = strtof(arg[iarg+1]);
+      error->all(FLERR, "The deepmd-kit was compiled without support for TTM, please rebuild it with -DUSE_TTM");
+#endif      
+    }
+    else if (string(arg[iarg]) == string("atomic")) {
+      out_each = 1;
+      iarg += 1;
+    }
+    else if (string(arg[iarg]) == string("relative")) {
+      out_rel = 1;
+#ifdef HIGH_PREC
+      eps = atof(arg[iarg+1]);
+#else
+      eps = strtof(arg[iarg+1], NULL);
 #endif
-	  iarg += 2;
-	}
+      iarg += 2;
+    }
   }
-  if (out_freq < 0) error->all(FLERR,"Illegal out_freq, should be >= 0");  
+  if (out_freq < 0) error->all(FLERR,"Illegal out_freq, should be >= 0");
+  if (do_ttm && aparam.size() > 0) {
+    error->all(FLERR,"aparam and ttm should NOT be set simultaneously");
+  }
   
   if (comm->me == 0){
     if (numb_models > 1 && out_freq > 0){
@@ -620,6 +750,13 @@ void PairNNP::settings(int narg, char **arg)
       cout << pre << "using fparam(s):    " ;
       for (int ii = 0; ii < dim_fparam; ++ii){
 	cout << fparam[ii] << "  " ;
+      }
+      cout << endl;
+    }
+    if (aparam.size() > 0) {
+      cout << pre << "using aparam(s):    " ;
+      for (int ii = 0; ii < aparam.size(); ++ii){
+	cout << aparam[ii] << "  " ;
       }
       cout << endl;
     }

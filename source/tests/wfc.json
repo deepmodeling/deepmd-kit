@@ -5,20 +5,23 @@
 	"type":			"polar",
 	"type_map":		["O", "H"],
 	"descriptor" :{
-	    "type":		"se_a",
-	    "sel":		[46, 92],
-	    "rcut_smth":	5.80,
+	    "type":		"loc_frame",
+	    "sel_a":		[16, 32],
+	    "sel_r":		[30, 60],
 	    "rcut":		6.00,
-	    "neuron":		[25, 50, 100],
-	    "resnet_dt":	false,
-	    "axis_neuron":	16,
-	    "seed":		1,
-	    "_comment":		" that's all"
+	    "axis_rule":	[0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0],
+	    "_comment":	" default rule: []",
+	    "_comment":	" user defined rule: for each type provides two axes, ",
+	    "_comment":	"                    for each axis: (a_or_r, type, idx)",
+	    "_comment":	"                    if type < 0, exclude type -(type+1)",
+	    "_comment":	"                    for water (O:0, H:1) it can be",
+	    "_comment":	"                    [0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0]",
+	    "_comment": " that's all"
 	},
 	"fitting_net": {
-	    "type":		"polar",
-	    "pol_type":		[0],
-	    "fit_diag":		false,
+	    "type":		"wfc",
+	    "wfc_numb":		4,
+	    "sel_type":		[0],
 	    "neuron":		[100, 100, 100],
 	    "resnet_dt":	true,
 	    "seed":		1,
@@ -32,11 +35,6 @@
 	"start_lr":	0.001,
 	"decay_steps":	5000,
 	"decay_rate":	0.95,
-	"_comment":	"that's all"
-    },
-
-    "loss" : {
-	"type":		"polar",
 	"_comment":	"that's all"
     },
 

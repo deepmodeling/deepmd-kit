@@ -35,13 +35,13 @@ This pair style takes the deep potential defined in a model file that usually ha
 
 The model deviation evalulate the consistency of the force predictions from multiple models. By default, only the maximal, minimal and averge model deviations are output. If the key `atomic` is set, then the model deviation of force prediction of each atom will be output.
 
-By default, the model deviation is output in absolute value. If the keyword `relative` is set, then the relative model deviation will be output, which is defined by
+By default, the model deviation is output in absolute value. If the keyword `relative` is set, then the relative model deviation will be output. The relative model deviation of the force on atom `i` is defined by
 ```math
-         |Df|
-Ef = -------------
-      |f| + level
+           |Df_i|
+Ef_i = -------------
+       |f_i| + level
 ```
-where `Df` is the model deviation of a force, `|f|` is the norm of the force and `level` is provided as the parameter of the keyword `relative`.
+where `Df_i` is the absolute model deviation of the force on atom `i`, `|f_i|` is the norm of the the force and `level` is provided as the parameter of the keyword `relative`.
 
 
 ## Restrictions
@@ -49,6 +49,8 @@ where `Df` is the model deviation of a force, `|f|` is the norm of the force and
 - The `deepmd` pair style is provided in the USER-DEEPMD package, which is compiled from the DeePMD-kit, visit the [DeePMD-kit website](https://github.com/deepmodeling/deepmd-kit) for more information.
 
 - The `atom_style` of the system should be `atomic`.
+
+- When using the `atomic` key word of `deepmd` is set, one should not use this pair style with MPI parallelization.
 
 
 [DP]:https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.120.143001
