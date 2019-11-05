@@ -53,8 +53,8 @@ class NNPInter
 {
 public:
   NNPInter () ;
-  NNPInter  (const string & model);
-  void init (const string & model);
+  NNPInter  (const string & model, const int & gpu_rank = 0);
+  void init (const string & model, const int & gpu_rank = 0);
   void print_summary(const string &pre) const;
 public:
   void compute (ENERGYTYPE &			ener,
@@ -64,7 +64,8 @@ public:
 		const vector<int> &		atype,
 		const vector<VALUETYPE> &	box, 
 		const int			nghost = 0,
-		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
+		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>(),
+		const vector<VALUETYPE>	&	aparam = vector<VALUETYPE>());
   void compute (ENERGYTYPE &			ener,
 		vector<VALUETYPE> &		force,
 		vector<VALUETYPE> &		virial,
@@ -73,7 +74,8 @@ public:
 		const vector<VALUETYPE> &	box, 
 		const int			nghost,
 		const LammpsNeighborList &	lmp_list,
-		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
+		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>(),
+		const vector<VALUETYPE>	&	aparam = vector<VALUETYPE>());
   void compute (ENERGYTYPE &			ener,
 		vector<VALUETYPE> &		force,
 		vector<VALUETYPE> &		virial,
@@ -82,7 +84,8 @@ public:
 		const vector<VALUETYPE> &	coord,
 		const vector<int> &		atype,
 		const vector<VALUETYPE> &	box,
-		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
+		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>(),
+		const vector<VALUETYPE>	&	aparam = vector<VALUETYPE>());
   void compute (ENERGYTYPE &			ener,
 		vector<VALUETYPE> &		force,
 		vector<VALUETYPE> &		virial,
@@ -93,10 +96,12 @@ public:
 		const vector<VALUETYPE> &	box, 
 		const int			nghost, 
 		const LammpsNeighborList &	lmp_list,
-		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
+		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>(),
+		const vector<VALUETYPE>	&	aparam = vector<VALUETYPE>());
   VALUETYPE cutoff () const {assert(inited); return rcut;};
   int numb_types () const {assert(inited); return ntypes;};
   int dim_fparam () const {assert(inited); return dfparam;};
+  int dim_aparam () const {assert(inited); return daparam;};
 private:
   Session* session;
   int num_intra_nthreads, num_inter_nthreads;
@@ -109,14 +114,18 @@ private:
   VALUETYPE cell_size;
   int ntypes;
   int dfparam;
+  int daparam;
+  void validate_fparam_aparam(const int & nloc,
+			      const vector<VALUETYPE> &fparam,
+			      const vector<VALUETYPE> &aparam)const ;
 };
 
 class NNPInterModelDevi
 {
 public:
   NNPInterModelDevi () ;
-  NNPInterModelDevi  (const vector<string> & models);
-  void init (const vector<string> & models);
+  NNPInterModelDevi  (const vector<string> & models, const int & gpu_rank = 0);
+  void init (const vector<string> & models, const int & gpu_rank = 0);
 public:
   void compute (ENERGYTYPE &			ener,
   		vector<VALUETYPE> &		force,
@@ -125,7 +134,8 @@ public:
   		const vector<VALUETYPE> &	coord,
   		const vector<int> &		atype,
   		const vector<VALUETYPE> &	box,
-		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
+		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>(),
+		const vector<VALUETYPE>	&	aparam = vector<VALUETYPE>());
   void compute (vector<ENERGYTYPE> &		all_ener,
 		vector<vector<VALUETYPE> > &	all_force,
 		vector<vector<VALUETYPE> > &	all_virial,
@@ -134,7 +144,8 @@ public:
 		const vector<VALUETYPE> &	box,
 		const int			nghost,
 		const LammpsNeighborList &	lmp_list,
-		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
+		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>(),
+		const vector<VALUETYPE>	&	aparam = vector<VALUETYPE>());
   void compute (vector<ENERGYTYPE> &		all_ener,
 		vector<vector<VALUETYPE> > &	all_force,
 		vector<vector<VALUETYPE> > &	all_virial,
@@ -145,10 +156,12 @@ public:
 		const vector<VALUETYPE> &	box,
 		const int			nghost,
 		const LammpsNeighborList &	lmp_list,
-		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
+		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>(),
+		const vector<VALUETYPE>	&	aparam = vector<VALUETYPE>());
   VALUETYPE cutoff () const {assert(inited); return rcut;};
   int numb_types () const {assert(inited); return ntypes;};
   int dim_fparam () const {assert(inited); return dfparam;};
+  int dim_aparam () const {assert(inited); return daparam;};
 #ifndef HIGH_PREC
   void compute_avg (ENERGYTYPE &		dener,
 		    const vector<ENERGYTYPE > &	all_energy);
@@ -176,6 +189,10 @@ private:
   VALUETYPE cell_size;
   int ntypes;
   int dfparam;
+  int daparam;
+  void validate_fparam_aparam(const int & nloc,
+			      const vector<VALUETYPE> &fparam,
+			      const vector<VALUETYPE> &aparam)const ;
 };
 
 

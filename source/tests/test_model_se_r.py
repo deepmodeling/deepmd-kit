@@ -1,7 +1,7 @@
 import dpdata,os,sys,json,unittest
 import numpy as np
-import tensorflow as tf
-from common import Data
+from deepmd.env import tf
+from common import Data,gen_data
 
 from deepmd.RunOptions import RunOptions
 from deepmd.DataSystem import DataSystem
@@ -13,21 +13,6 @@ from deepmd.common import j_must_have, j_must_have_d, j_have
 global_ener_float_precision = tf.float64
 global_tf_float_precision = tf.float64
 global_np_float_precision = np.float64
-
-def gen_data() :
-    tmpdata = Data(rand_pert = 0.1, seed = 1)
-    sys = dpdata.LabeledSystem()
-    sys.data['coords'] = tmpdata.coord
-    sys.data['atom_types'] = tmpdata.atype
-    sys.data['cells'] = tmpdata.cell
-    nframes = tmpdata.nframes
-    natoms = tmpdata.natoms
-    sys.data['coords'] = sys.data['coords'].reshape([nframes,natoms,3])
-    sys.data['cells'] = sys.data['cells'].reshape([nframes,3,3])
-    sys.data['energies'] = np.zeros([nframes,1])
-    sys.data['forces'] = np.zeros([nframes,natoms,3])
-    sys.data['virials'] = []
-    sys.to_deepmd_npy('system', prec=np.float64)    
 
 class TestModel(unittest.TestCase):
     def setUp(self) :
@@ -56,7 +41,14 @@ class TestModel(unittest.TestCase):
         fitting = EnerFitting(jdata['model']['fitting_net'], descrpt)
         model = Model(jdata['model'], descrpt, fitting)
 
-        model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
+        # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
+        input_data = {'coord' : [test_data['coord']], 
+                      'box': [test_data['box']], 
+                      'type': [test_data['type']],
+                      'natoms_vec' : [test_data['natoms_vec']],
+                      'default_mesh' : [test_data['default_mesh']]
+        }
+        model._compute_dstats(input_data)
         model.bias_atom_e = data.compute_energy_shift()
 
         t_prop_c           = tf.placeholder(tf.float32, [5],    name='t_prop_c')

@@ -2,8 +2,8 @@
     "with_distrib":	false,
     "_comment": " model parameters",
     "model":{
-	"type":			"wannier",
 	"type_map":		["O", "H"],
+	"data_stat_nbatch":	1,
 	"descriptor": {
 	    "type":		"loc_frame",
 	    "sel_a":		[16, 32],
@@ -19,9 +19,9 @@
 	    "_comment": " that's all"
 	},
 	"fitting_net": {
-	    "type":		"wannier",
+	    "type":		"wfc",
 	    "wfc_numb":		4,
-	    "wfc_type":		[0],
+	    "sel_type":		[0],
 	    "neuron":		[100, 100, 100],
 	    "resnet_dt":	true,
 	    "seed":		1,
@@ -35,11 +35,6 @@
 	"start_lr":	0.001,
 	"decay_steps":	5000,
 	"decay_rate":	0.95,
-	"_comment":	"that's all"
-    },
-
-    "loss" : {
-	"type":		"wannier",
 	"_comment":	"that's all"
     },
 

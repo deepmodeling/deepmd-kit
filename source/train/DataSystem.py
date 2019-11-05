@@ -9,6 +9,7 @@ sys.path.append (module_path)
 from Data import DataSets
 from Data import DeepmdData
 
+
 class DeepmdDataSystem() :
     def __init__ (self,
                   systems, 
@@ -17,7 +18,8 @@ class DeepmdDataSystem() :
                   rcut,
                   set_prefix = 'set',
                   shuffle_test = True,
-                  run_opt = None) :
+                  run_opt = None, 
+                  type_map = None) :
         # init data
         self.rcut = rcut
         self.system_dirs = systems
@@ -26,7 +28,8 @@ class DeepmdDataSystem() :
         for ii in self.system_dirs :
             self.data_systems.append(DeepmdData(ii, 
                                                 set_prefix=set_prefix, 
-                                                shuffle_test=shuffle_test))
+                                                shuffle_test=shuffle_test, 
+                                                type_map = type_map))
 
         # batch size
         self.batch_size = batch_size
@@ -38,6 +41,8 @@ class DeepmdDataSystem() :
                 rule = 32
                 if len(words) == 2 :
                     rule = int(words[1])
+            else:
+                raise RuntimeError('unknown batch_size rule ' + words[0])
             self.batch_size = self._make_auto_bs(rule)
         elif isinstance(self.batch_size, list):
             pass
@@ -227,7 +232,7 @@ class DeepmdDataSystem() :
         
     def _make_auto_bs(self, rule) :
         bs = []
-        for ii in self.system_dirs:
+        for ii in self.data_systems:
             ni = ii.get_natoms()
             bsi = rule // ni
             if bsi * ni < rule:

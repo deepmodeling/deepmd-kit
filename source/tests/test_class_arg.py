@@ -1,6 +1,5 @@
 import os,sys
 import numpy as np
-import tensorflow as tf
 import unittest
 
 from deepmd.common import ClassArg

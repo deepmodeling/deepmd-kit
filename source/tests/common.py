@@ -1,7 +1,7 @@
-import os, sys
-import tensorflow as tf
+import os, sys, dpdata
 import numpy as np
 
+from deepmd.env import tf
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
@@ -15,6 +15,23 @@ else :
     global_default_dw_hh = 1e-4
     global_default_places = 5
 
+def gen_data() :
+    tmpdata = Data(rand_pert = 0.1, seed = 1)
+    sys = dpdata.LabeledSystem()
+    sys.data['atom_names'] = ['foo', 'bar']
+    sys.data['coords'] = tmpdata.coord
+    sys.data['atom_types'] = tmpdata.atype
+    sys.data['cells'] = tmpdata.cell
+    nframes = tmpdata.nframes
+    natoms = tmpdata.natoms
+    sys.data['coords'] = sys.data['coords'].reshape([nframes,natoms,3])
+    sys.data['cells'] = sys.data['cells'].reshape([nframes,3,3])
+    sys.data['energies'] = np.zeros([nframes,1])
+    sys.data['forces'] = np.zeros([nframes,natoms,3])
+    sys.to_deepmd_npy('system', prec=np.float64)    
+    np.save('system/set.000/fparam.npy', tmpdata.fparam)
+    np.save('system/set.000/aparam.npy', tmpdata.aparam.reshape([nframes, natoms, 2]))
+
 class Data():
     def __init__ (self, 
                   rand_pert = 0.1, 
@@ -25,6 +42,7 @@ class Data():
         np.random.seed(seed)
         self.coord += rand_pert * np.random.random(self.coord.shape)
         self.fparam = np.array([[0.1, 0.2]])
+        self.aparam = np.tile(self.fparam, [1, 6])
         self.atype = np.array([0, 1, 1, 0, 1, 1], dtype = int)
         self.cell = 20 * np.eye(3)
         self.nframes = 1

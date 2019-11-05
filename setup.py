@@ -3,7 +3,7 @@ from skbuild.exceptions import SKBuildError
 from skbuild.cmaker import get_cmake_version
 from packaging.version import LegacyVersion
 from os import path, makedirs
-import imp
+import imp,sys
 
 readme_file = path.join(path.dirname(path.abspath(__file__)), 'README.md')
 try:
@@ -19,7 +19,6 @@ except ImportError:
     site_packages_path = path.join(path.dirname(path.__file__), 'site-packages')
     tf_install_dir = imp.find_module('tensorflow', [site_packages_path])[1]
 
-# install_requires = ['xml']
 install_requires=['numpy', 'scipy']
 setup_requires=['setuptools_scm']
 
@@ -38,7 +37,7 @@ except OSError:
 setup(
     name="deepmd-kit",
     setup_requires=setup_requires,
-    use_scm_version={'write_to': 'source/train/_version.py'},
+    use_scm_version={'write_to': 'deepmd/_version.py'},
     author="Han Wang",
     author_email="wang_han@iapcm.ac.cn",
     description="A deep learning package for many-body potential energy representation and molecular dynamics",
@@ -46,6 +45,7 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/deepmodeling/deepmd-kit",
     packages=['deepmd'],
+    python_requires=">=3.6",
     classifiers=[
         "Programming Language :: Python :: 3.6",
         "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
@@ -53,7 +53,6 @@ setup(
     keywords='deepmd',
     install_requires=install_requires,        
     cmake_args=['-DTENSORFLOW_ROOT:STRING=%s' % tf_install_dir, 
-                '-DTF_GOOGLE_BIN:BOOL=FALSE', 
                 '-DBUILD_PY_IF:BOOL=TRUE', 
                 '-DBUILD_CPP_IF:BOOL=FALSE',
                 '-DFLOAT_PREC:STRING=high',
@@ -61,6 +60,9 @@ setup(
     cmake_source_dir='source',
     cmake_minimum_required_version='3.0',
     extras_require={
-        'test': 'dpdata',
+        'test': ['dpdata>=0.1.9'],
     },
+    entry_points={
+          'console_scripts': ['dp = deepmd.main:main']
+    }
 )

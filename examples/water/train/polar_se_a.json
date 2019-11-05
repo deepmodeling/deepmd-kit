@@ -2,8 +2,8 @@
     "with_distrib":	false,
     "_comment": " model parameters",
     "model":{
-	"type":			"polar",
 	"type_map":		["O", "H"],
+	"data_stat_nbatch":	1,
 	"descriptor" :{
 	    "type":		"se_a",
 	    "sel":		[46, 92],
@@ -17,7 +17,8 @@
 	},
 	"fitting_net": {
 	    "type":		"polar",
-	    "pol_type":		[0],
+	    "sel_type":		[0],
+	    "fit_diag":		true,
 	    "neuron":		[100, 100, 100],
 	    "resnet_dt":	true,
 	    "seed":		1,
@@ -28,14 +29,9 @@
     
     "learning_rate" :{
 	"type":		"exp",
-	"start_lr":	0.001,
+	"start_lr":	0.01,
 	"decay_steps":	5000,
 	"decay_rate":	0.95,
-	"_comment":	"that's all"
-    },
-
-    "loss" : {
-	"type":		"polar",
 	"_comment":	"that's all"
     },
 

@@ -1,6 +1,6 @@
 import os,sys,warnings
 import numpy as np
-import tensorflow as tf
+from deepmd.env import tf
 from deepmd.common import ClassArg
 
 class LearningRateExp (object) :
