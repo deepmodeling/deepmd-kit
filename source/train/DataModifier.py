@@ -176,7 +176,18 @@ class DipoleChargeModifier(DeepDipole):
         all_coord, all_charge, dipole = self._extend_system(coord, box, atype, charge)
         
         # print('compute er')
-        tot_e, all_f, all_v = self.er.eval(all_coord, all_charge, box)
+        batch_size = 5
+        tot_e = []
+        all_f = []
+        all_v = []
+        for ii in range(0,nframes,batch_size):
+            e,f,v = self.er.eval(all_coord[ii:ii+batch_size], all_charge[ii:ii+batch_size], box[ii:ii+batch_size])
+            tot_e.append(e)
+            all_f.append(f)
+            all_v.append(v)
+        tot_e = np.concatenate(tot_e, axis = 0)
+        all_f = np.concatenate(all_f, axis = 0)
+        all_v = np.concatenate(all_v, axis = 0)
         # print('finish  er')
 
         tot_f = None
@@ -186,7 +197,18 @@ class DipoleChargeModifier(DeepDipole):
         if eval_fv:
             # compute f
             ext_f = all_f[:,natoms*3:]
-            corr_f, corr_v, corr_av = self.eval_fv(coord, box, atype[0], ext_f)
+            corr_f = []
+            corr_v = []
+            corr_av = []
+            for ii in range(0,nframes,batch_size):
+                print(ii, nframes)
+                f, v, av = self.eval_fv(coord[ii:ii+batch_size], box[ii:ii+batch_size], atype[0], ext_f[ii:ii+batch_size])
+                corr_f.append(f)
+                corr_v.append(v)
+                corr_av.append(av)
+            corr_f = np.concatenate(corr_f, axis = 0)
+            corr_v = np.concatenate(corr_v, axis = 0)
+            corr_av = np.concatenate(corr_av, axis = 0)
             tot_f = all_f[:,:natoms*3] + corr_f
             for ii in range(nsel):            
                 orig_idx = sel_idx_map[ii]            
