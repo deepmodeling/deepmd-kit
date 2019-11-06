@@ -4,6 +4,7 @@ import unittest
 import dpdata
 
 from deepmd.DataSystem import DeepmdDataSystem
+from deepmd.Fitting import EnerFitting
 from deepmd.Model import make_all_stat, merge_sys_stat, _make_all_stat_ref
 
 def gen_sys(nframes, atom_types):
@@ -32,7 +33,7 @@ class TestGenStatData(unittest.TestCase) :
         sys0.data = data0
         sys1.data = data1
         sys0.to_deepmd_npy('system_0', set_size = 10)
-        sys0.to_deepmd_npy('system_1', set_size = 10)
+        sys1.to_deepmd_npy('system_1', set_size = 10)
         
     def tearDown(self):
         shutil.rmtree('system_0')
@@ -72,21 +73,50 @@ class TestGenStatData(unittest.TestCase) :
         np.random.seed(0)
         all_stat_3 = _make_all_stat_ref(data2, 10)
         
-        # print(all_stat_1)
-        # print(all_stat_2)
-        for dd in all_stat_0 :
-            if 'find_' in dd: continue
-            if 'natoms_vec' in dd: continue
-            if 'default_mesh' in dd: continue
+        ####################################
+        # only check if the energy is concatenated correctly
+        ####################################
+        dd = 'energy'
+            # if 'find_' in dd: continue
+            # if 'natoms_vec' in dd: continue
+            # if 'default_mesh' in dd: continue
             # print(all_stat_2[dd])
-            # print(all_stat_1[dd])
-            d1 = np.array(all_stat_1[dd])
-            d2 = np.array(all_stat_2[dd])
-            d3 = np.array(all_stat_3[dd])
-            # print(dd)
-            # print(d1.shape)
-            # print(d2.shape)            
-            # self.assertEqual(all_stat_2[dd], all_stat_1[dd])
-            self._comp_data(d1, d2)
-            self._comp_data(d1, d3)
+            # print(dd, all_stat_1[dd])
+        d1 = np.array(all_stat_1[dd])
+        d2 = np.array(all_stat_2[dd])
+        d3 = np.array(all_stat_3[dd])
+        # print(dd)
+        # print(d1.shape)
+        # print(d2.shape)            
+        # self.assertEqual(all_stat_2[dd], all_stat_1[dd])
+        self._comp_data(d1, d2)
+        self._comp_data(d1, d3)
 
+
+class TestEnerShift(unittest.TestCase):
+    def setUp(self):
+        data0 = gen_sys(30, [0, 1, 0, 2, 1])
+        data1 = gen_sys(30, [0, 1, 0, 0])    
+        sys0 = dpdata.LabeledSystem()
+        sys1 = dpdata.LabeledSystem()
+        sys0.data = data0
+        sys1.data = data1
+        sys0.to_deepmd_npy('system_0', set_size = 10)
+        sys1.to_deepmd_npy('system_1', set_size = 10)
+        
+    def tearDown(self):
+        shutil.rmtree('system_0')
+        shutil.rmtree('system_1')
+
+    def test_ener_shift(self):
+        np.random.seed(0)
+        data = DeepmdDataSystem(['system_0', 'system_1'], 
+                                5, 
+                                10, 
+                                1.0)
+        data.add('energy', 1, must = True)
+        ener_shift0 = data.compute_energy_shift(rcond = 1)
+        all_stat = make_all_stat(data, 4, merge_sys = False)
+        ener_shift1 = EnerFitting._compute_output_stats(all_stat, rcond = 1)        
+        for ii in range(len(ener_shift0)):
+            self.assertAlmostEqual(ener_shift0[ii], ener_shift1[ii])

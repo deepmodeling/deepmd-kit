@@ -73,7 +73,6 @@ def make_all_stat(data, nbatches, merge_sys = True):
 def merge_sys_stat(all_stat):
     first_key = list(all_stat.keys())[0]
     nsys = len(all_stat[first_key])
-    # print('nsys is ---------------', nsys)
     ret = defaultdict(list)
     for ii in range(nsys):
         for dd in all_stat:
@@ -95,14 +94,12 @@ class Model() :
 
         args = ClassArg()\
                .add('type_map',         list,   default = []) \
-               .add('rcond',            float,  default = 1e-3) \
                .add('data_stat_nbatch', int,    default = 10) \
                .add('data_stat_protect',float,  default = 1e-2) \
                .add('use_srtab',        str)
         class_data = args.parse(jdata)
         self.type_map = class_data['type_map']
         self.srtab_name = class_data['use_srtab']
-        self.rcond = class_data['rcond']
         self.data_stat_nbatch = class_data['data_stat_nbatch']
         self.data_stat_protect = class_data['data_stat_protect']
         if self.srtab_name is not None :
@@ -130,16 +127,20 @@ class Model() :
     def data_stat(self, data):
         all_stat = make_all_stat(data, self.data_stat_nbatch, merge_sys = False)
         m_all_stat = merge_sys_stat(all_stat)
-        self._compute_dstats (m_all_stat, protection = self.data_stat_protect)
-        self.bias_atom_e = data.compute_energy_shift(self.rcond)
+        self._compute_input_stat(m_all_stat, protection = self.data_stat_protect)
+        self._compute_output_stat(all_stat)
+        # self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
-    def _compute_dstats (self, all_stat, protection = 1e-2) :
+    def _compute_input_stat (self, all_stat, protection = 1e-2) :
         self.descrpt.compute_input_stats(all_stat['coord'],
                                          all_stat['box'],
                                          all_stat['type'],
                                          all_stat['natoms_vec'],
                                          all_stat['default_mesh'])
         self.fitting.compute_input_stats(all_stat, protection = protection)
+
+    def _compute_output_stat (self, all_stat) :
+        self.fitting.compute_output_stats(all_stat)
 
     
     def build (self, 
@@ -194,7 +195,6 @@ class Model() :
         atom_ener = self.fitting.build (dout, 
                                         input_dict, 
                                         natoms, 
-                                        bias_atom_e = self.bias_atom_e, 
                                         reuse = reuse, 
                                         suffix = suffix)
 

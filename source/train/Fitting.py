@@ -23,14 +23,17 @@ class EnerFitting ():
                .add('numb_aparam',      int,    default = 0)\
                .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\
                .add('resnet_dt',        bool,   default = True)\
+               .add('rcond',            float,  default = 1e-3) \
                .add('seed',             int)               
         class_data = args.parse(jdata)
         self.numb_fparam = class_data['numb_fparam']
         self.numb_aparam = class_data['numb_aparam']
         self.n_neuron = class_data['neuron']
         self.resnet_dt = class_data['resnet_dt']
+        self.rcond = class_data['rcond']
         self.seed = class_data['seed']
         self.useBN = False
+        self.bias_atom_e = None
         # data requirement
         if self.numb_fparam > 0 :
             add_data_requirement('fparam', self.numb_fparam, atomic=False, must=True, high_prec=False)
@@ -48,6 +51,32 @@ class EnerFitting ():
 
     def get_numb_aparam(self) :
         return self.numb_fparam
+
+    def compute_output_stats(self, all_stat):
+        self.bias_atom_e = self._compute_output_stats(all_stat, rcond = self.rcond)
+
+    @classmethod
+    def _compute_output_stats(self, all_stat, rcond = 1e-3):
+        data = all_stat['energy']
+        # data[sys_idx][batch_idx][frame_idx]
+        sys_ener = np.array([])
+        for ss in range(len(data)):
+            sys_data = []
+            for ii in range(len(data[ss])):
+                for jj in range(len(data[ss][ii])):
+                    sys_data.append(data[ss][ii][jj])
+            sys_data = np.concatenate(sys_data)
+            sys_ener = np.append(sys_ener, np.average(sys_data))
+        data = all_stat['natoms_vec']
+        sys_tynatom = np.array([])
+        nsys = len(data)
+        for ss in range(len(data)):
+            sys_tynatom = np.append(sys_tynatom, data[ss][0].astype(np.float64))
+        sys_tynatom = np.reshape(sys_tynatom, [nsys,-1])
+        sys_tynatom = sys_tynatom[:,2:]
+        energy_shift,resd,rank,s_value \
+            = np.linalg.lstsq(sys_tynatom, sys_ener, rcond = rcond)
+        return energy_shift    
 
     def compute_input_stats(self, all_stat, protection):
         # stat fparam
@@ -78,7 +107,8 @@ class EnerFitting ():
             for ii in range(self.aparam_std.size):
                 if self.aparam_std[ii] < protection:
                     self.aparam_std[ii] = protection
-            self.aparam_inv_std = 1./self.aparam_std                
+            self.aparam_inv_std = 1./self.aparam_std
+
 
     def _compute_std (self, sumv2, sumv, sumn) :
         return np.sqrt(sumv2/sumn - np.multiply(sumv/sumn, sumv/sumn))
@@ -88,9 +118,9 @@ class EnerFitting ():
                inputs,
                input_dict,
                natoms,
-               bias_atom_e = None,
                reuse = None,
                suffix = '') :
+        bias_atom_e = self.bias_atom_e
         if self.numb_fparam > 0 and ( self.fparam_avg is None or self.fparam_inv_std is None ):
             raise RuntimeError('No data stat result. one should do data statisitic, before build')
         if self.numb_aparam > 0 and ( self.aparam_avg is None or self.aparam_inv_std is None ):
