@@ -333,3 +333,10 @@ class DipoleModel(TensorModel):
 class PolarModel(TensorModel):
     def __init__(self, jdata, descrpt, fitting) :
         TensorModel.__init__(self, jdata, descrpt, fitting, 'polar')
+
+
+class GlobalPolarModel(TensorModel):
+    def __init__(self, jdata, descrpt, fitting) :
+        TensorModel.__init__(self, jdata, descrpt, fitting, 'global_polar')
+
+

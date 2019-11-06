@@ -189,10 +189,11 @@ class TensorLoss () :
         self.tensor_name = kwarg['tensor_name']
         self.tensor_size = kwarg['tensor_size']
         self.label_name = kwarg['label_name']
+        self.atomic = kwarg.get('atomic', True)
         # data required
         add_data_requirement(self.label_name, 
                              self.tensor_size, 
-                             atomic=True,  
+                             atomic=self.atomic,  
                              must=True, 
                              high_prec=False, 
                              type_sel = type_sel)
@@ -206,6 +207,9 @@ class TensorLoss () :
         polar_hat = label_dict[self.label_name]
         polar = model_dict[self.tensor_name]
         l2_loss = tf.reduce_mean( tf.square(polar - polar_hat), name='l2_'+suffix)
+        if not self.atomic :
+            atom_norm  = 1./ global_cvt_2_tf_float(natoms[0]) 
+            l2_loss = l2_loss * atom_norm
         self.l2_l = l2_loss
         more_loss = {}
 

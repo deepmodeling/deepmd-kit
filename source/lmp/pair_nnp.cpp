@@ -14,7 +14,9 @@
 #include "neigh_request.h"
 #include "modify.h"
 #include "fix.h"
+#ifdef USE_TTM
 #include "fix_ttm_mod.h"
+#endif
 
 #include "pair_nnp.h"
 
@@ -120,6 +122,7 @@ make_uniform_aparam(
   }
 }
 
+#ifdef USE_TTM
 void PairNNP::make_ttm_aparam(
 #ifdef HIGH_PREC
     vector<double > & daparam
@@ -170,7 +173,7 @@ void PairNNP::make_ttm_aparam(
     }
   }
 }
-
+#endif
 
 PairNNP::PairNNP(LAMMPS *lmp) 
     : Pair(lmp)
@@ -280,7 +283,9 @@ void PairNNP::compute(int eflag, int vflag)
     make_uniform_aparam(daparam, aparam, nlocal);
   }
   else if (do_ttm) {
+#ifdef USE_TTM
     make_ttm_aparam(daparam);
+#endif
   }
 
   // compute
@@ -681,6 +686,7 @@ void PairNNP::settings(int narg, char **arg)
       iarg += 1 + dim_aparam ;
     }
     else if (string(arg[iarg]) == string("ttm")) {
+#ifdef USE_TTM
       for (int ii = 0; ii < 1; ++ii){
 	if (iarg+1+ii >= narg || is_key(arg[iarg+1+ii])) {
 	  error->all(FLERR, "invalid ttm key: should be ttm ttm_fix_id(str)");
@@ -689,6 +695,9 @@ void PairNNP::settings(int narg, char **arg)
       do_ttm = true;
       ttm_fix_id = arg[iarg+1];
       iarg += 1 + 1;
+#else
+      error->all(FLERR, "The deepmd-kit was compiled without support for TTM, please rebuild it with -DUSE_TTM");
+#endif      
     }
     else if (string(arg[iarg]) == string("atomic")) {
       out_each = 1;
@@ -699,7 +708,7 @@ void PairNNP::settings(int narg, char **arg)
 #ifdef HIGH_PREC
       eps = atof(arg[iarg+1]);
 #else
-      eps = strtof(arg[iarg+1]);
+      eps = strtof(arg[iarg+1], NULL);
 #endif
       iarg += 2;
     }

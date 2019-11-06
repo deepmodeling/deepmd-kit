@@ -352,12 +352,14 @@ class PolarFittingSeA () :
         args = ClassArg()\
                .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\
                .add('resnet_dt',        bool,   default = True)\
+               .add('fit_diag',         bool,   default = True)\
                .add('sel_type',         [list,int],   default = [ii for ii in range(self.ntypes)], alias = 'pol_type')\
                .add('seed',             int)
         class_data = args.parse(jdata)
         self.n_neuron = class_data['neuron']
         self.resnet_dt = class_data['resnet_dt']
         self.sel_type = class_data['sel_type']
+        self.fit_diag = class_data['fit_diag']
         self.seed = class_data['seed']
         self.dim_rot_mat_1 = descrpt.get_dim_rot_mat_1()
         self.dim_rot_mat = self.dim_rot_mat_1 * 3
@@ -400,12 +402,20 @@ class PolarFittingSeA () :
                     layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt)
                 else :
                     layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
-            # (nframes x natoms) x (naxis x naxis)
-            final_layer = one_layer(layer, self.dim_rot_mat_1*self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
-            # (nframes x natoms) x naxis x naxis
-            final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], self.dim_rot_mat_1, self.dim_rot_mat_1])
-            # (nframes x natoms) x naxis x naxis
-            final_layer = final_layer + tf.transpose(final_layer, perm = [0,2,1])
+            if self.fit_diag :
+                # (nframes x natoms) x naxis
+                final_layer = one_layer(layer, self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
+                # (nframes x natoms) x naxis
+                final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], self.dim_rot_mat_1])
+                # (nframes x natoms) x naxis x naxis
+                final_layer = tf.matrix_diag(final_layer)                
+            else :                
+                # (nframes x natoms) x (naxis x naxis)
+                final_layer = one_layer(layer, self.dim_rot_mat_1*self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
+                # (nframes x natoms) x naxis x naxis
+                final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], self.dim_rot_mat_1, self.dim_rot_mat_1])
+                # (nframes x natoms) x naxis x naxis
+                final_layer = final_layer + tf.transpose(final_layer, perm = [0,2,1])
             # (nframes x natoms) x naxis x 3(coord)
             final_layer = tf.matmul(final_layer, rot_mat_i)
             # (nframes x natoms) x 3(coord) x 3(coord)
@@ -420,6 +430,34 @@ class PolarFittingSeA () :
                 outs = tf.concat([outs, final_layer], axis = 1)
             count += 1
 
+        return tf.reshape(outs, [-1])
+
+
+class GlobalPolarFittingSeA () :
+    def __init__ (self, jdata, descrpt) :
+        if not isinstance(descrpt, DescrptSeA) :
+            raise RuntimeError('GlobalPolarFittingSeA only supports DescrptSeA')
+        self.ntypes = descrpt.get_ntypes()
+        self.dim_descrpt = descrpt.get_dim_out()
+        self.polar_fitting = PolarFittingSeA(jdata, descrpt)
+
+    def get_sel_type(self):
+        return self.polar_fitting.get_sel_type()
+
+    def get_out_size(self):
+        return self.polar_fitting.get_out_size()
+
+    def build (self,
+               input_d,
+               rot_mat,
+               natoms,
+               reuse = None,
+               suffix = '') :
+        inputs = tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]])
+        outs = self.polar_fitting.build(input_d, rot_mat, natoms, reuse, suffix)
+        # nframes x natoms x 9
+        outs = tf.reshape(outs, [tf.shape(inputs)[0], -1, 9])
+        outs = tf.reduce_sum(outs, axis = 1)
         return tf.reshape(outs, [-1])
 
 
