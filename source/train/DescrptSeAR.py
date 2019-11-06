@@ -51,14 +51,14 @@ class DescrptSeAR ():
     def get_nlist_r (self) :
         return self.descrpt_r.nlist, self.descrpt_r.rij, self.descrpt_r.sel_a, self.descrpt_r.sel_r
 
-    def compute_dstats (self,
+    def compute_input_stats (self,
                         data_coord, 
                         data_box, 
                         data_atype, 
                         natoms_vec,
                         mesh) :    
-        davg_a, dstd_a = self.descrpt_a.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh)
-        davg_r, dstd_r = self.descrpt_r.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh)
+        davg_a, dstd_a = self.descrpt_a.compute_input_stats(data_coord, data_box, data_atype, natoms_vec, mesh)
+        davg_r, dstd_r = self.descrpt_r.compute_input_stats(data_coord, data_box, data_atype, natoms_vec, mesh)
         self.davg = [davg_a, davg_r]
         self.dstd = [dstd_a, dstd_r]
 

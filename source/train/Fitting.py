@@ -49,7 +49,7 @@ class EnerFitting ():
     def get_numb_aparam(self) :
         return self.numb_fparam
 
-    def compute_dstats(self, all_stat, protection):
+    def compute_input_stats(self, all_stat, protection):
         # stat fparam
         if self.numb_fparam > 0:
             cat_data = np.concatenate(all_stat['fparam'], axis = 0)

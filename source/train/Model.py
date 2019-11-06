@@ -22,6 +22,66 @@ module_path = os.path.dirname(os.path.realpath(__file__)) + "/"
 assert (os.path.isfile (module_path  + "libop_abi.{}".format(ext) )), "op module does not exist"
 op_module = tf.load_op_library(module_path + "libop_abi.{}".format(ext))
 
+
+def _make_all_stat_ref(data, nbatches):
+    all_stat = defaultdict(list)
+    for ii in range(data.get_nsystems()) :
+        for jj in range(nbatches) :
+            stat_data = data.get_batch (sys_idx = ii)
+            for dd in stat_data:
+                if dd == "natoms_vec":
+                    stat_data[dd] = stat_data[dd].astype(np.int32) 
+                all_stat[dd].append(stat_data[dd])        
+    return all_stat
+
+
+def make_all_stat(data, nbatches, merge_sys = True):
+    """
+    pack data for statistics
+    Parameters
+    ----------
+    data:
+        The data
+    merge_sys: bool (True)
+        Merge system data
+    Returns
+    -------
+    all_stat:
+        A dictionary of list of list storing data for stat. 
+        if merge_sys == False data can be accessed by 
+            all_stat[key][sys_idx][batch_idx][frame_idx]
+        else merge_sys == True can be accessed by 
+            all_stat[key][batch_idx][frame_idx]
+    """
+    all_stat = defaultdict(list)
+    for ii in range(data.get_nsystems()) :
+        sys_stat =  defaultdict(list)
+        for jj in range(nbatches) :
+            stat_data = data.get_batch (sys_idx = ii)
+            for dd in stat_data:
+                if dd == "natoms_vec":
+                    stat_data[dd] = stat_data[dd].astype(np.int32) 
+                sys_stat[dd].append(stat_data[dd])
+        for dd in sys_stat:
+            if merge_sys:
+                for bb in sys_stat[dd]:
+                    all_stat[dd].append(bb)
+            else:                    
+                all_stat[dd].append(sys_stat[dd])
+    return all_stat
+
+def merge_sys_stat(all_stat):
+    first_key = list(all_stat.keys())[0]
+    nsys = len(all_stat[first_key])
+    # print('nsys is ---------------', nsys)
+    ret = defaultdict(list)
+    for ii in range(nsys):
+        for dd in all_stat:
+            for bb in all_stat[dd][ii]:
+                ret[dd].append(bb)
+    return ret
+
+
 class Model() :
     model_type = 'ener'
 
@@ -68,25 +128,18 @@ class Model() :
         return self.type_map
 
     def data_stat(self, data):
-        all_stat = defaultdict(list)
-        for ii in range(data.get_nsystems()) :
-            for jj in range(self.data_stat_nbatch) :
-                stat_data = data.get_batch (sys_idx = ii)
-                for dd in stat_data:
-                    if dd == "natoms_vec":
-                        stat_data[dd] = stat_data[dd].astype(np.int32) 
-                    all_stat[dd].append(stat_data[dd])        
-        self._compute_dstats (all_stat, protection = self.data_stat_protect)
+        all_stat = make_all_stat(data, self.data_stat_nbatch, merge_sys = False)
+        m_all_stat = merge_sys_stat(all_stat)
+        self._compute_dstats (m_all_stat, protection = self.data_stat_protect)
         self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
-
     def _compute_dstats (self, all_stat, protection = 1e-2) :
-        self.descrpt.compute_dstats(all_stat['coord'],
-                                    all_stat['box'],
-                                    all_stat['type'],
-                                    all_stat['natoms_vec'],
-                                    all_stat['default_mesh'])
-        self.fitting.compute_dstats(all_stat, protection = protection)
+        self.descrpt.compute_input_stats(all_stat['coord'],
+                                         all_stat['box'],
+                                         all_stat['type'],
+                                         all_stat['natoms_vec'],
+                                         all_stat['default_mesh'])
+        self.fitting.compute_input_stats(all_stat, protection = protection)
 
     
     def build (self, 
@@ -264,11 +317,11 @@ class TensorModel() :
         self._compute_dstats (all_stat)
 
     def _compute_dstats (self, all_stat) :        
-        self.descrpt.compute_dstats(all_stat['coord'],
-                                    all_stat['box'],
-                                    all_stat['type'],
-                                    all_stat['natoms_vec'],
-                                    all_stat['default_mesh'])
+        self.descrpt.compute_input_stats(all_stat['coord'],
+                                         all_stat['box'],
+                                         all_stat['type'],
+                                         all_stat['natoms_vec'],
+                                         all_stat['default_mesh'])
 
     def build (self, 
                coord_, 

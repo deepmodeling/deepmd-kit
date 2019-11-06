@@ -63,7 +63,7 @@ class DescrptSeR ():
     def get_nlist (self) :
         return self.nlist, self.rij, self.sel_a, self.sel_r
 
-    def compute_dstats (self,
+    def compute_input_stats (self,
                         data_coord, 
                         data_box, 
                         data_atype, 
