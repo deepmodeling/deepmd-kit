@@ -81,13 +81,13 @@ class Model() :
 
 
     def _compute_dstats (self, all_stat, protection = 1e-2) :
-        self.davg, self.dstd \
-            = self.descrpt.compute_dstats(all_stat['coord'],
-                                          all_stat['box'],
-                                          all_stat['type'],
-                                          all_stat['natoms_vec'],
-                                          all_stat['default_mesh'])        
+        self.descrpt.compute_dstats(all_stat['coord'],
+                                    all_stat['box'],
+                                    all_stat['type'],
+                                    all_stat['natoms_vec'],
+                                    all_stat['default_mesh'])
         self.fitting.compute_dstats(all_stat, protection = protection)
+
     
     def build (self, 
                coord_, 
@@ -129,8 +129,6 @@ class Model() :
                                  natoms,
                                  box,
                                  mesh,
-                                 davg = self.davg,
-                                 dstd = self.dstd,
                                  suffix = suffix,
                                  reuse = reuse)
         dout = tf.identity(dout, name='o_descriptor')
@@ -266,12 +264,11 @@ class TensorModel() :
         self._compute_dstats (all_stat)
 
     def _compute_dstats (self, all_stat) :        
-        self.davg, self.dstd \
-            = self.descrpt.compute_dstats(all_stat['coord'],
-                                          all_stat['box'],
-                                          all_stat['type'],
-                                          all_stat['natoms_vec'],
-                                          all_stat['default_mesh'])
+        self.descrpt.compute_dstats(all_stat['coord'],
+                                    all_stat['box'],
+                                    all_stat['type'],
+                                    all_stat['natoms_vec'],
+                                    all_stat['default_mesh'])
 
     def build (self, 
                coord_, 
@@ -302,8 +299,6 @@ class TensorModel() :
                                  natoms,
                                  box,
                                  mesh,
-                                 davg = self.davg,
-                                 dstd = self.dstd,
                                  suffix = suffix,
                                  reuse = reuse)
         dout = tf.identity(dout, name='o_descriptor')

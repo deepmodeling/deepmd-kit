@@ -75,7 +75,7 @@ class EnerStdLoss () :
         force_hat_reshape = tf.reshape (force_hat, [-1])
         atom_pref_reshape = tf.reshape (atom_pref, [-1])
         diff_f = force_hat_reshape - force_reshape
-        if self.relative_f is not None:
+        if self.relative_f is not None:            
             force_hat_3 = tf.reshape(force_hat, [-1, 3])
             norm_f = tf.reshape(tf.norm(force_hat_3, axis = 1), [-1, 1]) + self.relative_f
             diff_f_3 = tf.reshape(diff_f, [-1, 3])

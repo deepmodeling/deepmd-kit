@@ -46,8 +46,9 @@ class DescrptSeR ():
         self.ndescrpt_a = self.nnei_a * 4
         self.ndescrpt_r = self.nnei_r * 1
         self.ndescrpt = self.nnei_r
-
         self.useBN = False
+        self.davg = None
+        self.dstd = None
 
 
     def get_rcut (self) :
@@ -90,10 +91,9 @@ class DescrptSeR ():
             all_davg.append(davg)
             all_dstd.append(dstd)
 
-        davg = np.array(all_davg)
-        dstd = np.array(all_dstd)
+        self.davg = np.array(all_davg)
+        self.dstd = np.array(all_dstd)
 
-        return davg, dstd
 
     def build (self, 
                coord_, 
@@ -101,10 +101,10 @@ class DescrptSeR ():
                natoms,
                box_, 
                mesh,
-               davg = None, 
-               dstd = None,
                suffix = '', 
                reuse = None):
+        davg = self.davg
+        dstd = self.dstd
         with tf.variable_scope('descrpt_attr' + suffix, reuse = reuse) :
             if davg is None:
                 davg = np.zeros([self.ntypes, self.ndescrpt]) 
