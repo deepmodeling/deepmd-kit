@@ -125,12 +125,24 @@ class DeepmdData() :
             iterator_1 = set_size
         idx = np.arange (self.iterator, iterator_1)
         self.iterator += batch_size
-        return self._get_subdata(self.batch_set, idx)
+        ret = self._get_subdata(self.batch_set, idx)
+        if self.modifier is not None:
+            self.modifier.modify(ret)
+        return ret
 
-    def get_test (self) :
+    def get_test (self, ntests = -1) :
         if not hasattr(self, 'test_set') :            
             self._load_test_set(self.test_dir, self.shuffle_test)
-        return self._get_subdata(self.test_set)        
+        if ntests == -1:
+            idx = None
+        else :
+            ntests_ = ntests if ntests < self.test_set['type'].shape[0] else self.test_set['type'].shape[0]
+            # print('ntest', self.test_set['type'].shape[0], ntests, ntests_)
+            idx = np.arange(ntests_)
+        ret = self._get_subdata(self.test_set, idx = idx)
+        if self.modifier is not None:
+            self.modifier.modify(ret)
+        return ret
 
     def get_type_map(self) :
         return self.type_map
@@ -142,7 +154,7 @@ class DeepmdData() :
         return len (self.train_dirs)
 
     def get_numb_batch (self, batch_size, set_idx) :
-        data = self._load_set(self.train_dirs[set_idx], modify = False)
+        data = self._load_set(self.train_dirs[set_idx])
         return data["coord"].shape[0] // batch_size
 
     def get_sys_numb_batch (self, batch_size) :
@@ -214,6 +226,9 @@ class DeepmdData() :
                          set_name) :
         self.batch_set = self._load_set(set_name)
         self.batch_set, sf_idx = self._shuffle_data(self.batch_set)
+        self.reset_get_batch()
+
+    def reset_get_batch(self):
         self.iterator = 0
 
     def _load_test_set (self,
@@ -240,7 +255,7 @@ class DeepmdData() :
                 ret[kk] = data[kk]
         return ret, idx
 
-    def _load_set(self, set_name, modify = True) :
+    def _load_set(self, set_name) :
         ret = {}
         # get nframes
         path = os.path.join(set_name, "coord.npy")
@@ -272,9 +287,6 @@ class DeepmdData() :
                 data['find_'+kk] = data['find_'+k_in]
                 tmp_in = data[k_in].astype(global_ener_float_precision)
                 data[kk] = np.sum(np.reshape(tmp_in, [nframes, self.natoms, ndof]), axis = 1)
-
-        if modify and self.modifier is not None:
-            self.modifier.modify(data)
 
         return data
 

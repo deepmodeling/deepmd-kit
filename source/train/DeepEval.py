@@ -4,6 +4,7 @@ import os,sys
 import numpy as np
 
 from deepmd.env import tf
+from deepmd.common import make_default_mesh
 
 from tensorflow.python.framework import ops
 
@@ -51,19 +52,6 @@ class DeepEval():
             )
         return graph
 
-    def make_default_mesh(self, test_box) :
-        cell_size = 3
-        nframes = test_box.shape[0]
-        default_mesh = np.zeros([nframes, 6], dtype = np.int32)
-        for ff in range(nframes):
-            ncell = np.ones (3, dtype=np.int32)
-            for ii in range(3) :
-                ncell[ii] = int ( np.linalg.norm(test_box[ff][ii]) / cell_size )
-                if (ncell[ii] < 2) : ncell[ii] = 2
-            default_mesh[ff][3] = ncell[0]
-            default_mesh[ff][4] = ncell[1]
-            default_mesh[ff][5] = ncell[2]
-        return default_mesh
 
     def sort_input(self, coord, atom_type, sel_atoms = None) :
         if sel_atoms is not None:
@@ -167,7 +155,7 @@ class DeepTensor(DeepEval) :
         # make natoms_vec and default_mesh
         natoms_vec = self.make_natoms_vec(atom_types)
         assert(natoms_vec[0] == natoms)
-        default_mesh = self.make_default_mesh(cells)
+        default_mesh = make_default_mesh(cells)
 
         # evaluate
         tensor = []

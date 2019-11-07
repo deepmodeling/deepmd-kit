@@ -27,6 +27,20 @@ def select_idx_map(atom_type,
     return idx_map
 
 
+def make_default_mesh(test_box, cell_size = 3) :
+    nframes = test_box.shape[0]
+    default_mesh = np.zeros([nframes, 6], dtype = np.int32)
+    for ff in range(nframes):
+        ncell = np.ones (3, dtype=np.int32)
+        for ii in range(3) :
+            ncell[ii] = int ( np.linalg.norm(test_box[ff][ii]) / cell_size )
+            if (ncell[ii] < 2) : ncell[ii] = 2
+        default_mesh[ff][3] = ncell[0]
+        default_mesh[ff][4] = ncell[1]
+        default_mesh[ff][5] = ncell[2]
+    return default_mesh
+
+
 class ClassArg () : 
     def __init__ (self) :
         self.arg_dict = {}

@@ -463,7 +463,7 @@ class NNPTrainer (object):
                          fp,
                          data,
                          feed_dict_batch) :
-        test_data = data.get_test ()
+        test_data = data.get_test(ntests = self.numb_test)
         feed_dict_test = {}
         for kk in test_data.keys():
             if kk == 'find_type' or kk == 'type' :

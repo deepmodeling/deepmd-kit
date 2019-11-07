@@ -2,7 +2,7 @@ import os,platform
 import numpy as np
 from deepmd import DeepDipole
 from deepmd.env import tf
-from deepmd.common import select_idx_map
+from deepmd.common import select_idx_map, make_default_mesh
 from deepmd.EwaldRecp import EwaldRecp
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
@@ -201,7 +201,6 @@ class DipoleChargeModifier(DeepDipole):
             corr_v = []
             corr_av = []
             for ii in range(0,nframes,batch_size):
-                print(ii, nframes)
                 f, v, av = self.eval_fv(coord[ii:ii+batch_size], box[ii:ii+batch_size], atype[0], ext_f[ii:ii+batch_size])
                 corr_f.append(f)
                 corr_v.append(v)
@@ -240,7 +239,7 @@ class DipoleChargeModifier(DeepDipole):
         # make natoms_vec and default_mesh
         natoms_vec = self.make_natoms_vec(atom_types)
         assert(natoms_vec[0] == natoms)
-        default_mesh = self.make_default_mesh(cells)
+        default_mesh = make_default_mesh(cells)
 
         # evaluate
         tensor = []
