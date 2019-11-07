@@ -430,7 +430,7 @@ static int make_input_tensors (
 
     vector<VALUETYPE> dcoord (dcoord_);
     nnpmap.forward (dcoord.begin(), dcoord_.begin(), 3);
-    
+
     for (int ii = 0; ii < nframes; ++ii) {
         for (int jj = 0; jj < nall * 3; ++jj) {
             coord(ii, jj) = dcoord[jj];
@@ -659,12 +659,14 @@ NNPInter::NNPInter(const std::string & model, const int & gpu_rank)
 
 NNPInter::~NNPInter() {
     #ifdef USE_CUDA_TOOLKIT
+    if (init_nbor) {
         cudaErrcheck(cudaFree(ilist));
         cudaErrcheck(cudaFree(jrange));
         cudaErrcheck(cudaFree(jlist));
         cudaErrcheck(cudaFree(array_int));
         cudaErrcheck(cudaFree(array_longlong));
         cudaErrcheck(cudaFree(array_double));
+    }
     #endif
 }
 
@@ -1031,12 +1033,14 @@ NNPInterModelDevi::NNPInterModelDevi (const vector<string> & models, const int &
 
 NNPInterModelDevi::~NNPInterModelDevi() {
 #ifdef USE_CUDA_TOOLKIT
-    cudaErrcheck(cudaFree(ilist));
-    cudaErrcheck(cudaFree(jrange));
-    cudaErrcheck(cudaFree(jlist));
-    cudaErrcheck(cudaFree(array_int));
-    cudaErrcheck(cudaFree(array_longlong));
-    cudaErrcheck(cudaFree(array_double));
+    if (init_nbor) {
+        cudaErrcheck(cudaFree(ilist));
+        cudaErrcheck(cudaFree(jrange));
+        cudaErrcheck(cudaFree(jlist));
+        cudaErrcheck(cudaFree(array_int));
+        cudaErrcheck(cudaFree(array_longlong));
+        cudaErrcheck(cudaFree(array_double));
+    }
 #endif
 }
 
