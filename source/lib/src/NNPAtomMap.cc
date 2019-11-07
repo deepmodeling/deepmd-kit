@@ -4,6 +4,9 @@
 #include <cassert>
 
 template <typename VALUETYPE>
+NNPAtomMap<VALUETYPE>::NNPAtomMap() {}
+
+template <typename VALUETYPE>
 NNPAtomMap<VALUETYPE>::
 NNPAtomMap(const vector<int >::const_iterator in_begin, 
 	   const vector<int >::const_iterator in_end)
