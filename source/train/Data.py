@@ -120,14 +120,14 @@ class DeepmdData() :
             self._load_batch_set (self.train_dirs[self.set_count % self.get_numb_set()])
             self.set_count += 1
             set_size = self.batch_set["coord"].shape[0]
+            if self.modifier is not None:
+                self.modifier.modify(self.batch_set)
         iterator_1 = self.iterator + batch_size
         if iterator_1 >= set_size :
             iterator_1 = set_size
         idx = np.arange (self.iterator, iterator_1)
         self.iterator += batch_size
         ret = self._get_subdata(self.batch_set, idx)
-        if self.modifier is not None:
-            self.modifier.modify(ret)
         return ret
 
     def get_test (self, ntests = -1) :
