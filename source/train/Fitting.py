@@ -401,6 +401,21 @@ class PolarFittingSeA () :
     def get_out_size(self):
         return 9
 
+    def compute_input_stats(self, all_stat, protection = 1e-2):
+        assert('polarizability' in all_stat.keys())
+        data = all_stat['polarizability']
+        all_tmp = []
+        for ss in range(len(data)):
+            tmp = np.concatenate(data[ss], axis = 0)
+            print(tmp.shape)
+            tmp = np.reshape(tmp, [-1, 3, 3])
+            tmp,_ = np.linalg.eig(tmp)
+            tmp = np.absolute(tmp)
+            tmp = np.sort(tmp, axis = 1)
+            all_tmp.append(tmp)
+        all_tmp = np.concatenate(all_tmp, axis = 1)
+        self.avgeig = np.average(all_tmp, axis = 0)
+
     def build (self, 
                input_d,
                rot_mat,
@@ -433,15 +448,23 @@ class PolarFittingSeA () :
                 else :
                     layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
             if self.fit_diag :
+                bavg = np.zeros(self.dim_rot_mat_1)
+                bavg[0] = self.avgeig[0]
+                bavg[1] = self.avgeig[1]
+                bavg[2] = self.avgeig[2]
                 # (nframes x natoms) x naxis
-                final_layer = one_layer(layer, self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
+                final_layer = one_layer(layer, self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, bavg = bavg)
                 # (nframes x natoms) x naxis
                 final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], self.dim_rot_mat_1])
                 # (nframes x natoms) x naxis x naxis
                 final_layer = tf.matrix_diag(final_layer)                
-            else :                
+            else :
+                bavg = np.zeros(self.dim_rot_mat_1*self.dim_rot_mat_1)
+                bavg[0*self.dim_rot_mat_1+0] = self.avgeig[0]
+                bavg[1*self.dim_rot_mat_1+1] = self.avgeig[1]
+                bavg[2*self.dim_rot_mat_1+2] = self.avgeig[2]
                 # (nframes x natoms) x (naxis x naxis)
-                final_layer = one_layer(layer, self.dim_rot_mat_1*self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
+                final_layer = one_layer(layer, self.dim_rot_mat_1*self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, bavg = bavg)
                 # (nframes x natoms) x naxis x naxis
                 final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], self.dim_rot_mat_1, self.dim_rot_mat_1])
                 # (nframes x natoms) x naxis x naxis

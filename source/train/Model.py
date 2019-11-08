@@ -126,18 +126,18 @@ class Model() :
 
     def data_stat(self, data):
         all_stat = make_all_stat(data, self.data_stat_nbatch, merge_sys = False)
-        m_all_stat = merge_sys_stat(all_stat)
-        self._compute_input_stat(m_all_stat, protection = self.data_stat_protect)
+        self._compute_input_stat(all_stat, protection = self.data_stat_protect)
         self._compute_output_stat(all_stat)
         # self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
     def _compute_input_stat (self, all_stat, protection = 1e-2) :
-        self.descrpt.compute_input_stats(all_stat['coord'],
-                                         all_stat['box'],
-                                         all_stat['type'],
-                                         all_stat['natoms_vec'],
-                                         all_stat['default_mesh'])
-        self.fitting.compute_input_stats(all_stat, protection = protection)
+        m_all_stat = merge_sys_stat(all_stat)
+        self.descrpt.compute_input_stats(m_all_stat['coord'],
+                                         m_all_stat['box'],
+                                         m_all_stat['type'],
+                                         m_all_stat['natoms_vec'],
+                                         m_all_stat['default_mesh'])
+        self.fitting.compute_input_stats(m_all_stat, protection = protection)
 
     def _compute_output_stat (self, all_stat) :
         self.fitting.compute_output_stats(all_stat)
@@ -285,10 +285,12 @@ class TensorModel() :
 
         args = ClassArg()\
                .add('type_map',         list,   default = []) \
-               .add('data_stat_nbatch', int,    default = 10)
+               .add('data_stat_nbatch', int,    default = 10) \
+               .add('data_stat_protect',float,  default = 1e-2)
         class_data = args.parse(jdata)
         self.type_map = class_data['type_map']
         self.data_stat_nbatch = class_data['data_stat_nbatch']
+        self.data_stat_protect = class_data['data_stat_protect']
     
     def get_rcut (self) :
         return self.rcut
@@ -306,22 +308,23 @@ class TensorModel() :
         return self.fitting.get_out_size()
 
     def data_stat(self, data):
-        all_stat = defaultdict(list)
-        for ii in range(data.get_nsystems()) :
-            for jj in range(self.data_stat_nbatch) :
-                stat_data = data.get_batch (sys_idx = ii)
-                for dd in stat_data:
-                    if dd == "natoms_vec":
-                        stat_data[dd] = stat_data[dd].astype(np.int32) 
-                    all_stat[dd].append(stat_data[dd])        
-        self._compute_dstats (all_stat)
+        all_stat = make_all_stat(data, self.data_stat_nbatch, merge_sys = False)
+        self._compute_input_stat (all_stat, protection = self.data_stat_protect)
+        self._compute_output_stat(all_stat)
 
-    def _compute_dstats (self, all_stat) :        
-        self.descrpt.compute_input_stats(all_stat['coord'],
-                                         all_stat['box'],
-                                         all_stat['type'],
-                                         all_stat['natoms_vec'],
-                                         all_stat['default_mesh'])
+    def _compute_input_stat(self, all_stat, protection = 1e-2) :
+        m_all_stat = merge_sys_stat(all_stat)        
+        self.descrpt.compute_input_stats(m_all_stat['coord'],
+                                         m_all_stat['box'],
+                                         m_all_stat['type'],
+                                         m_all_stat['natoms_vec'],
+                                         m_all_stat['default_mesh'])
+        if hasattr(self.fitting, 'compute_input_stats'):
+            self.fitting.compute_input_stats(all_stat, protection = protection)
+
+    def _compute_output_stat (self, all_stat) :
+        if hasattr(self.fitting, 'compute_output_stats'):
+            self.fitting.compute_output_stats(all_stat)
 
     def build (self, 
                coord_, 
