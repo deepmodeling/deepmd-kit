@@ -733,6 +733,7 @@ void NNPInter::update_nbor(const InternalNeighborList & nlist, const int nloc) {
 #ifdef USE_CUDA_TOOLKIT
 void NNPInter::init (const string & model, const int & gpu_rank) {
     assert (!inited);
+    // me = gpu_rank;
     SessionOptions options;
     options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
     options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
@@ -769,6 +770,7 @@ void NNPInter::init (const string & model, const int & gpu_rank) {
 #else
 void NNPInter::init (const string & model, const int & gpu_rank) {
     assert (!inited);
+    // me = gpu_rank;
     SessionOptions options;
     options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
     options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
@@ -906,11 +908,11 @@ void NNPInter::compute (ENERGYTYPE  &   dener,
             const vector<VALUETYPE>	&   fparam,
             const vector<VALUETYPE>	&   aparam)
 {
+    // std::cout << "me = " << me << "\tago = " << ago << "\tenergy = " << dener << std::endl;
     // std::cout << "1-2" << std::endl;
     int nall = dcoord_.size() / 3;
     int nloc = nall - nghost;
     validate_fparam_aparam(nloc, fparam, aparam);
-    
     // agp == 0 means that the LAMMPS nbor list has been updated
     if (ago == 0) {
         nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
@@ -941,6 +943,7 @@ void NNPInter::compute (ENERGYTYPE  &   dener,
         assert (nloc == ret);
         run_model (dener, dforce_, dvirial, session, input_tensors, nnpmap, nghost);
     }
+    // std::cout << "ago = " << ago << "\tenergy = " << dener << std::endl;
 }
 
 void NNPInter::compute (ENERGYTYPE  &   dener,
@@ -1017,15 +1020,13 @@ void NNPInter::compute (ENERGYTYPE  &   dener,
 }
 
 NNPInterModelDevi::NNPInterModelDevi ()
-    : inited (false), 
-      numb_models (0)
+    : inited(false), init_nbor(false), numb_models(0)
 {
     get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
 }
 
 NNPInterModelDevi::NNPInterModelDevi (const vector<string> & models, const int & gpu_rank)
-    : inited (false), 
-      numb_models (0)
+    : inited(false), init_nbor(false), numb_models(0)
 {
     get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
     init(models, gpu_rank);
@@ -1047,6 +1048,7 @@ NNPInterModelDevi::~NNPInterModelDevi() {
 #ifdef USE_CUDA_TOOLKIT
 void NNPInterModelDevi::init (const vector<string> & models, const int & gpu_rank)
 {
+    std::cout << "I'm in" << std::endl;
     assert (!inited);
     numb_models = models.size();
     sessions.resize(numb_models);

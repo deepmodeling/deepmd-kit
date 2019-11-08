@@ -302,13 +302,14 @@ void PairNNP::compute(int eflag, int vflag) {
     #endif
     }
 
-    int ago = neighbor->ago;
-    if (multi_models_mod_devi && (numb_models > 1 && (out_freq == 0 || update->ntimestep % out_freq != 0))) {
-        ago = 0;
-    }
-    if (multi_models_no_mod_devi && (numb_models > 1 && (out_freq > 0 && update->ntimestep % out_freq == 0))) {
-        ago = 0;
-    }
+    int ago = numb_models > 1 ? 0 : neighbor->ago;
+    // bug occurred!
+    // if (multi_models_mod_devi && (numb_models > 1 && (out_freq == 0 || update->ntimestep % out_freq != 0))) {
+    //     ago = 0;
+    // }
+    // if (multi_models_no_mod_devi && (numb_models > 1 && (out_freq > 0 && update->ntimestep % out_freq == 0))) {
+    //     ago = 0;
+    // }
     // compute
     bool single_model = (numb_models == 1);
     bool multi_models_no_mod_devi = (numb_models > 1 && (out_freq == 0 || update->ntimestep % out_freq != 0));
@@ -478,7 +479,7 @@ void PairNNP::compute(int eflag, int vflag) {
                         for (unsigned jj = 0; jj < all_force_[ii].size(); ++jj) {
                             all_force_[ii][jj] = all_force[ii][jj];
                         }
-                    }
+                    } 
                     nnp_inter_model_devi.compute_avg(tmp_avg_f_, all_force_);
                     nnp_inter_model_devi.compute_std_f(std_f_, tmp_avg_f_, all_force_);
                     std_f.resize(std_f_.size());
