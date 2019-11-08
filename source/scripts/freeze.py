@@ -44,6 +44,8 @@ def _make_node_names(model_type = None) :
         nodes = "o_dipole,o_rmat,o_rmat_deriv,o_nlist,o_rij,descrpt_attr/rcut,descrpt_attr/ntypes,descrpt_attr/sel,descrpt_attr/ndescrpt,model_attr/tmap,model_attr/sel_type,model_attr/model_type"
     elif model_type == 'polar':
         nodes = "o_polar,descrpt_attr/rcut,descrpt_attr/ntypes,model_attr/tmap,model_attr/sel_type,model_attr/model_type"
+    elif model_type == 'global_polar':
+        nodes = "o_global_polar,descrpt_attr/rcut,descrpt_attr/ntypes,model_attr/tmap,model_attr/sel_type,model_attr/model_type"
     else:
         raise RuntimeError('unknow model type ' + model_type)
     return nodes
