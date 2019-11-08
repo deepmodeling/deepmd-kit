@@ -126,18 +126,18 @@ class Model() :
 
     def data_stat(self, data):
         all_stat = make_all_stat(data, self.data_stat_nbatch, merge_sys = False)
-        self._compute_input_stat(all_stat, protection = self.data_stat_protect)
+        m_all_stat = merge_sys_stat(all_stat)
+        self._compute_input_stat(m_all_stat, protection = self.data_stat_protect)
         self._compute_output_stat(all_stat)
         # self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
     def _compute_input_stat (self, all_stat, protection = 1e-2) :
-        m_all_stat = merge_sys_stat(all_stat)
-        self.descrpt.compute_input_stats(m_all_stat['coord'],
-                                         m_all_stat['box'],
-                                         m_all_stat['type'],
-                                         m_all_stat['natoms_vec'],
-                                         m_all_stat['default_mesh'])
-        self.fitting.compute_input_stats(m_all_stat, protection = protection)
+        self.descrpt.compute_input_stats(all_stat['coord'],
+                                         all_stat['box'],
+                                         all_stat['type'],
+                                         all_stat['natoms_vec'],
+                                         all_stat['default_mesh'])
+        self.fitting.compute_input_stats(all_stat, protection = protection)
 
     def _compute_output_stat (self, all_stat) :
         self.fitting.compute_output_stats(all_stat)
@@ -309,16 +309,16 @@ class TensorModel() :
 
     def data_stat(self, data):
         all_stat = make_all_stat(data, self.data_stat_nbatch, merge_sys = False)
-        self._compute_input_stat (all_stat, protection = self.data_stat_protect)
+        m_all_stat = merge_sys_stat(all_stat)        
+        self._compute_input_stat (m_all_stat, protection = self.data_stat_protect)
         self._compute_output_stat(all_stat)
 
     def _compute_input_stat(self, all_stat, protection = 1e-2) :
-        m_all_stat = merge_sys_stat(all_stat)        
-        self.descrpt.compute_input_stats(m_all_stat['coord'],
-                                         m_all_stat['box'],
-                                         m_all_stat['type'],
-                                         m_all_stat['natoms_vec'],
-                                         m_all_stat['default_mesh'])
+        self.descrpt.compute_input_stats(all_stat['coord'],
+                                         all_stat['box'],
+                                         all_stat['type'],
+                                         all_stat['natoms_vec'],
+                                         all_stat['default_mesh'])
         if hasattr(self.fitting, 'compute_input_stats'):
             self.fitting.compute_input_stats(all_stat, protection = protection)
 

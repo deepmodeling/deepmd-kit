@@ -402,7 +402,10 @@ class PolarFittingSeA () :
         return 9
 
     def compute_input_stats(self, all_stat, protection = 1e-2):
-        assert('polarizability' in all_stat.keys())
+        if not ('polarizability' in all_stat.keys()):
+            self.avgeig = np.zeros([9])
+            warnings.warn('no polarizability data, cannot do data stat. use zeros as guess')
+            return
         data = all_stat['polarizability']
         all_tmp = []
         for ss in range(len(data)):
