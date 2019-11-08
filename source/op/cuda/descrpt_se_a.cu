@@ -40,6 +40,20 @@ inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort=
     }
 }
 
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 600
+static __inline__ __device__ double atomicAdd(double* address, double val) {
+    unsigned long long int* address_as_ull = (unsigned long long int*)address;
+    unsigned long long int old = *address_as_ull, assumed;
+    do {
+        assumed = old;
+        old = atomicCAS(address_as_ull, assumed,
+                __double_as_longlong(val + __longlong_as_double(assumed)));
+    // Note: uses integer comparison to avoid hang in case of NaN (since NaN != NaN) } while (assumed != old);
+    } while (assumed != old);
+    return __longlong_as_double(old);
+}
+#endif
+
 template <
     typename    Key,
     int         BLOCK_THREADS,
@@ -47,7 +61,7 @@ template <
 __launch_bounds__ (BLOCK_THREADS)
 __global__ void BlockSortKernel(
     Key * d_in,
-    Key * d_out)         // Tile of output
+    Key * d_out)            // Tile of output
 {   
     enum { TILE_SIZE = BLOCK_THREADS * ITEMS_PER_THREAD };
     // Specialize BlockLoad type for our thread block (uses warp-striped loads for coalescing, then transposes in shared memory to a blocked arrangement)
