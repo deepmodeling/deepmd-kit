@@ -72,7 +72,7 @@ void DescrptSeRLauncher(const VALUETYPE* coord,
                             const int* jlist,
                             int* array_int,
                             unsigned long long* array_longlong,
-                            VALUETYPE* array_double,
+                            compute_t* array_double,
                             const VALUETYPE* avg,
                             const VALUETYPE* std,
                             VALUETYPE* descript,
@@ -182,13 +182,13 @@ public:
 	    					     &nlist_tensor));
         
 	    int * ilist = NULL, *jrange = NULL, *jlist = NULL;
-        int *array_int = NULL; unsigned long long *array_longlong = NULL; VALUETYPE *array_double = NULL;
+        int *array_int = NULL; unsigned long long *array_longlong = NULL; compute_t *array_double = NULL;
         cudaErrcheck(cudaMemcpy(&(ilist), 4 + mesh_tensor.flat<int>().data(), sizeof(int *), cudaMemcpyDeviceToHost));
         cudaErrcheck(cudaMemcpy(&(jrange), 8 + mesh_tensor.flat<int>().data(), sizeof(int *), cudaMemcpyDeviceToHost));
         cudaErrcheck(cudaMemcpy(&(jlist), 12 + mesh_tensor.flat<int>().data(), sizeof(int *), cudaMemcpyDeviceToHost));
         cudaErrcheck(cudaMemcpy(&(array_int), 16 + mesh_tensor.flat<int>().data(), sizeof(int *), cudaMemcpyDeviceToHost));
         cudaErrcheck(cudaMemcpy(&(array_longlong), 20 + mesh_tensor.flat<int>().data(), sizeof(unsigned long long *), cudaMemcpyDeviceToHost));
-        cudaErrcheck(cudaMemcpy(&(array_double), 24 + mesh_tensor.flat<int>().data(), sizeof(VALUETYPE *), cudaMemcpyDeviceToHost));
+        cudaErrcheck(cudaMemcpy(&(array_double), 24 + mesh_tensor.flat<int>().data(), sizeof(compute_t *), cudaMemcpyDeviceToHost));
 
         // cudaErrcheck(cudaMemcpy(jlist, host_jlist, sizeof(int) * nloc * MAGIC_NUMBER, cudaMemcpyHostToDevice));
         // Launch computation
