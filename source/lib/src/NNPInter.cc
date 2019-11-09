@@ -5,6 +5,9 @@
 #include "SimulationRegion.h"
 
 #define MAGIC_NUMBER 256
+
+typedef double compute_t;
+
 #ifdef  USE_CUDA_TOOLKIT
 #include "cuda_runtime.h"
 #include <tensorflow/core/public/session.h>
@@ -365,7 +368,7 @@ static int make_input_tensors (
 		    const int                           *   jlist,
 		    int                                 *   array_int,
 		    unsigned long long                  *   array_longlong, 
-		    VALUETYPE                           *   array_double,
+		    compute_t                           *   array_double,
             const vector<VALUETYPE>	            &   fparam_,
             const vector<VALUETYPE>	            &   aparam_,
 		    const NNPAtomMap<VALUETYPE>         &   nnpmap,
@@ -463,7 +466,7 @@ static int make_input_tensors (
     memcpy (&mesh(12), &(jlist), sizeof(int *));
     memcpy (&mesh(16), &(array_int), sizeof(int *));
     memcpy (&mesh(20), &(array_longlong), sizeof(unsigned long long *));
-    memcpy (&mesh(24), &(array_double), sizeof(VALUETYPE *));
+    memcpy (&mesh(24), &(array_double), sizeof(compute_t *));
 
     natoms (0) = nloc;
     natoms (1) = nall;
@@ -679,9 +682,9 @@ void NNPInter::update_nbor(const InternalNeighborList & nlist, const int nloc) {
         cudaErrcheck(cudaMalloc((void**)&array_int, sizeof(int) * (sec_a.size() + nloc * sec_a.size() + nloc)));
         cudaErrcheck(cudaMalloc((void**)&array_longlong, sizeof(unsigned long long) * nloc * MAGIC_NUMBER * 2));
         #ifdef HIGH_PREC
-            cudaErrcheck(cudaMalloc((void**)&array_double, sizeof(double) * nloc * sec_a.back() * 3));
+            cudaErrcheck(cudaMalloc((void**)&array_double, sizeof(compute_t) * nloc * sec_a.back() * 3));
         #else
-            cudaErrcheck(cudaMalloc((void**)&array_double, sizeof(float) * nloc * sec_a.back() * 3));
+            cudaErrcheck(cudaMalloc((void**)&array_double, sizeof(compute_t) * nloc * sec_a.back() * 3));
         #endif
         ilist_size = nlist.ilist.size();
         jrange_size = nlist.jrange.size();
@@ -719,9 +722,9 @@ void NNPInter::update_nbor(const InternalNeighborList & nlist, const int nloc) {
     if (arr_dou_size < nloc * sec_a.back() * 3) {
         cudaErrcheck(cudaFree(array_double));
         #ifdef HIGH_PREC
-            cudaErrcheck(cudaMalloc((void**)&array_double, sizeof(double) * nloc * sec_a.back() * 3));
+            cudaErrcheck(cudaMalloc((void**)&array_double, sizeof(compute_t) * nloc * sec_a.back() * 3));
         #else
-            cudaErrcheck(cudaMalloc((void**)&array_double, sizeof(float) * nloc * sec_a.back() * 3));
+            cudaErrcheck(cudaMalloc((void**)&array_double, sizeof(compute_t) * nloc * sec_a.back() * 3));
         #endif
         arr_dou_size = nloc * sec_a.back() * 3;
     }
@@ -1193,9 +1196,9 @@ void NNPInterModelDevi::update_nbor(const InternalNeighborList & nlist, const in
         cudaErrcheck(cudaMalloc((void**)&array_int, sizeof(int) * (max_sec_size + nloc * max_sec_size + nloc)));
         cudaErrcheck(cudaMalloc((void**)&array_longlong, sizeof(unsigned long long) * nloc * MAGIC_NUMBER * 2));
         #ifdef HIGH_PREC
-            cudaErrcheck(cudaMalloc((void**)&array_double, sizeof(double) * nloc * max_sec_back * 3));
+            cudaErrcheck(cudaMalloc((void**)&array_double, sizeof(compute_t) * nloc * max_sec_back * 3));
         #else
-            cudaErrcheck(cudaMalloc((void**)&array_double, sizeof(float ) * nloc * max_sec_back * 3));
+            cudaErrcheck(cudaMalloc((void**)&array_double, sizeof(compute_t) * nloc * max_sec_back * 3));
         #endif
         ilist_size = nlist.ilist.size();
         jrange_size = nlist.jrange.size();
@@ -1233,9 +1236,9 @@ void NNPInterModelDevi::update_nbor(const InternalNeighborList & nlist, const in
     if (arr_dou_size < nloc * max_sec_back * 3) {
         cudaErrcheck(cudaFree(array_double));
         #ifdef HIGH_PREC
-            cudaErrcheck(cudaMalloc((void**)&array_double, sizeof(double) * nloc * max_sec_back * 3));
+            cudaErrcheck(cudaMalloc((void**)&array_double, sizeof(compute_t) * nloc * max_sec_back * 3));
         #else
-            cudaErrcheck(cudaMalloc((void**)&array_double, sizeof(float) * nloc * max_sec_back * 3));
+            cudaErrcheck(cudaMalloc((void**)&array_double, sizeof(compute_t) * nloc * max_sec_back * 3));
         #endif
         arr_dou_size = nloc * max_sec_back * 3;
     }
