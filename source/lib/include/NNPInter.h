@@ -11,6 +11,7 @@
 #include <string>
 #include "version.h"
 
+typedef double compute_t;
 using namespace tensorflow;
 using namespace std;
 
@@ -109,7 +110,6 @@ public:
 	int dim_fparam () const {assert(inited); return dfparam;};  
 	int dim_aparam () const {assert(inited); return daparam;};
 
-
 private:
   	bool inited; 
   	Session* session;
@@ -129,7 +129,7 @@ private:
 	// copy neighbor list info from host
 	bool init_nbor;
 	std::vector<int> sec_a;
-	VALUETYPE *array_double;
+	compute_t *array_double;
 	unsigned long long *array_longlong;
 	int *ilist, *jrange, *jlist, *array_int;
 	int ilist_size, jrange_size, jlist_size;
@@ -217,7 +217,7 @@ private:
 	// copy neighbor list info from host
 	bool init_nbor;
 	vector<vector<int> > sec;
-	VALUETYPE *array_double;
+	compute_t *array_double;
 	unsigned long long *array_longlong;
 	int *ilist, *jrange, *jlist, *array_int;
 	int ilist_size, jrange_size, jlist_size, arr_int_size, arr_ll_size, arr_dou_size;
