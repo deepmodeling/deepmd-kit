@@ -14,7 +14,7 @@ SET(CMAKE_CXX_STANDARD 11)
 SET(CMAKE_CUDA_STANDARD 11)
 # nvcc -o libdeepmd_op_cuda.so -I/usr/local/cub-1.8.0 -rdc=true -DHIGH_PREC=true -gencode arch=compute_61,code=sm_61 -shared -Xcompiler -fPIC deepmd_op.cu -L/usr/local/cuda/lib64 -lcudadevrt
 # very important here! Include path to cub.
-include_directories(cub)
+include_directories(cub) 
 # nvcc flags
 set(CUDA_NVCC_FLAGS -gencode arch=compute_60,code=sm_60; # Pascal – GP100/Tesla P100 – DGX-1 (Generic Pascal)
                     -gencode arch=compute_61,code=sm_61; # Pascal - GTX 1080, GTX 1070, GTX 1060, GTX 1050, GTX 1030, Titan Xp, Tesla P40, Tesla P4, Discrete GPU on the NVIDIA Drive PX2
