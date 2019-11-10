@@ -410,7 +410,6 @@ class PolarFittingSeA () :
         all_tmp = []
         for ss in range(len(data)):
             tmp = np.concatenate(data[ss], axis = 0)
-            print(tmp.shape)
             tmp = np.reshape(tmp, [-1, 3, 3])
             tmp,_ = np.linalg.eig(tmp)
             tmp = np.absolute(tmp)
@@ -452,9 +451,9 @@ class PolarFittingSeA () :
                     layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
             if self.fit_diag :
                 bavg = np.zeros(self.dim_rot_mat_1)
-                bavg[0] = self.avgeig[0]
-                bavg[1] = self.avgeig[1]
-                bavg[2] = self.avgeig[2]
+                # bavg[0] = self.avgeig[0]
+                # bavg[1] = self.avgeig[1]
+                # bavg[2] = self.avgeig[2]
                 # (nframes x natoms) x naxis
                 final_layer = one_layer(layer, self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, bavg = bavg)
                 # (nframes x natoms) x naxis
@@ -463,9 +462,9 @@ class PolarFittingSeA () :
                 final_layer = tf.matrix_diag(final_layer)                
             else :
                 bavg = np.zeros(self.dim_rot_mat_1*self.dim_rot_mat_1)
-                bavg[0*self.dim_rot_mat_1+0] = self.avgeig[0]
-                bavg[1*self.dim_rot_mat_1+1] = self.avgeig[1]
-                bavg[2*self.dim_rot_mat_1+2] = self.avgeig[2]
+                # bavg[0*self.dim_rot_mat_1+0] = self.avgeig[0]
+                # bavg[1*self.dim_rot_mat_1+1] = self.avgeig[1]
+                # bavg[2*self.dim_rot_mat_1+2] = self.avgeig[2]
                 # (nframes x natoms) x (naxis x naxis)
                 final_layer = one_layer(layer, self.dim_rot_mat_1*self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, bavg = bavg)
                 # (nframes x natoms) x naxis x naxis
