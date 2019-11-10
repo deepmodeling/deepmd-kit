@@ -1,0 +1,6 @@
+[submodule "source/op/cuda/cub"]
+	path = source/op/cuda/cub
+	url = git://github.com/NVlabs/cub.git
+[submodule "/home/LuDh/Github/deepmd-kit/source/op/cuda/cub"]
+	path = /home/LuDh/Github/deepmd-kit/source/op/cuda/cub
+	url = git://github.com/NVlabs/cub.git
