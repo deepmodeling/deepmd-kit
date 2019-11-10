@@ -131,11 +131,11 @@ def _do_work(jdata, run_opt):
                             modifier = modifier)
     data.add_dict(data_requirement)
     # build the model with stats from the first system
-    model.build (data)
+    model.build (data, stop_batch)
     # train the model with the provided systems in a cyclic way
     start_time = time.time()
     cur_batch = 0
-    model.train (data, stop_batch)
+    model.train (data)
     end_time = time.time()
     run_opt.message("finished training\nwall time: %.3f s" % (end_time-start_time))
 
