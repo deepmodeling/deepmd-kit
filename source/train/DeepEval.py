@@ -149,7 +149,8 @@ class DeepTensor(DeepEval) :
     def eval(self,
              coords, 
              cells, 
-             atom_types) :
+             atom_types, 
+             atomic = True) :
         # standarize the shape of inputs
         coords = np.array(coords)
         cells = np.array(cells)
@@ -183,10 +184,13 @@ class DeepTensor(DeepEval) :
             tensor.append(v_out[0])
 
         # reverse map of the outputs
-        tensor = np.array(tensor)
-        tensor = self.reverse_map(np.reshape(tensor, [nframes,-1,self.variable_dof]), sel_imap)
-
-        tensor = np.reshape(tensor, [nframes, len(sel_at), self.variable_dof])
+        if atomic:
+            tensor = np.array(tensor)
+            tensor = self.reverse_map(np.reshape(tensor, [nframes,-1,self.variable_dof]), sel_imap)
+            tensor = np.reshape(tensor, [nframes, len(sel_at), self.variable_dof])
+        else:
+            tensor = np.reshape(tensor, [nframes, self.variable_dof])
+        
         return tensor
 
     

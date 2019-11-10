@@ -105,7 +105,11 @@ endif ()
 
 # define USE_CUDA_TOOLKIT
 if (DEFINED USE_CUDA_TOOLKIT)
-  find_package(CUDA REQUIRED)
+  if (USE_CUDA_TOOLKIT)
+    find_package(CUDA REQUIRED)
+  else()
+    message(STATUS "Will not build nv GPU support")
+  endif()
 else()
   find_package(CUDA QUIET)  
   if (CUDA_FOUND)
@@ -119,6 +123,15 @@ endif()
 if (USE_CUDA_TOOLKIT)
   add_definitions("-DUSE_CUDA_TOOLKIT")
 endif()
+
+# define USE_TTM
+if (NOT DEFINED USE_TTM)
+  set(USE_TTM FALSE)
+endif (NOT DEFINED USE_TTM)
+if (USE_TTM)
+  message(STATUS "Use TTM")
+  set(TTM_DEF "-DUSE_TTM")
+endif (USE_TTM)
 
 # define build type
 if ((NOT DEFINED CMAKE_BUILD_TYPE) OR CMAKE_BUILD_TYPE STREQUAL "")

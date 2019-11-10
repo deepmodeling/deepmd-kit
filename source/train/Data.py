@@ -359,6 +359,14 @@ class DataSets (object):
             self.has_fparam = 0
         else :
             self.has_fparam = -1
+        # check aparam
+        has_aparam = [ os.path.isfile(os.path.join(ii, 'aparam.npy')) for ii in self.dirs ]
+        if any(has_aparam) and (not all(has_aparam)) :
+            raise RuntimeError("system %s: if any set has frame parameter, then all sets should have frame parameter" % sys_path)
+        if all(has_aparam) :
+            self.has_aparam = 0
+        else :
+            self.has_aparam = -1
         # energy norm
         self.eavg = self.stats_energy()
         # load sets
@@ -463,6 +471,12 @@ class DataSets (object):
                 self.has_fparam = data["fparam"].shape[1]
             else :
                 assert self.has_fparam == data["fparam"].shape[1]
+        if self.has_aparam >= 0:
+            data["aparam"] = self.load_data(set_name, "aparam", [nframe, -1])
+            if self.has_aparam == 0 :
+                self.has_aparam = data["aparam"].shape[1] // (ncoord//3)
+            else :
+                assert self.has_aparam == data["aparam"].shape[1] // (ncoord//3)
         data["prop_c"] = np.zeros(5)
         data["prop_c"][0], data["energy"], data["prop_c"][3], data["atom_ener"] \
             = self.load_energy (set_name, nframe, ncoord // 3, "energy", "atom_ener")
@@ -572,4 +586,7 @@ class DataSets (object):
 
     def numb_fparam(self) :
         return self.has_fparam
+
+    def numb_aparam(self) :
+        return self.has_aparam
 

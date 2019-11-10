@@ -79,15 +79,27 @@ private:
   int out_freq;
   string out_file;
   int dim_fparam;
+  int dim_aparam;
   int out_each;
   int out_rel;
 #ifdef HIGH_PREC
   vector<double > fparam;
+  vector<double > aparam;
   double eps;
 #else
   vector<float > fparam;
+  vector<float > aparam;
   float eps;
 #endif
+  void make_ttm_aparam(
+#ifdef HIGH_PREC
+      vector<double > & dparam
+#else
+      vector<float > & dparam
+#endif
+      );
+  bool do_ttm;
+  string ttm_fix_id;
 };
 
 }
