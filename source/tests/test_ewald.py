@@ -54,9 +54,9 @@ class TestEwaldRecp (unittest.TestCase) :
         self.dcoord = np.array(self.dcoord).reshape([self.nframes, 3*self.natoms])
         self.dcharge = np.array(self.dcharge).reshape([self.nframes, self.natoms])
         # place holders
-        self.coord      = tf.placeholder(global_tf_float_precision, [None, self.natoms * 3], name='t_coord')
-        self.charge     = tf.placeholder(global_tf_float_precision, [None, self.natoms], name='t_charge')
-        self.box        = tf.placeholder(global_tf_float_precision, [None, 9], name='t_box')
+        self.coord      = tf.placeholder(global_tf_float_precision, [None], name='t_coord')
+        self.charge     = tf.placeholder(global_tf_float_precision, [None], name='t_charge')
+        self.box        = tf.placeholder(global_tf_float_precision, [None], name='t_box')
         self.nloc    = tf.placeholder(tf.int32, [1], name = "t_nloc")        
 
     def test_py_interface(self):
@@ -69,9 +69,9 @@ class TestEwaldRecp (unittest.TestCase) :
                                    ewald_beta = self.ewald_beta)
         [e, f, v] = sess.run([t_energy, t_force, t_virial], 
                            feed_dict = {
-                               self.coord:  self.dcoord,
-                               self.charge: self.dcharge,
-                               self.box:    self.dbox,
+                               self.coord:  self.dcoord.reshape([-1]),
+                               self.charge: self.dcharge.reshape([-1]),
+                               self.box:    self.dbox.reshape([-1]),
                                self.nloc:   [self.natoms],
                            })
         er = EwaldRecp(self.ewald_h, self.ewald_beta)
@@ -103,9 +103,9 @@ class TestEwaldRecp (unittest.TestCase) :
                                    ewald_beta = self.ewald_beta)
         [force] = sess.run([t_force], 
                            feed_dict = {
-                               self.coord:  self.dcoord,
-                               self.charge: self.dcharge,
-                               self.box:    self.dbox,
+                               self.coord:  self.dcoord.reshape([-1]),
+                               self.charge: self.dcharge.reshape([-1]),
+                               self.box:    self.dbox.reshape([-1]),
                                self.nloc:   [self.natoms],
                            })
         for idx in range(self.natoms):
@@ -116,16 +116,16 @@ class TestEwaldRecp (unittest.TestCase) :
                 dcoordm[:,idx*3+dd] = self.dcoord[:,idx*3+dd] - hh
                 energyp = sess.run([t_energy], 
                                    feed_dict = {
-                                       self.coord:  dcoordp,
-                                       self.charge: self.dcharge,
-                                       self.box:    self.dbox,
+                                       self.coord:  dcoordp.reshape([-1]),
+                                       self.charge: self.dcharge.reshape([-1]),
+                                       self.box:    self.dbox.reshape([-1]),
                                        self.nloc:   [self.natoms],
                                    })                                
                 energym = sess.run([t_energy], 
                                    feed_dict = {
-                                       self.coord:  dcoordm,
-                                       self.charge: self.dcharge,
-                                       self.box:    self.dbox,
+                                       self.coord:  dcoordm.reshape([-1]),
+                                       self.charge: self.dcharge.reshape([-1]),
+                                       self.box:    self.dbox.reshape([-1]),
                                        self.nloc:   [self.natoms],
                                    })
                 c_force = -(energyp[0] - energym[0]) / (2*hh)
@@ -145,9 +145,9 @@ class TestEwaldRecp (unittest.TestCase) :
                                    ewald_beta = self.ewald_beta)
         [virial] = sess.run([t_virial], 
                            feed_dict = {
-                               self.coord:  self.dcoord,
-                               self.charge: self.dcharge,
-                               self.box:    self.dbox,
+                               self.coord:  self.dcoord.reshape([-1]),
+                               self.charge: self.dcharge.reshape([-1]),
+                               self.box:    self.dbox.reshape([-1]),
                                self.nloc:   [self.natoms],
                            })
 
@@ -181,16 +181,16 @@ class TestEwaldRecp (unittest.TestCase) :
                 dcoordm = np.reshape(dcoord3m, [self.nframes,-1])
                 energyp = sess.run([t_energy],
                                    feed_dict = {
-                                       self.coord:  dcoordp,
-                                       self.charge: self.dcharge,
-                                       self.box:    dboxp,
+                                       self.coord:  dcoordp.reshape([-1]),
+                                       self.charge: self.dcharge.reshape([-1]),
+                                       self.box:    dboxp.reshape([-1]),
                                        self.nloc:   [self.natoms],
                                    })
                 energym = sess.run([t_energy], 
                                    feed_dict = {
-                                       self.coord:  dcoordm,
-                                       self.charge: self.dcharge,
-                                       self.box:    dboxm,
+                                       self.coord:  dcoordm.reshape([-1]),
+                                       self.charge: self.dcharge.reshape([-1]),
+                                       self.box:    dboxm.reshape([-1]),
                                        self.nloc:   [self.natoms],
                                    })
                 num_deriv[:,ii,jj] = -(energyp[0] - energym[0]) / (2.*hh)
