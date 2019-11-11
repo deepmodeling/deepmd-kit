@@ -201,14 +201,22 @@ EwaldReciprocal(VALUETYPE &			ener,
   // calculate ener, force and virial
   // firstly loop over particles then loop over m  
 #pragma omp parallel for num_threads(nthreads)
-  for (int mm0 = -KK[0]/2; mm0 <= KK[0]/2; ++mm0){
+  for (int mc = 0; mc < totK; ++mc){
     int thread_id = omp_get_thread_num();
-    int shift0 = (mm0 + KK[0]/2) * stride[1] * stride[2];
-    for (int mm1 = -KK[1]/2; mm1 <= KK[1]/2; ++mm1){
-      int shift1 = (mm1 + KK[1]/2) * stride[2];
-      for (int mm2 = -KK[2]/2; mm2 <= KK[2]/2; ++mm2){
+    int mm0 = mc / (stride[1] * stride[2]);
+    int left = mc - mm0 * stride[1] * stride[2];
+    int mm1 = left / stride[2];
+    int mm2 = left - mm1 * stride[2];
+    mm0 -= KK[0]/2;
+    mm1 -= KK[1]/2;
+    mm2 -= KK[2]/2;
+  // for (int mm0 = -KK[0]/2; mm0 <= KK[0]/2; ++mm0){
+  //   int shift0 = (mm0 + KK[0]/2) * stride[1] * stride[2];
+  //   for (int mm1 = -KK[1]/2; mm1 <= KK[1]/2; ++mm1){
+  //     int shift1 = (mm1 + KK[1]/2) * stride[2];
+  //     for (int mm2 = -KK[2]/2; mm2 <= KK[2]/2; ++mm2){
+  // 	int mc = shift0 + shift1 + mm2 + KK[2]/2;
 	if (mm0 == 0 && mm1 == 0 && mm2 == 0) continue;
-	int mc = shift0 + shift1 + mm2 + KK[2]/2;
 	// \bm m and \vert m \vert^2
 	VALUETYPE rm[3] = {0,0,0};	  
 	rm[0] += mm0 * rec_box[0*3+0];
@@ -243,9 +251,9 @@ EwaldReciprocal(VALUETYPE &			ener,
 	  thread_force[thread_id][ii*3+0] -= rm[0] * cc;
 	  thread_force[thread_id][ii*3+1] -= rm[1] * cc;
 	  thread_force[thread_id][ii*3+2] -= rm[2] * cc;
-	}	  
-      }
-    }
+	}
+    //   }
+    // }
   }
   // reduce thread results
   for (int ii = 0; ii < nthreads; ++ii){
