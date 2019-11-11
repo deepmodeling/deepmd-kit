@@ -27,6 +27,16 @@ class EwaldRecp () :
         self.hh = hh
         self.beta = beta
         self.sess = tf.Session()
+        # place holders
+        self.t_nloc       = tf.placeholder(tf.int32, [1], name = "t_nloc")
+        self.t_coord      = tf.placeholder(global_tf_float_precision, [None], name='t_coord')
+        self.t_charge     = tf.placeholder(global_tf_float_precision, [None], name='t_charge')
+        self.t_box        = tf.placeholder(global_tf_float_precision, [None], name='t_box')
+        
+        self.t_energy, self.t_force, self.t_virial \
+            = op_module.ewald_recp(self.t_coord, self.t_charge, self.t_nloc, self.t_box, 
+                                   ewald_h = self.hh,
+                                   ewald_beta = self.beta)
 
     def eval(self, 
              coord, 
@@ -37,26 +47,17 @@ class EwaldRecp () :
         box = np.array(box)
         nframes = charge.shape[0]
         natoms = charge.shape[1]
-        coord = np.reshape(coord, [nframes, 3*natoms])
-        box = np.reshape(box, [nframes, 9])
-        # place holders
-        t_coord      = tf.placeholder(global_tf_float_precision, [None, natoms * 3], name='t_coord')
-        t_charge     = tf.placeholder(global_tf_float_precision, [None, natoms], name='t_charge')
-        t_box        = tf.placeholder(global_tf_float_precision, [None, 9], name='t_box')
-        t_nloc    = tf.placeholder(tf.int32, [1], name = "t_nloc")
-        
-        t_energy, t_force, t_virial \
-            = op_module.ewald_recp(t_coord, t_charge, t_nloc, t_box, 
-                                   ewald_h = self.hh,
-                                   ewald_beta = self.beta)
+        coord = np.reshape(coord, [nframes * 3 * natoms])
+        charge = np.reshape(charge, [nframes * natoms])
+        box = np.reshape(box, [nframes * 9])
 
         [energy, force, virial] \
-            = self.sess.run([t_energy, t_force, t_virial], 
+            = self.sess.run([self.t_energy, self.t_force, self.t_virial], 
                             feed_dict = {
-                                t_coord:  coord,
-                                t_charge: charge,
-                                t_box:    box,
-                                t_nloc:   [natoms],
+                                self.t_coord:  coord,
+                                self.t_charge: charge,
+                                self.t_box:    box,
+                                self.t_nloc:   [natoms],
                             })
 
         return energy, force, virial

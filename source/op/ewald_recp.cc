@@ -59,22 +59,18 @@ public:
     const Tensor& box_tensor	= context->input(cc++);
 
     // set size of the sample
-    OP_REQUIRES (context, (coord_tensor.shape().dims() == 2),		errors::InvalidArgument ("Dim of coord should be 2"));
-    OP_REQUIRES (context, (charge_tensor.shape().dims() == 2),		errors::InvalidArgument ("Dim of type should be 2"));
+    OP_REQUIRES (context, (coord_tensor.shape().dims() == 1),		errors::InvalidArgument ("Dim of coord should be 1"));
+    OP_REQUIRES (context, (charge_tensor.shape().dims() == 1),		errors::InvalidArgument ("Dim of charge should be 1"));
     OP_REQUIRES (context, (natoms_tensor.shape().dim_size(0) == 1),	errors::InvalidArgument ("size of natoms should be 1"));
-    OP_REQUIRES (context, (box_tensor.shape().dims() == 2),		errors::InvalidArgument ("Dim of box should be 2"));
+    OP_REQUIRES (context, (box_tensor.shape().dims() == 1),		errors::InvalidArgument ("Dim of box should be 1"));
     auto natoms	= natoms_tensor.flat<int>();
     int nloc = natoms(0);
-    int nsamples = coord_tensor.shape().dim_size(0);
+    int nsamples = coord_tensor.shape().dim_size(0) / (nloc * 3);
 
     // check the sizes
-    OP_REQUIRES (context, (nsamples == coord_tensor.shape().dim_size(0)),	errors::InvalidArgument ("number of samples should match"));
-    OP_REQUIRES (context, (nsamples == charge_tensor.shape().dim_size(0)),	errors::InvalidArgument ("number of samples should match"));
-    OP_REQUIRES (context, (nsamples == box_tensor.shape().dim_size(0)),		errors::InvalidArgument ("number of samples should match"));
-
-    OP_REQUIRES (context, (nloc * 3 == coord_tensor.shape().dim_size(1)),	errors::InvalidArgument ("number of atoms should match"));
-    OP_REQUIRES (context, (nloc == charge_tensor.shape().dim_size(1)),		errors::InvalidArgument ("number of atoms should match"));
-    OP_REQUIRES (context, (9 == box_tensor.shape().dim_size(1)),		errors::InvalidArgument ("number of box should be 9"));
+    OP_REQUIRES (context, (nsamples * nloc * 3 == coord_tensor.shape().dim_size(0)),	errors::InvalidArgument ("coord  number of samples should match"));
+    OP_REQUIRES (context, (nsamples * nloc * 1 == charge_tensor.shape().dim_size(0)),	errors::InvalidArgument ("charge number of samples should match"));
+    OP_REQUIRES (context, (nsamples * 9 == box_tensor.shape().dim_size(0)),		errors::InvalidArgument ("box    number of samples should match"));
 
     // Create an output tensor
     TensorShape energy_shape ;
@@ -94,18 +90,21 @@ public:
     Tensor* virial_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(cc++, virial_shape, &virial_tensor));
     
-    auto coord	= coord_tensor	.matrix<VALUETYPE>();
-    auto charge	= charge_tensor	.matrix<VALUETYPE>();
-    auto box	= box_tensor	.matrix<VALUETYPE>();
+    auto coord	= coord_tensor	.flat<VALUETYPE>();
+    auto charge	= charge_tensor	.flat<VALUETYPE>();
+    auto box	= box_tensor	.flat<VALUETYPE>();
     auto energy	= energy_tensor	->flat<VALUETYPE>();
     auto force	= force_tensor	->matrix<VALUETYPE>();
     auto virial	= virial_tensor	->matrix<VALUETYPE>();
 
     for (int kk = 0; kk < nsamples; ++kk){
+      int box_iter = kk * 9;
+      int coord_iter = kk * nloc * 3;
+      int charge_iter = kk * nloc;
       // set region
       boxtensor_t boxt [9] = {0};
       for (int dd = 0; dd < 9; ++dd) {
-	boxt[dd] = box(kk, dd);
+	boxt[dd] = box(box_iter + dd);
       }
       SimulationRegion<boxtensor_t > region;
       region.reinitBox (boxt);
@@ -114,7 +113,7 @@ public:
       vector<boxtensor_t > d_coord3_ (nloc*3);
       for (int ii = 0; ii < nloc; ++ii){
 	for (int dd = 0; dd < 3; ++dd){
-	  d_coord3_[ii*3+dd] = coord(kk, ii*3+dd);
+	  d_coord3_[ii*3+dd] = coord(coord_iter + ii*3+dd);
 	}
 	double inter[3];
 	region.phys2Inter (inter, &d_coord3_[3*ii]);
@@ -130,7 +129,7 @@ public:
 
       // set charge
       vector<VALUETYPE > d_charge (nloc);
-      for (int ii = 0; ii < nloc; ++ii) d_charge[ii] = charge(kk, ii);
+      for (int ii = 0; ii < nloc; ++ii) d_charge[ii] = charge(charge_iter + ii);
 
       // prepare outputs vectors
       VALUETYPE d_ener;
