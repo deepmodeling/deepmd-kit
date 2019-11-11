@@ -683,6 +683,7 @@ NNPInter::~NNPInter() {
     #endif
 }
 
+#ifdef USE_CUDA_TOOLKIT
 void NNPInter::update_nbor(const InternalNeighborList & nlist, const int nloc) {
     if (!init_nbor) {
         sec_a = cum_sum(get_sel_a());
@@ -742,6 +743,7 @@ void NNPInter::update_nbor(const InternalNeighborList & nlist, const int nloc) {
     cudaErrcheck(cudaMemcpy(jrange, &nlist.jrange[0], sizeof(int) * nlist.jrange.size(), cudaMemcpyHostToDevice));
     cudaErrcheck(cudaMemcpy(jlist, &nlist.jlist[0], sizeof(int) * nlist.jlist.size(), cudaMemcpyHostToDevice));
 }
+#endif // USE_CUDA_TOOLKIT
 
 #ifdef USE_CUDA_TOOLKIT
 void
@@ -912,7 +914,7 @@ compute (ENERGYTYPE &			dener,
 {
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
-  NNPAtomMap<VALUETYPE> nnpmap (datype_.begin(), datype_.begin() + nloc);
+  nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
   assert (nloc == nnpmap.get_type().size());
   validate_fparam_aparam(nloc, fparam, aparam);
 
@@ -946,7 +948,7 @@ compute (ENERGYTYPE &			dener,
         nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
         assert (nloc == nnpmap.get_type().size());
 
-        InternalNeighborList nlist;
+        // InternalNeighborList nlist;
         convert_nlist_lmp_internal (nlist, lmp_list);
         shuffle_nlist (nlist, nnpmap);
         std::vector<std::pair<string, Tensor>> input_tensors;
@@ -987,7 +989,7 @@ compute (ENERGYTYPE &			dener,
 	 const vector<VALUETYPE> &	fparam,
 	 const vector<VALUETYPE> &	aparam)
 {
-  NNPAtomMap<VALUETYPE> nnpmap (datype_.begin(), datype_.end());
+  nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.end());
   validate_fparam_aparam(nnpmap.get_type().size(), fparam, aparam);
 
   std::vector<std::pair<string, Tensor>> input_tensors;
@@ -1019,10 +1021,10 @@ compute (ENERGYTYPE &			dener,
     validate_fparam_aparam(nloc, fparam, aparam);
 
     if (ago == 0) {
-        NNPAtomMap<VALUETYPE> nnpmap (datype_.begin(), datype_.begin() + nloc);
+        nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
         assert (nloc == nnpmap.get_type().size());
 
-        InternalNeighborList nlist;
+        // InternalNeighborList nlist;
         convert_nlist_lmp_internal (nlist, lmp_list);
         shuffle_nlist (nlist, nnpmap);
         std::vector<std::pair<string, Tensor>> input_tensors;
@@ -1240,7 +1242,8 @@ get_max_sec()
     }
 }
 
-void 
+#ifdef USE_CUDA_TOOLKIT
+void
 NNPInterModelDevi::
 update_nbor(const InternalNeighborList & nlist, const int nloc) 
 {
@@ -1303,6 +1306,7 @@ update_nbor(const InternalNeighborList & nlist, const int nloc)
     cudaErrcheck(cudaMemcpy(jrange, &nlist.jrange[0], sizeof(int) * nlist.jrange.size(), cudaMemcpyHostToDevice));
     cudaErrcheck(cudaMemcpy(jlist, &nlist.jlist[0], sizeof(int) * nlist.jlist.size(), cudaMemcpyHostToDevice));
 }
+#endif //USE_CUDA_TOOLKIT
 
 void
 NNPInterModelDevi::
@@ -1332,7 +1336,7 @@ compute (ENERGYTYPE &			dener,
 {
   if (numb_models == 0) return;
 
-  NNPAtomMap<VALUETYPE> nnpmap (datype_.begin(), datype_.end());
+  nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.end());
   validate_fparam_aparam(nnpmap.get_type().size(), fparam, aparam);
 
   std::vector<std::pair<string, Tensor>> input_tensors;
@@ -1389,7 +1393,7 @@ compute (vector<ENERGYTYPE> &		all_energy,
         nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
         assert (nloc == nnpmap.get_type().size());
 
-        InternalNeighborList nlist;
+        // InternalNeighborList nlist;
         convert_nlist_lmp_internal (nlist, lmp_list);
         shuffle_nlist (nlist, nnpmap);
         std::vector<std::pair<string, Tensor>> input_tensors;
@@ -1453,7 +1457,7 @@ compute (vector<ENERGYTYPE> &			all_energy,
         nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
         assert (nloc == nnpmap.get_type().size());
 
-        InternalNeighborList nlist;
+        // InternalNeighborList nlist;
         convert_nlist_lmp_internal (nlist, lmp_list);
         shuffle_nlist (nlist, nnpmap);
         std::vector<std::pair<string, Tensor>> input_tensors;

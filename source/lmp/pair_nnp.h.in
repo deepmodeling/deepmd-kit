@@ -82,6 +82,9 @@ private:
   int dim_aparam;
   int out_each;
   int out_rel;
+  bool single_model;
+  bool multi_models_mod_devi;
+  bool multi_models_no_mod_devi;
 #ifdef HIGH_PREC
   vector<double > fparam;
   vector<double > aparam;

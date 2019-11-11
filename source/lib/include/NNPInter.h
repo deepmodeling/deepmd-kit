@@ -127,6 +127,7 @@ private:
   bool init_nbor;
   std::vector<int> sec_a;
   compute_t *array_double;
+  InternalNeighborList nlist;
   NNPAtomMap<VALUETYPE> nnpmap;
   unsigned long long *array_longlong;
   int *ilist, *jrange, *jlist, *array_int;
@@ -135,7 +136,9 @@ private:
 
   // function used for neighbor list copy
   vector<int> get_sel_a() const;
+#ifdef USE_CUDA_TOOLKIT
   void update_nbor(const InternalNeighborList & nlist, const int nloc);
+#endif
 };
 
 class NNPInterModelDevi
@@ -217,8 +220,9 @@ private:
 
   // copy neighbor list info from host
   bool init_nbor;
-  vector<vector<int> > sec;
   compute_t *array_double;
+  vector<vector<int> > sec;
+  InternalNeighborList nlist;
   NNPAtomMap<VALUETYPE> nnpmap;
   unsigned long long *array_longlong;
   int max_sec_size = 0, max_sec_back = 0;
@@ -229,7 +233,9 @@ private:
   void get_max_sec();
   vector<vector<int> > get_sel() const;
   void cum_sum(const std::vector<std::vector<int32> > n_sel);
+#ifdef USE_CUDA_TOOLKIT
   void update_nbor(const InternalNeighborList & nlist, const int nloc);
+#endif
 };
 
 

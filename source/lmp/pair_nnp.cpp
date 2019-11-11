@@ -288,12 +288,20 @@ void PairNNP::compute(int eflag, int vflag)
 #endif
   }
 
-  int ago = numb_models > 1 ? 0 : neighbor->ago;
-
+  // int ago = numb_models > 1 ? 0 : neighbor->ago;
+  int ago = neighbor->ago;
+  if (numb_models > 1) {
+      if (multi_models_no_mod_devi && (out_freq > 0 && update->ntimestep % out_freq == 0)) {
+          ago = 0;
+      }
+      else if (multi_models_mod_devi && (out_freq == 0 || update->ntimestep % out_freq != 0)) {
+        ago = 0;
+      }
+  }
   // compute
-  bool single_model = (numb_models == 1);
-  bool multi_models_no_mod_devi = (numb_models > 1 && (out_freq == 0 || update->ntimestep % out_freq != 0));
-  bool multi_models_mod_devi = (numb_models > 1 && (out_freq > 0 && update->ntimestep % out_freq == 0));
+  single_model = (numb_models == 1);
+  multi_models_no_mod_devi = (numb_models > 1 && (out_freq == 0 || update->ntimestep % out_freq != 0));
+  multi_models_mod_devi = (numb_models > 1 && (out_freq > 0 && update->ntimestep % out_freq == 0));
   if (do_ghost) {
     LammpsNeighborList lmp_list (list->inum, list->ilist, list->numneigh, list->firstneigh);
     if (single_model || multi_models_no_mod_devi) {
