@@ -512,8 +512,8 @@ run_model (ENERGYTYPE &			dener,
     return;
   }
 
+#ifdef USE_CUDA_TOOLKIT
   std::vector<Tensor> output_tensors;
-
   checkStatus (session->Run(input_tensors, 
 			    {"o_energy", "o_force", "o_atom_virial"}, 
 			    {}, 
@@ -548,8 +548,37 @@ run_model (ENERGYTYPE &			dener,
     dvirial[7] += 1.0 * datom_virial[9*ii+7];
     dvirial[8] += 1.0 * datom_virial[9*ii+8];
 	}
+
   dforce_ = dforce;
   nnpmap.backward (dforce_.begin(), dforce.begin(), 3);
+#else 
+  std::vector<Tensor> output_tensors;
+
+  checkStatus (session->Run(input_tensors, 
+			    {"o_energy", "o_force", "o_virial"}, 
+			    {}, 
+			    &output_tensors));
+  
+  Tensor output_e = output_tensors[0];
+  Tensor output_f = output_tensors[1];
+  Tensor output_v = output_tensors[2];
+
+  auto oe = output_e.flat <ENERGYTYPE> ();
+  auto of = output_f.flat <VALUETYPE> ();
+  auto ov = output_v.flat <VALUETYPE> ();
+
+  dener = oe(0);
+  vector<VALUETYPE> dforce (3 * nall);
+  dvirial.resize (9);
+  for (unsigned ii = 0; ii < nall * 3; ++ii){
+    dforce[ii] = of(ii);
+  }
+  for (unsigned ii = 0; ii < 9; ++ii){
+    dvirial[ii] = ov(ii);
+  }
+  dforce_ = dforce;
+  nnpmap.backward (dforce_.begin(), dforce.begin(), 3);
+#endif
 }
 
 static void run_model (ENERGYTYPE   &	dener,
@@ -581,7 +610,7 @@ static void run_model (ENERGYTYPE   &	dener,
         fill(datom_virial_.begin(), datom_virial_.end(), 0.0);
         return;
     }
-
+#ifdef USE_CUDA_TOOLKIT
     std::vector<Tensor> output_tensors;
 
     checkStatus (session->Run(input_tensors, 
@@ -630,6 +659,50 @@ static void run_model (ENERGYTYPE   &	dener,
     nnpmap.backward (dforce_.begin(), dforce.begin(), 3);
     nnpmap.backward (datom_energy_.begin(), datom_energy.begin(), 1);
     nnpmap.backward (datom_virial_.begin(), datom_virial.begin(), 9);
+#else
+    std::vector<Tensor> output_tensors;
+
+    checkStatus (session->Run(input_tensors, 
+	  		    {"o_energy", "o_force", "o_virial", "o_atom_energy", "o_atom_virial"}, 
+	  		    {}, 
+	  		    &output_tensors));
+
+    Tensor output_e = output_tensors[0];
+    Tensor output_f = output_tensors[1];
+    Tensor output_v = output_tensors[2];
+    Tensor output_ae = output_tensors[3];
+    Tensor output_av = output_tensors[4];
+
+    auto oe = output_e.flat <ENERGYTYPE> ();
+    auto of = output_f.flat <VALUETYPE> ();
+    auto ov = output_v.flat <VALUETYPE> ();
+    auto oae = output_ae.flat <VALUETYPE> ();
+    auto oav = output_av.flat <VALUETYPE> ();
+
+    dener = oe(0);
+    vector<VALUETYPE> dforce (3 * nall);
+    vector<VALUETYPE> datom_energy (nall, 0);
+    vector<VALUETYPE> datom_virial (9 * nall);
+    dvirial.resize (9);
+    for (int ii = 0; ii < nall * 3; ++ii) {
+        dforce[ii] = of(ii);
+    }
+    for (int ii = 0; ii < nloc; ++ii) {
+        datom_energy[ii] = oae(ii);
+    }
+    for (int ii = 0; ii < nall * 9; ++ii) {
+        datom_virial[ii] = oav(ii);
+    }
+    for (int ii = 0; ii < 9; ++ii) {
+        dvirial[ii] = ov(ii);
+    }
+    dforce_ = dforce;
+    datom_energy_ = datom_energy;
+    datom_virial_ = datom_virial;
+    nnpmap.backward (dforce_.begin(), dforce.begin(), 3);
+    nnpmap.backward (datom_energy_.begin(), datom_energy.begin(), 1);
+    nnpmap.backward (datom_virial_.begin(), datom_virial.begin(), 9);
+#endif
 }
 
 static void
