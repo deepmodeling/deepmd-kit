@@ -194,7 +194,9 @@ PairNNP::PairNNP(LAMMPS *lmp)
   eps = 0.;
   scale = NULL;
   do_ttm = false;
-
+  single_model = false;
+  multi_models_mod_devi = false;
+  multi_models_no_mod_devi = false;
   // set comm size needed by this Pair
   comm_reverse = 1;
 

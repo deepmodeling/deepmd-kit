@@ -854,6 +854,14 @@ init (const string & model, const int & gpu_rank)
   if (dfparam < 0) dfparam = 0;
   if (daparam < 0) daparam = 0;
   inited = true;
+
+  init_nbor = false;
+  array_int = NULL;
+  array_double = NULL;
+  array_longlong = NULL;
+  ilist = NULL; jrange = NULL; jlist = NULL;
+  ilist_size = 0; jrange_size = 0; jlist_size = 0;
+  arr_int_size = 0; arr_ll_size = 0; arr_dou_size = 0;
 }
 #else
 void
@@ -881,6 +889,14 @@ init (const string & model, const int & gpu_rank)
   // ntypes = get_ntypes();
   // dfparam = get_dfparam();
   inited = true;
+
+  init_nbor = false;
+  array_int = NULL;
+  array_double = NULL;
+  array_longlong = NULL;
+  ilist = NULL; jrange = NULL; jlist = NULL;
+  ilist_size = 0; jrange_size = 0; jlist_size = 0;
+  arr_int_size = 0; arr_ll_size = 0; arr_dou_size = 0;
 }
 #endif
 
@@ -1015,6 +1031,7 @@ compute (ENERGYTYPE &			dener,
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
     validate_fparam_aparam(nloc, fparam, aparam);
+    std::vector<std::pair<string, Tensor>> input_tensors;
 
     // agp == 0 means that the LAMMPS nbor list has been updated
     if (ago == 0) {
@@ -1024,7 +1041,6 @@ compute (ENERGYTYPE &			dener,
         // InternalNeighborList nlist;
         convert_nlist_lmp_internal (nlist, lmp_list);
         shuffle_nlist (nlist, nnpmap);
-        std::vector<std::pair<string, Tensor>> input_tensors;
         #ifdef USE_CUDA_TOOLKIT
             update_nbor(nlist, nloc);
             int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, array_int, array_longlong, array_double, fparam, aparam, nnpmap, nghost);
@@ -1032,20 +1048,17 @@ compute (ENERGYTYPE &			dener,
             int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
         #endif
 
-        assert (nloc == ret);
-        run_model (dener, dforce_, dvirial, session, input_tensors, nnpmap, nghost);
     }
     else {
-        std::vector<std::pair<string, Tensor>> input_tensors;
         #ifdef USE_CUDA_TOOLKIT
             int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, array_int, array_longlong, array_double, fparam, aparam, nnpmap, nghost);
         #else
             int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
         #endif
 
-        assert (nloc == ret);
-        run_model (dener, dforce_, dvirial, session, input_tensors, nnpmap, nghost);
     }
+    assert (nloc == ret);
+    run_model (dener, dforce_, dvirial, session, input_tensors, nnpmap, nghost);
 }
 
 
@@ -1092,6 +1105,7 @@ compute (ENERGYTYPE &			dener,
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
     validate_fparam_aparam(nloc, fparam, aparam);
+    std::vector<std::pair<string, Tensor>> input_tensors;
 
     if (ago == 0) {
         nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
@@ -1100,7 +1114,6 @@ compute (ENERGYTYPE &			dener,
         // InternalNeighborList nlist;
         convert_nlist_lmp_internal (nlist, lmp_list);
         shuffle_nlist (nlist, nnpmap);
-        std::vector<std::pair<string, Tensor>> input_tensors;
         #ifdef USE_CUDA_TOOLKIT
             update_nbor(nlist, nloc);
             int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, array_int, array_longlong, array_double, fparam, aparam, nnpmap, nghost);
@@ -1108,20 +1121,17 @@ compute (ENERGYTYPE &			dener,
             int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
         #endif
 
-        assert (nloc == ret);
-        run_model (dener, dforce_, dvirial, datom_energy_, datom_virial_, session, input_tensors, nnpmap, nghost);
     }
     else {
-        std::vector<std::pair<string, Tensor>> input_tensors;
         #ifdef USE_CUDA_TOOLKIT
             int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, array_int, array_longlong, array_double, fparam, aparam, nnpmap, nghost);
         #else
             int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
         #endif
 
-        assert (nloc == ret);
-        run_model (dener, dforce_, dvirial, datom_energy_, datom_virial_, session, input_tensors, nnpmap, nghost);
     }
+    assert (nloc == ret);
+    run_model (dener, dforce_, dvirial, datom_energy_, datom_virial_, session, input_tensors, nnpmap, nghost);
 }
 
 
@@ -1203,6 +1213,14 @@ init (const vector<string> & models, const int & gpu_rank)
   // cell_size = rcut;
   // ntypes = get_ntypes();
   inited = true;
+
+  init_nbor = false;
+  array_int = NULL;
+  array_double = NULL;
+  array_longlong = NULL;
+  ilist = NULL; jrange = NULL; jlist = NULL;
+  ilist_size = 0; jrange_size = 0; jlist_size = 0;
+  arr_int_size = 0; arr_ll_size = 0; arr_dou_size = 0;
 }
 #else
 void
@@ -1232,6 +1250,14 @@ init (const vector<string> & models, const int & gpu_rank)
   // cell_size = rcut;
   // ntypes = get_ntypes();
   inited = true;
+
+  init_nbor = false;
+  array_int = NULL;
+  array_double = NULL;
+  array_longlong = NULL;
+  ilist = NULL; jrange = NULL; jlist = NULL;
+  ilist_size = 0; jrange_size = 0; jlist_size = 0;
+  arr_int_size = 0; arr_ll_size = 0; arr_dou_size = 0;
 }
 #endif
 
@@ -1460,6 +1486,7 @@ compute (vector<ENERGYTYPE> &		all_energy,
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
   validate_fparam_aparam(nloc, fparam, aparam);
+  std::vector<std::pair<string, Tensor>> input_tensors;
 
     // agp == 0 means that the LAMMPS nbor list has been updated
     if (ago == 0) {
@@ -1469,7 +1496,6 @@ compute (vector<ENERGYTYPE> &		all_energy,
         // InternalNeighborList nlist;
         convert_nlist_lmp_internal (nlist, lmp_list);
         shuffle_nlist (nlist, nnpmap);
-        std::vector<std::pair<string, Tensor>> input_tensors;
         #ifdef USE_CUDA_TOOLKIT
             update_nbor(nlist, nloc);
             int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, array_int, array_longlong, array_double, fparam, aparam, nnpmap, nghost);
@@ -1477,30 +1503,21 @@ compute (vector<ENERGYTYPE> &		all_energy,
             int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
         #endif
 
-        all_energy.resize (numb_models);
-        all_force.resize (numb_models);
-        all_virial.resize (numb_models);
-        assert (nloc == ret);
-        for (unsigned ii = 0; ii < numb_models; ++ii) {
-            run_model (all_energy[ii], all_force[ii], all_virial[ii], sessions[ii], input_tensors, nnpmap, nghost);
-        }
     }
     else {
-        std::vector<std::pair<string, Tensor>> input_tensors;
         #ifdef USE_CUDA_TOOLKIT
             int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, array_int, array_longlong, array_double, fparam, aparam, nnpmap, nghost);
         #else
             int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
         #endif
 
-        all_energy.resize (numb_models);
-        all_force.resize (numb_models);
-        all_virial.resize (numb_models);
-
-        assert (nloc == ret);
-        for (unsigned ii = 0; ii < numb_models; ++ii) {
-            run_model (all_energy[ii], all_force[ii], all_virial[ii], sessions[ii], input_tensors, nnpmap, nghost);
-        }
+    }
+    all_energy.resize (numb_models);
+    all_force.resize (numb_models);
+    all_virial.resize (numb_models)
+    assert (nloc == ret);
+    for (unsigned ii = 0; ii < numb_models; ++ii) {
+        run_model (all_energy[ii], all_force[ii], all_virial[ii], sessions[ii], input_tensors, nnpmap, nghost);
     }
 }
 
@@ -1524,6 +1541,7 @@ compute (vector<ENERGYTYPE> &			all_energy,
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
   validate_fparam_aparam(nloc, fparam, aparam);
+  std::vector<std::pair<string, Tensor>> input_tensors;
 
     // agp == 0 means that the LAMMPS nbor list has been updated
     if (ago == 0) {
@@ -1533,7 +1551,6 @@ compute (vector<ENERGYTYPE> &			all_energy,
         // InternalNeighborList nlist;
         convert_nlist_lmp_internal (nlist, lmp_list);
         shuffle_nlist (nlist, nnpmap);
-        std::vector<std::pair<string, Tensor>> input_tensors;
         #ifdef USE_CUDA_TOOLKIT
             update_nbor(nlist, nloc);
             int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, array_int, array_longlong, array_double, fparam, aparam, nnpmap, nghost);
@@ -1541,16 +1558,6 @@ compute (vector<ENERGYTYPE> &			all_energy,
             int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
         #endif
         
-        all_energy.resize (numb_models);
-        all_force .resize (numb_models);
-        all_virial.resize (numb_models);
-        all_atom_energy.resize (numb_models);
-        all_atom_virial.resize (numb_models); 
-        assert (nloc == ret);
-        
-        for (unsigned ii = 0; ii < numb_models; ++ii) {
-            run_model (all_energy[ii], all_force[ii], all_virial[ii], all_atom_energy[ii], all_atom_virial[ii], sessions[ii], input_tensors, nnpmap, nghost);
-        }
     }
     else {
         std::vector<std::pair<string, Tensor>> input_tensors;
@@ -1560,15 +1567,15 @@ compute (vector<ENERGYTYPE> &			all_energy,
             int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
         #endif
 
-        all_energy.resize (numb_models);
-        all_force .resize (numb_models);
-        all_virial.resize (numb_models);
-        all_atom_energy.resize (numb_models);
-        all_atom_virial.resize (numb_models); 
-        assert (nloc == ret);
-        for (unsigned ii = 0; ii < numb_models; ++ii) {
-            run_model (all_energy[ii], all_force[ii], all_virial[ii], all_atom_energy[ii], all_atom_virial[ii], sessions[ii], input_tensors, nnpmap, nghost);
-        }
+    }
+    all_energy.resize (numb_models);
+    all_force .resize (numb_models);
+    all_virial.resize (numb_models);
+    all_atom_energy.resize (numb_models);
+    all_atom_virial.resize (numb_models); 
+    assert (nloc == ret);
+    for (unsigned ii = 0; ii < numb_models; ++ii) {
+        run_model (all_energy[ii], all_force[ii], all_virial[ii], all_atom_energy[ii], all_atom_virial[ii], sessions[ii], input_tensors, nnpmap, nghost);
     }
 }
 
