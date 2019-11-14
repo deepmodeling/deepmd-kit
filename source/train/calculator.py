@@ -35,13 +35,13 @@ class DP(Calculator):
     def __init__(self, model, label="DP", **kwargs):
         Calculator.__init__(self, label=label, **kwargs)
         self.dp = DeepPot(model)
+        self.type_dict = dict(zip(self.dp.get_type_map(), range(self.dp.get_ntypes())))
 
     def calculate(self, atoms=None, properties=["energy", "forces", "stress"], system_changes=all_changes):
         coord = atoms.get_positions().reshape([1, -1])
         cell = atoms.get_cell().reshape([1, -1])
         symbols = atoms.get_chemical_symbols()
-        type_dict = dict(zip(self.dp.get_type_map(), range(self.dp.get_ntypes())))
-        atype = [type_dict[k] for k in symbols]
+        atype = [self.type_dict[k] for k in symbols]
         e, f, v = self.dp.eval(coord, cell, atype)
         self.results['energy'] = e[0]
         self.results['forces'] = f[0]
