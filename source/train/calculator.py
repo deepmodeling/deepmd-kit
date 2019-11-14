@@ -10,7 +10,7 @@ water = Atoms('H2O',
                          (1.9575, 1, 1),
                          (1., 1., 1.)],
               cell=[100, 100, 100],
-              calculator=DP(model="frozen_model.pb", type_map=['O', 'H']))
+              calculator=DP(model="frozen_model.pb"))
 print(water.get_potential_energy())
 print(water.get_forces())
 ```
@@ -25,23 +25,22 @@ print(water.get_positions())
 """
 
 from ase.calculators.calculator import Calculator, all_changes
-import deepmd.DeepPot as DPinference
+import deepmd.DeepPot as DeepPot
 
 
 class DP(Calculator):
     name = "DP"
     implemented_properties = ["energy", "forces", "stress"]
 
-    def __init__(self, model, type_map, label="DP", **kwargs):
+    def __init__(self, model, label="DP", **kwargs):
         Calculator.__init__(self, label=label, **kwargs)
-        self.dp = DPinference(model)
-        self.type_map = type_map
+        self.dp = DeepPot(model)
 
     def calculate(self, atoms=None, properties=["energy", "forces", "stress"], system_changes=all_changes):
         coord = atoms.get_positions().reshape([1, -1])
         cell = atoms.get_cell().reshape([1, -1])
         symbols = atoms.get_chemical_symbols()
-        type_dict = dict(zip(self.type_map, range(len(self.type_map))))
+        type_dict = dict(zip(self.dp.get_type_map(), range(self.dp.get_ntypes())))
         atype = [type_dict[k] for k in symbols]
         e, f, v = self.dp.eval(coord, cell, atype)
         self.results['energy'] = e[0]
