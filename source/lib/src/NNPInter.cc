@@ -1043,20 +1043,13 @@ compute (ENERGYTYPE &			dener,
         shuffle_nlist (nlist, nnpmap);
         #ifdef USE_CUDA_TOOLKIT
             update_nbor(nlist, nloc);
-            int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, array_int, array_longlong, array_double, fparam, aparam, nnpmap, nghost);
-        #else
-            int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
         #endif
-
     }
-    else {
-        #ifdef USE_CUDA_TOOLKIT
-            int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, array_int, array_longlong, array_double, fparam, aparam, nnpmap, nghost);
-        #else
-            int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
-        #endif
-
-    }
+    #ifdef USE_CUDA_TOOLKIT
+        int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, array_int, array_longlong, array_double, fparam, aparam, nnpmap, nghost);
+    #else
+        int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
+    #endif
     assert (nloc == ret);
     run_model (dener, dforce_, dvirial, session, input_tensors, nnpmap, nghost);
 }
@@ -1116,20 +1109,14 @@ compute (ENERGYTYPE &			dener,
         shuffle_nlist (nlist, nnpmap);
         #ifdef USE_CUDA_TOOLKIT
             update_nbor(nlist, nloc);
-            int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, array_int, array_longlong, array_double, fparam, aparam, nnpmap, nghost);
-        #else
-            int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
         #endif
 
     }
-    else {
-        #ifdef USE_CUDA_TOOLKIT
-            int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, array_int, array_longlong, array_double, fparam, aparam, nnpmap, nghost);
-        #else
-            int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
-        #endif
-
-    }
+    #ifdef USE_CUDA_TOOLKIT
+        int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, array_int, array_longlong, array_double, fparam, aparam, nnpmap, nghost);
+    #else
+        int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
+    #endif
     assert (nloc == ret);
     run_model (dener, dforce_, dvirial, datom_energy_, datom_virial_, session, input_tensors, nnpmap, nghost);
 }
@@ -1498,23 +1485,18 @@ compute (vector<ENERGYTYPE> &		all_energy,
         shuffle_nlist (nlist, nnpmap);
         #ifdef USE_CUDA_TOOLKIT
             update_nbor(nlist, nloc);
-            int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, array_int, array_longlong, array_double, fparam, aparam, nnpmap, nghost);
-        #else
-            int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
         #endif
 
     }
-    else {
-        #ifdef USE_CUDA_TOOLKIT
-            int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, array_int, array_longlong, array_double, fparam, aparam, nnpmap, nghost);
-        #else
-            int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
-        #endif
+    #ifdef USE_CUDA_TOOLKIT
+        int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, array_int, array_longlong, array_double, fparam, aparam, nnpmap, nghost);
+    #else
+        int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
+    #endif
 
-    }
     all_energy.resize (numb_models);
     all_force.resize (numb_models);
-    all_virial.resize (numb_models)
+    all_virial.resize (numb_models);
     assert (nloc == ret);
     for (unsigned ii = 0; ii < numb_models; ++ii) {
         run_model (all_energy[ii], all_force[ii], all_virial[ii], sessions[ii], input_tensors, nnpmap, nghost);
@@ -1553,21 +1535,15 @@ compute (vector<ENERGYTYPE> &			all_energy,
         shuffle_nlist (nlist, nnpmap);
         #ifdef USE_CUDA_TOOLKIT
             update_nbor(nlist, nloc);
-            int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, array_int, array_longlong, array_double, fparam, aparam, nnpmap, nghost);
-        #else
-            int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
         #endif
         
     }
-    else {
-        std::vector<std::pair<string, Tensor>> input_tensors;
-        #ifdef USE_CUDA_TOOLKIT
-            int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, array_int, array_longlong, array_double, fparam, aparam, nnpmap, nghost);
-        #else
-            int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
-        #endif
+    #ifdef USE_CUDA_TOOLKIT
+        int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, array_int, array_longlong, array_double, fparam, aparam, nnpmap, nghost);
+    #else
+        int ret = make_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
+    #endif
 
-    }
     all_energy.resize (numb_models);
     all_force .resize (numb_models);
     all_virial.resize (numb_models);
