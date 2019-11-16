@@ -1,53 +1,6 @@
 #pragma once
 
-#include "tensorflow/core/public/session.h"
-#include "tensorflow/core/platform/env.h"
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-
-#include <vector>
-#include "version.h"
-
-using namespace tensorflow;
-using namespace std;
-
-#ifdef HIGH_PREC
-typedef double VALUETYPE;
-typedef double ENERGYTYPE;
-#else 
-typedef float  VALUETYPE;
-typedef double ENERGYTYPE;
-#endif
-
-struct LammpsNeighborList 
-{
-  int inum;
-  const int * ilist;
-  const int * numneigh;
-  const int *const* firstneigh;
-  LammpsNeighborList (int inum_, 
-		      const int * ilist_,
-		      const int * numneigh_, 
-		      const int *const* firstneigh_) 
-      : inum(inum_), ilist(ilist_), numneigh(numneigh_), firstneigh(firstneigh_)
-      {
-      }
-};
-
-struct InternalNeighborList 
-{
-  int * pilist;
-  int * pjrange;
-  int * pjlist;
-  vector<int > ilist;
-  vector<int > jrange;
-  vector<int > jlist;
-  void clear () {ilist.clear(); jrange.clear(); jlist.clear();}
-  void make_ptrs () {
-    pilist = &ilist[0]; pjrange = &jrange[0]; pjlist = &jlist[0];
-  }
-};
+#include "common.h"
 
 class NNPInter 
 {

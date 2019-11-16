@@ -345,6 +345,9 @@ class TensorModel() :
             t_mt = tf.constant(self.model_type, 
                                name = 'model_type', 
                                dtype = tf.string)
+            t_od = tf.constant(self.get_out_size(), 
+                               name = 'output_dim', 
+                               dtype = tf.int32)
 
         coord = tf.reshape (coord_, [-1, natoms[1] * 3])
         atype = tf.reshape (atype_, [-1, natoms[1]])
