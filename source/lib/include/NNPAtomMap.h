@@ -8,6 +8,7 @@ template <typename VALUETYPE>
 class NNPAtomMap 
 {
 public:
+  NNPAtomMap();
   NNPAtomMap(const vector<int >::const_iterator in_begin, 
 	     const vector<int >::const_iterator in_end);
   void forward (typename vector<VALUETYPE >::iterator out,

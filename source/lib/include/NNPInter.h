@@ -5,10 +5,11 @@
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/shape_inference.h"
-
+#include "NNPAtomMap.h"
 #include <vector>
 #include "version.h"
 
+typedef double compute_t;
 using namespace tensorflow;
 using namespace std;
 
@@ -53,6 +54,7 @@ class NNPInter
 {
 public:
   NNPInter () ;
+  ~NNPInter() ;
   NNPInter  (const string & model, const int & gpu_rank = 0);
   void init (const string & model, const int & gpu_rank = 0);
   void print_summary(const string &pre) const;
@@ -74,6 +76,7 @@ public:
 		const vector<VALUETYPE> &	box, 
 		const int			nghost,
 		const LammpsNeighborList &	lmp_list,
+		const int				&   ago,
 		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>(),
 		const vector<VALUETYPE>	&	aparam = vector<VALUETYPE>());
   void compute (ENERGYTYPE &			ener,
@@ -96,6 +99,7 @@ public:
 		const vector<VALUETYPE> &	box, 
 		const int			nghost, 
 		const LammpsNeighborList &	lmp_list,
+		const int 				&   ago,
 		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>(),
 		const vector<VALUETYPE>	&	aparam = vector<VALUETYPE>());
   VALUETYPE cutoff () const {assert(inited); return rcut;};
@@ -118,12 +122,30 @@ private:
   void validate_fparam_aparam(const int & nloc,
 			      const vector<VALUETYPE> &fparam,
 			      const vector<VALUETYPE> &aparam)const ;
+
+  // copy neighbor list info from host
+  bool init_nbor;
+  std::vector<int> sec_a;
+  compute_t *array_double;
+  InternalNeighborList nlist;
+  NNPAtomMap<VALUETYPE> nnpmap;
+  unsigned long long *array_longlong;
+  int *ilist, *jrange, *jlist, *array_int;
+  int ilist_size, jrange_size, jlist_size;
+  int arr_int_size, arr_ll_size, arr_dou_size;
+
+  // function used for neighbor list copy
+  vector<int> get_sel_a() const;
+#ifdef USE_CUDA_TOOLKIT
+  void update_nbor(const InternalNeighborList & nlist, const int nloc);
+#endif
 };
 
 class NNPInterModelDevi
 {
 public:
   NNPInterModelDevi () ;
+  ~NNPInterModelDevi() ;
   NNPInterModelDevi  (const vector<string> & models, const int & gpu_rank = 0);
   void init (const vector<string> & models, const int & gpu_rank = 0);
 public:
@@ -144,6 +166,7 @@ public:
 		const vector<VALUETYPE> &	box,
 		const int			nghost,
 		const LammpsNeighborList &	lmp_list,
+		const int 				&   ago,
 		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>(),
 		const vector<VALUETYPE>	&	aparam = vector<VALUETYPE>());
   void compute (vector<ENERGYTYPE> &		all_ener,
@@ -156,6 +179,7 @@ public:
 		const vector<VALUETYPE> &	box,
 		const int			nghost,
 		const LammpsNeighborList &	lmp_list,
+		const int 				&   ago,
 		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>(),
 		const vector<VALUETYPE>	&	aparam = vector<VALUETYPE>());
   VALUETYPE cutoff () const {assert(inited); return rcut;};
@@ -193,6 +217,25 @@ private:
   void validate_fparam_aparam(const int & nloc,
 			      const vector<VALUETYPE> &fparam,
 			      const vector<VALUETYPE> &aparam)const ;
+
+  // copy neighbor list info from host
+  bool init_nbor;
+  compute_t *array_double;
+  vector<vector<int> > sec;
+  InternalNeighborList nlist;
+  NNPAtomMap<VALUETYPE> nnpmap;
+  unsigned long long *array_longlong;
+  int max_sec_size = 0, max_sec_back = 0;
+  int *ilist, *jrange, *jlist, *array_int;
+  int ilist_size, jrange_size, jlist_size, arr_int_size, arr_ll_size, arr_dou_size;
+
+  // function used for nborlist copy
+  void get_max_sec();
+  vector<vector<int> > get_sel() const;
+  void cum_sum(const std::vector<std::vector<int32> > n_sel);
+#ifdef USE_CUDA_TOOLKIT
+  void update_nbor(const InternalNeighborList & nlist, const int nloc);
+#endif
 };
 
 
