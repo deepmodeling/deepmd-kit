@@ -129,7 +129,11 @@ class DipoleChargeModifier(DeepDipole):
                                           self.t_natoms,
                                           n_a_sel = self.nnei_a,
                                           n_r_sel = self.nnei_r)
+        force = tf.identity(force, name='o_dm_force')
+        virial = tf.identity(virial, name='o_dm_virial')
+        atom_virial = tf.identity(atom_virial, name='o_dm_av')
         return force, virial, atom_virial
+
 
     def _enrich(self, dipole, dof = 3):
         coll = []                

@@ -5,7 +5,7 @@
 class DeepTensor
 {
 public:
-  DeepTensor () ;
+  DeepTensor ();
   DeepTensor  (const string & model, const int & gpu_rank = 0);
   void init (const string & model, const int & gpu_rank = 0);
   void print_summary(const string &pre) const;
@@ -23,6 +23,8 @@ public:
 		const LammpsNeighborList &	lmp_list);
   VALUETYPE cutoff () const {assert(inited); return rcut;};
   int numb_types () const {assert(inited); return ntypes;};
+  int output_dim () const {assert(inited); return odim;};
+  vector<int> sel_types () const {assert(inited); return sel_type;};
 private:
   Session* session;
   int num_intra_nthreads, num_inter_nthreads;
@@ -33,11 +35,24 @@ private:
   int ntypes;
   string model_type;
   int odim;
+  vector<int> sel_type;
   template<class VT> VT get_scalar(const string & name) const;
+  template<class VT> vector<VT> get_vector(const string & name) const;
   void run_model (vector<VALUETYPE> &		d_tensor_,
 		  Session *			session, 
 		  const std::vector<std::pair<string, Tensor>> & input_tensors,
 		  const NNPAtomMap<VALUETYPE> &	nnpmap, 
 		  const int			nghost = 0);
+  void compute_inner (vector<VALUETYPE> &	value,
+		      const vector<VALUETYPE> &	coord,
+		      const vector<int> &	atype,
+		      const vector<VALUETYPE> &	box,
+		      const int			nghost = 0);
+  void compute_inner (vector<VALUETYPE> &	value,
+		      const vector<VALUETYPE> &	coord,
+		      const vector<int> &	atype,
+		      const vector<VALUETYPE> &	box, 
+		      const int			nghost,
+		      const InternalNeighborList&lmp_list);
 };
 

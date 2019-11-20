@@ -184,8 +184,8 @@ init (const string & model, const int & gpu_rank)
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
   dfparam = get_scalar<int>("fitting_attr/dfparam");
   daparam = get_scalar<int>("fitting_attr/daparam");
-  assert(rcut == get_rcut());
-  assert(ntypes == get_ntypes());
+  // assert(rcut == get_rcut());
+  // assert(ntypes == get_ntypes());
   if (dfparam < 0) dfparam = 0;
   if (daparam < 0) daparam = 0;
   inited = true;
@@ -207,8 +207,8 @@ init (const string & model, const int & gpu_rank)
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
   dfparam = get_scalar<int>("fitting_attr/dfparam");
   daparam = get_scalar<int>("fitting_attr/daparam");
-  assert(rcut == get_rcut());
-  assert(ntypes == get_ntypes());
+  // assert(rcut == get_rcut());
+  // assert(ntypes == get_ntypes());
   if (dfparam < 0) dfparam = 0;
   if (daparam < 0) daparam = 0;
   // rcut = get_rcut();
@@ -293,7 +293,44 @@ compute (ENERGYTYPE &			dener,
 	 const int			nghost,
 	 const LammpsNeighborList &	lmp_list,
 	 const vector<VALUETYPE> &	fparam,
-	 const vector<VALUETYPE> &	aparam)
+	 const vector<VALUETYPE> &	aparam_)
+{
+  vector<VALUETYPE> dcoord, dforce, aparam;
+  vector<int> datype, fwd_map, bkw_map;
+  int nghost_real;
+  select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, nghost, ntypes);
+  // resize to nall_real
+  dcoord.resize(bkw_map.size() * 3);
+  datype.resize(bkw_map.size());
+  // fwd map
+  select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3);
+  select_map<int>(datype, datype_, fwd_map, 1);
+  // aparam
+  if (daparam > 0){
+    aparam.resize(bkw_map.size());
+    select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam);
+  }
+  // internal nlist
+  InternalNeighborList nlist;
+  convert_nlist_lmp_internal(nlist, lmp_list);
+  shuffle_nlist_exclude_empty(nlist, fwd_map);  
+  compute_inner(dener, dforce, dvirial, dcoord, datype, dbox, nghost_real, nlist, fparam, aparam);
+  // bkw map
+  select_map<VALUETYPE>(dforce_, dforce, bkw_map, 3);
+}
+
+void
+NNPInter::
+compute_inner (ENERGYTYPE &			dener,
+	       vector<VALUETYPE> &		dforce_,
+	       vector<VALUETYPE> &		dvirial,
+	       const vector<VALUETYPE> &	dcoord_,
+	       const vector<int> &		datype_,
+	       const vector<VALUETYPE> &	dbox, 
+	       const int			nghost,
+	       const InternalNeighborList &	nlist_,
+	       const vector<VALUETYPE> &	fparam,
+	       const vector<VALUETYPE> &	aparam)
 {
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
@@ -301,9 +338,10 @@ compute (ENERGYTYPE &			dener,
   assert (nloc == nnpmap.get_type().size());
   validate_fparam_aparam(nloc, fparam, aparam);
 
-  InternalNeighborList nlist;
-  convert_nlist_lmp_internal (nlist, lmp_list);
+  InternalNeighborList nlist(nlist_);
   shuffle_nlist (nlist, nnpmap);
+  // convert_nlist_lmp_internal (nlist, lmp_list);
+  // shuffle_nlist (nlist, nnpmap);
 
   std::vector<std::pair<string, Tensor>> input_tensors;
   int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);

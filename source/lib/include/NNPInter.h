@@ -61,8 +61,8 @@ private:
   GraphDef graph_def;
   bool inited;
   template<class VT> VT get_scalar(const string & name) const;
-  VALUETYPE get_rcut () const;
-  int get_ntypes () const;
+  // VALUETYPE get_rcut () const;
+  // int get_ntypes () const;
   VALUETYPE rcut;
   VALUETYPE cell_size;
   int ntypes;
@@ -71,6 +71,16 @@ private:
   void validate_fparam_aparam(const int & nloc,
 			      const vector<VALUETYPE> &fparam,
 			      const vector<VALUETYPE> &aparam)const ;
+  void compute_inner (ENERGYTYPE &			ener,
+		vector<VALUETYPE> &		force,
+		vector<VALUETYPE> &		virial,
+		const vector<VALUETYPE> &	coord,
+		const vector<int> &		atype,
+		const vector<VALUETYPE> &	box, 
+		const int			nghost,
+		const InternalNeighborList &	lmp_list,
+		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>(),
+		const vector<VALUETYPE>	&	aparam = vector<VALUETYPE>());
 };
 
 class NNPInterModelDevi
@@ -136,8 +146,8 @@ private:
   vector<GraphDef> graph_defs;
   bool inited;
   template<class VT> VT get_scalar(const string name) const;
-  VALUETYPE get_rcut () const;
-  int get_ntypes () const;
+  // VALUETYPE get_rcut () const;
+  // int get_ntypes () const;
   VALUETYPE rcut;
   VALUETYPE cell_size;
   int ntypes;

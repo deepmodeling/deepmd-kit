@@ -3,13 +3,15 @@
 import os,sys
 import numpy as np
 from deepmd.env import tf
+from deepmd.common import make_default_mesh
 from deepmd.DeepEval import DeepEval
 
 class DeepPot (DeepEval) :
     def __init__(self, 
                  model_file) :
-        self.model_file = model_file
-        self.graph = self.load_graph (self.model_file)
+        DeepEval.__init__(self, model_file)
+        # self.model_file = model_file
+        # self.graph = self.load_graph (self.model_file)
         # checkout input/output tensors from graph
         self.t_ntypes = self.graph.get_tensor_by_name ('load/descrpt_attr/ntypes:0')
         self.t_rcut   = self.graph.get_tensor_by_name ('load/descrpt_attr/rcut:0')
@@ -110,7 +112,7 @@ class DeepPot (DeepEval) :
         # make natoms_vec and default_mesh
         natoms_vec = self.make_natoms_vec(atom_types)
         assert(natoms_vec[0] == natoms)
-        default_mesh = self.make_default_mesh(cells)
+        default_mesh = make_default_mesh(cells)
 
         # evaluate
         energy = []
@@ -120,7 +122,7 @@ class DeepPot (DeepEval) :
         av = []
         feed_dict_test = {}
         feed_dict_test[self.t_natoms] = natoms_vec
-        feed_dict_test[self.t_mesh  ] = default_mesh
+        feed_dict_test[self.t_mesh  ] = default_mesh[0]
         feed_dict_test[self.t_type  ] = atom_types
         t_out = [self.t_energy, 
                  self.t_force, 

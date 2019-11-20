@@ -1,6 +1,12 @@
 #include "DeepTensor.h"
 
 DeepTensor::
+DeepTensor()
+    : inited (false)
+{
+}
+
+DeepTensor::
 DeepTensor(const string & model, const int & gpu_rank)
     : inited (false)
 {
@@ -24,6 +30,7 @@ init (const string & model, const int & gpu_rank)
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
   model_type = get_scalar<string>("model_attr/model_type");
   odim = get_scalar<int>("model_attr/output_dim");
+  sel_type = get_vector<int>("model_attr/sel_type");
   inited = true;
 }
 
@@ -33,6 +40,14 @@ DeepTensor::
 get_scalar (const string & name) const
 {
   return session_get_scalar<VT>(session, name);
+}
+
+template<class VT>
+vector<VT>
+DeepTensor::
+get_vector (const string & name) const
+{
+  return session_get_vector<VT>(session, name);
 }
 
 void 
@@ -46,9 +61,8 @@ run_model (vector<VALUETYPE> &		d_tensor_,
   unsigned nloc = nnpmap.get_type().size();
   unsigned nall = nloc + nghost;
   if (nloc == 0) {
-    // no backward map needed
-    d_tensor_.resize(nall * odim);
-    fill(d_tensor_.begin(), d_tensor_.end(), 0.0);
+    // return empty
+    d_tensor_.clear();
     return;
   }
 
@@ -59,16 +73,18 @@ run_model (vector<VALUETYPE> &		d_tensor_,
 			    &output_tensors));
   
   Tensor output_t = output_tensors[0];
+  assert (output_t.dims() == 1), "dim of output tensor should be 1";
+  int o_size = output_t.dim_size(0);
 
   auto ot = output_t.flat<VALUETYPE> ();
 
-  vector<VALUETYPE> d_tensor (nall * odim);
-  for (unsigned ii = 0; ii < nall * odim; ++ii){
+  vector<VALUETYPE> d_tensor (o_size);
+  for (unsigned ii = 0; ii < o_size; ++ii){
     d_tensor[ii] = ot(ii);
   }
   d_tensor_ = d_tensor;
-  nnpmap.backward (d_tensor_.begin(), d_tensor.begin(), odim);
 }
+
 
 void
 DeepTensor::
@@ -77,6 +93,54 @@ compute (vector<VALUETYPE> &		dtensor_,
 	 const vector<int> &		datype_,
 	 const vector<VALUETYPE> &	dbox, 
 	 const int			nghost)
+{
+  vector<VALUETYPE> dcoord;
+  vector<int> datype, fwd_map, bkw_map;
+  int nghost_real;
+  select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, nghost, ntypes);
+  // resize to nall_real
+  dcoord.resize(bkw_map.size() * 3);
+  datype.resize(bkw_map.size());
+  // fwd map
+  select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3);
+  select_map<int>(datype, datype_, fwd_map, 1);
+  compute_inner(dtensor_, dcoord, datype, dbox, nghost_real);
+}
+
+void
+DeepTensor::
+compute (vector<VALUETYPE> &		dtensor_,
+	 const vector<VALUETYPE> &	dcoord_,
+	 const vector<int> &		datype_,
+	 const vector<VALUETYPE> &	dbox, 
+	 const int			nghost,
+	 const LammpsNeighborList &	lmp_list)
+{
+  vector<VALUETYPE> dcoord;
+  vector<int> datype, fwd_map, bkw_map;
+  int nghost_real;
+  select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, nghost, ntypes);
+  // resize to nall_real
+  dcoord.resize(bkw_map.size() * 3);
+  datype.resize(bkw_map.size());
+  // fwd map
+  select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3);
+  select_map<int>(datype, datype_, fwd_map, 1);
+  // internal nlist
+  InternalNeighborList nlist;
+  convert_nlist_lmp_internal(nlist, lmp_list);
+  shuffle_nlist_exclude_empty(nlist, fwd_map);  
+  compute_inner(dtensor_, dcoord, datype, dbox, nghost_real, nlist);
+}
+
+
+void
+DeepTensor::
+compute_inner (vector<VALUETYPE> &		dtensor_,
+	       const vector<VALUETYPE> &	dcoord_,
+	       const vector<int> &		datype_,
+	       const vector<VALUETYPE> &	dbox, 
+	       const int			nghost)
 {
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
@@ -92,20 +156,19 @@ compute (vector<VALUETYPE> &		dtensor_,
 
 void
 DeepTensor::
-compute (vector<VALUETYPE> &		dtensor_,
-	 const vector<VALUETYPE> &	dcoord_,
-	 const vector<int> &		datype_,
-	 const vector<VALUETYPE> &	dbox, 
-	 const int			nghost,
-	 const LammpsNeighborList &	lmp_list)
+compute_inner (vector<VALUETYPE> &		dtensor_,
+	       const vector<VALUETYPE> &	dcoord_,
+	       const vector<int> &		datype_,
+	       const vector<VALUETYPE> &	dbox, 
+	       const int			nghost,
+	       const InternalNeighborList &	nlist_)
 {
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
   NNPAtomMap<VALUETYPE> nnpmap (datype_.begin(), datype_.begin() + nloc);
   assert (nloc == nnpmap.get_type().size());
 
-  InternalNeighborList nlist;
-  convert_nlist_lmp_internal (nlist, lmp_list);
+  InternalNeighborList nlist(nlist_);
   shuffle_nlist (nlist, nnpmap);
 
   std::vector<std::pair<string, Tensor>> input_tensors;

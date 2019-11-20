@@ -26,17 +26,18 @@ class EwaldRecp () :
                  beta):
         self.hh = hh
         self.beta = beta
-        self.sess = tf.Session()
-        # place holders
-        self.t_nloc       = tf.placeholder(tf.int32, [1], name = "t_nloc")
-        self.t_coord      = tf.placeholder(global_tf_float_precision, [None], name='t_coord')
-        self.t_charge     = tf.placeholder(global_tf_float_precision, [None], name='t_charge')
-        self.t_box        = tf.placeholder(global_tf_float_precision, [None], name='t_box')
-        
-        self.t_energy, self.t_force, self.t_virial \
-            = op_module.ewald_recp(self.t_coord, self.t_charge, self.t_nloc, self.t_box, 
-                                   ewald_h = self.hh,
-                                   ewald_beta = self.beta)
+        with tf.Graph().as_default() as graph:
+            # place holders
+            self.t_nloc       = tf.placeholder(tf.int32, [1], name = "t_nloc")
+            self.t_coord      = tf.placeholder(global_tf_float_precision, [None], name='t_coord')
+            self.t_charge     = tf.placeholder(global_tf_float_precision, [None], name='t_charge')
+            self.t_box        = tf.placeholder(global_tf_float_precision, [None], name='t_box')
+            # output            
+            self.t_energy, self.t_force, self.t_virial \
+                = op_module.ewald_recp(self.t_coord, self.t_charge, self.t_nloc, self.t_box, 
+                                       ewald_h = self.hh,
+                                       ewald_beta = self.beta)
+        self.sess = tf.Session(graph=graph)
 
     def eval(self, 
              coord, 

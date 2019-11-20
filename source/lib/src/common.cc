@@ -2,6 +2,64 @@
 #include "NNPAtomMap.h"
 #include "SimulationRegion.h"
 
+void 
+select_by_type(vector<int> & fwd_map,
+	       vector<int> & bkw_map,
+	       int & nghost_real, 
+	       const vector<VALUETYPE> & dcoord_, 
+	       const vector<int> & datype_,
+	       const int & nghost,
+	       const vector<int> & sel_type_)
+{
+  vector<int> sel_type (sel_type_);
+  sort(sel_type.begin(), sel_type.end());  
+  int nall = dcoord_.size() / 3;
+  int nloc = nall - nghost;
+  int nloc_real = 0;
+  nghost_real = 0;
+  fwd_map.resize(nall);
+  bkw_map.clear();
+  bkw_map.reserve(nall);  
+  int cc = 0;
+  for (int ii = 0; ii < nall; ++ii){
+    // exclude virtual sites
+    // select the type with id < ntypes
+    if (lower_bound(sel_type.begin(), sel_type.end(), datype_[ii]) !=
+	sel_type.end()){
+      bkw_map.push_back(ii);
+      if (ii < nloc) {
+	nloc_real += 1;
+      }
+      else{
+	nghost_real += 1;
+      }
+      fwd_map[ii] = cc;
+      cc ++;
+    }
+    else{
+      fwd_map[ii] = -1;
+    }
+  }  
+  assert((nloc_real+nghost_real) == bkw_map.size());  
+}	       
+
+
+void
+select_real_atoms(vector<int> & fwd_map,
+		  vector<int> & bkw_map,
+		  int & nghost_real,
+		  const vector<VALUETYPE> & dcoord_, 
+		  const vector<int> & datype_,
+		  const int & nghost,
+		  const int & ntypes)
+{
+  vector<int > sel_type;
+  for (int ii = 0; ii < ntypes; ++ii){
+    sel_type.push_back(ii);
+  }
+  select_by_type(fwd_map, bkw_map, nghost_real, dcoord_, datype_, nghost, sel_type);
+}
+
 void
 convert_nlist_lmp_internal (InternalNeighborList & list,
 			    const LammpsNeighborList & lmp_list) 
@@ -30,6 +88,13 @@ shuffle_nlist (InternalNeighborList & list,
 	       const NNPAtomMap<VALUETYPE> & map)
 {
   const vector<int> & fwd_map = map.get_fwd_map();
+  shuffle_nlist(list, fwd_map);
+}
+
+void
+shuffle_nlist (InternalNeighborList & list, 
+	       const vector<int> & fwd_map)
+{
   int nloc = fwd_map.size();
   for (unsigned ii = 0; ii < list.ilist.size(); ++ii){
     if (list.ilist[ii] < nloc) {
@@ -41,6 +106,41 @@ shuffle_nlist (InternalNeighborList & list,
       list.jlist[ii] = fwd_map[list.jlist[ii]];
     }
   }
+}
+
+void
+shuffle_nlist_exclude_empty (InternalNeighborList & list, 
+			     const vector<int> & fwd_map)
+{
+  int old_nloc = fwd_map.size();
+  shuffle_nlist(list, fwd_map);
+  vector<int> new_ilist, new_jrange, new_jlist, new_icount;
+  new_ilist.reserve(list.ilist.size());
+  new_icount.reserve(list.ilist.size());
+  new_jrange.reserve(list.jrange.size());
+  new_jlist.reserve(list.jlist.size());
+  for(int ii = 0; ii < list.ilist.size(); ++ii){
+    if(list.ilist[ii] >= 0){
+      new_ilist.push_back(list.ilist[ii]);
+    }
+  }
+  new_jrange.resize(new_ilist.size()+1);
+  new_jrange[0] = 0;
+  for(int ii = 0; ii < list.ilist.size(); ++ii){
+    int js = list.jrange[ii];
+    int je = list.jrange[ii+1];
+    int cc = 0;
+    for (int jj = js; jj < je; ++jj){
+      if (list.jlist[jj] >= 0) {
+	new_jlist.push_back(list.jlist[jj]);
+	cc++;
+      }      
+    }
+    new_jrange[ii+1] = new_jrange[ii] + cc;
+  }
+  list.ilist = new_ilist;
+  list.jrange = new_jrange;
+  list.jlist = new_jlist;
 }
 
 void
@@ -83,7 +183,8 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 		       const vector<VALUETYPE> &	fparam_,
 		       const vector<VALUETYPE> &	aparam_,
 		       const NNPAtomMap<VALUETYPE>&	nnpmap,
-		       const int			nghost)
+		       const int			nghost, 
+		       const string			scope)
 {
   bool b_ghost = (nghost != 0);
   
@@ -207,18 +308,22 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
   natoms (1) = nall;
   for (int ii = 0; ii < ntypes; ++ii) natoms(ii+2) = type_count[ii];
 
+  string prefix = "";
+  if (scope != ""){
+    prefix = scope + "/";
+  }
   input_tensors = {
-    {"t_coord",	coord_tensor}, 
-    {"t_type",	type_tensor},
-    {"t_box",	box_tensor},
-    {"t_mesh",	mesh_tensor},
-    {"t_natoms",natoms_tensor},
+    {prefix+"t_coord",	coord_tensor}, 
+    {prefix+"t_type",	type_tensor},
+    {prefix+"t_box",	box_tensor},
+    {prefix+"t_mesh",	mesh_tensor},
+    {prefix+"t_natoms",	natoms_tensor},
   };  
   if (fparam_.size() > 0) {
-    input_tensors.push_back({"t_fparam", fparam_tensor});
+    input_tensors.push_back({prefix+"t_fparam", fparam_tensor});
   }
   if (aparam_.size() > 0) {
-    input_tensors.push_back({"t_aparam", aparam_tensor});
+    input_tensors.push_back({prefix+"t_aparam", aparam_tensor});
   }
   return nloc;
 }
@@ -233,14 +338,15 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 		       const vector<VALUETYPE> &	fparam_,
 		       const vector<VALUETYPE> &	aparam_,
 		       const NNPAtomMap<VALUETYPE>&	nnpmap,
-		       const int			nghost)
+		       const int			nghost,
+		       const string			scope)
 {
   assert (dbox.size() == 9);
 
   int nframes = 1;
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
-  assert (nall == datype_.size());
+  assert (nall == datype_.size());  
 
   vector<int > datype = nnpmap.get_type();
   vector<int > type_count (ntypes, 0);
@@ -330,18 +436,22 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
   natoms (1) = nall;
   for (int ii = 0; ii < ntypes; ++ii) natoms(ii+2) = type_count[ii];
 
+  string prefix = "";
+  if (scope != ""){
+    prefix = scope + "/";
+  }
   input_tensors = {
-    {"t_coord",	coord_tensor}, 
-    {"t_type",	type_tensor},
-    {"t_box",	box_tensor},
-    {"t_mesh",	mesh_tensor},
-    {"t_natoms",natoms_tensor},
+    {prefix+"t_coord",	coord_tensor}, 
+    {prefix+"t_type",	type_tensor},
+    {prefix+"t_box",	box_tensor},
+    {prefix+"t_mesh",	mesh_tensor},
+    {prefix+"t_natoms",natoms_tensor},
   };  
   if (fparam_.size() > 0) {
-    input_tensors.push_back({"t_fparam", fparam_tensor});
+    input_tensors.push_back({prefix+"t_fparam", fparam_tensor});
   }
   if (aparam_.size() > 0) {
-    input_tensors.push_back({"t_aparam", aparam_tensor});
+    input_tensors.push_back({prefix+"t_aparam", aparam_tensor});
   }
 
   return nloc;

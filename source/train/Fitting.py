@@ -539,6 +539,9 @@ class DipoleFittingSeA () :
     def get_sel_type(self):
         return self.sel_type
 
+    def get_out_size(self):
+        return 3
+
     def build (self, 
                input_d,
                rot_mat,
@@ -587,3 +590,4 @@ class DipoleFittingSeA () :
             count += 1
 
         return tf.reshape(outs, [-1])
+        # return tf.reshape(outs, [tf.shape(inputs)[0] * natoms[0] * 3 // 3])

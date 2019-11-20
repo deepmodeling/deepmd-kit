@@ -25,24 +25,23 @@ class DeepEval():
     def __init__(self, 
                  model_file) :
         model_file = model_file
-        graph = self.load_graph (model_file)
-        t_mt = graph.get_tensor_by_name('load/model_attr/model_type:0')
-        sess = tf.Session (graph = graph)        
+        self.graph = self._load_graph (model_file)
+        t_mt = self.graph.get_tensor_by_name('load/model_attr/model_type:0')
+        sess = tf.Session (graph = self.graph)
         [mt] = sess.run([t_mt], feed_dict = {})
         self.model_type = mt.decode('utf-8')
 
-    def load_graph(self, 
+    def _load_graph(self, 
                    frozen_graph_filename, 
-                   prefix = 'load'):
+                   prefix = 'load', 
+                   default_tf_graph = True):
         # We load the protobuf file from the disk and parse it to retrieve the 
         # unserialized graph_def
         with tf.gfile.GFile(frozen_graph_filename, "rb") as f:
             graph_def = tf.GraphDef()
             graph_def.ParseFromString(f.read())
 
-        # Then, we can use again a convenient built-in function to import a graph_def into the 
-        # current default Graph
-        with tf.Graph().as_default() as graph:
+        if default_tf_graph:
             tf.import_graph_def(
                 graph_def, 
                 input_map=None, 
@@ -50,6 +49,21 @@ class DeepEval():
                 name=prefix, 
                 producer_op_list=None
             )
+            graph = tf.get_default_graph()
+        else :
+            # Then, we can use again a convenient built-in function to import a graph_def into the 
+            # current default Graph
+            with tf.Graph().as_default() as graph:
+                tf.import_graph_def(
+                    graph_def,
+                    input_map=None,
+                    return_elements=None,
+                    name=prefix,
+                    producer_op_list=None
+                )
+        # for ii in graph.as_graph_def().node:
+        #     print(ii.name)
+
         return graph
 
 
@@ -100,8 +114,8 @@ class DeepTensor(DeepEval) :
                  variable_name,                  
                  variable_dof) :
         DeepEval.__init__(self, model_file)
-        self.model_file = model_file
-        self.graph = self.load_graph (self.model_file)
+        # self.model_file = model_file
+        # self.graph = self.load_graph (self.model_file)
         self.variable_name = variable_name
         self.variable_dof = variable_dof
         # checkout input/output tensors from graph
