@@ -1,4 +1,5 @@
 #include <iostream>
+#include <string.h>
 #include <iomanip>
 #include <limits>
 #include "atom.h"
@@ -42,6 +43,7 @@ static int stringCmp(const void *a, const void* b)
 
 int PairNNP::get_node_rank() {
     char host_name[MPI_MAX_PROCESSOR_NAME];
+    memset(host_name, '\0', sizeof(char) * MPI_MAX_PROCESSOR_NAME);
     char (*host_names)[MPI_MAX_PROCESSOR_NAME];
     int n, namelen, color, rank, nprocs, myrank;
     size_t bytes;
@@ -53,6 +55,10 @@ int PairNNP::get_node_rank() {
 
     bytes = nprocs * sizeof(char[MPI_MAX_PROCESSOR_NAME]);
     host_names = (char (*)[MPI_MAX_PROCESSOR_NAME]) malloc(bytes);
+    for (int ii = 0; ii < nprocs; ii++) {
+        memset(host_names[ii], '\0', sizeof(char) * MPI_MAX_PROCESSOR_NAME);
+    }
+    
     strcpy(host_names[rank], host_name);
 
     for (n=0; n<nprocs; n++)
