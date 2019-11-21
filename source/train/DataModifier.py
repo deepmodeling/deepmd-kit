@@ -259,6 +259,8 @@ class DipoleChargeModifier(DeepDipole):
             = self.sess.run([self.force, self.virial, self.av],
                             feed_dict = feed_dict_test)
         # print('fout: ', fout.shape, fout)
+        fout = self.reverse_map(np.reshape(fout, [nframes,-1,3]), imap)
+        fout = np.reshape(fout, [nframes, -1])
         return fout, vout, avout
 
 
