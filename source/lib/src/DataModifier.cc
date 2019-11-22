@@ -224,7 +224,7 @@ compute (vector<VALUETYPE> &		dfcorr_,
   //     dfcorr_[ii*3+dd] += delef_[ii*3+dd];
   //   }
   // }  
-  for (int ii = 0; ii < real_bkw_map.size(); ++ii){
+  for (int ii = 0; ii < nloc_real; ++ii){
     int oii = real_bkw_map[ii];
     for (int dd = 0; dd < 3; ++dd){
       dfcorr_[oii*3+dd] += delef_[oii*3+dd];
