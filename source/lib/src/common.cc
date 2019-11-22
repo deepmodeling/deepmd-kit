@@ -127,6 +127,7 @@ shuffle_nlist_exclude_empty (InternalNeighborList & list,
   new_jrange.resize(new_ilist.size()+1);
   new_jrange[0] = 0;
   for(int ii = 0; ii < list.ilist.size(); ++ii){
+    if (list.ilist[ii] < 0) continue;
     int js = list.jrange[ii];
     int je = list.jrange[ii+1];
     int cc = 0;

@@ -104,8 +104,8 @@ VT
 session_get_scalar(Session* session, const string name, const string scope = "");
 
 template<typename VT>
-vector<VT>
-session_get_vector(Session* session, const string name, const string scope = "");
+void
+session_get_vector(vector<VT> & o_vec, Session* session, const string name_, const string scope = "");
 
 int
 session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
@@ -153,8 +153,8 @@ session_get_scalar(Session* session, const string name_, const string scope)
 }
 
 template<typename VT>
-vector<VT>
-session_get_vector(Session* session, const string name_, const string scope) 
+void
+session_get_vector(vector<VT> & o_vec, Session* session, const string name_, const string scope) 
 {
   string name = name_;
   if (scope != "") {
@@ -168,12 +168,11 @@ session_get_vector(Session* session, const string name_, const string scope)
   Tensor output_rc = output_tensors[0];
   assert(1 == output_rc.shape().dims());
   int dof = output_rc.shape().dim_size(0);
-  vector<VT> o_vec(dof);
+  o_vec.resize(dof);
   auto orc = output_rc.flat <VT> ();
   for (int ii = 0; ii < dof; ++ii){
     o_vec[ii] = orc(ii);
   }  
-  return o_vec;
 }
 
 

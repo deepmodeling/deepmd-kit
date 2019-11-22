@@ -30,7 +30,7 @@ init (const string & model, const int & gpu_rank)
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
   model_type = get_scalar<string>("model_attr/model_type");
   odim = get_scalar<int>("model_attr/output_dim");
-  sel_type = get_vector<int>("model_attr/sel_type");
+  get_vector<int>(sel_type, "model_attr/sel_type");
   inited = true;
 }
 
@@ -43,11 +43,11 @@ get_scalar (const string & name) const
 }
 
 template<class VT>
-vector<VT>
+void
 DeepTensor::
-get_vector (const string & name) const
+get_vector (vector<VT> & vec, const string & name) const
 {
-  return session_get_vector<VT>(session, name);
+  session_get_vector<VT>(vec, session, name);
 }
 
 void 

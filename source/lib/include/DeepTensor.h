@@ -37,7 +37,7 @@ private:
   int odim;
   vector<int> sel_type;
   template<class VT> VT get_scalar(const string & name) const;
-  template<class VT> vector<VT> get_vector(const string & name) const;
+  template<class VT> void get_vector (vector<VT> & vec, const string & name) const;
   void run_model (vector<VALUETYPE> &		d_tensor_,
 		  Session *			session, 
 		  const std::vector<std::pair<string, Tensor>> & input_tensors,
