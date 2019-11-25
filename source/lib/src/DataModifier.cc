@@ -128,6 +128,13 @@ compute (vector<VALUETYPE> &		dfcorr_,
   select_real_atoms(real_fwd_map, real_bkw_map, nghost_real, dcoord_, datype_, nghost, ntypes);  
   int nall_real = real_bkw_map.size();
   int nloc_real = nall_real - nghost_real;
+  if (nloc_real == 0){
+    dfcorr_.resize(nall * 3);
+    dvcorr_.resize(9);
+    fill(dfcorr_.begin(), dfcorr_.end(), 0.0);
+    fill(dvcorr_.begin(), dvcorr_.end(), 0.0);
+    return;
+  }
   // resize to nall_real
   vector<VALUETYPE> dcoord_real;
   vector<VALUETYPE> delef_real;
