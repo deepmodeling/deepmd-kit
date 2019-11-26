@@ -1700,11 +1700,11 @@ compute_relative_std_f (vector<VALUETYPE> &std,
   for (unsigned ii = 0; ii < nloc; ++ii){
       const VALUETYPE * tmp_avg = &(avg[ii*3]);
       VALUETYPE vdiff[3];
-	  vdiff[0] = tmp_avg[0];
+      vdiff[0] = tmp_avg[0];
       vdiff[1] = tmp_avg[1];
       vdiff[2] = tmp_avg[2];
-      VALUETYPE f_norm = MathUtilities::dot(vdiff, vdiff);
-	  // relative std = std/(abs(f)+eps)
+      VALUETYPE f_norm = sqrt(MathUtilities::dot(vdiff, vdiff));
+      // relative std = std/(abs(f)+eps)
       std[ii] /= f_norm + eps;
   }
 }
