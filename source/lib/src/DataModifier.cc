@@ -4,12 +4,13 @@ DataModifier::
 DataModifier()
     : inited (false)
 {
-  name_scope = "load";
 }
 
 DataModifier::
-DataModifier(const string & model, const int & gpu_rank)
-    : inited (false)
+DataModifier(const string & model, 
+	     const int & gpu_rank, 
+	     const string &name_scope_)
+    : inited (false), name_scope(name_scope_)
 {
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   init(model, gpu_rank);  
@@ -17,9 +18,12 @@ DataModifier(const string & model, const int & gpu_rank)
 
 void
 DataModifier::
-init (const string & model, const int & gpu_rank)
-{
+init (const string & model, 
+      const int & gpu_rank, 
+      const string &name_scope_)
+{  
   assert (!inited);
+  name_scope = name_scope_;
   SessionOptions options;
   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);

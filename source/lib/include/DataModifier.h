@@ -5,10 +5,14 @@
 class DataModifier
 {
 public:
-  DataModifier ();
-  DataModifier  (const string & model, const int & gpu_rank = 0);
+  DataModifier();
+  DataModifier(const string & model, 
+	       const int & gpu_rank = 0, 
+	       const string & name_scope = "");
   ~DataModifier () {};
-  void init (const string & model, const int & gpu_rank = 0);
+  void init (const string & model, 
+	     const int & gpu_rank = 0, 
+	     const string & name_scope = "");
   void print_summary(const string &pre) const;
 public:
   void compute (vector<VALUETYPE> &		dfcorr_,

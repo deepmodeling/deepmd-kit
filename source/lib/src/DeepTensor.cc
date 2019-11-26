@@ -7,8 +7,10 @@ DeepTensor()
 }
 
 DeepTensor::
-DeepTensor(const string & model, const int & gpu_rank)
-    : inited (false)
+DeepTensor(const string & model, 
+	   const int & gpu_rank, 
+	   const string &name_scope_)
+    : inited (false), name_scope(name_scope_)
 {
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   init(model, gpu_rank);  
@@ -16,9 +18,12 @@ DeepTensor(const string & model, const int & gpu_rank)
 
 void
 DeepTensor::
-init (const string & model, const int & gpu_rank)
+init (const string & model, 
+      const int & gpu_rank, 
+      const string &name_scope_)
 {
   assert (!inited);
+  name_scope = name_scope_;
   SessionOptions options;
   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
@@ -39,7 +44,7 @@ VT
 DeepTensor::
 get_scalar (const string & name) const
 {
-  return session_get_scalar<VT>(session, name);
+  return session_get_scalar<VT>(session, name, name_scope);
 }
 
 template<class VT>
@@ -47,7 +52,7 @@ void
 DeepTensor::
 get_vector (vector<VT> & vec, const string & name) const
 {
-  session_get_vector<VT>(vec, session, name);
+  session_get_vector<VT>(vec, session, name, name_scope);
 }
 
 void 
@@ -68,7 +73,7 @@ run_model (vector<VALUETYPE> &		d_tensor_,
 
   std::vector<Tensor> output_tensors;
   checkStatus (session->Run(input_tensors, 
-			    {"o_" + model_type},
+			    {name_prefix(name_scope) + "o_" + model_type},
 			    {}, 
 			    &output_tensors));
   
@@ -148,7 +153,7 @@ compute_inner (vector<VALUETYPE> &		dtensor_,
   assert (nloc == nnpmap.get_type().size());
 
   std::vector<std::pair<string, Tensor>> input_tensors;
-  int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, vector<VALUETYPE>(), vector<VALUETYPE>(), nnpmap, nghost);
+  int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, vector<VALUETYPE>(), vector<VALUETYPE>(), nnpmap, nghost, name_scope);
   assert (ret == nloc);
 
   run_model (dtensor_, session, input_tensors, nnpmap, nghost);
@@ -172,7 +177,7 @@ compute_inner (vector<VALUETYPE> &		dtensor_,
   shuffle_nlist (nlist, nnpmap);
 
   std::vector<std::pair<string, Tensor>> input_tensors;
-  int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, vector<VALUETYPE>(), vector<VALUETYPE>(), nnpmap, nghost);
+  int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, vector<VALUETYPE>(), vector<VALUETYPE>(), nnpmap, nghost, name_scope);
   assert (nloc == ret);
 
   run_model (dtensor_, session, input_tensors, nnpmap, nghost);

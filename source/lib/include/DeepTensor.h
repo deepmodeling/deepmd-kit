@@ -5,9 +5,13 @@
 class DeepTensor
 {
 public:
-  DeepTensor ();
-  DeepTensor  (const string & model, const int & gpu_rank = 0);
-  void init (const string & model, const int & gpu_rank = 0);
+  DeepTensor();
+  DeepTensor(const string & model, 
+	     const int & gpu_rank = 0, 
+	     const string &name_scope = "");
+  void init (const string & model, 
+	     const int & gpu_rank = 0, 
+	     const string &name_scope = "");
   void print_summary(const string &pre) const;
 public:
   void compute (vector<VALUETYPE> &		value,
@@ -27,6 +31,7 @@ public:
   vector<int> sel_types () const {assert(inited); return sel_type;};
 private:
   Session* session;
+  string name_scope;
   int num_intra_nthreads, num_inter_nthreads;
   GraphDef graph_def;
   bool inited;

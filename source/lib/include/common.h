@@ -99,6 +99,8 @@ get_env_nthreads(int & num_intra_nthreads,
 void
 checkStatus(const tensorflow::Status& status);
 
+string name_prefix(const string & name_scope);
+
 template<typename VT>
 VT
 session_get_scalar(Session* session, const string name, const string scope = "");

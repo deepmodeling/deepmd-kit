@@ -176,6 +176,16 @@ get_env_nthreads(int & num_intra_nthreads,
   }
 }
 
+string
+name_prefix(const string & scope)
+{
+  string prefix = "";
+  if (scope != ""){
+    prefix = scope + "/";
+  }
+  return prefix;
+}
+
 int
 session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 		       const vector<VALUETYPE> &	dcoord_,
