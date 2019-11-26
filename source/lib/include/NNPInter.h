@@ -200,6 +200,9 @@ public:
   void compute_std_f (vector<VALUETYPE> &		std,
 		      const vector<VALUETYPE> &		avg,
 		      const vector<vector<VALUETYPE> >& xx);
+  void compute_relative_std_f (vector<VALUETYPE> &		std,
+		      const vector<VALUETYPE> &		avg,
+		      const VALUETYPE eps);
 private:
   unsigned numb_models;
   vector<Session*> sessions;
