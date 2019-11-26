@@ -1690,3 +1690,26 @@ compute_std_f (vector<VALUETYPE> &		std,
   }
 }
 
+void
+NNPInterModelDevi::
+compute_relative_std_f (vector<VALUETYPE> &std,
+						const vector<VALUETYPE> &avg,
+						const VALUETYPE eps)
+{
+  unsigned ndof = std.size();
+  unsigned nloc = ndof;
+  assert (nloc == ndof);
+  rel_std.resize(nloc);
+  fill(rel_std.begin(), rel_std.end(), VALUETYPE(0.));
+  for (unsigned ii = 0; ii < nlocal; ++ii){
+      const VALUETYPE * tmp_avg = &(avg[ii*3]);
+      VALUETYPE vdiff[3];
+	  vdiff[0] = tmp_avg[0];
+      vdiff[1] = tmp_avg[1];
+      vdiff[2] = tmp_avg[2];
+      VALUETYPE f_norm = MathUtilities::dot(vdiff, vdiff);
+	  // relative std = std/(abs(f)+eps)
+      std[ii] /= f_norm + eps;
+  }
+}
+
