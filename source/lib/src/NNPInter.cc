@@ -1696,12 +1696,8 @@ compute_relative_std_f (vector<VALUETYPE> &std,
 						const vector<VALUETYPE> &avg,
 						const VALUETYPE eps)
 {
-  unsigned ndof = std.size();
-  unsigned nloc = ndof;
-  assert (nloc == ndof);
-  rel_std.resize(nloc);
-  fill(rel_std.begin(), rel_std.end(), VALUETYPE(0.));
-  for (unsigned ii = 0; ii < nlocal; ++ii){
+  unsigned nloc = std.size();
+  for (unsigned ii = 0; ii < nloc; ++ii){
       const VALUETYPE * tmp_avg = &(avg[ii*3]);
       VALUETYPE vdiff[3];
 	  vdiff[0] = tmp_avg[0];
