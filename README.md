@@ -131,6 +131,10 @@ if one wants to skip out of the virtual environment, he/she can do
 ```bash
 deactivate
 ```
+There is currently an issue with finding the correct tensorflow package if the pip version is 19.x. In case of such a problem, please downgrade to pip version 18.x using the following command:
+```bash
+pip install --upgrade pip==18.1
+```
 If one has multiple python interpreters named like python3.x, it can be specified by, for example
 ```bash
 virtualenv -p python3.7 $tensorflow_venv
