@@ -450,6 +450,9 @@ void PairNNP::compute(int eflag, int vflag)
 	vector<double> tmp_avg_f;
 	nnp_inter_model_devi.compute_avg (tmp_avg_f, all_force);  
 	nnp_inter_model_devi.compute_std_f (std_f, tmp_avg_f, all_force);
+	if (out_rel == 1){
+	    nnp_inter_model_devi.compute_relative_std_f (std_f, tmp_avg_f, eps);
+	}
 #else 
 	vector<float> tmp_avg_f_, std_f_;
 	for (unsigned ii = 0; ii < all_force_.size(); ++ii){
@@ -461,6 +464,9 @@ void PairNNP::compute(int eflag, int vflag)
 	nnp_inter_model_devi.compute_std_f (std_f_, tmp_avg_f_, all_force_);
 	std_f.resize(std_f_.size());
 	for (int dd = 0; dd < std_f_.size(); ++dd) std_f[dd] = std_f_[dd];
+	if (out_rel == 1){
+	    nnp_inter_model_devi.compute_relative_std_f (std_f, tmp_avg_f_, eps);
+	}
 #endif
 	double min = numeric_limits<double>::max(), max = 0, avg = 0;
 	ana_st(max, min, avg, std_f, nlocal);
@@ -514,16 +520,7 @@ void PairNNP::compute(int eflag, int vflag)
 	      // 1. If the atom_style is not atomic (e.g. charge), the order of std_f is different from that of atom ids.
               // 2. std_f is not gathered by MPI.
 	      for (int dd = 0; dd < all_nlocal; ++dd) {
-          if (out_rel == 1){
-            // relative std = std/(abs(f)+1)
-#ifdef HIGH_PREC
-            fp << " " << setw(18) << std_f[dd] / (fabs(tmp_avg_f[dd]) + eps);
-#else
-            fp << " " << setw(18) << std_f[dd] / (fabsf(tmp_avg_f_[dd]) + eps);
-#endif
-          } else {
             fp << " " << setw(18) << std_f[dd];	
-          }
         }
 	  }
 	  fp << endl;
