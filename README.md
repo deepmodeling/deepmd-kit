@@ -151,7 +151,7 @@ One should remember to activate the virtual environment every time he/she uses d
 Clone the DeePMD-kit source code
 ```bash
 cd /some/workspace
-git --recursive clone https://github.com/deepmodeling/deepmd-kit.git deepmd-kit -b devel
+git clone --recursive https://github.com/deepmodeling/deepmd-kit.git deepmd-kit -b devel
 ```
 If one downloads the .zip file from the github, then the default folder of source code would be `deepmd-kit-master` rather than `deepmd-kit`. For convenience, you may want to record the location of source to a variable, saying `deepmd_source_dir` by
 ```bash
