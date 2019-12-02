@@ -27,18 +27,26 @@ def select_idx_map(atom_type,
     return idx_map
 
 
-def make_default_mesh(test_box, cell_size = 3) :
+def make_default_mesh(test_box, cell_size = 3.0) :
+    # nframes = test_box.shape[0]
+    # default_mesh = np.zeros([nframes, 6], dtype = np.int32)
+    # for ff in range(nframes):
+    #     ncell = np.ones (3, dtype=np.int32)
+    #     for ii in range(3) :
+    #         ncell[ii] = int ( np.linalg.norm(test_box[ff][ii]) / cell_size )
+    #         if (ncell[ii] < 2) : ncell[ii] = 2
+    #     default_mesh[ff][3] = ncell[0]
+    #     default_mesh[ff][4] = ncell[1]
+    #     default_mesh[ff][5] = ncell[2]
+    # return default_mesh
     nframes = test_box.shape[0]
-    default_mesh = np.zeros([nframes, 6], dtype = np.int32)
-    for ff in range(nframes):
-        ncell = np.ones (3, dtype=np.int32)
-        for ii in range(3) :
-            ncell[ii] = int ( np.linalg.norm(test_box[ff][ii]) / cell_size )
-            if (ncell[ii] < 2) : ncell[ii] = 2
-        default_mesh[ff][3] = ncell[0]
-        default_mesh[ff][4] = ncell[1]
-        default_mesh[ff][5] = ncell[2]
-    return default_mesh
+    lboxv = np.linalg.norm(test_box.reshape([-1, 3, 3]), axis = 2)
+    avg_lboxv = np.average(lboxv, axis = 0)
+    ncell = (avg_lboxv / cell_size).astype(np.int32)
+    ncell[ncell < 2] = 2
+    default_mesh = np.zeros (6, dtype = np.int32)
+    default_mesh[3:6] = ncell
+    return default_mesh    
 
 
 class ClassArg () : 

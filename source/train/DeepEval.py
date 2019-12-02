@@ -170,7 +170,6 @@ class DeepTensor(DeepEval) :
         # make natoms_vec and default_mesh
         natoms_vec = self.make_natoms_vec(atom_types)
         assert(natoms_vec[0] == natoms)
-        default_mesh = make_default_mesh(cells)
 
         # evaluate
         tensor = []
@@ -181,7 +180,7 @@ class DeepTensor(DeepEval) :
         for ii in range(nframes) :
             feed_dict_test[self.t_coord] = np.reshape(coords[ii:ii+1, :], [-1])
             feed_dict_test[self.t_box  ] = np.reshape(cells [ii:ii+1, :], [-1])
-            feed_dict_test[self.t_mesh ] = default_mesh[ii]
+            feed_dict_test[self.t_mesh ] = make_default_mesh(cells[ii:ii+1, :])
             v_out = self.sess.run (t_out, feed_dict = feed_dict_test)
             tensor.append(v_out[0])
 

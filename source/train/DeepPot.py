@@ -112,7 +112,6 @@ class DeepPot (DeepEval) :
         # make natoms_vec and default_mesh
         natoms_vec = self.make_natoms_vec(atom_types)
         assert(natoms_vec[0] == natoms)
-        default_mesh = make_default_mesh(cells)
 
         # evaluate
         energy = []
@@ -122,7 +121,6 @@ class DeepPot (DeepEval) :
         av = []
         feed_dict_test = {}
         feed_dict_test[self.t_natoms] = natoms_vec
-        feed_dict_test[self.t_mesh  ] = default_mesh[0]
         feed_dict_test[self.t_type  ] = atom_types
         t_out = [self.t_energy, 
                  self.t_force, 
@@ -133,6 +131,7 @@ class DeepPot (DeepEval) :
         for ii in range(nframes) :
             feed_dict_test[self.t_coord] = np.reshape(coords[ii:ii+1, :], [-1])
             feed_dict_test[self.t_box  ] = np.reshape(cells [ii:ii+1, :], [-1])
+            feed_dict_test[self.t_mesh ] = make_default_mesh(cells[ii:ii+1, :])
             if self.has_fparam:
                 feed_dict_test[self.t_fparam] = np.reshape(fparam[ii:ii+1, :], [-1])
             if self.has_aparam:
