@@ -164,16 +164,17 @@ class DipoleChargeModifier(DeepDipole):
 
 
     def eval_modify(self, coord, box, atype, eval_fv = True):
+        coord, atype, imap = self.sort_input(coord, atype)
         natoms = coord.shape[1] // 3
         nframes = coord.shape[0]
         box = np.reshape(box, [nframes, 9])
-        atype = np.reshape(atype, [nframes, natoms])
-        sel_idx_map = select_idx_map(atype[0], self.sel_type)
+        atype = np.reshape(atype, [natoms])
+        sel_idx_map = select_idx_map(atype, self.sel_type)
         nsel = len(sel_idx_map)
         # setup charge
         charge = np.zeros([natoms])
         for ii in range(natoms):
-            charge[ii] = self.sys_charge_map[atype[0][ii]]
+            charge[ii] = self.sys_charge_map[atype[ii]]
         charge = np.tile(charge, [nframes, 1])
 
         # add wfcc
@@ -205,7 +206,7 @@ class DipoleChargeModifier(DeepDipole):
             corr_v = []
             corr_av = []
             for ii in range(0,nframes,batch_size):
-                f, v, av = self.eval_fv(coord[ii:ii+batch_size], box[ii:ii+batch_size], atype[0], ext_f[ii:ii+batch_size])
+                f, v, av = self.eval_fv(coord[ii:ii+batch_size], box[ii:ii+batch_size], atype, ext_f[ii:ii+batch_size])
                 corr_f.append(f)
                 corr_v.append(v)
                 corr_av.append(av)
@@ -216,6 +217,7 @@ class DipoleChargeModifier(DeepDipole):
             for ii in range(nsel):            
                 orig_idx = sel_idx_map[ii]            
                 tot_f[:,orig_idx*3:orig_idx*3+3] += ext_f[:,ii*3:ii*3+3]                
+            tot_f = self.reverse_map(np.reshape(tot_f, [nframes,-1,3]), imap)
             # compute v
             dipole3 = np.reshape(dipole, [nframes, nsel, 3])
             ext_f3 = np.reshape(ext_f, [nframes, nsel, 3])
@@ -268,20 +270,20 @@ class DipoleChargeModifier(DeepDipole):
         natoms = coord.shape[1] // 3
         nframes = coord.shape[0]
         # sel atoms and setup ref coord
-        sel_idx_map = select_idx_map(atype[0], self.sel_type)
+        sel_idx_map = select_idx_map(atype, self.sel_type)
         nsel = len(sel_idx_map)
         coord3 = coord.reshape([nframes, natoms, 3])
         ref_coord = coord3[:,sel_idx_map,:]
         ref_coord = np.reshape(ref_coord, [nframes, nsel * 3])
         
-        dipole = self.eval(coord, box, atype[0])
+        dipole = self.eval(coord, box, atype)
         dipole = np.reshape(dipole, [nframes, nsel * 3])
         
         wfcc_coord = ref_coord + dipole
         # wfcc_coord = dipole
         wfcc_charge = np.zeros([nsel])
         for ii in range(nsel):
-            orig_idx = self.sel_type.index(atype[0][sel_idx_map[ii]])
+            orig_idx = self.sel_type.index(atype[sel_idx_map[ii]])
             wfcc_charge[ii] = self.model_charge_map[orig_idx]
         wfcc_charge = np.tile(wfcc_charge, [nframes, 1])
 
@@ -303,6 +305,7 @@ class DipoleChargeModifier(DeepDipole):
         coord = data['coord'][:get_nframes,:]
         box = data['box'][:get_nframes,:]
         atype = data['type'][:get_nframes,:]
+        atype = atype[0]
         nframes = coord.shape[0]
 
         tot_e, tot_f, tot_v = self.eval_modify(coord, box, atype)

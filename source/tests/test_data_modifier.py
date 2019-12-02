@@ -99,7 +99,7 @@ class TestDataModifier (unittest.TestCase) :
                                    0.25)
         data = Data()
         coord, box, atype = data.get_data()
-
+        atype = atype[0]
         ve, vf, vv = dcm.eval_modify(coord, box, atype)
 
         hh = global_default_fv_hh
@@ -109,6 +109,7 @@ class TestDataModifier (unittest.TestCase) :
         nframes = coord.shape[0]
         ndof = coord.shape[1]
         natoms = ndof // 3
+        vf = np.reshape(vf, [nframes, -1])
         for ii in range(ndof):
             coordp = np.copy(coord)
             coordm = np.copy(coord)
