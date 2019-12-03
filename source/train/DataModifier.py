@@ -152,14 +152,14 @@ class DipoleChargeModifier(DeepDipole):
 
     def _slice_descrpt_deriv(self, deriv):
         coll = []
-        start_idx = 0        
+        start_idx = 0
         for type_i in range(self.ntypes):
             if type_i in self.sel_type:
                 di = tf.slice(deriv, 
                               [ 0, start_idx               * self.ndescrpt],
                               [-1, self.t_natoms[2+type_i] * self.ndescrpt])
                 coll.append(di)
-                start_idx += self.t_natoms[2+type_i]
+            start_idx += self.t_natoms[2+type_i]
         return tf.concat(coll, axis = 1)        
 
 
