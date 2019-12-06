@@ -24,8 +24,7 @@ select_by_type(vector<int> & fwd_map,
   for (int ii = 0; ii < nall; ++ii){
     // exclude virtual sites
     // select the type with id < ntypes
-    if (lower_bound(sel_type.begin(), sel_type.end(), datype_[ii]) !=
-	sel_type.end()){
+    if (binary_search(sel_type.begin(), sel_type.end(), datype_[ii])){
       bkw_map.push_back(ii);
       if (ii < nloc) {
 	nloc_real += 1;

@@ -175,7 +175,7 @@ compute (vector<VALUETYPE> &		dfcorr_,
   vector<int > dtype_sort_loc = nnpmap.get_type();
   vector<VALUETYPE> dextf;
   for(int ii = 0; ii < dtype_sort_loc.size(); ++ii){
-    if (lower_bound(sel_type.begin(), sel_type.end(), dtype_sort_loc[ii]) != sel_type.end()){
+    if (binary_search(sel_type.begin(), sel_type.end(), dtype_sort_loc[ii])){
       // selected atom
       int first_idx = real_bkw_map[sort_bkw_map[ii]];
       int second_idx = bd_idx[first_idx];

@@ -28,7 +28,7 @@ public:
   VALUETYPE cutoff () const {assert(inited); return rcut;};
   int numb_types () const {assert(inited); return ntypes;};
   int output_dim () const {assert(inited); return odim;};
-  vector<int> sel_types () const {assert(inited); return sel_type;};
+  const vector<int> & sel_types () const {assert(inited); return sel_type;};
 private:
   Session* session;
   string name_scope;
