@@ -1,4 +1,4 @@
-import os,sys,platform,json
+import os,sys,platform,json,shutil
 import numpy as np
 import unittest
 import dpdata
@@ -43,6 +43,10 @@ class TestDataModifier (unittest.TestCase) :
 
     def tearDown(self):
         tf.reset_default_graph()        
+        if os.path.isdir(os.path.join(modifier_datapath, 'sys_test_0')):
+            shutil.rmtree(os.path.join(modifier_datapath, 'sys_test_0'))
+        if os.path.isfile(os.path.join(modifier_datapath, 'dipole.pb')):
+            os.remove(os.path.join(modifier_datapath, 'dipole.pb'))
 
     def _setUp(self):
         args = Args()
@@ -104,7 +108,7 @@ class TestDataModifier (unittest.TestCase) :
         self.dipoles0 = np.random.random([self.nframes, self.nsel * 3]) 
         self.box0 = np.reshape(np.eye(3) * scale, [-1, 9])
         self.box0 = np.tile(self.box0, [self.nframes, 1])
-        self._write_sys_data('data_modifier/sys_test_0', 
+        self._write_sys_data(os.path.join(modifier_datapath, 'sys_test_0'), 
                              self.atom_types0, self.coords0, self.dipoles0, self.box0)
         # sys1
         self.idx_map = np.array([6, 7, 1, 0, 5, 2, 4, 3], dtype = int)
