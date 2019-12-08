@@ -192,8 +192,8 @@ class TestDataModifier (unittest.TestCase) :
                                    [1, 1, 1, 1, 1],
                                    1,
                                    0.25)
-        ve0, vf0, vv0 = dcm.eval_modify(self.coords0, self.box0, self.atom_types0)
-        ve1, vf1, vv1 = dcm.eval_modify(self.coords1, self.box1, self.atom_types1)
+        ve0, vf0, vv0 = dcm.eval(self.coords0, self.box0, self.atom_types0)
+        ve1, vf1, vv1 = dcm.eval(self.coords1, self.box1, self.atom_types1)
         vf01 = vf0[:,self.idx_map, :]
 
         for ii in range(self.nframes):

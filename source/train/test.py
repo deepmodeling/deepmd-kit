@@ -53,12 +53,24 @@ def test_ener (args) :
         aparam = test_data["aparam"][:numb_test] 
     else :
         aparam = None
-    energy, force, virial, ae, av = dp.eval(coord, box, atype, fparam = fparam, aparam = aparam, atomic = True)
+    detail_file = args.detail_file
+    if detail_file is not None:
+        atomic = True
+    else:
+        atomic = False
+
+    ret = dp.eval(coord, box, atype, fparam = fparam, aparam = aparam, atomic = atomic)
+    energy = ret[0]
+    force  = ret[1]
+    virial = ret[2]
     energy = energy.reshape([numb_test,1])
     force = force.reshape([numb_test,-1])
     virial = virial.reshape([numb_test,9])
-    ae = ae.reshape([numb_test,-1])
-    av = av.reshape([numb_test,-1])
+    if atomic:
+        ae = ret[3]
+        av = ret[4]
+        ae = ae.reshape([numb_test,-1])
+        av = av.reshape([numb_test,-1])
 
     l2e = (l2err (energy - test_data["energy"][:numb_test].reshape([-1,1])))
     l2f = (l2err (force  - test_data["force"] [:numb_test]))
@@ -74,7 +86,6 @@ def test_ener (args) :
     print ("Virial L2err        : %e eV" % l2v)
     print ("Virial L2err/Natoms : %e eV" % l2va)
 
-    detail_file = args.detail_file
     if detail_file is not None :
         pe = np.concatenate((np.reshape(test_data["energy"][:numb_test], [-1,1]),
                              np.reshape(energy, [-1,1])), 

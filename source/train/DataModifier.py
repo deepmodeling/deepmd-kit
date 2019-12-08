@@ -1,6 +1,6 @@
 import os,platform
 import numpy as np
-from deepmd import DeepDipole
+from deepmd.DeepDipole import DeepDipole
 from deepmd.env import tf
 from deepmd.common import select_idx_map, make_default_mesh
 from deepmd.EwaldRecp import EwaldRecp
@@ -29,15 +29,22 @@ class DipoleChargeModifier(DeepDipole):
                  sys_charge_map, 
                  ewald_h = 1, 
                  ewald_beta = 1):
-        DeepDipole.__init__(self, model_name)
-        self.er = EwaldRecp(ewald_h, ewald_beta)
+        # the dipole model is loaded with prefix 'dipole_charge'
+        self.modifier_prefix = 'dipole_charge'
+        # init dipole model
+        DeepDipole.__init__(self, model_name, load_prefix = self.modifier_prefix)
+        self.model_name = model_name
         self.model_charge_map = model_charge_map
         self.sys_charge_map = sys_charge_map
         self.sel_type = list(self.get_sel_type())
+        # init ewald recp
+        self.ewald_h = ewald_h
+        self.ewald_beta = ewald_beta
+        self.er = EwaldRecp(self.ewald_h, self.ewald_beta)
         # dimension of dipole
         self.ext_dim = 3
-        self.t_ndesc  = self.graph.get_tensor_by_name ('load/descrpt_attr/ndescrpt:0')
-        self.t_sela  = self.graph.get_tensor_by_name ('load/descrpt_attr/sel:0')
+        self.t_ndesc  = self.graph.get_tensor_by_name(os.path.join(self.modifier_prefix, 'descrpt_attr/ndescrpt:0'))
+        self.t_sela  = self.graph.get_tensor_by_name(os.path.join(self.modifier_prefix, 'descrpt_attr/sel:0'))
         [self.ndescrpt, self.sel_a] = self.sess.run([self.t_ndesc, self.t_sela])
         self.sel_r = [ 0 for ii in range(len(self.sel_a)) ]
         self.nnei_a = np.cumsum(self.sel_a)[-1]
@@ -50,6 +57,25 @@ class DipoleChargeModifier(DeepDipole):
         self.ntypes = len(self.sel_a)
 
     def build_fv_graph(self):
+        with tf.variable_scope('modifier_attr') :
+            t_mdl_name = tf.constant(self.model_name, 
+                                     name = 'mdl_name', 
+                                     dtype = tf.string)
+            t_modi_type = tf.constant(self.modifier_prefix, 
+                                      name = 'type', 
+                                      dtype = tf.string)
+            t_mdl_charge_map = tf.constant(' '.join([str(ii) for ii in self.model_charge_map]),
+                                            name = 'mdl_charge_map', 
+                                            dtype = tf.string)
+            t_sys_charge_map = tf.constant(' '.join([str(ii) for ii in self.sys_charge_map]),
+                                            name = 'sys_charge_map', 
+                                            dtype = tf.string)
+            t_ewald_h = tf.constant(self.ewald_h,
+                                    name = 'ewald_h', 
+                                    dtype = tf.float64)
+            t_ewald_b = tf.constant(self.ewald_beta,
+                                    name = 'ewald_beta',
+                                    dtype = tf.float64)
         with self.graph.as_default():
             return self._build_fv_graph_inner()        
 
@@ -66,10 +92,10 @@ class DipoleChargeModifier(DeepDipole):
         # (nframes x natoms_sel) x 1 x 3
         self.t_ef_reshape = tf.reshape(self.t_ef, [nfxnas, 1, 3])
         # (nframes x natoms) x ndescrpt
-        self.descrpt = self.graph.get_tensor_by_name('load/o_rmat:0')
-        self.descrpt_deriv = self.graph.get_tensor_by_name('load/o_rmat_deriv:0')
-        self.nlist = self.graph.get_tensor_by_name('load/o_nlist:0')
-        self.rij = self.graph.get_tensor_by_name('load/o_rij:0')
+        self.descrpt = self.graph.get_tensor_by_name(os.path.join(self.modifier_prefix, 'o_rmat:0'))
+        self.descrpt_deriv = self.graph.get_tensor_by_name(os.path.join(self.modifier_prefix, 'o_rmat_deriv:0'))
+        self.nlist = self.graph.get_tensor_by_name(os.path.join(self.modifier_prefix, 'o_nlist:0'))
+        self.rij = self.graph.get_tensor_by_name(os.path.join(self.modifier_prefix, 'o_rij:0'))
         # self.descrpt_reshape = tf.reshape(self.descrpt, [nf, 192 * self.ndescrpt])
         # self.descrpt_deriv = tf.reshape(self.descrpt_deriv, [nf, 192 * self.ndescrpt * 3])
 
@@ -163,7 +189,7 @@ class DipoleChargeModifier(DeepDipole):
         return tf.concat(coll, axis = 1)        
 
 
-    def eval_modify(self, coord, box, atype, eval_fv = True):
+    def eval(self, coord, box, atype, eval_fv = True):
         coord, atype, imap = self.sort_input(coord, atype)
         natoms = coord.shape[1] // 3
         nframes = coord.shape[0]
@@ -194,6 +220,8 @@ class DipoleChargeModifier(DeepDipole):
         all_f = np.concatenate(all_f, axis = 0)
         all_v = np.concatenate(all_v, axis = 0)
         # print('finish  er')
+        # reshape
+        tot_e.reshape([nframes,1])
 
         tot_f = None
         tot_v = None
@@ -218,6 +246,8 @@ class DipoleChargeModifier(DeepDipole):
                 orig_idx = sel_idx_map[ii]            
                 tot_f[:,orig_idx*3:orig_idx*3+3] += ext_f[:,ii*3:ii*3+3]                
             tot_f = self.reverse_map(np.reshape(tot_f, [nframes,-1,3]), imap)
+            # reshape
+            tot_f = tot_f.reshape([nframes,natoms,3])
             # compute v
             dipole3 = np.reshape(dipole, [nframes, nsel, 3])
             ext_f3 = np.reshape(ext_f, [nframes, nsel, 3])
@@ -228,6 +258,8 @@ class DipoleChargeModifier(DeepDipole):
             fd_corr_v = -np.matmul(ext_f3, dipole3).reshape([nframes, 9])
             # print(all_v, '\n', corr_v, '\n', fd_corr_v)
             tot_v = all_v + corr_v + fd_corr_v
+            # reshape
+            tot_v = tot_v.reshape([nframes,9])
 
         return tot_e, tot_f, tot_v
 
@@ -276,7 +308,7 @@ class DipoleChargeModifier(DeepDipole):
         ref_coord = coord3[:,sel_idx_map,:]
         ref_coord = np.reshape(ref_coord, [nframes, nsel * 3])
         
-        dipole = self.eval(coord, box, atype)
+        dipole = DeepDipole.eval(self, coord, box, atype)
         dipole = np.reshape(dipole, [nframes, nsel * 3])
         
         wfcc_coord = ref_coord + dipole
@@ -296,8 +328,7 @@ class DipoleChargeModifier(DeepDipole):
         return all_coord, all_charge, dipole
 
 
-    def modify(self, 
-               data):
+    def modify_data(self, data):
         if 'find_energy' not in data and 'find_force' not in data and 'find_virial' not in data:
             return
 
@@ -308,16 +339,16 @@ class DipoleChargeModifier(DeepDipole):
         atype = atype[0]
         nframes = coord.shape[0]
 
-        tot_e, tot_f, tot_v = self.eval_modify(coord, box, atype)
+        tot_e, tot_f, tot_v = self.eval(coord, box, atype)
 
         # print(tot_f[:,0])
         
         if 'find_energy' in data and data['find_energy'] == 1.0 :
-            data['energy'] -= tot_e.reshape([nframes, 1])
+            data['energy'] -= tot_e.reshape(data['energy'].shape)
         if 'find_force' in data and data['find_force'] == 1.0 :
-            data['force'] -= tot_f
+            data['force'] -= tot_f.reshape(data['force'].shape)
         if 'find_virial' in data and data['find_virial'] == 1.0 :
-            data['virial'] -= tot_v.reshape([nframes, 9])
+            data['virial'] -= tot_v.reshape(data['virial'].shape)
 
 
                            

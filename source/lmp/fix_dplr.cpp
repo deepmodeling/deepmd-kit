@@ -83,8 +83,8 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
 
   // dpt.init(model);
   // dtm.init("frozen_model.pb");
-  dpt.init(model, 0, "load");
-  dtm.init(model, 0, "load");
+  dpt.init(model, 0, "dipole_charge");
+  dtm.init(model, 0, "dipole_charge");
 
   sel_type = dpt.sel_types();
   sort(sel_type.begin(), sel_type.end());

@@ -110,7 +110,7 @@ def _do_work(jdata, run_opt):
        ipt_type_map = type_map
     # data modifier
     modifier = None
-    modi_data = jdata['training'].get("data_modifier", None)
+    modi_data = jdata['model'].get("modifier", None)
     if modi_data is not None:
        if modi_data['type'] == 'dipole_charge':
           modifier = DipoleChargeModifier(modi_data['model_name'],

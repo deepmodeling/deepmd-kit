@@ -23,10 +23,11 @@ class DeepEval():
     common methods for DeepPot, DeepWFC, DeepPolar, ...
     """
     def __init__(self, 
-                 model_file) :
+                 model_file, 
+                 load_prefix = 'load') :
         model_file = model_file
-        self.graph = self._load_graph (model_file)
-        t_mt = self.graph.get_tensor_by_name('load/model_attr/model_type:0')
+        self.graph = self._load_graph (model_file, prefix = load_prefix)
+        t_mt = self.graph.get_tensor_by_name(os.path.join(load_prefix, 'model_attr/model_type:0'))
         sess = tf.Session (graph = self.graph)
         [mt] = sess.run([t_mt], feed_dict = {})
         self.model_type = mt.decode('utf-8')
@@ -112,25 +113,26 @@ class DeepTensor(DeepEval) :
     def __init__(self, 
                  model_file, 
                  variable_name,                  
-                 variable_dof) :
-        DeepEval.__init__(self, model_file)
+                 variable_dof, 
+                 load_prefix = 'load') :
+        DeepEval.__init__(self, model_file, load_prefix = load_prefix)
         # self.model_file = model_file
         # self.graph = self.load_graph (self.model_file)
         self.variable_name = variable_name
         self.variable_dof = variable_dof
         # checkout input/output tensors from graph
-        self.t_ntypes = self.graph.get_tensor_by_name ('load/descrpt_attr/ntypes:0')
-        self.t_rcut   = self.graph.get_tensor_by_name ('load/descrpt_attr/rcut:0')
-        self.t_tmap   = self.graph.get_tensor_by_name ('load/model_attr/tmap:0')
-        self.t_sel_type= self.graph.get_tensor_by_name ('load/model_attr/sel_type:0')
+        self.t_ntypes = self.graph.get_tensor_by_name (os.path.join(load_prefix, 'descrpt_attr/ntypes:0'))
+        self.t_rcut   = self.graph.get_tensor_by_name (os.path.join(load_prefix, 'descrpt_attr/rcut:0'))
+        self.t_tmap   = self.graph.get_tensor_by_name (os.path.join(load_prefix, 'model_attr/tmap:0'))
+        self.t_sel_type= self.graph.get_tensor_by_name (os.path.join(load_prefix, 'model_attr/sel_type:0'))
         # inputs
-        self.t_coord  = self.graph.get_tensor_by_name ('load/t_coord:0')
-        self.t_type   = self.graph.get_tensor_by_name ('load/t_type:0')
-        self.t_natoms = self.graph.get_tensor_by_name ('load/t_natoms:0')
-        self.t_box    = self.graph.get_tensor_by_name ('load/t_box:0')
-        self.t_mesh   = self.graph.get_tensor_by_name ('load/t_mesh:0')
+        self.t_coord  = self.graph.get_tensor_by_name (os.path.join(load_prefix, 't_coord:0'))
+        self.t_type   = self.graph.get_tensor_by_name (os.path.join(load_prefix, 't_type:0'))
+        self.t_natoms = self.graph.get_tensor_by_name (os.path.join(load_prefix, 't_natoms:0'))
+        self.t_box    = self.graph.get_tensor_by_name (os.path.join(load_prefix, 't_box:0'))
+        self.t_mesh   = self.graph.get_tensor_by_name (os.path.join(load_prefix, 't_mesh:0'))
         # outputs
-        self.t_tensor = self.graph.get_tensor_by_name ('load/o_%s:0' % self.variable_name)
+        self.t_tensor = self.graph.get_tensor_by_name (os.path.join(load_prefix, 'o_%s:0' % self.variable_name))
         # start a tf session associated to the graph
         self.sess = tf.Session (graph = self.graph)        
         [self.ntypes, self.rcut, self.tmap, self.tselt] = self.sess.run([self.t_ntypes, self.t_rcut, self.t_tmap, self.t_sel_type])

@@ -5,6 +5,7 @@ import numpy as np
 from deepmd.env import tf
 from deepmd.common import make_default_mesh
 from deepmd.DeepEval import DeepEval
+from deepmd.DataModifier import DipoleChargeModifier
 
 class DeepPot (DeepEval) :
     def __init__(self, 
@@ -46,6 +47,22 @@ class DeepPot (DeepEval) :
         self.sess = tf.Session (graph = self.graph)        
         [self.ntypes, self.rcut, self.dfparam, self.daparam, self.tmap] = self.sess.run([self.t_ntypes, self.t_rcut, self.t_dfparam, self.t_daparam, self.t_tmap])
         self.tmap = self.tmap.decode('UTF-8').split()
+        # setup modifier
+        try:
+            t_modifier_type = self.graph.get_tensor_by_name('load/modifier_attr/type:0')
+            self.modifier_type = self.sess.run(t_modifier_type).decode('UTF-8')
+        except ValueError:
+            self.modifier_type = None
+        if self.modifier_type == 'dipole_charge':
+            t_mdl_name = self.graph.get_tensor_by_name('load/modifier_attr/mdl_name:0')
+            t_mdl_charge_map = self.graph.get_tensor_by_name('load/modifier_attr/mdl_charge_map:0')
+            t_sys_charge_map = self.graph.get_tensor_by_name('load/modifier_attr/sys_charge_map:0')
+            t_ewald_h = self.graph.get_tensor_by_name('load/modifier_attr/ewald_h:0')
+            t_ewald_beta = self.graph.get_tensor_by_name('load/modifier_attr/ewald_beta:0')
+            [mdl_name, mdl_charge_map, sys_charge_map, ewald_h, ewald_beta] = self.sess.run([t_mdl_name, t_mdl_charge_map, t_sys_charge_map, t_ewald_h, t_ewald_beta])
+            mdl_charge_map = [int(ii) for ii in mdl_charge_map.decode('UTF-8').split()]
+            sys_charge_map = [int(ii) for ii in sys_charge_map.decode('UTF-8').split()]
+            self.dm = DipoleChargeModifier(mdl_name, mdl_charge_map, sys_charge_map, ewald_h = ewald_h, ewald_beta = ewald_beta)
 
 
     def get_ntypes(self) :
@@ -63,8 +80,27 @@ class DeepPot (DeepEval) :
     def get_type_map(self):
         return self.tmap
 
-
     def eval(self,
+             coords,
+             cells,
+             atom_types,
+             fparam = None,
+             aparam = None,
+             atomic = False) :
+        if atomic :
+            if self.modifier_type is not None:
+                raise RuntimeError('modifier does not support atomic modification')
+            return self.eval_inner(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic)
+        else :
+            e, f, v = self.eval_inner(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic)
+            if self.modifier_type is not None:
+                me, mf, mv = self.dm.eval(coords, cells, atom_types)
+                e += me.reshape(e.shape)
+                f += mf.reshape(f.shape)
+                v += mv.reshape(v.shape)
+            return e, f, v
+
+    def eval_inner(self,
              coords, 
              cells, 
              atom_types, 
@@ -159,4 +195,5 @@ class DeepPot (DeepEval) :
             return energy, force, virial, ae, av
         else :
             return energy, force, virial
+
 

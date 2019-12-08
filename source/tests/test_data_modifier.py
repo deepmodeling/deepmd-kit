@@ -100,7 +100,7 @@ class TestDataModifier (unittest.TestCase) :
         data = Data()
         coord, box, atype = data.get_data()
         atype = atype[0]
-        ve, vf, vv = dcm.eval_modify(coord, box, atype)
+        ve, vf, vv = dcm.eval(coord, box, atype)
 
         hh = global_default_fv_hh
         hh=1e-4
@@ -115,8 +115,8 @@ class TestDataModifier (unittest.TestCase) :
             coordm = np.copy(coord)
             coordp[:,ii] += hh
             coordm[:,ii] -= hh
-            ep, _, __ = dcm.eval_modify(coordp, box, atype, eval_fv = False)
-            em, _, __ = dcm.eval_modify(coordm, box, atype, eval_fv = False)
+            ep, _, __ = dcm.eval(coordp, box, atype, eval_fv = False)
+            em, _, __ = dcm.eval(coordm, box, atype, eval_fv = False)
             num_f = -(ep - em) / (2.*hh)
             for ff in range(nframes):
                 self.assertAlmostEqual(vf[ff,ii], num_f[ff], 
@@ -140,8 +140,8 @@ class TestDataModifier (unittest.TestCase) :
                 coord3m = np.matmul(rcoord3, box3m)
                 coordp = np.reshape(coord3p, [nframes,-1])
                 coordm = np.reshape(coord3m, [nframes,-1])
-                ep, _, __ = dcm.eval_modify(coordp, boxp, atype, eval_fv = False)
-                em, _, __ = dcm.eval_modify(coordm, boxm, atype, eval_fv = False)
+                ep, _, __ = dcm.eval(coordp, boxp, atype, eval_fv = False)
+                em, _, __ = dcm.eval(coordm, boxm, atype, eval_fv = False)
                 num_deriv[:,ii,jj] = -(ep - em) / (2.*hh)
         # box3t = np.transpose(box3, [0,2,1])
         # t_esti = np.matmul(num_deriv, box3t)

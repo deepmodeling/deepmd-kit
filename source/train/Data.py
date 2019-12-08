@@ -121,7 +121,7 @@ class DeepmdData() :
             self.set_count += 1
             set_size = self.batch_set["coord"].shape[0]
             if self.modifier is not None:
-                self.modifier.modify(self.batch_set)
+                self.modifier.modify_data(self.batch_set)
         iterator_1 = self.iterator + batch_size
         if iterator_1 >= set_size :
             iterator_1 = set_size
@@ -141,7 +141,7 @@ class DeepmdData() :
             idx = np.arange(ntests_)
         ret = self._get_subdata(self.test_set, idx = idx)
         if self.modifier is not None:
-            self.modifier.modify(ret)
+            self.modifier.modify_data(ret)
         return ret
 
     def get_type_map(self) :

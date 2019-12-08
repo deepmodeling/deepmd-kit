@@ -35,7 +35,7 @@ import deepmd._prod_virial_se_r_grad
 import deepmd._soft_min_force_grad
 import deepmd._soft_min_virial_grad
 
-def _make_node_names(model_type = None) : 
+def _make_node_names(model_type, modifier_type = None) :
     if model_type == 'ener':
         nodes = "o_energy,o_force,o_virial,o_atom_energy,o_atom_virial,descrpt_attr/rcut,descrpt_attr/ntypes,fitting_attr/dfparam,fitting_attr/daparam,model_attr/tmap,model_attr/model_type"
     elif model_type == 'wfc':
@@ -48,6 +48,8 @@ def _make_node_names(model_type = None) :
         nodes = "o_global_polar,descrpt_attr/rcut,descrpt_attr/ntypes,model_attr/tmap,model_attr/sel_type,model_attr/model_type"
     else:
         raise RuntimeError('unknow model type ' + model_type)
+    if modifier_type == 'dipole_charge':
+        nodes += ",modifier_attr/type,modifier_attr/mdl_name,modifier_attr/mdl_charge_map,modifier_attr/sys_charge_map,modifier_attr/ewald_h,modifier_attr/ewald_beta,dipole_charge/descrpt_attr/rcut,dipole_charge/descrpt_attr/ntypes,dipole_charge/model_attr/tmap,dipole_charge/model_attr/model_type,o_dm_force,dipole_charge/model_attr/sel_type,dipole_charge/o_dipole,dipole_charge/model_attr/output_dim,o_dm_virial,o_dm_av"
     return nodes
 
 def freeze_graph(model_folder, 
@@ -75,14 +77,18 @@ def freeze_graph(model_folder,
     # We retrieve the protobuf graph definition
     graph = tf.get_default_graph()
     input_graph_def = graph.as_graph_def()
-    # nodes = [n.name for n in input_graph_def.node]
+    nodes = [n.name for n in input_graph_def.node]
 
     # We start a session and restore the graph weights
     with tf.Session() as sess:
         saver.restore(sess, input_checkpoint)
         model_type = sess.run('model_attr/model_type:0', feed_dict = {}).decode('utf-8')
+        if 'modifier_attr/type' in nodes:
+            modifier_type = sess.run('modifier_attr/type:0', feed_dict = {}).decode('utf-8')
+        else:
+            modifier_type = None
         if output_node_names is None :
-            output_node_names = _make_node_names(model_type)
+            output_node_names = _make_node_names(model_type, modifier_type)
         print('The following nodes will be frozen: %s' % output_node_names)
 
         # We use a built-in TF helper to export variables to constants
