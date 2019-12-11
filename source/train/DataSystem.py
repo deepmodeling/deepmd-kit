@@ -19,7 +19,8 @@ class DeepmdDataSystem() :
                   set_prefix = 'set',
                   shuffle_test = True,
                   run_opt = None, 
-                  type_map = None) :
+                  type_map = None, 
+                  modifier = None) :
         # init data
         self.rcut = rcut
         self.system_dirs = systems
@@ -29,8 +30,8 @@ class DeepmdDataSystem() :
             self.data_systems.append(DeepmdData(ii, 
                                                 set_prefix=set_prefix, 
                                                 shuffle_test=shuffle_test, 
-                                                type_map = type_map))
-
+                                                type_map = type_map, 
+                                                modifier = modifier))
         # batch size
         self.batch_size = batch_size
         if isinstance(self.batch_size, int) :
@@ -87,14 +88,20 @@ class DeepmdDataSystem() :
             self.print_summary(run_opt)
 
 
-    def _load_test(self):
+    def _load_test(self, ntests = -1):
         self.test_data = collections.defaultdict(list)
-        self.default_mesh = []
         for ii in range(self.nsystems) :
-            test_system_data = self.data_systems[ii].get_test ()
+            test_system_data = self.data_systems[ii].get_test(ntests = ntests)
             for nn in test_system_data:
                 self.test_data[nn].append(test_system_data[nn])
-            cell_size = np.max (self.rcut)
+
+    def _make_default_mesh(self):
+        self.default_mesh = []
+        cell_size = np.max (self.rcut)
+        for ii in range(self.nsystems) :
+            test_system_data = self.data_systems[ii].get_batch(self.batch_size[ii])
+            self.data_systems[ii].reset_get_batch()
+            # test_system_data = self.data_systems[ii].get_test()
             avg_box = np.average (test_system_data["box"], axis = 0)
             avg_box = np.reshape (avg_box, [3,3])
             ncell = (np.linalg.norm(avg_box, axis=1)/ cell_size).astype(np.int32)
@@ -151,7 +158,7 @@ class DeepmdDataSystem() :
                    sys_weights = None,
                    style = "prob_sys_size") :
         if not hasattr(self, 'default_mesh') :
-            self._load_test()
+            self._make_default_mesh()
         if sys_idx is not None :
             self.pick_idx = sys_idx
         else :
@@ -171,9 +178,12 @@ class DeepmdDataSystem() :
         return b_data
 
     def get_test (self, 
-                  sys_idx = None) :
+                  sys_idx = None, 
+                  ntests = -1) :
         if not hasattr(self, 'default_mesh') :
-            self._load_test()
+            self._make_default_mesh()
+        if not hasattr(self, 'test_data') :
+            self._load_test(ntests = ntests)
         if sys_idx is not None :
             idx = sys_idx
         else :

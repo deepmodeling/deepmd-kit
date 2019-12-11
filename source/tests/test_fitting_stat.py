@@ -69,7 +69,7 @@ class TestEnerFittingStat (unittest.TestCase) :
         all_data = _make_fake_data(sys_natoms, sys_nframes, avgs, stds)
         frefa, frefs = _brute_fparam(all_data, len(avgs))
         arefa, arefs = _brute_aparam(all_data, len(avgs))
-        fitting.compute_dstats(all_data, protection = 1e-2)
+        fitting.compute_input_stats(all_data, protection = 1e-2)
         # print(frefa, frefs)
         for ii in range(len(avgs)):
             self.assertAlmostEqual(frefa[ii], fitting.fparam_avg[ii])

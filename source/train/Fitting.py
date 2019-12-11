@@ -23,14 +23,17 @@ class EnerFitting ():
                .add('numb_aparam',      int,    default = 0)\
                .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\
                .add('resnet_dt',        bool,   default = True)\
+               .add('rcond',            float,  default = 1e-3) \
                .add('seed',             int)               
         class_data = args.parse(jdata)
         self.numb_fparam = class_data['numb_fparam']
         self.numb_aparam = class_data['numb_aparam']
         self.n_neuron = class_data['neuron']
         self.resnet_dt = class_data['resnet_dt']
+        self.rcond = class_data['rcond']
         self.seed = class_data['seed']
         self.useBN = False
+        self.bias_atom_e = None
         # data requirement
         if self.numb_fparam > 0 :
             add_data_requirement('fparam', self.numb_fparam, atomic=False, must=True, high_prec=False)
@@ -49,7 +52,33 @@ class EnerFitting ():
     def get_numb_aparam(self) :
         return self.numb_fparam
 
-    def compute_dstats(self, all_stat, protection):
+    def compute_output_stats(self, all_stat):
+        self.bias_atom_e = self._compute_output_stats(all_stat, rcond = self.rcond)
+
+    @classmethod
+    def _compute_output_stats(self, all_stat, rcond = 1e-3):
+        data = all_stat['energy']
+        # data[sys_idx][batch_idx][frame_idx]
+        sys_ener = np.array([])
+        for ss in range(len(data)):
+            sys_data = []
+            for ii in range(len(data[ss])):
+                for jj in range(len(data[ss][ii])):
+                    sys_data.append(data[ss][ii][jj])
+            sys_data = np.concatenate(sys_data)
+            sys_ener = np.append(sys_ener, np.average(sys_data))
+        data = all_stat['natoms_vec']
+        sys_tynatom = np.array([])
+        nsys = len(data)
+        for ss in range(len(data)):
+            sys_tynatom = np.append(sys_tynatom, data[ss][0].astype(np.float64))
+        sys_tynatom = np.reshape(sys_tynatom, [nsys,-1])
+        sys_tynatom = sys_tynatom[:,2:]
+        energy_shift,resd,rank,s_value \
+            = np.linalg.lstsq(sys_tynatom, sys_ener, rcond = rcond)
+        return energy_shift    
+
+    def compute_input_stats(self, all_stat, protection):
         # stat fparam
         if self.numb_fparam > 0:
             cat_data = np.concatenate(all_stat['fparam'], axis = 0)
@@ -78,7 +107,8 @@ class EnerFitting ():
             for ii in range(self.aparam_std.size):
                 if self.aparam_std[ii] < protection:
                     self.aparam_std[ii] = protection
-            self.aparam_inv_std = 1./self.aparam_std                
+            self.aparam_inv_std = 1./self.aparam_std
+
 
     def _compute_std (self, sumv2, sumv, sumn) :
         return np.sqrt(sumv2/sumn - np.multiply(sumv/sumn, sumv/sumn))
@@ -88,9 +118,9 @@ class EnerFitting ():
                inputs,
                input_dict,
                natoms,
-               bias_atom_e = None,
                reuse = None,
                suffix = '') :
+        bias_atom_e = self.bias_atom_e
         if self.numb_fparam > 0 and ( self.fparam_avg is None or self.fparam_inv_std is None ):
             raise RuntimeError('No data stat result. one should do data statisitic, before build')
         if self.numb_aparam > 0 and ( self.aparam_avg is None or self.aparam_inv_std is None ):
@@ -371,6 +401,23 @@ class PolarFittingSeA () :
     def get_out_size(self):
         return 9
 
+    def compute_input_stats(self, all_stat, protection = 1e-2):
+        if not ('polarizability' in all_stat.keys()):
+            self.avgeig = np.zeros([9])
+            warnings.warn('no polarizability data, cannot do data stat. use zeros as guess')
+            return
+        data = all_stat['polarizability']
+        all_tmp = []
+        for ss in range(len(data)):
+            tmp = np.concatenate(data[ss], axis = 0)
+            tmp = np.reshape(tmp, [-1, 3, 3])
+            tmp,_ = np.linalg.eig(tmp)
+            tmp = np.absolute(tmp)
+            tmp = np.sort(tmp, axis = 1)
+            all_tmp.append(tmp)
+        all_tmp = np.concatenate(all_tmp, axis = 1)
+        self.avgeig = np.average(all_tmp, axis = 0)
+
     def build (self, 
                input_d,
                rot_mat,
@@ -403,15 +450,23 @@ class PolarFittingSeA () :
                 else :
                     layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
             if self.fit_diag :
+                bavg = np.zeros(self.dim_rot_mat_1)
+                # bavg[0] = self.avgeig[0]
+                # bavg[1] = self.avgeig[1]
+                # bavg[2] = self.avgeig[2]
                 # (nframes x natoms) x naxis
-                final_layer = one_layer(layer, self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
+                final_layer = one_layer(layer, self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, bavg = bavg)
                 # (nframes x natoms) x naxis
                 final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], self.dim_rot_mat_1])
                 # (nframes x natoms) x naxis x naxis
                 final_layer = tf.matrix_diag(final_layer)                
-            else :                
+            else :
+                bavg = np.zeros(self.dim_rot_mat_1*self.dim_rot_mat_1)
+                # bavg[0*self.dim_rot_mat_1+0] = self.avgeig[0]
+                # bavg[1*self.dim_rot_mat_1+1] = self.avgeig[1]
+                # bavg[2*self.dim_rot_mat_1+2] = self.avgeig[2]
                 # (nframes x natoms) x (naxis x naxis)
-                final_layer = one_layer(layer, self.dim_rot_mat_1*self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
+                final_layer = one_layer(layer, self.dim_rot_mat_1*self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, bavg = bavg)
                 # (nframes x natoms) x naxis x naxis
                 final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], self.dim_rot_mat_1, self.dim_rot_mat_1])
                 # (nframes x natoms) x naxis x naxis
@@ -484,6 +539,9 @@ class DipoleFittingSeA () :
     def get_sel_type(self):
         return self.sel_type
 
+    def get_out_size(self):
+        return 3
+
     def build (self, 
                input_d,
                rot_mat,
@@ -532,3 +590,4 @@ class DipoleFittingSeA () :
             count += 1
 
         return tf.reshape(outs, [-1])
+        # return tf.reshape(outs, [tf.shape(inputs)[0] * natoms[0] * 3 // 3])
