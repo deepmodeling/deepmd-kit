@@ -386,6 +386,7 @@ class NNPTrainer (object):
             fp = open(self.disp_file, "a")
 
         cur_batch = self.sess.run(self.global_step)
+        is_first_step = True
         self.cur_batch = cur_batch
         self.run_opt.message("start training at lr %.2e (== %.2e), final lr will be %.2e" % 
                              (self.sess.run(self.learning_rate),
@@ -417,8 +418,9 @@ class NNPTrainer (object):
                 feed_dict_batch[self.place_holders[ii]] = batch_data[ii]
             feed_dict_batch[self.place_holders['is_training']] = True
 
-            if self.display_in_training and cur_batch == 0 :
+            if self.display_in_training and is_first_step :
                 self.test_on_the_fly(fp, data, feed_dict_batch)
+                is_first_step = False
             if self.timing_in_training : tic = time.time()
             self.sess.run([self.train_op], feed_dict = feed_dict_batch, options=prf_options, run_metadata=prf_run_metadata)
             if self.timing_in_training : toc = time.time()

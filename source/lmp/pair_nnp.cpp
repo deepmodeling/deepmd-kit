@@ -465,7 +465,7 @@ void PairNNP::compute(int eflag, int vflag)
 	std_f.resize(std_f_.size());
 	for (int dd = 0; dd < std_f_.size(); ++dd) std_f[dd] = std_f_[dd];
 	if (out_rel == 1){
-	    nnp_inter_model_devi.compute_relative_std_f (std_f, tmp_avg_f_, eps);
+	    nnp_inter_model_devi.compute_relative_std_f (std_f_, tmp_avg_f_, eps);
 	}
 #endif
 	double min = numeric_limits<double>::max(), max = 0, avg = 0;
