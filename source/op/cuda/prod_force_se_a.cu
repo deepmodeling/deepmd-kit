@@ -85,7 +85,11 @@ void ProdForceSeALauncher(VALUETYPE * force,
     // std::cout << "I'm here!" << std::endl;
     cudaErrcheck(cudaMemset(force, 0.0, sizeof(VALUETYPE) * nall * 3));
     dim3 grid(nloc, 3);
-    deriv_wrt_center_atom_se_a<<<grid, ndescrpt>>>(force, net_deriv, in_deriv, ndescrpt);
+    const int LEN1 = 256;
+    const int nblock1 = (ndescrpt + LEN1 -1) / LEN1;
+    dim3 grid(nblock1, nloc);
+    dim3 thread(LEN1, 3);
+    deriv_wrt_center_atom_se_a<<<grid, thread>>>(force, net_deriv, in_deriv, ndescrpt);
     
     const int LEN = 64;
     int nblock = (nloc + LEN -1) / LEN;
