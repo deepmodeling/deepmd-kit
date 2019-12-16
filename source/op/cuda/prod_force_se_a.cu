@@ -37,9 +37,13 @@ __global__ void deriv_wrt_center_atom_se_a(VALUETYPE * force,
                         const VALUETYPE * in_deriv,
                         const int ndescrpt)
 {
-    const unsigned int idx = blockIdx.x;
-    const unsigned int idy = threadIdx.x;
-    const unsigned int idz = blockIdx.y;
+    const unsigned int idx = blockIdx.y;
+    const unsigned int idy = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned int idz = threadIdx.y;
+
+    if (idy >= ndescrpt) {
+        return;
+    }
     
     atomicAdd(force + idx * 3 + idz, -1.0 * net_deriv[idx * ndescrpt + idy] * in_deriv[idx * ndescrpt * 3 + idy * 3 + idz]);
 }
@@ -84,8 +88,11 @@ void ProdForceSeALauncher(VALUETYPE * force,
 {   
     // std::cout << "I'm here!" << std::endl;
     cudaErrcheck(cudaMemset(force, 0.0, sizeof(VALUETYPE) * nall * 3));
-    dim3 grid(nloc, 3);
-    deriv_wrt_center_atom_se_a<<<grid, ndescrpt>>>(force, net_deriv, in_deriv, ndescrpt);
+    const int LEN1 = 256;
+    const int nblock1 = (ndescrpt + LEN1 -1) / LEN1;
+    dim3 grid(nblock1, nloc);
+    dim3 thread(LEN1, 3);
+    deriv_wrt_center_atom_se_a<<<grid, thread>>>(force, net_deriv, in_deriv, ndescrpt);
     
     const int LEN = 64;
     int nblock = (nloc + LEN -1) / LEN;
