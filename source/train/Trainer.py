@@ -212,9 +212,11 @@ class NNPTrainer (object):
         self.run_opt.message(msg)
 
     def build (self, 
-               data) :
+               data, 
+               stop_batch = 0) :
         self.ntypes = self.model.get_ntypes()
         assert (self.ntypes == data.get_ntypes()), "ntypes should match that found in data"
+        self.stop_batch = stop_batch
 
         self.batch_size = data.get_batch_size()
 
@@ -241,7 +243,7 @@ class NNPTrainer (object):
     def _build_lr(self):
         self._extra_train_ops   = []
         self.global_step = tf.train.get_or_create_global_step()
-        self.learning_rate = self.lr.build(self.global_step)
+        self.learning_rate = self.lr.build(self.global_step, self.stop_batch)
         self._message("built lr")
 
     def _build_network(self, data):        
@@ -373,8 +375,8 @@ class NNPTrainer (object):
         # save_checkpoint_steps = self.save_freq)
 
     def train (self, 
-               data, 
-               stop_batch) :
+               data) :
+        stop_batch = self.stop_batch
         if self.run_opt.is_distrib :
             self._init_sess_distrib()
         else :
@@ -388,9 +390,11 @@ class NNPTrainer (object):
         cur_batch = self.sess.run(self.global_step)
         is_first_step = True
         self.cur_batch = cur_batch
-        self.run_opt.message("start training at lr %.2e (== %.2e), final lr will be %.2e" % 
+        self.run_opt.message("start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e" % 
                              (self.sess.run(self.learning_rate),
                               self.lr.value(cur_batch), 
+                              self.lr.decay_steps_,
+                              self.lr.decay_rate_,
                               self.lr.value(stop_batch)) 
         )
 
@@ -465,7 +469,7 @@ class NNPTrainer (object):
                          fp,
                          data,
                          feed_dict_batch) :
-        test_data = data.get_test ()
+        test_data = data.get_test(ntests = self.numb_test)
         feed_dict_test = {}
         for kk in test_data.keys():
             if kk == 'find_type' or kk == 'type' :
