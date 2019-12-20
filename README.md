@@ -9,8 +9,11 @@
  	- [License and credits](#license-and-credits)
  	- [Deep Potential in a nutshell](#deep-potential-in-a-nutshell)
 - [Download and install](#download-and-install)
+    - [Easy installation methods](#easy-installation-methods)
+      - [With Docker](#with-docker)
+      - [With conda](#with-conda)
+      - [Offline packages](#offline-packages)
     - [Install the python interaction](#install-the-python-interface)
-      - [Easy installation methods](#easy-installation-methods)
       - [Install the Tensorflow's python interface](#install-the-tensorflows-python-interface)
       - [Install the DeePMD-kit's python interface](#install-the-deepmd-kits-python-interface)
     - [Install the C++ interface](#install-the-c-interface)
@@ -29,6 +32,7 @@
 	    - [Include deepmd in the pair style](#include-deepmd-in-the-pair-style)
 	    - [Long-range interaction](#long-range-interaction)
 	- [Run path-integral MD with i-PI](#run-path-integral-md-with-i-pi)
+	- [Use deep potential with ASE](#use-deep-potential-with-ase)
 - [Troubleshooting](#troubleshooting)
 
 # About DeePMD-kit
@@ -83,11 +87,29 @@ In addition to building up potential energy models, DeePMD-kit can also be used 
 
 Please follow our [github](https://github.com/deepmodeling/deepmd-kit) webpage to see the latest released version and development version.
 
+## Easy installation methods
+There various easy methods to install DeePMD-kit. Choose one that you prefer. If you want to build by yourself, jump to the next two sections.
+
+### With Docker
+A docker for installing the DeePMD-kit on CentOS 7 is available [here](https://github.com/frankhan91/deepmd-kit_docker).
+
+### With conda
+DeePMD-kit is avaiable with [conda](https://github.com/conda/conda). Install [Anaconda](https://www.anaconda.com/distribution/#download-section) or [Miniconda](https://docs.conda.io/en/latest/miniconda.html) first.
+
+To install the CPU version:
+```bash
+conda install deepmd-kit=*=*cpu lammps-dp=*=*cpu -c deepmodeling
+```
+
+To install the GPU version containing [CUDA 10.0](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver):
+```bash
+conda install deepmd-kit=*=*gpu lammps-dp=*=*gpu -c deepmodeling
+```
+
+### Offline packages
+Both CPU and GPU version offline package are avaiable in [the Releases page](https://github.com/deepmodeling/deepmd-kit/releases).
+
 ## Install the python interface 
-
-### Easy installation methods
-A docker for installing the DeePMD-kit on CentOS 7 is available [here](https://github.com/frankhan91/deepmd-kit_docker). We are currently working on installation methods using the `conda` package management system and `pip` tools. Hope these will come out soon.
-
 ### Install the Tensorflow's python interface
 First, check the python version and compiler version on your machine 
 ```bash
@@ -101,6 +123,14 @@ virtualenv -p python3 $tensorflow_venv
 source $tensorflow_venv/bin/activate
 pip install --upgrade pip
 pip install --upgrade tensorflow==1.14.0
+```
+It is notice that everytime a new shell is started and one wants to use `DeePMD-kit`, the virtual environment should be activated by 
+```bash
+source $tensorflow_venv/bin/activate
+```
+if one wants to skip out of the virtual environment, he/she can do
+```bash
+deactivate
 ```
 If one has multiple python interpreters named like python3.x, it can be specified by, for example
 ```bash
@@ -121,7 +151,7 @@ One should remember to activate the virtual environment every time he/she uses d
 Clone the DeePMD-kit source code
 ```bash
 cd /some/workspace
-git clone https://github.com/deepmodeling/deepmd-kit.git deepmd-kit
+git clone --recursive https://github.com/deepmodeling/deepmd-kit.git deepmd-kit -b devel
 ```
 If one downloads the .zip file from the github, then the default folder of source code would be `deepmd-kit-master` rather than `deepmd-kit`. For convenience, you may want to record the location of source to a variable, saying `deepmd_source_dir` by
 ```bash
@@ -483,7 +513,7 @@ Running an MD simulation with LAMMPS is simpler. In the LAMMPS input file, one n
 pair_style     deepmd graph.pb
 pair_coeff     
 ```
-where `graph.pb` is the file name of the frozen model. The `pair_coeff` should be left blank. It should be noted that LAMMPS counts atom types starting from 1, therefore, all LAMMPS atom type will be firstly subtracted by 1, and then passed into the DeePMD-kit engine to compute the interactions. A detailed documentation of this pair style is [here](doc/lammps-pair-style-deepmd.md).
+where `graph.pb` is the file name of the frozen model. The `pair_coeff` should be left blank. It should be noted that LAMMPS counts atom types starting from 1, therefore, all LAMMPS atom type will be firstly subtracted by 1, and then passed into the DeePMD-kit engine to compute the interactions. [A detailed documentation of this pair style is available.](doc/lammps-pair-style-deepmd.md).
 
 ### Long-range interaction
 The reciprocal space part of the long-range interaction can be calculated by LAMMPS command `kspace_style`. To use it with DeePMD-kit, one writes 
@@ -524,6 +554,30 @@ The option **`graph_file`** provides the file name of the frozen model.
 
 The `dp_ipi` gets the atom names from an [XYZ file](https://en.wikipedia.org/wiki/XYZ_file_format) provided by **`coord_file`** (meanwhile ignores all coordinates in it), and translates the names to atom types by rules provided by **`atom_type`**.
 
+## Use deep potential with ASE
+
+Deep potential can be set up as a calculator with ASE to obtain potential energies and forces.
+```python
+from ase import Atoms
+from deepmd.calculator import DP
+
+water = Atoms('H2O',
+              positions=[(0.7601, 1.9270, 1),
+                         (1.9575, 1, 1),
+                         (1., 1., 1.)],
+              cell=[100, 100, 100],
+              calculator=DP(model="frozen_model.pb"))
+print(water.get_potential_energy())
+print(water.get_forces())
+```
+
+Optimization is also available:
+```python
+from ase.optimize import BFGS
+dyn = BFGS(water)
+dyn.run(fmax=1e-6)
+print(water.get_positions())
+```
 
 # Troubleshooting
 In consequence of various differences of computers or systems, problems may occur. Some common circumstances are listed as follows. 
@@ -533,11 +587,7 @@ If other unexpected problems occur, you're welcome to contact us for help.
 
 When the version of DeePMD-kit used to training model is different from the that of DeePMD-kit running MDs, one has the problem of model compatability.
 
-DeePMD-kit guarantees that the codes with the same major and minor revisions are compatible. That is to say v0.12.5 is compatible to v0.12.0, but is not compatible to v0.11.0. When way of fixing it is to restart the training with the new revisions and a slightly increased `stop_batch`, say 1,000,000 to 1,001,000 if the `save_freq` was set to 1,000. Typically one runs
-```bash
-dp train --restart model.ckpt revised_input.json
-```
-and freeze the new model.
+DeePMD-kit guarantees that the codes with the same major and minor revisions are compatible. That is to say v0.12.5 is compatible to v0.12.0, but is not compatible to v0.11.0 nor v1.0.0. 
 
 ## Installation: inadequate versions of gcc/g++
 Sometimes you may use a gcc/g++ of version <4.9. If you have a gcc/g++ of version > 4.9, say, 7.2.0, you may choose to use it by doing 

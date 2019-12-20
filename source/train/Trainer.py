@@ -12,13 +12,13 @@ from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
 from deepmd.RunOptions import global_cvt_2_tf_float
 from deepmd.RunOptions import global_cvt_2_ener_float
-from deepmd.Fitting import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA
+from deepmd.Fitting import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
 from deepmd.DescrptLocFrame import DescrptLocFrame
 from deepmd.DescrptSeA import DescrptSeA
 from deepmd.DescrptSeR import DescrptSeR
 from deepmd.DescrptSeAR import DescrptSeAR
-from deepmd.Model import Model, WFCModel, PolarModel
-from deepmd.Loss import EnerStdLoss, WFCLoss, TensorLoss
+from deepmd.Model import Model, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
+from deepmd.Loss import EnerStdLoss, TensorLoss
 from deepmd.LearningRate import LearningRateExp
 
 from tensorflow.python.framework import ops
@@ -94,6 +94,11 @@ class NNPTrainer (object):
             self.fitting = EnerFitting(fitting_param, self.descrpt)
         elif fitting_type == 'wfc':            
             self.fitting = WFCFitting(fitting_param, self.descrpt)
+        elif fitting_type == 'dipole':
+            if descrpt_type == 'se_a':
+                self.fitting = DipoleFittingSeA(fitting_param, self.descrpt)
+            else :
+                raise RuntimeError('fitting dipole only supports descrptors: se_a')
         elif fitting_type == 'polar':
             if descrpt_type == 'loc_frame':
                 self.fitting = PolarFittingLocFrame(fitting_param, self.descrpt)
@@ -101,6 +106,11 @@ class NNPTrainer (object):
                 self.fitting = PolarFittingSeA(fitting_param, self.descrpt)
             else :
                 raise RuntimeError('fitting polar only supports descrptors: loc_frame and se_a')
+        elif fitting_type == 'global_polar':
+            if descrpt_type == 'se_a':
+                self.fitting = GlobalPolarFittingSeA(fitting_param, self.descrpt)
+            else :
+                raise RuntimeError('fitting global_polar only supports descrptors: loc_frame and se_a')
         else :
             raise RuntimeError('unknow fitting type ' + fitting_type)
 
@@ -108,10 +118,14 @@ class NNPTrainer (object):
         # infer model type by fitting_type
         if fitting_type == Model.model_type:
             self.model = Model(model_param, self.descrpt, self.fitting)
-        elif fitting_type == WFCModel.model_type:
+        elif fitting_type == 'wfc':
             self.model = WFCModel(model_param, self.descrpt, self.fitting)
-        elif fitting_type == PolarModel.model_type:
+        elif fitting_type == 'dipole':
+            self.model = DipoleModel(model_param, self.descrpt, self.fitting)
+        elif fitting_type == 'polar':
             self.model = PolarModel(model_param, self.descrpt, self.fitting)
+        elif fitting_type == 'global_polar':
+            self.model = GlobalPolarModel(model_param, self.descrpt, self.fitting)
         else :
             raise RuntimeError('get unknown fitting type when building model')
 
@@ -135,12 +149,29 @@ class NNPTrainer (object):
         if fitting_type == 'ener':
             self.loss = EnerStdLoss(loss_param, starter_learning_rate = self.lr.start_lr())
         elif fitting_type == 'wfc':
-            self.loss = WFCLoss(loss_param, model = self.model)
+            self.loss = TensorLoss(loss_param, 
+                                   model = self.model, 
+                                   tensor_name = 'wfc',
+                                   tensor_size = self.model.get_out_size(),
+                                   label_name = 'wfc')
+        elif fitting_type == 'dipole':
+            self.loss = TensorLoss(loss_param, 
+                                   model = self.model, 
+                                   tensor_name = 'dipole',
+                                   tensor_size = 3,
+                                   label_name = 'dipole')
         elif fitting_type == 'polar':
             self.loss = TensorLoss(loss_param, 
                                    model = self.model, 
                                    tensor_name = 'polar',
                                    tensor_size = 9,
+                                   label_name = 'polarizability')
+        elif fitting_type == 'global_polar':
+            self.loss = TensorLoss(loss_param, 
+                                   model = self.model, 
+                                   tensor_name = 'global_polar',
+                                   tensor_size = 9,
+                                   atomic = False,
                                    label_name = 'polarizability')
         else :
             raise RuntimeError('get unknown fitting type when building loss function')
@@ -355,6 +386,7 @@ class NNPTrainer (object):
             fp = open(self.disp_file, "a")
 
         cur_batch = self.sess.run(self.global_step)
+        is_first_step = True
         self.cur_batch = cur_batch
         self.run_opt.message("start training at lr %.2e (== %.2e), final lr will be %.2e" % 
                              (self.sess.run(self.learning_rate),
@@ -386,8 +418,9 @@ class NNPTrainer (object):
                 feed_dict_batch[self.place_holders[ii]] = batch_data[ii]
             feed_dict_batch[self.place_holders['is_training']] = True
 
-            if self.display_in_training and cur_batch == 0 :
+            if self.display_in_training and is_first_step :
                 self.test_on_the_fly(fp, data, feed_dict_batch)
+                is_first_step = False
             if self.timing_in_training : tic = time.time()
             self.sess.run([self.train_op], feed_dict = feed_dict_batch, options=prf_options, run_metadata=prf_run_metadata)
             if self.timing_in_training : toc = time.time()

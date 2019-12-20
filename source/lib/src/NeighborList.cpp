@@ -79,16 +79,18 @@ build_clist (vector<vector<int > > &	clist,
     for (int dd = 0; dd < 3; ++dd){
       idx[dd] = (inter[dd] - nat_orig[dd]) / cell_size[dd];
       if (inter[dd] - nat_orig[dd] < 0.) idx[dd] --;
-      if (idx[dd] < nat_stt[dd] &&
-	  count_warning_loc_idx_lower < MAX_WARN_IDX_OUT_OF_BOUND) {
-	cerr << "# warning: loc idx out of lower bound (ignored if warned for more than " << MAX_WARN_IDX_OUT_OF_BOUND << " times) " << endl;
-	count_warning_loc_idx_lower ++;
+      if (idx[dd] < nat_stt[dd]) {
+	if (count_warning_loc_idx_lower < MAX_WARN_IDX_OUT_OF_BOUND) {
+	  cerr << "# warning: loc idx out of lower bound (ignored if warned for more than " << MAX_WARN_IDX_OUT_OF_BOUND << " times) " << endl;
+	  count_warning_loc_idx_lower ++;
+	}	
 	idx[dd] = nat_stt[dd];
       }
-      else if (idx[dd] >= nat_end[dd] &&
-	       count_warning_loc_idx_upper < MAX_WARN_IDX_OUT_OF_BOUND) {
-	cerr << "# warning: loc idx out of upper bound (ignored if warned for more than " << MAX_WARN_IDX_OUT_OF_BOUND << " times) " << endl;
-	count_warning_loc_idx_upper ++;
+      else if (idx[dd] >= nat_end[dd]) {
+	if (count_warning_loc_idx_upper < MAX_WARN_IDX_OUT_OF_BOUND) {
+	  cerr << "# warning: loc idx out of upper bound (ignored if warned for more than " << MAX_WARN_IDX_OUT_OF_BOUND << " times) " << endl;
+	  count_warning_loc_idx_upper ++;
+	}
 	idx[dd] = nat_end[dd] - 1;
       }
       idx[dd] += idx_orig_shift[dd];
@@ -102,9 +104,9 @@ build_clist (vector<vector<int > > &	clist,
     for (int dd = 0; dd < 3; ++dd){
       idx[dd] = (inter[dd] - nat_orig[dd]) / cell_size[dd];
       if (inter[dd] - nat_orig[dd] < 0.) idx[dd] --;
-      if (idx[dd] < ext_stt[dd] &&
-	  count_warning_ghost_idx_lower < MAX_WARN_IDX_OUT_OF_BOUND) {
-	if (fabs((inter[dd] - nat_orig[dd]) - (ext_stt[dd] * cell_size[dd]))
+      if (idx[dd] < ext_stt[dd]) {
+	if (count_warning_ghost_idx_lower < MAX_WARN_IDX_OUT_OF_BOUND &&
+	    fabs((inter[dd] - nat_orig[dd]) - (ext_stt[dd] * cell_size[dd]))
 	    > fabs(ext_stt[dd] * cell_size[dd]) * numeric_limits<double>::epsilon() * 5.
 	    ) {
 	  cerr << "# warning: ghost idx out of lower bound (ignored if warned for more than " << MAX_WARN_IDX_OUT_OF_BOUND << " times) " << endl;
@@ -112,10 +114,11 @@ build_clist (vector<vector<int > > &	clist,
 	}
 	idx[dd] = ext_stt[dd];
       }
-      else if (idx[dd] >= ext_end[dd] &&
-	       count_warning_ghost_idx_upper < MAX_WARN_IDX_OUT_OF_BOUND) {
-	cerr << "# warning: ghost idx out of upper bound (ignored if warned for more than " << MAX_WARN_IDX_OUT_OF_BOUND << " times) " << endl;
-	count_warning_ghost_idx_upper ++;
+      else if (idx[dd] >= ext_end[dd]) {
+	if (count_warning_ghost_idx_upper < MAX_WARN_IDX_OUT_OF_BOUND) {
+	  cerr << "# warning: ghost idx out of upper bound (ignored if warned for more than " << MAX_WARN_IDX_OUT_OF_BOUND << " times) " << endl;
+	  count_warning_ghost_idx_upper ++;
+	}
 	idx[dd] = ext_end[dd] - 1;
       }
       idx[dd] += idx_orig_shift[dd];
@@ -161,16 +164,18 @@ build_clist (vector<vector<int > > &	clist,
     for (int dd = 0; dd < 3; ++dd){
       idx[dd] = (inter[dd] - nat_orig[dd]) / cell_size[dd];
       if (inter[dd] - nat_orig[dd] < 0.) idx[dd] --;
-      if (idx[dd] < nat_stt[dd] &&
-	  count_warning_loc_idx_lower < MAX_WARN_IDX_OUT_OF_BOUND) {
-	cerr << "# warning: loc idx out of lower bound (ignored if warned for more than " << MAX_WARN_IDX_OUT_OF_BOUND << " times) " << endl;
-	count_warning_loc_idx_lower ++;
+      if (idx[dd] < nat_stt[dd]) {
+	if (count_warning_loc_idx_lower < MAX_WARN_IDX_OUT_OF_BOUND) {
+	  cerr << "# warning: loc idx out of lower bound (ignored if warned for more than " << MAX_WARN_IDX_OUT_OF_BOUND << " times) " << endl;
+	  count_warning_loc_idx_lower ++;
+	}	
 	idx[dd] = nat_stt[dd];
       }
-      else if (idx[dd] >= nat_end[dd] &&
-	       count_warning_loc_idx_upper < MAX_WARN_IDX_OUT_OF_BOUND) {
-	cerr << "# warning: loc idx out of upper bound (ignored if warned for more than " << MAX_WARN_IDX_OUT_OF_BOUND << " times) " << endl;
-	count_warning_loc_idx_upper ++;
+      else if (idx[dd] >= nat_end[dd]) {
+	if (count_warning_loc_idx_upper < MAX_WARN_IDX_OUT_OF_BOUND) {
+	  cerr << "# warning: loc idx out of upper bound (ignored if warned for more than " << MAX_WARN_IDX_OUT_OF_BOUND << " times) " << endl;
+	  count_warning_loc_idx_upper ++;
+	}	
 	idx[dd] = nat_end[dd] - 1;
       }
     }

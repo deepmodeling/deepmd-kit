@@ -54,10 +54,9 @@ class DescrptSeAR ():
                         data_box, 
                         data_atype, 
                         natoms_vec,
-                        mesh,
-                        reuse = None) :    
-        davg_a, dstd_a = self.descrpt_a.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh, reuse)
-        davg_r, dstd_r = self.descrpt_r.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh, reuse)
+                        mesh) :    
+        davg_a, dstd_a = self.descrpt_a.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh)
+        davg_r, dstd_r = self.descrpt_r.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh)
         return [davg_a, davg_r], [dstd_a, dstd_r]
 
 
@@ -73,7 +72,7 @@ class DescrptSeAR ():
                reuse = None):
         # dout
         self.dout_a = self.descrpt_a.build(coord_, atype_, natoms, box, mesh, davg[0], dstd[0], suffix=suffix+'_a', reuse=reuse)
-        self.dout_r = self.descrpt_r.build(coord_, atype_, natoms, box, mesh, davg[1], dstd[1], suffix=suffix+'_r', reuse=reuse)
+        self.dout_r = self.descrpt_r.build(coord_, atype_, natoms, box, mesh, davg[1], dstd[1], suffix=suffix,      reuse=reuse)
         self.dout_a = tf.reshape(self.dout_a, [-1, self.descrpt_a.get_dim_out()])
         self.dout_r = tf.reshape(self.dout_r, [-1, self.descrpt_r.get_dim_out()])
         self.dout = tf.concat([self.dout_a, self.dout_r], axis = 1)

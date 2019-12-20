@@ -5,10 +5,11 @@
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/shape_inference.h"
-
+#include "NNPAtomMap.h"
 #include <vector>
 #include "version.h"
 
+typedef double compute_t;
 using namespace tensorflow;
 using namespace std;
 
@@ -53,6 +54,7 @@ class NNPInter
 {
 public:
   NNPInter () ;
+  ~NNPInter() ;
   NNPInter  (const string & model, const int & gpu_rank = 0);
   void init (const string & model, const int & gpu_rank = 0);
   void print_summary(const string &pre) const;
@@ -64,7 +66,8 @@ public:
 		const vector<int> &		atype,
 		const vector<VALUETYPE> &	box, 
 		const int			nghost = 0,
-		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
+		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>(),
+		const vector<VALUETYPE>	&	aparam = vector<VALUETYPE>());
   void compute (ENERGYTYPE &			ener,
 		vector<VALUETYPE> &		force,
 		vector<VALUETYPE> &		virial,
@@ -73,7 +76,9 @@ public:
 		const vector<VALUETYPE> &	box, 
 		const int			nghost,
 		const LammpsNeighborList &	lmp_list,
-		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
+		const int				&   ago,
+		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>(),
+		const vector<VALUETYPE>	&	aparam = vector<VALUETYPE>());
   void compute (ENERGYTYPE &			ener,
 		vector<VALUETYPE> &		force,
 		vector<VALUETYPE> &		virial,
@@ -82,7 +87,8 @@ public:
 		const vector<VALUETYPE> &	coord,
 		const vector<int> &		atype,
 		const vector<VALUETYPE> &	box,
-		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
+		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>(),
+		const vector<VALUETYPE>	&	aparam = vector<VALUETYPE>());
   void compute (ENERGYTYPE &			ener,
 		vector<VALUETYPE> &		force,
 		vector<VALUETYPE> &		virial,
@@ -93,10 +99,13 @@ public:
 		const vector<VALUETYPE> &	box, 
 		const int			nghost, 
 		const LammpsNeighborList &	lmp_list,
-		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
+		const int 				&   ago,
+		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>(),
+		const vector<VALUETYPE>	&	aparam = vector<VALUETYPE>());
   VALUETYPE cutoff () const {assert(inited); return rcut;};
   int numb_types () const {assert(inited); return ntypes;};
   int dim_fparam () const {assert(inited); return dfparam;};
+  int dim_aparam () const {assert(inited); return daparam;};
 private:
   Session* session;
   int num_intra_nthreads, num_inter_nthreads;
@@ -109,12 +118,34 @@ private:
   VALUETYPE cell_size;
   int ntypes;
   int dfparam;
+  int daparam;
+  void validate_fparam_aparam(const int & nloc,
+			      const vector<VALUETYPE> &fparam,
+			      const vector<VALUETYPE> &aparam)const ;
+
+  // copy neighbor list info from host
+  bool init_nbor;
+  std::vector<int> sec_a;
+  compute_t *array_double;
+  InternalNeighborList nlist;
+  NNPAtomMap<VALUETYPE> nnpmap;
+  unsigned long long *array_longlong;
+  int *ilist, *jrange, *jlist, *array_int;
+  int ilist_size, jrange_size, jlist_size;
+  int arr_int_size, arr_ll_size, arr_dou_size;
+
+  // function used for neighbor list copy
+  vector<int> get_sel_a() const;
+#ifdef USE_CUDA_TOOLKIT
+  void update_nbor(const InternalNeighborList & nlist, const int nloc);
+#endif
 };
 
 class NNPInterModelDevi
 {
 public:
   NNPInterModelDevi () ;
+  ~NNPInterModelDevi() ;
   NNPInterModelDevi  (const vector<string> & models, const int & gpu_rank = 0);
   void init (const vector<string> & models, const int & gpu_rank = 0);
 public:
@@ -125,7 +156,8 @@ public:
   		const vector<VALUETYPE> &	coord,
   		const vector<int> &		atype,
   		const vector<VALUETYPE> &	box,
-		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
+		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>(),
+		const vector<VALUETYPE>	&	aparam = vector<VALUETYPE>());
   void compute (vector<ENERGYTYPE> &		all_ener,
 		vector<vector<VALUETYPE> > &	all_force,
 		vector<vector<VALUETYPE> > &	all_virial,
@@ -134,7 +166,9 @@ public:
 		const vector<VALUETYPE> &	box,
 		const int			nghost,
 		const LammpsNeighborList &	lmp_list,
-		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
+		const int 				&   ago,
+		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>(),
+		const vector<VALUETYPE>	&	aparam = vector<VALUETYPE>());
   void compute (vector<ENERGYTYPE> &		all_ener,
 		vector<vector<VALUETYPE> > &	all_force,
 		vector<vector<VALUETYPE> > &	all_virial,
@@ -145,10 +179,13 @@ public:
 		const vector<VALUETYPE> &	box,
 		const int			nghost,
 		const LammpsNeighborList &	lmp_list,
-		const vector<VALUETYPE>		fparam = vector<VALUETYPE>());
+		const int 				&   ago,
+		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>(),
+		const vector<VALUETYPE>	&	aparam = vector<VALUETYPE>());
   VALUETYPE cutoff () const {assert(inited); return rcut;};
   int numb_types () const {assert(inited); return ntypes;};
   int dim_fparam () const {assert(inited); return dfparam;};
+  int dim_aparam () const {assert(inited); return daparam;};
 #ifndef HIGH_PREC
   void compute_avg (ENERGYTYPE &		dener,
 		    const vector<ENERGYTYPE > &	all_energy);
@@ -163,6 +200,9 @@ public:
   void compute_std_f (vector<VALUETYPE> &		std,
 		      const vector<VALUETYPE> &		avg,
 		      const vector<vector<VALUETYPE> >& xx);
+  void compute_relative_std_f (vector<VALUETYPE> &		std,
+		      const vector<VALUETYPE> &		avg,
+		      const VALUETYPE eps);
 private:
   unsigned numb_models;
   vector<Session*> sessions;
@@ -176,6 +216,29 @@ private:
   VALUETYPE cell_size;
   int ntypes;
   int dfparam;
+  int daparam;
+  void validate_fparam_aparam(const int & nloc,
+			      const vector<VALUETYPE> &fparam,
+			      const vector<VALUETYPE> &aparam)const ;
+
+  // copy neighbor list info from host
+  bool init_nbor;
+  compute_t *array_double;
+  vector<vector<int> > sec;
+  InternalNeighborList nlist;
+  NNPAtomMap<VALUETYPE> nnpmap;
+  unsigned long long *array_longlong;
+  int max_sec_size = 0, max_sec_back = 0;
+  int *ilist, *jrange, *jlist, *array_int;
+  int ilist_size, jrange_size, jlist_size, arr_int_size, arr_ll_size, arr_dou_size;
+
+  // function used for nborlist copy
+  void get_max_sec();
+  vector<vector<int> > get_sel() const;
+  void cum_sum(const std::vector<std::vector<int32> > n_sel);
+#ifdef USE_CUDA_TOOLKIT
+  void update_nbor(const InternalNeighborList & nlist, const int nloc);
+#endif
 };
 
 

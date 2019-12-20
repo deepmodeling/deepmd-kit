@@ -22,7 +22,8 @@ class EnerStdLoss () :
             .add('start_pref_ae',       float,  default = 0)\
             .add('limit_pref_ae',       float,  default = 0)\
             .add('start_pref_pf',       float,  default = 0)\
-            .add('limit_pref_pf',       float,  default = 0)        
+            .add('limit_pref_pf',       float,  default = 0)\
+            .add('relative_f',          float)
         class_data = args.parse(jdata)
         self.start_pref_e = class_data['start_pref_e']
         self.limit_pref_e = class_data['limit_pref_e']
@@ -34,6 +35,7 @@ class EnerStdLoss () :
         self.limit_pref_ae = class_data['limit_pref_ae']
         self.start_pref_pf = class_data['start_pref_pf']
         self.limit_pref_pf = class_data['limit_pref_pf']
+        self.relative_f = class_data['relative_f']
         self.has_e = (self.start_pref_e != 0 or self.limit_pref_e != 0)
         self.has_f = (self.start_pref_f != 0 or self.limit_pref_f != 0)
         self.has_v = (self.start_pref_v != 0 or self.limit_pref_v != 0)
@@ -72,8 +74,15 @@ class EnerStdLoss () :
         force_reshape = tf.reshape (force, [-1])
         force_hat_reshape = tf.reshape (force_hat, [-1])
         atom_pref_reshape = tf.reshape (atom_pref, [-1])
-        l2_force_loss = tf.reduce_mean (tf.square(force_hat_reshape - force_reshape), name = "l2_force_" + suffix)
-        l2_pref_force_loss = tf.reduce_mean (tf.multiply(tf.square(force_hat_reshape - force_reshape), atom_pref_reshape), name = "l2_pref_force_" + suffix)
+        diff_f = force_hat_reshape - force_reshape
+        if self.relative_f is not None:
+            force_hat_3 = tf.reshape(force_hat, [-1, 3])
+            norm_f = tf.reshape(tf.norm(force_hat_3, axis = 1), [-1, 1]) + self.relative_f
+            diff_f_3 = tf.reshape(diff_f, [-1, 3])
+            diff_f_3 = diff_f_3 / norm_f
+            diff_f = tf.reshape(diff_f_3, [-1])
+        l2_force_loss = tf.reduce_mean(tf.square(diff_f), name = "l2_force_" + suffix)
+        l2_pref_force_loss = tf.reduce_mean(tf.multiply(tf.square(diff_f), atom_pref_reshape), name = "l2_pref_force_" + suffix)
 
         virial_reshape = tf.reshape (virial, [-1])
         virial_hat_reshape = tf.reshape (virial_hat, [-1])
@@ -166,57 +175,8 @@ class EnerStdLoss () :
         if self.has_pf:
             print_str += prop_fmt % (np.sqrt(error_pf_test) / natoms[0], np.sqrt(error_pf_train) / natoms[0])
 
-        return print_str
-        
-        
+        return print_str        
 
-class WFCLoss () :
-    def __init__ (self, jdata, **kwarg) :
-        model = kwarg['model']
-        # data required
-        add_data_requirement('wfc', 
-                             model.get_wfc_numb() * 3, 
-                             atomic=True,  
-                             must=True, 
-                             high_prec=False, 
-                             type_sel = model.get_sel_type())
-
-    def build (self, 
-               learning_rate,
-               natoms,
-               model_dict,
-               label_dict,
-               suffix):        
-        wfc_hat = label_dict['wfc']
-        wfc = model_dict['wfc']
-        l2_loss = tf.reduce_mean( tf.square(wfc - wfc_hat), name='l2_'+suffix)
-        self.l2_l = l2_loss
-        more_loss = {}
-
-        return l2_loss, more_loss
-
-    def print_header(self) :
-        prop_fmt = '   %9s %9s'
-        print_str = ''
-        print_str += prop_fmt % ('l2_tst', 'l2_trn')
-        return print_str
-
-    def print_on_training(self, 
-                          sess, 
-                          natoms,
-                          feed_dict_test,
-                          feed_dict_batch) :
-        error_test\
-            = sess.run([self.l2_l], \
-                       feed_dict=feed_dict_test)
-        error_train\
-            = sess.run([self.l2_l], \
-                       feed_dict=feed_dict_batch)
-        print_str = ""
-        prop_fmt = "   %9.2e %9.2e"
-        print_str += prop_fmt % (np.sqrt(error_test), np.sqrt(error_train))
-
-        return print_str
 
 
 class TensorLoss () :
@@ -229,13 +189,14 @@ class TensorLoss () :
         self.tensor_name = kwarg['tensor_name']
         self.tensor_size = kwarg['tensor_size']
         self.label_name = kwarg['label_name']
+        self.atomic = kwarg.get('atomic', True)
         # data required
         add_data_requirement(self.label_name, 
                              self.tensor_size, 
-                             atomic=True,  
+                             atomic=self.atomic,  
                              must=True, 
                              high_prec=False, 
-                             type_sel = model.get_sel_type())
+                             type_sel = type_sel)
 
     def build (self, 
                learning_rate,
@@ -246,6 +207,9 @@ class TensorLoss () :
         polar_hat = label_dict[self.label_name]
         polar = model_dict[self.tensor_name]
         l2_loss = tf.reduce_mean( tf.square(polar - polar_hat), name='l2_'+suffix)
+        if not self.atomic :
+            atom_norm  = 1./ global_cvt_2_tf_float(natoms[0]) 
+            l2_loss = l2_loss * atom_norm
         self.l2_l = l2_loss
         more_loss = {}
 

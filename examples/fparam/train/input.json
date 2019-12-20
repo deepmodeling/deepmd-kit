@@ -1,6 +1,7 @@
 {
     "_comment": " model parameters",
     "model" : {
+	"data_stat_nbatch":	1,
 	"descriptor": {
 	    "type":		"se_a",
 	    "sel":		[60],
