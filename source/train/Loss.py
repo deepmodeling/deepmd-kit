@@ -42,11 +42,11 @@ class EnerStdLoss () :
         self.has_ae = (self.start_pref_ae != 0 or self.limit_pref_ae != 0)
         self.has_pf = (self.start_pref_pf != 0 or self.limit_pref_pf != 0)
         # data required
-        add_data_requirement('energy', 1, atomic=False, must=False, high_prec=True)
-        add_data_requirement('force',  3, atomic=True,  must=False, high_prec=False)
-        add_data_requirement('virial', 9, atomic=False, must=False, high_prec=False)
-        add_data_requirement('atom_ener', 1, atomic=True, must=False, high_prec=False)
-        add_data_requirement('atom_pref', 1, atomic=True, must=False, high_prec=False, repeat=3)
+        add_data_requirement('energy', 1, atomic=False, must=self.has_e, high_prec=True)
+        add_data_requirement('force',  3, atomic=True,  must=self.has_f, high_prec=False)
+        add_data_requirement('virial', 9, atomic=False, must=self.has_v, high_prec=False)
+        add_data_requirement('atom_ener', 1, atomic=True, must=self.has_ae, high_prec=False)
+        add_data_requirement('atom_pref', 1, atomic=True, must=self.has_pf, high_prec=False, repeat=3)
 
     def build (self, 
                learning_rate,
@@ -75,7 +75,7 @@ class EnerStdLoss () :
         force_hat_reshape = tf.reshape (force_hat, [-1])
         atom_pref_reshape = tf.reshape (atom_pref, [-1])
         diff_f = force_hat_reshape - force_reshape
-        if self.relative_f is not None:
+        if self.relative_f is not None:            
             force_hat_3 = tf.reshape(force_hat, [-1, 3])
             norm_f = tf.reshape(tf.norm(force_hat_3, axis = 1), [-1, 1]) + self.relative_f
             diff_f_3 = tf.reshape(diff_f, [-1, 3])

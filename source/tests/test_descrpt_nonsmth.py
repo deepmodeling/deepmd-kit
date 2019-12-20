@@ -24,9 +24,9 @@ from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
 
 class Inter():
-    def __init__ (self,
-                  data,
-                  comp = 0) :
+    def setUp (self,
+               data,
+               comp = 0) :
         self.sess = tf.Session()
         self.data = data
         self.natoms = self.data.get_natoms()
@@ -77,12 +77,13 @@ class Inter():
                  tnatoms,
                  name,
                  reuse = None) :
+        t_default_mesh = tf.constant(self.default_mesh)
         descrpt, descrpt_deriv, rij, nlist, axis, rot_mat \
             = op_module.descrpt (dcoord, 
                                  dtype,
                                  tnatoms,
                                  dbox, 
-                                 tf.constant(self.default_mesh),
+                                 t_default_mesh,
                                  self.t_avg,
                                  self.t_std,
                                  rcut_a = self.rcut_a, 
@@ -153,49 +154,29 @@ class Inter():
 
 
 class TestNonSmooth(Inter, unittest.TestCase):
-    def __init__ (self, *args, **kwargs):
+    # def __init__ (self, *args, **kwargs):
+    #     self.places = 5
+    #     data = Data()
+    #     Inter.__init__(self, data)
+    #     unittest.TestCase.__init__(self, *args, **kwargs)
+    #     self.controller = object()
+
+    def setUp(self):
         self.places = 5
         data = Data()
-        Inter.__init__(self, data)
-        unittest.TestCase.__init__(self, *args, **kwargs)
-        self.controller = object()
+        Inter.setUp(self, data)
 
     def test_force (self) :
-        force_test(self, self)
-        # t_energy, t_force, t_virial \
-        #     = self.comp_ef (self.coord, self.box, self.type, self.tnatoms, name = "test")
-        # self.sess.run (tf.global_variables_initializer())
-        # dcoord, dbox, dtype = self.data.get_data ()
-        # hh = 1e-6
-        # dcoordp = np.copy(dcoord)
-        # dcoordm = np.copy(dcoord)
-        # dcoordp[0,0] = dcoord[0,0] + hh
-        # dcoordm[0,0] = dcoord[0,0] - hh
-        # [axis0, nlist0, d0] = self.sess.run ([self.axis, self.nlist, self.descrpt], 
-        #                                  feed_dict = {
-        #                                      self.coord:     dcoordp,
-        #                                      self.box:       dbox,
-        #                                      self.type:      dtype,
-        #                                      self.tnatoms:   self.natoms}
-        # )
-        # [axis1, nlist1, d1] = self.sess.run ([self.axis, self.nlist, self.descrpt], 
-        #                                  feed_dict = {
-        #                                      self.coord:     dcoordm,
-        #                                      self.box:       dbox,
-        #                                      self.type:      dtype,
-        #                                      self.tnatoms:   self.natoms}
-        # )
-        # print((nlist0 - nlist1))
-        # print((axis0 - axis1))
+        force_test(self, self, suffix = '_se')
 
     def test_virial (self) :
-        virial_test(self, self)
+        virial_test(self, self, suffix = '_se')
 
     def test_force_dw (self) :
-        force_dw_test(self, self)
+        force_dw_test(self, self, suffix = '_se')
 
     def test_virial_dw (self) :
-        virial_dw_test(self, self)
+        virial_dw_test(self, self, suffix = '_se')
 
 
 if __name__ == '__main__':

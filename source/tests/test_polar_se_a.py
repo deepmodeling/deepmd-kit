@@ -49,7 +49,7 @@ class TestModel(unittest.TestCase):
                       'default_mesh' : [test_data['default_mesh']],
                       'fparam': [test_data['fparam']],
         }
-        model._compute_dstats(input_data)
+        model._compute_input_stat(input_data)
 
         t_prop_c           = tf.placeholder(tf.float32, [5],    name='t_prop_c')
         t_energy           = tf.placeholder(global_ener_float_precision, [None], name='t_energy')

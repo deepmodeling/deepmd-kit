@@ -16,6 +16,7 @@ from deepmd.RunOptions import RunOptions
 from deepmd.DataSystem import DataSystem, DeepmdDataSystem
 from deepmd.Trainer import NNPTrainer
 from deepmd.common import data_requirement
+from deepmd.DataModifier import DipoleChargeModifier
 
 def create_done_queue(cluster_spec, task_index):
    with tf.device("/job:ps/task:%d" % (task_index)):
@@ -53,8 +54,8 @@ def j_must_have (jdata, key) :
 
 def train (args) :
     # load json database
-    fp = open (args.INPUT, 'r')
-    jdata = json.load (fp)
+    with open (args.INPUT, 'r') as fp:
+       jdata = json.load (fp)
     if not 'model' in jdata.keys():
        jdata = convert_input_v0_v1(jdata, 
                                    warning = True, 
@@ -107,14 +108,34 @@ def _do_work(jdata, run_opt):
        ipt_type_map = None
     else:
        ipt_type_map = type_map
-    data = DeepmdDataSystem(systems, batch_size, test_size, rcut, set_prefix=set_pfx, run_opt=run_opt, type_map = ipt_type_map)
+    # data modifier
+    modifier = None
+    modi_data = jdata['model'].get("modifier", None)
+    if modi_data is not None:
+       if modi_data['type'] == 'dipole_charge':
+          modifier = DipoleChargeModifier(modi_data['model_name'],
+                                          modi_data['model_charge_map'],
+                                          modi_data['sys_charge_map'],
+                                          modi_data['ewald_h'],
+                                          modi_data['ewald_beta'])
+       else:
+          raise RuntimeError('unknown modifier type ' + str(modi_data['type']))
+    # init data
+    data = DeepmdDataSystem(systems, 
+                            batch_size, 
+                            test_size, 
+                            rcut, 
+                            set_prefix=set_pfx, 
+                            run_opt=run_opt, 
+                            type_map = ipt_type_map, 
+                            modifier = modifier)
     data.add_dict(data_requirement)
     # build the model with stats from the first system
-    model.build (data)
+    model.build (data, stop_batch)
     # train the model with the provided systems in a cyclic way
     start_time = time.time()
     cur_batch = 0
-    model.train (data, stop_batch)
+    model.train (data)
     end_time = time.time()
     run_opt.message("finished training\nwall time: %.3f s" % (end_time-start_time))
 

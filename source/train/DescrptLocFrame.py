@@ -42,7 +42,8 @@ class DescrptLocFrame () :
         self.ndescrpt_a = self.nnei_a * 4
         self.ndescrpt_r = self.nnei_r * 1
         self.ndescrpt = self.ndescrpt_a + self.ndescrpt_r
-
+        self.davg = None
+        self.dstd = None
 
     def get_rcut (self) :
         return self.rcut_r
@@ -56,7 +57,7 @@ class DescrptLocFrame () :
     def get_nlist (self) :
         return self.nlist, self.rij, self.sel_a, self.sel_r
 
-    def compute_dstats (self,
+    def compute_input_stats (self,
                         data_coord, 
                         data_box, 
                         data_atype, 
@@ -85,10 +86,9 @@ class DescrptLocFrame () :
                         dstd[ii] = 1e-2            
                 all_davg.append(davg)
                 all_dstd.append(dstd)
-        davg = np.array(all_davg)
-        dstd = np.array(all_dstd)
-        return davg, dstd
-        
+        self.davg = np.array(all_davg)
+        self.dstd = np.array(all_dstd)        
+
         
     def build (self, 
                coord_, 
@@ -96,10 +96,10 @@ class DescrptLocFrame () :
                natoms,
                box_, 
                mesh,
-               davg = None, 
-               dstd = None,
                suffix = '', 
                reuse = None):
+        davg = self.davg
+        dstd = self.dstd
         with tf.variable_scope('descrpt_attr' + suffix, reuse = reuse) :
             if davg is None:
                 davg = np.zeros([self.ntypes, self.ndescrpt]) 
