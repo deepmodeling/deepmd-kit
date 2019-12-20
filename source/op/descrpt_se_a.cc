@@ -119,14 +119,33 @@ public:
 
     int nei_mode = 0;
     if (mesh_tensor.shape().dim_size(0) == 16) {
+      // lammps neighbor list
       nei_mode = 3;
     }
     else if (mesh_tensor.shape().dim_size(0) == 12) {
+      // user provided extended mesh
       nei_mode = 2;
     }
     else if (mesh_tensor.shape().dim_size(0) == 6) {
+      // manual copied pbc
       assert (nloc == nall);
       nei_mode = 1;
+    }
+    else if (mesh_tensor.shape().dim_size(0) == 0) {
+      // no pbc
+      nei_mode = -1;
+    }
+    else {
+      throw runtime_error("invalid mesh tensor");
+    }
+    bool b_pbc = true;
+    // if region is given extended, do not use pbc
+    if (nei_mode >= 1 || nei_mode == -1) {
+      b_pbc = false;
+    }
+    bool b_norm_atom = false;
+    if (nei_mode == 1){
+      b_norm_atom = true;
     }
 
     // Create an output tensor
@@ -196,7 +215,7 @@ public:
 	for (int dd = 0; dd < 3; ++dd){
 	  d_coord3[ii*3+dd] = coord(kk, ii*3+dd);
 	}
-	if (nei_mode <= 1){
+	if (b_norm_atom){
 	  compute_t inter[3];
 	  region.phys2Inter (inter, &d_coord3[3*ii]);
 	  for (int dd = 0; dd < 3; ++dd){
@@ -259,14 +278,11 @@ public:
 	}
 	::build_nlist (d_nlist_a, d_nlist_r, d_coord3, nloc, rcut_a, rcut_r, nat_stt, ncell, ext_stt, ext_end, region, ncell);
       }
-      else {
-	build_nlist (d_nlist_a, d_nlist_r, rcut_a, rcut_r, d_coord3, region);      
+      else if (nei_mode == -1){
+	::build_nlist (d_nlist_a, d_nlist_r, d_coord3, rcut_a, rcut_r, NULL);
       }
-
-      bool b_pbc = true;
-      // if region is given extended, do not use pbc
-      if (nei_mode >= 1) {
-	b_pbc = false;
+      else {
+	throw runtime_error("unknow neighbor mode");
       }
 
       // loop over atoms, compute descriptors for each atom
@@ -349,48 +365,6 @@ private:
     sec[0] = 0;
     for (int ii = 1; ii < sec.size(); ++ii){
       sec[ii] = sec[ii-1] + n_sel[ii-1];
-    }
-  }
-  void 
-  build_nlist (vector<vector<int > > & nlist0,
-	       vector<vector<int > > & nlist1,
-	       const compute_t & rc0_,
-	       const compute_t & rc1_,
-	       const vector<compute_t > & posi3,
-	       const SimulationRegion<compute_t > & region) const {
-    compute_t rc0 (rc0_);
-    compute_t rc1 (rc1_);
-    assert (rc0 <= rc1);
-    compute_t rc02 = rc0 * rc0;
-    // negative rc0 means not applying rc0
-    if (rc0 < 0) rc02 = 0;
-    compute_t rc12 = rc1 * rc1;
-
-    unsigned natoms = posi3.size()/3;
-    nlist0.clear();
-    nlist1.clear();
-    nlist0.resize(natoms);
-    nlist1.resize(natoms);
-    for (unsigned ii = 0; ii < natoms; ++ii){
-      nlist0[ii].reserve (60);
-      nlist1[ii].reserve (60);
-    }
-    for (unsigned ii = 0; ii < natoms; ++ii){
-      for (unsigned jj = ii+1; jj < natoms; ++jj){
-	compute_t diff[3];
-	region.diffNearestNeighbor (posi3[jj*3+0], posi3[jj*3+1], posi3[jj*3+2],
-				    posi3[ii*3+0], posi3[ii*3+1], posi3[ii*3+2],
-				    diff[0], diff[1], diff[2]);
-	compute_t r2 = MathUtilities::dot<compute_t> (diff, diff);
-	if (r2 < rc02) {
-	  nlist0[ii].push_back (jj);
-	  nlist0[jj].push_back (ii);
-	}
-	else if (r2 < rc12) {
-	  nlist1[ii].push_back (jj);
-	  nlist1[jj].push_back (ii);
-	}
-      }
     }
   }
 };
