@@ -27,6 +27,7 @@ class DescrptSeR ():
                .add('rcut_smth',float,  default = 5.5) \
                .add('neuron',   list,   default = [10, 20, 40]) \
                .add('resnet_dt',bool,   default = False) \
+               .add('trainable',bool,   default = True) \
                .add('seed',     int) 
         class_data = args.parse(jdata)
         self.sel_r = class_data['sel']
@@ -35,6 +36,7 @@ class DescrptSeR ():
         self.filter_neuron = class_data['neuron']
         self.filter_resnet_dt = class_data['resnet_dt']
         self.seed = class_data['seed']        
+        self.trainable = class_data['trainable']
 
         # descrpt config
         self.sel_a = [ 0 for ii in range(len(self.sel_r)) ]
@@ -145,7 +147,7 @@ class DescrptSeR ():
 
         self.descrpt_reshape = tf.reshape(self.descrpt, [-1, self.ndescrpt])
 
-        self.dout = self._pass_filter(self.descrpt_reshape, natoms, suffix = suffix, reuse = reuse)
+        self.dout = self._pass_filter(self.descrpt_reshape, natoms, suffix = suffix, reuse = reuse, trainable = self.trainable)
 
         return self.dout
 
@@ -171,7 +173,8 @@ class DescrptSeR ():
                      inputs,
                      natoms,
                      reuse = None,
-                     suffix = '') :
+                     suffix = '', 
+                     trainable = True) :
         start_index = 0
         inputs = tf.reshape(inputs, [-1, self.ndescrpt * natoms[0]])
         shape = inputs.get_shape().as_list()
@@ -181,7 +184,7 @@ class DescrptSeR ():
                                  [ 0, start_index*      self.ndescrpt],
                                  [-1, natoms[2+type_i]* self.ndescrpt] )
             inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
-            layer = self._filter_r(inputs_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, seed = self.seed)
+            layer = self._filter_r(inputs_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, seed = self.seed, trainable = trainable)
             layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_out()])
             output.append(layer)
             start_index += natoms[2+type_i]
@@ -253,7 +256,8 @@ class DescrptSeR ():
                   bavg=0.0,
                   name='linear', 
                   reuse=None,
-                  seed=None):
+                  seed=None, 
+                  trainable = True):
         # natom x nei
         shape = inputs.get_shape().as_list()
         outputs_size = [1] + self.filter_neuron
@@ -274,16 +278,19 @@ class DescrptSeR ():
                     w = tf.get_variable('matrix_'+str(ii)+'_'+str(type_i), 
                                         [outputs_size[ii - 1], outputs_size[ii]], 
                                         global_tf_float_precision,
-                                        tf.random_normal_initializer(stddev=stddev/np.sqrt(outputs_size[ii]+outputs_size[ii-1]), seed = seed))
+                                        tf.random_normal_initializer(stddev=stddev/np.sqrt(outputs_size[ii]+outputs_size[ii-1]), seed = seed), 
+                                        trainable = trainable)
                     b = tf.get_variable('bias_'+str(ii)+'_'+str(type_i), 
                                         [1, outputs_size[ii]], 
                                         global_tf_float_precision,
-                                        tf.random_normal_initializer(stddev=stddev, mean = bavg, seed = seed))
+                                        tf.random_normal_initializer(stddev=stddev, mean = bavg, seed = seed), 
+                                        trainable = trainable)
                     if self.filter_resnet_dt :
                         idt = tf.get_variable('idt_'+str(ii)+'_'+str(type_i), 
                                               [1, outputs_size[ii]], 
                                               global_tf_float_precision,
-                                              tf.random_normal_initializer(stddev=0.001, mean = 1.0, seed = seed))
+                                              tf.random_normal_initializer(stddev=0.001, mean = 1.0, seed = seed), 
+                                              trainable = trainable)
                     if outputs_size[ii] == outputs_size[ii-1]:
                         if self.filter_resnet_dt :
                             xyz_scatter += activation_fn(tf.matmul(xyz_scatter, w) + b) * idt

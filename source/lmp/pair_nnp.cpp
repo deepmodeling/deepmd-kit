@@ -1,4 +1,5 @@
 #include <iostream>
+#include <string.h>
 #include <iomanip>
 #include <limits>
 #include "atom.h"
@@ -42,6 +43,7 @@ static int stringCmp(const void *a, const void* b)
 
 int PairNNP::get_node_rank() {
     char host_name[MPI_MAX_PROCESSOR_NAME];
+    memset(host_name, '\0', sizeof(char) * MPI_MAX_PROCESSOR_NAME);
     char (*host_names)[MPI_MAX_PROCESSOR_NAME];
     int n, namelen, color, rank, nprocs, myrank;
     size_t bytes;
@@ -53,6 +55,10 @@ int PairNNP::get_node_rank() {
 
     bytes = nprocs * sizeof(char[MPI_MAX_PROCESSOR_NAME]);
     host_names = (char (*)[MPI_MAX_PROCESSOR_NAME]) malloc(bytes);
+    for (int ii = 0; ii < nprocs; ii++) {
+        memset(host_names[ii], '\0', sizeof(char) * MPI_MAX_PROCESSOR_NAME);
+    }
+    
     strcpy(host_names[rank], host_name);
 
     for (n=0; n<nprocs; n++)
@@ -194,7 +200,9 @@ PairNNP::PairNNP(LAMMPS *lmp)
   eps = 0.;
   scale = NULL;
   do_ttm = false;
-
+  single_model = false;
+  multi_models_mod_devi = false;
+  multi_models_no_mod_devi = false;
   // set comm size needed by this Pair
   comm_reverse = 1;
 
@@ -288,16 +296,26 @@ void PairNNP::compute(int eflag, int vflag)
 #endif
   }
 
+  // int ago = numb_models > 1 ? 0 : neighbor->ago;
+  int ago = neighbor->ago;
+  if (numb_models > 1) {
+      if (multi_models_no_mod_devi && (out_freq > 0 && update->ntimestep % out_freq == 0)) {
+          ago = 0;
+      }
+      else if (multi_models_mod_devi && (out_freq == 0 || update->ntimestep % out_freq != 0)) {
+        ago = 0;
+      }
+  }
   // compute
-  bool single_model = (numb_models == 1);
-  bool multi_models_no_mod_devi = (numb_models > 1 && (out_freq == 0 || update->ntimestep % out_freq != 0));
-  bool multi_models_mod_devi = (numb_models > 1 && (out_freq > 0 && update->ntimestep % out_freq == 0));
+  single_model = (numb_models == 1);
+  multi_models_no_mod_devi = (numb_models > 1 && (out_freq == 0 || update->ntimestep % out_freq != 0));
+  multi_models_mod_devi = (numb_models > 1 && (out_freq > 0 && update->ntimestep % out_freq == 0));
   if (do_ghost) {
     LammpsNeighborList lmp_list (list->inum, list->ilist, list->numneigh, list->firstneigh);
     if (single_model || multi_models_no_mod_devi) {
       if ( ! (eflag_atom || vflag_atom) ) {      
 #ifdef HIGH_PREC
-	nnp_inter.compute (dener, dforce, dvirial, dcoord, dtype, dbox, nghost, lmp_list, fparam, daparam);
+	nnp_inter.compute (dener, dforce, dvirial, dcoord, dtype, dbox, nghost, lmp_list, ago, fparam, daparam);
 #else
 	vector<float> dcoord_(dcoord.size());
 	vector<float> dbox_(dbox.size());
@@ -306,7 +324,7 @@ void PairNNP::compute(int eflag, int vflag)
 	vector<float> dforce_(dforce.size(), 0);
 	vector<float> dvirial_(dvirial.size(), 0);
 	double dener_ = 0;
-	nnp_inter.compute (dener_, dforce_, dvirial_, dcoord_, dtype, dbox_, nghost, lmp_list, fparam, daparam);
+	nnp_inter.compute (dener_, dforce_, dvirial_, dcoord_, dtype, dbox_, nghost, lmp_list, ago, fparam, daparam);
 	for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];	
 	for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	
 	dener = dener_;
@@ -317,7 +335,7 @@ void PairNNP::compute(int eflag, int vflag)
 	vector<double > deatom (nall * 1, 0);
 	vector<double > dvatom (nall * 9, 0);
 #ifdef HIGH_PREC
-	nnp_inter.compute (dener, dforce, dvirial, deatom, dvatom, dcoord, dtype, dbox, nghost, lmp_list, fparam, daparam);
+	nnp_inter.compute (dener, dforce, dvirial, deatom, dvatom, dcoord, dtype, dbox, nghost, lmp_list, ago, fparam, daparam);
 #else 
 	vector<float> dcoord_(dcoord.size());
 	vector<float> dbox_(dbox.size());
@@ -328,7 +346,7 @@ void PairNNP::compute(int eflag, int vflag)
 	vector<float> deatom_(dforce.size(), 0);
 	vector<float> dvatom_(dforce.size(), 0);
 	double dener_ = 0;
-	nnp_inter.compute (dener_, dforce_, dvirial_, deatom_, dvatom_, dcoord_, dtype, dbox_, nghost, lmp_list, fparam, daparam);
+	nnp_inter.compute (dener_, dforce_, dvirial_, deatom_, dvatom_, dcoord_, dtype, dbox_, nghost, lmp_list, ago, fparam, daparam);
 	for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];	
 	for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	
 	for (unsigned dd = 0; dd < deatom.size(); ++dd) deatom[dd] = deatom_[dd];	
@@ -358,7 +376,7 @@ void PairNNP::compute(int eflag, int vflag)
       vector<vector<double>> 	all_virial;	       
       vector<vector<double>> 	all_atom_energy;
       vector<vector<double>> 	all_atom_virial;
-      nnp_inter_model_devi.compute(all_energy, all_force, all_virial, all_atom_energy, all_atom_virial, dcoord, dtype, dbox, nghost, lmp_list, fparam, daparam);
+      nnp_inter_model_devi.compute(all_energy, all_force, all_virial, all_atom_energy, all_atom_virial, dcoord, dtype, dbox, nghost, lmp_list, ago, fparam, daparam);
       // nnp_inter_model_devi.compute_avg (dener, all_energy);
       // nnp_inter_model_devi.compute_avg (dforce, all_force);
       // nnp_inter_model_devi.compute_avg (dvirial, all_virial);
@@ -384,7 +402,7 @@ void PairNNP::compute(int eflag, int vflag)
       vector<vector<float>> 	all_virial_;	       
       vector<vector<float>> 	all_atom_energy_;
       vector<vector<float>> 	all_atom_virial_;
-      nnp_inter_model_devi.compute(all_energy_, all_force_, all_virial_, all_atom_energy_, all_atom_virial_, dcoord_, dtype, dbox_, nghost, lmp_list, fparam, daparam);
+      nnp_inter_model_devi.compute(all_energy_, all_force_, all_virial_, all_atom_energy_, all_atom_virial_, dcoord_, dtype, dbox_, nghost, lmp_list, ago, fparam, daparam);
       // nnp_inter_model_devi.compute_avg (dener_, all_energy_);
       // nnp_inter_model_devi.compute_avg (dforce_, all_force_);
       // nnp_inter_model_devi.compute_avg (dvirial_, all_virial_);
@@ -432,6 +450,9 @@ void PairNNP::compute(int eflag, int vflag)
 	vector<double> tmp_avg_f;
 	nnp_inter_model_devi.compute_avg (tmp_avg_f, all_force);  
 	nnp_inter_model_devi.compute_std_f (std_f, tmp_avg_f, all_force);
+	if (out_rel == 1){
+	    nnp_inter_model_devi.compute_relative_std_f (std_f, tmp_avg_f, eps);
+	}
 #else 
 	vector<float> tmp_avg_f_, std_f_;
 	for (unsigned ii = 0; ii < all_force_.size(); ++ii){
@@ -443,6 +464,9 @@ void PairNNP::compute(int eflag, int vflag)
 	nnp_inter_model_devi.compute_std_f (std_f_, tmp_avg_f_, all_force_);
 	std_f.resize(std_f_.size());
 	for (int dd = 0; dd < std_f_.size(); ++dd) std_f[dd] = std_f_[dd];
+	if (out_rel == 1){
+	    nnp_inter_model_devi.compute_relative_std_f (std_f_, tmp_avg_f_, eps);
+	}
 #endif
 	double min = numeric_limits<double>::max(), max = 0, avg = 0;
 	ana_st(max, min, avg, std_f, nlocal);
@@ -496,16 +520,7 @@ void PairNNP::compute(int eflag, int vflag)
 	      // 1. If the atom_style is not atomic (e.g. charge), the order of std_f is different from that of atom ids.
               // 2. std_f is not gathered by MPI.
 	      for (int dd = 0; dd < all_nlocal; ++dd) {
-          if (out_rel == 1){
-            // relative std = std/(abs(f)+1)
-#ifdef HIGH_PREC
-            fp << " " << setw(18) << std_f[dd] / (fabs(tmp_avg_f[dd]) + eps);
-#else
-            fp << " " << setw(18) << std_f[dd] / (fabsf(tmp_avg_f_[dd]) + eps);
-#endif
-          } else {
             fp << " " << setw(18) << std_f[dd];	
-          }
         }
 	  }
 	  fp << endl;

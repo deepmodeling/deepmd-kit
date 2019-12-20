@@ -32,6 +32,7 @@
 	    - [Include deepmd in the pair style](#include-deepmd-in-the-pair-style)
 	    - [Long-range interaction](#long-range-interaction)
 	- [Run path-integral MD with i-PI](#run-path-integral-md-with-i-pi)
+	- [Use deep potential with ASE](#use-deep-potential-with-ase)
 - [Troubleshooting](#troubleshooting)
 
 # About DeePMD-kit
@@ -150,7 +151,7 @@ One should remember to activate the virtual environment every time he/she uses d
 Clone the DeePMD-kit source code
 ```bash
 cd /some/workspace
-git clone https://github.com/deepmodeling/deepmd-kit.git deepmd-kit
+git clone --recursive https://github.com/deepmodeling/deepmd-kit.git deepmd-kit -b devel
 ```
 If one downloads the .zip file from the github, then the default folder of source code would be `deepmd-kit-master` rather than `deepmd-kit`. For convenience, you may want to record the location of source to a variable, saying `deepmd_source_dir` by
 ```bash
@@ -553,6 +554,30 @@ The option **`graph_file`** provides the file name of the frozen model.
 
 The `dp_ipi` gets the atom names from an [XYZ file](https://en.wikipedia.org/wiki/XYZ_file_format) provided by **`coord_file`** (meanwhile ignores all coordinates in it), and translates the names to atom types by rules provided by **`atom_type`**.
 
+## Use deep potential with ASE
+
+Deep potential can be set up as a calculator with ASE to obtain potential energies and forces.
+```python
+from ase import Atoms
+from deepmd.calculator import DP
+
+water = Atoms('H2O',
+              positions=[(0.7601, 1.9270, 1),
+                         (1.9575, 1, 1),
+                         (1., 1., 1.)],
+              cell=[100, 100, 100],
+              calculator=DP(model="frozen_model.pb"))
+print(water.get_potential_energy())
+print(water.get_forces())
+```
+
+Optimization is also available:
+```python
+from ase.optimize import BFGS
+dyn = BFGS(water)
+dyn.run(fmax=1e-6)
+print(water.get_positions())
+```
 
 # Troubleshooting
 In consequence of various differences of computers or systems, problems may occur. Some common circumstances are listed as follows. 

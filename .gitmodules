@@ -1,0 +1,3 @@
+[submodule "source/op/cuda/cub"]
+	path = source/op/cuda/cub
+	url = git://github.com/NVlabs/cub.git
