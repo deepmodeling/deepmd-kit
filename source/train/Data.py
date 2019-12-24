@@ -25,6 +25,8 @@ class DeepmdData() :
         self.type_map = self._load_type_map(sys_path)
         if self.type_map is not None:
             assert(len(self.type_map) >= max(self.atom_type)+1)
+        # check pbc
+        self.pbc = self._check_pbc(sys_path)
         # enforce type_map if necessary
         if type_map is not None and self.type_map is not None:
             atom_type_ = [type_map.index(self.type_map[ii]) for ii in self.atom_type]
@@ -347,6 +349,12 @@ class DeepmdData() :
                 return fp.read().split()                
         else :
             return None
+
+    def _check_pbc(self, sys_path):
+        pbc = True
+        if os.path.isfile(os.path.join(sys_path, 'nopbc')) :
+            pbc = False
+        return pbc
 
 
 class DataSets (object):

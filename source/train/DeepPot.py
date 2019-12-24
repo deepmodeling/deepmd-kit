@@ -53,6 +53,8 @@ class DeepPot (DeepEval) :
             self.modifier_type = self.sess.run(t_modifier_type).decode('UTF-8')
         except ValueError:
             self.modifier_type = None
+        except KeyError:
+            self.modifier_type = None
         if self.modifier_type == 'dipole_charge':
             t_mdl_name = self.graph.get_tensor_by_name('load/modifier_attr/mdl_name:0')
             t_mdl_charge_map = self.graph.get_tensor_by_name('load/modifier_attr/mdl_charge_map:0')
@@ -108,9 +110,18 @@ class DeepPot (DeepEval) :
              aparam = None, 
              atomic = False) :
         # standarize the shape of inputs
-        coords = np.array(coords)
-        cells = np.array(cells)
-        atom_types = np.array(atom_types, dtype = int)
+        atom_types = np.array(atom_types, dtype = int).reshape([-1])
+        natoms = atom_types.size
+        coords = np.reshape(np.array(coords), [-1, natoms * 3])
+        nframes = coords.shape[0]
+        if cells is None:
+            pbc = False
+            # make cells to work around the requirement of pbc
+            cells = np.tile(np.eye(3), [nframes, 1]).reshape([nframes, 9])
+        else:
+            pbc = True
+            cells = np.array(cells).reshape([nframes, 9])
+        
         if self.has_fparam :
             assert(fparam is not None)
             fparam = np.array(fparam)
@@ -119,10 +130,6 @@ class DeepPot (DeepEval) :
             aparam = np.array(aparam)
 
         # reshape the inputs 
-        cells = np.reshape(cells, [-1, 9])
-        nframes = cells.shape[0]
-        coords = np.reshape(coords, [nframes, -1])
-        natoms = coords.shape[1] // 3
         if self.has_fparam :
             fdim = self.get_dim_fparam()
             if fparam.size == nframes * fdim :
@@ -167,7 +174,10 @@ class DeepPot (DeepEval) :
         for ii in range(nframes) :
             feed_dict_test[self.t_coord] = np.reshape(coords[ii:ii+1, :], [-1])
             feed_dict_test[self.t_box  ] = np.reshape(cells [ii:ii+1, :], [-1])
-            feed_dict_test[self.t_mesh ] = make_default_mesh(cells[ii:ii+1, :])
+            if pbc:
+                feed_dict_test[self.t_mesh ] = make_default_mesh(cells[ii:ii+1, :])
+            else:
+                feed_dict_test[self.t_mesh ] = np.array([], dtype = np.int32)
             if self.has_fparam:
                 feed_dict_test[self.t_fparam] = np.reshape(fparam[ii:ii+1, :], [-1])
             if self.has_aparam:

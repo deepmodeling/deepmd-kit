@@ -35,7 +35,8 @@ def gen_data() :
 class Data():
     def __init__ (self, 
                   rand_pert = 0.1, 
-                  seed = 1) :
+                  seed = 1, 
+                  box_scale = 20) :
         coord = [[0.0, 0.0, 0.1], [1.1, 0.0, 0.1], [0.0, 1.1, 0.1], 
                  [4.0, 0.0, 0.0], [5.1, 0.0, 0.0], [4.0, 1.1, 0.0]]
         self.nframes = 1
@@ -48,7 +49,7 @@ class Data():
         self.fparam = self._copy_nframes(self.fparam)
         self.aparam = self._copy_nframes(self.aparam)
         self.atype = np.array([0, 1, 1, 0, 1, 1], dtype = int)
-        self.cell = 20 * np.eye(3)
+        self.cell = box_scale * np.eye(3)
         self.cell = self._copy_nframes(self.cell)
         self.coord = self.coord.reshape([self.nframes, -1])
         self.cell = self.cell.reshape([self.nframes, -1])

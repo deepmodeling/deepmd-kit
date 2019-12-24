@@ -572,6 +572,58 @@ build_nlist (vector<vector<int > > &	nlist0,
   }
 }   
 
+
+void
+build_nlist (vector<vector<int > > & nlist0,
+	     vector<vector<int > > & nlist1,
+	     const vector<double > & posi3,
+	     const double & rc0_,
+	     const double & rc1_,
+	     const SimulationRegion<double > * region)
+{
+  double rc0 (rc0_);
+  double rc1 (rc1_);
+  assert (rc0 <= rc1);
+  double rc02 = rc0 * rc0;
+  // negative rc0 means not applying rc0
+  if (rc0 < 0) rc02 = 0;
+  double rc12 = rc1 * rc1;
+
+  unsigned natoms = posi3.size()/3;
+  nlist0.clear();
+  nlist1.clear();
+  nlist0.resize(natoms);
+  nlist1.resize(natoms);
+  for (unsigned ii = 0; ii < natoms; ++ii){
+    nlist0[ii].reserve (60);
+    nlist1[ii].reserve (60);
+  }
+  for (unsigned ii = 0; ii < natoms; ++ii){
+    for (unsigned jj = ii+1; jj < natoms; ++jj){
+      double diff[3];
+      if (region != NULL) {
+	region->diffNearestNeighbor (posi3[jj*3+0], posi3[jj*3+1], posi3[jj*3+2],
+				     posi3[ii*3+0], posi3[ii*3+1], posi3[ii*3+2],
+				     diff[0], diff[1], diff[2]);
+      }
+      else {
+	diff[0] = posi3[jj*3+0] - posi3[ii*3+0];
+	diff[1] = posi3[jj*3+1] - posi3[ii*3+1];
+	diff[2] = posi3[jj*3+2] - posi3[ii*3+2];
+      }
+      double r2 = MathUtilities::dot<double> (diff, diff);
+      if (r2 < rc02) {
+	nlist0[ii].push_back (jj);
+	nlist0[jj].push_back (ii);
+      }
+      else if (r2 < rc12) {
+	nlist1[ii].push_back (jj);
+	nlist1[jj].push_back (ii);
+      }
+    }
+  }
+}
+
 static int compute_pbc_shift (int idx, 
 			      int ncell)
 {

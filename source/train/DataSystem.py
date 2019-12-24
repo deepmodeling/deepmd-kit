@@ -95,20 +95,24 @@ class DeepmdDataSystem() :
             for nn in test_system_data:
                 self.test_data[nn].append(test_system_data[nn])
 
+
     def _make_default_mesh(self):
         self.default_mesh = []
         cell_size = np.max (self.rcut)
         for ii in range(self.nsystems) :
-            test_system_data = self.data_systems[ii].get_batch(self.batch_size[ii])
-            self.data_systems[ii].reset_get_batch()
-            # test_system_data = self.data_systems[ii].get_test()
-            avg_box = np.average (test_system_data["box"], axis = 0)
-            avg_box = np.reshape (avg_box, [3,3])
-            ncell = (np.linalg.norm(avg_box, axis=1)/ cell_size).astype(np.int32)
-            ncell[ncell < 2] = 2
-            default_mesh = np.zeros (6, dtype = np.int32)
-            default_mesh[3:6] = ncell
-            self.default_mesh.append(default_mesh)
+            if self.data_systems[ii].pbc :
+                test_system_data = self.data_systems[ii].get_batch(self.batch_size[ii])
+                self.data_systems[ii].reset_get_batch()
+                # test_system_data = self.data_systems[ii].get_test()
+                avg_box = np.average (test_system_data["box"], axis = 0)
+                avg_box = np.reshape (avg_box, [3,3])
+                ncell = (np.linalg.norm(avg_box, axis=1)/ cell_size).astype(np.int32)
+                ncell[ncell < 2] = 2
+                default_mesh = np.zeros (6, dtype = np.int32)
+                default_mesh[3:6] = ncell
+                self.default_mesh.append(default_mesh)
+            else:
+                self.default_mesh.append(np.array([], dtype = np.int32))
 
 
     def compute_energy_shift(self, rcond = 1e-3, key = 'energy') :
