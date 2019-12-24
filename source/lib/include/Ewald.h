@@ -81,7 +81,7 @@ rec_err_esti(const VALUETYPE & test_q,
 template <typename VALUETYPE>
 void
 cmpt_k(vector<int> & KK,
-       const SimulationRegion<VALUETYPE>&	region, 
+       const SimulationRegion<double>&		region, 
        const EwaldParameters<VALUETYPE>&	param)
 {
   const double * boxt_ = region.getBoxTensor();
@@ -154,7 +154,8 @@ EwaldReciprocal(VALUETYPE &			ener,
   for (int ii = 0; ii < natoms; ++ii){
     int thread_id = omp_get_thread_num();
     double ir[3];
-    region.phys2Inter(ir, &coord[ii*3]);
+    double tmpcoord[3] = {coord[ii*3], coord[ii*3+1], coord[ii*3+2]};
+    region.phys2Inter(ir, tmpcoord);
     for (int mm0 = -KK[0]/2; mm0 <= KK[0]/2; ++mm0){
       double mr[3];
       mr[0] = ir[0] * mm0;      
