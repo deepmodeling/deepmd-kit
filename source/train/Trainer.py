@@ -18,7 +18,7 @@ from deepmd.DescrptSeA import DescrptSeA
 from deepmd.DescrptSeR import DescrptSeR
 from deepmd.DescrptSeAR import DescrptSeAR
 from deepmd.Model import Model, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
-from deepmd.Loss import EnerStdLoss, TensorLoss
+from deepmd.Loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
 from deepmd.LearningRate import LearningRateExp
 
 from tensorflow.python.framework import ops
@@ -144,10 +144,18 @@ class NNPTrainer (object):
         # infer loss type by fitting_type
         try :
             loss_param = jdata['loss']
+            loss_type = loss_param.get('type', 'std')
         except:
             loss_param = None
+            loss_type = 'std'
+
         if fitting_type == 'ener':
-            self.loss = EnerStdLoss(loss_param, starter_learning_rate = self.lr.start_lr())
+            if loss_type == 'std':
+                self.loss = EnerStdLoss(loss_param, starter_learning_rate = self.lr.start_lr())
+            elif loss_type == 'ener_dipole':
+                self.loss = EnerDipoleLoss(loss_param, starter_learning_rate = self.lr.start_lr())
+            else:
+                raise RuntimeError('unknow loss type')
         elif fitting_type == 'wfc':
             self.loss = TensorLoss(loss_param, 
                                    model = self.model, 
@@ -262,7 +270,6 @@ class NNPTrainer (object):
         self.place_holders['natoms_vec']        = tf.placeholder(tf.int32,   [self.ntypes+2], name='t_natoms')
         self.place_holders['default_mesh']      = tf.placeholder(tf.int32,   [None], name='t_mesh')
         self.place_holders['is_training']       = tf.placeholder(tf.bool)
-
         self.model_pred\
             = self.model.build (self.place_holders['coord'], 
                                 self.place_holders['type'], 
