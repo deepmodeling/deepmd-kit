@@ -270,6 +270,8 @@ class Model() :
         model_dict['virial'] = virial
         model_dict['atom_ener'] = energy_raw
         model_dict['atom_virial'] = atom_virial
+        model_dict['coord'] = coord
+        model_dict['atype'] = atype
         
         return model_dict
 
