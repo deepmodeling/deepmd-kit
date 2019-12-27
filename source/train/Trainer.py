@@ -144,9 +144,10 @@ class NNPTrainer (object):
         # infer loss type by fitting_type
         try :
             loss_param = jdata['loss']
+            loss_type = loss_param.get('type', 'std')
         except:
             loss_param = None
-        loss_type = loss_param.get('type', 'std')
+            loss_type = 'std'
 
         if fitting_type == 'ener':
             if loss_type == 'std':
