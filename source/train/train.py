@@ -85,6 +85,13 @@ def train (args) :
         # serial training
         _do_work(jdata, run_opt)
 
+def expand_sys_str(root_dir):
+    all_sys = []
+    from pathlib import Path
+    for filename in Path(root_dir).rglob('type.raw'):
+        all_sys.append(os.path.dirname(filename))
+    return all_sys
+
 def _do_work(jdata, run_opt):
     # init the model
     model = NNPTrainer (jdata, run_opt = run_opt)
@@ -93,6 +100,8 @@ def _do_work(jdata, run_opt):
     # init params and run options
     assert('training' in jdata)
     systems = j_must_have(jdata['training'], 'systems')
+    if type(systems) == str:
+       systems = expand_sys_str(systems)
     set_pfx = j_must_have(jdata['training'], 'set_prefix')
     numb_sys = len(systems)
     seed = None
