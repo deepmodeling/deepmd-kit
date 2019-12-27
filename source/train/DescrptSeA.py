@@ -56,6 +56,32 @@ class DescrptSeA ():
         self.dstd = None
         self.davg = None
 
+        self.place_holders = {}
+        avg_zero = np.zeros([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
+        std_ones = np.ones ([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
+        sub_graph = tf.Graph()
+        with sub_graph.as_default():
+            name_pfx = 'd_sea_'
+            for ii in ['coord', 'box']:
+                self.place_holders[ii] = tf.placeholder(global_np_float_precision, [None, None], name = name_pfx+'t_'+ii)
+            self.place_holders['type'] = tf.placeholder(tf.int32, [None, None], name=name_pfx+'t_type')
+            self.place_holders['natoms_vec'] = tf.placeholder(tf.int32, [self.ntypes+2], name=name_pfx+'t_natoms')
+            self.place_holders['default_mesh'] = tf.placeholder(tf.int32, [None], name=name_pfx+'t_mesh')
+            self.stat_descrpt, descrpt_deriv, rij, nlist \
+                = op_module.descrpt_se_a(self.place_holders['coord'],
+                                         self.place_holders['type'],
+                                         self.place_holders['natoms_vec'],
+                                         self.place_holders['box'],
+                                         self.place_holders['default_mesh'],
+                                         tf.constant(avg_zero),
+                                         tf.constant(std_ones),
+                                         rcut_a = self.rcut_a,
+                                         rcut_r = self.rcut_r,
+                                         rcut_r_smth = self.rcut_r_smth,
+                                         sel_a = self.sel_a,
+                                         sel_r = self.sel_r)
+        self.sub_sess = tf.Session(graph = sub_graph)
+
 
     def get_rcut (self) :
         return self.rcut_r
@@ -240,32 +266,15 @@ class DescrptSeA ():
                                  data_atype,                             
                                  natoms_vec,
                                  mesh) :    
-        avg_zero = np.zeros([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
-        std_ones = np.ones ([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
-        sub_graph = tf.Graph()
-        with sub_graph.as_default():
-            descrpt, descrpt_deriv, rij, nlist \
-                = op_module.descrpt_se_a (tf.constant(data_coord),
-                                           tf.constant(data_atype),
-                                           tf.constant(natoms_vec, dtype = tf.int32),
-                                           tf.constant(data_box),
-                                           tf.constant(mesh),
-                                           tf.constant(avg_zero),
-                                           tf.constant(std_ones),
-                                           rcut_a = self.rcut_a,
-                                           rcut_r = self.rcut_r,
-                                           rcut_r_smth = self.rcut_r_smth,
-                                           sel_a = self.sel_a,
-                                           sel_r = self.sel_r)
-        # self.sess.run(tf.global_variables_initializer())
-        # sub_sess = tf.Session(graph = sub_graph,
-        #                       config=tf.ConfigProto(intra_op_parallelism_threads=self.run_opt.num_intra_threads, 
-        #                                             inter_op_parallelism_threads=self.run_opt.num_inter_threads
-
-        #                       ))
-        sub_sess = tf.Session(graph = sub_graph)
-        dd_all = sub_sess.run(descrpt)
-        sub_sess.close()
+        dd_all \
+            = self.sub_sess.run(self.stat_descrpt, 
+                                feed_dict = {
+                                    self.place_holders['coord']: data_coord,
+                                    self.place_holders['type']: data_atype,
+                                    self.place_holders['natoms_vec']: natoms_vec,
+                                    self.place_holders['box']: data_box,
+                                    self.place_holders['default_mesh']: mesh,
+                                })
         natoms = natoms_vec
         dd_all = np.reshape(dd_all, [-1, self.ndescrpt * natoms[0]])
         start_index = 0
