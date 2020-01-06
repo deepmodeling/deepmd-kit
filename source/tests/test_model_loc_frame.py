@@ -49,8 +49,8 @@ class TestModel(unittest.TestCase):
                       'natoms_vec' : [test_data['natoms_vec']],
                       'default_mesh' : [test_data['default_mesh']]
         }
-        model._compute_dstats(input_data)
-        model.bias_atom_e = data.compute_energy_shift()
+        model._compute_input_stat(input_data)
+        model.fitting.bias_atom_e = data.compute_energy_shift()
 
         t_prop_c           = tf.placeholder(tf.float32, [5],    name='t_prop_c')
         t_energy           = tf.placeholder(global_ener_float_precision, [None], name='t_energy')

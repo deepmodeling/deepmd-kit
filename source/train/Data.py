@@ -14,7 +14,8 @@ class DeepmdData() :
                   sys_path, 
                   set_prefix = 'set',
                   shuffle_test = True, 
-                  type_map = None) :
+                  type_map = None, 
+                  modifier = None) :
         self.dirs = glob.glob (os.path.join(sys_path, set_prefix + ".*"))
         self.dirs.sort()
         # load atom type
@@ -24,6 +25,8 @@ class DeepmdData() :
         self.type_map = self._load_type_map(sys_path)
         if self.type_map is not None:
             assert(len(self.type_map) >= max(self.atom_type)+1)
+        # check pbc
+        self.pbc = self._check_pbc(sys_path)
         # enforce type_map if necessary
         if type_map is not None and self.type_map is not None:
             atom_type_ = [type_map.index(self.type_map[ii]) for ii in self.atom_type]
@@ -46,6 +49,8 @@ class DeepmdData() :
         self.set_count = 0
         self.iterator = 0
         self.shuffle_test = shuffle_test
+        # set modifier
+        self.modifier = modifier
 
 
     def add(self, 
@@ -117,17 +122,29 @@ class DeepmdData() :
             self._load_batch_set (self.train_dirs[self.set_count % self.get_numb_set()])
             self.set_count += 1
             set_size = self.batch_set["coord"].shape[0]
+            if self.modifier is not None:
+                self.modifier.modify_data(self.batch_set)
         iterator_1 = self.iterator + batch_size
         if iterator_1 >= set_size :
             iterator_1 = set_size
         idx = np.arange (self.iterator, iterator_1)
         self.iterator += batch_size
-        return self._get_subdata(self.batch_set, idx)
+        ret = self._get_subdata(self.batch_set, idx)
+        return ret
 
-    def get_test (self) :
+    def get_test (self, ntests = -1) :
         if not hasattr(self, 'test_set') :            
             self._load_test_set(self.test_dir, self.shuffle_test)
-        return self._get_subdata(self.test_set)        
+        if ntests == -1:
+            idx = None
+        else :
+            ntests_ = ntests if ntests < self.test_set['type'].shape[0] else self.test_set['type'].shape[0]
+            # print('ntest', self.test_set['type'].shape[0], ntests, ntests_)
+            idx = np.arange(ntests_)
+        ret = self._get_subdata(self.test_set, idx = idx)
+        if self.modifier is not None:
+            self.modifier.modify_data(ret)
+        return ret
 
     def get_type_map(self) :
         return self.type_map
@@ -211,6 +228,9 @@ class DeepmdData() :
                          set_name) :
         self.batch_set = self._load_set(set_name)
         self.batch_set, sf_idx = self._shuffle_data(self.batch_set)
+        self.reset_get_batch()
+
+    def reset_get_batch(self):
         self.iterator = 0
 
     def _load_test_set (self,
@@ -269,7 +289,7 @@ class DeepmdData() :
                 data['find_'+kk] = data['find_'+k_in]
                 tmp_in = data[k_in].astype(global_ener_float_precision)
                 data[kk] = np.sum(np.reshape(tmp_in, [nframes, self.natoms, ndof]), axis = 1)
-                
+
         return data
 
 
@@ -329,6 +349,12 @@ class DeepmdData() :
                 return fp.read().split()                
         else :
             return None
+
+    def _check_pbc(self, sys_path):
+        pbc = True
+        if os.path.isfile(os.path.join(sys_path, 'nopbc')) :
+            pbc = False
+        return pbc
 
 
 class DataSets (object):

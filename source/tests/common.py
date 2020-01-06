@@ -11,7 +11,7 @@ if global_np_float_precision == np.float32 :
     global_default_dw_hh = 1e-2
     global_default_places = 3
 else :
-    global_default_fv_hh = 1e-6
+    global_default_fv_hh = 1e-5
     global_default_dw_hh = 1e-4
     global_default_places = 5
 
@@ -35,26 +35,34 @@ def gen_data() :
 class Data():
     def __init__ (self, 
                   rand_pert = 0.1, 
-                  seed = 1) :
+                  seed = 1, 
+                  box_scale = 20) :
         coord = [[0.0, 0.0, 0.1], [1.1, 0.0, 0.1], [0.0, 1.1, 0.1], 
                  [4.0, 0.0, 0.0], [5.1, 0.0, 0.0], [4.0, 1.1, 0.0]]
+        self.nframes = 1
         self.coord = np.array(coord)
+        self.coord = self._copy_nframes(self.coord)
         np.random.seed(seed)
         self.coord += rand_pert * np.random.random(self.coord.shape)
         self.fparam = np.array([[0.1, 0.2]])
         self.aparam = np.tile(self.fparam, [1, 6])
+        self.fparam = self._copy_nframes(self.fparam)
+        self.aparam = self._copy_nframes(self.aparam)
         self.atype = np.array([0, 1, 1, 0, 1, 1], dtype = int)
-        self.cell = 20 * np.eye(3)
-        self.nframes = 1
+        self.cell = box_scale * np.eye(3)
+        self.cell = self._copy_nframes(self.cell)
         self.coord = self.coord.reshape([self.nframes, -1])
         self.cell = self.cell.reshape([self.nframes, -1])
         self.natoms = len(self.atype)        
         self.idx_map = np.lexsort ((np.arange(self.natoms), self.atype))
-        self.coord = self.coord.reshape([1, -1, 3])
+        self.coord = self.coord.reshape([self.nframes, -1, 3])
         self.coord = self.coord[:,self.idx_map,:]
-        self.coord = self.coord.reshape([1, -1])        
+        self.coord = self.coord.reshape([self.nframes, -1])        
         self.atype = self.atype[self.idx_map]
-        self.datype = np.tile(self.atype, [self.nframes,1])
+        self.datype = self._copy_nframes(self.atype)
+
+    def _copy_nframes(self, xx):
+        return np.tile(xx, [self.nframes, 1])
         
     def get_data(self) :
         return self.coord, self.cell, self.datype
@@ -68,39 +76,80 @@ class Data():
     def get_ntypes(self) :
         return max(self.atype) + 1
 
+    # def get_test_box_data (self,
+    #                        hh) :
+    #     coord0_, box0_, type0_ = self.get_data()
+    #     coord0 = coord0_[0]
+    #     box0 = box0_[0]
+    #     type0 = type0_[0]
+    #     nc = np.array( [coord0, coord0*(1+hh), coord0*(1-hh)] )
+    #     nb = np.array( [box0, box0*(1+hh), box0*(1-hh)] )
+    #     nt = np.array( [type0, type0, type0] )
+    #     for dd in range(3) :
+    #         tmpc = np.copy (coord0)
+    #         tmpb = np.copy (box0)
+    #         tmpc = np.reshape(tmpc, [-1, 3])
+    #         tmpc [:,dd] *= (1+hh)
+    #         tmpc = np.reshape(tmpc, [-1])
+    #         tmpb = np.reshape(tmpb, [-1, 3])
+    #         tmpb [dd,:] *= (1+hh)
+    #         tmpb = np.reshape(tmpb, [-1])
+    #         nc = np.append (nc, [tmpc], axis = 0)
+    #         nb = np.append (nb, [tmpb], axis = 0)
+    #         nt = np.append (nt, [type0], axis = 0)
+    #         tmpc = np.copy (coord0)
+    #         tmpb = np.copy (box0)
+    #         tmpc = np.reshape(tmpc, [-1, 3])
+    #         tmpc [:,dd] *= (1-hh)
+    #         tmpc = np.reshape(tmpc, [-1])
+    #         tmpb = np.reshape(tmpb, [-1, 3])
+    #         tmpb [dd,:] *= (1-hh)
+    #         tmpb = np.reshape(tmpb, [-1])
+    #         nc = np.append (nc, [tmpc], axis = 0)
+    #         nb = np.append (nb, [tmpb], axis = 0)
+    #         nt = np.append (nt, [type0], axis = 0)
+    #     return nc, nb, nt
+
     def get_test_box_data (self,
-                           hh) :
+                           hh, 
+                           rand_pert = 0.1) :
         coord0_, box0_, type0_ = self.get_data()
-        coord0 = coord0_[0]
-        box0 = box0_[0]
-        type0 = type0_[0]
-        nc = np.array( [coord0, coord0*(1+hh), coord0*(1-hh)] )
-        nb = np.array( [box0, box0*(1+hh), box0*(1-hh)] )
-        nt = np.array( [type0, type0, type0] )
-        for dd in range(3) :
-            tmpc = np.copy (coord0)
-            tmpb = np.copy (box0)
-            tmpc = np.reshape(tmpc, [-1, 3])
-            tmpc [:,dd] *= (1+hh)
-            tmpc = np.reshape(tmpc, [-1])
-            tmpb = np.reshape(tmpb, [-1, 3])
-            tmpb [dd,:] *= (1+hh)
-            tmpb = np.reshape(tmpb, [-1])
-            nc = np.append (nc, [tmpc], axis = 0)
-            nb = np.append (nb, [tmpb], axis = 0)
-            nt = np.append (nt, [type0], axis = 0)
-            tmpc = np.copy (coord0)
-            tmpb = np.copy (box0)
-            tmpc = np.reshape(tmpc, [-1, 3])
-            tmpc [:,dd] *= (1-hh)
-            tmpc = np.reshape(tmpc, [-1])
-            tmpb = np.reshape(tmpb, [-1, 3])
-            tmpb [dd,:] *= (1-hh)
-            tmpb = np.reshape(tmpb, [-1])
-            nc = np.append (nc, [tmpc], axis = 0)
-            nb = np.append (nb, [tmpb], axis = 0)
-            nt = np.append (nt, [type0], axis = 0)
-        return nc, nb, nt
+        coord = coord0_[0]
+        box = box0_[0]
+        box += rand_pert * np.random.random(box.shape)
+        atype = type0_[0]
+        nframes = 1
+        natoms = coord.size // 3
+        box3 = np.reshape(box, [nframes, 3,3])
+        rbox3 = np.linalg.inv(box3)
+        coord3 = np.reshape(coord, [nframes, natoms, 3])
+        rcoord3 = np.matmul(coord3, rbox3)
+        
+        all_coord = [coord.reshape([nframes, natoms*3])]
+        all_box = [box.reshape([nframes,9])]
+        all_atype = [atype]
+        for ii in range(3):
+            for jj in range(3):
+                box3p = np.copy(box3)
+                box3m = np.copy(box3)
+                box3p[:,ii,jj] = box3[:,ii,jj] + hh
+                box3m[:,ii,jj] = box3[:,ii,jj] - hh
+                boxp = np.reshape(box3p, [-1,9])
+                boxm = np.reshape(box3m, [-1,9])
+                coord3p = np.matmul(rcoord3, box3p)
+                coord3m = np.matmul(rcoord3, box3m)
+                coordp = np.reshape(coord3p, [nframes,-1])
+                coordm = np.reshape(coord3m, [nframes,-1])
+                all_coord.append(coordp)
+                all_coord.append(coordm)
+                all_box.append(boxp)
+                all_box.append(boxm)
+                all_atype.append(atype)
+                all_atype.append(atype)
+        all_coord = np.reshape(all_coord, [-1, natoms * 3])
+        all_box = np.reshape(all_box, [-1, 9])
+        all_atype = np.reshape(all_atype, [-1, natoms])        
+        return all_coord, all_box, all_atype
 
 
 def force_test (inter, 
@@ -178,16 +227,22 @@ def virial_test (inter,
                               inter.type:      dtype,
                               inter.tnatoms:   inter.natoms}
         )
-    # check
-    ana_vir3 = (virial[0][0] + virial[0][4] + virial[0][8])/3. / comp_vol(dbox[0])
-    num_vir3 = -(energy[1] - energy[2]) / (comp_vol(dbox[1]) - comp_vol(dbox[2]))
-    testCase.assertAlmostEqual(ana_vir3, num_vir3, places=places)
-    vir_idx = [0, 4, 8]
-    for dd in range (3) :
-        ana_v = (virial[0][vir_idx[dd]] / comp_vol(dbox[0]))
-        idx = 2 * (dd+1) + 1
-        num_v = ( -(energy[idx] - energy[idx+1]) / (comp_vol(dbox[idx]) - comp_vol(dbox[idx+1])) )
-        testCase.assertAlmostEqual(ana_v, num_v, places=places)
+    ana_vir = virial[0].reshape([3,3])
+    num_vir = np.zeros([3,3])
+    for ii in range(3):
+        for jj in range(3):
+            ep = energy[1+(ii*3+jj)*2+0]
+            em = energy[1+(ii*3+jj)*2+1]
+            num_vir[ii][jj] = -(ep - em) / (2.*hh)
+    num_vir = np.transpose(num_vir, [1,0])    
+    box3 = dbox[0].reshape([3,3])
+    num_vir = np.matmul(num_vir, box3)
+    for ii in range(3):
+        for jj in range(3):
+            testCase.assertAlmostEqual(ana_vir[ii][jj], num_vir[ii][jj],
+                                       places=places, 
+                                       msg = 'virial component %d %d ' % (ii,jj))
+    
 
 
 def force_dw_test (inter, 
