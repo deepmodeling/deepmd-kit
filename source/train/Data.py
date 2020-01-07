@@ -157,7 +157,10 @@ class DeepmdData() :
 
     def get_numb_batch (self, batch_size, set_idx) :
         data = self._load_set(self.train_dirs[set_idx])
-        return data["coord"].shape[0] // batch_size
+        ret = data["coord"].shape[0] // batch_size
+        if ret == 0:
+            ret = 1
+        return ret
 
     def get_sys_numb_batch (self, batch_size) :
         ret = 0
