@@ -2,6 +2,7 @@
 
 import os, sys
 import collections
+import warnings
 import numpy as np
 
 module_path = os.path.dirname(os.path.realpath(__file__)) + "/"
@@ -76,12 +77,12 @@ class DeepmdDataSystem() :
         for ii in range(self.nsystems) :
             chk_ret = self.data_systems[ii].check_batch_size(self.batch_size[ii])
             if chk_ret is not None :
-                raise RuntimeError ("system %s required batch size %d is larger than the size %d of the dataset %s" % \
-                                    (self.system_dirs[ii], self.batch_size[ii], chk_ret[1], chk_ret[0]))
+                warnings.warn("system %s required batch size is larger than the size of the dataset %s (%d > %d)" % \
+                              (self.system_dirs[ii], chk_ret[0], self.batch_size[ii], chk_ret[1]))
             chk_ret = self.data_systems[ii].check_test_size(test_size)
             if chk_ret is not None :
-                print("WARNNING: system %s required test size %d is larger than the size %d of the dataset %s" % \
-                      (self.system_dirs[ii], test_size, chk_ret[1], chk_ret[0]))
+                warnings.warn("system %s required test size is larger than the size of the dataset %s (%d > %d)" % \
+                              (self.system_dirs[ii], chk_ret[0], test_size, chk_ret[1]))
 
         # print summary
         if run_opt is not None:
