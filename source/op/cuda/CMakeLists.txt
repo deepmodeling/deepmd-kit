@@ -56,7 +56,6 @@ elseif (${CUDA_VERSION_MAJOR} STREQUAL "9")
                         -gencode arch=compute_60,code=sm_60; # Pascal – GP100/Tesla P100 – DGX-1 (Generic Pascal)
                         -gencode arch=compute_61,code=sm_61; # Pascal - GTX 1080, GTX 1070, GTX 1060, GTX 1050, GTX 1030, Titan Xp, Tesla P40, Tesla P4, Discrete GPU on the NVIDIA Drive PX2
                         -gencode arch=compute_70,code=sm_70; # Volta  - GV100/Tesla V100, GTX 1180 (GV104)
-                        -gencode arch=compute_72,code=sm_72;
                         -O3; -Xcompiler -fPIC;
         )
 elseif (${CUDA_VERSION_MAJOR} STREQUAL "8")
