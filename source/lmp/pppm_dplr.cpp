@@ -40,8 +40,13 @@ enum{FORWARD_IK,FORWARD_AD,FORWARD_IK_PERATOM,FORWARD_AD_PERATOM};
 
 /* ---------------------------------------------------------------------- */
 
+#ifdef OLD_LMP_PPPM
 PPPMDPLR::PPPMDPLR(LAMMPS *lmp, int narg, char **arg) :
   PPPM(lmp, narg, arg)
+#else
+PPPMDPLR::PPPMDPLR(LAMMPS *lmp) :
+  PPPM(lmp)
+#endif
 {
   triclinic_support = 1;
 }

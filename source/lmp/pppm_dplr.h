@@ -35,7 +35,11 @@ namespace LAMMPS_NS {
 
   class PPPMDPLR : public PPPM {
 public:
+#ifdef OLD_LMP_PPPM
     PPPMDPLR(class LAMMPS *, int, char **);
+#else
+    PPPMDPLR(class LAMMPS *);
+#endif
     virtual ~PPPMDPLR () {};
     void init();
     const vector<double > & get_fele() const {return fele;};
