@@ -395,6 +395,12 @@ class PolarFittingSeA () :
         self.seed = class_data['seed']
         self.diag_shift = class_data['diag_shift']
         self.scale = class_data['scale']
+        if type(self.sel_type) is not list:
+            self.sel_type = [self.sel_type]
+        if type(self.diag_shift) is not list:
+            self.diag_shift = [self.diag_shift]
+        if type(self.scale) is not list:
+            self.scale = [self.scale]
         self.dim_rot_mat_1 = descrpt.get_dim_rot_mat_1()
         self.dim_rot_mat = self.dim_rot_mat_1 * 3
         self.useBN = False
