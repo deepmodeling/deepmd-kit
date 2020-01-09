@@ -383,6 +383,8 @@ class PolarFittingSeA () :
                .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\
                .add('resnet_dt',        bool,   default = True)\
                .add('fit_diag',         bool,   default = True)\
+               .add('diag_shift',       [list,float], default = [0.0 for ii in range(self.ntypes)])\
+               .add('scale',            [list,float], default = [1.0 for ii in range(self.ntypes)])\
                .add('sel_type',         [list,int],   default = [ii for ii in range(self.ntypes)], alias = 'pol_type')\
                .add('seed',             int)
         class_data = args.parse(jdata)
@@ -391,6 +393,8 @@ class PolarFittingSeA () :
         self.sel_type = class_data['sel_type']
         self.fit_diag = class_data['fit_diag']
         self.seed = class_data['seed']
+        self.diag_shift = class_data['diag_shift']
+        self.scale = class_data['scale']
         self.dim_rot_mat_1 = descrpt.get_dim_rot_mat_1()
         self.dim_rot_mat = self.dim_rot_mat_1 * 3
         self.useBN = False
@@ -477,6 +481,10 @@ class PolarFittingSeA () :
             final_layer = tf.matmul(rot_mat_i, final_layer, transpose_a = True)
             # nframes x natoms x 3 x 3
             final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i], 3, 3])
+            # shift and scale
+            sel_type_idx = self.sel_type.index(type_i)
+            final_layer = final_layer * self.scale[sel_type_idx]
+            final_layer = final_layer + self.diag_shift[sel_type_idx] * tf.eye(3, batch_shape=[tf.shape(inputs)[0], natoms[2+type_i]], dtype = global_tf_float_precision)
 
             # concat the results
             if count == 0:
