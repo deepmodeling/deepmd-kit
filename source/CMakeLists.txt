@@ -133,6 +133,16 @@ if (USE_TTM)
   set(TTM_DEF "-DUSE_TTM")
 endif (USE_TTM)
 
+# old pppm interface
+if(NOT DEFINED OLD_LMP_PPPM)
+  set(OLD_LMP_PPPM FALSE)
+endif(NOT DEFINED OLD_LMP_PPPM)
+if (OLD_LMP_PPPM)
+  set(OLD_LMP_PPPM_DEF "-DOLD_LMP_PPPM")
+  message(STATUS "Use old lammps pppm interface")
+endif()
+add_definitions (${OLD_LMP_PPPM_DEF})
+
 # define build type
 if ((NOT DEFINED CMAKE_BUILD_TYPE) OR CMAKE_BUILD_TYPE STREQUAL "")
    set (CMAKE_BUILD_TYPE release)
