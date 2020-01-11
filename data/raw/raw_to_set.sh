@@ -36,8 +36,8 @@ do
   test -f fparam.raw$pi && mv fparam.raw$pi set.$pi/fparam.raw
 
   cd set.$pi
-  python -c 'import numpy as np; data = np.loadtxt("box.raw"   ); data = data.astype (np.float32); np.save ("box",    data)'
-  python -c 'import numpy as np; data = np.loadtxt("coord.raw" ); data = data.astype (np.float32); np.save ("coord",  data)'
+  python -c 'import numpy as np; data = np.loadtxt("box.raw"   , ndmin = 2); data = data.astype (np.float32); np.save ("box",    data)'
+  python -c 'import numpy as np; data = np.loadtxt("coord.raw" , ndmin = 2); data = data.astype (np.float32); np.save ("coord",  data)'
   python -c \
 'import numpy as np; import os.path; 
 if os.path.isfile("energy.raw"): 
@@ -48,28 +48,28 @@ if os.path.isfile("energy.raw"):
   python -c \
 'import numpy as np; import os.path; 
 if os.path.isfile("force.raw" ): 
-   data = np.loadtxt("force.raw" ); 
+   data = np.loadtxt("force.raw", ndmin = 2); 
    data = data.astype (np.float32); 
    np.save ("force",  data)
 '
   python -c \
 'import numpy as np; import os.path; 
 if os.path.isfile("virial.raw"): 
-   data = np.loadtxt("virial.raw"); 
+   data = np.loadtxt("virial.raw", ndmin = 2); 
    data = data.astype (np.float32); 
    np.save ("virial", data)
 '
   python -c \
 'import numpy as np; import os.path; 
 if os.path.isfile("atom_ener.raw"): 
-   data = np.loadtxt("atom_ener.raw"); 
+   data = np.loadtxt("atom_ener.raw", ndmin = 2); 
    data = data.astype (np.float32); 
    np.save ("atom_ener", data)
 '
   python -c \
 'import numpy as np; import os.path; 
 if os.path.isfile("fparam.raw"): 
-   data = np.loadtxt("fparam.raw"); 
+   data = np.loadtxt("fparam.raw", ndmin = 2); 
    data = data.astype (np.float32); 
    np.save ("fparam", data)
 '
