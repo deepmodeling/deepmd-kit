@@ -1,5 +1,6 @@
 import os
 import logging
+import platform
 import numpy as np
 from imp import reload
 
@@ -30,3 +31,19 @@ def set_mkl():
         set_env_if_empty("KMP_BLOCKTIME", "0")
         set_env_if_empty("KMP_AFFINITY", "granularity=fine,verbose,compact,1,0")
         reload(np)
+
+def get_module(module_name):
+    """Load force module."""
+    if platform.system() == "Windows":
+        ext = "dll"
+    elif platform.system() == "Darwin":
+        ext = "dylib"
+    else:
+        ext = "so"
+    module_path = os.path.dirname(os.path.realpath(__file__)) + "/"
+    assert (os.path.isfile (module_path  + "{}.{}".format(module_name, ext) )), "module %s does not exist" % module_name
+    module = tf.load_op_library(module_path + "{}.{}".format(module_name, ext))
+    return module
+
+op_module = get_module("libop_abi")
+op_grads_module = get_module("libop_grads")

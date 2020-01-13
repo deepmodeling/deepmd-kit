@@ -1,10 +1,7 @@
-import os,warnings
 import numpy as np
 
 from deepmd.env import tf
 from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
 
 def one_layer(inputs, 
               outputs_size, 

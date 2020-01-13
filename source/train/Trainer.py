@@ -1,17 +1,11 @@
 #!/usr/bin/env python3
 import os
-import platform
-import sys
 import time
 import shutil
-import warnings
 import numpy as np
 from deepmd.env import tf
 from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
-from deepmd.RunOptions import global_cvt_2_tf_float
-from deepmd.RunOptions import global_cvt_2_ener_float
 from deepmd.Fitting import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
 from deepmd.DescrptLocFrame import DescrptLocFrame
 from deepmd.DescrptSeA import DescrptSeA
@@ -21,22 +15,10 @@ from deepmd.Model import Model, WFCModel, DipoleModel, PolarModel, GlobalPolarMo
 from deepmd.Loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
 from deepmd.LearningRate import LearningRateExp
 
-from tensorflow.python.framework import ops
 from tensorflow.python.client import timeline
-
-# load force module
-if platform.system() == "Windows":
-    ext = "dll"
-elif platform.system() == "Darwin":
-    ext = "dylib"
-else:
-    ext = "so"
-module_path = os.path.dirname(os.path.realpath(__file__)) + "/"
-assert (os.path.isfile (module_path  + "libop_abi.{}".format(ext) )), "op module does not exist"
-op_module = tf.load_op_library(module_path + "libop_abi.{}".format(ext))
+from deepmd.env import op_module
 
 # load grad of force module
-sys.path.append (module_path )
 import deepmd._prod_force_grad
 import deepmd._prod_virial_grad
 import deepmd._prod_force_se_a_grad
@@ -45,10 +27,8 @@ import deepmd._prod_force_se_r_grad
 import deepmd._prod_virial_se_r_grad
 import deepmd._soft_min_force_grad
 import deepmd._soft_min_virial_grad
-from deepmd.RunOptions import RunOptions
-from deepmd.TabInter import TabInter
 
-from deepmd.common import j_must_have, ClassArg, add_data_requirement, data_requirement
+from deepmd.common import j_must_have, ClassArg
 
 def _is_subdir(path, directory):
     path = os.path.realpath(path)
@@ -414,7 +394,6 @@ class NNPTrainer (object):
         train_time = 0
         while cur_batch < stop_batch :
             batch_data = data.get_batch (sys_weights = self.sys_weights)
-            cur_batch_size = batch_data["coord"].shape[0]
             feed_dict_batch = {}
             for kk in batch_data.keys():
                 if kk == 'find_type' or kk == 'type' :
