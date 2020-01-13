@@ -159,6 +159,7 @@ class Model() :
                                                 trainable = False,
                                                 initializer = tf.constant_initializer(tab_data, dtype = tf.float64))
 
+        coord = tf.reshape (coord_, [-1, natoms[1] * 3])
         atype = tf.reshape (atype_, [-1, natoms[1]])
 
         dout \
