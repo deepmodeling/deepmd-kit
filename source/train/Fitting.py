@@ -1,4 +1,4 @@
-import os,warnings
+import warnings
 import numpy as np
 
 from deepmd.env import tf
@@ -8,10 +8,6 @@ from deepmd.DescrptLocFrame import DescrptLocFrame
 from deepmd.DescrptSeA import DescrptSeA
 
 from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
-from deepmd.RunOptions import global_cvt_2_tf_float
-from deepmd.RunOptions import global_cvt_2_ener_float
 
 class EnerFitting ():
     def __init__ (self, jdata, descrpt):
@@ -158,7 +154,6 @@ class EnerFitting ():
             
         start_index = 0
         inputs = tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]])
-        shape = inputs.get_shape().as_list()
 
         if bias_atom_e is not None :
             assert(len(bias_atom_e) == self.ntypes)
@@ -253,7 +248,6 @@ class WFCFitting () :
         start_index = 0
         inputs = tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]])
         rot_mat = tf.reshape(rot_mat, [-1, 9 * natoms[0]])
-        shape = inputs.get_shape().as_list()
 
         count = 0
         for type_i in range(self.ntypes):
@@ -328,7 +322,6 @@ class PolarFittingLocFrame () :
         start_index = 0
         inputs = tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]])
         rot_mat = tf.reshape(rot_mat, [-1, 9 * natoms[0]])
-        shape = inputs.get_shape().as_list()
 
         count = 0
         for type_i in range(self.ntypes):
@@ -437,7 +430,6 @@ class PolarFittingSeA () :
         start_index = 0
         inputs = tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]])
         rot_mat = tf.reshape(rot_mat, [-1, self.dim_rot_mat * natoms[0]])
-        shape = inputs.get_shape().as_list()
 
         count = 0
         for type_i in range(self.ntypes):
@@ -565,7 +557,6 @@ class DipoleFittingSeA () :
         start_index = 0
         inputs = tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]])
         rot_mat = tf.reshape(rot_mat, [-1, self.dim_rot_mat * natoms[0]])
-        shape = inputs.get_shape().as_list()
 
         count = 0
         for type_i in range(self.ntypes):

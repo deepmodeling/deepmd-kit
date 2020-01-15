@@ -1,23 +1,9 @@
-import platform
-import os,sys,warnings
 import numpy as np
 from deepmd.env import tf
 from deepmd.common import ClassArg
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
-from deepmd.RunOptions import global_cvt_2_tf_float
-from deepmd.RunOptions import global_cvt_2_ener_float
-
-if platform.system() == "Windows":
-    ext = "dll"
-elif platform.system() == "Darwin":
-    ext = "dylib"
-else:
-    ext = "so"
-module_path = os.path.dirname(os.path.realpath(__file__)) + "/"
-assert (os.path.isfile (module_path  + "libop_abi.{}".format(ext) )), "op module does not exist"
-op_module = tf.load_op_library(module_path + "libop_abi.{}".format(ext))
+from deepmd.env import op_module
 
 class DescrptSeA ():
     def __init__ (self, jdata):
@@ -241,7 +227,6 @@ class DescrptSeA ():
                      trainable = True) :
         start_index = 0
         inputs = tf.reshape(inputs, [-1, self.ndescrpt * natoms[0]])
-        shape = inputs.get_shape().as_list()
         output = []
         output_qmat = []
         for type_i in range(self.ntypes):
@@ -403,7 +388,6 @@ class DescrptSeA ():
                            seed=None,
                          trainable = True):
         # natom x (nei x 4)
-        shape = inputs.get_shape().as_list()
         outputs_size = [1] + self.filter_neuron
         outputs_size_2 = self.n_axis_neuron
         with tf.variable_scope(name, reuse=reuse):

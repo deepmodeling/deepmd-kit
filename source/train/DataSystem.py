@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 
-import os, sys
+import os
 import collections
 import warnings
 import numpy as np
-
-module_path = os.path.dirname(os.path.realpath(__file__)) + "/"
-sys.path.append (module_path)
-from Data import DataSets
-from Data import DeepmdData
+from deepmd.Data import DataSets
+from deepmd.Data import DeepmdData
 
 
 class DeepmdDataSystem() :

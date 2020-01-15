@@ -1,22 +1,11 @@
 #!/usr/bin/env python3
 import platform
-import os,sys
+import os
 import numpy as np
 
 from deepmd.env import tf
 from deepmd.common import make_default_mesh
 
-from tensorflow.python.framework import ops
-
-if platform.system() == "Windows":
-    ext = "dll"
-elif platform.system() == "Darwin":
-    ext = "dylib"
-else:
-    ext = "so"
-module_path = os.path.dirname(os.path.realpath(__file__))
-assert (os.path.isfile (os.path.join(module_path, "libop_abi.{}".format(ext)))), "op module does not exist"
-op_module = tf.load_op_library(os.path.join(module_path, "libop_abi.{}".format(ext)))
 
 class DeepEval():
     """
@@ -25,7 +14,6 @@ class DeepEval():
     def __init__(self, 
                  model_file, 
                  load_prefix = 'load') :
-        model_file = model_file
         self.graph = self._load_graph (model_file, prefix = load_prefix)
         t_mt = self.graph.get_tensor_by_name(os.path.join(load_prefix, 'model_attr/model_type:0'))
         sess = tf.Session (graph = self.graph)

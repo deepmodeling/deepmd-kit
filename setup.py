@@ -3,7 +3,7 @@ from skbuild.exceptions import SKBuildError
 from skbuild.cmaker import get_cmake_version
 from packaging.version import LegacyVersion
 from os import path, makedirs
-import imp,sys
+import imp
 
 readme_file = path.join(path.dirname(path.abspath(__file__)), 'README.md')
 try:

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import os, sys, shutil
 import numpy as np
 from scipy.interpolate import CubicSpline
 

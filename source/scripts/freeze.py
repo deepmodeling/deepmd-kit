@@ -3,29 +3,10 @@
 # freeze.py :
 # see https://blog.metaflow.fr/tensorflow-how-to-freeze-a-model-and-serve-it-with-a-python-api-d4f3596b3adc
 
-import platform
-import os, argparse, json
-import sys
-
 from deepmd.env import tf
-
-dir = os.path.dirname(os.path.realpath(__file__))
-
-from tensorflow.python.framework import ops
-
-# load force module
-if platform.system() == "Windows":
-    ext = "dll"
-elif platform.system() == "Darwin":
-    ext = "dylib"
-else:
-    ext = "so"
-module_path = os.path.dirname(os.path.realpath(__file__)) + "/../"
-assert (os.path.isfile (module_path  + "deepmd/libop_abi.{}".format(ext) )), "force module does not exist"
-op_module = tf.load_op_library(module_path + "deepmd/libop_abi.{}".format(ext))
+from deepmd.env import op_module
 
 # load grad of force module
-sys.path.append (module_path )
 import deepmd._prod_force_grad
 import deepmd._prod_virial_grad
 import deepmd._prod_force_se_a_grad
