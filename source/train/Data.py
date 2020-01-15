@@ -2,10 +2,8 @@
 
 import time
 import glob
-import random
 import numpy as np
 import os.path
-from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
 
@@ -230,7 +228,7 @@ class DeepmdData() :
     def _load_batch_set (self,
                          set_name) :
         self.batch_set = self._load_set(set_name)
-        self.batch_set, sf_idx = self._shuffle_data(self.batch_set)
+        self.batch_set, _ = self._shuffle_data(self.batch_set)
         self.reset_get_batch()
 
     def reset_get_batch(self):
@@ -241,7 +239,7 @@ class DeepmdData() :
                        shuffle_test) :
         self.test_set = self._load_set(set_name)        
         if shuffle_test :
-            self.test_set, sf_idx = self._shuffle_data(self.test_set)
+            self.test_set, _ = self._shuffle_data(self.test_set)
 
     def _shuffle_data (self,
                        data) :
@@ -261,7 +259,6 @@ class DeepmdData() :
         return ret, idx
 
     def _load_set(self, set_name) :
-        ret = {}
         # get nframes
         path = os.path.join(set_name, "coord.npy")
         if self.data_dict['coord']['high_prec'] :
@@ -488,7 +485,6 @@ class DataSets (object):
         return 0, data
 
     def load_set(self, set_name, shuffle = True):
-        start_time = time.time()
         data = {}
         data["box"] = self.load_data(set_name, "box", [-1, 9])
         nframe = data["box"].shape[0]
@@ -526,7 +522,6 @@ class DataSets (object):
             data[ii] = data[ii][:, self.idx_map]
         for ii in ["coord", "force", "atom_pref"]:
             data[ii] = data[ii][:, self.idx3_map]
-        end_time = time.time()
         return data
 
     def load_batch_set (self,

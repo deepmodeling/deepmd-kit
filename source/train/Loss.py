@@ -1,11 +1,7 @@
-import os,sys,warnings
 import numpy as np
 from deepmd.env import tf
 from deepmd.common import ClassArg, add_data_requirement
 
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
 from deepmd.RunOptions import global_cvt_2_tf_float
 from deepmd.RunOptions import global_cvt_2_ener_float
 
