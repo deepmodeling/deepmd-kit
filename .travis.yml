@@ -88,7 +88,7 @@ jobs:
         - python -m cibuildwheel --output-dir wheelhouse
         - python setup.py sdist
       after_success:
-        - if [[ $TRAVIS_TAG ]]; then python -m twine upload wheelhouse/*; fi
+        - if [[ $TRAVIS_TAG ]]; then python -m twine upload wheelhouse/*; python -m twine upload dist/*.tar.gz;  fi
 before_install:
   - pip install --upgrade pip
   - pip install --upgrade setuptools
