@@ -14,9 +14,10 @@ addons:
     - g++-7
     - gcc-8
     - g++-8
-matrix:
+jobs:
   include:
-    - python: 3.6
+    - stage: unit tests
+      python: 3.6
       env: 
       - CC=gcc-4.8
       - CXX=g++-4.8
@@ -71,6 +72,23 @@ matrix:
       - CC=gcc-8
       - CXX=g++-8
       - TENSORFLOW_VERSION=2.1
+    - stage: build whls
+      services: docker
+      env:
+        - TWINE_USERNAME=__token__
+        - CIBW_BUILD="cp36-* cp37-*"
+        - CIBW_BEFORE_BUILD="pip install tensorflow && sed -i 's/libresolv.so.2\"/libresolv.so.2\", \"libtensorflow_framework.so.2\"/g' \$(find / -name policy.json)"
+        - CIBW_SKIP="*-win32 *-manylinux_i686"
+        - CC=gcc-7
+        - CXX=g++-7
+        - TENSORFLOW_VERSION=2.1
+      install:
+        - python -m pip install twine cibuildwheel==1.1.0 scikit-build
+      script:
+        - python -m cibuildwheel --output-dir wheelhouse
+        - python setup.py sdist
+      after_success:
+        - if [[ $TRAVIS_TAG ]]; then python -m twine upload wheelhouse/*; python -m twine upload dist/*.tar.gz;  fi
 before_install:
   - pip install --upgrade pip
   - pip install --upgrade setuptools
