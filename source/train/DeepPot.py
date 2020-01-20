@@ -2,6 +2,7 @@
 
 import numpy as np
 from deepmd.env import tf
+from deepmd.env import default_tf_session_config
 from deepmd.common import make_default_mesh
 from deepmd.DeepEval import DeepEval
 from deepmd.DataModifier import DipoleChargeModifier
@@ -43,7 +44,7 @@ class DeepPot (DeepEval) :
                 self.t_aparam = self.graph.get_tensor_by_name ('load/t_aparam:0')
         self.has_aparam = self.t_aparam is not None
         # start a tf session associated to the graph
-        self.sess = tf.Session (graph = self.graph)        
+        self.sess = tf.Session (graph = self.graph, config=default_tf_session_config)        
         [self.ntypes, self.rcut, self.dfparam, self.daparam, self.tmap] = self.sess.run([self.t_ntypes, self.t_rcut, self.t_dfparam, self.t_daparam, self.t_tmap])
         self.tmap = self.tmap.decode('UTF-8').split()
         # setup modifier

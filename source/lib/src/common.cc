@@ -159,7 +159,7 @@ get_env_nthreads(int & num_intra_nthreads,
 {
   num_intra_nthreads = 0;
   num_inter_nthreads = 0;
-  const char* env_intra_nthreads = std::getenv("OMP_NUM_THREADS");
+  const char* env_intra_nthreads = std::getenv("TF_INTRA_OP_PARALLELISM_THREADS");
   const char* env_inter_nthreads = std::getenv("TF_INTER_OP_PARALLELISM_THREADS");
   if (env_intra_nthreads && 
       string(env_intra_nthreads) != string("") && 

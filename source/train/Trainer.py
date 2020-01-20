@@ -4,6 +4,7 @@ import time
 import shutil
 import numpy as np
 from deepmd.env import tf
+from deepmd.env import default_tf_session_config
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_ener_float_precision
 from deepmd.Fitting import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
@@ -288,10 +289,7 @@ class NNPTrainer (object):
         self._message("built training")
 
     def _init_sess_serial(self) :
-        self.sess = tf.Session(
-            config=tf.ConfigProto(intra_op_parallelism_threads=self.run_opt.num_intra_threads, 
-                                  inter_op_parallelism_threads=self.run_opt.num_inter_threads
-            ))
+        self.sess = tf.Session(config=default_tf_session_config)
         self.saver = tf.train.Saver()
         saver = self.saver
         if self.run_opt.init_mode == 'init_from_scratch' :
