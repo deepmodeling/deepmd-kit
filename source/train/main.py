@@ -18,11 +18,6 @@ def main () :
     parser_train = subparsers.add_parser('train', help='train a model')
     parser_train.add_argument('INPUT', 
                               help='the input parameter file in json format')
-    parser_train.add_argument('-t','--inter-threads', type = int, default = default_num_inter_threads,
-                              help=
-                              'With default value %d. ' % default_num_inter_threads + 
-                              'Setting the "inter_op_parallelism_threads" key for the tensorflow, '  +
-                              'the "intra_op_parallelism_threads" will be set by the env variable OMP_NUM_THREADS')
     parser_train.add_argument('--init-model', type = str, 
                               help=
                               'Initialize the model by the provided checkpoint.')
