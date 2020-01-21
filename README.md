@@ -111,18 +111,17 @@ Both CPU and GPU version offline package are avaiable in [the Releases page](htt
 
 ## Install the python interface 
 ### Install the Tensorflow's python interface
-First, check the python version and compiler version on your machine 
+First, check the python version on your machine 
 ```bash
-python --version; gcc --version
+python --version
 ```
-If your python version is 3.7.x, it is highly recommended that the GNU C/C++ compiler is higher than or equal to 5.0.
 
 We follow the virtual environment approach to install the tensorflow's Python interface. The full instruction can be found on [the tensorflow's official website](https://www.tensorflow.org/install/pip). Now we assume that the Python interface will be installed to virtual environment directory `$tensorflow_venv`
 ```bash
 virtualenv -p python3 $tensorflow_venv
 source $tensorflow_venv/bin/activate
 pip install --upgrade pip
-pip install --upgrade tensorflow==1.14.0
+pip install --upgrade tensorflow==2.1.0
 ```
 It is notice that everytime a new shell is started and one wants to use `DeePMD-kit`, the virtual environment should be activated by 
 ```bash
@@ -136,31 +135,17 @@ If one has multiple python interpreters named like python3.x, it can be specifie
 ```bash
 virtualenv -p python3.7 $tensorflow_venv
 ```
-If one needs the GPU support of deepmd-kit, the GPU version of tensorflow should be installed by
-```bash
-pip install --upgrade tensorflow-gpu==1.14.0
-```
 To verify the installation, run
 ```bash
-python -c "import tensorflow as tf; sess=tf.Session(); print(sess.run(tf.reduce_sum(tf.random_normal([1000, 1000]))))"
+python -c "import tensorflow as tf;print(tf.reduce_sum(tf.random.normal([1000, 1000])))"
 ```
 One should remember to activate the virtual environment every time he/she uses deepmd-kit.
 
 ### Install the DeePMD-kit's python interface
 
-Clone the DeePMD-kit source code
+Execute
 ```bash
-cd /some/workspace
-git clone --recursive https://github.com/deepmodeling/deepmd-kit.git deepmd-kit -b devel
-```
-If one downloads the .zip file from the github, then the default folder of source code would be `deepmd-kit-master` rather than `deepmd-kit`. For convenience, you may want to record the location of source to a variable, saying `deepmd_source_dir` by
-```bash
-cd deepmd-kit
-deepmd_source_dir=`pwd`
-```
-Then execute
-```bash
-pip install .
+pip install deepmd-kit
 ```
 To test the installation, one may execute
 ```bash
@@ -189,11 +174,30 @@ If one does not need to use DeePMD-kit with Lammps or I-Pi, then the python inte
 
 ### Install the Tensorflow's C++ interface
 
-It is highly recommended that one keeps the same C/C++ compiler as the python interface. The C++ interface of DeePMD-kit was tested with compiler gcc >= 4.8. It is noticed that the I-Pi support is only compiled with gcc >= 4.9.
+Check the compiler version on your machine
+
+```
+gcc --version
+```
+
+The C++ interface of DeePMD-kit was tested with compiler gcc >= 4.8. It is noticed that the I-Pi support is only compiled with gcc >= 4.9.
 
 First the C++ interface of Tensorflow should be installed. It is noted that the version of Tensorflow should be in consistent with the python interface. We assume that you have followed our instruction and installed tensorflow python interface 1.14.0 with, then you may follow [the instruction for CPU](doc/install-tf.1.14.md) to install the corresponding C++ interface (CPU only). If one wants GPU supports, he/she should follow [the instruction for GPU](doc/install-tf.1.14-gpu.md) to install the C++ interface.
 
 ### Install the DeePMD-kit's C++ interface
+
+Clone the DeePMD-kit source code
+```bash
+cd /some/workspace
+git clone --recursive https://github.com/deepmodeling/deepmd-kit.git deepmd-kit
+```
+
+For convenience, you may want to record the location of source to a variable, saying `deepmd_source_dir` by
+```bash
+cd deepmd-kit
+deepmd_source_dir=`pwd`
+```
+
 Now goto the source code directory of DeePMD-kit and make a build place.
 ```bash
 cd $deepmd_source_dir/source
@@ -605,18 +609,6 @@ cd build
 rm -r *
 ```
 and redo the `cmake` process.
-
-## Training: TensorFlow abi binary cannot be found when doing training
-If you confront such kind of error: 
-
-```
-$deepmd_root/lib/deepmd/libop_abi.so: undefined symbol:
-_ZN10tensorflow8internal21CheckOpMessageBuilder9NewStringB5cxx11Ev
-```
-
-This may happen if you are using a gcc >= 5.0, and tensorflow was compiled with gcc < 5.0. You may set `-DOP_CXX_ABI=0` in the process of `cmake`.
-
-Another possible reason might be the large gap between the python version of TensorFlow and the TensorFlow c++ interface.
 
 ## MD: cannot run LAMMPS after installing a new version of DeePMD-kit
 This typically happens when you install a new version of DeePMD-kit and copy directly the generated `USER-DEEPMD` to a LAMMPS source code folder and re-install LAMMPS.
