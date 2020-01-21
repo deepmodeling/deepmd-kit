@@ -4,8 +4,8 @@ import os
 import numpy as np
 
 from deepmd.env import tf
+from deepmd.env import default_tf_session_config
 from deepmd.common import make_default_mesh
-
 
 class DeepEval():
     """
@@ -16,7 +16,7 @@ class DeepEval():
                  load_prefix = 'load') :
         self.graph = self._load_graph (model_file, prefix = load_prefix)
         t_mt = self.graph.get_tensor_by_name(os.path.join(load_prefix, 'model_attr/model_type:0'))
-        sess = tf.Session (graph = self.graph)
+        sess = tf.Session (graph = self.graph, config=default_tf_session_config)
         [mt] = sess.run([t_mt], feed_dict = {})
         self.model_type = mt.decode('utf-8')
 
@@ -122,7 +122,7 @@ class DeepTensor(DeepEval) :
         # outputs
         self.t_tensor = self.graph.get_tensor_by_name (os.path.join(load_prefix, 'o_%s:0' % self.variable_name))
         # start a tf session associated to the graph
-        self.sess = tf.Session (graph = self.graph)        
+        self.sess = tf.Session (graph = self.graph, config=default_tf_session_config)
         [self.ntypes, self.rcut, self.tmap, self.tselt] = self.sess.run([self.t_ntypes, self.t_rcut, self.t_tmap, self.t_sel_type])
         self.tmap = self.tmap.decode('UTF-8').split()
 

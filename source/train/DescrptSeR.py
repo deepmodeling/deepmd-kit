@@ -4,6 +4,7 @@ from deepmd.common import ClassArg
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.env import op_module
+from deepmd.env import default_tf_session_config
 
 class DescrptSeR ():
     def __init__ (self, jdata):
@@ -60,7 +61,7 @@ class DescrptSeR ():
                                          rcut = self.rcut,
                                          rcut_smth = self.rcut_smth,
                                          sel = self.sel_r)
-            self.sub_sess = tf.Session(graph = sub_graph)
+            self.sub_sess = tf.Session(graph = sub_graph, config=default_tf_session_config)
 
 
     def get_rcut (self) :
