@@ -90,7 +90,7 @@ jobs:
       after_success:
         - if [[ $TRAVIS_TAG ]]; then python -m twine upload wheelhouse/*; python -m twine upload dist/*.tar.gz;  fi
 before_install:
-  - pip install --upgrade pip
+  #- pip install --upgrade pip
   - pip install --upgrade setuptools
   - pip install tensorflow==$TENSORFLOW_VERSION
 install:
