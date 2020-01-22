@@ -849,8 +849,8 @@ init (const string & model, const int & gpu_rank)
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
   dfparam = get_scalar<int>("fitting_attr/dfparam");
   daparam = get_scalar<int>("fitting_attr/daparam");
-  assert(rcut == get_rcut());
-  assert(ntypes == get_ntypes());
+  // assert(rcut == get_rcut());
+  // assert(ntypes == get_ntypes());
   if (dfparam < 0) dfparam = 0;
   if (daparam < 0) daparam = 0;
   inited = true;
@@ -880,8 +880,8 @@ init (const string & model, const int & gpu_rank)
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
   dfparam = get_scalar<int>("fitting_attr/dfparam");
   daparam = get_scalar<int>("fitting_attr/daparam");
-  assert(rcut == get_rcut());
-  assert(ntypes == get_ntypes());
+  // assert(rcut == get_rcut());
+  // assert(ntypes == get_ntypes());
   if (dfparam < 0) dfparam = 0;
   if (daparam < 0) daparam = 0;
   // rcut = get_rcut();
