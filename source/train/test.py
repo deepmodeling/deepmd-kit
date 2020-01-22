@@ -6,7 +6,6 @@ import sys
 import argparse
 import numpy as np
 
-from deepmd.Data import DataSets
 from deepmd.Data import DeepmdData
 from deepmd import DeepEval
 from deepmd import DeepPot
@@ -35,13 +34,15 @@ def test_ener (args) :
     if args.rand_seed is not None :
         np.random.seed(args.rand_seed % (2**32))
 
-    data = DataSets (args.system, args.set_prefix, shuffle_test = args.shuffle_test)
+    dp = DeepPot(args.model)
+    data = DeepmdData(args.system, args.set_prefix, shuffle_test = args.shuffle_test, type_map = dp.get_type_map())
+
     test_data = data.get_test ()
     numb_test = args.numb_test
     natoms = len(test_data["type"][0])
     nframes = test_data["box"].shape[0]
     numb_test = min(nframes, numb_test)
-    dp = DeepPot(args.model)
+
     coord = test_data["coord"][:numb_test].reshape([numb_test, -1])
     box = test_data["box"][:numb_test]
     atype = test_data["type"][0]
