@@ -135,6 +135,10 @@ If one has multiple python interpreters named like python3.x, it can be specifie
 ```bash
 virtualenv -p python3.7 $tensorflow_venv
 ```
+If one does not need the GPU support of deepmd-kit and is concerned about package size, the CPU-only version of tensorflow should be installed by	
+```bash	
+pip install --upgrade tensorflow-cpu==2.1.0	
+```
 To verify the installation, run
 ```bash
 python -c "import tensorflow as tf;print(tf.reduce_sum(tf.random.normal([1000, 1000])))"
