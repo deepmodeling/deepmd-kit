@@ -195,14 +195,16 @@ __global__ void compute_descriptor_se_r (VALUETYPE* descript,
                             const VALUETYPE* coord,
                             const VALUETYPE rmin,
                             const VALUETYPE rmax,
-                            compute_t* sel_diff_dev)
+                            compute_t* sel_diff_dev,
+                            const int sec_size)
 {   
     // <<<nloc, sec.back()>>>
-    const unsigned int idx = blockIdx.x;
-    const unsigned int idy = threadIdx.x;
+    const unsigned int idx = blockIdx.y;
+    const unsigned int idy = blockIdx.x * blockDim.x + threadIdx.x;
     const int idx_deriv = idy * 3;	// 1 components time 3 directions
     const int idx_value = idy;	// 1 components
-
+    if (idy >= sec_size) {return;}
+    
     // else {return;}
     VALUETYPE * row_descript = descript + idx * ndescrpt;
     VALUETYPE * row_descript_deriv = descript_deriv + idx * descript_deriv_size;
@@ -310,7 +312,9 @@ void DescrptSeRLauncher(const VALUETYPE* coord,
                             nei_iter
         );
     }
-    compute_descriptor_se_r<<<nloc, sec.back()>>> (
+    const int nblock_ = (sec.back() + LEN -1) / LEN;
+    dim3 block_grid(nblock_, nloc);
+    compute_descriptor_se_r<<<block_grid, LEN>>> (
                             descript,
                             ndescrpt,
                             descript_deriv,
@@ -325,6 +329,7 @@ void DescrptSeRLauncher(const VALUETYPE* coord,
                             coord,
                             rcut_smth,
                             rcut,
-                            sel_diff
+                            sel_diff,
+                            sec.back()
     );
 }  
