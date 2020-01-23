@@ -4,16 +4,11 @@ import os
 import sys
 import time
 import numpy as np
-import argparse
 import json
 from deepmd.env import tf
 from deepmd.compat import convert_input_v0_v1
-
-lib_path = os.path.dirname(os.path.realpath(__file__)) + "/../lib/"
-sys.path.append (lib_path)
-
 from deepmd.RunOptions import RunOptions
-from deepmd.DataSystem import DataSystem, DeepmdDataSystem
+from deepmd.DataSystem import DeepmdDataSystem
 from deepmd.Trainer import NNPTrainer
 from deepmd.common import data_requirement
 from deepmd.DataModifier import DipoleChargeModifier
@@ -103,7 +98,6 @@ def _do_work(jdata, run_opt):
     if type(systems) == str:
        systems = expand_sys_str(systems)
     set_pfx = j_must_have(jdata['training'], 'set_prefix')
-    numb_sys = len(systems)
     seed = None
     if 'seed' in jdata['training'].keys() : seed = jdata['training']['seed']
     if seed is not None:
@@ -143,7 +137,6 @@ def _do_work(jdata, run_opt):
     model.build (data, stop_batch)
     # train the model with the provided systems in a cyclic way
     start_time = time.time()
-    cur_batch = 0
     model.train (data)
     end_time = time.time()
     run_opt.message("finished training\nwall time: %.3f s" % (end_time-start_time))

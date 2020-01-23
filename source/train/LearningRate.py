@@ -1,4 +1,3 @@
-import os,sys,warnings
 import numpy as np
 from deepmd.env import tf
 from deepmd.common import ClassArg

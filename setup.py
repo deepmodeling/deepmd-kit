@@ -3,7 +3,7 @@ from skbuild.exceptions import SKBuildError
 from skbuild.cmaker import get_cmake_version
 from packaging.version import LegacyVersion
 from os import path, makedirs
-import imp,sys
+import imp
 
 readme_file = path.join(path.dirname(path.abspath(__file__)), 'README.md')
 try:
@@ -20,7 +20,7 @@ except ImportError:
     tf_install_dir = imp.find_module('tensorflow', [site_packages_path])[1]
 
 install_requires=['numpy', 'scipy']
-setup_requires=['setuptools_scm']
+setup_requires=['setuptools_scm', 'scikit-build', 'cmake']
 
 # add cmake as a build requirement if cmake>3.0 is not installed
 try:

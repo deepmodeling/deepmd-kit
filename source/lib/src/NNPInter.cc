@@ -677,6 +677,11 @@ compute (ENERGYTYPE &			dener,
     run_model (dener, dforce_, dvirial, datom_energy_, datom_virial_, session, input_tensors, nnpmap, nghost);
 }
 
+void
+NNPInter::
+get_type_map(std::string & type_map){
+    type_map = get_scalar<std::string>("model_attr/tmap");
+}
 
 
 

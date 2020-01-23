@@ -1,11 +1,7 @@
-import os,sys,warnings
 import numpy as np
 from deepmd.env import tf
 from deepmd.common import ClassArg, add_data_requirement
 
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
 from deepmd.RunOptions import global_cvt_2_tf_float
 from deepmd.RunOptions import global_cvt_2_ener_float
 
@@ -284,6 +280,10 @@ class TensorLoss () :
         self.tensor_size = kwarg['tensor_size']
         self.label_name = kwarg['label_name']
         self.atomic = kwarg.get('atomic', True)
+        if jdata is not None:
+            self.scale = jdata.get('scale', 1.0)
+        else:
+            self.scale = 1.0
         # data required
         add_data_requirement(self.label_name, 
                              self.tensor_size, 
@@ -300,7 +300,7 @@ class TensorLoss () :
                suffix):        
         polar_hat = label_dict[self.label_name]
         polar = model_dict[self.tensor_name]
-        l2_loss = tf.reduce_mean( tf.square(polar - polar_hat), name='l2_'+suffix)
+        l2_loss = tf.reduce_mean( tf.square(self.scale*(polar - polar_hat)), name='l2_'+suffix)
         if not self.atomic :
             atom_norm  = 1./ global_cvt_2_tf_float(natoms[0]) 
             l2_loss = l2_loss * atom_norm

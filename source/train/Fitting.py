@@ -1,4 +1,4 @@
-import os,warnings
+import warnings
 import numpy as np
 
 from deepmd.env import tf
@@ -8,10 +8,6 @@ from deepmd.DescrptLocFrame import DescrptLocFrame
 from deepmd.DescrptSeA import DescrptSeA
 
 from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
-from deepmd.RunOptions import global_cvt_2_tf_float
-from deepmd.RunOptions import global_cvt_2_ener_float
 
 class EnerFitting ():
     def __init__ (self, jdata, descrpt):
@@ -158,7 +154,6 @@ class EnerFitting ():
             
         start_index = 0
         inputs = tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]])
-        shape = inputs.get_shape().as_list()
 
         if bias_atom_e is not None :
             assert(len(bias_atom_e) == self.ntypes)
@@ -253,7 +248,6 @@ class WFCFitting () :
         start_index = 0
         inputs = tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]])
         rot_mat = tf.reshape(rot_mat, [-1, 9 * natoms[0]])
-        shape = inputs.get_shape().as_list()
 
         count = 0
         for type_i in range(self.ntypes):
@@ -328,7 +322,6 @@ class PolarFittingLocFrame () :
         start_index = 0
         inputs = tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]])
         rot_mat = tf.reshape(rot_mat, [-1, 9 * natoms[0]])
-        shape = inputs.get_shape().as_list()
 
         count = 0
         for type_i in range(self.ntypes):
@@ -383,6 +376,8 @@ class PolarFittingSeA () :
                .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\
                .add('resnet_dt',        bool,   default = True)\
                .add('fit_diag',         bool,   default = True)\
+               .add('diag_shift',       [list,float], default = [0.0 for ii in range(self.ntypes)])\
+               .add('scale',            [list,float], default = [1.0 for ii in range(self.ntypes)])\
                .add('sel_type',         [list,int],   default = [ii for ii in range(self.ntypes)], alias = 'pol_type')\
                .add('seed',             int)
         class_data = args.parse(jdata)
@@ -391,6 +386,14 @@ class PolarFittingSeA () :
         self.sel_type = class_data['sel_type']
         self.fit_diag = class_data['fit_diag']
         self.seed = class_data['seed']
+        self.diag_shift = class_data['diag_shift']
+        self.scale = class_data['scale']
+        if type(self.sel_type) is not list:
+            self.sel_type = [self.sel_type]
+        if type(self.diag_shift) is not list:
+            self.diag_shift = [self.diag_shift]
+        if type(self.scale) is not list:
+            self.scale = [self.scale]
         self.dim_rot_mat_1 = descrpt.get_dim_rot_mat_1()
         self.dim_rot_mat = self.dim_rot_mat_1 * 3
         self.useBN = False
@@ -427,7 +430,6 @@ class PolarFittingSeA () :
         start_index = 0
         inputs = tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]])
         rot_mat = tf.reshape(rot_mat, [-1, self.dim_rot_mat * natoms[0]])
-        shape = inputs.get_shape().as_list()
 
         count = 0
         for type_i in range(self.ntypes):
@@ -477,6 +479,10 @@ class PolarFittingSeA () :
             final_layer = tf.matmul(rot_mat_i, final_layer, transpose_a = True)
             # nframes x natoms x 3 x 3
             final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i], 3, 3])
+            # shift and scale
+            sel_type_idx = self.sel_type.index(type_i)
+            final_layer = final_layer * self.scale[sel_type_idx]
+            final_layer = final_layer + self.diag_shift[sel_type_idx] * tf.eye(3, batch_shape=[tf.shape(inputs)[0], natoms[2+type_i]], dtype = global_tf_float_precision)
 
             # concat the results
             if count == 0:
@@ -551,7 +557,6 @@ class DipoleFittingSeA () :
         start_index = 0
         inputs = tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]])
         rot_mat = tf.reshape(rot_mat, [-1, self.dim_rot_mat * natoms[0]])
-        shape = inputs.get_shape().as_list()
 
         count = 0
         for type_i in range(self.ntypes):

@@ -59,6 +59,7 @@ public:
   int numb_types () const {assert(inited); return ntypes;};
   int dim_fparam () const {assert(inited); return dfparam;};
   int dim_aparam () const {assert(inited); return daparam;};
+  void get_type_map (std::string & type_map);
 private:
   Session* session;
   int num_intra_nthreads, num_inter_nthreads;
