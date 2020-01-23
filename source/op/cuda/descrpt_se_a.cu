@@ -194,13 +194,15 @@ __global__ void compute_descriptor_se_a (VALUETYPE* descript,
                             const VALUETYPE* coord,
                             const VALUETYPE rmin,
                             const VALUETYPE rmax,
-                            compute_t* sel_a_diff_dev)
+                            compute_t* sel_a_diff_dev,
+                            const int sec_a_size)
 {   
     // <<<nloc, sec_a.back()>>>
-    const unsigned int idx = blockIdx.x;
-    const unsigned int idy = threadIdx.x;
+    const unsigned int idx = blockIdx.y;
+    const unsigned int idy = blockIdx.x * blockDim.x + threadIdx.x;
     const int idx_deriv = idy * 4 * 3;	// 4 components time 3 directions
     const int idx_value = idy * 4;	// 4 components
+    if (idy >= sec_a_size) {return;}
 
     // else {return;}
     VALUETYPE * row_descript = descript + idx * ndescrpt;
@@ -341,7 +343,9 @@ void DescrptSeALauncher(const VALUETYPE* coord,
         );
     }
 
-    compute_descriptor_se_a<<<nloc, sec_a.back()>>> (
+    const int nblock_ = (sec_a.back() + LEN -1) / LEN;
+    dim3 block_grid(nblock_, nloc);
+    compute_descriptor_se_a<<<block_grid, LEN>>> (
                             descript,
                             ndescrpt,
                             descript_deriv,
@@ -356,7 +360,8 @@ void DescrptSeALauncher(const VALUETYPE* coord,
                             coord,
                             rcut_r_smth,
                             rcut_r,
-                            sel_a_diff
+                            sel_a_diff,
+                            sec_a.back()
     );
 ////
     // res = cudaFree(sec_a_dev);                  cudaErrcheck(res);
