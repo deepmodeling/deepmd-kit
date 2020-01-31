@@ -36,11 +36,18 @@ def test_ener (args) :
 
     dp = DeepPot(args.model)
     data = DeepmdData(args.system, args.set_prefix, shuffle_test = args.shuffle_test, type_map = dp.get_type_map())
+    data.add('energy', 1, atomic=False, must=False, high_prec=True)
+    data.add('force',  3, atomic=True,  must=False, high_prec=False)
+    data.add('virial', 9, atomic=False, must=False, high_prec=False)
+    if dp.get_dim_fparam() > 0:
+        data.add('fparam', dp.get_dim_fparam(), atomic=False, must=True, high_prec=False)
+    if dp.get_dim_aparam() > 0:
+        data.add('aparam', dp.get_dim_aparam(), atomic=True,  must=True, high_prec=False)
 
     test_data = data.get_test ()
-    numb_test = args.numb_test
     natoms = len(test_data["type"][0])
     nframes = test_data["box"].shape[0]
+    numb_test = args.numb_test
     numb_test = min(nframes, numb_test)
 
     coord = test_data["coord"][:numb_test].reshape([numb_test, -1])
