@@ -52,6 +52,8 @@ def test_ener (args) :
 
     coord = test_data["coord"][:numb_test].reshape([numb_test, -1])
     box = test_data["box"][:numb_test]
+    if not data.pbc:
+        box = None
     atype = test_data["type"][0]
     if dp.get_dim_fparam() > 0:
         fparam = test_data["fparam"][:numb_test] 
