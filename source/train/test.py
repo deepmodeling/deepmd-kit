@@ -16,19 +16,30 @@ from tensorflow.python.framework import ops
 
 def test (args):
     de = DeepEval(args.model)
-    if de.model_type == 'ener':
-        test_ener(args)
-    elif de.model_type == 'dipole':
-        test_dipole(args)
-    elif de.model_type == 'polar':
-        test_polar(args)
-    elif de.model_type == 'wfc':
-        test_wfc(args)
-    else :
-        raise RuntimeError('unknow model type '+de.model_type)
+    all_sys = []
+    from pathlib import Path
+    for filename in Path(args.system).rglob('type.raw'):
+        all_sys.append(os.path.dirname(filename))
+    for ii in all_sys:
+        args.system = ii
+        print ("# ---------------output of dp test--------------- ")
+        print ("# testing system : " + ii)
+        if de.model_type == 'ener':
+            test_ener(args)
+        elif de.model_type == 'dipole':
+            test_dipole(args)
+        elif de.model_type == 'polar':
+            test_polar(args)
+        elif de.model_type == 'wfc':
+            test_wfc(args)
+        else :
+            raise RuntimeError('unknow model type '+de.model_type)
+        print ("# ----------------------------------------------- ")
+
 
 def l2err (diff) :    
     return np.sqrt(np.average (diff*diff))
+
 
 def test_ener (args) :
     if args.rand_seed is not None :
