@@ -289,7 +289,10 @@ class DescrptSeA ():
 
 
     def _compute_std (self,sumv2, sumv, sumn) :
-        return np.sqrt(sumv2/sumn - np.multiply(sumv/sumn, sumv/sumn))
+        val = np.sqrt(sumv2/sumn - np.multiply(sumv/sumn, sumv/sumn))
+        if val == 0:
+            val = 1
+        return val
 
 
     def _filter(self, 
