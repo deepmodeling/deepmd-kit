@@ -178,7 +178,8 @@ class NNPTrainer (object):
                   .add('timing_in_training',  bool, default = True)\
                   .add('profiling',     bool,   default = False)\
                   .add('profiling_file',str,    default = 'timeline.json')\
-                  .add('sys_weights',   list    )
+                  .add('sys_probs',   list    )\
+                  .add('auto_prob_style', str, default = "prob_sys_size")
         tr_data = tr_args.parse(training_param)
         self.numb_test = tr_data['numb_test']
         self.disp_file = tr_data['disp_file']
@@ -189,7 +190,8 @@ class NNPTrainer (object):
         self.timing_in_training  = tr_data['timing_in_training']
         self.profiling = tr_data['profiling']
         self.profiling_file = tr_data['profiling_file']
-        self.sys_weights = tr_data['sys_weights']        
+        self.sys_probs = tr_data['sys_probs']        
+        self.auto_prob_style = tr_data['auto_prob_style']        
         self.useBN = False
         if fitting_type == 'ener' and  self.fitting.get_numb_fparam() > 0 :
             self.numb_fparam = self.fitting.get_numb_fparam()
@@ -391,7 +393,9 @@ class NNPTrainer (object):
 
         train_time = 0
         while cur_batch < stop_batch :
-            batch_data = data.get_batch (sys_weights = self.sys_weights)
+            batch_data = data.get_batch (sys_probs = self.sys_probs,
+                                         auto_prob_style = self.auto_prob_style
+            )
             feed_dict_batch = {}
             for kk in batch_data.keys():
                 if kk == 'find_type' or kk == 'type' :
