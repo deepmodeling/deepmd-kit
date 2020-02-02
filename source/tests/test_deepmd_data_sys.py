@@ -231,6 +231,38 @@ class TestDataSystem (unittest.TestCase) :
         ), 0.0)
 
 
+
+    def test_prob_sys_size_1(self) :
+        batch_size = 1
+        test_size = 1
+        ds = DeepmdDataSystem(self.sys_name, batch_size, test_size, 2.0)
+        prob = ds._prob_sys_size_ext("prob_sys_size; 0:2:2; 2:4:8")
+        self.assertAlmostEqual(np.sum(prob), 1)
+        self.assertAlmostEqual(np.sum(prob[0:2]), 0.2)
+        self.assertAlmostEqual(np.sum(prob[2:4]), 0.8)
+        # number of training set is self.nset-1
+        # shift is the total number of set size shift...
+        shift = np.sum(np.arange(self.nset-1))
+        self.assertAlmostEqual(prob[1]/prob[0], float(self.nframes[1]*(self.nset-1)+shift)/float(self.nframes[0]*(self.nset-1)+shift))
+        self.assertAlmostEqual(prob[3]/prob[2], float(self.nframes[3]*(self.nset-1)+shift)/float(self.nframes[2]*(self.nset-1)+shift))
+
+
+    def test_prob_sys_size_1(self) :
+        batch_size = 1
+        test_size = 1
+        ds = DeepmdDataSystem(self.sys_name, batch_size, test_size, 2.0)
+        prob = ds._prob_sys_size_ext("prob_sys_size; 1:2:0.4; 2:4:1.6")
+        self.assertAlmostEqual(np.sum(prob), 1)
+        self.assertAlmostEqual(np.sum(prob[1:2]), 0.2)
+        self.assertAlmostEqual(np.sum(prob[2:4]), 0.8)
+        # number of training set is self.nset-1
+        # shift is the total number of set size shift...
+        shift = np.sum(np.arange(self.nset-1))
+        self.assertAlmostEqual(prob[0], 0.0)
+        self.assertAlmostEqual(prob[1], 0.2)
+        self.assertAlmostEqual(prob[3]/prob[2], float(self.nframes[3]*(self.nset-1)+shift)/float(self.nframes[2]*(self.nset-1)+shift))
+
+
     def _idx_map(self, target, idx_map, ndof):
         natoms = len(idx_map)
         target = target.reshape([-1, natoms, ndof])
