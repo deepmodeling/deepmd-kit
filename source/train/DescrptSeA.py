@@ -17,7 +17,8 @@ class DescrptSeA ():
                .add('resnet_dt',bool,   default = False) \
                .add('trainable',bool,   default = True) \
                .add('seed',     int) \
-               .add('no_inter_types', list, default = [])
+               .add('no_inter_types', list, default = []) \
+               .add('set_davg_zero', bool, default = False)
         class_data = args.parse(jdata)
         self.sel_a = class_data['sel']
         self.rcut_r = class_data['rcut']
@@ -33,6 +34,7 @@ class DescrptSeA ():
             assert(len(tt) == 2)
             self.no_inter_types.add((tt[0], tt[1]))
             self.no_inter_types.add((tt[1], tt[0]))
+        self.set_davg_zero = class_data['set_davg_zero']
 
         # descrpt config
         self.sel_r = [ 0 for ii in range(len(self.sel_a)) ]
@@ -131,7 +133,8 @@ class DescrptSeA ():
                 all_davg.append(davg)
                 all_dstd.append(dstd)
 
-        self.davg = np.array(all_davg)
+        if not self.set_davg_zero:
+            self.davg = np.array(all_davg)
         self.dstd = np.array(all_dstd)
 
 
