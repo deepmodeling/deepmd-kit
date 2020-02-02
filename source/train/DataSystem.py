@@ -16,7 +16,6 @@ class DeepmdDataSystem() :
                   rcut,
                   set_prefix = 'set',
                   shuffle_test = True,
-                  run_opt = None, 
                   type_map = None, 
                   modifier = None) :
         # init data
@@ -80,10 +79,6 @@ class DeepmdDataSystem() :
             if chk_ret is not None :
                 warnings.warn("system %s required test size is larger than the size of the dataset %s (%d > %d)" % \
                               (self.system_dirs[ii], chk_ret[0], test_size, chk_ret[1]))
-
-        # print summary
-        if run_opt is not None:
-            self.print_summary(run_opt)
 
 
     def _load_test(self, ntests = -1):
@@ -155,6 +150,24 @@ class DeepmdDataSystem() :
     def get_data_dict(self) :
         return self.data_systems[0].get_data_dict()
 
+
+    def _get_sys_probs(self,
+                       sys_probs,
+                       auto_prob_style) :        
+        if sys_probs is None :
+            if auto_prob_style == "prob_uniform" :
+                prob = None
+            elif auto_prob_style == "prob_sys_size" :
+                prob = self.prob_nbatches
+            elif auto_prob_style[:14] == "prob_sys_size;" :
+                prob = self._prob_sys_size_ext(auto_prob_style)
+            else :
+                raise RuntimeError("unkown style " + auto_prob_style )
+        else :
+            prob = self._process_sys_probs(sys_probs)
+        return prob
+
+
     def get_batch (self, 
                    sys_idx = None,
                    sys_probs = None,
@@ -187,17 +200,7 @@ class DeepmdDataSystem() :
         if sys_idx is not None :
             self.pick_idx = sys_idx
         else :
-            if sys_probs is None :
-                if auto_prob_style == "prob_uniform" :
-                    prob = None
-                elif auto_prob_style == "prob_sys_size" :
-                    prob = self.prob_nbatches
-                elif auto_prob_style[:14] == "prob_sys_size;" :
-                    prob = self._prob_sys_size_ext(auto_prob_style)
-                else :
-                    raise RuntimeError("unkown style " + auto_prob_style )
-            else :
-                prob = self._process_sys_probs(sys_probs)
+            prob = self._get_sys_probs(sys_probs, auto_prob_style)
             self.pick_idx = np.random.choice(np.arange(self.nsystems), p = prob)
         b_data = self.data_systems[self.pick_idx].get_batch(self.batch_size[self.pick_idx])
         b_data["natoms_vec"] = self.natoms_vec[self.pick_idx]
@@ -249,21 +252,26 @@ class DeepmdDataSystem() :
             name = '-- ' + name
             return name 
 
-    def print_summary(self, run_opt) :
+    def print_summary(self, 
+                      run_opt,
+                      sys_probs = None,
+                      auto_prob_style = "prob_sys_size") :
+        prob = self._get_sys_probs(sys_probs, auto_prob_style)
         tmp_msg = ""
         # width 65
         sys_width = 42
-        tmp_msg += "---Summary of DataSystem-----------------------------------------\n"
+        tmp_msg += "---Summary of DataSystem------------------------------------------------\n"
         tmp_msg += "find %d system(s):\n" % self.nsystems
         tmp_msg += "%s  " % self._format_name_length('system', sys_width)
-        tmp_msg += "%s  %s  %s\n" % ('natoms', 'bch_sz', 'n_bch')
+        tmp_msg += "%s  %s  %s  %5s\n" % ('natoms', 'bch_sz', 'n_bch', 'prob')
         for ii in range(self.nsystems) :
-            tmp_msg += ("%s  %6d  %6d  %5d\n" % 
+            tmp_msg += ("%s  %6d  %6d  %5d  %5.3f\n" % 
                         (self._format_name_length(self.system_dirs[ii], sys_width),
                          self.natoms[ii], 
                          self.batch_size[ii], 
-                         self.nbatches[ii]) )
-        tmp_msg += "-----------------------------------------------------------------\n"
+                         self.nbatches[ii], 
+                         prob[ii]) )
+        tmp_msg += "------------------------------------------------------------------------\n"
         run_opt.message(tmp_msg)
 
         

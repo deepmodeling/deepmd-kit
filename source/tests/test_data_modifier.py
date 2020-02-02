@@ -61,8 +61,7 @@ class TestDataModifier (unittest.TestCase) :
                                 batch_size, 
                                 test_size, 
                                 rcut, 
-                                set_prefix=set_pfx, 
-                                run_opt=run_opt)
+                                set_prefix=set_pfx)
         data.add_dict(data_requirement)
 
         # clear the default graph
