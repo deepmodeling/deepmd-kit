@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.7)
 project(DeePMD)
+set(CMAKE_LINK_WHAT_YOU_USE TRUE)
 
 # build cpp or python interfaces
 if (NOT DEFINED BUILD_CPP_IF) 
