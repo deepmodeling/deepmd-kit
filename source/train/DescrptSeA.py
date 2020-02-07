@@ -17,7 +17,7 @@ class DescrptSeA ():
                .add('resnet_dt',bool,   default = False) \
                .add('trainable',bool,   default = True) \
                .add('seed',     int) \
-               .add('no_inter_types', list, default = []) \
+               .add('exclude_types', list, default = []) \
                .add('set_davg_zero', bool, default = False)
         class_data = args.parse(jdata)
         self.sel_a = class_data['sel']
@@ -28,12 +28,12 @@ class DescrptSeA ():
         self.filter_resnet_dt = class_data['resnet_dt']
         self.seed = class_data['seed']
         self.trainable = class_data['trainable']
-        no_inter_types = class_data['no_inter_types']
-        self.no_inter_types = set()
-        for tt in no_inter_types:
+        exclude_types = class_data['exclude_types']
+        self.exclude_types = set()
+        for tt in exclude_types:
             assert(len(tt) == 2)
-            self.no_inter_types.add((tt[0], tt[1]))
-            self.no_inter_types.add((tt[1], tt[0]))
+            self.exclude_types.add((tt[0], tt[1]))
+            self.exclude_types.add((tt[1], tt[0]))
         self.set_davg_zero = class_data['set_davg_zero']
 
         # descrpt config
@@ -337,7 +337,7 @@ class DescrptSeA ():
             # with (natom x nei_type_i) x 4  
             inputs_reshape = tf.reshape(inputs_i, [-1, 4])
             xyz_scatter = tf.reshape(tf.slice(inputs_reshape, [0,0],[-1,1]),[-1,1])
-            if (type_input, type_i) not in self.no_inter_types:
+            if (type_input, type_i) not in self.exclude_types:
               for ii in range(1, len(outputs_size)):
                 w = tf.get_variable('matrix_'+str(ii)+'_'+str(type_i), 
                                   [outputs_size[ii - 1], outputs_size[ii]], 
