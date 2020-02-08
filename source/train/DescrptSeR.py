@@ -26,6 +26,7 @@ class DescrptSeR ():
         self.filter_resnet_dt = class_data['resnet_dt']
         self.seed = class_data['seed']        
         self.trainable = class_data['trainable']
+        exclude_types = class_data['exclude_types']
         self.exclude_types = set()
         for tt in exclude_types:
             assert(len(tt) == 2)
