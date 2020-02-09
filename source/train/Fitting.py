@@ -20,7 +20,8 @@ class EnerFitting ():
                .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\
                .add('resnet_dt',        bool,   default = True)\
                .add('rcond',            float,  default = 1e-3) \
-               .add('seed',             int)               
+               .add('seed',             int)               \
+               .add('atom_ener',        list,   default = [])
         class_data = args.parse(jdata)
         self.numb_fparam = class_data['numb_fparam']
         self.numb_aparam = class_data['numb_aparam']
@@ -28,6 +29,12 @@ class EnerFitting ():
         self.resnet_dt = class_data['resnet_dt']
         self.rcond = class_data['rcond']
         self.seed = class_data['seed']
+        self.atom_ener = []
+        for at, ae in enumerate(class_data['atom_ener']):
+            if ae is not None:
+                self.atom_ener.append(tf.constant(ae, global_tf_float_precision, name = "atom_%d_ener" % at))
+            else:
+                self.atom_ener.append(None)
         self.useBN = False
         self.bias_atom_e = None
         # data requirement
@@ -198,6 +205,22 @@ class EnerFitting ():
                 else :
                     layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
             final_layer = one_layer(layer, 1, activation_fn = None, bavg = type_bias_ae, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
+
+            if type_i < len(self.atom_ener) and self.atom_ener[type_i] is not None:
+                inputs_zero = tf.zeros_like(inputs_i, dtype=global_tf_float_precision)
+                layer = inputs_zero
+                if self.numb_fparam > 0 :
+                    layer = tf.concat([layer, ext_fparam], axis = 1)
+                if self.numb_aparam > 0 :
+                    layer = tf.concat([layer, ext_aparam], axis = 1)
+                for ii in range(0,len(self.n_neuron)) :
+                    if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
+                        layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=True, seed = self.seed, use_timestep = self.resnet_dt)
+                    else :
+                        layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=True, seed = self.seed)
+                zero_layer = one_layer(layer, 1, activation_fn = None, bavg = type_bias_ae, name='final_layer_type_'+str(type_i)+suffix, reuse=True, seed = self.seed)
+                final_layer += self.atom_ener[type_i] - zero_layer
+
             final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i]])
 
             # concat the results
