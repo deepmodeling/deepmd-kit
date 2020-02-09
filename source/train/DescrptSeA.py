@@ -134,6 +134,7 @@ class DescrptSeA ():
                natoms,
                box_, 
                mesh,
+               input_dict,
                suffix = '', 
                reuse = None):
         davg = self.davg

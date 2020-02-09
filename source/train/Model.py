@@ -121,7 +121,8 @@ class Model() :
                                          all_stat['box'],
                                          all_stat['type'],
                                          all_stat['natoms_vec'],
-                                         all_stat['default_mesh'])
+                                         all_stat['default_mesh'], 
+                                         all_stat)
         self.fitting.compute_input_stats(all_stat, protection = protection)
 
     def _compute_output_stat (self, all_stat) :
@@ -168,6 +169,7 @@ class Model() :
                                  natoms,
                                  box,
                                  mesh,
+                                 input_dict,
                                  suffix = suffix,
                                  reuse = reuse)
         dout = tf.identity(dout, name='o_descriptor')

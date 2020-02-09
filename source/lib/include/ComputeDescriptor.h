@@ -83,6 +83,22 @@ void compute_descriptor_se_a (vector<double > &			descrpt_a,
 			       const double &				rmax);
 
 inline
+void compute_descriptor_se_a_extf (vector<double > &			descrpt_a,
+				   vector<double > &			descrpt_a_deriv,
+				   vector<double > &			rij_a,
+				   const vector<double > &		posi,
+				   const int &				ntypes,
+				   const vector<int > &			type,
+				   const SimulationRegion<double> &	region,
+				   const bool &				b_pbc,
+				   const vector<double > &		efield,
+				   const int &				i_idx,
+				   const vector<int > &			fmt_nlist_a,
+				   const vector<int > &			sec_a, 
+				   const double &			rmin, 
+				   const double &			rmax);
+
+inline
 void compute_descriptor_se_r (vector<double > &			descrpt_r,
 			      vector<double > &			descrpt_r_deriv,
 			      vector<double > &			rij_r,
@@ -1082,6 +1098,116 @@ void compute_descriptor_se_r (vector<double > &			descrpt,
       descrpt_deriv[idx_deriv + 2] = rr[2] * inr3 * sw - descrpt[idx_value + 0] * dsw * rr[2] * inr;
       // value components
       descrpt[idx_value + 0] *= sw;
+    }
+  }
+}
+
+
+// output deriv size: n_sel_a_nei x 4 x 12				    
+//		      (1./rr, cos_theta, cos_phi, sin_phi)  x 4 x (x, y, z) 
+void compute_descriptor_se_a_extf (vector<double > &			descrpt_a,
+				   vector<double > &			descrpt_a_deriv,
+				   vector<double > &			rij_a,
+				   const vector<double > &		posi,
+				   const int &				ntypes,
+				   const vector<int > &			type,
+				   const SimulationRegion<double> &	region,
+				   const bool &				b_pbc,
+				   const vector<double > &		efield,
+				   const int &				i_idx,
+				   const vector<int > &			fmt_nlist_a,
+				   const vector<int > &			sec_a, 
+				   const double &			rmin, 
+				   const double &			rmax)
+{
+  const double * ef_ = &efield[i_idx*3+0];
+  double ef[3] = {0.};
+  if (isnan(ef_[0]) || isnan(ef_[1]) || isnan(ef_[2])){
+    ef[0] = 1.;
+    ef[1] = ef[2] = 0.;
+  }
+  else {
+    for (int ii = 0; ii < 3; ++ii){
+      ef[ii] = ef_[ii];
+    }
+  }
+  assert( fabs(MathUtilities::dot(ef, ef) - 1.0) < 1e-12 ), "ef should be a normalized vector";
+
+  // compute the diff of the neighbors
+  vector<vector<double > > sel_a_diff (sec_a.back());
+  rij_a.resize (sec_a.back() * 3);
+  fill (rij_a.begin(), rij_a.end(), 0.0);
+  for (int ii = 0; ii < int(sec_a.size()) - 1; ++ii){
+    for (int jj = sec_a[ii]; jj < sec_a[ii+1]; ++jj){
+      if (fmt_nlist_a[jj] < 0) break;
+      sel_a_diff[jj].resize(3);
+      const int & j_idx = fmt_nlist_a[jj];
+      if (b_pbc){
+	region.diffNearestNeighbor (posi[j_idx*3+0], posi[j_idx*3+1], posi[j_idx*3+2], 
+				    posi[i_idx*3+0], posi[i_idx*3+1], posi[i_idx*3+2], 
+				    sel_a_diff[jj][0], sel_a_diff[jj][1], sel_a_diff[jj][2]);
+      }
+      else {
+	for (int dd = 0; dd < 3; ++dd) sel_a_diff[jj][dd] = posi[j_idx*3+dd] - posi[i_idx*3+dd];
+      }
+      for (int dd = 0; dd < 3; ++dd) rij_a[jj*3+dd] = sel_a_diff[jj][dd];
+    }
+  }
+  
+  // 1./rr, cos(theta), cos(phi), sin(phi)
+  descrpt_a.resize (sec_a.back() * 4);
+  fill (descrpt_a.begin(), descrpt_a.end(), 0.0);
+  // deriv wrt center: 3
+  descrpt_a_deriv.resize (sec_a.back() * 4 * 3);
+  fill (descrpt_a_deriv.begin(), descrpt_a_deriv.end(), 0.0);
+
+  for (int sec_iter = 0; sec_iter < int(sec_a.size()) - 1; ++sec_iter){
+    for (int nei_iter = sec_a[sec_iter]; nei_iter < sec_a[sec_iter+1]; ++nei_iter) {      
+      if (fmt_nlist_a[nei_iter] < 0) break;
+      const double * rr = &sel_a_diff[nei_iter][0];
+      // check validity of ef
+      double nr2 = MathUtilities::dot(rr, rr);
+      double inr = 1./sqrt(nr2);
+      double nr = nr2 * inr;
+      double inr2 = inr * inr;
+      double inr4 = inr2 * inr2;
+      double inr3 = inr4 * nr;
+      double sw, dsw;
+      spline5_switch(sw, dsw, nr, rmin, rmax);
+      int idx_deriv = nei_iter * 4 * 3;	// 4 components time 3 directions
+      int idx_value = nei_iter * 4;	// 4 components
+      // projections
+      double rp = MathUtilities::dot(rr, ef);
+      double rv[3];
+      rv[0] = rr[0] - rp * ef[0];
+      rv[1] = rr[1] - rp * ef[1];
+      rv[2] = rr[2] - rp * ef[2];
+      // 4 value components
+      descrpt_a[idx_value + 0] = rp / nr2;
+      descrpt_a[idx_value + 1] = rv[0] / nr2;
+      descrpt_a[idx_value + 2] = rv[1] / nr2;
+      descrpt_a[idx_value + 3] = rv[2] / nr2;
+      // deriv of component rp/r2
+      descrpt_a_deriv[idx_deriv + 0] = (2. * inr4 * rp * rr[0] - inr2 * ef[0]) * sw - descrpt_a[idx_value + 0] * dsw * rr[0] * inr;
+      descrpt_a_deriv[idx_deriv + 1] = (2. * inr4 * rp * rr[1] - inr2 * ef[1]) * sw - descrpt_a[idx_value + 0] * dsw * rr[1] * inr;
+      descrpt_a_deriv[idx_deriv + 2] = (2. * inr4 * rp * rr[2] - inr2 * ef[2]) * sw - descrpt_a[idx_value + 0] * dsw * rr[2] * inr;
+      // deriv of component rvx/r2
+      descrpt_a_deriv[idx_deriv + 3] = (2. * inr4 * rv[0] * rr[0] - inr2 * (1. - ef[0] * ef[0])) * sw - descrpt_a[idx_value + 1] * dsw * rr[0] * inr;
+      descrpt_a_deriv[idx_deriv + 4] = (2. * inr4 * rv[0] * rr[1] - inr2 * (   - ef[0] * ef[1])) * sw - descrpt_a[idx_value + 1] * dsw * rr[1] * inr;
+      descrpt_a_deriv[idx_deriv + 5] = (2. * inr4 * rv[0] * rr[2] - inr2 * (   - ef[0] * ef[2])) * sw - descrpt_a[idx_value + 1] * dsw * rr[2] * inr;
+      // deriv of component rvy/r2
+      descrpt_a_deriv[idx_deriv + 6] = (2. * inr4 * rv[1] * rr[0] - inr2 * (   - ef[1] * ef[0])) * sw - descrpt_a[idx_value + 2] * dsw * rr[0] * inr;
+      descrpt_a_deriv[idx_deriv + 7] = (2. * inr4 * rv[1] * rr[1] - inr2 * (1. - ef[1] * ef[1])) * sw - descrpt_a[idx_value + 2] * dsw * rr[1] * inr;
+      descrpt_a_deriv[idx_deriv + 8] = (2. * inr4 * rv[1] * rr[2] - inr2 * (   - ef[1] * ef[2])) * sw - descrpt_a[idx_value + 2] * dsw * rr[2] * inr;
+      // deriv of component rvz/r2
+      descrpt_a_deriv[idx_deriv + 9] = (2. * inr4 * rv[2] * rr[0] - inr2 * (   - ef[2] * ef[0])) * sw - descrpt_a[idx_value + 3] * dsw * rr[0] * inr;
+      descrpt_a_deriv[idx_deriv +10] = (2. * inr4 * rv[2] * rr[1] - inr2 * (   - ef[2] * ef[1])) * sw - descrpt_a[idx_value + 3] * dsw * rr[1] * inr;
+      descrpt_a_deriv[idx_deriv +11] = (2. * inr4 * rv[2] * rr[2] - inr2 * (1. - ef[2] * ef[2])) * sw - descrpt_a[idx_value + 3] * dsw * rr[2] * inr;
+      // 4 value components
+      descrpt_a[idx_value + 0] *= sw;
+      descrpt_a[idx_value + 1] *= sw;
+      descrpt_a[idx_value + 2] *= sw;
+      descrpt_a[idx_value + 3] *= sw;
     }
   }
 }
