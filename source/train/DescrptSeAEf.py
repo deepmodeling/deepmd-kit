@@ -7,8 +7,77 @@ from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.DescrptSeA import DescrptSeA
 
-class DescrptSeAEf (DescrptSeA):
-    def __init__ (self, jdata):
+class DescrptSeAEf ():
+    def __init__(self, jdata):
+        self.descrpt_para = DescrptSeAEfLower(jdata, op_module.descrpt_se_a_ef_para)
+        self.descrpt_vert = DescrptSeAEfLower(jdata, op_module.descrpt_se_a_ef_vert)
+        
+    def get_rcut (self) :
+        return self.descrpt_vert.rcut_r
+
+    def get_ntypes (self) :
+        return self.descrpt_vert.ntypes
+
+    def get_dim_out (self) :
+        return self.descrpt_vert.get_dim_out() + self.descrpt_para.get_dim_out()
+
+    def get_dim_rot_mat_1 (self) :
+        return self.descrpt_vert.filter_neuron[-1]
+
+    def get_rot_mat(self) :
+        return self.qmat
+
+
+    def get_nlist (self) :
+        return \
+            self.descrpt_vert.nlist, \
+            self.descrpt_vert.rij, \
+            self.descrpt_vert.sel_a, \
+            self.descrpt_vert.sel_r
+
+    def compute_input_stats (self,
+                             data_coord, 
+                             data_box, 
+                             data_atype, 
+                             natoms_vec,
+                             mesh, 
+                             input_dict) :
+        self.descrpt_vert.compute_input_stats(data_coord, data_box, data_atype, natoms_vec, mesh, input_dict)
+        self.descrpt_para.compute_input_stats(data_coord, data_box, data_atype, natoms_vec, mesh, input_dict)
+
+    def build (self, 
+               coord_, 
+               atype_,
+               natoms,
+               box_, 
+               mesh,
+               input_dict,
+               suffix = '', 
+               reuse = None):
+        self.dout_vert = self.descrpt_vert.build(coord_, atype_, natoms, box_, mesh, input_dict)
+        self.dout_para = self.descrpt_para.build(coord_, atype_, natoms, box_, mesh, input_dict, reuse = True)
+        coord = tf.reshape(coord_, [-1, natoms[1] * 3])
+        nframes = tf.shape(coord)[0]
+        self.dout_vert = tf.reshape(self.dout_vert, [nframes * natoms[0], self.descrpt_vert.get_dim_out()])
+        self.dout_para = tf.reshape(self.dout_para, [nframes * natoms[0], self.descrpt_para.get_dim_out()])
+        self.dout = tf.concat([self.dout_vert, self.dout_para], axis = 1)
+        self.dout = tf.reshape(self.dout, [nframes, natoms[0] * self.get_dim_out()])
+        self.qmat = self.descrpt_vert.qmat + self.descrpt_para.qmat
+        return self.dout
+
+    def prod_force_virial(self, atom_ener, natoms) :
+        f_vert, v_vert, av_vert \
+            = self.descrpt_vert.prod_force_virial(atom_ener, natoms)
+        f_para, v_para, av_para \
+            = self.descrpt_para.prod_force_virial(atom_ener, natoms)
+        force = f_vert + f_para
+        virial = v_vert + v_para
+        atom_vir = av_vert + av_para
+        return force, virial, atom_vir
+
+
+class DescrptSeAEfLower (DescrptSeA):
+    def __init__ (self, jdata, op):
         args = ClassArg()\
                .add('sel',      list,   must = True) \
                .add('rcut',     float,  default = 6.0) \
@@ -27,6 +96,7 @@ class DescrptSeAEf (DescrptSeA):
         self.filter_resnet_dt = class_data['resnet_dt']
         self.seed = class_data['seed']
         self.trainable = class_data['trainable']
+        self.op = op
 
         # descrpt config
         self.sel_r = [ 0 for ii in range(len(self.sel_a)) ]
@@ -59,19 +129,19 @@ class DescrptSeAEf (DescrptSeA):
             self.place_holders['default_mesh'] = tf.placeholder(tf.int32, [None], name=name_pfx+'t_mesh')
             self.place_holders['efield'] = tf.placeholder(global_np_float_precision, [None, None], name=name_pfx+'t_efield')
             self.stat_descrpt, descrpt_deriv, rij, nlist \
-                = op_module.descrpt_se_a_ef(self.place_holders['coord'],
-                                            self.place_holders['type'],
-                                            self.place_holders['natoms_vec'],
-                                            self.place_holders['box'],
-                                            self.place_holders['default_mesh'],
-                                            self.place_holders['efield'],
-                                            tf.constant(avg_zero),
-                                            tf.constant(std_ones),
-                                            rcut_a = self.rcut_a,
-                                            rcut_r = self.rcut_r,
-                                            rcut_r_smth = self.rcut_r_smth,
-                                            sel_a = self.sel_a,
-                                            sel_r = self.sel_r)
+                = self.op(self.place_holders['coord'],
+                          self.place_holders['type'],
+                          self.place_holders['natoms_vec'],
+                          self.place_holders['box'],
+                          self.place_holders['default_mesh'],
+                          self.place_holders['efield'],
+                          tf.constant(avg_zero),
+                          tf.constant(std_ones),
+                          rcut_a = self.rcut_a,
+                          rcut_r = self.rcut_r,
+                          rcut_r_smth = self.rcut_r_smth,
+                          sel_a = self.sel_a,
+                          sel_r = self.sel_r)
         self.sub_sess = tf.Session(graph = sub_graph, config=default_tf_session_config)
 
 
@@ -173,19 +243,19 @@ class DescrptSeAEf (DescrptSeA):
         efield = tf.reshape(efield, [-1, natoms[0] * 3])
 
         self.descrpt, self.descrpt_deriv, self.rij, self.nlist \
-            = op_module.descrpt_se_a_ef (coord,
-                                         atype,
-                                         natoms,
-                                         box,
-                                         mesh,
-                                         efield,
-                                         self.t_avg,
-                                         self.t_std,
-                                         rcut_a = self.rcut_a,
-                                         rcut_r = self.rcut_r,
-                                         rcut_r_smth = self.rcut_r_smth,
-                                         sel_a = self.sel_a,
-                                         sel_r = self.sel_r)
+            = self.op (coord,
+                       atype,
+                       natoms,
+                       box,
+                       mesh,
+                       efield,
+                       self.t_avg,
+                       self.t_std,
+                       rcut_a = self.rcut_a,
+                       rcut_r = self.rcut_r,
+                       rcut_r_smth = self.rcut_r_smth,
+                       sel_a = self.sel_a,
+                       sel_r = self.sel_r)
 
         self.descrpt_reshape = tf.reshape(self.descrpt, [-1, self.ndescrpt])
         self.descrpt_reshape = tf.identity(self.descrpt_reshape, name = 'o_rmat')

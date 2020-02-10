@@ -307,7 +307,8 @@ class TensorModel() :
                                          all_stat['box'],
                                          all_stat['type'],
                                          all_stat['natoms_vec'],
-                                         all_stat['default_mesh'])
+                                         all_stat['default_mesh'], 
+                                         all_stat)
         if hasattr(self.fitting, 'compute_input_stats'):
             self.fitting.compute_input_stats(all_stat, protection = protection)
 
@@ -345,6 +346,7 @@ class TensorModel() :
                                  natoms,
                                  box,
                                  mesh,
+                                 input_dict,
                                  suffix = suffix,
                                  reuse = reuse)
         dout = tf.identity(dout, name='o_descriptor')

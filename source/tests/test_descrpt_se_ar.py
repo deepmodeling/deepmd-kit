@@ -90,7 +90,7 @@ class Inter():
                  tnatoms,
                  name,
                  reuse = None) :
-        dout = self.descrpt.build(dcoord, dtype, tnatoms, dbox, self.default_mesh, suffix=name, reuse=reuse)
+        dout = self.descrpt.build(dcoord, dtype, tnatoms, dbox, self.default_mesh, {"efield": self.efield}, suffix=name, reuse=reuse)
         inputs_reshape = tf.reshape (dout, [-1, self.descrpt.get_dim_out()])
         atom_ener = self._net (inputs_reshape, name, reuse = reuse)
         atom_ener_reshape = tf.reshape(atom_ener, [-1, self.natoms[0]])       
