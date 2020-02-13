@@ -1,8 +1,9 @@
 import warnings
 import numpy as np
+from deepmd.env import tf
 
 data_requirement = {}
-
+activation_fn_dict = {'tf.nn.relu':tf.nn.relu,'tf.nn.relu6':tf.nn.relu6,"tf.nn.softplus":tf.nn.softplus,"tf.sigmoid":tf.sigmoid,"tf.tanh":tf.tanh,"tf.nn.tanh":tf.nn.tanh}
 def add_data_requirement(key, 
                          ndof, 
                          atomic = False, 
@@ -139,4 +140,9 @@ def j_must_have_d (jdata, key, deprecated_key) :
 
 def j_have (jdata, key) :
     return key in jdata.keys() 
+  
+def j_whether_in_dict(activation_fn):
+    if activation_fn not in activation_fn_dict:
+        raise RuntimeError(activation_fn+" is not a valid activation function")
+    return activation_fn_dict[activation_fn]
 
