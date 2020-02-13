@@ -1,6 +1,6 @@
 import numpy as np
 from deepmd.env import tf
-from deepmd.common import ClassArg
+from deepmd.common import ClassArg, j_whether_in_dict
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.env import op_module
@@ -17,7 +17,8 @@ class DescrptSeR ():
                .add('trainable',bool,   default = True) \
                .add('seed',     int) \
                .add('exclude_types', list, default = []) \
-               .add('set_davg_zero', bool, default = False)
+               .add('set_davg_zero', bool, default = False) \
+               .add("activation_function", str, default = "tf.nn.tanh")
         class_data = args.parse(jdata)
         self.sel_r = class_data['sel']
         self.rcut = class_data['rcut']
@@ -26,6 +27,7 @@ class DescrptSeR ():
         self.filter_resnet_dt = class_data['resnet_dt']
         self.seed = class_data['seed']        
         self.trainable = class_data['trainable']
+        self.filter_activation_fn = j_whether_in_dict(class_data["activation_function"])   
         exclude_types = class_data['exclude_types']
         self.exclude_types = set()
         for tt in exclude_types:
@@ -267,6 +269,7 @@ class DescrptSeR ():
                   reuse=None,
                   seed=None, 
                   trainable = True):
+        activation_fn = self.filter_activation_fn
         # natom x nei
         outputs_size = [1] + self.filter_neuron
         with tf.variable_scope(name, reuse=reuse):
