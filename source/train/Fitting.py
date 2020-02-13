@@ -246,7 +246,7 @@ class WFCFitting () :
                .add('wfc_numb',         int,    must = True)\
                .add('sel_type',         [list,int],   default = [ii for ii in range(self.ntypes)], alias = 'wfc_type')\
                .add('seed',             int)\
-               .add("activation_function", str, defalut = "tf.nn.tanh")
+               .add("activation_function", str, default = "tf.nn.tanh")
         class_data = args.parse(jdata)
         self.n_neuron = class_data['neuron']
         self.resnet_dt = class_data['resnet_dt']
