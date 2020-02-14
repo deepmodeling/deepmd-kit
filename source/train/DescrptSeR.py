@@ -18,7 +18,7 @@ class DescrptSeR ():
                .add('seed',     int) \
                .add('exclude_types', list, default = []) \
                .add('set_davg_zero', bool, default = False) \
-               .add("activation_function", str, default = "tf.nn.tanh")
+               .add("activation_function", str, default = "tanh")
         class_data = args.parse(jdata)
         self.sel_r = class_data['sel']
         self.rcut = class_data['rcut']
