@@ -8,7 +8,8 @@ activation_fn_dict = {
     "relu6": tf.nn.relu6,
     "softplus": tf.nn.softplus,
     "sigmoid": tf.sigmoid,
-    "tanh": tf.nn.tanh
+    "tanh": tf.nn.tanh,
+    "tf.nn.tanh": tf.nn.tanh
 }
 def add_data_requirement(key, 
                          ndof, 
