@@ -3,7 +3,13 @@ import numpy as np
 from deepmd.env import tf
 
 data_requirement = {}
-activation_fn_dict = {'tf.nn.relu':tf.nn.relu,'tf.nn.relu6':tf.nn.relu6,"tf.nn.softplus":tf.nn.softplus,"tf.sigmoid":tf.sigmoid,"tf.tanh":tf.tanh,"tf.nn.tanh":tf.nn.tanh}
+activation_fn_dict = {
+    "relu": tf.nn.relu,
+    "relu6": tf.nn.relu6,
+    "softplus": tf.nn.softplus,
+    "sigmoid": tf.sigmoid,
+    "tanh": tf.nn.tanh
+}
 def add_data_requirement(key, 
                          ndof, 
                          atomic = False, 
