@@ -22,7 +22,7 @@ class EnerFitting ():
                .add('rcond',            float,  default = 1e-3) \
                .add('seed',             int)               \
                .add('atom_ener',        list,   default = [])\
-               .add("activation_function", str,    default = "tf.nn.tanh") 
+               .add("activation_function", str,    default = "tanh") 
         class_data = args.parse(jdata)
         self.numb_fparam = class_data['numb_fparam']
         self.numb_aparam = class_data['numb_aparam']
@@ -246,7 +246,7 @@ class WFCFitting () :
                .add('wfc_numb',         int,    must = True)\
                .add('sel_type',         [list,int],   default = [ii for ii in range(self.ntypes)], alias = 'wfc_type')\
                .add('seed',             int)\
-               .add("activation_function", str, default = "tf.nn.tanh")
+               .add("activation_function", str, default = "tanh")
         class_data = args.parse(jdata)
         self.n_neuron = class_data['neuron']
         self.resnet_dt = class_data['resnet_dt']
@@ -327,7 +327,7 @@ class PolarFittingLocFrame () :
                .add('resnet_dt',        bool, default = True)\
                .add('sel_type',         [list,int], default = [ii for ii in range(self.ntypes)], alias = 'pol_type')\
                .add('seed',             int)\
-               .add("activation_function", str, default = "tf.nn.tanh")
+               .add("activation_function", str, default = "tanh")
         class_data = args.parse(jdata)
         self.n_neuron = class_data['neuron']
         self.resnet_dt = class_data['resnet_dt']
@@ -409,7 +409,7 @@ class PolarFittingSeA () :
                .add('scale',            [list,float], default = [1.0 for ii in range(self.ntypes)])\
                .add('sel_type',         [list,int],   default = [ii for ii in range(self.ntypes)], alias = 'pol_type')\
                .add('seed',             int)\
-               .add("activation_function", str ,   default = "tf.nn.tanh")
+               .add("activation_function", str ,   default = "tanh")
         class_data = args.parse(jdata)
         self.n_neuron = class_data['neuron']
         self.resnet_dt = class_data['resnet_dt']
@@ -564,7 +564,7 @@ class DipoleFittingSeA () :
                .add('resnet_dt',        bool,   default = True)\
                .add('sel_type',         [list,int],   default = [ii for ii in range(self.ntypes)], alias = 'dipole_type')\
                .add('seed',             int)\
-               .add("activation_function", str, default = "tf.nn.tanh")
+               .add("activation_function", str, default = "tanh")
         class_data = args.parse(jdata)
         self.n_neuron = class_data['neuron']
         self.resnet_dt = class_data['resnet_dt']
