@@ -25,6 +25,12 @@ class DeepPot (DeepEval) :
         self.t_natoms = self.graph.get_tensor_by_name ('load/t_natoms:0')
         self.t_box    = self.graph.get_tensor_by_name ('load/t_box:0')
         self.t_mesh   = self.graph.get_tensor_by_name ('load/t_mesh:0')
+        try:
+            self.t_efield = self.graph.get_tensor_by_name ('load/t_efield:0')
+            self.has_efield = True
+        except:
+            self.t_efield = None
+            self.has_efield = False
         # outputs
         self.t_energy = self.graph.get_tensor_by_name ('load/o_energy:0')
         self.t_force  = self.graph.get_tensor_by_name ('load/o_force:0')
@@ -88,13 +94,14 @@ class DeepPot (DeepEval) :
              atom_types,
              fparam = None,
              aparam = None,
-             atomic = False) :
+             atomic = False, 
+             efield = None) :
         if atomic :
             if self.modifier_type is not None:
                 raise RuntimeError('modifier does not support atomic modification')
-            return self.eval_inner(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic)
+            return self.eval_inner(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
         else :
-            e, f, v = self.eval_inner(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic)
+            e, f, v = self.eval_inner(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
             if self.modifier_type is not None:
                 me, mf, mv = self.dm.eval(coords, cells, atom_types)
                 e += me.reshape(e.shape)
@@ -103,12 +110,13 @@ class DeepPot (DeepEval) :
             return e, f, v
 
     def eval_inner(self,
-             coords, 
-             cells, 
-             atom_types, 
-             fparam = None, 
-             aparam = None, 
-             atomic = False) :
+                   coords, 
+                   cells, 
+                   atom_types, 
+                   fparam = None, 
+                   aparam = None, 
+                   atomic = False, 
+                   efield = None) :
         # standarize the shape of inputs
         atom_types = np.array(atom_types, dtype = int).reshape([-1])
         natoms = atom_types.size
@@ -128,6 +136,9 @@ class DeepPot (DeepEval) :
         if self.has_aparam :
             assert(aparam is not None)
             aparam = np.array(aparam)
+        if self.has_efield :
+            assert(efield is not None), "you are using a model with external field, parameter efield should be provided"
+            efield = np.array(efield)
 
         # reshape the inputs 
         if self.has_fparam :
@@ -151,6 +162,10 @@ class DeepPot (DeepEval) :
 
         # sort inputs
         coords, atom_types, imap = self.sort_input(coords, atom_types)
+        if self.has_efield:
+            efield = np.reshape(efield, [nframes, natoms, 3])
+            efield = efield[:,imap,:]
+            efield = np.reshape(efield, [nframes, natoms*3])            
 
         # make natoms_vec and default_mesh
         natoms_vec = self.make_natoms_vec(atom_types)
@@ -174,6 +189,8 @@ class DeepPot (DeepEval) :
         for ii in range(nframes) :
             feed_dict_test[self.t_coord] = np.reshape(coords[ii:ii+1, :], [-1])
             feed_dict_test[self.t_box  ] = np.reshape(cells [ii:ii+1, :], [-1])
+            if self.has_efield:
+                feed_dict_test[self.t_efield]= np.reshape(efield[ii:ii+1, :], [-1])
             if pbc:
                 feed_dict_test[self.t_mesh ] = make_default_mesh(cells[ii:ii+1, :])
             else:

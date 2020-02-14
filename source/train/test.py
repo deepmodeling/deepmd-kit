@@ -44,12 +44,17 @@ def l2err (diff) :
 def test_ener (args) :
     if args.rand_seed is not None :
         np.random.seed(args.rand_seed % (2**32))
-
+    has_atom_ener = args.atomic_energy
+        
     dp = DeepPot(args.model)
     data = DeepmdData(args.system, args.set_prefix, shuffle_test = args.shuffle_test, type_map = dp.get_type_map())
     data.add('energy', 1, atomic=False, must=False, high_prec=True)
     data.add('force',  3, atomic=True,  must=False, high_prec=False)
     data.add('virial', 9, atomic=False, must=False, high_prec=False)
+    if dp.has_efield:
+        data.add('efield', 3, atomic=True,  must=True, high_prec=False)
+    if has_atom_ener:
+        data.add('atom_ener', 1, atomic=True, must=True, high_prec=False)        
     if dp.get_dim_fparam() > 0:
         data.add('fparam', dp.get_dim_fparam(), atomic=False, must=True, high_prec=False)
     if dp.get_dim_aparam() > 0:
@@ -63,6 +68,10 @@ def test_ener (args) :
 
     coord = test_data["coord"][:numb_test].reshape([numb_test, -1])
     box = test_data["box"][:numb_test]
+    if dp.has_efield:
+        efield = test_data["efield"][:numb_test].reshape([numb_test, -1])
+    else :
+        efield = None
     if not data.pbc:
         box = None
     atype = test_data["type"][0]
@@ -75,12 +84,12 @@ def test_ener (args) :
     else :
         aparam = None
     detail_file = args.detail_file
-    if detail_file is not None:
+    if detail_file is not None or has_atom_ener:
         atomic = True
     else:
         atomic = False
 
-    ret = dp.eval(coord, box, atype, fparam = fparam, aparam = aparam, atomic = atomic)
+    ret = dp.eval(coord, box, atype, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
     energy = ret[0]
     force  = ret[1]
     virial = ret[2]
@@ -98,6 +107,8 @@ def test_ener (args) :
     l2v = (l2err (virial - test_data["virial"][:numb_test]))
     l2ea= l2e/natoms
     l2va= l2v/natoms
+    if has_atom_ener:
+        l2ae = (l2err(test_data['atom_ener'][:numb_test].reshape([-1]) - ae.reshape([-1])))
 
     # print ("# energies: %s" % energy)
     print ("# number of test data : %d " % numb_test)
@@ -106,6 +117,8 @@ def test_ener (args) :
     print ("Force  L2err        : %e eV/A" % l2f)
     print ("Virial L2err        : %e eV" % l2v)
     print ("Virial L2err/Natoms : %e eV" % l2va)
+    if has_atom_ener:
+        print ("Atomic ener L2err   : %e eV" % l2ae)
 
     if detail_file is not None :
         pe = np.concatenate((np.reshape(test_data["energy"][:numb_test], [-1,1]),
