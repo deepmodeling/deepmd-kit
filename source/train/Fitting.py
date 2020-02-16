@@ -2,7 +2,7 @@ import warnings
 import numpy as np
 
 from deepmd.env import tf
-from deepmd.common import ClassArg, add_data_requirement, j_whether_in_dict
+from deepmd.common import ClassArg, add_data_requirement, get_activation_func
 from deepmd.Network import one_layer
 from deepmd.DescrptLocFrame import DescrptLocFrame
 from deepmd.DescrptSeA import DescrptSeA
@@ -30,7 +30,7 @@ class EnerFitting ():
         self.resnet_dt = class_data['resnet_dt']
         self.rcond = class_data['rcond']
         self.seed = class_data['seed']
-        self.fitting_activation_fn = j_whether_in_dict(class_data["activation_function"])
+        self.fitting_activation_fn = get_activation_func(class_data["activation_function"])
         self.atom_ener = []
         for at, ae in enumerate(class_data['atom_ener']):
             if ae is not None:
@@ -253,7 +253,7 @@ class WFCFitting () :
         self.wfc_numb = class_data['wfc_numb']
         self.sel_type = class_data['sel_type']
         self.seed = class_data['seed']
-        self.fitting_activation_fn = j_whether_in_dict(class_data["activation_function"])
+        self.fitting_activation_fn = get_activation_func(class_data["activation_function"])
         self.useBN = False
 
 
@@ -333,7 +333,7 @@ class PolarFittingLocFrame () :
         self.resnet_dt = class_data['resnet_dt']
         self.sel_type = class_data['sel_type']
         self.seed = class_data['seed']
-        self.fitting_activation_fn = j_whether_in_dict(class_data["activation_function"])
+        self.fitting_activation_fn = get_activation_func(class_data["activation_function"])
         self.useBN = False
 
     def get_sel_type(self):
@@ -418,7 +418,7 @@ class PolarFittingSeA () :
         self.seed = class_data['seed']
         self.diag_shift = class_data['diag_shift']
         self.scale = class_data['scale']
-        self.fitting_activation_fn = j_whether_in_dict(class_data["activation_function"])
+        self.fitting_activation_fn = get_activation_func(class_data["activation_function"])
         if type(self.sel_type) is not list:
             self.sel_type = [self.sel_type]
         if type(self.diag_shift) is not list:
@@ -570,7 +570,7 @@ class DipoleFittingSeA () :
         self.resnet_dt = class_data['resnet_dt']
         self.sel_type = class_data['sel_type']
         self.seed = class_data['seed']
-        self.fitting_activation_fn = j_whether_in_dict(class_data["activation_function"])
+        self.fitting_activation_fn = get_activation_func(class_data["activation_function"])
         self.dim_rot_mat_1 = descrpt.get_dim_rot_mat_1()
         self.dim_rot_mat = self.dim_rot_mat_1 * 3
         self.useBN = False
