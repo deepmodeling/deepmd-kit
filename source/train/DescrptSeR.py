@@ -1,6 +1,6 @@
 import numpy as np
 from deepmd.env import tf
-from deepmd.common import ClassArg, j_whether_in_dict
+from deepmd.common import ClassArg, get_activation_func
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.env import op_module
@@ -27,7 +27,7 @@ class DescrptSeR ():
         self.filter_resnet_dt = class_data['resnet_dt']
         self.seed = class_data['seed']        
         self.trainable = class_data['trainable']
-        self.filter_activation_fn = j_whether_in_dict(class_data["activation_function"])   
+        self.filter_activation_fn = get_activation_func(class_data["activation_function"])   
         exclude_types = class_data['exclude_types']
         self.exclude_types = set()
         for tt in exclude_types:
