@@ -1,4 +1,4 @@
-import warnings
+import os,warnings,fnmatch
 import numpy as np
 from deepmd.env import tf
 
@@ -152,3 +152,9 @@ def get_activation_func(activation_fn):
         raise RuntimeError(activation_fn+" is not a valid activation function")
     return activation_fn_dict[activation_fn]
 
+def expand_sys_str(root_dir):
+    matches = []
+    for root, dirnames, filenames in os.walk(root_dir, followlinks=True):
+        for filename in fnmatch.filter(filenames, 'type.raw'):
+            matches.append(root)
+    return matches
