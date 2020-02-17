@@ -1,6 +1,6 @@
 import numpy as np
 from deepmd.env import tf
-from deepmd.common import ClassArg
+from deepmd.common import ClassArg, get_activation_func
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.env import op_module
@@ -17,7 +17,8 @@ class DescrptSeR ():
                .add('trainable',bool,   default = True) \
                .add('seed',     int) \
                .add('exclude_types', list, default = []) \
-               .add('set_davg_zero', bool, default = False)
+               .add('set_davg_zero', bool, default = False) \
+               .add("activation_function", str, default = "tanh")
         class_data = args.parse(jdata)
         self.sel_r = class_data['sel']
         self.rcut = class_data['rcut']
@@ -26,6 +27,7 @@ class DescrptSeR ():
         self.filter_resnet_dt = class_data['resnet_dt']
         self.seed = class_data['seed']        
         self.trainable = class_data['trainable']
+        self.filter_activation_fn = get_activation_func(class_data["activation_function"])   
         exclude_types = class_data['exclude_types']
         self.exclude_types = set()
         for tt in exclude_types:
@@ -204,7 +206,7 @@ class DescrptSeR ():
                                  [ 0, start_index*      self.ndescrpt],
                                  [-1, natoms[2+type_i]* self.ndescrpt] )
             inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
-            layer = self._filter_r(inputs_i, type_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, seed = self.seed, trainable = trainable)
+            layer = self._filter_r(inputs_i, type_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, seed = self.seed, trainable = trainable, activation_fn = self.filter_activation_fn)
             layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_out()])
             output.append(layer)
             start_index += natoms[2+type_i]
