@@ -7,6 +7,7 @@ import argparse
 import numpy as np
 
 from deepmd.Data import DeepmdData
+from deepmd.common import expand_sys_str
 from deepmd import DeepEval
 from deepmd import DeepPot
 from deepmd import DeepDipole
@@ -16,10 +17,7 @@ from tensorflow.python.framework import ops
 
 def test (args):
     de = DeepEval(args.model)
-    all_sys = []
-    from pathlib import Path
-    for filename in Path(args.system).rglob('type.raw'):
-        all_sys.append(os.path.dirname(filename))
+    all_sys = expand_sys_str(args.system)
     for ii in all_sys:
         args.system = ii
         print ("# ---------------output of dp test--------------- ")
