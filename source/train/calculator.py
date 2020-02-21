@@ -35,7 +35,10 @@ class DP(Calculator):
     def __init__(self, model, label="DP", **kwargs):
         Calculator.__init__(self, label=label, **kwargs)
         self.dp = DeepPot(model)
-        self.type_dict = dict(zip(self.dp.get_type_map(), range(self.dp.get_ntypes())))
+        try:
+            self.type_dict=kwargs['type_dict']
+        except:
+            self.type_dict = dict(zip(self.dp.get_type_map(), range(self.dp.get_ntypes())))
 
     def calculate(self, atoms=None, properties=["energy", "forces", "stress"], system_changes=all_changes):
         coord = atoms.get_positions().reshape([1, -1])
