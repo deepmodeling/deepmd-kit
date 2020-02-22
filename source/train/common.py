@@ -2,6 +2,7 @@ import os,warnings,fnmatch
 import numpy as np
 import math
 from deepmd.env import tf
+from deepmd.RunOptions import global_tf_float_precision
 
 def gelu(x):
     """Gaussian Error Linear Unit.
@@ -172,3 +173,16 @@ def expand_sys_str(root_dir):
         for filename in fnmatch.filter(filenames, 'type.raw'):
             matches.append(root)
     return matches
+
+def get_precision_func(precision):
+    if precision == 0:
+        return  global_tf_float_precision
+    elif precision == 16:
+        return tf.float16
+    elif precision == 32:
+        return tf.float32
+    elif precision == 64:
+        return tf.float64
+    else:
+        raise RuntimeError("%d is not a valid precision" % precision)
+
