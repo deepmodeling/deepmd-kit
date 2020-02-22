@@ -233,7 +233,7 @@ class EnerFitting ():
             else:
                 outs = tf.concat([outs, final_layer], axis = 1)
 
-        return tf.cast(tf.reshape(outs, [-1]), self.fitting_precision)        
+        return tf.cast(tf.reshape(outs, [-1]), global_tf_float_precision)        
 
 
 class WFCFitting () :
@@ -316,7 +316,7 @@ class WFCFitting () :
                 outs = tf.concat([outs, final_layer], axis = 1)
             count += 1
 
-        return tf.cast(tf.reshape(outs, [-1]),  self.fitting_precision)
+        return tf.cast(tf.reshape(outs, [-1]),  global_tf_float_precision)
 
 
 
@@ -398,7 +398,7 @@ class PolarFittingLocFrame () :
                 outs = tf.concat([outs, final_layer], axis = 1)
             count += 1
 
-        return tf.cast(tf.reshape(outs, [-1]),  self.fitting_precision)
+        return tf.cast(tf.reshape(outs, [-1]),  global_tf_float_precision)
 
 
 class PolarFittingSeA () :
@@ -530,7 +530,7 @@ class PolarFittingSeA () :
                 outs = tf.concat([outs, final_layer], axis = 1)
             count += 1
 
-        return tf.cast(tf.reshape(outs, [-1]), self.fitting_precision)
+        return tf.cast(tf.reshape(outs, [-1]), global_tf_float_precision)
 
 
 class GlobalPolarFittingSeA () :
@@ -637,5 +637,5 @@ class DipoleFittingSeA () :
                 outs = tf.concat([outs, final_layer], axis = 1)
             count += 1
 
-        return tf.cast(tf.reshape(outs, [-1]),  self.fitting_precision)
+        return tf.cast(tf.reshape(outs, [-1]),  global_tf_float_precision)
         # return tf.reshape(outs, [tf.shape(inputs)[0] * natoms[0] * 3 // 3])
