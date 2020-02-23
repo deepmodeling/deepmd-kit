@@ -174,7 +174,7 @@ def expand_sys_str(root_dir):
             matches.append(root)
     return matches
 
-def get_precision_func(precision):
+def get_precision(precision):
     if precision == "default":
         return  global_tf_float_precision
     elif precision == "float16":
