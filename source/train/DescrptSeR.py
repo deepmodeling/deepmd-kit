@@ -1,6 +1,6 @@
 import numpy as np
 from deepmd.env import tf
-from deepmd.common import ClassArg, get_activation_func, get_precision_func
+from deepmd.common import ClassArg, get_activation_func, get_precision
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.env import op_module
@@ -19,7 +19,7 @@ class DescrptSeR ():
                .add('exclude_types', list, default = []) \
                .add('set_davg_zero', bool, default = False) \
                .add("activation_function", str, default = "tanh") \
-               .add("precision",           int, default = 0)
+               .add("precision",           str, default = "default")
         class_data = args.parse(jdata)
         self.sel_r = class_data['sel']
         self.rcut = class_data['rcut']
@@ -29,7 +29,7 @@ class DescrptSeR ():
         self.seed = class_data['seed']        
         self.trainable = class_data['trainable']
         self.filter_activation_fn = get_activation_func(class_data["activation_function"]) 
-        self.filter_precision = get_precision_func(class_data['precision'])  
+        self.filter_precision = get_precision(class_data['precision'])  
         exclude_types = class_data['exclude_types']
         self.exclude_types = set()
         for tt in exclude_types:
