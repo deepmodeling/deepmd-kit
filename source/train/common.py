@@ -175,13 +175,13 @@ def expand_sys_str(root_dir):
     return matches
 
 def get_precision_func(precision):
-    if precision == 0:
+    if precision == "default":
         return  global_tf_float_precision
-    elif precision == 16:
+    elif precision == "float16":
         return tf.float16
-    elif precision == 32:
+    elif precision == "float32":
         return tf.float32
-    elif precision == 64:
+    elif precision == "float64":
         return tf.float64
     else:
         raise RuntimeError("%d is not a valid precision" % precision)
