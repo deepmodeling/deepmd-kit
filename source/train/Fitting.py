@@ -2,7 +2,7 @@ import warnings
 import numpy as np
 
 from deepmd.env import tf
-from deepmd.common import ClassArg, add_data_requirement, get_activation_func, get_precision_func
+from deepmd.common import ClassArg, add_data_requirement, get_activation_func, get_precision
 from deepmd.Network import one_layer
 from deepmd.DescrptLocFrame import DescrptLocFrame
 from deepmd.DescrptSeA import DescrptSeA
@@ -23,7 +23,7 @@ class EnerFitting ():
                .add('seed',             int)               \
                .add('atom_ener',        list,   default = [])\
                .add("activation_function", str,    default = "tanh")\
-               .add("precision",           int, default = 0)
+               .add("precision",           str, default = "default")
         class_data = args.parse(jdata)
         self.numb_fparam = class_data['numb_fparam']
         self.numb_aparam = class_data['numb_aparam']
@@ -32,7 +32,7 @@ class EnerFitting ():
         self.rcond = class_data['rcond']
         self.seed = class_data['seed']
         self.fitting_activation_fn = get_activation_func(class_data["activation_function"])
-        self.fitting_precision = get_precision_func(class_data['precision'])        
+        self.fitting_precision = get_precision(class_data['precision'])        
         self.atom_ener = []
         for at, ae in enumerate(class_data['atom_ener']):
             if ae is not None:
@@ -249,7 +249,7 @@ class WFCFitting () :
                .add('sel_type',         [list,int],   default = [ii for ii in range(self.ntypes)], alias = 'wfc_type')\
                .add('seed',             int)\
                .add("activation_function", str, default = "tanh")\
-               .add('precision',           int,    default = 0)
+               .add('precision',           str,    default = "default")
         class_data = args.parse(jdata)
         self.n_neuron = class_data['neuron']
         self.resnet_dt = class_data['resnet_dt']
@@ -257,7 +257,7 @@ class WFCFitting () :
         self.sel_type = class_data['sel_type']
         self.seed = class_data['seed']
         self.fitting_activation_fn = get_activation_func(class_data["activation_function"])
-        self.fitting_precision = get_precision_func(class_data['precision'])
+        self.fitting_precision = get_precision(class_data['precision'])
         self.useBN = False
 
 
@@ -332,14 +332,14 @@ class PolarFittingLocFrame () :
                .add('sel_type',         [list,int], default = [ii for ii in range(self.ntypes)], alias = 'pol_type')\
                .add('seed',             int)\
                .add("activation_function", str, default = "tanh")\
-               .add('precision',           int,    default = 0)    
+               .add('precision',           str,    default = "default")    
         class_data = args.parse(jdata)
         self.n_neuron = class_data['neuron']
         self.resnet_dt = class_data['resnet_dt']
         self.sel_type = class_data['sel_type']
         self.seed = class_data['seed']
         self.fitting_activation_fn = get_activation_func(class_data["activation_function"])
-        self.fitting_precision = get_precision_func(class_data['precision'])
+        self.fitting_precision = get_precision(class_data['precision'])
         self.useBN = False
 
     def get_sel_type(self):
@@ -416,7 +416,7 @@ class PolarFittingSeA () :
                .add('sel_type',         [list,int],   default = [ii for ii in range(self.ntypes)], alias = 'pol_type')\
                .add('seed',             int)\
                .add("activation_function", str ,   default = "tanh")\
-               .add('precision',           int,    default = 0)
+               .add('precision',           str,    default = "default")
         class_data = args.parse(jdata)
         self.n_neuron = class_data['neuron']
         self.resnet_dt = class_data['resnet_dt']
@@ -426,7 +426,7 @@ class PolarFittingSeA () :
         self.diag_shift = class_data['diag_shift']
         self.scale = class_data['scale']
         self.fitting_activation_fn = get_activation_func(class_data["activation_function"])
-        self.fitting_precision = get_precision_func(class_data['precision'])
+        self.fitting_precision = get_precision(class_data['precision'])
         if type(self.sel_type) is not list:
             self.sel_type = [self.sel_type]
         if type(self.diag_shift) is not list:
@@ -573,14 +573,14 @@ class DipoleFittingSeA () :
                .add('sel_type',         [list,int],   default = [ii for ii in range(self.ntypes)], alias = 'dipole_type')\
                .add('seed',             int)\
                .add("activation_function", str, default = "tanh")\
-               .add('precision',           int,    default = 0)
+               .add('precision',           str,    default = "default")
         class_data = args.parse(jdata)
         self.n_neuron = class_data['neuron']
         self.resnet_dt = class_data['resnet_dt']
         self.sel_type = class_data['sel_type']
         self.seed = class_data['seed']
         self.fitting_activation_fn = get_activation_func(class_data["activation_function"])
-        self.fitting_precision = get_precision_func(class_data['precision'])
+        self.fitting_precision = get_precision(class_data['precision'])
         self.dim_rot_mat_1 = descrpt.get_dim_rot_mat_1()
         self.dim_rot_mat = self.dim_rot_mat_1 * 3
         self.useBN = False
