@@ -49,6 +49,9 @@ set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wno-ignored-attributes")
 # find tensorflow, I need tf abi info
 find_package(tensorflow REQUIRED)
 
+# find threads
+find_package(Threads)
+
 # auto op_cxx_abi
 if (NOT DEFINED OP_CXX_ABI)
   if (BUILD_PY_IF) 
