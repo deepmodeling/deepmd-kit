@@ -13,17 +13,18 @@ class DeepEval():
     """
     def __init__(self, 
                  model_file, 
-                 load_prefix = 'load') :
-        self.graph = self._load_graph (model_file, prefix = load_prefix)
+                 load_prefix = 'load', 
+                 default_tf_graph = False) :
+        self.graph = self._load_graph (model_file, prefix = load_prefix, default_tf_graph = default_tf_graph)
         t_mt = self.graph.get_tensor_by_name(os.path.join(load_prefix, 'model_attr/model_type:0'))
         sess = tf.Session (graph = self.graph, config=default_tf_session_config)
         [mt] = sess.run([t_mt], feed_dict = {})
         self.model_type = mt.decode('utf-8')
 
     def _load_graph(self, 
-                   frozen_graph_filename, 
-                   prefix = 'load', 
-                   default_tf_graph = True):
+                    frozen_graph_filename, 
+                    prefix = 'load', 
+                    default_tf_graph = False):
         # We load the protobuf file from the disk and parse it to retrieve the 
         # unserialized graph_def
         with tf.gfile.GFile(frozen_graph_filename, "rb") as f:
@@ -102,8 +103,9 @@ class DeepTensor(DeepEval) :
                  model_file, 
                  variable_name,                  
                  variable_dof, 
-                 load_prefix = 'load') :
-        DeepEval.__init__(self, model_file, load_prefix = load_prefix)
+                 load_prefix = 'load', 
+                 default_tf_graph = False) :
+        DeepEval.__init__(self, model_file, load_prefix = load_prefix, default_tf_graph = default_tf_graph)
         # self.model_file = model_file
         # self.graph = self.load_graph (self.model_file)
         self.variable_name = variable_name
