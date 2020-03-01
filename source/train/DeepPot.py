@@ -9,8 +9,9 @@ from deepmd.DataModifier import DipoleChargeModifier
 
 class DeepPot (DeepEval) :
     def __init__(self, 
-                 model_file) :
-        DeepEval.__init__(self, model_file)
+                 model_file, 
+                 default_tf_graph = False) :
+        DeepEval.__init__(self, model_file, default_tf_graph = default_tf_graph)
         # self.model_file = model_file
         # self.graph = self.load_graph (self.model_file)
         # checkout input/output tensors from graph
