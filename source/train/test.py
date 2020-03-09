@@ -7,6 +7,7 @@ import argparse
 import numpy as np
 
 from deepmd.Data import DeepmdData
+from deepmd.common import expand_sys_str
 from deepmd import DeepEval
 from deepmd import DeepPot
 from deepmd import DeepDipole
@@ -16,22 +17,52 @@ from tensorflow.python.framework import ops
 
 def test (args):
     de = DeepEval(args.model)
-    all_sys = []
-    from pathlib import Path
-    for filename in Path(args.system).rglob('type.raw'):
-        all_sys.append(os.path.dirname(filename))
+    all_sys = expand_sys_str(args.system)
+    if len(all_sys) == 0:
+        print('Did not find valid system')
+    err_coll = []
+    siz_coll = []
+    if de.model_type == 'ener':
+        dp = DeepPot(args.model)        
+    elif de.model_type == 'dipole':
+        dp = DeepDipole(args.model)    
+    elif de.model_type == 'polar':
+        dp = DeepPolar(args.model)    
+    elif de.model_type == 'wfc':
+        dp = DeepWFC(args.model)    
+    else :
+        raise RuntimeError('unknow model type '+de.model_type)
     for ii in all_sys:
         args.system = ii
         print ("# ---------------output of dp test--------------- ")
         print ("# testing system : " + ii)
         if de.model_type == 'ener':
-            test_ener(args)
+            err, siz = test_ener(dp, args)
         elif de.model_type == 'dipole':
-            test_dipole(args)
+            err, siz = test_dipole(dp, args)
         elif de.model_type == 'polar':
-            test_polar(args)
+            err, siz = test_polar(dp, args)
         elif de.model_type == 'wfc':
-            test_wfc(args)
+            err, siz = test_wfc(dp, args)
+        else :
+            raise RuntimeError('unknow model type '+de.model_type)
+        print ("# ----------------------------------------------- ")
+        err_coll.append(err)
+        siz_coll.append(siz)
+    avg_err = weighted_average(err_coll, siz_coll)
+    if len(all_sys) != len(err):
+        print('Not all systems are tested! Check if the systems are valid')
+    if len(all_sys) > 1:
+        print ("# ----------weighted average of errors----------- ")
+        print ("# number of systems : %d" % len(all_sys))
+        if de.model_type == 'ener':
+            print_ener_sys_avg(avg_err)
+        elif de.model_type == 'dipole':
+            print_dipole_sys_avg(avg_err)
+        elif de.model_type == 'polar':
+            print_polar_sys_avg(avg_err)
+        elif de.model_type == 'wfc':
+            print_wfc_sys_avg(avg_err)
         else :
             raise RuntimeError('unknow model type '+de.model_type)
         print ("# ----------------------------------------------- ")
@@ -41,12 +72,27 @@ def l2err (diff) :
     return np.sqrt(np.average (diff*diff))
 
 
-def test_ener (args) :
+def weighted_average(err_coll, siz_coll):
+    nsys = len(err_coll)
+    nitems = len(err_coll[0])
+    assert(len(err_coll) == len(siz_coll))
+    sum_err = np.zeros(nitems)
+    sum_siz = np.zeros(nitems)
+    for sys_error, sys_size in zip(err_coll, siz_coll):
+        for ii in range(nitems):
+            ee = sys_error[ii]
+            ss = sys_size [ii]
+            sum_err[ii] += ee * ee * ss
+            sum_siz[ii] += ss
+    for ii in range(nitems):
+        sum_err[ii] = np.sqrt(sum_err[ii] / sum_siz[ii])
+    return sum_err
+
+
+def test_ener (dp, args) :
     if args.rand_seed is not None :
         np.random.seed(args.rand_seed % (2**32))
     has_atom_ener = args.atomic_energy
-        
-    dp = DeepPot(args.model)
     data = DeepmdData(args.system, args.set_prefix, shuffle_test = args.shuffle_test, type_map = dp.get_type_map())
     data.add('energy', 1, atomic=False, must=False, high_prec=True)
     data.add('force',  3, atomic=True,  must=False, high_prec=False)
@@ -136,13 +182,19 @@ def test_ener (args) :
                             axis = 1)
         np.savetxt(detail_file+".v.out", pv,
                    header = 'data_vxx data_vxy data_vxz data_vyx data_vyy data_vyz data_vzx data_vzy data_vzz pred_vxx pred_vxy pred_vxz pred_vyx pred_vyy pred_vyz pred_vzx pred_vzy pred_vzz')        
+    return [l2ea, l2f, l2va], [energy.size, force.size, virial.size]
 
 
-def test_wfc (args) :
+def print_ener_sys_avg(avg):
+    print ("Energy L2err/Natoms : %e eV" % avg[0])
+    print ("Force  L2err        : %e eV/A" % avg[1])
+    print ("Virial L2err/Natoms : %e eV" % avg[2])
+
+
+def test_wfc (dp, args) :
     if args.rand_seed is not None :
         np.random.seed(args.rand_seed % (2**32))
 
-    dp = DeepWFC(args.model)    
     data = DeepmdData(args.system, args.set_prefix, shuffle_test = args.shuffle_test)
     data.add('wfc', 12, atomic=True, must=True, high_prec=False, type_sel = dp.get_sel_type())
     test_data = data.get_test ()
@@ -169,13 +221,17 @@ def test_wfc (args) :
                             axis = 1)
         np.savetxt(detail_file+".out", pe, 
                    header = 'ref_wfc(12 dofs)   predicted_wfc(12 dofs)')
+    return [l2f], [wfc.size]
 
 
-def test_polar (args) :
+def print_wfc_sys_avg(avg):
+    print ("WFC  L2err : %e eV/A" % avg[0])
+
+
+def test_polar (dp, args) :
     if args.rand_seed is not None :
         np.random.seed(args.rand_seed % (2**32))
 
-    dp = DeepPolar(args.model)    
     data = DeepmdData(args.system, args.set_prefix, shuffle_test = args.shuffle_test)
     data.add('polarizability', 9, atomic=True, must=True, high_prec=False, type_sel = dp.get_sel_type())
     test_data = data.get_test ()
@@ -202,13 +258,17 @@ def test_polar (args) :
                             axis = 1)
         np.savetxt(detail_file+".out", pe, 
                    header = 'data_pxx data_pxy data_pxz data_pyx data_pyy data_pyz data_pzx data_pzy data_pzz pred_pxx pred_pxy pred_pxz pred_pyx pred_pyy pred_pyz pred_pzx pred_pzy pred_pzz')
+    return [l2f], [polar.size]
 
 
-def test_dipole (args) :
+def print_polar_sys_avg(avg):
+    print ("Polarizability  L2err : %e eV/A" % avg[0])
+
+
+def test_dipole (dp, args) :
     if args.rand_seed is not None :
         np.random.seed(args.rand_seed % (2**32))
 
-    dp = DeepDipole(args.model)    
     data = DeepmdData(args.system, args.set_prefix, shuffle_test = args.shuffle_test)
     data.add('dipole', 3, atomic=True, must=True, high_prec=False, type_sel = dp.get_sel_type())
     test_data = data.get_test ()
@@ -235,3 +295,8 @@ def test_dipole (args) :
                             axis = 1)
         np.savetxt(detail_file+".out", pe, 
                    header = 'data_x data_y data_z pred_x pred_y pred_z')
+    return [l2f], [dipole.size]
+
+
+def print_dipole_sys_avg(avg):
+    print ("Dipole  L2err         : %e eV/A" % avg[0])

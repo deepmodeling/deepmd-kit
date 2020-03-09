@@ -10,7 +10,7 @@ from deepmd.compat import convert_input_v0_v1
 from deepmd.RunOptions import RunOptions
 from deepmd.DataSystem import DeepmdDataSystem
 from deepmd.Trainer import NNPTrainer
-from deepmd.common import data_requirement
+from deepmd.common import data_requirement, expand_sys_str
 from deepmd.DataModifier import DipoleChargeModifier
 
 def create_done_queue(cluster_spec, task_index):
@@ -79,13 +79,6 @@ def train (args) :
     else :
         # serial training
         _do_work(jdata, run_opt)
-
-def expand_sys_str(root_dir):
-    all_sys = []
-    from pathlib import Path
-    for filename in Path(root_dir).rglob('type.raw'):
-        all_sys.append(os.path.dirname(filename))
-    return all_sys
 
 def _do_work(jdata, run_opt):
     # init the model

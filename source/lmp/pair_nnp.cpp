@@ -15,6 +15,7 @@
 #include "neigh_request.h"
 #include "modify.h"
 #include "fix.h"
+#include "citeme.h"
 #ifdef USE_TTM
 #include "fix_ttm_mod.h"
 #endif
@@ -23,6 +24,22 @@
 
 using namespace LAMMPS_NS;
 using namespace std;
+
+static const char cite_user_deepmd_package[] =
+	"USER-DEEPMD package:\n\n"
+    "@article{Wang_ComputPhysCommun_2018_v228_p178,\n"
+    "  author = {Wang, Han and Zhang, Linfeng and Han, Jiequn and E, Weinan},\n"
+    "  doi = {10.1016/j.cpc.2018.03.016},\n"
+    "  url = {https://doi.org/10.1016/j.cpc.2018.03.016},\n"
+    "  year = 2018,\n"
+    "  month = {jul},\n"
+    "  publisher = {Elsevier {BV}},\n"
+    "  volume = 228,\n"
+    "  journal = {Comput. Phys. Commun.},\n"
+    "  title = {{DeePMD-kit: A deep learning package for many-body potential energy representation and molecular dynamics}},\n"
+    "  pages = {178--184}\n"
+	"}\n\n";
+
 
 static int stringCmp(const void *a, const void* b)
 {
@@ -185,6 +202,7 @@ PairNNP::PairNNP(LAMMPS *lmp)
     : Pair(lmp)
       
 {
+  if (lmp->citeme) lmp->citeme->add(cite_user_deepmd_package);
   if (strcmp(update->unit_style,"metal") != 0) {
     error->all(FLERR,"Pair deepmd requires metal unit, please set it by \"units metal\"");
   }

@@ -1,8 +1,30 @@
-import warnings
+import os,warnings,fnmatch
 import numpy as np
+import math
+from deepmd.env import tf
+from deepmd.RunOptions import global_tf_float_precision
+
+def gelu(x):
+    """Gaussian Error Linear Unit.
+    This is a smoother version of the RELU.
+    Original paper: https://arxiv.org/abs/1606.08415
+    Args:
+    x: float Tensor to perform activation.
+    Returns:
+    `x` with the GELU activation applied.
+    """
+    cdf = 0.5 * (1.0 + tf.tanh((math.sqrt(2 / math.pi) * (x + 0.044715 * tf.pow(x, 3)))))
+    return x * cdf
 
 data_requirement = {}
-
+activation_fn_dict = {
+    "relu": tf.nn.relu,
+    "relu6": tf.nn.relu6,
+    "softplus": tf.nn.softplus,
+    "sigmoid": tf.sigmoid,
+    "tanh": tf.nn.tanh,
+    "gelu": gelu
+}
 def add_data_requirement(key, 
                          ndof, 
                          atomic = False, 
@@ -139,4 +161,28 @@ def j_must_have_d (jdata, key, deprecated_key) :
 
 def j_have (jdata, key) :
     return key in jdata.keys() 
+  
+def get_activation_func(activation_fn):
+    if activation_fn not in activation_fn_dict:
+        raise RuntimeError(activation_fn+" is not a valid activation function")
+    return activation_fn_dict[activation_fn]
+
+def expand_sys_str(root_dir):
+    matches = []
+    for root, dirnames, filenames in os.walk(root_dir, followlinks=True):
+        for filename in fnmatch.filter(filenames, 'type.raw'):
+            matches.append(root)
+    return matches
+
+def get_precision(precision):
+    if precision == "default":
+        return  global_tf_float_precision
+    elif precision == "float16":
+        return tf.float16
+    elif precision == "float32":
+        return tf.float32
+    elif precision == "float64":
+        return tf.float64
+    else:
+        raise RuntimeError("%d is not a valid precision" % precision)
 
