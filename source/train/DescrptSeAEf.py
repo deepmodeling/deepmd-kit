@@ -78,6 +78,7 @@ class DescrptSeAEf ():
 
 class DescrptSeAEfLower (DescrptSeA):
     def __init__ (self, jdata, op):
+        DescrptSeA.__init__(self, jdata)
         args = ClassArg()\
                .add('sel',      list,   must = True) \
                .add('rcut',     float,  default = 6.0) \
