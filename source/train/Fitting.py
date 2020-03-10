@@ -21,7 +21,6 @@ class EnerFitting ():
                .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\
                .add('resnet_dt',        bool,   default = True)\
                .add('rcond',            float,  default = 1e-3) \
-               .add('seed',             int)               
                .add('tot_ener_zero',    bool,   default = False) \
                .add('seed',             int)               \
                .add('atom_ener',        list,   default = [])\
