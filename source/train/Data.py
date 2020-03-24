@@ -144,6 +144,9 @@ class DeepmdData() :
             self.modifier.modify_data(ret)
         return ret
 
+    def get_ntypes(self) :
+        return len(self.type_map)
+
     def get_type_map(self) :
         return self.type_map
 
