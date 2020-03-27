@@ -13,23 +13,27 @@ def one_layer(inputs,
               reuse=None,
               seed=None, 
               use_timestep = False, 
+              trainable = True,
               useBN = False):
     with tf.variable_scope(name, reuse=reuse):
         shape = inputs.get_shape().as_list()
         w = tf.get_variable('matrix', 
                             [shape[1], outputs_size], 
                             precision,
-                            tf.random_normal_initializer(stddev=stddev/np.sqrt(shape[1]+outputs_size), seed = seed))
+                            tf.random_normal_initializer(stddev=stddev/np.sqrt(shape[1]+outputs_size), seed = seed), 
+                            trainable = trainable)
         b = tf.get_variable('bias', 
                             [outputs_size], 
                             precision,
-                            tf.random_normal_initializer(stddev=stddev, mean = bavg, seed = seed))
+                            tf.random_normal_initializer(stddev=stddev, mean = bavg, seed = seed), 
+                            trainable = trainable)
         hidden = tf.matmul(inputs, w) + b
         if activation_fn != None and use_timestep :
             idt = tf.get_variable('idt',
                                   [outputs_size],
                                   precision,
-                                  tf.random_normal_initializer(stddev=0.001, mean = 0.1, seed = seed))
+                                  tf.random_normal_initializer(stddev=0.001, mean = 0.1, seed = seed), 
+                                  trainable = trainable)
         if activation_fn != None:
             if useBN:
                 None

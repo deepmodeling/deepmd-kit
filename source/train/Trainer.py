@@ -10,6 +10,7 @@ from deepmd.RunOptions import global_ener_float_precision
 from deepmd.Fitting import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
 from deepmd.DescrptLocFrame import DescrptLocFrame
 from deepmd.DescrptSeA import DescrptSeA
+from deepmd.DescrptSeAEbd import DescrptSeAEbd
 from deepmd.DescrptSeR import DescrptSeR
 from deepmd.DescrptSeAR import DescrptSeAR
 from deepmd.Model import Model, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
@@ -59,6 +60,8 @@ class NNPTrainer (object):
             self.descrpt = DescrptLocFrame(descrpt_param)
         elif descrpt_type == 'se_a' :
             self.descrpt = DescrptSeA(descrpt_param)
+        elif descrpt_type == 'se_a_ebd' :
+            self.descrpt = DescrptSeAEbd(descrpt_param)
         elif descrpt_type == 'se_r' :
             self.descrpt = DescrptSeR(descrpt_param)
         elif descrpt_type == 'se_ar' :
@@ -467,7 +470,7 @@ class NNPTrainer (object):
             else:
                 feed_dict_test[self.place_holders[kk]] = np.reshape(test_data[kk][:self.numb_test], [-1])
         for ii in ['type'] :
-            feed_dict_test[self.place_holders[ii]] = np.reshape(test_data[ii][:self.numb_test], [-1])            
+            feed_dict_test[self.place_holders[ii]] = np.reshape(test_data[ii][:self.numb_test], [-1])
         for ii in ['natoms_vec', 'default_mesh'] :
             feed_dict_test[self.place_holders[ii]] = test_data[ii]
         feed_dict_test[self.place_holders['is_training']] = False
