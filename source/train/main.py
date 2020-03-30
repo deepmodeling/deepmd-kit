@@ -4,6 +4,7 @@ from .train import train
 from .freeze import freeze
 from .config import config
 from .test import test
+from .transform import transform
 
 def main () :    
     parser = argparse.ArgumentParser(
@@ -15,6 +16,13 @@ def main () :
     #                          help="the output json file")    
     
     default_num_inter_threads = 0
+    parser_transform = subparsers.add_parser('transform', help='pass parameters to another model')
+    parser_transform.add_argument('-r', "--raw-model", default = "raw_frozen_model.pb", type=str, 
+				  help = "the model receiving parameters")
+    parser_transform.add_argument("-o","--old-model", default = "old_frozen_model.pb", type=str, 
+				  help='the model providing parameters')
+    parser_transform.add_argument("-n", "--output", default = "frozen_model.pb", type=str, 
+				  help = "the model after passing parameters")
     parser_train = subparsers.add_parser('train', help='train a model')
     parser_train.add_argument('INPUT', 
                               help='the input parameter file in json format')
@@ -62,5 +70,7 @@ def main () :
         config(args)
     elif args.command == 'test' :
         test(args)
+    elif args.command == 'transform' :
+	transform(args)
     else :
         raise RuntimeError('unknown command ' + args.command)
