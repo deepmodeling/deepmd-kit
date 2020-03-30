@@ -52,7 +52,7 @@ class DeepmdDataSystem() :
         # natoms, nbatches
         ntypes = []
         for ii in self.data_systems :
-            ntypes.append(np.max(ii.get_atom_type()) + 1)
+            ntypes.append(ii.get_ntypes())
         self.sys_ntypes = max(ntypes)
         self.natoms = []
         self.natoms_vec = []

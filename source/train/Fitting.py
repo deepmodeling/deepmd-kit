@@ -23,7 +23,8 @@ class EnerFitting ():
                .add('seed',             int)               \
                .add('atom_ener',        list,   default = [])\
                .add("activation_function", str,    default = "tanh")\
-               .add("precision",           str, default = "default")
+               .add("precision",           str, default = "default")\
+               .add("trainable",        [list, bool], default = True)
         class_data = args.parse(jdata)
         self.numb_fparam = class_data['numb_fparam']
         self.numb_aparam = class_data['numb_aparam']
@@ -32,7 +33,11 @@ class EnerFitting ():
         self.rcond = class_data['rcond']
         self.seed = class_data['seed']
         self.fitting_activation_fn = get_activation_func(class_data["activation_function"])
-        self.fitting_precision = get_precision(class_data['precision'])        
+        self.fitting_precision = get_precision(class_data['precision'])
+        self.trainable = class_data['trainable']
+        if type(self.trainable) is bool:
+            self.trainable = [self.trainable] * (len(self.n_neuron)+1)
+        assert(len(self.trainable) == len(self.n_neuron) + 1), 'length of trainable should be that of n_neuron + 1'
         self.atom_ener = []
         for at, ae in enumerate(class_data['atom_ener']):
             if ae is not None:
@@ -205,10 +210,10 @@ class EnerFitting ():
 
             for ii in range(0,len(self.n_neuron)) :
                 if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
-                    layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision)
+                    layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, trainable = self.trainable[ii])
                 else :
-                    layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, precision = self.fitting_precision)
-            final_layer = one_layer(layer, 1, activation_fn = None, bavg = type_bias_ae, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, precision = self.fitting_precision)
+                    layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, precision = self.fitting_precision, trainable = self.trainable[ii])
+            final_layer = one_layer(layer, 1, activation_fn = None, bavg = type_bias_ae, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, precision = self.fitting_precision, trainable = self.trainable[-1])
 
             if type_i < len(self.atom_ener) and self.atom_ener[type_i] is not None:
                 inputs_zero = tf.zeros_like(inputs_i, dtype=global_tf_float_precision)
@@ -219,10 +224,10 @@ class EnerFitting ():
                     layer = tf.concat([layer, ext_aparam], axis = 1)
                 for ii in range(0,len(self.n_neuron)) :
                     if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
-                        layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=True, seed = self.seed, use_timestep = self.resnet_dt, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision)
+                        layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=True, seed = self.seed, use_timestep = self.resnet_dt, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, trainable = self.trainable[ii])
                     else :
-                        layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=True, seed = self.seed, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision)
-                zero_layer = one_layer(layer, 1, activation_fn = None, bavg = type_bias_ae, name='final_layer_type_'+str(type_i)+suffix, reuse=True, seed = self.seed, precision = self.fitting_precision)
+                        layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=True, seed = self.seed, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, trainable = self.trainable[ii])
+                zero_layer = one_layer(layer, 1, activation_fn = None, bavg = type_bias_ae, name='final_layer_type_'+str(type_i)+suffix, reuse=True, seed = self.seed, precision = self.fitting_precision, trainable = self.trainable[-1])
                 final_layer += self.atom_ener[type_i] - zero_layer
 
             final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i]])
