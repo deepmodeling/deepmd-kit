@@ -72,7 +72,7 @@ matrix:
       - CXX=g++-8
       - TENSORFLOW_VERSION=2.0
 before_install:
-  - pip install --upgrade pip
+#  - pip install --upgrade pip
   - pip install --upgrade setuptools
   - pip install tensorflow==$TENSORFLOW_VERSION
 install:

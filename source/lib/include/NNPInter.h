@@ -112,8 +112,8 @@ private:
   GraphDef graph_def;
   bool inited;
   template<class VT> VT get_scalar(const string & name) const;
-  VALUETYPE get_rcut () const;
-  int get_ntypes () const;
+  // VALUETYPE get_rcut () const;
+  // int get_ntypes () const;
   VALUETYPE rcut;
   VALUETYPE cell_size;
   int ntypes;
@@ -210,8 +210,8 @@ private:
   vector<GraphDef> graph_defs;
   bool inited;
   template<class VT> VT get_scalar(const string name) const;
-  VALUETYPE get_rcut () const;
-  int get_ntypes () const;
+  // VALUETYPE get_rcut () const;
+  // int get_ntypes () const;
   VALUETYPE rcut;
   VALUETYPE cell_size;
   int ntypes;

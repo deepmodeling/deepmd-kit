@@ -246,7 +246,11 @@ class DescrptSeR ():
 
 
     def _compute_std (self,sumv2, sumv, sumn) :
-        return np.sqrt(sumv2/sumn - np.multiply(sumv/sumn, sumv/sumn))
+        val = np.sqrt(sumv2/sumn - np.multiply(sumv/sumn, sumv/sumn))
+        if np.abs(val) < 1e-2:
+            val = 1e-2
+        return val
+
 
     def _filter_r(self, 
                   inputs, 
