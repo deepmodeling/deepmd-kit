@@ -169,7 +169,7 @@ class EnerStdLoss () :
         if self.has_v :
             print_str += prop_fmt % (np.sqrt(error_v_test) / natoms[0], np.sqrt(error_v_train) / natoms[0])
         if self.has_pf:
-            print_str += prop_fmt % (np.sqrt(error_pf_test) / natoms[0], np.sqrt(error_pf_train) / natoms[0])
+            print_str += prop_fmt % (np.sqrt(error_pf_test), np.sqrt(error_pf_train))
 
         return print_str        
 

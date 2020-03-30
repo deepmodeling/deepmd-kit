@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.7)
 project(DeePMD)
+set(CMAKE_LINK_WHAT_YOU_USE TRUE)
 
 # build cpp or python interfaces
 if (NOT DEFINED BUILD_CPP_IF) 
@@ -47,6 +48,9 @@ set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wno-ignored-attributes")
 
 # find tensorflow, I need tf abi info
 find_package(tensorflow REQUIRED)
+
+# find threads
+find_package(Threads)
 
 # auto op_cxx_abi
 if (NOT DEFINED OP_CXX_ABI)

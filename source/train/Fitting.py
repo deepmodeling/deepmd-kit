@@ -2,7 +2,7 @@ import warnings
 import numpy as np
 
 from deepmd.env import tf
-from deepmd.common import ClassArg, add_data_requirement
+from deepmd.common import ClassArg, add_data_requirement, get_activation_func, get_precision
 from deepmd.Network import one_layer
 from deepmd.DescrptLocFrame import DescrptLocFrame
 from deepmd.DescrptSeA import DescrptSeA
@@ -20,7 +20,11 @@ class EnerFitting ():
                .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\
                .add('resnet_dt',        bool,   default = True)\
                .add('rcond',            float,  default = 1e-3) \
-               .add('seed',             int)               
+               .add('seed',             int)               \
+               .add('atom_ener',        list,   default = [])\
+               .add("activation_function", str,    default = "tanh")\
+               .add("precision",           str, default = "default")\
+               .add("trainable",        [list, bool], default = True)
         class_data = args.parse(jdata)
         self.numb_fparam = class_data['numb_fparam']
         self.numb_aparam = class_data['numb_aparam']
@@ -28,6 +32,18 @@ class EnerFitting ():
         self.resnet_dt = class_data['resnet_dt']
         self.rcond = class_data['rcond']
         self.seed = class_data['seed']
+        self.fitting_activation_fn = get_activation_func(class_data["activation_function"])
+        self.fitting_precision = get_precision(class_data['precision'])
+        self.trainable = class_data['trainable']
+        if type(self.trainable) is bool:
+            self.trainable = [self.trainable] * (len(self.n_neuron)+1)
+        assert(len(self.trainable) == len(self.n_neuron) + 1), 'length of trainable should be that of n_neuron + 1'
+        self.atom_ener = []
+        for at, ae in enumerate(class_data['atom_ener']):
+            if ae is not None:
+                self.atom_ener.append(tf.constant(ae, global_tf_float_precision, name = "atom_%d_ener" % at))
+            else:
+                self.atom_ener.append(None)
         self.useBN = False
         self.bias_atom_e = None
         # data requirement
@@ -153,7 +169,7 @@ class EnerFitting ():
                                                 initializer = tf.constant_initializer(self.aparam_inv_std))
             
         start_index = 0
-        inputs = tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]])
+        inputs = tf.cast(tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]]), self.fitting_precision)
 
         if bias_atom_e is not None :
             assert(len(bias_atom_e) == self.ntypes)
@@ -194,10 +210,26 @@ class EnerFitting ():
 
             for ii in range(0,len(self.n_neuron)) :
                 if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
-                    layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt)
+                    layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, trainable = self.trainable[ii])
                 else :
-                    layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
-            final_layer = one_layer(layer, 1, activation_fn = None, bavg = type_bias_ae, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
+                    layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, precision = self.fitting_precision, trainable = self.trainable[ii])
+            final_layer = one_layer(layer, 1, activation_fn = None, bavg = type_bias_ae, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, precision = self.fitting_precision, trainable = self.trainable[-1])
+
+            if type_i < len(self.atom_ener) and self.atom_ener[type_i] is not None:
+                inputs_zero = tf.zeros_like(inputs_i, dtype=global_tf_float_precision)
+                layer = inputs_zero
+                if self.numb_fparam > 0 :
+                    layer = tf.concat([layer, ext_fparam], axis = 1)
+                if self.numb_aparam > 0 :
+                    layer = tf.concat([layer, ext_aparam], axis = 1)
+                for ii in range(0,len(self.n_neuron)) :
+                    if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
+                        layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=True, seed = self.seed, use_timestep = self.resnet_dt, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, trainable = self.trainable[ii])
+                    else :
+                        layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=True, seed = self.seed, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, trainable = self.trainable[ii])
+                zero_layer = one_layer(layer, 1, activation_fn = None, bavg = type_bias_ae, name='final_layer_type_'+str(type_i)+suffix, reuse=True, seed = self.seed, precision = self.fitting_precision, trainable = self.trainable[-1])
+                final_layer += self.atom_ener[type_i] - zero_layer
+
             final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i]])
 
             # concat the results
@@ -206,7 +238,7 @@ class EnerFitting ():
             else:
                 outs = tf.concat([outs, final_layer], axis = 1)
 
-        return tf.reshape(outs, [-1])        
+        return tf.cast(tf.reshape(outs, [-1]), global_tf_float_precision)        
 
 
 class WFCFitting () :
@@ -220,13 +252,17 @@ class WFCFitting () :
                .add('resnet_dt',        bool,   default = True)\
                .add('wfc_numb',         int,    must = True)\
                .add('sel_type',         [list,int],   default = [ii for ii in range(self.ntypes)], alias = 'wfc_type')\
-               .add('seed',             int)
+               .add('seed',             int)\
+               .add("activation_function", str, default = "tanh")\
+               .add('precision',           str,    default = "default")
         class_data = args.parse(jdata)
         self.n_neuron = class_data['neuron']
         self.resnet_dt = class_data['resnet_dt']
         self.wfc_numb = class_data['wfc_numb']
         self.sel_type = class_data['sel_type']
         self.seed = class_data['seed']
+        self.fitting_activation_fn = get_activation_func(class_data["activation_function"])
+        self.fitting_precision = get_precision(class_data['precision'])
         self.useBN = False
 
 
@@ -246,7 +282,7 @@ class WFCFitting () :
                reuse = None,
                suffix = '') :
         start_index = 0
-        inputs = tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]])
+        inputs = tf.cast(tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]]), self.fitting_precision)
         rot_mat = tf.reshape(rot_mat, [-1, 9 * natoms[0]])
 
         count = 0
@@ -266,11 +302,11 @@ class WFCFitting () :
             layer = inputs_i
             for ii in range(0,len(self.n_neuron)) :
                 if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
-                    layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt)
+                    layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision)
                 else :
-                    layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
+                    layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision)
             # (nframes x natoms) x (nwfc x 3)
-            final_layer = one_layer(layer, self.wfc_numb * 3, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
+            final_layer = one_layer(layer, self.wfc_numb * 3, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, precision = self.fitting_precision)
             # (nframes x natoms) x nwfc(wc) x 3(coord_local)
             final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], self.wfc_numb, 3])
             # (nframes x natoms) x nwfc(wc) x 3(coord)
@@ -285,7 +321,7 @@ class WFCFitting () :
                 outs = tf.concat([outs, final_layer], axis = 1)
             count += 1
 
-        return tf.reshape(outs, [-1])
+        return tf.cast(tf.reshape(outs, [-1]),  global_tf_float_precision)
 
 
 
@@ -299,12 +335,16 @@ class PolarFittingLocFrame () :
                .add('neuron',           list, default = [120,120,120], alias = 'n_neuron')\
                .add('resnet_dt',        bool, default = True)\
                .add('sel_type',         [list,int], default = [ii for ii in range(self.ntypes)], alias = 'pol_type')\
-               .add('seed',             int)
+               .add('seed',             int)\
+               .add("activation_function", str, default = "tanh")\
+               .add('precision',           str,    default = "default")    
         class_data = args.parse(jdata)
         self.n_neuron = class_data['neuron']
         self.resnet_dt = class_data['resnet_dt']
         self.sel_type = class_data['sel_type']
         self.seed = class_data['seed']
+        self.fitting_activation_fn = get_activation_func(class_data["activation_function"])
+        self.fitting_precision = get_precision(class_data['precision'])
         self.useBN = False
 
     def get_sel_type(self):
@@ -320,7 +360,7 @@ class PolarFittingLocFrame () :
                reuse = None,
                suffix = '') :
         start_index = 0
-        inputs = tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]])
+        inputs = tf.cast(tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]]), self.fitting_precision)
         rot_mat = tf.reshape(rot_mat, [-1, 9 * natoms[0]])
 
         count = 0
@@ -340,11 +380,11 @@ class PolarFittingLocFrame () :
             layer = inputs_i
             for ii in range(0,len(self.n_neuron)) :
                 if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
-                    layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt)
+                    layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision)
                 else :
-                    layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
+                    layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision)
             # (nframes x natoms) x 9
-            final_layer = one_layer(layer, 9, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
+            final_layer = one_layer(layer, 9, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, precision = self.fitting_precision)
             # (nframes x natoms) x 3 x 3
             final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], 3, 3])
             # (nframes x natoms) x 3 x 3
@@ -363,7 +403,7 @@ class PolarFittingLocFrame () :
                 outs = tf.concat([outs, final_layer], axis = 1)
             count += 1
 
-        return tf.reshape(outs, [-1])
+        return tf.cast(tf.reshape(outs, [-1]),  global_tf_float_precision)
 
 
 class PolarFittingSeA () :
@@ -379,7 +419,9 @@ class PolarFittingSeA () :
                .add('diag_shift',       [list,float], default = [0.0 for ii in range(self.ntypes)])\
                .add('scale',            [list,float], default = [1.0 for ii in range(self.ntypes)])\
                .add('sel_type',         [list,int],   default = [ii for ii in range(self.ntypes)], alias = 'pol_type')\
-               .add('seed',             int)
+               .add('seed',             int)\
+               .add("activation_function", str ,   default = "tanh")\
+               .add('precision',           str,    default = "default")
         class_data = args.parse(jdata)
         self.n_neuron = class_data['neuron']
         self.resnet_dt = class_data['resnet_dt']
@@ -388,6 +430,8 @@ class PolarFittingSeA () :
         self.seed = class_data['seed']
         self.diag_shift = class_data['diag_shift']
         self.scale = class_data['scale']
+        self.fitting_activation_fn = get_activation_func(class_data["activation_function"])
+        self.fitting_precision = get_precision(class_data['precision'])
         if type(self.sel_type) is not list:
             self.sel_type = [self.sel_type]
         if type(self.diag_shift) is not list:
@@ -428,7 +472,7 @@ class PolarFittingSeA () :
                reuse = None,
                suffix = '') :
         start_index = 0
-        inputs = tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]])
+        inputs = tf.cast(tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]]), self.fitting_precision)
         rot_mat = tf.reshape(rot_mat, [-1, self.dim_rot_mat * natoms[0]])
 
         count = 0
@@ -448,16 +492,16 @@ class PolarFittingSeA () :
             layer = inputs_i
             for ii in range(0,len(self.n_neuron)) :
                 if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
-                    layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt)
+                    layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision)
                 else :
-                    layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
+                    layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision)
             if self.fit_diag :
                 bavg = np.zeros(self.dim_rot_mat_1)
                 # bavg[0] = self.avgeig[0]
                 # bavg[1] = self.avgeig[1]
                 # bavg[2] = self.avgeig[2]
                 # (nframes x natoms) x naxis
-                final_layer = one_layer(layer, self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, bavg = bavg)
+                final_layer = one_layer(layer, self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, bavg = bavg, precision = self.fitting_precision)
                 # (nframes x natoms) x naxis
                 final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], self.dim_rot_mat_1])
                 # (nframes x natoms) x naxis x naxis
@@ -468,7 +512,7 @@ class PolarFittingSeA () :
                 # bavg[1*self.dim_rot_mat_1+1] = self.avgeig[1]
                 # bavg[2*self.dim_rot_mat_1+2] = self.avgeig[2]
                 # (nframes x natoms) x (naxis x naxis)
-                final_layer = one_layer(layer, self.dim_rot_mat_1*self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, bavg = bavg)
+                final_layer = one_layer(layer, self.dim_rot_mat_1*self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, bavg = bavg, precision = self.fitting_precision)
                 # (nframes x natoms) x naxis x naxis
                 final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], self.dim_rot_mat_1, self.dim_rot_mat_1])
                 # (nframes x natoms) x naxis x naxis
@@ -491,7 +535,7 @@ class PolarFittingSeA () :
                 outs = tf.concat([outs, final_layer], axis = 1)
             count += 1
 
-        return tf.reshape(outs, [-1])
+        return tf.cast(tf.reshape(outs, [-1]), global_tf_float_precision)
 
 
 class GlobalPolarFittingSeA () :
@@ -532,12 +576,16 @@ class DipoleFittingSeA () :
                .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\
                .add('resnet_dt',        bool,   default = True)\
                .add('sel_type',         [list,int],   default = [ii for ii in range(self.ntypes)], alias = 'dipole_type')\
-               .add('seed',             int)
+               .add('seed',             int)\
+               .add("activation_function", str, default = "tanh")\
+               .add('precision',           str,    default = "default")
         class_data = args.parse(jdata)
         self.n_neuron = class_data['neuron']
         self.resnet_dt = class_data['resnet_dt']
         self.sel_type = class_data['sel_type']
         self.seed = class_data['seed']
+        self.fitting_activation_fn = get_activation_func(class_data["activation_function"])
+        self.fitting_precision = get_precision(class_data['precision'])
         self.dim_rot_mat_1 = descrpt.get_dim_rot_mat_1()
         self.dim_rot_mat = self.dim_rot_mat_1 * 3
         self.useBN = False
@@ -555,7 +603,7 @@ class DipoleFittingSeA () :
                reuse = None,
                suffix = '') :
         start_index = 0
-        inputs = tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]])
+        inputs = tf.cast(tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]]), self.fitting_precision)
         rot_mat = tf.reshape(rot_mat, [-1, self.dim_rot_mat * natoms[0]])
 
         count = 0
@@ -575,11 +623,11 @@ class DipoleFittingSeA () :
             layer = inputs_i
             for ii in range(0,len(self.n_neuron)) :
                 if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
-                    layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt)
+                    layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision)
                 else :
-                    layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
+                    layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision)
             # (nframes x natoms) x naxis
-            final_layer = one_layer(layer, self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed)
+            final_layer = one_layer(layer, self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, precision = self.fitting_precision)
             # (nframes x natoms) x 1 * naxis
             final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], 1, self.dim_rot_mat_1])
             # (nframes x natoms) x 1 x 3(coord)
@@ -594,5 +642,5 @@ class DipoleFittingSeA () :
                 outs = tf.concat([outs, final_layer], axis = 1)
             count += 1
 
-        return tf.reshape(outs, [-1])
+        return tf.cast(tf.reshape(outs, [-1]),  global_tf_float_precision)
         # return tf.reshape(outs, [tf.shape(inputs)[0] * natoms[0] * 3 // 3])

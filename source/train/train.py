@@ -10,7 +10,7 @@ from deepmd.compat import convert_input_v0_v1
 from deepmd.RunOptions import RunOptions
 from deepmd.DataSystem import DeepmdDataSystem
 from deepmd.Trainer import NNPTrainer
-from deepmd.common import data_requirement
+from deepmd.common import data_requirement, expand_sys_str
 from deepmd.DataModifier import DipoleChargeModifier
 
 def create_done_queue(cluster_spec, task_index):
@@ -80,13 +80,6 @@ def train (args) :
         # serial training
         _do_work(jdata, run_opt)
 
-def expand_sys_str(root_dir):
-    all_sys = []
-    from pathlib import Path
-    for filename in Path(root_dir).rglob('type.raw'):
-        all_sys.append(os.path.dirname(filename))
-    return all_sys
-
 def _do_work(jdata, run_opt):
     # init the model
     model = NNPTrainer (jdata, run_opt = run_opt)
@@ -106,6 +99,8 @@ def _do_work(jdata, run_opt):
     batch_size = j_must_have(jdata['training'], 'batch_size')
     test_size = j_must_have(jdata['training'], 'numb_test')
     stop_batch = j_must_have(jdata['training'], 'stop_batch')
+    sys_probs = jdata['training'].get('sys_probs')
+    auto_prob_style = jdata['training'].get('auto_prob_style', 'prob_sys_size')
     if len(type_map) == 0:
        # empty type_map
        ipt_type_map = None
@@ -129,9 +124,11 @@ def _do_work(jdata, run_opt):
                             test_size, 
                             rcut, 
                             set_prefix=set_pfx, 
-                            run_opt=run_opt, 
                             type_map = ipt_type_map, 
                             modifier = modifier)
+    data.print_summary(run_opt, 
+                       sys_probs = sys_probs, 
+                       auto_prob_style = auto_prob_style)
     data.add_dict(data_requirement)
     # build the model with stats from the first system
     model.build (data, stop_batch)

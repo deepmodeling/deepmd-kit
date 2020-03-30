@@ -22,7 +22,10 @@ class DipoleChargeModifier(DeepDipole):
         # the dipole model is loaded with prefix 'dipole_charge'
         self.modifier_prefix = 'dipole_charge'
         # init dipole model
-        DeepDipole.__init__(self, model_name, load_prefix = self.modifier_prefix)
+        DeepDipole.__init__(self, 
+                            model_name, 
+                            load_prefix = self.modifier_prefix, 
+                            default_tf_graph = True)
         self.model_name = model_name
         self.model_charge_map = model_charge_map
         self.sys_charge_map = sys_charge_map

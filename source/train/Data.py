@@ -144,6 +144,12 @@ class DeepmdData() :
             self.modifier.modify_data(ret)
         return ret
 
+    def get_ntypes(self) :
+        if self.type_map is not None:
+            return len(self.type_map)
+        else:
+            return max(self.get_atom_type()) + 1
+
     def get_type_map(self) :
         return self.type_map
 

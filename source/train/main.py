@@ -37,7 +37,7 @@ def main () :
     parser_tst.add_argument("-m", "--model", default="frozen_model.pb", type=str, 
                             help="Frozen model file to import")
     parser_tst.add_argument("-s", "--system", default=".", type=str, 
-                            help="The system dir")
+                            help="The system dir. Recursively detect systems in this directory")
     parser_tst.add_argument("-S", "--set-prefix", default="set", type=str, 
                             help="The set prefix")
     parser_tst.add_argument("-n", "--numb-test", default=100, type=int, 
