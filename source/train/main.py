@@ -71,6 +71,6 @@ def main () :
     elif args.command == 'test' :
         test(args)
     elif args.command == 'transform' :
-	transform(args)
+        transform(args)
     else :
         raise RuntimeError('unknown command ' + args.command)
