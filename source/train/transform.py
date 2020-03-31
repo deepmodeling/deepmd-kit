@@ -50,7 +50,7 @@ def load_transform_node(graph):
     transform_node_pattern = "\
 filter_type_\d+/matrix_\d+_\d+|\
 filter_type_\d+/bias_\d+_\d+|\
-filter_type_\d+/idt_\d+_\d+\
+filter_type_\d+/idt_\d+_\d+|\
 layer_\d+_type_\d+/matrix|\
 layer_\d+_type_\d+/bias|\
 layer_\d+_type_\d+/idt|\
