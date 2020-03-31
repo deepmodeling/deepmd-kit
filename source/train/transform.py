@@ -1,4 +1,5 @@
 from deepmd.env import tf
+import re
 def transform(args):
     new_graph = load_graph(args.raw_model)
     old_graph = load_graph(args.old_model)
@@ -46,14 +47,17 @@ def check_dim(new_graph_node, old_graph_node, nodeName):
 
 def load_transform_node(graph):
     transform_node = {}
-    filter_w = ["filter_type_0/matrix_{}_0".format(i) for i in range(1,10)]
-    filter_b = ["filter_type_0/bias_{}_0".format(i) for i in range(1,10)]
-    fitting_w = ["layer_{}_type_0/matrix".format(i) for i in range(0,10)]
-    fitting_b = ["layer_{}_type_0/bias".format(i) for i in range(0,10)]
-    fitting_idt = ["layer_{}_type_0/idt".format(i) for i in range(0,10)]
-    final_layer = ["final_layer_type_0/bias","final_layer_type_0/matrix"]
-    transform_node_list = filter_w + filter_b + fitting_w + fitting_b + fitting_idt + final_layer
+    transform_node_pattern = "\
+filter_type_\d+/matrix_\d+_\d+|\
+filter_type_\d+/bias_\d+_\d+|\
+filter_type_\d+/idt_\d+_\d+\
+layer_\d+_type_\d+/matrix|\
+layer_\d+_type_\d+/bias|\
+layer_\d+_type_\d+/idt|\
+final_layer_type_\d+/bias|\
+final_layer_type_\d+/matrix\
+"
     for node in graph.node:
-        if node.name in transform_node_list:
+        if re.fullmatch(transform_node_pattern,node.name) != None:
             transform_node[node.name] = node
     return transform_node
