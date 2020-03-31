@@ -13,10 +13,12 @@ class DescrptSeAEbd (DescrptSeA):
         DescrptSeA.__init__(self, jdata)
         args = ClassArg()\
                .add('type_nchanl',      int,    default = 4) \
-               .add('type_nlayer',      int,    default = 2) 
+               .add('type_nlayer',      int,    default = 2) \
+               .add('type_one_side',    bool,   default = True)
         class_data = args.parse(jdata)
         self.type_nchanl = class_data['type_nchanl']
         self.type_nlayer = class_data['type_nlayer']
+        self.type_one_side = class_data['type_one_side']
 
 
     def build (self, 
@@ -46,6 +48,7 @@ class DescrptSeAEbd (DescrptSeA):
                     suffix = '',
                     trainable = True):
         ebd_type = tf.cast(atype, self.filter_precision)
+        ebd_type = ebd_type / float(self.ntypes)
         ebd_type = tf.reshape(ebd_type, [-1, 1])
         for ii in range(self.type_nlayer):
             name = 'type_embed_layer_' + str(ii)
@@ -135,6 +138,119 @@ class DescrptSeAEbd (DescrptSeA):
         xyz_scatter = tf.reshape(xyz_scatter, [tf.shape(inputs)[0], natoms[0], self.nnei, outputs_size[-1]])
         return xyz_scatter
 
+    
+    def _type_embedding_net_two_sides(self, 
+                                      mat_g, 
+                                      atype,
+                                      natoms,
+                                      name = '',
+                                      reuse = None,
+                                      seed = None,
+                                      trainable = True):
+        outputs_size = self.filter_neuron[-1]
+        nframes = tf.shape(mat_g)[0]
+        # (nf x natom x nei) x (outputs_size x chnl x chnl)
+        mat_g = tf.reshape(mat_g, [nframes * natoms[0] * self.nnei, outputs_size])
+        mat_g = one_layer(mat_g, 
+                          outputs_size * self.type_nchanl * self.type_nchanl, 
+                          activation_fn = None,
+                          precision = self.filter_precision,
+                          name = name+'_amplify',
+                          reuse = reuse,
+                          seed = self.seed,
+                          trainable = trainable)        
+        # nf x natom x nei x outputs_size x chnl x chnl
+        mat_g = tf.reshape(mat_g, [nframes, natoms[0], self.nnei, outputs_size, self.type_nchanl, self.type_nchanl])
+        # nf x natom x outputs_size x chnl x nei x chnl
+        mat_g = tf.transpose(mat_g, perm = [0, 1, 3, 4, 2, 5])
+        # nf x natom x outputs_size x chnl x (nei x chnl)
+        mat_g = tf.reshape(mat_g, [nframes, natoms[0], outputs_size, self.type_nchanl, self.nnei * self.type_nchanl])
+        
+        # nei x nchnl
+        ebd_nei_type = self._type_embed(self.nei_type, 
+                                        reuse = reuse,
+                                        trainable = True,
+                                        suffix = '')
+        # (nei x nchnl)
+        ebd_nei_type = tf.reshape(ebd_nei_type, [self.nnei * self.type_nchanl])
+        # (nframes x natom) x nchnl
+        ebd_atm_type = self._type_embed(atype,
+                                        reuse = True,
+                                        trainable = True,
+                                        suffix = '')    
+        # (nframes x natom x nchnl)
+        ebd_atm_type = tf.reshape(ebd_atm_type, [nframes * natoms[0] * self.type_nchanl])
+
+        # nf x natom x outputs_size x chnl x (nei x chnl)
+        mat_g = tf.multiply(mat_g, ebd_nei_type)
+        # nf x natom x outputs_size x chnl x nei x chnl
+        mat_g = tf.reshape(mat_g, [nframes, natoms[0], outputs_size, self.type_nchanl, self.nnei, self.type_nchanl])
+        # nf x natom x outputs_size x chnl x nei 
+        mat_g = tf.reduce_mean(mat_g, axis = 5)
+        # outputs_size x nei x nf x natom x chnl
+        mat_g = tf.transpose(mat_g, perm = [2, 4, 0, 1, 3])
+        # outputs_size x nei x (nf x natom x chnl)
+        mat_g = tf.reshape(mat_g, [outputs_size, self.nnei, nframes * natoms[0] * self.type_nchanl])
+        # outputs_size x nei x (nf x natom x chnl)
+        mat_g = tf.multiply(mat_g, ebd_atm_type)
+        # outputs_size x nei x nf x natom x chnl
+        mat_g = tf.reshape(mat_g, [outputs_size, self.nnei, nframes, natoms[0], self.type_nchanl])
+        # outputs_size x nei x nf x natom
+        mat_g = tf.reduce_mean(mat_g, axis = 4)
+        # nf x natom x nei x outputs_size
+        mat_g = tf.transpose(mat_g, perm = [2, 3, 1, 0])        
+        # (nf x natom) x nei x outputs_size
+        mat_g = tf.reshape(mat_g, [nframes * natoms[0], self.nnei, outputs_size])
+        return mat_g
+
+
+    def _type_embedding_net_one_side(self, 
+                                     mat_g, 
+                                     atype,
+                                     natoms,
+                                     name = '',
+                                     reuse = None,
+                                     seed = None,
+                                     trainable = True):
+        outputs_size = self.filter_neuron[-1]
+        nframes = tf.shape(mat_g)[0]
+        # (nf x natom x nei) x (outputs_size x chnl x chnl)
+        mat_g = tf.reshape(mat_g, [nframes * natoms[0] * self.nnei, outputs_size])
+        mat_g = one_layer(mat_g, 
+                          outputs_size * self.type_nchanl, 
+                          activation_fn = None,
+                          precision = self.filter_precision,
+                          name = name+'_amplify',
+                          reuse = reuse,
+                          seed = self.seed,
+                          trainable = trainable)        
+        # nf x natom x nei x outputs_size x chnl
+        mat_g = tf.reshape(mat_g, [nframes, natoms[0], self.nnei, outputs_size, self.type_nchanl])
+        # nf x natom x outputs_size x nei x chnl
+        mat_g = tf.transpose(mat_g, perm = [0, 1, 3, 2, 4])
+        # nf x natom x outputs_size x (nei x chnl)
+        mat_g = tf.reshape(mat_g, [nframes, natoms[0], outputs_size, self.nnei * self.type_nchanl])
+        
+        # nei x nchnl
+        ebd_nei_type = self._type_embed(self.nei_type, 
+                                        reuse = reuse,
+                                        trainable = True,
+                                        suffix = '')
+        # (nei x nchnl)
+        ebd_nei_type = tf.reshape(ebd_nei_type, [self.nnei * self.type_nchanl])
+
+        # nf x natom x outputs_size x (nei x chnl)
+        mat_g = tf.multiply(mat_g, ebd_nei_type)
+        # nf x natom x outputs_size x nei x chnl
+        mat_g = tf.reshape(mat_g, [nframes, natoms[0], outputs_size, self.nnei, self.type_nchanl])
+        # nf x natom x outputs_size x nei 
+        mat_g = tf.reduce_mean(mat_g, axis = 4)
+        # nf x natom x nei x outputs_size
+        mat_g = tf.transpose(mat_g, perm = [0, 1, 3, 2])
+        # (nf x natom) x nei x outputs_size
+        mat_g = tf.reshape(mat_g, [nframes * natoms[0], self.nnei, outputs_size])
+        return mat_g
+
 
     def _pass_filter(self, 
                      inputs,
@@ -175,7 +291,7 @@ class DescrptSeAEbd (DescrptSeA):
         # nf x natom x (nei x 4)
         nframes = tf.shape(inputs)[0]
         shape = tf.reshape(inputs, [-1, self.ndescrpt]).get_shape().as_list()
-        # nf x natom x nei x outputs_size
+        # nf x natom x nei x outputs_size        
         mat_g = self._embedding_net(inputs,
                                     natoms,
                                     self.filter_neuron,
@@ -186,60 +302,28 @@ class DescrptSeAEbd (DescrptSeA):
                                     reuse = reuse,
                                     seed = seed,
                                     trainable = trainable)
-        # (nf x natom x nei) x outputs_size        
-        mat_g = tf.reshape(mat_g, [nframes * natoms[0] * self.nnei, outputs_size])
-        # (nf x natom x nei) x (outputs_size x chnl x chnl)
-        mat_g = one_layer(mat_g, 
-                          outputs_size * self.type_nchanl * self.type_nchanl, 
-                          activation_fn = None,
-                          precision = self.filter_precision,
-                          name = name,
-                          reuse = reuse,
-                          seed = self.seed,
-                          trainable = trainable)        
-        # nf x natom x nei x outputs_size x chnl x chnl
-        mat_g = tf.reshape(mat_g, [nframes, natoms[0], self.nnei, outputs_size, self.type_nchanl, self.type_nchanl])
-        # nf x natom x outputs_size x chnl x nei x chnl
-        mat_g = tf.transpose(mat_g, perm = [0, 1, 3, 4, 2, 5])
-        # nf x natom x outputs_size x chnl x (nei x chnl)
-        mat_g = tf.reshape(mat_g, [nframes, natoms[0], outputs_size, self.type_nchanl, self.nnei * self.type_nchanl])
+        # nf x natom x nei x outputs_size        
+        mat_g = tf.reshape(mat_g, [nframes, natoms[0], self.nnei, outputs_size])
         
-        # nei x nchnl
-        ebd_nei_type = self._type_embed(self.nei_type, 
-                                        reuse = reuse,
-                                        trainable = True,
-                                        suffix = '')
-        # (nei x nchnl)
-        ebd_nei_type = tf.reshape(ebd_nei_type, [self.nnei * self.type_nchanl])
-        # (nframes x natom) x nchnl
-        ebd_atm_type = self._type_embed(atype, 
-                                        reuse = True,
-                                        trainable = True,
-                                        suffix = '')    
-        # (nframes x natom x nchnl)
-        ebd_atm_type = tf.reshape(ebd_atm_type, [nframes * natoms[0] * self.type_nchanl])
-
-        # nf x natom x outputs_size x chnl x (nei x chnl)
-        mat_g = tf.multiply(mat_g, ebd_nei_type)
-        # nf x natom x outputs_size x chnl x nei x chnl
-        mat_g = tf.reshape(mat_g, [nframes, natoms[0], outputs_size, self.type_nchanl, self.nnei, self.type_nchanl])
-        # nf x natom x outputs_size x chnl x nei 
-        mat_g = tf.reduce_mean(mat_g, axis = 5)
-        # outputs_size x nei x nf x natom x chnl
-        mat_g = tf.transpose(mat_g, perm = [2, 4, 0, 1, 3])
-        # outputs_size x nei x (nf x natom x chnl)
-        mat_g = tf.reshape(mat_g, [outputs_size, self.nnei, nframes * natoms[0] * self.type_nchanl])
-        # outputs_size x nei x (nf x natom x chnl)
-        mat_g = tf.multiply(mat_g, ebd_atm_type)
-        # outputs_size x nei x nf x natom x chnl
-        mat_g = tf.reshape(mat_g, [outputs_size, self.nnei, nframes, natoms[0], self.type_nchanl])
-        # outputs_size x nei x nf x natom
-        mat_g = tf.reduce_mean(mat_g, axis = 4)
-        # nf x natom x nei x outputs_size
-        mat_g = tf.transpose(mat_g, perm = [2, 3, 1, 0])        
         # (nf x natom) x nei x outputs_size
-        mat_g = tf.reshape(mat_g, [nframes * natoms[0], self.nnei, outputs_size])
-        xyz_scatter = mat_g
+        if self.type_one_side:
+            xyz_scatter \
+                = self._type_embedding_net_one_side(mat_g, 
+                                                    atype,
+                                                    natoms, 
+                                                    name = name,
+                                                    reuse = reuse, 
+                                                    seed = seed,
+                                                    trainable = trainable)
+        else:
+            xyz_scatter \
+                = self._type_embedding_net_two_sides(mat_g, 
+                                                     atype,
+                                                     natoms, 
+                                                     name = name,
+                                                     reuse = reuse, 
+                                                     seed = seed,
+                                                     trainable = trainable)
         
         # natom x nei x 4
         inputs_reshape = tf.reshape(inputs, [-1, shape[1]//4, 4])
