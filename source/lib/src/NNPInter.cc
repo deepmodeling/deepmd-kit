@@ -3,7 +3,7 @@
 #include "SimulationRegion.h"
 #include <stdexcept>	
 
-#define MAGIC_NUMBER 256
+#define MAGIC_NUMBER 1024
 
 #ifdef  USE_CUDA_TOOLKIT
 #include "cuda_runtime.h"
