@@ -34,7 +34,7 @@ find_path(TensorFlow_INCLUDE_DIRS
   )
 find_path(TensorFlow_INCLUDE_DIRS_GOOGLE
   NAMES 
-  google/protobuf/port.h
+  google/protobuf/type.pb.h
   PATHS ${TensorFlow_search_PATHS} 
   PATH_SUFFIXES "/include"
   NO_DEFAULT_PATH
@@ -43,7 +43,7 @@ list(APPEND TensorFlow_INCLUDE_DIRS ${TensorFlow_INCLUDE_DIRS_GOOGLE})
   
 if (NOT TensorFlow_INCLUDE_DIRS AND tensorflow_FIND_REQUIRED)
   message(FATAL_ERROR 
-    "Not found 'include/tensorflow/core/public/session.h' directory in path '${TensorFlow_search_PATHS}' "
+    "Not found 'tensorflow/core/public/session.h' directory in path '${TensorFlow_search_PATHS}' "
     "You can manually set the tensorflow install path by -DTENSORFLOW_ROOT ")
 endif ()
 
