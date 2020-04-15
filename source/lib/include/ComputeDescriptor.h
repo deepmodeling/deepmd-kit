@@ -1152,7 +1152,7 @@ void compute_descriptor_se_a_extf (vector<double > &			descrpt_a,
 {
   const double * ef_ = &efield[i_idx*3+0];
   double ef[3] = {0.};
-  if (isnan(ef_[0]) || isnan(ef_[1]) || isnan(ef_[2])){
+  if (std::isnan(ef_[0]) || std::isnan(ef_[1]) || std::isnan(ef_[2])){
     ef[0] = 1.;
     ef[1] = ef[2] = 0.;
   }
@@ -1261,7 +1261,7 @@ void compute_descriptor_se_a_ef_para (vector<double > &			descrpt_a,
 {
   const double * ef_ = &efield[i_idx*3+0];
   double ef[3] = {0.};
-  if (isnan(ef_[0]) || isnan(ef_[1]) || isnan(ef_[2])){
+  if (std::isnan(ef_[0]) || std::isnan(ef_[1]) || std::isnan(ef_[2])){
     ef[0] = 1.;
     ef[1] = ef[2] = 0.;
   }
@@ -1369,7 +1369,7 @@ void compute_descriptor_se_a_ef_vert (vector<double > &			descrpt_a,
 {
   const double * ef_ = &efield[i_idx*3+0];
   double ef[3] = {0.};
-  if (isnan(ef_[0]) || isnan(ef_[1]) || isnan(ef_[2])){
+  if (std::isnan(ef_[0]) || std::isnan(ef_[1]) || std::isnan(ef_[2])){
     ef[0] = 1.;
     ef[1] = ef[2] = 0.;
   }
