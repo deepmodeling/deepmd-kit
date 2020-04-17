@@ -7,6 +7,7 @@ from deepmd.Network import one_layer
 from deepmd.DescrptLocFrame import DescrptLocFrame
 from deepmd.DescrptSeA import DescrptSeA
 
+from deepmd.RunOptions import global_cvt_2_tf_float
 from deepmd.RunOptions import global_tf_float_precision
 
 class EnerFitting ():
@@ -20,6 +21,7 @@ class EnerFitting ():
                .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\
                .add('resnet_dt',        bool,   default = True)\
                .add('rcond',            float,  default = 1e-3) \
+               .add('tot_ener_zero',    bool,   default = False) \
                .add('seed',             int)               \
                .add('atom_ener',        list,   default = [])\
                .add("activation_function", str,    default = "tanh")\
@@ -31,6 +33,7 @@ class EnerFitting ():
         self.resnet_dt = class_data['resnet_dt']
         self.rcond = class_data['rcond']
         self.seed = class_data['seed']
+        self.tot_ener_zero = class_data['tot_ener_zero']
         self.fitting_activation_fn = get_activation_func(class_data["activation_function"])
         self.fitting_precision = get_precision(class_data['precision'])        
         self.atom_ener = []
@@ -232,6 +235,14 @@ class EnerFitting ():
                 outs = final_layer
             else:
                 outs = tf.concat([outs, final_layer], axis = 1)
+
+        if self.tot_ener_zero:
+            force_tot_ener = 0.0
+            outs = tf.reshape(outs, [-1, natoms[0]])
+            outs_mean = tf.reshape(tf.reduce_mean(outs, axis = 1), [-1, 1])
+            outs_mean = outs_mean - tf.ones_like(outs_mean, dtype = global_tf_float_precision) * (force_tot_ener/global_cvt_2_tf_float(natoms[0]))
+            outs = outs - outs_mean
+            outs = tf.reshape(outs, [-1])
 
         return tf.cast(tf.reshape(outs, [-1]), global_tf_float_precision)        
 
