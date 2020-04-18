@@ -264,7 +264,7 @@ class DescrptSeAEfLower (DescrptSeA):
         self.rij = tf.identity(self.rij, name = 'o_rij')
         self.nlist = tf.identity(self.nlist, name = 'o_nlist')
 
-        self.dout, self.qmat = self._pass_filter(self.descrpt_reshape, atype, natoms, suffix = suffix, reuse = reuse, trainable = self.trainable)
+        self.dout, self.qmat = self._pass_filter(self.descrpt_reshape, atype, natoms, input_dict, suffix = suffix, reuse = reuse, trainable = self.trainable)
 
         return self.dout
 

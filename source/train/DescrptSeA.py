@@ -209,6 +209,7 @@ class DescrptSeA ():
         self.dout, self.qmat = self._pass_filter(self.descrpt_reshape, 
                                                  atype,
                                                  natoms, 
+                                                 input_dict,
                                                  suffix = suffix, 
                                                  reuse = reuse, 
                                                  trainable = self.trainable)
@@ -245,6 +246,7 @@ class DescrptSeA ():
                      inputs,
                      atype,
                      natoms,
+                     input_dict,
                      reuse = None,
                      suffix = '', 
                      trainable = True) :
