@@ -84,7 +84,8 @@ class ClassArg () :
              types_,
              alias = None,
              default = None, 
-             must = False) :
+             must = False,
+             docs = "") :
         if type(types_) is not list :
             types = [types_]
         else :
@@ -100,7 +101,8 @@ class ClassArg () :
         self.arg_dict[key] = {'types' : types,
                               'alias' : alias_,
                               'value' : default, 
-                              'must': must}
+                              'must': must,
+                              'docs': docs}
         for ii in alias_ :
             self.alias_map[ii] = key
 
@@ -143,6 +145,28 @@ class ClassArg () :
         for kk in self.arg_dict.keys() :
             ret[kk] = self.arg_dict[kk]['value']
         return ret
+    
+    @property
+    def docs(self):
+        '''Example:
+        rcut: float, default: 6.0, cutoff
+        '''
+        docs = []
+        for kk, vv in self.arg_dict.items():
+            docs.append("* **{name}**: {t}{optional}{default}. Description: {description}".format(
+                name = kk,
+                t= ", ".join([tt.__name__ for tt in vv['types']]),
+                optional=" (optional)" if not vv['must'] else "",
+                default=" default: %s" % vv['value'] if vv['value'] else "",
+                description=vv['docs']
+            ))
+        return "\n".join(docs)
+
+
+class argproperty(property):
+    def __get__(self, cls, owner):
+        return classmethod(self.fget).__get__(None, owner)()
+
 
 def j_must_have (jdata, key) :
     if not key in jdata.keys() :

@@ -1,13 +1,13 @@
 import numpy as np
 from deepmd.env import tf
-from deepmd.common import ClassArg, add_data_requirement
+from deepmd.common import ClassArg, add_data_requirement, argproperty
 
 from deepmd.RunOptions import global_cvt_2_tf_float
 from deepmd.RunOptions import global_cvt_2_ener_float
 
 class EnerStdLoss () :
-    def __init__ (self, jdata, **kwarg) :
-        self.starter_learning_rate = kwarg['starter_learning_rate']
+    @argproperty
+    def args(cls):
         args = ClassArg()\
             .add('start_pref_e',        float,  default = 0.02)\
             .add('limit_pref_e',        float,  default = 1.00)\
@@ -20,7 +20,12 @@ class EnerStdLoss () :
             .add('start_pref_pf',       float,  default = 0)\
             .add('limit_pref_pf',       float,  default = 0)\
             .add('relative_f',          float)
-        class_data = args.parse(jdata)
+        return args
+
+
+    def __init__ (self, jdata, **kwarg) :
+        self.starter_learning_rate = kwarg['starter_learning_rate']
+        class_data = self.args.parse(jdata)
         self.start_pref_e = class_data['start_pref_e']
         self.limit_pref_e = class_data['limit_pref_e']
         self.start_pref_f = class_data['start_pref_f']
@@ -175,14 +180,20 @@ class EnerStdLoss () :
 
 
 class EnerDipoleLoss () :
-    def __init__ (self, jdata, **kwarg) :
-        self.starter_learning_rate = kwarg['starter_learning_rate']
+    @argproperty
+    def args(cls):
         args = ClassArg()\
             .add('start_pref_e',        float,  must = True, default = 0.1) \
             .add('limit_pref_e',        float,  must = True, default = 1.00)\
             .add('start_pref_ed',       float,  must = True, default = 1.00)\
             .add('limit_pref_ed',       float,  must = True, default = 1.00)
-        class_data = args.parse(jdata)
+        return args
+
+
+    def __init__ (self, jdata, **kwarg) :
+        self.starter_learning_rate = kwarg['starter_learning_rate']
+
+        class_data = self.args.parse(jdata)
         self.start_pref_e = class_data['start_pref_e']
         self.limit_pref_e = class_data['limit_pref_e']
         self.start_pref_ed = class_data['start_pref_ed']

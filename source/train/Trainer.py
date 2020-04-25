@@ -30,7 +30,7 @@ import deepmd._soft_min_force_grad
 import deepmd._soft_min_virial_grad
 import deepmd._gelu
 
-from deepmd.common import j_must_have, ClassArg
+from deepmd.common import j_must_have, ClassArg, argproperty
 
 def _is_subdir(path, directory):
     path = os.path.realpath(path)
@@ -47,6 +47,23 @@ class NNPTrainer (object):
                  run_opt):
         self.run_opt = run_opt
         self._init_param(jdata)
+    
+    @argproperty
+    def tr_args(cls):
+        tr_args = ClassArg()\
+            .add('numb_test',     int,    default = 1)\
+            .add('disp_file',     str,    default = 'lcurve.out')\
+            .add('disp_freq',     int,    default = 100)\
+            .add('save_freq',     int,    default = 1000)\
+            .add('save_ckpt',     str,    default = 'model.ckpt')\
+            .add('display_in_training', bool, default = True)\
+            .add('timing_in_training',  bool, default = True)\
+            .add('profiling',     bool,   default = False)\
+            .add('profiling_file',str,    default = 'timeline.json')\
+            .add('sys_probs',   list    )\
+            .add('auto_prob_style', str, default = "prob_sys_size")
+        return tr_args
+
 
     def _init_param(self, jdata):
         # model config        
@@ -169,19 +186,7 @@ class NNPTrainer (object):
         # training
         training_param = j_must_have(jdata, 'training')
 
-        tr_args = ClassArg()\
-                  .add('numb_test',     int,    default = 1)\
-                  .add('disp_file',     str,    default = 'lcurve.out')\
-                  .add('disp_freq',     int,    default = 100)\
-                  .add('save_freq',     int,    default = 1000)\
-                  .add('save_ckpt',     str,    default = 'model.ckpt')\
-                  .add('display_in_training', bool, default = True)\
-                  .add('timing_in_training',  bool, default = True)\
-                  .add('profiling',     bool,   default = False)\
-                  .add('profiling_file',str,    default = 'timeline.json')\
-                  .add('sys_probs',   list    )\
-                  .add('auto_prob_style', str, default = "prob_sys_size")
-        tr_data = tr_args.parse(training_param)
+        tr_data = self.tr_args.parse(training_param)
         self.numb_test = tr_data['numb_test']
         self.disp_file = tr_data['disp_file']
         self.disp_freq = tr_data['disp_freq']

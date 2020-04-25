@@ -2,7 +2,7 @@ import warnings
 import numpy as np
 
 from deepmd.env import tf
-from deepmd.common import ClassArg, add_data_requirement, get_activation_func, get_precision
+from deepmd.common import ClassArg, add_data_requirement, get_activation_func, get_precision, argproperty
 from deepmd.Network import one_layer
 from deepmd.DescrptLocFrame import DescrptLocFrame
 from deepmd.DescrptSeA import DescrptSeA
@@ -10,10 +10,8 @@ from deepmd.DescrptSeA import DescrptSeA
 from deepmd.RunOptions import global_tf_float_precision
 
 class EnerFitting ():
-    def __init__ (self, jdata, descrpt):
-        # model param
-        self.ntypes = descrpt.get_ntypes()
-        self.dim_descrpt = descrpt.get_dim_out()
+    @argproperty
+    def args(cls):
         args = ClassArg()\
                .add('numb_fparam',      int,    default = 0)\
                .add('numb_aparam',      int,    default = 0)\
@@ -25,7 +23,14 @@ class EnerFitting ():
                .add("activation_function", str,    default = "tanh")\
                .add("precision",           str, default = "default")\
                .add("trainable",        [list, bool], default = True)
-        class_data = args.parse(jdata)
+        return args
+
+
+    def __init__ (self, jdata, descrpt):
+        # model param
+        self.ntypes = descrpt.get_ntypes()
+        self.dim_descrpt = descrpt.get_dim_out()
+        class_data = self.args.parse(jdata)
         self.numb_fparam = class_data['numb_fparam']
         self.numb_aparam = class_data['numb_aparam']
         self.n_neuron = class_data['neuron']

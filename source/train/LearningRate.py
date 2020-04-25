@@ -1,16 +1,20 @@
 import numpy as np
 from deepmd.env import tf
-from deepmd.common import ClassArg
+from deepmd.common import ClassArg, argproperty
 
 class LearningRateExp (object) :
-    def __init__ (self, 
-                  jdata) :
+    @argproperty
+    def args(cls):
         args = ClassArg()\
                .add('decay_steps',      int,    must = False)\
                .add('decay_rate',       float,  must = False)\
                .add('start_lr',         float,  must = True)\
                .add('stop_lr',          float,  must = False)
-        self.cd = args.parse(jdata)
+        return args
+
+    def __init__ (self, 
+                  jdata) :
+        self.cd = self.args.parse(jdata)
         self.start_lr_ = self.cd['start_lr']
 
     def build(self, global_step, stop_batch = None) :

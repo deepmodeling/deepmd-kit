@@ -1,13 +1,14 @@
 import numpy as np
 from deepmd.env import tf
-from deepmd.common import ClassArg, get_activation_func, get_precision
+from deepmd.common import ClassArg, get_activation_func, get_precision, argproperty
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 
 class DescrptSeR ():
-    def __init__ (self, jdata):
+    @argproperty
+    def args(cls):
         args = ClassArg()\
                .add('sel',      list,   must = True) \
                .add('rcut',     float,  default = 6.0) \
@@ -20,7 +21,10 @@ class DescrptSeR ():
                .add('set_davg_zero', bool, default = False) \
                .add("activation_function", str, default = "tanh") \
                .add("precision",           str, default = "default")
-        class_data = args.parse(jdata)
+        return args
+
+    def __init__ (self, jdata):
+        class_data = self.args.parse(jdata)
         self.sel_r = class_data['sel']
         self.rcut = class_data['rcut']
         self.rcut_smth = class_data['rcut_smth']

@@ -1,19 +1,24 @@
 import numpy as np
 from deepmd.env import tf
-from deepmd.common import ClassArg
+from deepmd.common import ClassArg, argproperty
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 
 class DescrptLocFrame () :
-    def __init__(self, jdata):
+    @argproperty
+    def args(cls):
         args = ClassArg()\
                .add('sel_a',    list,   must = True) \
                .add('sel_r',    list,   must = True) \
                .add('rcut',     float,  default = 6.0) \
                .add('axis_rule',list,   must = True)
-        class_data = args.parse(jdata)
+        return args
+
+
+    def __init__(self, jdata):
+        class_data = self.args.parse(jdata)
         self.sel_a = class_data['sel_a']
         self.sel_r = class_data['sel_r']
         self.axis_rule = class_data['axis_rule']

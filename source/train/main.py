@@ -5,6 +5,7 @@ from .freeze import freeze
 from .config import config
 from .test import test
 from .transform import transform
+from .docs import print_docs
 
 def main () :    
     parser = argparse.ArgumentParser(
@@ -57,6 +58,8 @@ def main () :
     parser_tst.add_argument("-d", "--detail-file", type=str, 
                             help="The file containing details of energy force and virial accuracy")
 
+    parser_docs = subparsers.add_parser('docs', help='print document')
+
     args = parser.parse_args()
 
     if args.command is None :
@@ -72,5 +75,7 @@ def main () :
         test(args)
     elif args.command == 'transform' :
         transform(args)
+    elif args.command == 'docs' :
+        print_docs()
     else :
         raise RuntimeError('unknown command ' + args.command)

@@ -2,7 +2,7 @@ import numpy as np
 from deepmd.env import tf
 from collections import defaultdict
 from deepmd.TabInter import TabInter
-from deepmd.common import ClassArg
+from deepmd.common import ClassArg, argproperty
 
 from deepmd.RunOptions import global_cvt_2_ener_float
 from deepmd.env import op_module
@@ -69,6 +69,23 @@ def merge_sys_stat(all_stat):
 class Model() :
     model_type = 'ener'
 
+    @argproperty
+    def args(cls):
+        args = ClassArg()\
+            .add('type_map',         list,   default = []) \
+            .add('data_stat_nbatch', int,    default = 10) \
+            .add('data_stat_protect',float,  default = 1e-2) \
+            .add('use_srtab',        str)
+        return args
+
+    @argproperty
+    def srtab_args(cls):
+        args = cls.args
+        args.add('smin_alpha',      float,  must = True)\
+            .add('sw_rmin',         float,  must = True)\
+            .add('sw_rmax',         float,  must = True)
+        return args
+
     def __init__ (self, jdata, descrpt, fitting):
         self.descrpt = descrpt
         self.rcut = self.descrpt.get_rcut()
@@ -77,22 +94,15 @@ class Model() :
         self.fitting = fitting
         self.numb_fparam = self.fitting.get_numb_fparam()
 
-        args = ClassArg()\
-               .add('type_map',         list,   default = []) \
-               .add('data_stat_nbatch', int,    default = 10) \
-               .add('data_stat_protect',float,  default = 1e-2) \
-               .add('use_srtab',        str)
-        class_data = args.parse(jdata)
+        class_data = self.args.parse(jdata)
         self.type_map = class_data['type_map']
         self.srtab_name = class_data['use_srtab']
         self.data_stat_nbatch = class_data['data_stat_nbatch']
         self.data_stat_protect = class_data['data_stat_protect']
         if self.srtab_name is not None :
             self.srtab = TabInter(self.srtab_name)
-            args.add('smin_alpha',      float,  must = True)\
-                .add('sw_rmin',         float,  must = True)\
-                .add('sw_rmax',         float,  must = True)
-            class_data = args.parse(jdata)
+
+            class_data = self.srtab_args.parse(jdata)
             self.smin_alpha = class_data['smin_alpha']
             self.sw_rmin = class_data['sw_rmin']
             self.sw_rmax = class_data['sw_rmax']
@@ -262,6 +272,14 @@ class Model() :
 
 
 class TensorModel() :
+    @argproperty
+    def args(cls):
+        args = ClassArg()\
+               .add('type_map',         list,   default = []) \
+               .add('data_stat_nbatch', int,    default = 10) \
+               .add('data_stat_protect',float,  default = 1e-2)
+        return args
+
     def __init__ (self, jdata, descrpt, fitting, var_name):
         self.model_type = var_name        
         self.descrpt = descrpt
@@ -270,11 +288,7 @@ class TensorModel() :
         # fitting
         self.fitting = fitting
 
-        args = ClassArg()\
-               .add('type_map',         list,   default = []) \
-               .add('data_stat_nbatch', int,    default = 10) \
-               .add('data_stat_protect',float,  default = 1e-2)
-        class_data = args.parse(jdata)
+        class_data = self.args.parse(jdata)
         self.type_map = class_data['type_map']
         self.data_stat_nbatch = class_data['data_stat_nbatch']
         self.data_stat_protect = class_data['data_stat_protect']

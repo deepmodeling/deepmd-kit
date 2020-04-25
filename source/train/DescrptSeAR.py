@@ -1,17 +1,21 @@
 import numpy as np
 from deepmd.env import tf
-from deepmd.common import ClassArg
+from deepmd.common import ClassArg, argproperty
 
 from deepmd.DescrptSeA import DescrptSeA
 from deepmd.DescrptSeR import DescrptSeR
 from deepmd.env import op_module
 
 class DescrptSeAR ():
-    def __init__ (self, jdata):
+    @argproperty
+    def args(cls):
         args = ClassArg()\
-               .add('a',      dict,   must = True) \
-               .add('r',      dict,   must = True) 
-        class_data = args.parse(jdata)
+            .add('a',      dict,   must = True) \
+            .add('r',      dict,   must = True) 
+        return args
+
+    def __init__ (self, jdata):
+        class_data = self.args.parse(jdata)
         self.param_a = class_data['a']
         self.param_r = class_data['r']
         self.descrpt_a = DescrptSeA(self.param_a)
