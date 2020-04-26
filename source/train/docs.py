@@ -10,11 +10,12 @@ from deepmd.Trainer import NNPTrainer
 
 
 class ParamArgs:
-    def __init__(self, args, name, *subargs, depth=1):
+    def __init__(self, args, name, *subargs, depth=1, prefix=""):
         self.args = args
         self.name = name
         self.depth = depth
         self.subargs = subargs
+        self.prefix = prefix
 
     @property
     def docs(self):
@@ -22,6 +23,8 @@ class ParamArgs:
             "#"*self.depth,
             " ",
             self.name,
+            "\n",
+            self.prefix,
             "\n",
             self.args.docs if self.args is not None else "",
             "\n",

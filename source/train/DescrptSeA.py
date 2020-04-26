@@ -10,7 +10,7 @@ class DescrptSeA ():
     @argproperty
     def args(cls):
         args = ClassArg()\
-               .add('sel',      list,   must = True) \
+               .add('sel',      list,   must = True, docs="the maximum possible number of neighbors in the cut-off radius.") \
                .add('rcut',     float,  default = 6.0) \
                .add('rcut_smth',float,  default = 5.5) \
                .add('neuron',   list,   default = [10, 20, 40]) \

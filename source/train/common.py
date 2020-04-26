@@ -153,11 +153,15 @@ class ClassArg () :
         '''
         docs = []
         for kk, vv in self.arg_dict.items():
-            docs.append("* **{name}**: {t}{optional}{default}. Description: {description}".format(
+            docs.append("""|  **{name}**{optional} | {t} |
+|  ----  | ----  |
+{default}{alias}| *Description:* | {description} |
+""".format(
                 name = kk,
                 t= ", ".join([tt.__name__ for tt in vv['types']]),
-                optional=" (optional)" if not vv['must'] else "",
-                default=" default: %s" % vv['value'] if vv['value'] else "",
+                optional=" *(optional)*" if not vv['must'] else "",
+                default="| *Default:* | %s |\n" % vv['value'] if vv['value'] else "",
+                alias="| *Alias:* | %s |\n" % ", ".join(vv['alias']) if vv['alias'] else "",
                 description=vv['docs']
             ))
         return "\n".join(docs)
