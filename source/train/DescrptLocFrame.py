@@ -10,10 +10,19 @@ class DescrptLocFrame () :
     @argproperty
     def args(cls):
         args = ClassArg()\
-               .add('sel_a',    list,   must = True) \
-               .add('sel_r',    list,   must = True) \
-               .add('rcut',     float,  default = 6.0) \
-               .add('axis_rule',list,   must = True)
+               .add('sel_a',    list,   must = True,
+                docs="""a list of integers. The length of the list should be the same as the number of atom types in the system. sel_a[i] gives the selected number of type-i neighbors. The full relative coordinates of the neighbors are used.""") \
+               .add('sel_r',    list,   must = True,
+                docs="""a list of integers. The length of the list should be the same as the number of atom types in the system. sel_r[i] gives the selected number of type-i neighbors. Only  relative distance of the neighbors are used. sel_a[i] + sel_r[i] should is recommended to be larger than the maximally possible number of type_i neighbors in the cut-off radius.""") \
+               .add('rcut',     float,  default = 6.0, docs="""the cut-off distance.""") \
+               .add('axis_rule',list,   must = True,
+                docs="""a list of integers. The length should be 6 times of the number of types. 
+axis_rule[i\\*6+0]: class of the atom defining the first axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.
+axis_rule[i\\*6+1]: type of the atom defining the first axis of type-i atom.
+axis_rule[i\\*6+2]: index of the axis atom defining the first axis. Note that the neighbors with the same class and type are sorted according to their relative distance.
+axis_rule[i\\*6+3]: class of the atom defining the first axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.
+axis_rule[i\\*6+4]: type of the atom defining the second axis of type-i atom.
+axis_rule[i\\*6+5]: class of the atom defining the second axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.""")
         return args
 
 

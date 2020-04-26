@@ -162,7 +162,7 @@ class ClassArg () :
                 optional=" *(optional)*" if not vv['must'] else "",
                 default="| *Default:* | %s |\n" % vv['value'] if vv['value'] else "",
                 alias="| *Alias:* | %s |\n" % ", ".join(vv['alias']) if vv['alias'] else "",
-                description=vv['docs']
+                description=vv['docs'].replace("\n", "<br/>")
             ))
         return "\n".join(docs)
 
