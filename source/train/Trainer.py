@@ -511,7 +511,7 @@ class NNPTrainer (object):
             fp.write(print_str)
             fp.flush ()
 
-def test_on_the_fly_with_tensorboard (self,
+    def test_on_the_fly_with_tensorboard (self,
                          test_writer,
                          fp,
                          data,
