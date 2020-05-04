@@ -30,7 +30,7 @@ import deepmd._soft_min_force_grad
 import deepmd._soft_min_virial_grad
 import deepmd._gelu
 
-from deepmd.common import j_must_have, ClassArg
+from deepmd.common import j_must_have, ClassArg, delete_file_folder
 
 def _is_subdir(path, directory):
     path = os.path.realpath(path)
@@ -179,6 +179,8 @@ class NNPTrainer (object):
                   .add('timing_in_training',  bool, default = True)\
                   .add('profiling',     bool,   default = False)\
                   .add('profiling_file',str,    default = 'timeline.json')\
+                  .add('tensorboard',     bool,   default = False)\
+                  .add('tensorboard_log_file',str,    default = 'log')\
                   .add('sys_probs',   list    )\
                   .add('auto_prob_style', str, default = "prob_sys_size")
         tr_data = tr_args.parse(training_param)
@@ -191,6 +193,8 @@ class NNPTrainer (object):
         self.timing_in_training  = tr_data['timing_in_training']
         self.profiling = tr_data['profiling']
         self.profiling_file = tr_data['profiling_file']
+        self.tensorboard = tr_data['tensorboard']
+        self.tensorboard_log_file = tr_data['tensorboard_log_file']
         self.sys_probs = tr_data['sys_probs']        
         self.auto_prob_style = tr_data['auto_prob_style']        
         self.useBN = False
@@ -392,6 +396,16 @@ class NNPTrainer (object):
             prf_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
             prf_run_metadata = tf.RunMetadata()
 
+        # set tensorboard execution environment
+        if self.tensorboard :
+            summary_merged_op = tf.summary.merge_all()
+            if os.path.exists(self.tensorboard_log_file + '/train'):
+                delete_file_folder(self.tensorboard_log_file + '/train')
+            if os.path.exists(self.tensorboard_log_file + '/test'):
+                delete_file_folder (self.tensorboard_log_file + '/test')
+            train_writer = tf.summary.FileWriter(self.tensorboard_log_file + '/train', self.sess.graph)
+            test_writer = tf.summary.FileWriter(self.tensorboard_log_file + '/test')
+        
         train_time = 0
         while cur_batch < stop_batch :
             batch_data = data.get_batch (sys_probs = self.sys_probs,
@@ -412,10 +426,19 @@ class NNPTrainer (object):
             feed_dict_batch[self.place_holders['is_training']] = True
 
             if self.display_in_training and is_first_step :
-                self.test_on_the_fly(fp, data, feed_dict_batch)
+                if self.tensorboard :
+                    self.test_on_the_fly_with_tensorboard(test_writer, fp, data, feed_dict_batch)
+                else :
+                    self.test_on_the_fly(fp, data, feed_dict_batch)
                 is_first_step = False
             if self.timing_in_training : tic = time.time()
-            self.sess.run([self.train_op], feed_dict = feed_dict_batch, options=prf_options, run_metadata=prf_run_metadata)
+            # use tensorboard to visualize the training of deepmd-kit
+            # it will takes some extra execution time to generate the tensorboard data
+            if self.tensorboard :
+                summary, _ = self.sess.run([summary_merged_op, self.train_op], feed_dict = feed_dict_batch, options=prf_options, run_metadata=prf_run_metadata)
+                train_writer.add_summary(summary, cur_batch)
+            else :
+                self.sess.run([self.train_op], feed_dict = feed_dict_batch, options=prf_options, run_metadata=prf_run_metadata)
             if self.timing_in_training : toc = time.time()
             if self.timing_in_training : train_time += toc - tic
             cur_batch = self.sess.run(self.global_step)
@@ -423,7 +446,10 @@ class NNPTrainer (object):
 
             if self.display_in_training and (cur_batch % self.disp_freq == 0) :
                 tic = time.time()
-                self.test_on_the_fly(fp, data, feed_dict_batch)
+                if self.tensorboard :
+                    self.test_on_the_fly_with_tensorboard(test_writer, fp, data, feed_dict_batch)
+                else :
+                    self.test_on_the_fly(fp, data, feed_dict_batch)
                 toc = time.time()
                 test_time = toc - tic
                 if self.timing_in_training :
@@ -485,4 +511,36 @@ class NNPTrainer (object):
             fp.write(print_str)
             fp.flush ()
 
+def test_on_the_fly_with_tensorboard (self,
+                         test_writer,
+                         fp,
+                         data,
+                         feed_dict_batch) :
+        test_data = data.get_test(ntests = self.numb_test)
+        feed_dict_test = {}
+        for kk in test_data.keys():
+            if kk == 'find_type' or kk == 'type' :
+                continue
+            if 'find_' in kk:
+                feed_dict_test[self.place_holders[kk]] = test_data[kk]
+            else:
+                feed_dict_test[self.place_holders[kk]] = np.reshape(test_data[kk][:self.numb_test], [-1])
+        for ii in ['type'] :
+            feed_dict_test[self.place_holders[ii]] = np.reshape(test_data[ii][:self.numb_test], [-1])            
+        for ii in ['natoms_vec', 'default_mesh'] :
+            feed_dict_test[self.place_holders[ii]] = test_data[ii]
+        feed_dict_test[self.place_holders['is_training']] = False
 
+        cur_batch = self.cur_batch
+        current_lr = self.sess.run(self.learning_rate)
+        if self.run_opt.is_chief:
+            print_str = "%7d" % cur_batch
+            print_str += self.loss.print_on_training_with_tensorboard(test_writer,
+                                                     cur_batch,
+                                                     self.sess,
+                                                     test_data['natoms_vec'],
+                                                     feed_dict_test,
+                                                     feed_dict_batch)
+            print_str += "   %8.1e\n" % current_lr
+            fp.write(print_str)
+            fp.flush ()

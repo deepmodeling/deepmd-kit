@@ -1,6 +1,7 @@
 import numpy as np
 
 from deepmd.env import tf
+from deepmd.common import variable_summaries
 from deepmd.RunOptions import global_tf_float_precision
 
 def one_layer(inputs, 
@@ -22,11 +23,13 @@ def one_layer(inputs,
                             precision,
                             tf.random_normal_initializer(stddev=stddev/np.sqrt(shape[1]+outputs_size), seed = seed), 
                             trainable = trainable)
+        variable_summaries(w, 'matrix')
         b = tf.get_variable('bias', 
                             [outputs_size], 
                             precision,
                             tf.random_normal_initializer(stddev=stddev, mean = bavg, seed = seed), 
                             trainable = trainable)
+        variable_summaries(b, 'bias')
         hidden = tf.matmul(inputs, w) + b
         if activation_fn != None and use_timestep :
             idt = tf.get_variable('idt',
@@ -34,6 +37,7 @@ def one_layer(inputs,
                                   precision,
                                   tf.random_normal_initializer(stddev=0.001, mean = 0.1, seed = seed), 
                                   trainable = trainable)
+            variable_summaries(idt, 'idt')
         if activation_fn != None:
             if useBN:
                 None

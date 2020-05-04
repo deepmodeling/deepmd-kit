@@ -114,6 +114,12 @@ class EnerStdLoss () :
             l2_loss += global_cvt_2_ener_float(pref_pf * l2_pref_force_loss)
         more_loss['l2_pref_force_loss'] = l2_pref_force_loss
 
+        # only used when tensorboard was set as true
+        self.l2_loss_summary = tf.summary.scalar('l2_loss', tf.sqrt(l2_loss))
+        self.l2_loss_ener_summary = tf.summary.scalar('l2_ener_loss', tf.sqrt(l2_ener_loss) / tf.cast(natoms[0], tf.float64))
+        self.l2_loss_force_summary = tf.summary.scalar('l2_force_loss', tf.sqrt(l2_force_loss))
+        self.l2_loss_virial_summary = tf.summary.scalar('l2_virial_loss', tf.sqrt(l2_virial_loss) / tf.cast(natoms[0], tf.float64))
+
         self.l2_l = l2_loss
         self.l2_more = more_loss
         return l2_loss, more_loss
@@ -171,7 +177,50 @@ class EnerStdLoss () :
         if self.has_pf:
             print_str += prop_fmt % (np.sqrt(error_pf_test), np.sqrt(error_pf_train))
 
-        return print_str        
+        return print_str 
+   
+    def print_on_training_with_tensorboard(self, 
+                          test_writer,
+                          cur_batch,
+                          sess, 
+                          natoms,
+                          feed_dict_test,
+                          feed_dict_batch) :
+        summary_merged_op = tf.summary.merge([self.l2_loss_summary, self.l2_loss_ener_summary, self.l2_loss_force_summary, self.l2_loss_virial_summary])
+        summary, error_test, error_e_test, error_f_test, error_v_test, error_ae_test, error_pf_test \
+            = sess.run([summary_merged_op, \
+                        self.l2_l, \
+                        self.l2_more['l2_ener_loss'], \
+                        self.l2_more['l2_force_loss'], \
+                        self.l2_more['l2_virial_loss'], \
+                        self.l2_more['l2_atom_ener_loss'],\
+                        self.l2_more['l2_pref_force_loss']],
+                       feed_dict=feed_dict_test)
+        test_writer.add_summary(summary, cur_batch)
+
+        error_train, error_e_train, error_f_train, error_v_train, error_ae_train, error_pf_train \
+            = sess.run([self.l2_l, \
+                        self.l2_more['l2_ener_loss'], \
+                        self.l2_more['l2_force_loss'], \
+                        self.l2_more['l2_virial_loss'], \
+                        self.l2_more['l2_atom_ener_loss'],\
+                        self.l2_more['l2_pref_force_loss']], 
+                       feed_dict=feed_dict_batch)
+        print_str = ""
+        prop_fmt = "   %9.2e %9.2e"
+        print_str += prop_fmt % (np.sqrt(error_test), np.sqrt(error_train))
+        if self.has_e :
+            print_str += prop_fmt % (np.sqrt(error_e_test) / natoms[0], np.sqrt(error_e_train) / natoms[0])
+        if self.has_ae :
+            print_str += prop_fmt % (np.sqrt(error_ae_test), np.sqrt(error_ae_train))
+        if self.has_f :
+            print_str += prop_fmt % (np.sqrt(error_f_test), np.sqrt(error_f_train))
+        if self.has_v :
+            print_str += prop_fmt % (np.sqrt(error_v_test) / natoms[0], np.sqrt(error_v_train) / natoms[0])
+        if self.has_pf:
+            print_str += prop_fmt % (np.sqrt(error_pf_test), np.sqrt(error_pf_train))
+
+        return print_str      
 
 
 class EnerDipoleLoss () :
@@ -232,6 +281,10 @@ class EnerDipoleLoss () :
         more_loss['l2_ener_loss'] = l2_ener_loss
         more_loss['l2_ener_dipole_loss'] = l2_ener_dipole_loss
 
+        self.l2_loss_summary = tf.summary.scalar('l2_loss', tf.sqrt(l2_loss))
+        self.l2_loss_ener_summary = tf.summary.scalar('l2_ener_loss', tf.sqrt(l2_ener_loss) / tf.cast(natoms[0], tf.float64))
+        self.l2_ener_dipole_loss_summary = tf.summary.scalar('l2_ener_dipole_loss', tf.sqrt(l2_ener_dipole_loss))
+
         self.l2_l = l2_loss
         self.l2_more = more_loss
         return l2_loss, more_loss
@@ -266,7 +319,35 @@ class EnerDipoleLoss () :
         print_str += prop_fmt % (np.sqrt(error_test), np.sqrt(error_train))
         print_str += prop_fmt % (np.sqrt(error_e_test) / natoms[0], np.sqrt(error_e_train) / natoms[0])
         print_str += prop_fmt % (np.sqrt(error_ed_test), np.sqrt(error_ed_train))
-        return print_str        
+        return print_str     
+
+    def print_on_training_with_tensorboard(self,
+                          test_writer,
+                          cur_batch, 
+                          sess, 
+                          natoms,
+                          feed_dict_test,
+                          feed_dict_batch) :
+        summary_merged_op = tf.summary.merge([self.l2_loss_summary, self.l2_loss_ener_summary, self.l2_ener_dipole_loss_summary])
+        summary, error_test, error_e_test, error_ed_test\
+            = sess.run([summary_merged_op, \
+                        self.l2_l, \
+                        self.l2_more['l2_ener_loss'], \
+                        self.l2_more['l2_ener_dipole_loss']],
+                       feed_dict=feed_dict_test)
+        test_writer.add_summary(summary, cur_batch)
+        
+        error_train, error_e_train, error_ed_train\
+            = sess.run([self.l2_l, \
+                        self.l2_more['l2_ener_loss'], \
+                        self.l2_more['l2_ener_dipole_loss']],
+                       feed_dict=feed_dict_batch)
+        print_str = ""
+        prop_fmt = "   %9.2e %9.2e"
+        print_str += prop_fmt % (np.sqrt(error_test), np.sqrt(error_train))
+        print_str += prop_fmt % (np.sqrt(error_e_test) / natoms[0], np.sqrt(error_e_train) / natoms[0])
+        print_str += prop_fmt % (np.sqrt(error_ed_test), np.sqrt(error_ed_train))
+        return print_str   
 
 
 class TensorLoss () :
@@ -306,7 +387,7 @@ class TensorLoss () :
             l2_loss = l2_loss * atom_norm
         self.l2_l = l2_loss
         more_loss = {}
-
+        self.l2_loss_summary = tf.summary.scalar('l2_loss', tf.sqrt(l2_loss))
         return l2_loss, more_loss
 
     def print_header(self) :
@@ -332,4 +413,26 @@ class TensorLoss () :
 
         return print_str
 
+    def print_on_training_with_tensorboard(self, 
+                          test_writer,
+                          cur_batch,
+                          sess, 
+                          natoms,
+                          feed_dict_test,
+                          feed_dict_batch) :
+        summary_merged_op = tf.summary.merge([self.l2_loss_summary])
+        summary, error_test\
+            = sess.run([summary_merged_op, \
+                        self.l2_l], \
+                       feed_dict=feed_dict_test)
+        test_writer.add_summary(summary, cur_batch)
+        
+        error_train\
+            = sess.run([self.l2_l], \
+                       feed_dict=feed_dict_batch)
+        print_str = ""
+        prop_fmt = "   %9.2e %9.2e"
+        print_str += prop_fmt % (np.sqrt(error_test), np.sqrt(error_train))
+
+        return print_str
 
