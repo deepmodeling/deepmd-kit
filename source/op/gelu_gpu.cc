@@ -26,15 +26,6 @@ REGISTER_OP("GeluGrad")
         return Status::OK();
     });
 
-REGISTER_OP("GeluGradS")
-    .Attr("T: {float, double}")
-    .Input("x: T")
-    .Output("output: T")
-    .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
-        c->set_output(0, c->input(1));
-        return Status::OK();
-    });
-
 REGISTER_OP("GeluGradGrad")
     .Attr("T: {float, double}")
     .Input("dy: T")
@@ -53,9 +44,6 @@ void GeluLauncher(const double * in, double * out, int const size);
 void GeluGradLauncher(const float * dy, const float * in, float * out, int const size);
 void GeluGradLauncher(const double * dy, const double * in, double * out, int const size);
 
-void GeluGradSLauncher(const float * in, float * out, int const size);
-void GeluGradSLauncher(const double * in, double * out, int const size);
-
 void GeluGradGradLauncher(const float * dy, const float * dy_, const float * in, float * out, int const size);
 void GeluGradGradLauncher(const double * dy, const double * dy_, const double * in, double * out, int const size);
 
@@ -70,13 +58,6 @@ template <typename Device, typename T>
 struct GeluGradFunctor {
     void operator()(const Device& d, const T * dy, const T * in, T * out, int const size) {
         GeluGradLauncher(dy, in, out, size);
-    }
-};
-
-template <typename Device, typename T>
-struct GeluGradSFunctor {
-    void operator()(const Device& d, const T * in, T * out, int const size) {
-        GeluGradSLauncher(in, out, size);
     }
 };
 
@@ -145,33 +126,6 @@ class GeluGradOp : public OpKernel {
 // OpKernel definition.
 // template parameter <T> is the datatype of the tensors.
 template <typename Device, typename T>
-class GeluGradSOp : public OpKernel {
-  public :
-    explicit GeluGradSOp(OpKernelConstruction* context) : OpKernel(context) {}
-
-    void Compute(OpKernelContext* context) override {
-        // Grab the input tensor
-        const Tensor& x  = context->input(0);
-        
-        Tensor * output = NULL;
-        int context_output_index = 0;
-        OP_REQUIRES_OK(context, context->allocate_output(context_output_index++, 
-					    x.shape(),
-					    &output));
-		
-		GeluGradSFunctor<Device, T>()(
-            context->eigen_device<Device>(),
-            x.flat<T>().data(),
-            output->flat<T>().data(),
-            static_cast<int>(output->NumElements())
-        );
-        // GeluGradLauncher(dy.flat<T>().data(), x.flat<T>().data(), output->flat<T>().data(), static_cast<int>(output->NumElements()));
-    }
-};
-
-// OpKernel definition.
-// template parameter <T> is the datatype of the tensors.
-template <typename Device, typename T>
 class GeluGradGradOp : public OpKernel {
   public :
     explicit GeluGradGradOp(OpKernelConstruction* context) : OpKernel(context) {}
@@ -209,10 +163,6 @@ class GeluGradGradOp : public OpKernel {
     REGISTER_KERNEL_BUILDER(                                                \
         Name("GeluGrad").Device(DEVICE_GPU).TypeConstraint<T>("T"),         \
         GeluGradOp<GPUDevice, T>);                                          \
-    /* Declare explicit instantiations in kernel_example.cu.cc. */          \
-    REGISTER_KERNEL_BUILDER(                                                \
-        Name("GeluGradS").Device(DEVICE_GPU).TypeConstraint<T>("T"),        \
-        GeluGradSOp<GPUDevice, T>);                                         \
     /* Declare explicit instantiations in kernel_example.cu.cc. */          \
     REGISTER_KERNEL_BUILDER(                                                \
         Name("GeluGradGrad").Device(DEVICE_GPU).TypeConstraint<T>("T"),     \
