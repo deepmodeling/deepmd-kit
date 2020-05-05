@@ -12,6 +12,6 @@ def gelu_cc (op, dy) :
 
 @ops.RegisterGradient("GeluGrad")
 def gelu_grad_cc (op, dy) :
-    return [op_module.gelu_grad_s(op.inputs[1]), gelu_module.gelu_grad_grad(dy, op.inputs[0], op.inputs[1])]
+    return [op_module.gelu_grad_s(op.inputs[1]), op_module.gelu_grad_grad(dy, op.inputs[0], op.inputs[1])]
 # def gelu_grad_cc (op, dy) :
 #     return [None, op_module.gelu_grad_grad(dy, op.inputs[0], op.inputs[1])]
