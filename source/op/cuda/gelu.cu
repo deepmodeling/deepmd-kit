@@ -22,17 +22,26 @@ __global__ void gelu_grad(const T * dy, const T * in, T * out, int const size) {
 }
 
 template <typename T>
+__global__ void gelu_grad_s(const T * in, T * out, int const size) {
+    int const idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= size) {return;}
+
+    // out[idx] = in[idx] * 0.5 * (1.0 + tanh(SQRT_2_PI * (in[idx] + 0.044715 * in[idx] * in[idx] *in[idx])));
+    T const var1 = tanh(SQRT_2_PI * (in[idx] + 0.044715 * in[idx] * in[idx] *in[idx]));
+    out[idx] = 0.5 * SQRT_2_PI * in[idx] * (1 - var1 * var1) * (0.134145 * in[idx] * in[idx] + 1) + 0.5 * var1 + 0.5;
+}
+
+template <typename T>
 __global__ void gelu_grad_grad(const T * dy, const T * dy_, const T * in, T * out, int const size) {
     int const idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= size) {return;}
 
     // out[idx] = in[idx] * 0.5 * (1.0 + tanh(SQRT_2_PI * (in[idx] + 0.044715 * in[idx] * in[idx] *in[idx])));
     T const var1 = tanh(SQRT_2_PI * (in[idx] + 0.044715 * in[idx] * in[idx] *in[idx]));
-    T const var2 = SQRT_2_PI * (1 - var1 * var1) * (0.134145 * in[idx] * in[idx] + 1);
+    T const var2 = (1 - var1 * var1) * (0.134145 * in[idx] * in[idx] + 1) * (0.134145 * in[idx] * in[idx] + 1);
     
-	out[idx] = dy[idx] * dy_[idx] * (0.134145 * SQRT_2_PI * in[idx] * in[idx] * (1 - var1 * var1) - SQRT_2_PI * in[idx] * var2 * (0.134145 * in[idx] * in[idx] + 1) * var1 + var2);
+	out[idx] = dy[idx] * dy_[idx] * (0.134145 * SQRT_2_PI * in[idx] * in[idx] * (1 - var1 * var1) - SQRT_2_PI * SQRT_2_PI * in[idx] * var2 * var1 + SQRT_2_PI * (1 - var1 * var1) * (0.134145 * in[idx] * in[idx] + 1));
 }
-
 
 void GeluLauncher(const float * in, float * out, int const size) {
     int const THREAD_ITEMS = 1024;
@@ -60,6 +69,20 @@ void GeluGradLauncher(const double * dy, const double * in, double * out, int co
     int const BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
 
     gelu_grad<<<BLOCK_NUMS, THREAD_ITEMS>>>(dy, in, out, size);
+}
+
+void GeluGradSLauncher(const float * in, float * out, int const size) {
+    int const THREAD_ITEMS = 1024;
+    int const BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
+
+    gelu_grad_s<<<BLOCK_NUMS, THREAD_ITEMS>>>(in, out, size);
+}
+
+void GeluGradSLauncher(const double * in, double * out, int const size) {
+    int const THREAD_ITEMS = 1024;
+    int const BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
+
+    gelu_grad_s<<<BLOCK_NUMS, THREAD_ITEMS>>>(in, out, size);
 }
 
 void GeluGradGradLauncher(const float * dy, const float * dy_, const float * in, float * out, int const size) {
