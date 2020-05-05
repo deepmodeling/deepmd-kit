@@ -4,10 +4,10 @@
 	"type_map":	["O", "H"],
 	"descriptor" :{
 	    "type":		"se_a",
-	    "sel":		[46, 92],
+	    "sel":		[48, 96],
 	    "rcut_smth":	5.80,
 	    "rcut":		6.00,
-	    "neuron":		[25, 50, 100],
+	    "neuron":		[24, 48, 96],
 	    "resnet_dt":	false,
 	    "axis_neuron":	16,
 	    "seed":		1,
@@ -59,6 +59,8 @@
 	"load_ckpt":	"model.ckpt",
 	"disp_training":true,
 	"time_training":true,
+	"tensorboard":	false,
+	"tensorboard_log_file":"log",
 	"profiling":	false,
 	"profiling_file":"timeline.json",
 	"_comment":	"that's all"

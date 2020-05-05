@@ -3,37 +3,43 @@
 
 
 # Table of contents
+- [<span style="font-size:larger;">DeePMD-kit Manual</span>](#deepmd-kit-manual)
+- [Table of contents](#table-of-contents)
 - [About DeePMD-kit](#about-deepmd-kit)
- 	- [Highlighted features](#highlighted-features)
- 	- [Code structure](#code-structure)
- 	- [License and credits](#license-and-credits)
- 	- [Deep Potential in a nutshell](#deep-potential-in-a-nutshell)
+	- [Highlighted features](#highlighted-features)
+	- [Code structure](#code-structure)
+	- [License and credits](#license-and-credits)
+	- [Deep Potential in a nutshell](#deep-potential-in-a-nutshell)
 - [Download and install](#download-and-install)
-    - [Easy installation methods](#easy-installation-methods)
-      - [With Docker](#with-docker)
-      - [With conda](#with-conda)
-      - [Offline packages](#offline-packages)
-    - [Install the python interaction](#install-the-python-interface)
-      - [Install the Tensorflow's python interface](#install-the-tensorflows-python-interface)
-      - [Install the DeePMD-kit's python interface](#install-the-deepmd-kits-python-interface)
-    - [Install the C++ interface](#install-the-c-interface)
-	    - [Install the Tensorflow's C++ interface](#install-the-tensorflows-c-interface)    
-	    - [Install the DeePMD-kit's C++ interface](#install-the-deepmd-kits-c-interface)
-	    - [Install LAMMPS's DeePMD-kit module](#install-lammpss-deepmd-kit-module)
+	- [Easy installation methods](#easy-installation-methods)
+		- [With Docker](#with-docker)
+		- [With conda](#with-conda)
+		- [Offline packages](#offline-packages)
+	- [Install the python interface](#install-the-python-interface)
+		- [Install the Tensorflow's python interface](#install-the-tensorflows-python-interface)
+		- [Install the DeePMD-kit's python interface](#install-the-deepmd-kits-python-interface)
+	- [Install the C++ interface](#install-the-c-interface)
+		- [Install the Tensorflow's C++ interface](#install-the-tensorflows-c-interface)
+		- [Install the DeePMD-kit's C++ interface](#install-the-deepmd-kits-c-interface)
+		- [Install LAMMPS's DeePMD-kit module](#install-lammpss-deepmd-kit-module)
 - [Use DeePMD-kit](#use-deepmd-kit)
 	- [Prepare data](#prepare-data)
 	- [Train a model](#train-a-model)
-	    - [The DeePMD model](#the-deepmd-model)
-	    - [The DeepPot-SE model](#the-deeppot-se-model)
+		- [Write the input script](#write-the-input-script)
+		- [Training](#training)
 	- [Freeze a model](#freeze-a-model)
 	- [Test a model](#test-a-model)
 	- [Model inference](#model-inference)
-	- [Run MD with Lammps](#run-md-with-lammps)
-	    - [Include deepmd in the pair style](#include-deepmd-in-the-pair-style)
-	    - [Long-range interaction](#long-range-interaction)
+	- [Run MD with LAMMPS](#run-md-with-lammps)
+		- [Include deepmd in the pair style](#include-deepmd-in-the-pair-style)
+		- [Long-range interaction](#long-range-interaction)
 	- [Run path-integral MD with i-PI](#run-path-integral-md-with-i-pi)
 	- [Use deep potential with ASE](#use-deep-potential-with-ase)
 - [Troubleshooting](#troubleshooting)
+	- [Model compatability](#model-compatability)
+	- [Installation: inadequate versions of gcc/g++](#installation-inadequate-versions-of-gccg)
+	- [Installation: build files left in DeePMD-kit](#installation-build-files-left-in-deepmd-kit)
+	- [MD: cannot run LAMMPS after installing a new version of DeePMD-kit](#md-cannot-run-lammps-after-installing-a-new-version-of-deepmd-kit)
 
 # About DeePMD-kit
 DeePMD-kit is a package written in Python/C++, designed to minimize the effort required to build deep learning based model of interatomic potential energy and force field and to perform molecular dynamics (MD). This brings new hopes to addressing the accuracy-versus-efficiency dilemma in molecular simulations. Applications of DeePMD-kit span from finite molecules to extended systems and from metallic systems to chemically bonded systems. 
@@ -186,7 +192,7 @@ gcc --version
 
 The C++ interface of DeePMD-kit was tested with compiler gcc >= 4.8. It is noticed that the I-Pi support is only compiled with gcc >= 4.9.
 
-First the C++ interface of Tensorflow should be installed. It is noted that the version of Tensorflow should be in consistent with the python interface. We assume that you have followed our instruction and installed tensorflow python interface 1.14.0 with, then you may follow [the instruction for CPU](doc/install-tf.1.14.md) to install the corresponding C++ interface (CPU only). If one wants GPU supports, he/she should follow [the instruction for GPU](doc/install-tf.1.14-gpu.md) to install the C++ interface.
+First the C++ interface of Tensorflow should be installed. It is noted that the version of Tensorflow should be in consistent with the python interface. We assume that you have followed our instruction and installed tensorflow python interface 1.14.0 with, then you may follow [the instruction for CPU](/media/docs/install-tf.1.14.md) to install the corresponding C++ interface (CPU only). If one wants GPU supports, he/she should follow [the instruction for GPU](/media/docs/install-tf.1.14-gpu.md) to install the C++ interface.
 
 ### Install the DeePMD-kit's C++ interface
 
@@ -432,6 +438,8 @@ During the training, the error of the model is tested every **`disp_freq`** batc
 ```
 The first column displays the number of batches. The second and third columns display the loss function evaluated by `numb_test` frames randomly chosen from the test set and that evaluated by the current training batch, respectively. The fourth and fifth columns display the RMS energy error (normalized by number of atoms) evaluated by `numb_test` frames randomly chosen from the test set and that evaluated by the current training batch, respectively. The sixth and seventh columns display the RMS force error (component-wise) evaluated by `numb_test` frames randomly chosen from the test set and that evaluated by the current training batch, respectively. The last column displays the current learning rate.
 
+**For tracking and visualizing the training process, TensorBoard is now avaible with deepmd-kit.**[A detailed documentation of how to enable the tensorboard analysis is available.](/media/docs/dp-tensorboard-tutorial.md)
+
 Checkpoints will be written to files with prefix **`save_ckpt`** every **`save_freq`** batches. If **`restart`** is set to `true`, then the training will start from the checkpoint named **`load_ckpt`**, rather than from scratch.
 
 Several command line options can be passed to `dp train`, which can be checked with
@@ -528,7 +536,7 @@ Running an MD simulation with LAMMPS is simpler. In the LAMMPS input file, one n
 pair_style     deepmd graph.pb
 pair_coeff     
 ```
-where `graph.pb` is the file name of the frozen model. The `pair_coeff` should be left blank. It should be noted that LAMMPS counts atom types starting from 1, therefore, all LAMMPS atom type will be firstly subtracted by 1, and then passed into the DeePMD-kit engine to compute the interactions. [A detailed documentation of this pair style is available.](doc/lammps-pair-style-deepmd.md).
+where `graph.pb` is the file name of the frozen model. The `pair_coeff` should be left blank. It should be noted that LAMMPS counts atom types starting from 1, therefore, all LAMMPS atom type will be firstly subtracted by 1, and then passed into the DeePMD-kit engine to compute the interactions. [A detailed documentation of this pair style is available.](/media/docs/lammps-pair-style-deepmd.md).
 
 ### Long-range interaction
 The reciprocal space part of the long-range interaction can be calculated by LAMMPS command `kspace_style`. To use it with DeePMD-kit, one writes 
