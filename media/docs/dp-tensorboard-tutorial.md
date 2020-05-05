@@ -45,14 +45,17 @@ Before running TensorBoard, make sure you have generated summary data in a log d
     }
 ```
 
-Once you have event files, run TensorBoard and provide the log directory. This should print that TensorBoard has started. Next, connect to http://tensorboard_server_ip:6006.
-
-TensorBoard requires a logdir to read logs from. For info on configuring TensorBoard, run tensorboard --help.
-One can easily change the log name with "tensorboard_log_file".
+Once you have event files, run TensorBoard and provide the log directory.
 
 ```bash
 tensorboard --logdir path/to/logs
 ```
+
+This should print that TensorBoard has started. Next, connect to http://tensorboard_server_ip:6006.
+
+TensorBoard requires a logdir to read logs from. For info on configuring TensorBoard, run tensorboard --help.One can easily change the log name with "tensorboard_log_file".
+
+
 
 ## Examples
 
