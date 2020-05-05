@@ -71,20 +71,6 @@ void GeluGradLauncher(const double * dy, const double * in, double * out, int co
     gelu_grad<<<BLOCK_NUMS, THREAD_ITEMS>>>(dy, in, out, size);
 }
 
-void GeluGradSLauncher(const float * in, float * out, int const size) {
-    int const THREAD_ITEMS = 1024;
-    int const BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
-
-    gelu_grad_s<<<BLOCK_NUMS, THREAD_ITEMS>>>(in, out, size);
-}
-
-void GeluGradSLauncher(const double * in, double * out, int const size) {
-    int const THREAD_ITEMS = 1024;
-    int const BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
-
-    gelu_grad_s<<<BLOCK_NUMS, THREAD_ITEMS>>>(in, out, size);
-}
-
 void GeluGradGradLauncher(const float * dy, const float * dy_, const float * in, float * out, int const size) {
     int const THREAD_ITEMS = 1024;
     int const BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
