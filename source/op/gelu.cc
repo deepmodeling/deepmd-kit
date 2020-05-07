@@ -11,32 +11,20 @@ using GPUDevice = Eigen::GpuDevice;
 REGISTER_OP("Gelu")
     .Attr("T: {float, double}")
     .Input("x: T")
-    .Output("output: T")
-    .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
-        c->set_output(0, c->input(0));
-        return Status::OK();
-    });
+    .Output("output: T");
 
 REGISTER_OP("GeluGrad")
     .Attr("T: {float, double}")
     .Input("dy: T")
     .Input("x: T")
-    .Output("output: T")
-    .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
-        c->set_output(0, c->input(1));
-        return Status::OK();
-    });
+    .Output("output: T");
 
 REGISTER_OP("GeluGradGrad")
     .Attr("T: {float, double}")
     .Input("dy: T")
     .Input("dy_: T")
     .Input("x: T")
-    .Output("output: T")
-    .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
-        c->set_output(0, c->input(2));
-        return Status::OK();
-    });
+    .Output("output: T");
 
 template <typename Device, typename T>
 struct GeluFunctor {

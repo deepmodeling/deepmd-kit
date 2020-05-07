@@ -367,6 +367,7 @@ class DescrptSeA ():
                                     trainable = trainable)
                 # only used when tensorboard was set as true
                 variable_summaries(b, 'bias_'+str(ii)+'_'+str(type_i))
+                hidden = tf.reshape(activation_fn(tf.matmul(xyz_scatter, w) + b), [-1, outputs_size[ii]])
                 if self.filter_resnet_dt :
                     idt = tf.get_variable('idt_'+str(ii)+'_'+str(type_i), 
                                           [1, outputs_size[ii]], 
@@ -376,16 +377,16 @@ class DescrptSeA ():
                     variable_summaries(idt, 'idt_'+str(ii)+'_'+str(type_i))
                 if outputs_size[ii] == outputs_size[ii-1]:
                     if self.filter_resnet_dt :
-                        xyz_scatter += activation_fn(tf.matmul(xyz_scatter, w) + b) * idt
+                        xyz_scatter += hidden * idt
                     else :
-                        xyz_scatter += activation_fn(tf.matmul(xyz_scatter, w) + b)
+                        xyz_scatter += hidden
                 elif outputs_size[ii] == outputs_size[ii-1] * 2: 
                     if self.filter_resnet_dt :
-                        xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + activation_fn(tf.matmul(xyz_scatter, w) + b) * idt
+                        xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + hidden * idt
                     else :
-                        xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + activation_fn(tf.matmul(xyz_scatter, w) + b)
+                        xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + hidden
                 else:
-                    xyz_scatter = activation_fn(tf.matmul(xyz_scatter, w) + b)
+                    xyz_scatter = hidden
             else:
               w = tf.zeros((outputs_size[0], outputs_size[-1]), dtype=global_tf_float_precision)
               xyz_scatter = tf.matmul(xyz_scatter, w)
@@ -457,6 +458,7 @@ class DescrptSeA ():
                                 tf.random_normal_initializer(stddev=stddev, mean = bavg, seed = seed),
                                   trainable = trainable)
               variable_summaries(b, 'bias_'+str(ii)+'_'+str(type_i))
+              hidden = tf.reshape(activation_fn(tf.matmul(xyz_scatter, w) + b), [-1, outputs_size[ii]])
               if self.filter_resnet_dt :
                   idt = tf.get_variable('idt_'+str(ii)+'_'+str(type_i), 
                                         [1, outputs_size[ii]], 
@@ -466,16 +468,16 @@ class DescrptSeA ():
                   variable_summaries(idt, 'idt_'+str(ii)+'_'+str(type_i))
               if outputs_size[ii] == outputs_size[ii-1]:
                   if self.filter_resnet_dt :
-                      xyz_scatter += activation_fn(tf.matmul(xyz_scatter, w) + b) * idt
+                      xyz_scatter += hidden * idt
                   else :
-                      xyz_scatter += activation_fn(tf.matmul(xyz_scatter, w) + b)
+                      xyz_scatter += hidden
               elif outputs_size[ii] == outputs_size[ii-1] * 2: 
                   if self.filter_resnet_dt :
-                      xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + activation_fn(tf.matmul(xyz_scatter, w) + b) * idt
+                      xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + hidden * idt
                   else :
-                      xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + activation_fn(tf.matmul(xyz_scatter, w) + b)
+                      xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + hidden
               else:
-                  xyz_scatter = activation_fn(tf.matmul(xyz_scatter, w) + b)
+                  xyz_scatter = hidden
             # natom x nei_type_i x out_size
             xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1]//4, outputs_size[-1]))
             # natom x nei_type_i x 4  
