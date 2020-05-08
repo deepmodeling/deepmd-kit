@@ -3,7 +3,7 @@ from skbuild.exceptions import SKBuildError
 from skbuild.cmaker import get_cmake_version
 from packaging.version import LegacyVersion
 from os import path, makedirs
-import imp
+import imp, sys, platform
 
 readme_file = path.join(path.dirname(path.abspath(__file__)), 'README.md')
 try:
@@ -34,10 +34,17 @@ try:
 except OSError:
     pass
 
+site_packages_path = path.join(path.dirname(path.__file__), 'site-packages') + '/deepmd_kit-'
+sys_info = '-py' + str(sys.version_info.major + sys.version_info.minor * 0.1) + '-' + sys.platform + '-' + platform.machine() + '.egg'
+
 setup(
     name="deepmd-kit",
     setup_requires=setup_requires,
-    use_scm_version={'write_to': 'deepmd/_version.py'},
+    use_scm_version={
+        'write_to': 'deepmd/_version.py',
+        'write_to_template': "version = '{version}'",
+        'tag_regex': r'^(?P<prefix>v)?(?P<version>[^\+]+)(?P<suffix>.*)?$',
+    },
     author="Han Wang",
     author_email="wang_han@iapcm.ac.cn",
     description="A deep learning package for many-body potential energy representation and molecular dynamics",
@@ -56,6 +63,8 @@ setup(
                 '-DBUILD_PY_IF:BOOL=TRUE', 
                 '-DBUILD_CPP_IF:BOOL=FALSE',
                 '-DFLOAT_PREC:STRING=high',
+                '-DSITE_PACKAGE_DIR:STRING=%s' % site_packages_path,
+                '-DSYSTEM_INFO:STRING=%s' % sys_info,
     ],
     cmake_source_dir='source',
     cmake_minimum_required_version='3.0',
