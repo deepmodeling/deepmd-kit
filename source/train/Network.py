@@ -41,9 +41,9 @@ def one_layer(inputs,
                 # return activation_fn(hidden_bn)
             else:
                 if use_timestep :
-                    return activation_fn(hidden) * idt
+                    return tf.reshape(activation_fn(hidden), [-1, outputs_size]) * idt
                 else :
-                    return activation_fn(hidden)                    
+                    return tf.reshape(activation_fn(hidden), [-1, outputs_size])                    
         else:
             if useBN:
                 None

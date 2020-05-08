@@ -83,7 +83,7 @@ set (SOURCE_FILES
     descrpt_se_a.cu descrpt_se_r.cu prod_force_se_a.cu prod_force_se_r.cu prod_virial_se_a.cu prod_virial_se_r.cu gelu.cu 
 )
 
-cuda_add_library(deepmd_op_cuda STATIC ${SOURCE_FILES})
+cuda_add_library(deepmd_op_cuda SHARED ${SOURCE_FILES})
 
 if (BUILD_CPP_IF)
     install(TARGETS deepmd_op_cuda DESTINATION lib/)
