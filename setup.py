@@ -34,8 +34,7 @@ try:
 except OSError:
     pass
 
-site_packages_path = path.join(path.dirname(path.__file__), 'site-packages') + '/deepmd_kit-'
-sys_info = '-py' + str(sys.version_info.major + sys.version_info.minor * 0.1) + '-' + sys.platform + '-' + platform.machine() + '.egg'
+site_packages_path = path.join(path.dirname(path.__file__), 'site-packages') + '/deepmd_kit/lib'
 
 setup(
     name="deepmd-kit",
@@ -64,7 +63,6 @@ setup(
                 '-DBUILD_CPP_IF:BOOL=FALSE',
                 '-DFLOAT_PREC:STRING=high',
                 '-DSITE_PACKAGE_DIR:STRING=%s' % site_packages_path,
-                '-DSYSTEM_INFO:STRING=%s' % sys_info,
     ],
     cmake_source_dir='source',
     cmake_minimum_required_version='3.0',
