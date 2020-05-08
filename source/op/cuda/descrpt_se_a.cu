@@ -18,7 +18,7 @@ limitations under the License.
 #include <cub/block/block_radix_sort.cuh>
 #include <cuda_runtime.h>
 
-#define MAGIC_NUMBER 256
+#define MAGIC_NUMBER 1024
 
 #ifdef HIGH_PREC
     typedef double  VALUETYPE;
@@ -326,7 +326,7 @@ void DescrptSeALauncher(const VALUETYPE* coord,
                             i_idx
         );
         const int ITEMS_PER_THREAD = 4;
-        const int BLOCK_THREADS = 64;
+        const int BLOCK_THREADS = MAGIC_NUMBER / ITEMS_PER_THREAD;
         // BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
         BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAGIC_NUMBER);
         
