@@ -12,9 +12,10 @@ def get_dp_install_path() :
     python_version     = 'py' + str(sys.version_info.major + sys.version_info.minor * 0.1)
     os_info            = sys.platform
     machine_info       = platform.machine()
-    dp_install_path    = site_packages_path + '/deepmd_kit-' + dp_scm_version + '-' + python_version + '-' + os_info + '-' + machine_info + '.egg/deepmd'
+    dp_pip_install_path    = site_packages_path + '/deepmd'
+    dp_setup_install_path    = site_packages_path + '/deepmd_kit-' + dp_scm_version + '-' + python_version + '-' + os_info + '-' + machine_info + '.egg/deepmd'
     
-    return dp_install_path
+    return dp_pip_install_path, dp_setup_install_path
 
 readme_file = path.join(path.dirname(path.abspath(__file__)), 'README.md')
 try:
@@ -45,7 +46,7 @@ try:
 except OSError:
     pass
 
-dp_install_path = get_dp_install_path()
+dp_pip_install_path, dp_setup_install_path = get_dp_install_path()
 
 setup(
     name="deepmd-kit",
@@ -69,7 +70,8 @@ setup(
                 '-DBUILD_PY_IF:BOOL=TRUE', 
                 '-DBUILD_CPP_IF:BOOL=FALSE',
                 '-DFLOAT_PREC:STRING=high',
-                '-DDP_INSTALL_PATH=%s' % dp_install_path,
+                '-DDP_PIP_INSTALL_PATH=%s' % dp_pip_install_path,
+                '-DDP_SETUP_INSTALL_PATH=%s' % dp_setup_install_path,
     ],
     cmake_source_dir='source',
     cmake_minimum_required_version='3.0',
