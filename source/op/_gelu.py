@@ -7,9 +7,9 @@ from tensorflow.python.framework import ops
 from deepmd.env import op_module
 
 @ops.RegisterGradient("Gelu")
-def gelu_cc (op, dy) :
+def _gelu_cc (op, dy) :
     return op_module.gelu_grad(dy, op.inputs[0])     
 
 @ops.RegisterGradient("GeluGrad")
-def gelu_grad_cc (op, dy) :
-    return [None, op_module.gelu_grad_grad(dy, op.inputs[0], op.inputs[1])]
+def _gelu_grad_cc (op, dy) :
+    return [op_module.gelu_grad(dy, op.inputs[1]), op_module.gelu_grad_grad(dy, op.inputs[0], op.inputs[1])]
