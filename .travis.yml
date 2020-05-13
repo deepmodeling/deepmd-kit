@@ -83,7 +83,7 @@ jobs:
         - CXX=g++-7
         - TENSORFLOW_VERSION=2.1
       install:
-        - python -m pip install twine cibuildwheel==1.1.0 scikit-build
+        - python -m pip install twine cibuildwheel==1.1.0 scikit-build setuptools_scm
       script:
         - python -m cibuildwheel --output-dir wheelhouse
         - python setup.py sdist
