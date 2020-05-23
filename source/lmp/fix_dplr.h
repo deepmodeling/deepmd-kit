@@ -45,6 +45,7 @@ private:
     map<int,int > bk_type_asso;
     vector<FLOAT_PREC> dipole_recd;
     vector<double> dfcorr_buff;
+    vector<double> efield;
     void get_valid_pairs(vector<pair<int,int> >& pairs);
   };
 }
