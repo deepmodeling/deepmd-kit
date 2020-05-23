@@ -1,23 +1,10 @@
-import platform
-import os,sys,warnings
 import numpy as np
 from deepmd.env import tf
-from deepmd.common import ClassArg
+from deepmd.common import ClassArg, get_activation_func, get_precision
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
-from deepmd.RunOptions import global_cvt_2_tf_float
-from deepmd.RunOptions import global_cvt_2_ener_float
-
-if platform.system() == "Windows":
-    ext = "dll"
-elif platform.system() == "Darwin":
-    ext = "dylib"
-else:
-    ext = "so"
-module_path = os.path.dirname(os.path.realpath(__file__)) + "/"
-assert (os.path.isfile (module_path  + "libop_abi.{}".format(ext) )), "op module does not exist"
-op_module = tf.load_op_library(module_path + "libop_abi.{}".format(ext))
+from deepmd.env import op_module
+from deepmd.env import default_tf_session_config
 
 class DescrptSeA ():
     def __init__ (self, jdata):
@@ -29,7 +16,11 @@ class DescrptSeA ():
                .add('axis_neuron', int, default = 4, alias = 'n_axis_neuron') \
                .add('resnet_dt',bool,   default = False) \
                .add('trainable',bool,   default = True) \
-               .add('seed',     int) 
+               .add('seed',     int) \
+               .add('exclude_types', list, default = []) \
+               .add('set_davg_zero', bool, default = False) \
+               .add('activation_function', str,    default = 'tanh') \
+               .add('precision', str, default = "default")
         class_data = args.parse(jdata)
         self.sel_a = class_data['sel']
         self.rcut_r = class_data['rcut']
@@ -39,6 +30,15 @@ class DescrptSeA ():
         self.filter_resnet_dt = class_data['resnet_dt']
         self.seed = class_data['seed']
         self.trainable = class_data['trainable']
+        self.filter_activation_fn = get_activation_func(class_data['activation_function'])
+        self.filter_precision = get_precision(class_data['precision'])
+        exclude_types = class_data['exclude_types']
+        self.exclude_types = set()
+        for tt in exclude_types:
+            assert(len(tt) == 2)
+            self.exclude_types.add((tt[0], tt[1]))
+            self.exclude_types.add((tt[1], tt[0]))
+        self.set_davg_zero = class_data['set_davg_zero']
 
         # descrpt config
         self.sel_r = [ 0 for ii in range(len(self.sel_a)) ]
@@ -52,8 +52,35 @@ class DescrptSeA ():
         self.ndescrpt_a = self.nnei_a * 4
         self.ndescrpt_r = self.nnei_r * 1
         self.ndescrpt = self.ndescrpt_a + self.ndescrpt_r
-
         self.useBN = False
+        self.dstd = None
+        self.davg = None
+
+        self.place_holders = {}
+        avg_zero = np.zeros([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
+        std_ones = np.ones ([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
+        sub_graph = tf.Graph()
+        with sub_graph.as_default():
+            name_pfx = 'd_sea_'
+            for ii in ['coord', 'box']:
+                self.place_holders[ii] = tf.placeholder(global_np_float_precision, [None, None], name = name_pfx+'t_'+ii)
+            self.place_holders['type'] = tf.placeholder(tf.int32, [None, None], name=name_pfx+'t_type')
+            self.place_holders['natoms_vec'] = tf.placeholder(tf.int32, [self.ntypes+2], name=name_pfx+'t_natoms')
+            self.place_holders['default_mesh'] = tf.placeholder(tf.int32, [None], name=name_pfx+'t_mesh')
+            self.stat_descrpt, descrpt_deriv, rij, nlist \
+                = op_module.descrpt_se_a(self.place_holders['coord'],
+                                         self.place_holders['type'],
+                                         self.place_holders['natoms_vec'],
+                                         self.place_holders['box'],
+                                         self.place_holders['default_mesh'],
+                                         tf.constant(avg_zero),
+                                         tf.constant(std_ones),
+                                         rcut_a = self.rcut_a,
+                                         rcut_r = self.rcut_r,
+                                         rcut_r_smth = self.rcut_r_smth,
+                                         sel_a = self.sel_a,
+                                         sel_r = self.sel_r)
+        self.sub_sess = tf.Session(graph = sub_graph, config=default_tf_session_config)
 
 
     def get_rcut (self) :
@@ -71,7 +98,7 @@ class DescrptSeA ():
     def get_nlist (self) :
         return self.nlist, self.rij, self.sel_a, self.sel_r
 
-    def compute_dstats (self,
+    def compute_input_stats (self,
                         data_coord, 
                         data_box, 
                         data_atype, 
@@ -110,10 +137,9 @@ class DescrptSeA ():
                 all_davg.append(davg)
                 all_dstd.append(dstd)
 
-        davg = np.array(all_davg)
-        dstd = np.array(all_dstd)
-
-        return davg, dstd
+        if not self.set_davg_zero:
+            self.davg = np.array(all_davg)
+        self.dstd = np.array(all_dstd)
 
 
     def build (self, 
@@ -122,11 +148,10 @@ class DescrptSeA ():
                natoms,
                box_, 
                mesh,
-               davg = None, 
-               dstd = None,
                suffix = '', 
                reuse = None):
-
+        davg = self.davg
+        dstd = self.dstd
         with tf.variable_scope('descrpt_attr' + suffix, reuse = reuse) :
             if davg is None:
                 davg = np.zeros([self.ntypes, self.ndescrpt]) 
@@ -138,6 +163,12 @@ class DescrptSeA ():
             t_ntypes = tf.constant(self.ntypes, 
                                    name = 'ntypes', 
                                    dtype = tf.int32)
+            t_ndescrpt = tf.constant(self.ndescrpt, 
+                                     name = 'ndescrpt', 
+                                     dtype = tf.int32)            
+            t_sel = tf.constant(self.sel_a, 
+                                name = 'sel', 
+                                dtype = tf.int32)            
             self.t_avg = tf.get_variable('t_avg', 
                                          davg.shape, 
                                          dtype = global_tf_float_precision,
@@ -168,6 +199,10 @@ class DescrptSeA ():
                                        sel_r = self.sel_r)
 
         self.descrpt_reshape = tf.reshape(self.descrpt, [-1, self.ndescrpt])
+        self.descrpt_reshape = tf.identity(self.descrpt_reshape, name = 'o_rmat')
+        self.descrpt_deriv = tf.identity(self.descrpt_deriv, name = 'o_rmat_deriv')
+        self.rij = tf.identity(self.rij, name = 'o_rij')
+        self.nlist = tf.identity(self.nlist, name = 'o_nlist')
 
         self.dout, self.qmat = self._pass_filter(self.descrpt_reshape, natoms, suffix = suffix, reuse = reuse, trainable = self.trainable)
 
@@ -207,7 +242,6 @@ class DescrptSeA ():
                      trainable = True) :
         start_index = 0
         inputs = tf.reshape(inputs, [-1, self.ndescrpt * natoms[0]])
-        shape = inputs.get_shape().as_list()
         output = []
         output_qmat = []
         for type_i in range(self.ntypes):
@@ -215,7 +249,7 @@ class DescrptSeA ():
                                  [ 0, start_index*      self.ndescrpt],
                                  [-1, natoms[2+type_i]* self.ndescrpt] )
             inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
-            layer, qmat = self._filter(inputs_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, seed = self.seed, trainable = trainable)
+            layer, qmat = self._filter(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, seed = self.seed, trainable = trainable, activation_fn = self.filter_activation_fn)
             layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_out()])
             qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_rot_mat_1() * 3])
             output.append(layer)
@@ -232,32 +266,15 @@ class DescrptSeA ():
                                  data_atype,                             
                                  natoms_vec,
                                  mesh) :    
-        avg_zero = np.zeros([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
-        std_ones = np.ones ([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
-        sub_graph = tf.Graph()
-        with sub_graph.as_default():
-            descrpt, descrpt_deriv, rij, nlist \
-                = op_module.descrpt_se_a (tf.constant(data_coord),
-                                           tf.constant(data_atype),
-                                           tf.constant(natoms_vec, dtype = tf.int32),
-                                           tf.constant(data_box),
-                                           tf.constant(mesh),
-                                           tf.constant(avg_zero),
-                                           tf.constant(std_ones),
-                                           rcut_a = self.rcut_a,
-                                           rcut_r = self.rcut_r,
-                                           rcut_r_smth = self.rcut_r_smth,
-                                           sel_a = self.sel_a,
-                                           sel_r = self.sel_r)
-        # self.sess.run(tf.global_variables_initializer())
-        # sub_sess = tf.Session(graph = sub_graph,
-        #                       config=tf.ConfigProto(intra_op_parallelism_threads=self.run_opt.num_intra_threads, 
-        #                                             inter_op_parallelism_threads=self.run_opt.num_inter_threads
-
-        #                       ))
-        sub_sess = tf.Session(graph = sub_graph)
-        dd_all = sub_sess.run(descrpt)
-        sub_sess.close()
+        dd_all \
+            = self.sub_sess.run(self.stat_descrpt, 
+                                feed_dict = {
+                                    self.place_holders['coord']: data_coord,
+                                    self.place_holders['type']: data_atype,
+                                    self.place_holders['natoms_vec']: natoms_vec,
+                                    self.place_holders['box']: data_box,
+                                    self.place_holders['default_mesh']: mesh,
+                                })
         natoms = natoms_vec
         dd_all = np.reshape(dd_all, [-1, self.ndescrpt * natoms[0]])
         start_index = 0
@@ -297,6 +314,7 @@ class DescrptSeA ():
 
     def _filter(self, 
                    inputs, 
+                   type_input,
                    natoms,
                    activation_fn=tf.nn.tanh, 
                    stddev=1.0,
@@ -323,35 +341,39 @@ class DescrptSeA ():
             # with (natom x nei_type_i) x 4  
             inputs_reshape = tf.reshape(inputs_i, [-1, 4])
             xyz_scatter = tf.reshape(tf.slice(inputs_reshape, [0,0],[-1,1]),[-1,1])
-            for ii in range(1, len(outputs_size)):
-              w = tf.get_variable('matrix_'+str(ii)+'_'+str(type_i), 
-                                [outputs_size[ii - 1], outputs_size[ii]], 
-                                global_tf_float_precision,
-                                  tf.random_normal_initializer(stddev=stddev/np.sqrt(outputs_size[ii]+outputs_size[ii-1]), seed = seed), 
-                                  trainable = trainable)
-              b = tf.get_variable('bias_'+str(ii)+'_'+str(type_i), 
-                                [1, outputs_size[ii]], 
-                                global_tf_float_precision,
-                                tf.random_normal_initializer(stddev=stddev, mean = bavg, seed = seed), 
-                                  trainable = trainable)
-              if self.filter_resnet_dt :
-                  idt = tf.get_variable('idt_'+str(ii)+'_'+str(type_i), 
-                                        [1, outputs_size[ii]], 
-                                        global_tf_float_precision,
-                                        tf.random_normal_initializer(stddev=0.001, mean = 1.0, seed = seed), 
-                                        trainable = trainable)
-              if outputs_size[ii] == outputs_size[ii-1]:
-                  if self.filter_resnet_dt :
-                      xyz_scatter += activation_fn(tf.matmul(xyz_scatter, w) + b) * idt
-                  else :
-                      xyz_scatter += activation_fn(tf.matmul(xyz_scatter, w) + b)
-              elif outputs_size[ii] == outputs_size[ii-1] * 2: 
-                  if self.filter_resnet_dt :
-                      xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + activation_fn(tf.matmul(xyz_scatter, w) + b) * idt
-                  else :
-                      xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + activation_fn(tf.matmul(xyz_scatter, w) + b)
-              else:
-                  xyz_scatter = activation_fn(tf.matmul(xyz_scatter, w) + b)
+            if (type_input, type_i) not in self.exclude_types:
+              for ii in range(1, len(outputs_size)):
+                w = tf.get_variable('matrix_'+str(ii)+'_'+str(type_i), 
+                                  [outputs_size[ii - 1], outputs_size[ii]], 
+                                  self.filter_precision,
+                                    tf.random_normal_initializer(stddev=stddev/np.sqrt(outputs_size[ii]+outputs_size[ii-1]), seed = seed), 
+                                    trainable = trainable)
+                b = tf.get_variable('bias_'+str(ii)+'_'+str(type_i), 
+                                  [1, outputs_size[ii]], 
+                                  self.filter_precision,
+                                  tf.random_normal_initializer(stddev=stddev, mean = bavg, seed = seed), 
+                                    trainable = trainable)
+                if self.filter_resnet_dt :
+                    idt = tf.get_variable('idt_'+str(ii)+'_'+str(type_i), 
+                                          [1, outputs_size[ii]], 
+                                          self.filter_precision,
+                                          tf.random_normal_initializer(stddev=0.001, mean = 1.0, seed = seed), 
+                                          trainable = trainable)
+                if outputs_size[ii] == outputs_size[ii-1]:
+                    if self.filter_resnet_dt :
+                        xyz_scatter += activation_fn(tf.matmul(xyz_scatter, w) + b) * idt
+                    else :
+                        xyz_scatter += activation_fn(tf.matmul(xyz_scatter, w) + b)
+                elif outputs_size[ii] == outputs_size[ii-1] * 2: 
+                    if self.filter_resnet_dt :
+                        xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + activation_fn(tf.matmul(xyz_scatter, w) + b) * idt
+                    else :
+                        xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + activation_fn(tf.matmul(xyz_scatter, w) + b)
+                else:
+                    xyz_scatter = activation_fn(tf.matmul(xyz_scatter, w) + b)
+            else:
+              w = tf.zeros((outputs_size[0], outputs_size[-1]), dtype=global_tf_float_precision)
+              xyz_scatter = tf.matmul(xyz_scatter, w)
             # natom x nei_type_i x out_size
             xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1]//4, outputs_size[-1]))
             xyz_scatter_total.append(xyz_scatter)
@@ -389,7 +411,6 @@ class DescrptSeA ():
                            seed=None,
                          trainable = True):
         # natom x (nei x 4)
-        shape = inputs.get_shape().as_list()
         outputs_size = [1] + self.filter_neuron
         outputs_size_2 = self.n_axis_neuron
         with tf.variable_scope(name, reuse=reuse):
@@ -411,18 +432,18 @@ class DescrptSeA ():
             for ii in range(1, len(outputs_size)):
               w = tf.get_variable('matrix_'+str(ii)+'_'+str(type_i), 
                                 [outputs_size[ii - 1], outputs_size[ii]], 
-                                global_tf_float_precision,
+                                self.filter_precision,
                                   tf.random_normal_initializer(stddev=stddev/np.sqrt(outputs_size[ii]+outputs_size[ii-1]), seed = seed),
                                   trainable = trainable)
               b = tf.get_variable('bias_'+str(ii)+'_'+str(type_i), 
                                 [1, outputs_size[ii]], 
-                                global_tf_float_precision,
+                                self.filter_precision,
                                 tf.random_normal_initializer(stddev=stddev, mean = bavg, seed = seed),
                                   trainable = trainable)
               if self.filter_resnet_dt :
                   idt = tf.get_variable('idt_'+str(ii)+'_'+str(type_i), 
                                         [1, outputs_size[ii]], 
-                                        global_tf_float_precision,
+                                        self.filter_precision,
                                         tf.random_normal_initializer(stddev=0.001, mean = 1.0, seed = seed),
                                         trainable = trainable)
               if outputs_size[ii] == outputs_size[ii-1]:

@@ -1,26 +1,70 @@
-import os,sys,warnings
-import platform
 import numpy as np
 from deepmd.env import tf
 from collections import defaultdict
 from deepmd.TabInter import TabInter
 from deepmd.common import ClassArg
 
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
-from deepmd.RunOptions import global_cvt_2_tf_float
 from deepmd.RunOptions import global_cvt_2_ener_float
+from deepmd.env import op_module
 
-if platform.system() == "Windows":
-    ext = "dll"
-elif platform.system() == "Darwin":
-    ext = "dylib"
-else:
-    ext = "so"
-module_path = os.path.dirname(os.path.realpath(__file__)) + "/"
-assert (os.path.isfile (module_path  + "libop_abi.{}".format(ext) )), "op module does not exist"
-op_module = tf.load_op_library(module_path + "libop_abi.{}".format(ext))
+
+def _make_all_stat_ref(data, nbatches):
+    all_stat = defaultdict(list)
+    for ii in range(data.get_nsystems()) :
+        for jj in range(nbatches) :
+            stat_data = data.get_batch (sys_idx = ii)
+            for dd in stat_data:
+                if dd == "natoms_vec":
+                    stat_data[dd] = stat_data[dd].astype(np.int32) 
+                all_stat[dd].append(stat_data[dd])        
+    return all_stat
+
+
+def make_all_stat(data, nbatches, merge_sys = True):
+    """
+    pack data for statistics
+    Parameters
+    ----------
+    data:
+        The data
+    merge_sys: bool (True)
+        Merge system data
+    Returns
+    -------
+    all_stat:
+        A dictionary of list of list storing data for stat. 
+        if merge_sys == False data can be accessed by 
+            all_stat[key][sys_idx][batch_idx][frame_idx]
+        else merge_sys == True can be accessed by 
+            all_stat[key][batch_idx][frame_idx]
+    """
+    all_stat = defaultdict(list)
+    for ii in range(data.get_nsystems()) :
+        sys_stat =  defaultdict(list)
+        for jj in range(nbatches) :
+            stat_data = data.get_batch (sys_idx = ii)
+            for dd in stat_data:
+                if dd == "natoms_vec":
+                    stat_data[dd] = stat_data[dd].astype(np.int32) 
+                sys_stat[dd].append(stat_data[dd])
+        for dd in sys_stat:
+            if merge_sys:
+                for bb in sys_stat[dd]:
+                    all_stat[dd].append(bb)
+            else:                    
+                all_stat[dd].append(sys_stat[dd])
+    return all_stat
+
+def merge_sys_stat(all_stat):
+    first_key = list(all_stat.keys())[0]
+    nsys = len(all_stat[first_key])
+    ret = defaultdict(list)
+    for ii in range(nsys):
+        for dd in all_stat:
+            for bb in all_stat[dd][ii]:
+                ret[dd].append(bb)
+    return ret
+
 
 class Model() :
     model_type = 'ener'
@@ -35,14 +79,12 @@ class Model() :
 
         args = ClassArg()\
                .add('type_map',         list,   default = []) \
-               .add('rcond',            float,  default = 1e-3) \
                .add('data_stat_nbatch', int,    default = 10) \
                .add('data_stat_protect',float,  default = 1e-2) \
                .add('use_srtab',        str)
         class_data = args.parse(jdata)
         self.type_map = class_data['type_map']
         self.srtab_name = class_data['use_srtab']
-        self.rcond = class_data['rcond']
         self.data_stat_nbatch = class_data['data_stat_nbatch']
         self.data_stat_protect = class_data['data_stat_protect']
         if self.srtab_name is not None :
@@ -68,26 +110,23 @@ class Model() :
         return self.type_map
 
     def data_stat(self, data):
-        all_stat = defaultdict(list)
-        for ii in range(data.get_nsystems()) :
-            for jj in range(self.data_stat_nbatch) :
-                stat_data = data.get_batch (sys_idx = ii)
-                for dd in stat_data:
-                    if dd == "natoms_vec":
-                        stat_data[dd] = stat_data[dd].astype(np.int32) 
-                    all_stat[dd].append(stat_data[dd])        
-        self._compute_dstats (all_stat, protection = self.data_stat_protect)
-        self.bias_atom_e = data.compute_energy_shift(self.rcond)
+        all_stat = make_all_stat(data, self.data_stat_nbatch, merge_sys = False)
+        m_all_stat = merge_sys_stat(all_stat)
+        self._compute_input_stat(m_all_stat, protection = self.data_stat_protect)
+        self._compute_output_stat(all_stat)
+        # self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
+    def _compute_input_stat (self, all_stat, protection = 1e-2) :
+        self.descrpt.compute_input_stats(all_stat['coord'],
+                                         all_stat['box'],
+                                         all_stat['type'],
+                                         all_stat['natoms_vec'],
+                                         all_stat['default_mesh'])
+        self.fitting.compute_input_stats(all_stat, protection = protection)
 
-    def _compute_dstats (self, all_stat, protection = 1e-2) :
-        self.davg, self.dstd \
-            = self.descrpt.compute_dstats(all_stat['coord'],
-                                          all_stat['box'],
-                                          all_stat['type'],
-                                          all_stat['natoms_vec'],
-                                          all_stat['default_mesh'])        
-        self.fitting.compute_dstats(all_stat, protection = protection)
+    def _compute_output_stat (self, all_stat) :
+        self.fitting.compute_output_stats(all_stat)
+
     
     def build (self, 
                coord_, 
@@ -129,8 +168,6 @@ class Model() :
                                  natoms,
                                  box,
                                  mesh,
-                                 davg = self.davg,
-                                 dstd = self.dstd,
                                  suffix = suffix,
                                  reuse = reuse)
         dout = tf.identity(dout, name='o_descriptor')
@@ -143,7 +180,6 @@ class Model() :
         atom_ener = self.fitting.build (dout, 
                                         input_dict, 
                                         natoms, 
-                                        bias_atom_e = self.bias_atom_e, 
                                         reuse = reuse, 
                                         suffix = suffix)
 
@@ -219,6 +255,8 @@ class Model() :
         model_dict['virial'] = virial
         model_dict['atom_ener'] = energy_raw
         model_dict['atom_virial'] = atom_virial
+        model_dict['coord'] = coord
+        model_dict['atype'] = atype
         
         return model_dict
 
@@ -234,10 +272,12 @@ class TensorModel() :
 
         args = ClassArg()\
                .add('type_map',         list,   default = []) \
-               .add('data_stat_nbatch', int,    default = 10)
+               .add('data_stat_nbatch', int,    default = 10) \
+               .add('data_stat_protect',float,  default = 1e-2)
         class_data = args.parse(jdata)
         self.type_map = class_data['type_map']
         self.data_stat_nbatch = class_data['data_stat_nbatch']
+        self.data_stat_protect = class_data['data_stat_protect']
     
     def get_rcut (self) :
         return self.rcut
@@ -255,23 +295,23 @@ class TensorModel() :
         return self.fitting.get_out_size()
 
     def data_stat(self, data):
-        all_stat = defaultdict(list)
-        for ii in range(data.get_nsystems()) :
-            for jj in range(self.data_stat_nbatch) :
-                stat_data = data.get_batch (sys_idx = ii)
-                for dd in stat_data:
-                    if dd == "natoms_vec":
-                        stat_data[dd] = stat_data[dd].astype(np.int32) 
-                    all_stat[dd].append(stat_data[dd])        
-        self._compute_dstats (all_stat)
+        all_stat = make_all_stat(data, self.data_stat_nbatch, merge_sys = False)
+        m_all_stat = merge_sys_stat(all_stat)        
+        self._compute_input_stat (m_all_stat, protection = self.data_stat_protect)
+        self._compute_output_stat(all_stat)
 
-    def _compute_dstats (self, all_stat) :        
-        self.davg, self.dstd \
-            = self.descrpt.compute_dstats(all_stat['coord'],
-                                          all_stat['box'],
-                                          all_stat['type'],
-                                          all_stat['natoms_vec'],
-                                          all_stat['default_mesh'])
+    def _compute_input_stat(self, all_stat, protection = 1e-2) :
+        self.descrpt.compute_input_stats(all_stat['coord'],
+                                         all_stat['box'],
+                                         all_stat['type'],
+                                         all_stat['natoms_vec'],
+                                         all_stat['default_mesh'])
+        if hasattr(self.fitting, 'compute_input_stats'):
+            self.fitting.compute_input_stats(all_stat, protection = protection)
+
+    def _compute_output_stat (self, all_stat) :
+        if hasattr(self.fitting, 'compute_output_stats'):
+            self.fitting.compute_output_stats(all_stat)
 
     def build (self, 
                coord_, 
@@ -292,9 +332,10 @@ class TensorModel() :
             t_mt = tf.constant(self.model_type, 
                                name = 'model_type', 
                                dtype = tf.string)
+            t_od = tf.constant(self.get_out_size(), 
+                               name = 'output_dim', 
+                               dtype = tf.int32)
 
-        coord = tf.reshape (coord_, [-1, natoms[1] * 3])
-        atype = tf.reshape (atype_, [-1, natoms[1]])
 
         dout \
             = self.descrpt.build(coord_,
@@ -302,8 +343,6 @@ class TensorModel() :
                                  natoms,
                                  box,
                                  mesh,
-                                 davg = self.davg,
-                                 dstd = self.dstd,
                                  suffix = suffix,
                                  reuse = reuse)
         dout = tf.identity(dout, name='o_descriptor')

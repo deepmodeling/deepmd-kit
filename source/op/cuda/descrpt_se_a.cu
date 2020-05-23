@@ -18,7 +18,7 @@ limitations under the License.
 #include <cub/block/block_radix_sort.cuh>
 #include <cuda_runtime.h>
 
-#define MAGIC_NUMBER 256
+#define MAGIC_NUMBER 1024
 
 #ifdef HIGH_PREC
     typedef double  VALUETYPE;
@@ -39,20 +39,6 @@ inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort=
         if (abort) exit(code);
     }
 }
-
-#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 600
-static __inline__ __device__ double atomicAdd(double* address, double val) {
-    unsigned long long int* address_as_ull = (unsigned long long int*)address;
-    unsigned long long int old = *address_as_ull, assumed;
-    do {
-        assumed = old;
-        old = atomicCAS(address_as_ull, assumed,
-                __double_as_longlong(val + __longlong_as_double(assumed)));
-    // Note: uses integer comparison to avoid hang in case of NaN (since NaN != NaN) } while (assumed != old);
-    } while (assumed != old);
-    return __longlong_as_double(old);
-}
-#endif
 
 template <
     typename    Key,
@@ -340,7 +326,7 @@ void DescrptSeALauncher(const VALUETYPE* coord,
                             i_idx
         );
         const int ITEMS_PER_THREAD = 4;
-        const int BLOCK_THREADS = 64;
+        const int BLOCK_THREADS = MAGIC_NUMBER / ITEMS_PER_THREAD;
         // BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
         BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAGIC_NUMBER);
         

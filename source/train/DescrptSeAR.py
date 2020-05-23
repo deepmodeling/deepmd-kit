@@ -1,26 +1,10 @@
-import platform
-import os,sys,warnings
 import numpy as np
 from deepmd.env import tf
 from deepmd.common import ClassArg
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
-from deepmd.RunOptions import global_cvt_2_tf_float
-from deepmd.RunOptions import global_cvt_2_ener_float
 
 from deepmd.DescrptSeA import DescrptSeA
 from deepmd.DescrptSeR import DescrptSeR
-
-if platform.system() == "Windows":
-    ext = "dll"
-elif platform.system() == "Darwin":
-    ext = "dylib"
-else:
-    ext = "so"
-module_path = os.path.dirname(os.path.realpath(__file__)) + "/"
-assert (os.path.isfile (module_path  + "libop_abi.{}".format(ext) )), "op module does not exist"
-op_module = tf.load_op_library(module_path + "libop_abi.{}".format(ext))
+from deepmd.env import op_module
 
 class DescrptSeAR ():
     def __init__ (self, jdata):
@@ -33,6 +17,8 @@ class DescrptSeAR ():
         self.descrpt_a = DescrptSeA(self.param_a)
         self.descrpt_r = DescrptSeR(self.param_r)        
         assert(self.descrpt_a.get_ntypes() == self.descrpt_r.get_ntypes())
+        self.davg = None
+        self.dstd = None
 
     def get_rcut (self) :
         return np.max([self.descrpt_a.get_rcut(), self.descrpt_r.get_rcut()])
@@ -49,15 +35,16 @@ class DescrptSeAR ():
     def get_nlist_r (self) :
         return self.descrpt_r.nlist, self.descrpt_r.rij, self.descrpt_r.sel_a, self.descrpt_r.sel_r
 
-    def compute_dstats (self,
+    def compute_input_stats (self,
                         data_coord, 
                         data_box, 
                         data_atype, 
                         natoms_vec,
                         mesh) :    
-        davg_a, dstd_a = self.descrpt_a.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh)
-        davg_r, dstd_r = self.descrpt_r.compute_dstats(data_coord, data_box, data_atype, natoms_vec, mesh)
-        return [davg_a, davg_r], [dstd_a, dstd_r]
+        self.descrpt_a.compute_input_stats(data_coord, data_box, data_atype, natoms_vec, mesh)
+        self.descrpt_r.compute_input_stats(data_coord, data_box, data_atype, natoms_vec, mesh)
+        self.davg = [self.descrpt_a.davg, self.descrpt_r.davg]
+        self.dstd = [self.descrpt_a.dstd, self.descrpt_r.dstd]
 
 
     def build (self, 
@@ -66,13 +53,19 @@ class DescrptSeAR ():
                natoms,
                box, 
                mesh,
-               davg,
-               dstd,
                suffix = '', 
                reuse = None):
+        davg = self.davg
+        dstd = self.dstd
+        if davg is None:
+            davg = [np.zeros([self.descrpt_a.ntypes, self.descrpt_a.ndescrpt]), 
+                    np.zeros([self.descrpt_r.ntypes, self.descrpt_r.ndescrpt])]
+        if dstd is None:
+            dstd = [np.ones ([self.descrpt_a.ntypes, self.descrpt_a.ndescrpt]), 
+                    np.ones ([self.descrpt_r.ntypes, self.descrpt_r.ndescrpt])]
         # dout
-        self.dout_a = self.descrpt_a.build(coord_, atype_, natoms, box, mesh, davg[0], dstd[0], suffix=suffix+'_a', reuse=reuse)
-        self.dout_r = self.descrpt_r.build(coord_, atype_, natoms, box, mesh, davg[1], dstd[1], suffix=suffix,      reuse=reuse)
+        self.dout_a = self.descrpt_a.build(coord_, atype_, natoms, box, mesh, suffix=suffix+'_a', reuse=reuse)
+        self.dout_r = self.descrpt_r.build(coord_, atype_, natoms, box, mesh, suffix=suffix     , reuse=reuse)
         self.dout_a = tf.reshape(self.dout_a, [-1, self.descrpt_a.get_dim_out()])
         self.dout_r = tf.reshape(self.dout_r, [-1, self.descrpt_r.get_dim_out()])
         self.dout = tf.concat([self.dout_a, self.dout_r], axis = 1)

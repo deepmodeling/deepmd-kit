@@ -24,9 +24,10 @@ from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
 
 class Inter():
-    def __init__ (self,
-                  data,
-                  comp = 0) :
+    def setUp (self,
+               data,
+               comp = 0, 
+               pbc = True) :
         self.sess = tf.Session()
         self.data = data
         self.natoms = self.data.get_natoms()
@@ -46,10 +47,13 @@ class Inter():
         dstd = np.ones  ([self.ntypes, self.ndescrpt])
         self.t_avg = tf.constant(davg.astype(global_np_float_precision))
         self.t_std = tf.constant(dstd.astype(global_np_float_precision))
-        self.default_mesh = np.zeros (6, dtype = np.int32)
-        self.default_mesh[3] = 2
-        self.default_mesh[4] = 2
-        self.default_mesh[5] = 2
+        if pbc:
+            self.default_mesh = np.zeros (6, dtype = np.int32)
+            self.default_mesh[3] = 2
+            self.default_mesh[4] = 2
+            self.default_mesh[5] = 2
+        else :
+            self.default_mesh = np.array([], dtype = np.int32)
         # make place holder
         self.coord      = tf.placeholder(global_tf_float_precision, [None, self.natoms[0] * 3], name='t_coord')
         self.box        = tf.placeholder(global_tf_float_precision, [None, 9], name='t_box')
@@ -77,12 +81,13 @@ class Inter():
                  tnatoms,
                  name,
                  reuse = None) :
+        t_default_mesh = tf.constant(self.default_mesh)
         descrpt, descrpt_deriv, rij, nlist, axis, rot_mat \
             = op_module.descrpt (dcoord, 
                                  dtype,
                                  tnatoms,
                                  dbox, 
-                                 tf.constant(self.default_mesh),
+                                 t_default_mesh,
                                  self.t_avg,
                                  self.t_std,
                                  rcut_a = self.rcut_a, 
@@ -153,49 +158,112 @@ class Inter():
 
 
 class TestNonSmooth(Inter, unittest.TestCase):
-    def __init__ (self, *args, **kwargs):
+    # def __init__ (self, *args, **kwargs):
+    #     self.places = 5
+    #     data = Data()
+    #     Inter.__init__(self, data)
+    #     unittest.TestCase.__init__(self, *args, **kwargs)
+    #     self.controller = object()
+
+    def setUp(self):
         self.places = 5
         data = Data()
-        Inter.__init__(self, data)
-        unittest.TestCase.__init__(self, *args, **kwargs)
-        self.controller = object()
+        Inter.setUp(self, data)
 
     def test_force (self) :
-        force_test(self, self)
-        # t_energy, t_force, t_virial \
-        #     = self.comp_ef (self.coord, self.box, self.type, self.tnatoms, name = "test")
-        # self.sess.run (tf.global_variables_initializer())
-        # dcoord, dbox, dtype = self.data.get_data ()
-        # hh = 1e-6
-        # dcoordp = np.copy(dcoord)
-        # dcoordm = np.copy(dcoord)
-        # dcoordp[0,0] = dcoord[0,0] + hh
-        # dcoordm[0,0] = dcoord[0,0] - hh
-        # [axis0, nlist0, d0] = self.sess.run ([self.axis, self.nlist, self.descrpt], 
-        #                                  feed_dict = {
-        #                                      self.coord:     dcoordp,
-        #                                      self.box:       dbox,
-        #                                      self.type:      dtype,
-        #                                      self.tnatoms:   self.natoms}
-        # )
-        # [axis1, nlist1, d1] = self.sess.run ([self.axis, self.nlist, self.descrpt], 
-        #                                  feed_dict = {
-        #                                      self.coord:     dcoordm,
-        #                                      self.box:       dbox,
-        #                                      self.type:      dtype,
-        #                                      self.tnatoms:   self.natoms}
-        # )
-        # print((nlist0 - nlist1))
-        # print((axis0 - axis1))
+        force_test(self, self, suffix = '_se')
 
     def test_virial (self) :
-        virial_test(self, self)
+        virial_test(self, self, suffix = '_se')
 
     def test_force_dw (self) :
-        force_dw_test(self, self)
+        force_dw_test(self, self, suffix = '_se')
 
     def test_virial_dw (self) :
-        virial_dw_test(self, self)
+        virial_dw_test(self, self, suffix = '_se')
+
+
+class TestLFPbc(unittest.TestCase):
+    def test_pbc(self):
+        data = Data()
+        inter0 = Inter()
+        inter1 = Inter()
+        inter0.setUp(data, pbc = True)
+        inter1.setUp(data, pbc = False)
+        inter0.net_w_i = np.copy(np.ones(inter0.ndescrpt))
+        inter1.net_w_i = np.copy(np.ones(inter1.ndescrpt))
+
+        t_energy0, t_force0, t_virial0 \
+            = inter0.comp_ef (inter0.coord, inter0.box, inter0.type, inter0.tnatoms, name = "test_lf_pbc_true")
+        t_energy1, t_force1, t_virial1 \
+            = inter1.comp_ef (inter1.coord, inter1.box, inter1.type, inter1.tnatoms, name = "test_lf_pbc_false")
+
+        inter0.sess.run (tf.global_variables_initializer())
+        inter1.sess.run (tf.global_variables_initializer())
+
+        dcoord, dbox, dtype = data.get_data ()
+
+        [e0, f0, v0] = inter0.sess.run ([t_energy0, t_force0, t_virial0], 
+                                        feed_dict = {
+                                            inter0.coord:     dcoord,
+                                            inter0.box:       dbox,
+                                            inter0.type:      dtype,
+                                            inter0.tnatoms:   inter0.natoms})
+        [e1, f1, v1] = inter1.sess.run ([t_energy1, t_force1, t_virial1], 
+                                        feed_dict = {
+                                            inter1.coord:     dcoord,
+                                            inter1.box:       dbox,
+                                            inter1.type:      dtype,
+                                            inter1.tnatoms:   inter1.natoms})
+        
+        self.assertAlmostEqual(e0[0], e1[0])
+        for ii in range(f0[0].size):
+            # print(ii)
+            self.assertAlmostEqual(f0[0][ii], f1[0][ii])
+        for ii in range(v0[0].size):
+            # print(ii)
+            self.assertAlmostEqual(v0[0][ii], v1[0][ii])
+
+    def test_pbc_small_box(self):
+        data0 = Data()
+        data1 = Data(box_scale = 2)
+        inter0 = Inter()
+        inter1 = Inter()
+        inter0.setUp(data0, pbc = True)
+        inter1.setUp(data1, pbc = False)
+        inter0.net_w_i = np.copy(np.ones(inter0.ndescrpt))
+        inter1.net_w_i = np.copy(np.ones(inter1.ndescrpt))
+
+        t_energy0, t_force0, t_virial0 \
+            = inter0.comp_ef (inter0.coord, inter0.box, inter0.type, inter0.tnatoms, name = "test_lf_pbc_sbox_true")
+        t_energy1, t_force1, t_virial1 \
+            = inter1.comp_ef (inter1.coord, inter1.box, inter1.type, inter1.tnatoms, name = "test_lf_pbc_sbox_false")
+
+        inter0.sess.run (tf.global_variables_initializer())
+        inter1.sess.run (tf.global_variables_initializer())
+
+        dcoord, dbox, dtype = data0.get_data ()
+        [e0, f0, v0] = inter0.sess.run ([t_energy0, t_force0, t_virial0], 
+                                        feed_dict = {
+                                            inter0.coord:     dcoord,
+                                            inter0.box:       dbox,
+                                            inter0.type:      dtype,
+                                            inter0.tnatoms:   inter0.natoms})
+        dcoord, dbox, dtype = data1.get_data ()
+        [e1, f1, v1] = inter1.sess.run ([t_energy1, t_force1, t_virial1], 
+                                        feed_dict = {
+                                            inter1.coord:     dcoord,
+                                            inter1.box:       dbox,
+                                            inter1.type:      dtype,
+                                            inter1.tnatoms:   inter1.natoms})
+        
+        self.assertAlmostEqual(e0[0], e1[0])
+        for ii in range(f0[0].size):
+            # print(ii)
+            self.assertAlmostEqual(f0[0][ii], f1[0][ii])
+        for ii in range(v0[0].size):
+            # print(ii)
+            self.assertAlmostEqual(v0[0][ii], v1[0][ii])
 
 
 if __name__ == '__main__':
