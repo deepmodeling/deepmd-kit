@@ -4,6 +4,7 @@ from .train import train
 from .freeze import freeze
 from .config import config
 from .test import test
+from .transform import transform
 
 def main () :    
     parser = argparse.ArgumentParser(
@@ -15,14 +16,16 @@ def main () :
     #                          help="the output json file")    
     
     default_num_inter_threads = 0
+    parser_transform = subparsers.add_parser('transform', help='pass parameters to another model')
+    parser_transform.add_argument('-r', "--raw-model", default = "raw_frozen_model.pb", type=str, 
+				  help = "the model receiving parameters")
+    parser_transform.add_argument("-o","--old-model", default = "old_frozen_model.pb", type=str, 
+				  help='the model providing parameters')
+    parser_transform.add_argument("-n", "--output", default = "frozen_model.pb", type=str, 
+				  help = "the model after passing parameters")
     parser_train = subparsers.add_parser('train', help='train a model')
     parser_train.add_argument('INPUT', 
                               help='the input parameter file in json format')
-    parser_train.add_argument('-t','--inter-threads', type = int, default = default_num_inter_threads,
-                              help=
-                              'With default value %d. ' % default_num_inter_threads + 
-                              'Setting the "inter_op_parallelism_threads" key for the tensorflow, '  +
-                              'the "intra_op_parallelism_threads" will be set by the env variable OMP_NUM_THREADS')
     parser_train.add_argument('--init-model', type = str, 
                               help=
                               'Initialize the model by the provided checkpoint.')
@@ -42,7 +45,7 @@ def main () :
     parser_tst.add_argument("-m", "--model", default="frozen_model.pb", type=str, 
                             help="Frozen model file to import")
     parser_tst.add_argument("-s", "--system", default=".", type=str, 
-                            help="The system dir")
+                            help="The system dir. Recursively detect systems in this directory")
     parser_tst.add_argument("-S", "--set-prefix", default="set", type=str, 
                             help="The set prefix")
     parser_tst.add_argument("-n", "--numb-test", default=100, type=int, 
@@ -67,5 +70,7 @@ def main () :
         config(args)
     elif args.command == 'test' :
         test(args)
+    elif args.command == 'transform' :
+        transform(args)
     else :
         raise RuntimeError('unknown command ' + args.command)

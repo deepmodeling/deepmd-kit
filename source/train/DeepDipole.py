@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
-import os,sys
-import numpy as np
 from deepmd.DeepEval import DeepTensor
 
 class DeepDipole (DeepTensor) :
     def __init__(self, 
-                 model_file) :
-        DeepTensor.__init__(self, model_file, 'dipole', 3)
+                 model_file, 
+                 load_prefix = 'load', 
+                 default_tf_graph = False) :
+        DeepTensor.__init__(self, model_file, 'dipole', 3, load_prefix = load_prefix, default_tf_graph = default_tf_graph)
 

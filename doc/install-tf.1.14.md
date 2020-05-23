@@ -42,6 +42,7 @@ Now, copy the libraries to the tensorflow's installation directory:
 mkdir $tensorflow_root/lib
 cp -d bazel-bin/tensorflow/libtensorflow_cc.so* $tensorflow_root/lib/
 cp -d bazel-bin/tensorflow/libtensorflow_framework.so* $tensorflow_root/lib/
+cp -d $tensorflow_root/lib/libtensorflow_framework.so.1 $tensorflow_root/lib/libtensorflow_framework.so
 ```
 Then copy the headers
 ```bash

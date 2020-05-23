@@ -147,7 +147,7 @@ class ProdVirialOp : public OpKernel {
 	      VALUETYPE pref = -1.0 * net_deriv (net_iter + i_idx * ndescrpt + aa);
 	      for (int dd0 = 0; dd0 < 3; ++dd0){
 		for (int dd1 = 0; dd1 < 3; ++dd1){
-		  VALUETYPE tmp_v = pref * rij (rij_iter + i_idx * nnei * 3 + jj * 3 + dd0) *  in_deriv (in_iter + i_idx * ndescrpt * 12 + aa * 12 + 3 + dd1);
+		  VALUETYPE tmp_v = pref * rij (rij_iter + i_idx * nnei * 3 + jj * 3 + dd1) *  in_deriv (in_iter + i_idx * ndescrpt * 12 + aa * 12 + 3 + dd0);
 		  virial (virial_iter + dd0 * 3 + dd1) += tmp_v;
 		  atom_virial (atom_virial_iter + j_idx * 9 + dd0 * 3 + dd1) += tmp_v;
 		}
@@ -159,7 +159,7 @@ class ProdVirialOp : public OpKernel {
 	      VALUETYPE pref = -1.0 * net_deriv (net_iter + i_idx * ndescrpt + aa);
 	      for (int dd0 = 0; dd0 < 3; ++dd0){
 		for (int dd1 = 0; dd1 < 3; ++dd1){
-		  VALUETYPE tmp_v = pref * rij (rij_iter + i_idx * nnei * 3 + jj * 3 + dd0) *  in_deriv (in_iter + i_idx * ndescrpt * 12 + aa * 12 + 6 + dd1);
+		  VALUETYPE tmp_v = pref * rij (rij_iter + i_idx * nnei * 3 + jj * 3 + dd1) *  in_deriv (in_iter + i_idx * ndescrpt * 12 + aa * 12 + 6 + dd0);
 		  virial (virial_iter + dd0 * 3 + dd1) += tmp_v;
 		  atom_virial (atom_virial_iter + j_idx * 9 + dd0 * 3 + dd1) += tmp_v;
 		}
@@ -173,7 +173,7 @@ class ProdVirialOp : public OpKernel {
 	      VALUETYPE pref = -1.0 * net_deriv (net_iter + i_idx * ndescrpt + aa);
 	      for (int dd0 = 0; dd0 < 3; ++dd0){
 		for (int dd1 = 0; dd1 < 3; ++dd1){
-		  VALUETYPE tmp_v = pref * rij (rij_iter + i_idx * nnei * 3 + jj * 3 + dd0) *  in_deriv (in_iter + i_idx * ndescrpt * 12 + aa * 12 + 9 + dd1);
+		  VALUETYPE tmp_v = pref * rij (rij_iter + i_idx * nnei * 3 + jj * 3 + dd1) *  in_deriv (in_iter + i_idx * ndescrpt * 12 + aa * 12 + 9 + dd0);
 		  virial (virial_iter + dd0 * 3 + dd1) += tmp_v;
 		  atom_virial (atom_virial_iter + j_idx * 9 + dd0 * 3 + dd1) += tmp_v;
 		}

@@ -1,5 +1,6 @@
 import os,sys
-import tensorflow as tf
+from deepmd.env import tf
+from deepmd.env import get_tf_default_nthreads
 import numpy as np
 import deepmd.cluster.Slurm as Slurm
 import deepmd.cluster.Local as Local
@@ -27,14 +28,6 @@ global_git_date='@GIT_DATE@'
 global_git_branch='@GIT_BRANCH@'
 global_tf_include_dir='@TensorFlow_INCLUDE_DIRS@'
 global_tf_libs='@TensorFlow_LIBRARY@'
-
-def _get_threads_env () :
-    num_intra_threads = None
-    if 'OMP_NUM_THREADS' in os.environ : 
-        num_intra_threads = int(os.environ['OMP_NUM_THREADS'])
-    else :
-        num_intra_threads = 0
-    return num_intra_threads
 
 def _is_slurm() :
     return "SLURM_JOB_NODELIST" in os.environ
@@ -106,10 +99,6 @@ class RunOptions (object) :
     def __init__ (self, 
                   args, 
                   try_distrib = False):        
-        # thread settings
-        self.num_intra_threads = _get_threads_env()
-        self.num_inter_threads = 0
-
         # distributed tasks
         if try_distrib :
             self._try_init_mpi()
@@ -132,8 +121,6 @@ class RunOptions (object) :
             if args.restart is not None: 
                 self.restart = os.path.abspath(args.restart)
                 self.init_mode = "restart"
-            if args.inter_threads is not None :
-                self.num_inter_threads = args.inter_threads
 
     def message (self, msg) :
         if self.verbose :
@@ -167,28 +154,32 @@ class RunOptions (object) :
     def print_summary(self) :
         msg = ""
         msg += "---Summary of the training---------------------------------------\n"
-        msg += 'installed to:       %s\n' % global_install_prefix
-        msg += 'source :            %s\n' % global_git_summ
-        msg += 'source brach:       %s\n' % global_git_branch
-        msg += 'source commit:      %s\n' % global_git_hash
-        msg += 'source commit at:   %s\n' % global_git_date
-        msg += 'build float prec:   %s\n' % global_float_prec
-        msg += 'build with tf inc:  %s\n' % global_tf_include_dir
+        msg += 'installed to:         %s\n' % global_install_prefix
+        msg += 'source :              %s\n' % global_git_summ
+        msg += 'source brach:         %s\n' % global_git_branch
+        msg += 'source commit:        %s\n' % global_git_hash
+        msg += 'source commit at:     %s\n' % global_git_date
+        msg += 'build float prec:     %s\n' % global_float_prec
+        msg += 'build with tf inc:    %s\n' % global_tf_include_dir
         for idx,ii in enumerate(global_tf_libs.split(';')) :
             if idx == 0 :
-                msg += 'build with tf lib:  %s\n' % ii
+                msg += 'build with tf lib:    %s\n' % ii
             else :
-                msg += '                    %s\n' % ii
+                msg += '                      %s\n' % ii
         if self.is_distrib:
             msg += "distributed\n" 
-            msg += "ps list:            %s\n" % str(self.cluster['ps'])
-            msg += "worker list:        %s\n" % str(self.cluster['worker'])
-            msg += "chief on:           %s\n" % self.nodename
+            msg += "ps list:              %s\n" % str(self.cluster['ps'])
+            msg += "worker list:          %s\n" % str(self.cluster['worker'])
+            msg += "chief on:             %s\n" % self.nodename
         else :
-            msg += "running on:         %s\n" % self.nodename
-        msg += "gpu per node:       %s\n" % self.gpus
-        msg += "num_inter_threads:  %d\n" % self.num_inter_threads
-        msg += "num_intra_threads:  %d\n" % self.num_intra_threads
+            msg += "running on:           %s\n" % self.nodename
+        if self.gpus is None:
+            msg += "CUDA_VISIBLE_DEVICES: unset\n"
+        else:
+            msg += "CUDA_VISIBLE_DEVICES: %s\n" % self.gpus
+        intra, inter = get_tf_default_nthreads()
+        msg += "num_intra_threads:    %d\n" % intra
+        msg += "num_inter_threads:    %d\n" % inter
         msg += "-----------------------------------------------------------------\n"
         self.message(msg)
 

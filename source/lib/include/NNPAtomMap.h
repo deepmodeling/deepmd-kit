@@ -19,6 +19,7 @@ public:
 		 const int stride = 1) const ;
   const vector<int > & get_type () const {return atype;}
   const vector<int > & get_fwd_map () const {return fwd_idx_map;}
+  const vector<int > & get_bkw_map () const {return idx_map;}
 private:
   vector<int> idx_map;
   vector<int> fwd_idx_map;
