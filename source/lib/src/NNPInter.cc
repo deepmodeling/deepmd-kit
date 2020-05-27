@@ -3,7 +3,6 @@
 #include "SimulationRegion.h"
 #include <stdexcept>	
 
-#define MAGIC_NUMBER 1024
 
 #ifdef  USE_CUDA_TOOLKIT
 #include "cuda_runtime.h"
@@ -14,7 +13,7 @@
 #define cudaErrcheck(res) { cudaAssert((res), __FILE__, __LINE__); }
 inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort=true)
 {
-    if (code != cudaSuccess) 
+    if (code != cudaSuccess)
     {
         fprintf(stderr,"cuda assert: %s %s %d\n", cudaGetErrorString(code), file, line);
         if (abort) exit(code);
@@ -273,9 +272,6 @@ NNPInter::~NNPInter() {
         cudaErrcheck(cudaFree(ilist));
         cudaErrcheck(cudaFree(jrange));
         cudaErrcheck(cudaFree(jlist));
-        cudaErrcheck(cudaFree(array_int));
-        cudaErrcheck(cudaFree(array_longlong));
-        cudaErrcheck(cudaFree(array_double));
     }
     #endif
 }
@@ -283,24 +279,12 @@ NNPInter::~NNPInter() {
 #ifdef USE_CUDA_TOOLKIT
 void NNPInter::update_nbor(const InternalNeighborList & nlist, const int nloc) {
     if (!init_nbor) {
-        sec_a = cum_sum(get_sel_a());
         cudaErrcheck(cudaMalloc((void**)&ilist, sizeof(int) * nlist.ilist.size()));
         cudaErrcheck(cudaMalloc((void**)&jrange, sizeof(int) * nlist.jrange.size()));
         cudaErrcheck(cudaMalloc((void**)&jlist, sizeof(int) * nlist.jlist.size()));
-        cudaErrcheck(cudaMalloc((void**)&array_int, sizeof(int) * (sec_a.size() + nloc * sec_a.size() + nloc)));
-        cudaErrcheck(cudaMalloc((void**)&array_longlong, sizeof(unsigned long long) * nloc * MAGIC_NUMBER * 2));
-        #ifdef HIGH_PREC
-            cudaErrcheck(cudaMalloc((void**)&array_double, sizeof(compute_t) * nloc * sec_a.back() * 3));
-        #else
-            cudaErrcheck(cudaMalloc((void**)&array_double, sizeof(compute_t) * nloc * sec_a.back() * 3));
-        #endif
         ilist_size = nlist.ilist.size();
         jrange_size = nlist.jrange.size();
         jlist_size = nlist.jlist.size();
-        arr_int_size = sec_a.size() + nloc * sec_a.size() + nloc;
-        arr_ll_size = nloc * MAGIC_NUMBER * 2;
-        arr_dou_size = nloc * sec_a.back() * 3;
-        init_nbor = true;
     }
     if (ilist_size < nlist.ilist.size()) {
         cudaErrcheck(cudaFree(ilist));
@@ -317,25 +301,7 @@ void NNPInter::update_nbor(const InternalNeighborList & nlist, const int nloc) {
         cudaErrcheck(cudaMalloc((void**)&jlist, sizeof(int) * nlist.jlist.size()));
         jlist_size = nlist.jlist.size();
     }
-    if (arr_int_size < sec_a.size() + nloc * sec_a.size() + nloc) {
-        cudaErrcheck(cudaFree(array_int));
-        cudaErrcheck(cudaMalloc((void**)&array_int, sizeof(int) * (sec_a.size() + nloc * sec_a.size() + nloc)));
-        arr_int_size = sec_a.size() + nloc * sec_a.size() + nloc;
-    }
-    if (arr_ll_size < nloc * MAGIC_NUMBER * 2) {
-        cudaErrcheck(cudaFree(array_longlong));
-        cudaErrcheck(cudaMalloc((void**)&array_longlong, sizeof(unsigned long long) * nloc * MAGIC_NUMBER * 2));
-        arr_ll_size = nloc * MAGIC_NUMBER * 2;
-    }
-    if (arr_dou_size < nloc * sec_a.back() * 3) {
-        cudaErrcheck(cudaFree(array_double));
-        #ifdef HIGH_PREC
-            cudaErrcheck(cudaMalloc((void**)&array_double, sizeof(compute_t) * nloc * sec_a.back() * 3));
-        #else
-            cudaErrcheck(cudaMalloc((void**)&array_double, sizeof(compute_t) * nloc * sec_a.back() * 3));
-        #endif
-        arr_dou_size = nloc * sec_a.back() * 3;
-    }
+    
     cudaErrcheck(cudaMemcpy(ilist, &nlist.ilist[0], sizeof(int) * nlist.ilist.size(), cudaMemcpyHostToDevice));
     cudaErrcheck(cudaMemcpy(jrange, &nlist.jrange[0], sizeof(int) * nlist.jrange.size(), cudaMemcpyHostToDevice));
     cudaErrcheck(cudaMemcpy(jlist, &nlist.jlist[0], sizeof(int) * nlist.jlist.size(), cudaMemcpyHostToDevice));
@@ -378,14 +344,10 @@ init (const string & model, const int & gpu_rank)
   if (dfparam < 0) dfparam = 0;
   if (daparam < 0) daparam = 0;
   inited = true;
-
+  
   init_nbor = false;
-  array_int = NULL;
-  array_double = NULL;
-  array_longlong = NULL;
   ilist = NULL; jrange = NULL; jlist = NULL;
   ilist_size = 0; jrange_size = 0; jlist_size = 0;
-  arr_int_size = 0; arr_ll_size = 0; arr_dou_size = 0;
 }
 #else
 void
@@ -415,12 +377,8 @@ init (const string & model, const int & gpu_rank)
   inited = true;
 
   init_nbor = false;
-  array_int = NULL;
-  array_double = NULL;
-  array_longlong = NULL;
   ilist = NULL; jrange = NULL; jlist = NULL;
   ilist_size = 0; jrange_size = 0; jlist_size = 0;
-  arr_int_size = 0; arr_ll_size = 0; arr_dou_size = 0;
 }
 #endif
 
@@ -602,7 +560,7 @@ compute_inner (ENERGYTYPE &			dener,
     }
 
     #ifdef USE_CUDA_TOOLKIT
-        int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, array_int, array_longlong, array_double, fparam, aparam, nnpmap, nghost);
+        int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, fparam, aparam, nnpmap, nghost);
     #else
         int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
     #endif
@@ -669,7 +627,7 @@ compute (ENERGYTYPE &			dener,
     }
 
     #ifdef USE_CUDA_TOOLKIT
-        int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, array_int, array_longlong, array_double, fparam, aparam, nnpmap, nghost);
+        int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, fparam, aparam, nnpmap, nghost);
     #else
         int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
     #endif
@@ -710,9 +668,6 @@ NNPInterModelDevi::~NNPInterModelDevi() {
         cudaErrcheck(cudaFree(ilist));
         cudaErrcheck(cudaFree(jrange));
         cudaErrcheck(cudaFree(jlist));
-        cudaErrcheck(cudaFree(array_int));
-        cudaErrcheck(cudaFree(array_longlong));
-        cudaErrcheck(cudaFree(array_double));
     }
 #endif
 }
@@ -761,14 +716,10 @@ init (const vector<string> & models, const int & gpu_rank)
   // cell_size = rcut;
   // ntypes = get_ntypes();
   inited = true;
-
+  
   init_nbor = false;
-  array_int = NULL;
-  array_double = NULL;
-  array_longlong = NULL;
   ilist = NULL; jrange = NULL; jlist = NULL;
   ilist_size = 0; jrange_size = 0; jlist_size = 0;
-  arr_int_size = 0; arr_ll_size = 0; arr_dou_size = 0;
 }
 #else
 void
@@ -798,14 +749,10 @@ init (const vector<string> & models, const int & gpu_rank)
   // cell_size = rcut;
   // ntypes = get_ntypes();
   inited = true;
-
+  
   init_nbor = false;
-  array_int = NULL;
-  array_double = NULL;
-  array_longlong = NULL;
   ilist = NULL; jrange = NULL; jlist = NULL;
   ilist_size = 0; jrange_size = 0; jlist_size = 0;
-  arr_int_size = 0; arr_ll_size = 0; arr_dou_size = 0;
 }
 #endif
 
@@ -873,41 +820,18 @@ cum_sum (const std::vector<std::vector<int32> > n_sel)
     }
 }
 
-void  
-NNPInterModelDevi::
-get_max_sec() 
-{
-    for (int ii = 0; ii < numb_models; ii++) {
-        this->max_sec_size = max_sec_size < sec[ii].size() ? sec[ii].size() : max_sec_size;
-        this->max_sec_back = max_sec_back < sec[ii].back() ? sec[ii].back() : max_sec_back;
-    }
-}
-
 #ifdef USE_CUDA_TOOLKIT
 void
 NNPInterModelDevi::
 update_nbor(const InternalNeighborList & nlist, const int nloc) 
 {
     if (!init_nbor) {
-        cum_sum(get_sel());
-        get_max_sec();
         cudaErrcheck(cudaMalloc((void**)&ilist, sizeof(int) * nlist.ilist.size()));
         cudaErrcheck(cudaMalloc((void**)&jrange, sizeof(int) * nlist.jrange.size()));
         cudaErrcheck(cudaMalloc((void**)&jlist, sizeof(int) * nlist.jlist.size()));
-        cudaErrcheck(cudaMalloc((void**)&array_int, sizeof(int) * (max_sec_size + nloc * max_sec_size + nloc)));
-        cudaErrcheck(cudaMalloc((void**)&array_longlong, sizeof(unsigned long long) * nloc * MAGIC_NUMBER * 2));
-        #ifdef HIGH_PREC
-            cudaErrcheck(cudaMalloc((void**)&array_double, sizeof(compute_t) * nloc * max_sec_back * 3));
-        #else
-            cudaErrcheck(cudaMalloc((void**)&array_double, sizeof(compute_t) * nloc * max_sec_back * 3));
-        #endif
         ilist_size = nlist.ilist.size();
         jrange_size = nlist.jrange.size();
         jlist_size = nlist.jlist.size();
-        arr_int_size = max_sec_size + nloc * max_sec_size + nloc;
-        arr_ll_size = nloc * MAGIC_NUMBER * 2;
-        arr_dou_size = nloc * max_sec_back * 3;
-        init_nbor = true;
     }
     if (ilist_size < nlist.ilist.size()) {
         cudaErrcheck(cudaFree(ilist));
@@ -924,25 +848,7 @@ update_nbor(const InternalNeighborList & nlist, const int nloc)
         cudaErrcheck(cudaMalloc((void**)&jlist, sizeof(int) * nlist.jlist.size()));
         jlist_size = nlist.jlist.size();
     }
-    if (arr_int_size < max_sec_size + nloc * max_sec_size + nloc) {
-        cudaErrcheck(cudaFree(array_int));
-        cudaErrcheck(cudaMalloc((void**)&array_int, sizeof(int) * (max_sec_size + nloc * max_sec_size + nloc)));
-        arr_int_size = max_sec_size + nloc * max_sec_size + nloc;
-    }
-    if (arr_ll_size < nloc * MAGIC_NUMBER * 2) {
-        cudaErrcheck(cudaFree(array_longlong));
-        cudaErrcheck(cudaMalloc((void**)&array_longlong, sizeof(unsigned long long) * nloc * MAGIC_NUMBER * 2));
-        arr_ll_size = nloc * MAGIC_NUMBER * 2;
-    }
-    if (arr_dou_size < nloc * max_sec_back * 3) {
-        cudaErrcheck(cudaFree(array_double));
-        #ifdef HIGH_PREC
-            cudaErrcheck(cudaMalloc((void**)&array_double, sizeof(compute_t) * nloc * max_sec_back * 3));
-        #else
-            cudaErrcheck(cudaMalloc((void**)&array_double, sizeof(compute_t) * nloc * max_sec_back * 3));
-        #endif
-        arr_dou_size = nloc * max_sec_back * 3;
-    }
+
     cudaErrcheck(cudaMemcpy(ilist, &nlist.ilist[0], sizeof(int) * nlist.ilist.size(), cudaMemcpyHostToDevice));
     cudaErrcheck(cudaMemcpy(jrange, &nlist.jrange[0], sizeof(int) * nlist.jrange.size(), cudaMemcpyHostToDevice));
     cudaErrcheck(cudaMemcpy(jlist, &nlist.jlist[0], sizeof(int) * nlist.jlist.size(), cudaMemcpyHostToDevice));
@@ -1044,7 +950,7 @@ compute (vector<ENERGYTYPE> &		all_energy,
 
     }
     #ifdef USE_CUDA_TOOLKIT
-        int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, array_int, array_longlong, array_double, fparam, aparam, nnpmap, nghost);
+        int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, fparam, aparam, nnpmap, nghost);
     #else
         int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
     #endif
@@ -1094,7 +1000,7 @@ compute (vector<ENERGYTYPE> &			all_energy,
         
     }
     #ifdef USE_CUDA_TOOLKIT
-        int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, array_int, array_longlong, array_double, fparam, aparam, nnpmap, nghost);
+        int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, fparam, aparam, nnpmap, nghost);
     #else
         int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
     #endif
