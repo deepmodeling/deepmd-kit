@@ -285,6 +285,7 @@ void NNPInter::update_nbor(const InternalNeighborList & nlist, const int nloc) {
         ilist_size = nlist.ilist.size();
         jrange_size = nlist.jrange.size();
         jlist_size = nlist.jlist.size();
+        init_nbor = true;
     }
     if (ilist_size < nlist.ilist.size()) {
         cudaErrcheck(cudaFree(ilist));
@@ -832,6 +833,7 @@ update_nbor(const InternalNeighborList & nlist, const int nloc)
         ilist_size = nlist.ilist.size();
         jrange_size = nlist.jrange.size();
         jlist_size = nlist.jlist.size();
+        init_nbor = true;
     }
     if (ilist_size < nlist.ilist.size()) {
         cudaErrcheck(cudaFree(ilist));
