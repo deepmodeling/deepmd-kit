@@ -7,7 +7,7 @@
 #include "tensorflow/core/framework/shape_inference.h"
 
 using namespace tensorflow;  // NOLINT(build/namespaces)
-#define MAGIC_NUMBER 256
+#define MAGIC_NUMBER 1024
 
 #ifdef HIGH_PREC
     typedef double VALUETYPE ;
@@ -159,6 +159,7 @@ public:
         
         OP_REQUIRES (context, (ntypes == int(sel_a.size())),	errors::InvalidArgument ("number of types should match the length of sel array"));
         OP_REQUIRES (context, (ntypes == int(sel_r.size())),	errors::InvalidArgument ("number of types should match the length of sel array"));
+        OP_REQUIRES (context, (nnei <= 1024),	                errors::InvalidArgument ("Assert failed, max neighbor size of atom(nnei) " + std::to_string(nnei) + " is larger than 1024, which currently is not supported by deepmd-kit."));
         
         // Create output tensors
         TensorShape descrpt_shape ;
