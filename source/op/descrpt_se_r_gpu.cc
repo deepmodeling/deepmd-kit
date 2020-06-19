@@ -148,6 +148,7 @@ public:
         OP_REQUIRES (context, (9 == box_tensor.shape().dim_size(1)),		    errors::InvalidArgument ("number of box should be 9"));
         OP_REQUIRES (context, (ndescrpt == avg_tensor.shape().dim_size(1)),		errors::InvalidArgument ("number of avg should be ndescrpt"));
         OP_REQUIRES (context, (ndescrpt == std_tensor.shape().dim_size(1)),		errors::InvalidArgument ("number of std should be ndescrpt"));   
+        OP_REQUIRES (context, (nnei <= 1024),	                errors::InvalidArgument ("Assert failed, max neighbor size of atom(nnei) " + std::to_string(nnei) + " is larger than 1024, which currently is not supported by deepmd-kit."));
         
         // Create output tensors
         TensorShape descrpt_shape ;

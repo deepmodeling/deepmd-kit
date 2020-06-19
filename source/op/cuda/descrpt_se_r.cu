@@ -19,7 +19,7 @@ limitations under the License.
 #include <cuda_runtime.h>
 #include <fstream>
 
-#define MAGIC_NUMBER 256
+#define MAGIC_NUMBER 1024
 
 #ifdef HIGH_PREC
     typedef double  VALUETYPE;
@@ -311,8 +311,8 @@ void DescrptSeRLauncher(const VALUETYPE* coord,
                             key,
                             i_idx
         );
-        const int ITEMS_PER_THREAD = 4;
-        const int BLOCK_THREADS = 64;
+        const int ITEMS_PER_THREAD = 8;
+        const int BLOCK_THREADS = MAGIC_NUMBER / ITEMS_PER_THREAD;
         BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAGIC_NUMBER);
         format_nlist_fill_b_se_r<<<nblock, LEN>>> (
                             nlist,
