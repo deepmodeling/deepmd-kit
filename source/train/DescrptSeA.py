@@ -1,6 +1,6 @@
 import numpy as np
 from deepmd.env import tf
-from deepmd.common import ClassArg, get_activation_func, get_precision, argproperty
+from deepmd.common import ClassArg, get_activation_func, activation_fn_dict, get_precision, argproperty
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.env import op_module
@@ -10,18 +10,30 @@ class DescrptSeA ():
     @argproperty
     def args(cls):
         args = ClassArg()\
-               .add('sel',      list,   must = True, docs="the maximum possible number of neighbors in the cut-off radius.") \
-               .add('rcut',     float,  default = 6.0) \
-               .add('rcut_smth',float,  default = 5.5) \
-               .add('neuron',   list,   default = [10, 20, 40]) \
-               .add('axis_neuron', int, default = 4, alias = 'n_axis_neuron') \
-               .add('resnet_dt',bool,   default = False) \
-               .add('trainable',bool,   default = True) \
-               .add('seed',     int) \
-               .add('exclude_types', list, default = []) \
-               .add('set_davg_zero', bool, default = False) \
-               .add('activation_function', str,    default = 'tanh') \
-               .add('precision', str, default = "default")
+               .add('sel',      list,   must = True, 
+                    docs = "The maximum possible number of neighbors in the cut-off radius.") \
+               .add('rcut',     float,  default = 6.0, 
+                    docs = "The cut-off radius.") \
+               .add('rcut_smth',float,  default = 5.5, 
+                    docs = "The smoothing buffer of cut-off. The descriptor smoothly decay to 0 from `rcut_smth` to `rcut`.") \
+               .add('neuron',   list,   default = [10, 20, 40], 
+                    docs = "The size of the embedding net.") \
+               .add('axis_neuron', int, default = 4, alias = 'n_axis_neuron', 
+                    docs = "The size of the sub embedding matrix") \
+               .add('resnet_dt',bool,   default = False, 
+                    docs = "Use time-step in the ResNet architecture.") \
+               .add('trainable',bool,   default = True, 
+                    docs = "If the embedding net parameters are trainable.") \
+               .add('seed',     int, 
+                    docs = "Random seed for initializing the parameters of the embedding net.") \
+               .add('exclude_types', list, default = [], 
+                    docs = "Exclude this atom type.") \
+               .add('set_davg_zero', bool, default = False, 
+                    docs = "Force the average normalization to 0") \
+               .add('activation_function', str,    default = 'tanh', 
+                    docs = "The activation function. Supported activation functions are " + ", ".join(activation_fn_dict.keys()) + "." ) \
+               .add('precision', str, default = "default", 
+                    docs = "The floating point precision of the embedding net parameters.")
         return args
 
 
