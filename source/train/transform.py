@@ -86,7 +86,6 @@ def transform_graph(raw_graph,old_graph):
                     else:
                         if old_graph_dtype[1] == "float64":
                             tensor_value = (np.array(old_graph_node[node.name].double_val)).astype(raw_graph_dtype[0])
-                            print(node.name,tensor_value)
                             node.attr["value"].CopyFrom(tf.AttrValue(tensor=tf.make_tensor_proto(tensor_value,raw_graph_dtype[0], [1])))
 
                         elif old_graph_dtype[1] == "float32": 
