@@ -5,6 +5,7 @@
 #include <iostream>
 #include <limits>
 #include <typeinfo>
+#include <stdexcept>
 
 using namespace std;
 
