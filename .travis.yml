@@ -66,12 +66,12 @@ jobs:
       env:
       - CC=gcc-5
       - CXX=g++-5
-      - TENSORFLOW_VERSION=2.1
+      - TENSORFLOW_VERSION=2.3
     - python: 3.7
       env:
       - CC=gcc-8
       - CXX=g++-8
-      - TENSORFLOW_VERSION=2.1
+      - TENSORFLOW_VERSION=2.3
     - stage: build whls
       services: docker
       env:
