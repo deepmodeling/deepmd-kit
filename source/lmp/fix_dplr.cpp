@@ -34,7 +34,11 @@ is_key (const string& input)
 
 
 FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg) 
-    :Fix(lmp, narg, arg), efield(3, 0.0)
+    :Fix(lmp, narg, arg), 
+     efield(3, 0.0), 
+     efield_fsum(4, 0.0), 
+     efield_fsum_all(4, 0.0), 
+     efield_force_flag(0)
 {
   virial_flag = 1;
 
@@ -112,6 +116,7 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
 int FixDPLR::setmask()
 {
   int mask = 0;
+  mask |= THERMO_ENERGY;
   mask |= POST_INTEGRATE;
   mask |= PRE_FORCE;
   mask |= POST_FORCE;
@@ -383,11 +388,17 @@ void FixDPLR::post_force(int vflag)
     imageint *image = atom->image;
     double unwrap[3];
     double v[6];
+    efield_fsum[0] = efield_fsum[1] = efield_fsum[2] = efield_fsum[3] = 0.0;
+    efield_force_flag = 0;
     for (int ii = 0; ii < nlocal; ++ii){
       for (int dd = 0; dd < 3; ++dd){
 	dfele[ii*3+dd] += q[ii] * efield[dd];
       }
       domain->unmap(x[ii],image[ii],unwrap);
+      efield_fsum[0] -= efield[0]*unwrap[0]+efield[1]*unwrap[1]+efield[2]*unwrap[2];
+      efield_fsum[1] += efield[0];
+      efield_fsum[2] += efield[1];
+      efield_fsum[3] += efield[2];
       if (evflag) {
 	v[0] = q[ii] * efield[0] *unwrap[0];
 	v[1] = q[ii] * efield[1] *unwrap[1];
@@ -495,5 +506,28 @@ void FixDPLR::unpack_reverse_comm(int n, int *list, double *buf)
   }
 }
 
+/* ----------------------------------------------------------------------
+   return energy added by fix
+------------------------------------------------------------------------- */
 
+double FixDPLR::compute_scalar(void)
+{
+  if (efield_force_flag == 0) {
+    MPI_Allreduce(&efield_fsum[0],&efield_fsum_all[0],4,MPI_DOUBLE,MPI_SUM,world);
+    efield_force_flag = 1;
+  }
+  return efield_fsum_all[0];
+}
 
+/* ----------------------------------------------------------------------
+   return total extra force due to fix
+------------------------------------------------------------------------- */
+
+double FixDPLR::compute_vector(int n)
+{
+  if (efield_force_flag == 0) {
+    MPI_Allreduce(&efield_fsum[0],&efield_fsum_all[0],4,MPI_DOUBLE,MPI_SUM,world);
+    efield_force_flag = 1;
+  }
+  return efield_fsum_all[n+1];
+}
