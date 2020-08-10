@@ -34,7 +34,11 @@ is_key (const string& input)
 
 
 FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg) 
-    :Fix(lmp, narg, arg)
+    :Fix(lmp, narg, arg), 
+     efield(3, 0.0), 
+     efield_fsum(4, 0.0), 
+     efield_fsum_all(4, 0.0), 
+     efield_force_flag(0)
 {
   virial_flag = 1;
 
@@ -53,6 +57,13 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
       if (iarg+1 > narg) error->all(FLERR,"Illegal fix adapt command");
       model = string(arg[iarg+1]);
       iarg += 2;
+    }
+    if (string(arg[iarg]) == string("efield")) {
+      if (iarg+3 > narg) error->all(FLERR,"Illegal fix adapt command, efield should be provided 3 float numbers");
+      efield[0] = atof(arg[iarg+1]);
+      efield[1] = atof(arg[iarg+2]);
+      efield[2] = atof(arg[iarg+3]);
+      iarg += 4;
     }
     if (string(arg[iarg]) == string("type_associate")) {
       int iend = iarg+1;
@@ -105,6 +116,7 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
 int FixDPLR::setmask()
 {
   int mask = 0;
+  mask |= THERMO_ENERGY;
   mask |= POST_INTEGRATE;
   mask |= PRE_FORCE;
   mask |= POST_FORCE;
@@ -347,6 +359,7 @@ void FixDPLR::post_force(int vflag)
   int nall = nlocal + nghost;
   vector<FLOAT_PREC> dcoord(nall*3, 0.0), dbox(9, 0.0), dfele(nlocal*3, 0.0);
   vector<int> dtype(nall, 0);
+  // set values for dcoord, dbox, dfele
   {
     int *type = atom->type;
     for (int ii = 0; ii < nall; ++ii){
@@ -366,9 +379,36 @@ void FixDPLR::post_force(int vflag)
       }
     }
     assert(dfele_.size() == nlocal * 3);
+    // revise force according to efield
     for (int ii = 0; ii < nlocal*3; ++ii){
       dfele[ii] = dfele_[ii];
     }
+    // revise force and virial according to efield
+    double * q = atom->q;
+    imageint *image = atom->image;
+    double unwrap[3];
+    double v[6];
+    efield_fsum[0] = efield_fsum[1] = efield_fsum[2] = efield_fsum[3] = 0.0;
+    efield_force_flag = 0;
+    for (int ii = 0; ii < nlocal; ++ii){
+      for (int dd = 0; dd < 3; ++dd){
+	dfele[ii*3+dd] += q[ii] * efield[dd];
+      }
+      domain->unmap(x[ii],image[ii],unwrap);
+      efield_fsum[0] -= efield[0]*unwrap[0]+efield[1]*unwrap[1]+efield[2]*unwrap[2];
+      efield_fsum[1] += efield[0];
+      efield_fsum[2] += efield[1];
+      efield_fsum[3] += efield[2];
+      if (evflag) {
+	v[0] = q[ii] * efield[0] *unwrap[0];
+	v[1] = q[ii] * efield[1] *unwrap[1];
+	v[2] = q[ii] * efield[2] *unwrap[2];
+	v[3] = q[ii] * efield[0] *unwrap[1];
+	v[4] = q[ii] * efield[0] *unwrap[2];
+	v[5] = q[ii] * efield[1] *unwrap[2];
+	v_tally(ii, v);
+      }
+    }    
   }
   // lmp nlist
   NeighList * list = pair_nnp->list;
@@ -466,5 +506,28 @@ void FixDPLR::unpack_reverse_comm(int n, int *list, double *buf)
   }
 }
 
+/* ----------------------------------------------------------------------
+   return energy added by fix
+------------------------------------------------------------------------- */
 
+double FixDPLR::compute_scalar(void)
+{
+  if (efield_force_flag == 0) {
+    MPI_Allreduce(&efield_fsum[0],&efield_fsum_all[0],4,MPI_DOUBLE,MPI_SUM,world);
+    efield_force_flag = 1;
+  }
+  return efield_fsum_all[0];
+}
 
+/* ----------------------------------------------------------------------
+   return total extra force due to fix
+------------------------------------------------------------------------- */
+
+double FixDPLR::compute_vector(int n)
+{
+  if (efield_force_flag == 0) {
+    MPI_Allreduce(&efield_fsum[0],&efield_fsum_all[0],4,MPI_DOUBLE,MPI_SUM,world);
+    efield_force_flag = 1;
+  }
+  return efield_fsum_all[n+1];
+}
