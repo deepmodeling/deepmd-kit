@@ -24,6 +24,7 @@ is_key (const string& input)
   keys.push_back("model");
   keys.push_back("type_associate");
   keys.push_back("bond_type");
+  keys.push_back("efield");
   for (int ii = 0; ii < keys.size(); ++ii){
     if (input == keys[ii]) {
       return true;
@@ -58,14 +59,14 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
       model = string(arg[iarg+1]);
       iarg += 2;
     }
-    if (string(arg[iarg]) == string("efield")) {
+    else if (string(arg[iarg]) == string("efield")) {
       if (iarg+3 > narg) error->all(FLERR,"Illegal fix adapt command, efield should be provided 3 float numbers");
       efield[0] = atof(arg[iarg+1]);
       efield[1] = atof(arg[iarg+2]);
       efield[2] = atof(arg[iarg+3]);
       iarg += 4;
     }
-    if (string(arg[iarg]) == string("type_associate")) {
+    else if (string(arg[iarg]) == string("type_associate")) {
       int iend = iarg+1;
       while (iend < narg && (! is_key(arg[iend]) )) {
 	map_vec.push_back(atoi(arg[iend])-1);
@@ -73,7 +74,7 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
       }
       iarg = iend;
     }
-    if (string(arg[iarg]) == string("bond_type")) {
+    else if (string(arg[iarg]) == string("bond_type")) {
       int iend = iarg+1;
       while (iend < narg && (! is_key(arg[iend]) )) {
 	bond_type.push_back(atoi(arg[iend])-1);
