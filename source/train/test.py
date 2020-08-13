@@ -129,10 +129,7 @@ def test_ener (dp, args, append_detail = False) :
     else :
         aparam = None
     detail_file = args.detail_file
-    if detail_file is not None:
-        atomic = True
-    else:
-        atomic = False
+    atomic = False
 
     ret = dp.eval(coord, box, atype, fparam = fparam, aparam = aparam, atomic = atomic)
     energy = ret[0]
