@@ -392,24 +392,28 @@ void FixDPLR::post_force(int vflag)
     efield_fsum[0] = efield_fsum[1] = efield_fsum[2] = efield_fsum[3] = 0.0;
     efield_force_flag = 0;
     for (int ii = 0; ii < nlocal; ++ii){
+      double tmpf[3];
       for (int dd = 0; dd < 3; ++dd){
-	dfele[ii*3+dd] += q[ii] * efield[dd];
+	tmpf[dd] = q[ii] * efield[dd];
+      }
+      for (int dd = 0; dd < 3; ++dd){
+	dfele[ii*3+dd] += tmpf[dd];
       }
       domain->unmap(x[ii],image[ii],unwrap);
-      efield_fsum[0] -= efield[0]*unwrap[0]+efield[1]*unwrap[1]+efield[2]*unwrap[2];
-      efield_fsum[1] += efield[0];
-      efield_fsum[2] += efield[1];
-      efield_fsum[3] += efield[2];
+      efield_fsum[0] -= tmpf[0]*unwrap[0]+tmpf[1]*unwrap[1]+tmpf[2]*unwrap[2];
+      efield_fsum[1] += tmpf[0];
+      efield_fsum[2] += tmpf[1];
+      efield_fsum[3] += tmpf[2];
       if (evflag) {
-	v[0] = q[ii] * efield[0] *unwrap[0];
-	v[1] = q[ii] * efield[1] *unwrap[1];
-	v[2] = q[ii] * efield[2] *unwrap[2];
-	v[3] = q[ii] * efield[0] *unwrap[1];
-	v[4] = q[ii] * efield[0] *unwrap[2];
-	v[5] = q[ii] * efield[1] *unwrap[2];
+	v[0] = tmpf[0] *unwrap[0];
+	v[1] = tmpf[1] *unwrap[1];
+	v[2] = tmpf[2] *unwrap[2];
+	v[3] = tmpf[0] *unwrap[1];
+	v[4] = tmpf[0] *unwrap[2];
+	v[5] = tmpf[1] *unwrap[2];
 	v_tally(ii, v);
       }
-    }    
+    }
   }
   // lmp nlist
   NeighList * list = pair_nnp->list;
