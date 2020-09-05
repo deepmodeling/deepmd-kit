@@ -10,9 +10,9 @@
  	- [Deep Potential in a nutshell](#deep-potential-in-a-nutshell)
 - [Download and install](#download-and-install)
     - [Easy installation methods](#easy-installation-methods)
+      - [Offline packages](#offline-packages)
       - [With Docker](#with-docker)
       - [With conda](#with-conda)
-      - [Offline packages](#offline-packages)
     - [Install the python interaction](#install-the-python-interface)
       - [Install the Tensorflow's python interface](#install-the-tensorflows-python-interface)
       - [Install the DeePMD-kit's python interface](#install-the-deepmd-kits-python-interface)
@@ -90,8 +90,10 @@ Please follow our [github](https://github.com/deepmodeling/deepmd-kit) webpage t
 ## Easy installation methods
 There various easy methods to install DeePMD-kit. Choose one that you prefer. If you want to build by yourself, jump to the next two sections.
 
-### With Docker
-A docker for installing the DeePMD-kit on CentOS 7 is available [here](https://github.com/frankhan91/deepmd-kit_docker).
+After your easy installation, DeePMD-kit (`dp`) and LAMMPS (`lmp`) will be available to execute. You can try `dp -h` and `lmp -h` to see the help. `mpirun` is also available considering you may want to run LAMMPS in parallel.
+
+### Offline packages
+Both CPU and GPU version offline packages are avaiable in [the Releases page](https://github.com/deepmodeling/deepmd-kit/releases).
 
 ### With conda
 DeePMD-kit is avaiable with [conda](https://github.com/conda/conda). Install [Anaconda](https://www.anaconda.com/distribution/#download-section) or [Miniconda](https://docs.conda.io/en/latest/miniconda.html) first.
@@ -101,13 +103,23 @@ To install the CPU version:
 conda install deepmd-kit=*=*cpu lammps-dp=*=*cpu -c deepmodeling
 ```
 
-To install the GPU version containing [CUDA 10.0](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver):
+To install the GPU version containing [CUDA 10.1](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver):
 ```bash
 conda install deepmd-kit=*=*gpu lammps-dp=*=*gpu -c deepmodeling
 ```
 
-### Offline packages
-Both CPU and GPU version offline package are avaiable in [the Releases page](https://github.com/deepmodeling/deepmd-kit/releases).
+### With Docker
+A docker for installing the DeePMD-kit is available [here](https://hub.docker.com/r/deepmodeling/deepmd-kit).
+
+To pull the CPU version:
+```bash
+docker pull deepmodeling/deepmd-kit:1.2.0_cpu
+```
+
+To pull the GPU version:
+```bash
+docker pull deepmodeling/deepmd-kit:1.2.0_cuda10.1_gpu
+```
 
 ## Install the python interface 
 ### Install the Tensorflow's python interface
