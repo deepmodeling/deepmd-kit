@@ -194,7 +194,6 @@ init (const string & model, const int & gpu_rank)
   int gpu_num = -1;
   #if GOOGLE_CUDA
   cudaGetDeviceCount(&gpu_num); // check current device environment
-  #endif // GOOGLE_CUDA
   if (gpu_num > 0) {
     options.config.set_allow_soft_placement(true);
     options.config.mutable_gpu_options()->set_per_process_gpu_memory_fraction(0.9);
@@ -204,6 +203,7 @@ init (const string & model, const int & gpu_rank)
     str += std::to_string(gpu_rank % gpu_num);
     graph::SetDefaultDevice(str, &graph_def);
   }
+  #endif // GOOGLE_CUDA
   checkStatus (NewSession(options, &session));
   checkStatus (session->Create(graph_def));
 
