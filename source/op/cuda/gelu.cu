@@ -34,42 +34,42 @@ __global__ void gelu_grad_grad(const T * dy, const T * dy_, const T * in, T * ou
 }
 
 
-void GeluLauncher(const float * in, float * out, int const size) {
+void GeluGPULauncher(const float * in, float * out, int const size) {
     int const THREAD_ITEMS = 1024;
     int const BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
 
     gelu<<<BLOCK_NUMS, THREAD_ITEMS>>>(in, out, size);
 }
 
-void GeluLauncher(const double * in, double * out, int const size) {
+void GeluGPULauncher(const double * in, double * out, int const size) {
     int const THREAD_ITEMS = 1024;
     int const BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
 
     gelu<<<BLOCK_NUMS, THREAD_ITEMS>>>(in, out, size);
 }
 
-void GeluGradLauncher(const float * dy, const float * in, float * out, int const size) {
+void GeluGradGPULauncher(const float * dy, const float * in, float * out, int const size) {
     int const THREAD_ITEMS = 1024;
     int const BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
 
     gelu_grad<<<BLOCK_NUMS, THREAD_ITEMS>>>(dy, in, out, size);
 }
 
-void GeluGradLauncher(const double * dy, const double * in, double * out, int const size) {
+void GeluGradGPULauncher(const double * dy, const double * in, double * out, int const size) {
     int const THREAD_ITEMS = 1024;
     int const BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
 
     gelu_grad<<<BLOCK_NUMS, THREAD_ITEMS>>>(dy, in, out, size);
 }
 
-void GeluGradGradLauncher(const float * dy, const float * dy_, const float * in, float * out, int const size) {
+void GeluGradGradGPULauncher(const float * dy, const float * dy_, const float * in, float * out, int const size) {
     int const THREAD_ITEMS = 1024;
     int const BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
 
     gelu_grad_grad<<<BLOCK_NUMS, THREAD_ITEMS>>>(dy, dy_, in, out, size);
 }
 
-void GeluGradGradLauncher(const double * dy, const double * dy_, const double * in, double * out, int const size) {
+void GeluGradGradGPULauncher(const double * dy, const double * dy_, const double * in, double * out, int const size) {
     int const THREAD_ITEMS = 1024;
     int const BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
 

@@ -125,7 +125,7 @@ else()
   endif()
 endif()
 if (USE_CUDA_TOOLKIT)
-  add_definitions("-DUSE_CUDA_TOOLKIT")
+  add_definitions("-D GOOGLE_CUDA")
 endif()
 
 # define USE_TTM
@@ -230,4 +230,3 @@ configure_file(
 
 add_custom_target(lammps
     COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_lammps.cmake)
-

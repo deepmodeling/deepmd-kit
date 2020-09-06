@@ -1,15 +1,3 @@
-/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-    http://www.apache.org/licenses/LICENSE-2.0
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-==============================================================================*/
-#define EIGEN_USE_GPU
 #include <vector>
 #include <climits>
 #include <stdio.h>
@@ -18,25 +6,15 @@ limitations under the License.
 #include <cub/block/block_radix_sort.cuh>
 #include <cuda_runtime.h>
 
-#ifdef HIGH_PREC
-    typedef double  VALUETYPE;
-#else
-    typedef float   VALUETYPE;
-#endif
-
-typedef double compute_t;
-
-typedef unsigned long long int_64;
-
-#define cudaErrcheck(res) { cudaAssert((res), __FILE__, __LINE__); }
-inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort=true)
-{
-    if (code != cudaSuccess) 
-    {
+#define cudaErrcheck(res) {cudaAssert((res), __FILE__, __LINE__);}
+inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort=true) {
+    if (code != cudaSuccess) {
         fprintf(stderr,"cuda assert: %s %s %d\n", cudaGetErrorString(code), file, line);
         if (abort) exit(code);
     }
 }
+
+typedef unsigned long long int_64;
 
 template <
     typename    Key,
@@ -77,19 +55,16 @@ __device__ inline T dev_dot(T * arr1, T * arr2) {
     return arr1[0] * arr2[0] + arr1[1] * arr2[1] + arr1[2] * arr2[2];
 }
 
-__device__ inline void spline5_switch(compute_t & vv,
-        compute_t & dd,
-        compute_t & xx, 
-		const compute_t & rmin, 
-		const compute_t & rmax) 
+template<typename T>
+__device__ inline void spline5_switch(T & vv, T & dd, T & xx, const float & rmin, const float & rmax) 
 {
     if (xx < rmin) {
         dd = 0;
         vv = 1;
     }
     else if (xx < rmax) {
-        compute_t uu = (xx - rmin) / (rmax - rmin) ;
-        compute_t du = 1. / (rmax - rmin) ;
+        T uu = (xx - rmin) / (rmax - rmin) ;
+        T du = 1. / (rmax - rmin) ;
         vv = uu*uu*uu * (-6 * uu*uu + 15 * uu - 10) + 1;
         dd = ( 3 * uu*uu * (-6 * uu*uu + 15 * uu - 10) + uu*uu*uu * (-12 * uu + 15) ) * du;
     }
@@ -99,62 +74,60 @@ __device__ inline void spline5_switch(compute_t & vv,
     }
 }
 
-__global__ void get_i_idx_se_a(const int nloc,
-                        const int * ilist,
-                        int * i_idx)
+__global__ void get_i_idx_se_a(const int nloc, const int * ilist, int * i_idx)
 {
     const unsigned int idy = blockIdx.x * blockDim.x + threadIdx.x;
-    if(idy >= nloc) {
-        return;
-    }
+    if(idy >= nloc) {return;}
+
     i_idx[ilist[idy]] = idy;
 }
 
-__global__ void format_nlist_fill_a_se_a(const VALUETYPE * coord,
-                            const int * type,
-                            const int  * jrange,
-                            const int  * jlist,
-                            const float rcut,
-                            int_64 * key,
-                            int * i_idx,
-                            const int MAGIC_NUMBER)
+template<typename T>
+__global__ void format_nlist_fill_a_se_a(
+    const T * coord,
+    const int  * type,
+    const int  * jrange,
+    const int  * jlist,
+    const float rcut,
+    int_64 * key,
+    int * i_idx,
+    const int MAGIC_NUMBER)
 {   
     // <<<nloc, MAGIC_NUMBER>>>
-    const unsigned int idx = blockIdx.y;
-    const unsigned int idy = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned int idx = blockIdx.x;
+    const unsigned int idy = blockIdx.y * blockDim.y + threadIdx.y;
     
     const int nsize = jrange[i_idx[idx] + 1] - jrange[i_idx[idx]];
-    if (idy >= nsize) {
-        return;
-    }
+    if (idy >= nsize) {return;}
 
     const int * nei_idx = jlist + jrange[i_idx[idx]];
     // dev_copy(nei_idx, &jlist[jrange[i_idx]], nsize);
 
     int_64 * key_in = key + idx * MAGIC_NUMBER;
 
-    compute_t diff[3];
+    T diff[3];
     const int & j_idx = nei_idx[idy];
     for (int dd = 0; dd < 3; dd++) {
         diff[dd] = coord[j_idx * 3 + dd] - coord[idx * 3 + dd];
     }
-    compute_t rr = sqrt(dev_dot(diff, diff)); 
+    T rr = sqrt(dev_dot(diff, diff)); 
     if (rr <= rcut) {
-        key_in[idy] = type[j_idx] * 1E15+ (int_64)(rr * 1.0E13) / 100000 * 100000 + j_idx;
+        key_in[idy] = (int_64)(type[j_idx] * 1E15) + (int_64)(rr * 1.0E13) / 100000 * 100000 + j_idx;
     }
 }
 
     // bubble_sort(sel_nei, num_nei);
-__global__ void format_nlist_fill_b_se_a(int * nlist,
-                            const int nlist_size,
-                            const int nloc,
-                            const int * jrange,
-                            const int * jlist,
-                            int_64 * key,
-                            const int * sec_a,
-                            const int sec_a_size,
-                            int * nei_iter_dev,
-                            const int MAGIC_NUMBER)
+__global__ void format_nlist_fill_b_se_a(
+    int * nlist,
+    const int nlist_size,
+    const int nloc,
+    const int * jrange,
+    const int * jlist,
+    int_64 * key,
+    const int * sec_a,
+    const int sec_a_size,
+    int * nei_iter_dev,
+    const int MAGIC_NUMBER)
 { 
 
     const unsigned int idy = blockIdx.x * blockDim.x + threadIdx.x;
@@ -180,33 +153,35 @@ __global__ void format_nlist_fill_b_se_a(int * nlist,
 }
 //it's ok!
 
-__global__ void compute_descriptor_se_a (VALUETYPE* descript,
-                            const int ndescrpt,
-                            VALUETYPE* descript_deriv,
-                            const int descript_deriv_size,
-                            VALUETYPE* rij,
-                            const int rij_size,
-                            const int* type,
-                            const VALUETYPE* avg,
-                            const VALUETYPE* std,
-                            int* nlist,
-                            const int nlist_size,
-                            const VALUETYPE* coord,
-                            const VALUETYPE rmin,
-                            const VALUETYPE rmax,
-                            const int sec_a_size)
+template<typename T>
+__global__ void compute_descriptor_se_a (
+    T* descript,
+    const int ndescrpt,
+    T* descript_deriv,
+    const int descript_deriv_size,
+    T* rij,
+    const int rij_size,
+    const int* type,
+    const T* avg,
+    const T* std,
+    int* nlist,
+    const int nlist_size,
+    const T* coord,
+    const float rmin,
+    const float rmax,
+    const int sec_a_size)
 {   
     // <<<nloc, sec_a.back()>>>
-    const unsigned int idx = blockIdx.y;
-    const unsigned int idy = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned int idx = blockIdx.x;
+    const unsigned int idy = blockIdx.y * blockDim.y + threadIdx.y;
     const int idx_deriv = idy * 4 * 3;	// 4 components time 3 directions
     const int idx_value = idy * 4;	// 4 components
     if (idy >= sec_a_size) {return;}
 
     // else {return;}
-    VALUETYPE * row_descript = descript + idx * ndescrpt;
-    VALUETYPE * row_descript_deriv = descript_deriv + idx * descript_deriv_size;
-    VALUETYPE * row_rij = rij + idx * rij_size;
+    T * row_descript = descript + idx * ndescrpt;
+    T * row_descript_deriv = descript_deriv + idx * descript_deriv_size;
+    T * row_rij = rij + idx * rij_size;
     int * row_nlist = nlist + idx * nlist_size;
 
     if (row_nlist[idy] >= 0) {
@@ -214,14 +189,14 @@ __global__ void compute_descriptor_se_a (VALUETYPE* descript,
         for (int kk = 0; kk < 3; kk++) {
             row_rij[idy * 3 + kk] = coord[j_idx * 3 + kk] - coord[idx * 3 + kk];
         }
-        const compute_t * rr = &row_rij[idy * 3 + 0];
-        compute_t nr2 = dev_dot(rr, rr);
-        compute_t inr = 1./sqrt(nr2);
-        compute_t nr = nr2 * inr;
-        compute_t inr2 = inr * inr;
-        compute_t inr4 = inr2 * inr2;
-        compute_t inr3 = inr4 * nr;
-        compute_t sw, dsw;
+        const T * rr = &row_rij[idy * 3 + 0];
+        T nr2 = dev_dot(rr, rr);
+        T inr = 1./sqrt(nr2);
+        T nr = nr2 * inr;
+        T inr2 = inr * inr;
+        T inr4 = inr2 * inr2;
+        T inr3 = inr4 * nr;
+        T sw, dsw;
         spline5_switch(sw, dsw, nr, rmin, rmax);
         row_descript[idx_value + 0] = (1./nr)       ;//* sw;
         row_descript[idx_value + 1] = (rr[0] / nr2) ;//* sw;
@@ -253,195 +228,82 @@ __global__ void compute_descriptor_se_a (VALUETYPE* descript,
     for (int ii = 0; ii < 4; ii++) {
         row_descript[idx_value + ii] = (row_descript[idx_value + ii] - avg[type[idx] * ndescrpt + idx_value + ii]) / std[type[idx] * ndescrpt + idx_value + ii];
     }
-    // idy nloc, idx ndescrpt * 3
-    // descript_deriv[idy * ndescrpt * 3 + idx] = (descript_deriv_dev[idy * (ndescrpt * 3) + idx]) / std[type[idy] * ndescrpt + idx / 3];
     for (int ii = 0; ii < 12; ii++) {
         row_descript_deriv[idx_deriv + ii] /= std[type[idx] * ndescrpt + (idx_deriv + ii) / 3];
     }
 }
 
-void format_nbor_list_256 (
-    const VALUETYPE* coord,
-    const int* type,
-    const int* jrange,
-    const int* jlist,
-    const int& nloc,       
-    const float& rcut_r, 
-    int * i_idx, 
-    int_64 * key
-) 
-{   
+template<typename T>
+void format_nbor_list_256 (const T* coord, const int* type, const int* jrange, const int* jlist, const int& nloc, const float& rcut_r, int * i_idx, int_64 * key)  {   
     const int LEN = 256;
     const int MAGIC_NUMBER = 256;
     const int nblock = (MAGIC_NUMBER + LEN - 1) / LEN;
-    dim3 block_grid(nblock, nloc);
-    format_nlist_fill_a_se_a
-    <<<block_grid, LEN>>> (
-        coord,
-        type,
-        jrange,
-        jlist,
-        rcut_r,
-        key,
-        i_idx,
-        MAGIC_NUMBER
-    );
+    dim3 block_grid(nloc, nblock);
+    dim3 thread_grid(1, LEN);
+    format_nlist_fill_a_se_a<<<block_grid, thread_grid>>> (coord, type, jrange, jlist, rcut_r, key, i_idx, MAGIC_NUMBER);
+    
     const int ITEMS_PER_THREAD = 4;
     const int BLOCK_THREADS = MAGIC_NUMBER / ITEMS_PER_THREAD;
-    // BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
     BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAGIC_NUMBER);
 }
 
-void format_nbor_list_512 (
-    const VALUETYPE* coord,
-    const int* type,
-    const int* jrange,
-    const int* jlist,
-    const int& nloc,       
-    const float& rcut_r, 
-    int * i_idx, 
-    int_64 * key
-) 
-{   
+template<typename T>
+void format_nbor_list_512 (const T* coord, const int* type, const int* jrange, const int* jlist, const int& nloc, const float& rcut_r, int * i_idx, int_64 * key)  {   
     const int LEN = 256;
     const int MAGIC_NUMBER = 512;
     const int nblock = (MAGIC_NUMBER + LEN - 1) / LEN;
-    dim3 block_grid(nblock, nloc);
-    format_nlist_fill_a_se_a
-    <<<block_grid, LEN>>> (
-        coord,
-        type,
-        jrange,
-        jlist,
-        rcut_r,
-        key,
-        i_idx,
-        MAGIC_NUMBER
-    );
+    dim3 block_grid(nloc, nblock);
+    dim3 thread_grid(1, LEN);
+    format_nlist_fill_a_se_a<<<block_grid, thread_grid>>> (coord, type, jrange, jlist, rcut_r, key, i_idx, MAGIC_NUMBER);
+
     const int ITEMS_PER_THREAD = 4;
     const int BLOCK_THREADS = MAGIC_NUMBER / ITEMS_PER_THREAD;
-    // BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
     BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAGIC_NUMBER);
 }
 
-void format_nbor_list_1024 (
-    const VALUETYPE* coord,
-    const int* type,
-    const int* jrange,
-    const int* jlist,
-    const int& nloc,       
-    const float& rcut_r, 
-    int * i_idx, 
-    int_64 * key
-) 
-{   
+template<typename T>
+void format_nbor_list_1024 (const T* coord, const int* type, const int* jrange, const int* jlist, const int& nloc, const float& rcut_r, int * i_idx, int_64 * key)  {   
     const int LEN = 256;
     const int MAGIC_NUMBER = 1024;
     const int nblock = (MAGIC_NUMBER + LEN - 1) / LEN;
-    dim3 block_grid(nblock, nloc);
-    format_nlist_fill_a_se_a
-    <<<block_grid, LEN>>> (
-        coord,
-        type,
-        jrange,
-        jlist,
-        rcut_r,
-        key,
-        i_idx,
-        MAGIC_NUMBER
-    );
+    dim3 block_grid(nloc, nblock);
+    dim3 thread_grid(1, LEN);
+    format_nlist_fill_a_se_a<<<block_grid, thread_grid>>> (coord, type, jrange, jlist, rcut_r, key, i_idx, MAGIC_NUMBER);
+
     const int ITEMS_PER_THREAD = 8;
     const int BLOCK_THREADS = MAGIC_NUMBER / ITEMS_PER_THREAD;
-    // BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
     BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAGIC_NUMBER);
 }
 
-void format_nbor_list_2048 (
-    const VALUETYPE* coord,
-    const int* type,
-    const int* jrange,
-    const int* jlist,
-    const int& nloc,       
-    const float& rcut_r, 
-    int * i_idx, 
-    int_64 * key
-) 
-{   
+template<typename T>
+void format_nbor_list_2048 (const T* coord, const int* type, const int* jrange, const int* jlist, const int& nloc, const float& rcut_r, int * i_idx, int_64 * key)  {   
     const int LEN = 256;
     const int MAGIC_NUMBER = 2048;
     const int nblock = (MAGIC_NUMBER + LEN - 1) / LEN;
-    dim3 block_grid(nblock, nloc);
-    format_nlist_fill_a_se_a
-    <<<block_grid, LEN>>> (
-        coord,
-        type,
-        jrange,
-        jlist,
-        rcut_r,
-        key,
-        i_idx,
-        MAGIC_NUMBER
-    );
+    dim3 block_grid(nloc, nblock);
+    dim3 thread_grid(1, LEN);
+    format_nlist_fill_a_se_a<<<block_grid, thread_grid>>> (coord, type, jrange, jlist, rcut_r, key, i_idx, MAGIC_NUMBER);
+
     const int ITEMS_PER_THREAD = 8;
     const int BLOCK_THREADS = MAGIC_NUMBER / ITEMS_PER_THREAD;
-    // BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
     BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAGIC_NUMBER);
 }
 
-void format_nbor_list_4096 (
-    const VALUETYPE* coord,
-    const int* type,
-    const int* jrange,
-    const int* jlist,
-    const int& nloc,       
-    const float& rcut_r, 
-    int * i_idx, 
-    int_64 * key
-) 
-{   
+template<typename T>
+void format_nbor_list_4096 (const T* coord, const int* type, const int* jrange, const int* jlist, const int& nloc, const float& rcut_r, int * i_idx, int_64 * key)  {   
     const int LEN = 256;
     const int MAGIC_NUMBER = 4096;
     const int nblock = (MAGIC_NUMBER + LEN - 1) / LEN;
-    dim3 block_grid(nblock, nloc);
-    format_nlist_fill_a_se_a
-    <<<block_grid, LEN>>> (
-        coord,
-        type,
-        jrange,
-        jlist,
-        rcut_r,
-        key,
-        i_idx,
-        MAGIC_NUMBER
-    );
+    dim3 block_grid(nloc, nblock);
+    dim3 thread_grid(1, LEN);
+    format_nlist_fill_a_se_a<<<block_grid, thread_grid>>> (coord, type, jrange, jlist, rcut_r, key, i_idx, MAGIC_NUMBER);
+
     const int ITEMS_PER_THREAD = 16;
     const int BLOCK_THREADS = MAGIC_NUMBER / ITEMS_PER_THREAD;
-    // BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
     BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAGIC_NUMBER);
 }
 
-void DescrptSeALauncher(const VALUETYPE* coord,
-                            const int* type,
-                            const int* ilist,
-                            const int* jrange,
-                            const int* jlist,
-                            int* array_int,
-                            unsigned long long* array_longlong,
-                            const VALUETYPE* avg,
-                            const VALUETYPE* std,
-                            VALUETYPE* descript,
-                            VALUETYPE* descript_deriv,
-                            VALUETYPE* rij,
-                            int* nlist,
-                            const int& nloc,       
-                            const int& nnei,       
-                            const float& rcut_r,     
-                            const float& rcut_r_smth,
-                            const int& ndescrpt, 
-                            const std::vector<int>& sec_a,      
-                            const bool& fill_nei_a,
-                            const int MAGIC_NUMBER
-)
+void DescrptSeAGPUExecuteLauncher(const float * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const float * avg, const float * std, float * descript, float * descript_deriv, float * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int MAGIC_NUMBER)
 {   
     const int LEN = 256;
     int nblock = (nloc + LEN -1) / LEN;
@@ -454,8 +316,8 @@ void DescrptSeALauncher(const VALUETYPE* coord,
     res = cudaMemcpy(sec_a_dev, &sec_a[0], sizeof(int) * sec_a.size(), cudaMemcpyHostToDevice); cudaErrcheck(res);    
     res = cudaMemset(key, 0xffffffff, sizeof(int_64) * nloc * MAGIC_NUMBER); cudaErrcheck(res);
     res = cudaMemset(nlist, -1, sizeof(int) * nloc * nnei); cudaErrcheck(res);
-    res = cudaMemset(descript, 0.0, sizeof(VALUETYPE) * nloc * ndescrpt); cudaErrcheck(res);
-    res = cudaMemset(descript_deriv, 0.0, sizeof(VALUETYPE) * nloc * ndescrpt * 3); cudaErrcheck(res);
+    res = cudaMemset(descript, 0.0, sizeof(float) * nloc * ndescrpt); cudaErrcheck(res);
+    res = cudaMemset(descript_deriv, 0.0, sizeof(float) * nloc * ndescrpt * 3); cudaErrcheck(res);
 
     if (fill_nei_a) {
         // ~~~
@@ -463,93 +325,118 @@ void DescrptSeALauncher(const VALUETYPE* coord,
         get_i_idx_se_a<<<nblock, LEN>>> (nloc, ilist, i_idx);
 
         if (nnei <= 256) {
-            format_nbor_list_256 (
-                coord,
-                type,
-                jrange,
-                jlist,
-                nloc,       
-                rcut_r, 
-                i_idx, 
-                key
-            ); 
+            format_nbor_list_256 (coord, type, jrange, jlist, nloc, rcut_r, i_idx, key); 
         } else if (nnei <= 512) {
-            format_nbor_list_512 (
-                coord,
-                type,
-                jrange,
-                jlist,
-                nloc,       
-                rcut_r, 
-                i_idx, 
-                key
-            ); 
+            format_nbor_list_512 (coord, type, jrange, jlist, nloc, rcut_r, i_idx, key); 
         } else if (nnei <= 1024) {
-            format_nbor_list_1024 (
-                coord,
-                type,
-                jrange,
-                jlist,
-                nloc,       
-                rcut_r, 
-                i_idx, 
-                key
-            ); 
+            format_nbor_list_1024 (coord, type, jrange, jlist, nloc, rcut_r, i_idx, key); 
         } else if (nnei <= 2048) {
-            format_nbor_list_2048 (
-                coord,
-                type,
-                jrange,
-                jlist,
-                nloc,       
-                rcut_r, 
-                i_idx, 
-                key
-            ); 
+            format_nbor_list_2048 (coord, type, jrange, jlist, nloc, rcut_r, i_idx, key); 
         } else if (nnei <= 4096) {
-            format_nbor_list_4096 (
-                coord,
-                type,
-                jrange,
-                jlist,
-                nloc,       
-                rcut_r, 
-                i_idx, 
-                key
-            ); 
+            format_nbor_list_4096 (coord, type, jrange, jlist, nloc, rcut_r, i_idx, key); 
         } 
 
-        format_nlist_fill_b_se_a<<<nblock, LEN>>> (
-                            nlist,
-                            nnei,       
-                            nloc,
-                            jrange,
-                            jlist,
-                            key,
-                            sec_a_dev,
-                            sec_a.size(),
-                            nei_iter,
-                            MAGIC_NUMBER
-        );
+        format_nlist_fill_b_se_a<<<nblock, LEN>>> (nlist, nnei, nloc, jrange, jlist, key, sec_a_dev, sec_a.size(), nei_iter, MAGIC_NUMBER);
     }
 
     const int nblock_ = (sec_a.back() + LEN -1) / LEN;
-    dim3 block_grid(nblock_, nloc);
-    compute_descriptor_se_a<<<block_grid, LEN>>> (
-                            descript,
-                            ndescrpt,
-                            descript_deriv,
-                            ndescrpt * 3,
-                            rij,
-                            nnei * 3,
-                            type,
-                            avg,
-                            std,
-                            nlist,
-                            nnei,
-                            coord,
-                            rcut_r_smth,
-                            rcut_r,
-                            sec_a.back()
-    );
-}  
+    dim3 block_grid(nloc, nblock_);
+    dim3 thread_grid(1, LEN);
+    compute_descriptor_se_a<<<block_grid, thread_grid>>> (descript, ndescrpt, descript_deriv, ndescrpt * 3, rij, nnei * 3, type, avg, std, nlist, nnei, coord, rcut_r_smth, rcut_r, sec_a.back());
+}
+
+void DescrptSeAGPUExecuteLauncher(const double * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const double * avg, const double * std, double * descript, double * descript_deriv, double * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int MAGIC_NUMBER)
+{   
+    const int LEN = 256;
+    int nblock = (nloc + LEN -1) / LEN;
+    int * sec_a_dev = array_int;
+    int * nei_iter = array_int + sec_a.size(); // = new int[sec_a_size];
+    int * i_idx = array_int + sec_a.size() + nloc * sec_a.size();
+    int_64 * key = array_longlong;
+    
+    cudaError_t res = cudaSuccess;
+    res = cudaMemcpy(sec_a_dev, &sec_a[0], sizeof(int) * sec_a.size(), cudaMemcpyHostToDevice); cudaErrcheck(res);    
+    res = cudaMemset(key, 0xffffffff, sizeof(int_64) * nloc * MAGIC_NUMBER); cudaErrcheck(res);
+    res = cudaMemset(nlist, -1, sizeof(int) * nloc * nnei); cudaErrcheck(res);
+    res = cudaMemset(descript, 0.0, sizeof(double) * nloc * ndescrpt); cudaErrcheck(res);
+    res = cudaMemset(descript_deriv, 0.0, sizeof(double) * nloc * ndescrpt * 3); cudaErrcheck(res);
+
+    if (fill_nei_a) {
+        // ~~~
+        // cudaProfilerStart();
+        get_i_idx_se_a<<<nblock, LEN>>> (nloc, ilist, i_idx);
+
+        if (nnei <= 256) {
+            format_nbor_list_256 (coord, type, jrange, jlist, nloc, rcut_r, i_idx, key); 
+        }  else if (nnei <= 512) {
+            format_nbor_list_512 (coord, type, jrange, jlist, nloc, rcut_r, i_idx, key); 
+        } else if (nnei <= 1024) {
+            format_nbor_list_1024 (coord, type, jrange, jlist, nloc, rcut_r, i_idx, key); 
+        } else if (nnei <= 2048) {
+            format_nbor_list_2048 (coord, type, jrange, jlist, nloc, rcut_r, i_idx, key); 
+        } else if (nnei <= 4096) {
+            format_nbor_list_4096 (coord, type, jrange, jlist, nloc, rcut_r, i_idx, key); 
+        }
+
+        format_nlist_fill_b_se_a<<<nblock, LEN>>> (nlist, nnei, nloc, jrange, jlist, key, sec_a_dev, sec_a.size(), nei_iter, MAGIC_NUMBER);
+    }
+
+    const int nblock_ = (sec_a.back() + LEN -1) / LEN;
+    dim3 block_grid(nloc, nblock_);
+    dim3 thread_grid(1, LEN);
+    compute_descriptor_se_a<<<block_grid, thread_grid>>> (descript, ndescrpt, descript_deriv, ndescrpt * 3, rij, nnei * 3, type, avg, std, nlist, nnei, coord, rcut_r_smth, rcut_r, sec_a.back());
+
+    cudaErrcheck(cudaGetLastError());
+
+    #if GPU_DEBUG
+    #include<fstream>
+    std::fstream fout1("nlist_gpu.txt", std::ios::out);
+    int * nlist_host = (int *)malloc(sizeof(int) * nloc * nnei);
+    cudaErrcheck(cudaMemcpy(nlist_host, nlist, sizeof(int) * nloc * nnei, cudaMemcpyDeviceToHost));
+    fout1 << "nlist info:\t" << "height:\t" << nloc << "\twidth:\t" << nnei << std::endl;
+    for (int ii = 0; ii < nloc; ii++) {
+        for (int jj = 0; jj < nnei; jj++) {
+            fout1 << nlist_host[ii * nnei + jj] << "\t";
+        }
+        fout1 << std::endl;
+    }
+    fout1.close();
+
+    std::fstream fout2("rij_gpu.txt", std::ios::out);
+    double * rij_host = (double *)malloc(sizeof(double) * nloc * nnei * 3);
+    cudaErrcheck(cudaMemcpy(rij_host, rij, sizeof(double) * nloc * nnei * 3, cudaMemcpyDeviceToHost));
+    fout2 << "rij info:\t" << "height:\t" << nloc << "\twidth:\t" << nnei * 3 << std::endl;
+    for (int ii = 0; ii < nloc; ii++) {
+        for (int jj = 0; jj < nnei * 3; jj++) {
+            fout2 << rij_host[ii * nnei * 3 + jj] << "\t";
+        }
+        fout2 << std::endl;
+    }
+    fout2.close();
+
+    std::fstream fout3("descrpt_gpu.txt", std::ios::out);
+    double * descrpt_host = (double *)malloc(sizeof(double) * nloc * ndescrpt);
+    cudaErrcheck(cudaMemcpy(descrpt_host, descript, sizeof(double) * nloc * ndescrpt, cudaMemcpyDeviceToHost));
+    fout3 << "descrpt info:\t" << "height:\t" << nloc << "\twidth:\t" << ndescrpt << std::endl;
+    for (int ii = 0; ii < nloc; ii++) {
+        for (int jj = 0; jj < ndescrpt; jj++) {
+            fout3 << descrpt_host[ii * ndescrpt + jj] << "\t";
+        }
+        fout3 << std::endl;
+    }
+    fout3.close();
+
+
+    std::fstream fout4("descrpt_deriv_gpu.txt", std::ios::out);
+    double * descrpt_deriv_host = (double *)malloc(sizeof(double) * nloc * ndescrpt * 3);
+    cudaErrcheck(cudaMemcpy(descrpt_deriv_host, descript_deriv, sizeof(double) * nloc * ndescrpt * 3, cudaMemcpyDeviceToHost));
+    fout4 << "descrpt_deriv info:\t" << "height:\t" << nloc << "\twidth:\t" << ndescrpt * 3 << std::endl;
+    for (int ii = 0; ii < nloc; ii++) {
+        for (int jj = 0; jj < ndescrpt * 3; jj++) {
+            fout4 << descrpt_deriv_host[ii * ndescrpt * 3 + jj] << "\t";
+        }
+        fout4 << std::endl;
+    }
+    fout4.close();
+    #endif // GPU_DEBUG
+}

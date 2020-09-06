@@ -1,17 +1,23 @@
 #pragma once
-
 #include "tensorflow/core/public/session.h"
 #include "tensorflow/core/platform/env.h"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/shape_inference.h"
-
-using namespace tensorflow;
-using namespace std;
+#include <tensorflow/core/graph/default_device.h>
+#include <tensorflow/core/graph/graph_def_builder.h>
 
 #include "NNPAtomMap.h"
 #include <vector>
+#include <string>
+#include <iostream>
 #include "version.h"
+
+using CPUDevice = Eigen::ThreadPoolDevice;
+using GPUDevice = Eigen::GpuDevice;
+
+using namespace tensorflow;
+using namespace std;
 
 #ifdef HIGH_PREC
 typedef double VALUETYPE;
@@ -133,6 +139,20 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 		       const vector<VALUETYPE> &	aparam_,
 		       const NNPAtomMap<VALUETYPE>&	nnpmap,
 		       const int			nghost,
+		       const int			ago,
+		       const string			scope = "");
+
+int
+session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
+		       const vector<VALUETYPE> &	dcoord_,
+		       const int &			ntypes,
+		       const vector<int> &		datype_,
+		       const vector<VALUETYPE> &	dbox,		    
+		       InternalNeighborList &		dlist, 
+		       const vector<VALUETYPE> &	fparam_,
+		       const vector<VALUETYPE> &	aparam_,
+		       const NNPAtomMap<VALUETYPE>&	nnpmap,
+		       const int			nghost,
 		       const string			scope = "");
 
 int 
@@ -144,7 +164,7 @@ session_input_tensors (vector<std::pair<string, Tensor>>& input_tensors,
 		       const int                        * ilist, 
 		       const int                        * jrange,
 		       const int                        * jlist,
-		       const vector<VALUETYPE>		& fparam_,
+		       const vector<VALUETYPE>			& fparam_,
 		       const vector<VALUETYPE>	        & aparam_,
 		       const NNPAtomMap<VALUETYPE>      & nnpmap,
 		       const int			& nghost);
@@ -215,4 +235,3 @@ select_map(vector<VT> & out,
     }
   }
 }
-
