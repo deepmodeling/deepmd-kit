@@ -32,6 +32,8 @@ public:
     void post_force(int);
     int pack_reverse_comm(int, int, double *);
     void unpack_reverse_comm(int, int *, double *);
+    double compute_scalar(void);
+    double compute_vector(int);
 private:
     PairNNP * pair_nnp;
     DeepTensor dpt;
@@ -45,6 +47,9 @@ private:
     map<int,int > bk_type_asso;
     vector<FLOAT_PREC> dipole_recd;
     vector<double> dfcorr_buff;
+    vector<double> efield;
+    vector<double> efield_fsum, efield_fsum_all;
+    int efield_force_flag;
     void get_valid_pairs(vector<pair<int,int> >& pairs);
   };
 }
