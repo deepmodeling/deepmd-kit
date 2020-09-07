@@ -1,14 +1,5 @@
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include <iostream>
-#include <cuda_runtime.h>
-
-#ifdef HIGH_PREC
-typedef double VALUETYPE;
-#else
-typedef float  VALUETYPE;
-#endif
+#include "common.h"
+#include "CustomeOperation.h"
 
 #ifdef HIGH_PREC
 REGISTER_OP("ProdVirialSeA")
@@ -34,31 +25,19 @@ REGISTER_OP("ProdVirialSeA")
     .Output("atom_virial: float");
 #endif
 
-using namespace tensorflow;
-
-#define cudaErrcheck(res) { cudaAssert((res), __FILE__, __LINE__); }
-inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort=true)
-{
-    if (code != cudaSuccess) 
-    {
-        fprintf(stderr,"cuda assert: %s %s %d\n", cudaGetErrorString(code), file, line);
-        if (abort) exit(code);
+template<typename Device, typename T>
+struct ProdVirialSeAFunctor {
+    void operator()(const CPUDevice& d, T * virial, T * atom_virial, const T * net_deriv, const T * in_deriv, const T * rij, const int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const int n_a_sel, const int n_a_shift) {
+        ProdVirialSeACPULauncher(virial, atom_virial, net_deriv, in_deriv, rij, nlist, nloc, nall, nnei, ndescrpt, n_a_sel, n_a_shift);
     }
-}
+    #if GOOGLE_CUDA
+    void operator()(const GPUDevice& d, T * virial, T * atom_virial, const T * net_deriv, const T * in_deriv, const T * rij, const int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const int n_a_sel, const int n_a_shift) {
+        ProdVirialSeAGPULauncher(virial, atom_virial, net_deriv, in_deriv, rij, nlist, nloc, nall, nnei, ndescrpt, n_a_sel, n_a_shift);
+    }
+    #endif // GOOGLE_CUDA
+};
 
-void ProdVirialSeALauncher(VALUETYPE * virial, 
-                        VALUETYPE * atom_virial,
-                        const VALUETYPE * net_deriv,
-                        const VALUETYPE * in_deriv,
-                        const VALUETYPE * rij,
-                        const int * nlist,
-                        const int nloc,
-                        const int nall,
-                        const int nnei,
-                        const int ndescrpt,
-                        const int n_a_sel,
-                        const int n_a_shift);
-
+template<typename Device>
 class ProdVirialSeAOp : public OpKernel {
  public:
     explicit ProdVirialSeAOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -84,8 +63,7 @@ class ProdVirialSeAOp : public OpKernel {
         OP_REQUIRES (context, (natoms_tensor.shape().dims() == 1),		errors::InvalidArgument ("Dim of natoms should be 1"));
 
         OP_REQUIRES (context, (natoms_tensor.shape().dim_size(0) >= 3),	errors::InvalidArgument ("number of atoms should be larger than (or equal to) 3"));
-        int * natoms = new int[natoms_tensor.shape().dim_size(0)];
-        cudaErrcheck(cudaMemcpy(natoms, natoms_tensor.flat<int>().data(), sizeof(int) * natoms_tensor.shape().dim_size(0), cudaMemcpyDeviceToHost));
+        const int * natoms = natoms_tensor.flat<int>().data();
         int nloc = natoms[0];
         int nall = natoms[1];
         int nnei = nlist_tensor.shape().dim_size(1) / nloc;
@@ -121,25 +99,38 @@ class ProdVirialSeAOp : public OpKernel {
         auto virial = virial_tensor->flat<VALUETYPE>();
         auto atom_virial = atom_virial_tensor->flat<VALUETYPE>();
         
-        for (int II = 0; II < nframes; II++) {
-            ProdVirialSeALauncher(virial_tensor->flat<VALUETYPE>().data() + II * 9, 
-                                atom_virial_tensor->flat<VALUETYPE>().data() + II * (nall * 9),
-                                net_deriv_tensor.flat<VALUETYPE>().data() + II * (nloc * ndescrpt),
-                                in_deriv_tensor.flat<VALUETYPE>().data() + II * (nloc * ndescrpt * 3),
-                                rij_tensor.flat<VALUETYPE>().data() + II * (nloc * nnei * 3),
-                                nlist_tensor.flat<int>().data() + II * (nloc * nnei),
-                                nloc,
-                                nall,
-                                nnei,
-                                ndescrpt,
-                                n_a_sel,
-                                n_a_shift
-            );
-        }
-        delete[] natoms;
+        ProdVirialSeAFunctor<Device, VALUETYPE>()(
+            context->eigen_device<Device>(),
+            virial_tensor->flat<VALUETYPE>().data(), 
+            atom_virial_tensor->flat<VALUETYPE>().data(),
+            net_deriv_tensor.flat<VALUETYPE>().data(),
+            in_deriv_tensor.flat<VALUETYPE>().data(),
+            rij_tensor.flat<VALUETYPE>().data(),
+            nlist_tensor.flat<int>().data(),
+            nloc,
+            nall,
+            nnei,
+            ndescrpt,
+            n_a_sel,
+            n_a_shift
+        );
     }
 private:
     int n_r_sel, n_a_sel, n_a_shift;
 };
 
-REGISTER_KERNEL_BUILDER(Name("ProdVirialSeA").Device(DEVICE_GPU), ProdVirialSeAOp);
+// Register the CPU kernels.
+#define REGISTER_CPU()                                             \
+REGISTER_KERNEL_BUILDER(                                           \
+    Name("ProdVirialSeA").Device(DEVICE_CPU),                      \
+    ProdVirialSeAOp<CPUDevice>);
+REGISTER_CPU();
+
+// Register the GPU kernels.
+#if GOOGLE_CUDA
+#define REGISTER_GPU()                                             \
+REGISTER_KERNEL_BUILDER(                                           \
+    Name("ProdVirialSeA").Device(DEVICE_GPU).HostMemory("natoms"), \
+    ProdVirialSeAOp<GPUDevice>);
+REGISTER_GPU();
+#endif  // GOOGLE_CUDA

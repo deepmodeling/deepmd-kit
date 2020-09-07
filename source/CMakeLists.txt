@@ -125,7 +125,7 @@ else()
   endif()
 endif()
 if (USE_CUDA_TOOLKIT)
-  add_definitions("-DUSE_CUDA_TOOLKIT")
+  add_definitions("-D GOOGLE_CUDA")
 endif()
 
 # define USE_TTM

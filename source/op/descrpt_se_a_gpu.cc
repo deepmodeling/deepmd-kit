@@ -1,32 +1,5 @@
-#include <vector>
-#include <string.h>
-#include <iostream>
-#include <cuda_runtime.h>
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-
-using namespace tensorflow;  // NOLINT(build/namespaces)
-
-#ifdef HIGH_PREC
-    typedef double VALUETYPE ;
-#else
-    typedef float  VALUETYPE ;
-#endif
-
-typedef double compute_t;
-
-#define cudaErrcheck(res) { cudaAssert((res), __FILE__, __LINE__); }
-inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort=true)
-{
-    if (code != cudaSuccess) 
-    {
-        fprintf(stderr,"cuda assert: %s %s %d\n", cudaGetErrorString(code), file, line);
-        if (abort) exit(code);
-    }
-}
-
-using GPUDevice = Eigen::GpuDevice;
+#include "common.h"
+#include "CustomeOperation.h"
 
 #ifdef HIGH_PREC
 REGISTER_OP("DescrptSeA")
@@ -85,29 +58,32 @@ int get_magic_number(int const nnei) {
     }
 }
 
-void DescrptSeALauncher(const VALUETYPE* coord,
-                            const int* type,
-                            const int* ilist,
-                            const int* jrange,
-                            const int* jlist,
-                            int* array_int,
-                            unsigned long long* array_longlong,
-                            const VALUETYPE* avg,
-                            const VALUETYPE* std,
-                            VALUETYPE* descript,
-                            VALUETYPE* descript_deriv,
-                            VALUETYPE* rij,
-                            int* nlist,
-                            const int& nloc,
-                            const int& nnei,
-                            const float& rcut_r,
-                            const float& rcut_r_smth,
-                            const int& ndescrpt,
-                            const std::vector<int>& sec_a,
-                            const bool& fill_nei_a,
-                            const int MAGIC_NUMBER
-);
+template <typename Device, typename T> 
+struct DeviceFunctor {
+    void operator()(const CPUDevice& d, std::string& device) {
+        device = "CPU";
+    }
+    #if GOOGLE_CUDA
+    void operator()(const GPUDevice& d, std::string& device) {
+        device = "GPU";
+    }
+    #endif // GOOGLE_CUDA
+};
 
+template <typename Device, typename T>
+struct DescrptSeAFunctor {
+    void operator()(const CPUDevice& d, const T * coord, const int * type, const int * mesh, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const T * avg, const T * std, T * descrpt, T * descrpt_deriv, T * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ntypes, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int magic_number) {
+        DescrptSeACPULauncher(coord, type, ilist, jrange, jlist, avg, std, descrpt, descrpt_deriv, rij, nlist, nloc, nall, nnei, ntypes, ndescrpt, rcut_r, rcut_r_smth, sec_a, fill_nei_a, magic_number);
+    }
+
+    #if GOOGLE_CUDA
+    void operator()(const GPUDevice& d, const T * coord, const int * type, const int * mesh, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const T * avg, const T * std, T * descrpt, T * descrpt_deriv, T * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ntypes, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int magic_number) {
+        DescrptSeAGPULauncher(coord, type, ilist, jrange, jlist, array_int, array_longlong, avg, std, descrpt, descrpt_deriv, rij, nlist, nloc, nall, nnei, ndescrpt, rcut_r, rcut_r_smth, sec_a, fill_nei_a, magic_number);
+    }
+    #endif // GOOGLE_CUDA
+};
+
+template<typename Device>
 class DescrptSeAOp : public OpKernel {
 public:
     explicit DescrptSeAOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -154,8 +130,12 @@ public:
 
         OP_REQUIRES (context, (natoms_tensor.shape().dim_size(0) >= 3),		errors::InvalidArgument ("number of atoms should be larger than (or equal to) 3"));
 
-        int * natoms = new int[natoms_tensor.shape().dim_size(0)];
-        cudaErrcheck(cudaMemcpy(natoms, natoms_tensor.flat<int>().data(), sizeof(int) * natoms_tensor.shape().dim_size(0), cudaMemcpyDeviceToHost));
+        DeviceFunctor<Device, VALUETYPE>() (
+            context->eigen_device<Device>(),
+            device
+        );
+
+        const int * natoms = natoms_tensor.flat<int>().data();
         int nloc = natoms[0];
         int nall = natoms[1];
         int ntypes = natoms_tensor.shape().dim_size(0) - 2; //nloc and nall mean something.
@@ -209,51 +189,55 @@ public:
 	    					     nlist_shape,
 	    					     &nlist_tensor));
         
-        // allocate temp memory, temp memory must not be used after this operation!
-        Tensor int_temp;
-        TensorShape int_shape;
-        int_shape.AddDim(sec_a.size() + nloc * sec_a.size() + nloc);
-        OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, int_shape, &int_temp));
+        if(device == "GPU") {
+            // allocate temp memory, temp memory must not be used after this operation!
+            Tensor int_temp;
+            TensorShape int_shape;
+            int_shape.AddDim(sec_a.size() + nloc * sec_a.size() + nloc);
+            OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, int_shape, &int_temp));
+            Tensor uint64_temp;
+            TensorShape uint64_shape;
+            uint64_shape.AddDim(nloc * magic_number * 2);
+            OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape, &uint64_temp));
 
-        Tensor uint64_temp;
-        TensorShape uint64_shape;
-        uint64_shape.AddDim(nloc * magic_number * 2);
-        OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape, &uint64_temp));
+            array_int = int_temp.flat<int>().data(); 
+            array_longlong = uint64_temp.flat<unsigned long long>().data();
 
-	    int * ilist = NULL, * jrange = NULL, * jlist = NULL;
-        int * array_int = int_temp.flat<int>().data(); 
-        unsigned long long * array_longlong = uint64_temp.flat<unsigned long long>().data(); 
-        cudaErrcheck(cudaMemcpy(&(ilist), 4 + mesh_tensor.flat<int>().data(), sizeof(int *), cudaMemcpyDeviceToHost));
-        cudaErrcheck(cudaMemcpy(&(jrange), 8 + mesh_tensor.flat<int>().data(), sizeof(int *), cudaMemcpyDeviceToHost));
-        cudaErrcheck(cudaMemcpy(&(jlist), 12 + mesh_tensor.flat<int>().data(), sizeof(int *), cudaMemcpyDeviceToHost));
-
-        // Launch computation
-        for (int II = 0; II < nsamples; II++) {
-            DescrptSeALauncher(coord_tensor.matrix<VALUETYPE>().data() + II * (nall * 3),    // related to the kk argument
-                        type_tensor.matrix<int>().data() + II * nall,           // also related to the kk argument
-                        ilist,
-                        jrange,
-                        jlist,
-                        array_int,
-                        array_longlong,
-                        avg_tensor.matrix<VALUETYPE>().data(),
-                        std_tensor.matrix<VALUETYPE>().data(),
-                        descrpt_tensor->matrix<VALUETYPE>().data() + II * (nloc * ndescrpt),
-                        descrpt_deriv_tensor->matrix<VALUETYPE>().data() + II * (nloc * ndescrpt * 3),
-                        rij_tensor->matrix<VALUETYPE>().data() + II * (nloc * nnei * 3),
-                        nlist_tensor->matrix<int>().data() + II * (nloc * nnei),
-                        nloc,
-                        nnei,
-                        rcut_r,
-                        rcut_r_smth,
-                        ndescrpt,
-                        sec_a,
-                        fill_nei_a,
-                        magic_number
-            );
+            nbor_update(mesh_tensor.flat<int>().data(), static_cast<int>(mesh_tensor.NumElements()));
         }
-        // std::cout << "done" << std::endl;
-        delete[] natoms;
+        else if (device == "CPU") {
+            memcpy (&ilist,  4  + mesh_tensor.flat<int>().data(), sizeof(int *));
+	        memcpy (&jrange, 8  + mesh_tensor.flat<int>().data(), sizeof(int *));
+	        memcpy (&jlist,  12 + mesh_tensor.flat<int>().data(), sizeof(int *));
+        }
+
+        DescrptSeAFunctor<Device, VALUETYPE>()(
+            context->eigen_device<Device>(),            // define actually graph execution device
+            coord_tensor.matrix<VALUETYPE>().data(),    // related to the kk argument
+            type_tensor.matrix<int>().data(),           // also related to the kk argument
+            mesh_tensor.flat<int>().data(),
+            ilist,
+            jrange,
+            jlist,
+            array_int,
+            array_longlong,
+            avg_tensor.matrix<VALUETYPE>().data(),
+            std_tensor.matrix<VALUETYPE>().data(),
+            descrpt_tensor->matrix<VALUETYPE>().data(),
+            descrpt_deriv_tensor->matrix<VALUETYPE>().data(),
+            rij_tensor->matrix<VALUETYPE>().data(),
+            nlist_tensor->matrix<int>().data(),
+            nloc,
+            nall,
+            nnei,
+            ntypes,
+            ndescrpt,
+            rcut_r,
+            rcut_r_smth,
+            sec_a,
+            fill_nei_a,
+            magic_number
+        );
     }
 
 /////////////////////////////////////////////////////////////////////////////////////////////
@@ -277,6 +261,66 @@ private:
             sec[ii] = sec[ii-1] + n_sel[ii-1];
         }
     }
+
+    std::string device;
+    int *array_int;
+    unsigned long long*array_longlong;
+    int * ilist = NULL, * jrange = NULL, * jlist = NULL;
+    int ilist_size = 0, jrange_size = 0, jlist_size = 0;
+    bool init = false;
+
+    void nbor_update(const int * mesh, const int size) {
+        int *mesh_host = new int[size], *ilist_host = NULL, *jrange_host = NULL, *jlist_host = NULL;
+        cudaErrcheck(cudaMemcpy(mesh_host, mesh, sizeof(int) * size, cudaMemcpyDeviceToHost));
+        memcpy (&ilist_host,  4  + mesh_host, sizeof(int *));
+	    memcpy (&jrange_host, 8  + mesh_host, sizeof(int *));
+	    memcpy (&jlist_host,  12 + mesh_host, sizeof(int *));
+        int const ago = mesh_host[0];
+        if (!init) {
+            ilist_size  = (int)(mesh_host[1] * 1.2);
+            jrange_size = (int)(mesh_host[2] * 1.2);
+            jlist_size  = (int)(mesh_host[3] * 1.2);
+            cudaErrcheck(cudaMalloc((void **)&ilist,     sizeof(int) * ilist_size));
+            cudaErrcheck(cudaMalloc((void **)&jrange,    sizeof(int) * jrange_size));
+            cudaErrcheck(cudaMalloc((void **)&jlist,     sizeof(int) * jlist_size));
+            init = true;
+        }
+        if (ago == 0) {
+            if (ilist_size < mesh_host[1]) {
+                ilist_size = (int)(mesh_host[1] * 1.2);
+                cudaErrcheck(cudaFree(ilist));
+                cudaErrcheck(cudaMalloc((void **)&ilist, sizeof(int) * ilist_size));
+            }
+            if (jrange_size < mesh_host[2]) {
+                jrange_size = (int)(mesh_host[2] * 1.2);
+                cudaErrcheck(cudaFree(jrange));
+                cudaErrcheck(cudaMalloc((void **)&jrange,sizeof(int) * jrange_size));
+            }
+            if (jlist_size < mesh_host[3]) {
+                jlist_size = (int)(mesh_host[3] * 1.2);
+                cudaErrcheck(cudaFree(jlist));
+                cudaErrcheck(cudaMalloc((void **)&jlist, sizeof(int) * jlist_size));
+            }
+            cudaErrcheck(cudaMemcpy(ilist,  ilist_host,  sizeof(int) * mesh_host[1], cudaMemcpyHostToDevice));
+            cudaErrcheck(cudaMemcpy(jrange, jrange_host, sizeof(int) * mesh_host[2], cudaMemcpyHostToDevice));
+            cudaErrcheck(cudaMemcpy(jlist,  jlist_host,  sizeof(int) * mesh_host[3], cudaMemcpyHostToDevice));
+        }
+        delete [] mesh_host;
+    }
 };
 
-REGISTER_KERNEL_BUILDER(Name("DescrptSeA").Device(DEVICE_GPU), DescrptSeAOp);
+// Register the CPU kernels.
+#define REGISTER_CPU()                                           \
+REGISTER_KERNEL_BUILDER(                                         \
+    Name("DescrptSeA").Device(DEVICE_CPU),                       \
+    DescrptSeAOp<CPUDevice>);
+REGISTER_CPU();
+
+// Register the GPU kernels.
+#if GOOGLE_CUDA
+#define REGISTER_GPU()                                           \
+REGISTER_KERNEL_BUILDER(                                         \
+    Name("DescrptSeA").Device(DEVICE_GPU).HostMemory("natoms"),  \
+    DescrptSeAOp<GPUDevice>);
+REGISTER_GPU();
+#endif  // GOOGLE_CUDA
