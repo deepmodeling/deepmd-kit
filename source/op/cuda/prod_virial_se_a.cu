@@ -1,13 +1,4 @@
-#include <stdio.h>
-#include <cuda_runtime.h>
-
-#define cudaErrcheck(res) { cudaAssert((res), __FILE__, __LINE__); }
-inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort=true) {
-    if (code != cudaSuccess) {
-        fprintf(stderr,"cuda assert: %s %s %d\n", cudaGetErrorString(code), file, line);
-        if (abort) exit(code);
-    }
-}
+#include "DeviceFunctor.h"
 
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 600
 static __inline__ __device__ double atomicAdd(double* address, double val) {
@@ -57,11 +48,12 @@ __global__ void deriv_wrt_neighbors_se_a(T * virial,
     atomicAdd(atom_virial + j_idx * 9 + idz, net_deriv[idx * ndescrpt + idy * 4 + idw] * rij[idx * nnei * 3 + idy * 3 + idz % 3] * in_deriv[idx * ndescrpt * 3 + (idy * 4 + idw) * 3 + idz / 3]);
 }
 
-void ProdVirialSeAGPUExecuteLauncher(float * virial, 
-                        float * atom_virial,
-                        const float * net_deriv,
-                        const float * in_deriv,
-                        const float * rij,
+template <typename T>
+void ProdVirialSeAGPUExecuteFunctor<T>::operator()(T * virial, 
+                        T * atom_virial,
+                        const T * net_deriv,
+                        const T * in_deriv,
+                        const T * rij,
                         const int * nlist,
                         const int nloc,
                         const int nall,
@@ -70,8 +62,8 @@ void ProdVirialSeAGPUExecuteLauncher(float * virial,
                         const int n_a_sel,
                         const int n_a_shift)
 {
-    cudaErrcheck(cudaMemset(virial, 0.0, sizeof(float) * 9));
-    cudaErrcheck(cudaMemset(atom_virial, 0.0, sizeof(float) * 9 * nall));
+    cudaErrcheck(cudaMemset(virial, 0.0, sizeof(T) * 9));
+    cudaErrcheck(cudaMemset(atom_virial, 0.0, sizeof(T) * 9 * nall));
 
     const int LEN = 16;
     int nblock = (nloc + LEN -1) / LEN;
@@ -93,38 +85,5 @@ void ProdVirialSeAGPUExecuteLauncher(float * virial,
     );
 }
 
-void ProdVirialSeAGPUExecuteLauncher(double * virial, 
-                        double * atom_virial,
-                        const double * net_deriv,
-                        const double * in_deriv,
-                        const double * rij,
-                        const int * nlist,
-                        const int nloc,
-                        const int nall,
-                        const int nnei,
-                        const int ndescrpt,
-                        const int n_a_sel,
-                        const int n_a_shift) 
-{
-    cudaErrcheck(cudaMemset(virial, 0.0, sizeof(double) * 9));
-    cudaErrcheck(cudaMemset(atom_virial, 0.0, sizeof(double) * 9 * nall));
-
-    const int LEN = 16;
-    int nblock = (nloc + LEN -1) / LEN;
-    dim3 block_grid(nblock, nnei);
-    dim3 thread_grid(LEN, 9, 4);
-    // compute virial of a frame
-    deriv_wrt_neighbors_se_a<<<block_grid, thread_grid>>>(
-                        virial, 
-                        atom_virial, 
-                        net_deriv, 
-                        in_deriv,
-                        rij,
-                        nlist,
-                        nloc,
-                        nnei,
-                        ndescrpt,
-                        n_a_sel,
-                        n_a_shift
-    );
-}
+template struct ProdVirialSeAGPUExecuteFunctor<float>;
+template struct ProdVirialSeAGPUExecuteFunctor<double>;

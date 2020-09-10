@@ -1,27 +1,17 @@
 #include "common.h"
 #include "CustomeOperation.h"
 
-#ifdef HIGH_PREC
 REGISTER_OP("ProdForceSeA")
-    .Input("net_deriv: double")
-    .Input("in_deriv: double")
+    .Attr("T: {float, double}")
+    .Input("net_deriv: T")
+    .Input("in_deriv: T")
     .Input("nlist: int32")
     .Input("natoms: int32")
     .Attr("n_a_sel: int")
     .Attr("n_r_sel: int")
-    .Output("force: double");
-#else
-REGISTER_OP("ProdForceSeA")
-    .Input("net_deriv: float")
-    .Input("in_deriv: float")
-    .Input("nlist: int32")
-    .Input("natoms: int32")
-    .Attr("n_a_sel: int")
-    .Attr("n_r_sel: int")
-    .Output("force: float");
-#endif
+    .Output("force: T");
 
-template <typename Device, typename T>
+template <typename T>
 struct ProdForceSeAFunctor {
     void operator()(const CPUDevice& d, T * force, const T * net_deriv, const T * in_deriv, const int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const int n_a_sel, const int n_a_shift) {
         ProdForceSeACPULauncher(force, net_deriv, in_deriv, nlist, nloc, nall, nnei, ndescrpt, n_a_sel, n_a_shift);
@@ -33,7 +23,7 @@ struct ProdForceSeAFunctor {
     #endif // GOOGLE_CUDA
 };
 
-template<typename Device>
+template<typename Device, typename T>
 class ProdForceSeAOp : public OpKernel {
 public:
     explicit ProdForceSeAOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -82,10 +72,10 @@ public:
 	    					     force_shape, &force_tensor));
 
         // flat the tensors
-        auto net_deriv = net_deriv_tensor.flat<VALUETYPE>();
-        auto in_deriv = in_deriv_tensor.flat<VALUETYPE>();
+        auto net_deriv = net_deriv_tensor.flat<T>();
+        auto in_deriv = in_deriv_tensor.flat<T>();
         auto nlist = nlist_tensor.flat<int>();
-        auto force = force_tensor->flat<VALUETYPE>();
+        auto force = force_tensor->flat<T>();
 
         assert (nframes == force_shape.dim_size(0));
         assert (nframes == net_deriv_tensor.shape().dim_size(0));
@@ -97,11 +87,11 @@ public:
         assert (nloc * nnei == nlist_tensor.shape().dim_size(1));
         assert (nnei * 4 == ndescrpt);	    
 
-        ProdForceSeAFunctor<Device, VALUETYPE>()(
+        ProdForceSeAFunctor<T>()(
             context->eigen_device<Device>(),
-            force_tensor->flat<VALUETYPE>().data(),
-            net_deriv_tensor.flat<VALUETYPE>().data(),
-            in_deriv_tensor.flat<VALUETYPE>().data(),
+            force_tensor->flat<T>().data(),
+            net_deriv_tensor.flat<T>().data(),
+            in_deriv_tensor.flat<T>().data(),
             nlist_tensor.flat<int>().data(),
             nloc,
             nall, 
@@ -116,17 +106,18 @@ private:
 };
 
 // Register the CPU kernels.
-#define REGISTER_CPU()                                            \
-REGISTER_KERNEL_BUILDER(                                          \
-    Name("ProdForceSeA").Device(DEVICE_CPU),                      \
-    ProdForceSeAOp<CPUDevice>);
-REGISTER_CPU();
-
+#define REGISTER_CPU(T)                                                                  \
+REGISTER_KERNEL_BUILDER(                                                                 \
+    Name("ProdForceSeA").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
+    ProdForceSeAOp<CPUDevice, T>); 
+REGISTER_CPU(float);
+REGISTER_CPU(double);
 // Register the GPU kernels.
 #if GOOGLE_CUDA
-#define REGISTER_GPU()                                            \
-REGISTER_KERNEL_BUILDER(                                          \
-    Name("ProdForceSeA").Device(DEVICE_GPU).HostMemory("natoms"), \
-    ProdForceSeAOp<GPUDevice>);
-REGISTER_GPU();
+#define REGISTER_GPU(T)                                                                  \
+REGISTER_KERNEL_BUILDER(                                                                 \
+    Name("ProdForceSeA").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms"), \
+    ProdForceSeAOp<GPUDevice, T>);
+REGISTER_GPU(float);
+REGISTER_GPU(double);
 #endif  // GOOGLE_CUDA

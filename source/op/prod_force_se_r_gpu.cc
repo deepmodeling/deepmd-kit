@@ -22,21 +22,16 @@ inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort=
     typedef float  VALUETYPE;
 #endif
 
-#ifdef HIGH_PREC
 REGISTER_OP("ProdForceSeR")
-    .Input("net_deriv: double")
-    .Input("in_deriv: double")
-    .Input("nlist: int32")
-    .Input("natoms: int32")
-    .Output("force: double");
-#else
-REGISTER_OP("ProdForceSeR")
-    .Input("net_deriv: float")
-    .Input("in_deriv: float")
-    .Input("nlist: int32")
-    .Input("natoms: int32")
-    .Output("force: float");
-#endif
+.Attr("T: {float, double}")
+.Input("net_deriv: T")
+.Input("in_deriv: T")
+.Input("nlist: int32")
+.Input("natoms: int32")
+.Output("force: T");
+
+using CPUDevice = Eigen::ThreadPoolDevice;
+using GPUDevice = Eigen::GpuDevice;
 
 void ProdForceSeRLauncher(VALUETYPE * force, 
                         const VALUETYPE * net_deriv,
@@ -49,6 +44,7 @@ void ProdForceSeRLauncher(VALUETYPE * force,
                         const int n_a_sel,
                         const int n_a_shift);
 
+template<typename Device, typename T>
 class ProdForceSeROp : public OpKernel {
 public:
     explicit ProdForceSeROp(OpKernelConstruction* context) : OpKernel(context) {
@@ -130,4 +126,9 @@ private:
     int n_r_sel, n_a_sel, n_a_shift;
 };
 
-REGISTER_KERNEL_BUILDER(Name("ProdForceSeR").Device(DEVICE_GPU), ProdForceSeROp);
+// Register the CPU kernels.
+#define REGISTER_GPU(T)                                                                  \
+REGISTER_KERNEL_BUILDER(                                                                 \
+    Name("ProdForceSeR").Device(DEVICE_GPU).TypeConstraint<T>("T"),                      \
+    ProdForceSeROp<GPUDevice, T>); 
+REGISTER_GPU(VALUETYPE);

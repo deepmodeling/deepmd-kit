@@ -31,8 +31,8 @@ inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort=
 
 using GPUDevice = Eigen::GpuDevice;
 
-#ifdef HIGH_PREC
 REGISTER_OP("DescrptSeR")
+    .Attr("T: {float, double}")
     .Input("coord: double")
     .Input("type: int32")
     .Input("natoms: int32")
@@ -47,23 +47,7 @@ REGISTER_OP("DescrptSeR")
     .Output("descrpt_deriv: double")
     .Output("rij: double")
     .Output("nlist: int32");
-#else
-REGISTER_OP("DescrptSeR")
-    .Input("coord: float")
-    .Input("type: int32")
-    .Input("natoms: int32")
-    .Input("box: float")
-    .Input("mesh: int32")
-    .Input("davg: float")
-    .Input("dstd: float")
-    .Attr("rcut: float")
-    .Attr("rcut_smth: float")
-    .Attr("sel: list(int)")
-    .Output("descrpt: float")
-    .Output("descrpt_deriv: float")
-    .Output("rij: float")
-    .Output("nlist: int32");
-#endif
+
 
 void DescrptSeRLauncher(const VALUETYPE* coord,
                             const int* type,
@@ -90,6 +74,7 @@ void DescrptSeRLauncher(const VALUETYPE* coord,
                             const bool& fill_nei_a
 );
 
+template<typename Device, typename T>
 class DescrptSeROp : public OpKernel {
 public:
     explicit DescrptSeROp(OpKernelConstruction* context) : OpKernel(context) {
@@ -193,7 +178,7 @@ public:
         // cudaErrcheck(cudaMemcpy(jlist, host_jlist, sizeof(int) * nloc * MAGIC_NUMBER, cudaMemcpyHostToDevice));
         // Launch computation
         for (int II = 0; II < nsamples; II++) {
-            DescrptSeRLauncher( coord_tensor.matrix<VALUETYPE>().data() + II * (nall * 3),
+            DescrptSeRLauncher( coord_tensor.matrix<T>().data() + II * (nall * 3),
                                 type_tensor.matrix<int>().data() + II * nall,
                                 ilist,
                                 jrange,
@@ -201,11 +186,11 @@ public:
                                 array_int,
                                 array_longlong,
                                 array_double,
-                                avg_tensor.matrix<VALUETYPE>().data(),
-                                std_tensor.matrix<VALUETYPE>().data(),
-                                descrpt_tensor->matrix<VALUETYPE>().data() + II * (nloc * ndescrpt),
-                                descrpt_deriv_tensor->matrix<VALUETYPE>().data() + II * (nloc * ndescrpt * 3),
-                                rij_tensor->matrix<VALUETYPE>().data() + II * (nloc * nnei * 3),
+                                avg_tensor.matrix<T>().data(),
+                                std_tensor.matrix<T>().data(),
+                                descrpt_tensor->matrix<T>().data() + II * (nloc * ndescrpt),
+                                descrpt_deriv_tensor->matrix<T>().data() + II * (nloc * ndescrpt * 3),
+                                rij_tensor->matrix<T>().data() + II * (nloc * nnei * 3),
                                 nlist_tensor->matrix<int>().data() + II * (nloc * nnei),
                                 ntypes,
                                 nloc,
@@ -244,4 +229,8 @@ private:
     }
 };
 
-REGISTER_KERNEL_BUILDER(Name("DescrptSeR").Device(DEVICE_GPU), DescrptSeROp);
+#define REGISTER_GPU(T)                                                                 \
+REGISTER_KERNEL_BUILDER(                                                                \
+    Name("DescrptSeR").Device(DEVICE_GPU).TypeConstraint<T>("T"),                       \
+    DescrptSeROp<GPUDevice, T>); 
+REGISTER_GPU(VALUETYPE);

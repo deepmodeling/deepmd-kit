@@ -12,34 +12,23 @@ typedef double VALUETYPE;
 typedef float  VALUETYPE;
 #endif
 
-#ifdef HIGH_PREC
 REGISTER_OP("SoftMinVirial")
-.Input("du: double")
-.Input("sw_deriv: double")
-.Input("rij: double")
+.Attr("T: {float, double}")
+.Input("du: T")
+.Input("sw_deriv: T")
+.Input("rij: T")
 .Input("nlist: int32")
 .Input("natoms: int32")
 .Attr("n_a_sel: int")
 .Attr("n_r_sel: int")
-.Output("virial: double")
-.Output("atom_virial: double")
-;
-#else
-REGISTER_OP("SoftMinVirial")
-.Input("du: float")
-.Input("sw_deriv: float")
-.Input("rij: float")
-.Input("nlist: int32")
-.Input("natoms: int32")
-.Attr("n_a_sel: int")
-.Attr("n_r_sel: int")
-.Output("virial: float")
-.Output("atom_virial: float")
-;
-#endif
+.Output("virial: T")
+.Output("atom_virial: T");
 
 using namespace tensorflow;
 
+using CPUDevice = Eigen::ThreadPoolDevice;
+
+template<typename Device, typename T>
 class SoftMinVirialOp : public OpKernel {
  public:
   explicit SoftMinVirialOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -135,7 +124,11 @@ private:
   int n_r_sel, n_a_sel;
 };
 
-REGISTER_KERNEL_BUILDER(Name("SoftMinVirial").Device(DEVICE_CPU), SoftMinVirialOp);
-
+// Register the CPU kernels.
+#define REGISTER_CPU(T)                                                                   \
+REGISTER_KERNEL_BUILDER(                                                                  \
+    Name("SoftMinVirial").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
+    SoftMinVirialOp<CPUDevice, T>); 
+REGISTER_CPU(VALUETYPE);
 
 

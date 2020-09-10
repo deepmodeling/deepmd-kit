@@ -1,31 +1,19 @@
 #include "common.h"
 #include "CustomeOperation.h"
 
-#ifdef HIGH_PREC
 REGISTER_OP("ProdVirialSeA")
-    .Input("net_deriv: double")
-    .Input("in_deriv: double")
-    .Input("rij: double")
+    .Attr("T: {float, double}")
+    .Input("net_deriv: T")
+    .Input("in_deriv: T")
+    .Input("rij: T")
     .Input("nlist: int32")
     .Input("natoms: int32")
     .Attr("n_a_sel: int")
     .Attr("n_r_sel: int")
-    .Output("virial: double")
-    .Output("atom_virial: double");
-#else
-REGISTER_OP("ProdVirialSeA")
-    .Input("net_deriv: float")
-    .Input("in_deriv: float")
-    .Input("rij: float")
-    .Input("nlist: int32")
-    .Input("natoms: int32")
-    .Attr("n_a_sel: int")
-    .Attr("n_r_sel: int")
-    .Output("virial: float")
-    .Output("atom_virial: float");
-#endif
+    .Output("virial: T")
+    .Output("atom_virial: T");
 
-template<typename Device, typename T>
+template<typename T>
 struct ProdVirialSeAFunctor {
     void operator()(const CPUDevice& d, T * virial, T * atom_virial, const T * net_deriv, const T * in_deriv, const T * rij, const int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const int n_a_sel, const int n_a_shift) {
         ProdVirialSeACPULauncher(virial, atom_virial, net_deriv, in_deriv, rij, nlist, nloc, nall, nnei, ndescrpt, n_a_sel, n_a_shift);
@@ -37,7 +25,7 @@ struct ProdVirialSeAFunctor {
     #endif // GOOGLE_CUDA
 };
 
-template<typename Device>
+template<typename Device, typename T>
 class ProdVirialSeAOp : public OpKernel {
  public:
     explicit ProdVirialSeAOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -92,20 +80,20 @@ class ProdVirialSeAOp : public OpKernel {
         OP_REQUIRES_OK(context, context->allocate_output(1, atom_virial_shape, &atom_virial_tensor));
 
         // flat the tensors
-        auto net_deriv = net_deriv_tensor.flat<VALUETYPE>();
-        auto in_deriv = in_deriv_tensor.flat<VALUETYPE>();
-        auto rij = rij_tensor.flat<VALUETYPE>();
+        auto net_deriv = net_deriv_tensor.flat<T>();
+        auto in_deriv = in_deriv_tensor.flat<T>();
+        auto rij = rij_tensor.flat<T>();
         auto nlist = nlist_tensor.flat<int>();
-        auto virial = virial_tensor->flat<VALUETYPE>();
-        auto atom_virial = atom_virial_tensor->flat<VALUETYPE>();
+        auto virial = virial_tensor->flat<T>();
+        auto atom_virial = atom_virial_tensor->flat<T>();
         
-        ProdVirialSeAFunctor<Device, VALUETYPE>()(
+        ProdVirialSeAFunctor<T>()(
             context->eigen_device<Device>(),
-            virial_tensor->flat<VALUETYPE>().data(), 
-            atom_virial_tensor->flat<VALUETYPE>().data(),
-            net_deriv_tensor.flat<VALUETYPE>().data(),
-            in_deriv_tensor.flat<VALUETYPE>().data(),
-            rij_tensor.flat<VALUETYPE>().data(),
+            virial_tensor->flat<T>().data(), 
+            atom_virial_tensor->flat<T>().data(),
+            net_deriv_tensor.flat<T>().data(),
+            in_deriv_tensor.flat<T>().data(),
+            rij_tensor.flat<T>().data(),
             nlist_tensor.flat<int>().data(),
             nloc,
             nall,
@@ -120,17 +108,18 @@ private:
 };
 
 // Register the CPU kernels.
-#define REGISTER_CPU()                                             \
-REGISTER_KERNEL_BUILDER(                                           \
-    Name("ProdVirialSeA").Device(DEVICE_CPU),                      \
-    ProdVirialSeAOp<CPUDevice>);
-REGISTER_CPU();
-
+#define REGISTER_CPU(T)                                                                   \
+REGISTER_KERNEL_BUILDER(                                                                  \
+    Name("ProdVirialSeA").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
+    ProdVirialSeAOp<CPUDevice, T>); 
+REGISTER_CPU(float);
+REGISTER_CPU(double);
 // Register the GPU kernels.
 #if GOOGLE_CUDA
-#define REGISTER_GPU()                                             \
-REGISTER_KERNEL_BUILDER(                                           \
-    Name("ProdVirialSeA").Device(DEVICE_GPU).HostMemory("natoms"), \
-    ProdVirialSeAOp<GPUDevice>);
-REGISTER_GPU();
+#define REGISTER_GPU(T)                                                                   \
+REGISTER_KERNEL_BUILDER(                                                                  \
+    Name("ProdVirialSeA").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms"), \
+    ProdVirialSeAOp<GPUDevice, T>);
+REGISTER_GPU(float);
+REGISTER_GPU(double);
 #endif  // GOOGLE_CUDA

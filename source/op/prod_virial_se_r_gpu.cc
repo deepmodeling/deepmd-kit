@@ -10,27 +10,20 @@
     typedef float  VALUETYPE;
 #endif
 
-#ifdef HIGH_PREC
 REGISTER_OP("ProdVirialSeR")
-    .Input("net_deriv: double")
-    .Input("in_deriv: double")
-    .Input("rij: double")
+    .Attr("T: {float, double}")
+    .Input("net_deriv: T")
+    .Input("in_deriv: T")
+    .Input("rij: T")
     .Input("nlist: int32")
     .Input("natoms: int32")
-    .Output("virial: double")
-    .Output("atom_virial: double");
-#else
-REGISTER_OP("ProdVirialSeR")
-    .Input("net_deriv: float")
-    .Input("in_deriv: float")
-    .Input("rij: float")
-    .Input("nlist: int32")
-    .Input("natoms: int32")
-    .Output("virial: float")
-    .Output("atom_virial: float");
-#endif
+    .Output("virial: T")
+    .Output("atom_virial: T");
 
 using namespace tensorflow;
+
+using CPUDevice = Eigen::ThreadPoolDevice;
+using GPUDevice = Eigen::GpuDevice;
 
 #define cudaErrcheck(res) { cudaAssert((res), __FILE__, __LINE__); }
 inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort=true)
@@ -55,6 +48,7 @@ void ProdVirialSeRLauncher(VALUETYPE * virial,
                         const int n_a_sel,
                         const int n_a_shift);
 
+template<typename Device, typename T>
 class ProdVirialSeROp : public OpKernel {
  public:
     explicit ProdVirialSeROp(OpKernelConstruction* context) : OpKernel(context) {
@@ -134,4 +128,9 @@ private:
     int n_r_sel, n_a_sel, n_a_shift;
 };
 
-REGISTER_KERNEL_BUILDER(Name("ProdVirialSeR").Device(DEVICE_GPU), ProdVirialSeROp);
+// Register the GPU kernels.
+#define REGISTER_GPU(T)                                                                   \
+REGISTER_KERNEL_BUILDER(                                                                  \
+    Name("ProdVirialSeR").Device(DEVICE_GPU).TypeConstraint<T>("T"),                      \
+    ProdVirialSeROp<GPUDevice, T>); 
+REGISTER_GPU(VALUETYPE);

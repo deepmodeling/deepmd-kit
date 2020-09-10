@@ -1,7 +1,4 @@
-#include <cuda_runtime.h>
-#include <stdio.h>
-
-#define SQRT_2_PI 0.7978845608028654 
+#include "DeviceFunctor.h"
 
 template <typename T>
 __global__ void gelu(const T * in, T * out, int const size) {
@@ -33,45 +30,75 @@ __global__ void gelu_grad_grad(const T * dy, const T * dy_, const T * in, T * ou
 	out[idx] = dy[idx] * dy_[idx] * (0.134145 * SQRT_2_PI * in[idx] * in[idx] * (1 - var1 * var1) - SQRT_2_PI * in[idx] * var2 * (0.134145 * in[idx] * in[idx] + 1) * var1 + var2);
 }
 
-
-void GeluGPULauncher(const float * in, float * out, int const size) {
+void GeluLauncher(const float * in, float * out, int const size) {
     int const THREAD_ITEMS = 1024;
     int const BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
 
     gelu<<<BLOCK_NUMS, THREAD_ITEMS>>>(in, out, size);
 }
 
-void GeluGPULauncher(const double * in, double * out, int const size) {
+void GeluLauncher(const double * in, double * out, int const size) {
     int const THREAD_ITEMS = 1024;
     int const BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
 
     gelu<<<BLOCK_NUMS, THREAD_ITEMS>>>(in, out, size);
 }
 
-void GeluGradGPULauncher(const float * dy, const float * in, float * out, int const size) {
+void GeluGradLauncher(const float * dy, const float * in, float * out, int const size) {
     int const THREAD_ITEMS = 1024;
     int const BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
 
     gelu_grad<<<BLOCK_NUMS, THREAD_ITEMS>>>(dy, in, out, size);
 }
 
-void GeluGradGPULauncher(const double * dy, const double * in, double * out, int const size) {
+void GeluGradLauncher(const double * dy, const double * in, double * out, int const size) {
     int const THREAD_ITEMS = 1024;
     int const BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
 
     gelu_grad<<<BLOCK_NUMS, THREAD_ITEMS>>>(dy, in, out, size);
 }
 
-void GeluGradGradGPULauncher(const float * dy, const float * dy_, const float * in, float * out, int const size) {
+void GeluGradGradLauncher(const float * dy, const float * dy_, const float * in, float * out, int const size) {
     int const THREAD_ITEMS = 1024;
     int const BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
 
     gelu_grad_grad<<<BLOCK_NUMS, THREAD_ITEMS>>>(dy, dy_, in, out, size);
 }
 
-void GeluGradGradGPULauncher(const double * dy, const double * dy_, const double * in, double * out, int const size) {
+void GeluGradGradLauncher(const double * dy, const double * dy_, const double * in, double * out, int const size) {
     int const THREAD_ITEMS = 1024;
     int const BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
 
     gelu_grad_grad<<<BLOCK_NUMS, THREAD_ITEMS>>>(dy, dy_, in, out, size);
 }
+
+template <typename T>
+void GeluGPUExecuteFunctor<T>::operator()(const T * in, T * out, int const size) {
+    int const THREAD_ITEMS = 1024;
+    int const BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
+
+    gelu<<<BLOCK_NUMS, THREAD_ITEMS>>>(in, out, size);
+}
+
+template <typename T>
+void GeluGradGPUExecuteFunctor<T>::operator()(const T * dy, const T * in, T * out, int const size) {
+    int const THREAD_ITEMS = 1024;
+    int const BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
+
+    gelu_grad<<<BLOCK_NUMS, THREAD_ITEMS>>>(dy, in, out, size);
+}
+ 
+template <typename T>
+void GeluGradGradGPUExecuteFunctor<T>::operator()(const T * dy, const T * dy_, const T * in, T * out, int const size) {
+    int const THREAD_ITEMS = 1024;
+    int const BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
+
+    gelu_grad_grad<<<BLOCK_NUMS, THREAD_ITEMS>>>(dy, dy_, in, out, size);
+}
+
+template struct GeluGPUExecuteFunctor<float>;
+template struct GeluGPUExecuteFunctor<double>;
+template struct GeluGradGPUExecuteFunctor<float>;
+template struct GeluGradGPUExecuteFunctor<double>;
+template struct GeluGradGradGPUExecuteFunctor<float>;
+template struct GeluGradGradGPUExecuteFunctor<double>;

@@ -14,10 +14,10 @@ typedef double VALUETYPE;
 typedef float  VALUETYPE;
 #endif
 
-#ifdef HIGH_PREC
 REGISTER_OP("SoftMinSwitch")
+.Attr("T: {float, double}")
 .Input("type: int32")
-.Input("rij: double")
+.Input("rij: T")
 .Input("nlist: int32")
 .Input("natoms: int32")
 .Attr("sel_a: list(int)")
@@ -25,25 +25,14 @@ REGISTER_OP("SoftMinSwitch")
 .Attr("alpha: float")
 .Attr("rmin: float")
 .Attr("rmax: float")
-.Output("sw_value: double")
-.Output("sw_deriv: double");
-#else
-REGISTER_OP("SoftMinSwitch")
-.Input("type: int32")
-.Input("rij: float")
-.Input("nlist: int32")
-.Input("natoms: int32")
-.Attr("sel_a: list(int)")
-.Attr("sel_r: list(int)")
-.Attr("alpha: float")
-.Attr("rmin: float")
-.Attr("rmax: float")
-.Output("sw_value: float")
-.Output("sw_deriv: float");
-#endif
+.Output("sw_value: T")
+.Output("sw_deriv: T");
 
 using namespace tensorflow;
 
+using CPUDevice = Eigen::ThreadPoolDevice;
+
+template<typename Device, typename T>
 class SoftMinSwitchOp : public OpKernel {
  public:
   explicit SoftMinSwitchOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -106,10 +95,10 @@ class SoftMinSwitchOp : public OpKernel {
     
     // flat the tensors
     auto type	= type_tensor	.matrix<int>();
-    auto rij	= rij_tensor	.matrix<VALUETYPE>();
+    auto rij	= rij_tensor	.matrix<T>();
     auto nlist	= nlist_tensor	.matrix<int>();
-    auto sw_value = sw_value_tensor	->matrix<VALUETYPE>();
-    auto sw_deriv = sw_deriv_tensor	->matrix<VALUETYPE>();
+    auto sw_value = sw_value_tensor	->matrix<T>();
+    auto sw_deriv = sw_deriv_tensor	->matrix<T>();
 
     // loop over samples
 #pragma omp parallel for 
@@ -126,26 +115,26 @@ class SoftMinSwitchOp : public OpKernel {
       // compute force of a frame      
       for (int ii = 0; ii < nloc; ++ii){
 	int i_idx = ii;
-	VALUETYPE aa = 0;
-	VALUETYPE bb = 0;
+	T aa = 0;
+	T bb = 0;
 	for (int jj = 0; jj < nnei; ++jj){
 	  int j_idx = nlist (kk, i_idx * nnei + jj);
 	  if (j_idx < 0) continue;
 	  int rij_idx_shift = (i_idx * nnei + jj) * 3;
-	  VALUETYPE dr[3] = {
+	  T dr[3] = {
 	    rij(kk, rij_idx_shift + 0),
 	    rij(kk, rij_idx_shift + 1),
 	    rij(kk, rij_idx_shift + 2)
 	  };
-	  VALUETYPE rr2 = dr[0] * dr[0] + dr[1] * dr[1] + dr[2] * dr[2];
-	  VALUETYPE rr = sqrt(rr2);
-	  VALUETYPE ee = exp(-rr / alpha);
+	  T rr2 = dr[0] * dr[0] + dr[1] * dr[1] + dr[2] * dr[2];
+	  T rr = sqrt(rr2);
+	  T ee = exp(-rr / alpha);
 	  aa += ee;
 	  bb += rr * ee;
 	}
-	VALUETYPE smin = bb / aa;
-	VALUETYPE vv, dd;
-	spline5_switch(vv, dd, smin, static_cast<VALUETYPE>(rmin), static_cast<VALUETYPE>(rmax));
+	T smin = bb / aa;
+	T vv, dd;
+	spline5_switch(vv, dd, smin, static_cast<T>(rmin), static_cast<T>(rmax));
 	// value of switch
 	sw_value(kk, i_idx) = vv;
 	// deriv of switch distributed as force
@@ -153,17 +142,17 @@ class SoftMinSwitchOp : public OpKernel {
 	  int j_idx = nlist (kk, i_idx * nnei + jj);
 	  if (j_idx < 0) continue;
 	  int rij_idx_shift = (ii * nnei + jj) * 3;
-	  VALUETYPE dr[3] = {
+	  T dr[3] = {
 	    rij(kk, rij_idx_shift + 0),
 	    rij(kk, rij_idx_shift + 1),
 	    rij(kk, rij_idx_shift + 2)
 	  };
-	  VALUETYPE rr2 = dr[0] * dr[0] + dr[1] * dr[1] + dr[2] * dr[2];
-	  VALUETYPE rr = sqrt(rr2);
-	  VALUETYPE ee = exp(-rr / alpha);
-	  VALUETYPE pref_c = (1./rr - 1./alpha) * ee ;
-	  VALUETYPE pref_d = 1./(rr * alpha) * ee;
-	  VALUETYPE ts;
+	  T rr2 = dr[0] * dr[0] + dr[1] * dr[1] + dr[2] * dr[2];
+	  T rr = sqrt(rr2);
+	  T ee = exp(-rr / alpha);
+	  T pref_c = (1./rr - 1./alpha) * ee ;
+	  T pref_d = 1./(rr * alpha) * ee;
+	  T ts;
 	  ts = dd / (aa * aa) * (aa * pref_c + bb * pref_d);
 	  sw_deriv(kk, rij_idx_shift + 0) += ts * dr[0];
 	  sw_deriv(kk, rij_idx_shift + 1) += ts * dr[1];
@@ -196,7 +185,11 @@ private:
   }
 };
 
-REGISTER_KERNEL_BUILDER(Name("SoftMinSwitch").Device(DEVICE_CPU), SoftMinSwitchOp);
-
+// Register the CPU kernels.
+#define REGISTER_CPU(T)                                                                   \
+REGISTER_KERNEL_BUILDER(                                                                  \
+    Name("SoftMinSwitch").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
+    SoftMinSwitchOp<CPUDevice, T>); 
+REGISTER_CPU(VALUETYPE);
 
 

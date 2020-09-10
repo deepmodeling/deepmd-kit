@@ -12,32 +12,22 @@ typedef double VALUETYPE;
 typedef float  VALUETYPE;
 #endif
 
-#ifdef HIGH_PREC
 REGISTER_OP("ProdVirialGrad")
-.Input("grad: double")
-.Input("net_deriv: double")
-.Input("in_deriv: double")
-.Input("rij: double")
+.Attr("T: {float, double}")
+.Input("grad: T")
+.Input("net_deriv: T")
+.Input("in_deriv: T")
+.Input("rij: T")
 .Input("nlist: int32")
 .Input("axis: int32")
 .Input("natoms: int32")
 .Attr("n_a_sel: int")
 .Attr("n_r_sel: int")
-.Output("grad_net: double");
-#else
-REGISTER_OP("ProdVirialGrad")
-.Input("grad: float")
-.Input("net_deriv: float")
-.Input("in_deriv: float")
-.Input("rij: float")
-.Input("nlist: int32")
-.Input("axis: int32")
-.Input("natoms: int32")
-.Attr("n_a_sel: int")
-.Attr("n_r_sel: int")
-.Output("grad_net: float");
-#endif
+.Output("grad_net: T");
 
+using CPUDevice = Eigen::ThreadPoolDevice;
+
+template<typename Device, typename T>
 class ProdVirialGradOp : public OpKernel 
 {
 public:
@@ -200,4 +190,8 @@ private:
   }
 };
 
-REGISTER_KERNEL_BUILDER(Name("ProdVirialGrad").Device(DEVICE_CPU), ProdVirialGradOp);
+#define REGISTER_CPU(T)                                                                 \
+REGISTER_KERNEL_BUILDER(                                                                \
+    Name("ProdVirialGrad").Device(DEVICE_CPU).TypeConstraint<T>("T"),                       \
+    ProdVirialGradOp<CPUDevice, T>); 
+REGISTER_CPU(VALUETYPE);

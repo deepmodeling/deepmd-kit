@@ -18,44 +18,29 @@ typedef double VALUETYPE ;
 typedef float  VALUETYPE ;
 #endif
 
-#ifdef HIGH_PREC
-REGISTER_OP("DescrptSeA")
-.Input("coord: double")
-.Input("type: int32")
-.Input("natoms: int32")
-.Input("box: double")
-.Input("mesh: int32")
-.Input("davg: double")
-.Input("dstd: double")
-.Attr("rcut_a: float")
-.Attr("rcut_r: float")
-.Attr("rcut_r_smth: float")
-.Attr("sel_a: list(int)")
-.Attr("sel_r: list(int)")
-.Output("descrpt: double")
-.Output("descrpt_deriv: double")
-.Output("rij: double")
-.Output("nlist: int32");
-#else
-REGISTER_OP("DescrptSeA")
-.Input("coord: float")
-.Input("type: int32")
-.Input("natoms: int32")
-.Input("box: float")
-.Input("mesh: int32")
-.Input("davg: float")
-.Input("dstd: float")
-.Attr("rcut_a: float")
-.Attr("rcut_r: float")
-.Attr("rcut_r_smth: float")
-.Attr("sel_a: list(int)")
-.Attr("sel_r: list(int)")
-.Output("descrpt: float")
-.Output("descrpt_deriv: float")
-.Output("rij: float")
-.Output("nlist: int32");
-#endif
+using CPUDevice = Eigen::ThreadPoolDevice;
+using GPUDevice = Eigen::GpuDevice;
 
+REGISTER_OP("DescrptSeA")
+    .Attr("T: {float, double}")
+    .Input("coord: T")          //atomic coordinates
+    .Input("type: int32")       //atomic type
+    .Input("natoms: int32")     //local atomic number; each type atomic number; daizheyingxiangqude atomic numbers
+    .Input("box : T")
+    .Input("mesh : int32")
+    .Input("davg: T")           //average value of data
+    .Input("dstd: T")           //standard deviation
+    .Attr("rcut_a: float")      //no use
+    .Attr("rcut_r: float")
+    .Attr("rcut_r_smth: float")
+    .Attr("sel_a: list(int)")
+    .Attr("sel_r: list(int)")   //all zero
+    .Output("descrpt: T")
+    .Output("descrpt_deriv: T")
+    .Output("rij: T")
+    .Output("nlist: int32");
+
+template<typename Device, typename T>
 class DescrptSeAOp : public OpKernel {
 public:
   explicit DescrptSeAOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -180,15 +165,15 @@ public:
 						     nlist_shape,
 						     &nlist_tensor));
     
-    auto coord	= coord_tensor	.matrix<VALUETYPE>();
+    auto coord	= coord_tensor	.matrix<T>();
     auto type	= type_tensor	.matrix<int>();
-    auto box	= box_tensor	.matrix<VALUETYPE>();
+    auto box	= box_tensor	.matrix<T>();
     auto mesh	= mesh_tensor	.flat<int>();
-    auto avg	= avg_tensor	.matrix<VALUETYPE>();
-    auto std	= std_tensor	.matrix<VALUETYPE>();
-    auto descrpt	= descrpt_tensor	->matrix<VALUETYPE>();
-    auto descrpt_deriv	= descrpt_deriv_tensor	->matrix<VALUETYPE>();
-    auto rij		= rij_tensor		->matrix<VALUETYPE>();
+    auto avg	= avg_tensor	.matrix<T>();
+    auto std	= std_tensor	.matrix<T>();
+    auto descrpt	= descrpt_tensor	->matrix<T>();
+    auto descrpt_deriv	= descrpt_deriv_tensor	->matrix<T>();
+    auto rij		= rij_tensor		->matrix<T>();
     auto nlist		= nlist_tensor		->matrix<int>();
 
     // // check the types
@@ -369,5 +354,9 @@ private:
   }
 };
 
-REGISTER_KERNEL_BUILDER(Name("DescrptSeA").Device(DEVICE_CPU), DescrptSeAOp);
+#define REGISTER_CPU(T)                                                                 \
+REGISTER_KERNEL_BUILDER(                                                                \
+    Name("DescrptSeA").Device(DEVICE_CPU).TypeConstraint<T>("T"),                       \
+    DescrptSeAOp<CPUDevice, T>); 
+REGISTER_CPU(VALUETYPE);
 

@@ -1,16 +1,4 @@
-#include <stdio.h>
-#include <iostream>
-#include <cuda_runtime.h>
-
-#define cudaErrcheck(res) { cudaAssert((res), __FILE__, __LINE__); }
-inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort=true)  
-{
-    if (code != cudaSuccess) 
-    {
-        fprintf(stderr,"cuda assert: %s %s %d\n", cudaGetErrorString(code), file, line);
-        if (abort) exit(code);
-    }
-}
+#include "DeviceFunctor.h"
 
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 600
 static __inline__ __device__ double atomicAdd(double* address, double val) {
@@ -69,9 +57,10 @@ __global__ void deriv_wrt_neighbors_se_a(T * force,
     atomicAdd(force + j_idx * 3 + idz, net_deriv[idx * ndescrpt + idy * 4 + idw] * in_deriv[idx * ndescrpt * 3 + (idy * 4 + idw) * 3 + idz]);
 }
 
-void ProdForceSeAGPUExecuteLauncher(float * force, 
-                        const float * net_deriv,
-                        const float * in_deriv,
+template <typename T>
+void ProdForceSeAGPUExecuteFunctor<T>::operator()(T * force, 
+                        const T * net_deriv,
+                        const T * in_deriv,
                         const int * nlist,
                         const int nloc,
                         const int nall,
@@ -81,7 +70,7 @@ void ProdForceSeAGPUExecuteLauncher(float * force,
                         const int n_a_shift)
 {   
     // std::cout << "I'm here!" << std::endl;
-    cudaErrcheck(cudaMemset(force, 0.0, sizeof(float) * nall * 3));
+    cudaErrcheck(cudaMemset(force, 0.0, sizeof(T) * nall * 3));
     const int LEN1 = 256;
     const int nblock1 = (ndescrpt + LEN1 -1) / LEN1;
     dim3 grid(nloc, nblock1);
@@ -95,28 +84,5 @@ void ProdForceSeAGPUExecuteLauncher(float * force,
     deriv_wrt_neighbors_se_a<<<block_grid, thread_grid>>>(force, net_deriv, in_deriv, nlist, nloc, nnei, ndescrpt, n_a_sel, n_a_shift);
 }
 
-void ProdForceSeAGPUExecuteLauncher(double * force, 
-                        const double * net_deriv,
-                        const double * in_deriv,
-                        const int * nlist,
-                        const int nloc,
-                        const int nall,
-                        const int nnei,
-                        const int ndescrpt,
-                        const int n_a_sel,
-                        const int n_a_shift)
-{   
-    // std::cout << "I'm here!" << std::endl;
-    cudaErrcheck(cudaMemset(force, 0.0, sizeof(double) * nall * 3));
-    const int LEN1 = 256;
-    const int nblock1 = (ndescrpt + LEN1 -1) / LEN1;
-    dim3 grid(nloc, nblock1);
-    dim3 thread(3, LEN1);
-    deriv_wrt_center_atom_se_a<<<grid, thread>>>(force, net_deriv, in_deriv, ndescrpt);
-    
-    const int LEN = 64;
-    int nblock = (nloc + LEN -1) / LEN;
-    dim3 block_grid(nblock, nnei);
-    dim3 thread_grid(LEN, 3, 4);
-    deriv_wrt_neighbors_se_a<<<block_grid, thread_grid>>>(force, net_deriv, in_deriv, nlist, nloc, nnei, ndescrpt, n_a_sel, n_a_shift);
-}
+template struct ProdForceSeAGPUExecuteFunctor<float>;
+template struct ProdForceSeAGPUExecuteFunctor<double>;

@@ -1,21 +1,15 @@
 #pragma once
 #include <vector>
-#include <fstream>
 #include <stdio.h>
 #include <string.h>
 #include <algorithm>
 #include "MathUtilities.h"
-
 #if GOOGLE_CUDA
-#include <cuda_runtime.h>
-#define cudaErrcheck(res) {cudaAssert((res), __FILE__, __LINE__);}
-inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort=true) {
-    if (code != cudaSuccess) {
-        fprintf(stderr,"cuda assert: %s %s %d\n", cudaGetErrorString(code), file, line);
-        if (abort) exit(code);
-    }
-}
+#include "DeviceFunctor.h"
 #endif // GOOGLE_CUDA
+
+using CPUDevice = Eigen::ThreadPoolDevice;
+using GPUDevice = Eigen::GpuDevice;
 
 struct NeighborInfo {
     int type;
@@ -237,45 +231,14 @@ void DescrptSeACPULauncher(const T * coord, const int * type, const int * ilist,
 	        nlist[ii * nnei + jj] = fmt_nlist_a[jj];
 	    }
     }
-
-    #if DEBUG
-    std::fstream fout1("nlist.txt", std::ios::out);
-    fout1 << "tensor nlist, length:\t" << nloc << ",\twidth:\t" << nnei << std::endl;
-    for (int ii = 0; ii < nloc; ii++) {
-        for (int jj = 0; jj < nnei; jj++) {
-            fout1 << "nlist[" << ii << "][" << jj << "]:\t" << nlist[ii * nnei + jj] << std::endl;
-        }
-    }
-    fout1.close();
-
-    std::fstream fout2("rij.txt", std::ios::out);
-    fout2 << "tensor rij, length:\t" << nloc << ",\twidth:\t" << nnei * 3 << std::endl;
-    for (int ii = 0; ii < nloc; ii++) {
-        for (int jj = 0; jj < nnei * 3; jj++) {
-            fout2 << "rij[" << ii << "][" << jj << "]:\t" << rij[ii * nnei * 3 + jj] << std::endl;
-        }
-    }
-    fout2.close();
-
-    std::fstream fout3("descrpt.txt", std::ios::out);
-    fout3 << "tensor descrpt, length:\t" << nloc << ",\twidth:\t" << ndescrpt << std::endl;
-    for (int ii = 0; ii < nloc; ii++) {
-        for (int jj = 0; jj < ndescrpt; jj++) {
-            fout3 << "descrpt[" << ii << "][" << jj << "]:\t" << descrpt[ii * ndescrpt + jj] << std::endl;
-        }
-    }
-    fout3.close();
-    #endif // DEBUG
 }
 
-extern void DescrptSeAGPUExecuteLauncher(const float * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const float * avg, const float * std, float * descrpt, float * descrpt_deriv, float * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int magic_number);
-extern void DescrptSeAGPUExecuteLauncher(const double * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const double * avg, const double * std, double * descrpt, double * descrpt_deriv, double * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int magic_number);
-
+#if GOOGLE_CUDA
 template<typename T>
 void DescrptSeAGPULauncher(const T * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const T * avg, const T * std, T * descrpt, T * descrpt_deriv, T * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int magic_number) {
-    DescrptSeAGPUExecuteLauncher(coord, type, ilist, jrange, jlist, array_int, array_longlong, avg, std, descrpt, descrpt_deriv, rij, nlist, nloc, nall, nnei, ndescrpt, rcut_r, rcut_r_smth, sec_a, fill_nei_a, magic_number);
+    DescrptSeAGPUExecuteFunctor<T>()(coord, type, ilist, jrange, jlist, array_int, array_longlong, avg, std, descrpt, descrpt_deriv, rij, nlist, nloc, nall, nnei, ndescrpt, rcut_r, rcut_r_smth, sec_a, fill_nei_a, magic_number);
 }
-
+#endif // GOOGLE_CUDA
 // ******************************************************************************
 // end of custome op DescrptSeA
 // ******************************************************************************
@@ -317,14 +280,12 @@ void ProdForceSeACPULauncher(T * force, const T * net_deriv, const T * in_deriv,
     }
 }
 
-extern void ProdForceSeAGPUExecuteLauncher(float * force, const float * net_derive, const float * in_deriv, const int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const int n_a_sel, const int n_a_shift);
-extern void ProdForceSeAGPUExecuteLauncher(double * force, const double * net_derive, const double * in_deriv, const int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const int n_a_sel, const int n_a_shift);
-
-
+#if GOOGLE_CUDA
 template<typename T>
 void ProdForceSeAGPULauncher(T * force, const T * net_deriv, const T * in_deriv, const int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const int n_a_sel, const int n_a_shift) {
-    ProdForceSeAGPUExecuteLauncher(force, net_deriv, in_deriv, nlist, nloc, nall, nnei, ndescrpt, n_a_sel, n_a_shift);
+    ProdForceSeAGPUExecuteFunctor<T>()(force, net_deriv, in_deriv, nlist, nloc, nall, nnei, ndescrpt, n_a_sel, n_a_shift);
 }
+#endif // GOOGLE_CUDA
 
 // ******************************************************************************
 // end of custome op ProdForceSeA
@@ -356,14 +317,56 @@ void ProdVirialSeACPULauncher(T * virial, T * atom_virial, const T * net_deriv, 
 	}
 }
 
-extern void ProdVirialSeAGPUExecuteLauncher(float * virial, float * atom_virial, const float * net_deriv, const float * in_deriv, const float * rij, const int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const int n_a_sel, const int n_a_shift);
-extern void ProdVirialSeAGPUExecuteLauncher(double * virial, double * atom_virial, const double * net_deriv, const double * in_deriv, const double * rij, const int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const int n_a_sel, const int n_a_shift);
-
+#if GOOGLE_CUDA
 template<typename T>
 void ProdVirialSeAGPULauncher(T * virial, T * atom_virial, const T * net_deriv, const T * in_deriv, const T * rij, const int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const int n_a_sel, const int n_a_shift) {
-    ProdVirialSeAGPUExecuteLauncher(virial, atom_virial, net_deriv, in_deriv, rij, nlist, nloc, nall, nnei, ndescrpt, n_a_sel, n_a_shift);
+    ProdVirialSeAGPUExecuteFunctor<T>()(virial, atom_virial, net_deriv, in_deriv, rij, nlist, nloc, nall, nnei, ndescrpt, n_a_sel, n_a_shift);
 }
-
+#endif // GOOGLE_CUDA
 // ******************************************************************************
 // end of custome op ProdVirialSeA
+// ******************************************************************************
+
+template<typename T>
+void GeluCPULauncher(const T * in, T * out, int const size) {
+    for (int ii = 0; ii < size; ii++) {
+        out[ii] = in[ii] * 0.5 * (1.0 + tanh(SQRT_2_PI * (in[ii] + 0.044715 * in[ii] * in[ii] *in[ii])));
+    }
+}
+
+template<typename T>
+void GeluGradCPULauncher(const T * dy, const T * in, T * out, int const size) {
+    for (int ii = 0; ii < size; ii++) {
+        T const var1 = tanh(SQRT_2_PI * (in[ii] + 0.044715 * in[ii] * in[ii] *in[ii]));
+        out[ii] = dy[ii] * (0.5 * SQRT_2_PI * in[ii] * (1 - var1 * var1) * (0.134145 * in[ii] * in[ii] + 1) + 0.5 * var1 + 0.5);
+    }
+}
+
+template <typename T>
+void GeluGradGradCPULauncher(const T * dy, const T * dy_, const T * in, T * out, int const size) {
+    for (int ii = 0; ii < size; ii++) {
+        T const var1 = tanh(SQRT_2_PI * (in[ii] + 0.044715 * in[ii] * in[ii] *in[ii]));
+        T const var2 = SQRT_2_PI * (1 - var1 * var1) * (0.134145 * in[ii] * in[ii] + 1);
+	    out[ii] = dy[ii] * dy_[ii] * (0.134145 * SQRT_2_PI * in[ii] * in[ii] * (1 - var1 * var1) - SQRT_2_PI * in[ii] * var2 * (0.134145 * in[ii] * in[ii] + 1) * var1 + var2);
+    }
+}
+
+#if GOOGLE_CUDA
+template<typename T>
+void GeluGPULauncher(const T * in, T * out, int const size) {
+    GeluGPUExecuteFunctor<T>()(in, out, size);
+}
+
+template<typename T>
+void GeluGradGPULauncher(const T * dy, const T * in, T * out, int const size) {
+    GeluGradGPUExecuteFunctor<T>()(dy, in, out, size);
+}
+
+template <typename T>
+void GeluGradGradGPULauncher(const T * dy, const T * dy_, const T * in, T * out, int const size) {
+    GeluGradGradGPUExecuteFunctor<T>()(dy, dy_, in, out, size);
+}
+#endif // GOOGLE_CUDA
+// ******************************************************************************
+// end of custome op Gelu
 // ******************************************************************************

@@ -1,44 +1,25 @@
 #include "common.h"
 #include "CustomeOperation.h"
 
-#ifdef HIGH_PREC
 REGISTER_OP("DescrptSeA")
-    .Input("coord: double")     //atomic coordinates
+    .Attr("T: {float, double}")
+    .Input("coord: T")          //atomic coordinates
     .Input("type: int32")       //atomic type
     .Input("natoms: int32")     //local atomic number; each type atomic number; daizheyingxiangqude atomic numbers
-    .Input("box : double")
+    .Input("box : T")
     .Input("mesh : int32")
-    .Input("davg: double")      //average value of data
-    .Input("dstd: double")      //standard deviation
+    .Input("davg: T")           //average value of data
+    .Input("dstd: T")           //standard deviation
     .Attr("rcut_a: float")      //no use
     .Attr("rcut_r: float")
     .Attr("rcut_r_smth: float")
     .Attr("sel_a: list(int)")
     .Attr("sel_r: list(int)")   //all zero
-    .Output("descrpt: double")
-    .Output("descrpt_deriv: double")
-    .Output("rij: double")
+    .Output("descrpt: T")
+    .Output("descrpt_deriv: T")
+    .Output("rij: T")
     .Output("nlist: int32");
     // only sel_a and rcut_r uesd.
-#else
-REGISTER_OP("DescrptSeA")
-    .Input("coord: float")
-    .Input("type: int32")
-    .Input("natoms: int32")
-    .Input("box : float")
-    .Input("mesh : int32")
-    .Input("davg: float")
-    .Input("dstd: float")
-    .Attr("rcut_a: float")
-    .Attr("rcut_r: float")
-    .Attr("rcut_r_smth: float")
-    .Attr("sel_a: list(int)")
-    .Attr("sel_r: list(int)")
-    .Output("descrpt: float")
-    .Output("descrpt_deriv: float")
-    .Output("rij: float")
-    .Output("nlist: int32");
-#endif
 
 int get_magic_number(int const nnei) {
     if (nnei <= 256) {
@@ -58,7 +39,6 @@ int get_magic_number(int const nnei) {
     }
 }
 
-template <typename Device, typename T> 
 struct DeviceFunctor {
     void operator()(const CPUDevice& d, std::string& device) {
         device = "CPU";
@@ -70,7 +50,7 @@ struct DeviceFunctor {
     #endif // GOOGLE_CUDA
 };
 
-template <typename Device, typename T>
+template <typename T>
 struct DescrptSeAFunctor {
     void operator()(const CPUDevice& d, const T * coord, const int * type, const int * mesh, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const T * avg, const T * std, T * descrpt, T * descrpt_deriv, T * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ntypes, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int magic_number) {
         DescrptSeACPULauncher(coord, type, ilist, jrange, jlist, avg, std, descrpt, descrpt_deriv, rij, nlist, nloc, nall, nnei, ntypes, ndescrpt, rcut_r, rcut_r_smth, sec_a, fill_nei_a, magic_number);
@@ -80,10 +60,10 @@ struct DescrptSeAFunctor {
     void operator()(const GPUDevice& d, const T * coord, const int * type, const int * mesh, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const T * avg, const T * std, T * descrpt, T * descrpt_deriv, T * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ntypes, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int magic_number) {
         DescrptSeAGPULauncher(coord, type, ilist, jrange, jlist, array_int, array_longlong, avg, std, descrpt, descrpt_deriv, rij, nlist, nloc, nall, nnei, ndescrpt, rcut_r, rcut_r_smth, sec_a, fill_nei_a, magic_number);
     }
-    #endif // GOOGLE_CUDA
+    #endif // GOOGLE_CUDA 
 };
 
-template<typename Device>
+template <typename Device, typename T>
 class DescrptSeAOp : public OpKernel {
 public:
     explicit DescrptSeAOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -130,7 +110,7 @@ public:
 
         OP_REQUIRES (context, (natoms_tensor.shape().dim_size(0) >= 3),		errors::InvalidArgument ("number of atoms should be larger than (or equal to) 3"));
 
-        DeviceFunctor<Device, VALUETYPE>() (
+        DeviceFunctor() (
             context->eigen_device<Device>(),
             device
         );
@@ -211,9 +191,9 @@ public:
 	        memcpy (&jlist,  12 + mesh_tensor.flat<int>().data(), sizeof(int *));
         }
 
-        DescrptSeAFunctor<Device, VALUETYPE>()(
+        DescrptSeAFunctor<T>()(
             context->eigen_device<Device>(),            // define actually graph execution device
-            coord_tensor.matrix<VALUETYPE>().data(),    // related to the kk argument
+            coord_tensor.matrix<T>().data(),    // related to the kk argument
             type_tensor.matrix<int>().data(),           // also related to the kk argument
             mesh_tensor.flat<int>().data(),
             ilist,
@@ -221,11 +201,11 @@ public:
             jlist,
             array_int,
             array_longlong,
-            avg_tensor.matrix<VALUETYPE>().data(),
-            std_tensor.matrix<VALUETYPE>().data(),
-            descrpt_tensor->matrix<VALUETYPE>().data(),
-            descrpt_deriv_tensor->matrix<VALUETYPE>().data(),
-            rij_tensor->matrix<VALUETYPE>().data(),
+            avg_tensor.matrix<T>().data(),
+            std_tensor.matrix<T>().data(),
+            descrpt_tensor->matrix<T>().data(),
+            descrpt_deriv_tensor->matrix<T>().data(),
+            rij_tensor->matrix<T>().data(),
             nlist_tensor->matrix<int>().data(),
             nloc,
             nall,
@@ -310,17 +290,18 @@ private:
 };
 
 // Register the CPU kernels.
-#define REGISTER_CPU()                                           \
-REGISTER_KERNEL_BUILDER(                                         \
-    Name("DescrptSeA").Device(DEVICE_CPU),                       \
-    DescrptSeAOp<CPUDevice>);
-REGISTER_CPU();
-
+#define REGISTER_CPU(T)                                                                 \
+REGISTER_KERNEL_BUILDER(                                                                \
+    Name("DescrptSeA").Device(DEVICE_CPU).TypeConstraint<T>("T"),                       \
+    DescrptSeAOp<CPUDevice, T>); 
+REGISTER_CPU(float);
+REGISTER_CPU(double);
 // Register the GPU kernels.
 #if GOOGLE_CUDA
-#define REGISTER_GPU()                                           \
-REGISTER_KERNEL_BUILDER(                                         \
-    Name("DescrptSeA").Device(DEVICE_GPU).HostMemory("natoms"),  \
-    DescrptSeAOp<GPUDevice>);
-REGISTER_GPU();
+#define REGISTER_GPU(T)                                                                 \
+REGISTER_KERNEL_BUILDER(                                                                \
+    Name("DescrptSeA").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms"),  \
+    DescrptSeAOp<GPUDevice, T>);
+REGISTER_GPU(float);
+REGISTER_GPU(double);
 #endif  // GOOGLE_CUDA

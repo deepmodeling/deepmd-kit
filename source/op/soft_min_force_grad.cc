@@ -12,28 +12,20 @@ typedef double VALUETYPE;
 typedef float  VALUETYPE;
 #endif
 
-#ifdef HIGH_PREC
 REGISTER_OP("SoftMinForceGrad")
-.Input("grad: double")
-.Input("du: double")
-.Input("sw_deriv: double")
+.Attr("T: {float, double}")
+.Input("grad: T")
+.Input("du: T")
+.Input("sw_deriv: T")
 .Input("nlist: int32")
 .Input("natoms: int32")
 .Attr("n_a_sel: int")
 .Attr("n_r_sel: int")
-.Output("grad_net: double");
-#else
-REGISTER_OP("SoftMinForceGrad")
-.Input("grad: float")
-.Input("du: float")
-.Input("sw_deriv: float")
-.Input("nlist: int32")
-.Input("natoms: int32")
-.Attr("n_a_sel: int")
-.Attr("n_r_sel: int")
-.Output("grad_net: float");
-#endif
+.Output("grad_net: T");
 
+using CPUDevice = Eigen::ThreadPoolDevice;
+
+template<typename Device, typename T>
 class SoftMinForceGradOp : public OpKernel 
 {
 public:
@@ -89,11 +81,11 @@ public:
     OP_REQUIRES_OK(context, context->allocate_output(0, grad_net_shape, &grad_net_tensor));
     
     // flat the tensors
-    auto grad		= grad_tensor		.matrix<VALUETYPE>();
-    auto du		= du_tensor		.matrix<VALUETYPE>();
-    auto sw_deriv	= sw_deriv_tensor	.matrix<VALUETYPE>();
+    auto grad		= grad_tensor		.matrix<T>();
+    auto du		= du_tensor		.matrix<T>();
+    auto sw_deriv	= sw_deriv_tensor	.matrix<T>();
     auto nlist		= nlist_tensor		.matrix<int>();
-    auto grad_net	= grad_net_tensor	->matrix<VALUETYPE>();
+    auto grad_net	= grad_net_tensor	->matrix<T>();
 
     // loop over frames
 #pragma omp parallel for
@@ -125,4 +117,9 @@ private:
   int n_r_sel, n_a_sel;
 };
 
-REGISTER_KERNEL_BUILDER(Name("SoftMinForceGrad").Device(DEVICE_CPU), SoftMinForceGradOp);
+// Register the CPU kernels.
+#define REGISTER_CPU(T)                                                                   \
+REGISTER_KERNEL_BUILDER(                                                                  \
+    Name("SoftMinForceGrad").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
+    SoftMinForceGradOp<CPUDevice, T>); 
+REGISTER_CPU(VALUETYPE);

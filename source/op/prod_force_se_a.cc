@@ -12,28 +12,23 @@ typedef double VALUETYPE;
 typedef float  VALUETYPE;
 #endif
 
-#ifdef HIGH_PREC
 REGISTER_OP("ProdForceSeA")
-.Input("net_deriv: double")
-.Input("in_deriv: double")
+.Attr("T: {float, double}")
+.Input("net_deriv: T")
+.Input("in_deriv: T")
 .Input("nlist: int32")
 .Input("natoms: int32")
 .Attr("n_a_sel: int")
 .Attr("n_r_sel: int")
-.Output("force: double");
-#else
-REGISTER_OP("ProdForceSeA")
-.Input("net_deriv: float")
-.Input("in_deriv: float")
-.Input("nlist: int32")
-.Input("natoms: int32")
-.Attr("n_a_sel: int")
-.Attr("n_r_sel: int")
-.Output("force: float");
-#endif
+.Output("force: T");
+
 
 using namespace tensorflow;
 
+using CPUDevice = Eigen::ThreadPoolDevice;
+using GPUDevice = Eigen::GpuDevice;
+
+template<typename Device, typename T>
 class ProdForceSeAOp : public OpKernel {
  public:
   explicit ProdForceSeAOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -83,10 +78,10 @@ class ProdForceSeAOp : public OpKernel {
 						     force_shape, &force_tensor));
     
     // flat the tensors
-    auto net_deriv = net_deriv_tensor.flat<VALUETYPE>();
-    auto in_deriv = in_deriv_tensor.flat<VALUETYPE>();
+    auto net_deriv = net_deriv_tensor.flat<T>();
+    auto in_deriv = in_deriv_tensor.flat<T>();
     auto nlist = nlist_tensor.flat<int>();
-    auto force = force_tensor->flat<VALUETYPE>();
+    auto force = force_tensor->flat<T>();
 
     assert (nframes == force_shape.dim_size(0));
     assert (nframes == net_deriv_tensor.shape().dim_size(0));
@@ -155,7 +150,10 @@ private:
   }
 };
 
-REGISTER_KERNEL_BUILDER(Name("ProdForceSeA").Device(DEVICE_CPU), ProdForceSeAOp);
-
-
+// Register the CPU kernels.
+#define REGISTER_CPU(T)                                                                  \
+REGISTER_KERNEL_BUILDER(                                                                 \
+    Name("ProdForceSeA").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
+    ProdForceSeAOp<CPUDevice, T>); 
+REGISTER_CPU(VALUETYPE);
 

@@ -12,30 +12,21 @@ typedef double VALUETYPE;
 typedef float  VALUETYPE;
 #endif
 
-#ifdef HIGH_PREC
 REGISTER_OP("ProdVirialSeR")
-.Input("net_deriv: double")
-.Input("in_deriv: double")
-.Input("rij: double")
+.Attr("T: {float, double}")
+.Input("net_deriv: T")
+.Input("in_deriv: T")
+.Input("rij: T")
 .Input("nlist: int32")
 .Input("natoms: int32")
-.Output("virial: double")
-.Output("atom_virial: double")
-;
-#else
-REGISTER_OP("ProdVirialSeR")
-.Input("net_deriv: float")
-.Input("in_deriv: float")
-.Input("rij: float")
-.Input("nlist: int32")
-.Input("natoms: int32")
-.Output("virial: float")
-.Output("atom_virial: float")
-;
-#endif
+.Output("virial: T")
+.Output("atom_virial: T");
 
 using namespace tensorflow;
 
+using CPUDevice = Eigen::ThreadPoolDevice;
+
+template<typename Device, typename T>
 class ProdVirialSeROp : public OpKernel {
  public:
   explicit ProdVirialSeROp(OpKernelConstruction* context) : OpKernel(context) {
@@ -87,12 +78,12 @@ class ProdVirialSeROp : public OpKernel {
     OP_REQUIRES_OK(context, context->allocate_output(1, atom_virial_shape, &atom_virial_tensor));
     
     // flat the tensors
-    auto net_deriv = net_deriv_tensor.flat<VALUETYPE>();
-    auto in_deriv = in_deriv_tensor.flat<VALUETYPE>();
-    auto rij = rij_tensor.flat<VALUETYPE>();
+    auto net_deriv = net_deriv_tensor.flat<T>();
+    auto in_deriv = in_deriv_tensor.flat<T>();
+    auto rij = rij_tensor.flat<T>();
     auto nlist = nlist_tensor.flat<int>();
-    auto virial = virial_tensor->flat<VALUETYPE>();
-    auto atom_virial = atom_virial_tensor->flat<VALUETYPE>();
+    auto virial = virial_tensor->flat<T>();
+    auto atom_virial = atom_virial_tensor->flat<T>();
 
     // loop over samples
 #pragma omp parallel for
@@ -119,10 +110,10 @@ class ProdVirialSeROp : public OpKernel {
 	for (int jj = 0; jj < nnei; ++jj){
 	  int j_idx = nlist (nlist_iter + i_idx * nnei + jj);
 	  if (j_idx < 0) continue;
-	  VALUETYPE pref = -1.0 * net_deriv (net_iter + i_idx * ndescrpt + jj);
+	  T pref = -1.0 * net_deriv (net_iter + i_idx * ndescrpt + jj);
 	  for (int dd0 = 0; dd0 < 3; ++dd0){
 	    for (int dd1 = 0; dd1 < 3; ++dd1){
-	      VALUETYPE tmp_v = pref * rij (rij_iter + i_idx * nnei * 3 + jj * 3 + dd1) *  in_deriv (in_iter + i_idx * ndescrpt * 3 + jj * 3 + dd0);
+	      T tmp_v = pref * rij (rij_iter + i_idx * nnei * 3 + jj * 3 + dd1) *  in_deriv (in_iter + i_idx * ndescrpt * 3 + jj * 3 + dd0);
 	      virial (virial_iter + dd0 * 3 + dd1) -= tmp_v;
 	      atom_virial (atom_virial_iter + j_idx * 9 + dd0 * 3 + dd1) -= tmp_v;
 	    }
@@ -133,7 +124,11 @@ class ProdVirialSeROp : public OpKernel {
   }
 };
 
-REGISTER_KERNEL_BUILDER(Name("ProdVirialSeR").Device(DEVICE_CPU), ProdVirialSeROp);
+#define REGISTER_CPU(T)                                                                 \
+REGISTER_KERNEL_BUILDER(                                                                \
+    Name("ProdVirialSeR").Device(DEVICE_CPU).TypeConstraint<T>("T"),                       \
+    ProdVirialSeROp<CPUDevice, T>); 
+REGISTER_CPU(VALUETYPE);
 
 
 

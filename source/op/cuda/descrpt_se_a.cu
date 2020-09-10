@@ -1,22 +1,7 @@
-#include <vector>
-#include <climits>
-#include <stdio.h>
 #include <cub/block/block_load.cuh>
 #include <cub/block/block_store.cuh>
 #include <cub/block/block_radix_sort.cuh>
-#include <cuda_runtime.h>
-
-typedef unsigned long long int_64;
-
-#define cudaErrcheck(res) { cudaAssert((res), __FILE__, __LINE__); }
-inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort=true)
-{
-    if (code != cudaSuccess) 
-    {
-        fprintf(stderr,"cuda assert: %s %s %d\n", cudaGetErrorString(code), file, line);
-        if (abort) exit(code);
-    }
-}
+#include "DeviceFunctor.h"
 
 template <
     typename    Key,
@@ -413,30 +398,8 @@ void format_nbor_list_4096 (
     BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAGIC_NUMBER);
 }
 
-void DescrptSeAGPUExecuteLauncher(const float * coord, 
-                            const int * type, 
-                            const int * ilist, 
-                            const int * jrange, 
-                            const int * jlist, 
-                            int * array_int, 
-                            unsigned long long * array_longlong, 
-                            const float * avg, 
-                            const float * std, 
-                            float * descript, 
-                            float * descript_deriv, 
-                            float * rij, 
-                            int * nlist, 
-                            const int nloc, 
-                            const int nall, 
-                            const int nnei, 
-                            const int ndescrpt, 
-                            const float rcut_r, 
-                            const float rcut_r_smth, 
-                            const std::vector<int> sec_a, 
-                            const bool fill_nei_a, 
-                            const int MAGIC_NUMBER
-)
-{   
+template <typename T>
+void DescrptSeAGPUExecuteFunctor<T>::operator()(const T * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const T * avg, const T * std, T * descript, T * descript_deriv, T * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int MAGIC_NUMBER) {
     const int LEN = 256;
     int nblock = (nloc + LEN -1) / LEN;
     int * sec_a_dev = array_int;
@@ -448,8 +411,8 @@ void DescrptSeAGPUExecuteLauncher(const float * coord,
     res = cudaMemcpy(sec_a_dev, &sec_a[0], sizeof(int) * sec_a.size(), cudaMemcpyHostToDevice); cudaErrcheck(res);    
     res = cudaMemset(key, 0xffffffff, sizeof(int_64) * nloc * MAGIC_NUMBER); cudaErrcheck(res);
     res = cudaMemset(nlist, -1, sizeof(int) * nloc * nnei); cudaErrcheck(res);
-    res = cudaMemset(descript, 0.0, sizeof(float) * nloc * ndescrpt); cudaErrcheck(res);
-    res = cudaMemset(descript_deriv, 0.0, sizeof(float) * nloc * ndescrpt * 3); cudaErrcheck(res);
+    res = cudaMemset(descript, 0.0, sizeof(T) * nloc * ndescrpt); cudaErrcheck(res);
+    res = cudaMemset(descript_deriv, 0.0, sizeof(T) * nloc * ndescrpt * 3); cudaErrcheck(res);
 
     if (fill_nei_a) {
         // ~~~
@@ -547,140 +510,7 @@ void DescrptSeAGPUExecuteLauncher(const float * coord,
                             rcut_r,
                             sec_a.back()
     );
-}  
+}
 
-void DescrptSeAGPUExecuteLauncher(const double * coord, 
-                            const int * type, 
-                            const int * ilist, 
-                            const int * jrange, 
-                            const int * jlist, 
-                            int * array_int, 
-                            unsigned long long * array_longlong, 
-                            const double * avg, 
-                            const double * std, 
-                            double * descript, 
-                            double * descript_deriv, 
-                            double * rij, 
-                            int * nlist, 
-                            const int nloc, 
-                            const int nall, 
-                            const int nnei, 
-                            const int ndescrpt, 
-                            const float rcut_r, 
-                            const float rcut_r_smth, 
-                            const std::vector<int> sec_a, 
-                            const bool fill_nei_a, 
-                            const int MAGIC_NUMBER
-)
-{   
-    const int LEN = 256;
-    int nblock = (nloc + LEN -1) / LEN;
-    int * sec_a_dev = array_int;
-    int * nei_iter = array_int + sec_a.size(); // = new int[sec_a_size];
-    int * i_idx = array_int + sec_a.size() + nloc * sec_a.size();
-    int_64 * key = array_longlong;
-
-    cudaError_t res = cudaSuccess;
-    res = cudaMemcpy(sec_a_dev, &sec_a[0], sizeof(int) * sec_a.size(), cudaMemcpyHostToDevice); cudaErrcheck(res);    
-    res = cudaMemset(key, 0xffffffff, sizeof(int_64) * nloc * MAGIC_NUMBER); cudaErrcheck(res);
-    res = cudaMemset(nlist, -1, sizeof(int) * nloc * nnei); cudaErrcheck(res);
-    res = cudaMemset(descript, 0.0, sizeof(double) * nloc * ndescrpt); cudaErrcheck(res);
-    res = cudaMemset(descript_deriv, 0.0, sizeof(double) * nloc * ndescrpt * 3); cudaErrcheck(res);
-
-    if (fill_nei_a) {
-        // ~~~
-        // cudaProfilerStart();
-        get_i_idx_se_a<<<nblock, LEN>>> (nloc, ilist, i_idx);
-
-        if (nnei <= 256) {
-            format_nbor_list_256 (
-                coord,
-                type,
-                jrange,
-                jlist,
-                nloc,       
-                rcut_r, 
-                i_idx, 
-                key
-            ); 
-        } else if (nnei <= 512) {
-            format_nbor_list_512 (
-                coord,
-                type,
-                jrange,
-                jlist,
-                nloc,       
-                rcut_r, 
-                i_idx, 
-                key
-            ); 
-        } else if (nnei <= 1024) {
-            format_nbor_list_1024 (
-                coord,
-                type,
-                jrange,
-                jlist,
-                nloc,       
-                rcut_r, 
-                i_idx, 
-                key
-            ); 
-        } else if (nnei <= 2048) {
-            format_nbor_list_2048 (
-                coord,
-                type,
-                jrange,
-                jlist,
-                nloc,       
-                rcut_r, 
-                i_idx, 
-                key
-            ); 
-        } else if (nnei <= 4096) {
-            format_nbor_list_4096 (
-                coord,
-                type,
-                jrange,
-                jlist,
-                nloc,       
-                rcut_r, 
-                i_idx, 
-                key
-            ); 
-        } 
-
-        format_nlist_fill_b_se_a<<<nblock, LEN>>> (
-                            nlist,
-                            nnei,       
-                            nloc,
-                            jrange,
-                            jlist,
-                            key,
-                            sec_a_dev,
-                            sec_a.size(),
-                            nei_iter,
-                            MAGIC_NUMBER
-        );
-    }
-
-    const int nblock_ = (sec_a.back() + LEN -1) / LEN;
-    dim3 block_grid(nloc, nblock_);
-    dim3 thread_grid(1, LEN);
-    compute_descriptor_se_a<<<block_grid, thread_grid>>> (
-                            descript,
-                            ndescrpt,
-                            descript_deriv,
-                            ndescrpt * 3,
-                            rij,
-                            nnei * 3,
-                            type,
-                            avg,
-                            std,
-                            nlist,
-                            nnei,
-                            coord,
-                            rcut_r_smth,
-                            rcut_r,
-                            sec_a.back()
-    );
-}  
+template struct DescrptSeAGPUExecuteFunctor<float>;
+template struct DescrptSeAGPUExecuteFunctor<double>;

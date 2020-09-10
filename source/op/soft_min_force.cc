@@ -12,28 +12,22 @@ typedef double VALUETYPE;
 typedef float  VALUETYPE;
 #endif
 
-#ifdef HIGH_PREC
 REGISTER_OP("SoftMinForce")
-.Input("du: double")
-.Input("sw_deriv: double")
+.Attr("T: {float, double}")
+.Input("du: T")
+.Input("sw_deriv: T")
 .Input("nlist: int32")
 .Input("natoms: int32")
 .Attr("n_a_sel: int")
 .Attr("n_r_sel: int")
-.Output("force: double");
-#else
-REGISTER_OP("SoftMinForce")
-.Input("du: float")
-.Input("sw_deriv: float")
-.Input("nlist: int32")
-.Input("natoms: int32")
-.Attr("n_a_sel: int")
-.Attr("n_r_sel: int")
-.Output("force: float");
-#endif
+.Output("force: T");
+
 
 using namespace tensorflow;
 
+using CPUDevice = Eigen::ThreadPoolDevice;
+
+template<typename Device, typename T>
 class SoftMinForceOp : public OpKernel {
  public:
   explicit SoftMinForceOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -78,10 +72,10 @@ class SoftMinForceOp : public OpKernel {
     OP_REQUIRES_OK(context, context->allocate_output(0, force_shape, &force_tensor));
     
     // flat the tensors
-    auto du = du_tensor.matrix<VALUETYPE>();
-    auto sw_deriv = sw_deriv_tensor.matrix<VALUETYPE>();
+    auto du = du_tensor.matrix<T>();
+    auto sw_deriv = sw_deriv_tensor.matrix<T>();
     auto nlist = nlist_tensor.matrix<int>();
-    auto force = force_tensor->matrix<VALUETYPE>();
+    auto force = force_tensor->matrix<T>();
 
     // loop over samples
 #pragma omp parallel for 
@@ -118,4 +112,9 @@ private:
   int n_r_sel, n_a_sel;
 };
 
-REGISTER_KERNEL_BUILDER(Name("SoftMinForce").Device(DEVICE_CPU), SoftMinForceOp);
+// Register the CPU kernels.
+#define REGISTER_CPU(T)                                                                   \
+REGISTER_KERNEL_BUILDER(                                                                  \
+    Name("SoftMinForce").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
+    SoftMinForceOp<CPUDevice, T>); 
+REGISTER_CPU(VALUETYPE);
