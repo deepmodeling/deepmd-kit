@@ -17,6 +17,7 @@ class DescrptSeA ():
                .add('resnet_dt',bool,   default = False) \
                .add('trainable',bool,   default = True) \
                .add('seed',     int) \
+               .add('type_one_side', bool, default = False) \
                .add('exclude_types', list, default = []) \
                .add('set_davg_zero', bool, default = False) \
                .add('activation_function', str,    default = 'tanh') \
@@ -39,6 +40,9 @@ class DescrptSeA ():
             self.exclude_types.add((tt[0], tt[1]))
             self.exclude_types.add((tt[1], tt[0]))
         self.set_davg_zero = class_data['set_davg_zero']
+        self.type_one_side = class_data['type_one_side']
+        if self.type_one_side and len(exclude_types) != 0:
+            raise RuntimeError('"type_one_side" is not compatible with "exclude_types"')
 
         # descrpt config
         self.sel_r = [ 0 for ii in range(len(self.sel_a)) ]
@@ -244,17 +248,27 @@ class DescrptSeA ():
         inputs = tf.reshape(inputs, [-1, self.ndescrpt * natoms[0]])
         output = []
         output_qmat = []
-        for type_i in range(self.ntypes):
-            inputs_i = tf.slice (inputs,
-                                 [ 0, start_index*      self.ndescrpt],
-                                 [-1, natoms[2+type_i]* self.ndescrpt] )
+        if not self.type_one_side:
+            for type_i in range(self.ntypes):
+                inputs_i = tf.slice (inputs,
+                                     [ 0, start_index*      self.ndescrpt],
+                                     [-1, natoms[2+type_i]* self.ndescrpt] )
+                inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
+                layer, qmat = self._filter(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, seed = self.seed, trainable = trainable, activation_fn = self.filter_activation_fn)
+                layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_out()])
+                qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_rot_mat_1() * 3])
+                output.append(layer)
+                output_qmat.append(qmat)
+                start_index += natoms[2+type_i]
+        else :
+            inputs_i = inputs
             inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
-            layer, qmat = self._filter(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, seed = self.seed, trainable = trainable, activation_fn = self.filter_activation_fn)
-            layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_out()])
-            qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_rot_mat_1() * 3])
+            type_i = -1
+            layer, qmat = self._filter(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, seed = self.seed, trainable = trainable, activation_fn = self.filter_activation_fn)
+            layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0] * self.get_dim_out()])
+            qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[0] * self.get_dim_rot_mat_1() * 3])
             output.append(layer)
             output_qmat.append(qmat)
-            start_index += natoms[2+type_i]
         output = tf.concat(output, axis = 1)
         output_qmat = tf.concat(output_qmat, axis = 1)
         return output, output_qmat
@@ -353,6 +367,7 @@ class DescrptSeA ():
                                   self.filter_precision,
                                   tf.random_normal_initializer(stddev=stddev, mean = bavg, seed = seed), 
                                     trainable = trainable)
+                hidden = tf.reshape(activation_fn(tf.matmul(xyz_scatter, w) + b), [-1, outputs_size[ii]])
                 if self.filter_resnet_dt :
                     idt = tf.get_variable('idt_'+str(ii)+'_'+str(type_i), 
                                           [1, outputs_size[ii]], 
@@ -361,16 +376,16 @@ class DescrptSeA ():
                                           trainable = trainable)
                 if outputs_size[ii] == outputs_size[ii-1]:
                     if self.filter_resnet_dt :
-                        xyz_scatter += activation_fn(tf.matmul(xyz_scatter, w) + b) * idt
+                        xyz_scatter += hidden * idt
                     else :
-                        xyz_scatter += activation_fn(tf.matmul(xyz_scatter, w) + b)
+                        xyz_scatter += hidden
                 elif outputs_size[ii] == outputs_size[ii-1] * 2: 
                     if self.filter_resnet_dt :
-                        xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + activation_fn(tf.matmul(xyz_scatter, w) + b) * idt
+                        xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + hidden * idt
                     else :
-                        xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + activation_fn(tf.matmul(xyz_scatter, w) + b)
+                        xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + hidden
                 else:
-                    xyz_scatter = activation_fn(tf.matmul(xyz_scatter, w) + b)
+                    xyz_scatter = hidden
             else:
               w = tf.zeros((outputs_size[0], outputs_size[-1]), dtype=global_tf_float_precision)
               xyz_scatter = tf.matmul(xyz_scatter, w)
@@ -440,6 +455,7 @@ class DescrptSeA ():
                                 self.filter_precision,
                                 tf.random_normal_initializer(stddev=stddev, mean = bavg, seed = seed),
                                   trainable = trainable)
+              hidden = tf.reshape(activation_fn(tf.matmul(xyz_scatter, w) + b), [-1, outputs_size[ii]])
               if self.filter_resnet_dt :
                   idt = tf.get_variable('idt_'+str(ii)+'_'+str(type_i), 
                                         [1, outputs_size[ii]], 
@@ -448,16 +464,16 @@ class DescrptSeA ():
                                         trainable = trainable)
               if outputs_size[ii] == outputs_size[ii-1]:
                   if self.filter_resnet_dt :
-                      xyz_scatter += activation_fn(tf.matmul(xyz_scatter, w) + b) * idt
+                      xyz_scatter += hidden * idt
                   else :
-                      xyz_scatter += activation_fn(tf.matmul(xyz_scatter, w) + b)
+                      xyz_scatter += hidden
               elif outputs_size[ii] == outputs_size[ii-1] * 2: 
                   if self.filter_resnet_dt :
-                      xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + activation_fn(tf.matmul(xyz_scatter, w) + b) * idt
+                      xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + hidden * idt
                   else :
-                      xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + activation_fn(tf.matmul(xyz_scatter, w) + b)
+                      xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + hidden
               else:
-                  xyz_scatter = activation_fn(tf.matmul(xyz_scatter, w) + b)
+                  xyz_scatter = hidden
             # natom x nei_type_i x out_size
             xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1]//4, outputs_size[-1]))
             # natom x nei_type_i x 4  

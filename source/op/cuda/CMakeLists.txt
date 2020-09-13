@@ -80,9 +80,14 @@ else ()
 endif()
 
 set (SOURCE_FILES
-    descrpt_se_a.cu descrpt_se_r.cu prod_force_se_a.cu prod_force_se_r.cu prod_virial_se_a.cu prod_virial_se_r.cu 
+    descrpt_se_a.cu descrpt_se_r.cu prod_force_se_a.cu prod_force_se_r.cu prod_virial_se_a.cu prod_virial_se_r.cu gelu.cu 
 )
 
 cuda_add_library(deepmd_op_cuda SHARED ${SOURCE_FILES})
 
-install(TARGETS deepmd_op_cuda DESTINATION lib/)
+if (BUILD_CPP_IF)
+    install(TARGETS deepmd_op_cuda DESTINATION lib/)
+endif (BUILD_CPP_IF)
+if (BUILD_PY_IF)
+    install(TARGETS deepmd_op_cuda DESTINATION deepmd/)
+endif (BUILD_PY_IF)

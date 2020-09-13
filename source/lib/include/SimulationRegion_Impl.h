@@ -5,6 +5,7 @@
 #include <iostream>
 #include <limits>
 #include <typeinfo>
+#include <stdexcept>
 
 using namespace std;
 
@@ -500,6 +501,9 @@ computeVolume()
       boxt[0*3+1] * (boxt[1*3+0]*boxt[2*3+2] - boxt[2*3+0]*boxt[1*3+2]) +
       boxt[0*3+2] * (boxt[1*3+0]*boxt[2*3+1] - boxt[2*3+0]*boxt[1*3+1]);
   volumei = static_cast<double>(1.)/volume;
+  if (volume < 0) {
+    throw std::runtime_error("Negative volume detected. Please make sure the simulation cell obeys the right-hand rule.");
+  }
 }
 
 template<typename VALUETYPE>

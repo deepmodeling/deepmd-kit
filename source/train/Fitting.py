@@ -194,12 +194,14 @@ class EnerFitting ():
             if self.numb_fparam > 0 :
                 ext_fparam = tf.tile(fparam, [1, natoms[2+type_i]])
                 ext_fparam = tf.reshape(ext_fparam, [-1, self.numb_fparam])
+                ext_fparam = tf.cast(ext_fparam,self.fitting_precision)
                 layer = tf.concat([layer, ext_fparam], axis = 1)
             if self.numb_aparam > 0 :
                 ext_aparam = tf.slice(aparam, 
                                       [ 0, start_index      * self.numb_aparam],
                                       [-1, natoms[2+type_i] * self.numb_aparam])
                 ext_aparam = tf.reshape(ext_aparam, [-1, self.numb_aparam])
+                ext_aparam = tf.cast(ext_aparam,self.fitting_precision)
                 layer = tf.concat([layer, ext_aparam], axis = 1)
             start_index += natoms[2+type_i]
                 
