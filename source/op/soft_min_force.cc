@@ -6,12 +6,6 @@
 using namespace tensorflow;
 using namespace std;
 
-#ifdef HIGH_PREC
-typedef double VALUETYPE;
-#else
-typedef float  VALUETYPE;
-#endif
-
 REGISTER_OP("SoftMinForce")
 .Attr("T: {float, double}")
 .Input("du: T")
@@ -22,12 +16,11 @@ REGISTER_OP("SoftMinForce")
 .Attr("n_r_sel: int")
 .Output("force: T");
 
-
 using namespace tensorflow;
 
 using CPUDevice = Eigen::ThreadPoolDevice;
 
-template<typename Device, typename T>
+template<typename Device, typename FPTYPE>
 class SoftMinForceOp : public OpKernel {
  public:
   explicit SoftMinForceOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -72,10 +65,10 @@ class SoftMinForceOp : public OpKernel {
     OP_REQUIRES_OK(context, context->allocate_output(0, force_shape, &force_tensor));
     
     // flat the tensors
-    auto du = du_tensor.matrix<T>();
-    auto sw_deriv = sw_deriv_tensor.matrix<T>();
+    auto du = du_tensor.matrix<FPTYPE>();
+    auto sw_deriv = sw_deriv_tensor.matrix<FPTYPE>();
     auto nlist = nlist_tensor.matrix<int>();
-    auto force = force_tensor->matrix<T>();
+    auto force = force_tensor->matrix<FPTYPE>();
 
     // loop over samples
 #pragma omp parallel for 
@@ -117,4 +110,5 @@ private:
 REGISTER_KERNEL_BUILDER(                                                                  \
     Name("SoftMinForce").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
     SoftMinForceOp<CPUDevice, T>); 
-REGISTER_CPU(VALUETYPE);
+REGISTER_CPU(float);
+REGISTER_CPU(double);

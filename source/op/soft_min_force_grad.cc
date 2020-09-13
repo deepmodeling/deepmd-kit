@@ -6,12 +6,6 @@
 using namespace tensorflow;
 using namespace std;
 
-#ifdef HIGH_PREC
-typedef double VALUETYPE;
-#else
-typedef float  VALUETYPE;
-#endif
-
 REGISTER_OP("SoftMinForceGrad")
 .Attr("T: {float, double}")
 .Input("grad: T")
@@ -25,7 +19,7 @@ REGISTER_OP("SoftMinForceGrad")
 
 using CPUDevice = Eigen::ThreadPoolDevice;
 
-template<typename Device, typename T>
+template<typename Device, typename FPTYPE>
 class SoftMinForceGradOp : public OpKernel 
 {
 public:
@@ -81,11 +75,11 @@ public:
     OP_REQUIRES_OK(context, context->allocate_output(0, grad_net_shape, &grad_net_tensor));
     
     // flat the tensors
-    auto grad		= grad_tensor		.matrix<T>();
-    auto du		= du_tensor		.matrix<T>();
-    auto sw_deriv	= sw_deriv_tensor	.matrix<T>();
+    auto grad		= grad_tensor		.matrix<FPTYPE>();
+    auto du		= du_tensor		.matrix<FPTYPE>();
+    auto sw_deriv	= sw_deriv_tensor	.matrix<FPTYPE>();
     auto nlist		= nlist_tensor		.matrix<int>();
-    auto grad_net	= grad_net_tensor	->matrix<T>();
+    auto grad_net	= grad_net_tensor	->matrix<FPTYPE>();
 
     // loop over frames
 #pragma omp parallel for
@@ -122,4 +116,5 @@ private:
 REGISTER_KERNEL_BUILDER(                                                                  \
     Name("SoftMinForceGrad").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
     SoftMinForceGradOp<CPUDevice, T>); 
-REGISTER_CPU(VALUETYPE);
+REGISTER_CPU(float);
+REGISTER_CPU(double);

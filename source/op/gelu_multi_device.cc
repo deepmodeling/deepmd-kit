@@ -19,45 +19,45 @@ REGISTER_OP("GeluGradGrad")
     .Input("x: T")
     .Output("output: T");
 
-template <typename T>
+template <typename FPTYPE>
 struct GeluFunctor {
-    void operator()(const CPUDevice& d, const T * in, T * out, int const size) {
+    void operator()(const CPUDevice& d, const FPTYPE * in, FPTYPE * out, int const size) {
 		GeluCPULauncher(in, out, size);
 	}
     #if GOOGLE_CUDA
-    void operator()(const GPUDevice& d, const T * in, T * out, int const size) {
+    void operator()(const GPUDevice& d, const FPTYPE * in, FPTYPE * out, int const size) {
         GeluGPULauncher(in, out, size);
     }
     #endif
 };
 
-template <typename T>
+template <typename FPTYPE>
 struct GeluGradFunctor {
-    void operator()(const CPUDevice& d, const T * dy, const T * in, T * out, int const size) {
+    void operator()(const CPUDevice& d, const FPTYPE * dy, const FPTYPE * in, FPTYPE * out, int const size) {
         GeluGradCPULauncher(dy, in, out, size);
     }
     #if GOOGLE_CUDA
-    void operator()(const GPUDevice& d, const T * dy, const T * in, T * out, int const size) {
+    void operator()(const GPUDevice& d, const FPTYPE * dy, const FPTYPE * in, FPTYPE * out, int const size) {
         GeluGradGPULauncher(dy, in, out, size);
     }
     #endif
 };
 
-template <typename T>
+template <typename FPTYPE>
 struct GeluGradGradFunctor {
-    void operator()(const CPUDevice& d, const T * dy, const T * dy_, const T * in, T * out, int const size) {
+    void operator()(const CPUDevice& d, const FPTYPE * dy, const FPTYPE * dy_, const FPTYPE * in, FPTYPE * out, int const size) {
         GeluGradGradCPULauncher(dy, dy_, in, out, size);
     }
     #if GOOGLE_CUDA
-    void operator()(const GPUDevice& d, const T * dy, const T * dy_, const T * in, T * out, int const size) {
+    void operator()(const GPUDevice& d, const FPTYPE * dy, const FPTYPE * dy_, const FPTYPE * in, FPTYPE * out, int const size) {
         GeluGradGradGPULauncher(dy, dy_, in, out, size);
     }
     #endif
 };
 
 // OpKernel definition.
-// template parameter <T> is the datatype of the tensors.
-template <typename Device, typename T>
+// template parameter <FPTYPE> is the datatype of the tensors.
+template <typename Device, typename FPTYPE>
 class GeluOp : public OpKernel {
   public :
     explicit GeluOp(OpKernelConstruction* context) : OpKernel(context) {}
@@ -71,18 +71,18 @@ class GeluOp : public OpKernel {
 					    x.shape(),
 					    &output));
 		
-		GeluFunctor<T>()(
+		GeluFunctor<FPTYPE>()(
 			context->eigen_device<Device>(),
-			x.flat<T>().data(),
-			output->flat<T>().data(),
+			x.flat<FPTYPE>().data(),
+			output->flat<FPTYPE>().data(),
 			static_cast<int>(output->NumElements())
 		);
     }
 };
 
 // OpKernel definition.
-// template parameter <T> is the datatype of the tensors.
-template <typename Device, typename T>
+// template parameter <FPTYPE> is the datatype of the tensors.
+template <typename Device, typename FPTYPE>
 class GeluGradOp : public OpKernel {
   public :
     explicit GeluGradOp(OpKernelConstruction* context) : OpKernel(context) {}
@@ -98,19 +98,19 @@ class GeluGradOp : public OpKernel {
 					    x.shape(),
 					    &output));
 		
-		GeluGradFunctor<T>()(
+		GeluGradFunctor<FPTYPE>()(
             context->eigen_device<Device>(),
-            dy.flat<T>().data(),
-            x.flat<T>().data(),
-            output->flat<T>().data(),
+            dy.flat<FPTYPE>().data(),
+            x.flat<FPTYPE>().data(),
+            output->flat<FPTYPE>().data(),
             static_cast<int>(output->NumElements())
         );
     }
 };
 
 // OpKernel definition.
-// template parameter <T> is the datatype of the tensors.
-template <typename Device, typename T>
+// template parameter <FPTYPE> is the datatype of the tensors.
+template <typename Device, typename FPTYPE>
 class GeluGradGradOp : public OpKernel {
   public :
     explicit GeluGradGradOp(OpKernelConstruction* context) : OpKernel(context) {}
@@ -127,12 +127,12 @@ class GeluGradGradOp : public OpKernel {
 					    x.shape(),
 					    &output));
 		
-		GeluGradGradFunctor<T>()(
+		GeluGradGradFunctor<FPTYPE>()(
             context->eigen_device<Device>(),
-            dy.flat<T>().data(),
-            dy_.flat<T>().data(),
-            x.flat<T>().data(),
-            output->flat<T>().data(),
+            dy.flat<FPTYPE>().data(),
+            dy_.flat<FPTYPE>().data(),
+            x.flat<FPTYPE>().data(),
+            output->flat<FPTYPE>().data(),
             static_cast<int>(output->NumElements())
         );
     }

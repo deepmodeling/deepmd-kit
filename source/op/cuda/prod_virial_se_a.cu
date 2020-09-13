@@ -14,12 +14,12 @@ static __inline__ __device__ double atomicAdd(double* address, double val) {
 }
 #endif
 
-template<typename T>
-__global__ void deriv_wrt_neighbors_se_a(T * virial, 
-                        T * atom_virial,
-                        const T * net_deriv,
-                        const T * in_deriv,
-                        const T * rij,
+template<typename FPTYPE>
+__global__ void deriv_wrt_neighbors_se_a(FPTYPE * virial, 
+                        FPTYPE * atom_virial,
+                        const FPTYPE * net_deriv,
+                        const FPTYPE * in_deriv,
+                        const FPTYPE * rij,
                         const int * nlist,
                         const int nloc,
                         const int nnei,
@@ -48,12 +48,12 @@ __global__ void deriv_wrt_neighbors_se_a(T * virial,
     atomicAdd(atom_virial + j_idx * 9 + idz, net_deriv[idx * ndescrpt + idy * 4 + idw] * rij[idx * nnei * 3 + idy * 3 + idz % 3] * in_deriv[idx * ndescrpt * 3 + (idy * 4 + idw) * 3 + idz / 3]);
 }
 
-template <typename T>
-void ProdVirialSeAGPUExecuteFunctor<T>::operator()(T * virial, 
-                        T * atom_virial,
-                        const T * net_deriv,
-                        const T * in_deriv,
-                        const T * rij,
+template <typename FPTYPE>
+void ProdVirialSeAGPUExecuteFunctor<FPTYPE>::operator()(FPTYPE * virial, 
+                        FPTYPE * atom_virial,
+                        const FPTYPE * net_deriv,
+                        const FPTYPE * in_deriv,
+                        const FPTYPE * rij,
                         const int * nlist,
                         const int nloc,
                         const int nall,
@@ -62,8 +62,8 @@ void ProdVirialSeAGPUExecuteFunctor<T>::operator()(T * virial,
                         const int n_a_sel,
                         const int n_a_shift)
 {
-    cudaErrcheck(cudaMemset(virial, 0.0, sizeof(T) * 9));
-    cudaErrcheck(cudaMemset(atom_virial, 0.0, sizeof(T) * 9 * nall));
+    cudaErrcheck(cudaMemset(virial, 0.0, sizeof(FPTYPE) * 9));
+    cudaErrcheck(cudaMemset(atom_virial, 0.0, sizeof(FPTYPE) * 9 * nall));
 
     const int LEN = 16;
     int nblock = (nloc + LEN -1) / LEN;

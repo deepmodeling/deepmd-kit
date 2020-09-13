@@ -8,11 +8,6 @@
 using namespace tensorflow;
 using namespace std;
 
-#ifdef HIGH_PREC
-typedef double VALUETYPE;
-#else
-typedef float  VALUETYPE;
-#endif
 
 REGISTER_OP("SoftMinSwitch")
 .Attr("T: {float, double}")
@@ -32,7 +27,7 @@ using namespace tensorflow;
 
 using CPUDevice = Eigen::ThreadPoolDevice;
 
-template<typename Device, typename T>
+template<typename Device, typename FPTYPE>
 class SoftMinSwitchOp : public OpKernel {
  public:
   explicit SoftMinSwitchOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -95,10 +90,10 @@ class SoftMinSwitchOp : public OpKernel {
     
     // flat the tensors
     auto type	= type_tensor	.matrix<int>();
-    auto rij	= rij_tensor	.matrix<T>();
+    auto rij	= rij_tensor	.matrix<FPTYPE>();
     auto nlist	= nlist_tensor	.matrix<int>();
-    auto sw_value = sw_value_tensor	->matrix<T>();
-    auto sw_deriv = sw_deriv_tensor	->matrix<T>();
+    auto sw_value = sw_value_tensor	->matrix<FPTYPE>();
+    auto sw_deriv = sw_deriv_tensor	->matrix<FPTYPE>();
 
     // loop over samples
 #pragma omp parallel for 
@@ -115,26 +110,26 @@ class SoftMinSwitchOp : public OpKernel {
       // compute force of a frame      
       for (int ii = 0; ii < nloc; ++ii){
 	int i_idx = ii;
-	T aa = 0;
-	T bb = 0;
+	FPTYPE aa = 0;
+	FPTYPE bb = 0;
 	for (int jj = 0; jj < nnei; ++jj){
 	  int j_idx = nlist (kk, i_idx * nnei + jj);
 	  if (j_idx < 0) continue;
 	  int rij_idx_shift = (i_idx * nnei + jj) * 3;
-	  T dr[3] = {
+	  FPTYPE dr[3] = {
 	    rij(kk, rij_idx_shift + 0),
 	    rij(kk, rij_idx_shift + 1),
 	    rij(kk, rij_idx_shift + 2)
 	  };
-	  T rr2 = dr[0] * dr[0] + dr[1] * dr[1] + dr[2] * dr[2];
-	  T rr = sqrt(rr2);
-	  T ee = exp(-rr / alpha);
+	  FPTYPE rr2 = dr[0] * dr[0] + dr[1] * dr[1] + dr[2] * dr[2];
+	  FPTYPE rr = sqrt(rr2);
+	  FPTYPE ee = exp(-rr / alpha);
 	  aa += ee;
 	  bb += rr * ee;
 	}
-	T smin = bb / aa;
-	T vv, dd;
-	spline5_switch(vv, dd, smin, static_cast<T>(rmin), static_cast<T>(rmax));
+	FPTYPE smin = bb / aa;
+	FPTYPE vv, dd;
+	spline5_switch(vv, dd, smin, static_cast<FPTYPE>(rmin), static_cast<FPTYPE>(rmax));
 	// value of switch
 	sw_value(kk, i_idx) = vv;
 	// deriv of switch distributed as force
@@ -142,17 +137,17 @@ class SoftMinSwitchOp : public OpKernel {
 	  int j_idx = nlist (kk, i_idx * nnei + jj);
 	  if (j_idx < 0) continue;
 	  int rij_idx_shift = (ii * nnei + jj) * 3;
-	  T dr[3] = {
+	  FPTYPE dr[3] = {
 	    rij(kk, rij_idx_shift + 0),
 	    rij(kk, rij_idx_shift + 1),
 	    rij(kk, rij_idx_shift + 2)
 	  };
-	  T rr2 = dr[0] * dr[0] + dr[1] * dr[1] + dr[2] * dr[2];
-	  T rr = sqrt(rr2);
-	  T ee = exp(-rr / alpha);
-	  T pref_c = (1./rr - 1./alpha) * ee ;
-	  T pref_d = 1./(rr * alpha) * ee;
-	  T ts;
+	  FPTYPE rr2 = dr[0] * dr[0] + dr[1] * dr[1] + dr[2] * dr[2];
+	  FPTYPE rr = sqrt(rr2);
+	  FPTYPE ee = exp(-rr / alpha);
+	  FPTYPE pref_c = (1./rr - 1./alpha) * ee ;
+	  FPTYPE pref_d = 1./(rr * alpha) * ee;
+	  FPTYPE ts;
 	  ts = dd / (aa * aa) * (aa * pref_c + bb * pref_d);
 	  sw_deriv(kk, rij_idx_shift + 0) += ts * dr[0];
 	  sw_deriv(kk, rij_idx_shift + 1) += ts * dr[1];
@@ -190,6 +185,7 @@ private:
 REGISTER_KERNEL_BUILDER(                                                                  \
     Name("SoftMinSwitch").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
     SoftMinSwitchOp<CPUDevice, T>); 
-REGISTER_CPU(VALUETYPE);
+REGISTER_CPU(float);
+REGISTER_CPU(double);
 
 

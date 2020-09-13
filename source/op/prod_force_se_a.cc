@@ -6,12 +6,6 @@
 using namespace tensorflow;
 using namespace std;
 
-#ifdef HIGH_PREC
-typedef double VALUETYPE;
-#else
-typedef float  VALUETYPE;
-#endif
-
 REGISTER_OP("ProdForceSeA")
 .Attr("T: {float, double}")
 .Input("net_deriv: T")
@@ -28,7 +22,7 @@ using namespace tensorflow;
 using CPUDevice = Eigen::ThreadPoolDevice;
 using GPUDevice = Eigen::GpuDevice;
 
-template<typename Device, typename T>
+template<typename Device, typename FPTYPE>
 class ProdForceSeAOp : public OpKernel {
  public:
   explicit ProdForceSeAOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -78,10 +72,10 @@ class ProdForceSeAOp : public OpKernel {
 						     force_shape, &force_tensor));
     
     // flat the tensors
-    auto net_deriv = net_deriv_tensor.flat<T>();
-    auto in_deriv = in_deriv_tensor.flat<T>();
+    auto net_deriv = net_deriv_tensor.flat<FPTYPE>();
+    auto in_deriv = in_deriv_tensor.flat<FPTYPE>();
     auto nlist = nlist_tensor.flat<int>();
-    auto force = force_tensor->flat<T>();
+    auto force = force_tensor->flat<FPTYPE>();
 
     assert (nframes == force_shape.dim_size(0));
     assert (nframes == net_deriv_tensor.shape().dim_size(0));
@@ -155,5 +149,6 @@ private:
 REGISTER_KERNEL_BUILDER(                                                                 \
     Name("ProdForceSeA").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
     ProdForceSeAOp<CPUDevice, T>); 
-REGISTER_CPU(VALUETYPE);
+REGISTER_CPU(float);
+REGISTER_CPU(double);
 

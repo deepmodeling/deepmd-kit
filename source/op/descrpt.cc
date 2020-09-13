@@ -12,12 +12,6 @@ typedef double compute_t;
 using namespace tensorflow;
 using namespace std;
 
-#ifdef HIGH_PREC
-typedef double VALUETYPE ;
-#else 
-typedef float  VALUETYPE ;
-#endif
-
 using CPUDevice = Eigen::ThreadPoolDevice;
 
 REGISTER_OP("Descrpt")
@@ -41,7 +35,7 @@ REGISTER_OP("Descrpt")
 .Output("axis: int32")
 .Output("rot_mat: T");
 
-template<typename Device, typename T>
+template<typename Device, typename FPTYPE>
 class DescrptOp : public OpKernel {
 public:
   explicit DescrptOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -164,18 +158,18 @@ public:
     Tensor* rot_mat_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(5, rot_mat_shape, &rot_mat_tensor));
     
-    auto coord	= coord_tensor	.matrix<T>();
+    auto coord	= coord_tensor	.matrix<FPTYPE>();
     auto type	= type_tensor	.matrix<int>();
-    auto box	= box_tensor	.matrix<T>();
+    auto box	= box_tensor	.matrix<FPTYPE>();
     auto mesh	= mesh_tensor	.flat<int>();
-    auto avg	= avg_tensor	.matrix<T>();
-    auto std	= std_tensor	.matrix<T>();
-    auto descrpt	= descrpt_tensor	->matrix<T>();
-    auto descrpt_deriv	= descrpt_deriv_tensor	->matrix<T>();
-    auto rij		= rij_tensor		->matrix<T>();
+    auto avg	= avg_tensor	.matrix<FPTYPE>();
+    auto std	= std_tensor	.matrix<FPTYPE>();
+    auto descrpt	= descrpt_tensor	->matrix<FPTYPE>();
+    auto descrpt_deriv	= descrpt_deriv_tensor	->matrix<FPTYPE>();
+    auto rij		= rij_tensor		->matrix<FPTYPE>();
     auto nlist		= nlist_tensor		->matrix<int>();
     auto axis		= axis_tensor		->matrix<int>();
-    auto rot_mat	= rot_mat_tensor		->matrix<T>();
+    auto rot_mat	= rot_mat_tensor		->matrix<FPTYPE>();
 
     // // check the types
     // int max_type_v = 0;
@@ -610,5 +604,6 @@ private:
 REGISTER_KERNEL_BUILDER(                                                                \
     Name("Descrpt").Device(DEVICE_CPU).TypeConstraint<T>("T"),                       \
     DescrptOp<CPUDevice, T>); 
-REGISTER_CPU(VALUETYPE);
+REGISTER_CPU(float);
+REGISTER_CPU(double);
 

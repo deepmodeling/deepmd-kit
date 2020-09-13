@@ -6,12 +6,6 @@
 using namespace tensorflow;
 using namespace std;
 
-#ifdef HIGH_PREC
-typedef double VALUETYPE;
-#else
-typedef float  VALUETYPE;
-#endif
-
 REGISTER_OP("ProdForceGrad")
 .Attr("T: {float, double}")
 .Input("grad: T")
@@ -26,7 +20,7 @@ REGISTER_OP("ProdForceGrad")
 
 using CPUDevice = Eigen::ThreadPoolDevice;
 
-template<typename Device, typename T>
+template<typename Device, typename FPTYPE>
 class ProdForceGradOp : public OpKernel 
 {
 public:
@@ -88,12 +82,12 @@ public:
     OP_REQUIRES_OK(context, context->allocate_output(0, grad_net_shape, &grad_net_tensor));
     
     // flat the tensors
-    auto grad		= grad_tensor		.flat<T>();
-    auto net_deriv	= net_deriv_tensor	.flat<T>();
-    auto in_deriv	= in_deriv_tensor	.flat<T>();
+    auto grad		= grad_tensor		.flat<FPTYPE>();
+    auto net_deriv	= net_deriv_tensor	.flat<FPTYPE>();
+    auto in_deriv	= in_deriv_tensor	.flat<FPTYPE>();
     auto nlist		= nlist_tensor		.flat<int>();
     auto axis		= axis_tensor		.flat<int>();
-    auto grad_net	= grad_net_tensor	->flat<T>();
+    auto grad_net	= grad_net_tensor	->flat<FPTYPE>();
 
     // loop over frames
 #pragma omp parallel for
@@ -185,4 +179,5 @@ private:
 REGISTER_KERNEL_BUILDER(                                                                \
     Name("ProdForceGrad").Device(DEVICE_CPU).TypeConstraint<T>("T"),                       \
     ProdForceGradOp<CPUDevice, T>);
-REGISTER_CPU(VALUETYPE);
+REGISTER_CPU(float);
+REGISTER_CPU(double);

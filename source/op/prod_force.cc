@@ -6,12 +6,6 @@
 using namespace tensorflow;
 using namespace std;
 
-#ifdef HIGH_PREC
-typedef double VALUETYPE;
-#else
-typedef float  VALUETYPE;
-#endif
-
 REGISTER_OP("ProdForce")
 .Attr("T: {float, double}")
 .Input("net_deriv: T")
@@ -28,7 +22,7 @@ using namespace tensorflow;
 
 using CPUDevice = Eigen::ThreadPoolDevice;
 
-template<typename Device, typename T>
+template<typename Device, typename FPTYPE>
 class ProdForceOp : public OpKernel {
  public:
   explicit ProdForceOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -79,11 +73,11 @@ class ProdForceOp : public OpKernel {
     OP_REQUIRES_OK(context, context->allocate_output(0, force_shape, &force_tensor));
     
     // flat the tensors
-    auto net_deriv = net_deriv_tensor.flat<T>();
-    auto in_deriv = in_deriv_tensor.flat<T>();
+    auto net_deriv = net_deriv_tensor.flat<FPTYPE>();
+    auto in_deriv = in_deriv_tensor.flat<FPTYPE>();
     auto nlist = nlist_tensor.flat<int>();
     auto axis = axis_tensor.flat<int>();
-    auto force = force_tensor->flat<T>();
+    auto force = force_tensor->flat<FPTYPE>();
 
     // loop over samples
 #pragma omp parallel for 
@@ -173,6 +167,7 @@ private:
 REGISTER_KERNEL_BUILDER(                                                                \
     Name("ProdForce").Device(DEVICE_CPU).TypeConstraint<T>("T"),                       \
     ProdForceOp<CPUDevice, T>); 
-REGISTER_CPU(VALUETYPE);
+REGISTER_CPU(float);
+REGISTER_CPU(double);
 
 

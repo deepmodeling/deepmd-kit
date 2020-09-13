@@ -12,12 +12,6 @@ typedef double compute_t;
 using namespace tensorflow;
 using namespace std;
 
-#ifdef HIGH_PREC
-typedef double VALUETYPE ;
-#else 
-typedef float  VALUETYPE ;
-#endif
-
 using CPUDevice = Eigen::ThreadPoolDevice;
 
 REGISTER_OP("DescrptSeR")
@@ -37,7 +31,7 @@ REGISTER_OP("DescrptSeR")
 .Output("rij: T")
 .Output("nlist: int32");
 
-template<typename Device, typename T>
+template<typename Device, typename FPTYPE>
 class DescrptSeROp : public OpKernel {
 public:
   explicit DescrptSeROp(OpKernelConstruction* context) : OpKernel(context) {
@@ -156,15 +150,15 @@ public:
 						     nlist_shape,
 						     &nlist_tensor));
     
-    auto coord	= coord_tensor	.matrix<T>();
+    auto coord	= coord_tensor	.matrix<FPTYPE>();
     auto type	= type_tensor	.matrix<int>();
-    auto box	= box_tensor	.matrix<T>();
+    auto box	= box_tensor	.matrix<FPTYPE>();
     auto mesh	= mesh_tensor	.flat<int>();
-    auto avg	= avg_tensor	.matrix<T>();
-    auto std	= std_tensor	.matrix<T>();
-    auto descrpt	= descrpt_tensor	->matrix<T>();
-    auto descrpt_deriv	= descrpt_deriv_tensor	->matrix<T>();
-    auto rij		= rij_tensor		->matrix<T>();
+    auto avg	= avg_tensor	.matrix<FPTYPE>();
+    auto std	= std_tensor	.matrix<FPTYPE>();
+    auto descrpt	= descrpt_tensor	->matrix<FPTYPE>();
+    auto descrpt_deriv	= descrpt_deriv_tensor	->matrix<FPTYPE>();
+    auto rij		= rij_tensor		->matrix<FPTYPE>();
     auto nlist		= nlist_tensor		->matrix<int>();
 
     OP_REQUIRES (context, (ntypes == int(sel.size())),	errors::InvalidArgument ("number of types should match the length of sel array"));
@@ -342,5 +336,6 @@ private:
 REGISTER_KERNEL_BUILDER(                                                                \
     Name("DescrptSeR").Device(DEVICE_CPU).TypeConstraint<T>("T"),                       \
     DescrptSeROp<CPUDevice, T>); 
-REGISTER_CPU(VALUETYPE);
+REGISTER_CPU(float);
+REGISTER_CPU(double);
 

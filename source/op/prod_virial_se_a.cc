@@ -6,11 +6,6 @@
 using namespace tensorflow;
 using namespace std;
 
-#ifdef HIGH_PREC
-typedef double VALUETYPE;
-#else
-typedef float  VALUETYPE;
-#endif
 
 REGISTER_OP("ProdVirialSeA")
 .Attr("T: {float, double}")
@@ -29,7 +24,7 @@ using namespace tensorflow;
 using CPUDevice = Eigen::ThreadPoolDevice;
 using GPUDevice = Eigen::GpuDevice;
 
-template<typename Device, typename T>
+template<typename Device, typename FPTYPE>
 class ProdVirialSeAOp : public OpKernel {
  public:
   explicit ProdVirialSeAOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -85,12 +80,12 @@ class ProdVirialSeAOp : public OpKernel {
     OP_REQUIRES_OK(context, context->allocate_output(1, atom_virial_shape, &atom_virial_tensor));
     
     // flat the tensors
-    auto net_deriv = net_deriv_tensor.flat<T>();
-    auto in_deriv = in_deriv_tensor.flat<T>();
-    auto rij = rij_tensor.flat<T>();
+    auto net_deriv = net_deriv_tensor.flat<FPTYPE>();
+    auto in_deriv = in_deriv_tensor.flat<FPTYPE>();
+    auto rij = rij_tensor.flat<FPTYPE>();
     auto nlist = nlist_tensor.flat<int>();
-    auto virial = virial_tensor->flat<T>();
-    auto atom_virial = atom_virial_tensor->flat<T>();
+    auto virial = virial_tensor->flat<FPTYPE>();
+    auto atom_virial = atom_virial_tensor->flat<FPTYPE>();
 
     // loop over samples
 #pragma omp parallel for
@@ -121,10 +116,10 @@ class ProdVirialSeAOp : public OpKernel {
 	  int aa_start, aa_end;
 	  make_descript_range (aa_start, aa_end, jj);
 	  for (int aa = aa_start; aa < aa_end; ++aa) {
-	    T pref = -1.0 * net_deriv (net_iter + i_idx * ndescrpt + aa);
+	    FPTYPE pref = -1.0 * net_deriv (net_iter + i_idx * ndescrpt + aa);
 	    for (int dd0 = 0; dd0 < 3; ++dd0){
 	      for (int dd1 = 0; dd1 < 3; ++dd1){
-		T tmp_v = pref * rij (rij_iter + i_idx * nnei * 3 + jj * 3 + dd1) *  in_deriv (in_iter + i_idx * ndescrpt * 3 + aa * 3 + dd0);
+		FPTYPE tmp_v = pref * rij (rij_iter + i_idx * nnei * 3 + jj * 3 + dd1) *  in_deriv (in_iter + i_idx * ndescrpt * 3 + aa * 3 + dd0);
 		virial (virial_iter + dd0 * 3 + dd1) -= tmp_v;
 		atom_virial (atom_virial_iter + j_idx * 9 + dd0 * 3 + dd1) -= tmp_v;
 	      }
@@ -156,7 +151,8 @@ private:
 REGISTER_KERNEL_BUILDER(                                                                  \
     Name("ProdVirialSeA").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
     ProdVirialSeAOp<CPUDevice, T>); 
-REGISTER_CPU(VALUETYPE);
+REGISTER_CPU(float);
+REGISTER_CPU(double);
 
 
 

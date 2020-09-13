@@ -11,19 +11,19 @@ REGISTER_OP("ProdForceSeA")
     .Attr("n_r_sel: int")
     .Output("force: T");
 
-template <typename T>
+template <typename FPTYPE>
 struct ProdForceSeAFunctor {
-    void operator()(const CPUDevice& d, T * force, const T * net_deriv, const T * in_deriv, const int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const int n_a_sel, const int n_a_shift) {
+    void operator()(const CPUDevice& d, FPTYPE * force, const FPTYPE * net_deriv, const FPTYPE * in_deriv, const int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const int n_a_sel, const int n_a_shift) {
         ProdForceSeACPULauncher(force, net_deriv, in_deriv, nlist, nloc, nall, nnei, ndescrpt, n_a_sel, n_a_shift);
     }
     #if GOOGLE_CUDA
-    void operator()(const GPUDevice& d, T * force, const T * net_deriv, const T * in_deriv, const int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const int n_a_sel, const int n_a_shift) {
+    void operator()(const GPUDevice& d, FPTYPE * force, const FPTYPE * net_deriv, const FPTYPE * in_deriv, const int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const int n_a_sel, const int n_a_shift) {
         ProdForceSeAGPULauncher(force, net_deriv, in_deriv, nlist, nloc, nall, nnei, ndescrpt, n_a_sel, n_a_shift);
     }
     #endif // GOOGLE_CUDA
 };
 
-template<typename Device, typename T>
+template<typename Device, typename FPTYPE>
 class ProdForceSeAOp : public OpKernel {
 public:
     explicit ProdForceSeAOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -72,10 +72,10 @@ public:
 	    					     force_shape, &force_tensor));
 
         // flat the tensors
-        auto net_deriv = net_deriv_tensor.flat<T>();
-        auto in_deriv = in_deriv_tensor.flat<T>();
+        auto net_deriv = net_deriv_tensor.flat<FPTYPE>();
+        auto in_deriv = in_deriv_tensor.flat<FPTYPE>();
         auto nlist = nlist_tensor.flat<int>();
-        auto force = force_tensor->flat<T>();
+        auto force = force_tensor->flat<FPTYPE>();
 
         assert (nframes == force_shape.dim_size(0));
         assert (nframes == net_deriv_tensor.shape().dim_size(0));
@@ -87,11 +87,11 @@ public:
         assert (nloc * nnei == nlist_tensor.shape().dim_size(1));
         assert (nnei * 4 == ndescrpt);	    
 
-        ProdForceSeAFunctor<T>()(
+        ProdForceSeAFunctor<FPTYPE>()(
             context->eigen_device<Device>(),
-            force_tensor->flat<T>().data(),
-            net_deriv_tensor.flat<T>().data(),
-            in_deriv_tensor.flat<T>().data(),
+            force_tensor->flat<FPTYPE>().data(),
+            net_deriv_tensor.flat<FPTYPE>().data(),
+            in_deriv_tensor.flat<FPTYPE>().data(),
             nlist_tensor.flat<int>().data(),
             nloc,
             nall, 

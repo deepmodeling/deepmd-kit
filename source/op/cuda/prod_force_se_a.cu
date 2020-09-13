@@ -14,10 +14,10 @@ static __inline__ __device__ double atomicAdd(double* address, double val) {
 }
 #endif
 
-template<typename T>
-__global__ void deriv_wrt_center_atom_se_a(T * force, 
-                        const T * net_deriv,
-                        const T * in_deriv,
+template<typename FPTYPE>
+__global__ void deriv_wrt_center_atom_se_a(FPTYPE * force, 
+                        const FPTYPE * net_deriv,
+                        const FPTYPE * in_deriv,
                         const int ndescrpt)
 {
     const unsigned int idx = blockIdx.x;
@@ -29,10 +29,10 @@ __global__ void deriv_wrt_center_atom_se_a(T * force,
     atomicAdd(force + idx * 3 + idz, -1.0 * net_deriv[idx * ndescrpt + idy] * in_deriv[idx * ndescrpt * 3 + idy * 3 + idz]);
 }
 
-template<typename T>
-__global__ void deriv_wrt_neighbors_se_a(T * force, 
-                        const T * net_deriv,
-                        const T * in_deriv,
+template<typename FPTYPE>
+__global__ void deriv_wrt_neighbors_se_a(FPTYPE * force, 
+                        const FPTYPE * net_deriv,
+                        const FPTYPE * in_deriv,
                         const int * nlist,
                         const int nloc,
                         const int nnei,
@@ -57,10 +57,10 @@ __global__ void deriv_wrt_neighbors_se_a(T * force,
     atomicAdd(force + j_idx * 3 + idz, net_deriv[idx * ndescrpt + idy * 4 + idw] * in_deriv[idx * ndescrpt * 3 + (idy * 4 + idw) * 3 + idz]);
 }
 
-template <typename T>
-void ProdForceSeAGPUExecuteFunctor<T>::operator()(T * force, 
-                        const T * net_deriv,
-                        const T * in_deriv,
+template <typename FPTYPE>
+void ProdForceSeAGPUExecuteFunctor<FPTYPE>::operator()(FPTYPE * force, 
+                        const FPTYPE * net_deriv,
+                        const FPTYPE * in_deriv,
                         const int * nlist,
                         const int nloc,
                         const int nall,
@@ -70,7 +70,7 @@ void ProdForceSeAGPUExecuteFunctor<T>::operator()(T * force,
                         const int n_a_shift)
 {   
     // std::cout << "I'm here!" << std::endl;
-    cudaErrcheck(cudaMemset(force, 0.0, sizeof(T) * nall * 3));
+    cudaErrcheck(cudaMemset(force, 0.0, sizeof(FPTYPE) * nall * 3));
     const int LEN1 = 256;
     const int nblock1 = (ndescrpt + LEN1 -1) / LEN1;
     dim3 grid(nloc, nblock1);

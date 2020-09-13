@@ -10,12 +10,6 @@ typedef double boxtensor_t ;
 using namespace tensorflow;
 using namespace std;
 
-#ifdef HIGH_PREC
-typedef double VALUETYPE ;
-#else 
-typedef float  VALUETYPE ;
-#endif
-
 using CPUDevice = Eigen::ThreadPoolDevice;
 
 REGISTER_OP("EwaldRecp")
@@ -30,7 +24,7 @@ REGISTER_OP("EwaldRecp")
 .Output("force: T")
 .Output("virial: T");
 
-template<typename Device, typename T>
+template<typename Device, typename FPTYPE>
 class EwaldRecpOp : public OpKernel {
 public:
   explicit EwaldRecpOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -81,12 +75,12 @@ public:
     Tensor* virial_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(cc++, virial_shape, &virial_tensor));
     
-    auto coord	= coord_tensor	.flat<T>();
-    auto charge	= charge_tensor	.flat<T>();
-    auto box	= box_tensor	.flat<T>();
-    auto energy	= energy_tensor	->flat<T>();
-    auto force	= force_tensor	->matrix<T>();
-    auto virial	= virial_tensor	->matrix<T>();
+    auto coord	= coord_tensor	.flat<FPTYPE>();
+    auto charge	= charge_tensor	.flat<FPTYPE>();
+    auto box	= box_tensor	.flat<FPTYPE>();
+    auto energy	= energy_tensor	->flat<FPTYPE>();
+    auto force	= force_tensor	->matrix<FPTYPE>();
+    auto virial	= virial_tensor	->matrix<FPTYPE>();
 
     for (int kk = 0; kk < nsamples; ++kk){
       int box_iter = kk * 9;
@@ -113,19 +107,19 @@ public:
 	  else if (inter[dd] >= 1) inter[dd] -= 1.;
 	}
       }
-      vector<T > d_coord3 (nloc*3);
+      vector<FPTYPE > d_coord3 (nloc*3);
       for (int ii = 0; ii < nloc * 3; ++ii) {
 	d_coord3[ii] = d_coord3_[ii];
       }
 
       // set charge
-      vector<T > d_charge (nloc);
+      vector<FPTYPE > d_charge (nloc);
       for (int ii = 0; ii < nloc; ++ii) d_charge[ii] = charge(charge_iter + ii);
 
       // prepare outputs vectors
-      T d_ener;
-      vector<T> d_force(nloc*3);
-      vector<T> d_virial(9);
+      FPTYPE d_ener;
+      vector<FPTYPE> d_force(nloc*3);
+      vector<FPTYPE> d_virial(9);
 
       // compute
       EwaldReciprocal(d_ener, d_force, d_virial, d_coord3, d_charge, region, ep);
@@ -141,11 +135,12 @@ public:
     }
   }
 private:
-  EwaldParameters<T> ep;
+  EwaldParameters<FPTYPE> ep;
 };
 
 #define REGISTER_CPU(T)                                                                 \
 REGISTER_KERNEL_BUILDER(                                                                \
     Name("EwaldRecp").Device(DEVICE_CPU).TypeConstraint<T>("T"),                       \
     EwaldRecpOp<CPUDevice, T>); 
-REGISTER_CPU(VALUETYPE);
+REGISTER_CPU(float);
+REGISTER_CPU(double);

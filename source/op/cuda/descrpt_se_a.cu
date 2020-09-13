@@ -37,15 +37,15 @@ __global__ void BlockSortKernel(
     cub::StoreDirectStriped<BLOCK_THREADS>(threadIdx.x, d_out + block_offset, items);
 }
 
-template<typename T>
-__device__ inline T dev_dot(T * arr1, T * arr2) {
+template<typename FPTYPE>
+__device__ inline FPTYPE dev_dot(FPTYPE * arr1, FPTYPE * arr2) {
     return arr1[0] * arr2[0] + arr1[1] * arr2[1] + arr1[2] * arr2[2];
 }
 
-template<typename T>
-__device__ inline void spline5_switch(T & vv,
-        T & dd,
-        T & xx, 
+template<typename FPTYPE>
+__device__ inline void spline5_switch(FPTYPE & vv,
+        FPTYPE & dd,
+        FPTYPE & xx, 
 		const float & rmin, 
 		const float & rmax) 
 {
@@ -54,8 +54,8 @@ __device__ inline void spline5_switch(T & vv,
         vv = 1;
     }
     else if (xx < rmax) {
-        T uu = (xx - rmin) / (rmax - rmin) ;
-        T du = 1. / (rmax - rmin) ;
+        FPTYPE uu = (xx - rmin) / (rmax - rmin) ;
+        FPTYPE du = 1. / (rmax - rmin) ;
         vv = uu*uu*uu * (-6 * uu*uu + 15 * uu - 10) + 1;
         dd = ( 3 * uu*uu * (-6 * uu*uu + 15 * uu - 10) + uu*uu*uu * (-12 * uu + 15) ) * du;
     }
@@ -76,8 +76,8 @@ __global__ void get_i_idx_se_a(const int nloc,
     i_idx[ilist[idy]] = idy;
 }
 
-template<typename T>
-__global__ void format_nlist_fill_a_se_a(const T * coord,
+template<typename FPTYPE>
+__global__ void format_nlist_fill_a_se_a(const FPTYPE * coord,
                             const int * type,
                             const int  * jrange,
                             const int  * jlist,
@@ -100,12 +100,12 @@ __global__ void format_nlist_fill_a_se_a(const T * coord,
 
     int_64 * key_in = key + idx * MAGIC_NUMBER;
 
-    T diff[3];
+    FPTYPE diff[3];
     const int & j_idx = nei_idx[idy];
     for (int dd = 0; dd < 3; dd++) {
         diff[dd] = coord[j_idx * 3 + dd] - coord[idx * 3 + dd];
     }
-    T rr = sqrt(dev_dot(diff, diff)); 
+    FPTYPE rr = sqrt(dev_dot(diff, diff)); 
     if (rr <= rcut) {
         key_in[idy] = type[j_idx] * 1E15+ (int_64)(rr * 1.0E13) / 100000 * 100000 + j_idx;
     }
@@ -147,19 +147,19 @@ __global__ void format_nlist_fill_b_se_a(int * nlist,
 }
 //it's ok!
 
-template<typename T>
-__global__ void compute_descriptor_se_a (T* descript,
+template<typename FPTYPE>
+__global__ void compute_descriptor_se_a (FPTYPE* descript,
                             const int ndescrpt,
-                            T* descript_deriv,
+                            FPTYPE* descript_deriv,
                             const int descript_deriv_size,
-                            T* rij,
+                            FPTYPE* rij,
                             const int rij_size,
                             const int* type,
-                            const T* avg,
-                            const T* std,
+                            const FPTYPE* avg,
+                            const FPTYPE* std,
                             int* nlist,
                             const int nlist_size,
-                            const T* coord,
+                            const FPTYPE* coord,
                             const float rmin,
                             const float rmax,
                             const int sec_a_size)
@@ -172,9 +172,9 @@ __global__ void compute_descriptor_se_a (T* descript,
     if (idy >= sec_a_size) {return;}
 
     // else {return;}
-    T * row_descript = descript + idx * ndescrpt;
-    T * row_descript_deriv = descript_deriv + idx * descript_deriv_size;
-    T * row_rij = rij + idx * rij_size;
+    FPTYPE * row_descript = descript + idx * ndescrpt;
+    FPTYPE * row_descript_deriv = descript_deriv + idx * descript_deriv_size;
+    FPTYPE * row_rij = rij + idx * rij_size;
     int * row_nlist = nlist + idx * nlist_size;
 
     if (row_nlist[idy] >= 0) {
@@ -182,14 +182,14 @@ __global__ void compute_descriptor_se_a (T* descript,
         for (int kk = 0; kk < 3; kk++) {
             row_rij[idy * 3 + kk] = coord[j_idx * 3 + kk] - coord[idx * 3 + kk];
         }
-        const T * rr = &row_rij[idy * 3 + 0];
-        T nr2 = dev_dot(rr, rr);
-        T inr = 1./sqrt(nr2);
-        T nr = nr2 * inr;
-        T inr2 = inr * inr;
-        T inr4 = inr2 * inr2;
-        T inr3 = inr4 * nr;
-        T sw, dsw;
+        const FPTYPE * rr = &row_rij[idy * 3 + 0];
+        FPTYPE nr2 = dev_dot(rr, rr);
+        FPTYPE inr = 1./sqrt(nr2);
+        FPTYPE nr = nr2 * inr;
+        FPTYPE inr2 = inr * inr;
+        FPTYPE inr4 = inr2 * inr2;
+        FPTYPE inr3 = inr4 * nr;
+        FPTYPE sw, dsw;
         spline5_switch(sw, dsw, nr, rmin, rmax);
         row_descript[idx_value + 0] = (1./nr)       ;//* sw;
         row_descript[idx_value + 1] = (rr[0] / nr2) ;//* sw;
@@ -228,9 +228,9 @@ __global__ void compute_descriptor_se_a (T* descript,
     }
 }
 
-template<typename T>
+template<typename FPTYPE>
 void format_nbor_list_256 (
-    const T* coord,
+    const FPTYPE* coord,
     const int* type,
     const int* jrange,
     const int* jlist,
@@ -262,9 +262,9 @@ void format_nbor_list_256 (
     BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAGIC_NUMBER);
 }
 
-template<typename T>
+template<typename FPTYPE>
 void format_nbor_list_512 (
-    const T* coord,
+    const FPTYPE* coord,
     const int* type,
     const int* jrange,
     const int* jlist,
@@ -296,9 +296,9 @@ void format_nbor_list_512 (
     BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAGIC_NUMBER);
 }
 
-template<typename T>
+template<typename FPTYPE>
 void format_nbor_list_1024 (
-    const T* coord,
+    const FPTYPE* coord,
     const int* type,
     const int* jrange,
     const int* jlist,
@@ -330,9 +330,9 @@ void format_nbor_list_1024 (
     BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAGIC_NUMBER);
 }
 
-template<typename T>
+template<typename FPTYPE>
 void format_nbor_list_2048 (
-    const T* coord,
+    const FPTYPE* coord,
     const int* type,
     const int* jrange,
     const int* jlist,
@@ -364,9 +364,9 @@ void format_nbor_list_2048 (
     BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAGIC_NUMBER);
 }
 
-template<typename T>
+template<typename FPTYPE>
 void format_nbor_list_4096 (
-    const T* coord,
+    const FPTYPE* coord,
     const int* type,
     const int* jrange,
     const int* jlist,
@@ -398,8 +398,8 @@ void format_nbor_list_4096 (
     BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAGIC_NUMBER);
 }
 
-template <typename T>
-void DescrptSeAGPUExecuteFunctor<T>::operator()(const T * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const T * avg, const T * std, T * descript, T * descript_deriv, T * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int MAGIC_NUMBER) {
+template <typename FPTYPE>
+void DescrptSeAGPUExecuteFunctor<FPTYPE>::operator()(const FPTYPE * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descript, FPTYPE * descript_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int MAGIC_NUMBER) {
     const int LEN = 256;
     int nblock = (nloc + LEN -1) / LEN;
     int * sec_a_dev = array_int;
@@ -411,8 +411,8 @@ void DescrptSeAGPUExecuteFunctor<T>::operator()(const T * coord, const int * typ
     res = cudaMemcpy(sec_a_dev, &sec_a[0], sizeof(int) * sec_a.size(), cudaMemcpyHostToDevice); cudaErrcheck(res);    
     res = cudaMemset(key, 0xffffffff, sizeof(int_64) * nloc * MAGIC_NUMBER); cudaErrcheck(res);
     res = cudaMemset(nlist, -1, sizeof(int) * nloc * nnei); cudaErrcheck(res);
-    res = cudaMemset(descript, 0.0, sizeof(T) * nloc * ndescrpt); cudaErrcheck(res);
-    res = cudaMemset(descript_deriv, 0.0, sizeof(T) * nloc * ndescrpt * 3); cudaErrcheck(res);
+    res = cudaMemset(descript, 0.0, sizeof(FPTYPE) * nloc * ndescrpt); cudaErrcheck(res);
+    res = cudaMemset(descript_deriv, 0.0, sizeof(FPTYPE) * nloc * ndescrpt * 3); cudaErrcheck(res);
 
     if (fill_nei_a) {
         // ~~~

@@ -6,11 +6,6 @@
 using namespace tensorflow;
 using namespace std;
 
-#ifdef HIGH_PREC
-typedef double VALUETYPE;
-#else
-typedef float  VALUETYPE;
-#endif
 
 REGISTER_OP("TabInter")
 .Attr("T: {float, double}")
@@ -73,7 +68,7 @@ void tabulated_inter (double & ener,
   fscale *= -hi;
 }
 
-template<typename Device, typename T>
+template<typename Device, typename FPTYPE>
 class TabInterOp : public OpKernel {
  public:
   explicit TabInterOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -144,15 +139,15 @@ class TabInterOp : public OpKernel {
     OP_REQUIRES_OK(context, context->allocate_output(tmp_idx++, virial_shape, &virial_tensor));
     
     // flat the tensors
-    auto table_info = table_info_tensor.flat<T>();
-    auto table_data = table_data_tensor.flat<T>();
+    auto table_info = table_info_tensor.flat<FPTYPE>();
+    auto table_data = table_data_tensor.flat<FPTYPE>();
     auto type	= type_tensor	.matrix<int>();
-    auto rij	= rij_tensor	.matrix<T>();
+    auto rij	= rij_tensor	.matrix<FPTYPE>();
     auto nlist	= nlist_tensor	.matrix<int>();
-    auto scale  = scale_tensor	.matrix<T>();
-    auto energy = energy_tensor	->matrix<T>();
-    auto force	= force_tensor	->matrix<T>();
-    auto virial = virial_tensor	->matrix<T>();
+    auto scale  = scale_tensor	.matrix<FPTYPE>();
+    auto energy = energy_tensor	->matrix<FPTYPE>();
+    auto force	= force_tensor	->matrix<FPTYPE>();
+    auto virial = virial_tensor	->matrix<FPTYPE>();
 
     OP_REQUIRES (context, (ntypes == int(table_info(3)+0.1)),	errors::InvalidArgument ("ntypes provided in table does not match deeppot"));
     int nspline = table_info(2)+0.1;
@@ -191,7 +186,7 @@ class TabInterOp : public OpKernel {
       for (int tt = 0; tt < ntypes; ++tt) {
 	for (int ii = 0; ii < natoms(2+tt); ++ii){
 	  int i_type = type(kk, i_idx);
-	  T i_scale = scale(kk, i_idx);
+	  FPTYPE i_scale = scale(kk, i_idx);
 	  assert(i_type == tt) ;
 	  int jiter = 0;
 	  // a neighbor
@@ -311,7 +306,8 @@ private:
 REGISTER_KERNEL_BUILDER(                                                                  \
     Name("TabInter").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
     TabInterOp<CPUDevice, T>); 
-REGISTER_CPU(VALUETYPE);
+REGISTER_CPU(float);
+REGISTER_CPU(double);
 
 
 

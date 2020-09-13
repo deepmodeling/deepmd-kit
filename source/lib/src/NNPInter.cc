@@ -203,7 +203,7 @@ init (const string & model, const int & gpu_rank)
     options.config.set_allow_soft_placement(true);
     options.config.mutable_gpu_options()->set_per_process_gpu_memory_fraction(0.9);
     options.config.mutable_gpu_options()->set_allow_growth(true);
-    cudaErrcheck(cudaSetDevice(gpu_rank));
+    cudaErrcheck(cudaSetDevice(gpu_rank % gpu_num));
     std::string str = "/gpu:";
     str += std::to_string(gpu_rank % gpu_num);
     graph::SetDefaultDevice(str, &graph_def);
@@ -518,7 +518,7 @@ init (const vector<string> & models, const int & gpu_rank)
       options.config.set_allow_soft_placement(true);
       options.config.mutable_gpu_options()->set_per_process_gpu_memory_fraction(0.9);
       options.config.mutable_gpu_options()->set_allow_growth(true);
-      cudaErrcheck(cudaSetDevice(gpu_rank));
+      cudaErrcheck(cudaSetDevice(gpu_rank % gpu_num));
   }
   #endif // GOOGLE_CUDA
 
