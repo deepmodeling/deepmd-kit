@@ -7,7 +7,6 @@
 #include "tensorflow/core/framework/shape_inference.h"
 
 using namespace tensorflow;  // NOLINT(build/namespaces)
-#define MAGIC_NUMBER 256
 
 #ifdef HIGH_PREC
     typedef double VALUETYPE ;
@@ -68,6 +67,24 @@ REGISTER_OP("DescrptSeA")
     .Output("nlist: int32");
 #endif
 
+int get_magic_number(int const nnei) {
+    if (nnei <= 256) {
+        return 256;
+    }
+    else if (nnei <= 512) {
+        return 512;
+    }
+    else if (nnei <= 1024) {
+        return 1024;
+    }
+    else if (nnei <= 2048) {
+        return 2048;
+    }
+    else if (nnei <= 4096) {
+        return 4096;
+    }
+}
+
 void DescrptSeALauncher(const VALUETYPE* coord,
                             const int* type,
                             const int* ilist,
@@ -75,22 +92,20 @@ void DescrptSeALauncher(const VALUETYPE* coord,
                             const int* jlist,
                             int* array_int,
                             unsigned long long* array_longlong,
-                            compute_t* array_double,
                             const VALUETYPE* avg,
                             const VALUETYPE* std,
                             VALUETYPE* descript,
                             VALUETYPE* descript_deriv,
                             VALUETYPE* rij,
                             int* nlist,
-                            const int& ntypes,
                             const int& nloc,
-                            const int& nall,
                             const int& nnei,
                             const float& rcut_r,
                             const float& rcut_r_smth,
                             const int& ndescrpt,
                             const std::vector<int>& sec_a,
-                            const bool& fill_nei_a
+                            const bool& fill_nei_a,
+                            const int MAGIC_NUMBER
 );
 
 class DescrptSeAOp : public OpKernel {
@@ -113,6 +128,7 @@ public:
         nnei_r = sec_r.back();
         nnei = nnei_a + nnei_r;
         fill_nei_a = (rcut_a < 0);
+        magic_number = get_magic_number(nnei);
     }
 
     void Compute(OpKernelContext* context) override {
@@ -159,7 +175,8 @@ public:
         
         OP_REQUIRES (context, (ntypes == int(sel_a.size())),	errors::InvalidArgument ("number of types should match the length of sel array"));
         OP_REQUIRES (context, (ntypes == int(sel_r.size())),	errors::InvalidArgument ("number of types should match the length of sel array"));
-        
+        OP_REQUIRES (context, (nnei <= 4096),	                errors::InvalidArgument ("Assert failed, max neighbor size of atom(nnei) " + std::to_string(nnei) + " is larger than 4096, which currently is not supported by deepmd-kit."));
+
         // Create output tensors
         TensorShape descrpt_shape ;
         descrpt_shape.AddDim (nsamples);
@@ -192,16 +209,24 @@ public:
 	    					     nlist_shape,
 	    					     &nlist_tensor));
         
-	    int * ilist = NULL, *jrange = NULL, *jlist = NULL;
-        int * array_int = NULL; unsigned long long *array_longlong = NULL; compute_t *array_double = NULL;
+        // allocate temp memory, temp memory must not be used after this operation!
+        Tensor int_temp;
+        TensorShape int_shape;
+        int_shape.AddDim(sec_a.size() + nloc * sec_a.size() + nloc);
+        OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, int_shape, &int_temp));
+
+        Tensor uint64_temp;
+        TensorShape uint64_shape;
+        uint64_shape.AddDim(nloc * magic_number * 2);
+        OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape, &uint64_temp));
+
+	    int * ilist = NULL, * jrange = NULL, * jlist = NULL;
+        int * array_int = int_temp.flat<int>().data(); 
+        unsigned long long * array_longlong = uint64_temp.flat<unsigned long long>().data(); 
         cudaErrcheck(cudaMemcpy(&(ilist), 4 + mesh_tensor.flat<int>().data(), sizeof(int *), cudaMemcpyDeviceToHost));
         cudaErrcheck(cudaMemcpy(&(jrange), 8 + mesh_tensor.flat<int>().data(), sizeof(int *), cudaMemcpyDeviceToHost));
         cudaErrcheck(cudaMemcpy(&(jlist), 12 + mesh_tensor.flat<int>().data(), sizeof(int *), cudaMemcpyDeviceToHost));
-        cudaErrcheck(cudaMemcpy(&(array_int), 16 + mesh_tensor.flat<int>().data(), sizeof(int *), cudaMemcpyDeviceToHost));
-        cudaErrcheck(cudaMemcpy(&(array_longlong), 20 + mesh_tensor.flat<int>().data(), sizeof(unsigned long long *), cudaMemcpyDeviceToHost));
-        cudaErrcheck(cudaMemcpy(&(array_double), 24 + mesh_tensor.flat<int>().data(), sizeof(compute_t *), cudaMemcpyDeviceToHost));
 
-        // cudaErrcheck(cudaMemcpy(jlist, host_jlist, sizeof(int) * nloc * MAGIC_NUMBER, cudaMemcpyHostToDevice));
         // Launch computation
         for (int II = 0; II < nsamples; II++) {
             DescrptSeALauncher(coord_tensor.matrix<VALUETYPE>().data() + II * (nall * 3),    // related to the kk argument
@@ -211,22 +236,20 @@ public:
                         jlist,
                         array_int,
                         array_longlong,
-                        array_double,
                         avg_tensor.matrix<VALUETYPE>().data(),
                         std_tensor.matrix<VALUETYPE>().data(),
                         descrpt_tensor->matrix<VALUETYPE>().data() + II * (nloc * ndescrpt),
                         descrpt_deriv_tensor->matrix<VALUETYPE>().data() + II * (nloc * ndescrpt * 3),
                         rij_tensor->matrix<VALUETYPE>().data() + II * (nloc * nnei * 3),
                         nlist_tensor->matrix<int>().data() + II * (nloc * nnei),
-                        ntypes,
                         nloc,
-                        nall,
                         nnei,
                         rcut_r,
                         rcut_r_smth,
                         ndescrpt,
                         sec_a,
-                        fill_nei_a
+                        fill_nei_a,
+                        magic_number
             );
         }
         // std::cout << "done" << std::endl;
@@ -243,7 +266,7 @@ private:
     std::vector<int> sec_a;
     std::vector<int> sec_r;
     int ndescrpt, ndescrpt_a, ndescrpt_r;
-    int nnei, nnei_a, nnei_r, nloc, nall;
+    int nnei, nnei_a, nnei_r, nloc, nall, magic_number;
     bool fill_nei_a;
 
     //private func

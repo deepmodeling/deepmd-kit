@@ -47,6 +47,9 @@ __global__ void deriv_wrt_neighbors_se_r(VALUETYPE * virial,
 {
     // idx -> nloc
     // idy -> nnei
+    // idz = dd0 * 3 + dd1
+    // dd0 = idz / 3
+    // dd1 = idz % 3
     const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned int idy = blockIdx.y;
     const unsigned int idz = threadIdx.y;
@@ -58,7 +61,7 @@ __global__ void deriv_wrt_neighbors_se_r(VALUETYPE * virial,
     if (j_idx < 0) {
         return;
     }
-    atomicAdd(atom_virial + j_idx * 9 + idz, net_deriv[idx * ndescrpt + idy] * rij[idx * nnei * 3 + idy * 3 + idz / 3] * in_deriv[idx * ndescrpt * 3 + idy * 3 + idz % 3]);
+    atomicAdd(atom_virial + j_idx * 9 + idz, net_deriv[idx * ndescrpt + idy] * rij[idx * nnei * 3 + idy * 3 + idz % 3] * in_deriv[idx * ndescrpt * 3 + idy * 3 + idz / 3]);
 }
 
 void ProdVirialSeRLauncher(VALUETYPE * virial, 

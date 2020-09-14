@@ -1,42 +1,25 @@
 #!/usr/bin/env python3
 import os
-import platform
-import sys
 import time
 import shutil
-import warnings
 import numpy as np
 from deepmd.env import tf
+from deepmd.env import default_tf_session_config
 from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
-from deepmd.RunOptions import global_cvt_2_tf_float
-from deepmd.RunOptions import global_cvt_2_ener_float
 from deepmd.Fitting import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
 from deepmd.DescrptLocFrame import DescrptLocFrame
 from deepmd.DescrptSeA import DescrptSeA
 from deepmd.DescrptSeR import DescrptSeR
 from deepmd.DescrptSeAR import DescrptSeAR
 from deepmd.Model import Model, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
-from deepmd.Loss import EnerStdLoss, TensorLoss
+from deepmd.Loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
 from deepmd.LearningRate import LearningRateExp
 
-from tensorflow.python.framework import ops
 from tensorflow.python.client import timeline
-
-# load force module
-if platform.system() == "Windows":
-    ext = "dll"
-elif platform.system() == "Darwin":
-    ext = "dylib"
-else:
-    ext = "so"
-module_path = os.path.dirname(os.path.realpath(__file__)) + "/"
-assert (os.path.isfile (module_path  + "libop_abi.{}".format(ext) )), "op module does not exist"
-op_module = tf.load_op_library(module_path + "libop_abi.{}".format(ext))
+from deepmd.env import op_module
 
 # load grad of force module
-sys.path.append (module_path )
 import deepmd._prod_force_grad
 import deepmd._prod_virial_grad
 import deepmd._prod_force_se_a_grad
@@ -45,10 +28,9 @@ import deepmd._prod_force_se_r_grad
 import deepmd._prod_virial_se_r_grad
 import deepmd._soft_min_force_grad
 import deepmd._soft_min_virial_grad
-from deepmd.RunOptions import RunOptions
-from deepmd.TabInter import TabInter
+import deepmd._gelu
 
-from deepmd.common import j_must_have, ClassArg, add_data_requirement, data_requirement
+from deepmd.common import j_must_have, ClassArg
 
 def _is_subdir(path, directory):
     path = os.path.realpath(path)
@@ -144,10 +126,18 @@ class NNPTrainer (object):
         # infer loss type by fitting_type
         try :
             loss_param = jdata['loss']
+            loss_type = loss_param.get('type', 'std')
         except:
             loss_param = None
+            loss_type = 'std'
+
         if fitting_type == 'ener':
-            self.loss = EnerStdLoss(loss_param, starter_learning_rate = self.lr.start_lr())
+            if loss_type == 'std':
+                self.loss = EnerStdLoss(loss_param, starter_learning_rate = self.lr.start_lr())
+            elif loss_type == 'ener_dipole':
+                self.loss = EnerDipoleLoss(loss_param, starter_learning_rate = self.lr.start_lr())
+            else:
+                raise RuntimeError('unknow loss type')
         elif fitting_type == 'wfc':
             self.loss = TensorLoss(loss_param, 
                                    model = self.model, 
@@ -189,7 +179,8 @@ class NNPTrainer (object):
                   .add('timing_in_training',  bool, default = True)\
                   .add('profiling',     bool,   default = False)\
                   .add('profiling_file',str,    default = 'timeline.json')\
-                  .add('sys_weights',   list    )
+                  .add('sys_probs',   list    )\
+                  .add('auto_prob_style', str, default = "prob_sys_size")
         tr_data = tr_args.parse(training_param)
         self.numb_test = tr_data['numb_test']
         self.disp_file = tr_data['disp_file']
@@ -200,7 +191,8 @@ class NNPTrainer (object):
         self.timing_in_training  = tr_data['timing_in_training']
         self.profiling = tr_data['profiling']
         self.profiling_file = tr_data['profiling_file']
-        self.sys_weights = tr_data['sys_weights']        
+        self.sys_probs = tr_data['sys_probs']        
+        self.auto_prob_style = tr_data['auto_prob_style']        
         self.useBN = False
         if fitting_type == 'ener' and  self.fitting.get_numb_fparam() > 0 :
             self.numb_fparam = self.fitting.get_numb_fparam()
@@ -212,9 +204,11 @@ class NNPTrainer (object):
         self.run_opt.message(msg)
 
     def build (self, 
-               data) :
+               data, 
+               stop_batch = 0) :
         self.ntypes = self.model.get_ntypes()
         assert (self.ntypes == data.get_ntypes()), "ntypes should match that found in data"
+        self.stop_batch = stop_batch
 
         self.batch_size = data.get_batch_size()
 
@@ -241,7 +235,7 @@ class NNPTrainer (object):
     def _build_lr(self):
         self._extra_train_ops   = []
         self.global_step = tf.train.get_or_create_global_step()
-        self.learning_rate = self.lr.build(self.global_step)
+        self.learning_rate = self.lr.build(self.global_step, self.stop_batch)
         self._message("built lr")
 
     def _build_network(self, data):        
@@ -260,7 +254,6 @@ class NNPTrainer (object):
         self.place_holders['natoms_vec']        = tf.placeholder(tf.int32,   [self.ntypes+2], name='t_natoms')
         self.place_holders['default_mesh']      = tf.placeholder(tf.int32,   [None], name='t_mesh')
         self.place_holders['is_training']       = tf.placeholder(tf.bool)
-
         self.model_pred\
             = self.model.build (self.place_holders['coord'], 
                                 self.place_holders['type'], 
@@ -299,10 +292,7 @@ class NNPTrainer (object):
         self._message("built training")
 
     def _init_sess_serial(self) :
-        self.sess = tf.Session(
-            config=tf.ConfigProto(intra_op_parallelism_threads=self.run_opt.num_intra_threads, 
-                                  inter_op_parallelism_threads=self.run_opt.num_inter_threads
-            ))
+        self.sess = tf.Session(config=default_tf_session_config)
         self.saver = tf.train.Saver()
         saver = self.saver
         if self.run_opt.init_mode == 'init_from_scratch' :
@@ -373,8 +363,8 @@ class NNPTrainer (object):
         # save_checkpoint_steps = self.save_freq)
 
     def train (self, 
-               data, 
-               stop_batch) :
+               data) :
+        stop_batch = self.stop_batch
         if self.run_opt.is_distrib :
             self._init_sess_distrib()
         else :
@@ -388,9 +378,11 @@ class NNPTrainer (object):
         cur_batch = self.sess.run(self.global_step)
         is_first_step = True
         self.cur_batch = cur_batch
-        self.run_opt.message("start training at lr %.2e (== %.2e), final lr will be %.2e" % 
+        self.run_opt.message("start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e" % 
                              (self.sess.run(self.learning_rate),
                               self.lr.value(cur_batch), 
+                              self.lr.decay_steps_,
+                              self.lr.decay_rate_,
                               self.lr.value(stop_batch)) 
         )
 
@@ -402,8 +394,9 @@ class NNPTrainer (object):
 
         train_time = 0
         while cur_batch < stop_batch :
-            batch_data = data.get_batch (sys_weights = self.sys_weights)
-            cur_batch_size = batch_data["coord"].shape[0]
+            batch_data = data.get_batch (sys_probs = self.sys_probs,
+                                         auto_prob_style = self.auto_prob_style
+            )
             feed_dict_batch = {}
             for kk in batch_data.keys():
                 if kk == 'find_type' or kk == 'type' :
@@ -465,7 +458,7 @@ class NNPTrainer (object):
                          fp,
                          data,
                          feed_dict_batch) :
-        test_data = data.get_test ()
+        test_data = data.get_test(ntests = self.numb_test)
         feed_dict_test = {}
         for kk in test_data.keys():
             if kk == 'find_type' or kk == 'type' :

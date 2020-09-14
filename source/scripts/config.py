@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import glob,os,sys,json,argparse
+import glob,os,json
 import numpy as np
 
 

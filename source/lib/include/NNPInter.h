@@ -1,54 +1,7 @@
 #pragma once
 
-#include "tensorflow/core/public/session.h"
-#include "tensorflow/core/platform/env.h"
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include "NNPAtomMap.h"
-#include <vector>
-#include "version.h"
-
+#include "common.h"
 typedef double compute_t;
-using namespace tensorflow;
-using namespace std;
-
-#ifdef HIGH_PREC
-typedef double VALUETYPE;
-typedef double ENERGYTYPE;
-#else 
-typedef float  VALUETYPE;
-typedef double ENERGYTYPE;
-#endif
-
-struct LammpsNeighborList 
-{
-  int inum;
-  const int * ilist;
-  const int * numneigh;
-  const int *const* firstneigh;
-  LammpsNeighborList (int inum_, 
-		      const int * ilist_,
-		      const int * numneigh_, 
-		      const int *const* firstneigh_) 
-      : inum(inum_), ilist(ilist_), numneigh(numneigh_), firstneigh(firstneigh_)
-      {
-      }
-};
-
-struct InternalNeighborList 
-{
-  int * pilist;
-  int * pjrange;
-  int * pjlist;
-  vector<int > ilist;
-  vector<int > jrange;
-  vector<int > jlist;
-  void clear () {ilist.clear(); jrange.clear(); jlist.clear();}
-  void make_ptrs () {
-    pilist = &ilist[0]; pjrange = &jrange[0]; pjlist = &jlist[0];
-  }
-};
 
 class NNPInter 
 {
@@ -106,6 +59,7 @@ public:
   int numb_types () const {assert(inited); return ntypes;};
   int dim_fparam () const {assert(inited); return dfparam;};
   int dim_aparam () const {assert(inited); return daparam;};
+  void get_type_map (std::string & type_map);
 private:
   Session* session;
   int num_intra_nthreads, num_inter_nthreads;
@@ -122,6 +76,16 @@ private:
   void validate_fparam_aparam(const int & nloc,
 			      const vector<VALUETYPE> &fparam,
 			      const vector<VALUETYPE> &aparam)const ;
+  void compute_inner (ENERGYTYPE &			ener,
+		vector<VALUETYPE> &		force,
+		vector<VALUETYPE> &		virial,
+		const vector<VALUETYPE> &	coord,
+		const vector<int> &		atype,
+		const vector<VALUETYPE> &	box, 
+		const int			nghost,
+		const int &			ago,
+		const vector<VALUETYPE>	&	fparam = vector<VALUETYPE>(),
+		const vector<VALUETYPE>	&	aparam = vector<VALUETYPE>());
 
   // copy neighbor list info from host
   bool init_nbor;
@@ -129,10 +93,8 @@ private:
   compute_t *array_double;
   InternalNeighborList nlist;
   NNPAtomMap<VALUETYPE> nnpmap;
-  unsigned long long *array_longlong;
-  int *ilist, *jrange, *jlist, *array_int;
+  int *ilist, *jrange, *jlist;
   int ilist_size, jrange_size, jlist_size;
-  int arr_int_size, arr_ll_size, arr_dou_size;
 
   // function used for neighbor list copy
   vector<int> get_sel_a() const;
@@ -227,13 +189,10 @@ private:
   vector<vector<int> > sec;
   InternalNeighborList nlist;
   NNPAtomMap<VALUETYPE> nnpmap;
-  unsigned long long *array_longlong;
-  int max_sec_size = 0, max_sec_back = 0;
-  int *ilist, *jrange, *jlist, *array_int;
-  int ilist_size, jrange_size, jlist_size, arr_int_size, arr_ll_size, arr_dou_size;
+  int *ilist, *jrange, *jlist;
+  int ilist_size, jrange_size, jlist_size;
 
   // function used for nborlist copy
-  void get_max_sec();
   vector<vector<int> > get_sel() const;
   void cum_sum(const std::vector<std::vector<int32> > n_sel);
 #ifdef USE_CUDA_TOOLKIT

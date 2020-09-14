@@ -1,9 +1,21 @@
 from skbuild import setup
 from skbuild.exceptions import SKBuildError
 from skbuild.cmaker import get_cmake_version
+from setuptools_scm import get_version
 from packaging.version import LegacyVersion
 from os import path, makedirs
-import imp,sys
+import imp, sys, platform
+
+def get_dp_install_path() :
+    site_packages_path = path.join(path.dirname(path.__file__), 'site-packages')
+    dp_scm_version     = get_version(root="./", relative_to=__file__)
+    python_version     = 'py' + str(sys.version_info.major + sys.version_info.minor * 0.1)
+    os_info            = sys.platform
+    machine_info       = platform.machine()
+    dp_pip_install_path    = site_packages_path + '/deepmd'
+    dp_setup_install_path    = site_packages_path + '/deepmd_kit-' + dp_scm_version + '-' + python_version + '-' + os_info + '-' + machine_info + '.egg/deepmd'
+    
+    return dp_pip_install_path, dp_setup_install_path
 
 readme_file = path.join(path.dirname(path.abspath(__file__)), 'README.md')
 try:
@@ -20,7 +32,7 @@ except ImportError:
     tf_install_dir = imp.find_module('tensorflow', [site_packages_path])[1]
 
 install_requires=['numpy', 'scipy']
-setup_requires=['setuptools_scm']
+setup_requires=['setuptools_scm', 'scikit-build']
 
 # add cmake as a build requirement if cmake>3.0 is not installed
 try:
@@ -33,6 +45,8 @@ try:
     makedirs('deepmd')
 except OSError:
     pass
+
+dp_pip_install_path, dp_setup_install_path = get_dp_install_path()
 
 setup(
     name="deepmd-kit",
@@ -56,6 +70,8 @@ setup(
                 '-DBUILD_PY_IF:BOOL=TRUE', 
                 '-DBUILD_CPP_IF:BOOL=FALSE',
                 '-DFLOAT_PREC:STRING=high',
+                '-DDP_PIP_INSTALL_PATH=%s' % dp_pip_install_path,
+                '-DDP_SETUP_INSTALL_PATH=%s' % dp_setup_install_path,
     ],
     cmake_source_dir='source',
     cmake_minimum_required_version='3.0',

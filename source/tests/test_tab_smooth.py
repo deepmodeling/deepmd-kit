@@ -35,10 +35,10 @@ def _make_tab(ntype) :
 
 
 class IntplInter(Inter):
-    def __init__ (self, 
-                  data) :
+    def setUp (self, 
+               data) :
         # tabulated
-        Inter.__init__(self, data)
+        Inter.setUp(self, data)
         _make_tab(data.get_ntypes())
         self.srtab = TabInter('tab.xvg')
         self.smin_alpha = 0.3
@@ -151,12 +151,17 @@ class IntplInter(Inter):
     
 
 class TestTabSmooth(IntplInter, unittest.TestCase):
-    def __init__ (self, *args, **kwargs):
+    # def __init__ (self, *args, **kwargs):
+    #     self.places = 5
+    #     data = Data()
+    #     IntplInter.__init__(self, data)
+    #     unittest.TestCase.__init__(self, *args, **kwargs)
+    #     self.controller = object()
+
+    def setUp(self):
         self.places = 5
         data = Data()
-        IntplInter.__init__(self, data)
-        unittest.TestCase.__init__(self, *args, **kwargs)
-        self.controller = object()
+        IntplInter.setUp(self, data)
 
     def test_force (self) :
         force_test(self, self, places=5, suffix = '_tab_smth')

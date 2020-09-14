@@ -10,9 +10,13 @@
 # TensorFlowFramework_LIBRARY    
 # TensorFlowFramework_LIBRARY_PATH
 
+string(REPLACE "lib64" "lib" TENSORFLOW_ROOT_NO64 ${TENSORFLOW_ROOT})
+
 # define the search path
 list(APPEND TensorFlow_search_PATHS ${TENSORFLOW_ROOT})
 list(APPEND TensorFlow_search_PATHS "${TENSORFLOW_ROOT}/../tensorflow_core")
+list(APPEND TensorFlow_search_PATHS ${TENSORFLOW_ROOT_NO64})
+list(APPEND TensorFlow_search_PATHS "${TENSORFLOW_ROOT_NO64}/../tensorflow_core")
 list(APPEND TensorFlow_search_PATHS "/usr/")
 list(APPEND TensorFlow_search_PATHS "/usr/local/")
 
@@ -28,9 +32,18 @@ find_path(TensorFlow_INCLUDE_DIRS
   PATH_SUFFIXES "/include"
   NO_DEFAULT_PATH
   )
+find_path(TensorFlow_INCLUDE_DIRS_GOOGLE
+  NAMES 
+  google/protobuf/type.pb.h
+  PATHS ${TensorFlow_search_PATHS} 
+  PATH_SUFFIXES "/include"
+  NO_DEFAULT_PATH
+  )
+list(APPEND TensorFlow_INCLUDE_DIRS ${TensorFlow_INCLUDE_DIRS_GOOGLE})
+  
 if (NOT TensorFlow_INCLUDE_DIRS AND tensorflow_FIND_REQUIRED)
   message(FATAL_ERROR 
-    "Not found 'include/tensorflow/core/public/session.h' directory in path '${TensorFlow_search_PATHS}' "
+    "Not found 'tensorflow/core/public/session.h' directory in path '${TensorFlow_search_PATHS}' "
     "You can manually set the tensorflow install path by -DTENSORFLOW_ROOT ")
 endif ()
 
