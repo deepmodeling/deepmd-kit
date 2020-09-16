@@ -6,32 +6,19 @@
 using namespace tensorflow;
 using namespace std;
 
-#ifdef HIGH_PREC
-typedef double VALUETYPE;
-#else
-typedef float  VALUETYPE;
-#endif
-
-#ifdef HIGH_PREC
 REGISTER_OP("ProdVirialSeRGrad")
-.Input("grad: double")
-.Input("net_deriv: double")
-.Input("in_deriv: double")
-.Input("rij: double")
+.Attr("T: {float, double}")
+.Input("grad: T")
+.Input("net_deriv: T")
+.Input("in_deriv: T")
+.Input("rij: T")
 .Input("nlist: int32")
 .Input("natoms: int32")
-.Output("grad_net: double");
-#else
-REGISTER_OP("ProdVirialSeRGrad")
-.Input("grad: float")
-.Input("net_deriv: float")
-.Input("in_deriv: float")
-.Input("rij: float")
-.Input("nlist: int32")
-.Input("natoms: int32")
-.Output("grad_net: float");
-#endif
+.Output("grad_net: T");
 
+using CPUDevice = Eigen::ThreadPoolDevice;
+
+template<typename Device, typename FPTYPE>
 class ProdVirialSeRGradOp : public OpKernel 
 {
 public:
@@ -90,12 +77,12 @@ public:
     OP_REQUIRES_OK(context, context->allocate_output(0, grad_net_shape, &grad_net_tensor));
     
     // flat the tensors
-    auto grad		= grad_tensor		.flat<VALUETYPE>();
-    auto net_deriv	= net_deriv_tensor	.flat<VALUETYPE>();
-    auto in_deriv	= in_deriv_tensor	.flat<VALUETYPE>();
-    auto rij		= rij_tensor		.flat<VALUETYPE>();
+    auto grad		= grad_tensor		.flat<FPTYPE>();
+    auto net_deriv	= net_deriv_tensor	.flat<FPTYPE>();
+    auto in_deriv	= in_deriv_tensor	.flat<FPTYPE>();
+    auto rij		= rij_tensor		.flat<FPTYPE>();
     auto nlist		= nlist_tensor		.flat<int>();
-    auto grad_net	= grad_net_tensor	->flat<VALUETYPE>();
+    auto grad_net	= grad_net_tensor	->flat<FPTYPE>();
 
     // loop over frames
 #pragma omp parallel for
@@ -135,4 +122,10 @@ public:
   }
 };
 
-REGISTER_KERNEL_BUILDER(Name("ProdVirialSeRGrad").Device(DEVICE_CPU), ProdVirialSeRGradOp);
+// Register the GPU kernels.
+#define REGISTER_CPU(T)                                                                   \
+REGISTER_KERNEL_BUILDER(                                                                  \
+    Name("ProdVirialSeRGrad").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
+    ProdVirialSeRGradOp<CPUDevice, T>); 
+REGISTER_CPU(float);
+REGISTER_CPU(double);

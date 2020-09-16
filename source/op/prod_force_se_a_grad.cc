@@ -6,34 +6,20 @@
 using namespace tensorflow;
 using namespace std;
 
-#ifdef HIGH_PREC
-typedef double VALUETYPE;
-#else
-typedef float  VALUETYPE;
-#endif
-
-#ifdef HIGH_PREC
 REGISTER_OP("ProdForceSeAGrad")
-.Input("grad: double")
-.Input("net_deriv: double")
-.Input("in_deriv: double")
+.Attr("T: {float, double}")
+.Input("grad: T")
+.Input("net_deriv: T")
+.Input("in_deriv: T")
 .Input("nlist: int32")
 .Input("natoms: int32")
 .Attr("n_a_sel: int")
 .Attr("n_r_sel: int")
-.Output("grad_net: double");
-#else
-REGISTER_OP("ProdForceSeAGrad")
-.Input("grad: float")
-.Input("net_deriv: float")
-.Input("in_deriv: float")
-.Input("nlist: int32")
-.Input("natoms: int32")
-.Attr("n_a_sel: int")
-.Attr("n_r_sel: int")
-.Output("grad_net: float");
-#endif
+.Output("grad_net: T");
 
+using CPUDevice = Eigen::ThreadPoolDevice;
+
+template<typename Device, typename FPTYPE>
 class ProdForceSeAGradOp : public OpKernel 
 {
 public:
@@ -91,11 +77,11 @@ public:
     OP_REQUIRES_OK(context, context->allocate_output(0, grad_net_shape, &grad_net_tensor));
     
     // flat the tensors
-    auto grad		= grad_tensor		.flat<VALUETYPE>();
-    auto net_deriv	= net_deriv_tensor	.flat<VALUETYPE>();
-    auto in_deriv	= in_deriv_tensor	.flat<VALUETYPE>();
+    auto grad		= grad_tensor		.flat<FPTYPE>();
+    auto net_deriv	= net_deriv_tensor	.flat<FPTYPE>();
+    auto in_deriv	= in_deriv_tensor	.flat<FPTYPE>();
     auto nlist		= nlist_tensor		.flat<int>();
-    auto grad_net	= grad_net_tensor	->flat<VALUETYPE>();
+    auto grad_net	= grad_net_tensor	->flat<FPTYPE>();
 
     // loop over frames
 #pragma omp parallel for
@@ -158,4 +144,9 @@ private:
   }
 };
 
-REGISTER_KERNEL_BUILDER(Name("ProdForceSeAGrad").Device(DEVICE_CPU), ProdForceSeAGradOp);
+#define REGISTER_CPU(T)                                                                 \
+REGISTER_KERNEL_BUILDER(                                                                \
+    Name("ProdForceSeAGrad").Device(DEVICE_CPU).TypeConstraint<T>("T"),                       \
+    ProdForceSeAGradOp<CPUDevice, T>);
+REGISTER_CPU(float);
+REGISTER_CPU(double);

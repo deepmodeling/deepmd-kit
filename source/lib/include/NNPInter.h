@@ -98,9 +98,6 @@ private:
 
   // function used for neighbor list copy
   vector<int> get_sel_a() const;
-#ifdef USE_CUDA_TOOLKIT
-  void update_nbor(const InternalNeighborList & nlist, const int nloc);
-#endif
 };
 
 class NNPInterModelDevi
@@ -195,9 +192,6 @@ private:
   // function used for nborlist copy
   vector<vector<int> > get_sel() const;
   void cum_sum(const std::vector<std::vector<int32> > n_sel);
-#ifdef USE_CUDA_TOOLKIT
-  void update_nbor(const InternalNeighborList & nlist, const int nloc);
-#endif
 };
 
 
