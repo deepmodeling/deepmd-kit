@@ -12,6 +12,7 @@ from deepmd import DeepEval
 from deepmd import DeepPot
 from deepmd import DeepDipole
 from deepmd import DeepPolar
+from deepmd import DeepGlobalPolar
 from deepmd import DeepWFC
 from tensorflow.python.framework import ops
 
@@ -28,6 +29,8 @@ def test (args):
         dp = DeepDipole(args.model)    
     elif de.model_type == 'polar':
         dp = DeepPolar(args.model)    
+    elif de.model_type == 'global_polar':
+        dp = DeepGlobalPolar(args.model)    
     elif de.model_type == 'wfc':
         dp = DeepWFC(args.model)    
     else :
@@ -41,7 +44,9 @@ def test (args):
         elif de.model_type == 'dipole':
             err, siz = test_dipole(dp, args)
         elif de.model_type == 'polar':
-            err, siz = test_polar(dp, args)
+            err, siz = test_polar(dp, args, global_polar=False)
+        elif de.model_type == 'global_polar':
+            err, siz = test_polar(dp, args, global_polar=True)
         elif de.model_type == 'wfc':
             err, siz = test_wfc(dp, args)
         else :
@@ -60,6 +65,8 @@ def test (args):
         elif de.model_type == 'dipole':
             print_dipole_sys_avg(avg_err)
         elif de.model_type == 'polar':
+            print_polar_sys_avg(avg_err)
+        elif de.model_type == 'global_polar':
             print_polar_sys_avg(avg_err)
         elif de.model_type == 'wfc':
             print_wfc_sys_avg(avg_err)
@@ -223,12 +230,15 @@ def print_wfc_sys_avg(avg):
     print ("WFC  L2err : %e eV/A" % avg[0])
 
 
-def test_polar (dp, args) :
+def test_polar (dp, args, global_polar = False) :
     if args.rand_seed is not None :
         np.random.seed(args.rand_seed % (2**32))
 
     data = DeepmdData(args.system, args.set_prefix, shuffle_test = args.shuffle_test)
-    data.add('polarizability', 9, atomic=True, must=True, high_prec=False, type_sel = dp.get_sel_type())
+    if not global_polar:
+        data.add('polarizability', 9, atomic=True,  must=True, high_prec=False, type_sel = dp.get_sel_type())
+    else:
+        data.add('polarizability', 9, atomic=False, must=True, high_prec=False, type_sel = dp.get_sel_type())
     test_data = data.get_test ()
     numb_test = args.numb_test
     natoms = len(test_data["type"][0])
@@ -239,12 +249,21 @@ def test_polar (dp, args) :
     box = test_data["box"][:numb_test]
     atype = test_data["type"][0]
     polar = dp.eval(coord, box, atype)
+    sel_type = dp.get_sel_type()
+    sel_natoms = 0
+    for ii in sel_type:
+        sel_natoms += sum(atype == ii)
 
     polar = polar.reshape([numb_test,-1])
     l2f = (l2err (polar  - test_data["polarizability"] [:numb_test]))
+    l2fs = l2f/np.sqrt(sel_natoms)
+    l2fa = l2f/sel_natoms
 
     print ("# number of test data : %d " % numb_test)
-    print ("Polarizability  L2err : %e eV/A" % l2f)
+    print ("Polarizability  L2err       : %e eV/A" % l2f)
+    if global_polar:
+        print ("Polarizability  L2err/sqrtN : %e eV/A" % l2fs)
+        print ("Polarizability  L2err/N     : %e eV/A" % l2fa)
 
     detail_file = args.detail_file
     if detail_file is not None :
