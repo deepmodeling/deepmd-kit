@@ -301,11 +301,12 @@ class TensorLoss () :
         polar_hat = label_dict[self.label_name]
         polar = model_dict[self.tensor_name]
         l2_loss = tf.reduce_mean( tf.square(self.scale*(polar - polar_hat)), name='l2_'+suffix)
+        more_loss = {'nonorm': l2_loss}
         if not self.atomic :
             atom_norm  = 1./ global_cvt_2_tf_float(natoms[0]) 
             l2_loss = l2_loss * atom_norm
         self.l2_l = l2_loss
-        more_loss = {}
+        self.l2_more = more_loss['nonorm']
 
         return l2_loss, more_loss
 
@@ -321,10 +322,10 @@ class TensorLoss () :
                           feed_dict_test,
                           feed_dict_batch) :
         error_test\
-            = sess.run([self.l2_l], \
+            = sess.run([self.l2_more], \
                        feed_dict=feed_dict_test)
         error_train\
-            = sess.run([self.l2_l], \
+            = sess.run([self.l2_more], \
                        feed_dict=feed_dict_batch)
         print_str = ""
         prop_fmt = "   %9.2e %9.2e"
