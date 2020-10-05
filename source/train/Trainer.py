@@ -169,8 +169,9 @@ class NNPTrainer (object):
         # training
         training_param = j_must_have(jdata, 'training')
 
+        # ! first .add() altered by Marián Rynik
         tr_args = ClassArg()\
-                  .add('numb_test',     int,    default = 1)\
+                  .add('numb_test',     [int, list],    default = 1)\
                   .add('disp_file',     str,    default = 'lcurve.out')\
                   .add('disp_freq',     int,    default = 100)\
                   .add('save_freq',     int,    default = 1000)\
@@ -458,7 +459,10 @@ class NNPTrainer (object):
                          fp,
                          data,
                          feed_dict_batch) :
-        test_data = data.get_test(ntests = self.numb_test)
+        # ! altered by Marián Rynik
+        # Do not need to pass numb_test here as data object already knows it.
+        # Both DeepmdDataSystem and ClassArg parse the same json file
+        test_data = data.get_test()
         feed_dict_test = {}
         for kk in test_data.keys():
             if kk == 'find_type' or kk == 'type' :

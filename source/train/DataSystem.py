@@ -49,6 +49,38 @@ class DeepmdDataSystem() :
         assert(isinstance(self.batch_size, (list,np.ndarray)))
         assert(len(self.batch_size) == self.nsystems)
 
+        # ! altered by Marián Rynik
+        # test size
+        # now test size can be set as a percentage of systems data or test size
+        # can be set for each system individualy in the same manner as batch
+        # size. This enables one to use systems with diverse number of
+        # structures and different number of atoms.
+        self.test_size = test_size
+        if isinstance(self.test_size, int):
+            self.test_size = self.test_size * np.ones(self.nsystems, dtype=int)
+        elif isinstance(self.test_size, str):
+            # TODO hard to implement, need to read all the data to determine
+            # appropriate fractions, for now throw error until it is not
+            # implemented. This is convenient, but  not sure it is worth it.
+            # The appropriate numbers for each system can easily be determined
+            # before the run by looking at the data. At runtime we need to read
+            # in all the data for each system to get this done, this can take
+            # long times for large datasets and complex additional code
+            raise NotImplementedError("Percent specification of test fraction "
+                                      "is not yet implemented")
+            words = self.test_size.split('%')
+            try:
+                percent = int(words[0])
+            except ValueError:
+                raise RuntimeError('unknown test_size rule ' + words[0])
+            self.test_size = self._make_auto_ts(percent)
+        elif isinstance(self.test_size, list):
+            pass
+        else :
+            raise RuntimeError('invalid test_size')            
+        assert(isinstance(self.test_size, (list,np.ndarray)))
+        assert(len(self.test_size) == self.nsystems)
+
         # natoms, nbatches
         ntypes = []
         for ii in self.data_systems :
@@ -75,10 +107,10 @@ class DeepmdDataSystem() :
             if chk_ret is not None :
                 warnings.warn("system %s required batch size is larger than the size of the dataset %s (%d > %d)" % \
                               (self.system_dirs[ii], chk_ret[0], self.batch_size[ii], chk_ret[1]))
-            chk_ret = self.data_systems[ii].check_test_size(test_size)
+            chk_ret = self.data_systems[ii].check_test_size(self.test_size[ii])
             if chk_ret is not None :
                 warnings.warn("system %s required test size is larger than the size of the dataset %s (%d > %d)" % \
-                              (self.system_dirs[ii], chk_ret[0], test_size, chk_ret[1]))
+                              (self.system_dirs[ii], chk_ret[0], self.test_size[ii], chk_ret[1]))
 
 
     def _load_test(self, ntests = -1):
@@ -207,17 +239,23 @@ class DeepmdDataSystem() :
         b_data["default_mesh"] = self.default_mesh[self.pick_idx]
         return b_data
 
+    # ! altered by Marián Rynik
     def get_test (self, 
-                  sys_idx = None, 
-                  ntests = -1) :
-        if not hasattr(self, 'default_mesh') :
-            self._make_default_mesh()
-        if not hasattr(self, 'test_data') :
-            self._load_test(ntests = ntests)
+                  sys_idx = None) :
+
+        # need to get idx first to get the appropriate test size for the
+        # current system
         if sys_idx is not None :
             idx = sys_idx
         else :
+            # idx get selected in get batch, it is the index of a system
             idx = self.pick_idx
+
+        if not hasattr(self, 'default_mesh') :
+            self._make_default_mesh()
+        if not hasattr(self, 'test_data') :
+            self._load_test(ntests = self.test_size[idx])
+        
         test_system_data = {}
         for nn in self.test_data:
             test_system_data[nn] = self.test_data[nn][idx]
@@ -274,7 +312,6 @@ class DeepmdDataSystem() :
         tmp_msg += "------------------------------------------------------------------------\n"
         run_opt.message(tmp_msg)
 
-        
     def _make_auto_bs(self, rule) :
         bs = []
         for ii in self.data_systems:
@@ -284,6 +321,19 @@ class DeepmdDataSystem() :
                 bsi += 1
             bs.append(bsi)
         return bs
+
+    # ! added by Marián Rynik
+    def _make_auto_ts(self, percent):
+        ts = []
+        for ii in self.data_systems:
+            # ! this is not right need to read in all data and deternime the
+            # ! number of structures not number of atoms in structure!!
+            ni = ii.get_natoms()
+            tsi = int(ni * percent / 100)
+            # TODO test if the last(test) set has more than tsi elements
+            ts.append(tsi)
+
+        return ts
 
     def _check_type_map_consistency(self, type_map_list):
         ret = []
