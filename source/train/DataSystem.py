@@ -232,20 +232,23 @@ class DeepmdDataSystem() :
 
     # ! altered by Marián Rynik
     def get_test (self, 
-                  sys_idx = None) :
+                  sys_idx = None,
+                  n_test = None) :
 
         # need to get idx first to get the appropriate test size for the
         # current system
         if sys_idx is not None :
             idx = sys_idx
         else :
-            # idx get selected in get batch, it is the index of a system
+            # idx get selected in get_batch method, it must be run first
+            # otherwise this will get messed-up
             idx = self.pick_idx
 
         if not hasattr(self, 'default_mesh') :
             self._make_default_mesh()
         if not hasattr(self, 'test_data') :
-            self._load_test(ntests = self.test_size[idx])
+            n_test = n_test if n_test is not None else self.test_size[idx]
+            self._load_test(ntests = n_test)
         
         test_system_data = {}
         for nn in self.test_data:
