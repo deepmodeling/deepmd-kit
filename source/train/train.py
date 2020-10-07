@@ -4,13 +4,12 @@ import os
 import sys
 import time
 import numpy as np
-import json
 from deepmd.env import tf
 from deepmd.compat import convert_input_v0_v1
 from deepmd.RunOptions import RunOptions
 from deepmd.DataSystem import DeepmdDataSystem
 from deepmd.Trainer import NNPTrainer
-from deepmd.common import data_requirement, expand_sys_str
+from deepmd.common import data_requirement, expand_sys_str, j_loader
 from deepmd.DataModifier import DipoleChargeModifier
 
 def create_done_queue(cluster_spec, task_index):
@@ -49,8 +48,8 @@ def j_must_have (jdata, key) :
 
 def train (args) :
     # load json database
-    with open (args.INPUT, 'r') as fp:
-       jdata = json.load (fp)
+    jdata = j_loader(args.INPUT)
+
     if not 'model' in jdata.keys():
        jdata = convert_input_v0_v1(jdata, 
                                    warning = True, 
