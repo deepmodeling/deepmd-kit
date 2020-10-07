@@ -474,7 +474,6 @@ class NNPTrainer (object):
                 # ! altered by Marián Rynik
                 # again the data object knows appropriate test data shape,
                 # there is no need to slice again!
-                # feed_dict_test[self.place_holders[kk]] = np.reshape(test_data[kk][:self.numb_test[data.pick_idx]], [-1])
                 feed_dict_test[self.place_holders[kk]] = np.reshape(test_data[kk], [-1])
         for ii in ['type'] :
             feed_dict_test[self.place_holders[ii]] = np.reshape(test_data[ii], [-1])            
