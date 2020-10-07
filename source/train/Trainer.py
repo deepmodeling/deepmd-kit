@@ -171,7 +171,7 @@ class NNPTrainer (object):
 
         # ! first .add() altered by Marián Rynik
         tr_args = ClassArg()\
-                  .add('numb_test',     [int, list],    default = 1)\
+                  .add('numb_test',     [int, list, str],    default = 1)\
                   .add('disp_file',     str,    default = 'lcurve.out')\
                   .add('disp_freq',     int,    default = 100)\
                   .add('save_freq',     int,    default = 1000)\
@@ -183,7 +183,8 @@ class NNPTrainer (object):
                   .add('sys_probs',   list    )\
                   .add('auto_prob_style', str, default = "prob_sys_size")
         tr_data = tr_args.parse(training_param)
-        self.numb_test = tr_data['numb_test']
+        # not needed
+        # self.numb_test = tr_data['numb_test']
         self.disp_file = tr_data['disp_file']
         self.disp_freq = tr_data['disp_freq']
         self.save_freq = tr_data['save_freq']
@@ -470,9 +471,13 @@ class NNPTrainer (object):
             if 'find_' in kk:
                 feed_dict_test[self.place_holders[kk]] = test_data[kk]
             else:
-                feed_dict_test[self.place_holders[kk]] = np.reshape(test_data[kk][:self.numb_test], [-1])
+                # ! altered by Marián Rynik
+                # again the data object knows appropriate test data shape,
+                # there is no need to slice again!
+                # feed_dict_test[self.place_holders[kk]] = np.reshape(test_data[kk][:self.numb_test[data.pick_idx]], [-1])
+                feed_dict_test[self.place_holders[kk]] = np.reshape(test_data[kk], [-1])
         for ii in ['type'] :
-            feed_dict_test[self.place_holders[ii]] = np.reshape(test_data[ii][:self.numb_test], [-1])            
+            feed_dict_test[self.place_holders[ii]] = np.reshape(test_data[ii], [-1])            
         for ii in ['natoms_vec', 'default_mesh'] :
             feed_dict_test[self.place_holders[ii]] = test_data[ii]
         feed_dict_test[self.place_holders['is_training']] = False
@@ -488,5 +493,3 @@ class NNPTrainer (object):
             print_str += "   %8.1e\n" % current_lr
             fp.write(print_str)
             fp.flush ()
-
-
