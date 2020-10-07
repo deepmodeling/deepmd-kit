@@ -110,11 +110,17 @@ class ClassArg () :
     def _add_single(self, key, data) :
         vtype = type(data)
         if not(vtype in self.arg_dict[key]['types']) :
-            # try the type convertion to the first listed type
-            try :
-                vv = (self.arg_dict[key]['types'][0])(data)
-            except TypeError:
-                raise TypeError ("cannot convert provided key \"%s\" to type %s " % (key, str(self.arg_dict[key]['types'][0])) )
+            # ! altered by Marián Rynik
+            # try the type convertion to one of the types
+            for tp in self.arg_dict[key]['types']:
+                try :
+                    vv = tp(data)
+                except TypeError:
+                    pass
+                else:
+                    break
+            else:
+                raise TypeError ("cannot convert provided key \"%s\" to type(s) %s " % (key, str(self.arg_dict[key]['types'])) )
         else :
             vv = data
         self.arg_dict[key]['value'] = vv

@@ -398,10 +398,10 @@ Since we do not have virial data, the virial prefactors `start_pref_v` and `limi
 An example of `training` is
 ```json
     "training" : {
-	"systems":	["../data/"],
+	"systems":	["../data1/", "../data2/"],
 	"set_prefix":	"set",    
 	"stop_batch":	1000000,
-	"batch_size":	1,
+	"batch_size":	1, # or "auto" or [10, 20]
 
 	"seed":		1,
 
@@ -409,7 +409,7 @@ An example of `training` is
 	"_comment": " frequencies counted in batch",
 	"disp_file":	"lcurve.out",
 	"disp_freq":	100,
-	"numb_test":	10,
+	"numb_test":	10,  # or "XX%" or [10, 20]
 	"save_freq":	1000,
 	"save_ckpt":	"model.ckpt",
 	"load_ckpt":	"model.ckpt",
@@ -422,9 +422,10 @@ An example of `training` is
 ```
 The option **`systems`** provide location of the systems (path to `set.*` and `type.raw`). It is a vector, thus DeePMD-kit allows you to provide multiple systems. DeePMD-kit will train the model with the systems in the vector one by one in a cyclic manner. **It is warned that the example water data (in folder `examples/data/water`) is of very limited amount, is provided only for testing purpose, and should not be used to train a productive model.**
 
-The option **`batch_size`** specifies the number of frames in each batch. It can be set to `"auto"` to enable a automatic batch size.
+The option **`batch_size`** specifies the number of frames in each batch. It can be set to `"auto"` to enable a automatic batch size or it can be input as a list setting batch size individually for each system.
 The option **`stop_batch`** specifies the total number of batches will be used in the training.
 
+The option **`numb_test`** specifies the number of tests that will be used for each system. If it is an integer each system will be tested with the same number of tests. It can be set to percentage `"XX%"` to use XX% of frames of each system for its testing or it can be input as a list setting numer of tests individually for each system (the order should correspond to ordering of the systems key in json).
 
 ### Training
 
