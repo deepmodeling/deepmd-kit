@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 
 import argparse
-from pathlib import Path
 import json
+from pathlib import Path
+from warnings import warn
+
 import yaml
 
 
@@ -27,6 +29,9 @@ def _main():
     with args.INPUT.open("r") as infile, args.OUTPUT.open("w") as outfile:
         yaml.dump(json.load(infile), outfile, default_flow_style=False,
                   sort_keys=False)
+
+    warn("The order of the keys won't be preserved!", SyntaxWarning)
+    warn("_comment keys will also be lostt in the conversion")
 
 if __name__ == "__main__":
     _main()

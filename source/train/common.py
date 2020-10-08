@@ -168,13 +168,14 @@ def j_have (jdata, key) :
 
 def j_loader(filename):
 
-    with open(filename, 'r') as fp:
-        if filename.endswith("json"):
+    if filename.endswith("json"):
+        with open(filename, 'r') as fp:
             return json.load(fp)
-        elif filename.endswith(("yml", "yaml")):
+    elif filename.endswith(("yml", "yaml")):
+        with open(filename, 'r') as fp:
             return yaml.safe_load(fp)
-        else:
-            raise TypeError("config file must be json, or yaml/yml")
+    else:
+        raise TypeError("config file must be json, or yaml/yml")
 
 def get_activation_func(activation_fn):
     if activation_fn not in activation_fn_dict:

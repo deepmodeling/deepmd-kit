@@ -1,0 +1,50 @@
+model:
+  descriptor:
+    type: se_a
+    sel:
+    - 46
+    - 92
+    rcut_smth: 5.8
+    rcut: 6.0
+    neuron:
+    - 25
+    - 50
+    - 100
+    axis_neuron: 16
+    resnet_dt: false
+    seed: 1
+  fitting_net:
+    neuron:
+    - 240
+    - 240
+    - 240
+    resnet_dt: true
+    seed: 1
+learning_rate:
+  type: exp
+  decay_steps: 5000
+  decay_rate: 0.95
+  start_lr: 0.001
+loss:
+  start_pref_e: 0.02
+  limit_pref_e: 1
+  start_pref_f: 1000
+  limit_pref_f: 1
+  start_pref_v: 0
+  limit_pref_v: 0
+training:
+  systems: ['../data/']
+  set_prefix: set
+  stop_batch: 1000000
+  batch_size:
+  - 1
+  seed: 1
+  disp_file: lcurve.out
+  disp_freq: 100
+  numb_test: 10
+  save_freq: 1000
+  save_ckpt: model.ckpt
+  disp_training: true
+  time_training: true
+  profiling: true
+  profiling_file: timeline.json
