@@ -16,7 +16,7 @@ from deepmd.RunOptions import global_tf_float_precision
 #     """
 #     cdf = 0.5 * (1.0 + tf.tanh((math.sqrt(2 / math.pi) * (x + 0.044715 * tf.pow(x, 3)))))
 #     return x * cdf
-def gelu(x) :
+def gelu(x):
     return op_module.gelu(x)
 
 data_requirement = {}
