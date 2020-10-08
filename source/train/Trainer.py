@@ -463,7 +463,7 @@ class NNPTrainer (object):
         # ! altered by Marián Rynik
         # Do not need to pass numb_test here as data object already knows it.
         # Both DeepmdDataSystem and ClassArg parse the same json file
-        test_data = data.get_test()
+        test_data = data.get_test(n_test=data.get_sys_ntest())
         feed_dict_test = {}
         for kk in test_data.keys():
             if kk == 'find_type' or kk == 'type' :

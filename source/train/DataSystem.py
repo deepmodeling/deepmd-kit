@@ -233,23 +233,17 @@ class DeepmdDataSystem() :
     # ! altered by Marián Rynik
     def get_test (self, 
                   sys_idx = None,
-                  n_test = None) :
-
-        # need to get idx first to get the appropriate test size for the
-        # current system
-        if sys_idx is not None :
-            idx = sys_idx
-        else :
-            # idx get selected in get_batch method, it must be run first
-            # otherwise this will get messed-up
-            idx = self.pick_idx
+                  n_test = -1) :
 
         if not hasattr(self, 'default_mesh') :
             self._make_default_mesh()
         if not hasattr(self, 'test_data') :
-            n_test = n_test if n_test is not None else self.test_size[idx]
             self._load_test(ntests = n_test)
-        
+        if sys_idx is not None :
+            idx = sys_idx
+        else :
+            idx = self.pick_idx
+
         test_system_data = {}
         for nn in self.test_data:
             test_system_data[nn] = self.test_data[nn][idx]
@@ -257,6 +251,13 @@ class DeepmdDataSystem() :
         test_system_data["default_mesh"] = self.default_mesh[idx]
         return test_system_data
 
+    def get_sys_ntest(self, sys_idx=None):
+        """Get number of tests for the currently selected system,
+            or one defined by sys_idx."""
+        if sys_idx is not None :
+            return self.test_size[sys_idx]
+        else :
+            return self.test_size[self.pick_idx]
             
     def get_type_map(self):
         return self.type_map
