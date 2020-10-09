@@ -4,17 +4,16 @@ from skbuild.cmaker import get_cmake_version
 from setuptools_scm import get_version
 from packaging.version import LegacyVersion
 from os import path, makedirs
-import imp, sys, platform
+import os, imp, sys, platform, sysconfig
 
 def get_dp_install_path() :
-    site_packages_path = path.join(path.dirname(path.__file__), 'site-packages')
-    dp_scm_version     = get_version(root="./", relative_to=__file__)
+    site_packages_path = sysconfig.get_paths()['purelib']
+    dp_scm_version     = get_version(root=".", relative_to=__file__)
     python_version     = 'py' + str(sys.version_info.major + sys.version_info.minor * 0.1)
     os_info            = sys.platform
     machine_info       = platform.machine()
-    dp_pip_install_path    = site_packages_path + '/deepmd'
-    dp_setup_install_path    = site_packages_path + '/deepmd_kit-' + dp_scm_version + '-' + python_version + '-' + os_info + '-' + machine_info + '.egg/deepmd'
-    
+    dp_pip_install_path         = os.path.join(site_packages_path, 'deepmd')
+    dp_setup_install_path       = os.path.join(site_packages_path, 'deepmd_kit-' + dp_scm_version + '-' + python_version + '-' + os_info + '-' + machine_info + '.egg', 'deepmd')
     return dp_pip_install_path, dp_setup_install_path
 
 readme_file = path.join(path.dirname(path.abspath(__file__)), 'README.md')
