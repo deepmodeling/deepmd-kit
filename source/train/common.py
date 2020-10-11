@@ -4,6 +4,8 @@ import math
 from deepmd.env import tf
 from deepmd.env import op_module
 from deepmd.RunOptions import global_tf_float_precision
+import json
+import yaml
 
 # def gelu(x):
 #     """Gaussian Error Linear Unit.
@@ -163,7 +165,18 @@ def j_must_have_d (jdata, key, deprecated_key) :
 
 def j_have (jdata, key) :
     return key in jdata.keys() 
-  
+
+def j_loader(filename):
+
+    if filename.endswith("json"):
+        with open(filename, 'r') as fp:
+            return json.load(fp)
+    elif filename.endswith(("yml", "yaml")):
+        with open(filename, 'r') as fp:
+            return yaml.safe_load(fp)
+    else:
+        raise TypeError("config file must be json, or yaml/yml")
+
 def get_activation_func(activation_fn):
     if activation_fn not in activation_fn_dict:
         raise RuntimeError(activation_fn+" is not a valid activation function")

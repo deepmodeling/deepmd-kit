@@ -1,9 +1,9 @@
-import os,sys,platform,json
+import os,sys,platform
 import numpy as np
 import unittest
 from deepmd.env import tf
 
-from deepmd.common import j_must_have, data_requirement
+from deepmd.common import j_must_have, data_requirement, j_loader
 from deepmd.RunOptions import RunOptions
 from deepmd.Trainer import NNPTrainer
 from deepmd.DataSystem import DeepmdDataSystem
@@ -45,8 +45,7 @@ class TestDataModifier (unittest.TestCase) :
     def _setUp(self):
         args = Args()
         run_opt = RunOptions(args, False)
-        with open (args.INPUT, 'r') as fp:
-           jdata = json.load (fp)
+        jdata = j_loader(args.INPUT)
 
         # init model
         model = NNPTrainer (jdata, run_opt = run_opt)

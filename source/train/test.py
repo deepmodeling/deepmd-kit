@@ -55,7 +55,7 @@ def test (args):
         err_coll.append(err)
         siz_coll.append(siz)
     avg_err = weighted_average(err_coll, siz_coll)
-    if len(all_sys) != len(err):
+    if len(all_sys) != len(err_coll):
         print('Not all systems are tested! Check if the systems are valid')
     if len(all_sys) > 1:
         print ("# ----------weighted average of errors----------- ")

@@ -1,10 +1,11 @@
-import os,sys,json
+import os,sys
 import numpy as np
 import unittest
 
 from collections import defaultdict
 from deepmd.DescrptSeA import DescrptSeA
 from deepmd.Fitting import EnerFitting
+from deepmd.common import j_loader
 
 input_json = 'water_se_a_afparam.json'
 
@@ -57,9 +58,8 @@ def _brute_aparam(data, ndim):
 
 class TestEnerFittingStat (unittest.TestCase) :
     def test (self) :
-        with open(input_json) as fp:
-            jdata = json.load(fp)
-            jdata = jdata['model']
+        jdata = j_loader(input_json)
+        jdata = jdata['model']
         descrpt = DescrptSeA(jdata['descriptor'])
         fitting = EnerFitting(jdata['fitting_net'], descrpt)
         avgs = [0, 10]
