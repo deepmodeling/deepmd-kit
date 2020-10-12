@@ -1,13 +1,21 @@
 #pragma once
 
 #include "tensorflow/core/public/session.h"
+#include "tensorflow/core/public/version.h"
 #include "tensorflow/core/platform/env.h"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/shape_inference.h"
+#include <string>
 
 using namespace tensorflow;
 using namespace std;
+
+#if TF_MAJOR_VERSION >= 2 && TF_MINOR_VERSION >= 2
+typedef tensorflow::tstring STRINGTYPE;
+#else
+typedef std::string STRINGTYPE;
+#endif
 
 #include "NNPAtomMap.h"
 #include <vector>
