@@ -24,6 +24,8 @@ limitations under the License.
     typedef float   VALUETYPE;
 #endif
 
+typedef double compute_t;
+
 typedef unsigned long long int_64;
 
 #define cudaErrcheck(res) { cudaAssert((res), __FILE__, __LINE__); }
@@ -132,12 +134,12 @@ __global__ void format_nlist_fill_a_se_a(const VALUETYPE * coord,
 
     int_64 * key_in = key + idx * MAGIC_NUMBER;
 
-    VALUETYPE diff[3];
+    compute_t diff[3];
     const int & j_idx = nei_idx[idy];
     for (int dd = 0; dd < 3; dd++) {
         diff[dd] = coord[j_idx * 3 + dd] - coord[idx * 3 + dd];
     }
-    VALUETYPE rr = sqrt(dev_dot(diff, diff)); 
+    compute_t rr = sqrt(dev_dot(diff, diff)); 
     if (rr <= rcut) {
         key_in[idy] = type[j_idx] * 1E15+ (int_64)(rr * 1.0E13) / 100000 * 100000 + j_idx;
     }
@@ -179,18 +181,19 @@ __global__ void format_nlist_fill_b_se_a(int * nlist,
 }
 //it's ok!
 
-__global__ void compute_descriptor_se_a (VALUETYPE* descript,
+template<typename FPTYPE>
+__global__ void compute_descriptor_se_a (FPTYPE* descript,
                             const int ndescrpt,
-                            VALUETYPE* descript_deriv,
+                            FPTYPE* descript_deriv,
                             const int descript_deriv_size,
-                            VALUETYPE* rij,
+                            FPTYPE* rij,
                             const int rij_size,
                             const int* type,
-                            const VALUETYPE* avg,
-                            const VALUETYPE* std,
+                            const FPTYPE* avg,
+                            const FPTYPE* std,
                             int* nlist,
                             const int nlist_size,
-                            const VALUETYPE* coord,
+                            const FPTYPE* coord,
                             const float rmin,
                             const float rmax,
                             const int sec_a_size)
@@ -203,9 +206,9 @@ __global__ void compute_descriptor_se_a (VALUETYPE* descript,
     if (idy >= sec_a_size) {return;}
 
     // else {return;}
-    VALUETYPE * row_descript = descript + idx * ndescrpt;
-    VALUETYPE * row_descript_deriv = descript_deriv + idx * descript_deriv_size;
-    VALUETYPE * row_rij = rij + idx * rij_size;
+    FPTYPE * row_descript = descript + idx * ndescrpt;
+    FPTYPE * row_descript_deriv = descript_deriv + idx * descript_deriv_size;
+    FPTYPE * row_rij = rij + idx * rij_size;
     int * row_nlist = nlist + idx * nlist_size;
 
     if (row_nlist[idy] >= 0) {
@@ -213,14 +216,14 @@ __global__ void compute_descriptor_se_a (VALUETYPE* descript,
         for (int kk = 0; kk < 3; kk++) {
             row_rij[idy * 3 + kk] = coord[j_idx * 3 + kk] - coord[idx * 3 + kk];
         }
-        const VALUETYPE * rr = &row_rij[idy * 3 + 0];
-        VALUETYPE nr2 = dev_dot(rr, rr);
-        VALUETYPE inr = 1./sqrt(nr2);
-        VALUETYPE nr = nr2 * inr;
-        VALUETYPE inr2 = inr * inr;
-        VALUETYPE inr4 = inr2 * inr2;
-        VALUETYPE inr3 = inr4 * nr;
-        VALUETYPE sw, dsw;
+        const FPTYPE * rr = &row_rij[idy * 3 + 0];
+        FPTYPE nr2 = dev_dot(rr, rr);
+        FPTYPE inr = 1./sqrt(nr2);
+        FPTYPE nr = nr2 * inr;
+        FPTYPE inr2 = inr * inr;
+        FPTYPE inr4 = inr2 * inr2;
+        FPTYPE inr3 = inr4 * nr;
+        FPTYPE sw, dsw;
         spline5_switch(sw, dsw, nr, rmin, rmax);
         row_descript[idx_value + 0] = (1./nr)       ;//* sw;
         row_descript[idx_value + 1] = (rr[0] / nr2) ;//* sw;
