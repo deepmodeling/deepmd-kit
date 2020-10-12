@@ -25,7 +25,7 @@ def main () :
 				  help = "the model after passing parameters")
     parser_train = subparsers.add_parser('train', help='train a model')
     parser_train.add_argument('INPUT', 
-                              help='the input parameter file in json format')
+                              help='the input parameter file in json or yaml format')
     parser_train.add_argument('--init-model', type = str, 
                               help=
                               'Initialize the model by the provided checkpoint.')
