@@ -33,7 +33,7 @@ init (const string & model,
   rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
   cell_size = rcut;
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
-  model_type = get_scalar<string>("model_attr/model_type");
+  model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
   odim = get_scalar<int>("model_attr/output_dim");
   get_vector<int>(sel_type, "model_attr/sel_type");
   inited = true;
