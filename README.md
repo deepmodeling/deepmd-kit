@@ -330,7 +330,7 @@ The method of training is explained in our [DeePMD][2] and [DeepPot-SE][3] paper
 $ cd $deepmd_source_dir/examples/water/train/
 $ dp train water_se_a.json
 ```
-where `water_se_a.json` is the `json` format parameter file that controls the training. The components of the `water.json` contains three parts, `model`, `learning_rate`, `loss` and `training`.
+where `water_se_a.json` is the `json` format parameter file that controls the training. It is also possible to use `yaml` format file with the same keys as json (see `water_se_a.yaml` example). You can use script `json2yaml.py` in `data/json/` dir to convert your json files to yaml. The components of the `water.json` contains four parts, `model`, `learning_rate`, `loss` and `training`.
 
 The `model` section specify how the deep potential model is built. An example of the smooth-edition is provided as follows
 ```json
