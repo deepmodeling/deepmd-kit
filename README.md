@@ -401,7 +401,8 @@ An example of `training` is
 	"systems":	["../data1/", "../data2/"],
 	"set_prefix":	"set",    
 	"stop_batch":	1000000,
-	"batch_size":	1, # or "auto" or [10, 20]
+	"_comment": " batch_size can be supplied with, e.g. 1, or auto (string) or [10, 20]"
+	"batch_size":	1,
 
 	"seed":		1,
 
@@ -409,7 +410,8 @@ An example of `training` is
 	"_comment": " frequencies counted in batch",
 	"disp_file":	"lcurve.out",
 	"disp_freq":	100,
-	"numb_test":	10,  # or "XX%" or [10, 20]
+	"_comment": " numb_test can be supplied with, e.g. 1, or XX% (string) or [10, 20]"
+	"numb_test":	10,
 	"save_freq":	1000,
 	"save_ckpt":	"model.ckpt",
 	"load_ckpt":	"model.ckpt",
