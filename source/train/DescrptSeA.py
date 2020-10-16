@@ -11,7 +11,7 @@ class DescrptSeA ():
         args = ClassArg()\
                .add('sel',      list,   must = True) \
                .add('rcut',     float,  default = 6.0) \
-               .add('rcut_smth',float,  default = 5.5) \
+               .add('rcut_smth',float,  default = 0.5) \
                .add('neuron',   list,   default = [10, 20, 40]) \
                .add('axis_neuron', int, default = 4, alias = 'n_axis_neuron') \
                .add('resnet_dt',bool,   default = False) \
