@@ -4,7 +4,7 @@ from skbuild.cmaker import get_cmake_version
 from setuptools_scm import get_version
 from packaging.version import LegacyVersion
 from os import path, makedirs
-import os, imp, sys, platform, sysconfig
+import os, importlib, sys, platform, sysconfig
 
 
 readme_file = path.join(path.dirname(path.abspath(__file__)), 'README.md')
@@ -15,19 +15,28 @@ except ImportError:
     with open(readme_file) as f:
         readme = f.read()
 
-try:
-    tf_install_dir = imp.find_module('tensorflow')[1] 
-except ImportError:
-    site_packages_path = path.join(path.dirname(path.__file__), 'site-packages')
-    tf_install_dir = imp.find_module('tensorflow', [site_packages_path])[1]
-
-
 install_requires=['numpy', 'scipy', 'pyyaml']
-setup_requires=['setuptools_scm', 'scikit-build', 'cmake']
+setup_requires=['setuptools_scm', 'scikit-build']
 
-# add cmake as a build requirement if cmake>3.0 is not installed
+def find_tf(path):
+    return importlib.machinery.FileFinder(path).find_spec("tensorflow")
+
+tf_spec = importlib.util.find_spec("tensorflow")
+if tf_spec:
+    tf_install_dir = tf_spec.submodule_search_locations[1]
+else:
+    site_packages_path = path.join(path.dirname(path.__file__), 'site-packages')
+    tf_spec = importlib.machinery.FileFinder(path).find_spec("tensorflow")
+    if tf_spec:
+        tf_install_dir = tf_spec.submodule_search_locations[1]
+    else:
+        tf_version = os.environ.get('TENSORFLOW_VERSION', '2.3')
+        setup_requires.append("tensorflow==" + tf_version)
+        install_requires.append("tensorflow==" + tf_version)
+
+# add cmake as a build requirement if cmake>3.7 is not installed
 try:
-    if LegacyVersion(get_cmake_version()) < LegacyVersion("3.0"):
+    if LegacyVersion(get_cmake_version()) < LegacyVersion("3.7"):
         setup_requires.append('cmake')
 except SKBuildError:
     setup_requires.append('cmake')
