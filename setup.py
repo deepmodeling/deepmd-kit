@@ -18,9 +18,6 @@ except ImportError:
 install_requires=['numpy', 'scipy', 'pyyaml']
 setup_requires=['setuptools_scm', 'scikit-build']
 
-def find_tf(path):
-    return importlib.machinery.FileFinder(path).find_spec("tensorflow")
-
 tf_spec = importlib.util.find_spec("tensorflow")
 if tf_spec:
     tf_install_dir = tf_spec.submodule_search_locations[1]
