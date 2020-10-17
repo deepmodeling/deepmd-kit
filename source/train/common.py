@@ -111,6 +111,8 @@ class ClassArg () :
 
     def _add_single(self, key, data) :
         vtype = type(data)
+        if data is None:
+            return data
         if not(vtype in self.arg_dict[key]['types']) :
             # try the type convertion to the first listed type
             try :
