@@ -21,12 +21,12 @@ setup_requires=['setuptools_scm', 'scikit-build']
 extras_require = dict()
 tf_spec = importlib.util.find_spec("tensorflow")
 if tf_spec:
-    tf_install_dir = tf_spec.submodule_search_locations[1]
+    tf_install_dir = tf_spec.submodule_search_locations[0]
 else:
     site_packages_path = path.join(path.dirname(path.__file__), 'site-packages')
     tf_spec = importlib.machinery.FileFinder(site_packages_path).find_spec("tensorflow")
     if tf_spec:
-        tf_install_dir = tf_spec.submodule_search_locations[1]
+        tf_install_dir = tf_spec.submodule_search_locations[0]
     else:
         tf_version = os.environ.get('TENSORFLOW_VERSION', '2.3')
         setup_requires.append("tensorflow==" + tf_version)
