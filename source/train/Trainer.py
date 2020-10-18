@@ -126,13 +126,13 @@ class NNPTrainer (object):
         # infer loss type by fitting_type
         try :
             loss_param = jdata['loss']
-            loss_type = loss_param.get('type', 'std')
+            loss_type = loss_param.get('type', 'ener')
         except:
             loss_param = None
-            loss_type = 'std'
+            loss_type = 'ener'
 
         if fitting_type == 'ener':
-            if loss_type == 'std':
+            if loss_type == 'ener':
                 self.loss = EnerStdLoss(loss_param, starter_learning_rate = self.lr.start_lr())
             elif loss_type == 'ener_dipole':
                 self.loss = EnerDipoleLoss(loss_param, starter_learning_rate = self.lr.start_lr())
