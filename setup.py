@@ -21,6 +21,7 @@ setup_requires=['setuptools_scm', 'scikit-build']
 def find_tf(path):
     return importlib.machinery.FileFinder(path).find_spec("tensorflow")
 
+extras_require = dict()
 tf_spec = importlib.util.find_spec("tensorflow")
 if tf_spec:
     tf_install_dir = tf_spec.submodule_search_locations[1]
@@ -32,7 +33,7 @@ else:
     else:
         tf_version = os.environ.get('TENSORFLOW_VERSION', '2.3')
         setup_requires.append("tensorflow==" + tf_version)
-        install_requires.append("tensorflow==" + tf_version)
+        extras_require = {"cpu": "tensorflow_cpu==" + tf_version, "gpu": "tensorflow==" + tf_version}
 
 # add cmake as a build requirement if cmake>3.7 is not installed
 try:
@@ -74,6 +75,7 @@ setup(
     cmake_minimum_required_version='3.0',
     extras_require={
         'test': ['dpdata>=0.1.9'],
+        **extras_require,
     },
     entry_points={
           'console_scripts': ['dp = deepmd.main:main']
