@@ -4,7 +4,9 @@ from skbuild.cmaker import get_cmake_version
 from setuptools_scm import get_version
 from packaging.version import LegacyVersion
 from os import path, makedirs
-import os, importlib, sys, platform, sysconfig
+import os, importlib
+import pkg_resources
+from distutils.util import get_platform
 
 
 readme_file = path.join(path.dirname(path.abspath(__file__)), 'README.md')
@@ -31,6 +33,10 @@ else:
         tf_version = os.environ.get('TENSORFLOW_VERSION', '2.3')
         setup_requires.append("tensorflow==" + tf_version)
         extras_require = {"cpu": "tensorflow_cpu==" + tf_version, "gpu": "tensorflow==" + tf_version}
+        tf_install_dir = path.join(path.dirname(path.abspath(__file__)), '.egg',
+                                   pkg_resources.Distribution(project_name="tensorflow", version=tf_version,
+                                                              platform=get_platform()).egg_name(),
+                                   'tensorflow')
 
 # add cmake as a build requirement if cmake>3.7 is not installed
 try:
