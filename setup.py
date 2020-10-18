@@ -24,7 +24,7 @@ if tf_spec:
     tf_install_dir = tf_spec.submodule_search_locations[1]
 else:
     site_packages_path = path.join(path.dirname(path.__file__), 'site-packages')
-    tf_spec = importlib.machinery.FileFinder(path).find_spec("tensorflow")
+    tf_spec = importlib.machinery.FileFinder(site_packages_path).find_spec("tensorflow")
     if tf_spec:
         tf_install_dir = tf_spec.submodule_search_locations[1]
     else:
