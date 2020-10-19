@@ -22,7 +22,7 @@ except ImportError:
     tf_install_dir = imp.find_module('tensorflow', [site_packages_path])[1]
 
 
-install_requires=['numpy', 'scipy', 'pyyaml']
+install_requires=['numpy', 'scipy', 'pyyaml', 'dargs']
 setup_requires=['setuptools_scm', 'scikit-build', 'cmake']
 
 # add cmake as a build requirement if cmake>3.0 is not installed
