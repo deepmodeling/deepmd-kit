@@ -401,7 +401,7 @@ An example of `training` is
 	"systems":	["../data1/", "../data2/"],
 	"set_prefix":	"set",    
 	"stop_batch":	1000000,
-	"_comment": " batch_size can be supplied with, e.g. 1, or auto (string) or [10, 20]"
+	"_comment": " batch_size can be supplied with, e.g. 1, or auto (string) or [10, 20]",
 	"batch_size":	1,
 
 	"seed":		1,
