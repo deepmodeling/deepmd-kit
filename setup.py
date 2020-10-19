@@ -20,7 +20,7 @@ except ImportError:
 install_requires=['numpy', 'scipy', 'pyyaml']
 setup_requires=['setuptools_scm', 'scikit-build']
 
-extras_require = dict()
+extras_require = {"cpu": "", "gpu": ""}
 tf_spec = importlib.util.find_spec("tensorflow")
 if tf_spec:
     tf_install_dir = tf_spec.submodule_search_locations[0]
@@ -32,7 +32,10 @@ else:
     else:
         tf_version = os.environ.get('TENSORFLOW_VERSION', '2.3')
         setup_requires.append("tensorflow==" + tf_version)
-        extras_require = {"cpu": "tensorflow_cpu==" + tf_version, "gpu": "tensorflow==" + tf_version}
+        if LegacyVersion(tf_version) < LegacyVersion("1.15") or (LegacyVersion(tf_version) >= LegacyVersion("2.0") and LegacyVersion(tf_version) <  LegacyVersion("2.1")):
+            extras_require = {"cpu": "tensorflow==" + tf_version, "gpu": "tensorflow_gpu==" + tf_version}
+        else:
+            extras_require = {"cpu": "tensorflow_cpu==" + tf_version, "gpu": "tensorflow==" + tf_version}
         tf_install_dir = path.join(path.dirname(path.abspath(__file__)), '.egg',
                                    pkg_resources.Distribution(project_name="tensorflow", version=tf_version,
                                                               platform=get_platform()).egg_name(),

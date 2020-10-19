@@ -90,6 +90,6 @@ jobs:
       after_success:
         - if [[ $TRAVIS_TAG ]]; then python -m twine upload wheelhouse/*; python -m twine upload dist/*.tar.gz;  fi
 install:
-  - pip install .[test]
+  - pip install .[cpu,test]
 script:
   - cd source/tests && python -m unittest
