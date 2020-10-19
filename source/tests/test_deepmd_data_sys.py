@@ -98,6 +98,7 @@ class TestDataSystem (unittest.TestCase) :
                                               -
                                               data['null']
         ), 0.0)
+
         sys_idx = 2
         data = ds.get_test(sys_idx=sys_idx)
         self.assertEqual(list(data['type'][0]), list(np.sort(self.atom_type[sys_idx])))
