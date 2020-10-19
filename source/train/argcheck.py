@@ -23,9 +23,9 @@ def descrpt_local_frame_args ():
     doc_axis_rule = 'A list of integers. The length should be 6 times of the number of types. \n\n\
 - axis_rule[i*6+0]: class of the atom defining the first axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.\n\n\
 - axis_rule[i*6+1]: type of the atom defining the first axis of type-i atom.\n\n\
-- axis_rule[i*6+2]: index of the axis atom defining the first axis. Note that the neighbors with the same class and type are sorted according to their relative distance.\n\
-- axis_rule[i*6+3]: class of the atom defining the first axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.\n\
-- axis_rule[i*6+4]: type of the atom defining the second axis of type-i atom.\n\
+- axis_rule[i*6+2]: index of the axis atom defining the first axis. Note that the neighbors with the same class and type are sorted according to their relative distance.\n\n\
+- axis_rule[i*6+3]: class of the atom defining the first axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.\n\n\
+- axis_rule[i*6+4]: type of the atom defining the second axis of type-i atom.\n\n\
 - axis_rule[i*6+5]: class of the atom defining the second axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.'
     
     return [
@@ -109,10 +109,10 @@ def descrpt_se_ar_args():
 
 
 def descrpt_variant_type_args():
-    doc_descrpt_type = 'The type of the descritpor. Valid types are `loc_frame`, `se_a`, `se_r` and `se_ar`. \n\
-- `loc_frame`: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.\n\
-- `se_a`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor.\n\
-- `se_r`: Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor.\n\
+    doc_descrpt_type = 'The type of the descritpor. Valid types are `loc_frame`, `se_a`, `se_r` and `se_ar`. \n\n\
+- `loc_frame`: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.\n\n\
+- `se_a`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor.\n\n\
+- `se_r`: Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor.\n\n\
 - `se_ar`: A hybrid of `se_a` and `se_r`. Typically `se_a` has a smaller cut-off while the `se_r` has a larger cut-off.'
     
     return Variant("type", [
@@ -130,8 +130,8 @@ def fitting_ener():
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(activation_fn_dict.keys())}'
     doc_precision = f'The precision of the fitting net parameters, supported options are {supported_precision()}'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
-    doc_trainable = 'Whether the parameters in the fitting net are trainable. This option can be\n\
-- bool: True if all parameters of the fitting net are trainable, False otherwise.\n\
+    doc_trainable = 'Whether the parameters in the fitting net are trainable. This option can be\n\n\
+- bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
 - list of bool: Specifies if each layer is trainable. Since the fitting net is composed by hidden layers followed by a output layer, the length of tihs list should be equal to len(`neuron`)+1.'
     doc_rcond = 'The condition number used to determine the inital energy shift for each type of atoms.'
     doc_seed = 'Random seed for parameter initialization of the fitting net'
@@ -197,10 +197,10 @@ def fitting_dipole():
 
 
 def fitting_variant_type_args():
-    doc_descrpt_type = 'The type of the fitting. Valid types are `ener`, `dipole`, `polar` and `global_polar`. \n\
-- `ener`: Fit an energy model (potential energy surface).\n\
-- `dipole`: Fit an atomic dipole model. Atomic dipole labels for all the selected atoms (see `sel_type`) should be provided by `dipole.npy` in each data system. The file has number of frames lines and 3 times of number of selected atoms columns.\n\
-- `polar`: Fit an atomic polarizability model. Atomic polarizability labels for all the selected atoms (see `sel_type`) should be provided by `polarizability.npy` in each data system. The file has number of frames lines and 9 times of number of selected atoms columns.\n\
+    doc_descrpt_type = 'The type of the fitting. Valid types are `ener`, `dipole`, `polar` and `global_polar`. \n\n\
+- `ener`: Fit an energy model (potential energy surface).\n\n\
+- `dipole`: Fit an atomic dipole model. Atomic dipole labels for all the selected atoms (see `sel_type`) should be provided by `dipole.npy` in each data system. The file has number of frames lines and 3 times of number of selected atoms columns.\n\n\
+- `polar`: Fit an atomic polarizability model. Atomic polarizability labels for all the selected atoms (see `sel_type`) should be provided by `polarizability.npy` in each data system. The file has number of frames lines and 9 times of number of selected atoms columns.\n\n\
 - `global_polar`: Fit a polarizability model. Polarizability labels should be provided by `polarizability.npy` in each data system. The file has number of frames lines and 9 columns.'
     
     return Variant("type", [Argument("ener", dict, fitting_ener()),
@@ -291,10 +291,10 @@ def training_args():
     doc_systems = 'The data systems. This key can be provided with a listthat specifies the systems, or be provided with a string by which the prefix of all systems are given and the list of the systems is automatically generated.'
     doc_set_prefix = 'The prefix of the sets in the systems.'
     doc_stop_batch = 'Number of training batch. Each training uses one batch of data.'
-    doc_batch_size = 'This key can be \n\
-- list: the length of which is the same as the `systems`. The batch size of each system is given by the elements of the list.\n\
-- int: all `systems` uses the same batch size.\n\
-- string "auto": automatically determines the batch size os that the batch_size times the number of atoms in the system is no less than 32.\n\
+    doc_batch_size = 'This key can be \n\n\
+- list: the length of which is the same as the `systems`. The batch size of each system is given by the elements of the list.\n\n\
+- int: all `systems` uses the same batch size.\n\n\
+- string "auto": automatically determines the batch size os that the batch_size times the number of atoms in the system is no less than 32.\n\n\
 - string "auto:N": automatically determines the batch size os that the batch_size times the number of atoms in the system is no less than N.'
     doc_seed = 'The random seed for training.'
     doc_disp_file = 'The file for printing learning curve.'

@@ -21,17 +21,21 @@ model: ``dict``
             Argument path: model/descriptor/type
             The type of the descritpor. Valid types are `loc_frame`, `se_a`,
             `se_r` and `se_ar`. 
+
             - `loc_frame`: Defines a local frame at each
             atom, and the compute the descriptor as local coordinates under this
             frame.
+
             - `se_a`: Used by the smooth edition of Deep Potential. The
             full relative coordinates are used to construct the descriptor.
+
             -
             `se_r`: Used by the smooth edition of Deep Potential. Only the
             distance between atoms is used to construct the descriptor.
-            - `se_ar`:
-            A hybrid of `se_a` and `se_r`. Typically `se_a` has a smaller cut-off
-            while the `se_r` has a larger cut-off.
+
+            -
+            `se_ar`: A hybrid of `se_a` and `se_r`. Typically `se_a` has a smaller
+            cut-off while the `se_r` has a larger cut-off.
 
         When *type* is set to ``loc_frame``: 
 
@@ -71,15 +75,18 @@ model: ``dict``
             index of the axis atom defining the first axis. Note that the
             neighbors with the same class and type are sorted according to their
             relative distance.
+
             - axis_rule[i*6+3]: class of the atom defining the
             first axis of type-i atom. 0 for neighbors with full coordinates and 1
             for neighbors only with relative distance.
-            - axis_rule[i*6+4]: type of
-            the atom defining the second axis of type-i atom.
-            - axis_rule[i*6+5]:
-            class of the atom defining the second axis of type-i atom. 0 for
-            neighbors with full coordinates and 1 for neighbors only with relative
-            distance.
+
+            - axis_rule[i*6+4]: type
+            of the atom defining the second axis of type-i atom.
+
+            -
+            axis_rule[i*6+5]: class of the atom defining the second axis of type-i
+            atom. 0 for neighbors with full coordinates and 1 for neighbors only
+            with relative distance.
 
         When *type* is set to ``se_a``: 
 
@@ -225,17 +232,21 @@ model: ``dict``
             Argument path: model/fitting_net/type
             The type of the fitting. Valid types are `ener`, `dipole`, `polar` and
             `global_polar`. 
+
             - `ener`: Fit an energy model (potential energy
             surface).
-            - `dipole`: Fit an atomic dipole model. Atomic dipole labels
-            for all the selected atoms (see `sel_type`) should be provided by
-            `dipole.npy` in each data system. The file has number of frames lines
-            and 3 times of number of selected atoms columns.
-            - `polar`: Fit an
-            atomic polarizability model. Atomic polarizability labels for all the
-            selected atoms (see `sel_type`) should be provided by
+
+            - `dipole`: Fit an atomic dipole model. Atomic dipole
+            labels for all the selected atoms (see `sel_type`) should be provided
+            by `dipole.npy` in each data system. The file has number of frames
+            lines and 3 times of number of selected atoms columns.
+
+            - `polar`: Fit
+            an atomic polarizability model. Atomic polarizability labels for all
+            the selected atoms (see `sel_type`) should be provided by
             `polarizability.npy` in each data system. The file has number of
             frames lines and 9 times of number of selected atoms columns.
+
             -
             `global_polar`: Fit a polarizability model. Polarizability labels
             should be provided by `polarizability.npy` in each data system. The
@@ -276,11 +287,13 @@ model: ``dict``
             Argument path: model/fitting_net/ener/trainable
             Whether the parameters in the fitting net are trainable. This option
             can be
+
             - bool: True if all parameters of the fitting net are
             trainable, False otherwise.
-            - list of bool: Specifies if each layer is
-            trainable. Since the fitting net is composed by hidden layers followed
-            by a output layer, the length of tihs list should be equal to
+
+            - list of bool: Specifies if each layer
+            is trainable. Since the fitting net is composed by hidden layers
+            followed by a output layer, the length of tihs list should be equal to
             len(`neuron`)+1.
 
         rcond: ``float``, optional
@@ -533,13 +546,17 @@ training: ``dict``
     batch_size: ``int``|``list``|``str``, optional
         Argument path: training/batch_size
         This key can be 
+
         - list: the length of which is the same as the
         `systems`. The batch size of each system is given by the elements of
         the list.
+
         - int: all `systems` uses the same batch size.
+
         - string
         "auto": automatically determines the batch size os that the batch_size
         times the number of atoms in the system is no less than 32.
+
         - string
         "auto:N": automatically determines the batch size os that the
         batch_size times the number of atoms in the system is no less than N.
