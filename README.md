@@ -133,7 +133,7 @@ We follow the virtual environment approach to install the tensorflow's Python in
 virtualenv -p python3 $tensorflow_venv
 source $tensorflow_venv/bin/activate
 pip install --upgrade pip
-pip install --upgrade tensorflow==2.1.0
+pip install --upgrade tensorflow==2.3.0
 ```
 It is notice that everytime a new shell is started and one wants to use `DeePMD-kit`, the virtual environment should be activated by 
 ```bash
@@ -149,7 +149,7 @@ virtualenv -p python3.7 $tensorflow_venv
 ```
 If one does not need the GPU support of deepmd-kit and is concerned about package size, the CPU-only version of tensorflow should be installed by	
 ```bash	
-pip install --upgrade tensorflow-cpu==2.1.0	
+pip install --upgrade tensorflow-cpu==2.3.0	
 ```
 To verify the installation, run
 ```bash
