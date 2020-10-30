@@ -1,5 +1,5 @@
 from deepmd.argcheck import gen_doc
 
 def doc_train_input(args):
-    doc_str = gen_doc()
+    doc_str = gen_doc(make_anchor=False)
     print(doc_str)

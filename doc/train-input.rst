@@ -27,16 +27,6 @@ model:
             | type: ``str`` (flag key)
             | argument path: ``model/descriptor/type`` 
 
-            The type of the descritpor. Valid types are `loc_frame`, `se_a`, `se_r` and `se_ar`. 
-
-            - `loc_frame`: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.
-
-            - `se_a`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor.
-
-            - `se_r`: Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor.
-
-            - `se_ar`: A hybrid of `se_a` and `se_r`. Typically `se_a` has a smaller cut-off while the `se_r` has a larger cut-off.
-
 
         When *type* is set to ``loc_frame``: 
 
@@ -260,16 +250,6 @@ model:
             | type: ``str`` (flag key), default: ``ener``
             | argument path: ``model/fitting_net/type`` 
 
-            The type of the fitting. Valid types are `ener`, `dipole`, `polar` and `global_polar`. 
-
-            - `ener`: Fit an energy model (potential energy surface).
-
-            - `dipole`: Fit an atomic dipole model. Atomic dipole labels for all the selected atoms (see `sel_type`) should be provided by `dipole.npy` in each data system. The file has number of frames lines and 3 times of number of selected atoms columns.
-
-            - `polar`: Fit an atomic polarizability model. Atomic polarizability labels for all the selected atoms (see `sel_type`) should be provided by `polarizability.npy` in each data system. The file has number of frames lines and 9 times of number of selected atoms columns.
-
-            - `global_polar`: Fit a polarizability model. Polarizability labels should be provided by `polarizability.npy` in each data system. The file has number of frames lines and 9 columns.
-
 
         When *type* is set to ``ener``: 
 
@@ -310,7 +290,7 @@ model:
             Whether to use a "Timestep" in the skip connection
 
         trainable: 
-            | type: ``bool`` | ``list``, optional, default: ``True``
+            | type: ``list`` | ``bool``, optional, default: ``True``
             | argument path: ``model/fitting_net[ener]/trainable``
 
             Whether the parameters in the fitting net are trainable. This option can be
@@ -365,7 +345,7 @@ model:
             The precision of the fitting net parameters, supported options are "float64", "float32", "float16".
 
         sel_type: 
-            | type: ``int`` | ``NoneType`` | ``list``, optional
+            | type: ``list`` | ``int`` | ``NoneType``, optional
             | argument path: ``model/fitting_net[dipole]/sel_type``
 
             The atom types for which the atomic dipole will be provided. If not set, all types will be selected.
@@ -407,22 +387,22 @@ model:
             | type: ``bool``, optional, default: ``True``
             | argument path: ``model/fitting_net[polar]/fit_diag``
 
-            The diagonal part of the polarizability matrix  will be shifted by `fit_diag`. The shift operation is carried out after `scale`.
+            Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to normal polarizability matrix by contracting with the rotation matrix.
 
         scale: 
-            | type: ``float`` | ``list``, optional, default: ``1.0``
+            | type: ``list`` | ``float``, optional, default: ``1.0``
             | argument path: ``model/fitting_net[polar]/scale``
 
-            The output of the fitting net (polarizability matrix) will be scaled by `scale`
+            The output of the fitting net (polarizability matrix) will be scaled by ``scale``
 
         diag_shift: 
-            | type: ``float`` | ``list``, optional, default: ``0.0``
+            | type: ``list`` | ``float``, optional, default: ``0.0``
             | argument path: ``model/fitting_net[polar]/diag_shift``
 
-            The diagonal part of the polarizability matrix  will be shifted by `fit_diag`. The shift operation is carried out after `scale`.
+            The diagonal part of the polarizability matrix  will be shifted by ``diag_shift``. The shift operation is carried out after ``scale``.
 
         sel_type: 
-            | type: ``int`` | ``NoneType`` | ``list``, optional
+            | type: ``list`` | ``int`` | ``NoneType``, optional
             | argument path: ``model/fitting_net[polar]/sel_type``
 
             The atom types for which the atomic polarizability will be provided. If not set, all types will be selected.
@@ -464,22 +444,22 @@ model:
             | type: ``bool``, optional, default: ``True``
             | argument path: ``model/fitting_net[global_polar]/fit_diag``
 
-            The diagonal part of the polarizability matrix  will be shifted by `fit_diag`. The shift operation is carried out after `scale`.
+            Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to normal polarizability matrix by contracting with the rotation matrix.
 
         scale: 
-            | type: ``float`` | ``list``, optional, default: ``1.0``
+            | type: ``list`` | ``float``, optional, default: ``1.0``
             | argument path: ``model/fitting_net[global_polar]/scale``
 
-            The output of the fitting net (polarizability matrix) will be scaled by `scale`
+            The output of the fitting net (polarizability matrix) will be scaled by ``scale``
 
         diag_shift: 
-            | type: ``float`` | ``list``, optional, default: ``0.0``
+            | type: ``list`` | ``float``, optional, default: ``0.0``
             | argument path: ``model/fitting_net[global_polar]/diag_shift``
 
-            The diagonal part of the polarizability matrix  will be shifted by `fit_diag`. The shift operation is carried out after `scale`.
+            The diagonal part of the polarizability matrix  will be shifted by ``diag_shift``. The shift operation is carried out after ``scale``.
 
         sel_type: 
-            | type: ``int`` | ``NoneType`` | ``list``, optional
+            | type: ``list`` | ``int`` | ``NoneType``, optional
             | argument path: ``model/fitting_net[global_polar]/sel_type``
 
             The atom types for which the atomic polarizability will be provided. If not set, all types will be selected.
@@ -504,56 +484,53 @@ loss:
         | type: ``str`` (flag key), default: ``ener``
         | argument path: ``loss/type`` 
 
-        The type of the loss. For fitting type `ener`, the loss type should be set to `ener` or left unset. For tensorial fitting types `dipole`, `polar` and `global_polar`, the type should be left unset.
-        \.
-
 
     When *type* is set to ``ener``: 
 
     start_pref_e: 
-        | type: ``float`` | ``int``, optional, default: ``0.02``
+        | type: ``int`` | ``float``, optional, default: ``0.02``
         | argument path: ``loss[ener]/start_pref_e``
 
         The prefactor of energy loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the energy label should be provided by file energy.npy in each data system. If both start_pref_energy and limit_pref_energy are set to 0, then the energy will be ignored.
 
     limit_pref_e: 
-        | type: ``float`` | ``int``, optional, default: ``1.0``
+        | type: ``int`` | ``float``, optional, default: ``1.0``
         | argument path: ``loss[ener]/limit_pref_e``
 
         The prefactor of energy loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity.
 
     start_pref_f: 
-        | type: ``float`` | ``int``, optional, default: ``1000``
+        | type: ``int`` | ``float``, optional, default: ``1000``
         | argument path: ``loss[ener]/start_pref_f``
 
         The prefactor of force loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the force label should be provided by file force.npy in each data system. If both start_pref_force and limit_pref_force are set to 0, then the force will be ignored.
 
     limit_pref_f: 
-        | type: ``float`` | ``int``, optional, default: ``1.0``
+        | type: ``int`` | ``float``, optional, default: ``1.0``
         | argument path: ``loss[ener]/limit_pref_f``
 
         The prefactor of force loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity.
 
     start_pref_v: 
-        | type: ``float`` | ``int``, optional, default: ``0.0``
+        | type: ``int`` | ``float``, optional, default: ``0.0``
         | argument path: ``loss[ener]/start_pref_v``
 
         The prefactor of virial loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the virial label should be provided by file virial.npy in each data system. If both start_pref_virial and limit_pref_virial are set to 0, then the virial will be ignored.
 
     limit_pref_v: 
-        | type: ``float`` | ``int``, optional, default: ``0.0``
+        | type: ``int`` | ``float``, optional, default: ``0.0``
         | argument path: ``loss[ener]/limit_pref_v``
 
         The prefactor of virial loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity.
 
     start_pref_ae: 
-        | type: ``float`` | ``int``, optional, default: ``0.0``
+        | type: ``int`` | ``float``, optional, default: ``0.0``
         | argument path: ``loss[ener]/start_pref_ae``
 
         The prefactor of virial loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the virial label should be provided by file virial.npy in each data system. If both start_pref_virial and limit_pref_virial are set to 0, then the virial will be ignored.
 
     limit_pref_ae: 
-        | type: ``float`` | ``int``, optional, default: ``0.0``
+        | type: ``int`` | ``float``, optional, default: ``0.0``
         | argument path: ``loss[ener]/limit_pref_ae``
 
         The prefactor of virial loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity.
@@ -615,7 +592,7 @@ training:
         Number of training batch. Each training uses one batch of data.
 
     batch_size: 
-        | type: ``int`` | ``list`` | ``str``, optional, default: ``auto``
+        | type: ``list`` | ``str`` | ``int``, optional, default: ``auto``
         | argument path: ``training/batch_size``
 
         This key can be 

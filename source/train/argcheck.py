@@ -16,6 +16,10 @@ def supported_precision() :
     return list_to_doc(['float64', 'float32', 'float16'])
 
 
+def make_link(content, ref_key) :
+    return f'`{content} <#{ref_key}>`__'
+
+
 def descrpt_local_frame_args ():
     doc_sel_a = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_a[i]` gives the selected number of type-i neighbors. The full relative coordinates of the neighbors are used by the descriptor.'
     doc_sel_r = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_r[i]` gives the selected number of type-i neighbors. Only relative distance of the neighbors are used by the descriptor. sel_a[i] + sel_r[i] is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.'
@@ -156,9 +160,9 @@ def fitting_polar():
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(activation_fn_dict.keys())}'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_precision = f'The precision of the fitting net parameters, supported options are {supported_precision()}'
-    doc_scale = 'The output of the fitting net (polarizability matrix) will be scaled by `scale`'
-    doc_diag_shift = 'The diagonal part of the polarizability matrix  will be shifted by `fit_diag`. The shift operation is carried out after `scale`.'
-    doc_fit_diag = 'The diagonal part of the polarizability matrix  will be shifted by `fit_diag`. The shift operation is carried out after `scale`.'
+    doc_scale = 'The output of the fitting net (polarizability matrix) will be scaled by ``scale``'
+    doc_diag_shift = 'The diagonal part of the polarizability matrix  will be shifted by ``diag_shift``. The shift operation is carried out after ``scale``.'
+    doc_fit_diag = 'Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to normal polarizability matrix by contracting with the rotation matrix.'
     doc_sel_type = 'The atom types for which the atomic polarizability will be provided. If not set, all types will be selected.'
     doc_seed = 'Random seed for parameter initialization of the fitting net'
     
@@ -328,16 +332,30 @@ def training_args():
     return Argument("training", dict, args, [], doc = doc_training)
 
 
-def gen_doc():
+def make_index(keys):
+    ret = []
+    for ii in keys:
+        ret.append(make_link(ii, ii))
+    return ', '.join(ret)
+
+
+def gen_doc(**kwargs):
     ma = model_args()
     lra = learning_rate_args()
     la = loss_args()
     ta = training_args()
     ptr = []
-    ptr.append(ma.gen_doc())
-    ptr.append(la.gen_doc())
-    ptr.append(lra.gen_doc())
-    ptr.append(ta.gen_doc())
+    ptr.append(ma.gen_doc(**kwargs))
+    ptr.append(la.gen_doc(**kwargs))
+    ptr.append(lra.gen_doc(**kwargs))
+    ptr.append(ta.gen_doc(**kwargs))
+
+    key_words = []
+    for ii in "\n\n".join(ptr).split('\n'):
+        if 'argument path' in ii:
+            key_words.append(ii.split(':')[1].replace('`','').strip())
+    #ptr.insert(0, make_index(key_words))
+
     return "\n\n".join(ptr)
 
 def normalize(data):
