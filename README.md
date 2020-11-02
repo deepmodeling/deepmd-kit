@@ -109,16 +109,16 @@ conda install deepmd-kit=*=*gpu lammps-dp=*=*gpu -c deepmodeling
 ```
 
 ### With Docker
-A docker for installing the DeePMD-kit is available [here](https://github.com/orgs/deepmodeling/packages/container/deepmd-kit).
+A docker for installing the DeePMD-kit is available [here](https://github.com/orgs/deepmodeling/packages/container/package/deepmd-kit).
 
 To pull the CPU version:
 ```bash
-docker pull ghcr.io/deepmodeling/deepmd-kit:1.2.0_cpu
+docker pull ghcr.io/deepmodeling/deepmd-kit:1.2.2_cpu
 ```
 
 To pull the GPU version:
 ```bash
-docker pull ghcr.io/deepmodeling/deepmd-kit:1.2.0_cuda10.1_gpu
+docker pull ghcr.io/deepmodeling/deepmd-kit:1.2.2_cuda10.1_gpu
 ```
 
 ## Install the python interface 
