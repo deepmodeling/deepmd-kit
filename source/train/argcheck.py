@@ -103,8 +103,10 @@ def descrpt_se_r_args():
 
 
 def descrpt_se_ar_args():
-    doc_a = 'The parameters of descriptor `se_a`'
-    doc_r = 'The parameters of descriptor `se_r`'
+    link = make_link('se_a', 'model/descriptor[se_a]')
+    doc_a = f'The parameters of descriptor {link}'
+    link = make_link('se_r', 'model/descriptor[se_r]')
+    doc_r = f'The parameters of descriptor {link}'
     
     return [
         Argument("a", dict, optional = False, doc = doc_a),
