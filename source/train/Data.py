@@ -476,7 +476,7 @@ class DataSets (object):
         # ignore energy_file
         if coeff_atom_ener == 1:
             ener = np.sum(atom_ener, axis = 1)
-            coeff_atom_ener = 1
+            coeff_ener = 0
         # load energy_file
         else:
             coeff_ener, ener = self.load_data(set_name, energy_file, [nframes], False)
