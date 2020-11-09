@@ -4,7 +4,9 @@ from skbuild.cmaker import get_cmake_version
 from setuptools_scm import get_version
 from packaging.version import LegacyVersion
 from os import path, makedirs
-import os, imp, sys, platform, sysconfig
+import os, importlib
+import pkg_resources
+from distutils.util import get_platform
 
 
 readme_file = path.join(path.dirname(path.abspath(__file__)), 'README.md')
@@ -15,19 +17,32 @@ except ImportError:
     with open(readme_file) as f:
         readme = f.read()
 
-try:
-    tf_install_dir = imp.find_module('tensorflow')[1] 
-except ImportError:
-    site_packages_path = path.join(path.dirname(path.__file__), 'site-packages')
-    tf_install_dir = imp.find_module('tensorflow', [site_packages_path])[1]
-
-
 install_requires=['numpy', 'scipy', 'pyyaml', 'dargs']
-setup_requires=['setuptools_scm', 'scikit-build', 'cmake']
+setup_requires=['setuptools_scm', 'scikit-build']
 
-# add cmake as a build requirement if cmake>3.0 is not installed
+tf_version = os.environ.get('TENSORFLOW_VERSION', '2.3')
+if LegacyVersion(tf_version) < LegacyVersion("1.15") or (LegacyVersion(tf_version) >= LegacyVersion("2.0") and LegacyVersion(tf_version) <  LegacyVersion("2.1")):
+    extras_require = {"cpu": ["tensorflow==" + tf_version], "gpu": ["tensorflow-gpu==" + tf_version]}
+else:
+    extras_require = {"cpu": ["tensorflow-cpu==" + tf_version], "gpu": ["tensorflow==" + tf_version]}
+tf_spec = importlib.util.find_spec("tensorflow")
+if tf_spec:
+    tf_install_dir = tf_spec.submodule_search_locations[0]
+else:
+    site_packages_path = path.join(path.dirname(path.__file__), 'site-packages')
+    tf_spec = importlib.machinery.FileFinder(site_packages_path).find_spec("tensorflow")
+    if tf_spec:
+        tf_install_dir = tf_spec.submodule_search_locations[0]
+    else:
+        setup_requires.append("tensorflow==" + tf_version)
+        tf_install_dir = path.join(path.dirname(path.abspath(__file__)), '.egg',
+                                   pkg_resources.Distribution(project_name="tensorflow", version=tf_version,
+                                                              platform=get_platform()).egg_name(),
+                                   'tensorflow')
+
+# add cmake as a build requirement if cmake>3.7 is not installed
 try:
-    if LegacyVersion(get_cmake_version()) < LegacyVersion("3.0"):
+    if LegacyVersion(get_cmake_version()) < LegacyVersion("3.7"):
         setup_requires.append('cmake')
 except SKBuildError:
     setup_requires.append('cmake')
@@ -65,6 +80,7 @@ setup(
     cmake_minimum_required_version='3.0',
     extras_require={
         'test': ['dpdata>=0.1.9'],
+        **extras_require,
     },
     entry_points={
           'console_scripts': ['dp = deepmd.main:main']

@@ -13,7 +13,7 @@
 
 # Download and install
 
-Please follow our [github](https://github.com/deepmodeling/deepmd-kit) webpage to see the latest released version and development version.
+Please follow our [github](https://github.com/deepmodeling/deepmd-kit) webpage to download the [latest released version](https://github.com/deepmodeling/deepmd-kit/tree/master) and [development version](https://github.com/deepmodeling/deepmd-kit/tree/devel).
 
 ## Easy installation methods
 There various easy methods to install DeePMD-kit. Choose one that you prefer. If you want to build by yourself, jump to the next two sections.
@@ -37,16 +37,16 @@ conda install deepmd-kit=*=*gpu lammps-dp=*=*gpu -c deepmodeling
 ```
 
 ### With Docker
-A docker for installing the DeePMD-kit is available [here](https://github.com/orgs/deepmodeling/packages/container/deepmd-kit).
+A docker for installing the DeePMD-kit is available [here](https://github.com/orgs/deepmodeling/packages/container/package/deepmd-kit).
 
 To pull the CPU version:
 ```bash
-docker pull ghcr.io/deepmodeling/deepmd-kit:1.2.0_cpu
+docker pull ghcr.io/deepmodeling/deepmd-kit:1.2.2_cpu
 ```
 
 To pull the GPU version:
 ```bash
-docker pull ghcr.io/deepmodeling/deepmd-kit:1.2.0_cuda10.1_gpu
+docker pull ghcr.io/deepmodeling/deepmd-kit:1.2.2_cuda10.1_gpu
 ```
 
 ## Install the python interface 
@@ -61,7 +61,7 @@ We follow the virtual environment approach to install the tensorflow's Python in
 virtualenv -p python3 $tensorflow_venv
 source $tensorflow_venv/bin/activate
 pip install --upgrade pip
-pip install --upgrade tensorflow==2.1.0
+pip install --upgrade tensorflow==2.3.0
 ```
 It is notice that everytime a new shell is started and one wants to use `DeePMD-kit`, the virtual environment should be activated by 
 ```bash
@@ -77,7 +77,7 @@ virtualenv -p python3.7 $tensorflow_venv
 ```
 If one does not need the GPU support of deepmd-kit and is concerned about package size, the CPU-only version of tensorflow should be installed by	
 ```bash	
-pip install --upgrade tensorflow-cpu==2.1.0	
+pip install --upgrade tensorflow-cpu==2.3.0	
 ```
 To verify the installation, run
 ```bash
@@ -126,7 +126,7 @@ gcc --version
 
 The C++ interface of DeePMD-kit was tested with compiler gcc >= 4.8. It is noticed that the I-Pi support is only compiled with gcc >= 4.9.
 
-First the C++ interface of Tensorflow should be installed. It is noted that the version of Tensorflow should be in consistent with the python interface. We assume that you have followed our instruction and installed tensorflow python interface 1.14.0 with, then you may follow [the instruction for CPU](install-tf.1.14.md) to install the corresponding C++ interface (CPU only). If one wants GPU supports, he/she should follow [the instruction for GPU](install-tf.1.14-gpu.md) to install the C++ interface.
+First the C++ interface of Tensorflow should be installed. It is noted that the version of Tensorflow should be in consistent with the python interface. We assume that you have followed our instruction and installed tensorflow python interface 1.14.0 with, then you may follow [the instruction for CPU](doc/install-tf.1.14.md) to install the corresponding C++ interface (CPU only). If one wants GPU supports, he/she should follow [the instruction for GPU](doc/install-tf.1.14-gpu.md) to install the C++ interface.
 
 ### Install the DeePMD-kit's C++ interface
 
