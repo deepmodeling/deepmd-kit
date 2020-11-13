@@ -17,7 +17,7 @@ except ImportError:
     with open(readme_file) as f:
         readme = f.read()
 
-install_requires=['numpy', 'scipy', 'pyyaml']
+install_requires=['numpy', 'scipy', 'pyyaml', 'dargs']
 setup_requires=['setuptools_scm', 'scikit-build']
 
 tf_version = os.environ.get('TENSORFLOW_VERSION', '2.3')
