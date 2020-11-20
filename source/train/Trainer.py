@@ -209,7 +209,10 @@ class NNPTrainer (object):
                data, 
                stop_batch = 0) :
         self.ntypes = self.model.get_ntypes()
-        assert (self.ntypes == data.get_ntypes()), "ntypes should match that found in data"
+        # Usually, the type number of the model should be equal to that of the data
+        # However, nt_model > nt_data should be allowed, since users may only want to 
+        # train using a dataset that only have some of elements 
+        assert (self.ntypes >= data.get_ntypes()), "ntypes should match that found in data"
         self.stop_batch = stop_batch
 
         self.batch_size = data.get_batch_size()
