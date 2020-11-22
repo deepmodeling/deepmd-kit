@@ -55,3 +55,4 @@ html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
 autodoc_default_flags = ['members']
 autosummary_generate = True
+master_doc = 'index'
