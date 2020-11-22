@@ -80,6 +80,7 @@ setup(
     cmake_minimum_required_version='3.0',
     extras_require={
         'test': ['dpdata>=0.1.9'],
+        'docs': ['sphinx', 'recommonmark', 'sphinx_rtd_theme'],
         **extras_require,
     },
     entry_points={
