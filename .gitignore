@@ -25,5 +25,4 @@ _version.py
 venv*
 .vscode/**
 _build
-_static
 _templates
