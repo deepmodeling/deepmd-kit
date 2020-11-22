@@ -3,13 +3,19 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to deepmd-kit's documentation!
+DeePMD-kit's documentation
 ======================================
 
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
 
+   
+   install
+   use-deepmd-kit
+   train-input
+   lammps-pair-style-deepmd
+   api
 
 
 Indices and tables
