@@ -24,3 +24,5 @@ dist
 _version.py
 venv*
 .vscode/**
+_build
+_templates
