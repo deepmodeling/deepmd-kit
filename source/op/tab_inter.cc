@@ -6,43 +6,25 @@
 using namespace tensorflow;
 using namespace std;
 
-#ifdef HIGH_PREC
-typedef double VALUETYPE;
-#else
-typedef float  VALUETYPE;
-#endif
 
-#ifdef HIGH_PREC
 REGISTER_OP("TabInter")
+.Attr("T: {float, double}")
 .Input("table_info: double")
 .Input("table_data: double")
 .Input("type: int32")
-.Input("rij: double")
+.Input("rij: T")
 .Input("nlist: int32")
 .Input("natoms: int32")
-.Input("scale: double")
+.Input("scale: T")
 .Attr("sel_a: list(int)")
 .Attr("sel_r: list(int)")
-.Output("atom_energy: double")
-.Output("force: double")
-.Output("atom_virial: double");
-#else
-REGISTER_OP("TabInter")
-.Input("table_info: double")
-.Input("table_data: double")
-.Input("type: int32")
-.Input("rij: float")
-.Input("nlist: int32")
-.Input("natoms: int32")
-.Input("scale: float")
-.Attr("sel_a: list(int)")
-.Attr("sel_r: list(int)")
-.Output("atom_energy: float")
-.Output("force: float")
-.Output("atom_virial: float");
-#endif
+.Output("atom_energy: T")
+.Output("force: T")
+.Output("atom_virial: T");
 
 using namespace tensorflow;
+
+using CPUDevice = Eigen::ThreadPoolDevice;
 
 inline 
 void tabulated_inter (double & ener, 
@@ -86,6 +68,7 @@ void tabulated_inter (double & ener,
   fscale *= -hi;
 }
 
+template<typename Device, typename FPTYPE>
 class TabInterOp : public OpKernel {
  public:
   explicit TabInterOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -156,15 +139,15 @@ class TabInterOp : public OpKernel {
     OP_REQUIRES_OK(context, context->allocate_output(tmp_idx++, virial_shape, &virial_tensor));
     
     // flat the tensors
-    auto table_info = table_info_tensor.flat<VALUETYPE>();
-    auto table_data = table_data_tensor.flat<VALUETYPE>();
+    auto table_info = table_info_tensor.flat<FPTYPE>();
+    auto table_data = table_data_tensor.flat<FPTYPE>();
     auto type	= type_tensor	.matrix<int>();
-    auto rij	= rij_tensor	.matrix<VALUETYPE>();
+    auto rij	= rij_tensor	.matrix<FPTYPE>();
     auto nlist	= nlist_tensor	.matrix<int>();
-    auto scale  = scale_tensor	.matrix<VALUETYPE>();
-    auto energy = energy_tensor	->matrix<VALUETYPE>();
-    auto force	= force_tensor	->matrix<VALUETYPE>();
-    auto virial = virial_tensor	->matrix<VALUETYPE>();
+    auto scale  = scale_tensor	.matrix<FPTYPE>();
+    auto energy = energy_tensor	->matrix<FPTYPE>();
+    auto force	= force_tensor	->matrix<FPTYPE>();
+    auto virial = virial_tensor	->matrix<FPTYPE>();
 
     OP_REQUIRES (context, (ntypes == int(table_info(3)+0.1)),	errors::InvalidArgument ("ntypes provided in table does not match deeppot"));
     int nspline = table_info(2)+0.1;
@@ -203,7 +186,7 @@ class TabInterOp : public OpKernel {
       for (int tt = 0; tt < ntypes; ++tt) {
 	for (int ii = 0; ii < natoms(2+tt); ++ii){
 	  int i_type = type(kk, i_idx);
-	  VALUETYPE i_scale = scale(kk, i_idx);
+	  FPTYPE i_scale = scale(kk, i_idx);
 	  assert(i_type == tt) ;
 	  int jiter = 0;
 	  // a neighbor
@@ -318,7 +301,13 @@ private:
   }
 };
 
-REGISTER_KERNEL_BUILDER(Name("TabInter").Device(DEVICE_CPU), TabInterOp);
+// Register the CPU kernels.
+#define REGISTER_CPU(T)                                                                   \
+REGISTER_KERNEL_BUILDER(                                                                  \
+    Name("TabInter").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
+    TabInterOp<CPUDevice, T>); 
+REGISTER_CPU(float);
+REGISTER_CPU(double);
 
 
 

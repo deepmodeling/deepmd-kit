@@ -65,6 +65,29 @@ class DeepmdDataSystem() :
             type_map_list.append(self.data_systems[ii].get_type_map())
         self.type_map = self._check_type_map_consistency(type_map_list)
 
+        # ! altered by Marián Rynik
+        # test size
+        # now test size can be set as a percentage of systems data or test size
+        # can be set for each system individualy in the same manner as batch
+        # size. This enables one to use systems with diverse number of
+        # structures and different number of atoms.
+        self.test_size = test_size
+        if isinstance(self.test_size, int):
+            self.test_size = self.test_size * np.ones(self.nsystems, dtype=int)
+        elif isinstance(self.test_size, str):
+            words = self.test_size.split('%')
+            try:
+                percent = int(words[0])
+            except ValueError:
+                raise RuntimeError('unknown test_size rule ' + words[0])
+            self.test_size = self._make_auto_ts(percent)
+        elif isinstance(self.test_size, list):
+            pass
+        else :
+            raise RuntimeError('invalid test_size')            
+        assert(isinstance(self.test_size, (list,np.ndarray)))
+        assert(len(self.test_size) == self.nsystems)
+
         # prob of batch, init pick idx
         self.prob_nbatches = [ float(i) for i in self.nbatches] / np.sum(self.nbatches)        
         self.pick_idx = 0
@@ -75,10 +98,10 @@ class DeepmdDataSystem() :
             if chk_ret is not None :
                 warnings.warn("system %s required batch size is larger than the size of the dataset %s (%d > %d)" % \
                               (self.system_dirs[ii], chk_ret[0], self.batch_size[ii], chk_ret[1]))
-            chk_ret = self.data_systems[ii].check_test_size(test_size)
+            chk_ret = self.data_systems[ii].check_test_size(self.test_size[ii])
             if chk_ret is not None :
                 warnings.warn("system %s required test size is larger than the size of the dataset %s (%d > %d)" % \
-                              (self.system_dirs[ii], chk_ret[0], test_size, chk_ret[1]))
+                              (self.system_dirs[ii], chk_ret[0], self.test_size[ii], chk_ret[1]))
 
 
     def _load_test(self, ntests = -1):
@@ -207,17 +230,20 @@ class DeepmdDataSystem() :
         b_data["default_mesh"] = self.default_mesh[self.pick_idx]
         return b_data
 
+    # ! altered by Marián Rynik
     def get_test (self, 
-                  sys_idx = None, 
-                  ntests = -1) :
+                  sys_idx = None,
+                  n_test = -1) :
+
         if not hasattr(self, 'default_mesh') :
             self._make_default_mesh()
         if not hasattr(self, 'test_data') :
-            self._load_test(ntests = ntests)
+            self._load_test(ntests = n_test)
         if sys_idx is not None :
             idx = sys_idx
         else :
             idx = self.pick_idx
+
         test_system_data = {}
         for nn in self.test_data:
             test_system_data[nn] = self.test_data[nn][idx]
@@ -225,6 +251,13 @@ class DeepmdDataSystem() :
         test_system_data["default_mesh"] = self.default_mesh[idx]
         return test_system_data
 
+    def get_sys_ntest(self, sys_idx=None):
+        """Get number of tests for the currently selected system,
+            or one defined by sys_idx."""
+        if sys_idx is not None :
+            return self.test_size[sys_idx]
+        else :
+            return self.test_size[self.pick_idx]
             
     def get_type_map(self):
         return self.type_map
@@ -261,20 +294,21 @@ class DeepmdDataSystem() :
         # width 65
         sys_width = 42
         tmp_msg += "---Summary of DataSystem------------------------------------------------\n"
-        tmp_msg += "find %d system(s):\n" % self.nsystems
+        tmp_msg += "found %d system(s):\n" % self.nsystems
         tmp_msg += "%s  " % self._format_name_length('system', sys_width)
-        tmp_msg += "%s  %s  %s  %5s\n" % ('natoms', 'bch_sz', 'n_bch', 'prob')
+        tmp_msg += "%s  %s  %s   %s  %5s\n" % ('natoms', 'bch_sz', 'n_bch', "n_test", 'prob')
         for ii in range(self.nsystems) :
-            tmp_msg += ("%s  %6d  %6d  %5d  %5.3f\n" % 
+            tmp_msg += ("%s  %6d  %6d  %6d  %6d  %5.3f\n" % 
                         (self._format_name_length(self.system_dirs[ii], sys_width),
                          self.natoms[ii], 
-                         self.batch_size[ii], 
-                         self.nbatches[ii], 
+                         # TODO batch size * nbatches = number of structures
+                         self.batch_size[ii],
+                         self.nbatches[ii],
+                         self.test_size[ii],
                          prob[ii]) )
         tmp_msg += "------------------------------------------------------------------------\n"
         run_opt.message(tmp_msg)
 
-        
     def _make_auto_bs(self, rule) :
         bs = []
         for ii in self.data_systems:
@@ -284,6 +318,16 @@ class DeepmdDataSystem() :
                 bsi += 1
             bs.append(bsi)
         return bs
+
+    # ! added by Marián Rynik
+    def _make_auto_ts(self, percent):
+        ts = []
+        for ii in range(self.nsystems):
+            ni = self.batch_size[ii] * self.nbatches[ii]
+            tsi = int(ni * percent / 100)
+            ts.append(tsi)
+
+        return ts
 
     def _check_type_map_consistency(self, type_map_list):
         ret = []

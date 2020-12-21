@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   http://lammps.sandia.gov, Sandia National Laboratories
+   https://lammps.sandia.gov/, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -38,6 +38,7 @@ enum{FORWARD_IK,FORWARD_AD,FORWARD_IK_PERATOM,FORWARD_AD_PERATOM};
 #define ONEF  1.0
 #endif
 
+
 /* ---------------------------------------------------------------------- */
 
 #ifdef OLD_LMP_PPPM
@@ -68,7 +69,6 @@ void PPPMDPLR::init()
   fill(fele.begin(), fele.end(), 0.0);
 }
 
-
 /* ----------------------------------------------------------------------
    compute the PPPM long-range force, energy, virial
 ------------------------------------------------------------------------- */
@@ -80,15 +80,9 @@ void PPPMDPLR::compute(int eflag, int vflag)
   // set energy/virial flags
   // invoke allocate_peratom() if needed for first time
 
-  if (eflag || vflag) ev_setup(eflag,vflag);
-  else evflag = evflag_atom = eflag_global = vflag_global =
-         eflag_atom = vflag_atom = 0;
+  ev_init(eflag,vflag);
 
-  if (evflag_atom && !peratom_allocate_flag) {
-    allocate_peratom();
-    cg_peratom->ghost_notify();
-    cg_peratom->setup();
-  }
+  if (evflag_atom && !peratom_allocate_flag) allocate_peratom();
 
   // if atom count has changed, update qsum and qsqsum
 
@@ -127,7 +121,8 @@ void PPPMDPLR::compute(int eflag, int vflag)
   //   to fully sum contribution in their 3d bricks
   // remap from 3d decomposition to FFT decomposition
 
-  cg->reverse_comm(this,REVERSE_RHO);
+  gc->reverse_comm_kspace(this,1,sizeof(FFT_SCALAR),REVERSE_RHO,
+                          gc_buf1,gc_buf2,MPI_FFT_SCALAR);
   brick2fft();
 
   // compute potential gradient on my FFT grid and
@@ -140,16 +135,22 @@ void PPPMDPLR::compute(int eflag, int vflag)
   // all procs communicate E-field values
   // to fill ghost cells surrounding their 3d bricks
 
-  if (differentiation_flag == 1) cg->forward_comm(this,FORWARD_AD);
-  else cg->forward_comm(this,FORWARD_IK);
+  if (differentiation_flag == 1)
+    gc->forward_comm_kspace(this,1,sizeof(FFT_SCALAR),FORWARD_AD,
+                            gc_buf1,gc_buf2,MPI_FFT_SCALAR);
+  else
+    gc->forward_comm_kspace(this,3,sizeof(FFT_SCALAR),FORWARD_IK,
+                            gc_buf1,gc_buf2,MPI_FFT_SCALAR);
 
   // extra per-atom energy/virial communication
 
   if (evflag_atom) {
     if (differentiation_flag == 1 && vflag_atom)
-      cg_peratom->forward_comm(this,FORWARD_AD_PERATOM);
+      gc->forward_comm_kspace(this,6,sizeof(FFT_SCALAR),FORWARD_AD_PERATOM,
+                              gc_buf1,gc_buf2,MPI_FFT_SCALAR);
     else if (differentiation_flag == 0)
-      cg_peratom->forward_comm(this,FORWARD_IK_PERATOM);
+      gc->forward_comm_kspace(this,7,sizeof(FFT_SCALAR),FORWARD_IK_PERATOM,
+                              gc_buf1,gc_buf2,MPI_FFT_SCALAR);
   }
 
   // calculate the force on my particles
@@ -183,14 +184,6 @@ void PPPMDPLR::compute(int eflag, int vflag)
     MPI_Allreduce(virial,virial_all,6,MPI_DOUBLE,MPI_SUM,world);
     for (i = 0; i < 6; i++) virial[i] = 0.5*qscale*volume*virial_all[i];
   }
-  // std::cout<< "energy in pppm -------------------" << std::endl;
-  // std::cout << energy << " " 
-  // 	    << std::endl;
-  // std::cout<< "virial in pppm -------------------" << std::endl;
-  // for (int ii = 0; ii < 6; ++ii){
-  //   std::cout << virial[ii] << " " ;
-  // }
-  // std::cout << std::endl;
 
   // per-atom energy/virial
   // energy includes self-energy correction
@@ -227,10 +220,10 @@ void PPPMDPLR::compute(int eflag, int vflag)
   if (triclinic) domain->lamda2x(atom->nlocal);
 }
 
-
 /* ----------------------------------------------------------------------
    interpolate from grid to get electric field & force on my particles for ik
 ------------------------------------------------------------------------- */
+
 void PPPMDPLR::fieldforce_ik()
 {
   int i,l,m,n,nx,ny,nz,mx,my,mz;
@@ -288,21 +281,6 @@ void PPPMDPLR::fieldforce_ik()
     fele[i*3+1] += qfactor*eky;
     if (slabflag != 2) fele[i*3+2] += qfactor*ekz;
   }
-
-  // vector<FLOAT_PREC> dcoord(nall*3), dbox(9);
-  // vector<int> dtype(nall);
-  // {
-  //   double ** xx = atom->x;
-  //   for(int ii = 0; ii < nall; ++ii){
-  //     for (int dd = 0; dd < 3; +=dd){
-  // 	dcoord[ii*3+dd] = xx[ii][dd];
-  //     }
-  //   }
-  //   int *type = atom->type;
-  //   for (int ii = 0; ii < nall; ++ii){
-  //     dtype[ii] = type[ii] - 1;
-  //   }
-  // }
 }
 
 /* ----------------------------------------------------------------------
@@ -335,11 +313,14 @@ void PPPMDPLR::fieldforce_ad()
 
   double *q = atom->q;
   double **x = atom->x;
-  double **f = atom->f;
+  // double **f = atom->f;
 
   int nlocal = atom->nlocal;
+  int nghost = atom->nghost;
+  int nall = nlocal + nghost;
 
-  vector<double > fele(nlocal, 0.0);
+  fele.resize(nlocal*3);
+  fill(fele.begin(), fele.end(), 0.0);
 
   for (i = 0; i < nlocal; i++) {
     nx = part2grid[i][0];
@@ -369,7 +350,7 @@ void PPPMDPLR::fieldforce_ad()
     eky *= hy_inv;
     ekz *= hz_inv;
 
-    // convert E-field to force and substract self forces
+    // convert E-field to force and subtract self forces
 
     const double qfactor = qqrd2e * scale;
 
@@ -392,15 +373,5 @@ void PPPMDPLR::fieldforce_ad()
     sf *= 2*q[i]*q[i];
     if (slabflag != 2) fele[i*3+2] += qfactor*(ekz*q[i] - sf);
   }
-
-  // for (int ii = 0; ii < nlocal; ++ii){
-  //   cout << ii << "\t ";
-  //   for (int dd = 0; dd < 3; ++dd){
-  //     cout << fele[ii*3+dd] << " " ;
-  //   }
-  //   cout << endl;
-  // }
 }
-
-
 

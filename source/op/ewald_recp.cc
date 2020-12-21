@@ -10,36 +10,21 @@ typedef double boxtensor_t ;
 using namespace tensorflow;
 using namespace std;
 
-#ifdef HIGH_PREC
-typedef double VALUETYPE ;
-#else 
-typedef float  VALUETYPE ;
-#endif
+using CPUDevice = Eigen::ThreadPoolDevice;
 
-#ifdef HIGH_PREC
 REGISTER_OP("EwaldRecp")
-.Input("coord: double")
-.Input("charge: double")
+.Attr("T: {float, double}")
+.Input("coord: T")
+.Input("charge: T")
 .Input("natoms: int32")
-.Input("box: double")
+.Input("box: T")
 .Attr("ewald_beta: float")
 .Attr("ewald_h: float")
-.Output("energy: double")
-.Output("force: double")
-.Output("virial: double");
-#else
-REGISTER_OP("EwaldRecp")
-.Input("coord: float")
-.Input("charge: float")
-.Input("natoms: int32")
-.Input("box: float")
-.Attr("ewald_beta: float")
-.Attr("ewald_h: float")
-.Output("energy: float")
-.Output("force: float")
-.Output("virial: float");
-#endif
+.Output("energy: T")
+.Output("force: T")
+.Output("virial: T");
 
+template<typename Device, typename FPTYPE>
 class EwaldRecpOp : public OpKernel {
 public:
   explicit EwaldRecpOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -90,12 +75,12 @@ public:
     Tensor* virial_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(cc++, virial_shape, &virial_tensor));
     
-    auto coord	= coord_tensor	.flat<VALUETYPE>();
-    auto charge	= charge_tensor	.flat<VALUETYPE>();
-    auto box	= box_tensor	.flat<VALUETYPE>();
-    auto energy	= energy_tensor	->flat<VALUETYPE>();
-    auto force	= force_tensor	->matrix<VALUETYPE>();
-    auto virial	= virial_tensor	->matrix<VALUETYPE>();
+    auto coord	= coord_tensor	.flat<FPTYPE>();
+    auto charge	= charge_tensor	.flat<FPTYPE>();
+    auto box	= box_tensor	.flat<FPTYPE>();
+    auto energy	= energy_tensor	->flat<FPTYPE>();
+    auto force	= force_tensor	->matrix<FPTYPE>();
+    auto virial	= virial_tensor	->matrix<FPTYPE>();
 
     for (int kk = 0; kk < nsamples; ++kk){
       int box_iter = kk * 9;
@@ -122,19 +107,19 @@ public:
 	  else if (inter[dd] >= 1) inter[dd] -= 1.;
 	}
       }
-      vector<VALUETYPE > d_coord3 (nloc*3);
+      vector<FPTYPE > d_coord3 (nloc*3);
       for (int ii = 0; ii < nloc * 3; ++ii) {
 	d_coord3[ii] = d_coord3_[ii];
       }
 
       // set charge
-      vector<VALUETYPE > d_charge (nloc);
+      vector<FPTYPE > d_charge (nloc);
       for (int ii = 0; ii < nloc; ++ii) d_charge[ii] = charge(charge_iter + ii);
 
       // prepare outputs vectors
-      VALUETYPE d_ener;
-      vector<VALUETYPE> d_force(nloc*3);
-      vector<VALUETYPE> d_virial(9);
+      FPTYPE d_ener;
+      vector<FPTYPE> d_force(nloc*3);
+      vector<FPTYPE> d_virial(9);
 
       // compute
       EwaldReciprocal(d_ener, d_force, d_virial, d_coord3, d_charge, region, ep);
@@ -150,8 +135,12 @@ public:
     }
   }
 private:
-  EwaldParameters<VALUETYPE> ep;
+  EwaldParameters<FPTYPE> ep;
 };
 
-REGISTER_KERNEL_BUILDER(Name("EwaldRecp").Device(DEVICE_CPU), EwaldRecpOp);
-
+#define REGISTER_CPU(T)                                                                 \
+REGISTER_KERNEL_BUILDER(                                                                \
+    Name("EwaldRecp").Device(DEVICE_CPU).TypeConstraint<T>("T"),                       \
+    EwaldRecpOp<CPUDevice, T>); 
+REGISTER_CPU(float);
+REGISTER_CPU(double);

@@ -1,0 +1,68 @@
+# model parameters
+model:
+  type_map:
+  - O
+  - H
+  descriptor:
+    type: se_a
+    sel:
+    - 46
+    - 92
+    rcut_smth: 5.8
+    rcut: 6.0
+    neuron:
+    - 25
+    - 50
+    - 100
+    resnet_dt: false
+    axis_neuron: 16
+    seed: 1
+    # that's all for descriptor
+  fitting_net:
+    neuron:
+    - 240
+    - 240
+    - 240
+    resnet_dt: true
+    seed: 1
+    # that's all for fitting net
+  # that's all for model
+
+learning_rate:
+  type: exp
+  decay_steps: 5000
+  start_lr: 0.001
+  stop_lr: 3.51e-08
+  # that's all for learnnig rate
+
+loss:
+  start_pref_e: 0.02
+  limit_pref_e: 1
+  start_pref_f: 1000
+  limit_pref_f: 1
+  start_pref_v: 0
+  limit_pref_v: 0
+  # that's all for loss
+
+# training contols
+training:
+  systems:
+  - ../data/
+  set_prefix: set
+  stop_batch: 1000000
+  batch_size: 1
+  seed: 1
+  # display and restart
+  # frequencies counted in batch
+  disp_file: lcurve.out
+  disp_freq: 100
+  numb_test: 10
+  save_freq: 1000
+  save_ckpt: model.ckpt
+  load_ckpt: model.ckpt
+  disp_training: true
+  time_training: true
+  profiling: false
+  profiling_file: timeline.json
+  # that's all for training
+# that's all

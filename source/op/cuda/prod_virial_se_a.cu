@@ -1,21 +1,4 @@
-#include <stdio.h>
-#include <cuda_runtime.h>
-
-#define MUL 512
-
-#ifdef HIGH_PREC
-    typedef double VALUETYPE;
-#else
-    typedef float  VALUETYPE;
-#endif
-
-#define cudaErrcheck(res) { cudaAssert((res), __FILE__, __LINE__); }
-inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort=true) {
-    if (code != cudaSuccess) {
-        fprintf(stderr,"cuda assert: %s %s %d\n", cudaGetErrorString(code), file, line);
-        if (abort) exit(code);
-    }
-}
+#include "DeviceFunctor.h"
 
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 600
 static __inline__ __device__ double atomicAdd(double* address, double val) {
@@ -31,11 +14,12 @@ static __inline__ __device__ double atomicAdd(double* address, double val) {
 }
 #endif
 
-__global__ void deriv_wrt_neighbors_se_a(VALUETYPE * virial, 
-                        VALUETYPE * atom_virial,
-                        const VALUETYPE * net_deriv,
-                        const VALUETYPE * in_deriv,
-                        const VALUETYPE * rij,
+template<typename FPTYPE>
+__global__ void deriv_wrt_neighbors_se_a(FPTYPE * virial, 
+                        FPTYPE * atom_virial,
+                        const FPTYPE * net_deriv,
+                        const FPTYPE * in_deriv,
+                        const FPTYPE * rij,
                         const int * nlist,
                         const int nloc,
                         const int nnei,
@@ -64,21 +48,22 @@ __global__ void deriv_wrt_neighbors_se_a(VALUETYPE * virial,
     atomicAdd(atom_virial + j_idx * 9 + idz, net_deriv[idx * ndescrpt + idy * 4 + idw] * rij[idx * nnei * 3 + idy * 3 + idz % 3] * in_deriv[idx * ndescrpt * 3 + (idy * 4 + idw) * 3 + idz / 3]);
 }
 
-void ProdVirialSeALauncher(VALUETYPE * virial, 
-                        VALUETYPE * atom_virial,
-                        const VALUETYPE * net_deriv,
-                        const VALUETYPE * in_deriv,
-                        const VALUETYPE * rij,
+template <typename FPTYPE>
+void ProdVirialSeAGPUExecuteFunctor<FPTYPE>::operator()(FPTYPE * virial, 
+                        FPTYPE * atom_virial,
+                        const FPTYPE * net_deriv,
+                        const FPTYPE * in_deriv,
+                        const FPTYPE * rij,
                         const int * nlist,
                         const int nloc,
                         const int nall,
                         const int nnei,
                         const int ndescrpt,
                         const int n_a_sel,
-                        const int n_a_shift) 
+                        const int n_a_shift)
 {
-    cudaErrcheck(cudaMemset(virial, 0.0, sizeof(VALUETYPE) * 9));
-    cudaErrcheck(cudaMemset(atom_virial, 0.0, sizeof(VALUETYPE) * 9 * nall));
+    cudaErrcheck(cudaMemset(virial, 0.0, sizeof(FPTYPE) * 9));
+    cudaErrcheck(cudaMemset(atom_virial, 0.0, sizeof(FPTYPE) * 9 * nall));
 
     const int LEN = 16;
     int nblock = (nloc + LEN -1) / LEN;
@@ -99,3 +84,6 @@ void ProdVirialSeALauncher(VALUETYPE * virial,
                         n_a_shift
     );
 }
+
+template struct ProdVirialSeAGPUExecuteFunctor<float>;
+template struct ProdVirialSeAGPUExecuteFunctor<double>;

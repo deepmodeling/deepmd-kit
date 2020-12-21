@@ -11,7 +11,7 @@ class DescrptSeA ():
         args = ClassArg()\
                .add('sel',      list,   must = True) \
                .add('rcut',     float,  default = 6.0) \
-               .add('rcut_smth',float,  default = 5.5) \
+               .add('rcut_smth',float,  default = 0.5) \
                .add('neuron',   list,   default = [10, 20, 40]) \
                .add('axis_neuron', int, default = 4, alias = 'n_axis_neuron') \
                .add('resnet_dt',bool,   default = False) \
@@ -391,14 +391,18 @@ class DescrptSeA ():
               xyz_scatter = tf.matmul(xyz_scatter, w)
             # natom x nei_type_i x out_size
             xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1]//4, outputs_size[-1]))
-            xyz_scatter_total.append(xyz_scatter)
 
+            # xyz_scatter_total.append(xyz_scatter)
+            if type_i == 0 :
+                xyz_scatter_1 = tf.matmul(tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), xyz_scatter, transpose_a = True)
+            else :
+                xyz_scatter_1 += tf.matmul(tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), xyz_scatter, transpose_a = True)
           # natom x nei x outputs_size
-          xyz_scatter = tf.concat(xyz_scatter_total, axis=1)
+          # xyz_scatter = tf.concat(xyz_scatter_total, axis=1)
           # natom x nei x 4
-          inputs_reshape = tf.reshape(inputs, [-1, shape[1]//4, 4])
+          # inputs_reshape = tf.reshape(inputs, [-1, shape[1]//4, 4])
           # natom x 4 x outputs_size
-          xyz_scatter_1 = tf.matmul(inputs_reshape, xyz_scatter, transpose_a = True)
+          # xyz_scatter_1 = tf.matmul(inputs_reshape, xyz_scatter, transpose_a = True)
           xyz_scatter_1 = xyz_scatter_1 * (4.0 / shape[1])
           # natom x 4 x outputs_size_2
           xyz_scatter_2 = tf.slice(xyz_scatter_1, [0,0,0],[-1,-1,outputs_size_2])

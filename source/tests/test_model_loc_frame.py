@@ -1,4 +1,4 @@
-import dpdata,os,sys,json,unittest
+import dpdata,os,sys,unittest
 import numpy as np
 from deepmd.env import tf
 from common import Data,gen_data
@@ -8,7 +8,7 @@ from deepmd.DataSystem import DataSystem
 from deepmd.DescrptLocFrame import DescrptLocFrame
 from deepmd.Fitting import EnerFitting
 from deepmd.Model import Model
-from deepmd.common import j_must_have, j_must_have_d, j_have
+from deepmd.common import j_must_have, j_must_have_d, j_have, j_loader
 
 global_ener_float_precision = tf.float64
 global_tf_float_precision = tf.float64
@@ -21,8 +21,7 @@ class TestModel(unittest.TestCase):
 
     def test_model(self):
         jfile = 'water.json'
-        with open(jfile) as fp:
-            jdata = json.load (fp)
+        jdata = j_loader(jfile)
         run_opt = RunOptions(None) 
         systems = j_must_have(jdata, 'systems')
         set_pfx = j_must_have(jdata, 'set_prefix')

@@ -126,13 +126,13 @@ class NNPTrainer (object):
         # infer loss type by fitting_type
         try :
             loss_param = jdata['loss']
-            loss_type = loss_param.get('type', 'std')
+            loss_type = loss_param.get('type', 'ener')
         except:
             loss_param = None
-            loss_type = 'std'
+            loss_type = 'ener'
 
         if fitting_type == 'ener':
-            if loss_type == 'std':
+            if loss_type == 'ener':
                 self.loss = EnerStdLoss(loss_param, starter_learning_rate = self.lr.start_lr())
             elif loss_type == 'ener_dipole':
                 self.loss = EnerDipoleLoss(loss_param, starter_learning_rate = self.lr.start_lr())
@@ -169,8 +169,9 @@ class NNPTrainer (object):
         # training
         training_param = j_must_have(jdata, 'training')
 
+        # ! first .add() altered by Marián Rynik
         tr_args = ClassArg()\
-                  .add('numb_test',     int,    default = 1)\
+                  .add('numb_test',     [int, list, str],    default = 1)\
                   .add('disp_file',     str,    default = 'lcurve.out')\
                   .add('disp_freq',     int,    default = 100)\
                   .add('save_freq',     int,    default = 1000)\
@@ -182,7 +183,8 @@ class NNPTrainer (object):
                   .add('sys_probs',   list    )\
                   .add('auto_prob_style', str, default = "prob_sys_size")
         tr_data = tr_args.parse(training_param)
-        self.numb_test = tr_data['numb_test']
+        # not needed
+        # self.numb_test = tr_data['numb_test']
         self.disp_file = tr_data['disp_file']
         self.disp_freq = tr_data['disp_freq']
         self.save_freq = tr_data['save_freq']
@@ -207,7 +209,10 @@ class NNPTrainer (object):
                data, 
                stop_batch = 0) :
         self.ntypes = self.model.get_ntypes()
-        assert (self.ntypes == data.get_ntypes()), "ntypes should match that found in data"
+        # Usually, the type number of the model should be equal to that of the data
+        # However, nt_model > nt_data should be allowed, since users may only want to 
+        # train using a dataset that only have some of elements 
+        assert (self.ntypes >= data.get_ntypes()), "ntypes should match that found in data"
         self.stop_batch = stop_batch
 
         self.batch_size = data.get_batch_size()
@@ -458,7 +463,10 @@ class NNPTrainer (object):
                          fp,
                          data,
                          feed_dict_batch) :
-        test_data = data.get_test(ntests = self.numb_test)
+        # ! altered by Marián Rynik
+        # Do not need to pass numb_test here as data object already knows it.
+        # Both DeepmdDataSystem and ClassArg parse the same json file
+        test_data = data.get_test(n_test=data.get_sys_ntest())
         feed_dict_test = {}
         for kk in test_data.keys():
             if kk == 'find_type' or kk == 'type' :
@@ -466,9 +474,13 @@ class NNPTrainer (object):
             if 'find_' in kk:
                 feed_dict_test[self.place_holders[kk]] = test_data[kk]
             else:
-                feed_dict_test[self.place_holders[kk]] = np.reshape(test_data[kk][:self.numb_test], [-1])
+                # ! altered by Marián Rynik
+                # again the data object knows appropriate test data shape,
+                # there is no need to slice again!
+                # feed_dict_test[self.place_holders[kk]] = np.reshape(test_data[kk][:self.numb_test[data.pick_idx]], [-1])
+                feed_dict_test[self.place_holders[kk]] = np.reshape(test_data[kk], [-1])
         for ii in ['type'] :
-            feed_dict_test[self.place_holders[ii]] = np.reshape(test_data[ii][:self.numb_test], [-1])            
+            feed_dict_test[self.place_holders[ii]] = np.reshape(test_data[ii], [-1])            
         for ii in ['natoms_vec', 'default_mesh'] :
             feed_dict_test[self.place_holders[ii]] = test_data[ii]
         feed_dict_test[self.place_holders['is_training']] = False
@@ -484,5 +496,3 @@ class NNPTrainer (object):
             print_str += "   %8.1e\n" % current_lr
             fp.write(print_str)
             fp.flush ()
-
-

@@ -1,58 +1,29 @@
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include <cuda_runtime.h>
-#include <iostream>
+#include "common.h"
+#include "CustomeOperation.h"
 
-using namespace tensorflow;
+REGISTER_OP("ProdForceSeA")
+    .Attr("T: {float, double}")
+    .Input("net_deriv: T")
+    .Input("in_deriv: T")
+    .Input("nlist: int32")
+    .Input("natoms: int32")
+    .Attr("n_a_sel: int")
+    .Attr("n_r_sel: int")
+    .Output("force: T");
 
-#define cudaErrcheck(res) { cudaAssert((res), __FILE__, __LINE__); }
-inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort=true)
-{
-    if (code != cudaSuccess) 
-    {
-        fprintf(stderr,"cuda assert: %s %s %d\n", cudaGetErrorString(code), file, line);
-        if (abort) exit(code);
+template <typename FPTYPE>
+struct ProdForceSeAFunctor {
+    void operator()(const CPUDevice& d, FPTYPE * force, const FPTYPE * net_deriv, const FPTYPE * in_deriv, const int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const int n_a_sel, const int n_a_shift) {
+        ProdForceSeACPULauncher(force, net_deriv, in_deriv, nlist, nloc, nall, nnei, ndescrpt, n_a_sel, n_a_shift);
     }
-}
+    #if GOOGLE_CUDA
+    void operator()(const GPUDevice& d, FPTYPE * force, const FPTYPE * net_deriv, const FPTYPE * in_deriv, const int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const int n_a_sel, const int n_a_shift) {
+        ProdForceSeAGPULauncher(force, net_deriv, in_deriv, nlist, nloc, nall, nnei, ndescrpt, n_a_sel, n_a_shift);
+    }
+    #endif // GOOGLE_CUDA
+};
 
-#ifdef HIGH_PREC
-typedef double VALUETYPE;
-#else
-typedef float  VALUETYPE;
-#endif
-
-#ifdef HIGH_PREC
-REGISTER_OP("ProdForceSeA")
-    .Input("net_deriv: double")
-    .Input("in_deriv: double")
-    .Input("nlist: int32")
-    .Input("natoms: int32")
-    .Attr("n_a_sel: int")
-    .Attr("n_r_sel: int")
-    .Output("force: double");
-#else
-REGISTER_OP("ProdForceSeA")
-    .Input("net_deriv: float")
-    .Input("in_deriv: float")
-    .Input("nlist: int32")
-    .Input("natoms: int32")
-    .Attr("n_a_sel: int")
-    .Attr("n_r_sel: int")
-    .Output("force: float");
-#endif
-
-void ProdForceSeALauncher(VALUETYPE * force, 
-                        const VALUETYPE * net_deriv,
-                        const VALUETYPE * in_deriv,
-                        const int * nlist,
-                        const int nloc,
-                        const int nall,
-                        const int ndescrpt,
-                        const int nnei,
-                        const int n_a_sel,
-                        const int n_a_shift);
-
+template<typename Device, typename FPTYPE>
 class ProdForceSeAOp : public OpKernel {
 public:
     explicit ProdForceSeAOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -76,8 +47,7 @@ public:
         OP_REQUIRES (context, (natoms_tensor.shape().dims() == 1),		errors::InvalidArgument ("Dim of natoms should be 1"));
 
         OP_REQUIRES (context, (natoms_tensor.shape().dim_size(0) >= 3),	errors::InvalidArgument ("number of atoms should be larger than (or equal to) 3"));
-        int * natoms = new int[natoms_tensor.shape().dim_size(0)];
-        cudaErrcheck(cudaMemcpy(natoms, natoms_tensor.flat<int>().data(), sizeof(int) * natoms_tensor.shape().dim_size(0), cudaMemcpyDeviceToHost));
+        const int * natoms = natoms_tensor.flat<int>().data();
         int nloc = natoms[0];
         int nall = natoms[1];
         int nframes = net_deriv_tensor.shape().dim_size(0);
@@ -102,10 +72,10 @@ public:
 	    					     force_shape, &force_tensor));
 
         // flat the tensors
-        auto net_deriv = net_deriv_tensor.flat<VALUETYPE>();
-        auto in_deriv = in_deriv_tensor.flat<VALUETYPE>();
+        auto net_deriv = net_deriv_tensor.flat<FPTYPE>();
+        auto in_deriv = in_deriv_tensor.flat<FPTYPE>();
         auto nlist = nlist_tensor.flat<int>();
-        auto force = force_tensor->flat<VALUETYPE>();
+        auto force = force_tensor->flat<FPTYPE>();
 
         assert (nframes == force_shape.dim_size(0));
         assert (nframes == net_deriv_tensor.shape().dim_size(0));
@@ -117,23 +87,37 @@ public:
         assert (nloc * nnei == nlist_tensor.shape().dim_size(1));
         assert (nnei * 4 == ndescrpt);	    
 
-        for (int II = 0; II < nframes; II++) {
-            ProdForceSeALauncher(force_tensor->flat<VALUETYPE>().data() + II * (nall * 3),
-                                net_deriv_tensor.flat<VALUETYPE>().data() + II * (nloc * ndescrpt),
-                                in_deriv_tensor.flat<VALUETYPE>().data() + II * (nloc * ndescrpt * 3),
-                                nlist_tensor.flat<int>().data() + II * (nloc * nnei),
-                                nloc,
-                                nall, 
-                                ndescrpt,
-                                nnei,
-                                n_a_sel,
-                                n_a_shift
-            );
-        }
-        delete[] natoms;
+        ProdForceSeAFunctor<FPTYPE>()(
+            context->eigen_device<Device>(),
+            force_tensor->flat<FPTYPE>().data(),
+            net_deriv_tensor.flat<FPTYPE>().data(),
+            in_deriv_tensor.flat<FPTYPE>().data(),
+            nlist_tensor.flat<int>().data(),
+            nloc,
+            nall, 
+            nnei,
+            ndescrpt,
+            n_a_sel,
+            n_a_shift
+        );
     }
 private:
     int n_r_sel, n_a_sel, n_a_shift;
 };
 
-REGISTER_KERNEL_BUILDER(Name("ProdForceSeA").Device(DEVICE_GPU), ProdForceSeAOp);
+// Register the CPU kernels.
+#define REGISTER_CPU(T)                                                                  \
+REGISTER_KERNEL_BUILDER(                                                                 \
+    Name("ProdForceSeA").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
+    ProdForceSeAOp<CPUDevice, T>); 
+REGISTER_CPU(float);
+REGISTER_CPU(double);
+// Register the GPU kernels.
+#if GOOGLE_CUDA
+#define REGISTER_GPU(T)                                                                  \
+REGISTER_KERNEL_BUILDER(                                                                 \
+    Name("ProdForceSeA").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms"), \
+    ProdForceSeAOp<GPUDevice, T>);
+REGISTER_GPU(float);
+REGISTER_GPU(double);
+#endif  // GOOGLE_CUDA
