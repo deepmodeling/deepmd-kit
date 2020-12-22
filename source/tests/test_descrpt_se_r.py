@@ -55,6 +55,7 @@ class Inter():
         self.box        = tf.placeholder(global_tf_float_precision, [None, 9], name='t_box')
         self.type       = tf.placeholder(tf.int32,   [None, self.natoms[0]], name = "t_type")
         self.tnatoms    = tf.placeholder(tf.int32,   [None], name = "t_natoms")
+        self.efield     = tf.placeholder(global_tf_float_precision, [None, self.natoms[0] * 3], name='t_efield')
         
     def _net (self,
              inputs, 

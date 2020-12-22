@@ -60,6 +60,8 @@ def main () :
                             help="Shuffle test data")
     parser_tst.add_argument("-d", "--detail-file", type=str, 
                             help="The file containing details of energy force and virial accuracy")
+    parser_tst.add_argument("-a", "--atomic-energy", action = 'store_true', 
+                            help="Test the accuracy of atomic energy")
 
     parser_train = subparsers.add_parser('doc-train-input', 
                                          help='print the documentation (in rst format) of input training parameters.')
