@@ -72,6 +72,18 @@ def descrpt_se_a_args():
     ]
 
 
+def descrpt_se_a_ebd_args():
+    doc_type_nchanl = 'number of channels for type embedding'
+    doc_type_nlayer = 'number of hidden layers of type embedding net'
+    doc_numb_aparam = 'dimension of atomic parameter. if set to a value > 0, the atomic parameters are embedded.'
+
+    return descrpt_se_a_args() + [        
+        Argument("type_nchanl", int, optional = True, default = 4, doc = doc_type_nchanl),
+        Argument("type_nlayer", int, optional = True, default = 2, doc = doc_type_nlayer),
+        Argument("numb_aparam", int, optional = True, default = 0, doc = doc_numb_aparam)
+    ]
+
+
 def descrpt_se_r_args():
     doc_sel = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.'
     doc_rcut = 'The cut-off radius.'
@@ -124,6 +136,7 @@ def descrpt_variant_type_args():
     return Variant("type", [
         Argument("loc_frame", dict, descrpt_local_frame_args()),
         Argument("se_a", dict, descrpt_se_a_args()),
+        Argument("se_a_ebd", dict, descrpt_se_a_ebd_args()),
         Argument("se_r", dict, descrpt_se_r_args()),
         Argument("se_ar", dict, descrpt_se_ar_args())
     ], doc = doc_descrpt_type)

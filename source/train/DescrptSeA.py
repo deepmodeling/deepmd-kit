@@ -103,11 +103,12 @@ class DescrptSeA ():
         return self.nlist, self.rij, self.sel_a, self.sel_r
 
     def compute_input_stats (self,
-                        data_coord, 
-                        data_box, 
-                        data_atype, 
-                        natoms_vec,
-                        mesh) :
+                             data_coord, 
+                             data_box, 
+                             data_atype, 
+                             natoms_vec,
+                             mesh, 
+                             input_dict) :
         all_davg = []
         all_dstd = []
         if True:
@@ -152,6 +153,7 @@ class DescrptSeA ():
                natoms,
                box_, 
                mesh,
+               input_dict,
                suffix = '', 
                reuse = None):
         davg = self.davg
@@ -208,7 +210,13 @@ class DescrptSeA ():
         self.rij = tf.identity(self.rij, name = 'o_rij')
         self.nlist = tf.identity(self.nlist, name = 'o_nlist')
 
-        self.dout, self.qmat = self._pass_filter(self.descrpt_reshape, natoms, suffix = suffix, reuse = reuse, trainable = self.trainable)
+        self.dout, self.qmat = self._pass_filter(self.descrpt_reshape, 
+                                                 atype,
+                                                 natoms, 
+                                                 input_dict,
+                                                 suffix = suffix, 
+                                                 reuse = reuse, 
+                                                 trainable = self.trainable)
 
         return self.dout
 
@@ -240,7 +248,9 @@ class DescrptSeA ():
 
     def _pass_filter(self, 
                      inputs,
+                     atype,
                      natoms,
+                     input_dict,
                      reuse = None,
                      suffix = '', 
                      trainable = True) :
@@ -410,7 +420,7 @@ class DescrptSeA ():
           # qmat = tf.slice(xyz_scatter_2, [0,1,0], [-1, 3, -1])
           # natom x 3 x outputs_size_1
           qmat = tf.slice(xyz_scatter_1, [0,1,0], [-1, 3, -1])
-          # natom x outputs_size_2 x 3
+          # natom x outputs_size_1 x 3
           qmat = tf.transpose(qmat, perm = [0, 2, 1])
           # natom x outputs_size x outputs_size_2
           result = tf.matmul(xyz_scatter_1, xyz_scatter_2, transpose_a = True)
