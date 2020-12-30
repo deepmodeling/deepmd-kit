@@ -136,6 +136,7 @@ def descrpt_variant_type_args():
     return Variant("type", [
         Argument("loc_frame", dict, descrpt_local_frame_args()),
         Argument("se_a", dict, descrpt_se_a_args()),
+        Argument("se_at", dict, descrpt_se_a_args()),
         Argument("se_a_ebd", dict, descrpt_se_a_ebd_args()),
         Argument("se_r", dict, descrpt_se_r_args()),
         Argument("se_ar", dict, descrpt_se_ar_args())

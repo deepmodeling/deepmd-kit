@@ -10,6 +10,7 @@ from deepmd.RunOptions import global_ener_float_precision
 from deepmd.Fitting import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
 from deepmd.DescrptLocFrame import DescrptLocFrame
 from deepmd.DescrptSeA import DescrptSeA
+from deepmd.DescrptSeAT import DescrptSeAT
 from deepmd.DescrptSeAEbd import DescrptSeAEbd
 from deepmd.DescrptSeAEf import DescrptSeAEf
 from deepmd.DescrptSeR import DescrptSeR
@@ -62,6 +63,8 @@ class NNPTrainer (object):
             self.descrpt = DescrptLocFrame(descrpt_param)
         elif descrpt_type == 'se_a' :
             self.descrpt = DescrptSeA(descrpt_param)
+        elif descrpt_type == 'se_at' :
+            self.descrpt = DescrptSeAT(descrpt_param)
         elif descrpt_type == 'se_a_ebd' :
             self.descrpt = DescrptSeAEbd(descrpt_param)
         elif descrpt_type == 'se_a_ef' :
