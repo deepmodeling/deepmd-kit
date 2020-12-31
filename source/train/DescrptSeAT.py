@@ -347,8 +347,10 @@ class DescrptSeAT ():
                 assert(shape_i[1] == nei_type_i * 4)
                 # with natom x nei_type_i x 4
                 env_i = tf.reshape(inputs_i, [-1, nei_type_i, 4])
+                # with natom x nei_type_i x 3
+                env_i = tf.slice(env_i, [0, 0, 1], [-1, -1, -1])
                 start_index_j = 0
-                for type_j in range(self.ntypes):
+                for type_j in range(type_i, self.ntypes):
                     # with natom x (nei_type_j x 4)  
                     inputs_j = tf.slice (inputs,
                                          [ 0, start_index_j      *4],
@@ -359,8 +361,10 @@ class DescrptSeAT ():
                     assert(shape_j[1] == nei_type_j * 4)
                     # with natom x nei_type_j x 4
                     env_j = tf.reshape(inputs_j, [-1, nei_type_j, 4])
+                    # with natom x nei_type_i x 3
+                    env_j = tf.slice(env_j, [0, 0, 1], [-1, -1, -1])
                     # with natom x nei_type_i x nei_type_j
-                    env_ij = tf.einsum('ijm,ikm->ijk', env_i, env_j) / 4.0
+                    env_ij = tf.einsum('ijm,ikm->ijk', env_i, env_j)
                     # with (natom x nei_type_i x nei_type_j)
                     ebd_env_ij = tf.reshape(env_ij, [-1, 1])
                     # with (natom x nei_type_i x nei_type_j) x out_size
@@ -376,6 +380,7 @@ class DescrptSeAT ():
                                                trainable = trainable)
                     # with natom x nei_type_i x nei_type_j x out_size
                     ebd_env_ij = tf.reshape(ebd_env_ij, [-1, nei_type_i, nei_type_j, outputs_size[-1]])
+                    # with natom x out_size
                     res_ij = tf.einsum('ijk,ijkm->im', env_ij, ebd_env_ij)
                     res_ij = res_ij * (1.0 / float(nei_type_i) / float(nei_type_j))
                     if result is None:
