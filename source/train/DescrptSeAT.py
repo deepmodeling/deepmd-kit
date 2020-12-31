@@ -340,55 +340,54 @@ class DescrptSeAT ():
         outputs_size = [1] + self.filter_neuron
         outputs_size_2 = self.n_axis_neuron
         with tf.variable_scope(name, reuse=reuse):
-          start_index_i = 0
-          result = None
-          for type_i in range(self.ntypes):
-            # cut-out inputs
-            # with natom x (nei_type_i x 4)  
-            inputs_i = tf.slice (inputs,
-                                 [ 0, start_index_i      *4],
-                                 [-1, self.sel_a[type_i] *4] )
-            start_index_i += self.sel_a[type_i]
-            nei_type_i = self.sel_a[type_i]
-            shape_i = inputs_i.get_shape().as_list()
-            assert(shape_i[1] == nei_type_i * 4)
-            # with natom x nei_type_i x 4
-            env_i = tf.reshape(inputs_i, [-1, nei_type_i, 4])
-            start_index_j = 0
-            for type_j in range(self.ntypes):
-                # with natom x (nei_type_j x 4)  
-                inputs_j = tf.slice (inputs,
-                                     [ 0, start_index_j      *4],
-                                     [-1, self.sel_a[type_j] *4] )
-                start_index_j += self.sel_a[type_j]
-                nei_type_j = self.sel_a[type_j]
-                shape_j = inputs_j.get_shape().as_list()
-                assert(shape_j[1] == nei_type_j * 4)
-                # with natom x nei_type_j x 4
-                env_j = tf.reshape(inputs_j, [-1, nei_type_j, 4])
-                # with natom x nei_type_i x nei_type_j
-                env_ij = tf.einsum('ijm,ikm->ijk', env_i, env_j) / 4.0
-                # with (natom x nei_type_i x nei_type_j)
-                ebd_env_ij = tf.reshape(env_ij, [-1, 1])
-                # with (natom x nei_type_i x nei_type_j) x out_size
-                ebd_env_ij = embedding_net(ebd_env_ij, 
-                                           self.filter_neuron, 
-                                           self.filter_precision, 
-                                           activation_fn = activation_fn, 
-                                           resnet_dt = self.filter_resnet_dt,
-                                           name_suffix = f"_{type_i}_{type_j}",
-                                           stddev = stddev,
-                                           bavg = bavg,
-                                           seed = seed,
-                                           trainable = trainable)
-                # with (natom x nei_type_i x nei_type_j) x out_size
-                ebd_env_ij = tf.reshape(ebd_env_ij, [-1, nei_type_i, nei_type_j, outputs_size[-1]])
-                res_ij = tf.einsum('ijk,ijkm->im', env_ij, ebd_env_ij)
-                res_ij = res_ij * (1.0 / float(nei_type_i) / float(nei_type_j))
-            if result is None:
-                result = res_ij
-            else:
-                result += res_ij
-
+            start_index_i = 0
+            result = None
+            for type_i in range(self.ntypes):
+                # cut-out inputs
+                # with natom x (nei_type_i x 4)  
+                inputs_i = tf.slice (inputs,
+                                     [ 0, start_index_i      *4],
+                                     [-1, self.sel_a[type_i] *4] )
+                start_index_i += self.sel_a[type_i]
+                nei_type_i = self.sel_a[type_i]
+                shape_i = inputs_i.get_shape().as_list()
+                assert(shape_i[1] == nei_type_i * 4)
+                # with natom x nei_type_i x 4
+                env_i = tf.reshape(inputs_i, [-1, nei_type_i, 4])
+                start_index_j = 0
+                for type_j in range(self.ntypes):
+                    # with natom x (nei_type_j x 4)  
+                    inputs_j = tf.slice (inputs,
+                                         [ 0, start_index_j      *4],
+                                         [-1, self.sel_a[type_j] *4] )
+                    start_index_j += self.sel_a[type_j]
+                    nei_type_j = self.sel_a[type_j]
+                    shape_j = inputs_j.get_shape().as_list()
+                    assert(shape_j[1] == nei_type_j * 4)
+                    # with natom x nei_type_j x 4
+                    env_j = tf.reshape(inputs_j, [-1, nei_type_j, 4])
+                    # with natom x nei_type_i x nei_type_j
+                    env_ij = tf.einsum('ijm,ikm->ijk', env_i, env_j) / 4.0
+                    # with (natom x nei_type_i x nei_type_j)
+                    ebd_env_ij = tf.reshape(env_ij, [-1, 1])
+                    # with (natom x nei_type_i x nei_type_j) x out_size
+                    ebd_env_ij = embedding_net(ebd_env_ij, 
+                                               self.filter_neuron, 
+                                               self.filter_precision, 
+                                               activation_fn = activation_fn, 
+                                               resnet_dt = self.filter_resnet_dt,
+                                               name_suffix = f"_{type_i}_{type_j}",
+                                               stddev = stddev,
+                                               bavg = bavg,
+                                               seed = seed,
+                                               trainable = trainable)
+                    # with (natom x nei_type_i x nei_type_j) x out_size
+                    ebd_env_ij = tf.reshape(ebd_env_ij, [-1, nei_type_i, nei_type_j, outputs_size[-1]])
+                    res_ij = tf.einsum('ijk,ijkm->im', env_ij, ebd_env_ij)
+                    res_ij = res_ij * (1.0 / float(nei_type_i) / float(nei_type_j))
+                    if result is None:
+                        result = res_ij
+                    else:
+                        result += res_ij        
         return result, None
 
