@@ -14,11 +14,9 @@ class DescrptSeAT ():
                .add('rcut',     float,  default = 6.0) \
                .add('rcut_smth',float,  default = 0.5) \
                .add('neuron',   list,   default = [10, 20, 40]) \
-               .add('axis_neuron', int, default = 4, alias = 'n_axis_neuron') \
                .add('resnet_dt',bool,   default = False) \
                .add('trainable',bool,   default = True) \
                .add('seed',     int) \
-               .add('type_one_side', bool, default = False) \
                .add('exclude_types', list, default = []) \
                .add('set_davg_zero', bool, default = False) \
                .add('activation_function', str,    default = 'tanh') \
@@ -28,7 +26,6 @@ class DescrptSeAT ():
         self.rcut_r = class_data['rcut']
         self.rcut_r_smth = class_data['rcut_smth']
         self.filter_neuron = class_data['neuron']
-        self.n_axis_neuron = class_data['axis_neuron']
         self.filter_resnet_dt = class_data['resnet_dt']
         self.seed = class_data['seed']
         self.trainable = class_data['trainable']
@@ -41,9 +38,6 @@ class DescrptSeAT ():
             self.exclude_types.add((tt[0], tt[1]))
             self.exclude_types.add((tt[1], tt[0]))
         self.set_davg_zero = class_data['set_davg_zero']
-        self.type_one_side = class_data['type_one_side']
-        if self.type_one_side and len(exclude_types) != 0:
-            raise RuntimeError('"type_one_side" is not compatible with "exclude_types"')
 
         # descrpt config
         self.sel_r = [ 0 for ii in range(len(self.sel_a)) ]
@@ -325,20 +319,19 @@ class DescrptSeAT ():
 
 
     def _filter(self, 
-                   inputs, 
-                   type_input,
-                   natoms,
-                   activation_fn=tf.nn.tanh, 
-                   stddev=1.0,
-                   bavg=0.0,
-                   name='linear', 
-                   reuse=None,
-                   seed=None, 
+                inputs, 
+                type_input,
+                natoms,
+                activation_fn=tf.nn.tanh, 
+                stddev=1.0,
+                bavg=0.0,
+                name='linear', 
+                reuse=None,
+                seed=None, 
                 trainable = True):
         # natom x (nei x 4)
         shape = inputs.get_shape().as_list()
         outputs_size = [1] + self.filter_neuron
-        outputs_size_2 = self.n_axis_neuron
         with tf.variable_scope(name, reuse=reuse):
             start_index_i = 0
             result = None
@@ -381,13 +374,13 @@ class DescrptSeAT ():
                                                bavg = bavg,
                                                seed = seed,
                                                trainable = trainable)
-                    # with (natom x nei_type_i x nei_type_j) x out_size
+                    # with natom x nei_type_i x nei_type_j x out_size
                     ebd_env_ij = tf.reshape(ebd_env_ij, [-1, nei_type_i, nei_type_j, outputs_size[-1]])
                     res_ij = tf.einsum('ijk,ijkm->im', env_ij, ebd_env_ij)
                     res_ij = res_ij * (1.0 / float(nei_type_i) / float(nei_type_j))
                     if result is None:
                         result = res_ij
                     else:
-                        result += res_ij        
+                        result += res_ij
         return result, None
 

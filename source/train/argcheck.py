@@ -72,6 +72,35 @@ def descrpt_se_a_args():
     ]
 
 
+def descrpt_se_a_args():
+    doc_sel = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.'
+    doc_rcut = 'The cut-off radius.'
+    doc_rcut_smth = 'Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`'
+    doc_neuron = 'Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.'
+    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(activation_fn_dict.keys())}'
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
+    doc_precision = f'The precision of the embedding net parameters, supported options are {supported_precision()}'
+    doc_trainable = 'If the parameters in the embedding net is trainable'
+    doc_seed = 'Random seed for parameter initialization'
+    doc_exclude_types = 'The Excluded types'
+    doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
+    
+    return [
+        Argument("sel", list, optional = False, doc = doc_sel),
+        Argument("rcut", float, optional = True, default = 6.0, doc = doc_rcut),
+        Argument("rcut_smth", float, optional = True, default = 0.5, doc = doc_rcut_smth),
+        Argument("neuron", list, optional = True, default = [10,20,40], doc = doc_neuron),
+        Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
+        Argument("resnet_dt", bool, optional = True, default = False, doc = doc_resnet_dt),
+        Argument("precision", str, optional = True, default = "float64", doc = doc_precision),
+        Argument("trainable", bool, optional = True, default = True, doc = doc_trainable),
+        Argument("seed", [int,None], optional = True, doc = doc_seed),
+        Argument("exclude_types", list, optional = True, default = [], doc = doc_exclude_types),
+        Argument("set_davg_zero", bool, optional = True, default = False, doc = doc_set_davg_zero)
+    ]
+
+
+
 def descrpt_se_a_ebd_args():
     doc_type_nchanl = 'number of channels for type embedding'
     doc_type_nlayer = 'number of hidden layers of type embedding net'
@@ -136,7 +165,7 @@ def descrpt_variant_type_args():
     return Variant("type", [
         Argument("loc_frame", dict, descrpt_local_frame_args()),
         Argument("se_a", dict, descrpt_se_a_args()),
-        Argument("se_at", dict, descrpt_se_a_args()),
+        Argument("se_at", dict, descrpt_se_at_args()),
         Argument("se_a_ebd", dict, descrpt_se_a_ebd_args()),
         Argument("se_r", dict, descrpt_se_r_args()),
         Argument("se_ar", dict, descrpt_se_ar_args())
