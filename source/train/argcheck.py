@@ -155,6 +155,14 @@ def descrpt_se_ar_args():
     ]
 
 
+def descrpt_hybrid_args():
+    doc_list = f'A list of descriptor definitions'
+    
+    return [
+        Argument("list", list, optional = False, doc = doc_list)
+    ]
+
+
 def descrpt_variant_type_args():
     doc_descrpt_type = 'The type of the descritpor. Valid types are `loc_frame`, `se_a`, `se_r` and `se_ar`. \n\n\
 - `loc_frame`: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.\n\n\
@@ -168,7 +176,8 @@ def descrpt_variant_type_args():
         Argument("se_at", dict, descrpt_se_at_args()),
         Argument("se_a_ebd", dict, descrpt_se_a_ebd_args()),
         Argument("se_r", dict, descrpt_se_r_args()),
-        Argument("se_ar", dict, descrpt_se_ar_args())
+        Argument("se_ar", dict, descrpt_se_ar_args()),
+        Argument("hybrid", dict, descrpt_hybrid_args())
     ], doc = doc_descrpt_type)
 
 

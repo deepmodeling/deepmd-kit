@@ -15,6 +15,7 @@ from deepmd.DescrptSeAEbd import DescrptSeAEbd
 from deepmd.DescrptSeAEf import DescrptSeAEf
 from deepmd.DescrptSeR import DescrptSeR
 from deepmd.DescrptSeAR import DescrptSeAR
+from deepmd.DescrptHybrid import DescrptHybrid
 from deepmd.Model import Model, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
 from deepmd.Loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
 from deepmd.LearningRate import LearningRateExp
@@ -73,6 +74,8 @@ class NNPTrainer (object):
             self.descrpt = DescrptSeR(descrpt_param)
         elif descrpt_type == 'se_ar' :
             self.descrpt = DescrptSeAR(descrpt_param)
+        elif descrpt_type == 'hybrid' :
+            self.descrpt = DescrptHybrid(descrpt_param)
         else :
             raise RuntimeError('unknow model type ' + descrpt_type)
 
