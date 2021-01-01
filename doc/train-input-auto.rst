@@ -25,6 +25,42 @@ model:
 
     .. raw:: html
 
+       <a id="model/use_srtab"></a>
+    use_srtab: 
+        | type: ``str``, optional
+        | argument path: ``model/use_srtab``
+
+        The table for the short-range pairwise interaction added on top of DP. The table is a text data file with (N_t + 1) * N_t / 2 + 1 columes. The first colume is the distance between atoms. The second to the last columes are energies for pairs of certain types. For example we have two atom types, 0 and 1. The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly.
+
+    .. raw:: html
+
+       <a id="model/smin_alpha"></a>
+    smin_alpha: 
+        | type: ``float``, optional
+        | argument path: ``model/smin_alpha``
+
+        The short-range tabulated interaction will be swithed according to the distance of the nearest neighbor. This distance is calculated by softmin. This parameter is the decaying parameter in the softmin. It is only required when `use_srtab` is provided.
+
+    .. raw:: html
+
+       <a id="model/sw_rmin"></a>
+    sw_rmin: 
+        | type: ``float``, optional
+        | argument path: ``model/sw_rmin``
+
+        The lower boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
+
+    .. raw:: html
+
+       <a id="model/sw_rmax"></a>
+    sw_rmax: 
+        | type: ``float``, optional
+        | argument path: ``model/sw_rmax``
+
+        The upper boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
+
+    .. raw:: html
+
        <a id="model/descriptor"></a>
     descriptor: 
         | type: ``dict``

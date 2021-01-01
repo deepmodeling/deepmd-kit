@@ -236,9 +236,18 @@ def model_args ():
     doc_data_stat_nbatch = 'The model determines the normalization from the statistics of the data. This key specifies the number of `frames` in each `system` used for statistics.'
     doc_descrpt = 'The descriptor of atomic environment.'
     doc_fitting = 'The fitting of physical properties.'
+    doc_use_srtab = 'The table for the short-range pairwise interaction added on top of DP. The table is a text data file with (N_t + 1) * N_t / 2 + 1 columes. The first colume is the distance between atoms. The second to the last columes are energies for pairs of certain types. For example we have two atom types, 0 and 1. The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly.'
+    doc_smin_alpha = 'The short-range tabulated interaction will be swithed according to the distance of the nearest neighbor. This distance is calculated by softmin. This parameter is the decaying parameter in the softmin. It is only required when `use_srtab` is provided.'
+    doc_sw_rmin = 'The lower boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.'
+    doc_sw_rmax = 'The upper boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.'
+
     ca = Argument("model", dict, 
                   [Argument("type_map", list, optional = True, doc = doc_type_map),
                    Argument("data_stat_nbatch", int, optional = True, default = 10, doc = doc_data_stat_nbatch),
+                   Argument("use_srtab", str, optional = True, doc = doc_use_srtab),
+                   Argument("smin_alpha", float, optional = True, doc = doc_smin_alpha),
+                   Argument("sw_rmin", float, optional = True, doc = doc_sw_rmin),
+                   Argument("sw_rmax", float, optional = True, doc = doc_sw_rmax),
                    Argument("descriptor", dict, [], [descrpt_variant_type_args()], doc = doc_descrpt),
                    Argument("fitting_net", dict, [], [fitting_variant_type_args()], doc = doc_fitting)
                   ])
