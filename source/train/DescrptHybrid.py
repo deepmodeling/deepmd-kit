@@ -2,6 +2,8 @@ import numpy as np
 from deepmd.env import tf
 from deepmd.common import ClassArg
 from deepmd.env import op_module
+from deepmd.RunOptions import global_tf_float_precision
+from deepmd.RunOptions import global_np_float_precision
 from deepmd.DescrptLocFrame import DescrptLocFrame
 from deepmd.DescrptSeA import DescrptSeA
 from deepmd.DescrptSeAT import DescrptSeAT
@@ -80,6 +82,13 @@ class DescrptHybrid ():
                input_dict,
                suffix = '', 
                reuse = None):
+        with tf.variable_scope('descrpt_attr' + suffix, reuse = reuse) :
+            t_rcut = tf.constant(self.get_rcut(), 
+                                 name = 'rcut', 
+                                 dtype = global_tf_float_precision)
+            t_ntypes = tf.constant(self.get_ntypes(), 
+                                   name = 'ntypes', 
+                                   dtype = tf.int32)
         all_dout = []
         for tt,ii in zip(self.descrpt_type,self.descrpt_list):
             dout = ii.build(coord_, atype_, natoms, box, mesh, input_dict, suffix=suffix+f'_{tt}', reuse=reuse)
