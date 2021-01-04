@@ -251,6 +251,7 @@ class EnerFitting ():
             outs = outs - outs_mean
             outs = tf.reshape(outs, [-1])
 
+        tf.summary.histogram('fitting_net_output', outs)
         return tf.cast(tf.reshape(outs, [-1]), global_tf_float_precision)        
 
 
@@ -333,7 +334,8 @@ class WFCFitting () :
             else:
                 outs = tf.concat([outs, final_layer], axis = 1)
             count += 1
-
+        
+        tf.summary.histogram('fitting_net_output', outs)
         return tf.cast(tf.reshape(outs, [-1]),  global_tf_float_precision)
 
 
@@ -416,6 +418,7 @@ class PolarFittingLocFrame () :
                 outs = tf.concat([outs, final_layer], axis = 1)
             count += 1
 
+        tf.summary.histogram('fitting_net_output', outs)
         return tf.cast(tf.reshape(outs, [-1]),  global_tf_float_precision)
 
 
@@ -547,7 +550,8 @@ class PolarFittingSeA () :
             else:
                 outs = tf.concat([outs, final_layer], axis = 1)
             count += 1
-
+        
+        tf.summary.histogram('fitting_net_output', outs)
         return tf.cast(tf.reshape(outs, [-1]), global_tf_float_precision)
 
 
@@ -576,6 +580,7 @@ class GlobalPolarFittingSeA () :
         # nframes x natoms x 9
         outs = tf.reshape(outs, [tf.shape(inputs)[0], -1, 9])
         outs = tf.reduce_sum(outs, axis = 1)
+        tf.summary.histogram('fitting_net_output', outs)
         return tf.reshape(outs, [-1])
 
 
@@ -655,5 +660,6 @@ class DipoleFittingSeA () :
                 outs = tf.concat([outs, final_layer], axis = 1)
             count += 1
 
+        tf.summary.histogram('fitting_net_output', outs)
         return tf.cast(tf.reshape(outs, [-1]),  global_tf_float_precision)
         # return tf.reshape(outs, [tf.shape(inputs)[0] * natoms[0] * 3 // 3])

@@ -1,6 +1,6 @@
 import numpy as np
 from deepmd.env import tf
-from deepmd.common import ClassArg, get_activation_func, get_precision
+from deepmd.common import ClassArg, get_activation_func, get_precision, variable_summaries
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.env import op_module
@@ -186,13 +186,20 @@ class DescrptSeR ():
         self.rij = tf.identity(self.rij, name = 'o_rij')
         self.nlist = tf.identity(self.nlist, name = 'o_nlist')
 
+        # only used when tensorboard was set as true
+        tf.summary.histogram('descrpt', self.descrpt)
+        tf.summary.histogram('rij', self.rij)
+        tf.summary.histogram('nlist', self.nlist)
+
         self.dout = self._pass_filter(self.descrpt_reshape, natoms, suffix = suffix, reuse = reuse, trainable = self.trainable)
+        tf.summary.histogram('embedding_net_output', self.dout)
 
         return self.dout
 
 
     def prod_force_virial(self, atom_ener, natoms) :
         [net_deriv] = tf.gradients (atom_ener, self.descrpt_reshape)
+        tf.summary.histogram('net_derivative', net_deriv)
         net_deriv_reshape = tf.reshape (net_deriv, [-1, natoms[0] * self.ndescrpt])        
         force \
             = op_module.prod_force_se_r (net_deriv_reshape,
@@ -205,6 +212,10 @@ class DescrptSeR ():
                                           self.rij,
                                           self.nlist,
                                           natoms)
+        tf.summary.histogram('force', force)
+        tf.summary.histogram('virial', virial)
+        tf.summary.histogram('atom_virial', atom_virial)
+
         return force, virial, atom_virial
     
 
@@ -315,18 +326,24 @@ class DescrptSeR ():
                                             self.filter_precision,
                                             tf.random_normal_initializer(stddev=stddev/np.sqrt(outputs_size[ii]+outputs_size[ii-1]), seed = seed), 
                                             trainable = trainable)
+                        variable_summaries(w, 'matrix_'+str(ii)+'_'+str(type_i))
+
                         b = tf.get_variable('bias_'+str(ii)+'_'+str(type_i), 
                                             [1, outputs_size[ii]], 
                                             self.filter_precision,
                                             tf.random_normal_initializer(stddev=stddev, mean = bavg, seed = seed), 
                                             trainable = trainable)
+                        variable_summaries(b, 'bias_'+str(ii)+'_'+str(type_i))
+
                         hidden = tf.reshape(activation_fn(tf.matmul(xyz_scatter, w) + b), [-1, outputs_size[ii]])
+
                         if self.filter_resnet_dt :
                             idt = tf.get_variable('idt_'+str(ii)+'_'+str(type_i), 
                                                   [1, outputs_size[ii]], 
                                                   self.filter_precision,
                                                   tf.random_normal_initializer(stddev=0.001, mean = 1.0, seed = seed), 
                                                   trainable = trainable)
+                            variable_summaries(idt, 'idt_'+str(ii)+'_'+str(type_i))
                         if outputs_size[ii] == outputs_size[ii-1]:
                             if self.filter_resnet_dt :
                                 xyz_scatter += hidden * idt
