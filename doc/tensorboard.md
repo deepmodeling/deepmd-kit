@@ -1,6 +1,8 @@
-# DeePMD-kit TensorBoard tutorial
+# DeePMD-kit TensorBoard usage
 
-TensorBoard provides the visualization and tooling needed for machine learning experimentation. A full instruction of tensorboard can be found [here](https://tensorflow.google.cn/tensorboard).
+TensorBoard provides the visualization and tooling needed for machine learning
+experimentation. A full instruction of tensorboard can be found
+[here](https://tensorflow.google.cn/tensorboard).
 
 ## Highlighted features
 
@@ -14,9 +16,11 @@ DeePMD-kit can now use most of the interesting features enabled by tensorboard!
 <!-- * **Projecting embeddings to a lower dimensional space.**
 * **Precision curves.** -->
 
-## How to use
+## How to use Tensorboard with DeePMD-kit
 
-Before running TensorBoard, make sure you have generated summary data in a log directory by modifying the the input script, set "tensorboard" true will enable the tensorboard data analysis. eg. **water_se_a.json**.
+Before running TensorBoard, make sure you have generated summary data in a log
+directory by modifying the the input script, set "tensorboard" true in training
+subsection will enable the tensorboard data analysis. eg. **water_se_a.json**.
 
 ```json
     "training" : {
@@ -45,7 +49,8 @@ Before running TensorBoard, make sure you have generated summary data in a log d
     }
 ```
 
-Once you have event files, run TensorBoard and provide the log directory. This should print that TensorBoard has started. Next, connect to http://tensorboard_server_ip:6006.
+Once you have event files, run TensorBoard and provide the log directory. This
+should print that TensorBoard has started. Next, connect to http://tensorboard_server_ip:6006.
 
 TensorBoard requires a logdir to read logs from. For info on configuring TensorBoard, run tensorboard --help.
 One can easily change the log name with "tensorboard_log_file".
@@ -58,24 +63,24 @@ tensorboard --logdir path/to/logs
 
 ### Tracking and visualizing loss metrics(red:train, blue:test)
 
-![ALT](/media/images/l2_loss.png "l2 loss")
+![ALT](./images/l2_loss.png "l2 loss")
 
-![ALT](/media/images/l2_energy_loss.png "l2 energy loss")
+![ALT](./images/l2_energy_loss.png "l2 energy loss")
 
-![ALT](/media/images/l2_force_loss.png "l2 force loss")
+![ALT](./images/l2_force_loss.png "l2 force loss")
 
 ### Visualizing deepmd-kit model graph
 
-![ALT](/media/images/tensorboard-graph.png "deepmd-kit graph")
+![ALT](./images/tensorboard-graph.png "deepmd-kit graph")
 
 ### Viewing histograms of weights, biases, or other tensors as they change over time
 
-![ALT](/media/images/tensorboard-histograms.png "deepmd-kit histograms")
+![ALT](./images/tensorboard-histograms.png "deepmd-kit histograms")
 
-![ALT](/media/images/tensorboard-distribution.png "deepmd-kit distribution")
+![ALT](./images/tensorboard-distribution.png "deepmd-kit distribution")
 
-### Viewing summaries of trainable viriables
-![ALT](/media/images/tensorboard-scalar.png "deepmd-kit scalar")
+### Viewing summaries of trainable variables
+![ALT](./images/tensorboard-scalar.png "deepmd-kit scalar")
 
 ## Atention
 

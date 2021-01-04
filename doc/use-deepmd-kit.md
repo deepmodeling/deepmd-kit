@@ -222,6 +222,12 @@ export TF_INTER_OP_PARALLELISM_THREADS=2
 dp train input.json
 ```
 
+### Training analysis with Tensorboard
+
+If enbled in json/yaml input file DeePMD-kit will create log files which can be
+used to analyze training procedure with Tensorboard. For a short tutorial
+please read this [document](doc/tensorboard.md) 
+
 ## Freeze a model
 
 The trained neural network is extracted from a checkpoint and dumped into a database. This process is called "freezing" a model. The idea and part of our code are from [Morgan](https://blog.metaflow.fr/tensorflow-how-to-freeze-a-model-and-serve-it-with-a-python-api-d4f3596b3adc). To freeze a model, typically one does

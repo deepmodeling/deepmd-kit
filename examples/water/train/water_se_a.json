@@ -4,10 +4,10 @@
 	"type_map":	["O", "H"],
 	"descriptor" :{
 	    "type":		"se_a",
-	    "sel":		[48, 96],
+	    "sel":		[46, 92],
 	    "rcut_smth":	5.80,
 	    "rcut":		6.00,
-	    "neuron":		[24, 48, 96],
+	    "neuron":		[25, 50, 100],
 	    "resnet_dt":	false,
 	    "axis_neuron":	16,
 	    "seed":		1,
