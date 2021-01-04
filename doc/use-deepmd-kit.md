@@ -226,7 +226,7 @@ dp train input.json
 
 If enbled in json/yaml input file DeePMD-kit will create log files which can be
 used to analyze training procedure with Tensorboard. For a short tutorial
-please read this [document](doc/tensorboard.md) 
+please read this [document](doc/tensorboard.md).
 
 ## Freeze a model
 

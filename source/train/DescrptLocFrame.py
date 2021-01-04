@@ -157,6 +157,8 @@ class DescrptLocFrame () :
                                  axis_rule = self.axis_rule)
         self.descrpt = tf.reshape(self.descrpt, [-1, self.ndescrpt])
         tf.summary.histogram('descrpt', self.descrpt)
+        tf.summary.histogram('rij', self.rij)
+        tf.summary.histogram('nlist', self.nlist)
 
         return self.descrpt
 
