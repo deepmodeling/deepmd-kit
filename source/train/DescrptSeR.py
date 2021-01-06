@@ -5,6 +5,7 @@ from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
+from deepmd.Network import embedding_net
 
 class DescrptSeR ():
     def __init__ (self, jdata):
@@ -309,36 +310,16 @@ class DescrptSeR ():
                 # with (natom x nei_type_i) x 1
                 xyz_scatter = tf.reshape(inputs_i, [-1, 1])
                 if (type_input, type_i) not in self.exclude_types:
-                    for ii in range(1, len(outputs_size)):
-                        w = tf.get_variable('matrix_'+str(ii)+'_'+str(type_i), 
-                                            [outputs_size[ii - 1], outputs_size[ii]], 
-                                            self.filter_precision,
-                                            tf.random_normal_initializer(stddev=stddev/np.sqrt(outputs_size[ii]+outputs_size[ii-1]), seed = seed), 
-                                            trainable = trainable)
-                        b = tf.get_variable('bias_'+str(ii)+'_'+str(type_i), 
-                                            [1, outputs_size[ii]], 
-                                            self.filter_precision,
-                                            tf.random_normal_initializer(stddev=stddev, mean = bavg, seed = seed), 
-                                            trainable = trainable)
-                        hidden = tf.reshape(activation_fn(tf.matmul(xyz_scatter, w) + b), [-1, outputs_size[ii]])
-                        if self.filter_resnet_dt :
-                            idt = tf.get_variable('idt_'+str(ii)+'_'+str(type_i), 
-                                                  [1, outputs_size[ii]], 
-                                                  self.filter_precision,
-                                                  tf.random_normal_initializer(stddev=0.001, mean = 1.0, seed = seed), 
-                                                  trainable = trainable)
-                        if outputs_size[ii] == outputs_size[ii-1]:
-                            if self.filter_resnet_dt :
-                                xyz_scatter += hidden * idt
-                            else :
-                                xyz_scatter += hidden
-                        elif outputs_size[ii] == outputs_size[ii-1] * 2: 
-                            if self.filter_resnet_dt :
-                                xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + hidden * idt
-                            else :
-                                xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + hidden
-                        else:
-                            xyz_scatter = hidden
+                    xyz_scatter = embedding_net(xyz_scatter, 
+                                                self.filter_neuron, 
+                                                self.filter_precision, 
+                                                activation_fn = activation_fn, 
+                                                resnet_dt = self.filter_resnet_dt,
+                                                name_suffix = "_"+str(type_i),
+                                                stddev = stddev,
+                                                bavg = bavg,
+                                                seed = seed,
+                                                trainable = trainable)
                 else:
                     w = tf.zeros((outputs_size[0], outputs_size[-1]), dtype=global_tf_float_precision)
                     xyz_scatter = tf.matmul(xyz_scatter, w)

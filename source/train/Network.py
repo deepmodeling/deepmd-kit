@@ -50,3 +50,74 @@ def one_layer(inputs,
                 # return self._batch_norm(hidden, name=name+'_normalization', reuse=reuse)
             else:
                 return hidden
+
+
+
+def embedding_net(xx,
+                  network_size,
+                  precision,
+                  activation_fn = tf.nn.tanh,
+                  resnet_dt = False,
+                  name_suffix = '',
+                  stddev = 1.0,
+                  bavg = 0.0,
+                  seed = None,
+                  trainable = True):
+    """
+    Parameters
+    ----------
+    xx : Tensor   
+        Input tensor of shape [-1,1]
+    network_size: list of int
+        Size of the embedding network. For example [16,32,64]
+    precision: 
+        Precision of network weights. For example, tf.float64
+    activation_fn:
+        Activation function
+    resnet_dt: boolean
+        Using time-step in the ResNet construction
+    name_suffix: str
+        The name suffix append to each variable. 
+    stddev: float
+        Standard deviation of initializing network parameters
+    bavg: float
+        Mean of network intial bias
+    seed: int
+        Random seed for initializing network parameters
+    trainable: boolean
+        If the netowk is trainable
+    """
+    outputs_size = [1] + network_size
+    
+    for ii in range(1, len(outputs_size)):
+        w = tf.get_variable('matrix_'+str(ii)+name_suffix, 
+                            [outputs_size[ii - 1], outputs_size[ii]], 
+                            precision,
+                            tf.random_normal_initializer(stddev=stddev/np.sqrt(outputs_size[ii]+outputs_size[ii-1]), seed = seed), 
+                            trainable = trainable)
+        b = tf.get_variable('bias_'+str(ii)+name_suffix, 
+                            [1, outputs_size[ii]], 
+                            precision,
+                            tf.random_normal_initializer(stddev=stddev, mean = bavg, seed = seed), 
+                            trainable = trainable)
+        hidden = tf.reshape(activation_fn(tf.matmul(xx, w) + b), [-1, outputs_size[ii]])
+        if resnet_dt :
+            idt = tf.get_variable('idt_'+str(ii)+name_suffix, 
+                                  [1, outputs_size[ii]], 
+                                  precision,
+                                  tf.random_normal_initializer(stddev=0.001, mean = 1.0, seed = seed), 
+                                  trainable = trainable)
+        if outputs_size[ii] == outputs_size[ii-1]:
+            if resnet_dt :
+                xx += hidden * idt
+            else :
+                xx += hidden
+        elif outputs_size[ii] == outputs_size[ii-1] * 2: 
+            if resnet_dt :
+                xx = tf.concat([xx,xx], 1) + hidden * idt
+            else :
+                xx = tf.concat([xx,xx], 1) + hidden
+        else:
+            xx = hidden
+
+    return xx
