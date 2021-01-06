@@ -42,7 +42,7 @@ model:
             | type: ``str`` (flag key)
             | argument path: ``model/descriptor/type`` 
 
-            The type of the descritpor. Valid types are `loc_frame`, `se_a`, `se_r` and `se_ar`. 
+            The type of the descritpor. Valid types are `loc_frame <#model/descriptor[loc_frame]>`__, `se_a <#model/descriptor[se_a]>`__, `se_r <#model/descriptor[se_r]>`__, `se_a_3be <#model/descriptor[se_a_3be]>`__, `se_a_tpe <#model/descriptor[se_a_tpe]>`__, ``hybrid <#model/descriptor[hybrid]>`__`. 
 
             - `loc_frame`: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.
 
@@ -50,7 +50,13 @@ model:
 
             - `se_r`: Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor.
 
-            - `se_ar`: A hybrid of `se_a` and `se_r`. Typically `se_a` has a smaller cut-off while the `se_r` has a larger cut-off.
+            - `se_a_t`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Three-body embedding will be used by this descriptor.
+
+            - `se_a_ebd`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Type embedding will be used by this descriptor.
+
+            - `hybrid`: Concatenate of a list of descriptors as a new descriptor.
+
+            - `se_ar`: A hybrid of `se_a` and `se_r`. Typically `se_a` has a smaller cut-off while the `se_r` has a larger cut-off. Deprecated, use `hybrid` instead.
 
 
         .. raw:: html
@@ -232,156 +238,6 @@ model:
 
         .. raw:: html
 
-           <a id="model/descriptor[se_a_ebd]"></a>
-        When *type* is set to ``se_a_ebd``: 
-
-        .. raw:: html
-
-           <a id="model/descriptor[se_a_ebd]/sel"></a>
-        sel: 
-            | type: ``list``
-            | argument path: ``model/descriptor[se_a_ebd]/sel``
-
-            A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.
-
-        .. raw:: html
-
-           <a id="model/descriptor[se_a_ebd]/rcut"></a>
-        rcut: 
-            | type: ``float``, optional, default: ``6.0``
-            | argument path: ``model/descriptor[se_a_ebd]/rcut``
-
-            The cut-off radius.
-
-        .. raw:: html
-
-           <a id="model/descriptor[se_a_ebd]/rcut_smth"></a>
-        rcut_smth: 
-            | type: ``float``, optional, default: ``0.5``
-            | argument path: ``model/descriptor[se_a_ebd]/rcut_smth``
-
-            Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`
-
-        .. raw:: html
-
-           <a id="model/descriptor[se_a_ebd]/neuron"></a>
-        neuron: 
-            | type: ``list``, optional, default: ``[10, 20, 40]``
-            | argument path: ``model/descriptor[se_a_ebd]/neuron``
-
-            Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.
-
-        .. raw:: html
-
-           <a id="model/descriptor[se_a_ebd]/axis_neuron"></a>
-        axis_neuron: 
-            | type: ``int``, optional, default: ``4``
-            | argument path: ``model/descriptor[se_a_ebd]/axis_neuron``
-
-            Size of the submatrix of G (embedding matrix).
-
-        .. raw:: html
-
-           <a id="model/descriptor[se_a_ebd]/activation_function"></a>
-        activation_function: 
-            | type: ``str``, optional, default: ``tanh``
-            | argument path: ``model/descriptor[se_a_ebd]/activation_function``
-
-            The activation function in the embedding net. Supported activation functions are "relu", "relu6", "softplus", "sigmoid", "tanh", "gelu".
-
-        .. raw:: html
-
-           <a id="model/descriptor[se_a_ebd]/resnet_dt"></a>
-        resnet_dt: 
-            | type: ``bool``, optional, default: ``False``
-            | argument path: ``model/descriptor[se_a_ebd]/resnet_dt``
-
-            Whether to use a "Timestep" in the skip connection
-
-        .. raw:: html
-
-           <a id="model/descriptor[se_a_ebd]/type_one_side"></a>
-        type_one_side: 
-            | type: ``bool``, optional, default: ``False``
-            | argument path: ``model/descriptor[se_a_ebd]/type_one_side``
-
-            Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
-
-        .. raw:: html
-
-           <a id="model/descriptor[se_a_ebd]/precision"></a>
-        precision: 
-            | type: ``str``, optional, default: ``float64``
-            | argument path: ``model/descriptor[se_a_ebd]/precision``
-
-            The precision of the embedding net parameters, supported options are "float64", "float32", "float16".
-
-        .. raw:: html
-
-           <a id="model/descriptor[se_a_ebd]/trainable"></a>
-        trainable: 
-            | type: ``bool``, optional, default: ``True``
-            | argument path: ``model/descriptor[se_a_ebd]/trainable``
-
-            If the parameters in the embedding net is trainable
-
-        .. raw:: html
-
-           <a id="model/descriptor[se_a_ebd]/seed"></a>
-        seed: 
-            | type: ``int`` | ``NoneType``, optional
-            | argument path: ``model/descriptor[se_a_ebd]/seed``
-
-            Random seed for parameter initialization
-
-        .. raw:: html
-
-           <a id="model/descriptor[se_a_ebd]/exclude_types"></a>
-        exclude_types: 
-            | type: ``list``, optional, default: ``[]``
-            | argument path: ``model/descriptor[se_a_ebd]/exclude_types``
-
-            The Excluded types
-
-        .. raw:: html
-
-           <a id="model/descriptor[se_a_ebd]/set_davg_zero"></a>
-        set_davg_zero: 
-            | type: ``bool``, optional, default: ``False``
-            | argument path: ``model/descriptor[se_a_ebd]/set_davg_zero``
-
-            Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used
-
-        .. raw:: html
-
-           <a id="model/descriptor[se_a_ebd]/type_nchanl"></a>
-        type_nchanl: 
-            | type: ``int``, optional, default: ``4``
-            | argument path: ``model/descriptor[se_a_ebd]/type_nchanl``
-
-            number of channels for type embedding
-
-        .. raw:: html
-
-           <a id="model/descriptor[se_a_ebd]/type_nlayer"></a>
-        type_nlayer: 
-            | type: ``int``, optional, default: ``2``
-            | argument path: ``model/descriptor[se_a_ebd]/type_nlayer``
-
-            number of hidden layers of type embedding net
-
-        .. raw:: html
-
-           <a id="model/descriptor[se_a_ebd]/numb_aparam"></a>
-        numb_aparam: 
-            | type: ``int``, optional, default: ``0``
-            | argument path: ``model/descriptor[se_a_ebd]/numb_aparam``
-
-            dimension of atomic parameter. if set to a value > 0, the atomic parameters are embedded.
-
-
-        .. raw:: html
-
            <a id="model/descriptor[se_r]"></a>
         When *type* is set to ``se_r``: 
 
@@ -492,6 +348,276 @@ model:
             | argument path: ``model/descriptor[se_r]/set_davg_zero``
 
             Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used
+
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_3be]"></a>
+        When *type* is set to ``se_a_3be``: 
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_3be]/sel"></a>
+        sel: 
+            | type: ``list``
+            | argument path: ``model/descriptor[se_a_3be]/sel``
+
+            A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_3be]/rcut"></a>
+        rcut: 
+            | type: ``float``, optional, default: ``6.0``
+            | argument path: ``model/descriptor[se_a_3be]/rcut``
+
+            The cut-off radius.
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_3be]/rcut_smth"></a>
+        rcut_smth: 
+            | type: ``float``, optional, default: ``0.5``
+            | argument path: ``model/descriptor[se_a_3be]/rcut_smth``
+
+            Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_3be]/neuron"></a>
+        neuron: 
+            | type: ``list``, optional, default: ``[10, 20, 40]``
+            | argument path: ``model/descriptor[se_a_3be]/neuron``
+
+            Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_3be]/activation_function"></a>
+        activation_function: 
+            | type: ``str``, optional, default: ``tanh``
+            | argument path: ``model/descriptor[se_a_3be]/activation_function``
+
+            The activation function in the embedding net. Supported activation functions are "relu", "relu6", "softplus", "sigmoid", "tanh", "gelu".
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_3be]/resnet_dt"></a>
+        resnet_dt: 
+            | type: ``bool``, optional, default: ``False``
+            | argument path: ``model/descriptor[se_a_3be]/resnet_dt``
+
+            Whether to use a "Timestep" in the skip connection
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_3be]/precision"></a>
+        precision: 
+            | type: ``str``, optional, default: ``float64``
+            | argument path: ``model/descriptor[se_a_3be]/precision``
+
+            The precision of the embedding net parameters, supported options are "float64", "float32", "float16".
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_3be]/trainable"></a>
+        trainable: 
+            | type: ``bool``, optional, default: ``True``
+            | argument path: ``model/descriptor[se_a_3be]/trainable``
+
+            If the parameters in the embedding net is trainable
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_3be]/seed"></a>
+        seed: 
+            | type: ``int`` | ``NoneType``, optional
+            | argument path: ``model/descriptor[se_a_3be]/seed``
+
+            Random seed for parameter initialization
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_3be]/exclude_types"></a>
+        exclude_types: 
+            | type: ``list``, optional, default: ``[]``
+            | argument path: ``model/descriptor[se_a_3be]/exclude_types``
+
+            The Excluded types
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_3be]/set_davg_zero"></a>
+        set_davg_zero: 
+            | type: ``bool``, optional, default: ``False``
+            | argument path: ``model/descriptor[se_a_3be]/set_davg_zero``
+
+            Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used
+
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_tpe]"></a>
+        When *type* is set to ``se_a_tpe``: 
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_tpe]/sel"></a>
+        sel: 
+            | type: ``list``
+            | argument path: ``model/descriptor[se_a_tpe]/sel``
+
+            A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_tpe]/rcut"></a>
+        rcut: 
+            | type: ``float``, optional, default: ``6.0``
+            | argument path: ``model/descriptor[se_a_tpe]/rcut``
+
+            The cut-off radius.
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_tpe]/rcut_smth"></a>
+        rcut_smth: 
+            | type: ``float``, optional, default: ``0.5``
+            | argument path: ``model/descriptor[se_a_tpe]/rcut_smth``
+
+            Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_tpe]/neuron"></a>
+        neuron: 
+            | type: ``list``, optional, default: ``[10, 20, 40]``
+            | argument path: ``model/descriptor[se_a_tpe]/neuron``
+
+            Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_tpe]/axis_neuron"></a>
+        axis_neuron: 
+            | type: ``int``, optional, default: ``4``
+            | argument path: ``model/descriptor[se_a_tpe]/axis_neuron``
+
+            Size of the submatrix of G (embedding matrix).
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_tpe]/activation_function"></a>
+        activation_function: 
+            | type: ``str``, optional, default: ``tanh``
+            | argument path: ``model/descriptor[se_a_tpe]/activation_function``
+
+            The activation function in the embedding net. Supported activation functions are "relu", "relu6", "softplus", "sigmoid", "tanh", "gelu".
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_tpe]/resnet_dt"></a>
+        resnet_dt: 
+            | type: ``bool``, optional, default: ``False``
+            | argument path: ``model/descriptor[se_a_tpe]/resnet_dt``
+
+            Whether to use a "Timestep" in the skip connection
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_tpe]/type_one_side"></a>
+        type_one_side: 
+            | type: ``bool``, optional, default: ``False``
+            | argument path: ``model/descriptor[se_a_tpe]/type_one_side``
+
+            Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_tpe]/precision"></a>
+        precision: 
+            | type: ``str``, optional, default: ``float64``
+            | argument path: ``model/descriptor[se_a_tpe]/precision``
+
+            The precision of the embedding net parameters, supported options are "float64", "float32", "float16".
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_tpe]/trainable"></a>
+        trainable: 
+            | type: ``bool``, optional, default: ``True``
+            | argument path: ``model/descriptor[se_a_tpe]/trainable``
+
+            If the parameters in the embedding net is trainable
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_tpe]/seed"></a>
+        seed: 
+            | type: ``int`` | ``NoneType``, optional
+            | argument path: ``model/descriptor[se_a_tpe]/seed``
+
+            Random seed for parameter initialization
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_tpe]/exclude_types"></a>
+        exclude_types: 
+            | type: ``list``, optional, default: ``[]``
+            | argument path: ``model/descriptor[se_a_tpe]/exclude_types``
+
+            The Excluded types
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_tpe]/set_davg_zero"></a>
+        set_davg_zero: 
+            | type: ``bool``, optional, default: ``False``
+            | argument path: ``model/descriptor[se_a_tpe]/set_davg_zero``
+
+            Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_tpe]/type_nchanl"></a>
+        type_nchanl: 
+            | type: ``int``, optional, default: ``4``
+            | argument path: ``model/descriptor[se_a_tpe]/type_nchanl``
+
+            number of channels for type embedding
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_tpe]/type_nlayer"></a>
+        type_nlayer: 
+            | type: ``int``, optional, default: ``2``
+            | argument path: ``model/descriptor[se_a_tpe]/type_nlayer``
+
+            number of hidden layers of type embedding net
+
+        .. raw:: html
+
+           <a id="model/descriptor[se_a_tpe]/numb_aparam"></a>
+        numb_aparam: 
+            | type: ``int``, optional, default: ``0``
+            | argument path: ``model/descriptor[se_a_tpe]/numb_aparam``
+
+            dimension of atomic parameter. if set to a value > 0, the atomic parameters are embedded.
+
+
+        .. raw:: html
+
+           <a id="model/descriptor[hybrid]"></a>
+        When *type* is set to ``hybrid``: 
+
+        .. raw:: html
+
+           <a id="model/descriptor[hybrid]/list"></a>
+        list: 
+            | type: ``list``
+            | argument path: ``model/descriptor[hybrid]/list``
+
+            A list of descriptor definitions
 
 
         .. raw:: html

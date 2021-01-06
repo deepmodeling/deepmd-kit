@@ -164,20 +164,29 @@ def descrpt_hybrid_args():
 
 
 def descrpt_variant_type_args():
-    doc_descrpt_type = 'The type of the descritpor. Valid types are `loc_frame`, `se_a`, `se_r` and `se_ar`. \n\n\
+    link_lf = make_link('loc_frame', 'model/descriptor[loc_frame]')
+    link_se_a = make_link('se_a', 'model/descriptor[se_a]')
+    link_se_r = make_link('se_r', 'model/descriptor[se_r]')
+    link_se_a_3be = make_link('se_a_3be', 'model/descriptor[se_a_3be]')
+    link_se_a_tpe = make_link('se_a_tpe', 'model/descriptor[se_a_tpe]')
+    link_hybrid = make_link('hybrid', 'model/descriptor[hybrid]')
+    doc_descrpt_type = f'The type of the descritpor. Valid types are {link_lf}, {link_se_a}, {link_se_r}, {link_se_a_3be}, {link_se_a_tpe}, `{link_hybrid}`. \n\n\
 - `loc_frame`: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.\n\n\
 - `se_a`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor.\n\n\
 - `se_r`: Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor.\n\n\
-- `se_ar`: A hybrid of `se_a` and `se_r`. Typically `se_a` has a smaller cut-off while the `se_r` has a larger cut-off.'
+- `se_a_t`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Three-body embedding will be used by this descriptor.\n\n\
+- `se_a_ebd`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Type embedding will be used by this descriptor.\n\n\
+- `hybrid`: Concatenate of a list of descriptors as a new descriptor.\n\n\
+- `se_ar`: A hybrid of `se_a` and `se_r`. Typically `se_a` has a smaller cut-off while the `se_r` has a larger cut-off. Deprecated, use `hybrid` instead.'
     
     return Variant("type", [
-        Argument("loc_frame", dict, descrpt_local_frame_args()),
-        Argument("se_a", dict, descrpt_se_a_args()),
-        Argument("se_at", dict, descrpt_se_at_args()),
-        Argument("se_a_ebd", dict, descrpt_se_a_ebd_args()),
-        Argument("se_r", dict, descrpt_se_r_args()),
-        Argument("se_ar", dict, descrpt_se_ar_args()),
-        Argument("hybrid", dict, descrpt_hybrid_args())
+        Argument("loc_frame", dict, doc = descrpt_local_frame_args()),
+        Argument("se_a", dict, doc = descrpt_se_a_args()),
+        Argument("se_r", dict, doc = descrpt_se_r_args()),
+        Argument("se_a_3be", dict, doc = descrpt_se_at_args(), alias = ['se_at']),
+        Argument("se_a_tpe", dict, doc = descrpt_se_a_ebd_args(), alias = ['se_a_ebd']),
+        Argument("hybrid", dict, doc = descrpt_hybrid_args()),
+        Argument("se_ar", dict, doc = descrpt_se_ar_args()),
     ], doc = doc_descrpt_type)
 
 

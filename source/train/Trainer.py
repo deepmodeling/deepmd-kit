@@ -64,9 +64,9 @@ class NNPTrainer (object):
             self.descrpt = DescrptLocFrame(descrpt_param)
         elif descrpt_type == 'se_a' :
             self.descrpt = DescrptSeA(descrpt_param)
-        elif descrpt_type == 'se_at' :
+        elif descrpt_type == 'se_a_3be' or descrpt_type == 'se_at' :
             self.descrpt = DescrptSeAT(descrpt_param)
-        elif descrpt_type == 'se_a_ebd' :
+        elif descrpt_type == 'se_a_tpe' or descrpt_type == 'se_a_ebd' :
             self.descrpt = DescrptSeAEbd(descrpt_param)
         elif descrpt_type == 'se_a_ef' :
             self.descrpt = DescrptSeAEf(descrpt_param)
