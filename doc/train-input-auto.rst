@@ -86,9 +86,9 @@ model:
 
             - `se_r`: Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor.
 
-            - `se_a_t`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Three-body embedding will be used by this descriptor.
+            - `se_a_3be`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Three-body embedding will be used by this descriptor.
 
-            - `se_a_ebd`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Type embedding will be used by this descriptor.
+            - `se_a_tpe`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Type embedding will be used by this descriptor.
 
             - `hybrid`: Concatenate of a list of descriptors as a new descriptor.
 
