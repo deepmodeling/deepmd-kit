@@ -72,7 +72,7 @@ def descrpt_se_a_args():
     ]
 
 
-def descrpt_se_at_args():
+def descrpt_se_a_3be_args():
     doc_sel = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.'
     doc_rcut = 'The cut-off radius.'
     doc_rcut_smth = 'Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`'
@@ -101,7 +101,7 @@ def descrpt_se_at_args():
 
 
 
-def descrpt_se_a_ebd_args():
+def descrpt_se_a_tpe_args():
     doc_type_nchanl = 'number of channels for type embedding'
     doc_type_nlayer = 'number of hidden layers of type embedding net'
     doc_numb_aparam = 'dimension of atomic parameter. if set to a value > 0, the atomic parameters are embedded.'
@@ -170,7 +170,7 @@ def descrpt_variant_type_args():
     link_se_a_3be = make_link('se_a_3be', 'model/descriptor[se_a_3be]')
     link_se_a_tpe = make_link('se_a_tpe', 'model/descriptor[se_a_tpe]')
     link_hybrid = make_link('hybrid', 'model/descriptor[hybrid]')
-    doc_descrpt_type = f'The type of the descritpor. Valid types are {link_lf}, {link_se_a}, {link_se_r}, {link_se_a_3be}, {link_se_a_tpe}, `{link_hybrid}`. \n\n\
+    doc_descrpt_type = f'The type of the descritpor. Valid types are {link_lf}, {link_se_a}, {link_se_r}, {link_se_a_3be}, {link_se_a_tpe}, {link_hybrid}. \n\n\
 - `loc_frame`: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.\n\n\
 - `se_a`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor.\n\n\
 - `se_r`: Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor.\n\n\
@@ -180,13 +180,13 @@ def descrpt_variant_type_args():
 - `se_ar`: A hybrid of `se_a` and `se_r`. Typically `se_a` has a smaller cut-off while the `se_r` has a larger cut-off. Deprecated, use `hybrid` instead.'
     
     return Variant("type", [
-        Argument("loc_frame", dict, doc = descrpt_local_frame_args()),
-        Argument("se_a", dict, doc = descrpt_se_a_args()),
-        Argument("se_r", dict, doc = descrpt_se_r_args()),
-        Argument("se_a_3be", dict, doc = descrpt_se_at_args(), alias = ['se_at']),
-        Argument("se_a_tpe", dict, doc = descrpt_se_a_ebd_args(), alias = ['se_a_ebd']),
-        Argument("hybrid", dict, doc = descrpt_hybrid_args()),
-        Argument("se_ar", dict, doc = descrpt_se_ar_args()),
+        Argument("loc_frame", dict, descrpt_local_frame_args()),
+        Argument("se_a", dict, descrpt_se_a_args()),
+        Argument("se_r", dict, descrpt_se_r_args()),
+        Argument("se_a_3be", dict, descrpt_se_a_3be_args(), alias = ['se_at']),
+        Argument("se_a_tpe", dict, descrpt_se_a_tpe_args(), alias = ['se_a_ebd']),
+        Argument("hybrid", dict, descrpt_hybrid_args()),
+        Argument("se_ar", dict, descrpt_se_ar_args()),
     ], doc = doc_descrpt_type)
 
 

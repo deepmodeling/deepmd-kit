@@ -78,7 +78,7 @@ model:
             | type: ``str`` (flag key)
             | argument path: ``model/descriptor/type`` 
 
-            The type of the descritpor. Valid types are `loc_frame <#model/descriptor[loc_frame]>`__, `se_a <#model/descriptor[se_a]>`__, `se_r <#model/descriptor[se_r]>`__, `se_a_3be <#model/descriptor[se_a_3be]>`__, `se_a_tpe <#model/descriptor[se_a_tpe]>`__, ``hybrid <#model/descriptor[hybrid]>`__`. 
+            The type of the descritpor. Valid types are `loc_frame <#model/descriptor[loc_frame]>`__, `se_a <#model/descriptor[se_a]>`__, `se_r <#model/descriptor[se_r]>`__, `se_a_3be <#model/descriptor[se_a_3be]>`__, `se_a_tpe <#model/descriptor[se_a_tpe]>`__, `hybrid <#model/descriptor[hybrid]>`__. 
 
             - `loc_frame`: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.
 
