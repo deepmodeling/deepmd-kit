@@ -209,22 +209,6 @@ def get_precision(precision):
     else:
         raise RuntimeError("%d is not a valid precision" % precision)
 
-def delete_file_folder(src):
-    '''delete files and folders'''
-    if os.path.isfile(src):
-        try:
-            os.remove(src)
-        except:
-            pass
-    elif os.path.isdir(src):
-        for item in os.listdir(src):
-            itemsrc=os.path.join(src,item)
-            delete_file_folder(itemsrc) 
-        try:
-            os.rmdir(src)
-        except:
-            pass
-
 def variable_summaries(var, name):
     """Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
     with tf.name_scope(name):

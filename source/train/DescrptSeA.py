@@ -6,8 +6,27 @@ from deepmd.RunOptions import global_np_float_precision
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 
+from typing_extensions import TypedDict, List
+
+JDATA = TypedDict("JDATA", {
+    'sel': List[int],
+    'rcut': float,
+    'rcut_smth': float,
+    'neuron': List[int],
+    'axis_neuron': int,
+    'resnet_dt': bool,
+    'trainable': bool,
+    'seed': int,
+    'type_one_side': bool,
+    'exclude_types': list,
+    'set_davg_zero': bool,
+    'activation_function': str,
+    'precision': str
+})
+
+
 class DescrptSeA ():
-    def __init__ (self, jdata):
+    def __init__ (self, jdata: JDATA):
         args = ClassArg()\
                .add('sel',      list,   must = True) \
                .add('rcut',     float,  default = 6.0) \

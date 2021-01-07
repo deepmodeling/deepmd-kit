@@ -32,7 +32,7 @@ import deepmd._soft_min_force_grad
 import deepmd._soft_min_virial_grad
 import deepmd._gelu
 
-from deepmd.common import j_must_have, ClassArg, delete_file_folder
+from deepmd.common import j_must_have, ClassArg
 
 def _is_subdir(path, directory):
     path = os.path.realpath(path)
@@ -187,7 +187,7 @@ class NNPTrainer (object):
                   .add('profiling',     bool,   default = False)\
                   .add('profiling_file',str,    default = 'timeline.json')\
                   .add('tensorboard',     bool,   default = False)\
-                  .add('tensorboard_log_file',str,    default = 'log')\
+                  .add('tensorboard_log_dir',str,    default = 'log')\
                   .add('sys_probs',   list    )\
                   .add('auto_prob_style', str, default = "prob_sys_size")
         tr_data = tr_args.parse(training_param)
@@ -202,7 +202,7 @@ class NNPTrainer (object):
         self.profiling = tr_data['profiling']
         self.profiling_file = tr_data['profiling_file']
         self.tensorboard = tr_data['tensorboard']
-        self.tensorboard_log_file = tr_data['tensorboard_log_file']
+        self.tensorboard_log_dir = tr_data['tensorboard_log_dir']
         self.sys_probs = tr_data['sys_probs']        
         self.auto_prob_style = tr_data['auto_prob_style']        
         self.useBN = False
@@ -410,12 +410,9 @@ class NNPTrainer (object):
         # set tensorboard execution environment
         if self.tensorboard :
             summary_merged_op = tf.summary.merge_all()
-            if os.path.exists(self.tensorboard_log_file + '/train'):
-                delete_file_folder(self.tensorboard_log_file + '/train')
-            if os.path.exists(self.tensorboard_log_file + '/test'):
-                delete_file_folder (self.tensorboard_log_file + '/test')
-            tb_train_writer = tf.summary.FileWriter(self.tensorboard_log_file + '/train', self.sess.graph)
-            tb_test_writer = tf.summary.FileWriter(self.tensorboard_log_file + '/test')
+            shutil.rmtree(self.tensorboard_log_dir)
+            tb_train_writer = tf.summary.FileWriter(self.tensorboard_log_dir + '/train', self.sess.graph)
+            tb_test_writer = tf.summary.FileWriter(self.tensorboard_log_dir + '/test')
         else:
             tb_train_writer = None
             tb_test_writer = None
