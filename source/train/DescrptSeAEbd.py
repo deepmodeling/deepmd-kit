@@ -7,6 +7,7 @@ from deepmd.RunOptions import global_np_float_precision
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.DescrptSeA import DescrptSeA
+from deepmd.Network import embedding_net
 
 class DescrptSeAEbd (DescrptSeA):
     def __init__ (self, jdata):
@@ -106,36 +107,18 @@ class DescrptSeAEbd (DescrptSeA):
             shape_i = inputs_i.get_shape().as_list()
             # with (natom x nei) x 4  
             inputs_reshape = tf.reshape(inputs_i, [-1, 4])
+            # with (natom x nei) x 1
             xyz_scatter = tf.reshape(tf.slice(inputs_reshape, [0,0],[-1,1]),[-1,1])
-            for ii in range(1, len(outputs_size)):
-                w = tf.get_variable('matrix_'+str(ii), 
-                                    [outputs_size[ii - 1], outputs_size[ii]], 
-                                    self.filter_precision,
-                                    tf.random_normal_initializer(stddev=stddev/np.sqrt(outputs_size[ii]+outputs_size[ii-1]), seed = seed), 
-                                    trainable = trainable)
-                b = tf.get_variable('bias_'+str(ii),
-                                    [1, outputs_size[ii]], 
-                                    self.filter_precision,
-                                    tf.random_normal_initializer(stddev=stddev, mean = bavg, seed = seed), 
-                                    trainable = trainable)
-                if self.filter_resnet_dt :
-                    idt = tf.get_variable('idt_'+str(ii),
-                                          [1, outputs_size[ii]], 
-                                          self.filter_precision,
-                                          tf.random_normal_initializer(stddev=0.001, mean = 1.0, seed = seed), 
-                                          trainable = trainable)
-                if outputs_size[ii] == outputs_size[ii-1]:
-                    if self.filter_resnet_dt :
-                        xyz_scatter += activation_fn(tf.matmul(xyz_scatter, w) + b) * idt
-                    else :
-                        xyz_scatter += activation_fn(tf.matmul(xyz_scatter, w) + b)
-                elif outputs_size[ii] == outputs_size[ii-1] * 2: 
-                    if self.filter_resnet_dt :
-                        xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + activation_fn(tf.matmul(xyz_scatter, w) + b) * idt
-                    else :
-                        xyz_scatter = tf.concat([xyz_scatter,xyz_scatter], 1) + activation_fn(tf.matmul(xyz_scatter, w) + b)
-                else:
-                    xyz_scatter = activation_fn(tf.matmul(xyz_scatter, w) + b)
+            # with (natom x nei) x out_size
+            xyz_scatter = embedding_net(xyz_scatter, 
+                                        self.filter_neuron, 
+                                        self.filter_precision, 
+                                        activation_fn = activation_fn, 
+                                        resnet_dt = self.filter_resnet_dt,
+                                        stddev = stddev,
+                                        bavg = bavg,
+                                        seed = seed,
+                                        trainable = trainable)
             # natom x nei x out_size
             xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1]//4, outputs_size[-1]))
             xyz_scatter_total.append(xyz_scatter)
