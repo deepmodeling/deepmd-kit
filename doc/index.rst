@@ -15,6 +15,7 @@ DeePMD-kit's documentation
    use-deepmd-kit
    train-input
    lammps-pair-style-deepmd
+   tensorboard
    api
 
 

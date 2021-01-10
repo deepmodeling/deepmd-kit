@@ -7,6 +7,7 @@ from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.Network import embedding_net
 
+
 class DescrptSeA ():
     def __init__ (self, jdata):
         args = ClassArg()\
@@ -204,6 +205,10 @@ class DescrptSeA ():
                                        rcut_r_smth = self.rcut_r_smth,
                                        sel_a = self.sel_a,
                                        sel_r = self.sel_r)
+        # only used when tensorboard was set as true
+        tf.summary.histogram('descrpt', self.descrpt)
+        tf.summary.histogram('rij', self.rij)
+        tf.summary.histogram('nlist', self.nlist)
 
         self.descrpt_reshape = tf.reshape(self.descrpt, [-1, self.ndescrpt])
         self.descrpt_reshape = tf.identity(self.descrpt_reshape, name = 'o_rmat')
@@ -219,6 +224,8 @@ class DescrptSeA ():
                                                  reuse = reuse, 
                                                  trainable = self.trainable)
 
+        # only used when tensorboard was set as true
+        tf.summary.histogram('embedding_net_output', self.dout)
         return self.dout
 
     
@@ -228,6 +235,7 @@ class DescrptSeA ():
 
     def prod_force_virial(self, atom_ener, natoms) :
         [net_deriv] = tf.gradients (atom_ener, self.descrpt_reshape)
+        tf.summary.histogram('net_derivative', net_deriv)
         net_deriv_reshape = tf.reshape (net_deriv, [-1, natoms[0] * self.ndescrpt])        
         force \
             = op_module.prod_force_se_a (net_deriv_reshape,
@@ -244,6 +252,10 @@ class DescrptSeA ():
                                            natoms,
                                            n_a_sel = self.nnei_a,
                                            n_r_sel = self.nnei_r)
+        tf.summary.histogram('force', force)
+        tf.summary.histogram('virial', virial)
+        tf.summary.histogram('atom_virial', atom_virial)
+        
         return force, virial, atom_virial
         
 
@@ -411,4 +423,3 @@ class DescrptSeA ():
           result = tf.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
 
         return result, qmat
-

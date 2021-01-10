@@ -44,6 +44,7 @@ class DescrptSeAEbd (DescrptSeA):
                                         trainable = False,
                                         initializer = tf.constant_initializer(nei_type))
         self.dout = DescrptSeA.build(self, coord_, atype_, natoms, box_, mesh, input_dict, suffix = suffix, reuse = reuse)
+        tf.summary.histogram('embedding_net_output', self.dout)
 
         return self.dout
 

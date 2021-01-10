@@ -59,6 +59,8 @@
 	"load_ckpt":	"model.ckpt",
 	"disp_training":true,
 	"time_training":true,
+	"tensorboard":	false,
+	"tensorboard_log_dir":"log",
 	"profiling":	false,
 	"profiling_file":"timeline.json",
 	"_comment":	"that's all"

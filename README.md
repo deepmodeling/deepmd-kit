@@ -19,7 +19,7 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
 For more information, check the [documentation](https://deepmd.readthedocs.io/).
 
 ## Highlighted features
-* **interfaced with TensorFlow**, one of the most popular deep learning frameworks, making the training process highly automatic and efficient.
+* **interfaced with TensorFlow**, one of the most popular deep learning frameworks, making the training process highly automatic and efficient, in addition Tensorboard can be used to visualize training procedure.
 * **interfaced with high-performance classical MD and quantum (path-integral) MD packages**, i.e., LAMMPS and i-PI, respectively. 
 * **implements the Deep Potential series models**, which have been successfully applied to  finite and extended systems including organic molecules, metals, semiconductors, and insulators, etc.
 * **implements MPI and GPU supports**, makes it highly efficient for high performance parallel and distributed computing.
@@ -78,9 +78,10 @@ The typical procedure of using DeePMD-kit includes 5 steps
 
 1. [Prepare data](doc/use-deepmd-kit.md#prepare-data)
 2. [Train a model](doc/use-deepmd-kit.md#train-a-model)
-3. [Freeze the model](doc/use-deepmd-kit.md#freeze-a-model)
-4. [Test the model](doc/use-deepmd-kit.md#test-a-model)
-5. [Inference the model in python](doc/use-deepmd-kit.md#model-inference) or using the model in other molecular simulation packages like [LAMMPS](doc/use-deepmd-kit.md#run-md-with-lammps), [i-PI](doc/use-deepmd-kit.md#run-path-integral-md-with-i-pi) or [ASE](doc/use-deepmd-kit.md#use-deep-potential-with-ase).
+3. [Analyze training with Tensorboard](doc/tensorboard.md)
+4. [Freeze the model](doc/use-deepmd-kit.md#freeze-a-model)
+5. [Test the model](doc/use-deepmd-kit.md#test-a-model)
+6. [Inference the model in python](doc/use-deepmd-kit.md#model-inference) or using the model in other molecular simulation packages like [LAMMPS](doc/use-deepmd-kit.md#run-md-with-lammps), [i-PI](doc/use-deepmd-kit.md#run-path-integral-md-with-i-pi) or [ASE](doc/use-deepmd-kit.md#use-deep-potential-with-ase).
 
 A quick-start on using DeePMD-kit can be found [here](doc/use-deepmd-kit.md).
 

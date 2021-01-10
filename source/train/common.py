@@ -208,4 +208,3 @@ def get_precision(precision):
         return tf.float64
     else:
         raise RuntimeError("%d is not a valid precision" % precision)
-

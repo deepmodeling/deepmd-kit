@@ -22,11 +22,13 @@ def one_layer(inputs,
                             precision,
                             tf.random_normal_initializer(stddev=stddev/np.sqrt(shape[1]+outputs_size), seed = seed), 
                             trainable = trainable)
+        variable_summaries(w, 'matrix')
         b = tf.get_variable('bias', 
                             [outputs_size], 
                             precision,
                             tf.random_normal_initializer(stddev=stddev, mean = bavg, seed = seed), 
                             trainable = trainable)
+        variable_summaries(b, 'bias')
         hidden = tf.matmul(inputs, w) + b
         if activation_fn != None and use_timestep :
             idt = tf.get_variable('idt',
@@ -34,6 +36,7 @@ def one_layer(inputs,
                                   precision,
                                   tf.random_normal_initializer(stddev=0.001, mean = 0.1, seed = seed), 
                                   trainable = trainable)
+            variable_summaries(idt, 'idt')
         if activation_fn != None:
             if useBN:
                 None
@@ -95,11 +98,15 @@ def embedding_net(xx,
                             precision,
                             tf.random_normal_initializer(stddev=stddev/np.sqrt(outputs_size[ii]+outputs_size[ii-1]), seed = seed), 
                             trainable = trainable)
+        variable_summaries(w, 'matrix_'+str(ii)+name_suffix)
+
         b = tf.get_variable('bias_'+str(ii)+name_suffix, 
                             [1, outputs_size[ii]], 
                             precision,
                             tf.random_normal_initializer(stddev=stddev, mean = bavg, seed = seed), 
                             trainable = trainable)
+        variable_summaries(b, 'bias_'+str(ii)+name_suffix)
+
         hidden = tf.reshape(activation_fn(tf.matmul(xx, w) + b), [-1, outputs_size[ii]])
         if resnet_dt :
             idt = tf.get_variable('idt_'+str(ii)+name_suffix, 
@@ -107,6 +114,8 @@ def embedding_net(xx,
                                   precision,
                                   tf.random_normal_initializer(stddev=0.001, mean = 1.0, seed = seed), 
                                   trainable = trainable)
+            variable_summaries(idt, 'idt_'+str(ii)+name_suffix)
+
         if outputs_size[ii] == outputs_size[ii-1]:
             if resnet_dt :
                 xx += hidden * idt
@@ -121,3 +130,24 @@ def embedding_net(xx,
             xx = hidden
 
     return xx
+
+def variable_summaries(var: tf.Variable, name: str):
+    """Attach a lot of summaries to a Tensor (for TensorBoard visualization).
+
+    Parameters
+    ----------
+    var : tf.Variable
+        [description]
+    name : str
+        variable name
+    """
+    with tf.name_scope(name):
+        mean = tf.reduce_mean(var)
+        tf.summary.scalar('mean', mean)
+
+        with tf.name_scope('stddev'):
+            stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
+        tf.summary.scalar('stddev', stddev)
+        tf.summary.scalar('max', tf.reduce_max(var))
+        tf.summary.scalar('min', tf.reduce_min(var))
+        tf.summary.histogram('histogram', var)

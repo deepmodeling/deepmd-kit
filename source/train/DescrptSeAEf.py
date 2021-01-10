@@ -63,6 +63,9 @@ class DescrptSeAEf ():
         self.dout = tf.concat([self.dout_vert, self.dout_para], axis = 1)
         self.dout = tf.reshape(self.dout, [nframes, natoms[0] * self.get_dim_out()])
         self.qmat = self.descrpt_vert.qmat + self.descrpt_para.qmat
+
+        tf.summary.histogram('embedding_net_output', self.dout)
+
         return self.dout
 
     def prod_force_virial(self, atom_ener, natoms) :
@@ -264,7 +267,13 @@ class DescrptSeAEfLower (DescrptSeA):
         self.rij = tf.identity(self.rij, name = 'o_rij')
         self.nlist = tf.identity(self.nlist, name = 'o_nlist')
 
+        # only used when tensorboard was set as true
+        tf.summary.histogram('descrpt', self.descrpt)
+        tf.summary.histogram('rij', self.rij)
+        tf.summary.histogram('nlist', self.nlist)
+
         self.dout, self.qmat = self._pass_filter(self.descrpt_reshape, atype, natoms, input_dict, suffix = suffix, reuse = reuse, trainable = self.trainable)
+        tf.summary.histogram('embedding_net_output', self.dout)
 
         return self.dout
 
