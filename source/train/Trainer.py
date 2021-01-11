@@ -9,12 +9,12 @@ from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_ener_float_precision
 from deepmd.Fitting import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
 from deepmd.DescrptLocFrame import DescrptLocFrame
-from deepmd.DescrptSeA import DescrptSeA
-from deepmd.DescrptSeAT import DescrptSeAT
-from deepmd.DescrptSeAEbd import DescrptSeAEbd
-from deepmd.DescrptSeAEf import DescrptSeAEf
-from deepmd.DescrptSeR import DescrptSeR
-from deepmd.DescrptSeAR import DescrptSeAR
+from deepmd.descrpt_se_a import DescrptSeA
+from deepmd.descrpt_se_a_t import DescrptSeAT
+from deepmd.descrpt_se_a_ebd import DescrptSeAEbd
+from deepmd.descrpt_se_a_ef import DescrptSeAEf
+from deepmd.descrpt_se_r import DescrptSeR
+from deepmd.descrpt_se_ar import DescrptSeAR
 from deepmd.DescrptHybrid import DescrptHybrid
 from deepmd.Model import Model, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
 from deepmd.Loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
@@ -60,10 +60,11 @@ class NNPTrainer (object):
 
         # descriptor
         descrpt_type = j_must_have(descrpt_param, 'type')
+        descrpt_param.pop('type',None)
         if descrpt_type == 'loc_frame':
             self.descrpt = DescrptLocFrame(descrpt_param)
-        elif descrpt_type == 'se_a' :
-            self.descrpt = DescrptSeA(descrpt_param)
+        elif descrpt_type == 'se_a' :            
+            self.descrpt = DescrptSeA(**descrpt_param)
         elif descrpt_type == 'se_a_3be' or descrpt_type == 'se_at' :
             self.descrpt = DescrptSeAT(descrpt_param)
         elif descrpt_type == 'se_a_tpe' or descrpt_type == 'se_a_ebd' :

@@ -22,6 +22,7 @@ def gelu(x):
     return op_module.gelu(x)
 
 data_requirement = {}
+
 activation_fn_dict = {
     "relu": tf.nn.relu,
     "relu6": tf.nn.relu6,
@@ -30,6 +31,14 @@ activation_fn_dict = {
     "tanh": tf.nn.tanh,
     "gelu": gelu
 }
+
+precision_dict = {
+    "default": global_tf_float_precision,
+    "float16": tf.float16,
+    "float32": tf.float32,
+    "float64": tf.float64,
+}
+
 def add_data_requirement(key, 
                          ndof, 
                          atomic = False, 
@@ -190,6 +199,11 @@ def get_activation_func(activation_fn):
         raise RuntimeError(activation_fn+" is not a valid activation function")
     return activation_fn_dict[activation_fn]
 
+def get_precision(precision):
+    if precision not in precision_dict:
+        raise RuntimeError(precision+" is not a valid precision")
+    return precision_dict[precision]
+
 def expand_sys_str(root_dir):
     matches = []
     for root, dirnames, filenames in os.walk(root_dir, followlinks=True):
@@ -197,14 +211,8 @@ def expand_sys_str(root_dir):
             matches.append(root)
     return matches
 
-def get_precision(precision):
-    if precision == "default":
-        return  global_tf_float_precision
-    elif precision == "float16":
-        return tf.float16
-    elif precision == "float32":
-        return tf.float32
-    elif precision == "float64":
-        return tf.float64
-    else:
-        raise RuntimeError("%d is not a valid precision" % precision)
+def docstring_parameter(*sub):
+    def dec(obj):
+        obj.__doc__ = obj.__doc__.format(*sub)
+        return obj
+    return dec

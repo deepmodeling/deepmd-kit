@@ -20,7 +20,7 @@ def _make_all_stat_ref(data, nbatches):
     return all_stat
 
 
-def make_all_stat(data, nbatches, merge_sys = True):
+def make_stat_input(data, nbatches, merge_sys = True):
     """
     pack data for statistics
     Parameters
@@ -110,7 +110,7 @@ class Model() :
         return self.type_map
 
     def data_stat(self, data):
-        all_stat = make_all_stat(data, self.data_stat_nbatch, merge_sys = False)
+        all_stat = make_stat_input(data, self.data_stat_nbatch, merge_sys = False)
         m_all_stat = merge_sys_stat(all_stat)
         self._compute_input_stat(m_all_stat, protection = self.data_stat_protect)
         self._compute_output_stat(all_stat)
@@ -297,7 +297,7 @@ class TensorModel() :
         return self.fitting.get_out_size()
 
     def data_stat(self, data):
-        all_stat = make_all_stat(data, self.data_stat_nbatch, merge_sys = False)
+        all_stat = make_stat_input(data, self.data_stat_nbatch, merge_sys = False)
         m_all_stat = merge_sys_stat(all_stat)        
         self._compute_input_stat (m_all_stat, protection = self.data_stat_protect)
         self._compute_output_stat(all_stat)

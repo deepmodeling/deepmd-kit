@@ -1,5 +1,5 @@
 from dargs import Argument, Variant
-from deepmd.common import activation_fn_dict
+from deepmd.common import activation_fn_dict, precision_dict
 
 def list_to_doc (xx):
     items = []
@@ -10,10 +10,6 @@ def list_to_doc (xx):
             items.append(f', "{ii}"')
     items.append('.')
     return ''.join(items)
-
-
-def supported_precision() :
-    return list_to_doc(['float64', 'float32', 'float16'])
 
 
 def make_link(content, ref_key) :
@@ -49,7 +45,7 @@ def descrpt_se_a_args():
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(activation_fn_dict.keys())}'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_type_one_side = 'Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets'
-    doc_precision = f'The precision of the embedding net parameters, supported options are {supported_precision()}'
+    doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(precision_dict.keys())}'
     doc_trainable = 'If the parameters in the embedding net is trainable'
     doc_seed = 'Random seed for parameter initialization'
     doc_exclude_types = 'The Excluded types'
@@ -79,7 +75,7 @@ def descrpt_se_a_3be_args():
     doc_neuron = 'Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.'
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(activation_fn_dict.keys())}'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
-    doc_precision = f'The precision of the embedding net parameters, supported options are {supported_precision()}'
+    doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(precision_dict.keys())}'
     doc_trainable = 'If the parameters in the embedding net is trainable'
     doc_seed = 'Random seed for parameter initialization'
     doc_exclude_types = 'The Excluded types'
@@ -121,7 +117,7 @@ def descrpt_se_r_args():
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(activation_fn_dict.keys())}'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_type_one_side = 'Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets'
-    doc_precision = f'The precision of the embedding net parameters, supported options are {supported_precision()}'
+    doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(precision_dict.keys())}'
     doc_trainable = 'If the parameters in the embedding net is trainable'
     doc_seed = 'Random seed for parameter initialization'
     doc_exclude_types = 'The Excluded types'
@@ -195,7 +191,7 @@ def fitting_ener():
     doc_numb_aparam = 'The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams.'
     doc_neuron = 'The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.'
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(activation_fn_dict.keys())}'
-    doc_precision = f'The precision of the fitting net parameters, supported options are {supported_precision()}'
+    doc_precision = f'The precision of the fitting net parameters, supported options are {list_to_doc(precision_dict.keys())}'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_trainable = 'Whether the parameters in the fitting net are trainable. This option can be\n\n\
 - bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
@@ -222,7 +218,7 @@ def fitting_polar():
     doc_neuron = 'The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.'
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(activation_fn_dict.keys())}'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
-    doc_precision = f'The precision of the fitting net parameters, supported options are {supported_precision()}'
+    doc_precision = f'The precision of the fitting net parameters, supported options are {list_to_doc(precision_dict.keys())}'
     doc_scale = 'The output of the fitting net (polarizability matrix) will be scaled by ``scale``'
     doc_diag_shift = 'The diagonal part of the polarizability matrix  will be shifted by ``diag_shift``. The shift operation is carried out after ``scale``.'
     doc_fit_diag = 'Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to normal polarizability matrix by contracting with the rotation matrix.'
@@ -250,7 +246,7 @@ def fitting_dipole():
     doc_neuron = 'The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.'
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(activation_fn_dict.keys())}'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
-    doc_precision = f'The precision of the fitting net parameters, supported options are {supported_precision()}'
+    doc_precision = f'The precision of the fitting net parameters, supported options are {list_to_doc(precision_dict.keys())}'
     doc_sel_type = 'The atom types for which the atomic dipole will be provided. If not set, all types will be selected.'
     doc_seed = 'Random seed for parameter initialization of the fitting net'
     return [

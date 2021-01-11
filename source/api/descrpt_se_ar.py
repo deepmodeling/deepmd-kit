@@ -2,8 +2,8 @@ import numpy as np
 from deepmd.env import tf
 from deepmd.common import ClassArg
 
-from deepmd.DescrptSeA import DescrptSeA
-from deepmd.DescrptSeR import DescrptSeR
+from deepmd.descrpt_se_a import DescrptSeA
+from deepmd.descrpt_se_r import DescrptSeR
 from deepmd.env import op_module
 
 class DescrptSeAR ():

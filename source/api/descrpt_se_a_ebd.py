@@ -1,13 +1,13 @@
 import numpy as np
 from deepmd.env import tf
 from deepmd.common import ClassArg, get_activation_func, get_precision, add_data_requirement
-from deepmd.Network import one_layer
+from deepmd.network import one_layer
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
-from deepmd.DescrptSeA import DescrptSeA
-from deepmd.Network import embedding_net
+from deepmd.descrpt_se_a import DescrptSeA
+from deepmd.network import embedding_net
 
 class DescrptSeAEbd (DescrptSeA):
     def __init__ (self, jdata):

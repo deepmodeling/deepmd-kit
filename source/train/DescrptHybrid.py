@@ -5,11 +5,11 @@ from deepmd.env import op_module
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.DescrptLocFrame import DescrptLocFrame
-from deepmd.DescrptSeA import DescrptSeA
-from deepmd.DescrptSeAT import DescrptSeAT
-from deepmd.DescrptSeAEbd import DescrptSeAEbd
-from deepmd.DescrptSeAEf import DescrptSeAEf
-from deepmd.DescrptSeR import DescrptSeR
+from deepmd.descrpt_se_a import DescrptSeA
+from deepmd.descrpt_se_a_t import DescrptSeAT
+from deepmd.descrpt_se_a_ebd import DescrptSeAEbd
+from deepmd.descrpt_se_a_ef import DescrptSeAEf
+from deepmd.descrpt_se_r import DescrptSeR
 
 class DescrptHybrid ():
     def __init__ (self, jdata):
@@ -25,7 +25,7 @@ class DescrptHybrid ():
             if this_type == 'loc_frame':
                 this_descrpt = DescrptLocFrame(ii)
             elif this_type == 'se_a' :
-                this_descrpt = DescrptSeA(ii)
+                this_descrpt = DescrptSeA(**ii)
             elif this_type == 'se_at' :
                 this_descrpt = DescrptSeAT(ii)
             elif this_type == 'se_a_ebd' :
