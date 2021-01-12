@@ -63,7 +63,8 @@ source $tensorflow_venv/bin/activate
 pip install --upgrade pip
 pip install --upgrade tensorflow==2.3.0
 ```
-It is notice that everytime a new shell is started and one wants to use `DeePMD-kit`, the virtual environment should be activated by 
+It is highly recommanded to keep the consistency of the TensorFlow version for the python and C++ interfaces. 
+Everytime a new shell is started and one wants to use `DeePMD-kit`, the virtual environment should be activated by 
 ```bash
 source $tensorflow_venv/bin/activate
 ```
