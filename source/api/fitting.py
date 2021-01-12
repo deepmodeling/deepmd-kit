@@ -22,7 +22,7 @@ class EnerFitting ():
                   numb_aparam : int = 0,
                   rcond : float = 1e-3,
                   tot_ener_zero : bool = False,
-                  trainable : List[bool] = [True,True,True,True],
+                  trainable : List[bool] = None,
                   seed : int = 1,
                   atom_ener : List[float] = [],
                   activation_function : str = 'tanh',
@@ -86,6 +86,8 @@ class EnerFitting ():
         self.fitting_activation_fn = get_activation_func(activation_function)
         self.fitting_precision = get_precision(precision)
         self.trainable = trainable
+        if self.trainable is None:
+            self.trainable = [True for ii in range(len(self.n_neuron) + 1)]
         if type(self.trainable) is bool:
             self.trainable = [self.trainable] * (len(self.n_neuron)+1)
         assert(len(self.trainable) == len(self.n_neuron) + 1), 'length of trainable should be that of n_neuron + 1'

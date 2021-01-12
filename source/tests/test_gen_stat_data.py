@@ -4,8 +4,8 @@ import unittest
 import dpdata
 
 from deepmd.DataSystem import DeepmdDataSystem
-from deepmd.Fitting import EnerFitting
-from deepmd.Model import make_all_stat, merge_sys_stat, _make_all_stat_ref
+from deepmd.fitting import EnerFitting
+from deepmd.Model import make_stat_input, merge_sys_stat, _make_all_stat_ref
 
 def gen_sys(nframes, atom_types):
     natoms = len(atom_types)
@@ -66,9 +66,9 @@ class TestGenStatData(unittest.TestCase) :
         data2.add('force', 3, atomic = True, must = True)
         
         np.random.seed(0)
-        all_stat_0 = make_all_stat(data0, 10, merge_sys = False)
+        all_stat_0 = make_stat_input(data0, 10, merge_sys = False)
         np.random.seed(0)
-        all_stat_1 = make_all_stat(data1, 10, merge_sys = True)
+        all_stat_1 = make_stat_input(data1, 10, merge_sys = True)
         all_stat_2 = merge_sys_stat(all_stat_0)
         np.random.seed(0)
         all_stat_3 = _make_all_stat_ref(data2, 10)
@@ -116,7 +116,7 @@ class TestEnerShift(unittest.TestCase):
                                 1.0)
         data.add('energy', 1, must = True)
         ener_shift0 = data.compute_energy_shift(rcond = 1)
-        all_stat = make_all_stat(data, 4, merge_sys = False)
+        all_stat = make_stat_input(data, 4, merge_sys = False)
         ener_shift1 = EnerFitting._compute_output_stats(all_stat, rcond = 1)        
         for ii in range(len(ener_shift0)):
             self.assertAlmostEqual(ener_shift0[ii], ener_shift1[ii])

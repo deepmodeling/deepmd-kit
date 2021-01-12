@@ -5,8 +5,8 @@ from common import Data,gen_data
 
 from deepmd.RunOptions import RunOptions
 from deepmd.DataSystem import DataSystem
-from deepmd.DescrptSeA import DescrptSeA
-from deepmd.Fitting import EnerFitting
+from deepmd.descrpt_se_a import DescrptSeA
+from deepmd.fitting import EnerFitting
 from deepmd.Model import Model
 from deepmd.common import j_must_have, j_must_have_d, j_have, j_loader
 
@@ -47,8 +47,12 @@ class TestModel(unittest.TestCase):
         test_data = data.get_test ()
         numb_test = 1
         
-        descrpt = DescrptSeA(jdata['model']['descriptor'])
-        fitting = EnerFitting(jdata['model']['fitting_net'], descrpt)
+        jdata['model']['descriptor'].pop('type', None)        
+        descrpt = DescrptSeA(**jdata['model']['descriptor'])
+        jdata['model']['fitting_net']['descrpt'] = descrpt
+        fitting = EnerFitting(**jdata['model']['fitting_net'])
+        # descrpt = DescrptSeA(jdata['model']['descriptor'])
+        # fitting = EnerFitting(jdata['model']['fitting_net'], descrpt)
         model = Model(jdata['model'], descrpt, fitting)
 
         # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])

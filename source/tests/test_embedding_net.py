@@ -5,7 +5,7 @@ import unittest
 from deepmd.env import tf
 from tensorflow.python.framework import ops
 
-from deepmd.Network import embedding_net
+from deepmd.network import embedding_net
 
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision

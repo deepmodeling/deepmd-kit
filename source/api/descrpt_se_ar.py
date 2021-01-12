@@ -14,7 +14,7 @@ class DescrptSeAR ():
         class_data = args.parse(jdata)
         self.param_a = class_data['a']
         self.param_r = class_data['r']
-        self.descrpt_a = DescrptSeA(self.param_a)
+        self.descrpt_a = DescrptSeA(**self.param_a)
         self.descrpt_r = DescrptSeR(self.param_r)        
         assert(self.descrpt_a.get_ntypes() == self.descrpt_r.get_ntypes())
         self.davg = None

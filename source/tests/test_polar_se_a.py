@@ -5,8 +5,8 @@ from common import Data,gen_data
 
 from deepmd.RunOptions import RunOptions
 from deepmd.DataSystem import DataSystem
-from deepmd.DescrptSeA import DescrptSeA
-from deepmd.Fitting import PolarFittingSeA
+from deepmd.descrpt_se_a import DescrptSeA
+from deepmd.fitting import PolarFittingSeA
 from deepmd.Model import PolarModel
 from deepmd.common import j_must_have, j_must_have_d, j_have, j_loader
 
@@ -37,8 +37,11 @@ class TestModel(unittest.TestCase):
         test_data = data.get_test ()
         numb_test = 1
         
-        descrpt = DescrptSeA(jdata['model']['descriptor'])
-        fitting = PolarFittingSeA(jdata['model']['fitting_net'], descrpt)
+        jdata['model']['descriptor'].pop('type', None)
+        jdata['model']['fitting_net'].pop('type', None)
+        descrpt = DescrptSeA(**jdata['model']['descriptor'])
+        jdata['model']['fitting_net']['descrpt'] = descrpt
+        fitting = PolarFittingSeA(**jdata['model']['fitting_net'])
         model = PolarModel(jdata['model'], descrpt, fitting)
 
         # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])

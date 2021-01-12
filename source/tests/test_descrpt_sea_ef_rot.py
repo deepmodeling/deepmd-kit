@@ -9,8 +9,8 @@ from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
 
 from deepmd.env import op_module
-from deepmd.DescrptSeA import DescrptSeA
-from deepmd.DescrptSeAEf import DescrptSeAEfLower
+from deepmd.descrpt_se_a import DescrptSeA
+from deepmd.descrpt_se_a_ef import DescrptSeAEfLower
 
 class TestEfRot(unittest.TestCase):
     def setUp(self):
@@ -60,9 +60,9 @@ class TestEfRot(unittest.TestCase):
         efield = self._normalize_3d(efield)
         efield = tf.reshape(efield, [-1, tnatoms[0] * 3])
         if op != op_module.descrpt_se_a :            
-            descrpt = DescrptSeAEfLower({'sel':self.sel_a}, op)
+            descrpt = DescrptSeAEfLower(op, **{'sel':self.sel_a, 'rcut': 6, 'rcut_smth' : 5.5})
         else:
-            descrpt = DescrptSeA({'sel':self.sel_a})
+            descrpt = DescrptSeA(**{'sel':self.sel_a, 'rcut': 6, 'rcut_smth' : 0.5})
         dout = descrpt.build(dcoord,
                              dtype,
                              tnatoms,

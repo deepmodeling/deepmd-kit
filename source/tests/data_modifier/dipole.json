@@ -11,16 +11,14 @@
 	    "neuron":		[25, 50, 100],
 	    "resnet_dt":	false,
 	    "axis_neuron":	6,
-	    "seed":		1,
-	    "_comment":		" that's all"
+	    "seed":		1
 	},
 	"fitting_net": {
 	    "type":		"dipole",
-	    "dipole_type":		[0],
+	    "sel_type":		[0],
 	    "neuron":		[100, 100, 100],
 	    "resnet_dt":	true,
-	    "seed":		1,
-	    "_comment":		" that's all"
+	    "seed":		1
 	},
 	"_comment":	" that's all"
     },

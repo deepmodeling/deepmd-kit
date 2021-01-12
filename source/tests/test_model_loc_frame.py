@@ -6,7 +6,7 @@ from common import Data,gen_data
 from deepmd.RunOptions import RunOptions
 from deepmd.DataSystem import DataSystem
 from deepmd.DescrptLocFrame import DescrptLocFrame
-from deepmd.Fitting import EnerFitting
+from deepmd.fitting import EnerFitting
 from deepmd.Model import Model
 from deepmd.common import j_must_have, j_must_have_d, j_have, j_loader
 
@@ -38,7 +38,9 @@ class TestModel(unittest.TestCase):
         numb_test = 1        
 
         descrpt = DescrptLocFrame(jdata['model']['descriptor'])
-        fitting = EnerFitting(jdata['model']['fitting_net'], descrpt)
+        fitting = EnerFitting(descrpt, 
+                              neuron = [240, 120, 60, 30, 10], 
+                              seed = 1)
         model = Model(jdata['model'], descrpt, fitting)
 
         # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])

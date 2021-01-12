@@ -99,7 +99,7 @@ class TestDataModifier (unittest.TestCase) :
         self.natoms = len(self.atom_types0)
         self.nframes = 1
         scale = 10.0
-        self.sel_type = jdata['model']['fitting_net']['dipole_type']
+        self.sel_type = jdata['model']['fitting_net']['sel_type']
         self.nsel = 0
         for ii in self.sel_type:
             self.nsel += np.sum(self.atom_types0 == ii)
@@ -144,7 +144,7 @@ class TestDataModifier (unittest.TestCase) :
 	        },
 	        "fitting_net": {
 	            "type":		"dipole",
-	            "dipole_type":	[1, 3],
+	            "sel_type":	[1, 3],
 	            "neuron":		[10],
 	            "resnet_dt":	True,
 	            "seed":		1,

@@ -1,4 +1,6 @@
 import numpy as np
+from typing import Tuple, List
+
 from deepmd.env import tf
 from deepmd.common import ClassArg, add_data_requirement
 from deepmd.RunOptions import global_tf_float_precision
@@ -9,8 +11,8 @@ from deepmd.descrpt_se_a import DescrptSeA
 
 class DescrptSeAEf ():
     def __init__(self, jdata):
-        self.descrpt_para = DescrptSeAEfLower(jdata, op_module.descrpt_se_a_ef_para)
-        self.descrpt_vert = DescrptSeAEfLower(jdata, op_module.descrpt_se_a_ef_vert)
+        self.descrpt_para = DescrptSeAEfLower(op_module.descrpt_se_a_ef_para, **jdata)
+        self.descrpt_vert = DescrptSeAEfLower(op_module.descrpt_se_a_ef_vert, **jdata)
         
     def get_rcut (self) :
         return self.descrpt_vert.rcut_r
@@ -80,26 +82,64 @@ class DescrptSeAEf ():
 
 
 class DescrptSeAEfLower (DescrptSeA):
-    def __init__ (self, jdata, op):
-        DescrptSeA.__init__(self, jdata)
-        args = ClassArg()\
-               .add('sel',      list,   must = True) \
-               .add('rcut',     float,  default = 6.0) \
-               .add('rcut_smth',float,  default = 5.5) \
-               .add('neuron',   list,   default = [10, 20, 40]) \
-               .add('axis_neuron', int, default = 4, alias = 'n_axis_neuron') \
-               .add('resnet_dt',bool,   default = False) \
-               .add('trainable',bool,   default = True) \
-               .add('seed',     int) 
-        class_data = args.parse(jdata)
-        self.sel_a = class_data['sel']
-        self.rcut_r = class_data['rcut']
-        self.rcut_r_smth = class_data['rcut_smth']
-        self.filter_neuron = class_data['neuron']
-        self.n_axis_neuron = class_data['axis_neuron']
-        self.filter_resnet_dt = class_data['resnet_dt']
-        self.seed = class_data['seed']
-        self.trainable = class_data['trainable']
+    def __init__ (self, 
+                  op,
+                  rcut: float,
+                  rcut_smth: float,
+                  sel: List[str],
+                  neuron: List[int] = [24,48,96],
+                  axis_neuron: int = 8,
+                  resnet_dt: bool = False,
+                  trainable: bool = True,
+                  seed: int = 1,
+                  type_one_side: bool = True,
+                  exclude_types: List[int] = [],
+                  set_davg_zero: bool = False,
+                  activation_function: str = 'tanh',
+                  precision: str = 'default'
+    ) -> None:
+        DescrptSeA.__init__(self, 
+                  rcut,
+                  rcut_smth,
+                  sel,
+                  neuron,
+                  axis_neuron,
+                  resnet_dt,
+                  trainable,
+                  seed,
+                  type_one_side,
+                  exclude_types,
+                  set_davg_zero,
+                  activation_function,
+                  precision
+        )
+        # DescrptSeA.__init__(self, **jdata)
+        # args = ClassArg()\
+        #        .add('sel',      list,   must = True) \
+        #        .add('rcut',     float,  default = 6.0) \
+        #        .add('rcut_smth',float,  default = 5.5) \
+        #        .add('neuron',   list,   default = [10, 20, 40]) \
+        #        .add('axis_neuron', int, default = 4, alias = 'n_axis_neuron') \
+        #        .add('resnet_dt',bool,   default = False) \
+        #        .add('trainable',bool,   default = True) \
+        #        .add('seed',     int) 
+        # class_data = args.parse(jdata)
+        # self.sel_a = class_data['sel']
+        # self.rcut_r = class_data['rcut']
+        # self.rcut_r_smth = class_data['rcut_smth']
+        # self.filter_neuron = class_data['neuron']
+        # self.n_axis_neuron = class_data['axis_neuron']
+        # self.filter_resnet_dt = class_data['resnet_dt']
+        # self.seed = class_data['seed']
+        # self.trainable = class_data['trainable']
+        self.sel_a = sel
+        self.rcut_r = rcut
+        self.rcut_r_smth = rcut_smth
+        self.filter_neuron = neuron
+        self.n_axis_neuron = axis_neuron
+        self.filter_resnet_dt = resnet_dt
+        self.seed = seed
+        self.trainable = trainable
         self.op = op
 
         # descrpt config
