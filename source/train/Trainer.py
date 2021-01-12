@@ -7,7 +7,7 @@ from deepmd.env import tf
 from deepmd.env import default_tf_session_config
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_ener_float_precision
-from deepmd.Fitting import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
+from deepmd.fitting import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
 from deepmd.DescrptLocFrame import DescrptLocFrame
 from deepmd.descrpt_se_a import DescrptSeA
 from deepmd.descrpt_se_a_t import DescrptSeAT
@@ -85,25 +85,27 @@ class NNPTrainer (object):
             fitting_type = fitting_param['type']
         except:
             fitting_type = 'ener'
+        fitting_param.pop('type', None)
+        fitting_param['descrpt'] = self.descrpt
         if fitting_type == 'ener':
-            self.fitting = EnerFitting(fitting_param, self.descrpt)
-        elif fitting_type == 'wfc':            
-            self.fitting = WFCFitting(fitting_param, self.descrpt)
+            self.fitting = EnerFitting(**fitting_param)
+        # elif fitting_type == 'wfc':            
+        #     self.fitting = WFCFitting(fitting_param, self.descrpt)
         elif fitting_type == 'dipole':
             if descrpt_type == 'se_a':
-                self.fitting = DipoleFittingSeA(fitting_param, self.descrpt)
+                self.fitting = DipoleFittingSeA(**fitting_param)
             else :
                 raise RuntimeError('fitting dipole only supports descrptors: se_a')
         elif fitting_type == 'polar':
-            if descrpt_type == 'loc_frame':
-                self.fitting = PolarFittingLocFrame(fitting_param, self.descrpt)
-            elif descrpt_type == 'se_a':
-                self.fitting = PolarFittingSeA(fitting_param, self.descrpt)
+            # if descrpt_type == 'loc_frame':
+            #     self.fitting = PolarFittingLocFrame(fitting_param, self.descrpt)
+            if descrpt_type == 'se_a':
+                self.fitting = PolarFittingSeA(**fitting_param)
             else :
                 raise RuntimeError('fitting polar only supports descrptors: loc_frame and se_a')
         elif fitting_type == 'global_polar':
             if descrpt_type == 'se_a':
-                self.fitting = GlobalPolarFittingSeA(fitting_param, self.descrpt)
+                self.fitting = GlobalPolarFittingSeA(**fitting_param)
             else :
                 raise RuntimeError('fitting global_polar only supports descrptors: loc_frame and se_a')
         else :
@@ -113,8 +115,8 @@ class NNPTrainer (object):
         # infer model type by fitting_type
         if fitting_type == Model.model_type:
             self.model = Model(model_param, self.descrpt, self.fitting)
-        elif fitting_type == 'wfc':
-            self.model = WFCModel(model_param, self.descrpt, self.fitting)
+        # elif fitting_type == 'wfc':
+        #     self.model = WFCModel(model_param, self.descrpt, self.fitting)
         elif fitting_type == 'dipole':
             self.model = DipoleModel(model_param, self.descrpt, self.fitting)
         elif fitting_type == 'polar':

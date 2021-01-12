@@ -180,8 +180,8 @@ class Model() :
             nnei_r = np.cumsum(sel_r)[-1]
 
         atom_ener = self.fitting.build (dout, 
-                                        input_dict, 
                                         natoms, 
+                                        input_dict, 
                                         reuse = reuse, 
                                         suffix = suffix)
 

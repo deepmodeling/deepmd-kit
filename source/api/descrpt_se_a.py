@@ -17,8 +17,8 @@ class DescrptSeA ():
                   rcut: float,
                   rcut_smth: float,
                   sel: List[str],
-                  neuron: List[int],
-                  axis_neuron: int,
+                  neuron: List[int] = [24,48,96],
+                  axis_neuron: int = 8,
                   resnet_dt: bool = False,
                   trainable: bool = True,
                   seed: int = 1,
@@ -230,9 +230,9 @@ class DescrptSeA ():
                natoms : tf.Tensor,
                box_ : tf.Tensor, 
                mesh : tf.Tensor,
-               input_dict : dict,
-               suffix : str = '', 
-               reuse : bool = None) -> tf.Tensor:
+               input_dict : dict, 
+               reuse : bool = None,
+               suffix : str = '') -> tf.Tensor:
         """
         Build the computational graph for the descriptor
 
