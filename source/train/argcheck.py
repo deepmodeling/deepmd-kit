@@ -360,6 +360,7 @@ def loss_args():
     doc_loss = 'The definition of loss function. The type of the loss depends on the type of the fitting. For fitting type `ener`, the prefactors before energy, force, virial and atomic energy losses may be provided. For fitting type `dipole`, `polar` and `global_polar`, the loss may be an empty `dict` or unset.' 
     ca = Argument('loss', dict, [], 
                   [loss_variant_type_args()],
+                  optional = True,
                   doc = doc_loss)
     return ca
 
