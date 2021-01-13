@@ -2,7 +2,8 @@ import numpy as np
 from typing import Tuple, List
 
 from deepmd.env import tf
-from deepmd.common import ClassArg, add_data_requirement
+from deepmd.common import add_data_requirement,get_activation_func, get_precision, activation_fn_dict, precision_dict, docstring_parameter
+from deepmd.argcheck import list_to_doc
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.env import op_module
@@ -10,27 +11,132 @@ from deepmd.env import default_tf_session_config
 from deepmd.descrpt_se_a import DescrptSeA
 
 class DescrptSeAEf ():
-    def __init__(self, jdata):
-        self.descrpt_para = DescrptSeAEfLower(op_module.descrpt_se_a_ef_para, **jdata)
-        self.descrpt_vert = DescrptSeAEfLower(op_module.descrpt_se_a_ef_vert, **jdata)
+    @docstring_parameter(list_to_doc(activation_fn_dict.keys()), list_to_doc(precision_dict.keys()))
+    def __init__(self,
+                 rcut: float,
+                 rcut_smth: float,
+                 sel: List[str],
+                 neuron: List[int] = [24,48,96],
+                 axis_neuron: int = 8,
+                 resnet_dt: bool = False,
+                 trainable: bool = True,
+                 seed: int = 1,
+                 type_one_side: bool = True,
+                 exclude_types: List[int] = [],
+                 set_davg_zero: bool = False,
+                 activation_function: str = 'tanh',
+                 precision: str = 'default'
+    ) -> None:        
+        """
+        Constructor
+
+        Parameters
+        ----------
+        rcut
+                The cut-off radius
+        rcut_smth
+                From where the environment matrix should be smoothed
+        sel : list[str]
+                sel[i] specifies the maxmum number of type i atoms in the cut-off radius
+        neuron : list[int]
+                Number of neurons in each hidden layers of the embedding net
+        axis_neuron
+                Number of the axis neuron (number of columns of the sub-matrix of the embedding matrix)
+        resnet_dt
+                Time-step `dt` in the resnet construction:
+                y = x + dt * \phi (Wx + b)
+        trainable
+                If the weights of embedding net are trainable.
+        seed
+                Random seed for initializing the network parameters.
+        type_one_side
+                Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
+        exclude_types : list[int]
+                The Excluded types
+        set_davg_zero
+                Set the shift of embedding net input to zero.
+        activation_function
+                The activation function in the embedding net. Supported options are {0}
+        precision
+                The precision of the embedding net parameters. Supported options are {1}
+        """
+        self.descrpt_para = DescrptSeAEfLower(
+            op_module.descrpt_se_a_ef_para, 
+            rcut,
+            rcut_smth,
+            sel,
+            neuron,
+            axis_neuron,
+            resnet_dt,
+            trainable,
+            seed,
+            type_one_side,
+            exclude_types,
+            set_davg_zero,
+            activation_function,
+            precision,
+        )
+        self.descrpt_vert = DescrptSeAEfLower(
+            op_module.descrpt_se_a_ef_vert,
+            rcut,
+            rcut_smth,
+            sel,
+            neuron,
+            axis_neuron,
+            resnet_dt,
+            trainable,
+            seed,
+            type_one_side,
+            exclude_types,
+            set_davg_zero,
+            activation_function,
+            precision,
+        )
         
-    def get_rcut (self) :
+    def get_rcut (self) -> float:
+        """
+        Returns the cut-off radisu
+        """
         return self.descrpt_vert.rcut_r
 
-    def get_ntypes (self) :
+    def get_ntypes (self) -> int:
+        """
+        Returns the number of atom types
+        """
         return self.descrpt_vert.ntypes
 
-    def get_dim_out (self) :
+    def get_dim_out (self) -> int:
+        """
+        Returns the output dimension of this descriptor
+        """
         return self.descrpt_vert.get_dim_out() + self.descrpt_para.get_dim_out()
 
-    def get_dim_rot_mat_1 (self) :
+    def get_dim_rot_mat_1 (self) -> int:
+        """
+        Returns the first dimension of the rotation matrix. The rotation is of shape dim_1 x 3
+        """
         return self.descrpt_vert.filter_neuron[-1]
 
-    def get_rot_mat(self) :
+    def get_rot_mat(self) -> tf.Tensor:
+        """
+        Get rotational matrix
+        """
         return self.qmat
 
 
-    def get_nlist (self) :
+    def get_nlist (self)  -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
+        """
+        Returns
+        -------
+        nlist
+                Neighbor list
+        rij
+                The relative distance between the neighbor and the center atom.
+        sel_a
+                The number of neighbors with full information
+        sel_r
+                The number of neighbors with only radial information
+        """
         return \
             self.descrpt_vert.nlist, \
             self.descrpt_vert.rij, \
@@ -38,24 +144,74 @@ class DescrptSeAEf ():
             self.descrpt_vert.sel_r
 
     def compute_input_stats (self,
-                             data_coord, 
-                             data_box, 
-                             data_atype, 
-                             natoms_vec,
-                             mesh, 
-                             input_dict) :
+                             data_coord : list, 
+                             data_box : list, 
+                             data_atype : list, 
+                             natoms_vec : list,
+                             mesh : list, 
+                             input_dict : dict
+    ) -> None :
+        """
+        Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
+        
+        Parameters
+        ----------
+        data_coord
+                The coordinates. Can be generated by deepmd.model.make_stat_input
+        data_box
+                The box. Can be generated by deepmd.model.make_stat_input
+        data_atype
+                The atom types. Can be generated by deepmd.model.make_stat_input
+        natoms_vec
+                The vector for the number of atoms of the system and different types of atoms. Can be generated by deepmd.model.make_stat_input
+        mesh
+                The mesh for neighbor searching. Can be generated by deepmd.model.make_stat_input
+        input_dict
+                Dictionary for additional input
+        """
         self.descrpt_vert.compute_input_stats(data_coord, data_box, data_atype, natoms_vec, mesh, input_dict)
         self.descrpt_para.compute_input_stats(data_coord, data_box, data_atype, natoms_vec, mesh, input_dict)
 
     def build (self, 
-               coord_, 
-               atype_,
-               natoms,
-               box_, 
-               mesh,
-               input_dict,
-               suffix = '', 
-               reuse = None):
+               coord_ : tf.Tensor, 
+               atype_ : tf.Tensor,
+               natoms : tf.Tensor,
+               box_ : tf.Tensor, 
+               mesh : tf.Tensor,
+               input_dict : dict, 
+               reuse : bool = None,
+               suffix : str = ''
+    ) -> tf.Tensor:
+        """
+        Build the computational graph for the descriptor
+
+        Parameters
+        ----------
+        coord_
+                The coordinate of atoms
+        atype_
+                The type of atoms
+        natoms
+                The number of atoms. This tensor has the length of Ntypes + 2
+                natoms[0]: number of local atoms
+                natoms[1]: total number of atoms held by this processor
+                natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+        mesh
+                For historical reasons, only the length of the Tensor matters.
+                if size of mesh == 6, pbc is assumed. 
+                if size of mesh == 0, no-pbc is assumed. 
+        input_dict
+                Dictionary for additional inputs. Should have 'efield'.
+        reuse
+                The weights in the networks should be reused when get the variable.
+        suffix
+                Name suffix to identify this descriptor
+
+        Returns
+        -------
+        descriptor
+                The output descriptor
+        """
         self.dout_vert = self.descrpt_vert.build(coord_, atype_, natoms, box_, mesh, input_dict)
         self.dout_para = self.descrpt_para.build(coord_, atype_, natoms, box_, mesh, input_dict, reuse = True)
         coord = tf.reshape(coord_, [-1, natoms[1] * 3])
@@ -70,7 +226,31 @@ class DescrptSeAEf ():
 
         return self.dout
 
-    def prod_force_virial(self, atom_ener, natoms) :
+    def prod_force_virial(self, 
+                          atom_ener : tf.Tensor, 
+                          natoms : tf.Tensor
+    ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+        """
+        Compute force and virial
+
+        Parameters
+        ----------
+        atom_ener
+                The atomic energy
+        natoms
+                The number of atoms. This tensor has the length of Ntypes + 2
+                natoms[0]: number of local atoms
+                natoms[1]: total number of atoms held by this processor
+                natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+        Return
+        ------
+        force
+                The force on atoms
+        virial
+                The total virial
+        atom_virial
+                The atomic virial
+        """
         f_vert, v_vert, av_vert \
             = self.descrpt_vert.prod_force_virial(atom_ener, natoms)
         f_para, v_para, av_para \
@@ -82,6 +262,9 @@ class DescrptSeAEf ():
 
 
 class DescrptSeAEfLower (DescrptSeA):
+    """
+    Helper class for implementing DescrptSeAEf
+    """
     def __init__ (self, 
                   op,
                   rcut: float,

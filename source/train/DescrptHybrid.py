@@ -22,18 +22,20 @@ class DescrptHybrid ():
         self.descrpt_type = []
         for ii in dict_list:
             this_type = ii.get('type')
+            ii.pop('type', None)
+            ii.pop('_comment', None)
             if this_type == 'loc_frame':
                 this_descrpt = DescrptLocFrame(ii)
             elif this_type == 'se_a' :
                 this_descrpt = DescrptSeA(**ii)
             elif this_type == 'se_at' :
-                this_descrpt = DescrptSeAT(ii)
+                this_descrpt = DescrptSeAT(**ii)
             elif this_type == 'se_a_ebd' :
-                this_descrpt = DescrptSeAEbd(ii)
+                this_descrpt = DescrptSeAEbd(**ii)
             elif this_type == 'se_a_ef' :
-                this_descrpt = DescrptSeAEf(ii)
+                this_descrpt = DescrptSeAEf(**ii)
             elif this_type == 'se_r' :
-                this_descrpt = DescrptSeR(ii)
+                this_descrpt = DescrptSeR(**ii)
             else :
                 raise RuntimeError('unknow model type ' + this_type)
             self.descrpt_list.append(this_descrpt)

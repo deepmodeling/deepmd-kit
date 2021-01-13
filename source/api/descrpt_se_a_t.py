@@ -1,6 +1,9 @@
 import numpy as np
+from typing import Tuple, List
+
 from deepmd.env import tf
-from deepmd.common import ClassArg, get_activation_func, get_precision
+from deepmd.common import get_activation_func, get_precision, activation_fn_dict, precision_dict, docstring_parameter
+from deepmd.argcheck import list_to_doc
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.env import op_module
@@ -8,36 +11,61 @@ from deepmd.env import default_tf_session_config
 from deepmd.network import embedding_net
 
 class DescrptSeAT ():
-    def __init__ (self, jdata):
-        args = ClassArg()\
-               .add('sel',      list,   must = True) \
-               .add('rcut',     float,  default = 6.0) \
-               .add('rcut_smth',float,  default = 0.5) \
-               .add('neuron',   list,   default = [10, 20, 40]) \
-               .add('resnet_dt',bool,   default = False) \
-               .add('trainable',bool,   default = True) \
-               .add('seed',     int) \
-               .add('exclude_types', list, default = []) \
-               .add('set_davg_zero', bool, default = False) \
-               .add('activation_function', str,    default = 'tanh') \
-               .add('precision', str, default = "default")
-        class_data = args.parse(jdata)
-        self.sel_a = class_data['sel']
-        self.rcut_r = class_data['rcut']
-        self.rcut_r_smth = class_data['rcut_smth']
-        self.filter_neuron = class_data['neuron']
-        self.filter_resnet_dt = class_data['resnet_dt']
-        self.seed = class_data['seed']
-        self.trainable = class_data['trainable']
-        self.filter_activation_fn = get_activation_func(class_data['activation_function'])
-        self.filter_precision = get_precision(class_data['precision'])
-        exclude_types = class_data['exclude_types']
-        self.exclude_types = set()
-        for tt in exclude_types:
-            assert(len(tt) == 2)
-            self.exclude_types.add((tt[0], tt[1]))
-            self.exclude_types.add((tt[1], tt[0]))
-        self.set_davg_zero = class_data['set_davg_zero']
+    @docstring_parameter(list_to_doc(activation_fn_dict.keys()), list_to_doc(precision_dict.keys()))
+    def __init__ (self, 
+                  rcut: float,
+                  rcut_smth: float,
+                  sel: List[str],
+                  neuron: List[int] = [24,48,96],
+                  resnet_dt: bool = False,
+                  trainable: bool = True,
+                  seed: int = 1,
+                  set_davg_zero: bool = False,
+                  activation_function: str = 'tanh',
+                  precision: str = 'default'
+    ) -> None:
+        """
+        Constructor
+
+        Parameters
+        ----------
+        rcut
+                The cut-off radius
+        rcut_smth
+                From where the environment matrix should be smoothed
+        sel : list[str]
+                sel[i] specifies the maxmum number of type i atoms in the cut-off radius
+        neuron : list[int]
+                Number of neurons in each hidden layers of the embedding net
+        resnet_dt
+                Time-step `dt` in the resnet construction:
+                y = x + dt * \phi (Wx + b)
+        trainable
+                If the weights of embedding net are trainable.
+        seed
+                Random seed for initializing the network parameters.
+        set_davg_zero
+                Set the shift of embedding net input to zero.
+        activation_function
+                The activation function in the embedding net. Supported options are {0}
+        precision
+                The precision of the embedding net parameters. Supported options are {1}
+        """
+        self.sel_a = sel
+        self.rcut_r = rcut
+        self.rcut_r_smth = rcut_smth
+        self.filter_neuron = neuron
+        self.filter_resnet_dt = resnet_dt
+        self.seed = seed
+        self.trainable = trainable
+        self.filter_activation_fn = get_activation_func(activation_function)
+        self.filter_precision = get_precision(precision)
+        # self.exclude_types = set()
+        # for tt in exclude_types:
+        #     assert(len(tt) == 2)
+        #     self.exclude_types.add((tt[0], tt[1]))
+        #     self.exclude_types.add((tt[1], tt[0]))
+        self.set_davg_zero = set_davg_zero
 
         # descrpt config
         self.sel_r = [ 0 for ii in range(len(self.sel_a)) ]
@@ -82,28 +110,65 @@ class DescrptSeAT ():
         self.sub_sess = tf.Session(graph = sub_graph, config=default_tf_session_config)
 
 
-    def get_rcut (self) :
+    def get_rcut (self) -> float:
+        """
+        Returns the cut-off radisu
+        """
         return self.rcut_r
 
-    def get_ntypes (self) :
+    def get_ntypes (self) -> int:
+        """
+        Returns the number of atom types
+        """
         return self.ntypes
 
-    def get_dim_out (self) :
+    def get_dim_out (self) -> int:
+        """
+        Returns the output dimension of this descriptor
+        """
         return self.filter_neuron[-1]
 
-    def get_dim_rot_mat_1 (self) :
-        return self.filter_neuron[-1]
-
-    def get_nlist (self) :
+    def get_nlist (self) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
+        """
+        Returns
+        -------
+        nlist
+                Neighbor list
+        rij
+                The relative distance between the neighbor and the center atom.
+        sel_a
+                The number of neighbors with full information
+        sel_r
+                The number of neighbors with only radial information
+        """
         return self.nlist, self.rij, self.sel_a, self.sel_r
 
     def compute_input_stats (self,
-                             data_coord, 
-                             data_box, 
-                             data_atype, 
-                             natoms_vec,
-                             mesh, 
-                             input_dict) :
+                             data_coord : list, 
+                             data_box : list, 
+                             data_atype : list, 
+                             natoms_vec : list,
+                             mesh : list, 
+                             input_dict : dict
+    ) -> None :
+        """
+        Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
+        
+        Parameters
+        ----------
+        data_coord
+                The coordinates. Can be generated by deepmd.model.make_stat_input
+        data_box
+                The box. Can be generated by deepmd.model.make_stat_input
+        data_atype
+                The atom types. Can be generated by deepmd.model.make_stat_input
+        natoms_vec
+                The vector for the number of atoms of the system and different types of atoms. Can be generated by deepmd.model.make_stat_input
+        mesh
+                The mesh for neighbor searching. Can be generated by deepmd.model.make_stat_input
+        input_dict
+                Dictionary for additional input
+        """
         all_davg = []
         all_dstd = []
         if True:
@@ -143,14 +208,45 @@ class DescrptSeAT ():
 
 
     def build (self, 
-               coord_, 
-               atype_,
-               natoms,
-               box_, 
-               mesh,
-               input_dict,
-               suffix = '', 
-               reuse = None):
+               coord_ : tf.Tensor, 
+               atype_ : tf.Tensor,
+               natoms : tf.Tensor,
+               box_ : tf.Tensor, 
+               mesh : tf.Tensor,
+               input_dict : dict, 
+               reuse : bool = None,
+               suffix : str = ''
+    ) -> tf.Tensor:
+        """
+        Build the computational graph for the descriptor
+
+        Parameters
+        ----------
+        coord_
+                The coordinate of atoms
+        atype_
+                The type of atoms
+        natoms
+                The number of atoms. This tensor has the length of Ntypes + 2
+                natoms[0]: number of local atoms
+                natoms[1]: total number of atoms held by this processor
+                natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+        mesh
+                For historical reasons, only the length of the Tensor matters.
+                if size of mesh == 6, pbc is assumed. 
+                if size of mesh == 0, no-pbc is assumed. 
+        input_dict
+                Dictionary for additional inputs
+        reuse
+                The weights in the networks should be reused when get the variable.
+        suffix
+                Name suffix to identify this descriptor
+
+        Returns
+        -------
+        descriptor
+                The output descriptor
+        """
         davg = self.davg
         dstd = self.dstd
         with tf.variable_scope('descrpt_attr' + suffix, reuse = reuse) :
@@ -215,12 +311,32 @@ class DescrptSeAT ():
 
         return self.dout
 
-    
-    def get_rot_mat(self) :
-        return self.qmat
 
+    def prod_force_virial(self, 
+                          atom_ener : tf.Tensor, 
+                          natoms : tf.Tensor
+    ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+        """
+        Compute force and virial
 
-    def prod_force_virial(self, atom_ener, natoms) :
+        Parameters
+        ----------
+        atom_ener
+                The atomic energy
+        natoms
+                The number of atoms. This tensor has the length of Ntypes + 2
+                natoms[0]: number of local atoms
+                natoms[1]: total number of atoms held by this processor
+                natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+        Return
+        ------
+        force
+                The force on atoms
+        virial
+                The total virial
+        atom_virial
+                The atomic virial
+        """
         [net_deriv] = tf.gradients (atom_ener, self.descrpt_reshape)
         net_deriv_reshape = tf.reshape (net_deriv, [-1, natoms[0] * self.ndescrpt])        
         force \

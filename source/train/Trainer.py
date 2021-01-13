@@ -66,13 +66,13 @@ class NNPTrainer (object):
         elif descrpt_type == 'se_a' :            
             self.descrpt = DescrptSeA(**descrpt_param)
         elif descrpt_type == 'se_a_3be' or descrpt_type == 'se_at' :
-            self.descrpt = DescrptSeAT(descrpt_param)
+            self.descrpt = DescrptSeAT(**descrpt_param)
         elif descrpt_type == 'se_a_tpe' or descrpt_type == 'se_a_ebd' :
-            self.descrpt = DescrptSeAEbd(descrpt_param)
+            self.descrpt = DescrptSeAEbd(**descrpt_param)
         elif descrpt_type == 'se_a_ef' :
-            self.descrpt = DescrptSeAEf(descrpt_param)
+            self.descrpt = DescrptSeAEf(**descrpt_param)
         elif descrpt_type == 'se_r' :
-            self.descrpt = DescrptSeR(descrpt_param)
+            self.descrpt = DescrptSeR(**descrpt_param)
         elif descrpt_type == 'se_ar' :
             self.descrpt = DescrptSeAR(descrpt_param)
         elif descrpt_type == 'hybrid' :

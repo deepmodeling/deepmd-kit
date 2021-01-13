@@ -1,4 +1,6 @@
 import numpy as np
+from typing import Tuple, List
+
 from deepmd.env import tf
 from deepmd.common import ClassArg, get_activation_func, get_precision, add_data_requirement
 from deepmd.network import one_layer
@@ -10,31 +12,128 @@ from deepmd.descrpt_se_a import DescrptSeA
 from deepmd.network import embedding_net
 
 class DescrptSeAEbd (DescrptSeA):
-    def __init__ (self, jdata):
-        DescrptSeA.__init__(self, jdata)
-        args = ClassArg()\
-               .add('type_nchanl',      int,    default = 4) \
-               .add('type_nlayer',      int,    default = 2) \
-               .add('type_one_side',    bool,   default = True) \
-               .add('numb_aparam',      int,    default = 0)
-        class_data = args.parse(jdata)
-        self.type_nchanl = class_data['type_nchanl']
-        self.type_nlayer = class_data['type_nlayer']
-        self.type_one_side = class_data['type_one_side']
-        self.numb_aparam = class_data['numb_aparam']
+    def __init__ (self, 
+                  rcut: float,
+                  rcut_smth: float,
+                  sel: List[str],
+                  neuron: List[int] = [24,48,96],
+                  axis_neuron: int = 8,
+                  resnet_dt: bool = False,
+                  trainable: bool = True,
+                  seed: int = 1,
+                  type_one_side: bool = True,
+                  type_nchanl : int = 2,
+                  type_nlayer : int = 1,
+                  numb_aparam : int = 0,
+                  set_davg_zero: bool = False,
+                  activation_function: str = 'tanh',
+                  precision: str = 'default'
+    ) -> None:
+        """
+        Constructor
+
+        Parameters
+        ----------
+        rcut
+                The cut-off radius
+        rcut_smth
+                From where the environment matrix should be smoothed
+        sel : list[str]
+                sel[i] specifies the maxmum number of type i atoms in the cut-off radius
+        neuron : list[int]
+                Number of neurons in each hidden layers of the embedding net
+        axis_neuron
+                Number of the axis neuron (number of columns of the sub-matrix of the embedding matrix)
+        resnet_dt
+                Time-step `dt` in the resnet construction:
+                y = x + dt * \phi (Wx + b)
+        trainable
+                If the weights of embedding net are trainable.
+        seed
+                Random seed for initializing the network parameters.
+        type_one_side
+                Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
+        type_nchanl
+                Number of channels for type representation
+        type_nlayer
+                Number of hidden layers for the type embedding net (skip connected).
+        numb_aparam
+                Number of atomic parameters. If >0 it will be embedded with atom types.
+        set_davg_zero
+                Set the shift of embedding net input to zero.
+        activation_function
+                The activation function in the embedding net. Supported options are {0}
+        precision
+                The precision of the embedding net parameters. Supported options are {1}
+        """
+        # args = ClassArg()\
+        #        .add('type_nchanl',      int,    default = 4) \
+        #        .add('type_nlayer',      int,    default = 2) \
+        #        .add('type_one_side',    bool,   default = True) \
+        #        .add('numb_aparam',      int,    default = 0)
+        # class_data = args.parse(jdata)
+        DescrptSeA.__init__(self, 
+                            rcut,
+                            rcut_smth,
+                            sel,
+                            neuron = neuron,
+                            axis_neuron = axis_neuron,
+                            resnet_dt = resnet_dt,
+                            trainable = trainable,
+                            seed = seed,
+                            type_one_side = type_one_side,
+                            set_davg_zero = set_davg_zero,
+                            activation_function = activation_function,
+                            precision = precision
+        )
+        self.type_nchanl = type_nchanl
+        self.type_nlayer = type_nlayer
+        self.type_one_side = type_one_side
+        self.numb_aparam = numb_aparam
         if self.numb_aparam > 0:
             add_data_requirement('aparam', 3, atomic=True, must=True, high_prec=False)
 
 
     def build (self, 
-               coord_, 
-               atype_,
-               natoms,
-               box_, 
-               mesh,
-               input_dict,
-               suffix = '', 
-               reuse = None):
+               coord_ : tf.Tensor, 
+               atype_ : tf.Tensor,
+               natoms : tf.Tensor,
+               box_ : tf.Tensor, 
+               mesh : tf.Tensor,
+               input_dict : dict, 
+               reuse : bool = None,
+               suffix : str = ''
+    ) -> tf.Tensor:
+        """
+        Build the computational graph for the descriptor
+
+        Parameters
+        ----------
+        coord_
+                The coordinate of atoms
+        atype_
+                The type of atoms
+        natoms
+                The number of atoms. This tensor has the length of Ntypes + 2
+                natoms[0]: number of local atoms
+                natoms[1]: total number of atoms held by this processor
+                natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+        mesh
+                For historical reasons, only the length of the Tensor matters.
+                if size of mesh == 6, pbc is assumed. 
+                if size of mesh == 0, no-pbc is assumed. 
+        input_dict
+                Dictionary for additional inputs
+        reuse
+                The weights in the networks should be reused when get the variable.
+        suffix
+                Name suffix to identify this descriptor
+
+        Returns
+        -------
+        descriptor
+                The output descriptor
+        """
         nei_type = np.array([])
         for ii in range(self.ntypes):
             nei_type = np.append(nei_type, ii * np.ones(self.sel_a[ii]))

@@ -78,7 +78,6 @@ def descrpt_se_a_3be_args():
     doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(precision_dict.keys())}'
     doc_trainable = 'If the parameters in the embedding net is trainable'
     doc_seed = 'Random seed for parameter initialization'
-    doc_exclude_types = 'The Excluded types'
     doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
     
     return [
@@ -91,7 +90,6 @@ def descrpt_se_a_3be_args():
         Argument("precision", str, optional = True, default = "float64", doc = doc_precision),
         Argument("trainable", bool, optional = True, default = True, doc = doc_trainable),
         Argument("seed", [int,None], optional = True, doc = doc_seed),
-        Argument("exclude_types", list, optional = True, default = [], doc = doc_exclude_types),
         Argument("set_davg_zero", bool, optional = True, default = False, doc = doc_set_davg_zero)
     ]
 

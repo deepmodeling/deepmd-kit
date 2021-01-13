@@ -2,7 +2,7 @@ import numpy as np
 from typing import Tuple, List
 
 from deepmd.env import tf
-from deepmd.common import ClassArg, get_activation_func, get_precision, activation_fn_dict, precision_dict, docstring_parameter
+from deepmd.common import get_activation_func, get_precision, activation_fn_dict, precision_dict, docstring_parameter
 from deepmd.argcheck import list_to_doc
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
@@ -54,6 +54,8 @@ class DescrptSeA ():
                 Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
         exclude_types : list[int]
                 The Excluded types
+        set_davg_zero
+                Set the shift of embedding net input to zero.
         activation_function
                 The activation function in the embedding net. Supported options are {0}
         precision
@@ -167,7 +169,8 @@ class DescrptSeA ():
                              data_atype : list, 
                              natoms_vec : list,
                              mesh : list, 
-                             input_dict : dict) -> None :
+                             input_dict : dict
+    ) -> None :
         """
         Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
         
@@ -232,7 +235,8 @@ class DescrptSeA ():
                mesh : tf.Tensor,
                input_dict : dict, 
                reuse : bool = None,
-               suffix : str = '') -> tf.Tensor:
+               suffix : str = ''
+    ) -> tf.Tensor:
         """
         Build the computational graph for the descriptor
 
@@ -253,10 +257,10 @@ class DescrptSeA ():
                 if size of mesh == 0, no-pbc is assumed. 
         input_dict
                 Dictionary for additional inputs
-        suffix
-                Name suffix to identify this descriptor
         reuse
                 The weights in the networks should be reused when get the variable.
+        suffix
+                Name suffix to identify this descriptor
 
         Returns
         -------

@@ -215,7 +215,8 @@ class EnerFitting ():
                natoms : tf.Tensor,
                input_dict : dict = {},
                reuse : bool = None,
-               suffix : str = '') -> tf.Tensor:
+               suffix : str = ''
+    ) -> tf.Tensor:
         """
         Build the computational graph for fitting net
 

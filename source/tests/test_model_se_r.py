@@ -37,7 +37,8 @@ class TestModel(unittest.TestCase):
         test_data = data.get_test ()
         numb_test = 1
         
-        descrpt = DescrptSeR(jdata['model']['descriptor'])
+        jdata['model']['descriptor'].pop('type', None)        
+        descrpt = DescrptSeR(**jdata['model']['descriptor'])
         jdata['model']['fitting_net']['descrpt'] = descrpt
         fitting = EnerFitting(**jdata['model']['fitting_net'])
         # fitting = EnerFitting(jdata['model']['fitting_net'], descrpt)
