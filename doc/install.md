@@ -41,12 +41,12 @@ A docker for installing the DeePMD-kit is available [here](https://github.com/or
 
 To pull the CPU version:
 ```bash
-docker pull ghcr.io/deepmodeling/deepmd-kit:1.2.2_cpu
+docker pull ghcr.io/deepmodeling/deepmd-kit:1.3.1_cpu
 ```
 
 To pull the GPU version:
 ```bash
-docker pull ghcr.io/deepmodeling/deepmd-kit:1.2.2_cuda10.1_gpu
+docker pull ghcr.io/deepmodeling/deepmd-kit:1.3.1_cuda10.1_gpu
 ```
 
 ## Install the python interface 
@@ -126,7 +126,7 @@ gcc --version
 
 The C++ interface of DeePMD-kit was tested with compiler gcc >= 4.8. It is noticed that the I-Pi support is only compiled with gcc >= 4.9.
 
-First the C++ interface of Tensorflow should be installed. It is noted that the version of Tensorflow should be in consistent with the python interface. We assume that you have followed our instruction and installed tensorflow python interface 1.14.0 with, then you may follow [the instruction for CPU](install-tf.1.14.md) to install the corresponding C++ interface (CPU only). If one wants GPU supports, he/she should follow [the instruction for GPU](install-tf.1.14-gpu.md) to install the C++ interface.
+First the C++ interface of Tensorflow should be installed. It is noted that the version of Tensorflow should be in consistent with the python interface. You may follow [the instruction](install-tf.2.3.md) to install the corresponding C++ interface.
 
 ### Install the DeePMD-kit's C++ interface
 
@@ -175,14 +175,15 @@ DeePMD-kit provide module for running MD simulation with LAMMPS. Now make the De
 cd $deepmd_source_dir/source/build
 make lammps
 ```
-DeePMD-kit will generate a module called `USER-DEEPMD` in the `build` directory. Now download your favorite LAMMPS code, and uncompress it (I assume that you have downloaded the tar `lammps-stable.tar.gz`)
+DeePMD-kit will generate a module called `USER-DEEPMD` in the `build` directory. Now download the latest LAMMPS code, and uncompress it:
 ```bash
 cd /some/workspace
-tar xf lammps-stable.tar.gz
+wget https://github.com/lammps/lammps/archive/stable_29Oct2020.tar.gz
+tar xf stable_29Oct2020.tar.gz
 ```
-The source code of LAMMPS is stored in directory, for example `lammps-31Mar17`. Now go into the LAMMPS code and copy the DeePMD-kit module like this
+The source code of LAMMPS is stored in directory `lammps-stable_29Oct2020`. Now go into the LAMMPS code and copy the DeePMD-kit module like this
 ```bash
-cd lammps-31Mar17/src/
+cd lammps-stable_29Oct2020/src/
 cp -r $deepmd_source_dir/source/build/USER-DEEPMD .
 ```
 Now build LAMMPS
@@ -193,6 +194,9 @@ make mpi -j4
 The option `-j4` means using 4 processes in parallel. You may want to use a different number according to your hardware. 
 
 If everything works fine, you will end up with an executable `lmp_mpi`.
+```bash
+./lmp_mpi -h
+```
 
 The DeePMD-kit module can be removed from LAMMPS source code by 
 ```bash
