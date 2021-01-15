@@ -40,9 +40,10 @@ class DescrptSeAR ():
                         data_box, 
                         data_atype, 
                         natoms_vec,
-                        mesh) :    
-        self.descrpt_a.compute_input_stats(data_coord, data_box, data_atype, natoms_vec, mesh)
-        self.descrpt_r.compute_input_stats(data_coord, data_box, data_atype, natoms_vec, mesh)
+                             mesh, 
+                             input_dict) :    
+        self.descrpt_a.compute_input_stats(data_coord, data_box, data_atype, natoms_vec, mesh, input_dict)
+        self.descrpt_r.compute_input_stats(data_coord, data_box, data_atype, natoms_vec, mesh, input_dict)
         self.davg = [self.descrpt_a.davg, self.descrpt_r.davg]
         self.dstd = [self.descrpt_a.dstd, self.descrpt_r.dstd]
 

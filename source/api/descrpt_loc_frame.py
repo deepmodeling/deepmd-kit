@@ -1,23 +1,53 @@
 import numpy as np
+from typing import Tuple, List
+
 from deepmd.env import tf
-from deepmd.common import ClassArg
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 
 class DescrptLocFrame () :
-    def __init__(self, jdata):
-        args = ClassArg()\
-               .add('sel_a',    list,   must = True) \
-               .add('sel_r',    list,   must = True) \
-               .add('rcut',     float,  default = 6.0) \
-               .add('axis_rule',list,   must = True)
-        class_data = args.parse(jdata)
-        self.sel_a = class_data['sel_a']
-        self.sel_r = class_data['sel_r']
-        self.axis_rule = class_data['axis_rule']
-        self.rcut_r = class_data['rcut']
+    def __init__(self, 
+                 rcut: float,
+                 sel_a : List[int],
+                 sel_r : List[int],
+                 axis_rule : List[int]
+    ) -> None:
+        """
+        Constructor
+
+        Parameters
+        rcut
+                The cut-off radius
+        sel_a : list[str]
+                The length of the list should be the same as the number of atom types in the system. 
+                `sel_a[i]` gives the selected number of type-i neighbors. 
+                The full relative coordinates of the neighbors are used by the descriptor.
+        sel_r : list[str]
+                The length of the list should be the same as the number of atom types in the system. 
+                `sel_r[i]` gives the selected number of type-i neighbors. 
+                Only relative distance of the neighbors are used by the descriptor.
+                sel_a[i] + sel_r[i] is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.        
+        axis_rule: list[int]
+                The length should be 6 times of the number of types. 
+                - axis_rule[i*6+0]: class of the atom defining the first axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.\n\n\
+                - axis_rule[i*6+1]: type of the atom defining the first axis of type-i atom.\n\n\
+                - axis_rule[i*6+2]: index of the axis atom defining the first axis. Note that the neighbors with the same class and type are sorted according to their relative distance.\n\n\
+                - axis_rule[i*6+3]: class of the atom defining the first axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.\n\n\
+                - axis_rule[i*6+4]: type of the atom defining the second axis of type-i atom.\n\n\
+                - axis_rule[i*6+5]: class of the atom defining the second axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.        
+        """
+        # args = ClassArg()\
+        #        .add('sel_a',    list,   must = True) \
+        #        .add('sel_r',    list,   must = True) \
+        #        .add('rcut',     float,  default = 6.0) \
+        #        .add('axis_rule',list,   must = True)
+        # class_data = args.parse(jdata)
+        self.sel_a = sel_a
+        self.sel_r = sel_r
+        self.axis_rule = axis_rule
+        self.rcut_r = rcut
         # ntypes and rcut_a === -1
         self.ntypes = len(self.sel_a)
         assert(self.ntypes == len(self.sel_r))
@@ -59,25 +89,65 @@ class DescrptLocFrame () :
         self.sub_sess = tf.Session(graph = sub_graph, config=default_tf_session_config)
 
 
-    def get_rcut (self) :
+    def get_rcut (self) -> float:
+        """
+        Returns the cut-off radisu
+        """
         return self.rcut_r
 
-    def get_ntypes (self) :
+    def get_ntypes (self) -> int:
+        """
+        Returns the number of atom types
+        """
         return self.ntypes
 
-    def get_dim_out (self) :
+    def get_dim_out (self) -> int:
+        """
+        Returns the output dimension of this descriptor
+        """
         return self.ndescrpt
 
-    def get_nlist (self) :
+    def get_nlist (self) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
+        """
+        Returns
+        -------
+        nlist
+                Neighbor list
+        rij
+                The relative distance between the neighbor and the center atom.
+        sel_a
+                The number of neighbors with full information
+        sel_r
+                The number of neighbors with only radial information
+        """
         return self.nlist, self.rij, self.sel_a, self.sel_r
 
     def compute_input_stats (self,
-                             data_coord, 
-                             data_box, 
-                             data_atype, 
-                             natoms_vec,
-                             mesh, 
-                             input_dict) :
+                             data_coord : list, 
+                             data_box : list, 
+                             data_atype : list, 
+                             natoms_vec : list,
+                             mesh : list, 
+                             input_dict : dict
+    ) -> None :
+        """
+        Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
+        
+        Parameters
+        ----------
+        data_coord
+                The coordinates. Can be generated by deepmd.model.make_stat_input
+        data_box
+                The box. Can be generated by deepmd.model.make_stat_input
+        data_atype
+                The atom types. Can be generated by deepmd.model.make_stat_input
+        natoms_vec
+                The vector for the number of atoms of the system and different types of atoms. Can be generated by deepmd.model.make_stat_input
+        mesh
+                The mesh for neighbor searching. Can be generated by deepmd.model.make_stat_input
+        input_dict
+                Dictionary for additional input
+        """
         all_davg = []
         all_dstd = []
         if True:
@@ -106,14 +176,45 @@ class DescrptLocFrame () :
 
         
     def build (self, 
-               coord_, 
-               atype_,
-               natoms,
-               box_, 
-               mesh,
-               input_dict,
-               suffix = '', 
-               reuse = None):
+               coord_ : tf.Tensor, 
+               atype_ : tf.Tensor,
+               natoms : tf.Tensor,
+               box_ : tf.Tensor, 
+               mesh : tf.Tensor,
+               input_dict : dict, 
+               reuse : bool = None,
+               suffix : str = ''
+    ) -> tf.Tensor:
+        """
+        Build the computational graph for the descriptor
+
+        Parameters
+        ----------
+        coord_
+                The coordinate of atoms
+        atype_
+                The type of atoms
+        natoms
+                The number of atoms. This tensor has the length of Ntypes + 2
+                natoms[0]: number of local atoms
+                natoms[1]: total number of atoms held by this processor
+                natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+        mesh
+                For historical reasons, only the length of the Tensor matters.
+                if size of mesh == 6, pbc is assumed. 
+                if size of mesh == 0, no-pbc is assumed. 
+        input_dict
+                Dictionary for additional inputs
+        reuse
+                The weights in the networks should be reused when get the variable.
+        suffix
+                Name suffix to identify this descriptor
+
+        Returns
+        -------
+        descriptor
+                The output descriptor
+        """
         davg = self.davg
         dstd = self.dstd
         with tf.variable_scope('descrpt_attr' + suffix, reuse = reuse) :
@@ -162,10 +263,37 @@ class DescrptLocFrame () :
 
         return self.descrpt
 
-    def get_rot_mat(self) :
+    def get_rot_mat(self) -> tf.Tensor:
+        """
+        Get rotational matrix
+        """
         return self.rot_mat
 
-    def prod_force_virial(self, atom_ener, natoms) :
+    def prod_force_virial(self, 
+                          atom_ener : tf.Tensor, 
+                          natoms : tf.Tensor
+    ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+        """
+        Compute force and virial
+
+        Parameters
+        ----------
+        atom_ener
+                The atomic energy
+        natoms
+                The number of atoms. This tensor has the length of Ntypes + 2
+                natoms[0]: number of local atoms
+                natoms[1]: total number of atoms held by this processor
+                natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+        Return
+        ------
+        force
+                The force on atoms
+        virial
+                The total virial
+        atom_virial
+                The atomic virial
+        """
         [net_deriv] = tf.gradients (atom_ener, self.descrpt)
         tf.summary.histogram('net_derivative', net_deriv)
         net_deriv_reshape = tf.reshape (net_deriv, [-1, natoms[0] * self.ndescrpt])

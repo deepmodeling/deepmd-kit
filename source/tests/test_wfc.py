@@ -5,7 +5,7 @@ from common import Data,gen_data
 
 from deepmd.RunOptions import RunOptions
 from deepmd.DataSystem import DataSystem
-from deepmd.DescrptLocFrame import DescrptLocFrame
+from deepmd.descrpt_loc_frame import DescrptLocFrame
 from deepmd.fitting import WFCFitting
 from deepmd.Model import WFCModel
 from deepmd.common import j_must_have, j_must_have_d, j_have, j_loader
@@ -37,7 +37,9 @@ class TestModel(unittest.TestCase):
         test_data = data.get_test ()
         numb_test = 1
         
-        descrpt = DescrptLocFrame(jdata['model']['descriptor'])
+        jdata['model']['descriptor'].pop('type', None)        
+        jdata['model']['descriptor'].pop('_comment', None)        
+        descrpt = DescrptLocFrame(**jdata['model']['descriptor'])
         fitting = WFCFitting(jdata['model']['fitting_net'], descrpt)
         model = WFCModel(jdata['model'], descrpt, fitting)
 

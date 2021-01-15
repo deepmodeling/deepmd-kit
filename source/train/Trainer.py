@@ -8,14 +8,14 @@ from deepmd.env import default_tf_session_config
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_ener_float_precision
 from deepmd.fitting import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
-from deepmd.DescrptLocFrame import DescrptLocFrame
+from deepmd.descrpt_loc_frame import DescrptLocFrame
 from deepmd.descrpt_se_a import DescrptSeA
 from deepmd.descrpt_se_a_t import DescrptSeAT
 from deepmd.descrpt_se_a_ebd import DescrptSeAEbd
 from deepmd.descrpt_se_a_ef import DescrptSeAEf
 from deepmd.descrpt_se_r import DescrptSeR
 from deepmd.descrpt_se_ar import DescrptSeAR
-from deepmd.DescrptHybrid import DescrptHybrid
+from deepmd.descrpt_hybrid import DescrptHybrid
 from deepmd.Model import Model, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
 from deepmd.Loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
 from deepmd.LearningRate import LearningRateExp
@@ -44,6 +44,36 @@ def _is_subdir(path, directory):
     relative = os.path.relpath(path, directory) + os.sep
     return not relative.startswith(os.pardir + os.sep)
 
+def _generate_descrpt_from_param_dict(descrpt_param):
+    try:
+        descrpt_type = descrpt_param['type']
+    except KeyError:
+        raise KeyError('the type of descriptor should be set by `type`')
+    descrpt_param.pop('type', None)
+    to_pop = []
+    for kk in descrpt_param:
+        if kk[0] == '_':
+            to_pop.append(kk)
+    for kk in to_pop:
+        descrpt_param.pop(kk, None)
+    if descrpt_type == 'loc_frame':
+        descrpt = DescrptLocFrame(**descrpt_param)
+    elif descrpt_type == 'se_a' :            
+        descrpt = DescrptSeA(**descrpt_param)
+    elif descrpt_type == 'se_a_3be' or descrpt_type == 'se_at' :
+        descrpt = DescrptSeAT(**descrpt_param)
+    elif descrpt_type == 'se_a_tpe' or descrpt_type == 'se_a_ebd' :
+        descrpt = DescrptSeAEbd(**descrpt_param)
+    elif descrpt_type == 'se_a_ef' :
+        descrpt = DescrptSeAEf(**descrpt_param)
+    elif descrpt_type == 'se_r' :
+        descrpt = DescrptSeR(**descrpt_param)
+    elif descrpt_type == 'se_ar' :
+        descrpt = DescrptSeAR(descrpt_param)
+    else :
+        raise RuntimeError('unknow model type ' + descrpt_type)
+    return descrpt
+    
 
 class NNPTrainer (object):
     def __init__(self, 
@@ -59,26 +89,18 @@ class NNPTrainer (object):
         fitting_param = j_must_have(model_param, 'fitting_net')
 
         # descriptor
-        descrpt_type = j_must_have(descrpt_param, 'type')
-        descrpt_param.pop('type',None)
-        if descrpt_type == 'loc_frame':
-            self.descrpt = DescrptLocFrame(descrpt_param)
-        elif descrpt_type == 'se_a' :            
-            self.descrpt = DescrptSeA(**descrpt_param)
-        elif descrpt_type == 'se_a_3be' or descrpt_type == 'se_at' :
-            self.descrpt = DescrptSeAT(**descrpt_param)
-        elif descrpt_type == 'se_a_tpe' or descrpt_type == 'se_a_ebd' :
-            self.descrpt = DescrptSeAEbd(**descrpt_param)
-        elif descrpt_type == 'se_a_ef' :
-            self.descrpt = DescrptSeAEf(**descrpt_param)
-        elif descrpt_type == 'se_r' :
-            self.descrpt = DescrptSeR(**descrpt_param)
-        elif descrpt_type == 'se_ar' :
-            self.descrpt = DescrptSeAR(descrpt_param)
-        elif descrpt_type == 'hybrid' :
-            self.descrpt = DescrptHybrid(descrpt_param)
+        try:
+            descrpt_type = descrpt_param['type']
+        except KeyError:
+            raise KeyError('the type of descriptor should be set by `type`')
+
+        if descrpt_type != 'hybrid':
+            self.descrpt = _generate_descrpt_from_param_dict(descrpt_param)
         else :
-            raise RuntimeError('unknow model type ' + descrpt_type)
+            descrpt_list = []
+            for ii in descrpt_param.get('list', []):
+                descrpt_list.append(_generate_descrpt_from_param_dict(ii))
+            self.descrpt = DescrptHybrid(descrpt_list)
 
         # fitting net
         try: 

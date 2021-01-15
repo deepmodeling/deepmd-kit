@@ -227,7 +227,7 @@ class DipoleChargeModifier(DeepDipole):
             corr_v = []
             corr_av = []
             for ii in range(0,nframes,batch_size):
-                f, v, av = self.eval_fv(coord[ii:ii+batch_size], box[ii:ii+batch_size], atype, ext_f[ii:ii+batch_size])
+                f, v, av = self._eval_fv(coord[ii:ii+batch_size], box[ii:ii+batch_size], atype, ext_f[ii:ii+batch_size])
                 corr_f.append(f)
                 corr_v.append(v)
                 corr_av.append(av)
@@ -257,7 +257,7 @@ class DipoleChargeModifier(DeepDipole):
         return tot_e, tot_f, tot_v
 
 
-    def eval_fv(self, coords, cells, atom_types, ext_f) :
+    def _eval_fv(self, coords, cells, atom_types, ext_f) :
         # reshape the inputs 
         cells = np.reshape(cells, [-1, 9])
         nframes = cells.shape[0]

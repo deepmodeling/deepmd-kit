@@ -6,7 +6,7 @@ from deepmd.env import tf
 from deepmd.common import ClassArg, add_data_requirement, get_activation_func, get_precision, activation_fn_dict, precision_dict, docstring_parameter
 from deepmd.argcheck import list_to_doc
 from deepmd.network import one_layer
-from deepmd.DescrptLocFrame import DescrptLocFrame
+from deepmd.descrpt_loc_frame import DescrptLocFrame
 from deepmd.descrpt_se_a import DescrptSeA
 
 from deepmd.RunOptions import global_cvt_2_tf_float

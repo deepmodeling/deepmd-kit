@@ -21,7 +21,7 @@ from common import virial_dw_test
 from common import Data
 from test_descrpt_nonsmth import Inter 
 
-from deepmd.DescrptLocFrame import op_module
+from deepmd.descrpt_loc_frame import op_module
 
 def _make_tab(ntype) :
     xx = np.arange(0,9,0.001)
