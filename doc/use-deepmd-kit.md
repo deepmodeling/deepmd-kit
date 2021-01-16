@@ -273,9 +273,9 @@ optional arguments:
 ## Model inference 
 One may use the python interface of DeePMD-kit for model inference, an example is given as follows
 ```python
-import deepmd.DeepPot as DP
+from deepmd import DeepPot
 import numpy as np
-dp = DP('graph.pb')
+dp = DeepPot('graph.pb')
 coord = np.array([[1,0,0], [0,0,1.5], [1,0,3]]).reshape([1, -1])
 cell = np.diag(10 * np.ones(3)).reshape([1, -1])
 atype = [1,0,1]

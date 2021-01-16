@@ -1,16 +1,29 @@
 #!/usr/bin/env python3
 
 import numpy as np
+from typing import Tuple, List
+
 from deepmd.env import tf
 from deepmd.env import default_tf_session_config
 from deepmd.common import make_default_mesh
-from deepmd.DeepEval import DeepEval
+from deepmd.deep_eval import DeepEval
 from deepmd.DataModifier import DipoleChargeModifier
 
 class DeepPot (DeepEval) :
     def __init__(self, 
-                 model_file, 
-                 default_tf_graph = False) :
+                 model_file : str, 
+                 default_tf_graph : bool = False
+    ) -> None:
+        """
+        Constructor
+
+        Parameters
+        ----------
+        model_file : str
+                The name of the frozen model file.
+        default_tf_graph : bool
+                If uses the default tf graph, otherwise build a new tf graph for evaluation
+        """
         DeepEval.__init__(self, model_file, default_tf_graph = default_tf_graph)
         # self.model_file = model_file
         # self.graph = self.load_graph (self.model_file)
@@ -74,29 +87,90 @@ class DeepPot (DeepEval) :
             self.dm = DipoleChargeModifier(mdl_name, mdl_charge_map, sys_charge_map, ewald_h = ewald_h, ewald_beta = ewald_beta)
 
 
-    def get_ntypes(self) :
+    def get_ntypes(self) -> int:
+        """
+        Get the number of atom types of this DP
+        """
         return self.ntypes
 
-    def get_rcut(self) :
+    def get_rcut(self) -> float:
+        """
+        Get the cut-off radius of this DP
+        """
         return self.rcut
 
-    def get_dim_fparam(self) :
+    def get_dim_fparam(self) -> int:
+        """
+        Get the number (dimension) of frame parameters of this DP
+        """
         return self.dfparam
 
-    def get_dim_aparam(self) :
+    def get_dim_aparam(self) -> int:
+        """
+        Get the number (dimension) of atomic parameters of this DP
+        """
         return self.daparam
 
-    def get_type_map(self):
+    def get_type_map(self) -> List[int]:
+        """
+        Get the type map (element name of the atom types) of this DP
+        """
         return self.tmap
 
     def eval(self,
-             coords,
-             cells,
-             atom_types,
-             fparam = None,
-             aparam = None,
-             atomic = False, 
-             efield = None) :
+             coords : np.array,
+             cells : np.array,
+             atom_types : List[int],
+             fparam : np.array = None,
+             aparam : np.array = None,
+             atomic : bool = False, 
+             efield : np.array = None
+    ) :
+        """
+        Evaluate the energy, force and virial by using this DP.
+
+        Parameters
+        ----------
+        coords
+                The coordinates of atoms. 
+                The array should be of size nframes x natoms x 3
+        cells
+                The cell of the region. 
+                If None then non-PBC is assumed, otherwise using PBC. 
+                The array should be of size nframes x 9
+        atom_types
+                The atom types
+                The list should contain natoms ints
+        fparam
+                The frame parameter. 
+                The array can be of size :
+                - nframes x dim_fparam. 
+                - dim_fparam. Then all frames are assumed to be provided with the same fparam.
+        aparam
+                The atomic parameter
+                The array can be of size :
+                - nframes x natoms x dim_aparam.
+                - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
+                - dim_aparam. Then all frames and atoms are provided with the same aparam.
+        atomic
+                Calculate the atomic energy and virial
+        efield
+                The external field on atoms. 
+                The array should be of size nframes x natoms x 3
+
+        Returns
+        -------
+        energy 
+                The system energy. 
+        force
+                The force on each atom
+        virial
+                The virial 
+        atom_energy
+                The atomic energy. Only returned when atomic == True
+        atom_virial
+                The atomic virial. Only returned when atomic == True
+        """
         if atomic :
             if self.modifier_type is not None:
                 raise RuntimeError('modifier does not support atomic modification')

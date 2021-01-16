@@ -2,6 +2,7 @@
 import platform
 import os
 import numpy as np
+from typing import Tuple, List
 
 from deepmd.env import tf
 from deepmd.env import default_tf_session_config
@@ -100,11 +101,28 @@ class DeepTensor(DeepEval) :
     Evaluates a tensor model
     """
     def __init__(self, 
-                 model_file, 
-                 variable_name,                  
-                 variable_dof, 
-                 load_prefix = 'load', 
-                 default_tf_graph = False) :
+                 model_file : str, 
+                 variable_name : str,                  
+                 variable_dof : int, 
+                 load_prefix : str = 'load', 
+                 default_tf_graph : bool = False
+    ) -> None :
+        """
+        Constructor
+
+        Parameters
+        ----------
+        model_file : str
+                The name of the frozen model file.
+        variable_name : str
+                The name of the variable to evaluate.
+        variable_dof : 
+                The DOF of the variable to evaluate.
+        load_prefix: str
+                The prefix in the load computational graph
+        default_tf_graph : bool
+                If uses the default tf graph, otherwise build a new tf graph for evaluation
+        """
         DeepEval.__init__(self, model_file, load_prefix = load_prefix, default_tf_graph = default_tf_graph)
         # self.model_file = model_file
         # self.graph = self.load_graph (self.model_file)
@@ -128,23 +146,61 @@ class DeepTensor(DeepEval) :
         [self.ntypes, self.rcut, self.tmap, self.tselt] = self.sess.run([self.t_ntypes, self.t_rcut, self.t_tmap, self.t_sel_type])
         self.tmap = self.tmap.decode('UTF-8').split()
 
-    def get_ntypes(self) :
+    def get_ntypes(self) -> int:
+        """
+        Get the number of atom types of this model
+        """
         return self.ntypes
 
-    def get_rcut(self) :
+    def get_rcut(self) -> float:
+        """
+        Get the cut-off radius of this model
+        """
         return self.rcut
 
-    def get_type_map(self):
+    def get_type_map(self) -> List[int]:
+        """
+        Get the type map (element name of the atom types) of this model
+        """
         return self.tmap
 
-    def get_sel_type(self):
+    def get_sel_type(self) -> List[int]:
+        """
+        Get the selected atom types of this model
+        """        
         return self.tselt
 
     def eval(self,
-             coords, 
-             cells, 
-             atom_types, 
-             atomic = True) :
+             coords : np.array,
+             cells : np.array,
+             atom_types : List[int],
+             atomic : bool = True
+    ) -> np.array:
+        """
+        Evaluate the model
+
+        Parameters
+        ----------
+        coords
+                The coordinates of atoms. 
+                The array should be of size nframes x natoms x 3
+        cells
+                The cell of the region. 
+                If None then non-PBC is assumed, otherwise using PBC. 
+                The array should be of size nframes x 9
+        atom_types
+                The atom types
+                The list should contain natoms ints
+        atomic
+                Calculate the atomic energy and virial
+
+        Returns
+        -------
+        tensor
+                The returned tensor
+                If atomic == False then of size nframes x variable_dof
+                else of size nframes x natoms x variable_dof
+        """
         # standarize the shape of inputs
         coords = np.array(coords)
         cells = np.array(cells)

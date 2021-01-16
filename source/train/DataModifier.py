@@ -1,6 +1,8 @@
 import os
 import numpy as np
-from deepmd.DeepDipole import DeepDipole
+from typing import Tuple, List
+
+from deepmd.deep_dipole import DeepDipole
 from deepmd.env import tf
 from deepmd.common import select_idx_map, make_default_mesh
 from deepmd.EwaldRecp import EwaldRecp

@@ -1,10 +1,10 @@
 from .env import set_mkl
-from .DeepEval   import DeepEval
-from .DeepPot    import DeepPot
-from .DeepDipole import DeepDipole
-from .DeepPolar  import DeepPolar
-from .DeepPolar  import DeepGlobalPolar
-from .DeepWFC    import DeepWFC
+from .deep_eval   import DeepEval
+from .deep_pot    import DeepPot
+from .deep_dipole import DeepDipole
+from .deep_polar  import DeepPolar
+from .deep_polar  import DeepGlobalPolar
+from .deep_wfc    import DeepWFC
 
 set_mkl()
 
