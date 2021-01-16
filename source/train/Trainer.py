@@ -17,8 +17,8 @@ from deepmd.descrpt_se_r import DescrptSeR
 from deepmd.descrpt_se_ar import DescrptSeAR
 from deepmd.descrpt_hybrid import DescrptHybrid
 from deepmd.Model import Model, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
-from deepmd.Loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
-from deepmd.LearningRate import LearningRateExp
+from deepmd.loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
+from deepmd.learning_rate import LearningRateExp
 
 from tensorflow.python.client import timeline
 from deepmd.env import op_module
@@ -155,7 +155,9 @@ class NNPTrainer (object):
         except:
             lr_type = 'exp'
         if lr_type == 'exp':
-            self.lr = LearningRateExp(lr_param)
+            self.lr = LearningRateExp(lr_param['start_lr'],
+                                      lr_param['stop_lr'],
+                                      lr_param['decay_steps'])
         else :
             raise RuntimeError('unknown learning_rate type ' + lr_type)        
 
@@ -169,10 +171,12 @@ class NNPTrainer (object):
             loss_type = 'ener'
 
         if fitting_type == 'ener':
+            loss_param.pop('type', None)
+            loss_param['starter_learning_rate'] = self.lr.start_lr()
             if loss_type == 'ener':
-                self.loss = EnerStdLoss(loss_param, starter_learning_rate = self.lr.start_lr())
+                self.loss = EnerStdLoss(**loss_param)
             elif loss_type == 'ener_dipole':
-                self.loss = EnerDipoleLoss(loss_param, starter_learning_rate = self.lr.start_lr())
+                self.loss = EnerDipoleLoss(**loss_param)
             else:
                 raise RuntimeError('unknow loss type')
         elif fitting_type == 'wfc':

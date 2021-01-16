@@ -8,32 +8,35 @@ from deepmd.RunOptions import global_cvt_2_ener_float
 
 
 class EnerStdLoss () :
-    def __init__ (self, jdata, **kwarg) :
-        self.starter_learning_rate = kwarg['starter_learning_rate']
-        args = ClassArg()\
-            .add('start_pref_e',        float,  default = 0.02)\
-            .add('limit_pref_e',        float,  default = 1.00)\
-            .add('start_pref_f',        float,  default = 1000)\
-            .add('limit_pref_f',        float,  default = 1.00)\
-            .add('start_pref_v',        float,  default = 0)\
-            .add('limit_pref_v',        float,  default = 0)\
-            .add('start_pref_ae',       float,  default = 0)\
-            .add('limit_pref_ae',       float,  default = 0)\
-            .add('start_pref_pf',       float,  default = 0)\
-            .add('limit_pref_pf',       float,  default = 0)\
-            .add('relative_f',          float)
-        class_data = args.parse(jdata)
-        self.start_pref_e = class_data['start_pref_e']
-        self.limit_pref_e = class_data['limit_pref_e']
-        self.start_pref_f = class_data['start_pref_f']
-        self.limit_pref_f = class_data['limit_pref_f']
-        self.start_pref_v = class_data['start_pref_v']
-        self.limit_pref_v = class_data['limit_pref_v']
-        self.start_pref_ae = class_data['start_pref_ae']
-        self.limit_pref_ae = class_data['limit_pref_ae']
-        self.start_pref_pf = class_data['start_pref_pf']
-        self.limit_pref_pf = class_data['limit_pref_pf']
-        self.relative_f = class_data['relative_f']
+    """
+    Standard loss function for DP models
+    """
+    def __init__ (self, 
+                  starter_learning_rate : float, 
+                  start_pref_e : float = 0.02,
+                  limit_pref_e : float = 1.00,
+                  start_pref_f : float = 1000,
+                  limit_pref_f : float = 1.00,
+                  start_pref_v : float = 0,
+                  limit_pref_v : float = 0,
+                  start_pref_ae : float = 0,
+                  limit_pref_ae : float = 0,
+                  start_pref_pf : float = 0,
+                  limit_pref_pf : float = 0,
+                  relative_f : float = None 
+    ) -> None:
+        self.starter_learning_rate = starter_learning_rate
+        self.start_pref_e = start_pref_e
+        self.limit_pref_e = limit_pref_e
+        self.start_pref_f = start_pref_f
+        self.limit_pref_f = limit_pref_f
+        self.start_pref_v = start_pref_v
+        self.limit_pref_v = limit_pref_v
+        self.start_pref_ae = start_pref_ae
+        self.limit_pref_ae = limit_pref_ae
+        self.start_pref_pf = start_pref_pf
+        self.limit_pref_pf = limit_pref_pf
+        self.relative_f = relative_f
         self.has_e = (self.start_pref_e != 0 or self.limit_pref_e != 0)
         self.has_f = (self.start_pref_f != 0 or self.limit_pref_f != 0)
         self.has_v = (self.start_pref_v != 0 or self.limit_pref_v != 0)
@@ -196,7 +199,13 @@ class EnerStdLoss () :
 
 
 class EnerDipoleLoss () :
-    def __init__ (self, jdata, **kwarg) :
+    def __init__ (self, 
+                  starter_learning_rate : float,
+                  start_pref_e : float = 0.1,
+                  limit_pref_e : float = 1.0,
+                  start_pref_ed : float = 1.0,
+                  limit_pref_ed : float = 1.0
+    ) -> None :
         self.starter_learning_rate = kwarg['starter_learning_rate']
         args = ClassArg()\
             .add('start_pref_e',        float,  must = True, default = 0.1) \
@@ -315,6 +324,9 @@ class EnerDipoleLoss () :
 
 
 class TensorLoss () :
+    """
+    Loss function for tensorial properties.
+    """
     def __init__ (self, jdata, **kwarg) :
         try:
             model = kwarg['model']

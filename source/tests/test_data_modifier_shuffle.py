@@ -11,9 +11,9 @@ from deepmd.DataSystem import DeepmdDataSystem
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
-from deepmd.EwaldRecp import EwaldRecp
-from deepmd.DataModifier import DipoleChargeModifier
-from deepmd.DeepDipole import DeepDipole
+from deepmd.ewald_recp import EwaldRecp
+from deepmd.data_modifier import DipoleChargeModifier
+from deepmd.deep_dipole import DeepDipole
 
 from common import Data
 
@@ -153,6 +153,7 @@ class TestDataModifier (unittest.TestCase) :
             "learning_rate" :{
 	        "type":		"exp",
 	        "start_lr":	0.01,
+	        "stop_lr":	1e-8,
 	        "decay_steps":	5000,
 	        "decay_rate":	0.95,
             },

@@ -10,8 +10,8 @@ from deepmd.DataSystem import DeepmdDataSystem
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
-from deepmd.EwaldRecp import EwaldRecp
-from deepmd.DataModifier import DipoleChargeModifier
+from deepmd.ewald_recp import EwaldRecp
+from deepmd.data_modifier import DipoleChargeModifier
 
 from common import Data
 

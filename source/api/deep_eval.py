@@ -58,7 +58,41 @@ class DeepEval():
         return graph
 
 
-    def sort_input(self, coord, atom_type, sel_atoms = None) :
+    def sort_input(self, 
+                   coord : np.array, 
+                   atom_type : np.array, 
+                   sel_atoms : List[int] = None
+    ) :
+        """
+        Sort atoms in the system according their types.
+        
+        Parameters
+        ----------
+        coord
+                The coordinates of atoms.
+                Should be of shape [nframes, natoms, 3]
+        atom_type
+                The type of atoms
+                Should be of shape [natoms]
+        sel_atom
+                The selected atoms by type
+        
+        Returns
+        -------
+        coord_out
+                The coordinates after sorting
+        atom_type_out
+                The atom types after sorting
+        idx_map
+                The index mapping from the input to the output. 
+                For example coord_out = coord[:,idx_map,:]
+        sel_atom_type
+                Only output if sel_atoms is not None
+                The sorted selected atom types
+        sel_idx_map
+                Only output if sel_atoms is not None
+                The index mapping from the selected atoms to sorted selected atoms.
+        """
         if sel_atoms is not None:
             selection = [False] * np.size(atom_type)
             for ii in sel_atoms:
@@ -80,13 +114,52 @@ class DeepEval():
         else:
             return coord, atom_type, idx_map
 
-    def reverse_map(self, vec, imap):
+
+    def reverse_map(self, 
+                    vec : np.array, 
+                    imap : List[int]
+    ) -> np.array:
+        """
+        Reverse mapping of a vector according to the index map
+
+        Parameters
+        ----------
+        vec
+                Input vector. Be of shape [nframes, natoms, -1]
+        imap
+                Index map. Be of shape [natoms]
+        
+        Returns
+        -------
+        vec_out
+                Reverse mapped vector.
+        """
         ret = np.zeros(vec.shape)        
         for idx,ii in enumerate(imap) :
             ret[:,ii,:] = vec[:,idx,:]
         return ret
         
-    def make_natoms_vec(self, atom_types) :
+
+    def make_natoms_vec(self, 
+                        atom_types : np.array
+    ) -> np.array :
+        """
+        Make the natom vector used by deepmd-kit
+
+        Parameters
+        ----------
+        atom_types
+                The type of atoms
+        
+        Returns
+        -------
+        natoms
+                The number of atoms. This tensor has the length of Ntypes + 2
+                natoms[0]: number of local atoms
+                natoms[1]: total number of atoms held by this processor
+                natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+  
+        """
         natoms_vec = np.zeros (self.ntypes+2).astype(int)
         natoms = atom_types.size
         natoms_vec[0] = natoms

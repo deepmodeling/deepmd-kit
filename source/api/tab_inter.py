@@ -1,15 +1,45 @@
 #!/usr/bin/env python3
 
 import numpy as np
+from typing import Tuple, List
+
 from scipy.interpolate import CubicSpline
 
 class TabInter (object):
     def __init__(self,
-                 filename):
+                 filename : str
+    ) -> None:
+        """
+        Constructor
+
+        Parameters
+        ----------
+        filename
+                File name for the short-range tabulated potential.
+                The table is a text data file with (N_t + 1) * N_t / 2 + 1 columes. 
+                The first colume is the distance between atoms. 
+                The second to the last columes are energies for pairs of certain types. 
+                For example we have two atom types, 0 and 1. 
+                The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly.                
+        """
         self.reinit(filename)
         
     def reinit(self,
-               filename):
+               filename : str
+    ) -> None:
+        """
+        Initialize the tabulated interaction
+
+        Parameters
+        ----------
+        filename
+                File name for the short-range tabulated potential.
+                The table is a text data file with (N_t + 1) * N_t / 2 + 1 columes. 
+                The first colume is the distance between atoms. 
+                The second to the last columes are energies for pairs of certain types. 
+                For example we have two atom types, 0 and 1. 
+                The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly.                
+        """
         self.vdata = np.loadtxt(filename)
         self.rmin = self.vdata[0][0]
         self.hh = self.vdata[1][0] - self.vdata[0][0]
@@ -22,7 +52,10 @@ class TabInter (object):
         self.tab_info = np.array([self.rmin, self.hh, self.nspline, self.ntypes])
         self.tab_data = self._make_data()
 
-    def get(self) :
+    def get(self) -> Tuple[np.array, np.array]:
+        """
+        Get the serialized table. 
+        """
         return self.tab_info, self.tab_data
 
     def _make_data(self) :

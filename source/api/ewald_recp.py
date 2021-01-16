@@ -1,4 +1,6 @@
 import numpy as np
+from typing import Tuple, List
+
 from deepmd.env import tf
 from deepmd.common import ClassArg
 from deepmd.RunOptions import global_tf_float_precision
@@ -10,9 +12,22 @@ from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 
 class EwaldRecp () :
+    """
+    Evaluate the reciprocal part of the Ewald sum
+    """
     def __init__(self, 
                  hh,
                  beta):
+        """
+        Constructor 
+
+        Parameters
+        ----------
+        hh
+                Grid spacing of the reciprocal part of Ewald sum. Unit: A
+        beta
+                Splitting parameter of the Ewald sum. Unit: A^{-1}
+        """
         self.hh = hh
         self.beta = beta
         with tf.Graph().as_default() as graph:
@@ -29,9 +44,31 @@ class EwaldRecp () :
         self.sess = tf.Session(graph=graph, config=default_tf_session_config)
 
     def eval(self, 
-             coord, 
-             charge, 
-             box) :
+             coord : np.array, 
+             charge : np.array, 
+             box : np.array
+    ) -> Tuple[np.array, np.array, np.array] :
+        """
+        Evaluate 
+        
+        Parameters
+        ----------
+        coord
+                The coordinates of atoms
+        charge
+                The atomic charge
+        box
+                The simulation region. PBC is assumed
+
+        Returns
+        -------
+        e
+                The energy 
+        f
+                The force 
+        v
+                The virial 
+        """
         coord = np.array(coord)
         charge = np.array(charge)
         box = np.array(box)

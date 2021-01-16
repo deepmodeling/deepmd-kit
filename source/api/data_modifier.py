@@ -5,7 +5,7 @@ from typing import Tuple, List
 from deepmd.deep_dipole import DeepDipole
 from deepmd.env import tf
 from deepmd.common import select_idx_map, make_default_mesh
-from deepmd.EwaldRecp import EwaldRecp
+from deepmd.ewald_recp import EwaldRecp
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
@@ -16,11 +16,28 @@ from deepmd.env import op_module
 
 class DipoleChargeModifier(DeepDipole):
     def __init__(self, 
-                 model_name, 
-                 model_charge_map,
-                 sys_charge_map, 
-                 ewald_h = 1, 
-                 ewald_beta = 1):
+                 model_name : str, 
+                 model_charge_map : List[float],
+                 sys_charge_map : List[float], 
+                 ewald_h : float = 1, 
+                 ewald_beta : float = 1
+    ) -> None:
+        """
+        Constructor 
+
+        Parameters
+        ----------
+        model_name
+                The model file for the DeepDipole model
+        model_charge_map
+                Gives the amount of charge for the wfcc
+        sys_charge_map
+                Gives the amount of charge for the real atoms
+        ewald_h
+                Grid spacing of the reciprocal part of Ewald sum. Unit: A
+        ewald_beta
+                Splitting parameter of the Ewald sum. Unit: A^{-1}
+        """
         # the dipole model is loaded with prefix 'dipole_charge'
         self.modifier_prefix = 'dipole_charge'
         # init dipole model
@@ -51,7 +68,11 @@ class DipoleChargeModifier(DeepDipole):
         self.force = None
         self.ntypes = len(self.sel_a)
 
-    def build_fv_graph(self):
+
+    def build_fv_graph(self) -> tf.Tensor:
+        """
+        Build the computational graph for the force and virial inference.
+        """
         with tf.variable_scope('modifier_attr') :
             t_mdl_name = tf.constant(self.model_name, 
                                      name = 'mdl_name', 
@@ -73,6 +94,7 @@ class DipoleChargeModifier(DeepDipole):
                                     dtype = tf.float64)
         with self.graph.as_default():
             return self._build_fv_graph_inner()        
+
 
     def _build_fv_graph_inner(self):
         self.t_ef = tf.placeholder(global_tf_float_precision, [None], name = 't_ef')
@@ -184,7 +206,35 @@ class DipoleChargeModifier(DeepDipole):
         return tf.concat(coll, axis = 1)        
 
 
-    def eval(self, coord, box, atype, eval_fv = True):
+    def eval(self, 
+             coord : np.array, 
+             box : np.array, 
+             atype : np.array, 
+             eval_fv : bool = True
+    ) -> Tuple[np.array, np.array, np.array]:
+        """
+        Evaluate the modification
+        
+        Parameters
+        ----------
+        coord
+                The coordinates of atoms
+        box
+                The simulation region. PBC is assumed
+        atype
+                The atom types
+        eval_fv
+                Evaluate force and virial
+
+        Returns
+        -------
+        tot_e
+                The energy modification
+        tot_f
+                The force modification
+        tot_v
+                The virial modification
+        """
         coord, atype, imap = self.sort_input(coord, atype)
         natoms = coord.shape[1] // 3
         nframes = coord.shape[0]
@@ -323,7 +373,8 @@ class DipoleChargeModifier(DeepDipole):
         return all_coord, all_charge, dipole
 
 
-    def modify_data(self, data):
+    def modify_data(self, 
+                    data) -> None:        
         if 'find_energy' not in data and 'find_force' not in data and 'find_virial' not in data:
             return
 

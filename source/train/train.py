@@ -11,7 +11,7 @@ from deepmd.RunOptions import RunOptions
 from deepmd.DataSystem import DeepmdDataSystem
 from deepmd.Trainer import NNPTrainer
 from deepmd.common import data_requirement, expand_sys_str, j_loader
-from deepmd.DataModifier import DipoleChargeModifier
+from deepmd.data_modifier import DipoleChargeModifier
 from deepmd.argcheck import normalize
 
 def create_done_queue(cluster_spec, task_index):

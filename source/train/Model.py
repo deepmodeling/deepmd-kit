@@ -1,7 +1,7 @@
 import numpy as np
 from deepmd.env import tf
 from collections import defaultdict
-from deepmd.TabInter import TabInter
+from deepmd.tab_inter import TabInter
 from deepmd.common import ClassArg
 
 from deepmd.RunOptions import global_cvt_2_ener_float

@@ -7,7 +7,7 @@ from deepmd.env import tf
 from deepmd.env import default_tf_session_config
 from deepmd.common import make_default_mesh
 from deepmd.deep_eval import DeepEval
-from deepmd.DataModifier import DipoleChargeModifier
+from deepmd.data_modifier import DipoleChargeModifier
 
 class DeepPot (DeepEval) :
     def __init__(self, 
