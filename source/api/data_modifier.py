@@ -374,7 +374,25 @@ class DipoleChargeModifier(DeepDipole):
 
 
     def modify_data(self, 
-                    data) -> None:        
+                    data : dict) -> None:        
+        """
+        Modify data.
+
+        Parameters
+        ----------
+        data
+                Internal data of DeepmdData.
+                Be a dict, has the following keys
+                - coord         coordinates
+                - box           simulation box
+                - type          atom types
+                - find_energy   tells if data has energy
+                - find_force    tells if data has force
+                - find_virial   tells if data has virial
+                - energy        energy
+                - force         force
+                - virial        virial
+        """
         if 'find_energy' not in data and 'find_force' not in data and 'find_virial' not in data:
             return
 

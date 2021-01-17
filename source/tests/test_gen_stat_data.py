@@ -3,7 +3,7 @@ import numpy as np
 import unittest
 import dpdata
 
-from deepmd.DataSystem import DeepmdDataSystem
+from deepmd.data_system import DeepmdDataSystem
 from deepmd.fitting import EnerFitting
 from deepmd.Model import make_stat_input, merge_sys_stat, _make_all_stat_ref
 

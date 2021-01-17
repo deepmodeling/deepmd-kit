@@ -2,7 +2,7 @@ import os,sys,shutil,copy
 import numpy as np
 import unittest
 
-from deepmd.DataSystem import DeepmdDataSystem
+from deepmd.data_system import DeepmdDataSystem
 from deepmd.RunOptions import global_np_float_precision
 
 if global_np_float_precision == np.float32 :

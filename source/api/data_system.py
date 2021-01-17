@@ -4,20 +4,48 @@ import os
 import collections
 import warnings
 import numpy as np
-from deepmd.Data import DataSets
-from deepmd.Data import DeepmdData
+from typing import Tuple, List
+
+from deepmd.data import DataSets
+from deepmd.data import DeepmdData
 
 
 class DeepmdDataSystem() :
+    """
+    Class for manipulating many data systems. 
+    It is implemented with the help of DeepmdData
+    """
     def __init__ (self,
-                  systems, 
-                  batch_size,
-                  test_size,
-                  rcut,
-                  set_prefix = 'set',
-                  shuffle_test = True,
-                  type_map = None, 
+                  systems : List[str], 
+                  batch_size : int,
+                  test_size : int,
+                  rcut : float,
+                  set_prefix : str = 'set',
+                  shuffle_test : bool = True,
+                  type_map : List[str] = None, 
                   modifier = None) :
+        """
+        Constructor
+        
+        Parameters
+        ----------
+        systems
+                Specifying the paths to systems
+        batch_size
+                The batch size
+        test_size
+                The size of test data
+        rcut
+                The cut-off radius
+        set_prefix
+                Prefix for the directories of different sets
+        shuffle_test
+                If the test data are shuffled
+        type_map
+                Gives the name of different atom types
+        modifier
+                Data modifier that has the method `modify_data`        
+        """
         # init data
         self.rcut = rcut
         self.system_dirs = systems
@@ -143,7 +171,22 @@ class DeepmdDataSystem() :
         return energy_shift
 
 
-    def add_dict(self, adict) :
+    def add_dict(self, 
+                 adict : dict
+    ) -> None:
+        """
+        Add items to the data system by a `dict`.
+        `adict` should have items like
+        adict[key] = {
+                   'ndof': ndof, 
+                   'atomic': atomic,
+                   'must': must, 
+                   'high_prec': high_prec,
+                   'type_sel': type_sel,
+                   'repeat': repeat,
+        }        
+        For the explaination of the keys see `add`
+        """
         for kk in adict :
             self.add(kk, 
                      adict[kk]['ndof'], 
@@ -154,24 +197,59 @@ class DeepmdDataSystem() :
                      repeat=adict[kk]['repeat'])
 
     def add(self, 
-            key, 
-            ndof, 
-            atomic = False, 
-            must = False, 
-            high_prec = False,
-            type_sel = None,
-            repeat = 1) :
+            key : str, 
+            ndof : int, 
+            atomic : bool = False, 
+            must : bool = False, 
+            high_prec : bool = False,
+            type_sel : List[int] = None,
+            repeat : int = 1
+    ) :
+        """
+        Add a data item that to be loaded
+
+        Parameters
+        ----------
+        key 
+                The key of the item. The corresponding data is stored in `sys_path/set.*/key.npy`
+        ndof
+                The number of dof
+        atomic
+                The item is an atomic property.
+                If False, the size of the data should be nframes x ndof
+                If True, the size of data should be nframes x natoms x ndof
+        must
+                The data file `sys_path/set.*/key.npy` must exist.
+                If must is False and the data file does not exist, the `data_dict[find_key]` is set to 0.0
+        high_prec
+                Load the data and store in float64, otherwise in float32
+        type_sel
+                Select certain type of atoms
+        repeat
+                The data will be repeated `repeat` times.
+        """
         for ii in self.data_systems:
             ii.add(key, ndof, atomic=atomic, must=must, high_prec=high_prec, repeat=repeat, type_sel=type_sel)
 
     def reduce(self, 
                key_out,
                key_in) :
+        """
+        Generate a new item from the reduction of another atom
+
+        Parameters
+        ----------
+        key_out
+                The name of the reduced item
+        key_in
+                The name of the data item to be reduced
+        """
         for ii in self.data_systems:
             ii.reduce(key_out, k_in)
 
-    def get_data_dict(self) :
-        return self.data_systems[0].get_data_dict()
+    def get_data_dict(self, 
+                      ii : int = 0) -> dict:
+        return self.data_systems[ii].get_data_dict()
 
 
     def _get_sys_probs(self,
@@ -196,7 +274,7 @@ class DeepmdDataSystem() :
                    sys_probs = None,
                    auto_prob_style = "prob_sys_size") :
         """
-        Get a batch of data from the data system        
+        Get a batch of data from the data systems
 
         Parameters
         ----------
@@ -232,9 +310,20 @@ class DeepmdDataSystem() :
 
     # ! altered by Marián Rynik
     def get_test (self, 
-                  sys_idx = None,
-                  n_test = -1) :
+                  sys_idx : int = None,
+                  n_test : int = -1
+    ) :
+        """
+        Get test data from the the data systems.
 
+        Parameters
+        ----------
+        sys_idx
+                The test dat of system with index `sys_idx` will be returned. 
+                If is None, the currently selected system will be returned.
+        n_test
+                Number of test data. If set to -1 all test data will be get.
+        """
         if not hasattr(self, 'default_mesh') :
             self._make_default_mesh()
         if not hasattr(self, 'test_data') :
@@ -252,29 +341,49 @@ class DeepmdDataSystem() :
         return test_system_data
 
     def get_sys_ntest(self, sys_idx=None):
-        """Get number of tests for the currently selected system,
-            or one defined by sys_idx."""
+        """
+        Get number of tests for the currently selected system,
+            or one defined by sys_idx.
+        """
         if sys_idx is not None :
             return self.test_size[sys_idx]
         else :
             return self.test_size[self.pick_idx]
             
-    def get_type_map(self):
+    def get_type_map(self) -> List[str]:
+        """
+        Get the type map
+        """
         return self.type_map
 
-    def get_nbatches (self) : 
+    def get_nbatches (self) -> int: 
+        """
+        Get the total number of batches
+        """
         return self.nbatches
     
-    def get_ntypes (self) :
+    def get_ntypes (self) -> int:
+        """
+        Get the number of types
+        """
         return self.sys_ntypes
 
-    def get_nsystems (self) :
+    def get_nsystems (self) -> int:
+        """
+        Get the number of data systems
+        """
         return self.nsystems
 
-    def get_sys (self, idx) :
+    def get_sys (self, idx : int) -> DeepmdData:
+        """
+        Get a certain data system
+        """
         return self.data_systems[idx]
 
-    def get_batch_size(self) :
+    def get_batch_size(self) -> int:
+        """
+        Get the batch size
+        """
         return self.batch_size
 
     def _format_name_length(self, name, width) :
@@ -378,6 +487,9 @@ class DeepmdDataSystem() :
 
 
 class DataSystem (object) :
+    """
+    Outdated class for the data systems. Not maintained anymore.    
+    """
     def __init__ (self,
                   systems,
                   set_prefix,

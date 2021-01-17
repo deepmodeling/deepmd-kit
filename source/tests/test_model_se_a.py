@@ -5,7 +5,7 @@ from deepmd.env import tf
 from common import Data,gen_data
 
 from deepmd.RunOptions import RunOptions
-from deepmd.DataSystem import DataSystem
+from deepmd.data_system import DataSystem
 from deepmd.descrpt_se_a import DescrptSeA
 from deepmd.fitting import EnerFitting
 from deepmd.Model import Model
