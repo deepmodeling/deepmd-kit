@@ -4,7 +4,7 @@ from typing import Tuple, List
 
 from deepmd.env import tf
 from deepmd.common import ClassArg, add_data_requirement, get_activation_func, get_precision, activation_fn_dict, precision_dict, docstring_parameter
-from deepmd.argcheck import list_to_doc
+from deepmd.utils.argcheck import list_to_doc
 from deepmd.utils.network import one_layer
 from deepmd.descriptor import DescrptLocFrame
 from deepmd.descriptor import DescrptSeA

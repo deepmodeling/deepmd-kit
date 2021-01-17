@@ -6,13 +6,13 @@ import time
 import json
 import numpy as np
 from deepmd.env import tf
-from deepmd.compat import convert_input_v0_v1
-from deepmd.RunOptions import RunOptions
-from deepmd.utils.data_system import DeepmdDataSystem
-from deepmd.Trainer import NNPTrainer
 from deepmd.common import data_requirement, expand_sys_str, j_loader
+from deepmd.RunOptions import RunOptions
+from deepmd.Trainer import NNPTrainer
 from deepmd.infer.data_modifier import DipoleChargeModifier
-from deepmd.argcheck import normalize
+from deepmd.utils.data_system import DeepmdDataSystem
+from deepmd.utils.compat import convert_input_v0_v1
+from deepmd.utils.argcheck import normalize
 
 def create_done_queue(cluster_spec, task_index):
    with tf.device("/job:ps/task:%d" % (task_index)):

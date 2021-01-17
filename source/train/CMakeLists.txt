@@ -2,7 +2,7 @@
 
 configure_file("RunOptions.py.in" "${CMAKE_CURRENT_BINARY_DIR}/RunOptions.py" @ONLY)
 
-file(GLOB LIB_PY main.py common.py env.py compat.py calculator.py Network.py Deep*.py Data.py DataSystem.py Model*.py Descrpt*.py Loss.py LearningRate.py Trainer.py TabInter.py EwaldRecp.py DataModifier.py ${CMAKE_CURRENT_BINARY_DIR}/RunOptions.py transform.py argcheck.py doc.py)
+file(GLOB LIB_PY main.py calculator.py Model*.py Trainer.py ${CMAKE_CURRENT_BINARY_DIR}/RunOptions.py transform.py doc.py)
 
 file(GLOB CLS_PY  Local.py Slurm.py)
 

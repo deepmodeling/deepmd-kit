@@ -3,7 +3,7 @@ from typing import Tuple, List
 
 from deepmd.env import tf
 from deepmd.common import add_data_requirement,get_activation_func, get_precision, activation_fn_dict, precision_dict, docstring_parameter
-from deepmd.argcheck import list_to_doc
+from deepmd.utils.argcheck import list_to_doc
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.env import op_module
