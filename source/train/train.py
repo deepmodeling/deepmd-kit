@@ -8,10 +8,10 @@ import numpy as np
 from deepmd.env import tf
 from deepmd.compat import convert_input_v0_v1
 from deepmd.RunOptions import RunOptions
-from deepmd.data_system import DeepmdDataSystem
+from deepmd.utils.data_system import DeepmdDataSystem
 from deepmd.Trainer import NNPTrainer
 from deepmd.common import data_requirement, expand_sys_str, j_loader
-from deepmd.data_modifier import DipoleChargeModifier
+from deepmd.infer.data_modifier import DipoleChargeModifier
 from deepmd.argcheck import normalize
 
 def create_done_queue(cluster_spec, task_index):

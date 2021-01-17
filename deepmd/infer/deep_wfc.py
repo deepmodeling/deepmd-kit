@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from deepmd.deep_eval import DeepTensor
+from deepmd.infer.deep_eval import DeepTensor
 
 class DeepWFC (DeepTensor) :
     def __init__(self, 

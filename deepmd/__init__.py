@@ -1,10 +1,16 @@
+from . import descriptor
+from . import fit
+from . import loss
+from . import utils
+import deepmd.utils.network as network
+from .infer.deep_eval   import DeepEval
+from .infer.deep_pot    import DeepPot
+from .infer.deep_dipole import DeepDipole
+from .infer.deep_polar  import DeepPolar
+from .infer.deep_polar  import DeepGlobalPolar
+from .infer.deep_wfc    import DeepWFC
+from .infer.data_modifier    import DipoleChargeModifier
 from .env import set_mkl
-from .deep_eval   import DeepEval
-from .deep_pot    import DeepPot
-from .deep_dipole import DeepDipole
-from .deep_polar  import DeepPolar
-from .deep_polar  import DeepGlobalPolar
-from .deep_wfc    import DeepWFC
 
 set_mkl()
 

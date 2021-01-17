@@ -9,8 +9,8 @@ from deepmd.RunOptions import global_np_float_precision
 from deepmd.RunOptions import global_ener_float_precision
 
 from deepmd.env import op_module
-from deepmd.descrpt_se_a import DescrptSeA
-from deepmd.descrpt_se_a_ef import DescrptSeAEfLower
+from deepmd.descriptor import DescrptSeA
+from deepmd.descriptor import DescrptSeAEfLower
 
 class TestEfRot(unittest.TestCase):
     def setUp(self):

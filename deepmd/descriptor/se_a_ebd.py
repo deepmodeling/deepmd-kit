@@ -3,13 +3,13 @@ from typing import Tuple, List
 
 from deepmd.env import tf
 from deepmd.common import ClassArg, get_activation_func, get_precision, add_data_requirement
-from deepmd.network import one_layer
+from deepmd.utils.network import one_layer
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
-from deepmd.descrpt_se_a import DescrptSeA
-from deepmd.network import embedding_net
+from deepmd.utils.network import embedding_net
+from .se_a import DescrptSeA
 
 class DescrptSeAEbd (DescrptSeA):
     def __init__ (self, 

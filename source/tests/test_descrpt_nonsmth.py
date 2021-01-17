@@ -17,7 +17,7 @@ from common import force_dw_test
 from common import virial_dw_test
 from common import Data
 
-from deepmd.descrpt_loc_frame import op_module
+from deepmd.env import op_module
 
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision

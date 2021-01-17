@@ -6,8 +6,8 @@ from typing import Tuple, List
 from deepmd.env import tf
 from deepmd.env import default_tf_session_config
 from deepmd.common import make_default_mesh
-from deepmd.deep_eval import DeepEval
-from deepmd.data_modifier import DipoleChargeModifier
+from deepmd.infer.data_modifier import DipoleChargeModifier
+from deepmd.infer.deep_eval import DeepEval
 
 class DeepPot (DeepEval) :
     def __init__(self, 

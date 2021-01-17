@@ -6,7 +6,7 @@ import sys
 import argparse
 import numpy as np
 
-from deepmd.data import DeepmdData
+from deepmd.utils.data import DeepmdData
 from deepmd.common import expand_sys_str
 from deepmd import DeepEval
 from deepmd import DeepPot

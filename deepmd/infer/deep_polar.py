@@ -2,7 +2,7 @@
 
 import numpy as np
 from typing import Tuple, List
-from deepmd.deep_eval import DeepTensor
+from deepmd.infer.deep_eval import DeepTensor
 
 class DeepPolar (DeepTensor) :
     def __init__(self, 

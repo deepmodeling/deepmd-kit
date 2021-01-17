@@ -7,18 +7,18 @@ from deepmd.env import tf
 from deepmd.env import default_tf_session_config
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_ener_float_precision
-from deepmd.fitting import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
-from deepmd.descrpt_loc_frame import DescrptLocFrame
-from deepmd.descrpt_se_a import DescrptSeA
-from deepmd.descrpt_se_a_t import DescrptSeAT
-from deepmd.descrpt_se_a_ebd import DescrptSeAEbd
-from deepmd.descrpt_se_a_ef import DescrptSeAEf
-from deepmd.descrpt_se_r import DescrptSeR
-from deepmd.descrpt_se_ar import DescrptSeAR
-from deepmd.descrpt_hybrid import DescrptHybrid
+from deepmd.fit import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
+from deepmd.descriptor import DescrptLocFrame
+from deepmd.descriptor import DescrptSeA
+from deepmd.descriptor import DescrptSeAT
+from deepmd.descriptor import DescrptSeAEbd
+from deepmd.descriptor import DescrptSeAEf
+from deepmd.descriptor import DescrptSeR
+from deepmd.descriptor import DescrptSeAR
+from deepmd.descriptor import DescrptHybrid
 from deepmd.Model import Model, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
 from deepmd.loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
-from deepmd.learning_rate import LearningRateExp
+from deepmd.utils.learning_rate import LearningRateExp
 
 from tensorflow.python.client import timeline
 from deepmd.env import op_module

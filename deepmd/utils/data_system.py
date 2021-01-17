@@ -6,8 +6,8 @@ import warnings
 import numpy as np
 from typing import Tuple, List
 
-from deepmd.data import DataSets
-from deepmd.data import DeepmdData
+from deepmd.utils.data import DataSets
+from deepmd.utils.data import DeepmdData
 
 
 class DeepmdDataSystem() :

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 from typing import Tuple, List
-from deepmd.deep_eval import DeepTensor
+from deepmd.infer.deep_eval import DeepTensor
 
 class DeepDipole (DeepTensor) :
     def __init__(self, 

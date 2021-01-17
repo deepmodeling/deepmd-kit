@@ -8,7 +8,7 @@ from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
-from deepmd.network import embedding_net
+from deepmd.utils.network import embedding_net
 
 class DescrptSeR ():
     @docstring_parameter(list_to_doc(activation_fn_dict.keys()), list_to_doc(precision_dict.keys()))

@@ -12,7 +12,7 @@ import deepmd._prod_force_se_a_grad
 import deepmd._prod_virial_se_a_grad
 import deepmd._soft_min_force_grad
 import deepmd._soft_min_virial_grad
-from deepmd.tab_inter import TabInter
+from deepmd.utils.tab_inter import TabInter
 
 from common import force_test
 from common import virial_test
@@ -21,7 +21,7 @@ from common import virial_dw_test
 from common import Data
 from test_descrpt_nonsmth import Inter 
 
-from deepmd.descrpt_loc_frame import op_module
+from deepmd.env import op_module
 
 def _make_tab(ntype) :
     xx = np.arange(0,9,0.001)

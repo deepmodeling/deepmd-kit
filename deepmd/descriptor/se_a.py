@@ -8,18 +8,22 @@ from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
-from deepmd.network import embedding_net
+from deepmd.utils.network import embedding_net
 
-class DescrptSeAT ():
+
+class DescrptSeA ():
     @docstring_parameter(list_to_doc(activation_fn_dict.keys()), list_to_doc(precision_dict.keys()))
     def __init__ (self, 
                   rcut: float,
                   rcut_smth: float,
                   sel: List[str],
                   neuron: List[int] = [24,48,96],
+                  axis_neuron: int = 8,
                   resnet_dt: bool = False,
                   trainable: bool = True,
                   seed: int = 1,
+                  type_one_side: bool = True,
+                  exclude_types: List[int] = [],
                   set_davg_zero: bool = False,
                   activation_function: str = 'tanh',
                   precision: str = 'default'
@@ -37,6 +41,8 @@ class DescrptSeAT ():
                 sel[i] specifies the maxmum number of type i atoms in the cut-off radius
         neuron : list[int]
                 Number of neurons in each hidden layers of the embedding net
+        axis_neuron
+                Number of the axis neuron (number of columns of the sub-matrix of the embedding matrix)
         resnet_dt
                 Time-step `dt` in the resnet construction:
                 y = x + dt * \phi (Wx + b)
@@ -44,6 +50,10 @@ class DescrptSeAT ():
                 If the weights of embedding net are trainable.
         seed
                 Random seed for initializing the network parameters.
+        type_one_side
+                Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
+        exclude_types : list[int]
+                The Excluded types
         set_davg_zero
                 Set the shift of embedding net input to zero.
         activation_function
@@ -55,17 +65,21 @@ class DescrptSeAT ():
         self.rcut_r = rcut
         self.rcut_r_smth = rcut_smth
         self.filter_neuron = neuron
+        self.n_axis_neuron = axis_neuron
         self.filter_resnet_dt = resnet_dt
         self.seed = seed
         self.trainable = trainable
         self.filter_activation_fn = get_activation_func(activation_function)
         self.filter_precision = get_precision(precision)
-        # self.exclude_types = set()
-        # for tt in exclude_types:
-        #     assert(len(tt) == 2)
-        #     self.exclude_types.add((tt[0], tt[1]))
-        #     self.exclude_types.add((tt[1], tt[0]))
+        self.exclude_types = set()
+        for tt in exclude_types:
+            assert(len(tt) == 2)
+            self.exclude_types.add((tt[0], tt[1]))
+            self.exclude_types.add((tt[1], tt[0]))
         self.set_davg_zero = set_davg_zero
+        self.type_one_side = type_one_side
+        if self.type_one_side and len(exclude_types) != 0:
+            raise RuntimeError('"type_one_side" is not compatible with "exclude_types"')
 
         # descrpt config
         self.sel_r = [ 0 for ii in range(len(self.sel_a)) ]
@@ -112,7 +126,7 @@ class DescrptSeAT ():
 
     def get_rcut (self) -> float:
         """
-        Returns the cut-off radisu
+        Returns the cut-off radius
         """
         return self.rcut_r
 
@@ -125,6 +139,12 @@ class DescrptSeAT ():
     def get_dim_out (self) -> int:
         """
         Returns the output dimension of this descriptor
+        """
+        return self.filter_neuron[-1] * self.n_axis_neuron
+
+    def get_dim_rot_mat_1 (self) -> int:
+        """
+        Returns the first dimension of the rotation matrix. The rotation is of shape dim_1 x 3
         """
         return self.filter_neuron[-1]
 
@@ -294,6 +314,10 @@ class DescrptSeAT ():
                                        rcut_r_smth = self.rcut_r_smth,
                                        sel_a = self.sel_a,
                                        sel_r = self.sel_r)
+        # only used when tensorboard was set as true
+        tf.summary.histogram('descrpt', self.descrpt)
+        tf.summary.histogram('rij', self.rij)
+        tf.summary.histogram('nlist', self.nlist)
 
         self.descrpt_reshape = tf.reshape(self.descrpt, [-1, self.ndescrpt])
         self.descrpt_reshape = tf.identity(self.descrpt_reshape, name = 'o_rmat')
@@ -309,7 +333,16 @@ class DescrptSeAT ():
                                                  reuse = reuse, 
                                                  trainable = self.trainable)
 
+        # only used when tensorboard was set as true
+        tf.summary.histogram('embedding_net_output', self.dout)
         return self.dout
+
+    
+    def get_rot_mat(self) -> tf.Tensor:
+        """
+        Get rotational matrix
+        """
+        return self.qmat
 
 
     def prod_force_virial(self, 
@@ -338,6 +371,7 @@ class DescrptSeAT ():
                 The atomic virial
         """
         [net_deriv] = tf.gradients (atom_ener, self.descrpt_reshape)
+        tf.summary.histogram('net_derivative', net_deriv)
         net_deriv_reshape = tf.reshape (net_deriv, [-1, natoms[0] * self.ndescrpt])        
         force \
             = op_module.prod_force_se_a (net_deriv_reshape,
@@ -354,6 +388,10 @@ class DescrptSeAT ():
                                            natoms,
                                            n_a_sel = self.nnei_a,
                                            n_r_sel = self.nnei_r)
+        tf.summary.histogram('force', force)
+        tf.summary.histogram('virial', virial)
+        tf.summary.histogram('atom_virial', atom_virial)
+        
         return force, virial, atom_virial
         
 
@@ -369,17 +407,30 @@ class DescrptSeAT ():
         inputs = tf.reshape(inputs, [-1, self.ndescrpt * natoms[0]])
         output = []
         output_qmat = []
-        inputs_i = inputs
-        inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
-        type_i = -1
-        layer, qmat = self._filter(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, seed = self.seed, trainable = trainable, activation_fn = self.filter_activation_fn)
-        layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0] * self.get_dim_out()])
-        # qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[0] * self.get_dim_rot_mat_1() * 3])
-        output.append(layer)
-        # output_qmat.append(qmat)
+        if not self.type_one_side:
+            for type_i in range(self.ntypes):
+                inputs_i = tf.slice (inputs,
+                                     [ 0, start_index*      self.ndescrpt],
+                                     [-1, natoms[2+type_i]* self.ndescrpt] )
+                inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
+                layer, qmat = self._filter(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, seed = self.seed, trainable = trainable, activation_fn = self.filter_activation_fn)
+                layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_out()])
+                qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_rot_mat_1() * 3])
+                output.append(layer)
+                output_qmat.append(qmat)
+                start_index += natoms[2+type_i]
+        else :
+            inputs_i = inputs
+            inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
+            type_i = -1
+            layer, qmat = self._filter(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, seed = self.seed, trainable = trainable, activation_fn = self.filter_activation_fn)
+            layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0] * self.get_dim_out()])
+            qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[0] * self.get_dim_rot_mat_1() * 3])
+            output.append(layer)
+            output_qmat.append(qmat)
         output = tf.concat(output, axis = 1)
-        # output_qmat = tf.concat(output_qmat, axis = 1)
-        return output, None
+        output_qmat = tf.concat(output_qmat, axis = 1)
+        return output, output_qmat
 
 
     def _compute_dstats_sys_smth (self,
@@ -435,73 +486,76 @@ class DescrptSeAT ():
 
 
     def _filter(self, 
-                inputs, 
-                type_input,
-                natoms,
-                activation_fn=tf.nn.tanh, 
-                stddev=1.0,
-                bavg=0.0,
-                name='linear', 
-                reuse=None,
-                seed=None, 
+                   inputs, 
+                   type_input,
+                   natoms,
+                   activation_fn=tf.nn.tanh, 
+                   stddev=1.0,
+                   bavg=0.0,
+                   name='linear', 
+                   reuse=None,
+                   seed=None, 
                 trainable = True):
         # natom x (nei x 4)
         shape = inputs.get_shape().as_list()
         outputs_size = [1] + self.filter_neuron
+        outputs_size_2 = self.n_axis_neuron
         with tf.variable_scope(name, reuse=reuse):
-            start_index_i = 0
-            result = None
-            for type_i in range(self.ntypes):
-                # cut-out inputs
-                # with natom x (nei_type_i x 4)  
-                inputs_i = tf.slice (inputs,
-                                     [ 0, start_index_i      *4],
-                                     [-1, self.sel_a[type_i] *4] )
-                start_index_i += self.sel_a[type_i]
-                nei_type_i = self.sel_a[type_i]
-                shape_i = inputs_i.get_shape().as_list()
-                assert(shape_i[1] == nei_type_i * 4)
-                # with natom x nei_type_i x 4
-                env_i = tf.reshape(inputs_i, [-1, nei_type_i, 4])
-                # with natom x nei_type_i x 3
-                env_i = tf.slice(env_i, [0, 0, 1], [-1, -1, -1])
-                start_index_j = 0
-                for type_j in range(type_i, self.ntypes):
-                    # with natom x (nei_type_j x 4)  
-                    inputs_j = tf.slice (inputs,
-                                         [ 0, start_index_j      *4],
-                                         [-1, self.sel_a[type_j] *4] )
-                    start_index_j += self.sel_a[type_j]
-                    nei_type_j = self.sel_a[type_j]
-                    shape_j = inputs_j.get_shape().as_list()
-                    assert(shape_j[1] == nei_type_j * 4)
-                    # with natom x nei_type_j x 4
-                    env_j = tf.reshape(inputs_j, [-1, nei_type_j, 4])
-                    # with natom x nei_type_i x 3
-                    env_j = tf.slice(env_j, [0, 0, 1], [-1, -1, -1])
-                    # with natom x nei_type_i x nei_type_j
-                    env_ij = tf.einsum('ijm,ikm->ijk', env_i, env_j)
-                    # with (natom x nei_type_i x nei_type_j)
-                    ebd_env_ij = tf.reshape(env_ij, [-1, 1])
-                    # with (natom x nei_type_i x nei_type_j) x out_size
-                    ebd_env_ij = embedding_net(ebd_env_ij, 
-                                               self.filter_neuron, 
-                                               self.filter_precision, 
-                                               activation_fn = activation_fn, 
-                                               resnet_dt = self.filter_resnet_dt,
-                                               name_suffix = f"_{type_i}_{type_j}",
-                                               stddev = stddev,
-                                               bavg = bavg,
-                                               seed = seed,
-                                               trainable = trainable)
-                    # with natom x nei_type_i x nei_type_j x out_size
-                    ebd_env_ij = tf.reshape(ebd_env_ij, [-1, nei_type_i, nei_type_j, outputs_size[-1]])
-                    # with natom x out_size
-                    res_ij = tf.einsum('ijk,ijkm->im', env_ij, ebd_env_ij)
-                    res_ij = res_ij * (1.0 / float(nei_type_i) / float(nei_type_j))
-                    if result is None:
-                        result = res_ij
-                    else:
-                        result += res_ij
-        return result, None
+          start_index = 0
+          xyz_scatter_total = []
+          for type_i in range(self.ntypes):
+            # cut-out inputs
+            # with natom x (nei_type_i x 4)  
+            inputs_i = tf.slice (inputs,
+                                 [ 0, start_index*      4],
+                                 [-1, self.sel_a[type_i]* 4] )
+            start_index += self.sel_a[type_i]
+            shape_i = inputs_i.get_shape().as_list()
+            # with (natom x nei_type_i) x 4
+            inputs_reshape = tf.reshape(inputs_i, [-1, 4])
+            # with (natom x nei_type_i) x 1
+            xyz_scatter = tf.reshape(tf.slice(inputs_reshape, [0,0],[-1,1]),[-1,1])
+            # with (natom x nei_type_i) x out_size
+            if (type_input, type_i) not in self.exclude_types:
+                xyz_scatter = embedding_net(xyz_scatter, 
+                                            self.filter_neuron, 
+                                            self.filter_precision, 
+                                            activation_fn = activation_fn, 
+                                            resnet_dt = self.filter_resnet_dt,
+                                            name_suffix = "_"+str(type_i),
+                                            stddev = stddev,
+                                            bavg = bavg,
+                                            seed = seed,
+                                            trainable = trainable)
+            else:
+              w = tf.zeros((outputs_size[0], outputs_size[-1]), dtype=global_tf_float_precision)
+              xyz_scatter = tf.matmul(xyz_scatter, w)
+            # natom x nei_type_i x out_size
+            xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1]//4, outputs_size[-1]))
 
+            # xyz_scatter_total.append(xyz_scatter)
+            if type_i == 0 :
+                xyz_scatter_1 = tf.matmul(tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), xyz_scatter, transpose_a = True)
+            else :
+                xyz_scatter_1 += tf.matmul(tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), xyz_scatter, transpose_a = True)
+          # natom x nei x outputs_size
+          # xyz_scatter = tf.concat(xyz_scatter_total, axis=1)
+          # natom x nei x 4
+          # inputs_reshape = tf.reshape(inputs, [-1, shape[1]//4, 4])
+          # natom x 4 x outputs_size
+          # xyz_scatter_1 = tf.matmul(inputs_reshape, xyz_scatter, transpose_a = True)
+          xyz_scatter_1 = xyz_scatter_1 * (4.0 / shape[1])
+          # natom x 4 x outputs_size_2
+          xyz_scatter_2 = tf.slice(xyz_scatter_1, [0,0,0],[-1,-1,outputs_size_2])
+          # # natom x 3 x outputs_size_2
+          # qmat = tf.slice(xyz_scatter_2, [0,1,0], [-1, 3, -1])
+          # natom x 3 x outputs_size_1
+          qmat = tf.slice(xyz_scatter_1, [0,1,0], [-1, 3, -1])
+          # natom x outputs_size_1 x 3
+          qmat = tf.transpose(qmat, perm = [0, 2, 1])
+          # natom x outputs_size x outputs_size_2
+          result = tf.matmul(xyz_scatter_1, xyz_scatter_2, transpose_a = True)
+          # natom x (outputs_size x outputs_size_2)
+          result = tf.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
+
+        return result, qmat

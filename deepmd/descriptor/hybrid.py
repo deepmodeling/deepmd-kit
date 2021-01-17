@@ -6,12 +6,19 @@ from deepmd.common import ClassArg
 from deepmd.env import op_module
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
-from deepmd.descrpt_loc_frame import DescrptLocFrame
-from deepmd.descrpt_se_a import DescrptSeA
-from deepmd.descrpt_se_a_t import DescrptSeAT
-from deepmd.descrpt_se_a_ebd import DescrptSeAEbd
-from deepmd.descrpt_se_a_ef import DescrptSeAEf
-from deepmd.descrpt_se_r import DescrptSeR
+# from deepmd.descriptor import DescrptLocFrame
+# from deepmd.descriptor import DescrptSeA
+# from deepmd.descriptor import DescrptSeAT
+# from deepmd.descriptor import DescrptSeAEbd
+# from deepmd.descriptor import DescrptSeAEf
+# from deepmd.descriptor import DescrptSeR
+from .se_a      import DescrptSeA
+from .se_r      import DescrptSeR
+from .se_ar     import DescrptSeAR
+from .se_a_t    import DescrptSeAT
+from .se_a_ebd  import DescrptSeAEbd
+from .se_a_ef   import DescrptSeAEf
+from .loc_frame import DescrptLocFrame
 
 class DescrptHybrid ():
     def __init__ (self, 

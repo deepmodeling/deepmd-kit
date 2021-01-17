@@ -3,8 +3,8 @@ import numpy as np
 import unittest
 
 from collections import defaultdict
-from deepmd.descrpt_se_a import DescrptSeA
-from deepmd.fitting import EnerFitting
+from deepmd.descriptor import DescrptSeA
+from deepmd.fit import EnerFitting
 from deepmd.common import j_loader
 
 input_json = 'water_se_a_afparam.json'

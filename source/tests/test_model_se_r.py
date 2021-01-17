@@ -4,9 +4,9 @@ from deepmd.env import tf
 from common import Data,gen_data
 
 from deepmd.RunOptions import RunOptions
-from deepmd.data_system import DataSystem
-from deepmd.descrpt_se_r import DescrptSeR
-from deepmd.fitting import EnerFitting
+from deepmd.utils.data_system import DataSystem
+from deepmd.descriptor import DescrptSeR
+from deepmd.fit import EnerFitting
 from deepmd.Model import Model
 from deepmd.common import j_must_have, j_must_have_d, j_have, j_loader
 
