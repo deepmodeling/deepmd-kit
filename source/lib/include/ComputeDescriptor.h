@@ -11,135 +11,135 @@
 // return:	-1	OK
 //		> 0	the type of unsuccessful neighbor list
 inline
-int format_nlist_fill_a (vector<int > &				fmt_nei_idx_a,
-			 vector<int > &				fmt_nei_idx_r,
-			 const vector<double > &		posi,
+int format_nlist_fill_a (std::vector<int > &			fmt_nei_idx_a,
+			 std::vector<int > &			fmt_nei_idx_r,
+			 const std::vector<double > &		posi,
 			 const int &				ntypes,
-			 const vector<int > &			type,
+			 const std::vector<int > &		type,
 			 const SimulationRegion<double> &	region,
 			 const bool &				b_pbc,
 			 const int &				i_idx,
-			 const vector<int > &			nei_idx_a, 
-			 const vector<int > &			nei_idx_r, 
+			 const std::vector<int > &		nei_idx_a, 
+			 const std::vector<int > &		nei_idx_r, 
 			 const double &				rcut,
-			 const vector<int > &			sec_a, 
-			 const vector<int > &			sec_r);
+			 const std::vector<int > &		sec_a, 
+			 const std::vector<int > &		sec_r);
 
 inline
-void compute_descriptor (vector<double > &			descrpt_a,
-			 vector<double > &			descrpt_r,
-			 vector<double > &			rot_mat,
-			 const vector<double > &		posi,
+void compute_descriptor (std::vector<double > &			descrpt_a,
+			 std::vector<double > &			descrpt_r,
+			 std::vector<double > &			rot_mat,
+			 const std::vector<double > &		posi,
 			 const int &				ntypes,
-			 const vector<int > &			type,
+			 const std::vector<int > &		type,
 			 const SimulationRegion<double> &	region,
 			 const bool &				b_pbc,
 			 const int &				i_idx,
-			 const vector<int > &			fmt_nlist_a,
-			 const vector<int > &			fmt_nlist_r,
-			 const vector<int > &			sec_a,
-			 const vector<int > &			sec_r,
+			 const std::vector<int > &		fmt_nlist_a,
+			 const std::vector<int > &		fmt_nlist_r,
+			 const std::vector<int > &		sec_a,
+			 const std::vector<int > &		sec_r,
 			 const int				axis0_type,
 			 const int				axis0_idx,
 			 const int				axis1_type,
 			 const int				axis1_idx);
 
 inline
-void compute_descriptor (vector<double > &			descrpt_a,
-			 vector<double > &			descrpt_a_deriv,
-			 vector<double > &			descrpt_r,
-			 vector<double > &			descrpt_r_deriv,
-			 vector<double > &			rij_a,
-			 vector<double > &			rij_r,
-			 vector<double > &			rot_mat,
-			 const vector<double > &		posi,
+void compute_descriptor (std::vector<double > &			descrpt_a,
+			 std::vector<double > &			descrpt_a_deriv,
+			 std::vector<double > &			descrpt_r,
+			 std::vector<double > &			descrpt_r_deriv,
+			 std::vector<double > &			rij_a,
+			 std::vector<double > &			rij_r,
+			 std::vector<double > &			rot_mat,
+			 const std::vector<double > &		posi,
 			 const int &				ntypes,
-			 const vector<int > &			type,
+			 const std::vector<int > &		type,
 			 const SimulationRegion<double> &	region,
 			 const bool &				b_pbc,
 			 const int &				i_idx,
-			 const vector<int > &			fmt_nlist_a,
-			 const vector<int > &			fmt_nlist_r,
-			 const vector<int > &			sec_a,
-			 const vector<int > &			sec_r,
+			 const std::vector<int > &		fmt_nlist_a,
+			 const std::vector<int > &		fmt_nlist_r,
+			 const std::vector<int > &		sec_a,
+			 const std::vector<int > &		sec_r,
 			 const int				axis0_type,
 			 const int				axis0_idx,
 			 const int				axis1_type,
 			 const int				axis1_idx);
 
 inline
-void compute_descriptor_se_a (vector<double > &			descrpt_a,
-			       vector<double > &			descrpt_a_deriv,
-			       vector<double > &			rij_a,
-			       const vector<double > &			posi,
-			       const int &				ntypes,
-			       const vector<int > &			type,
-			       const SimulationRegion<double> &		region,
-			       const bool &				b_pbc,
-			       const int &				i_idx,
-			       const vector<int > &			fmt_nlist_a,
-			       const vector<int > &			sec_a, 
-			       const double &				rmin,
-			       const double &				rmax);
+void compute_descriptor_se_a (std::vector<double > &		descrpt_a,
+			       std::vector<double > &		descrpt_a_deriv,
+			       std::vector<double > &		rij_a,
+			       const std::vector<double > &	posi,
+			       const int &			ntypes,
+			       const std::vector<int > &	type,
+			       const SimulationRegion<double> &	region,
+			       const bool &			b_pbc,
+			       const int &			i_idx,
+			       const std::vector<int > &	fmt_nlist_a,
+			       const std::vector<int > &	sec_a, 
+			       const double &			rmin,
+			       const double &			rmax);
 
 inline
-void compute_descriptor_se_a_extf (vector<double > &			descrpt_a,
-				   vector<double > &			descrpt_a_deriv,
-				   vector<double > &			rij_a,
-				   const vector<double > &		posi,
-				   const int &				ntypes,
-				   const vector<int > &			type,
+void compute_descriptor_se_a_extf (std::vector<double > &	descrpt_a,
+				   std::vector<double > &	descrpt_a_deriv,
+				   std::vector<double > &	rij_a,
+				   const std::vector<double > &	posi,
+				   const int &			ntypes,
+				   const std::vector<int > &	type,
 				   const SimulationRegion<double> &	region,
-				   const bool &				b_pbc,
-				   const vector<double > &		efield,
-				   const int &				i_idx,
-				   const vector<int > &			fmt_nlist_a,
-				   const vector<int > &			sec_a, 
-				   const double &			rmin, 
-				   const double &			rmax);
+				   const bool &			b_pbc,
+				   const std::vector<double > &	efield,
+				   const int &			i_idx,
+				   const std::vector<int > &	fmt_nlist_a,
+				   const std::vector<int > &	sec_a, 
+				   const double &		rmin, 
+				   const double &		rmax);
 inline
-void compute_descriptor_se_a_ef_para (vector<double > &			descrpt_a,
-				      vector<double > &			descrpt_a_deriv,
-				      vector<double > &			rij_a,
-				      const vector<double > &		posi,
+void compute_descriptor_se_a_ef_para (std::vector<double > &			descrpt_a,
+				      std::vector<double > &			descrpt_a_deriv,
+				      std::vector<double > &			rij_a,
+				      const std::vector<double > &		posi,
 				      const int &				ntypes,
-				      const vector<int > &			type,
-				      const SimulationRegion<double> &	region,
+				      const std::vector<int > &			type,
+				      const SimulationRegion<double> &		region,
 				      const bool &				b_pbc,
-				      const vector<double > &		efield,
+				      const std::vector<double > &		efield,
 				      const int &				i_idx,
-				      const vector<int > &			fmt_nlist_a,
-				      const vector<int > &			sec_a, 
-				      const double &			rmin, 
-				      const double &			rmax);
+				      const std::vector<int > &			fmt_nlist_a,
+				      const std::vector<int > &			sec_a, 
+				      const double &				rmin, 
+				      const double &				rmax);
 inline
-void compute_descriptor_se_a_ef_vert (vector<double > &			descrpt_a,
-				      vector<double > &			descrpt_a_deriv,
-				      vector<double > &			rij_a,
-				      const vector<double > &		posi,
+void compute_descriptor_se_a_ef_vert (std::vector<double > &			descrpt_a,
+				      std::vector<double > &			descrpt_a_deriv,
+				      std::vector<double > &			rij_a,
+				      const std::vector<double > &		posi,
 				      const int &				ntypes,
-				      const vector<int > &			type,
-				      const SimulationRegion<double> &	region,
+				      const std::vector<int > &			type,
+				      const SimulationRegion<double> &		region,
 				      const bool &				b_pbc,
-				      const vector<double > &		efield,
+				      const std::vector<double > &		efield,
 				      const int &				i_idx,
-				      const vector<int > &			fmt_nlist_a,
-				      const vector<int > &			sec_a, 
-				      const double &			rmin, 
-				      const double &			rmax);
+				      const std::vector<int > &			fmt_nlist_a,
+				      const std::vector<int > &			sec_a, 
+				      const double &				rmin, 
+				      const double &				rmax);
 
 inline
-void compute_descriptor_se_r (vector<double > &			descrpt_r,
-			      vector<double > &			descrpt_r_deriv,
-			      vector<double > &			rij_r,
-			      const vector<double > &		posi,
+void compute_descriptor_se_r (std::vector<double > &		descrpt_r,
+			      std::vector<double > &		descrpt_r_deriv,
+			      std::vector<double > &		rij_r,
+			      const std::vector<double > &	posi,
 			      const int &			ntypes,
-			      const vector<int > &		type,
+			      const std::vector<int > &		type,
 			      const SimulationRegion<double> &	region,
 			      const bool &			b_pbc,
 			      const int &			i_idx,
-			      const vector<int > &		fmt_nlist_r,
-			      const vector<int > &		sec_r,
+			      const std::vector<int > &		fmt_nlist_r,
+			      const std::vector<int > &		sec_r,
 			      const double &			rmin, 
 			      const double &			rmax);
 
@@ -346,19 +346,19 @@ compute_dRdT_2 (double (* dRdT)[9],
   }
 }
 
-int format_nlist_fill_a (vector<int > &				fmt_nei_idx_a,
-			 vector<int > &				fmt_nei_idx_r,
-			 const vector<double > &		posi,
+int format_nlist_fill_a (std::vector<int > &			fmt_nei_idx_a,
+			 std::vector<int > &			fmt_nei_idx_r,
+			 const std::vector<double > &		posi,
 			 const int &				ntypes,
-			 const vector<int > &			type,
+			 const std::vector<int > &		type,
 			 const SimulationRegion<double> &	region,
 			 const bool &				b_pbc,
 			 const int &				i_idx,
-			 const vector<int > &			nei_idx_a, 
-			 const vector<int > &			nei_idx_r, 
+			 const std::vector<int > &		nei_idx_a, 
+			 const std::vector<int > &		nei_idx_r, 
 			 const double &				rcut,
-			 const vector<int > &			sec_a, 
-			 const vector<int > &			sec_r)
+			 const std::vector<int > &		sec_a, 
+			 const std::vector<int > &		sec_r)
 {
 #ifdef DEBUG
   assert (sec_a.size() == ntypes + 1);
@@ -371,11 +371,11 @@ int format_nlist_fill_a (vector<int > &				fmt_nei_idx_a,
   fill (fmt_nei_idx_r.begin(), fmt_nei_idx_r.end(), -1);  
   
   // gether all neighbors
-  vector<int > nei_idx (nei_idx_a);
+  std::vector<int > nei_idx (nei_idx_a);
   nei_idx.insert (nei_idx.end(), nei_idx_r.begin(), nei_idx_r.end());
   assert (nei_idx.size() == nei_idx_a.size() + nei_idx_r.size());
   // allocate the information for all neighbors
-  vector<NeighborInfo > sel_nei ;
+  std::vector<NeighborInfo > sel_nei ;
   sel_nei.reserve (nei_idx_a.size() + nei_idx_r.size());
   for (unsigned kk = 0; kk < nei_idx.size(); ++kk){
     double diff[3];
@@ -395,7 +395,7 @@ int format_nlist_fill_a (vector<int > &				fmt_nei_idx_a,
   }
   sort (sel_nei.begin(), sel_nei.end());  
   
-  vector<int > nei_iter = sec_a;
+  std::vector<int > nei_iter = sec_a;
   int overflowed = -1;
   for (unsigned kk = 0; kk < sel_nei.size(); ++kk){
     const int & nei_type = sel_nei[kk].type;
@@ -420,30 +420,30 @@ int format_nlist_fill_a (vector<int > &				fmt_nei_idx_a,
 
 // output deriv size: n_sel_a_nei x 4 x 12				    + n_sel_r_nei x 12
 //		      (1./rr, cos_theta, cos_phi, sin_phi)  x 4 x (x, y, z) + (1./rr) x 4 x (x, y, z)
-void compute_descriptor (vector<double > &			descrpt_a,
-			 vector<double > &			descrpt_a_deriv,
-			 vector<double > &			descrpt_r,
-			 vector<double > &			descrpt_r_deriv,
-			 vector<double > &			rij_a,
-			 vector<double > &			rij_r,
-			 vector<double > &			rot_mat,
-			 const vector<double > &		posi,
+void compute_descriptor (std::vector<double > &			descrpt_a,
+			 std::vector<double > &			descrpt_a_deriv,
+			 std::vector<double > &			descrpt_r,
+			 std::vector<double > &			descrpt_r_deriv,
+			 std::vector<double > &			rij_a,
+			 std::vector<double > &			rij_r,
+			 std::vector<double > &			rot_mat,
+			 const std::vector<double > &		posi,
 			 const int &				ntypes,
-			 const vector<int > &			type,
+			 const std::vector<int > &		type,
 			 const SimulationRegion<double> &	region,
 			 const bool &				b_pbc,
 			 const int &				i_idx,
-			 const vector<int > &			fmt_nlist_a,
-			 const vector<int > &			fmt_nlist_r,
-			 const vector<int > &			sec_a,
-			 const vector<int > &			sec_r,
+			 const std::vector<int > &		fmt_nlist_a,
+			 const std::vector<int > &		fmt_nlist_r,
+			 const std::vector<int > &		sec_a,
+			 const std::vector<int > &		sec_r,
 			 const int				axis0_type,
 			 const int				axis0_idx,
 			 const int				axis1_type,
 			 const int				axis1_idx)
 {  
   // compute the diff of the neighbors
-  vector<vector<double > > sel_a_diff (sec_a.back());
+  std::vector<std::vector<double > > sel_a_diff (sec_a.back());
   rij_a.resize (sec_a.back() * 3);
   fill (rij_a.begin(), rij_a.end(), 0.0);
   for (int ii = 0; ii < int(sec_a.size()) - 1; ++ii){
@@ -463,7 +463,7 @@ void compute_descriptor (vector<double > &			descrpt_a,
     }
   }
 
-  vector<vector<double > > sel_r_diff (sec_r.back());
+  std::vector<std::vector<double > > sel_r_diff (sec_r.back());
   rij_r.resize (sec_r.back() * 3);
   fill (rij_r.begin(), rij_r.end(), 0.0);
   for (int ii = 0; ii < int(sec_r.size()) - 1; ++ii){
@@ -759,26 +759,26 @@ void compute_descriptor (vector<double > &			descrpt_a,
 }
 
 
-void compute_descriptor (vector<double > &			descrpt_a,
-			 vector<double > &			descrpt_r,
-			 vector<double > &			rot_mat,
-			 const vector<double > &		posi,
+void compute_descriptor (std::vector<double > &			descrpt_a,
+			 std::vector<double > &			descrpt_r,
+			 std::vector<double > &			rot_mat,
+			 const std::vector<double > &		posi,
 			 const int &				ntypes,
-			 const vector<int > &			type,
+			 const std::vector<int > &		type,
 			 const SimulationRegion<double> &	region,
 			 const bool &				b_pbc,
 			 const int &				i_idx,
-			 const vector<int > &			fmt_nlist_a,
-			 const vector<int > &			fmt_nlist_r,
-			 const vector<int > &			sec_a,
-			 const vector<int > &			sec_r,
+			 const std::vector<int > &		fmt_nlist_a,
+			 const std::vector<int > &		fmt_nlist_r,
+			 const std::vector<int > &		sec_a,
+			 const std::vector<int > &		sec_r,
 			 const int				axis0_type,
 			 const int				axis0_idx,
 			 const int				axis1_type,
 			 const int				axis1_idx)
 {  
   // compute the diff of the neighbors
-  vector<vector<double > > sel_a_diff (sec_a.back());
+  std::vector<std::vector<double > > sel_a_diff (sec_a.back());
   for (int ii = 0; ii < int(sec_a.size()) - 1; ++ii){
     for (int jj = sec_a[ii]; jj < sec_a[ii+1]; ++jj){
       if (fmt_nlist_a[jj] < 0) break;
@@ -794,7 +794,7 @@ void compute_descriptor (vector<double > &			descrpt_a,
       }
     }
   }
-  vector<vector<double > > sel_r_diff (sec_r.back());
+  std::vector<std::vector<double > > sel_r_diff (sec_r.back());
   for (int ii = 0; ii < int(sec_r.size()) - 1; ++ii){
     for (int jj = sec_r[ii]; jj < sec_r[ii+1]; ++jj){
       if (fmt_nlist_r[jj] < 0) break;
@@ -977,22 +977,22 @@ spline5_switch (TYPE & vv,
 
 // output deriv size: n_sel_a_nei x 4 x 12				    
 //		      (1./rr, cos_theta, cos_phi, sin_phi)  x 4 x (x, y, z) 
-void compute_descriptor_se_a (vector<double > &			descrpt_a,
-			       vector<double > &			descrpt_a_deriv,
-			       vector<double > &			rij_a,
-			       const vector<double > &			posi,
+void compute_descriptor_se_a (std::vector<double > &			descrpt_a,
+			       std::vector<double > &			descrpt_a_deriv,
+			       std::vector<double > &			rij_a,
+			       const std::vector<double > &		posi,
 			       const int &				ntypes,
-			       const vector<int > &			type,
+			       const std::vector<int > &		type,
 			       const SimulationRegion<double> &		region,
 			       const bool &				b_pbc,
 			       const int &				i_idx,
-			       const vector<int > &			fmt_nlist_a,
-			       const vector<int > &			sec_a, 
+			       const std::vector<int > &		fmt_nlist_a,
+			       const std::vector<int > &		sec_a, 
 			       const double &				rmin, 
 			       const double &				rmax)
 {  
   // compute the diff of the neighbors
-  vector<vector<double > > sel_a_diff (sec_a.back());
+  std::vector<std::vector<double > > sel_a_diff (sec_a.back());
   rij_a.resize (sec_a.back() * 3);
   fill (rij_a.begin(), rij_a.end(), 0.0);
   for (int ii = 0; ii < int(sec_a.size()) - 1; ++ii){
@@ -1064,22 +1064,22 @@ void compute_descriptor_se_a (vector<double > &			descrpt_a,
 }
 
 
-void compute_descriptor_se_r (vector<double > &			descrpt,
-			      vector<double > &			descrpt_deriv,
-			      vector<double > &			rij,
-			      const vector<double > &		posi,
+void compute_descriptor_se_r (std::vector<double > &		descrpt,
+			      std::vector<double > &		descrpt_deriv,
+			      std::vector<double > &		rij,
+			      const std::vector<double > &	posi,
 			      const int &			ntypes,
-			      const vector<int > &		type,
+			      const std::vector<int > &		type,
 			      const SimulationRegion<double> &	region,
 			      const bool &			b_pbc,
 			      const int &			i_idx,
-			      const vector<int > &		fmt_nlist,
-			      const vector<int > &		sec,
+			      const std::vector<int > &		fmt_nlist,
+			      const std::vector<int > &		sec,
 			      const double &			rmin, 
 			      const double &			rmax)
 {  
   // compute the diff of the neighbors
-  vector<vector<double > > sel_diff (sec.back());
+  std::vector<std::vector<double > > sel_diff (sec.back());
   rij.resize (sec.back() * 3);
   fill (rij.begin(), rij.end(), 0.0);
   for (int ii = 0; ii < int(sec.size()) - 1; ++ii){
@@ -1135,18 +1135,18 @@ void compute_descriptor_se_r (vector<double > &			descrpt,
 
 // output deriv size: n_sel_a_nei x 4 x 12				    
 //		      (1./rr, cos_theta, cos_phi, sin_phi)  x 4 x (x, y, z) 
-void compute_descriptor_se_a_extf (vector<double > &			descrpt_a,
-				   vector<double > &			descrpt_a_deriv,
-				   vector<double > &			rij_a,
-				   const vector<double > &		posi,
+void compute_descriptor_se_a_extf (std::vector<double > &		descrpt_a,
+				   std::vector<double > &		descrpt_a_deriv,
+				   std::vector<double > &		rij_a,
+				   const std::vector<double > &		posi,
 				   const int &				ntypes,
-				   const vector<int > &			type,
+				   const std::vector<int > &		type,
 				   const SimulationRegion<double> &	region,
 				   const bool &				b_pbc,
-				   const vector<double > &		efield,
+				   const std::vector<double > &		efield,
 				   const int &				i_idx,
-				   const vector<int > &			fmt_nlist_a,
-				   const vector<int > &			sec_a, 
+				   const std::vector<int > &		fmt_nlist_a,
+				   const std::vector<int > &		sec_a, 
 				   const double &			rmin, 
 				   const double &			rmax)
 {
@@ -1161,10 +1161,10 @@ void compute_descriptor_se_a_extf (vector<double > &			descrpt_a,
       ef[ii] = ef_[ii];
     }
   }
-  assert( fabs(MathUtilities::dot(ef, ef) - 1.0) < 1e-12 ), "ef should be a normalized vector";
+  assert( fabs(MathUtilities::dot(ef, ef) - 1.0) < 1e-12 ), "ef should be a normalized std::vector";
 
   // compute the diff of the neighbors
-  vector<vector<double > > sel_a_diff (sec_a.back());
+  std::vector<std::vector<double > > sel_a_diff (sec_a.back());
   rij_a.resize (sec_a.back() * 3);
   fill (rij_a.begin(), rij_a.end(), 0.0);
   for (int ii = 0; ii < int(sec_a.size()) - 1; ++ii){
@@ -1244,18 +1244,18 @@ void compute_descriptor_se_a_extf (vector<double > &			descrpt_a,
 
 // output deriv size: n_sel_a_nei x 4 x 12				    
 //		      (1./rr, cos_theta, cos_phi, sin_phi)  x 4 x (x, y, z) 
-void compute_descriptor_se_a_ef_para (vector<double > &			descrpt_a,
-				      vector<double > &			descrpt_a_deriv,
-				      vector<double > &			rij_a,
-				      const vector<double > &		posi,
+void compute_descriptor_se_a_ef_para (std::vector<double > &		descrpt_a,
+				      std::vector<double > &		descrpt_a_deriv,
+				      std::vector<double > &		rij_a,
+				      const std::vector<double > &	posi,
 				      const int &			ntypes,
-				      const vector<int > &		type,
+				      const std::vector<int > &		type,
 				      const SimulationRegion<double> &	region,
 				      const bool &			b_pbc,
-				      const vector<double > &		efield,
+				      const std::vector<double > &	efield,
 				      const int &			i_idx,
-				      const vector<int > &		fmt_nlist_a,
-				      const vector<int > &		sec_a, 
+				      const std::vector<int > &		fmt_nlist_a,
+				      const std::vector<int > &		sec_a, 
 				      const double &			rmin, 
 				      const double &			rmax)
 {
@@ -1273,7 +1273,7 @@ void compute_descriptor_se_a_ef_para (vector<double > &			descrpt_a,
   assert( fabs(MathUtilities::dot(ef, ef) - 1.0) < 1e-12 ), "ef should be a normalized vector";
 
   // compute the diff of the neighbors
-  vector<vector<double > > sel_a_diff (sec_a.back());
+  std::vector<std::vector<double > > sel_a_diff (sec_a.back());
   rij_a.resize (sec_a.back() * 3);
   fill (rij_a.begin(), rij_a.end(), 0.0);
   for (int ii = 0; ii < int(sec_a.size()) - 1; ++ii){
@@ -1352,18 +1352,18 @@ void compute_descriptor_se_a_ef_para (vector<double > &			descrpt_a,
 
 // output deriv size: n_sel_a_nei x 4 x 12				    
 //		      (1./rr, cos_theta, cos_phi, sin_phi)  x 4 x (x, y, z) 
-void compute_descriptor_se_a_ef_vert (vector<double > &			descrpt_a,
-				      vector<double > &			descrpt_a_deriv,
-				      vector<double > &			rij_a,
-				      const vector<double > &		posi,
+void compute_descriptor_se_a_ef_vert (std::vector<double > &		descrpt_a,
+				      std::vector<double > &		descrpt_a_deriv,
+				      std::vector<double > &		rij_a,
+				      const std::vector<double > &	posi,
 				      const int &			ntypes,
-				      const vector<int > &		type,
+				      const std::vector<int > &		type,
 				      const SimulationRegion<double> &	region,
 				      const bool &			b_pbc,
-				      const vector<double > &		efield,
+				      const std::vector<double > &	efield,
 				      const int &			i_idx,
-				      const vector<int > &		fmt_nlist_a,
-				      const vector<int > &		sec_a, 
+				      const std::vector<int > &		fmt_nlist_a,
+				      const std::vector<int > &		sec_a, 
 				      const double &			rmin, 
 				      const double &			rmax)
 {
@@ -1381,7 +1381,7 @@ void compute_descriptor_se_a_ef_vert (vector<double > &			descrpt_a,
   assert( fabs(MathUtilities::dot(ef, ef) - 1.0) < 1e-12 ), "ef should be a normalized vector";
 
   // compute the diff of the neighbors
-  vector<vector<double > > sel_a_diff (sec_a.back());
+  std::vector<std::vector<double > > sel_a_diff (sec_a.back());
   rij_a.resize (sec_a.back() * 3);
   fill (rij_a.begin(), rij_a.end(), 0.0);
   for (int ii = 0; ii < int(sec_a.size()) - 1; ++ii){

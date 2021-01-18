@@ -6,7 +6,7 @@
 #include "ComputeDescriptor.h"
 
 using namespace tensorflow;
-using namespace std;
+// using namespace std;
 
 
 REGISTER_OP("SoftMinSwitch")
@@ -152,26 +152,26 @@ class SoftMinSwitchOp : public OpKernel {
 	  sw_deriv(kk, rij_idx_shift + 0) += ts * dr[0];
 	  sw_deriv(kk, rij_idx_shift + 1) += ts * dr[1];
 	  sw_deriv(kk, rij_idx_shift + 2) += ts * dr[2];
-	  // cout << ii << " "  << jj << " " << j_idx << "   "
+	  // std::cout << ii << " "  << jj << " " << j_idx << "   "
 	  //      << vv << " " 
 	  //      << sw_deriv(kk, rij_idx_shift+0) << " " 
 	  //      << sw_deriv(kk, rij_idx_shift+1) << " " 
 	  //      << sw_deriv(kk, rij_idx_shift+2) << " " 
-	  //      << endl;
+	  //      << std::endl;
 	}
       }
     }
   }
 private:
-  vector<int32> sel_r;
-  vector<int32> sel_a;
-  vector<int> sec_a;
-  vector<int> sec_r;
+  std::vector<int32> sel_r;
+  std::vector<int32> sel_a;
+  std::vector<int> sec_a;
+  std::vector<int> sec_r;
   float alpha, rmin, rmax;
   int nnei, nnei_a, nnei_r;
   void
-  cum_sum (vector<int> & sec,
-	   const vector<int32> & n_sel) const {
+  cum_sum (std::vector<int> & sec,
+	   const std::vector<int32> & n_sel) const {
     sec.resize (n_sel.size() + 1);
     sec[0] = 0;
     for (int ii = 1; ii < sec.size(); ++ii){

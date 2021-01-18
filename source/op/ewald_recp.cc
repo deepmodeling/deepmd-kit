@@ -8,7 +8,7 @@
 typedef double boxtensor_t ;
 
 using namespace tensorflow;
-using namespace std;
+// using namespace std;
 
 using CPUDevice = Eigen::ThreadPoolDevice;
 
@@ -95,7 +95,7 @@ public:
       region.reinitBox (boxt);
 
       // set & normalize coord
-      vector<boxtensor_t > d_coord3_ (nloc*3);
+      std::vector<boxtensor_t > d_coord3_ (nloc*3);
       for (int ii = 0; ii < nloc; ++ii){
 	for (int dd = 0; dd < 3; ++dd){
 	  d_coord3_[ii*3+dd] = coord(coord_iter + ii*3+dd);
@@ -107,19 +107,19 @@ public:
 	  else if (inter[dd] >= 1) inter[dd] -= 1.;
 	}
       }
-      vector<FPTYPE > d_coord3 (nloc*3);
+      std::vector<FPTYPE > d_coord3 (nloc*3);
       for (int ii = 0; ii < nloc * 3; ++ii) {
 	d_coord3[ii] = d_coord3_[ii];
       }
 
       // set charge
-      vector<FPTYPE > d_charge (nloc);
+      std::vector<FPTYPE > d_charge (nloc);
       for (int ii = 0; ii < nloc; ++ii) d_charge[ii] = charge(charge_iter + ii);
 
-      // prepare outputs vectors
+      // prepare outputs std::vectors
       FPTYPE d_ener;
-      vector<FPTYPE> d_force(nloc*3);
-      vector<FPTYPE> d_virial(9);
+      std::vector<FPTYPE> d_force(nloc*3);
+      std::vector<FPTYPE> d_virial(9);
 
       // compute
       EwaldReciprocal(d_ener, d_force, d_virial, d_coord3, d_charge, region, ep);

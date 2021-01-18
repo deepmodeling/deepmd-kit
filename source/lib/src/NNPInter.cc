@@ -33,11 +33,11 @@ std::vector<int> cum_sum (const std::vector<int32> & n_sel) {
 
 static void 
 run_model (ENERGYTYPE &			dener,
-	   vector<VALUETYPE> &		dforce_,
-	   vector<VALUETYPE> &		dvirial,	   
+	   std::vector<VALUETYPE> &	dforce_,
+	   std::vector<VALUETYPE> &	dvirial,
 	   Session *			session, 
 	   const std::vector<std::pair<string, Tensor>> & input_tensors,
-	   const NNPAtomMap<VALUETYPE> &	nnpmap, 
+	   const NNPAtomMap<VALUETYPE>&	nnpmap, 
 	   const int			nghost = 0)
 {
   unsigned nloc = nnpmap.get_type().size();
@@ -69,7 +69,7 @@ run_model (ENERGYTYPE &			dener,
   auto oav = output_av.flat <VALUETYPE> ();
 
   dener = oe(0);
-  vector<VALUETYPE> dforce (3 * nall);
+  std::vector<VALUETYPE> dforce (3 * nall);
   dvirial.resize (9);
   for (unsigned ii = 0; ii < nall * 3; ++ii){
     dforce[ii] = of(ii);
@@ -89,15 +89,15 @@ run_model (ENERGYTYPE &			dener,
   nnpmap.backward (dforce_.begin(), dforce.begin(), 3);
 }
 
-static void run_model (ENERGYTYPE   &	dener,
-	   vector<VALUETYPE>            &	dforce_,
-	   vector<VALUETYPE>            &	dvirial,	   
-	   vector<VALUETYPE>            &	datom_energy_,
-	   vector<VALUETYPE>            &	datom_virial_,
-	   Session                      *	session, 
-	   const std::vector<std::pair<string, Tensor>> & input_tensors,
-	   const NNPAtomMap<VALUETYPE>  &   nnpmap, 
-	   const int			        &   nghost = 0)
+static void run_model (ENERGYTYPE   &		dener,
+		       std::vector<VALUETYPE>&	dforce_,
+		       std::vector<VALUETYPE>&	dvirial,	   
+		       std::vector<VALUETYPE>&	datom_energy_,
+		       std::vector<VALUETYPE>&	datom_virial_,
+		       Session*			session, 
+		       const std::vector<std::pair<string, Tensor>> & input_tensors,
+		       const NNPAtomMap<VALUETYPE> &   nnpmap, 
+		       const int&		nghost = 0)
 {
     unsigned nloc = nnpmap.get_type().size();
     unsigned nall = nloc + nghost;
@@ -136,9 +136,9 @@ static void run_model (ENERGYTYPE   &	dener,
     auto oav = output_av.flat <VALUETYPE> ();
 
     dener = oe(0);
-    vector<VALUETYPE> dforce (3 * nall);
-    vector<VALUETYPE> datom_energy (nall, 0);
-    vector<VALUETYPE> datom_virial (9 * nall);
+    std::vector<VALUETYPE> dforce (3 * nall);
+    std::vector<VALUETYPE> datom_energy (nall, 0);
+    std::vector<VALUETYPE> datom_virial (9 * nall);
     dvirial.resize (9);
     for (int ii = 0; ii < nall * 3; ++ii) {
         dforce[ii] = of(ii);
@@ -229,16 +229,16 @@ void
 NNPInter::
 print_summary(const string &pre) const
 {
-  cout << pre << "installed to:       " + global_install_prefix << endl;
-  cout << pre << "source:             " + global_git_summ << endl;
-  cout << pre << "source brach:       " + global_git_branch << endl;
-  cout << pre << "source commit:      " + global_git_hash << endl;
-  cout << pre << "source commit at:   " + global_git_date << endl;
-  cout << pre << "build float prec:   " + global_float_prec << endl;
-  cout << pre << "build with tf inc:  " + global_tf_include_dir << endl;
-  cout << pre << "build with tf lib:  " + global_tf_lib << endl;
-  cout << pre << "set tf intra_op_parallelism_threads: " <<  num_intra_nthreads << endl;
-  cout << pre << "set tf inter_op_parallelism_threads: " <<  num_inter_nthreads << endl;
+  std::cout << pre << "installed to:       " + global_install_prefix << std::endl;
+  std::cout << pre << "source:             " + global_git_summ << std::endl;
+  std::cout << pre << "source brach:       " + global_git_branch << std::endl;
+  std::cout << pre << "source commit:      " + global_git_hash << std::endl;
+  std::cout << pre << "source commit at:   " + global_git_date << std::endl;
+  std::cout << pre << "build float prec:   " + global_float_prec << std::endl;
+  std::cout << pre << "build with tf inc:  " + global_tf_include_dir << std::endl;
+  std::cout << pre << "build with tf lib:  " + global_tf_lib << std::endl;
+  std::cout << pre << "set tf intra_op_parallelism_threads: " <<  num_intra_nthreads << std::endl;
+  std::cout << pre << "set tf inter_op_parallelism_threads: " <<  num_inter_nthreads << std::endl;
 }
 
 template<class VT>
@@ -297,8 +297,8 @@ std::vector<int> NNPInter::get_sel_a () const {
 void
 NNPInter::
 validate_fparam_aparam(const int & nloc,
-		       const vector<VALUETYPE> &fparam,
-		       const vector<VALUETYPE> &aparam)const 
+		       const std::vector<VALUETYPE> &fparam,
+		       const std::vector<VALUETYPE> &aparam)const 
 {
   if (fparam.size() != dfparam) {
     throw std::runtime_error("the dim of frame parameter provided is not consistent with what the model uses");
@@ -311,14 +311,14 @@ validate_fparam_aparam(const int & nloc,
 void
 NNPInter::
 compute (ENERGYTYPE &			dener,
-	 vector<VALUETYPE> &		dforce_,
-	 vector<VALUETYPE> &		dvirial,
-	 const vector<VALUETYPE> &	dcoord_,
-	 const vector<int> &		datype_,
-	 const vector<VALUETYPE> &	dbox, 
+	 std::vector<VALUETYPE> &	dforce_,
+	 std::vector<VALUETYPE> &	dvirial,
+	 const std::vector<VALUETYPE> &	dcoord_,
+	 const std::vector<int> &	datype_,
+	 const std::vector<VALUETYPE> &	dbox, 
 	 const int			nghost,
-	 const vector<VALUETYPE> &	fparam,
-	 const vector<VALUETYPE> &	aparam)
+	 const std::vector<VALUETYPE> &	fparam,
+	 const std::vector<VALUETYPE> &	aparam)
 {
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
@@ -336,19 +336,19 @@ compute (ENERGYTYPE &			dener,
 void
 NNPInter::
 compute (ENERGYTYPE &			dener,
-	 vector<VALUETYPE> &		dforce_,
-	 vector<VALUETYPE> &		dvirial,
-	 const vector<VALUETYPE> &	dcoord_,
-	 const vector<int> &		datype_,
-	 const vector<VALUETYPE> &	dbox, 
+	 std::vector<VALUETYPE> &	dforce_,
+	 std::vector<VALUETYPE> &	dvirial,
+	 const std::vector<VALUETYPE> &	dcoord_,
+	 const std::vector<int> &	datype_,
+	 const std::vector<VALUETYPE> &	dbox, 
 	 const int			nghost,
 	 const LammpsNeighborList &	lmp_list,
-   const int               &  ago,
-	 const vector<VALUETYPE> &	fparam,
-	 const vector<VALUETYPE> &	aparam_)
+	 const int&			ago,
+	 const std::vector<VALUETYPE> &	fparam,
+	 const std::vector<VALUETYPE> &	aparam_)
 {
-  vector<VALUETYPE> dcoord, dforce, aparam;
-  vector<int> datype, fwd_map, bkw_map;
+  std::vector<VALUETYPE> dcoord, dforce, aparam;
+  std::vector<int> datype, fwd_map, bkw_map;
   int nghost_real;
   select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, nghost, ntypes);
   // resize to nall_real
@@ -375,15 +375,15 @@ compute (ENERGYTYPE &			dener,
 void
 NNPInter::
 compute_inner (ENERGYTYPE &			dener,
-	       vector<VALUETYPE> &		dforce_,
-	       vector<VALUETYPE> &		dvirial,
-	       const vector<VALUETYPE> &	dcoord_,
-	       const vector<int> &		datype_,
-	       const vector<VALUETYPE> &	dbox, 
+	       std::vector<VALUETYPE> &		dforce_,
+	       std::vector<VALUETYPE> &		dvirial,
+	       const std::vector<VALUETYPE> &	dcoord_,
+	       const std::vector<int> &		datype_,
+	       const std::vector<VALUETYPE> &	dbox, 
 	       const int			nghost,
-	       const int               &  ago,
-	       const vector<VALUETYPE> &	fparam,
-	       const vector<VALUETYPE> &	aparam)
+	       const int&			ago,
+	       const std::vector<VALUETYPE> &	fparam,
+	       const std::vector<VALUETYPE> &	aparam)
 {
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
@@ -408,15 +408,15 @@ compute_inner (ENERGYTYPE &			dener,
 void
 NNPInter::
 compute (ENERGYTYPE &			dener,
-	 vector<VALUETYPE> &		dforce_,
-	 vector<VALUETYPE> &		dvirial,
-	 vector<VALUETYPE> &		datom_energy_,
-	 vector<VALUETYPE> &		datom_virial_,
-	 const vector<VALUETYPE> &	dcoord_,
-	 const vector<int> &		datype_,
-	 const vector<VALUETYPE> &	dbox,
-	 const vector<VALUETYPE> &	fparam,
-	 const vector<VALUETYPE> &	aparam)
+	 std::vector<VALUETYPE> &	dforce_,
+	 std::vector<VALUETYPE> &	dvirial,
+	 std::vector<VALUETYPE> &	datom_energy_,
+	 std::vector<VALUETYPE> &	datom_virial_,
+	 const std::vector<VALUETYPE> &	dcoord_,
+	 const std::vector<int> &	datype_,
+	 const std::vector<VALUETYPE> &	dbox,
+	 const std::vector<VALUETYPE> &	fparam,
+	 const std::vector<VALUETYPE> &	aparam)
 {
   nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.end());
   validate_fparam_aparam(nnpmap.get_type().size(), fparam, aparam);
@@ -432,18 +432,18 @@ compute (ENERGYTYPE &			dener,
 void
 NNPInter::
 compute (ENERGYTYPE &			dener,
-	 vector<VALUETYPE> &		dforce_,
-	 vector<VALUETYPE> &		dvirial,
-	 vector<VALUETYPE> &		datom_energy_,
-	 vector<VALUETYPE> &		datom_virial_,
-	 const vector<VALUETYPE> &	dcoord_,
-	 const vector<int> &		datype_,
-	 const vector<VALUETYPE> &	dbox, 
+	 std::vector<VALUETYPE> &	dforce_,
+	 std::vector<VALUETYPE> &	dvirial,
+	 std::vector<VALUETYPE> &	datom_energy_,
+	 std::vector<VALUETYPE> &	datom_virial_,
+	 const std::vector<VALUETYPE> &	dcoord_,
+	 const std::vector<int> &	datype_,
+	 const std::vector<VALUETYPE> &	dbox, 
 	 const int			nghost, 
 	 const LammpsNeighborList &	lmp_list,
-   const int               &   ago,
-	 const vector<VALUETYPE> &	fparam,
-	 const vector<VALUETYPE> &	aparam)
+	 const int               &	ago,
+	 const std::vector<VALUETYPE> &	fparam,
+	 const std::vector<VALUETYPE> &	aparam)
 {
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
@@ -482,7 +482,7 @@ NNPInterModelDevi ()
 }
 
 NNPInterModelDevi::
-NNPInterModelDevi (const vector<string> & models, const int & gpu_rank)
+NNPInterModelDevi (const std::vector<string> & models, const int & gpu_rank)
     : inited (false), 
       init_nbor(false),
       numb_models (0)
@@ -495,7 +495,7 @@ NNPInterModelDevi::~NNPInterModelDevi() {}
 
 void
 NNPInterModelDevi::
-init (const vector<string> & models, const int & gpu_rank)
+init (const std::vector<string> & models, const int & gpu_rank)
 {
   assert (!inited);
   numb_models = models.size();
@@ -615,8 +615,8 @@ cum_sum (const std::vector<std::vector<int32> > n_sel)
 void
 NNPInterModelDevi::
 validate_fparam_aparam(const int & nloc,
-		       const vector<VALUETYPE> &fparam,
-		       const vector<VALUETYPE> &aparam)const 
+		       const std::vector<VALUETYPE> &fparam,
+		       const std::vector<VALUETYPE> &aparam)const 
 {
   if (fparam.size() != dfparam) {
     throw std::runtime_error("the dim of frame parameter provided is not consistent with what the model uses");
@@ -629,14 +629,14 @@ validate_fparam_aparam(const int & nloc,
 void
 NNPInterModelDevi::
 compute (ENERGYTYPE &			dener,
-	 vector<VALUETYPE> &		dforce_,
-	 vector<VALUETYPE> &		dvirial,
-	 vector<VALUETYPE> &		model_devi,
-	 const vector<VALUETYPE> &	dcoord_,
-	 const vector<int> &		datype_,
-	 const vector<VALUETYPE> &	dbox,
-	 const vector<VALUETYPE> &	fparam,
-	 const vector<VALUETYPE> &	aparam)
+	 std::vector<VALUETYPE> &	dforce_,
+	 std::vector<VALUETYPE> &	dvirial,
+	 std::vector<VALUETYPE> &	model_devi,
+	 const std::vector<VALUETYPE> &	dcoord_,
+	 const std::vector<int> &	datype_,
+	 const std::vector<VALUETYPE> &	dbox,
+	 const std::vector<VALUETYPE> &	fparam,
+	 const std::vector<VALUETYPE> &	aparam)
 {
   if (numb_models == 0) return;
 
@@ -646,9 +646,9 @@ compute (ENERGYTYPE &			dener,
   std::vector<std::pair<string, Tensor>> input_tensors;
   int nloc = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, aparam, nnpmap);
 
-  vector<ENERGYTYPE > all_energy (numb_models);
-  vector<vector<VALUETYPE > > all_force (numb_models);
-  vector<vector<VALUETYPE > > all_virial (numb_models);
+  std::vector<ENERGYTYPE > all_energy (numb_models);
+  std::vector<std::vector<VALUETYPE > > all_force (numb_models);
+  std::vector<std::vector<VALUETYPE > > all_virial (numb_models);
 
   for (unsigned ii = 0; ii < numb_models; ++ii){
     run_model (all_energy[ii], all_force[ii], all_virial[ii], sessions[ii], input_tensors, nnpmap);
@@ -675,17 +675,17 @@ compute (ENERGYTYPE &			dener,
 
 void
 NNPInterModelDevi::
-compute (vector<ENERGYTYPE> &		all_energy,
-	 vector<vector<VALUETYPE>> &	all_force,
-	 vector<vector<VALUETYPE>> &	all_virial,
-	 const vector<VALUETYPE> &	dcoord_,
-	 const vector<int> &		datype_,
-	 const vector<VALUETYPE> &	dbox,
-	 const int			nghost,
-	 const LammpsNeighborList &	lmp_list,
-  const int                &  ago,
-	 const vector<VALUETYPE> &	fparam,
-	 const vector<VALUETYPE> &	aparam)
+compute (std::vector<ENERGYTYPE> &		all_energy,
+	 std::vector<std::vector<VALUETYPE>> &	all_force,
+	 std::vector<std::vector<VALUETYPE>> &	all_virial,
+	 const std::vector<VALUETYPE> &		dcoord_,
+	 const std::vector<int> &		datype_,
+	 const std::vector<VALUETYPE> &		dbox,
+	 const int				nghost,
+	 const LammpsNeighborList &		lmp_list,
+	 const int                &		ago,
+	 const std::vector<VALUETYPE> &		fparam,
+	 const std::vector<VALUETYPE> &		aparam)
 {
   if (numb_models == 0) return;
   int nall = dcoord_.size() / 3;
@@ -715,19 +715,19 @@ compute (vector<ENERGYTYPE> &		all_energy,
 
 void
 NNPInterModelDevi::
-compute (vector<ENERGYTYPE> &			all_energy,
-	 vector<vector<VALUETYPE>> &		all_force,
-	 vector<vector<VALUETYPE>> &		all_virial,
-	 vector<vector<VALUETYPE>> &		all_atom_energy,
-	 vector<vector<VALUETYPE>> &		all_atom_virial,
-	 const vector<VALUETYPE> &		dcoord_,
-	 const vector<int> &			datype_,
-	 const vector<VALUETYPE> &		dbox,
+compute (std::vector<ENERGYTYPE> &		all_energy,
+	 std::vector<std::vector<VALUETYPE>> &	all_force,
+	 std::vector<std::vector<VALUETYPE>> &	all_virial,
+	 std::vector<std::vector<VALUETYPE>> &	all_atom_energy,
+	 std::vector<std::vector<VALUETYPE>> &	all_atom_virial,
+	 const std::vector<VALUETYPE> &		dcoord_,
+	 const std::vector<int> &		datype_,
+	 const std::vector<VALUETYPE> &		dbox,
 	 const int				nghost,
 	 const LammpsNeighborList &		lmp_list,
-   const int	             &    ago,
-	 const vector<VALUETYPE> &	 	fparam,
-	 const vector<VALUETYPE> &	 	aparam)
+	 const int	             &		ago,
+	 const std::vector<VALUETYPE> &	 	fparam,
+	 const std::vector<VALUETYPE> &	 	aparam)
 {
   if (numb_models == 0) return;
   int nall = dcoord_.size() / 3;
@@ -760,7 +760,7 @@ compute (vector<ENERGYTYPE> &			all_energy,
 void
 NNPInterModelDevi::
 compute_avg (VALUETYPE &		dener, 
-	     const vector<VALUETYPE > &	all_energy) 
+	     const std::vector<VALUETYPE > &	all_energy) 
 {
   assert (all_energy.size() == numb_models);
   if (numb_models == 0) return;
@@ -776,7 +776,7 @@ compute_avg (VALUETYPE &		dener,
 void
 NNPInterModelDevi::
 compute_avg (ENERGYTYPE &		dener, 
-	     const vector<ENERGYTYPE >&	all_energy) 
+	     const std::vector<ENERGYTYPE >&	all_energy) 
 {
   assert (all_energy.size() == numb_models);
   if (numb_models == 0) return;
@@ -791,8 +791,8 @@ compute_avg (ENERGYTYPE &		dener,
 
 void
 NNPInterModelDevi::
-compute_avg (vector<VALUETYPE> &		avg, 
-	     const vector<vector<VALUETYPE> > &	xx) 
+compute_avg (std::vector<VALUETYPE> &		avg, 
+	     const std::vector<std::vector<VALUETYPE> > &	xx) 
 {
   assert (xx.size() == numb_models);
   if (numb_models == 0) return;
@@ -829,9 +829,9 @@ compute_avg (vector<VALUETYPE> &		avg,
 
 void
 NNPInterModelDevi::
-compute_std_e (vector<VALUETYPE> &		std, 
-	       const vector<VALUETYPE> &	avg, 
-	       const vector<vector<VALUETYPE> >&xx)  
+compute_std_e (std::vector<VALUETYPE> &		std, 
+	       const std::vector<VALUETYPE> &	avg, 
+	       const std::vector<std::vector<VALUETYPE> >&xx)  
 {
   assert (xx.size() == numb_models);
   if (numb_models == 0) return;
@@ -860,9 +860,9 @@ compute_std_e (vector<VALUETYPE> &		std,
 
 void
 NNPInterModelDevi::
-compute_std_f (vector<VALUETYPE> &		std, 
-	       const vector<VALUETYPE> &	avg, 
-	       const vector<vector<VALUETYPE> >&xx)  
+compute_std_f (std::vector<VALUETYPE> &		std, 
+	       const std::vector<VALUETYPE> &	avg, 
+	       const std::vector<std::vector<VALUETYPE> >&xx)  
 {
   assert (xx.size() == numb_models);
   if (numb_models == 0) return;
@@ -894,13 +894,13 @@ compute_std_f (vector<VALUETYPE> &		std,
 
 void
 NNPInterModelDevi::
-compute_relative_std_f (vector<VALUETYPE> &std,
-						const vector<VALUETYPE> &avg,
-						const VALUETYPE eps)
+compute_relative_std_f (std::vector<VALUETYPE> &std,
+			const std::vector<VALUETYPE> &avg,
+			const VALUETYPE eps)
 {
   unsigned nloc = std.size();
   for (unsigned ii = 0; ii < nloc; ++ii){
-      const VALUETYPE * tmp_avg = &(avg[ii*3]);
+    const VALUETYPE * tmp_avg = &(avg[ii*3]);
       VALUETYPE vdiff[3];
       vdiff[0] = tmp_avg[0];
       vdiff[1] = tmp_avg[1];

@@ -7,7 +7,7 @@
 #include <typeinfo>
 #include <stdexcept>
 
-using namespace std;
+// using namespace std;
 
 template<typename VALUETYPE>
 SimulationRegion<VALUETYPE>::
@@ -20,9 +20,9 @@ SimulationRegion<VALUETYPE>::
 SimulationRegion ()
 {
   is_periodic[0] = is_periodic[1] = is_periodic[2] = true;
-  fill (boxt,		boxt    + SPACENDIM*SPACENDIM, 0);
-  fill (boxt_bk,	boxt_bk + SPACENDIM*SPACENDIM, 0);
-  fill (origin,		origin  + SPACENDIM, 0);
+  std::fill (boxt,		boxt    + SPACENDIM*SPACENDIM, 0);
+  std::fill (boxt_bk,		boxt_bk + SPACENDIM*SPACENDIM, 0);
+  std::fill (origin,		origin  + SPACENDIM, 0);
 }
 
 template <typename VALUETYPE>
@@ -105,7 +105,7 @@ reinitOrigin (const double * orig)
 template <typename VALUETYPE>
 inline void
 SimulationRegion<VALUETYPE>::
-reinitOrigin (const vector<double>& orig)
+reinitOrigin (const std::vector<double>& orig)
 {
   for (int ii = 0; ii < SPACENDIM ; ++ii){
     origin[ii] = orig[ii];

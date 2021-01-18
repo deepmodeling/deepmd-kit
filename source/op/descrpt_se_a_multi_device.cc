@@ -34,12 +34,12 @@ struct DeviceFunctor {
 
 template <typename FPTYPE>
 struct DescrptSeAFunctor {
-    void operator()(const CPUDevice& d, const FPTYPE * coord, const int * type, const int * mesh, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descrpt, FPTYPE * descrpt_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ntypes, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int magic_number) {
+    void operator()(const CPUDevice& d, const FPTYPE * coord, const int * type, const int * mesh, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descrpt, FPTYPE * descrpt_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ntypes, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::std::vector<int> sec_a, const bool fill_nei_a, const int magic_number) {
         DescrptSeACPULauncher(coord, type, ilist, jrange, jlist, avg, std, descrpt, descrpt_deriv, rij, nlist, nloc, nall, nnei, ntypes, ndescrpt, rcut_r, rcut_r_smth, sec_a, fill_nei_a, magic_number);
     }
 
     #if GOOGLE_CUDA
-    void operator()(const GPUDevice& d, const FPTYPE * coord, const int * type, const int * mesh, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descrpt, FPTYPE * descrpt_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ntypes, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int magic_number) {
+    void operator()(const GPUDevice& d, const FPTYPE * coord, const int * type, const int * mesh, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descrpt, FPTYPE * descrpt_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ntypes, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::std::vector<int> sec_a, const bool fill_nei_a, const int magic_number) {
         DescrptSeAGPULauncher(coord, type, ilist, jrange, jlist, array_int, array_longlong, avg, std, descrpt, descrpt_deriv, rij, nlist, nloc, nall, nnei, ndescrpt, rcut_r, rcut_r_smth, sec_a, fill_nei_a, magic_number);
     }
     #endif // GOOGLE_CUDA 
@@ -207,16 +207,16 @@ private:
     float rcut_a;
     float rcut_r;
     float rcut_r_smth;
-    std::vector<int32> sel_r;
-    std::vector<int32> sel_a;
-    std::vector<int> sec_a;
-    std::vector<int> sec_r;
+    std::std::vector<int32> sel_r;
+    std::std::vector<int32> sel_a;
+    std::std::vector<int> sec_a;
+    std::std::vector<int> sec_r;
     int ndescrpt, ndescrpt_a, ndescrpt_r;
     int nnei, nnei_a, nnei_r, nloc, nall, magic_number;
     bool fill_nei_a;
 
     //private func
-    void cum_sum (std::vector<int> & sec, const std::vector<int32> & n_sel) const {
+    void cum_sum (std::std::vector<int> & sec, const std::std::vector<int32> & n_sel) const {
         sec.resize (n_sel.size() + 1);
         sec[0] = 0;
         for (int ii = 1; ii < sec.size(); ++ii) {

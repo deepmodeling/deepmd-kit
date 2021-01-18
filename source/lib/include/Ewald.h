@@ -42,7 +42,7 @@ rec_err_esti(const VALUETYPE & test_q,
 	     const SimulationRegion<double>&	region) 
 {
   const VALUETYPE & beta = param.beta;
-  vector<int> KK;
+  std::vector<int> KK;
   cmpt_k(KK, region, param);
   const double * rec_box = region.getRecBoxTensor();
   double sum = 0;
@@ -80,7 +80,7 @@ rec_err_esti(const VALUETYPE & test_q,
 
 template <typename VALUETYPE>
 void
-cmpt_k(vector<int> & KK,
+cmpt_k(std::vector<int> & KK,
        const SimulationRegion<double>&		region, 
        const EwaldParameters<VALUETYPE>&	param)
 {
@@ -107,12 +107,12 @@ cmpt_k(vector<int> & KK,
 // inputs: coordinates charges region
 template <typename VALUETYPE>
 void 
-EwaldReciprocal(VALUETYPE &			ener, 
-		vector<VALUETYPE> &		force,
-		vector<VALUETYPE> &		virial,
-		const vector<VALUETYPE>&	coord,
-		const vector<VALUETYPE>&	charge,
-		const SimulationRegion<double>& region, 
+EwaldReciprocal(VALUETYPE &				ener, 
+		std::vector<VALUETYPE> &		force,
+		std::vector<VALUETYPE> &		virial,
+		const std::vector<VALUETYPE>&		coord,
+		const std::vector<VALUETYPE>&		charge,
+		const SimulationRegion<double>&		region, 
 		const EwaldParameters<VALUETYPE>&	param)
 {
   // natoms
@@ -134,7 +134,7 @@ EwaldReciprocal(VALUETYPE &			ener,
   }
 
   // K grid
-  vector<int> KK(3);
+  std::vector<int> KK(3);
   int totK = 1;
   cmpt_k<VALUETYPE>(KK, region, param);
   for (int dd = 0; dd < 3; ++dd){
@@ -144,7 +144,7 @@ EwaldReciprocal(VALUETYPE &			ener,
   for (int dd = 0; dd < 3; ++dd) stride[dd] = KK[dd]+1;
   
   // compute the sq
-  vector<vector<VALUETYPE> > thread_sqr(nthreads), thread_sqi(nthreads);
+  std::vector<std::vector<VALUETYPE> > thread_sqr(nthreads), thread_sqi(nthreads);
   for (int ii = 0; ii < nthreads; ++ii){
     thread_sqr[ii].resize(totK, static_cast<VALUETYPE>(0));
     thread_sqi[ii].resize(totK, static_cast<VALUETYPE>(0));
@@ -192,9 +192,9 @@ EwaldReciprocal(VALUETYPE &			ener,
     rec_box[ii] = static_cast<VALUETYPE>(rec_box_[ii]);
   }
   
-  vector<VALUETYPE> thread_ener(nthreads, 0.);
-  vector<vector<VALUETYPE> > thread_force(nthreads);
-  vector<vector<VALUETYPE> > thread_virial(nthreads);
+  std::vector<VALUETYPE> thread_ener(nthreads, 0.);
+  std::vector<std::vector<VALUETYPE> > thread_force(nthreads);
+  std::vector<std::vector<VALUETYPE> > thread_virial(nthreads);
   for (int ii = 0; ii < nthreads; ++ii){
     thread_force[ii].resize(natoms * 3, 0.);
     thread_virial[ii].resize(9, 0.);

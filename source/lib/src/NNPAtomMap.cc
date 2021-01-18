@@ -9,15 +9,15 @@ NNPAtomMap() {}
 
 template <typename VALUETYPE>
 NNPAtomMap<VALUETYPE>::
-NNPAtomMap(const vector<int >::const_iterator in_begin, 
-	   const vector<int >::const_iterator in_end)
+NNPAtomMap(const std::vector<int >::const_iterator in_begin, 
+	   const std::vector<int >::const_iterator in_end)
 {
   int natoms = in_end - in_begin;
   atype.resize (natoms);
-  vector<pair<int, int > > sorting (natoms);
-  vector<int >::const_iterator iter = in_begin;
+  std::vector<std::pair<int, int > > sorting (natoms);
+  std::vector<int >::const_iterator iter = in_begin;
   for (unsigned ii = 0; ii < sorting.size(); ++ii){
-    sorting[ii] = pair<int, int > (*(iter++), ii);
+    sorting[ii] = std::pair<int, int > (*(iter++), ii);
   }
   sort (sorting.begin(), sorting.end());
   idx_map.resize(natoms);
@@ -32,8 +32,8 @@ NNPAtomMap(const vector<int >::const_iterator in_begin,
 template <typename VALUETYPE>
 void
 NNPAtomMap<VALUETYPE>::
-forward (typename vector<VALUETYPE >::iterator out,
-	 const typename vector<VALUETYPE >::const_iterator in, 
+forward (typename std::vector<VALUETYPE >::iterator out,
+	 const typename std::vector<VALUETYPE >::const_iterator in, 
 	 const int stride) const 
 {
   int natoms = idx_map.size();
@@ -49,8 +49,8 @@ forward (typename vector<VALUETYPE >::iterator out,
 template <typename VALUETYPE>
 void
 NNPAtomMap<VALUETYPE>::
-backward (typename vector<VALUETYPE >::iterator out,
-	  const typename vector<VALUETYPE >::const_iterator in, 
+backward (typename std::vector<VALUETYPE >::iterator out,
+	  const typename std::vector<VALUETYPE >::const_iterator in, 
 	  const int stride) const 
 {
   int natoms = idx_map.size();

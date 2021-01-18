@@ -9,7 +9,7 @@
 #include <string>
 
 using namespace tensorflow;
-using namespace std;
+// using namespace std;
 #include <tensorflow/core/graph/default_device.h>
 #include <tensorflow/core/graph/graph_def_builder.h>
 
@@ -55,9 +55,9 @@ struct InternalNeighborList
   int * pilist;
   int * pjrange;
   int * pjlist;
-  vector<int > ilist;
-  vector<int > jrange;
-  vector<int > jlist;
+  std::vector<int > ilist;
+  std::vector<int > jrange;
+  std::vector<int > jlist;
   void clear () {ilist.clear(); jrange.clear(); jlist.clear();}
   void make_ptrs () {
     pilist = &ilist[0]; pjrange = &jrange[0]; pjlist = &jlist[0];
@@ -70,7 +70,7 @@ convert_nlist_lmp_internal (InternalNeighborList & list,
 
 void
 shuffle_nlist (InternalNeighborList & list, 
-	       const vector<int> & fwd_map);
+	       const std::vector<int> & fwd_map);
 
 void
 shuffle_nlist (InternalNeighborList & list, 
@@ -78,32 +78,32 @@ shuffle_nlist (InternalNeighborList & list,
 
 void
 shuffle_nlist_exclude_empty (InternalNeighborList & list, 
-			     const vector<int> & fwd_map);
+			     const std::vector<int> & fwd_map);
 
 
 void 
-select_by_type(vector<int> & fwd_map,
-	       vector<int> & bkw_map,
+select_by_type(std::vector<int> & fwd_map,
+	       std::vector<int> & bkw_map,
 	       int & nghost_real, 
-	       const vector<VALUETYPE> & dcoord_, 
-	       const vector<int> & datype_,
+	       const std::vector<VALUETYPE> & dcoord_, 
+	       const std::vector<int> & datype_,
 	       const int & nghost,
-	       const vector<int> & sel_type_);
+	       const std::vector<int> & sel_type_);
 
 void
-select_real_atoms(vector<int> & fwd_map,
-		  vector<int> & bkw_map,
+select_real_atoms(std::vector<int> & fwd_map,
+		  std::vector<int> & bkw_map,
 		  int & nghost_real,
-		  const vector<VALUETYPE> & dcoord_, 
-		  const vector<int> & datype_,
+		  const std::vector<VALUETYPE> & dcoord_, 
+		  const std::vector<int> & datype_,
 		  const int & nghost,
 		  const int & ntypes);
 
 template<typename VT>
 void 
-select_map(vector<VT> & out,
-	   const vector<VT > & in,
-	   const vector<int > & fwd_map, 
+select_map(std::vector<VT> & out,
+	   const std::vector<VT > & in,
+	   const std::vector<int > & fwd_map, 
 	   const int & stride);
 
 void
@@ -121,30 +121,30 @@ session_get_scalar(Session* session, const string name, const string scope = "")
 
 template<typename VT>
 void
-session_get_vector(vector<VT> & o_vec, Session* session, const string name_, const string scope = "");
+session_get_vector(std::vector<VT> & o_vec, Session* session, const string name_, const string scope = "");
 
 int
 session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
-		       const vector<VALUETYPE> &	dcoord_,
+		       const std::vector<VALUETYPE> &	dcoord_,
 		       const int &			ntypes,
-		       const vector<int> &		datype_,
-		       const vector<VALUETYPE> &	dbox, 
+		       const std::vector<int> &		datype_,
+		       const std::vector<VALUETYPE> &	dbox, 
 		       const VALUETYPE &		cell_size,
-		       const vector<VALUETYPE> &	fparam_,
-		       const vector<VALUETYPE> &	aparam_,
+		       const std::vector<VALUETYPE> &	fparam_,
+		       const std::vector<VALUETYPE> &	aparam_,
 		       const NNPAtomMap<VALUETYPE>&	nnpmap,
 		       const int			nghost = 0,
 		       const string			scope = "");
 
 int
 session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
-		       const vector<VALUETYPE> &	dcoord_,
+		       const std::vector<VALUETYPE> &	dcoord_,
 		       const int &			ntypes,
-		       const vector<int> &		datype_,
-		       const vector<VALUETYPE> &	dbox,		    
+		       const std::vector<int> &		datype_,
+		       const std::vector<VALUETYPE> &	dbox,		    
 		       InternalNeighborList &		dlist, 
-		       const vector<VALUETYPE> &	fparam_,
-		       const vector<VALUETYPE> &	aparam_,
+		       const std::vector<VALUETYPE> &	fparam_,
+		       const std::vector<VALUETYPE> &	aparam_,
 		       const NNPAtomMap<VALUETYPE>&	nnpmap,
 		       const int			nghost,
 		       const int			ago,
@@ -152,28 +152,28 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 
 int
 session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
-		       const vector<VALUETYPE> &	dcoord_,
+		       const std::vector<VALUETYPE> &	dcoord_,
 		       const int &			ntypes,
-		       const vector<int> &		datype_,
-		       const vector<VALUETYPE> &	dbox,		    
+		       const std::vector<int> &		datype_,
+		       const std::vector<VALUETYPE> &	dbox,		    
 		       InternalNeighborList &		dlist, 
-		       const vector<VALUETYPE> &	fparam_,
-		       const vector<VALUETYPE> &	aparam_,
+		       const std::vector<VALUETYPE> &	fparam_,
+		       const std::vector<VALUETYPE> &	aparam_,
 		       const NNPAtomMap<VALUETYPE>&	nnpmap,
 		       const int			nghost,
 		       const string			scope = "");
 
 int 
-session_input_tensors (vector<std::pair<string, Tensor>>& input_tensors,
-		       const vector<VALUETYPE>          & dcoord_,
+session_input_tensors (std::vector<std::pair<string, Tensor>>& input_tensors,
+		       const std::vector<VALUETYPE>          & dcoord_,
 		       const int                        & ntypes,
-		       const vector<int>                & atype_,
-		       const vector<VALUETYPE>          & dbox,
+		       const std::vector<int>                & atype_,
+		       const std::vector<VALUETYPE>          & dbox,
 		       const int                        * ilist, 
 		       const int                        * jrange,
 		       const int                        * jlist,
-		       const vector<VALUETYPE>		& fparam_,
-		       const vector<VALUETYPE>	        & aparam_,
+		       const std::vector<VALUETYPE>		& fparam_,
+		       const std::vector<VALUETYPE>	        & aparam_,
 		       const NNPAtomMap<VALUETYPE>      & nnpmap,
 		       const int			& nghost);
 
@@ -198,7 +198,7 @@ session_get_scalar(Session* session, const string name_, const string scope)
 
 template<typename VT>
 void
-session_get_vector(vector<VT> & o_vec, Session* session, const string name_, const string scope) 
+session_get_vector(std::vector<VT> & o_vec, Session* session, const string name_, const string scope) 
 {
   string name = name_;
   if (scope != "") {
@@ -222,9 +222,9 @@ session_get_vector(vector<VT> & o_vec, Session* session, const string name_, con
 
 template<typename VT>
 void 
-select_map(vector<VT> & out,
-	   const vector<VT > & in,
-	   const vector<int > & idx_map, 
+select_map(std::vector<VT> & out,
+	   const std::vector<VT > & in,
+	   const std::vector<int > & idx_map, 
 	   const int & stride)
 {
 #ifdef DEBUG

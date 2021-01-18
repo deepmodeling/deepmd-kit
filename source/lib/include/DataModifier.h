@@ -6,44 +6,44 @@ class DataModifier
 {
 public:
   DataModifier();
-  DataModifier(const string & model, 
+  DataModifier(const std::string & model, 
 	       const int & gpu_rank = 0, 
-	       const string & name_scope = "");
+	       const std::string & name_scope = "");
   ~DataModifier () {};
-  void init (const string & model, 
+  void init (const std::string & model, 
 	     const int & gpu_rank = 0, 
-	     const string & name_scope = "");
-  void print_summary(const string &pre) const;
+	     const std::string & name_scope = "");
+  void print_summary(const std::string &pre) const;
 public:
-  void compute (vector<VALUETYPE> &		dfcorr_,
-		vector<VALUETYPE> &		dvcorr_,
-		const vector<VALUETYPE> &	dcoord_,
-		const vector<int> &		datype_,
-		const vector<VALUETYPE> &	dbox, 
-		const vector<pair<int,int>> &	pairs,
-		const vector<VALUETYPE> &	delef_, 
+  void compute (std::vector<VALUETYPE> &		dfcorr_,
+		std::vector<VALUETYPE> &		dvcorr_,
+		const std::vector<VALUETYPE> &	dcoord_,
+		const std::vector<int> &		datype_,
+		const std::vector<VALUETYPE> &	dbox, 
+		const std::vector<std::pair<int,int>> &	pairs,
+		const std::vector<VALUETYPE> &	delef_, 
 		const int			nghost,
 		const LammpsNeighborList &	lmp_list);
   VALUETYPE cutoff () const {assert(inited); return rcut;};
   int numb_types () const {assert(inited); return ntypes;};
-  vector<int> sel_types () const {assert(inited); return sel_type;};
+  std::vector<int> sel_types () const {assert(inited); return sel_type;};
 private:
   Session* session;
-  string name_scope, name_prefix;
+  std::string name_scope, name_prefix;
   int num_intra_nthreads, num_inter_nthreads;
   GraphDef graph_def;
   bool inited;
   VALUETYPE rcut;
   VALUETYPE cell_size;
   int ntypes;
-  string model_type;
-  vector<int> sel_type;
-  template<class VT> VT get_scalar(const string & name) const;
-  template<class VT> void get_vector(vector<VT> & vec, const string & name) const;
-  void run_model (vector<VALUETYPE> &		dforce,
-		  vector<VALUETYPE> &		dvirial,
+  std::string model_type;
+  std::vector<int> sel_type;
+  template<class VT> VT get_scalar(const std::string & name) const;
+  template<class VT> void get_vector(std::vector<VT> & vec, const std::string & name) const;
+  void run_model (std::vector<VALUETYPE> &		dforce,
+		  std::vector<VALUETYPE> &		dvirial,
 		  Session *			session,
-		  const std::vector<std::pair<string, Tensor>> & input_tensors,
+		  const std::vector<std::pair<std::string, Tensor>> & input_tensors,
 		  const NNPAtomMap<VALUETYPE> &	nnpmap,
 		  const int			nghost);
 };

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-using namespace std;
+// using namespace std;
 
 #ifdef HIGH_PREC
 const string global_float_prec="double";
