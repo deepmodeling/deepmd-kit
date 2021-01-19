@@ -213,7 +213,7 @@ det4d (const TYPE * mat)
 template<typename TYPE, typename VALUETYPE>
 inline int
 MathUtilities::
-searchVec (const vector<TYPE> & vec,
+searchVec (const std::vector<TYPE> & vec,
 	   const int sta_,
 	   const int end_,
 	   const VALUETYPE & val)
@@ -232,7 +232,7 @@ searchVec (const vector<TYPE> & vec,
 template<typename TYPE, typename VALUETYPE>
 inline int
 MathUtilities::
-lowerBound (const vector<TYPE> & vec,
+lowerBound (const std::vector<TYPE> & vec,
 	    const int sta_,
 	    const int end_,
 	    const VALUETYPE & val)
@@ -256,7 +256,7 @@ lowerBound (const vector<TYPE> & vec,
 template<typename TYPE, typename VALUETYPE>
 inline int
 MathUtilities::
-upperBound (const vector<TYPE> & vec,
+upperBound (const std::vector<TYPE> & vec,
 	    const int sta_,
 	    const int end_,
 	    const VALUETYPE & val)
@@ -280,7 +280,7 @@ upperBound (const vector<TYPE> & vec,
 template<typename TYPE, typename VALUETYPE, typename COMPARE>
 inline int
 MathUtilities::
-upperBound (const vector<TYPE> & vec,
+upperBound (const std::vector<TYPE> & vec,
 	    const int sta_,
 	    const int end_,
 	    const VALUETYPE & val,
@@ -334,7 +334,7 @@ upperBound (const vector<TYPE> & vec,
 
 // template<typename TYPE, typename VALUETYPE, typename COMPARE>
 // int
-// searchVec (const vector<TYPE> & vec,
+// searchVec (const std::vector<TYPE> & vec,
 // 	   const int sta_,
 // 	   const int end_,
 // 	   const VALUETYPE & val,

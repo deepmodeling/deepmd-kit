@@ -3,15 +3,15 @@
 #include "SimulationRegion.h"
 
 void 
-select_by_type(vector<int> & fwd_map,
-	       vector<int> & bkw_map,
+select_by_type(std::vector<int> & fwd_map,
+	       std::vector<int> & bkw_map,
 	       int & nghost_real, 
-	       const vector<VALUETYPE> & dcoord_, 
-	       const vector<int> & datype_,
+	       const std::vector<VALUETYPE> & dcoord_, 
+	       const std::vector<int> & datype_,
 	       const int & nghost,
-	       const vector<int> & sel_type_)
+	       const std::vector<int> & sel_type_)
 {
-  vector<int> sel_type (sel_type_);
+  std::vector<int> sel_type (sel_type_);
   sort(sel_type.begin(), sel_type.end());  
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
@@ -44,15 +44,15 @@ select_by_type(vector<int> & fwd_map,
 
 
 void
-select_real_atoms(vector<int> & fwd_map,
-		  vector<int> & bkw_map,
+select_real_atoms(std::vector<int> & fwd_map,
+		  std::vector<int> & bkw_map,
 		  int & nghost_real,
-		  const vector<VALUETYPE> & dcoord_, 
-		  const vector<int> & datype_,
+		  const std::vector<VALUETYPE> & dcoord_, 
+		  const std::vector<int> & datype_,
 		  const int & nghost,
 		  const int & ntypes)
 {
-  vector<int > sel_type;
+  std::vector<int > sel_type;
   for (int ii = 0; ii < ntypes; ++ii){
     sel_type.push_back(ii);
   }
@@ -86,13 +86,13 @@ void
 shuffle_nlist (InternalNeighborList & list, 
 	       const NNPAtomMap<VALUETYPE> & map)
 {
-  const vector<int> & fwd_map = map.get_fwd_map();
+  const std::vector<int> & fwd_map = map.get_fwd_map();
   shuffle_nlist(list, fwd_map);
 }
 
 void
 shuffle_nlist (InternalNeighborList & list, 
-	       const vector<int> & fwd_map)
+	       const std::vector<int> & fwd_map)
 {
   int nloc = fwd_map.size();
   for (unsigned ii = 0; ii < list.ilist.size(); ++ii){
@@ -109,11 +109,11 @@ shuffle_nlist (InternalNeighborList & list,
 
 void
 shuffle_nlist_exclude_empty (InternalNeighborList & list, 
-			     const vector<int> & fwd_map)
+			     const std::vector<int> & fwd_map)
 {
   int old_nloc = fwd_map.size();
   shuffle_nlist(list, fwd_map);
-  vector<int> new_ilist, new_jrange, new_jlist, new_icount;
+  std::vector<int> new_ilist, new_jrange, new_jlist, new_icount;
   new_ilist.reserve(list.ilist.size());
   new_icount.reserve(list.ilist.size());
   new_jrange.reserve(list.jrange.size());
@@ -187,13 +187,13 @@ name_prefix(const string & scope)
 
 int
 session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
-		       const vector<VALUETYPE> &	dcoord_,
+		       const std::vector<VALUETYPE> &	dcoord_,
 		       const int &			ntypes,
-		       const vector<int> &		datype_,
-		       const vector<VALUETYPE> &	dbox, 
+		       const std::vector<int> &		datype_,
+		       const std::vector<VALUETYPE> &	dbox, 
 		       const VALUETYPE &		cell_size,
-		       const vector<VALUETYPE> &	fparam_,
-		       const vector<VALUETYPE> &	aparam_,
+		       const std::vector<VALUETYPE> &	fparam_,
+		       const std::vector<VALUETYPE> &	aparam_,
 		       const NNPAtomMap<VALUETYPE>&	nnpmap,
 		       const int			nghost, 
 		       const string			scope)
@@ -207,26 +207,26 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
   int nloc = nall - nghost;
   assert (nall == datype_.size());
 
-  vector<int > datype = nnpmap.get_type();
-  vector<int > type_count (ntypes, 0);
+  std::vector<int > datype = nnpmap.get_type();
+  std::vector<int > type_count (ntypes, 0);
   for (unsigned ii = 0; ii < datype.size(); ++ii){
     type_count[datype[ii]] ++;
   }
   datype.insert (datype.end(), datype_.begin() + nloc, datype_.end());
 
   SimulationRegion<VALUETYPE> region;
-  vector<double > dbox_(9);
+  std::vector<double > dbox_(9);
   for (int dd = 0; dd < 9; ++dd) dbox_[dd] = dbox[dd];
   region.reinitBox (&dbox_[0]);
   double box_l[3];
   region.toFaceDistance (box_l);
   
-  vector<int > ncell (3, 2);
+  std::vector<int > ncell (3, 2);
   for (int dd = 0; dd < 3; ++dd){
     ncell[dd] = box_l[dd] / cell_size;
     if (ncell[dd] < 2) ncell[dd] = 2;
   }
-  vector<int > next(3, 0);
+  std::vector<int > next(3, 0);
   for (int dd = 0; dd < 3; ++dd){
     double cellh = box_l[dd] / ncell[dd];
     next[dd] = cellh / cell_size;
@@ -282,7 +282,7 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
   auto fparam = fparam_tensor.matrix<VALUETYPE> ();
   auto aparam = aparam_tensor.matrix<VALUETYPE> ();
 
-  vector<VALUETYPE> dcoord (dcoord_);
+  std::vector<VALUETYPE> dcoord (dcoord_);
   nnpmap.forward (dcoord.begin(), dcoord_.begin(), 3);
   
   for (int ii = 0; ii < nframes; ++ii){
@@ -342,13 +342,13 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 
 int
 session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
-		       const vector<VALUETYPE> &	dcoord_,
+		       const std::vector<VALUETYPE> &	dcoord_,
 		       const int &			ntypes,
-		       const vector<int> &		datype_,
-		       const vector<VALUETYPE> &	dbox,		    
+		       const std::vector<int> &		datype_,
+		       const std::vector<VALUETYPE> &	dbox,		    
 		       InternalNeighborList &		dlist, 
-		       const vector<VALUETYPE> &	fparam_,
-		       const vector<VALUETYPE> &	aparam_,
+		       const std::vector<VALUETYPE> &	fparam_,
+		       const std::vector<VALUETYPE> &	aparam_,
 		       const NNPAtomMap<VALUETYPE>&	nnpmap,
 		       const int			nghost,
            const int      ago,
@@ -361,8 +361,8 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
   int nloc = nall - nghost;
   assert (nall == datype_.size());  
 
-  vector<int > datype = nnpmap.get_type();
-  vector<int > type_count (ntypes, 0);
+  std::vector<int > datype = nnpmap.get_type();
+  std::vector<int > type_count (ntypes, 0);
   for (unsigned ii = 0; ii < datype.size(); ++ii){
     type_count[datype[ii]] ++;
   }
@@ -411,7 +411,7 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
   auto fparam = fparam_tensor.matrix<VALUETYPE> ();
   auto aparam = aparam_tensor.matrix<VALUETYPE> ();
 
-  vector<VALUETYPE> dcoord (dcoord_);
+  std::vector<VALUETYPE> dcoord (dcoord_);
   nnpmap.forward (dcoord.begin(), dcoord_.begin(), 3);
   
   for (int ii = 0; ii < nframes; ++ii){
@@ -472,13 +472,13 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 
 int
 session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
-		       const vector<VALUETYPE> &	dcoord_,
+		       const std::vector<VALUETYPE> &	dcoord_,
 		       const int &			ntypes,
-		       const vector<int> &		datype_,
-		       const vector<VALUETYPE> &	dbox,		    
+		       const std::vector<int> &		datype_,
+		       const std::vector<VALUETYPE> &	dbox,		    
 		       InternalNeighborList &		dlist, 
-		       const vector<VALUETYPE> &	fparam_,
-		       const vector<VALUETYPE> &	aparam_,
+		       const std::vector<VALUETYPE> &	fparam_,
+		       const std::vector<VALUETYPE> &	aparam_,
 		       const NNPAtomMap<VALUETYPE>&	nnpmap,
 		       const int			nghost,
 		       const string			scope)
@@ -490,8 +490,8 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
   int nloc = nall - nghost;
   assert (nall == datype_.size());  
 
-  vector<int > datype = nnpmap.get_type();
-  vector<int > type_count (ntypes, 0);
+  std::vector<int > datype = nnpmap.get_type();
+  std::vector<int > type_count (ntypes, 0);
   for (unsigned ii = 0; ii < datype.size(); ++ii){
     type_count[datype[ii]] ++;
   }
@@ -540,7 +540,7 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
   auto fparam = fparam_tensor.matrix<VALUETYPE> ();
   auto aparam = aparam_tensor.matrix<VALUETYPE> ();
 
-  vector<VALUETYPE> dcoord (dcoord_);
+  std::vector<VALUETYPE> dcoord (dcoord_);
   nnpmap.forward (dcoord.begin(), dcoord_.begin(), 3);
   
   for (int ii = 0; ii < nframes; ++ii){
@@ -601,18 +601,18 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 
 int
 session_input_tensors (
-    vector<std::pair<string, Tensor>>   &   input_tensors,
-    const vector<VALUETYPE>             &	  dcoord_,
-    const int                           &   ntypes,
-    const vector<int>                   &	  datype_,
-    const vector<VALUETYPE>             &	  dbox,
-    const int                           *   ilist, 
-    const int                           *   jrange,
-    const int                           *   jlist,
-    const vector<VALUETYPE>	            &   fparam_,
-    const vector<VALUETYPE>	            &   aparam_,
-    const NNPAtomMap<VALUETYPE>         &   nnpmap,
-    const int			                      &   nghost)
+    std::vector<std::pair<string, Tensor>>   &  input_tensors,
+    const std::vector<VALUETYPE>        & dcoord_,
+    const int                           & ntypes,
+    const std::vector<int>              & datype_,
+    const std::vector<VALUETYPE>        & dbox,
+    const int                           * ilist, 
+    const int                           * jrange,
+    const int                           * jlist,
+    const std::vector<VALUETYPE>	& fparam_,
+    const std::vector<VALUETYPE>	& aparam_,
+    const NNPAtomMap<VALUETYPE>         & nnpmap,
+    const int			        & nghost)
 {
     assert (dbox.size() == 9);
 
@@ -621,8 +621,8 @@ session_input_tensors (
     int nloc = nall - nghost;
     assert (nall == datype_.size());
 
-    vector<int > datype = nnpmap.get_type();
-    vector<int > type_count (ntypes, 0);
+    std::vector<int > datype = nnpmap.get_type();
+    std::vector<int > type_count (ntypes, 0);
     for (unsigned ii = 0; ii < datype.size(); ++ii) {
         type_count[datype[ii]] ++;
     }
@@ -671,7 +671,7 @@ session_input_tensors (
     auto fparam = fparam_tensor.matrix<VALUETYPE> ();
     auto aparam = aparam_tensor.matrix<VALUETYPE> ();
 
-    vector<VALUETYPE> dcoord (dcoord_);
+    std::vector<VALUETYPE> dcoord (dcoord_);
     nnpmap.forward (dcoord.begin(), dcoord_.begin(), 3);
 
     for (int ii = 0; ii < nframes; ++ii) {

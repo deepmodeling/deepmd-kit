@@ -4,7 +4,7 @@
 #include <iostream>
 
 using namespace tensorflow;
-using namespace std;
+// using namespace std;
 
 REGISTER_OP("SoftMinForce")
 .Attr("T: {float, double}")
@@ -93,10 +93,10 @@ class SoftMinForceOp : public OpKernel {
 	  force(kk, j_idx * 3 + 0) -= du(kk, i_idx) * sw_deriv(kk, rij_idx_shift + 0);
 	  force(kk, j_idx * 3 + 1) -= du(kk, i_idx) * sw_deriv(kk, rij_idx_shift + 1);
 	  force(kk, j_idx * 3 + 2) -= du(kk, i_idx) * sw_deriv(kk, rij_idx_shift + 2);
-	  // cout << "soft_min_force " << i_idx << " " << j_idx << " " 
+	  // std::cout << "soft_min_force " << i_idx << " " << j_idx << " " 
 	  //      << du(kk, i_idx) << " " 
 	  //      << du(kk, i_idx) * sw_deriv(kk, rij_idx_shift + 0)
-	  //      << endl;
+	  //      << std::endl;
 	}
       }
     }

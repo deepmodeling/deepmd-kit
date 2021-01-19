@@ -4,7 +4,7 @@
 #include <iostream>
 
 using namespace tensorflow;
-using namespace std;
+// using namespace std;
 
 #ifdef HIGH_PREC
 typedef double VALUETYPE;

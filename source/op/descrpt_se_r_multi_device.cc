@@ -31,12 +31,12 @@ struct DeviceFunctor {
 
 template <typename T>
 struct DescrptSeRFunctor {
-    void operator()(const CPUDevice& d, const T * coord, const int * type, const int * mesh, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const T * avg, const T * std, T * descrpt, T * descrpt_deriv, T * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ntypes, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int magic_number) {
+    void operator()(const CPUDevice& d, const T * coord, const int * type, const int * mesh, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const T * avg, const T * std, T * descrpt, T * descrpt_deriv, T * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ntypes, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::std::vector<int> sec_a, const bool fill_nei_a, const int magic_number) {
         DescrptSeRCPULauncher(coord, type, ilist, jrange, jlist, avg, std, descrpt, descrpt_deriv, rij, nlist, nloc, nall, nnei, ntypes, ndescrpt, rcut_r, rcut_r_smth, sec_a, fill_nei_a, magic_number);
     }
 
     #if GOOGLE_CUDA
-    void operator()(const GPUDevice& d, const T * coord, const int * type, const int * mesh, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const T * avg, const T * std, T * descrpt, T * descrpt_deriv, T * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ntypes, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int magic_number) {
+    void operator()(const GPUDevice& d, const T * coord, const int * type, const int * mesh, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const T * avg, const T * std, T * descrpt, T * descrpt_deriv, T * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ntypes, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::std::vector<int> sec_a, const bool fill_nei_a, const int magic_number) {
         DescrptSeRGPULauncher(coord, type, ilist, jrange, jlist, array_int, array_longlong, avg, std, descrpt, descrpt_deriv, rij, nlist, nloc, nall, nnei, ndescrpt, rcut_r, rcut_r_smth, sec_a, fill_nei_a, magic_number);
     }
     #endif // GOOGLE_CUDA 
@@ -57,7 +57,7 @@ public:
         fill_nei_a = true;
         magic_number = get_magic_number(nnei);
         // count_nei_idx_overflow = 0;
-        // std::cout << "I'm in descrpt_se_r_gpu.cc" << std::endl;
+        // std::std::cout << "I'm in descrpt_se_r_gpu.cc" << std::std::endl;
     }
 
     void Compute(OpKernelContext* context) override {
@@ -197,15 +197,15 @@ public:
 private:
     float rcut;
     float rcut_smth;
-    std::vector<int32> sel;
-    std::vector<int32> sel_null;
-    std::vector<int> sec;
-    std::vector<int> sec_null;
+    std::std::vector<int32> sel;
+    std::std::vector<int32> sel_null;
+    std::std::vector<int> sec;
+    std::std::vector<int> sec_null;
     int nnei, ndescrpt, nloc, nall;
     bool fill_nei_a;
 
     //private func
-    void cum_sum (std::vector<int> & sec, const std::vector<int32> & n_sel) const {
+    void cum_sum (std::std::vector<int> & sec, const std::std::vector<int32> & n_sel) const {
         sec.resize (n_sel.size() + 1);
         sec[0] = 0;
         for (int ii = 1; ii < sec.size(); ++ii) {

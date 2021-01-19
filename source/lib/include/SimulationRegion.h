@@ -14,7 +14,7 @@ public:
     void reinitBox (const double * boxv);
     void affineTransform (const double * affine_map);
     void reinitOrigin (const double * orig);
-    void reinitOrigin (const vector<double> & orig);
+    void reinitOrigin (const std::vector<double> & orig);
     void backup  ();
     void recover ();
 public:
@@ -94,7 +94,7 @@ private:
     double		rec_boxt	[SPACENDIM*SPACENDIM];
     double		origin		[SPACENDIM];
     bool		is_periodic	[SPACENDIM];
-    string		class_name;
+    std::string		class_name;
     bool		enable_restart;
 protected:
     void computeShiftVec ();
@@ -133,7 +133,7 @@ private:
     void apply_periodic (int dim, double * dd) const;
     void apply_periodic (int dim, double * dd, int & shift) const;
 private:
-    fstream fp;
+    std::fstream fp;
   };
 
 #ifdef MOASP_INLINE_IMPLEMENTATION

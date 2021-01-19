@@ -54,19 +54,19 @@ get_scalar (const string & name) const
 template<class VT>
 void
 DataModifier::
-get_vector (vector<VT> & vec, const string & name) const
+get_vector (std::vector<VT> & vec, const string & name) const
 {
   session_get_vector<VT>(vec, session, name, name_scope);
 }
 
 void 
 DataModifier::
-run_model (vector<VALUETYPE> &		dforce,
-	   vector<VALUETYPE> &		dvirial,
-	   Session *			session, 
+run_model (std::vector<VALUETYPE> &		dforce,
+	   std::vector<VALUETYPE> &		dvirial,
+	   Session *				session, 
 	   const std::vector<std::pair<string, Tensor>> & input_tensors,
-	   const NNPAtomMap<VALUETYPE> &nnpmap, 
-	   const int			nghost)
+	   const NNPAtomMap<VALUETYPE> &	nnpmap, 
+	   const int				nghost)
 {
   unsigned nloc = nnpmap.get_type().size();
   unsigned nall = nloc + nghost;
@@ -114,21 +114,21 @@ run_model (vector<VALUETYPE> &		dforce,
 
 void
 DataModifier::
-compute (vector<VALUETYPE> &		dfcorr_,
-	 vector<VALUETYPE> &		dvcorr_,
-	 const vector<VALUETYPE> &	dcoord_,
-	 const vector<int> &		datype_,
-	 const vector<VALUETYPE> &	dbox, 
-	 const vector<pair<int,int>> &	pairs,
-	 const vector<VALUETYPE> &	delef_, 
-	 const int			nghost,
-	 const LammpsNeighborList &	lmp_list)
+compute (std::vector<VALUETYPE> &		dfcorr_,
+	 std::vector<VALUETYPE> &		dvcorr_,
+	 const std::vector<VALUETYPE> &		dcoord_,
+	 const std::vector<int> &		datype_,
+	 const std::vector<VALUETYPE> &		dbox, 
+	 const std::vector<std::pair<int,int>>&	pairs,
+	 const std::vector<VALUETYPE> &		delef_, 
+	 const int				nghost,
+	 const LammpsNeighborList &		lmp_list)
 {
   // firstly do selection
   int nall = datype_.size();
   int nloc = nall - nghost;
   int nghost_real;
-  vector<int > real_fwd_map, real_bkw_map;
+  std::vector<int > real_fwd_map, real_bkw_map;
   select_real_atoms(real_fwd_map, real_bkw_map, nghost_real, dcoord_, datype_, nghost, ntypes);  
   int nall_real = real_bkw_map.size();
   int nloc_real = nall_real - nghost_real;
@@ -140,9 +140,9 @@ compute (vector<VALUETYPE> &		dfcorr_,
     return;
   }
   // resize to nall_real
-  vector<VALUETYPE> dcoord_real;
-  vector<VALUETYPE> delef_real;
-  vector<int> datype_real;
+  std::vector<VALUETYPE> dcoord_real;
+  std::vector<VALUETYPE> delef_real;
+  std::vector<int> datype_real;
   dcoord_real.resize(nall_real * 3);
   delef_real.resize(nall_real * 3);
   datype_real.resize(nall_real);
@@ -157,23 +157,23 @@ compute (vector<VALUETYPE> &		dfcorr_,
   // sort atoms
   NNPAtomMap<VALUETYPE> nnpmap (datype_real.begin(), datype_real.begin() + nloc_real);
   assert (nloc_real == nnpmap.get_type().size());
-  const vector<int> & sort_fwd_map(nnpmap.get_fwd_map());
-  const vector<int> & sort_bkw_map(nnpmap.get_bkw_map());
+  const std::vector<int> & sort_fwd_map(nnpmap.get_fwd_map());
+  const std::vector<int> & sort_bkw_map(nnpmap.get_bkw_map());
   // shuffle nlist
   InternalNeighborList nlist(nlist_);
   shuffle_nlist (nlist, nnpmap);
   // make input tensors
   std::vector<std::pair<string, Tensor>> input_tensors;
-  int ret = session_input_tensors (input_tensors, dcoord_real, ntypes, datype_real, dbox, nlist, vector<VALUETYPE>(), vector<VALUETYPE>(), nnpmap, nghost_real, name_scope);
+  int ret = session_input_tensors (input_tensors, dcoord_real, ntypes, datype_real, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), nnpmap, nghost_real, name_scope);
   assert (nloc_real == ret);
   // make bond idx map
-  vector<int > bd_idx(nall, -1);
+  std::vector<int > bd_idx(nall, -1);
   for (int ii = 0; ii < pairs.size(); ++ii){
     bd_idx[pairs[ii].first] = pairs[ii].second;
   }
   // make extf by bond idx map
-  vector<int > dtype_sort_loc = nnpmap.get_type();
-  vector<VALUETYPE> dextf;
+  std::vector<int > dtype_sort_loc = nnpmap.get_type();
+  std::vector<VALUETYPE> dextf;
   for(int ii = 0; ii < dtype_sort_loc.size(); ++ii){
     if (binary_search(sel_type.begin(), sel_type.end(), dtype_sort_loc[ii])){
       // selected atom
@@ -206,15 +206,15 @@ compute (vector<VALUETYPE> &		dfcorr_,
   // append extf to input tensor
   input_tensors.push_back({"t_ef", extf_tensor});  
   // run model
-  vector<VALUETYPE> dfcorr, dvcorr;
+  std::vector<VALUETYPE> dfcorr, dvcorr;
   run_model (dfcorr, dvcorr, session, input_tensors, nnpmap, nghost_real);
   assert(dfcorr.size() == nall_real * 3);
   // back map force
-  vector<VALUETYPE> dfcorr_1 = dfcorr;
+  std::vector<VALUETYPE> dfcorr_1 = dfcorr;
   nnpmap.backward (dfcorr_1.begin(), dfcorr.begin(), 3);
   assert(dfcorr_1.size() == nall_real * 3);
   // resize to all and clear
-  vector<VALUETYPE> dfcorr_2(nall*3);
+  std::vector<VALUETYPE> dfcorr_2(nall*3);
   fill(dfcorr_2.begin(), dfcorr_2.end(), 0.0);
   // back map to original position
   for (int ii = 0; ii < nall_real; ++ii){

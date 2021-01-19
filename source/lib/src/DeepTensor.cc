@@ -50,14 +50,14 @@ get_scalar (const string & name) const
 template<class VT>
 void
 DeepTensor::
-get_vector (vector<VT> & vec, const string & name) const
+get_vector (std::vector<VT> & vec, const string & name) const
 {
   session_get_vector<VT>(vec, session, name, name_scope);
 }
 
 void 
 DeepTensor::
-run_model (vector<VALUETYPE> &		d_tensor_,
+run_model (std::vector<VALUETYPE> &	d_tensor_,
 	   Session *			session, 
 	   const std::vector<std::pair<string, Tensor>> & input_tensors,
 	   const NNPAtomMap<VALUETYPE> &nnpmap, 
@@ -83,7 +83,7 @@ run_model (vector<VALUETYPE> &		d_tensor_,
 
   auto ot = output_t.flat<VALUETYPE> ();
 
-  vector<VALUETYPE> d_tensor (o_size);
+  std::vector<VALUETYPE> d_tensor (o_size);
   for (unsigned ii = 0; ii < o_size; ++ii){
     d_tensor[ii] = ot(ii);
   }
@@ -93,14 +93,14 @@ run_model (vector<VALUETYPE> &		d_tensor_,
 
 void
 DeepTensor::
-compute (vector<VALUETYPE> &		dtensor_,
-	 const vector<VALUETYPE> &	dcoord_,
-	 const vector<int> &		datype_,
-	 const vector<VALUETYPE> &	dbox, 
+compute (std::vector<VALUETYPE> &	dtensor_,
+	 const std::vector<VALUETYPE> &	dcoord_,
+	 const std::vector<int> &	datype_,
+	 const std::vector<VALUETYPE> &	dbox, 
 	 const int			nghost)
 {
-  vector<VALUETYPE> dcoord;
-  vector<int> datype, fwd_map, bkw_map;
+  std::vector<VALUETYPE> dcoord;
+  std::vector<int> datype, fwd_map, bkw_map;
   int nghost_real;
   select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, nghost, ntypes);
   // resize to nall_real
@@ -114,15 +114,15 @@ compute (vector<VALUETYPE> &		dtensor_,
 
 void
 DeepTensor::
-compute (vector<VALUETYPE> &		dtensor_,
-	 const vector<VALUETYPE> &	dcoord_,
-	 const vector<int> &		datype_,
-	 const vector<VALUETYPE> &	dbox, 
+compute (std::vector<VALUETYPE> &	dtensor_,
+	 const std::vector<VALUETYPE> &	dcoord_,
+	 const std::vector<int> &	datype_,
+	 const std::vector<VALUETYPE> &	dbox, 
 	 const int			nghost,
 	 const LammpsNeighborList &	lmp_list)
 {
-  vector<VALUETYPE> dcoord;
-  vector<int> datype, fwd_map, bkw_map;
+  std::vector<VALUETYPE> dcoord;
+  std::vector<int> datype, fwd_map, bkw_map;
   int nghost_real;
   select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, nghost, ntypes);
   // resize to nall_real
@@ -141,10 +141,10 @@ compute (vector<VALUETYPE> &		dtensor_,
 
 void
 DeepTensor::
-compute_inner (vector<VALUETYPE> &		dtensor_,
-	       const vector<VALUETYPE> &	dcoord_,
-	       const vector<int> &		datype_,
-	       const vector<VALUETYPE> &	dbox, 
+compute_inner (std::vector<VALUETYPE> &		dtensor_,
+	       const std::vector<VALUETYPE> &	dcoord_,
+	       const std::vector<int> &		datype_,
+	       const std::vector<VALUETYPE> &	dbox, 
 	       const int			nghost)
 {
   int nall = dcoord_.size() / 3;
@@ -153,7 +153,7 @@ compute_inner (vector<VALUETYPE> &		dtensor_,
   assert (nloc == nnpmap.get_type().size());
 
   std::vector<std::pair<string, Tensor>> input_tensors;
-  int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, vector<VALUETYPE>(), vector<VALUETYPE>(), nnpmap, nghost, name_scope);
+  int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), nnpmap, nghost, name_scope);
   assert (ret == nloc);
 
   run_model (dtensor_, session, input_tensors, nnpmap, nghost);
@@ -161,10 +161,10 @@ compute_inner (vector<VALUETYPE> &		dtensor_,
 
 void
 DeepTensor::
-compute_inner (vector<VALUETYPE> &		dtensor_,
-	       const vector<VALUETYPE> &	dcoord_,
-	       const vector<int> &		datype_,
-	       const vector<VALUETYPE> &	dbox, 
+compute_inner (std::vector<VALUETYPE> &		dtensor_,
+	       const std::vector<VALUETYPE> &	dcoord_,
+	       const std::vector<int> &		datype_,
+	       const std::vector<VALUETYPE> &	dbox, 
 	       const int			nghost,
 	       const InternalNeighborList &	nlist_)
 {
@@ -177,7 +177,7 @@ compute_inner (vector<VALUETYPE> &		dtensor_,
   shuffle_nlist (nlist, nnpmap);
 
   std::vector<std::pair<string, Tensor>> input_tensors;
-  int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, vector<VALUETYPE>(), vector<VALUETYPE>(), nnpmap, nghost, name_scope);
+  int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), nnpmap, nghost, name_scope);
   assert (nloc == ret);
 
   run_model (dtensor_, session, input_tensors, nnpmap, nghost);

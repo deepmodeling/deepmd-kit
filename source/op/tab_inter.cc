@@ -4,7 +4,7 @@
 #include <iostream>
 
 using namespace tensorflow;
-using namespace std;
+//using namespace std;
 
 
 REGISTER_OP("TabInter")
@@ -43,9 +43,9 @@ void tabulated_inter (double & ener,
   double r2 = dr[0] * dr[0] + dr[1] * dr[1] + dr[2] * dr[2];
   double rr = sqrt(r2);
   double uu = (rr - rmin) * hi;
-  // cout << rr << " " << rmin << " " << hh << " " << uu << endl;
+  // std::cout << rr << " " << rmin << " " << hh << " " << uu << std::endl;
   if (uu < 0) {
-    cerr << "coord go beyond table lower boundary" << endl;
+    std::cerr << "coord go beyond table lower boundary" << std::endl;
     exit(1);
   }
   int idx = uu;
@@ -153,8 +153,8 @@ class TabInterOp : public OpKernel {
     int nspline = table_info(2)+0.1;
     int tab_stride = 4 * nspline;
     assert(ntypes * ntypes * tab_stride == table_data_tensor.shape().dim_size(0));
-    vector<double > d_table_info(4);
-    vector<double > d_table_data(ntypes * ntypes * tab_stride);
+    std::vector<double > d_table_info(4);
+    std::vector<double > d_table_data(ntypes * ntypes * tab_stride);
     for (unsigned ii = 0; ii < d_table_info.size(); ++ii){
       d_table_info[ii] = table_info(ii);
     }
@@ -285,14 +285,14 @@ class TabInterOp : public OpKernel {
     }
   }
 private:
-  vector<int32> sel_r;
-  vector<int32> sel_a;
-  vector<int> sec_a;
-  vector<int> sec_r;
+  std::vector<int32> sel_r;
+  std::vector<int32> sel_a;
+  std::vector<int> sec_a;
+  std::vector<int> sec_r;
   int nnei, nnei_a, nnei_r;
   void
-  cum_sum (vector<int> & sec,
-	   const vector<int32> & n_sel) const {
+  cum_sum (std::vector<int> & sec,
+	   const std::vector<int32> & n_sel) const {
     sec.resize (n_sel.size() + 1);
     sec[0] = 0;
     for (int ii = 1; ii < sec.size(); ++ii){

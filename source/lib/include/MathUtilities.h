@@ -4,7 +4,7 @@
 #include <vector>
 #include <cmath>
 
-using namespace std;
+// using namespace std;
 
   namespace MathUtilities 
   {
@@ -66,22 +66,22 @@ using namespace std;
     inline TYPE msp_sqrt (const TYPE x);
     
     template<typename TYPE, typename VALUETYPE>
-    inline int searchVec (const vector<TYPE> & vec,
+    inline int searchVec (const std::vector<TYPE> & vec,
 			  const int sta_,
 			  const int end_,
 			  const VALUETYPE & val);
     template<typename TYPE, typename VALUETYPE>
-    inline int lowerBound (const vector<TYPE> & vec,
+    inline int lowerBound (const std::vector<TYPE> & vec,
 			   const int sta_,
 			   const int end_,
 			   const VALUETYPE & val);
     template<typename TYPE, typename VALUETYPE>
-    inline int upperBound (const vector<TYPE> & vec,
+    inline int upperBound (const std::vector<TYPE> & vec,
 			   const int sta_,
 			   const int end_,
 			   const VALUETYPE & val);
     template<typename TYPE, typename VALUETYPE, typename COMPARE>
-    inline int upperBound (const vector<TYPE> & vec,
+    inline int upperBound (const std::vector<TYPE> & vec,
 			   const int sta_,
 			   const int end_,
 			   const VALUETYPE & val,
