@@ -80,7 +80,7 @@ setup(
     extras_require={
         'test': ['dpdata>=0.1.9'],
         'docs': ['sphinx', 'recommonmark', 'sphinx_rtd_theme'],
-        **extras_require,  # ease the dependency setting for upstream application
+        **extras_require,  # ease the dependency setting for upstream applications
     },
     entry_points={
         'console_scripts': ['dp = deepmd.main:main']
