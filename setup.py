@@ -83,6 +83,6 @@ setup(
         **extras_require,  # ease the dependency setting for upstream applications
     },
     entry_points={
-        'console_scripts': ['dp = deepmd.main:main']
+        'console_scripts': ['dp = deepmd.train.main:main']
     }
 )
