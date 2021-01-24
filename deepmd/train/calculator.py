@@ -25,7 +25,7 @@ print(water.get_positions())
 """
 
 from ase.calculators.calculator import Calculator, all_changes
-import deepmd.DeepPot as DeepPot
+import deepmd.train.DeepPot as DeepPot
 
 
 class DP(Calculator):

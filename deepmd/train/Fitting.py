@@ -1,13 +1,13 @@
 import warnings
 import numpy as np
 
-from deepmd.env import tf
-from deepmd.common import ClassArg, add_data_requirement, get_activation_func, get_precision
-from deepmd.Network import one_layer
-from deepmd.DescrptLocFrame import DescrptLocFrame
-from deepmd.DescrptSeA import DescrptSeA
+from deepmd.train.env import tf
+from deepmd.train.common import ClassArg, add_data_requirement, get_activation_func, get_precision
+from deepmd.train.Network import one_layer
+from deepmd.train.DescrptLocFrame import DescrptLocFrame
+from deepmd.train.DescrptSeA import DescrptSeA
 
-from deepmd.RunOptions import global_tf_float_precision
+from deepmd.train.RunOptions import global_tf_float_precision
 
 class EnerFitting ():
     def __init__ (self, jdata, descrpt):

@@ -1,9 +1,9 @@
 import os,warnings,fnmatch
 import numpy as np
 import math
-from deepmd.env import tf
-from deepmd.env import op_module
-from deepmd.RunOptions import global_tf_float_precision
+from deepmd.train.env import tf
+from deepmd.train.env import op_module
+from deepmd.train.RunOptions import global_tf_float_precision
 import json
 import yaml
 

@@ -1,13 +1,13 @@
 import numpy as np
-from deepmd.env import tf
-from deepmd.common import ClassArg
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
-from deepmd.RunOptions import global_cvt_2_tf_float
-from deepmd.RunOptions import global_cvt_2_ener_float
-from deepmd.env import op_module
-from deepmd.env import default_tf_session_config
+from deepmd.train.env import tf
+from deepmd.train.common import ClassArg
+from deepmd.train.RunOptions import global_tf_float_precision
+from deepmd.train.RunOptions import global_np_float_precision
+from deepmd.train.RunOptions import global_ener_float_precision
+from deepmd.train.RunOptions import global_cvt_2_tf_float
+from deepmd.train.RunOptions import global_cvt_2_ener_float
+from deepmd.train.env import op_module
+from deepmd.train.env import default_tf_session_config
 
 class EwaldRecp () :
     def __init__(self, 

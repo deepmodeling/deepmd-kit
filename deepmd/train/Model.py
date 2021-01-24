@@ -1,11 +1,11 @@
 import numpy as np
-from deepmd.env import tf
+from deepmd.train.env import tf
 from collections import defaultdict
-from deepmd.TabInter import TabInter
-from deepmd.common import ClassArg
+from deepmd.train.TabInter import TabInter
+from deepmd.train.common import ClassArg
 
-from deepmd.RunOptions import global_cvt_2_ener_float
-from deepmd.env import op_module
+from deepmd.train.RunOptions import global_cvt_2_ener_float
+from deepmd.train.env import op_module
 
 
 def _make_all_stat_ref(data, nbatches):

@@ -4,6 +4,7 @@ from distutils.util import get_platform
 from os import path, makedirs
 
 import pkg_resources
+from packaging.version import LegacyVersion
 from skbuild import setup
 from skbuild.cmaker import get_cmake_version
 from skbuild.exceptions import SKBuildError
@@ -21,7 +22,8 @@ install_requires = ['numpy', 'scipy', 'pyyaml', 'dargs']
 setup_requires = ['setuptools_scm', 'scikit-build']  # this legacy usage won't function cuz `skbuild` is imported before
 
 tf_version = os.environ.get('TENSORFLOW_VERSION', '2.3')
-if tf_version < "1.15" or ("2.0" <= tf_version < "2.1"):
+if LegacyVersion(tf_version) < LegacyVersion("1.15") or (
+        LegacyVersion("2.0") <= LegacyVersion(tf_version) < LegacyVersion("2.1")):
     extras_require = {"cpu": ["tensorflow==" + tf_version], "gpu": ["tensorflow-gpu==" + tf_version]}
 else:
     extras_require = {"cpu": ["tensorflow-cpu==" + tf_version], "gpu": ["tensorflow==" + tf_version]}
@@ -29,7 +31,7 @@ tf_spec = importlib.util.find_spec("tensorflow")
 if tf_spec:
     tf_install_dir = tf_spec.submodule_search_locations[0]
 else:
-    site_packages_path = path.join(path.dirname(path.__file__), 'site-packages')  # when executing from console
+    site_packages_path = path.join(path.dirname(path.__file__), 'site-packages')  # dunno what it is for
     tf_spec = importlib.machinery.FileFinder(site_packages_path).find_spec("tensorflow")
     if tf_spec:
         tf_install_dir = tf_spec.submodule_search_locations[0]
@@ -42,7 +44,7 @@ else:
 
 # add cmake as a build requirement if cmake>3.7 is not installed
 try:
-    if get_cmake_version() < "3.7":
+    if LegacyVersion(get_cmake_version()) < LegacyVersion("3.7"):
         setup_requires.append('cmake')
 except SKBuildError:
     setup_requires.append('cmake')
@@ -75,7 +77,7 @@ setup(
                 '-DBUILD_CPP_IF:BOOL=FALSE',
                 '-DFLOAT_PREC:STRING=high',
                 ],
-    cmake_source_dir='source',
+    cmake_source_dir='deepmd',
     cmake_minimum_required_version='3.0',
     extras_require={
         'test': ['dpdata>=0.1.9'],

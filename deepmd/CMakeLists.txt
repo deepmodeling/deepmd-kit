@@ -54,14 +54,14 @@ find_package(Threads)
 
 # auto op_cxx_abi
 if (NOT DEFINED OP_CXX_ABI)
-  if (BUILD_PY_IF) 
+  if (BUILD_PY_IF)
     if (DEFINED TENSORFLOW_ROOT)
       set(FIND_ABI_CMD "import sys,os; sys.path.insert(0, os.path.join('${TENSORFLOW_ROOT}', '..')); import tensorflow; print(tensorflow.CXX11_ABI_FLAG if 'CXX11_ABI_FLAG' in tensorflow.__dict__ else tensorflow.sysconfig.CXX11_ABI_FLAG, end = '')" )
     else()
       set(FIND_ABI_CMD "import tensorflow; print(tensorflow.CXX11_ABI_FLAG if 'CXX11_ABI_FLAG' in tensorflow.__dict__ else tensorflow.sysconfig.CXX11_ABI_FLAG, end = '')")
     endif()
     execute_process(
-      COMMAND ${PYTHON_EXECUTABLE} "-c" "${FIND_ABI_CMD}"
+      COMMAND ${PYTHON_EXECUTABLE} "-c" "${FIND_ABI_CMD}"  # Automatically set PYTHON_EXECUTABLE
       WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
       OUTPUT_VARIABLE PY_CXX_ABI
       RESULT_VARIABLE PY_CXX_ABI_RESULT_VAR
@@ -75,7 +75,7 @@ if (NOT DEFINED OP_CXX_ABI)
   if (BUILD_CPP_IF)
     try_run(
       CPP_CXX_ABI_RUN_RESULT_VAR CPP_CXX_ABI_COMPILE_RESULT_VAR
-      ${CMAKE_CURRENT_BINARY_DIR}/tf_cxx_abi
+      ${CMAKE_CURRENT_BINARY_DIR}/tf_cxx_abi  # say build/tf_cxx_abi, or just ${CMAKE_CURRENT_BINARY_DIR}/ is enough
       "${CMAKE_CURRENT_SOURCE_DIR}/cmake/tf_cxx_abi.cpp"
       LINK_LIBRARIES ${TensorFlowFramework_LIBRARY}
       CMAKE_FLAGS "-DINCLUDE_DIRECTORIES:STRING=${TensorFlow_INCLUDE_DIRS}"
@@ -97,7 +97,7 @@ if (NOT DEFINED OP_CXX_ABI)
   endif()
   message (STATUS "Automatically determined OP_CXX_ABI=${OP_CXX_ABI} ")
 else()
-  message (STATUS "User set OP_CXX_ABI=${OP_CXX_ABI} ")  
+  message (STATUS "User set OP_CXX_ABI=${OP_CXX_ABI} ")
 endif()    
 # message the cxx_abi used during compiling
 if (${OP_CXX_ABI} EQUAL 0) 
@@ -173,7 +173,7 @@ if (OPENMP_FOUND)
 endif()
 
 # headers of lib
-list (APPEND DeePMD_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/lib/include/)
+list (APPEND DeePMD_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/lib/include/)  # Create DeePMD_INCLUDE_DIRS when it hasn't defined
 list (APPEND DeePMD_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/3rdparty/)
 
 # include
@@ -197,14 +197,15 @@ if (BUILD_CPP_IF)
   endif ()
 endif (BUILD_CPP_IF)
 
-include_directories(${CMAKE_BINARY_DIR}/lib/)
+include_directories(${CMAKE_BINARY_DIR}/lib/)  # Unused
 add_subdirectory (op/)
 if (BUILD_PY_IF)
   add_subdirectory (train/)
+  add_subdirectory (cluster/)
   add_subdirectory (scripts/)
   add_subdirectory (tests/)
 endif (BUILD_PY_IF)
-if (BUILD_CPP_IF) 
+if (BUILD_CPP_IF)
   add_subdirectory (lib/)
   add_subdirectory (lmp/)
   if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 4.9)
@@ -217,7 +218,7 @@ endif (BUILD_CPP_IF)
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_uninstall.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake"
-    IMMEDIATE @ONLY)
+     @ONLY)
 
 add_custom_target(uninstall
     COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
@@ -226,7 +227,7 @@ add_custom_target(uninstall
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_lammps.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/cmake_lammps.cmake"
-    IMMEDIATE @ONLY)
+    @ONLY)
 
 add_custom_target(lammps
     COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_lammps.cmake)

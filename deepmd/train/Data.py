@@ -4,8 +4,8 @@ import time
 import glob
 import numpy as np
 import os.path
-from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
+from deepmd.train.RunOptions import global_np_float_precision
+from deepmd.train.RunOptions import global_ener_float_precision
 
 class DeepmdData() :
     def __init__ (self, 

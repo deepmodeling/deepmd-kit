@@ -6,8 +6,8 @@ import sys
 import argparse
 import numpy as np
 
-from deepmd.Data import DeepmdData
-from deepmd.common import expand_sys_str
+from deepmd.train.Data import DeepmdData
+from deepmd.train.common import expand_sys_str
 from deepmd import DeepEval
 from deepmd import DeepPot
 from deepmd import DeepDipole

@@ -1,10 +1,10 @@
 import argparse
 
-from .config import config
+from deepmd.scripts.config import config
 from .doc import doc_train_input
-from .freeze import freeze
-from .test import test
-from .train import train
+from deepmd.scripts.freeze import freeze
+from deepmd.train.test import test
+from deepmd.train.train import train
 from .transform import transform
 
 

@@ -1,5 +1,5 @@
 from dargs import Argument, Variant
-from deepmd.common import activation_fn_dict
+from deepmd.train.common import activation_fn_dict
 
 def list_to_doc (xx):
     items = []

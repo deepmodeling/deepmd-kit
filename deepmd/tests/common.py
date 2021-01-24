@@ -1,10 +1,10 @@
 import os, sys, dpdata
 import numpy as np
 
-from deepmd.env import tf
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
+from deepmd.train.env import tf
+from deepmd.train.RunOptions import global_tf_float_precision
+from deepmd.train.RunOptions import global_np_float_precision
+from deepmd.train.RunOptions import global_ener_float_precision
 
 if global_np_float_precision == np.float32 :
     global_default_fv_hh = 1e-2

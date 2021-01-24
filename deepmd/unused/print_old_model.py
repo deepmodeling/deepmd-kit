@@ -1,18 +1,18 @@
 import dpdata,os,sys
 import numpy as np
 import tensorflow as tf
-from common import Data
+from deepmd.train.common import Data
 
 # hash: b721960c9d5c61ee161f9e929c7d76f77673bc10
 
 lib_path = os.path.dirname(os.path.realpath(__file__)) + ".."
 sys.path.append (lib_path)
 
-from deepmd.RunOptions import RunOptions
-from deepmd.DataSystem import DataSystem
-from deepmd.Model import NNPModel
-from deepmd.Model import LearingRate
-from deepmd.common import j_must_have, j_loader
+from deepmd.train.RunOptions import RunOptions
+from deepmd.train.DataSystem import DataSystem
+from deepmd.train.Model import NNPModel
+from deepmd.train.Model import LearingRate
+from deepmd.train.common import j_must_have, j_loader
 
 def gen_data() :
     tmpdata = Data(rand_pert = 0.1, seed = 1)

@@ -1,19 +1,19 @@
 import os,sys,platform
 import numpy as np
 import unittest
-from deepmd.env import tf
+from deepmd.train.env import tf
 
-from deepmd.common import j_must_have, data_requirement, j_loader
-from deepmd.RunOptions import RunOptions
-from deepmd.Trainer import NNPTrainer
-from deepmd.DataSystem import DeepmdDataSystem
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
-from deepmd.EwaldRecp import EwaldRecp
-from deepmd.DataModifier import DipoleChargeModifier
+from deepmd.train.common import j_must_have, data_requirement, j_loader
+from deepmd.train.RunOptions import RunOptions
+from deepmd.train.Trainer import NNPTrainer
+from deepmd.train.DataSystem import DeepmdDataSystem
+from deepmd.train.RunOptions import global_tf_float_precision
+from deepmd.train.RunOptions import global_np_float_precision
+from deepmd.train.RunOptions import global_ener_float_precision
+from deepmd.train.EwaldRecp import EwaldRecp
+from deepmd.train.DataModifier import DipoleChargeModifier
 
-from common import Data
+from deepmd.tests.common import Data
 
 if global_np_float_precision == np.float32 :
     global_default_fv_hh = 1e-2

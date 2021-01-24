@@ -2,7 +2,7 @@ import os,sys
 import numpy as np
 import unittest
 
-from deepmd.common import ClassArg
+from deepmd.train.common import ClassArg
 
 def test():
     raise RuntimeError

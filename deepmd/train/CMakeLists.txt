@@ -4,17 +4,17 @@ configure_file("RunOptions.py.in" "${CMAKE_CURRENT_BINARY_DIR}/RunOptions.py" @O
 
 file(GLOB LIB_PY main.py common.py env.py compat.py calculator.py Network.py Deep*.py Data.py DataSystem.py Model*.py Descrpt*.py Fitting.py Loss.py LearningRate.py Trainer.py TabInter.py EwaldRecp.py DataModifier.py ${CMAKE_CURRENT_BINARY_DIR}/RunOptions.py transform.py argcheck.py doc.py)
 
-file(GLOB CLS_PY  Local.py Slurm.py)
+# file(GLOB CLS_PY  Local.py Slurm.py)
 
 install(
   FILES		${LIB_PY} 
-  DESTINATION	deepmd
+  DESTINATION	deepmd/train  # CMAKE_INSTALL_PREFIX is <repo_dir>/_skbuild/<arch, python version>/cmake-install, which is the default behavior of skbuild
 )
+# install(
+#  FILES		${CLS_PY}
+#  DESTINATION	deepmd/cluster
+# )
 install(
-  FILES		${CLS_PY} 
-  DESTINATION	deepmd/cluster
-)
-install(
-  FILES		train.py test.py
-  DESTINATION	deepmd
+  FILES	 train.py test.py
+  DESTINATION	deepmd/train
 )

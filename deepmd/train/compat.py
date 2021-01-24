@@ -1,5 +1,5 @@
 import json,warnings
-from deepmd.common import j_have,j_must_have,j_must_have_d
+from deepmd.train.common import j_have,j_must_have,j_must_have_d
 
 def convert_input_v0_v1(jdata, warning = True, dump = None) :
     output = {}

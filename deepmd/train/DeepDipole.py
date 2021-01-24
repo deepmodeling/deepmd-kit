@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from deepmd.DeepEval import DeepTensor
+from deepmd.train.DeepEval import DeepTensor
 
 class DeepDipole (DeepTensor) :
     def __init__(self, 

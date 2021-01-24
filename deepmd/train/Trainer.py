@@ -3,34 +3,34 @@ import os
 import time
 import shutil
 import numpy as np
-from deepmd.env import tf
-from deepmd.env import default_tf_session_config
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_ener_float_precision
-from deepmd.Fitting import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
-from deepmd.DescrptLocFrame import DescrptLocFrame
-from deepmd.DescrptSeA import DescrptSeA
-from deepmd.DescrptSeR import DescrptSeR
-from deepmd.DescrptSeAR import DescrptSeAR
-from deepmd.Model import Model, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
-from deepmd.Loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
-from deepmd.LearningRate import LearningRateExp
+from deepmd.train.env import tf
+from deepmd.train.env import default_tf_session_config
+from deepmd.train.RunOptions import global_tf_float_precision
+from deepmd.train.RunOptions import global_ener_float_precision
+from deepmd.train.Fitting import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
+from deepmd.train.DescrptLocFrame import DescrptLocFrame
+from deepmd.train.DescrptSeA import DescrptSeA
+from deepmd.train.DescrptSeR import DescrptSeR
+from deepmd.train.DescrptSeAR import DescrptSeAR
+from deepmd.train.Model import Model, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
+from deepmd.train.Loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
+from deepmd.train.LearningRate import LearningRateExp
 
 from tensorflow.python.client import timeline
-from deepmd.env import op_module
+from deepmd.train.env import op_module
 
 # load grad of force module
-import deepmd._prod_force_grad
-import deepmd._prod_virial_grad
-import deepmd._prod_force_se_a_grad
-import deepmd._prod_virial_se_a_grad
-import deepmd._prod_force_se_r_grad
-import deepmd._prod_virial_se_r_grad
-import deepmd._soft_min_force_grad
-import deepmd._soft_min_virial_grad
-import deepmd._gelu
+import deepmd.op._prod_force_grad
+import deepmd.op._prod_virial_grad
+import deepmd.op._prod_force_se_a_grad
+import deepmd.op._prod_virial_se_a_grad
+import deepmd.op._prod_force_se_r_grad
+import deepmd.op._prod_virial_se_r_grad
+import deepmd.op._soft_min_force_grad
+import deepmd.op._soft_min_virial_grad
+import deepmd.op._gelu
 
-from deepmd.common import j_must_have, ClassArg
+from deepmd.train.common import j_must_have, ClassArg
 
 def _is_subdir(path, directory):
     path = os.path.realpath(path)

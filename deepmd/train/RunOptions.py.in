@@ -1,6 +1,6 @@
 import os,sys
-from deepmd.env import tf
-from deepmd.env import get_tf_default_nthreads
+from deepmd.train.env import tf
+from deepmd.train.env import get_tf_default_nthreads
 import numpy as np
 import deepmd.cluster.Slurm as Slurm
 import deepmd.cluster.Local as Local

@@ -2,7 +2,7 @@ import os
 import logging
 import platform
 import numpy as np
-from imp import reload
+from importlib import reload
 
 # import tensorflow v1 compatability
 try:
@@ -15,7 +15,7 @@ def set_env_if_empty(key, value, verbose=True):
     if os.environ.get(key) is None:
         os.environ[key] = value
         if verbose:
-            logging.warn("Environment variable {} is empty. Use the default value {}".format(key, value))
+            logging.warning("Environment variable {} is empty. Use the default value {}".format(key, value))
 
 def set_mkl():
     """Tuning MKL for the best performance

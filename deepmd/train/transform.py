@@ -1,4 +1,4 @@
-from deepmd.env import tf
+from deepmd.train.env import tf
 import re
 import numpy as np
 

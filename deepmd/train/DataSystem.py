@@ -4,8 +4,8 @@ import os
 import collections
 import warnings
 import numpy as np
-from deepmd.Data import DataSets
-from deepmd.Data import DeepmdData
+from deepmd.train.Data import DataSets
+from deepmd.train.Data import DeepmdData
 
 
 class DeepmdDataSystem() :
@@ -301,7 +301,7 @@ class DeepmdDataSystem() :
             tmp_msg += ("%s  %6d  %6d  %6d  %6d  %5.3f\n" % 
                         (self._format_name_length(self.system_dirs[ii], sys_width),
                          self.natoms[ii], 
-                         # TODO batch size * nbatches = number of structures
+                         # todo batch size * nbatches = number of structures
                          self.batch_size[ii],
                          self.nbatches[ii],
                          self.test_size[ii],

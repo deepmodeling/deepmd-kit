@@ -3,18 +3,18 @@
 # freeze.py :
 # see https://blog.metaflow.fr/tensorflow-how-to-freeze-a-model-and-serve-it-with-a-python-api-d4f3596b3adc
 
-from deepmd.env import tf
-from deepmd.env import op_module
+from deepmd.train.env import tf
+from deepmd.train.env import op_module
 
 # load grad of force module
-import deepmd._prod_force_grad
-import deepmd._prod_virial_grad
-import deepmd._prod_force_se_a_grad
-import deepmd._prod_virial_se_a_grad
-import deepmd._prod_force_se_r_grad
-import deepmd._prod_virial_se_r_grad
-import deepmd._soft_min_force_grad
-import deepmd._soft_min_virial_grad
+import deepmd.op._prod_force_grad
+import deepmd.op._prod_virial_grad
+import deepmd.op._prod_force_se_a_grad
+import deepmd.op._prod_virial_se_a_grad
+import deepmd.op._prod_force_se_r_grad
+import deepmd.op._prod_virial_se_r_grad
+import deepmd.op._soft_min_force_grad
+import deepmd.op._soft_min_virial_grad
 
 def _make_node_names(model_type, modifier_type = None) :
     if model_type == 'ener':

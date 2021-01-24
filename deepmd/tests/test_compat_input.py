@@ -2,8 +2,8 @@ import os,sys
 import numpy as np
 import unittest
 
-from deepmd.compat import convert_input_v0_v1
-from deepmd.common import j_loader
+from deepmd.train.compat import convert_input_v0_v1
+from deepmd.train.common import j_loader
 
 class TestConvertInput (unittest.TestCase) :
     def test_convert_smth(self):

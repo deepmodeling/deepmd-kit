@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
 import numpy as np
-from deepmd.env import tf
-from deepmd.env import default_tf_session_config
-from deepmd.common import make_default_mesh
-from deepmd.DeepEval import DeepEval
-from deepmd.DataModifier import DipoleChargeModifier
+from deepmd.train.env import tf
+from deepmd.train.env import default_tf_session_config
+from deepmd.train.common import make_default_mesh
+from deepmd.train.DeepEval import DeepEval
+from deepmd.train.DataModifier import DipoleChargeModifier
 
 class DeepPot (DeepEval) :
     def __init__(self, 

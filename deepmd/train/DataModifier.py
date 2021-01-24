@@ -1,15 +1,15 @@
 import os
 import numpy as np
-from deepmd.DeepDipole import DeepDipole
-from deepmd.env import tf
-from deepmd.common import select_idx_map, make_default_mesh
-from deepmd.EwaldRecp import EwaldRecp
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
-from deepmd.RunOptions import global_cvt_2_tf_float
-from deepmd.RunOptions import global_cvt_2_ener_float
-from deepmd.env import op_module
+from deepmd.train.DeepDipole import DeepDipole
+from deepmd.train.env import tf
+from deepmd.train.common import select_idx_map, make_default_mesh
+from deepmd.train.EwaldRecp import EwaldRecp
+from deepmd.train.RunOptions import global_tf_float_precision
+from deepmd.train.RunOptions import global_np_float_precision
+from deepmd.train.RunOptions import global_ener_float_precision
+from deepmd.train.RunOptions import global_cvt_2_tf_float
+from deepmd.train.RunOptions import global_cvt_2_ener_float
+from deepmd.train.env import op_module
 
 
 class DipoleChargeModifier(DeepDipole):

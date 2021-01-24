@@ -23,7 +23,7 @@ list(APPEND TensorFlow_search_PATHS "/usr/local/")
 # includes
 find_path(TensorFlow_INCLUDE_DIRS
   NAMES 
-  tensorflow/core/public/session.h
+  tensorflow/core/public/session.h  # "Or" relations between NAMES
   tensorflow/core/platform/env.h
   tensorflow/core/framework/op.h
   tensorflow/core/framework/op_kernel.h
@@ -47,15 +47,17 @@ if (NOT TensorFlow_INCLUDE_DIRS AND tensorflow_FIND_REQUIRED)
     "You can manually set the tensorflow install path by -DTENSORFLOW_ROOT ")
 endif ()
 
+# the lib
+list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.1)
+list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.2)
+
+# tensorflow all
 if (BUILD_CPP_IF)
   message (STATUS "Enabled cpp interface build, looking for tensorflow_cc and tensorflow_framework")
   # tensorflow_cc and tensorflow_framework
   if (NOT TensorFlow_FIND_COMPONENTS)
     set(TensorFlow_FIND_COMPONENTS tensorflow_cc tensorflow_framework)
   endif ()
-  # the lib
-  list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.1)
-  list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.2)
   set (TensorFlow_LIBRARY_PATH "")
   foreach (module ${TensorFlow_FIND_COMPONENTS})
     find_library(TensorFlow_LIBRARY_${module}
@@ -67,7 +69,7 @@ if (BUILD_CPP_IF)
       get_filename_component(TensorFlow_LIBRARY_PATH_${module} ${TensorFlow_LIBRARY_${module}} PATH)
       list(APPEND TensorFlow_LIBRARY_PATH ${TensorFlow_LIBRARY_PATH_${module}})
     elseif (tensorflow_FIND_REQUIRED)
-      message(FATAL_ERROR 
+      message(FATAL_ERROR
 	"Not found lib/'${module}' in '${TensorFlow_search_PATHS}' "
 	"You can manually set the tensorflow install path by -DTENSORFLOW_ROOT ")
     endif ()
@@ -76,14 +78,10 @@ else (BUILD_CPP_IF)
   message (STATUS "Disabled cpp interface build, looking for tensorflow_framework")
 endif (BUILD_CPP_IF)
 
-
 # tensorflow_framework
 if (NOT TensorFlowFramework_FIND_COMPONENTS)
   set(TensorFlowFramework_FIND_COMPONENTS tensorflow_framework)
 endif ()
-# the lib
-list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.1)
-list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.2)
 set (TensorFlowFramework_LIBRARY_PATH "")
 foreach (module ${TensorFlowFramework_FIND_COMPONENTS})
   find_library(TensorFlowFramework_LIBRARY_${module}
