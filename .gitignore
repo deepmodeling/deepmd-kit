@@ -27,3 +27,4 @@ venv*
 _build
 _templates
 .idea
+cmake-build-debug

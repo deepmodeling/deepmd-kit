@@ -10,6 +10,20 @@
 # TensorFlowFramework_LIBRARY    
 # TensorFlowFramework_LIBRARY_PATH
 
+
+
+if(NOT DEFINED TENSORFLOW_ROOT)
+  message(STATUS "TENSORFLOW_ROOT not set, finding in current conda environment")
+  set(FIND_TENSORFLOW_ROOT_CMD "import os, tensorflow; print(os.path.dirname(tensorflow.__file__), end='')")
+  execute_process(
+          COMMAND $ENV{CONDA_PYTHON_EXE} "-c" "${FIND_TENSORFLOW_ROOT_CMD}"  # Automatically set PYTHON_EXECUTABLE
+          WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+          OUTPUT_VARIABLE TENSORFLOW_ROOT
+          RESULT_VARIABLE TENSORFLOW_ROOT_RESULT_VAR
+          ERROR_VARIABLE TENSORFLOW_ROOT_ERROR_VAR
+  )
+endif()
+
 string(REPLACE "lib64" "lib" TENSORFLOW_ROOT_NO64 ${TENSORFLOW_ROOT})
 
 # define the search path
