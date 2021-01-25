@@ -19,6 +19,8 @@ list(APPEND TensorFlow_search_PATHS ${TENSORFLOW_ROOT_NO64})
 list(APPEND TensorFlow_search_PATHS "${TENSORFLOW_ROOT_NO64}/../tensorflow_core")
 list(APPEND TensorFlow_search_PATHS "/usr/")
 list(APPEND TensorFlow_search_PATHS "/usr/local/")
+# for conda
+list(APPEND TensorFlow_search_PATHS $ENV{CONDA_PREFIX})
 
 # includes
 find_path(TensorFlow_INCLUDE_DIRS
@@ -62,7 +64,9 @@ if (BUILD_CPP_IF)
   foreach (module ${TensorFlow_FIND_COMPONENTS})
     find_library(TensorFlow_LIBRARY_${module}
       NAMES ${module}
-      PATHS ${TensorFlow_search_PATHS} PATH_SUFFIXES lib NO_DEFAULT_PATH
+      PATHS ${TensorFlow_search_PATHS}
+      PATH_SUFFIXES lib
+      NO_DEFAULT_PATH
       )
     if (TensorFlow_LIBRARY_${module})
       list(APPEND TensorFlow_LIBRARY ${TensorFlow_LIBRARY_${module}})
@@ -86,7 +90,9 @@ set (TensorFlowFramework_LIBRARY_PATH "")
 foreach (module ${TensorFlowFramework_FIND_COMPONENTS})
   find_library(TensorFlowFramework_LIBRARY_${module}
     NAMES ${module}
-    PATHS ${TensorFlow_search_PATHS} PATH_SUFFIXES lib NO_DEFAULT_PATH
+    PATHS ${TensorFlow_search_PATHS}
+    PATH_SUFFIXES lib
+    NO_DEFAULT_PATH
     )
   if (TensorFlowFramework_LIBRARY_${module})
     list(APPEND TensorFlowFramework_LIBRARY ${TensorFlowFramework_LIBRARY_${module}})
@@ -116,6 +122,7 @@ endif (BUILD_CPP_IF)
 
 # print message
 if (NOT TensorFlow_FIND_QUIETLY)
+  message(STATUS "Found TensorFlow: TRUE")
   message(STATUS "Found TensorFlow: ${TensorFlow_INCLUDE_DIRS}, ${TensorFlow_LIBRARY}, ${TensorFlowFramework_LIBRARY} "
     " in ${TensorFlow_search_PATHS}")
 endif ()

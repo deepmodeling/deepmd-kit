@@ -21,9 +21,9 @@ if (USE_CUDA_TOOLKIT)
   target_link_libraries (${libname} ${CUDA_LIBRARIES})
 endif()
 
-install(TARGETS ${libname} DESTINATION lib/)
+install(TARGETS ${libname} DESTINATION lib/)  # if using conda, `lib` is $CONDA_PREFIX/lib
 
 install(
   FILES		${INC_SRC}
-  DESTINATION	include/deepmd
+  DESTINATION	include/deepmd  # if using conda, `include` is $CONDA_PREFIX/include
 )
