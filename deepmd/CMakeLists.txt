@@ -5,10 +5,10 @@ set(CMAKE_LINK_WHAT_YOU_USE TRUE)
 # build cpp or python interfaces
 if (NOT DEFINED BUILD_CPP_IF) 
   set(BUILD_CPP_IF TRUE)
-endif (NOT DEFINED BUILD_CPP_IF)
+endif ()
 if (NOT DEFINED BUILD_PY_IF) 
   set(BUILD_PY_IF FALSE)
-endif (NOT DEFINED BUILD_PY_IF)
+endif ()
 if ((NOT BUILD_PY_IF) AND (NOT BUILD_CPP_IF))
   # nothing to do
   message(FATAL_ERROR "Nothing to do.")
@@ -40,7 +40,7 @@ if(GIT_FOUND)
     OUTPUT_VARIABLE GIT_DATE
     OUTPUT_STRIP_TRAILING_WHITESPACE
     )
-endif(GIT_FOUND)
+endif()
 
 # global defines
 list (APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/)
@@ -131,16 +131,16 @@ endif()
 # define USE_TTM
 if (NOT DEFINED USE_TTM)
   set(USE_TTM FALSE)
-endif (NOT DEFINED USE_TTM)
+endif ()
 if (USE_TTM)
   message(STATUS "Use TTM")
   set(TTM_DEF "-DUSE_TTM")
-endif (USE_TTM)
+endif ()
 
 # old pppm interface
 if(NOT DEFINED OLD_LMP_PPPM)
   set(OLD_LMP_PPPM FALSE)
-endif(NOT DEFINED OLD_LMP_PPPM)
+endif()
 if (OLD_LMP_PPPM)
   set(OLD_LMP_PPPM_DEF "-DOLD_LMP_PPPM")
   message(STATUS "Use old lammps pppm interface")
@@ -195,16 +195,16 @@ if (BUILD_CPP_IF)
   else ()
     message (STATUS "Your gcc/g++ version is ${CMAKE_CXX_COMPILER_VERSION}, so native MD and ipi are disabled. To enable them, use gcc/g++ >= 4.9.")
   endif ()
-endif (BUILD_CPP_IF)
+endif ()
 
-include_directories(${CMAKE_BINARY_DIR}/lib/)  # Unused
+include_directories(${CMAKE_BINARY_DIR}/lib/)
 add_subdirectory (op/)
 if (BUILD_PY_IF)
   add_subdirectory (train/)
   add_subdirectory (cluster/)
   add_subdirectory (scripts/)
   add_subdirectory (tests/)
-endif (BUILD_PY_IF)
+endif ()
 if (BUILD_CPP_IF)
   add_subdirectory (lib/)
   add_subdirectory (lmp/)
@@ -212,7 +212,7 @@ if (BUILD_CPP_IF)
 #   add_subdirectory (md/)
     add_subdirectory (ipi/)
   endif ()
-endif (BUILD_CPP_IF)
+endif ()
 
 # uninstall target
 configure_file(

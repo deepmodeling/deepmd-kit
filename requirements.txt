@@ -1,0 +1,9 @@
+numpy~=1.19.2
+PyYAML~=5.4.1
+tensorflow~=2.2.0
+dpdata~=0.1.19
+dargs~=0.1.3
+scipy~=1.5.2
+ase~=3.21.0
+packaging~=20.8
+m2r~=0.2.1

@@ -5,13 +5,13 @@ project(deepmd_op_cuda)
 
 # SET(CUDA_SEPARABLE_COMPILATION ON)
 find_package(CUDA REQUIRED)
-if (NOT CUDA_FOUND)
+if(NOT CUDA_FOUND)
     message(STATUS "CUDA not found. Project will not be built.")
-endif(NOT CUDA_FOUND)
+endif()
 
 # set c++ version c++11
-SET(CMAKE_CXX_STANDARD 11)
-SET(CMAKE_CUDA_STANDARD 11)
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CUDA_STANDARD 11)
 # nvcc -o libdeepmd_op_cuda.so -I/usr/local/cub-1.8.0 -rdc=true -DHIGH_PREC=true -gencode arch=compute_61,code=sm_61 -shared -Xcompiler -fPIC deepmd_op.cu -L/usr/local/cuda/lib64 -lcudadevrt
 # very important here! Include path to cub.
 # for searching device compute capability, https://developer.nvidia.com/cuda-gpus
@@ -73,7 +73,7 @@ elseif (${CUDA_VERSION_MAJOR} STREQUAL "7")
                         -gencode arch=compute_50,code=sm_50;
                         -gencode arch=compute_52,code=sm_52; # Tesla M40, Tesla M40, Quadro M6000...
                         -gencode arch=compute_53,code=sm_53; 
-                        -O3; -Xcompiler -fPIC;
+                        -O3; -Xcompiler -fPIC;  # -Xcompiler: pass options to the lower level compilation tools
         )
 else () 
     message(FATAL_ERROR "unsupported CUDA_VERSION " ${CUDA_VERSION} ", please use a newer version (>=7.0) of CUDA toolkit!")
