@@ -84,9 +84,9 @@ __global__ void format_nlist_fill_a_se_a(const FPTYPE * coord,
                             const float rcut,
                             int_64 * key,
                             int * i_idx,
-                            const int MAGIC_NUMBER)
+                            const int MAX_NBOR_SIZE)
 {   
-    // <<<nloc, MAGIC_NUMBER>>>
+    // <<<nloc, MAX_NBOR_SIZE>>>
     const unsigned int idx = blockIdx.x;
     const unsigned int idy = blockIdx.y * blockDim.y + threadIdx.y;
     
@@ -98,7 +98,7 @@ __global__ void format_nlist_fill_a_se_a(const FPTYPE * coord,
     const int * nei_idx = jlist + jrange[i_idx[idx]];
     // dev_copy(nei_idx, &jlist[jrange[i_idx]], nsize);
 
-    int_64 * key_in = key + idx * MAGIC_NUMBER;
+    int_64 * key_in = key + idx * MAX_NBOR_SIZE;
 
     FPTYPE diff[3];
     const int & j_idx = nei_idx[idy];
@@ -121,7 +121,7 @@ __global__ void format_nlist_fill_b_se_a(int * nlist,
                             const int * sec_a,
                             const int sec_a_size,
                             int * nei_iter_dev,
-                            const int MAGIC_NUMBER)
+                            const int MAX_NBOR_SIZE)
 { 
 
     const unsigned int idy = blockIdx.x * blockDim.x + threadIdx.x;
@@ -132,13 +132,13 @@ __global__ void format_nlist_fill_b_se_a(int * nlist,
     
     int * row_nlist = nlist + idy * nlist_size;
     int * nei_iter = nei_iter_dev + idy * sec_a_size;
-    int_64 * key_out = key + nloc * MAGIC_NUMBER + idy * MAGIC_NUMBER;
+    int_64 * key_out = key + nloc * MAX_NBOR_SIZE + idy * MAX_NBOR_SIZE;
 
     for (int ii = 0; ii < sec_a_size; ii++) {
         nei_iter[ii] = sec_a[ii];
     }
     
-    for (unsigned int kk = 0; key_out[kk] != key_out[MAGIC_NUMBER - 1]; kk++) {
+    for (unsigned int kk = 0; key_out[kk] != key_out[MAX_NBOR_SIZE - 1]; kk++) {
         const int & nei_type = key_out[kk] / 1E15;
         if (nei_iter[nei_type] < sec_a[nei_type + 1]) {
             row_nlist[nei_iter[nei_type]++] = key_out[kk] % 100000;
@@ -242,8 +242,8 @@ void format_nbor_list_1024 (
 ) 
 {   
     const int LEN = 256;
-    const int MAGIC_NUMBER = 1024;
-    const int nblock = (MAGIC_NUMBER + LEN - 1) / LEN;
+    const int MAX_NBOR_SIZE = 1024;
+    const int nblock = (MAX_NBOR_SIZE + LEN - 1) / LEN;
     dim3 block_grid(nloc, nblock);
     dim3 thread_grid(1, LEN);
     format_nlist_fill_a_se_a
@@ -255,12 +255,12 @@ void format_nbor_list_1024 (
         rcut_r,
         key,
         i_idx,
-        MAGIC_NUMBER
+        MAX_NBOR_SIZE
     );
     const int ITEMS_PER_THREAD = 8;
-    const int BLOCK_THREADS = MAGIC_NUMBER / ITEMS_PER_THREAD;
+    const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
     // BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
-    BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAGIC_NUMBER);
+    BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAX_NBOR_SIZE);
 }
 
 template<typename FPTYPE>
@@ -276,8 +276,8 @@ void format_nbor_list_2048 (
 ) 
 {   
     const int LEN = 256;
-    const int MAGIC_NUMBER = 2048;
-    const int nblock = (MAGIC_NUMBER + LEN - 1) / LEN;
+    const int MAX_NBOR_SIZE = 2048;
+    const int nblock = (MAX_NBOR_SIZE + LEN - 1) / LEN;
     dim3 block_grid(nloc, nblock);
     dim3 thread_grid(1, LEN);
     format_nlist_fill_a_se_a
@@ -289,12 +289,12 @@ void format_nbor_list_2048 (
         rcut_r,
         key,
         i_idx,
-        MAGIC_NUMBER
+        MAX_NBOR_SIZE
     );
     const int ITEMS_PER_THREAD = 8;
-    const int BLOCK_THREADS = MAGIC_NUMBER / ITEMS_PER_THREAD;
+    const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
     // BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
-    BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAGIC_NUMBER);
+    BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAX_NBOR_SIZE);
 }
 
 template<typename FPTYPE>
@@ -310,8 +310,8 @@ void format_nbor_list_4096 (
 ) 
 {   
     const int LEN = 256;
-    const int MAGIC_NUMBER = 4096;
-    const int nblock = (MAGIC_NUMBER + LEN - 1) / LEN;
+    const int MAX_NBOR_SIZE = 4096;
+    const int nblock = (MAX_NBOR_SIZE + LEN - 1) / LEN;
     dim3 block_grid(nloc, nblock);
     dim3 thread_grid(1, LEN);
     format_nlist_fill_a_se_a
@@ -323,16 +323,16 @@ void format_nbor_list_4096 (
         rcut_r,
         key,
         i_idx,
-        MAGIC_NUMBER
+        MAX_NBOR_SIZE
     );
     const int ITEMS_PER_THREAD = 16;
-    const int BLOCK_THREADS = MAGIC_NUMBER / ITEMS_PER_THREAD;
+    const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
     // BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
-    BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAGIC_NUMBER);
+    BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAX_NBOR_SIZE);
 }
 
 template <typename FPTYPE>
-void DescrptSeAGPUExecuteFunctor<FPTYPE>::operator()(const FPTYPE * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descript, FPTYPE * descript_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int MAGIC_NUMBER) {
+void DescrptSeAGPUExecuteFunctor<FPTYPE>::operator()(const FPTYPE * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descript, FPTYPE * descript_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int max_nbor_size) {
     const int LEN = 256;
     int nblock = (nloc + LEN -1) / LEN;
     int * sec_a_dev = array_int;
@@ -342,7 +342,7 @@ void DescrptSeAGPUExecuteFunctor<FPTYPE>::operator()(const FPTYPE * coord, const
     
     cudaError_t res = cudaSuccess;
     res = cudaMemcpy(sec_a_dev, &sec_a[0], sizeof(int) * sec_a.size(), cudaMemcpyHostToDevice); cudaErrcheck(res);    
-    res = cudaMemset(key, 0xffffffff, sizeof(int_64) * nloc * MAGIC_NUMBER); cudaErrcheck(res);
+    res = cudaMemset(key, 0xffffffff, sizeof(int_64) * nloc * max_nbor_size); cudaErrcheck(res);
     res = cudaMemset(nlist, -1, sizeof(int) * nloc * nnei); cudaErrcheck(res);
     res = cudaMemset(descript, 0.0, sizeof(FPTYPE) * nloc * ndescrpt); cudaErrcheck(res);
     res = cudaMemset(descript_deriv, 0.0, sizeof(FPTYPE) * nloc * ndescrpt * 3); cudaErrcheck(res);
@@ -352,7 +352,7 @@ void DescrptSeAGPUExecuteFunctor<FPTYPE>::operator()(const FPTYPE * coord, const
         // cudaProfilerStart();
         get_i_idx_se_a<<<nblock, LEN>>> (nloc, ilist, i_idx);
 
-        if (MAGIC_NUMBER <= 1024) {
+        if (max_nbor_size <= 1024) {
             format_nbor_list_1024 (
                 coord,
                 type,
@@ -363,7 +363,7 @@ void DescrptSeAGPUExecuteFunctor<FPTYPE>::operator()(const FPTYPE * coord, const
                 i_idx, 
                 key
             ); 
-        } else if (MAGIC_NUMBER <= 2048) {
+        } else if (max_nbor_size <= 2048) {
             format_nbor_list_2048 (
                 coord,
                 type,
@@ -374,7 +374,7 @@ void DescrptSeAGPUExecuteFunctor<FPTYPE>::operator()(const FPTYPE * coord, const
                 i_idx, 
                 key
             ); 
-        } else if (MAGIC_NUMBER <= 4096) {
+        } else if (max_nbor_size <= 4096) {
             format_nbor_list_4096 (
                 coord,
                 type,
@@ -397,7 +397,7 @@ void DescrptSeAGPUExecuteFunctor<FPTYPE>::operator()(const FPTYPE * coord, const
                             sec_a_dev,
                             sec_a.size(),
                             nei_iter,
-                            MAGIC_NUMBER
+                            max_nbor_size
         );
     }
 
