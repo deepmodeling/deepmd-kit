@@ -23,3 +23,6 @@ dist
 .eggs
 _version.py
 venv*
+.vscode/**
+_build
+_templates

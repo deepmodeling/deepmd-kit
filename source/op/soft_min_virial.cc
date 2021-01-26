@@ -6,40 +6,23 @@
 using namespace tensorflow;
 using namespace std;
 
-#ifdef HIGH_PREC
-typedef double VALUETYPE;
-#else
-typedef float  VALUETYPE;
-#endif
-
-#ifdef HIGH_PREC
 REGISTER_OP("SoftMinVirial")
-.Input("du: double")
-.Input("sw_deriv: double")
-.Input("rij: double")
+.Attr("T: {float, double}")
+.Input("du: T")
+.Input("sw_deriv: T")
+.Input("rij: T")
 .Input("nlist: int32")
 .Input("natoms: int32")
 .Attr("n_a_sel: int")
 .Attr("n_r_sel: int")
-.Output("virial: double")
-.Output("atom_virial: double")
-;
-#else
-REGISTER_OP("SoftMinVirial")
-.Input("du: float")
-.Input("sw_deriv: float")
-.Input("rij: float")
-.Input("nlist: int32")
-.Input("natoms: int32")
-.Attr("n_a_sel: int")
-.Attr("n_r_sel: int")
-.Output("virial: float")
-.Output("atom_virial: float")
-;
-#endif
+.Output("virial: T")
+.Output("atom_virial: T");
 
 using namespace tensorflow;
 
+using CPUDevice = Eigen::ThreadPoolDevice;
+
+template<typename Device, typename FPTYPE>
 class SoftMinVirialOp : public OpKernel {
  public:
   explicit SoftMinVirialOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -94,12 +77,12 @@ class SoftMinVirialOp : public OpKernel {
     OP_REQUIRES_OK(context, context->allocate_output(1, atom_virial_shape, &atom_virial_tensor));
     
     // flat the tensors
-    auto du = du_tensor.matrix<VALUETYPE>();
-    auto sw_deriv = sw_deriv_tensor.matrix<VALUETYPE>();
-    auto rij = rij_tensor.matrix<VALUETYPE>();
+    auto du = du_tensor.matrix<FPTYPE>();
+    auto sw_deriv = sw_deriv_tensor.matrix<FPTYPE>();
+    auto rij = rij_tensor.matrix<FPTYPE>();
     auto nlist = nlist_tensor.matrix<int>();
-    auto virial = virial_tensor->matrix<VALUETYPE>();
-    auto atom_virial = atom_virial_tensor->matrix<VALUETYPE>();
+    auto virial = virial_tensor->matrix<FPTYPE>();
+    auto atom_virial = atom_virial_tensor->matrix<FPTYPE>();
 
     // loop over samples
 #pragma omp parallel for
@@ -122,7 +105,7 @@ class SoftMinVirialOp : public OpKernel {
 	  int rij_idx_shift = (ii * nnei + jj) * 3;
 	  for (int dd0 = 0; dd0 < 3; ++dd0){
 	    for (int dd1 = 0; dd1 < 3; ++dd1){
-	      VALUETYPE tmp_v = du(kk, i_idx) * sw_deriv(kk, rij_idx_shift + dd0) * rij(kk, rij_idx_shift + dd1);
+	      FPTYPE tmp_v = du(kk, i_idx) * sw_deriv(kk, rij_idx_shift + dd0) * rij(kk, rij_idx_shift + dd1);
 	      virial(kk, dd0 * 3 + dd1) -= tmp_v;		  
 	      atom_virial(kk, j_idx * 9 + dd0 * 3 + dd1) -= tmp_v;
 	    }
@@ -135,7 +118,12 @@ private:
   int n_r_sel, n_a_sel;
 };
 
-REGISTER_KERNEL_BUILDER(Name("SoftMinVirial").Device(DEVICE_CPU), SoftMinVirialOp);
-
+// Register the CPU kernels.
+#define REGISTER_CPU(T)                                                                   \
+REGISTER_KERNEL_BUILDER(                                                                  \
+    Name("SoftMinVirial").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
+    SoftMinVirialOp<CPUDevice, T>); 
+REGISTER_CPU(float);
+REGISTER_CPU(double);
 
 

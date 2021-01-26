@@ -12,54 +12,30 @@ typedef double compute_t;
 using namespace tensorflow;
 using namespace std;
 
-#ifdef HIGH_PREC
-typedef double VALUETYPE ;
-#else 
-typedef float  VALUETYPE ;
-#endif
+using CPUDevice = Eigen::ThreadPoolDevice;
 
-#ifdef HIGH_PREC
 REGISTER_OP("Descrpt")
-.Input("coord: double")
+.Attr("T: {float, double}")
+.Input("coord: T")
 .Input("type: int32")
 .Input("natoms: int32")
-.Input("box: double")
+.Input("box: T")
 .Input("mesh: int32")
-.Input("davg: double")
-.Input("dstd: double")
+.Input("davg: T")
+.Input("dstd: T")
 .Attr("rcut_a: float")
 .Attr("rcut_r: float")
 .Attr("sel_a: list(int)")
 .Attr("sel_r: list(int)")
 .Attr("axis_rule: list(int)")
-.Output("descrpt: double")
-.Output("descrpt_deriv: double")
-.Output("rij: double")
+.Output("descrpt: T")
+.Output("descrpt_deriv: T")
+.Output("rij: T")
 .Output("nlist: int32")
 .Output("axis: int32")
-.Output("rot_mat: double");
-#else
-REGISTER_OP("Descrpt")
-.Input("coord: float")
-.Input("type: int32")
-.Input("natoms: int32")
-.Input("box: float")
-.Input("mesh: int32")
-.Input("davg: float")
-.Input("dstd: float")
-.Attr("rcut_a: float")
-.Attr("rcut_r: float")
-.Attr("sel_a: list(int)")
-.Attr("sel_r: list(int)")
-.Attr("axis_rule: list(int)")
-.Output("descrpt: float")
-.Output("descrpt_deriv: float")
-.Output("rij: float")
-.Output("nlist: int32")
-.Output("axis: int32")
-.Output("rot_mat: float");
-#endif
+.Output("rot_mat: T");
 
+template<typename Device, typename FPTYPE>
 class DescrptOp : public OpKernel {
 public:
   explicit DescrptOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -182,18 +158,18 @@ public:
     Tensor* rot_mat_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(5, rot_mat_shape, &rot_mat_tensor));
     
-    auto coord	= coord_tensor	.matrix<VALUETYPE>();
+    auto coord	= coord_tensor	.matrix<FPTYPE>();
     auto type	= type_tensor	.matrix<int>();
-    auto box	= box_tensor	.matrix<VALUETYPE>();
+    auto box	= box_tensor	.matrix<FPTYPE>();
     auto mesh	= mesh_tensor	.flat<int>();
-    auto avg	= avg_tensor	.matrix<VALUETYPE>();
-    auto std	= std_tensor	.matrix<VALUETYPE>();
-    auto descrpt	= descrpt_tensor	->matrix<VALUETYPE>();
-    auto descrpt_deriv	= descrpt_deriv_tensor	->matrix<VALUETYPE>();
-    auto rij		= rij_tensor		->matrix<VALUETYPE>();
+    auto avg	= avg_tensor	.matrix<FPTYPE>();
+    auto std	= std_tensor	.matrix<FPTYPE>();
+    auto descrpt	= descrpt_tensor	->matrix<FPTYPE>();
+    auto descrpt_deriv	= descrpt_deriv_tensor	->matrix<FPTYPE>();
+    auto rij		= rij_tensor		->matrix<FPTYPE>();
     auto nlist		= nlist_tensor		->matrix<int>();
     auto axis		= axis_tensor		->matrix<int>();
-    auto rot_mat	= rot_mat_tensor		->matrix<VALUETYPE>();
+    auto rot_mat	= rot_mat_tensor		->matrix<FPTYPE>();
 
     // // check the types
     // int max_type_v = 0;
@@ -624,5 +600,10 @@ private:
   }
 };
 
-REGISTER_KERNEL_BUILDER(Name("Descrpt").Device(DEVICE_CPU), DescrptOp);
+#define REGISTER_CPU(T)                                                                 \
+REGISTER_KERNEL_BUILDER(                                                                \
+    Name("Descrpt").Device(DEVICE_CPU).TypeConstraint<T>("T"),                       \
+    DescrptOp<CPUDevice, T>); 
+REGISTER_CPU(float);
+REGISTER_CPU(double);
 

@@ -10,6 +10,8 @@
 
 using namespace tensorflow;
 using namespace std;
+#include <tensorflow/core/graph/default_device.h>
+#include <tensorflow/core/graph/graph_def_builder.h>
 
 #if TF_MAJOR_VERSION >= 2 && TF_MINOR_VERSION >= 2
 typedef tensorflow::tstring STRINGTYPE;
@@ -19,8 +21,12 @@ typedef std::string STRINGTYPE;
 
 #include "NNPAtomMap.h"
 #include <vector>
+#include <string>
+#include <iostream>
 #include "version.h"
 
+using CPUDevice = Eigen::ThreadPoolDevice;
+using GPUDevice = Eigen::GpuDevice;
 #ifdef HIGH_PREC
 typedef double VALUETYPE;
 typedef double ENERGYTYPE;
@@ -128,6 +134,20 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 		       const vector<VALUETYPE> &	aparam_,
 		       const NNPAtomMap<VALUETYPE>&	nnpmap,
 		       const int			nghost = 0,
+		       const string			scope = "");
+
+int
+session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
+		       const vector<VALUETYPE> &	dcoord_,
+		       const int &			ntypes,
+		       const vector<int> &		datype_,
+		       const vector<VALUETYPE> &	dbox,		    
+		       InternalNeighborList &		dlist, 
+		       const vector<VALUETYPE> &	fparam_,
+		       const vector<VALUETYPE> &	aparam_,
+		       const NNPAtomMap<VALUETYPE>&	nnpmap,
+		       const int			nghost,
+		       const int			ago,
 		       const string			scope = "");
 
 int

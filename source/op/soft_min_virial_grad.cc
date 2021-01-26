@@ -6,36 +6,22 @@
 using namespace tensorflow;
 using namespace std;
 
-#ifdef HIGH_PREC
-typedef double VALUETYPE;
-#else
-typedef float  VALUETYPE;
-#endif
 
-#ifdef HIGH_PREC
 REGISTER_OP("SoftMinVirialGrad")
-.Input("grad: double")
-.Input("du: double")
-.Input("sw_deriv: double")
-.Input("rij: double")
+.Attr("T: {float, double}")
+.Input("grad: T")
+.Input("du: T")
+.Input("sw_deriv: T")
+.Input("rij: T")
 .Input("nlist: int32")
 .Input("natoms: int32")
 .Attr("n_a_sel: int")
 .Attr("n_r_sel: int")
-.Output("grad_net: double");
-#else
-REGISTER_OP("SoftMinVirialGrad")
-.Input("grad: float")
-.Input("du: float")
-.Input("sw_deriv: float")
-.Input("rij: float")
-.Input("nlist: int32")
-.Input("natoms: int32")
-.Attr("n_a_sel: int")
-.Attr("n_r_sel: int")
-.Output("grad_net: float");
-#endif
+.Output("grad_net: T");
 
+using CPUDevice = Eigen::ThreadPoolDevice;
+
+template<typename Device, typename FPTYPE>
 class SoftMinVirialGradOp : public OpKernel 
 {
 public:
@@ -97,12 +83,12 @@ public:
     OP_REQUIRES_OK(context, context->allocate_output(0, grad_net_shape, &grad_net_tensor));
     
     // flat the tensors
-    auto grad		= grad_tensor		.matrix<VALUETYPE>();
-    auto du		= du_tensor		.matrix<VALUETYPE>();
-    auto sw_deriv	= sw_deriv_tensor	.matrix<VALUETYPE>();
-    auto rij		= rij_tensor		.matrix<VALUETYPE>();
+    auto grad		= grad_tensor		.matrix<FPTYPE>();
+    auto du		= du_tensor		.matrix<FPTYPE>();
+    auto sw_deriv	= sw_deriv_tensor	.matrix<FPTYPE>();
+    auto rij		= rij_tensor		.matrix<FPTYPE>();
     auto nlist		= nlist_tensor		.matrix<int>();
-    auto grad_net	= grad_net_tensor	->matrix<VALUETYPE>();
+    auto grad_net	= grad_net_tensor	->matrix<FPTYPE>();
 
     // loop over frames
 #pragma omp parallel for
@@ -148,4 +134,10 @@ private:
   }
 };
 
-REGISTER_KERNEL_BUILDER(Name("SoftMinVirialGrad").Device(DEVICE_CPU), SoftMinVirialGradOp);
+// Register the CPU kernels.
+#define REGISTER_CPU(T)                                                                   \
+REGISTER_KERNEL_BUILDER(                                                                  \
+    Name("SoftMinVirialGrad").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
+    SoftMinVirialGradOp<CPUDevice, T>); 
+REGISTER_CPU(float);
+REGISTER_CPU(double);
