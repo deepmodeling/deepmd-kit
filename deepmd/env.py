@@ -5,11 +5,11 @@ import numpy as np
 from importlib import reload
 
 # import tensorflow v1 compatability
-# try:
-import tensorflow.compat.v1 as tf
-tf.disable_v2_behavior()
-# except ImportError:
-#     import tensorflow as tf
+try:
+    import tensorflow._api.v2.compat.v1 as tf
+    tf.disable_v2_behavior()
+except ImportError:
+    import tensorflow as tf
 
 
 def set_env_if_empty(key, value, verbose=True):
