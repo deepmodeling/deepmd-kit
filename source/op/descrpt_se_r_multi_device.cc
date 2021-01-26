@@ -261,13 +261,7 @@ private:
     }
 
     int get_magic_number(int const nnei) {
-        if (nnei <= 256) {
-            return 256;
-        }
-        else if (nnei <= 512) {
-            return 512;
-        }
-        else if (nnei <= 1024) {
+        if (nnei <= 1024) {
             return 1024;
         }
         else if (nnei <= 2048) {
