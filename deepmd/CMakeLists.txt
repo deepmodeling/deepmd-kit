@@ -104,8 +104,8 @@ endif()
 if (${OP_CXX_ABI} EQUAL 0) 
   message (STATUS "Set GLIBCXX_USE_CXX_ABI=0 when compiling ops")
 else ()
-  set (OP_CXX_ABI 1)
-  message (STATUS "Set GLIBCXX_USE_CXX_ABI=1 when compiling ops")
+  set (OP_CXX_ABI 0)
+  message (STATUS "Set GLIBCXX_USE_CXX_ABI=0 when compiling anyway to avoid undefined symbol")
 endif ()
 
 # define USE_CUDA_TOOLKIT

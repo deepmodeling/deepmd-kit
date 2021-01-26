@@ -1,16 +1,13 @@
-import os,sys,platform
+import os
 import numpy as np
 import unittest
-from deepmd.train.env import tf
+from deepmd.env import tf
 
 from deepmd.train.common import j_must_have, data_requirement, j_loader
 from deepmd.train.RunOptions import RunOptions
 from deepmd.train.Trainer import NNPTrainer
 from deepmd.train.DataSystem import DeepmdDataSystem
-from deepmd.train.RunOptions import global_tf_float_precision
 from deepmd.train.RunOptions import global_np_float_precision
-from deepmd.train.RunOptions import global_ener_float_precision
-from deepmd.train.EwaldRecp import EwaldRecp
 from deepmd.train.DataModifier import DipoleChargeModifier
 
 from deepmd.tests.common import Data

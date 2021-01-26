@@ -1,5 +1,5 @@
 import numpy as np
-from deepmd.train.env import tf
+from deepmd.env import tf
 from deepmd.train.common import ClassArg
 
 class LearningRateExp (object) :

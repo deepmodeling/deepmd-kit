@@ -1,5 +1,5 @@
 import numpy as np
-from deepmd.train.env import tf
+from deepmd.env import tf
 from deepmd.train.common import ClassArg, add_data_requirement
 
 from deepmd.train.RunOptions import global_cvt_2_tf_float

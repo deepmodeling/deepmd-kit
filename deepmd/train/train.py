@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 
-import os
-import sys
 import time
 import json
 import numpy as np
-from deepmd.train.env import tf
+from deepmd.env import tf
 from deepmd.train.compat import convert_input_v0_v1
 from deepmd.train.RunOptions import RunOptions
 from deepmd.train.DataSystem import DeepmdDataSystem

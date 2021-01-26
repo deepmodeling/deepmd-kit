@@ -3,8 +3,8 @@ import os
 import time
 import shutil
 import numpy as np
-from deepmd.train.env import tf
-from deepmd.train.env import default_tf_session_config
+from deepmd.env import tf
+from deepmd.env import default_tf_session_config
 from deepmd.train.RunOptions import global_tf_float_precision
 from deepmd.train.RunOptions import global_ener_float_precision
 from deepmd.train.Fitting import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
@@ -17,18 +17,8 @@ from deepmd.train.Loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
 from deepmd.train.LearningRate import LearningRateExp
 
 from tensorflow.python.client import timeline
-from deepmd.train.env import op_module
 
 # load grad of force module
-import deepmd.op._prod_force_grad
-import deepmd.op._prod_virial_grad
-import deepmd.op._prod_force_se_a_grad
-import deepmd.op._prod_virial_se_a_grad
-import deepmd.op._prod_force_se_r_grad
-import deepmd.op._prod_virial_se_r_grad
-import deepmd.op._soft_min_force_grad
-import deepmd.op._soft_min_virial_grad
-import deepmd.op._gelu
 
 from deepmd.train.common import j_must_have, ClassArg
 

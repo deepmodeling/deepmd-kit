@@ -4,7 +4,7 @@ from deepmd.train.DeepPolar import DeepGlobalPolar
 from deepmd.train.DeepPolar import DeepPolar
 from deepmd.train.DeepPot import DeepPot
 from deepmd.train.DeepWFC import DeepWFC
-from deepmd.train.env import set_mkl
+from deepmd.env import set_mkl
 
 set_mkl()
 

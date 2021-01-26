@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-import platform
 import os
 import numpy as np
 
-from deepmd.train.env import tf
-from deepmd.train.env import default_tf_session_config
+from deepmd.env import tf
+from deepmd.env import default_tf_session_config
 from deepmd.train.common import make_default_mesh
 
 class DeepEval():

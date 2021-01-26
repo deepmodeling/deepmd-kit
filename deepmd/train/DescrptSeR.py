@@ -1,10 +1,10 @@
 import numpy as np
-from deepmd.train.env import tf
+from deepmd.env import tf
 from deepmd.train.common import ClassArg, get_activation_func, get_precision
 from deepmd.train.RunOptions import global_tf_float_precision
 from deepmd.train.RunOptions import global_np_float_precision
-from deepmd.train.env import op_module
-from deepmd.train.env import default_tf_session_config
+from deepmd.env import op_module
+from deepmd.env import default_tf_session_config
 
 class DescrptSeR ():
     def __init__ (self, jdata):

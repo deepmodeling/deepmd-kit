@@ -1,7 +1,7 @@
 import warnings
 import numpy as np
 
-from deepmd.train.env import tf
+from deepmd.env import tf
 from deepmd.train.common import ClassArg, add_data_requirement, get_activation_func, get_precision
 from deepmd.train.Network import one_layer
 from deepmd.train.DescrptLocFrame import DescrptLocFrame

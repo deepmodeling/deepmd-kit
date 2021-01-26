@@ -5,7 +5,7 @@ First-order derivatives and second-order derivatives for gelu function.
 
 from tensorflow.python.framework import ops
 
-from deepmd.train.env import op_module
+from deepmd.env import op_module
 
 
 @ops.RegisterGradient("Gelu")

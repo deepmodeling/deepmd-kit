@@ -18,7 +18,7 @@ except ImportError:
     with open(readme_file) as f:
         readme = f.read()
 
-install_requires = ['numpy', 'scipy', 'pyyaml', 'dargs']
+install_requires = ['numpy>=1.19', 'scipy>=1.5', 'pyyaml', 'dargs']
 setup_requires = ['setuptools_scm', 'scikit-build']  # this legacy usage won't function cuz `skbuild` is imported before
 
 tf_version = os.environ.get('TENSORFLOW_VERSION', '2.3')
@@ -74,7 +74,7 @@ setup(
     install_requires=install_requires,
     cmake_args=['-DTENSORFLOW_ROOT:STRING=%s' % tf_install_dir,
                 '-DBUILD_PY_IF:BOOL=TRUE',
-                '-DBUILD_CPP_IF:BOOL=FALSE',
+                '-DBUILD_CPP_IF:BOOL=TRUE',
                 '-DFLOAT_PREC:STRING=high',
                 ],
     cmake_source_dir='deepmd',

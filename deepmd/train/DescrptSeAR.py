@@ -1,10 +1,10 @@
 import numpy as np
-from deepmd.train.env import tf
+from deepmd.env import tf
 from deepmd.train.common import ClassArg
 
 from deepmd.train.DescrptSeA import DescrptSeA
 from deepmd.train.DescrptSeR import DescrptSeR
-from deepmd.train.env import op_module
+
 
 class DescrptSeAR ():
     def __init__ (self, jdata):

@@ -5,7 +5,7 @@ Gradients for prod force.
 
 from tensorflow.python.framework import ops
 
-from deepmd.train.env import op_grads_module
+from deepmd.env import op_grads_module
 
 
 @ops.RegisterGradient("ProdForceSeR")
