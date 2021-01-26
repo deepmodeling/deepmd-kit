@@ -46,6 +46,7 @@ endif()
 list (APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/)
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wno-ignored-attributes")
 
+
 # find tensorflow, I need tf abi info
 find_package(tensorflow REQUIRED)
 
@@ -75,7 +76,7 @@ if (NOT DEFINED OP_CXX_ABI)
   if (BUILD_CPP_IF)
     try_run(
       CPP_CXX_ABI_RUN_RESULT_VAR CPP_CXX_ABI_COMPILE_RESULT_VAR
-      ${CMAKE_CURRENT_BINARY_DIR}/tf_cxx_abi  # say build/tf_cxx_abi, or just ${CMAKE_CURRENT_BINARY_DIR}/ is enough
+      ${CMAKE_CURRENT_BINARY_DIR}/tf_cxx_abi  # i.e. cmake-build/tf_cxx_abi, actually just ${CMAKE_CURRENT_BINARY_DIR}/ is enough
       "${CMAKE_CURRENT_SOURCE_DIR}/cmake/tf_cxx_abi.cpp"
       LINK_LIBRARIES ${TensorFlowFramework_LIBRARY}
       CMAKE_FLAGS "-DINCLUDE_DIRECTORIES:STRING=${TensorFlow_INCLUDE_DIRS}"
@@ -110,12 +111,12 @@ endif ()
 # define USE_CUDA_TOOLKIT
 if (DEFINED USE_CUDA_TOOLKIT)
   if (USE_CUDA_TOOLKIT)
-    find_package(CUDA REQUIRED)
+    find_package(CUDA REQUIRED)  # will first search the root dir of $(which nvcc)
   else()
     message(STATUS "Will not build nv GPU support")
   endif()
 else()
-  find_package(CUDA QUIET)  
+  find_package(CUDA QUIET)
   if (CUDA_FOUND)
     set(USE_CUDA_TOOLKIT TRUE)
     message(STATUS "Found CUDA in ${CUDA_TOOLKIT_ROOT_DIR}, build nv GPU support")

@@ -13,7 +13,7 @@ target_link_libraries(dp_ipi ${LIB_DEEPMD_IPI} ${LIB_DEEPMD_OP} ${LIB_DEEPMD} ${
 set_target_properties(
   dp_ipi
   PROPERTIES
-  LINK_FLAGS "-Wl,-rpath,'$ORIGIN'/../lib -Wl,-z,defs"
+  LINK_FLAGS "-Wl,-rpath,'$ORIGIN'/../lib -Wl,-z,defs"  # "-Wl,-z,defs" to throw errors when references are undefined for shared lib linking
   INSTALL_RPATH "$ORIGIN/../lib:${TensorFlow_LIBRARY_PATH}"
 )
 

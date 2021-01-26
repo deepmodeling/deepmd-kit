@@ -86,8 +86,8 @@ set (SOURCE_FILES
 cuda_add_library(deepmd_op_cuda SHARED ${SOURCE_FILES})
 
 if (BUILD_CPP_IF)
-    install(TARGETS deepmd_op_cuda DESTINATION lib/)
-endif (BUILD_CPP_IF)
+    install(TARGETS deepmd_op_cuda DESTINATION lib/)  # one target could be installed multiple times
+endif ()
 if (BUILD_PY_IF)
-    install(TARGETS deepmd_op_cuda DESTINATION deepmd/)
-endif (BUILD_PY_IF)
+    install(TARGETS deepmd_op_cuda DESTINATION deepmd/lib)
+endif ()

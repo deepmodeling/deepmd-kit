@@ -11,19 +11,26 @@
 # TensorFlowFramework_LIBRARY_PATH
 
 
-#if(NOT DEFINED TENSORFLOW_ROOT)
-#  message(STATUS "TENSORFLOW_ROOT not set, finding in current Conda environment...")
-#  set(FIND_TENSORFLOW_ROOT_CMD "import os, tensorflow; print(os.path.dirname(tensorflow.__file__), end='')")
-#  execute_process(
-#          COMMAND $ENV{CONDA_PYTHON_EXE} "-c" "${FIND_TENSORFLOW_ROOT_CMD}"  # Automatically set PYTHON_EXECUTABLE
-#          WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-#          OUTPUT_VARIABLE TENSORFLOW_ROOT
-#          RESULT_VARIABLE TENSORFLOW_ROOT_RESULT_VAR
-#          ERROR_VARIABLE TENSORFLOW_ROOT_ERROR_VAR
-#  )
-#endif()
+if(NOT DEFINED TENSORFLOW_ROOT)
+  message(STATUS "TENSORFLOW_ROOT not set, finding in current python environment...")
+  set(FIND_TENSORFLOW_ROOT_CMD "import os, tensorflow; print(os.path.dirname(tensorflow.__file__), end='')")
+  execute_process(
+          COMMAND "python" "-c" "${FIND_TENSORFLOW_ROOT_CMD}"  # Automatically set PYTHON_EXECUTABLE
+          WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+          OUTPUT_VARIABLE TENSORFLOW_ROOT
+          RESULT_VARIABLE TENSORFLOW_ROOT_RESULT_VAR
+          ERROR_VARIABLE TENSORFLOW_ROOT_ERROR_VAR
+  )
+  message(STATUS "Set hypothetical TENSORFLOW_ROOT as: ${TENSORFLOW_ROOT}")
+endif()
 
 string(REPLACE "lib64" "lib" TENSORFLOW_ROOT_NO64 ${TENSORFLOW_ROOT})
+
+# search path when using conda
+if (NOT $ENV{CONDA_PREFIX} STREQUAL "")
+    message(STATUS "Detected Conda being used, add corresponding search paths for TensorFlow")
+    list(APPEND TensorFlow_search_PATHS $ENV{CONDA_PREFIX})
+endif()
 
 # define the search path
 list(APPEND TensorFlow_search_PATHS ${TENSORFLOW_ROOT})
@@ -32,8 +39,7 @@ list(APPEND TensorFlow_search_PATHS ${TENSORFLOW_ROOT_NO64})
 list(APPEND TensorFlow_search_PATHS "${TENSORFLOW_ROOT_NO64}/../tensorflow_core")
 list(APPEND TensorFlow_search_PATHS "/usr/")
 list(APPEND TensorFlow_search_PATHS "/usr/local/")
-# for conda
-list(APPEND TensorFlow_search_PATHS $ENV{CONDA_PREFIX})
+
 
 # includes
 find_path(TensorFlow_INCLUDE_DIRS
@@ -83,7 +89,7 @@ if (BUILD_CPP_IF)
       )
     if (TensorFlow_LIBRARY_${module})
       list(APPEND TensorFlow_LIBRARY ${TensorFlow_LIBRARY_${module}})
-      get_filename_component(TensorFlow_LIBRARY_PATH_${module} ${TensorFlow_LIBRARY_${module}} PATH)
+      get_filename_component(TensorFlow_LIBRARY_PATH_${module} ${TensorFlow_LIBRARY_${module}} DIRECTORY)
       list(APPEND TensorFlow_LIBRARY_PATH ${TensorFlow_LIBRARY_PATH_${module}})
     elseif (tensorflow_FIND_REQUIRED)
       message(FATAL_ERROR
@@ -91,9 +97,9 @@ if (BUILD_CPP_IF)
 	"You can manually set the tensorflow install path by -DTENSORFLOW_ROOT ")
     endif ()
   endforeach ()
-else (BUILD_CPP_IF)
+else ()
   message (STATUS "Disabled cpp interface build, looking for tensorflow_framework")
-endif (BUILD_CPP_IF)
+endif ()
 
 # tensorflow_framework
 if (NOT TensorFlowFramework_FIND_COMPONENTS)
@@ -108,7 +114,7 @@ foreach (module ${TensorFlowFramework_FIND_COMPONENTS})
     NO_DEFAULT_PATH
     )
   if (TensorFlowFramework_LIBRARY_${module})
-    list(APPEND TensorFlowFramework_LIBRARY ${TensorFlowFramework_LIBRARY_${module}})
+    list(APPEND TensorFlowFramework_LIBRARY ${TensorFlowFramework_LIBRARY_${module}})  # The one in py module dir if py version installed
     get_filename_component(TensorFlowFramework_LIBRARY_PATH_${module} ${TensorFlowFramework_LIBRARY_${module}} PATH)
     list(APPEND TensorFlowFramework_LIBRARY_PATH ${TensorFlowFramework_LIBRARY_PATH_${module}})
   elseif (tensorflow_FIND_REQUIRED)
@@ -125,19 +131,20 @@ if (BUILD_CPP_IF)
   else ()
     set(TensorFlow_FOUND FALSE)
   endif ()
-else (BUILD_CPP_IF)
+else ()
   if (TensorFlow_INCLUDE_DIRS AND TensorFlowFramework_LIBRARY)
     set(TensorFlow_FOUND TRUE)
   else ()
     set(TensorFlow_FOUND FALSE)
   endif ()
-endif (BUILD_CPP_IF)
+endif ()
 
 # print message
 if (NOT TensorFlow_FIND_QUIETLY)
   message(STATUS "Found TensorFlow: TRUE")
-  message(STATUS "Found TensorFlow: ${TensorFlow_INCLUDE_DIRS}, ${TensorFlow_LIBRARY}, ${TensorFlowFramework_LIBRARY} "
-    " in ${TensorFlow_search_PATHS}")
+  message(STATUS "Found TensorFlow: TensorFlow_INCLUDE_DIRS: ${TensorFlow_INCLUDE_DIRS}")
+  message(STATUS "Found TensorFlow: TensorFlow_LIBRARY: ${TensorFlow_LIBRARY}")
+  message(STATUS "Found TensorFlow: TensorFlowFramework_LIBRARY: ${TensorFlowFramework_LIBRARY}")
 endif ()
 
 unset(TensorFlow_search_PATHS)
