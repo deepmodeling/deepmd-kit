@@ -257,7 +257,7 @@ private:
             cudaErrcheck(cudaMemcpy(jlist,  jlist_host,  sizeof(int) * mesh_host[3], cudaMemcpyHostToDevice));
 
             max_nbor_size = 1024;
-            for(int ii = 0; ii < mesh_host[2] - 1; ii++) {
+            for(int ii = 0; ii < mesh_host[2]; ii++) {
                 max_nbor_size = (jrange_host[ii + 1] - jrange_host[ii]) > max_nbor_size ? (jrange_host[ii + 1] - jrange_host[ii]) : max_nbor_size;
             }
         }
