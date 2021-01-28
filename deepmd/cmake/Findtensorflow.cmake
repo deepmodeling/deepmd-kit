@@ -26,14 +26,10 @@ endif()
 
 string(REPLACE "lib64" "lib" TENSORFLOW_ROOT_NO64 ${TENSORFLOW_ROOT})
 
-# search path when using conda
-if (NOT $ENV{CONDA_PREFIX} STREQUAL "")
-    message(STATUS "Detected Conda being used, add corresponding search paths for TensorFlow")
-    list(APPEND TensorFlow_search_PATHS $ENV{CONDA_PREFIX})
-endif()
 
 # define the search path
 list(APPEND TensorFlow_search_PATHS ${TENSORFLOW_ROOT})
+list(APPEND TensorFlow_search_PATHS "/home/lzhpc/WORK/caizefeng/soft/")
 list(APPEND TensorFlow_search_PATHS "${TENSORFLOW_ROOT}/../tensorflow_core")
 list(APPEND TensorFlow_search_PATHS ${TENSORFLOW_ROOT_NO64})
 list(APPEND TensorFlow_search_PATHS "${TENSORFLOW_ROOT_NO64}/../tensorflow_core")
@@ -41,22 +37,28 @@ list(APPEND TensorFlow_search_PATHS "/usr/")
 list(APPEND TensorFlow_search_PATHS "/usr/local/")
 
 
+# search path when using conda
+if (NOT $ENV{CONDA_PREFIX} STREQUAL "")
+    message(STATUS "Detected Conda being used, add corresponding search paths for TensorFlow")
+    list(INSERT TensorFlow_search_PATHS 0 $ENV{CONDA_PREFIX})
+endif()
+
 # includes
 find_path(TensorFlow_INCLUDE_DIRS
-  NAMES 
+  NAMES
   tensorflow/core/public/session.h  # "Or" relations between NAMES
   tensorflow/core/platform/env.h
   tensorflow/core/framework/op.h
   tensorflow/core/framework/op_kernel.h
   tensorflow/core/framework/shape_inference.h
-  PATHS ${TensorFlow_search_PATHS} 
+  PATHS ${TensorFlow_search_PATHS}
   PATH_SUFFIXES "/include"
   NO_DEFAULT_PATH
   )
 find_path(TensorFlow_INCLUDE_DIRS_GOOGLE
   NAMES 
   google/protobuf/type.pb.h
-  PATHS ${TensorFlow_search_PATHS} 
+  PATHS ${TensorFlow_search_PATHS}
   PATH_SUFFIXES "/include"
   NO_DEFAULT_PATH
   )

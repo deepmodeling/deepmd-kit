@@ -74,7 +74,7 @@ setup(
     install_requires=install_requires,
     cmake_args=['-DTENSORFLOW_ROOT:STRING=%s' % tf_install_dir,
                 '-DBUILD_PY_IF:BOOL=TRUE',
-                '-DBUILD_CPP_IF:BOOL=TRUE',
+                '-DBUILD_CPP_IF:BOOL=TRUE',  # `pip install .` to install
                 '-DFLOAT_PREC:STRING=high',
                 ],
     cmake_source_dir='deepmd',
