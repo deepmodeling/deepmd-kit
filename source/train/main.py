@@ -5,6 +5,7 @@ from .freeze import freeze
 from .config import config
 from .test import test
 from .transform import transform
+from .doc import doc_train_input
 
 def main () :    
     parser = argparse.ArgumentParser(
@@ -25,13 +26,16 @@ def main () :
 				  help = "the model after passing parameters")
     parser_train = subparsers.add_parser('train', help='train a model')
     parser_train.add_argument('INPUT', 
-                              help='the input parameter file in json format')
+                              help='the input parameter file in json or yaml format')
     parser_train.add_argument('--init-model', type = str, 
                               help=
                               'Initialize the model by the provided checkpoint.')
     parser_train.add_argument('--restart', type = str, 
                               help=
                               'Restart the training from the provided checkpoint.')
+    parser_train.add_argument('-o','--output', type = str, default = 'out.json',
+                              help=
+                              'The output file of the parameters used in training.')
     
     parser_frz = subparsers.add_parser('freeze', help='freeze the model')
     parser_frz.add_argument("-d", "--folder", type=str, default = ".", 
@@ -56,6 +60,11 @@ def main () :
                             help="Shuffle test data")
     parser_tst.add_argument("-d", "--detail-file", type=str, 
                             help="The file containing details of energy force and virial accuracy")
+    parser_tst.add_argument("-a", "--atomic-energy", action = 'store_true', 
+                            help="Test the accuracy of atomic energy")
+
+    parser_train = subparsers.add_parser('doc-train-input', 
+                                         help='print the documentation (in rst format) of input training parameters.')
 
     args = parser.parse_args()
 
@@ -72,5 +81,7 @@ def main () :
         test(args)
     elif args.command == 'transform' :
         transform(args)
+    elif args.command == 'doc-train-input' :
+        doc_train_input(args)
     else :
         raise RuntimeError('unknown command ' + args.command)

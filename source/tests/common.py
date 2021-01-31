@@ -58,6 +58,7 @@ class Data():
         self.coord = self.coord.reshape([self.nframes, -1, 3])
         self.coord = self.coord[:,self.idx_map,:]
         self.coord = self.coord.reshape([self.nframes, -1])        
+        self.efield = np.random.random(self.coord.shape)
         self.atype = self.atype[self.idx_map]
         self.datype = self._copy_nframes(self.atype)
 
@@ -128,6 +129,7 @@ class Data():
         all_coord = [coord.reshape([nframes, natoms*3])]
         all_box = [box.reshape([nframes,9])]
         all_atype = [atype]
+        all_efield = [self.efield]
         for ii in range(3):
             for jj in range(3):
                 box3p = np.copy(box3)
@@ -146,10 +148,13 @@ class Data():
                 all_box.append(boxm)
                 all_atype.append(atype)
                 all_atype.append(atype)
+                all_efield.append(self.efield)
+                all_efield.append(self.efield)
         all_coord = np.reshape(all_coord, [-1, natoms * 3])
         all_box = np.reshape(all_box, [-1, 9])
         all_atype = np.reshape(all_atype, [-1, natoms])        
-        return all_coord, all_box, all_atype
+        all_efield = np.reshape(all_efield, [-1, natoms * 3])        
+        return all_coord, all_box, all_atype, all_efield
 
 
 def force_test (inter, 
@@ -166,12 +171,14 @@ def force_test (inter,
     inter.sess.run (tf.global_variables_initializer())
     # get data
     dcoord, dbox, dtype = inter.data.get_data ()
+    defield = inter.data.efield
     # cmp e0, f0
     [energy, force] = inter.sess.run ([t_energy, t_force], 
                                      feed_dict = {
                                          inter.coord:     dcoord,
                                          inter.box:       dbox,
                                          inter.type:      dtype,
+                                         inter.efield:    defield,
                                          inter.tnatoms:   inter.natoms}
     )
     # dim force
@@ -187,6 +194,7 @@ def force_test (inter,
                                          inter.coord:     dcoordp,
                                          inter.box:       dbox,
                                          inter.type:      dtype,
+                                         inter.efield:    defield,
                                          inter.tnatoms:   inter.natoms}
             )
             [enerm] = inter.sess.run ([t_energy], 
@@ -194,6 +202,7 @@ def force_test (inter,
                                          inter.coord:     dcoordm,
                                          inter.box:       dbox,
                                          inter.type:      dtype,
+                                         inter.efield:    defield,
                                          inter.tnatoms:   inter.natoms}
             )
             c_force = -(enerp[0] - enerm[0]) / (2*hh)
@@ -217,7 +226,7 @@ def virial_test (inter,
         = inter.comp_ef (inter.coord, inter.box, inter.type, inter.tnatoms, name = "test_v" + suffix)
     inter.sess.run (tf.global_variables_initializer())
     # get data
-    dcoord, dbox, dtype = inter.data.get_test_box_data(hh)
+    dcoord, dbox, dtype, defield = inter.data.get_test_box_data(hh)
     # cmp e, f, v
     [energy, force, virial] \
         = inter.sess.run ([t_energy, t_force, t_virial], 
@@ -225,6 +234,7 @@ def virial_test (inter,
                               inter.coord:     dcoord,
                               inter.box:       dbox,
                               inter.type:      dtype,
+                              inter.efield:    defield,
                               inter.tnatoms:   inter.natoms}
         )
     ana_vir = virial[0].reshape([3,3])
@@ -251,10 +261,12 @@ def force_dw_test (inter,
                    hh = global_default_dw_hh, 
                    suffix = '') :
     dcoord, dbox, dtype = inter.data.get_data()
+    defield = inter.data.efield
     feed_dict_test0 = {
         inter.coord:     dcoord,
         inter.box:       dbox,
         inter.type:      dtype,
+        inter.efield:    defield,
         inter.tnatoms:   inter.natoms}
 
     w0 = np.ones (inter.ndescrpt)
@@ -297,10 +309,12 @@ def virial_dw_test (inter,
                    hh = global_default_dw_hh, 
                    suffix = '') :
     dcoord, dbox, dtype = inter.data.get_data()
+    defield = inter.data.efield
     feed_dict_test0 = {
         inter.coord:     dcoord,
         inter.box:       dbox,
         inter.type:      dtype,
+        inter.efield:    defield,
         inter.tnatoms:   inter.natoms}
 
     w0 = np.ones (inter.ndescrpt)

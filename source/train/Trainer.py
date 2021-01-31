@@ -10,8 +10,12 @@ from deepmd.RunOptions import global_ener_float_precision
 from deepmd.Fitting import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
 from deepmd.DescrptLocFrame import DescrptLocFrame
 from deepmd.DescrptSeA import DescrptSeA
+from deepmd.DescrptSeAT import DescrptSeAT
+from deepmd.DescrptSeAEbd import DescrptSeAEbd
+from deepmd.DescrptSeAEf import DescrptSeAEf
 from deepmd.DescrptSeR import DescrptSeR
 from deepmd.DescrptSeAR import DescrptSeAR
+from deepmd.DescrptHybrid import DescrptHybrid
 from deepmd.Model import Model, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
 from deepmd.Loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
 from deepmd.LearningRate import LearningRateExp
@@ -60,10 +64,18 @@ class NNPTrainer (object):
             self.descrpt = DescrptLocFrame(descrpt_param)
         elif descrpt_type == 'se_a' :
             self.descrpt = DescrptSeA(descrpt_param)
+        elif descrpt_type == 'se_a_3be' or descrpt_type == 'se_at' :
+            self.descrpt = DescrptSeAT(descrpt_param)
+        elif descrpt_type == 'se_a_tpe' or descrpt_type == 'se_a_ebd' :
+            self.descrpt = DescrptSeAEbd(descrpt_param)
+        elif descrpt_type == 'se_a_ef' :
+            self.descrpt = DescrptSeAEf(descrpt_param)
         elif descrpt_type == 'se_r' :
             self.descrpt = DescrptSeR(descrpt_param)
         elif descrpt_type == 'se_ar' :
             self.descrpt = DescrptSeAR(descrpt_param)
+        elif descrpt_type == 'hybrid' :
+            self.descrpt = DescrptHybrid(descrpt_param)
         else :
             raise RuntimeError('unknow model type ' + descrpt_type)
 
@@ -126,13 +138,13 @@ class NNPTrainer (object):
         # infer loss type by fitting_type
         try :
             loss_param = jdata['loss']
-            loss_type = loss_param.get('type', 'std')
+            loss_type = loss_param.get('type', 'ener')
         except:
             loss_param = None
-            loss_type = 'std'
+            loss_type = 'ener'
 
         if fitting_type == 'ener':
-            if loss_type == 'std':
+            if loss_type == 'ener':
                 self.loss = EnerStdLoss(loss_param, starter_learning_rate = self.lr.start_lr())
             elif loss_type == 'ener_dipole':
                 self.loss = EnerDipoleLoss(loss_param, starter_learning_rate = self.lr.start_lr())
@@ -169,8 +181,9 @@ class NNPTrainer (object):
         # training
         training_param = j_must_have(jdata, 'training')
 
+        # ! first .add() altered by Marián Rynik
         tr_args = ClassArg()\
-                  .add('numb_test',     int,    default = 1)\
+                  .add('numb_test',     [int, list, str],    default = 1)\
                   .add('disp_file',     str,    default = 'lcurve.out')\
                   .add('disp_freq',     int,    default = 100)\
                   .add('save_freq',     int,    default = 1000)\
@@ -179,10 +192,13 @@ class NNPTrainer (object):
                   .add('timing_in_training',  bool, default = True)\
                   .add('profiling',     bool,   default = False)\
                   .add('profiling_file',str,    default = 'timeline.json')\
+                  .add('tensorboard',     bool,   default = False)\
+                  .add('tensorboard_log_dir',str,    default = 'log')\
                   .add('sys_probs',   list    )\
                   .add('auto_prob_style', str, default = "prob_sys_size")
         tr_data = tr_args.parse(training_param)
-        self.numb_test = tr_data['numb_test']
+        # not needed
+        # self.numb_test = tr_data['numb_test']
         self.disp_file = tr_data['disp_file']
         self.disp_freq = tr_data['disp_freq']
         self.save_freq = tr_data['save_freq']
@@ -191,6 +207,8 @@ class NNPTrainer (object):
         self.timing_in_training  = tr_data['timing_in_training']
         self.profiling = tr_data['profiling']
         self.profiling_file = tr_data['profiling_file']
+        self.tensorboard = tr_data['tensorboard']
+        self.tensorboard_log_dir = tr_data['tensorboard_log_dir']
         self.sys_probs = tr_data['sys_probs']        
         self.auto_prob_style = tr_data['auto_prob_style']        
         self.useBN = False
@@ -207,7 +225,10 @@ class NNPTrainer (object):
                data, 
                stop_batch = 0) :
         self.ntypes = self.model.get_ntypes()
-        assert (self.ntypes == data.get_ntypes()), "ntypes should match that found in data"
+        # Usually, the type number of the model should be equal to that of the data
+        # However, nt_model > nt_data should be allowed, since users may only want to 
+        # train using a dataset that only have some of elements 
+        assert (self.ntypes >= data.get_ntypes()), "ntypes should match that found in data"
         self.stop_batch = stop_batch
 
         self.batch_size = data.get_batch_size()
@@ -392,6 +413,16 @@ class NNPTrainer (object):
             prf_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
             prf_run_metadata = tf.RunMetadata()
 
+        # set tensorboard execution environment
+        if self.tensorboard :
+            summary_merged_op = tf.summary.merge_all()
+            shutil.rmtree(self.tensorboard_log_dir)
+            tb_train_writer = tf.summary.FileWriter(self.tensorboard_log_dir + '/train', self.sess.graph)
+            tb_test_writer = tf.summary.FileWriter(self.tensorboard_log_dir + '/test')
+        else:
+            tb_train_writer = None
+            tb_test_writer = None
+        
         train_time = 0
         while cur_batch < stop_batch :
             batch_data = data.get_batch (sys_probs = self.sys_probs,
@@ -412,10 +443,16 @@ class NNPTrainer (object):
             feed_dict_batch[self.place_holders['is_training']] = True
 
             if self.display_in_training and is_first_step :
-                self.test_on_the_fly(fp, data, feed_dict_batch)
+                self.test_on_the_fly(fp, data, feed_dict_batch, tb_test_writer)
                 is_first_step = False
             if self.timing_in_training : tic = time.time()
-            self.sess.run([self.train_op], feed_dict = feed_dict_batch, options=prf_options, run_metadata=prf_run_metadata)
+            # use tensorboard to visualize the training of deepmd-kit
+            # it will takes some extra execution time to generate the tensorboard data
+            if self.tensorboard :
+                summary, _ = self.sess.run([summary_merged_op, self.train_op], feed_dict = feed_dict_batch, options=prf_options, run_metadata=prf_run_metadata)
+                tb_train_writer.add_summary(summary, cur_batch)
+            else :
+                self.sess.run([self.train_op], feed_dict = feed_dict_batch, options=prf_options, run_metadata=prf_run_metadata)
             if self.timing_in_training : toc = time.time()
             if self.timing_in_training : train_time += toc - tic
             cur_batch = self.sess.run(self.global_step)
@@ -423,7 +460,7 @@ class NNPTrainer (object):
 
             if self.display_in_training and (cur_batch % self.disp_freq == 0) :
                 tic = time.time()
-                self.test_on_the_fly(fp, data, feed_dict_batch)
+                self.test_on_the_fly(fp, data, feed_dict_batch, tb_test_writer)
                 toc = time.time()
                 test_time = toc - tic
                 if self.timing_in_training :
@@ -457,8 +494,11 @@ class NNPTrainer (object):
     def test_on_the_fly (self,
                          fp,
                          data,
-                         feed_dict_batch) :
-        test_data = data.get_test(ntests = self.numb_test)
+                         feed_dict_batch,
+                         tb_writer) :
+        # Do not need to pass numb_test here as data object already knows it.
+        # Both DeepmdDataSystem and ClassArg parse the same json file
+        test_data = data.get_test(n_test=data.get_sys_ntest())
         feed_dict_test = {}
         for kk in test_data.keys():
             if kk == 'find_type' or kk == 'type' :
@@ -466,9 +506,12 @@ class NNPTrainer (object):
             if 'find_' in kk:
                 feed_dict_test[self.place_holders[kk]] = test_data[kk]
             else:
-                feed_dict_test[self.place_holders[kk]] = np.reshape(test_data[kk][:self.numb_test], [-1])
+                # again the data object knows appropriate test data shape,
+                # there is no need to slice again!
+                # feed_dict_test[self.place_holders[kk]] = np.reshape(test_data[kk][:self.numb_test[data.pick_idx]], [-1])
+                feed_dict_test[self.place_holders[kk]] = np.reshape(test_data[kk], [-1])
         for ii in ['type'] :
-            feed_dict_test[self.place_holders[ii]] = np.reshape(test_data[ii][:self.numb_test], [-1])            
+            feed_dict_test[self.place_holders[ii]] = np.reshape(test_data[ii], [-1])            
         for ii in ['natoms_vec', 'default_mesh'] :
             feed_dict_test[self.place_holders[ii]] = test_data[ii]
         feed_dict_test[self.place_holders['is_training']] = False
@@ -477,12 +520,15 @@ class NNPTrainer (object):
         current_lr = self.sess.run(self.learning_rate)
         if self.run_opt.is_chief:
             print_str = "%7d" % cur_batch
-            print_str += self.loss.print_on_training(self.sess,
-                                                     test_data['natoms_vec'],
-                                                     feed_dict_test,
-                                                     feed_dict_batch)
+            print_str += self.loss.print_on_training(
+                tb_writer,
+                cur_batch,
+                self.sess,
+                test_data['natoms_vec'],
+                feed_dict_test,
+                feed_dict_batch
+            )
+
             print_str += "   %8.1e\n" % current_lr
             fp.write(print_str)
             fp.flush ()
-
-

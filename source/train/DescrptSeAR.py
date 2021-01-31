@@ -53,6 +53,7 @@ class DescrptSeAR ():
                natoms,
                box, 
                mesh,
+               input_dict,
                suffix = '', 
                reuse = None):
         davg = self.davg
@@ -64,12 +65,14 @@ class DescrptSeAR ():
             dstd = [np.ones ([self.descrpt_a.ntypes, self.descrpt_a.ndescrpt]), 
                     np.ones ([self.descrpt_r.ntypes, self.descrpt_r.ndescrpt])]
         # dout
-        self.dout_a = self.descrpt_a.build(coord_, atype_, natoms, box, mesh, suffix=suffix+'_a', reuse=reuse)
-        self.dout_r = self.descrpt_r.build(coord_, atype_, natoms, box, mesh, suffix=suffix     , reuse=reuse)
+        self.dout_a = self.descrpt_a.build(coord_, atype_, natoms, box, mesh, input_dict, suffix=suffix+'_a', reuse=reuse)
+        self.dout_r = self.descrpt_r.build(coord_, atype_, natoms, box, mesh, input_dict, suffix=suffix     , reuse=reuse)
         self.dout_a = tf.reshape(self.dout_a, [-1, self.descrpt_a.get_dim_out()])
         self.dout_r = tf.reshape(self.dout_r, [-1, self.descrpt_r.get_dim_out()])
         self.dout = tf.concat([self.dout_a, self.dout_r], axis = 1)
         self.dout = tf.reshape(self.dout, [-1, natoms[0] * self.get_dim_out()])
+        
+        tf.summary.histogram('embedding_net_output', self.dout)
         return self.dout
 
 
@@ -79,6 +82,9 @@ class DescrptSeAR ():
         force = f_a + f_r
         virial = v_a + v_r
         atom_virial = av_a + av_r
+        tf.summary.histogram('force', force)
+        tf.summary.histogram('virial', virial)
+        tf.summary.histogram('atom_virial', atom_virial)
         return force, virial, atom_virial
         
 
