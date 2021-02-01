@@ -7,7 +7,6 @@
 #include "tensorflow/core/framework/shape_inference.h"
 
 using namespace tensorflow;  // NOLINT(build/namespaces)
-#define MAGIC_NUMBER 256
 
 #ifdef HIGH_PREC
     typedef double VALUETYPE ;
@@ -72,7 +71,6 @@ void DescrptSeRLauncher(const VALUETYPE* coord,
                             const int* jlist,
                             int* array_int,
                             unsigned long long* array_longlong,
-                            compute_t* array_double,
                             const VALUETYPE* avg,
                             const VALUETYPE* std,
                             VALUETYPE* descript,
@@ -87,7 +85,8 @@ void DescrptSeRLauncher(const VALUETYPE* coord,
                             const float& rcut_smth,
                             const int& ndescrpt,
                             const std::vector<int>& sec,
-                            const bool& fill_nei_a
+                            const bool& fill_nei_a,
+                            const int& magic_number
 );
 
 class DescrptSeROp : public OpKernel {
@@ -103,8 +102,8 @@ public:
         ndescrpt = sec.back() * 1;
         nnei = sec.back();
         fill_nei_a = true;
-        // count_nei_idx_overflow = 0;
-        // std::cout << "I'm in descrpt_se_r_gpu.cc" << std::endl;
+        max_nbor_size = 0;
+        magic_number = 1024;
     }
 
     void Compute(OpKernelContext* context) override {
@@ -181,14 +180,27 @@ public:
 	    					     nlist_shape,
 	    					     &nlist_tensor));
         
-	    int * ilist = NULL, *jrange = NULL, *jlist = NULL;
-        int *array_int = NULL; unsigned long long *array_longlong = NULL; compute_t *array_double = NULL;
+        cudaErrcheck(cudaMemcpy(&(max_nbor_size), 2 + mesh_tensor.flat<int>().data(), sizeof(int), cudaMemcpyDeviceToHost));
+        magic_number = get_magic_number(max_nbor_size);
+        OP_REQUIRES (context, (max_nbor_size <= 4096),	                errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_nbor_size) + " is larger than 4096, which currently is not supported by deepmd-kit."));
+
+        // allocate temp memory, temp memory must not be used after this operation!
+        Tensor int_temp;
+        TensorShape int_shape;
+        int_shape.AddDim(sec.size() + nloc * sec.size() + nloc);
+        OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, int_shape, &int_temp));
+
+        Tensor uint64_temp;
+        TensorShape uint64_shape;
+        uint64_shape.AddDim(nloc * magic_number * 2);
+        OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape, &uint64_temp));
+
+	    int * ilist = NULL, * jrange = NULL, * jlist = NULL;
+        int * array_int = int_temp.flat<int>().data(); 
+        unsigned long long * array_longlong = uint64_temp.flat<unsigned long long>().data(); 
         cudaErrcheck(cudaMemcpy(&(ilist), 4 + mesh_tensor.flat<int>().data(), sizeof(int *), cudaMemcpyDeviceToHost));
         cudaErrcheck(cudaMemcpy(&(jrange), 8 + mesh_tensor.flat<int>().data(), sizeof(int *), cudaMemcpyDeviceToHost));
         cudaErrcheck(cudaMemcpy(&(jlist), 12 + mesh_tensor.flat<int>().data(), sizeof(int *), cudaMemcpyDeviceToHost));
-        cudaErrcheck(cudaMemcpy(&(array_int), 16 + mesh_tensor.flat<int>().data(), sizeof(int *), cudaMemcpyDeviceToHost));
-        cudaErrcheck(cudaMemcpy(&(array_longlong), 20 + mesh_tensor.flat<int>().data(), sizeof(unsigned long long *), cudaMemcpyDeviceToHost));
-        cudaErrcheck(cudaMemcpy(&(array_double), 24 + mesh_tensor.flat<int>().data(), sizeof(compute_t *), cudaMemcpyDeviceToHost));
 
         // cudaErrcheck(cudaMemcpy(jlist, host_jlist, sizeof(int) * nloc * MAGIC_NUMBER, cudaMemcpyHostToDevice));
         // Launch computation
@@ -200,7 +212,6 @@ public:
                                 jlist,
                                 array_int,
                                 array_longlong,
-                                array_double,
                                 avg_tensor.matrix<VALUETYPE>().data(),
                                 std_tensor.matrix<VALUETYPE>().data(),
                                 descrpt_tensor->matrix<VALUETYPE>().data() + II * (nloc * ndescrpt),
@@ -215,7 +226,8 @@ public:
                                 rcut_smth,
                                 ndescrpt,
                                 sec,
-                                fill_nei_a
+                                fill_nei_a,
+                                magic_number
             );
         }
         // std::cout << "done" << std::endl;
@@ -233,6 +245,7 @@ private:
     std::vector<int> sec_null;
     int nnei, ndescrpt, nloc, nall;
     bool fill_nei_a;
+    int max_nbor_size, magic_number;
 
     //private func
     void cum_sum (std::vector<int> & sec, const std::vector<int32> & n_sel) const {
@@ -240,6 +253,17 @@ private:
         sec[0] = 0;
         for (int ii = 1; ii < sec.size(); ++ii) {
             sec[ii] = sec[ii-1] + n_sel[ii-1];
+        }
+    }
+    int get_magic_number(int max_nbor_size) {
+        if (max_nbor_size <= 1024) {
+            return 1024;
+        }
+        else if (max_nbor_size <= 2048) {
+            return 2048;
+        }
+        else {
+            return 4096;
         }
     }
 };
