@@ -207,16 +207,16 @@ private:
     float rcut_a;
     float rcut_r;
     float rcut_r_smth;
-    std::std::vector<int32> sel_r;
-    std::std::vector<int32> sel_a;
-    std::std::vector<int> sec_a;
-    std::std::vector<int> sec_r;
+    std::vector<int32> sel_r;
+    std::vector<int32> sel_a;
+    std::vector<int> sec_a;
+    std::vector<int> sec_r;
     int ndescrpt, ndescrpt_a, ndescrpt_r;
     int nnei, nnei_a, nnei_r, nloc, nall, max_nbor_size;
     bool fill_nei_a;
 
     //private func
-    void cum_sum (std::std::vector<int> & sec, const std::std::vector<int32> & n_sel) const {
+    void cum_sum (std::vector<int> & sec, const std::vector<int32> & n_sel) const {
         sec.resize (n_sel.size() + 1);
         sec[0] = 0;
         for (int ii = 1; ii < sec.size(); ++ii) {
