@@ -19,8 +19,6 @@ limitations under the License.
 #include <cuda_runtime.h>
 #include <fstream>
 
-#define MAGIC_NUMBER 256
-
 #ifdef HIGH_PREC
     typedef double  VALUETYPE;
 #else
@@ -119,11 +117,12 @@ __global__ void format_nlist_fill_a_se_r(const VALUETYPE * coord,
                             const int  * jlist,
                             const float rcut,
                             int_64 * key,
-                            int * i_idx)
+                            int * i_idx,
+                            const int MAGIC_NUMBER)
 {   
     // <<<nloc, MAGIC_NUMBER>>>
-    const unsigned int idx = blockIdx.x;
-    const unsigned int idy = threadIdx.x;
+    const unsigned int idx = blockIdx.y;
+    const unsigned int idy = blockIdx.x * blockDim.x + threadIdx.x;
     
     const int nsize = jrange[i_idx[idx] + 1] - jrange[i_idx[idx]];
     if (idy >= nsize) {
@@ -146,6 +145,7 @@ __global__ void format_nlist_fill_a_se_r(const VALUETYPE * coord,
     }
 }
 
+
     // bubble_sort(sel_nei, num_nei);
 __global__ void format_nlist_fill_b_se_r(int * nlist,
                             const int nlist_size,
@@ -155,7 +155,8 @@ __global__ void format_nlist_fill_b_se_r(int * nlist,
                             int_64 * key,
                             const int * sec,
                             const int sec_a_size,
-                            int * nei_iter_dev)
+                            int * nei_iter_dev,
+                            const int MAGIC_NUMBER)
 { 
 
     const unsigned int idy = blockIdx.x * blockDim.x + threadIdx.x;
@@ -195,7 +196,6 @@ __global__ void compute_descriptor_se_r (VALUETYPE* descript,
                             const VALUETYPE* coord,
                             const VALUETYPE rmin,
                             const VALUETYPE rmax,
-                            compute_t* sel_diff_dev,
                             const int sec_size)
 {   
     // <<<nloc, sec.back()>>>
@@ -209,16 +209,14 @@ __global__ void compute_descriptor_se_r (VALUETYPE* descript,
     VALUETYPE * row_descript = descript + idx * ndescrpt;
     VALUETYPE * row_descript_deriv = descript_deriv + idx * descript_deriv_size;
     VALUETYPE * row_rij = rij + idx * rij_size;
-    compute_t * sel_diff = sel_diff_dev + idx * nlist_size * 3;
     int * row_nlist = nlist + idx * nlist_size;
     
     if (row_nlist[idy] >= 0) {
         const int & j_idx = row_nlist[idy];
         for (int kk = 0; kk < 3; kk++) {
-            sel_diff[idy * 3 + kk] = coord[j_idx * 3 + kk] - coord[idx * 3 + kk];
-            row_rij[idy * 3 + kk] = sel_diff[idy * 3 + kk];
+            row_rij[idy * 3 + kk] = coord[j_idx * 3 + kk] - coord[idx * 3 + kk];
         }
-        const compute_t * rr = &sel_diff[idy * 3 + 0];
+        const compute_t * rr = &row_rij[idy * 3 + 0];
         compute_t nr2 = dev_dot(rr, rr);
         compute_t inr = 1./sqrt(nr2);
         compute_t nr = nr2 * inr;
@@ -244,6 +242,102 @@ __global__ void compute_descriptor_se_r (VALUETYPE* descript,
     }
 }
 
+void format_nbor_list_1024_se_r (
+    const VALUETYPE* coord,
+    const int* type,
+    const int* jrange,
+    const int* jlist,
+    const int& nloc,       
+    const float& rcut_r, 
+    int * i_idx, 
+    int_64 * key
+) 
+{   
+    const int LEN = 256;
+    const int MAGIC_NUMBER = 1024;
+    const int nblock = (MAGIC_NUMBER + LEN - 1) / LEN;
+    dim3 block_grid(nblock, nloc);
+    format_nlist_fill_a_se_r
+    <<<block_grid, LEN>>> (
+        coord,
+        type,
+        jrange,
+        jlist,
+        rcut_r,
+        key,
+        i_idx,
+        MAGIC_NUMBER
+    );
+    const int ITEMS_PER_THREAD = 8;
+    const int BLOCK_THREADS = MAGIC_NUMBER / ITEMS_PER_THREAD;
+    // BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
+    BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAGIC_NUMBER);
+}
+
+void format_nbor_list_2048_se_r (
+    const VALUETYPE* coord,
+    const int* type,
+    const int* jrange,
+    const int* jlist,
+    const int& nloc,       
+    const float& rcut_r, 
+    int * i_idx, 
+    int_64 * key
+) 
+{   
+    const int LEN = 256;
+    const int MAGIC_NUMBER = 2048;
+    const int nblock = (MAGIC_NUMBER + LEN - 1) / LEN;
+    dim3 block_grid(nblock, nloc);
+    format_nlist_fill_a_se_r
+    <<<block_grid, LEN>>> (
+        coord,
+        type,
+        jrange,
+        jlist,
+        rcut_r,
+        key,
+        i_idx,
+        MAGIC_NUMBER
+    );
+    const int ITEMS_PER_THREAD = 8;
+    const int BLOCK_THREADS = MAGIC_NUMBER / ITEMS_PER_THREAD;
+    // BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
+    BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAGIC_NUMBER);
+}
+
+void format_nbor_list_4096_se_r (
+    const VALUETYPE* coord,
+    const int* type,
+    const int* jrange,
+    const int* jlist,
+    const int& nloc,       
+    const float& rcut_r, 
+    int * i_idx, 
+    int_64 * key
+) 
+{   
+    const int LEN = 256;
+    const int MAGIC_NUMBER = 4096;
+    const int nblock = (MAGIC_NUMBER + LEN - 1) / LEN;
+    dim3 block_grid(nblock, nloc);
+    format_nlist_fill_a_se_r
+    <<<block_grid, LEN>>> (
+        coord,
+        type,
+        jrange,
+        jlist,
+        rcut_r,
+        key,
+        i_idx,
+        MAGIC_NUMBER
+    );
+    const int ITEMS_PER_THREAD = 16;
+    const int BLOCK_THREADS = MAGIC_NUMBER / ITEMS_PER_THREAD;
+    // BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
+    BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAGIC_NUMBER);
+}
+
 void DescrptSeRLauncher(const VALUETYPE* coord,
                         const int* type,
                         const int* ilist,
@@ -251,7 +345,6 @@ void DescrptSeRLauncher(const VALUETYPE* coord,
                         const int* jlist,
                         int* array_int,
                         unsigned long long* array_longlong,
-                        compute_t* array_double,
                         const VALUETYPE* avg,
                         const VALUETYPE* std,
                         VALUETYPE* descript,
@@ -266,7 +359,8 @@ void DescrptSeRLauncher(const VALUETYPE* coord,
                         const float& rcut_smth,
                         const int& ndescrpt,
                         const std::vector<int>& sec,
-                        const bool& fill_nei_a
+                        const bool& fill_nei_a,
+                        const int& MAGIC_NUMBER
 )
 {   
     const int LEN = 256;
@@ -275,7 +369,6 @@ void DescrptSeRLauncher(const VALUETYPE* coord,
     int * nei_iter = array_int + sec.size(); // = new int[sec_a_size];
     int * i_idx = array_int + sec.size() + nloc * sec.size();
     int_64 * key = array_longlong;
-    compute_t * sel_diff = array_double;    // = new VALUETYPE *[nlist_size]; nnei
     
     cudaError_t res = cudaSuccess;
     res = cudaMemcpy(sec_dev, &sec[0], sizeof(int) * sec.size(), cudaMemcpyHostToDevice); cudaErrcheck(res);    
@@ -288,15 +381,40 @@ void DescrptSeRLauncher(const VALUETYPE* coord,
         // cudaProfilerStart();
         get_i_idx_se_r<<<nblock, LEN>>> (nloc, ilist, i_idx);
 
-        format_nlist_fill_a_se_r<<<nloc, MAGIC_NUMBER>>> (
-                            coord,
-                            type,
-                            jrange,
-                            jlist,
-                            rcut,
-                            key,
-                            i_idx
-        );
+        if (MAGIC_NUMBER <= 1024) {
+            format_nbor_list_1024_se_r (
+                coord,
+                type,
+                jrange,
+                jlist,
+                nloc,       
+                rcut, 
+                i_idx, 
+                key
+            ); 
+        } else if (MAGIC_NUMBER <= 2048) {
+            format_nbor_list_2048_se_r (
+                coord,
+                type,
+                jrange,
+                jlist,
+                nloc,       
+                rcut, 
+                i_idx, 
+                key
+            ); 
+        } else if (MAGIC_NUMBER <= 4096) {
+            format_nbor_list_4096_se_r (
+                coord,
+                type,
+                jrange,
+                jlist,
+                nloc,       
+                rcut, 
+                i_idx, 
+                key
+            ); 
+        } 
         const int ITEMS_PER_THREAD = 4;
         const int BLOCK_THREADS = 64;
         BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAGIC_NUMBER);
@@ -309,7 +427,8 @@ void DescrptSeRLauncher(const VALUETYPE* coord,
                             key,
                             sec_dev,
                             sec.size(),
-                            nei_iter
+                            nei_iter,
+                            MAGIC_NUMBER
         );
     }
     const int nblock_ = (sec.back() + LEN -1) / LEN;
@@ -329,7 +448,6 @@ void DescrptSeRLauncher(const VALUETYPE* coord,
                             coord,
                             rcut_smth,
                             rcut,
-                            sel_diff,
                             sec.back()
     );
 }  

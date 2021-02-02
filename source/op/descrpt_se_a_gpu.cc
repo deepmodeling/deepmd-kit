@@ -67,24 +67,6 @@ REGISTER_OP("DescrptSeA")
     .Output("nlist: int32");
 #endif
 
-int get_magic_number(int const nnei) {
-    if (nnei <= 256) {
-        return 256;
-    }
-    else if (nnei <= 512) {
-        return 512;
-    }
-    else if (nnei <= 1024) {
-        return 1024;
-    }
-    else if (nnei <= 2048) {
-        return 2048;
-    }
-    else if (nnei <= 4096) {
-        return 4096;
-    }
-}
-
 void DescrptSeALauncher(const VALUETYPE* coord,
                             const int* type,
                             const int* ilist,
@@ -128,7 +110,8 @@ public:
         nnei_r = sec_r.back();
         nnei = nnei_a + nnei_r;
         fill_nei_a = (rcut_a < 0);
-        magic_number = get_magic_number(nnei);
+        magic_number = 1024;
+        max_nbor_size = 0;
     }
 
     void Compute(OpKernelContext* context) override {
@@ -175,7 +158,6 @@ public:
         
         OP_REQUIRES (context, (ntypes == int(sel_a.size())),	errors::InvalidArgument ("number of types should match the length of sel array"));
         OP_REQUIRES (context, (ntypes == int(sel_r.size())),	errors::InvalidArgument ("number of types should match the length of sel array"));
-        OP_REQUIRES (context, (nnei <= 4096),	                errors::InvalidArgument ("Assert failed, max neighbor size of atom(nnei) " + std::to_string(nnei) + " is larger than 4096, which currently is not supported by deepmd-kit."));
 
         // Create output tensors
         TensorShape descrpt_shape ;
@@ -209,6 +191,10 @@ public:
 	    					     nlist_shape,
 	    					     &nlist_tensor));
         
+        cudaErrcheck(cudaMemcpy(&(max_nbor_size), 2 + mesh_tensor.flat<int>().data(), sizeof(int), cudaMemcpyDeviceToHost));
+        magic_number = get_magic_number(max_nbor_size);
+        OP_REQUIRES (context, (max_nbor_size <= 4096),	                errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_nbor_size) + " is larger than 4096, which currently is not supported by deepmd-kit."));
+
         // allocate temp memory, temp memory must not be used after this operation!
         Tensor int_temp;
         TensorShape int_shape;
@@ -266,7 +252,7 @@ private:
     std::vector<int> sec_a;
     std::vector<int> sec_r;
     int ndescrpt, ndescrpt_a, ndescrpt_r;
-    int nnei, nnei_a, nnei_r, nloc, nall, magic_number;
+    int nnei, nnei_a, nnei_r, nloc, nall, magic_number, max_nbor_size;
     bool fill_nei_a;
 
     //private func
@@ -275,6 +261,17 @@ private:
         sec[0] = 0;
         for (int ii = 1; ii < sec.size(); ++ii) {
             sec[ii] = sec[ii-1] + n_sel[ii-1];
+        }
+    }
+    int get_magic_number(int max_nbor_size) {
+        if (max_nbor_size <= 1024) {
+            return 1024;
+        }
+        else if (max_nbor_size <= 2048) {
+            return 2048;
+        }
+        else {
+            return 4096;
         }
     }
 };

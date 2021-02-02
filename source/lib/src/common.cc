@@ -482,7 +482,8 @@ session_input_tensors (
     const vector<VALUETYPE>	            &   fparam_,
     const vector<VALUETYPE>	            &   aparam_,
     const NNPAtomMap<VALUETYPE>         &   nnpmap,
-    const int			                      &   nghost)
+    const int			                      &   nghost,
+    const int			                      &   max_nbor_size)
 {
     assert (dbox.size() == 9);
 
@@ -569,6 +570,7 @@ session_input_tensors (
     const int & stride = mesh(0);
     // mesh (1) = dlist.ilist.size();
     mesh (1) = nloc;
+    mesh (2) = max_nbor_size;
     assert (mesh(1) == nloc);
     assert (stride <= 4);
     memcpy (&mesh(4), &(ilist), sizeof(int *));

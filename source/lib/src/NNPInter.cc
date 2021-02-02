@@ -302,7 +302,11 @@ void NNPInter::update_nbor(const InternalNeighborList & nlist, const int nloc) {
         cudaErrcheck(cudaMalloc((void**)&jlist, sizeof(int) * nlist.jlist.size()));
         jlist_size = nlist.jlist.size();
     }
-    
+    max_nbor_size = 0;
+    for (int ii = 0; ii < nlist.jrange.size() - 1; ii++) {
+        max_nbor_size = (nlist.jrange[ii + 1] - nlist.jrange[ii]) > max_nbor_size ? (nlist.jrange[ii + 1] - nlist.jrange[ii]) : max_nbor_size;
+    }
+
     cudaErrcheck(cudaMemcpy(ilist, &nlist.ilist[0], sizeof(int) * nlist.ilist.size(), cudaMemcpyHostToDevice));
     cudaErrcheck(cudaMemcpy(jrange, &nlist.jrange[0], sizeof(int) * nlist.jrange.size(), cudaMemcpyHostToDevice));
     cudaErrcheck(cudaMemcpy(jlist, &nlist.jlist[0], sizeof(int) * nlist.jlist.size(), cudaMemcpyHostToDevice));
@@ -349,6 +353,7 @@ init (const string & model, const int & gpu_rank)
   init_nbor = false;
   ilist = NULL; jrange = NULL; jlist = NULL;
   ilist_size = 0; jrange_size = 0; jlist_size = 0;
+  max_nbor_size = 0;
 }
 #else
 void
@@ -380,6 +385,7 @@ init (const string & model, const int & gpu_rank)
   init_nbor = false;
   ilist = NULL; jrange = NULL; jlist = NULL;
   ilist_size = 0; jrange_size = 0; jlist_size = 0;
+  max_nbor_size = 0;
 }
 #endif
 
@@ -561,7 +567,7 @@ compute_inner (ENERGYTYPE &			dener,
     }
 
     #ifdef USE_CUDA_TOOLKIT
-        int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, fparam, aparam, nnpmap, nghost);
+        int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, fparam, aparam, nnpmap, nghost, max_nbor_size);
     #else
         int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
     #endif
@@ -628,7 +634,7 @@ compute (ENERGYTYPE &			dener,
     }
 
     #ifdef USE_CUDA_TOOLKIT
-        int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, fparam, aparam, nnpmap, nghost);
+        int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, fparam, aparam, nnpmap, nghost, max_nbor_size);
     #else
         int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
     #endif
@@ -721,6 +727,7 @@ init (const vector<string> & models, const int & gpu_rank)
   init_nbor = false;
   ilist = NULL; jrange = NULL; jlist = NULL;
   ilist_size = 0; jrange_size = 0; jlist_size = 0;
+  max_nbor_size = 0;
 }
 #else
 void
@@ -754,6 +761,7 @@ init (const vector<string> & models, const int & gpu_rank)
   init_nbor = false;
   ilist = NULL; jrange = NULL; jlist = NULL;
   ilist_size = 0; jrange_size = 0; jlist_size = 0;
+  max_nbor_size = 0;
 }
 #endif
 
@@ -849,6 +857,10 @@ update_nbor(const InternalNeighborList & nlist, const int nloc)
         cudaErrcheck(cudaFree(jlist));
         cudaErrcheck(cudaMalloc((void**)&jlist, sizeof(int) * nlist.jlist.size()));
         jlist_size = nlist.jlist.size();
+    }
+    max_nbor_size = 0;
+    for (int ii = 0; ii < nlist.jrange.size() - 1; ii++) {
+        max_nbor_size = (nlist.jrange[ii + 1] - nlist.jrange[ii]) > max_nbor_size ? (nlist.jrange[ii + 1] - nlist.jrange[ii]) : max_nbor_size;
     }
 
     cudaErrcheck(cudaMemcpy(ilist, &nlist.ilist[0], sizeof(int) * nlist.ilist.size(), cudaMemcpyHostToDevice));
@@ -952,7 +964,7 @@ compute (vector<ENERGYTYPE> &		all_energy,
 
     }
     #ifdef USE_CUDA_TOOLKIT
-        int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, fparam, aparam, nnpmap, nghost);
+        int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, fparam, aparam, nnpmap, nghost, max_nbor_size);
     #else
         int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
     #endif
@@ -1002,7 +1014,7 @@ compute (vector<ENERGYTYPE> &			all_energy,
         
     }
     #ifdef USE_CUDA_TOOLKIT
-        int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, fparam, aparam, nnpmap, nghost);
+        int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, ilist, jrange, jlist, fparam, aparam, nnpmap, nghost, max_nbor_size);
     #else
         int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost);
     #endif

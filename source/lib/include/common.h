@@ -147,7 +147,8 @@ session_input_tensors (vector<std::pair<string, Tensor>>& input_tensors,
 		       const vector<VALUETYPE>		& fparam_,
 		       const vector<VALUETYPE>	        & aparam_,
 		       const NNPAtomMap<VALUETYPE>      & nnpmap,
-		       const int			& nghost);
+		       const int			& nghost,
+			   const int 			& max_nbor_size);
 
 
 template<typename VT>

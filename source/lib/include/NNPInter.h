@@ -95,6 +95,7 @@ private:
   NNPAtomMap<VALUETYPE> nnpmap;
   int *ilist, *jrange, *jlist;
   int ilist_size, jrange_size, jlist_size;
+  int max_nbor_size;
 
   // function used for neighbor list copy
   vector<int> get_sel_a() const;
@@ -191,6 +192,7 @@ private:
   NNPAtomMap<VALUETYPE> nnpmap;
   int *ilist, *jrange, *jlist;
   int ilist_size, jrange_size, jlist_size;
+  int max_nbor_size;
 
   // function used for nborlist copy
   vector<vector<int> > get_sel() const;

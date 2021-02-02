@@ -259,70 +259,6 @@ __global__ void compute_descriptor_se_a (VALUETYPE* descript,
     }
 }
 
-void format_nbor_list_256 (
-    const VALUETYPE* coord,
-    const int* type,
-    const int* jrange,
-    const int* jlist,
-    const int& nloc,       
-    const float& rcut_r, 
-    int * i_idx, 
-    int_64 * key
-) 
-{   
-    const int LEN = 256;
-    const int MAGIC_NUMBER = 256;
-    const int nblock = (MAGIC_NUMBER + LEN - 1) / LEN;
-    dim3 block_grid(nblock, nloc);
-    format_nlist_fill_a_se_a
-    <<<block_grid, LEN>>> (
-        coord,
-        type,
-        jrange,
-        jlist,
-        rcut_r,
-        key,
-        i_idx,
-        MAGIC_NUMBER
-    );
-    const int ITEMS_PER_THREAD = 4;
-    const int BLOCK_THREADS = MAGIC_NUMBER / ITEMS_PER_THREAD;
-    // BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
-    BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAGIC_NUMBER);
-}
-
-void format_nbor_list_512 (
-    const VALUETYPE* coord,
-    const int* type,
-    const int* jrange,
-    const int* jlist,
-    const int& nloc,       
-    const float& rcut_r, 
-    int * i_idx, 
-    int_64 * key
-) 
-{   
-    const int LEN = 256;
-    const int MAGIC_NUMBER = 512;
-    const int nblock = (MAGIC_NUMBER + LEN - 1) / LEN;
-    dim3 block_grid(nblock, nloc);
-    format_nlist_fill_a_se_a
-    <<<block_grid, LEN>>> (
-        coord,
-        type,
-        jrange,
-        jlist,
-        rcut_r,
-        key,
-        i_idx,
-        MAGIC_NUMBER
-    );
-    const int ITEMS_PER_THREAD = 4;
-    const int BLOCK_THREADS = MAGIC_NUMBER / ITEMS_PER_THREAD;
-    // BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
-    BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAGIC_NUMBER);
-}
-
 void format_nbor_list_1024 (
     const VALUETYPE* coord,
     const int* type,
@@ -461,29 +397,7 @@ void DescrptSeALauncher(const VALUETYPE* coord,
         // cudaProfilerStart();
         get_i_idx_se_a<<<nblock, LEN>>> (nloc, ilist, i_idx);
 
-        if (nnei <= 256) {
-            format_nbor_list_256 (
-                coord,
-                type,
-                jrange,
-                jlist,
-                nloc,       
-                rcut_r, 
-                i_idx, 
-                key
-            ); 
-        } else if (nnei <= 512) {
-            format_nbor_list_512 (
-                coord,
-                type,
-                jrange,
-                jlist,
-                nloc,       
-                rcut_r, 
-                i_idx, 
-                key
-            ); 
-        } else if (nnei <= 1024) {
+        if (MAGIC_NUMBER <= 1024) {
             format_nbor_list_1024 (
                 coord,
                 type,
@@ -494,7 +408,7 @@ void DescrptSeALauncher(const VALUETYPE* coord,
                 i_idx, 
                 key
             ); 
-        } else if (nnei <= 2048) {
+        } else if (MAGIC_NUMBER <= 2048) {
             format_nbor_list_2048 (
                 coord,
                 type,
@@ -505,7 +419,7 @@ void DescrptSeALauncher(const VALUETYPE* coord,
                 i_idx, 
                 key
             ); 
-        } else if (nnei <= 4096) {
+        } else if (MAGIC_NUMBER <= 4096) {
             format_nbor_list_4096 (
                 coord,
                 type,
