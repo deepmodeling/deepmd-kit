@@ -7,9 +7,9 @@ DeepTensor()
 }
 
 DeepTensor::
-DeepTensor(const string & model, 
+DeepTensor(const std::string & model, 
 	   const int & gpu_rank, 
-	   const string &name_scope_)
+	   const std::string &name_scope_)
     : inited (false), name_scope(name_scope_)
 {
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
@@ -18,9 +18,9 @@ DeepTensor(const string & model,
 
 void
 DeepTensor::
-init (const string & model, 
+init (const std::string & model, 
       const int & gpu_rank, 
-      const string &name_scope_)
+      const std::string &name_scope_)
 {
   assert (!inited);
   name_scope = name_scope_;
@@ -42,7 +42,7 @@ init (const string & model,
 template<class VT>
 VT
 DeepTensor::
-get_scalar (const string & name) const
+get_scalar (const std::string & name) const
 {
   return session_get_scalar<VT>(session, name, name_scope);
 }
@@ -50,7 +50,7 @@ get_scalar (const string & name) const
 template<class VT>
 void
 DeepTensor::
-get_vector (std::vector<VT> & vec, const string & name) const
+get_vector (std::vector<VT> & vec, const std::string & name) const
 {
   session_get_vector<VT>(vec, session, name, name_scope);
 }
@@ -59,7 +59,7 @@ void
 DeepTensor::
 run_model (std::vector<VALUETYPE> &	d_tensor_,
 	   Session *			session, 
-	   const std::vector<std::pair<string, Tensor>> & input_tensors,
+	   const std::vector<std::pair<std::string, Tensor>> & input_tensors,
 	   const NNPAtomMap<VALUETYPE> &nnpmap, 
 	   const int			nghost)
 {
@@ -152,7 +152,7 @@ compute_inner (std::vector<VALUETYPE> &		dtensor_,
   NNPAtomMap<VALUETYPE> nnpmap (datype_.begin(), datype_.begin() + nloc);
   assert (nloc == nnpmap.get_type().size());
 
-  std::vector<std::pair<string, Tensor>> input_tensors;
+  std::vector<std::pair<std::string, Tensor>> input_tensors;
   int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), nnpmap, nghost, name_scope);
   assert (ret == nloc);
 
@@ -176,7 +176,7 @@ compute_inner (std::vector<VALUETYPE> &		dtensor_,
   InternalNeighborList nlist(nlist_);
   shuffle_nlist (nlist, nnpmap);
 
-  std::vector<std::pair<string, Tensor>> input_tensors;
+  std::vector<std::pair<std::string, Tensor>> input_tensors;
   int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), nnpmap, nghost, name_scope);
   assert (nloc == ret);
 

@@ -7,9 +7,9 @@ DataModifier()
 }
 
 DataModifier::
-DataModifier(const string & model, 
+DataModifier(const std::string & model, 
 	     const int & gpu_rank, 
-	     const string &name_scope_)
+	     const std::string &name_scope_)
     : inited (false), name_scope(name_scope_)
 {
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
@@ -18,9 +18,9 @@ DataModifier(const string & model,
 
 void
 DataModifier::
-init (const string & model, 
+init (const std::string & model, 
       const int & gpu_rank, 
-      const string &name_scope_)
+      const std::string &name_scope_)
 {  
   assert (!inited);
   name_scope = name_scope_;
@@ -46,7 +46,7 @@ init (const string & model,
 template<class VT>
 VT
 DataModifier::
-get_scalar (const string & name) const
+get_scalar (const std::string & name) const
 {
   return session_get_scalar<VT>(session, name, name_scope);
 }
@@ -54,7 +54,7 @@ get_scalar (const string & name) const
 template<class VT>
 void
 DataModifier::
-get_vector (std::vector<VT> & vec, const string & name) const
+get_vector (std::vector<VT> & vec, const std::string & name) const
 {
   session_get_vector<VT>(vec, session, name, name_scope);
 }
@@ -64,7 +64,7 @@ DataModifier::
 run_model (std::vector<VALUETYPE> &		dforce,
 	   std::vector<VALUETYPE> &		dvirial,
 	   Session *				session, 
-	   const std::vector<std::pair<string, Tensor>> & input_tensors,
+	   const std::vector<std::pair<std::string, Tensor>> & input_tensors,
 	   const NNPAtomMap<VALUETYPE> &	nnpmap, 
 	   const int				nghost)
 {
@@ -163,7 +163,7 @@ compute (std::vector<VALUETYPE> &		dfcorr_,
   InternalNeighborList nlist(nlist_);
   shuffle_nlist (nlist, nnpmap);
   // make input tensors
-  std::vector<std::pair<string, Tensor>> input_tensors;
+  std::vector<std::pair<std::string, Tensor>> input_tensors;
   int ret = session_input_tensors (input_tensors, dcoord_real, ntypes, datype_real, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), nnpmap, nghost_real, name_scope);
   assert (nloc_real == ret);
   // make bond idx map

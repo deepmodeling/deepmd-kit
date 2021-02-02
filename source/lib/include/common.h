@@ -21,7 +21,6 @@ typedef std::string STRINGTYPE;
 
 #include "NNPAtomMap.h"
 #include <vector>
-#include <string>
 #include <iostream>
 #include "version.h"
 
@@ -113,18 +112,18 @@ get_env_nthreads(int & num_intra_nthreads,
 void
 checkStatus(const tensorflow::Status& status);
 
-string name_prefix(const string & name_scope);
+std::string name_prefix(const std::string & name_scope);
 
 template<typename VT>
 VT
-session_get_scalar(Session* session, const string name, const string scope = "");
+session_get_scalar(Session* session, const std::string name, const std::string scope = "");
 
 template<typename VT>
 void
-session_get_vector(std::vector<VT> & o_vec, Session* session, const string name_, const string scope = "");
+session_get_vector(std::vector<VT> & o_vec, Session* session, const std::string name_, const std::string scope = "");
 
 int
-session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
+session_input_tensors (std::vector<std::pair<std::string, Tensor>> & input_tensors,
 		       const std::vector<VALUETYPE> &	dcoord_,
 		       const int &			ntypes,
 		       const std::vector<int> &		datype_,
@@ -134,10 +133,10 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 		       const std::vector<VALUETYPE> &	aparam_,
 		       const NNPAtomMap<VALUETYPE>&	nnpmap,
 		       const int			nghost = 0,
-		       const string			scope = "");
+		       const std::string			scope = "");
 
 int
-session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
+session_input_tensors (std::vector<std::pair<std::string, Tensor>> & input_tensors,
 		       const std::vector<VALUETYPE> &	dcoord_,
 		       const int &			ntypes,
 		       const std::vector<int> &		datype_,
@@ -148,10 +147,10 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 		       const NNPAtomMap<VALUETYPE>&	nnpmap,
 		       const int			nghost,
 		       const int			ago,
-		       const string			scope = "");
+		       const std::string			scope = "");
 
 int
-session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
+session_input_tensors (std::vector<std::pair<std::string, Tensor>> & input_tensors,
 		       const std::vector<VALUETYPE> &	dcoord_,
 		       const int &			ntypes,
 		       const std::vector<int> &		datype_,
@@ -161,10 +160,10 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 		       const std::vector<VALUETYPE> &	aparam_,
 		       const NNPAtomMap<VALUETYPE>&	nnpmap,
 		       const int			nghost,
-		       const string			scope = "");
+		       const std::string			scope = "");
 
 int 
-session_input_tensors (std::vector<std::pair<string, Tensor>>& input_tensors,
+session_input_tensors (std::vector<std::pair<std::string, Tensor>>& input_tensors,
 		       const std::vector<VALUETYPE>          & dcoord_,
 		       const int                        & ntypes,
 		       const std::vector<int>                & atype_,
@@ -180,14 +179,14 @@ session_input_tensors (std::vector<std::pair<string, Tensor>>& input_tensors,
 
 template<typename VT>
 VT
-session_get_scalar(Session* session, const string name_, const string scope) 
+session_get_scalar(Session* session, const std::string name_, const std::string scope) 
 {
-  string name = name_;
+  std::string name = name_;
   if (scope != "") {
     name = scope + "/" + name;
   }
   std::vector<Tensor> output_tensors;
-  checkStatus (session->Run(std::vector<std::pair<string, Tensor>> ({}), 
+  checkStatus (session->Run(std::vector<std::pair<std::string, Tensor>> ({}), 
 			    {name.c_str()}, 
 			    {}, 
 			    &output_tensors));
@@ -198,14 +197,14 @@ session_get_scalar(Session* session, const string name_, const string scope)
 
 template<typename VT>
 void
-session_get_vector(std::vector<VT> & o_vec, Session* session, const string name_, const string scope) 
+session_get_vector(std::vector<VT> & o_vec, Session* session, const std::string name_, const std::string scope) 
 {
-  string name = name_;
+  std::string name = name_;
   if (scope != "") {
     name = scope + "/" + name;
   }
   std::vector<Tensor> output_tensors;
-  checkStatus (session->Run(std::vector<std::pair<string, Tensor>> ({}), 
+  checkStatus (session->Run(std::vector<std::pair<std::string, Tensor>> ({}), 
 			    {name.c_str()}, 
 			    {}, 
 			    &output_tensors));

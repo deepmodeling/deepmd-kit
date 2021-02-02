@@ -36,7 +36,7 @@ run_model (ENERGYTYPE &			dener,
 	   std::vector<VALUETYPE> &	dforce_,
 	   std::vector<VALUETYPE> &	dvirial,
 	   Session *			session, 
-	   const std::vector<std::pair<string, Tensor>> & input_tensors,
+	   const std::vector<std::pair<std::string, Tensor>> & input_tensors,
 	   const NNPAtomMap<VALUETYPE>&	nnpmap, 
 	   const int			nghost = 0)
 {
@@ -95,7 +95,7 @@ static void run_model (ENERGYTYPE   &		dener,
 		       std::vector<VALUETYPE>&	datom_energy_,
 		       std::vector<VALUETYPE>&	datom_virial_,
 		       Session*			session, 
-		       const std::vector<std::pair<string, Tensor>> & input_tensors,
+		       const std::vector<std::pair<std::string, Tensor>> & input_tensors,
 		       const NNPAtomMap<VALUETYPE> &   nnpmap, 
 		       const int&		nghost = 0)
 {
@@ -177,7 +177,7 @@ NNPInter ()
 }
 
 NNPInter::
-NNPInter (const string & model, const int & gpu_rank)
+NNPInter (const std::string & model, const int & gpu_rank)
     : inited (false), init_nbor (false)
 {
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
@@ -188,7 +188,7 @@ NNPInter::~NNPInter() {}
 
 void
 NNPInter::
-init (const string & model, const int & gpu_rank)
+init (const std::string & model, const int & gpu_rank)
 {
   assert (!inited);
   SessionOptions options;
@@ -227,7 +227,7 @@ init (const string & model, const int & gpu_rank)
 
 void 
 NNPInter::
-print_summary(const string &pre) const
+print_summary(const std::string &pre) const
 {
   std::cout << pre << "installed to:       " + global_install_prefix << std::endl;
   std::cout << pre << "source:             " + global_git_summ << std::endl;
@@ -244,7 +244,7 @@ print_summary(const string &pre) const
 template<class VT>
 VT
 NNPInter::
-get_scalar (const string & name) const
+get_scalar (const std::string & name) const
 {
   return session_get_scalar<VT>(session, name);
 }
@@ -326,7 +326,7 @@ compute (ENERGYTYPE &			dener,
   assert (nloc == nnpmap.get_type().size());
   validate_fparam_aparam(nloc, fparam, aparam);
 
-  std::vector<std::pair<string, Tensor>> input_tensors;
+  std::vector<std::pair<std::string, Tensor>> input_tensors;
   int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, aparam, nnpmap, nghost);
   assert (ret == nloc);
 
@@ -389,7 +389,7 @@ compute_inner (ENERGYTYPE &			dener,
   int nloc = nall - nghost;
 
     validate_fparam_aparam(nloc, fparam, aparam);
-    std::vector<std::pair<string, Tensor>> input_tensors;
+    std::vector<std::pair<std::string, Tensor>> input_tensors;
 
     // agp == 0 means that the LAMMPS nbor list has been updated
     if (ago == 0) {
@@ -421,7 +421,7 @@ compute (ENERGYTYPE &			dener,
   nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.end());
   validate_fparam_aparam(nnpmap.get_type().size(), fparam, aparam);
 
-  std::vector<std::pair<string, Tensor>> input_tensors;
+  std::vector<std::pair<std::string, Tensor>> input_tensors;
   int nloc = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, aparam, nnpmap);
 
   run_model (dener, dforce_, dvirial, datom_energy_, datom_virial_, session, input_tensors, nnpmap);
@@ -448,7 +448,7 @@ compute (ENERGYTYPE &			dener,
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
     validate_fparam_aparam(nloc, fparam, aparam);
-    std::vector<std::pair<string, Tensor>> input_tensors;
+    std::vector<std::pair<std::string, Tensor>> input_tensors;
 
     if (ago == 0) {
         nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
@@ -482,7 +482,7 @@ NNPInterModelDevi ()
 }
 
 NNPInterModelDevi::
-NNPInterModelDevi (const std::vector<string> & models, const int & gpu_rank)
+NNPInterModelDevi (const std::vector<std::string> & models, const int & gpu_rank)
     : inited (false), 
       init_nbor(false),
       numb_models (0)
@@ -495,7 +495,7 @@ NNPInterModelDevi::~NNPInterModelDevi() {}
 
 void
 NNPInterModelDevi::
-init (const std::vector<string> & models, const int & gpu_rank)
+init (const std::vector<std::string> & models, const int & gpu_rank)
 {
   assert (!inited);
   numb_models = models.size();
@@ -551,7 +551,7 @@ init (const std::vector<string> & models, const int & gpu_rank)
 template<class VT>
 VT
 NNPInterModelDevi::
-get_scalar(const string name) const 
+get_scalar(const std::string name) const 
 {
   VT myrcut = 0;
   for (unsigned ii = 0; ii < numb_models; ++ii){
@@ -643,7 +643,7 @@ compute (ENERGYTYPE &			dener,
   nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.end());
   validate_fparam_aparam(nnpmap.get_type().size(), fparam, aparam);
 
-  std::vector<std::pair<string, Tensor>> input_tensors;
+  std::vector<std::pair<std::string, Tensor>> input_tensors;
   int nloc = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, aparam, nnpmap);
 
   std::vector<ENERGYTYPE > all_energy (numb_models);
@@ -691,7 +691,7 @@ compute (std::vector<ENERGYTYPE> &		all_energy,
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
   validate_fparam_aparam(nloc, fparam, aparam);
-  std::vector<std::pair<string, Tensor>> input_tensors;
+  std::vector<std::pair<std::string, Tensor>> input_tensors;
 
     // agp == 0 means that the LAMMPS nbor list has been updated
     if (ago == 0) {
@@ -733,7 +733,7 @@ compute (std::vector<ENERGYTYPE> &		all_energy,
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
   validate_fparam_aparam(nloc, fparam, aparam);
-  std::vector<std::pair<string, Tensor>> input_tensors;
+  std::vector<std::pair<std::string, Tensor>> input_tensors;
 
     // agp == 0 means that the LAMMPS nbor list has been updated
     if (ago == 0) {
