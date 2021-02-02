@@ -196,15 +196,15 @@ public:
 private:
     float rcut;
     float rcut_smth;
-    std::std::vector<int32> sel;
-    std::std::vector<int32> sel_null;
-    std::std::vector<int> sec;
-    std::std::vector<int> sec_null;
+    std::vector<int32> sel;
+    std::vector<int32> sel_null;
+    std::vector<int> sec;
+    std::vector<int> sec_null;
     int nnei, ndescrpt, nloc, nall;
     bool fill_nei_a;
 
     //private func
-    void cum_sum (std::std::vector<int> & sec, const std::std::vector<int32> & n_sel) const {
+    void cum_sum (std::vector<int> & sec, const std::vector<int32> & n_sel) const {
         sec.resize (n_sel.size() + 1);
         sec[0] = 0;
         for (int ii = 1; ii < sec.size(); ++ii) {
