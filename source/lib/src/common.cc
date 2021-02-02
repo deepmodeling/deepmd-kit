@@ -162,23 +162,23 @@ get_env_nthreads(int & num_intra_nthreads,
   const char* env_intra_nthreads = std::getenv("TF_INTRA_OP_PARALLELISM_THREADS");
   const char* env_inter_nthreads = std::getenv("TF_INTER_OP_PARALLELISM_THREADS");
   if (env_intra_nthreads && 
-      string(env_intra_nthreads) != string("") && 
+      std::string(env_intra_nthreads) != std::string("") && 
       atoi(env_intra_nthreads) >= 0
       ) {
     num_intra_nthreads = atoi(env_intra_nthreads);
   }
   if (env_inter_nthreads && 
-      string(env_inter_nthreads) != string("") &&
+      std::string(env_inter_nthreads) != std::string("") &&
       atoi(env_inter_nthreads) >= 0
       ) {
     num_inter_nthreads = atoi(env_inter_nthreads);
   }
 }
 
-string
-name_prefix(const string & scope)
+std::string
+name_prefix(const std::string & scope)
 {
-  string prefix = "";
+  std::string prefix = "";
   if (scope != ""){
     prefix = scope + "/";
   }
@@ -186,7 +186,7 @@ name_prefix(const string & scope)
 }
 
 int
-session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
+session_input_tensors (std::vector<std::pair<std::string, Tensor>> & input_tensors,
 		       const std::vector<VALUETYPE> &	dcoord_,
 		       const int &			ntypes,
 		       const std::vector<int> &		datype_,
@@ -196,7 +196,7 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 		       const std::vector<VALUETYPE> &	aparam_,
 		       const NNPAtomMap<VALUETYPE>&	nnpmap,
 		       const int			nghost, 
-		       const string			scope)
+		       const std::string			scope)
 {
   bool b_ghost = (nghost != 0);
   
@@ -320,7 +320,7 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
   natoms (1) = nall;
   for (int ii = 0; ii < ntypes; ++ii) natoms(ii+2) = type_count[ii];
 
-  string prefix = "";
+  std::string prefix = "";
   if (scope != ""){
     prefix = scope + "/";
   }
@@ -341,7 +341,7 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 }
 
 int
-session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
+session_input_tensors (std::vector<std::pair<std::string, Tensor>> & input_tensors,
 		       const std::vector<VALUETYPE> &	dcoord_,
 		       const int &			ntypes,
 		       const std::vector<int> &		datype_,
@@ -352,7 +352,7 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 		       const NNPAtomMap<VALUETYPE>&	nnpmap,
 		       const int			nghost,
            const int      ago,
-		       const string			scope)
+		       const std::string			scope)
 {
   assert (dbox.size() == 9);
 
@@ -450,7 +450,7 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
   natoms (1) = nall;
   for (int ii = 0; ii < ntypes; ++ii) natoms(ii+2) = type_count[ii];
 
-  string prefix = "";
+  std::string prefix = "";
   if (scope != ""){
     prefix = scope + "/";
   }
@@ -471,7 +471,7 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 }
 
 int
-session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
+session_input_tensors (std::vector<std::pair<std::string, Tensor>> & input_tensors,
 		       const std::vector<VALUETYPE> &	dcoord_,
 		       const int &			ntypes,
 		       const std::vector<int> &		datype_,
@@ -481,7 +481,7 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 		       const std::vector<VALUETYPE> &	aparam_,
 		       const NNPAtomMap<VALUETYPE>&	nnpmap,
 		       const int			nghost,
-		       const string			scope)
+		       const std::string			scope)
 {
   assert (dbox.size() == 9);
 
@@ -578,7 +578,7 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
   natoms (1) = nall;
   for (int ii = 0; ii < ntypes; ++ii) natoms(ii+2) = type_count[ii];
 
-  string prefix = "";
+  std::string prefix = "";
   if (scope != ""){
     prefix = scope + "/";
   }
@@ -601,7 +601,7 @@ session_input_tensors (std::vector<std::pair<string, Tensor>> & input_tensors,
 
 int
 session_input_tensors (
-    std::vector<std::pair<string, Tensor>>   &  input_tensors,
+    std::vector<std::pair<std::string, Tensor>>   &  input_tensors,
     const std::vector<VALUETYPE>        & dcoord_,
     const int                           & ntypes,
     const std::vector<int>              & datype_,
