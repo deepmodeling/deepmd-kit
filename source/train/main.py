@@ -5,6 +5,7 @@ from .freeze import freeze
 from .config import config
 from .test import test
 from .transform import transform
+from .compress import compress
 from .doc import doc_train_input
 
 def main () :    
@@ -63,6 +64,17 @@ def main () :
     parser_tst.add_argument("-a", "--atomic-energy", action = 'store_true', 
                             help="Test the accuracy of atomic energy")
 
+    parser_compress = subparsers.add_parser('compress', help='compress a model')
+    parser_compress.add_argument('INPUT', 
+                            help='the input parameter file in json or yaml format')
+    parser_compress.add_argument('-i', "--input", default = "frozen_model.pb", type=str, 
+				            help = "the original model")
+    parser_compress.add_argument("-o","--output", default = "frozen_model_tab.pb", type=str, 
+				            help='the compressed model')
+    parser_compress.add_argument('-t', '--table-info', nargs='+', default = [5, 0.01, 0.1, 1], type=float)
+    parser_compress.add_argument("-d", "--folder", type=str, default = ".", 
+                            help="path to checkpoint folder")
+
     parser_train = subparsers.add_parser('doc-train-input', 
                                          help='print the documentation (in rst format) of input training parameters.')
 
@@ -81,6 +93,8 @@ def main () :
         test(args)
     elif args.command == 'transform' :
         transform(args)
+    elif args.command == 'compress' :
+        compress(args)
     elif args.command == 'doc-train-input' :
         doc_train_input(args)
     else :

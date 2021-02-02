@@ -114,6 +114,9 @@ class Model() :
         m_all_stat = merge_sys_stat(all_stat)
         self._compute_input_stat(m_all_stat, protection = self.data_stat_protect)
         self._compute_output_stat(all_stat)
+
+        if hasattr(self.descrpt, 'compress') and self.descrpt.compress:
+            self.descrpt.data_info(data)
         # self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
     def _compute_input_stat (self, all_stat, protection = 1e-2) :

@@ -1,14 +1,17 @@
+import math
 import numpy as np
 from typing import Tuple, List
 
 from deepmd.env import tf
-from deepmd.common import get_activation_func, get_precision, activation_fn_dict, precision_dict, docstring_parameter
+from deepmd.common import get_activation_func, get_precision, activation_fn_dict, precision_dict, docstring_parameter, get_np_precision
 from deepmd.utils.argcheck import list_to_doc
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.utils.network import embedding_net
+from deepmd.utils.tabulate import DeepTabulate
+from tqdm import tqdm
 
 
 class DescrptSeA ():
@@ -26,7 +29,10 @@ class DescrptSeA ():
                   exclude_types: List[int] = [],
                   set_davg_zero: bool = False,
                   activation_function: str = 'tanh',
-                  precision: str = 'default'
+                  precision: str = 'default',
+                  compress: bool = False,
+                  model_file: str = 'frozen_model.pb',
+                  table_info: list = [5, 0.01, 0.1, -1]
     ) -> None:
         """
         Constructor
@@ -60,6 +66,12 @@ class DescrptSeA ():
                 The activation function in the embedding net. Supported options are {0}
         precision
                 The precision of the embedding net parameters. Supported options are {1}
+        compress
+                Try to compress the embedding nets. Otherwise, building original embedding nets
+        model_file
+                The original frozen model, that will be compressed.
+        table_info
+                The data info of tabulation.
         """
         self.sel_a = sel
         self.rcut_r = rcut
@@ -71,6 +83,7 @@ class DescrptSeA ():
         self.trainable = trainable
         self.filter_activation_fn = get_activation_func(activation_function)
         self.filter_precision = get_precision(precision)
+        self.filter_np_precision = get_np_precision(precision)
         self.exclude_types = set()
         for tt in exclude_types:
             assert(len(tt) == 2)
@@ -96,6 +109,13 @@ class DescrptSeA ():
         self.useBN = False
         self.dstd = None
         self.davg = None
+        
+        # compress config
+        self.compress = compress
+        self.model_file = model_file
+        self.table_info = table_info
+        if (self.compress):
+            self.table = DeepTabulate(self.model_file, self.filter_np_precision, self.type_one_side)
 
         self.place_holders = {}
         avg_zero = np.zeros([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
@@ -103,7 +123,7 @@ class DescrptSeA ():
         sub_graph = tf.Graph()
         with sub_graph.as_default():
             name_pfx = 'd_sea_'
-            for ii in ['coord', 'box']:
+            for ii in ['coord', 'box', 'avg', 'std']:
                 self.place_holders[ii] = tf.placeholder(global_np_float_precision, [None, None], name = name_pfx+'t_'+ii)
             self.place_holders['type'] = tf.placeholder(tf.int32, [None, None], name=name_pfx+'t_type')
             self.place_holders['natoms_vec'] = tf.placeholder(tf.int32, [self.ntypes+2], name=name_pfx+'t_natoms')
@@ -116,6 +136,19 @@ class DescrptSeA ():
                                          self.place_holders['default_mesh'],
                                          tf.constant(avg_zero),
                                          tf.constant(std_ones),
+                                         rcut_a = self.rcut_a,
+                                         rcut_r = self.rcut_r,
+                                         rcut_r_smth = self.rcut_r_smth,
+                                         sel_a = self.sel_a,
+                                         sel_r = self.sel_r)
+            descrpt, descrpt_deriv, rij, nlist, self.distance, self.max_nbor_size, self.table_range \
+                = op_module.data_info(self.place_holders['coord'],
+                                         self.place_holders['type'],
+                                         self.place_holders['natoms_vec'],
+                                         self.place_holders['box'],
+                                         self.place_holders['default_mesh'],
+                                         self.place_holders['avg'],
+                                         self.place_holders['std'],
                                          rcut_a = self.rcut_a,
                                          rcut_r = self.rcut_r,
                                          rcut_r_smth = self.rcut_r_smth,
@@ -324,6 +357,15 @@ class DescrptSeA ():
         self.descrpt_deriv = tf.identity(self.descrpt_deriv, name = 'o_rmat_deriv')
         self.rij = tf.identity(self.rij, name = 'o_rij')
         self.nlist = tf.identity(self.nlist, name = 'o_nlist')
+        
+        if (self.compress):
+            self.lower = math.floor(self.lower)
+            self.upper = math.ceil(self.upper)
+            self.table.build(self.lower, 
+                             self.upper, 
+                             self.upper * self.table_info[0], 
+                             self.table_info[1], 
+                             self.table_info[2])
 
         self.dout, self.qmat = self._pass_filter(self.descrpt_reshape, 
                                                  atype,
@@ -337,6 +379,58 @@ class DescrptSeA ():
         tf.summary.histogram('embedding_net_output', self.dout)
         return self.dout
 
+    def data_info(self, data) -> None:
+        """
+        Print the data info(tabulation boundary, the nearest distance of atoms, max neighbor size) of the training data
+
+        Parameters
+        ----------
+        data
+                The data class that controls input data information
+        """
+        self.lower = 0.0
+        self.upper = 0.0
+        self.dist  = 100.0
+        self.max_nbor = 0
+
+        davg = self.davg
+        dstd = self.dstd
+        if davg is None:
+            davg = np.zeros([self.ntypes, self.ndescrpt])
+        if dstd is None:
+            dstd = np.ones ([self.ntypes, self.ndescrpt])
+
+        for ii in tqdm(range(len(data.system_dirs)), desc = '# DEEPMD: getting data info'):
+            for jj in data.data_systems[ii].dirs:
+                data_set = data.data_systems[ii]._load_set(jj)
+                for kk in range(np.array(data_set['type']).shape[0]):
+                    dt, mn, tr \
+                        = self.sub_sess.run([self.distance, self.max_nbor_size, self.table_range], 
+                                            feed_dict = {
+                                                self.place_holders['coord']: np.array(data_set['coord'])[kk].reshape([-1, data.natoms[ii] * 3]),
+                                                self.place_holders['type']: np.array(data_set['type'])[kk].reshape([-1, data.natoms[ii]]),
+                                                self.place_holders['natoms_vec']: np.array(data.natoms_vec[ii]),
+                                                self.place_holders['box']: np.array(data_set['box'])[kk].reshape([-1, 9]),
+                                                self.place_holders['default_mesh']: np.array(data.default_mesh[ii]),
+                                                self.place_holders['avg']: davg,
+                                                self.place_holders['std']: dstd,
+                                            })
+                    dr = np.array([np.min(tr), np.max(tr)]).astype(global_np_float_precision)
+                    dt = np.min(dt)
+                    mn = np.max(mn)
+                    if (dr[0] < self.lower): 
+                        self.lower = dr[0]
+                    if (dr[1] > self.upper):
+                        self.upper = dr[1]
+                    if (dt < self.dist):
+                        self.dist = dt
+                    if (mn > self.max_nbor):
+                        self.max_nbor = mn
+
+        print('# DEEPMD: training data with lower boundary: ' + str(self.lower))
+        print('# DEEPMD: training data with upper boundary: ' + str(self.upper))
+        print('# DEEPMD: training data with min   distance: ' + str(self.dist))
+        print('# DEEPMD: training data with max   nborsize: ' + str(self.max_nbor))
     
     def get_rot_mat(self) -> tf.Tensor:
         """
@@ -413,7 +507,10 @@ class DescrptSeA ():
                                      [ 0, start_index*      self.ndescrpt],
                                      [-1, natoms[2+type_i]* self.ndescrpt] )
                 inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
-                layer, qmat = self._filter(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, seed = self.seed, trainable = trainable, activation_fn = self.filter_activation_fn)
+                if not self.compress:
+                    layer, qmat = self._filter(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, seed = self.seed, trainable = trainable, activation_fn = self.filter_activation_fn)
+                else:
+                    layer, qmat = self._compress_filter(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, seed = self.seed, trainable = trainable, activation_fn = self.filter_activation_fn)
                 layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_out()])
                 qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_rot_mat_1() * 3])
                 output.append(layer)
@@ -423,7 +520,10 @@ class DescrptSeA ():
             inputs_i = inputs
             inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
             type_i = -1
-            layer, qmat = self._filter(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, seed = self.seed, trainable = trainable, activation_fn = self.filter_activation_fn)
+            if not self.compress:
+                layer, qmat = self._filter(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, seed = self.seed, trainable = trainable, activation_fn = self.filter_activation_fn)
+            else:
+                layer, qmat = self._compress_filter(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, seed = self.seed, trainable = trainable, activation_fn = self.filter_activation_fn)
             layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0] * self.get_dim_out()])
             qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[0] * self.get_dim_rot_mat_1() * 3])
             output.append(layer)
@@ -552,6 +652,77 @@ class DescrptSeA ():
           # natom x 3 x outputs_size_1
           qmat = tf.slice(xyz_scatter_1, [0,1,0], [-1, 3, -1])
           # natom x outputs_size_1 x 3
+          qmat = tf.transpose(qmat, perm = [0, 2, 1])
+          # natom x outputs_size x outputs_size_2
+          result = tf.matmul(xyz_scatter_1, xyz_scatter_2, transpose_a = True)
+          # natom x (outputs_size x outputs_size_2)
+          result = tf.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
+
+        return result, qmat
+
+    def _compress_filter(self, 
+                   inputs, 
+                   type_input,
+                   natoms,
+                   activation_fn=tf.nn.tanh, 
+                   stddev=1.0,
+                   bavg=0.0,
+                   name='linear', 
+                   reuse=None,
+                   seed=None, 
+                trainable = True):
+        # natom x (nei x 4)
+        shape = inputs.get_shape().as_list()
+        outputs_size = [1] + self.filter_neuron
+        outputs_size_2 = self.n_axis_neuron
+        with tf.variable_scope(name, reuse=reuse):
+          start_index = 0
+          xyz_scatter_total = []
+          for type_i in range(self.ntypes):
+            # cut-out inputs
+            # with natom x (nei_type_i x 4)  
+            inputs_i = tf.slice (inputs,
+                                 [ 0, start_index*      4],
+                                 [-1, self.sel_a[type_i]* 4] )
+            start_index += self.sel_a[type_i]
+            shape_i = inputs_i.get_shape().as_list()
+            # with (natom x nei_type_i) x 4  
+            inputs_reshape = tf.reshape(inputs_i, [-1, 4])
+            xyz_scatter = tf.reshape(tf.slice(inputs_reshape, [0,0],[-1,1]),[-1,1])
+            if (type_input, type_i) in self.exclude_types:
+              w = tf.zeros((outputs_size[0], outputs_size[-1]), dtype=global_tf_float_precision)
+              xyz_scatter = tf.matmul(xyz_scatter, w)
+              xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1]//4, outputs_size[-1]))
+              if type_i == 0:
+                xyz_scatter_1  = tf.matmul(tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), xyz_scatter, transpose_a = True)
+              else:
+                xyz_scatter_1 += tf.matmul(tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), xyz_scatter, transpose_a = True)
+            else:
+              ti = [self.lower, self.upper, self.upper * self.table_info[0], self.table_info[1], self.table_info[2], self.table_info[3]]
+              if self.type_one_side:
+                assert type_input == -1, "Error: when type_one_side was set True, the value of type_input must be -1."
+                net = 'filter_-1_net_' + str(type_i)
+              else:
+                net = 'filter_' + str(type_input) + '_net_' + str(type_i)
+              if type_i == 0:
+                xyz_scatter_1  = op_module.tabulate_fusion(self.table.data[net], ti, xyz_scatter, tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])
+              else:
+                xyz_scatter_1 += op_module.tabulate_fusion(self.table.data[net], ti, xyz_scatter, tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])
+          # not needed any more!
+          # natom x nei x outputs_size
+          # xyz_scatter = tf.concat(xyz_scatter_total, axis=1)
+          # natom x nei x 4
+          # inputs_reshape = tf.reshape(inputs, [-1, shape[1]//4, 4])
+          # natom x 4 x outputs_size
+          # xyz_scatter_1 = tf.matmul(inputs_reshape, xyz_scatter, transpose_a = True)
+          xyz_scatter_1 = xyz_scatter_1 * (4.0 / shape[1])
+          # natom x 4 x outputs_size_2
+          xyz_scatter_2 = tf.slice(xyz_scatter_1, [0,0,0],[-1,-1,outputs_size_2])
+          # # natom x 3 x outputs_size_2
+          # qmat = tf.slice(xyz_scatter_2, [0,1,0], [-1, 3, -1])
+          # natom x 3 x outputs_size_1
+          qmat = tf.slice(xyz_scatter_1, [0,1,0], [-1, 3, -1])
+          # natom x outputs_size_2 x 3
           qmat = tf.transpose(qmat, perm = [0, 2, 1])
           # natom x outputs_size x outputs_size_2
           result = tf.matmul(xyz_scatter_1, xyz_scatter_2, transpose_a = True)

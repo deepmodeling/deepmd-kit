@@ -28,6 +28,7 @@ if (${CUDA_VERSION_MAJOR} GREATER "10")
                         -gencode arch=compute_61,code=sm_61; # Pascal - GTX 1080, GTX 1070, GTX 1060, GTX 1050, GTX 1030, Titan Xp, Tesla P40, Tesla P4, Discrete GPU on the NVIDIA Drive PX2
                         -gencode arch=compute_70,code=sm_70; # Volta  - GV100/Tesla V100, GTX 1180 (GV104)
                         -gencode arch=compute_75,code=sm_75; # Turing - RTX 2080, Titan RTX, Quadro R8000
+                        -gencode arch=compute_80,code=sm_86; # Anpere - RTX 2080, Titan RTX, Quadro R8000
                         -O3; -Xcompiler -fPIC;
         )
 elseif (${CUDA_VERSION_MAJOR} STREQUAL "10")
@@ -80,7 +81,7 @@ else ()
 endif()
 
 set (SOURCE_FILES
-    descrpt_se_a.cu descrpt_se_r.cu prod_force_se_a.cu prod_force_se_r.cu prod_virial_se_a.cu prod_virial_se_r.cu gelu.cu 
+    descrpt_se_a.cu descrpt_se_r.cu prod_force_se_a.cu prod_force_se_r.cu prod_virial_se_a.cu prod_virial_se_r.cu gelu.cu tabulate.cu
 )
 
 cuda_add_library(deepmd_op_cuda SHARED ${SOURCE_FILES})

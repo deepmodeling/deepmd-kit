@@ -169,7 +169,7 @@ void compute_descriptor_se_a_cpu (
 }
 
 template<typename FPTYPE>
-void DescrptSeACPULauncher(const FPTYPE * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descrpt, FPTYPE * descrpt_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ntypes, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int max_nbor_size) {
+void DescrptSeACPULauncher(const FPTYPE * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descrpt, FPTYPE * descrpt_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ntypes, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int magic_number) {
     // set & normalize coord
     std::vector<FPTYPE> d_coord3(nall * 3);
     for (int ii = 0; ii < nall; ++ii) {
@@ -235,8 +235,8 @@ void DescrptSeACPULauncher(const FPTYPE * coord, const int * type, const int * i
 
 #if GOOGLE_CUDA
 template<typename FPTYPE>
-void DescrptSeAGPULauncher(const FPTYPE * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descrpt, FPTYPE * descrpt_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int max_nbor_size) {
-    DescrptSeAGPUExecuteFunctor<FPTYPE>()(coord, type, ilist, jrange, jlist, array_int, array_longlong, avg, std, descrpt, descrpt_deriv, rij, nlist, nloc, nall, nnei, ndescrpt, rcut_r, rcut_r_smth, sec_a, fill_nei_a, max_nbor_size);
+void DescrptSeAGPULauncher(const FPTYPE * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descrpt, FPTYPE * descrpt_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int magic_number) {
+    DescrptSeAGPUExecuteFunctor<FPTYPE>()(coord, type, ilist, jrange, jlist, array_int, array_longlong, avg, std, descrpt, descrpt_deriv, rij, nlist, nloc, nall, nnei, ndescrpt, rcut_r, rcut_r_smth, sec_a, fill_nei_a, magic_number);
 }
 #endif // GOOGLE_CUDA
 // ******************************************************************************
@@ -432,7 +432,7 @@ void compute_descriptor_se_r_cpu (
 }
 
 template<typename FPTYPE>
-void DescrptSeRCPULauncher(const FPTYPE * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descrpt, FPTYPE * descrpt_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ntypes, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int max_nbor_size) {
+void DescrptSeRCPULauncher(const FPTYPE * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descrpt, FPTYPE * descrpt_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ntypes, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int magic_number) {
     // set & normalize coord
     std::vector<FPTYPE> d_coord3(nall * 3);
     for (int ii = 0; ii < nall; ++ii) {
@@ -498,8 +498,8 @@ void DescrptSeRCPULauncher(const FPTYPE * coord, const int * type, const int * i
 
 #if GOOGLE_CUDA
 template<typename FPTYPE>
-void DescrptSeRGPULauncher(const FPTYPE * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descrpt, FPTYPE * descrpt_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int max_nbor_size) {
-    DescrptSeRGPUExecuteFunctor<FPTYPE>()(coord, type, ilist, jrange, jlist, array_int, array_longlong, avg, std, descrpt, descrpt_deriv, rij, nlist, nloc, nall, nnei, ndescrpt, rcut_r, rcut_r_smth, sec_a, fill_nei_a, max_nbor_size);
+void DescrptSeRGPULauncher(const FPTYPE * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descrpt, FPTYPE * descrpt_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int magic_number) {
+    DescrptSeRGPUExecuteFunctor<FPTYPE>()(coord, type, ilist, jrange, jlist, array_int, array_longlong, avg, std, descrpt, descrpt_deriv, rij, nlist, nloc, nall, nnei, ndescrpt, rcut_r, rcut_r_smth, sec_a, fill_nei_a, magic_number);
 }
 #endif // GOOGLE_CUDA
 // ******************************************************************************
@@ -569,4 +569,210 @@ void ProdVirialSeRGPULauncher(FPTYPE * virial, FPTYPE * atom_virial, const FPTYP
 #endif // GOOGLE_CUDA
 // ******************************************************************************
 // end of custome op ProdVirialSeR
+// ******************************************************************************
+
+template <typename FPTYPE>
+inline FPTYPE dot(FPTYPE a[4], FPTYPE b[4]) {
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]; 
+}
+
+/*
+    This inline function was designed to get the table info and bias value for current input xx!
+    lower:      indicate the lower boundary of the first table;
+    upper:      indicate the upper boundary of the first table as well as the lower boundary of the second table;
+    max:        indicate the upper boundary of the second table;
+    stride0:    indicate the stride of the first table;
+    stride1:    indicate the stride of the second table;
+    xx:         indicate the inputs value;
+    table_idx:  indicate the location of table info of input value xx;
+*/
+template <typename FPTYPE>
+inline void locate_xx(const FPTYPE& lower, const FPTYPE& upper,  const FPTYPE& max, const FPTYPE& stride0, const FPTYPE& stride1, FPTYPE& xx, int& table_idx) {
+    if (xx < lower) {
+        table_idx = 0;
+        xx = 0;
+    }
+    else if (xx < upper) {
+        table_idx = (int)((xx - lower) / stride0);
+        xx -= (table_idx * stride0 + lower);
+    }
+    else if (xx < max) {
+        int first_stride = int((upper - lower) / stride0);
+        table_idx = first_stride + (int)((xx - upper) / stride1);
+        xx -= ((table_idx - first_stride) * stride1 + upper);
+    }
+    else {
+        table_idx = int((upper - lower) / stride0) + (int)((max - upper) / stride1) - 1;
+        xx = 0;
+    }
+}
+
+template <typename FPTYPE>
+void TabulateFusionCPULauncher(const FPTYPE * table, const FPTYPE * table_info, const FPTYPE * in, const FPTYPE * ff, const int nloc, const int nnei, const int last_layer_size, FPTYPE * out) {
+    //Currently, Do nothing at all! 
+    // std::cout << "I'm in tabulate @CPU!" << std::endl;
+    memset(out, 0.0, sizeof(FPTYPE) * nloc * 4 * last_layer_size);
+    FPTYPE const lower   = table_info[0];
+    FPTYPE const upper   = table_info[1];
+    FPTYPE const _max    = table_info[2];
+    FPTYPE const stride0 = table_info[3];
+    FPTYPE const stride1 = table_info[4];
+    // for every atom, execute a small gemm~
+    // FPTYPE * res = new FPTYPE[4 * last_layer_size];
+    #pragma omp parallel for
+    for (int ii = 0; ii < nloc; ii++) {
+        FPTYPE ll[4] = {0};
+        FPTYPE ago = in[ii * nnei + nnei - 1];
+        bool unloop = false; 
+        for (int jj = 0; jj < nnei; jj++) { 
+            ll[0] = ff[ii * nnei * 4 + jj * 4 + 0];
+            ll[1] = ff[ii * nnei * 4 + jj * 4 + 1];
+            ll[2] = ff[ii * nnei * 4 + jj * 4 + 2];
+            ll[3] = ff[ii * nnei * 4 + jj * 4 + 3];
+            FPTYPE xx = in[ii * nnei + jj]; 
+            if (ago == xx) {
+                unloop = true;
+            }
+            int table_idx = 0;
+            locate_xx(lower, upper, _max, stride0, stride1, xx, table_idx);
+            for (int kk = 0; kk < last_layer_size; kk++) {
+                // 1.094 timesteps/s                                       
+                FPTYPE a0  = table[table_idx * last_layer_size * 6 + 6 * kk + 0]; 
+                FPTYPE a1  = table[table_idx * last_layer_size * 6 + 6 * kk + 1]; 
+                FPTYPE a2  = table[table_idx * last_layer_size * 6 + 6 * kk + 2]; 
+                FPTYPE a3  = table[table_idx * last_layer_size * 6 + 6 * kk + 3];
+                FPTYPE a4  = table[table_idx * last_layer_size * 6 + 6 * kk + 4];
+                FPTYPE a5  = table[table_idx * last_layer_size * 6 + 6 * kk + 5];
+                FPTYPE var = a0 + a1 * xx + a2 * xx * xx + a3 * xx * xx * xx + a4 * xx * xx * xx * xx + a5 * xx * xx * xx * xx * xx;
+                if (unloop) {
+                    out[ii * last_layer_size * 4 + 0 * last_layer_size + kk] += (nnei - jj) * var * ll[0];
+                    out[ii * last_layer_size * 4 + 1 * last_layer_size + kk] += (nnei - jj) * var * ll[1];
+                    out[ii * last_layer_size * 4 + 2 * last_layer_size + kk] += (nnei - jj) * var * ll[2];
+                    out[ii * last_layer_size * 4 + 3 * last_layer_size + kk] += (nnei - jj) * var * ll[3];
+                }
+                else {
+                    out[ii * last_layer_size * 4 + 0 * last_layer_size + kk] += var * ll[0];
+                    out[ii * last_layer_size * 4 + 1 * last_layer_size + kk] += var * ll[1];
+                    out[ii * last_layer_size * 4 + 2 * last_layer_size + kk] += var * ll[2];
+                    out[ii * last_layer_size * 4 + 3 * last_layer_size + kk] += var * ll[3];
+                }
+            }
+            if (unloop) break;
+        }
+    }
+}
+
+template <typename FPTYPE>
+void TabulateFusionGradCPULauncher(const FPTYPE * table, const FPTYPE * table_info, const FPTYPE * in, const FPTYPE * ff, const FPTYPE * dy, const int nloc, const int nnei, const int last_layer_size, FPTYPE * dy_dx, FPTYPE * dy_df) {
+    // std::cout << "I'm in tabulate gradient @CPU!" << std::endl;
+    memset(dy_dx, 0.0, sizeof(FPTYPE) * nloc * nnei);
+    memset(dy_df, 0.0, sizeof(FPTYPE) * nloc * nnei * 4);
+    FPTYPE const lower   = table_info[0];
+    FPTYPE const upper   = table_info[1];
+    FPTYPE const _max    = table_info[2];
+    FPTYPE const stride0 = table_info[3];
+    FPTYPE const stride1 = table_info[4];
+    // for every atom, execute a small gemm~
+    // FPTYPE * res = new FPTYPE[4 * last_layer_size];
+    #pragma omp parallel for
+    for (int ii = 0; ii < nloc; ii++) {
+        FPTYPE ll[4];
+        FPTYPE rr[4];
+        FPTYPE ago = in[ii * nnei + nnei - 1];
+        bool unloop = false;
+        for (int jj = 0; jj < nnei; jj++) {
+            // construct the dy/dx
+            ll[0] = ff[ii * nnei * 4 + jj * 4 + 0];
+            ll[1] = ff[ii * nnei * 4 + jj * 4 + 1];
+            ll[2] = ff[ii * nnei * 4 + jj * 4 + 2];
+            ll[3] = ff[ii * nnei * 4 + jj * 4 + 3];
+            FPTYPE xx = in[ii * nnei + jj]; 
+            if (ago == xx) {
+                unloop = true;
+            }
+            int table_idx = 0;
+            locate_xx(lower, upper, _max, stride0, stride1, xx, table_idx);
+            FPTYPE grad = 0.0;
+            for (int kk = 0; kk < last_layer_size; kk++) {
+                rr[0] = dy[ii * last_layer_size * 4 + 0 * last_layer_size + kk];
+                rr[1] = dy[ii * last_layer_size * 4 + 1 * last_layer_size + kk];
+                rr[2] = dy[ii * last_layer_size * 4 + 2 * last_layer_size + kk];
+                rr[3] = dy[ii * last_layer_size * 4 + 3 * last_layer_size + kk];
+                // 1.094 timesteps/s
+                FPTYPE a0  = table[table_idx * last_layer_size * 6 + 6 * kk + 0]; 
+                FPTYPE a1  = table[table_idx * last_layer_size * 6 + 6 * kk + 1]; 
+                FPTYPE a2  = table[table_idx * last_layer_size * 6 + 6 * kk + 2]; 
+                FPTYPE a3  = table[table_idx * last_layer_size * 6 + 6 * kk + 3];
+                FPTYPE a4  = table[table_idx * last_layer_size * 6 + 6 * kk + 4];
+                FPTYPE a5  = table[table_idx * last_layer_size * 6 + 6 * kk + 5];
+                FPTYPE res = a0 + a1 * xx + a2 * xx * xx + a3 * xx * xx * xx + a4 * xx * xx * xx * xx + a5 * xx * xx * xx * xx * xx;
+                if (unloop) {
+                    grad += (a1 + 2 * a2 * xx + 3 * a3 * xx * xx + 4 * a4 * xx * xx * xx + 5 * a5 * xx * xx * xx * xx) * dot(ll, rr) * (nnei - jj);
+                    dy_df[ii * nnei * 4 + jj * 4 + 0] += res * rr[0] * (nnei - jj);
+                    dy_df[ii * nnei * 4 + jj * 4 + 1] += res * rr[1] * (nnei - jj);
+                    dy_df[ii * nnei * 4 + jj * 4 + 2] += res * rr[2] * (nnei - jj);
+                    dy_df[ii * nnei * 4 + jj * 4 + 3] += res * rr[3] * (nnei - jj);
+                }
+                else {
+                    grad += (a1 + 2 * a2 * xx + 3 * a3 * xx * xx + 4 * a4 * xx * xx * xx + 5 * a5 * xx * xx * xx * xx) * dot(ll, rr);
+                    dy_df[ii * nnei * 4 + jj * 4 + 0] += res * rr[0];
+                    dy_df[ii * nnei * 4 + jj * 4 + 1] += res * rr[1];
+                    dy_df[ii * nnei * 4 + jj * 4 + 2] += res * rr[2];
+                    dy_df[ii * nnei * 4 + jj * 4 + 3] += res * rr[3];
+                }
+            }
+            dy_dx[ii * nnei + jj] = grad;
+            if (unloop) break;
+        }
+    }
+}
+
+template <typename FPTYPE>
+void TabulateCheckerCPULauncher(const FPTYPE * table_info, const FPTYPE * in, int * out, const int nloc, const int nnei) {
+    FPTYPE const lower   = table_info[0];
+    FPTYPE const upper   = table_info[1];
+    FPTYPE const _max    = table_info[2];
+    FPTYPE const stride0 = table_info[3];
+    FPTYPE const stride1 = table_info[4];
+    // for every atom, execute a small gemm~
+    // FPTYPE * res = new FPTYPE[4 * last_layer_size];
+    int Csub = 0;    // summation of second table approximate;
+    int Dsub = 0;    // summation of the endpoint approximate;
+    for (int ii = 0; ii < nloc; ii++) {
+        for (int jj = 0; jj < nnei; jj++) {
+            FPTYPE xx = in[ii * nnei + jj];
+            if (xx < lower || xx > _max) {
+                Csub += 1;
+            }
+            else if (xx >= upper && xx <= _max) {
+                Dsub += 1;
+            }
+        }
+    }
+    if(Csub > 0) {
+        std::cout << "# DEEPMD: warning! some values [" << Csub << "/" << nloc * nnei << "] overflow the range of the table, using the endpoint approximate processing.." << std::endl;
+    }
+    if(Dsub > 0) {
+        std::cout << "# DEEPMD: warning! some values [" << Dsub << "/" << nloc * nnei << "] overflow the range of the table, using second table approximate processing.." << std::endl;
+    }
+}
+
+#if GOOGLE_CUDA
+template<typename FPTYPE>
+void TabulateFusionGPULauncher(const FPTYPE * table, const FPTYPE * table_info, const FPTYPE * in, const FPTYPE * ff, const int nloc, const int nnei, const int last_layer_size, FPTYPE * out) {
+    TabulateFusionGPUExecuteFunctor<FPTYPE>()(table, table_info, in, ff, nloc, nnei, last_layer_size, out);
+}
+
+template<typename FPTYPE>
+void TabulateFusionGradGPULauncher(const FPTYPE * table, const FPTYPE * table_info, const FPTYPE * in, const FPTYPE * ff, const FPTYPE * dy, const int nloc, const int nnei, const int last_layer_size, FPTYPE * dy_dx, FPTYPE * dy_df) {
+    TabulateFusionGradGPUExecuteFunctor<FPTYPE>()(table, table_info, in, ff, dy, nloc, nnei, last_layer_size, dy_dx, dy_df);
+}
+
+template <typename FPTYPE>
+void TabulateCheckerGPULauncher(const FPTYPE * table_info, const FPTYPE * in, int * out, const int nloc, const int nnei) {
+    TabulateCheckerGPUExecuteFunctor<FPTYPE>()(table_info, in, out, nloc, nnei);
+}
+#endif // GOOGLE_CUDA
+// ******************************************************************************
+// end of custome op Tabulate
 // ******************************************************************************
