@@ -15,12 +15,12 @@ class EnerStdLoss () :
                   limit_pref_e : float = 1.00,
                   start_pref_f : float = 1000,
                   limit_pref_f : float = 1.00,
-                  start_pref_v : float = 0,
-                  limit_pref_v : float = 0,
-                  start_pref_ae : float = 0,
-                  limit_pref_ae : float = 0,
-                  start_pref_pf : float = 0,
-                  limit_pref_pf : float = 0,
+                  start_pref_v : float = 0.0,
+                  limit_pref_v : float = 0.0,
+                  start_pref_ae : float = 0.0,
+                  limit_pref_ae : float = 0.0,
+                  start_pref_pf : float = 0.0,
+                  limit_pref_pf : float = 0.0,
                   relative_f : float = None 
     ) -> None:
         self.starter_learning_rate = starter_learning_rate
@@ -35,11 +35,11 @@ class EnerStdLoss () :
         self.start_pref_pf = start_pref_pf
         self.limit_pref_pf = limit_pref_pf
         self.relative_f = relative_f
-        self.has_e = (self.start_pref_e != 0 or self.limit_pref_e != 0)
-        self.has_f = (self.start_pref_f != 0 or self.limit_pref_f != 0)
-        self.has_v = (self.start_pref_v != 0 or self.limit_pref_v != 0)
-        self.has_ae = (self.start_pref_ae != 0 or self.limit_pref_ae != 0)
-        self.has_pf = (self.start_pref_pf != 0 or self.limit_pref_pf != 0)
+        self.has_e = (self.start_pref_e != 0.0 or self.limit_pref_e != 0.0)
+        self.has_f = (self.start_pref_f != 0.0 or self.limit_pref_f != 0.0)
+        self.has_v = (self.start_pref_v != 0.0 or self.limit_pref_v != 0.0)
+        self.has_ae = (self.start_pref_ae != 0.0 or self.limit_pref_ae != 0.0)
+        self.has_pf = (self.start_pref_pf != 0.0 or self.limit_pref_pf != 0.0)
         # data required
         add_data_requirement('energy', 1, atomic=False, must=False, high_prec=True)
         add_data_requirement('force',  3, atomic=True,  must=False, high_prec=False)
