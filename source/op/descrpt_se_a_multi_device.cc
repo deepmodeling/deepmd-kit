@@ -34,13 +34,13 @@ struct DeviceFunctor {
 
 template <typename FPTYPE>
 struct DescrptSeAFunctor {
-    void operator()(const CPUDevice& d, const FPTYPE * coord, const int * type, const int * mesh, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descrpt, FPTYPE * descrpt_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ntypes, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::std::vector<int> sec_a, const bool fill_nei_a, const int magic_number) {
-        DescrptSeACPULauncher(coord, type, ilist, jrange, jlist, avg, std, descrpt, descrpt_deriv, rij, nlist, nloc, nall, nnei, ntypes, ndescrpt, rcut_r, rcut_r_smth, sec_a, fill_nei_a, magic_number);
+    void operator()(const CPUDevice& d, const FPTYPE * coord, const int * type, const int * mesh, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descrpt, FPTYPE * descrpt_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ntypes, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int max_nbor_size) {
+        DescrptSeACPULauncher(coord, type, ilist, jrange, jlist, avg, std, descrpt, descrpt_deriv, rij, nlist, nloc, nall, nnei, ntypes, ndescrpt, rcut_r, rcut_r_smth, sec_a, fill_nei_a, max_nbor_size);
     }
 
     #if GOOGLE_CUDA
-    void operator()(const GPUDevice& d, const FPTYPE * coord, const int * type, const int * mesh, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descrpt, FPTYPE * descrpt_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ntypes, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::std::vector<int> sec_a, const bool fill_nei_a, const int magic_number) {
-        DescrptSeAGPULauncher(coord, type, ilist, jrange, jlist, array_int, array_longlong, avg, std, descrpt, descrpt_deriv, rij, nlist, nloc, nall, nnei, ndescrpt, rcut_r, rcut_r_smth, sec_a, fill_nei_a, magic_number);
+    void operator()(const GPUDevice& d, const FPTYPE * coord, const int * type, const int * mesh, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descrpt, FPTYPE * descrpt_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ntypes, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int max_nbor_size) {
+        DescrptSeAGPULauncher(coord, type, ilist, jrange, jlist, array_int, array_longlong, avg, std, descrpt, descrpt_deriv, rij, nlist, nloc, nall, nnei, ndescrpt, rcut_r, rcut_r_smth, sec_a, fill_nei_a, max_nbor_size);
     }
     #endif // GOOGLE_CUDA 
 };
@@ -66,7 +66,7 @@ public:
         nnei_r = sec_r.back();
         nnei = nnei_a + nnei_r;
         fill_nei_a = (rcut_a < 0);
-        magic_number = get_magic_number(nnei);
+        max_nbor_size = 1024;
     }
 
     void Compute(OpKernelContext* context) override {
@@ -117,7 +117,6 @@ public:
         
         OP_REQUIRES (context, (ntypes == int(sel_a.size())),	errors::InvalidArgument ("number of types should match the length of sel array"));
         OP_REQUIRES (context, (ntypes == int(sel_r.size())),	errors::InvalidArgument ("number of types should match the length of sel array"));
-        OP_REQUIRES (context, (nnei <= 4096),	                errors::InvalidArgument ("Assert failed, max neighbor size of atom(nnei) " + std::to_string(nnei) + " is larger than 4096, which currently is not supported by deepmd-kit."));
 
         // Create output tensors
         TensorShape descrpt_shape ;
@@ -159,13 +158,14 @@ public:
             OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, int_shape, &int_temp));
             Tensor uint64_temp;
             TensorShape uint64_shape;
-            uint64_shape.AddDim(nloc * magic_number * 2);
+            uint64_shape.AddDim(nloc * max_nbor_size * 2);
             OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape, &uint64_temp));
 
             array_int = int_temp.flat<int>().data(); 
             array_longlong = uint64_temp.flat<unsigned long long>().data();
 
             nbor_update(mesh_tensor.flat<int>().data(), static_cast<int>(mesh_tensor.NumElements()));
+            OP_REQUIRES (context, (max_nbor_size <= 4096),	                errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_nbor_size) + " is larger than 4096, which currently is not supported by deepmd-kit."));
         }
         else if (device == "CPU") {
             memcpy (&ilist,  4  + mesh_tensor.flat<int>().data(), sizeof(int *));
@@ -198,7 +198,7 @@ public:
             rcut_r_smth,
             sec_a,
             fill_nei_a,
-            magic_number
+            max_nbor_size
         );
     }
 
@@ -212,7 +212,7 @@ private:
     std::std::vector<int> sec_a;
     std::std::vector<int> sec_r;
     int ndescrpt, ndescrpt_a, ndescrpt_r;
-    int nnei, nnei_a, nnei_r, nloc, nall, magic_number;
+    int nnei, nnei_a, nnei_r, nloc, nall, max_nbor_size;
     bool fill_nei_a;
 
     //private func
@@ -266,27 +266,15 @@ private:
             cudaErrcheck(cudaMemcpy(ilist,  ilist_host,  sizeof(int) * mesh_host[1], cudaMemcpyHostToDevice));
             cudaErrcheck(cudaMemcpy(jrange, jrange_host, sizeof(int) * mesh_host[2], cudaMemcpyHostToDevice));
             cudaErrcheck(cudaMemcpy(jlist,  jlist_host,  sizeof(int) * mesh_host[3], cudaMemcpyHostToDevice));
+            
+            max_nbor_size = 1024;
+            for(int ii = 0; ii < mesh_host[2]; ii++) {
+                max_nbor_size = (jrange_host[ii + 1] - jrange_host[ii]) > max_nbor_size ? (jrange_host[ii + 1] - jrange_host[ii]) : max_nbor_size;
+            }
         }
         delete [] mesh_host;
     }
 
-    int get_magic_number(int const nnei) {
-        if (nnei <= 256) {
-            return 256;
-        }
-        else if (nnei <= 512) {
-            return 512;
-        }
-        else if (nnei <= 1024) {
-            return 1024;
-        }
-        else if (nnei <= 2048) {
-            return 2048;
-        }
-        else if (nnei <= 4096) {
-            return 4096;
-        }
-    }
 };
 
 // Register the CPU kernels.
