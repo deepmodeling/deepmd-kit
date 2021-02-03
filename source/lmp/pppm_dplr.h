@@ -29,7 +29,6 @@ KSpaceStyle(pppm/dplr,PPPMDPLR)
 #include "pppm.h"
 #include <iostream>
 #include <vector>
-using namespace std;
 
 namespace LAMMPS_NS {
 
@@ -42,13 +41,13 @@ public:
 #endif
     virtual ~PPPMDPLR () {};
     void init();
-    const vector<double > & get_fele() const {return fele;};
+    const std::vector<double > & get_fele() const {return fele;};
 protected:
     virtual void compute(int, int);
     virtual void fieldforce_ik();
     virtual void fieldforce_ad();    
 private:
-    vector<double > fele;
+    std::vector<double > fele;
   };
 
 }

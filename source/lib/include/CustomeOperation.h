@@ -49,14 +49,14 @@ inline void spline5_switch (
 
 template<typename FPTYPE> 
 int format_nlist_fill_se_a_cpu (
-    vector<int > &		    fmt_nei_idx_a,
-	const vector<FPTYPE > &	    posi,
+    std::vector<int > &		    fmt_nei_idx_a,
+	const std::vector<FPTYPE > &	    posi,
 	const int &			    ntypes,
-	const vector<int > &    type,
+	const std::vector<int > &    type,
 	const int &			    i_idx,
-	const vector<int > &    nei_idx_a, 
+	const std::vector<int > &    nei_idx_a, 
 	const float &		    rcut,
-	const vector<int > &    sec_a)
+	const std::vector<int > &    sec_a)
 {
     fmt_nei_idx_a.resize (sec_a.back());
     fill (fmt_nei_idx_a.begin(), fmt_nei_idx_a.end(), -1);
@@ -64,7 +64,7 @@ int format_nlist_fill_se_a_cpu (
     // gether all neighbors
     std::vector<int > nei_idx (nei_idx_a);
     // allocate the information for all neighbors
-    vector<NeighborInfo > sel_nei;
+    std::vector<NeighborInfo > sel_nei;
     sel_nei.reserve (nei_idx_a.size());
     for (unsigned kk = 0; kk < nei_idx.size(); ++kk) {
         FPTYPE diff[3];
@@ -92,15 +92,15 @@ int format_nlist_fill_se_a_cpu (
 
 template<typename FPTYPE> 
 void compute_descriptor_se_a_cpu (
-    vector<FPTYPE > &	        descrpt_a,
-	vector<FPTYPE > &	        descrpt_a_deriv,
-	vector<FPTYPE > &	        rij_a,
-	const vector<FPTYPE > &	    posi,
+    std::vector<FPTYPE > &	        descrpt_a,
+	std::vector<FPTYPE > &	        descrpt_a_deriv,
+	std::vector<FPTYPE > &	        rij_a,
+	const std::vector<FPTYPE > &	    posi,
 	const int &				ntypes,
-	const vector<int > &	type,
+	const std::vector<int > &	type,
 	const int &				i_idx,
-	const vector<int > &	fmt_nlist_a,
-	const vector<int > &	sec_a, 
+	const std::vector<int > &	fmt_nlist_a,
+	const std::vector<int > &	sec_a, 
 	const float &			rmin,
 	const float &			rmax) 
 {
@@ -185,7 +185,7 @@ void DescrptSeACPULauncher(const FPTYPE * coord, const int * type, const int * i
     }
     
     // build nlist
-    std::vector<vector<int > > d_nlist_a(nloc);
+    std::vector<std::vector<int > > d_nlist_a(nloc);
 
 	for (unsigned ii = 0; ii < nloc; ++ii) {
 	    d_nlist_a.reserve (jrange[nloc] / nloc + 10);
@@ -200,7 +200,7 @@ void DescrptSeACPULauncher(const FPTYPE * coord, const int * type, const int * i
     
     #pragma omp parallel for 
     for (int ii = 0; ii < nloc; ++ii) {
-	    vector<int> fmt_nlist_a;
+	    std::vector<int> fmt_nlist_a;
 	    int ret = -1;
 	    if (fill_nei_a) {
 	        format_nlist_fill_se_a_cpu(fmt_nlist_a, d_coord3, ntypes, d_type, ii, d_nlist_a[ii], rcut_r, sec_a);
@@ -373,15 +373,15 @@ void GeluGradGradGPULauncher(const FPTYPE * dy, const FPTYPE * dy_, const FPTYPE
 
 template<typename FPTYPE> 
 void compute_descriptor_se_r_cpu (
-    vector<FPTYPE > &	        descrpt_a,
-	vector<FPTYPE > &	        descrpt_a_deriv,
-	vector<FPTYPE > &	        rij_a,
-	const vector<FPTYPE > &	    posi,
+    std::vector<FPTYPE > &	        descrpt_a,
+	std::vector<FPTYPE > &	        descrpt_a_deriv,
+	std::vector<FPTYPE > &	        rij_a,
+	const std::vector<FPTYPE > &	    posi,
 	const int &				ntypes,
-	const vector<int > &	type,
+	const std::vector<int > &	type,
 	const int &				i_idx,
-	const vector<int > &	fmt_nlist_a,
-	const vector<int > &	sec_a, 
+	const std::vector<int > &	fmt_nlist_a,
+	const std::vector<int > &	sec_a, 
 	const float &			rmin,
 	const float &			rmax) 
 {
@@ -448,7 +448,7 @@ void DescrptSeRCPULauncher(const FPTYPE * coord, const int * type, const int * i
     }
     
     // build nlist
-    std::vector<vector<int > > d_nlist_a(nloc);
+    std::vector<std::vector<int > > d_nlist_a(nloc);
 
 	for (unsigned ii = 0; ii < nloc; ++ii) {
 	    d_nlist_a.reserve (jrange[nloc] / nloc + 10);
@@ -463,7 +463,7 @@ void DescrptSeRCPULauncher(const FPTYPE * coord, const int * type, const int * i
     
     #pragma omp parallel for 
     for (int ii = 0; ii < nloc; ++ii) {
-	    vector<int> fmt_nlist_a;
+	    std::vector<int> fmt_nlist_a;
 	    int ret = -1;
 	    if (fill_nei_a) {
 	        format_nlist_fill_se_a_cpu(fmt_nlist_a, d_coord3, ntypes, d_type, ii, d_nlist_a[ii], rcut_r, sec_a);
