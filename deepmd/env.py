@@ -122,12 +122,12 @@ def get_module(module_name: str) -> "ModuleType":
     else:
         ext = ".so"
 
-    module_file = (Path(__file__).parent / module_name).with_suffix(ext)
+    module_file = (Path(__file__).parent / module_name).with_suffix(ext).resolve()
 
     if not module_file.is_file():
         raise FileNotFoundError(f"module {module_name} does not exist")
     else:
-        module = tf.load_op_library(os.fspath(module_file))
+        module = tf.load_op_library(str(module_file))
         return module
 
 

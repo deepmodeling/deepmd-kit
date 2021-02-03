@@ -1,6 +1,5 @@
 """ASE calculator interface module."""
 
-from os import fspath
 from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
 import deepmd.DeepPot as DeepPot
@@ -61,7 +60,7 @@ class DP(Calculator):
         **kwargs
     ) -> None:
         Calculator.__init__(self, label=label, **kwargs)
-        self.dp = DeepPot(fspath(model))
+        self.dp = DeepPot(str(Path(model).resolve()))
         if type_dict:
             self.type_dict = type_dict
         else:
