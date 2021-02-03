@@ -188,7 +188,7 @@ class ClassArg:
         dictionary with keyword aliases
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.arg_dict = {}
         self.alias_map = {}
 
