@@ -1,9 +1,20 @@
+"""Collection of functions and classes used throughout the whole package."""
+
 import json
 import warnings
 from functools import wraps
 from pathlib import Path
-from typing import (TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple,
-                    TypeVar, Union)
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    TypeVar,
+    Union,
+)
 
 import numpy as np
 import yaml
@@ -15,7 +26,7 @@ if TYPE_CHECKING:
     _DICT_VAL = TypeVar("_DICT_VAL")
     _OBJ = TypeVar("_OBJ")
     try:
-        from typing import Literal  # python 3.6
+        from typing import Literal  # python >3.6
     except ImportError:
         from typing_extensions import Literal
     _ACTIVATION = Literal["relu", "relu6", "softplus", "sigmoid", "tanh", "gelu"]
@@ -161,8 +172,8 @@ def make_default_mesh(
     return default_mesh
 
 
-# TODO not an ideal approach, every class uses this to parse arguments on its own,
-# TODO json should be parsed once and the parsed result passed to all objects that need it
+# TODO not an ideal approach, every class uses this to parse arguments on its own, json
+# TODO should be parsed once and the parsed result passed to all objects that need it
 class ClassArg:
     """Class that take care of input json/yaml parsing.
 
@@ -246,7 +257,7 @@ class ClassArg:
                     break
             else:
                 raise TypeError(
-                    f'cannot convert provided key {key} to type(s) '
+                    f"cannot convert provided key {key} to type(s) "
                     f'{self.arg_dict[key]["types"]} '
                 )
         else:
@@ -256,7 +267,7 @@ class ClassArg:
     def _check_must(self):
         for kk in self.arg_dict:
             if self.arg_dict[kk]["must"] and self.arg_dict[kk]["value"] is None:
-                raise RuntimeError(f'key {kk} must be provided')
+                raise RuntimeError(f"key {kk} must be provided")
 
     def parse(self, jdata: Dict[str, Any]) -> Dict[str, Any]:
         """Parse input dictionary, use the rules defined by add method.
@@ -354,7 +365,9 @@ def j_loader(filename: Union[str, Path]) -> Dict[str, Any]:
         raise TypeError("config file must be json, or yaml/yml")
 
 
-def get_activation_func(activation_fn: "_ACTIVATION") -> Callable[[tf.Tensor], tf.Tensor]:
+def get_activation_func(
+    activation_fn: "_ACTIVATION",
+) -> Callable[[tf.Tensor], tf.Tensor]:
     """Get activation function callable based on string name.
 
     Parameters
@@ -430,6 +443,7 @@ def docstring_parameter(*sub: Tuple[str, ...]):
     ----
     Can be used on both object and classes.
     """
+
     @wraps
     def dec(obj: "_OBJ") -> "_OBJ":
         if obj.__doc__ is not None:

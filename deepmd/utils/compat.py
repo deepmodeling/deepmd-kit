@@ -10,7 +10,23 @@ from deepmd.common import j_must_have
 
 def convert_input_v0_v1(
     jdata: Dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
-):
+) -> Dict[str, Any]:
+    """Convert input from v0 format to v1.
+
+    Parameters
+    ----------
+    jdata : Dict[str, Any]
+        loaded json/yaml file
+    warning : bool, optional
+        whether to show deprecation warning, by default True
+    dump : Optional[Union[str, Path]], optional
+        whether to dump converted file, by default None
+
+    Returns
+    -------
+    Dict[str, Any]
+        converted output
+    """
     output = {}
     if "with_distrib" in jdata:
         output["with_distrib"] = jdata["with_distrib"]
@@ -167,7 +183,7 @@ def _loss(jdata: Dict[str, Any]) -> Dict[str, Any]:
     Dict[str, Any]
         dict with loss function parameters
     """
-    loss = {}
+    loss: Dict[str, Any] = {}
     _jcopy(
         jdata,
         loss,
@@ -222,7 +238,7 @@ def _training(jdata: Dict[str, Any]) -> Dict[str, Any]:
     return training
 
 
-def _jcopy(src: Dict[str, Any], dst: Dict[str, Any], keys: Sequence[str], must_have: bool):
+def _jcopy(src: Dict[str, Any], dst: Dict[str, Any], keys: Sequence[str]):
     """Copy specified keys from one dict to another.
 
     Parameters
