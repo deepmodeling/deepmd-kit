@@ -22,8 +22,9 @@ def compress(args):
     jdata['model']['descriptor']['model_file'] = args.input
     jdata['model']['descriptor']['table_info'] = args.table_info
     
-    # check the descriptor type of input file
+    # check the descriptor info of the input file
     assert jdata['model']['descriptor']['type'] == 'se_a', 'Model compression error: descriptor type must be se_a!'
+    assert jdata['model']['descriptor']['resnet_dt'] == False, 'Model compression error: descriptor resnet_dt must be false!'
 
     # stage 1: training or refining the model with tabulation
     print('\n\n# DEEPMD: stage 1: train or refine the model with tabulation')
