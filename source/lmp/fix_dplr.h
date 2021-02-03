@@ -38,19 +38,19 @@ private:
     PairNNP * pair_nnp;
     DeepTensor dpt;
     DataModifier dtm;
-    string model;
+    std::string model;
     int ntypes;
-    vector<int > sel_type;
-    vector<int > dpl_type;
-    vector<int > bond_type;
-    map<int,int > type_asso;
-    map<int,int > bk_type_asso;
-    vector<FLOAT_PREC> dipole_recd;
-    vector<double> dfcorr_buff;
-    vector<double> efield;
-    vector<double> efield_fsum, efield_fsum_all;
+    std::vector<int > sel_type;
+    std::vector<int > dpl_type;
+    std::vector<int > bond_type;
+    std::map<int,int > type_asso;
+    std::map<int,int > bk_type_asso;
+    std::vector<FLOAT_PREC> dipole_recd;
+    std::vector<double> dfcorr_buff;
+    std::vector<double> efield;
+    std::vector<double> efield_fsum, efield_fsum_all;
     int efield_force_flag;
-    void get_valid_pairs(vector<pair<int,int> >& pairs);
+    void get_valid_pairs(std::vector<std::pair<int,int> >& pairs);
   };
 }
 
