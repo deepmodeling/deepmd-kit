@@ -161,9 +161,22 @@ def make_default_mesh(
     return default_mesh
 
 
-# TODO not a good approach, every class uses this to parse arguments on its own,
-# TODO json shoul be parsed once and the parsed result passed to all objects taht need it
+# TODO not an ideal approach, every class uses this to parse arguments on its own,
+# TODO json should be parsed once and the parsed result passed to all objects that need it
 class ClassArg:
+    """Class that take care of input json/yaml parsing.
+
+    The rules for parsing are defined by the `add` method, than `parse` is called to
+    process the supplied dict
+
+    Attributes
+    ----------
+    arg_dict: Dict[str, Any]
+        dictionary containing parsing rules
+    alias_map: Dict[str, Any]
+        dictionary with keyword aliases
+    """
+
     def __init__(self):
         self.arg_dict = {}
         self.alias_map = {}
@@ -175,7 +188,27 @@ class ClassArg:
         alias: Optional[Union[str, List[str]]] = None,
         default: Any = None,
         must: bool = False,
-    ):
+    ) -> "ClassArg":
+        """Add key to be parsed.
+
+        Parameters
+        ----------
+        key : str
+            key name
+        types_ : Union[type, List[type]]
+            list of allowed key types
+        alias : Optional[Union[str, List[str]]], optional
+            alias for the key, by default None
+        default : Any, optional
+            default value for the key, by default None
+        must : bool, optional
+            if the key is mandatory, by default False
+
+        Returns
+        -------
+        ClassArg
+            instance with added key
+        """
         if not isinstance(types_, list):
             types = [types_]
         else:
@@ -213,8 +246,8 @@ class ClassArg:
                     break
             else:
                 raise TypeError(
-                    'cannot convert provided key "%s" to type(s) %s '
-                    % (key, str(self.arg_dict[key]["types"]))
+                    f'cannot convert provided key {key} to type(s) '
+                    f'{self.arg_dict[key]["types"]} '
                 )
         else:
             vv = data
@@ -223,9 +256,21 @@ class ClassArg:
     def _check_must(self):
         for kk in self.arg_dict:
             if self.arg_dict[kk]["must"] and self.arg_dict[kk]["value"] is None:
-                raise RuntimeError('key "%s" must be provided' % kk)
+                raise RuntimeError(f'key {kk} must be provided')
 
     def parse(self, jdata: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse input dictionary, use the rules defined by add method.
+
+        Parameters
+        ----------
+        jdata : Dict[str, Any]
+            loaded json/yaml data
+
+        Returns
+        -------
+        Dict[str, Any]
+            parsed dictionary
+        """
         for kk in jdata.keys():
             if kk in self.arg_dict:
                 key = kk
@@ -238,15 +283,22 @@ class ClassArg:
         return self.get_dict()
 
     def get_dict(self) -> Dict[str, Any]:
+        """Get dictionary built from rules defined by add method.
+
+        Returns
+        -------
+        Dict[str, Any]
+            settings dictionary with default values
+        """
         ret = {}
         for kk in self.arg_dict.keys():
             ret[kk] = self.arg_dict[kk]["value"]
         return ret
 
 
-# TODO maybe rename this to j_deprecated and only warn about deprecated keys, otherwise
-# TODO its puppose is only custom error since dict[key] already raises KeyError when the
-# TODO key is missing
+# TODO maybe rename this to j_deprecated and only warn about deprecated keys,
+# TODO if the deprecated_key argument is left empty function puppose is only custom
+# TODO error since dict[key] already raises KeyError when the key is missing
 def j_must_have(
     jdata: Dict[str, "_DICT_VAL"], key: str, deprecated_key: List[str] = []
 ) -> "_DICT_VAL":
