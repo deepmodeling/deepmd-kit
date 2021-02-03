@@ -1,7 +1,7 @@
 import re
 import math
 import numpy as np
-import tensorflow.compat.v1 as tf
+from deepmd.env import tf
 from tensorflow.python.platform import gfile
 from tensorflow.python.framework import tensor_util
 from tqdm import tqdm
