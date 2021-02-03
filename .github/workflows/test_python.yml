@@ -59,5 +59,6 @@ jobs:
     - run: |
         sudo apt update
         sudo apt install gcc-${{ matrix.gcc }} g++-${{ matrix.gcc }}
+    - run: pip install tensorflow
     - run: pip install .[cpu,test]
     - run: cd source/tests && python -m unittest
