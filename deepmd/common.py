@@ -118,20 +118,20 @@ def add_data_requirement(
 
 
 def select_idx_map(
-    atom_types: np.ndarray[int], select_types: np.ndarray[int]
-) -> np.ndarray[int]:
+    atom_types: np.ndarray, select_types: np.ndarray
+) -> np.ndarray:
     """Build map of indices for element supplied element types from all atoms list.
 
     Parameters
     ----------
-    atom_types : np.ndarray[int]
+    atom_types : np.ndarray
         array specifing type for each atoms as integer
-    select_types : np.ndarray[int]
+    select_types : np.ndarray
         types of atoms you want to find indices for
 
     Returns
     -------
-    np.ndarray[int]
+    np.ndarray
         indices of types of atoms defined by `select_types` in `atom_types` array
 
     Warnings
@@ -147,20 +147,20 @@ def select_idx_map(
 
 # TODO not really sure if the docstring is right the purpose of this is a bit unclear
 def make_default_mesh(
-    test_box: np.ndarray[float], cell_size: float = 3.0
-) -> np.ndarray[int]:
+    test_box: np.ndarray, cell_size: float = 3.0
+) -> np.ndarray:
     """Get number of cells of size=`cell_size` fit into average box.
 
     Parameters
     ----------
-    test_box : np.ndarray[float]
+    test_box : np.ndarray
         numpy array with cells of shape Nx9
     cell_size : float, optional
         length of one cell, by default 3.0
 
     Returns
     -------
-    np.ndarray[float]
+    np.ndarray
         mesh for supplied boxes, how many cells fit in each direction
     """
     cell_lengths = np.linalg.norm(test_box.reshape([-1, 3, 3]), axis=2)
@@ -390,7 +390,7 @@ def get_activation_func(
     return ACTIVATION_FN_DICT[activation_fn]
 
 
-def get_precision(precision: "_PRECISION") -> tf.python.framework.dtypes.DType:
+def get_precision(precision: "_PRECISION") -> Any:
     """Convert str to TF DType constant.
 
     Parameters

@@ -81,7 +81,7 @@ def valid_dir(path: Path):
 
 def load_systems(
     dirs: List[Path],
-) -> Tuple[List[np.ndarray[int]], List[np.ndarray[float]]]:
+) -> Tuple[List[np.ndarray], List[np.ndarray]]:
     """Load systems to memory for disk.
 
     Parameters
@@ -91,7 +91,7 @@ def load_systems(
 
     Returns
     -------
-    Tuple[List[np.ndarray[int]], List[np.ndarray[float]]]
+    Tuple[List[np.ndarray], List[np.ndarray]]
         atoms types and structure cells formated as Nx9 array
     """
     all_type = []
@@ -200,12 +200,12 @@ def get_stop_batch() -> int:
     return sb
 
 
-def get_ntypes(all_type: List[np.ndarray[int]]) -> int:
+def get_ntypes(all_type: List[np.ndarray]) -> int:
     """Count number of unique elements.
 
     Parameters
     ----------
-    all_type : List[np.ndarray[int]]
+    all_type : List[np.ndarray]
         list with arrays specifying elements of structures
 
     Returns
@@ -217,15 +217,15 @@ def get_ntypes(all_type: List[np.ndarray[int]]) -> int:
 
 
 def get_max_density(
-    all_type: List[np.ndarray[int]], all_box: List[np.ndarray[float]]
-) -> np.ndarray[float]:
+    all_type: List[np.ndarray], all_box: List[np.ndarray]
+) -> np.ndarray:
     """Compute maximum density in suppliedd cells.
 
     Parameters
     ----------
-    all_type : List[np.ndarray[int]]
+    all_type : List[np.ndarray]
         list with arrays specifying elements of structures
-    all_box : List[np.ndarray[float]]
+    all_box : List[np.ndarray]
         list with arrays specifying cells for all structures
 
     Returns
@@ -249,8 +249,8 @@ def get_max_density(
 
 
 def suggest_sel(
-    all_type: List[np.ndarray[int]],
-    all_box: List[np.ndarray[float]],
+    all_type: List[np.ndarray],
+    all_box: List[np.ndarray],
     rcut: float,
     ratio: float = 1.5,
 ) -> List[int]:
@@ -258,9 +258,9 @@ def suggest_sel(
 
     Parameters
     ----------
-    all_type : List[np.ndarray[int]]
+    all_type : List[np.ndarray]
         list with arrays specifying elements of structures
-    all_box : List[np.ndarray[float]]
+    all_box : List[np.ndarray]
         list with arrays specifying cells for all structures
     rcut : float
         cutoff radius
@@ -276,12 +276,12 @@ def suggest_sel(
     return [int(ii) for ii in max_den * 4.0 / 3.0 * np.pi * rcut ** 3 * ratio]
 
 
-def suggest_batch_size(all_type: List[np.ndarray[int]], min_atom: int) -> List[int]:
+def suggest_batch_size(all_type: List[np.ndarray], min_atom: int) -> List[int]:
     """Get suggestion for batch size.
 
     Parameters
     ----------
-    all_type : List[np.ndarray[int]]
+    all_type : List[np.ndarray]
         list with arrays specifying elements of structures
     min_atom : int
         minimal number of atoms in batch

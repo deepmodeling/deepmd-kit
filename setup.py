@@ -53,7 +53,7 @@ except (AttributeError, TypeError, IndexError):
     dist = Distribution(
         project_name="tensorflow", version=tf_version, platform=get_platform()
     ).egg_name()
-    tf_install_dir = Path(__file__).parent.joinpath(".egg", dist, "tensorflow").resolve()
+    tf_install_dir = Path(__file__).parent.resolve().joinpath(".egg", dist, "tensorflow").resolve()
 
 # add cmake as a build requirement if cmake>3.7 is not installed
 try:
@@ -92,7 +92,7 @@ setup(
     keywords="deepmd",
     install_requires=INSTALL_REQUIRES,
     cmake_args=[
-        f"-DTENSORFLOW_ROOT:STRING={str(tf_install_dir)}",
+        f"-DTENSORFLOW_ROOT:STRING={tf_install_dir}",
         "-DBUILD_PY_IF:BOOL=TRUE",
         "-DBUILD_CPP_IF:BOOL=FALSE",
         "-DFLOAT_PREC:STRING=high",

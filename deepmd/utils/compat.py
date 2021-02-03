@@ -113,7 +113,8 @@ def _smth_descriptor(jdata: Dict[str, Any]) -> Dict[str, Any]:
     if seed is not None:
         descriptor["seed"] = seed
     descriptor["type"] = "se_a"
-    _jcopy(jdata, descriptor, ("sel_a", "rcut"))
+    descriptor["sel"] = jdata["sel_a"]
+    _jcopy(jdata, descriptor, ("rcut", ))
     descriptor["rcut_smth"] = jdata.get("rcut_smth", descriptor["rcut"])
     descriptor["neuron"] = j_must_have(jdata, "filter_neuron")
     descriptor["axis_neuron"] = j_must_have(jdata, "axis_neuron", ["n_axis_neuron"])
