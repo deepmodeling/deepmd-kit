@@ -11,9 +11,12 @@ jobs:
     - uses: actions/checkout@v1
     - uses: marian-code/pyaction@master
       with:
-        python-root-list: "./deepmd/*.py ./deepmd/*/*.py ./source/train/*.py ./source/tests/*.py, ./source/scripts/*.py ./source/op/*.py"
+        python-root-list: "./deepmd/*.py ./deepmd/*/*.py ./source/train/*.py ./source/tests/*.py ./source/scripts/*.py ./source/op/*.py"
         use-black: true
         use-isort: true
         use-mypy: true
         use-pycodestyle: true
         extra-pycodestyle-options: "--max-line-length=88"
+        use-pylint: false
+        use-flake8: false
+        use-vulture: false
