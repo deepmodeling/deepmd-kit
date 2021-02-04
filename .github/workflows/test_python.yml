@@ -60,4 +60,8 @@ jobs:
         sudo apt update
         sudo apt install gcc-${{ matrix.gcc }} g++-${{ matrix.gcc }}
     - run: pip install .[cpu,test]
+      env:
+        CC: gcc-${{ matrix.gcc }}
+        CXX: g++-${{ matrix.gcc }}
+        TENSORFLOW_VERSION: ${{ matrix.tf }}
     - run: cd source/tests && python -m unittest
