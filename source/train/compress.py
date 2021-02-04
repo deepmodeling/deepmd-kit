@@ -33,7 +33,7 @@ def compress(args):
     args_train.output = 'compress.json'
     args_train.init_model = None
     args_train.restart = None
-    jdata['training']['stop_batch'] = jdata['training']['save_freq'] # be careful here, if we want refine the model
+    jdata['training']['stop_batch'] = jdata['training']['save_freq'] # be careful here, if one want to refine the model
     with open(args_train.INPUT, 'w') as fp:
         json.dump(jdata, fp, indent=4)
     train(args_train)

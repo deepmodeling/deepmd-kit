@@ -15,7 +15,7 @@ using namespace tensorflow;
 using CPUDevice = Eigen::ThreadPoolDevice;
 using GPUDevice = Eigen::GpuDevice;
 
-REGISTER_OP("DataInfo")
+REGISTER_OP("DataInfoSeA")
     .Attr("T: {float, double}")
     .Input("coord: T")          //atomic coordinates
     .Input("type: int32")       //atomic type
@@ -38,9 +38,9 @@ REGISTER_OP("DataInfo")
     .Output("table_range: T");
 
 template<typename Device, typename FPTYPE>
-class DataInfoOp : public OpKernel {
+class DataInfoSeAOp : public OpKernel {
 public:
-  explicit DataInfoOp(OpKernelConstruction* context) : OpKernel(context) {
+  explicit DataInfoSeAOp(OpKernelConstruction* context) : OpKernel(context) {
     OP_REQUIRES_OK(context, context->GetAttr("rcut_a", &rcut_a));
     OP_REQUIRES_OK(context, context->GetAttr("rcut_r", &rcut_r));
     OP_REQUIRES_OK(context, context->GetAttr("rcut_r_smth", &rcut_r_smth));
@@ -402,7 +402,7 @@ private:
 
 #define REGISTER_CPU(T)                                                                 \
 REGISTER_KERNEL_BUILDER(                                                                \
-    Name("DataInfo").Device(DEVICE_CPU).TypeConstraint<T>("T"),                       \
-    DataInfoOp<CPUDevice, T>); 
+    Name("DataInfoSeA").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
+    DataInfoSeAOp<CPUDevice, T>); 
 REGISTER_CPU(float);
 REGISTER_CPU(double);

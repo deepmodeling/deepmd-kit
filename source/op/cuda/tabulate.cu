@@ -196,7 +196,8 @@ __global__ void tabulate_fusion_special(const FPTYPE * table, const FPTYPE * in,
         var[3] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 3];
         var[4] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 4];
         var[5] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 5];
-        FPTYPE res = var[0] + var[1] * xx + var[2] * xx * xx + var[3] * xx * xx * xx + var[4] * xx * xx * xx * xx + var[5] * xx * xx * xx * xx * xx; 
+        FPTYPE res = var[0] + (var[1] + (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) * xx;
+        
         for (int kk = 0; kk < MTILE; kk++) {
             iteratorC[kk * last_layer_size + thread_idx] += (nnei - breakpoint) * ff[block_idx * nnei * MTILE + ii * MTILE + kk] * res;
         }
@@ -240,14 +241,16 @@ __global__ void tabulate_fusion_grad_warp_reduce_special(const FPTYPE * table, c
         FPTYPE sum[KTILE] = {0.f};
         FPTYPE Csub = 0.f;
         for (int jj = lane_idx; jj < last_layer_size; jj += WARP_SIZE) {
+            FPTYPE var[6]; 
             // load iteratorB through table 
-            FPTYPE a0  = table[table_idx * last_layer_size * 6 + 6 * jj + 0]; 
-            FPTYPE a1  = table[table_idx * last_layer_size * 6 + 6 * jj + 1]; 
-            FPTYPE a2  = table[table_idx * last_layer_size * 6 + 6 * jj + 2]; 
-            FPTYPE a3  = table[table_idx * last_layer_size * 6 + 6 * jj + 3];
-            FPTYPE a4  = table[table_idx * last_layer_size * 6 + 6 * jj + 4];
-            FPTYPE a5  = table[table_idx * last_layer_size * 6 + 6 * jj + 5];
-            FPTYPE res = a0 + a1 * xx + a2 * xx * xx + a3 * xx * xx * xx + a4 * xx * xx * xx * xx + a5 * xx * xx * xx * xx * xx;
+            var[0]  = table[table_idx * last_layer_size * 6 + 6 * jj + 0]; 
+            var[1]  = table[table_idx * last_layer_size * 6 + 6 * jj + 1]; 
+            var[2]  = table[table_idx * last_layer_size * 6 + 6 * jj + 2]; 
+            var[3]  = table[table_idx * last_layer_size * 6 + 6 * jj + 3];
+            var[4]  = table[table_idx * last_layer_size * 6 + 6 * jj + 4];
+            var[5]  = table[table_idx * last_layer_size * 6 + 6 * jj + 5];
+            FPTYPE res = var[0] + (var[1] + (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) * xx;
+            
             for (int kk = 0; kk < KTILE; kk++) {
                 sum[kk] += (nnei - breakpoint) * iteratorA[kk * last_layer_size + jj] * res;
             }
@@ -255,7 +258,7 @@ __global__ void tabulate_fusion_grad_warp_reduce_special(const FPTYPE * table, c
             res += ff[block_idx * nnei * MTILE + (ii + warp_idx) * 4 + 1] * iteratorA[1 * last_layer_size + jj];
             res += ff[block_idx * nnei * MTILE + (ii + warp_idx) * 4 + 2] * iteratorA[2 * last_layer_size + jj];
             res += ff[block_idx * nnei * MTILE + (ii + warp_idx) * 4 + 3] * iteratorA[3 * last_layer_size + jj];
-            Csub += (nnei - breakpoint) * (a1 + 2 * a2 * xx + 3 * a3 * xx * xx + 4 * a4 * xx * xx * xx + 5 * a5 * xx * xx * xx * xx) * res;
+            Csub += (nnei - breakpoint) * (var[1] + (2 * var[2] + (3 * var[3] + (4 * var[4] + 5 * var[5] * xx) * xx) * xx) * xx) * res;
         }
         __syncwarp();
         for (int kk = 0; kk < KTILE; kk++) {

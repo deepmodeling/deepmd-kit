@@ -27,12 +27,14 @@ REGISTER_OP("TabulateFusionGrad")
     .Output("dy_dx: T")
     .Output("dy_df: T");
 
+#if GOOGLE_CUDA
 void TabulateFusionLauncher(const float * table, const float * table_info, const float * in, const float * ff, const int nloc, const int nnei, const int last_layer_size, float * out);
 void TabulateFusionLauncher(const double * table, const double * table_info, const double * in, const double * ff, const int nloc, const int nnei, const int last_layer_size, double * out);
 void TabulateFusionGradLauncher(const float * table, const float * table_info, const float * in, const float * ff, const float * dy, const int nloc, const int nnei, const int last_layer_size, float * dy_dx, float * dy_df);
 void TabulateFusionGradLauncher(const double * table, const double * table_info, const double * in, const double * ff, const double * dy, const int nloc, const int nnei, const int last_layer_size, double * dy_dx, double * dy_df);
 void TabulateCheckerLauncher(const float * table_info, const float * in, int * out, const int nloc, const int nnei);
 void TabulateCheckerLauncher(const double * table_info, const double * in, int * out, const int nloc, const int nnei);
+#endif
 
 template <typename FPTYPE>
 inline FPTYPE dot(FPTYPE a[4], FPTYPE b[4]) {
@@ -107,7 +109,8 @@ struct TabulateFusionFunctor {
                     FPTYPE a3  = table[table_idx * last_layer_size * 6 + 6 * kk + 3];
                     FPTYPE a4  = table[table_idx * last_layer_size * 6 + 6 * kk + 4];
                     FPTYPE a5  = table[table_idx * last_layer_size * 6 + 6 * kk + 5];
-                    FPTYPE var = a0 + a1 * xx + a2 * xx * xx + a3 * xx * xx * xx + a4 * xx * xx * xx * xx + a5 * xx * xx * xx * xx * xx;
+                    // FPTYPE var = a0 + a1 * xx + a2 * xx * xx + a3 * xx * xx * xx + a4 * xx * xx * xx * xx + a5 * xx * xx * xx * xx * xx;
+                    FPTYPE var = a0 + (a1 + (a2 + (a3 + (a4 + a5 * xx) * xx) * xx) * xx) * xx;
                     if (unloop) {
                         out[ii * last_layer_size * 4 + 0 * last_layer_size + kk] += (nnei - jj) * var * ll[0];
                         out[ii * last_layer_size * 4 + 1 * last_layer_size + kk] += (nnei - jj) * var * ll[1];
@@ -177,17 +180,20 @@ struct TabulateFusionGradFunctor {
                     FPTYPE a3  = table[table_idx * last_layer_size * 6 + 6 * kk + 3];
                     FPTYPE a4  = table[table_idx * last_layer_size * 6 + 6 * kk + 4];
                     FPTYPE a5  = table[table_idx * last_layer_size * 6 + 6 * kk + 5];
-                    FPTYPE res = a0 + a1 * xx + a2 * xx * xx + a3 * xx * xx * xx + a4 * xx * xx * xx * xx + a5 * xx * xx * xx * xx * xx;
+                    // FPTYPE res = a0 + a1 * xx + a2 * xx * xx + a3 * xx * xx * xx + a4 * xx * xx * xx * xx + a5 * xx * xx * xx * xx * xx;
+                    FPTYPE res = a0 + (a1 + (a2 + (a3 + (a4 + a5 * xx) * xx) * xx) * xx) * xx;
 
                     if (unloop) {
-                        grad += (a1 + 2 * a2 * xx + 3 * a3 * xx * xx + 4 * a4 * xx * xx * xx + 5 * a5 * xx * xx * xx * xx) * dot(ll, rr) * (nnei - jj);
+                        // grad += (a1 + 2 * a2 * xx + 3 * a3 * xx * xx + 4 * a4 * xx * xx * xx + 5 * a5 * xx * xx * xx * xx) * dot(ll, rr) * (nnei - jj);
+                        grad += (a1 + (2 * a2 + (3 * a3 + (4 * a4 + 5 * a5 * xx) * xx) * xx) * xx) * dot(ll, rr) * (nnei - jj);
                         dy_df[ii * nnei * 4 + jj * 4 + 0] += res * rr[0] * (nnei - jj);
                         dy_df[ii * nnei * 4 + jj * 4 + 1] += res * rr[1] * (nnei - jj);
                         dy_df[ii * nnei * 4 + jj * 4 + 2] += res * rr[2] * (nnei - jj);
                         dy_df[ii * nnei * 4 + jj * 4 + 3] += res * rr[3] * (nnei - jj);
                     }
                     else {
-                        grad += (a1 + 2 * a2 * xx + 3 * a3 * xx * xx + 4 * a4 * xx * xx * xx + 5 * a5 * xx * xx * xx * xx) * dot(ll, rr);
+                        // grad += (a1 + 2 * a2 * xx + 3 * a3 * xx * xx + 4 * a4 * xx * xx * xx + 5 * a5 * xx * xx * xx * xx) * dot(ll, rr);
+                        grad += (a1 + (2 * a2 + (3 * a3 + (4 * a4 + 5 * a5 * xx) * xx) * xx) * xx) * dot(ll, rr);
                         dy_df[ii * nnei * 4 + jj * 4 + 0] += res * rr[0];
                         dy_df[ii * nnei * 4 + jj * 4 + 1] += res * rr[1];
                         dy_df[ii * nnei * 4 + jj * 4 + 2] += res * rr[2];

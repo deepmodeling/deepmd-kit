@@ -19,6 +19,7 @@ from deepmd.descriptor import DescrptHybrid
 from deepmd.Model import Model, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
 from deepmd.loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
 from deepmd.utils.learning_rate import LearningRateExp
+from deepmd.utils.data_info import DataInfo
 
 from tensorflow.python.client import timeline
 from deepmd.env import op_module
@@ -91,11 +92,11 @@ class NNPTrainer (object):
 
         # descriptor
         try:
-            descrpt_type = descrpt_param['type']
+            self.descrpt_type = descrpt_param['type']
         except KeyError:
             raise KeyError('the type of descriptor should be set by `type`')
 
-        if descrpt_type != 'hybrid':
+        if self.descrpt_type != 'hybrid':
             self.descrpt = _generate_descrpt_from_param_dict(descrpt_param)
         else :
             descrpt_list = []
@@ -115,19 +116,19 @@ class NNPTrainer (object):
         # elif fitting_type == 'wfc':            
         #     self.fitting = WFCFitting(fitting_param, self.descrpt)
         elif fitting_type == 'dipole':
-            if descrpt_type == 'se_a':
+            if self.descrpt_type == 'se_a':
                 self.fitting = DipoleFittingSeA(**fitting_param)
             else :
                 raise RuntimeError('fitting dipole only supports descrptors: se_a')
         elif fitting_type == 'polar':
-            # if descrpt_type == 'loc_frame':
+            # if self.descrpt_type == 'loc_frame':
             #     self.fitting = PolarFittingLocFrame(fitting_param, self.descrpt)
-            if descrpt_type == 'se_a':
+            if self.descrpt_type == 'se_a':
                 self.fitting = PolarFittingSeA(**fitting_param)
             else :
                 raise RuntimeError('fitting polar only supports descrptors: loc_frame and se_a')
         elif fitting_type == 'global_polar':
-            if descrpt_type == 'se_a':
+            if self.descrpt_type == 'se_a':
                 self.fitting = GlobalPolarFittingSeA(**fitting_param)
             else :
                 raise RuntimeError('fitting global_polar only supports descrptors: loc_frame and se_a')
@@ -271,6 +272,17 @@ class NNPTrainer (object):
         self.type_map = data.get_type_map()
 
         self.model.data_stat(data)
+
+        if hasattr(self.descrpt, 'compress') and self.descrpt.compress:
+            assert hasattr(self.descrpt, 'distance'), "Compression error: descrpt must have attr distance"
+            assert hasattr(self.descrpt, 'max_nbor_size'), "Compression error: descrpt must have attr max_nbor_size"
+            assert hasattr(self.descrpt, 'table_range'), "Compression error: descrpt must have attr table_range"
+            if self.descrpt_type == 'se_a':
+                info = DataInfo(self.descrpt_type, self.descrpt.ntypes, self.descrpt.rcut_r, self.descrpt.rcut_r_smth, self.descrpt.sel_a, self.descrpt.davg, self.descrpt.dstd)
+            else:
+                raise RuntimeError ("Model compression error: descriptor type must be se_a!")
+            self.descrpt.distance, self.descrpt.max_nbor_size, self.descrpt.table_range\
+                = info.data_info(data)
 
         worker_device = "/job:%s/task:%d/%s" % (self.run_opt.my_job_name,
                                                 self.run_opt.my_task_index,

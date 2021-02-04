@@ -69,7 +69,7 @@ def main () :
                             help='the input parameter file in json or yaml format')
     parser_compress.add_argument('-i', "--input", default = "frozen_model.pb", type=str, 
 				            help = "the original model")
-    parser_compress.add_argument("-o","--output", default = "frozen_model_tab.pb", type=str, 
+    parser_compress.add_argument("-o","--output", default = "frozen_model_compress.pb", type=str, 
 				            help='the compressed model')
     parser_compress.add_argument('-t', '--table-info', nargs='+', default = [5, 0.01, 0.1, 1], type=float)
     parser_compress.add_argument("-d", "--folder", type=str, default = ".", 
