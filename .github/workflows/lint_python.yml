@@ -1,0 +1,19 @@
+on:
+  push:
+  pull_request:
+name: Lint Python
+jobs:
+  testpython:
+    name: Lint Python
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v1
+    - uses: rahul-deepsource/pyaction@v1.4.0
+      with:
+        python-root-list: "./deepmd/*.py ./deepmd/*/*.py ./source/train/*.py ./source/tests/*.py, ./source/scripts/*.py ./source/op/*.py"
+        use-black: true
+        use-isort: true
+        use-mypy: true
+        use-pycodestyle: true
+        extra-pycodestyle-options: "--max-line-length=88"
