@@ -68,7 +68,7 @@ Path("deepmd").mkdir(exist_ok=True)
 
 setup(
     name="deepmd-kit",
-    setup_requires=INSTALL_REQUIRES,
+    setup_requires=setup_requires,
     use_scm_version={"write_to": "deepmd/_version.py"},
     author="Han Wang",
     author_email="wang_han@iapcm.ac.cn",
