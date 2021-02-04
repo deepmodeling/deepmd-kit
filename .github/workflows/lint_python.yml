@@ -9,7 +9,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v1
-    - uses: rahul-deepsource/pyaction@v1.4.0
+    - uses: rahul-deepsource/pyaction@master
       with:
         python-root-list: "./deepmd/*.py ./deepmd/*/*.py ./source/train/*.py ./source/tests/*.py, ./source/scripts/*.py ./source/op/*.py"
         use-black: true
