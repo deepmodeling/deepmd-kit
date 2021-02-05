@@ -602,7 +602,7 @@ private:
 
 #define REGISTER_CPU(T)                                                                 \
 REGISTER_KERNEL_BUILDER(                                                                \
-    Name("Descrpt").Device(DEVICE_CPU).TypeConstraint<T>("T"),                       \
+    Name("Descrpt").Device(DEVICE_CPU).TypeConstraint<T>("T"),                          \
     DescrptOp<CPUDevice, T>); 
 REGISTER_CPU(float);
 REGISTER_CPU(double);
