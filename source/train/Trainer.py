@@ -19,7 +19,7 @@ from deepmd.descriptor import DescrptHybrid
 from deepmd.Model import Model, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
 from deepmd.loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
 from deepmd.utils.learning_rate import LearningRateExp
-from deepmd.utils.data_info import DataInfo
+from deepmd.utils.env_mat_stat import EnvMatStat
 
 from tensorflow.python.client import timeline
 from deepmd.env import op_module
@@ -278,11 +278,11 @@ class NNPTrainer (object):
             assert hasattr(self.descrpt, 'max_nbor_size'), "Compression error: descrpt must have attr max_nbor_size"
             assert hasattr(self.descrpt, 'table_range'), "Compression error: descrpt must have attr table_range"
             if self.descrpt_type == 'se_a':
-                info = DataInfo(self.descrpt_type, self.descrpt.ntypes, self.descrpt.rcut_r, self.descrpt.rcut_r_smth, self.descrpt.sel_a, self.descrpt.davg, self.descrpt.dstd)
+                stat = EnvMatStat(self.descrpt_type, self.descrpt.ntypes, self.descrpt.rcut_r, self.descrpt.rcut_r_smth, self.descrpt.sel_a, self.descrpt.davg, self.descrpt.dstd)
             else:
                 raise RuntimeError ("Model compression error: descriptor type must be se_a!")
             self.descrpt.distance, self.descrpt.max_nbor_size, self.descrpt.table_range\
-                = info.data_info(data)
+                = stat.env_mat_stat(data)
 
         worker_device = "/job:%s/task:%d/%s" % (self.run_opt.my_job_name,
                                                 self.run_opt.my_task_index,

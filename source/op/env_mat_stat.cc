@@ -15,7 +15,7 @@ using namespace tensorflow;
 using CPUDevice = Eigen::ThreadPoolDevice;
 using GPUDevice = Eigen::GpuDevice;
 
-REGISTER_OP("DataInfoSeA")
+REGISTER_OP("EnvMatStatSeA")
     .Attr("T: {float, double}")
     .Input("coord: T")          //atomic coordinates
     .Input("type: int32")       //atomic type
@@ -38,9 +38,9 @@ REGISTER_OP("DataInfoSeA")
     .Output("table_range: T");
 
 template<typename Device, typename FPTYPE>
-class DataInfoSeAOp : public OpKernel {
+class EnvMatStatSeAOp : public OpKernel {
 public:
-  explicit DataInfoSeAOp(OpKernelConstruction* context) : OpKernel(context) {
+  explicit EnvMatStatSeAOp(OpKernelConstruction* context) : OpKernel(context) {
     OP_REQUIRES_OK(context, context->GetAttr("rcut_a", &rcut_a));
     OP_REQUIRES_OK(context, context->GetAttr("rcut_r", &rcut_r));
     OP_REQUIRES_OK(context, context->GetAttr("rcut_r_smth", &rcut_r_smth));
@@ -402,7 +402,7 @@ private:
 
 #define REGISTER_CPU(T)                                                                 \
 REGISTER_KERNEL_BUILDER(                                                                \
-    Name("DataInfoSeA").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
-    DataInfoSeAOp<CPUDevice, T>); 
+    Name("EnvMatStatSeA").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
+    EnvMatStatSeAOp<CPUDevice, T>); 
 REGISTER_CPU(float);
 REGISTER_CPU(double);

@@ -7,7 +7,7 @@ from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.RunOptions import global_np_float_precision
 
-class DataInfo():
+class EnvMatStat():
     """
     Class for getting training data information. 
     It loads data from DeepmdData object, and measures the data info, including neareest nbor distance between atoms, max nbor size of atoms and the output data range of the environment matrix.
@@ -60,7 +60,7 @@ class DataInfo():
                 self.sel_a = sel
                 self.sel_r = [ 0 for ii in range(len(self.sel_a)) ]
                 descrpt, descrpt_deriv, rij, nlist, self.distance, self.max_nbor_size, self.table_range \
-                    = op_module.data_info_se_a(self.place_holders['coord'],
+                    = op_module.env_mat_stat_se_a(self.place_holders['coord'],
                                              self.place_holders['type'],
                                              self.place_holders['natoms_vec'],
                                              self.place_holders['box'],
@@ -74,8 +74,8 @@ class DataInfo():
                                              sel_r = self.sel_r)
         self.sub_sess = tf.Session(graph = sub_graph, config=default_tf_session_config)
 
-    def data_info(self,
-                  data) -> Tuple[float, int, list]:
+    def env_mat_stat(self,
+                  data) -> Tuple[float, int, List[float]]:
         """
         get the data info of the training data, including neareest nbor distance between atoms, max nbor size of atoms and the output data range of the environment matrix
 
@@ -83,6 +83,15 @@ class DataInfo():
         ----------
         data
                 Class for manipulating many data systems. It is implemented with the help of DeepmdData.
+        
+        Returns
+        -------
+        distance
+                The neareest nbor distance between atoms
+        max_nbor_size
+                The max nbor size of atoms
+        table_range
+                The output data range of the environment matrix
         """
         self.lower = 0.0
         self.upper = 0.0
@@ -127,6 +136,6 @@ class DataInfo():
         print('# DEEPMD: training data with upper boundary: ' + str(self.upper))
         print('# DEEPMD: training data with min   distance: ' + str(self.dist))
         print('# DEEPMD: training data with max   nborsize: ' + str(self.max_nbor))
-        
-        return self.distance, self.max_nbor_size, [self.lower, self.upper]
+        table_range = [self.lower, self.upper]
+        return self.distance, self.max_nbor_size, table_range
         
