@@ -89,14 +89,19 @@ class NNPTrainer (object):
         model_param = j_must_have(jdata, 'model')
         descrpt_param = j_must_have(model_param, 'descriptor')
         fitting_param = j_must_have(model_param, 'fitting_net')
-
+        self.model_param    = model_param
+        self.descrpt_param  = descrpt_param
+        self.descrpt_type   = descrpt_param['type']
+        if 'compress' in model_param:
+            self.compress_param = model_param['compress']
+        
         # descriptor
         try:
-            self.descrpt_type = descrpt_param['type']
+            descrpt_type = descrpt_param['type']
         except KeyError:
             raise KeyError('the type of descriptor should be set by `type`')
 
-        if self.descrpt_type != 'hybrid':
+        if descrpt_type != 'hybrid':
             self.descrpt = _generate_descrpt_from_param_dict(descrpt_param)
         else :
             descrpt_list = []
@@ -116,19 +121,19 @@ class NNPTrainer (object):
         # elif fitting_type == 'wfc':            
         #     self.fitting = WFCFitting(fitting_param, self.descrpt)
         elif fitting_type == 'dipole':
-            if self.descrpt_type == 'se_a':
+            if descrpt_type == 'se_a':
                 self.fitting = DipoleFittingSeA(**fitting_param)
             else :
                 raise RuntimeError('fitting dipole only supports descrptors: se_a')
         elif fitting_type == 'polar':
-            # if self.descrpt_type == 'loc_frame':
+            # if descrpt_type == 'loc_frame':
             #     self.fitting = PolarFittingLocFrame(fitting_param, self.descrpt)
-            if self.descrpt_type == 'se_a':
+            if descrpt_type == 'se_a':
                 self.fitting = PolarFittingSeA(**fitting_param)
             else :
                 raise RuntimeError('fitting polar only supports descrptors: loc_frame and se_a')
         elif fitting_type == 'global_polar':
-            if self.descrpt_type == 'se_a':
+            if descrpt_type == 'se_a':
                 self.fitting = GlobalPolarFittingSeA(**fitting_param)
             else :
                 raise RuntimeError('fitting global_polar only supports descrptors: loc_frame and se_a')
@@ -248,7 +253,6 @@ class NNPTrainer (object):
         else :
             self.numb_fparam = 0
 
-
     def _message (self, msg) :
         self.run_opt.message(msg)
 
@@ -273,16 +277,21 @@ class NNPTrainer (object):
 
         self.model.data_stat(data)
 
-        if hasattr(self.descrpt, 'compress') and self.descrpt.compress:
-            assert hasattr(self.descrpt, 'distance'), "Compression error: descrpt must have attr distance"
-            assert hasattr(self.descrpt, 'max_nbor_size'), "Compression error: descrpt must have attr max_nbor_size"
-            assert hasattr(self.descrpt, 'table_range'), "Compression error: descrpt must have attr table_range"
+        if 'compress' in self.model_param and self.compress_param['compress']:
+            assert hasattr(self.descrpt, 'davg'),     "Model compression error: descriptor must have attr davg!"
+            assert hasattr(self.descrpt, 'dstd'),     "Model compression error: descriptor must have attr dstd!"
+            assert hasattr(self.descrpt, 'ntypes'),   "Model compression error: descriptor must have attr ntypes!"
+            assert 'sel' in self.descrpt_param,       "Model compression error: descriptor must have attr sel!"
+            assert 'rcut' in self.descrpt_param,      "Model compression error: descriptor must have attr rcut!"
+            assert 'rcut_smth' in self.descrpt_param, "Model compression error: descriptor must have attr rcut_smth!"
             if self.descrpt_type == 'se_a':
-                stat = EnvMatStat(self.descrpt_type, self.descrpt.ntypes, self.descrpt.rcut_r, self.descrpt.rcut_r_smth, self.descrpt.sel_a, self.descrpt.davg, self.descrpt.dstd)
+                stat = EnvMatStat(self.descrpt_type, self.descrpt.ntypes, self.descrpt_param['rcut'], self.descrpt_param['rcut_smth'], self.descrpt_param['sel'], self.descrpt.davg, self.descrpt.dstd)
             else:
                 raise RuntimeError ("Model compression error: descriptor type must be se_a!")
-            self.descrpt.distance, self.descrpt.max_nbor_size, self.descrpt.table_range\
+
+            distance, max_nbor_size, env_mat_range\
                 = stat.env_mat_stat(data)
+            self.descrpt.enable_compression(distance, max_nbor_size, env_mat_range, self.compress_param['model_file'], self.compress_param['table_config'])            # send the statistics of the training data and activate the descriptor compression mode
 
         worker_device = "/job:%s/task:%d/%s" % (self.run_opt.my_job_name,
                                                 self.run_opt.my_task_index,

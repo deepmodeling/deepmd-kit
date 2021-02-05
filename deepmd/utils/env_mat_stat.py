@@ -40,9 +40,9 @@ class EnvMatStat():
         dstd
                 Standard deviation of training data
         """
-        self.ntypes = ntypes
         self.davg = davg
         self.dstd = dstd
+        self.ntypes = ntypes
         self.descrpt_type = descrpt_type
         assert self.descrpt_type == 'se_a', 'Model compression error: descriptor type must be se_a!'
         self.place_holders = {}
@@ -53,29 +53,24 @@ class EnvMatStat():
             self.place_holders['type'] = tf.placeholder(tf.int32, [None, None], name='t_type')
             self.place_holders['natoms_vec'] = tf.placeholder(tf.int32, [self.ntypes+2], name='t_natoms')
             self.place_holders['default_mesh'] = tf.placeholder(tf.int32, [None], name='t_mesh')
-            if self.descrpt_type == 'se_a':
-                self.rcut_a = -1
-                self.rcut_r = rcut
-                self.rcut_r_smth = rcut_smth
-                self.sel_a = sel
-                self.sel_r = [ 0 for ii in range(len(self.sel_a)) ]
-                descrpt, descrpt_deriv, rij, nlist, self.distance, self.max_nbor_size, self.table_range \
-                    = op_module.env_mat_stat_se_a(self.place_holders['coord'],
-                                             self.place_holders['type'],
-                                             self.place_holders['natoms_vec'],
-                                             self.place_holders['box'],
-                                             self.place_holders['default_mesh'],
-                                             self.place_holders['avg'],
-                                             self.place_holders['std'],
-                                             rcut_a = self.rcut_a,
-                                             rcut_r = self.rcut_r,
-                                             rcut_r_smth = self.rcut_r_smth,
-                                             sel_a = self.sel_a,
-                                             sel_r = self.sel_r)
+            self.sel = sel
+            self.rcut = rcut
+            self.rcut_smth = rcut_smth
+            self.distance, self.max_nbor_size, self.table_range \
+                = op_module.env_mat_stat(self.place_holders['coord'],
+                                         self.place_holders['type'],
+                                         self.place_holders['natoms_vec'],
+                                         self.place_holders['box'],
+                                         self.place_holders['default_mesh'],
+                                         self.place_holders['avg'],
+                                         self.place_holders['std'],
+                                         sel = self.sel,
+                                         rcut = self.rcut,
+                                         rcut_smth = self.rcut_smth)
         self.sub_sess = tf.Session(graph = sub_graph, config=default_tf_session_config)
 
     def env_mat_stat(self,
-                  data) -> Tuple[float, int, List[float]]:
+                     data) -> Tuple[float, int, List[float]]:
         """
         get the data info of the training data, including neareest nbor distance between atoms, max nbor size of atoms and the output data range of the environment matrix
 
@@ -87,10 +82,10 @@ class EnvMatStat():
         Returns
         -------
         distance
-                The neareest nbor distance between atoms
+                The nearest nbor distance between atoms
         max_nbor_size
                 The max nbor size of atoms
-        table_range
+        env_mat_range
                 The output data range of the environment matrix
         """
         self.lower = 0.0
@@ -136,6 +131,6 @@ class EnvMatStat():
         print('# DEEPMD: training data with upper boundary: ' + str(self.upper))
         print('# DEEPMD: training data with min   distance: ' + str(self.dist))
         print('# DEEPMD: training data with max   nborsize: ' + str(self.max_nbor))
-        table_range = [self.lower, self.upper]
-        return self.distance, self.max_nbor_size, table_range
+        env_mat_range = [self.lower, self.upper]
+        return self.distance, self.max_nbor_size, env_mat_range
         

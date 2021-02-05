@@ -15,7 +15,7 @@ using namespace tensorflow;
 using CPUDevice = Eigen::ThreadPoolDevice;
 using GPUDevice = Eigen::GpuDevice;
 
-REGISTER_OP("EnvMatStatSeA")
+REGISTER_OP("EnvMatStat")
     .Attr("T: {float, double}")
     .Input("coord: T")          //atomic coordinates
     .Input("type: int32")       //atomic type
@@ -24,37 +24,24 @@ REGISTER_OP("EnvMatStatSeA")
     .Input("mesh : int32")
     .Input("davg: T")           //average value of data
     .Input("dstd: T")           //standard deviation
-    .Attr("rcut_a: float")      //no use
-    .Attr("rcut_r: float")
-    .Attr("rcut_r_smth: float")
-    .Attr("sel_a: list(int)")
-    .Attr("sel_r: list(int)")   //all zero
-    .Output("descrpt: T")
-    .Output("descrpt_deriv: T")
-    .Output("rij: T")
-    .Output("nlist: int32")
+    .Attr("rcut: float")      //no use
+    .Attr("rcut_smth: float")
+    .Attr("sel: list(int)")
     .Output("distance: T")
     .Output("max_nbor_size: int32")
-    .Output("table_range: T");
+    .Output("env_stat_range: T");
 
 template<typename Device, typename FPTYPE>
-class EnvMatStatSeAOp : public OpKernel {
+class EnvMatStatOp : public OpKernel {
 public:
-  explicit EnvMatStatSeAOp(OpKernelConstruction* context) : OpKernel(context) {
-    OP_REQUIRES_OK(context, context->GetAttr("rcut_a", &rcut_a));
-    OP_REQUIRES_OK(context, context->GetAttr("rcut_r", &rcut_r));
-    OP_REQUIRES_OK(context, context->GetAttr("rcut_r_smth", &rcut_r_smth));
-    OP_REQUIRES_OK(context, context->GetAttr("sel_a", &sel_a));
-    OP_REQUIRES_OK(context, context->GetAttr("sel_r", &sel_r));
-    cum_sum (sec_a, sel_a);
-    cum_sum (sec_r, sel_r);
-    ndescrpt_a = sec_a.back() * 4;
-    ndescrpt_r = sec_r.back() * 1;
-    ndescrpt = ndescrpt_a + ndescrpt_r;
-    nnei_a = sec_a.back();
-    nnei_r = sec_r.back();
-    nnei = nnei_a + nnei_r;
-    fill_nei_a = (rcut_a < 0);
+  explicit EnvMatStatOp(OpKernelConstruction* context) : OpKernel(context) {
+    OP_REQUIRES_OK(context, context->GetAttr("rcut", &rcut));
+    OP_REQUIRES_OK(context, context->GetAttr("rcut_smth", &rcut_smth));
+    OP_REQUIRES_OK(context, context->GetAttr("sel", &sel));
+    cum_sum (sec, sel);
+    ndescrpt = sec.back() * 4;
+    nnei = sec.back();
+    fill_nei_a = true;
     count_nei_idx_overflow = 0;
   }
 
@@ -78,8 +65,7 @@ public:
     OP_REQUIRES (context, (mesh_tensor.shape().dims() == 1),	errors::InvalidArgument ("Dim of mesh should be 1"));
     OP_REQUIRES (context, (avg_tensor.shape().dims() == 2),	errors::InvalidArgument ("Dim of avg should be 2"));
     OP_REQUIRES (context, (std_tensor.shape().dims() == 2),	errors::InvalidArgument ("Dim of std should be 2"));
-    OP_REQUIRES (context, (fill_nei_a),				errors::InvalidArgument ("Rotational free descriptor only support the case rcut_a < 0"));
-    OP_REQUIRES (context, (sec_r.back() == 0),			errors::InvalidArgument ("Rotational free descriptor only support all-angular information: sel_r should be all zero."));
+    OP_REQUIRES (context, (fill_nei_a),				errors::InvalidArgument ("Rotational free descriptor only support the case -1 < 0"));
 
     OP_REQUIRES (context, (natoms_tensor.shape().dim_size(0) >= 3),		errors::InvalidArgument ("number of atoms should be larger than (or equal to) 3"));
     auto natoms	= natoms_tensor	.flat<int>();
@@ -151,24 +137,19 @@ public:
     TensorShape table_range_shape ;
     table_range_shape.AddDim (nloc * nnei);
 
-    int context_output_index = 0;
-    Tensor* descrpt_tensor = NULL;
-    OP_REQUIRES_OK(context, context->allocate_output(context_output_index++, 
-						     descrpt_shape, 
-						     &descrpt_tensor));
-    Tensor* descrpt_deriv_tensor = NULL;
-    OP_REQUIRES_OK(context, context->allocate_output(context_output_index++, 
-						     descrpt_deriv_shape, 
-						     &descrpt_deriv_tensor));
-    Tensor* rij_tensor = NULL;
-    OP_REQUIRES_OK(context, context->allocate_output(context_output_index++, 
-						     rij_shape,
-						     &rij_tensor));
-    Tensor* nlist_tensor = NULL;
-    OP_REQUIRES_OK(context, context->allocate_output(context_output_index++, 
-						     nlist_shape,
-						     &nlist_tensor));
+    Tensor descrpt_tensor;
+    OP_REQUIRES_OK(context, context->allocate_temp(DT_DOUBLE, descrpt_shape, &descrpt_tensor));
     
+    Tensor descrpt_deriv_tensor;
+    OP_REQUIRES_OK(context, context->allocate_temp(DT_DOUBLE, descrpt_deriv_shape, &descrpt_deriv_tensor));
+
+    Tensor rij_tensor;
+    OP_REQUIRES_OK(context, context->allocate_temp(DT_DOUBLE, rij_shape, &rij_tensor));
+
+    Tensor nlist_tensor;
+    OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, nlist_shape, &nlist_tensor));
+    
+    int context_output_index = 0;
     Tensor* distance_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(context_output_index++, 
 						     distance_shape,
@@ -188,10 +169,10 @@ public:
     auto mesh	= mesh_tensor	.flat<int>();
     auto avg	= avg_tensor	.matrix<FPTYPE>();
     auto std	= std_tensor	.matrix<FPTYPE>();
-    auto descrpt	= descrpt_tensor	->matrix<FPTYPE>();
-    auto descrpt_deriv	= descrpt_deriv_tensor	->matrix<FPTYPE>();
-    auto rij		= rij_tensor		->matrix<FPTYPE>();
-    auto nlist		= nlist_tensor	->matrix<int>();
+    auto descrpt	= descrpt_tensor	.matrix<FPTYPE>();
+    auto descrpt_deriv	= descrpt_deriv_tensor	.matrix<FPTYPE>();
+    auto rij		= rij_tensor		.matrix<FPTYPE>();
+    auto nlist		= nlist_tensor	.matrix<int>();
     auto distance		= distance_tensor	->flat<FPTYPE>();
     // find a potential bug here!
     auto max_nbor_size	= max_nbor_size_tensor ->flat<int>();
@@ -212,8 +193,7 @@ public:
     //   if (type(0, ii) > max_type_v) max_type_v = type(0, ii);
     // }
     // int ntypes = max_type_v + 1;
-    OP_REQUIRES (context, (ntypes == int(sel_a.size())),	errors::InvalidArgument ("number of types should match the length of sel array"));
-    OP_REQUIRES (context, (ntypes == int(sel_r.size())),	errors::InvalidArgument ("number of types should match the length of sel array"));
+    OP_REQUIRES (context, (ntypes == int(sel.size())),	errors::InvalidArgument ("number of types should match the length of sel array"));
 
     for (int kk = 0; kk < nsamples; ++kk){
       // set region
@@ -278,14 +258,14 @@ public:
 	std::vector<int > ext_end = {mesh(10-1), mesh(11-1), mesh(12-1)};
 	std::vector<int > global_grid (3);
 	for (int dd = 0; dd < 3; ++dd) global_grid[dd] = nat_end[dd] - nat_stt[dd];
-	::build_nlist (d_nlist_a, d_nlist_r, d_coord3, nloc, rcut_a, rcut_r, nat_stt, nat_end, ext_stt, ext_end, region, global_grid);
+	::build_nlist (d_nlist_a, d_nlist_r, d_coord3, nloc, -1, rcut, nat_stt, nat_end, ext_stt, ext_end, region, global_grid);
       }
       else if (nei_mode == 1) {
           // std::cout << "I'm in nei_mode 1" << std::endl;
 	std::vector<double > bk_d_coord3 = d_coord3;
 	std::vector<int > bk_d_type = d_type;
 	std::vector<int > ncell, ngcell;
-	copy_coord(d_coord3, d_type, nlist_map, ncell, ngcell, bk_d_coord3, bk_d_type, rcut_r, region);	
+	copy_coord(d_coord3, d_type, nlist_map, ncell, ngcell, bk_d_coord3, bk_d_type, rcut, region);	
 	b_nlist_map = true;
 	std::vector<int> nat_stt(3, 0);
 	std::vector<int> ext_stt(3), ext_end(3);
@@ -293,10 +273,10 @@ public:
 	  ext_stt[dd] = -ngcell[dd];
 	  ext_end[dd] = ncell[dd] + ngcell[dd];
 	}
-	::build_nlist (d_nlist_a, d_nlist_r, d_coord3, nloc, rcut_a, rcut_r, nat_stt, ncell, ext_stt, ext_end, region, ncell);
+	::build_nlist (d_nlist_a, d_nlist_r, d_coord3, nloc, -1, rcut, nat_stt, ncell, ext_stt, ext_end, region, ncell);
       }
       else if (nei_mode == -1){
-	::build_nlist (d_nlist_a, d_nlist_r, d_coord3, rcut_a, rcut_r, NULL);
+	::build_nlist (d_nlist_a, d_nlist_r, d_coord3, -1, rcut, NULL);
       }
       else {
 	throw std::runtime_error("unknow neighbor mode");
@@ -310,9 +290,11 @@ public:
       for (int ii = 0; ii < nloc; ++ii){
 	std::vector<int> fmt_nlist_a;
 	std::vector<int> fmt_nlist_r;
+  std::vector<int> sec_r(sec.size(), 0);
+
 	int ret = -1;
 	if (fill_nei_a){
-	  if ((ret = format_nlist_fill_a (fmt_nlist_a, fmt_nlist_r, d_coord3, ntypes, d_type, region, b_pbc, ii, d_nlist_a[ii], d_nlist_r[ii], rcut_r, sec_a, sec_r)) != -1){
+	  if ((ret = format_nlist_fill_a (fmt_nlist_a, fmt_nlist_r, d_coord3, ntypes, d_type, region, b_pbc, ii, d_nlist_a[ii], d_nlist_r[ii], rcut, sec, sec_r)) != -1){
 	    if (count_nei_idx_overflow == 0) {
 	      std::cout << "WARNING: Radial neighbor list length of type " << ret << " is not enough" << std::endl;
 	      flush(std::cout);
@@ -337,36 +319,36 @@ public:
 				 b_pbc,
 				 ii, 
 				 fmt_nlist_a,
-				 sec_a, 
-				 rcut_r_smth, 
-				 rcut_r);
+				 sec, 
+				 rcut_smth, 
+				 rcut);
 
 	// check sizes
-	assert (d_descrpt_a.size() == ndescrpt_a);
-	assert (d_descrpt_a_deriv.size() == ndescrpt_a * 3);
-	assert (d_rij_a.size() == nnei_a * 3);
-	assert (int(fmt_nlist_a.size()) == nnei_a);
+	assert (d_descrpt_a.size() == ndescrpt);
+	assert (d_descrpt_a_deriv.size() == ndescrpt * 3);
+	assert (d_rij_a.size() == nnei * 3);
+	assert (int(fmt_nlist_a.size()) == nnei);
   // std::cout << "min:\t" << (0 - avg(0, 0)) / std(0, 0) << std::endl;
   // if (counter % 1000 == 0) {
   //   std::cout << "min:\t" << (0 - avg(0, 0)) / std(0, 0) << std::endl;
   // }
 	// record outputs
-	for (int jj = 0; jj < ndescrpt_a; ++jj) {
+	for (int jj = 0; jj < ndescrpt; ++jj) {
 	  descrpt(kk, ii * ndescrpt + jj) = (d_descrpt_a[jj] - avg(d_type[ii], jj)) / std(d_type[ii], jj);
        if (jj % 4 == 0) {
          table_range(ii * nnei + jj / 4) = descrpt(kk, ii * ndescrpt + jj);
        }
   }
-	for (int jj = 0; jj < ndescrpt_a * 3; ++jj) {
+	for (int jj = 0; jj < ndescrpt * 3; ++jj) {
 	  descrpt_deriv(kk, ii * ndescrpt * 3 + jj) = d_descrpt_a_deriv[jj] / std(d_type[ii], jj/3);
 	}
-	for (int jj = 0; jj < nnei_a * 3; ++jj){
+	for (int jj = 0; jj < nnei * 3; ++jj){
 	  rij (kk, ii * nnei * 3 + jj) = d_rij_a[jj];
     if (jj % 3 == 0 && d_rij_a[jj] > 0) {
       distance(ii * nnei + jj / 3) = sqrt(d_rij_a[jj] * d_rij_a[jj] + d_rij_a[jj + 1] * d_rij_a[jj + 1] + d_rij_a[jj + 2] * d_rij_a[jj + 2]);
     }
 	}
-	for (int jj = 0; jj < nnei_a; ++jj){
+	for (int jj = 0; jj < nnei; ++jj){
 	  int record = fmt_nlist_a[jj];
 	  if (b_nlist_map && record >= 0) {
 	    record = nlist_map[record];
@@ -378,15 +360,12 @@ public:
   }
 private:
   int counter = -1;
-  float rcut_a;
-  float rcut_r;
-  float rcut_r_smth;
-  std::vector<int32> sel_r;
-  std::vector<int32> sel_a;
-  std::vector<int> sec_a;
-  std::vector<int> sec_r;
-  int ndescrpt, ndescrpt_a, ndescrpt_r;
-  int nnei, nnei_a, nnei_r;
+  float rcut;
+  float rcut_smth;
+  std::vector<int32> sel;
+  std::vector<int> sec;
+  int ndescrpt;
+  int nnei;
   bool fill_nei_a;
   int count_nei_idx_overflow;
   void 
@@ -402,7 +381,7 @@ private:
 
 #define REGISTER_CPU(T)                                                                 \
 REGISTER_KERNEL_BUILDER(                                                                \
-    Name("EnvMatStatSeA").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
-    EnvMatStatSeAOp<CPUDevice, T>); 
+    Name("EnvMatStat").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
+    EnvMatStatOp<CPUDevice, T>); 
 REGISTER_CPU(float);
 REGISTER_CPU(double);

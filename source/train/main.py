@@ -71,7 +71,7 @@ def main () :
 				            help = "the original model")
     parser_compress.add_argument("-o","--output", default = "frozen_model_compress.pb", type=str, 
 				            help='the compressed model')
-    parser_compress.add_argument('-t', '--table-info', nargs='+', default = [5, 0.01, 0.1, 1], type=float)
+    parser_compress.add_argument('-t', '--table-config', nargs='+', default = [5, 0.01, 0.1, 1], type=float)
     parser_compress.add_argument("-d", "--folder", type=str, default = ".", 
                             help="path to checkpoint folder")
 

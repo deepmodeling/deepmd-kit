@@ -18,9 +18,10 @@ def compress(args):
                                    dump = 'input_v1_compat.json')
     
     jdata = normalize(jdata)
-    jdata['model']['descriptor']['compress'] = True
-    jdata['model']['descriptor']['model_file'] = args.input
-    jdata['model']['descriptor']['table_info'] = args.table_info
+    jdata['model']['compress'] = {}
+    jdata['model']['compress']['compress'] = True
+    jdata['model']['compress']['model_file'] = args.input
+    jdata['model']['compress']['table_config'] = args.table_config
     
     # check the descriptor info of the input file
     assert jdata['model']['descriptor']['type'] == 'se_a', 'Model compression error: descriptor type must be se_a!'

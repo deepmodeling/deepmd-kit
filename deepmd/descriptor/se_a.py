@@ -28,10 +28,7 @@ class DescrptSeA ():
                   exclude_types: List[int] = [],
                   set_davg_zero: bool = False,
                   activation_function: str = 'tanh',
-                  precision: str = 'default',
-                  compress: bool = False,
-                  model_file: str = 'frozen_model.pb',
-                  table_info: list = [5, 0.01, 0.1, -1]
+                  precision: str = 'default'
     ) -> None:
         """
         Constructor
@@ -65,12 +62,6 @@ class DescrptSeA ():
                 The activation function in the embedding net. Supported options are {0}
         precision
                 The precision of the embedding net parameters. Supported options are {1}
-        compress
-                Try to compress the embedding nets. Otherwise, building original embedding nets
-        model_file
-                The original frozen model, that will be compressed.
-        table_info
-                The data info of tabulation.
         """
         self.sel_a = sel
         self.rcut_r = rcut
@@ -108,17 +99,8 @@ class DescrptSeA ():
         self.useBN = False
         self.dstd = None
         self.davg = None
+        self.compress = False
         
-        # compress config
-        self.compress = compress
-        self.model_file = model_file
-        self.table_info = table_info
-        if self.compress:
-            self.distance = 100.0
-            self.max_nbor_size = 0
-            self.table_range = [-1, 20]
-            self.table = DeepTabulate(self.model_file, self.filter_np_precision, self.type_one_side)
-
         self.place_holders = {}
         avg_zero = np.zeros([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
         std_ones = np.ones ([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
@@ -248,6 +230,37 @@ class DescrptSeA ():
             self.davg = np.array(all_davg)
         self.dstd = np.array(all_dstd)
 
+    def enable_compression(self,
+                           distance,
+                           max_nbor_size,
+                           env_mat_range,
+                           model_file = 'frozon_model.pb',
+                           table_config = [5, 0.01, 0.1, -1]
+    ) -> None:
+        """
+        Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        
+        Parameters
+        ----------
+        distance
+                The nearest nbor distance between atoms
+        max_nbor_size
+                The max nbor size of atoms
+        env_mat_range
+                The output data range of the environment matrix
+        model_file
+                The original frozen model, that will be compressed
+        table_info
+                The configuration of the tabulation
+        """   
+        self.compress = True
+        self.model_file = model_file
+        self.table_config = table_config
+        self.distance = distance
+        self.max_nbor_size = max_nbor_size
+        self.env_mat_range = env_mat_range
+        self.table = DeepTabulate(self.model_file, self.filter_np_precision, self.type_one_side)
+
 
     def build (self, 
                coord_ : tf.Tensor, 
@@ -348,13 +361,13 @@ class DescrptSeA ():
         self.nlist = tf.identity(self.nlist, name = 'o_nlist')
         
         if self.compress:
-            self.lower = math.floor(self.table_range[0])
-            self.upper = math.ceil(self.table_range[1])
+            self.lower = math.floor(self.env_mat_range[0])
+            self.upper = math.ceil(self.env_mat_range[1])
             self.table.build(self.lower, 
                              self.upper, 
-                             self.upper * self.table_info[0], 
-                             self.table_info[1], 
-                             self.table_info[2])
+                             self.upper * self.table_config[0], 
+                             self.table_config[1], 
+                             self.table_config[2])
 
         self.dout, self.qmat = self._pass_filter(self.descrpt_reshape, 
                                                  atype,
@@ -547,7 +560,7 @@ class DescrptSeA ():
             xyz_scatter = tf.reshape(tf.slice(inputs_reshape, [0,0],[-1,1]),[-1,1])
             # with (natom x nei_type_i) x out_size
             if self.compress and (type_input, type_i) not in self.exclude_types:
-              info = [self.lower, self.upper, self.upper * self.table_info[0], self.table_info[1], self.table_info[2], self.table_info[3]]
+              info = [self.lower, self.upper, self.upper * self.table_config[0], self.table_config[1], self.table_config[2], self.table_config[3]]
               if self.type_one_side:
                 net = 'filter_-1_net_' + str(type_i)
               else:
