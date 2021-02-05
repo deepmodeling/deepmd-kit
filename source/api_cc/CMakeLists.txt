@@ -1,6 +1,12 @@
 # libmd
 
-set (libname ${LIB_DEEPMD})
+set (libname ${LIB_DEEPMD_CC})
+
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/version.h.in
+  version.h
+  @ONLY
+)
 
 if (USE_CUDA_TOOLKIT)
   include_directories("${CUDA_INCLUDE_DIRS}")

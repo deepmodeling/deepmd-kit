@@ -6,24 +6,8 @@
 
 #include "SimulationRegion.h"
 #include "MathUtilities.h"
+#include "switcher.h"
 
-
-// return:	-1	OK
-//		> 0	the type of unsuccessful neighbor list
-inline
-int format_nlist_fill_a (std::vector<int > &			fmt_nei_idx_a,
-			 std::vector<int > &			fmt_nei_idx_r,
-			 const std::vector<double > &		posi,
-			 const int &				ntypes,
-			 const std::vector<int > &		type,
-			 const SimulationRegion<double> &	region,
-			 const bool &				b_pbc,
-			 const int &				i_idx,
-			 const std::vector<int > &		nei_idx_a, 
-			 const std::vector<int > &		nei_idx_r, 
-			 const double &				rcut,
-			 const std::vector<int > &		sec_a, 
-			 const std::vector<int > &		sec_r);
 
 inline
 void compute_descriptor (std::vector<double > &			descrpt_a,
@@ -67,20 +51,6 @@ void compute_descriptor (std::vector<double > &			descrpt_a,
 			 const int				axis1_type,
 			 const int				axis1_idx);
 
-inline
-void compute_descriptor_se_a (std::vector<double > &		descrpt_a,
-			       std::vector<double > &		descrpt_a_deriv,
-			       std::vector<double > &		rij_a,
-			       const std::vector<double > &	posi,
-			       const int &			ntypes,
-			       const std::vector<int > &	type,
-			       const SimulationRegion<double> &	region,
-			       const bool &			b_pbc,
-			       const int &			i_idx,
-			       const std::vector<int > &	fmt_nlist_a,
-			       const std::vector<int > &	sec_a, 
-			       const double &			rmin,
-			       const double &			rmax);
 
 inline
 void compute_descriptor_se_a_extf (std::vector<double > &	descrpt_a,
@@ -143,28 +113,6 @@ void compute_descriptor_se_r (std::vector<double > &		descrpt_r,
 			      const double &			rmin, 
 			      const double &			rmax);
 
-
-struct NeighborInfo 
-{
-  int type;
-  double dist;
-  int index;
-  NeighborInfo () 
-      : type (0), dist(0), index(0) 
-      {
-      }
-  NeighborInfo (int tt, double dd, int ii) 
-      : type (tt), dist(dd), index(ii) 
-      {
-      }
-  bool operator < (const NeighborInfo & b) const 
-      {
-	return (type < b.type || 
-		(type == b.type && 
-		 (dist < b.dist || 
-		  (dist == b.dist && index < b.index) ) ) );
-      }
-};
 
 static void 
 compute_dRdT (double (* dRdT)[9], 
@@ -346,76 +294,6 @@ compute_dRdT_2 (double (* dRdT)[9],
   }
 }
 
-int format_nlist_fill_a (std::vector<int > &			fmt_nei_idx_a,
-			 std::vector<int > &			fmt_nei_idx_r,
-			 const std::vector<double > &		posi,
-			 const int &				ntypes,
-			 const std::vector<int > &		type,
-			 const SimulationRegion<double> &	region,
-			 const bool &				b_pbc,
-			 const int &				i_idx,
-			 const std::vector<int > &		nei_idx_a, 
-			 const std::vector<int > &		nei_idx_r, 
-			 const double &				rcut,
-			 const std::vector<int > &		sec_a, 
-			 const std::vector<int > &		sec_r)
-{
-#ifdef DEBUG
-  assert (sec_a.size() == ntypes + 1);
-  assert (sec_r.size() == ntypes + 1);
-#endif
-  
-  fmt_nei_idx_a.resize (sec_a.back());
-  fmt_nei_idx_r.resize (sec_r.back());
-  fill (fmt_nei_idx_a.begin(), fmt_nei_idx_a.end(), -1);
-  fill (fmt_nei_idx_r.begin(), fmt_nei_idx_r.end(), -1);  
-  
-  // gether all neighbors
-  std::vector<int > nei_idx (nei_idx_a);
-  nei_idx.insert (nei_idx.end(), nei_idx_r.begin(), nei_idx_r.end());
-  assert (nei_idx.size() == nei_idx_a.size() + nei_idx_r.size());
-  // allocate the information for all neighbors
-  std::vector<NeighborInfo > sel_nei ;
-  sel_nei.reserve (nei_idx_a.size() + nei_idx_r.size());
-  for (unsigned kk = 0; kk < nei_idx.size(); ++kk){
-    double diff[3];
-    const int & j_idx = nei_idx[kk];
-    if (b_pbc){
-      region.diffNearestNeighbor (posi[j_idx*3+0], posi[j_idx*3+1], posi[j_idx*3+2], 
-				  posi[i_idx*3+0], posi[i_idx*3+1], posi[i_idx*3+2], 
-				  diff[0], diff[1], diff[2]);
-    }
-    else {
-      for (int dd = 0; dd < 3; ++dd) diff[dd] = posi[j_idx*3+dd] - posi[i_idx*3+dd];
-    }
-    double rr = sqrt(MathUtilities::dot<double> (diff, diff));    
-    if (rr <= rcut) {
-      sel_nei.push_back(NeighborInfo (type[j_idx], rr, j_idx));
-    }
-  }
-  sort (sel_nei.begin(), sel_nei.end());  
-  
-  std::vector<int > nei_iter = sec_a;
-  int overflowed = -1;
-  for (unsigned kk = 0; kk < sel_nei.size(); ++kk){
-    const int & nei_type = sel_nei[kk].type;
-    if (nei_iter[nei_type] >= sec_a[nei_type+1]) {
-      int r_idx_iter = (nei_iter[nei_type] ++) - sec_a[nei_type+1] + sec_r[nei_type];
-      if (r_idx_iter >= sec_r[nei_type+1]) {
-	// return nei_type;
-	overflowed = nei_type;
-      }
-      else {
-	fmt_nei_idx_r[r_idx_iter] = sel_nei[kk].index;
-      }
-    }
-    else {
-      fmt_nei_idx_a[nei_iter[nei_type] ++] = sel_nei[kk].index;
-    }
-  }
-  
-  return overflowed;
-}
 
 
 // output deriv size: n_sel_a_nei x 4 x 12				    + n_sel_r_nei x 12
@@ -887,181 +765,9 @@ void compute_descriptor (std::vector<double > &			descrpt_a,
   }  
 }
 
-inline double
-cos_switch (const double & xx, 
-	    const double & rmin, 
-	    const double & rmax) 
-{
-  if (xx < rmin) {
-    return 1.;
-  }
-  else if (xx < rmax) {
-    const double value = (xx - rmin) / (rmax - rmin) * M_PI;
-    return 0.5 * (cos(value) + 1);  
-  }
-  else {
-    return 0.;
-  }
-}
 
-inline void
-cos_switch (double & vv,
-	    double & dd,
-	    const double & xx, 
-	    const double & rmin, 
-	    const double & rmax) 
-{
-  if (xx < rmin) {
-    dd = 0;
-    vv = 1;
-  }
-  else if (xx < rmax) {
-    double value = (xx - rmin) / (rmax - rmin) * M_PI;
-    dd = -0.5 * sin(value) * M_PI / (rmax - rmin);
-    vv = 0.5 * (cos(value) + 1);    
-  }
-  else {
-    dd = 0;
-    vv = 0;
-  }
-}
 
-inline void
-spline3_switch (double & vv,
-		double & dd,
-		const double & xx, 
-		const double & rmin, 
-		const double & rmax) 
-{
-  if (xx < rmin) {
-    dd = 0;
-    vv = 1;
-  }
-  else if (xx < rmax) {
-    double uu = (xx - rmin) / (rmax - rmin) ;
-    double du = 1. / (rmax - rmin) ;
-    // s(u) = (1+2u)(1-u)^2
-    // s'(u) = 2(2u+1)(u-1) + 2(u-1)^2
-    vv = (1 + 2*uu) * (1-uu) * (1-uu);
-    dd = (2 * (2*uu + 1) * (uu-1) + 2 * (uu-1) * (uu-1) ) * du;
-  }
-  else {
-    dd = 0;
-    vv = 0;
-  }
-}
 
-template <typename TYPE>
-inline void
-spline5_switch (TYPE & vv,
-		TYPE & dd,
-		const TYPE & xx, 
-		const TYPE & rmin, 
-		const TYPE & rmax) 
-{
-  if (xx < rmin) {
-    dd = 0;
-    vv = 1;
-  }
-  else if (xx < rmax) {
-    double uu = (xx - rmin) / (rmax - rmin) ;
-    double du = 1. / (rmax - rmin) ;
-    vv = uu*uu*uu * (-6 * uu*uu + 15 * uu - 10) + 1;
-    dd = ( 3 * uu*uu * (-6 * uu*uu + 15 * uu - 10) + uu*uu*uu * (-12 * uu + 15) ) * du;
-  }
-  else {
-    dd = 0;
-    vv = 0;
-  }
-}
-
-// output deriv size: n_sel_a_nei x 4 x 12				    
-//		      (1./rr, cos_theta, cos_phi, sin_phi)  x 4 x (x, y, z) 
-void compute_descriptor_se_a (std::vector<double > &			descrpt_a,
-			       std::vector<double > &			descrpt_a_deriv,
-			       std::vector<double > &			rij_a,
-			       const std::vector<double > &		posi,
-			       const int &				ntypes,
-			       const std::vector<int > &		type,
-			       const SimulationRegion<double> &		region,
-			       const bool &				b_pbc,
-			       const int &				i_idx,
-			       const std::vector<int > &		fmt_nlist_a,
-			       const std::vector<int > &		sec_a, 
-			       const double &				rmin, 
-			       const double &				rmax)
-{  
-  // compute the diff of the neighbors
-  std::vector<std::vector<double > > sel_a_diff (sec_a.back());
-  rij_a.resize (sec_a.back() * 3);
-  fill (rij_a.begin(), rij_a.end(), 0.0);
-  for (int ii = 0; ii < int(sec_a.size()) - 1; ++ii){
-    for (int jj = sec_a[ii]; jj < sec_a[ii+1]; ++jj){
-      if (fmt_nlist_a[jj] < 0) break;
-      sel_a_diff[jj].resize(3);
-      const int & j_idx = fmt_nlist_a[jj];
-      if (b_pbc){
-	region.diffNearestNeighbor (posi[j_idx*3+0], posi[j_idx*3+1], posi[j_idx*3+2], 
-				    posi[i_idx*3+0], posi[i_idx*3+1], posi[i_idx*3+2], 
-				    sel_a_diff[jj][0], sel_a_diff[jj][1], sel_a_diff[jj][2]);
-      }
-      else {
-	for (int dd = 0; dd < 3; ++dd) sel_a_diff[jj][dd] = posi[j_idx*3+dd] - posi[i_idx*3+dd];
-      }
-      for (int dd = 0; dd < 3; ++dd) rij_a[jj*3+dd] = sel_a_diff[jj][dd];
-    }
-  }
-  
-  // 1./rr, cos(theta), cos(phi), sin(phi)
-  descrpt_a.resize (sec_a.back() * 4);
-  fill (descrpt_a.begin(), descrpt_a.end(), 0.0);
-  // deriv wrt center: 3
-  descrpt_a_deriv.resize (sec_a.back() * 4 * 3);
-  fill (descrpt_a_deriv.begin(), descrpt_a_deriv.end(), 0.0);
-
-  for (int sec_iter = 0; sec_iter < int(sec_a.size()) - 1; ++sec_iter){
-    for (int nei_iter = sec_a[sec_iter]; nei_iter < sec_a[sec_iter+1]; ++nei_iter) {      
-      if (fmt_nlist_a[nei_iter] < 0) break;
-      const double * rr = &sel_a_diff[nei_iter][0];
-      double nr2 = MathUtilities::dot(rr, rr);
-      double inr = 1./sqrt(nr2);
-      double nr = nr2 * inr;
-      double inr2 = inr * inr;
-      double inr4 = inr2 * inr2;
-      double inr3 = inr4 * nr;
-      double sw, dsw;
-      spline5_switch(sw, dsw, nr, rmin, rmax);
-      int idx_deriv = nei_iter * 4 * 3;	// 4 components time 3 directions
-      int idx_value = nei_iter * 4;	// 4 components
-      // 4 value components
-      descrpt_a[idx_value + 0] = 1./nr;
-      descrpt_a[idx_value + 1] = rr[0] / nr2;
-      descrpt_a[idx_value + 2] = rr[1] / nr2;
-      descrpt_a[idx_value + 3] = rr[2] / nr2;
-      // deriv of component 1/r
-      descrpt_a_deriv[idx_deriv + 0] = rr[0] * inr3 * sw - descrpt_a[idx_value + 0] * dsw * rr[0] * inr;
-      descrpt_a_deriv[idx_deriv + 1] = rr[1] * inr3 * sw - descrpt_a[idx_value + 0] * dsw * rr[1] * inr;
-      descrpt_a_deriv[idx_deriv + 2] = rr[2] * inr3 * sw - descrpt_a[idx_value + 0] * dsw * rr[2] * inr;
-      // deriv of component x/r2
-      descrpt_a_deriv[idx_deriv + 3] = (2. * rr[0] * rr[0] * inr4 - inr2) * sw - descrpt_a[idx_value + 1] * dsw * rr[0] * inr;
-      descrpt_a_deriv[idx_deriv + 4] = (2. * rr[0] * rr[1] * inr4	) * sw - descrpt_a[idx_value + 1] * dsw * rr[1] * inr;
-      descrpt_a_deriv[idx_deriv + 5] = (2. * rr[0] * rr[2] * inr4	) * sw - descrpt_a[idx_value + 1] * dsw * rr[2] * inr;
-      // deriv of component y/r2
-      descrpt_a_deriv[idx_deriv + 6] = (2. * rr[1] * rr[0] * inr4	) * sw - descrpt_a[idx_value + 2] * dsw * rr[0] * inr;
-      descrpt_a_deriv[idx_deriv + 7] = (2. * rr[1] * rr[1] * inr4 - inr2) * sw - descrpt_a[idx_value + 2] * dsw * rr[1] * inr;
-      descrpt_a_deriv[idx_deriv + 8] = (2. * rr[1] * rr[2] * inr4	) * sw - descrpt_a[idx_value + 2] * dsw * rr[2] * inr;
-      // deriv of component z/r2
-      descrpt_a_deriv[idx_deriv + 9] = (2. * rr[2] * rr[0] * inr4	) * sw - descrpt_a[idx_value + 3] * dsw * rr[0] * inr;
-      descrpt_a_deriv[idx_deriv +10] = (2. * rr[2] * rr[1] * inr4	) * sw - descrpt_a[idx_value + 3] * dsw * rr[1] * inr;
-      descrpt_a_deriv[idx_deriv +11] = (2. * rr[2] * rr[2] * inr4 - inr2) * sw - descrpt_a[idx_value + 3] * dsw * rr[2] * inr;
-      // 4 value components
-      descrpt_a[idx_value + 0] *= sw;
-      descrpt_a[idx_value + 1] *= sw;
-      descrpt_a[idx_value + 2] *= sw;
-      descrpt_a[idx_value + 3] *= sw;
-    }
-  }
-}
 
 
 void compute_descriptor_se_r (std::vector<double > &		descrpt,

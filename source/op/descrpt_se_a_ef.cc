@@ -5,6 +5,7 @@
 
 #include "ComputeDescriptor.h"
 #include "NeighborList.h"
+#include "fmt_nlist.h"
 
 typedef double boxtensor_t ;
 typedef double compute_t;

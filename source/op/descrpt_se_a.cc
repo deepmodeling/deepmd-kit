@@ -5,6 +5,8 @@
 
 #include "ComputeDescriptor.h"
 #include "NeighborList.h"
+#include "fmt_nlist.h"
+#include "env_mat.h"
 
 typedef double boxtensor_t ;
 typedef double compute_t;
@@ -286,19 +288,19 @@ public:
 	std::vector<compute_t > d_descrpt_r_deriv;
 	std::vector<compute_t > d_rij_a;
 	std::vector<compute_t > d_rij_r;      
-	compute_descriptor_se_a (d_descrpt_a,
-				 d_descrpt_a_deriv,
-				 d_rij_a,
-				 d_coord3,
-				 ntypes, 
-				 d_type,
-				 region, 
-				 b_pbc,
-				 ii, 
-				 fmt_nlist_a,
-				 sec_a, 
-				 rcut_r_smth, 
-				 rcut_r);
+	env_mat_a (d_descrpt_a,
+		   d_descrpt_a_deriv,
+		   d_rij_a,
+		   d_coord3,
+		   ntypes, 
+		   d_type,
+		   region, 
+		   b_pbc,
+		   ii, 
+		   fmt_nlist_a,
+		   sec_a, 
+		   rcut_r_smth, 
+		   rcut_r);
 
 	// check sizes
 	assert (d_descrpt_a.size() == ndescrpt_a);
