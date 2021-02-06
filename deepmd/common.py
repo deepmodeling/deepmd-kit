@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     try:
         from typing import Literal  # python >3.6
     except ImportError:
-        from typing_extensions import Literal
+        from typing_extensions import Literal  # type: ignore
     _ACTIVATION = Literal["relu", "relu6", "softplus", "sigmoid", "tanh", "gelu"]
     _PRECISION = Literal["default", "float16", "float32", "float64"]
 
@@ -428,7 +428,7 @@ def expand_sys_str(root_dir: Union[str, Path]) -> List[str]:
         list of string pointing to system directories
     """
     matches = [d for d in Path(root_dir).rglob("*") if (d / "type.raw").is_file()]
-    return [str(m.resolve()) for m in matches]
+    return [str(m.relative_to(root_dir)) for m in matches]
 
 
 def docstring_parameter(*sub: Tuple[str, ...]):
