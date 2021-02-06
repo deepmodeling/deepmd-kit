@@ -273,19 +273,19 @@ public:
 	std::vector<compute_t > d_descrpt;
 	std::vector<compute_t > d_descrpt_deriv;
 	std::vector<compute_t > d_rij;
-	compute_descriptor_se_r (d_descrpt,
-				  d_descrpt_deriv,
-				  d_rij,
-				  d_coord3,
-				  ntypes, 
-				  d_type,
-				  region, 
-				  b_pbc,
-				  ii, 
-				  fmt_nlist,
-				  sec, 
-				  rcut_smth, 
-				  rcut);
+	env_mat_r (d_descrpt,
+		   d_descrpt_deriv,
+		   d_rij,
+		   d_coord3,
+		   ntypes, 
+		   d_type,
+		   region, 
+		   b_pbc,
+		   ii, 
+		   fmt_nlist,
+		   sec, 
+		   rcut_smth, 
+		   rcut);
 
 	// check sizes
 	assert (d_descrpt_deriv.size() == ndescrpt * 3);
