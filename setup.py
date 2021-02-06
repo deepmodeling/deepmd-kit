@@ -1,95 +1,108 @@
-from skbuild import setup
-from skbuild.exceptions import SKBuildError
-from skbuild.cmaker import get_cmake_version
-from setuptools_scm import get_version
-from packaging.version import LegacyVersion
-from os import path, makedirs
-import os, importlib
-import pkg_resources
+"""Setup script for DeePMD-kit package."""
+
+import os
 from distutils.util import get_platform
+from importlib.machinery import FileFinder
+from importlib.util import find_spec
+from pathlib import Path
+from sysconfig import get_path
 
+from packaging.specifiers import SpecifierSet
+from pkg_resources import Distribution
+from skbuild import setup
+from skbuild.cmaker import get_cmake_version
+from skbuild.exceptions import SKBuildError
 
-readme_file = path.join(path.dirname(path.abspath(__file__)), 'README.md')
+# define constants
+INSTALL_REQUIRES = ["numpy", "scipy", "pyyaml", "dargs", "typing_extensions"]
+setup_requires = ["setuptools_scm", "scikit-build"]
+
+# read readme to markdown
+readme_file = Path(__file__).parent / "README.md"
+readme = readme_file.read_text()
+
+tf_version = os.environ.get("TENSORFLOW_VERSION", "2.3")
+
+if tf_version in SpecifierSet("<1.15") or tf_version in SpecifierSet(">=2.0,<2.1"):
+    extras_require = {
+        "cpu": [f"tensorflow=={tf_version}"],
+        "gpu": [f"tensorflow-gpu=={tf_version}"],
+    }
+else:
+    extras_require = {
+        "cpu": [f"tensorflow-cpu=={tf_version}"],
+        "gpu": [f"tensorflow=={tf_version}"],
+    }
+
+# get tensorflow spec
+tf_spec = find_spec("tensorflow")
+if not tf_spec:
+    # purelib gets site-packages path
+    site_packages = get_path("purelib")
+    if site_packages:
+        tf_spec = FileFinder(site_packages).find_spec("tensorflow")
+
+# get install dir from spec
 try:
-    from m2r import parse_from_file
-    readme = parse_from_file(readme_file)
-except ImportError:
-    with open(readme_file) as f:
-        readme = f.read()
-
-install_requires=['numpy', 'scipy', 'pyyaml', 'dargs']
-setup_requires=['setuptools_scm', 'scikit-build']
-
-tf_version = os.environ.get('TENSORFLOW_VERSION', '2.3')
-if LegacyVersion(tf_version) < LegacyVersion("1.15") or (LegacyVersion(tf_version) >= LegacyVersion("2.0") and LegacyVersion(tf_version) <  LegacyVersion("2.1")):
-    extras_require = {"cpu": ["tensorflow==" + tf_version], "gpu": ["tensorflow-gpu==" + tf_version]}
-else:
-    extras_require = {"cpu": ["tensorflow-cpu==" + tf_version], "gpu": ["tensorflow==" + tf_version]}
-tf_spec = importlib.util.find_spec("tensorflow")
-if tf_spec:
-    tf_install_dir = tf_spec.submodule_search_locations[0]
-else:
-    site_packages_path = path.join(path.dirname(path.__file__), 'site-packages')
-    tf_spec = importlib.machinery.FileFinder(site_packages_path).find_spec("tensorflow")
-    if tf_spec:
-        tf_install_dir = tf_spec.submodule_search_locations[0]
-    else:
-        setup_requires.append("tensorflow==" + tf_version)
-        tf_install_dir = path.join(path.dirname(path.abspath(__file__)), '.egg',
-                                   pkg_resources.Distribution(project_name="tensorflow", version=tf_version,
-                                                              platform=get_platform()).egg_name(),
-                                   'tensorflow')
+    tf_install_dir = tf_spec.submodule_search_locations[0]  # type: ignore
+    # AttributeError if ft_spec is None
+    # TypeError if submodule_search_locations are None
+    # IndexError if submodule_search_locations is an empty list
+except (AttributeError, TypeError, IndexError):
+    setup_requires.append(f"tensorflow=={tf_version}")
+    dist = Distribution(
+        project_name="tensorflow", version=tf_version, platform=get_platform()
+    ).egg_name()
+    tf_install_dir = Path(__file__).parent.resolve().joinpath(".egg", dist, "tensorflow").resolve()
 
 # add cmake as a build requirement if cmake>3.7 is not installed
 try:
-    if LegacyVersion(get_cmake_version()) < LegacyVersion("3.7"):
-        setup_requires.append('cmake')
+    cmake_version = get_cmake_version()
 except SKBuildError:
-    setup_requires.append('cmake')
+    setup_requires.append("cmake")
+else:
+    if cmake_version in SpecifierSet("<3.7"):
+        setup_requires.append("cmake")
 
-try:
-    makedirs('deepmd')
-except OSError:
-    pass
-
+Path("deepmd").mkdir(exist_ok=True)
 
 setup(
     name="deepmd-kit",
     setup_requires=setup_requires,
-    use_scm_version={'write_to': 'deepmd/_version.py'},
+    use_scm_version={"write_to": "deepmd/_version.py"},
     author="Han Wang",
     author_email="wang_han@iapcm.ac.cn",
     description="A deep learning package for many-body potential energy representation and molecular dynamics",
     long_description=readme,
     long_description_content_type="text/markdown",
     url="https://github.com/deepmodeling/deepmd-kit",
-    packages=['deepmd', 
-              'deepmd/descriptor',
-              'deepmd/fit',
-              'deepmd/infer',
-              'deepmd/loss',
-              'deepmd/utils',
+    packages=[
+        "deepmd",
+        "deepmd/descriptor",
+        "deepmd/fit",
+        "deepmd/infer",
+        "deepmd/loss",
+        "deepmd/utils",
     ],
     python_requires=">=3.6",
     classifiers=[
         "Programming Language :: Python :: 3.6",
         "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
     ],
-    keywords='deepmd',
-    install_requires=install_requires,        
-    cmake_args=['-DTENSORFLOW_ROOT:STRING=%s' % tf_install_dir, 
-                '-DBUILD_PY_IF:BOOL=TRUE', 
-                '-DBUILD_CPP_IF:BOOL=FALSE',
-                '-DFLOAT_PREC:STRING=high',
+    keywords="deepmd",
+    install_requires=INSTALL_REQUIRES,
+    cmake_args=[
+        f"-DTENSORFLOW_ROOT:STRING={tf_install_dir}",
+        "-DBUILD_PY_IF:BOOL=TRUE",
+        "-DBUILD_CPP_IF:BOOL=FALSE",
+        "-DFLOAT_PREC:STRING=high",
     ],
-    cmake_source_dir='source',
-    cmake_minimum_required_version='3.0',
+    cmake_source_dir="source",
+    cmake_minimum_required_version="3.0",
     extras_require={
-        'test': ['dpdata>=0.1.9'],
-        'docs': ['sphinx', 'recommonmark', 'sphinx_rtd_theme'],
+        "test": ["dpdata>=0.1.9"],
+        "docs": ["sphinx", "recommonmark", "sphinx_rtd_theme"],
         **extras_require,
     },
-    entry_points={
-          'console_scripts': ['dp = deepmd.main:main']
-    }
+    entry_points={"console_scripts": ["dp = deepmd.main:main"]},
 )

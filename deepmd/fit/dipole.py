@@ -3,7 +3,7 @@ import numpy as np
 from typing import Tuple, List
 
 from deepmd.env import tf
-from deepmd.common import add_data_requirement, get_activation_func, get_precision, activation_fn_dict, precision_dict, docstring_parameter
+from deepmd.common import add_data_requirement, get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter
 from deepmd.utils.argcheck import list_to_doc
 from deepmd.utils.network import one_layer
 from deepmd.descriptor import DescrptSeA
@@ -15,7 +15,7 @@ class DipoleFittingSeA () :
     """
     Fit the atomic dipole with descriptor se_a
     """
-    @docstring_parameter(list_to_doc(activation_fn_dict.keys()), list_to_doc(precision_dict.keys()))
+    @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   descrpt : tf.Tensor,
                   neuron : List[int] = [120,120,120], 
