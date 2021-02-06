@@ -98,21 +98,6 @@ void compute_descriptor_se_a_ef_vert (std::vector<double > &			descrpt_a,
 				      const double &				rmin, 
 				      const double &				rmax);
 
-inline
-void compute_descriptor_se_r (std::vector<double > &		descrpt_r,
-			      std::vector<double > &		descrpt_r_deriv,
-			      std::vector<double > &		rij_r,
-			      const std::vector<double > &	posi,
-			      const int &			ntypes,
-			      const std::vector<int > &		type,
-			      const SimulationRegion<double> &	region,
-			      const bool &			b_pbc,
-			      const int &			i_idx,
-			      const std::vector<int > &		fmt_nlist_r,
-			      const std::vector<int > &		sec_r,
-			      const double &			rmin, 
-			      const double &			rmax);
-
 
 static void 
 compute_dRdT (double (* dRdT)[9], 
@@ -770,73 +755,6 @@ void compute_descriptor (std::vector<double > &			descrpt_a,
 
 
 
-void compute_descriptor_se_r (std::vector<double > &		descrpt,
-			      std::vector<double > &		descrpt_deriv,
-			      std::vector<double > &		rij,
-			      const std::vector<double > &	posi,
-			      const int &			ntypes,
-			      const std::vector<int > &		type,
-			      const SimulationRegion<double> &	region,
-			      const bool &			b_pbc,
-			      const int &			i_idx,
-			      const std::vector<int > &		fmt_nlist,
-			      const std::vector<int > &		sec,
-			      const double &			rmin, 
-			      const double &			rmax)
-{  
-  // compute the diff of the neighbors
-  std::vector<std::vector<double > > sel_diff (sec.back());
-  rij.resize (sec.back() * 3);
-  fill (rij.begin(), rij.end(), 0.0);
-  for (int ii = 0; ii < int(sec.size()) - 1; ++ii){
-    for (int jj = sec[ii]; jj < sec[ii+1]; ++jj){
-      if (fmt_nlist[jj] < 0) break;
-      sel_diff[jj].resize(3);
-      const int & j_idx = fmt_nlist[jj];
-      if (b_pbc){
-	region.diffNearestNeighbor (posi[j_idx*3+0], posi[j_idx*3+1], posi[j_idx*3+2], 
-				    posi[i_idx*3+0], posi[i_idx*3+1], posi[i_idx*3+2], 
-				    sel_diff[jj][0], sel_diff[jj][1], sel_diff[jj][2]);
-      }
-      else {
-	for (int dd = 0; dd < 3; ++dd) sel_diff[jj][dd] = posi[j_idx*3+dd] - posi[i_idx*3+dd];
-      }
-      for (int dd = 0; dd < 3; ++dd) rij[jj*3+dd] = sel_diff[jj][dd];
-    }
-  }
-  
-  // 1./rr
-  descrpt.resize (sec.back());
-  fill (descrpt.begin(), descrpt.end(), 0.0);
-  // deriv wrt center: 3
-  descrpt_deriv.resize (sec.back() * 3);
-  fill (descrpt_deriv.begin(), descrpt_deriv.end(), 0.0);
-
-  for (int sec_iter = 0; sec_iter < int(sec.size()) - 1; ++sec_iter){
-    for (int nei_iter = sec[sec_iter]; nei_iter < sec[sec_iter+1]; ++nei_iter) {      
-      if (fmt_nlist[nei_iter] < 0) break;
-      const double * rr = &sel_diff[nei_iter][0];
-      double nr2 = MathUtilities::dot(rr, rr);
-      double inr = 1./sqrt(nr2);
-      double nr = nr2 * inr;
-      double inr2 = inr * inr;
-      double inr4 = inr2 * inr2;
-      double inr3 = inr4 * nr;
-      double sw, dsw;
-      spline5_switch(sw, dsw, nr, rmin, rmax);
-      int idx_deriv = nei_iter * 3;	// 1 components time 3 directions
-      int idx_value = nei_iter;		// 1 components
-      // value components
-      descrpt[idx_value + 0] = 1./nr;
-      // deriv of component 1/r
-      descrpt_deriv[idx_deriv + 0] = rr[0] * inr3 * sw - descrpt[idx_value + 0] * dsw * rr[0] * inr;
-      descrpt_deriv[idx_deriv + 1] = rr[1] * inr3 * sw - descrpt[idx_value + 0] * dsw * rr[1] * inr;
-      descrpt_deriv[idx_deriv + 2] = rr[2] * inr3 * sw - descrpt[idx_value + 0] * dsw * rr[2] * inr;
-      // value components
-      descrpt[idx_value + 0] *= sw;
-    }
-  }
-}
 
 
 // output deriv size: n_sel_a_nei x 4 x 12				    
