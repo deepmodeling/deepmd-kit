@@ -281,17 +281,17 @@ class NNPTrainer (object):
             assert hasattr(self.descrpt, 'davg'),     "Model compression error: descriptor must have attr davg!"
             assert hasattr(self.descrpt, 'dstd'),     "Model compression error: descriptor must have attr dstd!"
             assert hasattr(self.descrpt, 'ntypes'),   "Model compression error: descriptor must have attr ntypes!"
+            assert hasattr(self.descrpt, 'ndescrpt'), "Model compression error: descriptor must have attr ndescrpt!"
             assert 'sel' in self.descrpt_param,       "Model compression error: descriptor must have attr sel!"
             assert 'rcut' in self.descrpt_param,      "Model compression error: descriptor must have attr rcut!"
             assert 'rcut_smth' in self.descrpt_param, "Model compression error: descriptor must have attr rcut_smth!"
             if self.descrpt_type == 'se_a':
-                stat = EnvMatStat(self.descrpt_type, self.descrpt.ntypes, self.descrpt_param['rcut'], self.descrpt_param['rcut_smth'], self.descrpt_param['sel'], self.descrpt.davg, self.descrpt.dstd)
+                stat = EnvMatStat(self.descrpt_type, self.descrpt.ntypes, self.descrpt.ndescrpt, self.descrpt_param['rcut'], self.descrpt_param['rcut_smth'], self.descrpt_param['sel'], self.descrpt.davg, self.descrpt.dstd)
             else:
                 raise RuntimeError ("Model compression error: descriptor type must be se_a!")
-
-            distance, max_nbor_size, env_mat_range\
-                = stat.env_mat_stat(data)
-            self.descrpt.enable_compression(distance, max_nbor_size, env_mat_range, self.compress_param['model_file'], self.compress_param['table_config'])            # send the statistics of the training data and activate the descriptor compression mode
+            env_mat_range\
+                = stat.get_env_mat_range(data)
+            self.descrpt.enable_compression(env_mat_range, self.compress_param['model_file'], self.compress_param['table_config'])            # send the statistics of the training data and activate the descriptor compression mode
 
         worker_device = "/job:%s/task:%d/%s" % (self.run_opt.my_job_name,
                                                 self.run_opt.my_task_index,

@@ -143,6 +143,18 @@ void compute_descriptor_se_r (std::vector<double > &		descrpt_r,
 			      const double &			rmin, 
 			      const double &			rmax);
 
+inline
+void get_rij(std::vector<double > &	rij_a,
+			       const std::vector<double > &	posi,
+			       const int &			ntypes,
+			       const std::vector<int > &	type,
+			       const SimulationRegion<double> &	region,
+			       const bool &			b_pbc,
+			       const int &			i_idx,
+			       const std::vector<int > &	fmt_nlist_a,
+			       const std::vector<int > &	sec_a,
+			       const double &			rmin,
+			       const double &			rmax);
 
 struct NeighborInfo 
 {
@@ -1059,6 +1071,40 @@ void compute_descriptor_se_a (std::vector<double > &			descrpt_a,
       descrpt_a[idx_value + 1] *= sw;
       descrpt_a[idx_value + 2] *= sw;
       descrpt_a[idx_value + 3] *= sw;
+    }
+  }
+}
+
+void get_rij(std::vector<double > &	rij_a,
+			       const std::vector<double > &	posi,
+			       const int &			ntypes,
+			       const std::vector<int > &	type,
+			       const SimulationRegion<double> &	region,
+			       const bool &			b_pbc,
+			       const int &			i_idx,
+			       const std::vector<int > &	fmt_nlist_a,
+			       const std::vector<int > &	sec_a,
+			       const double &			rmin,
+			       const double &			rmax)
+{  
+  // compute the diff of the neighbors
+  std::vector<std::vector<double > > sel_a_diff (sec_a.back());
+  rij_a.resize (sec_a.back() * 3);
+  fill (rij_a.begin(), rij_a.end(), 0.0);
+  for (int ii = 0; ii < int(sec_a.size()) - 1; ++ii){
+    for (int jj = sec_a[ii]; jj < sec_a[ii+1]; ++jj){
+      if (fmt_nlist_a[jj] < 0) break;
+      sel_a_diff[jj].resize(3);
+      const int & j_idx = fmt_nlist_a[jj];
+      if (b_pbc){
+	region.diffNearestNeighbor (posi[j_idx*3+0], posi[j_idx*3+1], posi[j_idx*3+2], 
+				    posi[i_idx*3+0], posi[i_idx*3+1], posi[i_idx*3+2], 
+				    sel_a_diff[jj][0], sel_a_diff[jj][1], sel_a_diff[jj][2]);
+      }
+      else {
+	for (int dd = 0; dd < 3; ++dd) sel_a_diff[jj][dd] = posi[j_idx*3+dd] - posi[i_idx*3+dd];
+      }
+      for (int dd = 0; dd < 3; ++dd) rij_a[jj*3+dd] = sel_a_diff[jj][dd];
     }
   }
 }

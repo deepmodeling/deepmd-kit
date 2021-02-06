@@ -231,8 +231,6 @@ class DescrptSeA ():
         self.dstd = np.array(all_dstd)
 
     def enable_compression(self,
-                           distance,
-                           max_nbor_size,
                            env_mat_range,
                            model_file = 'frozon_model.pb',
                            table_config = [5, 0.01, 0.1, -1]
@@ -242,22 +240,22 @@ class DescrptSeA ():
         
         Parameters
         ----------
-        distance
-                The nearest nbor distance between atoms
-        max_nbor_size
-                The max nbor size of atoms
         env_mat_range
                 The output data range of the environment matrix
+                env_mat_range[0] denotes the lower boundary of environment matrix
+                env_mat_range[1] denotes the upper boundary of environment matrix
         model_file
                 The original frozen model, that will be compressed
-        table_info
+        table_config
                 The configuration of the tabulation
+                Table_config[0] denotes the scale of model extrapolation
+                Table_config[1] denotes the first table stride
+                Table_config[2] denotes the second table stride
+                Table_config[3] denotes the overflow check frequency
         """   
         self.compress = True
         self.model_file = model_file
         self.table_config = table_config
-        self.distance = distance
-        self.max_nbor_size = max_nbor_size
         self.env_mat_range = env_mat_range
         self.table = DeepTabulate(self.model_file, self.filter_np_precision, self.type_one_side)
 

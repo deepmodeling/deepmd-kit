@@ -22,14 +22,11 @@ REGISTER_OP("EnvMatStat")
     .Input("natoms: int32")     //local atomic number; each type atomic number; daizheyingxiangqude atomic numbers
     .Input("box : T")
     .Input("mesh : int32")
-    .Input("davg: T")           //average value of data
-    .Input("dstd: T")           //standard deviation
     .Attr("rcut: float")      //no use
     .Attr("rcut_smth: float")
     .Attr("sel: list(int)")
-    .Output("distance: T")
-    .Output("max_nbor_size: int32")
-    .Output("env_stat_range: T");
+    .Output("min_nbor_dist: T")
+    .Output("max_nbor_size: int32");
 
 template<typename Device, typename FPTYPE>
 class EnvMatStatOp : public OpKernel {
@@ -41,8 +38,6 @@ public:
     cum_sum (sec, sel);
     ndescrpt = sec.back() * 4;
     nnei = sec.back();
-    fill_nei_a = true;
-    count_nei_idx_overflow = 0;
   }
 
   void Compute(OpKernelContext* context) override {
@@ -54,8 +49,6 @@ public:
     const Tensor& natoms_tensor	= context->input(context_input_index++);
     const Tensor& box_tensor	= context->input(context_input_index++);
     const Tensor& mesh_tensor	= context->input(context_input_index++);
-    const Tensor& avg_tensor	= context->input(context_input_index++);
-    const Tensor& std_tensor	= context->input(context_input_index++);
 
     // set size of the sample
     OP_REQUIRES (context, (coord_tensor.shape().dims() == 2),	errors::InvalidArgument ("Dim of coord should be 2"));
@@ -63,10 +56,6 @@ public:
     OP_REQUIRES (context, (natoms_tensor.shape().dims() == 1),	errors::InvalidArgument ("Dim of natoms should be 1"));
     OP_REQUIRES (context, (box_tensor.shape().dims() == 2),	errors::InvalidArgument ("Dim of box should be 2"));
     OP_REQUIRES (context, (mesh_tensor.shape().dims() == 1),	errors::InvalidArgument ("Dim of mesh should be 1"));
-    OP_REQUIRES (context, (avg_tensor.shape().dims() == 2),	errors::InvalidArgument ("Dim of avg should be 2"));
-    OP_REQUIRES (context, (std_tensor.shape().dims() == 2),	errors::InvalidArgument ("Dim of std should be 2"));
-    OP_REQUIRES (context, (fill_nei_a),				errors::InvalidArgument ("Rotational free descriptor only support the case -1 < 0"));
-
     OP_REQUIRES (context, (natoms_tensor.shape().dim_size(0) >= 3),		errors::InvalidArgument ("number of atoms should be larger than (or equal to) 3"));
     auto natoms	= natoms_tensor	.flat<int>();
     int nloc = natoms(0);
@@ -77,14 +66,9 @@ public:
     // check the sizes
     OP_REQUIRES (context, (nsamples == type_tensor.shape().dim_size(0)),	errors::InvalidArgument ("number of samples should match"));
     OP_REQUIRES (context, (nsamples == box_tensor.shape().dim_size(0)),		errors::InvalidArgument ("number of samples should match"));
-    OP_REQUIRES (context, (ntypes == avg_tensor.shape().dim_size(0)),		errors::InvalidArgument ("number of avg should be ntype"));
-    OP_REQUIRES (context, (ntypes == std_tensor.shape().dim_size(0)),		errors::InvalidArgument ("number of std should be ntype"));
-
     OP_REQUIRES (context, (nall * 3 == coord_tensor.shape().dim_size(1)),	errors::InvalidArgument ("number of atoms should match"));
     OP_REQUIRES (context, (nall == type_tensor.shape().dim_size(1)),		errors::InvalidArgument ("number of atoms should match"));
     OP_REQUIRES (context, (9 == box_tensor.shape().dim_size(1)),		errors::InvalidArgument ("number of box should be 9"));
-    OP_REQUIRES (context, (ndescrpt == avg_tensor.shape().dim_size(1)),		errors::InvalidArgument ("number of avg should be ndescrpt"));
-    OP_REQUIRES (context, (ndescrpt == std_tensor.shape().dim_size(1)),		errors::InvalidArgument ("number of std should be ndescrpt"));
 
     int nei_mode = 0;
     if (mesh_tensor.shape().dim_size(0) == 16) {
@@ -117,83 +101,35 @@ public:
       b_norm_atom = true;
     }
 
-    // Create an output tensor
-    TensorShape descrpt_shape ;
-    descrpt_shape.AddDim (nsamples);
-    descrpt_shape.AddDim (nloc * ndescrpt);
-    TensorShape descrpt_deriv_shape ;
-    descrpt_deriv_shape.AddDim (nsamples);
-    descrpt_deriv_shape.AddDim (nloc * ndescrpt * 3);
-    TensorShape rij_shape ;
-    rij_shape.AddDim (nsamples);
-    rij_shape.AddDim (nloc * nnei * 3);
-    TensorShape nlist_shape ;
-    nlist_shape.AddDim (nsamples);
-    nlist_shape.AddDim (nloc * nnei);
-    TensorShape distance_shape ;
-    distance_shape.AddDim (nloc * nnei);
+    TensorShape min_nbor_dist_shape ;
+    min_nbor_dist_shape.AddDim (nloc * nnei);
     TensorShape max_nbor_size_shape ;
     max_nbor_size_shape.AddDim (nloc);
-    TensorShape table_range_shape ;
-    table_range_shape.AddDim (nloc * nnei);
 
-    Tensor descrpt_tensor;
-    OP_REQUIRES_OK(context, context->allocate_temp(DT_DOUBLE, descrpt_shape, &descrpt_tensor));
-    
-    Tensor descrpt_deriv_tensor;
-    OP_REQUIRES_OK(context, context->allocate_temp(DT_DOUBLE, descrpt_deriv_shape, &descrpt_deriv_tensor));
-
-    Tensor rij_tensor;
-    OP_REQUIRES_OK(context, context->allocate_temp(DT_DOUBLE, rij_shape, &rij_tensor));
-
-    Tensor nlist_tensor;
-    OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, nlist_shape, &nlist_tensor));
-    
     int context_output_index = 0;
-    Tensor* distance_tensor = NULL;
+    Tensor* min_nbor_dist_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(context_output_index++, 
-						     distance_shape,
-						     &distance_tensor));
+						     min_nbor_dist_shape,
+						     &min_nbor_dist_tensor));
     Tensor* max_nbor_size_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(context_output_index++, 
 						     max_nbor_size_shape,
 						     &max_nbor_size_tensor));
-    Tensor* table_range_tensor = NULL;
-    OP_REQUIRES_OK(context, context->allocate_output(context_output_index++, 
-						     table_range_shape,
-						     &table_range_tensor));
 
     auto coord	= coord_tensor	.matrix<FPTYPE>();
     auto type	= type_tensor	.matrix<int>();
     auto box	= box_tensor	.matrix<FPTYPE>();
     auto mesh	= mesh_tensor	.flat<int>();
-    auto avg	= avg_tensor	.matrix<FPTYPE>();
-    auto std	= std_tensor	.matrix<FPTYPE>();
-    auto descrpt	= descrpt_tensor	.matrix<FPTYPE>();
-    auto descrpt_deriv	= descrpt_deriv_tensor	.matrix<FPTYPE>();
-    auto rij		= rij_tensor		.matrix<FPTYPE>();
-    auto nlist		= nlist_tensor	.matrix<int>();
-    auto distance		= distance_tensor	->flat<FPTYPE>();
+    auto min_nbor_dist	= min_nbor_dist_tensor ->flat<FPTYPE>();
     // find a potential bug here!
     auto max_nbor_size	= max_nbor_size_tensor ->flat<int>();
-    auto table_range		= table_range_tensor	->flat<FPTYPE>();
     
-    for (int ii = 0; ii < static_cast<int>(distance_tensor->NumElements()); ii++) {
-      distance(ii) = 10000.0;
+    for (int ii = 0; ii < static_cast<int>(min_nbor_dist_tensor->NumElements()); ii++) {
+      min_nbor_dist(ii) = 10000.0;
     }
     for (int ii = 0; ii < static_cast<int>(max_nbor_size_tensor->NumElements()); ii++) {
       max_nbor_size(ii) = 0;
     }
-    for (int ii = 0; ii < static_cast<int>(table_range_tensor->NumElements()); ii++) {
-      table_range(ii) = 0.0;
-    }
-    // // check the types
-    // int max_type_v = 0;
-    // for (int ii = 0; ii < natoms; ++ii){
-    //   if (type(0, ii) > max_type_v) max_type_v = type(0, ii);
-    // }
-    // int ntypes = max_type_v + 1;
-    OP_REQUIRES (context, (ntypes == int(sel.size())),	errors::InvalidArgument ("number of types should match the length of sel array"));
 
     for (int kk = 0; kk < nsamples; ++kk){
       // set region
@@ -293,25 +229,16 @@ public:
   std::vector<int> sec_r(sec.size(), 0);
 
 	int ret = -1;
-	if (fill_nei_a){
-	  if ((ret = format_nlist_fill_a (fmt_nlist_a, fmt_nlist_r, d_coord3, ntypes, d_type, region, b_pbc, ii, d_nlist_a[ii], d_nlist_r[ii], rcut, sec, sec_r)) != -1){
-	    if (count_nei_idx_overflow == 0) {
-	      std::cout << "WARNING: Radial neighbor list length of type " << ret << " is not enough" << std::endl;
-	      flush(std::cout);
-	      count_nei_idx_overflow ++;
-	    }
+	if ((ret = format_nlist_fill_a (fmt_nlist_a, fmt_nlist_r, d_coord3, ntypes, d_type, region, b_pbc, ii, d_nlist_a[ii], d_nlist_r[ii], rcut, sec, sec_r)) != -1){
+	  if (count_nei_idx_overflow == 0) {
+	    std::cout << "WARNING: Radial neighbor list length of type " << ret << " is not enough" << std::endl;
+	    flush(std::cout);
+	    count_nei_idx_overflow ++;
 	  }
 	}
 
-	std::vector<compute_t > d_descrpt_a;
-	std::vector<compute_t > d_descrpt_a_deriv;
-	std::vector<compute_t > d_descrpt_r;
-	std::vector<compute_t > d_descrpt_r_deriv;
 	std::vector<compute_t > d_rij_a;
-	std::vector<compute_t > d_rij_r;      
-	compute_descriptor_se_a (d_descrpt_a,
-				 d_descrpt_a_deriv,
-				 d_rij_a,
+	get_rij (d_rij_a,
 				 d_coord3,
 				 ntypes, 
 				 d_type,
@@ -324,36 +251,12 @@ public:
 				 rcut);
 
 	// check sizes
-	assert (d_descrpt_a.size() == ndescrpt);
-	assert (d_descrpt_a_deriv.size() == ndescrpt * 3);
 	assert (d_rij_a.size() == nnei * 3);
 	assert (int(fmt_nlist_a.size()) == nnei);
-  // std::cout << "min:\t" << (0 - avg(0, 0)) / std(0, 0) << std::endl;
-  // if (counter % 1000 == 0) {
-  //   std::cout << "min:\t" << (0 - avg(0, 0)) / std(0, 0) << std::endl;
-  // }
-	// record outputs
-	for (int jj = 0; jj < ndescrpt; ++jj) {
-	  descrpt(kk, ii * ndescrpt + jj) = (d_descrpt_a[jj] - avg(d_type[ii], jj)) / std(d_type[ii], jj);
-       if (jj % 4 == 0) {
-         table_range(ii * nnei + jj / 4) = descrpt(kk, ii * ndescrpt + jj);
-       }
-  }
-	for (int jj = 0; jj < ndescrpt * 3; ++jj) {
-	  descrpt_deriv(kk, ii * ndescrpt * 3 + jj) = d_descrpt_a_deriv[jj] / std(d_type[ii], jj/3);
-	}
 	for (int jj = 0; jj < nnei * 3; ++jj){
-	  rij (kk, ii * nnei * 3 + jj) = d_rij_a[jj];
     if (jj % 3 == 0 && d_rij_a[jj] > 0) {
-      distance(ii * nnei + jj / 3) = sqrt(d_rij_a[jj] * d_rij_a[jj] + d_rij_a[jj + 1] * d_rij_a[jj + 1] + d_rij_a[jj + 2] * d_rij_a[jj + 2]);
+      min_nbor_dist(ii * nnei + jj / 3) = sqrt(d_rij_a[jj] * d_rij_a[jj] + d_rij_a[jj + 1] * d_rij_a[jj + 1] + d_rij_a[jj + 2] * d_rij_a[jj + 2]);
     }
-	}
-	for (int jj = 0; jj < nnei; ++jj){
-	  int record = fmt_nlist_a[jj];
-	  if (b_nlist_map && record >= 0) {
-	    record = nlist_map[record];
-	  }
-	  nlist (kk, ii * nnei + jj) = record;
 	}
       }
     }

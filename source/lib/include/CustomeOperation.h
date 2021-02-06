@@ -169,7 +169,7 @@ void compute_descriptor_se_a_cpu (
 }
 
 template<typename FPTYPE>
-void DescrptSeACPULauncher(const FPTYPE * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descrpt, FPTYPE * descrpt_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ntypes, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int magic_number) {
+void DescrptSeACPULauncher(const FPTYPE * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descrpt, FPTYPE * descrpt_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ntypes, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int max_nbor_size) {
     // set & normalize coord
     std::vector<FPTYPE> d_coord3(nall * 3);
     for (int ii = 0; ii < nall; ++ii) {
@@ -235,7 +235,7 @@ void DescrptSeACPULauncher(const FPTYPE * coord, const int * type, const int * i
 
 #if GOOGLE_CUDA
 template<typename FPTYPE>
-void DescrptSeAGPULauncher(const FPTYPE * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descrpt, FPTYPE * descrpt_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int magic_number) {
+void DescrptSeAGPULauncher(const FPTYPE * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descrpt, FPTYPE * descrpt_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int max_nbor_size) {
     DescrptSeAGPUExecuteFunctor<FPTYPE>()(coord, type, ilist, jrange, jlist, array_int, array_longlong, avg, std, descrpt, descrpt_deriv, rij, nlist, nloc, nall, nnei, ndescrpt, rcut_r, rcut_r_smth, sec_a, fill_nei_a, magic_number);
 }
 #endif // GOOGLE_CUDA
