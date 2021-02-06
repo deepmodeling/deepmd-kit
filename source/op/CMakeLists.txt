@@ -39,6 +39,8 @@ if (BUILD_PY_IF)
     add_library(op_grads SHARED ${OP_GRADS_SRC})
   endif(USE_CUDA_TOOLKIT)
   message(STATUS ${TensorFlowFramework_LIBRARY})
+  target_link_libraries(op_abi ${LIB_DEEPMD})
+  target_link_libraries(op_grads ${LIB_DEEPMD})
   target_link_libraries(
     op_abi ${TensorFlowFramework_LIBRARY}
     )

@@ -15,10 +15,14 @@ if (USE_CUDA_TOOLKIT)
   target_link_libraries (${libname} ${CUDA_LIBRARIES})
 endif()
 
-install(TARGETS ${libname} DESTINATION lib/)
-
-install(
-  FILES		${INC_SRC}
-  DESTINATION	include/deepmd
-)
+if(BUILD_PY_IF)
+  install(TARGETS ${libname} DESTINATION deepmd/)
+endif(BUILD_PY_IF)
+if(BUILD_CPP_IF)
+  install(TARGETS ${libname} DESTINATION lib/)
+  install(
+    FILES	${INC_SRC}
+    DESTINATION	include/deepmd
+    )
+endif(BUILD_CPP_IF)
 
