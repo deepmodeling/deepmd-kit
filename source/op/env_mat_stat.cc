@@ -105,6 +105,7 @@ public:
     min_nbor_dist_shape.AddDim (nloc * nnei);
     TensorShape max_nbor_size_shape ;
     max_nbor_size_shape.AddDim (nloc);
+    max_nbor_size_shape.AddDim (ntypes);
 
     int context_output_index = 0;
     Tensor* min_nbor_dist_tensor = NULL;
@@ -219,7 +220,10 @@ public:
       }
 
   for (int ii = 0; ii < nloc; ii++) {
-    max_nbor_size(ii) = d_nlist_r[ii].size();
+    for (int jj = 0; jj < d_nlist_r[ii].size(); jj++) {
+        int type = d_type[d_nlist_r[ii][jj]];
+        max_nbor_size(ii * ntypes + type) += 1;
+    }
   }
       // loop over atoms, compute descriptors for each atom
 #pragma omp parallel for 

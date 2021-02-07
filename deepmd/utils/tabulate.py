@@ -2,16 +2,18 @@ import re
 import math
 import numpy as np
 from tqdm import tqdm
+from typing import Tuple, List
 from deepmd.env import tf
 from deepmd.env import op_module
 from tensorflow.python.platform import gfile
 from tensorflow.python.framework import tensor_util
 
-
 class DeepTabulate():
     """
     Class for tabulation.
-    It reads the trained weights and bias from the frozen model, and builds the table according to the weights and bias.
+    Compress a model, which including tabulating the embedding-net. 
+    The table is composed of fifth-order polynomial coefficients and is assembled from two sub-tables. The first table takes the stride(parameter) as it\'s uniform stride, while the second table takes 10 * stride as it\s uniform stride 
+    The range of the first table is automatically detected by deepmd-kit, while the second table ranges from the first table\'s upper boundary(upper) to the extrapolate(parameter) * upper.
     """
     def __init__(self,
                  model_file,
@@ -43,6 +45,9 @@ class DeepTabulate():
         self.sel_a = self.graph.get_operation_by_name('DescrptSeA').get_attr('sel_a')
         self.ntypes = self._get_tensor_value(self.graph.get_tensor_by_name ('descrpt_attr/ntypes:0'))
 
+        self.davg = self._get_tensor_value(self.graph.get_tensor_by_name ('descrpt_attr/t_avg:0'))
+        self.dstd = self._get_tensor_value(self.graph.get_tensor_by_name ('descrpt_attr/t_std:0'))
+
         self.filter_variable_nodes = self._load_matrix_node()
         self.layer_size = int(len(self.filter_variable_nodes) / (self.ntypes * self.ntypes * 2))
         self.table_size = self.ntypes * self.ntypes
@@ -61,6 +66,66 @@ class DeepTabulate():
         self.data = {}
 
         # TODO: Need a check function to determine if the current model is properly
+
+    def build(self, 
+              min_nbor_dist,
+              rcut,
+              rcut_smth,
+              extrapolate, 
+              stride0, 
+              stride1) -> Tuple[int, int]:
+        """
+        Build the tables for model compression
+
+        Parameters
+        ----------
+        min_nbor_dist
+                The nearest distance between neighbor atoms
+        rcut
+                The cut-off radius
+        rcut_smth
+                From where the environment matrix should be smoothed
+        extrapolate
+                The scale of model extrapolation
+        stride0
+                The uniform stride of the first table
+        stride1
+                The uniform stride of the second table
+        
+        Returns
+        ----------
+        lower
+                The lower boundary of environment matrix
+        upper
+                The upper boundary of environment matrix
+        """
+        # tabulate range [lower, upper] with stride0 'stride0'
+        lower, upper = self._get_env_mat_range(min_nbor_dist, rcut, rcut_smth)
+        xx = np.arange(lower, upper, stride0, dtype = self.data_type)
+        xx = np.append(xx, np.arange(upper, extrapolate * upper, stride1, dtype = self.data_type))
+        xx = np.append(xx, np.array([extrapolate * upper], dtype = self.data_type))
+        self.nspline = int((upper - lower) / stride0 + (extrapolate * upper - upper) / stride1)
+        for ii in range(self.table_size):
+            vv, dd, d2 = self._make_data(xx, ii)
+            if self.type_one_side:
+                net = "filter_-1_net_" + str(int(ii))
+            else:
+                net = "filter_" + str(int(ii / self.ntypes)) + "_net_" + str(int(ii % self.ntypes))
+            self.data[net] = np.zeros([self.nspline, 6 * self.last_layer_size], dtype = self.data_type)
+            for jj in tqdm(range(self.nspline), desc = '# DEEPMD: ' + net + ', tabulating'):
+                for kk in range(self.last_layer_size):
+                    if jj < int((upper - lower) / stride0):
+                        tt = stride0
+                    else:
+                        tt = stride1
+                    hh = vv[jj + 1][kk] - vv[jj][kk]
+                    self.data[net][jj][kk * 6 + 0] = vv[jj][kk]
+                    self.data[net][jj][kk * 6 + 1] = dd[jj][kk]
+                    self.data[net][jj][kk * 6 + 2] = 0.5 * d2[jj][kk]
+                    self.data[net][jj][kk * 6 + 3] = (1 / (2 * tt * tt * tt)) * (20 * hh - (8 * dd[jj + 1][kk] + 12 * dd[jj][kk]) * tt - (3 * d2[jj][kk] - d2[jj + 1][kk]) * tt * tt)
+                    self.data[net][jj][kk * 6 + 4] = (1 / (2 * tt * tt * tt * tt)) * (-30 * hh + (14 * dd[jj + 1][kk] + 16 * dd[jj][kk]) * tt + (3 * d2[jj][kk] - 2 * d2[jj + 1][kk]) * tt * tt)
+                    self.data[net][jj][kk * 6 + 5] = (1 / (2 * tt * tt * tt * tt * tt)) * (12 * hh - 6 * (dd[jj + 1][kk] + dd[jj][kk]) * tt + (d2[jj + 1][kk] - d2[jj][kk]) * tt * tt)
+        return lower, upper
 
     def _load_graph(self):
         graph_def = tf.GraphDef()
@@ -124,57 +189,6 @@ class DeepTabulate():
                     matrix["layer_" + str(layer)].append(np.reshape(tensor_value, tensor_shape).astype(self.data_type))
         return matrix
 
-    def build(self, 
-              lower, 
-              upper, 
-              _max, 
-              stride0, 
-              stride1) -> None:
-        """
-        Build the tables for model compression
-
-        Parameters
-        ----------
-        lower
-                The lower boundary of the first table
-        upper
-                The upper boundary of the first table as well as the lower boundary of the second table
-        _max
-                The upper boundary of the second table
-        stride0
-                The stride of the first table
-        stride1
-                The stride of the second table
-        """
-        # tabulate range [lower, upper] with stride0 'stride0'
-        lower = math.floor(lower)
-        upper = math.ceil(upper)
-        xx = np.arange(lower, upper, stride0, dtype = self.data_type)
-        xx = np.append(xx, np.arange(upper, _max, stride1, dtype = self.data_type))
-        xx = np.append(xx, np.array([_max], dtype = self.data_type))
-        self.nspline = int((upper - lower) / stride0 + (_max - upper) / stride1)
-
-        for ii in range(self.table_size):
-            vv, dd, d2 = self._make_data(xx, ii)
-            if self.type_one_side:
-                net = "filter_-1_net_" + str(int(ii))
-            else:
-                net = "filter_" + str(int(ii / self.ntypes)) + "_net_" + str(int(ii % self.ntypes))
-            self.data[net] = np.zeros([self.nspline, 6 * self.last_layer_size], dtype = self.data_type)
-            for jj in tqdm(range(self.nspline), desc = '# DEEPMD: ' + net + ', tabulating'):
-                for kk in range(self.last_layer_size):
-                    if jj < int((upper - lower) / stride0):
-                        tt = stride0
-                    else:
-                        tt = stride1
-                    hh = vv[jj + 1][kk] - vv[jj][kk]
-                    self.data[net][jj][kk * 6 + 0] = vv[jj][kk]
-                    self.data[net][jj][kk * 6 + 1] = dd[jj][kk]
-                    self.data[net][jj][kk * 6 + 2] = 0.5 * d2[jj][kk]
-                    self.data[net][jj][kk * 6 + 3] = (1 / (2 * tt * tt * tt)) * (20 * hh - (8 * dd[jj + 1][kk] + 12 * dd[jj][kk]) * tt - (3 * d2[jj][kk] - d2[jj + 1][kk]) * tt * tt)
-                    self.data[net][jj][kk * 6 + 4] = (1 / (2 * tt * tt * tt * tt)) * (-30 * hh + (14 * dd[jj + 1][kk] + 16 * dd[jj][kk]) * tt + (3 * d2[jj][kk] - 2 * d2[jj + 1][kk]) * tt * tt)
-                    self.data[net][jj][kk * 6 + 5] = (1 / (2 * tt * tt * tt * tt * tt)) * (12 * hh - 6 * (dd[jj + 1][kk] + dd[jj][kk]) * tt + (d2[jj + 1][kk] - d2[jj][kk]) * tt * tt)
-        
     # one-by-one executions
     def _make_data(self, xx, idx):
         with self.sub_graph.as_default():
@@ -207,3 +221,32 @@ class DeepTabulate():
         for ii in range(self.ntypes * self.ntypes):
             net = "filter_" + str(int(ii / self.ntypes)) + "_net_" + str(int(ii % self.ntypes))
             np.savetxt('data_' + str(int(ii)), self.data[net])
+
+    def _get_env_mat_range(self,
+                           min_nbor_dist,
+                           rcut,
+                           rcut_smth):
+        lower = 100.0
+        upper = -10.0
+        sw    = self._spline5_switch(min_nbor_dist, rcut_smth, rcut)
+        for ii in range(self.ntypes):
+            if lower > -self.davg[ii][0] / self.dstd[ii][0]:
+                lower = -self.davg[ii][0] / self.dstd[ii][0]
+            if upper < ((1 / min_nbor_dist) * sw - self.davg[ii][0]) / self.dstd[ii][0]:
+                upper = ((1 / min_nbor_dist) * sw - self.davg[ii][0]) / self.dstd[ii][0]
+        print('# DEEPMD: training data with lower boundary: ' + str(lower))
+        print('# DEEPMD: training data with upper boundary: ' + str(upper))
+        return math.floor(lower), math.ceil(upper)
+
+    def _spline5_switch(self,
+                        xx,
+                        rmin,
+                        rmax):
+        if xx < rmin:
+            vv = 1
+        elif xx < rmax:
+            uu = (xx - rmin) / (rmax - rmin)
+            vv = uu*uu*uu * (-6 * uu*uu + 15 * uu - 10) + 1
+        else:
+            vv = 0
+        return vv

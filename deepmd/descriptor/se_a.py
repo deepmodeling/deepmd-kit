@@ -100,7 +100,6 @@ class DescrptSeA ():
         self.dstd = None
         self.davg = None
         self.compress = False
-        
         self.place_holders = {}
         avg_zero = np.zeros([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
         std_ones = np.ones ([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
@@ -231,7 +230,7 @@ class DescrptSeA ():
         self.dstd = np.array(all_dstd)
 
     def enable_compression(self,
-                           env_mat_range,
+                           min_nbor_dist,
                            model_file = 'frozon_model.pb',
                            table_config = [5, 0.01, 0.1, -1]
     ) -> None:
@@ -240,25 +239,23 @@ class DescrptSeA ():
         
         Parameters
         ----------
-        env_mat_range
-                The output data range of the environment matrix
-                env_mat_range[0] denotes the lower boundary of environment matrix
-                env_mat_range[1] denotes the upper boundary of environment matrix
+        min_nbor_dist
+                The nearest distance between atoms
         model_file
-                The original frozen model, that will be compressed
+                The original frozen model, which will be compressed by the program
         table_config
-                The configuration of the tabulation
+                The configuration including:
                 Table_config[0] denotes the scale of model extrapolation
-                Table_config[1] denotes the first table stride
-                Table_config[2] denotes the second table stride
+                Table_config[1] denotes the uniform stride of the first table
+                Table_config[2] denotes the uniform stride of the second table
                 Table_config[3] denotes the overflow check frequency
-        """   
+        """
         self.compress = True
         self.model_file = model_file
         self.table_config = table_config
-        self.env_mat_range = env_mat_range
         self.table = DeepTabulate(self.model_file, self.filter_np_precision, self.type_one_side)
-
+        self.lower, self.upper \
+            = self.table.build(min_nbor_dist, self.rcut_r, self.rcut_r_smth, self.table_config[0], self.table_config[1], self.table_config[2])
 
     def build (self, 
                coord_ : tf.Tensor, 
@@ -357,15 +354,6 @@ class DescrptSeA ():
         self.descrpt_deriv = tf.identity(self.descrpt_deriv, name = 'o_rmat_deriv')
         self.rij = tf.identity(self.rij, name = 'o_rij')
         self.nlist = tf.identity(self.nlist, name = 'o_nlist')
-        
-        if self.compress:
-            self.lower = math.floor(self.env_mat_range[0])
-            self.upper = math.ceil(self.env_mat_range[1])
-            self.table.build(self.lower, 
-                             self.upper, 
-                             self.upper * self.table_config[0], 
-                             self.table_config[1], 
-                             self.table_config[2])
 
         self.dout, self.qmat = self._pass_filter(self.descrpt_reshape, 
                                                  atype,

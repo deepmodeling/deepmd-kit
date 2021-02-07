@@ -63,16 +63,26 @@ def main () :
                             help="The file containing details of energy force and virial accuracy")
     parser_tst.add_argument("-a", "--atomic-energy", action = 'store_true', 
                             help="Test the accuracy of atomic energy")
-
+    
+    """
+    Compress a model, which including tabulating the embedding-net. 
+    The table is composed of fifth-order polynomial coefficients and is assembled from two sub-tables. The first table takes the stride(parameter) as it\'s uniform stride, while the second table takes 10 * stride as it\s uniform stride 
+    The range of the first table is automatically detected by deepmd-kit, while the second table ranges from the first table\'s upper boundary(upper) to the extrapolate(parameter) * upper.
+    """
     parser_compress = subparsers.add_parser('compress', help='compress a model')
     parser_compress.add_argument('INPUT', 
-                            help='the input parameter file in json or yaml format')
+                            help='The input parameter file in json or yaml format, which should be consistent with the original model parameter file')
     parser_compress.add_argument('-i', "--input", default = "frozen_model.pb", type=str, 
-				            help = "the original model")
+				            help = "The original frozen model, which will be compressed by the deepmd-kit")
     parser_compress.add_argument("-o","--output", default = "frozen_model_compress.pb", type=str, 
-				            help='the compressed model')
-    parser_compress.add_argument('-t', '--table-config', nargs='+', default = [5, 0.01, 0.1, 1], type=float)
-    parser_compress.add_argument("-d", "--folder", type=str, default = ".", 
+				            help='The compressed model')
+    parser_compress.add_argument('-e', '--extrapolate', default=5, type=int, 
+                            help="The scale of model extrapolation")
+    parser_compress.add_argument('-s', '--stride', default=0.01, type=float, 
+                            help="The uniform stride of tabulation's first table, the second table will use 10 * stride as it's uniform stride")
+    parser_compress.add_argument('-f', '--frequency', default=-1, type=int, 
+                            help="The frequency of tabulation overflow check(If the input environment matrix overflow the first or second table range). By default do not check the overflow")
+    parser_compress.add_argument("-d", "--folder", type=str, default = ".",
                             help="path to checkpoint folder")
 
     parser_train = subparsers.add_parser('doc-train-input', 

@@ -16,13 +16,12 @@ def compress(args):
        jdata = convert_input_v0_v1(jdata, 
                                    warning = True, 
                                    dump = 'input_v1_compat.json')
-    
     jdata = normalize(jdata)
     jdata['model']['compress'] = {}
     jdata['model']['compress']['compress'] = True
     jdata['model']['compress']['model_file'] = args.input
-    jdata['model']['compress']['table_config'] = args.table_config
-    
+    jdata['model']['compress']['table_config'] = [args.extrapolate, args.stride, 10 * args.stride, args.frequency]
+
     # check the descriptor info of the input file
     assert jdata['model']['descriptor']['type'] == 'se_a', 'Model compression error: descriptor type must be se_a!'
     assert jdata['model']['descriptor']['resnet_dt'] == False, 'Model compression error: descriptor resnet_dt must be false!'

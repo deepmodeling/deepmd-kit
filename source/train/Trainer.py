@@ -91,9 +91,6 @@ class NNPTrainer (object):
         fitting_param = j_must_have(model_param, 'fitting_net')
         self.model_param    = model_param
         self.descrpt_param  = descrpt_param
-        self.descrpt_type   = descrpt_param['type']
-        if 'compress' in model_param:
-            self.compress_param = model_param['compress']
         
         # descriptor
         try:
@@ -277,21 +274,15 @@ class NNPTrainer (object):
 
         self.model.data_stat(data)
 
-        if 'compress' in self.model_param and self.compress_param['compress']:
-            assert hasattr(self.descrpt, 'davg'),     "Model compression error: descriptor must have attr davg!"
-            assert hasattr(self.descrpt, 'dstd'),     "Model compression error: descriptor must have attr dstd!"
-            assert hasattr(self.descrpt, 'ntypes'),   "Model compression error: descriptor must have attr ntypes!"
-            assert hasattr(self.descrpt, 'ndescrpt'), "Model compression error: descriptor must have attr ndescrpt!"
-            assert 'sel' in self.descrpt_param,       "Model compression error: descriptor must have attr sel!"
-            assert 'rcut' in self.descrpt_param,      "Model compression error: descriptor must have attr rcut!"
-            assert 'rcut_smth' in self.descrpt_param, "Model compression error: descriptor must have attr rcut_smth!"
-            if self.descrpt_type == 'se_a':
-                stat = EnvMatStat(self.descrpt_type, self.descrpt.ntypes, self.descrpt.ndescrpt, self.descrpt_param['rcut'], self.descrpt_param['rcut_smth'], self.descrpt_param['sel'], self.descrpt.davg, self.descrpt.dstd)
-            else:
-                raise RuntimeError ("Model compression error: descriptor type must be se_a!")
-            env_mat_range\
-                = stat.get_env_mat_range(data)
-            self.descrpt.enable_compression(env_mat_range, self.compress_param['model_file'], self.compress_param['table_config'])            # send the statistics of the training data and activate the descriptor compression mode
+        if 'compress' in self.model_param and self.model_param['compress']['compress']:
+            assert 'sel' in self.descrpt_param,       "Error: descriptor must have attr sel!"
+            assert 'rcut' in self.descrpt_param,      "Error: descriptor must have attr rcut!"
+            assert 'rcut_smth' in self.descrpt_param, "Error: descriptor must have attr rcut_smth!"
+            self.env_mat_stat \
+                = EnvMatStat(self.ntypes, self.descrpt_param['rcut'], self.descrpt_param['rcut_smth'], self.descrpt_param['sel'])
+            self.min_nbor_dist, self.max_nbor_size \
+                = self.env_mat_stat.get_env_mat_stat(data)
+            self.descrpt.enable_compression(self.min_nbor_dist, self.model_param['compress']['model_file'], self.model_param['compress']['table_config'])
 
         worker_device = "/job:%s/task:%d/%s" % (self.run_opt.my_job_name,
                                                 self.run_opt.my_task_index,
