@@ -3,7 +3,7 @@ import numpy as np
 from typing import Tuple, List
 
 from deepmd.env import tf
-from deepmd.common import ClassArg, add_data_requirement, get_activation_func, get_precision, activation_fn_dict, precision_dict, docstring_parameter
+from deepmd.common import ClassArg, add_data_requirement, get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter
 from deepmd.utils.argcheck import list_to_doc
 from deepmd.utils.network import one_layer
 from deepmd.descriptor import DescrptLocFrame
@@ -13,7 +13,7 @@ from deepmd.RunOptions import global_cvt_2_tf_float
 from deepmd.RunOptions import global_tf_float_precision
 
 class EnerFitting ():
-    @docstring_parameter(list_to_doc(activation_fn_dict.keys()), list_to_doc(precision_dict.keys()))
+    @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   descrpt : tf.Tensor,
                   neuron : List[int] = [120,120,120],
@@ -64,7 +64,7 @@ class EnerFitting ():
         # model param
         self.ntypes = descrpt.get_ntypes()
         self.dim_descrpt = descrpt.get_dim_out()
-        # args = ClassArg()\
+        # args = ()\
         #        .add('numb_fparam',      int,    default = 0)\
         #        .add('numb_aparam',      int,    default = 0)\
         #        .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\

@@ -8,7 +8,7 @@ from deepmd.utils.data_system import DataSystem
 from deepmd.descriptor import DescrptLocFrame
 from deepmd.fit import WFCFitting
 from deepmd.Model import WFCModel
-from deepmd.common import j_must_have, j_must_have_d, j_have, j_loader
+from deepmd.common import j_must_have, j_loader
 
 global_ener_float_precision = tf.float64
 global_tf_float_precision = tf.float64
