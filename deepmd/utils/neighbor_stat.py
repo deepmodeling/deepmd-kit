@@ -7,16 +7,14 @@ from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.RunOptions import global_np_float_precision
 
-class EnvMatStat():
+class NeighborStat():
     """
     Class for getting training data information. 
     It loads data from DeepmdData object, and measures the data info, including neareest nbor distance between atoms, max nbor size of atoms and the output data range of the environment matrix.
     """
     def __init__(self,
                  ntypes : int,
-                 rcut,
-                 rcut_smth,
-                 sel) -> None:
+                 rcut) -> None:
         """
         Constructor
 
@@ -26,11 +24,8 @@ class EnvMatStat():
                 The num of atom types
         rcut
                 The cut-off radius
-        rcut_smth
-                From where the environment matrix should be smoothed
-        sel : list[str]
-                sel[i] specifies the maxmum number of type i atoms in the cut-off radius
         """
+        self.rcut = rcut
         self.ntypes = ntypes
         self.place_holders = {}
         sub_graph = tf.Graph()
@@ -40,22 +35,17 @@ class EnvMatStat():
             self.place_holders['type'] = tf.placeholder(tf.int32, [None, None], name='t_type')
             self.place_holders['natoms_vec'] = tf.placeholder(tf.int32, [self.ntypes+2], name='t_natoms')
             self.place_holders['default_mesh'] = tf.placeholder(tf.int32, [None], name='t_mesh')
-            self.sel = sel
-            self.rcut = rcut
-            self.rcut_smth = rcut_smth
-            self._min_nbor_dist, self._max_nbor_size \
-                = op_module.env_mat_stat(self.place_holders['coord'],
+            self._max_nbor_size, self._min_nbor_dist \
+                = op_module.neighbor_stat(self.place_holders['coord'],
                                          self.place_holders['type'],
                                          self.place_holders['natoms_vec'],
                                          self.place_holders['box'],
                                          self.place_holders['default_mesh'],
-                                         sel = self.sel,
-                                         rcut = self.rcut,
-                                         rcut_smth = self.rcut_smth)
+                                         rcut = self.rcut)
         self.sub_sess = tf.Session(graph = sub_graph, config=default_tf_session_config)
 
-    def get_env_mat_stat(self,
-                         data) -> Tuple[float, List[int]]:
+    def get_stat(self,
+                 data) -> Tuple[float, List[int]]:
         """
         get the data statistics of the training data, including nearest nbor distance between atoms, max nbor size of atoms
 
@@ -78,8 +68,8 @@ class EnvMatStat():
             for jj in data.data_systems[ii].dirs:
                 data_set = data.data_systems[ii]._load_set(jj)
                 for kk in range(np.array(data_set['type']).shape[0]):
-                    dt, mn \
-                        = self.sub_sess.run([self._min_nbor_dist, self._max_nbor_size], 
+                    mn, dt \
+                        = self.sub_sess.run([self._max_nbor_size, self._min_nbor_dist], 
                                             feed_dict = {
                                                 self.place_holders['coord']: np.array(data_set['coord'])[kk].reshape([-1, data.natoms[ii] * 3]),
                                                 self.place_holders['type']: np.array(data_set['type'])[kk].reshape([-1, data.natoms[ii]]),

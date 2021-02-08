@@ -19,7 +19,7 @@ from deepmd.descriptor import DescrptHybrid
 from deepmd.Model import Model, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
 from deepmd.loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
 from deepmd.utils.learning_rate import LearningRateExp
-from deepmd.utils.env_mat_stat import EnvMatStat
+from deepmd.utils.neighbor_stat import NeighborStat
 
 from tensorflow.python.client import timeline
 from deepmd.env import op_module
@@ -275,14 +275,12 @@ class NNPTrainer (object):
         self.model.data_stat(data)
 
         if 'compress' in self.model_param and self.model_param['compress']['compress']:
-            assert 'sel' in self.descrpt_param,       "Error: descriptor must have attr sel!"
             assert 'rcut' in self.descrpt_param,      "Error: descriptor must have attr rcut!"
-            assert 'rcut_smth' in self.descrpt_param, "Error: descriptor must have attr rcut_smth!"
-            self.env_mat_stat \
-                = EnvMatStat(self.ntypes, self.descrpt_param['rcut'], self.descrpt_param['rcut_smth'], self.descrpt_param['sel'])
+            self.neighbor_stat \
+                = NeighborStat(self.ntypes, self.descrpt_param['rcut'])
             self.min_nbor_dist, self.max_nbor_size \
-                = self.env_mat_stat.get_env_mat_stat(data)
-            self.descrpt.enable_compression(self.min_nbor_dist, self.model_param['compress']['model_file'], self.model_param['compress']['table_config'])
+                = self.neighbor_stat.get_stat(data)
+            self.descrpt.enable_compression(self.min_nbor_dist, self.model_param['compress']['model_file'], self.model_param['compress']['table_config'][0], self.model_param['compress']['table_config'][1], self.model_param['compress']['table_config'][2], self.model_param['compress']['table_config'][3])
 
         worker_device = "/job:%s/task:%d/%s" % (self.run_opt.my_job_name,
                                                 self.run_opt.my_task_index,

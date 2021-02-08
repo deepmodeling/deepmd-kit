@@ -232,7 +232,10 @@ class DescrptSeA ():
     def enable_compression(self,
                            min_nbor_dist,
                            model_file = 'frozon_model.pb',
-                           table_config = [5, 0.01, 0.1, -1]
+                           table_extrapolate = 5,
+                           table_stride_1 = 0.01,
+                           table_stride_2 = 0.1,
+                           check_frequency = -1
     ) -> None:
         """
         Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
@@ -243,19 +246,21 @@ class DescrptSeA ():
                 The nearest distance between atoms
         model_file
                 The original frozen model, which will be compressed by the program
-        table_config
-                The configuration including:
-                Table_config[0] denotes the scale of model extrapolation
-                Table_config[1] denotes the uniform stride of the first table
-                Table_config[2] denotes the uniform stride of the second table
-                Table_config[3] denotes the overflow check frequency
+        table_extrapolate
+                The scale of model extrapolation
+        table_stride_1
+                The uniform stride of the first table
+        table_stride_2
+                The uniform stride of the second table
+        check_frequency
+                The overflow check frequency
         """
         self.compress = True
         self.model_file = model_file
-        self.table_config = table_config
+        self.table_config = [table_extrapolate, table_stride_1, table_stride_2, check_frequency]
         self.table = DeepTabulate(self.model_file, self.filter_np_precision, self.type_one_side)
         self.lower, self.upper \
-            = self.table.build(min_nbor_dist, self.rcut_r, self.rcut_r_smth, self.table_config[0], self.table_config[1], self.table_config[2])
+            = self.table.build(min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2)
 
     def build (self, 
                coord_ : tf.Tensor, 
