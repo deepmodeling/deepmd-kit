@@ -123,6 +123,7 @@ TEST_F(TestEnvMatA, orig_cpy)
     env_mat_a(env, env_deriv, rij_a, posi_cpy, ntypes, atype_cpy, region, pbc, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
     EXPECT_EQ(env.size(), sec_a[2]*4);
     EXPECT_EQ(env.size(), env_deriv.size()/3);
+    EXPECT_EQ(rij_a.size(), sec_a[2]*3);
     for (int jj = 0; jj < sec_a[2]; ++jj){
       for (int dd = 0; dd < 4; ++dd){
     	EXPECT_LT(fabs(env[jj*4+dd] - expected_env[ii*sec_a[2]*4 + jj*4 + dd]) , 1e-5);
@@ -144,6 +145,9 @@ TEST_F(TestEnvMatA, orig_pbc)
     int ret = format_nlist_fill_a(fmt_nlist_a, fmt_nlist_r, posi, ntypes, atype, region, pbc, ii, nlist_a[ii], nlist_r[ii], rc, sec_a, sec_r);    
     EXPECT_EQ(ret, -1);
     env_mat_a(env, env_deriv, rij_a, posi, ntypes, atype, region, pbc, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
+    EXPECT_EQ(env.size(), sec_a[2]*4);
+    EXPECT_EQ(env.size(), env_deriv.size()/3);
+    EXPECT_EQ(rij_a.size(), sec_a[2]*3);
     for (int jj = 0; jj < sec_a[2]; ++jj){
       for (int dd = 0; dd < 4; ++dd){
     	EXPECT_LT(fabs(env[jj*4+dd] - expected_env[ii*sec_a[2]*4 + jj*4 + dd]) , 1e-5);
@@ -192,6 +196,9 @@ TEST_F(TestEnvMatA, orig_cpy_num_deriv)
     int ret = format_nlist_cpu<double>(fmt_nlist_a, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);
     EXPECT_EQ(ret, -1);
     env_mat_a(env, env_deriv, rij_a, posi_cpy, ntypes, atype_cpy, region, pbc, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
+    EXPECT_EQ(env.size(), sec_a[2]*4);
+    EXPECT_EQ(env.size(), env_deriv.size()/3);
+    EXPECT_EQ(rij_a.size(), sec_a[2]*3);
 
     for (int jj = 0; jj < sec_a[2]; ++jj){
       int j_idx = fmt_nlist_a[jj];
@@ -227,6 +234,9 @@ TEST_F(TestEnvMatA, cpu)
     int ret = format_nlist_cpu<double>(fmt_nlist_a, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);    
     EXPECT_EQ(ret, -1);
     env_mat_a_cpu<double>(env, env_deriv, rij_a, posi_cpy, ntypes, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
+    EXPECT_EQ(env.size(), sec_a[2]*4);
+    EXPECT_EQ(env.size(), env_deriv.size()/3);
+    EXPECT_EQ(rij_a.size(), sec_a[2]*3);
     for (int jj = 0; jj < sec_a[2]; ++jj){
       for (int dd = 0; dd < 4; ++dd){
     	EXPECT_LT(fabs(env[jj*4+dd] - expected_env[ii*sec_a[2]*4 + jj*4 + dd]) , 1e-5);
@@ -276,6 +286,9 @@ TEST_F(TestEnvMatA, cpu_num_deriv)
     int ret = format_nlist_cpu<double>(fmt_nlist_a, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);    
     EXPECT_EQ(ret, -1);
     env_mat_a_cpu<double>(env, env_deriv, rij_a, posi_cpy, ntypes, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
+    EXPECT_EQ(env.size(), sec_a[2]*4);
+    EXPECT_EQ(env.size(), env_deriv.size()/3);
+    EXPECT_EQ(rij_a.size(), sec_a[2]*3);
 
     for (int jj = 0; jj < sec_a[2]; ++jj){
       int j_idx = fmt_nlist_a[jj];
@@ -313,6 +326,7 @@ TEST_F(TestEnvMatAShortSel, orig_cpy)
     env_mat_a(env, env_deriv, rij_a, posi_cpy, ntypes, atype_cpy, region, pbc, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
     EXPECT_EQ(env.size(), sec_a[2]*4);
     EXPECT_EQ(env.size(), env_deriv.size()/3);
+    EXPECT_EQ(rij_a.size(), sec_a[2]*3);
     for (int jj = 0; jj < sec_a[2]; ++jj){
       for (int dd = 0; dd < 4; ++dd){
     	EXPECT_LT(fabs(env[jj*4+dd] - expected_env[ii*sec_a[2]*4 + jj*4 + dd]) , 1e-5);
@@ -334,6 +348,9 @@ TEST_F(TestEnvMatAShortSel, orig_pbc)
     int ret = format_nlist_fill_a(fmt_nlist_a, fmt_nlist_r, posi, ntypes, atype, region, pbc, ii, nlist_a[ii], nlist_r[ii], rc, sec_a, sec_r);    
     EXPECT_EQ(ret, 1);
     env_mat_a(env, env_deriv, rij_a, posi, ntypes, atype, region, pbc, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
+    EXPECT_EQ(env.size(), sec_a[2]*4);
+    EXPECT_EQ(env.size(), env_deriv.size()/3);
+    EXPECT_EQ(rij_a.size(), sec_a[2]*3);
     for (int jj = 0; jj < sec_a[2]; ++jj){
       for (int dd = 0; dd < 4; ++dd){
     	EXPECT_LT(fabs(env[jj*4+dd] - expected_env[ii*sec_a[2]*4 + jj*4 + dd]) , 1e-5);
@@ -351,6 +368,9 @@ TEST_F(TestEnvMatAShortSel, cpu)
     int ret = format_nlist_cpu<double>(fmt_nlist_a, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);    
     EXPECT_EQ(ret, 1);
     env_mat_a_cpu<double>(env, env_deriv, rij_a, posi_cpy, ntypes, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
+    EXPECT_EQ(env.size(), sec_a[2]*4);
+    EXPECT_EQ(env.size(), env_deriv.size()/3);
+    EXPECT_EQ(rij_a.size(), sec_a[2]*3);
     for (int jj = 0; jj < sec_a[2]; ++jj){
       for (int dd = 0; dd < 4; ++dd){
     	EXPECT_LT(fabs(env[jj*4+dd] - expected_env[ii*sec_a[2]*4 + jj*4 + dd]) , 1e-5);
