@@ -6,6 +6,7 @@
 #include "ComputeDescriptor.h"
 #include "NeighborList.h"
 #include "fmt_nlist.h"
+#include "env_mat.h"
 
 typedef double boxtensor_t ;
 typedef double compute_t;
@@ -229,7 +230,7 @@ public:
 	::build_nlist (d_nlist_null, d_nlist, d_coord3, nloc, -1, rcut, nat_stt, nat_end, ext_stt, ext_end, region, global_grid);
       }
       else if (nei_mode == 1) {
-	std::vector<double > bk_d_coord3 = d_coord3;
+	std::vector<compute_t > bk_d_coord3 = d_coord3;
 	std::vector<int > bk_d_type = d_type;
 	std::vector<int > ncell, ngcell;
 	copy_coord(d_coord3, d_type, nlist_map, ncell, ngcell, bk_d_coord3, bk_d_type, rcut, region);	

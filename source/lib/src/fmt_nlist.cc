@@ -116,6 +116,9 @@ int format_nlist_cpu (
         if (nei_iter[nei_type] < sec_a[nei_type+1]) {
             fmt_nei_idx_a[nei_iter[nei_type] ++] = sel_nei[kk].index;
         }
+	else{
+	  overflowed = nei_type;
+	}
     }
     return overflowed;
 }

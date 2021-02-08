@@ -246,7 +246,7 @@ public:
 	::build_nlist (d_nlist_a, d_nlist_r, d_coord3, nloc, rcut_a, rcut_r, nat_stt, nat_end, ext_stt, ext_end, region, global_grid);
       }
       else if (nei_mode == 1) {
-	std::vector<double > bk_d_coord3 = d_coord3;
+	std::vector<compute_t > bk_d_coord3 = d_coord3;
 	std::vector<int > bk_d_type = d_type;
 	std::vector<int > ncell, ngcell;
 	copy_coord(d_coord3, d_type, nlist_map, ncell, ngcell, bk_d_coord3, bk_d_type, rcut_r, region);	
