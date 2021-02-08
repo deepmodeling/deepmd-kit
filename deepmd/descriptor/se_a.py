@@ -258,7 +258,7 @@ class DescrptSeA ():
         self.compress = True
         self.model_file = model_file
         self.table_config = [table_extrapolate, table_stride_1, table_stride_2, check_frequency]
-        self.table = DeepTabulate(self.model_file, self.filter_np_precision, self.type_one_side)
+        self.table = DeepTabulate(self.model_file, self.type_one_side)
         self.lower, self.upper \
             = self.table.build(min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2)
 
@@ -557,9 +557,9 @@ class DescrptSeA ():
               else:
                 net = 'filter_' + str(type_input) + '_net_' + str(type_i)
               if type_i == 0:
-                xyz_scatter_1  = op_module.tabulate_fusion(self.table.data[net], info, xyz_scatter, tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])
+                xyz_scatter_1  = op_module.tabulate_fusion(self.table.data[net].astype(self.filter_np_precision), info, xyz_scatter, tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])
               else:
-                xyz_scatter_1 += op_module.tabulate_fusion(self.table.data[net], info, xyz_scatter, tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])
+                xyz_scatter_1 += op_module.tabulate_fusion(self.table.data[net].astype(self.filter_np_precision), info, xyz_scatter, tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])
             else:
               if (type_input, type_i) not in self.exclude_types:
                   xyz_scatter = embedding_net(xyz_scatter, 

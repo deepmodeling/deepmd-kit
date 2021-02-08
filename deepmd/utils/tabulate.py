@@ -17,7 +17,6 @@ class DeepTabulate():
     """
     def __init__(self,
                  model_file,
-                 data_type,
                  type_one_side = False) -> None:
         """
         Constructor
@@ -26,14 +25,11 @@ class DeepTabulate():
         ----------
         model_file
                 The frozen model
-        data_type
-                The precision of the tables. Supported options are {1}
         type_one_side
                 Try to build N_types tables. Otherwise, building N_types^2 tables
         """
 
         self.model_file = model_file
-        self.np_data_type = data_type
         self.type_one_side = type_one_side
 
         self.graph, self.graph_def = self._load_graph()
@@ -123,7 +119,7 @@ class DeepTabulate():
                     self.data[net][jj][kk * 6 + 3] = (1 / (2 * tt * tt * tt)) * (20 * hh - (8 * dd[jj + 1][kk] + 12 * dd[jj][kk]) * tt - (3 * d2[jj][kk] - d2[jj + 1][kk]) * tt * tt)
                     self.data[net][jj][kk * 6 + 4] = (1 / (2 * tt * tt * tt * tt)) * (-30 * hh + (14 * dd[jj + 1][kk] + 16 * dd[jj][kk]) * tt + (3 * d2[jj][kk] - 2 * d2[jj + 1][kk]) * tt * tt)
                     self.data[net][jj][kk * 6 + 5] = (1 / (2 * tt * tt * tt * tt * tt)) * (12 * hh - 6 * (dd[jj + 1][kk] + dd[jj][kk]) * tt + (d2[jj + 1][kk] - d2[jj][kk]) * tt * tt)
-            self.data[net].astype(self.np_data_type)
+            self.data[net]
         return lower, upper
 
     def _load_graph(self):
