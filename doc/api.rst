@@ -65,7 +65,7 @@ DeePMD-kit API
    :members:
    :undoc-members:
 
-.. automodule:: deepmd.local
+.. automodule:: deepmd.cluster.local
    :members:
    :undoc-members:
 

@@ -161,6 +161,10 @@ def set_log_handles(
     ------
     RuntimeError
         if only one of the arguments `mpi_log`, `MPI` is specified
+
+    References
+    ----------
+    https://groups.google.com/g/mpi4py/c/SaNzc8bdj6U
     """
     # convert 0 - 3 to python logging level
     # we have debug=3 -> logging.DEBUG = 10
