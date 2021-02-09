@@ -9,10 +9,6 @@ sinstall(
   DESTINATION	deepmd
 )
 install(
-  DIRECTORY	cluster 
-  DESTINATION	deepmd/cluster
-)
-install(
   FILES		train.py test.py
   DESTINATION	deepmd
 )
