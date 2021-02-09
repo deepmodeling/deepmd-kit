@@ -3,7 +3,7 @@ import numpy as np
 import unittest
 
 from deepmd.utils.data import DeepmdData
-from deepmd.RunOptions import global_np_float_precision
+from deepmd.run_options import global_np_float_precision
 
 if global_np_float_precision == np.float32 :
     places = 6

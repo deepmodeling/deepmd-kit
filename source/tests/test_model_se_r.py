@@ -3,11 +3,11 @@ import numpy as np
 from deepmd.env import tf
 from common import Data,gen_data
 
-from deepmd.RunOptions import RunOptions
+from deepmd.run_options import RunOptions
 from deepmd.utils.data_system import DataSystem
 from deepmd.descriptor import DescrptSeR
 from deepmd.fit import EnerFitting
-from deepmd.Model import Model
+from deepmd.model import Model
 from deepmd.common import j_must_have, j_loader
 
 global_ener_float_precision = tf.float64

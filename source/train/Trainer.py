@@ -5,8 +5,8 @@ import shutil
 import numpy as np
 from deepmd.env import tf
 from deepmd.env import default_tf_session_config
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_ener_float_precision
+from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.run_options import GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.fit import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
 from deepmd.descriptor import DescrptLocFrame
 from deepmd.descriptor import DescrptSeA
@@ -16,7 +16,7 @@ from deepmd.descriptor import DescrptSeAEf
 from deepmd.descriptor import DescrptSeR
 from deepmd.descriptor import DescrptSeAR
 from deepmd.descriptor import DescrptHybrid
-from deepmd.Model import Model, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
+from deepmd.model import Model, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
 from deepmd.loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
 from deepmd.utils.learning_rate import LearningRateExp
 
@@ -294,9 +294,9 @@ class NNPTrainer (object):
         for kk in data_dict.keys():
             if kk == 'type':
                 continue
-            prec = global_tf_float_precision
+            prec = GLOBAL_TF_FLOAT_PRECISION
             if data_dict[kk]['high_prec'] :
-                prec = global_ener_float_precision
+                prec = GLOBAL_ENER_FLOAT_PRECISION
             self.place_holders[kk] = tf.placeholder(prec, [None], name = 't_' + kk)
             self.place_holders['find_'+kk] = tf.placeholder(tf.float32, name = 't_find_' + kk)
 

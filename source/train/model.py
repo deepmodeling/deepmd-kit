@@ -4,7 +4,7 @@ from collections import defaultdict
 from deepmd.utils.tab_inter import TabInter
 from deepmd.common import ClassArg
 
-from deepmd.RunOptions import global_cvt_2_ener_float
+from deepmd.run_options import global_cvt_2_ener_float
 from deepmd.env import op_module
 
 

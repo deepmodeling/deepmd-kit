@@ -3,11 +3,11 @@ from typing import Tuple, List
 
 from deepmd.env import tf
 from deepmd.common import ClassArg
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
-from deepmd.RunOptions import global_cvt_2_tf_float
-from deepmd.RunOptions import global_cvt_2_ener_float
+from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.run_options import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.run_options import GLOBAL_ENER_FLOAT_PRECISION
+from deepmd.run_options import global_cvt_2_tf_float
+from deepmd.run_options import global_cvt_2_ener_float
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 
@@ -33,9 +33,9 @@ class EwaldRecp () :
         with tf.Graph().as_default() as graph:
             # place holders
             self.t_nloc       = tf.placeholder(tf.int32, [1], name = "t_nloc")
-            self.t_coord      = tf.placeholder(global_tf_float_precision, [None], name='t_coord')
-            self.t_charge     = tf.placeholder(global_tf_float_precision, [None], name='t_charge')
-            self.t_box        = tf.placeholder(global_tf_float_precision, [None], name='t_box')
+            self.t_coord      = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='t_coord')
+            self.t_charge     = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='t_charge')
+            self.t_box        = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='t_box')
             # output            
             self.t_energy, self.t_force, self.t_virial \
                 = op_module.ewald_recp(self.t_coord, self.t_charge, self.t_nloc, self.t_box, 

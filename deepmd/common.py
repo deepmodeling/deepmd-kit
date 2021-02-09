@@ -20,7 +20,7 @@ import numpy as np
 import yaml
 
 from deepmd.env import op_module, tf
-from deepmd.RunOptions import global_tf_float_precision
+from deepmd.RunOptions import GLOBAL_TF_FLOAT_PRECISION
 
 if TYPE_CHECKING:
     _DICT_VAL = TypeVar("_DICT_VAL")
@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
 # define constants
 PRECISION_DICT = {
-    "default": global_tf_float_precision,
+    "default": GLOBAL_TF_FLOAT_PRECISION,
     "float16": tf.float16,
     "float32": tf.float32,
     "float64": tf.float64,

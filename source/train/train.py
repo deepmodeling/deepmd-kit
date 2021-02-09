@@ -7,8 +7,8 @@ import json
 import numpy as np
 from deepmd.env import tf
 from deepmd.common import data_requirement, expand_sys_str, j_loader
-from deepmd.RunOptions import RunOptions
-from deepmd.Trainer import NNPTrainer
+from deepmd.run_options import RunOptions, WELCOME, CITATION, BUILD_EXTENDED
+from deepmd.trainer import NNPTrainer
 from deepmd.infer.data_modifier import DipoleChargeModifier
 from deepmd.utils.data_system import DeepmdDataSystem
 from deepmd.utils.compat import convert_input_v0_v1
@@ -66,9 +66,10 @@ def train (args) :
     if 'with_distrib' in jdata:
         with_distrib = jdata['with_distrib']
     run_opt = RunOptions(args, with_distrib)
-    run_opt.print_welcome()
-    run_opt.print_citation()
-    run_opt.print_summary()
+    run_opt.message(WELCOME)
+    run_opt.message(CITATION)
+    run_opt.message(BUILD_EXTENDED)
+    run_opt.print_run_summary()
 
     if run_opt.is_distrib :
         # distributed training

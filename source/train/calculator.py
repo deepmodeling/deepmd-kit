@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
-import deepmd.DeepPot as DeepPot
+from deepmd import DeepPot
 from ase.calculators.calculator import Calculator, all_changes
 
 if TYPE_CHECKING:
@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
     from ase import Atoms
 
+__all__ = ["DP"]
 
 class DP(Calculator):
     """Implementation of ASE deepmd calculator.

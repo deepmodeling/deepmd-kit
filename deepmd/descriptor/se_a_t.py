@@ -4,8 +4,8 @@ from typing import Tuple, List
 from deepmd.env import tf
 from deepmd.common import get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter
 from deepmd.utils.argcheck import list_to_doc
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
+from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.run_options import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.utils.network import embedding_net
@@ -84,13 +84,13 @@ class DescrptSeAT ():
         self.davg = None
 
         self.place_holders = {}
-        avg_zero = np.zeros([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
-        std_ones = np.ones ([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
+        avg_zero = np.zeros([self.ntypes,self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
+        std_ones = np.ones ([self.ntypes,self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
         sub_graph = tf.Graph()
         with sub_graph.as_default():
             name_pfx = 'd_sea_'
             for ii in ['coord', 'box']:
-                self.place_holders[ii] = tf.placeholder(global_np_float_precision, [None, None], name = name_pfx+'t_'+ii)
+                self.place_holders[ii] = tf.placeholder(GLOBAL_NP_FLOAT_PRECISION, [None, None], name = name_pfx+'t_'+ii)
             self.place_holders['type'] = tf.placeholder(tf.int32, [None, None], name=name_pfx+'t_type')
             self.place_holders['natoms_vec'] = tf.placeholder(tf.int32, [self.ntypes+2], name=name_pfx+'t_natoms')
             self.place_holders['default_mesh'] = tf.placeholder(tf.int32, [None], name=name_pfx+'t_mesh')
@@ -256,7 +256,7 @@ class DescrptSeAT ():
                 dstd = np.ones ([self.ntypes, self.ndescrpt])
             t_rcut = tf.constant(np.max([self.rcut_r, self.rcut_a]), 
                                  name = 'rcut', 
-                                 dtype = global_tf_float_precision)
+                                 dtype = GLOBAL_TF_FLOAT_PRECISION)
             t_ntypes = tf.constant(self.ntypes, 
                                    name = 'ntypes', 
                                    dtype = tf.int32)
@@ -268,12 +268,12 @@ class DescrptSeAT ():
                                 dtype = tf.int32)            
             self.t_avg = tf.get_variable('t_avg', 
                                          davg.shape, 
-                                         dtype = global_tf_float_precision,
+                                         dtype = GLOBAL_TF_FLOAT_PRECISION,
                                          trainable = False,
                                          initializer = tf.constant_initializer(davg))
             self.t_std = tf.get_variable('t_std', 
                                          dstd.shape, 
-                                         dtype = global_tf_float_precision,
+                                         dtype = GLOBAL_TF_FLOAT_PRECISION,
                                          trainable = False,
                                          initializer = tf.constant_initializer(dstd))
 

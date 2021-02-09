@@ -4,9 +4,9 @@ import unittest
 
 from deepmd.env import tf
 from tensorflow.python.framework import ops
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
+from deepmd.run_options import global_tf_float_precision
+from deepmd.run_options import global_np_float_precision
+from deepmd.run_options import global_ener_float_precision
 
 from deepmd.env import op_module
 from deepmd.descriptor import DescrptSeA

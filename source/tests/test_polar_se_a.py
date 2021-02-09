@@ -3,11 +3,11 @@ import numpy as np
 from deepmd.env import tf
 from common import Data,gen_data
 
-from deepmd.RunOptions import RunOptions
+from deepmd.run_options import RunOptions
 from deepmd.utils.data_system import DataSystem
 from deepmd.descriptor import DescrptSeA
 from deepmd.fit import PolarFittingSeA
-from deepmd.Model import PolarModel
+from deepmd.model import PolarModel
 from deepmd.common import j_must_have, j_loader
 
 global_ener_float_precision = tf.float64
