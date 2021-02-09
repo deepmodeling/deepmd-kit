@@ -277,10 +277,10 @@ class RunOptions:
                 raise RuntimeError(
                     "--init-model and --restart should not be set at the same time"
                 )
-            elif args.init_model is not None:
+            elif args.init_model:
                 self.init_model = os.path.abspath(args.init_model)
                 self.init_mode = "init_from_model"
-            elif args.restart is not None:
+            elif args.restart:
                 self.restart = os.path.abspath(args.restart)
                 self.init_mode = "restart"
 

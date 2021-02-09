@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
 __all__ = ["DP"]
 
+
 class DP(Calculator):
     """Implementation of ASE deepmd calculator.
 
