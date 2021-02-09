@@ -4,7 +4,7 @@ configure_file("run_config.ini" "${CMAKE_CURRENT_BINARY_DIR}/run_config.ini" @ON
 
 file(GLOB LIB_PY main.py calculator.py model.py trainer.py run_options.py transform.py doc.py)
 
-sinstall(
+install(
   FILES		${LIB_PY} 
   DESTINATION	deepmd
 )

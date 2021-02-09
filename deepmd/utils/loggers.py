@@ -175,7 +175,7 @@ def set_log_handles(
     for hdlr in root_log.handlers[:]:
         root_log.removeHandler(hdlr)
 
-    # check arguments
+    # check if arguments are present
     if (mpi_log and not MPI) or (not mpi_log and MPI):
         raise RuntimeError("You cannot specify only one of 'mpi_log', 'MPI' arguments")
 
