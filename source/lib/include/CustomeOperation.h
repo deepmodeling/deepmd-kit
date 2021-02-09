@@ -5,6 +5,7 @@
 #include <algorithm>
 #include "MathUtilities.h"
 #include "fmt_nlist.h"
+#include "env_mat.h"
 #if GOOGLE_CUDA
 #include "DeviceFunctor.h"
 #endif // GOOGLE_CUDA
@@ -69,7 +70,7 @@ void DescrptSeACPULauncher(const FPTYPE * coord, const int * type, const int * i
 	    std::vector<FPTYPE> d_descrpt_r;
 	    std::vector<FPTYPE> d_descrpt_r_deriv;
 	    std::vector<FPTYPE> d_rij_a;
-	    compute_descriptor_se_a_cpu (d_descrpt_a, d_descrpt_a_deriv, d_rij_a, d_coord3, ntypes, d_type, ii, fmt_nlist_a, sec_a, rcut_r_smth, rcut_r);
+	    env_mat_a_cpu (d_descrpt_a, d_descrpt_a_deriv, d_rij_a, d_coord3, ntypes, d_type, ii, fmt_nlist_a, sec_a, rcut_r_smth, rcut_r);
 
 	    // check sizes
 	    assert (d_descrpt_a.size() == ndescrpt);
@@ -273,7 +274,7 @@ void DescrptSeRCPULauncher(const FPTYPE * coord, const int * type, const int * i
 	    std::vector<FPTYPE> d_descrpt_r;
 	    std::vector<FPTYPE> d_descrpt_r_deriv;
 	    std::vector<FPTYPE> d_rij_a;
-	    compute_descriptor_se_r_cpu (d_descrpt_a, d_descrpt_a_deriv, d_rij_a, d_coord3, ntypes, d_type, ii, fmt_nlist_a, sec_a, rcut_r_smth, rcut_r);
+	    env_mat_r_cpu (d_descrpt_a, d_descrpt_a_deriv, d_rij_a, d_coord3, ntypes, d_type, ii, fmt_nlist_a, sec_a, rcut_r_smth, rcut_r);
 
 	    // check sizes
 	    assert (d_descrpt_a.size() == ndescrpt);

@@ -30,6 +30,7 @@ class ProdForceSeAOp : public OpKernel {
   explicit ProdForceSeAOp(OpKernelConstruction* context) : OpKernel(context) {
     OP_REQUIRES_OK(context, context->GetAttr("n_a_sel", &n_a_sel));
     OP_REQUIRES_OK(context, context->GetAttr("n_r_sel", &n_r_sel));
+    // n_a_shift = n_a_sel * 4;
   }
 
   void Compute(OpKernelContext* context) override {
@@ -102,8 +103,7 @@ class ProdForceSeAOp : public OpKernel {
 			       &nlist(nlist_iter),
 			       nloc, 
 			       nall,
-			       nnei,
-			       n_a_sel);
+			       nnei);
     }
   }
 private:

@@ -85,7 +85,7 @@ TEST_F(TestProdForceA, cpu)
 {
   std::vector<double> force(nall * 3);
   int n_a_sel = nnei;
-  prod_force_a_cpu<double> (&force[0], &net_deriv[0], &env_deriv[0], &nlist[0], nloc, nall, nnei, n_a_sel);
+  prod_force_a_cpu<double> (&force[0], &net_deriv[0], &env_deriv[0], &nlist[0], nloc, nall, nnei);
   for (int jj = 0; jj < nall * 3; ++jj){
     EXPECT_LT(fabs(force[jj] - expected_force[jj]) , 1e-5);
   }  

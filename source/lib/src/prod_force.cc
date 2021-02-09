@@ -3,11 +3,13 @@
 #include "prod_force.h"
 
 inline void
-make_descript_range (int & idx_start,
-		     int & idx_end,
-		     const int & nei_idx, 
-		     const int & n_a_sel) {
-  if (nei_idx < n_a_sel) {
+make_index_range (
+    int & idx_start,
+    int & idx_end,
+    const int & nei_idx, 
+    const int & nnei) 
+{
+  if (nei_idx < nnei) {
     idx_start = nei_idx * 4;
     idx_end   = nei_idx * 4 + 4;
   }
@@ -25,8 +27,7 @@ void prod_force_a_cpu(
     const int * nlist, 
     const int nloc, 
     const int nall, 
-    const int nnei, 
-    const int n_a_sel) 
+    const int nnei) 
 {
   const int ndescrpt = 4 * nnei;
 
@@ -44,7 +45,7 @@ void prod_force_a_cpu(
       int j_idx = nlist[i_idx * nnei + jj];
       if (j_idx < 0) continue;
       int aa_start, aa_end;
-      make_descript_range (aa_start, aa_end, jj, n_a_sel);
+      make_index_range (aa_start, aa_end, jj, nnei);
       for (int aa = aa_start; aa < aa_end; ++aa) {
 	force[j_idx * 3 + 0] += net_deriv[i_idx * ndescrpt + aa] * env_deriv[i_idx * ndescrpt * 3 + aa * 3 + 0];
 	force[j_idx * 3 + 1] += net_deriv[i_idx * ndescrpt + aa] * env_deriv[i_idx * ndescrpt * 3 + aa * 3 + 1];
@@ -64,8 +65,7 @@ void prod_force_a_cpu<double>(
     const int * nlist, 
     const int nloc, 
     const int nall, 
-    const int nnei, 
-    const int n_a_sel);
+    const int nnei);
 
 template
 void prod_force_a_cpu<float>(
@@ -75,5 +75,4 @@ void prod_force_a_cpu<float>(
     const int * nlist, 
     const int nloc, 
     const int nall, 
-    const int nnei, 
-    const int n_a_sel);
+    const int nnei);
