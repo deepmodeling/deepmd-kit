@@ -93,6 +93,8 @@ TEST_F(TestProdVirialA, cpu)
   std::vector<double> atom_virial(nall * 9);
   int n_a_sel = nnei;
   prod_virial_a_cpu<double> (&virial[0], &atom_virial[0], &net_deriv[0], &env_deriv[0], &rij[0], &nlist[0], nloc, nall, nnei);
+  EXPECT_EQ(virial.size(), 9);
+  EXPECT_EQ(atom_virial.size(), nall * 9);  
   for (int jj = 0; jj < 9; ++jj){
     EXPECT_LT(fabs(virial[jj] - expected_virial[jj]) , 1e-5);
   }  

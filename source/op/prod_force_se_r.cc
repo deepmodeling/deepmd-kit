@@ -3,6 +3,8 @@
 #include "tensorflow/core/framework/shape_inference.h"
 #include <iostream>
 
+#include "prod_force.h"
+
 using namespace tensorflow;
 // using namespace std;
 
@@ -86,32 +88,13 @@ class ProdForceSeROp : public OpKernel {
       int in_iter	= kk * nloc * ndescrpt * 3;
       int nlist_iter	= kk * nloc * nnei;
 
-      for (int ii = 0; ii < nall; ++ii){
-	int i_idx = ii;
-	force (force_iter + i_idx * 3 + 0) = 0;
-	force (force_iter + i_idx * 3 + 1) = 0;
-	force (force_iter + i_idx * 3 + 2) = 0;
-      }
-
-      // compute force of a frame
-      for (int ii = 0; ii < nloc; ++ii){
-	int i_idx = ii;	
-	// deriv wrt center atom
-	for (int aa = 0; aa < ndescrpt; ++aa){
-	  force (force_iter + i_idx * 3 + 0) -= net_deriv (net_iter + i_idx * ndescrpt + aa) * in_deriv (in_iter + i_idx * ndescrpt * 3 + aa * 3 + 0);
-	  force (force_iter + i_idx * 3 + 1) -= net_deriv (net_iter + i_idx * ndescrpt + aa) * in_deriv (in_iter + i_idx * ndescrpt * 3 + aa * 3 + 1);
-	  force (force_iter + i_idx * 3 + 2) -= net_deriv (net_iter + i_idx * ndescrpt + aa) * in_deriv (in_iter + i_idx * ndescrpt * 3 + aa * 3 + 2);
-	}
-	// deriv wrt neighbors
-	for (int jj = 0; jj < nnei; ++jj){
-	  int j_idx = nlist (nlist_iter + i_idx * nnei + jj);
-	  // if (j_idx > nloc) j_idx = j_idx % nloc;
-	  if (j_idx < 0) continue;
-	  force (force_iter + j_idx * 3 + 0) += net_deriv (net_iter + i_idx * ndescrpt + jj) * in_deriv (in_iter + i_idx * ndescrpt * 3 + jj * 3 + 0);
-	  force (force_iter + j_idx * 3 + 1) += net_deriv (net_iter + i_idx * ndescrpt + jj) * in_deriv (in_iter + i_idx * ndescrpt * 3 + jj * 3 + 1);
-	  force (force_iter + j_idx * 3 + 2) += net_deriv (net_iter + i_idx * ndescrpt + jj) * in_deriv (in_iter + i_idx * ndescrpt * 3 + jj * 3 + 2);
-	}
-      }
+      prod_force_r_cpu<FPTYPE>(&force(force_iter),
+			       &net_deriv(net_iter),
+			       &in_deriv(in_iter),
+			       &nlist(nlist_iter),
+			       nloc, 
+			       nall,
+			       nnei);
     }
   }
 };
