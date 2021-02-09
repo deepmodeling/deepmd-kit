@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     try:
         from typing import Protocol  # python >=3.8
     except ImportError:
-        from typing_extensions import Protocol
+        from typing_extensions import Protocol  # type: ignore
 
     class ArgsProto(Protocol):
         """Prococol mimicking parser object."""
@@ -160,7 +160,8 @@ def freeze_graph(
     output_graph = abspath(output)
 
     # Before exporting our graph, we need to precise what is our output node
-    # This is how TF decides what part of the Graph he has to keep and what part it can dump
+    # This is how TF decides what part of the Graph he has to keep
+    # and what part it can dump
     # NOTE: this variable is plural, because you can have multiple output nodes
     # output_node_names = "energy_test,force_test,virial_test,t_rcut"
 
