@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import logging
 import os
 import collections
 import warnings
@@ -8,6 +9,8 @@ from typing import Tuple, List
 
 from deepmd.utils.data import DataSets
 from deepmd.utils.data import DeepmdData
+
+log = logging.getLogger(__name__)
 
 
 class DeepmdDataSystem() :
@@ -416,7 +419,7 @@ class DeepmdDataSystem() :
                          self.test_size[ii],
                          prob[ii]) )
         tmp_msg += "------------------------------------------------------------------------\n"
-        run_opt.message(tmp_msg)
+        log.info(tmp_msg)
 
     def _make_auto_bs(self, rule) :
         bs = []
@@ -602,7 +605,7 @@ class DataSystem (object) :
                          self.batch_size[ii], 
                          self.nbatches[ii]) )
         tmp_msg += "-----------------------------------------------------------------\n"
-        run_opt.message(tmp_msg)
+        log.info(tmp_msg)
 
     def compute_energy_shift(self) :
         sys_ener = np.array([])

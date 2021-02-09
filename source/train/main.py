@@ -3,7 +3,7 @@
 import argparse
 from pathlib import Path
 
-from deepmd.utils.loggers import set_log_handles
+from deepmd.loggers import set_log_handles
 
 from .config import config
 from .doc import doc_train_input
@@ -124,7 +124,7 @@ def main():
         "--mpi-log",
         type=str,
         default="master",
-        options=("master", "collect", "workers"),
+        choices=("master", "collect", "workers"),
         help="Set the manner of logging when running with MPI. 'master' logs only on "
         "main process, 'collect' broadcasts logs from workers to master and 'workers' "
         "means each process will output its own log"

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import logging
 import os
 import time
 import shutil
@@ -35,6 +36,9 @@ import deepmd._soft_min_virial_grad
 import deepmd._gelu
 
 from deepmd.common import j_must_have, ClassArg
+
+log = logging.getLogger(__name__)
+
 
 def _is_subdir(path, directory):
     path = os.path.realpath(path)
@@ -246,10 +250,6 @@ class NNPTrainer (object):
         else :
             self.numb_fparam = 0
 
-
-    def _message (self, msg) :
-        self.run_opt.message(msg)
-
     def build (self, 
                data, 
                stop_batch = 0) :
@@ -263,9 +263,9 @@ class NNPTrainer (object):
         self.batch_size = data.get_batch_size()
 
         if self.numb_fparam > 0 :
-            self._message("training with %d frame parameter(s)" % self.numb_fparam)
+            log.info("training with %d frame parameter(s)" % self.numb_fparam)
         else:
-            self._message("training without frame parameter")
+            log.info("training without frame parameter")
 
         self.type_map = data.get_type_map()
 
@@ -286,7 +286,7 @@ class NNPTrainer (object):
         self._extra_train_ops   = []
         self.global_step = tf.train.get_or_create_global_step()
         self.learning_rate = self.lr.build(self.global_step, self.stop_batch)
-        self._message("built lr")
+        log.info("built lr")
 
     def _build_network(self, data):        
         self.place_holders = {}
@@ -321,7 +321,7 @@ class NNPTrainer (object):
                                self.place_holders,
                                suffix = "test")
 
-        self._message("built network")
+        log.info("built network")
 
     def _build_training(self):
         trainable_variables = tf.trainable_variables()
@@ -339,20 +339,20 @@ class NNPTrainer (object):
                                               name='train_step')
         train_ops = [apply_op] + self._extra_train_ops
         self.train_op = tf.group(*train_ops)
-        self._message("built training")
+        log.info("built training")
 
     def _init_sess_serial(self) :
         self.sess = tf.Session(config=default_tf_session_config)
         self.saver = tf.train.Saver()
         saver = self.saver
         if self.run_opt.init_mode == 'init_from_scratch' :
-            self._message("initialize model from scratch")
+            log.info("initialize model from scratch")
             init_op = tf.global_variables_initializer()
             self.sess.run(init_op)
             fp = open(self.disp_file, "w")
             fp.close ()
         elif self.run_opt.init_mode == 'init_from_model' :
-            self._message("initialize from model %s" % self.run_opt.init_model)
+            log.info("initialize from model %s" % self.run_opt.init_model)
             init_op = tf.global_variables_initializer()
             self.sess.run(init_op)
             saver.restore (self.sess, self.run_opt.init_model)            
@@ -360,7 +360,7 @@ class NNPTrainer (object):
             fp = open(self.disp_file, "w")
             fp.close ()
         elif self.run_opt.init_mode == 'restart' :
-            self._message("restart from model %s" % self.run_opt.restart)
+            log.info("restart from model %s" % self.run_opt.restart)
             init_op = tf.global_variables_initializer()
             self.sess.run(init_op)
             saver.restore (self.sess, self.run_opt.restart)
@@ -371,7 +371,7 @@ class NNPTrainer (object):
         ckpt_dir = os.path.join(os.getcwd(), self.save_ckpt)
         assert(_is_subdir(ckpt_dir, os.getcwd())), "the checkpoint dir must be a subdir of the current dir"
         if self.run_opt.init_mode == 'init_from_scratch' :
-            self._message("initialize model from scratch")
+            log.info("initialize model from scratch")
             if self.run_opt.is_chief :
                 if os.path.exists(ckpt_dir):
                     shutil.rmtree(ckpt_dir)
@@ -382,7 +382,7 @@ class NNPTrainer (object):
         elif self.run_opt.init_mode == 'init_from_model' :
             raise RuntimeError("distributed training does not support %s" % self.run_opt.init_mode)
         elif self.run_opt.init_mode == 'restart' :
-            self._message("restart from model %s" % ckpt_dir)
+            log.info("restart from model %s" % ckpt_dir)
             if self.run_opt.is_chief :
                 assert(os.path.isdir(ckpt_dir)), "the checkpoint dir %s should exists" % ckpt_dir
         else :
@@ -428,12 +428,12 @@ class NNPTrainer (object):
         cur_batch = self.sess.run(self.global_step)
         is_first_step = True
         self.cur_batch = cur_batch
-        self.run_opt.message("start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e" % 
-                             (self.sess.run(self.learning_rate),
-                              self.lr.value(cur_batch), 
-                              self.lr.decay_steps_,
-                              self.lr.decay_rate_,
-                              self.lr.value(stop_batch)) 
+        log.info("start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e" % 
+                 (self.sess.run(self.learning_rate),
+                  self.lr.value(cur_batch), 
+                  self.lr.decay_steps_,
+                  self.lr.decay_rate_,
+                  self.lr.value(stop_batch)) 
         )
 
         prf_options = None
@@ -493,13 +493,13 @@ class NNPTrainer (object):
                 toc = time.time()
                 test_time = toc - tic
                 if self.timing_in_training :
-                    self._message("batch %7d training time %.2f s, testing time %.2f s"
+                    log.info("batch %7d training time %.2f s, testing time %.2f s"
                                   % (cur_batch, train_time, test_time))
                     train_time = 0
                 if self.save_freq > 0 and cur_batch % self.save_freq == 0 and self.run_opt.is_chief :
                     if self.saver is not None :
                         self.saver.save (self.sess, os.getcwd() + "/" + self.save_ckpt)
-                        self._message("saved checkpoint %s" % self.save_ckpt)
+                        log.info("saved checkpoint %s" % self.save_ckpt)
         if self.run_opt.is_chief: 
             fp.close ()
         if self.profiling and self.run_opt.is_chief :

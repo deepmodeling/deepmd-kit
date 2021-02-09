@@ -2,7 +2,6 @@
 
 import logging
 import os
-import sys
 from configparser import ConfigParser
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
@@ -10,7 +9,7 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 import numpy as np
 from deepmd.cluster import get_resource
 from deepmd.env import get_tf_default_nthreads, tf
-from deepmd.utils.loggers import set_log_handles
+from deepmd.loggers import set_log_handles
 
 if TYPE_CHECKING:
     try:
@@ -46,7 +45,7 @@ log = logging.getLogger(__name__)
 
 
 def _get_package_constants(
-    config_file: str = "config/run_config.ini",
+    config_file: Path = Path(__file__).parent / "config/run_config.ini",
 ) -> Dict[str, str]:
     """Read package constants set at compile time by CMake to dictionary.
 
@@ -67,7 +66,7 @@ def _get_package_constants(
 
 GLOBAL_CONFIG = _get_package_constants()
 
-if GLOBAL_CONFIG["PRECISION"] == "-DHIGH_PREC":
+if GLOBAL_CONFIG["precision"] == "-DHIGH_PREC":
     GLOBAL_TF_FLOAT_PRECISION = tf.float64
     GLOBAL_NP_FLOAT_PRECISION = np.float64
     GLOBAL_ENER_FLOAT_PRECISION = np.float64
@@ -95,14 +94,14 @@ CITATION = (
 
 _sep = "\n                      "
 BUILD = (
-    f"installed to:         {GLOBAL_CONFIG['INSTALL_PREFIX']}",
-    f"source :              {GLOBAL_CONFIG['GIT_SUMM']}",
-    f"source brach:         {GLOBAL_CONFIG['GIT_BRANCH']}",
-    f"source commit:        {GLOBAL_CONFIG['GIT_HASH']}",
-    f"source commit at:     {GLOBAL_CONFIG['GIT_DATE']}",
+    f"installed to:         {GLOBAL_CONFIG['install_prefix']}",
+    f"source :              {GLOBAL_CONFIG['git_summ']}",
+    f"source brach:         {GLOBAL_CONFIG['git_branch']}",
+    f"source commit:        {GLOBAL_CONFIG['git_hash']}",
+    f"source commit at:     {GLOBAL_CONFIG['git_date']}",
     f"build float prec:     {global_float_prec}",
-    f"build with tf inc:    {GLOBAL_CONFIG['TF_INCLUDE_DIR']}",
-    f"build with tf lib:    {GLOBAL_CONFIG['TF_LIBS'].replace(';', _sep)}"  # noqa
+    f"build with tf inc:    {GLOBAL_CONFIG['tf_include_dir']}",
+    f"build with tf lib:    {GLOBAL_CONFIG['tf_libs'].replace(';', _sep)}"  # noqa
 )
 
 
@@ -301,7 +300,6 @@ class RunOptions:
                 args.log_level,
                 args.mpi_log,
             )
-
 
     def print_resource_summary(self):
         """Print build and current running cluster configuration summary."""

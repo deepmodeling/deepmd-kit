@@ -5,7 +5,7 @@ import json
 import numpy as np
 from deepmd.env import tf
 from deepmd.common import data_requirement, expand_sys_str, j_loader
-from deepmd.run_options import RunOptions, WELCOME, CITATION, BUILD_EXTENDED
+from deepmd.run_options import RunOptions, WELCOME, CITATION, BUILD
 from deepmd.trainer import NNPTrainer
 from deepmd.infer.data_modifier import DipoleChargeModifier
 from deepmd.utils.data_system import DeepmdDataSystem
@@ -69,7 +69,7 @@ def train (args) :
         with_distrib = jdata['with_distrib']
     run_opt = RunOptions(args, with_distrib)
 
-    for message in (WELCOME + CITATION + BUILD_EXTENDED):
+    for message in (WELCOME + CITATION + BUILD):
         log.info(message)
  
     run_opt.print_resource_summary()
@@ -146,5 +146,5 @@ def _do_work(jdata, run_opt):
     start_time = time.time()
     model.train (data)
     end_time = time.time()
-    run_opt.message("finished training\nwall time: %.3f s" % (end_time-start_time))
+    log.info("finished training\nwall time: %.3f s" % (end_time-start_time))
 

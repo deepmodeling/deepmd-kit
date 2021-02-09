@@ -7,15 +7,15 @@ from deepmd.common import j_must_have, data_requirement, j_loader
 from deepmd.run_options import RunOptions
 from deepmd.trainer import NNPTrainer
 from deepmd.utils.data_system import DeepmdDataSystem
-from deepmd.run_options import global_tf_float_precision
-from deepmd.run_options import global_np_float_precision
-from deepmd.run_options import global_ener_float_precision
+from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.run_options import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.run_options import GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.infer.ewald_recp import EwaldRecp
 from deepmd.infer.data_modifier import DipoleChargeModifier
 
 from common import Data
 
-if global_np_float_precision == np.float32 :
+if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
     global_default_fv_hh = 1e-2
     global_default_dw_hh = 1e-2
     global_default_places = 3
@@ -31,6 +31,9 @@ class Args() :
     restart = None
     init_model = None
     inter_threads = 0
+    log_path = None
+    log_level = 0
+    mpi_log = "master"
 
 class TestDataModifier (unittest.TestCase) :
 
