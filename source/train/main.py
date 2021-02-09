@@ -1,6 +1,9 @@
 """DeePMD-Kit entry point module."""
 
 import argparse
+from pathlib import Path
+
+from deepmd.utils.loggers import set_log_handles
 
 from .config import config
 from .doc import doc_train_input
@@ -25,9 +28,31 @@ def main():
     )
     subparsers = parser.add_subparsers(title="Valid subcommands", dest="command")
 
+    # * logging options parser *********************************************************
+    # with use of the parent argument this options will be added to every parser
+    parser_log = argparse.ArgumentParser(add_help=False)
+    parser_log.add_argument(
+        "-v",
+        "--verbose",
+        default=2,
+        action="count",
+        dest="log_level",
+        help="set verbosity level 0 - 3, 0=ERROR, 1(-v)=WARNING, 2(-vv)=INFO "
+        "and 3(-vvv)=DEBUG"
+    )
+    parser_log.add_argument(
+        "-l",
+        "--log-path",
+        default=None,
+        help="set log file to log messages to disk, if not specified, the logs will "
+        "only be output to console"
+    )
+
     # * config script ******************************************************************
     parser_cfig = subparsers.add_parser(
-        "config", help="fast configuration of parameter file for smooth model"
+        "config",
+        parents=[parser_log],
+        help="fast configuration of parameter file for smooth model"
     )
     parser_cfig.add_argument(
         "-o",
@@ -39,7 +64,9 @@ def main():
 
     # * transform script ***************************************************************
     parser_transform = subparsers.add_parser(
-        "transform", help="pass parameters to another model"
+        "transform",
+        parents=[parser_log],
+        help="pass parameters to another model"
     )
     parser_transform.add_argument(
         "-r",
@@ -64,7 +91,10 @@ def main():
     )
 
     # * config parser ******************************************************************
-    parser_train = subparsers.add_parser("train", help="train a model")
+    parser_train = subparsers.add_parser(
+        "train",
+        parents=[parser_log],
+        help="train a model")
     parser_train.add_argument(
         "INPUT", help="the input parameter file in json or yaml format"
     )
@@ -89,9 +119,22 @@ def main():
         default="out.json",
         help="The output file of the parameters used in training.",
     )
+    parser_train.add_argument(
+        "-m",
+        "--mpi-log",
+        type=str,
+        default="master",
+        options=("master", "collect", "workers"),
+        help="Set the manner of logging when running with MPI. 'master' logs only on "
+        "main process, 'collect' broadcasts logs from workers to master and 'workers' "
+        "means each process will output its own log"
+    )
 
     # * freeze script ******************************************************************
-    parser_frz = subparsers.add_parser("freeze", help="freeze the model")
+    parser_frz = subparsers.add_parser(
+        "freeze",
+        parents=[parser_log],
+        help="freeze the model")
     parser_frz.add_argument(
         "-f",
         "--folder",
@@ -114,7 +157,10 @@ def main():
     )
 
     # * test script ********************************************************************
-    parser_tst = subparsers.add_parser("test", help="test the model")
+    parser_tst = subparsers.add_parser(
+        "test",
+        parents=[parser_log],
+        help="test the model")
     parser_tst.add_argument(
         "-m",
         "--model",
@@ -170,14 +216,21 @@ def main():
     # * print docs script **************************************************************
     subparsers.add_parser(
         "doc-train-input",
+        parents=[parser_log],
         help="print the documentation (in rst format) of input training parameters.",
     )
 
     args = parser.parse_args()
 
+    # do not set log handles for None it is useless
+    # log handles for train will be set separatelly
+    # when the use of MPI will be determined in `RunOptions`
+    if args.command not in (None, "train"):
+        set_log_handles(args.log_level, Path(args.log_path))
+
     if args.command is None:
         parser.print_help()
-    if args.command == "train":
+    elif args.command == "train":
         train(args)
     elif args.command == "freeze":
         freeze(args)
@@ -190,4 +243,4 @@ def main():
     elif args.command == "doc-train-input":
         doc_train_input(args)
     else:
-        raise RuntimeError(f"unknown command {args.command}s)
+        raise RuntimeError(f"unknown command {args.command}")

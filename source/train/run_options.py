@@ -1,13 +1,16 @@
 """Module taking care of important package constants."""
 
+import logging
 import os
 import sys
 from configparser import ConfigParser
+from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 import numpy as np
 from deepmd.cluster import get_resource
 from deepmd.env import get_tf_default_nthreads, tf
+from deepmd.utils.loggers import set_log_handles
 
 if TYPE_CHECKING:
     try:
@@ -22,6 +25,10 @@ if TYPE_CHECKING:
 
         init_model: Optional[str]
         restart: Optional[str]
+        log_level: int
+        log_path: Optional[str]
+        mpi_log: Optional[str]
+
 
 __all__ = [
     "GLOBAL_TF_FLOAT_PRECISION",
@@ -32,8 +39,10 @@ __all__ = [
     "BUILD",
     "global_cvt_2_tf_float",
     "global_cvt_2_ener_float",
-    "RunOptions"
+    "RunOptions",
 ]
+
+log = logging.getLogger(__name__)
 
 
 def _get_package_constants(
@@ -71,28 +80,28 @@ else:
 
 # http://patorjk.com/software/taag. Font:Big"
 WELCOME = (  # noqa
-    " _____               _____   __  __  _____           _     _  _   \n"
-    "|  __ \             |  __ \ |  \/  ||  __ \         | |   (_)| |  \n"
-    "| |  | |  ___   ___ | |__) || \  / || |  | | ______ | | __ _ | |_ \n"
-    "| |  | | / _ \ / _ \|  ___/ | |\/| || |  | ||______|| |/ /| || __|\n"
-    "| |__| ||  __/|  __/| |     | |  | || |__| |        |   < | || |_ \n"
-    "|_____/  \___| \___||_|     |_|  |_||_____/         |_|\_\|_| \__|\n"
+    " _____               _____   __  __  _____           _     _  _   ",
+    "|  __ \             |  __ \ |  \/  ||  __ \         | |   (_)| |  ",
+    "| |  | |  ___   ___ | |__) || \  / || |  | | ______ | | __ _ | |_ ",
+    "| |  | | / _ \ / _ \|  ___/ | |\/| || |  | ||______|| |/ /| || __|",
+    "| |__| ||  __/|  __/| |     | |  | || |__| |        |   < | || |_ ",
+    "|_____/  \___| \___||_|     |_|  |_||_____/         |_|\_\|_| \__|",
 )
 
 CITATION = (
-    "Please read and cite:\n"
-    "Wang, Zhang, Han and E, Comput.Phys.Comm. 228, 178-184 (2018)\n"
+    "Please read and cite:",
+    "Wang, Zhang, Han and E, Comput.Phys.Comm. 228, 178-184 (2018)",
 )
 
-_sep = '\n                      '
+_sep = "\n                      "
 BUILD = (
-    f"installed to:         {GLOBAL_CONFIG['INSTALL_PREFIX']}\n"
-    f"source :              {GLOBAL_CONFIG['GIT_SUMM']}\n"
-    f"source brach:         {GLOBAL_CONFIG['GIT_BRANCH']}\n"
-    f"source commit:        {GLOBAL_CONFIG['GIT_HASH']}\n"
-    f"source commit at:     {GLOBAL_CONFIG['GIT_DATE']}\n"
-    f"build float prec:     {global_float_prec}\n"
-    f"build with tf inc:    {GLOBAL_CONFIG['TF_INCLUDE_DIR']}\n"
+    f"installed to:         {GLOBAL_CONFIG['INSTALL_PREFIX']}",
+    f"source :              {GLOBAL_CONFIG['GIT_SUMM']}",
+    f"source brach:         {GLOBAL_CONFIG['GIT_BRANCH']}",
+    f"source commit:        {GLOBAL_CONFIG['GIT_HASH']}",
+    f"source commit at:     {GLOBAL_CONFIG['GIT_DATE']}",
+    f"build float prec:     {global_float_prec}",
+    f"build with tf inc:    {GLOBAL_CONFIG['TF_INCLUDE_DIR']}",
     f"build with tf lib:    {GLOBAL_CONFIG['TF_LIBS'].replace(';', _sep)}"  # noqa
 )
 
@@ -259,6 +268,9 @@ class RunOptions:
     server: Optional[tf.train.Server]
     my_device: str
 
+    _MPI: Optional["MPI"]
+    _log_handles_already_set: bool = False
+
     def __init__(self, args: Optional["ArgsProto"], try_distrib: bool = False):
         # distributed tasks
         if try_distrib:
@@ -284,40 +296,66 @@ class RunOptions:
                 self.restart = os.path.abspath(args.restart)
                 self.init_mode = "restart"
 
-    def message(self, msg: str):
-        """Print message if on the main process.
+            self._setup_logger(
+                Path(args.log_path) if args.log_path else None,
+                args.log_level,
+                args.mpi_log,
+            )
+
+
+    def print_resource_summary(self):
+        """Print build and current running cluster configuration summary."""
+        log.info("---Summary of the training---------------------------------------\n")
+        if self.is_distrib:
+            log.info("distributed\n")
+            log.info(f"ps list:              {self.cluster['ps']}\n")
+            log.info(f"worker list:          {self.cluster['worker']}\n")
+            log.info(f"chief on:             {self.nodename}\n")
+        else:
+            log.info(f"running on:           {self.nodename}\n")
+        if self.gpus is None:
+            log.info(f"CUDA_VISIBLE_DEVICES: unset\n")
+        else:
+            log.info(f"CUDA_VISIBLE_DEVICES: {self.gpus}\n")
+        intra, inter = get_tf_default_nthreads()
+        log.info(f"num_intra_threads:    {intra:d}\n")
+        log.info(f"num_inter_threads:    {inter:d}\n")
+        log.info("-----------------------------------------------------------------\n")
+
+    def _setup_logger(
+        self,
+        log_path: Optional[Path],
+        log_level: int,
+        mpi_log: Optional[str],
+    ):
+        """Set up package loggers.
 
         Parameters
         ----------
-        msg : str
-            message to print
+        log_level: int
+            logging level
+        log_path: Optional[str]
+            path to log file, if None logs will be send only to console. If the parent
+            directory does not exist it will be automatically created, by default None
+        mpi_log : Optional[str], optional
+            mpi log type. Has three options. `master` will output logs to file and
+            console only from rank==0. `collect` will write messages from all ranks to
+            one file opened under rank==0 and to console. `workers` will open one log
+            file for each worker designated by its rank, console behaviour is the same
+            as for `collect`. If this argument is specified than also `MPI` object must
+            be passed in. by default None
         """
-        if self.is_chief:
-            lines = msg.split("\n")
-            for ii in lines:
-                print(f"# DEEPMD: {ii}")
-            sys.stdout.flush()
-
-    def print_run_summary(self):
-        """Print build and current running cluster configuration summary."""
-        msg = ""
-        msg += "---Summary of the training---------------------------------------\n"
-        if self.is_distrib:
-            msg += "distributed\n"
-            msg += f"ps list:              {self.cluster['ps']}\n"
-            msg += f"worker list:          {self.cluster['worker']}\n"
-            msg += f"chief on:             {self.nodename}\n"
+        if not self._log_handles_already_set:
+            if not self._MPI:
+                mpi_log = None
+            set_log_handles(log_level, log_path, mpi_log=mpi_log, MPI=self._MPI)
+            self._log_handles_already_set = True
+            log.debug("Log handles were successfully set")
         else:
-            msg += f"running on:           {self.nodename}\n"
-        if self.gpus is None:
-            msg += f"CUDA_VISIBLE_DEVICES: unset\n"
-        else:
-            msg += f"CUDA_VISIBLE_DEVICES: {self.gpus}\n"
-        intra, inter = get_tf_default_nthreads()
-        msg += f"num_intra_threads:    {intra:d}\n"
-        msg += f"num_inter_threads:    {inter:d}\n"
-        msg += "-----------------------------------------------------------------\n"
-        self.message(msg)
+            log.warning(
+                f"Log handles have already been set. It is not advisable to "
+                f"reset them{', especially when runnig with MPI!' if self._MPI else ''}"
+            )
 
     def _try_init_mpi(self):
         try:
@@ -330,8 +368,10 @@ class RunOptions:
             self.is_distrib = _is_distributed(MPI)
             if self.is_distrib:
                 self._init_distributed(MPI)
+                self._MPI = MPI
             else:
                 self._init_serial()
+                self._MPI = None
 
     def _init_distributed(self, MPI: "MPI"):
         """Initialize  settings for distributed training.
@@ -381,3 +421,5 @@ class RunOptions:
             self.my_device = f"gpu:{gpus[0]:d}"
         else:
             self.my_device = "cpu:0"
+
+        self._MPI = None

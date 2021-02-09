@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-import os
-import sys
 import time
 import json
 import numpy as np
@@ -13,6 +11,10 @@ from deepmd.infer.data_modifier import DipoleChargeModifier
 from deepmd.utils.data_system import DeepmdDataSystem
 from deepmd.utils.compat import convert_input_v0_v1
 from deepmd.utils.argcheck import normalize
+import logging
+
+log = logging.getLogger(__name__)
+
 
 def create_done_queue(cluster_spec, task_index):
    with tf.device("/job:ps/task:%d" % (task_index)):
@@ -66,10 +68,11 @@ def train (args) :
     if 'with_distrib' in jdata:
         with_distrib = jdata['with_distrib']
     run_opt = RunOptions(args, with_distrib)
-    run_opt.message(WELCOME)
-    run_opt.message(CITATION)
-    run_opt.message(BUILD_EXTENDED)
-    run_opt.print_run_summary()
+
+    for message in (WELCOME + CITATION + BUILD_EXTENDED):
+        log.info(message)
+ 
+    run_opt.print_resource_summary()
 
     if run_opt.is_distrib :
         # distributed training
