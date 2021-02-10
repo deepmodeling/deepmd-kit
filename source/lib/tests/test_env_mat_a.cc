@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 #include "fmt_nlist.h"
 #include "env_mat.h"
+#include "prod_env_mat.h"
 #include "NeighborList.h"
 
 class TestEnvMatA : public ::testing::Test
@@ -17,7 +18,6 @@ protected:
   std::vector<int > atype = {0, 1, 1, 0, 1, 1};
   std::vector<double > posi_cpy;
   std::vector<int > atype_cpy;
-  int ntypes = 2;  
   int nloc, nall;
   double rc = 6;
   double rc_smth = 0.8;
@@ -28,6 +28,9 @@ protected:
   std::vector<int> nat_stt, ext_stt, ext_end;
   std::vector<std::vector<int>> nlist_a, nlist_r;
   std::vector<std::vector<int>> nlist_a_cpy, nlist_r_cpy;
+  int ntypes = sec_a.size()-1;
+  int nnei = sec_a.back();
+  int ndescrpt = nnei * 4;
   std::vector<double > expected_env = {
     0.12206, 0.12047, 0.01502, -0.01263, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 1.02167, -0.77271, 0.32370, 0.58475, 0.99745, 0.41810, 0.75655, -0.49773, 0.10564, 0.10495, -0.00143, 0.01198, 0.03103, 0.03041, 0.00452, -0.00425, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 
     1.02167, 0.77271, -0.32370, -0.58475, 0.04135, 0.04039, 0.00123, -0.00880, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.59220, 0.42028, 0.16304, -0.38405, 0.03694, 0.03680, -0.00300, -0.00117, 0.00336, 0.00327, 0.00022, -0.00074, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 
@@ -71,7 +74,6 @@ protected:
   std::vector<int > atype = {0, 1, 1, 0, 1, 1};
   std::vector<double > posi_cpy;
   std::vector<int > atype_cpy;
-  int ntypes = 2;  
   int nloc, nall;
   double rc = 6;
   double rc_smth = 0.8;
@@ -82,6 +84,9 @@ protected:
   std::vector<int> nat_stt, ext_stt, ext_end;
   std::vector<std::vector<int>> nlist_a, nlist_r;
   std::vector<std::vector<int>> nlist_a_cpy, nlist_r_cpy;
+  int ntypes = sec_a.size()-1;
+  int nnei = sec_a.back();
+  int ndescrpt = nnei * 4;
   std::vector<double > expected_env = {
     0.12206,  0.12047,  0.01502, -0.01263,  0.00000,  0.00000,  0.00000,  0.00000,  1.02167, -0.77271,  0.32370,  0.58475,  0.99745,  0.41810,  0.75655, -0.49773, 
     1.02167,  0.77271, -0.32370, -0.58475,  0.04135,  0.04039,  0.00123, -0.00880,  0.59220,  0.42028,  0.16304, -0.38405,  0.03694,  0.03680, -0.00300, -0.00117, 
@@ -377,4 +382,140 @@ TEST_F(TestEnvMatAShortSel, cpu)
       }
     }    
   }
+}
+
+
+TEST_F(TestEnvMatA, prod_cpu)
+{
+  EXPECT_EQ(nlist_r_cpy.size(), nloc);
+  int tot_nnei = 0;
+  int max_nbor_size = 0;
+  for(int ii = 0; ii < nlist_a_cpy.size(); ++ii){
+    tot_nnei += nlist_a_cpy[ii].size();
+    if (nlist_a_cpy[ii].size() > max_nbor_size){
+      max_nbor_size = nlist_a_cpy[ii].size();
+    }
+  }
+  std::vector<int> ilist(nloc), jlist(tot_nnei), jrange(nloc+1, 0);
+  for (int ii = 0; ii < nloc; ++ii){
+    ilist[ii] = ii;
+    jrange[ii+1] = jrange[ii] + nlist_a_cpy[ii].size();
+    int jj, cc;
+    for (jj = jrange[ii], cc = 0; jj < jrange[ii+1]; ++jj, ++cc){
+      jlist[jj] = nlist_a_cpy[ii][cc];
+    }
+  }
+  std::vector<double > em(nloc * ndescrpt), em_deriv(nloc * ndescrpt * 3), rij(nloc * nnei * 3);
+  std::vector<int> nlist(nloc * nnei);
+  std::vector<double > avg(ntypes * ndescrpt, 0);
+  std::vector<double > std(ntypes * ndescrpt, 1);
+  prod_env_mat_a_cpu(
+      &em[0],
+      &em_deriv[0],
+      &rij[0],
+      &nlist[0],
+      &posi_cpy[0],
+      &atype_cpy[0],
+      &ilist[0],
+      &jrange[0],
+      &jlist[0],
+      max_nbor_size,
+      &avg[0],
+      &std[0],
+      nloc,
+      nall,
+      ntypes,
+      rc, 
+      rc_smth,
+      sec_a);
+
+  for(int ii = 0; ii < nloc; ++ii){
+    for (int jj = 0; jj < nnei; ++jj){
+      for (int dd = 0; dd < 4; ++dd){
+    	EXPECT_LT(fabs(em[ii*nnei*4 + jj*4 + dd] - 
+		       expected_env[ii*nnei*4 + jj*4 + dd]) , 
+		  1e-5);
+      }
+    }    
+  }
+}
+
+
+TEST_F(TestEnvMatA, prod_cpu_equal_cpu)
+{
+  EXPECT_EQ(nlist_r_cpy.size(), nloc);
+  int tot_nnei = 0;
+  int max_nbor_size = 0;
+  for(int ii = 0; ii < nlist_a_cpy.size(); ++ii){
+    tot_nnei += nlist_a_cpy[ii].size();
+    if (nlist_a_cpy[ii].size() > max_nbor_size){
+      max_nbor_size = nlist_a_cpy[ii].size();
+    }
+  }
+  std::vector<int> ilist(nloc), jlist(tot_nnei), jrange(nloc+1, 0);
+  for (int ii = 0; ii < nloc; ++ii){
+    ilist[ii] = ii;
+    jrange[ii+1] = jrange[ii] + nlist_a_cpy[ii].size();
+    int jj, cc;
+    for (jj = jrange[ii], cc = 0; jj < jrange[ii+1]; ++jj, ++cc){
+      jlist[jj] = nlist_a_cpy[ii][cc];
+    }
+  }
+  std::vector<double > em(nloc * ndescrpt), em_deriv(nloc * ndescrpt * 3), rij(nloc * nnei * 3);
+  std::vector<int> nlist(nloc * nnei);
+  std::vector<double > avg(ntypes * ndescrpt, 0);
+  std::vector<double > std(ntypes * ndescrpt, 1);
+  prod_env_mat_a_cpu(
+      &em[0],
+      &em_deriv[0],
+      &rij[0],
+      &nlist[0],
+      &posi_cpy[0],
+      &atype_cpy[0],
+      &ilist[0],
+      &jrange[0],
+      &jlist[0],
+      max_nbor_size,
+      &avg[0],
+      &std[0],
+      nloc,
+      nall,
+      ntypes,
+      rc, 
+      rc_smth,
+      sec_a);
+
+  std::vector<int> fmt_nlist_a_1, fmt_nlist_r_1;
+  std::vector<double> env_1, env_deriv_1, rij_a_1;
+  for(int ii = 0; ii < nloc; ++ii){
+    int ret_1 = format_nlist_cpu<double>(fmt_nlist_a_1, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);  
+    EXPECT_EQ(ret_1, -1);
+    env_mat_a_cpu<double>(env_1, env_deriv_1, rij_a_1, posi_cpy, ntypes, atype_cpy, ii, fmt_nlist_a_1, sec_a, rc_smth, rc);
+    EXPECT_EQ(env_1.size(), nnei * 4);
+    EXPECT_EQ(env_deriv_1.size(), nnei * 4 * 3);
+    EXPECT_EQ(rij_a_1.size(), nnei * 3);
+    EXPECT_EQ(fmt_nlist_a_1.size(), nnei);
+    for (unsigned jj = 0; jj < env_1.size(); ++jj){
+      EXPECT_LT(fabs(em[ii*nnei*4+jj] - env_1[jj]), 1e-10);
+    }
+    for (unsigned jj = 0; jj < env_deriv_1.size(); ++jj){
+      EXPECT_LT(fabs(em_deriv[ii*nnei*4*3+jj] - env_deriv_1[jj]), 1e-10);      
+    }    
+    for (unsigned jj = 0; jj < rij_a_1.size(); ++jj){
+      EXPECT_LT(fabs(rij[ii*nnei*3+jj] - rij_a_1[jj]), 1e-10);
+    }
+    for (unsigned jj = 0; jj < fmt_nlist_a_1.size(); ++jj){
+      EXPECT_EQ(nlist[ii*nnei+jj], fmt_nlist_a_1[jj]);
+    }
+  }
+
+  // for(int ii = 0; ii < nloc; ++ii){
+  //   for (int jj = 0; jj < nnei; ++jj){
+  //     for (int dd = 0; dd < 4; ++dd){
+  //   	EXPECT_LT(fabs(em[ii*nnei*4 + jj*4 + dd] - 
+  // 		       expected_env[ii*nnei*4 + jj*4 + dd]) , 
+  // 		  1e-5);
+  //     }
+  //   }    
+  // }
 }

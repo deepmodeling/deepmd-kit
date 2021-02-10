@@ -4,7 +4,7 @@
 #include "switcher.h"
 
 template <typename FPTYPE>
-void soft_min_switch(
+void soft_min_switch_cpu(
     FPTYPE * sw_value,
     FPTYPE * sw_deriv,
     const FPTYPE * rij,
@@ -80,7 +80,7 @@ void soft_min_switch(
 }
 
 template
-void soft_min_switch<double>(
+void soft_min_switch_cpu<double>(
     double * sw_value,
     double * sw_deriv,
     const double * rij,
@@ -92,7 +92,7 @@ void soft_min_switch<double>(
     const double & rmax);
 
 template
-void soft_min_switch<float>(
+void soft_min_switch_cpu<float>(
     float * sw_value,
     float * sw_deriv,
     const float * rij,

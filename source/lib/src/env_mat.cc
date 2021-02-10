@@ -104,7 +104,7 @@ void env_mat_a_cpu (
     const std::vector<int > &		sec_a, 
     const float &			rmin,
     const float &			rmax) 
-{
+{  
     // compute the diff of the neighbors
     rij_a.resize (sec_a.back() * 3);
     fill (rij_a.begin(), rij_a.end(), 0.0);

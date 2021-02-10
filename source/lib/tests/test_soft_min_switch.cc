@@ -5,7 +5,7 @@
 #include "NeighborList.h"
 #include "soft_min_switch.h"
 
-class TestSoftMin : public ::testing::Test
+class TestSoftMinSwitch : public ::testing::Test
 {
 protected:
   std::vector<double > posi = {12.83, 2.56, 2.18, 
@@ -22,7 +22,7 @@ protected:
   int nloc, nall, nnei, ndescrpt;
   double rc = 6;
   double rc_smth = 0.8;
-  double alpha = 0.1;
+  double alpha = 0.5;
   double rmin = 0.8;
   double rmax = 1.5;
   SimulationRegion<double > region;
@@ -36,7 +36,7 @@ protected:
   std::vector<int> nlist;
   std::vector<int> fmt_nlist_a;
   std::vector<double > expected_value = {
-     0.87457,  0.88983,  0.84966,  0.92623,  0.93726,  0.90048,
+     0.84693,  0.57040,  0.41834,  0.89258,  0.63482,  0.60391, 
   };  
   
   void SetUp() override {
@@ -75,11 +75,11 @@ protected:
   }
 };
 
-TEST_F(TestSoftMin, cpu)
+TEST_F(TestSoftMinSwitch, cpu)
 {
   std::vector<double> sw_value(nloc);
   std::vector<double> sw_deriv(nloc * nnei * 3);
-  soft_min_switch<double> (&sw_value[0], &sw_deriv[0], &rij[0], &nlist[0], nloc, nnei, alpha, rmin, rmax);
+  soft_min_switch_cpu<double> (&sw_value[0], &sw_deriv[0], &rij[0], &nlist[0], nloc, nnei, alpha, rmin, rmax);
   EXPECT_EQ(sw_value.size(), nloc);
   EXPECT_EQ(sw_deriv.size(), nloc * nnei * 3);
   for (int jj = 0; jj < nloc; ++jj){
@@ -91,7 +91,7 @@ TEST_F(TestSoftMin, cpu)
   // printf("\n");
 }
 
-TEST_F(TestSoftMin, cpu_num_deriv)
+TEST_F(TestSoftMinSwitch, cpu_num_deriv)
 {
   std::vector<double> sw_value(nloc);
   std::vector<double> sw_deriv(nloc * nnei * 3);
@@ -105,7 +105,7 @@ TEST_F(TestSoftMin, cpu_num_deriv)
   std::vector<int> fmt_nlist_a;
   double hh = 1e-5;
   
-  soft_min_switch<double> (&sw_value[0], &sw_deriv[0], &rij[0], &nlist[0], nloc, nnei, alpha, rmin, rmax);
+  soft_min_switch_cpu<double> (&sw_value[0], &sw_deriv[0], &rij[0], &nlist[0], nloc, nnei, alpha, rmin, rmax);
   EXPECT_EQ(sw_value.size(), nloc);
   EXPECT_EQ(sw_deriv.size(), nloc * nnei * 3);
 
@@ -132,8 +132,8 @@ TEST_F(TestSoftMin, cpu_num_deriv)
 	  rij_0[ii*nnei*3 + jj*3 + dd] = t_rij_0[jj*3 + dd];
 	  rij_1[ii*nnei*3 + jj*3 + dd] = t_rij_1[jj*3 + dd];
 	}      
-	soft_min_switch<double> (&sw_value_0[0], &sw_deriv_0[0], &rij_0[0], &nlist[0], nloc, nnei, alpha, rmin, rmax);
-	soft_min_switch<double> (&sw_value_1[0], &sw_deriv_1[0], &rij_1[0], &nlist[0], nloc, nnei, alpha, rmin, rmax);
+	soft_min_switch_cpu<double> (&sw_value_0[0], &sw_deriv_0[0], &rij_0[0], &nlist[0], nloc, nnei, alpha, rmin, rmax);
+	soft_min_switch_cpu<double> (&sw_value_1[0], &sw_deriv_1[0], &rij_1[0], &nlist[0], nloc, nnei, alpha, rmin, rmax);
 	double ana_deriv = sw_deriv[ii*nnei*3 + jj*3 + dd];
 	double num_deriv = (sw_value_1[ii] - sw_value_0[ii]) / (2. * hh);
 	EXPECT_LT(fabs(num_deriv - ana_deriv), 1e-5);

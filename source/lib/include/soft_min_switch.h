@@ -1,7 +1,7 @@
 #pragma once
 
 template <typename FPTYPE>
-void soft_min_switch(
+void soft_min_switch_cpu(
     FPTYPE * sw_value,
     FPTYPE * sw_deriv,
     const FPTYPE * rij,
