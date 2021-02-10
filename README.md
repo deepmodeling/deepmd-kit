@@ -81,7 +81,8 @@ The typical procedure of using DeePMD-kit includes 5 steps
 3. [Analyze training with Tensorboard](doc/tensorboard.md)
 4. [Freeze the model](doc/use-deepmd-kit.md#freeze-a-model)
 5. [Test the model](doc/use-deepmd-kit.md#test-a-model)
-6. [Inference the model in python](doc/use-deepmd-kit.md#model-inference) or using the model in other molecular simulation packages like [LAMMPS](doc/use-deepmd-kit.md#run-md-with-lammps), [i-PI](doc/use-deepmd-kit.md#run-path-integral-md-with-i-pi) or [ASE](doc/use-deepmd-kit.md#use-deep-potential-with-ase).
+6. [Compress the model](doc/use-deepmd-kit.md#compress-a-model)
+7. [Inference the model in python](doc/use-deepmd-kit.md#model-inference) or using the model in other molecular simulation packages like [LAMMPS](doc/use-deepmd-kit.md#run-md-with-lammps), [i-PI](doc/use-deepmd-kit.md#run-path-integral-md-with-i-pi) or [ASE](doc/use-deepmd-kit.md#use-deep-potential-with-ase).
 
 A quick-start on using DeePMD-kit can be found [here](doc/use-deepmd-kit.md).
 
