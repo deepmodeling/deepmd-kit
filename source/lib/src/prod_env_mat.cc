@@ -21,11 +21,11 @@ void prod_env_mat_a_cpu(
     const int nloc, 
     const int nall, 
     const int ntypes, 
-    const float rcut_r, 
-    const float rcut_r_smth, 
-    const std::vector<int> sec_a) 
+    const float rcut, 
+    const float rcut_smth, 
+    const std::vector<int> sec) 
 {
-  const int nnei = sec_a.back();
+  const int nnei = sec.back();
   const int nem = nnei * 4;
 
   // set & normalize coord
@@ -59,13 +59,13 @@ void prod_env_mat_a_cpu(
 #pragma omp parallel for 
   for (int ii = 0; ii < nloc; ++ii) {
     std::vector<int> fmt_nlist_a;
-    int ret = format_nlist_cpu(fmt_nlist_a, d_coord3, ntypes, d_type, ii, d_nlist_a[ii], rcut_r, sec_a);
+    int ret = format_nlist_cpu(fmt_nlist_a, d_coord3, ntypes, d_type, ii, d_nlist_a[ii], rcut, sec);
     std::vector<FPTYPE> d_em_a;
     std::vector<FPTYPE> d_em_a_deriv;
     std::vector<FPTYPE> d_em_r;
     std::vector<FPTYPE> d_em_r_deriv;
     std::vector<FPTYPE> d_rij_a;
-    env_mat_a_cpu (d_em_a, d_em_a_deriv, d_rij_a, d_coord3, ntypes, d_type, ii, fmt_nlist_a, sec_a, rcut_r_smth, rcut_r);
+    env_mat_a_cpu (d_em_a, d_em_a_deriv, d_rij_a, d_coord3, ntypes, d_type, ii, fmt_nlist_a, sec, rcut_smth, rcut);
 
     // check sizes
     assert (d_em_a.size() == nem);
@@ -106,9 +106,9 @@ void prod_env_mat_a_cpu<double>(
     const int nloc, 
     const int nall, 
     const int ntypes, 
-    const float rcut_r, 
-    const float rcut_r_smth, 
-    const std::vector<int> sec_a);
+    const float rcut, 
+    const float rcut_smth, 
+    const std::vector<int> sec);
 
 template
 void prod_env_mat_a_cpu<float>(
@@ -127,6 +127,6 @@ void prod_env_mat_a_cpu<float>(
     const int nloc, 
     const int nall, 
     const int ntypes, 
-    const float rcut_r, 
-    const float rcut_r_smth, 
-    const std::vector<int> sec_a);
+    const float rcut, 
+    const float rcut_smth, 
+    const std::vector<int> sec);

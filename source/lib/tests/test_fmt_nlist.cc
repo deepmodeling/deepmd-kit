@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include "fmt_nlist.h"
-#include "NeighborList.h"
+#include "neighbor_list.h"
 
 class TestFormatNlist : public ::testing::Test
 {

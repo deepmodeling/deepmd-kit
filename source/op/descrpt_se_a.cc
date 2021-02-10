@@ -4,7 +4,7 @@
 #include <iostream>
 
 #include "ComputeDescriptor.h"
-#include "NeighborList.h"
+#include "neighbor_list.h"
 #include "fmt_nlist.h"
 #include "env_mat.h"
 

@@ -3,7 +3,7 @@
 #include "fmt_nlist.h"
 #include "env_mat.h"
 #include "prod_env_mat.h"
-#include "NeighborList.h"
+#include "neighbor_list.h"
 
 class TestEnvMatA : public ::testing::Test
 {

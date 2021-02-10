@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 #include "fmt_nlist.h"
 #include "env_mat.h"
-#include "NeighborList.h"
+#include "neighbor_list.h"
 #include "prod_force_grad.h"
 
 class TestProdForceGradA : public ::testing::Test

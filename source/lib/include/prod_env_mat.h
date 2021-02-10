@@ -18,9 +18,9 @@ void prod_env_mat_a_cpu(
     const int nloc, 
     const int nall, 
     const int ntypes, 
-    const float rcut_r, 
-    const float rcut_r_smth, 
-    const std::vector<int> sec_a);
+    const float rcut, 
+    const float rcut_smth, 
+    const std::vector<int> sec);
 
 template<typename FPTYPE> 
 void prod_env_mat_a_gpu_nv(    
@@ -39,6 +39,6 @@ void prod_env_mat_a_gpu_nv(
     const int nloc, 
     const int nall, 
     const int ntypes, 
-    const float rcut_r, 
-    const float rcut_r_smth, 
-    const std::vector<int> sec_a);
+    const float rcut, 
+    const float rcut_smth, 
+    const std::vector<int> sec);
