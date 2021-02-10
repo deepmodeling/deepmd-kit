@@ -14,7 +14,7 @@ from skbuild.cmaker import get_cmake_version
 from skbuild.exceptions import SKBuildError
 
 # define constants
-INSTALL_REQUIRES = ["numpy", "scipy", "pyyaml", "dargs", "tqdm", "typing_extensions"]
+INSTALL_REQUIRES = (Path(__file__).parent / "requirements.txt").read_text().splitlines()
 setup_requires = ["setuptools_scm", "scikit-build"]
 
 # read readme to markdown
