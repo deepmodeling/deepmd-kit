@@ -81,6 +81,7 @@ TEST_F(TestSoftMinSwitch, cpu)
   std::vector<double> sw_deriv(nloc * nnei * 3);
   soft_min_switch_cpu<double> (&sw_value[0], &sw_deriv[0], &rij[0], &nlist[0], nloc, nnei, alpha, rmin, rmax);
   EXPECT_EQ(sw_value.size(), nloc);
+  EXPECT_EQ(sw_value.size(), expected_value.size());
   EXPECT_EQ(sw_deriv.size(), nloc * nnei * 3);
   for (int jj = 0; jj < nloc; ++jj){
     EXPECT_LT(fabs(sw_value[jj] - expected_value[jj]) , 1e-5);

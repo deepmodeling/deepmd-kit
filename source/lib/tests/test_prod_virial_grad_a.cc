@@ -90,7 +90,8 @@ TEST_F(TestProdVirialGradA, cpu)
   int n_a_sel = nnei;
   prod_virial_grad_a_cpu<double> (&grad_net[0], &grad[0], &env_deriv[0], &rij[0], &nlist[0], nloc, nnei);
   EXPECT_EQ(grad_net.size(), nloc * ndescrpt);
-  for (int jj = 0; jj < nloc * ndescrpt; ++jj){
+  EXPECT_EQ(grad_net.size(), expected_grad_net.size());
+  for (int jj = 0; jj < grad_net.size(); ++jj){
     EXPECT_LT(fabs(grad_net[jj] - expected_grad_net[jj]) , 1e-5);
   }  
   // for (int jj = 0; jj < nloc * ndescrpt; ++jj){

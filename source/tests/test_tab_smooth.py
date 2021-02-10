@@ -170,10 +170,10 @@ class TestTabSmooth(IntplInter, unittest.TestCase):
         virial_test(self, self, places=5, suffix = '_tab_smth')
 
     def test_force_dw (self) :
-        force_dw_test(self, self, places=5, suffix = '_tab_smth')
+        force_dw_test(self, self, places=8, suffix = '_tab_smth')
 
     def test_virial_dw (self) :
-        virial_dw_test(self, self, places=5, suffix = '_tab_smth')
+        virial_dw_test(self, self, places=8, suffix = '_tab_smth')
 
 
 if __name__ == '__main__':

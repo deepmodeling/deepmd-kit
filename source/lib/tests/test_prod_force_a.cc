@@ -87,7 +87,8 @@ TEST_F(TestProdForceA, cpu)
   int n_a_sel = nnei;
   prod_force_a_cpu<double> (&force[0], &net_deriv[0], &env_deriv[0], &nlist[0], nloc, nall, nnei);
   EXPECT_EQ(force.size(), nall * 3);
-  for (int jj = 0; jj < nall * 3; ++jj){
+  EXPECT_EQ(force.size(), expected_force.size());
+  for (int jj = 0; jj < force.size(); ++jj){
     EXPECT_LT(fabs(force[jj] - expected_force[jj]) , 1e-5);
   }  
   // for (int jj = 0; jj < nall * 3; ++jj){

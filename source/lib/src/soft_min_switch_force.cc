@@ -11,9 +11,9 @@ void soft_min_switch_force_cpu(
     const int nall, 
     const int nnei)
 //
-//	force : nall * 3
-//	du : nloc
-//	sw_deriv : nloc * nnei * 3
+//	force :		nall * 3
+//	du :		nloc
+//	sw_deriv :	nloc * nnei * 3
 //
 {
   // set zeros

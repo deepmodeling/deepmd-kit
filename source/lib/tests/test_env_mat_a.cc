@@ -495,6 +495,10 @@ TEST_F(TestEnvMatA, prod_cpu_equal_cpu)
     EXPECT_EQ(env_deriv_1.size(), nnei * 4 * 3);
     EXPECT_EQ(rij_a_1.size(), nnei * 3);
     EXPECT_EQ(fmt_nlist_a_1.size(), nnei);
+    EXPECT_EQ(env_1.size() * nloc, em.size());
+    EXPECT_EQ(env_deriv_1.size() * nloc, em_deriv.size());
+    EXPECT_EQ(rij_a_1.size() * nloc, rij.size());
+    EXPECT_EQ(fmt_nlist_a_1.size() * nloc, nlist.size());
     for (unsigned jj = 0; jj < env_1.size(); ++jj){
       EXPECT_LT(fabs(em[ii*nnei*4+jj] - env_1[jj]), 1e-10);
     }

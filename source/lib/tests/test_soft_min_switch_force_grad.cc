@@ -4,9 +4,9 @@
 #include "env_mat.h"
 #include "NeighborList.h"
 #include "soft_min_switch.h"
-#include "soft_min_switch_force.h"
+#include "soft_min_switch_force_grad.h"
 
-class TestSoftMinSwitchForce : public ::testing::Test
+class TestSoftMinSwitchForceGrad : public ::testing::Test
 {
 protected:
   std::vector<double > posi = {12.83, 2.56, 2.18, 
@@ -32,12 +32,12 @@ protected:
   std::vector<int> sec_r = {0, 0, 0};
   std::vector<int> nat_stt, ext_stt, ext_end;
   std::vector<std::vector<int>> nlist_a_cpy, nlist_r_cpy;
-  std::vector<double> sw_value, sw_deriv, du;
+  std::vector<double> sw_value, sw_deriv, grad;
   std::vector<double> rij;
   std::vector<int> nlist;
   std::vector<int> fmt_nlist_a;
-  std::vector<double > expected_force = {
-    2.24044, -1.75363, -1.50088, -2.54065,  1.08035,  1.93630,  1.12909,  1.64972, -1.10112, -2.07854,  0.69062, -1.29217,  0.14032, -1.16008,  1.86286,  1.71311,  0.49339, -0.59049, -0.88441, -1.66176,  1.09480, -0.01957, -0.01188,  0.02612,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.36743,  0.67600, -0.43959, -0.03250, -0.00298,  0.00469, -0.02791,  0.00109, -0.00167, -0.00681, -0.00083,  0.00115,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000,  0.00000, 
+  std::vector<double > expected_grad_net = {
+    -0.62289, -0.08638, -1.94404,  0.01995,  0.04023,  0.01040,
   };
   
   void SetUp() override {
@@ -75,32 +75,31 @@ protected:
     sw_deriv.resize(nloc * nnei * 3);
     soft_min_switch_cpu<double> (&sw_value[0], &sw_deriv[0], &rij[0], &nlist[0], nloc, 
 				 nnei, alpha, rmin, rmax);
-    du.resize(nloc);
+    grad.resize(nloc * 3);
     for (int ii = 0; ii < nloc; ++ii){
-      du[ii] = 1.0 - ii * 0.1;
+      grad[ii] = 1.0 - ii * 0.1;
     }
   }
   void TearDown() override {
   }
 };
 
-TEST_F(TestSoftMinSwitchForce, cpu)
+TEST_F(TestSoftMinSwitchForceGrad, cpu)
 {
-  std::vector<double> force(nall * 3);
-  soft_min_switch_force_cpu(
-      &force[0],
-      &du[0],
+  std::vector<double> grad_net(nloc);
+  soft_min_switch_force_grad_cpu(
+      &grad_net[0],
+      &grad[0],
       &sw_deriv[0],
       &nlist[0],
       nloc,
-      nall,
       nnei);
-  EXPECT_EQ(force.size(), expected_force.size());
-  for (int jj = 0; jj < force.size(); ++jj){
-    EXPECT_LT(fabs(force[jj] - expected_force[jj]) , 1e-5);
+  EXPECT_EQ(grad_net.size(), expected_grad_net.size());
+  for (int jj = 0; jj < grad_net.size(); ++jj){
+    EXPECT_LT(fabs(grad_net[jj] - expected_grad_net[jj]) , 1e-5);
   }  
-  // for (int ii = 0; ii < nall * 3; ++ii){
-  //   printf("%8.5f, ", force[ii]);
+  // for (int ii = 0; ii < nloc; ++ii){
+  //   printf("%8.5f, ", grad_net[ii]);
   // }  
   // printf("\n");
 }

@@ -94,11 +94,13 @@ TEST_F(TestProdVirialA, cpu)
   int n_a_sel = nnei;
   prod_virial_a_cpu<double> (&virial[0], &atom_virial[0], &net_deriv[0], &env_deriv[0], &rij[0], &nlist[0], nloc, nall, nnei);
   EXPECT_EQ(virial.size(), 9);
+  EXPECT_EQ(virial.size(), expected_virial.size());
   EXPECT_EQ(atom_virial.size(), nall * 9);  
-  for (int jj = 0; jj < 9; ++jj){
+  EXPECT_EQ(atom_virial.size(), expected_atom_virial.size());  
+  for (int jj = 0; jj < virial.size(); ++jj){
     EXPECT_LT(fabs(virial[jj] - expected_virial[jj]) , 1e-5);
   }  
-  for (int jj = 0; jj < nall * 9; ++jj){
+  for (int jj = 0; jj < atom_virial.size(); ++jj){
     EXPECT_LT(fabs(atom_virial[jj] - expected_atom_virial[jj]) , 1e-5);
   }  
   // for (int jj = 0; jj < 9; ++jj){
