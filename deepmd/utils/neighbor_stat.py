@@ -6,6 +6,7 @@ from typing import Tuple, List
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.RunOptions import global_np_float_precision
+from deepmd.utils.data_system import DeepmdDataSystem
 
 class NeighborStat():
     """
@@ -45,7 +46,7 @@ class NeighborStat():
         self.sub_sess = tf.Session(graph = sub_graph, config=default_tf_session_config)
 
     def get_stat(self,
-                 data) -> Tuple[float, List[int]]:
+                 data : DeepmdDataSystem) -> Tuple[float, List[int]]:
         """
         get the data statistics of the training data, including nearest nbor distance between atoms, max nbor size of atoms
 
@@ -61,6 +62,7 @@ class NeighborStat():
         max_nbor_size
                 A list with ntypes integers, denotes the actual achieved max sel
         """
+        print(type(data))
         self.min_nbor_dist = 100.0
         self.max_nbor_size = [0] * self.ntypes
 
