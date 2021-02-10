@@ -291,7 +291,7 @@ __global__ void tabulate_checker(const FPTYPE * in, int * out, const FPTYPE lowe
         FPTYPE xx = in[bid * nnei + ii];
         if (xx < lower || xx > max) {
             Csub[tid] += 1;
-            printf("# DEEPMD: level 2 overflow, xx:\t%f\n", xx);
+            // printf("# DEEPMD: level 2 overflow, xx:\t%f\n", xx);
         }
         else if (xx >= upper && xx <= max) {
             Dsub[tid] += 1;

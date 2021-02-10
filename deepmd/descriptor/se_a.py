@@ -230,12 +230,12 @@ class DescrptSeA ():
         self.dstd = np.array(all_dstd)
 
     def enable_compression(self,
-                           min_nbor_dist,
-                           model_file = 'frozon_model.pb',
-                           table_extrapolate = 5,
-                           table_stride_1 = 0.01,
-                           table_stride_2 = 0.1,
-                           check_frequency = -1
+                           min_nbor_dist : float,
+                           model_file : str = 'frozon_model.pb',
+                           table_extrapolate : float = 5,
+                           table_stride_1 : float = 0.01,
+                           table_stride_2 : float = 0.1,
+                           check_frequency : int = -1
     ) -> None:
         """
         Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
@@ -260,7 +260,10 @@ class DescrptSeA ():
         self.table_config = [table_extrapolate, table_stride_1, table_stride_2, check_frequency]
         self.table = DeepTabulate(self.model_file, self.type_one_side)
         self.lower, self.upper \
-            = self.table.build(min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2)
+            = self.table.build(min_nbor_dist, 
+                               table_extrapolate, 
+                               table_stride_1, 
+                               table_stride_2)
 
     def build (self, 
                coord_ : tf.Tensor, 

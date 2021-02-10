@@ -14,7 +14,7 @@ class NeighborStat():
     """
     def __init__(self,
                  ntypes : int,
-                 rcut) -> None:
+                 rcut: float) -> None:
         """
         Constructor
 

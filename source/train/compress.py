@@ -20,7 +20,7 @@ def compress(args):
     jdata['model']['compress'] = {}
     jdata['model']['compress']['compress'] = True
     jdata['model']['compress']['model_file'] = args.input
-    jdata['model']['compress']['table_config'] = [args.extrapolate, args.stride, 10 * args.stride, args.frequency]
+    jdata['model']['compress']['table_config'] = [args.extrapolate, args.stride, 10 * args.stride, int(args.frequency)]
 
     # check the descriptor info of the input file
     assert jdata['model']['descriptor']['type'] == 'se_a', 'Model compression error: descriptor type must be se_a!'

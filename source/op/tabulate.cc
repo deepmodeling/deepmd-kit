@@ -283,21 +283,21 @@ class TabulateFusionOp : public OpKernel {
 	    					     output_shape,
 	    					     &output));
 
-        counter++;
-        if ((int)table_info.flat<FPTYPE>().data()[5] != -1 && counter % (int)table_info.flat<FPTYPE>().data()[5] == 0) {
-            Tensor int_temp;
-            TensorShape int_shape;
-            int_shape.AddDim(2 * ff.shape().dim_size(0));
-            OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, int_shape, &int_temp));
-            TabulateCheckerFunctor<FPTYPE>()(
-                context->eigen_device<Device>(),
-                table_info.flat<FPTYPE>().data(),
-                input.flat<FPTYPE>().data(),
-                int_temp.flat<int>().data(),
-                ff.shape().dim_size(0),
-                ff.shape().dim_size(1)
-            );
-        }
+        // counter++;
+        // if ((int)table_info.flat<FPTYPE>().data()[5] != -1 && counter % (int)table_info.flat<FPTYPE>().data()[5] == 0) {
+        //     Tensor int_temp;
+        //     TensorShape int_shape;
+        //     int_shape.AddDim(2 * ff.shape().dim_size(0));
+        //     OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, int_shape, &int_temp));
+        //     TabulateCheckerFunctor<FPTYPE>()(
+        //         context->eigen_device<Device>(),
+        //         table_info.flat<FPTYPE>().data(),
+        //         input.flat<FPTYPE>().data(),
+        //         int_temp.flat<int>().data(),
+        //         ff.shape().dim_size(0),
+        //         ff.shape().dim_size(1)
+        //     );
+        // }
 
         TabulateFusionFunctor<FPTYPE>()(
             context->eigen_device<Device>(),            // define actually graph execution device

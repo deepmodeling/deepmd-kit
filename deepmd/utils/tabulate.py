@@ -16,8 +16,8 @@ class DeepTabulate():
     The range of the first table is automatically detected by deepmd-kit, while the second table ranges from the first table\'s upper boundary(upper) to the extrapolate(parameter) * upper.
     """
     def __init__(self,
-                 model_file,
-                 type_one_side = False) -> None:
+                 model_file : str,
+                 type_one_side : bool = False) -> None:
         """
         Constructor
 
@@ -68,10 +68,10 @@ class DeepTabulate():
         # TODO: Need a check function to determine if the current model is properly
 
     def build(self, 
-              min_nbor_dist,
-              extrapolate, 
-              stride0, 
-              stride1) -> Tuple[int, int]:
+              min_nbor_dist : float,
+              extrapolate : float, 
+              stride0 : float, 
+              stride1 : float) -> Tuple[int, int]:
         """
         Build the tables for model compression
 
