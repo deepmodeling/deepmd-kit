@@ -14,5 +14,5 @@ install(
 )
 install(
   FILES		${CMAKE_CURRENT_BINARY_DIR}/run_config.ini
-  DESTINATION	deepmd/config
+  DESTINATION	deepmd/pkg_config
 )

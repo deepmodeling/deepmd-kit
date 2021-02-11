@@ -60,8 +60,6 @@ jobs:
         path: ~/.cache/pip
         key:
           ${{ runner.os }}-pip-${{ hashFiles('**/setup.py') }}-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
     - run: |
         sudo apt update
         sudo apt install gcc-${{ matrix.gcc }} g++-${{ matrix.gcc }}

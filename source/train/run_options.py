@@ -8,7 +8,9 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 import numpy as np
 for p in Path(__file__).parent.glob("*"):
-    print(p)
+    if p.is_dir():
+        print(p)
+print("----------------")
 from deepmd.cluster import get_resource
 from deepmd.env import get_tf_default_nthreads, tf
 from deepmd.loggers import set_log_handles
@@ -47,7 +49,7 @@ log = logging.getLogger(__name__)
 
 
 def _get_package_constants(
-    config_file: Path = Path(__file__).parent / "config/run_config.ini",
+    config_file: Path = Path(__file__).parent / "pkg_config/run_config.ini",
 ) -> Dict[str, str]:
     """Read package constants set at compile time by CMake to dictionary.
 
