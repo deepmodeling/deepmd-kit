@@ -2,6 +2,7 @@
 #include "NNPAtomMap.h"
 #include "SimulationRegion.h"
 #include <stdexcept>	
+#include <mpi.h>
 
 
 #if  GOOGLE_CUDA
@@ -195,7 +196,35 @@ init (const std::string & model, const int & gpu_rank)
   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
 
-  checkStatus (ReadBinaryProto(Env::Default(), model, &graph_def));
+/////////////////////////////////////////////////////////////////
+// new implementation
+// bcast file_content to all MPI processors  
+/////////////////////////////////////////////////////////////////
+  int myrank = 0, root = 0;
+  MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
+  unsigned nchar = 0;
+  std::string file_content;
+  if (myrank == root) {
+    checkStatus (ReadFileToString(Env::Default(), model, &file_content));
+    nchar = file_content.size();
+  }
+  MPI_Bcast(&nchar, 1, MPI_UNSIGNED, root, MPI_COMM_WORLD);  
+  char * buff = (char *)malloc(sizeof(char) * nchar);  
+  if (myrank == root) {  
+    memcpy(buff, file_content.c_str(), sizeof(char) * nchar);
+  }
+  MPI_Bcast(buff, nchar, MPI_CHAR, root, MPI_COMM_WORLD);
+  file_content.resize(nchar);
+  for (unsigned ii = 0; ii < nchar; ++ii) {
+    file_content[ii] = buff[ii];
+  }
+  graph_def.ParseFromString(file_content);
+  free(buff);
+/////////////////////////////////////////////////////////////////
+// old implementation
+// checkStatus (ReadBinaryProto(Env::Default(), model, &graph_def));
+/////////////////////////////////////////////////////////////////
+
   int gpu_num = -1;
   #if GOOGLE_CUDA
   cudaGetDeviceCount(&gpu_num); // check current device environment
@@ -510,9 +539,39 @@ init (const std::vector<std::string> & models, const int & gpu_rank)
   SessionOptions options;
   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
-  for (unsigned ii = 0; ii < numb_models; ++ii){
-    checkStatus (ReadBinaryProto(Env::Default(), models[ii], &graph_defs[ii]));
+/////////////////////////////////////////////////////////////////
+// new implementation
+// bcast file_content to all MPI processors  
+/////////////////////////////////////////////////////////////////
+  int myrank = 0, root = 0;
+  MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
+  unsigned nchar = 0;
+  std::string file_content;
+  for (unsigned ii = 0; ii < numb_models; ++ii) {
+    if (myrank == root) {
+      checkStatus (ReadFileToString(Env::Default(), models[ii], &file_content));
+      nchar = file_content.size();
+    }
+    MPI_Bcast(&nchar, 1, MPI_UNSIGNED, root, MPI_COMM_WORLD);  
+    char * buff = (char *)malloc(sizeof(char) * nchar);  
+    if (myrank == root) {  
+      memcpy(buff, file_content.c_str(), sizeof(char) * nchar);
+    }
+    MPI_Bcast(buff, nchar, MPI_CHAR, root, MPI_COMM_WORLD);
+    file_content.resize(nchar);
+    for (unsigned ii = 0; ii < nchar; ++ii) {
+      file_content[ii] = buff[ii];
+    }
+    graph_defs[ii].ParseFromString(file_content);
+    free(buff);
   }
+/////////////////////////////////////////////////////////////////
+// old implementation
+// for (unsigned ii = 0; ii < numb_models; ++ii){
+//   checkStatus (ReadBinaryProto(Env::Default(), models[ii], &graph_defs[ii]));
+// }
+/////////////////////////////////////////////////////////////////
+
   #if GOOGLE_CUDA 
   if (gpu_num > 0) {
       options.config.set_allow_soft_placement(true);
