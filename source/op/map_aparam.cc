@@ -6,32 +6,19 @@
 using namespace tensorflow;
 // using namespace std;
 
-#ifdef HIGH_PREC
-typedef double VALUETYPE;
-#else
-typedef float  VALUETYPE;
-#endif
+using CPUDevice = Eigen::ThreadPoolDevice;
+using GPUDevice = Eigen::GpuDevice;
 
-#ifdef HIGH_PREC
 REGISTER_OP("MapAparam")
-.Input("aparam: double")
+.Attr("T: {float, double}")
+.Input("aparam: T")
 .Input("nlist: int32")
 .Input("natoms: int32")
 .Attr("n_a_sel: int")
 .Attr("n_r_sel: int")
-.Output("output: double");
-#else
-REGISTER_OP("MapAparam")
-.Input("aparam: float")
-.Input("nlist: int32")
-.Input("natoms: int32")
-.Attr("n_a_sel: int")
-.Attr("n_r_sel: int")
-.Output("mapped: float");
-#endif
+.Output("output: T");
 
-using namespace tensorflow;
-
+template <typename Device, typename FPTYPE>
 class MapAparamOp : public OpKernel {
  public:
   explicit MapAparamOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -73,9 +60,9 @@ class MapAparamOp : public OpKernel {
     OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &output_tensor));
     
     // flat the tensors
-    auto aparam = aparam_tensor.flat<VALUETYPE>();
+    auto aparam = aparam_tensor.flat<FPTYPE>();
     auto nlist = nlist_tensor.flat<int>();
-    auto output = output_tensor->flat<VALUETYPE>();
+    auto output = output_tensor->flat<FPTYPE>();
 
     // loop over samples
 #pragma omp parallel for 
@@ -110,7 +97,12 @@ private:
   int n_r_sel, n_a_sel, n_a_shift;
 };
 
-REGISTER_KERNEL_BUILDER(Name("MapAparam").Device(DEVICE_CPU), MapAparamOp);
+#define REGISTER_CPU(T)                                                                 \
+REGISTER_KERNEL_BUILDER(                                                                \
+    Name("MapAparam").Device(DEVICE_CPU).TypeConstraint<T>("T"),                        \
+    MapAparamOp<CPUDevice, T>); 
+REGISTER_CPU(float);
+REGISTER_CPU(double);
 
 
 

@@ -451,3 +451,15 @@ def docstring_parameter(*sub: Tuple[str, ...]):
         return obj
 
     return dec
+
+def get_np_precision(precision):
+    if precision == "default":
+        return  global_np_float_precision
+    elif precision == "float16":
+        return np.float16
+    elif precision == "float32":
+        return np.float32
+    elif precision == "float64":
+        return np.float64
+    else:
+        raise RuntimeError("%d is not a valid precision" % precision)

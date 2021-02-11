@@ -143,7 +143,6 @@ void compute_descriptor_se_r (std::vector<double > &		descrpt_r,
 			      const double &			rmin, 
 			      const double &			rmax);
 
-
 struct NeighborInfo 
 {
   int type;

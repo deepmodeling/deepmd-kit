@@ -216,4 +216,4 @@ def freeze(args: "ArgsProto"):
     args : ArgsProto
         parser instance
     """
-    freeze_graph(args.folder, args.output, args.nodes)
+    freeze_graph(args.checkpoint_folder, args.output, args.nodes)

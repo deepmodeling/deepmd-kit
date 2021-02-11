@@ -11,6 +11,8 @@ from .freeze import freeze
 from .test import test
 from .train import train
 from .transform import transform
+from .compress import compress
+from .doc import doc_train_input
 
 
 def main():
@@ -24,7 +26,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="DeePMD-kit: A deep learning package for many-body potential energy"
         " representation and molecular dynamics",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     subparsers = parser.add_subparsers(title="Valid subcommands", dest="command")
 
@@ -38,35 +40,29 @@ def main():
         action="count",
         dest="log_level",
         help="set verbosity level 0 - 3, 0=ERROR, 1(-v)=WARNING, 2(-vv)=INFO "
-        "and 3(-vvv)=DEBUG"
+        "and 3(-vvv)=DEBUG",
     )
     parser_log.add_argument(
         "-l",
         "--log-path",
         default=None,
         help="set log file to log messages to disk, if not specified, the logs will "
-        "only be output to console"
+        "only be output to console",
     )
 
     # * config script ******************************************************************
     parser_cfig = subparsers.add_parser(
         "config",
         parents=[parser_log],
-        help="fast configuration of parameter file for smooth model"
+        help="fast configuration of parameter file for smooth model",
     )
     parser_cfig.add_argument(
-        "-o",
-        "--output",
-        type=str,
-        default="input.json",
-        help="the output json file"
+        "-o", "--output", type=str, default="input.json", help="the output json file"
     )
 
     # * transform script ***************************************************************
     parser_transform = subparsers.add_parser(
-        "transform",
-        parents=[parser_log],
-        help="pass parameters to another model"
+        "transform", parents=[parser_log], help="pass parameters to another model"
     )
     parser_transform.add_argument(
         "-r",
@@ -76,14 +72,14 @@ def main():
         help="the model receiving parameters",
     )
     parser_transform.add_argument(
-        "-o",
+        "-O",
         "--old-model",
         default="old_frozen_model.pb",
         type=str,
         help="the model providing parameters",
     )
     parser_transform.add_argument(
-        "-n",
+        "-o",
         "--output",
         default="frozen_model.pb",
         type=str,
@@ -92,25 +88,24 @@ def main():
 
     # * config parser ******************************************************************
     parser_train = subparsers.add_parser(
-        "train",
-        parents=[parser_log],
-        help="train a model")
+        "train", parents=[parser_log], help="train a model"
+    )
     parser_train.add_argument(
         "INPUT", help="the input parameter file in json or yaml format"
     )
     parser_train.add_argument(
-        "-im"
+        "-i",
         "--init-model",
         type=str,
         default=False,
         help="Initialize the model by the provided checkpoint.",
     )
     parser_train.add_argument(
-        "-r"
+        "-r",
         "--restart",
         type=str,
         default=False,
-        help="Restart the training from the provided checkpoint."
+        help="Restart the training from the provided checkpoint.",
     )
     parser_train.add_argument(
         "-o",
@@ -127,20 +122,19 @@ def main():
         choices=("master", "collect", "workers"),
         help="Set the manner of logging when running with MPI. 'master' logs only on "
         "main process, 'collect' broadcasts logs from workers to master and 'workers' "
-        "means each process will output its own log"
+        "means each process will output its own log",
     )
 
     # * freeze script ******************************************************************
     parser_frz = subparsers.add_parser(
-        "freeze",
-        parents=[parser_log],
-        help="freeze the model")
+        "freeze", parents=[parser_log], help="freeze the model"
+    )
     parser_frz.add_argument(
-        "-f",
-        "--folder",
+        "-c",
+        "--checkpoint-folder",
         type=str,
         default=".",
-        help="path to checkpoint folder"
+        help="path to checkpoint folder",
     )
     parser_frz.add_argument(
         "-o",
@@ -158,9 +152,8 @@ def main():
 
     # * test script ********************************************************************
     parser_tst = subparsers.add_parser(
-        "test",
-        parents=[parser_log],
-        help="test the model")
+        "test", parents=[parser_log], help="test the model"
+    )
     parser_tst.add_argument(
         "-m",
         "--model",
@@ -176,29 +169,14 @@ def main():
         help="The system dir. Recursively detect systems in this directory",
     )
     parser_tst.add_argument(
-        "-S",
-        "--set-prefix",
-        default="set",
-        type=str,
-        help="The set prefix"
+        "-S", "--set-prefix", default="set", type=str, help="The set prefix"
     )
     parser_tst.add_argument(
-        "-n",
-        "--numb-test",
-        default=100,
-        type=int,
-        help="The number of data for test"
+        "-n", "--numb-test", default=100, type=int, help="The number of data for test"
     )
+    parser_tst.add_argument("-r", "--rand-seed", type=int, help="The random seed")
     parser_tst.add_argument(
-        "-r",
-        "--rand-seed",
-        type=int,
-        help="The random seed")
-    parser_tst.add_argument(
-        "-st",
-        "--shuffle-test",
-        action="store_true",
-        help="Shuffle test data"
+        "--shuffle-test", action="store_true", help="Shuffle test data"
     )
     parser_tst.add_argument(
         "-d",
@@ -211,6 +189,66 @@ def main():
         "--atomic-energy",
         action="store_true",
         help="Test the accuracy of atomic energy",
+    )
+
+    # * compress model *****************************************************************
+    # Compress a model, which including tabulating the embedding-net.
+    # The table is composed of fifth-order polynomial coefficients and is assembled
+    # from two sub-tables. The first table takes the stride(parameter) as it's uniform
+    # stride, while the second table takes 10 * stride as it\s uniform stride
+    #  The range of the first table is automatically detected by deepmd-kit, while the
+    # second table ranges from the first table's upper boundary(upper) to the
+    # extrapolate(parameter) * upper.
+    parser_compress = subparsers.add_parser("compress", help="compress a model")
+    parser_compress.add_argument(
+        "INPUT",
+        help="The input parameter file in json or yaml format, which should be "
+        "consistent with the original model parameter file",
+    )
+    parser_compress.add_argument(
+        "-i",
+        "--input",
+        default="frozen_model.pb",
+        type=str,
+        help="The original frozen model, which will be compressed by the deepmd-kit",
+    )
+    parser_compress.add_argument(
+        "-o",
+        "--output",
+        default="frozen_model_compress.pb",
+        type=str,
+        help="The compressed model",
+    )
+    parser_compress.add_argument(
+        "-e",
+        "--extrapolate",
+        default=5,
+        type=int,
+        help="The scale of model extrapolation",
+    )
+    parser_compress.add_argument(
+        "-s",
+        "--stride",
+        default=0.01,
+        type=float,
+        help="The uniform stride of tabulation's first table, the second table will "
+        "use 10 * stride as it's uniform stride",
+    )
+    parser_compress.add_argument(
+        "-f",
+        "--frequency",
+        default=-1,
+        type=int,
+        help="The frequency of tabulation overflow check(If the input environment "
+        "matrix overflow the first or second table range). "
+        "By default do not check the overflow",
+    )
+    parser_compress.add_argument(
+        "-c",
+        "--checkpoint-folder",
+        type=str,
+        default=".",
+        help="path to checkpoint folder",
     )
 
     # * print docs script **************************************************************
@@ -240,6 +278,8 @@ def main():
         test(args)
     elif args.command == "transform":
         transform(args)
+    elif args.command == "compress":
+        compress(args)
     elif args.command == "doc-train-input":
         doc_train_input(args)
     else:

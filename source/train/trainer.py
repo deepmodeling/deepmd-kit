@@ -20,6 +20,7 @@ from deepmd.descriptor import DescrptHybrid
 from deepmd.model import Model, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
 from deepmd.loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
 from deepmd.utils.learning_rate import LearningRateExp
+from deepmd.utils.neighbor_stat import NeighborStat
 
 from tensorflow.python.client import timeline
 from deepmd.env import op_module
@@ -33,6 +34,7 @@ import deepmd._prod_force_se_r_grad
 import deepmd._prod_virial_se_r_grad
 import deepmd._soft_min_force_grad
 import deepmd._soft_min_virial_grad
+import deepmd._tabulate_grad
 import deepmd._gelu
 
 from deepmd.common import j_must_have, ClassArg
@@ -91,7 +93,9 @@ class NNPTrainer (object):
         model_param = j_must_have(jdata, 'model')
         descrpt_param = j_must_have(model_param, 'descriptor')
         fitting_param = j_must_have(model_param, 'fitting_net')
-
+        self.model_param    = model_param
+        self.descrpt_param  = descrpt_param
+        
         # descriptor
         try:
             descrpt_type = descrpt_param['type']
@@ -270,6 +274,14 @@ class NNPTrainer (object):
         self.type_map = data.get_type_map()
 
         self.model.data_stat(data)
+
+        if 'compress' in self.model_param and self.model_param['compress']['compress']:
+            assert 'rcut' in self.descrpt_param,      "Error: descriptor must have attr rcut!"
+            self.neighbor_stat \
+                = NeighborStat(self.ntypes, self.descrpt_param['rcut'])
+            self.min_nbor_dist, self.max_nbor_size \
+                = self.neighbor_stat.get_stat(data)
+            self.descrpt.enable_compression(self.min_nbor_dist, self.model_param['compress']['model_file'], self.model_param['compress']['table_config'][0], self.model_param['compress']['table_config'][1], self.model_param['compress']['table_config'][2], self.model_param['compress']['table_config'][3])
 
         worker_device = "/job:%s/task:%d/%s" % (self.run_opt.my_job_name,
                                                 self.run_opt.my_task_index,

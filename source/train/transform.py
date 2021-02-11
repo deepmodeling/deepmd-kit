@@ -44,8 +44,8 @@ def transform_graph(raw_graph,old_graph):
     raw_graph_node = load_transform_node(raw_graph_def)
     old_graph_node = load_transform_node(old_graph_def)
 
-    if len(raw_graph_node) != len(old_graph_node):
-        raise RuntimeError("raw graph and old graph has different network structure")
+    # if len(raw_graph_node) != len(old_graph_node):
+        # raise RuntimeError("raw graph and old graph has different network structure")
 
     for node in raw_graph_def.node:
         if node.name in raw_graph_node.keys():
@@ -108,7 +108,7 @@ def check_dim(raw_graph_node, old_graph_node, node_name):
     raw_graph_dim = raw_graph_node[node_name].tensor_shape
     old_graph_dim = old_graph_node[node_name].tensor_shape
     if raw_graph_dim != old_graph_dim:
-        raise RuntimeError("old graph and raw graph has different"+node_name+" dim")
+        raise RuntimeError("old graph " + str(old_graph_dim) + " and raw graph " + str(raw_graph_dim) + " has different " + str(node_name) + " dim")
 
 
 def load_transform_node(graph):
