@@ -98,7 +98,6 @@ void compute_descriptor_se_a_ef_vert (std::vector<double > &			descrpt_a,
 				      const double &				rmin, 
 				      const double &				rmax);
 
-
 static void 
 compute_dRdT (double (* dRdT)[9], 
 	      const double * r1, 

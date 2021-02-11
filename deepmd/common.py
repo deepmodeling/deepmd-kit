@@ -20,7 +20,7 @@ import numpy as np
 import yaml
 
 from deepmd.env import op_module, tf
-from deepmd.RunOptions import global_tf_float_precision
+from deepmd.RunOptions import global_tf_float_precision, global_np_float_precision
 
 if TYPE_CHECKING:
     _DICT_VAL = TypeVar("_DICT_VAL")
@@ -451,3 +451,15 @@ def docstring_parameter(*sub: Tuple[str, ...]):
         return obj
 
     return dec
+
+def get_np_precision(precision):
+    if precision == "default":
+        return  global_np_float_precision
+    elif precision == "float16":
+        return np.float16
+    elif precision == "float32":
+        return np.float32
+    elif precision == "float64":
+        return np.float64
+    else:
+        raise RuntimeError("%d is not a valid precision" % precision)

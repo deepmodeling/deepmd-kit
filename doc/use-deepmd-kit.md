@@ -5,6 +5,7 @@
 	    - [The DeepPot-SE model](#the-deeppot-se-model)
 	- [Freeze a model](#freeze-a-model)
 	- [Test a model](#test-a-model)
+	- [Compress a model](#compress-a-model)
 	- [Model inference](#model-inference)
 	- [Run MD with Lammps](#run-md-with-lammps)
 	    - [Include deepmd in the pair style](#include-deepmd-in-the-pair-style)
@@ -19,7 +20,8 @@ In this text, we will call the deep neural network that is used to represent the
 2. Train a model
 3. Freeze the model
 4. Test the model
-5. Inference with the model
+5. Compress the model
+6. Inference with the model
 
 ## Prepare data
 One needs to provide the following information to train a model: the atom type, the simulation box, the atom coordinate, the atom force, system energy and virial. A snapshot of a system that contains these information is called a **frame**. We use the following convention of units:
@@ -269,6 +271,58 @@ optional arguments:
                         The file containing details of energy force and virial
                         accuracy
 ```
+
+## Compress a model
+
+Once the frozen model is obtained from deepmd-kit, we can get the neural network structure and its parameters (weights, biases, etc.) from the trained model, and compress it in the following way:
+```bash
+dp compress input.json -i graph.pb -o graph-compress.pb
+```
+where input.json denotes the original training input script, `-i` gives the original frozen model, `-o` gives the compressed model. Several other command line options can be passed to `dp compress`, which can be checked with
+```bash
+$ dp compress --help
+```
+An explanation will be provided
+```
+usage: dp compress [-h] [-i INPUT] [-o OUTPUT] [-e EXTRAPOLATE] [-s STRIDE]
+                   [-f FREQUENCY] [-d FOLDER]
+                   INPUT
+
+positional arguments:
+  INPUT                 The input parameter file in json or yaml format, which
+                        should be consistent with the original model parameter
+                        file
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -i INPUT, --input INPUT
+                        The original frozen model, which will be compressed by
+                        the deepmd-kit
+  -o OUTPUT, --output OUTPUT
+                        The compressed model
+  -e EXTRAPOLATE, --extrapolate EXTRAPOLATE
+                        The scale of model extrapolation
+  -s STRIDE, --stride STRIDE
+                        The uniform stride of tabulation's first table, the
+                        second table will use 10 * stride as it's uniform
+                        stride
+  -f FREQUENCY, --frequency FREQUENCY
+                        The frequency of tabulation overflow check(If the
+                        input environment matrix overflow the first or second
+                        table range). By default do not check the overflow
+  -d FOLDER, --folder FOLDER
+                        path to checkpoint folder
+```
+**Parameter explanation**
+
+Model compression, which including tabulating the embedding-net.
+The table is composed of fifth-order polynomial coefficients and is assembled from two sub-tables. The first sub-table takes the stride(parameter) as it's uniform stride, while the second sub-table takes 10 * stride as it's uniform stride.
+The range of the first table is automatically detected by deepmd-kit, while the second table ranges from the first table's upper boundary(upper) to the extrapolate(parameter) * upper.
+Finally, we added a check frequency parameter. It indicates how often the program checks for overflow(if the input environment matrix overflow the first or second table range) during the MD inference.
+
+**Justification of model compression**
+
+Model compression, with little loss of accuracy, can greatly speed up MD inference time. According to different simulation systems and training parameters, the speedup can reach more than 10 times at both CPU and GPU devices. At the same time, model compression can greatly change the memory usage, reducing as much as 20 times under the same hardware conditions.
 
 ## Model inference 
 One may use the python interface of DeePMD-kit for model inference, an example is given as follows
