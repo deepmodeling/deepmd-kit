@@ -7,7 +7,7 @@ using namespace tensorflow;
 //using namespace std;
 
 
-REGISTER_OP("TabInter")
+REGISTER_OP("PairTab")
 .Attr("T: {float, double}")
 .Input("table_info: double")
 .Input("table_data: double")
@@ -69,9 +69,9 @@ void tabulated_inter (double & ener,
 }
 
 template<typename Device, typename FPTYPE>
-class TabInterOp : public OpKernel {
+class PairTabOp : public OpKernel {
  public:
-  explicit TabInterOp(OpKernelConstruction* context) : OpKernel(context) {
+  explicit PairTabOp(OpKernelConstruction* context) : OpKernel(context) {
     OP_REQUIRES_OK(context, context->GetAttr("sel_a", &sel_a));
     OP_REQUIRES_OK(context, context->GetAttr("sel_r", &sel_r));
     cum_sum (sec_a, sel_a);
@@ -304,10 +304,8 @@ private:
 // Register the CPU kernels.
 #define REGISTER_CPU(T)                                                                   \
 REGISTER_KERNEL_BUILDER(                                                                  \
-    Name("TabInter").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
-    TabInterOp<CPUDevice, T>); 
+    Name("PairTab").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
+    PairTabOp<CPUDevice, T>); 
 REGISTER_CPU(float);
 REGISTER_CPU(double);
-
-
 

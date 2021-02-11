@@ -1,7 +1,7 @@
 import numpy as np
 from deepmd.env import tf
 from collections import defaultdict
-from deepmd.utils.tab_inter import TabInter
+from deepmd.utils.pair_tab import PairTab
 from deepmd.common import ClassArg
 
 from deepmd.RunOptions import global_cvt_2_ener_float
@@ -88,7 +88,7 @@ class Model() :
         self.data_stat_nbatch = class_data['data_stat_nbatch']
         self.data_stat_protect = class_data['data_stat_protect']
         if self.srtab_name is not None :
-            self.srtab = TabInter(self.srtab_name)
+            self.srtab = PairTab(self.srtab_name)
             args.add('smin_alpha',      float,  must = True)\
                 .add('sw_rmin',         float,  must = True)\
                 .add('sw_rmax',         float,  must = True)
@@ -201,7 +201,7 @@ class Model() :
             # atom energy is not scaled, 
             # force and virial are scaled
             tab_atom_ener, tab_force, tab_atom_virial \
-                = op_module.tab_inter(self.tab_info,
+                = op_module.pair_tab(self.tab_info,
                                       self.tab_data,
                                       atype,
                                       rij,
