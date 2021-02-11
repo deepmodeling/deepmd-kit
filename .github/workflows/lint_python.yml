@@ -19,7 +19,7 @@ jobs:
       run: pip install -r requirements.txt
     - uses: marian-code/python-lint-annotate@v2.5.0
       with:
-        python-root-list: "'./deepmd/*.py ./deepmd/*/*.py ./source/train/*.py ./source/tests/*.py ./source/scripts/*.py ./source/op/*.py'"
+        python-root-list: "./deepmd/*.py ./deepmd/*/*.py ./source/train/*.py ./source/tests/*.py ./source/scripts/*.py ./source/op/*.py"
         use-black: true
         use-isort: true
         use-mypy: true
