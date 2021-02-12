@@ -105,6 +105,54 @@ int PairNNP::get_node_rank() {
     return looprank;
 }
 
+std::string PairNNP::get_file_content(const std::string & model) {
+  int myrank = 0, root = 0;
+  MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
+  unsigned nchar = 0;
+  std::string file_content;
+  if (myrank == root) {
+    checkStatus (ReadFileToString(Env::Default(), model, &file_content));
+    nchar = file_content.size();
+  }
+  MPI_Bcast(&nchar, 1, MPI_UNSIGNED, root, MPI_COMM_WORLD);  
+  char * buff = (char *)malloc(sizeof(char) * nchar);  
+  if (myrank == root) {  
+    memcpy(buff, file_content.c_str(), sizeof(char) * nchar);
+  }
+  MPI_Bcast(buff, nchar, MPI_CHAR, root, MPI_COMM_WORLD);
+  file_content.resize(nchar);
+  for (unsigned ii = 0; ii < nchar; ++ii) {
+    file_content[ii] = buff[ii];
+  }
+  return file_content;
+  free(buff);
+}
+
+std::vector<std::string> PairNNP::get_file_content(const std::vector<std::string> & models) {
+  int myrank = 0, root = 0;
+  MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
+  unsigned nchar = 0;
+  std::vector<std::string> file_contents(models.size());
+  for (unsigned ii = 0; ii < models.size(); ++ii) {
+    if (myrank == root) {
+      checkStatus (ReadFileToString(Env::Default(), models[ii], &file_contents[ii]));
+      nchar = file_contents[ii].size();
+    }
+    MPI_Bcast(&nchar, 1, MPI_UNSIGNED, root, MPI_COMM_WORLD);  
+    char * buff = (char *)malloc(sizeof(char) * nchar);  
+    if (myrank == root) {  
+      memcpy(buff, file_contents[ii].c_str(), sizeof(char) * nchar);
+    }
+    MPI_Bcast(buff, nchar, MPI_CHAR, root, MPI_COMM_WORLD);
+    file_contents[ii].resize(nchar);
+    for (unsigned jj = 0; jj < nchar; ++jj) {
+      file_contents[ii][jj] = buff[jj];
+    }
+    free(buff);
+  }
+  return file_contents;
+}
+
 static void 
 ana_st (double & max, 
 	double & min, 
@@ -656,15 +704,15 @@ void PairNNP::settings(int narg, char **arg)
   }
   numb_models = models.size();
   if (numb_models == 1) {
-    nnp_inter.init (arg[0], get_node_rank());
+    nnp_inter.init (arg[0], get_node_rank(), get_file_content(arg[0]));
     cutoff = nnp_inter.cutoff ();
     numb_types = nnp_inter.numb_types();
     dim_fparam = nnp_inter.dim_fparam();
     dim_aparam = nnp_inter.dim_aparam();
   }
   else {
-    nnp_inter.init (arg[0], get_node_rank());
-    nnp_inter_model_devi.init(models, get_node_rank());
+    nnp_inter.init (arg[0], get_node_rank(), get_file_content(arg[0]));
+    nnp_inter_model_devi.init(models, get_node_rank(), get_file_content(models));
     cutoff = nnp_inter_model_devi.cutoff();
     numb_types = nnp_inter_model_devi.numb_types();
     dim_fparam = nnp_inter_model_devi.dim_fparam();

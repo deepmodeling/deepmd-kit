@@ -8,9 +8,6 @@ configure_file(
   @ONLY
 )
 
-find_package(MPI REQUIRED)
-include_directories(SYSTEM ${MPI_INCLUDE_PATH})
-
 if (USE_CUDA_TOOLKIT)
   include_directories("${CUDA_INCLUDE_DIRS}")
 endif()
@@ -23,8 +20,6 @@ add_library(${libname} SHARED ${LIB_SRC})
 if (USE_CUDA_TOOLKIT)
   target_link_libraries (${libname} ${CUDA_LIBRARIES})
 endif()
-
-target_link_libraries (${libname} ${MPI_C_LIBRARIES})
 
 install(TARGETS ${libname} DESTINATION lib/)
 
