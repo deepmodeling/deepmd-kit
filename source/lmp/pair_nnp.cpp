@@ -129,26 +129,9 @@ std::string PairNNP::get_file_content(const std::string & model) {
 }
 
 std::vector<std::string> PairNNP::get_file_content(const std::vector<std::string> & models) {
-  int myrank = 0, root = 0;
-  MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
-  unsigned nchar = 0;
   std::vector<std::string> file_contents(models.size());
   for (unsigned ii = 0; ii < models.size(); ++ii) {
-    if (myrank == root) {
-      checkStatus (ReadFileToString(Env::Default(), models[ii], &file_contents[ii]));
-      nchar = file_contents[ii].size();
-    }
-    MPI_Bcast(&nchar, 1, MPI_UNSIGNED, root, MPI_COMM_WORLD);  
-    char * buff = (char *)malloc(sizeof(char) * nchar);  
-    if (myrank == root) {  
-      memcpy(buff, file_contents[ii].c_str(), sizeof(char) * nchar);
-    }
-    MPI_Bcast(buff, nchar, MPI_CHAR, root, MPI_COMM_WORLD);
-    file_contents[ii].resize(nchar);
-    for (unsigned jj = 0; jj < nchar; ++jj) {
-      file_contents[ii][jj] = buff[jj];
-    }
-    free(buff);
+    file_contents[ii] = get_file_content(models[ii]);
   }
   return file_contents;
 }
