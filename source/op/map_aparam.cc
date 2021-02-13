@@ -73,7 +73,7 @@ class MapAparamOp : public OpKernel {
       int aparam_iter	= kk * nall * numb_aparam;
       int nlist_iter	= kk * nloc * nnei;
       map_aparam_cpu(
-	  &ouput(output_iter),
+	  &output(output_iter),
 	  &aparam(aparam_iter),
 	  &nlist(nlist_iter),
 	  nloc,
