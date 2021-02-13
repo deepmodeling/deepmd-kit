@@ -3,6 +3,8 @@
 #include "tensorflow/core/framework/shape_inference.h"
 #include <iostream>
 
+#include "pair_tab.h"
+
 using namespace tensorflow;
 //using namespace std;
 
@@ -25,48 +27,6 @@ REGISTER_OP("PairTab")
 using namespace tensorflow;
 
 using CPUDevice = Eigen::ThreadPoolDevice;
-
-inline 
-void tabulated_inter (double & ener, 
-		      double & fscale, 
-		      const double * table_info,
-		      const double * table_data,
-		      const double * dr)
-{
-  // info size: 3
-  const double & rmin = table_info[0];
-  const double & hh = table_info[1];
-  const double hi = 1./hh;
-  const unsigned nspline = unsigned(table_info[2] + 0.1);
-  const unsigned ndata = nspline * 4;
-
-  double r2 = dr[0] * dr[0] + dr[1] * dr[1] + dr[2] * dr[2];
-  double rr = sqrt(r2);
-  double uu = (rr - rmin) * hi;
-  // std::cout << rr << " " << rmin << " " << hh << " " << uu << std::endl;
-  if (uu < 0) {
-    std::cerr << "coord go beyond table lower boundary" << std::endl;
-    exit(1);
-  }
-  int idx = uu;
-  if (idx >= nspline) {
-    fscale = ener = 0;
-    return;
-  }
-  uu -= idx;
-  assert(idx >= 0);
-  assert(uu >= 0 && uu < 1);
-
-  const double & a3 = table_data[4 * idx + 0];
-  const double & a2 = table_data[4 * idx + 1];
-  const double & a1 = table_data[4 * idx + 2];
-  const double & a0 = table_data[4 * idx + 3];
-  
-  double etmp = (a3 * uu + a2) * uu + a1;
-  ener = etmp * uu + a0;
-  fscale = (2. * a3 * uu + a2) * uu + etmp;
-  fscale *= -hi;
-}
 
 template<typename Device, typename FPTYPE>
 class PairTabOp : public OpKernel {
@@ -164,124 +124,29 @@ class PairTabOp : public OpKernel {
     const double * p_table_info = &(d_table_info[0]);
     const double * p_table_data = &(d_table_data[0]);
 
+    std::vector<int > t_sel_a(sel_a.size()), t_sel_r(sel_r.size());
+    for (int ii = 0; ii < sel_a.size(); ++ii){
+      t_sel_a[ii] = sel_a[ii];
+    }
+    for (int ii = 0; ii < sel_r.size(); ++ii){
+      t_sel_r[ii] = sel_r[ii];
+    }
     // loop over samples
 #pragma omp parallel for 
     for (int kk = 0; kk < nframes; ++kk){
-      // fill results with 0
-      for (int ii = 0; ii < nloc; ++ii){
-	int i_idx = ii;
-	energy(kk, i_idx) = 0;
-      }
-      for (int ii = 0; ii < nall; ++ii){
-	int i_idx = ii;
-	force(kk, i_idx * 3 + 0) = 0;
-	force(kk, i_idx * 3 + 1) = 0;
-	force(kk, i_idx * 3 + 2) = 0;
-	for (int dd = 0; dd < 9; ++dd) {
-	  virial(kk, i_idx * 9 + dd) = 0;
-	}
-      }
-      // compute force of a frame
-      int i_idx = 0;
-      for (int tt = 0; tt < ntypes; ++tt) {
-	for (int ii = 0; ii < natoms(2+tt); ++ii){
-	  int i_type = type(kk, i_idx);
-	  FPTYPE i_scale = scale(kk, i_idx);
-	  assert(i_type == tt) ;
-	  int jiter = 0;
-	  // a neighbor
-	  for (int ss = 0; ss < sel_a.size(); ++ss){
-	    int j_type = ss;
-	    const double * cur_table_data = 
-		p_table_data + (i_type * ntypes + j_type) * tab_stride;
-	    for (int jj = 0; jj < sel_a[ss]; ++jj){
-	      int j_idx = nlist(kk, i_idx * nnei + jiter);
-	      if (j_idx < 0){
-		jiter++;
-		continue;
-	      }
-	      assert(j_type == type(kk, j_idx));
-	      double dr[3];
-	      for (int dd = 0; dd < 3; ++dd){
-		dr[dd] = rij(kk, (i_idx * nnei + jiter) * 3 + dd);
-	      }
-	      double r2 = dr[0] * dr[0] + dr[1] * dr[1] + dr[2] * dr[2];
-	      double ri = 1./sqrt(r2);
-	      double ener, fscale;
-	      tabulated_inter(ener,
-			      fscale, 
-			      p_table_info, 
-			      cur_table_data, 
-			      dr);
-	      // printf("tabforce  %d %d  r: %12.8f  ener: %12.8f %12.8f %8.5f  fj: %8.5f %8.5f %8.5f  dr: %9.6f %9.6f %9.6f\n", 
-	      // 	     i_idx, j_idx, 
-	      // 	     1/ri,
-	      // 	     ener, fscale, i_scale,
-	      // 	     -fscale * dr[00] * ri * 0.5 * i_scale,  -fscale * dr[01] * ri * 0.5 * i_scale,  -fscale * dr[02] * ri * 0.5 * i_scale,
-	      // 	     dr[0], dr[1], dr[2]
-	      // 	  );
-	      energy(kk, i_idx) += 0.5 * ener;
-	      for (int dd = 0; dd < 3; ++dd) {
-		force(kk, i_idx * 3 + dd) -= fscale * dr[dd] * ri * 0.5 * i_scale;
-		force(kk, j_idx * 3 + dd) += fscale * dr[dd] * ri * 0.5 * i_scale;
-	      }
-	      for (int dd0 = 0; dd0 < 3; ++dd0) {
-		for (int dd1 = 0; dd1 < 3; ++dd1) {
-		  virial(kk, i_idx * 9 + dd0 * 3 + dd1) 
-		      += 0.5 * fscale * dr[dd0] * dr[dd1] * ri * 0.5 * i_scale;
-		  virial(kk, j_idx * 9 + dd0 * 3 + dd1) 
-		      += 0.5 * fscale * dr[dd0] * dr[dd1] * ri * 0.5 * i_scale;
-		}
-	      }
-	      jiter++;
-	    }
-	  }
-	  // r neighbor
-	  for (int ss = 0; ss < sel_r.size(); ++ss){
-	    int j_type = ss;
-	    const double * cur_table_data = 
-		p_table_data + (i_type * ntypes + j_type) * tab_stride;
-	    for (int jj = 0; jj < sel_r[ss]; ++jj){
-	      int j_idx = nlist(kk, i_idx * nnei + jiter);
-	      if (j_idx < 0){
-		jiter ++;
-		continue;
-	      }
-	      assert(j_type == type(kk, j_idx));
-	      double dr[3];
-	      for (int dd = 0; dd < 3; ++dd){
-		dr[dd] = rij(kk, (i_idx * nnei + jiter) * 3 + dd);
-	      }
-	      double r2 = dr[0] * dr[0] + dr[1] * dr[1] + dr[2] * dr[2];
-	      double ri = 1./sqrt(r2);
-	      double ener, fscale;
-	      tabulated_inter(ener,
-			      fscale, 
-			      p_table_info, 
-			      cur_table_data, 
-			      dr);
-	      // printf("tabforce  %d %d  %8.5f  %12.8f %12.8f %8.5f  fj: %8.5f %8.5f %8.5f\n", 
-	      // 	     i_idx, j_idx, 
-	      // 	     1/ri, 
-	      // 	     ener, fscale, i_scale,
-	      // 	     -fscale * dr[00] * ri * 0.5 * i_scale,  -fscale * dr[01] * ri * 0.5 * i_scale,  -fscale * dr[02] * ri * 0.5 * i_scale);
-	      energy(kk, i_idx) += 0.5 * ener;
-	      for (int dd = 0; dd < 3; ++dd) {
-		force(kk, i_idx * 3 + dd) -= fscale * dr[dd] * ri * 0.5 * i_scale;
-		force(kk, j_idx * 3 + dd) += fscale * dr[dd] * ri * 0.5 * i_scale;
-	      }
-	      for (int dd0 = 0; dd0 < 3; ++dd0) {
-		for (int dd1 = 0; dd1 < 3; ++dd1) {
-		  virial(kk, j_idx * 9 + dd0 * 3 + dd1) 
-		      += fscale * dr[dd0] * dr[dd1] * ri * 0.5 * i_scale;
-		}
-	      }
-	      jiter++;
-	    }
-	  }
-	  i_idx ++;
-	}
-      }
+      pair_tab<FPTYPE>(
+	  &energy(kk,0),
+	  &force(kk,0),
+	  &virial(kk,0),
+	  p_table_info,
+	  p_table_data,
+	  &rij(kk,0),
+	  &scale(kk,0),
+	  &type(kk,0),
+	  &nlist(kk,0),
+	  &natoms(0),
+	  t_sel_a,
+	  t_sel_r);
     }
   }
 private:
