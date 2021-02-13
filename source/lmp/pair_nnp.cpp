@@ -124,8 +124,8 @@ std::string PairNNP::get_file_content(const std::string & model) {
   for (unsigned ii = 0; ii < nchar; ++ii) {
     file_content[ii] = buff[ii];
   }
-  return file_content;
   free(buff);
+  return file_content;
 }
 
 std::vector<std::string> PairNNP::get_file_content(const std::vector<std::string> & models) {
