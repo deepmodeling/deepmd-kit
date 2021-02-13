@@ -3,6 +3,8 @@
 #include "tensorflow/core/framework/shape_inference.h"
 #include <iostream>
 
+#include "map_aparam.h"
+
 using namespace tensorflow;
 // using namespace std;
 
