@@ -1,7 +1,7 @@
 #pragma once
 
 template<typename FPTYPE>
-void pair_tab(
+void pair_tab_cpu(
     FPTYPE * energy,
     FPTYPE * force,
     FPTYPE * virial,

@@ -134,7 +134,7 @@ TEST_F(TestPairTab, cpu)
   std::vector<double > virial(nall * 9);
   std::vector<double > scale(nloc, 1.0);
 
-  pair_tab(
+  pair_tab_cpu(
       &energy[0],
       &force[0],
       &virial[0],
@@ -197,7 +197,7 @@ TEST_F(TestPairTab, cpu_f_num_deriv)
   std::vector<double > virial(9, 0.);
   std::vector<double > atom_virial(nall * 9);
   std::vector<double > scale(nloc, 1.0);
-  pair_tab(
+  pair_tab_cpu(
       &energy[0],
       &force[0],
       &atom_virial[0],
@@ -254,7 +254,7 @@ TEST_F(TestPairTab, cpu_f_num_deriv)
       prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_1[0], &nlist_1[0], &posi_cpy_1[0], &atype_cpy_1[0], &ilist_1[0], &jrange_1[0], &jlist_1[0], max_nnei_1, &avg[0], &std[0], nloc, nall, ntypes, rc, rc_smth, sec_a);
       std::vector<double> energy_0(nloc), energy_1(nloc);
       std::vector<double> t_force(nall * 3), t_virial(nall * 9);
-      pair_tab(
+      pair_tab_cpu(
 	  &energy_0[0],
 	  &t_force[0],
 	  &t_virial[0],
@@ -267,7 +267,7 @@ TEST_F(TestPairTab, cpu_f_num_deriv)
 	  &natoms[0],
 	  sel_a,
 	  sel_r);  
-      pair_tab(
+      pair_tab_cpu(
 	  &energy_1[0],
 	  &t_force[0],
 	  &t_virial[0],
@@ -301,7 +301,7 @@ TEST_F(TestPairTab, cpu_f_num_deriv_scale)
   std::vector<double > virial(9, 0.);
   std::vector<double > atom_virial(nall * 9);
   std::vector<double > scale(nloc, new_scale);
-  pair_tab(
+  pair_tab_cpu(
       &energy[0],
       &force[0],
       &atom_virial[0],
@@ -358,7 +358,7 @@ TEST_F(TestPairTab, cpu_f_num_deriv_scale)
       prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_1[0], &nlist_1[0], &posi_cpy_1[0], &atype_cpy_1[0], &ilist_1[0], &jrange_1[0], &jlist_1[0], max_nnei_1, &avg[0], &std[0], nloc, nall, ntypes, rc, rc_smth, sec_a);
       std::vector<double> energy_0(nloc), energy_1(nloc);
       std::vector<double> t_force(nall * 3), t_virial(nall * 9);
-      pair_tab(
+      pair_tab_cpu(
 	  &energy_0[0],
 	  &t_force[0],
 	  &t_virial[0],
@@ -371,7 +371,7 @@ TEST_F(TestPairTab, cpu_f_num_deriv_scale)
 	  &natoms[0],
 	  sel_a,
 	  sel_r);  
-      pair_tab(
+      pair_tab_cpu(
 	  &energy_1[0],
 	  &t_force[0],
 	  &t_virial[0],
@@ -403,7 +403,7 @@ TEST_F(TestPairTab, cpu_v_num_deriv)
   std::vector<double > virial(9, 0.);
   std::vector<double > atom_virial(nall * 9);
   std::vector<double > scale(nloc, 1.0);
-  pair_tab(
+  pair_tab_cpu(
       &energy[0],
       &force[0],
       &atom_virial[0],
@@ -475,7 +475,7 @@ TEST_F(TestPairTab, cpu_v_num_deriv)
       prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_1[0], &nlist_1[0], &posi_cpy_1[0], &atype_cpy_1[0], &ilist_1[0], &jrange_1[0], &jlist_1[0], max_nnei_1, &avg[0], &std[0], nloc, nall, ntypes, rc, rc_smth, sec_a);
       std::vector<double> energy_0(nloc), energy_1(nloc);
       std::vector<double> t_force(nall * 3), t_virial(nall * 9);
-      pair_tab(
+      pair_tab_cpu(
 	  &energy_0[0],
 	  &t_force[0],
 	  &t_virial[0],
@@ -488,7 +488,7 @@ TEST_F(TestPairTab, cpu_v_num_deriv)
 	  &natoms[0],
 	  sel_a,
 	  sel_r);  
-      pair_tab(
+      pair_tab_cpu(
 	  &energy_1[0],
 	  &t_force[0],
 	  &t_virial[0],
@@ -531,7 +531,7 @@ TEST_F(TestPairTab, cpu_v_num_deriv_scale)
   std::vector<double > virial(9, 0.);
   std::vector<double > atom_virial(nall * 9);
   std::vector<double > scale(nloc, new_scale);
-  pair_tab(
+  pair_tab_cpu(
       &energy[0],
       &force[0],
       &atom_virial[0],
@@ -603,7 +603,7 @@ TEST_F(TestPairTab, cpu_v_num_deriv_scale)
       prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_1[0], &nlist_1[0], &posi_cpy_1[0], &atype_cpy_1[0], &ilist_1[0], &jrange_1[0], &jlist_1[0], max_nnei_1, &avg[0], &std[0], nloc, nall, ntypes, rc, rc_smth, sec_a);
       std::vector<double> energy_0(nloc), energy_1(nloc);
       std::vector<double> t_force(nall * 3), t_virial(nall * 9);
-      pair_tab(
+      pair_tab_cpu(
 	  &energy_0[0],
 	  &t_force[0],
 	  &t_virial[0],
@@ -616,7 +616,7 @@ TEST_F(TestPairTab, cpu_v_num_deriv_scale)
 	  &natoms[0],
 	  sel_a,
 	  sel_r);  
-      pair_tab(
+      pair_tab_cpu(
 	  &energy_1[0],
 	  &t_force[0],
 	  &t_virial[0],
@@ -659,7 +659,7 @@ TEST_F(TestPairTabTriBox, cpu_v_num_deriv)
   std::vector<double > virial(9, 0.);
   std::vector<double > atom_virial(nall * 9);
   std::vector<double > scale(nloc, 1.0);
-  pair_tab(
+  pair_tab_cpu(
       &energy[0],
       &force[0],
       &atom_virial[0],
@@ -731,7 +731,7 @@ TEST_F(TestPairTabTriBox, cpu_v_num_deriv)
       prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_1[0], &nlist_1[0], &posi_cpy_1[0], &atype_cpy_1[0], &ilist_1[0], &jrange_1[0], &jlist_1[0], max_nnei_1, &avg[0], &std[0], nloc, nall, ntypes, rc, rc_smth, sec_a);
       std::vector<double> energy_0(nloc), energy_1(nloc);
       std::vector<double> t_force(nall * 3), t_virial(nall * 9);
-      pair_tab(
+      pair_tab_cpu(
 	  &energy_0[0],
 	  &t_force[0],
 	  &t_virial[0],
@@ -744,7 +744,7 @@ TEST_F(TestPairTabTriBox, cpu_v_num_deriv)
 	  &natoms[0],
 	  sel_a,
 	  sel_r);  
-      pair_tab(
+      pair_tab_cpu(
 	  &energy_1[0],
 	  &t_force[0],
 	  &t_virial[0],
