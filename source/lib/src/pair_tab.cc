@@ -52,17 +52,62 @@ void _pair_tab_jloop(
     FPTYPE * energy,
     FPTYPE * force,
     FPTYPE * virial,
-    const double * table_info,
-    const double * table_data,
+    int & jiter,
+    const int & i_idx,
+    const int & nnei,
+    const int & i_type_shift,
+    const double * p_table_info,
+    const double * p_table_data,
+    const int & tab_stride,
     const FPTYPE * rij,
     const FPTYPE * scale,
     const int * type,
     const int * nlist,
     const int * natoms,
-    const std::vector<int> & sel_a,
-    const std::vector<int> & sel_r
+    const std::vector<int> & sel
     )
 {
+  const FPTYPE i_scale = scale[i_idx];
+  for (int ss = 0; ss < sel.size(); ++ss){
+    int j_type = ss;
+    const double * cur_table_data = 
+	p_table_data + (i_type_shift + j_type) * tab_stride;
+    for (int jj = 0; jj < sel[ss]; ++jj){
+      int j_idx = nlist[i_idx * nnei + jiter];
+      if (j_idx < 0){
+	jiter++;
+	continue;
+      }
+      assert(j_type == type[j_idx]);
+      double dr[3];
+      for (int dd = 0; dd < 3; ++dd){
+	dr[dd] = rij[(i_idx * nnei + jiter) * 3 + dd];
+      }
+      double r2 = dr[0] * dr[0] + dr[1] * dr[1] + dr[2] * dr[2];
+      double ri = 1./sqrt(r2);
+      double ener, fscale;
+      _pair_tabulated_inter(
+	  ener,
+	  fscale, 
+	  p_table_info, 
+	  cur_table_data, 
+	  dr);
+      energy[i_idx] += 0.5 * ener;
+      for (int dd = 0; dd < 3; ++dd) {
+	force[i_idx * 3 + dd] -= fscale * dr[dd] * ri * 0.5 * i_scale;
+	force[j_idx * 3 + dd] += fscale * dr[dd] * ri * 0.5 * i_scale;
+      }
+      for (int dd0 = 0; dd0 < 3; ++dd0) {
+	for (int dd1 = 0; dd1 < 3; ++dd1) {
+	  virial[i_idx * 9 + dd0 * 3 + dd1]
+	      += 0.5 * fscale * dr[dd0] * dr[dd1] * ri * 0.5 * i_scale;
+	  virial[j_idx * 9 + dd0 * 3 + dd1]
+	      += 0.5 * fscale * dr[dd0] * dr[dd1] * ri * 0.5 * i_scale;
+	}
+      }
+      jiter++;
+    }
+  }
 }
 
 inline void
@@ -122,101 +167,43 @@ void pair_tab(
   for (int tt = 0; tt < ntypes; ++tt) {
     for (int ii = 0; ii < natoms[2+tt]; ++ii){
       int i_type = type[i_idx];
-      FPTYPE i_scale = scale[i_idx];
       assert(i_type == tt) ;
+      const int i_type_shift = i_type * ntypes;
       int jiter = 0;
       // a neighbor
-      for (int ss = 0; ss < sel_a.size(); ++ss){
-	int j_type = ss;
-	const double * cur_table_data = 
-	    p_table_data + (i_type * ntypes + j_type) * tab_stride;
-	for (int jj = 0; jj < sel_a[ss]; ++jj){
-	  int j_idx = nlist[i_idx * nnei + jiter];
-	  if (j_idx < 0){
-	    jiter++;
-	    continue;
-	  }
-	  assert(j_type == type[j_idx]);
-	  double dr[3];
-	  for (int dd = 0; dd < 3; ++dd){
-	    dr[dd] = rij[(i_idx * nnei + jiter) * 3 + dd];
-	  }
-	  double r2 = dr[0] * dr[0] + dr[1] * dr[1] + dr[2] * dr[2];
-	  double ri = 1./sqrt(r2);
-	  double ener, fscale;
-	  _pair_tabulated_inter(
-	      ener,
-	      fscale, 
-	      p_table_info, 
-	      cur_table_data, 
-	      dr);
-	  // printf("tabforce  %d %d  r: %12.8f  ener: %12.8f %12.8f %8.5f  fj: %8.5f %8.5f %8.5f  dr: %9.6f %9.6f %9.6f\n", 
-	  // 	     i_idx, j_idx, 
-	  // 	     1/ri,
-	  // 	     ener, fscale, i_scale,
-	  // 	     -fscale * dr[00] * ri * 0.5 * i_scale,  -fscale * dr[01] * ri * 0.5 * i_scale,  -fscale * dr[02] * ri * 0.5 * i_scale,
-	  // 	     dr[0], dr[1], dr[2]
-	  // 	  );
-	  energy[i_idx] += 0.5 * ener;
-	  for (int dd = 0; dd < 3; ++dd) {
-	    force[i_idx * 3 + dd] -= fscale * dr[dd] * ri * 0.5 * i_scale;
-	    force[j_idx * 3 + dd] += fscale * dr[dd] * ri * 0.5 * i_scale;
-	  }
-	  for (int dd0 = 0; dd0 < 3; ++dd0) {
-	    for (int dd1 = 0; dd1 < 3; ++dd1) {
-	      virial[i_idx * 9 + dd0 * 3 + dd1]
-		  += 0.5 * fscale * dr[dd0] * dr[dd1] * ri * 0.5 * i_scale;
-	      virial[j_idx * 9 + dd0 * 3 + dd1]
-		  += 0.5 * fscale * dr[dd0] * dr[dd1] * ri * 0.5 * i_scale;
-	    }
-	  }
-	  jiter++;
-	}
-      }
+      _pair_tab_jloop(energy,
+		      force,
+		      virial,
+		      jiter,
+		      i_idx, 
+		      nnei,
+		      i_type_shift,
+		      p_table_info,
+		      p_table_data,
+		      tab_stride,
+		      rij,
+		      scale,
+		      type, 
+		      nlist,
+		      natoms,
+		      sel_a);
       // r neighbor
-      for (int ss = 0; ss < sel_r.size(); ++ss){
-	int j_type = ss;
-	const double * cur_table_data = 
-	    p_table_data + (i_type * ntypes + j_type) * tab_stride;
-	for (int jj = 0; jj < sel_r[ss]; ++jj){
-	  int j_idx = nlist[i_idx * nnei + jiter];
-	  if (j_idx < 0){
-	    jiter ++;
-	    continue;
-	  }
-	  assert(j_type == type[j_idx]);
-	  double dr[3];
-	  for (int dd = 0; dd < 3; ++dd){
-	    dr[dd] = rij[(i_idx * nnei + jiter) * 3 + dd];
-	  }
-	  double r2 = dr[0] * dr[0] + dr[1] * dr[1] + dr[2] * dr[2];
-	  double ri = 1./sqrt(r2);
-	  double ener, fscale;
-	  _pair_tabulated_inter(
-	      ener,
-	      fscale, 
-	      p_table_info, 
-	      cur_table_data, 
-	      dr);
-	  // printf("tabforce  %d %d  %8.5f  %12.8f %12.8f %8.5f  fj: %8.5f %8.5f %8.5f\n", 
-	  // 	     i_idx, j_idx, 
-	  // 	     1/ri, 
-	  // 	     ener, fscale, i_scale,
-	  // 	     -fscale * dr[00] * ri * 0.5 * i_scale,  -fscale * dr[01] * ri * 0.5 * i_scale,  -fscale * dr[02] * ri * 0.5 * i_scale);
-	  energy[i_idx] += 0.5 * ener;
-	  for (int dd = 0; dd < 3; ++dd) {
-	    force[i_idx * 3 + dd] -= fscale * dr[dd] * ri * 0.5 * i_scale;
-	    force[j_idx * 3 + dd] += fscale * dr[dd] * ri * 0.5 * i_scale;
-	  }
-	  for (int dd0 = 0; dd0 < 3; ++dd0) {
-	    for (int dd1 = 0; dd1 < 3; ++dd1) {
-	      virial[j_idx * 9 + dd0 * 3 + dd1] 
-		  += fscale * dr[dd0] * dr[dd1] * ri * 0.5 * i_scale;
-	    }
-	  }
-	  jiter++;
-	}
-      }
+      _pair_tab_jloop(energy,
+		      force,
+		      virial,
+		      jiter,
+		      i_idx, 
+		      nnei,
+		      i_type_shift,
+		      p_table_info,
+		      p_table_data,
+		      tab_stride,
+		      rij,
+		      scale,
+		      type, 
+		      nlist,
+		      natoms,
+		      sel_r);
       i_idx ++;
     }
   }
