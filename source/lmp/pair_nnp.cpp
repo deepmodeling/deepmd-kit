@@ -108,13 +108,13 @@ int PairNNP::get_node_rank() {
 std::string PairNNP::get_file_content(const std::string & model) {
   int myrank = 0, root = 0;
   MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
-  unsigned nchar = 0;
+  int nchar = 0;
   std::string file_content;
   if (myrank == root) {
     checkStatus (ReadFileToString(Env::Default(), model, &file_content));
     nchar = file_content.size();
   }
-  MPI_Bcast(&nchar, 1, MPI_UNSIGNED, root, MPI_COMM_WORLD);  
+  MPI_Bcast(&nchar, 1, MPI_INT, root, MPI_COMM_WORLD);  
   char * buff = (char *)malloc(sizeof(char) * nchar);  
   if (myrank == root) {  
     memcpy(buff, file_content.c_str(), sizeof(char) * nchar);
