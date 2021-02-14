@@ -64,6 +64,8 @@ class PairNNP : public Pair {
   void unpack_reverse_comm(int, int *, double *);
   void print_summary(const std::string pre) const;
   int get_node_rank();
+  std::string get_file_content(const std::string & model);
+  std::vector<std::string> get_file_content(const std::vector<std::string> & models);
  protected:  
   virtual void allocate();
   double **scale;
