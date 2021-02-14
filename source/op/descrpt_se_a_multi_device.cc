@@ -1,4 +1,5 @@
 #include "common.h"
+#include "prod_env_mat.h"
 #include "CustomeOperation.h"
 
 REGISTER_OP("DescrptSeA")
@@ -34,9 +35,38 @@ struct DeviceFunctor {
 
 template <typename FPTYPE>
 struct DescrptSeAFunctor {
-    void operator()(const CPUDevice& d, const FPTYPE * coord, const int * type, const int * mesh, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descrpt, FPTYPE * descrpt_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ntypes, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int max_nbor_size) {
-        DescrptSeACPULauncher(coord, type, ilist, jrange, jlist, avg, std, descrpt, descrpt_deriv, rij, nlist, nloc, nall, nnei, ntypes, ndescrpt, rcut_r, rcut_r_smth, sec_a, fill_nei_a, max_nbor_size);
-    }
+    void operator()(
+	const CPUDevice& d, 
+	const FPTYPE * coord, 
+	const int * type, 
+	const int * mesh, 
+	const int * ilist, 
+	const int * jrange, 
+	const int * jlist, 
+	int * array_int, 
+	unsigned long long * array_longlong, 
+	const FPTYPE * avg, 
+	const FPTYPE * std, 
+	FPTYPE * descrpt, 
+	FPTYPE * descrpt_deriv, 
+	FPTYPE * rij, 
+	int * nlist, 
+	const int nloc, 
+	const int nall, 
+	const int nnei, 
+	const int ntypes, 
+	const int ndescrpt, 
+	const float rcut_r, 
+	const float rcut_r_smth, 
+	const std::vector<int> sec_a, 
+	const bool fill_nei_a, 
+	const int max_nbor_size
+	)
+      {
+        prod_env_mat_a_cpu(
+	    descrpt, descrpt_deriv, rij, nlist, 
+	    coord, type, ilist, jrange, jlist, max_nbor_size, avg, std, nloc, nall, ntypes, rcut_r, rcut_r_smth, sec_a);
+      }
 
     #if GOOGLE_CUDA
     void operator()(const GPUDevice& d, const FPTYPE * coord, const int * type, const int * mesh, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descrpt, FPTYPE * descrpt_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ntypes, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int max_nbor_size) {

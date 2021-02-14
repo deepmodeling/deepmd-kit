@@ -4,7 +4,8 @@
 #include <iostream>
 
 #include "ComputeDescriptor.h"
-#include "NeighborList.h"
+#include "neighbor_list.h"
+#include "fmt_nlist.h"
 
 typedef double boxtensor_t ;
 typedef double compute_t;

@@ -3,7 +3,7 @@
 #include "tensorflow/core/framework/shape_inference.h"
 #include <iostream>
 
-#include "NeighborList.h"
+#include "neighbor_list.h"
 
 typedef double boxtensor_t ;
 typedef double compute_t;

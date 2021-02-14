@@ -1,4 +1,4 @@
-#include "NeighborList.h"
+#include "neighbor_list.h"
 #include <iostream>
 // #include <iomanip> 
 
