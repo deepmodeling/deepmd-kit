@@ -104,8 +104,6 @@ public:
         OP_REQUIRES (context, (9 == box_tensor.shape().dim_size(1)),		errors::InvalidArgument ("number of box should be 9"));
         OP_REQUIRES (context, (ndescrpt == avg_tensor.shape().dim_size(1)),		errors::InvalidArgument ("number of avg should be ndescrpt"));
         OP_REQUIRES (context, (ndescrpt == std_tensor.shape().dim_size(1)),		errors::InvalidArgument ("number of std should be ndescrpt")); 
-        
-        OP_REQUIRES (context, (nnei <= 4096),	                errors::InvalidArgument ("Assert failed, max neighbor size of atom(nnei) " + std::to_string(nnei) + " is larger than 4096, which currently is not supported by deepmd-kit."));
 
         // Create an output tensor
         TensorShape descrpt_shape ;
@@ -147,14 +145,14 @@ public:
             OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, int_shape, &int_temp));
             Tensor uint64_temp;
             TensorShape uint64_shape;
-            uint64_shape.AddDim(nloc * max_nbor_size * 2);
+            uint64_shape.AddDim(nloc * GPU_MAX_NBOR_SIZE * 2);
             OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape, &uint64_temp));
 
             array_int = int_temp.flat<int>().data(); 
             array_longlong = uint64_temp.flat<unsigned long long>().data();
 
             nbor_update(mesh_tensor.flat<int>().data(), static_cast<int>(mesh_tensor.NumElements()));
-            OP_REQUIRES (context, (max_nbor_size <= 4096),	                errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_nbor_size) + " is larger than 4096, which currently is not supported by deepmd-kit."));
+            OP_REQUIRES (context, (max_nbor_size <= GPU_MAX_NBOR_SIZE), errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_nbor_size) + " is larger than " + std::to_string(GPU_MAX_NBOR_SIZE) + ", which currently is not supported by deepmd-kit."));
         }
         else if (device == "CPU") {
             memcpy (&ilist,  4  + mesh_tensor.flat<int>().data(), sizeof(int *));

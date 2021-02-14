@@ -3,6 +3,8 @@
 #include "tensorflow/core/framework/shape_inference.h"
 #include <iostream>
 
+#include "soft_min_switch_virial.h"
+
 using namespace tensorflow;
 // using namespace std;
 
@@ -87,31 +89,16 @@ class SoftMinVirialOp : public OpKernel {
     // loop over samples
 #pragma omp parallel for
     for (int kk = 0; kk < nframes; ++kk){
-
-      for (int ii = 0; ii < 9; ++ ii){
-	virial (kk, ii) = 0.;
-      }
-      for (int ii = 0; ii < 9 * nall; ++ ii){
-	atom_virial (kk, ii) = 0.;
-      }
-
-      // compute virial of a frame
-      for (int ii = 0; ii < nloc; ++ii){
-	int i_idx = ii;
-	// loop over neighbors
-	for (int jj = 0; jj < nnei; ++jj){	  
-	  int j_idx = nlist (kk, i_idx * nnei + jj);
-	  if (j_idx < 0) continue;
-	  int rij_idx_shift = (ii * nnei + jj) * 3;
-	  for (int dd0 = 0; dd0 < 3; ++dd0){
-	    for (int dd1 = 0; dd1 < 3; ++dd1){
-	      FPTYPE tmp_v = du(kk, i_idx) * sw_deriv(kk, rij_idx_shift + dd0) * rij(kk, rij_idx_shift + dd1);
-	      virial(kk, dd0 * 3 + dd1) -= tmp_v;		  
-	      atom_virial(kk, j_idx * 9 + dd0 * 3 + dd1) -= tmp_v;
-	    }
-	  }
-	}
-      }      
+      soft_min_switch_virial_cpu(
+	  &virial(kk,0),
+	  &atom_virial(kk,0),
+	  &du(kk,0),
+	  &sw_deriv(kk,0),
+	  &rij(kk,0),
+	  &nlist(kk,0),
+	  nloc,
+	  nall,
+	  nnei);
     }
   }
 private:

@@ -62,7 +62,6 @@ class NeighborStat():
         max_nbor_size
                 A list with ntypes integers, denotes the actual achieved max sel
         """
-        print(type(data))
         self.min_nbor_dist = 100.0
         self.max_nbor_size = [0] * self.ntypes
 

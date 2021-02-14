@@ -2,12 +2,6 @@
 
 set (libname ${LIB_DEEPMD})
 
-configure_file(
-  ${CMAKE_CURRENT_SOURCE_DIR}/include/version.h.in
-  version.h
-  @ONLY
-)
-
 if (USE_CUDA_TOOLKIT)
   include_directories("${CUDA_INCLUDE_DIRS}")
 endif()
@@ -21,9 +15,14 @@ if (USE_CUDA_TOOLKIT)
   target_link_libraries (${libname} ${CUDA_LIBRARIES})
 endif()
 
-install(TARGETS ${libname} DESTINATION lib/)
+if(BUILD_PY_IF)
+  install(TARGETS ${libname} DESTINATION deepmd/)
+endif(BUILD_PY_IF)
+if(BUILD_CPP_IF)
+  install(TARGETS ${libname} DESTINATION lib/)
+  install(
+    FILES	${INC_SRC}
+    DESTINATION	include/deepmd
+    )
+endif(BUILD_CPP_IF)
 
-install(
-  FILES		${INC_SRC}
-  DESTINATION	include/deepmd
-)

@@ -8,8 +8,8 @@ class NNPInter
 public:
   NNPInter () ;
   ~NNPInter() ;
-  NNPInter  (const std::string & model, const int & gpu_rank = 0);
-  void init (const std::string & model, const int & gpu_rank = 0);
+  NNPInter  (const std::string & model, const int & gpu_rank = 0, const std::string & file_content = "");
+  void init (const std::string & model, const int & gpu_rank = 0, const std::string & file_content = "");
   void print_summary(const std::string &pre) const;
 public:
   void compute (ENERGYTYPE &			ener,
@@ -105,8 +105,8 @@ class NNPInterModelDevi
 public:
   NNPInterModelDevi () ;
   ~NNPInterModelDevi() ;
-  NNPInterModelDevi  (const std::vector<std::string> & models, const int & gpu_rank = 0);
-  void init (const std::vector<std::string> & models, const int & gpu_rank = 0);
+  NNPInterModelDevi  (const std::vector<std::string> & models, const int & gpu_rank = 0, const std::vector<std::string> & file_contents = std::vector<std::string>());
+  void init (const std::vector<std::string> & models, const int & gpu_rank = 0, const std::vector<std::string> & file_contents = std::vector<std::string>());
 public:
   void compute (ENERGYTYPE &			ener,
   		std::vector<VALUETYPE> &		force,
