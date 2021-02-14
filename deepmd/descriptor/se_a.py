@@ -1,18 +1,20 @@
+import math
 import numpy as np
 from typing import Tuple, List
 
 from deepmd.env import tf
-from deepmd.common import get_activation_func, get_precision, activation_fn_dict, precision_dict, docstring_parameter
+from deepmd.common import get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, get_np_precision
 from deepmd.utils.argcheck import list_to_doc
 from deepmd.RunOptions import global_tf_float_precision
 from deepmd.RunOptions import global_np_float_precision
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.utils.network import embedding_net
+from deepmd.utils.tabulate import DeepTabulate
 
 
 class DescrptSeA ():
-    @docstring_parameter(list_to_doc(activation_fn_dict.keys()), list_to_doc(precision_dict.keys()))
+    @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   rcut: float,
                   rcut_smth: float,
@@ -71,6 +73,7 @@ class DescrptSeA ():
         self.trainable = trainable
         self.filter_activation_fn = get_activation_func(activation_function)
         self.filter_precision = get_precision(precision)
+        self.filter_np_precision = get_np_precision(precision)
         self.exclude_types = set()
         for tt in exclude_types:
             assert(len(tt) == 2)
@@ -96,7 +99,7 @@ class DescrptSeA ():
         self.useBN = False
         self.dstd = None
         self.davg = None
-
+        self.compress = False
         self.place_holders = {}
         avg_zero = np.zeros([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
         std_ones = np.ones ([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
@@ -226,6 +229,41 @@ class DescrptSeA ():
             self.davg = np.array(all_davg)
         self.dstd = np.array(all_dstd)
 
+    def enable_compression(self,
+                           min_nbor_dist : float,
+                           model_file : str = 'frozon_model.pb',
+                           table_extrapolate : float = 5,
+                           table_stride_1 : float = 0.01,
+                           table_stride_2 : float = 0.1,
+                           check_frequency : int = -1
+    ) -> None:
+        """
+        Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        
+        Parameters
+        ----------
+        min_nbor_dist
+                The nearest distance between atoms
+        model_file
+                The original frozen model, which will be compressed by the program
+        table_extrapolate
+                The scale of model extrapolation
+        table_stride_1
+                The uniform stride of the first table
+        table_stride_2
+                The uniform stride of the second table
+        check_frequency
+                The overflow check frequency
+        """
+        self.compress = True
+        self.model_file = model_file
+        self.table_config = [table_extrapolate, table_stride_1, table_stride_2, check_frequency]
+        self.table = DeepTabulate(self.model_file, self.type_one_side)
+        self.lower, self.upper \
+            = self.table.build(min_nbor_dist, 
+                               table_extrapolate, 
+                               table_stride_1, 
+                               table_stride_2)
 
     def build (self, 
                coord_ : tf.Tensor, 
@@ -336,7 +374,6 @@ class DescrptSeA ():
         # only used when tensorboard was set as true
         tf.summary.histogram('embedding_net_output', self.dout)
         return self.dout
-
     
     def get_rot_mat(self) -> tf.Tensor:
         """
@@ -516,28 +553,38 @@ class DescrptSeA ():
             # with (natom x nei_type_i) x 1
             xyz_scatter = tf.reshape(tf.slice(inputs_reshape, [0,0],[-1,1]),[-1,1])
             # with (natom x nei_type_i) x out_size
-            if (type_input, type_i) not in self.exclude_types:
-                xyz_scatter = embedding_net(xyz_scatter, 
-                                            self.filter_neuron, 
-                                            self.filter_precision, 
-                                            activation_fn = activation_fn, 
-                                            resnet_dt = self.filter_resnet_dt,
-                                            name_suffix = "_"+str(type_i),
-                                            stddev = stddev,
-                                            bavg = bavg,
-                                            seed = seed,
-                                            trainable = trainable)
+            if self.compress and (type_input, type_i) not in self.exclude_types:
+              info = [self.lower, self.upper, self.upper * self.table_config[0], self.table_config[1], self.table_config[2], self.table_config[3]]
+              if self.type_one_side:
+                net = 'filter_-1_net_' + str(type_i)
+              else:
+                net = 'filter_' + str(type_input) + '_net_' + str(type_i)
+              if type_i == 0:
+                xyz_scatter_1  = op_module.tabulate_fusion(self.table.data[net].astype(self.filter_np_precision), info, xyz_scatter, tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])
+              else:
+                xyz_scatter_1 += op_module.tabulate_fusion(self.table.data[net].astype(self.filter_np_precision), info, xyz_scatter, tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])
             else:
-              w = tf.zeros((outputs_size[0], outputs_size[-1]), dtype=global_tf_float_precision)
-              xyz_scatter = tf.matmul(xyz_scatter, w)
-            # natom x nei_type_i x out_size
-            xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1]//4, outputs_size[-1]))
-
-            # xyz_scatter_total.append(xyz_scatter)
-            if type_i == 0 :
-                xyz_scatter_1 = tf.matmul(tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), xyz_scatter, transpose_a = True)
-            else :
-                xyz_scatter_1 += tf.matmul(tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), xyz_scatter, transpose_a = True)
+              if (type_input, type_i) not in self.exclude_types:
+                  xyz_scatter = embedding_net(xyz_scatter, 
+                                              self.filter_neuron, 
+                                              self.filter_precision, 
+                                              activation_fn = activation_fn, 
+                                              resnet_dt = self.filter_resnet_dt,
+                                              name_suffix = "_"+str(type_i),
+                                              stddev = stddev,
+                                              bavg = bavg,
+                                              seed = seed,
+                                              trainable = trainable)
+              else:
+                w = tf.zeros((outputs_size[0], outputs_size[-1]), dtype=global_tf_float_precision)
+                xyz_scatter = tf.matmul(xyz_scatter, w)
+              # natom x nei_type_i x out_size
+              xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1]//4, outputs_size[-1]))  
+              # xyz_scatter_total.append(xyz_scatter)
+              if type_i == 0 :
+                  xyz_scatter_1 = tf.matmul(tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), xyz_scatter, transpose_a = True)
+              else :
+                  xyz_scatter_1 += tf.matmul(tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), xyz_scatter, transpose_a = True)
           # natom x nei x outputs_size
           # xyz_scatter = tf.concat(xyz_scatter_total, axis=1)
           # natom x nei x 4
