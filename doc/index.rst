@@ -17,6 +17,7 @@ DeePMD-kit's documentation
    lammps-pair-style-deepmd
    tensorboard
    api
+   developement
 
 
 Indices and tables
