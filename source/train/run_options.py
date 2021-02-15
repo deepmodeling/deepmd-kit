@@ -7,10 +7,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 import numpy as np
-for p in Path(__file__).parent.glob("*"):
-    if p.is_dir():
-        print(p)
-print("----------------")
 from deepmd.cluster import get_resource
 from deepmd.env import get_tf_default_nthreads, tf
 from deepmd.loggers import set_log_handles
