@@ -19,6 +19,8 @@ try:
 except ImportError:
     import tensorflow as tf
 
+SHARED_LIB_MODULE = "op"
+
 
 def set_env_if_empty(key: str, value: str, verbose: bool = True):
     """Set environment variable only if it is empty.
@@ -123,7 +125,9 @@ def get_module(module_name: str) -> "ModuleType":
         ext = ".so"
 
     module_file = (
-        (Path(__file__).parent / "op" / module_name).with_suffix(ext).resolve()
+        (Path(__file__).parent / SHARED_LIB_MODULE / module_name)
+        .with_suffix(ext)
+        .resolve()
     )
 
     if not module_file.is_file():
