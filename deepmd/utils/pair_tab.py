@@ -5,7 +5,7 @@ from typing import Tuple, List
 
 from scipy.interpolate import CubicSpline
 
-class TabInter (object):
+class PairTab (object):
     def __init__(self,
                  filename : str
     ) -> None:

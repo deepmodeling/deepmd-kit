@@ -1,0 +1,4 @@
+*.cmake
+Makefile
+libdeepmd.a
+runUnitTests

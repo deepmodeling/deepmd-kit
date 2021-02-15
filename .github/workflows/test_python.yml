@@ -70,4 +70,4 @@ jobs:
         CC: gcc-${{ matrix.gcc }}
         CXX: g++-${{ matrix.gcc }}
         TENSORFLOW_VERSION: ${{ matrix.tf }}
-    - run: cd source/tests && python -m unittest
+    - run: cd source/tests && python -m unittest -v -f
