@@ -3,13 +3,13 @@ import numpy as np
 import unittest
 from deepmd.env import tf
 
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
+from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.run_options import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.run_options import GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.infer.ewald_recp import op_module
 from deepmd.infer.ewald_recp import EwaldRecp
 
-if global_np_float_precision == np.float32 :
+if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
     global_default_fv_hh = 1e-2
     global_default_dw_hh = 1e-2
     global_default_places = 3
@@ -54,9 +54,9 @@ class TestEwaldRecp (unittest.TestCase) :
         self.dcoord = np.array(self.dcoord).reshape([self.nframes, 3*self.natoms])
         self.dcharge = np.array(self.dcharge).reshape([self.nframes, self.natoms])
         # place holders
-        self.coord      = tf.placeholder(global_tf_float_precision, [None], name='t_coord')
-        self.charge     = tf.placeholder(global_tf_float_precision, [None], name='t_charge')
-        self.box        = tf.placeholder(global_tf_float_precision, [None], name='t_box')
+        self.coord      = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='t_coord')
+        self.charge     = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='t_charge')
+        self.box        = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='t_box')
         self.nloc    = tf.placeholder(tf.int32, [1], name = "t_nloc")        
 
     def test_py_interface(self):

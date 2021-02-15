@@ -83,6 +83,8 @@ setup(
         "deepmd/infer",
         "deepmd/loss",
         "deepmd/utils",
+        "deepmd/loggers",
+        "deepmd/cluster"
     ],
     python_requires=">=3.6",
     classifiers=[

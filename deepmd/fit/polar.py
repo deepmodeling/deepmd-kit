@@ -9,8 +9,8 @@ from deepmd.utils.network import one_layer
 from deepmd.descriptor import DescrptLocFrame
 from deepmd.descriptor import DescrptSeA
 
-from deepmd.RunOptions import global_cvt_2_tf_float
-from deepmd.RunOptions import global_tf_float_precision
+from deepmd.run_options import global_cvt_2_tf_float
+from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
 
 
 class PolarFittingLocFrame () :
@@ -95,7 +95,7 @@ class PolarFittingLocFrame () :
             count += 1
 
         tf.summary.histogram('fitting_net_output', outs)
-        return tf.cast(tf.reshape(outs, [-1]),  global_tf_float_precision)
+        return tf.cast(tf.reshape(outs, [-1]),  GLOBAL_TF_FLOAT_PRECISION)
 
 
 class PolarFittingSeA () :
@@ -308,7 +308,7 @@ class PolarFittingSeA () :
             # shift and scale
             sel_type_idx = self.sel_type.index(type_i)
             final_layer = final_layer * self.scale[sel_type_idx]
-            final_layer = final_layer + self.diag_shift[sel_type_idx] * tf.eye(3, batch_shape=[tf.shape(inputs)[0], natoms[2+type_i]], dtype = global_tf_float_precision)
+            final_layer = final_layer + self.diag_shift[sel_type_idx] * tf.eye(3, batch_shape=[tf.shape(inputs)[0], natoms[2+type_i]], dtype = GLOBAL_TF_FLOAT_PRECISION)
 
             # concat the results
             if count == 0:
@@ -318,7 +318,7 @@ class PolarFittingSeA () :
             count += 1
         
         tf.summary.histogram('fitting_net_output', outs)
-        return tf.cast(tf.reshape(outs, [-1]), global_tf_float_precision)
+        return tf.cast(tf.reshape(outs, [-1]), GLOBAL_TF_FLOAT_PRECISION)
 
 
 class GlobalPolarFittingSeA () :

@@ -8,10 +8,10 @@ from common import Data
 lib_path = os.path.dirname(os.path.realpath(__file__)) + ".."
 sys.path.append (lib_path)
 
-from deepmd.RunOptions import RunOptions
+from deepmd.run_options import RunOptions
 from deepmd.DataSystem import DataSystem
-from deepmd.Model import NNPModel
-from deepmd.Model import LearingRate
+from deepmd.model import NNPModel
+from deepmd.model import LearingRate
 from deepmd.common import j_must_have, j_loader
 
 def gen_data() :

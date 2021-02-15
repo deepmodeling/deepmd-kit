@@ -4,9 +4,9 @@ import unittest
 
 from deepmd.env import tf
 from tensorflow.python.framework import ops
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
+from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.run_options import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.run_options import GLOBAL_ENER_FLOAT_PRECISION
 
 from deepmd.env import op_module
 from deepmd.descriptor import DescrptSeA
@@ -30,14 +30,14 @@ class TestEfRot(unittest.TestCase):
         self.ndescrpt = self.ndescrpt_a + self.ndescrpt_r
         davg = np.zeros ([self.ntypes, self.ndescrpt])
         dstd = np.ones  ([self.ntypes, self.ndescrpt])
-        self.t_avg = tf.constant(davg.astype(global_np_float_precision))
-        self.t_std = tf.constant(dstd.astype(global_np_float_precision))
+        self.t_avg = tf.constant(davg.astype(GLOBAL_NP_FLOAT_PRECISION))
+        self.t_std = tf.constant(dstd.astype(GLOBAL_NP_FLOAT_PRECISION))
         # no pbc
         self.default_mesh = np.array([], dtype = np.int32)
         # make place holder
-        self.coord      = tf.placeholder(global_tf_float_precision, [None, self.natoms[0] * 3], name='t_coord')
-        self.efield     = tf.placeholder(global_tf_float_precision, [None, self.natoms[0] * 3], name='t_efield')
-        self.box        = tf.placeholder(global_tf_float_precision, [None, 9], name='t_box')
+        self.coord      = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, self.natoms[0] * 3], name='t_coord')
+        self.efield     = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, self.natoms[0] * 3], name='t_efield')
+        self.box        = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, 9], name='t_box')
         self.type       = tf.placeholder(tf.int32,   [None, self.natoms[0]], name = "t_type")
         self.tnatoms    = tf.placeholder(tf.int32,   [None], name = "t_natoms")
 

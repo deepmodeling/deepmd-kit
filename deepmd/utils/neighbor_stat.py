@@ -5,7 +5,7 @@ from deepmd.env import tf
 from typing import Tuple, List
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
-from deepmd.RunOptions import global_np_float_precision
+from deepmd.run_options import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.utils.data_system import DeepmdDataSystem
 
 class NeighborStat():

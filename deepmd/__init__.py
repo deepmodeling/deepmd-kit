@@ -4,6 +4,7 @@ from . import descriptor
 from . import fit
 from . import loss
 from . import utils
+from . import cluster
 import deepmd.utils.network as network
 from .infer.deep_eval import DeepEval
 from .infer.deep_pot import DeepPot
@@ -26,6 +27,7 @@ __all__ = [
     "fit",
     "loss",
     "utils",
+    "cluster",
     "network",
     "DeepEval",
     "DeepPot",
