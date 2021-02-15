@@ -26,16 +26,7 @@ from tensorflow.python.client import timeline
 from deepmd.env import op_module
 
 # load grad of force module
-import deepmd._prod_force_grad
-import deepmd._prod_virial_grad
-import deepmd._prod_force_se_a_grad
-import deepmd._prod_virial_se_a_grad
-import deepmd._prod_force_se_r_grad
-import deepmd._prod_virial_se_r_grad
-import deepmd._soft_min_force_grad
-import deepmd._soft_min_virial_grad
-import deepmd._tabulate_grad
-import deepmd._gelu
+import deepmd.op
 
 from deepmd.common import j_must_have, ClassArg
 

@@ -122,7 +122,9 @@ def get_module(module_name: str) -> "ModuleType":
     else:
         ext = ".so"
 
-    module_file = (Path(__file__).parent / module_name).with_suffix(ext).resolve()
+    module_file = (
+        (Path(__file__).parent / "op" / module_name).with_suffix(ext).resolve()
+    )
 
     if not module_file.is_file():
         raise FileNotFoundError(f"module {module_name} does not exist")
