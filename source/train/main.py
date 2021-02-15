@@ -3,16 +3,9 @@
 import argparse
 from pathlib import Path
 
+from deepmd.entrypoints import (compress, config, doc_train_input, freeze,
+                                test, train, transform)
 from deepmd.loggers import set_log_handles
-
-from .config import config
-from .doc import doc_train_input
-from .freeze import freeze
-from .test import test
-from .train import train
-from .transform import transform
-from .compress import compress
-from .doc import doc_train_input
 
 
 def main():

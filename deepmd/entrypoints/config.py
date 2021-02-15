@@ -19,6 +19,8 @@ if TYPE_CHECKING:
 
         output: str
 
+__all__ = ["config"]
+
 
 DEFAULT_DATA: Dict[str, Any] = {
     "use_smooth": True,

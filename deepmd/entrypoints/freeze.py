@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""This script freezes TF trained graph so it can be used with LAMMPS ain i-PI.
+"""This script freezes TF trained graph so it can be used with LAMMPS and i-PI.
 
 References
 ----------
@@ -35,6 +35,8 @@ if TYPE_CHECKING:
         folder: str
         output: str
         nodes: str
+
+__all__ = ["freeze"]
 
 
 def _make_node_names(model_type: str, modifier_type: Optional[str] = None) -> List[str]:
