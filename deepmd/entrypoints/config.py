@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     try:
         from typing import Protocol  # python >=3.8
     except ImportError:
-        from typing_extensions import Protocol
+        from typing_extensions import Protocol  # type: ignore
 
     class ArgsProto(Protocol):
         """Prococol mimicking parser object."""
