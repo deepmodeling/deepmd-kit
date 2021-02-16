@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
-from deepmd import DeepPot
+from deepmd import DeepPotential
 from ase.calculators.calculator import Calculator, all_changes
 
 if TYPE_CHECKING:
