@@ -257,7 +257,7 @@ def main():
     # log handles for train will be set separatelly
     # when the use of MPI will be determined in `RunOptions`
     if args.command not in (None, "train"):
-        set_log_handles(args.log_level, Path(args.log_path))
+        set_log_handles(args.log_level, Path(args.log_path) if args.log_path else None)
 
     if args.command is None:
         parser.print_help()
