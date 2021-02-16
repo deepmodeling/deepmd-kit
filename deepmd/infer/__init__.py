@@ -1,12 +1,14 @@
 """Submodule containing all the implemented potentials."""
 
+from pathlib import Path
 from typing import Union
+
+from .data_modifier import DipoleChargeModifier
 from .deep_dipole import DeepDipole
 from .deep_eval import DeepEval
 from .deep_polar import DeepGlobalPolar, DeepPolar
 from .deep_pot import DeepPot
 from .deep_wfc import DeepWFC
-from .data_modifier import DipoleChargeModifier
 from .ewald_recp import EwaldRecp
 
 __all__ = [
@@ -23,7 +25,9 @@ __all__ = [
 
 
 def DeepPotential(
-    model_file: str, load_prefix: str = "load", default_tf_graph: bool = False
+    model_file: Union[str, Path],
+    load_prefix: str = "load",
+    default_tf_graph: bool = False,
 ) -> Union[DeepDipole, DeepGlobalPolar, DeepPolar, DeepPot, DeepWFC]:
     """Factory function that will inialize appropriate potential read from `model_file`.
 
@@ -47,7 +51,7 @@ def DeepPotential(
         if model file does not correspond to any implementd potential
     """
     model_type = DeepEval(
-        model_file, load_prefix=load_prefix, default_tf_graph=default_tf_graph
+        str(model_file), load_prefix=load_prefix, default_tf_graph=default_tf_graph
     ).model_type
 
     if model_type == "ener":
