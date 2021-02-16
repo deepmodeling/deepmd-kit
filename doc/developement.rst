@@ -69,6 +69,10 @@ Conventions`_ and `Typing Conventions`_ PEPs, clarified and extended as follows:
 * Use ``"double quotes"`` for string literals, and ``"""triple double
   quotes"""`` for docstring's. Single quotes are OK for
   something like 
+
+* Use f-strings ``s = f"{x:.2f}"`` instead of old style formating with ``"%f" % x``.
+  string format method ``"{x:.2f}".format()`` may be used sparsely where it is more
+  convenient than f-strings.
   
   .. code-block:: python
     
