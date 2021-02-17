@@ -16,14 +16,14 @@ def convertMatrix(matrix, shape):
     return tmp.reshape(shape)
 
 
-def transform(args):
-    raw_graph = load_graph(args.raw_model)
-    old_graph = load_graph(args.old_model)
+def transform(*, old_model: str, raw_model: str, output: str, **kwargs):
+    raw_graph = load_graph(raw_model)
+    old_graph = load_graph(old_model)
     print("%d ops in the raw graph\n%d ops in the old graph" %(len(raw_graph.as_graph_def().node),len(old_graph.as_graph_def().node)))
     new_graph_def = transform_graph(raw_graph,old_graph)
-    with tf.gfile.GFile(args.output, mode='wb') as f:
+    with tf.gfile.GFile(output, mode='wb') as f:
         f.write(new_graph_def.SerializeToString())
-    print("the output model is saved in %s" % args.output)
+    print("the output model is saved in %s" % output)
 
 def load_graph(graphName):
     graph_def = tf.GraphDef()

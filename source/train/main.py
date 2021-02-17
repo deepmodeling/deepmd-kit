@@ -3,8 +3,15 @@
 import argparse
 from pathlib import Path
 
-from deepmd.entrypoints import (compress, config, doc_train_input, freeze,
-                                test, train, transform)
+from deepmd.entrypoints import (
+    compress,
+    config,
+    doc_train_input,
+    freeze,
+    test,
+    train,
+    transform,
+)
 from deepmd.loggers import set_log_handles
 
 
@@ -41,6 +48,18 @@ def main():
         default=None,
         help="set log file to log messages to disk, if not specified, the logs will "
         "only be output to console",
+    )
+    # * mpi logging parser *************************************************************
+    parser_mpi_log = argparse.ArgumentParser(add_help=False)
+    parser_mpi_log.add_argument(
+        "-m",
+        "--mpi-log",
+        type=str,
+        default="master",
+        choices=("master", "collect", "workers"),
+        help="Set the manner of logging when running with MPI. 'master' logs only on "
+        "main process, 'collect' broadcasts logs from workers to master and 'workers' "
+        "means each process will output its own log",
     )
 
     # * config script ******************************************************************
@@ -81,7 +100,7 @@ def main():
 
     # * config parser ******************************************************************
     parser_train = subparsers.add_parser(
-        "train", parents=[parser_log], help="train a model"
+        "train", parents=[parser_log, parser_mpi_log], help="train a model"
     )
     parser_train.add_argument(
         "INPUT", help="the input parameter file in json or yaml format"
@@ -107,16 +126,6 @@ def main():
         default="out.json",
         help="The output file of the parameters used in training.",
     )
-    parser_train.add_argument(
-        "-m",
-        "--mpi-log",
-        type=str,
-        default="master",
-        choices=("master", "collect", "workers"),
-        help="Set the manner of logging when running with MPI. 'master' logs only on "
-        "main process, 'collect' broadcasts logs from workers to master and 'workers' "
-        "means each process will output its own log",
-    )
 
     # * freeze script ******************************************************************
     parser_frz = subparsers.add_parser(
@@ -138,8 +147,9 @@ def main():
     )
     parser_frz.add_argument(
         "-n",
-        "--nodes",
+        "--node-names",
         type=str,
+        default=None,
         help="the frozen nodes, if not set, determined from the model type",
     )
 
@@ -167,15 +177,17 @@ def main():
     parser_tst.add_argument(
         "-n", "--numb-test", default=100, type=int, help="The number of data for test"
     )
-    parser_tst.add_argument("-r", "--rand-seed", type=int, help="The random seed")
     parser_tst.add_argument(
-        "--shuffle-test", action="store_true", help="Shuffle test data"
+        "-r", "--rand-seed", type=int, default=None, help="The random seed"
+    )
+    parser_tst.add_argument(
+        "--shuffle-test", action="store_true", default=False, help="Shuffle test data"
     )
     parser_tst.add_argument(
         "-d",
         "--detail-file",
         type=str,
-        help="The file containing details of energy force and virial accuracy",
+        help="File where details of energy force and virial accuracy will be written",
     )
     parser_tst.add_argument(
         "-a",
@@ -192,7 +204,9 @@ def main():
     #  The range of the first table is automatically detected by deepmd-kit, while the
     # second table ranges from the first table's upper boundary(upper) to the
     # extrapolate(parameter) * upper.
-    parser_compress = subparsers.add_parser("compress", help="compress a model")
+    parser_compress = subparsers.add_parser(
+        "compress", parents=[parser_log, parser_mpi_log], help="compress a model"
+    )
     parser_compress.add_argument(
         "INPUT",
         help="The input parameter file in json or yaml format, which should be "
@@ -259,21 +273,23 @@ def main():
     if args.command not in (None, "train"):
         set_log_handles(args.log_level, Path(args.log_path) if args.log_path else None)
 
+    dict_args = vars(args)
+
     if args.command is None:
         parser.print_help()
     elif args.command == "train":
-        train(args)
+        train(**dict_args)
     elif args.command == "freeze":
-        freeze(args)
+        freeze(**dict_args)
     elif args.command == "config":
-        config(args)
+        config(**dict_args)
     elif args.command == "test":
-        test(args)
+        test(**dict_args)
     elif args.command == "transform":
-        transform(args)
+        transform(**dict_args)
     elif args.command == "compress":
-        compress(args)
+        compress(**dict_args)
     elif args.command == "doc-train-input":
-        doc_train_input(args)
+        doc_train_input()
     else:
         raise RuntimeError(f"unknown command {args.command}")

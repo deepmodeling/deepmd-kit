@@ -33,7 +33,7 @@ def gen_data() :
 
 def compute_efv(jfile):
     jdata = j_loader(jfile)
-    run_opt = RunOptions(None) 
+    run_opt = RunOptions() 
     systems = j_must_have(jdata, 'systems')
     set_pfx = j_must_have(jdata, 'set_prefix')
     batch_size = j_must_have(jdata, 'batch_size')

@@ -28,14 +28,6 @@ else :
 
 modifier_datapath = 'data_modifier'
 
-class Args() :
-    # INPUT = os.path.join(modifier_datapath, 'dipole.json')
-    restart = None
-    init_model = None
-    inter_threads = 0
-    log_path = None
-    log_level = 0
-    mpi_log = "master"
 
 class TestDataModifier (unittest.TestCase) :
 
@@ -52,8 +44,15 @@ class TestDataModifier (unittest.TestCase) :
             os.remove(os.path.join(modifier_datapath, 'dipole.pb'))
 
     def _setUp(self):
-        args = Args()
-        run_opt = RunOptions(args, False)
+        run_opt = RunOptions(
+            restart=None,
+            init_model=None,
+            inter_threads=0,
+            log_path=None,
+            log_level=0,
+            mpi_log="master",
+            try_distrib=False
+        )
         jdata = self._setUp_jdata()
         self._setUp_data()
 

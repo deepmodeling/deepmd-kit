@@ -2,6 +2,7 @@
 
 import time
 import json
+from typing import Optional
 import numpy as np
 from deepmd.env import tf
 from deepmd.common import data_requirement, expand_sys_str, j_loader
@@ -50,9 +51,19 @@ def j_must_have (jdata, key) :
     else :
         return jdata[key]
 
-def train (args) :
+def train(
+    *,
+    INPUT: str,
+    init_model: Optional[str],
+    restart: Optional[str],
+    output: str,
+    mpi_log: str,
+    log_level: int,
+    log_path: Optional[str],
+    **kwargs
+):
     # load json database
-    jdata = j_loader(args.INPUT)
+    jdata = j_loader(INPUT)
 
     if not 'model' in jdata.keys():
        jdata = convert_input_v0_v1(jdata, 
@@ -60,14 +71,21 @@ def train (args) :
                                    dump = 'input_v1_compat.json')
     
     jdata = normalize(jdata)
-    with open(args.output, 'w') as fp:
+    with open(output, 'w') as fp:
         json.dump(jdata, fp, indent=4)
 
     # run options
     with_distrib = False 
     if 'with_distrib' in jdata:
         with_distrib = jdata['with_distrib']
-    run_opt = RunOptions(args, with_distrib)
+    run_opt = RunOptions(
+        init_model=init_model,
+        restart=restart,
+        log_path=log_path,
+        log_level=log_level,
+        mpi_log=mpi_log,
+        try_distrib=with_distrib
+    )
 
     for message in (WELCOME + CITATION + BUILD):
         log.info(message)

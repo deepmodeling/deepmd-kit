@@ -4,20 +4,9 @@
 import json
 import yaml
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, TYPE_CHECKING
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
-
-if TYPE_CHECKING:
-    try:
-        from typing import Protocol  # python >=3.8
-    except ImportError:
-        from typing_extensions import Protocol  # type: ignore
-
-    class ArgsProto(Protocol):
-        """Prococol mimicking parser object."""
-
-        output: str
 
 __all__ = ["config"]
 
@@ -81,9 +70,7 @@ def valid_dir(path: Path):
             raise OSError
 
 
-def load_systems(
-    dirs: List[Path],
-) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+def load_systems(dirs: List[Path]) -> Tuple[List[np.ndarray], List[np.ndarray]]:
     """Load systems to memory for disk.
 
     Parameters
@@ -321,13 +308,13 @@ def suggest_decay(stop_batch: int) -> Tuple[int, float]:
     return decay_steps, decay_rate
 
 
-def config(args: "ArgsProto"):
+def config(*, output: str, **kwargs):
     """Auto config file generator.
 
     Parameters
     ----------
-    args : ArgsProto
-        argparse:parser instance with output attribute
+    output: str
+        file to write config file
 
     Raises
     ------
@@ -358,10 +345,10 @@ def config(args: "ArgsProto"):
     jdata["decay_steps"] = decay_steps
     jdata["decay_rate"] = decay_rate
 
-    with open(args.output, "w") as fp:
-        if args.output.endswith("json"):
+    with open(output, "w") as fp:
+        if output.endswith("json"):
             json.dump(jdata, fp, indent=4)
-        elif args.output.endswith(("yml", "yaml")):
+        elif output.endswith(("yml", "yaml")):
             yaml.safe_dump(jdata, fp, default_flow_style=False)
         else:
             raise ValueError("output file must be of type json or yaml")

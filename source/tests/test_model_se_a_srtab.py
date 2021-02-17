@@ -3,7 +3,6 @@ import numpy as np
 from deepmd.env import tf
 from common import Data,gen_data
 
-from deepmd.run_options import RunOptions
 from deepmd.utils.data_system import DataSystem
 from deepmd.descriptor import DescrptSeA
 from deepmd.fit import EnerFitting
@@ -32,7 +31,6 @@ class TestModel(unittest.TestCase):
         jfile = 'water_se_a.json'
         jdata = j_loader(jfile)
 
-        run_opt = RunOptions(None) 
         systems = j_must_have(jdata, 'systems')
         set_pfx = j_must_have(jdata, 'set_prefix')
         batch_size = j_must_have(jdata, 'batch_size')
