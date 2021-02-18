@@ -25,6 +25,7 @@ else :
     global_default_places = 5
 
 modifier_datapath = 'data_modifier'
+INPUT = os.path.join(modifier_datapath, 'dipole.json')
 
 
 class TestDataModifier (unittest.TestCase) :
@@ -39,7 +40,6 @@ class TestDataModifier (unittest.TestCase) :
 
     def _setUp(self):
         run_opt = RunOptions(
-            INPUT=os.path.join(modifier_datapath, 'dipole.json'),
             restart=None,
             init_model=None,
             log_path=None,
@@ -47,7 +47,7 @@ class TestDataModifier (unittest.TestCase) :
             mpi_log="master",
             try_distrib=False
         )
-        jdata = j_loader(args.INPUT)
+        jdata = j_loader(INPUT)
 
         # init model
         model = NNPTrainer (jdata, run_opt = run_opt)

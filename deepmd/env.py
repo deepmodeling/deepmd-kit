@@ -1,4 +1,4 @@
-"""This module sets tensorflow working environment."""
+"""Module that sets tensorflow working environment and exports inportant constants."""
 
 import os
 from pathlib import Path

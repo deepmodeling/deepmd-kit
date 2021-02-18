@@ -14,6 +14,18 @@ from deepmd.loggers import set_log_handles
 if TYPE_CHECKING:
     from mpi4py import MPI
 
+    try:
+        from typing import Protocol  # python >=3.8
+    except ImportError:
+        from typing_extensions import Protocol  # type: ignore
+
+    class TFServerV1(Protocol):
+        """Prococol mimicking parser object."""
+
+        server_def: tf.train.ServerDef
+        target: str
+
+
 __all__ = [
     "GLOBAL_TF_FLOAT_PRECISION",
     "GLOBAL_NP_FLOAT_PRECISION",
@@ -249,7 +261,7 @@ class RunOptions:
     nodename: str
     num_ps: Optional[int]
     num_workers: Optional[int]
-    server: Optional[tf.train.Server]
+    server: Optional["TFServerV1"]
     my_device: str
 
     _MPI: Optional["MPI"]

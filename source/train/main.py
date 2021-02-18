@@ -10,9 +10,11 @@ from deepmd.entrypoints import (
     freeze,
     test,
     train,
-    transform,
+    transfer
 )
 from deepmd.loggers import set_log_handles
+
+__all__ = ["main"]
 
 
 def main():
@@ -72,25 +74,25 @@ def main():
         "-o", "--output", type=str, default="input.json", help="the output json file"
     )
 
-    # * transform script ***************************************************************
-    parser_transform = subparsers.add_parser(
-        "transform", parents=[parser_log], help="pass parameters to another model"
+    # * transfer script ****************************************************************
+    parser_transfer = subparsers.add_parser(
+        "transfer", parents=[parser_log], help="pass parameters to another model"
     )
-    parser_transform.add_argument(
+    parser_transfer.add_argument(
         "-r",
         "--raw-model",
         default="raw_frozen_model.pb",
         type=str,
         help="the model receiving parameters",
     )
-    parser_transform.add_argument(
+    parser_transfer.add_argument(
         "-O",
         "--old-model",
         default="old_frozen_model.pb",
         type=str,
         help="the model providing parameters",
     )
-    parser_transform.add_argument(
+    parser_transfer.add_argument(
         "-o",
         "--output",
         default="frozen_model.pb",
@@ -285,8 +287,8 @@ def main():
         config(**dict_args)
     elif args.command == "test":
         test(**dict_args)
-    elif args.command == "transform":
-        transform(**dict_args)
+    elif args.command == "transfer":
+        transfer(**dict_args)
     elif args.command == "compress":
         compress(**dict_args)
     elif args.command == "doc-train-input":

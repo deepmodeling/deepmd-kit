@@ -6,7 +6,7 @@ from .doc import doc_train_input
 from .freeze import freeze
 from .test import test
 from .train import train
-from .transform import transform
+from .transfer import transfer
 
 __all__ = [
     "config",
@@ -14,7 +14,7 @@ __all__ = [
     "freeze",
     "test",
     "train",
-    "transform",
+    "transfer",
     "compress",
     "doc_train_input",
 ]

@@ -10,7 +10,7 @@ from deepmd.utils.compat import convert_input_v0_v1
 
 from .freeze import freeze
 from .train import train
-from .transform import transform
+from .transfer import transfer
 
 __all__ = ["compress"]
 
@@ -110,4 +110,4 @@ def compress(
     # stage 3: transform the model
     log.info("\n\n")
     log.info("stage 3: transform the model")
-    transform(old_model=input, raw_model=output, output=output)
+    transfer(old_model=input, raw_model=output, output=output)

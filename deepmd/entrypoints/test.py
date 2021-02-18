@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from deepmd.infer import DeepDipole, DeepPolar, DeepPot, DeepWFC
     from deepmd.infer.deep_eval import DeepTensor
 
+__all__ = ["test"]
 
 log = logging.getLogger(__name__)
 

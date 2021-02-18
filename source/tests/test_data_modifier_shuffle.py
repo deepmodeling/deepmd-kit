@@ -47,7 +47,6 @@ class TestDataModifier (unittest.TestCase) :
         run_opt = RunOptions(
             restart=None,
             init_model=None,
-            inter_threads=0,
             log_path=None,
             log_level=0,
             mpi_log="master",
