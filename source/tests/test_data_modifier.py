@@ -56,7 +56,8 @@ class TestDataModifier (unittest.TestCase) :
 
         # init data system
         systems = j_must_have(jdata['training'], 'systems')
-        systems[0] = tests_path / systems[0]
+        #systems[0] = tests_path / systems[0]
+        systems = [tests_path / ii for ii in systems]
         set_pfx = j_must_have(jdata['training'], 'set_prefix')
         batch_size = j_must_have(jdata['training'], 'batch_size')
         test_size = j_must_have(jdata['training'], 'numb_test')    

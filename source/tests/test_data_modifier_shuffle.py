@@ -15,7 +15,7 @@ from deepmd.infer.ewald_recp import EwaldRecp
 from deepmd.infer.data_modifier import DipoleChargeModifier
 from deepmd.infer.deep_dipole import DeepDipole
 
-from common import Data
+from common import Data, tests_path
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
     global_default_fv_hh = 1e-2
@@ -63,6 +63,7 @@ class TestDataModifier (unittest.TestCase) :
 
         # init data system
         systems = j_must_have(jdata['training'], 'systems')
+        systems = [tests_path / ii for ii in systems]
         set_pfx = j_must_have(jdata['training'], 'set_prefix')
         batch_size = j_must_have(jdata['training'], 'batch_size')
         test_size = j_must_have(jdata['training'], 'numb_test')    

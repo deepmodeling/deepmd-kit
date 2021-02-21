@@ -17,6 +17,11 @@ else :
     global_default_dw_hh = 1e-4
     global_default_places = 5
 
+tests_path = pathlib.Path(__file__).parent.absolute()
+
+def j_loader(filename):
+    return dp_j_loader(tests_path/filename)
+
 def gen_data() :
     tmpdata = Data(rand_pert = 0.1, seed = 1)
     sys = dpdata.LabeledSystem()
@@ -350,7 +355,3 @@ def virial_dw_test (inter,
         ana_v = dw_0[ii]
         testCase.assertAlmostEqual(num_v, ana_v, places = places)
 
-tests_path = pathlib.Path(__file__).parent.absolute()
-
-def j_loader(filename):
-    return dp_j_loader(tests_path/filename)
