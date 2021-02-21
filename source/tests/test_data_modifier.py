@@ -85,7 +85,7 @@ class TestDataModifier (unittest.TestCase) :
                 input_graph_def,
                 nodes.split(",") 
             )
-            output_graph = tests_path / os.path.join(modifier_datapath, 'dipole.pb')
+            output_graph = str(tests_path / os.path.join(modifier_datapath, 'dipole.pb'))
             with tf.gfile.GFile(output_graph, "wb") as f:
                 f.write(output_graph_def.SerializeToString())
 
