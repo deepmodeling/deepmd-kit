@@ -70,4 +70,4 @@ jobs:
         CC: gcc-${{ matrix.gcc }}
         CXX: g++-${{ matrix.gcc }}
         TENSORFLOW_VERSION: ${{ matrix.tf }}
-    - run: cd source/tests && pytest --cov=../train --cov=../../deepmd && codecov
+    - run: pytest --cov=deepmd source/tests && codecov
