@@ -5,7 +5,7 @@ from .freeze import freeze
 from .config import config
 from .test import test
 from .transform import transform
-from .convert import convert
+from .convert_to_13 import convert_to_13
 
 def main () :    
     parser = argparse.ArgumentParser(
@@ -79,6 +79,6 @@ def main () :
     elif args.command == 'transform' :
         transform(args)
     elif args.command == 'convert-to-1.3' :
-        convert(args)
+        convert_to_13(args)
     else :
         raise RuntimeError('unknown command ' + args.command)

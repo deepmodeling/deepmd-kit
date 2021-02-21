@@ -4,7 +4,7 @@ from tensorflow.python.platform import gfile
 from tensorflow.python import pywrap_tensorflow
 from tensorflow.python.framework import graph_util
 
-def convert(args):
+def convert_to_13(args):
     convert_pb_to_pbtxt(args.input_model, 'frozen_model.pbtxt')
     convert_to_dp13('frozen_model.pbtxt')
     convert_pbtxt_to_pb('frozen_model.pbtxt', args.output_model)
