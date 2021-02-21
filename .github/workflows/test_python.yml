@@ -65,9 +65,10 @@ jobs:
     - run: |
         sudo apt update
         sudo apt install gcc-${{ matrix.gcc }} g++-${{ matrix.gcc }}
-    - run: pip install .[cpu,test]
+    - run: pip install .[cpu,test] codecov
       env:
         CC: gcc-${{ matrix.gcc }}
         CXX: g++-${{ matrix.gcc }}
         TENSORFLOW_VERSION: ${{ matrix.tf }}
     - run: cd source/tests && pytest
+    - run: codecov
