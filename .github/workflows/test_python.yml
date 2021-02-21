@@ -65,7 +65,7 @@ jobs:
     - run: |
         sudo apt update
         sudo apt install gcc-${{ matrix.gcc }} g++-${{ matrix.gcc }}
-    - run: pip install .[cpu,test] codecov
+    - run: pip install -e .[cpu,test] codecov
       env:
         CC: gcc-${{ matrix.gcc }}
         CXX: g++-${{ matrix.gcc }}
