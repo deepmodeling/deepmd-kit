@@ -94,7 +94,7 @@ class TestDataModifier (unittest.TestCase) :
         self._test_fv()
             
     def _test_fv (self):
-        dcm = DipoleChargeModifier(tests_path / os.path.join(modifier_datapath, "dipole.pb"),
+        dcm = DipoleChargeModifier(str(tests_path / os.path.join(modifier_datapath, "dipole.pb")),
                                    [-8],
                                    [6, 1],
                                    1,
