@@ -118,7 +118,7 @@ __global__ void format_nlist_fill_b_se_a(int * nlist,
                             const int * jrange,
                             const int * jlist,
                             int_64 * key,
-                            const int * sec_a,
+                            const int * sec,
                             const int sec_a_size,
                             int * nei_iter_dev,
                             const int MAX_NBOR_SIZE)
@@ -135,12 +135,12 @@ __global__ void format_nlist_fill_b_se_a(int * nlist,
     int_64 * key_out = key + nloc * MAX_NBOR_SIZE + idy * MAX_NBOR_SIZE;
 
     for (int ii = 0; ii < sec_a_size; ii++) {
-        nei_iter[ii] = sec_a[ii];
+        nei_iter[ii] = sec[ii];
     }
     
     for (unsigned int kk = 0; key_out[kk] != key_out[MAX_NBOR_SIZE - 1]; kk++) {
         const int & nei_type = key_out[kk] / 1E15;
-        if (nei_iter[nei_type] < sec_a[nei_type + 1]) {
+        if (nei_iter[nei_type] < sec[nei_type + 1]) {
             row_nlist[nei_iter[nei_type]++] = key_out[kk] % 100000;
         }
     }
@@ -248,7 +248,7 @@ void format_nbor_list_1024 (
     const int* jrange,
     const int* jlist,
     const int& nloc,       
-    const float& rcut_r, 
+    const float& rcut, 
     int * i_idx, 
     int_64 * key
 ) 
@@ -264,7 +264,7 @@ void format_nbor_list_1024 (
         type,
         jrange,
         jlist,
-        rcut_r,
+        rcut,
         key,
         i_idx,
         MAX_NBOR_SIZE
@@ -282,7 +282,7 @@ void format_nbor_list_2048 (
     const int* jrange,
     const int* jlist,
     const int& nloc,       
-    const float& rcut_r, 
+    const float& rcut, 
     int * i_idx, 
     int_64 * key
 ) 
@@ -298,7 +298,7 @@ void format_nbor_list_2048 (
         type,
         jrange,
         jlist,
-        rcut_r,
+        rcut,
         key,
         i_idx,
         MAX_NBOR_SIZE
@@ -316,7 +316,7 @@ void format_nbor_list_4096 (
     const int* jrange,
     const int* jlist,
     const int& nloc,       
-    const float& rcut_r, 
+    const float& rcut, 
     int * i_idx, 
     int_64 * key
 ) 
@@ -332,7 +332,7 @@ void format_nbor_list_4096 (
         type,
         jrange,
         jlist,
-        rcut_r,
+        rcut,
         key,
         i_idx,
         MAX_NBOR_SIZE
@@ -343,78 +343,96 @@ void format_nbor_list_4096 (
     BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (key, key + nloc * MAX_NBOR_SIZE);
 }
 
+
 template <typename FPTYPE>
-void DescrptSeAGPUExecuteFunctor<FPTYPE>::operator()(const FPTYPE * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descript, FPTYPE * descript_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int max_nbor_size) {
+void DescrptSeAFunctor<FPTYPE>::operator()(
+    FPTYPE * descript, 
+    FPTYPE * descript_deriv, 
+    FPTYPE * rij, 
+    int * nlist, 
+    const FPTYPE * coord, 
+    const int * type, 
+    const int * ilist, 
+    const int * jrange, 
+    const int * jlist, 
+    int * array_int, 
+    unsigned long long * array_longlong, 
+    const FPTYPE * avg, 
+    const FPTYPE * std, 
+    const int nloc, 
+    const int nall, 
+    const float rcut, 
+    const float rcut_smth, 
+    const std::vector<int> sec, 
+    const int max_nbor_size) 
+{
     const int LEN = 256;
+    const int nnei = sec.back();
+    const int ndescrpt = nnei * 4;
     int nblock = (nloc + LEN -1) / LEN;
     int * sec_a_dev = array_int;
-    int * nei_iter = array_int + sec_a.size(); // = new int[sec_a_size];
-    int * i_idx = array_int + sec_a.size() + nloc * sec_a.size();
+    int * nei_iter = array_int + sec.size(); // = new int[sec_a_size];
+    int * i_idx = array_int + sec.size() + nloc * sec.size();
     int_64 * key = array_longlong;
     
     cudaError_t res = cudaSuccess;
-    res = cudaMemcpy(sec_a_dev, &sec_a[0], sizeof(int) * sec_a.size(), cudaMemcpyHostToDevice); cudaErrcheck(res);    
+    res = cudaMemcpy(sec_a_dev, &sec[0], sizeof(int) * sec.size(), cudaMemcpyHostToDevice); cudaErrcheck(res);    
     res = cudaMemset(key, 0xffffffff, sizeof(int_64) * nloc * max_nbor_size); cudaErrcheck(res);
     res = cudaMemset(nlist, -1, sizeof(int) * nloc * nnei); cudaErrcheck(res);
     res = cudaMemset(descript, 0.0, sizeof(FPTYPE) * nloc * ndescrpt); cudaErrcheck(res);
     res = cudaMemset(descript_deriv, 0.0, sizeof(FPTYPE) * nloc * ndescrpt * 3); cudaErrcheck(res);
 
-    if (fill_nei_a) {
-        // ~~~
-        // cudaProfilerStart();
-        get_i_idx_se_a<<<nblock, LEN>>> (nloc, ilist, i_idx);
+    get_i_idx_se_a<<<nblock, LEN>>> (nloc, ilist, i_idx);
 
-        if (max_nbor_size <= 1024) {
-            format_nbor_list_1024 (
-                coord,
-                type,
-                jrange,
-                jlist,
-                nloc,       
-                rcut_r, 
-                i_idx, 
-                key
-            ); 
-        } else if (max_nbor_size <= 2048) {
-            format_nbor_list_2048 (
-                coord,
-                type,
-                jrange,
-                jlist,
-                nloc,       
-                rcut_r, 
-                i_idx, 
-                key
-            ); 
-        } else if (max_nbor_size <= 4096) {
-            format_nbor_list_4096 (
-                coord,
-                type,
-                jrange,
-                jlist,
-                nloc,       
-                rcut_r, 
-                i_idx, 
-                key
-            ); 
-        } 
-
-        format_nlist_fill_b_se_a<<<nblock, LEN>>> (
-                            nlist,
-                            nnei,       
-                            nloc,
-                            jrange,
-                            jlist,
-                            key,
-                            sec_a_dev,
-                            sec_a.size(),
-                            nei_iter,
-                            max_nbor_size
-        );
+    if (max_nbor_size <= 1024) {
+        format_nbor_list_1024 (
+            coord,
+            type,
+            jrange,
+            jlist,
+            nloc,       
+            rcut, 
+            i_idx, 
+            key
+        ); 
+    } else if (max_nbor_size <= 2048) {
+        format_nbor_list_2048 (
+            coord,
+            type,
+            jrange,
+            jlist,
+            nloc,       
+            rcut, 
+            i_idx, 
+            key
+        ); 
+    } else if (max_nbor_size <= 4096) {
+        format_nbor_list_4096 (
+            coord,
+            type,
+            jrange,
+            jlist,
+            nloc,       
+            rcut, 
+            i_idx, 
+            key
+        ); 
     }
+    format_nlist_fill_b_se_a<<<nblock, LEN>>> (
+                        nlist,
+                        nnei,       
+                        nloc,
+                        jrange,
+                        jlist,
+                        key,
+                        sec_a_dev,
+                        sec.size(),
+                        nei_iter,
+                        max_nbor_size
+    );
 
-    compute_descriptor_se_a<FPTYPE, TPB> <<<nloc, TPB>>> (descript, ndescrpt, descript_deriv, ndescrpt * 3, rij, nnei * 3, type, avg, std, nlist, nnei, coord, rcut_r_smth, rcut_r, sec_a.back());
+    compute_descriptor_se_a<FPTYPE, TPB> <<<nloc, TPB>>> (descript, ndescrpt, descript_deriv, ndescrpt * 3, rij, nnei * 3, type, avg, std, nlist, nnei, coord, rcut_smth, rcut, sec.back());
 }
 
-template struct DescrptSeAGPUExecuteFunctor<float>;
-template struct DescrptSeAGPUExecuteFunctor<double>;
+template struct DescrptSeAFunctor<float>;
+template struct DescrptSeAFunctor<double>;

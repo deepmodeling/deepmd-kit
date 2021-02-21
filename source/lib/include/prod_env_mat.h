@@ -1,5 +1,8 @@
 #pragma once
 #include <vector>
+#if GOOGLE_CUDA
+#include "DeviceFunctor.h"
+#endif
 
 template<typename FPTYPE>
 void prod_env_mat_a_cpu(
@@ -12,7 +15,6 @@ void prod_env_mat_a_cpu(
     const int * ilist, 
     const int * jrange, 
     const int * jlist,
-    const int max_nbor_size,
     const FPTYPE * avg, 
     const FPTYPE * std, 
     const int nloc, 
@@ -22,6 +24,7 @@ void prod_env_mat_a_cpu(
     const float rcut_smth, 
     const std::vector<int> sec);
 
+#if GOOGLE_CUDA
 template<typename FPTYPE> 
 void prod_env_mat_a_gpu_nv(    
     FPTYPE * em, 
@@ -33,6 +36,8 @@ void prod_env_mat_a_gpu_nv(
     const int * ilist, 
     const int * jrange, 
     const int * jlist,
+    int * array_int, 
+    unsigned long long * array_longlong,
     const int max_nbor_size,
     const FPTYPE * avg, 
     const FPTYPE * std, 
@@ -42,3 +47,4 @@ void prod_env_mat_a_gpu_nv(
     const float rcut, 
     const float rcut_smth, 
     const std::vector<int> sec);
+#endif

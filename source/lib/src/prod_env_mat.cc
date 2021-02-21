@@ -15,7 +15,6 @@ void prod_env_mat_a_cpu(
     const int * ilist, 
     const int * jrange, 
     const int * jlist,
-    const int max_nbor_size,
     const FPTYPE * avg, 
     const FPTYPE * std, 
     const int nloc, 
@@ -100,7 +99,6 @@ void prod_env_mat_a_cpu<double>(
     const int * ilist, 
     const int * jrange, 
     const int * jlist,
-    const int max_nbor_size,
     const double * avg, 
     const double * std, 
     const int nloc, 
@@ -121,6 +119,79 @@ void prod_env_mat_a_cpu<float>(
     const int * ilist, 
     const int * jrange, 
     const int * jlist,
+    const float * avg, 
+    const float * std, 
+    const int nloc, 
+    const int nall, 
+    const int ntypes, 
+    const float rcut, 
+    const float rcut_smth, 
+    const std::vector<int> sec);
+
+#if GOOGLE_CUDA
+template<typename FPTYPE> 
+void prod_env_mat_a_gpu_nv(    
+    FPTYPE * em, 
+    FPTYPE * em_deriv, 
+    FPTYPE * rij, 
+    int * nlist, 
+    const FPTYPE * coord, 
+    const int * type, 
+    const int * ilist, 
+    const int * jrange, 
+    const int * jlist,
+    int * array_int, 
+    unsigned long long * array_longlong,
+    const int max_nbor_size,
+    const FPTYPE * avg, 
+    const FPTYPE * std, 
+    const int nloc, 
+    const int nall, 
+    const int ntypes, 
+    const float rcut, 
+    const float rcut_smth, 
+    const std::vector<int> sec) {
+  DescrptSeAFunctor<FPTYPE>()(
+      em, em_deriv, rij, nlist,
+      coord, type, ilist, jrange, jlist, array_int, array_longlong, avg, std, nloc, nall, rcut, rcut_smth, sec, max_nbor_size);
+}
+
+template
+void prod_env_mat_a_gpu_nv<double>(    
+    double * em, 
+    double * em_deriv, 
+    double * rij, 
+    int * nlist, 
+    const double * coord, 
+    const int * type, 
+    const int * ilist, 
+    const int * jrange, 
+    const int * jlist,
+    int * array_int, 
+    unsigned long long * array_longlong,
+    const int max_nbor_size,
+    const double * avg, 
+    const double * std, 
+    const int nloc, 
+    const int nall, 
+    const int ntypes, 
+    const float rcut, 
+    const float rcut_smth, 
+    const std::vector<int> sec);
+
+template
+void prod_env_mat_a_gpu_nv<float>(   
+    float * em, 
+    float * em_deriv, 
+    float * rij, 
+    int * nlist, 
+    const float * coord, 
+    const int * type, 
+    const int * ilist, 
+    const int * jrange, 
+    const int * jlist,
+    int * array_int, 
+    unsigned long long * array_longlong,
     const int max_nbor_size,
     const float * avg, 
     const float * std, 
@@ -130,3 +201,4 @@ void prod_env_mat_a_cpu<float>(
     const float rcut, 
     const float rcut_smth, 
     const std::vector<int> sec);
+#endif

@@ -19,8 +19,8 @@ inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort=
 }
 
 template<typename FPTYPE>
-struct DescrptSeAGPUExecuteFunctor {
-    void operator()(const FPTYPE * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descript, FPTYPE * descript_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int MAGIC_NUMBER);
+struct DescrptSeAFunctor {
+    void operator()(FPTYPE * descript, FPTYPE * descript_deriv, FPTYPE * rij, int * nlist, const FPTYPE * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const FPTYPE * avg, const FPTYPE * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec, const int max_nbor_size);
 };
 
 template<typename FPTYPE>
