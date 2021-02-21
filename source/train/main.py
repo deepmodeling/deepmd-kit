@@ -5,6 +5,7 @@ from .freeze import freeze
 from .config import config
 from .test import test
 from .transform import transform
+from .convert_to_13 import convert_to_13
 
 def main () :    
     parser = argparse.ArgumentParser(
@@ -57,6 +58,11 @@ def main () :
     parser_tst.add_argument("-d", "--detail-file", type=str, 
                             help="The file containing details of energy force and virial accuracy")
 
+    parser_transform = subparsers.add_parser('convert-to-1.3', help='convert dp-1.2 model to dp-1.3 model')
+    parser_transform.add_argument('-i', "--input-model", default = "frozen_model.pb", type=str, 
+				  help = "the input dp-1.2 model")
+    parser_transform.add_argument("-o","--output-model", default = "frozen_model_1.3.pb", type=str, 
+				  help='the converted dp-1.3 model')
     args = parser.parse_args()
 
     if args.command is None :
@@ -72,5 +78,7 @@ def main () :
         test(args)
     elif args.command == 'transform' :
         transform(args)
+    elif args.command == 'convert-to-1.3' :
+        convert_to_13(args)
     else :
         raise RuntimeError('unknown command ' + args.command)
