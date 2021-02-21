@@ -1,10 +1,12 @@
 import os, sys, dpdata
 import numpy as np
+import pathlib
 
 from deepmd.env import tf
 from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.run_options import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.run_options import GLOBAL_ENER_FLOAT_PRECISION
+from deepmd.common import j_loader as dp_j_loader
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
     global_default_fv_hh = 1e-2
@@ -347,3 +349,8 @@ def virial_dw_test (inter,
         num_v = (ll_1 - ll_2) / (2. * hh)
         ana_v = dw_0[ii]
         testCase.assertAlmostEqual(num_v, ana_v, places = places)
+
+tests_path = pathlib.Path(__file__).parent.absolute()
+
+def j_loader(filename):
+    return dp_j_loader(tests_path/filename)

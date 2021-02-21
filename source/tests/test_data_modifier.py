@@ -3,7 +3,7 @@ import numpy as np
 import unittest
 from deepmd.env import tf
 
-from deepmd.common import j_must_have, data_requirement, j_loader
+from deepmd.common import j_must_have, data_requirement
 from deepmd.run_options import RunOptions
 from deepmd.trainer import NNPTrainer
 from deepmd.utils.data_system import DeepmdDataSystem
@@ -13,7 +13,7 @@ from deepmd.run_options import GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.infer.ewald_recp import EwaldRecp
 from deepmd.infer.data_modifier import DipoleChargeModifier
 
-from common import Data
+from common import Data, j_loader
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
     global_default_fv_hh = 1e-2
