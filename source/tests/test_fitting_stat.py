@@ -5,7 +5,7 @@ import unittest
 from collections import defaultdict
 from deepmd.descriptor import DescrptSeA
 from deepmd.fit import EnerFitting
-from deepmd.common import j_loader
+from common import j_loader
 
 input_json = 'water_se_a_afparam.json'
 
