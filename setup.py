@@ -84,7 +84,8 @@ setup(
         "deepmd/loss",
         "deepmd/utils",
         "deepmd/loggers",
-        "deepmd/cluster"
+        "deepmd/cluster",
+        "deepmd/op"
     ],
     python_requires=">=3.6",
     classifiers=[
