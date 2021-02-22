@@ -3,25 +3,7 @@
 #include <climits>
 #include <stdio.h>
 #include <iostream>
-#include <cuda_runtime.h>
-
-typedef unsigned long long int_64;
-#define SQRT_2_PI 0.7978845608028654 
-#define TPB 256
-#define GPU_MAX_NBOR_SIZE 4096
-
-#define cudaErrcheck(res) {cudaAssert((res), __FILE__, __LINE__);}
-inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort=true) {
-    if (code != cudaSuccess) {
-        fprintf(stderr,"cuda assert: %s %s %d\n", cudaGetErrorString(code), file, line);
-        if (abort) exit(code);
-    }
-}
-
-template<typename FPTYPE>
-struct DescrptSeAFunctor {
-    void operator()(FPTYPE * descript, FPTYPE * descript_deriv, FPTYPE * rij, int * nlist, const FPTYPE * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const FPTYPE * avg, const FPTYPE * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec, const int max_nbor_size);
-};
+#include "device_common.h"
 
 template<typename FPTYPE>
 struct DescrptSeRGPUExecuteFunctor {

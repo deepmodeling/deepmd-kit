@@ -2,6 +2,7 @@
 #include <cub/block/block_store.cuh>
 #include <cub/block/block_radix_sort.cuh>
 #include "DeviceFunctor.h"
+#include "gpu_nv.h"
 
 template <
     typename    Key,

@@ -18,17 +18,6 @@ REGISTER_OP("DescrptSeR")
     .Output("rij: T")
     .Output("nlist: int32");
 
-struct DeviceFunctor {
-    void operator()(const CPUDevice& d, std::string& device) {
-        device = "CPU";
-    }
-    #if GOOGLE_CUDA
-    void operator()(const GPUDevice& d, std::string& device) {
-        device = "GPU";
-    }
-    #endif // GOOGLE_CUDA
-};
-
 template <typename T>
 struct DescrptSeRFunctor {
     void operator()(const CPUDevice& d, const T * coord, const int * type, const int * mesh, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const T * avg, const T * std, T * descrpt, T * descrpt_deriv, T * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ntypes, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int max_nbor_size) {
@@ -82,8 +71,8 @@ public:
         OP_REQUIRES (context, (natoms_tensor.shape().dim_size(0) >= 3),		errors::InvalidArgument ("number of atoms should be larger than (or equal to) 3"));
 
         DeviceFunctor() (
-            context->eigen_device<Device>(),
-            device
+            device,
+            context->eigen_device<Device>()
         );
 
         const int * natoms = natoms_tensor.flat<int>().data();

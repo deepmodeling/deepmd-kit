@@ -243,3 +243,24 @@ select_map(std::vector<VT> & out,
   }
 }
 
+// functions used in custom ops
+struct DeviceFunctor {
+  void operator()(
+      std::string& device, 
+      const CPUDevice& d) 
+  {
+    device = "CPU";
+  }
+#if GOOGLE_CUDA
+  void operator()(
+      std::string& device, 
+      const GPUDevice& d) 
+  {
+    device = "GPU";
+  }
+#endif // GOOGLE_CUDA
+};
+
+void cum_sum(
+    std::vector<int> & sec, 
+    const std::vector<int32> & n_sel);

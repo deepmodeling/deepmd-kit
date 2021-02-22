@@ -1,4 +1,5 @@
 #include "DeviceFunctor.h"
+#include "gpu_nv.h"
 
 template <typename FPTYPE>
 __global__ void gelu(const FPTYPE * in, FPTYPE * out, int const size) {

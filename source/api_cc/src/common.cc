@@ -1,6 +1,7 @@
 #include "common.h"
 #include "NNPAtomMap.h"
 #include "SimulationRegion.h"
+#include "device_common.h"
 
 void 
 select_by_type(std::vector<int> & fwd_map,
@@ -723,4 +724,16 @@ session_input_tensors (
         input_tensors.push_back({"t_aparam", aparam_tensor});
     }
     return nloc;
+}
+
+// functions used in custom ops
+void cum_sum(
+    std::vector<int> & sec, 
+    const std::vector<int32> & n_sel) 
+{
+  sec.resize (n_sel.size() + 1);
+  sec[0] = 0;
+  for (int ii = 1; ii < sec.size(); ++ii) {
+    sec[ii] = sec[ii-1] + n_sel[ii-1];
+  }
 }

@@ -5,6 +5,7 @@
 #include <cub/cub.cuh>   // or equivalently <cub/device/device_radix_sort.cuh>
 #include <cub/device/device_radix_sort.cuh>
 #include "DeviceFunctor.h"
+#include "gpu_nv.h"
 
 #define MM 4
 #define KK 4
