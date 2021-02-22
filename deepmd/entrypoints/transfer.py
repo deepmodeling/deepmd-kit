@@ -121,15 +121,16 @@ def transform_graph(raw_graph: tf.Graph, old_graph: tf.Graph) -> tf.Graph:
             continue
 
         old_node = old_graph_node[node.name]
+        raw_node = raw_graph_node[node.name]
         cp_attr = CopyNodeAttr(node)
 
         check_dim(raw_graph_node, old_graph_node, node.name)
-        tensor_shape = [dim.size for dim in node.tensor_shape.dim]
+        tensor_shape = [dim.size for dim in raw_node.tensor_shape.dim]
         old_graph_dtype = PRECISION_MAPPING[old_node.dtype]
-        raw_graph_dtype = PRECISION_MAPPING[node.dtype]
+        raw_graph_dtype = PRECISION_MAPPING[raw_node.dtype]
         log.info(
-            f"{node.name:s} is passed from old graph({old_graph_dtype:s}) "
-            f"to raw graph({raw_graph_dtype:s})"
+            f"{node.name} is passed from old graph({old_graph_dtype}) "
+            f"to raw graph({raw_graph_dtype})"
         )
 
         if raw_graph_dtype == np.float16:
