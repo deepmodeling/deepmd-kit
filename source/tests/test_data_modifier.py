@@ -3,7 +3,7 @@ import numpy as np
 import unittest
 from deepmd.env import tf
 
-from deepmd.common import j_must_have, data_requirement, j_loader
+from deepmd.common import j_must_have, data_requirement
 from deepmd.run_options import RunOptions
 from deepmd.trainer import NNPTrainer
 from deepmd.utils.data_system import DeepmdDataSystem
@@ -13,7 +13,7 @@ from deepmd.run_options import GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.infer.ewald_recp import EwaldRecp
 from deepmd.infer.data_modifier import DipoleChargeModifier
 
-from common import Data
+from common import Data, j_loader, tests_path
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
     global_default_fv_hh = 1e-2
@@ -55,6 +55,8 @@ class TestDataModifier (unittest.TestCase) :
 
         # init data system
         systems = j_must_have(jdata['training'], 'systems')
+        #systems[0] = tests_path / systems[0]
+        systems = [tests_path / ii for ii in systems]
         set_pfx = j_must_have(jdata['training'], 'set_prefix')
         batch_size = j_must_have(jdata['training'], 'batch_size')
         test_size = j_must_have(jdata['training'], 'numb_test')    
@@ -83,7 +85,7 @@ class TestDataModifier (unittest.TestCase) :
                 input_graph_def,
                 nodes.split(",") 
             )
-            output_graph = os.path.join(modifier_datapath, 'dipole.pb')
+            output_graph = str(tests_path / os.path.join(modifier_datapath, 'dipole.pb'))
             with tf.gfile.GFile(output_graph, "wb") as f:
                 f.write(output_graph_def.SerializeToString())
 
@@ -92,7 +94,7 @@ class TestDataModifier (unittest.TestCase) :
         self._test_fv()
             
     def _test_fv (self):
-        dcm = DipoleChargeModifier(os.path.join(modifier_datapath, "dipole.pb"),
+        dcm = DipoleChargeModifier(str(tests_path / os.path.join(modifier_datapath, "dipole.pb")),
                                    [-8],
                                    [6, 1],
                                    1,

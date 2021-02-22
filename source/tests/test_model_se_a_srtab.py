@@ -1,13 +1,13 @@
 import dpdata,os,sys,unittest
 import numpy as np
 from deepmd.env import tf
-from common import Data,gen_data
+from common import Data,gen_data, j_loader
 
 from deepmd.utils.data_system import DataSystem
 from deepmd.descriptor import DescrptSeA
 from deepmd.fit import EnerFitting
 from deepmd.model import Model
-from deepmd.common import j_must_have, j_loader
+from deepmd.common import j_must_have
 
 GLOBAL_ENER_FLOAT_PRECISION = tf.float64
 GLOBAL_TF_FLOAT_PRECISION = tf.float64
