@@ -1,6 +1,8 @@
 from deepmd.env import tf
 import re
 import numpy as np
+import logging
+log = logging.getLogger(__name__)
 
 def convertNumber(number):
     binary = bin(number).replace("0b", "").zfill(16)
@@ -19,11 +21,11 @@ def convertMatrix(matrix, shape):
 def transform(args):
     raw_graph = load_graph(args.raw_model)
     old_graph = load_graph(args.old_model)
-    print("%d ops in the raw graph\n%d ops in the old graph" %(len(raw_graph.as_graph_def().node),len(old_graph.as_graph_def().node)))
+    log.debug("%d ops in the raw graph\n%d ops in the old graph" %(len(raw_graph.as_graph_def().node),len(old_graph.as_graph_def().node)))
     new_graph_def = transform_graph(raw_graph,old_graph)
     with tf.gfile.GFile(args.output, mode='wb') as f:
         f.write(new_graph_def.SerializeToString())
-    print("the output model is saved in %s" % args.output)
+    log.debug("the output model is saved in %s" % args.output)
 
 def load_graph(graphName):
     graph_def = tf.GraphDef()
@@ -54,7 +56,7 @@ def transform_graph(raw_graph,old_graph):
             tensor_shape = [dim.size for dim in raw_graph_node[node.name].tensor_shape.dim]
             old_graph_dtype = precision_dict[old_graph_node[node.name].dtype]
             raw_graph_dtype = precision_dict[raw_graph_node[node.name].dtype]
-            print("%s is passed from old graph(%s) to raw graph(%s)" % (node.name, old_graph_dtype[1],raw_graph_dtype[1]))
+            log.debug("%s is passed from old graph(%s) to raw graph(%s)" % (node.name, old_graph_dtype[1],raw_graph_dtype[1]))
             
             if raw_graph_dtype[1] == "float16":
                 if old_graph_dtype[1] == "float64" or old_graph_dtype[1] == "float32":
