@@ -1,35 +1,67 @@
+"""Test if `DeepPotential` facto function returns the right type of potential."""
+
 import unittest
 from pathlib import Path
-from shutil import rmtree
 
-from deepmd.infer import DeepPotential, DeepDipole, DeepGlobalPolar, DeepPolar, DeepPot, DeepWFC
-from deepmd.env import tf
+from deepmd.infer import (DeepDipole, DeepGlobalPolar, DeepPolar, DeepPot,
+                          DeepPotential, DeepWFC)
+
+from infer.convert2pb import convert_pbtxt_to_pb
 
 
 class TestGetPotential(unittest.TestCase):
 
     def setUp(self):
-        self.work_dir = Path(__file__).parent / "test_get_potential"
-        self.work_dir.mkdir(exist_ok=True)
-        # TODO create all types of graphs
-        ...
+        self.work_dir = Path(__file__).parent / "infer"
+
+        convert_pbtxt_to_pb(
+            str(self.work_dir / "deeppot.pbtxt"),
+            str(self.work_dir / "deep_pot.pb")
+        )
+
+        convert_pbtxt_to_pb(
+            str(self.work_dir / "deepdipole.pbtxt"),
+            str(self.work_dir / "deep_dipole.pb")
+        )
+
+        convert_pbtxt_to_pb(
+            str(self.work_dir / "deeppolar.pbtxt"),
+            str(self.work_dir / "deep_polar.pb")
+        )
+
+        # TODO add model files for globalpolar and WFC
+        # convert_pbtxt_to_pb(
+        #     str(self.work_dir / "deepglobalpolar.pbtxt"),
+        #     str(self.work_dir / "deep_globalpolar.pb")
+        # )
+
+        # convert_pbtxt_to_pb(
+        #     str(self.work_dir / "deepwfc.pbtxt"),
+        #     str(self.work_dir / "deep_wfc.pb")
+        # )
 
     def tearDown(self):
-        rmtree(self.work_dir)
+        for f in self.work_dir.glob("*.pb"):
+            f.unlink()
 
-    def test_merge_all_stat(self):
+    def test_factory(self):
 
-        dp = DeepPotential(self.work_dir / "deep_pot_model.pb")
-        self.assertIsInstance(dp, DeepPot, "Returned wrong type of potential")
+        msg = "Returned wrong type of potential. Expected: {}, got: {}"
 
-        dp = DeepPotential(self.work_dir / "deep_polar_model.pb")
-        self.assertIsInstance(dp, DeepPolar, "Returned wrong type of potential")
+        dp = DeepPotential(self.work_dir / "deep_dipole.pb")
+        self.assertIsInstance(dp, DeepDipole, msg.format(DeepDipole, type(dp)))
 
-        dp = DeepPotential(self.work_dir / "deep_global_polar_model.pb")
-        self.assertIsInstance(dp, DeepGlobalPolar, "Returned wrong type of potential")
+        dp = DeepPotential(self.work_dir / "deep_polar.pb")
+        self.assertIsInstance(dp, DeepPolar, msg.format(DeepPolar, type(dp)))
 
-        dp = DeepPotential(self.work_dir / "deep_wfc_model.pb")
-        self.assertIsInstance(dp, DeepWFC, "Returned wrong type of potential")
+        dp = DeepPotential(self.work_dir / "deep_pot.pb")
+        self.assertIsInstance(dp, DeepPot, msg.format(DeepPot, type(dp)))
 
-        dp = DeepPotential(self.work_dir / "deep_dipole_model.pb")
-        self.assertIsInstance(dp, DeepDipole, "Returned wrong type of potential")
+        # TODO add model files for globalpolar and WFC
+        # dp = DeepPotential(self.work_dir / "deep_globalpolar.pb")
+        # self.assertIsInstance(
+        #     dp, DeepGlobalPolar, msg.format(DeepGlobalPolar, type(dp))
+        # )
+
+        # dp = DeepPotential(self.work_dir / "deep_wfc.pb")
+        # self.assertIsInstance(dp, DeepWFC, msg.format(DeepWFC, type(dp)))

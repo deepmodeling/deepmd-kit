@@ -1,9 +1,13 @@
+import logging
+from typing import TYPE_CHECKING, List, Optional, Tuple
+
 import numpy as np
-from typing import List, Optional, Tuple
 from deepmd.common import make_default_mesh
 from deepmd.infer.data_modifier import DipoleChargeModifier
-from deepmd.infer.deep_eval import DeepTensor
-import logging
+from deepmd.infer.deep_eval import DeepEval, DeepTensor
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 log = logging.getLogger(__name__)
 
@@ -13,47 +17,62 @@ class DeepPot(DeepTensor):
 
     Parameters
     ----------
-    model_file : str
+    model_file : Path
         The name of the frozen model file.
     load_prefix: str
         The prefix in the load computational graph
     default_tf_graph : bool
         If uses the default tf graph, otherwise build a new tf graph for evaluation
+
+    Warnings
+    --------
+    For developers: `DeepTensor` initializer must be called at the end after
+    `self.tensors` are modified because it uses the data in `self.tensors` dict.
+    Do not chanage the order!
     """
 
     def __init__(
         self,
-        model_file: str,
+        model_file: "Path",
         load_prefix: str = "load",
         default_tf_graph: bool = False
     ) -> None:
 
-        # this tensor does not apply here so delete it
-        self.tensors.pop("t_sel_type")
-
         # add these tensors on top of what is defined by DeepTensor Class
-        self.tensors.update({
-            # general
-            "t_dfparam": "fitting_attr/dfparam:0",
-            "t_daparam": "fitting_attr/daparam:0",
-            # add output tensors
-            "t_energy": "o_energy:0",
-            "t_force": "o_force:0",
-            "t_virial": "o_virial:0",
-            "t_ae": "o_atom_energy:0",
-            "t_av": "o_atom_virial:0"
-        })
-
-        try:
-            self._get_tensor("t_efield:0", "t_efield")
-            self.has_efield = True
-        except KeyError:
-            log.debug(f"Could not get tensor 't_efield:0'")
-            self.t_efield = None
-            self.has_efield = False
+        # use this in favor of dict update to move attribute from class to
+        # instance namespace
+        self.tensors = dict(
+            {
+                # general
+                "t_dfparam": "fitting_attr/dfparam:0",
+                "t_daparam": "fitting_attr/daparam:0",
+                # add output tensors
+                "t_energy": "o_energy:0",
+                "t_force": "o_force:0",
+                "t_virial": "o_virial:0",
+                "t_ae": "o_atom_energy:0",
+                "t_av": "o_atom_virial:0"
+            },
+            **self.tensors
+        )
+        DeepEval.__init__(
+            self,
+            model_file,
+            load_prefix=load_prefix,
+            default_tf_graph=default_tf_graph
+        )
 
         # load optional tensors
         operations = [op.name for op in self.graph.get_operations()]
+        # check if the graph has these operations:
+        # if yes add them
+        if 't_efield' in operations:
+            self._get_tensor("t_efield:0", "t_efield")
+            self.has_efield = True
+        else:
+            log.debug(f"Could not get tensor 't_efield:0'")
+            self.t_efield = None
+            self.has_efield = False
 
         if 'load/t_fparam' in operations:
             self.tensors.update({"t_fparam": "t_fparam:0"})
@@ -63,7 +82,6 @@ class DeepPot(DeepTensor):
             self.t_fparam = None
             self.has_fparam = False
 
-        # check if the graph has aparam
         if 'load/t_aparam' in operations:
             self.tensors.update({"t_aparam": "t_aparam:0"})
             self.has_aparam = True

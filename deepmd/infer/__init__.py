@@ -50,26 +50,26 @@ def DeepPotential(
     RuntimeError
         if model file does not correspond to any implementd potential
     """
+    mf = Path(model_file)
+
     model_type = DeepEval(
-        str(model_file), load_prefix=load_prefix, default_tf_graph=default_tf_graph
+        mf, load_prefix=load_prefix, default_tf_graph=default_tf_graph
     ).model_type
 
+    print(mf, model_type)
+
     if model_type == "ener":
-        dp = DeepPot(model_file, prefix=load_prefix, default_tf_graph=default_tf_graph)
+        dp = DeepPot(mf, load_prefix=load_prefix, default_tf_graph=default_tf_graph)
     elif model_type == "dipole":
-        dp = DeepDipole(
-            model_file, prefix=load_prefix, default_tf_graph=default_tf_graph
-        )
+        dp = DeepDipole(mf, load_prefix=load_prefix, default_tf_graph=default_tf_graph)
     elif model_type == "polar":
-        dp = DeepPolar(
-            model_file, prefix=load_prefix, default_tf_graph=default_tf_graph
-        )
+        dp = DeepPolar(mf, load_prefix=load_prefix, default_tf_graph=default_tf_graph)
     elif model_type == "global_polar":
         dp = DeepGlobalPolar(
-            model_file, prefix=load_prefix, default_tf_graph=default_tf_graph
+            mf, load_prefix=load_prefix, default_tf_graph=default_tf_graph
         )
     elif model_type == "wfc":
-        dp = DeepWFC(model_file, prefix=load_prefix, default_tf_graph=default_tf_graph)
+        dp = DeepWFC(mf, load_prefix=load_prefix, default_tf_graph=default_tf_graph)
     else:
         raise RuntimeError(f"unknow model type {model_type}")
 

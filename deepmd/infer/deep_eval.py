@@ -1,26 +1,37 @@
 import os
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 
 import numpy as np
 from deepmd.common import make_default_mesh
 from deepmd.env import default_tf_session_config, tf
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 
 class DeepEval:
     """Common methods for DeepPot, DeepWFC, DeepPolar, ..."""
 
-    _model_type: Optional[str]
+    _model_type: Optional[str] = None
+    load_prefix: str  # set by subclass
 
     def __init__(
-        self, model_file: str, load_prefix: str = "load", default_tf_graph: bool = False
+        self,
+        model_file: "Path",
+        load_prefix: str = "load",
+        default_tf_graph: bool = False
     ):
         self.graph = self._load_graph(
             model_file, prefix=load_prefix, default_tf_graph=default_tf_graph
         )
+        self.load_prefix = load_prefix
 
     @property
     def model_type(self) -> str:
+        """Get type of model.
 
+        :type:str
+        """
         if not self._model_type:
             t_mt = self._get_tensor("model_attr/model_type:0")
             sess = tf.Session(graph=self.graph, config=default_tf_session_config)
@@ -57,11 +68,13 @@ class DeepEval:
 
     @staticmethod
     def _load_graph(
-        frozen_graph_filename: str, prefix: str = "load", default_tf_graph: bool = False
+        frozen_graph_filename: "Path", prefix: str = "load", default_tf_graph: bool = False
     ):
+
+
         # We load the protobuf file from the disk and parse it to retrieve the
         # unserialized graph_def
-        with tf.gfile.GFile(frozen_graph_filename, "rb") as f:
+        with tf.gfile.GFile(str(frozen_graph_filename), "rb") as f:
             graph_def = tf.GraphDef()
             graph_def.ParseFromString(f.read())
 
@@ -119,7 +132,7 @@ class DeepTensor(DeepEval):
 
     def __init__(
         self,
-        model_file: str,
+        model_file: "Path",
         variable_dof: Optional[int],
         load_prefix: str = 'load',
         default_tf_graph: bool = False
@@ -131,7 +144,6 @@ class DeepTensor(DeepEval):
             default_tf_graph=default_tf_graph
         )
         self.variable_dof = variable_dof
-        self.load_prefix = load_prefix
 
         # now load tensors to object attributes
         for attr_name, tensor_name in self.tensors.items():
