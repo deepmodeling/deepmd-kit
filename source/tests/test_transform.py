@@ -18,8 +18,6 @@ class TestTransform(unittest.TestCase) :
     def setUp(self):
         convert_pbtxt_to_pb(str(tests_path / os.path.join("infer","deeppot.pbtxt")), "deeppot.pb")
         convert_pbtxt_to_pb(str(tests_path / os.path.join("infer","deeppot-1.pbtxt")), "deeppot-1.pb")        
-        self.graph0 = load_graph("deeppot.pb")
-        self.graph1 = load_graph("deeppot-1.pb")
         self.coords = np.array([12.83, 2.56, 2.18,
                                 12.09, 2.87, 2.74,
                                 00.25, 3.32, 1.68,
@@ -37,9 +35,9 @@ class TestTransform(unittest.TestCase) :
         os.remove("deeppot-1.pb")
 
     def test(self):
-        raw_graph = load_graph("deeppot-1.pb")
-        old_graph = load_graph("deeppot.pb")
-        new_graph_def = transform_graph(raw_graph,old_graph)
+        self.graph0 = load_graph("deeppot.pb")
+        self.graph1 = load_graph("deeppot-1.pb")
+        new_graph_def = transform_graph(self.graph1, self.graph0)
         with tf.gfile.GFile("deeppot-2.pb", mode='wb') as f:
             f.write(new_graph_def.SerializeToString())
         self.dp = DeepPot("deeppot-2.pb")
