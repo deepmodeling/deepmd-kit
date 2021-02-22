@@ -153,18 +153,18 @@ public:
       #if GOOGLE_CUDA
       // launch the gpu(nv) compute function
       prod_env_mat_a_gpu_nv(
-	        em, em_deriv, rij, nlist, 
-	        coord, type, ilist, jrange, jlist, array_int, array_longlong, max_nbor_size, avg, std, nloc, nall, ntypes, rcut_r, rcut_r_smth, sec_a);
+          em, em_deriv, rij, nlist, 
+          coord, type, ilist, jrange, jlist, array_int, array_longlong, max_nbor_size, avg, std, nloc, nall, ntypes, rcut_r, rcut_r_smth, sec_a);
       #endif //GOOGLE_CUDA
     }
     else if (device == "CPU") {
       memcpy (&ilist,  4  + mesh_tensor.flat<int>().data(), sizeof(int *));
-	    memcpy (&jrange, 8  + mesh_tensor.flat<int>().data(), sizeof(int *));
-	    memcpy (&jlist,  12 + mesh_tensor.flat<int>().data(), sizeof(int *));
+      memcpy (&jrange, 8  + mesh_tensor.flat<int>().data(), sizeof(int *));
+      memcpy (&jlist,  12 + mesh_tensor.flat<int>().data(), sizeof(int *));
       // launch the cpu compute function
       prod_env_mat_a_cpu(
-	        em, em_deriv, rij, nlist, 
-	        coord, type, ilist, jrange, jlist, max_nbor_size, avg, std, nloc, nall, ntypes, rcut_r, rcut_r_smth, sec_a);
+          em, em_deriv, rij, nlist, 
+          coord, type, ilist, jrange, jlist, max_nbor_size, avg, std, nloc, nall, ntypes, rcut_r, rcut_r_smth, sec_a);
     }
   }
 
