@@ -181,9 +181,19 @@ void env_mat_nbor_update(
     cudaErrcheck(cudaMemcpy(jrange, jrange_host, sizeof(int) * mesh_host[2], cudaMemcpyHostToDevice));
     cudaErrcheck(cudaMemcpy(jlist,  jlist_host,  sizeof(int) * mesh_host[3], cudaMemcpyHostToDevice));
 
-    max_nbor_size = 1024;
+    max_nbor_size = 0;
     for(int ii = 0; ii < mesh_host[2]; ii++) {
       max_nbor_size = (jrange_host[ii + 1] - jrange_host[ii]) > max_nbor_size ? (jrange_host[ii + 1] - jrange_host[ii]) : max_nbor_size;
+    }
+    assert(max_nbor_size <= GPU_MAX_NBOR_SIZE);
+    if (max_nbor_size <= 1024) {
+      max_nbor_size = 1024;
+    }
+    else if (max_nbor_size <= 2048) {
+      max_nbor_size = 2048;
+    }
+    else {
+      max_nbor_size = 4096;
     }
   }
   delete [] mesh_host;

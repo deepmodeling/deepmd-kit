@@ -42,7 +42,6 @@ void prod_env_mat_a_gpu_nv(
     const FPTYPE * std, 
     const int nloc, 
     const int nall, 
-    const int ntypes, 
     const float rcut, 
     const float rcut_smth, 
     const std::vector<int> sec);

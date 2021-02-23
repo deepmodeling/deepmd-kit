@@ -527,9 +527,6 @@ TEST_F(TestEnvMatA, prod_cpu_equal_cpu)
 
 
 #if GOOGLE_CUDA
-
-#include "device_common.h"
-
 TEST_F(TestEnvMatA, prod_gpu_nv)
 {
   EXPECT_EQ(nlist_r_cpy.size(), nloc);
@@ -540,6 +537,16 @@ TEST_F(TestEnvMatA, prod_gpu_nv)
     if (nlist_a_cpy[ii].size() > max_nbor_size){
       max_nbor_size = nlist_a_cpy[ii].size();
     }
+  }
+  assert(max_nbor_size <= GPU_MAX_NBOR_SIZE);
+  if (max_nbor_size <= 1024) {
+    max_nbor_size = 1024;
+  }
+  else if (max_nbor_size <= 2048) {
+    max_nbor_size = 2048;
+  }
+  else {
+    max_nbor_size = 4096;
   }
   std::vector<int> ilist(nloc), jlist(tot_nnei), jrange(nloc+1, 0);
   for (int ii = 0; ii < nloc; ++ii){
@@ -587,12 +594,11 @@ TEST_F(TestEnvMatA, prod_gpu_nv)
       jlist_dev,
       array_int_dev, 
       array_longlong_dev,
-      GPU_MAX_NBOR_SIZE,
+      max_nbor_size,
       avg_dev, 
       std_dev, 
       nloc,
       nall,
-      ntypes,
       rc, 
       rc_smth,
       sec_a);
@@ -633,6 +639,16 @@ TEST_F(TestEnvMatA, prod_gpu_equal_cpu)
       max_nbor_size = nlist_a_cpy[ii].size();
     }
   }
+  assert(max_nbor_size <= GPU_MAX_NBOR_SIZE);
+  if (max_nbor_size <= 1024) {
+    max_nbor_size = 1024;
+  }
+  else if (max_nbor_size <= 2048) {
+    max_nbor_size = 2048;
+  }
+  else {
+    max_nbor_size = 4096;
+  }
   std::vector<int> ilist(nloc), jlist(tot_nnei), jrange(nloc+1, 0);
   for (int ii = 0; ii < nloc; ++ii){
     ilist[ii] = ii;
@@ -679,12 +695,11 @@ TEST_F(TestEnvMatA, prod_gpu_equal_cpu)
       jlist_dev,
       array_int_dev, 
       array_longlong_dev,
-      GPU_MAX_NBOR_SIZE,
+      max_nbor_size,
       avg_dev, 
       std_dev, 
       nloc,
       nall,
-      ntypes,
       rc, 
       rc_smth,
       sec_a);

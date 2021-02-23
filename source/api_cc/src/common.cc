@@ -725,15 +725,3 @@ session_input_tensors (
     }
     return nloc;
 }
-
-// functions used in custom ops
-void cum_sum(
-    std::vector<int> & sec, 
-    const std::vector<int32> & n_sel) 
-{
-  sec.resize (n_sel.size() + 1);
-  sec[0] = 0;
-  for (int ii = 1; ii < sec.size(); ++ii) {
-    sec[ii] = sec[ii-1] + n_sel[ii-1];
-  }
-}

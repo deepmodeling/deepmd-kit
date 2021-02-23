@@ -260,7 +260,3 @@ struct DeviceFunctor {
   }
 #endif // GOOGLE_CUDA
 };
-
-void cum_sum(
-    std::vector<int> & sec, 
-    const std::vector<int32> & n_sel);

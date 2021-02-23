@@ -1,4 +1,5 @@
 #include "common.h"
+#include "lib_common.h"
 #include "prod_env_mat.h"
 
 REGISTER_OP("DescrptSeA")
@@ -110,20 +111,20 @@ public:
     Tensor* nlist_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(
         context_output_index++,
-	  		descrpt_shape,
-	  		&descrpt_tensor));
+        descrpt_shape,
+        &descrpt_tensor));
     OP_REQUIRES_OK(context, context->allocate_output(
         context_output_index++,
-	  		descrpt_deriv_shape,
-	  		&descrpt_deriv_tensor));
+        descrpt_deriv_shape,
+        &descrpt_deriv_tensor));
     OP_REQUIRES_OK(context, context->allocate_output(
         context_output_index++,
-	  		rij_shape,
-	  		&rij_tensor));
+        rij_shape,
+        &rij_tensor));
     OP_REQUIRES_OK(context, context->allocate_output(
         context_output_index++,
-	  		nlist_shape,
-	  		&nlist_tensor));
+        nlist_shape,
+        &nlist_tensor));
 
     FPTYPE * em = descrpt_tensor->flat<FPTYPE>().data();
     FPTYPE * em_deriv = descrpt_deriv_tensor->flat<FPTYPE>().data();
@@ -154,7 +155,7 @@ public:
       // launch the gpu(nv) compute function
       prod_env_mat_a_gpu_nv(
           em, em_deriv, rij, nlist, 
-          coord, type, ilist, jrange, jlist, array_int, array_longlong, max_nbor_size, avg, std, nloc, nall, ntypes, rcut_r, rcut_r_smth, sec_a);
+          coord, type, ilist, jrange, jlist, array_int, array_longlong, max_nbor_size, avg, std, nloc, nall, rcut_r, rcut_r_smth, sec_a);
       #endif //GOOGLE_CUDA
     }
     else if (device == "CPU") {
