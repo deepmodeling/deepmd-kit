@@ -3,7 +3,7 @@
 #include <climits>
 #include <stdio.h>
 #include <iostream>
-#include "device_common.h"
+#include "device.h"
 
 template<typename FPTYPE>
 struct DescrptSeRGPUExecuteFunctor {

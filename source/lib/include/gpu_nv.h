@@ -1,4 +1,7 @@
 #pragma once
+#include <vector>
+#include <stdio.h>
+#include <assert.h>
 #include <cuda_runtime.h>
 
 #define GPU_MAX_NBOR_SIZE 4096

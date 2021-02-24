@@ -1,6 +1,6 @@
 #pragma once
 #include <vector>
-#include "device_common.h"
+#include "device.h"
 
 template<typename FPTYPE>
 void prod_env_mat_a_cpu(

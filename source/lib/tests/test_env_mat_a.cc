@@ -4,7 +4,7 @@
 #include "env_mat.h"
 #include "prod_env_mat.h"
 #include "neighbor_list.h"
-#include "device_common.h"
+#include "device.h"
 
 class TestEnvMatA : public ::testing::Test
 {
@@ -628,7 +628,7 @@ TEST_F(TestEnvMatA, prod_gpu_nv)
 }
 
 
-TEST_F(TestEnvMatA, prod_gpu_equal_cpu)
+TEST_F(TestEnvMatA, prod_gpu_nv_equal_cpu)
 {
   EXPECT_EQ(nlist_r_cpy.size(), nloc);
   int tot_nnei = 0;

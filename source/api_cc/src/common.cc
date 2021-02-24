@@ -1,7 +1,7 @@
 #include "common.h"
 #include "NNPAtomMap.h"
 #include "SimulationRegion.h"
-#include "device_common.h"
+#include "device.h"
 
 void 
 select_by_type(std::vector<int> & fwd_map,
