@@ -645,7 +645,7 @@ compute (ENERGYTYPE &			dener,
 void
 NNPInter::
 get_type_map(std::string & type_map){
-    type_map = get_scalar<std::string>("model_attr/tmap");
+    type_map = get_scalar<STRINGTYPE>("model_attr/tmap");
 }
 
 
