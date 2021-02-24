@@ -85,6 +85,7 @@ setup(
         "deepmd/utils",
         "deepmd/loggers",
         "deepmd/cluster",
+        "deepmd/entrypoints",
         "deepmd/op"
     ],
     python_requires=">=3.6",

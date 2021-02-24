@@ -10,7 +10,7 @@ from deepmd.entrypoints import (
     freeze,
     test,
     train,
-    transfer
+    transfer,
 )
 from deepmd.loggers import set_log_handles
 
@@ -34,7 +34,9 @@ def main():
 
     # * logging options parser *********************************************************
     # with use of the parent argument this options will be added to every parser
-    parser_log = argparse.ArgumentParser(add_help=False)
+    parser_log = argparse.ArgumentParser(
+        add_help=False, formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
     parser_log.add_argument(
         "-v",
         "--verbose",
@@ -52,7 +54,9 @@ def main():
         "only be output to console",
     )
     # * mpi logging parser *************************************************************
-    parser_mpi_log = argparse.ArgumentParser(add_help=False)
+    parser_mpi_log = argparse.ArgumentParser(
+        add_help=False, formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
     parser_mpi_log.add_argument(
         "-m",
         "--mpi-log",
@@ -69,6 +73,7 @@ def main():
         "config",
         parents=[parser_log],
         help="fast configuration of parameter file for smooth model",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser_cfig.add_argument(
         "-o", "--output", type=str, default="input.json", help="the output json file"
@@ -102,7 +107,10 @@ def main():
 
     # * config parser ******************************************************************
     parser_train = subparsers.add_parser(
-        "train", parents=[parser_log, parser_mpi_log], help="train a model"
+        "train",
+        parents=[parser_log, parser_mpi_log],
+        help="train a model",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser_train.add_argument(
         "INPUT", help="the input parameter file in json or yaml format"
@@ -111,14 +119,14 @@ def main():
         "-i",
         "--init-model",
         type=str,
-        default=False,
+        default=None,
         help="Initialize the model by the provided checkpoint.",
     )
     parser_train.add_argument(
         "-r",
         "--restart",
         type=str,
-        default=False,
+        default=None,
         help="Restart the training from the provided checkpoint.",
     )
     parser_train.add_argument(
@@ -131,7 +139,10 @@ def main():
 
     # * freeze script ******************************************************************
     parser_frz = subparsers.add_parser(
-        "freeze", parents=[parser_log], help="freeze the model"
+        "freeze",
+        parents=[parser_log],
+        help="freeze the model",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser_frz.add_argument(
         "-c",
@@ -157,7 +168,10 @@ def main():
 
     # * test script ********************************************************************
     parser_tst = subparsers.add_parser(
-        "test", parents=[parser_log], help="test the model"
+        "test",
+        parents=[parser_log],
+        help="test the model",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser_tst.add_argument(
         "-m",
@@ -207,7 +221,10 @@ def main():
     # second table ranges from the first table's upper boundary(upper) to the
     # extrapolate(parameter) * upper.
     parser_compress = subparsers.add_parser(
-        "compress", parents=[parser_log, parser_mpi_log], help="compress a model"
+        "compress",
+        parents=[parser_log, parser_mpi_log],
+        help="compress a model",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser_compress.add_argument(
         "INPUT",
@@ -265,6 +282,7 @@ def main():
         "doc-train-input",
         parents=[parser_log],
         help="print the documentation (in rst format) of input training parameters.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
     args = parser.parse_args()

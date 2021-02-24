@@ -6,7 +6,6 @@ from . import cluster, descriptor, fit, loss, utils
 from .env import set_mkl
 from .infer import DeepPotential
 from .infer.data_modifier import DipoleChargeModifier
-from .infer.deep_eval import DeepEval
 
 set_mkl()
 

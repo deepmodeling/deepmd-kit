@@ -402,24 +402,22 @@ class DeepmdDataSystem() :
                       sys_probs = None,
                       auto_prob_style = "prob_sys_size") :
         prob = self._get_sys_probs(sys_probs, auto_prob_style)
-        tmp_msg = ""
         # width 65
         sys_width = 42
-        tmp_msg += "---Summary of DataSystem------------------------------------------------\n"
-        tmp_msg += "found %d system(s):\n" % self.nsystems
-        tmp_msg += "%s  " % self._format_name_length('system', sys_width)
-        tmp_msg += "%s  %s  %s   %s  %5s\n" % ('natoms', 'bch_sz', 'n_bch', "n_test", 'prob')
+        log.info("---Summary of DataSystem------------------------------------------------")
+        log.info("found %d system(s):" % self.nsystems)
+        log.info("%s  " % self._format_name_length('system', sys_width))
+        log.info("%s  %s  %s   %s  %5s" % ('natoms', 'bch_sz', 'n_bch', "n_test", 'prob'))
         for ii in range(self.nsystems) :
-            tmp_msg += ("%s  %6d  %6d  %6d  %6d  %5.3f\n" % 
-                        (self._format_name_length(self.system_dirs[ii], sys_width),
-                         self.natoms[ii], 
-                         # TODO batch size * nbatches = number of structures
-                         self.batch_size[ii],
-                         self.nbatches[ii],
-                         self.test_size[ii],
-                         prob[ii]) )
-        tmp_msg += "------------------------------------------------------------------------\n"
-        log.info(tmp_msg)
+            log.info("%s  %6d  %6d  %6d  %6d  %5.3f" % 
+                     (self._format_name_length(self.system_dirs[ii], sys_width),
+                     self.natoms[ii], 
+                     # TODO batch size * nbatches = number of structures
+                     self.batch_size[ii],
+                     self.nbatches[ii],
+                     self.test_size[ii],
+                     prob[ii]) )
+        log.info("------------------------------------------------------------------------\n")
 
     def _make_auto_bs(self, rule) :
         bs = []

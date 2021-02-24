@@ -304,22 +304,22 @@ class RunOptions:
 
     def print_resource_summary(self):
         """Print build and current running cluster configuration summary."""
-        log.info("---Summary of the training---------------------------------------\n")
+        log.info("---Summary of the training---------------------------------------")
         if self.is_distrib:
-            log.info("distributed\n")
-            log.info(f"ps list:              {self.cluster['ps']}\n")
-            log.info(f"worker list:          {self.cluster['worker']}\n")
-            log.info(f"chief on:             {self.nodename}\n")
+            log.info("distributed")
+            log.info(f"ps list:              {self.cluster['ps']}")
+            log.info(f"worker list:          {self.cluster['worker']}")
+            log.info(f"chief on:             {self.nodename}")
         else:
-            log.info(f"running on:           {self.nodename}\n")
+            log.info(f"running on:           {self.nodename}")
         if self.gpus is None:
-            log.info(f"CUDA_VISIBLE_DEVICES: unset\n")
+            log.info(f"CUDA_VISIBLE_DEVICES: unset")
         else:
-            log.info(f"CUDA_VISIBLE_DEVICES: {self.gpus}\n")
+            log.info(f"CUDA_VISIBLE_DEVICES: {self.gpus}")
         intra, inter = get_tf_default_nthreads()
-        log.info(f"num_intra_threads:    {intra:d}\n")
-        log.info(f"num_inter_threads:    {inter:d}\n")
-        log.info("-----------------------------------------------------------------\n")
+        log.info(f"num_intra_threads:    {intra:d}")
+        log.info(f"num_inter_threads:    {inter:d}")
+        log.info("-----------------------------------------------------------------")
 
     def _setup_logger(
         self,
