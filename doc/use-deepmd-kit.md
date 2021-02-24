@@ -326,7 +326,7 @@ Model compression, with little loss of accuracy, can greatly speed up MD inferen
 
 **Acceptable original model version**
 
-The model compression method requires that the version of DeePMD-kit used in original model generation should be 1.3 or above. If one has a frozen 1.2 model, one can first use the convenient conversion interface(eg: ```dp convert-to-1.3 -i frozen_1.2.pb -o frozen_1.3.pb```) of r1.2 branch(python interface of r1.2 branch is needed) to get a 1.3 executable model.
+The model compression method requires that the version of DeePMD-kit used in original model generation should be 1.3 or above. If one has a frozen 1.2 model, one can first use the convenient conversion interface of DeePMD-kit-v1.2.4 to get a 1.3 executable model.(eg: ```dp convert-to-1.3 -i frozen_1.2.pb -o frozen_1.3.pb```) 
 
 ## Model inference 
 One may use the python interface of DeePMD-kit for model inference, an example is given as follows
