@@ -1,4 +1,5 @@
 #include "DeviceFunctor.h"
+#include "gpu_nv.h"
 
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 600
 static __inline__ __device__ double atomicAdd(double* address, double val) {
