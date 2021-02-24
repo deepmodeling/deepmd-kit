@@ -6,6 +6,13 @@ jobs:
   testpython:
     name: Test C++
     runs-on: ubuntu-latest
+    strategy:  
+      matrix:
+        include:
+        - float_prec: high
+        - float_prec: low
     steps:
     - uses: actions/checkout@master
     - run: source/install/build_cc.sh
+      env:
+        FLOAT_PREC: ${{ matrix.float_prec }}
