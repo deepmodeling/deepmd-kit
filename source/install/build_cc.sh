@@ -1,12 +1,14 @@
 set -e
 
-if [ -z "$FLOAT_PREC" ] then
+if [ -z "$FLOAT_PREC" ]
+then
   FLOAT_PREC=high
 fi
 #------------------
 
 SCRIPT_PATH=$(dirname $(realpath -s $0))
-if [ -z "$INSTALL_PREFIX" ] then
+if [ -z "$INSTALL_PREFIX" ]
+then
   INSTALL_PREFIX=$(realpath -s ${SCRIPT_PATH}/../../dp)
 fi
 mkdir -p ${INSTALL_PREFIX}
