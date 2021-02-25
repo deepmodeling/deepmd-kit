@@ -14,5 +14,5 @@ cmake ../lib/tests
 make -j${NPROC}
 
 #------------------
-../lib/tests/runUnitTests
+${BUILD_TMP_DIR}/runUnitTests
 
