@@ -2,6 +2,7 @@
 
 import argparse
 from pathlib import Path
+from typing import List, Optional
 
 from deepmd.entrypoints import (
     compress,
@@ -14,16 +15,17 @@ from deepmd.entrypoints import (
 )
 from deepmd.loggers import set_log_handles
 
-__all__ = ["main"]
+__all__ = ["main", "parse_args"]
 
 
-def main():
-    """DeePMD-Kit entry point.
+def parse_args(args: Optional[List[str]] = None):
+    """DeePMD-Kit commandline options argument parser.
 
-    Raises
-    ------
-    RuntimeError
-        if no command was input
+    Parameters
+    ----------
+    args: List[str]
+        list of command line arguments, main purpose is testing default option None
+        takes arguments from sys.argv
     """
     parser = argparse.ArgumentParser(
         description="DeePMD-kit: A deep learning package for many-body potential energy"
@@ -49,6 +51,7 @@ def main():
     parser_log.add_argument(
         "-l",
         "--log-path",
+        type=str,
         default=None,
         help="set log file to log messages to disk, if not specified, the logs will "
         "only be output to console",
@@ -285,9 +288,24 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
-    args = parser.parse_args()
+    parsed_args = parser.parse_args(args=args)
+    if parsed_args.command is None:
+        parser.print_help()
 
-    # do not set log handles for None it is useless
+    return parsed_args
+
+
+def main():
+    """DeePMD-Kit entry point.
+
+    Raises
+    ------
+    RuntimeError
+        if no command was input
+    """
+    args = parse_args()
+
+    # do not set log handles for None, it is useless
     # log handles for train will be set separatelly
     # when the use of MPI will be determined in `RunOptions`
     if args.command not in (None, "train"):
@@ -295,9 +313,7 @@ def main():
 
     dict_args = vars(args)
 
-    if args.command is None:
-        parser.print_help()
-    elif args.command == "train":
+    if args.command == "train":
         train(**dict_args)
     elif args.command == "freeze":
         freeze(**dict_args)
