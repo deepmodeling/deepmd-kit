@@ -4,6 +4,7 @@
 #include "env_mat.h"
 #include "prod_env_mat.h"
 #include "neighbor_list.h"
+#include "device.h"
 
 class TestEnvMatA : public ::testing::Test
 {
@@ -523,3 +524,238 @@ TEST_F(TestEnvMatA, prod_cpu_equal_cpu)
   //   }    
   // }
 }
+
+
+#if GOOGLE_CUDA
+TEST_F(TestEnvMatA, prod_gpu_nv)
+{
+  EXPECT_EQ(nlist_r_cpy.size(), nloc);
+  int tot_nnei = 0;
+  int max_nbor_size = 0;
+  for(int ii = 0; ii < nlist_a_cpy.size(); ++ii){
+    tot_nnei += nlist_a_cpy[ii].size();
+    if (nlist_a_cpy[ii].size() > max_nbor_size){
+      max_nbor_size = nlist_a_cpy[ii].size();
+    }
+  }
+  assert(max_nbor_size <= GPU_MAX_NBOR_SIZE);
+  if (max_nbor_size <= 1024) {
+    max_nbor_size = 1024;
+  }
+  else if (max_nbor_size <= 2048) {
+    max_nbor_size = 2048;
+  }
+  else {
+    max_nbor_size = 4096;
+  }
+  std::vector<int> ilist(nloc), jlist(tot_nnei), jrange(nloc+1, 0);
+  for (int ii = 0; ii < nloc; ++ii){
+    ilist[ii] = ii;
+    jrange[ii+1] = jrange[ii] + nlist_a_cpy[ii].size();
+    int jj, cc;
+    for (jj = jrange[ii], cc = 0; jj < jrange[ii+1]; ++jj, ++cc){
+      jlist[jj] = nlist_a_cpy[ii][cc];
+    }
+  }
+  std::vector<double > em(nloc * ndescrpt), em_deriv(nloc * ndescrpt * 3), rij(nloc * nnei * 3);
+  std::vector<int> nlist(nloc * nnei);
+  std::vector<double > avg(ntypes * ndescrpt, 0);
+  std::vector<double > std(ntypes * ndescrpt, 1);
+
+  double * em_dev = NULL, * em_deriv_dev = NULL, * rij_dev = NULL;
+  double * posi_cpy_dev = NULL, * avg_dev = NULL, * std_dev = NULL;
+  int * atype_cpy_dev = NULL, * nlist_dev = NULL, * ilist_dev = NULL, * jrange_dev = NULL, * jlist_dev = NULL, * array_int_dev = NULL;
+  int_64 * array_longlong_dev = NULL;
+  malloc_device_memory_sync(em_dev, em);
+  malloc_device_memory_sync(em_deriv_dev, em_deriv);
+  malloc_device_memory_sync(rij_dev, rij);
+  malloc_device_memory_sync(posi_cpy_dev, posi_cpy);
+  malloc_device_memory_sync(avg_dev, avg);
+  malloc_device_memory_sync(std_dev, std);
+
+  malloc_device_memory_sync(atype_cpy_dev, atype_cpy);
+  malloc_device_memory_sync(nlist_dev, nlist);
+  malloc_device_memory_sync(ilist_dev, ilist);
+  malloc_device_memory_sync(jrange_dev, jrange);
+  malloc_device_memory_sync(jlist_dev, jlist);
+
+  malloc_device_memory(array_int_dev, sec_a.size() + nloc * sec_a.size() + nloc);
+  malloc_device_memory(array_longlong_dev, nloc * GPU_MAX_NBOR_SIZE * 2);
+
+  prod_env_mat_a_gpu_nv(    
+      em_dev, 
+      em_deriv_dev, 
+      rij_dev, 
+      nlist_dev, 
+      posi_cpy_dev, 
+      atype_cpy_dev, 
+      ilist_dev, 
+      jrange_dev, 
+      jlist_dev,
+      array_int_dev, 
+      array_longlong_dev,
+      max_nbor_size,
+      avg_dev, 
+      std_dev, 
+      nloc,
+      nall,
+      rc, 
+      rc_smth,
+      sec_a);
+  memcpy_device_to_host(em_dev, em);
+  delete_device_memory(em_dev);
+  delete_device_memory(em_deriv_dev);
+  delete_device_memory(nlist_dev);
+  delete_device_memory(posi_cpy_dev);
+  delete_device_memory(atype_cpy_dev);
+  delete_device_memory(ilist_dev);
+  delete_device_memory(jrange_dev);
+  delete_device_memory(jlist_dev);
+  delete_device_memory(array_int_dev);
+  delete_device_memory(array_longlong_dev);
+  delete_device_memory(avg_dev);
+  delete_device_memory(std_dev);
+
+  for(int ii = 0; ii < nloc; ++ii){
+    for (int jj = 0; jj < nnei; ++jj){
+      for (int dd = 0; dd < 4; ++dd){
+    	EXPECT_LT(fabs(em[ii*nnei*4 + jj*4 + dd] - 
+		       expected_env[ii*nnei*4 + jj*4 + dd]) , 
+		  1e-5);
+      }
+    }    
+  }
+}
+
+
+TEST_F(TestEnvMatA, prod_gpu_nv_equal_cpu)
+{
+  EXPECT_EQ(nlist_r_cpy.size(), nloc);
+  int tot_nnei = 0;
+  int max_nbor_size = 0;
+  for(int ii = 0; ii < nlist_a_cpy.size(); ++ii){
+    tot_nnei += nlist_a_cpy[ii].size();
+    if (nlist_a_cpy[ii].size() > max_nbor_size){
+      max_nbor_size = nlist_a_cpy[ii].size();
+    }
+  }
+  assert(max_nbor_size <= GPU_MAX_NBOR_SIZE);
+  if (max_nbor_size <= 1024) {
+    max_nbor_size = 1024;
+  }
+  else if (max_nbor_size <= 2048) {
+    max_nbor_size = 2048;
+  }
+  else {
+    max_nbor_size = 4096;
+  }
+  std::vector<int> ilist(nloc), jlist(tot_nnei), jrange(nloc+1, 0);
+  for (int ii = 0; ii < nloc; ++ii){
+    ilist[ii] = ii;
+    jrange[ii+1] = jrange[ii] + nlist_a_cpy[ii].size();
+    int jj, cc;
+    for (jj = jrange[ii], cc = 0; jj < jrange[ii+1]; ++jj, ++cc){
+      jlist[jj] = nlist_a_cpy[ii][cc];
+    }
+  }
+  std::vector<double > em(nloc * ndescrpt), em_deriv(nloc * ndescrpt * 3), rij(nloc * nnei * 3);
+  std::vector<int> nlist(nloc * nnei);
+  std::vector<double > avg(ntypes * ndescrpt, 0);
+  std::vector<double > std(ntypes * ndescrpt, 1);
+
+  double * em_dev = NULL, * em_deriv_dev = NULL, * rij_dev = NULL;
+  double * posi_cpy_dev = NULL, * avg_dev = NULL, * std_dev = NULL;
+  int * atype_cpy_dev = NULL, * nlist_dev = NULL, * ilist_dev = NULL, * jrange_dev = NULL, * jlist_dev = NULL, * array_int_dev = NULL;
+  int_64 * array_longlong_dev = NULL;
+  malloc_device_memory_sync(em_dev, em);
+  malloc_device_memory_sync(em_deriv_dev, em_deriv);
+  malloc_device_memory_sync(rij_dev, rij);
+  malloc_device_memory_sync(posi_cpy_dev, posi_cpy);
+  malloc_device_memory_sync(avg_dev, avg);
+  malloc_device_memory_sync(std_dev, std);
+
+  malloc_device_memory_sync(atype_cpy_dev, atype_cpy);
+  malloc_device_memory_sync(nlist_dev, nlist);
+  malloc_device_memory_sync(ilist_dev, ilist);
+  malloc_device_memory_sync(jrange_dev, jrange);
+  malloc_device_memory_sync(jlist_dev, jlist);
+
+  malloc_device_memory(array_int_dev, sec_a.size() + nloc * sec_a.size() + nloc);
+  malloc_device_memory(array_longlong_dev, nloc * GPU_MAX_NBOR_SIZE * 2);
+
+  prod_env_mat_a_gpu_nv(    
+      em_dev, 
+      em_deriv_dev, 
+      rij_dev, 
+      nlist_dev, 
+      posi_cpy_dev, 
+      atype_cpy_dev, 
+      ilist_dev, 
+      jrange_dev, 
+      jlist_dev,
+      array_int_dev, 
+      array_longlong_dev,
+      max_nbor_size,
+      avg_dev, 
+      std_dev, 
+      nloc,
+      nall,
+      rc, 
+      rc_smth,
+      sec_a);
+  memcpy_device_to_host(em_dev, em);
+  memcpy_device_to_host(em_deriv_dev, em_deriv);
+  memcpy_device_to_host(rij_dev, rij);
+  memcpy_device_to_host(nlist_dev, nlist);
+  delete_device_memory(em_dev);
+  delete_device_memory(em_deriv_dev);
+  delete_device_memory(nlist_dev);
+  delete_device_memory(posi_cpy_dev);
+  delete_device_memory(atype_cpy_dev);
+  delete_device_memory(ilist_dev);
+  delete_device_memory(jrange_dev);
+  delete_device_memory(jlist_dev);
+  delete_device_memory(array_int_dev);
+  delete_device_memory(array_longlong_dev);
+  delete_device_memory(avg_dev);
+  delete_device_memory(std_dev);
+
+  std::vector<int> fmt_nlist_a_1, fmt_nlist_r_1;
+  std::vector<double> env_1, env_deriv_1, rij_a_1;
+  for(int ii = 0; ii < nloc; ++ii){
+    int ret_1 = format_nlist_cpu<double>(fmt_nlist_a_1, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);  
+    EXPECT_EQ(ret_1, -1);
+    env_mat_a_cpu<double>(env_1, env_deriv_1, rij_a_1, posi_cpy, ntypes, atype_cpy, ii, fmt_nlist_a_1, sec_a, rc_smth, rc);
+    EXPECT_EQ(env_1.size(), nnei * 4);
+    EXPECT_EQ(env_deriv_1.size(), nnei * 4 * 3);
+    EXPECT_EQ(rij_a_1.size(), nnei * 3);
+    EXPECT_EQ(fmt_nlist_a_1.size(), nnei);
+    EXPECT_EQ(env_1.size() * nloc, em.size());
+    EXPECT_EQ(env_deriv_1.size() * nloc, em_deriv.size());
+    EXPECT_EQ(rij_a_1.size() * nloc, rij.size());
+    EXPECT_EQ(fmt_nlist_a_1.size() * nloc, nlist.size());
+    for (unsigned jj = 0; jj < env_1.size(); ++jj){
+      EXPECT_LT(fabs(em[ii*nnei*4+jj] - env_1[jj]), 1e-10);
+    }
+    for (unsigned jj = 0; jj < env_deriv_1.size(); ++jj){
+      EXPECT_LT(fabs(em_deriv[ii*nnei*4*3+jj] - env_deriv_1[jj]), 1e-10);      
+    }    
+    for (unsigned jj = 0; jj < rij_a_1.size(); ++jj){
+      EXPECT_LT(fabs(rij[ii*nnei*3+jj] - rij_a_1[jj]), 1e-10);
+    }
+    for (unsigned jj = 0; jj < fmt_nlist_a_1.size(); ++jj){
+      EXPECT_EQ(nlist[ii*nnei+jj], fmt_nlist_a_1[jj]);
+    }
+  }
+
+  // for(int ii = 0; ii < nloc; ++ii){
+  //   for (int jj = 0; jj < nnei; ++jj){
+  //     for (int dd = 0; dd < 4; ++dd){
+  //   	EXPECT_LT(fabs(em[ii*nnei*4 + jj*4 + dd] - 
+  // 		       expected_env[ii*nnei*4 + jj*4 + dd]) , 
+  // 		  1e-5);
+  //     }
+  //   }    
+  // }
+}
+#endif //GOOGLE_CUDA

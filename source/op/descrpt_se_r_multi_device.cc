@@ -1,4 +1,5 @@
 #include "common.h"
+#include "utilities.h"
 #include "CustomeOperation.h"
 
 REGISTER_OP("DescrptSeR")
@@ -17,17 +18,6 @@ REGISTER_OP("DescrptSeR")
     .Output("descrpt_deriv: T")
     .Output("rij: T")
     .Output("nlist: int32");
-
-struct DeviceFunctor {
-    void operator()(const CPUDevice& d, std::string& device) {
-        device = "CPU";
-    }
-    #if GOOGLE_CUDA
-    void operator()(const GPUDevice& d, std::string& device) {
-        device = "GPU";
-    }
-    #endif // GOOGLE_CUDA
-};
 
 template <typename T>
 struct DescrptSeRFunctor {
@@ -82,8 +72,8 @@ public:
         OP_REQUIRES (context, (natoms_tensor.shape().dim_size(0) >= 3),		errors::InvalidArgument ("number of atoms should be larger than (or equal to) 3"));
 
         DeviceFunctor() (
-            context->eigen_device<Device>(),
-            device
+            device,
+            context->eigen_device<Device>()
         );
 
         const int * natoms = natoms_tensor.flat<int>().data();

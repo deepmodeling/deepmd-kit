@@ -1,4 +1,5 @@
 #include "DeviceFunctor.h"
+#include "gpu_nv.h"
 
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 600
 static __inline__ __device__ double atomicAdd(double* address, double val) {
@@ -17,7 +18,7 @@ static __inline__ __device__ double atomicAdd(double* address, double val) {
 template <
     typename FPTYPE,
     int      THREADS_PER_BLOCK>
-__global__ void force_deriv_wrt_center_atom_se_a(FPTYPE * force, const FPTYPE * net_deriv, const FPTYPE * in_deriv, const int ndescrpt)
+__global__ void force_deriv_wrt_center_atom_se_r(FPTYPE * force, const FPTYPE * net_deriv, const FPTYPE * in_deriv, const int ndescrpt)
 {
     __shared__ FPTYPE data[THREADS_PER_BLOCK * 3];
     unsigned int bid = blockIdx.x;
@@ -51,21 +52,18 @@ __global__ void force_deriv_wrt_center_atom_se_a(FPTYPE * force, const FPTYPE * 
 }
 
 template<typename FPTYPE>
-__global__ void force_deriv_wrt_neighbors_se_a(FPTYPE * force, 
+__global__ void force_deriv_wrt_neighbors_se_r(FPTYPE * force, 
                         const FPTYPE * net_deriv,
                         const FPTYPE * in_deriv,
                         const int * nlist,
                         const int nloc,
                         const int nnei,
-                        const int ndescrpt,
-                        const int n_a_sel,
-                        const int n_a_shift)
+                        const int ndescrpt)
 {  
     // idy -> nnei
     const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned int idy = blockIdx.y;
     const unsigned int idz = threadIdx.y;
-    const unsigned int idw = threadIdx.z;
     
     if (idx >= nloc) {
         return;
@@ -75,31 +73,29 @@ __global__ void force_deriv_wrt_neighbors_se_a(FPTYPE * force,
     if (j_idx < 0) {
         return;
     }
-    atomicAdd(force + j_idx * 3 + idz, net_deriv[idx * ndescrpt + idy * 4 + idw] * in_deriv[idx * ndescrpt * 3 + (idy * 4 + idw) * 3 + idz]);
+    atomicAdd(force + j_idx * 3 + idz, net_deriv[idx * ndescrpt + idy] * in_deriv[idx * ndescrpt * 3 + idy * 3 + idz]);
 }
 
 template <typename FPTYPE>
-void ProdForceSeAGPUExecuteFunctor<FPTYPE>::operator()(FPTYPE * force, 
+void ProdForceSeRGPUExecuteFunctor<FPTYPE>::operator()(FPTYPE * force, 
                         const FPTYPE * net_deriv,
                         const FPTYPE * in_deriv,
                         const int * nlist,
                         const int nloc,
                         const int nall,
                         const int nnei,
-                        const int ndescrpt,
-                        const int n_a_sel,
-                        const int n_a_shift)
+                        const int ndescrpt)
 {   
     // std::cout << "I'm here!" << std::endl;
     cudaErrcheck(cudaMemset(force, 0.0, sizeof(FPTYPE) * nall * 3));
-    force_deriv_wrt_center_atom_se_a<FPTYPE, TPB> <<<nloc, TPB>>>(force, net_deriv, in_deriv, ndescrpt);
+    force_deriv_wrt_center_atom_se_r<FPTYPE, TPB> <<<nloc, TPB>>>(force, net_deriv, in_deriv, ndescrpt);
     
     const int LEN = 64;
     int nblock = (nloc + LEN -1) / LEN;
     dim3 block_grid(nblock, nnei);
-    dim3 thread_grid(LEN, 3, 4);
-    force_deriv_wrt_neighbors_se_a<<<block_grid, thread_grid>>>(force, net_deriv, in_deriv, nlist, nloc, nnei, ndescrpt, n_a_sel, n_a_shift);
+    dim3 thread_grid(LEN, 3);
+    force_deriv_wrt_neighbors_se_r<<<block_grid, thread_grid>>>(force, net_deriv, in_deriv, nlist, nloc, nnei, ndescrpt);
 }
 
-template struct ProdForceSeAGPUExecuteFunctor<float>;
-template struct ProdForceSeAGPUExecuteFunctor<double>;
+template struct ProdForceSeRGPUExecuteFunctor<float>;
+template struct ProdForceSeRGPUExecuteFunctor<double>;

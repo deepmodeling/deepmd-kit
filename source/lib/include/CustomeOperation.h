@@ -13,31 +13,6 @@
 using CPUDevice = Eigen::ThreadPoolDevice;
 using GPUDevice = Eigen::GpuDevice;
 
-struct NeighborInfo {
-    int type;
-    double dist;
-    int index;
-    NeighborInfo () : type (0), dist(0), index(0) {}
-    NeighborInfo (int tt, double dd, int ii) : type (tt), dist(dd), index(ii) {}
-    
-    bool operator < (const NeighborInfo & b) const {
-	    return (type < b.type || (type == b.type && (dist < b.dist || (dist == b.dist && index < b.index))));
-    }
-};
-
-
-
-
-
-#if GOOGLE_CUDA
-template<typename FPTYPE>
-void DescrptSeAGPULauncher(const FPTYPE * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const FPTYPE * avg, const FPTYPE * std, FPTYPE * descrpt, FPTYPE * descrpt_deriv, FPTYPE * rij, int * nlist, const int nloc, const int nall, const int nnei, const int ndescrpt, const float rcut_r, const float rcut_r_smth, const std::vector<int> sec_a, const bool fill_nei_a, const int max_nbor_size) {
-    DescrptSeAGPUExecuteFunctor<FPTYPE>()(coord, type, ilist, jrange, jlist, array_int, array_longlong, avg, std, descrpt, descrpt_deriv, rij, nlist, nloc, nall, nnei, ndescrpt, rcut_r, rcut_r_smth, sec_a, fill_nei_a, max_nbor_size);
-}
-#endif // GOOGLE_CUDA
-// ******************************************************************************
-// end of custome op DescrptSeA
-// ******************************************************************************
 
 inline void make_descript_range (int & idx_start, int & idx_end, const int & nei_idx, const int& n_a_sel, const int n_a_shift) {
     if (nei_idx < n_a_sel) {

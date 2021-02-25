@@ -1,5 +1,6 @@
 #include <cassert>
 #include <iostream>
+#include <string.h>
 #include "prod_env_mat.h"
 #include "fmt_nlist.h"
 #include "env_mat.h"
@@ -130,3 +131,71 @@ void prod_env_mat_a_cpu<float>(
     const float rcut, 
     const float rcut_smth, 
     const std::vector<int> sec);
+
+
+#if GOOGLE_CUDA
+void env_mat_nbor_update(
+    bool &init,
+    int * &ilist,
+    int * &jrange,
+    int * &jlist,
+    int &ilist_size,
+    int &jrange_size,
+    int &jlist_size,
+    int &max_nbor_size,
+    const int * mesh, 
+    const int size)
+{
+  int *mesh_host = new int[size], *ilist_host = NULL, *jrange_host = NULL, *jlist_host = NULL;
+  cudaErrcheck(cudaMemcpy(mesh_host, mesh, sizeof(int) * size, cudaMemcpyDeviceToHost));
+  memcpy (&ilist_host,  4  + mesh_host, sizeof(int *));
+  memcpy (&jrange_host, 8  + mesh_host, sizeof(int *));
+  memcpy (&jlist_host,  12 + mesh_host, sizeof(int *));
+  int const ago = mesh_host[0];
+  if (!init) {
+    ilist_size  = (int)(mesh_host[1] * 1.2);
+    jrange_size = (int)(mesh_host[2] * 1.2);
+    jlist_size  = (int)(mesh_host[3] * 1.2);
+    cudaErrcheck(cudaMalloc((void **)&ilist,     sizeof(int) * ilist_size));
+    cudaErrcheck(cudaMalloc((void **)&jrange,    sizeof(int) * jrange_size));
+    cudaErrcheck(cudaMalloc((void **)&jlist,     sizeof(int) * jlist_size));
+    init = true;
+  }
+  if (ago == 0) {
+    if (ilist_size < mesh_host[1]) {
+      ilist_size = (int)(mesh_host[1] * 1.2);
+      cudaErrcheck(cudaFree(ilist));
+      cudaErrcheck(cudaMalloc((void **)&ilist, sizeof(int) * ilist_size));
+    }
+    if (jrange_size < mesh_host[2]) {
+      jrange_size = (int)(mesh_host[2] * 1.2);
+      cudaErrcheck(cudaFree(jrange));
+      cudaErrcheck(cudaMalloc((void **)&jrange,sizeof(int) * jrange_size));
+    }
+    if (jlist_size < mesh_host[3]) {
+      jlist_size = (int)(mesh_host[3] * 1.2);
+      cudaErrcheck(cudaFree(jlist));
+      cudaErrcheck(cudaMalloc((void **)&jlist, sizeof(int) * jlist_size));
+    }
+    cudaErrcheck(cudaMemcpy(ilist,  ilist_host,  sizeof(int) * mesh_host[1], cudaMemcpyHostToDevice));
+    cudaErrcheck(cudaMemcpy(jrange, jrange_host, sizeof(int) * mesh_host[2], cudaMemcpyHostToDevice));
+    cudaErrcheck(cudaMemcpy(jlist,  jlist_host,  sizeof(int) * mesh_host[3], cudaMemcpyHostToDevice));
+
+    max_nbor_size = 0;
+    for(int ii = 0; ii < mesh_host[2]; ii++) {
+      max_nbor_size = (jrange_host[ii + 1] - jrange_host[ii]) > max_nbor_size ? (jrange_host[ii + 1] - jrange_host[ii]) : max_nbor_size;
+    }
+    assert(max_nbor_size <= GPU_MAX_NBOR_SIZE);
+    if (max_nbor_size <= 1024) {
+      max_nbor_size = 1024;
+    }
+    else if (max_nbor_size <= 2048) {
+      max_nbor_size = 2048;
+    }
+    else {
+      max_nbor_size = 4096;
+    }
+  }
+  delete [] mesh_host;
+}
+#endif // GOOGLE_CUDA
