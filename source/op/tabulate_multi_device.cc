@@ -1,174 +1,143 @@
-#include "common.h"
-#include "CustomeOperation.h"
+#include "custom_op.h"
+#include "tabulate.h"
 
 REGISTER_OP("TabulateFusion")
     .Attr("T: {float, double}")
     .Input("table: T")
     .Input("table_info: T")
-    .Input("input: T")
-    .Input("ff: T")
+    .Input("em_x: T")
+    .Input("em: T")
     .Attr("last_layer_size: int")
-    .Output("output: T");
+    .Output("descriptor: T");
 
 REGISTER_OP("TabulateFusionGrad")
     .Attr("T: {float, double}")
     .Input("table: T")
     .Input("table_info: T")
-    .Input("input: T")
-    .Input("ff: T")
+    .Input("em_x: T")
+    .Input("em: T")
     .Input("dy: T")        
-    .Input("output: T")         
-    .Output("dy_dx: T")
-    .Output("dy_df: T");
-
-template <typename FPTYPE>
-struct TabulateFusionFunctor {
-    void operator()(const CPUDevice& d, const FPTYPE * table, const FPTYPE * table_info, const FPTYPE * in, const FPTYPE * ff, const int nloc, const int nnei, const int last_layer_size, FPTYPE * out) {
-        TabulateFusionCPULauncher(table, table_info, in, ff, nloc, nnei, last_layer_size, out);
-    }
-    #if GOOGLE_CUDA
-    void operator()(const GPUDevice& d, const FPTYPE * table, const FPTYPE * table_info, const FPTYPE * in, const FPTYPE * ff, const int nloc, const int nnei, const int last_layer_size, FPTYPE * out) {
-        //Currently, Do nothing at all! 
-        TabulateFusionGPULauncher(table, table_info, in, ff, nloc, nnei, last_layer_size, out);
-    }
-    #endif // GOOGLE_CUDA 
-};
-
-template <typename FPTYPE>
-struct TabulateFusionGradFunctor {
-    void operator()(const CPUDevice& d, const FPTYPE * table, const FPTYPE * table_info, const FPTYPE * in, const FPTYPE * ff, const FPTYPE * dy, const int nloc, const int nnei, const int last_layer_size, FPTYPE * dy_dx, FPTYPE * dy_df) {
-        TabulateFusionGradCPULauncher(table, table_info, in, ff, dy, nloc, nnei, last_layer_size, dy_dx, dy_df);
-    }
-    #if GOOGLE_CUDA
-    void operator()(const GPUDevice& d, const FPTYPE * table, const FPTYPE * table_info, const FPTYPE * in, const FPTYPE * ff, const FPTYPE * dy, const int nloc, const int nnei, const int last_layer_size, FPTYPE * dy_dx, FPTYPE * dy_df) {
-        //Currently, Do nothing at all! 
-        TabulateFusionGradGPULauncher(table, table_info, in, ff, dy, nloc, nnei, last_layer_size, dy_dx, dy_df);
-    }
-    #endif // GOOGLE_CUDA 
-};
-
-template <typename FPTYPE>
-struct TabulateCheckerFunctor {
-    void operator()(const CPUDevice& d, const FPTYPE * table_info, const FPTYPE * in, int * out, const int nloc, const int nnei) {
-        TabulateCheckerCPULauncher(table_info, in, out, nloc, nnei);
-    }
-    #if GOOGLE_CUDA
-    void operator()(const GPUDevice& d, const FPTYPE * table_info, const FPTYPE * in, int * out, const int nloc, const int nnei) {
-        //Currently, Do nothing at all! 
-        TabulateCheckerGPULauncher(table_info, in, out, nloc, nnei);
-    }
-    #endif // GOOGLE_CUDA 
-};
+    .Input("descriptor: T")         
+    .Output("dy_dem_x: T")
+    .Output("dy_dem: T");
 
 template<typename Device, typename FPTYPE>
 class TabulateFusionOp : public OpKernel {
-  public:
-    explicit TabulateFusionOp(OpKernelConstruction* context) : OpKernel(context) {
-        OP_REQUIRES_OK(context, context->GetAttr("last_layer_size", &last_layer_size));
-        counter = -1;
+ public:
+  explicit TabulateFusionOp(OpKernelConstruction* context) : OpKernel(context) {
+    OP_REQUIRES_OK(context, context->GetAttr("last_layer_size", &last_layer_size));
+  }
+  void Compute(OpKernelContext* context) override {
+    // Grab the input tensor
+    int context_input_index = 0;
+    const Tensor& table_tensor	= context->input(context_input_index++);
+    const Tensor& table_info_tensor = context->input(context_input_index++);
+    const Tensor& em_x_tensor	= context->input(context_input_index++);
+    const Tensor& em_tensor	= context->input(context_input_index++);
+    // set size of the sample
+    OP_REQUIRES (context, (table_tensor.shape().dims() == 2),   errors::InvalidArgument ("Dim of table should be 2"));
+    OP_REQUIRES (context, (em_x_tensor.shape().dims() == 2),    errors::InvalidArgument ("Dim of input should be 2"));
+    OP_REQUIRES (context, (em_tensor.shape().dims() == 3),      errors::InvalidArgument ("Dim of input should be 3"));
+    TensorShape descriptor_shape;
+    descriptor_shape.AddDim (em_tensor.shape().dim_size(0));
+    descriptor_shape.AddDim (4); // TODO: be careful here;
+    descriptor_shape.AddDim (last_layer_size);
+    int context_output_index = 0;
+    Tensor* descriptor_tensor = NULL;
+    OP_REQUIRES_OK(context, context->allocate_output(
+        context_output_index++,
+	  		descriptor_shape,
+	  		&descriptor_tensor));
+    DeviceFunctor() (
+        device,
+        context->eigen_device<Device>()
+    );
+    // flat the tensors
+    FPTYPE * descriptor = descriptor_tensor->flat<FPTYPE>().data();
+    const FPTYPE * table = table_tensor.flat<FPTYPE>().data();
+    const FPTYPE * table_info = table_info_tensor.flat<FPTYPE>().data();
+    const FPTYPE * em_x = em_x_tensor.flat<FPTYPE>().data();
+    const FPTYPE * em = em_tensor.flat<FPTYPE>().data();
+    const int nloc = em_tensor.shape().dim_size(0);
+    const int nnei = em_tensor.shape().dim_size(1);
+
+    if (device == "GPU") {
+      #if GOOGLE_CUDA
+      tabulate_fusion_gpu_cuda(    
+          descriptor,
+          table, table_info, em_x, em, nloc, nnei, last_layer_size);
+      #endif // GOOGLE_CUDA
     }
-
-    void Compute(OpKernelContext* context) override {
-        // Grab the input tensor
-        int context_input_index = 0;
-        const Tensor& table	= context->input(context_input_index++);
-        const Tensor& table_info = context->input(context_input_index++);
-        const Tensor& input	= context->input(context_input_index++);
-        const Tensor& ff	= context->input(context_input_index++);
-
-        // set size of the sample
-        OP_REQUIRES (context, (table.shape().dims() == 2),	    errors::InvalidArgument ("Dim of table should be 2"));
-        OP_REQUIRES (context, (input.shape().dims() == 2),		errors::InvalidArgument ("Dim of input should be 2"));
-        OP_REQUIRES (context, (ff.shape().dims() == 3),		    errors::InvalidArgument ("Dim of input should be 3"));
-
-        TensorShape output_shape;
-        output_shape.AddDim (ff.shape().dim_size(0));
-        output_shape.AddDim (4);
-        output_shape.AddDim (last_layer_size);
-
-        int context_output_index = 0;
-        Tensor* output = NULL;
-        OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
-	    					     output_shape,
-	    					     &output));
-
-        // counter++;
-        // if ((int)table_info.flat<FPTYPE>().data()[5] != -1 && counter % (int)table_info.flat<FPTYPE>().data()[5] == 0) {
-        //     Tensor int_temp;
-        //     TensorShape int_shape;
-        //     int_shape.AddDim(2 * ff.shape().dim_size(0));
-        //     OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, int_shape, &int_temp));
-        //     TabulateCheckerFunctor<FPTYPE>()(
-        //         context->eigen_device<Device>(),
-        //         table_info.flat<FPTYPE>().data(),
-        //         input.flat<FPTYPE>().data(),
-        //         int_temp.flat<int>().data(),
-        //         ff.shape().dim_size(0),
-        //         ff.shape().dim_size(1)
-        //     );
-        // }
-
-        TabulateFusionFunctor<FPTYPE>()(
-            context->eigen_device<Device>(),            // define actually graph execution device
-            table.flat<FPTYPE>().data(),
-            table_info.flat<FPTYPE>().data(),
-            input.flat<FPTYPE>().data(),
-            ff.flat<FPTYPE>().data(),
-            ff.shape().dim_size(0),
-            ff.shape().dim_size(1),
-            last_layer_size,
-            output->flat<FPTYPE>().data()
-        );
+    else if (device == "CPU") {
+      tabulate_fusion_cpu(    
+          descriptor,
+          table, table_info, em_x, em, nloc, nnei, last_layer_size);
     }
+  }
 private:
-    int counter;
     int last_layer_size;
+    std::string device;
 };
 
 template<typename Device, typename FPTYPE>
 class TabulateFusionGradOp : public OpKernel {
  public:
-    explicit TabulateFusionGradOp(OpKernelConstruction* context) : OpKernel(context) {}
+  explicit TabulateFusionGradOp(OpKernelConstruction* context) : OpKernel(context) {}
+  void Compute(OpKernelContext* context) override {
+    // Grab the input tensor
+    int context_input_index = 0;
+    const Tensor& table_tensor	= context->input(context_input_index++);
+    const Tensor& table_info_tensor = context->input(context_input_index++);
+    const Tensor& em_x_tensor	= context->input(context_input_index++);
+    const Tensor& em_tensor	= context->input(context_input_index++);
+    const Tensor& dy_tensor	= context->input(context_input_index++);
+    const Tensor& descriptor_tensor = context->input(context_input_index++);
+    // set size of the sample
+    OP_REQUIRES (context, (dy_tensor.shape().dims() == 3), errors::InvalidArgument ("Dim of table should be 3"));
+    int context_output_index = 0;
+    Tensor* dy_dem_x_tensor = NULL;
+    OP_REQUIRES_OK(context, context->allocate_output(
+        context_output_index++,
+	  		em_x_tensor.shape(),
+        &dy_dem_x_tensor));
+    Tensor* dy_dem_tensor = NULL;
+    OP_REQUIRES_OK(context, context->allocate_output(
+        context_output_index++,
+	  		em_tensor.shape(),
+	  		&dy_dem_tensor));
+    DeviceFunctor() (
+        device,
+        context->eigen_device<Device>()
+    );
 
-    void Compute(OpKernelContext* context) override {
-        // std::cout << "I'm here" << std::endl;
-        // Grab the input tensor
-        int context_input_index = 0;
-        const Tensor& table	= context->input(context_input_index++);
-        const Tensor& table_info = context->input(context_input_index++);
-        const Tensor& input	= context->input(context_input_index++);
-        const Tensor& ff	= context->input(context_input_index++);
-        const Tensor& dy	= context->input(context_input_index++);
-        const Tensor& output = context->input(context_input_index++);
+    // flat the tensors
+    FPTYPE * dy_dem_x = dy_dem_x_tensor->flat<FPTYPE>().data();
+    FPTYPE * dy_dem = dy_dem_tensor->flat<FPTYPE>().data();
+    const FPTYPE * descriptor = descriptor_tensor.flat<FPTYPE>().data();
+    const FPTYPE * table = table_tensor.flat<FPTYPE>().data();
+    const FPTYPE * table_info = table_info_tensor.flat<FPTYPE>().data();
+    const FPTYPE * em_x = em_x_tensor.flat<FPTYPE>().data();
+    const FPTYPE * em = em_tensor.flat<FPTYPE>().data();
+    const FPTYPE * dy = dy_tensor.flat<FPTYPE>().data();
+    const int nloc = em_tensor.shape().dim_size(0);
+    const int nnei = em_tensor.shape().dim_size(1);
+    const int last_layer_size = descriptor_tensor.shape().dim_size(2);
 
-        // set size of the sample
-        OP_REQUIRES (context, (dy.shape().dims() == 3),	    errors::InvalidArgument ("Dim of table should be 1"));
-
-        int context_output_index = 0;
-        Tensor* dy_dx = NULL;
-        OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
-	    					     input.shape(),
-	    					     &dy_dx));
-        Tensor* dy_df = NULL;
-        OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
-	    					     ff.shape(),
-	    					     &dy_df));
-
-        TabulateFusionGradFunctor<FPTYPE>()(
-            context->eigen_device<Device>(),            // define actually graph execution device
-            table.flat<FPTYPE>().data(),
-            table_info.flat<FPTYPE>().data(),
-            input.flat<FPTYPE>().data(),
-            ff.flat<FPTYPE>().data(),
-            dy.flat<FPTYPE>().data(),
-            ff.shape().dim_size(0),
-            ff.shape().dim_size(1),
-            output.shape().dim_size(2),
-            dy_dx->flat<FPTYPE>().data(),
-            dy_df->flat<FPTYPE>().data()
-        );
+    if (device == "GPU") {
+      #if GOOGLE_CUDA
+      tabulate_fusion_grad_gpu_cuda(    
+          dy_dem_x, dy_dem,
+          table, table_info, em_x, em, dy, nloc, nnei, last_layer_size);
+      #endif // GOOGLE_CUDA
     }
+    else if (device == "CPU") {
+      tabulate_fusion_grad_cpu(    
+          dy_dem_x, dy_dem,
+          table, table_info, em_x, em, dy, nloc, nnei, last_layer_size);
+    }
+  }
 private:
+    std::string device;
 };
 
 #define REGISTER_CPU(T)                                                                             \

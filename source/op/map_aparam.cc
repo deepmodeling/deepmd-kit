@@ -1,15 +1,5 @@
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include <iostream>
-
+#include "custom_op.h"
 #include "map_aparam.h"
-
-using namespace tensorflow;
-// using namespace std;
-
-using CPUDevice = Eigen::ThreadPoolDevice;
-using GPUDevice = Eigen::GpuDevice;
 
 REGISTER_OP("MapAparam")
 .Attr("T: {float, double}")

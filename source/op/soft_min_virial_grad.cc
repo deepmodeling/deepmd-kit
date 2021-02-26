@@ -1,11 +1,4 @@
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include <iostream>
-
-using namespace tensorflow;
-// using namespace std;
-
+#include "custom_op.h"
 #include "soft_min_switch_virial_grad.h"
 
 REGISTER_OP("SoftMinVirialGrad")

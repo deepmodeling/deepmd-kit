@@ -1,16 +1,5 @@
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include <iostream>
-
+#include "custom_op.h"
 #include "Ewald.h"
-
-typedef double boxtensor_t ;
-
-using namespace tensorflow;
-// using namespace std;
-
-using CPUDevice = Eigen::ThreadPoolDevice;
 
 REGISTER_OP("EwaldRecp")
 .Attr("T: {float, double}")

@@ -24,3 +24,28 @@ void prod_virial_r_cpu(
     const int nall, 
     const int nnei);
 
+#if GOOGLE_CUDA
+template<typename FPTYPE>
+void prod_virial_a_gpu_cuda(
+    FPTYPE * virial, 
+    FPTYPE * atom_virial, 
+    const FPTYPE * net_deriv, 
+    const FPTYPE * env_deriv, 
+    const FPTYPE * rij_deriv, 
+    const int * nlist, 
+    const int nloc, 
+    const int nall, 
+    const int nnei);
+
+template<typename FPTYPE>
+void prod_virial_r_gpu_cuda(
+    FPTYPE * virial, 
+    FPTYPE * atom_virial, 
+    const FPTYPE * net_deriv, 
+    const FPTYPE * env_deriv, 
+    const FPTYPE * rij_deriv, 
+    const int * nlist, 
+    const int nloc, 
+    const int nall, 
+    const int nnei);
+#endif // GOOGLE_CUDA
