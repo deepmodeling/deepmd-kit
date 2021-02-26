@@ -73,14 +73,14 @@ public:
     const Tensor& avg_tensor	= context->input(context_input_index++);
     const Tensor& std_tensor	= context->input(context_input_index++);
     // set size of the sample. assume 't' is [[[1, 1, 1], [2, 2, 2]], [[3, 3, 3], [4, 4, 4]]], then shape(t) ==> [2, 2, 3]
-    OP_REQUIRES (context, (coord_tensor.shape().dims() == 2),	      errors::InvalidArgument ("Dim of coord should be 2"));
-    OP_REQUIRES (context, (type_tensor.shape().dims() == 2),	      errors::InvalidArgument ("Dim of type should be 2"));
-    OP_REQUIRES (context, (natoms_tensor.shape().dims() == 1),	    errors::InvalidArgument ("Dim of natoms should be 1"));
-    OP_REQUIRES (context, (box_tensor.shape().dims() == 2),	        errors::InvalidArgument ("Dim of box should be 2"));
-    OP_REQUIRES (context, (mesh_tensor.shape().dims() == 1),	      errors::InvalidArgument ("Dim of mesh should be 1"));
-    OP_REQUIRES (context, (avg_tensor.shape().dims() == 2),	        errors::InvalidArgument ("Dim of avg should be 2"));
-    OP_REQUIRES (context, (std_tensor.shape().dims() == 2),	        errors::InvalidArgument ("Dim of std should be 2"));
-    OP_REQUIRES (context, (sec_r.back() == 0),			                errors::InvalidArgument ("Rotational free descriptor only support all-angular information: sel_r should be all zero."));
+    OP_REQUIRES (context, (coord_tensor.shape().dims() == 2),       errors::InvalidArgument ("Dim of coord should be 2"));
+    OP_REQUIRES (context, (type_tensor.shape().dims() == 2),        errors::InvalidArgument ("Dim of type should be 2"));
+    OP_REQUIRES (context, (natoms_tensor.shape().dims() == 1),      errors::InvalidArgument ("Dim of natoms should be 1"));
+    OP_REQUIRES (context, (box_tensor.shape().dims() == 2),         errors::InvalidArgument ("Dim of box should be 2"));
+    OP_REQUIRES (context, (mesh_tensor.shape().dims() == 1),        errors::InvalidArgument ("Dim of mesh should be 1"));
+    OP_REQUIRES (context, (avg_tensor.shape().dims() == 2),         errors::InvalidArgument ("Dim of avg should be 2"));
+    OP_REQUIRES (context, (std_tensor.shape().dims() == 2),         errors::InvalidArgument ("Dim of std should be 2"));
+    OP_REQUIRES (context, (sec_r.back() == 0),                      errors::InvalidArgument ("Rotational free descriptor only support all-angular information: sel_r should be all zero."));
     OP_REQUIRES (context, (natoms_tensor.shape().dim_size(0) >= 3), errors::InvalidArgument ("number of atoms should be larger than (or equal to) 3"));
     DeviceFunctor() (
         device,
@@ -92,19 +92,19 @@ public:
     int ntypes = natoms_tensor.shape().dim_size(0) - 2; //nloc and nall mean something.
     int nsamples = coord_tensor.shape().dim_size(0);
     //// check the sizes
-    OP_REQUIRES (context, (nsamples == type_tensor.shape().dim_size(0)),	errors::InvalidArgument ("number of samples should match"));
-    OP_REQUIRES (context, (nsamples == box_tensor.shape().dim_size(0)),		errors::InvalidArgument ("number of samples should match"));
-    OP_REQUIRES (context, (ntypes == avg_tensor.shape().dim_size(0)),		  errors::InvalidArgument ("number of avg should be ntype"));
-    OP_REQUIRES (context, (ntypes == std_tensor.shape().dim_size(0)),		  errors::InvalidArgument ("number of std should be ntype"));
+    OP_REQUIRES (context, (nsamples == type_tensor.shape().dim_size(0)),  errors::InvalidArgument ("number of samples should match"));
+    OP_REQUIRES (context, (nsamples == box_tensor.shape().dim_size(0)),   errors::InvalidArgument ("number of samples should match"));
+    OP_REQUIRES (context, (ntypes == avg_tensor.shape().dim_size(0)),     errors::InvalidArgument ("number of avg should be ntype"));
+    OP_REQUIRES (context, (ntypes == std_tensor.shape().dim_size(0)),     errors::InvalidArgument ("number of std should be ntype"));
     
-    OP_REQUIRES (context, (nall * 3 == coord_tensor.shape().dim_size(1)),	errors::InvalidArgument ("number of atoms should match"));
-    OP_REQUIRES (context, (nall == type_tensor.shape().dim_size(1)),		  errors::InvalidArgument ("number of atoms should match"));
-    OP_REQUIRES (context, (9 == box_tensor.shape().dim_size(1)),		      errors::InvalidArgument ("number of box should be 9"));
-    OP_REQUIRES (context, (ndescrpt == avg_tensor.shape().dim_size(1)),		errors::InvalidArgument ("number of avg should be ndescrpt"));
-    OP_REQUIRES (context, (ndescrpt == std_tensor.shape().dim_size(1)),		errors::InvalidArgument ("number of std should be ndescrpt"));   
+    OP_REQUIRES (context, (nall * 3 == coord_tensor.shape().dim_size(1)), errors::InvalidArgument ("number of atoms should match"));
+    OP_REQUIRES (context, (nall == type_tensor.shape().dim_size(1)),      errors::InvalidArgument ("number of atoms should match"));
+    OP_REQUIRES (context, (9 == box_tensor.shape().dim_size(1)),          errors::InvalidArgument ("number of box should be 9"));
+    OP_REQUIRES (context, (ndescrpt == avg_tensor.shape().dim_size(1)),   errors::InvalidArgument ("number of avg should be ndescrpt"));
+    OP_REQUIRES (context, (ndescrpt == std_tensor.shape().dim_size(1)),   errors::InvalidArgument ("number of std should be ndescrpt"));   
     
-    OP_REQUIRES (context, (ntypes == int(sel_a.size())),	errors::InvalidArgument ("number of types should match the length of sel array"));
-    OP_REQUIRES (context, (ntypes == int(sel_r.size())),	errors::InvalidArgument ("number of types should match the length of sel array"));
+    OP_REQUIRES (context, (ntypes == int(sel_a.size())),  errors::InvalidArgument ("number of types should match the length of sel array"));
+    OP_REQUIRES (context, (ntypes == int(sel_r.size())),  errors::InvalidArgument ("number of types should match the length of sel array"));
     // Create output tensors
     TensorShape descrpt_shape ;
     descrpt_shape.AddDim (nsamples);
@@ -221,22 +221,22 @@ public:
   void Compute(OpKernelContext* context) override {
     // Grab the input tensor
     int context_input_index = 0;
-    const Tensor& coord_tensor	= context->input(context_input_index++);
-    const Tensor& type_tensor	= context->input(context_input_index++);
-    const Tensor& natoms_tensor	= context->input(context_input_index++);
-    const Tensor& box_tensor	= context->input(context_input_index++);
-    const Tensor& mesh_tensor	= context->input(context_input_index++);
-    const Tensor& avg_tensor	= context->input(context_input_index++);
-    const Tensor& std_tensor	= context->input(context_input_index++);
+    const Tensor& coord_tensor  = context->input(context_input_index++);
+    const Tensor& type_tensor   = context->input(context_input_index++);
+    const Tensor& natoms_tensor = context->input(context_input_index++);
+    const Tensor& box_tensor    = context->input(context_input_index++);
+    const Tensor& mesh_tensor   = context->input(context_input_index++);
+    const Tensor& avg_tensor    = context->input(context_input_index++);
+    const Tensor& std_tensor    = context->input(context_input_index++);
     // set size of the sample
     OP_REQUIRES (context, (coord_tensor.shape().dims() == 2),	      errors::InvalidArgument ("Dim of coord should be 2"));
     OP_REQUIRES (context, (type_tensor.shape().dims() == 2),	      errors::InvalidArgument ("Dim of type should be 2"));
-    OP_REQUIRES (context, (natoms_tensor.shape().dims() == 1),	    errors::InvalidArgument ("Dim of natoms should be 1"));
-    OP_REQUIRES (context, (box_tensor.shape().dims() == 2),	        errors::InvalidArgument ("Dim of box should be 2"));
-    OP_REQUIRES (context, (mesh_tensor.shape().dims() == 1),	      errors::InvalidArgument ("Dim of mesh should be 1"));
-    OP_REQUIRES (context, (avg_tensor.shape().dims() == 2),	        errors::InvalidArgument ("Dim of avg should be 2"));
-    OP_REQUIRES (context, (std_tensor.shape().dims() == 2),	        errors::InvalidArgument ("Dim of std should be 2"));
-    OP_REQUIRES (context, (natoms_tensor.shape().dim_size(0) >= 3),	errors::InvalidArgument ("number of atoms should be larger than (or equal to) 3"));
+    OP_REQUIRES (context, (natoms_tensor.shape().dims() == 1),      errors::InvalidArgument ("Dim of natoms should be 1"));
+    OP_REQUIRES (context, (box_tensor.shape().dims() == 2),         errors::InvalidArgument ("Dim of box should be 2"));
+    OP_REQUIRES (context, (mesh_tensor.shape().dims() == 1),        errors::InvalidArgument ("Dim of mesh should be 1"));
+    OP_REQUIRES (context, (avg_tensor.shape().dims() == 2),         errors::InvalidArgument ("Dim of avg should be 2"));
+    OP_REQUIRES (context, (std_tensor.shape().dims() == 2),         errors::InvalidArgument ("Dim of std should be 2"));
+    OP_REQUIRES (context, (natoms_tensor.shape().dim_size(0) >= 3), errors::InvalidArgument ("number of atoms should be larger than (or equal to) 3"));
     DeviceFunctor() (
         device,
         context->eigen_device<Device>()
@@ -249,15 +249,15 @@ public:
     //
     //// check the sizes
     // check the sizes
-    OP_REQUIRES (context, (nsamples == type_tensor.shape().dim_size(0)),	errors::InvalidArgument ("number of samples should match"));
-    OP_REQUIRES (context, (nsamples == box_tensor.shape().dim_size(0)),		errors::InvalidArgument ("number of samples should match"));
-    OP_REQUIRES (context, (ntypes == avg_tensor.shape().dim_size(0)),		  errors::InvalidArgument ("number of avg should be ntype"));
-    OP_REQUIRES (context, (ntypes == std_tensor.shape().dim_size(0)),		  errors::InvalidArgument ("number of std should be ntype"));
-    OP_REQUIRES (context, (nall * 3 == coord_tensor.shape().dim_size(1)),	errors::InvalidArgument ("number of atoms should match"));
-    OP_REQUIRES (context, (nall == type_tensor.shape().dim_size(1)),		  errors::InvalidArgument ("number of atoms should match"));
-    OP_REQUIRES (context, (9 == box_tensor.shape().dim_size(1)),		      errors::InvalidArgument ("number of box should be 9"));
-    OP_REQUIRES (context, (ndescrpt == avg_tensor.shape().dim_size(1)),		errors::InvalidArgument ("number of avg should be ndescrpt"));
-    OP_REQUIRES (context, (ndescrpt == std_tensor.shape().dim_size(1)),		errors::InvalidArgument ("number of std should be ndescrpt"));
+    OP_REQUIRES (context, (nsamples == type_tensor.shape().dim_size(0)),  errors::InvalidArgument ("number of samples should match"));
+    OP_REQUIRES (context, (nsamples == box_tensor.shape().dim_size(0)),   errors::InvalidArgument ("number of samples should match"));
+    OP_REQUIRES (context, (ntypes == avg_tensor.shape().dim_size(0)),     errors::InvalidArgument ("number of avg should be ntype"));
+    OP_REQUIRES (context, (ntypes == std_tensor.shape().dim_size(0)),     errors::InvalidArgument ("number of std should be ntype"));
+    OP_REQUIRES (context, (nall * 3 == coord_tensor.shape().dim_size(1)), errors::InvalidArgument ("number of atoms should match"));
+    OP_REQUIRES (context, (nall == type_tensor.shape().dim_size(1)),      errors::InvalidArgument ("number of atoms should match"));
+    OP_REQUIRES (context, (9 == box_tensor.shape().dim_size(1)),          errors::InvalidArgument ("number of box should be 9"));
+    OP_REQUIRES (context, (ndescrpt == avg_tensor.shape().dim_size(1)),   errors::InvalidArgument ("number of avg should be ndescrpt"));
+    OP_REQUIRES (context, (ndescrpt == std_tensor.shape().dim_size(1)),   errors::InvalidArgument ("number of std should be ndescrpt"));
     // Create an output tensor
     TensorShape descrpt_shape ;
     descrpt_shape.AddDim (nsamples);

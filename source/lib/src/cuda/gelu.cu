@@ -33,8 +33,8 @@ __global__ void gelu_grad(
 
 template <typename FPTYPE>
 __global__ void gelu_grad_grad(
-  FPTYPE * out, 
-  const FPTYPE * xx, 
+    FPTYPE * out, 
+    const FPTYPE * xx, 
     const FPTYPE * dy, 
     const FPTYPE * dy_2,
     int const size) 

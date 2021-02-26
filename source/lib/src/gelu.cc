@@ -37,7 +37,7 @@ void gelu_grad_grad_cpu(
   for (int ii = 0; ii < size; ii++) {
     const FPTYPE var1 = tanh(SQRT_2_PI * (xx[ii] + 0.044715 * xx[ii] * xx[ii] *xx[ii]));
     const FPTYPE var2 = SQRT_2_PI * (1 - var1 * var1) * (0.134145 * xx[ii] * xx[ii] + 1);
-	  out[ii] = dy[ii] * dy_2[ii] * (0.134145 * SQRT_2_PI * xx[ii] * xx[ii] * (1 - var1 * var1) - SQRT_2_PI * xx[ii] * var2 * (0.134145 * xx[ii] * xx[ii] + 1) * var1 + var2);
+	out[ii] = dy[ii] * dy_2[ii] * (0.134145 * SQRT_2_PI * xx[ii] * xx[ii] * (1 - var1 * var1) - SQRT_2_PI * xx[ii] * var2 * (0.134145 * xx[ii] * xx[ii] + 1) * var1 + var2);
   }
 }
 

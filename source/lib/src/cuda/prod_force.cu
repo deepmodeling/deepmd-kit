@@ -3,16 +3,19 @@
 #include "prod_force.h"
 
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 600
-static __inline__ __device__ double atomicAdd(double* address, double val) {
-    unsigned long long int* address_as_ull = (unsigned long long int*)address;
-    unsigned long long int old = *address_as_ull, assumed;
-    do {
-        assumed = old;
-        old = atomicCAS(address_as_ull, assumed,
-                __double_as_longlong(val + __longlong_as_double(assumed)));
-    // Note: uses integer comparison to avoid hang in case of NaN (since NaN != NaN) } while (assumed != old);
-    } while (assumed != old);
-    return __longlong_as_double(old);
+static __inline__ __device__ double atomicAdd(
+    double* address, 
+    double val) 
+{
+  unsigned long long int* address_as_ull = (unsigned long long int*)address;
+  unsigned long long int old = *address_as_ull, assumed;
+  do {
+    assumed = old;
+    old = atomicCAS(address_as_ull, assumed,
+          __double_as_longlong(val + __longlong_as_double(assumed)));
+  // Note: uses integer comparison to avoid hang in case of NaN (since NaN != NaN) } while (assumed != old);
+  } while (assumed != old);
+  return __longlong_as_double(old);
 }
 #endif
 
@@ -105,8 +108,8 @@ __global__ void force_deriv_wrt_neighbors_r(
         return;
     }
     atomicAdd(
-				force + j_idx * 3 + idz, 
-				net_deriv[idx * ndescrpt + idy] * in_deriv[idx * ndescrpt * 3 + idy * 3 + idz]);
+        force + j_idx * 3 + idz, 
+        net_deriv[idx * ndescrpt + idy] * in_deriv[idx * ndescrpt * 3 + idy * 3 + idz]);
 }
 
 template<typename FPTYPE> 
