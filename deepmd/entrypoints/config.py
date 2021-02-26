@@ -125,7 +125,7 @@ def get_rcut() -> float:
     ValueError
         if rcut is smaller than 0.0
     """
-    dv = 6
+    dv = 6.0
     rcut_input = input(f"Enter rcut (default {dv:.1f} A): \n")
     try:
         rcut = float(rcut_input)
@@ -336,7 +336,7 @@ def config(*, output: str, **kwargs):
     decay_steps, decay_rate = suggest_decay(stop_batch)
 
     jdata = DEFAULT_DATA.copy()
-    jdata["systems"] = all_sys
+    jdata["systems"] = [str(ii) for ii in all_sys]
     jdata["sel_a"] = sel
     jdata["rcut"] = rcut
     jdata["rcut_smth"] = rcut - 0.2

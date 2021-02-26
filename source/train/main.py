@@ -327,5 +327,7 @@ def main():
         compress(**dict_args)
     elif args.command == "doc-train-input":
         doc_train_input()
+    elif args.command is None:
+        pass
     else:
         raise RuntimeError(f"unknown command {args.command}")
