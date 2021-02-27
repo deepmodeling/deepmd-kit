@@ -3,7 +3,7 @@ import numpy as np
 import unittest
 
 from infer.convert2pb import convert_pbtxt_to_pb
-from deepmd import DeepPolar
+from deepmd.infer import DeepPolar
 from common import tests_path
 
 from deepmd.run_options import GLOBAL_NP_FLOAT_PRECISION

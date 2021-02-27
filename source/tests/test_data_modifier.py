@@ -25,15 +25,8 @@ else :
     global_default_places = 5
 
 modifier_datapath = 'data_modifier'
+INPUT = os.path.join(modifier_datapath, 'dipole.json')
 
-class Args() :
-    INPUT = os.path.join(modifier_datapath, 'dipole.json')
-    restart = None
-    init_model = None
-    inter_threads = 0
-    log_path = None
-    log_level = 0
-    mpi_log = "master"
 
 class TestDataModifier (unittest.TestCase) :
 
@@ -46,9 +39,15 @@ class TestDataModifier (unittest.TestCase) :
         tf.reset_default_graph()        
 
     def _setUp(self):
-        args = Args()
-        run_opt = RunOptions(args, False)
-        jdata = j_loader(args.INPUT)
+        run_opt = RunOptions(
+            restart=None,
+            init_model=None,
+            log_path=None,
+            log_level=0,
+            mpi_log="master",
+            try_distrib=False
+        )
+        jdata = j_loader(INPUT)
 
         # init model
         model = NNPTrainer (jdata, run_opt = run_opt)

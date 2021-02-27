@@ -7,30 +7,23 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 import numpy as np
-for p in Path(__file__).parent.glob("*"):
-    if p.is_dir():
-        print(p)
-print("----------------")
 from deepmd.cluster import get_resource
 from deepmd.env import get_tf_default_nthreads, tf
 from deepmd.loggers import set_log_handles
 
 if TYPE_CHECKING:
+    from mpi4py import MPI
+
     try:
         from typing import Protocol  # python >=3.8
     except ImportError:
         from typing_extensions import Protocol  # type: ignore
 
-    from mpi4py import MPI
-
-    class ArgsProto(Protocol):
+    class TFServerV1(Protocol):
         """Prococol mimicking parser object."""
 
-        init_model: Optional[str]
-        restart: Optional[str]
-        log_level: int
-        log_path: Optional[str]
-        mpi_log: Optional[str]
+        server_def: tf.train.ServerDef
+        target: str
 
 
 __all__ = [
@@ -268,13 +261,21 @@ class RunOptions:
     nodename: str
     num_ps: Optional[int]
     num_workers: Optional[int]
-    server: Optional[tf.train.Server]
+    server: Optional["TFServerV1"]
     my_device: str
 
     _MPI: Optional["MPI"]
     _log_handles_already_set: bool = False
 
-    def __init__(self, args: Optional["ArgsProto"], try_distrib: bool = False):
+    def __init__(
+        self,
+        init_model: Optional[str] = None,
+        restart: Optional[str] = None,
+        log_path: Optional[str] = None,
+        log_level: int = 0,
+        mpi_log: str = "master",
+        try_distrib: bool = False
+    ):
         # distributed tasks
         if try_distrib:
             self._try_init_mpi()
@@ -282,47 +283,43 @@ class RunOptions:
             self.is_distrib = False
             self._init_serial()
 
-        # model init options
-        # default set
-        self.restart = None
-        self.init_model = None
-        self.init_mode = "init_from_scratch"
-        if args is not None:
-            if all((args.init_model, args.restart)):
-                raise RuntimeError(
-                    "--init-model and --restart should not be set at the same time"
-                )
-            elif args.init_model:
-                self.init_model = os.path.abspath(args.init_model)
-                self.init_mode = "init_from_model"
-            elif args.restart:
-                self.restart = os.path.abspath(args.restart)
-                self.init_mode = "restart"
-
-            self._setup_logger(
-                Path(args.log_path) if args.log_path else None,
-                args.log_level,
-                args.mpi_log,
+        if all((init_model, restart)):
+            raise RuntimeError(
+                "--init-model and --restart should not be set at the same time"
             )
+
+        # model init options
+        self.restart = restart
+        self.init_model = init_model
+        self.init_mode = "init_from_scratch"
+
+        if restart is not None:
+            self.restart = os.path.abspath(restart)
+            self.init_mode = "restart"
+        elif init_model is not None:
+            self.init_model = os.path.abspath(init_model)
+            self.init_mode = "init_from_model"
+
+        self._setup_logger(Path(log_path) if log_path else None, log_level, mpi_log)
 
     def print_resource_summary(self):
         """Print build and current running cluster configuration summary."""
-        log.info("---Summary of the training---------------------------------------\n")
+        log.info("---Summary of the training---------------------------------------")
         if self.is_distrib:
-            log.info("distributed\n")
-            log.info(f"ps list:              {self.cluster['ps']}\n")
-            log.info(f"worker list:          {self.cluster['worker']}\n")
-            log.info(f"chief on:             {self.nodename}\n")
+            log.info("distributed")
+            log.info(f"ps list:              {self.cluster['ps']}")
+            log.info(f"worker list:          {self.cluster['worker']}")
+            log.info(f"chief on:             {self.nodename}")
         else:
-            log.info(f"running on:           {self.nodename}\n")
+            log.info(f"running on:           {self.nodename}")
         if self.gpus is None:
-            log.info(f"CUDA_VISIBLE_DEVICES: unset\n")
+            log.info(f"CUDA_VISIBLE_DEVICES: unset")
         else:
-            log.info(f"CUDA_VISIBLE_DEVICES: {self.gpus}\n")
+            log.info(f"CUDA_VISIBLE_DEVICES: {self.gpus}")
         intra, inter = get_tf_default_nthreads()
-        log.info(f"num_intra_threads:    {intra:d}\n")
-        log.info(f"num_inter_threads:    {inter:d}\n")
-        log.info("-----------------------------------------------------------------\n")
+        log.info(f"num_intra_threads:    {intra:d}")
+        log.info(f"num_inter_threads:    {inter:d}")
+        log.info("-----------------------------------------------------------------")
 
     def _setup_logger(
         self,

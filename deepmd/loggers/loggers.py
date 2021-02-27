@@ -1,6 +1,7 @@
 """Logger initialization for package."""
 
 import logging
+import os
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
@@ -165,10 +166,34 @@ def set_log_handles(
     References
     ----------
     https://groups.google.com/g/mpi4py/c/SaNzc8bdj6U
+    https://stackoverflow.com/questions/35869137/avoid-tensorflow-print-on-standard-error
+    https://stackoverflow.com/questions/56085015/suppress-openmp-debug-messages-when-running-tensorflow-on-cpu
+
+    Notes
+    -----
+    Logging levels:
+
+    +---------+--------------+----------------+----------------+----------------+
+    |         | our notation | python logging | tensorflow cpp | OpenMP         |
+    +=========+==============+================+================+================+
+    | debug   | 3            | 10             | 0              | 1/on/true/yes  |
+    +---------+--------------+----------------+----------------+----------------+
+    | info    | 2            | 20             | 1              | 0/off/false/no |
+    +---------+--------------+----------------+----------------+----------------+
+    | warning | 1            | 30             | 2              | 0/off/false/no |
+    +---------+--------------+----------------+----------------+----------------+
+    | error   | 0            | 40             | 3              | 0/off/false/no |
+    +---------+--------------+----------------+----------------+----------------+
+
     """
-    # convert 0 - 3 to python logging level
-    # we have debug=3 -> logging.DEBUG = 10
-    # we have error=0 -> logging.ERROR = 40
+    # silence logging for OpenMP when running on CPU if level is any other than debug
+    if level >= 3:
+        os.environ["KMP_WARNINGS"] = "FALSE"
+
+    # set TF cpp internal logging level
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = str(3 - level)
+
+    # set python logging level
     level = (4 - level) * 10
 
     # get root logger

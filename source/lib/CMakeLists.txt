@@ -19,7 +19,7 @@ if (USE_CUDA_TOOLKIT)
 endif()
 
 if(BUILD_PY_IF)
-  install(TARGETS ${libname} DESTINATION deepmd/)
+  install(TARGETS ${libname} DESTINATION deepmd/op/)
 endif(BUILD_PY_IF)
 if(BUILD_CPP_IF)
   install(TARGETS ${libname} DESTINATION lib/)

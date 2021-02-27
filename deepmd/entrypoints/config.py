@@ -4,20 +4,11 @@
 import json
 import yaml
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, TYPE_CHECKING
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
-if TYPE_CHECKING:
-    try:
-        from typing import Protocol  # python >=3.8
-    except ImportError:
-        from typing_extensions import Protocol
-
-    class ArgsProto(Protocol):
-        """Prococol mimicking parser object."""
-
-        output: str
+__all__ = ["config"]
 
 
 DEFAULT_DATA: Dict[str, Any] = {
@@ -79,9 +70,7 @@ def valid_dir(path: Path):
             raise OSError
 
 
-def load_systems(
-    dirs: List[Path],
-) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+def load_systems(dirs: List[Path]) -> Tuple[List[np.ndarray], List[np.ndarray]]:
     """Load systems to memory for disk.
 
     Parameters
@@ -136,7 +125,7 @@ def get_rcut() -> float:
     ValueError
         if rcut is smaller than 0.0
     """
-    dv = 6
+    dv = 6.0
     rcut_input = input(f"Enter rcut (default {dv:.1f} A): \n")
     try:
         rcut = float(rcut_input)
@@ -319,13 +308,13 @@ def suggest_decay(stop_batch: int) -> Tuple[int, float]:
     return decay_steps, decay_rate
 
 
-def config(args: "ArgsProto"):
+def config(*, output: str, **kwargs):
     """Auto config file generator.
 
     Parameters
     ----------
-    args : ArgsProto
-        argparse:parser instance with output attribute
+    output: str
+        file to write config file
 
     Raises
     ------
@@ -347,7 +336,7 @@ def config(args: "ArgsProto"):
     decay_steps, decay_rate = suggest_decay(stop_batch)
 
     jdata = DEFAULT_DATA.copy()
-    jdata["systems"] = all_sys
+    jdata["systems"] = [str(ii) for ii in all_sys]
     jdata["sel_a"] = sel
     jdata["rcut"] = rcut
     jdata["rcut_smth"] = rcut - 0.2
@@ -356,10 +345,10 @@ def config(args: "ArgsProto"):
     jdata["decay_steps"] = decay_steps
     jdata["decay_rate"] = decay_rate
 
-    with open(args.output, "w") as fp:
-        if args.output.endswith("json"):
+    with open(output, "w") as fp:
+        if output.endswith("json"):
             json.dump(jdata, fp, indent=4)
-        elif args.output.endswith(("yml", "yaml")):
+        elif output.endswith(("yml", "yaml")):
             yaml.safe_dump(jdata, fp, default_flow_style=False)
         else:
             raise ValueError("output file must be of type json or yaml")

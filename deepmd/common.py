@@ -427,8 +427,10 @@ def expand_sys_str(root_dir: Union[str, Path]) -> List[str]:
     List[str]
         list of string pointing to system directories
     """
-    matches = [d for d in Path(root_dir).rglob("*") if (d / "type.raw").is_file()]
-    return [str(m.relative_to(root_dir)) for m in matches]
+    matches = [str(d) for d in Path(root_dir).rglob("*") if (d / "type.raw").is_file()]
+    if (Path(root_dir) / "type.raw").is_file():
+        matches += [root_dir]
+    return matches
 
 
 def docstring_parameter(*sub: Tuple[str, ...]):

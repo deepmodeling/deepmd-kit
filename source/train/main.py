@@ -2,26 +2,30 @@
 
 import argparse
 from pathlib import Path
+from typing import List, Optional
 
+from deepmd.entrypoints import (
+    compress,
+    config,
+    doc_train_input,
+    freeze,
+    test,
+    train,
+    transfer,
+)
 from deepmd.loggers import set_log_handles
 
-from .config import config
-from .doc import doc_train_input
-from .freeze import freeze
-from .test import test
-from .train import train
-from .transform import transform
-from .compress import compress
-from .doc import doc_train_input
+__all__ = ["main", "parse_args"]
 
 
-def main():
-    """DeePMD-Kit entry point.
+def parse_args(args: Optional[List[str]] = None):
+    """DeePMD-Kit commandline options argument parser.
 
-    Raises
-    ------
-    RuntimeError
-        if no command was input
+    Parameters
+    ----------
+    args: List[str]
+        list of command line arguments, main purpose is testing default option None
+        takes arguments from sys.argv
     """
     parser = argparse.ArgumentParser(
         description="DeePMD-kit: A deep learning package for many-body potential energy"
@@ -32,7 +36,9 @@ def main():
 
     # * logging options parser *********************************************************
     # with use of the parent argument this options will be added to every parser
-    parser_log = argparse.ArgumentParser(add_help=False)
+    parser_log = argparse.ArgumentParser(
+        add_help=False, formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
     parser_log.add_argument(
         "-v",
         "--verbose",
@@ -45,76 +51,16 @@ def main():
     parser_log.add_argument(
         "-l",
         "--log-path",
+        type=str,
         default=None,
         help="set log file to log messages to disk, if not specified, the logs will "
         "only be output to console",
     )
-
-    # * config script ******************************************************************
-    parser_cfig = subparsers.add_parser(
-        "config",
-        parents=[parser_log],
-        help="fast configuration of parameter file for smooth model",
+    # * mpi logging parser *************************************************************
+    parser_mpi_log = argparse.ArgumentParser(
+        add_help=False, formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-    parser_cfig.add_argument(
-        "-o", "--output", type=str, default="input.json", help="the output json file"
-    )
-
-    # * transform script ***************************************************************
-    parser_transform = subparsers.add_parser(
-        "transform", parents=[parser_log], help="pass parameters to another model"
-    )
-    parser_transform.add_argument(
-        "-r",
-        "--raw-model",
-        default="raw_frozen_model.pb",
-        type=str,
-        help="the model receiving parameters",
-    )
-    parser_transform.add_argument(
-        "-O",
-        "--old-model",
-        default="old_frozen_model.pb",
-        type=str,
-        help="the model providing parameters",
-    )
-    parser_transform.add_argument(
-        "-o",
-        "--output",
-        default="frozen_model.pb",
-        type=str,
-        help="the model after passing parameters",
-    )
-
-    # * config parser ******************************************************************
-    parser_train = subparsers.add_parser(
-        "train", parents=[parser_log], help="train a model"
-    )
-    parser_train.add_argument(
-        "INPUT", help="the input parameter file in json or yaml format"
-    )
-    parser_train.add_argument(
-        "-i",
-        "--init-model",
-        type=str,
-        default=False,
-        help="Initialize the model by the provided checkpoint.",
-    )
-    parser_train.add_argument(
-        "-r",
-        "--restart",
-        type=str,
-        default=False,
-        help="Restart the training from the provided checkpoint.",
-    )
-    parser_train.add_argument(
-        "-o",
-        "--output",
-        type=str,
-        default="out.json",
-        help="The output file of the parameters used in training.",
-    )
-    parser_train.add_argument(
+    parser_mpi_log.add_argument(
         "-m",
         "--mpi-log",
         type=str,
@@ -125,9 +71,81 @@ def main():
         "means each process will output its own log",
     )
 
+    # * config script ******************************************************************
+    parser_cfig = subparsers.add_parser(
+        "config",
+        parents=[parser_log],
+        help="fast configuration of parameter file for smooth model",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser_cfig.add_argument(
+        "-o", "--output", type=str, default="input.json", help="the output json file"
+    )
+
+    # * transfer script ****************************************************************
+    parser_transfer = subparsers.add_parser(
+        "transfer", parents=[parser_log], help="pass parameters to another model"
+    )
+    parser_transfer.add_argument(
+        "-r",
+        "--raw-model",
+        default="raw_frozen_model.pb",
+        type=str,
+        help="the model receiving parameters",
+    )
+    parser_transfer.add_argument(
+        "-O",
+        "--old-model",
+        default="old_frozen_model.pb",
+        type=str,
+        help="the model providing parameters",
+    )
+    parser_transfer.add_argument(
+        "-o",
+        "--output",
+        default="frozen_model.pb",
+        type=str,
+        help="the model after passing parameters",
+    )
+
+    # * config parser ******************************************************************
+    parser_train = subparsers.add_parser(
+        "train",
+        parents=[parser_log, parser_mpi_log],
+        help="train a model",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser_train.add_argument(
+        "INPUT", help="the input parameter file in json or yaml format"
+    )
+    parser_train.add_argument(
+        "-i",
+        "--init-model",
+        type=str,
+        default=None,
+        help="Initialize the model by the provided checkpoint.",
+    )
+    parser_train.add_argument(
+        "-r",
+        "--restart",
+        type=str,
+        default=None,
+        help="Restart the training from the provided checkpoint.",
+    )
+    parser_train.add_argument(
+        "-o",
+        "--output",
+        type=str,
+        default="out.json",
+        help="The output file of the parameters used in training.",
+    )
+
     # * freeze script ******************************************************************
     parser_frz = subparsers.add_parser(
-        "freeze", parents=[parser_log], help="freeze the model"
+        "freeze",
+        parents=[parser_log],
+        help="freeze the model",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser_frz.add_argument(
         "-c",
@@ -145,14 +163,18 @@ def main():
     )
     parser_frz.add_argument(
         "-n",
-        "--nodes",
+        "--node-names",
         type=str,
+        default=None,
         help="the frozen nodes, if not set, determined from the model type",
     )
 
     # * test script ********************************************************************
     parser_tst = subparsers.add_parser(
-        "test", parents=[parser_log], help="test the model"
+        "test",
+        parents=[parser_log],
+        help="test the model",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser_tst.add_argument(
         "-m",
@@ -174,15 +196,17 @@ def main():
     parser_tst.add_argument(
         "-n", "--numb-test", default=100, type=int, help="The number of data for test"
     )
-    parser_tst.add_argument("-r", "--rand-seed", type=int, help="The random seed")
     parser_tst.add_argument(
-        "--shuffle-test", action="store_true", help="Shuffle test data"
+        "-r", "--rand-seed", type=int, default=None, help="The random seed"
+    )
+    parser_tst.add_argument(
+        "--shuffle-test", action="store_true", default=False, help="Shuffle test data"
     )
     parser_tst.add_argument(
         "-d",
         "--detail-file",
         type=str,
-        help="The file containing details of energy force and virial accuracy",
+        help="File where details of energy force and virial accuracy will be written",
     )
     parser_tst.add_argument(
         "-a",
@@ -199,7 +223,12 @@ def main():
     #  The range of the first table is automatically detected by deepmd-kit, while the
     # second table ranges from the first table's upper boundary(upper) to the
     # extrapolate(parameter) * upper.
-    parser_compress = subparsers.add_parser("compress", help="compress a model")
+    parser_compress = subparsers.add_parser(
+        "compress",
+        parents=[parser_log, parser_mpi_log],
+        help="compress a model",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser_compress.add_argument(
         "INPUT",
         help="The input parameter file in json or yaml format, which should be "
@@ -256,31 +285,49 @@ def main():
         "doc-train-input",
         parents=[parser_log],
         help="print the documentation (in rst format) of input training parameters.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
-    args = parser.parse_args()
+    parsed_args = parser.parse_args(args=args)
+    if parsed_args.command is None:
+        parser.print_help()
 
-    # do not set log handles for None it is useless
+    return parsed_args
+
+
+def main():
+    """DeePMD-Kit entry point.
+
+    Raises
+    ------
+    RuntimeError
+        if no command was input
+    """
+    args = parse_args()
+
+    # do not set log handles for None, it is useless
     # log handles for train will be set separatelly
     # when the use of MPI will be determined in `RunOptions`
     if args.command not in (None, "train"):
-        set_log_handles(args.log_level, Path(args.log_path))
+        set_log_handles(args.log_level, Path(args.log_path) if args.log_path else None)
 
-    if args.command is None:
-        parser.print_help()
-    elif args.command == "train":
-        train(args)
+    dict_args = vars(args)
+
+    if args.command == "train":
+        train(**dict_args)
     elif args.command == "freeze":
-        freeze(args)
+        freeze(**dict_args)
     elif args.command == "config":
-        config(args)
+        config(**dict_args)
     elif args.command == "test":
-        test(args)
-    elif args.command == "transform":
-        transform(args)
+        test(**dict_args)
+    elif args.command == "transfer":
+        transfer(**dict_args)
     elif args.command == "compress":
-        compress(args)
+        compress(**dict_args)
     elif args.command == "doc-train-input":
-        doc_train_input(args)
+        doc_train_input()
+    elif args.command is None:
+        pass
     else:
         raise RuntimeError(f"unknown command {args.command}")

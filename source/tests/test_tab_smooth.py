@@ -6,12 +6,7 @@ import unittest
 from tensorflow.python.framework import ops
 
 # load grad of force module
-import deepmd._prod_force_grad
-import deepmd._prod_virial_grad
-import deepmd._prod_force_se_a_grad
-import deepmd._prod_virial_se_a_grad
-import deepmd._soft_min_force_grad
-import deepmd._soft_min_virial_grad
+import deepmd.op
 from deepmd.utils.pair_tab import PairTab
 
 from common import force_test

@@ -6,10 +6,7 @@ from deepmd.env import tf
 from tensorflow.python.framework import ops
 
 # load grad of force module
-import deepmd._prod_force_grad
-import deepmd._prod_virial_grad
-import deepmd._soft_min_force_grad
-import deepmd._soft_min_virial_grad
+import deepmd.op
 
 from common import force_test
 from common import virial_test

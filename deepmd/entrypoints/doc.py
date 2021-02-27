@@ -2,6 +2,8 @@
 
 from deepmd.utils.argcheck import gen_doc
 
+__all__ = ["doc_train_input"]
+
 
 def doc_train_input():
     """Print out trining input arguments to console."""
