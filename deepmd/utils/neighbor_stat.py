@@ -32,7 +32,7 @@ class NeighborStat():
         sub_graph = tf.Graph()
         with sub_graph.as_default():
             for ii in ['coord', 'box']:
-                self.place_holders[ii] = tf.placeholder(global_np_float_precision, [None, None], name='t_'+ii)
+                self.place_holders[ii] = tf.placeholder(GLOBAL_NP_FLOAT_PRECISION, [None, None], name='t_'+ii)
             self.place_holders['type'] = tf.placeholder(tf.int32, [None, None], name='t_type')
             self.place_holders['natoms_vec'] = tf.placeholder(tf.int32, [self.ntypes+2], name='t_natoms')
             self.place_holders['default_mesh'] = tf.placeholder(tf.int32, [None], name='t_mesh')
