@@ -1,4 +1,5 @@
 import math
+import logging
 import numpy as np
 from tqdm import tqdm
 from deepmd.env import tf
@@ -7,6 +8,8 @@ from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.run_options import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.utils.data_system import DeepmdDataSystem
+
+log = logging.getLogger(__name__)
 
 class NeighborStat():
     """
@@ -65,7 +68,8 @@ class NeighborStat():
         self.min_nbor_dist = 100.0
         self.max_nbor_size = [0] * self.ntypes
 
-        for ii in tqdm(range(len(data.system_dirs)), desc = '# DEEPMD: getting data info'):
+        # for ii in tqdm(range(len(data.system_dirs)), desc = 'DEEPMD INFO    |-> deepmd.utils.neighbor_stat\t\t\tgetting neighbor status'):
+        for ii in range(len(data.system_dirs)):
             for jj in data.data_systems[ii].dirs:
                 data_set = data.data_systems[ii]._load_set(jj)
                 for kk in range(np.array(data_set['type']).shape[0]):
@@ -86,6 +90,6 @@ class NeighborStat():
                         if var > self.max_nbor_size[ww]:
                             self.max_nbor_size[ww] = var
 
-        print('# DEEPMD: training data with min nbor dist: ' + str(self.min_nbor_dist))
-        print('# DEEPMD: training data with max nbor size: ' + str(self.max_nbor_size))
+        log.info('training data with min nbor dist: ' + str(self.min_nbor_dist))
+        log.info('training data with max nbor size: ' + str(self.max_nbor_size))
         return self.min_nbor_dist, self.max_nbor_size

@@ -142,7 +142,7 @@ public:
     assert (nloc * ndescrpt == net_deriv_tensor.shape().dim_size(1));
     assert (nloc * ndescrpt * 3 == in_deriv_tensor.shape().dim_size(1));
     assert (nloc * nnei == nlist_tensor.shape().dim_size(1));
-    assert (nnei * 4 == ndescrpt);	 
+    assert (nnei * 1 == ndescrpt);	 
     // flat the tensors
     FPTYPE * force = force_tensor->flat<FPTYPE>().data();
     const FPTYPE * net_deriv = net_deriv_tensor.flat<FPTYPE>().data();

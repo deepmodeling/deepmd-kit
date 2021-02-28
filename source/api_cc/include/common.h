@@ -1,14 +1,31 @@
 #pragma once
-#include "custom_op.h"
-#include "NNPAtomMap.h"
-#include "version.h"
 
+#include <vector>
+#include <string>
+#include <iostream>
+#include "version.h"
+#include "NNPAtomMap.h"
+
+#include "tensorflow/core/platform/env.h"
+#include "tensorflow/core/public/session.h"
+#include "tensorflow/core/public/version.h"
+#include <tensorflow/core/graph/default_device.h>
+#include <tensorflow/core/graph/graph_def_builder.h>
+
+using namespace tensorflow;
 #if TF_MAJOR_VERSION >= 2 && TF_MINOR_VERSION >= 2
 typedef tensorflow::tstring STRINGTYPE;
 #else
 typedef std::string STRINGTYPE;
 #endif
 
+#ifdef HIGH_PREC
+typedef double VALUETYPE;
+typedef double ENERGYTYPE;
+#else 
+typedef float  VALUETYPE;
+typedef double ENERGYTYPE;
+#endif
 
 struct LammpsNeighborList 
 {
@@ -218,3 +235,4 @@ select_map(std::vector<VT> & out,
     }
   }
 }
+

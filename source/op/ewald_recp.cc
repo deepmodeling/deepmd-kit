@@ -1,6 +1,9 @@
 #include "custom_op.h"
 #include "Ewald.h"
 
+typedef double boxtensor_t ;
+typedef double compute_t;
+
 REGISTER_OP("EwaldRecp")
 .Attr("T: {float, double}")
 .Input("coord: T")

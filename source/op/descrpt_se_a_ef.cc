@@ -4,6 +4,9 @@
 #include "neighbor_list.h"
 #include "fmt_nlist.h"
 
+typedef double boxtensor_t ;
+typedef double compute_t;
+
 REGISTER_OP("DescrptSeAEf")
 .Attr("T: {float, double}")
 .Input("coord: T")

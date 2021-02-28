@@ -1,6 +1,9 @@
 #include "custom_op.h"
 #include "neighbor_list.h"
 
+typedef double boxtensor_t ;
+typedef double compute_t;
+
 REGISTER_OP("NeighborStat")
     .Attr("T: {float, double}")
     .Input("coord: T")
