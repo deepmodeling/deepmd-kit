@@ -15,17 +15,6 @@ using namespace tensorflow;
 using CPUDevice = Eigen::ThreadPoolDevice;
 using GPUDevice = Eigen::GpuDevice;
 
-#ifdef HIGH_PREC
-typedef double VALUETYPE;
-typedef double ENERGYTYPE;
-#else 
-typedef float  VALUETYPE;
-typedef double ENERGYTYPE;
-#endif
-
-typedef double boxtensor_t ;
-typedef double compute_t;
-
 // functions used in custom ops
 struct DeviceFunctor {
   void operator()(
