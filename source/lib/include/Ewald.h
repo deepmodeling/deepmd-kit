@@ -4,6 +4,7 @@
 #include<cassert>
 #include<omp.h>
 
+#include "utilities.h"
 #include "SimulationRegion.h"
 
 // 8.988e9 / pc.electron_volt / pc.angstrom * (1.602e-19)**2
@@ -91,7 +92,7 @@ cmpt_k(std::vector<int> & KK,
   }  
   KK.resize(3);
   for (int dd = 0; dd < 3; ++dd){
-    VALUETYPE ll = sqrt(MathUtilities::dot<VALUETYPE>(boxt+dd*3, boxt+dd*3));
+    VALUETYPE ll = sqrt(dot3(boxt+dd*3, boxt+dd*3));
     KK[dd] = ll / param.spacing;
     // KK[dd] should be large enough 
     if (KK[dd] * param.spacing < ll) KK[dd] += 1;

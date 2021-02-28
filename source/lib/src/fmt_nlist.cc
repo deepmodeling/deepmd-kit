@@ -48,7 +48,7 @@ int format_nlist_fill_a (
     else {
       for (int dd = 0; dd < 3; ++dd) diff[dd] = posi[j_idx*3+dd] - posi[i_idx*3+dd];
     }
-    double rr = sqrt(MathUtilities::dot<double> (diff, diff));    
+    double rr = sqrt(dot3(diff, diff));    
     if (rr <= rcut) {
       sel_nei.push_back(NeighborInfo (type[j_idx], rr, j_idx));
     }
@@ -102,7 +102,7 @@ int format_nlist_cpu (
         for (int dd = 0; dd < 3; ++dd) {
             diff[dd] = posi[j_idx * 3 + dd] - posi[i_idx * 3 + dd];
         }
-        FPTYPE rr = sqrt(MathUtilities::dot<FPTYPE> (diff, diff));    
+        FPTYPE rr = sqrt(dot3(diff, diff));    
         if (rr <= rcut) {
             sel_nei.push_back(NeighborInfo(type[j_idx], rr, j_idx));
         }
