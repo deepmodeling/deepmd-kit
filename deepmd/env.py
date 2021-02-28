@@ -1,4 +1,4 @@
-"""This module sets tensorflow working environment."""
+"""Module that sets tensorflow working environment and exports inportant constants."""
 
 import os
 from pathlib import Path
@@ -18,6 +18,8 @@ try:
     tf.disable_v2_behavior()
 except ImportError:
     import tensorflow as tf
+
+SHARED_LIB_MODULE = "op"
 
 
 def set_env_if_empty(key: str, value: str, verbose: bool = True):
@@ -122,7 +124,11 @@ def get_module(module_name: str) -> "ModuleType":
     else:
         ext = ".so"
 
-    module_file = (Path(__file__).parent / module_name).with_suffix(ext).resolve()
+    module_file = (
+        (Path(__file__).parent / SHARED_LIB_MODULE / module_name)
+        .with_suffix(ext)
+        .resolve()
+    )
 
     if not module_file.is_file():
         raise FileNotFoundError(f"module {module_name} does not exist")

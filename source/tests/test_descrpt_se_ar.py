@@ -6,12 +6,7 @@ from deepmd.env import tf
 from tensorflow.python.framework import ops
 
 # load grad of force module
-import deepmd._prod_force_grad
-import deepmd._prod_virial_grad
-import deepmd._prod_force_se_r_grad
-import deepmd._prod_virial_se_r_grad
-import deepmd._soft_min_force_grad
-import deepmd._soft_min_virial_grad
+import deepmd.op
 
 from common import force_test
 from common import virial_test
@@ -21,9 +16,9 @@ from common import Data
 
 from deepmd.descriptor import DescrptSeAR
 
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
+from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.run_options import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.run_options import GLOBAL_ENER_FLOAT_PRECISION
 
 class Inter():
     def setUp (self, 
@@ -64,11 +59,11 @@ class Inter():
         self.default_mesh[4] = 2
         self.default_mesh[5] = 2
         # make place holder
-        self.coord      = tf.placeholder(global_tf_float_precision, [None, self.natoms[0] * 3], name='t_coord')
-        self.box        = tf.placeholder(global_tf_float_precision, [None, 9], name='t_box')
+        self.coord      = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, self.natoms[0] * 3], name='t_coord')
+        self.box        = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, 9], name='t_box')
         self.type       = tf.placeholder(tf.int32,   [None, self.natoms[0]], name = "t_type")
         self.tnatoms    = tf.placeholder(tf.int32,   [None], name = "t_natoms")
-        self.efield     = tf.placeholder(global_tf_float_precision, [None, self.natoms[0] * 3], name='t_efield')
+        self.efield     = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, self.natoms[0] * 3], name='t_efield')
         
     def _net (self,
               inputs, 
@@ -77,7 +72,7 @@ class Inter():
         with tf.variable_scope(name, reuse=reuse):
             net_w = tf.get_variable ('net_w', 
                                      [self.descrpt.get_dim_out()], 
-                                     global_tf_float_precision,
+                                     GLOBAL_TF_FLOAT_PRECISION,
                                      tf.constant_initializer (self.net_w_i))
         dot_v = tf.matmul (tf.reshape (inputs, [-1, self.descrpt.get_dim_out()]),
                            tf.reshape (net_w, [self.descrpt.get_dim_out(), 1]))

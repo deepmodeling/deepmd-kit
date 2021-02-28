@@ -1,25 +1,57 @@
-#!/usr/bin/env python3
+from typing import TYPE_CHECKING
 
-from typing import Tuple, List
 from deepmd.infer.deep_eval import DeepTensor
 
-class DeepDipole (DeepTensor) :
-    def __init__(self, 
-                 model_file : str, 
-                 load_prefix : str = 'load', 
-                 default_tf_graph : bool = False
+if TYPE_CHECKING:
+    from pathlib import Path
+
+
+class DeepDipole(DeepTensor):
+    """Constructor.
+
+    Parameters
+    ----------
+    model_file : Path
+        The name of the frozen model file.
+    load_prefix: str
+        The prefix in the load computational graph
+    default_tf_graph : bool
+        If uses the default tf graph, otherwise build a new tf graph for evaluation
+
+    Warnings
+    --------
+    For developers: `DeepTensor` initializer must be called at the end after
+    `self.tensors` are modified because it uses the data in `self.tensors` dict.
+    Do not chanage the order!
+    """
+
+    def __init__(
+        self, model_file: "Path", load_prefix: str = "load", default_tf_graph: bool = False
     ) -> None:
-        """
-        Constructor
 
-        Parameters
-        ----------
-        model_file : str
-                The name of the frozen model file.
-        load_prefix: str
-                The prefix in the load computational graph
-        default_tf_graph : bool
-                If uses the default tf graph, otherwise build a new tf graph for evaluation
-        """
-        DeepTensor.__init__(self, model_file, 'dipole', 3, load_prefix = load_prefix, default_tf_graph = default_tf_graph)
+        # use this in favor of dict update to move attribute from class to
+        # instance namespace
+        self.tensors = dict(
+            {
+                "t_sel_type": "model_attr/sel_type:0",
+                # output tensor
+                "t_tensor": "o_dipole:0",
+            },
+            **self.tensors
+        )
 
+        DeepTensor.__init__(
+            self,
+            model_file,
+            3,
+            load_prefix=load_prefix,
+            default_tf_graph=default_tf_graph,
+        )
+
+    def get_dim_fparam(self) -> int:
+        """Unsupported in this model."""
+        raise NotImplementedError("This model type does not support this attribute")
+
+    def get_dim_aparam(self) -> int:
+        """Unsupported in this model."""
+        raise NotImplementedError("This model type does not support this attribute")

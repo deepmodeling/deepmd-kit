@@ -3,7 +3,7 @@ import numpy as np
 import unittest
 
 from deepmd.utils.compat import convert_input_v0_v1
-from deepmd.common import j_loader
+from common import j_loader
 
 class TestConvertInput (unittest.TestCase) :
     def test_convert_smth(self):

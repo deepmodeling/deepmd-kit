@@ -1,12 +1,12 @@
 import numpy as np
 
 from deepmd.env import tf
-from deepmd.RunOptions import global_tf_float_precision
+from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
 
 def one_layer(inputs, 
               outputs_size, 
               activation_fn=tf.nn.tanh, 
-              precision = global_tf_float_precision, 
+              precision = GLOBAL_TF_FLOAT_PRECISION, 
               stddev=1.0,
               bavg=0.0,
               name='linear', 

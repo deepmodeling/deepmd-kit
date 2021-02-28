@@ -38,11 +38,6 @@ Conventions`_ and `Typing Conventions`_ PEPs, clarified and extended as follows:
 
 * Use 4 spaces per indentation level.  No tabs.
 
-* Read the *Whitespace in Expressions and Statements*
-  section of PEP8_.
-
-* Avoid `trailing whitespaces`_.
-
 * No one-liner compound statements (i.e., no ``if x: return``: use two
   lines).
 
@@ -69,7 +64,41 @@ Conventions`_ and `Typing Conventions`_ PEPs, clarified and extended as follows:
 * Use ``"double quotes"`` for string literals, and ``"""triple double
   quotes"""`` for docstring's. Single quotes are OK for
   something like 
+
+* Use f-strings ``s = f"{x:.2f}"`` instead of old style formating with ``"%f" % x``.
+  string format method ``"{x:.2f}".format()`` may be used sparsely where it is more
+  convenient than f-strings.
   
+Whitespace
+==========
+
+Python is not C/C++ so whitespace  should be used sparingly to maintain code readability
+
+* Read the *Whitespace in Expressions and Statements*
+  section of PEP8_.
+
+* Avoid `trailing whitespaces`_.
+
+* Do not use excessive whitespace in your expressions and statements.
+
+* You should have blank spaces after commas, colons, and semi-colons if it isn’t
+  trailing next to the end of a bracket, brace, or parentheses.
+* With any operators you should use a space in on both sides of the operator.
+
+* Colons for slicing are considered a binary operator, and should not have any spaces
+  between them.
+
+* You should have parentheses with no space, directly next to the function when calling
+  functions ``function()``.
+
+* When indexing or slicing the brackets should be directly next to the collection with
+  no space ``collection["index"]``.
+
+* Whitespace used to line up variable values is not recommended.
+
+* Make sure you are consistent with the formats you choose when optional choices are
+  available.
+
   .. code-block:: python
     
     f"something {'this' if x else 'that'}"

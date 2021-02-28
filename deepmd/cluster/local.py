@@ -4,9 +4,11 @@ import os
 import socket
 from typing import List, Tuple, Optional
 
+__all__ = ["get_resource"]
+
 
 def get_resource() -> Tuple[str, List[str], Optional[List[int]]]:
-    """Get loacl resources: nodename, nodelist, and gpus.
+    """Get local resources: nodename, nodelist, and gpus.
 
     Returns
     -------
@@ -16,10 +18,8 @@ def get_resource() -> Tuple[str, List[str], Optional[List[int]]]:
     nodename = socket.gethostname()
     nodelist = [nodename]
     gpus_env = os.getenv("CUDA_VISIBLE_DEVICES", None)
-    if gpus_env is None:
+    if not gpus_env:
         gpus = None
-    elif gpus_env == "":
-        gpus = []
     else:
         gpus = [int(gpu) for gpu in gpus_env.split(",")]
 

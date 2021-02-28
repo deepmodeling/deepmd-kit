@@ -9,8 +9,8 @@ from deepmd.utils.network import one_layer
 from deepmd.descriptor import DescrptLocFrame
 from deepmd.descriptor import DescrptSeA
 
-from deepmd.RunOptions import global_cvt_2_tf_float
-from deepmd.RunOptions import global_tf_float_precision
+from deepmd.run_options import global_cvt_2_tf_float
+from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
 
 class EnerFitting ():
     @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
@@ -94,7 +94,7 @@ class EnerFitting ():
         self.atom_ener = []
         for at, ae in enumerate(atom_ener):
             if ae is not None:
-                self.atom_ener.append(tf.constant(ae, global_tf_float_precision, name = "atom_%d_ener" % at))
+                self.atom_ener.append(tf.constant(ae, GLOBAL_TF_FLOAT_PRECISION, name = "atom_%d_ener" % at))
             else:
                 self.atom_ener.append(None)
         self.useBN = False
@@ -259,23 +259,23 @@ class EnerFitting ():
             if self.numb_fparam > 0: 
                 t_fparam_avg = tf.get_variable('t_fparam_avg', 
                                                self.numb_fparam,
-                                               dtype = global_tf_float_precision,
+                                               dtype = GLOBAL_TF_FLOAT_PRECISION,
                                                trainable = False,
                                                initializer = tf.constant_initializer(self.fparam_avg))
                 t_fparam_istd = tf.get_variable('t_fparam_istd', 
                                                 self.numb_fparam,
-                                                dtype = global_tf_float_precision,
+                                                dtype = GLOBAL_TF_FLOAT_PRECISION,
                                                 trainable = False,
                                                 initializer = tf.constant_initializer(self.fparam_inv_std))
             if self.numb_aparam > 0: 
                 t_aparam_avg = tf.get_variable('t_aparam_avg', 
                                                self.numb_aparam,
-                                               dtype = global_tf_float_precision,
+                                               dtype = GLOBAL_TF_FLOAT_PRECISION,
                                                trainable = False,
                                                initializer = tf.constant_initializer(self.aparam_avg))
                 t_aparam_istd = tf.get_variable('t_aparam_istd', 
                                                 self.numb_aparam,
-                                                dtype = global_tf_float_precision,
+                                                dtype = GLOBAL_TF_FLOAT_PRECISION,
                                                 trainable = False,
                                                 initializer = tf.constant_initializer(self.aparam_inv_std))
             
@@ -329,7 +329,7 @@ class EnerFitting ():
             final_layer = one_layer(layer, 1, activation_fn = None, bavg = type_bias_ae, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, precision = self.fitting_precision, trainable = self.trainable[-1])
 
             if type_i < len(self.atom_ener) and self.atom_ener[type_i] is not None:
-                inputs_zero = tf.zeros_like(inputs_i, dtype=global_tf_float_precision)
+                inputs_zero = tf.zeros_like(inputs_i, dtype=GLOBAL_TF_FLOAT_PRECISION)
                 layer = inputs_zero
                 if self.numb_fparam > 0 :
                     layer = tf.concat([layer, ext_fparam], axis = 1)
@@ -355,12 +355,12 @@ class EnerFitting ():
             force_tot_ener = 0.0
             outs = tf.reshape(outs, [-1, natoms[0]])
             outs_mean = tf.reshape(tf.reduce_mean(outs, axis = 1), [-1, 1])
-            outs_mean = outs_mean - tf.ones_like(outs_mean, dtype = global_tf_float_precision) * (force_tot_ener/global_cvt_2_tf_float(natoms[0]))
+            outs_mean = outs_mean - tf.ones_like(outs_mean, dtype = GLOBAL_TF_FLOAT_PRECISION) * (force_tot_ener/global_cvt_2_tf_float(natoms[0]))
             outs = outs - outs_mean
             outs = tf.reshape(outs, [-1])
 
         tf.summary.histogram('fitting_net_output', outs)
-        return tf.cast(tf.reshape(outs, [-1]), global_tf_float_precision)        
+        return tf.cast(tf.reshape(outs, [-1]), GLOBAL_TF_FLOAT_PRECISION)        
 
 
 

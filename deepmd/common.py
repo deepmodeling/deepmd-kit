@@ -20,7 +20,7 @@ import numpy as np
 import yaml
 
 from deepmd.env import op_module, tf
-from deepmd.RunOptions import global_tf_float_precision, global_np_float_precision
+from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION, GLOBAL_NP_FLOAT_PRECISION
 
 if TYPE_CHECKING:
     _DICT_VAL = TypeVar("_DICT_VAL")
@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
 # define constants
 PRECISION_DICT = {
-    "default": global_tf_float_precision,
+    "default": GLOBAL_TF_FLOAT_PRECISION,
     "float16": tf.float16,
     "float32": tf.float32,
     "float64": tf.float64,
@@ -427,8 +427,10 @@ def expand_sys_str(root_dir: Union[str, Path]) -> List[str]:
     List[str]
         list of string pointing to system directories
     """
-    matches = [d for d in Path(root_dir).rglob("*") if (d / "type.raw").is_file()]
-    return [str(m.relative_to(root_dir)) for m in matches]
+    matches = [str(d) for d in Path(root_dir).rglob("*") if (d / "type.raw").is_file()]
+    if (Path(root_dir) / "type.raw").is_file():
+        matches += [root_dir]
+    return matches
 
 
 def docstring_parameter(*sub: Tuple[str, ...]):
@@ -452,9 +454,27 @@ def docstring_parameter(*sub: Tuple[str, ...]):
 
     return dec
 
-def get_np_precision(precision):
+
+def get_np_precision(precision: "_PRECISION") -> np.dtype:
+    """Get numpy precision constant from string.
+
+    Parameters
+    ----------
+    precision : _PRECISION
+        string name of numpy constant or default
+
+    Returns
+    -------
+    np.dtype
+        numpy presicion constant
+
+    Raises
+    ------
+    RuntimeError
+        if string is invalid
+    """
     if precision == "default":
-        return  global_np_float_precision
+        return GLOBAL_NP_FLOAT_PRECISION
     elif precision == "float16":
         return np.float16
     elif precision == "float32":
@@ -462,4 +482,4 @@ def get_np_precision(precision):
     elif precision == "float64":
         return np.float64
     else:
-        raise RuntimeError("%d is not a valid precision" % precision)
+        raise RuntimeError(f"{precision} is not a valid precision")

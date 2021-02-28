@@ -1,182 +1,192 @@
-#!/usr/bin/env python3
+import logging
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 import numpy as np
-from typing import Tuple, List
-
-from deepmd.env import tf
-from deepmd.env import default_tf_session_config
 from deepmd.common import make_default_mesh
 from deepmd.infer.data_modifier import DipoleChargeModifier
-from deepmd.infer.deep_eval import DeepEval
+from deepmd.infer.deep_eval import DeepEval, DeepTensor
 
-class DeepPot (DeepEval) :
-    def __init__(self, 
-                 model_file : str, 
-                 default_tf_graph : bool = False
+if TYPE_CHECKING:
+    from pathlib import Path
+
+log = logging.getLogger(__name__)
+
+
+class DeepPot(DeepTensor):
+    """Constructor.
+
+    Parameters
+    ----------
+    model_file : Path
+        The name of the frozen model file.
+    load_prefix: str
+        The prefix in the load computational graph
+    default_tf_graph : bool
+        If uses the default tf graph, otherwise build a new tf graph for evaluation
+
+    Warnings
+    --------
+    For developers: `DeepTensor` initializer must be called at the end after
+    `self.tensors` are modified because it uses the data in `self.tensors` dict.
+    Do not chanage the order!
+    """
+
+    def __init__(
+        self,
+        model_file: "Path",
+        load_prefix: str = "load",
+        default_tf_graph: bool = False
     ) -> None:
-        """
-        Constructor
 
-        Parameters
-        ----------
-        model_file : str
-                The name of the frozen model file.
-        default_tf_graph : bool
-                If uses the default tf graph, otherwise build a new tf graph for evaluation
-        """
-        DeepEval.__init__(self, model_file, default_tf_graph = default_tf_graph)
-        # self.model_file = model_file
-        # self.graph = self.load_graph (self.model_file)
-        # checkout input/output tensors from graph
-        self.t_ntypes = self.graph.get_tensor_by_name ('load/descrpt_attr/ntypes:0')
-        self.t_rcut   = self.graph.get_tensor_by_name ('load/descrpt_attr/rcut:0')
-        self.t_dfparam= self.graph.get_tensor_by_name ('load/fitting_attr/dfparam:0')
-        self.t_daparam= self.graph.get_tensor_by_name ('load/fitting_attr/daparam:0')
-        self.t_tmap   = self.graph.get_tensor_by_name ('load/model_attr/tmap:0')
-        # inputs
-        self.t_coord  = self.graph.get_tensor_by_name ('load/t_coord:0')
-        self.t_type   = self.graph.get_tensor_by_name ('load/t_type:0')
-        self.t_natoms = self.graph.get_tensor_by_name ('load/t_natoms:0')
-        self.t_box    = self.graph.get_tensor_by_name ('load/t_box:0')
-        self.t_mesh   = self.graph.get_tensor_by_name ('load/t_mesh:0')
-        try:
-            self.t_efield = self.graph.get_tensor_by_name ('load/t_efield:0')
+        # add these tensors on top of what is defined by DeepTensor Class
+        # use this in favor of dict update to move attribute from class to
+        # instance namespace
+        self.tensors = dict(
+            {
+                # general
+                "t_dfparam": "fitting_attr/dfparam:0",
+                "t_daparam": "fitting_attr/daparam:0",
+                # add output tensors
+                "t_energy": "o_energy:0",
+                "t_force": "o_force:0",
+                "t_virial": "o_virial:0",
+                "t_ae": "o_atom_energy:0",
+                "t_av": "o_atom_virial:0"
+            },
+            **self.tensors
+        )
+        DeepEval.__init__(
+            self,
+            model_file,
+            load_prefix=load_prefix,
+            default_tf_graph=default_tf_graph
+        )
+
+        # load optional tensors
+        operations = [op.name for op in self.graph.get_operations()]
+        # check if the graph has these operations:
+        # if yes add them
+        if 't_efield' in operations:
+            self._get_tensor("t_efield:0", "t_efield")
             self.has_efield = True
-        except:
+        else:
+            log.debug(f"Could not get tensor 't_efield:0'")
             self.t_efield = None
             self.has_efield = False
-        # outputs
-        self.t_energy = self.graph.get_tensor_by_name ('load/o_energy:0')
-        self.t_force  = self.graph.get_tensor_by_name ('load/o_force:0')
-        self.t_virial = self.graph.get_tensor_by_name ('load/o_virial:0')
-        self.t_ae     = self.graph.get_tensor_by_name ('load/o_atom_energy:0')
-        self.t_av     = self.graph.get_tensor_by_name ('load/o_atom_virial:0')
-        self.t_fparam = None
-        self.t_aparam = None
-        # check if the graph has fparam
-        for op in self.graph.get_operations():
-            if op.name == 'load/t_fparam' :
-                self.t_fparam = self.graph.get_tensor_by_name ('load/t_fparam:0')
-        self.has_fparam = self.t_fparam is not None
-        # check if the graph has aparam
-        for op in self.graph.get_operations():
-            if op.name == 'load/t_aparam' :
-                self.t_aparam = self.graph.get_tensor_by_name ('load/t_aparam:0')
-        self.has_aparam = self.t_aparam is not None
-        # start a tf session associated to the graph
-        self.sess = tf.Session (graph = self.graph, config=default_tf_session_config)        
-        [self.ntypes, self.rcut, self.dfparam, self.daparam, self.tmap] = self.sess.run([self.t_ntypes, self.t_rcut, self.t_dfparam, self.t_daparam, self.t_tmap])
-        self.tmap = self.tmap.decode('UTF-8').split()
+
+        if 'load/t_fparam' in operations:
+            self.tensors.update({"t_fparam": "t_fparam:0"})
+            self.has_fparam = True
+        else:
+            log.debug(f"Could not get tensor 't_fparam:0'")
+            self.t_fparam = None
+            self.has_fparam = False
+
+        if 'load/t_aparam' in operations:
+            self.tensors.update({"t_aparam": "t_aparam:0"})
+            self.has_aparam = True
+        else:
+            log.debug(f"Could not get tensor 't_aparam:0'")
+            self.t_aparam = None
+            self.has_aparam = False
+
+        # now when tensors are set initialize DeepTensor which will load them all
+        # to class attributes, the run session assciated with the graph
+        DeepTensor.__init__(
+            self,
+            model_file,
+            None,
+            load_prefix=load_prefix,
+            default_tf_graph=default_tf_graph
+        )
+
         # setup modifier
         try:
-            t_modifier_type = self.graph.get_tensor_by_name('load/modifier_attr/type:0')
-            self.modifier_type = self.sess.run(t_modifier_type).decode('UTF-8')
-        except ValueError:
+            t_modifier_type = self._get_tensor("modifier_attr/type:0")
+            self.modifier_type = self.sess.run(t_modifier_type).decode("UTF-8")
+        except (ValueError, KeyError):
             self.modifier_type = None
-        except KeyError:
-            self.modifier_type = None
-        if self.modifier_type == 'dipole_charge':
-            t_mdl_name = self.graph.get_tensor_by_name('load/modifier_attr/mdl_name:0')
-            t_mdl_charge_map = self.graph.get_tensor_by_name('load/modifier_attr/mdl_charge_map:0')
-            t_sys_charge_map = self.graph.get_tensor_by_name('load/modifier_attr/sys_charge_map:0')
-            t_ewald_h = self.graph.get_tensor_by_name('load/modifier_attr/ewald_h:0')
-            t_ewald_beta = self.graph.get_tensor_by_name('load/modifier_attr/ewald_beta:0')
+
+        if self.modifier_type == "dipole_charge":
+            t_mdl_name = self._get_tensor("modifier_attr/mdl_name:0")
+            t_mdl_charge_map = self._get_tensor("modifier_attr/mdl_charge_map:0")
+            t_sys_charge_map = self._get_tensor("modifier_attr/sys_charge_map:0")
+            t_ewald_h = self._get_tensor("modifier_attr/ewald_h:0")
+            t_ewald_beta = self._get_tensor("modifier_attr/ewald_beta:0")
             [mdl_name, mdl_charge_map, sys_charge_map, ewald_h, ewald_beta] = self.sess.run([t_mdl_name, t_mdl_charge_map, t_sys_charge_map, t_ewald_h, t_ewald_beta])
-            mdl_charge_map = [int(ii) for ii in mdl_charge_map.decode('UTF-8').split()]
-            sys_charge_map = [int(ii) for ii in sys_charge_map.decode('UTF-8').split()]
+            mdl_charge_map = [int(ii) for ii in mdl_charge_map.decode("UTF-8").split()]
+            sys_charge_map = [int(ii) for ii in sys_charge_map.decode("UTF-8").split()]
             self.dm = DipoleChargeModifier(mdl_name, mdl_charge_map, sys_charge_map, ewald_h = ewald_h, ewald_beta = ewald_beta)
 
+    def _run_default_sess(self):
+        [self.ntypes, self.rcut, self.dfparam, self.daparam, self.tmap] = self.sess.run(
+            [self.t_ntypes, self.t_rcut, self.t_dfparam, self.t_daparam, self.t_tmap]
+        )
 
-    def get_ntypes(self) -> int:
-        """
-        Get the number of atom types of this DP
-        """
-        return self.ntypes
+    def get_sel_type(self) -> List[int]:
+        """Unsupported in this model."""
+        raise NotImplementedError("This model type does not support this attribute")
 
-    def get_rcut(self) -> float:
-        """
-        Get the cut-off radius of this DP
-        """
-        return self.rcut
-
-    def get_dim_fparam(self) -> int:
-        """
-        Get the number (dimension) of frame parameters of this DP
-        """
-        return self.dfparam
-
-    def get_dim_aparam(self) -> int:
-        """
-        Get the number (dimension) of atomic parameters of this DP
-        """
-        return self.daparam
-
-    def get_type_map(self) -> List[int]:
-        """
-        Get the type map (element name of the atom types) of this DP
-        """
-        return self.tmap
-
-    def eval(self,
-             coords : np.array,
-             cells : np.array,
-             atom_types : List[int],
-             fparam : np.array = None,
-             aparam : np.array = None,
-             atomic : bool = False, 
-             efield : np.array = None
-    ) :
-        """
-        Evaluate the energy, force and virial by using this DP.
+    def eval(
+        self,
+        coords: np.array,
+        cells: np.array,
+        atom_types: List[int],
+        atomic: bool = False,
+        fparam: Optional[np.array] = None,
+        aparam: Optional[np.array] = None,
+        efield: Optional[np.array] = None
+    ) -> Tuple[np.ndarray, ...]:
+        """Evaluate the energy, force and virial by using this DP.
 
         Parameters
         ----------
         coords
-                The coordinates of atoms. 
-                The array should be of size nframes x natoms x 3
+            The coordinates of atoms.
+            The array should be of size nframes x natoms x 3
         cells
-                The cell of the region. 
-                If None then non-PBC is assumed, otherwise using PBC. 
-                The array should be of size nframes x 9
+            The cell of the region.
+            If None then non-PBC is assumed, otherwise using PBC.
+            The array should be of size nframes x 9
         atom_types
-                The atom types
-                The list should contain natoms ints
-        fparam
-                The frame parameter. 
-                The array can be of size :
-                - nframes x dim_fparam. 
-                - dim_fparam. Then all frames are assumed to be provided with the same fparam.
-        aparam
-                The atomic parameter
-                The array can be of size :
-                - nframes x natoms x dim_aparam.
-                - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
-                - dim_aparam. Then all frames and atoms are provided with the same aparam.
+            The atom types
+            The list should contain natoms ints
         atomic
-                Calculate the atomic energy and virial
+            Calculate the atomic energy and virial
+        fparam
+            The frame parameter.
+            The array can be of size :
+            - nframes x dim_fparam.
+            - dim_fparam. Then all frames are assumed to be provided with the same fparam.
+        aparam
+            The atomic parameter
+            The array can be of size :
+            - nframes x natoms x dim_aparam.
+            - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
+            - dim_aparam. Then all frames and atoms are provided with the same aparam.
         efield
-                The external field on atoms. 
-                The array should be of size nframes x natoms x 3
+            The external field on atoms.
+            The array should be of size nframes x natoms x 3
 
         Returns
         -------
-        energy 
-                The system energy. 
+        energy
+            The system energy.
         force
-                The force on each atom
+            The force on each atom
         virial
-                The virial 
+            The virial
         atom_energy
-                The atomic energy. Only returned when atomic == True
+            The atomic energy. Only returned when atomic == True
         atom_virial
-                The atomic virial. Only returned when atomic == True
+            The atomic virial. Only returned when atomic == True
         """
-        if atomic :
+        if atomic:
             if self.modifier_type is not None:
                 raise RuntimeError('modifier does not support atomic modification')
-            return self.eval_inner(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
+            return self._eval_inner(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
         else :
-            e, f, v = self.eval_inner(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
+            e, f, v = self._eval_inner(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
             if self.modifier_type is not None:
                 me, mf, mv = self.dm.eval(coords, cells, atom_types)
                 e += me.reshape(e.shape)
@@ -184,14 +194,16 @@ class DeepPot (DeepEval) :
                 v += mv.reshape(v.shape)
             return e, f, v
 
-    def eval_inner(self,
-                   coords, 
-                   cells, 
-                   atom_types, 
-                   fparam = None, 
-                   aparam = None, 
-                   atomic = False, 
-                   efield = None) :
+    def _eval_inner(
+        self,
+        coords,
+        cells,
+        atom_types,
+        fparam=None,
+        aparam=None,
+        atomic=False,
+        efield=None
+    ):
         # standarize the shape of inputs
         atom_types = np.array(atom_types, dtype = int).reshape([-1])
         natoms = atom_types.size
@@ -297,5 +309,3 @@ class DeepPot (DeepEval) :
             return energy, force, virial, ae, av
         else :
             return energy, force, virial
-
-

@@ -8,8 +8,8 @@ from deepmd.utils.argcheck import list_to_doc
 from deepmd.utils.network import one_layer
 from deepmd.descriptor import DescrptSeA
 
-from deepmd.RunOptions import global_cvt_2_tf_float
-from deepmd.RunOptions import global_tf_float_precision
+from deepmd.run_options import global_cvt_2_tf_float
+from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
 
 class DipoleFittingSeA () :
     """
@@ -154,5 +154,5 @@ class DipoleFittingSeA () :
             count += 1
 
         tf.summary.histogram('fitting_net_output', outs)
-        return tf.cast(tf.reshape(outs, [-1]),  global_tf_float_precision)
+        return tf.cast(tf.reshape(outs, [-1]),  GLOBAL_TF_FLOAT_PRECISION)
         # return tf.reshape(outs, [tf.shape(inputs)[0] * natoms[0] * 3 // 3])
