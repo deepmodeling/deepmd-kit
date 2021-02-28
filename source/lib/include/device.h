@@ -9,5 +9,5 @@
 typedef unsigned long long int_64;
 
 #if GOOGLE_CUDA
-#include "gpu_nv.h"
+#include "gpu_cuda.h"
 #endif

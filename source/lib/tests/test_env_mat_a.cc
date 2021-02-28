@@ -582,7 +582,7 @@ TEST_F(TestEnvMatA, prod_gpu_nv)
   malloc_device_memory(array_int_dev, sec_a.size() + nloc * sec_a.size() + nloc);
   malloc_device_memory(array_longlong_dev, nloc * GPU_MAX_NBOR_SIZE * 2);
 
-  prod_env_mat_a_gpu_nv(    
+  prod_env_mat_a_gpu_cuda(    
       em_dev, 
       em_deriv_dev, 
       rij_dev, 
@@ -683,7 +683,7 @@ TEST_F(TestEnvMatA, prod_gpu_nv_equal_cpu)
   malloc_device_memory(array_int_dev, sec_a.size() + nloc * sec_a.size() + nloc);
   malloc_device_memory(array_longlong_dev, nloc * GPU_MAX_NBOR_SIZE * 2);
 
-  prod_env_mat_a_gpu_nv(    
+  prod_env_mat_a_gpu_cuda(    
       em_dev, 
       em_deriv_dev, 
       rij_dev, 
