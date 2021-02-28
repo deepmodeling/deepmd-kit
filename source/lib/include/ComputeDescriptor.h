@@ -5,7 +5,7 @@
 #include <cassert>
 
 #include "SimulationRegion.h"
-#include "MathUtilities.h"
+#include "utilities.h"
 #include "switcher.h"
 
 
@@ -110,11 +110,11 @@ compute_dRdT (double (* dRdT)[9],
   const double *xx = rot;
   const double *yy = rot+3;
 
-  double nr1 = sqrt(MathUtilities::dot (r1, r1));
+  double nr1 = sqrt(dot3(r1, r1));
   double nr12 = nr1  * nr1;
   double nr13 = nr1  * nr12;
   double nr14 = nr12 * nr12;
-  double r1dr2 = MathUtilities::dot (r1, r2);
+  double r1dr2 = dot3(r1, r2);
 
   // dRdT0
   for (int ii = 0; ii < 3; ++ii){
@@ -137,7 +137,7 @@ compute_dRdT (double (* dRdT)[9],
   }
   double tmpy[3];
   for (int dd = 0; dd < 3; ++dd) tmpy[dd] = r2[dd] - r1dr2 / nr12 * r1[dd];
-  double ntmpy = sqrt(MathUtilities::dot(tmpy, tmpy));
+  double ntmpy = sqrt(dot3(tmpy, tmpy));
   double ydRdy [3] = {0};
   for (int ii = 0; ii < 3; ++ii){
     for (int jj = 0; jj < 3; ++jj){
@@ -153,8 +153,8 @@ compute_dRdT (double (* dRdT)[9],
   // dRdT2
   for (int ii = 0; ii < 3; ++ii){
     double res[3];
-    MathUtilities::cprod (dRdT0 + ii*3, yy, dRdT2 + ii*3);
-    MathUtilities::cprod (xx, dRdT1 + ii*3, res);
+    cprod(dRdT0 + ii*3, yy, dRdT2 + ii*3);
+    cprod(xx, dRdT1 + ii*3, res);
     for (int dd = 0; dd < 3; ++dd) dRdT2[ii*3+dd] += res[dd];
   }
 }
@@ -171,11 +171,11 @@ compute_dRdT_1 (double (* dRdT)[9],
   const double *xx = rot;
   const double *yy = rot+3;
 
-  double nr1 = sqrt(MathUtilities::dot (r1, r1));
+  double nr1 = sqrt(dot3(r1, r1));
   double nr12 = nr1  * nr1;
   double nr13 = nr1  * nr12;
   double nr14 = nr12 * nr12;
-  double r1dr2 = MathUtilities::dot (r1, r2);
+  double r1dr2 = dot3(r1, r2);
 
   // dRdT0
   for (int ii = 0; ii < 3; ++ii){
@@ -198,7 +198,7 @@ compute_dRdT_1 (double (* dRdT)[9],
   }
   double tmpy[3];
   for (int dd = 0; dd < 3; ++dd) tmpy[dd] = r2[dd] - r1dr2 / nr12 * r1[dd];
-  double ntmpy = sqrt(MathUtilities::dot(tmpy, tmpy));
+  double ntmpy = sqrt(dot3(tmpy, tmpy));
   double ydRdy [3] = {0};
   for (int ii = 0; ii < 3; ++ii){
     for (int jj = 0; jj < 3; ++jj){
@@ -214,8 +214,8 @@ compute_dRdT_1 (double (* dRdT)[9],
   // dRdT2
   for (int ii = 0; ii < 3; ++ii){
     double res[3];
-    MathUtilities::cprod (dRdT0 + ii*3, yy, dRdT2 + ii*3);
-    MathUtilities::cprod (xx, dRdT1 + ii*3, res);
+    cprod(dRdT0 + ii*3, yy, dRdT2 + ii*3);
+    cprod(xx, dRdT1 + ii*3, res);
     for (int dd = 0; dd < 3; ++dd) dRdT2[ii*3+dd] += res[dd];
   }
 }
@@ -233,9 +233,9 @@ compute_dRdT_2 (double (* dRdT)[9],
   const double *xx = rot;
   const double *yy = rot+3;
 
-  double nr1 = sqrt(MathUtilities::dot (r1, r1));
+  double nr1 = sqrt(dot3(r1, r1));
   double nr12 = nr1  * nr1;
-  double r1dr2 = MathUtilities::dot (r1, r2);
+  double r1dr2 = dot3(r1, r2);
 
   // dRdT0
   for (int ii = 0; ii < 3; ++ii){
@@ -256,7 +256,7 @@ compute_dRdT_2 (double (* dRdT)[9],
   }
   double tmpy[3];
   for (int dd = 0; dd < 3; ++dd) tmpy[dd] = r2[dd] - r1dr2 / nr12 * r1[dd];
-  double ntmpy = sqrt(MathUtilities::dot(tmpy, tmpy));
+  double ntmpy = sqrt(dot3(tmpy, tmpy));
   double ydRdy [3] = {0};
   for (int ii = 0; ii < 3; ++ii){
     for (int jj = 0; jj < 3; ++jj){
@@ -272,8 +272,8 @@ compute_dRdT_2 (double (* dRdT)[9],
   // dRdT2
   for (int ii = 0; ii < 3; ++ii){
     double res[3];
-    MathUtilities::cprod (dRdT0 + ii*3, yy, dRdT2 + ii*3);
-    MathUtilities::cprod (xx, dRdT1 + ii*3, res);
+    cprod(dRdT0 + ii*3, yy, dRdT2 + ii*3);
+    cprod(xx, dRdT1 + ii*3, res);
     for (int dd = 0; dd < 3; ++dd) dRdT2[ii*3+dd] += res[dd];
   }
 }
@@ -353,7 +353,7 @@ void compute_descriptor (std::vector<double > &			descrpt_a,
   // 	cout << jj << "\t  jidx " << j_idx;
   // 	if (j_idx >= 0){
   // 	  cout << "\t type " << type[j_idx];
-  // 	  cout << "\t " << sqrt(MathUtilities::dot (&sel_a_diff[jj][0], &sel_a_diff[jj][0]));
+  // 	  cout << "\t " << sqrt(dot3(&sel_a_diff[jj][0], &sel_a_diff[jj][0]));
   // 	}
   // 	cout << endl;
   //     }
@@ -365,7 +365,7 @@ void compute_descriptor (std::vector<double > &			descrpt_a,
   // 	cout << jj << "\t  jidx " << j_idx;
   // 	if (j_idx >= 0){
   // 	  cout << "\t type " << type[j_idx];
-  // 	  cout << "\t " << sqrt(MathUtilities::dot (&sel_r_diff[jj][0], &sel_r_diff[jj][0]));
+  // 	  cout << "\t " << sqrt(dot3(&sel_r_diff[jj][0], &sel_r_diff[jj][0]));
   // 	}
   // 	cout << endl;
   //     }
@@ -402,13 +402,13 @@ void compute_descriptor (std::vector<double > &			descrpt_a,
     xx[dd] = r1[dd];
     yy[dd] = r2[dd];
   }
-  double norm_xx = sqrt(MathUtilities::dot (xx, xx));
+  double norm_xx = sqrt(dot3(xx, xx));
   for (unsigned dd = 0; dd < 3; ++dd) xx[dd] /= norm_xx;
-  double dxy = MathUtilities::dot (xx, yy);
+  double dxy = dot3(xx, yy);
   for (unsigned dd = 0; dd < 3; ++dd) yy[dd] -= dxy * xx[dd];
-  double norm_yy = sqrt(MathUtilities::dot (yy, yy));
+  double norm_yy = sqrt(dot3(yy, yy));
   for (unsigned dd = 0; dd < 3; ++dd) yy[dd] /= norm_yy;
-  MathUtilities::cprod (xx, yy, zz);  
+  cprod(xx, yy, zz);  
   rot_mat.resize (9);
   for (int dd = 0; dd < 9; ++dd) rot_mat[dd] = rot[dd];
 
@@ -419,8 +419,8 @@ void compute_descriptor (std::vector<double > &			descrpt_a,
     for (int jj = sec_a[ii]; jj < sec_a[ii+1]; ++jj){
       if (fmt_nlist_a[jj] < 0) break;
       double rdiff[3] ;
-      MathUtilities::dot (rdiff, rot, &sel_a_diff[jj][0]);
-      double rr2 = MathUtilities::dot(rdiff, rdiff);
+      dot3(rdiff, rot, &sel_a_diff[jj][0]);
+      double rr2 = dot3(rdiff, rdiff);
       double rr = sqrt(rr2);
 #ifdef DESCRPT_THETAPHI
       double cos_theta = rdiff[2] / rr;
@@ -445,7 +445,7 @@ void compute_descriptor (std::vector<double > &			descrpt_a,
     for (int jj = sec_r[ii]; jj < sec_r[ii+1]; ++jj){
       if (fmt_nlist_r[jj] < 0) break;
       const double *rdiff = &sel_r_diff[jj][0];
-      double rr = sqrt (MathUtilities::dot(rdiff, rdiff));
+      double rr = sqrt (dot3(rdiff, rdiff));
       descrpt_r[jj] = 1./rr;      
     }
   }
@@ -474,8 +474,8 @@ void compute_descriptor (std::vector<double > &			descrpt_a,
       double dtrdST[4][3];
       double * rr = &sel_a_diff[nei_iter][0];
       double tr[3] ;
-      MathUtilities::dot (tr, rot, rr);
-      double nr2 = MathUtilities::dot(tr, tr);
+      dot3(tr, rot, rr);
+      double nr2 = dot3(tr, tr);
       double nr = sqrt(nr2);
       double nr3 = nr * nr2;
       for (int dd = 0; dd < 3; ++dd){
@@ -601,7 +601,7 @@ void compute_descriptor (std::vector<double > &			descrpt_a,
       if (fmt_nlist_r[nei_iter] < 0) break;      
 
       const double * rr = &sel_r_diff[nei_iter][0];
-      double nr = sqrt(MathUtilities::dot(rr, rr));
+      double nr = sqrt(dot3(rr, rr));
       double nr3 = nr * nr * nr;
       int idx = nei_iter * 12;
 
@@ -699,13 +699,13 @@ void compute_descriptor (std::vector<double > &			descrpt_a,
     xx[dd] = r1[dd];
     yy[dd] = r2[dd];
   }
-  double norm_xx = sqrt(MathUtilities::dot (xx, xx));
+  double norm_xx = sqrt(dot3(xx, xx));
   for (unsigned dd = 0; dd < 3; ++dd) xx[dd] /= norm_xx;
-  double dxy = MathUtilities::dot (xx, yy);
+  double dxy = dot3(xx, yy);
   for (unsigned dd = 0; dd < 3; ++dd) yy[dd] -= dxy * xx[dd];
-  double norm_yy = sqrt(MathUtilities::dot (yy, yy));
+  double norm_yy = sqrt(dot3(yy, yy));
   for (unsigned dd = 0; dd < 3; ++dd) yy[dd] /= norm_yy;
-  MathUtilities::cprod (xx, yy, zz);  
+  cprod(xx, yy, zz);  
   rot_mat.resize (9);
   for (int dd = 0; dd < 9; ++dd) rot_mat[dd] = rot[dd];
 
@@ -716,8 +716,8 @@ void compute_descriptor (std::vector<double > &			descrpt_a,
     for (int jj = sec_a[ii]; jj < sec_a[ii+1]; ++jj){
       if (fmt_nlist_a[jj] < 0) break;
       double rdiff[3] ;
-      MathUtilities::dot (rdiff, rot, &sel_a_diff[jj][0]);
-      double rr2 = MathUtilities::dot(rdiff, rdiff);
+      dot3(rdiff, rot, &sel_a_diff[jj][0]);
+      double rr2 = dot3(rdiff, rdiff);
       double rr = sqrt(rr2);
 #ifdef DESCRPT_THETAPHI
       double cos_theta = rdiff[2] / rr;
@@ -742,8 +742,8 @@ void compute_descriptor (std::vector<double > &			descrpt_a,
     for (int jj = sec_r[ii]; jj < sec_r[ii+1]; ++jj){
       if (fmt_nlist_r[jj] < 0) break;
       double rdiff[3] ;
-      MathUtilities::dot (rdiff, rot, &sel_r_diff[jj][0]);
-      double rr = sqrt (MathUtilities::dot(rdiff, rdiff));
+      dot3(rdiff, rot, &sel_r_diff[jj][0]);
+      double rr = sqrt (dot3(rdiff, rdiff));
       descrpt_r[jj] = 1./rr;
     }
   }  
@@ -784,7 +784,7 @@ void compute_descriptor_se_a_extf (std::vector<double > &		descrpt_a,
       ef[ii] = ef_[ii];
     }
   }
-  assert( fabs(MathUtilities::dot(ef, ef) - 1.0) < 1e-12 ), "ef should be a normalized std::vector";
+  assert( fabs(dot3(ef, ef) - 1.0) < 1e-12 ), "ef should be a normalized std::vector";
 
   // compute the diff of the neighbors
   std::vector<std::vector<double > > sel_a_diff (sec_a.back());
@@ -819,7 +819,7 @@ void compute_descriptor_se_a_extf (std::vector<double > &		descrpt_a,
       if (fmt_nlist_a[nei_iter] < 0) break;
       const double * rr = &sel_a_diff[nei_iter][0];
       // check validity of ef
-      double nr2 = MathUtilities::dot(rr, rr);
+      double nr2 = dot3(rr, rr);
       double inr = 1./sqrt(nr2);
       double nr = nr2 * inr;
       double inr2 = inr * inr;
@@ -830,7 +830,7 @@ void compute_descriptor_se_a_extf (std::vector<double > &		descrpt_a,
       int idx_deriv = nei_iter * 4 * 3;	// 4 components time 3 directions
       int idx_value = nei_iter * 4;	// 4 components
       // projections
-      double rp = MathUtilities::dot(rr, ef);
+      double rp = dot3(rr, ef);
       double rv[3];
       rv[0] = rr[0] - rp * ef[0];
       rv[1] = rr[1] - rp * ef[1];
@@ -893,7 +893,7 @@ void compute_descriptor_se_a_ef_para (std::vector<double > &		descrpt_a,
       ef[ii] = ef_[ii];
     }
   }
-  assert( fabs(MathUtilities::dot(ef, ef) - 1.0) < 1e-12 ), "ef should be a normalized vector";
+  assert( fabs(dot3(ef, ef) - 1.0) < 1e-12 ), "ef should be a normalized vector";
 
   // compute the diff of the neighbors
   std::vector<std::vector<double > > sel_a_diff (sec_a.back());
@@ -928,7 +928,7 @@ void compute_descriptor_se_a_ef_para (std::vector<double > &		descrpt_a,
       if (fmt_nlist_a[nei_iter] < 0) break;
       const double * rr = &sel_a_diff[nei_iter][0];
       // check validity of ef
-      double nr2 = MathUtilities::dot(rr, rr);
+      double nr2 = dot3(rr, rr);
       double inr = 1./sqrt(nr2);
       double nr = nr2 * inr;
       double inr2 = inr * inr;
@@ -940,9 +940,9 @@ void compute_descriptor_se_a_ef_para (std::vector<double > &		descrpt_a,
       int idx_value = nei_iter * 4;	// 4 components
       // projections
       double rp[3];
-      rp[0] = MathUtilities::dot(rr, ef) * ef[0];
-      rp[1] = MathUtilities::dot(rr, ef) * ef[1];
-      rp[2] = MathUtilities::dot(rr, ef) * ef[2];
+      rp[0] = dot3(rr, ef) * ef[0];
+      rp[1] = dot3(rr, ef) * ef[1];
+      rp[2] = dot3(rr, ef) * ef[2];
       // 4 value components
       descrpt_a[idx_value + 0] = 1 / nr;
       descrpt_a[idx_value + 1] = rp[0] / nr2;
@@ -1001,7 +1001,7 @@ void compute_descriptor_se_a_ef_vert (std::vector<double > &		descrpt_a,
       ef[ii] = ef_[ii];
     }
   }
-  assert( fabs(MathUtilities::dot(ef, ef) - 1.0) < 1e-12 ), "ef should be a normalized vector";
+  assert( fabs(dot3(ef, ef) - 1.0) < 1e-12 ), "ef should be a normalized vector";
 
   // compute the diff of the neighbors
   std::vector<std::vector<double > > sel_a_diff (sec_a.back());
@@ -1036,7 +1036,7 @@ void compute_descriptor_se_a_ef_vert (std::vector<double > &		descrpt_a,
       if (fmt_nlist_a[nei_iter] < 0) break;
       const double * rr = &sel_a_diff[nei_iter][0];
       // check validity of ef
-      double nr2 = MathUtilities::dot(rr, rr);
+      double nr2 = dot3(rr, rr);
       double inr = 1./sqrt(nr2);
       double nr = nr2 * inr;
       double inr2 = inr * inr;
@@ -1047,7 +1047,7 @@ void compute_descriptor_se_a_ef_vert (std::vector<double > &		descrpt_a,
       int idx_deriv = nei_iter * 4 * 3;	// 4 components time 3 directions
       int idx_value = nei_iter * 4;	// 4 components
       // projections
-      double rp = MathUtilities::dot(rr, ef);
+      double rp = dot3(rr, ef);
       double rv[3];
       rv[0] = rr[0] - rp * ef[0];
       rv[1] = rr[1] - rp * ef[1];

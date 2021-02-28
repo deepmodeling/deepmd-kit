@@ -4,7 +4,7 @@
 #include <iterator>
 #include <cassert>
 
-#include "MathUtilities.h"
+#include "utilities.h"
 #include "SimulationRegion.h"
 
 // build nlist by an extended grid

@@ -212,7 +212,7 @@ build_nlist_cell (std::vector<std::vector<int> > &	nlist0,
 	  diff[dd0] += shift[dd1] * boxt[3*dd1+dd0];
 	}
       }
-      double r2 = MathUtilities::dot<double> (diff, diff);
+      double r2 = dot3(diff, diff);
       if (r2 < rc02) {
 	if (i_idx < nloc) nlist0[i_idx].push_back (j_idx);
 	if (j_idx < nloc) nlist0[j_idx].push_back (i_idx);
@@ -253,7 +253,7 @@ build_nlist_cell (std::vector<std::vector<int> > &	nlist0,
 	  diff[dd0] += shift[dd1] * boxt[3*dd1+dd0];
 	}
       }
-      double r2 = MathUtilities::dot<double> (diff, diff);
+      double r2 = dot3(diff, diff);
       if (r2 < rc02) {
 	nlist0[i_idx].push_back (j_idx);
       }
@@ -611,7 +611,7 @@ build_nlist (std::vector<std::vector<int > > & nlist0,
 	diff[1] = posi3[jj*3+1] - posi3[ii*3+1];
 	diff[2] = posi3[jj*3+2] - posi3[ii*3+2];
       }
-      double r2 = MathUtilities::dot<double> (diff, diff);
+      double r2 = dot3(diff, diff);
       if (r2 < rc02) {
 	nlist0[ii].push_back (jj);
 	nlist0[jj].push_back (ii);

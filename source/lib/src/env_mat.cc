@@ -50,7 +50,7 @@ void env_mat_a (
     for (int nei_iter = sec_a[sec_iter]; nei_iter < sec_a[sec_iter+1]; ++nei_iter) {      
       if (fmt_nlist_a[nei_iter] < 0) break;
       const double * rr = &sel_a_diff[nei_iter][0];
-      double nr2 = MathUtilities::dot(rr, rr);
+      double nr2 = dot3(rr, rr);
       double inr = 1./sqrt(nr2);
       double nr = nr2 * inr;
       double inr2 = inr * inr;
@@ -128,7 +128,7 @@ void env_mat_a_cpu (
         for (int nei_iter = sec_a[sec_iter]; nei_iter < sec_a[sec_iter+1]; ++nei_iter) {      
             if (fmt_nlist_a[nei_iter] < 0) break;
             const FPTYPE * rr = &rij_a[nei_iter * 3];
-            FPTYPE nr2 = MathUtilities::dot(rr, rr);
+            FPTYPE nr2 = dot3(rr, rr);
             FPTYPE inr = 1./sqrt(nr2);
             FPTYPE nr = nr2 * inr;
             FPTYPE inr2 = inr * inr;
@@ -216,7 +216,7 @@ void env_mat_r (
     for (int nei_iter = sec[sec_iter]; nei_iter < sec[sec_iter+1]; ++nei_iter) {      
       if (fmt_nlist[nei_iter] < 0) break;
       const double * rr = &sel_diff[nei_iter][0];
-      double nr2 = MathUtilities::dot(rr, rr);
+      double nr2 = dot3(rr, rr);
       double inr = 1./sqrt(nr2);
       double nr = nr2 * inr;
       double inr2 = inr * inr;
@@ -276,7 +276,7 @@ void env_mat_r_cpu (
         for (int nei_iter = sec[sec_iter]; nei_iter < sec[sec_iter+1]; ++nei_iter) {      
             if (fmt_nlist[nei_iter] < 0) break;
             const FPTYPE * rr = &rij_a[nei_iter * 3];
-            FPTYPE nr2 = MathUtilities::dot(rr, rr);
+            FPTYPE nr2 = dot3(rr, rr);
             FPTYPE inr = 1./sqrt(nr2);
             FPTYPE nr = nr2 * inr;
             FPTYPE inr2 = inr * inr;

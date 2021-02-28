@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <algorithm>
-#include "MathUtilities.h"
+#include "utilities.h"
 #include "fmt_nlist.h"
 #include "env_mat.h"
 #if GOOGLE_CUDA
