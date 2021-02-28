@@ -1,12 +1,5 @@
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include <iostream>
+#include "custom_op.h"
 #include "prod_virial.h"
-
-using namespace tensorflow;
-// using namespace std;
-
 
 REGISTER_OP("ProdVirialSeA")
 .Attr("T: {float, double}")

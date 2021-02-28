@@ -1,14 +1,6 @@
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include <iostream>
-
+#include "custom_op.h"
 #include "ComputeDescriptor.h"
 #include "soft_min_switch.h"
-
-using namespace tensorflow;
-// using namespace std;
-
 
 REGISTER_OP("SoftMinSwitch")
 .Attr("T: {float, double}")
