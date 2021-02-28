@@ -419,7 +419,7 @@ void compute_descriptor (std::vector<double > &			descrpt_a,
     for (int jj = sec_a[ii]; jj < sec_a[ii+1]; ++jj){
       if (fmt_nlist_a[jj] < 0) break;
       double rdiff[3] ;
-      dot3(rdiff, rot, &sel_a_diff[jj][0]);
+      dotmv3(rdiff, rot, &sel_a_diff[jj][0]);
       double rr2 = dot3(rdiff, rdiff);
       double rr = sqrt(rr2);
 #ifdef DESCRPT_THETAPHI
@@ -474,7 +474,7 @@ void compute_descriptor (std::vector<double > &			descrpt_a,
       double dtrdST[4][3];
       double * rr = &sel_a_diff[nei_iter][0];
       double tr[3] ;
-      dot3(tr, rot, rr);
+      dotmv3(tr, rot, rr);
       double nr2 = dot3(tr, tr);
       double nr = sqrt(nr2);
       double nr3 = nr * nr2;
@@ -716,7 +716,7 @@ void compute_descriptor (std::vector<double > &			descrpt_a,
     for (int jj = sec_a[ii]; jj < sec_a[ii+1]; ++jj){
       if (fmt_nlist_a[jj] < 0) break;
       double rdiff[3] ;
-      dot3(rdiff, rot, &sel_a_diff[jj][0]);
+      dotmv3(rdiff, rot, &sel_a_diff[jj][0]);
       double rr2 = dot3(rdiff, rdiff);
       double rr = sqrt(rr2);
 #ifdef DESCRPT_THETAPHI
@@ -742,7 +742,7 @@ void compute_descriptor (std::vector<double > &			descrpt_a,
     for (int jj = sec_r[ii]; jj < sec_r[ii+1]; ++jj){
       if (fmt_nlist_r[jj] < 0) break;
       double rdiff[3] ;
-      dot3(rdiff, rot, &sel_r_diff[jj][0]);
+      dotmv3(rdiff, rot, &sel_r_diff[jj][0]);
       double rr = sqrt (dot3(rdiff, rdiff));
       descrpt_r[jj] = 1./rr;
     }

@@ -38,6 +38,15 @@ dot4 (const TYPE* r0, const TYPE* r1)
 }
 
 template <typename TYPE>
+inline void 
+dotmv3 (TYPE * vec_o, const TYPE * tensor, const TYPE * vec_i)
+{
+  vec_o[0] = dot3(tensor+0, vec_i);
+  vec_o[1] = dot3(tensor+3, vec_i);
+  vec_o[2] = dot3(tensor+6, vec_i);
+}
+
+template <typename TYPE>
 inline void
 cprod (const TYPE * r0,
        const TYPE * r1,
