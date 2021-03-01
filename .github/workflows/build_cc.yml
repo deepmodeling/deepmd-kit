@@ -10,9 +10,17 @@ jobs:
       matrix:
         include:
         - float_prec: high
+          cudatoolkit: false
         - float_prec: low
+          cudatoolkit: false
+        - float_prec: high
+          cudatoolkit: true
+        - float_prec: low
+          cudatoolkit: true
     steps:
     - uses: actions/checkout@master
+    - run: sudo apt update && sudo apt install nvidia-cuda-toolkit
+      if: ${{ matrix.cudatoolkit }} != 'false'
     - run: source/install/build_cc.sh
       env:
         FLOAT_PREC: ${{ matrix.float_prec }}
