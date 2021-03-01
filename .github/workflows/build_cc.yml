@@ -5,22 +5,24 @@ name: Build C++
 jobs:
   testpython:
     name: Build C++
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     strategy:  
       matrix:
         include:
         - float_prec: high
-          cudatoolkit: false
+          variant: cpu
         - float_prec: low
-          cudatoolkit: false
+          variant: cpu
         - float_prec: high
-          cudatoolkit: true
+          variant: gpu
         - float_prec: low
-          cudatoolkit: true
+          variant: gpu
     steps:
     - uses: actions/checkout@master
     - run: sudo apt update && sudo apt install nvidia-cuda-toolkit
-      if: ${{ matrix.cudatoolkit }} != 'false'
+      if: matrix.variant == 'gpu'
     - run: source/install/build_cc.sh
       env:
         FLOAT_PREC: ${{ matrix.float_prec }}
+        CC: gcc-7
+        CXX: g++-7
