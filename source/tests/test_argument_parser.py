@@ -7,7 +7,7 @@ import re
 from io import StringIO
 from contextlib import redirect_stderr
 
-from deepmd.main import parse_args
+from deepmd.main import parse_args, get_ll
 
 if TYPE_CHECKING:
     try:
@@ -92,22 +92,27 @@ class TestParserOutput(unittest.TestCase):
             # first check if namespace object hat the expected attribute
             self.assertTrue(
                 hasattr(namespace, attribute),
-                msg=f"Namespace object does not have expected attribute: {attribute}"
+                msg=f"Namespace object does not have expected attribute: {attribute}",
             )
             # than check if the attribute is of expected type
             self.assertIsInstance(
                 getattr(namespace, attribute),
                 expected_type,
                 msg=f"Namespace attribute '{attribute}' is of wrong type, expected: "
-                f"{expected_type}, got: {type(getattr(namespace, attribute))}"
+                f"{expected_type}, got: {type(getattr(namespace, attribute))}",
             )
             # if argument has associated value check if it is same as expected
             if "value" in test_data and test_value:
+                # use expected value if supplied
+                if "expected" in test_data:
+                    expected = test_data["expected"]
+                else:
+                    expected = test_data["value"]
                 self.assertEqual(
-                    test_data["value"],
+                    expected,
                     getattr(namespace, attribute),
                     msg=f"Got wrong parsed value, expected: {test_data['value']}, got "
-                    f"{getattr(namespace, attribute)}"
+                    f"{getattr(namespace, attribute)}",
                 )
 
     def run_test(self, *, command: str, mapping: "TEST_DICT"):
@@ -186,8 +191,8 @@ class TestParserOutput(unittest.TestCase):
     def test_parser_log(self):
         """Check if logging associated attributes are present in specified parsers."""
         ARGS = {
-            "--verbose": dict(type=int, dest="log_level"),
-            "--log-path": dict(type=(str, type(None)), value="LOGFILE")
+            "--log-level": dict(type=int, value="INFO", expected=20),
+            "--log-path": dict(type=(str, type(None)), value="LOGFILE"),
         }
 
         for parser in ("config", "transfer", "train", "freeze", "test", "compress"):
@@ -280,3 +285,23 @@ class TestParserOutput(unittest.TestCase):
         ARGS = {}
 
         self.run_test(command="doc-train-input", mapping=ARGS)
+
+    def test_get_log_level(self):
+        MAPPING = {
+            "DEBUG": 10,
+            "INFO": 20,
+            "WARNING": 30,
+            "ERROR": 40,
+            "3": 10,
+            "2": 20,
+            "1": 30,
+            "0": 40,
+        }
+
+        for input_val, expected_result in MAPPING.items():
+            self.assertEqual(
+                get_ll(input_val),
+                expected_result,
+                msg=f"Expected: {expected_result} result for input value: {input_val} "
+                f"but got {get_ll(input_val)}"
+            )
