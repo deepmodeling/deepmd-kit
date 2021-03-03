@@ -62,7 +62,7 @@ def parse_args(args: Optional[List[str]] = None):
         add_help=False, formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser_log.add_argument(
-        #"-l",
+        "-v",
         "--log-level",
         choices=["DEBUG", 3, "INFO", 2, "WARNING", 1, "ERROR", 0],
         default="INFO",
