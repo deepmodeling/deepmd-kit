@@ -3,9 +3,32 @@
 #include <algorithm>
 #include <iterator>
 #include <cassert>
+#include <vector>
 
 #include "utilities.h"
 #include "SimulationRegion.h"
+
+// format of the input neighbor list
+struct InputNlist
+{
+  int inum;
+  int * ilist;
+  int * numneigh;
+  int ** firstneigh;
+  InputNlist (
+      int inum_, 
+      int * ilist_,
+      int * numneigh_, 
+      int ** firstneigh_
+      ) 
+      : inum(inum_), ilist(ilist_), numneigh(numneigh_), firstneigh(firstneigh_)
+      {}
+};
+
+void convert_from(
+    InputNlist & to_nlist,
+    std::vector<std::vector<int> > & from_nlist
+    );
 
 // build nlist by an extended grid
 void

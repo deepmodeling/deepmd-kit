@@ -124,7 +124,7 @@ TEST_F(TestEnvMatA, orig_cpy)
   std::vector<double> env, env_deriv, rij_a;
   bool pbc = false;
   for(int ii = 0; ii < nloc; ++ii){
-    int ret = format_nlist_i_cpu<double>(fmt_nlist_a, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);
+    int ret = format_nlist_i_cpu<double>(fmt_nlist_a, posi_cpy, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);
     EXPECT_EQ(ret, -1);
     env_mat_a(env, env_deriv, rij_a, posi_cpy, ntypes, atype_cpy, region, pbc, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
     EXPECT_EQ(env.size(), sec_a[2]*4);
@@ -170,7 +170,7 @@ TEST_F(TestEnvMatA, orig_cpy_equal_pbc)
   std::vector<double> env_0, env_deriv_0, rij_a_0;
   std::vector<double> env_1, env_deriv_1, rij_a_1;
   for(int ii = 0; ii < nloc; ++ii){
-    int ret_0 = format_nlist_i_cpu<double>(fmt_nlist_a_0, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);
+    int ret_0 = format_nlist_i_cpu<double>(fmt_nlist_a_0, posi_cpy, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);
     EXPECT_EQ(ret_0, -1);
     env_mat_a(env_0, env_deriv_0, rij_a_0, posi_cpy, ntypes, atype_cpy, region, false, ii, fmt_nlist_a_0, sec_a, rc_smth, rc);
     int ret_1 = format_nlist_i_fill_a(fmt_nlist_a_1, fmt_nlist_r_1, posi, ntypes, atype, region, true, ii, nlist_a[ii], nlist_r[ii], rc, sec_a, sec_r);    
@@ -199,7 +199,7 @@ TEST_F(TestEnvMatA, orig_cpy_num_deriv)
   bool pbc = false;
   double hh = 1e-5;
   for(int ii = 0; ii < nloc; ++ii){
-    int ret = format_nlist_i_cpu<double>(fmt_nlist_a, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);
+    int ret = format_nlist_i_cpu<double>(fmt_nlist_a, posi_cpy, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);
     EXPECT_EQ(ret, -1);
     env_mat_a(env, env_deriv, rij_a, posi_cpy, ntypes, atype_cpy, region, pbc, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
     EXPECT_EQ(env.size(), sec_a[2]*4);
@@ -237,9 +237,9 @@ TEST_F(TestEnvMatA, cpu)
   std::vector<double> env, env_deriv, rij_a;
   bool pbc = false;
   for(int ii = 0; ii < nloc; ++ii){
-    int ret = format_nlist_i_cpu<double>(fmt_nlist_a, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);    
+    int ret = format_nlist_i_cpu<double>(fmt_nlist_a, posi_cpy, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);    
     EXPECT_EQ(ret, -1);
-    env_mat_a_cpu<double>(env, env_deriv, rij_a, posi_cpy, ntypes, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
+    env_mat_a_cpu<double>(env, env_deriv, rij_a, posi_cpy, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
     EXPECT_EQ(env.size(), sec_a[2]*4);
     EXPECT_EQ(env.size(), env_deriv.size()/3);
     EXPECT_EQ(rij_a.size(), sec_a[2]*3);
@@ -258,14 +258,14 @@ TEST_F(TestEnvMatA, cpu_equal_orig_cpy)
   std::vector<double> env_0, env_deriv_0, rij_a_0;
   std::vector<double> env_1, env_deriv_1, rij_a_1;
   for(int ii = 0; ii < nloc; ++ii){
-    int ret_0 = format_nlist_i_cpu<double>(fmt_nlist_a_0, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);
+    int ret_0 = format_nlist_i_cpu<double>(fmt_nlist_a_0, posi_cpy, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);
     EXPECT_EQ(ret_0, -1);
     env_mat_a(env_0, env_deriv_0, rij_a_0, posi_cpy, ntypes, atype_cpy, region, false, ii, fmt_nlist_a_0, sec_a, rc_smth, rc);
 
-    int ret_1 = format_nlist_i_cpu<double>(fmt_nlist_a_1, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);  
+    int ret_1 = format_nlist_i_cpu<double>(fmt_nlist_a_1, posi_cpy, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);  
   
     EXPECT_EQ(ret_1, -1);
-    env_mat_a_cpu<double>(env_1, env_deriv_1, rij_a_1, posi_cpy, ntypes, atype_cpy, ii, fmt_nlist_a_1, sec_a, rc_smth, rc);
+    env_mat_a_cpu<double>(env_1, env_deriv_1, rij_a_1, posi_cpy, atype_cpy, ii, fmt_nlist_a_1, sec_a, rc_smth, rc);
 
     EXPECT_EQ(env_0.size(), env_1.size());
     EXPECT_EQ(env_deriv_0.size(), env_deriv_1.size());
@@ -289,9 +289,9 @@ TEST_F(TestEnvMatA, cpu_num_deriv)
   bool pbc = false;
   double hh = 1e-5;
   for(int ii = 0; ii < nloc; ++ii){
-    int ret = format_nlist_i_cpu<double>(fmt_nlist_a, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);    
+    int ret = format_nlist_i_cpu<double>(fmt_nlist_a, posi_cpy, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);    
     EXPECT_EQ(ret, -1);
-    env_mat_a_cpu<double>(env, env_deriv, rij_a, posi_cpy, ntypes, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
+    env_mat_a_cpu<double>(env, env_deriv, rij_a, posi_cpy, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
     EXPECT_EQ(env.size(), sec_a[2]*4);
     EXPECT_EQ(env.size(), env_deriv.size()/3);
     EXPECT_EQ(rij_a.size(), sec_a[2]*3);
@@ -327,7 +327,7 @@ TEST_F(TestEnvMatAShortSel, orig_cpy)
   std::vector<double> env, env_deriv, rij_a;
   bool pbc = false;
   for(int ii = 0; ii < nloc; ++ii){
-    int ret = format_nlist_i_cpu<double>(fmt_nlist_a, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);
+    int ret = format_nlist_i_cpu<double>(fmt_nlist_a, posi_cpy, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);
     EXPECT_EQ(ret, 1);
     env_mat_a(env, env_deriv, rij_a, posi_cpy, ntypes, atype_cpy, region, pbc, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
     EXPECT_EQ(env.size(), sec_a[2]*4);
@@ -371,9 +371,9 @@ TEST_F(TestEnvMatAShortSel, cpu)
   std::vector<double> env, env_deriv, rij_a;
   bool pbc = false;
   for(int ii = 0; ii < nloc; ++ii){
-    int ret = format_nlist_i_cpu<double>(fmt_nlist_a, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);    
+    int ret = format_nlist_i_cpu<double>(fmt_nlist_a, posi_cpy, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);    
     EXPECT_EQ(ret, 1);
-    env_mat_a_cpu<double>(env, env_deriv, rij_a, posi_cpy, ntypes, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
+    env_mat_a_cpu<double>(env, env_deriv, rij_a, posi_cpy, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
     EXPECT_EQ(env.size(), sec_a[2]*4);
     EXPECT_EQ(env.size(), env_deriv.size()/3);
     EXPECT_EQ(rij_a.size(), sec_a[2]*3);
@@ -425,7 +425,6 @@ TEST_F(TestEnvMatA, prod_cpu)
       &std[0],
       nloc,
       nall,
-      ntypes,
       rc, 
       rc_smth,
       sec_a);
@@ -481,7 +480,6 @@ TEST_F(TestEnvMatA, prod_cpu_equal_cpu)
       &std[0],
       nloc,
       nall,
-      ntypes,
       rc, 
       rc_smth,
       sec_a);
@@ -489,9 +487,9 @@ TEST_F(TestEnvMatA, prod_cpu_equal_cpu)
   std::vector<int> fmt_nlist_a_1, fmt_nlist_r_1;
   std::vector<double> env_1, env_deriv_1, rij_a_1;
   for(int ii = 0; ii < nloc; ++ii){
-    int ret_1 = format_nlist_i_cpu<double>(fmt_nlist_a_1, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);  
+    int ret_1 = format_nlist_i_cpu<double>(fmt_nlist_a_1, posi_cpy, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);  
     EXPECT_EQ(ret_1, -1);
-    env_mat_a_cpu<double>(env_1, env_deriv_1, rij_a_1, posi_cpy, ntypes, atype_cpy, ii, fmt_nlist_a_1, sec_a, rc_smth, rc);
+    env_mat_a_cpu<double>(env_1, env_deriv_1, rij_a_1, posi_cpy, atype_cpy, ii, fmt_nlist_a_1, sec_a, rc_smth, rc);
     EXPECT_EQ(env_1.size(), nnei * 4);
     EXPECT_EQ(env_deriv_1.size(), nnei * 4 * 3);
     EXPECT_EQ(rij_a_1.size(), nnei * 3);
@@ -723,9 +721,9 @@ TEST_F(TestEnvMatA, prod_gpu_nv_equal_cpu)
   std::vector<int> fmt_nlist_a_1, fmt_nlist_r_1;
   std::vector<double> env_1, env_deriv_1, rij_a_1;
   for(int ii = 0; ii < nloc; ++ii){
-    int ret_1 = format_nlist_i_cpu<double>(fmt_nlist_a_1, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);  
+    int ret_1 = format_nlist_i_cpu<double>(fmt_nlist_a_1, posi_cpy, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);  
     EXPECT_EQ(ret_1, -1);
-    env_mat_a_cpu<double>(env_1, env_deriv_1, rij_a_1, posi_cpy, ntypes, atype_cpy, ii, fmt_nlist_a_1, sec_a, rc_smth, rc);
+    env_mat_a_cpu<double>(env_1, env_deriv_1, rij_a_1, posi_cpy, atype_cpy, ii, fmt_nlist_a_1, sec_a, rc_smth, rc);
     EXPECT_EQ(env_1.size(), nnei * 4);
     EXPECT_EQ(env_deriv_1.size(), nnei * 4 * 3);
     EXPECT_EQ(rij_a_1.size(), nnei * 3);

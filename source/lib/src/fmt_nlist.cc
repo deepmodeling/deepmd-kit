@@ -81,7 +81,6 @@ template<typename FPTYPE>
 int format_nlist_i_cpu (
     std::vector<int > &		fmt_nei_idx_a,
     const std::vector<FPTYPE > &posi,
-    const int &			ntypes,
     const std::vector<int > &   type,
     const int &			i_idx,
     const std::vector<int > &   nei_idx_a, 
@@ -123,11 +122,22 @@ int format_nlist_i_cpu (
     return overflowed;
 }
 
+template<typename FPTYPE> 
+void format_nlist_cpu (
+    int * nlist,
+    const InputNlist & in_nlist,
+    const FPTYPE * coord, 
+    const int * type, 
+    const float rcut, 
+    const std::vector<int> sec)
+{
+  
+}
+
 template
 int format_nlist_i_cpu<double> (
     std::vector<int > &		fmt_nei_idx_a,
     const std::vector<double > &posi,
-    const int &			ntypes,
     const std::vector<int > &   type,
     const int &			i_idx,
     const std::vector<int > &   nei_idx_a, 
@@ -139,7 +149,6 @@ template
 int format_nlist_i_cpu<float> (
     std::vector<int > &		fmt_nei_idx_a,
     const std::vector<float > &	posi,
-    const int &			ntypes,
     const std::vector<int > &   type,
     const int &			i_idx,
     const std::vector<int > &   nei_idx_a, 

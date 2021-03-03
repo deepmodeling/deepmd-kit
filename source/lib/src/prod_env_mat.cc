@@ -21,7 +21,6 @@ void prod_env_mat_a_cpu(
     const FPTYPE * std, 
     const int nloc, 
     const int nall, 
-    const int ntypes, 
     const float rcut, 
     const float rcut_smth, 
     const std::vector<int> sec) 
@@ -60,13 +59,13 @@ void prod_env_mat_a_cpu(
 #pragma omp parallel for 
   for (int ii = 0; ii < nloc; ++ii) {
     std::vector<int> fmt_nlist_a;
-    int ret = format_nlist_i_cpu(fmt_nlist_a, d_coord3, ntypes, d_type, ii, d_nlist_a[ii], rcut, sec);
+    int ret = format_nlist_i_cpu(fmt_nlist_a, d_coord3, d_type, ii, d_nlist_a[ii], rcut, sec);
     std::vector<FPTYPE> d_em_a;
     std::vector<FPTYPE> d_em_a_deriv;
     std::vector<FPTYPE> d_em_r;
     std::vector<FPTYPE> d_em_r_deriv;
     std::vector<FPTYPE> d_rij_a;
-    env_mat_a_cpu (d_em_a, d_em_a_deriv, d_rij_a, d_coord3, ntypes, d_type, ii, fmt_nlist_a, sec, rcut_smth, rcut);
+    env_mat_a_cpu (d_em_a, d_em_a_deriv, d_rij_a, d_coord3, d_type, ii, fmt_nlist_a, sec, rcut_smth, rcut);
 
     // check sizes
     assert (d_em_a.size() == nem);
@@ -105,7 +104,6 @@ void prod_env_mat_r_cpu(
     const FPTYPE * std, 
     const int nloc, 
     const int nall, 
-    const int ntypes, 
     const float rcut, 
     const float rcut_smth, 
     const std::vector<int> sec) 
@@ -144,13 +142,13 @@ void prod_env_mat_r_cpu(
 #pragma omp parallel for 
   for (int ii = 0; ii < nloc; ++ii) {
     std::vector<int> fmt_nlist_a;
-    int ret = format_nlist_i_cpu(fmt_nlist_a, d_coord3, ntypes, d_type, ii, d_nlist_a[ii], rcut, sec);
+    int ret = format_nlist_i_cpu(fmt_nlist_a, d_coord3, d_type, ii, d_nlist_a[ii], rcut, sec);
     std::vector<FPTYPE> d_em_a;
     std::vector<FPTYPE> d_em_a_deriv;
     std::vector<FPTYPE> d_em_r;
     std::vector<FPTYPE> d_em_r_deriv;
     std::vector<FPTYPE> d_rij_a;
-    env_mat_r_cpu (d_em_a, d_em_a_deriv, d_rij_a, d_coord3, ntypes, d_type, ii, fmt_nlist_a, sec, rcut_smth, rcut);
+    env_mat_r_cpu (d_em_a, d_em_a_deriv, d_rij_a, d_coord3, d_type, ii, fmt_nlist_a, sec, rcut_smth, rcut);
 
     // check sizes
     assert (d_em_a.size() == nem);
@@ -190,7 +188,6 @@ void prod_env_mat_a_cpu<double>(
     const double * std, 
     const int nloc, 
     const int nall, 
-    const int ntypes, 
     const float rcut, 
     const float rcut_smth, 
     const std::vector<int> sec);
@@ -211,7 +208,6 @@ void prod_env_mat_a_cpu<float>(
     const float * std, 
     const int nloc, 
     const int nall, 
-    const int ntypes, 
     const float rcut, 
     const float rcut_smth, 
     const std::vector<int> sec);
@@ -232,7 +228,6 @@ void prod_env_mat_r_cpu<double>(
     const double * std, 
     const int nloc, 
     const int nall, 
-    const int ntypes, 
     const float rcut, 
     const float rcut_smth, 
     const std::vector<int> sec);
@@ -253,7 +248,6 @@ void prod_env_mat_r_cpu<float>(
     const float * std, 
     const int nloc, 
     const int nall, 
-    const int ntypes, 
     const float rcut, 
     const float rcut_smth, 
     const std::vector<int> sec);

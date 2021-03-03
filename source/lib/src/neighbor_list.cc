@@ -742,3 +742,19 @@ copy_coord (std::vector<double > & out_c,
   }
 }
 
+
+void
+convert_from(
+    InputNlist & to_nlist,
+    std::vector<std::vector<int> > & from_nlist
+    )
+{
+  to_nlist.inum = from_nlist.size();
+  for(int ii = 0; ii < to_nlist.inum; ++ii){
+    to_nlist.ilist[ii] = ii;
+    to_nlist.numneigh[ii] = from_nlist[ii].size();
+    to_nlist.firstneigh[ii] = &from_nlist[ii][0];
+  }
+}
+
+    
