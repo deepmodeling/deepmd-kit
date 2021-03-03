@@ -1,5 +1,6 @@
 import re
 import math
+import logging
 import numpy as np
 from tqdm import tqdm
 from typing import Tuple, List
@@ -7,6 +8,8 @@ from deepmd.env import tf
 from deepmd.env import op_module
 from tensorflow.python.platform import gfile
 from tensorflow.python.framework import tensor_util
+
+log = logging.getLogger(__name__)
 
 class DeepTabulate():
     """
@@ -106,7 +109,8 @@ class DeepTabulate():
             else:
                 net = "filter_" + str(int(ii / self.ntypes)) + "_net_" + str(int(ii % self.ntypes))
             self.data[net] = np.zeros([self.nspline, 6 * self.last_layer_size], dtype = self.data_type)
-            for jj in tqdm(range(self.nspline), desc = '# DEEPMD: ' + net + ', tabulating'):
+            # for jj in tqdm(range(self.nspline), desc = 'DEEPMD INFO    |-> deepmd.utils.tabulate\t\t\t' + net + ', tabulating'):
+            for jj in range(self.nspline):
                 for kk in range(self.last_layer_size):
                     if jj < int((upper - lower) / stride0):
                         tt = stride0
@@ -227,8 +231,8 @@ class DeepTabulate():
                 lower = -self.davg[ii][0] / self.dstd[ii][0]
             if upper < ((1 / min_nbor_dist) * sw - self.davg[ii][0]) / self.dstd[ii][0]:
                 upper = ((1 / min_nbor_dist) * sw - self.davg[ii][0]) / self.dstd[ii][0]
-        print('# DEEPMD: training data with lower boundary: ' + str(lower))
-        print('# DEEPMD: training data with upper boundary: ' + str(upper))
+        log.info('training data with lower boundary: ' + str(lower))
+        log.info('training data with upper boundary: ' + str(upper))
         return math.floor(lower), math.ceil(upper)
 
     def _spline5_switch(self,

@@ -12,7 +12,10 @@ file(GLOB INC_SRC include/*.h ${CMAKE_CURRENT_BINARY_DIR}/version.h)
 add_library(${libname} SHARED ${LIB_SRC})
 
 if (USE_CUDA_TOOLKIT)
-  target_link_libraries (${libname} ${CUDA_LIBRARIES})
+  add_definitions("-D GOOGLE_CUDA")
+  add_subdirectory(src/cuda)
+  set (EXTRA_LIBS ${EXTRA_LIBS} deepmd_op_cuda)
+  target_link_libraries (${libname} ${CUDA_LIBRARIES} ${EXTRA_LIBS})
 endif()
 
 if(BUILD_PY_IF)

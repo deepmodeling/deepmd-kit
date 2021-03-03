@@ -417,12 +417,12 @@ SimulationRegion<VALUETYPE>::
 toFaceDistance	(double * dd) const
 {
   double tmp[3];
-  MathUtilities::cprod (boxt+3, boxt+6, tmp);
-  dd[0] = volume * MathUtilities::invsqrt (MathUtilities::dot(tmp,tmp));
-  MathUtilities::cprod (boxt+6, boxt+0, tmp);
-  dd[1] = volume * MathUtilities::invsqrt (MathUtilities::dot(tmp,tmp));
-  MathUtilities::cprod (boxt+0, boxt+3, tmp);
-  dd[2] = volume * MathUtilities::invsqrt (MathUtilities::dot(tmp,tmp));
+  cprod(boxt+3, boxt+6, tmp);
+  dd[0] = volume * invsqrt(dot3(tmp,tmp));
+  cprod(boxt+6, boxt+0, tmp);
+  dd[1] = volume * invsqrt(dot3(tmp,tmp));
+  cprod(boxt+0, boxt+3, tmp);
+  dd[2] = volume * invsqrt(dot3(tmp,tmp));
 }
 
 // static int tmp_count = 0;

@@ -140,7 +140,7 @@ void prod_virial_r_cpu<double>(
     const int * nlist, 
     const int nloc, 
     const int nall, 
-    const int nnei) ;
+    const int nnei);
 
 template
 void prod_virial_r_cpu<float>(
@@ -152,4 +152,4 @@ void prod_virial_r_cpu<float>(
     const int * nlist, 
     const int nloc, 
     const int nall, 
-    const int nnei) ;
+    const int nnei);

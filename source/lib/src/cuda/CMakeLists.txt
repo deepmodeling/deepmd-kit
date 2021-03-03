@@ -81,8 +81,10 @@ else ()
     message(FATAL_ERROR "unsupported CUDA_VERSION " ${CUDA_VERSION} ", please use a newer version (>=7.0) of CUDA toolkit!")
 endif()
 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -DCUB_IGNORE_DEPRECATED_CPP_DIALECT -DCUB_IGNORE_DEPRECATED_CPP_DIALECT")
+
 set (SOURCE_FILES
-    descrpt_se_a.cu descrpt_se_r.cu prod_force_se_a.cu prod_force_se_r.cu prod_virial_se_a.cu prod_virial_se_r.cu gelu.cu tabulate.cu
+    prod_env_mat.cu prod_force.cu prod_virial.cu gelu.cu tabulate.cu
 )
 
 cuda_add_library(deepmd_op_cuda SHARED ${SOURCE_FILES})
@@ -91,5 +93,5 @@ if (BUILD_CPP_IF)
     install(TARGETS deepmd_op_cuda DESTINATION lib/)
 endif (BUILD_CPP_IF)
 if (BUILD_PY_IF)
-    install(TARGETS deepmd_op_cuda DESTINATION deepmd/)
+    install(TARGETS deepmd_op_cuda DESTINATION deepmd/op/)
 endif (BUILD_PY_IF)
