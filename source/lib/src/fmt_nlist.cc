@@ -5,7 +5,7 @@
 #include "SimulationRegion.h"
 #include <iostream>
 
-int format_nlist_fill_a (
+int format_nlist_i_fill_a (
     std::vector<int > &			fmt_nei_idx_a,
     std::vector<int > &			fmt_nei_idx_r,
     const std::vector<double > &	posi,
@@ -78,7 +78,7 @@ int format_nlist_fill_a (
 
 
 template<typename FPTYPE> 
-int format_nlist_cpu (
+int format_nlist_i_cpu (
     std::vector<int > &		fmt_nei_idx_a,
     const std::vector<FPTYPE > &posi,
     const int &			ntypes,
@@ -124,7 +124,7 @@ int format_nlist_cpu (
 }
 
 template
-int format_nlist_cpu<double> (
+int format_nlist_i_cpu<double> (
     std::vector<int > &		fmt_nei_idx_a,
     const std::vector<double > &posi,
     const int &			ntypes,
@@ -136,7 +136,7 @@ int format_nlist_cpu<double> (
 
 
 template
-int format_nlist_cpu<float> (
+int format_nlist_i_cpu<float> (
     std::vector<int > &		fmt_nei_idx_a,
     const std::vector<float > &	posi,
     const int &			ntypes,

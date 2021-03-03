@@ -60,7 +60,7 @@ void prod_env_mat_a_cpu(
 #pragma omp parallel for 
   for (int ii = 0; ii < nloc; ++ii) {
     std::vector<int> fmt_nlist_a;
-    int ret = format_nlist_cpu(fmt_nlist_a, d_coord3, ntypes, d_type, ii, d_nlist_a[ii], rcut, sec);
+    int ret = format_nlist_i_cpu(fmt_nlist_a, d_coord3, ntypes, d_type, ii, d_nlist_a[ii], rcut, sec);
     std::vector<FPTYPE> d_em_a;
     std::vector<FPTYPE> d_em_a_deriv;
     std::vector<FPTYPE> d_em_r;
@@ -144,7 +144,7 @@ void prod_env_mat_r_cpu(
 #pragma omp parallel for 
   for (int ii = 0; ii < nloc; ++ii) {
     std::vector<int> fmt_nlist_a;
-    int ret = format_nlist_cpu(fmt_nlist_a, d_coord3, ntypes, d_type, ii, d_nlist_a[ii], rcut, sec);
+    int ret = format_nlist_i_cpu(fmt_nlist_a, d_coord3, ntypes, d_type, ii, d_nlist_a[ii], rcut, sec);
     std::vector<FPTYPE> d_em_a;
     std::vector<FPTYPE> d_em_a_deriv;
     std::vector<FPTYPE> d_em_r;

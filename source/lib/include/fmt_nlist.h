@@ -5,7 +5,7 @@
 
 // return:	-1	OK
 //		> 0	the type of unsuccessful neighbor list
-int format_nlist_fill_a (
+int format_nlist_i_fill_a (
     std::vector<int > &			fmt_nei_idx_a,
     std::vector<int > &			fmt_nei_idx_r,
     const std::vector<double > &	posi,
@@ -22,7 +22,7 @@ int format_nlist_fill_a (
 
 
 template<typename FPTYPE> 
-int format_nlist_cpu (
+int format_nlist_i_cpu (
     std::vector<int > &			fmt_nei_idx_a,
     const std::vector<FPTYPE > &	posi,
     const int &				ntypes,

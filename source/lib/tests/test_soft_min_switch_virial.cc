@@ -63,7 +63,7 @@ protected:
     rij.resize(nloc * nnei * 3);
     for(int ii = 0; ii < nloc; ++ii){      
       // format nlist and record
-      format_nlist_cpu<double>(fmt_nlist_a, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);
+      format_nlist_i_cpu<double>(fmt_nlist_a, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);
       for (int jj = 0; jj < nnei; ++jj){
 	nlist[ii*nnei + jj] = fmt_nlist_a[jj];
       }

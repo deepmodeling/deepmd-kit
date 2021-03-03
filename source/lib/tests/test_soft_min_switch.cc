@@ -59,7 +59,7 @@ protected:
     rij.resize(nloc * nnei * 3);
     for(int ii = 0; ii < nloc; ++ii){      
       // format nlist and record
-      format_nlist_cpu<double>(fmt_nlist_a, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);
+      format_nlist_i_cpu<double>(fmt_nlist_a, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);
       for (int jj = 0; jj < nnei; ++jj){
 	nlist[ii*nnei + jj] = fmt_nlist_a[jj];
       }
@@ -111,7 +111,7 @@ TEST_F(TestSoftMinSwitch, cpu_num_deriv)
   EXPECT_EQ(sw_deriv.size(), nloc * nnei * 3);
 
   for (int ii = 0; ii < nloc; ++ii){
-    int ret = format_nlist_cpu<double>(fmt_nlist_a, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);    
+    int ret = format_nlist_i_cpu<double>(fmt_nlist_a, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);    
     EXPECT_EQ(ret, -1);
     
     int i_idx = ii;

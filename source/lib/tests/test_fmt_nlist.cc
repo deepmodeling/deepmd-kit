@@ -128,7 +128,7 @@ TEST_F(TestFormatNlist, orig_cpy)
   bool pbc = false;
   int ii = 0;
   for (ii = 0; ii < nloc; ++ii){
-    int ret = format_nlist_fill_a(fmt_nlist_a, fmt_nlist_r, posi_cpy, ntypes, atype_cpy, region, pbc, ii, nlist_a[ii], nlist_r[ii], rc, sec_a, sec_r);
+    int ret = format_nlist_i_fill_a(fmt_nlist_a, fmt_nlist_r, posi_cpy, ntypes, atype_cpy, region, pbc, ii, nlist_a[ii], nlist_r[ii], rc, sec_a, sec_r);
   
     EXPECT_EQ(ret, -1);
     for (int jj = 0; jj < sec_a[2]; ++jj){
@@ -146,7 +146,7 @@ TEST_F(TestFormatNlist, orig_pbc)
   std::vector<int> fmt_nlist_a_1, fmt_nlist_r_1;
 
   for (int ii = 0; ii < nloc; ++ii){
-    int ret_1 = format_nlist_fill_a(fmt_nlist_a_1, fmt_nlist_r_1, posi, ntypes, atype, region, true, ii, nlist_a_1[ii], nlist_r_1[ii], rc, sec_a, sec_r);
+    int ret_1 = format_nlist_i_fill_a(fmt_nlist_a_1, fmt_nlist_r_1, posi, ntypes, atype, region, true, ii, nlist_a_1[ii], nlist_r_1[ii], rc, sec_a, sec_r);
 
     EXPECT_EQ(ret_1, -1);
     for (int jj = 0; jj < sec_a[2]; ++jj){
@@ -167,8 +167,8 @@ TEST_F(TestFormatNlist, orig_cpy_equal_pbc)
   std::vector<int> fmt_nlist_a_1, fmt_nlist_r_1;
 
   for (int ii = 0; ii < nloc; ++ii){
-    int ret_0 = format_nlist_fill_a(fmt_nlist_a_0, fmt_nlist_r_0, posi_cpy, ntypes, atype_cpy, region, false, ii, nlist_a_0[ii], nlist_r_0[ii], rc, sec_a, sec_r);
-    int ret_1 = format_nlist_fill_a(fmt_nlist_a_1, fmt_nlist_r_1, posi, ntypes, atype, region, true, ii, nlist_a_1[ii], nlist_r_1[ii], rc, sec_a, sec_r);
+    int ret_0 = format_nlist_i_fill_a(fmt_nlist_a_0, fmt_nlist_r_0, posi_cpy, ntypes, atype_cpy, region, false, ii, nlist_a_0[ii], nlist_r_0[ii], rc, sec_a, sec_r);
+    int ret_1 = format_nlist_i_fill_a(fmt_nlist_a_1, fmt_nlist_r_1, posi, ntypes, atype, region, true, ii, nlist_a_1[ii], nlist_r_1[ii], rc, sec_a, sec_r);
 
     EXPECT_EQ(ret_0, -1);
     EXPECT_EQ(ret_1, -1);
@@ -193,8 +193,8 @@ TEST_F(TestFormatNlist, cpu_equal_orig)
   std::vector<int> fmt_nlist_a_1;
   
   for (int ii = 0; ii < nloc; ++ii){
-    int ret_0 = format_nlist_fill_a(fmt_nlist_a_0, fmt_nlist_r_0, posi_cpy, ntypes, atype_cpy, region, false, ii, nlist_a_0[ii], nlist_r_0[ii], rc, sec_a, sec_r);
-    int ret_1 = format_nlist_cpu<double>(fmt_nlist_a_1, posi_cpy, ntypes, atype_cpy, ii, nlist_a_0[ii], rc, sec_a);
+    int ret_0 = format_nlist_i_fill_a(fmt_nlist_a_0, fmt_nlist_r_0, posi_cpy, ntypes, atype_cpy, region, false, ii, nlist_a_0[ii], nlist_r_0[ii], rc, sec_a, sec_r);
+    int ret_1 = format_nlist_i_cpu<double>(fmt_nlist_a_1, posi_cpy, ntypes, atype_cpy, ii, nlist_a_0[ii], rc, sec_a);
     EXPECT_EQ(ret_0, -1);
     EXPECT_EQ(ret_1, -1);
     for (int jj = 0; jj < sec_a[2]; ++jj){
@@ -214,7 +214,7 @@ TEST_F(TestFormatNlistShortSel, orig_cpy)
   bool pbc = false;
   int ii = 0;
   for (ii = 0; ii < nloc; ++ii){
-    int ret = format_nlist_fill_a(fmt_nlist_a, fmt_nlist_r, posi_cpy, ntypes, atype_cpy, region, pbc, ii, nlist_a[ii], nlist_r[ii], rc, sec_a, sec_r);  
+    int ret = format_nlist_i_fill_a(fmt_nlist_a, fmt_nlist_r, posi_cpy, ntypes, atype_cpy, region, pbc, ii, nlist_a[ii], nlist_r[ii], rc, sec_a, sec_r);  
     EXPECT_EQ(ret, 1);
     for (int jj = 0; jj < sec_a[2]; ++jj){
       EXPECT_EQ(fmt_nlist_a[jj], expect_nlist_cpy[ii*sec_a[2]+jj]);
@@ -233,7 +233,7 @@ TEST_F(TestFormatNlistShortSel, cpu_equal_orig)
   std::vector<int> fmt_nlist_a_1;
   
   for (int ii = 0; ii < nloc; ++ii){
-    int ret_1 = format_nlist_cpu<double>(fmt_nlist_a_1, posi_cpy, ntypes, atype_cpy, ii, nlist_a_0[ii], rc, sec_a);
+    int ret_1 = format_nlist_i_cpu<double>(fmt_nlist_a_1, posi_cpy, ntypes, atype_cpy, ii, nlist_a_0[ii], rc, sec_a);
     EXPECT_EQ(ret_1, 1);
     for (int jj = 0; jj < sec_a[2]; ++jj){
       EXPECT_EQ(fmt_nlist_a_1[jj], expect_nlist_cpy[ii*sec_a[2]+jj]);
