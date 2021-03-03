@@ -206,6 +206,7 @@ PairNNP::PairNNP(LAMMPS *lmp)
   if (strcmp(update->unit_style,"metal") != 0) {
     error->all(FLERR,"Pair deepmd requires metal unit, please set it by \"units metal\"");
   }
+  restartinfo = 0;
   pppmflag = 1;
   respa_enable = 0;
   writedata = 0;
