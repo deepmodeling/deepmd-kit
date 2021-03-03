@@ -25,10 +25,38 @@ struct InputNlist
       {}
 };
 
-void convert_from(
+void convert_nlist(
     InputNlist & to_nlist,
     std::vector<std::vector<int> > & from_nlist
     );
+
+
+// template <typename FPTYPE>
+// void 
+// build_nlist_nopbc(
+//     InputNlist & nlist,
+//     const FPTYPE * coord,
+//     const int & nloc, 
+//     const float & rcut);
+
+// template <typename FPTYPE>
+// void 
+// build_nlist_pbc(
+//     InputNlist & nlist,
+//     const FPTYPE * coord,
+//     const Region<FPTYPE> & region,
+//     const int & nloc, 
+//     const float & rcut);
+
+// template <typename FPTYPE>
+// void 
+// build_nlist_pbc(
+//     InputNlist & nlist,
+//     const FPTYPE * coord,
+//     const Region<FPTYPE> & region,
+//     const int & nloc, 
+//     const float & rcut);
+
 
 // build nlist by an extended grid
 void

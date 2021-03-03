@@ -184,7 +184,7 @@ TEST_F(TestFormatNlist, orig_cpy_equal_pbc)
   }  
 }
 
-TEST_F(TestFormatNlist, cpu_equal_orig)
+TEST_F(TestFormatNlist, cpu_i_equal_orig)
 {
   std::vector<std::vector<int>> nlist_a_0, nlist_r_0;
   build_nlist(nlist_a_0, nlist_r_0, posi_cpy, nloc, rc, rc, nat_stt, ncell, ext_stt, ext_end, region, ncell);
@@ -200,6 +200,36 @@ TEST_F(TestFormatNlist, cpu_equal_orig)
     for (int jj = 0; jj < sec_a[2]; ++jj){
       EXPECT_EQ(fmt_nlist_a_1[jj], fmt_nlist_a_0[jj]);
     }
+  }
+}
+
+TEST_F(TestFormatNlist, cpu)
+{
+  std::vector<std::vector<int>> nlist_a_0, nlist_r_0;
+  build_nlist(nlist_a_0, nlist_r_0, posi_cpy, nloc, rc, rc, nat_stt, ncell, ext_stt, ext_end, region, ncell);  
+  // make a input nlist
+  int inum = nlist_a_0.size();
+  std::vector<int > ilist(inum);
+  std::vector<int > numneigh(inum);
+  std::vector<int* > firstneigh(inum);
+  InputNlist in_nlist(inum, &ilist[0], &numneigh[0], &firstneigh[0]);
+  convert_nlist(in_nlist, nlist_a_0);
+  // allocate the mem for the result
+  std::vector<int> nlist(inum * sec_a.back());
+  EXPECT_EQ(nlist.size(), expect_nlist_cpy.size());
+  // format nlist
+  format_nlist_cpu(
+      &nlist[0], 
+      in_nlist,
+      &posi_cpy[0],
+      &atype_cpy[0],
+      nloc,
+      nall,
+      rc,
+      sec_a);
+  // validate
+  for(int ii = 0; ii < nlist.size(); ++ii){
+    EXPECT_EQ(nlist[ii], expect_nlist_cpy[ii]);
   }
 }
 
@@ -238,6 +268,36 @@ TEST_F(TestFormatNlistShortSel, cpu_equal_orig)
     for (int jj = 0; jj < sec_a[2]; ++jj){
       EXPECT_EQ(fmt_nlist_a_1[jj], expect_nlist_cpy[ii*sec_a[2]+jj]);
     }
+  }
+}
+
+TEST_F(TestFormatNlistShortSel, cpu)
+{
+  std::vector<std::vector<int>> nlist_a_0, nlist_r_0;
+  build_nlist(nlist_a_0, nlist_r_0, posi_cpy, nloc, rc, rc, nat_stt, ncell, ext_stt, ext_end, region, ncell);  
+  // make a input nlist
+  int inum = nlist_a_0.size();
+  std::vector<int > ilist(inum);
+  std::vector<int > numneigh(inum);
+  std::vector<int* > firstneigh(inum);
+  InputNlist in_nlist(inum, &ilist[0], &numneigh[0], &firstneigh[0]);
+  convert_nlist(in_nlist, nlist_a_0);  
+  // mem
+  std::vector<int> nlist(inum * sec_a.back());
+  EXPECT_EQ(nlist.size(), expect_nlist_cpy.size());
+  // format nlist
+  format_nlist_cpu(
+      &nlist[0], 
+      in_nlist,
+      &posi_cpy[0],
+      &atype_cpy[0],
+      nloc,
+      nall,
+      rc,
+      sec_a);
+  // validate
+  for(int ii = 0; ii < nlist.size(); ++ii){
+    EXPECT_EQ(nlist[ii], expect_nlist_cpy[ii]);
   }
 }
 

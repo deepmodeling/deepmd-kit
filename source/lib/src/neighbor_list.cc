@@ -744,7 +744,7 @@ copy_coord (std::vector<double > & out_c,
 
 
 void
-convert_from(
+convert_nlist(
     InputNlist & to_nlist,
     std::vector<std::vector<int> > & from_nlist
     )
@@ -756,5 +756,30 @@ convert_from(
     to_nlist.firstneigh[ii] = &from_nlist[ii][0];
   }
 }
+
+
+// template <typename FPTYPE>
+// void 
+// build_nlist_pbc(
+//     InputNlist & nlist,
+//     const FPTYPE * coord,
+//     const Region & region,
+//     const int & nloc, 
+//     const float & rcut)
+// {
+//   std::vector<double > in_c(nloc);
+//   std::vector<int> in_t(nloc, 0);
+//   std::copy(coord, coord + nloc * 3, in_c.begin());
+//   SimulationRegion<double > tmpr;
+//   double tmp_boxt[9];
+//   std::copy(region.boxt, region.boxt+9, tmp_boxt);
+//   tmpr.reinitBox(tmp_boxt);
+  
+//   std::vector<double > out_c;
+//   std::vector<int> out_r, mapping, ncell, ngcell;
+  
+// }
+
+
 
     
