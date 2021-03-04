@@ -92,13 +92,13 @@ protected:
     rij.resize(nloc * nnei * 3);
     for(int ii = 0; ii < nloc; ++ii){      
       // format nlist and record
-      format_nlist_cpu<double>(fmt_nlist_a, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);
+      format_nlist_i_cpu<double>(fmt_nlist_a, posi_cpy, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);
       for (int jj = 0; jj < nnei; ++jj){
 	nlist[ii*nnei + jj] = fmt_nlist_a[jj];
       }
       std::vector<double > t_env, t_env_deriv, t_rij;
       // compute env_mat and its deriv, record
-      env_mat_a_cpu<double>(t_env, t_env_deriv, t_rij, posi_cpy, ntypes, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
+      env_mat_a_cpu<double>(t_env, t_env_deriv, t_rij, posi_cpy, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
       for (int jj = 0; jj < ndescrpt; ++jj){
 	env[ii*ndescrpt+jj] = t_env[jj];
 	for (int dd = 0; dd < 3; ++dd){
@@ -250,8 +250,8 @@ TEST_F(TestPairTab, cpu_f_num_deriv)
       std::vector<int> nlist_0(nloc * nnei), nlist_1(nloc * nnei);
       std::vector<double > avg(ntypes * ndescrpt, 0);
       std::vector<double > std(ntypes * ndescrpt, 1);
-      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_0[0], &nlist_0[0], &posi_cpy_0[0], &atype_cpy_0[0], &ilist_0[0], &jrange_0[0], &jlist_0[0], max_nnei_0, &avg[0], &std[0], nloc, nall, ntypes, rc, rc_smth, sec_a);
-      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_1[0], &nlist_1[0], &posi_cpy_1[0], &atype_cpy_1[0], &ilist_1[0], &jrange_1[0], &jlist_1[0], max_nnei_1, &avg[0], &std[0], nloc, nall, ntypes, rc, rc_smth, sec_a);
+      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_0[0], &nlist_0[0], &posi_cpy_0[0], &atype_cpy_0[0], &ilist_0[0], &jrange_0[0], &jlist_0[0], max_nnei_0, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
+      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_1[0], &nlist_1[0], &posi_cpy_1[0], &atype_cpy_1[0], &ilist_1[0], &jrange_1[0], &jlist_1[0], max_nnei_1, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
       std::vector<double> energy_0(nloc), energy_1(nloc);
       std::vector<double> t_force(nall * 3), t_virial(nall * 9);
       pair_tab_cpu(
@@ -354,8 +354,8 @@ TEST_F(TestPairTab, cpu_f_num_deriv_scale)
       std::vector<int> nlist_0(nloc * nnei), nlist_1(nloc * nnei);
       std::vector<double > avg(ntypes * ndescrpt, 0);
       std::vector<double > std(ntypes * ndescrpt, 1);
-      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_0[0], &nlist_0[0], &posi_cpy_0[0], &atype_cpy_0[0], &ilist_0[0], &jrange_0[0], &jlist_0[0], max_nnei_0, &avg[0], &std[0], nloc, nall, ntypes, rc, rc_smth, sec_a);
-      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_1[0], &nlist_1[0], &posi_cpy_1[0], &atype_cpy_1[0], &ilist_1[0], &jrange_1[0], &jlist_1[0], max_nnei_1, &avg[0], &std[0], nloc, nall, ntypes, rc, rc_smth, sec_a);
+      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_0[0], &nlist_0[0], &posi_cpy_0[0], &atype_cpy_0[0], &ilist_0[0], &jrange_0[0], &jlist_0[0], max_nnei_0, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
+      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_1[0], &nlist_1[0], &posi_cpy_1[0], &atype_cpy_1[0], &ilist_1[0], &jrange_1[0], &jlist_1[0], max_nnei_1, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
       std::vector<double> energy_0(nloc), energy_1(nloc);
       std::vector<double> t_force(nall * 3), t_virial(nall * 9);
       pair_tab_cpu(
@@ -471,8 +471,8 @@ TEST_F(TestPairTab, cpu_v_num_deriv)
       std::vector<int> nlist_0(nloc * nnei), nlist_1(nloc * nnei);
       std::vector<double > avg(ntypes * ndescrpt, 0);
       std::vector<double > std(ntypes * ndescrpt, 1);
-      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_0[0], &nlist_0[0], &posi_cpy_0[0], &atype_cpy_0[0], &ilist_0[0], &jrange_0[0], &jlist_0[0], max_nnei_0, &avg[0], &std[0], nloc, nall, ntypes, rc, rc_smth, sec_a);
-      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_1[0], &nlist_1[0], &posi_cpy_1[0], &atype_cpy_1[0], &ilist_1[0], &jrange_1[0], &jlist_1[0], max_nnei_1, &avg[0], &std[0], nloc, nall, ntypes, rc, rc_smth, sec_a);
+      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_0[0], &nlist_0[0], &posi_cpy_0[0], &atype_cpy_0[0], &ilist_0[0], &jrange_0[0], &jlist_0[0], max_nnei_0, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
+      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_1[0], &nlist_1[0], &posi_cpy_1[0], &atype_cpy_1[0], &ilist_1[0], &jrange_1[0], &jlist_1[0], max_nnei_1, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
       std::vector<double> energy_0(nloc), energy_1(nloc);
       std::vector<double> t_force(nall * 3), t_virial(nall * 9);
       pair_tab_cpu(
@@ -599,8 +599,8 @@ TEST_F(TestPairTab, cpu_v_num_deriv_scale)
       std::vector<int> nlist_0(nloc * nnei), nlist_1(nloc * nnei);
       std::vector<double > avg(ntypes * ndescrpt, 0);
       std::vector<double > std(ntypes * ndescrpt, 1);
-      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_0[0], &nlist_0[0], &posi_cpy_0[0], &atype_cpy_0[0], &ilist_0[0], &jrange_0[0], &jlist_0[0], max_nnei_0, &avg[0], &std[0], nloc, nall, ntypes, rc, rc_smth, sec_a);
-      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_1[0], &nlist_1[0], &posi_cpy_1[0], &atype_cpy_1[0], &ilist_1[0], &jrange_1[0], &jlist_1[0], max_nnei_1, &avg[0], &std[0], nloc, nall, ntypes, rc, rc_smth, sec_a);
+      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_0[0], &nlist_0[0], &posi_cpy_0[0], &atype_cpy_0[0], &ilist_0[0], &jrange_0[0], &jlist_0[0], max_nnei_0, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
+      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_1[0], &nlist_1[0], &posi_cpy_1[0], &atype_cpy_1[0], &ilist_1[0], &jrange_1[0], &jlist_1[0], max_nnei_1, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
       std::vector<double> energy_0(nloc), energy_1(nloc);
       std::vector<double> t_force(nall * 3), t_virial(nall * 9);
       pair_tab_cpu(
@@ -727,8 +727,8 @@ TEST_F(TestPairTabTriBox, cpu_v_num_deriv)
       std::vector<int> nlist_0(nloc * nnei), nlist_1(nloc * nnei);
       std::vector<double > avg(ntypes * ndescrpt, 0);
       std::vector<double > std(ntypes * ndescrpt, 1);
-      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_0[0], &nlist_0[0], &posi_cpy_0[0], &atype_cpy_0[0], &ilist_0[0], &jrange_0[0], &jlist_0[0], max_nnei_0, &avg[0], &std[0], nloc, nall, ntypes, rc, rc_smth, sec_a);
-      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_1[0], &nlist_1[0], &posi_cpy_1[0], &atype_cpy_1[0], &ilist_1[0], &jrange_1[0], &jlist_1[0], max_nnei_1, &avg[0], &std[0], nloc, nall, ntypes, rc, rc_smth, sec_a);
+      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_0[0], &nlist_0[0], &posi_cpy_0[0], &atype_cpy_0[0], &ilist_0[0], &jrange_0[0], &jlist_0[0], max_nnei_0, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
+      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_1[0], &nlist_1[0], &posi_cpy_1[0], &atype_cpy_1[0], &ilist_1[0], &jrange_1[0], &jlist_1[0], max_nnei_1, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
       std::vector<double> energy_0(nloc), energy_1(nloc);
       std::vector<double> t_force(nall * 3), t_virial(nall * 9);
       pair_tab_cpu(

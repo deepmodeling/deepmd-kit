@@ -5,7 +5,7 @@
 #include "SimulationRegion.h"
 #include <iostream>
 
-int format_nlist_fill_a (
+int format_nlist_i_fill_a (
     std::vector<int > &			fmt_nei_idx_a,
     std::vector<int > &			fmt_nei_idx_r,
     const std::vector<double > &	posi,
@@ -78,10 +78,9 @@ int format_nlist_fill_a (
 
 
 template<typename FPTYPE> 
-int format_nlist_cpu (
+int format_nlist_i_cpu (
     std::vector<int > &		fmt_nei_idx_a,
     const std::vector<FPTYPE > &posi,
-    const int &			ntypes,
     const std::vector<int > &   type,
     const int &			i_idx,
     const std::vector<int > &   nei_idx_a, 
@@ -123,11 +122,53 @@ int format_nlist_cpu (
     return overflowed;
 }
 
+template<typename FPTYPE> 
+void format_nlist_cpu (
+    int * nlist,
+    const InputNlist & in_nlist,
+    const FPTYPE * coord, 
+    const int * type, 
+    const int nloc, 
+    const int nall, 
+    const float rcut, 
+    const std::vector<int> sec)
+{
+  std::vector<FPTYPE> posi_(nall * 3);
+  std::vector<int> type_(nall);
+  std::copy(coord, coord + nall * 3, posi_.begin());
+  std::copy(type, type + nall, type_.begin());
+  std::vector<int> ilist, fmt_ilist;
+  int nnei = sec.back();
+  
+  for(int ii = 0; ii < in_nlist.inum; ++ii){
+    int i_idx = in_nlist.ilist[ii];
+    int i_num = in_nlist.numneigh[ii];
+    ilist.resize(i_num);
+    std::copy(in_nlist.firstneigh[ii], in_nlist.firstneigh[ii] + i_num, ilist.begin());
+    format_nlist_i_cpu(
+	fmt_ilist,
+	posi_,
+	type_,
+	i_idx,
+	ilist,
+	rcut, 
+	sec);	
+    int * cur_nlist = nlist + i_idx * nnei;
+    if(fmt_ilist.size() != nnei){
+      std::cerr << "FATAL: formatted nlist of i have length " 
+		<< fmt_ilist.size()
+		<< " which does not match " 
+		<< nnei	<< std::endl;
+      exit(1);
+    }
+    std::copy(fmt_ilist.begin(), fmt_ilist.end(), cur_nlist);
+  }
+}
+
 template
-int format_nlist_cpu<double> (
+int format_nlist_i_cpu<double> (
     std::vector<int > &		fmt_nei_idx_a,
     const std::vector<double > &posi,
-    const int &			ntypes,
     const std::vector<int > &   type,
     const int &			i_idx,
     const std::vector<int > &   nei_idx_a, 
@@ -136,14 +177,36 @@ int format_nlist_cpu<double> (
 
 
 template
-int format_nlist_cpu<float> (
+int format_nlist_i_cpu<float> (
     std::vector<int > &		fmt_nei_idx_a,
     const std::vector<float > &	posi,
-    const int &			ntypes,
     const std::vector<int > &   type,
     const int &			i_idx,
     const std::vector<int > &   nei_idx_a, 
     const float &		rcut,
     const std::vector<int > &   sec_a);
+
+template
+void format_nlist_cpu<double> (
+    int * nlist,
+    const InputNlist & in_nlist,
+    const double * coord, 
+    const int * type, 
+    const int nloc, 
+    const int nall, 
+    const float rcut, 
+    const std::vector<int> sec);
+
+
+template
+void format_nlist_cpu<float> (
+    int * nlist,
+    const InputNlist & in_nlist,
+    const float * coord, 
+    const int * type, 
+    const int nloc, 
+    const int nall, 
+    const float rcut, 
+    const std::vector<int> sec);
 
 

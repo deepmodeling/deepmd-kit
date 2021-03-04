@@ -18,7 +18,6 @@ void prod_env_mat_a_cpu(
     const FPTYPE * std, 
     const int nloc, 
     const int nall, 
-    const int ntypes, 
     const float rcut, 
     const float rcut_smth, 
     const std::vector<int> sec);
@@ -39,7 +38,6 @@ void prod_env_mat_r_cpu(
     const FPTYPE * std, 
     const int nloc, 
     const int nall, 
-    const int ntypes, 
     const float rcut, 
     const float rcut_smth, 
     const std::vector<int> sec);

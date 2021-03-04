@@ -180,7 +180,7 @@ public:
       // launch the cpu compute function
       prod_env_mat_a_cpu(
           em, em_deriv, rij, nlist, 
-          coord, type, ilist, jrange, jlist, max_nbor_size, avg, std, nloc, nall, ntypes, rcut_r, rcut_r_smth, sec_a);
+          coord, type, ilist, jrange, jlist, max_nbor_size, avg, std, nloc, nall, rcut_r, rcut_r_smth, sec_a);
     }
   }
 
@@ -333,7 +333,7 @@ public:
       // launch the cpu compute function
       prod_env_mat_r_cpu(
           em, em_deriv, rij, nlist, 
-          coord, type, ilist, jrange, jlist, max_nbor_size, avg, std, nloc, nall, ntypes, rcut, rcut_smth, sec);
+          coord, type, ilist, jrange, jlist, max_nbor_size, avg, std, nloc, nall, rcut, rcut_smth, sec);
     }
   }
 

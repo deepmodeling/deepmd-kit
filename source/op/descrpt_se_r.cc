@@ -248,7 +248,7 @@ public:
 	std::vector<int> fmt_nlist;
 	int ret = -1;
 	if (fill_nei_a){
-	  if ((ret = format_nlist_fill_a (fmt_nlist, fmt_nlist_null, d_coord3, ntypes, d_type, region, b_pbc, ii, d_nlist_null[ii], d_nlist[ii], rcut, sec, sec_null)) != -1){
+	  if ((ret = format_nlist_i_fill_a (fmt_nlist, fmt_nlist_null, d_coord3, ntypes, d_type, region, b_pbc, ii, d_nlist_null[ii], d_nlist[ii], rcut, sec, sec_null)) != -1){
 	    if (count_nei_idx_overflow == 0) {
 	      std::cout << "WARNING: Radial neighbor list length of type " << ret << " is not enough" << std::endl;
 	      flush(std::cout);

@@ -190,7 +190,10 @@ void
 NNPInter::
 init (const std::string & model, const int & gpu_rank, const std::string & file_content)
 {
-  assert (!inited);
+  if (inited){
+    std::cerr << "WARNING: deepmd-kit should not be initialized twice, do nothing at the second call of initializer" << std::endl;
+    return ;
+  }
   SessionOptions options;
   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
@@ -500,7 +503,10 @@ void
 NNPInterModelDevi::
 init (const std::vector<std::string> & models, const int & gpu_rank, const std::vector<std::string> & file_contents)
 {
-  assert (!inited);
+  if (inited){
+    std::cerr << "WARNING: deepmd-kit should not be initialized twice, do nothing at the second call of initializer" << std::endl;
+    return ;
+  }
   numb_models = models.size();
   sessions.resize(numb_models);
   graph_defs.resize(numb_models);
