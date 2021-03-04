@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <cmath>
+#include <algorithm>
 #include "coord.h"
 
 class TestNormCoord : public ::testing::Test
