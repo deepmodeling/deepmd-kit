@@ -3,9 +3,58 @@
 #include <algorithm>
 #include <iterator>
 #include <cassert>
+#include <vector>
 
-#include "MathUtilities.h"
+#include "region.h"
+#include "utilities.h"
 #include "SimulationRegion.h"
+
+// format of the input neighbor list
+struct InputNlist
+{
+  int inum;
+  int * ilist;
+  int * numneigh;
+  int ** firstneigh;
+  InputNlist (
+      int inum_, 
+      int * ilist_,
+      int * numneigh_, 
+      int ** firstneigh_
+      ) 
+      : inum(inum_), ilist(ilist_), numneigh(numneigh_), firstneigh(firstneigh_)
+      {}
+};
+
+void convert_nlist(
+    InputNlist & to_nlist,
+    std::vector<std::vector<int> > & from_nlist
+    );
+
+
+// build neighbor list.
+// outputs
+
+//	nlist, max_list_size
+//	max_list_size is the maximal size of jlist.
+// inputs
+//	c_cpy, nloc, nall, mem_size, rcut, region
+//	mem_size is the size of allocated memory for jlist.
+// returns
+//	0: succssful
+//	1: the memory is not large enough to hold all neighbors.
+//	   i.e. max_list_size > mem_nall
+template <typename FPTYPE>
+int
+build_nlist_cpu(
+    InputNlist & nlist,
+    int * max_list_size,
+    const FPTYPE * c_cpy,
+    const int & nloc, 
+    const int & nall, 
+    const int & mem_size,
+    const float & rcut);
+
 
 // build nlist by an extended grid
 void

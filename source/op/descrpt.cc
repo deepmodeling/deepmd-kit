@@ -264,7 +264,7 @@ public:
 	std::vector<int> fmt_nlist_r;
 	int ret = -1;
 	if (fill_nei_a){
-	  if ((ret = format_nlist_fill_a (fmt_nlist_a, fmt_nlist_r, d_coord3, ntypes, d_type, region, b_pbc, ii, d_nlist_a[ii], d_nlist_r[ii], rcut_r, sec_a, sec_r)) != -1){
+	  if ((ret = format_nlist_i_fill_a (fmt_nlist_a, fmt_nlist_r, d_coord3, ntypes, d_type, region, b_pbc, ii, d_nlist_a[ii], d_nlist_r[ii], rcut_r, sec_a, sec_r)) != -1){
 	    if (count_nei_idx_overflow == 0) {
 	      std::cout << "WARNING: Radial neighbor list length of type " << ret << " is not enough" << std::endl;
 	      flush(std::cout);
@@ -495,7 +495,7 @@ private:
 	    }
 	  }
 	  sort_info.push_back (std::pair<compute_t, int> 
-			       (MathUtilities::dot<compute_t> (diff, diff), list_idx) );
+			       (dot3(diff, diff), list_idx) );
 	}
       }
       sort (sort_info.begin(), sort_info.end());
@@ -527,7 +527,7 @@ private:
 	    }
 	  }
 	  sort_info.push_back (std::pair<compute_t, int> 
-			       (MathUtilities::dot<compute_t> (diff, diff), list_idx) );
+			       (dot3(diff, diff), list_idx) );
 	}
       }
       sort (sort_info.begin(), sort_info.end());
@@ -580,9 +580,9 @@ private:
 	}
       }
     }
-    compute_t rij = MathUtilities::dot (diff[0], diff[1]);
-    compute_t rii = MathUtilities::dot (diff[0], diff[0]);
-    compute_t rjj = MathUtilities::dot (diff[1], diff[1]);
+    compute_t rij = dot3(diff[0], diff[1]);
+    compute_t rii = dot3(diff[0], diff[0]);
+    compute_t rjj = dot3(diff[1], diff[1]);
     if ( fabs (rij / sqrt(rii * rjj) + 1) < 1e-4  ) {
       return false;
     }

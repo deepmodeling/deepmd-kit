@@ -63,13 +63,13 @@ protected:
     rij.resize(nloc * nnei * 3);
     for(int ii = 0; ii < nloc; ++ii){      
       // format nlist and record
-      format_nlist_cpu<double>(fmt_nlist_a, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);
+      format_nlist_i_cpu<double>(fmt_nlist_a, posi_cpy, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);
       for (int jj = 0; jj < nnei; ++jj){
 	nlist[ii*nnei + jj] = fmt_nlist_a[jj];
       }
       std::vector<double > t_env, t_env_deriv, t_rij;
       // compute env_mat and its deriv, record
-      env_mat_a_cpu<double>(t_env, t_env_deriv, t_rij, posi_cpy, ntypes, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
+      env_mat_a_cpu<double>(t_env, t_env_deriv, t_rij, posi_cpy, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
       for (int jj = 0; jj < nnei * 3; ++jj){
 	rij[ii*nnei*3 + jj] = t_rij[jj];
       }      

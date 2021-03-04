@@ -212,7 +212,7 @@ build_nlist_cell (std::vector<std::vector<int> > &	nlist0,
 	  diff[dd0] += shift[dd1] * boxt[3*dd1+dd0];
 	}
       }
-      double r2 = MathUtilities::dot<double> (diff, diff);
+      double r2 = dot3(diff, diff);
       if (r2 < rc02) {
 	if (i_idx < nloc) nlist0[i_idx].push_back (j_idx);
 	if (j_idx < nloc) nlist0[j_idx].push_back (i_idx);
@@ -253,7 +253,7 @@ build_nlist_cell (std::vector<std::vector<int> > &	nlist0,
 	  diff[dd0] += shift[dd1] * boxt[3*dd1+dd0];
 	}
       }
-      double r2 = MathUtilities::dot<double> (diff, diff);
+      double r2 = dot3(diff, diff);
       if (r2 < rc02) {
 	nlist0[i_idx].push_back (j_idx);
       }
@@ -611,7 +611,7 @@ build_nlist (std::vector<std::vector<int > > & nlist0,
 	diff[1] = posi3[jj*3+1] - posi3[ii*3+1];
 	diff[2] = posi3[jj*3+2] - posi3[ii*3+2];
       }
-      double r2 = MathUtilities::dot<double> (diff, diff);
+      double r2 = dot3(diff, diff);
       if (r2 < rc02) {
 	nlist0[ii].push_back (jj);
 	nlist0[jj].push_back (ii);
@@ -741,4 +741,85 @@ copy_coord (std::vector<double > & out_c,
     }
   }
 }
+
+
+void
+convert_nlist(
+    InputNlist & to_nlist,
+    std::vector<std::vector<int> > & from_nlist
+    )
+{
+  to_nlist.inum = from_nlist.size();
+  for(int ii = 0; ii < to_nlist.inum; ++ii){
+    to_nlist.ilist[ii] = ii;
+    to_nlist.numneigh[ii] = from_nlist[ii].size();
+    to_nlist.firstneigh[ii] = &from_nlist[ii][0];
+  }
+}
+
+template <typename FPTYPE>
+int
+build_nlist_cpu(
+    InputNlist & nlist,
+    int * max_list_size,
+    const FPTYPE * c_cpy,
+    const int & nloc, 
+    const int & nall, 
+    const int & mem_size,
+    const float & rcut)
+{
+  *max_list_size = 0;
+  nlist.inum = nloc;
+  FPTYPE rcut2 = rcut * rcut;  
+  std::vector<int> jlist;
+  jlist.reserve(mem_size);  
+  for(int ii = 0; ii < nlist.inum; ++ii){
+    nlist.ilist[ii] = ii;
+    jlist.clear();
+    for(int jj = 0; jj < nall; ++jj){
+      if(jj == ii) continue;
+      FPTYPE diff[3];
+      for(int dd = 0; dd < 3; ++dd){
+	diff[dd] = c_cpy[ii*3+dd] - c_cpy[jj*3+dd];
+      }
+      FPTYPE diff2 = dot3(diff, diff);
+      if(diff2 < rcut2){
+	jlist.push_back(jj);
+      }
+    }
+    if(jlist.size() > mem_size){
+      *max_list_size = jlist.size();
+      return 1;      
+    }
+    else {
+      int list_size = jlist.size();
+      nlist.numneigh[ii] = list_size;
+      if(list_size > *max_list_size) *max_list_size = list_size;
+      std::copy(jlist.begin(), jlist.end(), nlist.firstneigh[ii]);
+    }
+  }
+  return 0;
+}
+
+template
+int
+build_nlist_cpu<double>(
+    InputNlist & nlist,
+    int * max_list_size,
+    const double * c_cpy,
+    const int & nloc, 
+    const int & nall, 
+    const int & mem_size,
+    const float & rcut);
+
+template
+int
+build_nlist_cpu<float>(
+    InputNlist & nlist,
+    int * max_list_size,
+    const float * c_cpy,
+    const int & nloc, 
+    const int & nall, 
+    const int & mem_size,
+    const float & rcut);
 
