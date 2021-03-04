@@ -4,6 +4,7 @@
 #include "env_mat.h"
 #include "neighbor_list.h"
 #include "prod_virial.h"
+#include "device.h"
 
 class TestProdVirialA : public ::testing::Test
 {
@@ -111,3 +112,51 @@ TEST_F(TestProdVirialA, cpu)
   // }
   // printf("\n");
 }
+
+#if GOOGLE_CUDA
+TEST_F(TestProdVirialA, gpu_cuda)
+{
+  std::vector<double> virial(9);
+  std::vector<double> atom_virial(nall * 9);
+  int n_a_sel = nnei;
+
+  int * nlist_dev = NULL;
+  double * virial_dev = NULL, *atom_virial_dev = NULL, * net_deriv_dev = NULL, * env_deriv_dev = NULL, * rij_dev = NULL;
+
+  malloc_device_memory_sync(nlist_dev, nlist);
+  malloc_device_memory_sync(virial_dev, virial);
+  malloc_device_memory_sync(atom_virial_dev, atom_virial);
+  malloc_device_memory_sync(net_deriv_dev, net_deriv);  
+  malloc_device_memory_sync(env_deriv_dev, env_deriv);  
+  malloc_device_memory_sync(rij_dev, rij);  
+
+  prod_virial_a_gpu_cuda<double> (virial_dev, atom_virial_dev, net_deriv_dev, env_deriv_dev, rij_dev, nlist_dev, nloc, nall, nnei);
+  
+  memcpy_device_to_host(virial_dev, virial);
+  memcpy_device_to_host(atom_virial_dev, atom_virial);
+  delete_device_memory(nlist_dev);
+  delete_device_memory(virial_dev);
+  delete_device_memory(atom_virial_dev);
+  delete_device_memory(net_deriv_dev);
+  delete_device_memory(env_deriv_dev);
+  delete_device_memory(rij_dev);
+  // virial are not calculated in gpu currently;
+  for (int ii = 0; ii < 9; ii++) {
+    virial[ii] = 0;
+  }
+  for (int ii = 0; ii < nall * 9; ii++) {
+    virial[ii % 9] += atom_virial[ii];
+  }
+
+  EXPECT_EQ(virial.size(), 9);
+  EXPECT_EQ(virial.size(), expected_virial.size());
+  EXPECT_EQ(atom_virial.size(), nall * 9);  
+  EXPECT_EQ(atom_virial.size(), expected_atom_virial.size());  
+  for (int jj = 0; jj < virial.size(); ++jj){
+    EXPECT_LT(fabs(virial[jj] - expected_virial[jj]) , 1e-5);
+  }  
+  for (int jj = 0; jj < atom_virial.size(); ++jj){
+    EXPECT_LT(fabs(atom_virial[jj] - expected_atom_virial[jj]) , 1e-5);
+  }  
+}
+#endif // GOOGLE_CUDA

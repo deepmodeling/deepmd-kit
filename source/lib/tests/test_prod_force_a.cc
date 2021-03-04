@@ -4,6 +4,7 @@
 #include "env_mat.h"
 #include "neighbor_list.h"
 #include "prod_force.h"
+#include "device.h"
 
 class TestProdForceA : public ::testing::Test
 {
@@ -96,3 +97,33 @@ TEST_F(TestProdForceA, cpu)
   // }
   // printf("\n");
 }
+
+#if GOOGLE_CUDA
+TEST_F(TestProdForceA, gpu_cuda)
+{
+  std::vector<double> force(nall * 3);
+  int n_a_sel = nnei;
+
+  int * nlist_dev = NULL;
+  double * force_dev = NULL, * net_deriv_dev = NULL, * env_deriv_dev = NULL;
+
+  malloc_device_memory_sync(nlist_dev, nlist);
+  malloc_device_memory_sync(force_dev, force);
+  malloc_device_memory_sync(net_deriv_dev, net_deriv);
+  malloc_device_memory_sync(env_deriv_dev, env_deriv);
+
+  prod_force_a_gpu_cuda<double> (force_dev, net_deriv_dev, env_deriv_dev, nlist_dev, nloc, nall, nnei);
+  
+  memcpy_device_to_host(force_dev, force);
+  delete_device_memory(nlist_dev);
+  delete_device_memory(force_dev);
+  delete_device_memory(net_deriv_dev);
+  delete_device_memory(env_deriv_dev);
+
+  EXPECT_EQ(force.size(), nall * 3);
+  EXPECT_EQ(force.size(), expected_force.size());
+  for (int jj = 0; jj < force.size(); ++jj){
+    EXPECT_LT(fabs(force[jj] - expected_force[jj]) , 1e-5);
+  }
+}
+#endif // GOOGLE_CUDA

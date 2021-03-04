@@ -527,7 +527,7 @@ TEST_F(TestEnvMatA, prod_cpu_equal_cpu)
 
 
 #if GOOGLE_CUDA
-TEST_F(TestEnvMatA, prod_gpu_nv)
+TEST_F(TestEnvMatA, prod_gpu_cuda)
 {
   EXPECT_EQ(nlist_r_cpy.size(), nloc);
   int tot_nnei = 0;
@@ -628,7 +628,7 @@ TEST_F(TestEnvMatA, prod_gpu_nv)
 }
 
 
-TEST_F(TestEnvMatA, prod_gpu_nv_equal_cpu)
+TEST_F(TestEnvMatA, prod_gpu_cuda_equal_cpu)
 {
   EXPECT_EQ(nlist_r_cpy.size(), nloc);
   int tot_nnei = 0;

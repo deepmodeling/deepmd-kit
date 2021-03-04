@@ -162,7 +162,7 @@ void prod_force_r_gpu_cuda(
   const int LEN = 64;
   const int nblock = (nloc + LEN -1) / LEN;
   dim3 block_grid(nblock, nnei);
-  dim3 thread_grid(LEN, 3, 4);
+  dim3 thread_grid(LEN, 3);
   force_deriv_wrt_neighbors_r<<<block_grid, thread_grid>>>(
       force, 
       net_deriv, in_deriv, nlist, nloc, nnei);

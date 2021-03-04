@@ -117,7 +117,7 @@ template <
     typename FPTYPE,
     int      MTILE,
     int      KTILE> 
-__global__ void tabulate_fusion__grad_fifth_order_polynomial(
+__global__ void tabulate_fusion_grad_fifth_order_polynomial(
     FPTYPE * dy_dem_x, 
     FPTYPE * dy_dem,   
     const FPTYPE * table, 
@@ -151,7 +151,7 @@ __global__ void tabulate_fusion__grad_fifth_order_polynomial(
     FPTYPE xx = em_x[block_idx * nnei + ii + warp_idx];
     if (ago == xx) { 
       unloop = true;
-      breakpoint = ii;
+      breakpoint = ii + warp_idx;
     }
     
     int table_idx = 0;
@@ -229,7 +229,7 @@ void tabulate_fusion_grad_gpu_cuda(
       dy_dem,
       0.0, sizeof(FPTYPE) * nloc * nnei * 4));
 
-  tabulate_fusion__grad_fifth_order_polynomial<FPTYPE, MM, KK> <<<nloc, KK * WARP_SIZE, sizeof(FPTYPE) * MM * last_layer_size>>>(
+  tabulate_fusion_grad_fifth_order_polynomial<FPTYPE, MM, KK> <<<nloc, KK * WARP_SIZE, sizeof(FPTYPE) * MM * last_layer_size>>>(
       dy_dem_x, dy_dem,
       table, em_x, em, dy,  table_info[0], table_info[1], table_info[2], table_info[3], table_info[4], nnei, last_layer_size);
 }
