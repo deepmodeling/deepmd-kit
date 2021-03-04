@@ -64,7 +64,7 @@ def parse_args(args: Optional[List[str]] = None):
     parser_log.add_argument(
         "-v",
         "--log-level",
-        choices=["DEBUG", 3, "INFO", 2, "WARNING", 1, "ERROR", 0],
+        choices=["DEBUG", "3", "INFO", "2", "WARNING", "1", "ERROR", "0"],
         default="INFO",
         help="set verbosity level by string or number, 0=ERROR, 1=WARNING, 2=INFO "
         "and 3=DEBUG",
@@ -227,12 +227,14 @@ def parse_args(args: Optional[List[str]] = None):
         "-d",
         "--detail-file",
         type=str,
+        default=None,
         help="File where details of energy force and virial accuracy will be written",
     )
     parser_tst.add_argument(
         "-a",
         "--atomic-energy",
         action="store_true",
+        default=False,
         help="Test the accuracy of atomic energy",
     )
 
