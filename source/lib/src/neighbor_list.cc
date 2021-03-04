@@ -757,29 +757,69 @@ convert_nlist(
   }
 }
 
+template <typename FPTYPE>
+int
+build_nlist_cpu(
+    InputNlist & nlist,
+    int * max_list_size,
+    const FPTYPE * c_cpy,
+    const int & nloc, 
+    const int & nall, 
+    const int & mem_size,
+    const float & rcut)
+{
+  *max_list_size = 0;
+  nlist.inum = nloc;
+  FPTYPE rcut2 = rcut * rcut;  
+  std::vector<int> jlist;
+  jlist.reserve(mem_size);  
+  for(int ii = 0; ii < nlist.inum; ++ii){
+    nlist.ilist[ii] = ii;
+    jlist.clear();
+    for(int jj = 0; jj < nall; ++jj){
+      if(jj == ii) continue;
+      FPTYPE diff[3];
+      for(int dd = 0; dd < 3; ++dd){
+	diff[dd] = c_cpy[ii*3+dd] - c_cpy[jj*3+dd];
+      }
+      FPTYPE diff2 = dot3(diff, diff);
+      if(diff2 < rcut2){
+	jlist.push_back(jj);
+      }
+    }
+    if(jlist.size() > mem_size){
+      *max_list_size = jlist.size();
+      return 1;      
+    }
+    else {
+      int list_size = jlist.size();
+      nlist.numneigh[ii] = list_size;
+      if(list_size > *max_list_size) *max_list_size = list_size;
+      std::copy(jlist.begin(), jlist.end(), nlist.firstneigh[ii]);
+    }
+  }
+  return 0;
+}
 
-// template <typename FPTYPE>
-// void 
-// build_nlist_pbc(
-//     InputNlist & nlist,
-//     const FPTYPE * coord,
-//     const Region & region,
-//     const int & nloc, 
-//     const float & rcut)
-// {
-//   std::vector<double > in_c(nloc);
-//   std::vector<int> in_t(nloc, 0);
-//   std::copy(coord, coord + nloc * 3, in_c.begin());
-//   SimulationRegion<double > tmpr;
-//   double tmp_boxt[9];
-//   std::copy(region.boxt, region.boxt+9, tmp_boxt);
-//   tmpr.reinitBox(tmp_boxt);
-  
-//   std::vector<double > out_c;
-//   std::vector<int> out_r, mapping, ncell, ngcell;
-  
-// }
+template
+int
+build_nlist_cpu<double>(
+    InputNlist & nlist,
+    int * max_list_size,
+    const double * c_cpy,
+    const int & nloc, 
+    const int & nall, 
+    const int & mem_size,
+    const float & rcut);
 
+template
+int
+build_nlist_cpu<float>(
+    InputNlist & nlist,
+    int * max_list_size,
+    const float * c_cpy,
+    const int & nloc, 
+    const int & nall, 
+    const int & mem_size,
+    const float & rcut);
 
-
-    
