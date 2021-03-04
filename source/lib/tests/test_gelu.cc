@@ -2,7 +2,7 @@
 #include "device.h"
 #include <iostream>
 #include <gtest/gtest.h>
-#include "MathUtilities.h"
+#include "utilities.h"
 
 class TestGelu : public ::testing::Test
 {

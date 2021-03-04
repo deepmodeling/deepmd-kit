@@ -3,7 +3,7 @@
 #include "device.h"
 #include "tabulate.h"
 #include <gtest/gtest.h>
-#include "MathUtilities.h"
+#include "utilities.h"
 
 class TestTabulate : public ::testing::Test
 {

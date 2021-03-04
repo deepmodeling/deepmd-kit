@@ -1,9 +1,9 @@
 #include <iostream>
 #include <gtest/gtest.h>
-#include "fmt_nlist.h"
 #include "env_mat.h"
-#include "neighbor_list.h"
+#include "fmt_nlist.h"
 #include "prod_env_mat.h"
+#include "neighbor_list.h"
 
 class TestEnvMatR : public ::testing::Test
 {
@@ -277,7 +277,6 @@ TEST_F(TestEnvMatR, prod_cpu)
       &std[0],
       nloc,
       nall,
-      ntypes,
       rc, 
       rc_smth,
       sec_a);
@@ -333,7 +332,6 @@ TEST_F(TestEnvMatR, prod_cpu_equal_cpu)
       &std[0],
       nloc,
       nall,
-      ntypes,
       rc, 
       rc_smth,
       sec_a);
@@ -341,9 +339,9 @@ TEST_F(TestEnvMatR, prod_cpu_equal_cpu)
   std::vector<int> fmt_nlist_a_1, fmt_nlist_r_1;
   std::vector<double> env_1, env_deriv_1, rij_a_1;
   for(int ii = 0; ii < nloc; ++ii){
-    int ret_1 = format_nlist_cpu<double>(fmt_nlist_a_1, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);  
+    int ret_1 = format_nlist_i_cpu<double>(fmt_nlist_a_1, posi_cpy, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);
     EXPECT_EQ(ret_1, -1);
-    env_mat_r_cpu<double>(env_1, env_deriv_1, rij_a_1, posi_cpy, ntypes, atype_cpy, ii, fmt_nlist_a_1, sec_a, rc_smth, rc);
+    env_mat_r_cpu<double>(env_1, env_deriv_1, rij_a_1, posi_cpy, atype_cpy, ii, fmt_nlist_a_1, sec_a, rc_smth, rc);
     EXPECT_EQ(env_1.size(), nnei * 1);
     EXPECT_EQ(env_deriv_1.size(), nnei * 1 * 3);
     EXPECT_EQ(rij_a_1.size(), nnei * 3);
@@ -564,9 +562,9 @@ TEST_F(TestEnvMatR, prod_gpu_cuda_equal_cpu)
   std::vector<int> fmt_nlist_a_1, fmt_nlist_r_1;
   std::vector<double> env_1, env_deriv_1, rij_a_1;
   for(int ii = 0; ii < nloc; ++ii){
-    int ret_1 = format_nlist_cpu<double>(fmt_nlist_a_1, posi_cpy, ntypes, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);  
+    int ret_1 = format_nlist_i_cpu<double>(fmt_nlist_a_1, posi_cpy, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);  
     EXPECT_EQ(ret_1, -1);
-    env_mat_r_cpu<double>(env_1, env_deriv_1, rij_a_1, posi_cpy, ntypes, atype_cpy, ii, fmt_nlist_a_1, sec_a, rc_smth, rc);
+    env_mat_r_cpu<double>(env_1, env_deriv_1, rij_a_1, posi_cpy, atype_cpy, ii, fmt_nlist_a_1, sec_a, rc_smth, rc);
     EXPECT_EQ(env_1.size(), nnei * 1);
     EXPECT_EQ(env_deriv_1.size(), nnei * 1 * 3);
     EXPECT_EQ(rij_a_1.size(), nnei * 3);
