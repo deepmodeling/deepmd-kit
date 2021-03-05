@@ -61,12 +61,12 @@ _norm_copy_coord_cpu(
 template<typename FPTYPE>
 static int
 _build_nlist_cpu(
+    std::vector<int> &ilist, 
+    std::vector<int> &numneigh,
     std::vector<int*> &firstneigh,
     std::vector<std::vector<int>> &jlist,
     int & max_nnei,
     int & mem_nnei,
-    std::vector<int> &ilist, 
-    std::vector<int> &numneigh,
     const FPTYPE *coord,
     const int & nloc,
     const int & new_nall,
@@ -74,7 +74,7 @@ _build_nlist_cpu(
     const float & rcut_r);
 
 static void
-_map_nlist(
+_map_nlist_cpu(
     int * nlist,
     const int * idx_mapping,
     const int & nloc,
@@ -254,11 +254,17 @@ public:
       #endif //GOOGLE_CUDA
     }
     else if (device == "CPU") {
-      // build nlist by myself
+      int new_nall = nall;
+      InputNlist inlist;
+      inlist.inum = nloc;
+      // some buffers, be free after prod_env_mat_a_cpu
+      std::vector<int> ilist(nloc), numneigh(nloc);
+      std::vector<int*> firstneigh(nloc);
+      std::vector<std::vector<int>> jlist(nloc);
+      std::vector<FPTYPE> coord_cpy;
+      std::vector<int> type_cpy;
       if(nei_mode != 3){
-	std::vector<FPTYPE> coord_cpy;
-	std::vector<int> type_cpy;
-	int new_nall = nall;
+	// build nlist by myself
 	// normalize and copy coord
 	if(nei_mode == 1){
 	  int copy_ok = _norm_copy_coord_cpu(
@@ -269,35 +275,27 @@ public:
 	  type = &type_cpy[0];
 	}
 	// build nlist
-	std::vector<int> ilist(nloc), numneigh(nloc);
-	std::vector<int*> firstneigh(nloc);
-	std::vector<std::vector<int>> jlist(nloc);
 	int build_ok = _build_nlist_cpu(
-	    firstneigh, jlist, max_nbor_size, mem_nnei,
-	    ilist, numneigh, coord, nloc, new_nall, max_nnei_trial, rcut_r);
+	    ilist, numneigh, firstneigh, jlist, max_nbor_size, mem_nnei,
+	    coord, nloc, new_nall, max_nnei_trial, rcut_r);
 	OP_REQUIRES (context, build_ok, errors::Aborted("cannot allocate mem for nlist"));
-	InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
-	// prod env mat	
-	prod_env_mat_a_cpu(
-	    em, em_deriv, rij, nlist, 
-	    coord, type, inlist, max_nbor_size, avg, std, nloc, new_nall, rcut_r, rcut_r_smth, sec_a);
-	// do nlist mapping if coords were copied
-	if(b_nlist_map) _map_nlist(nlist, &idx_mapping[0], nloc, nnei);
+	inlist.ilist = &ilist[0];
+	inlist.numneigh = &numneigh[0];
+	inlist.firstneigh = &firstneigh[0];
       }
       else{
 	// copy pointers to nlist data
-	InputNlist inlist;
-	inlist.inum = nloc;
 	memcpy(&inlist.ilist, 4 + mesh_tensor.flat<int>().data(), sizeof(int *));
 	memcpy(&inlist.numneigh, 8 + mesh_tensor.flat<int>().data(), sizeof(int *));
 	memcpy(&inlist.firstneigh, 12 + mesh_tensor.flat<int>().data(), sizeof(int **));
 	max_nbor_size = max_numneigh(inlist);
-	// prod env mat
-	prod_env_mat_a_cpu(
-	    em, em_deriv, rij, nlist, 
-	    coord, type, inlist, max_nbor_size, avg, std, nloc, nall, rcut_r, rcut_r_smth, sec_a);
       }
       // launch the cpu compute function
+      prod_env_mat_a_cpu(
+	  em, em_deriv, rij, nlist, 
+	  coord, type, inlist, max_nbor_size, avg, std, nloc, new_nall, rcut_r, rcut_r_smth, sec_a);
+      // do nlist mapping if coords were copied
+      if(b_nlist_map) _map_nlist_cpu(nlist, &idx_mapping[0], nloc, nnei);
     }
     }
   }
@@ -516,12 +514,12 @@ _norm_copy_coord_cpu(
 template<typename FPTYPE>
 static int
 _build_nlist_cpu(
+    std::vector<int> &ilist, 
+    std::vector<int> &numneigh,
     std::vector<int*> &firstneigh,
     std::vector<std::vector<int>> &jlist,
     int & max_nnei,
     int & mem_nnei,
-    std::vector<int> &ilist, 
-    std::vector<int> &numneigh,
     const FPTYPE *coord,
     const int & nloc,
     const int & new_nall,
@@ -549,7 +547,7 @@ _build_nlist_cpu(
 }
     
 static void
-_map_nlist(
+_map_nlist_cpu(
     int * nlist,
     const int * idx_mapping,
     const int & nloc,
