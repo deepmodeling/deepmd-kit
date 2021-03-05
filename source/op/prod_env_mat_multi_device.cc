@@ -319,7 +319,7 @@ private:
   int * array_int = NULL;
   unsigned long long * array_longlong = NULL;
   bool init = false;
-  InputNlist inlist;
+  int * ilist = NULL, * jrange = NULL, * jlist = NULL;
   int ilist_size = 0, jrange_size = 0, jlist_size = 0;
 };
 
