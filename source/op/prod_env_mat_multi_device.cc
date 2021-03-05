@@ -42,6 +42,45 @@ REGISTER_OP("ProdEnvMatR")
     .Output("rij: T")
     .Output("nlist: int32");
 
+
+template<typename FPTYPE>
+static int
+_norm_copy_coord_cpu(
+    std::vector<FPTYPE> & coord_cpy,
+    std::vector<int> & type_cpy,
+    std::vector<int> & mapping,
+    int & nall,
+    int & mem_cpy,
+    const FPTYPE * coord,
+    const FPTYPE * box,
+    const int * type,
+    const int &nloc, 
+    const int &max_cpy_trial, 
+    const float & rcut_r);
+
+template<typename FPTYPE>
+static int
+_build_nlist_cpu(
+    std::vector<int*> &firstneigh,
+    std::vector<std::vector<int>> &jlist,
+    int & max_nnei,
+    int & mem_nnei,
+    std::vector<int> &ilist, 
+    std::vector<int> &numneigh,
+    const FPTYPE *coord,
+    const int & nloc,
+    const int & new_nall,
+    const int & max_nnei_trial,
+    const float & rcut_r);
+
+static void
+_map_nlist(
+    int * nlist,
+    const int * idx_mapping,
+    const int & nloc,
+    const int & nnei);
+
+
 template <typename Device, typename FPTYPE>
 class ProdEnvMatAOp : public OpKernel {
 public:
@@ -222,72 +261,28 @@ public:
 	int new_nall = nall;
 	// normalize and copy coord
 	if(nei_mode == 1){
-	  std::vector<FPTYPE> tmp_coord(nall*3);
-	  std::copy(coord, coord+nall*3, tmp_coord.begin());
-	  Region<FPTYPE> region;
-	  init_region_cpu(region, box);
-	  normalize_coord_cpu(&tmp_coord[0], nall, region);
-	  int tt;
-	  for(tt = 0; tt < max_cpy_trial; ++tt){
-	    coord_cpy.resize(mem_cpy*3);
-	    type_cpy.resize(mem_cpy);
-	    idx_mapping.resize(mem_cpy);
-	    int ret = copy_coord_cpu(
-		&coord_cpy[0], &type_cpy[0], &idx_mapping[0], &new_nall, 
-		&tmp_coord[0], type, nloc, mem_cpy, rcut_r, region);
-	    if(ret == 0){
-	      break;
-	    }
-	    else{
-	      mem_cpy *= 2;
-	    }
-	  }
-	  OP_REQUIRES (context, (tt != max_cpy_trial),
-		       errors::Aborted("cannot allocate mem for copied coords"));
+	  int copy_ok = _norm_copy_coord_cpu(
+	      coord_cpy, type_cpy, idx_mapping, new_nall, mem_cpy,
+	      coord, box, type, nloc, max_cpy_trial, rcut_r);
+	  OP_REQUIRES (context, copy_ok, errors::Aborted("cannot allocate mem for copied coords"));
 	  coord = &coord_cpy[0];
 	  type = &type_cpy[0];
 	}
 	// build nlist
-	int tt;
 	std::vector<int> ilist(nloc), numneigh(nloc);
 	std::vector<int*> firstneigh(nloc);
 	std::vector<std::vector<int>> jlist(nloc);
-	for(tt = 0; tt < max_nnei_trial; ++tt){
-	  for(int ii = 0; ii < nloc; ++ii){
-	    jlist[ii].resize(mem_nnei);
-	    firstneigh[ii] = &jlist[ii][0];
-	  }
-	  InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
-	  int new_mem_nnei = 0;
-	  int ret = build_nlist_cpu(
-	      inlist, &new_mem_nnei, 
-	      coord, nloc, new_nall, mem_nnei, rcut_r);
-	  if(ret == 0){
-	    break;
-	  }
-	  else{
-	    mem_nnei *= 2;
-	  }
-	}
-	OP_REQUIRES (context, (tt != max_nnei_trial),  
-		     errors::Aborted("cannot allocate mem for nlist"));
+	int build_ok = _build_nlist_cpu(
+	    firstneigh, jlist, max_nbor_size, mem_nnei,
+	    ilist, numneigh, coord, nloc, new_nall, max_nnei_trial, rcut_r);
+	OP_REQUIRES (context, build_ok, errors::Aborted("cannot allocate mem for nlist"));
 	InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
-	max_nbor_size = max_numneigh(inlist);
 	// prod env mat	
 	prod_env_mat_a_cpu(
 	    em, em_deriv, rij, nlist, 
 	    coord, type, inlist, max_nbor_size, avg, std, nloc, new_nall, rcut_r, rcut_r_smth, sec_a);
 	// do nlist mapping if coords were copied
-	if(b_nlist_map){
-	  for (int ii = 0; ii < nloc; ++ii){
-	    for (int jj = 0; jj < nnei; ++jj){
-	      int record = nlist[ii*nnei+jj];
-	      if (record >= 0) {		
-		nlist[ii*nnei+jj] = idx_mapping[record];	      
-	      }
-	    }
-	  }
-	}
+	if(b_nlist_map) _map_nlist(nlist, &idx_mapping[0], nloc, nnei);
       }
       else{
 	// copy pointers to nlist data
@@ -480,41 +475,97 @@ private:
   int ilist_size = 0, jrange_size = 0, jlist_size = 0;
 };
 
-// template<FPTYPE>
-// static int
-// norm_copy_coord(
-//     std::vector<FPTYPE> & coord_cpy,
-//     std::vector<int> & type_cpy,
-//     std::vector<int> & mapping,
-//     int & mem_cpy,
-//     const FPTYPE * coord,
-//     const FPTYPE * box,
-//     const int * type,
-//     const int &nloc, 
-//     const int &max_cpy_trial)
-// {
-//   std::vector<FPTYPE> tmp_coord(nall*3);
-//   std::copy(coord, coord+nall*3, tmp_coord.begin());
-//   Region<FPTYPE> region;
-//   init_region_cpu(region, box);
-//   normalize_coord_cpu(&tmp_coord[0], nall, region);
-//   int tt;
-//   for(tt = 0; tt < max_cpy_trial; ++tt){
-//     coord_cpy.resize(mem_cpy*3);
-//     type_cpy.resize(mem_cpy);
-//     idx_mapping.resize(mem_cpy);
-//     int ret = copy_coord_cpu(
-// 	&coord_cpy[0], &type_cpy[0], &idx_mapping[0], &new_nall, 
-// 	&tmp_coord[0], type, nloc, mem_cpy, rcut_r, region);
-//     if(ret == 0){
-//       break;
-//     }
-//     else{
-//       mem_cpy *= 2;
-//     }
-//   }
-//   return (tt != max_cpy_trial)
-// }
+template<typename FPTYPE>
+static int
+_norm_copy_coord_cpu(
+    std::vector<FPTYPE> & coord_cpy,
+    std::vector<int> & type_cpy,
+    std::vector<int> & idx_mapping,
+    int & nall,
+    int & mem_cpy,
+    const FPTYPE * coord,
+    const FPTYPE * box,
+    const int * type,
+    const int &nloc, 
+    const int &max_cpy_trial, 
+    const float & rcut_r)
+{
+  std::vector<FPTYPE> tmp_coord(nall*3);
+  std::copy(coord, coord+nall*3, tmp_coord.begin());
+  Region<FPTYPE> region;
+  init_region_cpu(region, box);
+  normalize_coord_cpu(&tmp_coord[0], nall, region);
+  int tt;
+  for(tt = 0; tt < max_cpy_trial; ++tt){
+    coord_cpy.resize(mem_cpy*3);
+    type_cpy.resize(mem_cpy);
+    idx_mapping.resize(mem_cpy);
+    int ret = copy_coord_cpu(
+	&coord_cpy[0], &type_cpy[0], &idx_mapping[0], &nall, 
+	&tmp_coord[0], type, nloc, mem_cpy, rcut_r, region);
+    if(ret == 0){
+      break;
+    }
+    else{
+      mem_cpy *= 2;
+    }
+  }
+  return (tt != max_cpy_trial);
+}
+
+template<typename FPTYPE>
+static int
+_build_nlist_cpu(
+    std::vector<int*> &firstneigh,
+    std::vector<std::vector<int>> &jlist,
+    int & max_nnei,
+    int & mem_nnei,
+    std::vector<int> &ilist, 
+    std::vector<int> &numneigh,
+    const FPTYPE *coord,
+    const int & nloc,
+    const int & new_nall,
+    const int & max_nnei_trial,
+    const float & rcut_r)
+{
+  int tt;
+  for(tt = 0; tt < max_nnei_trial; ++tt){
+    for(int ii = 0; ii < nloc; ++ii){
+      jlist[ii].resize(mem_nnei);
+      firstneigh[ii] = &jlist[ii][0];
+    }
+    InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+    int ret = build_nlist_cpu(
+	inlist, &max_nnei, 
+	coord, nloc, new_nall, mem_nnei, rcut_r);
+    if(ret == 0){
+      break;
+    }
+    else{
+      mem_nnei *= 2;
+    }
+  }
+  return (tt != max_nnei_trial);
+}
+    
+static void
+_map_nlist(
+    int * nlist,
+    const int * idx_mapping,
+    const int & nloc,
+    const int & nnei)
+{
+  for (int ii = 0; ii < nloc; ++ii){
+    for (int jj = 0; jj < nnei; ++jj){
+      int record = nlist[ii*nnei+jj];
+      if (record >= 0) {		
+	nlist[ii*nnei+jj] = idx_mapping[record];	      
+      }
+    }
+  }  
+}
+
+
 
 // Register the CPU kernels.
 #define REGISTER_CPU(T)                                                                 \

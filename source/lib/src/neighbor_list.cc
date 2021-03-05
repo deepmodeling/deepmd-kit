@@ -777,9 +777,10 @@ build_nlist_cpu(
     const FPTYPE * c_cpy,
     const int & nloc, 
     const int & nall, 
-    const int & mem_size,
+    const int & mem_size_,
     const float & rcut)
 {
+  const int mem_size = mem_size_;
   *max_list_size = 0;
   nlist.inum = nloc;
   FPTYPE rcut2 = rcut * rcut;  
