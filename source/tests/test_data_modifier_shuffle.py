@@ -48,7 +48,7 @@ class TestDataModifier (unittest.TestCase) :
             restart=None,
             init_model=None,
             log_path=None,
-            log_level=0,
+            log_level=30,
             mpi_log="master",
             try_distrib=False
         )
