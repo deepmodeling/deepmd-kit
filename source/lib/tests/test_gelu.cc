@@ -148,7 +148,7 @@ TEST_F(TestGelu, gelu_grad_grad_cpu)
 #if GOOGLE_CUDA
 TEST_F(TestGelu, gelu_gpu_cuda)
 {
-  std::vector<double> gelu(nloc);
+  std::vector<double> gelu(nloc, 0.0);
   
   double * gelu_dev = NULL, * xx_dev = NULL;
   malloc_device_memory_sync(gelu_dev, gelu);
@@ -168,7 +168,7 @@ TEST_F(TestGelu, gelu_gpu_cuda)
 TEST_F(TestGelu, gelu_grad_gpu_cuda)
 {
   std::vector<double> dy(100, 1.0);
-  std::vector<double> gelu_grad(nloc);
+  std::vector<double> gelu_grad(nloc, 0.0);
 
   double * gelu_grad_dev = NULL, * xx_dev = NULL, * dy_dev = NULL;
   malloc_device_memory_sync(gelu_grad_dev, gelu_grad);
@@ -191,7 +191,7 @@ TEST_F(TestGelu, gelu_grad_grad_gpu_cuda)
 {
   std::vector<double> dy(100, 1.0);
   std::vector<double> dy_2(100, 1.0);
-  std::vector<double> gelu_grad_grad(nloc);
+  std::vector<double> gelu_grad_grad(nloc, 0.0);
 
   double * gelu_grad_grad_dev = NULL, * xx_dev = NULL, * dy_dev = NULL, * dy_2_dev = NULL;
   malloc_device_memory_sync(gelu_grad_grad_dev, gelu_grad_grad);

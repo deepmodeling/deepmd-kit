@@ -176,7 +176,7 @@ TEST_F(TestTabulate, tabulate_fusion_grad_cpu)
 #if GOOGLE_CUDA
 TEST_F(TestTabulate, tabulate_fusion_gpu_cuda)
 {
-  std::vector<double> xyz_scatter(nloc * nnei * last_layer_size);
+  std::vector<double> xyz_scatter(nloc * nnei * last_layer_size, 0.0);
 
   double * xyz_scatter_dev = NULL, * table_dev = NULL, * em_x_dev = NULL, * em_dev = NULL;
   malloc_device_memory_sync(xyz_scatter_dev, xyz_scatter);
@@ -199,8 +199,8 @@ TEST_F(TestTabulate, tabulate_fusion_gpu_cuda)
 
 TEST_F(TestTabulate, tabulate_fusion_grad_gpu_cuda)
 {
-  std::vector<double> dy_dem_x(em_x.size());
-  std::vector<double> dy_dem(em.size());
+  std::vector<double> dy_dem_x(em_x.size(), 0.0);
+  std::vector<double> dy_dem(em.size(), 0.0);
   std::vector<double> dy(nloc * nnei * last_layer_size, 1.0);
 
   double * dy_dem_x_dev = NULL, * dy_dem_dev = NULL, * table_dev = NULL, * em_x_dev = NULL, * em_dev = NULL, * dy_dev = NULL;

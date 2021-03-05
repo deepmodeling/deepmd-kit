@@ -101,7 +101,7 @@ TEST_F(TestProdForceR, cpu)
 #if GOOGLE_CUDA
 TEST_F(TestProdForceR, gpu_cuda)
 {
-  std::vector<double> force(nall * 3);
+  std::vector<double> force(nall * 3, 0.0);
   int n_a_sel = nnei;
 
   int * nlist_dev = NULL;

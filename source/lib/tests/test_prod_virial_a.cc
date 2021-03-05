@@ -116,8 +116,8 @@ TEST_F(TestProdVirialA, cpu)
 #if GOOGLE_CUDA
 TEST_F(TestProdVirialA, gpu_cuda)
 {
-  std::vector<double> virial(9);
-  std::vector<double> atom_virial(nall * 9);
+  std::vector<double> virial(9, 0.0);
+  std::vector<double> atom_virial(nall * 9, 0.0);
   int n_a_sel = nnei;
 
   int * nlist_dev = NULL;
