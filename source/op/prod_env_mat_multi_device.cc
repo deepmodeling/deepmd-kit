@@ -1,8 +1,11 @@
 #include "custom_op.h"
 #include "utilities.h"
+#include "coord.h"
+#include "region.h"
+#include "neighbor_list.h"
 #include "prod_env_mat.h"
 
-REGISTER_OP("DescrptSeA")
+REGISTER_OP("ProdEnvMatA")
     .Attr("T: {float, double}")
     .Input("coord: T")          //atomic coordinates
     .Input("type: int32")       //atomic type
@@ -22,7 +25,7 @@ REGISTER_OP("DescrptSeA")
     .Output("nlist: int32");
     // only sel_a and rcut_r uesd.
 
-REGISTER_OP("DescrptSeR")
+REGISTER_OP("ProdEnvMatR")
     .Attr("T: {float, double}")
     .Input("coord: T")
     .Input("type: int32")
@@ -40,9 +43,9 @@ REGISTER_OP("DescrptSeR")
     .Output("nlist: int32");
 
 template <typename Device, typename FPTYPE>
-class DescrptSeAOp : public OpKernel {
+class ProdEnvMatAOp : public OpKernel {
 public:
-  explicit DescrptSeAOp(OpKernelConstruction* context) : OpKernel(context) {
+  explicit ProdEnvMatAOp(OpKernelConstruction* context) : OpKernel(context) {
     float nloc_f, nall_f;
     OP_REQUIRES_OK(context, context->GetAttr("rcut_a", &rcut_a));
     OP_REQUIRES_OK(context, context->GetAttr("rcut_r", &rcut_r));
@@ -60,6 +63,10 @@ public:
     nnei_r = sec_r.back();
     nnei = nnei_a + nnei_r;
     max_nbor_size = 1024;
+    max_cpy_trial = 100;
+    mem_cpy = 256;
+    max_nnei_trial = 100;
+    mem_nnei = 256;
   }
 
   void Compute(OpKernelContext* context) override {
@@ -105,6 +112,28 @@ public:
     
     OP_REQUIRES (context, (ntypes == int(sel_a.size())),  errors::InvalidArgument ("number of types should match the length of sel array"));
     OP_REQUIRES (context, (ntypes == int(sel_r.size())),  errors::InvalidArgument ("number of types should match the length of sel array"));
+
+    int nei_mode = 0;
+    bool b_nlist_map = false;
+    if (mesh_tensor.shape().dim_size(0) == 16) {
+      // lammps neighbor list
+      nei_mode = 3;
+    }
+    else if (mesh_tensor.shape().dim_size(0) == 6) {
+      // manual copied pbc
+      assert (nloc == nall);
+      nei_mode = 1;
+      b_nlist_map = true;
+    }
+    else if (mesh_tensor.shape().dim_size(0) == 0) {
+      // no pbc
+      assert (nloc == nall);
+      nei_mode = -1;
+    }
+    else {
+      throw std::runtime_error("invalid mesh tensor");
+    }
+
     // Create output tensors
     TensorShape descrpt_shape ;
     descrpt_shape.AddDim (nsamples);
@@ -141,16 +170,29 @@ public:
         nlist_shape,
         &nlist_tensor));
 
-    FPTYPE * em = descrpt_tensor->flat<FPTYPE>().data();
-    FPTYPE * em_deriv = descrpt_deriv_tensor->flat<FPTYPE>().data();
-    FPTYPE * rij = rij_tensor->flat<FPTYPE>().data();
-    int * nlist = nlist_tensor->flat<int>().data();
-    const FPTYPE * coord = coord_tensor.flat<FPTYPE>().data();
+    FPTYPE * p_em = descrpt_tensor->flat<FPTYPE>().data();
+    FPTYPE * p_em_deriv = descrpt_deriv_tensor->flat<FPTYPE>().data();
+    FPTYPE * p_rij = rij_tensor->flat<FPTYPE>().data();
+    int * p_nlist = nlist_tensor->flat<int>().data();
+    const FPTYPE * p_coord = coord_tensor.flat<FPTYPE>().data();
+    const FPTYPE * p_box = box_tensor.flat<FPTYPE>().data();
     const FPTYPE * avg = avg_tensor.flat<FPTYPE>().data();
     const FPTYPE * std = std_tensor.flat<FPTYPE>().data();
-    const int * type = type_tensor.flat<int>().data();
+    const int * p_type = type_tensor.flat<int>().data();
+
+    // loop over samples
+    for(int ff = 0; ff < nsamples; ++ff){
+      FPTYPE * em = p_em + ff*nloc*ndescrpt;
+      FPTYPE * em_deriv = p_em_deriv + ff*nloc*ndescrpt*3;
+      FPTYPE * rij = p_rij + ff*nloc*nnei*3;
+      int * nlist = p_nlist + ff*nloc*nnei;
+      const FPTYPE * coord = p_coord + ff*nall*3;
+      const FPTYPE * box = p_box + ff*9;
+      const int * type = p_type + ff*nall;
+      std::vector<int> idx_mapping;
 
     if(device == "GPU") {
+      #if GOOGLE_CUDA
       // allocate temp memory, temp memory must not be used after this operation!
       Tensor int_temp;
       TensorShape int_shape;
@@ -166,7 +208,6 @@ public:
           init, ilist, jrange, jlist, ilist_size, jrange_size, jlist_size, max_nbor_size,
           mesh_tensor.flat<int>().data(), static_cast<int>(mesh_tensor.NumElements()));
       OP_REQUIRES (context, (max_nbor_size <= GPU_MAX_NBOR_SIZE), errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_nbor_size) + " is larger than " + std::to_string(GPU_MAX_NBOR_SIZE) + ", which currently is not supported by deepmd-kit."));
-      #if GOOGLE_CUDA
       // launch the gpu(nv) compute function
       prod_env_mat_a_gpu_cuda(
           em, em_deriv, rij, nlist, 
@@ -174,13 +215,95 @@ public:
       #endif //GOOGLE_CUDA
     }
     else if (device == "CPU") {
-      memcpy (&ilist,  4  + mesh_tensor.flat<int>().data(), sizeof(int *));
-      memcpy (&jrange, 8  + mesh_tensor.flat<int>().data(), sizeof(int *));
-      memcpy (&jlist,  12 + mesh_tensor.flat<int>().data(), sizeof(int *));
+      // build nlist by myself
+      if(nei_mode != 3){
+	std::vector<FPTYPE> coord_cpy;
+	std::vector<int> type_cpy;
+	int new_nall = nall;
+	// normalize and copy coord
+	if(nei_mode == 1){
+	  std::vector<FPTYPE> tmp_coord(nall*3);
+	  std::copy(coord, coord+nall*3, tmp_coord.begin());
+	  Region<FPTYPE> region;
+	  init_region_cpu(region, box);
+	  normalize_coord_cpu(&tmp_coord[0], nall, region);
+	  int tt;
+	  for(tt = 0; tt < max_cpy_trial; ++tt){
+	    coord_cpy.resize(mem_cpy*3);
+	    type_cpy.resize(mem_cpy);
+	    idx_mapping.resize(mem_cpy);
+	    int ret = copy_coord_cpu(
+		&coord_cpy[0], &type_cpy[0], &idx_mapping[0], &new_nall, 
+		&tmp_coord[0], type, nloc, mem_cpy, rcut_r, region);
+	    if(ret == 0){
+	      break;
+	    }
+	    else{
+	      mem_cpy *= 2;
+	    }
+	  }
+	  OP_REQUIRES (context, (tt != max_cpy_trial),
+		       errors::Aborted("cannot allocate mem for copied coords"));
+	  coord = &coord_cpy[0];
+	  type = &type_cpy[0];
+	}
+	// build nlist
+	int tt;
+	std::vector<int> ilist(nloc), numneigh(nloc);
+	std::vector<int*> firstneigh(nloc);
+	std::vector<std::vector<int>> jlist(nloc);
+	for(tt = 0; tt < max_nnei_trial; ++tt){
+	  for(int ii = 0; ii < nloc; ++ii){
+	    jlist[ii].resize(mem_nnei);
+	    firstneigh[ii] = &jlist[ii][0];
+	  }
+	  InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+	  int new_mem_nnei = 0;
+	  int ret = build_nlist_cpu(
+	      inlist, &new_mem_nnei, 
+	      coord, nloc, new_nall, mem_nnei, rcut_r);
+	  if(ret == 0){
+	    break;
+	  }
+	  else{
+	    mem_nnei *= 2;
+	  }
+	}
+	OP_REQUIRES (context, (tt != max_nnei_trial),  
+		     errors::Aborted("cannot allocate mem for nlist"));
+	InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+	max_nbor_size = max_numneigh(inlist);
+	// prod env mat	
+	prod_env_mat_a_cpu(
+	    em, em_deriv, rij, nlist, 
+	    coord, type, inlist, max_nbor_size, avg, std, nloc, new_nall, rcut_r, rcut_r_smth, sec_a);
+	// do nlist mapping if coords were copied
+	if(b_nlist_map){
+	  for (int ii = 0; ii < nloc; ++ii){
+	    for (int jj = 0; jj < nnei; ++jj){
+	      int record = nlist[ii*nnei+jj];
+	      if (record >= 0) {		
+		nlist[ii*nnei+jj] = idx_mapping[record];	      
+	      }
+	    }
+	  }
+	}
+      }
+      else{
+	// copy pointers to nlist data
+	InputNlist inlist;
+	inlist.inum = nloc;
+	memcpy(&inlist.ilist, 4 + mesh_tensor.flat<int>().data(), sizeof(int *));
+	memcpy(&inlist.numneigh, 8 + mesh_tensor.flat<int>().data(), sizeof(int *));
+	memcpy(&inlist.firstneigh, 12 + mesh_tensor.flat<int>().data(), sizeof(int **));
+	max_nbor_size = max_numneigh(inlist);
+	// prod env mat
+	prod_env_mat_a_cpu(
+	    em, em_deriv, rij, nlist, 
+	    coord, type, inlist, max_nbor_size, avg, std, nloc, nall, rcut_r, rcut_r_smth, sec_a);
+      }
       // launch the cpu compute function
-      prod_env_mat_a_cpu(
-          em, em_deriv, rij, nlist, 
-          coord, type, ilist, jrange, jlist, max_nbor_size, avg, std, nloc, nall, rcut_r, rcut_r_smth, sec_a);
+    }
     }
   }
 
@@ -195,18 +318,20 @@ private:
   std::vector<int> sec_r;
   int ndescrpt, ndescrpt_a, ndescrpt_r;
   int nnei, nnei_a, nnei_r, nloc, nall, max_nbor_size;
+  int mem_cpy, max_cpy_trial;
+  int mem_nnei, max_nnei_trial;
   std::string device;
   int * array_int = NULL;
   unsigned long long * array_longlong = NULL;
   bool init = false;
-  int * ilist = NULL, * jrange = NULL, * jlist = NULL;
+  InputNlist inlist;
   int ilist_size = 0, jrange_size = 0, jlist_size = 0;
 };
 
 template<typename Device, typename FPTYPE>
-class DescrptSeROp : public OpKernel {
+class ProdEnvMatROp : public OpKernel {
 public:
-  explicit DescrptSeROp(OpKernelConstruction* context) : OpKernel(context) {
+  explicit ProdEnvMatROp(OpKernelConstruction* context) : OpKernel(context) {
     OP_REQUIRES_OK(context, context->GetAttr("rcut", &rcut));
     OP_REQUIRES_OK(context, context->GetAttr("rcut_smth", &rcut_smth));
     OP_REQUIRES_OK(context, context->GetAttr("sel", &sel));
@@ -304,6 +429,7 @@ public:
     const int * type = type_tensor.flat<int>().data();
 
     if(device == "GPU") {
+      #if GOOGLE_CUDA
       // allocate temp memory, temp memory must not be used after this operation!
       Tensor int_temp;
       TensorShape int_shape;
@@ -319,7 +445,6 @@ public:
           init, ilist, jrange, jlist, ilist_size, jrange_size, jlist_size, max_nbor_size,
           mesh_tensor.flat<int>().data(), static_cast<int>(mesh_tensor.NumElements()));
       OP_REQUIRES (context, (max_nbor_size <= GPU_MAX_NBOR_SIZE), errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_nbor_size) + " is larger than " + std::to_string(GPU_MAX_NBOR_SIZE) + ", which currently is not supported by deepmd-kit."));
-      #if GOOGLE_CUDA
       // launch the gpu(nv) compute function
       prod_env_mat_r_gpu_cuda(
           em, em_deriv, rij, nlist, 
@@ -331,9 +456,9 @@ public:
       memcpy (&jrange, 8  + mesh_tensor.flat<int>().data(), sizeof(int *));
       memcpy (&jlist,  12 + mesh_tensor.flat<int>().data(), sizeof(int *));
       // launch the cpu compute function
-      prod_env_mat_r_cpu(
-          em, em_deriv, rij, nlist, 
-          coord, type, ilist, jrange, jlist, max_nbor_size, avg, std, nloc, nall, rcut, rcut_smth, sec);
+      // prod_env_mat_r_cpu(
+      //     em, em_deriv, rij, nlist, 
+      //     coord, type, ilist, jrange, jlist, max_nbor_size, avg, std, nloc, nall, rcut, rcut_smth, sec);
     }
   }
 
@@ -355,14 +480,50 @@ private:
   int ilist_size = 0, jrange_size = 0, jlist_size = 0;
 };
 
+// template<FPTYPE>
+// static int
+// norm_copy_coord(
+//     std::vector<FPTYPE> & coord_cpy,
+//     std::vector<int> & type_cpy,
+//     std::vector<int> & mapping,
+//     int & mem_cpy,
+//     const FPTYPE * coord,
+//     const FPTYPE * box,
+//     const int * type,
+//     const int &nloc, 
+//     const int &max_cpy_trial)
+// {
+//   std::vector<FPTYPE> tmp_coord(nall*3);
+//   std::copy(coord, coord+nall*3, tmp_coord.begin());
+//   Region<FPTYPE> region;
+//   init_region_cpu(region, box);
+//   normalize_coord_cpu(&tmp_coord[0], nall, region);
+//   int tt;
+//   for(tt = 0; tt < max_cpy_trial; ++tt){
+//     coord_cpy.resize(mem_cpy*3);
+//     type_cpy.resize(mem_cpy);
+//     idx_mapping.resize(mem_cpy);
+//     int ret = copy_coord_cpu(
+// 	&coord_cpy[0], &type_cpy[0], &idx_mapping[0], &new_nall, 
+// 	&tmp_coord[0], type, nloc, mem_cpy, rcut_r, region);
+//     if(ret == 0){
+//       break;
+//     }
+//     else{
+//       mem_cpy *= 2;
+//     }
+//   }
+//   return (tt != max_cpy_trial)
+// }
+
 // Register the CPU kernels.
 #define REGISTER_CPU(T)                                                                 \
 REGISTER_KERNEL_BUILDER(                                                                \
-    Name("DescrptSeA").Device(DEVICE_CPU).TypeConstraint<T>("T"),                       \
-    DescrptSeAOp<CPUDevice, T>);                                                        \
+    Name("ProdEnvMatA").Device(DEVICE_CPU).TypeConstraint<T>("T"),                       \
+    ProdEnvMatAOp<CPUDevice, T>);                                                        \
 REGISTER_KERNEL_BUILDER(                                                                \
-    Name("DescrptSeR").Device(DEVICE_CPU).TypeConstraint<T>("T"),                       \
-    DescrptSeROp<CPUDevice, T>); 
+    Name("ProdEnvMatR").Device(DEVICE_CPU).TypeConstraint<T>("T"),                       \
+    ProdEnvMatROp<CPUDevice, T>); 
 REGISTER_CPU(float);
 REGISTER_CPU(double);
 
@@ -370,11 +531,11 @@ REGISTER_CPU(double);
 #if GOOGLE_CUDA
 #define REGISTER_GPU(T)                                                                 \
 REGISTER_KERNEL_BUILDER(                                                                \
-    Name("DescrptSeA").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms"),  \
-    DescrptSeAOp<GPUDevice, T>);                                                        \
+    Name("ProdEnvMatA").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms"),  \
+    ProdEnvMatAOp<GPUDevice, T>);                                                        \
 REGISTER_KERNEL_BUILDER(                                                                \
-    Name("DescrptSeR").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms"),  \
-    DescrptSeROp<GPUDevice, T>);
+    Name("ProdEnvMatR").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms"),  \
+    ProdEnvMatROp<GPUDevice, T>);
 REGISTER_GPU(float);
 REGISTER_GPU(double);
 #endif  // GOOGLE_CUDA

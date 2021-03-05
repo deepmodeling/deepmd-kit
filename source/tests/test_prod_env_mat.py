@@ -64,7 +64,7 @@ class TestProdEnvMat(unittest.TestCase):
  
     def test_pbc_self_built_nlist(self):
         tem, tem_deriv, trij, tnlist \
-            = op_module.descrpt_se_a (
+            = op_module.prod_env_mat_a (
                 self.tcoord,
                 self.ttype,
                 self.tnatoms,
@@ -97,7 +97,7 @@ class TestProdEnvMat(unittest.TestCase):
     def test_pbc_self_built_nlist_deriv(self):
         hh = 1e-4
         tem, tem_deriv, trij, tnlist \
-            = op_module.descrpt_se_a (
+            = op_module.prod_env_mat_a (
                 self.tcoord,
                 self.ttype,
                 self.tnatoms,
@@ -115,7 +115,7 @@ class TestProdEnvMat(unittest.TestCase):
 
     def test_nopbc_self_built_nlist(self):
         tem, tem_deriv, trij, tnlist \
-            = op_module.descrpt_se_a (
+            = op_module.prod_env_mat_a (
                 self.tcoord,
                 self.ttype,
                 self.tnatoms,
@@ -149,7 +149,7 @@ class TestProdEnvMat(unittest.TestCase):
     def test_nopbc_self_built_nlist_deriv(self):
         hh = 1e-4
         tem, tem_deriv, trij, tnlist \
-            = op_module.descrpt_se_a (
+            = op_module.prod_env_mat_a (
                 self.tcoord,
                 self.ttype,
                 self.tnatoms,
