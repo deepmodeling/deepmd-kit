@@ -757,6 +757,18 @@ convert_nlist(
   }
 }
 
+int
+max_numneigh(
+    const InputNlist & nlist
+    )
+{
+  int max_num = 0;
+  for(int ii = 0; ii < nlist.inum; ++ii){
+    if(nlist.numneigh[ii] > max_num) max_num = nlist.numneigh[ii];
+  }
+  return max_num;
+}
+
 template <typename FPTYPE>
 int
 build_nlist_cpu(

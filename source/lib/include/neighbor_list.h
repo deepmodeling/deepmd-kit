@@ -31,10 +31,12 @@ void convert_nlist(
     std::vector<std::vector<int> > & from_nlist
     );
 
+int max_numneigh(
+    const InputNlist & to_nlist
+    );
 
 // build neighbor list.
 // outputs
-
 //	nlist, max_list_size
 //	max_list_size is the maximal size of jlist.
 // inputs

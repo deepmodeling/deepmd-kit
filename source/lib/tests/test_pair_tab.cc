@@ -160,34 +160,34 @@ TEST_F(TestPairTab, cpu)
 }
 
 
-int make_inter_nlist(
-    std::vector<int> &ilist,
-    std::vector<int> &jrange,
-    std::vector<int> &jlist,
-    const int & nloc,
-    const std::vector<std::vector<int>> & nlist_cpy)
-{
-  ilist.resize(nloc);
-  jrange.resize(nloc+1);
-  int tot_nnei = 0;
-  int max_nbor_size = 0;
-  for(int ii = 0; ii < nlist_cpy.size(); ++ii){
-    tot_nnei += nlist_cpy[ii].size();
-    if (nlist_cpy[ii].size() > max_nbor_size){
-      max_nbor_size = nlist_cpy[ii].size();
-    }
-  }
-  jlist.resize(tot_nnei);
-  for (int ii = 0; ii < nloc; ++ii){
-    ilist[ii] = ii;
-    jrange[ii+1] = jrange[ii] + nlist_cpy[ii].size();
-    int jj, cc;
-    for (jj = jrange[ii], cc = 0; jj < jrange[ii+1]; ++jj, ++cc){
-      jlist[jj] = nlist_cpy[ii][cc];
-    }
-  }
-  return max_nbor_size;
-}
+// int make_inter_nlist(
+//     std::vector<int> &ilist,
+//     std::vector<int> &jrange,
+//     std::vector<int> &jlist,
+//     const int & nloc,
+//     const std::vector<std::vector<int>> & nlist_cpy)
+// {
+//   ilist.resize(nloc);
+//   jrange.resize(nloc+1);
+//   int tot_nnei = 0;
+//   int max_nbor_size = 0;
+//   for(int ii = 0; ii < nlist_cpy.size(); ++ii){
+//     tot_nnei += nlist_cpy[ii].size();
+//     if (nlist_cpy[ii].size() > max_nbor_size){
+//       max_nbor_size = nlist_cpy[ii].size();
+//     }
+//   }
+//   jlist.resize(tot_nnei);
+//   for (int ii = 0; ii < nloc; ++ii){
+//     ilist[ii] = ii;
+//     jrange[ii+1] = jrange[ii] + nlist_cpy[ii].size();
+//     int jj, cc;
+//     for (jj = jrange[ii], cc = 0; jj < jrange[ii+1]; ++jj, ++cc){
+//       jlist[jj] = nlist_cpy[ii][cc];
+//     }
+//   }
+//   return max_nbor_size;
+// }
 
 
 TEST_F(TestPairTab, cpu_f_num_deriv)
@@ -240,18 +240,22 @@ TEST_F(TestPairTab, cpu_f_num_deriv)
       std::vector<std::vector<int>> nlist_cpy_0, nlist_cpy_1, t_nlist;
       build_nlist(nlist_cpy_0, t_nlist, posi_cpy_0, nloc, rc, rc, nat_stt, ncell, ext_stt, ext_end, region, ncell);
       build_nlist(nlist_cpy_1, t_nlist, posi_cpy_1, nloc, rc, rc, nat_stt, ncell, ext_stt, ext_end, region, ncell);
-      std::vector<int> ilist_0, jlist_0, jrange_0;
-      std::vector<int> ilist_1, jlist_1, jrange_1;
-      int max_nnei_0 = make_inter_nlist(ilist_0, jrange_0, jlist_0, nloc, nlist_cpy_0);
-      int max_nnei_1 = make_inter_nlist(ilist_1, jrange_1, jlist_1, nloc, nlist_cpy_1);
+      std::vector<int> ilist_0(nloc), numneigh_0(nloc), ilist_1(nloc), numneigh_1(nloc);;
+      std::vector<int*> firstneigh_0(nloc), firstneigh_1(nloc);
+      InputNlist inlist_0(nloc, &ilist_0[0], &numneigh_0[0], &firstneigh_0[0]);
+      InputNlist inlist_1(nloc, &ilist_1[0], &numneigh_1[0], &firstneigh_1[0]);
+      convert_nlist(inlist_0, nlist_cpy_0);
+      convert_nlist(inlist_1, nlist_cpy_1);
+      int max_nnei_0 = max_numneigh(inlist_0);
+      int max_nnei_1 = max_numneigh(inlist_1);
       EXPECT_EQ(max_nnei_0, max_nnei_1);
       std::vector<double> t_em(nloc * ndescrpt), t_em_deriv(nloc * ndescrpt * 3);
       std::vector<double> rij_0(nloc * nnei * 3), rij_1(nloc * nnei * 3);
       std::vector<int> nlist_0(nloc * nnei), nlist_1(nloc * nnei);
       std::vector<double > avg(ntypes * ndescrpt, 0);
       std::vector<double > std(ntypes * ndescrpt, 1);
-      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_0[0], &nlist_0[0], &posi_cpy_0[0], &atype_cpy_0[0], &ilist_0[0], &jrange_0[0], &jlist_0[0], max_nnei_0, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
-      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_1[0], &nlist_1[0], &posi_cpy_1[0], &atype_cpy_1[0], &ilist_1[0], &jrange_1[0], &jlist_1[0], max_nnei_1, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
+      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_0[0], &nlist_0[0], &posi_cpy_0[0], &atype_cpy_0[0], inlist_0, max_nnei_0, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
+      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_1[0], &nlist_1[0], &posi_cpy_1[0], &atype_cpy_1[0], inlist_1, max_nnei_1, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
       std::vector<double> energy_0(nloc), energy_1(nloc);
       std::vector<double> t_force(nall * 3), t_virial(nall * 9);
       pair_tab_cpu(
@@ -344,18 +348,22 @@ TEST_F(TestPairTab, cpu_f_num_deriv_scale)
       std::vector<std::vector<int>> nlist_cpy_0, nlist_cpy_1, t_nlist;
       build_nlist(nlist_cpy_0, t_nlist, posi_cpy_0, nloc, rc, rc, nat_stt, ncell, ext_stt, ext_end, region, ncell);
       build_nlist(nlist_cpy_1, t_nlist, posi_cpy_1, nloc, rc, rc, nat_stt, ncell, ext_stt, ext_end, region, ncell);
-      std::vector<int> ilist_0, jlist_0, jrange_0;
-      std::vector<int> ilist_1, jlist_1, jrange_1;
-      int max_nnei_0 = make_inter_nlist(ilist_0, jrange_0, jlist_0, nloc, nlist_cpy_0);
-      int max_nnei_1 = make_inter_nlist(ilist_1, jrange_1, jlist_1, nloc, nlist_cpy_1);
+      std::vector<int> ilist_0(nloc), numneigh_0(nloc), ilist_1(nloc), numneigh_1(nloc);;
+      std::vector<int*> firstneigh_0(nloc), firstneigh_1(nloc);
+      InputNlist inlist_0(nloc, &ilist_0[0], &numneigh_0[0], &firstneigh_0[0]);
+      InputNlist inlist_1(nloc, &ilist_1[0], &numneigh_1[0], &firstneigh_1[0]);
+      convert_nlist(inlist_0, nlist_cpy_0);
+      convert_nlist(inlist_1, nlist_cpy_1);
+      int max_nnei_0 = max_numneigh(inlist_0);
+      int max_nnei_1 = max_numneigh(inlist_1);
       EXPECT_EQ(max_nnei_0, max_nnei_1);
       std::vector<double> t_em(nloc * ndescrpt), t_em_deriv(nloc * ndescrpt * 3);
       std::vector<double> rij_0(nloc * nnei * 3), rij_1(nloc * nnei * 3);
       std::vector<int> nlist_0(nloc * nnei), nlist_1(nloc * nnei);
       std::vector<double > avg(ntypes * ndescrpt, 0);
       std::vector<double > std(ntypes * ndescrpt, 1);
-      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_0[0], &nlist_0[0], &posi_cpy_0[0], &atype_cpy_0[0], &ilist_0[0], &jrange_0[0], &jlist_0[0], max_nnei_0, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
-      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_1[0], &nlist_1[0], &posi_cpy_1[0], &atype_cpy_1[0], &ilist_1[0], &jrange_1[0], &jlist_1[0], max_nnei_1, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
+      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_0[0], &nlist_0[0], &posi_cpy_0[0], &atype_cpy_0[0], inlist_0, max_nnei_0, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
+      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_1[0], &nlist_1[0], &posi_cpy_1[0], &atype_cpy_1[0], inlist_1, max_nnei_1, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
       std::vector<double> energy_0(nloc), energy_1(nloc);
       std::vector<double> t_force(nall * 3), t_virial(nall * 9);
       pair_tab_cpu(
@@ -461,18 +469,22 @@ TEST_F(TestPairTab, cpu_v_num_deriv)
       std::vector<std::vector<int>> nlist_cpy_0, nlist_cpy_1, t_nlist;
       build_nlist(nlist_cpy_0, t_nlist, posi_cpy_0, nloc, rc, rc, nat_stt, ncell, ext_stt, ext_end, region_0, ncell);
       build_nlist(nlist_cpy_1, t_nlist, posi_cpy_1, nloc, rc, rc, nat_stt, ncell, ext_stt, ext_end, region_1, ncell);
-      std::vector<int> ilist_0, jlist_0, jrange_0;
-      std::vector<int> ilist_1, jlist_1, jrange_1;
-      int max_nnei_0 = make_inter_nlist(ilist_0, jrange_0, jlist_0, nloc, nlist_cpy_0);
-      int max_nnei_1 = make_inter_nlist(ilist_1, jrange_1, jlist_1, nloc, nlist_cpy_1);
+      std::vector<int> ilist_0(nloc), numneigh_0(nloc), ilist_1(nloc), numneigh_1(nloc);;
+      std::vector<int*> firstneigh_0(nloc), firstneigh_1(nloc);
+      InputNlist inlist_0(nloc, &ilist_0[0], &numneigh_0[0], &firstneigh_0[0]);
+      InputNlist inlist_1(nloc, &ilist_1[0], &numneigh_1[0], &firstneigh_1[0]);
+      convert_nlist(inlist_0, nlist_cpy_0);
+      convert_nlist(inlist_1, nlist_cpy_1);
+      int max_nnei_0 = max_numneigh(inlist_0);
+      int max_nnei_1 = max_numneigh(inlist_1);
       EXPECT_EQ(max_nnei_0, max_nnei_1);
       std::vector<double> t_em(nloc * ndescrpt), t_em_deriv(nloc * ndescrpt * 3);
       std::vector<double> rij_0(nloc * nnei * 3), rij_1(nloc * nnei * 3);
       std::vector<int> nlist_0(nloc * nnei), nlist_1(nloc * nnei);
       std::vector<double > avg(ntypes * ndescrpt, 0);
       std::vector<double > std(ntypes * ndescrpt, 1);
-      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_0[0], &nlist_0[0], &posi_cpy_0[0], &atype_cpy_0[0], &ilist_0[0], &jrange_0[0], &jlist_0[0], max_nnei_0, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
-      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_1[0], &nlist_1[0], &posi_cpy_1[0], &atype_cpy_1[0], &ilist_1[0], &jrange_1[0], &jlist_1[0], max_nnei_1, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
+      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_0[0], &nlist_0[0], &posi_cpy_0[0], &atype_cpy_0[0], inlist_0, max_nnei_0, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
+      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_1[0], &nlist_1[0], &posi_cpy_1[0], &atype_cpy_1[0], inlist_1, max_nnei_1, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
       std::vector<double> energy_0(nloc), energy_1(nloc);
       std::vector<double> t_force(nall * 3), t_virial(nall * 9);
       pair_tab_cpu(
@@ -589,18 +601,22 @@ TEST_F(TestPairTab, cpu_v_num_deriv_scale)
       std::vector<std::vector<int>> nlist_cpy_0, nlist_cpy_1, t_nlist;
       build_nlist(nlist_cpy_0, t_nlist, posi_cpy_0, nloc, rc, rc, nat_stt, ncell, ext_stt, ext_end, region_0, ncell);
       build_nlist(nlist_cpy_1, t_nlist, posi_cpy_1, nloc, rc, rc, nat_stt, ncell, ext_stt, ext_end, region_1, ncell);
-      std::vector<int> ilist_0, jlist_0, jrange_0;
-      std::vector<int> ilist_1, jlist_1, jrange_1;
-      int max_nnei_0 = make_inter_nlist(ilist_0, jrange_0, jlist_0, nloc, nlist_cpy_0);
-      int max_nnei_1 = make_inter_nlist(ilist_1, jrange_1, jlist_1, nloc, nlist_cpy_1);
+      std::vector<int> ilist_0(nloc), numneigh_0(nloc), ilist_1(nloc), numneigh_1(nloc);;
+      std::vector<int*> firstneigh_0(nloc), firstneigh_1(nloc);
+      InputNlist inlist_0(nloc, &ilist_0[0], &numneigh_0[0], &firstneigh_0[0]);
+      InputNlist inlist_1(nloc, &ilist_1[0], &numneigh_1[0], &firstneigh_1[0]);
+      convert_nlist(inlist_0, nlist_cpy_0);
+      convert_nlist(inlist_1, nlist_cpy_1);
+      int max_nnei_0 = max_numneigh(inlist_0);
+      int max_nnei_1 = max_numneigh(inlist_1);
       EXPECT_EQ(max_nnei_0, max_nnei_1);
       std::vector<double> t_em(nloc * ndescrpt), t_em_deriv(nloc * ndescrpt * 3);
       std::vector<double> rij_0(nloc * nnei * 3), rij_1(nloc * nnei * 3);
       std::vector<int> nlist_0(nloc * nnei), nlist_1(nloc * nnei);
       std::vector<double > avg(ntypes * ndescrpt, 0);
       std::vector<double > std(ntypes * ndescrpt, 1);
-      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_0[0], &nlist_0[0], &posi_cpy_0[0], &atype_cpy_0[0], &ilist_0[0], &jrange_0[0], &jlist_0[0], max_nnei_0, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
-      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_1[0], &nlist_1[0], &posi_cpy_1[0], &atype_cpy_1[0], &ilist_1[0], &jrange_1[0], &jlist_1[0], max_nnei_1, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
+      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_0[0], &nlist_0[0], &posi_cpy_0[0], &atype_cpy_0[0], inlist_0, max_nnei_0, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
+      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_1[0], &nlist_1[0], &posi_cpy_1[0], &atype_cpy_1[0], inlist_1, max_nnei_1, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
       std::vector<double> energy_0(nloc), energy_1(nloc);
       std::vector<double> t_force(nall * 3), t_virial(nall * 9);
       pair_tab_cpu(
@@ -717,18 +733,22 @@ TEST_F(TestPairTabTriBox, cpu_v_num_deriv)
       std::vector<std::vector<int>> nlist_cpy_0, nlist_cpy_1, t_nlist;
       build_nlist(nlist_cpy_0, t_nlist, posi_cpy_0, nloc, rc, rc, nat_stt, ncell, ext_stt, ext_end, region_0, ncell);
       build_nlist(nlist_cpy_1, t_nlist, posi_cpy_1, nloc, rc, rc, nat_stt, ncell, ext_stt, ext_end, region_1, ncell);
-      std::vector<int> ilist_0, jlist_0, jrange_0;
-      std::vector<int> ilist_1, jlist_1, jrange_1;
-      int max_nnei_0 = make_inter_nlist(ilist_0, jrange_0, jlist_0, nloc, nlist_cpy_0);
-      int max_nnei_1 = make_inter_nlist(ilist_1, jrange_1, jlist_1, nloc, nlist_cpy_1);
+      std::vector<int> ilist_0(nloc), numneigh_0(nloc), ilist_1(nloc), numneigh_1(nloc);;
+      std::vector<int*> firstneigh_0(nloc), firstneigh_1(nloc);
+      InputNlist inlist_0(nloc, &ilist_0[0], &numneigh_0[0], &firstneigh_0[0]);
+      InputNlist inlist_1(nloc, &ilist_1[0], &numneigh_1[0], &firstneigh_1[0]);
+      convert_nlist(inlist_0, nlist_cpy_0);
+      convert_nlist(inlist_1, nlist_cpy_1);
+      int max_nnei_0 = max_numneigh(inlist_0);
+      int max_nnei_1 = max_numneigh(inlist_1);
       EXPECT_EQ(max_nnei_0, max_nnei_1);
       std::vector<double> t_em(nloc * ndescrpt), t_em_deriv(nloc * ndescrpt * 3);
       std::vector<double> rij_0(nloc * nnei * 3), rij_1(nloc * nnei * 3);
       std::vector<int> nlist_0(nloc * nnei), nlist_1(nloc * nnei);
       std::vector<double > avg(ntypes * ndescrpt, 0);
       std::vector<double > std(ntypes * ndescrpt, 1);
-      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_0[0], &nlist_0[0], &posi_cpy_0[0], &atype_cpy_0[0], &ilist_0[0], &jrange_0[0], &jlist_0[0], max_nnei_0, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
-      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_1[0], &nlist_1[0], &posi_cpy_1[0], &atype_cpy_1[0], &ilist_1[0], &jrange_1[0], &jlist_1[0], max_nnei_1, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
+      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_0[0], &nlist_0[0], &posi_cpy_0[0], &atype_cpy_0[0], inlist_0, max_nnei_0, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
+      prod_env_mat_a_cpu(&t_em[0], &t_em_deriv[0], &rij_1[0], &nlist_1[0], &posi_cpy_1[0], &atype_cpy_1[0], inlist_1, max_nnei_1, &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a);
       std::vector<double> energy_0(nloc), energy_1(nloc);
       std::vector<double> t_force(nall * 3), t_virial(nall * 9);
       pair_tab_cpu(
