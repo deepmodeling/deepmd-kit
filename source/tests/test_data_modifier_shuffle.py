@@ -5,19 +5,19 @@ import dpdata
 from deepmd.env import tf
 
 from deepmd.common import j_must_have, data_requirement
-from deepmd.RunOptions import RunOptions
-from deepmd.Trainer import NNPTrainer
-from deepmd.DataSystem import DeepmdDataSystem
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
-from deepmd.EwaldRecp import EwaldRecp
-from deepmd.DataModifier import DipoleChargeModifier
-from deepmd.DeepDipole import DeepDipole
+from deepmd.run_options import RunOptions
+from deepmd.trainer import NNPTrainer
+from deepmd.utils.data_system import DeepmdDataSystem
+from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.run_options import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.run_options import GLOBAL_ENER_FLOAT_PRECISION
+from deepmd.infer.ewald_recp import EwaldRecp
+from deepmd.infer.data_modifier import DipoleChargeModifier
+from deepmd.infer.deep_dipole import DeepDipole
 
 from common import Data
 
-if global_np_float_precision == np.float32 :
+if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
     global_default_fv_hh = 1e-2
     global_default_dw_hh = 1e-2
     global_default_places = 3
@@ -28,11 +28,6 @@ else :
 
 modifier_datapath = 'data_modifier'
 
-class Args() :
-    # INPUT = os.path.join(modifier_datapath, 'dipole.json')
-    restart = None
-    init_model = None
-    inter_threads = 0
 
 class TestDataModifier (unittest.TestCase) :
 
@@ -49,8 +44,14 @@ class TestDataModifier (unittest.TestCase) :
             os.remove(os.path.join(modifier_datapath, 'dipole.pb'))
 
     def _setUp(self):
-        args = Args()
-        run_opt = RunOptions(args, False)
+        run_opt = RunOptions(
+            restart=None,
+            init_model=None,
+            log_path=None,
+            log_level=0,
+            mpi_log="master",
+            try_distrib=False
+        )
         jdata = self._setUp_jdata()
         self._setUp_data()
 
@@ -99,7 +100,7 @@ class TestDataModifier (unittest.TestCase) :
         self.natoms = len(self.atom_types0)
         self.nframes = 1
         scale = 10.0
-        self.sel_type = jdata['model']['fitting_net']['dipole_type']
+        self.sel_type = jdata['model']['fitting_net']['sel_type']
         self.nsel = 0
         for ii in self.sel_type:
             self.nsel += np.sum(self.atom_types0 == ii)
@@ -144,7 +145,7 @@ class TestDataModifier (unittest.TestCase) :
 	        },
 	        "fitting_net": {
 	            "type":		"dipole",
-	            "dipole_type":	[1, 3],
+	            "sel_type":	[1, 3],
 	            "neuron":		[10],
 	            "resnet_dt":	True,
 	            "seed":		1,
@@ -153,6 +154,7 @@ class TestDataModifier (unittest.TestCase) :
             "learning_rate" :{
 	        "type":		"exp",
 	        "start_lr":	0.01,
+	        "stop_lr":	1e-8,
 	        "decay_steps":	5000,
 	        "decay_rate":	0.95,
             },

@@ -1,11 +1,5 @@
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include <iostream>
-
-using namespace tensorflow;
-using namespace std;
-
+#include "custom_op.h"
+#include "soft_min_switch_virial_grad.h"
 
 REGISTER_OP("SoftMinVirialGrad")
 .Attr("T: {float, double}")
@@ -93,28 +87,14 @@ public:
     // loop over frames
 #pragma omp parallel for
     for (int kk = 0; kk < nframes; ++kk){
-
-      // reset the frame to 0
-      for (int ii = 0; ii < nloc; ++ii){
-	grad_net (kk, ii) = 0;
-      }      
-
-      // compute grad of one frame
-      for (int ii = 0; ii < nloc; ++ii){
-	int i_idx = ii;
-	// loop over neighbors
-	for (int jj = 0; jj < nnei; ++jj){
-	  int j_idx = nlist (kk, i_idx * nnei + jj);	  
-	  if (j_idx < 0) continue;
-	  int rij_idx_shift = (ii * nnei + jj) * 3;
-	  for (int dd0 = 0; dd0 < 3; ++dd0){
-	    for (int dd1 = 0; dd1 < 3; ++dd1){
-	      grad_net (kk, i_idx) -= 
-		  grad (kk, dd0 * 3 + dd1) * sw_deriv(kk, rij_idx_shift + dd0) * rij(kk, rij_idx_shift + dd1);
-	    }
-	  }
-	}
-      }
+      soft_min_switch_virial_grad_cpu(
+	  &grad_net(kk, 0),
+	  &grad(kk, 0),
+	  &sw_deriv(kk, 0),
+	  &rij(kk, 0),
+	  &nlist(kk, 0),
+	  nloc,
+	  nnei);
     }
   }
 private:

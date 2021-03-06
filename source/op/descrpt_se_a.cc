@@ -1,19 +1,11 @@
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include <iostream>
-
+#include "custom_op.h"
 #include "ComputeDescriptor.h"
-#include "NeighborList.h"
+#include "neighbor_list.h"
+#include "fmt_nlist.h"
+#include "env_mat.h"
 
 typedef double boxtensor_t ;
 typedef double compute_t;
-
-using namespace tensorflow;
-using namespace std;
-
-using CPUDevice = Eigen::ThreadPoolDevice;
-using GPUDevice = Eigen::GpuDevice;
 
 REGISTER_OP("DescrptSeA")
     .Attr("T: {float, double}")
@@ -115,7 +107,7 @@ public:
       nei_mode = -1;
     }
     else {
-      throw runtime_error("invalid mesh tensor");
+      throw std::runtime_error("invalid mesh tensor");
     }
     bool b_pbc = true;
     // if region is given extended, do not use pbc
@@ -189,7 +181,7 @@ public:
       region.reinitBox (boxt);
 
       // set & normalize coord
-      vector<compute_t > d_coord3 (nall*3);
+      std::vector<compute_t > d_coord3 (nall*3);
       for (int ii = 0; ii < nall; ++ii){
 	for (int dd = 0; dd < 3; ++dd){
 	  d_coord3[ii*3+dd] = coord(kk, ii*3+dd);
@@ -206,13 +198,13 @@ public:
       }
 
       // set type
-      vector<int > d_type (nall);
+      std::vector<int > d_type (nall);
       for (int ii = 0; ii < nall; ++ii) d_type[ii] = type(kk, ii);
       
       // build nlist
-      vector<vector<int > > d_nlist_a;
-      vector<vector<int > > d_nlist_r;
-      vector<int> nlist_map;
+      std::vector<std::vector<int > > d_nlist_a;
+      std::vector<std::vector<int > > d_nlist_r;
+      std::vector<int> nlist_map;
       bool b_nlist_map = false;
       if (nei_mode == 3) {	
 	int * pilist, *pjrange, *pjlist;
@@ -235,22 +227,22 @@ public:
 	}
       }
       else if (nei_mode == 2) {
-	vector<int > nat_stt = {mesh(1-1), mesh(2-1), mesh(3-1)};
-	vector<int > nat_end = {mesh(4-1), mesh(5-1), mesh(6-1)};
-	vector<int > ext_stt = {mesh(7-1), mesh(8-1), mesh(9-1)};
-	vector<int > ext_end = {mesh(10-1), mesh(11-1), mesh(12-1)};
-	vector<int > global_grid (3);
+	std::vector<int > nat_stt = {mesh(1-1), mesh(2-1), mesh(3-1)};
+	std::vector<int > nat_end = {mesh(4-1), mesh(5-1), mesh(6-1)};
+	std::vector<int > ext_stt = {mesh(7-1), mesh(8-1), mesh(9-1)};
+	std::vector<int > ext_end = {mesh(10-1), mesh(11-1), mesh(12-1)};
+	std::vector<int > global_grid (3);
 	for (int dd = 0; dd < 3; ++dd) global_grid[dd] = nat_end[dd] - nat_stt[dd];
 	::build_nlist (d_nlist_a, d_nlist_r, d_coord3, nloc, rcut_a, rcut_r, nat_stt, nat_end, ext_stt, ext_end, region, global_grid);
       }
       else if (nei_mode == 1) {
-	vector<double > bk_d_coord3 = d_coord3;
-	vector<int > bk_d_type = d_type;
-	vector<int > ncell, ngcell;
+	std::vector<compute_t > bk_d_coord3 = d_coord3;
+	std::vector<int > bk_d_type = d_type;
+	std::vector<int > ncell, ngcell;
 	copy_coord(d_coord3, d_type, nlist_map, ncell, ngcell, bk_d_coord3, bk_d_type, rcut_r, region);	
 	b_nlist_map = true;
-	vector<int> nat_stt(3, 0);
-	vector<int> ext_stt(3), ext_end(3);
+	std::vector<int> nat_stt(3, 0);
+	std::vector<int> ext_stt(3), ext_end(3);
 	for (int dd = 0; dd < 3; ++dd){
 	  ext_stt[dd] = -ngcell[dd];
 	  ext_end[dd] = ncell[dd] + ngcell[dd];
@@ -261,44 +253,44 @@ public:
 	::build_nlist (d_nlist_a, d_nlist_r, d_coord3, rcut_a, rcut_r, NULL);
       }
       else {
-	throw runtime_error("unknow neighbor mode");
+	throw std::runtime_error("unknow neighbor mode");
       }
 
       // loop over atoms, compute descriptors for each atom
 #pragma omp parallel for 
       for (int ii = 0; ii < nloc; ++ii){
-	vector<int> fmt_nlist_a;
-	vector<int> fmt_nlist_r;
+	std::vector<int> fmt_nlist_a;
+	std::vector<int> fmt_nlist_r;
 	int ret = -1;
 	if (fill_nei_a){
-	  if ((ret = format_nlist_fill_a (fmt_nlist_a, fmt_nlist_r, d_coord3, ntypes, d_type, region, b_pbc, ii, d_nlist_a[ii], d_nlist_r[ii], rcut_r, sec_a, sec_r)) != -1){
+	  if ((ret = format_nlist_i_fill_a (fmt_nlist_a, fmt_nlist_r, d_coord3, ntypes, d_type, region, b_pbc, ii, d_nlist_a[ii], d_nlist_r[ii], rcut_r, sec_a, sec_r)) != -1){
 	    if (count_nei_idx_overflow == 0) {
-	      cout << "WARNING: Radial neighbor list length of type " << ret << " is not enough" << endl;
-	      flush(cout);
+	      std::cout << "WARNING: Radial neighbor list length of type " << ret << " is not enough" << std::endl;
+	      flush(std::cout);
 	      count_nei_idx_overflow ++;
 	    }
 	  }
 	}
 
-	vector<compute_t > d_descrpt_a;
-	vector<compute_t > d_descrpt_a_deriv;
-	vector<compute_t > d_descrpt_r;
-	vector<compute_t > d_descrpt_r_deriv;
-	vector<compute_t > d_rij_a;
-	vector<compute_t > d_rij_r;      
-	compute_descriptor_se_a (d_descrpt_a,
-				 d_descrpt_a_deriv,
-				 d_rij_a,
-				 d_coord3,
-				 ntypes, 
-				 d_type,
-				 region, 
-				 b_pbc,
-				 ii, 
-				 fmt_nlist_a,
-				 sec_a, 
-				 rcut_r_smth, 
-				 rcut_r);
+	std::vector<compute_t > d_descrpt_a;
+	std::vector<compute_t > d_descrpt_a_deriv;
+	std::vector<compute_t > d_descrpt_r;
+	std::vector<compute_t > d_descrpt_r_deriv;
+	std::vector<compute_t > d_rij_a;
+	std::vector<compute_t > d_rij_r;      
+	env_mat_a (d_descrpt_a,
+		   d_descrpt_a_deriv,
+		   d_rij_a,
+		   d_coord3,
+		   ntypes, 
+		   d_type,
+		   region, 
+		   b_pbc,
+		   ii, 
+		   fmt_nlist_a,
+		   sec_a, 
+		   rcut_r_smth, 
+		   rcut_r);
 
 	// check sizes
 	assert (d_descrpt_a.size() == ndescrpt_a);
@@ -329,17 +321,17 @@ private:
   float rcut_a;
   float rcut_r;
   float rcut_r_smth;
-  vector<int32> sel_r;
-  vector<int32> sel_a;
-  vector<int> sec_a;
-  vector<int> sec_r;
+  std::vector<int32> sel_r;
+  std::vector<int32> sel_a;
+  std::vector<int> sec_a;
+  std::vector<int> sec_r;
   int ndescrpt, ndescrpt_a, ndescrpt_r;
   int nnei, nnei_a, nnei_r;
   bool fill_nei_a;
   int count_nei_idx_overflow;
   void 
-  cum_sum (vector<int> & sec,
-	   const vector<int32> & n_sel) const {
+  cum_sum (std::vector<int> & sec,
+	   const std::vector<int32> & n_sel) const {
     sec.resize (n_sel.size() + 1);
     sec[0] = 0;
     for (int ii = 1; ii < sec.size(); ++ii){

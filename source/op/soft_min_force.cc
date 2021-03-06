@@ -1,10 +1,5 @@
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include <iostream>
-
-using namespace tensorflow;
-using namespace std;
+#include "custom_op.h"
+#include "soft_min_switch_force.h"
 
 REGISTER_OP("SoftMinForce")
 .Attr("T: {float, double}")
@@ -73,32 +68,14 @@ class SoftMinForceOp : public OpKernel {
     // loop over samples
 #pragma omp parallel for 
     for (int kk = 0; kk < nframes; ++kk){
-      // set zeros
-      for (int ii = 0; ii < nall; ++ii){
-	int i_idx = ii;
-	force (kk, i_idx * 3 + 0) = 0;
-	force (kk, i_idx * 3 + 1) = 0;
-	force (kk, i_idx * 3 + 2) = 0;
-      }
-      // compute force of a frame
-      for (int ii = 0; ii < nloc; ++ii){
-	int i_idx = ii;	
-	for (int jj = 0; jj < nnei; ++jj){	  
-	  int j_idx = nlist (kk, i_idx * nnei + jj);
-	  if (j_idx < 0) continue;
-	  int rij_idx_shift = (ii * nnei + jj) * 3;
-	  force(kk, i_idx * 3 + 0) += du(kk, i_idx) * sw_deriv(kk, rij_idx_shift + 0);
-	  force(kk, i_idx * 3 + 1) += du(kk, i_idx) * sw_deriv(kk, rij_idx_shift + 1);
-	  force(kk, i_idx * 3 + 2) += du(kk, i_idx) * sw_deriv(kk, rij_idx_shift + 2);
-	  force(kk, j_idx * 3 + 0) -= du(kk, i_idx) * sw_deriv(kk, rij_idx_shift + 0);
-	  force(kk, j_idx * 3 + 1) -= du(kk, i_idx) * sw_deriv(kk, rij_idx_shift + 1);
-	  force(kk, j_idx * 3 + 2) -= du(kk, i_idx) * sw_deriv(kk, rij_idx_shift + 2);
-	  // cout << "soft_min_force " << i_idx << " " << j_idx << " " 
-	  //      << du(kk, i_idx) << " " 
-	  //      << du(kk, i_idx) * sw_deriv(kk, rij_idx_shift + 0)
-	  //      << endl;
-	}
-      }
+      soft_min_switch_force_cpu(
+	  &force(kk,0),
+	  &du(kk,0),
+	  &sw_deriv(kk,0),
+	  &nlist(kk,0),
+	  nloc,
+	  nall,
+	  nnei);
     }
   }
 private:

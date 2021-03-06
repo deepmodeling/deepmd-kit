@@ -1,18 +1,10 @@
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include <iostream>
-
+#include "custom_op.h"
 #include "ComputeDescriptor.h"
-#include "NeighborList.h"
+#include "neighbor_list.h"
+#include "fmt_nlist.h"
 
 typedef double boxtensor_t ;
 typedef double compute_t;
-
-using namespace tensorflow;
-using namespace std;
-
-using CPUDevice = Eigen::ThreadPoolDevice;
 
 REGISTER_OP("Descrpt")
 .Attr("T: {float, double}")
@@ -113,7 +105,7 @@ public:
       nei_mode = -1;
     }
     else {
-      throw runtime_error("invalid mesh tensor");
+      throw std::runtime_error("invalid mesh tensor");
     }
     bool b_pbc = true;
     // if region is given extended, do not use pbc
@@ -190,7 +182,7 @@ public:
       region.reinitBox (boxt);
 
       // set & normalize coord
-      vector<compute_t > d_coord3 (nall*3);
+      std::vector<compute_t > d_coord3 (nall*3);
       for (int ii = 0; ii < nall; ++ii){
 	for (int dd = 0; dd < 3; ++dd){
 	  d_coord3[ii*3+dd] = coord(kk, ii*3+dd);
@@ -207,13 +199,13 @@ public:
       }
 
       // set type
-      vector<int > d_type (nall);
+      std::vector<int > d_type (nall);
       for (int ii = 0; ii < nall; ++ii) d_type[ii] = type(kk, ii);
       
       // build nlist
-      vector<vector<int > > d_nlist_a;
-      vector<vector<int > > d_nlist_r;
-      vector<int> nlist_map;
+      std::vector<std::vector<int > > d_nlist_a;
+      std::vector<std::vector<int > > d_nlist_r;
+      std::vector<int> nlist_map;
       bool b_nlist_map = false;
       if (nei_mode == 3) {	
 	int * pilist, *pjrange, *pjlist;
@@ -236,22 +228,22 @@ public:
 	}
       }
       else if (nei_mode == 2) {
-	vector<int > nat_stt = {mesh(1-1), mesh(2-1), mesh(3-1)};
-	vector<int > nat_end = {mesh(4-1), mesh(5-1), mesh(6-1)};
-	vector<int > ext_stt = {mesh(7-1), mesh(8-1), mesh(9-1)};
-	vector<int > ext_end = {mesh(10-1), mesh(11-1), mesh(12-1)};
-	vector<int > global_grid (3);
+	std::vector<int > nat_stt = {mesh(1-1), mesh(2-1), mesh(3-1)};
+	std::vector<int > nat_end = {mesh(4-1), mesh(5-1), mesh(6-1)};
+	std::vector<int > ext_stt = {mesh(7-1), mesh(8-1), mesh(9-1)};
+	std::vector<int > ext_end = {mesh(10-1), mesh(11-1), mesh(12-1)};
+	std::vector<int > global_grid (3);
 	for (int dd = 0; dd < 3; ++dd) global_grid[dd] = nat_end[dd] - nat_stt[dd];
 	::build_nlist (d_nlist_a, d_nlist_r, d_coord3, nloc, rcut_a, rcut_r, nat_stt, nat_end, ext_stt, ext_end, region, global_grid);
       }
       else if (nei_mode == 1) {
-	vector<double > bk_d_coord3 = d_coord3;
-	vector<int > bk_d_type = d_type;
-	vector<int > ncell, ngcell;
+	std::vector<double > bk_d_coord3 = d_coord3;
+	std::vector<int > bk_d_type = d_type;
+	std::vector<int > ncell, ngcell;
 	copy_coord(d_coord3, d_type, nlist_map, ncell, ngcell, bk_d_coord3, bk_d_type, rcut_r, region);	
 	b_nlist_map = true;
-	vector<int> nat_stt(3, 0);
-	vector<int> ext_stt(3), ext_end(3);
+	std::vector<int> nat_stt(3, 0);
+	std::vector<int> ext_stt(3), ext_end(3);
 	for (int dd = 0; dd < 3; ++dd){
 	  ext_stt[dd] = -ngcell[dd];
 	  ext_end[dd] = ncell[dd] + ngcell[dd];
@@ -262,40 +254,40 @@ public:
 	::build_nlist (d_nlist_a, d_nlist_r, d_coord3, rcut_a, rcut_r, NULL);
       }
       else {
-	throw runtime_error("unknow neighbor mode");
+	throw std::runtime_error("unknow neighbor mode");
       }
 
       // loop over atoms, compute descriptors for each atom
 #pragma omp parallel for 
       for (int ii = 0; ii < nloc; ++ii){
-	vector<int> fmt_nlist_a;
-	vector<int> fmt_nlist_r;
+	std::vector<int> fmt_nlist_a;
+	std::vector<int> fmt_nlist_r;
 	int ret = -1;
 	if (fill_nei_a){
-	  if ((ret = format_nlist_fill_a (fmt_nlist_a, fmt_nlist_r, d_coord3, ntypes, d_type, region, b_pbc, ii, d_nlist_a[ii], d_nlist_r[ii], rcut_r, sec_a, sec_r)) != -1){
+	  if ((ret = format_nlist_i_fill_a (fmt_nlist_a, fmt_nlist_r, d_coord3, ntypes, d_type, region, b_pbc, ii, d_nlist_a[ii], d_nlist_r[ii], rcut_r, sec_a, sec_r)) != -1){
 	    if (count_nei_idx_overflow == 0) {
-	      cout << "WARNING: Radial neighbor list length of type " << ret << " is not enough" << endl;
-	      flush(cout);
+	      std::cout << "WARNING: Radial neighbor list length of type " << ret << " is not enough" << std::endl;
+	      flush(std::cout);
 	      count_nei_idx_overflow ++;
 	    }
 	  }
 	}
 
 	// set axis
-	vector<int> d_axis_type (2);
-	vector<int> d_axis_idx  (2);
+	std::vector<int> d_axis_type (2);
+	std::vector<int> d_axis_idx  (2);
 	make_axis (d_axis_type, d_axis_idx, d_type[ii], axis_rule, ii, fmt_nlist_a, fmt_nlist_r, d_coord3, region, b_pbc);
-	// cout << ii  << " type " << d_type[ii] 
+	// std::cout << ii  << " type " << d_type[ii] 
 	//      << " axis 0: " << d_axis_type[0] << " " << d_axis_idx[0] 
-	//      << " axis 1: " << d_axis_type[1] << " " << d_axis_idx[1] << endl;
+	//      << " axis 1: " << d_axis_type[1] << " " << d_axis_idx[1] << std::endl;
 
-	vector<compute_t > d_descrpt_a;
-	vector<compute_t > d_descrpt_a_deriv;
-	vector<compute_t > d_descrpt_r;
-	vector<compute_t > d_descrpt_r_deriv;
-	vector<compute_t > d_rij_a;
-	vector<compute_t > d_rij_r;
-	vector<compute_t > rot;
+	std::vector<compute_t > d_descrpt_a;
+	std::vector<compute_t > d_descrpt_a_deriv;
+	std::vector<compute_t > d_descrpt_r;
+	std::vector<compute_t > d_descrpt_r_deriv;
+	std::vector<compute_t > d_rij_a;
+	std::vector<compute_t > d_rij_r;
+	std::vector<compute_t > rot;
 	compute_descriptor (d_descrpt_a,
 			    d_descrpt_a_deriv,
 			    d_descrpt_r,
@@ -372,18 +364,18 @@ public:
 private:
   float rcut_a;
   float rcut_r;
-  vector<int32> sel_r;
-  vector<int32> sel_a;
-  vector<int32> axis_rule;
-  vector<int> sec_a;
-  vector<int> sec_r;
+  std::vector<int32> sel_r;
+  std::vector<int32> sel_a;
+  std::vector<int32> axis_rule;
+  std::vector<int> sec_a;
+  std::vector<int> sec_r;
   int ndescrpt, ndescrpt_a, ndescrpt_r;
   int nnei, nnei_a, nnei_r;
   bool fill_nei_a;
   int count_nei_idx_overflow;
   void 
-  cum_sum (vector<int> & sec,
-	   const vector<int32> & n_sel) const {
+  cum_sum (std::vector<int> & sec,
+	   const std::vector<int32> & n_sel) const {
     sec.resize (n_sel.size() + 1);
     sec[0] = 0;
     for (int ii = 1; ii < sec.size(); ++ii){
@@ -391,14 +383,14 @@ private:
     }
   }
   void 
-  make_axis (vector<int > & axis_type,
-	     vector<int > & axis_idx,
+  make_axis (std::vector<int > & axis_type,
+	     std::vector<int > & axis_idx,
 	     const int & type,
-	     const vector<int > & rule, 
+	     const std::vector<int > & rule, 
 	     const int ii,
-	     const vector<int> & nlist_a,
-	     const vector<int> & nlist_r,
-	     const vector<compute_t> & coord3,
+	     const std::vector<int> & nlist_a,
+	     const std::vector<int> & nlist_r,
+	     const std::vector<compute_t> & coord3,
 	     const SimulationRegion<compute_t > & region, 
 	     const bool b_pbc) const {
     int backup_axis = -1;
@@ -411,7 +403,7 @@ private:
       assert(rule.size() == ntypes * 2 * 3);
       axis_type.resize(2);
       axis_idx .resize(2);
-      vector<int>::const_iterator iter;
+      std::vector<int>::const_iterator iter;
       iter = rule.begin() + type * 6;
       if (*(iter+1) >= 0) {
 	make_one_axis (axis_type[0], axis_idx[0], iter);
@@ -426,7 +418,7 @@ private:
       else {
 	make_one_axis (axis_type[1], axis_idx[1], iter, ii, nlist_a, nlist_r, coord3, region, b_pbc);
       }
-      vector<int > backup_rule (3);
+      std::vector<int > backup_rule (3);
       copy (iter, iter+3, backup_rule.begin());
       backup_rule[2] ++;
       if (*(iter+1) >= 0) {      
@@ -442,7 +434,7 @@ private:
       }
       else {
 	axis_idx[1] ++;
-	// cerr << "wrong backup axis, exit" << endl;
+	// std::cerr << "wrong backup axis, exit" << std::endl;
 	// exit (1);
       }
     }
@@ -458,7 +450,7 @@ private:
   void
   make_one_axis (int & axis_type, 
 		 int & axis_idx,
-		 vector<int>::const_iterator info_i) const {
+		 std::vector<int>::const_iterator info_i) const {
     axis_type = *info_i;
     if (axis_type == 0){
       axis_idx = sec_a[*(info_i+1)] + *(info_i+2);
@@ -470,16 +462,16 @@ private:
   void
   make_one_axis (int & axis_type, 
 		 int & axis_idx,
-		 vector<int>::const_iterator info_i, 
+		 std::vector<int>::const_iterator info_i, 
 		 const int id,
-		 const vector<int> & nlist_a,
-		 const vector<int> & nlist_r,
-		 const vector<compute_t> & coord3,
+		 const std::vector<int> & nlist_a,
+		 const std::vector<int> & nlist_r,
+		 const std::vector<compute_t> & coord3,
 		 const SimulationRegion<compute_t > & region, 
 		 const bool b_pbc) const {
     axis_type = *info_i;
     if (axis_type == 0){
-      vector<pair<compute_t, int> > sort_info;
+      std::vector<std::pair<compute_t, int> > sort_info;
       int excl_type = - (*(info_i+1) + 1);
       int ntypes = sel_a.size();
       for (unsigned ii = 0; ii < ntypes; ++ii){
@@ -502,8 +494,8 @@ private:
 	      diff[dd] = coord3[3*id+dd] - coord3[3*jd+dd];
 	    }
 	  }
-	  sort_info.push_back (pair<compute_t, int> 
-			       (MathUtilities::dot<compute_t> (diff, diff), list_idx) );
+	  sort_info.push_back (std::pair<compute_t, int> 
+			       (dot3(diff, diff), list_idx) );
 	}
       }
       sort (sort_info.begin(), sort_info.end());
@@ -511,7 +503,7 @@ private:
       axis_idx = sort_info[*(info_i+2)].second;
     }
     else {
-      vector<pair<compute_t, int> > sort_info;
+      std::vector<std::pair<compute_t, int> > sort_info;
       int excl_type = - *(info_i+1);
       int ntypes = sel_r.size();
       for (unsigned ii = 0; ii < ntypes; ++ii){
@@ -534,8 +526,8 @@ private:
 	      diff[dd] = coord3[3*id+dd] - coord3[3*jd+dd];
 	    }
 	  }
-	  sort_info.push_back (pair<compute_t, int> 
-			       (MathUtilities::dot<compute_t> (diff, diff), list_idx) );
+	  sort_info.push_back (std::pair<compute_t, int> 
+			       (dot3(diff, diff), list_idx) );
 	}
       }
       sort (sort_info.begin(), sort_info.end());
@@ -544,8 +536,8 @@ private:
     }
   }		 
   void 
-  make_axis_default (vector<int > & axis_type,
-		     vector<int > & axis_idx) const {
+  make_axis_default (std::vector<int > & axis_type,
+		     std::vector<int > & axis_idx) const {
     axis_type.resize(2);
     axis_idx .resize(2);
     if (nnei_a > 1) {
@@ -562,12 +554,12 @@ private:
     axis_idx[1] = 1;    
   }
   bool 
-  check_axis (const vector<int > & axis_type,
-	      const vector<int > & axis_idx,
+  check_axis (const std::vector<int > & axis_type,
+	      const std::vector<int > & axis_idx,
 	      const int id,
-	      const vector<int> & nlist_a,
-	      const vector<int> & nlist_r,
-	      const vector<compute_t> & coord3,
+	      const std::vector<int> & nlist_a,
+	      const std::vector<int> & nlist_r,
+	      const std::vector<compute_t> & coord3,
 	      const SimulationRegion<compute_t > & region, 
 	      const bool b_pbc) const {
     compute_t diff[2][3];
@@ -588,9 +580,9 @@ private:
 	}
       }
     }
-    compute_t rij = MathUtilities::dot (diff[0], diff[1]);
-    compute_t rii = MathUtilities::dot (diff[0], diff[0]);
-    compute_t rjj = MathUtilities::dot (diff[1], diff[1]);
+    compute_t rij = dot3(diff[0], diff[1]);
+    compute_t rii = dot3(diff[0], diff[0]);
+    compute_t rjj = dot3(diff[1], diff[1]);
     if ( fabs (rij / sqrt(rii * rjj) + 1) < 1e-4  ) {
       return false;
     }

@@ -1,11 +1,5 @@
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include <iostream>
-
-using namespace tensorflow;
-using namespace std;
-
+#include "custom_op.h"
+#include "prod_virial.h"
 
 REGISTER_OP("ProdVirialSeR")
 .Attr("T: {float, double}")
@@ -90,31 +84,16 @@ class ProdVirialSeROp : public OpKernel {
       int virial_iter	= kk * 9;
       int atom_virial_iter	= kk * nall * 9;
 
-      for (int ii = 0; ii < 9; ++ ii){
-	virial (virial_iter + ii) = 0.;
-      }
-      for (int ii = 0; ii < 9 * nall; ++ ii){
-	atom_virial (atom_virial_iter + ii) = 0.;
-      }
-
-      // compute virial of a frame
-      for (int ii = 0; ii < nloc; ++ii){
-	int i_idx = ii;
-
-	// deriv wrt neighbors
-	for (int jj = 0; jj < nnei; ++jj){
-	  int j_idx = nlist (nlist_iter + i_idx * nnei + jj);
-	  if (j_idx < 0) continue;
-	  FPTYPE pref = -1.0 * net_deriv (net_iter + i_idx * ndescrpt + jj);
-	  for (int dd0 = 0; dd0 < 3; ++dd0){
-	    for (int dd1 = 0; dd1 < 3; ++dd1){
-	      FPTYPE tmp_v = pref * rij (rij_iter + i_idx * nnei * 3 + jj * 3 + dd1) *  in_deriv (in_iter + i_idx * ndescrpt * 3 + jj * 3 + dd0);
-	      virial (virial_iter + dd0 * 3 + dd1) -= tmp_v;
-	      atom_virial (atom_virial_iter + j_idx * 9 + dd0 * 3 + dd1) -= tmp_v;
-	    }
-	  }
-	}
-      }
+      prod_virial_r_cpu(
+	  &virial(virial_iter),
+	  &atom_virial(atom_virial_iter),
+	  &net_deriv(net_iter),
+	  &in_deriv(in_iter),
+	  &rij(rij_iter),
+	  &nlist(nlist_iter),
+	  nloc,
+	  nall,
+	  nnei);
     }
   }
 };

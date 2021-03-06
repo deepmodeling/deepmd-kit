@@ -1,20 +1,14 @@
 # train
 
-configure_file("RunOptions.py.in" "${CMAKE_CURRENT_BINARY_DIR}/RunOptions.py" @ONLY)
+configure_file("run_config.ini" "${CMAKE_CURRENT_BINARY_DIR}/run_config.ini" @ONLY)
 
-file(GLOB LIB_PY main.py common.py env.py compat.py calculator.py Network.py Deep*.py Data.py DataSystem.py Model*.py Descrpt*.py Fitting.py Loss.py LearningRate.py Trainer.py TabInter.py EwaldRecp.py DataModifier.py ${CMAKE_CURRENT_BINARY_DIR}/RunOptions.py transform.py argcheck.py doc.py)
-
-file(GLOB CLS_PY  Local.py Slurm.py)
+file(GLOB LIB_PY main.py calculator.py model.py trainer.py run_options.py )
 
 install(
   FILES		${LIB_PY} 
   DESTINATION	deepmd
 )
 install(
-  FILES		${CLS_PY} 
-  DESTINATION	deepmd/cluster
-)
-install(
-  FILES		train.py test.py
-  DESTINATION	deepmd
+  FILES		${CMAKE_CURRENT_BINARY_DIR}/run_config.ini
+  DESTINATION	deepmd/pkg_config
 )

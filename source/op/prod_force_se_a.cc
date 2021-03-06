@@ -1,10 +1,5 @@
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include <iostream>
-
-using namespace tensorflow;
-using namespace std;
+#include "custom_op.h"
+#include "prod_force.h"
 
 REGISTER_OP("ProdForceSeA")
 .Attr("T: {float, double}")
@@ -28,7 +23,7 @@ class ProdForceSeAOp : public OpKernel {
   explicit ProdForceSeAOp(OpKernelConstruction* context) : OpKernel(context) {
     OP_REQUIRES_OK(context, context->GetAttr("n_a_sel", &n_a_sel));
     OP_REQUIRES_OK(context, context->GetAttr("n_r_sel", &n_r_sel));
-    n_a_shift = n_a_sel * 4;
+    // n_a_shift = n_a_sel * 4;
   }
 
   void Compute(OpKernelContext* context) override {
@@ -95,53 +90,17 @@ class ProdForceSeAOp : public OpKernel {
       int in_iter	= kk * nloc * ndescrpt * 3;
       int nlist_iter	= kk * nloc * nnei;
 
-      for (int ii = 0; ii < nall; ++ii){
-	int i_idx = ii;
-	force (force_iter + i_idx * 3 + 0) = 0;
-	force (force_iter + i_idx * 3 + 1) = 0;
-	force (force_iter + i_idx * 3 + 2) = 0;
-      }
-
-      // compute force of a frame
-      for (int ii = 0; ii < nloc; ++ii){
-	int i_idx = ii;	
-	// deriv wrt center atom
-	for (int aa = 0; aa < ndescrpt; ++aa){
-	  force (force_iter + i_idx * 3 + 0) -= net_deriv (net_iter + i_idx * ndescrpt + aa) * in_deriv (in_iter + i_idx * ndescrpt * 3 + aa * 3 + 0);
-	  force (force_iter + i_idx * 3 + 1) -= net_deriv (net_iter + i_idx * ndescrpt + aa) * in_deriv (in_iter + i_idx * ndescrpt * 3 + aa * 3 + 1);
-	  force (force_iter + i_idx * 3 + 2) -= net_deriv (net_iter + i_idx * ndescrpt + aa) * in_deriv (in_iter + i_idx * ndescrpt * 3 + aa * 3 + 2);
-	}
-	// deriv wrt neighbors
-	for (int jj = 0; jj < nnei; ++jj){
-	  int j_idx = nlist (nlist_iter + i_idx * nnei + jj);
-	  // if (j_idx > nloc) j_idx = j_idx % nloc;
-	  if (j_idx < 0) continue;
-	  int aa_start, aa_end;
-	  make_descript_range (aa_start, aa_end, jj);
-	  for (int aa = aa_start; aa < aa_end; ++aa) {
-	    force (force_iter + j_idx * 3 + 0) += net_deriv (net_iter + i_idx * ndescrpt + aa) * in_deriv (in_iter + i_idx * ndescrpt * 3 + aa * 3 + 0);
-	    force (force_iter + j_idx * 3 + 1) += net_deriv (net_iter + i_idx * ndescrpt + aa) * in_deriv (in_iter + i_idx * ndescrpt * 3 + aa * 3 + 1);
-	    force (force_iter + j_idx * 3 + 2) += net_deriv (net_iter + i_idx * ndescrpt + aa) * in_deriv (in_iter + i_idx * ndescrpt * 3 + aa * 3 + 2);
-	  }
-	}
-      }
+      prod_force_a_cpu<FPTYPE>(&force(force_iter),
+			       &net_deriv(net_iter),
+			       &in_deriv(in_iter),
+			       &nlist(nlist_iter),
+			       nloc, 
+			       nall,
+			       nnei);
     }
   }
 private:
-  int n_r_sel, n_a_sel, n_a_shift;
-  inline void
-  make_descript_range (int & idx_start,
-		       int & idx_end,
-		       const int & nei_idx) {
-    if (nei_idx < n_a_sel) {
-      idx_start = nei_idx * 4;
-      idx_end   = nei_idx * 4 + 4;
-    }
-    else {
-      idx_start = n_a_shift + (nei_idx - n_a_sel);
-      idx_end   = n_a_shift + (nei_idx - n_a_sel) + 1;
-    }
-  }
+  int n_r_sel, n_a_sel;
 };
 
 // Register the CPU kernels.
