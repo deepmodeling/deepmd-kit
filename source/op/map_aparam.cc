@@ -1,37 +1,16 @@
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include <iostream>
+#include "custom_op.h"
+#include "map_aparam.h"
 
-using namespace tensorflow;
-using namespace std;
-
-#ifdef HIGH_PREC
-typedef double VALUETYPE;
-#else
-typedef float  VALUETYPE;
-#endif
-
-#ifdef HIGH_PREC
 REGISTER_OP("MapAparam")
-.Input("aparam: double")
+.Attr("T: {float, double}")
+.Input("aparam: T")
 .Input("nlist: int32")
 .Input("natoms: int32")
 .Attr("n_a_sel: int")
 .Attr("n_r_sel: int")
-.Output("output: double");
-#else
-REGISTER_OP("MapAparam")
-.Input("aparam: float")
-.Input("nlist: int32")
-.Input("natoms: int32")
-.Attr("n_a_sel: int")
-.Attr("n_r_sel: int")
-.Output("mapped: float");
-#endif
+.Output("output: T");
 
-using namespace tensorflow;
-
+template <typename Device, typename FPTYPE>
 class MapAparamOp : public OpKernel {
  public:
   explicit MapAparamOp(OpKernelConstruction* context) : OpKernel(context) {
@@ -73,9 +52,9 @@ class MapAparamOp : public OpKernel {
     OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &output_tensor));
     
     // flat the tensors
-    auto aparam = aparam_tensor.flat<VALUETYPE>();
+    auto aparam = aparam_tensor.flat<FPTYPE>();
     auto nlist = nlist_tensor.flat<int>();
-    auto output = output_tensor->flat<VALUETYPE>();
+    auto output = output_tensor->flat<FPTYPE>();
 
     // loop over samples
 #pragma omp parallel for 
@@ -83,34 +62,25 @@ class MapAparamOp : public OpKernel {
       int output_iter	= kk * nloc * nnei * numb_aparam;
       int aparam_iter	= kk * nall * numb_aparam;
       int nlist_iter	= kk * nloc * nnei;
-
-      for (int ii = 0; ii < nloc; ++ii){
-	int i_idx = ii;
-	for (int dd = 0; dd < nnei * numb_aparam; ++dd) {
-	  output(output_iter + i_idx * nnei * numb_aparam + dd) = 0.;
-	}
-      }
-
-      // loop over loc atoms
-      for (int ii = 0; ii < nloc; ++ii){
-	int i_idx = ii;	
-	// loop over neighbor atoms
-	for (int jj = 0; jj < nnei; ++jj){
-	  int j_idx = nlist (nlist_iter + i_idx * nnei + jj);
-	  if (j_idx < 0) continue;
-	  // loop over elements of aparam
-	  for (int dd = 0; dd < numb_aparam; ++dd){
-	    output(output_iter + ii * nnei * numb_aparam + jj * numb_aparam + dd) = aparam(aparam_iter + j_idx * numb_aparam + dd);
-	  }
-	}
-      }
+      map_aparam_cpu(
+	  &output(output_iter),
+	  &aparam(aparam_iter),
+	  &nlist(nlist_iter),
+	  nloc,
+	  nnei,
+	  numb_aparam);
     }
   }
 private:
   int n_r_sel, n_a_sel, n_a_shift;
 };
 
-REGISTER_KERNEL_BUILDER(Name("MapAparam").Device(DEVICE_CPU), MapAparamOp);
+#define REGISTER_CPU(T)                                                                 \
+REGISTER_KERNEL_BUILDER(                                                                \
+    Name("MapAparam").Device(DEVICE_CPU).TypeConstraint<T>("T"),                        \
+    MapAparamOp<CPUDevice, T>); 
+REGISTER_CPU(float);
+REGISTER_CPU(double);
 
 
 

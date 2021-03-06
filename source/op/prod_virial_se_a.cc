@@ -1,11 +1,5 @@
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include <iostream>
-
-using namespace tensorflow;
-using namespace std;
-
+#include "custom_op.h"
+#include "prod_virial.h"
 
 REGISTER_OP("ProdVirialSeA")
 .Attr("T: {float, double}")
@@ -30,7 +24,7 @@ class ProdVirialSeAOp : public OpKernel {
   explicit ProdVirialSeAOp(OpKernelConstruction* context) : OpKernel(context) {
     OP_REQUIRES_OK(context, context->GetAttr("n_a_sel", &n_a_sel));
     OP_REQUIRES_OK(context, context->GetAttr("n_r_sel", &n_r_sel));
-    n_a_shift = n_a_sel * 4;
+    // n_a_shift = n_a_sel * 4;
   }
 
   void Compute(OpKernelContext* context) override {
@@ -94,56 +88,22 @@ class ProdVirialSeAOp : public OpKernel {
       int in_iter	= kk * nloc * ndescrpt * 3;
       int rij_iter	= kk * nloc * nnei * 3;
       int nlist_iter	= kk * nloc * nnei;
-      int axis_iter	= kk * nloc * 4;
       int virial_iter	= kk * 9;
       int atom_virial_iter	= kk * nall * 9;
 
-      for (int ii = 0; ii < 9; ++ ii){
-	virial (virial_iter + ii) = 0.;
-      }
-      for (int ii = 0; ii < 9 * nall; ++ ii){
-	atom_virial (atom_virial_iter + ii) = 0.;
-      }
-
-      // compute virial of a frame
-      for (int ii = 0; ii < nloc; ++ii){
-	int i_idx = ii;
-
-	// deriv wrt neighbors
-	for (int jj = 0; jj < nnei; ++jj){
-	  int j_idx = nlist (nlist_iter + i_idx * nnei + jj);
-	  if (j_idx < 0) continue;
-	  int aa_start, aa_end;
-	  make_descript_range (aa_start, aa_end, jj);
-	  for (int aa = aa_start; aa < aa_end; ++aa) {
-	    FPTYPE pref = -1.0 * net_deriv (net_iter + i_idx * ndescrpt + aa);
-	    for (int dd0 = 0; dd0 < 3; ++dd0){
-	      for (int dd1 = 0; dd1 < 3; ++dd1){
-		FPTYPE tmp_v = pref * rij (rij_iter + i_idx * nnei * 3 + jj * 3 + dd1) *  in_deriv (in_iter + i_idx * ndescrpt * 3 + aa * 3 + dd0);
-		virial (virial_iter + dd0 * 3 + dd1) -= tmp_v;
-		atom_virial (atom_virial_iter + j_idx * 9 + dd0 * 3 + dd1) -= tmp_v;
-	      }
-	    }
-	  }
-	}
-      }
+      prod_virial_a_cpu<FPTYPE>(&virial(virial_iter),
+				&atom_virial(atom_virial_iter),
+				&net_deriv(net_iter),
+				&in_deriv(in_iter),
+				&rij(rij_iter),
+				&nlist(nlist_iter),
+				nloc,
+				nall,
+				nnei);
     }
   }
 private:
-  int n_r_sel, n_a_sel, n_a_shift;
-  inline void 
-  make_descript_range (int & idx_start,
-		       int & idx_end,
-		       const int & nei_idx) {
-    if (nei_idx < n_a_sel) {
-      idx_start = nei_idx * 4;
-      idx_end   = nei_idx * 4 + 4;
-    }
-    else {
-      idx_start = n_a_shift + (nei_idx - n_a_sel);
-      idx_end   = n_a_shift + (nei_idx - n_a_sel) + 1;
-    }
-  }
+  int n_r_sel, n_a_sel;
 };
 
 // Register the CPU kernels.

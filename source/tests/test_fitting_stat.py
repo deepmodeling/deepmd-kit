@@ -3,9 +3,9 @@ import numpy as np
 import unittest
 
 from collections import defaultdict
-from deepmd.DescrptSeA import DescrptSeA
-from deepmd.Fitting import EnerFitting
-from deepmd.common import j_loader
+from deepmd.descriptor import DescrptSeA
+from deepmd.fit import EnerFitting
+from common import j_loader
 
 input_json = 'water_se_a_afparam.json'
 
@@ -60,8 +60,18 @@ class TestEnerFittingStat (unittest.TestCase) :
     def test (self) :
         jdata = j_loader(input_json)
         jdata = jdata['model']
-        descrpt = DescrptSeA(jdata['descriptor'])
-        fitting = EnerFitting(jdata['fitting_net'], descrpt)
+        # descrpt = DescrptSeA(jdata['descriptor'])
+        # fitting = EnerFitting(jdata['fitting_net'], descrpt)
+        descrpt = DescrptSeA(6.0, 
+                             5.8,
+                             [46, 92],
+                             neuron = [25, 50, 100], 
+                             axis_neuron = 16)
+        fitting = EnerFitting(descrpt,
+                              neuron = [240, 240, 240],
+                              resnet_dt = True,
+                              numb_fparam = 2,
+                              numb_aparam = 2)
         avgs = [0, 10]
         stds = [2, 0.4]
         sys_natoms = [10, 100]

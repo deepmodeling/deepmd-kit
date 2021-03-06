@@ -8,7 +8,7 @@ add_library(${LIB_DEEPMD_IPI} SHARED ${IN_SRC})
 
 set(DRIVER_SOURCE_FILES driver.cc)
 add_executable(dp_ipi ${DRIVER_SOURCE_FILES})
-target_link_libraries(dp_ipi ${LIB_DEEPMD_IPI} ${LIB_DEEPMD_OP} ${LIB_DEEPMD} ${TensorFlow_LIBRARY})
+target_link_libraries(dp_ipi ${LIB_DEEPMD_IPI} ${LIB_DEEPMD_OP} ${LIB_DEEPMD_CC} ${LIB_DEEPMD} ${TensorFlow_LIBRARY})
 
 set_target_properties(
   dp_ipi

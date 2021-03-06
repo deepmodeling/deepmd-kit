@@ -62,8 +62,10 @@ class PairNNP : public Pair {
   double init_one(int i, int j);
   int pack_reverse_comm(int, int, double *);
   void unpack_reverse_comm(int, int *, double *);
-  void print_summary(const string pre) const;
+  void print_summary(const std::string pre) const;
   int get_node_rank();
+  std::string get_file_content(const std::string & model);
+  std::vector<std::string> get_file_content(const std::vector<std::string> & models);
  protected:  
   virtual void allocate();
   double **scale;
@@ -74,10 +76,10 @@ private:
   unsigned numb_models;
   double cutoff;
   int numb_types;
-  vector<vector<double > > all_force;
-  ofstream fp;
+  std::vector<std::vector<double > > all_force;
+  std::ofstream fp;
   int out_freq;
-  string out_file;
+  std::string out_file;
   int dim_fparam;
   int dim_aparam;
   int out_each;
@@ -86,23 +88,23 @@ private:
   bool multi_models_mod_devi;
   bool multi_models_no_mod_devi;
 #ifdef HIGH_PREC
-  vector<double > fparam;
-  vector<double > aparam;
+  std::vector<double > fparam;
+  std::vector<double > aparam;
   double eps;
 #else
-  vector<float > fparam;
-  vector<float > aparam;
+  std::vector<float > fparam;
+  std::vector<float > aparam;
   float eps;
 #endif
   void make_ttm_aparam(
 #ifdef HIGH_PREC
-      vector<double > & dparam
+      std::vector<double > & dparam
 #else
-      vector<float > & dparam
+      std::vector<float > & dparam
 #endif
       );
   bool do_ttm;
-  string ttm_fix_id;
+  std::string ttm_fix_id;
 };
 
 }
