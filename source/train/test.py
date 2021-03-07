@@ -23,6 +23,7 @@ def test (args):
         print('Did not find valid system')
     err_coll = []
     siz_coll = []
+    print("# model type : {}".format(de.model_type))
     if de.model_type == 'ener':
         dp = DeepPot(args.model)        
     elif de.model_type == 'dipole':
