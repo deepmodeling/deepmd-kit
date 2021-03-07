@@ -233,9 +233,6 @@ void format_nbor_list_4096 (
 
 template <typename FPTYPE>
 void format_nbor_list(    
-    FPTYPE * em, 
-    FPTYPE * em_deriv, 
-    FPTYPE * rij, 
     int * nlist, 
     const FPTYPE * coord, 
     const int * type, 
@@ -245,28 +242,22 @@ void format_nbor_list(
     int * array_int, 
     int_64 * array_longlong,
     const int max_nbor_size,
-    const FPTYPE * avg, 
-    const FPTYPE * std, 
     const int nloc, 
     const int nall, 
     const float rcut, 
-    const float rcut_smth, 
     const std::vector<int> sec)
 {
   const int LEN = 256;
   const int nnei = sec.back();
-  const int ndescrpt = nnei * 4;
-  int nblock = (nloc + LEN -1) / LEN;
+  const int nblock = (nloc + LEN -1) / LEN;
   int * sec_dev = array_int;
   int * nei_iter = array_int + sec.size(); // = new int[sec_size];
   int * i_idx = array_int + sec.size() + nloc * sec.size();
   int_64 * key = array_longlong;
   assert(max_nbor_size == 1024 || max_nbor_size == 2048 || max_nbor_size == 4096);
-  cudaErrcheck(cudaMemcpy(sec_dev, &sec[0], sizeof(int) * sec.size(), cudaMemcpyHostToDevice));   
-  cudaErrcheck(cudaMemset(key, 0xffffffff, sizeof(int_64) * nloc * max_nbor_size));
   cudaErrcheck(cudaMemset(nlist, -1, sizeof(int) * nloc * nnei));
-  cudaErrcheck(cudaMemset(em, 0.0, sizeof(FPTYPE) * nloc * ndescrpt));
-  cudaErrcheck(cudaMemset(em_deriv, 0.0, sizeof(FPTYPE) * nloc * ndescrpt * 3));
+  cudaErrcheck(cudaMemset(key, 0xffffffff, sizeof(int_64) * nloc * max_nbor_size));
+  cudaErrcheck(cudaMemcpy(sec_dev, &sec[0], sizeof(int) * sec.size(), cudaMemcpyHostToDevice));   
 
   get_i_idx<<<nblock, LEN>>>(
       i_idx,
@@ -468,13 +459,18 @@ void prod_env_mat_a_gpu_cuda(
     const float rcut_smth, 
     const std::vector<int> sec)
 {
+  const int nnei = sec.back();
+  const int ndescrpt = nnei * 4;
+  cudaErrcheck(cudaMemset(em, 0.0, sizeof(FPTYPE) * nloc * ndescrpt));
+  cudaErrcheck(cudaMemset(em_deriv, 0.0, sizeof(FPTYPE) * nloc * ndescrpt * 3));
+
   format_nbor_list(
-      em, em_deriv, rij, nlist, 
-      coord, type, ilist, jrange, jlist, array_int, array_longlong, max_nbor_size, avg, std, nloc, nall, rcut, rcut_smth, sec);
+      nlist, 
+      coord, type, ilist, jrange, jlist, array_int, array_longlong, max_nbor_size, nloc, nall, rcut, sec);
 
   compute_env_mat_a<FPTYPE, TPB> <<<nloc, TPB>>> (
       em, em_deriv, rij, 
-      coord, avg, std, type, nlist, sec.back(), rcut_smth, rcut);
+      coord, avg, std, type, nlist, nnei, rcut_smth, rcut);
 }
 
 template <typename FPTYPE>
@@ -499,13 +495,18 @@ void prod_env_mat_r_gpu_cuda(
     const float rcut_smth, 
     const std::vector<int> sec)
 {
+  const int nnei = sec.back();
+  const int ndescrpt = nnei * 1;
+  cudaErrcheck(cudaMemset(em, 0.0, sizeof(FPTYPE) * nloc * ndescrpt));
+  cudaErrcheck(cudaMemset(em_deriv, 0.0, sizeof(FPTYPE) * nloc * ndescrpt * 3));
+
   format_nbor_list(
-      em, em_deriv, rij, nlist, 
-      coord, type, ilist, jrange, jlist, array_int, array_longlong, max_nbor_size, avg, std, nloc, nall, rcut, rcut_smth, sec);
+      nlist, 
+      coord, type, ilist, jrange, jlist, array_int, array_longlong, max_nbor_size, nloc, nall, rcut, sec);
 
   compute_env_mat_r<FPTYPE, TPB> <<<nloc, TPB>>> (
       em, em_deriv, rij, 
-      coord, avg, std, type, nlist, sec.back(), rcut_smth, rcut);
+      coord, avg, std, type, nlist, nnei, rcut_smth, rcut);
 }
 
 template void prod_env_mat_a_gpu_cuda<float>(float * em, float * em_deriv, float * rij, int * nlist, const float * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const int max_nbor_size, const float * avg, const float * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec);

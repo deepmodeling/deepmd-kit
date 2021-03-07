@@ -141,7 +141,7 @@ void prod_virial_r_gpu_cuda(
   const int LEN = 16;
   int nblock = (nloc + LEN -1) / LEN;
   dim3 block_grid(nblock, nnei);
-  dim3 thread_grid(LEN, 9, 4);
+  dim3 thread_grid(LEN, 9);
   // compute virial of a frame
   virial_deriv_wrt_neighbors_r<<<block_grid, thread_grid>>>(
       virial, atom_virial, 

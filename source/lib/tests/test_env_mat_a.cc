@@ -512,7 +512,7 @@ TEST_F(TestEnvMatA, prod_cpu_equal_cpu)
 
 
 #if GOOGLE_CUDA
-TEST_F(TestEnvMatA, prod_gpu_nv)
+TEST_F(TestEnvMatA, prod_gpu_cuda)
 {
   EXPECT_EQ(nlist_r_cpy.size(), nloc);
   int tot_nnei = 0;
@@ -542,8 +542,8 @@ TEST_F(TestEnvMatA, prod_gpu_nv)
       jlist[jj] = nlist_a_cpy[ii][cc];
     }
   }
-  std::vector<double > em(nloc * ndescrpt), em_deriv(nloc * ndescrpt * 3), rij(nloc * nnei * 3);
-  std::vector<int> nlist(nloc * nnei);
+  std::vector<double > em(nloc * ndescrpt, 0.0), em_deriv(nloc * ndescrpt * 3, 0.0), rij(nloc * nnei * 3, 0.0);
+  std::vector<int> nlist(nloc * nnei, 0);
   std::vector<double > avg(ntypes * ndescrpt, 0);
   std::vector<double > std(ntypes * ndescrpt, 1);
 
@@ -613,7 +613,7 @@ TEST_F(TestEnvMatA, prod_gpu_nv)
 }
 
 
-TEST_F(TestEnvMatA, prod_gpu_nv_equal_cpu)
+TEST_F(TestEnvMatA, prod_gpu_cuda_equal_cpu)
 {
   EXPECT_EQ(nlist_r_cpy.size(), nloc);
   int tot_nnei = 0;
@@ -643,8 +643,8 @@ TEST_F(TestEnvMatA, prod_gpu_nv_equal_cpu)
       jlist[jj] = nlist_a_cpy[ii][cc];
     }
   }
-  std::vector<double > em(nloc * ndescrpt), em_deriv(nloc * ndescrpt * 3), rij(nloc * nnei * 3);
-  std::vector<int> nlist(nloc * nnei);
+  std::vector<double > em(nloc * ndescrpt, 0.0), em_deriv(nloc * ndescrpt * 3, 0.0), rij(nloc * nnei * 3, 0.0);
+  std::vector<int> nlist(nloc * nnei, 0);
   std::vector<double > avg(ntypes * ndescrpt, 0);
   std::vector<double > std(ntypes * ndescrpt, 1);
 
