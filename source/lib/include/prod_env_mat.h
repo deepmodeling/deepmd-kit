@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include "device.h"
+#include "neighbor_list.h"
 
 template<typename FPTYPE>
 void prod_env_mat_a_cpu(
@@ -10,9 +11,7 @@ void prod_env_mat_a_cpu(
     int * nlist, 
     const FPTYPE * coord, 
     const int * type, 
-    const int * ilist, 
-    const int * jrange, 
-    const int * jlist,
+    const InputNlist & inlist,
     const int max_nbor_size,
     const FPTYPE * avg, 
     const FPTYPE * std, 
@@ -30,9 +29,7 @@ void prod_env_mat_r_cpu(
     int * nlist, 
     const FPTYPE * coord, 
     const int * type, 
-    const int * ilist, 
-    const int * jrange, 
-    const int * jlist,
+    const InputNlist & inlist,
     const int max_nbor_size,
     const FPTYPE * avg, 
     const FPTYPE * std, 

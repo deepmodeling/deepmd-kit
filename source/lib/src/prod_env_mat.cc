@@ -13,9 +13,7 @@ void prod_env_mat_a_cpu(
     int * nlist, 
     const FPTYPE * coord, 
     const int * type, 
-    const int * ilist, 
-    const int * jrange, 
-    const int * jlist,
+    const InputNlist & inlist,
     const int max_nbor_size,
     const FPTYPE * avg, 
     const FPTYPE * std, 
@@ -45,13 +43,14 @@ void prod_env_mat_a_cpu(
   // build nlist
   std::vector<std::vector<int > > d_nlist_a(nloc);
 
+  assert(nloc == inlist.inum);
   for (unsigned ii = 0; ii < nloc; ++ii) {
-    d_nlist_a.reserve (jrange[nloc] / nloc + 10);
+    d_nlist_a[ii].reserve(max_nbor_size);
   }
   for (unsigned ii = 0; ii < nloc; ++ii) {
-    int i_idx = ilist[ii];
-    for (unsigned jj = jrange[ii]; jj < jrange[ii+1]; ++jj) {
-      int j_idx = jlist[jj];
+    int i_idx = inlist.ilist[ii];
+    for(unsigned jj = 0; jj < inlist.numneigh[ii]; ++jj){
+      int j_idx = inlist.firstneigh[ii][jj];
       d_nlist_a[i_idx].push_back (j_idx);
     }
   }
@@ -96,9 +95,7 @@ void prod_env_mat_r_cpu(
     int * nlist, 
     const FPTYPE * coord, 
     const int * type, 
-    const int * ilist, 
-    const int * jrange, 
-    const int * jlist,
+    const InputNlist & inlist,
     const int max_nbor_size,
     const FPTYPE * avg, 
     const FPTYPE * std, 
@@ -128,13 +125,14 @@ void prod_env_mat_r_cpu(
   // build nlist
   std::vector<std::vector<int > > d_nlist_a(nloc);
 
+  assert(nloc == inlist.inum);
   for (unsigned ii = 0; ii < nloc; ++ii) {
-    d_nlist_a.reserve (jrange[nloc] / nloc + 10);
+    d_nlist_a[ii].reserve(max_nbor_size);
   }
   for (unsigned ii = 0; ii < nloc; ++ii) {
-    int i_idx = ilist[ii];
-    for (unsigned jj = jrange[ii]; jj < jrange[ii+1]; ++jj) {
-      int j_idx = jlist[jj];
+    int i_idx = inlist.ilist[ii];
+    for(unsigned jj = 0; jj < inlist.numneigh[ii]; ++jj){
+      int j_idx = inlist.firstneigh[ii][jj];
       d_nlist_a[i_idx].push_back (j_idx);
     }
   }
@@ -180,9 +178,7 @@ void prod_env_mat_a_cpu<double>(
     int * nlist, 
     const double * coord, 
     const int * type, 
-    const int * ilist, 
-    const int * jrange, 
-    const int * jlist,
+    const InputNlist & inlist,
     const int max_nbor_size,
     const double * avg, 
     const double * std, 
@@ -200,9 +196,7 @@ void prod_env_mat_a_cpu<float>(
     int * nlist, 
     const float * coord, 
     const int * type, 
-    const int * ilist, 
-    const int * jrange, 
-    const int * jlist,
+    const InputNlist & inlist,
     const int max_nbor_size,
     const float * avg, 
     const float * std, 
@@ -220,9 +214,7 @@ void prod_env_mat_r_cpu<double>(
     int * nlist, 
     const double * coord, 
     const int * type, 
-    const int * ilist, 
-    const int * jrange, 
-    const int * jlist,
+    const InputNlist & inlist,
     const int max_nbor_size,
     const double * avg, 
     const double * std, 
@@ -240,9 +232,7 @@ void prod_env_mat_r_cpu<float>(
     int * nlist, 
     const float * coord, 
     const int * type, 
-    const int * ilist, 
-    const int * jrange, 
-    const int * jlist,
+    const InputNlist & inlist,
     const int max_nbor_size,
     const float * avg, 
     const float * std, 

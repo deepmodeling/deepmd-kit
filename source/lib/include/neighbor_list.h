@@ -16,6 +16,9 @@ struct InputNlist
   int * ilist;
   int * numneigh;
   int ** firstneigh;
+  InputNlist () 
+      : inum(0), ilist(NULL), numneigh(NULL), firstneigh(NULL)
+      {};
   InputNlist (
       int inum_, 
       int * ilist_,
@@ -23,7 +26,7 @@ struct InputNlist
       int ** firstneigh_
       ) 
       : inum(inum_), ilist(ilist_), numneigh(numneigh_), firstneigh(firstneigh_)
-      {}
+      {};
 };
 
 void convert_nlist(
@@ -31,10 +34,12 @@ void convert_nlist(
     std::vector<std::vector<int> > & from_nlist
     );
 
+int max_numneigh(
+    const InputNlist & to_nlist
+    );
 
 // build neighbor list.
 // outputs
-
 //	nlist, max_list_size
 //	max_list_size is the maximal size of jlist.
 // inputs
