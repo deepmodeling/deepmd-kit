@@ -249,15 +249,11 @@ TEST_F(TestEnvMatR, prod_cpu)
       max_nbor_size = nlist_a_cpy[ii].size();
     }
   }
-  std::vector<int> ilist(nloc), jlist(tot_nnei), jrange(nloc+1, 0);
-  for (int ii = 0; ii < nloc; ++ii){
-    ilist[ii] = ii;
-    jrange[ii+1] = jrange[ii] + nlist_a_cpy[ii].size();
-    int jj, cc;
-    for (jj = jrange[ii], cc = 0; jj < jrange[ii+1]; ++jj, ++cc){
-      jlist[jj] = nlist_a_cpy[ii][cc];
-    }
-  }
+  std::vector<int> ilist(nloc), numneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
+  InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  convert_nlist(inlist, nlist_a_cpy);
+  
   std::vector<double > em(nloc * ndescrpt), em_deriv(nloc * ndescrpt * 3), rij(nloc * nnei * 3);
   std::vector<int> nlist(nloc * nnei);
   std::vector<double > avg(ntypes * ndescrpt, 0);
@@ -269,9 +265,7 @@ TEST_F(TestEnvMatR, prod_cpu)
       &nlist[0],
       &posi_cpy[0],
       &atype_cpy[0],
-      &ilist[0],
-      &jrange[0],
-      &jlist[0],
+      inlist,
       max_nbor_size,
       &avg[0],
       &std[0],
@@ -304,15 +298,10 @@ TEST_F(TestEnvMatR, prod_cpu_equal_cpu)
       max_nbor_size = nlist_a_cpy[ii].size();
     }
   }
-  std::vector<int> ilist(nloc), jlist(tot_nnei), jrange(nloc+1, 0);
-  for (int ii = 0; ii < nloc; ++ii){
-    ilist[ii] = ii;
-    jrange[ii+1] = jrange[ii] + nlist_a_cpy[ii].size();
-    int jj, cc;
-    for (jj = jrange[ii], cc = 0; jj < jrange[ii+1]; ++jj, ++cc){
-      jlist[jj] = nlist_a_cpy[ii][cc];
-    }
-  }
+  std::vector<int> ilist(nloc), numneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
+  InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  convert_nlist(inlist, nlist_a_cpy);
   std::vector<double > em(nloc * ndescrpt), em_deriv(nloc * ndescrpt * 3), rij(nloc * nnei * 3);
   std::vector<int> nlist(nloc * nnei);
   std::vector<double > avg(ntypes * ndescrpt, 0);
@@ -324,9 +313,7 @@ TEST_F(TestEnvMatR, prod_cpu_equal_cpu)
       &nlist[0],
       &posi_cpy[0],
       &atype_cpy[0],
-      &ilist[0],
-      &jrange[0],
-      &jlist[0],
+      inlist,
       max_nbor_size,
       &avg[0],
       &std[0],
