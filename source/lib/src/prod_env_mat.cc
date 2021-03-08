@@ -271,29 +271,20 @@ void env_mat_nbor_update(
   memcpy (&jrange_host, 8  + mesh_host, sizeof(int *));
   memcpy (&jlist_host,  12 + mesh_host, sizeof(int *));
   int const ago = mesh_host[0];
-  if (!init) {
-    ilist_size  = (int)(mesh_host[1] * 1.2);
-    jrange_size = (int)(mesh_host[2] * 1.2);
-    jlist_size  = (int)(mesh_host[3] * 1.2);
-    cudaErrcheck(cudaMalloc((void **)&ilist,     sizeof(int) * ilist_size));
-    cudaErrcheck(cudaMalloc((void **)&jrange,    sizeof(int) * jrange_size));
-    cudaErrcheck(cudaMalloc((void **)&jlist,     sizeof(int) * jlist_size));
-    init = true;
-  }
-  if (ago == 0) {
+  if (!init || ago == 0) {
     if (ilist_size < mesh_host[1]) {
       ilist_size = (int)(mesh_host[1] * 1.2);
-      cudaErrcheck(cudaFree(ilist));
+      if (ilist != NULL) {cudaErrcheck(cudaFree(ilist));}
       cudaErrcheck(cudaMalloc((void **)&ilist, sizeof(int) * ilist_size));
     }
     if (jrange_size < mesh_host[2]) {
       jrange_size = (int)(mesh_host[2] * 1.2);
-      cudaErrcheck(cudaFree(jrange));
+      if (jrange != NULL) {cudaErrcheck(cudaFree(jrange));}
       cudaErrcheck(cudaMalloc((void **)&jrange,sizeof(int) * jrange_size));
     }
     if (jlist_size < mesh_host[3]) {
       jlist_size = (int)(mesh_host[3] * 1.2);
-      cudaErrcheck(cudaFree(jlist));
+      if (jlist != NULL) {cudaErrcheck(cudaFree(jlist));}
       cudaErrcheck(cudaMalloc((void **)&jlist, sizeof(int) * jlist_size));
     }
     cudaErrcheck(cudaMemcpy(ilist,  ilist_host,  sizeof(int) * mesh_host[1], cudaMemcpyHostToDevice));
@@ -315,6 +306,7 @@ void env_mat_nbor_update(
       max_nbor_size = 4096;
     }
   }
+  init = true;
   delete [] mesh_host;
 }
 #endif // GOOGLE_CUDA
