@@ -202,11 +202,13 @@ class DescrptSeA ():
                                        sel_a = self.sel_a,
                                        sel_r = self.sel_r)
 
+
         self.descrpt_reshape = tf.reshape(self.descrpt, [-1, self.ndescrpt])
         self.descrpt_reshape = tf.identity(self.descrpt_reshape, name = 'o_rmat')
         self.descrpt_deriv = tf.identity(self.descrpt_deriv, name = 'o_rmat_deriv')
         self.rij = tf.identity(self.rij, name = 'o_rij')
         self.nlist = tf.identity(self.nlist, name = 'o_nlist')
+
 
         self.dout, self.qmat = self._pass_filter(self.descrpt_reshape, natoms, suffix = suffix, reuse = reuse, trainable = self.trainable)
 
