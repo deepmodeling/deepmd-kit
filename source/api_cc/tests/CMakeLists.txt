@@ -28,7 +28,7 @@ file(GLOB API_SRC ${API_BASE_DIR}/src/*.cc ${API_BASE_DIR}/src/*.cpp)
 add_library(${apiname} SHARED ${API_SRC})
 configure_file(
   ${API_BASE_DIR}/include/version.h.in
-  version.h
+  ${CMAKE_SOURCE_DIR}/version.h
   @ONLY
 )
 
@@ -86,7 +86,7 @@ add_test( runUnitTests runUnitTests )
 
 find_package(GTest)
 if(NOT GTEST_LIBRARY)
-  configure_file(CMakeLists.txt.in googletest-download/CMakeLists.txt)
+  configure_file(../../cmake/googletest.cmake.in googletest-download/CMakeLists.txt)
   execute_process(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" .
     RESULT_VARIABLE result
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/googletest-download )
