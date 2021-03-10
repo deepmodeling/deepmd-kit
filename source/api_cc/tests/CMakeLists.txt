@@ -28,7 +28,7 @@ file(GLOB API_SRC ${API_BASE_DIR}/src/*.cc ${API_BASE_DIR}/src/*.cpp)
 add_library(${apiname} SHARED ${API_SRC})
 configure_file(
   ${API_BASE_DIR}/include/version.h.in
-  version.h
+  ${CMAKE_SOURCE_DIR}/version.h
   @ONLY
 )
 
