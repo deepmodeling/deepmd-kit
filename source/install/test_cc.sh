@@ -22,7 +22,7 @@ ${BUILD_TMP_DIR}/runUnitTests
 BUILD_TMP_DIR=${SCRIPT_PATH}/../build_cc_tests
 mkdir -p ${BUILD_TMP_DIR}
 cd ${BUILD_TMP_DIR}
-cmake ../api_cc/tests
+cmake -DINSTALL_TENSORFLOW=TRUE ../api_cc/tests
 make -j${NPROC}
 
 #------------------
