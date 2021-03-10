@@ -158,3 +158,60 @@ TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list)
   }
 }
 
+
+TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list_atomic)
+{
+  float rc = dp_md.cutoff();
+  int nloc = coord.size() / 3;  
+  std::vector<double> coord_cpy;
+  std::vector<int> atype_cpy, mapping;  
+  std::vector<std::vector<int > > nlist_data;
+  _build_nlist(nlist_data, coord_cpy, atype_cpy, mapping,
+	       coord, atype, box, rc);
+  int nall = coord_cpy.size() / 3;
+  std::vector<int> ilist(nloc), numneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
+  InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  convert_nlist(inlist, nlist_data);  
+
+  int nmodel = 2;
+  std::vector<double > edir(nmodel), emd;
+  std::vector<std::vector<double> > fdir_(nmodel), fdir(nmodel), vdir(nmodel), fmd_, fmd(nmodel), vmd, aedir(nmodel), aemd, avdir(nmodel), avdir_(nmodel), avmd(nmodel), avmd_;
+  dp0.compute(edir[0], fdir_[0], vdir[0], aedir[0], avdir_[0], coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
+  dp1.compute(edir[1], fdir_[1], vdir[1], aedir[1], avdir_[1], coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
+  dp_md.compute(emd, fmd_, vmd, aemd, avmd_, coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
+  for(int kk = 0; kk < nmodel; ++kk){
+    _fold_back(fdir[kk], fdir_[kk], mapping, nloc, nall, 3);
+    _fold_back(fmd[kk], fmd_[kk], mapping, nloc, nall, 3);
+    _fold_back(avdir[kk], avdir_[kk], mapping, nloc, nall, 9);
+    _fold_back(avmd[kk], avmd_[kk], mapping, nloc, nall, 9);
+  }  
+
+  EXPECT_EQ(edir.size(), emd.size());
+  EXPECT_EQ(fdir.size(), fmd.size());
+  EXPECT_EQ(vdir.size(), vmd.size());
+  EXPECT_EQ(aedir.size(), aemd.size());
+  EXPECT_EQ(avdir.size(), avmd.size());
+  for(int kk = 0; kk < nmodel; ++kk){
+    EXPECT_EQ(fdir[kk].size(), fmd[kk].size());
+    EXPECT_EQ(vdir[kk].size(), vmd[kk].size());
+    EXPECT_EQ(aedir[kk].size(), aemd[kk].size());
+    EXPECT_EQ(avdir[kk].size(), avmd[kk].size());
+  }  
+  for(int kk = 0; kk < nmodel; ++kk){
+    EXPECT_LT(fabs(edir[kk] - emd[kk]), 1e-10);
+    for(int ii = 0; ii < fdir[0].size(); ++ii){
+      EXPECT_LT(fabs(fdir[kk][ii] - fmd[kk][ii]), 1e-10);
+    }
+    for(int ii = 0; ii < vdir[0].size(); ++ii){
+      EXPECT_LT(fabs(vdir[kk][ii] - vmd[kk][ii]), 1e-10);
+    }
+    for(int ii = 0; ii < aedir[0].size(); ++ii){
+      EXPECT_LT(fabs(aedir[kk][ii] - aemd[kk][ii]), 1e-10);
+    }
+    for(int ii = 0; ii < avdir[0].size(); ++ii){
+      EXPECT_LT(fabs(avdir[kk][ii] - avmd[kk][ii]), 1e-10);
+    }
+  }
+}
+
