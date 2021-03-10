@@ -122,7 +122,7 @@ compute (std::vector<VALUETYPE> &	dtensor_,
 	 const std::vector<int> &	datype_,
 	 const std::vector<VALUETYPE> &	dbox, 
 	 const int			nghost,
-	 const InputNlist &	nlist)
+	 const InputNlist &	lmp_list)
 {
   std::vector<VALUETYPE> dcoord;
   std::vector<int> datype, fwd_map, bkw_map;
@@ -136,11 +136,11 @@ compute (std::vector<VALUETYPE> &	dtensor_,
   select_map<int>(datype, datype_, fwd_map, 1);
   // internal nlist
   NeighborListData nlist_data;
-  nlist_data.copy_from_nlist(nlist);
+  nlist_data.copy_from_nlist(lmp_list);
   nlist_data.shuffle_exclude_empty(fwd_map);  
-  InputNlist inlist;
-  nlist_data.make_inlist(inlist);
-  compute_inner(dtensor_, dcoord, datype, dbox, nghost_real, inlist);
+  InputNlist nlist;
+  nlist_data.make_inlist(nlist);
+  compute_inner(dtensor_, dcoord, datype, dbox, nghost_real, nlist);
 }
 
 
@@ -170,7 +170,7 @@ compute_inner (std::vector<VALUETYPE> &		dtensor_,
 	       const std::vector<int> &		datype_,
 	       const std::vector<VALUETYPE> &	dbox, 
 	       const int			nghost,
-	       const InputNlist &	nlist)
+	       const InputNlist &	nlist_)
 {
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
@@ -178,13 +178,13 @@ compute_inner (std::vector<VALUETYPE> &		dtensor_,
   assert (nloc == nnpmap.get_type().size());
 
   NeighborListData nlist_data;
-  nlist_data.copy_from_nlist(nlist);
+  nlist_data.copy_from_nlist(nlist_);
   nlist_data.shuffle(nnpmap);
-  InputNlist inlist;
-  nlist_data.make_inlist(inlist);
+  InputNlist nlist;
+  nlist_data.make_inlist(nlist);
 
   std::vector<std::pair<std::string, Tensor>> input_tensors;
-  int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, inlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), nnpmap, nghost, 0, name_scope);
+  int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), nnpmap, nghost, 0, name_scope);
   assert (nloc == ret);
 
   run_model (dtensor_, session, input_tensors, nnpmap, nghost);

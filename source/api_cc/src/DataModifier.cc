@@ -125,7 +125,7 @@ compute (std::vector<VALUETYPE> &		dfcorr_,
 	 const std::vector<std::pair<int,int>>&	pairs,
 	 const std::vector<VALUETYPE> &		delef_, 
 	 const int				nghost,
-	 const InputNlist &		nlist)
+	 const InputNlist &		lmp_list)
 {
   // firstly do selection
   int nall = datype_.size();
@@ -155,7 +155,7 @@ compute (std::vector<VALUETYPE> &		dfcorr_,
   select_map<int>(datype_real, datype_, real_fwd_map, 1);
   // internal nlist
   NeighborListData nlist_data;
-  nlist_data.copy_from_nlist(nlist);
+  nlist_data.copy_from_nlist(lmp_list);
   nlist_data.shuffle_exclude_empty(real_fwd_map);  
   // sort atoms
   NNPAtomMap<VALUETYPE> nnpmap (datype_real.begin(), datype_real.begin() + nloc_real);
@@ -164,11 +164,11 @@ compute (std::vector<VALUETYPE> &		dfcorr_,
   const std::vector<int> & sort_bkw_map(nnpmap.get_bkw_map());
   // shuffle nlist
   nlist_data.shuffle(nnpmap);
-  InputNlist inlist;
-  nlist_data.make_inlist(inlist);
+  InputNlist nlist;
+  nlist_data.make_inlist(nlist);
   // make input tensors
   std::vector<std::pair<std::string, Tensor>> input_tensors;
-  int ret = session_input_tensors (input_tensors, dcoord_real, ntypes, datype_real, dbox, inlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), nnpmap, nghost_real, 0, name_scope);
+  int ret = session_input_tensors (input_tensors, dcoord_real, ntypes, datype_real, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), nnpmap, nghost_real, 0, name_scope);
   assert (nloc_real == ret);
   // make bond idx map
   std::vector<int > bd_idx(nall, -1);

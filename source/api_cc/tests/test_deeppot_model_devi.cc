@@ -65,7 +65,7 @@ protected:
 
   void TearDown() override {
     remove( "deeppot.pb" ) ;
-    //remove( "deeppot-1.pb" ) ;
+    remove( "deeppot-1.pb" ) ;
   };
 };
 
