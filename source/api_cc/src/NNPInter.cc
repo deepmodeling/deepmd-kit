@@ -173,12 +173,14 @@ NNPInter::
 NNPInter ()
     : inited (false), init_nbor (false)
 {
+  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
 }
 
 NNPInter::
 NNPInter (const std::string & model, const int & gpu_rank, const std::string & file_content)
     : inited (false), init_nbor (false)
 {
+  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   init(model, gpu_rank, file_content);  
 }
 
@@ -226,8 +228,6 @@ init (const std::string & model, const int & gpu_rank, const std::string & file_
   inited = true;
   
   init_nbor = false;
-  ilist = NULL; jrange = NULL; jlist = NULL;
-  ilist_size = 0; jrange_size = 0; jlist_size = 0;
 }
 
 void 
@@ -346,7 +346,7 @@ compute (ENERGYTYPE &			dener,
 	 const std::vector<int> &	datype_,
 	 const std::vector<VALUETYPE> &	dbox, 
 	 const int			nghost,
-	 const InputNlist &		inlist,
+	 const InputNlist &		lmp_list,
 	 const int&			ago,
 	 const std::vector<VALUETYPE> &	fparam,
 	 const std::vector<VALUETYPE> &	aparam_)
@@ -368,7 +368,7 @@ compute (ENERGYTYPE &			dener,
   }
   // internal nlist
   if (ago == 0){
-    nlist_data.copy_from_nlist(inlist);
+    nlist_data.copy_from_nlist(lmp_list);
     nlist_data.shuffle_exclude_empty(fwd_map);  
   }
   compute_inner(dener, dforce, dvirial, dcoord, datype, dbox, nghost_real, ago, fparam, aparam);
@@ -401,10 +401,9 @@ compute_inner (ENERGYTYPE &			dener,
       nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
       assert (nloc == nnpmap.get_type().size());
       nlist_data.shuffle(nnpmap);
+      nlist_data.make_inlist(nlist);
     }
-    InputNlist inlist;
-    nlist_data.make_inlist(inlist);
-    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, inlist, fparam, aparam, nnpmap, nghost, ago);
+    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost, ago);
     assert (nloc == ret);
     run_model (dener, dforce_, dvirial, session, input_tensors, nnpmap, nghost);
 }
@@ -445,7 +444,7 @@ compute (ENERGYTYPE &			dener,
 	 const std::vector<int> &	datype_,
 	 const std::vector<VALUETYPE> &	dbox, 
 	 const int			nghost, 
-	 const InputNlist &	nlist,
+	 const InputNlist &	lmp_list,
 	 const int               &	ago,
 	 const std::vector<VALUETYPE> &	fparam,
 	 const std::vector<VALUETYPE> &	aparam)
@@ -458,14 +457,13 @@ compute (ENERGYTYPE &			dener,
     if (ago == 0) {
         nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
         assert (nloc == nnpmap.get_type().size());
-	// make internal nlist data
-        nlist_data.copy_from_nlist(nlist);
+
+        nlist_data.copy_from_nlist(lmp_list);
         nlist_data.shuffle(nnpmap);
+	nlist_data.make_inlist(nlist);
     }
 
-    InputNlist inlist;
-    nlist_data.make_inlist(inlist);
-    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, inlist, fparam, aparam, nnpmap, nghost, ago);
+    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost, ago);
     assert (nloc == ret);
     run_model (dener, dforce_, dvirial, datom_energy_, datom_virial_, session, input_tensors, nnpmap, nghost);
 }
@@ -478,448 +476,446 @@ get_type_map(std::string & type_map){
 
 
 
-// // NNPInterModelDevi::
-// // NNPInterModelDevi ()
-// //     : inited (false), 
-// //       init_nbor (false),
-// //       numb_models (0)
-// // {
-// //   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
-// // }
+NNPInterModelDevi::
+NNPInterModelDevi ()
+    : inited (false), 
+      init_nbor (false),
+      numb_models (0)
+{
+  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
+}
 
-// // NNPInterModelDevi::
-// // NNPInterModelDevi (const std::vector<std::string> & models, const int & gpu_rank, const std::vector<std::string> & file_contents)
-// //     : inited (false), 
-// //       init_nbor(false),
-// //       numb_models (0)
-// // {
-// //   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
-// //   init(models, gpu_rank, file_contents);
-// // }
+NNPInterModelDevi::
+NNPInterModelDevi (const std::vector<std::string> & models, const int & gpu_rank, const std::vector<std::string> & file_contents)
+    : inited (false), 
+      init_nbor(false),
+      numb_models (0)
+{
+  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
+  init(models, gpu_rank, file_contents);
+}
 
-// // NNPInterModelDevi::~NNPInterModelDevi() {}
+NNPInterModelDevi::~NNPInterModelDevi() {}
 
-// // void
-// // NNPInterModelDevi::
-// // init (const std::vector<std::string> & models, const int & gpu_rank, const std::vector<std::string> & file_contents)
-// // {
-// //   if (inited){
-// //     std::cerr << "WARNING: deepmd-kit should not be initialized twice, do nothing at the second call of initializer" << std::endl;
-// //     return ;
-// //   }
-// //   numb_models = models.size();
-// //   sessions.resize(numb_models);
-// //   graph_defs.resize(numb_models);
+void
+NNPInterModelDevi::
+init (const std::vector<std::string> & models, const int & gpu_rank, const std::vector<std::string> & file_contents)
+{
+  if (inited){
+    std::cerr << "WARNING: deepmd-kit should not be initialized twice, do nothing at the second call of initializer" << std::endl;
+    return ;
+  }
+  numb_models = models.size();
+  sessions.resize(numb_models);
+  graph_defs.resize(numb_models);
   
-// //   int gpu_num = -1;
-// //   #if GOOGLE_CUDA 
-// //   cudaGetDeviceCount(&gpu_num);
-// //   #endif // GOOGLE_CUDA
+  int gpu_num = -1;
+  #if GOOGLE_CUDA 
+  cudaGetDeviceCount(&gpu_num);
+  #endif // GOOGLE_CUDA
 
-// //   SessionOptions options;
-// //   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
-// //   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
-// //   for (unsigned ii = 0; ii < numb_models; ++ii){
-// //     if (file_contents.size() == 0)
-// //       checkStatus (ReadBinaryProto(Env::Default(), models[ii], &graph_defs[ii]));
-// //     else
-// //       graph_defs[ii].ParseFromString(file_contents[ii]);
-// //   }
-// //   #if GOOGLE_CUDA 
-// //   if (gpu_num > 0) {
-// //       options.config.set_allow_soft_placement(true);
-// //       options.config.mutable_gpu_options()->set_per_process_gpu_memory_fraction(0.9);
-// //       options.config.mutable_gpu_options()->set_allow_growth(true);
-// //       cudaErrcheck(cudaSetDevice(gpu_rank % gpu_num));
-// //   }
-// //   #endif // GOOGLE_CUDA
+  SessionOptions options;
+  options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
+  options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
+  for (unsigned ii = 0; ii < numb_models; ++ii){
+    if (file_contents.size() == 0)
+      checkStatus (ReadBinaryProto(Env::Default(), models[ii], &graph_defs[ii]));
+    else
+      graph_defs[ii].ParseFromString(file_contents[ii]);
+  }
+  #if GOOGLE_CUDA 
+  if (gpu_num > 0) {
+      options.config.set_allow_soft_placement(true);
+      options.config.mutable_gpu_options()->set_per_process_gpu_memory_fraction(0.9);
+      options.config.mutable_gpu_options()->set_allow_growth(true);
+      cudaErrcheck(cudaSetDevice(gpu_rank % gpu_num));
+  }
+  #endif // GOOGLE_CUDA
 
-// //   for (unsigned ii = 0; ii < numb_models; ++ii) {
-// //     if (gpu_num > 0) {
-// //       std::string str = "/gpu:";
-// //       str += std::to_string(gpu_rank % gpu_num);
-// //       graph::SetDefaultDevice(str, &graph_defs[ii]);
-// //     }
-// //     checkStatus (NewSession(options, &(sessions[ii])));
-// //     checkStatus (sessions[ii]->Create(graph_defs[ii]));
-// //   }
-// //   rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
-// //   cell_size = rcut;
-// //   ntypes = get_scalar<int>("descrpt_attr/ntypes");
-// //   dfparam = get_scalar<int>("fitting_attr/dfparam");
-// //   daparam = get_scalar<int>("fitting_attr/daparam");
-// //   if (dfparam < 0) dfparam = 0;
-// //   if (daparam < 0) daparam = 0;
-// //   // rcut = get_rcut();
-// //   // cell_size = rcut;
-// //   // ntypes = get_ntypes();
-// //   inited = true;
+  for (unsigned ii = 0; ii < numb_models; ++ii) {
+    if (gpu_num > 0) {
+      std::string str = "/gpu:";
+      str += std::to_string(gpu_rank % gpu_num);
+      graph::SetDefaultDevice(str, &graph_defs[ii]);
+    }
+    checkStatus (NewSession(options, &(sessions[ii])));
+    checkStatus (sessions[ii]->Create(graph_defs[ii]));
+  }
+  rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
+  cell_size = rcut;
+  ntypes = get_scalar<int>("descrpt_attr/ntypes");
+  dfparam = get_scalar<int>("fitting_attr/dfparam");
+  daparam = get_scalar<int>("fitting_attr/daparam");
+  if (dfparam < 0) dfparam = 0;
+  if (daparam < 0) daparam = 0;
+  // rcut = get_rcut();
+  // cell_size = rcut;
+  // ntypes = get_ntypes();
+  inited = true;
   
-// //   init_nbor = false;
-// //   ilist = NULL; jrange = NULL; jlist = NULL;
-// //   ilist_size = 0; jrange_size = 0; jlist_size = 0;
-// // }
+  init_nbor = false;
+}
 
-// // template<class VT>
-// // VT
-// // NNPInterModelDevi::
-// // get_scalar(const std::string name) const 
-// // {
-// //   VT myrcut = 0;
-// //   for (unsigned ii = 0; ii < numb_models; ++ii){
-// //     VT ret = session_get_scalar<VT>(sessions[ii], name);
-// //     if (ii == 0){
-// //       myrcut = ret;
-// //     }
-// //     else {
-// //       assert (myrcut == ret);
-// //     }
-// //   }
-// //   return myrcut;
-// // }
+template<class VT>
+VT
+NNPInterModelDevi::
+get_scalar(const std::string name) const 
+{
+  VT myrcut = 0;
+  for (unsigned ii = 0; ii < numb_models; ++ii){
+    VT ret = session_get_scalar<VT>(sessions[ii], name);
+    if (ii == 0){
+      myrcut = ret;
+    }
+    else {
+      assert (myrcut == ret);
+    }
+  }
+  return myrcut;
+}
 
-// // // init the tmp array data
-// // std::vector<std::vector<int> > 
-// // NNPInterModelDevi::
-// // get_sel () const 
-// // {
-// //     std::vector<std::vector<int> > sec;
-// //     for (int ii = 0; ii < numb_models; ii++) {
-// //         std::vector<int> sel;
-// //         std::istringstream is(graph_info(graph_defs[ii]));
-// //         std::string line = "";
-// //         while(is >> line) {
-// //             if (line.find("sel") != line.npos) {
-// //                 while (std::getline(is, line) && line != "}") {
-// //                     if (line.find("i:") != line.npos) {
-// //                         sel.push_back(atoi((line.substr(line.find("i:") + 2)).c_str()));
-// //                     }
-// //                 } break;
-// //             }
-// //             if (line.find("sel_a") != line.npos) {
-// //                 while (std::getline(is, line) && line != "}") {
-// //                     if (line.find("i:") != line.npos) {
-// //                         sel.push_back(atoi((line.substr(line.find("i:") + 2)).c_str()));
-// //                     }
-// //                 } break;
-// //             }
-// //         }
-// //         sec.push_back(sel);
-// //     }
-// //     return sec;
-// // }
+// init the tmp array data
+std::vector<std::vector<int> > 
+NNPInterModelDevi::
+get_sel () const 
+{
+    std::vector<std::vector<int> > sec;
+    for (int ii = 0; ii < numb_models; ii++) {
+        std::vector<int> sel;
+        std::istringstream is(graph_info(graph_defs[ii]));
+        std::string line = "";
+        while(is >> line) {
+            if (line.find("sel") != line.npos) {
+                while (std::getline(is, line) && line != "}") {
+                    if (line.find("i:") != line.npos) {
+                        sel.push_back(atoi((line.substr(line.find("i:") + 2)).c_str()));
+                    }
+                } break;
+            }
+            if (line.find("sel_a") != line.npos) {
+                while (std::getline(is, line) && line != "}") {
+                    if (line.find("i:") != line.npos) {
+                        sel.push_back(atoi((line.substr(line.find("i:") + 2)).c_str()));
+                    }
+                } break;
+            }
+        }
+        sec.push_back(sel);
+    }
+    return sec;
+}
 
-// // void  
-// // NNPInterModelDevi::
-// // cum_sum (const std::vector<std::vector<int32> > n_sel) 
-// // {
-// //     for (int ii = 0; ii < numb_models; ++ii) {
-// //         std::vector<int> _sec;
-// //         _sec.resize (n_sel[ii].size() + 1);
-// //         _sec[0] = 0;
-// //         for (int jj = 1; jj < _sec.size(); ++jj) {
-// //             _sec[jj] = _sec[jj-1] + n_sel[ii][jj-1];
-// //         }
-// //         sec.push_back(_sec);
-// //     }
-// // }
+void  
+NNPInterModelDevi::
+cum_sum (const std::vector<std::vector<int32> > n_sel) 
+{
+    for (int ii = 0; ii < numb_models; ++ii) {
+        std::vector<int> _sec;
+        _sec.resize (n_sel[ii].size() + 1);
+        _sec[0] = 0;
+        for (int jj = 1; jj < _sec.size(); ++jj) {
+            _sec[jj] = _sec[jj-1] + n_sel[ii][jj-1];
+        }
+        sec.push_back(_sec);
+    }
+}
 
-// // void
-// // NNPInterModelDevi::
-// // validate_fparam_aparam(const int & nloc,
-// // 		       const std::vector<VALUETYPE> &fparam,
-// // 		       const std::vector<VALUETYPE> &aparam)const 
-// // {
-// //   if (fparam.size() != dfparam) {
-// //     throw std::runtime_error("the dim of frame parameter provided is not consistent with what the model uses");
-// //   }
-// //   if (aparam.size() != daparam * nloc) {
-// //     throw std::runtime_error("the dim of atom parameter provided is not consistent with what the model uses");
-// //   }  
-// // }
-
-// // void
-// // NNPInterModelDevi::
-// // compute (ENERGYTYPE &			dener,
-// // 	 std::vector<VALUETYPE> &	dforce_,
-// // 	 std::vector<VALUETYPE> &	dvirial,
-// // 	 std::vector<VALUETYPE> &	model_devi,
-// // 	 const std::vector<VALUETYPE> &	dcoord_,
-// // 	 const std::vector<int> &	datype_,
-// // 	 const std::vector<VALUETYPE> &	dbox,
-// // 	 const std::vector<VALUETYPE> &	fparam,
-// // 	 const std::vector<VALUETYPE> &	aparam)
-// // {
-// //   if (numb_models == 0) return;
-
-// //   nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.end());
-// //   validate_fparam_aparam(nnpmap.get_type().size(), fparam, aparam);
-
-// //   std::vector<std::pair<std::string, Tensor>> input_tensors;
-// //   int nloc = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, aparam, nnpmap);
-
-// //   std::vector<ENERGYTYPE > all_energy (numb_models);
-// //   std::vector<std::vector<VALUETYPE > > all_force (numb_models);
-// //   std::vector<std::vector<VALUETYPE > > all_virial (numb_models);
-
-// //   for (unsigned ii = 0; ii < numb_models; ++ii){
-// //     run_model (all_energy[ii], all_force[ii], all_virial[ii], sessions[ii], input_tensors, nnpmap);
-// //   }
-
-// //   dener = 0;
-// //   for (unsigned ii = 0; ii < numb_models; ++ii){
-// //     dener += all_energy[ii];
-// //   }
-// //   dener /= VALUETYPE(numb_models);
-// //   compute_avg (dvirial, all_virial);  
-// //   compute_avg (dforce_, all_force);
-  
-// //   compute_std_f (model_devi, dforce_, all_force);
-  
-// //   // for (unsigned ii = 0; ii < numb_models; ++ii){
-// //   //   cout << all_force[ii][573] << " " << all_force[ii][574] << " " << all_force[ii][575] << endl;
-// //   // }
-// //   // cout << dforce_[573] << " " 
-// //   //      << dforce_[574] << " " 
-// //   //      << dforce_[575] << " " 
-// //   //      << model_devi[191] << endl;
-// // }
-
-// // void
-// // NNPInterModelDevi::
-// // compute (std::vector<ENERGYTYPE> &		all_energy,
-// // 	 std::vector<std::vector<VALUETYPE>> &	all_force,
-// // 	 std::vector<std::vector<VALUETYPE>> &	all_virial,
-// // 	 const std::vector<VALUETYPE> &		dcoord_,
-// // 	 const std::vector<int> &		datype_,
-// // 	 const std::vector<VALUETYPE> &		dbox,
-// // 	 const int				nghost,
-// // 	 const LammpsNeighborList &		lmp_list,
-// // 	 const int                &		ago,
-// // 	 const std::vector<VALUETYPE> &		fparam,
-// // 	 const std::vector<VALUETYPE> &		aparam)
-// // {
-// //   if (numb_models == 0) return;
-// //   int nall = dcoord_.size() / 3;
-// //   int nloc = nall - nghost;
-// //   validate_fparam_aparam(nloc, fparam, aparam);
-// //   std::vector<std::pair<std::string, Tensor>> input_tensors;
-
-// //     // agp == 0 means that the LAMMPS nbor list has been updated
-// //     if (ago == 0) {
-// //         nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
-// //         assert (nloc == nnpmap.get_type().size());
-
-// //         // InternalNeighborList nlist;
-// //         convert_nlist_lmp_internal (nlist, lmp_list);
-// //         shuffle_nlist (nlist, nnpmap);
-// //     }
-// //     int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost, ago);
-
-// //     all_energy.resize (numb_models);
-// //     all_force.resize (numb_models);
-// //     all_virial.resize (numb_models);
-// //     assert (nloc == ret);
-// //     for (unsigned ii = 0; ii < numb_models; ++ii) {
-// //         run_model (all_energy[ii], all_force[ii], all_virial[ii], sessions[ii], input_tensors, nnpmap, nghost);
-// //     }
-// // }
-
-// // void
-// // NNPInterModelDevi::
-// // compute (std::vector<ENERGYTYPE> &		all_energy,
-// // 	 std::vector<std::vector<VALUETYPE>> &	all_force,
-// // 	 std::vector<std::vector<VALUETYPE>> &	all_virial,
-// // 	 std::vector<std::vector<VALUETYPE>> &	all_atom_energy,
-// // 	 std::vector<std::vector<VALUETYPE>> &	all_atom_virial,
-// // 	 const std::vector<VALUETYPE> &		dcoord_,
-// // 	 const std::vector<int> &		datype_,
-// // 	 const std::vector<VALUETYPE> &		dbox,
-// // 	 const int				nghost,
-// // 	 const LammpsNeighborList &		lmp_list,
-// // 	 const int	             &		ago,
-// // 	 const std::vector<VALUETYPE> &	 	fparam,
-// // 	 const std::vector<VALUETYPE> &	 	aparam)
-// // {
-// //   if (numb_models == 0) return;
-// //   int nall = dcoord_.size() / 3;
-// //   int nloc = nall - nghost;
-// //   validate_fparam_aparam(nloc, fparam, aparam);
-// //   std::vector<std::pair<std::string, Tensor>> input_tensors;
-
-// //     // agp == 0 means that the LAMMPS nbor list has been updated
-// //     if (ago == 0) {
-// //         nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
-// //         assert (nloc == nnpmap.get_type().size());
-
-// //         // InternalNeighborList nlist;
-// //         convert_nlist_lmp_internal (nlist, lmp_list);
-// //         shuffle_nlist (nlist, nnpmap);
-// //     }
-// //     int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost, ago);
-
-// //     all_energy.resize (numb_models);
-// //     all_force .resize (numb_models);
-// //     all_virial.resize (numb_models);
-// //     all_atom_energy.resize (numb_models);
-// //     all_atom_virial.resize (numb_models); 
-// //     assert (nloc == ret);
-// //     for (unsigned ii = 0; ii < numb_models; ++ii) {
-// //         run_model (all_energy[ii], all_force[ii], all_virial[ii], all_atom_energy[ii], all_atom_virial[ii], sessions[ii], input_tensors, nnpmap, nghost);
-// //     }
-// // }
-
-// // void
-// // NNPInterModelDevi::
-// // compute_avg (VALUETYPE &		dener, 
-// // 	     const std::vector<VALUETYPE > &	all_energy) 
-// // {
-// //   assert (all_energy.size() == numb_models);
-// //   if (numb_models == 0) return;
-
-// //   dener = 0;
-// //   for (unsigned ii = 0; ii < numb_models; ++ii){
-// //     dener += all_energy[ii];
-// //   }
-// //   dener /= (VALUETYPE)(numb_models);  
-// // }
-
-// // #ifndef HIGH_PREC
-// // void
-// // NNPInterModelDevi::
-// // compute_avg (ENERGYTYPE &		dener, 
-// // 	     const std::vector<ENERGYTYPE >&	all_energy) 
-// // {
-// //   assert (all_energy.size() == numb_models);
-// //   if (numb_models == 0) return;
-
-// //   dener = 0;
-// //   for (unsigned ii = 0; ii < numb_models; ++ii){
-// //     dener += all_energy[ii];
-// //   }
-// //   dener /= (ENERGYTYPE)(numb_models);  
-// // }
-// // #endif
-
-// // void
-// // NNPInterModelDevi::
-// // compute_avg (std::vector<VALUETYPE> &		avg, 
-// // 	     const std::vector<std::vector<VALUETYPE> > &	xx) 
-// // {
-// //   assert (xx.size() == numb_models);
-// //   if (numb_models == 0) return;
-  
-// //   avg.resize(xx[0].size());
-// //   fill (avg.begin(), avg.end(), VALUETYPE(0.));
-  
-// //   for (unsigned ii = 0; ii < numb_models; ++ii){
-// //     for (unsigned jj = 0; jj < avg.size(); ++jj){
-// //       avg[jj] += xx[ii][jj];
-// //     }
-// //   }
-
-// //   for (unsigned jj = 0; jj < avg.size(); ++jj){
-// //     avg[jj] /= VALUETYPE(numb_models);
-// //   }
-// // }
-
-
-// // // void
-// // // NNPInterModelDevi::
-// // // compute_std (VALUETYPE &		std, 
-// // // 	     const VALUETYPE &		avg, 
-// // // 	     const vector<VALUETYPE >&	xx)
-// // // {
-// // //   std = 0;
-// // //   assert(xx.size() == numb_models);
-// // //   for (unsigned jj = 0; jj < xx.size(); ++jj){
-// // //     std += (xx[jj] - avg) * (xx[jj] - avg);
-// // //   }
-// // //   std = sqrt(std / VALUETYPE(numb_models));
-// // //   // std = sqrt(std / VALUETYPE(numb_models-));
-// // // }
-
-// // void
-// // NNPInterModelDevi::
-// // compute_std_e (std::vector<VALUETYPE> &		std, 
-// // 	       const std::vector<VALUETYPE> &	avg, 
-// // 	       const std::vector<std::vector<VALUETYPE> >&xx)  
-// // {
-// //   assert (xx.size() == numb_models);
-// //   if (numb_models == 0) return;
-
-// //   unsigned ndof = avg.size();
-// //   unsigned nloc = ndof;
-// //   assert (nloc == ndof);
-  
-// //   std.resize(nloc);
-// //   fill (std.begin(), std.end(), VALUETYPE(0.));
-  
-// //   for (unsigned ii = 0; ii < numb_models; ++ii) {
-// //     for (unsigned jj = 0 ; jj < nloc; ++jj){
-// //       const VALUETYPE * tmp_f = &(xx[ii][jj]);
-// //       const VALUETYPE * tmp_avg = &(avg[jj]);
-// //       VALUETYPE vdiff = xx[ii][jj] - avg[jj];
-// //       std[jj] += vdiff * vdiff;
-// //     }
-// //   }
-
-// //   for (unsigned jj = 0; jj < nloc; ++jj){
-// //     std[jj] = sqrt(std[jj] / VALUETYPE(numb_models));
-// //     // std[jj] = sqrt(std[jj] / VALUETYPE(numb_models-1));
-// //   }
-// // }
-
-// // void
-// // NNPInterModelDevi::
-// // compute_std_f (std::vector<VALUETYPE> &		std, 
-// // 	       const std::vector<VALUETYPE> &	avg, 
-// // 	       const std::vector<std::vector<VALUETYPE> >&xx)  
-// // {
-// //   assert (xx.size() == numb_models);
-// //   if (numb_models == 0) return;
-
-// //   unsigned ndof = avg.size();
-// //   unsigned nloc = ndof / 3;
-// //   assert (nloc * 3 == ndof);
-  
-// //   std.resize(nloc);
-// //   fill (std.begin(), std.end(), VALUETYPE(0.));
-  
-// //   for (unsigned ii = 0; ii < numb_models; ++ii) {
-//     for (unsigned jj = 0 ; jj < nloc; ++jj){
-//       const VALUETYPE * tmp_f = &(xx[ii][jj*3]);
-//       const VALUETYPE * tmp_avg = &(avg[jj*3]);
-//       VALUETYPE vdiff[3];
-//       vdiff[0] = tmp_f[0] - tmp_avg[0];
-//       vdiff[1] = tmp_f[1] - tmp_avg[1];
-//       vdiff[2] = tmp_f[2] - tmp_avg[2];
-//       std[jj] += dot3(vdiff, vdiff);
-//     }
-//   }
-
-//   for (unsigned jj = 0; jj < nloc; ++jj){
-//     std[jj] = sqrt(std[jj] / VALUETYPE(numb_models));
-//     // std[jj] = sqrt(std[jj] / VALUETYPE(numb_models-1));
-//   }
-// }
+void
+NNPInterModelDevi::
+validate_fparam_aparam(const int & nloc,
+		       const std::vector<VALUETYPE> &fparam,
+		       const std::vector<VALUETYPE> &aparam)const 
+{
+  if (fparam.size() != dfparam) {
+    throw std::runtime_error("the dim of frame parameter provided is not consistent with what the model uses");
+  }
+  if (aparam.size() != daparam * nloc) {
+    throw std::runtime_error("the dim of atom parameter provided is not consistent with what the model uses");
+  }  
+}
 
 // void
 // NNPInterModelDevi::
-// compute_relative_std_f (std::vector<VALUETYPE> &std,
-// 			const std::vector<VALUETYPE> &avg,
-// 			const VALUETYPE eps)
+// compute (ENERGYTYPE &			dener,
+// 	 std::vector<VALUETYPE> &	dforce_,
+// 	 std::vector<VALUETYPE> &	dvirial,
+// 	 std::vector<VALUETYPE> &	model_devi,
+// 	 const std::vector<VALUETYPE> &	dcoord_,
+// 	 const std::vector<int> &	datype_,
+// 	 const std::vector<VALUETYPE> &	dbox,
+// 	 const std::vector<VALUETYPE> &	fparam,
+// 	 const std::vector<VALUETYPE> &	aparam)
 // {
-//   unsigned nloc = std.size();
-//   for (unsigned ii = 0; ii < nloc; ++ii){
-//     const VALUETYPE * tmp_avg = &(avg[ii*3]);
-//       VALUETYPE vdiff[3];
-//       vdiff[0] = tmp_avg[0];
-//       vdiff[1] = tmp_avg[1];
-//       vdiff[2] = tmp_avg[2];
-//       VALUETYPE f_norm = sqrt(dot3(vdiff, vdiff));
-//       // relative std = std/(abs(f)+eps)
-//       std[ii] /= f_norm + eps;
+//   if (numb_models == 0) return;
+
+//   nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.end());
+//   validate_fparam_aparam(nnpmap.get_type().size(), fparam, aparam);
+
+//   std::vector<std::pair<std::string, Tensor>> input_tensors;
+//   int nloc = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, aparam, nnpmap);
+
+//   std::vector<ENERGYTYPE > all_energy (numb_models);
+//   std::vector<std::vector<VALUETYPE > > all_force (numb_models);
+//   std::vector<std::vector<VALUETYPE > > all_virial (numb_models);
+
+//   for (unsigned ii = 0; ii < numb_models; ++ii){
+//     run_model (all_energy[ii], all_force[ii], all_virial[ii], sessions[ii], input_tensors, nnpmap);
 //   }
+
+//   dener = 0;
+//   for (unsigned ii = 0; ii < numb_models; ++ii){
+//     dener += all_energy[ii];
+//   }
+//   dener /= VALUETYPE(numb_models);
+//   compute_avg (dvirial, all_virial);  
+//   compute_avg (dforce_, all_force);
+  
+//   compute_std_f (model_devi, dforce_, all_force);
+  
+//   // for (unsigned ii = 0; ii < numb_models; ++ii){
+//   //   cout << all_force[ii][573] << " " << all_force[ii][574] << " " << all_force[ii][575] << endl;
+//   // }
+//   // cout << dforce_[573] << " " 
+//   //      << dforce_[574] << " " 
+//   //      << dforce_[575] << " " 
+//   //      << model_devi[191] << endl;
 // }
+
+void
+NNPInterModelDevi::
+compute (std::vector<ENERGYTYPE> &		all_energy,
+	 std::vector<std::vector<VALUETYPE>> &	all_force,
+	 std::vector<std::vector<VALUETYPE>> &	all_virial,
+	 const std::vector<VALUETYPE> &		dcoord_,
+	 const std::vector<int> &		datype_,
+	 const std::vector<VALUETYPE> &		dbox,
+	 const int				nghost,
+	 const InputNlist &		lmp_list,
+	 const int                &		ago,
+	 const std::vector<VALUETYPE> &		fparam,
+	 const std::vector<VALUETYPE> &		aparam)
+{
+  if (numb_models == 0) return;
+  int nall = dcoord_.size() / 3;
+  int nloc = nall - nghost;
+  validate_fparam_aparam(nloc, fparam, aparam);
+  std::vector<std::pair<std::string, Tensor>> input_tensors;
+
+    // agp == 0 means that the LAMMPS nbor list has been updated
+    if (ago == 0) {
+        nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
+        assert (nloc == nnpmap.get_type().size());
+
+        nlist_data.copy_from_nlist(lmp_list);
+        nlist_data.shuffle(nnpmap);
+	nlist_data.make_inlist(nlist);
+    }
+    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost, ago);
+
+    all_energy.resize (numb_models);
+    all_force.resize (numb_models);
+    all_virial.resize (numb_models);
+    assert (nloc == ret);
+    for (unsigned ii = 0; ii < numb_models; ++ii) {
+        run_model (all_energy[ii], all_force[ii], all_virial[ii], sessions[ii], input_tensors, nnpmap, nghost);
+    }
+}
+
+void
+NNPInterModelDevi::
+compute (std::vector<ENERGYTYPE> &		all_energy,
+	 std::vector<std::vector<VALUETYPE>> &	all_force,
+	 std::vector<std::vector<VALUETYPE>> &	all_virial,
+	 std::vector<std::vector<VALUETYPE>> &	all_atom_energy,
+	 std::vector<std::vector<VALUETYPE>> &	all_atom_virial,
+	 const std::vector<VALUETYPE> &		dcoord_,
+	 const std::vector<int> &		datype_,
+	 const std::vector<VALUETYPE> &		dbox,
+	 const int				nghost,
+	 const InputNlist &		lmp_list,
+	 const int	             &		ago,
+	 const std::vector<VALUETYPE> &	 	fparam,
+	 const std::vector<VALUETYPE> &	 	aparam)
+{
+  if (numb_models == 0) return;
+  int nall = dcoord_.size() / 3;
+  int nloc = nall - nghost;
+  validate_fparam_aparam(nloc, fparam, aparam);
+  std::vector<std::pair<std::string, Tensor>> input_tensors;
+
+    // agp == 0 means that the LAMMPS nbor list has been updated
+    if (ago == 0) {
+        nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
+        assert (nloc == nnpmap.get_type().size());
+
+        nlist_data.copy_from_nlist(lmp_list);
+        nlist_data.shuffle(nnpmap);
+	nlist_data.make_inlist(nlist);
+    }
+    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost, ago);
+
+    all_energy.resize (numb_models);
+    all_force .resize (numb_models);
+    all_virial.resize (numb_models);
+    all_atom_energy.resize (numb_models);
+    all_atom_virial.resize (numb_models); 
+    assert (nloc == ret);
+    for (unsigned ii = 0; ii < numb_models; ++ii) {
+        run_model (all_energy[ii], all_force[ii], all_virial[ii], all_atom_energy[ii], all_atom_virial[ii], sessions[ii], input_tensors, nnpmap, nghost);
+    }
+}
+
+void
+NNPInterModelDevi::
+compute_avg (VALUETYPE &		dener, 
+	     const std::vector<VALUETYPE > &	all_energy) 
+{
+  assert (all_energy.size() == numb_models);
+  if (numb_models == 0) return;
+
+  dener = 0;
+  for (unsigned ii = 0; ii < numb_models; ++ii){
+    dener += all_energy[ii];
+  }
+  dener /= (VALUETYPE)(numb_models);  
+}
+
+#ifndef HIGH_PREC
+void
+NNPInterModelDevi::
+compute_avg (ENERGYTYPE &		dener, 
+	     const std::vector<ENERGYTYPE >&	all_energy) 
+{
+  assert (all_energy.size() == numb_models);
+  if (numb_models == 0) return;
+
+  dener = 0;
+  for (unsigned ii = 0; ii < numb_models; ++ii){
+    dener += all_energy[ii];
+  }
+  dener /= (ENERGYTYPE)(numb_models);  
+}
+#endif
+
+void
+NNPInterModelDevi::
+compute_avg (std::vector<VALUETYPE> &		avg, 
+	     const std::vector<std::vector<VALUETYPE> > &	xx) 
+{
+  assert (xx.size() == numb_models);
+  if (numb_models == 0) return;
+  
+  avg.resize(xx[0].size());
+  fill (avg.begin(), avg.end(), VALUETYPE(0.));
+  
+  for (unsigned ii = 0; ii < numb_models; ++ii){
+    for (unsigned jj = 0; jj < avg.size(); ++jj){
+      avg[jj] += xx[ii][jj];
+    }
+  }
+
+  for (unsigned jj = 0; jj < avg.size(); ++jj){
+    avg[jj] /= VALUETYPE(numb_models);
+  }
+}
+
+
+// void
+// NNPInterModelDevi::
+// compute_std (VALUETYPE &		std, 
+// 	     const VALUETYPE &		avg, 
+// 	     const vector<VALUETYPE >&	xx)
+// {
+//   std = 0;
+//   assert(xx.size() == numb_models);
+//   for (unsigned jj = 0; jj < xx.size(); ++jj){
+//     std += (xx[jj] - avg) * (xx[jj] - avg);
+//   }
+//   std = sqrt(std / VALUETYPE(numb_models));
+//   // std = sqrt(std / VALUETYPE(numb_models-));
+// }
+
+void
+NNPInterModelDevi::
+compute_std_e (std::vector<VALUETYPE> &		std, 
+	       const std::vector<VALUETYPE> &	avg, 
+	       const std::vector<std::vector<VALUETYPE> >&xx)  
+{
+  assert (xx.size() == numb_models);
+  if (numb_models == 0) return;
+
+  unsigned ndof = avg.size();
+  unsigned nloc = ndof;
+  assert (nloc == ndof);
+  
+  std.resize(nloc);
+  fill (std.begin(), std.end(), VALUETYPE(0.));
+  
+  for (unsigned ii = 0; ii < numb_models; ++ii) {
+    for (unsigned jj = 0 ; jj < nloc; ++jj){
+      const VALUETYPE * tmp_f = &(xx[ii][jj]);
+      const VALUETYPE * tmp_avg = &(avg[jj]);
+      VALUETYPE vdiff = xx[ii][jj] - avg[jj];
+      std[jj] += vdiff * vdiff;
+    }
+  }
+
+  for (unsigned jj = 0; jj < nloc; ++jj){
+    std[jj] = sqrt(std[jj] / VALUETYPE(numb_models));
+    // std[jj] = sqrt(std[jj] / VALUETYPE(numb_models-1));
+  }
+}
+
+void
+NNPInterModelDevi::
+compute_std_f (std::vector<VALUETYPE> &		std, 
+	       const std::vector<VALUETYPE> &	avg, 
+	       const std::vector<std::vector<VALUETYPE> >&xx)  
+{
+  assert (xx.size() == numb_models);
+  if (numb_models == 0) return;
+
+  unsigned ndof = avg.size();
+  unsigned nloc = ndof / 3;
+  assert (nloc * 3 == ndof);
+  
+  std.resize(nloc);
+  fill (std.begin(), std.end(), VALUETYPE(0.));
+  
+  for (unsigned ii = 0; ii < numb_models; ++ii) {
+    for (unsigned jj = 0 ; jj < nloc; ++jj){
+      const VALUETYPE * tmp_f = &(xx[ii][jj*3]);
+      const VALUETYPE * tmp_avg = &(avg[jj*3]);
+      VALUETYPE vdiff[3];
+      vdiff[0] = tmp_f[0] - tmp_avg[0];
+      vdiff[1] = tmp_f[1] - tmp_avg[1];
+      vdiff[2] = tmp_f[2] - tmp_avg[2];
+      std[jj] += dot3(vdiff, vdiff);
+    }
+  }
+
+  for (unsigned jj = 0; jj < nloc; ++jj){
+    std[jj] = sqrt(std[jj] / VALUETYPE(numb_models));
+    // std[jj] = sqrt(std[jj] / VALUETYPE(numb_models-1));
+  }
+}
+
+void
+NNPInterModelDevi::
+compute_relative_std_f (std::vector<VALUETYPE> &std,
+			const std::vector<VALUETYPE> &avg,
+			const VALUETYPE eps)
+{
+  unsigned nloc = std.size();
+  for (unsigned ii = 0; ii < nloc; ++ii){
+    const VALUETYPE * tmp_avg = &(avg[ii*3]);
+      VALUETYPE vdiff[3];
+      vdiff[0] = tmp_avg[0];
+      vdiff[1] = tmp_avg[1];
+      vdiff[2] = tmp_avg[2];
+      VALUETYPE f_norm = sqrt(dot3(vdiff, vdiff));
+      // relative std = std/(abs(f)+eps)
+      std[ii] /= f_norm + eps;
+  }
+}
 
