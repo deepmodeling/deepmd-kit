@@ -2,14 +2,14 @@
 
 #include "NNPInter.h"
 
-class DataModifier
+class DipoleChargeModifier
 {
 public:
-  DataModifier();
-  DataModifier(const std::string & model, 
+  DipoleChargeModifier();
+  DipoleChargeModifier(const std::string & model, 
 	       const int & gpu_rank = 0, 
 	       const std::string & name_scope = "");
-  ~DataModifier () {};
+  ~DipoleChargeModifier () {};
   void init (const std::string & model, 
 	     const int & gpu_rank = 0, 
 	     const std::string & name_scope = "");
@@ -23,7 +23,7 @@ public:
 		const std::vector<std::pair<int,int>> &	pairs,
 		const std::vector<VALUETYPE> &	delef_, 
 		const int			nghost,
-		const LammpsNeighborList &	lmp_list);
+		const InputNlist &	lmp_list);
   VALUETYPE cutoff () const {assert(inited); return rcut;};
   int numb_types () const {assert(inited); return ntypes;};
   std::vector<int> sel_types () const {assert(inited); return sel_type;};
