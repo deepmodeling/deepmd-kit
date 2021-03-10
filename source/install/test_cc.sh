@@ -28,5 +28,6 @@ cmake -DINSTALL_TENSORFLOW=TRUE -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} ../api_
 make -j${NPROC}
 
 #------------------
+cd ${SCRIPT_PATH}/../api_cc/tests
 ${BUILD_TMP_DIR}/runUnitTests
 
