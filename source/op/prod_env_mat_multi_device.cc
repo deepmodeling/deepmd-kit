@@ -288,16 +288,17 @@ public:
       std::vector<std::vector<int>> jlist(nloc);
       std::vector<FPTYPE> coord_cpy;
       std::vector<int> type_cpy;
+      int frame_nall = nall;
       // prepare coord and nlist
       _prepare_coord_nlist_cpu<FPTYPE>(
 	  context, &coord, coord_cpy, &type, type_cpy, idx_mapping, 
 	  inlist, ilist, numneigh, firstneigh, jlist,
-	  nall, mem_cpy, mem_nnei, max_nbor_size,
+	  frame_nall, mem_cpy, mem_nnei, max_nbor_size,
 	  box, mesh_tensor.flat<int>().data(), nloc, nei_mode, rcut_r, max_cpy_trial, max_nnei_trial);
       // launch the cpu compute function
       prod_env_mat_a_cpu(
 	  em, em_deriv, rij, nlist, 
-	  coord, type, inlist, max_nbor_size, avg, std, nloc, nall, rcut_r, rcut_r_smth, sec_a);
+	  coord, type, inlist, max_nbor_size, avg, std, nloc, frame_nall, rcut_r, rcut_r_smth, sec_a);
       // do nlist mapping if coords were copied
       if(b_nlist_map) _map_nlist_cpu(nlist, &idx_mapping[0], nloc, nnei);
     }
@@ -494,16 +495,17 @@ public:
       std::vector<std::vector<int>> jlist(nloc);
       std::vector<FPTYPE> coord_cpy;
       std::vector<int> type_cpy;
+      int frame_nall = nall;
       // prepare coord and nlist
       _prepare_coord_nlist_cpu<FPTYPE>(
 	  context, &coord, coord_cpy, &type, type_cpy, idx_mapping, 
 	  inlist, ilist, numneigh, firstneigh, jlist,
-	  nall, mem_cpy, mem_nnei, max_nbor_size,
+	  frame_nall, mem_cpy, mem_nnei, max_nbor_size,
 	  box, mesh_tensor.flat<int>().data(), nloc, nei_mode, rcut, max_cpy_trial, max_nnei_trial);
       // launch the cpu compute function
       prod_env_mat_r_cpu(
           em, em_deriv, rij, nlist, 
-          coord, type, inlist, max_nbor_size, avg, std, nloc, nall, rcut, rcut_smth, sec);
+          coord, type, inlist, max_nbor_size, avg, std, nloc, frame_nall, rcut, rcut_smth, sec);
       if(b_nlist_map) _map_nlist_cpu(nlist, &idx_mapping[0], nloc, nnei);
     }
     }
