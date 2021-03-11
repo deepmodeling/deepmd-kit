@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common.h"
+#include "neighbor_list.h"
 typedef double compute_t;
 
 class NNPInter 
@@ -18,7 +19,6 @@ public:
 		const std::vector<VALUETYPE> &	coord,
 		const std::vector<int> &	atype,
 		const std::vector<VALUETYPE> &	box, 
-		const int			nghost = 0,
 		const std::vector<VALUETYPE>&	fparam = std::vector<VALUETYPE>(),
 		const std::vector<VALUETYPE>&	aparam = std::vector<VALUETYPE>());
   void compute (ENERGYTYPE &			ener,
@@ -28,7 +28,7 @@ public:
 		const std::vector<int> &	atype,
 		const std::vector<VALUETYPE> &	box, 
 		const int			nghost,
-		const LammpsNeighborList &	lmp_list,
+		const InputNlist &		inlist,
 		const int&			ago,
 		const std::vector<VALUETYPE>&	fparam = std::vector<VALUETYPE>(),
 		const std::vector<VALUETYPE>&	aparam = std::vector<VALUETYPE>());
@@ -51,7 +51,7 @@ public:
 		const std::vector<int> &	atype,
 		const std::vector<VALUETYPE> &	box, 
 		const int			nghost, 
-		const LammpsNeighborList &	lmp_list,
+		const InputNlist &	lmp_list,
 		const int&			ago,
 		const std::vector<VALUETYPE>&	fparam = std::vector<VALUETYPE>(),
 		const std::vector<VALUETYPE>&	aparam = std::vector<VALUETYPE>());
@@ -91,10 +91,9 @@ private:
   bool init_nbor;
   std::vector<int> sec_a;
   compute_t *array_double;
-  InternalNeighborList nlist;
+  NeighborListData nlist_data;
+  InputNlist nlist;
   NNPAtomMap<VALUETYPE> nnpmap;
-  int *ilist, *jrange, *jlist;
-  int ilist_size, jrange_size, jlist_size;
 
   // function used for neighbor list copy
   std::vector<int> get_sel_a() const;
@@ -108,15 +107,6 @@ public:
   NNPInterModelDevi  (const std::vector<std::string> & models, const int & gpu_rank = 0, const std::vector<std::string> & file_contents = std::vector<std::string>());
   void init (const std::vector<std::string> & models, const int & gpu_rank = 0, const std::vector<std::string> & file_contents = std::vector<std::string>());
 public:
-  void compute (ENERGYTYPE &			ener,
-  		std::vector<VALUETYPE> &		force,
-  		std::vector<VALUETYPE> &		virial,
-  		std::vector<VALUETYPE> &		model_devi,
-  		const std::vector<VALUETYPE> &	coord,
-  		const std::vector<int> &		atype,
-  		const std::vector<VALUETYPE> &	box,
-		const std::vector<VALUETYPE>	&	fparam = std::vector<VALUETYPE>(),
-		const std::vector<VALUETYPE>	&	aparam = std::vector<VALUETYPE>());
   void compute (std::vector<ENERGYTYPE> &		all_ener,
 		std::vector<std::vector<VALUETYPE> > &	all_force,
 		std::vector<std::vector<VALUETYPE> > &	all_virial,
@@ -124,7 +114,7 @@ public:
 		const std::vector<int> &		atype,
 		const std::vector<VALUETYPE> &	box,
 		const int			nghost,
-		const LammpsNeighborList &	lmp_list,
+		const InputNlist &	lmp_list,
 		const int 				&   ago,
 		const std::vector<VALUETYPE>	&	fparam = std::vector<VALUETYPE>(),
 		const std::vector<VALUETYPE>	&	aparam = std::vector<VALUETYPE>());
@@ -137,7 +127,7 @@ public:
 		const std::vector<int> &		atype,
 		const std::vector<VALUETYPE> &	box,
 		const int			nghost,
-		const LammpsNeighborList &	lmp_list,
+		const InputNlist &	lmp_list,
 		const int 				&   ago,
 		const std::vector<VALUETYPE>	&	fparam = std::vector<VALUETYPE>(),
 		const std::vector<VALUETYPE>	&	aparam = std::vector<VALUETYPE>());
@@ -184,10 +174,9 @@ private:
   bool init_nbor;
   compute_t *array_double;
   std::vector<std::vector<int> > sec;
-  InternalNeighborList nlist;
   NNPAtomMap<VALUETYPE> nnpmap;
-  int *ilist, *jrange, *jlist;
-  int ilist_size, jrange_size, jlist_size;
+  NeighborListData nlist_data;
+  InputNlist nlist;
 
   // function used for nborlist copy
   std::vector<std::vector<int> > get_sel() const;

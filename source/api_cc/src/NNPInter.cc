@@ -195,6 +195,7 @@ init (const std::string & model, const int & gpu_rank, const std::string & file_
     return ;
   }
   SessionOptions options;
+  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
 
@@ -227,8 +228,6 @@ init (const std::string & model, const int & gpu_rank, const std::string & file_
   inited = true;
   
   init_nbor = false;
-  ilist = NULL; jrange = NULL; jlist = NULL;
-  ilist_size = 0; jrange_size = 0; jlist_size = 0;
 }
 
 void 
@@ -322,21 +321,20 @@ compute (ENERGYTYPE &			dener,
 	 const std::vector<VALUETYPE> &	dcoord_,
 	 const std::vector<int> &	datype_,
 	 const std::vector<VALUETYPE> &	dbox, 
-	 const int			nghost,
 	 const std::vector<VALUETYPE> &	fparam,
 	 const std::vector<VALUETYPE> &	aparam)
 {
   int nall = dcoord_.size() / 3;
-  int nloc = nall - nghost;
+  int nloc = nall;
   nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
   assert (nloc == nnpmap.get_type().size());
   validate_fparam_aparam(nloc, fparam, aparam);
 
   std::vector<std::pair<std::string, Tensor>> input_tensors;
-  int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, aparam, nnpmap, nghost);
+  int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, aparam, nnpmap);
   assert (ret == nloc);
 
-  run_model (dener, dforce_, dvirial, session, input_tensors, nnpmap, nghost);
+  run_model (dener, dforce_, dvirial, session, input_tensors, nnpmap);
 }
 
 void
@@ -348,7 +346,7 @@ compute (ENERGYTYPE &			dener,
 	 const std::vector<int> &	datype_,
 	 const std::vector<VALUETYPE> &	dbox, 
 	 const int			nghost,
-	 const LammpsNeighborList &	lmp_list,
+	 const InputNlist &		lmp_list,
 	 const int&			ago,
 	 const std::vector<VALUETYPE> &	fparam,
 	 const std::vector<VALUETYPE> &	aparam_)
@@ -370,11 +368,12 @@ compute (ENERGYTYPE &			dener,
   }
   // internal nlist
   if (ago == 0){
-    convert_nlist_lmp_internal(nlist, lmp_list);
-    shuffle_nlist_exclude_empty(nlist, fwd_map);  
+    nlist_data.copy_from_nlist(lmp_list);
+    nlist_data.shuffle_exclude_empty(fwd_map);  
   }
   compute_inner(dener, dforce, dvirial, dcoord, datype, dbox, nghost_real, ago, fparam, aparam);
   // bkw map
+  dforce_.resize(fwd_map.size() * 3);
   select_map<VALUETYPE>(dforce_, dforce, bkw_map, 3);
 }
 
@@ -399,12 +398,11 @@ compute_inner (ENERGYTYPE &			dener,
 
     // agp == 0 means that the LAMMPS nbor list has been updated
     if (ago == 0) {
-        nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
-        assert (nloc == nnpmap.get_type().size());
-
-   shuffle_nlist (nlist, nnpmap);
+      nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
+      assert (nloc == nnpmap.get_type().size());
+      nlist_data.shuffle(nnpmap);
+      nlist_data.make_inlist(nlist);
     }
-
     int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost, ago);
     assert (nloc == ret);
     run_model (dener, dforce_, dvirial, session, input_tensors, nnpmap, nghost);
@@ -446,7 +444,7 @@ compute (ENERGYTYPE &			dener,
 	 const std::vector<int> &	datype_,
 	 const std::vector<VALUETYPE> &	dbox, 
 	 const int			nghost, 
-	 const LammpsNeighborList &	lmp_list,
+	 const InputNlist &	lmp_list,
 	 const int               &	ago,
 	 const std::vector<VALUETYPE> &	fparam,
 	 const std::vector<VALUETYPE> &	aparam)
@@ -460,9 +458,9 @@ compute (ENERGYTYPE &			dener,
         nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
         assert (nloc == nnpmap.get_type().size());
 
-        // InternalNeighborList nlist;
-        convert_nlist_lmp_internal (nlist, lmp_list);
-        shuffle_nlist (nlist, nnpmap);
+        nlist_data.copy_from_nlist(lmp_list);
+        nlist_data.shuffle(nnpmap);
+	nlist_data.make_inlist(nlist);
     }
 
     int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost, ago);
@@ -556,8 +554,6 @@ init (const std::vector<std::string> & models, const int & gpu_rank, const std::
   inited = true;
   
   init_nbor = false;
-  ilist = NULL; jrange = NULL; jlist = NULL;
-  ilist_size = 0; jrange_size = 0; jlist_size = 0;
 }
 
 template<class VT>
@@ -638,52 +634,52 @@ validate_fparam_aparam(const int & nloc,
   }  
 }
 
-void
-NNPInterModelDevi::
-compute (ENERGYTYPE &			dener,
-	 std::vector<VALUETYPE> &	dforce_,
-	 std::vector<VALUETYPE> &	dvirial,
-	 std::vector<VALUETYPE> &	model_devi,
-	 const std::vector<VALUETYPE> &	dcoord_,
-	 const std::vector<int> &	datype_,
-	 const std::vector<VALUETYPE> &	dbox,
-	 const std::vector<VALUETYPE> &	fparam,
-	 const std::vector<VALUETYPE> &	aparam)
-{
-  if (numb_models == 0) return;
+// void
+// NNPInterModelDevi::
+// compute (ENERGYTYPE &			dener,
+// 	 std::vector<VALUETYPE> &	dforce_,
+// 	 std::vector<VALUETYPE> &	dvirial,
+// 	 std::vector<VALUETYPE> &	model_devi,
+// 	 const std::vector<VALUETYPE> &	dcoord_,
+// 	 const std::vector<int> &	datype_,
+// 	 const std::vector<VALUETYPE> &	dbox,
+// 	 const std::vector<VALUETYPE> &	fparam,
+// 	 const std::vector<VALUETYPE> &	aparam)
+// {
+//   if (numb_models == 0) return;
 
-  nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.end());
-  validate_fparam_aparam(nnpmap.get_type().size(), fparam, aparam);
+//   nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.end());
+//   validate_fparam_aparam(nnpmap.get_type().size(), fparam, aparam);
 
-  std::vector<std::pair<std::string, Tensor>> input_tensors;
-  int nloc = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, aparam, nnpmap);
+//   std::vector<std::pair<std::string, Tensor>> input_tensors;
+//   int nloc = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, aparam, nnpmap);
 
-  std::vector<ENERGYTYPE > all_energy (numb_models);
-  std::vector<std::vector<VALUETYPE > > all_force (numb_models);
-  std::vector<std::vector<VALUETYPE > > all_virial (numb_models);
+//   std::vector<ENERGYTYPE > all_energy (numb_models);
+//   std::vector<std::vector<VALUETYPE > > all_force (numb_models);
+//   std::vector<std::vector<VALUETYPE > > all_virial (numb_models);
 
-  for (unsigned ii = 0; ii < numb_models; ++ii){
-    run_model (all_energy[ii], all_force[ii], all_virial[ii], sessions[ii], input_tensors, nnpmap);
-  }
+//   for (unsigned ii = 0; ii < numb_models; ++ii){
+//     run_model (all_energy[ii], all_force[ii], all_virial[ii], sessions[ii], input_tensors, nnpmap);
+//   }
 
-  dener = 0;
-  for (unsigned ii = 0; ii < numb_models; ++ii){
-    dener += all_energy[ii];
-  }
-  dener /= VALUETYPE(numb_models);
-  compute_avg (dvirial, all_virial);  
-  compute_avg (dforce_, all_force);
+//   dener = 0;
+//   for (unsigned ii = 0; ii < numb_models; ++ii){
+//     dener += all_energy[ii];
+//   }
+//   dener /= VALUETYPE(numb_models);
+//   compute_avg (dvirial, all_virial);  
+//   compute_avg (dforce_, all_force);
   
-  compute_std_f (model_devi, dforce_, all_force);
+//   compute_std_f (model_devi, dforce_, all_force);
   
-  // for (unsigned ii = 0; ii < numb_models; ++ii){
-  //   cout << all_force[ii][573] << " " << all_force[ii][574] << " " << all_force[ii][575] << endl;
-  // }
-  // cout << dforce_[573] << " " 
-  //      << dforce_[574] << " " 
-  //      << dforce_[575] << " " 
-  //      << model_devi[191] << endl;
-}
+//   // for (unsigned ii = 0; ii < numb_models; ++ii){
+//   //   cout << all_force[ii][573] << " " << all_force[ii][574] << " " << all_force[ii][575] << endl;
+//   // }
+//   // cout << dforce_[573] << " " 
+//   //      << dforce_[574] << " " 
+//   //      << dforce_[575] << " " 
+//   //      << model_devi[191] << endl;
+// }
 
 void
 NNPInterModelDevi::
@@ -694,7 +690,7 @@ compute (std::vector<ENERGYTYPE> &		all_energy,
 	 const std::vector<int> &		datype_,
 	 const std::vector<VALUETYPE> &		dbox,
 	 const int				nghost,
-	 const LammpsNeighborList &		lmp_list,
+	 const InputNlist &		lmp_list,
 	 const int                &		ago,
 	 const std::vector<VALUETYPE> &		fparam,
 	 const std::vector<VALUETYPE> &		aparam)
@@ -710,9 +706,9 @@ compute (std::vector<ENERGYTYPE> &		all_energy,
         nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
         assert (nloc == nnpmap.get_type().size());
 
-        // InternalNeighborList nlist;
-        convert_nlist_lmp_internal (nlist, lmp_list);
-        shuffle_nlist (nlist, nnpmap);
+        nlist_data.copy_from_nlist(lmp_list);
+        nlist_data.shuffle(nnpmap);
+	nlist_data.make_inlist(nlist);
     }
     int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost, ago);
 
@@ -736,7 +732,7 @@ compute (std::vector<ENERGYTYPE> &		all_energy,
 	 const std::vector<int> &		datype_,
 	 const std::vector<VALUETYPE> &		dbox,
 	 const int				nghost,
-	 const LammpsNeighborList &		lmp_list,
+	 const InputNlist &		lmp_list,
 	 const int	             &		ago,
 	 const std::vector<VALUETYPE> &	 	fparam,
 	 const std::vector<VALUETYPE> &	 	aparam)
@@ -752,9 +748,9 @@ compute (std::vector<ENERGYTYPE> &		all_energy,
         nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
         assert (nloc == nnpmap.get_type().size());
 
-        // InternalNeighborList nlist;
-        convert_nlist_lmp_internal (nlist, lmp_list);
-        shuffle_nlist (nlist, nnpmap);
+        nlist_data.copy_from_nlist(lmp_list);
+        nlist_data.shuffle(nnpmap);
+	nlist_data.make_inlist(nlist);
     }
     int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost, ago);
 

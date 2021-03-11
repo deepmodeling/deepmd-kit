@@ -4,6 +4,7 @@
 #include <string>
 #include <iostream>
 #include "version.h"
+#include "neighbor_list.h"
 #include "NNPAtomMap.h"
 
 #include "tensorflow/core/platform/env.h"
@@ -27,51 +28,19 @@ typedef float  VALUETYPE;
 typedef double ENERGYTYPE;
 #endif
 
-struct LammpsNeighborList 
+struct NeighborListData 
 {
-  int inum;
-  const int * ilist;
-  const int * numneigh;
-  const int *const* firstneigh;
-  LammpsNeighborList (int inum_, 
-		      const int * ilist_,
-		      const int * numneigh_, 
-		      const int *const* firstneigh_) 
-      : inum(inum_), ilist(ilist_), numneigh(numneigh_), firstneigh(firstneigh_)
-      {
-      }
-};
-
-struct InternalNeighborList 
-{
-  int * pilist;
-  int * pjrange;
-  int * pjlist;
   std::vector<int > ilist;
-  std::vector<int > jrange;
-  std::vector<int > jlist;
-  void clear () {ilist.clear(); jrange.clear(); jlist.clear();}
-  void make_ptrs () {
-    pilist = &ilist[0]; pjrange = &jrange[0]; pjlist = &jlist[0];
-  }
+  std::vector<std::vector<int> > jlist;
+  std::vector<int > numneigh;
+  std::vector<int* > firstneigh;  
+public:
+  void copy_from_nlist(const InputNlist & inlist);
+  void shuffle(const std::vector<int> & fwd_map);
+  void shuffle(const NNPAtomMap<VALUETYPE> & map);
+  void shuffle_exclude_empty(const std::vector<int> & fwd_map);
+  void make_inlist(InputNlist & inlist);
 };
-
-void
-convert_nlist_lmp_internal (InternalNeighborList & list,
-			    const LammpsNeighborList & lmp_list);
-
-void
-shuffle_nlist (InternalNeighborList & list, 
-	       const std::vector<int> & fwd_map);
-
-void
-shuffle_nlist (InternalNeighborList & list, 
-	       const NNPAtomMap<VALUETYPE> & map);
-
-void
-shuffle_nlist_exclude_empty (InternalNeighborList & list, 
-			     const std::vector<int> & fwd_map);
-
 
 void 
 select_by_type(std::vector<int> & fwd_map,
@@ -125,8 +94,7 @@ session_input_tensors (std::vector<std::pair<std::string, Tensor>> & input_tenso
 		       const std::vector<VALUETYPE> &	fparam_,
 		       const std::vector<VALUETYPE> &	aparam_,
 		       const NNPAtomMap<VALUETYPE>&	nnpmap,
-		       const int			nghost = 0,
-		       const std::string			scope = "");
+		       const std::string		scope = "");
 
 int
 session_input_tensors (std::vector<std::pair<std::string, Tensor>> & input_tensors,
@@ -134,40 +102,40 @@ session_input_tensors (std::vector<std::pair<std::string, Tensor>> & input_tenso
 		       const int &			ntypes,
 		       const std::vector<int> &		datype_,
 		       const std::vector<VALUETYPE> &	dbox,		    
-		       InternalNeighborList &		dlist, 
+		       InputNlist &		dlist, 
 		       const std::vector<VALUETYPE> &	fparam_,
 		       const std::vector<VALUETYPE> &	aparam_,
 		       const NNPAtomMap<VALUETYPE>&	nnpmap,
 		       const int			nghost,
 		       const int			ago,
-		       const std::string			scope = "");
+		       const std::string		scope = "");
 
-int
-session_input_tensors (std::vector<std::pair<std::string, Tensor>> & input_tensors,
-		       const std::vector<VALUETYPE> &	dcoord_,
-		       const int &			ntypes,
-		       const std::vector<int> &		datype_,
-		       const std::vector<VALUETYPE> &	dbox,		    
-		       InternalNeighborList &		dlist, 
-		       const std::vector<VALUETYPE> &	fparam_,
-		       const std::vector<VALUETYPE> &	aparam_,
-		       const NNPAtomMap<VALUETYPE>&	nnpmap,
-		       const int			nghost,
-		       const std::string			scope = "");
+// int
+// session_input_tensors (std::vector<std::pair<std::string, Tensor>> & input_tensors,
+// 		       const std::vector<VALUETYPE> &	dcoord_,
+// 		       const int &			ntypes,
+// 		       const std::vector<int> &		datype_,
+// 		       const std::vector<VALUETYPE> &	dbox,		    
+// 		       InputNlist &		dlist, 
+// 		       const std::vector<VALUETYPE> &	fparam_,
+// 		       const std::vector<VALUETYPE> &	aparam_,
+// 		       const NNPAtomMap<VALUETYPE>&	nnpmap,
+// 		       const int			nghost,
+// 		       const std::string			scope = "");
 
-int 
-session_input_tensors (std::vector<std::pair<std::string, Tensor>>& input_tensors,
-		       const std::vector<VALUETYPE>          & dcoord_,
-		       const int                        & ntypes,
-		       const std::vector<int>                & atype_,
-		       const std::vector<VALUETYPE>          & dbox,
-		       const int                        * ilist, 
-		       const int                        * jrange,
-		       const int                        * jlist,
-		       const std::vector<VALUETYPE>		& fparam_,
-		       const std::vector<VALUETYPE>	        & aparam_,
-		       const NNPAtomMap<VALUETYPE>      & nnpmap,
-		       const int			& nghost);
+// int 
+// session_input_tensors (std::vector<std::pair<std::string, Tensor>>& input_tensors,
+// 		       const std::vector<VALUETYPE>          & dcoord_,
+// 		       const int                        & ntypes,
+// 		       const std::vector<int>                & atype_,
+// 		       const std::vector<VALUETYPE>          & dbox,
+// 		       const int                        * ilist, 
+// 		       const int                        * jrange,
+// 		       const int                        * jlist,
+// 		       const std::vector<VALUETYPE>		& fparam_,
+// 		       const std::vector<VALUETYPE>	        & aparam_,
+// 		       const NNPAtomMap<VALUETYPE>      & nnpmap,
+// 		       const int			& nghost);
 
 
 template<typename VT>

@@ -27,6 +27,7 @@ struct InputNlist
       ) 
       : inum(inum_), ilist(ilist_), numneigh(numneigh_), firstneigh(firstneigh_)
       {};
+  ~InputNlist(){};
 };
 
 void convert_nlist(
