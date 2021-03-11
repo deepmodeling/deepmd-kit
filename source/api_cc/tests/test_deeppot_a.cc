@@ -14,7 +14,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>  
 
-class TestInferDeepPot : public ::testing::Test
+class TestInferDeepPotA : public ::testing::Test
 {  
 protected:  
   std::vector<double> coord = {
@@ -83,7 +83,7 @@ protected:
 };
 
 
-TEST_F(TestInferDeepPot, cpu_build_nlist)
+TEST_F(TestInferDeepPotA, cpu_build_nlist)
 {
   double ener;
   std::vector<double> force, virial;
@@ -101,7 +101,7 @@ TEST_F(TestInferDeepPot, cpu_build_nlist)
   }
 }
 
-TEST_F(TestInferDeepPot, cpu_build_nlist_atomic)
+TEST_F(TestInferDeepPotA, cpu_build_nlist_atomic)
 {
   double ener;
   std::vector<double> force, virial, atom_ener, atom_vir;
@@ -128,7 +128,7 @@ TEST_F(TestInferDeepPot, cpu_build_nlist_atomic)
 }
 
 
-TEST_F(TestInferDeepPot, cpu_lmp_nlist)
+TEST_F(TestInferDeepPotA, cpu_lmp_nlist)
 {
   float rc = dp.cutoff();
   int nloc = coord.size() / 3;  
@@ -179,7 +179,7 @@ TEST_F(TestInferDeepPot, cpu_lmp_nlist)
 }
 
 
-TEST_F(TestInferDeepPot, cpu_lmp_nlist_atomic)
+TEST_F(TestInferDeepPotA, cpu_lmp_nlist_atomic)
 {
   float rc = dp.cutoff();
   int nloc = coord.size() / 3;  
@@ -252,7 +252,7 @@ TEST_F(TestInferDeepPot, cpu_lmp_nlist_atomic)
 }
 
 
-TEST_F(TestInferDeepPot, cpu_lmp_nlist_2rc)
+TEST_F(TestInferDeepPotA, cpu_lmp_nlist_2rc)
 {
   float rc = dp.cutoff();
   int nloc = coord.size() / 3;  
@@ -303,7 +303,7 @@ TEST_F(TestInferDeepPot, cpu_lmp_nlist_2rc)
 }
 
 
-TEST_F(TestInferDeepPot, cpu_lmp_nlist_type_sel)
+TEST_F(TestInferDeepPotA, cpu_lmp_nlist_type_sel)
 {
   float rc = dp.cutoff();
 
@@ -355,7 +355,7 @@ TEST_F(TestInferDeepPot, cpu_lmp_nlist_type_sel)
 
 
 
-class TestInferDeepPotNoPbc : public ::testing::Test
+class TestInferDeepPotANoPbc : public ::testing::Test
 {  
 protected:  
   std::vector<double> coord = {
@@ -418,7 +418,7 @@ protected:
   };
 };
 
-TEST_F(TestInferDeepPotNoPbc, cpu_build_nlist)
+TEST_F(TestInferDeepPotANoPbc, cpu_build_nlist)
 {
   double ener;
   std::vector<double> force, virial;

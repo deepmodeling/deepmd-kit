@@ -259,40 +259,35 @@ class DeepPot(DeepTensor):
         assert(natoms_vec[0] == natoms)
 
         # evaluate
-        energy = []
-        force = []
-        virial = []
-        ae = []
-        av = []
         feed_dict_test = {}
         feed_dict_test[self.t_natoms] = natoms_vec
-        feed_dict_test[self.t_type  ] = atom_types
+        feed_dict_test[self.t_type  ] = np.tile(atom_types, [nframes, 1]).reshape([-1])
         t_out = [self.t_energy, 
                  self.t_force, 
                  self.t_virial]
         if atomic :
             t_out += [self.t_ae, 
                       self.t_av]
-        for ii in range(nframes) :
-            feed_dict_test[self.t_coord] = np.reshape(coords[ii:ii+1, :], [-1])
-            feed_dict_test[self.t_box  ] = np.reshape(cells [ii:ii+1, :], [-1])
-            if self.has_efield:
-                feed_dict_test[self.t_efield]= np.reshape(efield[ii:ii+1, :], [-1])
-            if pbc:
-                feed_dict_test[self.t_mesh ] = make_default_mesh(cells[ii:ii+1, :])
-            else:
-                feed_dict_test[self.t_mesh ] = np.array([], dtype = np.int32)
-            if self.has_fparam:
-                feed_dict_test[self.t_fparam] = np.reshape(fparam[ii:ii+1, :], [-1])
-            if self.has_aparam:
-                feed_dict_test[self.t_aparam] = np.reshape(aparam[ii:ii+1, :], [-1])
-            v_out = self.sess.run (t_out, feed_dict = feed_dict_test)
-            energy.append(v_out[0])
-            force .append(v_out[1])
-            virial.append(v_out[2])
-            if atomic:
-                ae.append(v_out[3])
-                av.append(v_out[4])
+
+        feed_dict_test[self.t_coord] = np.reshape(coords, [-1])
+        feed_dict_test[self.t_box  ] = np.reshape(cells , [-1])
+        if self.has_efield:
+            feed_dict_test[self.t_efield]= np.reshape(efield, [-1])
+        if pbc:
+            feed_dict_test[self.t_mesh ] = make_default_mesh(cells)
+        else:
+            feed_dict_test[self.t_mesh ] = np.array([], dtype = np.int32)
+        if self.has_fparam:
+            feed_dict_test[self.t_fparam] = np.reshape(fparam, [-1])
+        if self.has_aparam:
+            feed_dict_test[self.t_aparam] = np.reshape(aparam, [-1])
+        v_out = self.sess.run (t_out, feed_dict = feed_dict_test)
+        energy = v_out[0]
+        force = v_out[1]
+        virial = v_out[2]
+        if atomic:
+            ae = v_out[3]
+            av = v_out[4]
 
         # reverse map of the outputs
         force  = self.reverse_map(np.reshape(force, [nframes,-1,3]), imap)
