@@ -80,6 +80,33 @@ _map_nlist_cpu(
     const int & nloc,
     const int & nnei);
 
+template <typename FPTYPE>
+static void
+_prepare_coord_nlist_cpu(
+    OpKernelContext* context,
+    FPTYPE const ** coord,
+    std::vector<FPTYPE> & coord_cpy,
+    int const** type,
+    std::vector<int> & type_cpy,
+    std::vector<int> & idx_mapping,
+    InputNlist & inlist,
+    std::vector<int> & ilist,
+    std::vector<int> & numneigh,
+    std::vector<int*> & firstneigh,
+    std::vector<std::vector<int>> & jlist,
+    int & new_nall,
+    int & mem_cpy,
+    int & mem_nnei,
+    int & max_nbor_size,
+    const FPTYPE * box,
+    const int * mesh_tensor_data,
+    const int & nloc,
+    const int & nei_mode,
+    const float & rcut_r,
+    const int & max_cpy_trial,
+    const int & max_nnei_trial);
+
+
 
 template <typename Device, typename FPTYPE>
 class ProdEnvMatAOp : public OpKernel {
@@ -228,7 +255,6 @@ public:
       const FPTYPE * coord = p_coord + ff*nall*3;
       const FPTYPE * box = p_box + ff*9;
       const int * type = p_type + ff*nall;
-      std::vector<int> idx_mapping;
 
     if(device == "GPU") {
       #if GOOGLE_CUDA
@@ -254,46 +280,25 @@ public:
       #endif //GOOGLE_CUDA
     }
     else if (device == "CPU") {
-      int new_nall = nall;
       InputNlist inlist;
-      inlist.inum = nloc;
-      // some buffers, be free after prod_env_mat_a_cpu
+      // some buffers, be freed after the evaluation of this frame
+      std::vector<int> idx_mapping;
       std::vector<int> ilist(nloc), numneigh(nloc);
       std::vector<int*> firstneigh(nloc);
       std::vector<std::vector<int>> jlist(nloc);
       std::vector<FPTYPE> coord_cpy;
       std::vector<int> type_cpy;
-      if(nei_mode != 3){
-	// build nlist by myself
-	// normalize and copy coord
-	if(nei_mode == 1){
-	  int copy_ok = _norm_copy_coord_cpu(
-	      coord_cpy, type_cpy, idx_mapping, new_nall, mem_cpy,
-	      coord, box, type, nloc, max_cpy_trial, rcut_r);
-	  OP_REQUIRES (context, copy_ok, errors::Aborted("cannot allocate mem for copied coords"));
-	  coord = &coord_cpy[0];
-	  type = &type_cpy[0];
-	}
-	// build nlist
-	int build_ok = _build_nlist_cpu(
-	    ilist, numneigh, firstneigh, jlist, max_nbor_size, mem_nnei,
-	    coord, nloc, new_nall, max_nnei_trial, rcut_r);
-	OP_REQUIRES (context, build_ok, errors::Aborted("cannot allocate mem for nlist"));
-	inlist.ilist = &ilist[0];
-	inlist.numneigh = &numneigh[0];
-	inlist.firstneigh = &firstneigh[0];
-      }
-      else{
-	// copy pointers to nlist data
-	memcpy(&inlist.ilist, 4 + mesh_tensor.flat<int>().data(), sizeof(int *));
-	memcpy(&inlist.numneigh, 8 + mesh_tensor.flat<int>().data(), sizeof(int *));
-	memcpy(&inlist.firstneigh, 12 + mesh_tensor.flat<int>().data(), sizeof(int **));
-	max_nbor_size = max_numneigh(inlist);
-      }
+      int frame_nall = nall;
+      // prepare coord and nlist
+      _prepare_coord_nlist_cpu<FPTYPE>(
+	  context, &coord, coord_cpy, &type, type_cpy, idx_mapping, 
+	  inlist, ilist, numneigh, firstneigh, jlist,
+	  frame_nall, mem_cpy, mem_nnei, max_nbor_size,
+	  box, mesh_tensor.flat<int>().data(), nloc, nei_mode, rcut_r, max_cpy_trial, max_nnei_trial);
       // launch the cpu compute function
       prod_env_mat_a_cpu(
 	  em, em_deriv, rij, nlist, 
-	  coord, type, inlist, max_nbor_size, avg, std, nloc, new_nall, rcut_r, rcut_r_smth, sec_a);
+	  coord, type, inlist, max_nbor_size, avg, std, nloc, frame_nall, rcut_r, rcut_r_smth, sec_a);
       // do nlist mapping if coords were copied
       if(b_nlist_map) _map_nlist_cpu(nlist, &idx_mapping[0], nloc, nnei);
     }
@@ -334,6 +339,10 @@ public:
     ndescrpt = sec.back() * 1;
     nnei = sec.back();
     max_nbor_size = 1024;
+    max_cpy_trial = 100;
+    mem_cpy = 256;
+    max_nnei_trial = 100;
+    mem_nnei = 256;
   }
 
   void Compute(OpKernelContext* context) override {
@@ -376,6 +385,28 @@ public:
     OP_REQUIRES (context, (9 == box_tensor.shape().dim_size(1)),          errors::InvalidArgument ("number of box should be 9"));
     OP_REQUIRES (context, (ndescrpt == avg_tensor.shape().dim_size(1)),   errors::InvalidArgument ("number of avg should be ndescrpt"));
     OP_REQUIRES (context, (ndescrpt == std_tensor.shape().dim_size(1)),   errors::InvalidArgument ("number of std should be ndescrpt"));
+
+    int nei_mode = 0;
+    bool b_nlist_map = false;
+    if (mesh_tensor.shape().dim_size(0) == 16) {
+      // lammps neighbor list
+      nei_mode = 3;
+    }
+    else if (mesh_tensor.shape().dim_size(0) == 6) {
+      // manual copied pbc
+      assert (nloc == nall);
+      nei_mode = 1;
+      b_nlist_map = true;
+    }
+    else if (mesh_tensor.shape().dim_size(0) == 0) {
+      // no pbc
+      assert (nloc == nall);
+      nei_mode = -1;
+    }
+    else {
+      throw std::runtime_error("invalid mesh tensor");
+    }
+
     // Create an output tensor
     TensorShape descrpt_shape ;
     descrpt_shape.AddDim (nsamples);
@@ -412,14 +443,25 @@ public:
         nlist_shape,
         &nlist_tensor));
 
-    FPTYPE * em = descrpt_tensor->flat<FPTYPE>().data();
-    FPTYPE * em_deriv = descrpt_deriv_tensor->flat<FPTYPE>().data();
-    FPTYPE * rij = rij_tensor->flat<FPTYPE>().data();
-    int * nlist = nlist_tensor->flat<int>().data();
-    const FPTYPE * coord = coord_tensor.flat<FPTYPE>().data();
+    FPTYPE * p_em = descrpt_tensor->flat<FPTYPE>().data();
+    FPTYPE * p_em_deriv = descrpt_deriv_tensor->flat<FPTYPE>().data();
+    FPTYPE * p_rij = rij_tensor->flat<FPTYPE>().data();
+    int * p_nlist = nlist_tensor->flat<int>().data();
+    const FPTYPE * p_coord = coord_tensor.flat<FPTYPE>().data();
+    const FPTYPE * p_box = box_tensor.flat<FPTYPE>().data();
     const FPTYPE * avg = avg_tensor.flat<FPTYPE>().data();
     const FPTYPE * std = std_tensor.flat<FPTYPE>().data();
-    const int * type = type_tensor.flat<int>().data();
+    const int * p_type = type_tensor.flat<int>().data();
+
+    // loop over samples
+    for(int ff = 0; ff < nsamples; ++ff){
+      FPTYPE * em = p_em + ff*nloc*ndescrpt;
+      FPTYPE * em_deriv = p_em_deriv + ff*nloc*ndescrpt*3;
+      FPTYPE * rij = p_rij + ff*nloc*nnei*3;
+      int * nlist = p_nlist + ff*nloc*nnei;
+      const FPTYPE * coord = p_coord + ff*nall*3;
+      const FPTYPE * box = p_box + ff*9;
+      const int * type = p_type + ff*nall;
 
     if(device == "GPU") {
       #if GOOGLE_CUDA
@@ -445,13 +487,27 @@ public:
       #endif //GOOGLE_CUDA
     }
     else if (device == "CPU") {
-      memcpy (&ilist,  4  + mesh_tensor.flat<int>().data(), sizeof(int *));
-      memcpy (&jrange, 8  + mesh_tensor.flat<int>().data(), sizeof(int *));
-      memcpy (&jlist,  12 + mesh_tensor.flat<int>().data(), sizeof(int *));
+      InputNlist inlist;
+      // some buffers, be freed after the evaluation of this frame
+      std::vector<int> idx_mapping;
+      std::vector<int> ilist(nloc), numneigh(nloc);
+      std::vector<int*> firstneigh(nloc);
+      std::vector<std::vector<int>> jlist(nloc);
+      std::vector<FPTYPE> coord_cpy;
+      std::vector<int> type_cpy;
+      int frame_nall = nall;
+      // prepare coord and nlist
+      _prepare_coord_nlist_cpu<FPTYPE>(
+	  context, &coord, coord_cpy, &type, type_cpy, idx_mapping, 
+	  inlist, ilist, numneigh, firstneigh, jlist,
+	  frame_nall, mem_cpy, mem_nnei, max_nbor_size,
+	  box, mesh_tensor.flat<int>().data(), nloc, nei_mode, rcut, max_cpy_trial, max_nnei_trial);
       // launch the cpu compute function
-      // prod_env_mat_r_cpu(
-      //     em, em_deriv, rij, nlist, 
-      //     coord, type, ilist, jrange, jlist, max_nbor_size, avg, std, nloc, nall, rcut, rcut_smth, sec);
+      prod_env_mat_r_cpu(
+          em, em_deriv, rij, nlist, 
+          coord, type, inlist, max_nbor_size, avg, std, nloc, frame_nall, rcut, rcut_smth, sec);
+      if(b_nlist_map) _map_nlist_cpu(nlist, &idx_mapping[0], nloc, nnei);
+    }
     }
   }
 
@@ -465,6 +521,8 @@ private:
   std::vector<int> sec;
   std::vector<int> sec_null;
   int nnei, ndescrpt, nloc, nall, max_nbor_size;
+  int mem_cpy, max_cpy_trial;
+  int mem_nnei, max_nnei_trial;
   std::string device;
   int * array_int = NULL;
   unsigned long long * array_longlong = NULL;
@@ -472,6 +530,9 @@ private:
   int * ilist = NULL, * jrange = NULL, * jlist = NULL;
   int ilist_size = 0, jrange_size = 0, jlist_size = 0;
 };
+
+
+
 
 template<typename FPTYPE>
 static int
@@ -563,6 +624,61 @@ _map_nlist_cpu(
   }  
 }
 
+template <typename FPTYPE>
+static void
+_prepare_coord_nlist_cpu(
+    OpKernelContext* context,
+    FPTYPE const ** coord,
+    std::vector<FPTYPE> & coord_cpy,
+    int const** type,
+    std::vector<int> & type_cpy,
+    std::vector<int> & idx_mapping,
+    InputNlist & inlist,
+    std::vector<int> & ilist,
+    std::vector<int> & numneigh,
+    std::vector<int*> & firstneigh,
+    std::vector<std::vector<int>> & jlist,
+    int & new_nall,
+    int & mem_cpy,
+    int & mem_nnei,
+    int & max_nbor_size,
+    const FPTYPE * box,
+    const int * mesh_tensor_data,
+    const int & nloc,
+    const int & nei_mode,
+    const float & rcut_r,
+    const int & max_cpy_trial,
+    const int & max_nnei_trial)
+{    
+  inlist.inum = nloc;
+  if(nei_mode != 3){
+    // build nlist by myself
+    // normalize and copy coord
+    if(nei_mode == 1){
+      int copy_ok = _norm_copy_coord_cpu(
+	  coord_cpy, type_cpy, idx_mapping, new_nall, mem_cpy,
+	  *coord, box, *type, nloc, max_cpy_trial, rcut_r);
+      OP_REQUIRES (context, copy_ok, errors::Aborted("cannot allocate mem for copied coords"));
+      *coord = &coord_cpy[0];
+      *type = &type_cpy[0];
+    }
+    // build nlist
+    int build_ok = _build_nlist_cpu(
+	ilist, numneigh, firstneigh, jlist, max_nbor_size, mem_nnei,
+	*coord, nloc, new_nall, max_nnei_trial, rcut_r);
+    OP_REQUIRES (context, build_ok, errors::Aborted("cannot allocate mem for nlist"));
+    inlist.ilist = &ilist[0];
+    inlist.numneigh = &numneigh[0];
+    inlist.firstneigh = &firstneigh[0];
+  }
+  else{
+    // copy pointers to nlist data
+    memcpy(&inlist.ilist, 4 + mesh_tensor_data, sizeof(int *));
+    memcpy(&inlist.numneigh, 8 + mesh_tensor_data, sizeof(int *));
+    memcpy(&inlist.firstneigh, 12 + mesh_tensor_data, sizeof(int **));
+    max_nbor_size = max_numneigh(inlist);
+  }
+}
 
 
 // Register the CPU kernels.
