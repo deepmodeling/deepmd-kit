@@ -235,8 +235,10 @@ class DipoleChargeModifier(DeepDipole):
         tot_v
                 The virial modification
         """
+        atype = np.array(atype, dtype=int)
         coord, atype, imap = self.sort_input(coord, atype)
-        natoms = coord.shape[1] // 3
+        # natoms = coord.shape[1] // 3
+        natoms = atype.size
         nframes = coord.shape[0]
         box = np.reshape(box, [nframes, 9])
         atype = np.reshape(atype, [natoms])

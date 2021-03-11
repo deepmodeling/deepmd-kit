@@ -37,7 +37,7 @@ public:
 private:
     PairNNP * pair_nnp;
     DeepTensor dpt;
-    DataModifier dtm;
+    DipoleChargeModifier dtm;
     std::string model;
     int ntypes;
     std::vector<int > sel_type;

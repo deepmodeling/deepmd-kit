@@ -176,25 +176,22 @@ def set_log_handles(
     +---------+--------------+----------------+----------------+----------------+
     |         | our notation | python logging | tensorflow cpp | OpenMP         |
     +=========+==============+================+================+================+
-    | debug   | 3            | 10             | 0              | 1/on/true/yes  |
+    | debug   | 10           | 10             | 0              | 1/on/true/yes  |
     +---------+--------------+----------------+----------------+----------------+
-    | info    | 2            | 20             | 1              | 0/off/false/no |
+    | info    | 20           | 20             | 1              | 0/off/false/no |
     +---------+--------------+----------------+----------------+----------------+
-    | warning | 1            | 30             | 2              | 0/off/false/no |
+    | warning | 30           | 30             | 2              | 0/off/false/no |
     +---------+--------------+----------------+----------------+----------------+
-    | error   | 0            | 40             | 3              | 0/off/false/no |
+    | error   | 40           | 40             | 3              | 0/off/false/no |
     +---------+--------------+----------------+----------------+----------------+
 
     """
     # silence logging for OpenMP when running on CPU if level is any other than debug
-    if level >= 3:
+    if level <= 10:
         os.environ["KMP_WARNINGS"] = "FALSE"
 
     # set TF cpp internal logging level
-    os.environ['TF_CPP_MIN_LOG_LEVEL'] = str(3 - level)
-
-    # set python logging level
-    level = (4 - level) * 10
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = str(int((level / 10) - 1))
 
     # get root logger
     root_log = logging.getLogger()

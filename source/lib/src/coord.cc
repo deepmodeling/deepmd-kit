@@ -33,10 +33,11 @@ copy_coord_cpu(
     const FPTYPE * in_c,
     const int * in_t,
     const int & nloc,
-    const int & mem_nall,
+    const int & mem_nall_,
     const float & rcut,
     const Region<FPTYPE> & region)
 {
+  const int mem_nall = mem_nall_;
   std::vector<double> coord(nloc * 3);
   std::vector<int> atype(nloc);
   std::copy(in_c, in_c+nloc*3, coord.begin());

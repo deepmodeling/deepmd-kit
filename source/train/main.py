@@ -1,6 +1,7 @@
 """DeePMD-Kit entry point module."""
 
 import argparse
+import logging
 from pathlib import Path
 from typing import List, Optional
 
@@ -15,7 +16,28 @@ from deepmd.entrypoints import (
 )
 from deepmd.loggers import set_log_handles
 
-__all__ = ["main", "parse_args"]
+__all__ = ["main", "parse_args", "get_ll"]
+
+
+def get_ll(log_level: str) -> int:
+    """Convert string to python logging level.
+
+    Parameters
+    ----------
+    log_level : str
+        allowed input values are: DEBUG, INFO, WARNING, ERROR, 3, 2, 1, 0
+
+    Returns
+    -------
+    int
+        one of python logging module log levels - 10, 20, 30 or 40
+    """
+    if log_level.isdigit():
+        int_level = (4 - int(log_level)) * 10
+    else:
+        int_level = getattr(logging, log_level)
+
+    return int_level
 
 
 def parse_args(args: Optional[List[str]] = None):
@@ -41,12 +63,11 @@ def parse_args(args: Optional[List[str]] = None):
     )
     parser_log.add_argument(
         "-v",
-        "--verbose",
-        default=2,
-        action="count",
-        dest="log_level",
-        help="set verbosity level 0 - 3, 0=ERROR, 1(-v)=WARNING, 2(-vv)=INFO "
-        "and 3(-vvv)=DEBUG",
+        "--log-level",
+        choices=["DEBUG", "3", "INFO", "2", "WARNING", "1", "ERROR", "0"],
+        default="INFO",
+        help="set verbosity level by string or number, 0=ERROR, 1=WARNING, 2=INFO "
+        "and 3=DEBUG",
     )
     parser_log.add_argument(
         "-l",
@@ -206,12 +227,14 @@ def parse_args(args: Optional[List[str]] = None):
         "-d",
         "--detail-file",
         type=str,
+        default=None,
         help="File where details of energy force and virial accuracy will be written",
     )
     parser_tst.add_argument(
         "-a",
         "--atomic-energy",
         action="store_true",
+        default=False,
         help="Test the accuracy of atomic energy",
     )
 
@@ -291,6 +314,8 @@ def parse_args(args: Optional[List[str]] = None):
     parsed_args = parser.parse_args(args=args)
     if parsed_args.command is None:
         parser.print_help()
+    else:
+        parsed_args.log_level = get_ll(parsed_args.log_level)
 
     return parsed_args
 

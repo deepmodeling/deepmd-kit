@@ -17,14 +17,13 @@ public:
   void compute (std::vector<VALUETYPE> &	value,
 		const std::vector<VALUETYPE> &	coord,
 		const std::vector<int> &	atype,
-		const std::vector<VALUETYPE> &	box,
-		const int			nghost = 0);
+		const std::vector<VALUETYPE> &	box);
   void compute (std::vector<VALUETYPE> &	value,
 		const std::vector<VALUETYPE> &	coord,
 		const std::vector<int> &	atype,
 		const std::vector<VALUETYPE> &	box, 
 		const int			nghost,
-		const LammpsNeighborList &	lmp_list);
+		const InputNlist &	inlist);
   VALUETYPE cutoff () const {assert(inited); return rcut;};
   int numb_types () const {assert(inited); return ntypes;};
   int output_dim () const {assert(inited); return odim;};
@@ -51,13 +50,12 @@ private:
   void compute_inner (std::vector<VALUETYPE> &		value,
 		      const std::vector<VALUETYPE> &	coord,
 		      const std::vector<int> &		atype,
-		      const std::vector<VALUETYPE> &	box,
-		      const int				nghost = 0);
+		      const std::vector<VALUETYPE> &	box);
   void compute_inner (std::vector<VALUETYPE> &		value,
 		      const std::vector<VALUETYPE> &	coord,
 		      const std::vector<int> &		atype,
 		      const std::vector<VALUETYPE> &	box, 
 		      const int				nghost,
-		      const InternalNeighborList&	lmp_list);
+		      const InputNlist&			inlist);
 };
 

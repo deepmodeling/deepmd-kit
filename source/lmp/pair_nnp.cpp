@@ -360,7 +360,7 @@ void PairNNP::compute(int eflag, int vflag)
   multi_models_no_mod_devi = (numb_models > 1 && (out_freq == 0 || update->ntimestep % out_freq != 0));
   multi_models_mod_devi = (numb_models > 1 && (out_freq > 0 && update->ntimestep % out_freq == 0));
   if (do_ghost) {
-    LammpsNeighborList lmp_list (list->inum, list->ilist, list->numneigh, list->firstneigh);
+    InputNlist lmp_list (list->inum, list->ilist, list->numneigh, list->firstneigh);
     if (single_model || multi_models_no_mod_devi) {
       if ( ! (eflag_atom || vflag_atom) ) {      
 #ifdef HIGH_PREC
@@ -583,7 +583,7 @@ void PairNNP::compute(int eflag, int vflag)
   else {
     if (numb_models == 1) {
 #ifdef HIGH_PREC
-      nnp_inter.compute (dener, dforce, dvirial, dcoord, dtype, dbox, nghost);
+      nnp_inter.compute (dener, dforce, dvirial, dcoord, dtype, dbox);
 #else
       vector<float> dcoord_(dcoord.size());
       vector<float> dbox_(dbox.size());
@@ -592,7 +592,7 @@ void PairNNP::compute(int eflag, int vflag)
       vector<float> dforce_(dforce.size(), 0);
       vector<float> dvirial_(dvirial.size(), 0);
       double dener_ = 0;
-      nnp_inter.compute (dener_, dforce_, dvirial_, dcoord_, dtype, dbox_, nghost);
+      nnp_inter.compute (dener_, dforce_, dvirial_, dcoord_, dtype, dbox_);
       for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];	
       for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	
       dener = dener_;      
