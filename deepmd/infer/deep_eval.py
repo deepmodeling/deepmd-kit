@@ -245,14 +245,13 @@ class DeepTensor(DeepEval):
         tensor = []
         feed_dict_test = {}
         feed_dict_test[self.t_natoms] = natoms_vec
-        feed_dict_test[self.t_type  ] = atom_types
+        feed_dict_test[self.t_type  ] = np.tile(atom_types, [nframes,1]).reshape([-1])
         t_out = [self.t_tensor]
-        for ii in range(nframes) :
-            feed_dict_test[self.t_coord] = np.reshape(coords[ii:ii+1, :], [-1])
-            feed_dict_test[self.t_box  ] = np.reshape(cells [ii:ii+1, :], [-1])
-            feed_dict_test[self.t_mesh ] = make_default_mesh(cells[ii:ii+1, :])
-            v_out = self.sess.run (t_out, feed_dict = feed_dict_test)
-            tensor.append(v_out[0])
+        feed_dict_test[self.t_coord] = np.reshape(coords, [-1])
+        feed_dict_test[self.t_box  ] = np.reshape(cells , [-1])
+        feed_dict_test[self.t_mesh ] = make_default_mesh(cells)
+        v_out = self.sess.run (t_out, feed_dict = feed_dict_test)
+        tensor = v_out[0]
 
         # reverse map of the outputs
         if atomic:
