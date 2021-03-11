@@ -48,9 +48,7 @@ void prod_env_mat_a_gpu_cuda(
     int * nlist, 
     const FPTYPE * coord, 
     const int * type, 
-    const int * ilist, 
-    const int * jrange, 
-    const int * jlist,
+    const InputNlist & gpu_inlist,
     int * array_int, 
     unsigned long long * array_longlong,
     const int max_nbor_size,
@@ -70,9 +68,7 @@ void prod_env_mat_r_gpu_cuda(
     int * nlist, 
     const FPTYPE * coord, 
     const int * type, 
-    const int * ilist, 
-    const int * jrange, 
-    const int * jlist,
+    const InputNlist & gpu_inlist,
     int * array_int, 
     unsigned long long * array_longlong,
     const int max_nbor_size,
@@ -85,14 +81,10 @@ void prod_env_mat_r_gpu_cuda(
     const std::vector<int> sec);
 
 void env_mat_nbor_update(
-    bool &init,
-    int * &ilist,
-    int * &jrange,
-    int * &jlist,
-    int &ilist_size,
-    int &jrange_size,
-    int &jlist_size,
+    InputNlist &inlist,
+    InputNlist &gpu_inlist,
     int &max_nbor_size,
+    int* &nbor_list_dev,
     const int * mesh, 
     const int size);
 #endif // GOOGLE_CUDA

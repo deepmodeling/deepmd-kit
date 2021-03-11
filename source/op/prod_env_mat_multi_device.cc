@@ -243,14 +243,18 @@ public:
       OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape, &uint64_temp));
       array_int = int_temp.flat<int>().data(); 
       array_longlong = uint64_temp.flat<unsigned long long>().data();
+
+      // update nbor list
+      InputNlist inlist;
+      inlist.inum = nloc;
       env_mat_nbor_update(
-          init, ilist, jrange, jlist, ilist_size, jrange_size, jlist_size, max_nbor_size,
+          inlist, gpu_inlist, max_nbor_size, nbor_list_dev,
           mesh_tensor.flat<int>().data(), static_cast<int>(mesh_tensor.NumElements()));
-      OP_REQUIRES (context, (max_nbor_size <= GPU_MAX_NBOR_SIZE), errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_nbor_size) + " is larger than " + std::to_string(GPU_MAX_NBOR_SIZE) + ", which currently is not supported by deepmd-kit."));
+      OP_REQUIRES (context, (max_numneigh(inlist) <= GPU_MAX_NBOR_SIZE), errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_numneigh(inlist)) + " is larger than " + std::to_string(GPU_MAX_NBOR_SIZE) + ", which currently is not supported by deepmd-kit."));
       // launch the gpu(nv) compute function
       prod_env_mat_a_gpu_cuda(
           em, em_deriv, rij, nlist, 
-          coord, type, ilist, jrange, jlist, array_int, array_longlong, max_nbor_size, avg, std, nloc, nall, rcut_r, rcut_r_smth, sec_a);
+          coord, type, gpu_inlist, array_int, array_longlong, max_nbor_size, avg, std, nloc, nall, rcut_r, rcut_r_smth, sec_a);
       #endif //GOOGLE_CUDA
     }
     else if (device == "CPU") {
@@ -316,9 +320,8 @@ private:
   std::string device;
   int * array_int = NULL;
   unsigned long long * array_longlong = NULL;
-  bool init = false;
-  int * ilist = NULL, * jrange = NULL, * jlist = NULL;
-  int ilist_size = 0, jrange_size = 0, jlist_size = 0;
+  InputNlist gpu_inlist;
+  int * nbor_list_dev = NULL;
 };
 
 template<typename Device, typename FPTYPE>
@@ -434,24 +437,37 @@ public:
       OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape, &uint64_temp));
       array_int = int_temp.flat<int>().data(); 
       array_longlong = uint64_temp.flat<unsigned long long>().data();
+      
+      // update nbor list
+      InputNlist inlist;
+      inlist.inum = nloc;
       env_mat_nbor_update(
-          init, ilist, jrange, jlist, ilist_size, jrange_size, jlist_size, max_nbor_size,
+          inlist, gpu_inlist, max_nbor_size, nbor_list_dev,
           mesh_tensor.flat<int>().data(), static_cast<int>(mesh_tensor.NumElements()));
-      OP_REQUIRES (context, (max_nbor_size <= GPU_MAX_NBOR_SIZE), errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_nbor_size) + " is larger than " + std::to_string(GPU_MAX_NBOR_SIZE) + ", which currently is not supported by deepmd-kit."));
+      OP_REQUIRES (context, (max_numneigh(inlist) <= GPU_MAX_NBOR_SIZE), errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_numneigh(inlist)) + " is larger than " + std::to_string(GPU_MAX_NBOR_SIZE) + ", which currently is not supported by deepmd-kit."));
       // launch the gpu(nv) compute function
       prod_env_mat_r_gpu_cuda(
           em, em_deriv, rij, nlist, 
-          coord, type, ilist, jrange, jlist, array_int, array_longlong, max_nbor_size, avg, std, nloc, nall, rcut, rcut_smth, sec);
+          coord, type, gpu_inlist, array_int, array_longlong, max_nbor_size, avg, std, nloc, nall, rcut, rcut_smth, sec);
       #endif //GOOGLE_CUDA
     }
     else if (device == "CPU") {
-      memcpy (&ilist,  4  + mesh_tensor.flat<int>().data(), sizeof(int *));
-      memcpy (&jrange, 8  + mesh_tensor.flat<int>().data(), sizeof(int *));
-      memcpy (&jlist,  12 + mesh_tensor.flat<int>().data(), sizeof(int *));
+      // memcpy (&ilist,  4  + mesh_tensor.flat<int>().data(), sizeof(int *));
+      // memcpy (&jrange, 8  + mesh_tensor.flat<int>().data(), sizeof(int *));
+      // memcpy (&jlist,  12 + mesh_tensor.flat<int>().data(), sizeof(int *));
       // launch the cpu compute function
       // prod_env_mat_r_cpu(
       //     em, em_deriv, rij, nlist, 
       //     coord, type, ilist, jrange, jlist, max_nbor_size, avg, std, nloc, nall, rcut, rcut_smth, sec);
+      InputNlist inlist;
+      inlist.inum = nloc;
+      memcpy(&inlist.ilist, 4 + mesh_tensor.flat<int>().data(), sizeof(int *));
+      memcpy(&inlist.numneigh, 8 + mesh_tensor.flat<int>().data(), sizeof(int *));
+      memcpy(&inlist.firstneigh, 12 + mesh_tensor.flat<int>().data(), sizeof(int **));
+      max_nbor_size = max_numneigh(inlist);
+      prod_env_mat_r_cpu(
+          em, em_deriv, rij, nlist, 
+          coord, type, inlist, max_nbor_size, avg, std, nloc, nall, rcut, rcut_smth, sec);
     }
   }
 
@@ -468,9 +484,8 @@ private:
   std::string device;
   int * array_int = NULL;
   unsigned long long * array_longlong = NULL;
-  bool init = false;
-  int * ilist = NULL, * jrange = NULL, * jlist = NULL;
-  int ilist_size = 0, jrange_size = 0, jlist_size = 0;
+  InputNlist gpu_inlist;
+  int * nbor_list_dev = NULL;
 };
 
 template<typename FPTYPE>
@@ -568,10 +583,10 @@ _map_nlist_cpu(
 // Register the CPU kernels.
 #define REGISTER_CPU(T)                                                                 \
 REGISTER_KERNEL_BUILDER(                                                                \
-    Name("ProdEnvMatA").Device(DEVICE_CPU).TypeConstraint<T>("T"),                       \
-    ProdEnvMatAOp<CPUDevice, T>);                                                        \
+    Name("ProdEnvMatA").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
+    ProdEnvMatAOp<CPUDevice, T>);                                                       \
 REGISTER_KERNEL_BUILDER(                                                                \
-    Name("ProdEnvMatR").Device(DEVICE_CPU).TypeConstraint<T>("T"),                       \
+    Name("ProdEnvMatR").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
     ProdEnvMatROp<CPUDevice, T>); 
 REGISTER_CPU(float);
 REGISTER_CPU(double);
@@ -580,10 +595,10 @@ REGISTER_CPU(double);
 #if GOOGLE_CUDA
 #define REGISTER_GPU(T)                                                                 \
 REGISTER_KERNEL_BUILDER(                                                                \
-    Name("ProdEnvMatA").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms"),  \
-    ProdEnvMatAOp<GPUDevice, T>);                                                        \
+    Name("ProdEnvMatA").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms"), \
+    ProdEnvMatAOp<GPUDevice, T>);                                                       \
 REGISTER_KERNEL_BUILDER(                                                                \
-    Name("ProdEnvMatR").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms"),  \
+    Name("ProdEnvMatR").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms"), \
     ProdEnvMatROp<GPUDevice, T>);
 REGISTER_GPU(float);
 REGISTER_GPU(double);
