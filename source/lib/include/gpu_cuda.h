@@ -22,6 +22,15 @@ void memcpy_host_to_device(
 }
 
 template <typename FPTYPE>
+void memcpy_host_to_device(
+    FPTYPE * device, 
+    FPTYPE * host,
+    const int size) 
+{
+  cudaErrcheck(cudaMemcpy(device, host, sizeof(FPTYPE) * size, cudaMemcpyHostToDevice));  
+}
+
+template <typename FPTYPE>
 void memcpy_device_to_host(
     FPTYPE * device, 
     std::vector<FPTYPE> &host) 
@@ -56,7 +65,9 @@ void malloc_device_memory_sync(
 
 template <typename FPTYPE>
 void delete_device_memory(
-    FPTYPE * device) 
+    FPTYPE * &device) 
 {
-  cudaErrcheck(cudaFree(device));
+  if (device != NULL) {
+    cudaErrcheck(cudaFree(device));
+  }
 }

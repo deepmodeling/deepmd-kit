@@ -533,15 +533,10 @@ TEST_F(TestEnvMatA, prod_gpu_cuda)
   else {
     max_nbor_size = 4096;
   }
-  std::vector<int> ilist(nloc), jlist(tot_nnei), jrange(nloc+1, 0);
-  for (int ii = 0; ii < nloc; ++ii){
-    ilist[ii] = ii;
-    jrange[ii+1] = jrange[ii] + nlist_a_cpy[ii].size();
-    int jj, cc;
-    for (jj = jrange[ii], cc = 0; jj < jrange[ii+1]; ++jj, ++cc){
-      jlist[jj] = nlist_a_cpy[ii][cc];
-    }
-  }
+  std::vector<int> ilist(nloc), numneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
+  InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]), gpu_inlist;
+  convert_nlist(inlist, nlist_a_cpy);
   std::vector<double > em(nloc * ndescrpt, 0.0), em_deriv(nloc * ndescrpt * 3, 0.0), rij(nloc * nnei * 3, 0.0);
   std::vector<int> nlist(nloc * nnei, 0);
   std::vector<double > avg(ntypes * ndescrpt, 0);
@@ -549,7 +544,7 @@ TEST_F(TestEnvMatA, prod_gpu_cuda)
 
   double * em_dev = NULL, * em_deriv_dev = NULL, * rij_dev = NULL;
   double * posi_cpy_dev = NULL, * avg_dev = NULL, * std_dev = NULL;
-  int * atype_cpy_dev = NULL, * nlist_dev = NULL, * ilist_dev = NULL, * jrange_dev = NULL, * jlist_dev = NULL, * array_int_dev = NULL;
+  int * atype_cpy_dev = NULL, * nlist_dev = NULL, * array_int_dev = NULL, * memory_dev = NULL;
   int_64 * array_longlong_dev = NULL;
   malloc_device_memory_sync(em_dev, em);
   malloc_device_memory_sync(em_deriv_dev, em_deriv);
@@ -557,15 +552,12 @@ TEST_F(TestEnvMatA, prod_gpu_cuda)
   malloc_device_memory_sync(posi_cpy_dev, posi_cpy);
   malloc_device_memory_sync(avg_dev, avg);
   malloc_device_memory_sync(std_dev, std);
-
   malloc_device_memory_sync(atype_cpy_dev, atype_cpy);
   malloc_device_memory_sync(nlist_dev, nlist);
-  malloc_device_memory_sync(ilist_dev, ilist);
-  malloc_device_memory_sync(jrange_dev, jrange);
-  malloc_device_memory_sync(jlist_dev, jlist);
-
   malloc_device_memory(array_int_dev, sec_a.size() + nloc * sec_a.size() + nloc);
   malloc_device_memory(array_longlong_dev, nloc * GPU_MAX_NBOR_SIZE * 2);
+  malloc_device_memory(memory_dev, nloc * max_nbor_size);
+  convert_nlist_gpu_cuda(gpu_inlist, inlist, memory_dev, max_nbor_size);
 
   prod_env_mat_a_gpu_cuda(    
       em_dev, 
@@ -574,9 +566,7 @@ TEST_F(TestEnvMatA, prod_gpu_cuda)
       nlist_dev, 
       posi_cpy_dev, 
       atype_cpy_dev, 
-      ilist_dev, 
-      jrange_dev, 
-      jlist_dev,
+      gpu_inlist,
       array_int_dev, 
       array_longlong_dev,
       max_nbor_size,
@@ -593,13 +583,12 @@ TEST_F(TestEnvMatA, prod_gpu_cuda)
   delete_device_memory(nlist_dev);
   delete_device_memory(posi_cpy_dev);
   delete_device_memory(atype_cpy_dev);
-  delete_device_memory(ilist_dev);
-  delete_device_memory(jrange_dev);
-  delete_device_memory(jlist_dev);
   delete_device_memory(array_int_dev);
   delete_device_memory(array_longlong_dev);
   delete_device_memory(avg_dev);
   delete_device_memory(std_dev);
+  delete_device_memory(memory_dev);
+  free_nlist_gpu_cuda(gpu_inlist);
 
   for(int ii = 0; ii < nloc; ++ii){
     for (int jj = 0; jj < nnei; ++jj){
@@ -634,15 +623,10 @@ TEST_F(TestEnvMatA, prod_gpu_cuda_equal_cpu)
   else {
     max_nbor_size = 4096;
   }
-  std::vector<int> ilist(nloc), jlist(tot_nnei), jrange(nloc+1, 0);
-  for (int ii = 0; ii < nloc; ++ii){
-    ilist[ii] = ii;
-    jrange[ii+1] = jrange[ii] + nlist_a_cpy[ii].size();
-    int jj, cc;
-    for (jj = jrange[ii], cc = 0; jj < jrange[ii+1]; ++jj, ++cc){
-      jlist[jj] = nlist_a_cpy[ii][cc];
-    }
-  }
+  std::vector<int> ilist(nloc), numneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
+  InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]), gpu_inlist;
+  convert_nlist(inlist, nlist_a_cpy);
   std::vector<double > em(nloc * ndescrpt, 0.0), em_deriv(nloc * ndescrpt * 3, 0.0), rij(nloc * nnei * 3, 0.0);
   std::vector<int> nlist(nloc * nnei, 0);
   std::vector<double > avg(ntypes * ndescrpt, 0);
@@ -650,7 +634,7 @@ TEST_F(TestEnvMatA, prod_gpu_cuda_equal_cpu)
 
   double * em_dev = NULL, * em_deriv_dev = NULL, * rij_dev = NULL;
   double * posi_cpy_dev = NULL, * avg_dev = NULL, * std_dev = NULL;
-  int * atype_cpy_dev = NULL, * nlist_dev = NULL, * ilist_dev = NULL, * jrange_dev = NULL, * jlist_dev = NULL, * array_int_dev = NULL;
+  int * atype_cpy_dev = NULL, * nlist_dev = NULL, * array_int_dev = NULL, * memory_dev = NULL;
   int_64 * array_longlong_dev = NULL;
   malloc_device_memory_sync(em_dev, em);
   malloc_device_memory_sync(em_deriv_dev, em_deriv);
@@ -661,12 +645,10 @@ TEST_F(TestEnvMatA, prod_gpu_cuda_equal_cpu)
 
   malloc_device_memory_sync(atype_cpy_dev, atype_cpy);
   malloc_device_memory_sync(nlist_dev, nlist);
-  malloc_device_memory_sync(ilist_dev, ilist);
-  malloc_device_memory_sync(jrange_dev, jrange);
-  malloc_device_memory_sync(jlist_dev, jlist);
-
   malloc_device_memory(array_int_dev, sec_a.size() + nloc * sec_a.size() + nloc);
   malloc_device_memory(array_longlong_dev, nloc * GPU_MAX_NBOR_SIZE * 2);
+  malloc_device_memory(memory_dev, nloc * max_nbor_size);
+  convert_nlist_gpu_cuda(gpu_inlist, inlist, memory_dev, max_nbor_size);
 
   prod_env_mat_a_gpu_cuda(    
       em_dev, 
@@ -675,9 +657,7 @@ TEST_F(TestEnvMatA, prod_gpu_cuda_equal_cpu)
       nlist_dev, 
       posi_cpy_dev, 
       atype_cpy_dev, 
-      ilist_dev, 
-      jrange_dev, 
-      jlist_dev,
+      gpu_inlist,
       array_int_dev, 
       array_longlong_dev,
       max_nbor_size,
@@ -697,13 +677,12 @@ TEST_F(TestEnvMatA, prod_gpu_cuda_equal_cpu)
   delete_device_memory(nlist_dev);
   delete_device_memory(posi_cpy_dev);
   delete_device_memory(atype_cpy_dev);
-  delete_device_memory(ilist_dev);
-  delete_device_memory(jrange_dev);
-  delete_device_memory(jlist_dev);
   delete_device_memory(array_int_dev);
   delete_device_memory(array_longlong_dev);
   delete_device_memory(avg_dev);
   delete_device_memory(std_dev);
+  delete_device_memory(memory_dev);
+  free_nlist_gpu_cuda(gpu_inlist);
 
   std::vector<int> fmt_nlist_a_1, fmt_nlist_r_1;
   std::vector<double> env_1, env_deriv_1, rij_a_1;
@@ -733,14 +712,14 @@ TEST_F(TestEnvMatA, prod_gpu_cuda_equal_cpu)
     }
   }
 
-  // for(int ii = 0; ii < nloc; ++ii){
-  //   for (int jj = 0; jj < nnei; ++jj){
-  //     for (int dd = 0; dd < 4; ++dd){
-  //   	EXPECT_LT(fabs(em[ii*nnei*4 + jj*4 + dd] - 
-  // 		       expected_env[ii*nnei*4 + jj*4 + dd]) , 
-  // 		  1e-5);
-  //     }
-  //   }    
-  // }
+  for(int ii = 0; ii < nloc; ++ii){
+    for (int jj = 0; jj < nnei; ++jj){
+      for (int dd = 0; dd < 4; ++dd){
+    	EXPECT_LT(fabs(em[ii*nnei*4 + jj*4 + dd] - 
+  		       expected_env[ii*nnei*4 + jj*4 + dd]) , 
+  		  1e-5);
+      }
+    }    
+  }
 }
 #endif //GOOGLE_CUDA

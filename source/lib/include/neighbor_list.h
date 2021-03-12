@@ -121,3 +121,13 @@ copy_coord (std::vector<double > &		out_c,
 	    const std::vector<int > &		in_t,
 	    const double &			rc,
 	    const SimulationRegion<double > &	region);
+
+#if GOOGLE_CUDA
+void convert_nlist_gpu_cuda(
+    InputNlist & gpu_nlist,
+    InputNlist & cpu_nlist,
+    int* & gpu_memory,
+    const int & max_nbor_size);
+
+void free_nlist_gpu_cuda(InputNlist & gpu_nlist);
+#endif // GOOGLE_CUDA
