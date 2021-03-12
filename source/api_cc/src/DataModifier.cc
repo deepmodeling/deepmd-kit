@@ -68,10 +68,10 @@ run_model (std::vector<VALUETYPE> &		dforce,
 	   std::vector<VALUETYPE> &		dvirial,
 	   Session *				session, 
 	   const std::vector<std::pair<std::string, Tensor>> & input_tensors,
-	   const NNPAtomMap<VALUETYPE> &	nnpmap, 
+	   const AtomMap<VALUETYPE> &	atommap, 
 	   const int				nghost)
 {
-  unsigned nloc = nnpmap.get_type().size();
+  unsigned nloc = atommap.get_type().size();
   unsigned nall = nloc + nghost;
   if (nloc == 0) {
     dforce.clear();
@@ -158,17 +158,17 @@ compute (std::vector<VALUETYPE> &		dfcorr_,
   nlist_data.copy_from_nlist(lmp_list);
   nlist_data.shuffle_exclude_empty(real_fwd_map);  
   // sort atoms
-  NNPAtomMap<VALUETYPE> nnpmap (datype_real.begin(), datype_real.begin() + nloc_real);
-  assert (nloc_real == nnpmap.get_type().size());
-  const std::vector<int> & sort_fwd_map(nnpmap.get_fwd_map());
-  const std::vector<int> & sort_bkw_map(nnpmap.get_bkw_map());
+  AtomMap<VALUETYPE> atommap (datype_real.begin(), datype_real.begin() + nloc_real);
+  assert (nloc_real == atommap.get_type().size());
+  const std::vector<int> & sort_fwd_map(atommap.get_fwd_map());
+  const std::vector<int> & sort_bkw_map(atommap.get_bkw_map());
   // shuffle nlist
-  nlist_data.shuffle(nnpmap);
+  nlist_data.shuffle(atommap);
   InputNlist nlist;
   nlist_data.make_inlist(nlist);
   // make input tensors
   std::vector<std::pair<std::string, Tensor>> input_tensors;
-  int ret = session_input_tensors (input_tensors, dcoord_real, ntypes, datype_real, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), nnpmap, nghost_real, 0, name_scope);
+  int ret = session_input_tensors (input_tensors, dcoord_real, ntypes, datype_real, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, nghost_real, 0, name_scope);
   assert (nloc_real == ret);
   // make bond idx map
   std::vector<int > bd_idx(nall, -1);
@@ -176,7 +176,7 @@ compute (std::vector<VALUETYPE> &		dfcorr_,
     bd_idx[pairs[ii].first] = pairs[ii].second;
   }
   // make extf by bond idx map
-  std::vector<int > dtype_sort_loc = nnpmap.get_type();
+  std::vector<int > dtype_sort_loc = atommap.get_type();
   std::vector<VALUETYPE> dextf;
   for(int ii = 0; ii < dtype_sort_loc.size(); ++ii){
     if (binary_search(sel_type.begin(), sel_type.end(), dtype_sort_loc[ii])){
@@ -211,11 +211,11 @@ compute (std::vector<VALUETYPE> &		dfcorr_,
   input_tensors.push_back({"t_ef", extf_tensor});  
   // run model
   std::vector<VALUETYPE> dfcorr, dvcorr;
-  run_model (dfcorr, dvcorr, session, input_tensors, nnpmap, nghost_real);
+  run_model (dfcorr, dvcorr, session, input_tensors, atommap, nghost_real);
   assert(dfcorr.size() == nall_real * 3);
   // back map force
   std::vector<VALUETYPE> dfcorr_1 = dfcorr;
-  nnpmap.backward (dfcorr_1.begin(), dfcorr.begin(), 3);
+  atommap.backward (dfcorr_1.begin(), dfcorr.begin(), 3);
   assert(dfcorr_1.size() == nall_real * 3);
   // resize to all and clear
   std::vector<VALUETYPE> dfcorr_2(nall*3);

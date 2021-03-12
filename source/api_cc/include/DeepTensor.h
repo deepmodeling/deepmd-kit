@@ -1,6 +1,6 @@
 #pragma once
 
-#include "NNPInter.h"
+#include "DeepPot.h"
 
 class DeepTensor
 {
@@ -45,7 +45,7 @@ private:
   void run_model (std::vector<VALUETYPE> &		d_tensor_,
 		  Session *				session, 
 		  const std::vector<std::pair<std::string, Tensor>> & input_tensors,
-		  const NNPAtomMap<VALUETYPE> &		nnpmap, 
+		  const AtomMap<VALUETYPE> &		atommap, 
 		  const int				nghost = 0);
   void compute_inner (std::vector<VALUETYPE> &		value,
 		      const std::vector<VALUETYPE> &	coord,

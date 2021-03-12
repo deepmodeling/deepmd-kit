@@ -1,5 +1,5 @@
 #include "common.h"
-#include "NNPAtomMap.h"
+#include "AtomMap.h"
 #include "SimulationRegion.h"
 #include "device.h"
 
@@ -79,7 +79,7 @@ copy_from_nlist(const InputNlist & inlist)
 
 void
 NeighborListData::
-shuffle(const NNPAtomMap<VALUETYPE> & map)
+shuffle(const AtomMap<VALUETYPE> & map)
 {
   const std::vector<int> & fwd_map = map.get_fwd_map();
   shuffle(fwd_map);
@@ -201,7 +201,7 @@ session_input_tensors (std::vector<std::pair<std::string, Tensor>> & input_tenso
 		       const VALUETYPE &		cell_size,
 		       const std::vector<VALUETYPE> &	fparam_,
 		       const std::vector<VALUETYPE> &	aparam_,
-		       const NNPAtomMap<VALUETYPE>&	nnpmap,
+		       const AtomMap<VALUETYPE>&	atommap,
 		       const std::string		scope)
 {
   bool b_pbc = (dbox.size() == 9);
@@ -211,7 +211,7 @@ session_input_tensors (std::vector<std::pair<std::string, Tensor>> & input_tenso
   int nloc = nall;
   assert (nall == datype_.size());
 
-  std::vector<int > datype = nnpmap.get_type();
+  std::vector<int > datype = atommap.get_type();
   std::vector<int > type_count (ntypes, 0);
   for (unsigned ii = 0; ii < datype.size(); ++ii){
     type_count[datype[ii]] ++;
@@ -267,7 +267,7 @@ session_input_tensors (std::vector<std::pair<std::string, Tensor>> & input_tenso
   auto aparam = aparam_tensor.matrix<VALUETYPE> ();
 
   std::vector<VALUETYPE> dcoord (dcoord_);
-  nnpmap.forward (dcoord.begin(), dcoord_.begin(), 3);
+  atommap.forward (dcoord.begin(), dcoord_.begin(), 3);
   
   for (int ii = 0; ii < nframes; ++ii){
     for (int jj = 0; jj < nall * 3; ++jj){
@@ -334,7 +334,7 @@ session_input_tensors (std::vector<std::pair<std::string, Tensor>> & input_tenso
 		       InputNlist &		dlist, 
 		       const std::vector<VALUETYPE> &	fparam_,
 		       const std::vector<VALUETYPE> &	aparam_,
-		       const NNPAtomMap<VALUETYPE>&	nnpmap,
+		       const AtomMap<VALUETYPE>&	atommap,
 		       const int			nghost,
            const int      ago,
 		       const std::string			scope)
@@ -346,7 +346,7 @@ session_input_tensors (std::vector<std::pair<std::string, Tensor>> & input_tenso
   int nloc = nall - nghost;
   assert (nall == datype_.size());  
 
-  std::vector<int > datype = nnpmap.get_type();
+  std::vector<int > datype = atommap.get_type();
   std::vector<int > type_count (ntypes, 0);
   for (unsigned ii = 0; ii < datype.size(); ++ii){
     type_count[datype[ii]] ++;
@@ -397,7 +397,7 @@ session_input_tensors (std::vector<std::pair<std::string, Tensor>> & input_tenso
   auto aparam = aparam_tensor.matrix<VALUETYPE> ();
 
   std::vector<VALUETYPE> dcoord (dcoord_);
-  nnpmap.forward (dcoord.begin(), dcoord_.begin(), 3);
+  atommap.forward (dcoord.begin(), dcoord_.begin(), 3);
   
   for (int ii = 0; ii < nframes; ++ii){
     for (int jj = 0; jj < nall * 3; ++jj){

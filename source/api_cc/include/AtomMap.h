@@ -5,11 +5,11 @@
 // using namespace std;
 
 template <typename VALUETYPE>
-class NNPAtomMap 
+class AtomMap 
 {
 public:
-  NNPAtomMap();
-  NNPAtomMap(const std::vector<int >::const_iterator in_begin, 
+  AtomMap();
+  AtomMap(const std::vector<int >::const_iterator in_begin, 
 	     const std::vector<int >::const_iterator in_end);
   void forward (typename std::vector<VALUETYPE >::iterator out,
 		const typename std::vector<VALUETYPE >::const_iterator in, 

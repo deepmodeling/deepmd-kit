@@ -1,5 +1,5 @@
-#include "NNPInter.h"
-#include "NNPAtomMap.h"
+#include "DeepPot.h"
+#include "AtomMap.h"
 #include "SimulationRegion.h"
 #include <stdexcept>	
 
@@ -37,10 +37,10 @@ run_model (ENERGYTYPE &			dener,
 	   std::vector<VALUETYPE> &	dvirial,
 	   Session *			session, 
 	   const std::vector<std::pair<std::string, Tensor>> & input_tensors,
-	   const NNPAtomMap<VALUETYPE>&	nnpmap, 
+	   const AtomMap<VALUETYPE>&	atommap, 
 	   const int			nghost = 0)
 {
-  unsigned nloc = nnpmap.get_type().size();
+  unsigned nloc = atommap.get_type().size();
   unsigned nall = nloc + nghost;
   if (nloc == 0) {
     dener = 0;
@@ -86,7 +86,7 @@ run_model (ENERGYTYPE &			dener,
     dvirial[8] += 1.0 * oav(9*ii+8);
   }
   dforce_ = dforce;
-  nnpmap.backward (dforce_.begin(), dforce.begin(), 3);
+  atommap.backward (dforce_.begin(), dforce.begin(), 3);
 }
 
 static void run_model (ENERGYTYPE   &		dener,
@@ -96,10 +96,10 @@ static void run_model (ENERGYTYPE   &		dener,
 		       std::vector<VALUETYPE>&	datom_virial_,
 		       Session*			session, 
 		       const std::vector<std::pair<std::string, Tensor>> & input_tensors,
-		       const NNPAtomMap<VALUETYPE> &   nnpmap, 
+		       const AtomMap<VALUETYPE> &   atommap, 
 		       const int&		nghost = 0)
 {
-    unsigned nloc = nnpmap.get_type().size();
+    unsigned nloc = atommap.get_type().size();
     unsigned nall = nloc + nghost;
     if (nloc == 0) {
         dener = 0;
@@ -163,31 +163,31 @@ static void run_model (ENERGYTYPE   &		dener,
     dforce_ = dforce;
     datom_energy_ = datom_energy;
     datom_virial_ = datom_virial;
-    nnpmap.backward (dforce_.begin(), dforce.begin(), 3);
-    nnpmap.backward (datom_energy_.begin(), datom_energy.begin(), 1);
-    nnpmap.backward (datom_virial_.begin(), datom_virial.begin(), 9);
+    atommap.backward (dforce_.begin(), dforce.begin(), 3);
+    atommap.backward (datom_energy_.begin(), datom_energy.begin(), 1);
+    atommap.backward (datom_virial_.begin(), datom_virial.begin(), 9);
 }
 
 
-NNPInter::
-NNPInter ()
+DeepPot::
+DeepPot ()
     : inited (false), init_nbor (false)
 {
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
 }
 
-NNPInter::
-NNPInter (const std::string & model, const int & gpu_rank, const std::string & file_content)
+DeepPot::
+DeepPot (const std::string & model, const int & gpu_rank, const std::string & file_content)
     : inited (false), init_nbor (false)
 {
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   init(model, gpu_rank, file_content);  
 }
 
-NNPInter::~NNPInter() {}
+DeepPot::~DeepPot() {}
 
 void
-NNPInter::
+DeepPot::
 init (const std::string & model, const int & gpu_rank, const std::string & file_content)
 {
   if (inited){
@@ -231,7 +231,7 @@ init (const std::string & model, const int & gpu_rank, const std::string & file_
 }
 
 void 
-NNPInter::
+DeepPot::
 print_summary(const std::string &pre) const
 {
   std::cout << pre << "installed to:       " + global_install_prefix << std::endl;
@@ -248,7 +248,7 @@ print_summary(const std::string &pre) const
 
 template<class VT>
 VT
-NNPInter::
+DeepPot::
 get_scalar (const std::string & name) const
 {
   return session_get_scalar<VT>(session, name);
@@ -276,7 +276,7 @@ std::string graph_info(const GraphDef & graph_def) {
 }
 
 // init the tmp array data
-std::vector<int> NNPInter::get_sel_a () const {
+std::vector<int> DeepPot::get_sel_a () const {
     std::vector<int> sel_a;
     std::istringstream is(graph_info(graph_def));
     std::string line = "";
@@ -300,7 +300,7 @@ std::vector<int> NNPInter::get_sel_a () const {
 }
 
 void
-NNPInter::
+DeepPot::
 validate_fparam_aparam(const int & nloc,
 		       const std::vector<VALUETYPE> &fparam,
 		       const std::vector<VALUETYPE> &aparam)const 
@@ -314,7 +314,7 @@ validate_fparam_aparam(const int & nloc,
 }
 
 void
-NNPInter::
+DeepPot::
 compute (ENERGYTYPE &			dener,
 	 std::vector<VALUETYPE> &	dforce_,
 	 std::vector<VALUETYPE> &	dvirial,
@@ -326,19 +326,19 @@ compute (ENERGYTYPE &			dener,
 {
   int nall = dcoord_.size() / 3;
   int nloc = nall;
-  nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
-  assert (nloc == nnpmap.get_type().size());
+  atommap = AtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
+  assert (nloc == atommap.get_type().size());
   validate_fparam_aparam(nloc, fparam, aparam);
 
   std::vector<std::pair<std::string, Tensor>> input_tensors;
-  int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, aparam, nnpmap);
+  int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, aparam, atommap);
   assert (ret == nloc);
 
-  run_model (dener, dforce_, dvirial, session, input_tensors, nnpmap);
+  run_model (dener, dforce_, dvirial, session, input_tensors, atommap);
 }
 
 void
-NNPInter::
+DeepPot::
 compute (ENERGYTYPE &			dener,
 	 std::vector<VALUETYPE> &	dforce_,
 	 std::vector<VALUETYPE> &	dvirial,
@@ -378,7 +378,7 @@ compute (ENERGYTYPE &			dener,
 }
 
 void
-NNPInter::
+DeepPot::
 compute_inner (ENERGYTYPE &			dener,
 	       std::vector<VALUETYPE> &		dforce_,
 	       std::vector<VALUETYPE> &		dvirial,
@@ -398,19 +398,19 @@ compute_inner (ENERGYTYPE &			dener,
 
     // agp == 0 means that the LAMMPS nbor list has been updated
     if (ago == 0) {
-      nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
-      assert (nloc == nnpmap.get_type().size());
-      nlist_data.shuffle(nnpmap);
+      atommap = AtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
+      assert (nloc == atommap.get_type().size());
+      nlist_data.shuffle(atommap);
       nlist_data.make_inlist(nlist);
     }
-    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost, ago);
+    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
     assert (nloc == ret);
-    run_model (dener, dforce_, dvirial, session, input_tensors, nnpmap, nghost);
+    run_model (dener, dforce_, dvirial, session, input_tensors, atommap, nghost);
 }
 
 
 void
-NNPInter::
+DeepPot::
 compute (ENERGYTYPE &			dener,
 	 std::vector<VALUETYPE> &	dforce_,
 	 std::vector<VALUETYPE> &	dvirial,
@@ -422,19 +422,19 @@ compute (ENERGYTYPE &			dener,
 	 const std::vector<VALUETYPE> &	fparam,
 	 const std::vector<VALUETYPE> &	aparam)
 {
-  nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.end());
-  validate_fparam_aparam(nnpmap.get_type().size(), fparam, aparam);
+  atommap = AtomMap<VALUETYPE> (datype_.begin(), datype_.end());
+  validate_fparam_aparam(atommap.get_type().size(), fparam, aparam);
 
   std::vector<std::pair<std::string, Tensor>> input_tensors;
-  int nloc = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, aparam, nnpmap);
+  int nloc = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, aparam, atommap);
 
-  run_model (dener, dforce_, dvirial, datom_energy_, datom_virial_, session, input_tensors, nnpmap);
+  run_model (dener, dforce_, dvirial, datom_energy_, datom_virial_, session, input_tensors, atommap);
 }
 
 
 
 void
-NNPInter::
+DeepPot::
 compute (ENERGYTYPE &			dener,
 	 std::vector<VALUETYPE> &	dforce_,
 	 std::vector<VALUETYPE> &	dvirial,
@@ -455,29 +455,29 @@ compute (ENERGYTYPE &			dener,
     std::vector<std::pair<std::string, Tensor>> input_tensors;
 
     if (ago == 0) {
-        nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
-        assert (nloc == nnpmap.get_type().size());
+        atommap = AtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
+        assert (nloc == atommap.get_type().size());
 
         nlist_data.copy_from_nlist(lmp_list);
-        nlist_data.shuffle(nnpmap);
+        nlist_data.shuffle(atommap);
 	nlist_data.make_inlist(nlist);
     }
 
-    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost, ago);
+    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
     assert (nloc == ret);
-    run_model (dener, dforce_, dvirial, datom_energy_, datom_virial_, session, input_tensors, nnpmap, nghost);
+    run_model (dener, dforce_, dvirial, datom_energy_, datom_virial_, session, input_tensors, atommap, nghost);
 }
 
 void
-NNPInter::
+DeepPot::
 get_type_map(std::string & type_map){
     type_map = get_scalar<STRINGTYPE>("model_attr/tmap");
 }
 
 
 
-NNPInterModelDevi::
-NNPInterModelDevi ()
+DeepPotModelDevi::
+DeepPotModelDevi ()
     : inited (false), 
       init_nbor (false),
       numb_models (0)
@@ -485,8 +485,8 @@ NNPInterModelDevi ()
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
 }
 
-NNPInterModelDevi::
-NNPInterModelDevi (const std::vector<std::string> & models, const int & gpu_rank, const std::vector<std::string> & file_contents)
+DeepPotModelDevi::
+DeepPotModelDevi (const std::vector<std::string> & models, const int & gpu_rank, const std::vector<std::string> & file_contents)
     : inited (false), 
       init_nbor(false),
       numb_models (0)
@@ -495,10 +495,10 @@ NNPInterModelDevi (const std::vector<std::string> & models, const int & gpu_rank
   init(models, gpu_rank, file_contents);
 }
 
-NNPInterModelDevi::~NNPInterModelDevi() {}
+DeepPotModelDevi::~DeepPotModelDevi() {}
 
 void
-NNPInterModelDevi::
+DeepPotModelDevi::
 init (const std::vector<std::string> & models, const int & gpu_rank, const std::vector<std::string> & file_contents)
 {
   if (inited){
@@ -558,7 +558,7 @@ init (const std::vector<std::string> & models, const int & gpu_rank, const std::
 
 template<class VT>
 VT
-NNPInterModelDevi::
+DeepPotModelDevi::
 get_scalar(const std::string name) const 
 {
   VT myrcut = 0;
@@ -576,7 +576,7 @@ get_scalar(const std::string name) const
 
 // init the tmp array data
 std::vector<std::vector<int> > 
-NNPInterModelDevi::
+DeepPotModelDevi::
 get_sel () const 
 {
     std::vector<std::vector<int> > sec;
@@ -606,7 +606,7 @@ get_sel () const
 }
 
 void  
-NNPInterModelDevi::
+DeepPotModelDevi::
 cum_sum (const std::vector<std::vector<int32> > n_sel) 
 {
     for (int ii = 0; ii < numb_models; ++ii) {
@@ -621,7 +621,7 @@ cum_sum (const std::vector<std::vector<int32> > n_sel)
 }
 
 void
-NNPInterModelDevi::
+DeepPotModelDevi::
 validate_fparam_aparam(const int & nloc,
 		       const std::vector<VALUETYPE> &fparam,
 		       const std::vector<VALUETYPE> &aparam)const 
@@ -635,7 +635,7 @@ validate_fparam_aparam(const int & nloc,
 }
 
 // void
-// NNPInterModelDevi::
+// DeepPotModelDevi::
 // compute (ENERGYTYPE &			dener,
 // 	 std::vector<VALUETYPE> &	dforce_,
 // 	 std::vector<VALUETYPE> &	dvirial,
@@ -648,18 +648,18 @@ validate_fparam_aparam(const int & nloc,
 // {
 //   if (numb_models == 0) return;
 
-//   nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.end());
-//   validate_fparam_aparam(nnpmap.get_type().size(), fparam, aparam);
+//   atommap = AtomMap<VALUETYPE> (datype_.begin(), datype_.end());
+//   validate_fparam_aparam(atommap.get_type().size(), fparam, aparam);
 
 //   std::vector<std::pair<std::string, Tensor>> input_tensors;
-//   int nloc = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, aparam, nnpmap);
+//   int nloc = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, aparam, atommap);
 
 //   std::vector<ENERGYTYPE > all_energy (numb_models);
 //   std::vector<std::vector<VALUETYPE > > all_force (numb_models);
 //   std::vector<std::vector<VALUETYPE > > all_virial (numb_models);
 
 //   for (unsigned ii = 0; ii < numb_models; ++ii){
-//     run_model (all_energy[ii], all_force[ii], all_virial[ii], sessions[ii], input_tensors, nnpmap);
+//     run_model (all_energy[ii], all_force[ii], all_virial[ii], sessions[ii], input_tensors, atommap);
 //   }
 
 //   dener = 0;
@@ -682,7 +682,7 @@ validate_fparam_aparam(const int & nloc,
 // }
 
 void
-NNPInterModelDevi::
+DeepPotModelDevi::
 compute (std::vector<ENERGYTYPE> &		all_energy,
 	 std::vector<std::vector<VALUETYPE>> &	all_force,
 	 std::vector<std::vector<VALUETYPE>> &	all_virial,
@@ -703,26 +703,26 @@ compute (std::vector<ENERGYTYPE> &		all_energy,
 
     // agp == 0 means that the LAMMPS nbor list has been updated
     if (ago == 0) {
-        nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
-        assert (nloc == nnpmap.get_type().size());
+        atommap = AtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
+        assert (nloc == atommap.get_type().size());
 
         nlist_data.copy_from_nlist(lmp_list);
-        nlist_data.shuffle(nnpmap);
+        nlist_data.shuffle(atommap);
 	nlist_data.make_inlist(nlist);
     }
-    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost, ago);
+    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
 
     all_energy.resize (numb_models);
     all_force.resize (numb_models);
     all_virial.resize (numb_models);
     assert (nloc == ret);
     for (unsigned ii = 0; ii < numb_models; ++ii) {
-        run_model (all_energy[ii], all_force[ii], all_virial[ii], sessions[ii], input_tensors, nnpmap, nghost);
+        run_model (all_energy[ii], all_force[ii], all_virial[ii], sessions[ii], input_tensors, atommap, nghost);
     }
 }
 
 void
-NNPInterModelDevi::
+DeepPotModelDevi::
 compute (std::vector<ENERGYTYPE> &		all_energy,
 	 std::vector<std::vector<VALUETYPE>> &	all_force,
 	 std::vector<std::vector<VALUETYPE>> &	all_virial,
@@ -745,14 +745,14 @@ compute (std::vector<ENERGYTYPE> &		all_energy,
 
     // agp == 0 means that the LAMMPS nbor list has been updated
     if (ago == 0) {
-        nnpmap = NNPAtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
-        assert (nloc == nnpmap.get_type().size());
+        atommap = AtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
+        assert (nloc == atommap.get_type().size());
 
         nlist_data.copy_from_nlist(lmp_list);
-        nlist_data.shuffle(nnpmap);
+        nlist_data.shuffle(atommap);
 	nlist_data.make_inlist(nlist);
     }
-    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, nnpmap, nghost, ago);
+    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
 
     all_energy.resize (numb_models);
     all_force .resize (numb_models);
@@ -761,12 +761,12 @@ compute (std::vector<ENERGYTYPE> &		all_energy,
     all_atom_virial.resize (numb_models); 
     assert (nloc == ret);
     for (unsigned ii = 0; ii < numb_models; ++ii) {
-        run_model (all_energy[ii], all_force[ii], all_virial[ii], all_atom_energy[ii], all_atom_virial[ii], sessions[ii], input_tensors, nnpmap, nghost);
+        run_model (all_energy[ii], all_force[ii], all_virial[ii], all_atom_energy[ii], all_atom_virial[ii], sessions[ii], input_tensors, atommap, nghost);
     }
 }
 
 void
-NNPInterModelDevi::
+DeepPotModelDevi::
 compute_avg (VALUETYPE &		dener, 
 	     const std::vector<VALUETYPE > &	all_energy) 
 {
@@ -782,7 +782,7 @@ compute_avg (VALUETYPE &		dener,
 
 #ifndef HIGH_PREC
 void
-NNPInterModelDevi::
+DeepPotModelDevi::
 compute_avg (ENERGYTYPE &		dener, 
 	     const std::vector<ENERGYTYPE >&	all_energy) 
 {
@@ -798,7 +798,7 @@ compute_avg (ENERGYTYPE &		dener,
 #endif
 
 void
-NNPInterModelDevi::
+DeepPotModelDevi::
 compute_avg (std::vector<VALUETYPE> &		avg, 
 	     const std::vector<std::vector<VALUETYPE> > &	xx) 
 {
@@ -821,7 +821,7 @@ compute_avg (std::vector<VALUETYPE> &		avg,
 
 
 // void
-// NNPInterModelDevi::
+// DeepPotModelDevi::
 // compute_std (VALUETYPE &		std, 
 // 	     const VALUETYPE &		avg, 
 // 	     const vector<VALUETYPE >&	xx)
@@ -836,7 +836,7 @@ compute_avg (std::vector<VALUETYPE> &		avg,
 // }
 
 void
-NNPInterModelDevi::
+DeepPotModelDevi::
 compute_std_e (std::vector<VALUETYPE> &		std, 
 	       const std::vector<VALUETYPE> &	avg, 
 	       const std::vector<std::vector<VALUETYPE> >&xx)  
@@ -867,7 +867,7 @@ compute_std_e (std::vector<VALUETYPE> &		std,
 }
 
 void
-NNPInterModelDevi::
+DeepPotModelDevi::
 compute_std_f (std::vector<VALUETYPE> &		std, 
 	       const std::vector<VALUETYPE> &	avg, 
 	       const std::vector<std::vector<VALUETYPE> >&xx)  
@@ -901,7 +901,7 @@ compute_std_f (std::vector<VALUETYPE> &		std,
 }
 
 void
-NNPInterModelDevi::
+DeepPotModelDevi::
 compute_relative_std_f (std::vector<VALUETYPE> &std,
 			const std::vector<VALUETYPE> &avg,
 			const VALUETYPE eps)

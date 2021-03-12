@@ -5,7 +5,7 @@
 #include <iostream>
 #include "version.h"
 #include "neighbor_list.h"
-#include "NNPAtomMap.h"
+#include "AtomMap.h"
 
 #include "tensorflow/core/platform/env.h"
 #include "tensorflow/core/public/session.h"
@@ -37,7 +37,7 @@ struct NeighborListData
 public:
   void copy_from_nlist(const InputNlist & inlist);
   void shuffle(const std::vector<int> & fwd_map);
-  void shuffle(const NNPAtomMap<VALUETYPE> & map);
+  void shuffle(const AtomMap<VALUETYPE> & map);
   void shuffle_exclude_empty(const std::vector<int> & fwd_map);
   void make_inlist(InputNlist & inlist);
 };
@@ -93,7 +93,7 @@ session_input_tensors (std::vector<std::pair<std::string, Tensor>> & input_tenso
 		       const VALUETYPE &		cell_size,
 		       const std::vector<VALUETYPE> &	fparam_,
 		       const std::vector<VALUETYPE> &	aparam_,
-		       const NNPAtomMap<VALUETYPE>&	nnpmap,
+		       const AtomMap<VALUETYPE>&	atommap,
 		       const std::string		scope = "");
 
 int
@@ -105,7 +105,7 @@ session_input_tensors (std::vector<std::pair<std::string, Tensor>> & input_tenso
 		       InputNlist &		dlist, 
 		       const std::vector<VALUETYPE> &	fparam_,
 		       const std::vector<VALUETYPE> &	aparam_,
-		       const NNPAtomMap<VALUETYPE>&	nnpmap,
+		       const AtomMap<VALUETYPE>&	atommap,
 		       const int			nghost,
 		       const int			ago,
 		       const std::string		scope = "");
@@ -119,7 +119,7 @@ session_input_tensors (std::vector<std::pair<std::string, Tensor>> & input_tenso
 // 		       InputNlist &		dlist, 
 // 		       const std::vector<VALUETYPE> &	fparam_,
 // 		       const std::vector<VALUETYPE> &	aparam_,
-// 		       const NNPAtomMap<VALUETYPE>&	nnpmap,
+// 		       const AtomMap<VALUETYPE>&	atommap,
 // 		       const int			nghost,
 // 		       const std::string			scope = "");
 
@@ -134,7 +134,7 @@ session_input_tensors (std::vector<std::pair<std::string, Tensor>> & input_tenso
 // 		       const int                        * jlist,
 // 		       const std::vector<VALUETYPE>		& fparam_,
 // 		       const std::vector<VALUETYPE>	        & aparam_,
-// 		       const NNPAtomMap<VALUETYPE>      & nnpmap,
+// 		       const AtomMap<VALUETYPE>      & atommap,
 // 		       const int			& nghost);
 
 

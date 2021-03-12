@@ -133,7 +133,7 @@ TEST_F(TestDipoleCharge, cpu_lmp_nlist)
   int sel_nloc = sel_nall - sel_nghost;
   std::vector<int> sel_atype(sel_bwd.size());
   select_map<int>(sel_atype, atype, sel_fwd, 1);
-  NNPAtomMap<double> nnp_map(sel_atype.begin(), sel_atype.begin() + sel_nloc);
+  AtomMap<double> nnp_map(sel_atype.begin(), sel_atype.begin() + sel_nloc);
   const std::vector<int> & sort_fwd_map(nnp_map.get_fwd_map());
 
   // // add coords

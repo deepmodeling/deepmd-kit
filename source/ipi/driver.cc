@@ -1,7 +1,7 @@
 #include <fstream>
 #include <cstdint>
 #include "sockets.h"
-#include "NNPInter.h"
+#include "DeepPot.h"
 #include "Convert.h"
 #include "XyzFileManager.h"
 #include "SimulationRegion.h"
@@ -91,7 +91,7 @@ int main(int argc, char * argv[])
   }
 
   Convert<double> cvt (atom_name, name_type_map);
-  NNPInter nnp_inter (graph_file);
+  DeepPot nnp_inter (graph_file);
   
   enum { _MSGLEN = 12 };
   int MSGLEN = _MSGLEN;

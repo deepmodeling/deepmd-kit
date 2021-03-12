@@ -4,12 +4,12 @@
 #include "neighbor_list.h"
 typedef double compute_t;
 
-class NNPInter 
+class DeepPot 
 {
 public:
-  NNPInter () ;
-  ~NNPInter() ;
-  NNPInter  (const std::string & model, const int & gpu_rank = 0, const std::string & file_content = "");
+  DeepPot () ;
+  ~DeepPot() ;
+  DeepPot  (const std::string & model, const int & gpu_rank = 0, const std::string & file_content = "");
   void init (const std::string & model, const int & gpu_rank = 0, const std::string & file_content = "");
   void print_summary(const std::string &pre) const;
 public:
@@ -93,18 +93,18 @@ private:
   compute_t *array_double;
   NeighborListData nlist_data;
   InputNlist nlist;
-  NNPAtomMap<VALUETYPE> nnpmap;
+  AtomMap<VALUETYPE> atommap;
 
   // function used for neighbor list copy
   std::vector<int> get_sel_a() const;
 };
 
-class NNPInterModelDevi
+class DeepPotModelDevi
 {
 public:
-  NNPInterModelDevi () ;
-  ~NNPInterModelDevi() ;
-  NNPInterModelDevi  (const std::vector<std::string> & models, const int & gpu_rank = 0, const std::vector<std::string> & file_contents = std::vector<std::string>());
+  DeepPotModelDevi () ;
+  ~DeepPotModelDevi() ;
+  DeepPotModelDevi  (const std::vector<std::string> & models, const int & gpu_rank = 0, const std::vector<std::string> & file_contents = std::vector<std::string>());
   void init (const std::vector<std::string> & models, const int & gpu_rank = 0, const std::vector<std::string> & file_contents = std::vector<std::string>());
 public:
   void compute (std::vector<ENERGYTYPE> &		all_ener,
@@ -174,7 +174,7 @@ private:
   bool init_nbor;
   compute_t *array_double;
   std::vector<std::vector<int> > sec;
-  NNPAtomMap<VALUETYPE> nnpmap;
+  AtomMap<VALUETYPE> atommap;
   NeighborListData nlist_data;
   InputNlist nlist;
 
