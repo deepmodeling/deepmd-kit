@@ -267,7 +267,6 @@ void env_mat_nbor_update(
       malloc_device_memory(gpu_inlist.numneigh, inum);
       malloc_device_memory(gpu_inlist.firstneigh, inum);
     }
-    gpu_inlist.inum = inum;
     memcpy_host_to_device(gpu_inlist.ilist, inlist.ilist, inum);
     memcpy_host_to_device(gpu_inlist.numneigh, inlist.numneigh, inum);
     int _max_nbor_size = max_numneigh(inlist);
@@ -280,17 +279,27 @@ void env_mat_nbor_update(
     else {
       _max_nbor_size = 4096;
     }
-    if (_max_nbor_size > max_nbor_size || nbor_list_dev == NULL) {
+    if ( nbor_list_dev == NULL 
+      || _max_nbor_size > max_nbor_size 
+      || inum > gpu_inlist.inum) 
+    {
       delete_device_memory(nbor_list_dev);
-      malloc_device_memory(nbor_list_dev, inum * max_nbor_size);
+      malloc_device_memory(nbor_list_dev, inum * _max_nbor_size);
     }
+    // update info
+    gpu_inlist.inum = inum;
     max_nbor_size = _max_nbor_size;
-    int ** _firstneigh = NULL;
-    _firstneigh = (int**)malloc(sizeof(int*) * inum);
+
+    // copy nbor list from host to the device
+    std::vector<int> nbor_list_host(inum * max_nbor_size, 0);
+    int ** _firstneigh = (int**)malloc(sizeof(int*) * inum);
     for (int ii = 0; ii < inum; ii++) {
-      memcpy_host_to_device(nbor_list_dev + ii * max_nbor_size, inlist.firstneigh[ii], inlist.numneigh[ii]);
       _firstneigh[ii] = nbor_list_dev + ii * max_nbor_size;
+      for (int jj = 0; jj < inlist.numneigh[ii]; jj++) {
+        nbor_list_host[ii * max_nbor_size + jj] = inlist.firstneigh[ii][jj];
+      }
     }
+    memcpy_host_to_device(nbor_list_dev, &nbor_list_host[0], inum * max_nbor_size);
     memcpy_host_to_device(gpu_inlist.firstneigh, _firstneigh, inum);
     free(_firstneigh);
   }
