@@ -9,7 +9,7 @@ FixStyle(dplr,FixDPLR)
 
 #include <stdio.h>
 #include "fix.h"
-#include "pair_nnp.h"
+#include "pair_deepmd.h"
 #include "DeepTensor.h"
 #include "DataModifier.h"
 
@@ -35,7 +35,7 @@ public:
     double compute_scalar(void);
     double compute_vector(int);
 private:
-    PairNNP * pair_nnp;
+    PairDeepMD * pair_deepmd;
     DeepTensor dpt;
     DipoleChargeModifier dtm;
     std::string model;

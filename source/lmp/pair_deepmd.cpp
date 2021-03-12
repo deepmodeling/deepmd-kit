@@ -20,7 +20,7 @@
 #include "fix_ttm_mod.h"
 #endif
 
-#include "pair_nnp.h"
+#include "pair_deepmd.h"
 
 using namespace LAMMPS_NS;
 using namespace std;
@@ -58,7 +58,7 @@ static int stringCmp(const void *a, const void* b)
     return sum;
 }
 
-int PairNNP::get_node_rank() {
+int PairDeepMD::get_node_rank() {
     char host_name[MPI_MAX_PROCESSOR_NAME];
     memset(host_name, '\0', sizeof(char) * MPI_MAX_PROCESSOR_NAME);
     char (*host_names)[MPI_MAX_PROCESSOR_NAME];
@@ -105,7 +105,7 @@ int PairNNP::get_node_rank() {
     return looprank;
 }
 
-std::string PairNNP::get_file_content(const std::string & model) {
+std::string PairDeepMD::get_file_content(const std::string & model) {
   int myrank = 0, root = 0;
   MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
   int nchar = 0;
@@ -128,7 +128,7 @@ std::string PairNNP::get_file_content(const std::string & model) {
   return file_content;
 }
 
-std::vector<std::string> PairNNP::get_file_content(const std::vector<std::string> & models) {
+std::vector<std::string> PairDeepMD::get_file_content(const std::vector<std::string> & models) {
   std::vector<std::string> file_contents(models.size());
   for (unsigned ii = 0; ii < models.size(); ++ii) {
     file_contents[ii] = get_file_content(models[ii]);
@@ -177,7 +177,7 @@ make_uniform_aparam(
 }
 
 #ifdef USE_TTM
-void PairNNP::make_ttm_aparam(
+void PairDeepMD::make_ttm_aparam(
 #ifdef HIGH_PREC
     vector<double > & daparam
 #else
@@ -229,7 +229,7 @@ void PairNNP::make_ttm_aparam(
 }
 #endif
 
-PairNNP::PairNNP(LAMMPS *lmp) 
+PairDeepMD::PairDeepMD(LAMMPS *lmp) 
     : Pair(lmp)
       
 {
@@ -259,12 +259,12 @@ PairNNP::PairNNP(LAMMPS *lmp)
 }
 
 void
-PairNNP::print_summary(const string pre) const
+PairDeepMD::print_summary(const string pre) const
 {
   if (comm->me == 0){
     cout << "Summary of lammps deepmd module ..." << endl;
     cout << pre << ">>> Info of deepmd-kit:" << endl;
-    nnp_inter.print_summary(pre);
+    deep_pot.print_summary(pre);
     cout << pre << ">>> Info of lammps module:" << endl;
     cout << pre << "use deepmd-kit at:  " << STR_DEEPMD_ROOT << endl;
     cout << pre << "source:             " << STR_GIT_SUMM << endl;
@@ -278,7 +278,7 @@ PairNNP::print_summary(const string pre) const
 }
 
 
-PairNNP::~PairNNP()
+PairDeepMD::~PairDeepMD()
 {
   if (allocated) {
     memory->destroy(setflag);
@@ -287,7 +287,7 @@ PairNNP::~PairNNP()
   }
 }
 
-void PairNNP::compute(int eflag, int vflag)
+void PairDeepMD::compute(int eflag, int vflag)
 {
   if (numb_models == 0) return;
   if (eflag || vflag) ev_setup(eflag,vflag);
@@ -364,7 +364,7 @@ void PairNNP::compute(int eflag, int vflag)
     if (single_model || multi_models_no_mod_devi) {
       if ( ! (eflag_atom || vflag_atom) ) {      
 #ifdef HIGH_PREC
-	nnp_inter.compute (dener, dforce, dvirial, dcoord, dtype, dbox, nghost, lmp_list, ago, fparam, daparam);
+	deep_pot.compute (dener, dforce, dvirial, dcoord, dtype, dbox, nghost, lmp_list, ago, fparam, daparam);
 #else
 	vector<float> dcoord_(dcoord.size());
 	vector<float> dbox_(dbox.size());
@@ -373,7 +373,7 @@ void PairNNP::compute(int eflag, int vflag)
 	vector<float> dforce_(dforce.size(), 0);
 	vector<float> dvirial_(dvirial.size(), 0);
 	double dener_ = 0;
-	nnp_inter.compute (dener_, dforce_, dvirial_, dcoord_, dtype, dbox_, nghost, lmp_list, ago, fparam, daparam);
+	deep_pot.compute (dener_, dforce_, dvirial_, dcoord_, dtype, dbox_, nghost, lmp_list, ago, fparam, daparam);
 	for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];	
 	for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	
 	dener = dener_;
@@ -384,7 +384,7 @@ void PairNNP::compute(int eflag, int vflag)
 	vector<double > deatom (nall * 1, 0);
 	vector<double > dvatom (nall * 9, 0);
 #ifdef HIGH_PREC
-	nnp_inter.compute (dener, dforce, dvirial, deatom, dvatom, dcoord, dtype, dbox, nghost, lmp_list, ago, fparam, daparam);
+	deep_pot.compute (dener, dforce, dvirial, deatom, dvatom, dcoord, dtype, dbox, nghost, lmp_list, ago, fparam, daparam);
 #else 
 	vector<float> dcoord_(dcoord.size());
 	vector<float> dbox_(dbox.size());
@@ -395,7 +395,7 @@ void PairNNP::compute(int eflag, int vflag)
 	vector<float> deatom_(dforce.size(), 0);
 	vector<float> dvatom_(dforce.size(), 0);
 	double dener_ = 0;
-	nnp_inter.compute (dener_, dforce_, dvirial_, deatom_, dvatom_, dcoord_, dtype, dbox_, nghost, lmp_list, ago, fparam, daparam);
+	deep_pot.compute (dener_, dforce_, dvirial_, deatom_, dvatom_, dcoord_, dtype, dbox_, nghost, lmp_list, ago, fparam, daparam);
 	for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];	
 	for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	
 	for (unsigned dd = 0; dd < deatom.size(); ++dd) deatom[dd] = deatom_[dd];	
@@ -425,12 +425,12 @@ void PairNNP::compute(int eflag, int vflag)
       vector<vector<double>> 	all_virial;	       
       vector<vector<double>> 	all_atom_energy;
       vector<vector<double>> 	all_atom_virial;
-      nnp_inter_model_devi.compute(all_energy, all_force, all_virial, all_atom_energy, all_atom_virial, dcoord, dtype, dbox, nghost, lmp_list, ago, fparam, daparam);
-      // nnp_inter_model_devi.compute_avg (dener, all_energy);
-      // nnp_inter_model_devi.compute_avg (dforce, all_force);
-      // nnp_inter_model_devi.compute_avg (dvirial, all_virial);
-      // nnp_inter_model_devi.compute_avg (deatom, all_atom_energy);
-      // nnp_inter_model_devi.compute_avg (dvatom, all_atom_virial);
+      deep_pot_model_devi.compute(all_energy, all_force, all_virial, all_atom_energy, all_atom_virial, dcoord, dtype, dbox, nghost, lmp_list, ago, fparam, daparam);
+      // deep_pot_model_devi.compute_avg (dener, all_energy);
+      // deep_pot_model_devi.compute_avg (dforce, all_force);
+      // deep_pot_model_devi.compute_avg (dvirial, all_virial);
+      // deep_pot_model_devi.compute_avg (deatom, all_atom_energy);
+      // deep_pot_model_devi.compute_avg (dvatom, all_atom_virial);
       dener = all_energy[0];
       dforce = all_force[0];
       dvirial = all_virial[0];
@@ -451,12 +451,12 @@ void PairNNP::compute(int eflag, int vflag)
       vector<vector<float>> 	all_virial_;	       
       vector<vector<float>> 	all_atom_energy_;
       vector<vector<float>> 	all_atom_virial_;
-      nnp_inter_model_devi.compute(all_energy_, all_force_, all_virial_, all_atom_energy_, all_atom_virial_, dcoord_, dtype, dbox_, nghost, lmp_list, ago, fparam, daparam);
-      // nnp_inter_model_devi.compute_avg (dener_, all_energy_);
-      // nnp_inter_model_devi.compute_avg (dforce_, all_force_);
-      // nnp_inter_model_devi.compute_avg (dvirial_, all_virial_);
-      // nnp_inter_model_devi.compute_avg (deatom_, all_atom_energy_);
-      // nnp_inter_model_devi.compute_avg (dvatom_, all_atom_virial_);
+      deep_pot_model_devi.compute(all_energy_, all_force_, all_virial_, all_atom_energy_, all_atom_virial_, dcoord_, dtype, dbox_, nghost, lmp_list, ago, fparam, daparam);
+      // deep_pot_model_devi.compute_avg (dener_, all_energy_);
+      // deep_pot_model_devi.compute_avg (dforce_, all_force_);
+      // deep_pot_model_devi.compute_avg (dvirial_, all_virial_);
+      // deep_pot_model_devi.compute_avg (deatom_, all_atom_energy_);
+      // deep_pot_model_devi.compute_avg (dvatom_, all_atom_virial_);
       dener_ = all_energy_[0];
       dforce_ = all_force_[0];
       dvirial_ = all_virial_[0];
@@ -497,10 +497,10 @@ void PairNNP::compute(int eflag, int vflag)
 	vector<double> std_f;
 #ifdef HIGH_PREC
 	vector<double> tmp_avg_f;
-	nnp_inter_model_devi.compute_avg (tmp_avg_f, all_force);  
-	nnp_inter_model_devi.compute_std_f (std_f, tmp_avg_f, all_force);
+	deep_pot_model_devi.compute_avg (tmp_avg_f, all_force);  
+	deep_pot_model_devi.compute_std_f (std_f, tmp_avg_f, all_force);
 	if (out_rel == 1){
-	    nnp_inter_model_devi.compute_relative_std_f (std_f, tmp_avg_f, eps);
+	    deep_pot_model_devi.compute_relative_std_f (std_f, tmp_avg_f, eps);
 	}
 #else 
 	vector<float> tmp_avg_f_, std_f_;
@@ -509,12 +509,12 @@ void PairNNP::compute(int eflag, int vflag)
 	    all_force_[ii][jj] = all_force[ii][jj];
 	  }
 	}
-	nnp_inter_model_devi.compute_avg (tmp_avg_f_, all_force_);  
-	nnp_inter_model_devi.compute_std_f (std_f_, tmp_avg_f_, all_force_);
+	deep_pot_model_devi.compute_avg (tmp_avg_f_, all_force_);  
+	deep_pot_model_devi.compute_std_f (std_f_, tmp_avg_f_, all_force_);
 	std_f.resize(std_f_.size());
 	for (int dd = 0; dd < std_f_.size(); ++dd) std_f[dd] = std_f_[dd];
 	if (out_rel == 1){
-	    nnp_inter_model_devi.compute_relative_std_f (std_f_, tmp_avg_f_, eps);
+	    deep_pot_model_devi.compute_relative_std_f (std_f_, tmp_avg_f_, eps);
 	}
 #endif
 	double min = numeric_limits<double>::max(), max = 0, avg = 0;
@@ -530,12 +530,12 @@ void PairNNP::compute(int eflag, int vflag)
 	vector<double > std_e;
 #ifdef HIGH_PREC
 	vector<double > tmp_avg_e;
-	nnp_inter_model_devi.compute_avg (tmp_avg_e, all_atom_energy);
-	nnp_inter_model_devi.compute_std_e (std_e, tmp_avg_e, all_atom_energy);
+	deep_pot_model_devi.compute_avg (tmp_avg_e, all_atom_energy);
+	deep_pot_model_devi.compute_std_e (std_e, tmp_avg_e, all_atom_energy);
 #else 
 	vector<float> tmp_avg_e_, std_e_;
-	nnp_inter_model_devi.compute_avg (tmp_avg_e_, all_atom_energy_);
-	nnp_inter_model_devi.compute_std_e (std_e_, tmp_avg_e_, all_atom_energy_);
+	deep_pot_model_devi.compute_avg (tmp_avg_e_, all_atom_energy_);
+	deep_pot_model_devi.compute_std_e (std_e_, tmp_avg_e_, all_atom_energy_);
 	std_e.resize(std_e_.size());
 	for (int dd = 0; dd < std_e_.size(); ++dd) std_e[dd] = std_e_[dd];
 #endif	
@@ -552,9 +552,9 @@ void PairNNP::compute(int eflag, int vflag)
 	// MPI_Reduce (&all_energy[0], &sum_e[0], numb_models, MPI_DOUBLE, MPI_SUM, 0, world);
 	if (rank == 0) {
 	  // double avg_e = 0;
-	  // nnp_inter_model_devi.compute_avg(avg_e, sum_e);
+	  // deep_pot_model_devi.compute_avg(avg_e, sum_e);
 	  // double std_e_1 = 0;
-	  // nnp_inter_model_devi.compute_std(std_e_1, avg_e, sum_e);	
+	  // deep_pot_model_devi.compute_std(std_e_1, avg_e, sum_e);	
 	  fp << setw(12) << update->ntimestep 
 	     << " " << setw(18) << all_e_max 
 	     << " " << setw(18) << all_e_min
@@ -583,7 +583,7 @@ void PairNNP::compute(int eflag, int vflag)
   else {
     if (numb_models == 1) {
 #ifdef HIGH_PREC
-      nnp_inter.compute (dener, dforce, dvirial, dcoord, dtype, dbox);
+      deep_pot.compute (dener, dforce, dvirial, dcoord, dtype, dbox);
 #else
       vector<float> dcoord_(dcoord.size());
       vector<float> dbox_(dbox.size());
@@ -592,7 +592,7 @@ void PairNNP::compute(int eflag, int vflag)
       vector<float> dforce_(dforce.size(), 0);
       vector<float> dvirial_(dvirial.size(), 0);
       double dener_ = 0;
-      nnp_inter.compute (dener_, dforce_, dvirial_, dcoord_, dtype, dbox_);
+      deep_pot.compute (dener_, dforce_, dvirial_, dcoord_, dtype, dbox_);
       for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];	
       for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	
       dener = dener_;      
@@ -623,7 +623,7 @@ void PairNNP::compute(int eflag, int vflag)
 }
 
 
-void PairNNP::allocate()
+void PairDeepMD::allocate()
 {
   allocated = 1;
   int n = atom->ntypes;
@@ -670,7 +670,7 @@ is_key (const string& input)
 }
 
 
-void PairNNP::settings(int narg, char **arg)
+void PairDeepMD::settings(int narg, char **arg)
 {
   if (narg <= 0) error->all(FLERR,"Illegal pair_style command");
 
@@ -687,23 +687,23 @@ void PairNNP::settings(int narg, char **arg)
   }
   numb_models = models.size();
   if (numb_models == 1) {
-    nnp_inter.init (arg[0], get_node_rank(), get_file_content(arg[0]));
-    cutoff = nnp_inter.cutoff ();
-    numb_types = nnp_inter.numb_types();
-    dim_fparam = nnp_inter.dim_fparam();
-    dim_aparam = nnp_inter.dim_aparam();
+    deep_pot.init (arg[0], get_node_rank(), get_file_content(arg[0]));
+    cutoff = deep_pot.cutoff ();
+    numb_types = deep_pot.numb_types();
+    dim_fparam = deep_pot.dim_fparam();
+    dim_aparam = deep_pot.dim_aparam();
   }
   else {
-    nnp_inter.init (arg[0], get_node_rank(), get_file_content(arg[0]));
-    nnp_inter_model_devi.init(models, get_node_rank(), get_file_content(models));
-    cutoff = nnp_inter_model_devi.cutoff();
-    numb_types = nnp_inter_model_devi.numb_types();
-    dim_fparam = nnp_inter_model_devi.dim_fparam();
-    dim_aparam = nnp_inter_model_devi.dim_aparam();
-    assert(cutoff == nnp_inter.cutoff());
-    assert(numb_types == nnp_inter.numb_types());
-    assert(dim_fparam == nnp_inter.dim_fparam());
-    assert(dim_aparam == nnp_inter.dim_aparam());
+    deep_pot.init (arg[0], get_node_rank(), get_file_content(arg[0]));
+    deep_pot_model_devi.init(models, get_node_rank(), get_file_content(models));
+    cutoff = deep_pot_model_devi.cutoff();
+    numb_types = deep_pot_model_devi.numb_types();
+    dim_fparam = deep_pot_model_devi.dim_fparam();
+    dim_aparam = deep_pot_model_devi.dim_aparam();
+    assert(cutoff == deep_pot.cutoff());
+    assert(numb_types == deep_pot.numb_types());
+    assert(dim_fparam == deep_pot.dim_fparam());
+    assert(dim_aparam == deep_pot.dim_aparam());
   }
 
   out_freq = 100;
@@ -834,7 +834,7 @@ void PairNNP::settings(int narg, char **arg)
    set coeffs for one or more type pairs
 ------------------------------------------------------------------------- */
 
-void PairNNP::coeff(int narg, char **arg)
+void PairDeepMD::coeff(int narg, char **arg)
 {
   if (!allocated) {
     allocate();
@@ -867,7 +867,7 @@ void PairNNP::coeff(int narg, char **arg)
 }
 
 
-void PairNNP::init_style()
+void PairDeepMD::init_style()
 {
   int irequest = neighbor->request(this,instance_me);
   neighbor->requests[irequest]->half = 0;
@@ -876,7 +876,7 @@ void PairNNP::init_style()
 }
 
 
-double PairNNP::init_one(int i, int j)
+double PairDeepMD::init_one(int i, int j)
 {
   if (i > numb_types || j > numb_types) {
     char warning_msg[1024];
@@ -893,7 +893,7 @@ double PairNNP::init_one(int i, int j)
 
 /* ---------------------------------------------------------------------- */
 
-int PairNNP::pack_reverse_comm(int n, int first, double *buf)
+int PairDeepMD::pack_reverse_comm(int n, int first, double *buf)
 {
   int i,m,last;
 
@@ -911,7 +911,7 @@ int PairNNP::pack_reverse_comm(int n, int first, double *buf)
 
 /* ---------------------------------------------------------------------- */
 
-void PairNNP::unpack_reverse_comm(int n, int *list, double *buf)
+void PairDeepMD::unpack_reverse_comm(int n, int *list, double *buf)
 {
   int i,j,m;
 
@@ -926,7 +926,7 @@ void PairNNP::unpack_reverse_comm(int n, int *list, double *buf)
   }
 }
 
-void *PairNNP::extract(const char *str, int &dim)
+void *PairDeepMD::extract(const char *str, int &dim)
 {
   if (strcmp(str,"cut_coul") == 0) {
     dim = 0;

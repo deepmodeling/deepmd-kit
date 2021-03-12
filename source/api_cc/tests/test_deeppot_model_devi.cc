@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <fstream>
 #include <vector>
-#include "NNPInter.h"
+#include "DeepPot.h"
 #include "SimulationRegion.h"
 #include "neighbor_list.h"
 #include "test_utils.h"
@@ -33,9 +33,9 @@ protected:
   };
   int natoms;
 
-  NNPInter dp0;
-  NNPInter dp1;
-  NNPInterModelDevi dp_md;
+  DeepPot dp0;
+  DeepPot dp1;
+  DeepPotModelDevi dp_md;
 
   void SetUp() override {
     {

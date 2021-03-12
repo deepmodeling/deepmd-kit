@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <fstream>
 #include <vector>
-#include "NNPInter.h"
+#include "DeepPot.h"
 #include "SimulationRegion.h"
 #include "neighbor_list.h"
 #include "test_utils.h"
@@ -44,7 +44,7 @@ protected:
   double expected_tot_e;
   std::vector<double>expected_tot_v;
 
-  NNPInter dp;
+  DeepPot dp;
 
   void SetUp() override {
     std::string file_name = "../../tests/infer/deeppot-r.pbtxt";
@@ -383,7 +383,7 @@ protected:
   double expected_tot_e;
   std::vector<double>expected_tot_v;
 
-  NNPInter dp;
+  DeepPot dp;
 
   void SetUp() override {
     std::string file_name = "../../tests/infer/deeppot-r.pbtxt";

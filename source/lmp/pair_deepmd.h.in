@@ -13,7 +13,7 @@
 
 #ifdef PAIR_CLASS
 
-PairStyle(deepmd,PairNNP)
+PairStyle(deepmd,PairDeepMD)
 
 #else
 
@@ -21,7 +21,7 @@ PairStyle(deepmd,PairNNP)
 #define LMP_PAIR_NNP_H
 
 #include "pair.h"
-#include "NNPInter.h"
+#include "DeepPot.h"
 #include <iostream>
 #include <fstream>
 
@@ -50,10 +50,10 @@ PairStyle(deepmd,PairNNP)
 
 namespace LAMMPS_NS {
 
-class PairNNP : public Pair {
+class PairDeepMD : public Pair {
  public:
-  PairNNP(class LAMMPS *);
-  virtual ~PairNNP();
+  PairDeepMD(class LAMMPS *);
+  virtual ~PairDeepMD();
   virtual void compute(int, int);
   virtual void *extract(const char *, int &);
   void settings(int, char **);
@@ -71,8 +71,8 @@ class PairNNP : public Pair {
   double **scale;
 
 private:  
-  NNPInter nnp_inter;
-  NNPInterModelDevi nnp_inter_model_devi;
+  DeepPot deep_pot;
+  DeepPotModelDevi deep_pot_model_devi;
   unsigned numb_models;
   double cutoff;
   int numb_types;
