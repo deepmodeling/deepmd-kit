@@ -1,6 +1,5 @@
 #include "common.h"
 #include "AtomMap.h"
-#include "SimulationRegion.h"
 #include "device.h"
 
 void 
