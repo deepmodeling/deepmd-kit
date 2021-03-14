@@ -222,13 +222,13 @@ EwaldReciprocal(VALUETYPE &				ener,
 	// \bm m and \vert m \vert^2
 	VALUETYPE rm[3] = {0,0,0};	  
 	rm[0] += mm0 * rec_box[0*3+0];
-	rm[1] += mm0 * rec_box[1*3+0];
-	rm[2] += mm0 * rec_box[2*3+0];
-	rm[0] += mm1 * rec_box[0*3+1];
+	rm[1] += mm0 * rec_box[0*3+1];
+	rm[2] += mm0 * rec_box[0*3+2];
+	rm[0] += mm1 * rec_box[1*3+0];
 	rm[1] += mm1 * rec_box[1*3+1];
-	rm[2] += mm1 * rec_box[2*3+1];
-	rm[0] += mm2 * rec_box[0*3+2];
-	rm[1] += mm2 * rec_box[1*3+2];
+	rm[2] += mm1 * rec_box[1*3+2];
+	rm[0] += mm2 * rec_box[2*3+0];
+	rm[1] += mm2 * rec_box[2*3+1];
 	rm[2] += mm2 * rec_box[2*3+2];
 	VALUETYPE nmm2 = rm[0] * rm[0] + rm[1] * rm[1] + rm[2] * rm[2];
 	// energy
