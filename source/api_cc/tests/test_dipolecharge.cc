@@ -6,7 +6,7 @@
 #include "DeepTensor.h"
 #include "DataModifier.h"
 #include "SimulationRegion.h"
-#include "Ewald.h"
+#include "ewald.h"
 #include "neighbor_list.h"
 #include "test_utils.h"
 
@@ -174,12 +174,12 @@ TEST_F(TestDipoleCharge, cpu_lmp_nlist)
   // compute the recp part of the ele interaction
   double eener;
   std::vector<double> eforce, evirial;
-  SimulationRegion<double> region;
-  region.reinitBox(&box[0]);
+  Region<double> region;
+  init_region_cpu(region, &box[0]);
   EwaldParameters<double> eparam;
   eparam.beta = 0.2;
   eparam.spacing = 4;
-  EwaldReciprocal(eener, eforce, evirial, coord, charge, region, eparam);
+  ewald_recp(eener, eforce, evirial, coord, charge, region, eparam);
   
   EXPECT_LT(fabs(eener - expected_e[0]), 1e-6);
   EXPECT_EQ(eforce.size(), coord.size());

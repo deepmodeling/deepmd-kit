@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <cmath>
 #include <algorithm>
-#include "Ewald.h"
+#include "ewald.h"
 
 class TestEwald : public ::testing::Test
 {

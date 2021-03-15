@@ -5,7 +5,7 @@
 #include <vector>
 #include "neighbor_list.h"
 #include "test_utils.h"
-#include "Ewald.h"
+#include "ewald.h"
 
 class TestInferEwald : public ::testing::Test
 {  
@@ -48,9 +48,9 @@ public:
 	std::vector<double> &	virial,
 	const std::vector<double> & coord,
 	const std::vector<double> & box) {
-      SimulationRegion<double> region;
-      region.reinitBox(&box[0]);
-      EwaldReciprocal(ener, force, virial, coord, charge, region, eparam);
+      Region<double> region;
+      init_region_cpu(region, &box[0]);
+      ewald_recp(ener, force, virial, coord, charge, region, eparam);
     }
   };
   MyModel model(charge);
