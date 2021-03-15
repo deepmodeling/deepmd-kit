@@ -43,6 +43,14 @@ endif()
 file(GLOB TEST_SRC test_*.cc)
 add_executable( runUnitTests ${TEST_SRC} )
 
+find_package(Threads)
+# find openmp
+find_package(OpenMP)
+if (OPENMP_FOUND)
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+endif()
+
 if (USE_CUDA_TOOLKIT)
   target_link_libraries(runUnitTests gtest gtest_main ${libname} pthread deepmd_op_cuda)
 else()

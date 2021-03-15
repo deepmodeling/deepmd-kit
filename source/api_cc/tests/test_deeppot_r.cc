@@ -3,8 +3,7 @@
 #include <algorithm>
 #include <fstream>
 #include <vector>
-#include "NNPInter.h"
-#include "SimulationRegion.h"
+#include "DeepPot.h"
 #include "neighbor_list.h"
 #include "test_utils.h"
 
@@ -44,7 +43,7 @@ protected:
   double expected_tot_e;
   std::vector<double>expected_tot_v;
 
-  NNPInter dp;
+  DeepPot dp;
 
   void SetUp() override {
     std::string file_name = "../../tests/infer/deeppot-r.pbtxt";
@@ -99,6 +98,50 @@ TEST_F(TestInferDeepPotR, cpu_build_nlist)
   for(int ii = 0; ii < 3*3; ++ii){
     EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), 1e-10);
   }
+}
+
+TEST_F(TestInferDeepPotR, cpu_build_nlist_numfv)
+{
+  class MyModel : public EnergyModelTest<double>
+  {
+    DeepPot & mydp;
+    const std::vector<int > & atype;
+public:
+    MyModel(
+	DeepPot & dp_,
+	const std::vector<int> & atype_
+	) : mydp(dp_), atype(atype_) {};
+    virtual void compute (
+	double & ener,
+	std::vector<double> &	force,
+	std::vector<double> &	virial,
+	const std::vector<double> & coord,
+	const std::vector<double> & box) {
+      mydp.compute(ener, force, virial, coord, atype, box);
+    }
+  };
+  MyModel model(dp, atype);
+  model.test_f(coord, box);
+  model.test_v(coord, box);
+  std::vector<double> box_(box);
+  box_[1] -= 0.4;
+  model.test_f(coord, box_);
+  model.test_v(coord, box_);
+  box_[2] += 0.5;
+  model.test_f(coord, box_);
+  model.test_v(coord, box_);
+  box_[4] += 0.2;
+  model.test_f(coord, box_);
+  model.test_v(coord, box_);
+  box_[3] -= 0.3;
+  model.test_f(coord, box_);
+  model.test_v(coord, box_);
+  box_[6] -= 0.7;
+  model.test_f(coord, box_);
+  model.test_v(coord, box_);
+  box_[7] += 0.6;
+  model.test_f(coord, box_);
+  model.test_v(coord, box_);
 }
 
 TEST_F(TestInferDeepPotR, cpu_build_nlist_atomic)
@@ -383,7 +426,7 @@ protected:
   double expected_tot_e;
   std::vector<double>expected_tot_v;
 
-  NNPInter dp;
+  DeepPot dp;
 
   void SetUp() override {
     std::string file_name = "../../tests/infer/deeppot-r.pbtxt";

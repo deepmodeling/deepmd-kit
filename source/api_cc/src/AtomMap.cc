@@ -1,15 +1,15 @@
-#include "NNPAtomMap.h"
+#include "AtomMap.h"
 
 #include <algorithm>
 #include <cassert>
 
 template <typename VALUETYPE>
-NNPAtomMap<VALUETYPE>::
-NNPAtomMap() {}
+AtomMap<VALUETYPE>::
+AtomMap() {}
 
 template <typename VALUETYPE>
-NNPAtomMap<VALUETYPE>::
-NNPAtomMap(const std::vector<int >::const_iterator in_begin, 
+AtomMap<VALUETYPE>::
+AtomMap(const std::vector<int >::const_iterator in_begin, 
 	   const std::vector<int >::const_iterator in_end)
 {
   int natoms = in_end - in_begin;
@@ -31,7 +31,7 @@ NNPAtomMap(const std::vector<int >::const_iterator in_begin,
 
 template <typename VALUETYPE>
 void
-NNPAtomMap<VALUETYPE>::
+AtomMap<VALUETYPE>::
 forward (typename std::vector<VALUETYPE >::iterator out,
 	 const typename std::vector<VALUETYPE >::const_iterator in, 
 	 const int stride) const 
@@ -48,7 +48,7 @@ forward (typename std::vector<VALUETYPE >::iterator out,
 
 template <typename VALUETYPE>
 void
-NNPAtomMap<VALUETYPE>::
+AtomMap<VALUETYPE>::
 backward (typename std::vector<VALUETYPE >::iterator out,
 	  const typename std::vector<VALUETYPE >::const_iterator in, 
 	  const int stride) const 
@@ -63,6 +63,6 @@ backward (typename std::vector<VALUETYPE >::iterator out,
   }
 }
 
-template class NNPAtomMap<float>;
-template class NNPAtomMap<double>;
+template class AtomMap<float>;
+template class AtomMap<double>;
 

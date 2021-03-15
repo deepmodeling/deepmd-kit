@@ -1,6 +1,6 @@
 #pragma once
 
-#include "NNPInter.h"
+#include "DeepPot.h"
 
 class DipoleChargeModifier
 {
@@ -44,7 +44,7 @@ private:
 		  std::vector<VALUETYPE> &		dvirial,
 		  Session *			session,
 		  const std::vector<std::pair<std::string, Tensor>> & input_tensors,
-		  const NNPAtomMap<VALUETYPE> &	nnpmap,
+		  const AtomMap<VALUETYPE> &	atommap,
 		  const int			nghost);
 };
 
