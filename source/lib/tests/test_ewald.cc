@@ -38,9 +38,9 @@ TEST_F(TestEwald, cpu)
 {
   double ener;
   std::vector<double > force, virial;
-  SimulationRegion<double> region;
-  region.reinitBox(&boxt[0]);
-  EwaldReciprocal(ener, force, virial, coord, charge, region, eparam);
+  Region<double> region;
+  init_region_cpu(region, &boxt[0]);
+  ewald_recp(ener, force, virial, coord, charge, region, eparam);
   EXPECT_LT(fabs(ener - expected_e), 1e-10);
   for(int ii = 0; ii < force.size(); ++ii){
     EXPECT_LT(fabs(force[ii] - expected_f[ii]), 1e-10);
