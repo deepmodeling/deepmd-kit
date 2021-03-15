@@ -10,6 +10,7 @@ protected:
   std::vector<double > ref_boxt = {
     3.27785716,  0.09190842,  0.14751448,  0.02331264,  4.36482777, -0.2999871 , -0.47510999, -0.38123489,  5.33561809
   };
+  double expected_vol = 76.26958621360133;
   // rec_boxt = boxt^{-T}
   std::vector<double > ref_rec_boxt = {
     3.0385229041853185e-01,  2.3783430948044884e-04, 2.7073513689027690e-02, -7.1670232142159460e-03, 2.3022911797728179e-01,  1.5811897837543720e-02, -8.8035961973365381e-03,  1.2937710358702505e-02, 1.8756020637229892e-01
@@ -45,6 +46,9 @@ TEST_F(TestRegion, cpu)
   for(int ii = 0; ii < 9; ++ii){
     EXPECT_LT(fabs(region.rec_boxt[ii] - ref_rec_boxt[ii]), 1e-10);
   }
+  // check volume
+  double vol = volume_cpu(region);
+  EXPECT_LT(fabs(vol - expected_vol), 1e-10);
   // check conversion between phys and inter coords.
   double ri[3];
   convert_to_inter_cpu(ri, region, &ref_rp[0]);

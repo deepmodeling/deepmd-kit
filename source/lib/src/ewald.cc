@@ -1,22 +1,5 @@
-#pragma once
-
-#include<algorithm>
-#include<cassert>
-#include<omp.h>
-
-#include "utilities.h"
+#include "ewald.h"
 #include "SimulationRegion.h"
-
-// 8.988e9 / pc.electron_volt / pc.angstrom * (1.602e-19)**2
-const double ElectrostaticConvertion = 14.39964535475696995031;
-
-template <typename VALUETYPE>
-struct EwaldParameters 
-{
-  VALUETYPE rcut = 6.0;
-  VALUETYPE beta = 2;
-  VALUETYPE spacing = 4;
-};
 
 template<typename VALUETYPE> 
 VALUETYPE
@@ -82,14 +65,9 @@ rec_err_esti(const VALUETYPE & test_q,
 template <typename VALUETYPE>
 void
 cmpt_k(std::vector<int> & KK,
-       const SimulationRegion<double>&		region, 
+       const VALUETYPE *		boxt, 
        const EwaldParameters<VALUETYPE>&	param)
 {
-  const double * boxt_ = region.getBoxTensor();
-  VALUETYPE boxt[9];
-  for (int dd = 0; dd < 9; ++dd){
-    boxt[dd] = static_cast<VALUETYPE>(boxt_[dd]);
-  }  
   KK.resize(3);
   for (int dd = 0; dd < 3; ++dd){
     VALUETYPE ll = sqrt(dot3(boxt+dd*3, boxt+dd*3));
@@ -108,13 +86,14 @@ cmpt_k(std::vector<int> & KK,
 // inputs: coordinates charges region
 template <typename VALUETYPE>
 void 
-EwaldReciprocal(VALUETYPE &				ener, 
-		std::vector<VALUETYPE> &		force,
-		std::vector<VALUETYPE> &		virial,
-		const std::vector<VALUETYPE>&		coord,
-		const std::vector<VALUETYPE>&		charge,
-		const SimulationRegion<double>&		region, 
-		const EwaldParameters<VALUETYPE>&	param)
+ewald_recp(
+    VALUETYPE &				ener, 
+    std::vector<VALUETYPE> &		force,
+    std::vector<VALUETYPE> &		virial,
+    const std::vector<VALUETYPE>&	coord,
+    const std::vector<VALUETYPE>&	charge,
+    const Region<VALUETYPE>&		region, 
+    const EwaldParameters<VALUETYPE>&	param)
 {
   // natoms
   int natoms = charge.size();
@@ -137,7 +116,7 @@ EwaldReciprocal(VALUETYPE &				ener,
   // K grid
   std::vector<int> KK(3);
   int totK = 1;
-  cmpt_k<VALUETYPE>(KK, region, param);
+  cmpt_k<VALUETYPE>(KK, region.boxt, param);
   for (int dd = 0; dd < 3; ++dd){
     totK *= (KK[dd]+1);
   }  
@@ -154,11 +133,12 @@ EwaldReciprocal(VALUETYPE &				ener,
 #pragma omp parallel for num_threads(nthreads)
   for (int ii = 0; ii < natoms; ++ii){
     int thread_id = omp_get_thread_num();
-    double ir[3];
-    double tmpcoord[3] = {coord[ii*3], coord[ii*3+1], coord[ii*3+2]};
-    region.phys2Inter(ir, tmpcoord);
+    VALUETYPE ir[3];
+    VALUETYPE tmpcoord[3] = {coord[ii*3], coord[ii*3+1], coord[ii*3+2]};
+    convert_to_inter_cpu(ir, region, tmpcoord);
+    // region.phys2Inter(ir, tmpcoord);
     for (int mm0 = -KK[0]/2; mm0 <= KK[0]/2; ++mm0){
-      double mr[3];
+      VALUETYPE mr[3];
       mr[0] = ir[0] * mm0;      
       int shift0 = (mm0 + KK[0]/2) * stride[1] * stride[2];
       for (int mm1 = -KK[1]/2; mm1 <= KK[1]/2; ++mm1){
@@ -168,7 +148,7 @@ EwaldReciprocal(VALUETYPE &				ener,
 	  if (mm0 == 0 && mm1 == 0 && mm2 == 0) continue;
 	  int mc = shift0 + shift1 + mm2 + KK[2]/2;
 	  mr[2] = ir[2] * mm2;
-	  double mdotr = 2. * M_PI * (mr[0]+mr[1]+mr[2]);
+	  VALUETYPE mdotr = 2. * M_PI * (mr[0]+mr[1]+mr[2]);
 	  thread_sqr[thread_id][mc] += charge[ii] * cos(mdotr);
 	  thread_sqi[thread_id][mc] += charge[ii] * sin(mdotr);
 	}
@@ -187,11 +167,7 @@ EwaldReciprocal(VALUETYPE &				ener,
   }  
 
   // get rbox
-  VALUETYPE rec_box[9];
-  const double * rec_box_ = region.getRecBoxTensor();
-  for (int ii = 0; ii < 9; ++ii){
-    rec_box[ii] = static_cast<VALUETYPE>(rec_box_[ii]);
-  }
+  const VALUETYPE * rec_box = region.rec_boxt;
   
   std::vector<VALUETYPE> thread_ener(nthreads, 0.);
   std::vector<std::vector<VALUETYPE> > thread_force(nthreads);
@@ -222,13 +198,13 @@ EwaldReciprocal(VALUETYPE &				ener,
 	// \bm m and \vert m \vert^2
 	VALUETYPE rm[3] = {0,0,0};	  
 	rm[0] += mm0 * rec_box[0*3+0];
-	rm[1] += mm0 * rec_box[1*3+0];
-	rm[2] += mm0 * rec_box[2*3+0];
-	rm[0] += mm1 * rec_box[0*3+1];
+	rm[1] += mm0 * rec_box[0*3+1];
+	rm[2] += mm0 * rec_box[0*3+2];
+	rm[0] += mm1 * rec_box[1*3+0];
 	rm[1] += mm1 * rec_box[1*3+1];
-	rm[2] += mm1 * rec_box[2*3+1];
-	rm[0] += mm2 * rec_box[0*3+2];
-	rm[1] += mm2 * rec_box[1*3+2];
+	rm[2] += mm1 * rec_box[1*3+2];
+	rm[0] += mm2 * rec_box[2*3+0];
+	rm[1] += mm2 * rec_box[2*3+1];
 	rm[2] += mm2 * rec_box[2*3+2];
 	VALUETYPE nmm2 = rm[0] * rm[0] + rm[1] * rm[1] + rm[2] * rm[2];
 	// energy
@@ -272,7 +248,7 @@ EwaldReciprocal(VALUETYPE &				ener,
     }
   }
 
-  VALUETYPE vol = static_cast<VALUETYPE>(region.getVolume());
+  VALUETYPE vol = volume_cpu(region);
   ener /= 2 * M_PI * vol;
   ener *= ElectrostaticConvertion;
   for (int ii = 0; ii < 3*natoms; ++ii){
@@ -287,3 +263,25 @@ EwaldReciprocal(VALUETYPE &				ener,
   delete[]sqi;
 }
 
+
+template
+void 
+ewald_recp<float>(
+    float &				ener, 
+    std::vector<float> &		force,
+    std::vector<float> &		virial,
+    const std::vector<float>&		coord,
+    const std::vector<float>&		charge,
+    const Region<float>&		region, 
+    const EwaldParameters<float>&	param);
+
+template
+void 
+ewald_recp<double>(
+    double &				ener, 
+    std::vector<double> &		force,
+    std::vector<double> &		virial,
+    const std::vector<double>&		coord,
+    const std::vector<double>&		charge,
+    const Region<double>&		region, 
+    const EwaldParameters<double>&	param);

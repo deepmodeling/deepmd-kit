@@ -108,6 +108,14 @@ convert_to_phys_cpu(
   tensor_t_dot_vec(rp, region.boxt, ri);
 }
 
+template<typename FPTYPE>
+FPTYPE
+volume_cpu(
+    const Region<FPTYPE> & region)
+{
+  return compute_volume(region.boxt);
+}
+
 template
 void init_region_cpu<double>(
     Region<double> & region,
@@ -146,3 +154,12 @@ convert_to_phys_cpu<float>(
     const Region<float> & region,
     const float * rp);
 
+template
+double
+volume_cpu<double>(
+    const Region<double> & region);
+
+template
+float
+volume_cpu<float>(
+    const Region<float> & region);

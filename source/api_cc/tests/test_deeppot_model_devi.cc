@@ -4,7 +4,6 @@
 #include <fstream>
 #include <vector>
 #include "DeepPot.h"
-#include "SimulationRegion.h"
 #include "neighbor_list.h"
 #include "test_utils.h"
 

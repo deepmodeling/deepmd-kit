@@ -95,7 +95,7 @@ class TestEwaldRecp (unittest.TestCase) :
 
     def test_force(self):
         hh = 1e-4
-        places = 4
+        places = 6
         sess = tf.Session()
         t_energy, t_force, t_virial \
             = op_module.ewald_recp(self.coord, self.charge, self.nloc, self.box, 
@@ -137,7 +137,7 @@ class TestEwaldRecp (unittest.TestCase) :
 
     def test_virial(self):
         hh = 1e-4
-        places = 5
+        places = 6
         sess = tf.Session()
         t_energy, t_force, t_virial \
             = op_module.ewald_recp(self.coord, self.charge, self.nloc, self.box, 
@@ -194,8 +194,8 @@ class TestEwaldRecp (unittest.TestCase) :
                                        self.nloc:   [self.natoms],
                                    })
                 num_deriv[:,ii,jj] = -(energyp[0] - energym[0]) / (2.*hh)
-        dbox3t = np.transpose(self.dbox3, [0,2,1])
-        t_esti = np.matmul(num_deriv, dbox3t)
+        num_deriv_t = np.transpose(num_deriv, [0,2,1])
+        t_esti = np.matmul(num_deriv_t, self.dbox3)
         # # t_esti = np.matmul(num_deriv, self.dbox3)
         # print(num_deriv[0])
         # print(t_esti[0])

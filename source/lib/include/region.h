@@ -16,6 +16,11 @@ init_region_cpu(
     const FPTYPE * boxt);
 
 template<typename FPTYPE>
+FPTYPE
+volume_cpu(
+    const Region<FPTYPE> & region);
+
+template<typename FPTYPE>
 void
 convert_to_inter_cpu(
     FPTYPE * ri, 

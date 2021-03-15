@@ -1,6 +1,5 @@
 #include "DeepPot.h"
 #include "AtomMap.h"
-#include "SimulationRegion.h"
 #include <stdexcept>	
 
 
