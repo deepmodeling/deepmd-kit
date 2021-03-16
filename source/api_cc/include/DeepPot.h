@@ -2,8 +2,8 @@
 
 #include "common.h"
 #include "neighbor_list.h"
-typedef double compute_t;
 
+namespace deepmd{
 class DeepPot 
 {
 public:
@@ -61,9 +61,9 @@ public:
   int dim_aparam () const {assert(inited); return daparam;};
   void get_type_map (std::string & type_map);
 private:
-  Session* session;
+  tensorflow::Session* session;
   int num_intra_nthreads, num_inter_nthreads;
-  GraphDef graph_def;
+  tensorflow::GraphDef graph_def;
   bool inited;
   template<class VT> VT get_scalar(const std::string & name) const;
   // VALUETYPE get_rcut () const;
@@ -92,7 +92,6 @@ private:
   // copy neighbor list info from host
   bool init_nbor;
   std::vector<int> sec_a;
-  compute_t *array_double;
   NeighborListData nlist_data;
   InputNlist nlist;
   AtomMap<VALUETYPE> atommap;
@@ -156,9 +155,9 @@ public:
 		      const VALUETYPE eps);
 private:
   unsigned numb_models;
-  std::vector<Session*> sessions;
+  std::vector<tensorflow::Session*> sessions;
   int num_intra_nthreads, num_inter_nthreads;
-  std::vector<GraphDef> graph_defs;
+  std::vector<tensorflow::GraphDef> graph_defs;
   bool inited;
   template<class VT> VT get_scalar(const std::string name) const;
   // VALUETYPE get_rcut () const;
@@ -176,15 +175,15 @@ private:
 
   // copy neighbor list info from host
   bool init_nbor;
-  compute_t *array_double;
   std::vector<std::vector<int> > sec;
-  AtomMap<VALUETYPE> atommap;
+  deepmd::AtomMap<VALUETYPE> atommap;
   NeighborListData nlist_data;
   InputNlist nlist;
 
   // function used for nborlist copy
   std::vector<std::vector<int> > get_sel() const;
-  void cum_sum(const std::vector<std::vector<int32> > n_sel);
+  void cum_sum(const std::vector<std::vector<tensorflow::int32> > n_sel);
 };
+}
 
 

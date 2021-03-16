@@ -1,5 +1,8 @@
 #include "DeepTensor.h"
 
+using namespace deepmd;
+using namespace tensorflow;
+
 DeepTensor::
 DeepTensor()
     : inited (false)
@@ -30,9 +33,9 @@ init (const std::string & model,
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
-  checkStatus (NewSession(options, &session));
-  checkStatus (ReadBinaryProto(Env::Default(), model, &graph_def));
-  checkStatus (session->Create(graph_def));  
+  deepmd::check_status (NewSession(options, &session));
+  deepmd::check_status (ReadBinaryProto(Env::Default(), model, &graph_def));
+  deepmd::check_status (session->Create(graph_def));  
   rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
   cell_size = rcut;
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
@@ -82,7 +85,7 @@ run_model (std::vector<VALUETYPE> &	d_tensor_,
   }
 
   std::vector<Tensor> output_tensors;
-  checkStatus (session->Run(input_tensors, 
+  deepmd::check_status (session->Run(input_tensors, 
 			    {name_prefix(name_scope) + "o_" + model_type},
 			    {}, 
 			    &output_tensors));

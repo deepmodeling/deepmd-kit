@@ -2,6 +2,8 @@
 #include "AtomMap.h"
 #include <stdexcept>	
 
+using namespace tensorflow;
+using namespace deepmd;
 
 #if  GOOGLE_CUDA
 #include "cuda_runtime.h"
@@ -54,7 +56,7 @@ run_model (ENERGYTYPE &			dener,
   }
 
   std::vector<Tensor> output_tensors;
-  checkStatus (session->Run(input_tensors, 
+  check_status (session->Run(input_tensors, 
 			    {"o_energy", "o_force", "o_atom_virial"}, 
 			    {}, 
 			    &output_tensors));
@@ -95,7 +97,7 @@ static void run_model (ENERGYTYPE   &		dener,
 		       std::vector<VALUETYPE>&	datom_virial_,
 		       Session*			session, 
 		       const std::vector<std::pair<std::string, Tensor>> & input_tensors,
-		       const AtomMap<VALUETYPE> &   atommap, 
+		       const deepmd::AtomMap<VALUETYPE> &   atommap, 
 		       const int&		nghost = 0)
 {
     unsigned nloc = atommap.get_type().size();
@@ -119,7 +121,7 @@ static void run_model (ENERGYTYPE   &		dener,
     }
     std::vector<Tensor> output_tensors;
 
-    checkStatus (session->Run(input_tensors, 
+    check_status (session->Run(input_tensors, 
 			    {"o_energy", "o_force", "o_atom_energy", "o_atom_virial"}, 
 			    {},
 			    &output_tensors));
@@ -199,7 +201,7 @@ init (const std::string & model, const int & gpu_rank, const std::string & file_
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
 
   if(file_content.size() == 0)
-    checkStatus (ReadBinaryProto(Env::Default(), model, &graph_def));
+    check_status (ReadBinaryProto(Env::Default(), model, &graph_def));
   else
     graph_def.ParseFromString(file_content);
   int gpu_num = -1;
@@ -215,8 +217,8 @@ init (const std::string & model, const int & gpu_rank, const std::string & file_
     graph::SetDefaultDevice(str, &graph_def);
   }
   #endif // GOOGLE_CUDA
-  checkStatus (NewSession(options, &session));
-  checkStatus (session->Create(graph_def));
+  check_status (NewSession(options, &session));
+  check_status (session->Create(graph_def));
   rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
   cell_size = rcut;
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
@@ -334,7 +336,7 @@ compute (ENERGYTYPE &			dener,
 {
   int nall = dcoord_.size() / 3;
   int nloc = nall;
-  atommap = AtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
+  atommap = deepmd::AtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
   assert (nloc == atommap.get_type().size());
   validate_fparam_aparam(nloc, fparam, aparam);
 
@@ -406,7 +408,7 @@ compute_inner (ENERGYTYPE &			dener,
 
     // agp == 0 means that the LAMMPS nbor list has been updated
     if (ago == 0) {
-      atommap = AtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
+      atommap = deepmd::AtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
       assert (nloc == atommap.get_type().size());
       nlist_data.shuffle(atommap);
       nlist_data.make_inlist(nlist);
@@ -430,7 +432,7 @@ compute (ENERGYTYPE &			dener,
 	 const std::vector<VALUETYPE> &	fparam,
 	 const std::vector<VALUETYPE> &	aparam)
 {
-  atommap = AtomMap<VALUETYPE> (datype_.begin(), datype_.end());
+  atommap = deepmd::AtomMap<VALUETYPE> (datype_.begin(), datype_.end());
   validate_fparam_aparam(atommap.get_type().size(), fparam, aparam);
 
   std::vector<std::pair<std::string, Tensor>> input_tensors;
@@ -527,7 +529,7 @@ init (const std::vector<std::string> & models, const int & gpu_rank, const std::
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
   for (unsigned ii = 0; ii < numb_models; ++ii){
     if (file_contents.size() == 0)
-      checkStatus (ReadBinaryProto(Env::Default(), models[ii], &graph_defs[ii]));
+      check_status (ReadBinaryProto(Env::Default(), models[ii], &graph_defs[ii]));
     else
       graph_defs[ii].ParseFromString(file_contents[ii]);
   }
@@ -546,8 +548,8 @@ init (const std::vector<std::string> & models, const int & gpu_rank, const std::
       str += std::to_string(gpu_rank % gpu_num);
       graph::SetDefaultDevice(str, &graph_defs[ii]);
     }
-    checkStatus (NewSession(options, &(sessions[ii])));
-    checkStatus (sessions[ii]->Create(graph_defs[ii]));
+    check_status (NewSession(options, &(sessions[ii])));
+    check_status (sessions[ii]->Create(graph_defs[ii]));
   }
   rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
   cell_size = rcut;
