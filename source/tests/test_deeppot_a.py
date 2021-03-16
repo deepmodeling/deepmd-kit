@@ -25,18 +25,19 @@ class TestModelMajorCompatability(unittest.TestCase) :
                         if "string_val:" in data[jj]:
                             data[jj] = data[jj].replace(MODEL_VERSION, "0.0")
                             break
-        with open("deeppot-ver.pbtxt", "w") as fp:
+        self.version_pbtxt = str(tests_path / "deeppot-ver.pbtxt")
+        self.version_pb = str(tests_path / "deeppot.pb")
+        with open(self.version_pbtxt, "w") as fp:
             fp.write("\n".join(data))
-
-        convert_pbtxt_to_pb(str(tests_path / os.path.join("deeppot-ver.pbtxt")), "deeppot.pb")
+        convert_pbtxt_to_pb(self.version_pbtxt, self.version_pb)
 
     def tearDown(self):
-        os.remove("deeppot-ver.pbtxt")
-        os.remove("deeppot.pb")
+        os.remove(self.version_pbtxt)
+        os.remove(self.version_pb)
 
     def test(self):        
         with self.assertRaises(RuntimeError) as context:
-            DeepPot("deeppot.pb")
+            DeepPot(str(self.version_pb))
         self.assertTrue('incompatible' in str(context.exception))
         self.assertTrue(MODEL_VERSION in str(context.exception))
         self.assertTrue('0.0' in str(context.exception))
@@ -54,18 +55,19 @@ class TestModelMinorCompatability(unittest.TestCase) :
                         if "string_val:" in data[jj]:
                             data[jj] = data[jj].replace(MODEL_VERSION, "0.1000000")
                             break
-        with open("deeppot-ver.pbtxt", "w") as fp:
+        self.version_pbtxt = str(tests_path / "deeppot-ver.pbtxt")
+        self.version_pb = str(tests_path / "deeppot.pb")
+        with open(self.version_pbtxt, "w") as fp:
             fp.write("\n".join(data))
-
-        convert_pbtxt_to_pb(str(tests_path / os.path.join("deeppot-ver.pbtxt")), "deeppot.pb")
+        convert_pbtxt_to_pb(self.version_pbtxt, self.version_pb)
 
     def tearDown(self):
-        os.remove("deeppot-ver.pbtxt")
-        os.remove("deeppot.pb")
+        os.remove(self.version_pbtxt)
+        os.remove(self.version_pb)
 
     def test(self):        
         with self.assertRaises(RuntimeError) as context:
-            DeepPot("deeppot.pb")
+            DeepPot(self.version_pb)
         self.assertTrue('incompatible' in str(context.exception))
         self.assertTrue(MODEL_VERSION in str(context.exception))
         self.assertTrue('0.1000000' in str(context.exception))
