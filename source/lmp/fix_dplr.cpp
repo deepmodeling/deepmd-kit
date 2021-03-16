@@ -299,13 +299,13 @@ void FixDPLR::pre_force(int vflag)
   }
   vector<int> sel_fwd, sel_bwd;
   int sel_nghost;
-  select_by_type(sel_fwd, sel_bwd, sel_nghost, dcoord, dtype, nghost, sel_type);
+  deepmd::select_by_type(sel_fwd, sel_bwd, sel_nghost, dcoord, dtype, nghost, sel_type);
   int sel_nall = sel_bwd.size();
   int sel_nloc = sel_nall - sel_nghost;
   vector<int> sel_type(sel_bwd.size());
-  select_map<int>(sel_type, dtype, sel_fwd, 1);
+  deepmd::select_map<int>(sel_type, dtype, sel_fwd, 1);
   
-  AtomMap<FLOAT_PREC> atom_map(sel_type.begin(), sel_type.begin() + sel_nloc);
+  deepmd::AtomMap<FLOAT_PREC> atom_map(sel_type.begin(), sel_type.begin() + sel_nloc);
   const vector<int> & sort_fwd_map(atom_map.get_fwd_map());
 
   vector<pair<int,int> > valid_pairs;

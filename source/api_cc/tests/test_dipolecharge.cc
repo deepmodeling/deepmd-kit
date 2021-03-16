@@ -53,22 +53,22 @@ protected:
   double expected_tot_e;
   std::vector<double>expected_tot_v;
 
-  DeepTensor dp;
-  DipoleChargeModifier dm;
+  deepmd::DeepTensor dp;
+  deepmd::DipoleChargeModifier dm;
 
   void SetUp() override {
     std::string file_name = "../../tests/infer/dipolecharge_e.pbtxt";
     int fd = open(file_name.c_str(), O_RDONLY);
-    protobuf::io::ZeroCopyInputStream* input = new protobuf::io::FileInputStream(fd);
-    GraphDef graph_def;
-    protobuf::TextFormat::Parse(input, &graph_def);
+    tensorflow::protobuf::io::ZeroCopyInputStream* input = new tensorflow::protobuf::io::FileInputStream(fd);
+    tensorflow::GraphDef graph_def;
+    tensorflow::protobuf::TextFormat::Parse(input, &graph_def);
     delete input;
-    string model = "dipolecharge_e.pb";
+    std::string model = "dipolecharge_e.pb";
     std::fstream output(model.c_str(), std::ios::out | std::ios::trunc | std::ios::binary);
     graph_def.SerializeToOstream(&output);
     // check the string by the following commands
     // string txt;
-    // protobuf::TextFormat::PrintToString(graph_def, &txt);
+    // tensorflow::protobuf::TextFormat::PrintToString(graph_def, &txt);
 
     // dp.init("dipolecharge_d.pb");
     // dm.init("dipolecharge_d.pb");
@@ -128,12 +128,12 @@ TEST_F(TestDipoleCharge, cpu_lmp_nlist)
   std::vector<int> sel_types = dp.sel_types();
   std::vector<int> sel_fwd, sel_bwd;
   int sel_nghost;
-  select_by_type(sel_fwd, sel_bwd, sel_nghost, coord_cpy, atype_cpy, nghost, sel_types);
+  deepmd::select_by_type(sel_fwd, sel_bwd, sel_nghost, coord_cpy, atype_cpy, nghost, sel_types);
   int sel_nall = sel_bwd.size();
   int sel_nloc = sel_nall - sel_nghost;
   std::vector<int> sel_atype(sel_bwd.size());
-  select_map<int>(sel_atype, atype, sel_fwd, 1);
-  AtomMap<double> nnp_map(sel_atype.begin(), sel_atype.begin() + sel_nloc);
+  deepmd::select_map<int>(sel_atype, atype, sel_fwd, 1);
+  deepmd::AtomMap<double> nnp_map(sel_atype.begin(), sel_atype.begin() + sel_nloc);
   const std::vector<int> & sort_fwd_map(nnp_map.get_fwd_map());
 
   // // add coords

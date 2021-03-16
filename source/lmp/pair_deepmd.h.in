@@ -71,8 +71,8 @@ class PairDeepMD : public Pair {
   double **scale;
 
 private:  
-  DeepPot deep_pot;
-  DeepPotModelDevi deep_pot_model_devi;
+  deepmd::DeepPot deep_pot;
+  deepmd::DeepPotModelDevi deep_pot_model_devi;
   unsigned numb_models;
   double cutoff;
   int numb_types;

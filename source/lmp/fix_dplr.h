@@ -36,8 +36,8 @@ public:
     double compute_vector(int);
 private:
     PairDeepMD * pair_deepmd;
-    DeepTensor dpt;
-    DipoleChargeModifier dtm;
+    deepmd::DeepTensor dpt;
+    deepmd::DipoleChargeModifier dtm;
     std::string model;
     int ntypes;
     std::vector<int > sel_type;
