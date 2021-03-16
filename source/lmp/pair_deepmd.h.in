@@ -21,7 +21,7 @@ PairStyle(deepmd,PairDeepMD)
 #define LMP_PAIR_NNP_H
 
 #include "pair.h"
-#include "DeepPot.h"
+#include "deepmd/DeepPot.h"
 #include <iostream>
 #include <fstream>
 
