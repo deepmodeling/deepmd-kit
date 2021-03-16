@@ -4,6 +4,7 @@ import unittest
 
 from infer.convert2pb import convert_pbtxt_to_pb
 from deepmd.infer import DeepPot
+from deepmd.run_options import MODEL_VERSION
 from common import tests_path
 
 from deepmd.run_options import GLOBAL_NP_FLOAT_PRECISION
@@ -11,6 +12,66 @@ if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
     default_places = 4
 else :
     default_places = 10
+
+class TestModelMajorCompatability(unittest.TestCase) :
+    def setUp(self):
+        model_file = str(tests_path / os.path.join("infer","deeppot.pbtxt"))
+        with open(model_file, 'r') as fp:
+            # data = fp.read().replace('\n', '')
+            data = fp.read().split("\n")
+            for ii in range(len(data)):
+                if "model_attr/model_version" in data[ii]:
+                    for jj in range(ii, len(data)):
+                        if "string_val:" in data[jj]:
+                            data[jj] = data[jj].replace(MODEL_VERSION, "0.0")
+                            break
+        self.version_pbtxt = str(tests_path / "deeppot-ver.pbtxt")
+        self.version_pb = str(tests_path / "deeppot.pb")
+        with open(self.version_pbtxt, "w") as fp:
+            fp.write("\n".join(data))
+        convert_pbtxt_to_pb(self.version_pbtxt, self.version_pb)
+
+    def tearDown(self):
+        os.remove(self.version_pbtxt)
+        os.remove(self.version_pb)
+
+    def test(self):        
+        with self.assertRaises(RuntimeError) as context:
+            DeepPot(str(self.version_pb))
+        self.assertTrue('incompatible' in str(context.exception))
+        self.assertTrue(MODEL_VERSION in str(context.exception))
+        self.assertTrue('0.0' in str(context.exception))
+
+
+class TestModelMinorCompatability(unittest.TestCase) :
+    def setUp(self):
+        model_file = str(tests_path / os.path.join("infer","deeppot.pbtxt"))
+        with open(model_file, 'r') as fp:
+            # data = fp.read().replace('\n', '')
+            data = fp.read().split("\n")
+            for ii in range(len(data)):
+                if "model_attr/model_version" in data[ii]:
+                    for jj in range(ii, len(data)):
+                        if "string_val:" in data[jj]:
+                            data[jj] = data[jj].replace(MODEL_VERSION, "0.1000000")
+                            break
+        self.version_pbtxt = str(tests_path / "deeppot-ver.pbtxt")
+        self.version_pb = str(tests_path / "deeppot.pb")
+        with open(self.version_pbtxt, "w") as fp:
+            fp.write("\n".join(data))
+        convert_pbtxt_to_pb(self.version_pbtxt, self.version_pb)
+
+    def tearDown(self):
+        os.remove(self.version_pbtxt)
+        os.remove(self.version_pb)
+
+    def test(self):        
+        with self.assertRaises(RuntimeError) as context:
+            DeepPot(self.version_pb)
+        self.assertTrue('incompatible' in str(context.exception))
+        self.assertTrue(MODEL_VERSION in str(context.exception))
+        self.assertTrue('0.1000000' in str(context.exception))
+
 
 class TestDeepPotAPBC(unittest.TestCase) :
     def setUp(self):

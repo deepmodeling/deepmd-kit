@@ -46,6 +46,11 @@ endif(GIT_FOUND)
 list (APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/)
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wno-ignored-attributes")
 
+# model version
+file(READ ${PROJECT_SOURCE_DIR}/train/MODEL_VER MODEL_VERSION)
+string(REPLACE "\n" " " MODEL_VERSION ${MODEL_VERSION})
+message(STATUS "Supported model version: ${MODEL_VERSION}")
+
 # define USE_CUDA_TOOLKIT
 if (DEFINED USE_CUDA_TOOLKIT)
   if (USE_CUDA_TOOLKIT)

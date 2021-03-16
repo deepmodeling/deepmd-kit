@@ -70,6 +70,8 @@ private:
   // int get_ntypes () const;
   VALUETYPE rcut;
   VALUETYPE cell_size;
+  std::string model_type;
+  std::string model_version;
   int ntypes;
   int dfparam;
   int daparam;
@@ -163,6 +165,8 @@ private:
   // int get_ntypes () const;
   VALUETYPE rcut;
   VALUETYPE cell_size;
+  std::string model_type;
+  std::string model_version;
   int ntypes;
   int dfparam;
   int daparam;

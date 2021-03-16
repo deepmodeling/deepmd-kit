@@ -36,6 +36,7 @@ __all__ = [
     "global_cvt_2_tf_float",
     "global_cvt_2_ener_float",
     "RunOptions",
+    "MODEL_VERSION",
 ]
 
 log = logging.getLogger(__name__)
@@ -62,6 +63,7 @@ def _get_package_constants(
 
 
 GLOBAL_CONFIG = _get_package_constants()
+MODEL_VERSION = GLOBAL_CONFIG["model_version"]
 
 if GLOBAL_CONFIG["precision"] == "-DHIGH_PREC":
     GLOBAL_TF_FLOAT_PRECISION = tf.float64

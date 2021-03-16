@@ -38,6 +38,7 @@ private:
   VALUETYPE cell_size;
   int ntypes;
   std::string model_type;
+  std::string model_version;
   int odim;
   std::vector<int> sel_type;
   template<class VT> VT get_scalar(const std::string & name) const;

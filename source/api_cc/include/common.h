@@ -42,6 +42,10 @@ public:
   void make_inlist(InputNlist & inlist);
 };
 
+bool
+model_compatable(
+    std::string & model_version);
+
 void 
 select_by_type(std::vector<int> & fwd_map,
 	       std::vector<int> & bkw_map,
@@ -203,4 +207,5 @@ select_map(std::vector<VT> & out,
     }
   }
 }
+
 

@@ -224,6 +224,14 @@ init (const std::string & model, const int & gpu_rank, const std::string & file_
   daparam = get_scalar<int>("fitting_attr/daparam");
   if (dfparam < 0) dfparam = 0;
   if (daparam < 0) daparam = 0;
+  model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
+  model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
+  if(! model_compatable(model_version)){
+    throw std::runtime_error(
+	"incompatable model: version " + model_version 
+	+ " in graph, but version " + global_model_version 
+	+ " supported ");
+  }
   inited = true;
   
   init_nbor = false;
@@ -238,6 +246,7 @@ print_summary(const std::string &pre) const
   std::cout << pre << "source brach:       " + global_git_branch << std::endl;
   std::cout << pre << "source commit:      " + global_git_hash << std::endl;
   std::cout << pre << "source commit at:   " + global_git_date << std::endl;
+  std::cout << pre << "surpport model ver.:" + global_model_version << std::endl;
   std::cout << pre << "build float prec:   " + global_float_prec << std::endl;
   std::cout << pre << "build with tf inc:  " + global_tf_include_dir << std::endl;
   std::cout << pre << "build with tf lib:  " + global_tf_lib << std::endl;
@@ -547,6 +556,14 @@ init (const std::vector<std::string> & models, const int & gpu_rank, const std::
   daparam = get_scalar<int>("fitting_attr/daparam");
   if (dfparam < 0) dfparam = 0;
   if (daparam < 0) daparam = 0;
+  model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
+  model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
+  if(! model_compatable(model_version)){
+    throw std::runtime_error(
+	"incompatable model: version " + model_version 
+	+ " in graph, but version " + global_model_version 
+	+ " supported ");
+  }
   // rcut = get_rcut();
   // cell_size = rcut;
   // ntypes = get_ntypes();
@@ -560,7 +577,7 @@ VT
 DeepPotModelDevi::
 get_scalar(const std::string name) const 
 {
-  VT myrcut = 0;
+  VT myrcut;
   for (unsigned ii = 0; ii < numb_models; ++ii){
     VT ret = session_get_scalar<VT>(sessions[ii], name);
     if (ii == 0){
