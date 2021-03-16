@@ -2,6 +2,46 @@
 #include "AtomMap.h"
 #include "device.h"
 
+static std::vector<std::string>
+split(const std::string &input_, 
+      const std::string &delimiter)
+{
+  std::string input = input_;
+  size_t pos = 0;
+  std::vector<std::string> res;
+  while ((pos = input.find(delimiter)) != std::string::npos) {
+    res.push_back(input.substr(0, pos));
+    input.erase(0, pos + delimiter.length());
+  }
+  res.push_back(input);
+  return res;
+}
+
+bool
+model_compatable(
+    std::string & model_version)
+{
+  std::vector<std::string> words_mv = split(model_version, ".");
+  std::vector<std::string> words_gmv = split(global_model_version, ".");
+  if(words_mv.size() != 2){
+    throw std::runtime_error("invalid graph model version string " + model_version);
+  }
+  if(words_gmv.size() != 2){
+    throw std::runtime_error("invalid supported model version string " + global_model_version);
+  }
+  int model_version_major = atoi(words_mv[0].c_str());
+  int model_version_minor = atoi(words_mv[1].c_str());
+  int MODEL_VERSION_MAJOR = atoi(words_gmv[0].c_str());
+  int MODEL_VERSION_MINOR = atoi(words_gmv[1].c_str());
+  if(model_version_major != MODEL_VERSION_MAJOR ||
+     model_version_minor >  MODEL_VERSION_MINOR){
+    return false;
+  }
+  else{
+    return true;
+  }
+}
+
 void 
 select_by_type(std::vector<int> & fwd_map,
 	       std::vector<int> & bkw_map,
