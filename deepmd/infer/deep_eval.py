@@ -28,6 +28,7 @@ class DeepEval:
         )
         self.load_prefix = load_prefix
 
+        # graph_compatable should be called after graph and prefix are set
         if not self._graph_compatable():
             raise RuntimeError(
                 f"model in graph (version {self.model_version}) is incompatible"
