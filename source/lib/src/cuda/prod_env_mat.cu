@@ -4,6 +4,8 @@
 #include <cub/block/block_store.cuh>
 #include <cub/block/block_radix_sort.cuh>
 
+using namespace deepmd;
+
 // common part of prod_env_mat
 template <
     typename    Key,
