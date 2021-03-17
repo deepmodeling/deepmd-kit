@@ -120,8 +120,8 @@ public:
     OP_REQUIRES_OK(context, context->GetAttr("sel_r", &sel_r));
     // OP_REQUIRES_OK(context, context->GetAttr("nloc", &nloc_f));
     // OP_REQUIRES_OK(context, context->GetAttr("nall", &nall_f));
-    cum_sum (sec_a, sel_a);
-    cum_sum (sec_r, sel_r);
+    deepmd::cum_sum (sec_a, sel_a);
+    deepmd::cum_sum (sec_r, sel_r);
     ndescrpt_a = sec_a.back() * 4;
     ndescrpt_r = sec_r.back() * 1;
     ndescrpt = ndescrpt_a + ndescrpt_r;
@@ -336,9 +336,9 @@ public:
     OP_REQUIRES_OK(context, context->GetAttr("rcut", &rcut));
     OP_REQUIRES_OK(context, context->GetAttr("rcut_smth", &rcut_smth));
     OP_REQUIRES_OK(context, context->GetAttr("sel", &sel));
-    cum_sum (sec, sel);
+    deepmd::cum_sum (sec, sel);
     sel_null.resize(3, 0);
-    cum_sum (sec_null, sel_null);
+    deepmd::cum_sum (sec_null, sel_null);
     ndescrpt = sec.back() * 1;
     nnei = sec.back();
     max_nbor_size = 1024;

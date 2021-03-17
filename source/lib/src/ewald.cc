@@ -72,7 +72,7 @@ cmpt_k(std::vector<int> & KK,
 {
   KK.resize(3);
   for (int dd = 0; dd < 3; ++dd){
-    VALUETYPE ll = sqrt(dot3(boxt+dd*3, boxt+dd*3));
+    VALUETYPE ll = sqrt(deepmd::dot3(boxt+dd*3, boxt+dd*3));
     KK[dd] = ll / param.spacing;
     // KK[dd] should be large enough 
     if (KK[dd] * param.spacing < ll) KK[dd] += 1;
