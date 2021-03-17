@@ -45,7 +45,7 @@ class GeluOp : public OpKernel {
 
     if (device == "GPU") {
       #if GOOGLE_CUDA
-      gelu_gpu_cuda(
+      deepmd::gelu_gpu_cuda(
           out, 
           x, size);
       #endif // GOOGLE_CUDA
@@ -88,7 +88,7 @@ class GeluGradOp : public OpKernel {
 
     if (device == "GPU") {
       #if GOOGLE_CUDA
-      gelu_grad_gpu_cuda(
+      deepmd::gelu_grad_gpu_cuda(
           out, 
           x, dy, size);
       #endif // GOOGLE_CUDA
@@ -129,7 +129,7 @@ class GeluGradGradOp : public OpKernel {
 
     if (device == "GPU") {
       #if GOOGLE_CUDA
-      gelu_grad_grad_gpu_cuda(
+      deepmd::gelu_grad_grad_gpu_cuda(
           out, 
           x, dy, dy_2, size);
       #endif // GOOGLE_CUDA

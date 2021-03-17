@@ -78,13 +78,13 @@ public:
 
     if (device == "GPU") {
       #if GOOGLE_CUDA
-      prod_force_a_gpu_cuda(    
+      deepmd::prod_force_a_gpu_cuda(    
           force, 
           net_deriv, in_deriv, nlist, nloc, nall, nnei);
       #endif // GOOGLE_CUDA
     }
     else if (device == "CPU") {
-      prod_force_a_cpu(    
+      deepmd::prod_force_a_cpu(    
           force, 
           net_deriv, in_deriv, nlist, nloc, nall, nnei);
     }
@@ -151,13 +151,13 @@ public:
 
     if (device == "GPU") {
       #if GOOGLE_CUDA
-      prod_force_r_gpu_cuda(    
+      deepmd::prod_force_r_gpu_cuda(    
           force, 
           net_deriv, in_deriv, nlist, nloc, nall, nnei);
       #endif // GOOGLE_CUDA
     }
     else if (device == "CPU") {
-      prod_force_r_cpu(    
+      deepmd::prod_force_r_cpu(    
           force, 
           net_deriv, in_deriv, nlist, nloc, nall, nnei);
     }

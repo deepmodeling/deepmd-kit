@@ -273,12 +273,12 @@ public:
       // update nbor list
       deepmd::InputNlist inlist;
       inlist.inum = nloc;
-      env_mat_nbor_update(
+      deepmd::env_mat_nbor_update(
           inlist, gpu_inlist, max_nbor_size, nbor_list_dev,
           mesh_tensor.flat<int>().data(), static_cast<int>(mesh_tensor.NumElements()));
       OP_REQUIRES (context, (max_numneigh(inlist) <= GPU_MAX_NBOR_SIZE), errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_numneigh(inlist)) + " is larger than " + std::to_string(GPU_MAX_NBOR_SIZE) + ", which currently is not supported by deepmd-kit."));
       // launch the gpu(nv) compute function
-      prod_env_mat_a_gpu_cuda(
+      deepmd::prod_env_mat_a_gpu_cuda(
           em, em_deriv, rij, nlist, 
           coord, type, gpu_inlist, array_int, array_longlong, max_nbor_size, avg, std, nloc, nall, rcut_r, rcut_r_smth, sec_a);
       #endif //GOOGLE_CUDA
@@ -300,7 +300,7 @@ public:
 	  frame_nall, mem_cpy, mem_nnei, max_nbor_size,
 	  box, mesh_tensor.flat<int>().data(), nloc, nei_mode, rcut_r, max_cpy_trial, max_nnei_trial);
       // launch the cpu compute function
-      prod_env_mat_a_cpu(
+      deepmd::prod_env_mat_a_cpu(
 	  em, em_deriv, rij, nlist, 
 	  coord, type, inlist, max_nbor_size, avg, std, nloc, frame_nall, rcut_r, rcut_r_smth, sec_a);
       // do nlist mapping if coords were copied
@@ -483,12 +483,12 @@ public:
       // update nbor list
       deepmd::InputNlist inlist;
       inlist.inum = nloc;
-      env_mat_nbor_update(
+      deepmd::env_mat_nbor_update(
           inlist, gpu_inlist, max_nbor_size, nbor_list_dev,
           mesh_tensor.flat<int>().data(), static_cast<int>(mesh_tensor.NumElements()));
       OP_REQUIRES (context, (max_numneigh(inlist) <= GPU_MAX_NBOR_SIZE), errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_numneigh(inlist)) + " is larger than " + std::to_string(GPU_MAX_NBOR_SIZE) + ", which currently is not supported by deepmd-kit."));
       // launch the gpu(nv) compute function
-      prod_env_mat_r_gpu_cuda(
+      deepmd::prod_env_mat_r_gpu_cuda(
           em, em_deriv, rij, nlist, 
           coord, type, gpu_inlist, array_int, array_longlong, max_nbor_size, avg, std, nloc, nall, rcut, rcut_smth, sec);
       #endif //GOOGLE_CUDA
