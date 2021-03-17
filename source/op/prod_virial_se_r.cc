@@ -84,7 +84,7 @@ class ProdVirialSeROp : public OpKernel {
       int virial_iter	= kk * 9;
       int atom_virial_iter	= kk * nall * 9;
 
-      prod_virial_r_cpu(
+      deepmd::prod_virial_r_cpu(
 	  &virial(virial_iter),
 	  &atom_virial(atom_virial_iter),
 	  &net_deriv(net_iter),

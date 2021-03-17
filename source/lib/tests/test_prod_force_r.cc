@@ -65,7 +65,7 @@ protected:
       }
       std::vector<double > t_env, t_env_deriv, t_rij_a;
       // compute env_mat and its deriv, record
-      env_mat_r_cpu<double>(t_env, t_env_deriv, t_rij_a, posi_cpy, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
+      deepmd::env_mat_r_cpu<double>(t_env, t_env_deriv, t_rij_a, posi_cpy, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
       for (int jj = 0; jj < ndescrpt; ++jj){
 	env[ii*ndescrpt+jj] = t_env[jj];
 	for (int dd = 0; dd < 3; ++dd){
@@ -86,7 +86,7 @@ TEST_F(TestProdForceR, cpu)
 {
   std::vector<double> force(nall * 3);
   int n_a_sel = nnei;
-  prod_force_r_cpu<double> (&force[0], &net_deriv[0], &env_deriv[0], &nlist[0], nloc, nall, nnei);
+  deepmd::prod_force_r_cpu<double> (&force[0], &net_deriv[0], &env_deriv[0], &nlist[0], nloc, nall, nnei);
   EXPECT_EQ(force.size(), nall * 3);
   EXPECT_EQ(force.size(), expected_force.size());
   for (int jj = 0; jj < force.size(); ++jj){

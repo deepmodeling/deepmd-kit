@@ -4,7 +4,7 @@
 #include "switcher.h"
 
 template <typename FPTYPE>
-void soft_min_switch_cpu(
+void deepmd::soft_min_switch_cpu(
     FPTYPE * sw_value,
     FPTYPE * sw_deriv,
     const FPTYPE * rij,
@@ -46,7 +46,7 @@ void soft_min_switch_cpu(
     }
     FPTYPE smin = bb / aa;
     FPTYPE vv, dd;
-    spline5_switch(vv, dd, smin, static_cast<FPTYPE>(rmin), static_cast<FPTYPE>(rmax));
+    spline5_switch(vv, dd, smin, rmin, rmax);
     // value of switch
     sw_value[i_idx] = vv;
     // deriv of switch distributed as force
@@ -80,7 +80,7 @@ void soft_min_switch_cpu(
 }
 
 template
-void soft_min_switch_cpu<double>(
+void deepmd::soft_min_switch_cpu<double>(
     double * sw_value,
     double * sw_deriv,
     const double * rij,
@@ -92,7 +92,7 @@ void soft_min_switch_cpu<double>(
     const double & rmax);
 
 template
-void soft_min_switch_cpu<float>(
+void deepmd::soft_min_switch_cpu<float>(
     float * sw_value,
     float * sw_deriv,
     const float * rij,

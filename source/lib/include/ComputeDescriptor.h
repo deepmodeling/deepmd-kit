@@ -826,7 +826,7 @@ void compute_descriptor_se_a_extf (std::vector<double > &		descrpt_a,
       double inr4 = inr2 * inr2;
       double inr3 = inr4 * nr;
       double sw, dsw;
-      spline5_switch(sw, dsw, nr, rmin, rmax);
+      deepmd::spline5_switch(sw, dsw, nr, rmin, rmax);
       int idx_deriv = nei_iter * 4 * 3;	// 4 components time 3 directions
       int idx_value = nei_iter * 4;	// 4 components
       // projections
@@ -935,7 +935,7 @@ void compute_descriptor_se_a_ef_para (std::vector<double > &		descrpt_a,
       double inr4 = inr2 * inr2;
       double inr3 = inr4 * nr;
       double sw, dsw;
-      spline5_switch(sw, dsw, nr, rmin, rmax);
+      deepmd::spline5_switch(sw, dsw, nr, rmin, rmax);
       int idx_deriv = nei_iter * 4 * 3;	// 4 components time 3 directions
       int idx_value = nei_iter * 4;	// 4 components
       // projections
@@ -1043,7 +1043,7 @@ void compute_descriptor_se_a_ef_vert (std::vector<double > &		descrpt_a,
       double inr4 = inr2 * inr2;
       double inr3 = inr4 * nr;
       double sw, dsw;
-      spline5_switch(sw, dsw, nr, rmin, rmax);
+      deepmd::spline5_switch(sw, dsw, nr, rmin, rmax);
       int idx_deriv = nei_iter * 4 * 3;	// 4 components time 3 directions
       int idx_value = nei_iter * 4;	// 4 components
       // projections

@@ -112,7 +112,7 @@ protected:
 TEST_F(TestGelu, gelu_cpu)
 {
   std::vector<double> gelu(nloc);
-  gelu_cpu<double> (&gelu[0], &xx[0], nloc);
+  deepmd::gelu_cpu<double> (&gelu[0], &xx[0], nloc);
   EXPECT_EQ(gelu.size(), nloc);
   EXPECT_EQ(gelu.size(), expected_gelu.size());
   for (int jj = 0; jj < gelu.size(); ++jj){
@@ -124,7 +124,7 @@ TEST_F(TestGelu, gelu_grad_cpu)
 {
   std::vector<double> dy(100, 1.0);
   std::vector<double> gelu_grad(nloc);
-  gelu_grad_cpu<double> (&gelu_grad[0], &xx[0], &dy[0], nloc);
+  deepmd::gelu_grad_cpu<double> (&gelu_grad[0], &xx[0], &dy[0], nloc);
   EXPECT_EQ(gelu_grad.size(), nloc);
   EXPECT_EQ(gelu_grad.size(), expected_gelu_grad.size());
   for (int jj = 0; jj < gelu_grad.size(); ++jj){
@@ -137,7 +137,7 @@ TEST_F(TestGelu, gelu_grad_grad_cpu)
   std::vector<double> dy(100, 1.0);
   std::vector<double> dy_2(100, 1.0);
   std::vector<double> gelu_grad_grad(nloc);
-  gelu_grad_grad_cpu<double> (&gelu_grad_grad[0], &xx[0], &dy[0], &dy_2[0], nloc);
+  deepmd::gelu_grad_grad_cpu<double> (&gelu_grad_grad[0], &xx[0], &dy[0], &dy_2[0], nloc);
   EXPECT_EQ(gelu_grad_grad.size(), nloc);
   EXPECT_EQ(gelu_grad_grad.size(), expected_gelu_grad_grad.size());
   for (int jj = 0; jj < gelu_grad_grad.size(); ++jj){

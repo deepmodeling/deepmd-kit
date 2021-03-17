@@ -57,7 +57,7 @@ void env_mat_a (
       double inr4 = inr2 * inr2;
       double inr3 = inr4 * nr;
       double sw, dsw;
-      spline5_switch(sw, dsw, nr, rmin, rmax);
+      deepmd::spline5_switch(sw, dsw, nr, rmin, rmax);
       int idx_deriv = nei_iter * 4 * 3;	// 4 components time 3 directions
       int idx_value = nei_iter * 4;	// 4 components
       // 4 value components
@@ -92,7 +92,9 @@ void env_mat_a (
 
 
 template<typename FPTYPE> 
-void env_mat_a_cpu (
+void 
+deepmd::
+env_mat_a_cpu (
     std::vector<FPTYPE > &	        descrpt_a,
     std::vector<FPTYPE > &	        descrpt_a_deriv,
     std::vector<FPTYPE > &	        rij_a,
@@ -134,7 +136,7 @@ void env_mat_a_cpu (
             FPTYPE inr4 = inr2 * inr2;
             FPTYPE inr3 = inr4 * nr;
             FPTYPE sw, dsw;
-            spline5_switch(sw, dsw, nr, rmin, rmax);
+            deepmd::spline5_switch(sw, dsw, nr, rmin, rmax);
             int idx_deriv = nei_iter * 4 * 3;	// 4 components time 3 directions
             int idx_value = nei_iter * 4;	// 4 components
             // 4 value components
@@ -222,7 +224,7 @@ void env_mat_r (
       double inr4 = inr2 * inr2;
       double inr3 = inr4 * nr;
       double sw, dsw;
-      spline5_switch(sw, dsw, nr, rmin, rmax);
+      deepmd::spline5_switch(sw, dsw, nr, rmin, rmax);
       int idx_deriv = nei_iter * 3;	// 1 components time 3 directions
       int idx_value = nei_iter;		// 1 components
       // value components
@@ -238,7 +240,9 @@ void env_mat_r (
 }
 
 template<typename FPTYPE> 
-void env_mat_r_cpu (
+void 
+deepmd::
+env_mat_r_cpu (
     std::vector<FPTYPE > &		descrpt_a,
     std::vector<FPTYPE > &	        descrpt_a_deriv,
     std::vector<FPTYPE > &	        rij_a,
@@ -281,7 +285,7 @@ void env_mat_r_cpu (
             FPTYPE inr4 = inr2 * inr2;
             FPTYPE inr3 = inr4 * nr;
             FPTYPE sw, dsw;
-            spline5_switch(sw, dsw, nr, rmin, rmax);
+            deepmd::spline5_switch(sw, dsw, nr, rmin, rmax);
             int idx_deriv = nei_iter * 3;	// 1 components time 3 directions
             int idx_value = nei_iter;	    // 1 components
             // 4 value components
@@ -298,7 +302,9 @@ void env_mat_r_cpu (
 
 
 template
-void env_mat_a_cpu<double> (
+void 
+deepmd::
+env_mat_a_cpu<double> (
     std::vector<double > &	        descrpt_a,
     std::vector<double > &	        descrpt_a_deriv,
     std::vector<double > &	        rij_a,
@@ -312,7 +318,9 @@ void env_mat_a_cpu<double> (
 
 
 template
-void env_mat_a_cpu<float> (
+void 
+deepmd::
+env_mat_a_cpu<float> (
     std::vector<float > &	        descrpt_a,
     std::vector<float > &	        descrpt_a_deriv,
     std::vector<float > &	        rij_a,
@@ -326,7 +334,9 @@ void env_mat_a_cpu<float> (
 
 
 template
-void env_mat_r_cpu<double> (
+void 
+deepmd::
+env_mat_r_cpu<double> (
     std::vector<double > &	        descrpt_r,
     std::vector<double > &	        descrpt_r_deriv,
     std::vector<double > &	        rij_r,
@@ -340,7 +350,9 @@ void env_mat_r_cpu<double> (
 
 
 template
-void env_mat_r_cpu<float> (
+void 
+deepmd::
+env_mat_r_cpu<float> (
     std::vector<float > &	        descrpt_r,
     std::vector<float > &	        descrpt_r_deriv,
     std::vector<float > &	        rij_r,

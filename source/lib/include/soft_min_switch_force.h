@@ -1,5 +1,7 @@
 #pragma once
 
+namespace deepmd{
+  
 template<typename FPTYPE>
 void soft_min_switch_force_cpu(
     FPTYPE * force, 
@@ -9,3 +11,5 @@ void soft_min_switch_force_cpu(
     const int nloc, 
     const int nall, 
     const int nnei);
+
+}

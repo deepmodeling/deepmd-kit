@@ -1,7 +1,7 @@
 #include "map_aparam.h"
 
 template <typename FPTYPE>
-void map_aparam_cpu (
+void deepmd::map_aparam_cpu (
     FPTYPE * output,
     const FPTYPE * aparam,
     const int * nlist,
@@ -38,7 +38,7 @@ void map_aparam_cpu (
 }
 
 template
-void map_aparam_cpu<double> (
+void deepmd::map_aparam_cpu<double> (
     double * output,
     const double * aparam,
     const int * nlist,
@@ -48,7 +48,7 @@ void map_aparam_cpu<double> (
     );
 
 template
-void map_aparam_cpu<float> (
+void deepmd::map_aparam_cpu<float> (
     float * output,
     const float * aparam,
     const int * nlist,

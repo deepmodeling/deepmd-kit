@@ -360,7 +360,7 @@ void PairDeepMD::compute(int eflag, int vflag)
   multi_models_no_mod_devi = (numb_models > 1 && (out_freq == 0 || update->ntimestep % out_freq != 0));
   multi_models_mod_devi = (numb_models > 1 && (out_freq > 0 && update->ntimestep % out_freq == 0));
   if (do_ghost) {
-    InputNlist lmp_list (list->inum, list->ilist, list->numneigh, list->firstneigh);
+    deepmd::InputNlist lmp_list (list->inum, list->ilist, list->numneigh, list->firstneigh);
     if (single_model || multi_models_no_mod_devi) {
       if ( ! (eflag_atom || vflag_atom) ) {      
 #ifdef HIGH_PREC

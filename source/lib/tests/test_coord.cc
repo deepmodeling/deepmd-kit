@@ -37,7 +37,7 @@ protected:
 
 TEST_F(TestNormCoord, cpu_case0)
 {
-  Region<double> region;
+  deepmd::Region<double> region;
   init_region_cpu(region, &boxt[0]);
   std::vector<double > out_c(r0);
   normalize_coord_cpu(&out_c[0], natoms, region);
@@ -48,7 +48,7 @@ TEST_F(TestNormCoord, cpu_case0)
 
 TEST_F(TestNormCoord, cpu_case1)
 {
-  Region<double> region;
+  deepmd::Region<double> region;
   init_region_cpu(region, &boxt[0]);
   std::vector<double > out_c(r1);
   normalize_coord_cpu(&out_c[0], natoms, region);
@@ -59,7 +59,7 @@ TEST_F(TestNormCoord, cpu_case1)
 
 TEST_F(TestNormCoord, cpu_case2)
 {
-  Region<double> region;
+  deepmd::Region<double> region;
   init_region_cpu(region, &boxt[0]);
   std::vector<double > out_c(r2);
   normalize_coord_cpu(&out_c[0], natoms, region);
@@ -167,7 +167,7 @@ TEST_F(TestCopyCoord, cpu)
   std::vector<int > out_t(mem_size);
   std::vector<int > mapping(mem_size);
   int nall;
-  Region<double> region;
+  deepmd::Region<double> region;
   init_region_cpu(region, &boxt[0]);
   
   int ret = copy_coord_cpu(
@@ -211,7 +211,7 @@ TEST_F(TestCopyCoord, cpu_lessmem)
   std::vector<int > out_t(mem_size);
   std::vector<int > mapping(mem_size);
   int nall;
-  Region<double> region;
+  deepmd::Region<double> region;
   init_region_cpu(region, &boxt[0]);
   
   int ret = copy_coord_cpu(

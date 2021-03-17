@@ -54,7 +54,7 @@ TEST_F(TestNeighborList, cpu)
     firstneigh[ii] = new int[mem_size];
   }
 
-  InputNlist nlist(nloc, ilist, numneigh, firstneigh);
+  deepmd::InputNlist nlist(nloc, ilist, numneigh, firstneigh);
   int max_list_size;
   int ret = build_nlist_cpu(
       nlist,
@@ -94,7 +94,7 @@ TEST_F(TestNeighborList, cpu_lessmem)
     firstneigh[ii] = new int[mem_size];
   }
 
-  InputNlist nlist(nloc, ilist, numneigh, firstneigh);
+  deepmd::InputNlist nlist(nloc, ilist, numneigh, firstneigh);
   int max_list_size;
   int ret = build_nlist_cpu(
       nlist,

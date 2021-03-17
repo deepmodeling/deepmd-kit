@@ -3,6 +3,8 @@
 #include "device.h"
 #include "neighbor_list.h"
 
+namespace deepmd{
+
 template<typename FPTYPE>
 void prod_env_mat_a_cpu(
     FPTYPE * em, 
@@ -88,4 +90,6 @@ void env_mat_nbor_update(
     const int * mesh, 
     const int size);
 #endif // GOOGLE_CUDA
+
+}
 

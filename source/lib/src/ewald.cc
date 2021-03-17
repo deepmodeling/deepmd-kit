@@ -1,6 +1,8 @@
 #include "ewald.h"
 #include "SimulationRegion.h"
 
+using namespace deepmd;
+
 template<typename VALUETYPE> 
 VALUETYPE
 dir_err_esti(const VALUETYPE & test_q,
@@ -86,6 +88,7 @@ cmpt_k(std::vector<int> & KK,
 // inputs: coordinates charges region
 template <typename VALUETYPE>
 void 
+deepmd::
 ewald_recp(
     VALUETYPE &				ener, 
     std::vector<VALUETYPE> &		force,
@@ -266,6 +269,7 @@ ewald_recp(
 
 template
 void 
+deepmd::
 ewald_recp<float>(
     float &				ener, 
     std::vector<float> &		force,
@@ -277,6 +281,7 @@ ewald_recp<float>(
 
 template
 void 
+deepmd::
 ewald_recp<double>(
     double &				ener, 
     std::vector<double> &		force,

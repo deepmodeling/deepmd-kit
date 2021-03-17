@@ -68,7 +68,7 @@ protected:
       }
       std::vector<double > t_env, t_env_deriv, t_rij;
       // compute env_mat and its deriv, record
-      env_mat_a_cpu<double>(t_env, t_env_deriv, t_rij, posi_cpy, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
+      deepmd::env_mat_a_cpu<double>(t_env, t_env_deriv, t_rij, posi_cpy, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
       for (int jj = 0; jj < ndescrpt; ++jj){
 	env[ii*ndescrpt+jj] = t_env[jj];
 	for (int dd = 0; dd < 3; ++dd){
@@ -93,7 +93,7 @@ TEST_F(TestProdVirialA, cpu)
   std::vector<double> virial(9);
   std::vector<double> atom_virial(nall * 9);
   int n_a_sel = nnei;
-  prod_virial_a_cpu<double> (&virial[0], &atom_virial[0], &net_deriv[0], &env_deriv[0], &rij[0], &nlist[0], nloc, nall, nnei);
+  deepmd::prod_virial_a_cpu<double> (&virial[0], &atom_virial[0], &net_deriv[0], &env_deriv[0], &rij[0], &nlist[0], nloc, nall, nnei);
   EXPECT_EQ(virial.size(), 9);
   EXPECT_EQ(virial.size(), expected_virial.size());
   EXPECT_EQ(atom_virial.size(), nall * 9);  

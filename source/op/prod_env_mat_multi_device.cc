@@ -89,7 +89,7 @@ _prepare_coord_nlist_cpu(
     int const** type,
     std::vector<int> & type_cpy,
     std::vector<int> & idx_mapping,
-    InputNlist & inlist,
+    deepmd::InputNlist & inlist,
     std::vector<int> & ilist,
     std::vector<int> & numneigh,
     std::vector<int*> & firstneigh,
@@ -271,7 +271,7 @@ public:
       array_longlong = uint64_temp.flat<unsigned long long>().data();
 
       // update nbor list
-      InputNlist inlist;
+      deepmd::InputNlist inlist;
       inlist.inum = nloc;
       env_mat_nbor_update(
           inlist, gpu_inlist, max_nbor_size, nbor_list_dev,
@@ -284,7 +284,7 @@ public:
       #endif //GOOGLE_CUDA
     }
     else if (device == "CPU") {
-      InputNlist inlist;
+      deepmd::InputNlist inlist;
       // some buffers, be freed after the evaluation of this frame
       std::vector<int> idx_mapping;
       std::vector<int> ilist(nloc), numneigh(nloc);
@@ -325,7 +325,7 @@ private:
   std::string device;
   int * array_int = NULL;
   unsigned long long * array_longlong = NULL;
-  InputNlist gpu_inlist;
+  deepmd::InputNlist gpu_inlist;
   int * nbor_list_dev = NULL;
 };
 
@@ -481,7 +481,7 @@ public:
       array_longlong = uint64_temp.flat<unsigned long long>().data();
       
       // update nbor list
-      InputNlist inlist;
+      deepmd::InputNlist inlist;
       inlist.inum = nloc;
       env_mat_nbor_update(
           inlist, gpu_inlist, max_nbor_size, nbor_list_dev,
@@ -494,7 +494,7 @@ public:
       #endif //GOOGLE_CUDA
     }
     else if (device == "CPU") {
-      InputNlist inlist;
+      deepmd::InputNlist inlist;
       // some buffers, be freed after the evaluation of this frame
       std::vector<int> idx_mapping;
       std::vector<int> ilist(nloc), numneigh(nloc);
@@ -533,7 +533,7 @@ private:
   std::string device;
   int * array_int = NULL;
   unsigned long long * array_longlong = NULL;
-  InputNlist gpu_inlist;
+  deepmd::InputNlist gpu_inlist;
   int * nbor_list_dev = NULL;
 };
 
@@ -557,7 +557,7 @@ _norm_copy_coord_cpu(
 {
   std::vector<FPTYPE> tmp_coord(nall*3);
   std::copy(coord, coord+nall*3, tmp_coord.begin());
-  Region<FPTYPE> region;
+  deepmd::Region<FPTYPE> region;
   init_region_cpu(region, box);
   normalize_coord_cpu(&tmp_coord[0], nall, region);
   int tt;
@@ -599,7 +599,7 @@ _build_nlist_cpu(
       jlist[ii].resize(mem_nnei);
       firstneigh[ii] = &jlist[ii][0];
     }
-    InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+    deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
     int ret = build_nlist_cpu(
 	inlist, &max_nnei, 
 	coord, nloc, new_nall, mem_nnei, rcut_r);
@@ -639,7 +639,7 @@ _prepare_coord_nlist_cpu(
     int const** type,
     std::vector<int> & type_cpy,
     std::vector<int> & idx_mapping,
-    InputNlist & inlist,
+    deepmd::InputNlist & inlist,
     std::vector<int> & ilist,
     std::vector<int> & numneigh,
     std::vector<int*> & firstneigh,

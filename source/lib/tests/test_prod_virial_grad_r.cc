@@ -64,7 +64,7 @@ protected:
       }
       std::vector<double > t_env, t_env_deriv, t_rij;
       // compute env_mat and its deriv, record
-      env_mat_a_cpu<double>(t_env, t_env_deriv, t_rij, posi_cpy, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
+      deepmd::env_mat_a_cpu<double>(t_env, t_env_deriv, t_rij, posi_cpy, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
       for (int jj = 0; jj < ndescrpt; ++jj){
 	env[ii*ndescrpt+jj] = t_env[jj];
 	for (int dd = 0; dd < 3; ++dd){
@@ -88,7 +88,7 @@ TEST_F(TestProdVirialGradR, cpu)
 {
   std::vector<double> grad_net(nloc * ndescrpt);
   int n_a_sel = nnei;
-  prod_virial_grad_r_cpu<double> (&grad_net[0], &grad[0], &env_deriv[0], &rij[0], &nlist[0], nloc, nnei);
+  deepmd::prod_virial_grad_r_cpu<double> (&grad_net[0], &grad[0], &env_deriv[0], &rij[0], &nlist[0], nloc, nnei);
   EXPECT_EQ(grad_net.size(), nloc * ndescrpt);
   EXPECT_EQ(grad_net.size(), expected_grad_net.size());
   for (int jj = 0; jj < grad_net.size(); ++jj){

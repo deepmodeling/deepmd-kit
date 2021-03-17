@@ -743,8 +743,10 @@ copy_coord (std::vector<double > & out_c,
   }
 }
 
+using namespace deepmd;
 
 void
+deepmd::
 convert_nlist(
     InputNlist & to_nlist,
     std::vector<std::vector<int> > & from_nlist
@@ -759,6 +761,7 @@ convert_nlist(
 }
 
 int
+deepmd::
 max_numneigh(
     const InputNlist & nlist
     )
@@ -772,6 +775,7 @@ max_numneigh(
 
 template <typename FPTYPE>
 int
+deepmd::
 build_nlist_cpu(
     InputNlist & nlist,
     int * max_list_size,
@@ -817,6 +821,7 @@ build_nlist_cpu(
 
 template
 int
+deepmd::
 build_nlist_cpu<double>(
     InputNlist & nlist,
     int * max_list_size,
@@ -828,6 +833,7 @@ build_nlist_cpu<double>(
 
 template
 int
+deepmd::
 build_nlist_cpu<float>(
     InputNlist & nlist,
     int * max_list_size,

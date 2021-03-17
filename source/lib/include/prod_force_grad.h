@@ -1,5 +1,7 @@
 #pragma once
 
+namespace deepmd{
+  
 template<typename FPTYPE>
 void prod_force_grad_a_cpu(
     FPTYPE * grad_net, 
@@ -18,3 +20,4 @@ void prod_force_grad_r_cpu(
     const int nloc, 
     const int nnei);
 
+}

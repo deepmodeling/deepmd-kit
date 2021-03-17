@@ -82,7 +82,7 @@ class SoftMinVirialOp : public OpKernel {
     // loop over samples
 #pragma omp parallel for
     for (int kk = 0; kk < nframes; ++kk){
-      soft_min_switch_virial_cpu(
+      deepmd::soft_min_switch_virial_cpu(
 	  &virial(kk,0),
 	  &atom_virial(kk,0),
 	  &du(kk,0),
