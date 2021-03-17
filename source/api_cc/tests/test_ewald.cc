@@ -35,7 +35,7 @@ TEST_F(TestInferEwald, cpu_numfv)
   class MyModel : public EnergyModelTest<double>
   {
     const std::vector<double > & charge;
-    EwaldParameters<double> eparam;    
+    deepmd::EwaldParameters<double> eparam;    
 public:
     MyModel(
 	const std::vector<double> & charge_
@@ -48,7 +48,7 @@ public:
 	std::vector<double> &	virial,
 	const std::vector<double> & coord,
 	const std::vector<double> & box) {
-      Region<double> region;
+      deepmd::Region<double> region;
       init_region_cpu(region, &box[0]);
       ewald_recp(ener, force, virial, coord, charge, region, eparam);
     }

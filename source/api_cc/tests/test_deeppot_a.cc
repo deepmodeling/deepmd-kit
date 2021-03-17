@@ -183,7 +183,7 @@ TEST_F(TestInferDeepPotA, cpu_lmp_nlist)
   int nall = coord_cpy.size() / 3;
   std::vector<int> ilist(nloc), numneigh(nloc);
   std::vector<int*> firstneigh(nloc);
-  InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
   convert_nlist(inlist, nlist_data);  
   
   double ener;
@@ -234,7 +234,7 @@ TEST_F(TestInferDeepPotA, cpu_lmp_nlist_atomic)
   int nall = coord_cpy.size() / 3;
   std::vector<int> ilist(nloc), numneigh(nloc);
   std::vector<int*> firstneigh(nloc);
-  InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
   convert_nlist(inlist, nlist_data);  
   
   double ener;
@@ -307,7 +307,7 @@ TEST_F(TestInferDeepPotA, cpu_lmp_nlist_2rc)
   int nall = coord_cpy.size() / 3;
   std::vector<int> ilist(nloc), numneigh(nloc);
   std::vector<int*> firstneigh(nloc);
-  InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
   convert_nlist(inlist, nlist_data);  
   
   double ener;
@@ -373,7 +373,7 @@ TEST_F(TestInferDeepPotA, cpu_lmp_nlist_type_sel)
   int nall = coord_cpy.size() / 3;
   std::vector<int> ilist(nloc), numneigh(nloc);
   std::vector<int*> firstneigh(nloc);
-  InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
   convert_nlist(inlist, nlist_data);  
 
   // dp compute

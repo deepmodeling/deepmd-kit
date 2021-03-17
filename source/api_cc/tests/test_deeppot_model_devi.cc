@@ -93,7 +93,7 @@ TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list)
   int nall = coord_cpy.size() / 3;
   std::vector<int> ilist(nloc), numneigh(nloc);
   std::vector<int*> firstneigh(nloc);
-  InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
   convert_nlist(inlist, nlist_data);  
 
   int nmodel = 2;
@@ -170,7 +170,7 @@ TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list_atomic)
   int nall = coord_cpy.size() / 3;
   std::vector<int> ilist(nloc), numneigh(nloc);
   std::vector<int*> firstneigh(nloc);
-  InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
   convert_nlist(inlist, nlist_data);  
 
   int nmodel = 2;

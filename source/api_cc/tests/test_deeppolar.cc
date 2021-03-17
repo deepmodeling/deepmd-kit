@@ -88,7 +88,7 @@ TEST_F(TestInferDeepPolar, cpu_lmp_nlist)
   std::vector<int> ilist(nloc), numneigh(nloc);
   std::vector<int*> firstneigh(nloc);
   std::vector<std::vector<int > > nlist_data;
-  InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
   _build_nlist(nlist_data, coord_cpy, atype_cpy, mapping,
 	       coord, atype, box, rc);
   int nall = coord_cpy.size() / 3;
