@@ -1,6 +1,6 @@
-from typing import TYPE_CHECKING
+from deepmd.infer.deep_tensor import DeepTensor
 
-from deepmd.infer.deep_eval import DeepTensor
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -33,7 +33,6 @@ class DeepDipole(DeepTensor):
         # instance namespace
         self.tensors = dict(
             {
-                "t_sel_type": "model_attr/sel_type:0",
                 # output tensor
                 "t_tensor": "o_dipole:0",
             },
@@ -43,7 +42,6 @@ class DeepDipole(DeepTensor):
         DeepTensor.__init__(
             self,
             model_file,
-            3,
             load_prefix=load_prefix,
             default_tf_graph=default_tf_graph,
         )

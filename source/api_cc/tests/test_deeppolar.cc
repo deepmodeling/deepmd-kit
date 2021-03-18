@@ -35,20 +35,20 @@ protected:
   };
   int natoms;
 
-  DeepTensor dp;
+  deepmd::DeepTensor dp;
 
   void SetUp() override {
     std::string file_name = "../../tests/infer/deeppolar.pbtxt";
     int fd = open(file_name.c_str(), O_RDONLY);
-    protobuf::io::ZeroCopyInputStream* input = new protobuf::io::FileInputStream(fd);
-    GraphDef graph_def;
-    protobuf::TextFormat::Parse(input, &graph_def);
+    tensorflow::protobuf::io::ZeroCopyInputStream* input = new tensorflow::protobuf::io::FileInputStream(fd);
+    tensorflow::GraphDef graph_def;
+    tensorflow::protobuf::TextFormat::Parse(input, &graph_def);
     delete input;
     std::fstream output("deeppolar.pb", std::ios::out | std::ios::trunc | std::ios::binary);
     graph_def.SerializeToOstream(&output);
     // check the string by the following commands
     // string txt;
-    // protobuf::TextFormat::PrintToString(graph_def, &txt);
+    // tensorflow::protobuf::TextFormat::PrintToString(graph_def, &txt);
 
     dp.init("deeppolar.pb");
 

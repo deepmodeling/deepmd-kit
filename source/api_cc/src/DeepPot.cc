@@ -2,6 +2,8 @@
 #include "AtomMap.h"
 #include <stdexcept>	
 
+using namespace tensorflow;
+using namespace deepmd;
 
 #if  GOOGLE_CUDA
 #include "cuda_runtime.h"
@@ -54,7 +56,7 @@ run_model (ENERGYTYPE &			dener,
   }
 
   std::vector<Tensor> output_tensors;
-  checkStatus (session->Run(input_tensors, 
+  check_status (session->Run(input_tensors, 
 			    {"o_energy", "o_force", "o_atom_virial"}, 
 			    {}, 
 			    &output_tensors));
@@ -95,7 +97,7 @@ static void run_model (ENERGYTYPE   &		dener,
 		       std::vector<VALUETYPE>&	datom_virial_,
 		       Session*			session, 
 		       const std::vector<std::pair<std::string, Tensor>> & input_tensors,
-		       const AtomMap<VALUETYPE> &   atommap, 
+		       const deepmd::AtomMap<VALUETYPE> &   atommap, 
 		       const int&		nghost = 0)
 {
     unsigned nloc = atommap.get_type().size();
@@ -119,7 +121,7 @@ static void run_model (ENERGYTYPE   &		dener,
     }
     std::vector<Tensor> output_tensors;
 
-    checkStatus (session->Run(input_tensors, 
+    check_status (session->Run(input_tensors, 
 			    {"o_energy", "o_force", "o_atom_energy", "o_atom_virial"}, 
 			    {},
 			    &output_tensors));
@@ -199,7 +201,7 @@ init (const std::string & model, const int & gpu_rank, const std::string & file_
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
 
   if(file_content.size() == 0)
-    checkStatus (ReadBinaryProto(Env::Default(), model, &graph_def));
+    check_status (ReadBinaryProto(Env::Default(), model, &graph_def));
   else
     graph_def.ParseFromString(file_content);
   int gpu_num = -1;
@@ -215,8 +217,8 @@ init (const std::string & model, const int & gpu_rank, const std::string & file_
     graph::SetDefaultDevice(str, &graph_def);
   }
   #endif // GOOGLE_CUDA
-  checkStatus (NewSession(options, &session));
-  checkStatus (session->Create(graph_def));
+  check_status (NewSession(options, &session));
+  check_status (session->Create(graph_def));
   rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
   cell_size = rcut;
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
@@ -224,6 +226,14 @@ init (const std::string & model, const int & gpu_rank, const std::string & file_
   daparam = get_scalar<int>("fitting_attr/daparam");
   if (dfparam < 0) dfparam = 0;
   if (daparam < 0) daparam = 0;
+  model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
+  model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
+  if(! model_compatable(model_version)){
+    throw std::runtime_error(
+	"incompatable model: version " + model_version 
+	+ " in graph, but version " + global_model_version 
+	+ " supported ");
+  }
   inited = true;
   
   init_nbor = false;
@@ -238,6 +248,7 @@ print_summary(const std::string &pre) const
   std::cout << pre << "source brach:       " + global_git_branch << std::endl;
   std::cout << pre << "source commit:      " + global_git_hash << std::endl;
   std::cout << pre << "source commit at:   " + global_git_date << std::endl;
+  std::cout << pre << "surpport model ver.:" + global_model_version << std::endl;
   std::cout << pre << "build float prec:   " + global_float_prec << std::endl;
   std::cout << pre << "build with tf inc:  " + global_tf_include_dir << std::endl;
   std::cout << pre << "build with tf lib:  " + global_tf_lib << std::endl;
@@ -325,7 +336,7 @@ compute (ENERGYTYPE &			dener,
 {
   int nall = dcoord_.size() / 3;
   int nloc = nall;
-  atommap = AtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
+  atommap = deepmd::AtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
   assert (nloc == atommap.get_type().size());
   validate_fparam_aparam(nloc, fparam, aparam);
 
@@ -397,7 +408,7 @@ compute_inner (ENERGYTYPE &			dener,
 
     // agp == 0 means that the LAMMPS nbor list has been updated
     if (ago == 0) {
-      atommap = AtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
+      atommap = deepmd::AtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
       assert (nloc == atommap.get_type().size());
       nlist_data.shuffle(atommap);
       nlist_data.make_inlist(nlist);
@@ -421,7 +432,7 @@ compute (ENERGYTYPE &			dener,
 	 const std::vector<VALUETYPE> &	fparam,
 	 const std::vector<VALUETYPE> &	aparam)
 {
-  atommap = AtomMap<VALUETYPE> (datype_.begin(), datype_.end());
+  atommap = deepmd::AtomMap<VALUETYPE> (datype_.begin(), datype_.end());
   validate_fparam_aparam(atommap.get_type().size(), fparam, aparam);
 
   std::vector<std::pair<std::string, Tensor>> input_tensors;
@@ -518,7 +529,7 @@ init (const std::vector<std::string> & models, const int & gpu_rank, const std::
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
   for (unsigned ii = 0; ii < numb_models; ++ii){
     if (file_contents.size() == 0)
-      checkStatus (ReadBinaryProto(Env::Default(), models[ii], &graph_defs[ii]));
+      check_status (ReadBinaryProto(Env::Default(), models[ii], &graph_defs[ii]));
     else
       graph_defs[ii].ParseFromString(file_contents[ii]);
   }
@@ -537,8 +548,8 @@ init (const std::vector<std::string> & models, const int & gpu_rank, const std::
       str += std::to_string(gpu_rank % gpu_num);
       graph::SetDefaultDevice(str, &graph_defs[ii]);
     }
-    checkStatus (NewSession(options, &(sessions[ii])));
-    checkStatus (sessions[ii]->Create(graph_defs[ii]));
+    check_status (NewSession(options, &(sessions[ii])));
+    check_status (sessions[ii]->Create(graph_defs[ii]));
   }
   rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
   cell_size = rcut;
@@ -547,6 +558,14 @@ init (const std::vector<std::string> & models, const int & gpu_rank, const std::
   daparam = get_scalar<int>("fitting_attr/daparam");
   if (dfparam < 0) dfparam = 0;
   if (daparam < 0) daparam = 0;
+  model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
+  model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
+  if(! model_compatable(model_version)){
+    throw std::runtime_error(
+	"incompatable model: version " + model_version 
+	+ " in graph, but version " + global_model_version 
+	+ " supported ");
+  }
   // rcut = get_rcut();
   // cell_size = rcut;
   // ntypes = get_ntypes();
@@ -560,7 +579,7 @@ VT
 DeepPotModelDevi::
 get_scalar(const std::string name) const 
 {
-  VT myrcut = 0;
+  VT myrcut;
   for (unsigned ii = 0; ii < numb_models; ++ii){
     VT ret = session_get_scalar<VT>(sessions[ii], name);
     if (ii == 0){

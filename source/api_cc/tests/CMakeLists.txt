@@ -11,8 +11,10 @@ enable_testing()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
-message(${PROJECT_SOURCE_DIR})
-message(${CMAKE_SOURCE_DIR})
+# model version
+file(READ ${PROJECT_SOURCE_DIR}/../../train/MODEL_VER MODEL_VERSION)
+string(REPLACE "\n" " " MODEL_VERSION ${MODEL_VERSION})
+message(STATUS "Supported model version: ${MODEL_VERSION}")
 
 set(libname "deepmd")
 set(LIB_BASE_DIR ${CMAKE_SOURCE_DIR}/../../lib)

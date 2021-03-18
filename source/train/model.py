@@ -4,7 +4,7 @@ from collections import defaultdict
 from deepmd.utils.pair_tab import PairTab
 from deepmd.common import ClassArg
 
-from deepmd.run_options import global_cvt_2_ener_float
+from deepmd.run_options import global_cvt_2_ener_float, MODEL_VERSION
 from deepmd.env import op_module
 
 
@@ -146,6 +146,9 @@ class Model() :
             t_mt = tf.constant(self.model_type, 
                                name = 'model_type', 
                                dtype = tf.string)
+            t_ver = tf.constant(MODEL_VERSION,
+                                name = 'model_version',
+                                dtype = tf.string)
 
             if self.srtab is not None :
                 tab_info, tab_data = self.srtab.get()
@@ -335,10 +338,12 @@ class TensorModel() :
             t_mt = tf.constant(self.model_type, 
                                name = 'model_type', 
                                dtype = tf.string)
+            t_ver = tf.constant(MODEL_VERSION,
+                                name = 'model_version',
+                                dtype = tf.string)
             t_od = tf.constant(self.get_out_size(), 
                                name = 'output_dim', 
                                dtype = tf.int32)
-
 
         dout \
             = self.descrpt.build(coord_,

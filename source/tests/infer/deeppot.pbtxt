@@ -8876,6 +8876,27 @@ node {
   }
 }
 node {
+  name: "model_attr/model_version"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_STRING
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_STRING
+        tensor_shape {
+        }
+        string_val: "1.0"
+      }
+    }
+  }
+}
+node {
   name: "model_attr/tmap"
   op: "Const"
   attr {

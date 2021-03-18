@@ -111,7 +111,7 @@ std::string PairDeepMD::get_file_content(const std::string & model) {
   int nchar = 0;
   std::string file_content;
   if (myrank == root) {
-    checkStatus (ReadFileToString(Env::Default(), model, &file_content));
+    deepmd::check_status(tensorflow::ReadFileToString(tensorflow::Env::Default(), model, &file_content));
     nchar = file_content.size();
   }
   MPI_Bcast(&nchar, 1, MPI_INT, root, MPI_COMM_WORLD);  
