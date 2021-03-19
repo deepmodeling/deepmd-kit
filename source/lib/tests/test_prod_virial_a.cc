@@ -123,23 +123,23 @@ TEST_F(TestProdVirialA, gpu_cuda)
   int * nlist_dev = NULL;
   double * virial_dev = NULL, *atom_virial_dev = NULL, * net_deriv_dev = NULL, * env_deriv_dev = NULL, * rij_dev = NULL;
 
-  malloc_device_memory_sync(nlist_dev, nlist);
-  malloc_device_memory_sync(virial_dev, virial);
-  malloc_device_memory_sync(atom_virial_dev, atom_virial);
-  malloc_device_memory_sync(net_deriv_dev, net_deriv);  
-  malloc_device_memory_sync(env_deriv_dev, env_deriv);  
-  malloc_device_memory_sync(rij_dev, rij);  
+  deepmd::malloc_device_memory_sync(nlist_dev, nlist);
+  deepmd::malloc_device_memory_sync(virial_dev, virial);
+  deepmd::malloc_device_memory_sync(atom_virial_dev, atom_virial);
+  deepmd::malloc_device_memory_sync(net_deriv_dev, net_deriv);  
+  deepmd::malloc_device_memory_sync(env_deriv_dev, env_deriv);  
+  deepmd::malloc_device_memory_sync(rij_dev, rij);  
 
-  prod_virial_a_gpu_cuda<double> (virial_dev, atom_virial_dev, net_deriv_dev, env_deriv_dev, rij_dev, nlist_dev, nloc, nall, nnei);
+  deepmd::prod_virial_a_gpu_cuda<double> (virial_dev, atom_virial_dev, net_deriv_dev, env_deriv_dev, rij_dev, nlist_dev, nloc, nall, nnei);
   
-  memcpy_device_to_host(virial_dev, virial);
-  memcpy_device_to_host(atom_virial_dev, atom_virial);
-  delete_device_memory(nlist_dev);
-  delete_device_memory(virial_dev);
-  delete_device_memory(atom_virial_dev);
-  delete_device_memory(net_deriv_dev);
-  delete_device_memory(env_deriv_dev);
-  delete_device_memory(rij_dev);
+  deepmd::memcpy_device_to_host(virial_dev, virial);
+  deepmd::memcpy_device_to_host(atom_virial_dev, atom_virial);
+  deepmd::delete_device_memory(nlist_dev);
+  deepmd::delete_device_memory(virial_dev);
+  deepmd::delete_device_memory(atom_virial_dev);
+  deepmd::delete_device_memory(net_deriv_dev);
+  deepmd::delete_device_memory(env_deriv_dev);
+  deepmd::delete_device_memory(rij_dev);
   // virial are not calculated in gpu currently;
   for (int ii = 0; ii < 9; ii++) {
     virial[ii] = 0;
