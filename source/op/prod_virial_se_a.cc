@@ -91,15 +91,16 @@ class ProdVirialSeAOp : public OpKernel {
       int virial_iter	= kk * 9;
       int atom_virial_iter	= kk * nall * 9;
 
-      prod_virial_a_cpu<FPTYPE>(&virial(virial_iter),
-				&atom_virial(atom_virial_iter),
-				&net_deriv(net_iter),
-				&in_deriv(in_iter),
-				&rij(rij_iter),
-				&nlist(nlist_iter),
-				nloc,
-				nall,
-				nnei);
+      deepmd::prod_virial_a_cpu<FPTYPE>(
+	  &virial(virial_iter),
+	  &atom_virial(atom_virial_iter),
+	  &net_deriv(net_iter),
+	  &in_deriv(in_iter),
+	  &rij(rij_iter),
+	  &nlist(nlist_iter),
+	  nloc,
+	  nall,
+	  nnei);
     }
   }
 private:

@@ -116,7 +116,7 @@ TEST_F(TestDipoleCharge, cpu_lmp_nlist)
   int nghost = nall - nloc;
   std::vector<int> ilist(nloc), numneigh(nloc);
   std::vector<int*> firstneigh(nloc);
-  InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
   convert_nlist(inlist, nlist_data);  
 
   // evaluate dipole
@@ -174,9 +174,9 @@ TEST_F(TestDipoleCharge, cpu_lmp_nlist)
   // compute the recp part of the ele interaction
   double eener;
   std::vector<double> eforce, evirial;
-  Region<double> region;
+  deepmd::Region<double> region;
   init_region_cpu(region, &box[0]);
-  EwaldParameters<double> eparam;
+  deepmd::EwaldParameters<double> eparam;
   eparam.beta = 0.2;
   eparam.spacing = 4;
   ewald_recp(eener, eforce, evirial, coord, charge, region, eparam);

@@ -263,7 +263,7 @@ void FixDPLR::pre_force(int vflag)
   }
   // get lammps nlist
   NeighList * list = pair_deepmd->list;
-  InputNlist lmp_list (list->inum, list->ilist, list->numneigh, list->firstneigh);
+  deepmd::InputNlist lmp_list (list->inum, list->ilist, list->numneigh, list->firstneigh);
   // declear output
   vector<FLOAT_PREC> tensor;
   // compute
@@ -417,7 +417,7 @@ void FixDPLR::post_force(int vflag)
   }
   // lmp nlist
   NeighList * list = pair_deepmd->list;
-  InputNlist lmp_list (list->inum, list->ilist, list->numneigh, list->firstneigh);
+  deepmd::InputNlist lmp_list (list->inum, list->ilist, list->numneigh, list->firstneigh);
   // bonded pairs
   vector<pair<int,int> > valid_pairs;
   get_valid_pairs(valid_pairs);  

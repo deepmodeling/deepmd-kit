@@ -908,7 +908,7 @@ compute_std_f (std::vector<VALUETYPE> &		std,
       vdiff[0] = tmp_f[0] - tmp_avg[0];
       vdiff[1] = tmp_f[1] - tmp_avg[1];
       vdiff[2] = tmp_f[2] - tmp_avg[2];
-      std[jj] += dot3(vdiff, vdiff);
+      std[jj] += deepmd::dot3(vdiff, vdiff);
     }
   }
 
@@ -931,7 +931,7 @@ compute_relative_std_f (std::vector<VALUETYPE> &std,
       vdiff[0] = tmp_avg[0];
       vdiff[1] = tmp_avg[1];
       vdiff[2] = tmp_avg[2];
-      VALUETYPE f_norm = sqrt(dot3(vdiff, vdiff));
+      VALUETYPE f_norm = sqrt(deepmd::dot3(vdiff, vdiff));
       // relative std = std/(abs(f)+eps)
       std[ii] /= f_norm + eps;
   }

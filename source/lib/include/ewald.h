@@ -7,6 +7,8 @@
 #include "utilities.h"
 #include "region.h"
 
+namespace deepmd{
+
 // 8.988e9 / pc.electron_volt / pc.angstrom * (1.602e-19)**2
 const double ElectrostaticConvertion = 14.39964535475696995031;
 
@@ -29,6 +31,7 @@ ewald_recp(
     std::vector<VALUETYPE> &		virial,
     const std::vector<VALUETYPE>&	coord,
     const std::vector<VALUETYPE>&	charge,
-    const Region<VALUETYPE>&		region, 
+    const deepmd::Region<VALUETYPE>&	region, 
     const EwaldParameters<VALUETYPE>&	param);
 
+}

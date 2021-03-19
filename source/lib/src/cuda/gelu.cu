@@ -1,6 +1,5 @@
 #include "gelu.h"
 #include "device.h"
-#include "gpu_cuda.h"
 
 template <typename FPTYPE>
 __global__ void gelu(
@@ -49,6 +48,7 @@ __global__ void gelu_grad_grad(
   out[idx] = dy[idx] * dy_2[idx] * (0.134145 * SQRT_2_PI * xx[idx] * xx[idx] * (1 - var1 * var1) - SQRT_2_PI * xx[idx] * var2 * (0.134145 * xx[idx] * xx[idx] + 1) * var1 + var2);
 }
 
+namespace deepmd {
 template<typename FPTYPE>
 void gelu_gpu_cuda(
     FPTYPE * out, 
@@ -94,3 +94,4 @@ template void gelu_grad_gpu_cuda<float>(float * out, const float * x, const floa
 template void gelu_grad_gpu_cuda<double>(double * out, const double * x, const double * dy, const int size);
 template void gelu_grad_grad_gpu_cuda<float>(float * out, const float * x, const float * dy, const float * dy_2, const int size);
 template void gelu_grad_grad_gpu_cuda<double>(double * out, const double * x, const double * dy, const double * dy_2, const int size);
+}

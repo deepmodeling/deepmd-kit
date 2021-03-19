@@ -86,13 +86,13 @@ class ProdVirialSeAOp : public OpKernel {
     
     if (device == "GPU") {
       #if GOOGLE_CUDA
-      prod_virial_a_gpu_cuda(    
+      deepmd::prod_virial_a_gpu_cuda(    
           virial, atom_virial,
           net_deriv, in_deriv, rij, nlist, nloc, nall, nnei);
       #endif // GOOGLE_CUDA
     }
     else if (device == "CPU") {
-      prod_virial_a_cpu(    
+      deepmd::prod_virial_a_cpu(    
           virial, atom_virial,
           net_deriv, in_deriv, rij, nlist, nloc, nall, nnei);
     }
@@ -164,13 +164,13 @@ class ProdVirialSeROp : public OpKernel {
     
     if (device == "GPU") {
       #if GOOGLE_CUDA
-      prod_virial_r_gpu_cuda(    
+      deepmd::prod_virial_r_gpu_cuda(    
           virial, atom_virial,
           net_deriv, in_deriv, rij, nlist, nloc, nall, nnei);
       #endif // GOOGLE_CUDA
     }
     else if (device == "CPU") {
-      prod_virial_r_cpu(    
+      deepmd::prod_virial_r_cpu(    
           virial, atom_virial,
           net_deriv, in_deriv, rij, nlist, nloc, nall, nnei);
     }

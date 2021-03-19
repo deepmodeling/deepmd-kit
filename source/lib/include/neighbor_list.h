@@ -9,6 +9,8 @@
 #include "utilities.h"
 #include "SimulationRegion.h"
 
+namespace deepmd{
+
 // format of the input neighbor list
 struct InputNlist
 {
@@ -61,6 +63,22 @@ build_nlist_cpu(
     const int & mem_size,
     const float & rcut);
 
+#if GOOGLE_CUDA
+void convert_nlist_gpu_cuda(
+    InputNlist & gpu_nlist,
+    InputNlist & cpu_nlist,
+    int* & gpu_memory,
+    const int & max_nbor_size);
+
+void free_nlist_gpu_cuda(InputNlist & gpu_nlist);
+#endif // GOOGLE_CUDA
+
+} // namespace deepmd
+
+
+////////////////////////////////////////////////////////
+// legacy code
+////////////////////////////////////////////////////////
 
 // build nlist by an extended grid
 void
@@ -121,13 +139,3 @@ copy_coord (std::vector<double > &		out_c,
 	    const std::vector<int > &		in_t,
 	    const double &			rc,
 	    const SimulationRegion<double > &	region);
-
-#if GOOGLE_CUDA
-void convert_nlist_gpu_cuda(
-    InputNlist & gpu_nlist,
-    InputNlist & cpu_nlist,
-    int* & gpu_memory,
-    const int & max_nbor_size);
-
-void free_nlist_gpu_cuda(InputNlist & gpu_nlist);
-#endif // GOOGLE_CUDA

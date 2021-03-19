@@ -89,7 +89,7 @@ _prepare_coord_nlist_cpu(
     int const** type,
     std::vector<int> & type_cpy,
     std::vector<int> & idx_mapping,
-    InputNlist & inlist,
+    deepmd::InputNlist & inlist,
     std::vector<int> & ilist,
     std::vector<int> & numneigh,
     std::vector<int*> & firstneigh,
@@ -120,8 +120,8 @@ public:
     OP_REQUIRES_OK(context, context->GetAttr("sel_r", &sel_r));
     // OP_REQUIRES_OK(context, context->GetAttr("nloc", &nloc_f));
     // OP_REQUIRES_OK(context, context->GetAttr("nall", &nall_f));
-    cum_sum (sec_a, sel_a);
-    cum_sum (sec_r, sel_r);
+    deepmd::cum_sum (sec_a, sel_a);
+    deepmd::cum_sum (sec_r, sel_r);
     ndescrpt_a = sec_a.back() * 4;
     ndescrpt_r = sec_r.back() * 1;
     ndescrpt = ndescrpt_a + ndescrpt_r;
@@ -271,20 +271,20 @@ public:
       array_longlong = uint64_temp.flat<unsigned long long>().data();
 
       // update nbor list
-      InputNlist inlist;
+      deepmd::InputNlist inlist;
       inlist.inum = nloc;
-      env_mat_nbor_update(
+      deepmd::env_mat_nbor_update(
           inlist, gpu_inlist, max_nbor_size, nbor_list_dev,
           mesh_tensor.flat<int>().data(), static_cast<int>(mesh_tensor.NumElements()));
       OP_REQUIRES (context, (max_numneigh(inlist) <= GPU_MAX_NBOR_SIZE), errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_numneigh(inlist)) + " is larger than " + std::to_string(GPU_MAX_NBOR_SIZE) + ", which currently is not supported by deepmd-kit."));
       // launch the gpu(nv) compute function
-      prod_env_mat_a_gpu_cuda(
+      deepmd::prod_env_mat_a_gpu_cuda(
           em, em_deriv, rij, nlist, 
           coord, type, gpu_inlist, array_int, array_longlong, max_nbor_size, avg, std, nloc, nall, rcut_r, rcut_r_smth, sec_a);
       #endif //GOOGLE_CUDA
     }
     else if (device == "CPU") {
-      InputNlist inlist;
+      deepmd::InputNlist inlist;
       // some buffers, be freed after the evaluation of this frame
       std::vector<int> idx_mapping;
       std::vector<int> ilist(nloc), numneigh(nloc);
@@ -300,7 +300,7 @@ public:
 	  frame_nall, mem_cpy, mem_nnei, max_nbor_size,
 	  box, mesh_tensor.flat<int>().data(), nloc, nei_mode, rcut_r, max_cpy_trial, max_nnei_trial);
       // launch the cpu compute function
-      prod_env_mat_a_cpu(
+      deepmd::prod_env_mat_a_cpu(
 	  em, em_deriv, rij, nlist, 
 	  coord, type, inlist, max_nbor_size, avg, std, nloc, frame_nall, rcut_r, rcut_r_smth, sec_a);
       // do nlist mapping if coords were copied
@@ -325,7 +325,7 @@ private:
   std::string device;
   int * array_int = NULL;
   unsigned long long * array_longlong = NULL;
-  InputNlist gpu_inlist;
+  deepmd::InputNlist gpu_inlist;
   int * nbor_list_dev = NULL;
 };
 
@@ -336,9 +336,9 @@ public:
     OP_REQUIRES_OK(context, context->GetAttr("rcut", &rcut));
     OP_REQUIRES_OK(context, context->GetAttr("rcut_smth", &rcut_smth));
     OP_REQUIRES_OK(context, context->GetAttr("sel", &sel));
-    cum_sum (sec, sel);
+    deepmd::cum_sum (sec, sel);
     sel_null.resize(3, 0);
-    cum_sum (sec_null, sel_null);
+    deepmd::cum_sum (sec_null, sel_null);
     ndescrpt = sec.back() * 1;
     nnei = sec.back();
     max_nbor_size = 1024;
@@ -481,20 +481,20 @@ public:
       array_longlong = uint64_temp.flat<unsigned long long>().data();
       
       // update nbor list
-      InputNlist inlist;
+      deepmd::InputNlist inlist;
       inlist.inum = nloc;
-      env_mat_nbor_update(
+      deepmd::env_mat_nbor_update(
           inlist, gpu_inlist, max_nbor_size, nbor_list_dev,
           mesh_tensor.flat<int>().data(), static_cast<int>(mesh_tensor.NumElements()));
       OP_REQUIRES (context, (max_numneigh(inlist) <= GPU_MAX_NBOR_SIZE), errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_numneigh(inlist)) + " is larger than " + std::to_string(GPU_MAX_NBOR_SIZE) + ", which currently is not supported by deepmd-kit."));
       // launch the gpu(nv) compute function
-      prod_env_mat_r_gpu_cuda(
+      deepmd::prod_env_mat_r_gpu_cuda(
           em, em_deriv, rij, nlist, 
           coord, type, gpu_inlist, array_int, array_longlong, max_nbor_size, avg, std, nloc, nall, rcut, rcut_smth, sec);
       #endif //GOOGLE_CUDA
     }
     else if (device == "CPU") {
-      InputNlist inlist;
+      deepmd::InputNlist inlist;
       // some buffers, be freed after the evaluation of this frame
       std::vector<int> idx_mapping;
       std::vector<int> ilist(nloc), numneigh(nloc);
@@ -533,7 +533,7 @@ private:
   std::string device;
   int * array_int = NULL;
   unsigned long long * array_longlong = NULL;
-  InputNlist gpu_inlist;
+  deepmd::InputNlist gpu_inlist;
   int * nbor_list_dev = NULL;
 };
 
@@ -557,7 +557,7 @@ _norm_copy_coord_cpu(
 {
   std::vector<FPTYPE> tmp_coord(nall*3);
   std::copy(coord, coord+nall*3, tmp_coord.begin());
-  Region<FPTYPE> region;
+  deepmd::Region<FPTYPE> region;
   init_region_cpu(region, box);
   normalize_coord_cpu(&tmp_coord[0], nall, region);
   int tt;
@@ -599,7 +599,7 @@ _build_nlist_cpu(
       jlist[ii].resize(mem_nnei);
       firstneigh[ii] = &jlist[ii][0];
     }
-    InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+    deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
     int ret = build_nlist_cpu(
 	inlist, &max_nnei, 
 	coord, nloc, new_nall, mem_nnei, rcut_r);
@@ -639,7 +639,7 @@ _prepare_coord_nlist_cpu(
     int const** type,
     std::vector<int> & type_cpy,
     std::vector<int> & idx_mapping,
-    InputNlist & inlist,
+    deepmd::InputNlist & inlist,
     std::vector<int> & ilist,
     std::vector<int> & numneigh,
     std::vector<int*> & firstneigh,

@@ -19,7 +19,9 @@ make_index_range (
 }
 
 template<typename FPTYPE>
-void prod_virial_grad_a_cpu(
+void 
+deepmd::
+prod_virial_grad_a_cpu(
     FPTYPE * grad_net,
     const FPTYPE * grad,
     const FPTYPE * env_deriv,
@@ -61,7 +63,9 @@ void prod_virial_grad_a_cpu(
 
 
 template
-void prod_virial_grad_a_cpu<double>(
+void 
+deepmd::
+prod_virial_grad_a_cpu<double>(
     double * grad_net,
     const double * grad,
     const double * env_deriv,
@@ -71,7 +75,9 @@ void prod_virial_grad_a_cpu<double>(
     const int nnei);
 
 template
-void prod_virial_grad_a_cpu<float>(
+void 
+deepmd::
+prod_virial_grad_a_cpu<float>(
     float * grad_net,
     const float * grad,
     const float * env_deriv,
@@ -82,7 +88,9 @@ void prod_virial_grad_a_cpu<float>(
 
 
 template<typename FPTYPE>
-void prod_virial_grad_r_cpu(
+void 
+deepmd::
+prod_virial_grad_r_cpu(
     FPTYPE * grad_net,
     const FPTYPE * grad,
     const FPTYPE * env_deriv,
@@ -127,7 +135,9 @@ void prod_virial_grad_r_cpu(
 
 
 template
-void prod_virial_grad_r_cpu<double>(
+void 
+deepmd::
+prod_virial_grad_r_cpu<double>(
     double * grad_net,
     const double * grad,
     const double * env_deriv,
@@ -137,7 +147,9 @@ void prod_virial_grad_r_cpu<double>(
     const int nnei);
 
 template
-void prod_virial_grad_r_cpu<float>(
+void 
+deepmd::
+prod_virial_grad_r_cpu<float>(
     float * grad_net,
     const float * grad,
     const float * env_deriv,

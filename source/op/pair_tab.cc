@@ -126,7 +126,7 @@ class PairTabOp : public OpKernel {
     // loop over samples
 #pragma omp parallel for 
     for (int kk = 0; kk < nframes; ++kk){
-      pair_tab_cpu<FPTYPE>(
+      deepmd::pair_tab_cpu<FPTYPE>(
 	  &energy(kk,0),
 	  &force(kk,0),
 	  &virial(kk,0),

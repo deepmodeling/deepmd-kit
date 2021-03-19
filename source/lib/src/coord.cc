@@ -3,9 +3,12 @@
 #include "SimulationRegion.h"
 #include <vector>
 
+using namespace deepmd;
+
 // normalize coords
 template <typename FPTYPE>
 void
+deepmd::
 normalize_coord_cpu(
     FPTYPE * coord,
     const int natom,
@@ -25,6 +28,7 @@ normalize_coord_cpu(
 
 template <typename FPTYPE>
 int
+deepmd::
 copy_coord_cpu(
     FPTYPE * out_c,
     int * out_t,
@@ -67,20 +71,23 @@ copy_coord_cpu(
 
 template
 void
+deepmd::
 normalize_coord_cpu<double>(
     double * coord,
     const int natom,
-    const Region<double> & region);
+    const deepmd::Region<double> & region);
 
 template
 void
+deepmd::
 normalize_coord_cpu<float>(
     float * coord,
     const int natom,
-    const Region<float> & region);
+    const deepmd::Region<float> & region);
 
 template
 int
+deepmd::
 copy_coord_cpu<double>(
     double * out_c,
     int * out_t,
@@ -91,10 +98,11 @@ copy_coord_cpu<double>(
     const int & nloc,
     const int & mem_nall,
     const float & rcut,
-    const Region<double> & region);
+    const deepmd::Region<double> & region);
 
 template
 int
+deepmd::
 copy_coord_cpu<float>(
     float * out_c,
     int * out_t,
@@ -105,7 +113,7 @@ copy_coord_cpu<float>(
     const int & nloc,
     const int & mem_nall,
     const float & rcut,
-    const Region<float> & region);
+    const deepmd::Region<float> & region);
 
 
 

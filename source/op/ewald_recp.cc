@@ -79,7 +79,7 @@ public:
       int coord_iter = kk * nloc * 3;
       int charge_iter = kk * nloc;
       // set region
-      Region<FPTYPE> region;
+      deepmd::Region<FPTYPE> region;
       init_region_cpu(region, &box(box_iter));
 
       // set & normalize coord
@@ -117,7 +117,7 @@ public:
     }
   }
 private:
-  EwaldParameters<FPTYPE> ep;
+  deepmd::EwaldParameters<FPTYPE> ep;
 };
 
 #define REGISTER_CPU(T)                                                                 \
