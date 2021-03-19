@@ -30,6 +30,7 @@ static __inline__ __device__ double atomicAdd(
 }
 #endif
 
+namespace deepmd {
 template <typename FPTYPE>
 void memcpy_host_to_device(
     FPTYPE * device, 
@@ -97,3 +98,4 @@ void memset_device_memory(
 {
   cudaErrcheck(cudaMemset(device, var, sizeof(FPTYPE) * size));  
 }
+} // end of namespace deepmd

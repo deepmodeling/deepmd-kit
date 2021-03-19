@@ -546,17 +546,17 @@ TEST_F(TestEnvMatA, prod_gpu_cuda)
   double * posi_cpy_dev = NULL, * avg_dev = NULL, * std_dev = NULL;
   int * atype_cpy_dev = NULL, * nlist_dev = NULL, * array_int_dev = NULL, * memory_dev = NULL;
   int_64 * array_longlong_dev = NULL;
-  malloc_device_memory_sync(em_dev, em);
-  malloc_device_memory_sync(em_deriv_dev, em_deriv);
-  malloc_device_memory_sync(rij_dev, rij);
-  malloc_device_memory_sync(posi_cpy_dev, posi_cpy);
-  malloc_device_memory_sync(avg_dev, avg);
-  malloc_device_memory_sync(std_dev, std);
-  malloc_device_memory_sync(atype_cpy_dev, atype_cpy);
-  malloc_device_memory_sync(nlist_dev, nlist);
-  malloc_device_memory(array_int_dev, sec_a.size() + nloc * sec_a.size() + nloc);
-  malloc_device_memory(array_longlong_dev, nloc * GPU_MAX_NBOR_SIZE * 2);
-  malloc_device_memory(memory_dev, nloc * max_nbor_size);
+  deepmd::malloc_device_memory_sync(em_dev, em);
+  deepmd::malloc_device_memory_sync(em_deriv_dev, em_deriv);
+  deepmd::malloc_device_memory_sync(rij_dev, rij);
+  deepmd::malloc_device_memory_sync(posi_cpy_dev, posi_cpy);
+  deepmd::malloc_device_memory_sync(avg_dev, avg);
+  deepmd::malloc_device_memory_sync(std_dev, std);
+  deepmd::malloc_device_memory_sync(atype_cpy_dev, atype_cpy);
+  deepmd::malloc_device_memory_sync(nlist_dev, nlist);
+  deepmd::malloc_device_memory(array_int_dev, sec_a.size() + nloc * sec_a.size() + nloc);
+  deepmd::malloc_device_memory(array_longlong_dev, nloc * GPU_MAX_NBOR_SIZE * 2);
+  deepmd::malloc_device_memory(memory_dev, nloc * max_nbor_size);
   deepmd::convert_nlist_gpu_cuda(gpu_inlist, inlist, memory_dev, max_nbor_size);
 
   deepmd::prod_env_mat_a_gpu_cuda(    
@@ -577,18 +577,18 @@ TEST_F(TestEnvMatA, prod_gpu_cuda)
       rc, 
       rc_smth,
       sec_a);
-  memcpy_device_to_host(em_dev, em);
-  delete_device_memory(em_dev);
-  delete_device_memory(em_deriv_dev);
-  delete_device_memory(nlist_dev);
-  delete_device_memory(posi_cpy_dev);
-  delete_device_memory(atype_cpy_dev);
-  delete_device_memory(array_int_dev);
-  delete_device_memory(array_longlong_dev);
-  delete_device_memory(avg_dev);
-  delete_device_memory(std_dev);
-  delete_device_memory(memory_dev);
-  free_nlist_gpu_cuda(gpu_inlist);
+  deepmd::memcpy_device_to_host(em_dev, em);
+  deepmd::delete_device_memory(em_dev);
+  deepmd::delete_device_memory(em_deriv_dev);
+  deepmd::delete_device_memory(nlist_dev);
+  deepmd::delete_device_memory(posi_cpy_dev);
+  deepmd::delete_device_memory(atype_cpy_dev);
+  deepmd::delete_device_memory(array_int_dev);
+  deepmd::delete_device_memory(array_longlong_dev);
+  deepmd::delete_device_memory(avg_dev);
+  deepmd::delete_device_memory(std_dev);
+  deepmd::delete_device_memory(memory_dev);
+  deepmd::free_nlist_gpu_cuda(gpu_inlist);
 
   for(int ii = 0; ii < nloc; ++ii){
     for (int jj = 0; jj < nnei; ++jj){
@@ -636,18 +636,18 @@ TEST_F(TestEnvMatA, prod_gpu_cuda_equal_cpu)
   double * posi_cpy_dev = NULL, * avg_dev = NULL, * std_dev = NULL;
   int * atype_cpy_dev = NULL, * nlist_dev = NULL, * array_int_dev = NULL, * memory_dev = NULL;
   int_64 * array_longlong_dev = NULL;
-  malloc_device_memory_sync(em_dev, em);
-  malloc_device_memory_sync(em_deriv_dev, em_deriv);
-  malloc_device_memory_sync(rij_dev, rij);
-  malloc_device_memory_sync(posi_cpy_dev, posi_cpy);
-  malloc_device_memory_sync(avg_dev, avg);
-  malloc_device_memory_sync(std_dev, std);
+  deepmd::malloc_device_memory_sync(em_dev, em);
+  deepmd::malloc_device_memory_sync(em_deriv_dev, em_deriv);
+  deepmd::malloc_device_memory_sync(rij_dev, rij);
+  deepmd::malloc_device_memory_sync(posi_cpy_dev, posi_cpy);
+  deepmd::malloc_device_memory_sync(avg_dev, avg);
+  deepmd::malloc_device_memory_sync(std_dev, std);
 
-  malloc_device_memory_sync(atype_cpy_dev, atype_cpy);
-  malloc_device_memory_sync(nlist_dev, nlist);
-  malloc_device_memory(array_int_dev, sec_a.size() + nloc * sec_a.size() + nloc);
-  malloc_device_memory(array_longlong_dev, nloc * GPU_MAX_NBOR_SIZE * 2);
-  malloc_device_memory(memory_dev, nloc * max_nbor_size);
+  deepmd::malloc_device_memory_sync(atype_cpy_dev, atype_cpy);
+  deepmd::malloc_device_memory_sync(nlist_dev, nlist);
+  deepmd::malloc_device_memory(array_int_dev, sec_a.size() + nloc * sec_a.size() + nloc);
+  deepmd::malloc_device_memory(array_longlong_dev, nloc * GPU_MAX_NBOR_SIZE * 2);
+  deepmd::malloc_device_memory(memory_dev, nloc * max_nbor_size);
   deepmd::convert_nlist_gpu_cuda(gpu_inlist, inlist, memory_dev, max_nbor_size);
 
   deepmd::prod_env_mat_a_gpu_cuda(    
@@ -668,21 +668,21 @@ TEST_F(TestEnvMatA, prod_gpu_cuda_equal_cpu)
       rc, 
       rc_smth,
       sec_a);
-  memcpy_device_to_host(em_dev, em);
-  memcpy_device_to_host(em_deriv_dev, em_deriv);
-  memcpy_device_to_host(rij_dev, rij);
-  memcpy_device_to_host(nlist_dev, nlist);
-  delete_device_memory(em_dev);
-  delete_device_memory(em_deriv_dev);
-  delete_device_memory(nlist_dev);
-  delete_device_memory(posi_cpy_dev);
-  delete_device_memory(atype_cpy_dev);
-  delete_device_memory(array_int_dev);
-  delete_device_memory(array_longlong_dev);
-  delete_device_memory(avg_dev);
-  delete_device_memory(std_dev);
-  delete_device_memory(memory_dev);
-  free_nlist_gpu_cuda(gpu_inlist);
+  deepmd::memcpy_device_to_host(em_dev, em);
+  deepmd::memcpy_device_to_host(em_deriv_dev, em_deriv);
+  deepmd::memcpy_device_to_host(rij_dev, rij);
+  deepmd::memcpy_device_to_host(nlist_dev, nlist);
+  deepmd::delete_device_memory(em_dev);
+  deepmd::delete_device_memory(em_deriv_dev);
+  deepmd::delete_device_memory(nlist_dev);
+  deepmd::delete_device_memory(posi_cpy_dev);
+  deepmd::delete_device_memory(atype_cpy_dev);
+  deepmd::delete_device_memory(array_int_dev);
+  deepmd::delete_device_memory(array_longlong_dev);
+  deepmd::delete_device_memory(avg_dev);
+  deepmd::delete_device_memory(std_dev);
+  deepmd::delete_device_memory(memory_dev);
+  deepmd::free_nlist_gpu_cuda(gpu_inlist);
 
   std::vector<int> fmt_nlist_a_1, fmt_nlist_r_1;
   std::vector<double> env_1, env_deriv_1, rij_a_1;
