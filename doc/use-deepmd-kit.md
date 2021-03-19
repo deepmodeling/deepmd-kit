@@ -324,6 +324,10 @@ Finally, we added a check frequency parameter. It indicates how often the progra
 
 Model compression, with little loss of accuracy, can greatly speed up MD inference time. According to different simulation systems and training parameters, the speedup can reach more than 10 times at both CPU and GPU devices. At the same time, model compression can greatly change the memory usage, reducing as much as 20 times under the same hardware conditions.
 
+**Acceptable original model version**
+
+The model compression method requires that the version of DeePMD-kit used in original model generation should be 1.3 or above. If one has a frozen 1.2 model, one can first use the convenient conversion interface of DeePMD-kit-v1.2.4 to get a 1.3 executable model.(eg: ```dp convert-to-1.3 -i frozen_1.2.pb -o frozen_1.3.pb```) 
+
 ## Model inference 
 One may use the python interface of DeePMD-kit for model inference, an example is given as follows
 ```python

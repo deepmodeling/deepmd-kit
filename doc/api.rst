@@ -65,7 +65,7 @@ DeePMD-kit API
    :members:
    :undoc-members:
 
-.. automodule:: deepmd.Local
+.. automodule:: deepmd.cluster.local
    :members:
    :undoc-members:
 
@@ -73,7 +73,7 @@ DeePMD-kit API
    :members:
    :undoc-members:
 
-.. automodule:: deepmd.Model
+.. automodule:: deepmd.model
    :members:
    :undoc-members:
 
@@ -85,7 +85,7 @@ DeePMD-kit API
    :members:
    :undoc-members:
 
-.. automodule:: deepmd.Trainer
+.. automodule:: deepmd.trainer
    :members:
    :undoc-members:
 

@@ -3,13 +3,13 @@ import numpy as np
 import unittest
 from deepmd.env import tf
 
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
+from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.run_options import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.run_options import GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.infer.ewald_recp import op_module
 from deepmd.infer.ewald_recp import EwaldRecp
 
-if global_np_float_precision == np.float32 :
+if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
     global_default_fv_hh = 1e-2
     global_default_dw_hh = 1e-2
     global_default_places = 3
@@ -54,9 +54,9 @@ class TestEwaldRecp (unittest.TestCase) :
         self.dcoord = np.array(self.dcoord).reshape([self.nframes, 3*self.natoms])
         self.dcharge = np.array(self.dcharge).reshape([self.nframes, self.natoms])
         # place holders
-        self.coord      = tf.placeholder(global_tf_float_precision, [None], name='t_coord')
-        self.charge     = tf.placeholder(global_tf_float_precision, [None], name='t_charge')
-        self.box        = tf.placeholder(global_tf_float_precision, [None], name='t_box')
+        self.coord      = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='t_coord')
+        self.charge     = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='t_charge')
+        self.box        = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='t_box')
         self.nloc    = tf.placeholder(tf.int32, [1], name = "t_nloc")        
 
     def test_py_interface(self):
@@ -95,7 +95,7 @@ class TestEwaldRecp (unittest.TestCase) :
 
     def test_force(self):
         hh = 1e-4
-        places = 4
+        places = 6
         sess = tf.Session()
         t_energy, t_force, t_virial \
             = op_module.ewald_recp(self.coord, self.charge, self.nloc, self.box, 
@@ -137,7 +137,7 @@ class TestEwaldRecp (unittest.TestCase) :
 
     def test_virial(self):
         hh = 1e-4
-        places = 5
+        places = 6
         sess = tf.Session()
         t_energy, t_force, t_virial \
             = op_module.ewald_recp(self.coord, self.charge, self.nloc, self.box, 
@@ -194,8 +194,8 @@ class TestEwaldRecp (unittest.TestCase) :
                                        self.nloc:   [self.natoms],
                                    })
                 num_deriv[:,ii,jj] = -(energyp[0] - energym[0]) / (2.*hh)
-        dbox3t = np.transpose(self.dbox3, [0,2,1])
-        t_esti = np.matmul(num_deriv, dbox3t)
+        num_deriv_t = np.transpose(num_deriv, [0,2,1])
+        t_esti = np.matmul(num_deriv_t, self.dbox3)
         # # t_esti = np.matmul(num_deriv, self.dbox3)
         # print(num_deriv[0])
         # print(t_esti[0])

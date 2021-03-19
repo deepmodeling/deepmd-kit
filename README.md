@@ -44,8 +44,6 @@ The code is organized as follows:
 
 * `source/op`: tensorflow op implementation. working with library.
 
-* `source/scripts`: Python script for model freezing.
-
 * `source/train`: Python modules and scripts for training and testing.
 
 

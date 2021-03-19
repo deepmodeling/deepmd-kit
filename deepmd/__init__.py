@@ -1,18 +1,11 @@
 """Root of the deepmd package, exposes all public classes and submodules."""
 
-from . import descriptor
-from . import fit
-from . import loss
-from . import utils
 import deepmd.utils.network as network
-from .infer.deep_eval import DeepEval
-from .infer.deep_pot import DeepPot
-from .infer.deep_dipole import DeepDipole
-from .infer.deep_polar import DeepPolar
-from .infer.deep_polar import DeepGlobalPolar
-from .infer.deep_wfc import DeepWFC
-from .infer.data_modifier import DipoleChargeModifier
+
+from . import cluster, descriptor, fit, loss, utils
 from .env import set_mkl
+from .infer import DeepPotential
+from .infer.data_modifier import DipoleChargeModifier
 
 set_mkl()
 
@@ -26,12 +19,9 @@ __all__ = [
     "fit",
     "loss",
     "utils",
+    "cluster",
     "network",
     "DeepEval",
-    "DeepPot",
-    "DeepDipole",
-    "DeepPolar",
-    "DeepGlobalPolar",
-    "DeepWFC",
+    "DeepPotential",
     "DipoleChargeModifier",
 ]

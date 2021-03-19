@@ -4,9 +4,6 @@ import unittest
 
 from deepmd.common import ClassArg
 
-def test():
-    raise RuntimeError
-
 class TestClassArg (unittest.TestCase) :
     def test_add (self) :
         ca = ClassArg().add('test', int)

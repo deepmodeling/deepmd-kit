@@ -1,7 +1,7 @@
 #include <fstream>
 #include <cstdint>
 #include "sockets.h"
-#include "NNPInter.h"
+#include "DeepPot.h"
 #include "Convert.h"
 #include "XyzFileManager.h"
 #include "SimulationRegion.h"
@@ -75,14 +75,14 @@ int main(int argc, char * argv[])
     inet = 0;
   }
   int port = jdata["port"];
-  string host_str = jdata["host"];
+  std::string host_str = jdata["host"];
   const char * host = host_str.c_str();
-  string graph_file = jdata["graph_file"];
-  string coord_file = jdata["coord_file"];
-  std::map<string, int> name_type_map = jdata["atom_type"];
+  std::string graph_file = jdata["graph_file"];
+  std::string coord_file = jdata["coord_file"];
+  std::map<std::string, int> name_type_map = jdata["atom_type"];
   bool b_verb = jdata["verbose"];
   
-  std::vector<string > atom_name;  
+  std::vector<std::string > atom_name;  
   {
     std::vector<std::vector<double > >  posi;
     std::vector<std::vector<double > >  velo;
@@ -91,7 +91,7 @@ int main(int argc, char * argv[])
   }
 
   Convert<double> cvt (atom_name, name_type_map);
-  NNPInter nnp_inter (graph_file);
+  deepmd::DeepPot nnp_inter (graph_file);
   
   enum { _MSGLEN = 12 };
   int MSGLEN = _MSGLEN;
@@ -126,7 +126,7 @@ int main(int argc, char * argv[])
 
   while (true) {
     readbuffer_ (&socket, header, MSGLEN);
-    string header_str (trimwhitespace(header));
+    std::string header_str (trimwhitespace(header));
     if (b_verb) std::cout << "# get header " << header_str << std::endl;
 
     if (header_str == "STATUS"){

@@ -10,7 +10,28 @@
 # TensorFlowFramework_LIBRARY    
 # TensorFlowFramework_LIBRARY_PATH
 
-string(REPLACE "lib64" "lib" TENSORFLOW_ROOT_NO64 ${TENSORFLOW_ROOT})
+
+if (BUILD_CPP_IF AND INSTALL_TENSORFLOW)
+  # Here we try to install libtensorflow_cc using conda install.
+
+  if (USE_CUDA_TOOLKIT)
+    set (VARIANT gpu)
+  else ()
+    set (VARIANT cpu)
+  endif ()
+
+  if (NOT DEFINED TENSORFLOW_ROOT)
+    set (TENSORFLOW_ROOT ${CMAKE_INSTALL_PREFIX})
+  endif ()
+  # execute conda install
+  execute_process(
+	  COMMAND conda install libtensorflow_cc=*=${VARIANT}* -c deepmodeling -y -p ${TENSORFLOW_ROOT}
+	  )
+endif ()
+
+if(DEFINED TENSORFLOW_ROOT)
+  string(REPLACE "lib64" "lib" TENSORFLOW_ROOT_NO64 ${TENSORFLOW_ROOT})
+endif(DEFINED TENSORFLOW_ROOT)
 
 # define the search path
 list(APPEND TensorFlow_search_PATHS ${TENSORFLOW_ROOT})

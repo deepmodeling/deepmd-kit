@@ -1,12 +1,15 @@
 import math
+import logging
 import numpy as np
 from tqdm import tqdm
 from deepmd.env import tf
 from typing import Tuple, List
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
-from deepmd.RunOptions import global_np_float_precision
+from deepmd.run_options import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.utils.data_system import DeepmdDataSystem
+
+log = logging.getLogger(__name__)
 
 class NeighborStat():
     """
@@ -32,7 +35,7 @@ class NeighborStat():
         sub_graph = tf.Graph()
         with sub_graph.as_default():
             for ii in ['coord', 'box']:
-                self.place_holders[ii] = tf.placeholder(global_np_float_precision, [None, None], name='t_'+ii)
+                self.place_holders[ii] = tf.placeholder(GLOBAL_NP_FLOAT_PRECISION, [None, None], name='t_'+ii)
             self.place_holders['type'] = tf.placeholder(tf.int32, [None, None], name='t_type')
             self.place_holders['natoms_vec'] = tf.placeholder(tf.int32, [self.ntypes+2], name='t_natoms')
             self.place_holders['default_mesh'] = tf.placeholder(tf.int32, [None], name='t_mesh')
@@ -62,11 +65,11 @@ class NeighborStat():
         max_nbor_size
                 A list with ntypes integers, denotes the actual achieved max sel
         """
-        print(type(data))
         self.min_nbor_dist = 100.0
         self.max_nbor_size = [0] * self.ntypes
 
-        for ii in tqdm(range(len(data.system_dirs)), desc = '# DEEPMD: getting data info'):
+        # for ii in tqdm(range(len(data.system_dirs)), desc = 'DEEPMD INFO    |-> deepmd.utils.neighbor_stat\t\t\tgetting neighbor status'):
+        for ii in range(len(data.system_dirs)):
             for jj in data.data_systems[ii].dirs:
                 data_set = data.data_systems[ii]._load_set(jj)
                 for kk in range(np.array(data_set['type']).shape[0]):
@@ -87,6 +90,6 @@ class NeighborStat():
                         if var > self.max_nbor_size[ww]:
                             self.max_nbor_size[ww] = var
 
-        print('# DEEPMD: training data with min nbor dist: ' + str(self.min_nbor_dist))
-        print('# DEEPMD: training data with max nbor size: ' + str(self.max_nbor_size))
+        log.info('training data with min nbor dist: ' + str(self.min_nbor_dist))
+        log.info('training data with max nbor size: ' + str(self.max_nbor_size))
         return self.min_nbor_dist, self.max_nbor_size

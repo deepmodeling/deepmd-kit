@@ -1,18 +1,11 @@
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include <iostream>
-
+#include "custom_op.h"
 #include "ComputeDescriptor.h"
-#include "NeighborList.h"
+#include "neighbor_list.h"
+#include "fmt_nlist.h"
+#include "env_mat.h"
 
 typedef double boxtensor_t ;
 typedef double compute_t;
-
-using namespace tensorflow;
-// using namespace std;
-
-using CPUDevice = Eigen::ThreadPoolDevice;
 
 REGISTER_OP("DescrptSeR")
 .Attr("T: {float, double}")
@@ -228,7 +221,7 @@ public:
 	::build_nlist (d_nlist_null, d_nlist, d_coord3, nloc, -1, rcut, nat_stt, nat_end, ext_stt, ext_end, region, global_grid);
       }
       else if (nei_mode == 1) {
-	std::vector<double > bk_d_coord3 = d_coord3;
+	std::vector<compute_t > bk_d_coord3 = d_coord3;
 	std::vector<int > bk_d_type = d_type;
 	std::vector<int > ncell, ngcell;
 	copy_coord(d_coord3, d_type, nlist_map, ncell, ngcell, bk_d_coord3, bk_d_type, rcut, region);	
@@ -255,7 +248,7 @@ public:
 	std::vector<int> fmt_nlist;
 	int ret = -1;
 	if (fill_nei_a){
-	  if ((ret = format_nlist_fill_a (fmt_nlist, fmt_nlist_null, d_coord3, ntypes, d_type, region, b_pbc, ii, d_nlist_null[ii], d_nlist[ii], rcut, sec, sec_null)) != -1){
+	  if ((ret = format_nlist_i_fill_a (fmt_nlist, fmt_nlist_null, d_coord3, ntypes, d_type, region, b_pbc, ii, d_nlist_null[ii], d_nlist[ii], rcut, sec, sec_null)) != -1){
 	    if (count_nei_idx_overflow == 0) {
 	      std::cout << "WARNING: Radial neighbor list length of type " << ret << " is not enough" << std::endl;
 	      flush(std::cout);
@@ -272,19 +265,19 @@ public:
 	std::vector<compute_t > d_descrpt;
 	std::vector<compute_t > d_descrpt_deriv;
 	std::vector<compute_t > d_rij;
-	compute_descriptor_se_r (d_descrpt,
-				  d_descrpt_deriv,
-				  d_rij,
-				  d_coord3,
-				  ntypes, 
-				  d_type,
-				  region, 
-				  b_pbc,
-				  ii, 
-				  fmt_nlist,
-				  sec, 
-				  rcut_smth, 
-				  rcut);
+	env_mat_r (d_descrpt,
+		   d_descrpt_deriv,
+		   d_rij,
+		   d_coord3,
+		   ntypes, 
+		   d_type,
+		   region, 
+		   b_pbc,
+		   ii, 
+		   fmt_nlist,
+		   sec, 
+		   rcut_smth, 
+		   rcut);
 
 	// check sizes
 	assert (d_descrpt_deriv.size() == ndescrpt * 3);

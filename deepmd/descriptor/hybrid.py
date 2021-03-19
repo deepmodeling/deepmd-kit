@@ -4,8 +4,8 @@ from typing import Tuple, List
 from deepmd.env import tf
 from deepmd.common import ClassArg
 from deepmd.env import op_module
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
+from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.run_options import GLOBAL_NP_FLOAT_PRECISION
 # from deepmd.descriptor import DescrptLocFrame
 # from deepmd.descriptor import DescrptSeA
 # from deepmd.descriptor import DescrptSeAT
@@ -164,7 +164,7 @@ class DescrptHybrid ():
         with tf.variable_scope('descrpt_attr' + suffix, reuse = reuse) :
             t_rcut = tf.constant(self.get_rcut(), 
                                  name = 'rcut', 
-                                 dtype = global_tf_float_precision)
+                                 dtype = GLOBAL_TF_FLOAT_PRECISION)
             t_ntypes = tf.constant(self.get_ntypes(), 
                                    name = 'ntypes', 
                                    dtype = tf.int32)

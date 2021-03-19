@@ -6,13 +6,8 @@ import unittest
 from tensorflow.python.framework import ops
 
 # load grad of force module
-import deepmd._prod_force_grad
-import deepmd._prod_virial_grad
-import deepmd._prod_force_se_a_grad
-import deepmd._prod_virial_se_a_grad
-import deepmd._soft_min_force_grad
-import deepmd._soft_min_virial_grad
-from deepmd.utils.tab_inter import TabInter
+import deepmd.op
+from deepmd.utils.pair_tab import PairTab
 
 from common import force_test
 from common import virial_test
@@ -40,7 +35,7 @@ class IntplInter(Inter):
         # tabulated
         Inter.setUp(self, data)
         _make_tab(data.get_ntypes())
-        self.srtab = TabInter('tab.xvg')
+        self.srtab = PairTab('tab.xvg')
         self.smin_alpha = 0.3
         self.sw_rmin = 1
         self.sw_rmax = 3.45
@@ -92,15 +87,16 @@ class IntplInter(Inter):
                                         rmax = self.sw_rmax)
         inv_sw_lambda = 1.0 - sw_lambda
         tab_atom_ener, tab_force, tab_atom_virial \
-            = op_module.tab_inter(self.tab_info,
-                                  self.tab_data,
-                                  dtype,
-                                  rij,
-                                  nlist,
-                                  tnatoms,
-                                  sw_lambda,
-                                  sel_a = self.sel_a,
-                                  sel_r = self.sel_r)
+            = op_module.pair_tab(
+                self.tab_info,
+                self.tab_data,
+                dtype,
+                rij,
+                nlist,
+                tnatoms,
+                sw_lambda,
+                sel_a = self.sel_a,
+                sel_r = self.sel_r)
         energy_diff = tab_atom_ener - tf.reshape(atom_ener, [-1, self.natoms[0]])
         tab_atom_ener = tf.reshape(sw_lambda, [-1]) * tf.reshape(tab_atom_ener, [-1])
         atom_ener = tf.reshape(inv_sw_lambda, [-1]) * atom_ener

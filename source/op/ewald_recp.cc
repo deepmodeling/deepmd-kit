@@ -1,16 +1,8 @@
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include <iostream>
-
-#include "Ewald.h"
+#include "custom_op.h"
+#include "ewald.h"
 
 typedef double boxtensor_t ;
-
-using namespace tensorflow;
-// using namespace std;
-
-using CPUDevice = Eigen::ThreadPoolDevice;
+typedef double compute_t;
 
 REGISTER_OP("EwaldRecp")
 .Attr("T: {float, double}")
@@ -87,29 +79,19 @@ public:
       int coord_iter = kk * nloc * 3;
       int charge_iter = kk * nloc;
       // set region
-      boxtensor_t boxt [9] = {0};
-      for (int dd = 0; dd < 9; ++dd) {
-	boxt[dd] = box(box_iter + dd);
-      }
-      SimulationRegion<boxtensor_t > region;
-      region.reinitBox (boxt);
+      deepmd::Region<FPTYPE> region;
+      init_region_cpu(region, &box(box_iter));
 
       // set & normalize coord
-      std::vector<boxtensor_t > d_coord3_ (nloc*3);
+      std::vector<FPTYPE > d_coord3 (nloc*3);
       for (int ii = 0; ii < nloc; ++ii){
-	for (int dd = 0; dd < 3; ++dd){
-	  d_coord3_[ii*3+dd] = coord(coord_iter + ii*3+dd);
-	}
-	double inter[3];
-	region.phys2Inter (inter, &d_coord3_[3*ii]);
+	FPTYPE inter[3];
+	convert_to_inter_cpu(inter, region, &coord(coord_iter + ii*3));
 	for (int dd = 0; dd < 3; ++dd){
 	  if      (inter[dd] < 0 ) inter[dd] += 1.;
 	  else if (inter[dd] >= 1) inter[dd] -= 1.;
 	}
-      }
-      std::vector<FPTYPE > d_coord3 (nloc*3);
-      for (int ii = 0; ii < nloc * 3; ++ii) {
-	d_coord3[ii] = d_coord3_[ii];
+	convert_to_phys_cpu(&d_coord3[ii*3], region, inter);
       }
 
       // set charge
@@ -122,7 +104,7 @@ public:
       std::vector<FPTYPE> d_virial(9);
 
       // compute
-      EwaldReciprocal(d_ener, d_force, d_virial, d_coord3, d_charge, region, ep);
+      ewald_recp(d_ener, d_force, d_virial, d_coord3, d_charge, region, ep);
 
       // copy output
       energy(kk) = d_ener;
@@ -135,7 +117,7 @@ public:
     }
   }
 private:
-  EwaldParameters<FPTYPE> ep;
+  deepmd::EwaldParameters<FPTYPE> ep;
 };
 
 #define REGISTER_CPU(T)                                                                 \

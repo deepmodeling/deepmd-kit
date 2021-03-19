@@ -6,12 +6,7 @@ from deepmd.env import tf
 from tensorflow.python.framework import ops
 
 # load grad of force module
-import deepmd._prod_force_grad
-import deepmd._prod_virial_grad
-import deepmd._prod_force_se_r_grad
-import deepmd._prod_virial_se_r_grad
-import deepmd._soft_min_force_grad
-import deepmd._soft_min_virial_grad
+import deepmd.op
 
 from common import force_test
 from common import virial_test
@@ -21,9 +16,9 @@ from common import Data
 
 from deepmd.env import op_module
 
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
+from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.run_options import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.run_options import GLOBAL_ENER_FLOAT_PRECISION
 
 class Inter():
     def setUp (self, 
@@ -41,8 +36,8 @@ class Inter():
         self.ndescrpt = self.nnei * 1
         davg = np.zeros ([self.ntypes, self.ndescrpt])
         dstd = np.ones  ([self.ntypes, self.ndescrpt])
-        self.t_avg = tf.constant(davg.astype(global_np_float_precision))
-        self.t_std = tf.constant(dstd.astype(global_np_float_precision))
+        self.t_avg = tf.constant(davg.astype(GLOBAL_NP_FLOAT_PRECISION))
+        self.t_std = tf.constant(dstd.astype(GLOBAL_NP_FLOAT_PRECISION))
         if pbc:
             self.default_mesh = np.zeros (6, dtype = np.int32)
             self.default_mesh[3] = 2
@@ -51,11 +46,11 @@ class Inter():
         else:
             self.default_mesh = np.array([], dtype = np.int32)            
         # make place holder
-        self.coord      = tf.placeholder(global_tf_float_precision, [None, self.natoms[0] * 3], name='t_coord')
-        self.box        = tf.placeholder(global_tf_float_precision, [None, 9], name='t_box')
+        self.coord      = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, self.natoms[0] * 3], name='t_coord')
+        self.box        = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, 9], name='t_box')
         self.type       = tf.placeholder(tf.int32,   [None, self.natoms[0]], name = "t_type")
         self.tnatoms    = tf.placeholder(tf.int32,   [None], name = "t_natoms")
-        self.efield     = tf.placeholder(global_tf_float_precision, [None, self.natoms[0] * 3], name='t_efield')
+        self.efield     = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, self.natoms[0] * 3], name='t_efield')
         
     def _net (self,
              inputs, 
@@ -64,7 +59,7 @@ class Inter():
         with tf.variable_scope(name, reuse=reuse):
             net_w = tf.get_variable ('net_w', 
                                      [self.ndescrpt], 
-                                     global_tf_float_precision,
+                                     GLOBAL_TF_FLOAT_PRECISION,
                                      tf.constant_initializer (self.net_w_i))
         dot_v = tf.matmul (tf.reshape (inputs, [-1, self.ndescrpt]),
                            tf.reshape (net_w, [self.ndescrpt, 1]))
@@ -117,7 +112,7 @@ class Inter():
                    reuse = None) :
         energy, force, virial = self.comp_ef (dcoord, dbox, dtype, tnatoms, name, reuse)
         with tf.variable_scope(name, reuse=True):
-            net_w = tf.get_variable ('net_w', [self.ndescrpt], global_tf_float_precision, tf.constant_initializer (self.net_w_i))
+            net_w = tf.get_variable ('net_w', [self.ndescrpt], GLOBAL_TF_FLOAT_PRECISION, tf.constant_initializer (self.net_w_i))
         f_mag = tf.reduce_sum (tf.nn.tanh(force))
         f_mag_dw = tf.gradients (f_mag, net_w)
         assert (len(f_mag_dw) == 1), "length of dw is wrong"        
@@ -133,7 +128,7 @@ class Inter():
                    reuse = None) :
         energy, force, virial = self.comp_ef (dcoord, dbox, dtype, tnatoms, name, reuse)
         with tf.variable_scope(name, reuse=True):
-            net_w = tf.get_variable ('net_w', [self.ndescrpt], global_tf_float_precision, tf.constant_initializer (self.net_w_i))
+            net_w = tf.get_variable ('net_w', [self.ndescrpt], GLOBAL_TF_FLOAT_PRECISION, tf.constant_initializer (self.net_w_i))
         v_mag = tf.reduce_sum (virial)
         v_mag_dw = tf.gradients (v_mag, net_w)
         assert (len(v_mag_dw) == 1), "length of dw is wrong"        

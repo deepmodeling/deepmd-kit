@@ -2,18 +2,17 @@
 import dpdata,os,sys,unittest
 import numpy as np
 from deepmd.env import tf
-from common import Data,gen_data
+from common import Data,gen_data, j_loader
 
-from deepmd.RunOptions import RunOptions
 from deepmd.utils.data_system import DataSystem
 from deepmd.descriptor import DescrptSeA
 from deepmd.fit import EnerFitting
-from deepmd.Model import Model
-from deepmd.common import j_must_have, j_loader
+from deepmd.model import Model
+from deepmd.common import j_must_have
 
-global_ener_float_precision = tf.float64
-global_tf_float_precision = tf.float64
-global_np_float_precision = np.float64
+GLOBAL_ENER_FLOAT_PRECISION = tf.float64
+GLOBAL_TF_FLOAT_PRECISION = tf.float64
+GLOBAL_NP_FLOAT_PRECISION = np.float64
 
 class TestModel(unittest.TestCase):
     def setUp(self) :
@@ -23,7 +22,6 @@ class TestModel(unittest.TestCase):
         jfile = 'water_se_a.json'
         jdata = j_loader(jfile)
 
-        run_opt = RunOptions(None) 
         systems = j_must_have(jdata, 'systems')
         set_pfx = j_must_have(jdata, 'set_prefix')
         batch_size = j_must_have(jdata, 'batch_size')
@@ -55,14 +53,14 @@ class TestModel(unittest.TestCase):
         model.descrpt.bias_atom_e = data.compute_energy_shift()
 
         t_prop_c           = tf.placeholder(tf.float32, [5],    name='t_prop_c')
-        t_energy           = tf.placeholder(global_ener_float_precision, [None], name='t_energy')
-        t_force            = tf.placeholder(global_tf_float_precision, [None], name='t_force')
-        t_virial           = tf.placeholder(global_tf_float_precision, [None], name='t_virial')
-        t_atom_ener        = tf.placeholder(global_tf_float_precision, [None], name='t_atom_ener')
-        t_coord            = tf.placeholder(global_tf_float_precision, [None], name='i_coord')
+        t_energy           = tf.placeholder(GLOBAL_ENER_FLOAT_PRECISION, [None], name='t_energy')
+        t_force            = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='t_force')
+        t_virial           = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='t_virial')
+        t_atom_ener        = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='t_atom_ener')
+        t_coord            = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='i_coord')
         t_type             = tf.placeholder(tf.int32,   [None], name='i_type')
         t_natoms           = tf.placeholder(tf.int32,   [model.ntypes+2], name='i_natoms')
-        t_box              = tf.placeholder(global_tf_float_precision, [None, 9], name='i_box')
+        t_box              = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, 9], name='i_box')
         t_mesh             = tf.placeholder(tf.int32,   [None], name='i_mesh')
         is_training        = tf.placeholder(tf.bool)
         t_fparam = None

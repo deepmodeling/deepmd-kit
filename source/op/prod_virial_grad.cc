@@ -1,10 +1,4 @@
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include <iostream>
-
-using namespace tensorflow;
-// using namespace std;
+#include "custom_op.h"
 
 REGISTER_OP("ProdVirialGrad")
 .Attr("T: {float, double}")

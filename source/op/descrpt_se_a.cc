@@ -1,19 +1,11 @@
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include <iostream>
-
+#include "custom_op.h"
 #include "ComputeDescriptor.h"
-#include "NeighborList.h"
+#include "neighbor_list.h"
+#include "fmt_nlist.h"
+#include "env_mat.h"
 
 typedef double boxtensor_t ;
 typedef double compute_t;
-
-using namespace tensorflow;
-// using namespace std;
-
-using CPUDevice = Eigen::ThreadPoolDevice;
-using GPUDevice = Eigen::GpuDevice;
 
 REGISTER_OP("DescrptSeA")
     .Attr("T: {float, double}")
@@ -244,7 +236,7 @@ public:
 	::build_nlist (d_nlist_a, d_nlist_r, d_coord3, nloc, rcut_a, rcut_r, nat_stt, nat_end, ext_stt, ext_end, region, global_grid);
       }
       else if (nei_mode == 1) {
-	std::vector<double > bk_d_coord3 = d_coord3;
+	std::vector<compute_t > bk_d_coord3 = d_coord3;
 	std::vector<int > bk_d_type = d_type;
 	std::vector<int > ncell, ngcell;
 	copy_coord(d_coord3, d_type, nlist_map, ncell, ngcell, bk_d_coord3, bk_d_type, rcut_r, region);	
@@ -271,7 +263,7 @@ public:
 	std::vector<int> fmt_nlist_r;
 	int ret = -1;
 	if (fill_nei_a){
-	  if ((ret = format_nlist_fill_a (fmt_nlist_a, fmt_nlist_r, d_coord3, ntypes, d_type, region, b_pbc, ii, d_nlist_a[ii], d_nlist_r[ii], rcut_r, sec_a, sec_r)) != -1){
+	  if ((ret = format_nlist_i_fill_a (fmt_nlist_a, fmt_nlist_r, d_coord3, ntypes, d_type, region, b_pbc, ii, d_nlist_a[ii], d_nlist_r[ii], rcut_r, sec_a, sec_r)) != -1){
 	    if (count_nei_idx_overflow == 0) {
 	      std::cout << "WARNING: Radial neighbor list length of type " << ret << " is not enough" << std::endl;
 	      flush(std::cout);
@@ -286,19 +278,19 @@ public:
 	std::vector<compute_t > d_descrpt_r_deriv;
 	std::vector<compute_t > d_rij_a;
 	std::vector<compute_t > d_rij_r;      
-	compute_descriptor_se_a (d_descrpt_a,
-				 d_descrpt_a_deriv,
-				 d_rij_a,
-				 d_coord3,
-				 ntypes, 
-				 d_type,
-				 region, 
-				 b_pbc,
-				 ii, 
-				 fmt_nlist_a,
-				 sec_a, 
-				 rcut_r_smth, 
-				 rcut_r);
+	env_mat_a (d_descrpt_a,
+		   d_descrpt_a_deriv,
+		   d_rij_a,
+		   d_coord3,
+		   ntypes, 
+		   d_type,
+		   region, 
+		   b_pbc,
+		   ii, 
+		   fmt_nlist_a,
+		   sec_a, 
+		   rcut_r_smth, 
+		   rcut_r);
 
 	// check sizes
 	assert (d_descrpt_a.size() == ndescrpt_a);

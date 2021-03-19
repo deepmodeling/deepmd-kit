@@ -83,6 +83,10 @@ setup(
         "deepmd/infer",
         "deepmd/loss",
         "deepmd/utils",
+        "deepmd/loggers",
+        "deepmd/cluster",
+        "deepmd/entrypoints",
+        "deepmd/op"
     ],
     python_requires=">=3.6",
     classifiers=[
@@ -100,7 +104,7 @@ setup(
     cmake_source_dir="source",
     cmake_minimum_required_version="3.0",
     extras_require={
-        "test": ["dpdata>=0.1.9"],
+        "test": ["dpdata>=0.1.9", "pytest", "pytest-cov", "pytest-sugar"],
         "docs": ["sphinx", "recommonmark", "sphinx_rtd_theme"],
         **extras_require,
     },
