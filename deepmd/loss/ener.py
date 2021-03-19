@@ -128,19 +128,19 @@ class EnerStdLoss () :
         return l2_loss, more_loss
 
     def print_header(self):
-        prop_fmt = '   %9s %9s'
+        prop_fmt = '   %11s %11s'
         print_str = ''
-        print_str += prop_fmt % ('l2_tst', 'l2_trn')
+        print_str += prop_fmt % ('rmse_tst', 'rmse_trn')
         if self.has_e :
-            print_str += prop_fmt % ('l2_e_tst', 'l2_e_trn')
+            print_str += prop_fmt % ('rmse_e_tst', 'rmse_e_trn')
         if self.has_ae :
-            print_str += prop_fmt % ('l2_ae_tst', 'l2_ae_trn')
+            print_str += prop_fmt % ('rmse_ae_tst', 'rmse_ae_trn')
         if self.has_f :
-            print_str += prop_fmt % ('l2_f_tst', 'l2_f_trn')
+            print_str += prop_fmt % ('rmse_f_tst', 'rmse_f_trn')
         if self.has_v :
-            print_str += prop_fmt % ('l2_v_tst', 'l2_v_trn')
+            print_str += prop_fmt % ('rmse_v_tst', 'rmse_v_trn')
         if self.has_pf :
-            print_str += prop_fmt % ('l2_pf_tst', 'l2_pf_trn')
+            print_str += prop_fmt % ('rmse_pf_tst', 'rmse_pf_trn')
         return print_str
 
     def print_on_training(self, 
@@ -180,7 +180,7 @@ class EnerStdLoss () :
 
         
         print_str = ""
-        prop_fmt = "   %9.2e %9.2e"
+        prop_fmt = "   %11.2e %11.2e"
         print_str += prop_fmt % (np.sqrt(error_test), np.sqrt(error_train))
         if self.has_e :
             print_str += prop_fmt % (np.sqrt(error_e_test) / natoms[0], np.sqrt(error_e_train) / natoms[0])
