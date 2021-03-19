@@ -292,13 +292,13 @@ def test_ener(
 
     # print ("# energies: %s" % energy)
     log.info(f"# number of test data : {numb_test:d} ")
-    log.info(f"Energy L2err        : {l2e:e} eV")
-    log.info(f"Energy L2err/Natoms : {l2ea:e} eV")
-    log.info(f"Force  L2err        : {l2f:e} eV/A")
-    log.info(f"Virial L2err        : {l2v:e} eV")
-    log.info(f"Virial L2err/Natoms : {l2va:e} eV")
+    log.info(f"Energy RMSE        : {l2e:e} eV")
+    log.info(f"Energy RMSE/Natoms : {l2ea:e} eV")
+    log.info(f"Force  RMSE        : {l2f:e} eV/A")
+    log.info(f"Virial RMSE        : {l2v:e} eV")
+    log.info(f"Virial RMSE/Natoms : {l2va:e} eV")
     if has_atom_ener:
-        log.info(f"Atomic ener L2err   : {l2ae:e} eV")
+        log.info(f"Atomic ener RMSE   : {l2ae:e} eV")
 
     if detail_file is not None:
         detail_path = Path(detail_file)
@@ -355,9 +355,9 @@ def print_ener_sys_avg(avg: np.ndarray):
     avg : np.ndarray
         array with summaries
     """
-    log.info(f"Energy L2err/Natoms : {avg[0]:e} eV")
-    log.info(f"Force  L2err        : {avg[1]:e} eV/A")
-    log.info(f"Virial L2err/Natoms : {avg[2]:e} eV")
+    log.info(f"Energy RMSE/Natoms : {avg[0]:e} eV")
+    log.info(f"Force  RMSE        : {avg[1]:e} eV/A")
+    log.info(f"Virial RMSE/Natoms : {avg[2]:e} eV")
 
 
 def run_test(dp: "DeepTensor", test_data: dict, numb_test: int):
@@ -420,7 +420,7 @@ def test_wfc(
     l2f = l2err(wfc - test_data["wfc"][:numb_test])
 
     log.info("# number of test data : {numb_test:d} ")
-    log.info("WFC  L2err : {l2f:e} eV/A")
+    log.info("WFC  RMSE : {l2f:e} eV/A")
 
     if detail_file is not None:
         detail_path = Path(detail_file)
@@ -447,7 +447,7 @@ def print_wfc_sys_avg(avg):
     avg : np.ndarray
         array with summaries
     """
-    log.info(f"WFC  L2err : {avg[0]:e} eV/A")
+    log.info(f"WFC  RMSE : {avg[0]:e} eV/A")
 
 
 def test_polar(
@@ -509,10 +509,10 @@ def test_polar(
     l2fa = l2f / sel_natoms
 
     log.info(f"# number of test data : {numb_test:d} ")
-    log.info(f"Polarizability  L2err       : {l2f:e} eV/A")
+    log.info(f"Polarizability  RMSE       : {l2f:e} eV/A")
     if global_polar:
-        log.info(f"Polarizability  L2err/sqrtN : {l2fs:e} eV/A")
-        log.info(f"Polarizability  L2err/N     : {l2fa:e} eV/A")
+        log.info(f"Polarizability  RMSE/sqrtN : {l2fs:e} eV/A")
+        log.info(f"Polarizability  RMSE/N     : {l2fa:e} eV/A")
 
     if detail_file is not None:
         detail_path = Path(detail_file)
@@ -542,7 +542,7 @@ def print_polar_sys_avg(avg):
     avg : np.ndarray
         array with summaries
     """
-    log.info(f"Polarizability  L2err : {avg[0]:e} eV/A")
+    log.info(f"Polarizability  RMSE : {avg[0]:e} eV/A")
 
 
 def test_dipole(
@@ -577,7 +577,7 @@ def test_dipole(
     l2f = l2err(dipole - test_data["dipole"][:numb_test])
 
     log.info(f"# number of test data : {numb_test:d}")
-    log.info(f"Dipole  L2err         : {l2f:e} eV/A")
+    log.info(f"Dipole  RMSE         : {l2f:e} eV/A")
 
     if detail_file is not None:
         detail_path = Path(detail_file)
@@ -605,4 +605,4 @@ def print_dipole_sys_avg(avg):
     avg : np.ndarray
         array with summaries
     """
-    log.info(f"Dipole  L2err         : {avg[0]:e} eV/A")
+    log.info(f"Dipole  RMSE         : {avg[0]:e} eV/A")

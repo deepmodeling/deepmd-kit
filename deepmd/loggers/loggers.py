@@ -20,13 +20,15 @@ FFORMATTER = logging.Formatter(
     "[%(asctime)s] %(app_name)s %(levelname)-7s %(name)-45s %(message)s"
 )
 CFORMATTER = logging.Formatter(
-    "%(app_name)s %(levelname)-7s |-> %(name)-45s %(message)s"
+#    "%(app_name)s %(levelname)-7s |-> %(name)-45s %(message)s"
+    "%(app_name)s %(levelname)-7s %(message)s"
 )
 FFORMATTER_MPI = logging.Formatter(
     "[%(asctime)s] %(app_name)s rank:%(rank)-2s %(levelname)-7s %(name)-45s %(message)s"
 )
 CFORMATTER_MPI = logging.Formatter(
-    "%(app_name)s rank:%(rank)-2s %(levelname)-7s |-> %(name)-45s %(message)s"
+#    "%(app_name)s rank:%(rank)-2s %(levelname)-7s |-> %(name)-45s %(message)s"
+    "%(app_name)s rank:%(rank)-2s %(levelname)-7s %(message)s"
 )
 
 
