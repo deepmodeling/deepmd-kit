@@ -257,7 +257,7 @@ prod_env_mat_r_cpu<float>(
     const std::vector<int> sec);
 
 #if GOOGLE_CUDA
-void env_mat_nbor_update(
+void deepmd::env_mat_nbor_update(
     InputNlist &inlist,
     InputNlist &gpu_inlist,
     int &max_nbor_size,

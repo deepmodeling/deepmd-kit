@@ -112,7 +112,7 @@ TEST_F(TestProdForceA, gpu_cuda)
   malloc_device_memory_sync(net_deriv_dev, net_deriv);
   malloc_device_memory_sync(env_deriv_dev, env_deriv);
 
-  prod_force_a_gpu_cuda<double> (force_dev, net_deriv_dev, env_deriv_dev, nlist_dev, nloc, nall, nnei);
+  deepmd::prod_force_a_gpu_cuda<double> (force_dev, net_deriv_dev, env_deriv_dev, nlist_dev, nloc, nall, nnei);
   
   memcpy_device_to_host(force_dev, force);
   delete_device_memory(nlist_dev);

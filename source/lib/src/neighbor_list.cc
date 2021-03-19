@@ -844,7 +844,7 @@ build_nlist_cpu<float>(
     const float & rcut);
 
 #if GOOGLE_CUDA
-void convert_nlist_gpu_cuda(
+void deepmd::convert_nlist_gpu_cuda(
     InputNlist & gpu_nlist,
     InputNlist & cpu_nlist,
     int* & gpu_memory,
@@ -867,7 +867,7 @@ void convert_nlist_gpu_cuda(
   free(_firstneigh);
 }
 
-void free_nlist_gpu_cuda(
+void deepmd::free_nlist_gpu_cuda(
     InputNlist & gpu_nlist)
 {
   delete_device_memory(gpu_nlist.ilist);

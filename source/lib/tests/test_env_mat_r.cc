@@ -377,7 +377,7 @@ TEST_F(TestEnvMatR, prod_gpu_cuda)
   }
   std::vector<int> ilist(nloc), numneigh(nloc);
   std::vector<int*> firstneigh(nloc);
-  InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]), gpu_inlist;
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]), gpu_inlist;
   convert_nlist(inlist, nlist_a_cpy);
   std::vector<double > em(nloc * ndescrpt, 0.0), em_deriv(nloc * ndescrpt * 3, 0.0), rij(nloc * nnei * 3, 0.0);
   std::vector<int> nlist(nloc * nnei, 0);
@@ -402,7 +402,7 @@ TEST_F(TestEnvMatR, prod_gpu_cuda)
   malloc_device_memory(memory_dev, nloc * max_nbor_size);
   convert_nlist_gpu_cuda(gpu_inlist, inlist, memory_dev, max_nbor_size);
 
-  prod_env_mat_r_gpu_cuda(    
+  deepmd::prod_env_mat_r_gpu_cuda(    
       em_dev, 
       em_deriv_dev, 
       rij_dev, 
@@ -467,7 +467,7 @@ TEST_F(TestEnvMatR, prod_gpu_cuda_equal_cpu)
   }
   std::vector<int> ilist(nloc), numneigh(nloc);
   std::vector<int*> firstneigh(nloc);
-  InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]), gpu_inlist;
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]), gpu_inlist;
   convert_nlist(inlist, nlist_a_cpy);
   std::vector<double > em(nloc * ndescrpt, 0.0), em_deriv(nloc * ndescrpt * 3, 0.0), rij(nloc * nnei * 3, 0.0);
   std::vector<int> nlist(nloc * nnei, 0);
@@ -492,7 +492,7 @@ TEST_F(TestEnvMatR, prod_gpu_cuda_equal_cpu)
   malloc_device_memory(memory_dev, nloc * max_nbor_size);
   convert_nlist_gpu_cuda(gpu_inlist, inlist, memory_dev, max_nbor_size);
 
-  prod_env_mat_r_gpu_cuda(    
+  deepmd::prod_env_mat_r_gpu_cuda(    
       em_dev, 
       em_deriv_dev, 
       rij_dev, 

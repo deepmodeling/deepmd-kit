@@ -557,9 +557,9 @@ TEST_F(TestEnvMatA, prod_gpu_cuda)
   malloc_device_memory(array_int_dev, sec_a.size() + nloc * sec_a.size() + nloc);
   malloc_device_memory(array_longlong_dev, nloc * GPU_MAX_NBOR_SIZE * 2);
   malloc_device_memory(memory_dev, nloc * max_nbor_size);
-  convert_nlist_gpu_cuda(gpu_inlist, inlist, memory_dev, max_nbor_size);
+  deepmd::convert_nlist_gpu_cuda(gpu_inlist, inlist, memory_dev, max_nbor_size);
 
-  prod_env_mat_a_gpu_cuda(    
+  deepmd::prod_env_mat_a_gpu_cuda(    
       em_dev, 
       em_deriv_dev, 
       rij_dev, 
@@ -648,9 +648,9 @@ TEST_F(TestEnvMatA, prod_gpu_cuda_equal_cpu)
   malloc_device_memory(array_int_dev, sec_a.size() + nloc * sec_a.size() + nloc);
   malloc_device_memory(array_longlong_dev, nloc * GPU_MAX_NBOR_SIZE * 2);
   malloc_device_memory(memory_dev, nloc * max_nbor_size);
-  convert_nlist_gpu_cuda(gpu_inlist, inlist, memory_dev, max_nbor_size);
+  deepmd::convert_nlist_gpu_cuda(gpu_inlist, inlist, memory_dev, max_nbor_size);
 
-  prod_env_mat_a_gpu_cuda(    
+  deepmd::prod_env_mat_a_gpu_cuda(    
       em_dev, 
       em_deriv_dev, 
       rij_dev, 

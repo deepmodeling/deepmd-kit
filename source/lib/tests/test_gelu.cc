@@ -153,7 +153,7 @@ TEST_F(TestGelu, gelu_gpu_cuda)
   double * gelu_dev = NULL, * xx_dev = NULL;
   malloc_device_memory_sync(gelu_dev, gelu);
   malloc_device_memory_sync(xx_dev, xx);
-  gelu_gpu_cuda<double> (gelu_dev, xx_dev, nloc);
+  deepmd::gelu_gpu_cuda<double> (gelu_dev, xx_dev, nloc);
   memcpy_device_to_host(gelu_dev, gelu);
   delete_device_memory(gelu_dev);
   delete_device_memory(xx_dev);
@@ -174,7 +174,7 @@ TEST_F(TestGelu, gelu_grad_gpu_cuda)
   malloc_device_memory_sync(gelu_grad_dev, gelu_grad);
   malloc_device_memory_sync(xx_dev, xx);
   malloc_device_memory_sync(dy_dev, dy);
-  gelu_grad_gpu_cuda<double> (gelu_grad_dev, xx_dev, dy_dev, nloc);
+  deepmd::gelu_grad_gpu_cuda<double> (gelu_grad_dev, xx_dev, dy_dev, nloc);
   memcpy_device_to_host(gelu_grad_dev, gelu_grad);
   delete_device_memory(gelu_grad_dev);
   delete_device_memory(xx_dev);
@@ -198,7 +198,7 @@ TEST_F(TestGelu, gelu_grad_grad_gpu_cuda)
   malloc_device_memory_sync(xx_dev, xx);
   malloc_device_memory_sync(dy_dev, dy);
   malloc_device_memory_sync(dy_2_dev, dy_2);
-  gelu_grad_grad_gpu_cuda<double> (gelu_grad_grad_dev, xx_dev, dy_dev, dy_2_dev, nloc);
+  deepmd::gelu_grad_grad_gpu_cuda<double> (gelu_grad_grad_dev, xx_dev, dy_dev, dy_2_dev, nloc);
   memcpy_device_to_host(gelu_grad_grad_dev, gelu_grad_grad);
   delete_device_memory(gelu_grad_grad_dev);
   delete_device_memory(xx_dev);

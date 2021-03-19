@@ -130,7 +130,7 @@ TEST_F(TestProdVirialA, gpu_cuda)
   malloc_device_memory_sync(env_deriv_dev, env_deriv);  
   malloc_device_memory_sync(rij_dev, rij);  
 
-  prod_virial_a_gpu_cuda<double> (virial_dev, atom_virial_dev, net_deriv_dev, env_deriv_dev, rij_dev, nlist_dev, nloc, nall, nnei);
+  deepmd::prod_virial_a_gpu_cuda<double> (virial_dev, atom_virial_dev, net_deriv_dev, env_deriv_dev, rij_dev, nlist_dev, nloc, nall, nnei);
   
   memcpy_device_to_host(virial_dev, virial);
   memcpy_device_to_host(atom_virial_dev, atom_virial);
