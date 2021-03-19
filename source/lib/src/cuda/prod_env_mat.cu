@@ -114,7 +114,7 @@ __global__ void format_nlist_fill_a(
   }
   FPTYPE rr = sqrt(dev_dot(diff, diff)); 
   if (rr <= rcut) {
-    key_in[idy] = type[j_idx] * 1E15+ (int_64)(rr * 1.0E13) / 100000 * 100000 + j_idx;
+    key_in[idy] = type[j_idx] * 1E15+ (int_64)(rr * 1.0E13) / 10000000 * 10000000 + j_idx;
   }
 }
 
@@ -144,7 +144,7 @@ __global__ void format_nlist_fill_b(
   for (unsigned int kk = 0; key_out[kk] != key_out[max_nbor_size - 1]; kk++) {
     const int & nei_type = key_out[kk] / 1E15;
     if (nei_iter[nei_type] < sec[nei_type + 1]) {
-      row_nlist[nei_iter[nei_type]++] = key_out[kk] % 100000;
+      row_nlist[nei_iter[nei_type]++] = key_out[kk] % 10000000;
     }
   }
 }
