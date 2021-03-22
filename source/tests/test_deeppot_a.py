@@ -329,7 +329,7 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase) :
         from deepmd.calculator import DP
         water = Atoms('OHHOHH',
                     positions=self.coords.reshape((-1,3)),
-                    cell=self.box.reshpae((3,3)),
+                    cell=self.box.reshape((3,3)),
                     calculator=self.dp)
         ee = water.get_potential_energy()
         ff = water.get_forces()
