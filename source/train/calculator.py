@@ -62,7 +62,7 @@ class DP(Calculator):
         **kwargs
     ) -> None:
         Calculator.__init__(self, label=label, **kwargs)
-        self.dp = DeepPot(str(Path(model).resolve()))
+        self.dp = DeepPotential(str(Path(model).resolve()))
         if type_dict:
             self.type_dict = type_dict
         else:
