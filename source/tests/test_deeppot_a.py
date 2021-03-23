@@ -324,4 +324,19 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase) :
         for ii in range(nframes, 9):
             self.assertAlmostEqual(vv.reshape([-1])[ii], expected_sv.reshape([-1])[ii], places = default_places)
 
+    def test_ase(self):
+        from ase import Atoms
+        from deepmd.calculator import DP
+        water = Atoms('OHHOHH',
+                    positions=self.coords.reshape((-1,3)),
+                    cell=self.box.reshape((3,3)),
+                    calculator=DP("deeppot.pb"))
+        ee = water.get_potential_energy()
+        ff = water.get_forces()
+        nframes = 1
+        for ii in range(ff.size):
+            self.assertAlmostEqual(ff.reshape([-1])[ii], self.expected_f.reshape([-1])[ii], places = default_places)
+        expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis = 1)
+        for ii in range(nframes):
+            self.assertAlmostEqual(ee.reshape([-1])[ii], expected_se.reshape([-1])[ii], places = default_places)
 
