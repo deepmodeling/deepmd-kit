@@ -163,8 +163,6 @@ class Model() :
         coord = tf.reshape (coord_, [-1, natoms[1] * 3])
         atype = tf.reshape (atype_, [-1, natoms[1]])
         
-        coord_ = tf.Print(coord_,[coord],message="before descrpt coord ----------------------------")
-
         dout \
             = self.descrpt.build(coord_,
                                  atype_,
@@ -175,22 +173,16 @@ class Model() :
                                  reuse = reuse)
         dout = tf.identity(dout, name='o_descriptor')
 
-        dout = tf.Print(dout,[dout],message="after descrpt dout ----------------------------")
-        
         if self.srtab is not None :
             nlist, rij, sel_a, sel_r = self.descrpt.get_nlist()
             nnei_a = np.cumsum(sel_a)[-1]
             nnei_r = np.cumsum(sel_r)[-1]
-
-        dout = tf.Print(dout,[dout],message="before fitting dout ----------------------------")
 
         atom_ener = self.fitting.build (dout, 
                                         input_dict, 
                                         natoms, 
                                         reuse = reuse, 
                                         suffix = suffix)
-
-        atom_ener = tf.Print(atom_ener,[atom_ener],message="after fitting atom_ener ----------------------------")
 
         if self.srtab is not None :
             sw_lambda, sw_deriv \

@@ -21,7 +21,7 @@ PairStyle(deepmd,PairNNP)
 #define LMP_PAIR_NNP_H
 
 #include "pair.h"
-#include "PyNNPInter.h"
+#include "NNPInter.h"
 #include <iostream>
 #include <fstream>
 
@@ -69,8 +69,8 @@ class PairNNP : public Pair {
   double **scale;
 
 private:  
-  PyNNPInter nnp_inter;
-  // NNPInterModelDevi nnp_inter_model_devi;
+  NNPInter nnp_inter;
+  NNPInterModelDevi nnp_inter_model_devi;
   unsigned numb_models;
   double cutoff;
   int numb_types;

@@ -99,7 +99,8 @@ if (NOT DEFINED OP_CXX_ABI)
 else()
   message (STATUS "User set OP_CXX_ABI=${OP_CXX_ABI} ")  
 endif()    
-# message the cxx_abi used during compiling
+#:: message the cxx_abi used during compiling
+add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
 if (${OP_CXX_ABI} EQUAL 0) 
   message (STATUS "Set GLIBCXX_USE_CXX_ABI=0 when compiling ops")
 else ()
@@ -209,7 +210,7 @@ if (BUILD_CPP_IF)
   add_subdirectory (lmp/)
   if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 4.9)
 #   add_subdirectory (md/)
-    add_subdirectory (ipi/)
+# add_subdirectory (ipi/)
   endif ()
 endif (BUILD_CPP_IF)
 

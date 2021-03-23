@@ -40,7 +40,7 @@ class DescrptSeAOp : public OpKernel
 public:
   explicit DescrptSeAOp(OpKernelConstruction *context) : OpKernel(context)
   {
-    cout << "Init DescrptSeAOp --------------------------------" << endl;
+    // cout << "Init DescrptSeAOp --------------------------------" << endl;
     OP_REQUIRES_OK(context, context->GetAttr("rcut_a", &rcut_a));
     OP_REQUIRES_OK(context, context->GetAttr("rcut_r", &rcut_r));
     OP_REQUIRES_OK(context, context->GetAttr("rcut_r_smth", &rcut_r_smth));
@@ -60,7 +60,7 @@ public:
 
   void Compute(OpKernelContext *context) override
   {
-    cout << "In DescrptSeAOp::Compute --------------------------------" << endl;
+    // cout << "In DescrptSeAOp::Compute --------------------------------" << endl;
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor &coord_tensor = context->input(context_input_index++);
@@ -364,7 +364,7 @@ public:
         }
       }
     }
-    cout << "In DescrptSeAOp::Compute end--------------------------------" << endl;
+    // cout << "In DescrptSeAOp::Compute end--------------------------------" << endl;
   }
 
 private:

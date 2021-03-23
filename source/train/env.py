@@ -43,6 +43,9 @@ def get_tf_default_nthreads():
 def get_tf_session_config():
     set_tf_default_nthreads()    
     intra, inter = get_tf_default_nthreads()
+    print("in get_tf_session_config:")
+    print("intra_op_parallelism_threads : {}".format(intra))
+    print("inter_op_parallelism_threads : {}".format(inter))
     return tf.ConfigProto(intra_op_parallelism_threads=intra, inter_op_parallelism_threads=inter)
 
 def get_module(module_name):

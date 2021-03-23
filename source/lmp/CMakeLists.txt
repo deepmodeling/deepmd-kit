@@ -1,5 +1,6 @@
 file(GLOB LMP_HEADER *.h)
-file(GLOB LMP_SRC *.cpp)
+# file(GLOB LMP_SRC *.cpp)
+file(GLOB LMP_SRC pppm_dplr.cpp fix_dplr.cpp pair_nnp.cpp)
 file(GLOB LMP_SHSCRIPT *.sh)
 
 unset (LMP_INSTALL_FILES)

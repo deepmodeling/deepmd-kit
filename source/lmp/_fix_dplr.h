@@ -10,8 +10,8 @@ FixStyle(dplr,FixDPLR)
 #include <stdio.h>
 #include "fix.h"
 #include "pair_nnp.h"
-// #include "DeepTensor.h"
-// #include "DataModifier.h"
+#include "DeepTensor.h"
+#include "DataModifier.h"
 
 #ifdef HIGH_PREC
 #define FLOAT_PREC double
@@ -36,8 +36,8 @@ public:
     double compute_vector(int);
 private:
     PairNNP * pair_nnp;
-    // DeepTensor dpt;
-    // DataModifier dtm;
+    DeepTensor dpt;
+    DataModifier dtm;
     string model;
     int ntypes;
     vector<int > sel_type;

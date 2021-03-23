@@ -56,6 +56,7 @@ class DeepPot (DeepEval) :
             self.modifier_type = None
         except KeyError:
             self.modifier_type = None
+
         if self.modifier_type == 'dipole_charge':
             t_mdl_name = self.graph.get_tensor_by_name('load/modifier_attr/mdl_name:0')
             t_mdl_charge_map = self.graph.get_tensor_by_name('load/modifier_attr/mdl_charge_map:0')
@@ -66,6 +67,15 @@ class DeepPot (DeepEval) :
             mdl_charge_map = [int(ii) for ii in mdl_charge_map.decode('UTF-8').split()]
             sys_charge_map = [int(ii) for ii in sys_charge_map.decode('UTF-8').split()]
             self.dm = DipoleChargeModifier(mdl_name, mdl_charge_map, sys_charge_map, ewald_h = ewald_h, ewald_beta = ewald_beta)
+        
+        print(" in init model ")
+        print("ntypes : ",self.ntypes)
+        print("rcut : ",self.rcut)
+        print("dfparam : ",self.dfparam)
+        print("daparam : ",self.daparam)
+        print("tmap : ",self.tmap)
+        print("modifier_type : ",self.modifier_type)
+
 
 
     def get_ntypes(self) :

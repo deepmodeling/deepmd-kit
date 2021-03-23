@@ -56,6 +56,7 @@ class NNPTrainer (object):
 
         # descriptor
         descrpt_type = j_must_have(descrpt_param, 'type')
+        print("descrpt_type:{}".format(descrpt_type))
         if descrpt_type == 'loc_frame':
             self.descrpt = DescrptLocFrame(descrpt_param)
         elif descrpt_type == 'se_a' :
@@ -70,6 +71,7 @@ class NNPTrainer (object):
         # fitting net
         try: 
             fitting_type = fitting_param['type']
+            print("fitting_type:{}".format(fitting_type))
         except:
             fitting_type = 'ener'
         if fitting_type == 'ener':

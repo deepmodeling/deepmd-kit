@@ -37,7 +37,7 @@ class DescrptSeROp : public OpKernel
 public:
   explicit DescrptSeROp(OpKernelConstruction *context) : OpKernel(context)
   {
-    cout << "Init DescrptSeR --------------------------------" << endl;
+    // cout << "Init DescrptSeR --------------------------------" << endl;
     OP_REQUIRES_OK(context, context->GetAttr("rcut", &rcut));
     OP_REQUIRES_OK(context, context->GetAttr("rcut_smth", &rcut_smth));
     OP_REQUIRES_OK(context, context->GetAttr("sel", &sel));
@@ -52,7 +52,7 @@ public:
 
   void Compute(OpKernelContext *context) override
   {
-    cout << "In DescrptSeR::Compute --------------------------------" << endl;
+    // cout << "In DescrptSeR::Compute --------------------------------" << endl;
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor &coord_tensor = context->input(context_input_index++);
@@ -349,8 +349,7 @@ public:
         }
       }
     }
-    cout << "In DescrptSeR::Compute end --------------------------------" << endl;
-    cout.flush();
+    // cout << "In DescrptSeR::Compute end --------------------------------" << endl;
   }
 
 private:
