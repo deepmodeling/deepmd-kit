@@ -7,4 +7,4 @@ assignees: ''
 
 ---
 
-Do you want to contribute to our community? Start by writing down and share your experience with DP.
+Do you want to contribute to our community? Start by writing down and share your experience using DP.
