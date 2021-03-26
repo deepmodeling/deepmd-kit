@@ -86,7 +86,8 @@ setup(
         "deepmd/loggers",
         "deepmd/cluster",
         "deepmd/entrypoints",
-        "deepmd/op"
+        "deepmd/op",
+        "deepmd/model",
     ],
     python_requires=">=3.6",
     classifiers=[
