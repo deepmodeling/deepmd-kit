@@ -26,6 +26,10 @@ def _make_tab(ntype) :
 class TestModel(unittest.TestCase):
     def setUp(self) :
         gen_data()
+        _make_tab(2)
+
+    def tearDown(self):
+        os.remove('tab.xvg')
 
     def test_model(self):
         jfile = 'water_se_a_srtab.json'
