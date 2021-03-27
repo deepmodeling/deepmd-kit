@@ -15,7 +15,7 @@ class EnerModel() :
             self, 
             descrpt, 
             fitting, 
-            type_map : List[str],
+            type_map : List[str] = None,
             data_stat_nbatch : int = 10,
             data_stat_protect : float = 1e-2,
             use_srtab : str = None,
@@ -56,19 +56,18 @@ class EnerModel() :
         self.fitting = fitting
         self.numb_fparam = self.fitting.get_numb_fparam()
         # other inputs
-        self.type_map = type_map
+        if type_map is None:
+            self.type_map = []
+        else:
+            self.type_map = type_map
         self.data_stat_nbatch = data_stat_nbatch
         self.data_stat_protect = data_stat_protect
         self.srtab_name = use_srtab
         if self.srtab_name is not None :
             self.srtab = PairTab(self.srtab_name)
-            args.add('smin_alpha',      float,  must = True)\
-                .add('sw_rmin',         float,  must = True)\
-                .add('sw_rmax',         float,  must = True)
-            class_data = args.parse(jdata)
-            self.smin_alpha = class_data['smin_alpha']
-            self.sw_rmin = class_data['sw_rmin']
-            self.sw_rmax = class_data['sw_rmax']
+            self.smin_alpha = smin_alpha
+            self.sw_rmin = sw_rmin
+            self.sw_rmax = sw_rmax
         else :
             self.srtab = None
 
