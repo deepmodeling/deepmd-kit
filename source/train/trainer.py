@@ -138,9 +138,9 @@ class NNPTrainer (object):
             self.model = EnerModel(
                 self.descrpt, 
                 self.fitting, 
-                model_param['type_map'],
-                model_param['data_stat_nbatch'],
-                model_param['data_stat_protect'],
+                model_param.get('type_map'),
+                model_param.get('data_stat_nbatch', 10),
+                model_param.get('data_stat_protect', 1e-2),
                 model_param.get('use_srtab'),
                 model_param.get('smin_alpha'),
                 model_param.get('sw_rmin'),
@@ -152,25 +152,25 @@ class NNPTrainer (object):
             self.model = DipoleModel(
                 self.descrpt, 
                 self.fitting, 
-                model_param['type_map'],
-                model_param['data_stat_nbatch'],
-                model_param['data_stat_protect']
+                model_param.get('type_map'),
+                model_param.get('data_stat_nbatch', 10),
+                model_param.get('data_stat_protect', 1e-2)
             )
         elif fitting_type == 'polar':
             self.model = PolarModel(
                 self.descrpt, 
                 self.fitting,
-                model_param['type_map'],
-                model_param['data_stat_nbatch'],
-                model_param['data_stat_protect']
+                model_param.get('type_map'),
+                model_param.get('data_stat_nbatch', 10),
+                model_param.get('data_stat_protect', 1e-2)
             )
         elif fitting_type == 'global_polar':
             self.model = GlobalPolarModel(
                 self.descrpt, 
                 self.fitting,
-                model_param['type_map'],
-                model_param['data_stat_nbatch'],
-                model_param['data_stat_protect']
+                model_param.get('type_map'),
+                model_param.get('data_stat_nbatch', 10),
+                model_param.get('data_stat_protect', 1e-2)
             )
         else :
             raise RuntimeError('get unknown fitting type when building model')
