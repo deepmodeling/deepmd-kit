@@ -40,7 +40,7 @@ class TestModel(unittest.TestCase):
         descrpt = DescrptSeA(**jdata['model']['descriptor'])
         jdata['model']['fitting_net']['descrpt'] = descrpt
         fitting = PolarFittingSeA(**jdata['model']['fitting_net'])
-        model = PolarModel(jdata['model'], descrpt, fitting)
+        model = PolarModel(descrpt, fitting)
 
         # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
         input_data = {'coord' : [test_data['coord']], 

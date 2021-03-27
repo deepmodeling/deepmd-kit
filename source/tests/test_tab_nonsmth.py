@@ -51,6 +51,9 @@ class IntplInter(Inter):
                                             dtype = tf.float64,
                                             trainable = False,
                                             initializer = tf.constant_initializer(tab_data))
+
+    def tearDown(self):
+        os.remove('tab.xvg')
         
     def comp_interpl_ef (self, 
                          dcoord, 
