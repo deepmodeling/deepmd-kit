@@ -68,6 +68,34 @@ copy_coord_cpu(
   return 0;
 }
 
+void
+deepmd::
+compute_cell_info(
+    int * cell_info, //nat_stt,ncell,ext_stt,ext_end,ngcell,cell_shift,cell_iter,loc_cellnum,total_cellnum
+    const float & rcut,
+    const double * boxt
+)
+{
+  SimulationRegion<double> region;
+	double to_face [3];
+	region.reinitBox(boxt);
+	region.toFaceDistance (to_face);
+  double cell_size [3];
+  for (int dd = 0; dd < 3; ++dd){
+    cell_info[dd]=0; //nat_stt
+    cell_info[3+dd]  = to_face[dd] / rcut; //ncell
+    if (cell_info[3+dd] == 0) cell_info[3+dd] = 1;
+    cell_size[dd] = to_face[dd] / cell_info[3+dd]; 
+    cell_info[12+dd] = int(rcut / cell_size[dd]) + 1; //ngcell
+    cell_info[6+dd]=-cell_info[12+dd]; //ext_stt
+    cell_info[9+dd]=cell_info[3+dd]+cell_info[12+dd]; //ext_end
+    cell_info[15+dd]=cell_info[12+dd]; //cell_shift
+    cell_info[18+dd]= rcut / cell_size[dd]; //cell_iter
+    if (cell_info[18+dd] * cell_size[dd] < rcut) cell_info[18+dd] += 1;
+  }
+  cell_info[21] = (cell_info[3+0]) * (cell_info[3+1]) * (cell_info[3+2]); //loc_cellnum
+  cell_info[22] = (2 * cell_info[12+0] + cell_info[3+0]) * (2 * cell_info[12+1] + cell_info[3+1]) * (2 * cell_info[12+2] + cell_info[3+2]); //total_cellnum
+}
 
 template
 void
