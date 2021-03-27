@@ -4,7 +4,7 @@ from typing import Tuple, List
 from deepmd.env import tf
 from deepmd.utils.pair_tab import PairTab
 from deepmd.common import ClassArg
-from deepmd.run_options import global_cvt_2_ener_float, MODEL_VERSION
+from deepmd.env import global_cvt_2_ener_float, MODEL_VERSION
 from deepmd.env import op_module
 from .model_stat import make_stat_input, merge_sys_stat
 

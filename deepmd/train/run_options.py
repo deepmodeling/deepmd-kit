@@ -2,13 +2,12 @@
 
 import logging
 import os
-from configparser import ConfigParser
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 import numpy as np
 from deepmd.cluster import get_resource
-from deepmd.env import get_tf_default_nthreads, tf
+from deepmd.env import get_tf_default_nthreads, tf, GLOBAL_CONFIG, global_float_prec
 from deepmd.loggers import set_log_handles
 
 if TYPE_CHECKING:
@@ -27,54 +26,14 @@ if TYPE_CHECKING:
 
 
 __all__ = [
-    "GLOBAL_TF_FLOAT_PRECISION",
-    "GLOBAL_NP_FLOAT_PRECISION",
-    "GLOBAL_ENER_FLOAT_PRECISION",
     "WELCOME",
     "CITATION",
     "BUILD",
-    "global_cvt_2_tf_float",
-    "global_cvt_2_ener_float",
     "RunOptions",
-    "MODEL_VERSION",
 ]
 
 log = logging.getLogger(__name__)
 
-
-def _get_package_constants(
-    config_file: Path = Path(__file__).parent / "pkg_config/run_config.ini",
-) -> Dict[str, str]:
-    """Read package constants set at compile time by CMake to dictionary.
-
-    Parameters
-    ----------
-    config_file : str, optional
-        path to CONFIG file, by default "config/run_config.ini"
-
-    Returns
-    -------
-    Dict[str, str]
-        dictionary with package constants
-    """
-    config = ConfigParser()
-    config.read(config_file)
-    return dict(config.items("CONFIG"))
-
-
-GLOBAL_CONFIG = _get_package_constants()
-MODEL_VERSION = GLOBAL_CONFIG["model_version"]
-
-if GLOBAL_CONFIG["precision"] == "-DHIGH_PREC":
-    GLOBAL_TF_FLOAT_PRECISION = tf.float64
-    GLOBAL_NP_FLOAT_PRECISION = np.float64
-    GLOBAL_ENER_FLOAT_PRECISION = np.float64
-    global_float_prec = "double"
-else:
-    GLOBAL_TF_FLOAT_PRECISION = tf.float32
-    GLOBAL_NP_FLOAT_PRECISION = np.float32
-    GLOBAL_ENER_FLOAT_PRECISION = np.float64
-    global_float_prec = "float"
 
 # http://patorjk.com/software/taag. Font:Big"
 WELCOME = (  # noqa
@@ -102,38 +61,6 @@ BUILD = (
     f"build with tf inc:    {GLOBAL_CONFIG['tf_include_dir']}",
     f"build with tf lib:    {GLOBAL_CONFIG['tf_libs'].replace(';', _sep)}"  # noqa
 )
-
-
-def global_cvt_2_tf_float(xx: tf.Tensor) -> tf.Tensor:
-    """Cast tensor to globally set TF precision.
-
-    Parameters
-    ----------
-    xx : tf.Tensor
-        input tensor
-
-    Returns
-    -------
-    tf.Tensor
-        output tensor cast to `GLOBAL_TF_FLOAT_PRECISION`
-    """
-    return tf.cast(xx, GLOBAL_TF_FLOAT_PRECISION)
-
-
-def global_cvt_2_ener_float(xx: tf.Tensor) -> tf.Tensor:
-    """Cast tensor to globally set energy precision.
-
-    Parameters
-    ----------
-    xx : tf.Tensor
-        input tensor
-
-    Returns
-    -------
-    tf.Tensor
-        output tensor cast to `GLOBAL_ENER_FLOAT_PRECISION`
-    """
-    return tf.cast(xx, GLOBAL_ENER_FLOAT_PRECISION)
 
 
 def _is_distributed(MPI: "MPI") -> bool:

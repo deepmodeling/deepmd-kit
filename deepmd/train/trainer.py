@@ -6,8 +6,8 @@ import shutil
 import numpy as np
 from deepmd.env import tf
 from deepmd.env import default_tf_session_config
-from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.run_options import GLOBAL_ENER_FLOAT_PRECISION
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.fit import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
 from deepmd.descriptor import DescrptLocFrame
 from deepmd.descriptor import DescrptSeA
@@ -72,7 +72,7 @@ def _generate_descrpt_from_param_dict(descrpt_param):
     return descrpt
     
 
-class NNPTrainer (object):
+class DPTrainer (object):
     def __init__(self, 
                  jdata, 
                  run_opt):

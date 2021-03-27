@@ -88,6 +88,7 @@ setup(
         "deepmd/entrypoints",
         "deepmd/op",
         "deepmd/model",
+        "deepmd/train",
     ],
     python_requires=">=3.6",
     classifiers=[

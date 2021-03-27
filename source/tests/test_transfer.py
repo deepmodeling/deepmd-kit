@@ -8,7 +8,7 @@ from common import tests_path
 from infer.convert2pb import convert_pbtxt_to_pb
 from deepmd.entrypoints.transfer import load_graph, transform_graph
 
-from deepmd.run_options import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
     default_places = 4
 else :
