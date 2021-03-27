@@ -104,7 +104,7 @@ setup(
     cmake_source_dir="source",
     cmake_minimum_required_version="3.0",
     extras_require={
-        "test": ["dpdata>=0.1.9", "pytest", "pytest-cov", "pytest-sugar"],
+        "test": ["dpdata>=0.1.9", "ase", "pytest", "pytest-cov", "pytest-sugar"],
         "docs": ["sphinx", "recommonmark", "sphinx_rtd_theme"],
         **extras_require,
     },

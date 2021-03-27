@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cassert>
 
+using namespace deepmd;
+
 template <typename VALUETYPE>
 AtomMap<VALUETYPE>::
 AtomMap() {}

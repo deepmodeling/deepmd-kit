@@ -83,7 +83,7 @@ class TestDataModifier (unittest.TestCase) :
             sess.run(init_op)
             graph = tf.get_default_graph()
             input_graph_def = graph.as_graph_def()
-            nodes = "o_dipole,o_rmat,o_rmat_deriv,o_nlist,o_rij,descrpt_attr/rcut,descrpt_attr/ntypes,descrpt_attr/sel,descrpt_attr/ndescrpt,model_attr/tmap,model_attr/sel_type,model_attr/model_type"
+            nodes = "o_dipole,o_rmat,o_rmat_deriv,o_nlist,o_rij,descrpt_attr/rcut,descrpt_attr/ntypes,descrpt_attr/sel,descrpt_attr/ndescrpt,model_attr/tmap,model_attr/sel_type,model_attr/model_type,model_attr/output_dim,model_attr/model_version"
             output_graph_def = tf.graph_util.convert_variables_to_constants(
                 sess,
                 input_graph_def,

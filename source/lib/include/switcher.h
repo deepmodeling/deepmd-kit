@@ -1,5 +1,7 @@
 #pragma once
 
+namespace deepmd{
+
 inline double
 cos_switch (const double & xx, 
 	    const double & rmin, 
@@ -64,30 +66,6 @@ spline3_switch (double & vv,
   }
 }
 
-// template <typename TYPE>
-// inline void
-// spline5_switch (TYPE & vv,
-// 		TYPE & dd,
-// 		const TYPE & xx, 
-// 		const TYPE & rmin, 
-// 		const TYPE & rmax) 
-// {
-//   if (xx < rmin) {
-//     dd = 0;
-//     vv = 1;
-//   }
-//   else if (xx < rmax) {
-//     double uu = (xx - rmin) / (rmax - rmin) ;
-//     double du = 1. / (rmax - rmin) ;
-//     vv = uu*uu*uu * (-6 * uu*uu + 15 * uu - 10) + 1;
-//     dd = ( 3 * uu*uu * (-6 * uu*uu + 15 * uu - 10) + uu*uu*uu * (-12 * uu + 15) ) * du;
-//   }
-//   else {
-//     dd = 0;
-//     vv = 0;
-//   }
-// }
-
 template <typename FPTYPE>
 inline void 
 spline5_switch (
@@ -111,4 +89,6 @@ spline5_switch (
     dd = 0;
     vv = 0;
   }
+}
+
 }

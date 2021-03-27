@@ -90,13 +90,14 @@ class ProdForceSeAOp : public OpKernel {
       int in_iter	= kk * nloc * ndescrpt * 3;
       int nlist_iter	= kk * nloc * nnei;
 
-      prod_force_a_cpu<FPTYPE>(&force(force_iter),
-			       &net_deriv(net_iter),
-			       &in_deriv(in_iter),
-			       &nlist(nlist_iter),
-			       nloc, 
-			       nall,
-			       nnei);
+      deepmd::prod_force_a_cpu<FPTYPE>(
+	  &force(force_iter),
+	  &net_deriv(net_iter),
+	  &in_deriv(in_iter),
+	  &nlist(nlist_iter),
+	  nloc, 
+	  nall,
+	  nnei);
     }
   }
 private:

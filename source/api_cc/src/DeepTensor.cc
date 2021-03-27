@@ -1,5 +1,8 @@
 #include "DeepTensor.h"
 
+using namespace deepmd;
+using namespace tensorflow;
+
 DeepTensor::
 DeepTensor()
     : inited (false)
@@ -30,15 +33,22 @@ init (const std::string & model,
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
-  checkStatus (NewSession(options, &session));
-  checkStatus (ReadBinaryProto(Env::Default(), model, &graph_def));
-  checkStatus (session->Create(graph_def));  
+  deepmd::check_status (NewSession(options, &session));
+  deepmd::check_status (ReadBinaryProto(Env::Default(), model, &graph_def));
+  deepmd::check_status (session->Create(graph_def));  
   rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
   cell_size = rcut;
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
-  model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
   odim = get_scalar<int>("model_attr/output_dim");
   get_vector<int>(sel_type, "model_attr/sel_type");
+  model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
+  model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
+  if(! model_compatable(model_version)){
+    throw std::runtime_error(
+	"incompatable model: version " + model_version 
+	+ " in graph, but version " + global_model_version 
+	+ " supported ");
+  }
   inited = true;
 }
 
@@ -75,7 +85,7 @@ run_model (std::vector<VALUETYPE> &	d_tensor_,
   }
 
   std::vector<Tensor> output_tensors;
-  checkStatus (session->Run(input_tensors, 
+  deepmd::check_status (session->Run(input_tensors, 
 			    {name_prefix(name_scope) + "o_" + model_type},
 			    {}, 
 			    &output_tensors));

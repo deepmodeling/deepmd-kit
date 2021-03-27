@@ -63,13 +63,13 @@ class TabulateFusionOp : public OpKernel {
 
     if (device == "GPU") {
       #if GOOGLE_CUDA
-      tabulate_fusion_gpu_cuda(    
+      deepmd::tabulate_fusion_gpu_cuda(    
           descriptor,
           table, table_info, em_x, em, nloc, nnei, last_layer_size);
       #endif // GOOGLE_CUDA
     }
     else if (device == "CPU") {
-      tabulate_fusion_cpu(    
+      deepmd::tabulate_fusion_cpu(    
           descriptor,
           table, table_info, em_x, em, nloc, nnei, last_layer_size);
     }
@@ -125,13 +125,13 @@ class TabulateFusionGradOp : public OpKernel {
 
     if (device == "GPU") {
       #if GOOGLE_CUDA
-      tabulate_fusion_grad_gpu_cuda(    
+      deepmd::tabulate_fusion_grad_gpu_cuda(    
           dy_dem_x, dy_dem,
           table, table_info, em_x, em, dy, nloc, nnei, last_layer_size);
       #endif // GOOGLE_CUDA
     }
     else if (device == "CPU") {
-      tabulate_fusion_grad_cpu(    
+      deepmd::tabulate_fusion_grad_cpu(    
           dy_dem_x, dy_dem,
           table, table_info, em_x, em, dy, nloc, nnei, last_layer_size);
     }

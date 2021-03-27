@@ -43,20 +43,20 @@ protected:
   double expected_tot_e;
   std::vector<double>expected_tot_v;
 
-  DeepPot dp;
+  deepmd::DeepPot dp;
 
   void SetUp() override {
     std::string file_name = "../../tests/infer/deeppot-r.pbtxt";
     int fd = open(file_name.c_str(), O_RDONLY);
-    protobuf::io::ZeroCopyInputStream* input = new protobuf::io::FileInputStream(fd);
-    GraphDef graph_def;
-    protobuf::TextFormat::Parse(input, &graph_def);
+    tensorflow::protobuf::io::ZeroCopyInputStream* input = new tensorflow::protobuf::io::FileInputStream(fd);
+    tensorflow::GraphDef graph_def;
+    tensorflow::protobuf::TextFormat::Parse(input, &graph_def);
     delete input;
     std::fstream output("deeppot.pb", std::ios::out | std::ios::trunc | std::ios::binary);
     graph_def.SerializeToOstream(&output);
     // check the string by the following commands
     // string txt;
-    // protobuf::TextFormat::PrintToString(graph_def, &txt);
+    // tensorflow::protobuf::TextFormat::PrintToString(graph_def, &txt);
 
     dp.init("deeppot.pb");
 
@@ -104,11 +104,11 @@ TEST_F(TestInferDeepPotR, cpu_build_nlist_numfv)
 {
   class MyModel : public EnergyModelTest<double>
   {
-    DeepPot & mydp;
+    deepmd::DeepPot & mydp;
     const std::vector<int > & atype;
 public:
     MyModel(
-	DeepPot & dp_,
+	deepmd::DeepPot & dp_,
 	const std::vector<int> & atype_
 	) : mydp(dp_), atype(atype_) {};
     virtual void compute (
@@ -183,7 +183,7 @@ TEST_F(TestInferDeepPotR, cpu_lmp_nlist)
   int nall = coord_cpy.size() / 3;
   std::vector<int> ilist(nloc), numneigh(nloc);
   std::vector<int*> firstneigh(nloc);
-  InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
   convert_nlist(inlist, nlist_data);  
   
   double ener;
@@ -234,7 +234,7 @@ TEST_F(TestInferDeepPotR, cpu_lmp_nlist_atomic)
   int nall = coord_cpy.size() / 3;
   std::vector<int> ilist(nloc), numneigh(nloc);
   std::vector<int*> firstneigh(nloc);
-  InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
   convert_nlist(inlist, nlist_data);  
   
   double ener;
@@ -307,7 +307,7 @@ TEST_F(TestInferDeepPotR, cpu_lmp_nlist_2rc)
   int nall = coord_cpy.size() / 3;
   std::vector<int> ilist(nloc), numneigh(nloc);
   std::vector<int*> firstneigh(nloc);
-  InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
   convert_nlist(inlist, nlist_data);  
   
   double ener;
@@ -373,7 +373,7 @@ TEST_F(TestInferDeepPotR, cpu_lmp_nlist_type_sel)
   int nall = coord_cpy.size() / 3;
   std::vector<int> ilist(nloc), numneigh(nloc);
   std::vector<int*> firstneigh(nloc);
-  InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
   convert_nlist(inlist, nlist_data);  
 
   // dp compute
@@ -426,14 +426,14 @@ protected:
   double expected_tot_e;
   std::vector<double>expected_tot_v;
 
-  DeepPot dp;
+  deepmd::DeepPot dp;
 
   void SetUp() override {
     std::string file_name = "../../tests/infer/deeppot-r.pbtxt";
     int fd = open(file_name.c_str(), O_RDONLY);
-    protobuf::io::ZeroCopyInputStream* input = new protobuf::io::FileInputStream(fd);
-    GraphDef graph_def;
-    protobuf::TextFormat::Parse(input, &graph_def);
+    tensorflow::protobuf::io::ZeroCopyInputStream* input = new tensorflow::protobuf::io::FileInputStream(fd);
+    tensorflow::GraphDef graph_def;
+    tensorflow::protobuf::TextFormat::Parse(input, &graph_def);
     delete input;
     std::fstream output("deeppot.pb", std::ios::out | std::ios::trunc | std::ios::binary);
     graph_def.SerializeToOstream(&output);

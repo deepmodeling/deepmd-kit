@@ -3,6 +3,8 @@
 #include "region.h"
 #define BOXT_DIM 9
 
+using namespace deepmd;
+
 template<typename FPTYPE>
 Region<FPTYPE>::
 Region()
@@ -80,6 +82,7 @@ tensor_t_dot_vec (
 
 template<typename FPTYPE>
 void
+deepmd::
 init_region_cpu(
     Region<FPTYPE> & region,
     const FPTYPE * boxt)
@@ -90,6 +93,7 @@ init_region_cpu(
 
 template<typename FPTYPE>
 void
+deepmd::
 convert_to_inter_cpu(
     FPTYPE * ri, 
     const Region<FPTYPE> & region,
@@ -100,6 +104,7 @@ convert_to_inter_cpu(
 
 template<typename FPTYPE>
 void
+deepmd::
 convert_to_phys_cpu(
     FPTYPE * rp, 
     const Region<FPTYPE> & region,
@@ -110,6 +115,7 @@ convert_to_phys_cpu(
 
 template<typename FPTYPE>
 FPTYPE
+deepmd::
 volume_cpu(
     const Region<FPTYPE> & region)
 {
@@ -117,49 +123,59 @@ volume_cpu(
 }
 
 template
-void init_region_cpu<double>(
-    Region<double> & region,
+void 
+deepmd::
+init_region_cpu<double>(
+    deepmd::Region<double> & region,
     const double * boxt);
 
 template
-void init_region_cpu<float>(
-    Region<float> & region,
+void 
+deepmd::
+init_region_cpu<float>(
+    deepmd::Region<float> & region,
     const float * boxt);
 
 template
 void
+deepmd::
 convert_to_inter_cpu<double>(
     double * ri, 
-    const Region<double> & region,
+    const deepmd::Region<double> & region,
     const double * rp);
 
 template
 void
+deepmd::
 convert_to_inter_cpu<float>(
     float * ri, 
-    const Region<float> & region,
+    const deepmd::Region<float> & region,
     const float * rp);
 
 template
 void
+deepmd::
 convert_to_phys_cpu<double>(
     double * ri, 
-    const Region<double> & region,
+    const deepmd::Region<double> & region,
     const double * rp);
 
 template
 void
+deepmd::
 convert_to_phys_cpu<float>(
     float * ri, 
-    const Region<float> & region,
+    const deepmd::Region<float> & region,
     const float * rp);
 
 template
 double
+deepmd::
 volume_cpu<double>(
-    const Region<double> & region);
+    const deepmd::Region<double> & region);
 
 template
 float
+deepmd::
 volume_cpu<float>(
-    const Region<float> & region);
+    const deepmd::Region<float> & region);

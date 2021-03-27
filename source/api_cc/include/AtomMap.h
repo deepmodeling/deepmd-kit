@@ -4,6 +4,7 @@
 
 // using namespace std;
 
+namespace deepmd{
 template <typename VALUETYPE>
 class AtomMap 
 {
@@ -25,3 +26,4 @@ private:
   std::vector<int> fwd_idx_map;
   std::vector<int> atype;
 };
+}

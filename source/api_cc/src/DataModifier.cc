@@ -1,5 +1,8 @@
 #include "DataModifier.h"
 
+using namespace deepmd;
+using namespace tensorflow;
+
 DipoleChargeModifier::
 DipoleChargeModifier()
     : inited (false)
@@ -30,9 +33,9 @@ init (const std::string & model,
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
-  checkStatus(NewSession(options, &session));
-  checkStatus(ReadBinaryProto(Env::Default(), model, &graph_def));
-  checkStatus(session->Create(graph_def));  
+  deepmd::check_status(NewSession(options, &session));
+  deepmd::check_status(ReadBinaryProto(Env::Default(), model, &graph_def));
+  deepmd::check_status(session->Create(graph_def));  
   // int nnodes = graph_def.node_size();
   // for (int ii = 0; ii < nnodes; ++ii){
   //   cout << ii << " \t " << graph_def.node(ii).name() << endl;
@@ -80,7 +83,7 @@ run_model (std::vector<VALUETYPE> &		dforce,
   }
 
   std::vector<Tensor> output_tensors;
-  checkStatus (session->Run(input_tensors, 
+  deepmd::check_status (session->Run(input_tensors, 
 			    {"o_dm_force", "o_dm_virial", "o_dm_av"},
 			    {}, 
 			    &output_tensors));

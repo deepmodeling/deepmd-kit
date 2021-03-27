@@ -41,7 +41,7 @@ TEST_F(TestRegion, orig)
 TEST_F(TestRegion, cpu)
 {
   // check rec_box
-  Region<double> region;
+  deepmd::Region<double> region;
   init_region_cpu(region, &ref_boxt[0]);
   for(int ii = 0; ii < 9; ++ii){
     EXPECT_LT(fabs(region.rec_boxt[ii] - ref_rec_boxt[ii]), 1e-10);

@@ -5,8 +5,12 @@
 #include "fmt_nlist.h"
 #include "env_mat.h"
 
+using namespace deepmd;
+
 template<typename FPTYPE>
-void prod_env_mat_a_cpu(
+void
+deepmd::
+prod_env_mat_a_cpu(
     FPTYPE * em, 
     FPTYPE * em_deriv, 
     FPTYPE * rij, 
@@ -88,7 +92,9 @@ void prod_env_mat_a_cpu(
 }
 
 template<typename FPTYPE>
-void prod_env_mat_r_cpu(
+void 
+deepmd::
+prod_env_mat_r_cpu(
     FPTYPE * em, 
     FPTYPE * em_deriv, 
     FPTYPE * rij, 
@@ -171,7 +177,9 @@ void prod_env_mat_r_cpu(
 
 
 template
-void prod_env_mat_a_cpu<double>(
+void 
+deepmd::
+prod_env_mat_a_cpu<double>(
     double * em, 
     double * em_deriv, 
     double * rij, 
@@ -189,7 +197,9 @@ void prod_env_mat_a_cpu<double>(
     const std::vector<int> sec);
 
 template
-void prod_env_mat_a_cpu<float>(
+void
+deepmd::
+prod_env_mat_a_cpu<float>(
     float * em, 
     float * em_deriv, 
     float * rij, 
@@ -207,7 +217,9 @@ void prod_env_mat_a_cpu<float>(
     const std::vector<int> sec);
 
 template
-void prod_env_mat_r_cpu<double>(
+void
+deepmd::
+prod_env_mat_r_cpu<double>(
     double * em, 
     double * em_deriv, 
     double * rij, 
@@ -225,7 +237,9 @@ void prod_env_mat_r_cpu<double>(
     const std::vector<int> sec);
 
 template
-void prod_env_mat_r_cpu<float>(
+void 
+deepmd::
+prod_env_mat_r_cpu<float>(
     float * em, 
     float * em_deriv, 
     float * rij, 
@@ -243,7 +257,7 @@ void prod_env_mat_r_cpu<float>(
     const std::vector<int> sec);
 
 #if GOOGLE_CUDA
-void env_mat_nbor_update(
+void deepmd::env_mat_nbor_update(
     InputNlist &inlist,
     InputNlist &gpu_inlist,
     int &max_nbor_size,

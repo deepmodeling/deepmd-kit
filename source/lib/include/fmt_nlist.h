@@ -2,7 +2,8 @@
 
 #include <vector>
 #include "neighbor_list.h"
-#include "SimulationRegion.h"
+
+namespace deepmd{
 
 template <typename FPTYPE>
 void format_nlist_cpu(
@@ -14,6 +15,15 @@ void format_nlist_cpu(
     const int nall, 
     const float rcut, 
     const std::vector<int> sec);
+
+}
+
+
+////////////////////////////////////////////////////////
+// legacy code
+////////////////////////////////////////////////////////
+
+#include "SimulationRegion.h"
 
 // return:	-1	OK
 //		> 0	the type of unsuccessful neighbor list
@@ -45,24 +55,3 @@ int format_nlist_i_cpu (
 
 
 
-struct NeighborInfo 
-{
-  int type;
-  double dist;
-  int index;
-  NeighborInfo () 
-      : type (0), dist(0), index(0) 
-      {
-      }
-  NeighborInfo (int tt, double dd, int ii) 
-      : type (tt), dist(dd), index(ii) 
-      {
-      }
-  bool operator < (const NeighborInfo & b) const 
-      {
-	return (type < b.type || 
-		(type == b.type && 
-		 (dist < b.dist || 
-		  (dist == b.dist && index < b.index) ) ) );
-      }
-};

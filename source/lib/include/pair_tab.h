@@ -1,5 +1,7 @@
 #pragma once
 
+namespace deepmd{
+  
 template<typename FPTYPE>
 void pair_tab_cpu(
     FPTYPE * energy,
@@ -16,3 +18,4 @@ void pair_tab_cpu(
     const std::vector<int> & sel_r
     );
 
+}

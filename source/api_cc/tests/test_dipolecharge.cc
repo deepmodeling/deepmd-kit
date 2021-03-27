@@ -53,22 +53,22 @@ protected:
   double expected_tot_e;
   std::vector<double>expected_tot_v;
 
-  DeepTensor dp;
-  DipoleChargeModifier dm;
+  deepmd::DeepTensor dp;
+  deepmd::DipoleChargeModifier dm;
 
   void SetUp() override {
     std::string file_name = "../../tests/infer/dipolecharge_e.pbtxt";
     int fd = open(file_name.c_str(), O_RDONLY);
-    protobuf::io::ZeroCopyInputStream* input = new protobuf::io::FileInputStream(fd);
-    GraphDef graph_def;
-    protobuf::TextFormat::Parse(input, &graph_def);
+    tensorflow::protobuf::io::ZeroCopyInputStream* input = new tensorflow::protobuf::io::FileInputStream(fd);
+    tensorflow::GraphDef graph_def;
+    tensorflow::protobuf::TextFormat::Parse(input, &graph_def);
     delete input;
-    string model = "dipolecharge_e.pb";
+    std::string model = "dipolecharge_e.pb";
     std::fstream output(model.c_str(), std::ios::out | std::ios::trunc | std::ios::binary);
     graph_def.SerializeToOstream(&output);
     // check the string by the following commands
     // string txt;
-    // protobuf::TextFormat::PrintToString(graph_def, &txt);
+    // tensorflow::protobuf::TextFormat::PrintToString(graph_def, &txt);
 
     // dp.init("dipolecharge_d.pb");
     // dm.init("dipolecharge_d.pb");
@@ -116,7 +116,7 @@ TEST_F(TestDipoleCharge, cpu_lmp_nlist)
   int nghost = nall - nloc;
   std::vector<int> ilist(nloc), numneigh(nloc);
   std::vector<int*> firstneigh(nloc);
-  InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
   convert_nlist(inlist, nlist_data);  
 
   // evaluate dipole
@@ -128,12 +128,12 @@ TEST_F(TestDipoleCharge, cpu_lmp_nlist)
   std::vector<int> sel_types = dp.sel_types();
   std::vector<int> sel_fwd, sel_bwd;
   int sel_nghost;
-  select_by_type(sel_fwd, sel_bwd, sel_nghost, coord_cpy, atype_cpy, nghost, sel_types);
+  deepmd::select_by_type(sel_fwd, sel_bwd, sel_nghost, coord_cpy, atype_cpy, nghost, sel_types);
   int sel_nall = sel_bwd.size();
   int sel_nloc = sel_nall - sel_nghost;
   std::vector<int> sel_atype(sel_bwd.size());
-  select_map<int>(sel_atype, atype, sel_fwd, 1);
-  AtomMap<double> nnp_map(sel_atype.begin(), sel_atype.begin() + sel_nloc);
+  deepmd::select_map<int>(sel_atype, atype, sel_fwd, 1);
+  deepmd::AtomMap<double> nnp_map(sel_atype.begin(), sel_atype.begin() + sel_nloc);
   const std::vector<int> & sort_fwd_map(nnp_map.get_fwd_map());
 
   // // add coords
@@ -174,9 +174,9 @@ TEST_F(TestDipoleCharge, cpu_lmp_nlist)
   // compute the recp part of the ele interaction
   double eener;
   std::vector<double> eforce, evirial;
-  Region<double> region;
+  deepmd::Region<double> region;
   init_region_cpu(region, &box[0]);
-  EwaldParameters<double> eparam;
+  deepmd::EwaldParameters<double> eparam;
   eparam.beta = 0.2;
   eparam.spacing = 4;
   ewald_recp(eener, eforce, evirial, coord, charge, region, eparam);

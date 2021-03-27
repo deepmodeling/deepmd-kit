@@ -212,7 +212,7 @@ TEST_F(TestFormatNlist, cpu)
   std::vector<int > ilist(inum);
   std::vector<int > numneigh(inum);
   std::vector<int* > firstneigh(inum);
-  InputNlist in_nlist(inum, &ilist[0], &numneigh[0], &firstneigh[0]);
+  deepmd::InputNlist in_nlist(inum, &ilist[0], &numneigh[0], &firstneigh[0]);
   convert_nlist(in_nlist, nlist_a_0);
   // allocate the mem for the result
   std::vector<int> nlist(inum * sec_a.back());
@@ -280,7 +280,7 @@ TEST_F(TestFormatNlistShortSel, cpu)
   std::vector<int > ilist(inum);
   std::vector<int > numneigh(inum);
   std::vector<int* > firstneigh(inum);
-  InputNlist in_nlist(inum, &ilist[0], &numneigh[0], &firstneigh[0]);
+  deepmd::InputNlist in_nlist(inum, &ilist[0], &numneigh[0], &firstneigh[0]);
   convert_nlist(in_nlist, nlist_a_0);  
   // mem
   std::vector<int> nlist(inum * sec_a.back());

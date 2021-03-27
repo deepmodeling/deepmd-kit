@@ -32,17 +32,17 @@ protected:
   };
   int natoms;
 
-  DeepPot dp0;
-  DeepPot dp1;
-  DeepPotModelDevi dp_md;
+  deepmd::DeepPot dp0;
+  deepmd::DeepPot dp1;
+  deepmd::DeepPotModelDevi dp_md;
 
   void SetUp() override {
     {
       std::string file_name = "../../tests/infer/deeppot.pbtxt";
       int fd = open(file_name.c_str(), O_RDONLY);
-      protobuf::io::ZeroCopyInputStream* input = new protobuf::io::FileInputStream(fd);
-      GraphDef graph_def;
-      protobuf::TextFormat::Parse(input, &graph_def);
+      tensorflow::protobuf::io::ZeroCopyInputStream* input = new tensorflow::protobuf::io::FileInputStream(fd);
+      tensorflow::GraphDef graph_def;
+      tensorflow::protobuf::TextFormat::Parse(input, &graph_def);
       delete input;
       std::fstream output("deeppot.pb", std::ios::out | std::ios::trunc | std::ios::binary);
       graph_def.SerializeToOstream(&output);
@@ -51,9 +51,9 @@ protected:
     {
       std::string file_name = "../../tests/infer/deeppot-1.pbtxt";
       int fd = open(file_name.c_str(), O_RDONLY);
-      protobuf::io::ZeroCopyInputStream* input = new protobuf::io::FileInputStream(fd);
-      GraphDef graph_def;
-      protobuf::TextFormat::Parse(input, &graph_def);
+      tensorflow::protobuf::io::ZeroCopyInputStream* input = new tensorflow::protobuf::io::FileInputStream(fd);
+      tensorflow::GraphDef graph_def;
+      tensorflow::protobuf::TextFormat::Parse(input, &graph_def);
       delete input;
       std::fstream output("deeppot-1.pb", std::ios::out | std::ios::trunc | std::ios::binary);
       graph_def.SerializeToOstream(&output);
@@ -93,7 +93,7 @@ TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list)
   int nall = coord_cpy.size() / 3;
   std::vector<int> ilist(nloc), numneigh(nloc);
   std::vector<int*> firstneigh(nloc);
-  InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
   convert_nlist(inlist, nlist_data);  
 
   int nmodel = 2;
@@ -170,7 +170,7 @@ TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list_atomic)
   int nall = coord_cpy.size() / 3;
   std::vector<int> ilist(nloc), numneigh(nloc);
   std::vector<int*> firstneigh(nloc);
-  InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
   convert_nlist(inlist, nlist_data);  
 
   int nmodel = 2;

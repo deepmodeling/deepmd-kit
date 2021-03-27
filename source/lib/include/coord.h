@@ -2,13 +2,15 @@
 
 #include "region.h"
 
+namespace deepmd{
+
 // normalize coords
 template <typename FPTYPE>
 void
 normalize_coord_cpu(
     FPTYPE * coord,
     const int natom,
-    const Region<FPTYPE> & region);
+    const deepmd::Region<FPTYPE> & region);
 
 // copy coordinates
 // outputs:
@@ -32,4 +34,6 @@ copy_coord_cpu(
     const int & nloc,
     const int & mem_nall,
     const float & rcut,
-    const Region<FPTYPE> & region);
+    const deepmd::Region<FPTYPE> & region);
+
+}

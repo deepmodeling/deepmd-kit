@@ -1,5 +1,7 @@
 #pragma once
 
+namespace deepmd{
+
 template<typename FPTYPE>
 struct Region
 {
@@ -33,4 +35,6 @@ convert_to_phys_cpu(
     FPTYPE * rp, 
     const Region<FPTYPE> & region,
     const FPTYPE * ri);
+
+}
 

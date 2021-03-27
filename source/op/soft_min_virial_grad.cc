@@ -87,7 +87,7 @@ public:
     // loop over frames
 #pragma omp parallel for
     for (int kk = 0; kk < nframes; ++kk){
-      soft_min_switch_virial_grad_cpu(
+      deepmd::soft_min_switch_virial_grad_cpu(
 	  &grad_net(kk, 0),
 	  &grad(kk, 0),
 	  &sw_deriv(kk, 0),

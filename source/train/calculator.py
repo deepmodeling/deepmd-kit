@@ -1,13 +1,12 @@
 """ASE calculator interface module."""
 
 from typing import TYPE_CHECKING, Dict, List, Optional, Union
+from pathlib import Path
 
 from deepmd import DeepPotential
 from ase.calculators.calculator import Calculator, all_changes
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from ase import Atoms
 
 __all__ = ["DP"]
@@ -62,7 +61,7 @@ class DP(Calculator):
         **kwargs
     ) -> None:
         Calculator.__init__(self, label=label, **kwargs)
-        self.dp = DeepPot(str(Path(model).resolve()))
+        self.dp = DeepPotential(str(Path(model).resolve()))
         if type_dict:
             self.type_dict = type_dict
         else:

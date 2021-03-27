@@ -111,7 +111,7 @@ std::string PairDeepMD::get_file_content(const std::string & model) {
   int nchar = 0;
   std::string file_content;
   if (myrank == root) {
-    checkStatus (ReadFileToString(Env::Default(), model, &file_content));
+    deepmd::check_status(tensorflow::ReadFileToString(tensorflow::Env::Default(), model, &file_content));
     nchar = file_content.size();
   }
   MPI_Bcast(&nchar, 1, MPI_INT, root, MPI_COMM_WORLD);  
@@ -360,7 +360,7 @@ void PairDeepMD::compute(int eflag, int vflag)
   multi_models_no_mod_devi = (numb_models > 1 && (out_freq == 0 || update->ntimestep % out_freq != 0));
   multi_models_mod_devi = (numb_models > 1 && (out_freq > 0 && update->ntimestep % out_freq == 0));
   if (do_ghost) {
-    InputNlist lmp_list (list->inum, list->ilist, list->numneigh, list->firstneigh);
+    deepmd::InputNlist lmp_list (list->inum, list->ilist, list->numneigh, list->firstneigh);
     if (single_model || multi_models_no_mod_devi) {
       if ( ! (eflag_atom || vflag_atom) ) {      
 #ifdef HIGH_PREC
