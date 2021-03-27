@@ -110,5 +110,5 @@ setup(
         "docs": ["sphinx", "recommonmark", "sphinx_rtd_theme"],
         **extras_require,
     },
-    entry_points={"console_scripts": ["dp = deepmd.main:main"]},
+    entry_points={"console_scripts": ["dp = deepmd.entrypoints.main:main"]},
 )

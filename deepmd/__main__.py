@@ -1,6 +1,6 @@
 """Package dp entry point."""
 
-from .main import main
+from .entrypoints.main import main
 
 if __name__ == '__main__':
     main()
