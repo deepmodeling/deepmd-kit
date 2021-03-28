@@ -4,10 +4,10 @@ import unittest
 
 from infer.convert2pb import convert_pbtxt_to_pb
 from deepmd.infer import DeepPot
-from deepmd.run_options import MODEL_VERSION
+from deepmd.env import MODEL_VERSION
 from common import tests_path
 
-from deepmd.run_options import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
     default_places = 4
 else :

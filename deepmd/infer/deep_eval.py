@@ -3,8 +3,7 @@ from typing import List, Optional, TYPE_CHECKING
 
 import numpy as np
 from deepmd.common import make_default_mesh
-from deepmd.env import default_tf_session_config, tf
-from deepmd.run_options import MODEL_VERSION
+from deepmd.env import default_tf_session_config, tf, MODEL_VERSION
 
 if TYPE_CHECKING:
     from pathlib import Path

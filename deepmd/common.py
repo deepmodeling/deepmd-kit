@@ -20,7 +20,7 @@ import numpy as np
 import yaml
 
 from deepmd.env import op_module, tf
-from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION, GLOBAL_NP_FLOAT_PRECISION
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION, GLOBAL_NP_FLOAT_PRECISION
 
 if TYPE_CHECKING:
     _DICT_VAL = TypeVar("_DICT_VAL")

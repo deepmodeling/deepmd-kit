@@ -12,7 +12,7 @@ enable_testing()
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
 # model version
-file(READ ${PROJECT_SOURCE_DIR}/../../train/MODEL_VER MODEL_VERSION)
+file(READ ${PROJECT_SOURCE_DIR}/../../config/MODEL_VER MODEL_VERSION)
 string(REPLACE "\n" " " MODEL_VERSION ${MODEL_VERSION})
 message(STATUS "Supported model version: ${MODEL_VERSION}")
 
