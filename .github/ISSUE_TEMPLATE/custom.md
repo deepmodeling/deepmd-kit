@@ -7,4 +7,6 @@ assignees: ''
 
 ---
 
-Please tag a label to your issue. So we can locate people to solve your problem sooner.
+Issue session is for enhancement suggestions. If your question is otherwise, please go to the discussion session. Thank you for your support. And look forward to working together.
+
+From DeepModeling Community
