@@ -73,7 +73,7 @@ class Inter():
                  name,
                  reuse = None) :
         descrpt, descrpt_deriv, rij, nlist \
-            = op_module.descrpt_se_r (dcoord, 
+            = op_module.prod_env_mat_r(dcoord, 
                                       dtype,
                                       tnatoms,
                                       dbox, 
