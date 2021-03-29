@@ -68,18 +68,20 @@ copy_coord_cpu(
   return 0;
 }
 
+template <typename FPTYPE>
 void
 deepmd::
 compute_cell_info(
     int * cell_info, //nat_stt,ncell,ext_stt,ext_end,ngcell,cell_shift,cell_iter,loc_cellnum,total_cellnum
     const float & rcut,
-    const double * boxt
-)
+    const Region<FPTYPE> & region)
 {
-  SimulationRegion<double> region;
+  SimulationRegion<double> tmpr;
 	double to_face [3];
-	region.reinitBox(boxt);
-	region.toFaceDistance (to_face);
+  double tmp_boxt[9];
+  std::copy(region.boxt, region.boxt+9, tmp_boxt);
+	tmpr.reinitBox(tmp_boxt);
+	tmpr.toFaceDistance (to_face);
   double cell_size [3];
   for (int dd = 0; dd < 3; ++dd){
     cell_info[dd]=0; //nat_stt
@@ -142,6 +144,22 @@ copy_coord_cpu<float>(
     const int & mem_nall,
     const float & rcut,
     const deepmd::Region<float> & region);
+
+template
+void
+deepmd::
+compute_cell_info<double>(
+    int * cell_info, //nat_stt,ncell,ext_stt,ext_end,ngcell,cell_shift,cell_iter,loc_cellnum,total_cellnum
+    const float & rcut,
+    const Region<double> & region);
+
+template
+void
+deepmd::
+compute_cell_info<float>(
+    int * cell_info, //nat_stt,ncell,ext_stt,ext_end,ngcell,cell_shift,cell_iter,loc_cellnum,total_cellnum
+    const float & rcut,
+    const Region<float> & region);
 
 
 

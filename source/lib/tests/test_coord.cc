@@ -73,6 +73,9 @@ TEST_F(TestNormCoord, cpu_case2)
 TEST_F(TestNormCoord, gpu_case0)
 {
   deepmd::Region<double> region;
+  deepmd::Region<double> region_dev;
+  double * new_boxt = region_dev.boxt;
+  double * new_rec_boxt = region_dev.rec_boxt;
   init_region_cpu(region, &boxt[0]);
   std::vector<double> box_info;
   box_info.resize(18);
@@ -83,7 +86,11 @@ TEST_F(TestNormCoord, gpu_case0)
   std::vector<double > out_c(r0);
   deepmd::malloc_device_memory_sync(box_info_dev, box_info);
   deepmd::malloc_device_memory_sync(out_c_dev, out_c);
-  deepmd::normalize_coord_gpu(out_c_dev, natoms, box_info_dev);
+  region_dev.boxt = box_info_dev;
+  region_dev.rec_boxt = box_info_dev + 9;
+  deepmd::normalize_coord_gpu(out_c_dev, natoms, region_dev);
+  region_dev.boxt = new_boxt;
+  region_dev.rec_boxt = new_rec_boxt;
   deepmd::memcpy_device_to_host(out_c_dev, out_c);
   deepmd::delete_device_memory(box_info_dev);
   deepmd::delete_device_memory(out_c_dev);
@@ -95,6 +102,9 @@ TEST_F(TestNormCoord, gpu_case0)
 TEST_F(TestNormCoord, gpu_case1)
 {
   deepmd::Region<double> region;
+  deepmd::Region<double> region_dev;
+  double * new_boxt = region_dev.boxt;
+  double * new_rec_boxt = region_dev.rec_boxt;
   init_region_cpu(region, &boxt[0]);
   std::vector<double> box_info;
   box_info.resize(18);
@@ -105,7 +115,11 @@ TEST_F(TestNormCoord, gpu_case1)
   std::vector<double > out_c(r1);
   deepmd::malloc_device_memory_sync(box_info_dev, box_info);
   deepmd::malloc_device_memory_sync(out_c_dev, out_c);
-  deepmd::normalize_coord_gpu(out_c_dev, natoms, box_info_dev);
+  region_dev.boxt = box_info_dev;
+  region_dev.rec_boxt = box_info_dev + 9;
+  deepmd::normalize_coord_gpu(out_c_dev, natoms, region_dev);
+  region_dev.boxt = new_boxt;
+  region_dev.rec_boxt = new_rec_boxt;
   deepmd::memcpy_device_to_host(out_c_dev, out_c);
   deepmd::delete_device_memory(box_info_dev);
   deepmd::delete_device_memory(out_c_dev);
@@ -117,6 +131,9 @@ TEST_F(TestNormCoord, gpu_case1)
 TEST_F(TestNormCoord, gpu_case2)
 {
   deepmd::Region<double> region;
+  deepmd::Region<double> region_dev;
+  double * new_boxt = region_dev.boxt;
+  double * new_rec_boxt = region_dev.rec_boxt;
   init_region_cpu(region, &boxt[0]);
   std::vector<double> box_info;
   box_info.resize(18);
@@ -127,7 +144,11 @@ TEST_F(TestNormCoord, gpu_case2)
   std::vector<double > out_c(r2);
   deepmd::malloc_device_memory_sync(box_info_dev, box_info);
   deepmd::malloc_device_memory_sync(out_c_dev, out_c);
-  deepmd::normalize_coord_gpu(out_c_dev, natoms, box_info_dev);
+  region_dev.boxt = box_info_dev;
+  region_dev.rec_boxt = box_info_dev + 9;
+  deepmd::normalize_coord_gpu(out_c_dev, natoms, region_dev);
+  region_dev.boxt = new_boxt;
+  region_dev.rec_boxt = new_rec_boxt;
   deepmd::memcpy_device_to_host(out_c_dev, out_c);
   deepmd::delete_device_memory(box_info_dev);
   deepmd::delete_device_memory(out_c_dev);
@@ -311,9 +332,12 @@ TEST_F(TestCopyCoord, gpu)
   int nall;
   std::vector<int> cell_info;
   cell_info.resize(23);
-  deepmd::compute_cell_info(&cell_info[0], rc, &boxt[0]);
   deepmd::Region<double> region;
+  deepmd::Region<double> region_dev;
+  double * new_boxt = region_dev.boxt;
+  double * new_rec_boxt = region_dev.rec_boxt;
   init_region_cpu(region, &boxt[0]);
+  deepmd::compute_cell_info(&cell_info[0], rc, region);
   std::vector<double> box_info;
   box_info.resize(18);
   memcpy(&box_info[0], &boxt[0], sizeof(double)*9);
@@ -332,6 +356,8 @@ TEST_F(TestCopyCoord, gpu)
   deepmd::malloc_device_memory(out_t_dev, mem_size);
   deepmd::malloc_device_memory(mapping_dev, mem_size);
   deepmd::malloc_device_memory(int_data_dev, nloc*3+loc_cellnum+total_cellnum*3+total_cellnum*3+loc_cellnum+1+total_cellnum+1+nloc);
+  region_dev.boxt = box_info_dev;
+  region_dev.rec_boxt = box_info_dev + 9;
   int ret = deepmd::copy_coord_gpu(
       out_c_dev, 
       out_t_dev, 
@@ -345,7 +371,9 @@ TEST_F(TestCopyCoord, gpu)
       loc_cellnum,
       total_cellnum,
       cell_info_dev,
-      box_info_dev);
+      region_dev);
+  region_dev.boxt = new_boxt;
+  region_dev.rec_boxt = new_rec_boxt;
   deepmd::memcpy_device_to_host(out_c_dev, out_c);
   deepmd::memcpy_device_to_host(out_t_dev, out_t);
   deepmd::memcpy_device_to_host(mapping_dev, mapping);
@@ -385,9 +413,12 @@ TEST_F(TestCopyCoord, gpu_lessmem)
   int nall;
   std::vector<int> cell_info;
   cell_info.resize(23);
-  deepmd::compute_cell_info(&cell_info[0], rc, &boxt[0]);
   deepmd::Region<double> region;
+  deepmd::Region<double> region_dev;
+  double * new_boxt = region_dev.boxt;
+  double * new_rec_boxt = region_dev.rec_boxt;
   init_region_cpu(region, &boxt[0]);
+  deepmd::compute_cell_info(&cell_info[0], rc, region);
   std::vector<double> box_info;
   box_info.resize(18);
   memcpy(&box_info[0], &boxt[0], sizeof(double)*9);
@@ -406,6 +437,8 @@ TEST_F(TestCopyCoord, gpu_lessmem)
   deepmd::malloc_device_memory(out_t_dev, mem_size);
   deepmd::malloc_device_memory(mapping_dev, mem_size);
   deepmd::malloc_device_memory(int_data_dev, nloc*3+loc_cellnum+total_cellnum*3+total_cellnum*3+loc_cellnum+1+total_cellnum+1+nloc);
+  region_dev.boxt = box_info_dev;
+  region_dev.rec_boxt = box_info_dev + 9;
   int ret = deepmd::copy_coord_gpu(
       out_c_dev, 
       out_t_dev, 
@@ -419,7 +452,9 @@ TEST_F(TestCopyCoord, gpu_lessmem)
       loc_cellnum,
       total_cellnum,
       cell_info_dev,
-      box_info_dev);
+      region_dev);
+  region_dev.boxt = new_boxt;
+  region_dev.rec_boxt = new_rec_boxt;
   deepmd::memcpy_device_to_host(out_c_dev, out_c);
   deepmd::memcpy_device_to_host(out_t_dev, out_t);
   deepmd::memcpy_device_to_host(mapping_dev, mapping);

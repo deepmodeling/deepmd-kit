@@ -1,31 +1,8 @@
 #include "device.h"
 #include "gpu_cuda.h"
 #include "coord.h"
+#include "region.cu"
 
-template<typename FPTYPE>
-__device__ inline void tensorDotVector(FPTYPE *o_v, const FPTYPE *i_v, const double *i_t)
-{
-    o_v[0] = i_v[0] * i_t[0*3+0] + i_v[1] * i_t[0*3+1] + i_v[2] * i_t[0*3+2];
-    o_v[1] = i_v[0] * i_t[1*3+0] + i_v[1] * i_t[1*3+1] + i_v[2] * i_t[1*3+2];
-    o_v[2] = i_v[0] * i_t[2*3+0] + i_v[1] * i_t[2*3+1] + i_v[2] * i_t[2*3+2];
-}
-template<typename FPTYPE>
-__device__ inline void tensorTransDotVector(FPTYPE *o_v, const FPTYPE *i_v, const double *i_t)
-{
-    o_v[0] = i_v[0] * i_t[0*3+0] + i_v[1] * i_t[1*3+0] + i_v[2] * i_t[2*3+0];
-    o_v[1] = i_v[0] * i_t[0*3+1] + i_v[1] * i_t[1*3+1] + i_v[2] * i_t[2*3+1];
-    o_v[2] = i_v[0] * i_t[0*3+2] + i_v[1] * i_t[1*3+2] + i_v[2] * i_t[2*3+2];
-}
-template<typename FPTYPE>
-__device__ inline void phys2Inter(FPTYPE *inter, const FPTYPE *phys, const double *rec_boxt)
-{
-    tensorDotVector(inter, phys, rec_boxt);
-}
-template<typename FPTYPE>
-__device__ inline void inter2Phys(FPTYPE *phys, const FPTYPE *inter, const double *boxt)
-{
-    tensorTransDotVector(phys, inter, boxt);
-}
 __device__ inline int collapse_index(const int * idx,const int * size)
 {
     return (idx[0] * size[1] + idx[1]) * size[2] + idx[2];
@@ -50,7 +27,7 @@ __device__ inline void idx_unshift(int * idx, const int * shift)
         idx[dd]-=shift[dd];
     }
 }
-__device__ inline int compute_pbc_shift (int idx, int ncell)
+__device__ inline int compute_pbc_shift(int idx, int ncell)
 {
     int shift = 0;
     if (idx < 0) {
@@ -67,8 +44,8 @@ __device__ inline int compute_pbc_shift (int idx, int ncell)
 template<typename FPTYPE>
 __global__ void normalize_one(
     FPTYPE *out_c,
-    const double *boxt,
-    const double *rec_boxt,
+    const FPTYPE *boxt,
+    const FPTYPE *rec_boxt,
     const int nall
 )
 {
@@ -92,8 +69,8 @@ __global__ void _compute_int_data(
     const int *ext_stt,
     const int *ext_end,
     const int *ngcell,
-    const double *boxt,
-    const double *rec_boxt,
+    const FPTYPE *boxt,
+    const FPTYPE *rec_boxt,
     int * idx_cellmap,
     int * idx_cellmap_noshift,
     int * total_cellnum_map,
@@ -210,8 +187,8 @@ __global__ void _copy_coord(
     const int nloc, 
     const int nall, 
     const int total_cellnum, 
-    const double * boxt, 
-    const double * rec_boxt
+    const FPTYPE * boxt, 
+    const FPTYPE * rec_boxt
 )
 {
     int idy = blockIdx.x*blockDim.x+threadIdx.x;
@@ -258,7 +235,7 @@ __global__ void _copy_coord(
 }
 
 template <typename FPTYPE>
-void compute_int_data(int * int_data, const FPTYPE * in_c, const int * cell_info, const double * box_info, const int nloc, const int loc_cellnum, const int total_cellnum)
+void compute_int_data(int * int_data, const FPTYPE * in_c, const int * cell_info, const deepmd::Region<FPTYPE> & region, const int nloc, const int loc_cellnum, const int total_cellnum)
 {
     const int nn=(nloc>=total_cellnum)?nloc:total_cellnum; 
     const int nblock=(nn+TPB-1)/TPB;
@@ -276,8 +253,8 @@ void compute_int_data(int * int_data, const FPTYPE * in_c, const int * cell_info
     const int * ext_stt=cell_info+6;
     const int * ext_end=cell_info+9;
     const int * ngcell=cell_info+12;
-    const double * boxt = box_info;
-    const double * rec_boxt = box_info+9;
+    const FPTYPE * boxt = region.boxt;
+    const FPTYPE * rec_boxt = region.rec_boxt;
     _compute_int_data<<<nblock, TPB>>>(in_c,nat_stt,nat_end,ext_stt,ext_end,ngcell,boxt,rec_boxt,idx_cellmap,idx_cellmap_noshift,total_cellnum_map,mask_cellnum_map,cell_map,loc_cellnum_map,cell_shift_map,temp_idx_order,nloc,loc_cellnum,total_cellnum);
 }
 
@@ -292,7 +269,7 @@ void build_loc_clist(int * int_data, const int nloc, const int loc_cellnum, cons
 }
 
 template <typename FPTYPE>
-void copy_coord(FPTYPE * out_c, int * out_t, int * mapping, const int * int_data, const FPTYPE * in_c, const int * in_t, const int nloc, const int nall, const int loc_cellnum, const int total_cellnum, const double * box_info)
+void copy_coord(FPTYPE * out_c, int * out_t, int * mapping, const int * int_data, const FPTYPE * in_c, const int * in_t, const int nloc, const int nall, const int loc_cellnum, const int total_cellnum, const deepmd::Region<FPTYPE> & region)
 {
     const int nblock=(nall+TPB-1)/TPB;
     const int * cell_map=int_data+3*nloc+loc_cellnum+2*total_cellnum;
@@ -301,8 +278,8 @@ void copy_coord(FPTYPE * out_c, int * out_t, int * mapping, const int * int_data
     const int * sec_total_cellnum_map=sec_loc_cellnum_map+loc_cellnum+1;
     const int * loc_clist=sec_total_cellnum_map+total_cellnum+1;
 
-    const double *boxt = box_info;
-    const double *rec_boxt = box_info+9;
+    const FPTYPE *boxt = region.boxt;
+    const FPTYPE *rec_boxt = region.rec_boxt;
     _copy_coord<<<nblock, TPB>>>(out_c, out_t, mapping, in_c, in_t, cell_map, cell_shift_map, sec_loc_cellnum_map, sec_total_cellnum_map, loc_clist, nloc, nall, total_cellnum, boxt, rec_boxt);
 }
 
@@ -312,10 +289,10 @@ void
 normalize_coord_gpu(
     FPTYPE * coord,
     const int natom,
-    const double * box_info)
+    const Region<FPTYPE> & region)
 {
-    const double * boxt=box_info;
-    const double * rec_boxt=box_info + 9;
+    const FPTYPE * boxt=region.boxt;
+    const FPTYPE * rec_boxt=region.rec_boxt;
     const int nblock=(natom+TPB-1)/TPB;
     normalize_one<<<nblock, TPB>>>(coord, boxt, rec_boxt, natom);
 }
@@ -337,9 +314,9 @@ copy_coord_gpu(
     const int & loc_cellnum,
     const int & total_cellnum,
     const int * cell_info,
-    const double * box_info)
+    const Region<FPTYPE> & region)
 {
-    compute_int_data(int_data, in_c, cell_info, box_info, nloc, loc_cellnum, total_cellnum);
+    compute_int_data(int_data, in_c, cell_info, region, nloc, loc_cellnum, total_cellnum);
     int * int_data_cpu=new int [loc_cellnum+2*total_cellnum+loc_cellnum+1+total_cellnum+1];//loc_cellnum_map,total_cellnum_map,mask_cellnum_map,sec_loc_cellnum_map,sec_total_cellnum_map
     cudaErrcheck(cudaMemcpy(int_data_cpu, int_data+3*nloc, sizeof(int) * (loc_cellnum + 2 * total_cellnum), cudaMemcpyDeviceToHost));
     int * loc_cellnum_map=int_data_cpu;
@@ -366,13 +343,13 @@ copy_coord_gpu(
         cudaErrcheck(cudaMemcpy(int_data+nloc*3+loc_cellnum+total_cellnum*3+total_cellnum*3, sec_loc_cellnum_map, sizeof(int) * (loc_cellnum+1+total_cellnum+1), cudaMemcpyHostToDevice));
         delete[] int_data_cpu;
         build_loc_clist(int_data, nloc, loc_cellnum, total_cellnum);
-        copy_coord(out_c, out_t, mapping, int_data, in_c, in_t, nloc, *nall, loc_cellnum, total_cellnum, box_info);
+        copy_coord(out_c, out_t, mapping, int_data, in_c, in_t, nloc, *nall, loc_cellnum, total_cellnum, region);
     }
     return 0;
 }
 
-template void normalize_coord_gpu<float>(float * coord, const int natom, const double * box_info);
-template void normalize_coord_gpu<double>(double * coord, const int natom, const double * box_info);
-template int copy_coord_gpu<float>(float * out_c, int * out_t, int * mapping, int * nall, int * int_data, const float * in_c, const int * in_t, const int & nloc, const int & mem_nall, const int & loc_cellnum, const int & total_cellnum, const int * cell_info, const double * box_info);
-template int copy_coord_gpu<double>(double * out_c, int * out_t, int * mapping, int * nall, int * int_data, const double * in_c, const int * in_t, const int & nloc, const int & mem_nall, const int & loc_cellnum, const int & total_cellnum, const int * cell_info, const double * box_info);
+template void normalize_coord_gpu<float>(float * coord, const int natom, const Region<float> & region);
+template void normalize_coord_gpu<double>(double * coord, const int natom, const Region<double> & region);
+template int copy_coord_gpu<float>(float * out_c, int * out_t, int * mapping, int * nall, int * int_data, const float * in_c, const int * in_t, const int & nloc, const int & mem_nall, const int & loc_cellnum, const int & total_cellnum, const int * cell_info, const Region<float> & region);
+template int copy_coord_gpu<double>(double * out_c, int * out_t, int * mapping, int * nall, int * int_data, const double * in_c, const int * in_t, const int & nloc, const int & mem_nall, const int & loc_cellnum, const int & total_cellnum, const int * cell_info, const Region<double> & region);
 }

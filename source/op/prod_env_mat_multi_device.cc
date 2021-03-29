@@ -806,18 +806,16 @@ _norm_copy_coord_gpu(
   context->allocate_temp(DT_DOUBLE, FPTYPE_shape, tensor_list);
   FPTYPE * tmp_coord = (*tensor_list).flat<FPTYPE>().data();
   cudaErrcheck(cudaMemcpy(tmp_coord, coord, sizeof(FPTYPE) * nall * 3, cudaMemcpyDeviceToDevice));
-
+  
   deepmd::Region<FPTYPE> region;
   init_region_cpu(region, box);
-  double box_info[18];
+  FPTYPE box_info[18];
   std::copy(region.boxt, region.boxt+9, box_info);
   std::copy(region.rec_boxt, region.rec_boxt+9, box_info+9);
-
   int cell_info[23];
-  deepmd::compute_cell_info(cell_info, rcut_r, box_info);
+  deepmd::compute_cell_info(cell_info, rcut_r, region);
   const int loc_cellnum=cell_info[21];
   const int total_cellnum=cell_info[22];
-
   //Tensor double_temp;
   TensorShape double_shape;
   double_shape.AddDim(18);
@@ -826,31 +824,33 @@ _norm_copy_coord_gpu(
   TensorShape int_shape;
   int_shape.AddDim(23+nloc*3+loc_cellnum+total_cellnum*3+total_cellnum*3+loc_cellnum+1+total_cellnum+1+nloc);
   context, context->allocate_temp(DT_INT32, int_shape, tensor_list+2);
-  double * box_info_dev = (*(tensor_list+1)).flat<double>().data();
+  FPTYPE * box_info_dev = (*(tensor_list+1)).flat<FPTYPE>().data();
   int * cell_info_dev = (*(tensor_list+2)).flat<int>().data();
   int * int_data_dev = cell_info_dev + 23;
   deepmd::memcpy_host_to_device(box_info_dev, box_info, 18);
   deepmd::memcpy_host_to_device(cell_info_dev, cell_info, 23);
-  deepmd::normalize_coord_gpu(tmp_coord, nall, box_info_dev);
+  deepmd::Region<FPTYPE> region_dev;
+  FPTYPE * new_boxt = region_dev.boxt;
+  FPTYPE * new_rec_boxt = region_dev.rec_boxt;
+  region_dev.boxt = box_info_dev;
+  region_dev.rec_boxt = box_info_dev + 9;
+  deepmd::normalize_coord_gpu(tmp_coord, nall, region_dev);
   int tt;
-  //Tensor cpy_temp;
-  //Tensor t_temp;
   for(tt = 0; tt < max_cpy_trial; ++tt){
-    
+    //Tensor cpy_temp;
     TensorShape cpy_shape;
     cpy_shape.AddDim(mem_cpy*3);
     context->allocate_temp(DT_DOUBLE, cpy_shape, tensor_list+3);
-    
+    //Tensor t_temp;
     TensorShape t_shape;
     t_shape.AddDim(mem_cpy*2);
     context, context->allocate_temp(DT_INT32, t_shape, tensor_list+4);
-
     coord_cpy = (*(tensor_list+3)).flat<FPTYPE>().data();
     type_cpy = (*(tensor_list+4)).flat<int>().data();
     idx_mapping = type_cpy + mem_cpy;
     int ret = deepmd::copy_coord_gpu(
         coord_cpy, type_cpy, idx_mapping, &nall, int_data_dev,
-        tmp_coord, type, nloc, mem_cpy, loc_cellnum, total_cellnum, cell_info_dev, box_info_dev);
+        tmp_coord, type, nloc, mem_cpy, loc_cellnum, total_cellnum, cell_info_dev, region_dev);
     if(ret == 0){
       break;
     }
@@ -858,6 +858,8 @@ _norm_copy_coord_gpu(
       mem_cpy *= 2;
     }
   }
+  region_dev.boxt = new_boxt;
+  region_dev.rec_boxt = new_rec_boxt;
   return (tt != max_cpy_trial);
 }
 

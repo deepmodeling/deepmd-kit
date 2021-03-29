@@ -91,6 +91,16 @@ void malloc_device_memory_sync(
 }
 
 template <typename FPTYPE>
+void malloc_device_memory_sync(
+    FPTYPE * &device,
+    const FPTYPE * host,
+    const int size)
+{
+  cudaErrcheck(cudaMalloc((void **)&device, sizeof(FPTYPE) * size));
+  memcpy_host_to_device(device, host, size);
+}
+
+template <typename FPTYPE>
 void delete_device_memory(
     FPTYPE * &device) 
 {

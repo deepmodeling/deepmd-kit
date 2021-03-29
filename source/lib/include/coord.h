@@ -41,12 +41,12 @@ copy_coord_cpu(
 // cell_info: nat_stt,ncell,ext_stt,ext_end,ngcell,cell_shift,cell_iter,total_cellnum,loc_cellnum
 // input:
 // boxt
+template <typename FPTYPE>
 void
 compute_cell_info(
     int * cell_info,
     const float & rcut,
-    const double * boxt
-);
+    const deepmd::Region<FPTYPE> & region);
 
 #if GOOGLE_CUDA
 // normalize coords
@@ -59,7 +59,7 @@ void
 normalize_coord_gpu(
     FPTYPE * coord,
     const int natom,
-    const double * box_info);
+    const deepmd::Region<FPTYPE> & region);
 
 // copy coordinates
 // outputs:
@@ -88,7 +88,7 @@ copy_coord_gpu(
     const int & loc_cellnum,
     const int & total_cellnum,
     const int * cell_info,
-    const double * box_info);
+    const deepmd::Region<FPTYPE> & region);
 #endif // GOOGLE_CUDA
 
 }
