@@ -70,7 +70,8 @@ void convert_nlist_gpu_cuda(
     int* & gpu_memory,
     const int & max_nbor_size);
 
-void free_nlist_gpu_cuda(InputNlist & gpu_nlist);
+void free_nlist_gpu_cuda(
+    InputNlist & gpu_nlist);
 
 // build neighbor list.
 // outputs

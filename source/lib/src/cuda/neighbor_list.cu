@@ -3,18 +3,22 @@
 #include "neighbor_list.h"
 
 template<typename FPTYPE>
-__device__ inline FPTYPE dev_dot(FPTYPE * arr1, FPTYPE * arr2) {
+__device__ inline FPTYPE dev_dot(
+    FPTYPE * arr1, 
+    FPTYPE * arr2) 
+{
     return arr1[0] * arr2[0] + arr1[1] * arr2[1] + arr1[2] * arr2[2];
 }
 
 template<typename FPTYPE>
-__global__ void build_nlist(int * ilist, 
-                            int * temp_nlist,
-                            const FPTYPE * c_cpy, 
-                            const FPTYPE rcut2,
-                            const int nloc,
-                            const int nall,
-                            const int mem_size)
+__global__ void build_nlist(
+    int * ilist, 
+    int * temp_nlist,
+    const FPTYPE * c_cpy, 
+    const FPTYPE rcut2,
+    const int nloc,
+    const int nall,
+    const int mem_size)
 {
     const unsigned int atom_idx = blockIdx.x;
     const unsigned int neighbor_idx = blockIdx.y * blockDim.y + threadIdx.y;
@@ -41,12 +45,13 @@ __global__ void build_nlist(int * ilist,
     }
 }
 
-__global__ void scan_nlist(int * numneigh, 
-                           int * nei_order, 
-                           const int * temp_nlist, 
-                           const int mem_size, 
-                           const int nloc,
-                           const int nall)
+__global__ void scan_nlist(
+    int * numneigh, 
+    int * nei_order, 
+    const int * temp_nlist, 
+    const int mem_size, 
+    const int nloc,
+    const int nall)
 {
     const unsigned int atom_idx = blockIdx.x * blockDim.x + threadIdx.x;
     if(atom_idx<nloc){
@@ -63,11 +68,12 @@ __global__ void scan_nlist(int * numneigh,
     }
 }
 
-__global__ void fill_nlist(int ** firstneigh,
-                           const int * temp_nlist,
-                           const int * nei_order,
-                           const int mem_size,
-                           const int nall)
+__global__ void fill_nlist(
+    int ** firstneigh,
+    const int * temp_nlist,
+    const int * nei_order,
+    const int mem_size,
+    const int nall)
 {
     const unsigned int atom_idx = blockIdx.x;
     const unsigned int neighbor_idx = blockIdx.y * blockDim.y + threadIdx.y;
@@ -170,7 +176,7 @@ void use_nlist_map(
     int nblock=(nnei+TPB-1)/TPB;
     dim3 block_grid(nloc, nblock);
     dim3 thread_grid(1, TPB);
-    map_nlist<<<block_grid,thread_grid>>>(nlist,nlist_map,nloc,nnei);
+    map_nlist<<<block_grid,thread_grid>>>(nlist, nlist_map, nloc, nnei);
 }
 
 template int build_nlist_gpu<float>(InputNlist & nlist, int * max_list_size, int * nlist_data, const float * c_cpy, const int & nloc, const int & nall, const int & mem_size, const float & rcut);

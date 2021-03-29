@@ -3,31 +3,42 @@
 #include "coord.h"
 #include "region.cu"
 
-__device__ inline int collapse_index(const int * idx,const int * size)
+__device__ inline int collapse_index(
+    const int * idx,
+    const int * size)
 {
     return (idx[0] * size[1] + idx[1]) * size[2] + idx[2];
 }
-__device__ inline void index_recover(const int in_idx,const int * size, int * idx)
+__device__ inline void index_recover(
+    const int in_idx,
+    const int * size, 
+    int * idx)
 {
     idx[2]=in_idx%size[2];
     idx[1]=int(in_idx/size[2])%size[1];
     idx[0]=int(int(in_idx/size[2])/size[1]);
 }
-__device__ inline void idx_addshift(int * idx, const int * shift)
+__device__ inline void idx_addshift(
+    int * idx, 
+    const int * shift)
 {
     for(int dd=0;dd<3;dd++)
     {
         idx[dd]+=shift[dd];
     }
 }
-__device__ inline void idx_unshift(int * idx, const int * shift)
+__device__ inline void idx_unshift(
+    int * idx, 
+    const int * shift)
 {
     for(int dd=0;dd<3;dd++)
     {
         idx[dd]-=shift[dd];
     }
 }
-__device__ inline int compute_pbc_shift(int idx, int ncell)
+__device__ inline int compute_pbc_shift(
+    int idx, 
+    int ncell)
 {
     int shift = 0;
     if (idx < 0) {
@@ -46,8 +57,7 @@ __global__ void normalize_one(
     FPTYPE *out_c,
     const FPTYPE *boxt,
     const FPTYPE *rec_boxt,
-    const int nall
-)
+    const int nall)
 {
     // <<<nall/TPB, TPB>>>
     int idy=blockIdx.x*blockDim.x+threadIdx.x;
@@ -162,8 +172,7 @@ __global__ void _build_loc_clist(
     const int *idx_cellmap, 
     const int *idx_order,
     const int *sec_num_map,
-    const int nloc
-)
+    const int nloc)
 {
     int idy = blockIdx.x*blockDim.x+threadIdx.x;
     if(idy>=nloc){return;}
@@ -188,8 +197,7 @@ __global__ void _copy_coord(
     const int nall, 
     const int total_cellnum, 
     const FPTYPE * boxt, 
-    const FPTYPE * rec_boxt
-)
+    const FPTYPE * rec_boxt)
 {
     int idy = blockIdx.x*blockDim.x+threadIdx.x;
     if(idy>=nall){return;}
@@ -235,7 +243,14 @@ __global__ void _copy_coord(
 }
 
 template <typename FPTYPE>
-void compute_int_data(int * int_data, const FPTYPE * in_c, const int * cell_info, const deepmd::Region<FPTYPE> & region, const int nloc, const int loc_cellnum, const int total_cellnum)
+void compute_int_data(
+    int * int_data, 
+    const FPTYPE * in_c, 
+    const int * cell_info, 
+    const deepmd::Region<FPTYPE> & region, 
+    const int nloc, 
+    const int loc_cellnum, 
+    const int total_cellnum)
 {
     const int nn=(nloc>=total_cellnum)?nloc:total_cellnum; 
     const int nblock=(nn+TPB-1)/TPB;
@@ -255,21 +270,38 @@ void compute_int_data(int * int_data, const FPTYPE * in_c, const int * cell_info
     const int * ngcell=cell_info+12;
     const FPTYPE * boxt = region.boxt;
     const FPTYPE * rec_boxt = region.rec_boxt;
-    _compute_int_data<<<nblock, TPB>>>(in_c,nat_stt,nat_end,ext_stt,ext_end,ngcell,boxt,rec_boxt,idx_cellmap,idx_cellmap_noshift,total_cellnum_map,mask_cellnum_map,cell_map,loc_cellnum_map,cell_shift_map,temp_idx_order,nloc,loc_cellnum,total_cellnum);
+    _compute_int_data<<<nblock, TPB>>>(in_c, nat_stt, nat_end, ext_stt, ext_end, ngcell,
+        boxt, rec_boxt, idx_cellmap, idx_cellmap_noshift, total_cellnum_map, mask_cellnum_map,
+        cell_map, loc_cellnum_map, cell_shift_map, temp_idx_order, nloc, loc_cellnum, total_cellnum);
 }
 
-void build_loc_clist(int * int_data, const int nloc, const int loc_cellnum, const int total_cellnum)
+void build_loc_clist(
+    int * int_data, 
+    const int nloc, 
+    const int loc_cellnum, 
+    const int total_cellnum)
 {
     const int nblock=(nloc+TPB-1)/TPB;
     const int * idx_cellmap_noshift=int_data+nloc;
     const int * temp_idx_order=idx_cellmap_noshift+nloc;
     const int * sec_loc_cellnum_map=temp_idx_order+nloc+loc_cellnum+2*total_cellnum+total_cellnum+3*total_cellnum;
     int * loc_clist=int_data+nloc*3+loc_cellnum+total_cellnum*3+total_cellnum*3+loc_cellnum+1+total_cellnum+1;
-    _build_loc_clist<<<nblock, TPB>>>(loc_clist,idx_cellmap_noshift,temp_idx_order,sec_loc_cellnum_map,nloc);
+    _build_loc_clist<<<nblock, TPB>>>(loc_clist, idx_cellmap_noshift, temp_idx_order, sec_loc_cellnum_map, nloc);
 }
 
 template <typename FPTYPE>
-void copy_coord(FPTYPE * out_c, int * out_t, int * mapping, const int * int_data, const FPTYPE * in_c, const int * in_t, const int nloc, const int nall, const int loc_cellnum, const int total_cellnum, const deepmd::Region<FPTYPE> & region)
+void copy_coord(
+    FPTYPE * out_c, 
+    int * out_t, 
+    int * mapping, 
+    const int * int_data, 
+    const FPTYPE * in_c, 
+    const int * in_t, 
+    const int nloc, 
+    const int nall, 
+    const int loc_cellnum, 
+    const int total_cellnum, 
+    const deepmd::Region<FPTYPE> & region)
 {
     const int nblock=(nall+TPB-1)/TPB;
     const int * cell_map=int_data+3*nloc+loc_cellnum+2*total_cellnum;
@@ -280,7 +312,8 @@ void copy_coord(FPTYPE * out_c, int * out_t, int * mapping, const int * int_data
 
     const FPTYPE *boxt = region.boxt;
     const FPTYPE *rec_boxt = region.rec_boxt;
-    _copy_coord<<<nblock, TPB>>>(out_c, out_t, mapping, in_c, in_t, cell_map, cell_shift_map, sec_loc_cellnum_map, sec_total_cellnum_map, loc_clist, nloc, nall, total_cellnum, boxt, rec_boxt);
+    _copy_coord<<<nblock, TPB>>>(out_c, out_t, mapping, in_c, in_t, cell_map, cell_shift_map, 
+        sec_loc_cellnum_map, sec_total_cellnum_map, loc_clist, nloc, nall, total_cellnum, boxt, rec_boxt);
 }
 
 namespace deepmd {
@@ -340,7 +373,8 @@ copy_coord_gpu(
         return 1;
     }
     else{
-        cudaErrcheck(cudaMemcpy(int_data+nloc*3+loc_cellnum+total_cellnum*3+total_cellnum*3, sec_loc_cellnum_map, sizeof(int) * (loc_cellnum+1+total_cellnum+1), cudaMemcpyHostToDevice));
+        cudaErrcheck(cudaMemcpy(int_data+nloc*3+loc_cellnum+total_cellnum*3+total_cellnum*3, 
+            sec_loc_cellnum_map, sizeof(int) * (loc_cellnum+1+total_cellnum+1), cudaMemcpyHostToDevice));
         delete[] int_data_cpu;
         build_loc_clist(int_data, nloc, loc_cellnum, total_cellnum);
         copy_coord(out_c, out_t, mapping, int_data, in_c, in_t, nloc, *nall, loc_cellnum, total_cellnum, region);
