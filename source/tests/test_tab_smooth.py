@@ -63,7 +63,7 @@ class IntplInter(Inter):
                  name,
                  reuse = None) :
         descrpt, descrpt_deriv, rij, nlist \
-            = op_module.descrpt_se_a (dcoord, 
+            = op_module.prod_env_mat_a (dcoord, 
                                        dtype,
                                        tnatoms,
                                        dbox, 
