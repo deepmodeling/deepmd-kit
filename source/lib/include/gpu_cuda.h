@@ -34,7 +34,7 @@ namespace deepmd {
 template <typename FPTYPE>
 void memcpy_host_to_device(
     FPTYPE * device, 
-    std::vector<FPTYPE> &host) 
+    const std::vector<FPTYPE> &host) 
 {
   cudaErrcheck(cudaMemcpy(device, &host[0], sizeof(FPTYPE) * host.size(), cudaMemcpyHostToDevice));  
 }
@@ -42,7 +42,7 @@ void memcpy_host_to_device(
 template <typename FPTYPE>
 void memcpy_host_to_device(
     FPTYPE * device, 
-    FPTYPE * host,
+    const FPTYPE * host,
     const int size) 
 {
   cudaErrcheck(cudaMemcpy(device, host, sizeof(FPTYPE) * size, cudaMemcpyHostToDevice));  
@@ -50,16 +50,25 @@ void memcpy_host_to_device(
 
 template <typename FPTYPE>
 void memcpy_device_to_host(
-    FPTYPE * device, 
+    const FPTYPE * device, 
     std::vector<FPTYPE> &host) 
 {
   cudaErrcheck(cudaMemcpy(&host[0], device, sizeof(FPTYPE) * host.size(), cudaMemcpyDeviceToHost));  
 }
 
 template <typename FPTYPE>
+void memcpy_device_to_host(
+    const FPTYPE * device, 
+    FPTYPE * host,
+    const int size) 
+{
+  cudaErrcheck(cudaMemcpy(host, device, sizeof(FPTYPE) * size, cudaMemcpyDeviceToHost));  
+}
+
+template <typename FPTYPE>
 void malloc_device_memory(
     FPTYPE * &device, 
-    std::vector<FPTYPE> &host) 
+    const std::vector<FPTYPE> &host) 
 {
   cudaErrcheck(cudaMalloc((void **)&device, sizeof(FPTYPE) * host.size()));
 }
@@ -75,10 +84,20 @@ void malloc_device_memory(
 template <typename FPTYPE>
 void malloc_device_memory_sync(
     FPTYPE * &device,
-    std::vector<FPTYPE> &host) 
+    const std::vector<FPTYPE> &host) 
 {
   cudaErrcheck(cudaMalloc((void **)&device, sizeof(FPTYPE) * host.size()));
   memcpy_host_to_device(device, host);
+}
+
+template <typename FPTYPE>
+void malloc_device_memory_sync(
+    FPTYPE * &device,
+    const FPTYPE * host,
+    const int size)
+{
+  cudaErrcheck(cudaMalloc((void **)&device, sizeof(FPTYPE) * size));
+  memcpy_host_to_device(device, host, size);
 }
 
 template <typename FPTYPE>
