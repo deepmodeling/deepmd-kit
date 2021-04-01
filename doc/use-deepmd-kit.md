@@ -10,6 +10,7 @@
 	- [Run MD with Lammps](#run-md-with-lammps)
 	    - [Include deepmd in the pair style](#include-deepmd-in-the-pair-style)
 	    - [Long-range interaction](#long-range-interaction)
+	    - [Model deviation with lammps](#Model-deviation-with-lammps)
 	- [Run path-integral MD with i-PI](#run-path-integral-md-with-i-pi)
 	- [Use deep potential with ASE](#use-deep-potential-with-ase)
 
@@ -360,6 +361,8 @@ kspace_style	pppm 1.0e-5
 kspace_modify	gewald 0.45
 ```
 Please notice that the DeePMD does nothing to the direct space part of the electrostatic interaction, because this part is assumed to be fitted in the DeePMD model (the direct space cut-off is thus the cut-off of the DeePMD model). The splitting parameter `gewald` is modified by the `kspace_modify` command.
+
+### Model deviation with lammps
 
 ## Run path-integral MD with i-PI
 The i-PI works in a client-server model. The i-PI provides the server for integrating the replica positions of atoms, while the DeePMD-kit provides a client named `dp_ipi` that computes the interactions (including energy, force and virial). The server and client communicates via the Unix domain socket or the Internet socket. The client can be started by
