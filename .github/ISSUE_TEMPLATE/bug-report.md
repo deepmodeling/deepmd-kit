@@ -16,7 +16,7 @@ assignees: ''
 
 <!--Please specify precisely which Deepmd-kit version this issue was detected with on what build environment, (Python Version and GCC Version are in the first and second line of Python command line interface respectively. And check the Deepmd-kit Version with command line "print(deepmd.__version__)"). -->
 
-<!--If necessary, specify what platform you are running on. -->
+<!--If applicable, specify what platform you are running on. -->
 
 **Steps to Reproduce**
 
