@@ -4,12 +4,12 @@ about: Create a bug report to help us eliminate issues and improve deepmd-kit. I
   this doesn’t look right, [choose a different type](https://github.com/deepmodeling/deepmd-kit/issues/new/choose).
 title: "[BUG] _Replace With Suitable Title_"
 labels: bug
-assignees: njzjz
+assignees: ''
 
 ---
 
 **Summary**
-[choose a different type](https://github.com/deepmodeling/deepmd-kit/issues/new/choose)
+
 <!--Please provide a clear and concise description of what the bug is.-->
 
 **Deepmd-kit Version, Python Version, Tensorflow Version, GCC Version and Cuda Version.**
