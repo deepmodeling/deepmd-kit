@@ -2,7 +2,7 @@
 name: Parameters
 about: Make a suggestion for a change of input parameters or a new output to deepmd-kit.
   If this doesn’t work right, [choose a different type]( https://github.com/deepmodeling/deepmd-kit/issues/new/choose).
-title: "[About input files] _Replace With Suitable Title_"
+title: "[Parameters] _Replace With Suitable Title_"
 labels: document, enhancement
 assignees: ''
 
