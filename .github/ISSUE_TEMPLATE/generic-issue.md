@@ -10,7 +10,7 @@ assignees: ''
 
 **Summary**
 
-<!--Please provide a clear and concise description of what the bug is.-->
+<!--Please provide a clear and concise description of what the question is.-->
 
 **Deepmd-kit Version, Python Version, Tensorflow Version, GCC Version and Cuda Version.**
 
