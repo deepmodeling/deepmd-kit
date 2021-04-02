@@ -86,7 +86,9 @@ setup(
         "deepmd/loggers",
         "deepmd/cluster",
         "deepmd/entrypoints",
-        "deepmd/op"
+        "deepmd/op",
+        "deepmd/model",
+        "deepmd/train",
     ],
     python_requires=">=3.6",
     classifiers=[
@@ -108,5 +110,5 @@ setup(
         "docs": ["sphinx", "recommonmark", "sphinx_rtd_theme"],
         **extras_require,
     },
-    entry_points={"console_scripts": ["dp = deepmd.main:main"]},
+    entry_points={"console_scripts": ["dp = deepmd.entrypoints.main:main"]},
 )

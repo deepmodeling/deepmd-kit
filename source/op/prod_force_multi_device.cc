@@ -70,12 +70,18 @@ public:
     assert (nloc * ndescrpt * 3 == in_deriv_tensor.shape().dim_size(1));
     assert (nloc * nnei == nlist_tensor.shape().dim_size(1));
     assert (nnei * 4 == ndescrpt);	  
-    // flat the tensors
-    FPTYPE * force = force_tensor->flat<FPTYPE>().data();
-    const FPTYPE * net_deriv = net_deriv_tensor.flat<FPTYPE>().data();
-    const FPTYPE * in_deriv = in_deriv_tensor.flat<FPTYPE>().data();
-    const int * nlist = nlist_tensor.flat<int>().data();
 
+    // flat the tensors
+    FPTYPE * p_force = force_tensor->flat<FPTYPE>().data();
+    const FPTYPE * p_net_deriv = net_deriv_tensor.flat<FPTYPE>().data();
+    const FPTYPE * p_in_deriv = in_deriv_tensor.flat<FPTYPE>().data();
+    const int * p_nlist = nlist_tensor.flat<int>().data();
+
+    for(int kk = 0; kk < nframes; ++kk){
+      FPTYPE * force = p_force + kk * nall * 3;
+      const FPTYPE * net_deriv = p_net_deriv + kk * nloc * ndescrpt;
+      const FPTYPE * in_deriv = p_in_deriv + kk * nloc * ndescrpt * 3;
+      const int * nlist = p_nlist + kk * nloc * nnei;      
     if (device == "GPU") {
       #if GOOGLE_CUDA
       deepmd::prod_force_a_gpu_cuda(    
@@ -87,6 +93,7 @@ public:
       deepmd::prod_force_a_cpu(    
           force, 
           net_deriv, in_deriv, nlist, nloc, nall, nnei);
+    }
     }
   }
  private:
@@ -144,11 +151,16 @@ public:
     assert (nloc * nnei == nlist_tensor.shape().dim_size(1));
     assert (nnei * 1 == ndescrpt);	 
     // flat the tensors
-    FPTYPE * force = force_tensor->flat<FPTYPE>().data();
-    const FPTYPE * net_deriv = net_deriv_tensor.flat<FPTYPE>().data();
-    const FPTYPE * in_deriv = in_deriv_tensor.flat<FPTYPE>().data();
-    const int * nlist = nlist_tensor.flat<int>().data();
+    FPTYPE * p_force = force_tensor->flat<FPTYPE>().data();
+    const FPTYPE * p_net_deriv = net_deriv_tensor.flat<FPTYPE>().data();
+    const FPTYPE * p_in_deriv = in_deriv_tensor.flat<FPTYPE>().data();
+    const int * p_nlist = nlist_tensor.flat<int>().data();
 
+    for(int kk = 0; kk < nframes; ++kk){
+      FPTYPE * force = p_force + kk * nall * 3;
+      const FPTYPE * net_deriv = p_net_deriv + kk * nloc * ndescrpt;
+      const FPTYPE * in_deriv = p_in_deriv + kk * nloc * ndescrpt * 3;
+      const int * nlist = p_nlist + kk * nloc * nnei;      
     if (device == "GPU") {
       #if GOOGLE_CUDA
       deepmd::prod_force_r_gpu_cuda(    
@@ -160,6 +172,7 @@ public:
       deepmd::prod_force_r_cpu(    
           force, 
           net_deriv, in_deriv, nlist, nloc, nall, nnei);
+    }
     }
   }
  private:

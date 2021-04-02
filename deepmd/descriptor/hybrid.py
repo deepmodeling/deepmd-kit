@@ -4,8 +4,8 @@ from typing import Tuple, List
 from deepmd.env import tf
 from deepmd.common import ClassArg
 from deepmd.env import op_module
-from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.run_options import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 # from deepmd.descriptor import DescrptLocFrame
 # from deepmd.descriptor import DescrptSeA
 # from deepmd.descriptor import DescrptSeAT

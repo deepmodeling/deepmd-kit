@@ -276,6 +276,7 @@ def fitting_variant_type_args():
 def model_args ():
     doc_type_map = 'A list of strings. Give the name to each type of atoms.'
     doc_data_stat_nbatch = 'The model determines the normalization from the statistics of the data. This key specifies the number of `frames` in each `system` used for statistics.'
+    doc_data_stat_protect = 'Protect parameter for atomic energy regression.'
     doc_descrpt = 'The descriptor of atomic environment.'
     doc_fitting = 'The fitting of physical properties.'
     doc_use_srtab = 'The table for the short-range pairwise interaction added on top of DP. The table is a text data file with (N_t + 1) * N_t / 2 + 1 columes. The first colume is the distance between atoms. The second to the last columes are energies for pairs of certain types. For example we have two atom types, 0 and 1. The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly.'
@@ -286,6 +287,7 @@ def model_args ():
     ca = Argument("model", dict, 
                   [Argument("type_map", list, optional = True, doc = doc_type_map),
                    Argument("data_stat_nbatch", int, optional = True, default = 10, doc = doc_data_stat_nbatch),
+                   Argument("data_stat_protect", float, optional = True, default = 1e-2, doc = doc_data_stat_protect),
                    Argument("use_srtab", str, optional = True, doc = doc_use_srtab),
                    Argument("smin_alpha", float, optional = True, doc = doc_smin_alpha),
                    Argument("sw_rmin", float, optional = True, doc = doc_sw_rmin),

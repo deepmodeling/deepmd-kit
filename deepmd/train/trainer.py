@@ -6,8 +6,8 @@ import shutil
 import numpy as np
 from deepmd.env import tf
 from deepmd.env import default_tf_session_config
-from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.run_options import GLOBAL_ENER_FLOAT_PRECISION
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.fit import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
 from deepmd.descriptor import DescrptLocFrame
 from deepmd.descriptor import DescrptSeA
@@ -17,7 +17,7 @@ from deepmd.descriptor import DescrptSeAEf
 from deepmd.descriptor import DescrptSeR
 from deepmd.descriptor import DescrptSeAR
 from deepmd.descriptor import DescrptHybrid
-from deepmd.model import Model, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
+from deepmd.model import EnerModel, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
 from deepmd.loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
 from deepmd.utils.learning_rate import LearningRateExp
 from deepmd.utils.neighbor_stat import NeighborStat
@@ -72,7 +72,7 @@ def _generate_descrpt_from_param_dict(descrpt_param):
     return descrpt
     
 
-class NNPTrainer (object):
+class DPTrainer (object):
     def __init__(self, 
                  jdata, 
                  run_opt):
@@ -134,16 +134,44 @@ class NNPTrainer (object):
 
         # init model
         # infer model type by fitting_type
-        if fitting_type == Model.model_type:
-            self.model = Model(model_param, self.descrpt, self.fitting)
+        if fitting_type == 'ener':
+            self.model = EnerModel(
+                self.descrpt, 
+                self.fitting, 
+                model_param.get('type_map'),
+                model_param.get('data_stat_nbatch', 10),
+                model_param.get('data_stat_protect', 1e-2),
+                model_param.get('use_srtab'),
+                model_param.get('smin_alpha'),
+                model_param.get('sw_rmin'),
+                model_param.get('sw_rmax')
+            )
         # elif fitting_type == 'wfc':
         #     self.model = WFCModel(model_param, self.descrpt, self.fitting)
         elif fitting_type == 'dipole':
-            self.model = DipoleModel(model_param, self.descrpt, self.fitting)
+            self.model = DipoleModel(
+                self.descrpt, 
+                self.fitting, 
+                model_param.get('type_map'),
+                model_param.get('data_stat_nbatch', 10),
+                model_param.get('data_stat_protect', 1e-2)
+            )
         elif fitting_type == 'polar':
-            self.model = PolarModel(model_param, self.descrpt, self.fitting)
+            self.model = PolarModel(
+                self.descrpt, 
+                self.fitting,
+                model_param.get('type_map'),
+                model_param.get('data_stat_nbatch', 10),
+                model_param.get('data_stat_protect', 1e-2)
+            )
         elif fitting_type == 'global_polar':
-            self.model = GlobalPolarModel(model_param, self.descrpt, self.fitting)
+            self.model = GlobalPolarModel(
+                self.descrpt, 
+                self.fitting,
+                model_param.get('type_map'),
+                model_param.get('data_stat_nbatch', 10),
+                model_param.get('data_stat_protect', 1e-2)
+            )
         else :
             raise RuntimeError('get unknown fitting type when building model')
 
