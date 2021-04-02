@@ -10,7 +10,7 @@
 	    - [Install the Tensorflow's C++ interface](#install-the-tensorflows-c-interface)    
 	    - [Install the DeePMD-kit's C++ interface](#install-the-deepmd-kits-c-interface)
 	    - [Install LAMMPS's DeePMD-kit module](#install-lammpss-deepmd-kit-module)
-    - [Hardware platforms](#install-on-various-hardware-platforms)
+    - [Hardware platforms](#hardware-platforms)
 
 # Download and install
 

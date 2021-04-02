@@ -10,7 +10,6 @@
 	- [Run MD with Lammps](#run-md-with-lammps)
 	    - [Include deepmd in the pair style](#include-deepmd-in-the-pair-style)
 	    - [Long-range interaction](#long-range-interaction)
-	    - [Model deviation with lammps](#Model-deviation-with-lammps)
 	- [Run path-integral MD with i-PI](#run-path-integral-md-with-i-pi)
 	- [Use deep potential with ASE](#use-deep-potential-with-ase)
 
@@ -33,6 +32,7 @@ Time	| ps
 Length	| Å
 Energy	| eV
 Force	| eV/Å
+Virial  | kBar
 Pressure| Bar
 
 The frames of the system are stored in two formats. A raw file is a plain text file with each information item written in one file and one frame written on one line. The default files that provide box, coordinate, force, energy and virial are `box.raw`, `coord.raw`, `force.raw`, `energy.raw` and `virial.raw`, respectively. *We recommend you use these file names*. Here is an example of force.raw:
@@ -42,7 +42,7 @@ $ cat force.raw
  6.737  1.554 -5.587 -2.803  0.062  2.222
 -1.968 -0.163  1.020 -0.225 -0.789  0.343
 ```
-This `force.raw` contains 3 frames with each frame having the forces of 2 atoms, thus it has 3 lines and 6 columns. Each line provides all the 3 force components of 2 atoms in 1 frame. The first three numbers are the 3 force components of the first atom, while the second three numbers are the 3 force components of the second atom. The coordinate file `coord.raw` is organized similarly. In `box.raw`, the 9 components of the box vectors should be provided on each line. In `virial.raw`, the 9 components of the virial tensor should be provided on each line. The number of lines of all raw files should be identical.
+This `force.raw` contains 3 frames with each frame having the forces of 2 atoms, thus it has 3 lines and 6 columns. Each line provides all the 3 force components of 2 atoms in 1 frame. The first three numbers are the 3 force components of the first atom, while the second three numbers are the 3 force components of the second atom. The coordinate file `coord.raw` is organized similarly. In `box.raw`, the 9 components of the box vectors should be provided on each line. In `virial.raw`, the 9 components of the virial tensor should be provided on each line in the order `XX YY ZZ XY YX YZ ZY XZ ZX`. The number of lines of all raw files should be identical.
 
 We assume that the atom types do not change in all frames. It is provided by `type.raw`, which has one line with the types of atoms written one by one. The atom types should be integers. For example the `type.raw` of a system that has 2 atoms with 0 and 1:
 ```bash
