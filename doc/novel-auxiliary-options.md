@@ -13,4 +13,5 @@ descriptor:
 fitting_net:  
 "share_fitting" : bool # if applying share fitting net, set true  
 
+
 ## Interpolation with tabulated pair potentials
