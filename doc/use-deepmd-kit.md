@@ -32,7 +32,7 @@ Time	| ps
 Length	| Å
 Energy	| eV
 Force	| eV/Å
-Virial  | kBar
+Virial  | eV
 Pressure| Bar
 
 The frames of the system are stored in two formats. A raw file is a plain text file with each information item written in one file and one frame written on one line. The default files that provide box, coordinate, force, energy and virial are `box.raw`, `coord.raw`, `force.raw`, `energy.raw` and `virial.raw`, respectively. *We recommend you use these file names*. Here is an example of force.raw:
