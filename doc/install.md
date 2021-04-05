@@ -1,29 +1,26 @@
-- [Download and install](#download-and-install)
-    - [Easy installation methods](#easy-installation-methods)
-      - [Offline packages](#offline-packages)
-      - [With Docker](#with-docker)
-      - [With conda](#with-conda)
+- [Easy installation methods](#easy-installation-methods)
+    - [Offline packages](#offline-packages)
+    - [With Docker](#with-docker)
+    - [With conda](#with-conda)
+- [From source code](#from-source-code)
     - [Install the python interaction](#install-the-python-interface)
       - [Install the Tensorflow's python interface](#install-the-tensorflows-python-interface)
       - [Install the DeePMD-kit's python interface](#install-the-deepmd-kits-python-interface)
     - [Install the C++ interface](#install-the-c-interface)
-	    - [Install the Tensorflow's C++ interface](#install-the-tensorflows-c-interface)    
-	    - [Install the DeePMD-kit's C++ interface](#install-the-deepmd-kits-c-interface)
-	    - [Install LAMMPS's DeePMD-kit module](#install-lammpss-deepmd-kit-module)
+      - [Install the Tensorflow's C++ interface](#install-the-tensorflows-c-interface)
+      - [Install the DeePMD-kit's C++ interface](#install-the-deepmd-kits-c-interface)
+      - [Install LAMMPS's DeePMD-kit module](#install-lammpss-deepmd-kit-module)
 
-# Download and install
 
-Please follow our [github](https://github.com/deepmodeling/deepmd-kit) webpage to download the [latest released version](https://github.com/deepmodeling/deepmd-kit/tree/master) and [development version](https://github.com/deepmodeling/deepmd-kit/tree/devel).
-
-## Easy installation methods
+# Easy installation methods
 There various easy methods to install DeePMD-kit. Choose one that you prefer. If you want to build by yourself, jump to the next two sections.
 
 After your easy installation, DeePMD-kit (`dp`) and LAMMPS (`lmp`) will be available to execute. You can try `dp -h` and `lmp -h` to see the help. `mpirun` is also available considering you may want to run LAMMPS in parallel.
 
-### Offline packages
+## Offline packages
 Both CPU and GPU version offline packages are avaiable in [the Releases page](https://github.com/deepmodeling/deepmd-kit/releases).
 
-### With conda
+## With conda
 DeePMD-kit is avaiable with [conda](https://github.com/conda/conda). Install [Anaconda](https://www.anaconda.com/distribution/#download-section) or [Miniconda](https://docs.conda.io/en/latest/miniconda.html) first.
 
 To install the CPU version:
@@ -36,7 +33,7 @@ To install the GPU version containing [CUDA 10.1](https://docs.nvidia.com/deploy
 conda install deepmd-kit=*=*gpu lammps-dp=*=*gpu -c deepmodeling
 ```
 
-### With Docker
+## With Docker
 A docker for installing the DeePMD-kit is available [here](https://github.com/orgs/deepmodeling/packages/container/package/deepmd-kit).
 
 To pull the CPU version:
@@ -48,6 +45,25 @@ To pull the GPU version:
 ```bash
 docker pull ghcr.io/deepmodeling/deepmd-kit:1.2.2_cuda10.1_gpu
 ```
+
+
+# From source code
+
+Please follow our [github](https://github.com/deepmodeling/deepmd-kit) webpage to download the [latest released version](https://github.com/deepmodeling/deepmd-kit/tree/master) and [development version](https://github.com/deepmodeling/deepmd-kit/tree/devel).
+
+Or get the DeePMD-kit source code by `git clone`
+```bash
+cd /some/workspace
+git clone --recursive https://github.com/deepmodeling/deepmd-kit.git deepmd-kit
+```
+The `--recursive` option clones all [submodules](https://git-scm.com/book/en/v2/Git-Tools-Submodules) needed by DeePMD-kit.
+
+For convenience, you may want to record the location of source to a variable, saying `deepmd_source_dir` by
+```bash
+cd deepmd-kit
+deepmd_source_dir=`pwd`
+```
+
 
 ## Install the python interface 
 ### Install the Tensorflow's python interface
@@ -89,9 +105,14 @@ One should remember to activate the virtual environment every time he/she uses d
 
 Execute
 ```bash
-pip install deepmd-kit
+cd $deepmd_source_dir
+pip install .
 ```
-To test the installation, one may execute
+To test the installation, one should firstly jump out of the source directory
+```
+cd /some/other/workspace
+```
+then execute
 ```bash
 dp -h
 ```
@@ -130,18 +151,6 @@ First the C++ interface of Tensorflow should be installed. It is noted that the 
 
 ### Install the DeePMD-kit's C++ interface
 
-Clone the DeePMD-kit source code
-```bash
-cd /some/workspace
-git clone --recursive https://github.com/deepmodeling/deepmd-kit.git deepmd-kit
-```
-
-For convenience, you may want to record the location of source to a variable, saying `deepmd_source_dir` by
-```bash
-cd deepmd-kit
-deepmd_source_dir=`pwd`
-```
-
 Now goto the source code directory of DeePMD-kit and make a build place.
 ```bash
 cd $deepmd_source_dir/source
@@ -175,18 +184,19 @@ DeePMD-kit provide module for running MD simulation with LAMMPS. Now make the De
 cd $deepmd_source_dir/source/build
 make lammps
 ```
-DeePMD-kit will generate a module called `USER-DEEPMD` in the `build` directory. Now download your favorite LAMMPS code, and uncompress it (I assume that you have downloaded the tar `lammps-stable.tar.gz`)
+DeePMD-kit will generate a module called `USER-DEEPMD` in the `build` directory. Now download a LAMMPS code with version later than `stable_29Oct2020`, and uncompress it (I assume that you have downloaded the tar `lammps-stable.tar.gz`)
 ```bash
 cd /some/workspace
 tar xf lammps-stable.tar.gz
 ```
-The source code of LAMMPS is stored in directory, for example `lammps-31Mar17`. Now go into the LAMMPS code and copy the DeePMD-kit module like this
+The source code of LAMMPS is stored in directory, Now go into the LAMMPS code and copy the DeePMD-kit module like this
 ```bash
-cd lammps-31Mar17/src/
+cd lammps-29Oct2020/src/
 cp -r $deepmd_source_dir/source/build/USER-DEEPMD .
 ```
 Now build LAMMPS
 ```bash
+make yes-kspace
 make yes-user-deepmd
 make mpi -j4
 ```
