@@ -19,6 +19,7 @@ DeePMD-kit's documentation
    tensorboard
    api
    developement
+   application-examples
 
 
 Indices and tables
