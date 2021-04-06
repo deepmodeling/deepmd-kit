@@ -51,7 +51,7 @@ inline FPTYPE dot(
 }
 
 template<typename FPTYPE>
-void tabulate_fusion_cpu(
+void deepmd::tabulate_fusion_cpu(
     FPTYPE * out,
     const FPTYPE * table, 
     const FPTYPE * table_info, 
@@ -112,7 +112,7 @@ void tabulate_fusion_cpu(
 }
 
 template<typename FPTYPE>
-void tabulate_fusion_grad_cpu(
+void deepmd::tabulate_fusion_grad_cpu(
     FPTYPE * dy_dem_x, 
     FPTYPE * dy_dem,
     const FPTYPE * table, 
@@ -186,7 +186,7 @@ void tabulate_fusion_grad_cpu(
   }
 }
 
-template void tabulate_fusion_cpu<float>(float * out, const float * table, const float * table_info, const float * em_x, const float * em, const int nloc, const int nnei, const int last_layer_size);
-template void tabulate_fusion_cpu<double>(double * out, const double * table, const double * table_info, const double * em_x, const double * em, const int nloc, const int nnei, const int last_layer_size);
-template void tabulate_fusion_grad_cpu<float> (float * dy_dem_x, float * dy_dem, const float * table, const float * table_info, const float * em_x, const float * em, const float * dy, const int nloc, const int nnei, const int last_layer_size); 
-template void tabulate_fusion_grad_cpu<double> (double * dy_dem_x, double * dy_dem, const double * table, const double * table_info, const double * em_x, const double * em, const double * dy, const int nloc, const int nnei, const int last_layer_size);
+template void deepmd::tabulate_fusion_cpu<float>(float * out, const float * table, const float * table_info, const float * em_x, const float * em, const int nloc, const int nnei, const int last_layer_size);
+template void deepmd::tabulate_fusion_cpu<double>(double * out, const double * table, const double * table_info, const double * em_x, const double * em, const int nloc, const int nnei, const int last_layer_size);
+template void deepmd::tabulate_fusion_grad_cpu<float> (float * dy_dem_x, float * dy_dem, const float * table, const float * table_info, const float * em_x, const float * em, const float * dy, const int nloc, const int nnei, const int last_layer_size); 
+template void deepmd::tabulate_fusion_grad_cpu<double> (double * dy_dem_x, double * dy_dem, const double * table, const double * table_info, const double * em_x, const double * em, const double * dy, const int nloc, const int nnei, const int last_layer_size);

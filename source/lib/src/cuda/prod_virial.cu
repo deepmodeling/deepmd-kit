@@ -1,23 +1,6 @@
 #include "gpu_cuda.h"
 #include "prod_virial.h"
 
-#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 600
-static __inline__ __device__ double atomicAdd(
-    double* address, 
-    double val) 
-{
-  unsigned long long int* address_as_ull = (unsigned long long int*)address;
-  unsigned long long int old = *address_as_ull, assumed;
-  do {
-    assumed = old;
-    old = atomicCAS(address_as_ull, assumed,
-          __double_as_longlong(val + __longlong_as_double(assumed)));
-  // Note: uses integer comparison to avoid hang in case of NaN (since NaN != NaN) } while (assumed != old);
-  } while (assumed != old);
-  return __longlong_as_double(old);
-}
-#endif
-
 template<typename FPTYPE>
 __global__ void virial_deriv_wrt_neighbors_a(
     FPTYPE * virial, 
@@ -90,6 +73,7 @@ __global__ void virial_deriv_wrt_neighbors_r(
         net_deriv[idx * ndescrpt + idy] * rij[idx * nnei * 3 + idy * 3 + idz % 3] * in_deriv[idx * ndescrpt * 3 + idy * 3 + idz / 3]);
 }
 
+namespace deepmd {
 template<typename FPTYPE>
 void prod_virial_a_gpu_cuda(
     FPTYPE * virial, 
@@ -152,3 +136,4 @@ template void prod_virial_a_gpu_cuda<float>(float * virial, float * atom_virial,
 template void prod_virial_a_gpu_cuda<double>(double * virial, double * atom_virial, const double * net_deriv, const double * in_deriv, const double * rij, const int * nlist, const int nloc, const int nall, const int nnei);
 template void prod_virial_r_gpu_cuda<float>(float * virial, float * atom_virial, const float * net_deriv, const float * in_deriv, const float * rij, const int * nlist, const int nloc, const int nall, const int nnei);
 template void prod_virial_r_gpu_cuda<double>(double * virial, double * atom_virial, const double * net_deriv, const double * in_deriv, const double * rij, const int * nlist, const int nloc, const int nall, const int nnei);
+}

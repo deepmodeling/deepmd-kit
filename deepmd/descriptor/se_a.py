@@ -5,8 +5,8 @@ from typing import Tuple, List
 from deepmd.env import tf
 from deepmd.common import get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, get_np_precision
 from deepmd.utils.argcheck import list_to_doc
-from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.run_options import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.utils.network import embedding_net
@@ -112,7 +112,7 @@ class DescrptSeA ():
             self.place_holders['natoms_vec'] = tf.placeholder(tf.int32, [self.ntypes+2], name=name_pfx+'t_natoms')
             self.place_holders['default_mesh'] = tf.placeholder(tf.int32, [None], name=name_pfx+'t_mesh')
             self.stat_descrpt, descrpt_deriv, rij, nlist \
-                = op_module.descrpt_se_a(self.place_holders['coord'],
+                = op_module.prod_env_mat_a(self.place_holders['coord'],
                                          self.place_holders['type'],
                                          self.place_holders['natoms_vec'],
                                          self.place_holders['box'],
@@ -340,7 +340,7 @@ class DescrptSeA ():
         atype = tf.reshape (atype_, [-1, natoms[1]])
 
         self.descrpt, self.descrpt_deriv, self.rij, self.nlist \
-            = op_module.descrpt_se_a (coord,
+            = op_module.prod_env_mat_a (coord,
                                        atype,
                                        natoms,
                                        box,

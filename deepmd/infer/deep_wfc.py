@@ -1,4 +1,5 @@
-from deepmd.infer.deep_eval import DeepTensor
+from deepmd.infer.deep_tensor import DeepTensor
+
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -32,7 +33,6 @@ class DeepWFC(DeepTensor):
         # instance namespace
         self.tensors = dict(
             {
-                "t_sel_type": "model_attr/sel_type:0",
                 # output tensor
                 "t_tensor": "o_wfc:0",
             },
@@ -41,7 +41,6 @@ class DeepWFC(DeepTensor):
         DeepTensor.__init__(
             self,
             model_file,
-            12,
             load_prefix=load_prefix,
             default_tf_graph=default_tf_graph,
         )

@@ -4,9 +4,9 @@ import unittest
 
 from deepmd.env import tf
 from tensorflow.python.framework import ops
-from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.run_options import GLOBAL_NP_FLOAT_PRECISION
-from deepmd.run_options import GLOBAL_ENER_FLOAT_PRECISION
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 
 from deepmd.env import op_module
 from deepmd.descriptor import DescrptSeA
@@ -59,7 +59,7 @@ class TestEfRot(unittest.TestCase):
         efield = tf.reshape(self.efield, [-1, 3])
         efield = self._normalize_3d(efield)
         efield = tf.reshape(efield, [-1, tnatoms[0] * 3])
-        if op != op_module.descrpt_se_a :            
+        if op != op_module.prod_env_mat_a :            
             descrpt = DescrptSeAEfLower(op, **{'sel':self.sel_a, 'rcut': 6, 'rcut_smth' : 5.5})
         else:
             descrpt = DescrptSeA(**{'sel':self.sel_a, 'rcut': 6, 'rcut_smth' : 0.5})
@@ -119,7 +119,7 @@ class TestEfRot(unittest.TestCase):
         t_v_e, t_v_f, t_v_f, t_v_ae, t_v_av \
             = self.build_efv (self.coord, self.box, self.type, self.tnatoms, name = "test_rot" + suffix, op = op_module.descrpt_se_a_ef_vert, reuse = True)
         t_e, t_f, t_f, t_ae, t_av \
-            = self.build_efv (self.coord, self.box, self.type, self.tnatoms, name = "test_rot" + suffix, op = op_module.descrpt_se_a, reuse = True)
+            = self.build_efv (self.coord, self.box, self.type, self.tnatoms, name = "test_rot" + suffix, op = op_module.prod_env_mat_a, reuse = True)
         self.sess.run (tf.global_variables_initializer())
 
         np.random.seed(0)        
@@ -214,7 +214,7 @@ class TestEfRot(unittest.TestCase):
         t_v_e, t_v_f, t_v_f, t_v_ae, t_v_av \
             = self.build_efv (self.coord, self.box, self.type, self.tnatoms, name = "test_rot" + suffix, op = op_module.descrpt_se_a_ef_vert, reuse = True)
         t_e, t_f, t_f, t_ae, t_av \
-            = self.build_efv (self.coord, self.box, self.type, self.tnatoms, name = "test_rot" + suffix, op = op_module.descrpt_se_a, reuse = True)
+            = self.build_efv (self.coord, self.box, self.type, self.tnatoms, name = "test_rot" + suffix, op = op_module.prod_env_mat_a, reuse = True)
         self.sess.run (tf.global_variables_initializer())
 
         np.random.seed(0)        
@@ -289,7 +289,7 @@ class TestEfRot(unittest.TestCase):
         t_v_e, t_v_f, t_v_f, t_v_ae, t_v_av \
             = self.build_efv (self.coord, self.box, self.type, self.tnatoms, name = "test_rot" + suffix, op = op_module.descrpt_se_a_ef_vert, reuse = True)
         t_e, t_f, t_f, t_ae, t_av \
-            = self.build_efv (self.coord, self.box, self.type, self.tnatoms, name = "test_rot" + suffix, op = op_module.descrpt_se_a, reuse = True)
+            = self.build_efv (self.coord, self.box, self.type, self.tnatoms, name = "test_rot" + suffix, op = op_module.prod_env_mat_a, reuse = True)
         self.sess.run (tf.global_variables_initializer())
 
         np.random.seed(0)        

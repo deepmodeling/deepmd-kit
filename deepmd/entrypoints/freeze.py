@@ -43,6 +43,7 @@ def _make_node_names(model_type: str, modifier_type: Optional[str] = None) -> Li
         "descrpt_attr/ntypes",
         "model_attr/tmap",
         "model_attr/model_type",
+        "model_attr/model_version",
     ]
 
     if model_type == "ener":
@@ -59,6 +60,7 @@ def _make_node_names(model_type: str, modifier_type: Optional[str] = None) -> Li
         nodes += [
             "o_wfc",
             "model_attr/sel_type",
+            "model_attr/output_dim",
         ]
     elif model_type == "dipole":
         nodes += [
@@ -76,11 +78,13 @@ def _make_node_names(model_type: str, modifier_type: Optional[str] = None) -> Li
         nodes += [
             "o_polar",
             "model_attr/sel_type",
+            "model_attr/output_dim",
         ]
     elif model_type == "global_polar":
         nodes += [
             "o_global_polar",
             "model_attr/sel_type",
+            "model_attr/output_dim",
         ]
     else:
         raise RuntimeError(f"unknow model type {model_type}")

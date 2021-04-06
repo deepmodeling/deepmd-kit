@@ -5,12 +5,12 @@ import dpdata
 from deepmd.env import tf
 
 from deepmd.common import j_must_have, data_requirement
-from deepmd.run_options import RunOptions
-from deepmd.trainer import NNPTrainer
+from deepmd.train.run_options import RunOptions
+from deepmd.train.trainer import DPTrainer
 from deepmd.utils.data_system import DeepmdDataSystem
-from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.run_options import GLOBAL_NP_FLOAT_PRECISION
-from deepmd.run_options import GLOBAL_ENER_FLOAT_PRECISION
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.infer.ewald_recp import EwaldRecp
 from deepmd.infer.data_modifier import DipoleChargeModifier
 from deepmd.infer.deep_dipole import DeepDipole
@@ -48,7 +48,7 @@ class TestDataModifier (unittest.TestCase) :
             restart=None,
             init_model=None,
             log_path=None,
-            log_level=0,
+            log_level=30,
             mpi_log="master",
             try_distrib=False
         )
@@ -56,7 +56,7 @@ class TestDataModifier (unittest.TestCase) :
         self._setUp_data()
 
         # init model
-        model = NNPTrainer (jdata, run_opt = run_opt)
+        model = DPTrainer (jdata, run_opt = run_opt)
         rcut = model.model.get_rcut()
 
         # init data system
@@ -83,7 +83,7 @@ class TestDataModifier (unittest.TestCase) :
             sess.run(init_op)
             graph = tf.get_default_graph()
             input_graph_def = graph.as_graph_def()
-            nodes = "o_dipole,o_rmat,o_rmat_deriv,o_nlist,o_rij,descrpt_attr/rcut,descrpt_attr/ntypes,descrpt_attr/sel,descrpt_attr/ndescrpt,model_attr/tmap,model_attr/sel_type,model_attr/model_type"
+            nodes = "o_dipole,o_rmat,o_rmat_deriv,o_nlist,o_rij,descrpt_attr/rcut,descrpt_attr/ntypes,descrpt_attr/sel,descrpt_attr/ndescrpt,model_attr/tmap,model_attr/sel_type,model_attr/model_type,model_attr/output_dim,model_attr/model_version"
             output_graph_def = tf.graph_util.convert_variables_to_constants(
                 sess,
                 input_graph_def,

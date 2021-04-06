@@ -106,7 +106,7 @@ endif()
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -DCUB_IGNORE_DEPRECATED_CPP_DIALECT -DCUB_IGNORE_DEPRECATED_CPP_DIALECT")
 
 set (SOURCE_FILES
-    prod_env_mat.cu prod_force.cu prod_virial.cu gelu.cu tabulate.cu
+    prod_env_mat.cu prod_force.cu prod_virial.cu gelu.cu tabulate.cu coord.cu neighbor_list.cu region.cu
 )
 
 cuda_add_library(deepmd_op_cuda SHARED ${SOURCE_FILES})

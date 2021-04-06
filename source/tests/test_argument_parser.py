@@ -7,7 +7,7 @@ import re
 from io import StringIO
 from contextlib import redirect_stderr
 
-from deepmd.main import parse_args, get_ll
+from deepmd.entrypoints.main import parse_args, get_ll
 
 if TYPE_CHECKING:
     try:

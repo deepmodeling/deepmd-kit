@@ -9,6 +9,8 @@
 #include "utilities.h"
 #include "SimulationRegion.h"
 
+namespace deepmd{
+
 // format of the input neighbor list
 struct InputNlist
 {
@@ -16,6 +18,9 @@ struct InputNlist
   int * ilist;
   int * numneigh;
   int ** firstneigh;
+  InputNlist () 
+      : inum(0), ilist(NULL), numneigh(NULL), firstneigh(NULL)
+      {};
   InputNlist (
       int inum_, 
       int * ilist_,
@@ -23,7 +28,8 @@ struct InputNlist
       int ** firstneigh_
       ) 
       : inum(inum_), ilist(ilist_), numneigh(numneigh_), firstneigh(firstneigh_)
-      {}
+      {};
+  ~InputNlist(){};
 };
 
 void convert_nlist(
@@ -31,10 +37,12 @@ void convert_nlist(
     std::vector<std::vector<int> > & from_nlist
     );
 
+int max_numneigh(
+    const InputNlist & to_nlist
+    );
 
 // build neighbor list.
 // outputs
-
 //	nlist, max_list_size
 //	max_list_size is the maximal size of jlist.
 // inputs
@@ -55,6 +63,53 @@ build_nlist_cpu(
     const int & mem_size,
     const float & rcut);
 
+#if GOOGLE_CUDA
+void convert_nlist_gpu_cuda(
+    InputNlist & gpu_nlist,
+    InputNlist & cpu_nlist,
+    int* & gpu_memory,
+    const int & max_nbor_size);
+
+void free_nlist_gpu_cuda(
+    InputNlist & gpu_nlist);
+
+// build neighbor list.
+// outputs
+//	nlist, max_list_size
+//	max_list_size is the maximal size of jlist.
+// inputs
+//	c_cpy, nloc, nall, mem_size, rcut, region
+//	mem_size is the size of allocated memory for jlist.
+// returns
+//	0: succssful
+//	1: the memory is not large enough to hold all neighbors.
+//	   i.e. max_list_size > mem_nall
+template <typename FPTYPE>
+int
+build_nlist_gpu(
+    InputNlist & nlist,
+    int * max_list_size,
+    int * nlist_data,
+    const FPTYPE * c_cpy, 
+    const int & nloc, 
+    const int & nall, 
+    const int & mem_size,
+    const float & rcut);
+
+void use_nlist_map(
+    int * nlist, 
+    const int * nlist_map, 
+    const int nloc, 
+    const int nnei);
+	
+#endif // GOOGLE_CUDA
+
+} // namespace deepmd
+
+
+////////////////////////////////////////////////////////
+// legacy code
+////////////////////////////////////////////////////////
 
 // build nlist by an extended grid
 void

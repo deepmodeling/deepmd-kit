@@ -20,7 +20,9 @@ make_index_range (
 
 
 template<typename FPTYPE>
-void prod_force_a_cpu(
+void 
+deepmd::
+prod_force_a_cpu(
     FPTYPE * force, 
     const FPTYPE * net_deriv, 
     const FPTYPE * env_deriv, 
@@ -56,7 +58,9 @@ void prod_force_a_cpu(
 }
 
 template
-void prod_force_a_cpu<double>(
+void 
+deepmd::
+prod_force_a_cpu<double>(
     double * force, 
     const double * net_deriv, 
     const double * env_deriv, 
@@ -66,7 +70,9 @@ void prod_force_a_cpu<double>(
     const int nnei);
 
 template
-void prod_force_a_cpu<float>(
+void 
+deepmd::
+prod_force_a_cpu<float>(
     float * force, 
     const float * net_deriv, 
     const float * env_deriv, 
@@ -77,7 +83,9 @@ void prod_force_a_cpu<float>(
 
 
 template<typename FPTYPE>
-void prod_force_r_cpu(
+void 
+deepmd::
+prod_force_r_cpu(
     FPTYPE * force, 
     const FPTYPE * net_deriv, 
     const FPTYPE * env_deriv, 
@@ -117,7 +125,9 @@ void prod_force_r_cpu(
 }
 
 template
-void prod_force_r_cpu<double>(
+void 
+deepmd::
+prod_force_r_cpu<double>(
     double * force, 
     const double * net_deriv, 
     const double * env_deriv, 
@@ -127,7 +137,9 @@ void prod_force_r_cpu<double>(
     const int nnei);
 
 template
-void prod_force_r_cpu<float>(
+void 
+deepmd::
+prod_force_r_cpu<float>(
     float * force, 
     const float * net_deriv, 
     const float * env_deriv, 

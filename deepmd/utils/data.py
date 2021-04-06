@@ -6,8 +6,8 @@ import numpy as np
 import os.path
 from typing import Tuple, List
 
-from deepmd.run_options import GLOBAL_NP_FLOAT_PRECISION
-from deepmd.run_options import GLOBAL_ENER_FLOAT_PRECISION
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 
 class DeepmdData() :
     """

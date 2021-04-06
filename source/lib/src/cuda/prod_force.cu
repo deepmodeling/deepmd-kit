@@ -2,23 +2,6 @@
 #include "gpu_cuda.h"
 #include "prod_force.h"
 
-#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 600
-static __inline__ __device__ double atomicAdd(
-    double* address, 
-    double val) 
-{
-  unsigned long long int* address_as_ull = (unsigned long long int*)address;
-  unsigned long long int old = *address_as_ull, assumed;
-  do {
-    assumed = old;
-    old = atomicCAS(address_as_ull, assumed,
-          __double_as_longlong(val + __longlong_as_double(assumed)));
-  // Note: uses integer comparison to avoid hang in case of NaN (since NaN != NaN) } while (assumed != old);
-  } while (assumed != old);
-  return __longlong_as_double(old);
-}
-#endif
-
 template <
     typename FPTYPE,
     int      THREADS_PER_BLOCK>
@@ -112,6 +95,7 @@ __global__ void force_deriv_wrt_neighbors_r(
         net_deriv[idx * ndescrpt + idy] * in_deriv[idx * ndescrpt * 3 + idy * 3 + idz]);
 }
 
+namespace deepmd {
 template<typename FPTYPE> 
 void prod_force_a_gpu_cuda(    
     FPTYPE * force, 
@@ -172,3 +156,4 @@ template void prod_force_a_gpu_cuda<float>(float * force, const float * net_deri
 template void prod_force_a_gpu_cuda<double>(double * force, const double * net_deriv, const double * in_deriv, const int * nlist, const int nloc, const int nall, const int nnei);
 template void prod_force_r_gpu_cuda<float>(float * force, const float * net_deriv, const float * in_deriv, const int * nlist, const int nloc, const int nall, const int nnei);
 template void prod_force_r_gpu_cuda<double>(double * force, const double * net_deriv, const double * in_deriv, const int * nlist, const int nloc, const int nall, const int nnei);
+}

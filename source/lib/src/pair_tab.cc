@@ -122,7 +122,8 @@ _cum_sum (
 }
 
 template<typename FPTYPE>
-void pair_tab_cpu(
+void 
+deepmd::pair_tab_cpu(
     FPTYPE * energy,
     FPTYPE * force,
     FPTYPE * virial,
@@ -211,7 +212,7 @@ void pair_tab_cpu(
 
 
 template
-void pair_tab_cpu<float>(
+void deepmd::pair_tab_cpu<float>(
     float * energy,
     float * force,
     float * virial,
@@ -227,7 +228,7 @@ void pair_tab_cpu<float>(
     );
 
 template
-void pair_tab_cpu<double>(
+void deepmd::pair_tab_cpu<double>(
     double * energy,
     double * force,
     double * virial,

@@ -3,8 +3,9 @@ from typing import TYPE_CHECKING, List, Optional, Tuple
 
 import numpy as np
 from deepmd.common import make_default_mesh
+from deepmd.env import default_tf_session_config, tf
 from deepmd.infer.data_modifier import DipoleChargeModifier
-from deepmd.infer.deep_eval import DeepEval, DeepTensor
+from deepmd.infer.deep_eval import DeepEval
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -12,7 +13,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-class DeepPot(DeepTensor):
+class DeepPot(DeepEval):
     """Constructor.
 
     Parameters
@@ -43,9 +44,20 @@ class DeepPot(DeepTensor):
         # instance namespace
         self.tensors = dict(
             {
-                # general
+                # descrpt attrs
+                "t_ntypes": "descrpt_attr/ntypes:0",
+                "t_rcut": "descrpt_attr/rcut:0",
+                # fitting attrs
                 "t_dfparam": "fitting_attr/dfparam:0",
                 "t_daparam": "fitting_attr/daparam:0",
+                # model attrs
+                "t_tmap": "model_attr/tmap:0",
+                # inputs
+                "t_coord": "t_coord:0",
+                "t_type": "t_type:0",
+                "t_natoms": "t_natoms:0",
+                "t_box": "t_box:0",
+                "t_mesh": "t_mesh:0",
                 # add output tensors
                 "t_energy": "o_energy:0",
                 "t_force": "o_force:0",
@@ -53,7 +65,6 @@ class DeepPot(DeepTensor):
                 "t_ae": "o_atom_energy:0",
                 "t_av": "o_atom_virial:0"
             },
-            **self.tensors
         )
         DeepEval.__init__(
             self,
@@ -90,15 +101,14 @@ class DeepPot(DeepTensor):
             self.t_aparam = None
             self.has_aparam = False
 
-        # now when tensors are set initialize DeepTensor which will load them all
-        # to class attributes, the run session assciated with the graph
-        DeepTensor.__init__(
-            self,
-            model_file,
-            None,
-            load_prefix=load_prefix,
-            default_tf_graph=default_tf_graph
-        )
+        # now load tensors to object attributes
+        for attr_name, tensor_name in self.tensors.items():
+            self._get_tensor(tensor_name, attr_name)
+
+        # start a tf session associated to the graph
+        self.sess = tf.Session(graph=self.graph, config=default_tf_session_config)
+        self._run_default_sess()
+        self.tmap = self.tmap.decode('UTF-8').split()        
 
         # setup modifier
         try:
@@ -123,9 +133,28 @@ class DeepPot(DeepTensor):
             [self.t_ntypes, self.t_rcut, self.t_dfparam, self.t_daparam, self.t_tmap]
         )
 
+    def get_ntypes(self) -> int:
+        """Get the number of atom types of this model."""
+        return self.ntypes
+
+    def get_rcut(self) -> float:
+        """Get the cut-off radius of this model."""
+        return self.rcut
+
+    def get_type_map(self) -> List[int]:
+        """Get the type map (element name of the atom types) of this model."""
+        return self.tmap
+
     def get_sel_type(self) -> List[int]:
         """Unsupported in this model."""
         raise NotImplementedError("This model type does not support this attribute")
+    def get_dim_fparam(self) -> int:
+        """Get the number (dimension) of frame parameters of this DP."""
+        return self.dfparam
+
+    def get_dim_aparam(self) -> int:
+        """Get the number (dimension) of atomic parameters of this DP."""
+        return self.daparam
 
     def eval(
         self,
@@ -259,40 +288,35 @@ class DeepPot(DeepTensor):
         assert(natoms_vec[0] == natoms)
 
         # evaluate
-        energy = []
-        force = []
-        virial = []
-        ae = []
-        av = []
         feed_dict_test = {}
         feed_dict_test[self.t_natoms] = natoms_vec
-        feed_dict_test[self.t_type  ] = atom_types
+        feed_dict_test[self.t_type  ] = np.tile(atom_types, [nframes, 1]).reshape([-1])
         t_out = [self.t_energy, 
                  self.t_force, 
                  self.t_virial]
         if atomic :
             t_out += [self.t_ae, 
                       self.t_av]
-        for ii in range(nframes) :
-            feed_dict_test[self.t_coord] = np.reshape(coords[ii:ii+1, :], [-1])
-            feed_dict_test[self.t_box  ] = np.reshape(cells [ii:ii+1, :], [-1])
-            if self.has_efield:
-                feed_dict_test[self.t_efield]= np.reshape(efield[ii:ii+1, :], [-1])
-            if pbc:
-                feed_dict_test[self.t_mesh ] = make_default_mesh(cells[ii:ii+1, :])
-            else:
-                feed_dict_test[self.t_mesh ] = np.array([], dtype = np.int32)
-            if self.has_fparam:
-                feed_dict_test[self.t_fparam] = np.reshape(fparam[ii:ii+1, :], [-1])
-            if self.has_aparam:
-                feed_dict_test[self.t_aparam] = np.reshape(aparam[ii:ii+1, :], [-1])
-            v_out = self.sess.run (t_out, feed_dict = feed_dict_test)
-            energy.append(v_out[0])
-            force .append(v_out[1])
-            virial.append(v_out[2])
-            if atomic:
-                ae.append(v_out[3])
-                av.append(v_out[4])
+
+        feed_dict_test[self.t_coord] = np.reshape(coords, [-1])
+        feed_dict_test[self.t_box  ] = np.reshape(cells , [-1])
+        if self.has_efield:
+            feed_dict_test[self.t_efield]= np.reshape(efield, [-1])
+        if pbc:
+            feed_dict_test[self.t_mesh ] = make_default_mesh(cells)
+        else:
+            feed_dict_test[self.t_mesh ] = np.array([], dtype = np.int32)
+        if self.has_fparam:
+            feed_dict_test[self.t_fparam] = np.reshape(fparam, [-1])
+        if self.has_aparam:
+            feed_dict_test[self.t_aparam] = np.reshape(aparam, [-1])
+        v_out = self.sess.run (t_out, feed_dict = feed_dict_test)
+        energy = v_out[0]
+        force = v_out[1]
+        virial = v_out[2]
+        if atomic:
+            ae = v_out[3]
+            av = v_out[4]
 
         # reverse map of the outputs
         force  = self.reverse_map(np.reshape(force, [nframes,-1,3]), imap)

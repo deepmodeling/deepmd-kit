@@ -1,5 +1,7 @@
 #pragma once
 
+namespace deepmd{
+
 template<typename FPTYPE>
 void tabulate_fusion_cpu(
     FPTYPE * out,
@@ -49,3 +51,6 @@ void tabulate_fusion_grad_gpu_cuda(
     const int nnei, 
     const int last_layer_size);
 #endif // GOOGLE_CUDA
+
+}
+

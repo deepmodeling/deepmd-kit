@@ -20,7 +20,9 @@ make_index_range (
 }
 
 template<typename FPTYPE>
-void prod_virial_a_cpu(
+void 
+deepmd::
+prod_virial_a_cpu(
     FPTYPE * virial, 
     FPTYPE * atom_virial, 
     const FPTYPE * net_deriv, 
@@ -65,7 +67,9 @@ void prod_virial_a_cpu(
 }
 
 template
-void prod_virial_a_cpu<double>(
+void 
+deepmd::
+prod_virial_a_cpu<double>(
     double * virial, 
     double * atom_virial, 
     const double * net_deriv, 
@@ -77,7 +81,9 @@ void prod_virial_a_cpu<double>(
     const int nnei) ;
 
 template
-void prod_virial_a_cpu<float>(
+void 
+deepmd::
+prod_virial_a_cpu<float>(
     float * virial, 
     float * atom_virial, 
     const float * net_deriv, 
@@ -90,7 +96,9 @@ void prod_virial_a_cpu<float>(
 
 
 template<typename FPTYPE>
-void prod_virial_r_cpu(
+void 
+deepmd::
+prod_virial_r_cpu(
     FPTYPE * virial, 
     FPTYPE * atom_virial, 
     const FPTYPE * net_deriv, 
@@ -131,7 +139,9 @@ void prod_virial_r_cpu(
 }
 
 template
-void prod_virial_r_cpu<double>(
+void 
+deepmd::
+prod_virial_r_cpu<double>(
     double * virial, 
     double * atom_virial, 
     const double * net_deriv, 
@@ -143,7 +153,9 @@ void prod_virial_r_cpu<double>(
     const int nnei);
 
 template
-void prod_virial_r_cpu<float>(
+void 
+deepmd::
+prod_virial_r_cpu<float>(
     float * virial, 
     float * atom_virial, 
     const float * net_deriv, 

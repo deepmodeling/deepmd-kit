@@ -1,5 +1,7 @@
 #pragma once
 
+namespace deepmd{
+  
 template<typename FPTYPE>
 void soft_min_switch_virial_cpu(
     FPTYPE * virial, 
@@ -12,3 +14,4 @@ void soft_min_switch_virial_cpu(
     const int nall, 
     const int nnei);
 
+}

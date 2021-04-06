@@ -65,7 +65,7 @@ protected:
       }
       std::vector<double > t_env, t_env_deriv, t_rij_a;
       // compute env_mat and its deriv, record
-      env_mat_a_cpu<double>(t_env, t_env_deriv, t_rij_a, posi_cpy, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
+      deepmd::env_mat_a_cpu<double>(t_env, t_env_deriv, t_rij_a, posi_cpy, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
       for (int jj = 0; jj < ndescrpt; ++jj){
 	env[ii*ndescrpt+jj] = t_env[jj];
 	for (int dd = 0; dd < 3; ++dd){
@@ -86,7 +86,7 @@ TEST_F(TestProdForceA, cpu)
 {
   std::vector<double> force(nall * 3);
   int n_a_sel = nnei;
-  prod_force_a_cpu<double> (&force[0], &net_deriv[0], &env_deriv[0], &nlist[0], nloc, nall, nnei);
+  deepmd::prod_force_a_cpu<double> (&force[0], &net_deriv[0], &env_deriv[0], &nlist[0], nloc, nall, nnei);
   EXPECT_EQ(force.size(), nall * 3);
   EXPECT_EQ(force.size(), expected_force.size());
   for (int jj = 0; jj < force.size(); ++jj){
@@ -107,18 +107,18 @@ TEST_F(TestProdForceA, gpu_cuda)
   int * nlist_dev = NULL;
   double * force_dev = NULL, * net_deriv_dev = NULL, * env_deriv_dev = NULL;
 
-  malloc_device_memory_sync(nlist_dev, nlist);
-  malloc_device_memory_sync(force_dev, force);
-  malloc_device_memory_sync(net_deriv_dev, net_deriv);
-  malloc_device_memory_sync(env_deriv_dev, env_deriv);
+  deepmd::malloc_device_memory_sync(nlist_dev, nlist);
+  deepmd::malloc_device_memory_sync(force_dev, force);
+  deepmd::malloc_device_memory_sync(net_deriv_dev, net_deriv);
+  deepmd::malloc_device_memory_sync(env_deriv_dev, env_deriv);
 
-  prod_force_a_gpu_cuda<double> (force_dev, net_deriv_dev, env_deriv_dev, nlist_dev, nloc, nall, nnei);
+  deepmd::prod_force_a_gpu_cuda<double> (force_dev, net_deriv_dev, env_deriv_dev, nlist_dev, nloc, nall, nnei);
   
-  memcpy_device_to_host(force_dev, force);
-  delete_device_memory(nlist_dev);
-  delete_device_memory(force_dev);
-  delete_device_memory(net_deriv_dev);
-  delete_device_memory(env_deriv_dev);
+  deepmd::memcpy_device_to_host(force_dev, force);
+  deepmd::delete_device_memory(nlist_dev);
+  deepmd::delete_device_memory(force_dev);
+  deepmd::delete_device_memory(net_deriv_dev);
+  deepmd::delete_device_memory(env_deriv_dev);
 
   EXPECT_EQ(force.size(), nall * 3);
   EXPECT_EQ(force.size(), expected_force.size());

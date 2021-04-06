@@ -6,7 +6,7 @@ from common import Data,gen_data, j_loader
 from deepmd.utils.data_system import DataSystem
 from deepmd.descriptor import DescrptSeA
 from deepmd.fit import EnerFitting
-from deepmd.model import Model
+from deepmd.model import EnerModel
 from deepmd.common import j_must_have
 
 GLOBAL_ENER_FLOAT_PRECISION = tf.float64
@@ -26,9 +26,13 @@ def _make_tab(ntype) :
 class TestModel(unittest.TestCase):
     def setUp(self) :
         gen_data()
+        _make_tab(2)
+
+    def tearDown(self):
+        os.remove('tab.xvg')
 
     def test_model(self):
-        jfile = 'water_se_a.json'
+        jfile = 'water_se_a_srtab.json'
         jdata = j_loader(jfile)
 
         systems = j_must_have(jdata, 'systems')
@@ -51,7 +55,17 @@ class TestModel(unittest.TestCase):
         fitting = EnerFitting(**jdata['model']['fitting_net'])
         # descrpt = DescrptSeA(jdata['model']['descriptor'])
         # fitting = EnerFitting(jdata['model']['fitting_net'], descrpt)
-        model = Model(jdata['model'], descrpt, fitting)
+        model = EnerModel(
+            descrpt, 
+            fitting, 
+            jdata['model'].get('type_map'),
+            jdata['model'].get('data_stat_nbatch'),
+            jdata['model'].get('data_stat_protect'),
+            jdata['model'].get('use_srtab'),
+            jdata['model'].get('smin_alpha'),
+            jdata['model'].get('sw_rmin'),
+            jdata['model'].get('sw_rmax')
+        )
 
         # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
         input_data = {'coord' : [test_data['coord']], 
@@ -111,9 +125,9 @@ class TestModel(unittest.TestCase):
         f = f.reshape([-1])
         v = v.reshape([-1])
 
-        refe = [6.135449167779321300e+01]
-        reff = [7.799691562262310585e-02,9.423098804815030483e-02,3.790560997388224204e-03,1.432522403799846578e-01,1.148392791403983204e-01,-1.321871172563671148e-02,-7.318966526325138000e-02,6.516069212737778116e-02,5.406418483320515412e-04,5.870713761026503247e-02,-1.605402669549013672e-01,-5.089516979826595386e-03,-2.554593467731766654e-01,3.092063507347833987e-02,1.510355029451411479e-02,4.869271842355533952e-02,-1.446113274345035005e-01,-1.126524434771078789e-03]
-        refv = [-6.076776685178300053e-01,1.103174323630009418e-01,1.984250991380156690e-02,1.103174323630009557e-01,-3.319759402259439551e-01,-6.007404107650986258e-03,1.984250991380157036e-02,-6.007404107650981921e-03,-1.200076017439753642e-03]
+        refe = [1.141610882066236599e+02]
+        reff = [-1.493121233165248043e+02,-1.831419491743885715e+02,-8.439542992300344437e+00,-1.811987095947552859e+02,-1.476380826187439084e+02,1.264271856742560018e+01,1.544377958934875323e+02,-7.816520233903435866e+00,1.287925245463442225e+00,-4.000393268449002449e+00,1.910748885843098890e+02,7.134789955349889468e+00,1.826908441979261113e+02,3.677156386479059513e+00,-1.122312112141401741e+01,-2.617413911684622008e+00,1.438445070562470391e+02,-1.402769654524568033e+00]
+        refv = [3.585047655925112622e+02,-7.569252978336677984e+00,-1.068382043878426124e+01,-7.569252978336677096e+00,3.618439481685132932e+02,5.448668500896081568e+00,-1.068382043878426302e+01,5.448668500896082456e+00,1.050393462151727686e+00]
         refe = np.reshape(refe, [-1])
         reff = np.reshape(reff, [-1])
         refv = np.reshape(refv, [-1])
