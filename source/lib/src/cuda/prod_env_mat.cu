@@ -89,8 +89,8 @@ __global__ void format_nlist_fill_a(
     int_64 * key,
     const FPTYPE * coord,
     const int * type,
-    const int  * jrange,
-    const int  * jlist,
+    const int * numneigh,
+    int ** firstneigh,
     const float rcut,
     int * i_idx,
     const int MAX_NBOR_SIZE)
@@ -99,11 +99,12 @@ __global__ void format_nlist_fill_a(
   const unsigned int idx = blockIdx.x;
   const unsigned int idy = blockIdx.y * blockDim.y + threadIdx.y;
   
-  const int nsize = jrange[i_idx[idx] + 1] - jrange[i_idx[idx]];
+  const int nsize = numneigh[i_idx[idx]];
   if (idy >= nsize) {
     return;
   }
-  const int * nei_idx = jlist + jrange[i_idx[idx]];
+
+  const int * nei_idx = firstneigh[i_idx[idx]];
   // dev_copy(nei_idx, &jlist[jrange[i_idx]], nsize);
   int_64 * key_in = key + idx * MAX_NBOR_SIZE;
   FPTYPE diff[3];
@@ -113,7 +114,7 @@ __global__ void format_nlist_fill_a(
   }
   FPTYPE rr = sqrt(dev_dot(diff, diff)); 
   if (rr <= rcut) {
-    key_in[idy] = type[j_idx] * 1E15+ (int_64)(rr * 1.0E13) / 100000 * 100000 + j_idx;
+    key_in[idy] = type[j_idx] * 1E15+ (int_64)(rr * 1.0E13) / 10000000 * 10000000 + j_idx;
   }
 }
 
@@ -122,8 +123,6 @@ __global__ void format_nlist_fill_b(
     int * nlist,
     const int nlist_size,
     const int nloc,
-    const int * jrange,
-    const int * jlist,
     FPTYPE * key,
     const int * sec,
     const int sec_size,
@@ -145,7 +144,7 @@ __global__ void format_nlist_fill_b(
   for (unsigned int kk = 0; key_out[kk] != key_out[max_nbor_size - 1]; kk++) {
     const int & nei_type = key_out[kk] / 1E15;
     if (nei_iter[nei_type] < sec[nei_type + 1]) {
-      row_nlist[nei_iter[nei_type]++] = key_out[kk] % 100000;
+      row_nlist[nei_iter[nei_type]++] = key_out[kk] % 10000000;
     }
   }
 }
@@ -155,8 +154,7 @@ void format_nbor_list_1024 (
     int_64 * key,
     const FPTYPE* coord,
     const int* type,
-    const int* jrange,
-    const int* jlist,
+    const deepmd::InputNlist & gpu_inlist,
     const int& nloc,       
     const float& rcut, 
     int * i_idx) 
@@ -168,7 +166,7 @@ void format_nbor_list_1024 (
   dim3 thread_grid(1, LEN);
   format_nlist_fill_a<<<block_grid, thread_grid>>> (
       key,
-      coord, type, jrange, jlist, rcut, i_idx, MAX_NBOR_SIZE);
+      coord, type, gpu_inlist.numneigh, gpu_inlist.firstneigh, rcut, i_idx, MAX_NBOR_SIZE);
   const int ITEMS_PER_THREAD = 8;
   const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
   // BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
@@ -182,8 +180,7 @@ void format_nbor_list_2048 (
     int_64 * key,
     const FPTYPE* coord,
     const int* type,
-    const int* jrange,
-    const int* jlist,
+    const deepmd::InputNlist & gpu_inlist,
     const int& nloc,       
     const float& rcut, 
     int * i_idx) 
@@ -195,7 +192,7 @@ void format_nbor_list_2048 (
   dim3 thread_grid(1, LEN);
   format_nlist_fill_a<<<block_grid, thread_grid>>> (
       key,
-      coord, type, jrange, jlist, rcut, i_idx, MAX_NBOR_SIZE);
+      coord, type, gpu_inlist.numneigh, gpu_inlist.firstneigh, rcut, i_idx, MAX_NBOR_SIZE);
   const int ITEMS_PER_THREAD = 8;
   const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
   // BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
@@ -209,8 +206,7 @@ void format_nbor_list_4096 (
     int_64 * key,
     const FPTYPE* coord,
     const int* type,
-    const int* jrange,
-    const int* jlist,
+    const deepmd::InputNlist & gpu_inlist,
     const int& nloc,       
     const float& rcut, 
     int * i_idx)
@@ -222,7 +218,7 @@ void format_nbor_list_4096 (
   dim3 thread_grid(1, LEN);
   format_nlist_fill_a<<<block_grid, thread_grid>>> (
       key,
-      coord, type, jrange, jlist, rcut, i_idx, MAX_NBOR_SIZE);
+      coord, type, gpu_inlist.numneigh, gpu_inlist.firstneigh, rcut, i_idx, MAX_NBOR_SIZE);
   const int ITEMS_PER_THREAD = 16;
   const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
   // BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
@@ -236,10 +232,8 @@ void format_nbor_list(
     int * nlist, 
     const FPTYPE * coord, 
     const int * type, 
-    const int * ilist, 
-    const int * jrange, 
-    const int * jlist,
-    int * array_int, 
+    const deepmd::InputNlist & gpu_inlist,
+    int * array_int,
     int_64 * array_longlong,
     const int max_nbor_size,
     const int nloc, 
@@ -261,27 +255,27 @@ void format_nbor_list(
 
   get_i_idx<<<nblock, LEN>>>(
       i_idx,
-      nloc, ilist);
+      nloc, gpu_inlist.ilist);
 
   if (max_nbor_size == 1024) {
     format_nbor_list_1024 (
         key,
-        coord, type, jrange, jlist, nloc, rcut, i_idx); 
+        coord, type, gpu_inlist, nloc, rcut, i_idx); 
   } 
   else if (max_nbor_size == 2048) {
     format_nbor_list_2048 (
         key,
-        coord, type, jrange, jlist, nloc, rcut, i_idx); 
+        coord, type, gpu_inlist, nloc, rcut, i_idx); 
   } 
   else if (max_nbor_size == 4096) {
     format_nbor_list_4096 (
         key,
-        coord, type, jrange, jlist, nloc, rcut, i_idx); 
+        coord, type, gpu_inlist, nloc, rcut, i_idx); 
   }
 
   format_nlist_fill_b<<<nblock, LEN>>> (
       nlist,
-      nnei, nloc, jrange, jlist, key, sec_dev, sec.size(), nei_iter, max_nbor_size);
+      nnei, nloc, key, sec_dev, sec.size(), nei_iter, max_nbor_size);
 }
 
 template<
@@ -437,6 +431,7 @@ __global__ void compute_env_mat_r(
   }
 }
 
+namespace deepmd {
 template <typename FPTYPE>
 void prod_env_mat_a_gpu_cuda(    
     FPTYPE * em, 
@@ -445,9 +440,7 @@ void prod_env_mat_a_gpu_cuda(
     int * nlist, 
     const FPTYPE * coord, 
     const int * type, 
-    const int * ilist, 
-    const int * jrange, 
-    const int * jlist,
+    const InputNlist & gpu_inlist,
     int * array_int, 
     int_64 * array_longlong,
     const int max_nbor_size,
@@ -466,7 +459,7 @@ void prod_env_mat_a_gpu_cuda(
 
   format_nbor_list(
       nlist, 
-      coord, type, ilist, jrange, jlist, array_int, array_longlong, max_nbor_size, nloc, nall, rcut, sec);
+      coord, type, gpu_inlist, array_int, array_longlong, max_nbor_size, nloc, nall, rcut, sec);
 
   compute_env_mat_a<FPTYPE, TPB> <<<nloc, TPB>>> (
       em, em_deriv, rij, 
@@ -481,9 +474,7 @@ void prod_env_mat_r_gpu_cuda(
     int * nlist, 
     const FPTYPE * coord, 
     const int * type, 
-    const int * ilist, 
-    const int * jrange, 
-    const int * jlist,
+    const InputNlist & gpu_inlist,
     int * array_int, 
     int_64 * array_longlong,
     const int max_nbor_size,
@@ -502,14 +493,15 @@ void prod_env_mat_r_gpu_cuda(
 
   format_nbor_list(
       nlist, 
-      coord, type, ilist, jrange, jlist, array_int, array_longlong, max_nbor_size, nloc, nall, rcut, sec);
+      coord, type, gpu_inlist, array_int, array_longlong, max_nbor_size, nloc, nall, rcut, sec);
 
   compute_env_mat_r<FPTYPE, TPB> <<<nloc, TPB>>> (
       em, em_deriv, rij, 
       coord, avg, std, type, nlist, nnei, rcut_smth, rcut);
 }
 
-template void prod_env_mat_a_gpu_cuda<float>(float * em, float * em_deriv, float * rij, int * nlist, const float * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const int max_nbor_size, const float * avg, const float * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec);
-template void prod_env_mat_a_gpu_cuda<double>(double * em, double * em_deriv, double * rij, int * nlist, const double * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const int max_nbor_size, const double * avg, const double * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec);
-template void prod_env_mat_r_gpu_cuda<float>(float * em, float * em_deriv, float * rij, int * nlist, const float * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const int max_nbor_size, const float * avg, const float * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec);
-template void prod_env_mat_r_gpu_cuda<double>(double * em, double * em_deriv, double * rij, int * nlist, const double * coord, const int * type, const int * ilist, const int * jrange, const int * jlist, int * array_int, unsigned long long * array_longlong, const int max_nbor_size, const double * avg, const double * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec);
+template void prod_env_mat_a_gpu_cuda<float>(float * em, float * em_deriv, float * rij, int * nlist, const float * coord, const int * type, const InputNlist & gpu_inlist, int * array_int, unsigned long long * array_longlong, const int max_nbor_size, const float * avg, const float * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec);
+template void prod_env_mat_a_gpu_cuda<double>(double * em, double * em_deriv, double * rij, int * nlist, const double * coord, const int * type, const InputNlist & gpu_inlist, int * array_int, unsigned long long * array_longlong, const int max_nbor_size, const double * avg, const double * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec);
+template void prod_env_mat_r_gpu_cuda<float>(float * em, float * em_deriv, float * rij, int * nlist, const float * coord, const int * type, const InputNlist & gpu_inlist, int * array_int, unsigned long long * array_longlong, const int max_nbor_size, const float * avg, const float * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec);
+template void prod_env_mat_r_gpu_cuda<double>(double * em, double * em_deriv, double * rij, int * nlist, const double * coord, const int * type, const InputNlist & gpu_inlist, int * array_int, unsigned long long * array_longlong, const int max_nbor_size, const double * avg, const double * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec);
+}

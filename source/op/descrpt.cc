@@ -495,7 +495,7 @@ private:
 	    }
 	  }
 	  sort_info.push_back (std::pair<compute_t, int> 
-			       (dot3(diff, diff), list_idx) );
+			       (deepmd::dot3(diff, diff), list_idx) );
 	}
       }
       sort (sort_info.begin(), sort_info.end());
@@ -527,7 +527,7 @@ private:
 	    }
 	  }
 	  sort_info.push_back (std::pair<compute_t, int> 
-			       (dot3(diff, diff), list_idx) );
+			       (deepmd::dot3(diff, diff), list_idx) );
 	}
       }
       sort (sort_info.begin(), sort_info.end());
@@ -580,9 +580,9 @@ private:
 	}
       }
     }
-    compute_t rij = dot3(diff[0], diff[1]);
-    compute_t rii = dot3(diff[0], diff[0]);
-    compute_t rjj = dot3(diff[1], diff[1]);
+    compute_t rij = deepmd::dot3(diff[0], diff[1]);
+    compute_t rii = deepmd::dot3(diff[0], diff[0]);
+    compute_t rjj = deepmd::dot3(diff[1], diff[1]);
     if ( fabs (rij / sqrt(rii * rjj) + 1) < 1e-4  ) {
       return false;
     }

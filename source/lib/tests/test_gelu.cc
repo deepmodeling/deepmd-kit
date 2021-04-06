@@ -112,7 +112,7 @@ protected:
 TEST_F(TestGelu, gelu_cpu)
 {
   std::vector<double> gelu(nloc);
-  gelu_cpu<double> (&gelu[0], &xx[0], nloc);
+  deepmd::gelu_cpu<double> (&gelu[0], &xx[0], nloc);
   EXPECT_EQ(gelu.size(), nloc);
   EXPECT_EQ(gelu.size(), expected_gelu.size());
   for (int jj = 0; jj < gelu.size(); ++jj){
@@ -124,7 +124,7 @@ TEST_F(TestGelu, gelu_grad_cpu)
 {
   std::vector<double> dy(100, 1.0);
   std::vector<double> gelu_grad(nloc);
-  gelu_grad_cpu<double> (&gelu_grad[0], &xx[0], &dy[0], nloc);
+  deepmd::gelu_grad_cpu<double> (&gelu_grad[0], &xx[0], &dy[0], nloc);
   EXPECT_EQ(gelu_grad.size(), nloc);
   EXPECT_EQ(gelu_grad.size(), expected_gelu_grad.size());
   for (int jj = 0; jj < gelu_grad.size(); ++jj){
@@ -137,7 +137,7 @@ TEST_F(TestGelu, gelu_grad_grad_cpu)
   std::vector<double> dy(100, 1.0);
   std::vector<double> dy_2(100, 1.0);
   std::vector<double> gelu_grad_grad(nloc);
-  gelu_grad_grad_cpu<double> (&gelu_grad_grad[0], &xx[0], &dy[0], &dy_2[0], nloc);
+  deepmd::gelu_grad_grad_cpu<double> (&gelu_grad_grad[0], &xx[0], &dy[0], &dy_2[0], nloc);
   EXPECT_EQ(gelu_grad_grad.size(), nloc);
   EXPECT_EQ(gelu_grad_grad.size(), expected_gelu_grad_grad.size());
   for (int jj = 0; jj < gelu_grad_grad.size(); ++jj){
@@ -151,12 +151,12 @@ TEST_F(TestGelu, gelu_gpu_cuda)
   std::vector<double> gelu(nloc, 0.0);
   
   double * gelu_dev = NULL, * xx_dev = NULL;
-  malloc_device_memory_sync(gelu_dev, gelu);
-  malloc_device_memory_sync(xx_dev, xx);
-  gelu_gpu_cuda<double> (gelu_dev, xx_dev, nloc);
-  memcpy_device_to_host(gelu_dev, gelu);
-  delete_device_memory(gelu_dev);
-  delete_device_memory(xx_dev);
+  deepmd::malloc_device_memory_sync(gelu_dev, gelu);
+  deepmd::malloc_device_memory_sync(xx_dev, xx);
+  deepmd::gelu_gpu_cuda<double> (gelu_dev, xx_dev, nloc);
+  deepmd::memcpy_device_to_host(gelu_dev, gelu);
+  deepmd::delete_device_memory(gelu_dev);
+  deepmd::delete_device_memory(xx_dev);
 
   EXPECT_EQ(gelu.size(), nloc);
   EXPECT_EQ(gelu.size(), expected_gelu.size());
@@ -171,14 +171,14 @@ TEST_F(TestGelu, gelu_grad_gpu_cuda)
   std::vector<double> gelu_grad(nloc, 0.0);
 
   double * gelu_grad_dev = NULL, * xx_dev = NULL, * dy_dev = NULL;
-  malloc_device_memory_sync(gelu_grad_dev, gelu_grad);
-  malloc_device_memory_sync(xx_dev, xx);
-  malloc_device_memory_sync(dy_dev, dy);
-  gelu_grad_gpu_cuda<double> (gelu_grad_dev, xx_dev, dy_dev, nloc);
-  memcpy_device_to_host(gelu_grad_dev, gelu_grad);
-  delete_device_memory(gelu_grad_dev);
-  delete_device_memory(xx_dev);
-  delete_device_memory(dy_dev);
+  deepmd::malloc_device_memory_sync(gelu_grad_dev, gelu_grad);
+  deepmd::malloc_device_memory_sync(xx_dev, xx);
+  deepmd::malloc_device_memory_sync(dy_dev, dy);
+  deepmd::gelu_grad_gpu_cuda<double> (gelu_grad_dev, xx_dev, dy_dev, nloc);
+  deepmd::memcpy_device_to_host(gelu_grad_dev, gelu_grad);
+  deepmd::delete_device_memory(gelu_grad_dev);
+  deepmd::delete_device_memory(xx_dev);
+  deepmd::delete_device_memory(dy_dev);
 
   EXPECT_EQ(gelu_grad.size(), nloc);
   EXPECT_EQ(gelu_grad.size(), expected_gelu_grad.size());
@@ -194,16 +194,16 @@ TEST_F(TestGelu, gelu_grad_grad_gpu_cuda)
   std::vector<double> gelu_grad_grad(nloc, 0.0);
 
   double * gelu_grad_grad_dev = NULL, * xx_dev = NULL, * dy_dev = NULL, * dy_2_dev = NULL;
-  malloc_device_memory_sync(gelu_grad_grad_dev, gelu_grad_grad);
-  malloc_device_memory_sync(xx_dev, xx);
-  malloc_device_memory_sync(dy_dev, dy);
-  malloc_device_memory_sync(dy_2_dev, dy_2);
-  gelu_grad_grad_gpu_cuda<double> (gelu_grad_grad_dev, xx_dev, dy_dev, dy_2_dev, nloc);
-  memcpy_device_to_host(gelu_grad_grad_dev, gelu_grad_grad);
-  delete_device_memory(gelu_grad_grad_dev);
-  delete_device_memory(xx_dev);
-  delete_device_memory(dy_dev);
-  delete_device_memory(dy_2_dev);
+  deepmd::malloc_device_memory_sync(gelu_grad_grad_dev, gelu_grad_grad);
+  deepmd::malloc_device_memory_sync(xx_dev, xx);
+  deepmd::malloc_device_memory_sync(dy_dev, dy);
+  deepmd::malloc_device_memory_sync(dy_2_dev, dy_2);
+  deepmd::gelu_grad_grad_gpu_cuda<double> (gelu_grad_grad_dev, xx_dev, dy_dev, dy_2_dev, nloc);
+  deepmd::memcpy_device_to_host(gelu_grad_grad_dev, gelu_grad_grad);
+  deepmd::delete_device_memory(gelu_grad_grad_dev);
+  deepmd::delete_device_memory(xx_dev);
+  deepmd::delete_device_memory(dy_dev);
+  deepmd::delete_device_memory(dy_2_dev);
 
   EXPECT_EQ(gelu_grad_grad.size(), nloc);
   EXPECT_EQ(gelu_grad_grad.size(), expected_gelu_grad_grad.size());

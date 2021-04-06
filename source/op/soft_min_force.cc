@@ -68,7 +68,7 @@ class SoftMinForceOp : public OpKernel {
     // loop over samples
 #pragma omp parallel for 
     for (int kk = 0; kk < nframes; ++kk){
-      soft_min_switch_force_cpu(
+      deepmd::soft_min_switch_force_cpu(
 	  &force(kk,0),
 	  &du(kk,0),
 	  &sw_deriv(kk,0),

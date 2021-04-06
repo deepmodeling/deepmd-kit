@@ -43,6 +43,14 @@ endif()
 file(GLOB TEST_SRC test_*.cc)
 add_executable( runUnitTests ${TEST_SRC} )
 
+find_package(Threads)
+# find openmp
+find_package(OpenMP)
+if (OPENMP_FOUND)
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+endif()
+
 if (USE_CUDA_TOOLKIT)
   target_link_libraries(runUnitTests gtest gtest_main ${libname} pthread deepmd_op_cuda)
 else()
@@ -59,7 +67,7 @@ add_test( runUnitTests runUnitTests )
 
 find_package(GTest)
 if(NOT GTEST_LIBRARY)
-  configure_file(CMakeLists.txt.in googletest-download/CMakeLists.txt)
+  configure_file(../../cmake/googletest.cmake.in googletest-download/CMakeLists.txt)
   execute_process(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" .
     RESULT_VARIABLE result
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/googletest-download )

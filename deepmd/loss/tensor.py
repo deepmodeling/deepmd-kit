@@ -2,8 +2,8 @@ import numpy as np
 from deepmd.env import tf
 from deepmd.common import ClassArg, add_data_requirement
 
-from deepmd.run_options import global_cvt_2_tf_float
-from deepmd.run_options import global_cvt_2_ener_float
+from deepmd.env import global_cvt_2_tf_float
+from deepmd.env import global_cvt_2_ener_float
 
 class TensorLoss () :
     """
@@ -52,9 +52,9 @@ class TensorLoss () :
 
     @staticmethod
     def print_header():
-        prop_fmt = '   %9s %9s'
+        prop_fmt = '   %11s %11s'
         print_str = ''
-        print_str += prop_fmt % ('l2_tst', 'l2_trn')
+        print_str += prop_fmt % ('rmse_tst', 'rmse_trn')
         return print_str
 
     def print_on_training(self, 
@@ -85,7 +85,7 @@ class TensorLoss () :
         error_test = test_out[0]     
         
         print_str = ""
-        prop_fmt = "   %9.2e %9.2e"
+        prop_fmt = "   %11.2e %11.2e"
         print_str += prop_fmt % (np.sqrt(error_test), np.sqrt(error_train))
 
         return print_str

@@ -1,35 +1,41 @@
 #include "DataModifier.h"
 
-DataModifier::
-DataModifier()
+using namespace deepmd;
+using namespace tensorflow;
+
+DipoleChargeModifier::
+DipoleChargeModifier()
     : inited (false)
 {
 }
 
-DataModifier::
-DataModifier(const std::string & model, 
+DipoleChargeModifier::
+DipoleChargeModifier(const std::string & model, 
 	     const int & gpu_rank, 
 	     const std::string &name_scope_)
     : inited (false), name_scope(name_scope_)
 {
-  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   init(model, gpu_rank);  
 }
 
 void
-DataModifier::
+DipoleChargeModifier::
 init (const std::string & model, 
       const int & gpu_rank, 
       const std::string &name_scope_)
 {  
-  assert (!inited);
+  if (inited){
+    std::cerr << "WARNING: deepmd-kit should not be initialized twice, do nothing at the second call of initializer" << std::endl;
+    return ;
+  }
   name_scope = name_scope_;
   SessionOptions options;
+  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
-  checkStatus(NewSession(options, &session));
-  checkStatus(ReadBinaryProto(Env::Default(), model, &graph_def));
-  checkStatus(session->Create(graph_def));  
+  deepmd::check_status(NewSession(options, &session));
+  deepmd::check_status(ReadBinaryProto(Env::Default(), model, &graph_def));
+  deepmd::check_status(session->Create(graph_def));  
   // int nnodes = graph_def.node_size();
   // for (int ii = 0; ii < nnodes; ++ii){
   //   cout << ii << " \t " << graph_def.node(ii).name() << endl;
@@ -45,7 +51,7 @@ init (const std::string & model,
 
 template<class VT>
 VT
-DataModifier::
+DipoleChargeModifier::
 get_scalar (const std::string & name) const
 {
   return session_get_scalar<VT>(session, name, name_scope);
@@ -53,22 +59,22 @@ get_scalar (const std::string & name) const
 
 template<class VT>
 void
-DataModifier::
+DipoleChargeModifier::
 get_vector (std::vector<VT> & vec, const std::string & name) const
 {
   session_get_vector<VT>(vec, session, name, name_scope);
 }
 
 void 
-DataModifier::
+DipoleChargeModifier::
 run_model (std::vector<VALUETYPE> &		dforce,
 	   std::vector<VALUETYPE> &		dvirial,
 	   Session *				session, 
 	   const std::vector<std::pair<std::string, Tensor>> & input_tensors,
-	   const NNPAtomMap<VALUETYPE> &	nnpmap, 
+	   const AtomMap<VALUETYPE> &	atommap, 
 	   const int				nghost)
 {
-  unsigned nloc = nnpmap.get_type().size();
+  unsigned nloc = atommap.get_type().size();
   unsigned nall = nloc + nghost;
   if (nloc == 0) {
     dforce.clear();
@@ -77,7 +83,7 @@ run_model (std::vector<VALUETYPE> &		dforce,
   }
 
   std::vector<Tensor> output_tensors;
-  checkStatus (session->Run(input_tensors, 
+  deepmd::check_status (session->Run(input_tensors, 
 			    {"o_dm_force", "o_dm_virial", "o_dm_av"},
 			    {}, 
 			    &output_tensors));
@@ -113,7 +119,7 @@ run_model (std::vector<VALUETYPE> &		dforce,
 
 
 void
-DataModifier::
+DipoleChargeModifier::
 compute (std::vector<VALUETYPE> &		dfcorr_,
 	 std::vector<VALUETYPE> &		dvcorr_,
 	 const std::vector<VALUETYPE> &		dcoord_,
@@ -122,7 +128,7 @@ compute (std::vector<VALUETYPE> &		dfcorr_,
 	 const std::vector<std::pair<int,int>>&	pairs,
 	 const std::vector<VALUETYPE> &		delef_, 
 	 const int				nghost,
-	 const LammpsNeighborList &		lmp_list)
+	 const InputNlist &		lmp_list)
 {
   // firstly do selection
   int nall = datype_.size();
@@ -151,20 +157,21 @@ compute (std::vector<VALUETYPE> &		dfcorr_,
   select_map<VALUETYPE>(delef_real, delef_, real_fwd_map, 3);
   select_map<int>(datype_real, datype_, real_fwd_map, 1);
   // internal nlist
-  InternalNeighborList nlist_;
-  convert_nlist_lmp_internal(nlist_, lmp_list);
-  shuffle_nlist_exclude_empty(nlist_, real_fwd_map);  
+  NeighborListData nlist_data;
+  nlist_data.copy_from_nlist(lmp_list);
+  nlist_data.shuffle_exclude_empty(real_fwd_map);  
   // sort atoms
-  NNPAtomMap<VALUETYPE> nnpmap (datype_real.begin(), datype_real.begin() + nloc_real);
-  assert (nloc_real == nnpmap.get_type().size());
-  const std::vector<int> & sort_fwd_map(nnpmap.get_fwd_map());
-  const std::vector<int> & sort_bkw_map(nnpmap.get_bkw_map());
+  AtomMap<VALUETYPE> atommap (datype_real.begin(), datype_real.begin() + nloc_real);
+  assert (nloc_real == atommap.get_type().size());
+  const std::vector<int> & sort_fwd_map(atommap.get_fwd_map());
+  const std::vector<int> & sort_bkw_map(atommap.get_bkw_map());
   // shuffle nlist
-  InternalNeighborList nlist(nlist_);
-  shuffle_nlist (nlist, nnpmap);
+  nlist_data.shuffle(atommap);
+  InputNlist nlist;
+  nlist_data.make_inlist(nlist);
   // make input tensors
   std::vector<std::pair<std::string, Tensor>> input_tensors;
-  int ret = session_input_tensors (input_tensors, dcoord_real, ntypes, datype_real, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), nnpmap, nghost_real, name_scope);
+  int ret = session_input_tensors (input_tensors, dcoord_real, ntypes, datype_real, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, nghost_real, 0, name_scope);
   assert (nloc_real == ret);
   // make bond idx map
   std::vector<int > bd_idx(nall, -1);
@@ -172,7 +179,7 @@ compute (std::vector<VALUETYPE> &		dfcorr_,
     bd_idx[pairs[ii].first] = pairs[ii].second;
   }
   // make extf by bond idx map
-  std::vector<int > dtype_sort_loc = nnpmap.get_type();
+  std::vector<int > dtype_sort_loc = atommap.get_type();
   std::vector<VALUETYPE> dextf;
   for(int ii = 0; ii < dtype_sort_loc.size(); ++ii){
     if (binary_search(sel_type.begin(), sel_type.end(), dtype_sort_loc[ii])){
@@ -207,11 +214,11 @@ compute (std::vector<VALUETYPE> &		dfcorr_,
   input_tensors.push_back({"t_ef", extf_tensor});  
   // run model
   std::vector<VALUETYPE> dfcorr, dvcorr;
-  run_model (dfcorr, dvcorr, session, input_tensors, nnpmap, nghost_real);
+  run_model (dfcorr, dvcorr, session, input_tensors, atommap, nghost_real);
   assert(dfcorr.size() == nall_real * 3);
   // back map force
   std::vector<VALUETYPE> dfcorr_1 = dfcorr;
-  nnpmap.backward (dfcorr_1.begin(), dfcorr.begin(), 3);
+  atommap.backward (dfcorr_1.begin(), dfcorr.begin(), 3);
   assert(dfcorr_1.size() == nall_real * 3);
   // resize to all and clear
   std::vector<VALUETYPE> dfcorr_2(nall*3);

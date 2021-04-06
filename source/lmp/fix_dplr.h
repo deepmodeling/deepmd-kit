@@ -9,9 +9,9 @@ FixStyle(dplr,FixDPLR)
 
 #include <stdio.h>
 #include "fix.h"
-#include "pair_nnp.h"
-#include "DeepTensor.h"
-#include "DataModifier.h"
+#include "pair_deepmd.h"
+#include "deepmd/DeepTensor.h"
+#include "deepmd/DataModifier.h"
 
 #ifdef HIGH_PREC
 #define FLOAT_PREC double
@@ -35,9 +35,9 @@ public:
     double compute_scalar(void);
     double compute_vector(int);
 private:
-    PairNNP * pair_nnp;
-    DeepTensor dpt;
-    DataModifier dtm;
+    PairDeepMD * pair_deepmd;
+    deepmd::DeepTensor dpt;
+    deepmd::DipoleChargeModifier dtm;
     std::string model;
     int ntypes;
     std::vector<int > sel_type;

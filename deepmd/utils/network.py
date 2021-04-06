@@ -1,7 +1,7 @@
 import numpy as np
 
 from deepmd.env import tf
-from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 
 def one_layer(inputs, 
               outputs_size, 

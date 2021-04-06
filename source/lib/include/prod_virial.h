@@ -1,5 +1,7 @@
 #pragma once
 
+namespace deepmd{
+
 template<typename FPTYPE>
 void prod_virial_a_cpu(
     FPTYPE * virial, 
@@ -49,3 +51,5 @@ void prod_virial_r_gpu_cuda(
     const int nall, 
     const int nnei);
 #endif // GOOGLE_CUDA
+
+} //namespace deepmd

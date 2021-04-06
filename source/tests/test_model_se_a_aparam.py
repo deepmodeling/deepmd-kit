@@ -6,7 +6,7 @@ from common import Data,gen_data, j_loader
 from deepmd.utils.data_system import DataSystem
 from deepmd.descriptor import DescrptSeA
 from deepmd.fit import EnerFitting
-from deepmd.model import Model
+from deepmd.model import EnerModel
 from deepmd.common import j_must_have
 
 GLOBAL_ENER_FLOAT_PRECISION = tf.float64
@@ -40,7 +40,7 @@ class TestModel(unittest.TestCase):
         descrpt = DescrptSeA(**jdata['model']['descriptor'])
         jdata['model']['fitting_net']['descrpt'] = descrpt
         fitting = EnerFitting(**jdata['model']['fitting_net'])
-        model = Model(jdata['model'], descrpt, fitting)
+        model = EnerModel(descrpt, fitting)
 
         # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
         input_data = {'coord' : [test_data['coord']], 

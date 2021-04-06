@@ -8,8 +8,8 @@ from deepmd.utils.argcheck import list_to_doc
 from deepmd.utils.network import one_layer
 from deepmd.descriptor import DescrptSeA
 
-from deepmd.run_options import global_cvt_2_tf_float
-from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import global_cvt_2_tf_float
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 
 class DipoleFittingSeA () :
     """

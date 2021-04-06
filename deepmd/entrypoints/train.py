@@ -12,8 +12,8 @@ import numpy as np
 from deepmd.common import data_requirement, expand_sys_str, j_loader, j_must_have
 from deepmd.env import tf
 from deepmd.infer.data_modifier import DipoleChargeModifier
-from deepmd.run_options import BUILD, CITATION, WELCOME, RunOptions
-from deepmd.trainer import NNPTrainer
+from deepmd.train.run_options import BUILD, CITATION, WELCOME, RunOptions
+from deepmd.train.trainer import DPTrainer
 from deepmd.utils.argcheck import normalize
 from deepmd.utils.compat import convert_input_v0_v1
 from deepmd.utils.data_system import DeepmdDataSystem
@@ -230,7 +230,7 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
     assert "training" in jdata
 
     # init the model
-    model = NNPTrainer(jdata, run_opt=run_opt)
+    model = DPTrainer(jdata, run_opt=run_opt)
     rcut = model.model.get_rcut()
     type_map = model.model.get_type_map()
     if len(type_map) == 0:

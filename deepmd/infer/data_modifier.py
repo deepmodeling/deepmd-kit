@@ -6,11 +6,11 @@ from deepmd.infer.deep_dipole import DeepDipole
 from deepmd.infer.ewald_recp import EwaldRecp
 from deepmd.env import tf
 from deepmd.common import select_idx_map, make_default_mesh
-from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.run_options import GLOBAL_NP_FLOAT_PRECISION
-from deepmd.run_options import GLOBAL_ENER_FLOAT_PRECISION
-from deepmd.run_options import global_cvt_2_tf_float
-from deepmd.run_options import global_cvt_2_ener_float
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
+from deepmd.env import global_cvt_2_tf_float
+from deepmd.env import global_cvt_2_ener_float
 from deepmd.env import op_module
 
 
@@ -235,8 +235,10 @@ class DipoleChargeModifier(DeepDipole):
         tot_v
                 The virial modification
         """
+        atype = np.array(atype, dtype=int)
         coord, atype, imap = self.sort_input(coord, atype)
-        natoms = coord.shape[1] // 3
+        # natoms = coord.shape[1] // 3
+        natoms = atype.size
         nframes = coord.shape[0]
         box = np.reshape(box, [nframes, 9])
         atype = np.reshape(atype, [natoms])

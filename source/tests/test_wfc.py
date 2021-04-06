@@ -39,7 +39,7 @@ class TestModel(unittest.TestCase):
         jdata['model']['descriptor'].pop('_comment', None)        
         descrpt = DescrptLocFrame(**jdata['model']['descriptor'])
         fitting = WFCFitting(jdata['model']['fitting_net'], descrpt)
-        model = WFCModel(jdata['model'], descrpt, fitting)
+        model = WFCModel(descrpt, fitting)
 
         input_data = {'coord' : [test_data['coord']], 
                       'box': [test_data['box']], 
