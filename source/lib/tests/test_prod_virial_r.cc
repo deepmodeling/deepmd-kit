@@ -141,13 +141,12 @@ TEST_F(TestProdVirialR, gpu_cuda)
   deepmd::delete_device_memory(env_deriv_dev);
   deepmd::delete_device_memory(rij_dev);
   // virial are not calculated in gpu currently;
-  for (int ii = 0; ii < 9; ii++) {
-    virial[ii] = 0;
-  }
-  for (int ii = 0; ii < nall * 9; ii++) {
-    virial[ii % 9] += atom_virial[ii];
-  }
-
+  // for (int ii = 0; ii < 9; ii++) {
+  //   virial[ii] = 0;
+  // }
+  // for (int ii = 0; ii < nall * 9; ii++) {
+  //   virial[ii % 9] += atom_virial[ii];
+  // }
   EXPECT_EQ(virial.size(), 9);
   EXPECT_EQ(virial.size(), expected_virial.size());
   EXPECT_EQ(atom_virial.size(), nall * 9);  
