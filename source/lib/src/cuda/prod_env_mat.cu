@@ -114,7 +114,7 @@ __global__ void format_nlist_fill_a(
   }
   FPTYPE rr = sqrt(dev_dot(diff, diff)); 
   if (rr <= rcut) {
-    key_in[idy] = type[j_idx] * 1E15+ (int_64)(rr * 1.0E13) / 10000000 * 10000000 + j_idx;
+    key_in[idy] = type[j_idx] * 1E14+ (int_64)(rr * 1.0E12) / 10000000 * 10000000 + j_idx;
   }
 }
 
