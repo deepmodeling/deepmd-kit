@@ -142,7 +142,7 @@ __global__ void format_nlist_fill_b(
   }
   
   for (unsigned int kk = 0; key_out[kk] != key_out[max_nbor_size - 1]; kk++) {
-    const int & nei_type = key_out[kk] / 1E15;
+    const int & nei_type = key_out[kk] / 1E14;
     if (nei_iter[nei_type] < sec[nei_type + 1]) {
       row_nlist[nei_iter[nei_type]++] = key_out[kk] % 10000000;
     }
