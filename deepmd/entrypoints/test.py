@@ -580,6 +580,7 @@ def test_dipole(
 
     # do summation in atom dimension
     if has_atom_dipole == False:
+        dipole = np.reshape(dipole,(dipole.shape[0], -1, 3))
         atoms = dipole.shape[1]
         dipole = np.sum(dipole,axis=1)
 

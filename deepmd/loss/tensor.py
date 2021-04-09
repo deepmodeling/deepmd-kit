@@ -124,10 +124,10 @@ class TensorLoss () :
         self.l2_loss_summary = tf.summary.scalar('l2_loss', tf.sqrt(l2_loss))
         if self.local_weight > 0.0:
             self.l2_loss_local_summary = tf.summary.scalar('l2_local_loss', 
-                                            tf.sqrt(more_loss['local_loss']) / atoms)
+                                            tf.sqrt(more_loss['local_loss']) / global_cvt_2_tf_float(atoms))
         if self.global_weight > 0.0:
             self.l2_loss_global_summary = tf.summary.scalar('l2_global_loss', 
-                                            tf.sqrt(more_loss['global_loss']) / atoms)
+                                            tf.sqrt(more_loss['global_loss']) / global_cvt_2_tf_float(atoms))
         return l2_loss, more_loss
 
     def print_header(self):
