@@ -12,7 +12,7 @@ assignees: ''
 
 <!--Please provide a clear and concise description of what the bug is.-->
 
-**AS  DETAILED AS POSSIBLE.**
+**Deepmd-kit version, installation way, input file, running commands, error log, etc.**
 
 <!--Please provide necessary information including the version of software and installation way, input file, running commands, error log , etc., AS  DETAILED AS POSSIBLE to help locate and reproduce your problem. -->
 
