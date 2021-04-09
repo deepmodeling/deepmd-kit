@@ -1,5 +1,33 @@
+#include "device.h"
 #include "gpu_cuda.h"
 #include "prod_virial.h"
+
+template <
+    typename FPTYPE,
+    int      THREADS_PER_BLOCK>
+__global__ void atom_virial_reduction(
+    FPTYPE * virial, 
+    const FPTYPE * atom_virial,
+    const int nall)
+{
+    unsigned int bid = blockIdx.x;
+    unsigned int tid = threadIdx.x;
+    __shared__ FPTYPE data[THREADS_PER_BLOCK];
+    data[tid] = 0.f;
+    for (int ii = tid; ii < nall; ii += THREADS_PER_BLOCK) {
+        data[tid] += atom_virial[ii * 9 + bid];
+    }
+    __syncthreads(); 
+    // do reduction in shared memory
+    for (int ii = THREADS_PER_BLOCK >> 1; ii > 0; ii >>= 1) {
+        if (tid < ii) {
+            data[tid] += data[tid + ii];
+        }
+        __syncthreads();
+    }
+    // write result for this block to global memory
+    if (tid == 0) virial[bid] = data[0];
+}
 
 template<typename FPTYPE>
 __global__ void virial_deriv_wrt_neighbors_a(
@@ -101,6 +129,10 @@ void prod_virial_a_gpu_cuda(
   virial_deriv_wrt_neighbors_a<<<block_grid, thread_grid>>>(
       virial, atom_virial, 
       net_deriv, in_deriv, rij, nlist, nloc, nnei);
+  // reduction atom_virial to virial
+  atom_virial_reduction<FPTYPE, TPB> <<<9, TPB>>>(
+      virial, 
+      atom_virial, nall);
 }
 
 template<typename FPTYPE>
@@ -130,6 +162,10 @@ void prod_virial_r_gpu_cuda(
   virial_deriv_wrt_neighbors_r<<<block_grid, thread_grid>>>(
       virial, atom_virial, 
       net_deriv, in_deriv, rij, nlist, nloc, nnei);
+  // reduction atom_virial to virial
+  atom_virial_reduction<FPTYPE, TPB> <<<9, TPB>>>(
+    virial, 
+    atom_virial, nall);
 }
 
 template void prod_virial_a_gpu_cuda<float>(float * virial, float * atom_virial, const float * net_deriv, const float * in_deriv, const float * rij, const int * nlist, const int nloc, const int nall, const int nnei);
