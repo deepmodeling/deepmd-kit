@@ -88,6 +88,8 @@ class TensorLoss () :
             local_loss = tf.reduce_mean( tf.square(self.scale*(polar - polar_hat)), name='l2_'+suffix)
             more_loss['local_loss'] = local_loss
             l2_loss += self.local_weight * local_loss
+            self.l2_loss_local_summary = tf.summary.scalar('l2_local_loss', 
+                                            tf.sqrt(more_loss['local_loss']))
         
 
         if self.global_weight > 0.0:    # Need global loss
@@ -110,6 +112,8 @@ class TensorLoss () :
             global_loss = tf.reduce_mean( tf.square(self.scale*(global_polar - global_polar_hat)), name='l2_'+suffix)
 
             more_loss['global_loss'] = global_loss
+            self.l2_loss_global_summary = tf.summary.scalar('l2_global_loss', 
+                                            tf.sqrt(more_loss['global_loss']) / global_cvt_2_tf_float(atoms))
 
             # YHT: should only consider atoms with dipole, i.e. atoms
             # atom_norm  = 1./ global_cvt_2_tf_float(natoms[0])  
@@ -122,12 +126,6 @@ class TensorLoss () :
         self.l2_l = l2_loss
 
         self.l2_loss_summary = tf.summary.scalar('l2_loss', tf.sqrt(l2_loss))
-        if self.local_weight > 0.0:
-            self.l2_loss_local_summary = tf.summary.scalar('l2_local_loss', 
-                                            tf.sqrt(more_loss['local_loss']) / global_cvt_2_tf_float(atoms))
-        if self.global_weight > 0.0:
-            self.l2_loss_global_summary = tf.summary.scalar('l2_global_loss', 
-                                            tf.sqrt(more_loss['global_loss']) / global_cvt_2_tf_float(atoms))
         return l2_loss, more_loss
 
     def print_header(self):
