@@ -232,10 +232,10 @@ def parse_args(args: Optional[List[str]] = None):
     )
     parser_tst.add_argument(
         "-a",
-        "--atomic-energy",
+        "--atomic",
         action="store_true",
         default=False,
-        help="Test the accuracy of atomic energy",
+        help="Test the accuracy of atomic label, i.e. energy / dipole / polar",
     )
 
     # * compress model *****************************************************************
