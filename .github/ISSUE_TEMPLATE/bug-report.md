@@ -12,9 +12,9 @@ assignees: ''
 
 <!--Please provide a clear and concise description of what the bug is.-->
 
-**Deepmd-kit Version, Python Version, Tensorflow Version, GCC Version and Cuda Version.**
+**Deepmd-kit version, installation way, input file, running commands, error log, etc.**
 
-<!--Please specify precisely which Deepmd-kit version this issue was detected with on what build environment, (Python Version and GCC Version are in the first and second line of Python command line interface respectively. And check the Deepmd-kit Version with command line "print(deepmd.__version__)"). -->
+<!--Please provide necessary information including the version of software and installation way, input file, running commands, error log , etc., AS  DETAILED AS POSSIBLE to help locate and reproduce your problem. -->
 
 <!--If applicable, specify what platform you are running on. -->
 

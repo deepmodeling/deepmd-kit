@@ -3,7 +3,7 @@ name: Feature request
 about: Suggest an idea for this project. If this doesn’t work right, [choose a different
   type]( https://github.com/deepmodeling/deepmd-kit/issues/new/choose)
 title: "[Feature Request] _Replace with Title_"
-labels: new feature
+labels: enhancement
 assignees: ''
 
 ---
