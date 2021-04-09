@@ -368,7 +368,8 @@ class NNPTrainer (object):
         # save_checkpoint_steps = self.save_freq)
 
     def train (self, 
-               data) :
+               data,
+               valid_data) :
         stop_batch = self.stop_batch
         if self.run_opt.is_distrib :
             self._init_sess_distrib()
@@ -417,7 +418,7 @@ class NNPTrainer (object):
             feed_dict_batch[self.place_holders['is_training']] = True
 
             if self.display_in_training and is_first_step :
-                self.test_on_the_fly(fp, data, feed_dict_batch)
+                self.test_on_the_fly(fp, valid_data, feed_dict_batch)
                 is_first_step = False
             if self.timing_in_training : tic = time.time()
             self.sess.run([self.train_op], feed_dict = feed_dict_batch, options=prf_options, run_metadata=prf_run_metadata)
@@ -428,7 +429,7 @@ class NNPTrainer (object):
 
             if self.display_in_training and (cur_batch % self.disp_freq == 0) :
                 tic = time.time()
-                self.test_on_the_fly(fp, data, feed_dict_batch)
+                self.test_on_the_fly(fp, valid_data, feed_dict_batch)
                 toc = time.time()
                 test_time = toc - tic
                 if self.timing_in_training :
@@ -461,12 +462,12 @@ class NNPTrainer (object):
 
     def test_on_the_fly (self,
                          fp,
-                         data,
+                         valid_data,
                          feed_dict_batch) :
         # ! altered by Marián Rynik
         # Do not need to pass numb_test here as data object already knows it.
         # Both DeepmdDataSystem and ClassArg parse the same json file
-        test_data = data.get_test(n_test=data.get_sys_ntest())
+        test_data = valid_data.get_test(n_test=valid_data.get_sys_ntest())
         feed_dict_test = {}
         for kk in test_data.keys():
             if kk == 'find_type' or kk == 'type' :

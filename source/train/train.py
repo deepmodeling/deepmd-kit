@@ -136,11 +136,30 @@ def _do_work(jdata, run_opt):
                        sys_probs = sys_probs, 
                        auto_prob_style = auto_prob_style)
     data.add_dict(data_requirement)
+
+    ### START modified by ziyao
+
+    # init valid data
+    valid_data = data  # use train data if no validation is specified
+    if 'valid' in jdata.keys():
+        valid_systems = j_must_have(jdata['valid'], 'systems')
+        valid_data = DeepmdDataSystem(valid_systems,
+                                      1,
+                                      test_size,
+                                      rcut,
+                                      set_prefix=set_pfx,
+                                      type_map=ipt_type_map,
+                                      modifier=modifier)
+        valid_data.print_summary(run_opt,
+                                 sys_probs=sys_probs,
+                                 auto_prob_style=auto_prob_style)
+        valid_data.add_dict(data_requirement)
+
     # build the model with stats from the first system
     model.build (data, stop_batch)
     # train the model with the provided systems in a cyclic way
     start_time = time.time()
-    model.train (data)
+    model.train (data, valid_data)
     end_time = time.time()
     run_opt.message("finished training\nwall time: %.3f s" % (end_time-start_time))
 
