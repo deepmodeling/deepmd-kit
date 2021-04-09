@@ -379,9 +379,17 @@ def training_args():
     doc_time_training = 'Timing durining training.'
     doc_profiling = 'Profiling during training.'
     doc_profiling_file = 'Output file for profiling.'
+    doc_train_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
+- "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
+- "prob_sys_size" : the probability of a system is proportional to the number of batches in the system\n\n\
+- "prob_sys_size;stt_idx:end_idx:weight;stt_idx:end_idx:weight;..." : \n\n\
+    the list of systems is devided into blocks. A block is specified by `stt_idx:end_idx:weight`, where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system, the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional to the number of batches in the system.'
+    doc_train_sys_probs = "A list of float, should be of the same length as `train_systems`, specifying the probability of each system."
 
     args = [
-        Argument("systems", [list,str], optional = False, doc = doc_systems),
+        Argument("systems", [list,str], optional = False, doc = doc_systems, alias = ["train_systems"]),
+        Argument("auto_prob_style", str, optional = True, default = "prob_sys_size", doc = doc_train_auto_prob_style, alias = ["train_auto_prob_style"]),
+        Argument("sys_probs", list, optional = True, default = None, doc = doc_train_sys_probs, alias = ["train_sys_probs"]),
         Argument("set_prefix", str, optional = True, default = 'set', doc = doc_set_prefix),
         Argument("stop_batch", int, optional = False, doc = doc_stop_batch),
         Argument("batch_size", [list,int,str], optional = True, default = 'auto', doc = doc_batch_size),

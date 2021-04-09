@@ -25,6 +25,15 @@ model:
 
     .. raw:: html
 
+       <a id="model/data_stat_protect"></a>
+    data_stat_protect: 
+        | type: ``float``, optional, default: ``0.01``
+        | argument path: ``model/data_stat_protect``
+
+        Protect parameter for atomic energy regression.
+
+    .. raw:: html
+
        <a id="model/use_srtab"></a>
     use_srtab: 
         | type: ``str``, optional
@@ -233,7 +242,7 @@ model:
             | type: ``str``, optional, default: ``float64``
             | argument path: ``model/descriptor[se_a]/precision``
 
-            The precision of the embedding net parameters, supported options are "float64", "float32", "float16".
+            The precision of the embedding net parameters, supported options are "default", "float16", "float32", "float64".
 
         .. raw:: html
 
@@ -347,7 +356,7 @@ model:
             | type: ``str``, optional, default: ``float64``
             | argument path: ``model/descriptor[se_r]/precision``
 
-            The precision of the embedding net parameters, supported options are "float64", "float32", "float16".
+            The precision of the embedding net parameters, supported options are "default", "float16", "float32", "float64".
 
         .. raw:: html
 
@@ -452,7 +461,7 @@ model:
             | type: ``str``, optional, default: ``float64``
             | argument path: ``model/descriptor[se_a_3be]/precision``
 
-            The precision of the embedding net parameters, supported options are "float64", "float32", "float16".
+            The precision of the embedding net parameters, supported options are "default", "float16", "float32", "float64".
 
         .. raw:: html
 
@@ -471,15 +480,6 @@ model:
             | argument path: ``model/descriptor[se_a_3be]/seed``
 
             Random seed for parameter initialization
-
-        .. raw:: html
-
-           <a id="model/descriptor[se_a_3be]/exclude_types"></a>
-        exclude_types: 
-            | type: ``list``, optional, default: ``[]``
-            | argument path: ``model/descriptor[se_a_3be]/exclude_types``
-
-            The Excluded types
 
         .. raw:: html
 
@@ -575,7 +575,7 @@ model:
             | type: ``str``, optional, default: ``float64``
             | argument path: ``model/descriptor[se_a_tpe]/precision``
 
-            The precision of the embedding net parameters, supported options are "float64", "float32", "float16".
+            The precision of the embedding net parameters, supported options are "default", "float16", "float32", "float64".
 
         .. raw:: html
 
@@ -757,7 +757,7 @@ model:
             | type: ``str``, optional, default: ``float64``
             | argument path: ``model/fitting_net[ener]/precision``
 
-            The precision of the fitting net parameters, supported options are "float64", "float32", "float16".
+            The precision of the fitting net parameters, supported options are "default", "float16", "float32", "float64".
 
         .. raw:: html
 
@@ -848,7 +848,7 @@ model:
             | type: ``str``, optional, default: ``float64``
             | argument path: ``model/fitting_net[dipole]/precision``
 
-            The precision of the fitting net parameters, supported options are "float64", "float32", "float16".
+            The precision of the fitting net parameters, supported options are "default", "float16", "float32", "float64".
 
         .. raw:: html
 
@@ -908,7 +908,7 @@ model:
             | type: ``str``, optional, default: ``float64``
             | argument path: ``model/fitting_net[polar]/precision``
 
-            The precision of the fitting net parameters, supported options are "float64", "float32", "float16".
+            The precision of the fitting net parameters, supported options are "default", "float16", "float32", "float64".
 
         .. raw:: html
 
@@ -995,7 +995,7 @@ model:
             | type: ``str``, optional, default: ``float64``
             | argument path: ``model/fitting_net[global_polar]/precision``
 
-            The precision of the fitting net parameters, supported options are "float64", "float32", "float16".
+            The precision of the fitting net parameters, supported options are "default", "float16", "float32", "float64".
 
         .. raw:: html
 
@@ -1047,7 +1047,7 @@ model:
 
    <a id="loss"></a>
 loss: 
-    | type: ``dict``
+    | type: ``dict``, optional
     | argument path: ``loss``
 
     The definition of loss function. The type of the loss depends on the type of the fitting. For fitting type `ener`, the prefactors before energy, force, virial and atomic energy losses may be provided. For fitting type `dipole`, `polar` and `global_polar`, the loss may be an empty `dict` or unset.
@@ -1207,6 +1207,32 @@ training:
         | argument path: ``training/systems``
 
         The data systems. This key can be provided with a listthat specifies the systems, or be provided with a string by which the prefix of all systems are given and the list of the systems is automatically generated.
+
+    .. raw:: html
+
+       <a id="training/auto_prob_style"></a>
+    auto_prob_style: 
+        | type: ``str``, optional, default: ``prob_sys_size``
+        | argument path: ``training/auto_prob_style``
+
+        Determine the probability of systems automatically. The method is assigned by this key and can be
+
+        - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()
+
+        - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system
+
+        - "prob_sys_size;stt_idx:end_idx:weight;stt_idx:end_idx:weight;..." : 
+
+            the list of systems is devided into blocks. A block is specified by `stt_idx:end_idx:weight`, where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system, the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional to the number of batches in the system.
+
+    .. raw:: html
+
+       <a id="training/sys_probs"></a>
+    sys_probs: 
+        | type: ``NoneType`` | ``list``, optional, default: ``None``
+        | argument path: ``training/sys_probs``
+
+        A list of float, should be of the same length as `train_systems`, specifying the probability of each system.
 
     .. raw:: html
 
