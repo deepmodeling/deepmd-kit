@@ -464,7 +464,6 @@ _prepare_coord_nlist_gpu(
     const int &max_nnei_trial)
 {
     inlist.inum = nloc;
-    std::cout<<"nei_mode is: "<<nei_mode<<std::endl;
     if (nei_mode != 3)
     {
         // build nlist by myself
