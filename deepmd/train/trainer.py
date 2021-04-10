@@ -4,7 +4,7 @@ import os
 import time
 import shutil
 import numpy as np
-from deepmd.env import tf
+from deepmd.env import tf, paddle
 from deepmd.env import default_tf_session_config
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
@@ -24,6 +24,10 @@ from deepmd.utils.neighbor_stat import NeighborStat
 
 from tensorflow.python.client import timeline
 from deepmd.env import op_module
+
+from collections import defaultdict
+import sys
+
 
 # load grad of force module
 import deepmd.op
@@ -234,6 +238,7 @@ class DPTrainer (object):
         else :
             raise RuntimeError('get unknown fitting type when building loss function')
 
+        print(self.model)
         # training
         training_param = j_must_have(jdata, 'training')
 
@@ -273,6 +278,7 @@ class DPTrainer (object):
         else :
             self.numb_fparam = 0
 
+
     def build (self, 
                data, 
                stop_batch = 0) :
@@ -294,174 +300,35 @@ class DPTrainer (object):
 
         self.model.data_stat(data)
 
-        if 'compress' in self.model_param and self.model_param['compress']['compress']:
-            assert 'rcut' in self.descrpt_param,      "Error: descriptor must have attr rcut!"
-            self.neighbor_stat \
-                = NeighborStat(self.ntypes, self.descrpt_param['rcut'])
-            self.min_nbor_dist, self.max_nbor_size \
-                = self.neighbor_stat.get_stat(data)
-            self.descrpt.enable_compression(self.min_nbor_dist, self.model_param['compress']['model_file'], self.model_param['compress']['table_config'][0], self.model_param['compress']['table_config'][1], self.model_param['compress']['table_config'][2], self.model_param['compress']['table_config'][3])
-
-        worker_device = "/job:%s/task:%d/%s" % (self.run_opt.my_job_name,
-                                                self.run_opt.my_task_index,
-                                                self.run_opt.my_device)
-
-        with tf.device(tf.train.replica_device_setter(worker_device = worker_device,
-                                                      cluster = self.run_opt.cluster_spec)):
-            self._build_lr()
-            self._build_network(data)
-            self._build_training()
-
-
-    def _build_lr(self):
-        self._extra_train_ops   = []
-        self.global_step = tf.train.get_or_create_global_step()
-        self.learning_rate = self.lr.build(self.global_step, self.stop_batch)
         log.info("built lr")
+        self.lr_scheduler = self.lr.build(self.stop_batch)
 
-    def _build_network(self, data):        
-        self.place_holders = {}
-        data_dict = data.get_data_dict()
-        for kk in data_dict.keys():
-            if kk == 'type':
-                continue
-            prec = GLOBAL_TF_FLOAT_PRECISION
-            if data_dict[kk]['high_prec'] :
-                prec = GLOBAL_ENER_FLOAT_PRECISION
-            self.place_holders[kk] = tf.placeholder(prec, [None], name = 't_' + kk)
-            self.place_holders['find_'+kk] = tf.placeholder(tf.float32, name = 't_find_' + kk)
 
-        self.place_holders['type']      = tf.placeholder(tf.int32,   [None], name='t_type')
-        self.place_holders['natoms_vec']        = tf.placeholder(tf.int32,   [self.ntypes+2], name='t_natoms')
-        self.place_holders['default_mesh']      = tf.placeholder(tf.int32,   [None], name='t_mesh')
-        self.place_holders['is_training']       = tf.placeholder(tf.bool)
-        self.model_pred\
-            = self.model.build (self.place_holders['coord'], 
-                                self.place_holders['type'], 
-                                self.place_holders['natoms_vec'], 
-                                self.place_holders['box'], 
-                                self.place_holders['default_mesh'],
-                                self.place_holders,
-                                suffix = "", 
-                                reuse = False)
-
-        self.l2_l, self.l2_more\
-            = self.loss.build (self.learning_rate,
-                               self.place_holders['natoms_vec'], 
-                               self.model_pred,
-                               self.place_holders,
-                               suffix = "test")
+    def calculate_loss(self, model_inputs):
+        return (self.model(model_inputs['coord'], model_inputs['type'], model_inputs['natoms_vec'], model_inputs['box'], model_inputs['default_mesh'], model_inputs, suffix = "", reuse = False), "fake")
+        #model_pred = self.model(model_inputs['coord'], model_inputs['type'], model_inputs['natoms_vec'], model_inputs['box'], model_inputs['default_mesh'], model_inputs, suffix = "", reuse = False)
+        #return self.loss.calculate_loss (self.learning_rate.get_lr(), model_inputs['natoms_vec'], model_pred, model_inputs, suffix = "test")
 
         log.info("built network")
 
-    def _build_training(self):
-        trainable_variables = tf.trainable_variables()
-        optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate)
-        if self.run_opt.is_distrib :
-            optimizer = tf.train.SyncReplicasOptimizer(
-                optimizer,
-                replicas_to_aggregate = self.run_opt.cluster_spec.num_tasks("worker"),
-                total_num_replicas = self.run_opt.cluster_spec.num_tasks("worker"),
-                name = "sync_replicas")
-            self.sync_replicas_hook = optimizer.make_session_run_hook(self.run_opt.is_chief)            
-        grads = tf.gradients(self.l2_l, trainable_variables)
-        apply_op = optimizer.apply_gradients (zip (grads, trainable_variables),
-                                              global_step=self.global_step,
-                                              name='train_step')
-        train_ops = [apply_op] + self._extra_train_ops
-        self.train_op = tf.group(*train_ops)
-        log.info("built training")
-
-    def _init_sess_serial(self) :
-        self.sess = tf.Session(config=default_tf_session_config)
-        self.saver = tf.train.Saver()
-        saver = self.saver
-        if self.run_opt.init_mode == 'init_from_scratch' :
-            log.info("initialize model from scratch")
-            init_op = tf.global_variables_initializer()
-            self.sess.run(init_op)
-            fp = open(self.disp_file, "w")
-            fp.close ()
-        elif self.run_opt.init_mode == 'init_from_model' :
-            log.info("initialize from model %s" % self.run_opt.init_model)
-            init_op = tf.global_variables_initializer()
-            self.sess.run(init_op)
-            saver.restore (self.sess, self.run_opt.init_model)            
-            self.sess.run(self.global_step.assign(0))
-            fp = open(self.disp_file, "w")
-            fp.close ()
-        elif self.run_opt.init_mode == 'restart' :
-            log.info("restart from model %s" % self.run_opt.restart)
-            init_op = tf.global_variables_initializer()
-            self.sess.run(init_op)
-            saver.restore (self.sess, self.run_opt.restart)
-        else :
-            raise RuntimeError ("unkown init mode")
-
-    def _init_sess_distrib(self):
-        ckpt_dir = os.path.join(os.getcwd(), self.save_ckpt)
-        assert(_is_subdir(ckpt_dir, os.getcwd())), "the checkpoint dir must be a subdir of the current dir"
-        if self.run_opt.init_mode == 'init_from_scratch' :
-            log.info("initialize model from scratch")
-            if self.run_opt.is_chief :
-                if os.path.exists(ckpt_dir):
-                    shutil.rmtree(ckpt_dir)
-                if not os.path.exists(ckpt_dir) :
-                    os.makedirs(ckpt_dir)
-                fp = open(self.disp_file, "w")
-                fp.close ()
-        elif self.run_opt.init_mode == 'init_from_model' :
-            raise RuntimeError("distributed training does not support %s" % self.run_opt.init_mode)
-        elif self.run_opt.init_mode == 'restart' :
-            log.info("restart from model %s" % ckpt_dir)
-            if self.run_opt.is_chief :
-                assert(os.path.isdir(ckpt_dir)), "the checkpoint dir %s should exists" % ckpt_dir
-        else :
-            raise RuntimeError ("unkown init mode")
-
-        saver = tf.train.Saver(max_to_keep = 1)
-        self.saver = None
-        # gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.5)
-        # config = tf.ConfigProto(allow_soft_placement=True,
-        #                         gpu_options = gpu_options,
-        #                         intra_op_parallelism_threads=self.run_opt.num_intra_threads,
-        #                         inter_op_parallelism_threads=self.run_opt.num_inter_threads)
-        config = tf.ConfigProto(intra_op_parallelism_threads=self.run_opt.num_intra_threads,
-                                inter_op_parallelism_threads=self.run_opt.num_inter_threads)
-        # The stop_hook handles stopping after running given steps
-        # stop_hook = tf.train.StopAtStepHook(last_step = stop_batch)
-        # hooks = [self.sync_replicas_hook, stop_hook]
-        hooks = [self.sync_replicas_hook]
-        scaffold = tf.train.Scaffold(saver=saver)
-        # Use monitor session for distributed computation
-        self.sess = tf.train.MonitoredTrainingSession(master = self.run_opt.server.target,
-                                                      is_chief = self.run_opt.is_chief,
-                                                      config = config,
-                                                      hooks = hooks,
-                                                      scaffold = scaffold,
-                                                      checkpoint_dir = ckpt_dir)
-        # ,
-        # save_checkpoint_steps = self.save_freq)
-
     def train (self, 
-               data) :
-        stop_batch = self.stop_batch
-        if self.run_opt.is_distrib :
-            self._init_sess_distrib()
-        else :
-            self._init_sess_serial()
+               data,
+               stop_batch) :
+        self.stop_batch = stop_batch
 
         self.print_head()
         fp = None
         if self.run_opt.is_chief :
             fp = open(self.disp_file, "a")
 
-        cur_batch = self.sess.run(self.global_step)
         is_first_step = True
-        self.cur_batch = cur_batch
+        self.cur_batch = 0
+        
+        adam = paddle.optimizer.SGD(learning_rate = self.lr_scheduler, parameters=self.model.parameters())
+
         log.info("start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e" % 
-                 (self.sess.run(self.learning_rate),
-                  self.lr.value(cur_batch), 
+                 (self.lr_scheduler.get_lr(),
+                  self.lr.value(self.cur_batch), 
                   self.lr.decay_steps_,
                   self.lr.decay_rate_,
                   self.lr.value(stop_batch)) 
@@ -473,61 +340,83 @@ class DPTrainer (object):
             prf_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
             prf_run_metadata = tf.RunMetadata()
 
-        # set tensorboard execution environment
-        if self.tensorboard :
-            summary_merged_op = tf.summary.merge_all()
-            shutil.rmtree(self.tensorboard_log_dir)
-            tb_train_writer = tf.summary.FileWriter(self.tensorboard_log_dir + '/train', self.sess.graph)
-            tb_test_writer = tf.summary.FileWriter(self.tensorboard_log_dir + '/test')
-        else:
-            tb_train_writer = None
-            tb_test_writer = None
+        tb_train_writer = None
+        tb_test_writer = None
         
         train_time = 0
-        while cur_batch < stop_batch :
+        print(self.model)
+        while self.cur_batch < stop_batch :
             batch_data = data.get_batch (sys_probs = self.sys_probs,
                                          auto_prob_style = self.auto_prob_style
             )
-            feed_dict_batch = {}
+            model_inputs = defaultdict(str)
             for kk in batch_data.keys():
                 if kk == 'find_type' or kk == 'type' :
                     continue
                 if 'find_' in kk :
-                    feed_dict_batch[self.place_holders[kk]] = batch_data[kk]
+                    model_inputs[kk] = paddle.to_tensor(batch_data[kk])
                 else:
-                    feed_dict_batch[self.place_holders[kk]] = np.reshape(batch_data[kk], [-1])
+                    model_inputs[kk] = paddle.to_tensor(np.reshape(batch_data[kk], [-1]))
             for ii in ['type'] :
-                feed_dict_batch[self.place_holders[ii]] = np.reshape(batch_data[ii], [-1])
+                model_inputs[ii] = paddle.to_tensor(np.reshape(batch_data[ii], [-1]))
             for ii in ['natoms_vec', 'default_mesh'] :
-                feed_dict_batch[self.place_holders[ii]] = batch_data[ii]
-            feed_dict_batch[self.place_holders['is_training']] = True
+                model_inputs[ii] = paddle.to_tensor(batch_data[ii])
+
+            model_inputs['is_training'] = paddle.to_tensor(True)
+
 
             if self.display_in_training and is_first_step :
-                self.test_on_the_fly(fp, data, feed_dict_batch, tb_test_writer)
+                #self.test_on_the_fly(fp, data, model_inputs, tb_test_writer)
                 is_first_step = False
             if self.timing_in_training : tic = time.time()
-            # use tensorboard to visualize the training of deepmd-kit
-            # it will takes some extra execution time to generate the tensorboard data
-            if self.tensorboard :
-                summary, _ = self.sess.run([summary_merged_op, self.train_op], feed_dict = feed_dict_batch, options=prf_options, run_metadata=prf_run_metadata)
-                tb_train_writer.add_summary(summary, cur_batch)
-            else :
-                self.sess.run([self.train_op], feed_dict = feed_dict_batch, options=prf_options, run_metadata=prf_run_metadata)
+
+            l2_l, l2_more =  self.calculate_loss(model_inputs)
+
+            adam.clear_grad()
+
+            l2_l.backward()
+
+            print("\n ", [g for p, g in adam.backward(l2_l)])
+
+            #print(self.model.descrpt.dout.grad)
+            
+            #print(l2_l.grad)
+            #print(self.model.descrpt.embedding_nets[0].weight[0].grad)
+            #print(self.model.descrpt.embedding_nets[0].bias[0].grad)
+            #print(self.model.descrpt.embedding_nets[0].weight[1].grad)
+            #print(self.model.descrpt.embedding_nets[0].bias[1].grad)
+            #print(self.model.descrpt.embedding_nets[0].weight[2].grad)
+            #print(self.model.descrpt.embedding_nets[0].bias[2].grad)
+
+            adam.step()
+
+            #print(self.model.descrpt.embedding_nets[0].weight[0])
+            #print(self.model.descrpt.embedding_nets[0].bias[0])
+            #print(self.model.descrpt.embedding_nets[0].weight[1])
+            #print(self.model.descrpt.embedding_nets[0].bias[1])
+            #print(self.model.descrpt.embedding_nets[0].weight[2])
+            #print(self.model.descrpt.embedding_nets[0].bias[2])
+
             if self.timing_in_training : toc = time.time()
             if self.timing_in_training : train_time += toc - tic
-            cur_batch = self.sess.run(self.global_step)
-            self.cur_batch = cur_batch
+            
+            self.cur_batch += 1
+            if self.cur_batch == 1:
+                exit(0)
 
-            if self.display_in_training and (cur_batch % self.disp_freq == 0) :
+            if (self.cur_batch % self.lr.decay_steps_) == 0:
+                self.lr_scheduler.step()
+
+            if self.display_in_training and (self.cur_batch % self.disp_freq == 0) :
                 tic = time.time()
-                self.test_on_the_fly(fp, data, feed_dict_batch, tb_test_writer)
+                self.test_on_the_fly(fp, data, model_inputs, tb_test_writer)
                 toc = time.time()
                 test_time = toc - tic
                 if self.timing_in_training :
                     log.info("batch %7d training time %.2f s, testing time %.2f s"
-                                  % (cur_batch, train_time, test_time))
+                                  % (self.cur_batch, train_time, test_time))
                     train_time = 0
-                if self.save_freq > 0 and cur_batch % self.save_freq == 0 and self.run_opt.is_chief :
+                if self.save_freq > 0 and self.cur_batch % self.save_freq == 0 and self.run_opt.is_chief :
                     if self.saver is not None :
                         self.saver.save (self.sess, os.getcwd() + "/" + self.save_ckpt)
                         log.info("saved checkpoint %s" % self.save_ckpt)
@@ -554,41 +443,64 @@ class DPTrainer (object):
     def test_on_the_fly (self,
                          fp,
                          data,
-                         feed_dict_batch,
+                         model_train_inputs,
                          tb_writer) :
         # Do not need to pass numb_test here as data object already knows it.
         # Both DeepmdDataSystem and ClassArg parse the same json file
+        model_test_inputs = defaultdict(str)
         test_data = data.get_test(n_test=data.get_sys_ntest())
-        feed_dict_test = {}
+
         for kk in test_data.keys():
             if kk == 'find_type' or kk == 'type' :
                 continue
             if 'find_' in kk:
-                feed_dict_test[self.place_holders[kk]] = test_data[kk]
+                model_test_inputs[kk] = paddle.to_tensor(test_data[kk])
             else:
                 # again the data object knows appropriate test data shape,
                 # there is no need to slice again!
                 # feed_dict_test[self.place_holders[kk]] = np.reshape(test_data[kk][:self.numb_test[data.pick_idx]], [-1])
-                feed_dict_test[self.place_holders[kk]] = np.reshape(test_data[kk], [-1])
+                model_test_inputs[kk] = paddle.to_tensor(np.reshape(test_data[kk], [-1]))
         for ii in ['type'] :
-            feed_dict_test[self.place_holders[ii]] = np.reshape(test_data[ii], [-1])            
+            model_test_inputs[ii] = paddle.to_tensor(np.reshape(test_data[ii], [-1]))         
         for ii in ['natoms_vec', 'default_mesh'] :
-            feed_dict_test[self.place_holders[ii]] = test_data[ii]
-        feed_dict_test[self.place_holders['is_training']] = False
+            model_test_inputs[ii] = paddle.to_tensor(test_data[ii])
+        model_test_inputs['is_training'] = paddle.to_tensor(False)
 
-        cur_batch = self.cur_batch
-        current_lr = self.sess.run(self.learning_rate)
+        current_batch = self.cur_batch
+        current_lr = self.lr_scheduler.get_lr()
         if self.run_opt.is_chief:
-            print_str = "%7d" % cur_batch
-            print_str += self.loss.print_on_training(
-                tb_writer,
-                cur_batch,
-                self.sess,
-                test_data['natoms_vec'],
-                feed_dict_test,
-                feed_dict_batch
-            )
+            print_str = "%7d" % current_batch
 
-            print_str += "   %8.1e\n" % current_lr
-            fp.write(print_str)
-            fp.flush ()
+            l2_l, l2_more = self.calculate_loss(model_train_inputs)
+            #error_train = l2_l.numpy()
+            #error_e_train = l2_more['l2_ener_loss'].numpy()
+            #error_f_train = l2_more['l2_force_loss'].numpy()
+            #error_v_train = l2_more['l2_virial_loss'].numpy()
+            #error_ae_train = l2_more['l2_atom_ener_loss'].numpy()
+            #error_pf_train = l2_more['l2_pref_force_loss'].numpy()
+
+            l2_l, l2_more = self.calculate_loss(model_test_inputs)
+            #error_test = l2_l.numpy()
+            #error_e_test = l2_more['l2_ener_loss'].numpy()
+            #error_f_test = l2_more['l2_force_loss'].numpy()
+            #error_v_test = l2_more['l2_virial_loss'].numpy()
+            #error_ae_test = l2_more['l2_atom_ener_loss'].numpy()
+            #error_pf_test = l2_more['l2_pref_force_loss'].numpy()
+
+            #print_str = ""
+            #prop_fmt = "   %11.2e %11.2e"
+            #print_str += prop_fmt % (np.sqrt(error_test), np.sqrt(error_train))
+            #if self.has_e :
+            #    print_str += prop_fmt % (np.sqrt(error_e_test) / natoms[0], np.sqrt(error_e_train) / natoms[0])
+            #if self.has_ae :
+            #    print_str += prop_fmt % (np.sqrt(error_ae_test), np.sqrt(error_ae_train))
+            #if self.has_f :
+            #    print_str += prop_fmt % (np.sqrt(error_f_test), np.sqrt(error_f_train))
+            #if self.has_v :
+            #    print_str += prop_fmt % (np.sqrt(error_v_test) / natoms[0], np.sqrt(error_v_train) / natoms[0])
+            #if self.has_pf:
+            #    print_str += prop_fmt % (np.sqrt(error_pf_test), np.sqrt(error_pf_train))
+
+            #print_str += "   %8.1e\n" % current_lr
+            #fp.write(print_str)
+            #fp.flush ()

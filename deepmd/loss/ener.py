@@ -47,7 +47,7 @@ class EnerStdLoss () :
         add_data_requirement('atom_ener', 1, atomic=True, must=False, high_prec=False)
         add_data_requirement('atom_pref', 1, atomic=True, must=False, high_prec=False, repeat=3)
 
-    def build (self, 
+    def calculate_loss (self, 
                learning_rate,
                natoms,
                model_dict,
@@ -146,10 +146,10 @@ class EnerStdLoss () :
     def print_on_training(self, 
                           tb_writer,
                           cur_batch,
-                          sess, 
+                          model, 
                           natoms,
-                          feed_dict_test,
-                          feed_dict_batch):
+                          model_train_inputs,
+                          model_test_inputs):
 
         run_data = [
             self.l2_l,
@@ -160,8 +160,14 @@ class EnerStdLoss () :
             self.l2_more['l2_pref_force_loss']
         ]
 
+        model_pred = model(model_train_inputs['coord'], model_train_inputs['type'], model_train_inputs['natoms_vec'], model_train_inputs['box'], model_train_inputs['default_mesh'], model_train_inputs, suffix = "", reuse = False)
+        
+        self.l2_l, self.l2_more = self.calculate_loss (self.learning_rate.get_lr(), model_inputs['natoms_vec'], model_pred, model_inputs, suffix = "test")
+
+
         # first train data
         train_out = sess.run(run_data, feed_dict=feed_dict_batch)
+        
         error_train, error_e_train, error_f_train, error_v_train, error_ae_train, error_pf_train = train_out
 
         # than test data, if tensorboard log writter is present, commpute summary
@@ -319,6 +325,3 @@ class EnerDipoleLoss () :
         print_str += prop_fmt % (np.sqrt(error_e_test) / natoms[0], np.sqrt(error_e_train) / natoms[0])
         print_str += prop_fmt % (np.sqrt(error_ed_test), np.sqrt(error_ed_train))
         return print_str   
-
-
-

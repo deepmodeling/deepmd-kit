@@ -18,6 +18,8 @@ from deepmd.utils.argcheck import normalize
 from deepmd.utils.compat import convert_input_v0_v1
 from deepmd.utils.data_system import DeepmdDataSystem
 
+from collections import defaultdict
+
 if TYPE_CHECKING:
     from deepmd.run_options import TFServerV1
 
@@ -287,12 +289,12 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
     data.print_summary(run_opt, sys_probs=sys_probs, auto_prob_style=auto_prob_style)
     data.add_dict(data_requirement)
 
-    # build the model with stats from the first system
+    # # build the model with stats from the first system
     model.build(data, stop_batch)
 
     # train the model with the provided systems in a cyclic way
     start_time = time.time()
-    model.train(data)
+    model.train(data, stop_batch)
     end_time = time.time()
     log.info("finished training")
     log.info(f"wall time: {(end_time - start_time):.3f} s")
