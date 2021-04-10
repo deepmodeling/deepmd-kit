@@ -139,11 +139,12 @@ class EnerModel(paddle.nn.Layer) :
 
         energy_raw = atom_ener
         print("self.atom_ener=   ", atom_ener)
-        return energy_raw
+        #return atom_ener
 
         energy_raw = paddle.reshape(energy_raw, [-1, natoms[0]], name = 'o_atom_energy'+suffix)
-        energy = paddle.reduce_sum(paddle.cast(energy_raw, GLOBAL_ENER_FLOAT_PRECISION), dim=1, name='o_energy'+suffix)
+        energy = paddle.fluid.layers.reduce_sum(paddle.cast(energy_raw, GLOBAL_ENER_FLOAT_PRECISION), dim=1, name='o_energy'+suffix)
 
+        return self.descrpt.prod_force_virial (atom_ener, natoms)
         force, virial, atom_virial = self.descrpt.prod_force_virial (atom_ener, natoms)
 
         force = paddle.reshape (force, [-1, 3 * natoms[1]], name = "o_force"+suffix)

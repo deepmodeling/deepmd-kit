@@ -336,7 +336,7 @@ class DescrptSeA (paddle.nn.Layer):
         #                               sel_a = self.sel_a,
         #                               sel_r = self.sel_r)
 
-        self.descrpt = to_tensor(np.load('/workspace/deepmd-kit/examples/water/train/descrpt.npy'))
+        self.descrpt = to_tensor(np.load('/workspace/deepmd-kit/examples/water/train/descrpt.npy'), stop_gradient=False)
         self.descrpt_deriv = to_tensor(np.load('/workspace/deepmd-kit/examples/water/train/descrpt_deriv.npy'))
         self.rij = to_tensor(np.load('/workspace/deepmd-kit/examples/water/train/rij.npy'))
         self.nlist = to_tensor(np.load('/workspace/deepmd-kit/examples/water/train/nlist.npy'))
@@ -393,9 +393,12 @@ class DescrptSeA (paddle.nn.Layer):
         atom_virial
                 The atomic virial
         """
-        [net_deriv] = tf.gradients (atom_ener, self.descrpt_reshape)
-        tf.summary.histogram('net_derivative', net_deriv)
-        net_deriv_reshape = tf.reshape (net_deriv, [-1, natoms[0] * self.ndescrpt])        
+
+        net_deriv = paddle.grad(atom_ener, self.descrpt_reshape, create_graph=True)[0]
+        net_deriv_reshape = paddle.reshape (net_deriv, [-1, natoms[0] * self.ndescrpt])
+
+        return net_deriv_reshape
+
         force \
             = op_module.prod_force_se_a (net_deriv_reshape,
                                           self.descrpt_deriv,
@@ -411,9 +414,6 @@ class DescrptSeA (paddle.nn.Layer):
                                            natoms,
                                            n_a_sel = self.nnei_a,
                                            n_r_sel = self.nnei_r)
-        tf.summary.histogram('force', force)
-        tf.summary.histogram('virial', virial)
-        tf.summary.histogram('atom_virial', atom_virial)
         
         return force, virial, atom_virial
         
@@ -524,7 +524,7 @@ class DescrptSeA (paddle.nn.Layer):
                    inputs, 
                    type_input,
                     natoms,
-                   activation_fn=paddle.tanh, 
+                   activation_fn=paddle.nn.functional.relu, 
                    stddev=1.0,
                    bavg=0.0,
                    reuse=None,
@@ -558,9 +558,9 @@ class DescrptSeA (paddle.nn.Layer):
 
           # xyz_scatter_total.append(xyz_scatter)
           if type_i == 0 :
-              xyz_scatter_1 = paddle.matmul(paddle.reshape(inputs_i, [-1, shape_i[1]//4, 4]), xyz_scatter, transpose_x = True)
+              xyz_scatter_1 = paddle.fluid.layers.matmul(paddle.reshape(inputs_i, [-1, shape_i[1]//4, 4]), xyz_scatter, transpose_x = True)
           else :
-              xyz_scatter_1 += paddle.matmul(paddle.reshape(inputs_i, [-1, shape_i[1]//4, 4]), xyz_scatter, transpose_x = True)
+              xyz_scatter_1 += paddle.fluid.layers.matmul(paddle.reshape(inputs_i, [-1, shape_i[1]//4, 4]), xyz_scatter, transpose_x = True)
 
         # natom x nei x outputs_size
         # xyz_scatter = tf.concat(xyz_scatter_total, axis=1)
@@ -580,7 +580,7 @@ class DescrptSeA (paddle.nn.Layer):
         # natom x outputs_size_1 x 3
         qmat = paddle.transpose(qmat, perm = [0, 2, 1])
         # natom x outputs_size x outputs_size_2
-        result = paddle.matmul(xyz_scatter_1, xyz_scatter_2, transpose_x = True)
+        result = paddle.fluid.layers.matmul(xyz_scatter_1, xyz_scatter_2, transpose_x = True)
         # natom x (outputs_size x outputs_size_2)
         result = paddle.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
 
