@@ -1,17 +1,13 @@
+import paddle
+from paddle_ops import prod_env_mat_a
+
 import os,sys
 import numpy as np
 import unittest
-
-import deepmd.op
-from deepmd.env import tf
-from deepmd.env import op_module
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
-from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
-
+import time
 class TestProdEnvMat(unittest.TestCase):
     def setUp(self):
-        self.sess = tf.Session()
+        # self.sess = tf.Session()
         self.nframes = 2
         self.dcoord = [
             12.83, 2.56, 2.18,
@@ -48,44 +44,33 @@ class TestProdEnvMat(unittest.TestCase):
         self.rcut = 6.
         self.rcut_smth = 0.8
         self.dnatoms = [6, 6, 2, 4]
-        self.tcoord = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, self.dnatoms[0] * 3], name='t_coord')
-        self.tbox = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, 9], name='t_box')
-        self.ttype = tf.placeholder(tf.int32, [None, self.dnatoms[0]], name = "t_type")
-        self.tnatoms = tf.placeholder(tf.int32, [None], name = "t_natoms")
         self.nloc = self.dnatoms[0]
         self.nall = self.dnatoms[1]
         self.nnei = self.sec[-1]
         self.ndescrpt = 4 * self.nnei
         self.ntypes = np.max(self.dtype) + 1
-        davg = np.zeros ([self.ntypes, self.ndescrpt])
-        dstd = np.ones  ([self.ntypes, self.ndescrpt])
-        self.t_avg = tf.constant(davg.astype(GLOBAL_NP_FLOAT_PRECISION))
-        self.t_std = tf.constant(dstd.astype(GLOBAL_NP_FLOAT_PRECISION))
- 
+        self.davg = np.zeros ([self.ntypes, self.ndescrpt])
+        self.dstd = np.ones  ([self.ntypes, self.ndescrpt])
+        
     def test_pbc_self_built_nlist(self):
         tem, tem_deriv, trij, tnlist \
-            = op_module.prod_env_mat_a (
-                self.tcoord,
-                self.ttype,
-                self.tnatoms,
-                self.tbox, 
-                tf.constant(np.zeros(6, dtype = np.int32)),
-                self.t_avg,
-                self.t_std,
-                rcut_a = -1, 
-                rcut_r = self.rcut, 
-                rcut_r_smth = self.rcut_smth,
-                sel_a = self.sel, 
-                sel_r = [0, 0])
-        self.sess.run (tf.global_variables_initializer())
-        dem, dem_deriv, drij, dnlist = self.sess.run(
-            [tem, tem_deriv, trij, tnlist],
-            feed_dict = {
-                self.tcoord: self.dcoord,
-                self.ttype: self.dtype,
-                self.tbox: self.dbox,
-                self.tnatoms: self.dnatoms}
+            = prod_env_mat_a(paddle.to_tensor(self.dcoord, dtype="float64"),
+        paddle.to_tensor(self.dtype, dtype='int32'),
+        paddle.to_tensor(self.dnatoms, dtype="int32"),
+        paddle.to_tensor(self.dbox, dtype="float64"),
+        paddle.to_tensor(np.zeros(6, dtype = np.int32), dtype='int32'),
+        paddle.to_tensor(self.davg, dtype="float64"),
+        paddle.to_tensor(self.dstd, dtype="float64"),
+        -1,
+        self.rcut,
+        self.rcut_smth,
+        self.sel,
+        [0,0]
         )
+        dem = tem.numpy()
+        dem_deriv = tem_deriv.numpy()
+        drij = trij.numpy()
+        dnlist = tnlist.numpy()
         self.assertEqual(dem.shape, (self.nframes, self.nloc*self.ndescrpt))
         self.assertEqual(dem_deriv.shape, (self.nframes, self.nloc*self.ndescrpt*3))
         self.assertEqual(drij.shape, (self.nframes, self.nloc*self.nnei*3))
@@ -94,123 +79,200 @@ class TestProdEnvMat(unittest.TestCase):
             for ii in range(self.ndescrpt):
                 self.assertAlmostEqual(dem[ff][ii], self.pbc_expected_output[ii], places=5)
 
-    # def test_pbc_self_built_nlist_deriv(self):
-    #     hh = 1e-4
-    #     tem, tem_deriv, trij, tnlist \
-    #         = op_module.prod_env_mat_a (
-    #             self.tcoord,
-    #             self.ttype,
-    #             self.tnatoms,
-    #             self.tbox, 
-    #             tf.constant(np.zeros(6, dtype = np.int32)),
-    #             self.t_avg,
-    #             self.t_std,
-    #             rcut_a = -1, 
-    #             rcut_r = self.rcut, 
-    #             rcut_r_smth = self.rcut_smth,
-    #             sel_a = self.sel, 
-    #             sel_r = [0, 0])
-    #     self.sess.run (tf.global_variables_initializer())
-    #     self.check_deriv_numerical_deriv(hh, tem, tem_deriv, trij, tnlist)
+    def test_pbc_self_built_nlist_deriv(self):
+        hh = 1e-4
+        self.check_deriv_numerical_deriv(hh)
+    
+    def test_nopbc_self_built_nlist(self):
+        tem, tem_deriv, trij, tnlist \
+            = prod_env_mat_a(paddle.to_tensor(self.dcoord, dtype="float64"),
+                paddle.to_tensor(self.dtype, dtype='int32'),
+                paddle.to_tensor(self.dnatoms, dtype="int32"),
+                paddle.to_tensor(self.dbox, dtype="float64"),
+                paddle.to_tensor(np.zeros(0, dtype = np.int32), dtype='int32'),
+                paddle.to_tensor(self.davg, dtype="float64"),
+                paddle.to_tensor(self.dstd, dtype="float64"),
+                -1,
+                self.rcut,
+                self.rcut_smth,
+                self.sel,
+                [0,0]
+                )
+        dem = tem.numpy()
+        dem_deriv = tem_deriv.numpy()
+        drij = trij.numpy()
+        dnlist = tnlist.numpy()
 
-    # def test_nopbc_self_built_nlist(self):
-    #     tem, tem_deriv, trij, tnlist \
-    #         = op_module.prod_env_mat_a (
-    #             self.tcoord,
-    #             self.ttype,
-    #             self.tnatoms,
-    #             self.tbox, 
-    #             tf.constant(np.zeros(0, dtype = np.int32)),
-    #             self.t_avg,
-    #             self.t_std,
-    #             rcut_a = -1, 
-    #             rcut_r = self.rcut, 
-    #             rcut_r_smth = self.rcut_smth,
-    #             sel_a = self.sel, 
-    #             sel_r = [0, 0])
-    #     self.sess.run (tf.global_variables_initializer())
-    #     dem, dem_deriv, drij, dnlist = self.sess.run(
-    #         [tem, tem_deriv, trij, tnlist],
-    #         feed_dict = {
-    #             self.tcoord: self.dcoord,
-    #             self.ttype: self.dtype,
-    #             self.tbox: self.dbox,
-    #             self.tnatoms: self.dnatoms}
-    #     )
-    #     self.assertEqual(dem.shape, (self.nframes, self.nloc*self.ndescrpt))
-    #     self.assertEqual(dem_deriv.shape, (self.nframes, self.nloc*self.ndescrpt*3))
-    #     self.assertEqual(drij.shape, (self.nframes, self.nloc*self.nnei*3))
-    #     self.assertEqual(dnlist.shape, (self.nframes, self.nloc*self.nnei))
-    #     for ff in range(self.nframes):
-    #         for ii in range(self.ndescrpt):
-    #             self.assertAlmostEqual(dem[ff][ii], self.nopbc_expected_output[ii], places=5)
+        self.assertEqual(dem.shape, (self.nframes, self.nloc*self.ndescrpt))
+        self.assertEqual(dem_deriv.shape, (self.nframes, self.nloc*self.ndescrpt*3))
+        self.assertEqual(drij.shape, (self.nframes, self.nloc*self.nnei*3))
+        self.assertEqual(dnlist.shape, (self.nframes, self.nloc*self.nnei))
+        for ff in range(self.nframes):
+            for ii in range(self.ndescrpt):
+                self.assertAlmostEqual(dem[ff][ii], self.nopbc_expected_output[ii], places=5)
+    
+    def test_nopbc_self_built_nlist_deriv(self):
+        hh = 1e-4
 
+        self.check_nopbc_deriv_numerical_deriv(hh)
+    
+    def check_nopbc_deriv_numerical_deriv(self, hh):
+        tem, tem_deriv, trij, tnlist \
+            = prod_env_mat_a(paddle.to_tensor(self.dcoord, dtype="float64"),
+                paddle.to_tensor(self.dtype, dtype='int32'),
+                paddle.to_tensor(self.dnatoms, dtype="int32"),
+                paddle.to_tensor(self.dbox, dtype="float64"),
+                paddle.to_tensor(np.zeros(0, dtype = np.int32), dtype='int32'),
+                paddle.to_tensor(self.davg, dtype="float64"),
+                paddle.to_tensor(self.dstd, dtype="float64"),
+                -1,
+                self.rcut,
+                self.rcut_smth,
+                self.sel,
+                [0,0]
+                )
+        dem_ = tem.numpy()
+        dem_deriv_ = tem_deriv.numpy()
+        drij_ = trij.numpy()
+        dnlist_ = tnlist.numpy()
 
-    # def test_nopbc_self_built_nlist_deriv(self):
-    #     hh = 1e-4
-    #     tem, tem_deriv, trij, tnlist \
-    #         = op_module.prod_env_mat_a (
-    #             self.tcoord,
-    #             self.ttype,
-    #             self.tnatoms,
-    #             self.tbox, 
-    #             tf.constant(np.zeros(0, dtype = np.int32)),
-    #             self.t_avg,
-    #             self.t_std,
-    #             rcut_a = -1, 
-    #             rcut_r = self.rcut, 
-    #             rcut_r_smth = self.rcut_smth,
-    #             sel_a = self.sel, 
-    #             sel_r = [0, 0])
-    #     self.sess.run (tf.global_variables_initializer())
-    #     self.check_deriv_numerical_deriv(hh, tem, tem_deriv, trij, tnlist)
+        ff = 0
+        dem = dem_[ff]
+        dem_deriv = dem_deriv_[ff]
+        dnlist = dnlist_[ff]
+        for ii in range(self.dnatoms[0]):            
+            for jj in range(self.nnei):
+                j_idx = dnlist[ii*self.nnei+jj]
+                if j_idx < 0:
+                    continue
+                for kk in range(4):
+                    for dd in range(3):
+                        dcoord_0 = np.copy(self.dcoord)
+                        dcoord_1 = np.copy(self.dcoord)
+                        dcoord_0[ff][j_idx*3+dd] -= hh
+                        dcoord_1[ff][j_idx*3+dd] += hh
+                        
+                        tem_0, tem_deriv_0, trij_0, tnlist_0 \
+                            = prod_env_mat_a(paddle.to_tensor(dcoord_0, dtype="float64"),
+                                paddle.to_tensor(self.dtype, dtype='int32'),
+                                paddle.to_tensor(self.dnatoms, dtype="int32"),
+                                paddle.to_tensor(self.dbox, dtype="float64"),
+                                paddle.to_tensor(np.zeros(0, dtype = np.int32), dtype='int32'),
+                                paddle.to_tensor(self.davg, dtype="float64"),
+                                paddle.to_tensor(self.dstd, dtype="float64"),
+                                -1,
+                                self.rcut,
+                                self.rcut_smth,
+                                self.sel,
+                                [0,0]
+                                )
+                        dem_0 = tem_0.numpy()
+                        dem_deriv_0 = tem_deriv_0.numpy()
+                        drij_0 = trij_0.numpy()
+                        dnlist_0 = tnlist_0.numpy()
 
+                        tem_1, tem_deriv_1, trij_1, tnlist_1 \
+                            = prod_env_mat_a(paddle.to_tensor(dcoord_1, dtype="float64"),
+                                paddle.to_tensor(self.dtype, dtype='int32'),
+                                paddle.to_tensor(self.dnatoms, dtype="int32"),
+                                paddle.to_tensor(self.dbox, dtype="float64"),
+                                paddle.to_tensor(np.zeros(0, dtype = np.int32), dtype='int32'),
+                                paddle.to_tensor(self.davg, dtype="float64"),
+                                paddle.to_tensor(self.dstd, dtype="float64"),
+                                -1,
+                                self.rcut,
+                                self.rcut_smth,
+                                self.sel,
+                                [0,0]
+                                )
 
-    # def check_deriv_numerical_deriv(self, 
-    #                                 hh,
-    #                                 tem, tem_deriv, trij, tnlist):
-    #     dem_, dem_deriv_, drij_, dnlist_ = self.sess.run(
-    #         [tem, tem_deriv, trij, tnlist],
-    #         feed_dict = {
-    #             self.tcoord: self.dcoord,
-    #             self.ttype: self.dtype,
-    #             self.tbox: self.dbox,
-    #             self.tnatoms: self.dnatoms}
-    #     )
-    #     ff = 0
-    #     dem = dem_[ff]
-    #     dem_deriv = dem_deriv_[ff]
-    #     dnlist = dnlist_[ff]
-    #     for ii in range(self.dnatoms[0]):            
-    #         for jj in range(self.nnei):
-    #             j_idx = dnlist[ii*self.nnei+jj]
-    #             if j_idx < 0:
-    #                 continue
-    #             for kk in range(4):
-    #                 for dd in range(3):
-    #                     dcoord_0 = np.copy(self.dcoord)
-    #                     dcoord_1 = np.copy(self.dcoord)
-    #                     dcoord_0[ff][j_idx*3+dd] -= hh
-    #                     dcoord_1[ff][j_idx*3+dd] += hh
-    #                     dem_0, dem_deriv_0, drij_0, dnlist_0 = self.sess.run(
-    #                         [tem, tem_deriv, trij, tnlist],
-    #                         feed_dict = {
-    #                             self.tcoord: dcoord_0,
-    #                             self.ttype: self.dtype,
-    #                             self.tbox: self.dbox,
-    #                             self.tnatoms: self.dnatoms}
-    #                     )
-    #                     dem_1, dem_deriv_1, drij_1, dnlist_1 = self.sess.run(
-    #                         [tem, tem_deriv, trij, tnlist],
-    #                         feed_dict = {
-    #                             self.tcoord: dcoord_1,
-    #                             self.ttype: self.dtype,
-    #                             self.tbox: self.dbox,
-    #                             self.tnatoms: self.dnatoms}
-    #                     )
-    #                     num_deriv = (dem_1[0][ii*self.nnei*4+jj*4+kk] - dem_0[0][ii*self.ndescrpt+jj*4+kk]) / (2.*hh)
-    #                     ana_deriv = -dem_deriv[ii*self.nnei*4*3+jj*4*3+kk*3+dd]
-    #                     self.assertAlmostEqual(num_deriv, ana_deriv, places = 5)
+                        dem_1 = tem_1.numpy()
+                        dem_deriv_1 = tem_deriv_1.numpy()
+                        drij_1 = trij_1.numpy()
+                        dnlist_1 = tnlist_1.numpy()
+
+                        num_deriv = (dem_1[0][ii*self.nnei*4+jj*4+kk] - dem_0[0][ii*self.ndescrpt+jj*4+kk]) / (2.*hh)
+                        ana_deriv = -dem_deriv[ii*self.nnei*4*3+jj*4*3+kk*3+dd]
+                        self.assertAlmostEqual(num_deriv, ana_deriv, places = 5)
+
+    def check_deriv_numerical_deriv(self, hh):
+        tem, tem_deriv, trij, tnlist \
+            = prod_env_mat_a(paddle.to_tensor(self.dcoord, dtype="float64"),
+                paddle.to_tensor(self.dtype, dtype='int32'),
+                paddle.to_tensor(self.dnatoms, dtype="int32"),
+                paddle.to_tensor(self.dbox, dtype="float64"),
+                paddle.to_tensor(np.zeros(6, dtype = np.int32), dtype='int32'),
+                paddle.to_tensor(self.davg, dtype="float64"),
+                paddle.to_tensor(self.dstd, dtype="float64"),
+                -1,
+                self.rcut,
+                self.rcut_smth,
+                self.sel,
+                [0,0]
+                )
+        dem_ = tem.numpy()
+        dem_deriv_ = tem_deriv.numpy()
+        drij_ = trij.numpy()
+        dnlist_ = tnlist.numpy()
+
+        ff = 0
+        dem = dem_[ff]
+        dem_deriv = dem_deriv_[ff]
+        dnlist = dnlist_[ff]
+        for ii in range(self.dnatoms[0]):            
+            for jj in range(self.nnei):
+                j_idx = dnlist[ii*self.nnei+jj]
+                if j_idx < 0:
+                    continue
+                for kk in range(4):
+                    for dd in range(3):
+                        dcoord_0 = np.copy(self.dcoord)
+                        dcoord_1 = np.copy(self.dcoord)
+                        dcoord_0[ff][j_idx*3+dd] -= hh
+                        dcoord_1[ff][j_idx*3+dd] += hh
+                        
+                        tem_0, tem_deriv_0, trij_0, tnlist_0 \
+                            = prod_env_mat_a(paddle.to_tensor(dcoord_0, dtype="float64"),
+                                paddle.to_tensor(self.dtype, dtype='int32'),
+                                paddle.to_tensor(self.dnatoms, dtype="int32"),
+                                paddle.to_tensor(self.dbox, dtype="float64"),
+                                paddle.to_tensor(np.zeros(6, dtype = np.int32), dtype='int32'),
+                                paddle.to_tensor(self.davg, dtype="float64"),
+                                paddle.to_tensor(self.dstd, dtype="float64"),
+                                -1,
+                                self.rcut,
+                                self.rcut_smth,
+                                self.sel,
+                                [0,0]
+                                )
+                        dem_0 = tem_0.numpy()
+                        dem_deriv_0 = tem_deriv_0.numpy()
+                        drij_0 = trij_0.numpy()
+                        dnlist_0 = tnlist_0.numpy()
+
+                        tem_1, tem_deriv_1, trij_1, tnlist_1 \
+                            = prod_env_mat_a(paddle.to_tensor(dcoord_1, dtype="float64"),
+                                paddle.to_tensor(self.dtype, dtype='int32'),
+                                paddle.to_tensor(self.dnatoms, dtype="int32"),
+                                paddle.to_tensor(self.dbox, dtype="float64"),
+                                paddle.to_tensor(np.zeros(6, dtype = np.int32), dtype='int32'),
+                                paddle.to_tensor(self.davg, dtype="float64"),
+                                paddle.to_tensor(self.dstd, dtype="float64"),
+                                -1,
+                                self.rcut,
+                                self.rcut_smth,
+                                self.sel,
+                                [0,0]
+                                )
+
+                        dem_1 = tem_1.numpy()
+                        dem_deriv_1 = tem_deriv_1.numpy()
+                        drij_1 = trij_1.numpy()
+                        dnlist_1 = tnlist_1.numpy()
+
+                        num_deriv = (dem_1[0][ii*self.nnei*4+jj*4+kk] - dem_0[0][ii*self.ndescrpt+jj*4+kk]) / (2.*hh)
+                        ana_deriv = -dem_deriv[ii*self.nnei*4*3+jj*4*3+kk*3+dd]
+                        self.assertAlmostEqual(num_deriv, ana_deriv, places = 5)
 
 if __name__ == '__main__':
     unittest.main()
