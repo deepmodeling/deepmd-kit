@@ -211,4 +211,4 @@ class TestProdEnvMat(unittest.TestCase):
                         num_deriv = (dem_1[0][ii*self.nnei*4+jj*4+kk] - dem_0[0][ii*self.ndescrpt+jj*4+kk]) / (2.*hh)
                         ana_deriv = -dem_deriv[ii*self.nnei*4*3+jj*4*3+kk*3+dd]
                         self.assertAlmostEqual(num_deriv, ana_deriv, places = 5)
-                        
+
