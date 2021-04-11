@@ -214,6 +214,16 @@ std::vector<std::vector<int64_t>> PdProdForceSeAOpForwardInferShape(
     return {force_shape};
 }
 
+std::vector<std::vector<int64_t>> PdProdForceSeAOpBackwardInferShape(
+    std::vector<int64_t> grad_shape,
+    std::vector<int64_t> net_deriv_shape,
+    std::vector<int64_t> in_deriv_shape,
+    std::vector<int64_t> nlist_shape,
+    std::vector<int64_t> natoms_shape
+){
+    return {net_deriv_shape};
+}
+
 std::vector<paddle::DataType> PdProdForceSeAOpForwardInferDtype(
   paddle::DataType net_deriv_dtype,
   paddle::DataType in_deriv_dtype,
@@ -222,6 +232,14 @@ std::vector<paddle::DataType> PdProdForceSeAOpForwardInferDtype(
       return {net_deriv_dtype};
 }
 
+std::vector<paddle::DataType> PdProdForceSeAOpBackwardInferDtype(
+  paddle::DataType grad_dtype,
+  paddle::DataType net_deriv_dtype,
+  paddle::DataType in_deriv_dtype,
+  paddle::DataType nlist_dtype,
+  paddle::DataType natoms_dtype){
+      return {net_deriv_dtype};
+}
 PD_BUILD_OP(prod_force_se_a)
     .Inputs({"net_deriv", "in_deriv", "nlist", "natoms"})
     .Outputs({"force"})
@@ -239,3 +257,14 @@ PD_BUILD_GRAD_OP(prod_force_se_a)
     "n_a_sel : int",
     "n_r_sel: int"})
     .SetKernelFn(PD_KERNEL(PdProdForceSeABackward));
+
+// just for test 
+PD_BUILD_OP(prod_force_se_a_grad2)
+    .Inputs({paddle::Grad("force"), "net_deriv", "in_deriv", "nlist", "natoms"})
+    .Outputs({paddle::Grad("net_deriv")})
+    .Attrs({
+    "n_a_sel : int",
+    "n_r_sel: int"})
+    .SetKernelFn(PD_KERNEL(PdProdForceSeABackward))
+    .SetInferShapeFn(PD_INFER_SHAPE(PdProdForceSeAOpBackwardInferShape))
+    .SetInferDtypeFn(PD_INFER_DTYPE(PdProdForceSeAOpBackwardInferDtype));

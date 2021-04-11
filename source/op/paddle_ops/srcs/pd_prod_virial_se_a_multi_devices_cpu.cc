@@ -229,6 +229,17 @@ std::vector<std::vector<int64_t>> PdProdVirialSeAOpForwardInferShape(
     return {virial_shape, atom_virial_shape};
 }
 
+std::vector<std::vector<int64_t>> PdProdVirialSeAOpBackwardInferShape(
+    std::vector<int64_t> grad_shape,
+    std::vector<int64_t> net_deriv_shape,
+    std::vector<int64_t> in_deriv_shape,
+    std::vector<int64_t> rij_shape,
+    std::vector<int64_t> nlist_shape,
+    std::vector<int64_t> natoms_shape
+){
+    return {net_deriv_shape};
+}
+
 std::vector<paddle::DataType> PdProdVirialSeAOpForwardInferDtype(
   paddle::DataType net_deriv_dtype,
   paddle::DataType in_deriv_dtype,
@@ -236,6 +247,16 @@ std::vector<paddle::DataType> PdProdVirialSeAOpForwardInferDtype(
   paddle::DataType nlist_dtype,
   paddle::DataType natoms_dtype){
       return {net_deriv_dtype, net_deriv_dtype};
+}
+
+std::vector<paddle::DataType> PdProdVirialSeAOpBackwardInferDtype(
+  paddle::DataType grad_type,
+  paddle::DataType net_deriv_dtype,
+  paddle::DataType in_deriv_dtype,
+  paddle::DataType rij_dtype,
+  paddle::DataType nlist_dtype,
+  paddle::DataType natoms_dtype){
+      return {net_deriv_dtype};
 }
 
 PD_BUILD_OP(prod_virial_se_a)
@@ -255,3 +276,15 @@ PD_BUILD_GRAD_OP(prod_virial_se_a)
     "n_a_sel : int",
     "n_r_sel: int"})
     .SetKernelFn(PD_KERNEL(PdProdVirialSeABackward));
+
+// just for test
+
+PD_BUILD_OP(prod_virial_se_a_grad2)
+    .Inputs({paddle::Grad("virial"), "net_deriv", "in_deriv", "rij", "nlist", "natoms"})
+    .Outputs({paddle::Grad("net_deriv")})
+    .Attrs({
+    "n_a_sel : int",
+    "n_r_sel: int"})
+    .SetKernelFn(PD_KERNEL(PdProdVirialSeABackward))
+    .SetInferShapeFn(PD_INFER_SHAPE(PdProdVirialSeAOpBackwardInferShape))
+    .SetInferDtypeFn(PD_INFER_DTYPE(PdProdVirialSeAOpBackwardInferDtype));
