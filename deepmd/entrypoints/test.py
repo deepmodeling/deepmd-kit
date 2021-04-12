@@ -26,7 +26,7 @@ def test(
     rand_seed: Optional[int],
     shuffle_test: bool,
     detail_file: str,
-    atomic_energy: bool,
+    atomic: bool,
     **kwargs,
 ):
     """Test model predictions.
@@ -47,7 +47,7 @@ def test(
         whether to shuffle tests
     detail_file : Optional[str]
         file where test details will be output
-    atomic_energy : bool
+    atomic : bool
         whether per atom quantities should be computed
 
     Raises
@@ -83,11 +83,11 @@ def test(
                 system,
                 numb_test,
                 detail_file,
-                atomic_energy,
+                atomic,
                 append_detail=(cc != 0),
             )
         elif dp.model_type == "dipole":
-            err, siz = test_dipole(dp, data, numb_test, detail_file)
+            err, siz = test_dipole(dp, data, numb_test, detail_file, atomic)
         elif dp.model_type == "polar":
             err, siz = test_polar(dp, data, numb_test, detail_file, global_polar=False)
         elif dp.model_type == "global_polar":
@@ -550,6 +550,7 @@ def test_dipole(
     data: DeepmdData,
     numb_test: int,
     detail_file: Optional[str],
+    has_atom_dipole: bool,
 ) -> Tuple[List[np.ndarray], List[int]]:
     """Test energy type model.
 
@@ -563,6 +564,8 @@ def test_dipole(
         munber of tests to do
     detail_file : Optional[str]
         file where test details will be output
+    has_atom_dipole : bool
+        whether atomic dipole is provided
 
     Returns
     -------
@@ -570,11 +573,21 @@ def test_dipole(
         arrays with results and their shapes
     """
     data.add(
-        "dipole", 3, atomic=True, must=True, high_prec=False, type_sel=dp.get_sel_type()
+        "dipole", 3, atomic=has_atom_dipole, must=True, high_prec=False, type_sel=dp.get_sel_type()
     )
     test_data = data.get_test()
     dipole, numb_test, _ = run_test(dp, test_data, numb_test)
+
+    # do summation in atom dimension
+    if has_atom_dipole == False:
+        dipole = np.reshape(dipole,(dipole.shape[0], -1, 3))
+        atoms = dipole.shape[1]
+        dipole = np.sum(dipole,axis=1)
+
     l2f = l2err(dipole - test_data["dipole"][:numb_test])
+
+    if has_atom_dipole == False:
+        l2f = l2f / atoms
 
     log.info(f"# number of test data : {numb_test:d}")
     log.info(f"Dipole  RMSE         : {l2f:e} eV/A")
