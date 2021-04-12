@@ -31,8 +31,8 @@ class TensorLoss () :
             self.local_weight,self.global_weight = 0.0,1.0
         else: # self.atomic is None, let the loss parameter decide which mode to use
             if jdata is not None:
-                self.local_weight = jdata.get('atomic_' + self.tensor_name,None)
-                self.global_weight = jdata.get(self.tensor_name,None)
+                self.local_weight = jdata.get('pref_atomic_' + self.tensor_name,None)
+                self.global_weight = jdata.get('pref_' + self.tensor_name,None)
 
                 # get the input parameter first
                 if self.local_weight is None and self.global_weight is None:
@@ -42,19 +42,21 @@ class TensorLoss () :
                 elif self.local_weight is None and self.global_weight is not None:
                     # using global mode only, normalize to 1
                     assert self.global_weight > 0.0, AssertionError('assign a zero weight to global dipole without setting a local weight')
-                    self.local_weight,self.global_weight=0.0,1.0
+                    self.local_weight = 0.0
                     self.atomic = False
                 elif self.local_weight is not None and self.global_weight is None:
                     assert self.local_weight > 0.0, AssertionError('assign a zero weight to local dipole without setting a global weight')
-                    self.local_weight,self.global_weight = 1.0,0.0
+                    self.global_weight = 0.0
                     self.atomic = True
                 else:   # Both are not None
                     self.atomic = True if self.local_weight != 0.0 else False
                     assert (self.local_weight >0.0) or (self.global_weight>0.0), AssertionError('can not assian zero weight to both local and global mode')
-                    # normalize
-                    temp_sum = self.local_weight + self.global_weight
-                    self.local_weight   /=  temp_sum
-                    self.global_weight  /=  temp_sum
+
+                    # normalize, not do according to Han Wang's suggestion
+                    #temp_sum = self.local_weight + self.global_weight
+                    #self.local_weight   /=  temp_sum
+                    #self.global_weight  /=  temp_sum
+                    
             else: # Nothing been set, use default setting
                 self.local_weight,self.global_weight = 1.0,0.0
                 self.atomic = True
