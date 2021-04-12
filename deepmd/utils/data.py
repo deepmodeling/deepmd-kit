@@ -19,7 +19,8 @@ class DeepmdData() :
                   set_prefix : str = 'set',
                   shuffle_test : bool = True, 
                   type_map : List[str] = None, 
-                  modifier = None) :
+                  modifier = None,
+                  trn_all_set : bool = False) :
         """
         Constructor
         
@@ -35,6 +36,8 @@ class DeepmdData() :
                 Gives the name of different atom types
         modifier
                 Data modifier that has the method `modify_data`
+        trn_all_set
+                Use all sets as training dataset. Otherwise, if the number of sets is more than 1, the last set is left for test.
         """
         self.dirs = glob.glob (os.path.join(sys_path, set_prefix + ".*"))
         self.dirs.sort()
@@ -57,10 +60,13 @@ class DeepmdData() :
         self.idx_map = self._make_idx_map(self.atom_type)
         # train dirs
         self.test_dir = self.dirs[-1]
-        if len(self.dirs) == 1 :
+        if trn_all_set:
             self.train_dirs = self.dirs
-        else :
-            self.train_dirs = self.dirs[:-1]
+        else:
+            if len(self.dirs) == 1 :
+                self.train_dirs = self.dirs
+            else :
+                self.train_dirs = self.dirs[:-1]
         self.data_dict = {}        
         # add box and coord
         self.add('box', 9, must = True)

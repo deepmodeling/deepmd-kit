@@ -55,11 +55,15 @@ class DeepmdDataSystem() :
         self.nsystems = len(self.system_dirs)
         self.data_systems = []
         for ii in self.system_dirs :
-            self.data_systems.append(DeepmdData(ii, 
-                                                set_prefix=set_prefix, 
-                                                shuffle_test=shuffle_test, 
-                                                type_map = type_map, 
-                                                modifier = modifier))
+            self.data_systems.append(
+                DeepmdData(
+                    ii, 
+                    set_prefix=set_prefix, 
+                    shuffle_test=shuffle_test, 
+                    type_map = type_map, 
+                    modifier = modifier, 
+                    trn_all_set = True
+                ))
         # batch size
         self.batch_size = batch_size
         if isinstance(self.batch_size, int) :
@@ -260,7 +264,8 @@ class DeepmdDataSystem() :
                        auto_prob_style) :        
         if sys_probs is None :
             if auto_prob_style == "prob_uniform" :
-                prob = None
+                prob_v = 1./float(self.nsystems)
+                prob = [prob_v for ii in range(self.nsystems)]
             elif auto_prob_style == "prob_sys_size" :
                 prob = self.prob_nbatches
             elif auto_prob_style[:14] == "prob_sys_size;" :
