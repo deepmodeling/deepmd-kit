@@ -27,7 +27,9 @@ class DeepmdDataSystem() :
                   shuffle_test : bool = True,
                   type_map : List[str] = None, 
                   modifier = None, 
-                  trn_all_set = False) :
+                  trn_all_set = False,
+                  sys_probs = None,
+                  auto_prob = "prob_sys_size") :
         """
         Constructor
         
@@ -102,6 +104,9 @@ class DeepmdDataSystem() :
             self.nbatches.append(self.data_systems[ii].get_sys_numb_batch(self.batch_size[ii]))
             type_map_list.append(self.data_systems[ii].get_type_map())
         self.type_map = self._check_type_map_consistency(type_map_list)
+
+        self.sys_probs = sys_probs
+        self.auto_prob = auto_prob
 
         # ! altered by Marián Rynik
         # test size
@@ -255,12 +260,11 @@ class DeepmdDataSystem() :
                 The name of the data item to be reduced
         """
         for ii in self.data_systems:
-            ii.reduce(key_out, k_in)
+            ii.reduce(key_out, key_in)
 
     def get_data_dict(self, 
                       ii : int = 0) -> dict:
         return self.data_systems[ii].get_data_dict()
-
 
     def _get_sys_probs(self,
                        sys_probs,
@@ -307,6 +311,8 @@ class DeepmdDataSystem() :
                                 the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional 
                                 to the number of batches in the system.
         """
+        sys_probs = self.sys_probs
+        auto_prob_style = self.auto_prob
         if not hasattr(self, 'default_mesh') :
             self._make_default_mesh()
         if sys_idx is not None :
@@ -405,11 +411,8 @@ class DeepmdDataSystem() :
             name = '-- ' + name
             return name 
 
-    def print_summary(self, 
-                      run_opt,
-                      sys_probs = None,
-                      auto_prob_style = "prob_sys_size") :
-        prob = self._get_sys_probs(sys_probs, auto_prob_style)
+    def print_summary(self) :
+        prob = self._get_sys_probs(self.sys_probs, self.auto_prob)
         # width 65
         sys_width = 42
         log.info("---Summary of DataSystem--------------------------------------------------------------")
@@ -601,7 +604,7 @@ class DataSystem (object) :
             name = '-- ' + name
             return name 
 
-    def print_summary(self, run_opt) :
+    def print_summary(self) :
         tmp_msg = ""
         # width 65
         sys_width = 42

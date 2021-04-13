@@ -127,7 +127,30 @@ class EnerStdLoss () :
         self.l2_more = more_loss
         return l2_loss, more_loss
 
-    def print_header(self):
+    def eval(self, sess, feed_dict, natoms):
+        run_data = [
+            self.l2_l,
+            self.l2_more['l2_ener_loss'],
+            self.l2_more['l2_force_loss'],
+            self.l2_more['l2_virial_loss'],
+            self.l2_more['l2_atom_ener_loss'],
+            self.l2_more['l2_pref_force_loss']
+        ]
+        error, error_e, error_f, error_v, error_ae, error_pf = sess.run(run_data, feed_dict=feed_dict)
+        results = {"rmse": np.sqrt(error)}
+        if self.has_e:
+            results["rmse_e"] = np.sqrt(error_e) / natoms[0]
+        if self.has_ae:
+            results["rmse_ae"] = np.sqrt(error_ae)
+        if self.has_f:
+            results["rmse_f"] = np.sqrt(error_f)
+        if self.has_v:
+            results["rmse_v"] = np.sqrt(error_v) / natoms[0]
+        if self.has_pf:
+            results["rmse_pf"] = np.sqrt(error_pf)
+        return results
+
+    def print_header(self):  # depreciated
         prop_fmt = '   %11s %11s'
         print_str = ''
         print_str += prop_fmt % ('rmse_tst', 'rmse_trn')
@@ -149,7 +172,7 @@ class EnerStdLoss () :
                           sess, 
                           natoms,
                           feed_dict_test,
-                          feed_dict_batch):
+                          feed_dict_batch):  # depreciated
 
         run_data = [
             self.l2_l,
@@ -268,8 +291,22 @@ class EnerDipoleLoss () :
         self.l2_more = more_loss
         return l2_loss, more_loss
 
+    def eval(self, sess, feed_dict, natoms):
+        run_data = [
+            self.l2_l,
+            self.l2_more['l2_ener_loss'],
+            self.l2_more['l2_ener_dipole_loss']
+        ]
+        error, error_e, error_ed = sess.run(run_data, feed_dict=feed_dict)
+        results = {
+            'rmse': np.sqrt(error),
+            'rmse_e': np.sqrt(error_e) / natoms[0],
+            'rmse_ed': np.sqrt(error_ed)
+        }
+        return results
+
     @staticmethod
-    def print_header() :
+    def print_header() :  # depreciated
         prop_fmt = '   %9s %9s'
         print_str = ''
         print_str += prop_fmt % ('l2_tst', 'l2_trn')
@@ -283,7 +320,7 @@ class EnerDipoleLoss () :
                           sess, 
                           natoms,
                           feed_dict_test,
-                          feed_dict_batch):
+                          feed_dict_batch):  # depreciated
 
         run_data = [
             self.l2_l,

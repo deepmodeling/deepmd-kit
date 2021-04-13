@@ -239,7 +239,6 @@ class DPTrainer (object):
 
         # ! first .add() altered by Marián Rynik
         tr_args = ClassArg()\
-                  .add('numb_test',     [int, list, str],    default = 1)\
                   .add('disp_file',     str,    default = 'lcurve.out')\
                   .add('disp_freq',     int,    default = 100)\
                   .add('save_freq',     int,    default = 1000)\
@@ -249,9 +248,9 @@ class DPTrainer (object):
                   .add('profiling',     bool,   default = False)\
                   .add('profiling_file',str,    default = 'timeline.json')\
                   .add('tensorboard',     bool,   default = False)\
-                  .add('tensorboard_log_dir',str,    default = 'log')\
-                  .add('sys_probs',   list    )\
-                  .add('auto_prob', str, default = "prob_sys_size")
+                  .add('tensorboard_log_dir',str,    default = 'log')
+                  # .add('sys_probs',   list    )\
+                  # .add('auto_prob', str, default = "prob_sys_size")
         tr_data = tr_args.parse(training_param)
         # not needed
         # self.numb_test = tr_data['numb_test']
@@ -265,13 +264,18 @@ class DPTrainer (object):
         self.profiling_file = tr_data['profiling_file']
         self.tensorboard = tr_data['tensorboard']
         self.tensorboard_log_dir = tr_data['tensorboard_log_dir']
-        self.sys_probs = tr_data['sys_probs']        
-        self.auto_prob_style = tr_data['auto_prob']        
+        # self.sys_probs = tr_data['sys_probs']
+        # self.auto_prob_style = tr_data['auto_prob']
         self.useBN = False
         if fitting_type == 'ener' and  self.fitting.get_numb_fparam() > 0 :
             self.numb_fparam = self.fitting.get_numb_fparam()
         else :
             self.numb_fparam = 0
+
+        if "validation_data" in tr_data.keys():  # if validation set specified
+            self.valid_numb_batch = tr_data["validation_data"].get("numb_btch", 1)
+        else:
+            self.valid_numb_batch = 1
 
     def build (self, 
                data, 
@@ -443,15 +447,18 @@ class DPTrainer (object):
         # ,
         # save_checkpoint_steps = self.save_freq)
 
-    def train (self, 
-               data) :
+    def train (self, train_data, valid_data=None) :
+
+        if valid_data is None:  # no validation set specified.
+            valid_data = train_data  # using training set as validation set.
+
         stop_batch = self.stop_batch
         if self.run_opt.is_distrib :
             self._init_sess_distrib()
         else :
             self._init_sess_serial()
 
-        self.print_head()
+        # self.print_head()
         fp = None
         if self.run_opt.is_chief :
             fp = open(self.disp_file, "a")
@@ -478,41 +485,27 @@ class DPTrainer (object):
             summary_merged_op = tf.summary.merge_all()
             shutil.rmtree(self.tensorboard_log_dir)
             tb_train_writer = tf.summary.FileWriter(self.tensorboard_log_dir + '/train', self.sess.graph)
-            tb_test_writer = tf.summary.FileWriter(self.tensorboard_log_dir + '/test')
+            tb_valid_writer = tf.summary.FileWriter(self.tensorboard_log_dir + '/test')
         else:
             tb_train_writer = None
-            tb_test_writer = None
+            tb_valid_writer = None
         
         train_time = 0
         while cur_batch < stop_batch :
-            batch_data = data.get_batch (sys_probs = self.sys_probs,
-                                         auto_prob_style = self.auto_prob_style
-            )
-            feed_dict_batch = {}
-            for kk in batch_data.keys():
-                if kk == 'find_type' or kk == 'type' :
-                    continue
-                if 'find_' in kk :
-                    feed_dict_batch[self.place_holders[kk]] = batch_data[kk]
-                else:
-                    feed_dict_batch[self.place_holders[kk]] = np.reshape(batch_data[kk], [-1])
-            for ii in ['type'] :
-                feed_dict_batch[self.place_holders[ii]] = np.reshape(batch_data[ii], [-1])
-            for ii in ['natoms_vec', 'default_mesh'] :
-                feed_dict_batch[self.place_holders[ii]] = batch_data[ii]
-            feed_dict_batch[self.place_holders['is_training']] = True
-
+            train_feed_dict, train_natoms = self.get_feed_dict(train_data, is_training=True)
             if self.display_in_training and is_first_step :
-                self.test_on_the_fly(fp, data, feed_dict_batch, tb_test_writer)
+                self.valid_on_the_fly(fp, train_data, valid_data, print_header=True)
                 is_first_step = False
             if self.timing_in_training : tic = time.time()
             # use tensorboard to visualize the training of deepmd-kit
             # it will takes some extra execution time to generate the tensorboard data
             if self.tensorboard :
-                summary, _ = self.sess.run([summary_merged_op, self.train_op], feed_dict = feed_dict_batch, options=prf_options, run_metadata=prf_run_metadata)
+                summary, _ = self.sess.run([summary_merged_op, self.train_op], feed_dict=train_feed_dict,
+                                           options=prf_options, run_metadata=prf_run_metadata)
                 tb_train_writer.add_summary(summary, cur_batch)
             else :
-                self.sess.run([self.train_op], feed_dict = feed_dict_batch, options=prf_options, run_metadata=prf_run_metadata)
+                self.sess.run([self.train_op], feed_dict=train_feed_dict,
+                              options=prf_options, run_metadata=prf_run_metadata)
             if self.timing_in_training : toc = time.time()
             if self.timing_in_training : train_time += toc - tic
             cur_batch = self.sess.run(self.global_step)
@@ -520,7 +513,7 @@ class DPTrainer (object):
 
             if self.display_in_training and (cur_batch % self.disp_freq == 0) :
                 tic = time.time()
-                self.test_on_the_fly(fp, data, feed_dict_batch, tb_test_writer)
+                self.valid_on_the_fly(fp, train_data, valid_data)
                 toc = time.time()
                 test_time = toc - tic
                 if self.timing_in_training :
@@ -539,56 +532,81 @@ class DPTrainer (object):
             with open(self.profiling_file, 'w') as f:
                 f.write(chrome_trace)
 
+    def get_feed_dict (self, data, is_training) :
+        batch = data.get_batch()
+        feed_dict = {}
+        for kk in batch.keys():
+            if kk == 'find_type' or kk == 'type':
+                continue
+            if 'find_' in kk:
+                feed_dict[self.place_holders[kk]] = batch[kk]
+            else:
+                feed_dict[self.place_holders[kk]] = np.reshape(batch[kk], [-1])
+        for ii in ['type']:
+            feed_dict[self.place_holders[ii]] = np.reshape(batch[ii], [-1])
+        for ii in ['natoms_vec', 'default_mesh']:
+            feed_dict[self.place_holders[ii]] = batch[ii]
+        feed_dict[self.place_holders['is_training']] = is_training
+        return feed_dict, batch['natoms_vec']
+
     def get_global_step (self) :
         return self.sess.run(self.global_step)
 
-    def print_head (self) :
-        if self.run_opt.is_chief:
-            fp = open(self.disp_file, "a")
-            print_str = "# %5s" % 'batch'
-            print_str += self.loss.print_header()
-            print_str += '   %8s\n' % 'lr'
-            fp.write(print_str)
-            fp.close ()
+    # def print_head (self) :  # depreciated
+    #     if self.run_opt.is_chief:
+    #         fp = open(self.disp_file, "a")
+    #         print_str = "# %5s" % 'batch'
+    #         print_str += self.loss.print_header()
+    #         print_str += '   %8s\n' % 'lr'
+    #         fp.write(print_str)
+    #         fp.close ()
 
-    def test_on_the_fly (self,
+    def valid_on_the_fly(self,
                          fp,
-                         data,
-                         feed_dict_batch,
-                         tb_writer) :
-        # Do not need to pass numb_test here as data object already knows it.
-        # Both DeepmdDataSystem and ClassArg parse the same json file
-        test_data = data.get_test(n_test=data.get_sys_ntest())
-        feed_dict_test = {}
-        for kk in test_data.keys():
-            if kk == 'find_type' or kk == 'type' :
-                continue
-            if 'find_' in kk:
-                feed_dict_test[self.place_holders[kk]] = test_data[kk]
-            else:
-                # again the data object knows appropriate test data shape,
-                # there is no need to slice again!
-                # feed_dict_test[self.place_holders[kk]] = np.reshape(test_data[kk][:self.numb_test[data.pick_idx]], [-1])
-                feed_dict_test[self.place_holders[kk]] = np.reshape(test_data[kk], [-1])
-        for ii in ['type'] :
-            feed_dict_test[self.place_holders[ii]] = np.reshape(test_data[ii], [-1])            
-        for ii in ['natoms_vec', 'default_mesh'] :
-            feed_dict_test[self.place_holders[ii]] = test_data[ii]
-        feed_dict_test[self.place_holders['is_training']] = False
+                         train_data,
+                         valid_data,
+                         print_header=False):
+        train_results = self.get_evaluation_results(train_data, self.valid_numb_batch)
+        valid_results = self.get_evaluation_results(valid_data, self.valid_numb_batch)
 
         cur_batch = self.cur_batch
         current_lr = self.sess.run(self.learning_rate)
-        if self.run_opt.is_chief:
-            print_str = "%7d" % cur_batch
-            print_str += self.loss.print_on_training(
-                tb_writer,
-                cur_batch,
-                self.sess,
-                test_data['natoms_vec'],
-                feed_dict_test,
-                feed_dict_batch
-            )
+        if print_header:
+            self.print_header(fp, valid_results)
+        self.print_on_training(fp, train_results, valid_results, cur_batch, current_lr)
 
-            print_str += "   %8.1e\n" % current_lr
-            fp.write(print_str)
-            fp.flush ()
+    @staticmethod
+    def print_header(fp, results):
+        print_str = ''
+        print_str += "# %5s" % 'batch'
+        prop_fmt =  '   %11s %11s'
+        for k in results.keys():
+            print_str += prop_fmt % (k + '_val', k + '_trn')
+        print_str += '   %8s\n' % 'lr'
+        fp.write(print_str)
+        fp.flush()
+
+    @staticmethod
+    def print_on_training(fp, train_results, valid_results, cur_batch, cur_lr):
+        print_str = ''
+        print_str += "%7d" % cur_batch
+        prop_fmt = "   %11.2e %11.2e"
+        for k in valid_results.keys():
+            # assert k in train_results.keys()
+            print_str += prop_fmt % (valid_results[k], train_results[k])
+        print_str += "   %8.1e\n" % cur_lr
+        fp.write(print_str)
+        fp.flush()
+
+    def get_evaluation_results(self, data, numb_batch):
+        sum_results = None
+        for i in range(numb_batch):
+            feed_dict, natoms = self.get_feed_dict(data, is_training=False)
+            results = self.loss.eval(self.sess, feed_dict, natoms)
+            if sum_results is None:
+                sum_results = results
+            else:
+                for k, v in results:
+                    sum_results[k] += v
+        avg_results = {k: v / numb_batch for k, v in sum_results.items()}
+        return avg_results
