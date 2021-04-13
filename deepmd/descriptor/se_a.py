@@ -2,14 +2,11 @@ import math
 import numpy as np
 from typing import Tuple, List
 
-from deepmd.env import paddle, tf
+from deepmd.env import paddle
 from paddle import to_tensor
 from deepmd.common import get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, get_np_precision
 from deepmd.utils.argcheck import list_to_doc
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
-from deepmd.env import op_module
-from deepmd.env import default_tf_session_config
+from deepmd.env import GLOBAL_PD_FLOAT_PRECISION, GLOBAL_NP_FLOAT_PRECISION, paddle_ops
 from deepmd.utils.network import EmbeddingNet
 from deepmd.utils.tabulate import DeepTabulate
 
@@ -67,7 +64,7 @@ class DescrptSeA (paddle.nn.Layer):
         precision
                 The precision of the embedding net parameters. Supported options are {1}
         """
-        super(DescrptSeA, self).__init__()
+        super(DescrptSeA, self).__init__(name_scope="DescrptSeA")
         self.sel_a = sel
         self.rcut_r = rcut
         self.rcut_r_smth = rcut_smth
@@ -105,8 +102,8 @@ class DescrptSeA (paddle.nn.Layer):
         self.dstd = None
         self.davg = None
         self.compress = False
-        avg_zero = np.zeros([self.ntypes, self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
-        std_ones = np.ones ([self.ntypes, self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
+        self.avg_zero = paddle.zeros([self.ntypes, self.ndescrpt], dtype=GLOBAL_PD_FLOAT_PRECISION)
+        self.std_ones = paddle.ones ([self.ntypes, self.ndescrpt], dtype=GLOBAL_PD_FLOAT_PRECISION)
 
         nets = []
         for type_input in range(self.ntypes) :
@@ -116,6 +113,13 @@ class DescrptSeA (paddle.nn.Layer):
             nets.append(paddle.nn.LayerList(layer))
 
         self.embedding_nets = paddle.nn.LayerList(nets)
+
+        self.t_rcut = paddle.to_tensor(np.max([self.rcut_r, self.rcut_a]), dtype = GLOBAL_PD_FLOAT_PRECISION)
+        self.t_ntypes = paddle.to_tensor(self.ntypes, dtype = "int32")
+        self.t_ndescrpt = paddle.to_tensor(self.ndescrpt, dtype = "int32")
+        self.t_sel = paddle.to_tensor(self.sel_a, dtype = "int32")
+        self.t_avg = paddle.to_tensor(np.zeros([self.ntypes, self.ndescrpt]), dtype = GLOBAL_PD_FLOAT_PRECISION)
+        self.t_std = paddle.to_tensor(np.ones([self.ntypes, self.ndescrpt]), dtype = GLOBAL_PD_FLOAT_PRECISION)
 
     def get_rcut (self) -> float:
         """
@@ -182,57 +186,45 @@ class DescrptSeA (paddle.nn.Layer):
         input_dict
                 Dictionary for additional input
         """
-        #all_davg = []
-        #all_dstd = []
-        #if True:
-        #    sumr = []
-        #    suma = []
-        #    sumn = []
-        #    sumr2 = []
-        #    suma2 = []
-        #    for cc,bb,tt,nn,mm in zip(data_coord,data_box,data_atype,natoms_vec,mesh) :
-        #        sysr,sysr2,sysa,sysa2,sysn \
-        #            = self._compute_dstats_sys_smth(cc,bb,tt,nn,mm)
-        #        sumr.append(sysr)
-        #        suma.append(sysa)
-        #        sumn.append(sysn)
-        #        sumr2.append(sysr2)
-        #        suma2.append(sysa2)
-        #    sumr = np.sum(sumr, axis = 0)
-        #    suma = np.sum(suma, axis = 0)
-        #    sumn = np.sum(sumn, axis = 0)
-        #    sumr2 = np.sum(sumr2, axis = 0)
-        #    suma2 = np.sum(suma2, axis = 0)
-        #    for type_i in range(self.ntypes) :
-        #        davgunit = [sumr[type_i]/sumn[type_i], 0, 0, 0]
-        #        dstdunit = [self._compute_std(sumr2[type_i], sumr[type_i], sumn[type_i]), 
-        #                    self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
-        #                    self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
-        #                    self._compute_std(suma2[type_i], suma[type_i], sumn[type_i])
-        #                    ]
-        #        davg = np.tile(davgunit, self.ndescrpt // 4)
-        #        dstd = np.tile(dstdunit, self.ndescrpt // 4)
-        #        all_davg.append(davg)
-        #        all_dstd.append(dstd)
+        all_davg = []
+        all_dstd = []
+        if True:
+            sumr = []
+            suma = []
+            sumn = []
+            sumr2 = []
+            suma2 = []
+            for cc,bb,tt,nn,mm in zip(data_coord,data_box,data_atype,natoms_vec,mesh) :
+                sysr,sysr2,sysa,sysa2,sysn \
+                    = self._compute_dstats_sys_smth(cc,bb,tt,nn,mm)
+                sumr.append(sysr)
+                suma.append(sysa)
+                sumn.append(sysn)
+                sumr2.append(sysr2)
+                suma2.append(sysa2)
+            sumr = np.sum(sumr, axis = 0)
+            suma = np.sum(suma, axis = 0)
+            sumn = np.sum(sumn, axis = 0)
+            sumr2 = np.sum(sumr2, axis = 0)
+            suma2 = np.sum(suma2, axis = 0)
+            for type_i in range(self.ntypes) :
+                davgunit = [sumr[type_i]/sumn[type_i], 0, 0, 0]
+                dstdunit = [self._compute_std(sumr2[type_i], sumr[type_i], sumn[type_i]), 
+                            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
+                            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
+                            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i])
+                            ]
+                davg = np.tile(davgunit, self.ndescrpt // 4)
+                dstd = np.tile(dstdunit, self.ndescrpt // 4)
+                all_davg.append(davg)
+                all_dstd.append(dstd)
 
-        #if not self.set_davg_zero:
-        #    self.davg = np.array(all_davg)
-        #self.dstd = np.array(all_dstd)
+        if not self.set_davg_zero:
+            self.davg = np.array(all_davg)
+        self.dstd = np.array(all_dstd)
 
-        self.davg = np.load('/workspace/deepmd-kit/examples/water/train/davg.npy')
-        self.dstd = np.load('/workspace/deepmd-kit/examples/water/train/dstd.npy')
+        np.save("tf", self.davg)
 
-        davg = self.davg
-        dstd = self.dstd
-        if davg is None :
-            davg = np.zeros([self.ntypes, self.ndescrpt]) 
-        if dstd is None:
-            dstd = np.ones ([self.ntypes, self.ndescrpt])
-        
-        self.t_rcut = paddle.to_tensor(np.max([self.rcut_r, self.rcut_a]), dtype = GLOBAL_NP_FLOAT_PRECISION)
-        self.t_ntypes = paddle.to_tensor(self.ntypes, dtype = 'int32')
-        self.t_ndescrpt = paddle.to_tensor(self.ndescrpt, dtype = 'int32')            
-        self.t_sel = paddle.to_tensor(self.sel_a, dtype = 'int32')
         self.t_avg = paddle.to_tensor(self.davg, dtype = GLOBAL_NP_FLOAT_PRECISION)
         self.t_std = paddle.to_tensor(self.dstd, dtype = GLOBAL_NP_FLOAT_PRECISION)
 
@@ -312,34 +304,34 @@ class DescrptSeA (paddle.nn.Layer):
                 The output descriptor
         """
 
-        coord = paddle.reshape (coord_, [-1, natoms[1] * 3])
-        box   = paddle.reshape (box_, [-1, 9])
-        atype = paddle.reshape (atype_, [-1, natoms[1]])
+        coord = paddle.reshape(coord_, [-1, natoms[1] * 3])
+        box   = paddle.reshape(box_, [-1, 9])
+        atype = paddle.reshape(atype_, [-1, natoms[1]])
 
-        #print("coord= ", coord)
-        #print("box= ", box)
-        #print("atype= ", atype)
-        #print("natoms= ", natoms)
-        #print("mesh= ", mesh)
+        #print("coord= ", coord.shape)
+        #print("box= ", box.shape)
+        #print("atype= ", atype.shape)
+        #print("natoms= ", natoms.shape)
+        #print("mesh= ", mesh.shape)
 
-        #self.descrpt, self.descrpt_deriv, self.rij, self.nlist \
-        #    = op_module.prod_env_mat_a (coord,
-        #                               atype,
-        #                               natoms,
-        #                               box,
-        #                               mesh,
-        #                               self.t_avg,
-        #                               self.t_std,
-        #                               rcut_a = self.rcut_a,
-        #                               rcut_r = self.rcut_r,
-        #                               rcut_r_smth = self.rcut_r_smth,
-        #                               sel_a = self.sel_a,
-        #                               sel_r = self.sel_r)
+        self.descrpt, self.descrpt_deriv, self.rij, self.nlist \
+            = paddle_ops.prod_env_mat_a(coord,
+                                       atype,
+                                       natoms,
+                                       box,
+                                       mesh,
+                                       self.t_avg,
+                                       self.t_std,
+                                       rcut_a = self.rcut_a,
+                                       rcut_r = self.rcut_r,
+                                       rcut_r_smth = self.rcut_r_smth,
+                                       sel_a = self.sel_a,
+                                       sel_r = self.sel_r)
 
-        self.descrpt = to_tensor(np.load('/workspace/deepmd-kit/examples/water/train/descrpt.npy'), stop_gradient=False)
-        self.descrpt_deriv = to_tensor(np.load('/workspace/deepmd-kit/examples/water/train/descrpt_deriv.npy'))
-        self.rij = to_tensor(np.load('/workspace/deepmd-kit/examples/water/train/rij.npy'))
-        self.nlist = to_tensor(np.load('/workspace/deepmd-kit/examples/water/train/nlist.npy'))
+        #self.descrpt = to_tensor(np.load('/workspace/deepmd-kit/examples/water/train/descrpt.npy'), stop_gradient=False)
+        #self.descrpt_deriv = to_tensor(np.load('/workspace/deepmd-kit/examples/water/train/descrpt_deriv.npy'))
+        #self.rij = to_tensor(np.load('/workspace/deepmd-kit/examples/water/train/rij.npy'))
+        #self.nlist = to_tensor(np.load('/workspace/deepmd-kit/examples/water/train/nlist.npy'))
 
         #print("self.descrpt= ", self.descrpt)
         #print("self.descrpt_deriv= ", self.descrpt_deriv)
@@ -347,10 +339,7 @@ class DescrptSeA (paddle.nn.Layer):
         #print("self.nlist= ", self.nlist)
 
         self.descrpt_reshape = paddle.reshape(self.descrpt, [-1, self.ndescrpt])
-        #self.descrpt_reshape = tf.identity(self.descrpt_reshape, name = 'o_rmat')
-        #self.descrpt_deriv = tf.identity(self.descrpt_deriv, name = 'o_rmat_deriv')
-        #lf.rij = tf.identity(self.rij, name = 'o_rij')
-        #lf.nlist = tf.identity(self.nlist, name = 'o_nlist')
+        self.descrpt_reshape.stop_gradient = False
 
         self.dout, self.qmat = self._pass_filter(self.descrpt_reshape, 
                                                  atype,
@@ -397,17 +386,19 @@ class DescrptSeA (paddle.nn.Layer):
         net_deriv = paddle.grad(atom_ener, self.descrpt_reshape, create_graph=True)[0]
         net_deriv_reshape = paddle.reshape (net_deriv, [-1, natoms[0] * self.ndescrpt])
 
-        return net_deriv_reshape
+        self.net_deriv_reshape = net_deriv_reshape
+
+        paddle.set_device("cpu")
 
         force \
-            = op_module.prod_force_se_a (net_deriv_reshape,
+            = paddle_ops.prod_force_se_a (net_deriv_reshape,
                                           self.descrpt_deriv,
                                           self.nlist,
                                           natoms,
                                           n_a_sel = self.nnei_a,
                                           n_r_sel = self.nnei_r)
         virial, atom_virial \
-            = op_module.prod_virial_se_a (net_deriv_reshape,
+            = paddle_ops.prod_virial_se_a (net_deriv_reshape,
                                            self.descrpt_deriv,
                                            self.rij,
                                            self.nlist,
@@ -415,6 +406,7 @@ class DescrptSeA (paddle.nn.Layer):
                                            n_a_sel = self.nnei_a,
                                            n_r_sel = self.nnei_r)
         
+        paddle.set_device("gpu")
         return force, virial, atom_virial
         
 
@@ -454,36 +446,36 @@ class DescrptSeA (paddle.nn.Layer):
                                  natoms_vec,
                                  mesh) :
 
-        print("pbefore sub_sess run========")
-        print("data_coord= ", data_coord)
-        print("data_atype= ", data_atype)
-        print("natoms_vec= ", natoms_vec)
-        print("data_box= ", data_box)
-        print("mesh= ", mesh)
+        #print("pbefore sub_sess run========")
+        #print("data_coord= ", data_coord)
+        #print("data_atype= ", data_atype)
+        #print("natoms_vec= ", natoms_vec)
+        #print("data_box= ", data_box)
+        #print("mesh= ", mesh)
 
-        input_dict = defaultdict(str)
-        input_dict['coord'] = paddle.to_tensor(data_coord)
-        input_dict['box'] = paddle.to_tensor(data_atype)
-        input_dict['type'] = paddle.to_tensor(natoms_vec)
-        input_dict['natoms_vec'] = paddle.to_tensor(data_box)
-        input_dict['default_mesh'] = paddle.to_tensor(mesh)
+        input_dict = {}
+        input_dict['coord'] = paddle.to_tensor(data_coord, dtype=GLOBAL_NP_FLOAT_PRECISION)
+        input_dict['box'] = paddle.to_tensor(data_box, dtype=GLOBAL_PD_FLOAT_PRECISION)
+        input_dict['type'] = paddle.to_tensor(data_atype, dtype="int32")
+        input_dict['natoms_vec'] = paddle.to_tensor(natoms_vec, dtype="int32")
+        input_dict['default_mesh'] = paddle.to_tensor(mesh, dtype="int32")
         
-        stat_descrpt, descrpt_deriv, rij, nlist = op_module.prod_env_mat_a(input_dict['coord'],
+        self.stat_descrpt, descrpt_deriv, rij, nlist = paddle_ops.prod_env_mat_a(input_dict['coord'],
                                          input_dict['type'],
                                          input_dict['natoms_vec'],
                                          input_dict['box'],
                                          input_dict['default_mesh'],
-                                         paddle.to_tensor(avg_zero),
-                                         paddle.to_tensor(std_ones),
+                                         self.avg_zero,
+                                         self.std_ones,
                                          rcut_a = self.rcut_a,
                                          rcut_r = self.rcut_r,
                                          rcut_r_smth = self.rcut_r_smth,
                                          sel_a = self.sel_a,
                                          sel_r = self.sel_r)
         
-        print("self.stat_descrpt   ", stat_descrpt)
-        print("==========after sub_sess run=========")
-        dd_all = stat_descrpt.numpy()
+        #print("self.stat_descrpt   ", stat_descrpt)
+        #print("==========after sub_sess run=========")
+        dd_all = self.stat_descrpt.numpy()
         natoms = natoms_vec
         dd_all = np.reshape(dd_all, [-1, self.ndescrpt * natoms[0]])
         start_index = 0
@@ -563,18 +555,18 @@ class DescrptSeA (paddle.nn.Layer):
               xyz_scatter_1 += paddle.fluid.layers.matmul(paddle.reshape(inputs_i, [-1, shape_i[1]//4, 4]), xyz_scatter, transpose_x = True)
 
         # natom x nei x outputs_size
-        # xyz_scatter = tf.concat(xyz_scatter_total, axis=1)
+        # xyz_scatter = paddle.concat(xyz_scatter_total, axis=1)
         # natom x nei x 4
-        # inputs_reshape = tf.reshape(inputs, [-1, shape[1]//4, 4])
+        # inputs_reshape = paddle.reshape(inputs, [-1, shape[1]//4, 4])
         # natom x 4 x outputs_size
-        # xyz_scatter_1 = tf.matmul(inputs_reshape, xyz_scatter, transpose_a = True)
+        # xyz_scatter_1 = paddle.matmul(inputs_reshape, xyz_scatter, transpose_a = True)
         xyz_scatter_1 = xyz_scatter_1 * (4.0 / shape[1])
 
         # natom x 4 x outputs_size_2
         xyz_scatter_2 = paddle.slice(xyz_scatter_1, [0,1,2], [0,0,0],[xyz_scatter_1.shape[0],xyz_scatter_1.shape[1],outputs_size_2])
 
         # # natom x 3 x outputs_size_2
-        # qmat = tf.slice(xyz_scatter_2, [0,1,0], [-1, 3, -1])
+        # qmat = paddle.slice(xyz_scatter_2, [0,1,0], [-1, 3, -1])
         # natom x 3 x outputs_size_1
         qmat = paddle.slice(xyz_scatter_1, [0,1,2], [0,1,0], [xyz_scatter_1.shape[0], 4, xyz_scatter_1.shape[2]])
         # natom x outputs_size_1 x 3

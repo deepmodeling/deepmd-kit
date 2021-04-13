@@ -5,7 +5,7 @@ from deepmd.env import paddle
 from deepmd.utils.pair_tab import PairTab
 from deepmd.common import ClassArg
 from deepmd.env import global_cvt_2_ener_float, MODEL_VERSION, GLOBAL_ENER_FLOAT_PRECISION
-from deepmd.env import op_module
+from deepmd.env import op_module, paddle_ops
 from .model_stat import make_stat_input, merge_sys_stat
 
 import sys
@@ -51,7 +51,7 @@ class EnerModel(paddle.nn.Layer) :
                 The upper boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
         """
         # descriptor
-        super(EnerModel, self).__init__()
+        super(EnerModel, self).__init__(name_scope="EnerModel")
         self.descrpt = descrpt
         self.rcut = self.descrpt.get_rcut()
         self.ntypes = self.descrpt.get_ntypes()
@@ -107,7 +107,7 @@ class EnerModel(paddle.nn.Layer) :
     def _compute_output_stat (self, all_stat) :
         self.fitting.compute_output_stats(all_stat)
 
-    
+    #@paddle.jit.to_static
     def forward (self, 
                coord_, 
                atype_,
@@ -117,8 +117,8 @@ class EnerModel(paddle.nn.Layer) :
                input_dict,
                suffix = '', 
                reuse = None):
-        coord = paddle.reshape (coord_, [-1, natoms[1] * 3])
-        atype = paddle.reshape (atype_, [-1, natoms[1]])
+        coord = paddle.reshape(coord_, [-1, natoms[1] * 3])
+        atype = paddle.reshape(atype_, [-1, natoms[1]])
 
         dout = self.descrpt(coord_,
                             atype_,
@@ -128,8 +128,8 @@ class EnerModel(paddle.nn.Layer) :
                             input_dict,
                             suffix = suffix,
                             reuse = reuse)
-        print("self.dout=  ", dout)
-        #return dout
+
+        self.dout = dout
         
         atom_ener = self.fitting (dout, 
                                   natoms, 
@@ -137,14 +137,12 @@ class EnerModel(paddle.nn.Layer) :
                                   reuse = reuse, 
                                   suffix = suffix)
 
+        self.atom_ener = atom_ener
         energy_raw = atom_ener
-        print("self.atom_ener=   ", atom_ener)
-        #return atom_ener
 
         energy_raw = paddle.reshape(energy_raw, [-1, natoms[0]], name = 'o_atom_energy'+suffix)
-        energy = paddle.fluid.layers.reduce_sum(paddle.cast(energy_raw, GLOBAL_ENER_FLOAT_PRECISION), dim=1, name='o_energy'+suffix)
+        energy = paddle.sum(paddle.cast(energy_raw, GLOBAL_ENER_FLOAT_PRECISION), axis=1, name='o_energy'+suffix)
 
-        return self.descrpt.prod_force_virial (atom_ener, natoms)
         force, virial, atom_virial = self.descrpt.prod_force_virial (atom_ener, natoms)
 
         force = paddle.reshape (force, [-1, 3 * natoms[1]], name = "o_force"+suffix)
@@ -159,6 +157,6 @@ class EnerModel(paddle.nn.Layer) :
         model_dict['atom_virial'] = atom_virial
         model_dict['coord'] = coord
         model_dict['atype'] = atype
-        
+
         return model_dict
 

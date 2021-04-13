@@ -1,13 +1,13 @@
 import numpy as np
 
 from deepmd.env import tf, paddle
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION, GLOBAL_PD_FLOAT_PRECISION
 
-w1 = 1.1
-b1 = 0.9
+w1 = 0.001
+b1 = -0.05
 
-w2 = 1.2
-b2 = 0.8
+w2 = -0.002
+b2 = 0.03
 
 def one_layer(inputs, 
               outputs_size, 
@@ -168,8 +168,8 @@ class OneLayer(paddle.nn.Layer):
     def __init__(self,
                  in_features,
                  out_features,
-                 activation_fn=paddle.tanh, 
-                 precision = GLOBAL_TF_FLOAT_PRECISION, 
+                 activation_fn=paddle.nn.functional.relu, 
+                 precision = GLOBAL_PD_FLOAT_PRECISION, 
                  stddev=1.0,
                  bavg=0.0,
                  name='linear', 
@@ -177,18 +177,20 @@ class OneLayer(paddle.nn.Layer):
                  use_timestep = False, 
                  trainable = True,
                  useBN = False):
-        super(OneLayer, self).__init__()
+        super(OneLayer, self).__init__(name)
         self.out_features = out_features
         self.activation_fn = activation_fn
         self.use_timestep = use_timestep
         self.useBN = useBN
+        self.seed = seed
+        paddle.seed(seed)
 
         self.weight = self.create_parameter(
             shape=[in_features, out_features],
             dtype = precision,
             is_bias= False,
             default_initializer = paddle.fluid.initializer.Constant(w1))
-            #default_initializer = paddle.nn.initializer.Normal(std = stddev/np.sqrt(shape[1]+out_features)))
+            #default_initializer = paddle.nn.initializer.Normal(std = stddev/np.sqrt(in_features+out_features)))
         self.bias = self.create_parameter(
             shape=[out_features],
             dtype = precision,
@@ -203,7 +205,7 @@ class OneLayer(paddle.nn.Layer):
                                   #default_initializer = paddle.nn.initializer.Normal(mean = 0.1, std = 0.001))
 
     def forward(self, input):
-        hidden = paddle.matmul(input, self.weight) + self.bias
+        hidden = paddle.fluid.layers.matmul(input, self.weight) + self.bias
         if self.activation_fn != None:
             if self.useBN:
                 None
@@ -249,10 +251,21 @@ class EmbeddingNet(paddle.nn.Layer):
     trainable: boolean
         If the netowk is trainable
     """
-    def __init__(self, network_size, precision, activation_fn = paddle.tanh, resnet_dt = False, seed = None, trainable = True, stddev = 1.0, bavg = 0.0, name=''):
+    def __init__(self,
+                 network_size, 
+                 precision, 
+                 activation_fn = paddle.nn.functional.relu, 
+                 resnet_dt = False, 
+                 seed = None, 
+                 trainable = True, 
+                 stddev = 1.0, 
+                 bavg = 0.0, 
+                 name=''):
         super(EmbeddingNet, self).__init__(name)
         self.outputs_size = [1] + network_size
         self.activation_fn = activation_fn
+        self.seed = seed
+        paddle.seed(seed)
 
         outputs_size = self.outputs_size
         weight = []
@@ -263,7 +276,7 @@ class EmbeddingNet(paddle.nn.Layer):
                                 dtype = precision,
                                 is_bias= False,
                                 default_initializer = paddle.fluid.initializer.Constant(w2)))
-                                #default_initializer = paddle.nn.initializer.Normal(std = stddev/np.sqrt(outputs_size[1]+outputs_size[0]), seed = seed)))
+                                #default_initializer = paddle.nn.initializer.Normal(std = stddev/np.sqrt(outputs_size[ii]+outputs_size[ii-1]))))
 
             bias.append(self.create_parameter(
                                 shape = [1, outputs_size[ii]], 
@@ -279,7 +292,7 @@ class EmbeddingNet(paddle.nn.Layer):
     def forward(self, xx):
         outputs_size = self.outputs_size
         for ii in range(1, len(outputs_size)):
-            hidden = paddle.reshape(self.activation_fn(paddle.matmul(xx, self.weight[ii-1]) + self.bias[ii-1]), [-1, outputs_size[ii]])
+            hidden = paddle.reshape(self.activation_fn(paddle.fluid.layers.matmul(xx, self.weight[ii-1]) + self.bias[ii-1]), [-1, outputs_size[ii]])
             if outputs_size[ii] == outputs_size[ii-1] * 2: 
                 xx = paddle.concat([xx,xx], axis=1) + hidden
             else:

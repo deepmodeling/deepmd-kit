@@ -2,7 +2,7 @@ import warnings
 import numpy as np
 from typing import Tuple, List
 
-from deepmd.env import tf, paddle
+from deepmd.env import paddle
 from deepmd.common import ClassArg, add_data_requirement, get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter
 from deepmd.utils.argcheck import list_to_doc
 from deepmd.utils.network import OneLayer
@@ -10,7 +10,7 @@ from deepmd.descriptor import DescrptLocFrame
 from deepmd.descriptor import DescrptSeA
 
 from deepmd.env import global_cvt_2_tf_float
-from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION, GLOBAL_PD_FLOAT_PRECISION
 
 
 class EnerFitting(paddle.nn.Layer):
@@ -28,7 +28,7 @@ class EnerFitting(paddle.nn.Layer):
                   activation_function : str = 'tanh',
                   precision : str = 'default'
     ) -> None:
-        super(EnerFitting, self).__init__()
+        super(EnerFitting, self).__init__(name_scope="EnerFitting")
         self.ntypes = descrpt.get_ntypes()
         self.dim_descrpt = descrpt.get_dim_out()
         self.numb_fparam = numb_fparam
@@ -49,7 +49,7 @@ class EnerFitting(paddle.nn.Layer):
         self.atom_ener = []
         for at, ae in enumerate(atom_ener):
             if ae is not None:
-                self.atom_ener.append(tf.constant(ae, GLOBAL_TF_FLOAT_PRECISION, name = "atom_%d_ener" % at))
+                self.atom_ener.append(paddle.to_tensor(ae, dtype=GLOBAL_PD_FLOAT_PRECISION))
             else:
                 self.atom_ener.append(None)
         self.useBN = False
@@ -77,8 +77,24 @@ class EnerFitting(paddle.nn.Layer):
             layers.append(OneLayer(self.n_neuron[-1], 1, name='final_layer_type_'+str(type_i), seed = self.seed, activation_fn = None, precision = self.fitting_precision, trainable = self.trainable[ii]))
             
             emenets.append(paddle.nn.LayerList(layers))
-        
         self.ElementNets = paddle.nn.LayerList(emenets)
+
+        self.t_dfparam = paddle.to_tensor(self.numb_fparam, dtype = "int32")
+        self.t_daparam = paddle.to_tensor(self.numb_aparam, dtype = "int32")
+
+        # stat fparam
+        if self.numb_fparam > 0:
+            self.t_fparam_avg = paddl.to_tensor(np.zeros([1, self.numb_fparam]),
+                                                dtype = GLOBAL_PD_FLOAT_PRECISION)
+            self.t_fparam_istd = paddl.to_tensor(np.ones([1, self.numb_fparam]),
+                                                 dtype = GLOBAL_PD_FLOAT_PRECISION)
+
+        # stat aparam
+        if self.numb_aparam > 0:
+            self.t_aparam_avg = paddl.to_tensor(np.zeros([1, self.numb_aparam]),
+                                                dtype = GLOBAL_PD_FLOAT_PRECISION)
+            self.t_aparam_istd = tf.get_variable(np.ones([1, self.numb_aparam]),
+                                                 dtype = GLOBAL_PD_FLOAT_PRECISION)
 
 
     def get_numb_fparam(self) -> int:
@@ -145,6 +161,7 @@ class EnerFitting(paddle.nn.Layer):
         protection
                 Divided-by-zero protection
         """
+        
         # stat fparam
         if self.numb_fparam > 0:
             cat_data = np.concatenate(all_stat['fparam'], axis = 0)
@@ -155,6 +172,12 @@ class EnerFitting(paddle.nn.Layer):
                 if self.fparam_std[ii] < protection:
                     self.fparam_std[ii] = protection
             self.fparam_inv_std = 1./self.fparam_std
+
+            self.t_fparam_avg = paddl.to_tensor(self.fparam_avg,
+                                                dtype = GLOBAL_PD_FLOAT_PRECISION)
+            self.t_fparam_istd = paddl.to_tensor(self.fparam_inv_std,
+                                                 dtype = GLOBAL_PD_FLOAT_PRECISION)
+
         # stat aparam
         if self.numb_aparam > 0:
             sys_sumv = []
@@ -174,6 +197,11 @@ class EnerFitting(paddle.nn.Layer):
                 if self.aparam_std[ii] < protection:
                     self.aparam_std[ii] = protection
             self.aparam_inv_std = 1./self.aparam_std
+
+            self.t_aparam_avg = paddl.to_tensor(self.aparam_avg,
+                                                dtype = GLOBAL_PD_FLOAT_PRECISION)
+            self.t_aparam_istd = tf.get_variable(self.aparam_inv_std,
+                                                 dtype = GLOBAL_PD_FLOAT_PRECISION)
 
 
     def _compute_std (self, sumv2, sumv, sumn) :
@@ -250,11 +278,4 @@ class EnerFitting(paddle.nn.Layer):
             else:
                 outs = paddle.concat([outs, final_layer], axis=1)
 
-        if self.tot_ener_zero:
-            force_tot_ener = 0.0
-            outs = paddle.reshape(outs, [-1, natoms[0]])
-            outs_mean = paddle.reshape(paddle.mean(outs, axis = 1, keepdim=True), [-1, 1])
-            outs = outs - outs_mean
-            outs = paddle.reshape(outs, [-1])
-
-        return paddle.cast(paddle.reshape(outs, [-1]), GLOBAL_NP_FLOAT_PRECISION)
+        return paddle.cast(paddle.reshape(outs, [-1]), GLOBAL_PD_FLOAT_PRECISION)

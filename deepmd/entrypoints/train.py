@@ -262,6 +262,7 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
     # setup data modifier
     modifier: Optional[DipoleChargeModifier]
     modi_data = jdata["model"].get("modifier", None)
+
     if modi_data is not None:
         if modi_data["type"] == "dipole_charge":
             modifier = DipoleChargeModifier(

@@ -2,8 +2,12 @@ import os
 from typing import List, Optional, TYPE_CHECKING
 
 import numpy as np
-from deepmd.common import make_default_mesh
-from deepmd.env import default_tf_session_config, tf, MODEL_VERSION
+import json
+from deepmd.common import make_default_mesh, j_must_have
+from deepmd.env import MODEL_VERSION, paddle, tf
+from deepmd.fit import EnerFitting
+from deepmd.descriptor import DescrptSeA
+from deepmd.model import EnerModel
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -22,9 +26,34 @@ class DeepEval:
         load_prefix: str = "load",
         default_tf_graph: bool = False
     ):
-        self.graph = self._load_graph(
-            model_file, prefix=load_prefix, default_tf_graph=default_tf_graph
-        )
+        ##### hard code, should use dy2stat, avoid to build model #######
+        with open("out.json", 'r') as load_f:
+            jdata = json.load(load_f)
+        
+        model_param = j_must_have(jdata, 'model')
+        descrpt_param = j_must_have(model_param, 'descriptor')
+        descrpt_param.pop('type', None)
+        self.descrpt = descrpt = DescrptSeA(**descrpt_param)
+
+        fitting_param = j_must_have(model_param, 'fitting_net')
+        fitting_param.pop('type', None)
+        fitting_param['descrpt'] = self.descrpt
+        self.fitting = EnerFitting(**fitting_param)
+        
+        self.model = EnerModel(
+                self.descrpt, 
+                self.fitting, 
+                model_param.get('type_map'),
+                model_param.get('data_stat_nbatch', 10),
+                model_param.get('data_stat_protect', 1e-2),
+                model_param.get('use_srtab'),
+                model_param.get('smin_alpha'),
+                model_param.get('sw_rmin'),
+                model_param.get('sw_rmax')
+            )
+        self.model.set_dict(paddle.load(model_file))
+        ################################################################
+
         self.load_prefix = load_prefix
 
         # graph_compatable should be called after graph and prefix are set
@@ -40,11 +69,7 @@ class DeepEval:
 
         :type:str
         """
-        if not self._model_type:
-            t_mt = self._get_tensor("model_attr/model_type:0")
-            sess = tf.Session(graph=self.graph, config=default_tf_session_config)
-            [mt] = sess.run([t_mt], feed_dict={})
-            self._model_type = mt.decode("utf-8")
+        self._model_type = self.model.t_mt
         return self._model_type
 
     @property
@@ -53,16 +78,14 @@ class DeepEval:
 
         :type:str
         """
+
         if not self._model_version:
             try:
-                t_mt = self._get_tensor("model_attr/model_version:0")
-                sess = tf.Session(graph=self.graph, config=default_tf_session_config)
-                [mt] = sess.run([t_mt], feed_dict={})
-                self._model_version = mt.decode("utf-8")
+                self._model_version = self.model.t_ver
             except KeyError:
                 # For deepmd-kit version 0.x - 1.x, set model version to 0.0
                 self._model_version = "0.0"
-        return self._model_version    
+        return self._model_version
 
     def _graph_compatable(
         self
@@ -83,31 +106,20 @@ class DeepEval:
         else:
             return True
 
-    def _get_tensor(
+    def _get_value(
         self, tensor_name: str, attr_name: Optional[str] = None
-    ) -> tf.Tensor:
-        """Get TF graph tensor and assign it to class namespace.
-
-        Parameters
-        ----------
-        tensor_name : str
-            name of tensor to get
-        attr_name : Optional[str], optional
-            if specified, class attribute with this name will be created and tensor will
-            be assigned to it, by default None
-
-        Returns
-        -------
-        tf.Tensor
-            loaded tensor
+    ):
         """
-        tensor_path = os.path.join(self.load_prefix, tensor_name)
-        tensor = self.graph.get_tensor_by_name(tensor_path)
+        """
+        value = None
+        for name, tensor in self.model.named_buffers():
+            if tensor_name in name:
+                value = tensor.numpy()[0] if tensor.shape == [1] else tensor.numpy()
         if attr_name:
-            setattr(self, attr_name, tensor)
-            return tensor
+            setattr(self, attr_name, value)
+            return value
         else:
-            return tensor
+            return value
 
     @staticmethod
     def _load_graph(

@@ -6,7 +6,7 @@ import shutil
 import numpy as np
 from deepmd.env import tf, paddle
 from deepmd.env import default_tf_session_config
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION, GLOBAL_PD_FLOAT_PRECISION
 from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.fit import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
 from deepmd.descriptor import DescrptLocFrame
@@ -246,7 +246,7 @@ class DPTrainer (object):
         tr_args = ClassArg()\
                   .add('numb_test',     [int, list, str],    default = 1)\
                   .add('disp_file',     str,    default = 'lcurve.out')\
-                  .add('disp_freq',     int,    default = 100)\
+                  .add('disp_freq',     int,    default = 1)\
                   .add('save_freq',     int,    default = 1000)\
                   .add('save_ckpt',     str,    default = 'model.ckpt')\
                   .add('display_in_training', bool, default = True)\
@@ -299,17 +299,8 @@ class DPTrainer (object):
         self.type_map = data.get_type_map()
 
         self.model.data_stat(data)
-
-        log.info("built lr")
         self.lr_scheduler = self.lr.build(self.stop_batch)
 
-
-    def calculate_loss(self, model_inputs):
-        return (self.model(model_inputs['coord'], model_inputs['type'], model_inputs['natoms_vec'], model_inputs['box'], model_inputs['default_mesh'], model_inputs, suffix = "", reuse = False), "fake")
-        #model_pred = self.model(model_inputs['coord'], model_inputs['type'], model_inputs['natoms_vec'], model_inputs['box'], model_inputs['default_mesh'], model_inputs, suffix = "", reuse = False)
-        #return self.loss.calculate_loss (self.learning_rate.get_lr(), model_inputs['natoms_vec'], model_pred, model_inputs, suffix = "test")
-
-        log.info("built network")
 
     def train (self, 
                data,
@@ -324,8 +315,8 @@ class DPTrainer (object):
         is_first_step = True
         self.cur_batch = 0
         
-        adam = paddle.optimizer.SGD(learning_rate = self.lr_scheduler, parameters=self.model.parameters())
-
+        adam = paddle.optimizer.Adam(learning_rate = self.lr_scheduler, parameters=self.model.parameters())
+        
         log.info("start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e" % 
                  (self.lr_scheduler.get_lr(),
                   self.lr.value(self.cur_batch), 
@@ -337,46 +328,48 @@ class DPTrainer (object):
         prf_options = None
         prf_run_metadata = None
         if self.profiling :
-            prf_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
-            prf_run_metadata = tf.RunMetadata()
+            pass
 
         tb_train_writer = None
         tb_test_writer = None
         
         train_time = 0
-        print(self.model)
+
+        data_dict = data.get_data_dict()
         while self.cur_batch < stop_batch :
             batch_data = data.get_batch (sys_probs = self.sys_probs,
                                          auto_prob_style = self.auto_prob_style
             )
-            model_inputs = defaultdict(str)
+            model_inputs = {}
             for kk in batch_data.keys():
                 if kk == 'find_type' or kk == 'type' :
                     continue
+                prec = GLOBAL_PD_FLOAT_PRECISION
                 if 'find_' in kk :
-                    model_inputs[kk] = paddle.to_tensor(batch_data[kk])
+                    model_inputs[kk] = paddle.to_tensor(batch_data[kk], dtype="float32")
                 else:
-                    model_inputs[kk] = paddle.to_tensor(np.reshape(batch_data[kk], [-1]))
+                    model_inputs[kk] = paddle.to_tensor(np.reshape(batch_data[kk], [-1]), dtype=prec)
             for ii in ['type'] :
-                model_inputs[ii] = paddle.to_tensor(np.reshape(batch_data[ii], [-1]))
+                model_inputs[ii] = paddle.to_tensor(np.reshape(batch_data[ii], [-1]), dtype="int32")
             for ii in ['natoms_vec', 'default_mesh'] :
-                model_inputs[ii] = paddle.to_tensor(batch_data[ii])
+                model_inputs[ii] = paddle.to_tensor(batch_data[ii], dtype="int32")
 
             model_inputs['is_training'] = paddle.to_tensor(True)
-
 
             if self.display_in_training and is_first_step :
                 #self.test_on_the_fly(fp, data, model_inputs, tb_test_writer)
                 is_first_step = False
             if self.timing_in_training : tic = time.time()
 
-            l2_l, l2_more =  self.calculate_loss(model_inputs)
+            model_pred = self.model(model_inputs['coord'], model_inputs['type'], model_inputs['natoms_vec'], model_inputs['box'], model_inputs['default_mesh'], model_inputs, suffix = "", reuse = False)
+            l2_l, l2_more = self.loss.calculate_loss(self.lr_scheduler.get_lr(), model_inputs['natoms_vec'], model_pred, model_inputs, suffix = "test")
 
             adam.clear_grad()
-
             l2_l.backward()
 
-            print("\n ", [g for p, g in adam.backward(l2_l)])
+            #print([[name, p._grad_ivar() is None] for name, p in self.model.named_parameters()])
+            #print("\n ", [p for p, g in adam.backward(l2_l)])
+            #print("\n ", [g for p, g in adam.backward(l2_l)])
 
             #print(self.model.descrpt.dout.grad)
             
@@ -390,36 +383,37 @@ class DPTrainer (object):
 
             adam.step()
 
-            #print(self.model.descrpt.embedding_nets[0].weight[0])
-            #print(self.model.descrpt.embedding_nets[0].bias[0])
-            #print(self.model.descrpt.embedding_nets[0].weight[1])
-            #print(self.model.descrpt.embedding_nets[0].bias[1])
-            #print(self.model.descrpt.embedding_nets[0].weight[2])
-            #print(self.model.descrpt.embedding_nets[0].bias[2])
+            #print("self.atom_ener=   ", self.model.atom_ener)
+            #print("self.dout=  ", self.model.dout)
+            #print("self.net_deriv_reshape= ", self.descrpt.net_deriv_reshape)
+
 
             if self.timing_in_training : toc = time.time()
             if self.timing_in_training : train_time += toc - tic
-            
+
             self.cur_batch += 1
+
             if self.cur_batch == 1:
                 exit(0)
+
+            print("batch %7d  training time %.2f s, l2_l %f" % (self.cur_batch, train_time, l2_l.numpy()))
 
             if (self.cur_batch % self.lr.decay_steps_) == 0:
                 self.lr_scheduler.step()
 
             if self.display_in_training and (self.cur_batch % self.disp_freq == 0) :
                 tic = time.time()
-                self.test_on_the_fly(fp, data, model_inputs, tb_test_writer)
+                #self.test_on_the_fly(fp, data, model_inputs, tb_test_writer)
                 toc = time.time()
                 test_time = toc - tic
                 if self.timing_in_training :
                     log.info("batch %7d training time %.2f s, testing time %.2f s"
                                   % (self.cur_batch, train_time, test_time))
                     train_time = 0
-                if self.save_freq > 0 and self.cur_batch % self.save_freq == 0 and self.run_opt.is_chief :
-                    if self.saver is not None :
-                        self.saver.save (self.sess, os.getcwd() + "/" + self.save_ckpt)
-                        log.info("saved checkpoint %s" % self.save_ckpt)
+                if self.save_freq > 0 and self.cur_batch % self.save_freq == 0 and self.run_opt.is_chief:
+                    #paddle.jit.save(self.model, os.getcwd() + "/" + self.save_ckpt)
+                    paddle.save(self.model.state_dict(), os.getcwd() + "/" + self.save_ckpt)
+                    log.info("saved checkpoint to %s" % (os.getcwd() + "/" + self.save_ckpt))
         if self.run_opt.is_chief: 
             fp.close ()
         if self.profiling and self.run_opt.is_chief :
@@ -429,7 +423,7 @@ class DPTrainer (object):
                 f.write(chrome_trace)
 
     def get_global_step (self) :
-        return self.sess.run(self.global_step)
+        return self.cur_batch
 
     def print_head (self) :
         if self.run_opt.is_chief:
@@ -447,23 +441,25 @@ class DPTrainer (object):
                          tb_writer) :
         # Do not need to pass numb_test here as data object already knows it.
         # Both DeepmdDataSystem and ClassArg parse the same json file
-        model_test_inputs = defaultdict(str)
+        model_test_inputs = {}
         test_data = data.get_test(n_test=data.get_sys_ntest())
 
         for kk in test_data.keys():
             if kk == 'find_type' or kk == 'type' :
                 continue
+            prec = GLOBAL_PD_FLOAT_PRECISION
             if 'find_' in kk:
-                model_test_inputs[kk] = paddle.to_tensor(test_data[kk])
+                model_test_inputs[kk] = paddle.to_tensor(test_data[kk], dtype="float32")
             else:
                 # again the data object knows appropriate test data shape,
                 # there is no need to slice again!
                 # feed_dict_test[self.place_holders[kk]] = np.reshape(test_data[kk][:self.numb_test[data.pick_idx]], [-1])
-                model_test_inputs[kk] = paddle.to_tensor(np.reshape(test_data[kk], [-1]))
+                model_test_inputs[kk] = paddle.to_tensor(np.reshape(test_data[kk], [-1]), dtype=prec)
         for ii in ['type'] :
-            model_test_inputs[ii] = paddle.to_tensor(np.reshape(test_data[ii], [-1]))         
+            model_test_inputs[ii] = paddle.to_tensor(np.reshape(test_data[ii], [-1]), dtype="int32")   
         for ii in ['natoms_vec', 'default_mesh'] :
-            model_test_inputs[ii] = paddle.to_tensor(test_data[ii])
+            model_test_inputs[ii] = paddle.to_tensor(test_data[ii], dtype="int32")
+
         model_test_inputs['is_training'] = paddle.to_tensor(False)
 
         current_batch = self.cur_batch
@@ -471,36 +467,41 @@ class DPTrainer (object):
         if self.run_opt.is_chief:
             print_str = "%7d" % current_batch
 
-            l2_l, l2_more = self.calculate_loss(model_train_inputs)
-            #error_train = l2_l.numpy()
-            #error_e_train = l2_more['l2_ener_loss'].numpy()
-            #error_f_train = l2_more['l2_force_loss'].numpy()
-            #error_v_train = l2_more['l2_virial_loss'].numpy()
-            #error_ae_train = l2_more['l2_atom_ener_loss'].numpy()
-            #error_pf_train = l2_more['l2_pref_force_loss'].numpy()
+            model_pred = self.model(model_train_inputs['coord'], model_train_inputs['type'], model_train_inputs['natoms_vec'], model_train_inputs['box'], model_train_inputs['default_mesh'], model_train_inputs, suffix = "", reuse = False)
+            l2_l, l2_more = self.loss.calculate_loss(self.lr_scheduler.get_lr(), model_train_inputs['natoms_vec'], model_pred, model_train_inputs, suffix = "test")
 
-            l2_l, l2_more = self.calculate_loss(model_test_inputs)
-            #error_test = l2_l.numpy()
-            #error_e_test = l2_more['l2_ener_loss'].numpy()
-            #error_f_test = l2_more['l2_force_loss'].numpy()
-            #error_v_test = l2_more['l2_virial_loss'].numpy()
-            #error_ae_test = l2_more['l2_atom_ener_loss'].numpy()
-            #error_pf_test = l2_more['l2_pref_force_loss'].numpy()
+            error_train = l2_l.numpy()
+            error_e_train = l2_more['l2_ener_loss'].numpy()
+            error_f_train = l2_more['l2_force_loss'].numpy()
+            error_v_train = l2_more['l2_virial_loss'].numpy()
+            error_ae_train = l2_more['l2_atom_ener_loss'].numpy()
+            error_pf_train = l2_more['l2_pref_force_loss'].numpy()
 
-            #print_str = ""
-            #prop_fmt = "   %11.2e %11.2e"
-            #print_str += prop_fmt % (np.sqrt(error_test), np.sqrt(error_train))
-            #if self.has_e :
-            #    print_str += prop_fmt % (np.sqrt(error_e_test) / natoms[0], np.sqrt(error_e_train) / natoms[0])
-            #if self.has_ae :
-            #    print_str += prop_fmt % (np.sqrt(error_ae_test), np.sqrt(error_ae_train))
-            #if self.has_f :
-            #    print_str += prop_fmt % (np.sqrt(error_f_test), np.sqrt(error_f_train))
-            #if self.has_v :
-            #    print_str += prop_fmt % (np.sqrt(error_v_test) / natoms[0], np.sqrt(error_v_train) / natoms[0])
-            #if self.has_pf:
-            #    print_str += prop_fmt % (np.sqrt(error_pf_test), np.sqrt(error_pf_train))
+            model_pred = self.model(model_test_inputs['coord'], model_test_inputs['type'], model_test_inputs['natoms_vec'], model_test_inputs['box'], model_test_inputs['default_mesh'], model_test_inputs, suffix = "", reuse = False)
+            l2_l, l2_more = self.loss.calculate_loss(self.lr_scheduler.get_lr(), model_test_inputs['natoms_vec'], model_pred, model_test_inputs, suffix = "test")
 
-            #print_str += "   %8.1e\n" % current_lr
-            #fp.write(print_str)
-            #fp.flush ()
+            error_test = l2_l.numpy()
+            error_e_test = l2_more['l2_ener_loss'].numpy()
+            error_f_test = l2_more['l2_force_loss'].numpy()
+            error_v_test = l2_more['l2_virial_loss'].numpy()
+            error_ae_test = l2_more['l2_atom_ener_loss'].numpy()
+            error_pf_test = l2_more['l2_pref_force_loss'].numpy()
+
+            print_str = ""
+            prop_fmt = "   %11.2e %11.2e"
+            print_str += prop_fmt % (np.sqrt(error_test), np.sqrt(error_train))
+            if self.has_e :
+                print_str += prop_fmt % (np.sqrt(error_e_test) / natoms[0], np.sqrt(error_e_train) / natoms[0])
+            if self.has_ae :
+                print_str += prop_fmt % (np.sqrt(error_ae_test), np.sqrt(error_ae_train))
+            if self.has_f :
+                print_str += prop_fmt % (np.sqrt(error_f_test), np.sqrt(error_f_train))
+            if self.has_v :
+                print_str += prop_fmt % (np.sqrt(error_v_test) / natoms[0], np.sqrt(error_v_train) / natoms[0])
+            if self.has_pf:
+                print_str += prop_fmt % (np.sqrt(error_pf_test), np.sqrt(error_pf_train))
+
+            print_str += "   %8.1e\n" % current_lr
+            print(print_str)
+            fp.write(print_str)
+            fp.flush ()

@@ -19,8 +19,8 @@ from typing import (
 import numpy as np
 import yaml
 
-from deepmd.env import op_module, tf
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION, GLOBAL_NP_FLOAT_PRECISION
+from deepmd.env import op_module, tf, paddle
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION, GLOBAL_PD_FLOAT_PRECISION, GLOBAL_NP_FLOAT_PRECISION
 
 if TYPE_CHECKING:
     _DICT_VAL = TypeVar("_DICT_VAL")
@@ -34,10 +34,10 @@ if TYPE_CHECKING:
 
 # define constants
 PRECISION_DICT = {
-    "default": GLOBAL_TF_FLOAT_PRECISION,
-    "float16": tf.float16,
-    "float32": tf.float32,
-    "float64": tf.float64,
+    "default": GLOBAL_PD_FLOAT_PRECISION,
+    "float16": np.float16,
+    "float32": np.float32,
+    "float64": np.float64,
 }
 
 
@@ -72,7 +72,7 @@ ACTIVATION_FN_DICT = {
     "relu6": tf.nn.relu6,
     "softplus": tf.nn.softplus,
     "sigmoid": tf.sigmoid,
-    "tanh": tf.nn.tanh,
+    "tanh": tf.tanh,
     "gelu": gelu,
 }
 
@@ -367,7 +367,7 @@ def j_loader(filename: Union[str, Path]) -> Dict[str, Any]:
 
 def get_activation_func(
     activation_fn: "_ACTIVATION",
-) -> Callable[[tf.Tensor], tf.Tensor]:
+):
     """Get activation function callable based on string name.
 
     Parameters
@@ -385,6 +385,11 @@ def get_activation_func(
     RuntimeError
         if unknown activation function is specified
     """
+    #return paddle.nn.functional.tanh
+    def fun(x):
+        return paddle.clip(x, min=-1.0, max=1.0)
+    return fun
+
     if activation_fn not in ACTIVATION_FN_DICT:
         raise RuntimeError(f"{activation_fn} is not a valid activation function")
     return ACTIVATION_FN_DICT[activation_fn]
