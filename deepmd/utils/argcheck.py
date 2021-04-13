@@ -272,6 +272,31 @@ def fitting_variant_type_args():
                    default_tag = 'ener',
                    doc = doc_descrpt_type)
 
+def modifier_dipole_charge():
+    doc_model_name = "The name of the frozen dipole model file."
+    doc_model_charge_map = f"The charge of the WFCC. The list length should be the same as the {make_link('sel_type', 'model/fitting_net[dipole]/sel_type')}. "
+    doc_sys_charge_map = f"The charge of real atoms. The list length should be the same as the {make_link('type_map', 'model/type_map')}"
+    doc_ewald_h = f"The grid spacing of the FFT grid. Unit is A"
+    doc_ewald_beta = f"The splitting parameter of Ewald sum. Unit is A^{-1}"
+    
+    return [
+        Argument("model_name", str, optional = False, doc = doc_model_name),
+        Argument("model_charge_map", list, optional = False, doc = doc_model_charge_map),
+        Argument("sys_charge_map", list, optional = False, doc = doc_sys_charge_map),
+        Argument("ewald_beta", float, optional = True, default = 0.4, doc = doc_ewald_beta),
+        Argument("ewald_h", float, optional = True, default = 1.0, doc = doc_ewald_h),        
+    ]
+
+def modifier_variant_type_args():
+    doc_modifier_type = "The type of modifier. See explanation below.\n\n\
+-`dipole_charge`: Use WFCC to model the electronic structure of the system. Correct the long-range interaction"
+    return Variant("type", 
+                   [
+                       Argument("dipole_charge", dict, modifier_dipole_charge()),
+                   ],
+                   optional = False,
+                   doc = doc_modifier_type)
+
 
 def model_args ():
     doc_type_map = 'A list of strings. Give the name to each type of atoms.'
@@ -279,6 +304,7 @@ def model_args ():
     doc_data_stat_protect = 'Protect parameter for atomic energy regression.'
     doc_descrpt = 'The descriptor of atomic environment.'
     doc_fitting = 'The fitting of physical properties.'
+    doc_modifier = 'The modifier of model output.'
     doc_use_srtab = 'The table for the short-range pairwise interaction added on top of DP. The table is a text data file with (N_t + 1) * N_t / 2 + 1 columes. The first colume is the distance between atoms. The second to the last columes are energies for pairs of certain types. For example we have two atom types, 0 and 1. The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly.'
     doc_smin_alpha = 'The short-range tabulated interaction will be swithed according to the distance of the nearest neighbor. This distance is calculated by softmin. This parameter is the decaying parameter in the softmin. It is only required when `use_srtab` is provided.'
     doc_sw_rmin = 'The lower boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.'
@@ -293,7 +319,8 @@ def model_args ():
                    Argument("sw_rmin", float, optional = True, doc = doc_sw_rmin),
                    Argument("sw_rmax", float, optional = True, doc = doc_sw_rmax),
                    Argument("descriptor", dict, [], [descrpt_variant_type_args()], doc = doc_descrpt),
-                   Argument("fitting_net", dict, [], [fitting_variant_type_args()], doc = doc_fitting)
+                   Argument("fitting_net", dict, [], [fitting_variant_type_args()], doc = doc_fitting),
+                   Argument("modifier", dict, [], [modifier_variant_type_args()], optional = True, doc = doc_modifier),
                   ])
     # print(ca.gen_doc())
     return ca
