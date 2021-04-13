@@ -26,7 +26,8 @@ class DeepmdDataSystem() :
                   set_prefix : str = 'set',
                   shuffle_test : bool = True,
                   type_map : List[str] = None, 
-                  modifier = None) :
+                  modifier = None, 
+                  trn_all_set = False) :
         """
         Constructor
         
@@ -48,6 +49,8 @@ class DeepmdDataSystem() :
                 Gives the name of different atom types
         modifier
                 Data modifier that has the method `modify_data`        
+        trn_all_set
+                Use all sets as training dataset. Otherwise, if the number of sets is more than 1, the last set is left for test.
         """
         # init data
         self.rcut = rcut
@@ -55,11 +58,15 @@ class DeepmdDataSystem() :
         self.nsystems = len(self.system_dirs)
         self.data_systems = []
         for ii in self.system_dirs :
-            self.data_systems.append(DeepmdData(ii, 
-                                                set_prefix=set_prefix, 
-                                                shuffle_test=shuffle_test, 
-                                                type_map = type_map, 
-                                                modifier = modifier))
+            self.data_systems.append(
+                DeepmdData(
+                    ii, 
+                    set_prefix=set_prefix, 
+                    shuffle_test=shuffle_test, 
+                    type_map = type_map, 
+                    modifier = modifier, 
+                    trn_all_set = trn_all_set
+                ))
         # batch size
         self.batch_size = batch_size
         if isinstance(self.batch_size, int) :
@@ -260,7 +267,8 @@ class DeepmdDataSystem() :
                        auto_prob_style) :        
         if sys_probs is None :
             if auto_prob_style == "prob_uniform" :
-                prob = None
+                prob_v = 1./float(self.nsystems)
+                prob = [prob_v for ii in range(self.nsystems)]
             elif auto_prob_style == "prob_sys_size" :
                 prob = self.prob_nbatches
             elif auto_prob_style[:14] == "prob_sys_size;" :
@@ -273,9 +281,9 @@ class DeepmdDataSystem() :
 
 
     def get_batch (self, 
-                   sys_idx = None,
-                   sys_probs = None,
-                   auto_prob_style = "prob_sys_size") :
+                   sys_idx : int = None,
+                   sys_probs : List[float] = None,
+                   auto_prob_style : str = "prob_sys_size") :
         """
         Get a batch of data from the data systems
 
@@ -289,7 +297,7 @@ class DeepmdDataSystem() :
             The probabilitis of systems to get the batch.
             Summation of positive elements of this list should be no greater than 1.
             Element of this list can be negative, the probability of the corresponding system is determined automatically by the number of batches in the system.
-        auto_prob_style: float
+        auto_prob_style: str
             Determine the probability of systems automatically. The method is assigned by this key and can be
             - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()
             - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system
@@ -459,9 +467,12 @@ class DeepmdDataSystem() :
         assigned_sum_prob = np.sum(type_filter * sys_probs)
         assert assigned_sum_prob <= 1, "the sum of assigned probability should be less than 1"
         rest_sum_prob = 1. - assigned_sum_prob
-        rest_nbatch = (1 - type_filter) * self.nbatches
-        rest_prob = rest_sum_prob * rest_nbatch / np.sum(rest_nbatch)
-        ret_prob = rest_prob + type_filter * sys_probs
+        if rest_sum_prob != 0 :
+            rest_nbatch = (1 - type_filter) * self.nbatches
+            rest_prob = rest_sum_prob * rest_nbatch / np.sum(rest_nbatch)
+            ret_prob = rest_prob + type_filter * sys_probs
+        else :
+            ret_prob = sys_probs
         assert np.sum(ret_prob) == 1, "sum of probs should be 1"
         return ret_prob
     

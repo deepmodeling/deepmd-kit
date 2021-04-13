@@ -251,7 +251,7 @@ class DPTrainer (object):
                   .add('tensorboard',     bool,   default = False)\
                   .add('tensorboard_log_dir',str,    default = 'log')\
                   .add('sys_probs',   list    )\
-                  .add('auto_prob_style', str, default = "prob_sys_size")
+                  .add('auto_prob', str, default = "prob_sys_size")
         tr_data = tr_args.parse(training_param)
         # not needed
         # self.numb_test = tr_data['numb_test']
@@ -266,7 +266,7 @@ class DPTrainer (object):
         self.tensorboard = tr_data['tensorboard']
         self.tensorboard_log_dir = tr_data['tensorboard_log_dir']
         self.sys_probs = tr_data['sys_probs']        
-        self.auto_prob_style = tr_data['auto_prob_style']        
+        self.auto_prob_style = tr_data['auto_prob']        
         self.useBN = False
         if fitting_type == 'ener' and  self.fitting.get_numb_fparam() > 0 :
             self.numb_fparam = self.fitting.get_numb_fparam()
