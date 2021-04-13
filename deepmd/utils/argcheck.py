@@ -164,7 +164,7 @@ def descrpt_variant_type_args():
     link_se_a_3be = make_link('se_a_3be', 'model/descriptor[se_a_3be]')
     link_se_a_tpe = make_link('se_a_tpe', 'model/descriptor[se_a_tpe]')
     link_hybrid = make_link('hybrid', 'model/descriptor[hybrid]')
-    doc_descrpt_type = f'The type of the descritpor. Valid types are {link_lf}, {link_se_a}, {link_se_r}, {link_se_a_3be}, {link_se_a_tpe}, {link_hybrid}. \n\n\
+    doc_descrpt_type = f'The type of the descritpor. See explanation below. \n\n\
 - `loc_frame`: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.\n\n\
 - `se_a`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor.\n\n\
 - `se_r`: Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor.\n\n\
@@ -258,7 +258,7 @@ def fitting_dipole():
 
 
 def fitting_variant_type_args():
-    doc_descrpt_type = 'The type of the fitting. Valid types are `ener`, `dipole`, `polar` and `global_polar`. \n\n\
+    doc_descrpt_type = 'The type of the fitting. See explanation below. \n\n\
 - `ener`: Fit an energy model (potential energy surface).\n\n\
 - `dipole`: Fit an atomic dipole model. Atomic dipole labels for all the selected atoms (see `sel_type`) should be provided by `dipole.npy` in each data system. The file has number of frames lines and 3 times of number of selected atoms columns.\n\n\
 - `polar`: Fit an atomic polarizability model. Atomic polarizability labels for all the selected atoms (see `sel_type`) should be provided by `polarizability.npy` in each data system. The file has number of frames lines and 9 times of number of selected atoms columns.\n\n\
@@ -313,7 +313,7 @@ def learning_rate_exp():
     
 
 def learning_rate_variant_type_args():
-    doc_lr = 'The type of the learning rate. Current type `exp`, the exponentially decaying learning rate is supported.'
+    doc_lr = 'The type of the learning rate.'
 
     return Variant("type", 
                    [Argument("exp", dict, learning_rate_exp())],
@@ -359,7 +359,7 @@ def loss_ener():
 
 
 def loss_variant_type_args():
-    doc_loss = 'The type of the loss. For fitting type `ener`, the loss type should be set to `ener` or left unset. For tensorial fitting types `dipole`, `polar` and `global_polar`, the type should be left unset.\n\.'
+    doc_loss = 'The type of the loss. \n\.'
     
     return Variant("type", 
                    [Argument("ener", dict, loss_ener())],
@@ -441,10 +441,10 @@ def gen_doc(**kwargs):
     la = loss_args()
     ta = training_args()
     ptr = []
-    ptr.append(ma.gen_doc(**kwargs))
-    ptr.append(la.gen_doc(**kwargs))
-    ptr.append(lra.gen_doc(**kwargs))
-    ptr.append(ta.gen_doc(**kwargs))
+    ptr.append(ma.gen_doc(**kwargs, make_link = True))
+    ptr.append(la.gen_doc(**kwargs, make_link = True))
+    ptr.append(lra.gen_doc(**kwargs, make_link = True))
+    ptr.append(ta.gen_doc(**kwargs, make_link = True))
 
     key_words = []
     for ii in "\n\n".join(ptr).split('\n'):
