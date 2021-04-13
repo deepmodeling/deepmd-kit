@@ -1,18 +1,17 @@
 import dpdata,os,sys,unittest
 import numpy as np
 from deepmd.env import tf
-from common import Data,gen_data
+from common import Data,gen_data, j_loader
 
-from deepmd.RunOptions import RunOptions
-from deepmd.DataSystem import DataSystem
-from deepmd.DescrptSeA import DescrptSeA
-from deepmd.Fitting import EnerFitting
-from deepmd.Model import Model
-from deepmd.common import j_must_have, j_must_have_d, j_have, j_loader
+from deepmd.utils.data_system import DataSystem
+from deepmd.descriptor import DescrptSeA
+from deepmd.fit import EnerFitting
+from deepmd.model import EnerModel
+from deepmd.common import j_must_have
 
-global_ener_float_precision = tf.float64
-global_tf_float_precision = tf.float64
-global_np_float_precision = np.float64
+GLOBAL_ENER_FLOAT_PRECISION = tf.float64
+GLOBAL_TF_FLOAT_PRECISION = tf.float64
+GLOBAL_NP_FLOAT_PRECISION = np.float64
 
 class TestModel(unittest.TestCase):
     def setUp(self) :
@@ -21,7 +20,6 @@ class TestModel(unittest.TestCase):
     def test_model(self):
         jfile = 'water_se_a_aparam.json'
         jdata = j_loader(jfile)
-        run_opt = RunOptions(None) 
         systems = j_must_have(jdata, 'systems')
         set_pfx = j_must_have(jdata, 'set_prefix')
         batch_size = j_must_have(jdata, 'batch_size')
@@ -38,9 +36,11 @@ class TestModel(unittest.TestCase):
         test_data['aparam'] = np.load('system/set.000/aparam.npy')
         numb_test = 1
         
-        descrpt = DescrptSeA(jdata['model']['descriptor'])
-        fitting = EnerFitting(jdata['model']['fitting_net'], descrpt)
-        model = Model(jdata['model'], descrpt, fitting)
+        jdata['model']['descriptor'].pop('type', None)        
+        descrpt = DescrptSeA(**jdata['model']['descriptor'])
+        jdata['model']['fitting_net']['descrpt'] = descrpt
+        fitting = EnerFitting(**jdata['model']['fitting_net'])
+        model = EnerModel(descrpt, fitting)
 
         # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
         input_data = {'coord' : [test_data['coord']], 
@@ -54,16 +54,16 @@ class TestModel(unittest.TestCase):
         model.descrpt.bias_atom_e = data.compute_energy_shift()
 
         t_prop_c           = tf.placeholder(tf.float32, [5],    name='t_prop_c')
-        t_energy           = tf.placeholder(global_ener_float_precision, [None], name='t_energy')
-        t_force            = tf.placeholder(global_tf_float_precision, [None], name='t_force')
-        t_virial           = tf.placeholder(global_tf_float_precision, [None], name='t_virial')
-        t_atom_ener        = tf.placeholder(global_tf_float_precision, [None], name='t_atom_ener')
-        t_coord            = tf.placeholder(global_tf_float_precision, [None], name='i_coord')
+        t_energy           = tf.placeholder(GLOBAL_ENER_FLOAT_PRECISION, [None], name='t_energy')
+        t_force            = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='t_force')
+        t_virial           = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='t_virial')
+        t_atom_ener        = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='t_atom_ener')
+        t_coord            = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='i_coord')
         t_type             = tf.placeholder(tf.int32,   [None], name='i_type')
         t_natoms           = tf.placeholder(tf.int32,   [model.ntypes+2], name='i_natoms')
-        t_box              = tf.placeholder(global_tf_float_precision, [None, 9], name='i_box')
+        t_box              = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, 9], name='i_box')
         t_mesh             = tf.placeholder(tf.int32,   [None], name='i_mesh')
-        t_aparam           = tf.placeholder(global_tf_float_precision, [None], name='i_aparam')
+        t_aparam           = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='i_aparam')
         is_training        = tf.placeholder(tf.bool)
         input_dict = {}
         input_dict['aparam'] = t_aparam

@@ -5,17 +5,17 @@
 
 template <typename VALUETYPE>
 Convert<VALUETYPE>::
-Convert(const vector<string > &  atomname,
-	map<string, int> & name_type_map)
+Convert(const std::vector<std::string > &  atomname,
+	std::map<std::string, int> & name_type_map)
 {
   int natoms = atomname.size();
   atype.resize (natoms);
   for (unsigned ii = 0; ii < atype.size(); ++ii){
     atype[ii] = name_type_map[atomname[ii]];
   }
-  vector<pair<int, int > > sorting (natoms);
+  std::vector<std::pair<int, int > > sorting (natoms);
   for (unsigned ii = 0; ii < sorting.size(); ++ii){
-    sorting[ii] = pair<int, int > (atype[ii], ii);
+    sorting[ii] = std::pair<int, int > (atype[ii], ii);
   }
   // sort (sorting.begin(), sorting.end());
   idx_map.resize(natoms);
@@ -28,8 +28,8 @@ Convert(const vector<string > &  atomname,
 template <typename VALUETYPE>
 void
 Convert<VALUETYPE>::
-forward (vector<VALUETYPE > & out,
-	 const vector<double > & in, 
+forward (std::vector<VALUETYPE > & out,
+	 const std::vector<double > & in, 
 	 const int stride) const 
 {
   assert (in.size() == stride * idx_map.size());
@@ -46,8 +46,8 @@ forward (vector<VALUETYPE > & out,
 template <typename VALUETYPE>
 void
 Convert<VALUETYPE>::
-backward (vector<VALUETYPE > & out,
-	  const vector<double > & in,
+backward (std::vector<VALUETYPE > & out,
+	  const std::vector<double > & in,
 	  const int stride) const 
 {
   int natoms = idx_map.size();

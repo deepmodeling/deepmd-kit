@@ -1,0 +1,73 @@
+on:
+  push:
+  pull_request:
+name: Test Python
+jobs:
+  testpython:
+    name: Test Python
+    runs-on: ubuntu-18.04
+    strategy:  
+      matrix:
+        include:
+          - python: 3.6
+            gcc: 4.8
+            tf: 1.8
+          - python: 3.6
+            gcc: 4.8
+            tf: 1.12
+          - python: 3.6
+            gcc: 4.8
+            tf: 1.14
+          - python: 3.6
+            gcc: 5
+            tf: 1.14
+          - python: 3.6
+            gcc: 8
+            tf: 1.14
+          - python: 3.7
+            gcc: 5
+            tf: 1.14
+          - python: 3.7
+            gcc: 6
+            tf: 1.14
+          - python: 3.7
+            gcc: 7
+            tf: 1.14
+          - python: 3.7
+            gcc: 8
+            tf: 1.14
+          - python: 3.7
+            gcc: 5
+            tf: 2.3
+          - python: 3.7
+            gcc: 8
+            tf: 2.3
+          - python: 3.8
+            gcc: 5
+            tf: 2.3
+          - python: 3.8
+            gcc: 8
+            tf: 2.3
+
+    steps:
+    - uses: actions/checkout@master
+    - uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.python }}
+    - name: pip cache
+      uses: actions/cache@v2
+      with:
+        path: ~/.cache/pip
+        key:
+          ${{ runner.os }}-pip-${{ hashFiles('**/setup.py') }}-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    - run: |
+        sudo apt update
+        sudo apt install gcc-${{ matrix.gcc }} g++-${{ matrix.gcc }}
+    - run: pip install -e .[cpu,test] codecov
+      env:
+        CC: gcc-${{ matrix.gcc }}
+        CXX: g++-${{ matrix.gcc }}
+        TENSORFLOW_VERSION: ${{ matrix.tf }}
+    - run: pytest --cov=deepmd source/tests && codecov

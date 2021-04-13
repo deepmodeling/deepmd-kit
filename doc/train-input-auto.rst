@@ -25,6 +25,15 @@ model:
 
     .. raw:: html
 
+       <a id="model/data_stat_protect"></a>
+    data_stat_protect: 
+        | type: ``float``, optional, default: ``0.01``
+        | argument path: ``model/data_stat_protect``
+
+        Protect parameter for atomic energy regression.
+
+    .. raw:: html
+
        <a id="model/use_srtab"></a>
     use_srtab: 
         | type: ``str``, optional
@@ -233,7 +242,7 @@ model:
             | type: ``str``, optional, default: ``float64``
             | argument path: ``model/descriptor[se_a]/precision``
 
-            The precision of the embedding net parameters, supported options are "float64", "float32", "float16".
+            The precision of the embedding net parameters, supported options are "default", "float16", "float32", "float64".
 
         .. raw:: html
 
@@ -347,7 +356,7 @@ model:
             | type: ``str``, optional, default: ``float64``
             | argument path: ``model/descriptor[se_r]/precision``
 
-            The precision of the embedding net parameters, supported options are "float64", "float32", "float16".
+            The precision of the embedding net parameters, supported options are "default", "float16", "float32", "float64".
 
         .. raw:: html
 
@@ -452,7 +461,7 @@ model:
             | type: ``str``, optional, default: ``float64``
             | argument path: ``model/descriptor[se_a_3be]/precision``
 
-            The precision of the embedding net parameters, supported options are "float64", "float32", "float16".
+            The precision of the embedding net parameters, supported options are "default", "float16", "float32", "float64".
 
         .. raw:: html
 
@@ -471,15 +480,6 @@ model:
             | argument path: ``model/descriptor[se_a_3be]/seed``
 
             Random seed for parameter initialization
-
-        .. raw:: html
-
-           <a id="model/descriptor[se_a_3be]/exclude_types"></a>
-        exclude_types: 
-            | type: ``list``, optional, default: ``[]``
-            | argument path: ``model/descriptor[se_a_3be]/exclude_types``
-
-            The Excluded types
 
         .. raw:: html
 
@@ -575,7 +575,7 @@ model:
             | type: ``str``, optional, default: ``float64``
             | argument path: ``model/descriptor[se_a_tpe]/precision``
 
-            The precision of the embedding net parameters, supported options are "float64", "float32", "float16".
+            The precision of the embedding net parameters, supported options are "default", "float16", "float32", "float64".
 
         .. raw:: html
 
@@ -757,7 +757,7 @@ model:
             | type: ``str``, optional, default: ``float64``
             | argument path: ``model/fitting_net[ener]/precision``
 
-            The precision of the fitting net parameters, supported options are "float64", "float32", "float16".
+            The precision of the fitting net parameters, supported options are "default", "float16", "float32", "float64".
 
         .. raw:: html
 
@@ -848,7 +848,7 @@ model:
             | type: ``str``, optional, default: ``float64``
             | argument path: ``model/fitting_net[dipole]/precision``
 
-            The precision of the fitting net parameters, supported options are "float64", "float32", "float16".
+            The precision of the fitting net parameters, supported options are "default", "float16", "float32", "float64".
 
         .. raw:: html
 
@@ -908,7 +908,7 @@ model:
             | type: ``str``, optional, default: ``float64``
             | argument path: ``model/fitting_net[polar]/precision``
 
-            The precision of the fitting net parameters, supported options are "float64", "float32", "float16".
+            The precision of the fitting net parameters, supported options are "default", "float16", "float32", "float64".
 
         .. raw:: html
 
@@ -995,7 +995,7 @@ model:
             | type: ``str``, optional, default: ``float64``
             | argument path: ``model/fitting_net[global_polar]/precision``
 
-            The precision of the fitting net parameters, supported options are "float64", "float32", "float16".
+            The precision of the fitting net parameters, supported options are "default", "float16", "float32", "float64".
 
         .. raw:: html
 
@@ -1047,7 +1047,7 @@ model:
 
    <a id="loss"></a>
 loss: 
-    | type: ``dict``
+    | type: ``dict``, optional
     | argument path: ``loss``
 
     The definition of loss function. The type of the loss depends on the type of the fitting. For fitting type `ener`, the prefactors before energy, force, virial and atomic energy losses may be provided. For fitting type `dipole`, `polar` and `global_polar`, the loss may be an empty `dict` or unset.
@@ -1160,32 +1160,50 @@ learning_rate:
     | type: ``dict``
     | argument path: ``learning_rate``
 
-    The learning rate options
+    The definitio of learning rate
+
+
+    Depending on the value of *type*, different sub args are accepted. 
 
     .. raw:: html
 
-       <a id="learning_rate/start_lr"></a>
+       <a id="learning_rate/type"></a>
+    type:
+        | type: ``str`` (flag key), default: ``exp``
+        | argument path: ``learning_rate/type`` 
+
+        The type of the learning rate. Current type `exp`, the exponentially decaying learning rate is supported.
+
+
+    .. raw:: html
+
+       <a id="learning_rate[exp]"></a>
+    When *type* is set to ``exp``: 
+
+    .. raw:: html
+
+       <a id="learning_rate[exp]/start_lr"></a>
     start_lr: 
         | type: ``float``, optional, default: ``0.001``
-        | argument path: ``learning_rate/start_lr``
+        | argument path: ``learning_rate[exp]/start_lr``
 
         The learning rate the start of the training.
 
     .. raw:: html
 
-       <a id="learning_rate/stop_lr"></a>
+       <a id="learning_rate[exp]/stop_lr"></a>
     stop_lr: 
         | type: ``float``, optional, default: ``1e-08``
-        | argument path: ``learning_rate/stop_lr``
+        | argument path: ``learning_rate[exp]/stop_lr``
 
         The desired learning rate at the end of the training.
 
     .. raw:: html
 
-       <a id="learning_rate/decay_steps"></a>
+       <a id="learning_rate[exp]/decay_steps"></a>
     decay_steps: 
         | type: ``int``, optional, default: ``5000``
-        | argument path: ``learning_rate/decay_steps``
+        | argument path: ``learning_rate[exp]/decay_steps``
 
         The learning rate is decaying every this number of training steps.
 
@@ -1215,16 +1233,31 @@ training:
         | type: ``str``, optional, default: ``set``
         | argument path: ``training/set_prefix``
 
-        The prefix of the sets in the systems.
+        The prefix of the sets in the `systems <#training/systems>`__.
 
     .. raw:: html
 
-       <a id="training/stop_batch"></a>
-    stop_batch: 
-        | type: ``int``
-        | argument path: ``training/stop_batch``
+       <a id="training/auto_prob"></a>
+    auto_prob: 
+        | type: ``str``, optional, default: ``prob_sys_size``
+        | argument path: ``training/auto_prob``
 
-        Number of training batch. Each training uses one batch of data.
+        Determine the probability of systems automatically. The method is assigned by this key and can be
+
+        - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()
+
+        - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system
+
+        - "prob_sys_size;stt_idx:end_idx:weight;stt_idx:end_idx:weight;..." : the list of systems is devided into blocks. A block is specified by `stt_idx:end_idx:weight`, where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system, the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional to the number of batches in the system.
+
+    .. raw:: html
+
+       <a id="training/sys_probs"></a>
+    sys_probs: 
+        | type: ``NoneType`` | ``list``, optional, default: ``None``
+        | argument path: ``training/sys_probs``
+
+        A list of float, should be of the same length as `train_systems`, specifying the probability of each system.
 
     .. raw:: html
 
@@ -1235,13 +1268,22 @@ training:
 
         This key can be 
 
-        - list: the length of which is the same as the `systems`. The batch size of each system is given by the elements of the list.
+        - list: the length of which is the same as the `systems <#training/systems>`__. The batch size of each system is given by the elements of the list.
 
-        - int: all `systems` uses the same batch size.
+        - int: all `systems <#training/systems>`__ use the same batch size.
 
-        - string "auto": automatically determines the batch size os that the batch_size times the number of atoms in the system is no less than 32.
+        - string "auto": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than 32.
 
-        - string "auto:N": automatically determines the batch size os that the batch_size times the number of atoms in the system is no less than N.
+        - string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.
+
+    .. raw:: html
+
+       <a id="training/numb_steps"></a>
+    numb_steps: 
+        | type: ``int``
+        | argument path: ``training/numb_steps``
+
+        Number of training batch. Each training uses one batch of data.
 
     .. raw:: html
 
@@ -1250,7 +1292,7 @@ training:
         | type: ``int`` | ``NoneType``, optional
         | argument path: ``training/seed``
 
-        The random seed for training.
+        The random seed for getting frames from the training data set.
 
     .. raw:: html
 
@@ -1332,4 +1374,22 @@ training:
         | argument path: ``training/profiling_file``
 
         Output file for profiling.
+
+    .. raw:: html
+
+       <a id="training/tensorboard"></a>
+    tensorboard: 
+        | type: ``bool``, optional, default: ``False``
+        | argument path: ``training/tensorboard``
+
+        Enable tensorboard
+
+    .. raw:: html
+
+       <a id="training/tensorboard_log_dir"></a>
+    tensorboard_log_dir: 
+        | type: ``str``, optional, default: ``log``
+        | argument path: ``training/tensorboard_log_dir``
+
+        The log directory of tensorboard outputs
 

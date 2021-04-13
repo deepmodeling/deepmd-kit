@@ -1,0 +1,33 @@
+on:
+  push:
+  pull_request:
+name: Lint Python
+jobs:
+  lintpython:
+    name: Lint Python
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        python-version: [3.8]
+
+    steps:
+    - uses: actions/checkout@v1
+    - uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.python }}
+    - name: Install requirements
+      run: pip install -r requirements.txt
+    - uses: marian-code/python-lint-annotate@v2.5.0
+      with:
+        python-root-list: "./deepmd/*.py ./deepmd/*/*.py ./source/train/*.py ./source/tests/*.py ./source/op/*.py"
+        use-black: true
+        use-isort: true
+        use-mypy: true
+        use-pycodestyle: true
+        use-pydocstyle: true
+        extra-pycodestyle-options: "--max-line-length=88"
+        use-pylint: false
+        use-flake8: false
+        use-vulture: true
+        conda-python-version: "3.8"
+

@@ -1,0 +1,11 @@
+on:
+  push:
+  pull_request:
+name: Test C++
+jobs:
+  testpython:
+    name: Test C++
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@master
+    - run: source/install/test_cc.sh

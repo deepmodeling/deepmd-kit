@@ -1,0 +1,19 @@
+#pragma once
+
+#include <string>
+// using namespace std;
+
+#ifdef HIGH_PREC
+const std::string global_float_prec="double";
+#else 
+const std::string global_float_prec="float";
+#endif
+
+const std::string global_install_prefix="@CMAKE_INSTALL_PREFIX@";
+const std::string global_git_summ="@GIT_SUMM@";
+const std::string global_git_hash="@GIT_HASH@";
+const std::string global_git_date="@GIT_DATE@";
+const std::string global_git_branch="@GIT_BRANCH@";
+const std::string global_tf_include_dir="@TensorFlow_INCLUDE_DIRS@";
+const std::string global_tf_lib="@TensorFlow_LIBRARY@";
+const std::string global_model_version="@MODEL_VERSION@";

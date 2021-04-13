@@ -5,11 +5,11 @@ import unittest
 from deepmd.env import tf
 from tensorflow.python.framework import ops
 
-from deepmd.Network import embedding_net
+from deepmd.utils.network import embedding_net
 
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 
 class Inter(unittest.TestCase):
     def setUp (self) :

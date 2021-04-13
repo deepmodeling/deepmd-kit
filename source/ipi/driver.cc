@@ -1,7 +1,7 @@
 #include <fstream>
 #include <cstdint>
 #include "sockets.h"
-#include "NNPInter.h"
+#include "DeepPot.h"
 #include "Convert.h"
 #include "XyzFileManager.h"
 #include "SimulationRegion.h"
@@ -10,7 +10,7 @@
 using json = nlohmann::json;
 
 
-using namespace std;
+// using namespace std;
 
 // bohr -> angstrom
 const double cvt_len  = 0.52917721;
@@ -38,7 +38,7 @@ char *trimwhitespace(char *str)
 }
 
 void 
-normalize_coord (vector<double > & coord,
+normalize_coord (std::vector<double > & coord,
 		 const SimulationRegion<double > & region)
 {
   int natoms = coord.size() / 3;
@@ -58,16 +58,16 @@ normalize_coord (vector<double > & coord,
 int main(int argc, char * argv[])
 {
   if (argc == 1) {
-    cerr << "usage " << endl;
-    cerr << argv[0] << " input_script " << endl;
+    std::cerr << "usage " << std::endl;
+    std::cerr << argv[0] << " input_script " << std::endl;
     return 1;
   }
 
-  ifstream fp (argv[1]);
+  std::ifstream fp (argv[1]);
   json jdata;
   fp >> jdata;
-  cout << "# using data base" << endl;
-  cout << setw(4) << jdata << endl;
+  std::cout << "# using data base" << std::endl;
+  std::cout << std::setw(4) << jdata << std::endl;
 
   int socket;
   int inet = 1;
@@ -75,23 +75,23 @@ int main(int argc, char * argv[])
     inet = 0;
   }
   int port = jdata["port"];
-  string host_str = jdata["host"];
+  std::string host_str = jdata["host"];
   const char * host = host_str.c_str();
-  string graph_file = jdata["graph_file"];
-  string coord_file = jdata["coord_file"];
-  map<string, int> name_type_map = jdata["atom_type"];
+  std::string graph_file = jdata["graph_file"];
+  std::string coord_file = jdata["coord_file"];
+  std::map<std::string, int> name_type_map = jdata["atom_type"];
   bool b_verb = jdata["verbose"];
   
-  vector<string > atom_name;  
+  std::vector<std::string > atom_name;  
   {
-    vector<vector<double > >  posi;
-    vector<vector<double > >  velo;
-    vector<vector<double > >  forc;
+    std::vector<std::vector<double > >  posi;
+    std::vector<std::vector<double > >  velo;
+    std::vector<std::vector<double > >  forc;
     XyzFileManager::read (coord_file, atom_name, posi, velo, forc);
   }
 
   Convert<double> cvt (atom_name, name_type_map);
-  NNPInter nnp_inter (graph_file);
+  deepmd::DeepPot nnp_inter (graph_file);
   
   enum { _MSGLEN = 12 };
   int MSGLEN = _MSGLEN;
@@ -103,13 +103,13 @@ int main(int argc, char * argv[])
   double cell_ih[9];
   int32_t natoms = -1;
   double dener (0);
-  vector<double > dforce;
-  vector<double > dforce_tmp;
-  vector<double > dvirial (9, 0);
-  vector<double > dcoord ;
-  vector<double > dcoord_tmp ;
-  vector<int > dtype = cvt.get_type();
-  vector<double > dbox (9, 0) ;
+  std::vector<double > dforce;
+  std::vector<double > dforce_tmp;
+  std::vector<double > dvirial (9, 0);
+  std::vector<double > dcoord ;
+  std::vector<double > dcoord_tmp ;
+  std::vector<int > dtype = cvt.get_type();
+  std::vector<double > dbox (9, 0) ;
   SimulationRegion<double > region;
   double * msg_buff = NULL;
   double ener;
@@ -126,28 +126,28 @@ int main(int argc, char * argv[])
 
   while (true) {
     readbuffer_ (&socket, header, MSGLEN);
-    string header_str (trimwhitespace(header));
-    if (b_verb) cout << "# get header " << header_str << endl;
+    std::string header_str (trimwhitespace(header));
+    if (b_verb) std::cout << "# get header " << header_str << std::endl;
 
     if (header_str == "STATUS"){
       if (! isinit) {
 	writebuffer_ (&socket, msg_needinit, MSGLEN);
-	if (b_verb) cout << "# send back  " << "NEEDINIT" << endl;
+	if (b_verb) std::cout << "# send back  " << "NEEDINIT" << std::endl;
       }
       else if (hasdata) {
 	writebuffer_ (&socket, msg_havedata, MSGLEN);
-	if (b_verb) cout << "# send back  " << "HAVEDATA" << endl;
+	if (b_verb) std::cout << "# send back  " << "HAVEDATA" << std::endl;
       }
       else {
 	writebuffer_ (&socket, msg_ready, MSGLEN);
-	if (b_verb) cout << "# send back  " << "READY" << endl;
+	if (b_verb) std::cout << "# send back  " << "READY" << std::endl;
       }
     }
     else if (header_str == "INIT") {
       assert (4 == sizeof(int32_t));
       readbuffer_ (&socket, (char *)(&cbuf), sizeof(int32_t));
       readbuffer_ (&socket, initbuffer, cbuf);
-      if (b_verb) cout << "Init sys from wrapper, using " << initbuffer << endl;
+      if (b_verb) std::cout << "Init sys from wrapper, using " << initbuffer << std::endl;
     }
     else if (header_str == "POSDATA"){
       assert (8 == sizeof(double));
@@ -164,7 +164,7 @@ int main(int argc, char * argv[])
       readbuffer_ (&socket, (char *)(&cbuf), sizeof(int32_t));
       if (natoms < 0) {
 	natoms = cbuf;
-	if (b_verb) cout << "# get number of atoms in system: " << natoms << endl;
+	if (b_verb) std::cout << "# get number of atoms in system: " << natoms << std::endl;
 	
 	dcoord.resize (3 * natoms);
 	dforce.resize (3 * natoms, 0);
@@ -186,12 +186,12 @@ int main(int argc, char * argv[])
       nnp_inter.compute (dener, dforce_tmp, dvirial, dcoord, dtype, dbox);   
 #else 
       // model in float prec
-      vector<float> dcoord_(dcoord.size());
-      vector<float> dbox_(dbox.size());
+      std::vector<float> dcoord_(dcoord.size());
+      std::vector<float> dbox_(dbox.size());
       for (unsigned dd = 0; dd < dcoord.size(); ++dd) dcoord_[dd] = dcoord[dd];
       for (unsigned dd = 0; dd < dbox.size(); ++dd) dbox_[dd] = dbox[dd];
-      vector<float> dforce_(dforce.size(), 0);
-      vector<float> dvirial_(dvirial.size(), 0);
+      std::vector<float> dforce_(dforce.size(), 0);
+      std::vector<float> dvirial_(dvirial.size(), 0);
       double dener_ = 0;
       nnp_inter.compute (dener_, dforce_, dvirial_, dcoord_, dtype, dbox_);   
       for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce_tmp[dd] = dforce_[dd];	
@@ -209,7 +209,7 @@ int main(int argc, char * argv[])
       for (int ii = 0; ii < 9; ++ii){
 	virial[ii] = dvirial[ii] * icvt_ener * (1.0);
       }
-      if (b_verb) cout << "# energy of sys. : " << scientific << setprecision(10) << dener << endl;
+      if (b_verb) std::cout << "# energy of sys. : " << std::scientific << std::setprecision(10) << dener << std::endl;
       writebuffer_ (&socket, msg_forceready, MSGLEN);
       writebuffer_ (&socket, (char *)(&ener), sizeof(double));
       writebuffer_ (&socket, (char *)(&natoms), sizeof(int32_t));
@@ -221,7 +221,7 @@ int main(int argc, char * argv[])
       hasdata = false;
     }
     else {
-      cerr << "unexpected header " << endl;
+      std::cerr << "unexpected header " << std::endl;
       return 1;
     }
   }

@@ -1,10 +1,5 @@
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include <iostream>
-
-using namespace tensorflow;
-using namespace std;
+#include "custom_op.h"
+#include "soft_min_switch_force_grad.h"
 
 REGISTER_OP("SoftMinForceGrad")
 .Attr("T: {float, double}")
@@ -61,6 +56,7 @@ public:
     OP_REQUIRES (context, (nframes == sw_deriv_shape.dim_size(0)),	errors::InvalidArgument ("number of frames should match"));
     OP_REQUIRES (context, (nframes == nlist_shape.dim_size(0)),		errors::InvalidArgument ("number of frames should match"));
     
+    OP_REQUIRES (context, (nloc == du_tensor.shape().dim_size(1)),	errors::InvalidArgument ("number of du should match"));
     OP_REQUIRES (context, (nloc * 3 == grad_shape.dim_size(1)),		errors::InvalidArgument ("input grad shape should be 3 x natoms"));
     OP_REQUIRES (context, (nloc * nnei * 3 == sw_deriv_shape.dim_size(1)),errors::InvalidArgument ("number of sw deriv should match"));
     OP_REQUIRES (context, (nnei == n_a_sel + n_r_sel),			errors::InvalidArgument ("number of neighbors should match"));
@@ -84,27 +80,13 @@ public:
     // loop over frames
 #pragma omp parallel for
     for (int kk = 0; kk < nframes; ++kk){
-      // reset the frame to 0
-      for (int ii = 0; ii < nloc; ++ii){
-	grad_net (kk, ii) = 0;
-      }      
-
-      // compute grad of one frame
-      for (int ii = 0; ii < nloc; ++ii){
-	int i_idx = ii;
-	// deriv wrt center atom	
-	for (int jj = 0; jj < nnei; ++jj){
-	  int j_idx = nlist (kk, i_idx * nnei + jj);	  
-	  if (j_idx < 0) continue;
-	  int rij_idx_shift = (ii * nnei + jj) * 3;
-	  grad_net(kk, i_idx) += grad(kk, i_idx * 3 + 0) * sw_deriv(kk, rij_idx_shift + 0);
-	  grad_net(kk, i_idx) += grad(kk, i_idx * 3 + 1) * sw_deriv(kk, rij_idx_shift + 1);
-	  grad_net(kk, i_idx) += grad(kk, i_idx * 3 + 2) * sw_deriv(kk, rij_idx_shift + 2);
-	  grad_net(kk, i_idx) -= grad(kk, j_idx * 3 + 0) * sw_deriv(kk, rij_idx_shift + 0);
-	  grad_net(kk, i_idx) -= grad(kk, j_idx * 3 + 1) * sw_deriv(kk, rij_idx_shift + 1);
-	  grad_net(kk, i_idx) -= grad(kk, j_idx * 3 + 2) * sw_deriv(kk, rij_idx_shift + 2);
-	}
-      }
+      deepmd::soft_min_switch_force_grad_cpu(
+	  &grad_net(kk,0),
+	  &grad(kk,0),
+	  &sw_deriv(kk,0),
+	  &nlist(kk,0),
+	  nloc,
+	  nnei);
     }
   }
 private:
