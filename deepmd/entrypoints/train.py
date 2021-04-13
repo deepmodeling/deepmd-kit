@@ -253,9 +253,9 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
     # get batch sizes
     batch_size = j_must_have(jdata["training"], "batch_size")
     test_size = j_must_have(jdata["training"], "numb_test")
-    stop_batch = j_must_have(jdata["training"], "stop_batch")
+    stop_batch = j_must_have(jdata["training"], "numb_steps")
     sys_probs = jdata["training"].get("sys_probs")
-    auto_prob_style = jdata["training"].get("auto_prob_style", "prob_sys_size")
+    auto_prob = jdata["training"].get("auto_prob", "prob_sys_size")
 
     # setup data modifier
     modifier: Optional[DipoleChargeModifier]
@@ -283,8 +283,9 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
         set_prefix=set_pfx,
         type_map=ipt_type_map,
         modifier=modifier,
+        trn_all_set = True
     )
-    data.print_summary(run_opt, sys_probs=sys_probs, auto_prob_style=auto_prob_style)
+    data.print_summary(run_opt, sys_probs=sys_probs, auto_prob_style=auto_prob)
     data.add_dict(data_requirement)
 
     # build the model with stats from the first system
