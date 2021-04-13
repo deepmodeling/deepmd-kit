@@ -27,7 +27,8 @@ class DescrptSeAEbd (DescrptSeA):
                   numb_aparam : int = 0,
                   set_davg_zero: bool = False,
                   activation_function: str = 'tanh',
-                  precision: str = 'default'
+                  precision: str = 'default',
+                  exclude_types: List[int] = [],
     ) -> None:
         """
         Constructor
