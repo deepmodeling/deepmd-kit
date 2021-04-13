@@ -262,7 +262,7 @@ class TestParserOutput(unittest.TestCase):
             "--numb-test": dict(type=int, value=1),
             "--rand-seed": dict(type=(int, type(None)), value=12321),
             "--detail-file": dict(type=(str, type(None)), value="TARGET.FILE"),
-            "--atomic-energy": dict(type=bool),
+            "--atomic": dict(type=bool),
         }
 
         self.run_test(command="test", mapping=ARGS)
