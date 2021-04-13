@@ -283,6 +283,7 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
         set_prefix=set_pfx,
         type_map=ipt_type_map,
         modifier=modifier,
+        trn_all_set = True
     )
     data.print_summary(run_opt, sys_probs=sys_probs, auto_prob_style=auto_prob)
     data.add_dict(data_requirement)

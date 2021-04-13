@@ -26,7 +26,8 @@ class DeepmdDataSystem() :
                   set_prefix : str = 'set',
                   shuffle_test : bool = True,
                   type_map : List[str] = None, 
-                  modifier = None) :
+                  modifier = None, 
+                  trn_all_set = False) :
         """
         Constructor
         
@@ -48,6 +49,8 @@ class DeepmdDataSystem() :
                 Gives the name of different atom types
         modifier
                 Data modifier that has the method `modify_data`        
+        trn_all_set
+                Use all sets as training dataset. Otherwise, if the number of sets is more than 1, the last set is left for test.
         """
         # init data
         self.rcut = rcut
@@ -62,7 +65,7 @@ class DeepmdDataSystem() :
                     shuffle_test=shuffle_test, 
                     type_map = type_map, 
                     modifier = modifier, 
-                    trn_all_set = True
+                    trn_all_set = trn_all_set
                 ))
         # batch size
         self.batch_size = batch_size
