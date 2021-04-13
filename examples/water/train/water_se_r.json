@@ -1,6 +1,5 @@
 {
     "_comment": " model parameters",
-    "model_type":	"se_r",
     "model":	{
 	"type_map":		["O", "H"],
 	"descriptor": {
