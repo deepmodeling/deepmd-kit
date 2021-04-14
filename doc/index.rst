@@ -62,7 +62,8 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
    :maxdepth: 2
    :caption: Project Details
 
-   license_and_credits
+   license
+   credits
 
 
 * :ref:`genindex`
