@@ -12,8 +12,8 @@ import numpy as np
 from deepmd.common import data_requirement, expand_sys_str, j_loader, j_must_have
 from deepmd.env import tf
 from deepmd.infer.data_modifier import DipoleChargeModifier
-from deepmd.run_options import BUILD, CITATION, WELCOME, RunOptions
-from deepmd.trainer import NNPTrainer
+from deepmd.train.run_options import BUILD, CITATION, WELCOME, RunOptions
+from deepmd.train.trainer import DPTrainer
 from deepmd.utils.argcheck import normalize
 from deepmd.utils.compat import convert_input_v0_v1
 from deepmd.utils.data_system import DeepmdDataSystem
@@ -230,7 +230,7 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
     assert "training" in jdata
 
     # init the model
-    model = NNPTrainer(jdata, run_opt=run_opt)
+    model = DPTrainer(jdata, run_opt=run_opt)
     rcut = model.model.get_rcut()
     type_map = model.model.get_type_map()
     if len(type_map) == 0:
@@ -253,9 +253,9 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
     # get batch sizes
     batch_size = j_must_have(jdata["training"], "batch_size")
     test_size = j_must_have(jdata["training"], "numb_test")
-    stop_batch = j_must_have(jdata["training"], "stop_batch")
+    stop_batch = j_must_have(jdata["training"], "numb_steps")
     sys_probs = jdata["training"].get("sys_probs")
-    auto_prob_style = jdata["training"].get("auto_prob_style", "prob_sys_size")
+    auto_prob = jdata["training"].get("auto_prob", "prob_sys_size")
 
     # setup data modifier
     modifier: Optional[DipoleChargeModifier]
@@ -283,8 +283,9 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
         set_prefix=set_pfx,
         type_map=ipt_type_map,
         modifier=modifier,
+        trn_all_set = True
     )
-    data.print_summary(run_opt, sys_probs=sys_probs, auto_prob_style=auto_prob_style)
+    data.print_summary(run_opt, sys_probs=sys_probs, auto_prob_style=auto_prob)
     data.add_dict(data_requirement)
 
     # build the model with stats from the first system

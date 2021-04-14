@@ -5,7 +5,7 @@ import dpdata
 
 from deepmd.utils.data_system import DeepmdDataSystem
 from deepmd.fit import EnerFitting
-from deepmd.model import make_stat_input, merge_sys_stat, _make_all_stat_ref
+from deepmd.model.model_stat import make_stat_input, merge_sys_stat, _make_all_stat_ref
 
 def gen_sys(nframes, atom_types):
     natoms = len(atom_types)

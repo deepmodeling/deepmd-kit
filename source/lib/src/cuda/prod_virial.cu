@@ -1,22 +1,33 @@
+#include "device.h"
 #include "gpu_cuda.h"
 #include "prod_virial.h"
 
-#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 600
-static __inline__ __device__ double atomicAdd(
-    double* address, 
-    double val) 
+template <
+    typename FPTYPE,
+    int      THREADS_PER_BLOCK>
+__global__ void atom_virial_reduction(
+    FPTYPE * virial, 
+    const FPTYPE * atom_virial,
+    const int nall)
 {
-  unsigned long long int* address_as_ull = (unsigned long long int*)address;
-  unsigned long long int old = *address_as_ull, assumed;
-  do {
-    assumed = old;
-    old = atomicCAS(address_as_ull, assumed,
-          __double_as_longlong(val + __longlong_as_double(assumed)));
-  // Note: uses integer comparison to avoid hang in case of NaN (since NaN != NaN) } while (assumed != old);
-  } while (assumed != old);
-  return __longlong_as_double(old);
+    unsigned int bid = blockIdx.x;
+    unsigned int tid = threadIdx.x;
+    __shared__ FPTYPE data[THREADS_PER_BLOCK];
+    data[tid] = 0.f;
+    for (int ii = tid; ii < nall; ii += THREADS_PER_BLOCK) {
+        data[tid] += atom_virial[ii * 9 + bid];
+    }
+    __syncthreads(); 
+    // do reduction in shared memory
+    for (int ii = THREADS_PER_BLOCK >> 1; ii > 0; ii >>= 1) {
+        if (tid < ii) {
+            data[tid] += data[tid + ii];
+        }
+        __syncthreads();
+    }
+    // write result for this block to global memory
+    if (tid == 0) virial[bid] = data[0];
 }
-#endif
 
 template<typename FPTYPE>
 __global__ void virial_deriv_wrt_neighbors_a(
@@ -90,6 +101,7 @@ __global__ void virial_deriv_wrt_neighbors_r(
         net_deriv[idx * ndescrpt + idy] * rij[idx * nnei * 3 + idy * 3 + idz % 3] * in_deriv[idx * ndescrpt * 3 + idy * 3 + idz / 3]);
 }
 
+namespace deepmd {
 template<typename FPTYPE>
 void prod_virial_a_gpu_cuda(
     FPTYPE * virial, 
@@ -117,6 +129,10 @@ void prod_virial_a_gpu_cuda(
   virial_deriv_wrt_neighbors_a<<<block_grid, thread_grid>>>(
       virial, atom_virial, 
       net_deriv, in_deriv, rij, nlist, nloc, nnei);
+  // reduction atom_virial to virial
+  atom_virial_reduction<FPTYPE, TPB> <<<9, TPB>>>(
+      virial, 
+      atom_virial, nall);
 }
 
 template<typename FPTYPE>
@@ -146,9 +162,14 @@ void prod_virial_r_gpu_cuda(
   virial_deriv_wrt_neighbors_r<<<block_grid, thread_grid>>>(
       virial, atom_virial, 
       net_deriv, in_deriv, rij, nlist, nloc, nnei);
+  // reduction atom_virial to virial
+  atom_virial_reduction<FPTYPE, TPB> <<<9, TPB>>>(
+    virial, 
+    atom_virial, nall);
 }
 
 template void prod_virial_a_gpu_cuda<float>(float * virial, float * atom_virial, const float * net_deriv, const float * in_deriv, const float * rij, const int * nlist, const int nloc, const int nall, const int nnei);
 template void prod_virial_a_gpu_cuda<double>(double * virial, double * atom_virial, const double * net_deriv, const double * in_deriv, const double * rij, const int * nlist, const int nloc, const int nall, const int nnei);
 template void prod_virial_r_gpu_cuda<float>(float * virial, float * atom_virial, const float * net_deriv, const float * in_deriv, const float * rij, const int * nlist, const int nloc, const int nall, const int nnei);
 template void prod_virial_r_gpu_cuda<double>(double * virial, double * atom_virial, const double * net_deriv, const double * in_deriv, const double * rij, const int * nlist, const int nloc, const int nall, const int nnei);
+}

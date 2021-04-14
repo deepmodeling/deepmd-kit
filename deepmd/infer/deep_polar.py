@@ -1,7 +1,7 @@
-from typing import TYPE_CHECKING, List, Optional
-
+from deepmd.infer.deep_tensor import DeepTensor
 import numpy as np
-from deepmd.infer.deep_eval import DeepTensor
+
+from typing import TYPE_CHECKING, List, Optional
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -34,7 +34,6 @@ class DeepPolar(DeepTensor):
         # instance namespace
         self.tensors = dict(
             {
-                "t_sel_type": "model_attr/sel_type:0",
                 # output tensor
                 "t_tensor": "o_polar:0",
             },
@@ -44,7 +43,6 @@ class DeepPolar(DeepTensor):
         DeepTensor.__init__(
             self,
             model_file,
-            9,
             load_prefix=load_prefix,
             default_tf_graph=default_tf_graph,
         )

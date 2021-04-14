@@ -1,7 +1,7 @@
 #include "utilities.h"
 
 // functions used in custom ops
-void cum_sum(
+void deepmd::cum_sum(
     std::vector<int> & sec, 
     const std::vector<int> & n_sel) 
 {

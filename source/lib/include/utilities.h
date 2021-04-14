@@ -5,6 +5,8 @@
 #include <iostream>
 #include <cmath>
 
+namespace deepmd{
+
 void cum_sum(
     std::vector<int> & sec, 
     const std::vector<int> & n_sel);
@@ -74,3 +76,4 @@ invsqrt<float> (const float x)
   return 1./sqrtf (x);
 }
 
+}

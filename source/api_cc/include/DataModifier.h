@@ -1,15 +1,16 @@
 #pragma once
 
-#include "NNPInter.h"
+#include "DeepPot.h"
 
-class DataModifier
+namespace deepmd{
+class DipoleChargeModifier
 {
 public:
-  DataModifier();
-  DataModifier(const std::string & model, 
+  DipoleChargeModifier();
+  DipoleChargeModifier(const std::string & model, 
 	       const int & gpu_rank = 0, 
 	       const std::string & name_scope = "");
-  ~DataModifier () {};
+  ~DipoleChargeModifier () {};
   void init (const std::string & model, 
 	     const int & gpu_rank = 0, 
 	     const std::string & name_scope = "");
@@ -23,15 +24,15 @@ public:
 		const std::vector<std::pair<int,int>> &	pairs,
 		const std::vector<VALUETYPE> &	delef_, 
 		const int			nghost,
-		const LammpsNeighborList &	lmp_list);
+		const InputNlist &	lmp_list);
   VALUETYPE cutoff () const {assert(inited); return rcut;};
   int numb_types () const {assert(inited); return ntypes;};
   std::vector<int> sel_types () const {assert(inited); return sel_type;};
 private:
-  Session* session;
+  tensorflow::Session* session;
   std::string name_scope, name_prefix;
   int num_intra_nthreads, num_inter_nthreads;
-  GraphDef graph_def;
+  tensorflow::GraphDef graph_def;
   bool inited;
   VALUETYPE rcut;
   VALUETYPE cell_size;
@@ -42,9 +43,10 @@ private:
   template<class VT> void get_vector(std::vector<VT> & vec, const std::string & name) const;
   void run_model (std::vector<VALUETYPE> &		dforce,
 		  std::vector<VALUETYPE> &		dvirial,
-		  Session *			session,
-		  const std::vector<std::pair<std::string, Tensor>> & input_tensors,
-		  const NNPAtomMap<VALUETYPE> &	nnpmap,
+		  tensorflow::Session *			session,
+		  const std::vector<std::pair<std::string, tensorflow::Tensor>> & input_tensors,
+		  const AtomMap<VALUETYPE> &	atommap,
 		  const int			nghost);
 };
+}
 

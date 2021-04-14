@@ -1,5 +1,7 @@
 #pragma once
 
+namespace deepmd{
+
 template<typename FPTYPE>
 void gelu_cpu(
     FPTYPE * out, 
@@ -43,3 +45,5 @@ void gelu_grad_grad_gpu_cuda(
     const FPTYPE * dy_2,
     const int size);
 #endif // GOOGLE_CUDA
+
+}

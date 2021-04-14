@@ -26,7 +26,7 @@ def test(
     rand_seed: Optional[int],
     shuffle_test: bool,
     detail_file: str,
-    atomic_energy: bool,
+    atomic: bool,
     **kwargs,
 ):
     """Test model predictions.
@@ -47,7 +47,7 @@ def test(
         whether to shuffle tests
     detail_file : Optional[str]
         file where test details will be output
-    atomic_energy : bool
+    atomic : bool
         whether per atom quantities should be computed
 
     Raises
@@ -83,11 +83,11 @@ def test(
                 system,
                 numb_test,
                 detail_file,
-                atomic_energy,
+                atomic,
                 append_detail=(cc != 0),
             )
         elif dp.model_type == "dipole":
-            err, siz = test_dipole(dp, data, numb_test, detail_file)
+            err, siz = test_dipole(dp, data, numb_test, detail_file, atomic)
         elif dp.model_type == "polar":
             err, siz = test_polar(dp, data, numb_test, detail_file, global_polar=False)
         elif dp.model_type == "global_polar":
@@ -292,13 +292,13 @@ def test_ener(
 
     # print ("# energies: %s" % energy)
     log.info(f"# number of test data : {numb_test:d} ")
-    log.info(f"Energy L2err        : {l2e:e} eV")
-    log.info(f"Energy L2err/Natoms : {l2ea:e} eV")
-    log.info(f"Force  L2err        : {l2f:e} eV/A")
-    log.info(f"Virial L2err        : {l2v:e} eV")
-    log.info(f"Virial L2err/Natoms : {l2va:e} eV")
+    log.info(f"Energy RMSE        : {l2e:e} eV")
+    log.info(f"Energy RMSE/Natoms : {l2ea:e} eV")
+    log.info(f"Force  RMSE        : {l2f:e} eV/A")
+    log.info(f"Virial RMSE        : {l2v:e} eV")
+    log.info(f"Virial RMSE/Natoms : {l2va:e} eV")
     if has_atom_ener:
-        log.info(f"Atomic ener L2err   : {l2ae:e} eV")
+        log.info(f"Atomic ener RMSE   : {l2ae:e} eV")
 
     if detail_file is not None:
         detail_path = Path(detail_file)
@@ -355,9 +355,9 @@ def print_ener_sys_avg(avg: np.ndarray):
     avg : np.ndarray
         array with summaries
     """
-    log.info(f"Energy L2err/Natoms : {avg[0]:e} eV")
-    log.info(f"Force  L2err        : {avg[1]:e} eV/A")
-    log.info(f"Virial L2err/Natoms : {avg[2]:e} eV")
+    log.info(f"Energy RMSE/Natoms : {avg[0]:e} eV")
+    log.info(f"Force  RMSE        : {avg[1]:e} eV/A")
+    log.info(f"Virial RMSE/Natoms : {avg[2]:e} eV")
 
 
 def run_test(dp: "DeepTensor", test_data: dict, numb_test: int):
@@ -420,7 +420,7 @@ def test_wfc(
     l2f = l2err(wfc - test_data["wfc"][:numb_test])
 
     log.info("# number of test data : {numb_test:d} ")
-    log.info("WFC  L2err : {l2f:e} eV/A")
+    log.info("WFC  RMSE : {l2f:e} eV/A")
 
     if detail_file is not None:
         detail_path = Path(detail_file)
@@ -447,7 +447,7 @@ def print_wfc_sys_avg(avg):
     avg : np.ndarray
         array with summaries
     """
-    log.info(f"WFC  L2err : {avg[0]:e} eV/A")
+    log.info(f"WFC  RMSE : {avg[0]:e} eV/A")
 
 
 def test_polar(
@@ -509,10 +509,10 @@ def test_polar(
     l2fa = l2f / sel_natoms
 
     log.info(f"# number of test data : {numb_test:d} ")
-    log.info(f"Polarizability  L2err       : {l2f:e} eV/A")
+    log.info(f"Polarizability  RMSE       : {l2f:e} eV/A")
     if global_polar:
-        log.info(f"Polarizability  L2err/sqrtN : {l2fs:e} eV/A")
-        log.info(f"Polarizability  L2err/N     : {l2fa:e} eV/A")
+        log.info(f"Polarizability  RMSE/sqrtN : {l2fs:e} eV/A")
+        log.info(f"Polarizability  RMSE/N     : {l2fa:e} eV/A")
 
     if detail_file is not None:
         detail_path = Path(detail_file)
@@ -542,7 +542,7 @@ def print_polar_sys_avg(avg):
     avg : np.ndarray
         array with summaries
     """
-    log.info(f"Polarizability  L2err : {avg[0]:e} eV/A")
+    log.info(f"Polarizability  RMSE : {avg[0]:e} eV/A")
 
 
 def test_dipole(
@@ -550,6 +550,7 @@ def test_dipole(
     data: DeepmdData,
     numb_test: int,
     detail_file: Optional[str],
+    has_atom_dipole: bool,
 ) -> Tuple[List[np.ndarray], List[int]]:
     """Test energy type model.
 
@@ -563,6 +564,8 @@ def test_dipole(
         munber of tests to do
     detail_file : Optional[str]
         file where test details will be output
+    has_atom_dipole : bool
+        whether atomic dipole is provided
 
     Returns
     -------
@@ -570,14 +573,24 @@ def test_dipole(
         arrays with results and their shapes
     """
     data.add(
-        "dipole", 3, atomic=True, must=True, high_prec=False, type_sel=dp.get_sel_type()
+        "dipole", 3, atomic=has_atom_dipole, must=True, high_prec=False, type_sel=dp.get_sel_type()
     )
     test_data = data.get_test()
     dipole, numb_test, _ = run_test(dp, test_data, numb_test)
+
+    # do summation in atom dimension
+    if has_atom_dipole == False:
+        dipole = np.reshape(dipole,(dipole.shape[0], -1, 3))
+        atoms = dipole.shape[1]
+        dipole = np.sum(dipole,axis=1)
+
     l2f = l2err(dipole - test_data["dipole"][:numb_test])
 
+    if has_atom_dipole == False:
+        l2f = l2f / atoms
+
     log.info(f"# number of test data : {numb_test:d}")
-    log.info(f"Dipole  L2err         : {l2f:e} eV/A")
+    log.info(f"Dipole  RMSE         : {l2f:e} eV/A")
 
     if detail_file is not None:
         detail_path = Path(detail_file)
@@ -605,4 +618,4 @@ def print_dipole_sys_avg(avg):
     avg : np.ndarray
         array with summaries
     """
-    log.info(f"Dipole  L2err         : {avg[0]:e} eV/A")
+    log.info(f"Dipole  RMSE         : {avg[0]:e} eV/A")

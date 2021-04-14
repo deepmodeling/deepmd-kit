@@ -77,24 +77,32 @@ class ProdVirialSeAOp : public OpKernel {
         context->eigen_device<Device>()
     );
     // flat the tensors
-    FPTYPE * virial = virial_tensor->flat<FPTYPE>().data();
-    FPTYPE * atom_virial = atom_virial_tensor->flat<FPTYPE>().data();
-    const FPTYPE * net_deriv = net_deriv_tensor.flat<FPTYPE>().data();
-    const FPTYPE * in_deriv = in_deriv_tensor.flat<FPTYPE>().data();
-    const FPTYPE * rij = rij_tensor.flat<FPTYPE>().data();
-    const int * nlist = nlist_tensor.flat<int>().data();
+    FPTYPE * p_virial = virial_tensor->flat<FPTYPE>().data();
+    FPTYPE * p_atom_virial = atom_virial_tensor->flat<FPTYPE>().data();
+    const FPTYPE * p_net_deriv = net_deriv_tensor.flat<FPTYPE>().data();
+    const FPTYPE * p_in_deriv = in_deriv_tensor.flat<FPTYPE>().data();
+    const FPTYPE * p_rij = rij_tensor.flat<FPTYPE>().data();
+    const int * p_nlist = nlist_tensor.flat<int>().data();
     
+    for(int kk = 0; kk < nframes; ++kk){
+      FPTYPE * virial = p_virial + kk * 9;
+      FPTYPE * atom_virial = p_atom_virial + kk * nall * 9;
+      const FPTYPE * net_deriv = p_net_deriv + kk * nloc * ndescrpt;
+      const FPTYPE * in_deriv = p_in_deriv + kk * nloc * ndescrpt * 3;
+      const FPTYPE * rij = p_rij + kk * nloc * nnei * 3;
+      const int * nlist = p_nlist + kk * nloc * nnei;      
     if (device == "GPU") {
       #if GOOGLE_CUDA
-      prod_virial_a_gpu_cuda(    
+      deepmd::prod_virial_a_gpu_cuda(    
           virial, atom_virial,
           net_deriv, in_deriv, rij, nlist, nloc, nall, nnei);
       #endif // GOOGLE_CUDA
     }
     else if (device == "CPU") {
-      prod_virial_a_cpu(    
+      deepmd::prod_virial_a_cpu(    
           virial, atom_virial,
           net_deriv, in_deriv, rij, nlist, nloc, nall, nnei);
+    }
     }
   }
  private:
@@ -155,24 +163,32 @@ class ProdVirialSeROp : public OpKernel {
         context->eigen_device<Device>()
     );
     // flat the tensors
-    FPTYPE * virial = virial_tensor->flat<FPTYPE>().data();
-    FPTYPE * atom_virial = atom_virial_tensor->flat<FPTYPE>().data();
-    const FPTYPE * net_deriv = net_deriv_tensor.flat<FPTYPE>().data();
-    const FPTYPE * in_deriv = in_deriv_tensor.flat<FPTYPE>().data();
-    const FPTYPE * rij = rij_tensor.flat<FPTYPE>().data();
-    const int * nlist = nlist_tensor.flat<int>().data();
+    FPTYPE * p_virial = virial_tensor->flat<FPTYPE>().data();
+    FPTYPE * p_atom_virial = atom_virial_tensor->flat<FPTYPE>().data();
+    const FPTYPE * p_net_deriv = net_deriv_tensor.flat<FPTYPE>().data();
+    const FPTYPE * p_in_deriv = in_deriv_tensor.flat<FPTYPE>().data();
+    const FPTYPE * p_rij = rij_tensor.flat<FPTYPE>().data();
+    const int * p_nlist = nlist_tensor.flat<int>().data();
     
+    for(int kk = 0; kk < nframes; ++kk){
+      FPTYPE * virial = p_virial + kk * 9;
+      FPTYPE * atom_virial = p_atom_virial + kk * nall * 9;
+      const FPTYPE * net_deriv = p_net_deriv + kk * nloc * ndescrpt;
+      const FPTYPE * in_deriv = p_in_deriv + kk * nloc * ndescrpt * 3;
+      const FPTYPE * rij = p_rij + kk * nloc * nnei * 3;
+      const int * nlist = p_nlist + kk * nloc * nnei;      
     if (device == "GPU") {
       #if GOOGLE_CUDA
-      prod_virial_r_gpu_cuda(    
+      deepmd::prod_virial_r_gpu_cuda(    
           virial, atom_virial,
           net_deriv, in_deriv, rij, nlist, nloc, nall, nnei);
       #endif // GOOGLE_CUDA
     }
     else if (device == "CPU") {
-      prod_virial_r_cpu(    
+      deepmd::prod_virial_r_cpu(    
           virial, atom_virial,
           net_deriv, in_deriv, rij, nlist, nloc, nall, nnei);
+    }
     }
   }
  private:

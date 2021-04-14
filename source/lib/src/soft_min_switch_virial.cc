@@ -2,7 +2,7 @@
 #include <iostream>
 
 template<typename FPTYPE>
-void soft_min_switch_virial_cpu(
+void deepmd::soft_min_switch_virial_cpu(
     FPTYPE * virial, 
     FPTYPE * atom_virial, 
     const FPTYPE * du, 
@@ -47,7 +47,7 @@ void soft_min_switch_virial_cpu(
 
 
 template
-void soft_min_switch_virial_cpu<double>(
+void deepmd::soft_min_switch_virial_cpu<double>(
     double * virial, 
     double * atom_virial, 
     const double * du, 
@@ -59,7 +59,7 @@ void soft_min_switch_virial_cpu<double>(
     const int nnei);
 
 template
-void soft_min_switch_virial_cpu<float>(
+void deepmd::soft_min_switch_virial_cpu<float>(
     float * virial, 
     float * atom_virial, 
     const float * du, 

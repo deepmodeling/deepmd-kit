@@ -164,7 +164,7 @@ def descrpt_variant_type_args():
     link_se_a_3be = make_link('se_a_3be', 'model/descriptor[se_a_3be]')
     link_se_a_tpe = make_link('se_a_tpe', 'model/descriptor[se_a_tpe]')
     link_hybrid = make_link('hybrid', 'model/descriptor[hybrid]')
-    doc_descrpt_type = f'The type of the descritpor. Valid types are {link_lf}, {link_se_a}, {link_se_r}, {link_se_a_3be}, {link_se_a_tpe}, {link_hybrid}. \n\n\
+    doc_descrpt_type = f'The type of the descritpor. See explanation below. \n\n\
 - `loc_frame`: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.\n\n\
 - `se_a`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor.\n\n\
 - `se_r`: Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor.\n\n\
@@ -258,7 +258,7 @@ def fitting_dipole():
 
 
 def fitting_variant_type_args():
-    doc_descrpt_type = 'The type of the fitting. Valid types are `ener`, `dipole`, `polar` and `global_polar`. \n\n\
+    doc_descrpt_type = 'The type of the fitting. See explanation below. \n\n\
 - `ener`: Fit an energy model (potential energy surface).\n\n\
 - `dipole`: Fit an atomic dipole model. Atomic dipole labels for all the selected atoms (see `sel_type`) should be provided by `dipole.npy` in each data system. The file has number of frames lines and 3 times of number of selected atoms columns.\n\n\
 - `polar`: Fit an atomic polarizability model. Atomic polarizability labels for all the selected atoms (see `sel_type`) should be provided by `polarizability.npy` in each data system. The file has number of frames lines and 9 times of number of selected atoms columns.\n\n\
@@ -276,6 +276,7 @@ def fitting_variant_type_args():
 def model_args ():
     doc_type_map = 'A list of strings. Give the name to each type of atoms.'
     doc_data_stat_nbatch = 'The model determines the normalization from the statistics of the data. This key specifies the number of `frames` in each `system` used for statistics.'
+    doc_data_stat_protect = 'Protect parameter for atomic energy regression.'
     doc_descrpt = 'The descriptor of atomic environment.'
     doc_fitting = 'The fitting of physical properties.'
     doc_use_srtab = 'The table for the short-range pairwise interaction added on top of DP. The table is a text data file with (N_t + 1) * N_t / 2 + 1 columes. The first colume is the distance between atoms. The second to the last columes are energies for pairs of certain types. For example we have two atom types, 0 and 1. The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly.'
@@ -286,6 +287,7 @@ def model_args ():
     ca = Argument("model", dict, 
                   [Argument("type_map", list, optional = True, doc = doc_type_map),
                    Argument("data_stat_nbatch", int, optional = True, default = 10, doc = doc_data_stat_nbatch),
+                   Argument("data_stat_protect", float, optional = True, default = 1e-2, doc = doc_data_stat_protect),
                    Argument("use_srtab", str, optional = True, doc = doc_use_srtab),
                    Argument("smin_alpha", float, optional = True, doc = doc_smin_alpha),
                    Argument("sw_rmin", float, optional = True, doc = doc_sw_rmin),
@@ -297,7 +299,7 @@ def model_args ():
     return ca
 
 
-def learning_rate_args():
+def learning_rate_exp():
     doc_start_lr = 'The learning rate the start of the training.'
     doc_stop_lr = 'The desired learning rate at the end of the training.'
     doc_decay_steps = 'The learning rate is decaying every this number of training steps.'
@@ -307,9 +309,24 @@ def learning_rate_args():
         Argument("stop_lr", float, optional = True, default = 1e-8, doc = doc_stop_lr),
         Argument("decay_steps", int, optional = True, default = 5000, doc = doc_decay_steps)
     ]
+    return args
+    
 
-    doc_lr = "The learning rate options" 
-    return Argument("learning_rate", dict, args, [], doc = doc_lr)
+def learning_rate_variant_type_args():
+    doc_lr = 'The type of the learning rate.'
+
+    return Variant("type", 
+                   [Argument("exp", dict, learning_rate_exp())],
+                   optional = True,
+                   default_tag = 'exp',
+                   doc = doc_lr)
+
+
+def learning_rate_args():
+    doc_lr = "The definitio of learning rate" 
+    return Argument("learning_rate", dict, [], 
+                    [learning_rate_variant_type_args()],
+                    doc = doc_lr)
 
 
 def start_pref(item):
@@ -342,7 +359,7 @@ def loss_ener():
 
 
 def loss_variant_type_args():
-    doc_loss = 'The type of the loss. For fitting type `ener`, the loss type should be set to `ener` or left unset. For tensorial fitting types `dipole`, `polar` and `global_polar`, the type should be left unset.\n\.'
+    doc_loss = 'The type of the loss. \n\.'
     
     return Variant("type", 
                    [Argument("ener", dict, loss_ener())],
@@ -359,15 +376,16 @@ def loss_args():
     return ca
 
 def training_args():
+    link_sys = make_link("systems", "training/systems")
     doc_systems = 'The data systems. This key can be provided with a listthat specifies the systems, or be provided with a string by which the prefix of all systems are given and the list of the systems is automatically generated.'
-    doc_set_prefix = 'The prefix of the sets in the systems.'
+    doc_set_prefix = f'The prefix of the sets in the {link_sys}.'
     doc_stop_batch = 'Number of training batch. Each training uses one batch of data.'
-    doc_batch_size = 'This key can be \n\n\
-- list: the length of which is the same as the `systems`. The batch size of each system is given by the elements of the list.\n\n\
-- int: all `systems` uses the same batch size.\n\n\
-- string "auto": automatically determines the batch size os that the batch_size times the number of atoms in the system is no less than 32.\n\n\
-- string "auto:N": automatically determines the batch size os that the batch_size times the number of atoms in the system is no less than N.'
-    doc_seed = 'The random seed for training.'
+    doc_batch_size = f'This key can be \n\n\
+- list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\
+- int: all {link_sys} use the same batch size.\n\n\
+- string "auto": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than 32.\n\n\
+- string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.'
+    doc_seed = 'The random seed for getting frames from the training data set.'
     doc_disp_file = 'The file for printing learning curve.'
     doc_disp_freq = 'The frequency of printing learning curve.'
     doc_numb_test = 'Number of frames used for the test during training.'
@@ -377,12 +395,21 @@ def training_args():
     doc_time_training = 'Timing durining training.'
     doc_profiling = 'Profiling during training.'
     doc_profiling_file = 'Output file for profiling.'
+    doc_train_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
+- "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
+- "prob_sys_size" : the probability of a system is proportional to the number of batches in the system\n\n\
+- "prob_sys_size;stt_idx:end_idx:weight;stt_idx:end_idx:weight;..." : the list of systems is devided into blocks. A block is specified by `stt_idx:end_idx:weight`, where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system, the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional to the number of batches in the system.'
+    doc_train_sys_probs = "A list of float, should be of the same length as `train_systems`, specifying the probability of each system."
+    doc_tensorboard = 'Enable tensorboard'
+    doc_tensorboard_log_dir = 'The log directory of tensorboard outputs'
 
     args = [
-        Argument("systems", [list,str], optional = False, doc = doc_systems),
+        Argument("systems", [list,str], optional = False, doc = doc_systems, alias = ["trn_systems"]),
         Argument("set_prefix", str, optional = True, default = 'set', doc = doc_set_prefix),
-        Argument("stop_batch", int, optional = False, doc = doc_stop_batch),
-        Argument("batch_size", [list,int,str], optional = True, default = 'auto', doc = doc_batch_size),
+        Argument("auto_prob", str, optional = True, default = "prob_sys_size", doc = doc_train_auto_prob_style, alias = ["trn_auto_prob", "auto_prob_style"]),
+        Argument("sys_probs", list, optional = True, default = None, doc = doc_train_sys_probs, alias = ["trn_sys_probs"]),
+        Argument("batch_size", [list,int,str], optional = True, default = 'auto', doc = doc_batch_size, alias = ["trn_batch_size"]),
+        Argument("numb_steps", int, optional = False, doc = doc_stop_batch, alias = ["stop_batch"]),
         Argument("seed", [int,None], optional = True, doc = doc_seed),
         Argument("disp_file", str, optional = True, default = 'lcueve.out', doc = doc_disp_file),
         Argument("disp_freq", int, optional = True, default = 1000, doc = doc_disp_freq),
@@ -392,7 +419,9 @@ def training_args():
         Argument("disp_training", bool, optional = True, default = True, doc = doc_disp_training),
         Argument("time_training", bool, optional = True, default = True, doc = doc_time_training),
         Argument("profiling", bool, optional = True, default = False, doc = doc_profiling),
-        Argument("profiling_file", str, optional = True, default = 'timeline.json', doc = doc_profiling_file)
+        Argument("profiling_file", str, optional = True, default = 'timeline.json', doc = doc_profiling_file),
+        Argument("tensorboard", bool, optional = True, default = False, doc = doc_tensorboard),
+        Argument("tensorboard_log_dir", str, optional = True, default = 'log', doc = doc_tensorboard_log_dir),
     ]
 
     doc_training = 'The training options'
@@ -412,10 +441,10 @@ def gen_doc(**kwargs):
     la = loss_args()
     ta = training_args()
     ptr = []
-    ptr.append(ma.gen_doc(**kwargs))
-    ptr.append(la.gen_doc(**kwargs))
-    ptr.append(lra.gen_doc(**kwargs))
-    ptr.append(ta.gen_doc(**kwargs))
+    ptr.append(ma.gen_doc(**kwargs, make_link = True))
+    ptr.append(la.gen_doc(**kwargs, make_link = True))
+    ptr.append(lra.gen_doc(**kwargs, make_link = True))
+    ptr.append(ta.gen_doc(**kwargs, make_link = True))
 
     key_words = []
     for ii in "\n\n".join(ptr).split('\n'):
@@ -433,7 +462,7 @@ def normalize(data):
 
     base = Argument("base", dict, [ma, lra, la, ta])
     data = base.normalize_value(data, trim_pattern = "_*")
-    base.check_value(data)
+    base.check_value(data, strict = True)
 
     return data
 
