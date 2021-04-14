@@ -1,5 +1,4 @@
 {
-    "with_distrib":	false,
     "_comment": " model parameters",
     "model":{
 	"type_map":		["O", "H"],
@@ -37,8 +36,8 @@
 
     "_comment": " traing controls",
     "training": {
-	"systems":	["/path/to/data/polar/bulk"], 
-	"set_prefix":	"set",    
+	"systems":	["/path/to/data/polar/bulk"],
+	"set_prefix":	"set",
 	"stop_batch":	1000000,
 	"batch_size":	[1],
 
@@ -51,7 +50,6 @@
 	"numb_test":	10,
 	"save_freq":	1000,
 	"save_ckpt":	"model.ckpt",
-	"load_ckpt":	"model.ckpt",
 	"disp_training":true,
 	"time_training":true,
 	"_comment":	"that's all"

@@ -1,6 +1,6 @@
 numpy
 scipy
 pyyaml
-dargs >= 0.2.0
+dargs >= 0.2.1
 tqdm
 typing_extensions
