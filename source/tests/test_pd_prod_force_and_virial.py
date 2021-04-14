@@ -216,7 +216,7 @@ def virial_test (inter,
                  hh = global_default_fv_hh, 
                  suffix = '') :
     # TODO:(jiabin): Remove this line when virial lib fixed by Wang Han
-    paddle.set_device("cpu")
+    paddle.set_device("gpu:0")
     # set weights
     w0 = np.ones (inter.ndescrpt)
     inter.net_w_i = np.copy(w0)
