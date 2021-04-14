@@ -8,7 +8,7 @@
 #include <vector>
 
 #define CHECK_INPUT(x) PD_CHECK(x.place() == paddle::PlaceType::kCPU, #x " must be a CPU Tensor.")
-#define CHECK_INPUT_READY(x) PD_CHECK(x.IsInitialized(), #x " must be initialized before usage.")
+#define CHECK_INPUT_READY(x) PD_CHECK(x.is_initialized(), #x " must be initialized before usage.")
 #define CHECK_INPUT_DIM(x, value) PD_CHECK(x.shape().size() == value, #x "'s dim should be " #value ".")
 template <typename FPTYPE>
 static int
