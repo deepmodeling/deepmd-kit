@@ -1,4 +1,4 @@
-from dargs import Argument, Variant
+from dargs import dargs, Argument, Variant
 from deepmd.common import ACTIVATION_FN_DICT, PRECISION_DICT
 
 def list_to_doc (xx):
@@ -13,7 +13,7 @@ def list_to_doc (xx):
 
 
 def make_link(content, ref_key) :
-    return f'`{content} <#{ref_key}>`__'
+    return f'`{content} <{ref_key}_>`_' if not dargs.RAW_ANCHOR else f'`{content} <#{ref_key}>`_'
 
 
 def descrpt_local_frame_args ():
@@ -460,16 +460,18 @@ def make_index(keys):
     return ', '.join(ret)
 
 
-def gen_doc(**kwargs):
+def gen_doc(*, make_anchor=True, make_link=True, **kwargs):
+    if make_link:
+        make_anchor = True
     ma = model_args()
     lra = learning_rate_args()
     la = loss_args()
     ta = training_args()
     ptr = []
-    ptr.append(ma.gen_doc(**kwargs, make_link = True))
-    ptr.append(la.gen_doc(**kwargs, make_link = True))
-    ptr.append(lra.gen_doc(**kwargs, make_link = True))
-    ptr.append(ta.gen_doc(**kwargs, make_link = True))
+    ptr.append(ma.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
+    ptr.append(la.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
+    ptr.append(lra.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
+    ptr.append(ta.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
 
     key_words = []
     for ii in "\n\n".join(ptr).split('\n'):
