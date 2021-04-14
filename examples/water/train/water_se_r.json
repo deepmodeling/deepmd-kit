@@ -1,6 +1,5 @@
 {
     "_comment": " model parameters",
-    "model_type":	"se_r",
     "model":	{
 	"type_map":		["O", "H"],
 	"descriptor": {
@@ -56,7 +55,6 @@
 	"numb_test":	10,
 	"save_freq":	1000,
 	"save_ckpt":	"model.ckpt",
-	"load_ckpt":	"model.ckpt",
 	"disp_training":true,
 	"time_training":true,
 	"profiling":	false,
