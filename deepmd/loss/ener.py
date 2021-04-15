@@ -137,7 +137,7 @@ class EnerStdLoss () :
             self.l2_more['l2_pref_force_loss']
         ]
         error, error_e, error_f, error_v, error_ae, error_pf = sess.run(run_data, feed_dict=feed_dict)
-        results = {"rmse": np.sqrt(error)}
+        results = {"natoms": natoms[0], "rmse": np.sqrt(error)}
         if self.has_e:
             results["rmse_e"] = np.sqrt(error_e) / natoms[0]
         if self.has_ae:
@@ -299,6 +299,7 @@ class EnerDipoleLoss () :
         ]
         error, error_e, error_ed = sess.run(run_data, feed_dict=feed_dict)
         results = {
+            'natoms': natoms[0],
             'rmse': np.sqrt(error),
             'rmse_e': np.sqrt(error_e) / natoms[0],
             'rmse_ed': np.sqrt(error_ed)

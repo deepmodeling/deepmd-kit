@@ -141,7 +141,7 @@ class TensorLoss () :
         run_data = [self.l2_l, self.l2_more['local_loss'], self.l2_more['global_loss']]
         error, error_lc, error_gl = sess.run(run_data, feed_dict=feed_dict)
 
-        results = {"rmse": np.sqrt(error)}
+        results = {"natoms": atoms, "rmse": np.sqrt(error)}
         if self.local_weight > 0.0:
             results["rmse_lc"] = np.sqrt(error_lc)
         if self.global_weight > 0.0:
