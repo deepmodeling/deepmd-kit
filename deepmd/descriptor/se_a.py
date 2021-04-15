@@ -14,7 +14,7 @@ from collections import defaultdict
 import sys
 
 
-class DescrptSeA (paddle.nn.Layer):
+class DescrptSeA(paddle.nn.Layer):
     @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   rcut: float,
@@ -308,12 +308,6 @@ class DescrptSeA (paddle.nn.Layer):
         box   = paddle.reshape(box_, [-1, 9])
         atype = paddle.reshape(atype_, [-1, natoms[1]])
 
-        #print("coord= ", coord.shape)
-        #print("box= ", box.shape)
-        #print("atype= ", atype.shape)
-        #print("natoms= ", natoms.shape)
-        #print("mesh= ", mesh.shape)
-
         self.descrpt, self.descrpt_deriv, self.rij, self.nlist \
             = paddle_ops.prod_env_mat_a(coord,
                                        atype,
@@ -327,16 +321,6 @@ class DescrptSeA (paddle.nn.Layer):
                                        rcut_r_smth = self.rcut_r_smth,
                                        sel_a = self.sel_a,
                                        sel_r = self.sel_r)
-
-        #self.descrpt = to_tensor(np.load('/workspace/deepmd-kit/examples/water/train/descrpt.npy'), stop_gradient=False)
-        #self.descrpt_deriv = to_tensor(np.load('/workspace/deepmd-kit/examples/water/train/descrpt_deriv.npy'))
-        #self.rij = to_tensor(np.load('/workspace/deepmd-kit/examples/water/train/rij.npy'))
-        #self.nlist = to_tensor(np.load('/workspace/deepmd-kit/examples/water/train/nlist.npy'))
-
-        #print("self.descrpt= ", self.descrpt)
-        #print("self.descrpt_deriv= ", self.descrpt_deriv)
-        #print("self.rij= ", self.rij)
-        #print("self.nlist= ", self.nlist)
 
         self.descrpt_reshape = paddle.reshape(self.descrpt, [-1, self.ndescrpt])
         self.descrpt_reshape.stop_gradient = False
@@ -386,10 +370,6 @@ class DescrptSeA (paddle.nn.Layer):
         net_deriv = paddle.grad(atom_ener, self.descrpt_reshape, create_graph=True)[0]
         net_deriv_reshape = paddle.reshape (net_deriv, [-1, natoms[0] * self.ndescrpt])
 
-        self.net_deriv_reshape = net_deriv_reshape
-
-        paddle.set_device("cpu")
-
         force \
             = paddle_ops.prod_force_se_a (net_deriv_reshape,
                                           self.descrpt_deriv,
@@ -397,6 +377,7 @@ class DescrptSeA (paddle.nn.Layer):
                                           natoms,
                                           n_a_sel = self.nnei_a,
                                           n_r_sel = self.nnei_r)
+
         virial, atom_virial \
             = paddle_ops.prod_virial_se_a (net_deriv_reshape,
                                            self.descrpt_deriv,
@@ -405,8 +386,7 @@ class DescrptSeA (paddle.nn.Layer):
                                            natoms,
                                            n_a_sel = self.nnei_a,
                                            n_r_sel = self.nnei_r)
-        
-        paddle.set_device("gpu")
+
         return force, virial, atom_virial
         
 
@@ -445,14 +425,6 @@ class DescrptSeA (paddle.nn.Layer):
                                  data_atype,                             
                                  natoms_vec,
                                  mesh) :
-
-        #print("pbefore sub_sess run========")
-        #print("data_coord= ", data_coord)
-        #print("data_atype= ", data_atype)
-        #print("natoms_vec= ", natoms_vec)
-        #print("data_box= ", data_box)
-        #print("mesh= ", mesh)
-
         input_dict = {}
         input_dict['coord'] = paddle.to_tensor(data_coord, dtype=GLOBAL_NP_FLOAT_PRECISION)
         input_dict['box'] = paddle.to_tensor(data_box, dtype=GLOBAL_PD_FLOAT_PRECISION)
@@ -472,9 +444,7 @@ class DescrptSeA (paddle.nn.Layer):
                                          rcut_r_smth = self.rcut_r_smth,
                                          sel_a = self.sel_a,
                                          sel_r = self.sel_r)
-        
-        #print("self.stat_descrpt   ", stat_descrpt)
-        #print("==========after sub_sess run=========")
+
         dd_all = self.stat_descrpt.numpy()
         natoms = natoms_vec
         dd_all = np.reshape(dd_all, [-1, self.ndescrpt * natoms[0]])
@@ -513,14 +483,14 @@ class DescrptSeA (paddle.nn.Layer):
         return val
 
     def _filter(self, 
-                   inputs, 
-                   type_input,
-                    natoms,
-                   activation_fn=paddle.nn.functional.relu, 
-                   stddev=1.0,
-                   bavg=0.0,
-                   reuse=None,
-                   seed=None, 
+                inputs, 
+                type_input,
+                natoms,
+                activation_fn=paddle.nn.functional.tanh, 
+                stddev=1.0,
+                bavg=0.0,
+                reuse=None,
+                seed=None, 
                 trainable = True):
         # natom x (nei x 4)
         shape = inputs.shape
@@ -577,3 +547,4 @@ class DescrptSeA (paddle.nn.Layer):
         result = paddle.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
 
         return result, qmat
+

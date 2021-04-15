@@ -68,11 +68,11 @@ def gelu(x: tf.Tensor) -> tf.Tensor:
 data_requirement = {}
 
 ACTIVATION_FN_DICT = {
-    "relu": tf.nn.relu,
-    "relu6": tf.nn.relu6,
-    "softplus": tf.nn.softplus,
-    "sigmoid": tf.sigmoid,
-    "tanh": tf.tanh,
+    "relu": paddle.nn.functional.relu,
+    "relu6": paddle.nn.functional.relu6,
+    "softplus": paddle.nn.functional.softplus,
+    "sigmoid": paddle.nn.functional.sigmoid,
+    "tanh": paddle.nn.functional.tanh,
     "gelu": gelu,
 }
 
@@ -385,11 +385,6 @@ def get_activation_func(
     RuntimeError
         if unknown activation function is specified
     """
-    #return paddle.nn.functional.tanh
-    def fun(x):
-        return paddle.clip(x, min=-1.0, max=1.0)
-    return fun
-
     if activation_fn not in ACTIVATION_FN_DICT:
         raise RuntimeError(f"{activation_fn} is not a valid activation function")
     return ACTIVATION_FN_DICT[activation_fn]

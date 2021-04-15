@@ -238,7 +238,6 @@ class DPTrainer (object):
         else :
             raise RuntimeError('get unknown fitting type when building loss function')
 
-        print(self.model)
         # training
         training_param = j_must_have(jdata, 'training')
 
@@ -305,6 +304,7 @@ class DPTrainer (object):
     def train (self, 
                data,
                stop_batch) :
+        paddle.set_device("gpu")
         self.stop_batch = stop_batch
 
         self.print_head()
@@ -353,11 +353,10 @@ class DPTrainer (object):
                 model_inputs[ii] = paddle.to_tensor(np.reshape(batch_data[ii], [-1]), dtype="int32")
             for ii in ['natoms_vec', 'default_mesh'] :
                 model_inputs[ii] = paddle.to_tensor(batch_data[ii], dtype="int32")
-
             model_inputs['is_training'] = paddle.to_tensor(True)
-
+            
             if self.display_in_training and is_first_step :
-                #self.test_on_the_fly(fp, data, model_inputs, tb_test_writer)
+                self.test_on_the_fly(fp, data, model_inputs, tb_test_writer)
                 is_first_step = False
             if self.timing_in_training : tic = time.time()
 
@@ -366,44 +365,18 @@ class DPTrainer (object):
 
             adam.clear_grad()
             l2_l.backward()
-
-            #print([[name, p._grad_ivar() is None] for name, p in self.model.named_parameters()])
-            #print("\n ", [p for p, g in adam.backward(l2_l)])
-            #print("\n ", [g for p, g in adam.backward(l2_l)])
-
-            #print(self.model.descrpt.dout.grad)
-            
-            #print(l2_l.grad)
-            #print(self.model.descrpt.embedding_nets[0].weight[0].grad)
-            #print(self.model.descrpt.embedding_nets[0].bias[0].grad)
-            #print(self.model.descrpt.embedding_nets[0].weight[1].grad)
-            #print(self.model.descrpt.embedding_nets[0].bias[1].grad)
-            #print(self.model.descrpt.embedding_nets[0].weight[2].grad)
-            #print(self.model.descrpt.embedding_nets[0].bias[2].grad)
-
             adam.step()
-
-            #print("self.atom_ener=   ", self.model.atom_ener)
-            #print("self.dout=  ", self.model.dout)
-            #print("self.net_deriv_reshape= ", self.descrpt.net_deriv_reshape)
-
 
             if self.timing_in_training : toc = time.time()
             if self.timing_in_training : train_time += toc - tic
-
             self.cur_batch += 1
-
-            if self.cur_batch == 1:
-                exit(0)
-
-            print("batch %7d  training time %.2f s, l2_l %f" % (self.cur_batch, train_time, l2_l.numpy()))
 
             if (self.cur_batch % self.lr.decay_steps_) == 0:
                 self.lr_scheduler.step()
 
             if self.display_in_training and (self.cur_batch % self.disp_freq == 0) :
                 tic = time.time()
-                #self.test_on_the_fly(fp, data, model_inputs, tb_test_writer)
+                self.test_on_the_fly(fp, data, model_inputs, tb_test_writer)
                 toc = time.time()
                 test_time = toc - tic
                 if self.timing_in_training :
@@ -487,21 +460,21 @@ class DPTrainer (object):
             error_ae_test = l2_more['l2_atom_ener_loss'].numpy()
             error_pf_test = l2_more['l2_pref_force_loss'].numpy()
 
-            print_str = ""
             prop_fmt = "   %11.2e %11.2e"
+            natoms = test_data['natoms_vec']
             print_str += prop_fmt % (np.sqrt(error_test), np.sqrt(error_train))
-            if self.has_e :
+            if self.loss.has_e :
                 print_str += prop_fmt % (np.sqrt(error_e_test) / natoms[0], np.sqrt(error_e_train) / natoms[0])
-            if self.has_ae :
+            if self.loss.has_ae :
                 print_str += prop_fmt % (np.sqrt(error_ae_test), np.sqrt(error_ae_train))
-            if self.has_f :
+            if self.loss.has_f :
                 print_str += prop_fmt % (np.sqrt(error_f_test), np.sqrt(error_f_train))
-            if self.has_v :
+            if self.loss.has_v :
                 print_str += prop_fmt % (np.sqrt(error_v_test) / natoms[0], np.sqrt(error_v_train) / natoms[0])
-            if self.has_pf:
+            if self.loss.has_pf:
                 print_str += prop_fmt % (np.sqrt(error_pf_test), np.sqrt(error_pf_train))
 
+            print("batch %7d, lr %f, l2_l %f, l2_ener_loss %f, l2_force_loss %f, l2_virial_loss %f, l2_atom_ener_loss %f, l2_pref_force_loss %f" % (current_batch, current_lr, error_train, error_e_train, error_f_train, error_v_train, error_ae_train, error_pf_train))
             print_str += "   %8.1e\n" % current_lr
-            print(print_str)
             fp.write(print_str)
             fp.flush ()

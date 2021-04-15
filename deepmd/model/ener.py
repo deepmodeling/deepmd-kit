@@ -10,6 +10,7 @@ from .model_stat import make_stat_input, merge_sys_stat
 
 import sys
 
+
 class EnerModel(paddle.nn.Layer) :
     model_type = 'ener'
 
@@ -130,7 +131,7 @@ class EnerModel(paddle.nn.Layer) :
                             reuse = reuse)
 
         self.dout = dout
-        
+
         atom_ener = self.fitting (dout, 
                                   natoms, 
                                   input_dict, 
@@ -143,11 +144,11 @@ class EnerModel(paddle.nn.Layer) :
         energy_raw = paddle.reshape(energy_raw, [-1, natoms[0]], name = 'o_atom_energy'+suffix)
         energy = paddle.sum(paddle.cast(energy_raw, GLOBAL_ENER_FLOAT_PRECISION), axis=1, name='o_energy'+suffix)
 
-        force, virial, atom_virial = self.descrpt.prod_force_virial (atom_ener, natoms)
-
-        force = paddle.reshape (force, [-1, 3 * natoms[1]], name = "o_force"+suffix)
-        virial = paddle.reshape (virial, [-1, 9], name = "o_virial"+suffix)
-        atom_virial = paddle.reshape (atom_virial, [-1, 9 * natoms[1]], name = "o_atom_virial"+suffix)
+        force, virial, atom_virial = self.descrpt.prod_force_virial(atom_ener, natoms)
+        
+        force = paddle.reshape(force, [-1, 3 * natoms[1]], name = "o_force"+suffix)
+        virial = paddle.reshape(virial, [-1, 9], name = "o_virial"+suffix)
+        atom_virial = paddle.reshape(atom_virial, [-1, 9 * natoms[1]], name = "o_atom_virial"+suffix)
 
         model_dict = {}
         model_dict['energy'] = energy
@@ -159,4 +160,3 @@ class EnerModel(paddle.nn.Layer) :
         model_dict['atype'] = atype
 
         return model_dict
-

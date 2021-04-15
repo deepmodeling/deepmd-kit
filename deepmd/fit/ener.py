@@ -84,16 +84,16 @@ class EnerFitting(paddle.nn.Layer):
 
         # stat fparam
         if self.numb_fparam > 0:
-            self.t_fparam_avg = paddl.to_tensor(np.zeros([1, self.numb_fparam]),
+            self.t_fparam_avg = paddle.to_tensor(np.zeros([1, self.numb_fparam]),
                                                 dtype = GLOBAL_PD_FLOAT_PRECISION)
-            self.t_fparam_istd = paddl.to_tensor(np.ones([1, self.numb_fparam]),
+            self.t_fparam_istd = paddle.to_tensor(np.ones([1, self.numb_fparam]),
                                                  dtype = GLOBAL_PD_FLOAT_PRECISION)
 
         # stat aparam
         if self.numb_aparam > 0:
-            self.t_aparam_avg = paddl.to_tensor(np.zeros([1, self.numb_aparam]),
+            self.t_aparam_avg = paddle.to_tensor(np.zeros([1, self.numb_aparam]),
                                                 dtype = GLOBAL_PD_FLOAT_PRECISION)
-            self.t_aparam_istd = tf.get_variable(np.ones([1, self.numb_aparam]),
+            self.t_aparam_istd = paddle.to_tensor(np.ones([1, self.numb_aparam]),
                                                  dtype = GLOBAL_PD_FLOAT_PRECISION)
 
 
@@ -123,6 +123,15 @@ class EnerFitting(paddle.nn.Layer):
                 can be prepared by model.make_stat_input
         """
         self.bias_atom_e = self._compute_output_stats(all_stat, rcond = self.rcond)
+        if self.bias_atom_e is not None:
+            assert (len(self.bias_atom_e) == self.ntypes)
+            for type_i in range(self.ntypes):
+                type_bias_ae = self.bias_atom_e[type_i]
+                paddle.seed(self.seed)
+                normal_init_ = paddle.nn.initializer.Normal(mean=type_bias_ae, std=1.0)
+                final_layer = self.ElementNets[type_i][-1]
+                normal_init_(final_layer.bias)
+
 
     @classmethod
     def _compute_output_stats(self, all_stat, rcond = 1e-3):
@@ -173,9 +182,9 @@ class EnerFitting(paddle.nn.Layer):
                     self.fparam_std[ii] = protection
             self.fparam_inv_std = 1./self.fparam_std
 
-            self.t_fparam_avg = paddl.to_tensor(self.fparam_avg,
+            self.t_fparam_avg = paddle.to_tensor(self.fparam_avg,
                                                 dtype = GLOBAL_PD_FLOAT_PRECISION)
-            self.t_fparam_istd = paddl.to_tensor(self.fparam_inv_std,
+            self.t_fparam_istd = paddle.to_tensor(self.fparam_inv_std,
                                                  dtype = GLOBAL_PD_FLOAT_PRECISION)
 
         # stat aparam
@@ -198,9 +207,9 @@ class EnerFitting(paddle.nn.Layer):
                     self.aparam_std[ii] = protection
             self.aparam_inv_std = 1./self.aparam_std
 
-            self.t_aparam_avg = paddl.to_tensor(self.aparam_avg,
+            self.t_aparam_avg = paddle.to_tensor(self.aparam_avg,
                                                 dtype = GLOBAL_PD_FLOAT_PRECISION)
-            self.t_aparam_istd = tf.get_variable(self.aparam_inv_std,
+            self.t_aparam_istd = paddle.to_tensor(self.aparam_inv_std,
                                                  dtype = GLOBAL_PD_FLOAT_PRECISION)
 
 
@@ -209,7 +218,6 @@ class EnerFitting(paddle.nn.Layer):
 
 
     def forward(self, inputs, natoms, input_dict, reuse=None, suffix=''):
-        bias_atom_e = self.bias_atom_e
         if self.numb_fparam > 0 and (self.fparam_avg is None or self.fparam_inv_std is None):
             raise RuntimeError('No data stat result. one should do data statisitic, before build')
         if self.numb_aparam > 0 and (self.aparam_avg is None or self.aparam_inv_std is None):
@@ -217,9 +225,6 @@ class EnerFitting(paddle.nn.Layer):
 
         start_index = 0
         inputs = paddle.cast(paddle.reshape(inputs, [-1, self.dim_descrpt * natoms[0]]), self.fitting_precision)
-
-        if bias_atom_e is not None:
-            assert (len(bias_atom_e) == self.ntypes)
 
         if self.numb_fparam > 0:
             fparam = input_dict['fparam']
@@ -252,10 +257,6 @@ class EnerFitting(paddle.nn.Layer):
                 layer = paddle.concat([layer, ext_aparam], axis=1)
             start_index += natoms[2 + type_i]
 
-            if bias_atom_e is None:
-                type_bias_ae = 0.0
-            else:
-                type_bias_ae = bias_atom_e[type_i]
 
             for ii in range(0, len(self.n_neuron)) :
                 if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
@@ -264,11 +265,7 @@ class EnerFitting(paddle.nn.Layer):
                     layer = self.ElementNets[type_i][ii](layer)
             final_layer = self.ElementNets[type_i][len(self.n_neuron)](layer)
 
-            if type_i < len(self.atom_ener) and self.atom_ener[type_i] is not None:
-                zero_inputs = paddle.cast(layer, self.fitting_precision)
-                zero_inputs[:, :self.dim_descrpt] = 0.
-                zero_layer = net_i(zero_inputs)
-                final_layer += self.atom_ener[type_i] - zero_layer
+            # if type_i < len(self.atom_ener) and self.atom_ener[type_i] is not None: (Not implement)
 
             final_layer = paddle.reshape(final_layer, [inputs.shape[0], natoms[2 + type_i]])
 

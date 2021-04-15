@@ -3,11 +3,6 @@ import numpy as np
 from deepmd.env import tf, paddle
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION, GLOBAL_PD_FLOAT_PRECISION
 
-w1 = 0.001
-b1 = -0.05
-
-w2 = -0.002
-b2 = 0.03
 
 def one_layer(inputs, 
               outputs_size, 
@@ -99,7 +94,6 @@ def embedding_net(xx,
     outputs_size = [1] + network_size
 
     for ii in range(1, len(outputs_size)):
-        print("for ii in range(1, len(outputs_size)):")
         w = tf.get_variable('matrix_'+str(ii)+name_suffix, 
                             [outputs_size[ii - 1], outputs_size[ii]], 
                             precision,
@@ -116,7 +110,6 @@ def embedding_net(xx,
 
         hidden = tf.reshape(activation_fn(tf.matmul(xx, w) + b), [-1, outputs_size[ii]])
         if resnet_dt :
-            print("resnet_dt")
             idt = tf.get_variable('idt_'+str(ii)+name_suffix, 
                                   [1, outputs_size[ii]], 
                                   precision,
@@ -125,7 +118,6 @@ def embedding_net(xx,
             variable_summaries(idt, 'idt_'+str(ii)+name_suffix)
 
         if outputs_size[ii] == outputs_size[ii-1]:
-            print("outputs_size[ii] == outputs_size[ii-1]")
             if resnet_dt :
                 xx += hidden * idt
             else :
@@ -168,7 +160,7 @@ class OneLayer(paddle.nn.Layer):
     def __init__(self,
                  in_features,
                  out_features,
-                 activation_fn=paddle.nn.functional.relu, 
+                 activation_fn=paddle.nn.functional.tanh, 
                  precision = GLOBAL_PD_FLOAT_PRECISION, 
                  stddev=1.0,
                  bavg=0.0,
@@ -184,25 +176,23 @@ class OneLayer(paddle.nn.Layer):
         self.useBN = useBN
         self.seed = seed
         paddle.seed(seed)
-
+        
         self.weight = self.create_parameter(
             shape=[in_features, out_features],
             dtype = precision,
             is_bias= False,
-            default_initializer = paddle.fluid.initializer.Constant(w1))
-            #default_initializer = paddle.nn.initializer.Normal(std = stddev/np.sqrt(in_features+out_features)))
+            default_initializer = paddle.nn.initializer.Normal(std = stddev/np.sqrt(in_features+out_features)))
         self.bias = self.create_parameter(
             shape=[out_features],
             dtype = precision,
             is_bias=True,
-            default_initializer = paddle.fluid.initializer.Constant(b1))
-            #default_initializer = paddle.nn.initializer.Normal(mean = bavg, std = stddev))
+            default_initializer = paddle.nn.initializer.Normal(mean = bavg, std = stddev))
         if self.activation_fn != None and self.use_timestep :
             self.idt = self.create_parameter(
                                   shape=[out_features],
                                   dtype=precision,
-                                  default_initializer = paddle.fluid.initializer.Constant(b1))
-                                  #default_initializer = paddle.nn.initializer.Normal(mean = 0.1, std = 0.001))
+                                  default_initializer = paddle.nn.initializer.Normal(mean = 0.1, std = 0.001))
+
 
     def forward(self, input):
         hidden = paddle.fluid.layers.matmul(input, self.weight) + self.bias
@@ -254,7 +244,7 @@ class EmbeddingNet(paddle.nn.Layer):
     def __init__(self,
                  network_size, 
                  precision, 
-                 activation_fn = paddle.nn.functional.relu, 
+                 activation_fn = paddle.nn.functional.tanh, 
                  resnet_dt = False, 
                  seed = None, 
                  trainable = True, 
@@ -275,20 +265,17 @@ class EmbeddingNet(paddle.nn.Layer):
                                 shape = [outputs_size[ii-1], outputs_size[ii]], 
                                 dtype = precision,
                                 is_bias= False,
-                                default_initializer = paddle.fluid.initializer.Constant(w2)))
-                                #default_initializer = paddle.nn.initializer.Normal(std = stddev/np.sqrt(outputs_size[ii]+outputs_size[ii-1]))))
-
+                                default_initializer = paddle.nn.initializer.Normal(std = stddev/np.sqrt(outputs_size[ii]+outputs_size[ii-1]))))
             bias.append(self.create_parameter(
                                 shape = [1, outputs_size[ii]], 
                                 dtype = precision,
                                 is_bias= True,
-                                default_initializer = paddle.fluid.initializer.Constant(b2)))
-                                #default_initializer = paddle.nn.initializer.Normal(mean = bavg, std = stddev)))
+                                default_initializer = paddle.nn.initializer.Normal(mean = bavg, std = stddev)))
 
         self.weight = paddle.nn.ParameterList(weight)
         self.bias = paddle.nn.ParameterList(bias)
 
-    
+
     def forward(self, xx):
         outputs_size = self.outputs_size
         for ii in range(1, len(outputs_size)):

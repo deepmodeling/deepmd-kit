@@ -84,17 +84,17 @@ class EnerStdLoss () :
         l2_force_loss = paddle.mean(paddle.square(diff_f), name = "l2_force_" + suffix)
         l2_pref_force_loss = paddle.mean(paddle.multiply(paddle.square(diff_f), atom_pref_reshape), name = "l2_pref_force_" + suffix)
 
-        virial_reshape = paddle.reshape (virial, [-1])
+        virial_reshape = paddle.reshape(virial, [-1])
         virial_hat_reshape = paddle.reshape (virial_hat, [-1])
-        l2_virial_loss = paddle.mean (paddle.square(virial_hat_reshape - virial_reshape), name = "l2_virial_" + suffix)
+        l2_virial_loss = paddle.mean(paddle.square(virial_hat_reshape - virial_reshape), name = "l2_virial_" + suffix)
 
         atom_ener_reshape = paddle.reshape (atom_ener, [-1])
         atom_ener_hat_reshape = paddle.reshape (atom_ener_hat, [-1])
         l2_atom_ener_loss = paddle.mean (paddle.square(atom_ener_hat_reshape - atom_ener_reshape), name = "l2_atom_ener_" + suffix)
 
         atom_norm  = 1./ global_cvt_2_pd_float(natoms[0]) 
-        atom_norm_ener  = 1./ global_cvt_2_pd_float(natoms[0]) 
-        pref_e = global_cvt_2_pd_float(find_energy * (self.limit_pref_e + (self.start_pref_e - self.limit_pref_e) * learning_rate / self.starter_learning_rate) )
+        atom_norm_ener  = 1./ global_cvt_2_ener_float(natoms[0]) 
+        pref_e = global_cvt_2_ener_float(find_energy * (self.limit_pref_e + (self.start_pref_e - self.limit_pref_e) * learning_rate / self.starter_learning_rate))
         pref_f = global_cvt_2_pd_float(find_force * (self.limit_pref_f + (self.start_pref_f - self.limit_pref_f) * learning_rate / self.starter_learning_rate) )
         pref_v = global_cvt_2_pd_float(find_virial * (self.limit_pref_v + (self.start_pref_v - self.limit_pref_v) * learning_rate / self.starter_learning_rate) )
         pref_ae= global_cvt_2_pd_float(find_atom_ener * (self.limit_pref_ae+ (self.start_pref_ae-self.limit_pref_ae) * learning_rate / self.starter_learning_rate) )
@@ -136,6 +136,7 @@ class EnerStdLoss () :
             print_str += prop_fmt % ('rmse_v_tst', 'rmse_v_trn')
         if self.has_pf :
             print_str += prop_fmt % ('rmse_pf_tst', 'rmse_pf_trn')
+
         return print_str
 
 
