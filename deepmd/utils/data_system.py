@@ -421,7 +421,6 @@ class DeepmdDataSystem() :
             return name 
 
     def print_summary(self) :
-        prob = self._get_sys_probs(self.sys_probs, self.auto_prob)
         # width 65
         sys_width = 42
         log.info("---Summary of DataSystem--------------------------------------------------------------")
@@ -436,7 +435,7 @@ class DeepmdDataSystem() :
                       self.batch_size[ii],
                       self.nbatches[ii],
                       self.test_size[ii],
-                      prob[ii],
+                      self.sys_probs[ii],
                       "T" if self.data_systems[ii].pbc else "F"
                      ) )
         log.info("--------------------------------------------------------------------------------------")
