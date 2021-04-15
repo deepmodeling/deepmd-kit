@@ -14,7 +14,7 @@ def list_to_doc(xx):
 
 
 def make_link(content, ref_key):
-    return f'`{content} <{ref_key}_>`_' if not dargs.RAW_ANCHOR else f'`{content} <#{ref_key}>`_'
+    return f'`{content} <{ref_key}_>`_' # if not dargs.RAW_ANCHOR else f'`{content} <#{ref_key}>`_'
 
 
 #  --- Descriptor configurations: --- #
