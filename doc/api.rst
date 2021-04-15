@@ -1,4 +1,4 @@
-DeePMD-kit API
+API
 ===============
 
 .. toctree::
