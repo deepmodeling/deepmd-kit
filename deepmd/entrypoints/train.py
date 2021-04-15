@@ -171,7 +171,7 @@ def train(
     if "model" not in jdata.keys():
         jdata = convert_input_v0_v1(jdata, warning=True, dump="input_v1_compat.json")
 
-    # jdata = normalize(jdata)
+    jdata = normalize(jdata)
     with open(output, "w") as fp:
         json.dump(jdata, fp, indent=4)
 
