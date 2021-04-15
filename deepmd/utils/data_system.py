@@ -118,9 +118,6 @@ class DeepmdDataSystem() :
             type_map_list.append(self.data_systems[ii].get_type_map())
         self.type_map = self._check_type_map_consistency(type_map_list)
 
-        self.sys_probs = None
-        self.set_sys_probs(sys_probs, auto_prob_style)
-
         # ! altered by Marián Rynik
         # test size
         # now test size can be set as a percentage of systems data or test size
@@ -147,6 +144,10 @@ class DeepmdDataSystem() :
         # prob of batch, init pick idx
         self.prob_nbatches = [ float(i) for i in self.nbatches] / np.sum(self.nbatches)        
         self.pick_idx = 0
+
+        # derive system probabilities
+        self.sys_probs = None
+        self.set_sys_probs(sys_probs, auto_prob_style)
 
         # check batch and test size
         for ii in range(self.nsystems) :
