@@ -449,8 +449,8 @@ class DPTrainer (object):
 
     def train (self, train_data, valid_data=None) :
 
-        if valid_data is None:  # no validation set specified.
-            valid_data = train_data  # using training set as validation set.
+        # if valid_data is None:  # no validation set specified.
+        #     valid_data = train_data  # using training set as validation set.
 
         stop_batch = self.stop_batch
         if self.run_opt.is_distrib :
@@ -492,11 +492,14 @@ class DPTrainer (object):
         
         train_time = 0
         while cur_batch < stop_batch :
-            train_feed_dict, train_natoms = self.get_feed_dict(train_data, is_training=True)
-            if self.display_in_training and is_first_step :
+
+            # first round validation:
+            if self.display_in_training and is_first_step:
                 self.valid_on_the_fly(fp, train_data, valid_data, print_header=True)
                 is_first_step = False
-            if self.timing_in_training : tic = time.time()
+
+            if self.timing_in_training: tic = time.time()
+            train_feed_dict = self.get_feed_dict(train_data.get_batch(), is_training=True)
             # use tensorboard to visualize the training of deepmd-kit
             # it will takes some extra execution time to generate the tensorboard data
             if self.tensorboard :
@@ -506,17 +509,19 @@ class DPTrainer (object):
             else :
                 self.sess.run([self.train_op], feed_dict=train_feed_dict,
                               options=prf_options, run_metadata=prf_run_metadata)
-            if self.timing_in_training : toc = time.time()
-            if self.timing_in_training : train_time += toc - tic
+            if self.timing_in_training: toc = time.time()
+            if self.timing_in_training: train_time += toc - tic
             cur_batch = self.sess.run(self.global_step)
             self.cur_batch = cur_batch
 
-            if self.display_in_training and (cur_batch % self.disp_freq == 0) :
-                tic = time.time()
+            # on-the-fly validation
+            if self.display_in_training and (cur_batch % self.disp_freq == 0):
+                if self.timing_in_training:
+                    tic = time.time()
                 self.valid_on_the_fly(fp, train_data, valid_data)
-                toc = time.time()
-                test_time = toc - tic
-                if self.timing_in_training :
+                if self.timing_in_training:
+                    toc = time.time()
+                    test_time = toc - tic
                     log.info("batch %7d training time %.2f s, testing time %.2f s"
                                   % (cur_batch, train_time, test_time))
                     train_time = 0
@@ -532,8 +537,7 @@ class DPTrainer (object):
             with open(self.profiling_file, 'w') as f:
                 f.write(chrome_trace)
 
-    def get_feed_dict (self, data, is_training) :
-        batch = data.get_batch()
+    def get_feed_dict(self, batch, is_training):
         feed_dict = {}
         for kk in batch.keys():
             if kk == 'find_type' or kk == 'type':
@@ -547,9 +551,9 @@ class DPTrainer (object):
         for ii in ['natoms_vec', 'default_mesh']:
             feed_dict[self.place_holders[ii]] = batch[ii]
         feed_dict[self.place_holders['is_training']] = is_training
-        return feed_dict, batch['natoms_vec']
+        return feed_dict
 
-    def get_global_step (self) :
+    def get_global_step(self):
         return self.sess.run(self.global_step)
 
     # def print_head (self) :  # depreciated
@@ -572,16 +576,21 @@ class DPTrainer (object):
         cur_batch = self.cur_batch
         current_lr = self.sess.run(self.learning_rate)
         if print_header:
-            self.print_header(fp, valid_results)
+            self.print_header(fp, train_results, valid_results)
         self.print_on_training(fp, train_results, valid_results, cur_batch, current_lr)
 
     @staticmethod
-    def print_header(fp, results):
+    def print_header(fp, train_results, valid_results):
         print_str = ''
         print_str += "# %5s" % 'batch'
-        prop_fmt =  '   %11s %11s'
-        for k in results.keys():
-            print_str += prop_fmt % (k + '_val', k + '_trn')
+        if valid_results is not None:
+            prop_fmt =  '   %11s %11s'
+            for k in train_results.keys():
+                print_str += prop_fmt % (k + '_val', k + '_trn')
+        else:
+            prop_fmt = '   %11s'
+            for k in train_results.keys():
+                print_str += prop_fmt % (k + '_trn')
         print_str += '   %8s\n' % 'lr'
         fp.write(print_str)
         fp.flush()
@@ -590,18 +599,27 @@ class DPTrainer (object):
     def print_on_training(fp, train_results, valid_results, cur_batch, cur_lr):
         print_str = ''
         print_str += "%7d" % cur_batch
-        prop_fmt = "   %11.2e %11.2e"
-        for k in valid_results.keys():
-            # assert k in train_results.keys()
-            print_str += prop_fmt % (valid_results[k], train_results[k])
+        if valid_results is not None:
+            prop_fmt = "   %11.2e %11.2e"
+            for k in valid_results.keys():
+                # assert k in train_results.keys()
+                print_str += prop_fmt % (valid_results[k], train_results[k])
+        else:
+            prop_fmt = "   %11.2e"
+            for k in train_results.keys():
+                print_str += prop_fmt % (train_results[k])
         print_str += "   %8.1e\n" % cur_lr
         fp.write(print_str)
         fp.flush()
 
     def get_evaluation_results(self, data, numb_batch):
+        if data is None:
+            return None
         sum_results = None
         for i in range(numb_batch):
-            feed_dict, natoms = self.get_feed_dict(data, is_training=False)
+            batch = data.get_batch()
+            natoms = batch["natoms_vec"]
+            feed_dict = self.get_feed_dict(batch, is_training=False)
             results = self.loss.eval(self.sess, feed_dict, natoms)
             if sum_results is None:
                 sum_results = results
