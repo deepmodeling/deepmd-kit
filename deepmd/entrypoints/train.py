@@ -287,7 +287,7 @@ def get_data(jdata: Dict[str, Any], rcut, type_map, modifier):
         modifier=modifier,
         trn_all_set=True,    # sample from all sets
         sys_probs=sys_probs,
-        auto_prob=auto_prob
+        auto_prob_style=auto_prob
     )
     data.add_dict(data_requirement)
 
