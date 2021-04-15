@@ -615,16 +615,16 @@ class DPTrainer (object):
     def get_evaluation_results(self, data, numb_batch):
         if data is None:
             return None
-        sum_results = None
+        sum_natoms = 0      # total #atoms
+        sum_results = {}    # sum of losses on all atoms
         for i in range(numb_batch):
             batch = data.get_batch()
-            natoms = batch["natoms_vec"]
+            natoms = int(batch["natoms_vec"][0])
             feed_dict = self.get_feed_dict(batch, is_training=False)
             results = self.loss.eval(self.sess, feed_dict, natoms)
-            if sum_results is None:
-                sum_results = results
-            else:
-                for k, v in results:
-                    sum_results[k] += v
-        avg_results = {k: v / numb_batch for k, v in sum_results.items()}
+
+            sum_natoms += natoms
+            for k, v in results:
+                sum_results[k] = sum_results.get(k, 0.) + v * natoms
+        avg_results = {k: v / sum_natoms for k, v in sum_results.items()}
         return avg_results
