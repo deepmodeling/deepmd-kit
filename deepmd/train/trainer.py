@@ -236,16 +236,16 @@ class DPTrainer (object):
 
         # training
         tr_data = jdata['training']
-        self.disp_file = tr_data['disp_file']
-        self.disp_freq = tr_data['disp_freq']
-        self.save_freq = tr_data['save_freq']
-        self.save_ckpt = tr_data['save_ckpt']
-        self.display_in_training = tr_data['disp_training']
-        self.timing_in_training  = tr_data['time_training']
-        self.profiling = tr_data['profiling']
-        self.profiling_file = tr_data['profiling_file']
-        self.tensorboard = tr_data['tensorboard']
-        self.tensorboard_log_dir = tr_data['tensorboard_log_dir']
+        self.disp_file = tr_data.get('disp_file', 'lcurve.out')
+        self.disp_freq = tr_data.get('disp_freq', 1000)
+        self.save_freq = tr_data.get('save_freq', 1000)
+        self.save_ckpt = tr_data.get('save_ckpt', 'model.ckpt')
+        self.display_in_training = tr_data.get('disp_training', True)
+        self.timing_in_training  = tr_data.get('time_training', True)
+        self.profiling = tr_data.get('profiling', False)
+        self.profiling_file = tr_data.get('profiling_file', 'timeline.json')
+        self.tensorboard = tr_data.get('tensorboard', False)
+        self.tensorboard_log_dir = tr_data.get('tensorboard_log_dir', 'log')
         # self.sys_probs = tr_data['sys_probs']
         # self.auto_prob_style = tr_data['auto_prob']
         self.useBN = False
@@ -254,7 +254,7 @@ class DPTrainer (object):
         else :
             self.numb_fparam = 0
 
-        if tr_data["validation_data"] is not None:
+        if tr_data.get("validation_data", None) is not None:
             self.valid_numb_batch = tr_data["validation_data"].get("numb_btch", 1)
         else:
             self.valid_numb_batch = 1
