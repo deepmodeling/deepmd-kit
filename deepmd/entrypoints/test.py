@@ -117,8 +117,8 @@ def test(
         log.info("# ----------------------------------------------- ")
 
 
-def l2err(diff: np.ndarray) -> np.ndarray:
-    """Calculate average l2 norm error.
+def rmse(diff: np.ndarray) -> np.ndarray:
+    """Calculate average root mean square error.
 
     Parameters
     ----------
@@ -245,25 +245,25 @@ def test_ener(
         ae = ae.reshape([numb_test, -1])
         av = av.reshape([numb_test, -1])
 
-    l2e = l2err(energy - test_data["energy"][:numb_test].reshape([-1, 1]))
-    l2f = l2err(force - test_data["force"][:numb_test])
-    l2v = l2err(virial - test_data["virial"][:numb_test])
-    l2ea = l2e / natoms
-    l2va = l2v / natoms
+    rmse_e = rmse(energy - test_data["energy"][:numb_test].reshape([-1, 1]))
+    rmse_f = rmse(force - test_data["force"][:numb_test])
+    rmse_v = rmse(virial - test_data["virial"][:numb_test])
+    rmse_ea = rmse_e / natoms
+    rmse_va = rmse_v / natoms
     if has_atom_ener:
-        l2ae = l2err(
+        rmse_ae = rmse(
             test_data["atom_ener"][:numb_test].reshape([-1]) - ae.reshape([-1])
         )
 
     # print ("# energies: %s" % energy)
     log.info(f"# number of test data : {numb_test:d} ")
-    log.info(f"Energy RMSE        : {l2e:e} eV")
-    log.info(f"Energy RMSE/Natoms : {l2ea:e} eV")
-    log.info(f"Force  RMSE        : {l2f:e} eV/A")
-    log.info(f"Virial RMSE        : {l2v:e} eV")
-    log.info(f"Virial RMSE/Natoms : {l2va:e} eV")
+    log.info(f"Energy RMSE        : {rmse_e:e} eV")
+    log.info(f"Energy RMSE/Natoms : {rmse_ea:e} eV")
+    log.info(f"Force  RMSE        : {rmse_f:e} eV/A")
+    log.info(f"Virial RMSE        : {rmse_v:e} eV")
+    log.info(f"Virial RMSE/Natoms : {rmse_va:e} eV")
     if has_atom_ener:
-        log.info(f"Atomic ener RMSE   : {l2ae:e} eV")
+        log.info(f"Atomic ener RMSE   : {rmse_ae:e} eV")
 
     if detail_file is not None:
         detail_path = Path(detail_file)
@@ -310,9 +310,9 @@ def test_ener(
             append=append_detail,
         )
     return {
-        "l2ea" : (l2ea, energy.size),
-        "l2f" : (l2f, force.size),
-        "l2va" : (l2va, virial.size),
+        "rmse_ea" : (rmse_ea, energy.size),
+        "rmse_f" : (rmse_f, force.size),
+        "rmse_va" : (rmse_va, virial.size),
     }
 
 
@@ -324,9 +324,9 @@ def print_ener_sys_avg(avg: Dict[str,float]):
     avg : np.ndarray
         array with summaries
     """
-    log.info(f"Energy RMSE/Natoms : {avg['l2ea']:e} eV")
-    log.info(f"Force  RMSE        : {avg['l2f']:e} eV/A")
-    log.info(f"Virial RMSE/Natoms : {avg['l2va']:e} eV")
+    log.info(f"Energy RMSE/Natoms : {avg['rmse_ea']:e} eV")
+    log.info(f"Force  RMSE        : {avg['rmse_f']:e} eV/A")
+    log.info(f"Virial RMSE/Natoms : {avg['rmse_va']:e} eV")
 
 
 def run_test(dp: "DeepTensor", test_data: dict, numb_test: int):
@@ -386,10 +386,10 @@ def test_wfc(
     )
     test_data = data.get_test()
     wfc, numb_test, _ = run_test(dp, test_data, numb_test)
-    l2f = l2err(wfc - test_data["wfc"][:numb_test])
+    rmse_f = rmse(wfc - test_data["wfc"][:numb_test])
 
     log.info("# number of test data : {numb_test:d} ")
-    log.info("WFC  RMSE : {l2f:e} eV/A")
+    log.info("WFC  RMSE : {rmse_f:e} eV/A")
 
     if detail_file is not None:
         detail_path = Path(detail_file)
@@ -406,7 +406,7 @@ def test_wfc(
             header="ref_wfc(12 dofs)   predicted_wfc(12 dofs)",
         )
     return {
-        'l2' : (l2f, wfc.size)
+        'rmse' : (rmse_f, wfc.size)
     }
 
 
@@ -418,7 +418,7 @@ def print_wfc_sys_avg(avg):
     avg : np.ndarray
         array with summaries
     """
-    log.info(f"WFC  RMSE : {avg['l2']:e} eV/A")
+    log.info(f"WFC  RMSE : {avg['rmse']:e} eV/A")
 
 
 def test_polar(
@@ -475,15 +475,15 @@ def test_polar(
     for ii in sel_type:
         sel_natoms += sum(atype == ii)
 
-    l2f = l2err(polar - test_data["polarizability"][:numb_test])
-    l2fs = l2f / np.sqrt(sel_natoms)
-    l2fa = l2f / sel_natoms
+    rmse_f = rmse(polar - test_data["polarizability"][:numb_test])
+    rmse_fs = rmse_f / np.sqrt(sel_natoms)
+    rmse_fa = rmse_f / sel_natoms
 
     log.info(f"# number of test data : {numb_test:d} ")
-    log.info(f"Polarizability  RMSE       : {l2f:e} eV/A")
+    log.info(f"Polarizability  RMSE       : {rmse_f:e} eV/A")
     if global_polar:
-        log.info(f"Polarizability  RMSE/sqrtN : {l2fs:e} eV/A")
-        log.info(f"Polarizability  RMSE/N     : {l2fa:e} eV/A")
+        log.info(f"Polarizability  RMSE/sqrtN : {rmse_fs:e} eV/A")
+        log.info(f"Polarizability  RMSE/N     : {rmse_fa:e} eV/A")
 
     if detail_file is not None:
         detail_path = Path(detail_file)
@@ -503,7 +503,7 @@ def test_polar(
             "pred_pzx pred_pzy pred_pzz",
         )
     return {
-        "l2" : (l2f, polar.size)
+        "rmse_" : (rmse_f, polar.size)
     }
 
 
@@ -515,7 +515,7 @@ def print_polar_sys_avg(avg):
     avg : np.ndarray
         array with summaries
     """
-    log.info(f"Polarizability  RMSE : {avg['l2']:e} eV/A")
+    log.info(f"Polarizability  RMSE : {avg['rmse']:e} eV/A")
 
 
 def test_dipole(
@@ -557,13 +557,13 @@ def test_dipole(
         atoms = dipole.shape[1]
         dipole = np.sum(dipole,axis=1)
 
-    l2f = l2err(dipole - test_data["dipole"][:numb_test])
+    rmse_f = rmse(dipole - test_data["dipole"][:numb_test])
 
     if has_atom_dipole == False:
-        l2f = l2f / atoms
+        rmse_f = rmse_f / atoms
 
     log.info(f"# number of test data : {numb_test:d}")
-    log.info(f"Dipole  RMSE         : {l2f:e} eV/A")
+    log.info(f"Dipole  RMSE         : {rmse_f:e} eV/A")
 
     if detail_file is not None:
         detail_path = Path(detail_file)
@@ -581,7 +581,7 @@ def test_dipole(
             header="data_x data_y data_z pred_x pred_y pred_z",
         )
     return {
-        'l2' : (l2f, dipole.size)
+        'rmse' : (rmse_f, dipole.size)
     }
 
 
@@ -593,4 +593,4 @@ def print_dipole_sys_avg(avg):
     avg : np.ndarray
         array with summaries
     """
-    log.info(f"Dipole  RMSE         : {avg['l2']:e} eV/A")
+    log.info(f"Dipole  RMSE         : {avg['rmse']:e} eV/A")
