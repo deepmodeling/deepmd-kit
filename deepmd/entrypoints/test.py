@@ -503,7 +503,7 @@ def test_polar(
             "pred_pzx pred_pzy pred_pzz",
         )
     return {
-        "rmse_" : (rmse_f, polar.size)
+        "rmse" : (rmse_f, polar.size)
     }
 
 
