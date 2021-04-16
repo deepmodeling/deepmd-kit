@@ -1,12 +1,13 @@
 """Test trained DeePMD model."""
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Dict, Optional, Tuple
 
 import numpy as np
 from deepmd import DeepPotential
 from deepmd.common import expand_sys_str
 from deepmd.utils.data import DeepmdData
+from deepmd.utils.weight_avg import weighted_average
 
 if TYPE_CHECKING:
     from deepmd.infer import DeepDipole, DeepPolar, DeepPot, DeepWFC
@@ -77,7 +78,7 @@ def test(
         data = DeepmdData(system, set_prefix, shuffle_test=shuffle_test, type_map=tmap)
 
         if dp.model_type == "ener":
-            err, siz = test_ener(
+            err = test_ener(
                 dp,
                 data,
                 system,
@@ -87,18 +88,15 @@ def test(
                 append_detail=(cc != 0),
             )
         elif dp.model_type == "dipole":
-            err, siz = test_dipole(dp, data, numb_test, detail_file, atomic)
+            err = test_dipole(dp, data, numb_test, detail_file, atomic)
         elif dp.model_type == "polar":
-            err, siz = test_polar(dp, data, numb_test, detail_file, global_polar=False)
+            err = test_polar(dp, data, numb_test, detail_file, global_polar=False)
         elif dp.model_type == "global_polar":
-            err, siz = test_polar(dp, data, numb_test, detail_file, global_polar=True)
-        elif dp.model_type == "wfc":
-            err, siz = test_wfc(dp, data, numb_test, detail_file)
+            err = test_polar(dp, data, numb_test, detail_file, global_polar=True)
         log.info("# ----------------------------------------------- ")
         err_coll.append(err)
-        siz_coll.append(siz)
 
-    avg_err = weighted_average(err_coll, siz_coll)
+    avg_err = weighted_average(err_coll)
 
     if len(all_sys) != len(err_coll):
         log.warning("Not all systems are tested! Check if the systems are valid")
@@ -133,39 +131,6 @@ def l2err(diff: np.ndarray) -> np.ndarray:
         array with normalized difference
     """
     return np.sqrt(np.average(diff * diff))
-
-
-def weighted_average(
-    err_coll: List[List[np.ndarray]], siz_coll: List[List[int]]
-) -> np.ndarray:
-    """Compute wighted average of prediction errors for model.
-
-    Parameters
-    ----------
-    err_coll : List[List[np.ndarray]]
-        each item in list represents erros for one model
-    siz_coll : List[List[int]]
-        weight for each model errors
-
-    Returns
-    -------
-    np.ndarray
-        weighted averages
-    """
-    assert len(err_coll) == len(siz_coll)
-
-    nitems = len(err_coll[0])
-    sum_err = np.zeros(nitems)
-    sum_siz = np.zeros(nitems)
-    for sys_error, sys_size in zip(err_coll, siz_coll):
-        for ii in range(nitems):
-            ee = sys_error[ii]
-            ss = sys_size[ii]
-            sum_err[ii] += ee * ee * ss
-            sum_siz[ii] += ss
-    for ii in range(nitems):
-        sum_err[ii] = np.sqrt(sum_err[ii] / sum_siz[ii])
-    return sum_err
 
 
 def save_txt_file(
@@ -344,10 +309,14 @@ def test_ener(
             "pred_vyy pred_vyz pred_vzx pred_vzy pred_vzz",
             append=append_detail,
         )
-    return [l2ea, l2f, l2va], [energy.size, force.size, virial.size]
+    return {
+        "l2ea" : (l2ea, energy.size),
+        "l2f" : (l2f, force.size),
+        "l2va" : (l2va, virial.size),
+    }
 
 
-def print_ener_sys_avg(avg: np.ndarray):
+def print_ener_sys_avg(avg: Dict[str,float]):
     """Print errors summary for energy type potential.
 
     Parameters
@@ -355,9 +324,9 @@ def print_ener_sys_avg(avg: np.ndarray):
     avg : np.ndarray
         array with summaries
     """
-    log.info(f"Energy RMSE/Natoms : {avg[0]:e} eV")
-    log.info(f"Force  RMSE        : {avg[1]:e} eV/A")
-    log.info(f"Virial RMSE/Natoms : {avg[2]:e} eV")
+    log.info(f"Energy RMSE/Natoms : {avg['l2ea']:e} eV")
+    log.info(f"Force  RMSE        : {avg['l2f']:e} eV/A")
+    log.info(f"Virial RMSE/Natoms : {avg['l2va']:e} eV")
 
 
 def run_test(dp: "DeepTensor", test_data: dict, numb_test: int):
@@ -436,7 +405,9 @@ def test_wfc(
             pe,
             header="ref_wfc(12 dofs)   predicted_wfc(12 dofs)",
         )
-    return [l2f], [wfc.size]
+    return {
+        'l2' : (l2f, wfc.size)
+    }
 
 
 def print_wfc_sys_avg(avg):
@@ -447,7 +418,7 @@ def print_wfc_sys_avg(avg):
     avg : np.ndarray
         array with summaries
     """
-    log.info(f"WFC  RMSE : {avg[0]:e} eV/A")
+    log.info(f"WFC  RMSE : {avg['l2']:e} eV/A")
 
 
 def test_polar(
@@ -531,7 +502,9 @@ def test_polar(
             "data_pzy data_pzz pred_pxx pred_pxy pred_pxz pred_pyx pred_pyy pred_pyz "
             "pred_pzx pred_pzy pred_pzz",
         )
-    return [l2f], [polar.size]
+    return {
+        "l2" : (l2f, polar.size)
+    }
 
 
 def print_polar_sys_avg(avg):
@@ -542,7 +515,7 @@ def print_polar_sys_avg(avg):
     avg : np.ndarray
         array with summaries
     """
-    log.info(f"Polarizability  RMSE : {avg[0]:e} eV/A")
+    log.info(f"Polarizability  RMSE : {avg['l2']:e} eV/A")
 
 
 def test_dipole(
@@ -607,7 +580,9 @@ def test_dipole(
             pe,
             header="data_x data_y data_z pred_x pred_y pred_z",
         )
-    return [l2f], [dipole.size]
+    return {
+        'l2' : (l2f, dipole.size)
+    }
 
 
 def print_dipole_sys_avg(avg):
@@ -618,4 +593,4 @@ def print_dipole_sys_avg(avg):
     avg : np.ndarray
         array with summaries
     """
-    log.info(f"Dipole  RMSE         : {avg[0]:e} eV/A")
+    log.info(f"Dipole  RMSE         : {avg['l2']:e} eV/A")
