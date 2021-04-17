@@ -479,8 +479,8 @@ class DPTrainer (object):
             # first round validation:
             train_batch = train_data.get_batch()
             if self.display_in_training and is_first_step:
-                valid_batch = [valid_data.get_batch() for ii in range(self.valid_numb_batch)] if valid_data is not None else None
-                self.valid_on_the_fly(fp, [train_batch], valid_batch, print_header=True)
+                valid_batches = [valid_data.get_batch() for ii in range(self.valid_numb_batch)] if valid_data is not None else None
+                self.valid_on_the_fly(fp, [train_batch], valid_batches, print_header=True)
                 is_first_step = False
 
             if self.timing_in_training: tic = time.time()
@@ -503,8 +503,8 @@ class DPTrainer (object):
             if self.display_in_training and (cur_batch % self.disp_freq == 0):
                 if self.timing_in_training:
                     tic = time.time()
-                valid_batch = [valid_data.get_batch() for ii in range(self.valid_numb_batch)] if valid_data is not None else None
-                self.valid_on_the_fly(fp, [train_batch], valid_batch)
+                valid_batches = [valid_data.get_batch() for ii in range(self.valid_numb_batch)] if valid_data is not None else None
+                self.valid_on_the_fly(fp, [train_batch], valid_batches)
                 if self.timing_in_training:
                     toc = time.time()
                     test_time = toc - tic
@@ -553,11 +553,11 @@ class DPTrainer (object):
 
     def valid_on_the_fly(self,
                          fp,
-                         train_batch,
-                         valid_batch,
+                         train_batches,
+                         valid_batches,
                          print_header=False):
-        train_results = self.get_evaluation_results(train_batch)
-        valid_results = self.get_evaluation_results(valid_batch)
+        train_results = self.get_evaluation_results(train_batches)
+        valid_results = self.get_evaluation_results(valid_batches)
 
         cur_batch = self.cur_batch
         current_lr = self.sess.run(self.learning_rate)
