@@ -258,7 +258,7 @@ class DPTrainer (object):
             self.valid_numb_batch = tr_data["validation_data"].get("numb_btch", 1)
         else:
             self.valid_numb_batch = 1
-
+        
 
     def build (self, 
                data, 
@@ -477,12 +477,14 @@ class DPTrainer (object):
         while cur_batch < stop_batch :
 
             # first round validation:
+            train_batch = train_data.get_batch()
             if self.display_in_training and is_first_step:
-                self.valid_on_the_fly(fp, train_data, valid_data, print_header=True)
+                valid_batch = [valid_data.get_batch() for ii in range(self.valid_numb_batch)] if valid_data is not None else None
+                self.valid_on_the_fly(fp, [train_batch], valid_batch, print_header=True)
                 is_first_step = False
 
             if self.timing_in_training: tic = time.time()
-            train_feed_dict = self.get_feed_dict(train_data.get_batch(), is_training=True)
+            train_feed_dict = self.get_feed_dict(train_batch, is_training=True)
             # use tensorboard to visualize the training of deepmd-kit
             # it will takes some extra execution time to generate the tensorboard data
             if self.tensorboard :
@@ -501,7 +503,8 @@ class DPTrainer (object):
             if self.display_in_training and (cur_batch % self.disp_freq == 0):
                 if self.timing_in_training:
                     tic = time.time()
-                self.valid_on_the_fly(fp, train_data, valid_data)
+                valid_batch = [valid_data.get_batch() for ii in range(self.valid_numb_batch)] if valid_data is not None else None
+                self.valid_on_the_fly(fp, [train_batch], valid_batch)
                 if self.timing_in_training:
                     toc = time.time()
                     test_time = toc - tic
@@ -550,11 +553,11 @@ class DPTrainer (object):
 
     def valid_on_the_fly(self,
                          fp,
-                         train_data,
-                         valid_data,
+                         train_batch,
+                         valid_batch,
                          print_header=False):
-        train_results = self.get_evaluation_results(train_data, self.valid_numb_batch)
-        valid_results = self.get_evaluation_results(valid_data, self.valid_numb_batch)
+        train_results = self.get_evaluation_results(train_batch)
+        valid_results = self.get_evaluation_results(valid_batch)
 
         cur_batch = self.cur_batch
         current_lr = self.sess.run(self.learning_rate)
@@ -595,17 +598,22 @@ class DPTrainer (object):
         fp.write(print_str)
         fp.flush()
 
-    def get_evaluation_results(self, data, numb_batch):
-        if data is None: return None
+    def get_evaluation_results(self, batch_list):
+        if batch_list is None: return None
+        numb_batch = len(batch_list)
 
         sum_results = {}    # sum of losses on all atoms
+        sum_natoms = 0
         for i in range(numb_batch):
-            batch = data.get_batch()
+            batch = batch_list[i]
             natoms = batch["natoms_vec"]
             feed_dict = self.get_feed_dict(batch, is_training=False)
             results = self.loss.eval(self.sess, feed_dict, natoms)
-
+            
             for k, v in results.items():
-                sum_results[k] = sum_results.get(k, 0.) + v * results["natoms"]
-        avg_results = {k: v / sum_results["natoms"] for k, v in sum_results.items() if not k == "natoms"}
+                if k == "natoms":
+                    sum_natoms += v
+                else:
+                    sum_results[k] = sum_results.get(k, 0.) + v * results["natoms"]
+        avg_results = {k: v / sum_natoms for k, v in sum_results.items() if not k == "natoms"}
         return avg_results
