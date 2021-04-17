@@ -258,7 +258,7 @@ class DPTrainer (object):
             self.valid_numb_batch = tr_data["validation_data"].get("numb_btch", 1)
         else:
             self.valid_numb_batch = 1
-        
+
 
     def build (self, 
                data, 
@@ -609,7 +609,7 @@ class DPTrainer (object):
             natoms = batch["natoms_vec"]
             feed_dict = self.get_feed_dict(batch, is_training=False)
             results = self.loss.eval(self.sess, feed_dict, natoms)
-            
+
             for k, v in results.items():
                 if k == "natoms":
                     sum_natoms += v
