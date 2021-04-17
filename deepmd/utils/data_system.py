@@ -420,10 +420,10 @@ class DeepmdDataSystem() :
             name = '-- ' + name
             return name 
 
-    def print_summary(self) :
+    def print_summary(self, name) :
         # width 65
         sys_width = 42
-        log.info("---Summary of DataSystem--------------------------------------------------------------")
+        log.info(f"---Summary of DataSystem: {name:13s}-----------------------------------------------")
         log.info("found %d system(s):" % self.nsystems)
         log.info(("%s  " % self._format_name_length('system', sys_width)) + 
                  ("%6s  %6s  %6s  %6s  %5s  %3s" % ('natoms', 'bch_sz', 'n_bch', "n_test", 'prob', 'pbc')))

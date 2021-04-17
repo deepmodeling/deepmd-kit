@@ -249,10 +249,10 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
 
     # init data
     train_data = get_data(jdata["training"]["training_data"], rcut, ipt_type_map, modifier)
-    train_data.print_summary()
-    if "validation_data" in jdata["training"]:
+    train_data.print_summary("training")
+    if jdata["training"]["validation_data"] is not None:
         valid_data = get_data(jdata["training"]["validation_data"], rcut, ipt_type_map, modifier)
-        valid_data.print_summary()
+        valid_data.print_summary("validation")
     else:
         valid_data = None
 
