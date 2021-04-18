@@ -253,7 +253,6 @@ class DeepPot(DeepEval):
         # evaluate
         eval_inputs = {}
         eval_inputs['coord'] = paddle.to_tensor(np.reshape(coords, [-1]), dtype=GLOBAL_PD_FLOAT_PRECISION)
-        print(eval_inputs['coord'])
         eval_inputs['type'] = paddle.to_tensor(np.tile(atom_types, [nframes, 1]).reshape([-1]), dtype="int32")
         eval_inputs['natoms_vec'] = paddle.to_tensor(natoms_vec, dtype="int32")
         eval_inputs['box'] = paddle.to_tensor(np.reshape(cells , [-1]), dtype=GLOBAL_PD_FLOAT_PRECISION)

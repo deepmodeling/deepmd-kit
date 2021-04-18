@@ -118,8 +118,11 @@ class DescrptSeA(paddle.nn.Layer):
         self.t_ntypes = paddle.to_tensor(self.ntypes, dtype = "int32")
         self.t_ndescrpt = paddle.to_tensor(self.ndescrpt, dtype = "int32")
         self.t_sel = paddle.to_tensor(self.sel_a, dtype = "int32")
-        self.t_avg = paddle.to_tensor(np.zeros([self.ntypes, self.ndescrpt]), dtype = GLOBAL_PD_FLOAT_PRECISION)
-        self.t_std = paddle.to_tensor(np.ones([self.ntypes, self.ndescrpt]), dtype = GLOBAL_PD_FLOAT_PRECISION)
+
+        t_avg = paddle.to_tensor(np.zeros([self.ntypes, self.ndescrpt]), dtype = GLOBAL_PD_FLOAT_PRECISION)
+        t_std = paddle.to_tensor(np.ones([self.ntypes, self.ndescrpt]), dtype = GLOBAL_PD_FLOAT_PRECISION)
+        self.register_buffer("t_avg", t_avg)
+        self.register_buffer("t_std", t_std)
 
     def get_rcut (self) -> float:
         """
@@ -222,9 +225,7 @@ class DescrptSeA(paddle.nn.Layer):
         if not self.set_davg_zero:
             self.davg = np.array(all_davg)
         self.dstd = np.array(all_dstd)
-
-        np.save("tf", self.davg)
-
+        
         self.t_avg = paddle.to_tensor(self.davg, dtype = GLOBAL_NP_FLOAT_PRECISION)
         self.t_std = paddle.to_tensor(self.dstd, dtype = GLOBAL_NP_FLOAT_PRECISION)
 

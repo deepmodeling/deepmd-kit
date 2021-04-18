@@ -26,7 +26,8 @@ class DeepEval:
         load_prefix: str = "load",
         default_tf_graph: bool = False
     ):
-        ##### hard code, should use dy2stat, avoid to build model #######
+        ##### Hard code, will change to use dy2stat, avoid to build model #######
+        ##### Now use paddle.load temporarily#######
         with open("out.json", 'r') as load_f:
             jdata = json.load(load_f)
         
