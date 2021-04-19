@@ -70,7 +70,7 @@ class TestModel(unittest.TestCase):
                            t_box, 
                            t_mesh,
                            t_fparam,
-                           suffix = "se_r", 
+                           suffix = "se_t", 
                            reuse = False)
         energy = model_pred['energy']
         force  = model_pred['force']
