@@ -55,16 +55,16 @@ def _generate_descrpt_from_param_dict(descrpt_param):
         descrpt_param.pop(kk, None)
     if descrpt_type == 'loc_frame':
         descrpt = DescrptLocFrame(**descrpt_param)
-    elif descrpt_type == 'se_a' :            
+    elif descrpt_type == 'se_e2_a' or descrpt_type == 'se_a' :
         descrpt = DescrptSeA(**descrpt_param)
-    elif descrpt_type == 'se_a_3be' or descrpt_type == 'se_at' or descrpt_type == 'se_t' :
+    elif descrpt_type == 'se_e2_r' or descrpt_type == 'se_r' :
+        descrpt = DescrptSeR(**descrpt_param)
+    elif descrpt_type == 'se_e3' or descrpt_type == 'se_at' or descrpt_type == 'se_a_3be' :
         descrpt = DescrptSeT(**descrpt_param)
     elif descrpt_type == 'se_a_tpe' or descrpt_type == 'se_a_ebd' :
         descrpt = DescrptSeAEbd(**descrpt_param)
     elif descrpt_type == 'se_a_ef' :
         descrpt = DescrptSeAEf(**descrpt_param)
-    elif descrpt_type == 'se_r' :
-        descrpt = DescrptSeR(**descrpt_param)
     elif descrpt_type == 'se_ar' :
         descrpt = DescrptSeAR(descrpt_param)
     else :

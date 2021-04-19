@@ -177,9 +177,9 @@ def descrpt_variant_type_args():
     
     return Variant("type", [
         Argument("loc_frame", dict, descrpt_local_frame_args()),
-        Argument("se_a", dict, descrpt_se_a_args()),
-        Argument("se_r", dict, descrpt_se_r_args()),
-        Argument("se_t", dict, descrpt_se_t_args(), alias = ['se_at', 'se_a_3be']),
+        Argument("se_e2_a", dict, descrpt_se_a_args(), alias = ['se_a']),
+        Argument("se_e2_r", dict, descrpt_se_r_args(), alias = ['se_r']),
+        Argument("se_e3", dict, descrpt_se_t_args(), alias = ['se_at', 'se_a_3be', 'se_t']),
         Argument("se_a_tpe", dict, descrpt_se_a_tpe_args(), alias = ['se_a_ebd']),
         Argument("hybrid", dict, descrpt_hybrid_args()),
     ], doc = doc_descrpt_type)
@@ -553,7 +553,21 @@ def gen_doc(*, make_anchor=True, make_link=True, **kwargs):
     return "\n\n".join(ptr)
 
 
+def normalize_hybrid_list(hy_list):
+    new_list = []
+    base = Argument("base", dict, [], [descrpt_variant_type_args()], doc = "")
+    for ii in range(len(hy_list)):
+        data = base.normalize_value(hy_list[ii], trim_pattern="_*")
+        base.check_value(data, strict=True)
+        new_list.append(data)
+    return new_list
+
+
 def normalize(data):
+    if "hybrid" == data["model"]["descriptor"]["type"]:
+        data["model"]["descriptor"]["list"] \
+            = normalize_hybrid_list(data["model"]["descriptor"]["list"])
+
     ma = model_args()
     lra = learning_rate_args()
     la = loss_args()
