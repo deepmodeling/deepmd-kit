@@ -162,16 +162,16 @@ def descrpt_hybrid_args():
 
 def descrpt_variant_type_args():
     link_lf = make_link('loc_frame', 'model/descriptor[loc_frame]')
-    link_se_a = make_link('se_a', 'model/descriptor[se_a]')
-    link_se_r = make_link('se_r', 'model/descriptor[se_r]')
-    link_se_t = make_link('se_t', 'model/descriptor[se_t]')
+    link_se_e2_a = make_link('se_e2_a', 'model/descriptor[se_e2_a]')
+    link_se_e2_r = make_link('se_e2_r', 'model/descriptor[se_e2_r]')
+    link_se_e3 = make_link('se_e3', 'model/descriptor[se_e3]')
     link_se_a_tpe = make_link('se_a_tpe', 'model/descriptor[se_a_tpe]')
     link_hybrid = make_link('hybrid', 'model/descriptor[hybrid]')
     doc_descrpt_type = f'The type of the descritpor. See explanation below. \n\n\
 - `loc_frame`: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.\n\n\
-- `se_a`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor.\n\n\
-- `se_r`: Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor.\n\n\
-- `se_t`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Three-body embedding will be used by this descriptor.\n\n\
+- `se_e2_a`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor.\n\n\
+- `se_e2_r`: Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor.\n\n\
+- `se_e3`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Three-body embedding will be used by this descriptor.\n\n\
 - `se_a_tpe`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Type embedding will be used by this descriptor.\n\n\
 - `hybrid`: Concatenate of a list of descriptors as a new descriptor.'
     
