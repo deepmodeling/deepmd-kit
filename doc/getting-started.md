@@ -390,7 +390,7 @@ where `Df_i` is the absolute model deviation of the force on atom `i`, `|f_i|` i
 - When using the `atomic` key word of `deepmd` is set, one should not use this pair style with MPI parallelization.
 
 
-### Long-range interaction
+#### Long-range interaction
 The reciprocal space part of the long-range interaction can be calculated by LAMMPS command `kspace_style`. To use it with DeePMD-kit, one writes 
 ```bash
 pair_style	deepmd graph.pb
