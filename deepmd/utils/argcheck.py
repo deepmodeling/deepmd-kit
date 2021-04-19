@@ -553,7 +553,21 @@ def gen_doc(*, make_anchor=True, make_link=True, **kwargs):
     return "\n\n".join(ptr)
 
 
+def normalize_hybrid_list(hy_list):
+    new_list = []
+    base = Argument("base", dict, [], [descrpt_variant_type_args()], doc = "")
+    for ii in range(len(hy_list)):
+        data = base.normalize_value(hy_list[ii], trim_pattern="_*")
+        base.check_value(data, strict=True)
+        new_list.append(data)
+    return new_list
+
+
 def normalize(data):
+    if "hybrid" == data["model"]["descriptor"]["type"]:
+        data["model"]["descriptor"]["list"] \
+            = normalize_hybrid_list(data["model"]["descriptor"]["list"])
+
     ma = model_args()
     lra = learning_rate_args()
     la = loss_args()
