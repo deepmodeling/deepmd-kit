@@ -4,7 +4,7 @@ from deepmd.env import tf
 from common import Data,gen_data, j_loader
 
 from deepmd.utils.data_system import DataSystem
-from deepmd.descriptor import DescrptSeAT
+from deepmd.descriptor import DescrptSeT
 from deepmd.fit import EnerFitting
 from deepmd.model import EnerModel
 from deepmd.common import j_must_have
@@ -36,7 +36,7 @@ class TestModel(unittest.TestCase):
         numb_test = 1
         
         jdata['model']['descriptor'].pop('type', None)        
-        descrpt = DescrptSeAT(**jdata['model']['descriptor'])
+        descrpt = DescrptSeT(**jdata['model']['descriptor'])
         jdata['model']['fitting_net']['descrpt'] = descrpt
         fitting = EnerFitting(**jdata['model']['fitting_net'])
         model = EnerModel(descrpt, fitting)
