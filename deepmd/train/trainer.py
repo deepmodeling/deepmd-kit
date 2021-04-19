@@ -568,7 +568,7 @@ class DPTrainer (object):
     @staticmethod
     def print_header(fp, train_results, valid_results):
         print_str = ''
-        print_str += "# %5s" % 'batch'
+        print_str += "# %5s" % 'step'
         if valid_results is not None:
             prop_fmt =  '   %11s %11s'
             for k in train_results.keys():
