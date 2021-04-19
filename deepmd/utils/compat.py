@@ -12,7 +12,6 @@ def convert_input_v0_v1(
     jdata: Dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
 ) -> Dict[str, Any]:
     """Convert input from v0 format to v1.
-
     Parameters
     ----------
     jdata : Dict[str, Any]
@@ -21,12 +20,12 @@ def convert_input_v0_v1(
         whether to show deprecation warning, by default True
     dump : Optional[Union[str, Path]], optional
         whether to dump converted file, by default None
-
     Returns
     -------
     Dict[str, Any]
         converted output
     """
+
     output = {}
     if "with_distrib" in jdata:
         output["with_distrib"] = jdata["with_distrib"]
@@ -35,18 +34,16 @@ def convert_input_v0_v1(
     output["loss"] = _loss(jdata)
     output["training"] = _training(jdata)
     if warning:
-        _warnning_input_v0_v1(dump)
+        _warning_input_v0_v1(dump)
     if dump is not None:
         with open(dump, "w") as fp:
             json.dump(output, fp, indent=4)
     return output
 
 
-def _warnning_input_v0_v1(fname: Optional[Union[str, Path]]):
-    msg = (
-        "It seems that you are using a deepmd-kit input of version 0.x.x, "
-        "which is deprecated. we have converted the input to >1.0.0 compatible"
-    )
+def _warning_input_v0_v1(fname: Optional[Union[str, Path]]):
+    msg = "It seems that you are using a deepmd-kit input of version 0.x.x, " \
+          "which is deprecated. we have converted the input to >2.0.0 compatible"
     if fname is not None:
         msg += f", and output it to file {fname}"
     warnings.warn(msg)
@@ -54,14 +51,12 @@ def _warnning_input_v0_v1(fname: Optional[Union[str, Path]]):
 
 def _model(jdata: Dict[str, Any], smooth: bool) -> Dict[str, Dict[str, Any]]:
     """Convert data to v1 input for non-smooth model.
-
     Parameters
     ----------
     jdata : Dict[str, Any]
         parsed input json/yaml data
     smooth : bool
         whether to use smooth or non-smooth descriptor version
-
     Returns
     -------
     Dict[str, Dict[str, Any]]
@@ -78,12 +73,10 @@ def _model(jdata: Dict[str, Any], smooth: bool) -> Dict[str, Dict[str, Any]]:
 
 def _nonsmth_descriptor(jdata: Dict[str, Any]) -> Dict[str, Any]:
     """Convert data to v1 input for non-smooth descriptor.
-
     Parameters
     ----------
     jdata : Dict[str, Any]
         parsed input json/yaml data
-
     Returns
     -------
     Dict[str, Any]
@@ -97,12 +90,10 @@ def _nonsmth_descriptor(jdata: Dict[str, Any]) -> Dict[str, Any]:
 
 def _smth_descriptor(jdata: Dict[str, Any]) -> Dict[str, Any]:
     """Convert data to v1 input for smooth descriptor.
-
     Parameters
     ----------
     jdata : Dict[str, Any]
         parsed input json/yaml data
-
     Returns
     -------
     Dict[str, Any]
@@ -127,12 +118,10 @@ def _smth_descriptor(jdata: Dict[str, Any]) -> Dict[str, Any]:
 
 def _fitting_net(jdata: Dict[str, Any]) -> Dict[str, Any]:
     """Convert data to v1 input for fitting net.
-
     Parameters
     ----------
     jdata : Dict[str, Any]
         parsed input json/yaml data
-
     Returns
     -------
     Dict[str, Any]
@@ -154,12 +143,10 @@ def _fitting_net(jdata: Dict[str, Any]) -> Dict[str, Any]:
 
 def _learning_rate(jdata: Dict[str, Any]) -> Dict[str, Any]:
     """Convert data to v1 input for learning rate section.
-
     Parameters
     ----------
     jdata : Dict[str, Any]
         parsed input json/yaml data
-
     Returns
     -------
     Dict[str, Any]
@@ -173,12 +160,10 @@ def _learning_rate(jdata: Dict[str, Any]) -> Dict[str, Any]:
 
 def _loss(jdata: Dict[str, Any]) -> Dict[str, Any]:
     """Convert data to v1 input for loss function.
-
     Parameters
     ----------
     jdata : Dict[str, Any]
         parsed input json/yaml data
-
     Returns
     -------
     Dict[str, Any]
@@ -206,12 +191,10 @@ def _loss(jdata: Dict[str, Any]) -> Dict[str, Any]:
 
 def _training(jdata: Dict[str, Any]) -> Dict[str, Any]:
     """Convert data to v1 input for training.
-
     Parameters
     ----------
     jdata : Dict[str, Any]
         parsed input json/yaml data
-
     Returns
     -------
     Dict[str, Any]
@@ -241,7 +224,6 @@ def _training(jdata: Dict[str, Any]) -> Dict[str, Any]:
 
 def _jcopy(src: Dict[str, Any], dst: Dict[str, Any], keys: Sequence[str]):
     """Copy specified keys from one dict to another.
-
     Parameters
     ----------
     src : Dict[str, Any]
@@ -255,3 +237,62 @@ def _jcopy(src: Dict[str, Any], dst: Dict[str, Any], keys: Sequence[str]):
     """
     for k in keys:
         dst[k] = src[k]
+
+
+def convert_input_v1_v2(jdata: Dict[str, Any],
+                        warning: bool = True,
+                        dump: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
+
+    tr_cfg = jdata["training"]
+    tr_data_keys = {
+        "systems",
+        "set_prefix",
+        "batch_size",
+        "sys_prob",
+        "auto_prob",
+        # alias included
+        "sys_weights",
+        "auto_prob_style"
+    }
+
+    tr_data_cfg = {k: v for k, v in tr_cfg.items() if k in tr_data_keys}
+    new_tr_cfg = {k: v for k, v in tr_cfg.items() if k not in tr_data_keys}
+    new_tr_cfg["training_data"] = tr_data_cfg
+
+    jdata["training"] = new_tr_cfg
+
+    if warning:
+        _warning_input_v1_v2(dump)
+    if dump is not None:
+        with open(dump, "w") as fp:
+            json.dump(jdata, fp, indent=4)
+
+    return jdata
+
+
+def _warning_input_v1_v2(fname: Optional[Union[str, Path]]):
+    msg = "It seems that you are using a deepmd-kit input of version 1.x.x, " \
+          "which is deprecated. we have converted the input to >2.0.0 compatible"
+    if fname is not None:
+        msg += f", and output it to file {fname}"
+    warnings.warn(msg)
+
+
+def updata_deepmd_input(jdata: Dict[str, Any],
+                        warning: bool = True,
+                        dump: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
+    def is_deepmd_v0_input(jdata):
+        return "model" not in jdata.keys()
+
+    def is_deepmd_v1_input(jdata):
+        return "systems" in j_must_have(jdata, "training").keys()
+
+    if is_deepmd_v0_input(jdata):
+        jdata = convert_input_v0_v1(jdata, warning, None)
+        jdata = convert_input_v1_v2(jdata, False, dump)
+    elif is_deepmd_v1_input(jdata):
+        jdata = convert_input_v1_v2(jdata, warning, dump)
+    else:
+        pass
+
+    return jdata
