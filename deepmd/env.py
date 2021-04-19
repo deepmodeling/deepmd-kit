@@ -4,9 +4,10 @@ import os
 from pathlib import Path
 import logging
 import platform
-from typing import Tuple, TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Any
 import numpy as np
 from imp import reload
+from configparser import ConfigParser
 
 if TYPE_CHECKING:
     from types import ModuleType
@@ -19,8 +20,22 @@ try:
 except ImportError:
     import tensorflow as tf
 
-SHARED_LIB_MODULE = "op"
+__all__ = [
+    "GLOBAL_CONFIG",
+    "GLOBAL_TF_FLOAT_PRECISION",
+    "GLOBAL_NP_FLOAT_PRECISION",
+    "GLOBAL_ENER_FLOAT_PRECISION",
+    "global_float_prec",
+    "global_cvt_2_tf_float",
+    "global_cvt_2_ener_float",
+    "MODEL_VERSION",
+    "SHARED_LIB_MODULE",
+    "default_tf_session_config",
+    "op_module",
+    "op_grads_module",
+]
 
+SHARED_LIB_MODULE = "op"
 
 def set_env_if_empty(key: str, value: str, verbose: bool = True):
     """Set environment variable only if it is empty.
@@ -103,6 +118,7 @@ def get_tf_session_config() -> Any:
         intra_op_parallelism_threads=intra, inter_op_parallelism_threads=inter
     )
 
+default_tf_session_config = get_tf_session_config()
 
 def get_module(module_name: str) -> "ModuleType":
     """Load force module.
@@ -139,4 +155,71 @@ def get_module(module_name: str) -> "ModuleType":
 
 op_module = get_module("libop_abi")
 op_grads_module = get_module("libop_grads")
-default_tf_session_config = get_tf_session_config()
+
+
+def _get_package_constants(
+    config_file: Path = Path(__file__).parent / "pkg_config/run_config.ini",
+) -> Dict[str, str]:
+    """Read package constants set at compile time by CMake to dictionary.
+
+    Parameters
+    ----------
+    config_file : str, optional
+        path to CONFIG file, by default "config/run_config.ini"
+
+    Returns
+    -------
+    Dict[str, str]
+        dictionary with package constants
+    """
+    config = ConfigParser()
+    config.read(config_file)
+    return dict(config.items("CONFIG"))
+
+GLOBAL_CONFIG = _get_package_constants()
+MODEL_VERSION = GLOBAL_CONFIG["model_version"]
+
+if GLOBAL_CONFIG["precision"] == "-DHIGH_PREC":
+    GLOBAL_TF_FLOAT_PRECISION = tf.float64
+    GLOBAL_NP_FLOAT_PRECISION = np.float64
+    GLOBAL_ENER_FLOAT_PRECISION = np.float64
+    global_float_prec = "double"
+else:
+    GLOBAL_TF_FLOAT_PRECISION = tf.float32
+    GLOBAL_NP_FLOAT_PRECISION = np.float32
+    GLOBAL_ENER_FLOAT_PRECISION = np.float64
+    global_float_prec = "float"
+
+
+def global_cvt_2_tf_float(xx: tf.Tensor) -> tf.Tensor:
+    """Cast tensor to globally set TF precision.
+
+    Parameters
+    ----------
+    xx : tf.Tensor
+        input tensor
+
+    Returns
+    -------
+    tf.Tensor
+        output tensor cast to `GLOBAL_TF_FLOAT_PRECISION`
+    """
+    return tf.cast(xx, GLOBAL_TF_FLOAT_PRECISION)
+
+
+def global_cvt_2_ener_float(xx: tf.Tensor) -> tf.Tensor:
+    """Cast tensor to globally set energy precision.
+
+    Parameters
+    ----------
+    xx : tf.Tensor
+        input tensor
+
+    Returns
+    -------
+    tf.Tensor
+        output tensor cast to `GLOBAL_ENER_FLOAT_PRECISION`
+    """
+    return tf.cast(xx, GLOBAL_ENER_FLOAT_PRECISION)
+
+

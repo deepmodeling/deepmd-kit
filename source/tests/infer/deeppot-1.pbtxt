@@ -8876,6 +8876,27 @@ node {
   }
 }
 node {
+  name: "model_attr/model_version"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_STRING
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_STRING
+        tensor_shape {
+        }
+        string_val: "1.0"
+      }
+    }
+  }
+}
+node {
   name: "model_attr/tmap"
   op: "Const"
   attr {
@@ -10515,8 +10536,8 @@ node {
   }
 }
 node {
-  name: "DescrptSeA"
-  op: "DescrptSeA"
+  name: "ProdEnvMatA"
+  op: "ProdEnvMatA"
   input: "Reshape_2"
   input: "Reshape_4"
   input: "t_natoms"
@@ -10570,7 +10591,7 @@ node {
 node {
   name: "o_nlist"
   op: "Identity"
-  input: "DescrptSeA:3"
+  input: "ProdEnvMatA:3"
   attr {
     key: "T"
     value {
@@ -10581,7 +10602,7 @@ node {
 node {
   name: "o_rij"
   op: "Identity"
-  input: "DescrptSeA:2"
+  input: "ProdEnvMatA:2"
   attr {
     key: "T"
     value {
@@ -10592,7 +10613,7 @@ node {
 node {
   name: "o_rmat_deriv"
   op: "Identity"
-  input: "DescrptSeA:1"
+  input: "ProdEnvMatA:1"
   attr {
     key: "T"
     value {
@@ -10603,7 +10624,7 @@ node {
 node {
   name: "Reshape_5"
   op: "Reshape"
-  input: "DescrptSeA"
+  input: "ProdEnvMatA"
   input: "Reshape_5/shape"
   attr {
     key: "T"

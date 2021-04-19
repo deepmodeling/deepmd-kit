@@ -71,7 +71,7 @@ protected:
 TEST_F(TestMapAparam, cpu)
 {
   std::vector<double> output(nloc * nnei * numb_aparam);
-  map_aparam_cpu(
+  deepmd::map_aparam_cpu(
       &output[0],
       &aparam[0],
       &nlist[0],

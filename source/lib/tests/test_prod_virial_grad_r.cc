@@ -4,6 +4,7 @@
 #include "env_mat.h"
 #include "neighbor_list.h"
 #include "prod_virial_grad.h"
+#include "device.h"
 
 class TestProdVirialGradR : public ::testing::Test
 {
@@ -64,7 +65,7 @@ protected:
       }
       std::vector<double > t_env, t_env_deriv, t_rij;
       // compute env_mat and its deriv, record
-      env_mat_a_cpu<double>(t_env, t_env_deriv, t_rij, posi_cpy, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
+      deepmd::env_mat_a_cpu<double>(t_env, t_env_deriv, t_rij, posi_cpy, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
       for (int jj = 0; jj < ndescrpt; ++jj){
 	env[ii*ndescrpt+jj] = t_env[jj];
 	for (int dd = 0; dd < 3; ++dd){
@@ -88,7 +89,7 @@ TEST_F(TestProdVirialGradR, cpu)
 {
   std::vector<double> grad_net(nloc * ndescrpt);
   int n_a_sel = nnei;
-  prod_virial_grad_r_cpu<double> (&grad_net[0], &grad[0], &env_deriv[0], &rij[0], &nlist[0], nloc, nnei);
+  deepmd::prod_virial_grad_r_cpu<double> (&grad_net[0], &grad[0], &env_deriv[0], &rij[0], &nlist[0], nloc, nnei);
   EXPECT_EQ(grad_net.size(), nloc * ndescrpt);
   EXPECT_EQ(grad_net.size(), expected_grad_net.size());
   for (int jj = 0; jj < grad_net.size(); ++jj){
@@ -99,3 +100,36 @@ TEST_F(TestProdVirialGradR, cpu)
   // }
   // printf("\n");
 }
+
+#if GOOGLE_CUDA
+TEST_F(TestProdVirialGradR, gpu)
+{
+  std::vector<double> grad_net(nloc * ndescrpt);
+  int n_a_sel = nnei;
+  int * nlist_dev = NULL;
+  double * grad_net_dev = NULL, * grad_dev = NULL, * env_deriv_dev = NULL, * rij_dev = NULL;
+
+  deepmd::malloc_device_memory_sync(nlist_dev, nlist);
+  deepmd::malloc_device_memory_sync(grad_dev, grad);
+  deepmd::malloc_device_memory_sync(env_deriv_dev, env_deriv);
+  deepmd::malloc_device_memory_sync(rij_dev, rij);
+  deepmd::malloc_device_memory(grad_net_dev, nloc * ndescrpt);
+  deepmd::prod_virial_grad_r_gpu_cuda<double>(grad_net_dev, grad_dev, env_deriv_dev, rij_dev, nlist_dev, nloc, nnei);
+  deepmd::memcpy_device_to_host(grad_net_dev, grad_net);
+  deepmd::delete_device_memory(nlist_dev);
+  deepmd::delete_device_memory(grad_dev);
+  deepmd::delete_device_memory(env_deriv_dev);
+  deepmd::delete_device_memory(rij_dev);
+  deepmd::delete_device_memory(grad_net_dev);
+
+  EXPECT_EQ(grad_net.size(), nloc * ndescrpt);
+  EXPECT_EQ(grad_net.size(), expected_grad_net.size());
+  for (int jj = 0; jj < grad_net.size(); ++jj){
+    EXPECT_LT(fabs(grad_net[jj] - expected_grad_net[jj]) , 1e-5);
+  }  
+  // for (int jj = 0; jj < nloc * ndescrpt; ++jj){
+  //   printf("%8.5f, ", grad_net[jj]);
+  // }
+  // printf("\n");
+}
+#endif // GOOGLE_CUDA

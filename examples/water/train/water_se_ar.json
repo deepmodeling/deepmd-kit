@@ -3,8 +3,10 @@
     "model": {
 	"type_map":	["O", "H"],
 	"descriptor" :{
-	    "type":		"se_ar",
-	    "a" : {
+	    "type":		"hybrid",
+	    "list": [
+	    {
+		"type":		"se_a",
 		"sel":		[20, 40],
 		"rcut_smth":	3.50,
 		"rcut":		4.00,
@@ -14,7 +16,8 @@
 		"seed":		1,
 		"_comment":	" that's all"
 	    },
-	    "r": {
+	    {
+		"type":		"se_r",
 		"sel":		[46, 92],
 		"rcut_smth":	1.00,
 		"rcut":		6.00,
@@ -23,6 +26,7 @@
 		"seed":		1,
 		"_comment":	" that's all"
 	    }
+	    ]
 	},
 	"fitting_net" : {
 	    "neuron":		[240, 240, 240],
@@ -67,7 +71,6 @@
 	"numb_test":	10,
 	"save_freq":	1000,
 	"save_ckpt":	"model.ckpt",
-	"load_ckpt":	"model.ckpt",
 	"disp_training":true,
 	"time_training":true,
 	"profiling":	false,

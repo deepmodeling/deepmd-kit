@@ -2,7 +2,7 @@
 #include <iostream>
 
 template<typename FPTYPE>
-void soft_min_switch_force_cpu(
+void deepmd::soft_min_switch_force_cpu(
     FPTYPE * force, 
     const FPTYPE * du, 
     const FPTYPE * sw_deriv, 
@@ -41,7 +41,7 @@ void soft_min_switch_force_cpu(
 }
 
 template
-void soft_min_switch_force_cpu<double>(
+void deepmd::soft_min_switch_force_cpu<double>(
     double * force, 
     const double * du, 
     const double * sw_deriv, 
@@ -51,7 +51,7 @@ void soft_min_switch_force_cpu<double>(
     const int nnei);
 
 template
-void soft_min_switch_force_cpu<float>(
+void deepmd::soft_min_switch_force_cpu<float>(
     float * force, 
     const float * du, 
     const float * sw_deriv, 

@@ -1,7 +1,7 @@
 #include "soft_min_switch_virial_grad.h"
 
 template<typename FPTYPE>
-void soft_min_switch_virial_grad_cpu(
+void deepmd::soft_min_switch_virial_grad_cpu(
     FPTYPE * grad_net, 
     const FPTYPE * grad,
     const FPTYPE * sw_deriv, 
@@ -41,7 +41,7 @@ void soft_min_switch_virial_grad_cpu(
 }
 
 template
-void soft_min_switch_virial_grad_cpu<double>(
+void deepmd::soft_min_switch_virial_grad_cpu<double>(
     double * grad_net, 
     const double * grad,
     const double * sw_deriv, 
@@ -51,7 +51,7 @@ void soft_min_switch_virial_grad_cpu<double>(
     const int nnei);
 
 template
-void soft_min_switch_virial_grad_cpu<float>(
+void deepmd::soft_min_switch_virial_grad_cpu<float>(
     float * grad_net, 
     const float * grad,
     const float * sw_deriv, 

@@ -1,5 +1,7 @@
 #pragma once
 
+namespace deepmd{
+
 template<typename FPTYPE>
 void prod_force_a_cpu(
     FPTYPE * force, 
@@ -41,3 +43,5 @@ void prod_force_r_gpu_cuda(
     const int nall, 
     const int nnei);
 #endif // GOOGLE_CUDA
+
+}

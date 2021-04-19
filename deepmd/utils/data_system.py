@@ -19,14 +19,17 @@ class DeepmdDataSystem() :
     It is implemented with the help of DeepmdData
     """
     def __init__ (self,
-                  systems : List[str], 
+                  systems : List[str],
                   batch_size : int,
                   test_size : int,
                   rcut : float,
                   set_prefix : str = 'set',
                   shuffle_test : bool = True,
-                  type_map : List[str] = None, 
-                  modifier = None) :
+                  type_map : List[str] = None,
+                  modifier = None,
+                  trn_all_set = False,
+                  sys_probs = None,
+                  auto_prob_style ="prob_sys_size") :
         """
         Constructor
         
@@ -48,21 +51,40 @@ class DeepmdDataSystem() :
                 Gives the name of different atom types
         modifier
                 Data modifier that has the method `modify_data`        
-        """
+        trn_all_set
+                Use all sets as training dataset. Otherwise, if the number of sets is more than 1, the last set is left for test.
+        sys_probs: list of float
+            The probabilitis of systems to get the batch.
+            Summation of positive elements of this list should be no greater than 1.
+            Element of this list can be negative, the probability of the corresponding system is determined
+                automatically by the number of batches in the system.
+        auto_prob_style: str
+            Determine the probability of systems automatically. The method is assigned by this key and can be
+            - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()
+            - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system
+            - "prob_sys_size;stt_idx:end_idx:weight;stt_idx:end_idx:weight;..." :
+                                the list of systems is devided into blocks. A block is specified by `stt_idx:end_idx:weight`,
+                                where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system,
+                                the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional
+                                to the number of batches in the system."""
         # init data
         self.rcut = rcut
         self.system_dirs = systems
         self.nsystems = len(self.system_dirs)
         self.data_systems = []
         for ii in self.system_dirs :
-            self.data_systems.append(DeepmdData(ii, 
-                                                set_prefix=set_prefix, 
-                                                shuffle_test=shuffle_test, 
-                                                type_map = type_map, 
-                                                modifier = modifier))
+            self.data_systems.append(
+                DeepmdData(
+                    ii, 
+                    set_prefix=set_prefix, 
+                    shuffle_test=shuffle_test, 
+                    type_map = type_map, 
+                    modifier = modifier, 
+                    trn_all_set = trn_all_set
+                ))
         # batch size
         self.batch_size = batch_size
-        if isinstance(self.batch_size, int) :
+        if isinstance(self.batch_size, int):
             self.batch_size = self.batch_size * np.ones(self.nsystems, dtype=int)
         elif isinstance(self.batch_size, str):
             words = self.batch_size.split(':')
@@ -123,6 +145,10 @@ class DeepmdDataSystem() :
         self.prob_nbatches = [ float(i) for i in self.nbatches] / np.sum(self.nbatches)        
         self.pick_idx = 0
 
+        # derive system probabilities
+        self.sys_probs = None
+        self.set_sys_probs(sys_probs, auto_prob_style)
+
         # check batch and test size
         for ii in range(self.nsystems) :
             chk_ret = self.data_systems[ii].check_batch_size(self.batch_size[ii])
@@ -173,10 +199,7 @@ class DeepmdDataSystem() :
             = np.linalg.lstsq(sys_tynatom, sys_ener, rcond = rcond)
         return energy_shift
 
-
-    def add_dict(self, 
-                 adict : dict
-    ) -> None:
+    def add_dict(self, adict: dict) -> None:
         """
         Add items to the data system by a `dict`.
         `adict` should have items like
@@ -234,9 +257,7 @@ class DeepmdDataSystem() :
         for ii in self.data_systems:
             ii.add(key, ndof, atomic=atomic, must=must, high_prec=high_prec, repeat=repeat, type_sel=type_sel)
 
-    def reduce(self, 
-               key_out,
-               key_in) :
+    def reduce(self, key_out, key_in):
         """
         Generate a new item from the reduction of another atom
 
@@ -248,19 +269,34 @@ class DeepmdDataSystem() :
                 The name of the data item to be reduced
         """
         for ii in self.data_systems:
-            ii.reduce(key_out, k_in)
+            ii.reduce(key_out, key_in)
 
-    def get_data_dict(self, 
-                      ii : int = 0) -> dict:
+    def get_data_dict(self, ii: int = 0) -> dict:
         return self.data_systems[ii].get_data_dict()
 
+    def set_sys_probs(self, sys_probs=None,
+                      auto_prob_style: str = "prob_sys_size"):
+        if sys_probs is None :
+            if auto_prob_style == "prob_uniform":
+                prob_v = 1./float(self.nsystems)
+                probs = [prob_v for ii in range(self.nsystems)]
+            elif auto_prob_style == "prob_sys_size":
+                probs = self.prob_nbatches
+            elif auto_prob_style[:14] == "prob_sys_size;":
+                probs = self._prob_sys_size_ext(auto_prob_style)
+            else:
+                raise RuntimeError("Unknown auto prob style: " + auto_prob_style)
+        else:
+            probs = self._process_sys_probs(sys_probs)
+        self.sys_probs = probs
 
     def _get_sys_probs(self,
                        sys_probs,
-                       auto_prob_style) :        
+                       auto_prob_style) :  # depreciated
         if sys_probs is None :
             if auto_prob_style == "prob_uniform" :
-                prob = None
+                prob_v = 1./float(self.nsystems)
+                prob = [prob_v for ii in range(self.nsystems)]
             elif auto_prob_style == "prob_sys_size" :
                 prob = self.prob_nbatches
             elif auto_prob_style[:14] == "prob_sys_size;" :
@@ -271,11 +307,12 @@ class DeepmdDataSystem() :
             prob = self._process_sys_probs(sys_probs)
         return prob
 
-
-    def get_batch (self, 
-                   sys_idx = None,
-                   sys_probs = None,
-                   auto_prob_style = "prob_sys_size") :
+    def get_batch(self, sys_idx : int = None):
+        # batch generation style altered by Ziyao Li:
+        # one should specify the "sys_prob" and "auto_prob_style" params
+        # via set_sys_prob() function. The sys_probs this function uses is
+        # defined as a private variable, self.sys_probs, initialized in __init__().
+        # This is to optimize the (vain) efforts in evaluating sys_probs every batch.
         """
         Get a batch of data from the data systems
 
@@ -285,27 +322,14 @@ class DeepmdDataSystem() :
             The index of system from which the batch is get. 
             If sys_idx is not None, `sys_probs` and `auto_prob_style` are ignored
             If sys_idx is None, automatically determine the system according to `sys_probs` or `auto_prob_style`, see the following.
-        sys_probs: list of float
-            The probabilitis of systems to get the batch.
-            Summation of positive elements of this list should be no greater than 1.
-            Element of this list can be negative, the probability of the corresponding system is determined automatically by the number of batches in the system.
-        auto_prob_style: float
-            Determine the probability of systems automatically. The method is assigned by this key and can be
-            - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()
-            - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system
-            - "prob_sys_size;stt_idx:end_idx:weight;stt_idx:end_idx:weight;..." : 
-                                the list of systems is devided into blocks. A block is specified by `stt_idx:end_idx:weight`, 
-                                where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system,
-                                the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional 
-                                to the number of batches in the system.
         """
         if not hasattr(self, 'default_mesh') :
             self._make_default_mesh()
         if sys_idx is not None :
             self.pick_idx = sys_idx
         else :
-            prob = self._get_sys_probs(sys_probs, auto_prob_style)
-            self.pick_idx = np.random.choice(np.arange(self.nsystems), p = prob)
+            # prob = self._get_sys_probs(sys_probs, auto_prob_style)
+            self.pick_idx = np.random.choice(np.arange(self.nsystems), p=self.sys_probs)
         b_data = self.data_systems[self.pick_idx].get_batch(self.batch_size[self.pick_idx])
         b_data["natoms_vec"] = self.natoms_vec[self.pick_idx]
         b_data["default_mesh"] = self.default_mesh[self.pick_idx]
@@ -314,8 +338,7 @@ class DeepmdDataSystem() :
     # ! altered by Marián Rynik
     def get_test (self, 
                   sys_idx : int = None,
-                  n_test : int = -1
-    ) :
+                  n_test : int = -1) :  # depreciated
         """
         Get test data from the the data systems.
 
@@ -397,27 +420,24 @@ class DeepmdDataSystem() :
             name = '-- ' + name
             return name 
 
-    def print_summary(self, 
-                      run_opt,
-                      sys_probs = None,
-                      auto_prob_style = "prob_sys_size") :
-        prob = self._get_sys_probs(sys_probs, auto_prob_style)
+    def print_summary(self, name) :
         # width 65
         sys_width = 42
-        log.info("---Summary of DataSystem------------------------------------------------")
+        log.info(f"---Summary of DataSystem: {name:13s}-----------------------------------------------")
         log.info("found %d system(s):" % self.nsystems)
-        log.info("%s  " % self._format_name_length('system', sys_width))
-        log.info("%s  %s  %s   %s  %5s" % ('natoms', 'bch_sz', 'n_bch', "n_test", 'prob'))
+        log.info(("%s  " % self._format_name_length('system', sys_width)) + 
+                 ("%6s  %6s  %6s  %5s  %3s" % ('natoms', 'bch_sz', 'n_bch', 'prob', 'pbc')))
         for ii in range(self.nsystems) :
-            log.info("%s  %6d  %6d  %6d  %6d  %5.3f" % 
+            log.info("%s  %6d  %6d  %6d  %5.3f  %3s" % 
                      (self._format_name_length(self.system_dirs[ii], sys_width),
-                     self.natoms[ii], 
-                     # TODO batch size * nbatches = number of structures
-                     self.batch_size[ii],
-                     self.nbatches[ii],
-                     self.test_size[ii],
-                     prob[ii]) )
-        log.info("------------------------------------------------------------------------\n")
+                      self.natoms[ii], 
+                      # TODO batch size * nbatches = number of structures
+                      self.batch_size[ii],
+                      self.nbatches[ii],
+                      self.sys_probs[ii],
+                      "T" if self.data_systems[ii].pbc else "F"
+                     ) )
+        log.info("--------------------------------------------------------------------------------------")
 
     def _make_auto_bs(self, rule) :
         bs = []
@@ -457,9 +477,12 @@ class DeepmdDataSystem() :
         assigned_sum_prob = np.sum(type_filter * sys_probs)
         assert assigned_sum_prob <= 1, "the sum of assigned probability should be less than 1"
         rest_sum_prob = 1. - assigned_sum_prob
-        rest_nbatch = (1 - type_filter) * self.nbatches
-        rest_prob = rest_sum_prob * rest_nbatch / np.sum(rest_nbatch)
-        ret_prob = rest_prob + type_filter * sys_probs
+        if rest_sum_prob != 0 :
+            rest_nbatch = (1 - type_filter) * self.nbatches
+            rest_prob = rest_sum_prob * rest_nbatch / np.sum(rest_nbatch)
+            ret_prob = rest_prob + type_filter * sys_probs
+        else :
+            ret_prob = sys_probs
         assert np.sum(ret_prob) == 1, "sum of probs should be 1"
         return ret_prob
     
@@ -588,7 +611,7 @@ class DataSystem (object) :
             name = '-- ' + name
             return name 
 
-    def print_summary(self, run_opt) :
+    def print_summary(self) :
         tmp_msg = ""
         # width 65
         sys_width = 42

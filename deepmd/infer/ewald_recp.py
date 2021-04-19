@@ -3,11 +3,11 @@ from typing import Tuple, List
 
 from deepmd.env import tf
 from deepmd.common import ClassArg
-from deepmd.run_options import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.run_options import GLOBAL_NP_FLOAT_PRECISION
-from deepmd.run_options import GLOBAL_ENER_FLOAT_PRECISION
-from deepmd.run_options import global_cvt_2_tf_float
-from deepmd.run_options import global_cvt_2_ener_float
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
+from deepmd.env import global_cvt_2_tf_float
+from deepmd.env import global_cvt_2_ener_float
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 

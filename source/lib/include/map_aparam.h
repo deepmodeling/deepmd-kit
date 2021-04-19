@@ -1,5 +1,7 @@
 #pragma once
 
+namespace deepmd{
+  
 template <typename FPTYPE>
 void map_aparam_cpu (
     FPTYPE * output,
@@ -10,3 +12,4 @@ void map_aparam_cpu (
     const int & numb_aparam
     );
 
+}

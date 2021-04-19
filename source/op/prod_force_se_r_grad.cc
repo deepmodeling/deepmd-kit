@@ -81,7 +81,7 @@ public:
       int nlist_iter	= kk * nloc * nnei;
       int grad_net_iter	= kk * nloc * ndescrpt;
       
-      prod_force_grad_r_cpu(
+      deepmd::prod_force_grad_r_cpu(
 	  &grad_net(grad_net_iter),
 	  &grad(grad_iter),
 	  &in_deriv(in_iter),

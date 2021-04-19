@@ -3,7 +3,7 @@
 #include "device.h"
 
 template<typename FPTYPE>
-void gelu_cpu(
+void deepmd::gelu_cpu(
     FPTYPE * out, 
     const FPTYPE * xx, 
     const int size)
@@ -14,7 +14,7 @@ void gelu_cpu(
 }
 
 template<typename FPTYPE>
-void gelu_grad_cpu(
+void deepmd::gelu_grad_cpu(
     FPTYPE * out, 
     const FPTYPE * xx,
     const FPTYPE * dy, 
@@ -27,7 +27,7 @@ void gelu_grad_cpu(
 }
 
 template<typename FPTYPE>
-void gelu_grad_grad_cpu(
+void deepmd::gelu_grad_grad_cpu(
     FPTYPE * out,
     const FPTYPE * xx,
     const FPTYPE * dy, 
@@ -41,9 +41,9 @@ void gelu_grad_grad_cpu(
   }
 }
 
-template void gelu_cpu<float>(float * out, const float * x, const int size);
-template void gelu_cpu<double>(double * out, const double * x, const int size);
-template void gelu_grad_cpu<float>(float * out, const float * x, const float * dy, const int size);
-template void gelu_grad_cpu<double>(double * out, const double * x, const double * dy, const int size);
-template void gelu_grad_grad_cpu<float>(float * out, const float * x, const float * dy, const float * dy_2, const int size);
-template void gelu_grad_grad_cpu<double>(double * out, const double * x, const double * dy, const double * dy_2, const int size);
+template void deepmd::gelu_cpu<float>(float * out, const float * x, const int size);
+template void deepmd::gelu_cpu<double>(double * out, const double * x, const int size);
+template void deepmd::gelu_grad_cpu<float>(float * out, const float * x, const float * dy, const int size);
+template void deepmd::gelu_grad_cpu<double>(double * out, const double * x, const double * dy, const int size);
+template void deepmd::gelu_grad_grad_cpu<float>(float * out, const float * x, const float * dy, const float * dy_2, const int size);
+template void deepmd::gelu_grad_grad_cpu<double>(double * out, const double * x, const double * dy, const double * dy_2, const int size);

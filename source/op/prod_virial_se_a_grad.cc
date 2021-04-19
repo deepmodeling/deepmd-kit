@@ -95,13 +95,14 @@ public:
       int nlist_iter	= kk * nloc * nnei;
       int grad_net_iter	= kk * nloc * ndescrpt;
 
-      prod_virial_grad_a_cpu(&grad_net(grad_net_iter),
-			     &grad(grad_iter),
-			     &in_deriv(in_iter),
-			     &rij(rij_iter),
-			     &nlist(nlist_iter),
-			     nloc,
-			     nnei);
+      deepmd::prod_virial_grad_a_cpu(
+	  &grad_net(grad_net_iter),
+	  &grad(grad_iter),
+	  &in_deriv(in_iter),
+	  &rij(rij_iter),
+	  &nlist(nlist_iter),
+	  nloc,
+	  nnei);
     }
   }
 private:
