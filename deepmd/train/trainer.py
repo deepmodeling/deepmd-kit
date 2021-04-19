@@ -11,7 +11,7 @@ from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.fit import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
 from deepmd.descriptor import DescrptLocFrame
 from deepmd.descriptor import DescrptSeA
-from deepmd.descriptor import DescrptSeAT
+from deepmd.descriptor import DescrptSeT
 from deepmd.descriptor import DescrptSeAEbd
 from deepmd.descriptor import DescrptSeAEf
 from deepmd.descriptor import DescrptSeR
@@ -57,8 +57,8 @@ def _generate_descrpt_from_param_dict(descrpt_param):
         descrpt = DescrptLocFrame(**descrpt_param)
     elif descrpt_type == 'se_a' :            
         descrpt = DescrptSeA(**descrpt_param)
-    elif descrpt_type == 'se_a_3be' or descrpt_type == 'se_at' :
-        descrpt = DescrptSeAT(**descrpt_param)
+    elif descrpt_type == 'se_a_3be' or descrpt_type == 'se_at' or descrpt_type == 'se_t' :
+        descrpt = DescrptSeT(**descrpt_param)
     elif descrpt_type == 'se_a_tpe' or descrpt_type == 'se_a_ebd' :
         descrpt = DescrptSeAEbd(**descrpt_param)
     elif descrpt_type == 'se_a_ef' :
