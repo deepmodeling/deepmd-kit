@@ -1,7 +1,8 @@
 import numpy as np
 
-from deepmd.env import tf
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import tf, paddle
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION, GLOBAL_PD_FLOAT_PRECISION
+
 
 def one_layer(inputs, 
               outputs_size, 
@@ -91,7 +92,7 @@ def embedding_net(xx,
         If the netowk is trainable
     """
     outputs_size = [1] + network_size
-    
+
     for ii in range(1, len(outputs_size)):
         w = tf.get_variable('matrix_'+str(ii)+name_suffix, 
                             [outputs_size[ii - 1], outputs_size[ii]], 
@@ -131,6 +132,8 @@ def embedding_net(xx,
 
     return xx
 
+
+
 def variable_summaries(var: tf.Variable, name: str):
     """Attach a lot of summaries to a Tensor (for TensorBoard visualization).
 
@@ -151,3 +154,135 @@ def variable_summaries(var: tf.Variable, name: str):
         tf.summary.scalar('max', tf.reduce_max(var))
         tf.summary.scalar('min', tf.reduce_min(var))
         tf.summary.histogram('histogram', var)
+
+
+class OneLayer(paddle.nn.Layer):
+    def __init__(self,
+                 in_features,
+                 out_features,
+                 activation_fn=paddle.nn.functional.tanh, 
+                 precision = GLOBAL_PD_FLOAT_PRECISION, 
+                 stddev=1.0,
+                 bavg=0.0,
+                 name='linear', 
+                 seed=None, 
+                 use_timestep = False, 
+                 trainable = True,
+                 useBN = False):
+        super(OneLayer, self).__init__(name)
+        self.out_features = out_features
+        self.activation_fn = activation_fn
+        self.use_timestep = use_timestep
+        self.useBN = useBN
+        self.seed = seed
+        paddle.seed(seed)
+        
+        self.weight = self.create_parameter(
+            shape=[in_features, out_features],
+            dtype = precision,
+            is_bias= False,
+            default_initializer = paddle.nn.initializer.Normal(std = stddev/np.sqrt(in_features+out_features)))
+        self.bias = self.create_parameter(
+            shape=[out_features],
+            dtype = precision,
+            is_bias=True,
+            default_initializer = paddle.nn.initializer.Normal(mean = bavg, std = stddev))
+        if self.activation_fn != None and self.use_timestep :
+            self.idt = self.create_parameter(
+                                  shape=[out_features],
+                                  dtype=precision,
+                                  default_initializer = paddle.nn.initializer.Normal(mean = 0.1, std = 0.001))
+
+
+    def forward(self, input):
+        hidden = paddle.fluid.layers.matmul(input, self.weight) + self.bias
+        if self.activation_fn != None:
+            if self.useBN:
+                None
+                # hidden_bn = self._batch_norm(hidden, name=name+'_normalization', reuse=reuse)   
+                # return activation_fn(hidden_bn)
+            else:
+                if self.use_timestep :
+                    out = paddle.reshape(self.activation_fn(hidden), [-1, self.out_features]) * self.idt
+                else :
+                    out = paddle.reshape(self.activation_fn(hidden), [-1, self.out_features])
+        else:
+            if self.useBN:
+                None
+                # return self._batch_norm(hidden, name=name+'_normalization', reuse=reuse)
+            else:
+                out = hidden
+        return out
+
+
+
+class EmbeddingNet(paddle.nn.Layer):
+    """
+    Parameters
+    ----------
+    xx : Tensor   
+        Input tensor of shape [-1,1]
+    network_size: list of int
+        Size of the embedding network. For example [16,32,64]
+    precision: 
+        Precision of network weights. For example, tf.float64
+    activation_fn:
+        Activation function
+    resnet_dt: boolean
+        Using time-step in the ResNet construction
+    name_suffix: str
+        The name suffix append to each variable. 
+    stddev: float
+        Standard deviation of initializing network parameters
+    bavg: float
+        Mean of network intial bias
+    seed: int
+        Random seed for initializing network parameters
+    trainable: boolean
+        If the netowk is trainable
+    """
+    def __init__(self,
+                 network_size, 
+                 precision, 
+                 activation_fn = paddle.nn.functional.tanh, 
+                 resnet_dt = False, 
+                 seed = None, 
+                 trainable = True, 
+                 stddev = 1.0, 
+                 bavg = 0.0, 
+                 name=''):
+        super(EmbeddingNet, self).__init__(name)
+        self.outputs_size = [1] + network_size
+        self.activation_fn = activation_fn
+        self.seed = seed
+        paddle.seed(seed)
+
+        outputs_size = self.outputs_size
+        weight = []
+        bias = []
+        for ii in range(1, len(outputs_size)):
+            weight.append(self.create_parameter(
+                                shape = [outputs_size[ii-1], outputs_size[ii]], 
+                                dtype = precision,
+                                is_bias= False,
+                                default_initializer = paddle.nn.initializer.Normal(std = stddev/np.sqrt(outputs_size[ii]+outputs_size[ii-1]))))
+            bias.append(self.create_parameter(
+                                shape = [1, outputs_size[ii]], 
+                                dtype = precision,
+                                is_bias= True,
+                                default_initializer = paddle.nn.initializer.Normal(mean = bavg, std = stddev)))
+
+        self.weight = paddle.nn.ParameterList(weight)
+        self.bias = paddle.nn.ParameterList(bias)
+
+
+    def forward(self, xx):
+        outputs_size = self.outputs_size
+        for ii in range(1, len(outputs_size)):
+            hidden = paddle.reshape(self.activation_fn(paddle.fluid.layers.matmul(xx, self.weight[ii-1]) + self.bias[ii-1]), [-1, outputs_size[ii]])
+            if outputs_size[ii] == outputs_size[ii-1] * 2: 
+                xx = paddle.concat([xx,xx], axis=1) + hidden
+            else:
+                xx = hidden
+
+        return xx

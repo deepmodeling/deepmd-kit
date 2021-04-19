@@ -1,5 +1,5 @@
 import numpy as np
-from deepmd.env import tf
+from deepmd.env import paddle
 from deepmd.common import ClassArg
 
 class LearningRateExp (object) :
@@ -44,10 +44,7 @@ class LearningRateExp (object) :
         self.cd['decay_rate'] = decay_rate
         self.start_lr_ = self.cd['start_lr']
 
-    def build(self, 
-              global_step : tf.Tensor, 
-              stop_step : int = None
-    ) -> tf.Tensor :
+    def build(self, stop_step : int = None):
         """
         Build the learning rate
 
@@ -73,12 +70,10 @@ class LearningRateExp (object) :
             if self.decay_steps_ >= stop_step:
                 self.decay_steps_ = default_ds
             self.decay_rate_ = np.exp(np.log(self.stop_lr_ / self.start_lr_) / (stop_step / self.decay_steps_))
-            
-        return tf.train.exponential_decay(self.start_lr_, 
-                                          global_step,
-                                          self.decay_steps_,
-                                          self.decay_rate_, 
-                                          staircase=True)
+        
+        return paddle.optimizer.lr.ExponentialDecay(learning_rate=self.start_lr_, gamma=self.decay_rate_, verbose=True)
+
+                                          
     def start_lr(self) -> float:
         """
         Get the start lr

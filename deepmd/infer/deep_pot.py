@@ -2,8 +2,9 @@ import logging
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
 import numpy as np
+from collections import defaultdict
 from deepmd.common import make_default_mesh
-from deepmd.env import default_tf_session_config, tf
+from deepmd.env import paddle, GLOBAL_PD_FLOAT_PRECISION, GLOBAL_NP_FLOAT_PRECISION
 from deepmd.infer.data_modifier import DipoleChargeModifier
 from deepmd.infer.deep_eval import DeepEval
 
@@ -45,93 +46,54 @@ class DeepPot(DeepEval):
         self.tensors = dict(
             {
                 # descrpt attrs
-                "t_ntypes": "descrpt_attr/ntypes:0",
-                "t_rcut": "descrpt_attr/rcut:0",
+                "ntypes": "descrpt.t_ntypes",
+                "rcut": "descrpt.t_rcut",
                 # fitting attrs
-                "t_dfparam": "fitting_attr/dfparam:0",
-                "t_daparam": "fitting_attr/daparam:0",
-                # model attrs
-                "t_tmap": "model_attr/tmap:0",
-                # inputs
-                "t_coord": "t_coord:0",
-                "t_type": "t_type:0",
-                "t_natoms": "t_natoms:0",
-                "t_box": "t_box:0",
-                "t_mesh": "t_mesh:0",
-                # add output tensors
-                "t_energy": "o_energy:0",
-                "t_force": "o_force:0",
-                "t_virial": "o_virial:0",
-                "t_ae": "o_atom_energy:0",
-                "t_av": "o_atom_virial:0"
+                "dfparam": "fitting.t_dfparam",
+                "daparam": "fitting.t_daparam",
             },
         )
         DeepEval.__init__(
             self,
             model_file,
             load_prefix=load_prefix,
-            default_tf_graph=default_tf_graph
         )
 
-        # load optional tensors
-        operations = [op.name for op in self.graph.get_operations()]
-        # check if the graph has these operations:
-        # if yes add them
-        if 't_efield' in operations:
-            self._get_tensor("t_efield:0", "t_efield")
+        if self._get_value("t_efield") is not None:
+            self._get_tensor("t_efield", "t_efield")
             self.has_efield = True
         else:
             log.debug(f"Could not get tensor 't_efield:0'")
             self.t_efield = None
             self.has_efield = False
 
-        if 'load/t_fparam' in operations:
-            self.tensors.update({"t_fparam": "t_fparam:0"})
+        if self._get_value("t_fparam") is not None:
+            self.tensors.update({"t_fparam": "t_fparam"})
             self.has_fparam = True
         else:
-            log.debug(f"Could not get tensor 't_fparam:0'")
+            log.debug(f"Could not get tensor 't_fparam'")
             self.t_fparam = None
             self.has_fparam = False
 
-        if 'load/t_aparam' in operations:
-            self.tensors.update({"t_aparam": "t_aparam:0"})
+        if self._get_value("t_aparam") is not None:
+            self.tensors.update({"t_aparam": "t_aparam"})
             self.has_aparam = True
         else:
-            log.debug(f"Could not get tensor 't_aparam:0'")
+            log.debug(f"Could not get tensor 't_aparam'")
             self.t_aparam = None
             self.has_aparam = False
 
         # now load tensors to object attributes
         for attr_name, tensor_name in self.tensors.items():
-            self._get_tensor(tensor_name, attr_name)
+            self._get_value(tensor_name, attr_name)
 
-        # start a tf session associated to the graph
-        self.sess = tf.Session(graph=self.graph, config=default_tf_session_config)
-        self._run_default_sess()
-        self.tmap = self.tmap.decode('UTF-8').split()        
+        self.t_tmap = self.model.t_tmap.split()
 
         # setup modifier
         try:
-            t_modifier_type = self._get_tensor("modifier_attr/type:0")
-            self.modifier_type = self.sess.run(t_modifier_type).decode("UTF-8")
+            self.modifier_type = self._get_value("modifier_attr.type")
         except (ValueError, KeyError):
             self.modifier_type = None
-
-        if self.modifier_type == "dipole_charge":
-            t_mdl_name = self._get_tensor("modifier_attr/mdl_name:0")
-            t_mdl_charge_map = self._get_tensor("modifier_attr/mdl_charge_map:0")
-            t_sys_charge_map = self._get_tensor("modifier_attr/sys_charge_map:0")
-            t_ewald_h = self._get_tensor("modifier_attr/ewald_h:0")
-            t_ewald_beta = self._get_tensor("modifier_attr/ewald_beta:0")
-            [mdl_name, mdl_charge_map, sys_charge_map, ewald_h, ewald_beta] = self.sess.run([t_mdl_name, t_mdl_charge_map, t_sys_charge_map, t_ewald_h, t_ewald_beta])
-            mdl_charge_map = [int(ii) for ii in mdl_charge_map.decode("UTF-8").split()]
-            sys_charge_map = [int(ii) for ii in sys_charge_map.decode("UTF-8").split()]
-            self.dm = DipoleChargeModifier(mdl_name, mdl_charge_map, sys_charge_map, ewald_h = ewald_h, ewald_beta = ewald_beta)
-
-    def _run_default_sess(self):
-        [self.ntypes, self.rcut, self.dfparam, self.daparam, self.tmap] = self.sess.run(
-            [self.t_ntypes, self.t_rcut, self.t_dfparam, self.t_daparam, self.t_tmap]
-        )
 
     def get_ntypes(self) -> int:
         """Get the number of atom types of this model."""
@@ -143,11 +105,12 @@ class DeepPot(DeepEval):
 
     def get_type_map(self) -> List[int]:
         """Get the type map (element name of the atom types) of this model."""
-        return self.tmap
+        return self.t_tmap
 
     def get_sel_type(self) -> List[int]:
         """Unsupported in this model."""
         raise NotImplementedError("This model type does not support this attribute")
+    
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this DP."""
         return self.dfparam
@@ -288,35 +251,29 @@ class DeepPot(DeepEval):
         assert(natoms_vec[0] == natoms)
 
         # evaluate
-        feed_dict_test = {}
-        feed_dict_test[self.t_natoms] = natoms_vec
-        feed_dict_test[self.t_type  ] = np.tile(atom_types, [nframes, 1]).reshape([-1])
-        t_out = [self.t_energy, 
-                 self.t_force, 
-                 self.t_virial]
-        if atomic :
-            t_out += [self.t_ae, 
-                      self.t_av]
-
-        feed_dict_test[self.t_coord] = np.reshape(coords, [-1])
-        feed_dict_test[self.t_box  ] = np.reshape(cells , [-1])
-        if self.has_efield:
-            feed_dict_test[self.t_efield]= np.reshape(efield, [-1])
-        if pbc:
-            feed_dict_test[self.t_mesh ] = make_default_mesh(cells)
-        else:
-            feed_dict_test[self.t_mesh ] = np.array([], dtype = np.int32)
+        eval_inputs = {}
+        eval_inputs['coord'] = paddle.to_tensor(np.reshape(coords, [-1]), dtype=GLOBAL_PD_FLOAT_PRECISION)
+        eval_inputs['type'] = paddle.to_tensor(np.tile(atom_types, [nframes, 1]).reshape([-1]), dtype="int32")
+        eval_inputs['natoms_vec'] = paddle.to_tensor(natoms_vec, dtype="int32")
+        eval_inputs['box'] = paddle.to_tensor(np.reshape(cells , [-1]), dtype=GLOBAL_PD_FLOAT_PRECISION)
+          
         if self.has_fparam:
-            feed_dict_test[self.t_fparam] = np.reshape(fparam, [-1])
+            eval_inputs["fparam"] = paddle.to_tensor(np.reshape(fparam, [-1], dtype=GLOBAL_PD_FLOAT_PRECISION))
         if self.has_aparam:
-            feed_dict_test[self.t_aparam] = np.reshape(aparam, [-1])
-        v_out = self.sess.run (t_out, feed_dict = feed_dict_test)
-        energy = v_out[0]
-        force = v_out[1]
-        virial = v_out[2]
+            eval_inputs["aparam"] = paddle.to_tensor(np.reshape(aparam, [-1], dtype=GLOBAL_PD_FLOAT_PRECISION))
+        if pbc:
+            eval_inputs['default_mesh'] = paddle.to_tensor(make_default_mesh(cells), dtype="int32")
+        else:
+            eval_inputs['default_mesh'] = paddle.to_tensor(np.array([], dtype = np.int32))
+
+        eval_outputs = self.model(eval_inputs['coord'], eval_inputs['type'], eval_inputs['natoms_vec'], eval_inputs['box'], eval_inputs['default_mesh'], eval_inputs, suffix = "", reuse = False)
+
+        energy = eval_outputs['energy'].numpy()
+        force = eval_outputs['force'].numpy()
+        virial = eval_outputs['virial'].numpy()
         if atomic:
-            ae = v_out[3]
-            av = v_out[4]
+            ae = eval_outputs['atom_ener'].numpy()
+            av = eval_outputs['atom_virial'].numpy()
 
         # reverse map of the outputs
         force  = self.reverse_map(np.reshape(force, [nframes,-1,3]), imap)

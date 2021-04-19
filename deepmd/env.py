@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 
 # import tensorflow v1 compatability
 try:
+    import paddle
+    import paddle_ops
     import tensorflow.compat.v1 as tf
 
     tf.disable_v2_behavior()
@@ -181,11 +183,13 @@ MODEL_VERSION = GLOBAL_CONFIG["model_version"]
 
 if GLOBAL_CONFIG["precision"] == "-DHIGH_PREC":
     GLOBAL_TF_FLOAT_PRECISION = tf.float64
+    GLOBAL_PD_FLOAT_PRECISION = "float64"
     GLOBAL_NP_FLOAT_PRECISION = np.float64
     GLOBAL_ENER_FLOAT_PRECISION = np.float64
     global_float_prec = "double"
 else:
     GLOBAL_TF_FLOAT_PRECISION = tf.float32
+    GLOBAL_PD_FLOAT_PRECISION = "float32"
     GLOBAL_NP_FLOAT_PRECISION = np.float32
     GLOBAL_ENER_FLOAT_PRECISION = np.float64
     global_float_prec = "float"
@@ -207,19 +211,9 @@ def global_cvt_2_tf_float(xx: tf.Tensor) -> tf.Tensor:
     return tf.cast(xx, GLOBAL_TF_FLOAT_PRECISION)
 
 
-def global_cvt_2_ener_float(xx: tf.Tensor) -> tf.Tensor:
-    """Cast tensor to globally set energy precision.
-
-    Parameters
-    ----------
-    xx : tf.Tensor
-        input tensor
-
-    Returns
-    -------
-    tf.Tensor
-        output tensor cast to `GLOBAL_ENER_FLOAT_PRECISION`
-    """
-    return tf.cast(xx, GLOBAL_ENER_FLOAT_PRECISION)
+def global_cvt_2_pd_float(xx: paddle.Tensor) -> paddle.Tensor:
+    return paddle.cast(xx, GLOBAL_PD_FLOAT_PRECISION)
 
 
+def global_cvt_2_ener_float(xx: paddle.Tensor) -> paddle.Tensor:
+    return paddle.cast(xx, GLOBAL_ENER_FLOAT_PRECISION)
