@@ -2,7 +2,7 @@ import os,sys
 import numpy as np
 import unittest
 
-from deepmd.utils.compat import convert_input_v0_v1
+from deepmd.utils.compat import convert_input_v0_v1, convert_input_v1_v2
 from common import j_loader
 
 class TestConvertInput (unittest.TestCase) :
@@ -16,6 +16,12 @@ class TestConvertInput (unittest.TestCase) :
         jdata0 = j_loader(os.path.join('compat_inputs', 'water_v0.json'))
         jdata1 = j_loader(os.path.join('compat_inputs', 'water_v1.json'))
         jdata = convert_input_v0_v1(jdata0, warning = False, dump = None)
+        self.assertEqual(jdata, jdata1)
+
+    def test_convert_v1_v2(self):
+        jdata0 = j_loader(os.path.join('compat_inputs', 'water_v1.json'))
+        jdata1 = j_loader(os.path.join('compat_inputs', 'water_v2.json'))
+        jdata = convert_input_v1_v2(jdata0, warning = False, dump = None)
         self.assertEqual(jdata, jdata1)
 
     def test_json_yaml_equal(self):

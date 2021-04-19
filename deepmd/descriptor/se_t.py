@@ -10,7 +10,7 @@ from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.utils.network import embedding_net
 
-class DescrptSeAT ():
+class DescrptSeT ():
     @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   rcut: float,
@@ -95,7 +95,7 @@ class DescrptSeAT ():
             self.place_holders['natoms_vec'] = tf.placeholder(tf.int32, [self.ntypes+2], name=name_pfx+'t_natoms')
             self.place_holders['default_mesh'] = tf.placeholder(tf.int32, [None], name=name_pfx+'t_mesh')
             self.stat_descrpt, descrpt_deriv, rij, nlist \
-                = op_module.descrpt_se_a(self.place_holders['coord'],
+                = op_module.prod_env_mat_a(self.place_holders['coord'],
                                          self.place_holders['type'],
                                          self.place_holders['natoms_vec'],
                                          self.place_holders['box'],
@@ -282,7 +282,7 @@ class DescrptSeAT ():
         atype = tf.reshape (atype_, [-1, natoms[1]])
 
         self.descrpt, self.descrpt_deriv, self.rij, self.nlist \
-            = op_module.descrpt_se_a (coord,
+            = op_module.prod_env_mat_a (coord,
                                        atype,
                                        natoms,
                                        box,
