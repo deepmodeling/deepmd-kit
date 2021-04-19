@@ -64,6 +64,10 @@ Conventions`_ and `Typing Conventions`_ PEPs, clarified and extended as follows:
 * Use ``"double quotes"`` for string literals, and ``"""triple double
   quotes"""`` for docstring's. Single quotes are OK for
   something like 
+  
+  .. code-block:: python
+
+     f"something {'this' if x else 'that'}"
 
 * Use f-strings ``s = f"{x:.2f}"`` instead of old style formating with ``"%f" % x``.
   string format method ``"{x:.2f}".format()`` may be used sparsely where it is more
@@ -83,6 +87,7 @@ Python is not C/C++ so whitespace  should be used sparingly to maintain code rea
 
 * You should have blank spaces after commas, colons, and semi-colons if it isn’t
   trailing next to the end of a bracket, brace, or parentheses.
+  
 * With any operators you should use a space in on both sides of the operator.
 
 * Colons for slicing are considered a binary operator, and should not have any spaces
@@ -99,10 +104,6 @@ Python is not C/C++ so whitespace  should be used sparingly to maintain code rea
 * Make sure you are consistent with the formats you choose when optional choices are
   available.
 
-  .. code-block:: python
-    
-    f"something {'this' if x else 'that'}"
-
 .. _Style Guide for Python Code:
 .. _PEP8: https://www.python.org/dev/peps/pep-0008/
 .. _Docstring Conventions: https://www.python.org/dev/peps/pep-0257/
@@ -112,24 +113,15 @@ Python is not C/C++ so whitespace  should be used sparingly to maintain code rea
 .. _trailing whitespaces: http://www.gnu.org/software/emacs/manual/html_node/
                           emacs/Useless-Whitespace.html
 
-.. attention::
-
-   Thus spake the Lord: Thou shalt indent with four spaces. No more, no less.
-   Four shall be the number of spaces thou shalt indent, and the number of thy
-   indenting shall be four. Eight shalt thou not indent, nor either indent thou
-   two, excepting that thou then proceed to four. Tabs are right out.
-
-                                          Georg Brandl
-
-
 General advice
 ==============
 
- * Get rid of as many ``break`` and ``continue`` statements as possible.
+* Get rid of as many ``break`` and ``continue`` statements as possible.
 
- * Write short functions. All functions should fit within a standard screen.
+* Write short functions. 
+  All functions should fit within a standard screen.
 
- * Use descriptive variable names.
+* Use descriptive variable names.
 
 Writing documentation in the code
 =================================
