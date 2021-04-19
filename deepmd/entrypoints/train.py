@@ -15,7 +15,7 @@ from deepmd.infer.data_modifier import DipoleChargeModifier
 from deepmd.train.run_options import BUILD, CITATION, WELCOME, RunOptions
 from deepmd.train.trainer import DPTrainer
 from deepmd.utils.argcheck import normalize
-from deepmd.utils.compat import convert_input_v0_v1
+from deepmd.utils.compat import updata_deepmd_input
 from deepmd.utils.data_system import DeepmdDataSystem
 
 if TYPE_CHECKING:
@@ -168,8 +168,7 @@ def train(
     # load json database
     jdata = j_loader(INPUT)
 
-    if "model" not in jdata.keys():
-        jdata = convert_input_v0_v1(jdata, warning=True, dump="input_v1_compat.json")
+    jdata = updata_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
 
     jdata = normalize(jdata)
     with open(output, "w") as fp:
