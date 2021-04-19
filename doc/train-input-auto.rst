@@ -1,76 +1,67 @@
-.. raw:: html
+.. _`model`: 
 
-   <a id="model"></a>
 model: 
     | type: ``dict``
     | argument path: ``model``
 
-    .. raw:: html
+    .. _`model/type_map`: 
 
-       <a id="model/type_map"></a>
     type_map: 
         | type: ``list``, optional
         | argument path: ``model/type_map``
 
         A list of strings. Give the name to each type of atoms.
 
-    .. raw:: html
+    .. _`model/data_stat_nbatch`: 
 
-       <a id="model/data_stat_nbatch"></a>
     data_stat_nbatch: 
         | type: ``int``, optional, default: ``10``
         | argument path: ``model/data_stat_nbatch``
 
         The model determines the normalization from the statistics of the data. This key specifies the number of `frames` in each `system` used for statistics.
 
-    .. raw:: html
+    .. _`model/data_stat_protect`: 
 
-       <a id="model/data_stat_protect"></a>
     data_stat_protect: 
         | type: ``float``, optional, default: ``0.01``
         | argument path: ``model/data_stat_protect``
 
         Protect parameter for atomic energy regression.
 
-    .. raw:: html
+    .. _`model/use_srtab`: 
 
-       <a id="model/use_srtab"></a>
     use_srtab: 
         | type: ``str``, optional
         | argument path: ``model/use_srtab``
 
         The table for the short-range pairwise interaction added on top of DP. The table is a text data file with (N_t + 1) * N_t / 2 + 1 columes. The first colume is the distance between atoms. The second to the last columes are energies for pairs of certain types. For example we have two atom types, 0 and 1. The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly.
 
-    .. raw:: html
+    .. _`model/smin_alpha`: 
 
-       <a id="model/smin_alpha"></a>
     smin_alpha: 
         | type: ``float``, optional
         | argument path: ``model/smin_alpha``
 
         The short-range tabulated interaction will be swithed according to the distance of the nearest neighbor. This distance is calculated by softmin. This parameter is the decaying parameter in the softmin. It is only required when `use_srtab` is provided.
 
-    .. raw:: html
+    .. _`model/sw_rmin`: 
 
-       <a id="model/sw_rmin"></a>
     sw_rmin: 
         | type: ``float``, optional
         | argument path: ``model/sw_rmin``
 
         The lower boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
 
-    .. raw:: html
+    .. _`model/sw_rmax`: 
 
-       <a id="model/sw_rmax"></a>
     sw_rmax: 
         | type: ``float``, optional
         | argument path: ``model/sw_rmax``
 
         The upper boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
 
-    .. raw:: html
+    .. _`model/descriptor`: 
 
-       <a id="model/descriptor"></a>
     descriptor: 
         | type: ``dict``
         | argument path: ``model/descriptor``
@@ -80,65 +71,74 @@ model:
 
         Depending on the value of *type*, different sub args are accepted. 
 
-        .. raw:: html
+        .. _`model/descriptor/type`: 
 
-           <a id="model/descriptor/type"></a>
         type:
             | type: ``str`` (flag key)
             | argument path: ``model/descriptor/type`` 
+            | possible choices: |code:model/descriptor[loc_frame]|_, |code:model/descriptor[se_e2_a]|_, |code:model/descriptor[se_e2_r]|_, |code:model/descriptor[se_e3]|_, |code:model/descriptor[se_a_tpe]|_, |code:model/descriptor[hybrid]|_
 
-            The type of the descritpor. Valid types are `loc_frame <#model/descriptor[loc_frame]>`__, `se_a <#model/descriptor[se_a]>`__, `se_r <#model/descriptor[se_r]>`__, `se_a_3be <#model/descriptor[se_a_3be]>`__, `se_a_tpe <#model/descriptor[se_a_tpe]>`__, `hybrid <#model/descriptor[hybrid]>`__. 
+            The type of the descritpor. See explanation below. 
 
             - `loc_frame`: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.
 
-            - `se_a`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor.
+            - `se_e2_a`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor.
 
-            - `se_r`: Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor.
+            - `se_e2_r`: Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor.
 
-            - `se_a_3be`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Three-body embedding will be used by this descriptor.
+            - `se_e3`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Three-body embedding will be used by this descriptor.
 
             - `se_a_tpe`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Type embedding will be used by this descriptor.
 
             - `hybrid`: Concatenate of a list of descriptors as a new descriptor.
 
-            - `se_ar`: A hybrid of `se_a` and `se_r`. Typically `se_a` has a smaller cut-off while the `se_r` has a larger cut-off. Deprecated, use `hybrid` instead.
+            .. |code:model/descriptor[loc_frame]| replace:: ``loc_frame``
+            .. _`code:model/descriptor[loc_frame]`: `model/descriptor[loc_frame]`_
+            .. |code:model/descriptor[se_e2_a]| replace:: ``se_e2_a``
+            .. _`code:model/descriptor[se_e2_a]`: `model/descriptor[se_e2_a]`_
+            .. |code:model/descriptor[se_e2_r]| replace:: ``se_e2_r``
+            .. _`code:model/descriptor[se_e2_r]`: `model/descriptor[se_e2_r]`_
+            .. |code:model/descriptor[se_e3]| replace:: ``se_e3``
+            .. _`code:model/descriptor[se_e3]`: `model/descriptor[se_e3]`_
+            .. |code:model/descriptor[se_a_tpe]| replace:: ``se_a_tpe``
+            .. _`code:model/descriptor[se_a_tpe]`: `model/descriptor[se_a_tpe]`_
+            .. |code:model/descriptor[hybrid]| replace:: ``hybrid``
+            .. _`code:model/descriptor[hybrid]`: `model/descriptor[hybrid]`_
+
+        .. |flag:model/descriptor/type| replace:: *type*
+        .. _`flag:model/descriptor/type`: `model/descriptor/type`_
 
 
-        .. raw:: html
+        .. _`model/descriptor[loc_frame]`: 
 
-           <a id="model/descriptor[loc_frame]"></a>
-        When *type* is set to ``loc_frame``: 
+        When |flag:model/descriptor/type|_ is set to ``loc_frame``: 
 
-        .. raw:: html
+        .. _`model/descriptor[loc_frame]/sel_a`: 
 
-           <a id="model/descriptor[loc_frame]/sel_a"></a>
         sel_a: 
             | type: ``list``
             | argument path: ``model/descriptor[loc_frame]/sel_a``
 
             A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_a[i]` gives the selected number of type-i neighbors. The full relative coordinates of the neighbors are used by the descriptor.
 
-        .. raw:: html
+        .. _`model/descriptor[loc_frame]/sel_r`: 
 
-           <a id="model/descriptor[loc_frame]/sel_r"></a>
         sel_r: 
             | type: ``list``
             | argument path: ``model/descriptor[loc_frame]/sel_r``
 
             A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_r[i]` gives the selected number of type-i neighbors. Only relative distance of the neighbors are used by the descriptor. sel_a[i] + sel_r[i] is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.
 
-        .. raw:: html
+        .. _`model/descriptor[loc_frame]/rcut`: 
 
-           <a id="model/descriptor[loc_frame]/rcut"></a>
         rcut: 
             | type: ``float``, optional, default: ``6.0``
             | argument path: ``model/descriptor[loc_frame]/rcut``
 
             The cut-off radius. The default value is 6.0
 
-        .. raw:: html
+        .. _`model/descriptor[loc_frame]/axis_rule`: 
 
-           <a id="model/descriptor[loc_frame]/axis_rule"></a>
         axis_rule: 
             | type: ``list``
             | argument path: ``model/descriptor[loc_frame]/axis_rule``
@@ -158,482 +158,427 @@ model:
             - axis_rule[i*6+5]: class of the atom defining the second axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.
 
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_a]`: 
 
-           <a id="model/descriptor[se_a]"></a>
-        When *type* is set to ``se_a``: 
+        When |flag:model/descriptor/type|_ is set to ``se_e2_a`` (or its alias ``se_a``): 
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_a]/sel`: 
 
-           <a id="model/descriptor[se_a]/sel"></a>
         sel: 
             | type: ``list``
-            | argument path: ``model/descriptor[se_a]/sel``
+            | argument path: ``model/descriptor[se_e2_a]/sel``
 
             A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_a]/rcut`: 
 
-           <a id="model/descriptor[se_a]/rcut"></a>
         rcut: 
             | type: ``float``, optional, default: ``6.0``
-            | argument path: ``model/descriptor[se_a]/rcut``
+            | argument path: ``model/descriptor[se_e2_a]/rcut``
 
             The cut-off radius.
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_a]/rcut_smth`: 
 
-           <a id="model/descriptor[se_a]/rcut_smth"></a>
         rcut_smth: 
             | type: ``float``, optional, default: ``0.5``
-            | argument path: ``model/descriptor[se_a]/rcut_smth``
+            | argument path: ``model/descriptor[se_e2_a]/rcut_smth``
 
             Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_a]/neuron`: 
 
-           <a id="model/descriptor[se_a]/neuron"></a>
         neuron: 
             | type: ``list``, optional, default: ``[10, 20, 40]``
-            | argument path: ``model/descriptor[se_a]/neuron``
+            | argument path: ``model/descriptor[se_e2_a]/neuron``
 
             Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_a]/axis_neuron`: 
 
-           <a id="model/descriptor[se_a]/axis_neuron"></a>
         axis_neuron: 
             | type: ``int``, optional, default: ``4``
-            | argument path: ``model/descriptor[se_a]/axis_neuron``
+            | argument path: ``model/descriptor[se_e2_a]/axis_neuron``
 
             Size of the submatrix of G (embedding matrix).
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_a]/activation_function`: 
 
-           <a id="model/descriptor[se_a]/activation_function"></a>
         activation_function: 
             | type: ``str``, optional, default: ``tanh``
-            | argument path: ``model/descriptor[se_a]/activation_function``
+            | argument path: ``model/descriptor[se_e2_a]/activation_function``
 
             The activation function in the embedding net. Supported activation functions are "relu", "relu6", "softplus", "sigmoid", "tanh", "gelu".
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_a]/resnet_dt`: 
 
-           <a id="model/descriptor[se_a]/resnet_dt"></a>
         resnet_dt: 
             | type: ``bool``, optional, default: ``False``
-            | argument path: ``model/descriptor[se_a]/resnet_dt``
+            | argument path: ``model/descriptor[se_e2_a]/resnet_dt``
 
             Whether to use a "Timestep" in the skip connection
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_a]/type_one_side`: 
 
-           <a id="model/descriptor[se_a]/type_one_side"></a>
         type_one_side: 
             | type: ``bool``, optional, default: ``False``
-            | argument path: ``model/descriptor[se_a]/type_one_side``
+            | argument path: ``model/descriptor[se_e2_a]/type_one_side``
 
             Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_a]/precision`: 
 
-           <a id="model/descriptor[se_a]/precision"></a>
         precision: 
             | type: ``str``, optional, default: ``float64``
-            | argument path: ``model/descriptor[se_a]/precision``
+            | argument path: ``model/descriptor[se_e2_a]/precision``
 
             The precision of the embedding net parameters, supported options are "default", "float16", "float32", "float64".
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_a]/trainable`: 
 
-           <a id="model/descriptor[se_a]/trainable"></a>
         trainable: 
             | type: ``bool``, optional, default: ``True``
-            | argument path: ``model/descriptor[se_a]/trainable``
+            | argument path: ``model/descriptor[se_e2_a]/trainable``
 
             If the parameters in the embedding net is trainable
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_a]/seed`: 
 
-           <a id="model/descriptor[se_a]/seed"></a>
         seed: 
             | type: ``int`` | ``NoneType``, optional
-            | argument path: ``model/descriptor[se_a]/seed``
+            | argument path: ``model/descriptor[se_e2_a]/seed``
 
             Random seed for parameter initialization
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_a]/exclude_types`: 
 
-           <a id="model/descriptor[se_a]/exclude_types"></a>
         exclude_types: 
             | type: ``list``, optional, default: ``[]``
-            | argument path: ``model/descriptor[se_a]/exclude_types``
+            | argument path: ``model/descriptor[se_e2_a]/exclude_types``
 
             The Excluded types
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_a]/set_davg_zero`: 
 
-           <a id="model/descriptor[se_a]/set_davg_zero"></a>
         set_davg_zero: 
             | type: ``bool``, optional, default: ``False``
-            | argument path: ``model/descriptor[se_a]/set_davg_zero``
+            | argument path: ``model/descriptor[se_e2_a]/set_davg_zero``
 
             Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used
 
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_r]`: 
 
-           <a id="model/descriptor[se_r]"></a>
-        When *type* is set to ``se_r``: 
+        When |flag:model/descriptor/type|_ is set to ``se_e2_r`` (or its alias ``se_r``): 
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_r]/sel`: 
 
-           <a id="model/descriptor[se_r]/sel"></a>
         sel: 
             | type: ``list``
-            | argument path: ``model/descriptor[se_r]/sel``
+            | argument path: ``model/descriptor[se_e2_r]/sel``
 
             A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_r]/rcut`: 
 
-           <a id="model/descriptor[se_r]/rcut"></a>
         rcut: 
             | type: ``float``, optional, default: ``6.0``
-            | argument path: ``model/descriptor[se_r]/rcut``
+            | argument path: ``model/descriptor[se_e2_r]/rcut``
 
             The cut-off radius.
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_r]/rcut_smth`: 
 
-           <a id="model/descriptor[se_r]/rcut_smth"></a>
         rcut_smth: 
             | type: ``float``, optional, default: ``0.5``
-            | argument path: ``model/descriptor[se_r]/rcut_smth``
+            | argument path: ``model/descriptor[se_e2_r]/rcut_smth``
 
             Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_r]/neuron`: 
 
-           <a id="model/descriptor[se_r]/neuron"></a>
         neuron: 
             | type: ``list``, optional, default: ``[10, 20, 40]``
-            | argument path: ``model/descriptor[se_r]/neuron``
+            | argument path: ``model/descriptor[se_e2_r]/neuron``
 
             Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_r]/activation_function`: 
 
-           <a id="model/descriptor[se_r]/activation_function"></a>
         activation_function: 
             | type: ``str``, optional, default: ``tanh``
-            | argument path: ``model/descriptor[se_r]/activation_function``
+            | argument path: ``model/descriptor[se_e2_r]/activation_function``
 
             The activation function in the embedding net. Supported activation functions are "relu", "relu6", "softplus", "sigmoid", "tanh", "gelu".
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_r]/resnet_dt`: 
 
-           <a id="model/descriptor[se_r]/resnet_dt"></a>
         resnet_dt: 
             | type: ``bool``, optional, default: ``False``
-            | argument path: ``model/descriptor[se_r]/resnet_dt``
+            | argument path: ``model/descriptor[se_e2_r]/resnet_dt``
 
             Whether to use a "Timestep" in the skip connection
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_r]/type_one_side`: 
 
-           <a id="model/descriptor[se_r]/type_one_side"></a>
         type_one_side: 
             | type: ``bool``, optional, default: ``False``
-            | argument path: ``model/descriptor[se_r]/type_one_side``
+            | argument path: ``model/descriptor[se_e2_r]/type_one_side``
 
             Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_r]/precision`: 
 
-           <a id="model/descriptor[se_r]/precision"></a>
         precision: 
             | type: ``str``, optional, default: ``float64``
-            | argument path: ``model/descriptor[se_r]/precision``
+            | argument path: ``model/descriptor[se_e2_r]/precision``
 
             The precision of the embedding net parameters, supported options are "default", "float16", "float32", "float64".
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_r]/trainable`: 
 
-           <a id="model/descriptor[se_r]/trainable"></a>
         trainable: 
             | type: ``bool``, optional, default: ``True``
-            | argument path: ``model/descriptor[se_r]/trainable``
+            | argument path: ``model/descriptor[se_e2_r]/trainable``
 
             If the parameters in the embedding net is trainable
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_r]/seed`: 
 
-           <a id="model/descriptor[se_r]/seed"></a>
         seed: 
             | type: ``int`` | ``NoneType``, optional
-            | argument path: ``model/descriptor[se_r]/seed``
+            | argument path: ``model/descriptor[se_e2_r]/seed``
 
             Random seed for parameter initialization
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_r]/exclude_types`: 
 
-           <a id="model/descriptor[se_r]/exclude_types"></a>
         exclude_types: 
             | type: ``list``, optional, default: ``[]``
-            | argument path: ``model/descriptor[se_r]/exclude_types``
+            | argument path: ``model/descriptor[se_e2_r]/exclude_types``
 
             The Excluded types
 
-        .. raw:: html
+        .. _`model/descriptor[se_e2_r]/set_davg_zero`: 
 
-           <a id="model/descriptor[se_r]/set_davg_zero"></a>
         set_davg_zero: 
             | type: ``bool``, optional, default: ``False``
-            | argument path: ``model/descriptor[se_r]/set_davg_zero``
+            | argument path: ``model/descriptor[se_e2_r]/set_davg_zero``
 
             Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used
 
 
-        .. raw:: html
+        .. _`model/descriptor[se_e3]`: 
 
-           <a id="model/descriptor[se_a_3be]"></a>
-        When *type* is set to ``se_a_3be``: 
+        When |flag:model/descriptor/type|_ is set to ``se_e3`` (or its aliases ``se_at``, ``se_a_3be``, ``se_t``): 
 
-        .. raw:: html
+        .. _`model/descriptor[se_e3]/sel`: 
 
-           <a id="model/descriptor[se_a_3be]/sel"></a>
         sel: 
             | type: ``list``
-            | argument path: ``model/descriptor[se_a_3be]/sel``
+            | argument path: ``model/descriptor[se_e3]/sel``
 
             A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.
 
-        .. raw:: html
+        .. _`model/descriptor[se_e3]/rcut`: 
 
-           <a id="model/descriptor[se_a_3be]/rcut"></a>
         rcut: 
             | type: ``float``, optional, default: ``6.0``
-            | argument path: ``model/descriptor[se_a_3be]/rcut``
+            | argument path: ``model/descriptor[se_e3]/rcut``
 
             The cut-off radius.
 
-        .. raw:: html
+        .. _`model/descriptor[se_e3]/rcut_smth`: 
 
-           <a id="model/descriptor[se_a_3be]/rcut_smth"></a>
         rcut_smth: 
             | type: ``float``, optional, default: ``0.5``
-            | argument path: ``model/descriptor[se_a_3be]/rcut_smth``
+            | argument path: ``model/descriptor[se_e3]/rcut_smth``
 
             Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`
 
-        .. raw:: html
+        .. _`model/descriptor[se_e3]/neuron`: 
 
-           <a id="model/descriptor[se_a_3be]/neuron"></a>
         neuron: 
             | type: ``list``, optional, default: ``[10, 20, 40]``
-            | argument path: ``model/descriptor[se_a_3be]/neuron``
+            | argument path: ``model/descriptor[se_e3]/neuron``
 
             Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.
 
-        .. raw:: html
+        .. _`model/descriptor[se_e3]/activation_function`: 
 
-           <a id="model/descriptor[se_a_3be]/activation_function"></a>
         activation_function: 
             | type: ``str``, optional, default: ``tanh``
-            | argument path: ``model/descriptor[se_a_3be]/activation_function``
+            | argument path: ``model/descriptor[se_e3]/activation_function``
 
             The activation function in the embedding net. Supported activation functions are "relu", "relu6", "softplus", "sigmoid", "tanh", "gelu".
 
-        .. raw:: html
+        .. _`model/descriptor[se_e3]/resnet_dt`: 
 
-           <a id="model/descriptor[se_a_3be]/resnet_dt"></a>
         resnet_dt: 
             | type: ``bool``, optional, default: ``False``
-            | argument path: ``model/descriptor[se_a_3be]/resnet_dt``
+            | argument path: ``model/descriptor[se_e3]/resnet_dt``
 
             Whether to use a "Timestep" in the skip connection
 
-        .. raw:: html
+        .. _`model/descriptor[se_e3]/precision`: 
 
-           <a id="model/descriptor[se_a_3be]/precision"></a>
         precision: 
             | type: ``str``, optional, default: ``float64``
-            | argument path: ``model/descriptor[se_a_3be]/precision``
+            | argument path: ``model/descriptor[se_e3]/precision``
 
             The precision of the embedding net parameters, supported options are "default", "float16", "float32", "float64".
 
-        .. raw:: html
+        .. _`model/descriptor[se_e3]/trainable`: 
 
-           <a id="model/descriptor[se_a_3be]/trainable"></a>
         trainable: 
             | type: ``bool``, optional, default: ``True``
-            | argument path: ``model/descriptor[se_a_3be]/trainable``
+            | argument path: ``model/descriptor[se_e3]/trainable``
 
             If the parameters in the embedding net is trainable
 
-        .. raw:: html
+        .. _`model/descriptor[se_e3]/seed`: 
 
-           <a id="model/descriptor[se_a_3be]/seed"></a>
         seed: 
             | type: ``int`` | ``NoneType``, optional
-            | argument path: ``model/descriptor[se_a_3be]/seed``
+            | argument path: ``model/descriptor[se_e3]/seed``
 
             Random seed for parameter initialization
 
-        .. raw:: html
+        .. _`model/descriptor[se_e3]/set_davg_zero`: 
 
-           <a id="model/descriptor[se_a_3be]/set_davg_zero"></a>
         set_davg_zero: 
             | type: ``bool``, optional, default: ``False``
-            | argument path: ``model/descriptor[se_a_3be]/set_davg_zero``
+            | argument path: ``model/descriptor[se_e3]/set_davg_zero``
 
             Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used
 
 
-        .. raw:: html
+        .. _`model/descriptor[se_a_tpe]`: 
 
-           <a id="model/descriptor[se_a_tpe]"></a>
-        When *type* is set to ``se_a_tpe``: 
+        When |flag:model/descriptor/type|_ is set to ``se_a_tpe`` (or its alias ``se_a_ebd``): 
 
-        .. raw:: html
+        .. _`model/descriptor[se_a_tpe]/sel`: 
 
-           <a id="model/descriptor[se_a_tpe]/sel"></a>
         sel: 
             | type: ``list``
             | argument path: ``model/descriptor[se_a_tpe]/sel``
 
             A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.
 
-        .. raw:: html
+        .. _`model/descriptor[se_a_tpe]/rcut`: 
 
-           <a id="model/descriptor[se_a_tpe]/rcut"></a>
         rcut: 
             | type: ``float``, optional, default: ``6.0``
             | argument path: ``model/descriptor[se_a_tpe]/rcut``
 
             The cut-off radius.
 
-        .. raw:: html
+        .. _`model/descriptor[se_a_tpe]/rcut_smth`: 
 
-           <a id="model/descriptor[se_a_tpe]/rcut_smth"></a>
         rcut_smth: 
             | type: ``float``, optional, default: ``0.5``
             | argument path: ``model/descriptor[se_a_tpe]/rcut_smth``
 
             Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`
 
-        .. raw:: html
+        .. _`model/descriptor[se_a_tpe]/neuron`: 
 
-           <a id="model/descriptor[se_a_tpe]/neuron"></a>
         neuron: 
             | type: ``list``, optional, default: ``[10, 20, 40]``
             | argument path: ``model/descriptor[se_a_tpe]/neuron``
 
             Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.
 
-        .. raw:: html
+        .. _`model/descriptor[se_a_tpe]/axis_neuron`: 
 
-           <a id="model/descriptor[se_a_tpe]/axis_neuron"></a>
         axis_neuron: 
             | type: ``int``, optional, default: ``4``
             | argument path: ``model/descriptor[se_a_tpe]/axis_neuron``
 
             Size of the submatrix of G (embedding matrix).
 
-        .. raw:: html
+        .. _`model/descriptor[se_a_tpe]/activation_function`: 
 
-           <a id="model/descriptor[se_a_tpe]/activation_function"></a>
         activation_function: 
             | type: ``str``, optional, default: ``tanh``
             | argument path: ``model/descriptor[se_a_tpe]/activation_function``
 
             The activation function in the embedding net. Supported activation functions are "relu", "relu6", "softplus", "sigmoid", "tanh", "gelu".
 
-        .. raw:: html
+        .. _`model/descriptor[se_a_tpe]/resnet_dt`: 
 
-           <a id="model/descriptor[se_a_tpe]/resnet_dt"></a>
         resnet_dt: 
             | type: ``bool``, optional, default: ``False``
             | argument path: ``model/descriptor[se_a_tpe]/resnet_dt``
 
             Whether to use a "Timestep" in the skip connection
 
-        .. raw:: html
+        .. _`model/descriptor[se_a_tpe]/type_one_side`: 
 
-           <a id="model/descriptor[se_a_tpe]/type_one_side"></a>
         type_one_side: 
             | type: ``bool``, optional, default: ``False``
             | argument path: ``model/descriptor[se_a_tpe]/type_one_side``
 
             Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
 
-        .. raw:: html
+        .. _`model/descriptor[se_a_tpe]/precision`: 
 
-           <a id="model/descriptor[se_a_tpe]/precision"></a>
         precision: 
             | type: ``str``, optional, default: ``float64``
             | argument path: ``model/descriptor[se_a_tpe]/precision``
 
             The precision of the embedding net parameters, supported options are "default", "float16", "float32", "float64".
 
-        .. raw:: html
+        .. _`model/descriptor[se_a_tpe]/trainable`: 
 
-           <a id="model/descriptor[se_a_tpe]/trainable"></a>
         trainable: 
             | type: ``bool``, optional, default: ``True``
             | argument path: ``model/descriptor[se_a_tpe]/trainable``
 
             If the parameters in the embedding net is trainable
 
-        .. raw:: html
+        .. _`model/descriptor[se_a_tpe]/seed`: 
 
-           <a id="model/descriptor[se_a_tpe]/seed"></a>
         seed: 
             | type: ``int`` | ``NoneType``, optional
             | argument path: ``model/descriptor[se_a_tpe]/seed``
 
             Random seed for parameter initialization
 
-        .. raw:: html
+        .. _`model/descriptor[se_a_tpe]/exclude_types`: 
 
-           <a id="model/descriptor[se_a_tpe]/exclude_types"></a>
         exclude_types: 
             | type: ``list``, optional, default: ``[]``
             | argument path: ``model/descriptor[se_a_tpe]/exclude_types``
 
             The Excluded types
 
-        .. raw:: html
+        .. _`model/descriptor[se_a_tpe]/set_davg_zero`: 
 
-           <a id="model/descriptor[se_a_tpe]/set_davg_zero"></a>
         set_davg_zero: 
             | type: ``bool``, optional, default: ``False``
             | argument path: ``model/descriptor[se_a_tpe]/set_davg_zero``
 
             Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used
 
-        .. raw:: html
+        .. _`model/descriptor[se_a_tpe]/type_nchanl`: 
 
-           <a id="model/descriptor[se_a_tpe]/type_nchanl"></a>
         type_nchanl: 
             | type: ``int``, optional, default: ``4``
             | argument path: ``model/descriptor[se_a_tpe]/type_nchanl``
 
             number of channels for type embedding
 
-        .. raw:: html
+        .. _`model/descriptor[se_a_tpe]/type_nlayer`: 
 
-           <a id="model/descriptor[se_a_tpe]/type_nlayer"></a>
         type_nlayer: 
             | type: ``int``, optional, default: ``2``
             | argument path: ``model/descriptor[se_a_tpe]/type_nlayer``
 
             number of hidden layers of type embedding net
 
-        .. raw:: html
+        .. _`model/descriptor[se_a_tpe]/numb_aparam`: 
 
-           <a id="model/descriptor[se_a_tpe]/numb_aparam"></a>
         numb_aparam: 
             | type: ``int``, optional, default: ``0``
             | argument path: ``model/descriptor[se_a_tpe]/numb_aparam``
@@ -641,47 +586,20 @@ model:
             dimension of atomic parameter. if set to a value > 0, the atomic parameters are embedded.
 
 
-        .. raw:: html
+        .. _`model/descriptor[hybrid]`: 
 
-           <a id="model/descriptor[hybrid]"></a>
-        When *type* is set to ``hybrid``: 
+        When |flag:model/descriptor/type|_ is set to ``hybrid``: 
 
-        .. raw:: html
+        .. _`model/descriptor[hybrid]/list`: 
 
-           <a id="model/descriptor[hybrid]/list"></a>
         list: 
             | type: ``list``
             | argument path: ``model/descriptor[hybrid]/list``
 
             A list of descriptor definitions
 
+    .. _`model/fitting_net`: 
 
-        .. raw:: html
-
-           <a id="model/descriptor[se_ar]"></a>
-        When *type* is set to ``se_ar``: 
-
-        .. raw:: html
-
-           <a id="model/descriptor[se_ar]/a"></a>
-        a: 
-            | type: ``dict``
-            | argument path: ``model/descriptor[se_ar]/a``
-
-            The parameters of descriptor `se_a <#model/descriptor[se_a]>`__
-
-        .. raw:: html
-
-           <a id="model/descriptor[se_ar]/r"></a>
-        r: 
-            | type: ``dict``
-            | argument path: ``model/descriptor[se_ar]/r``
-
-            The parameters of descriptor `se_r <#model/descriptor[se_r]>`__
-
-    .. raw:: html
-
-       <a id="model/fitting_net"></a>
     fitting_net: 
         | type: ``dict``
         | argument path: ``model/fitting_net``
@@ -691,14 +609,14 @@ model:
 
         Depending on the value of *type*, different sub args are accepted. 
 
-        .. raw:: html
+        .. _`model/fitting_net/type`: 
 
-           <a id="model/fitting_net/type"></a>
         type:
             | type: ``str`` (flag key), default: ``ener``
             | argument path: ``model/fitting_net/type`` 
+            | possible choices: |code:model/fitting_net[ener]|_, |code:model/fitting_net[dipole]|_, |code:model/fitting_net[polar]|_, |code:model/fitting_net[global_polar]|_
 
-            The type of the fitting. Valid types are `ener`, `dipole`, `polar` and `global_polar`. 
+            The type of the fitting. See explanation below. 
 
             - `ener`: Fit an energy model (potential energy surface).
 
@@ -708,69 +626,73 @@ model:
 
             - `global_polar`: Fit a polarizability model. Polarizability labels should be provided by `polarizability.npy` in each data system. The file has number of frames lines and 9 columns.
 
+            .. |code:model/fitting_net[ener]| replace:: ``ener``
+            .. _`code:model/fitting_net[ener]`: `model/fitting_net[ener]`_
+            .. |code:model/fitting_net[dipole]| replace:: ``dipole``
+            .. _`code:model/fitting_net[dipole]`: `model/fitting_net[dipole]`_
+            .. |code:model/fitting_net[polar]| replace:: ``polar``
+            .. _`code:model/fitting_net[polar]`: `model/fitting_net[polar]`_
+            .. |code:model/fitting_net[global_polar]| replace:: ``global_polar``
+            .. _`code:model/fitting_net[global_polar]`: `model/fitting_net[global_polar]`_
 
-        .. raw:: html
+        .. |flag:model/fitting_net/type| replace:: *type*
+        .. _`flag:model/fitting_net/type`: `model/fitting_net/type`_
 
-           <a id="model/fitting_net[ener]"></a>
-        When *type* is set to ``ener``: 
 
-        .. raw:: html
+        .. _`model/fitting_net[ener]`: 
 
-           <a id="model/fitting_net[ener]/numb_fparam"></a>
+        When |flag:model/fitting_net/type|_ is set to ``ener``: 
+
+        .. _`model/fitting_net[ener]/numb_fparam`: 
+
         numb_fparam: 
             | type: ``int``, optional, default: ``0``
             | argument path: ``model/fitting_net[ener]/numb_fparam``
 
             The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams.
 
-        .. raw:: html
+        .. _`model/fitting_net[ener]/numb_aparam`: 
 
-           <a id="model/fitting_net[ener]/numb_aparam"></a>
         numb_aparam: 
             | type: ``int``, optional, default: ``0``
             | argument path: ``model/fitting_net[ener]/numb_aparam``
 
             The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams.
 
-        .. raw:: html
+        .. _`model/fitting_net[ener]/neuron`: 
 
-           <a id="model/fitting_net[ener]/neuron"></a>
         neuron: 
             | type: ``list``, optional, default: ``[120, 120, 120]``
             | argument path: ``model/fitting_net[ener]/neuron``
 
             The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.
 
-        .. raw:: html
+        .. _`model/fitting_net[ener]/activation_function`: 
 
-           <a id="model/fitting_net[ener]/activation_function"></a>
         activation_function: 
             | type: ``str``, optional, default: ``tanh``
             | argument path: ``model/fitting_net[ener]/activation_function``
 
             The activation function in the fitting net. Supported activation functions are "relu", "relu6", "softplus", "sigmoid", "tanh", "gelu".
 
-        .. raw:: html
+        .. _`model/fitting_net[ener]/precision`: 
 
-           <a id="model/fitting_net[ener]/precision"></a>
         precision: 
             | type: ``str``, optional, default: ``float64``
             | argument path: ``model/fitting_net[ener]/precision``
 
             The precision of the fitting net parameters, supported options are "default", "float16", "float32", "float64".
 
-        .. raw:: html
+        .. _`model/fitting_net[ener]/resnet_dt`: 
 
-           <a id="model/fitting_net[ener]/resnet_dt"></a>
         resnet_dt: 
             | type: ``bool``, optional, default: ``True``
             | argument path: ``model/fitting_net[ener]/resnet_dt``
 
             Whether to use a "Timestep" in the skip connection
 
-        .. raw:: html
+        .. _`model/fitting_net[ener]/trainable`: 
 
-           <a id="model/fitting_net[ener]/trainable"></a>
         trainable: 
             | type: ``bool`` | ``list``, optional, default: ``True``
             | argument path: ``model/fitting_net[ener]/trainable``
@@ -781,27 +703,24 @@ model:
 
             - list of bool: Specifies if each layer is trainable. Since the fitting net is composed by hidden layers followed by a output layer, the length of tihs list should be equal to len(`neuron`)+1.
 
-        .. raw:: html
+        .. _`model/fitting_net[ener]/rcond`: 
 
-           <a id="model/fitting_net[ener]/rcond"></a>
         rcond: 
             | type: ``float``, optional, default: ``0.001``
             | argument path: ``model/fitting_net[ener]/rcond``
 
             The condition number used to determine the inital energy shift for each type of atoms.
 
-        .. raw:: html
+        .. _`model/fitting_net[ener]/seed`: 
 
-           <a id="model/fitting_net[ener]/seed"></a>
         seed: 
             | type: ``int`` | ``NoneType``, optional
             | argument path: ``model/fitting_net[ener]/seed``
 
             Random seed for parameter initialization of the fitting net
 
-        .. raw:: html
+        .. _`model/fitting_net[ener]/atom_ener`: 
 
-           <a id="model/fitting_net[ener]/atom_ener"></a>
         atom_ener: 
             | type: ``list``, optional, default: ``[]``
             | argument path: ``model/fitting_net[ener]/atom_ener``
@@ -809,59 +728,52 @@ model:
             Specify the atomic energy in vacuum for each type
 
 
-        .. raw:: html
+        .. _`model/fitting_net[dipole]`: 
 
-           <a id="model/fitting_net[dipole]"></a>
-        When *type* is set to ``dipole``: 
+        When |flag:model/fitting_net/type|_ is set to ``dipole``: 
 
-        .. raw:: html
+        .. _`model/fitting_net[dipole]/neuron`: 
 
-           <a id="model/fitting_net[dipole]/neuron"></a>
         neuron: 
             | type: ``list``, optional, default: ``[120, 120, 120]``
             | argument path: ``model/fitting_net[dipole]/neuron``
 
             The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.
 
-        .. raw:: html
+        .. _`model/fitting_net[dipole]/activation_function`: 
 
-           <a id="model/fitting_net[dipole]/activation_function"></a>
         activation_function: 
             | type: ``str``, optional, default: ``tanh``
             | argument path: ``model/fitting_net[dipole]/activation_function``
 
             The activation function in the fitting net. Supported activation functions are "relu", "relu6", "softplus", "sigmoid", "tanh", "gelu".
 
-        .. raw:: html
+        .. _`model/fitting_net[dipole]/resnet_dt`: 
 
-           <a id="model/fitting_net[dipole]/resnet_dt"></a>
         resnet_dt: 
             | type: ``bool``, optional, default: ``True``
             | argument path: ``model/fitting_net[dipole]/resnet_dt``
 
             Whether to use a "Timestep" in the skip connection
 
-        .. raw:: html
+        .. _`model/fitting_net[dipole]/precision`: 
 
-           <a id="model/fitting_net[dipole]/precision"></a>
         precision: 
             | type: ``str``, optional, default: ``float64``
             | argument path: ``model/fitting_net[dipole]/precision``
 
             The precision of the fitting net parameters, supported options are "default", "float16", "float32", "float64".
 
-        .. raw:: html
+        .. _`model/fitting_net[dipole]/sel_type`: 
 
-           <a id="model/fitting_net[dipole]/sel_type"></a>
         sel_type: 
             | type: ``int`` | ``NoneType`` | ``list``, optional
             | argument path: ``model/fitting_net[dipole]/sel_type``
 
             The atom types for which the atomic dipole will be provided. If not set, all types will be selected.
 
-        .. raw:: html
+        .. _`model/fitting_net[dipole]/seed`: 
 
-           <a id="model/fitting_net[dipole]/seed"></a>
         seed: 
             | type: ``int`` | ``NoneType``, optional
             | argument path: ``model/fitting_net[dipole]/seed``
@@ -869,86 +781,76 @@ model:
             Random seed for parameter initialization of the fitting net
 
 
-        .. raw:: html
+        .. _`model/fitting_net[polar]`: 
 
-           <a id="model/fitting_net[polar]"></a>
-        When *type* is set to ``polar``: 
+        When |flag:model/fitting_net/type|_ is set to ``polar``: 
 
-        .. raw:: html
+        .. _`model/fitting_net[polar]/neuron`: 
 
-           <a id="model/fitting_net[polar]/neuron"></a>
         neuron: 
             | type: ``list``, optional, default: ``[120, 120, 120]``
             | argument path: ``model/fitting_net[polar]/neuron``
 
             The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.
 
-        .. raw:: html
+        .. _`model/fitting_net[polar]/activation_function`: 
 
-           <a id="model/fitting_net[polar]/activation_function"></a>
         activation_function: 
             | type: ``str``, optional, default: ``tanh``
             | argument path: ``model/fitting_net[polar]/activation_function``
 
             The activation function in the fitting net. Supported activation functions are "relu", "relu6", "softplus", "sigmoid", "tanh", "gelu".
 
-        .. raw:: html
+        .. _`model/fitting_net[polar]/resnet_dt`: 
 
-           <a id="model/fitting_net[polar]/resnet_dt"></a>
         resnet_dt: 
             | type: ``bool``, optional, default: ``True``
             | argument path: ``model/fitting_net[polar]/resnet_dt``
 
             Whether to use a "Timestep" in the skip connection
 
-        .. raw:: html
+        .. _`model/fitting_net[polar]/precision`: 
 
-           <a id="model/fitting_net[polar]/precision"></a>
         precision: 
             | type: ``str``, optional, default: ``float64``
             | argument path: ``model/fitting_net[polar]/precision``
 
             The precision of the fitting net parameters, supported options are "default", "float16", "float32", "float64".
 
-        .. raw:: html
+        .. _`model/fitting_net[polar]/fit_diag`: 
 
-           <a id="model/fitting_net[polar]/fit_diag"></a>
         fit_diag: 
             | type: ``bool``, optional, default: ``True``
             | argument path: ``model/fitting_net[polar]/fit_diag``
 
             Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to normal polarizability matrix by contracting with the rotation matrix.
 
-        .. raw:: html
+        .. _`model/fitting_net[polar]/scale`: 
 
-           <a id="model/fitting_net[polar]/scale"></a>
         scale: 
             | type: ``float`` | ``list``, optional, default: ``1.0``
             | argument path: ``model/fitting_net[polar]/scale``
 
             The output of the fitting net (polarizability matrix) will be scaled by ``scale``
 
-        .. raw:: html
+        .. _`model/fitting_net[polar]/diag_shift`: 
 
-           <a id="model/fitting_net[polar]/diag_shift"></a>
         diag_shift: 
             | type: ``float`` | ``list``, optional, default: ``0.0``
             | argument path: ``model/fitting_net[polar]/diag_shift``
 
             The diagonal part of the polarizability matrix  will be shifted by ``diag_shift``. The shift operation is carried out after ``scale``.
 
-        .. raw:: html
+        .. _`model/fitting_net[polar]/sel_type`: 
 
-           <a id="model/fitting_net[polar]/sel_type"></a>
         sel_type: 
             | type: ``int`` | ``NoneType`` | ``list``, optional
             | argument path: ``model/fitting_net[polar]/sel_type``
 
             The atom types for which the atomic polarizability will be provided. If not set, all types will be selected.
 
-        .. raw:: html
+        .. _`model/fitting_net[polar]/seed`: 
 
-           <a id="model/fitting_net[polar]/seed"></a>
         seed: 
             | type: ``int`` | ``NoneType``, optional
             | argument path: ``model/fitting_net[polar]/seed``
@@ -956,96 +858,158 @@ model:
             Random seed for parameter initialization of the fitting net
 
 
-        .. raw:: html
+        .. _`model/fitting_net[global_polar]`: 
 
-           <a id="model/fitting_net[global_polar]"></a>
-        When *type* is set to ``global_polar``: 
+        When |flag:model/fitting_net/type|_ is set to ``global_polar``: 
 
-        .. raw:: html
+        .. _`model/fitting_net[global_polar]/neuron`: 
 
-           <a id="model/fitting_net[global_polar]/neuron"></a>
         neuron: 
             | type: ``list``, optional, default: ``[120, 120, 120]``
             | argument path: ``model/fitting_net[global_polar]/neuron``
 
             The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.
 
-        .. raw:: html
+        .. _`model/fitting_net[global_polar]/activation_function`: 
 
-           <a id="model/fitting_net[global_polar]/activation_function"></a>
         activation_function: 
             | type: ``str``, optional, default: ``tanh``
             | argument path: ``model/fitting_net[global_polar]/activation_function``
 
             The activation function in the fitting net. Supported activation functions are "relu", "relu6", "softplus", "sigmoid", "tanh", "gelu".
 
-        .. raw:: html
+        .. _`model/fitting_net[global_polar]/resnet_dt`: 
 
-           <a id="model/fitting_net[global_polar]/resnet_dt"></a>
         resnet_dt: 
             | type: ``bool``, optional, default: ``True``
             | argument path: ``model/fitting_net[global_polar]/resnet_dt``
 
             Whether to use a "Timestep" in the skip connection
 
-        .. raw:: html
+        .. _`model/fitting_net[global_polar]/precision`: 
 
-           <a id="model/fitting_net[global_polar]/precision"></a>
         precision: 
             | type: ``str``, optional, default: ``float64``
             | argument path: ``model/fitting_net[global_polar]/precision``
 
             The precision of the fitting net parameters, supported options are "default", "float16", "float32", "float64".
 
-        .. raw:: html
+        .. _`model/fitting_net[global_polar]/fit_diag`: 
 
-           <a id="model/fitting_net[global_polar]/fit_diag"></a>
         fit_diag: 
             | type: ``bool``, optional, default: ``True``
             | argument path: ``model/fitting_net[global_polar]/fit_diag``
 
             Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to normal polarizability matrix by contracting with the rotation matrix.
 
-        .. raw:: html
+        .. _`model/fitting_net[global_polar]/scale`: 
 
-           <a id="model/fitting_net[global_polar]/scale"></a>
         scale: 
             | type: ``float`` | ``list``, optional, default: ``1.0``
             | argument path: ``model/fitting_net[global_polar]/scale``
 
             The output of the fitting net (polarizability matrix) will be scaled by ``scale``
 
-        .. raw:: html
+        .. _`model/fitting_net[global_polar]/diag_shift`: 
 
-           <a id="model/fitting_net[global_polar]/diag_shift"></a>
         diag_shift: 
             | type: ``float`` | ``list``, optional, default: ``0.0``
             | argument path: ``model/fitting_net[global_polar]/diag_shift``
 
             The diagonal part of the polarizability matrix  will be shifted by ``diag_shift``. The shift operation is carried out after ``scale``.
 
-        .. raw:: html
+        .. _`model/fitting_net[global_polar]/sel_type`: 
 
-           <a id="model/fitting_net[global_polar]/sel_type"></a>
         sel_type: 
             | type: ``int`` | ``NoneType`` | ``list``, optional
             | argument path: ``model/fitting_net[global_polar]/sel_type``
 
             The atom types for which the atomic polarizability will be provided. If not set, all types will be selected.
 
-        .. raw:: html
+        .. _`model/fitting_net[global_polar]/seed`: 
 
-           <a id="model/fitting_net[global_polar]/seed"></a>
         seed: 
             | type: ``int`` | ``NoneType``, optional
             | argument path: ``model/fitting_net[global_polar]/seed``
 
             Random seed for parameter initialization of the fitting net
 
+    .. _`model/modifier`: 
 
-.. raw:: html
+    modifier: 
+        | type: ``dict``, optional
+        | argument path: ``model/modifier``
 
-   <a id="loss"></a>
+        The modifier of model output.
+
+
+        Depending on the value of *type*, different sub args are accepted. 
+
+        .. _`model/modifier/type`: 
+
+        type:
+            | type: ``str`` (flag key)
+            | argument path: ``model/modifier/type`` 
+            | possible choices: |code:model/modifier[dipole_charge]|_
+
+            The type of modifier. See explanation below.
+
+            -`dipole_charge`: Use WFCC to model the electronic structure of the system. Correct the long-range interaction
+
+            .. |code:model/modifier[dipole_charge]| replace:: ``dipole_charge``
+            .. _`code:model/modifier[dipole_charge]`: `model/modifier[dipole_charge]`_
+
+        .. |flag:model/modifier/type| replace:: *type*
+        .. _`flag:model/modifier/type`: `model/modifier/type`_
+
+
+        .. _`model/modifier[dipole_charge]`: 
+
+        When |flag:model/modifier/type|_ is set to ``dipole_charge``: 
+
+        .. _`model/modifier[dipole_charge]/model_name`: 
+
+        model_name: 
+            | type: ``str``
+            | argument path: ``model/modifier[dipole_charge]/model_name``
+
+            The name of the frozen dipole model file.
+
+        .. _`model/modifier[dipole_charge]/model_charge_map`: 
+
+        model_charge_map: 
+            | type: ``list``
+            | argument path: ``model/modifier[dipole_charge]/model_charge_map``
+
+            The charge of the WFCC. The list length should be the same as the `sel_type <model/fitting_net[dipole]/sel_type_>`_. 
+
+        .. _`model/modifier[dipole_charge]/sys_charge_map`: 
+
+        sys_charge_map: 
+            | type: ``list``
+            | argument path: ``model/modifier[dipole_charge]/sys_charge_map``
+
+            The charge of real atoms. The list length should be the same as the `type_map <model/type_map_>`_
+
+        .. _`model/modifier[dipole_charge]/ewald_beta`: 
+
+        ewald_beta: 
+            | type: ``float``, optional, default: ``0.4``
+            | argument path: ``model/modifier[dipole_charge]/ewald_beta``
+
+            The splitting parameter of Ewald sum. Unit is A^-1
+
+        .. _`model/modifier[dipole_charge]/ewald_h`: 
+
+        ewald_h: 
+            | type: ``float``, optional, default: ``1.0``
+            | argument path: ``model/modifier[dipole_charge]/ewald_h``
+
+            The grid spacing of the FFT grid. Unit is A
+
+
+.. _`loss`: 
+
 loss: 
     | type: ``dict``, optional
     | argument path: ``loss``
@@ -1055,97 +1019,93 @@ loss:
 
     Depending on the value of *type*, different sub args are accepted. 
 
-    .. raw:: html
+    .. _`loss/type`: 
 
-       <a id="loss/type"></a>
     type:
         | type: ``str`` (flag key), default: ``ener``
         | argument path: ``loss/type`` 
+        | possible choices: |code:loss[ener]|_
 
-        The type of the loss. For fitting type `ener`, the loss type should be set to `ener` or left unset. For tensorial fitting types `dipole`, `polar` and `global_polar`, the type should be left unset.
+        The type of the loss. 
         \.
 
+        .. |code:loss[ener]| replace:: ``ener``
+        .. _`code:loss[ener]`: `loss[ener]`_
 
-    .. raw:: html
+    .. |flag:loss/type| replace:: *type*
+    .. _`flag:loss/type`: `loss/type`_
 
-       <a id="loss[ener]"></a>
-    When *type* is set to ``ener``: 
 
-    .. raw:: html
+    .. _`loss[ener]`: 
 
-       <a id="loss[ener]/start_pref_e"></a>
+    When |flag:loss/type|_ is set to ``ener``: 
+
+    .. _`loss[ener]/start_pref_e`: 
+
     start_pref_e: 
         | type: ``float`` | ``int``, optional, default: ``0.02``
         | argument path: ``loss[ener]/start_pref_e``
 
         The prefactor of energy loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the energy label should be provided by file energy.npy in each data system. If both start_pref_energy and limit_pref_energy are set to 0, then the energy will be ignored.
 
-    .. raw:: html
+    .. _`loss[ener]/limit_pref_e`: 
 
-       <a id="loss[ener]/limit_pref_e"></a>
     limit_pref_e: 
         | type: ``float`` | ``int``, optional, default: ``1.0``
         | argument path: ``loss[ener]/limit_pref_e``
 
         The prefactor of energy loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity.
 
-    .. raw:: html
+    .. _`loss[ener]/start_pref_f`: 
 
-       <a id="loss[ener]/start_pref_f"></a>
     start_pref_f: 
         | type: ``float`` | ``int``, optional, default: ``1000``
         | argument path: ``loss[ener]/start_pref_f``
 
         The prefactor of force loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the force label should be provided by file force.npy in each data system. If both start_pref_force and limit_pref_force are set to 0, then the force will be ignored.
 
-    .. raw:: html
+    .. _`loss[ener]/limit_pref_f`: 
 
-       <a id="loss[ener]/limit_pref_f"></a>
     limit_pref_f: 
         | type: ``float`` | ``int``, optional, default: ``1.0``
         | argument path: ``loss[ener]/limit_pref_f``
 
         The prefactor of force loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity.
 
-    .. raw:: html
+    .. _`loss[ener]/start_pref_v`: 
 
-       <a id="loss[ener]/start_pref_v"></a>
     start_pref_v: 
         | type: ``float`` | ``int``, optional, default: ``0.0``
         | argument path: ``loss[ener]/start_pref_v``
 
         The prefactor of virial loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the virial label should be provided by file virial.npy in each data system. If both start_pref_virial and limit_pref_virial are set to 0, then the virial will be ignored.
 
-    .. raw:: html
+    .. _`loss[ener]/limit_pref_v`: 
 
-       <a id="loss[ener]/limit_pref_v"></a>
     limit_pref_v: 
         | type: ``float`` | ``int``, optional, default: ``0.0``
         | argument path: ``loss[ener]/limit_pref_v``
 
         The prefactor of virial loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity.
 
-    .. raw:: html
+    .. _`loss[ener]/start_pref_ae`: 
 
-       <a id="loss[ener]/start_pref_ae"></a>
     start_pref_ae: 
         | type: ``float`` | ``int``, optional, default: ``0.0``
         | argument path: ``loss[ener]/start_pref_ae``
 
-        The prefactor of virial loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the virial label should be provided by file virial.npy in each data system. If both start_pref_virial and limit_pref_virial are set to 0, then the virial will be ignored.
+        The prefactor of atom_ener loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the atom_ener label should be provided by file atom_ener.npy in each data system. If both start_pref_atom_ener and limit_pref_atom_ener are set to 0, then the atom_ener will be ignored.
 
-    .. raw:: html
+    .. _`loss[ener]/limit_pref_ae`: 
 
-       <a id="loss[ener]/limit_pref_ae"></a>
     limit_pref_ae: 
         | type: ``float`` | ``int``, optional, default: ``0.0``
         | argument path: ``loss[ener]/limit_pref_ae``
 
-        The prefactor of virial loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity.
+        The prefactor of atom_ener loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity.
 
-    .. raw:: html
+    .. _`loss[ener]/relative_f`: 
 
-       <a id="loss[ener]/relative_f"></a>
     relative_f: 
         | type: ``float`` | ``NoneType``, optional
         | argument path: ``loss[ener]/relative_f``
@@ -1153,9 +1113,8 @@ loss:
         If provided, relative force error will be used in the loss. The difference of force will be normalized by the magnitude of the force in the label with a shift given by `relative_f`, i.e. DF_i / ( || F || + relative_f ) with DF denoting the difference between prediction and label and || F || denoting the L2 norm of the label.
 
 
-.. raw:: html
+.. _`learning_rate`: 
 
-   <a id="learning_rate"></a>
 learning_rate: 
     | type: ``dict``
     | argument path: ``learning_rate``
@@ -1165,42 +1124,44 @@ learning_rate:
 
     Depending on the value of *type*, different sub args are accepted. 
 
-    .. raw:: html
+    .. _`learning_rate/type`: 
 
-       <a id="learning_rate/type"></a>
     type:
         | type: ``str`` (flag key), default: ``exp``
         | argument path: ``learning_rate/type`` 
+        | possible choices: |code:learning_rate[exp]|_
 
-        The type of the learning rate. Current type `exp`, the exponentially decaying learning rate is supported.
+        The type of the learning rate.
+
+        .. |code:learning_rate[exp]| replace:: ``exp``
+        .. _`code:learning_rate[exp]`: `learning_rate[exp]`_
+
+    .. |flag:learning_rate/type| replace:: *type*
+    .. _`flag:learning_rate/type`: `learning_rate/type`_
 
 
-    .. raw:: html
+    .. _`learning_rate[exp]`: 
 
-       <a id="learning_rate[exp]"></a>
-    When *type* is set to ``exp``: 
+    When |flag:learning_rate/type|_ is set to ``exp``: 
 
-    .. raw:: html
+    .. _`learning_rate[exp]/start_lr`: 
 
-       <a id="learning_rate[exp]/start_lr"></a>
     start_lr: 
         | type: ``float``, optional, default: ``0.001``
         | argument path: ``learning_rate[exp]/start_lr``
 
         The learning rate the start of the training.
 
-    .. raw:: html
+    .. _`learning_rate[exp]/stop_lr`: 
 
-       <a id="learning_rate[exp]/stop_lr"></a>
     stop_lr: 
         | type: ``float``, optional, default: ``1e-08``
         | argument path: ``learning_rate[exp]/stop_lr``
 
         The desired learning rate at the end of the training.
 
-    .. raw:: html
+    .. _`learning_rate[exp]/decay_steps`: 
 
-       <a id="learning_rate[exp]/decay_steps"></a>
     decay_steps: 
         | type: ``int``, optional, default: ``5000``
         | argument path: ``learning_rate[exp]/decay_steps``
@@ -1208,185 +1169,244 @@ learning_rate:
         The learning rate is decaying every this number of training steps.
 
 
-.. raw:: html
+.. _`training`: 
 
-   <a id="training"></a>
 training: 
     | type: ``dict``
     | argument path: ``training``
 
-    The training options
+    The training options.
 
-    .. raw:: html
+    .. _`training/training_data`: 
 
-       <a id="training/systems"></a>
-    systems: 
-        | type: ``list`` | ``str``
-        | argument path: ``training/systems``
+    training_data: 
+        | type: ``dict``
+        | argument path: ``training/training_data``
 
-        The data systems. This key can be provided with a listthat specifies the systems, or be provided with a string by which the prefix of all systems are given and the list of the systems is automatically generated.
+        Configurations of training data.
 
-    .. raw:: html
+        .. _`training/training_data/systems`: 
 
-       <a id="training/set_prefix"></a>
-    set_prefix: 
-        | type: ``str``, optional, default: ``set``
-        | argument path: ``training/set_prefix``
+        systems: 
+            | type: ``list`` | ``str``
+            | argument path: ``training/training_data/systems``
 
-        The prefix of the sets in the `systems <#training/systems>`__.
+            The data systems for training. This key can be provided with a list that specifies the systems, or be provided with a string by which the prefix of all systems are given and the list of the systems is automatically generated.
 
-    .. raw:: html
+        .. _`training/training_data/set_prefix`: 
 
-       <a id="training/auto_prob"></a>
-    auto_prob: 
-        | type: ``str``, optional, default: ``prob_sys_size``
-        | argument path: ``training/auto_prob``
+        set_prefix: 
+            | type: ``str``, optional, default: ``set``
+            | argument path: ``training/training_data/set_prefix``
 
-        Determine the probability of systems automatically. The method is assigned by this key and can be
+            The prefix of the sets in the `systems <training/training_data/systems_>`_.
 
-        - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()
+        .. _`training/training_data/batch_size`: 
 
-        - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system
+        batch_size: 
+            | type: ``int`` | ``list`` | ``str``, optional, default: ``auto``
+            | argument path: ``training/training_data/batch_size``
 
-        - "prob_sys_size;stt_idx:end_idx:weight;stt_idx:end_idx:weight;..." : the list of systems is devided into blocks. A block is specified by `stt_idx:end_idx:weight`, where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system, the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional to the number of batches in the system.
+            This key can be 
 
-    .. raw:: html
+            - list: the length of which is the same as the `systems <training/training_data/systems_>`_. The batch size of each system is given by the elements of the list.
 
-       <a id="training/sys_probs"></a>
-    sys_probs: 
-        | type: ``NoneType`` | ``list``, optional, default: ``None``
-        | argument path: ``training/sys_probs``
+            - int: all `systems <training/training_data/systems_>`_ use the same batch size.
 
-        A list of float, should be of the same length as `train_systems`, specifying the probability of each system.
+            - string "auto": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than 32.
 
-    .. raw:: html
+            - string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.
 
-       <a id="training/batch_size"></a>
-    batch_size: 
-        | type: ``int`` | ``list`` | ``str``, optional, default: ``auto``
-        | argument path: ``training/batch_size``
+        .. _`training/training_data/auto_prob`: 
 
-        This key can be 
+        auto_prob: 
+            | type: ``str``, optional, default: ``prob_sys_size``, alias: *auto_prob_style*
+            | argument path: ``training/training_data/auto_prob``
 
-        - list: the length of which is the same as the `systems <#training/systems>`__. The batch size of each system is given by the elements of the list.
+            Determine the probability of systems automatically. The method is assigned by this key and can be
 
-        - int: all `systems <#training/systems>`__ use the same batch size.
+            - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()
 
-        - string "auto": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than 32.
+            - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system
 
-        - string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.
+            - "prob_sys_size;stt_idx:end_idx:weight;stt_idx:end_idx:weight;..." : the list of systems is devided into blocks. A block is specified by `stt_idx:end_idx:weight`, where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system, the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional to the number of batches in the system.
 
-    .. raw:: html
+        .. _`training/training_data/sys_probs`: 
 
-       <a id="training/numb_steps"></a>
+        sys_probs: 
+            | type: ``NoneType`` | ``list``, optional, default: ``None``, alias: *sys_weights*
+            | argument path: ``training/training_data/sys_probs``
+
+            A list of float if specified. Should be of the same length as `systems`, specifying the probability of each system.
+
+    .. _`training/validation_data`: 
+
+    validation_data: 
+        | type: ``NoneType`` | ``dict``, optional, default: ``None``
+        | argument path: ``training/validation_data``
+
+        Configurations of validation data. Similar to that of training data, except that a `numb_btch` argument may be configured
+
+        .. _`training/validation_data/systems`: 
+
+        systems: 
+            | type: ``list`` | ``str``
+            | argument path: ``training/validation_data/systems``
+
+            The data systems for validation. This key can be provided with a list that specifies the systems, or be provided with a string by which the prefix of all systems are given and the list of the systems is automatically generated.
+
+        .. _`training/validation_data/set_prefix`: 
+
+        set_prefix: 
+            | type: ``str``, optional, default: ``set``
+            | argument path: ``training/validation_data/set_prefix``
+
+            The prefix of the sets in the `systems <training/validation_data/systems_>`_.
+
+        .. _`training/validation_data/batch_size`: 
+
+        batch_size: 
+            | type: ``int`` | ``list`` | ``str``, optional, default: ``auto``
+            | argument path: ``training/validation_data/batch_size``
+
+            This key can be 
+
+            - list: the length of which is the same as the `systems <training/validation_data/systems_>`_. The batch size of each system is given by the elements of the list.
+
+            - int: all `systems <training/validation_data/systems_>`_ use the same batch size.
+
+            - string "auto": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than 32.
+
+            - string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.
+
+        .. _`training/validation_data/auto_prob`: 
+
+        auto_prob: 
+            | type: ``str``, optional, default: ``prob_sys_size``, alias: *auto_prob_style*
+            | argument path: ``training/validation_data/auto_prob``
+
+            Determine the probability of systems automatically. The method is assigned by this key and can be
+
+            - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()
+
+            - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system
+
+            - "prob_sys_size;stt_idx:end_idx:weight;stt_idx:end_idx:weight;..." : the list of systems is devided into blocks. A block is specified by `stt_idx:end_idx:weight`, where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system, the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional to the number of batches in the system.
+
+        .. _`training/validation_data/sys_probs`: 
+
+        sys_probs: 
+            | type: ``NoneType`` | ``list``, optional, default: ``None``, alias: *sys_weights*
+            | argument path: ``training/validation_data/sys_probs``
+
+            A list of float if specified. Should be of the same length as `systems`, specifying the probability of each system.
+
+        .. _`training/validation_data/numb_btch`: 
+
+        numb_btch: 
+            | type: ``int``, optional, default: ``1``, alias: *numb_batch*
+            | argument path: ``training/validation_data/numb_btch``
+
+            An integer that specifies the number of systems to be sampled for each validation period.
+
+    .. _`training/numb_steps`: 
+
     numb_steps: 
-        | type: ``int``
+        | type: ``int``, alias: *stop_batch*
         | argument path: ``training/numb_steps``
 
         Number of training batch. Each training uses one batch of data.
 
-    .. raw:: html
+    .. _`training/seed`: 
 
-       <a id="training/seed"></a>
     seed: 
         | type: ``int`` | ``NoneType``, optional
         | argument path: ``training/seed``
 
         The random seed for getting frames from the training data set.
 
-    .. raw:: html
+    .. _`training/disp_file`: 
 
-       <a id="training/disp_file"></a>
     disp_file: 
         | type: ``str``, optional, default: ``lcueve.out``
         | argument path: ``training/disp_file``
 
         The file for printing learning curve.
 
-    .. raw:: html
+    .. _`training/disp_freq`: 
 
-       <a id="training/disp_freq"></a>
     disp_freq: 
         | type: ``int``, optional, default: ``1000``
         | argument path: ``training/disp_freq``
 
         The frequency of printing learning curve.
 
-    .. raw:: html
+    .. _`training/numb_test`: 
 
-       <a id="training/numb_test"></a>
     numb_test: 
         | type: ``int`` | ``list`` | ``str``, optional, default: ``1``
         | argument path: ``training/numb_test``
 
         Number of frames used for the test during training.
 
-    .. raw:: html
+    .. _`training/save_freq`: 
 
-       <a id="training/save_freq"></a>
     save_freq: 
         | type: ``int``, optional, default: ``1000``
         | argument path: ``training/save_freq``
 
         The frequency of saving check point.
 
-    .. raw:: html
+    .. _`training/save_ckpt`: 
 
-       <a id="training/save_ckpt"></a>
     save_ckpt: 
         | type: ``str``, optional, default: ``model.ckpt``
         | argument path: ``training/save_ckpt``
 
         The file name of saving check point.
 
-    .. raw:: html
+    .. _`training/disp_training`: 
 
-       <a id="training/disp_training"></a>
     disp_training: 
         | type: ``bool``, optional, default: ``True``
         | argument path: ``training/disp_training``
 
         Displaying verbose information during training.
 
-    .. raw:: html
+    .. _`training/time_training`: 
 
-       <a id="training/time_training"></a>
     time_training: 
         | type: ``bool``, optional, default: ``True``
         | argument path: ``training/time_training``
 
         Timing durining training.
 
-    .. raw:: html
+    .. _`training/profiling`: 
 
-       <a id="training/profiling"></a>
     profiling: 
         | type: ``bool``, optional, default: ``False``
         | argument path: ``training/profiling``
 
         Profiling during training.
 
-    .. raw:: html
+    .. _`training/profiling_file`: 
 
-       <a id="training/profiling_file"></a>
     profiling_file: 
         | type: ``str``, optional, default: ``timeline.json``
         | argument path: ``training/profiling_file``
 
         Output file for profiling.
 
-    .. raw:: html
+    .. _`training/tensorboard`: 
 
-       <a id="training/tensorboard"></a>
     tensorboard: 
         | type: ``bool``, optional, default: ``False``
         | argument path: ``training/tensorboard``
 
         Enable tensorboard
 
-    .. raw:: html
+    .. _`training/tensorboard_log_dir`: 
 
-       <a id="training/tensorboard_log_dir"></a>
     tensorboard_log_dir: 
         | type: ``str``, optional, default: ``log``
         | argument path: ``training/tensorboard_log_dir``
