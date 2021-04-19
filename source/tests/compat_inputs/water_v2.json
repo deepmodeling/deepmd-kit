@@ -34,9 +34,9 @@
     "training": {
 		"training_data": {
 			"systems":	["../data/"],
+			"set_prefix":	"set",
 			"batch_size":	[4]
 		},
-		"set_prefix":	"set",
 		"stop_batch":	1000000,
 		"seed":		1,
 		"disp_file":	"lcurve.out",
