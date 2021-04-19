@@ -426,15 +426,14 @@ class DeepmdDataSystem() :
         log.info(f"---Summary of DataSystem: {name:13s}-----------------------------------------------")
         log.info("found %d system(s):" % self.nsystems)
         log.info(("%s  " % self._format_name_length('system', sys_width)) + 
-                 ("%6s  %6s  %6s  %6s  %5s  %3s" % ('natoms', 'bch_sz', 'n_bch', "n_test", 'prob', 'pbc')))
+                 ("%6s  %6s  %6s  %5s  %3s" % ('natoms', 'bch_sz', 'n_bch', 'prob', 'pbc')))
         for ii in range(self.nsystems) :
-            log.info("%s  %6d  %6d  %6d  %6d  %5.3f  %3s" % 
+            log.info("%s  %6d  %6d  %6d  %5.3f  %3s" % 
                      (self._format_name_length(self.system_dirs[ii], sys_width),
                       self.natoms[ii], 
                       # TODO batch size * nbatches = number of structures
                       self.batch_size[ii],
                       self.nbatches[ii],
-                      self.test_size[ii],
                       self.sys_probs[ii],
                       "T" if self.data_systems[ii].pbc else "F"
                      ) )
