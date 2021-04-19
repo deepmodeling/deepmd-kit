@@ -71,7 +71,7 @@ def descrpt_se_a_args():
     ]
 
 
-def descrpt_se_a_3be_args():
+def descrpt_se_t_args():
     doc_sel = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.'
     doc_rcut = 'The cut-off radius.'
     doc_rcut_smth = 'Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`'
@@ -164,14 +164,14 @@ def descrpt_variant_type_args():
     link_lf = make_link('loc_frame', 'model/descriptor[loc_frame]')
     link_se_a = make_link('se_a', 'model/descriptor[se_a]')
     link_se_r = make_link('se_r', 'model/descriptor[se_r]')
-    link_se_a_3be = make_link('se_a_3be', 'model/descriptor[se_a_3be]')
+    link_se_t = make_link('se_t', 'model/descriptor[se_t]')
     link_se_a_tpe = make_link('se_a_tpe', 'model/descriptor[se_a_tpe]')
     link_hybrid = make_link('hybrid', 'model/descriptor[hybrid]')
     doc_descrpt_type = f'The type of the descritpor. See explanation below. \n\n\
 - `loc_frame`: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.\n\n\
 - `se_a`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor.\n\n\
 - `se_r`: Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor.\n\n\
-- `se_a_3be`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Three-body embedding will be used by this descriptor.\n\n\
+- `se_t`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Three-body embedding will be used by this descriptor.\n\n\
 - `se_a_tpe`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Type embedding will be used by this descriptor.\n\n\
 - `hybrid`: Concatenate of a list of descriptors as a new descriptor.'
     
@@ -179,7 +179,7 @@ def descrpt_variant_type_args():
         Argument("loc_frame", dict, descrpt_local_frame_args()),
         Argument("se_a", dict, descrpt_se_a_args()),
         Argument("se_r", dict, descrpt_se_r_args()),
-        Argument("se_a_3be", dict, descrpt_se_a_3be_args(), alias = ['se_at']),
+        Argument("se_t", dict, descrpt_se_t_args(), alias = ['se_at', 'se_a_3be']),
         Argument("se_a_tpe", dict, descrpt_se_a_tpe_args(), alias = ['se_a_ebd']),
         Argument("hybrid", dict, descrpt_hybrid_args()),
     ], doc = doc_descrpt_type)
