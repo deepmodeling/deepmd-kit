@@ -8,16 +8,16 @@ from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 # from deepmd.descriptor import DescrptLocFrame
 # from deepmd.descriptor import DescrptSeA
-# from deepmd.descriptor import DescrptSeAT
+# from deepmd.descriptor import DescrptSeT
 # from deepmd.descriptor import DescrptSeAEbd
 # from deepmd.descriptor import DescrptSeAEf
 # from deepmd.descriptor import DescrptSeR
-from .se_a      import DescrptSeA
-from .se_r      import DescrptSeR
-from .se_ar     import DescrptSeAR
-from .se_a_t    import DescrptSeAT
-from .se_a_ebd  import DescrptSeAEbd
-from .se_a_ef   import DescrptSeAEf
+from .se_a import DescrptSeA
+from .se_r import DescrptSeR
+from .se_ar import DescrptSeAR
+from .se_t import DescrptSeT
+from .se_a_ebd import DescrptSeAEbd
+from .se_a_ef import DescrptSeAEf
 from .loc_frame import DescrptLocFrame
 
 class DescrptHybrid ():
