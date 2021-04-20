@@ -4,3 +4,4 @@ pyyaml
 dargs >= 0.2.1
 tqdm
 typing_extensions
+sphinx_markdown_tables
