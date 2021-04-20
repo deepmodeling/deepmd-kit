@@ -341,6 +341,7 @@ where `e`, `f` and `v` are predicted energy, force and virial of the system, res
 Include deepmd in the pair_style
 
 #### Syntax
+```
 pair_style deepmd models ... keyword value ...
 ```
 - deepmd = style of this pair_style
