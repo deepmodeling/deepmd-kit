@@ -954,8 +954,8 @@ _prepare_coord_nlist_gpu(
     const int & max_cpy_trial,
     const int & max_nnei_trial)
 {    
-  inlist.inum = nloc;
   if(nei_mode != 3){
+    inlist.inum = nloc;
     // build nlist by myself
     // normalize and copy coord
     if(nei_mode == 1){

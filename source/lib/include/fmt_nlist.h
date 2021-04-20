@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include "device.h"
 #include "neighbor_list.h"
 
 namespace deepmd{
@@ -16,6 +17,21 @@ void format_nlist_cpu(
     const float rcut, 
     const std::vector<int> sec);
 
+#if GOOGLE_CUDA
+template <typename FPTYPE>
+void format_nbor_list_gpu_cuda(    
+    int * nlist, 
+    const FPTYPE * coord, 
+    const int * type, 
+    const deepmd::InputNlist & gpu_inlist,
+    int * array_int,
+    uint_64 * array_longlong,
+    const int max_nbor_size,
+    const int nloc, 
+    const int nall, 
+    const float rcut, 
+    const std::vector<int> sec);
+#endif //GOOGLE_CUDA
 }
 
 

@@ -1,4 +1,5 @@
 #include "gpu_cuda.h"
+#include "fmt_nlist.h"
 #include "prod_env_mat.h"
 #include <cub/block/block_load.cuh>
 #include <cub/block/block_store.cuh>
@@ -86,7 +87,7 @@ __global__ void get_i_idx(
 
 template<typename FPTYPE>
 __global__ void format_nlist_fill_a(
-    int_64 * key,
+    uint_64 * key,
     const FPTYPE * coord,
     const int * type,
     const int * numneigh,
@@ -106,15 +107,18 @@ __global__ void format_nlist_fill_a(
 
   const int * nei_idx = firstneigh[i_idx[idx]];
   // dev_copy(nei_idx, &jlist[jrange[i_idx]], nsize);
-  int_64 * key_in = key + idx * MAX_NBOR_SIZE;
+  uint_64 * key_in = key + idx * MAX_NBOR_SIZE;
   FPTYPE diff[3];
   const int & j_idx = nei_idx[idy];
   for (int dd = 0; dd < 3; dd++) {
     diff[dd] = coord[j_idx * 3 + dd] - coord[idx * 3 + dd];
   }
   FPTYPE rr = sqrt(dev_dot(diff, diff)); 
+  if(type[j_idx] > 128 || rr > 128.0 || j_idx > (1 << 24)) {
+    asm("trap;");
+  }
   if (rr <= rcut) {
-    key_in[idy] = type[j_idx] * 1E14+ (int_64)(rr * 1.0E12) / 10000000 * 10000000 + j_idx;
+    key_in[idy] = ((uint_64)type[j_idx] << 57) + (uint_64)((double)rr * ((uint_64)1 << 50)) / (1 << 24) * (1 << 24) + j_idx;
   }
 }
 
@@ -142,16 +146,16 @@ __global__ void format_nlist_fill_b(
   }
   
   for (unsigned int kk = 0; key_out[kk] != key_out[max_nbor_size - 1]; kk++) {
-    const int & nei_type = key_out[kk] / 1E14;
+    const int & nei_type = key_out[kk] >> 57;
     if (nei_iter[nei_type] < sec[nei_type + 1]) {
-      row_nlist[nei_iter[nei_type]++] = key_out[kk] % 10000000;
+      row_nlist[nei_iter[nei_type]++] = key_out[kk] & 0xFFFFFF;
     }
   }
 }
 
 template<typename FPTYPE>
 void format_nbor_list_1024 (
-    int_64 * key,
+    uint_64 * key,
     const FPTYPE* coord,
     const int* type,
     const deepmd::InputNlist & gpu_inlist,
@@ -170,14 +174,14 @@ void format_nbor_list_1024 (
   const int ITEMS_PER_THREAD = 8;
   const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
   // BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
-  BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (
+  BlockSortKernel<uint_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (
       key, 
       key + nloc * MAX_NBOR_SIZE);
 }
 
 template<typename FPTYPE>
 void format_nbor_list_2048 (
-    int_64 * key,
+    uint_64 * key,
     const FPTYPE* coord,
     const int* type,
     const deepmd::InputNlist & gpu_inlist,
@@ -196,14 +200,14 @@ void format_nbor_list_2048 (
   const int ITEMS_PER_THREAD = 8;
   const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
   // BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
-  BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (
+  BlockSortKernel<uint_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (
       key, 
       key + nloc * MAX_NBOR_SIZE);
 }
 
 template<typename FPTYPE>
 void format_nbor_list_4096 (
-    int_64 * key,
+    uint_64 * key,
     const FPTYPE* coord,
     const int* type,
     const deepmd::InputNlist & gpu_inlist,
@@ -222,60 +226,9 @@ void format_nbor_list_4096 (
   const int ITEMS_PER_THREAD = 16;
   const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
   // BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
-  BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (
+  BlockSortKernel<uint_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (
       key, 
       key + nloc * MAX_NBOR_SIZE);
-}
-
-template <typename FPTYPE>
-void format_nbor_list(    
-    int * nlist, 
-    const FPTYPE * coord, 
-    const int * type, 
-    const deepmd::InputNlist & gpu_inlist,
-    int * array_int,
-    int_64 * array_longlong,
-    const int max_nbor_size,
-    const int nloc, 
-    const int nall, 
-    const float rcut, 
-    const std::vector<int> sec)
-{
-  const int LEN = 256;
-  const int nnei = sec.back();
-  const int nblock = (nloc + LEN -1) / LEN;
-  int * sec_dev = array_int;
-  int * nei_iter = array_int + sec.size(); // = new int[sec_size];
-  int * i_idx = array_int + sec.size() + nloc * sec.size();
-  int_64 * key = array_longlong;
-  assert(max_nbor_size == 1024 || max_nbor_size == 2048 || max_nbor_size == 4096);
-  cudaErrcheck(cudaMemset(nlist, -1, sizeof(int) * nloc * nnei));
-  cudaErrcheck(cudaMemset(key, 0xffffffff, sizeof(int_64) * nloc * max_nbor_size));
-  cudaErrcheck(cudaMemcpy(sec_dev, &sec[0], sizeof(int) * sec.size(), cudaMemcpyHostToDevice));   
-
-  get_i_idx<<<nblock, LEN>>>(
-      i_idx,
-      nloc, gpu_inlist.ilist);
-
-  if (max_nbor_size == 1024) {
-    format_nbor_list_1024 (
-        key,
-        coord, type, gpu_inlist, nloc, rcut, i_idx); 
-  } 
-  else if (max_nbor_size == 2048) {
-    format_nbor_list_2048 (
-        key,
-        coord, type, gpu_inlist, nloc, rcut, i_idx); 
-  } 
-  else if (max_nbor_size == 4096) {
-    format_nbor_list_4096 (
-        key,
-        coord, type, gpu_inlist, nloc, rcut, i_idx); 
-  }
-
-  format_nlist_fill_b<<<nblock, LEN>>> (
-      nlist,
-      nnei, nloc, key, sec_dev, sec.size(), nei_iter, max_nbor_size);
 }
 
 template<
@@ -433,6 +386,57 @@ __global__ void compute_env_mat_r(
 
 namespace deepmd {
 template <typename FPTYPE>
+void format_nbor_list_gpu_cuda(    
+    int * nlist, 
+    const FPTYPE * coord, 
+    const int * type, 
+    const deepmd::InputNlist & gpu_inlist,
+    int * array_int,
+    uint_64 * array_longlong,
+    const int max_nbor_size,
+    const int nloc, 
+    const int nall, 
+    const float rcut, 
+    const std::vector<int> sec)
+{
+  const int LEN = 256;
+  const int nnei = sec.back();
+  const int nblock = (nloc + LEN -1) / LEN;
+  int * sec_dev = array_int;
+  int * nei_iter = array_int + sec.size(); // = new int[sec_size];
+  int * i_idx = array_int + sec.size() + nloc * sec.size();
+  uint_64 * key = array_longlong;
+  assert(max_nbor_size == 1024 || max_nbor_size == 2048 || max_nbor_size == 4096);
+  cudaErrcheck(cudaMemset(nlist, -1, sizeof(int) * nloc * nnei));
+  cudaErrcheck(cudaMemset(key, 0xffffffff, sizeof(uint_64) * nloc * max_nbor_size));
+  cudaErrcheck(cudaMemcpy(sec_dev, &sec[0], sizeof(int) * sec.size(), cudaMemcpyHostToDevice));   
+
+  get_i_idx<<<nblock, LEN>>>(
+      i_idx,
+      nloc, gpu_inlist.ilist);
+
+  if (max_nbor_size == 1024) {
+    format_nbor_list_1024 (
+        key,
+        coord, type, gpu_inlist, nloc, rcut, i_idx); 
+  } 
+  else if (max_nbor_size == 2048) {
+    format_nbor_list_2048 (
+        key,
+        coord, type, gpu_inlist, nloc, rcut, i_idx); 
+  } 
+  else if (max_nbor_size == 4096) {
+    format_nbor_list_4096 (
+        key,
+        coord, type, gpu_inlist, nloc, rcut, i_idx); 
+  }
+
+  format_nlist_fill_b<<<nblock, LEN>>> (
+      nlist,
+      nnei, nloc, key, sec_dev, sec.size(), nei_iter, max_nbor_size);
+}
+
+template <typename FPTYPE>
 void prod_env_mat_a_gpu_cuda(    
     FPTYPE * em, 
     FPTYPE * em_deriv, 
@@ -442,7 +446,7 @@ void prod_env_mat_a_gpu_cuda(
     const int * type, 
     const InputNlist & gpu_inlist,
     int * array_int, 
-    int_64 * array_longlong,
+    uint_64 * array_longlong,
     const int max_nbor_size,
     const FPTYPE * avg, 
     const FPTYPE * std, 
@@ -457,9 +461,11 @@ void prod_env_mat_a_gpu_cuda(
   cudaErrcheck(cudaMemset(em, 0.0, sizeof(FPTYPE) * nloc * ndescrpt));
   cudaErrcheck(cudaMemset(em_deriv, 0.0, sizeof(FPTYPE) * nloc * ndescrpt * 3));
 
-  format_nbor_list(
+  format_nbor_list_gpu_cuda(
       nlist, 
       coord, type, gpu_inlist, array_int, array_longlong, max_nbor_size, nloc, nall, rcut, sec);
+  nborErrcheck(cudaGetLastError());
+  nborErrcheck(cudaDeviceSynchronize());
 
   compute_env_mat_a<FPTYPE, TPB> <<<nloc, TPB>>> (
       em, em_deriv, rij, 
@@ -476,7 +482,7 @@ void prod_env_mat_r_gpu_cuda(
     const int * type, 
     const InputNlist & gpu_inlist,
     int * array_int, 
-    int_64 * array_longlong,
+    uint_64 * array_longlong,
     const int max_nbor_size,
     const FPTYPE * avg, 
     const FPTYPE * std, 
@@ -491,10 +497,12 @@ void prod_env_mat_r_gpu_cuda(
   cudaErrcheck(cudaMemset(em, 0.0, sizeof(FPTYPE) * nloc * ndescrpt));
   cudaErrcheck(cudaMemset(em_deriv, 0.0, sizeof(FPTYPE) * nloc * ndescrpt * 3));
 
-  format_nbor_list(
+  format_nbor_list_gpu_cuda(
       nlist, 
       coord, type, gpu_inlist, array_int, array_longlong, max_nbor_size, nloc, nall, rcut, sec);
-
+  nborErrcheck(cudaGetLastError());
+  nborErrcheck(cudaDeviceSynchronize());
+  
   compute_env_mat_r<FPTYPE, TPB> <<<nloc, TPB>>> (
       em, em_deriv, rij, 
       coord, avg, std, type, nlist, nnei, rcut_smth, rcut);
@@ -504,4 +512,6 @@ template void prod_env_mat_a_gpu_cuda<float>(float * em, float * em_deriv, float
 template void prod_env_mat_a_gpu_cuda<double>(double * em, double * em_deriv, double * rij, int * nlist, const double * coord, const int * type, const InputNlist & gpu_inlist, int * array_int, unsigned long long * array_longlong, const int max_nbor_size, const double * avg, const double * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec);
 template void prod_env_mat_r_gpu_cuda<float>(float * em, float * em_deriv, float * rij, int * nlist, const float * coord, const int * type, const InputNlist & gpu_inlist, int * array_int, unsigned long long * array_longlong, const int max_nbor_size, const float * avg, const float * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec);
 template void prod_env_mat_r_gpu_cuda<double>(double * em, double * em_deriv, double * rij, int * nlist, const double * coord, const int * type, const InputNlist & gpu_inlist, int * array_int, unsigned long long * array_longlong, const int max_nbor_size, const double * avg, const double * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec);
+template void format_nbor_list_gpu_cuda<float>(int * nlist, const float * coord, const int * type, const deepmd::InputNlist & gpu_inlist,int * array_int,uint_64 * array_longlong,const int max_nbor_size,const int nloc, const int nall, const float rcut, const std::vector<int> sec);
+template void format_nbor_list_gpu_cuda<double>(int * nlist, const double * coord, const int * type, const deepmd::InputNlist & gpu_inlist,int * array_int,uint_64 * array_longlong,const int max_nbor_size,const int nloc, const int nall, const float rcut, const std::vector<int> sec);
 }
