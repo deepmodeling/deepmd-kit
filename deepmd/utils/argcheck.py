@@ -393,19 +393,40 @@ def loss_ener():
         Argument("relative_f", [float,None], optional = True, doc = doc_relative_f)
     ]
 
+# YWolfeee: Modified to support tensor type of loss args.
+def loss_tensor(default_mode):
+    if default_mode == "local":
+        doc_global_weight = "The prefactor of the weight of global loss. It should be larger than or equal to 0. If not provided, training will be atomic mode, i.e. atomic label should be provided." 
+        doc_local_weight =  "The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If it's not provided and global weight is provided, training will be global mode, i.e. global label should be provided. If both global and atomic weight are not provided, training will be atomic mode, i.e.  atomic label should be provided." 
+        return [
+            Argument("pref_weight", [float,int], optional = True, default = None, doc = doc_global_weight),
+            Argument("pref_atomic_weight", [float,int], optional = True, default = None, doc = doc_local_weight),
+        ]
+    else:
+        doc_local_weight = "The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If not provided, training will be global mode, i.e. global label should be provided." 
+        doc_global_weight =  "The prefactor of the weight of global loss. It should be larger than or equal to 0. If it's not provided and atomic weight is provided, training will be atomic mode, i.e. atomic label should be provided. If both global and atomic weight are not provided, training will be global mode, i.e.  global label should be provided." 
+        return [
+            Argument("pref_weight", [float,int], optional = True, default = None, doc = doc_global_weight),
+            Argument("pref_atomic_weight", [float,int], optional = True, default = None, doc = doc_local_weight),
+        ]
 
 def loss_variant_type_args():
-    doc_loss = 'The type of the loss. \n\.'
+    doc_loss = 'The type of the loss. The loss type should be set to the fitting type or left unset.\n\.'
+
     
     return Variant("type", 
-                   [Argument("ener", dict, loss_ener())],
+                   [Argument("ener", dict, loss_ener()),
+                    Argument("dipole", dict, loss_tensor("local")),
+                    Argument("polar", dict, loss_tensor("local")),
+                    Argument("global_polar", dict, loss_tensor("global"))
+                    ],
                    optional = True,
                    default_tag = 'ener',
                    doc = doc_loss)
 
 
 def loss_args():
-    doc_loss = 'The definition of loss function. The type of the loss depends on the type of the fitting. For fitting type `ener`, the prefactors before energy, force, virial and atomic energy losses may be provided. For fitting type `dipole`, `polar` and `global_polar`, the loss may be an empty `dict` or unset.' 
+    doc_loss = 'The definition of loss function. The loss type should be set to the fitting type or left unset.\n\.'
     ca = Argument('loss', dict, [], 
                   [loss_variant_type_args()],
                   optional = True,
