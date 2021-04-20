@@ -11,7 +11,7 @@ from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.fit import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
 from deepmd.descriptor import DescrptLocFrame
 from deepmd.descriptor import DescrptSeA
-from deepmd.descriptor import DescrptSeAT
+from deepmd.descriptor import DescrptSeT
 from deepmd.descriptor import DescrptSeAEbd
 from deepmd.descriptor import DescrptSeAEf
 from deepmd.descriptor import DescrptSeR
@@ -55,16 +55,16 @@ def _generate_descrpt_from_param_dict(descrpt_param):
         descrpt_param.pop(kk, None)
     if descrpt_type == 'loc_frame':
         descrpt = DescrptLocFrame(**descrpt_param)
-    elif descrpt_type == 'se_a' :            
+    elif descrpt_type == 'se_e2_a' or descrpt_type == 'se_a' :
         descrpt = DescrptSeA(**descrpt_param)
-    elif descrpt_type == 'se_a_3be' or descrpt_type == 'se_at' :
-        descrpt = DescrptSeAT(**descrpt_param)
+    elif descrpt_type == 'se_e2_r' or descrpt_type == 'se_r' :
+        descrpt = DescrptSeR(**descrpt_param)
+    elif descrpt_type == 'se_e3' or descrpt_type == 'se_at' or descrpt_type == 'se_a_3be' :
+        descrpt = DescrptSeT(**descrpt_param)
     elif descrpt_type == 'se_a_tpe' or descrpt_type == 'se_a_ebd' :
         descrpt = DescrptSeAEbd(**descrpt_param)
     elif descrpt_type == 'se_a_ef' :
         descrpt = DescrptSeAEf(**descrpt_param)
-    elif descrpt_type == 'se_r' :
-        descrpt = DescrptSeR(**descrpt_param)
     elif descrpt_type == 'se_ar' :
         descrpt = DescrptSeAR(descrpt_param)
     else :
@@ -568,7 +568,7 @@ class DPTrainer (object):
     @staticmethod
     def print_header(fp, train_results, valid_results):
         print_str = ''
-        print_str += "# %5s" % 'batch'
+        print_str += "# %5s" % 'step'
         if valid_results is not None:
             prop_fmt =  '   %11s %11s'
             for k in train_results.keys():
