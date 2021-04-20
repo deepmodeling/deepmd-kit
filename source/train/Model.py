@@ -82,6 +82,7 @@ class Model() :
                .add('data_stat_nbatch', int,    default = 10) \
                .add('data_stat_protect',float,  default = 1e-2) \
                .add('use_srtab',        str)
+               
         class_data = args.parse(jdata)
         self.type_map = class_data['type_map']
         self.srtab_name = class_data['use_srtab']
@@ -162,24 +163,44 @@ class Model() :
 
         coord = tf.reshape (coord_, [-1, natoms[1] * 3])
         atype = tf.reshape (atype_, [-1, natoms[1]])
-
-        dout \
+        print(self.fitting.share_fitting)
+        if self.fitting.share_fitting:
+          type_embedding,dout \
             = self.descrpt.build(coord_,
                                  atype_,
                                  natoms,
                                  box,
                                  mesh,
                                  input_dict,
-                                 suffix = suffix,
-                                 reuse = reuse)
+                                 reuse = reuse,
+                                 suffix = suffix)
+          type_embedding=tf.identity(type_embedding,name ='t_embed')
+        else:
+          dout \
+            = self.descrpt.build(coord_,
+                                 atype_,
+                                 natoms,
+                                 box,
+                                 mesh,
+                                 input_dict,
+                                 reuse = reuse,
+                                 suffix = suffix)
         dout = tf.identity(dout, name='o_descriptor')
-
         if self.srtab is not None :
             nlist, rij, sel_a, sel_r = self.descrpt.get_nlist()
             nnei_a = np.cumsum(sel_a)[-1]
             nnei_r = np.cumsum(sel_r)[-1]
-
-        atom_ener = self.fitting.build (dout, 
+        
+        if self.fitting.share_fitting:
+            atom_ener = self.fitting.build_share (dout,
+                                        atype_,
+                                        type_embedding,
+                                        input_dict, 
+                                        natoms, 
+                                        reuse = reuse, 
+                                        suffix = suffix)
+        else:
+            atom_ener = self.fitting.build (dout,
                                         input_dict, 
                                         natoms, 
                                         reuse = reuse, 

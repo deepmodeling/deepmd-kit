@@ -308,6 +308,7 @@ class NNPTrainer (object):
         apply_op = optimizer.apply_gradients (zip (grads, trainable_variables),
                                               global_step=self.global_step,
                                               name='train_step')
+
         train_ops = [apply_op] + self._extra_train_ops
         self.train_op = tf.group(*train_ops)
         self._message("built training")
@@ -453,6 +454,8 @@ class NNPTrainer (object):
                 tb_train_writer.add_summary(summary, cur_batch)
             else :
                 self.sess.run([self.train_op], feed_dict = feed_dict_batch, options=prf_options, run_metadata=prf_run_metadata)
+                
+                
             if self.timing_in_training : toc = time.time()
             if self.timing_in_training : train_time += toc - tic
             cur_batch = self.sess.run(self.global_step)
@@ -467,6 +470,11 @@ class NNPTrainer (object):
                     self._message("batch %7d training time %.2f s, testing time %.2f s"
                                   % (cur_batch, train_time, test_time))
                     train_time = 0
+
+                    
+                    #varvar2 = self.sess.graph.get_tensor_by_name('o_descriptor:0')
+                    #print(self.sess.run(varvar2))
+                    
                 if self.save_freq > 0 and cur_batch % self.save_freq == 0 and self.run_opt.is_chief :
                     if self.saver is not None :
                         self.saver.save (self.sess, os.getcwd() + "/" + self.save_ckpt)
