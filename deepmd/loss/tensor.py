@@ -78,6 +78,9 @@ class TensorLoss () :
         polar_hat = label_dict[self.label_name]
         polar = model_dict[self.tensor_name]
         
+        # YWolfeee: get the 2 norm of label, i.e. polar_hat
+        normalized_term = tf.sqrt(tf.reduce_sum(tf.square(polar_hat)))
+
         # YHT: added for global / local dipole combination
         l2_loss = global_cvt_2_tf_float(0.0)
         more_loss = {
@@ -117,7 +120,7 @@ class TensorLoss () :
             self.l2_loss_global_summary = tf.summary.scalar('l2_global_loss', 
                                             tf.sqrt(more_loss['global_loss']) / global_cvt_2_tf_float(atoms))
 
-            # YHT: should only consider atoms with dipole, i.e. atoms
+            # YWolfeee: should only consider atoms with dipole, i.e. atoms
             # atom_norm  = 1./ global_cvt_2_tf_float(natoms[0])  
             atom_norm  = 1./ global_cvt_2_tf_float(atoms)  
             global_loss *= atom_norm   
@@ -128,7 +131,12 @@ class TensorLoss () :
         self.l2_l = l2_loss
 
         self.l2_loss_summary = tf.summary.scalar('l2_loss', tf.sqrt(l2_loss))
-        return l2_loss, more_loss
+
+        # YWolfeee: loss normalization, do not influence the printed loss,
+        #           just change the training process
+        #return l2_loss, more_loss
+        return l2_loss / normalized_term, more_loss
+
 
     def print_header(self):
         prop_fmt = '   %11s %11s'
