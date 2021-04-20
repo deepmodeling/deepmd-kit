@@ -30,6 +30,7 @@ author = 'Deep Potential'
 extensions = [
     'recommonmark',
     "sphinx_rtd_theme",
+	'sphinx_markdown_tables',
     'sphinx.ext.autosummary'
 ]
 

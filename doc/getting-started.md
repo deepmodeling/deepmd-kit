@@ -18,14 +18,16 @@ In this text, we will call the deep neural network that is used to represent the
 ## Prepare data
 One needs to provide the following information to train a model: the atom type, the simulation box, the atom coordinate, the atom force, system energy and virial. A snapshot of a system that contains these information is called a **frame**. We use the following convention of units:
 
-Property| Unit
----	| :---:
-Time	| ps
-Length	| Å
-Energy	| eV
-Force	| eV/Å
-Virial  | eV
-Pressure| Bar
+
+Property | Unit 
+---|---
+Time     | ps   
+Length   | Å    
+Energy   | eV   
+Force    | eV/Å 
+Virial   | eV   
+Pressure | Bar  
+
 
 The frames of the system are stored in two formats. A raw file is a plain text file with each information item written in one file and one frame written on one line. The default files that provide box, coordinate, force, energy and virial are `box.raw`, `coord.raw`, `force.raw`, `energy.raw` and `virial.raw`, respectively. *We recommend you use these file names*. Here is an example of force.raw:
 ```bash
@@ -408,7 +410,7 @@ $ dp_ipi water.json
 ```
 It is noted that multiple instances of the client is allow for computing, in parallel, the interactions of multiple replica of the path-integral MD.
 
-`water.json` is the parameter file for the client `dp_ipi`, and [an example](./examples/ipi/water.json) is provided:
+`water.json` is the parameter file for the client `dp_ipi`, and [an example](https://github.com/tuoping/deepmd-kit/blob/devel/examples/water/ipi/water.json) is provided:
 ```json
 {
     "verbose":		false,
