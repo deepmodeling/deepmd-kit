@@ -78,6 +78,9 @@ class TensorLoss () :
         polar_hat = label_dict[self.label_name]
         polar = model_dict[self.tensor_name]
         
+        # YWolfeee: get the 2 norm of label, i.e. polar_hat
+        normalized_term = tf.sqrt(tf.reduce_sum(tf.square(polar_hat)))
+
         # YHT: added for global / local dipole combination
         l2_loss = global_cvt_2_tf_float(0.0)
         more_loss = {
@@ -117,7 +120,7 @@ class TensorLoss () :
             self.l2_loss_global_summary = tf.summary.scalar('l2_global_loss', 
                                             tf.sqrt(more_loss['global_loss']) / global_cvt_2_tf_float(atoms))
 
-            # YHT: should only consider atoms with dipole, i.e. atoms
+            # YWolfeee: should only consider atoms with dipole, i.e. atoms
             # atom_norm  = 1./ global_cvt_2_tf_float(natoms[0])  
             atom_norm  = 1./ global_cvt_2_tf_float(atoms)  
             global_loss *= atom_norm   
@@ -128,9 +131,32 @@ class TensorLoss () :
         self.l2_l = l2_loss
 
         self.l2_loss_summary = tf.summary.scalar('l2_loss', tf.sqrt(l2_loss))
-        return l2_loss, more_loss
 
-    def print_header(self):
+        # YWolfeee: loss normalization, do not influence the printed loss,
+        #           just change the training process
+        #return l2_loss, more_loss
+        return l2_loss / normalized_term, more_loss
+
+
+    def eval(self, sess, feed_dict, natoms):
+        atoms = 0
+        if self.type_sel is not None:
+            for w in self.type_sel:
+                atoms += natoms[2+w]
+        else:
+            atoms = natoms[0]
+
+        run_data = [self.l2_l, self.l2_more['local_loss'], self.l2_more['global_loss']]
+        error, error_lc, error_gl = sess.run(run_data, feed_dict=feed_dict)
+
+        results = {"natoms": atoms, "rmse": np.sqrt(error)}
+        if self.local_weight > 0.0:
+            results["rmse_lc"] = np.sqrt(error_lc)
+        if self.global_weight > 0.0:
+            results["rmse_gl"] = np.sqrt(error_gl) / atoms
+        return results
+
+    def print_header(self):  # depreciated
         prop_fmt = '   %11s %11s'
         print_str = ''
         print_str += prop_fmt % ('rmse_tst', 'rmse_trn')
@@ -146,7 +172,7 @@ class TensorLoss () :
                           sess, 
                           natoms,
                           feed_dict_test,
-                          feed_dict_batch) :
+                          feed_dict_batch) :  # depreciated
 
         # YHT: added to calculate the atoms number
         atoms = 0

@@ -11,7 +11,7 @@ from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.fit import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
 from deepmd.descriptor import DescrptLocFrame
 from deepmd.descriptor import DescrptSeA
-from deepmd.descriptor import DescrptSeAT
+from deepmd.descriptor import DescrptSeT
 from deepmd.descriptor import DescrptSeAEbd
 from deepmd.descriptor import DescrptSeAEf
 from deepmd.descriptor import DescrptSeR
@@ -55,16 +55,16 @@ def _generate_descrpt_from_param_dict(descrpt_param):
         descrpt_param.pop(kk, None)
     if descrpt_type == 'loc_frame':
         descrpt = DescrptLocFrame(**descrpt_param)
-    elif descrpt_type == 'se_a' :            
+    elif descrpt_type == 'se_e2_a' or descrpt_type == 'se_a' :
         descrpt = DescrptSeA(**descrpt_param)
-    elif descrpt_type == 'se_a_3be' or descrpt_type == 'se_at' :
-        descrpt = DescrptSeAT(**descrpt_param)
+    elif descrpt_type == 'se_e2_r' or descrpt_type == 'se_r' :
+        descrpt = DescrptSeR(**descrpt_param)
+    elif descrpt_type == 'se_e3' or descrpt_type == 'se_at' or descrpt_type == 'se_a_3be' :
+        descrpt = DescrptSeT(**descrpt_param)
     elif descrpt_type == 'se_a_tpe' or descrpt_type == 'se_a_ebd' :
         descrpt = DescrptSeAEbd(**descrpt_param)
     elif descrpt_type == 'se_a_ef' :
         descrpt = DescrptSeAEf(**descrpt_param)
-    elif descrpt_type == 'se_r' :
-        descrpt = DescrptSeR(**descrpt_param)
     elif descrpt_type == 'se_ar' :
         descrpt = DescrptSeAR(descrpt_param)
     else :
@@ -235,43 +235,30 @@ class DPTrainer (object):
             raise RuntimeError('get unknown fitting type when building loss function')
 
         # training
-        training_param = j_must_have(jdata, 'training')
-
-        # ! first .add() altered by Marián Rynik
-        tr_args = ClassArg()\
-                  .add('numb_test',     [int, list, str],    default = 1)\
-                  .add('disp_file',     str,    default = 'lcurve.out')\
-                  .add('disp_freq',     int,    default = 100)\
-                  .add('save_freq',     int,    default = 1000)\
-                  .add('save_ckpt',     str,    default = 'model.ckpt')\
-                  .add('display_in_training', bool, default = True)\
-                  .add('timing_in_training',  bool, default = True)\
-                  .add('profiling',     bool,   default = False)\
-                  .add('profiling_file',str,    default = 'timeline.json')\
-                  .add('tensorboard',     bool,   default = False)\
-                  .add('tensorboard_log_dir',str,    default = 'log')\
-                  .add('sys_probs',   list    )\
-                  .add('auto_prob', str, default = "prob_sys_size")
-        tr_data = tr_args.parse(training_param)
-        # not needed
-        # self.numb_test = tr_data['numb_test']
-        self.disp_file = tr_data['disp_file']
-        self.disp_freq = tr_data['disp_freq']
-        self.save_freq = tr_data['save_freq']
-        self.save_ckpt = tr_data['save_ckpt']
-        self.display_in_training = tr_data['display_in_training']
-        self.timing_in_training  = tr_data['timing_in_training']
-        self.profiling = tr_data['profiling']
-        self.profiling_file = tr_data['profiling_file']
-        self.tensorboard = tr_data['tensorboard']
-        self.tensorboard_log_dir = tr_data['tensorboard_log_dir']
-        self.sys_probs = tr_data['sys_probs']        
-        self.auto_prob_style = tr_data['auto_prob']        
+        tr_data = jdata['training']
+        self.disp_file = tr_data.get('disp_file', 'lcurve.out')
+        self.disp_freq = tr_data.get('disp_freq', 1000)
+        self.save_freq = tr_data.get('save_freq', 1000)
+        self.save_ckpt = tr_data.get('save_ckpt', 'model.ckpt')
+        self.display_in_training = tr_data.get('disp_training', True)
+        self.timing_in_training  = tr_data.get('time_training', True)
+        self.profiling = tr_data.get('profiling', False)
+        self.profiling_file = tr_data.get('profiling_file', 'timeline.json')
+        self.tensorboard = tr_data.get('tensorboard', False)
+        self.tensorboard_log_dir = tr_data.get('tensorboard_log_dir', 'log')
+        # self.sys_probs = tr_data['sys_probs']
+        # self.auto_prob_style = tr_data['auto_prob']
         self.useBN = False
         if fitting_type == 'ener' and  self.fitting.get_numb_fparam() > 0 :
             self.numb_fparam = self.fitting.get_numb_fparam()
         else :
             self.numb_fparam = 0
+
+        if tr_data.get("validation_data", None) is not None:
+            self.valid_numb_batch = tr_data["validation_data"].get("numb_btch", 1)
+        else:
+            self.valid_numb_batch = 1
+
 
     def build (self, 
                data, 
@@ -443,15 +430,18 @@ class DPTrainer (object):
         # ,
         # save_checkpoint_steps = self.save_freq)
 
-    def train (self, 
-               data) :
+    def train (self, train_data, valid_data=None) :
+
+        # if valid_data is None:  # no validation set specified.
+        #     valid_data = train_data  # using training set as validation set.
+
         stop_batch = self.stop_batch
         if self.run_opt.is_distrib :
             self._init_sess_distrib()
         else :
             self._init_sess_serial()
 
-        self.print_head()
+        # self.print_head()
         fp = None
         if self.run_opt.is_chief :
             fp = open(self.disp_file, "a")
@@ -478,52 +468,46 @@ class DPTrainer (object):
             summary_merged_op = tf.summary.merge_all()
             shutil.rmtree(self.tensorboard_log_dir)
             tb_train_writer = tf.summary.FileWriter(self.tensorboard_log_dir + '/train', self.sess.graph)
-            tb_test_writer = tf.summary.FileWriter(self.tensorboard_log_dir + '/test')
+            tb_valid_writer = tf.summary.FileWriter(self.tensorboard_log_dir + '/test')
         else:
             tb_train_writer = None
-            tb_test_writer = None
+            tb_valid_writer = None
         
         train_time = 0
         while cur_batch < stop_batch :
-            batch_data = data.get_batch (sys_probs = self.sys_probs,
-                                         auto_prob_style = self.auto_prob_style
-            )
-            feed_dict_batch = {}
-            for kk in batch_data.keys():
-                if kk == 'find_type' or kk == 'type' :
-                    continue
-                if 'find_' in kk :
-                    feed_dict_batch[self.place_holders[kk]] = batch_data[kk]
-                else:
-                    feed_dict_batch[self.place_holders[kk]] = np.reshape(batch_data[kk], [-1])
-            for ii in ['type'] :
-                feed_dict_batch[self.place_holders[ii]] = np.reshape(batch_data[ii], [-1])
-            for ii in ['natoms_vec', 'default_mesh'] :
-                feed_dict_batch[self.place_holders[ii]] = batch_data[ii]
-            feed_dict_batch[self.place_holders['is_training']] = True
 
-            if self.display_in_training and is_first_step :
-                self.test_on_the_fly(fp, data, feed_dict_batch, tb_test_writer)
+            # first round validation:
+            train_batch = train_data.get_batch()
+            if self.display_in_training and is_first_step:
+                valid_batches = [valid_data.get_batch() for ii in range(self.valid_numb_batch)] if valid_data is not None else None
+                self.valid_on_the_fly(fp, [train_batch], valid_batches, print_header=True)
                 is_first_step = False
-            if self.timing_in_training : tic = time.time()
+
+            if self.timing_in_training: tic = time.time()
+            train_feed_dict = self.get_feed_dict(train_batch, is_training=True)
             # use tensorboard to visualize the training of deepmd-kit
             # it will takes some extra execution time to generate the tensorboard data
             if self.tensorboard :
-                summary, _ = self.sess.run([summary_merged_op, self.train_op], feed_dict = feed_dict_batch, options=prf_options, run_metadata=prf_run_metadata)
+                summary, _ = self.sess.run([summary_merged_op, self.train_op], feed_dict=train_feed_dict,
+                                           options=prf_options, run_metadata=prf_run_metadata)
                 tb_train_writer.add_summary(summary, cur_batch)
             else :
-                self.sess.run([self.train_op], feed_dict = feed_dict_batch, options=prf_options, run_metadata=prf_run_metadata)
-            if self.timing_in_training : toc = time.time()
-            if self.timing_in_training : train_time += toc - tic
+                self.sess.run([self.train_op], feed_dict=train_feed_dict,
+                              options=prf_options, run_metadata=prf_run_metadata)
+            if self.timing_in_training: toc = time.time()
+            if self.timing_in_training: train_time += toc - tic
             cur_batch = self.sess.run(self.global_step)
             self.cur_batch = cur_batch
 
-            if self.display_in_training and (cur_batch % self.disp_freq == 0) :
-                tic = time.time()
-                self.test_on_the_fly(fp, data, feed_dict_batch, tb_test_writer)
-                toc = time.time()
-                test_time = toc - tic
-                if self.timing_in_training :
+            # on-the-fly validation
+            if self.display_in_training and (cur_batch % self.disp_freq == 0):
+                if self.timing_in_training:
+                    tic = time.time()
+                valid_batches = [valid_data.get_batch() for ii in range(self.valid_numb_batch)] if valid_data is not None else None
+                self.valid_on_the_fly(fp, [train_batch], valid_batches)
+                if self.timing_in_training:
+                    toc = time.time()
+                    test_time = toc - tic
                     log.info("batch %7d training time %.2f s, testing time %.2f s"
                                   % (cur_batch, train_time, test_time))
                     train_time = 0
@@ -539,56 +523,97 @@ class DPTrainer (object):
             with open(self.profiling_file, 'w') as f:
                 f.write(chrome_trace)
 
-    def get_global_step (self) :
-        return self.sess.run(self.global_step)
-
-    def print_head (self) :
-        if self.run_opt.is_chief:
-            fp = open(self.disp_file, "a")
-            print_str = "# %5s" % 'batch'
-            print_str += self.loss.print_header()
-            print_str += '   %8s\n' % 'lr'
-            fp.write(print_str)
-            fp.close ()
-
-    def test_on_the_fly (self,
-                         fp,
-                         data,
-                         feed_dict_batch,
-                         tb_writer) :
-        # Do not need to pass numb_test here as data object already knows it.
-        # Both DeepmdDataSystem and ClassArg parse the same json file
-        test_data = data.get_test(n_test=data.get_sys_ntest())
-        feed_dict_test = {}
-        for kk in test_data.keys():
-            if kk == 'find_type' or kk == 'type' :
+    def get_feed_dict(self, batch, is_training):
+        feed_dict = {}
+        for kk in batch.keys():
+            if kk == 'find_type' or kk == 'type':
                 continue
             if 'find_' in kk:
-                feed_dict_test[self.place_holders[kk]] = test_data[kk]
+                feed_dict[self.place_holders[kk]] = batch[kk]
             else:
-                # again the data object knows appropriate test data shape,
-                # there is no need to slice again!
-                # feed_dict_test[self.place_holders[kk]] = np.reshape(test_data[kk][:self.numb_test[data.pick_idx]], [-1])
-                feed_dict_test[self.place_holders[kk]] = np.reshape(test_data[kk], [-1])
-        for ii in ['type'] :
-            feed_dict_test[self.place_holders[ii]] = np.reshape(test_data[ii], [-1])            
-        for ii in ['natoms_vec', 'default_mesh'] :
-            feed_dict_test[self.place_holders[ii]] = test_data[ii]
-        feed_dict_test[self.place_holders['is_training']] = False
+                feed_dict[self.place_holders[kk]] = np.reshape(batch[kk], [-1])
+        for ii in ['type']:
+            feed_dict[self.place_holders[ii]] = np.reshape(batch[ii], [-1])
+        for ii in ['natoms_vec', 'default_mesh']:
+            feed_dict[self.place_holders[ii]] = batch[ii]
+        feed_dict[self.place_holders['is_training']] = is_training
+        return feed_dict
+
+    def get_global_step(self):
+        return self.sess.run(self.global_step)
+
+    # def print_head (self) :  # depreciated
+    #     if self.run_opt.is_chief:
+    #         fp = open(self.disp_file, "a")
+    #         print_str = "# %5s" % 'batch'
+    #         print_str += self.loss.print_header()
+    #         print_str += '   %8s\n' % 'lr'
+    #         fp.write(print_str)
+    #         fp.close ()
+
+    def valid_on_the_fly(self,
+                         fp,
+                         train_batches,
+                         valid_batches,
+                         print_header=False):
+        train_results = self.get_evaluation_results(train_batches)
+        valid_results = self.get_evaluation_results(valid_batches)
 
         cur_batch = self.cur_batch
         current_lr = self.sess.run(self.learning_rate)
-        if self.run_opt.is_chief:
-            print_str = "%7d" % cur_batch
-            print_str += self.loss.print_on_training(
-                tb_writer,
-                cur_batch,
-                self.sess,
-                test_data['natoms_vec'],
-                feed_dict_test,
-                feed_dict_batch
-            )
+        if print_header:
+            self.print_header(fp, train_results, valid_results)
+        self.print_on_training(fp, train_results, valid_results, cur_batch, current_lr)
 
-            print_str += "   %8.1e\n" % current_lr
-            fp.write(print_str)
-            fp.flush ()
+    @staticmethod
+    def print_header(fp, train_results, valid_results):
+        print_str = ''
+        print_str += "# %5s" % 'step'
+        if valid_results is not None:
+            prop_fmt =  '   %11s %11s'
+            for k in train_results.keys():
+                print_str += prop_fmt % (k + '_val', k + '_trn')
+        else:
+            prop_fmt = '   %11s'
+            for k in train_results.keys():
+                print_str += prop_fmt % (k + '_trn')
+        print_str += '   %8s\n' % 'lr'
+        fp.write(print_str)
+        fp.flush()
+
+    @staticmethod
+    def print_on_training(fp, train_results, valid_results, cur_batch, cur_lr):
+        print_str = ''
+        print_str += "%7d" % cur_batch
+        if valid_results is not None:
+            prop_fmt = "   %11.2e %11.2e"
+            for k in valid_results.keys():
+                # assert k in train_results.keys()
+                print_str += prop_fmt % (valid_results[k], train_results[k])
+        else:
+            prop_fmt = "   %11.2e"
+            for k in train_results.keys():
+                print_str += prop_fmt % (train_results[k])
+        print_str += "   %8.1e\n" % cur_lr
+        fp.write(print_str)
+        fp.flush()
+
+    def get_evaluation_results(self, batch_list):
+        if batch_list is None: return None
+        numb_batch = len(batch_list)
+
+        sum_results = {}    # sum of losses on all atoms
+        sum_natoms = 0
+        for i in range(numb_batch):
+            batch = batch_list[i]
+            natoms = batch["natoms_vec"]
+            feed_dict = self.get_feed_dict(batch, is_training=False)
+            results = self.loss.eval(self.sess, feed_dict, natoms)
+
+            for k, v in results.items():
+                if k == "natoms":
+                    sum_natoms += v
+                else:
+                    sum_results[k] = sum_results.get(k, 0.) + v * results["natoms"]
+        avg_results = {k: v / sum_natoms for k, v in sum_results.items() if not k == "natoms"}
+        return avg_results

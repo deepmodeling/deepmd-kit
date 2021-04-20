@@ -15,7 +15,7 @@ from deepmd.infer.data_modifier import DipoleChargeModifier
 from deepmd.train.run_options import BUILD, CITATION, WELCOME, RunOptions
 from deepmd.train.trainer import DPTrainer
 from deepmd.utils.argcheck import normalize
-from deepmd.utils.compat import convert_input_v0_v1
+from deepmd.utils.compat import updata_deepmd_input
 from deepmd.utils.data_system import DeepmdDataSystem
 
 if TYPE_CHECKING:
@@ -168,8 +168,7 @@ def train(
     # load json database
     jdata = j_loader(INPUT)
 
-    if "model" not in jdata.keys():
-        jdata = convert_input_v0_v1(jdata, warning=True, dump="input_v1_compat.json")
+    jdata = updata_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
 
     jdata = normalize(jdata)
     with open(output, "w") as fp:
@@ -238,28 +237,64 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
     else:
         ipt_type_map = type_map
 
-    # init params and run options
-    systems = j_must_have(jdata["training"], "systems")
-    if isinstance(systems, str):
-        systems = expand_sys_str(systems)
-    set_pfx = j_must_have(jdata["training"], "set_prefix")
-
     #  init random seed
     seed = jdata["training"].get("seed", None)
     if seed is not None:
         seed = seed % (2 ** 32)
     np.random.seed(seed)
 
-    # get batch sizes
-    batch_size = j_must_have(jdata["training"], "batch_size")
-    test_size = j_must_have(jdata["training"], "numb_test")
-    stop_batch = j_must_have(jdata["training"], "numb_steps")
-    sys_probs = jdata["training"].get("sys_probs")
-    auto_prob = jdata["training"].get("auto_prob", "prob_sys_size")
-
     # setup data modifier
+    modifier = get_modifier(jdata["model"].get("modifier", None))
+
+    # init data
+    train_data = get_data(jdata["training"]["training_data"], rcut, ipt_type_map, modifier)
+    train_data.print_summary("training")
+    if jdata["training"].get("validation_data", None) is not None:
+        valid_data = get_data(jdata["training"]["validation_data"], rcut, ipt_type_map, modifier)
+        valid_data.print_summary("validation")
+    else:
+        valid_data = None
+
+    # get training info
+    stop_batch = j_must_have(jdata["training"], "numb_steps")
+    model.build(train_data, stop_batch)
+
+    # train the model with the provided systems in a cyclic way
+    start_time = time.time()
+    model.train(train_data, valid_data)
+    end_time = time.time()
+    log.info("finished training")
+    log.info(f"wall time: {(end_time - start_time):.3f} s")
+
+
+def get_data(jdata: Dict[str, Any], rcut, type_map, modifier):
+    systems = j_must_have(jdata, "systems")
+    if isinstance(systems, str):
+        systems = expand_sys_str(systems)
+
+    batch_size = j_must_have(jdata, "batch_size")
+    sys_probs = jdata.get("sys_probs", None)
+    auto_prob = jdata.get("auto_prob", "prob_sys_size")
+
+    data = DeepmdDataSystem(
+        systems=systems,
+        batch_size=batch_size,
+        test_size=1,        # to satisfy the old api
+        shuffle_test=True,  # to satisfy the old api
+        rcut=rcut,
+        type_map=type_map,
+        modifier=modifier,
+        trn_all_set=True,    # sample from all sets
+        sys_probs=sys_probs,
+        auto_prob_style=auto_prob
+    )
+    data.add_dict(data_requirement)
+
+    return data
+
+
+def get_modifier(modi_data=None):
     modifier: Optional[DipoleChargeModifier]
-    modi_data = jdata["model"].get("modifier", None)
     if modi_data is not None:
         if modi_data["type"] == "dipole_charge":
             modifier = DipoleChargeModifier(
@@ -273,27 +308,4 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
             raise RuntimeError("unknown modifier type " + str(modi_data["type"]))
     else:
         modifier = None
-
-    # init data
-    data = DeepmdDataSystem(
-        systems,
-        batch_size,
-        test_size,
-        rcut,
-        set_prefix=set_pfx,
-        type_map=ipt_type_map,
-        modifier=modifier,
-        trn_all_set = True
-    )
-    data.print_summary(run_opt, sys_probs=sys_probs, auto_prob_style=auto_prob)
-    data.add_dict(data_requirement)
-
-    # build the model with stats from the first system
-    model.build(data, stop_batch)
-
-    # train the model with the provided systems in a cyclic way
-    start_time = time.time()
-    model.train(data)
-    end_time = time.time()
-    log.info("finished training")
-    log.info(f"wall time: {(end_time - start_time):.3f} s")
+    return modifier

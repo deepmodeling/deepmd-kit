@@ -31,8 +31,8 @@
 
     "learning_rate" : {
 	"start_lr":	0.001,
-	"decay_steps":	5000,
-	"decay_rate":	0.95
+	"stop_lr":	3e-8,
+	"decay_steps":	5000
     },
 
     "_comment": " traing controls",
@@ -51,7 +51,6 @@
 	"numb_test":	10,
 	"save_freq":	1000,
 	"save_ckpt":	"model.ckpt",
-	"load_ckpt":	"model.ckpt",
 	"disp_training":true,
 	"time_training":true,
 	"profiling":	false,
