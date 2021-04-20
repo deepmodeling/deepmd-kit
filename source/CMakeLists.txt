@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.7)
 project(DeePMD)
-set(CMAKE_LINK_WHAT_YOU_USE TRUE)
+if (CMAKE_COMPILER_IS_GNU)
+  set(CMAKE_LINK_WHAT_YOU_USE TRUE)
+endif ()
 
 # build cpp or python interfaces
 if (NOT DEFINED BUILD_CPP_IF) 
