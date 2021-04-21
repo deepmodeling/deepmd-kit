@@ -113,22 +113,22 @@ class DPTrainer (object):
         # elif fitting_type == 'wfc':            
         #     self.fitting = WFCFitting(fitting_param, self.descrpt)
         elif fitting_type == 'dipole':
-            if descrpt_type == 'se_a':
+            if descrpt_type == 'se_e2_a':
                 self.fitting = DipoleFittingSeA(**fitting_param)
             else :
-                raise RuntimeError('fitting dipole only supports descrptors: se_a')
+                raise RuntimeError('fitting dipole only supports descrptors: se_e2_a')
         elif fitting_type == 'polar':
             # if descrpt_type == 'loc_frame':
             #     self.fitting = PolarFittingLocFrame(fitting_param, self.descrpt)
-            if descrpt_type == 'se_a':
+            if descrpt_type == 'se_e2_a':
                 self.fitting = PolarFittingSeA(**fitting_param)
             else :
-                raise RuntimeError('fitting polar only supports descrptors: loc_frame and se_a')
+                raise RuntimeError('fitting polar only supports descrptors: loc_frame and se_e2_a')
         elif fitting_type == 'global_polar':
-            if descrpt_type == 'se_a':
+            if descrpt_type == 'se_e2_a':
                 self.fitting = GlobalPolarFittingSeA(**fitting_param)
             else :
-                raise RuntimeError('fitting global_polar only supports descrptors: loc_frame and se_a')
+                raise RuntimeError('fitting global_polar only supports descrptors: loc_frame and se_e2_a')
         else :
             raise RuntimeError('unknow fitting type ' + fitting_type)
 
