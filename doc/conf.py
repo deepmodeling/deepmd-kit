@@ -10,10 +10,11 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
-import os
-import sys
-sys.path.append(os.path.abspath(".."))
-print(sys.path)
+# import os
+# import sys
+import recommonmark
+from recommonmark.transform import AutoStructify
+
 
 # -- Project information -----------------------------------------------------
 
@@ -33,7 +34,6 @@ extensions = [
 	'sphinx_markdown_tables',
     'sphinx.ext.autosummary'
 ]
-
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']

@@ -9,15 +9,11 @@ API
    :members:
    :undoc-members:
 
-.. automodule:: deepmd.infer.dataModifier
+.. automodule:: deepmd.infer.data_modifier
    :members:
    :undoc-members:
 
-.. automodule:: deepmd.utils.dataSystem
-   :members:
-   :undoc-members:
-
-.. automodule:: deepmd.descriptor.dipole
+.. automodule:: deepmd.utils.data_system
    :members:
    :undoc-members:
 
