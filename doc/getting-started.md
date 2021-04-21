@@ -1,4 +1,4 @@
-# Use DeePMD-kit
+# Getting Started
 In this text, we will call the deep neural network that is used to represent the interatomic interactions (Deep Potential) the **model**. The typical procedure of using DeePMD-kit is 
 
 1. [Prepare data](#prepare-data)
@@ -78,16 +78,16 @@ One can use the a convenient tool `dpdata` to convert data directly from the out
 A model has two parts, a descriptor that maps atomic configuration to a set of symmetry invariant features, and a fitting net that takes descriptor as input and predicts the atomic contribution to the target physical property.
 
 DeePMD-kit implements the following descriptors:
-1. [`se_e2_a`](train-se-e2-a.md#descriptor): DeepPot-SE constructed from all information (both angular and radial) of atomic configurations. The embedding takes the distance between atoms as input.
-2. [`se_e2_r`](train-se-e2-r.md): DeepPot-SE constructed from radial information of atomic configurations. The embedding takes the distance between atoms as input.
-3. [`se_e3`](train-se-e3.md): DeepPot-SE constructed from all information (both angular and radial) of atomic configurations. The embedding takes angles between two neighboring atoms as input.
-4. `loc_frame`: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.
-5. [`hybrid`](train-hybrid.md): Concate a list of descriptors to form a new descriptor.
+1. [se_e2_a](train-se-e2-a.md): DeepPot-SE constructed from all information (both angular and radial) of atomic configurations. The embedding takes the distance between atoms as input.
+2. [se_e2_r](train-se-e2-r.md): DeepPot-SE constructed from radial information of atomic configurations. The embedding takes the distance between atoms as input.
+3. [se_e3](train-se-e3.md): DeepPot-SE constructed from all information (both angular and radial) of atomic configurations. The embedding takes angles between two neighboring atoms as input.
+4. loc_frame: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.
+5. [hybrid](train-hybrid.md): Concate a list of descriptors to form a new descriptor.
 
 The fitting of the following physical properties are supported
-1. [`ener`](train-se-e2-a.md#fitting) Fitting the energy of the system. The force (derivative with atom positions) and the virial (derivative with the box tensor) can also be trained. See [the example](train-se-e2-a.md#loss).
-2. `dipole` The dipole moment.
-3. `polar` The polarizability.
+1. [ener](train-se-e2-a.md): Fitting the energy of the system. The force (derivative with atom positions) and the virial (derivative with the box tensor) can also be trained. See [the example](train-se-e2-a.md).
+2. dipole: The dipole moment.
+3. polar: The polarizability.
 
 
 ### Training
@@ -96,7 +96,7 @@ The training can be invoked by
 ```bash
 $ dp train input.json
 ```
-where `input.json` is the name of the input script. See [the example](train-se-e2-a.md#train-a-deep-potential-model) for more details.
+where `input.json` is the name of the input script. See [the example](train-se-e2-a.md) for more details.
 
 During the training, checkpoints will be written to files with prefix `save_ckpt` every `save_freq` training steps. 
 
@@ -134,7 +134,7 @@ dp train input.json
 
 If enbled in json/yaml input file DeePMD-kit will create log files which can be
 used to analyze training procedure with Tensorboard. For a short tutorial
-please read this [document](tensorboard.html).
+please read this [document](tensorboard.md).
 
 ## Freeze a model
 
@@ -321,7 +321,7 @@ $ dp_ipi water.json
 ```
 It is noted that multiple instances of the client is allow for computing, in parallel, the interactions of multiple replica of the path-integral MD.
 
-`water.json` is the parameter file for the client `dp_ipi`, and [an example](https://github.com/tuoping/deepmd-kit/blob/devel/examples/water/ipi/water.json) is provided:
+`water.json` is the parameter file for the client `dp_ipi`, and an example is provided:
 ```json
 {
     "verbose":		false,

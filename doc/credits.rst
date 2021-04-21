@@ -17,7 +17,7 @@ Core Package Contributors
 * kevinwenminion
 * KuangYu
 * lqs0609
-* mohanchen
+* marian-code
 * njzjz
 * robinzyb
 * tansongchen
