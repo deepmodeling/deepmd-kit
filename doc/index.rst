@@ -26,7 +26,7 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
    :maxdepth: 2
    :caption: Data and Parameters
 
-   data-conversion
+   data-conv
    train-input
 
 .. toctree::

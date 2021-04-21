@@ -1,21 +1,4 @@
-<<<<<<< HEAD:doc/getting-started.md
-# Getting started
-=======
-- [Use DeePMD-kit](#use-deepmd-kit)
-	- [Prepare data](#prepare-data)
-	- [Train a model](#train-a-model)
-	- [Freeze a model](#freeze-a-model)
-	- [Test a model](#test-a-model)
-	- [Compress a model](#compress-a-model)
-	- [Model inference](#model-inference)
-	- [Run MD with Lammps](#run-md-with-lammps)
-	    - [Include deepmd in the pair style](#include-deepmd-in-the-pair-style)
-	    - [Long-range interaction](#long-range-interaction)
-	- [Run path-integral MD with i-PI](#run-path-integral-md-with-i-pi)
-	- [Use deep potential with ASE](#use-deep-potential-with-ase)
-
 # Use DeePMD-kit
->>>>>>> origin/devel:doc/use-deepmd-kit.md
 In this text, we will call the deep neural network that is used to represent the interatomic interactions (Deep Potential) the **model**. The typical procedure of using DeePMD-kit is 
 
 1. [Prepare data](#prepare-data)
