@@ -485,7 +485,7 @@ class DescrptSeT ():
                     ebd_env_ij = tf.reshape(env_ij, [-1, 1])
                     # with (natom x nei_type_i x nei_type_j) x out_size
                     ebd_env_ij = embedding_net(ebd_env_ij, 
-                                               self.filter_neuron, 
+                                               [1]+self.filter_neuron, 
                                                self.filter_precision, 
                                                activation_fn = activation_fn, 
                                                resnet_dt = self.filter_resnet_dt,

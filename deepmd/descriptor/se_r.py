@@ -461,7 +461,7 @@ class DescrptSeR ():
                 xyz_scatter = tf.reshape(inputs_i, [-1, 1])
                 if (type_input, type_i) not in self.exclude_types:
                     xyz_scatter = embedding_net(xyz_scatter, 
-                                                self.filter_neuron, 
+                                                [1]+self.filter_neuron, 
                                                 self.filter_precision, 
                                                 activation_fn = activation_fn, 
                                                 resnet_dt = self.filter_resnet_dt,
