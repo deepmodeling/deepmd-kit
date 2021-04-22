@@ -137,7 +137,7 @@ class EnerModel() :
 
         coord = tf.reshape (coord_, [-1, natoms[1] * 3])
         atype = tf.reshape (atype_, [-1, natoms[1]])
-        if self.fitting.share_fitting：
+        if self.fitting.share_fitting:
             type_embedding,dout \
                 = self.descrpt.build(coord_,
                                  atype_,
