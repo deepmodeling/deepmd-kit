@@ -87,8 +87,8 @@ DeePMD-kit implements the following descriptors:
 
 The fitting of the following physical properties are supported
 1. <a rel="subsection" href="train-se-e2-a.html#fitting">`ener`</a>: Fitting the energy of the system. The force (derivative with atom positions) and the virial (derivative with the box tensor) can also be trained. See <a rel="subsection" href="train-se-e2-a.html#loss">the example</a>.
-2. dipole: The dipole moment.
-3. polar: The polarizability.
+2. `dipole`: The dipole moment.
+3. `polar`: The polarizability.
 
 
 ### Training
