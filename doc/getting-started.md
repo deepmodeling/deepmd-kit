@@ -369,4 +369,4 @@ dyn.run(fmax=1e-6)
 print(water.get_positions())
 ```
 [DP]:https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.120.143001
-[DP-SE]:https://arxiv.org/abs/1805.09003
+[DP-SE]:https://dl.acm.org/doi/10.5555/3327345.3327356
