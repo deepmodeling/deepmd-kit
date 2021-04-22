@@ -137,9 +137,20 @@ class EnerModel() :
 
         coord = tf.reshape (coord_, [-1, natoms[1] * 3])
         atype = tf.reshape (atype_, [-1, natoms[1]])
-
-        dout \
-            = self.descrpt.build(coord_,
+        if self.fitting.share_fitting：
+            type_embedding,dout \
+                = self.descrpt.build(coord_,
+                                 atype_,
+                                 natoms,
+                                 box,
+                                 mesh,
+                                 input_dict,
+                                 reuse = reuse,
+                                 suffix = suffix)
+            type_embedding=tf.identity(type_embedding,name ='t_embed')
+        else:
+            dout \
+                = self.descrpt.build(coord_,
                                  atype_,
                                  natoms,
                                  box,
@@ -153,8 +164,16 @@ class EnerModel() :
             nlist, rij, sel_a, sel_r = self.descrpt.get_nlist()
             nnei_a = np.cumsum(sel_a)[-1]
             nnei_r = np.cumsum(sel_r)[-1]
-
-        atom_ener = self.fitting.build (dout, 
+        if self.fitting.share_fitting:
+            atom_ener = self.fitting.build_share (dout,
+                                        atype_,
+                                        type_embedding,
+                                        natoms, 
+                                        input_dict, 
+                                        reuse = reuse, 
+                                        suffix = suffix)
+        else:
+            atom_ener = self.fitting.build (dout, 
                                         natoms, 
                                         input_dict, 
                                         reuse = reuse, 

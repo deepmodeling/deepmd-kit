@@ -26,6 +26,7 @@ class EnerFitting ():
                   seed : int = 1,
                   atom_ener : List[float] = [],
                   activation_function : str = 'tanh',
+                  share_fitting: bool = False,
                   precision : str = 'default'
     ) -> None:
         """
@@ -83,6 +84,7 @@ class EnerFitting ():
         self.rcond = rcond
         self.seed = seed
         self.tot_ener_zero = tot_ener_zero
+        self.share_fitting = share_fitting
         self.fitting_activation_fn = get_activation_func(activation_function)
         self.fitting_precision = get_precision(precision)
         self.trainable = trainable
@@ -361,6 +363,143 @@ class EnerFitting ():
 
         tf.summary.histogram('fitting_net_output', outs)
         return tf.cast(tf.reshape(outs, [-1]), GLOBAL_TF_FLOAT_PRECISION)        
+
+    def build_share (self, 
+               inputs : tf.Tensor,
+               atype:tf.Tensor,
+               type_embedding:tf.Tensor,
+               natoms : tf.Tensor,
+               input_dict : dict = {},
+               reuse : bool = None,
+               suffix : str = ''
+        ) -> tf.Tensor:
+        """
+        Build the computational graph for fitting net
+
+        Parameters
+        ----------
+        inputs
+                The input descriptor
+        input_dict
+                Additional dict for inputs. 
+                if numb_fparam > 0, should have input_dict['fparam']
+                if numb_aparam > 0, should have input_dict['aparam']
+        natoms
+                The number of atoms. This tensor has the length of Ntypes + 2
+                natoms[0]: number of local atoms
+                natoms[1]: total number of atoms held by this processor
+                natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+        reuse
+                The weights in the networks should be reused when get the variable.
+        suffix
+                Name suffix to identify this descriptor
+
+        Return
+        ------
+        ener
+                The system energy
+        """
+        bias_atom_e = self.bias_atom_e
+        if self.numb_fparam > 0 and ( self.fparam_avg is None or self.fparam_inv_std is None ):
+            raise RuntimeError('No data stat result. one should do data statisitic, before build')
+        if self.numb_aparam > 0 and ( self.aparam_avg is None or self.aparam_inv_std is None ):
+            raise RuntimeError('No data stat result. one should do data statisitic, before build')
+
+        with tf.variable_scope('fitting_attr' + suffix, reuse = reuse) :
+            t_dfparam = tf.constant(self.numb_fparam, 
+                                    name = 'dfparam', 
+                                    dtype = tf.int32)
+            t_daparam = tf.constant(self.numb_aparam, 
+                                    name = 'daparam', 
+                                    dtype = tf.int32)
+            if self.numb_fparam > 0: 
+                t_fparam_avg = tf.get_variable('t_fparam_avg', 
+                                               self.numb_fparam,
+                                               dtype = GLOBAL_TF_FLOAT_PRECISION,
+                                               trainable = False,
+                                               initializer = tf.constant_initializer(self.fparam_avg))
+                t_fparam_istd = tf.get_variable('t_fparam_istd', 
+                                                self.numb_fparam,
+                                                dtype = GLOBAL_TF_FLOAT_PRECISION,
+                                                trainable = False,
+                                                initializer = tf.constant_initializer(self.fparam_inv_std))
+            if self.numb_aparam > 0: 
+                t_aparam_avg = tf.get_variable('t_aparam_avg', 
+                                               self.numb_aparam,
+                                               dtype = GLOBAL_TF_FLOAT_PRECISION,
+                                               trainable = False,
+                                               initializer = tf.constant_initializer(self.aparam_avg))
+                t_aparam_istd = tf.get_variable('t_aparam_istd', 
+                                                self.numb_aparam,
+                                                dtype = GLOBAL_TF_FLOAT_PRECISION,
+                                                trainable = False,
+                                                initializer = tf.constant_initializer(self.aparam_inv_std))
+            
+        atype_shape = atype.get_shape().as_list()
+        type_shape = type_embedding.get_shape().as_list()
+        
+        #atm_embed = tf.tile( tf.reshape(type_embedding[0],[1,-1]),(natoms[2],1)) 
+         
+        #for ii in range(1,self.ntypes):
+            #atm_embed = tf.concat([atm_embed,tf.tile( tf.reshape(type_embedding[ii],[1,-1]),(natoms[2+ii],1))],axis=0) 
+        #atm_embed= tf.convert_to_tensor(atm_embed,dtype=global_tf_float_precision)
+        atm_embed =  tf.nn.embedding_lookup(type_embedding,atype)
+        atm_embed = tf.reshape(atm_embed,[-1,type_shape[1]])
+        inputs = tf.concat([tf.reshape(inputs,[-1,self.dim_descrpt]),atm_embed],axis=1)
+        start_index = 0
+        inputs = tf.cast(tf.reshape(inputs, [-1, (self.dim_descrpt+type_shape[1]) * natoms[0]]), self.fitting_precision)
+        
+
+        if bias_atom_e is not None :
+            assert(len(bias_atom_e) == self.ntypes)
+
+        if self.numb_fparam > 0 :
+            fparam = input_dict['fparam']
+            fparam = tf.reshape(fparam, [-1, self.numb_fparam])
+            fparam = (fparam - t_fparam_avg) * t_fparam_istd            
+        if self.numb_aparam > 0 :
+            aparam = input_dict['aparam']
+            aparam = tf.reshape(aparam, [-1, self.numb_aparam])
+            aparam = (aparam - t_aparam_avg) * t_aparam_istd
+            aparam = tf.reshape(aparam, [-1, self.numb_aparam * natoms[0]])
+
+        layer =  tf.reshape(inputs, [-1, self.dim_descrpt+type_shape[1]])
+
+        if self.numb_fparam > 0 :
+            ext_fparam = tf.tile(fparam, [1, natoms[0]])
+            ext_fparam = tf.reshape(ext_fparam, [-1, self.numb_fparam])
+            ext_fparam = tf.cast(ext_fparam,self.fitting_precision)
+            layer = tf.concat([layer, ext_fparam], axis = 1)
+        if self.numb_aparam > 0 :
+            ext_aparam = tf.reshape(ext_aparam, [-1, self.numb_aparam])
+            ext_aparam = tf.cast(ext_aparam,self.fitting_precision)
+            layer = tf.concat([layer, ext_aparam], axis = 1)
+        
+        type_bias_ae = 0.0
+
+        for ii in range(0,len(self.n_neuron)) :
+            if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
+                    layer+= one_layer(layer, self.n_neuron[ii], name='fitting_layer_'+str(ii)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, trainable = self.trainable[ii])
+            else :
+                    layer = one_layer(layer, self.n_neuron[ii], name='fitting_layer_'+str(ii)+suffix, reuse=reuse, seed = self.seed, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, trainable = self.trainable[ii])
+        final_layer = one_layer(layer, 1, activation_fn = None, bavg = type_bias_ae, name='fitting_final_layer_'+suffix, reuse=reuse, seed = self.seed, precision = self.fitting_precision, trainable = self.trainable[-1])
+
+        
+        outs = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[0]])
+
+
+
+        if self.tot_ener_zero:
+            force_tot_ener = 0.0
+            outs = tf.reshape(outs, [-1, natoms[0]])
+            outs_mean = tf.reshape(tf.reduce_mean(outs, axis = 1), [-1, 1])
+            outs_mean = outs_mean - tf.ones_like(outs_mean, dtype = GLOBAL_TF_FLOAT_PRECISION) * (force_tot_ener/global_cvt_2_tf_float(natoms[0]))
+            outs = outs - outs_mean
+            outs = tf.reshape(outs, [-1])
+
+        tf.summary.histogram('fitting_net_output', outs)
+        return tf.cast(tf.reshape(outs, [-1]), GLOBAL_TF_FLOAT_PRECISION) 
+
 
 
 
