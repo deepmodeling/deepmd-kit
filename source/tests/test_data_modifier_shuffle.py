@@ -134,7 +134,7 @@ class TestDataModifier (unittest.TestCase) :
             "model":{
 	        "type_map":		["A", "B", "C", "D", "E"],
 	        "descriptor" :{
-	            "type":		"se_a",
+	            "type":		"se_e2_a",
 	            "sel":              [50, 50, 50, 50, 50],
 	            "rcut_smth":	3.80,
 	            "rcut":		4.00,
