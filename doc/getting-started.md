@@ -79,14 +79,14 @@ One can use the a convenient tool `dpdata` to convert data directly from the out
 A model has two parts, a descriptor that maps atomic configuration to a set of symmetry invariant features, and a fitting net that takes descriptor as input and predicts the atomic contribution to the target physical property.
 
 DeePMD-kit implements the following descriptors:
-1. [se_e2_a](train-se-e2-a.html#model): DeepPot-SE constructed from all information (both angular and radial) of atomic configurations. The embedding takes the distance between atoms as input.
-2. [se_e2_r](train-se-e2-r): DeepPot-SE constructed from radial information of atomic configurations. The embedding takes the distance between atoms as input.
-3. [se_e3](train-se-e3): DeepPot-SE constructed from all information (both angular and radial) of atomic configurations. The embedding takes angles between two neighboring atoms as input.
-4. loc_frame: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.
-5. [hybrid](train-hybrid): Concate a list of descriptors to form a new descriptor.
+1. <a rel="subsection" href="train-se-e2-a.html#descriptor">`se_e2_a`</a>: DeepPot-SE constructed from all information (both angular and radial) of atomic configurations. The embedding takes the distance between atoms as input.
+2. <a href="train-se-e2-r.html">`se_e2_r`</a>: DeepPot-SE constructed from radial information of atomic configurations. The embedding takes the distance between atoms as input.
+3. <a href="train-se-e3.html">`se_e3`</a>: DeepPot-SE constructed from all information (both angular and radial) of atomic configurations. The embedding takes angles between two neighboring atoms as input.
+4. `loc_frame`: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.
+5. <a href="train-hybrid.html">`hybrid`</a>: Concate a list of descriptors to form a new descriptor.
 
 The fitting of the following physical properties are supported
-1. [ener](train-se-e2-a.md): Fitting the energy of the system. The force (derivative with atom positions) and the virial (derivative with the box tensor) can also be trained. See [the example](train-se-e2-a.md).
+1. <a rel="subsection" href="train-se-e2-a.html#fitting">`ener`</a>: Fitting the energy of the system. The force (derivative with atom positions) and the virial (derivative with the box tensor) can also be trained. See <a rel="subsection" href="train-se-e2-a.html#loss">the example</a>.
 2. dipole: The dipole moment.
 3. polar: The polarizability.
 
@@ -97,7 +97,7 @@ The training can be invoked by
 ```bash
 $ dp train input.json
 ```
-where `input.json` is the name of the input script. See [the example](train-se-e2-a.md) for more details.
+where `input.json` is the name of the input script. See <a rel="subsection" href="train-se-e2-a.html#train-a-deep-potential-model">the example</a> for more details.
 
 During the training, checkpoints will be written to files with prefix `save_ckpt` every `save_freq` training steps. 
 
