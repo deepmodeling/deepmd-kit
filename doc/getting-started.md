@@ -3,14 +3,15 @@ In this text, we will call the deep neural network that is used to represent the
 
 1. [Prepare data](#prepare-data)
 2. [Train a model](#train-a-model)
-    - [The DeePMD model](#the-deepmd-model)
-    - [The DeepPot-SE model](#the-deeppot-se-model)
+    - [Write the input script](#write-the-input-script)
+    - [Training](#training)
+    - [Training analysis with Tensorboard](#training-analysis-with-tensorboard)
 3. [Freeze a model](#freeze-a-model)
 4. [Test a model](#test-a-model)
 5. [Compress a model](#compress-a-model)
 6. [Model inference](#model-inference)
 7. [Run MD](#run-md)
-    - [Run MD with LAMMPS](#Run-MD-with-LAMMPS)
+    - [Run MD with LAMMPS](#run-md-with-lammps)
     - [Run path-integral MD with i-PI](#run-path-integral-md-with-i-pi)
     - [Use deep potential with ASE](#use-deep-potential-with-ase)
 
@@ -78,7 +79,7 @@ One can use the a convenient tool `dpdata` to convert data directly from the out
 A model has two parts, a descriptor that maps atomic configuration to a set of symmetry invariant features, and a fitting net that takes descriptor as input and predicts the atomic contribution to the target physical property.
 
 DeePMD-kit implements the following descriptors:
-1. [se_e2_a](train-se-e2-a): DeepPot-SE constructed from all information (both angular and radial) of atomic configurations. The embedding takes the distance between atoms as input.
+1. [se_e2_a](train-se-e2-a#model): DeepPot-SE constructed from all information (both angular and radial) of atomic configurations. The embedding takes the distance between atoms as input.
 2. [se_e2_r](train-se-e2-r): DeepPot-SE constructed from radial information of atomic configurations. The embedding takes the distance between atoms as input.
 3. [se_e3](train-se-e3): DeepPot-SE constructed from all information (both angular and radial) of atomic configurations. The embedding takes angles between two neighboring atoms as input.
 4. loc_frame: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.

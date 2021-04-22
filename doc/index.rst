@@ -18,6 +18,7 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
    install
    getting-started
    tensorboard
+   troubleshooting
 
 .. toctree::
    :maxdepth: 2
