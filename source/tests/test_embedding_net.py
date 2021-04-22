@@ -22,7 +22,7 @@ class Inter(unittest.TestCase):
     def test_enlarger_net(self):
         network_size = [3, 4]
         out = embedding_net(self.inputs, 
-                            network_size, 
+                            [1]+network_size, 
                             tf.float64,
                             name_suffix = 'enlarger_net',
                             seed = 1)
@@ -39,7 +39,7 @@ class Inter(unittest.TestCase):
     def test_enlarger_net_1(self):
         network_size = [4, 4]
         out = embedding_net(self.inputs, 
-                            network_size, 
+                            [1]+network_size, 
                             tf.float64,
                             name_suffix = 'enlarger_net_1',
                             seed = 1)
@@ -55,7 +55,7 @@ class Inter(unittest.TestCase):
     def test_enlarger_net_1_idt(self):
         network_size = [4, 4]
         out = embedding_net(self.inputs, 
-                            network_size, 
+                            [1]+network_size, 
                             tf.float64,
                             name_suffix = 'enlarger_net_1_idt',
                             resnet_dt = True,
@@ -72,7 +72,7 @@ class Inter(unittest.TestCase):
     def test_enlarger_net_2(self):
         network_size = [2, 4]
         out = embedding_net(self.inputs, 
-                            network_size, 
+                            [1]+network_size, 
                             tf.float64,
                             name_suffix = 'enlarger_net_2',
                             seed = 1)
@@ -89,7 +89,7 @@ class Inter(unittest.TestCase):
     def test_enlarger_net_2(self):
         network_size = [2, 4]
         out = embedding_net(self.inputs, 
-                            network_size, 
+                            [1]+network_size, 
                             tf.float64,
                             name_suffix = 'enlarger_net_2_idt',
                             resnet_dt = True,
