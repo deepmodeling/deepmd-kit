@@ -31,7 +31,7 @@ author = 'Deep Potential'
 extensions = [
     'recommonmark',
     "sphinx_rtd_theme",
-	'sphinx_markdown_tables',
+    'sphinx_markdown_tables',
     'sphinx.ext.autosummary'
 ]
 
@@ -60,4 +60,3 @@ html_css_files = ['css/custom.css']
 autodoc_default_flags = ['members']
 autosummary_generate = True
 master_doc = 'index'
-
