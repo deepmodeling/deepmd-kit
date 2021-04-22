@@ -94,7 +94,7 @@ void PdProdEnvMatAOpCPUForwardKernel(
     const std::vector<int>& sec_r, data_t *p_em, data_t *p_em_deriv, data_t *p_rij, int *p_nlist,
     const data_t *p_coord, const data_t *p_box, const data_t *avg, const data_t *std, const int *p_type)
 {
-  for (size_t ff = 0; ff < 2; ++ff)
+  for (size_t ff = 0; ff < nsamples; ++ff)
   {
     data_t *em = p_em + ff * nloc * ndescrpt;
     data_t *em_deriv = p_em_deriv + ff * nloc * ndescrpt * 3;
