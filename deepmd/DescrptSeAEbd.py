@@ -1,101 +1,32 @@
 import numpy as np
-from typing import Tuple, List
-
 from deepmd.env import tf
 from deepmd.common import ClassArg, get_activation_func, get_precision, add_data_requirement
-from deepmd.utils.network import one_layer
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.Network import one_layer
+from deepmd.RunOptions import global_tf_float_precision
+from deepmd.RunOptions import global_np_float_precision
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
-from deepmd.utils.network import embedding_net,share_embedding_network_oneside,share_embedding_network_twoside
-from .se_a import DescrptSeA
+from deepmd.DescrptSeA import DescrptSeA
+from deepmd.Network import embedding_net,share_embedding_network_oneside,share_embedding_network_twoside
+import random
+from deepmd.RunOptions import global_tf_float_precision
 
 class DescrptSeAEbd (DescrptSeA):
-    def __init__ (self, 
-                  rcut: float,
-                  rcut_smth: float,
-                  sel: List[str],
-                  neuron: List[int] = [24,48,96],
-                  axis_neuron: int = 8,
-                  resnet_dt: bool = False,
-                  trainable: bool = True,
-                  seed: int = 1,
-                  type_nchanl: int=4,
-                  type_nlayer: int=4,
-                  type_filter:List[int] = [5,10,10],
-                  type_one_side: bool = True,
-                  numb_aparam : int = 0,
-                  set_davg_zero: bool = False,
-                  activation_function: str = 'tanh',
-                  precision: str = 'default',
-                  exclude_types: List[int] = [],
-    ) -> None:
-        """
-        Constructor
-
-        Parameters
-        ----------
-        rcut
-                The cut-off radius
-        rcut_smth
-                From where the environment matrix should be smoothed
-        sel : list[str]
-                sel[i] specifies the maxmum number of type i atoms in the cut-off radius
-        neuron : list[int]
-                Number of neurons in each hidden layers of the embedding net
-        axis_neuron
-                Number of the axis neuron (number of columns of the sub-matrix of the embedding matrix)
-        resnet_dt
-                Time-step `dt` in the resnet construction:
-                y = x + dt * \phi (Wx + b)
-        trainable
-                If the weights of embedding net are trainable.
-        seed
-                Random seed for initializing the network parameters.
-        type_one_side
-                Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
-        type_nchanl
-                Number of channels for type representation
-        type_nlayer
-                Number of hidden layers for the type embedding net (skip connected).
-        numb_aparam
-                Number of atomic parameters. If >0 it will be embedded with atom types.
-        set_davg_zero
-                Set the shift of embedding net input to zero.
-        activation_function
-                The activation function in the embedding net. Supported options are {0}
-        precision
-                The precision of the embedding net parameters. Supported options are {1}
-        """
-        # args = ClassArg()\
-        #        .add('type_nchanl',      int,    default = 4) \
-        #        .add('type_nlayer',      int,    default = 2) \
-        #        .add('type_one_side',    bool,   default = True) \
-        #        .add('numb_aparam',      int,    default = 0)
-        # class_data = args.parse(jdata)
-        DescrptSeA.__init__(self, 
-                            rcut,
-                            rcut_smth,
-                            sel,
-                            neuron = neuron,
-                            axis_neuron = axis_neuron,
-                            resnet_dt = resnet_dt,
-                            trainable = trainable,
-                            seed = seed,
-                            type_filter = type_filter,
-                            type_one_side = type_one_side,
-                            set_davg_zero = set_davg_zero,
-                            activation_function = activation_function,
-                            precision = precision
-        )
-        self.type_filter = type_filter
-        self.type_one_side = type_one_side
-        self.numb_aparam = numb_aparam
+    def __init__ (self, jdata):
+        DescrptSeA.__init__(self, jdata)
+        args = ClassArg()\
+               .add('type_filter',      list,    default = [5,10,20]) \
+               .add('type_one_side',    bool,   default = True) \
+               .add('numb_aparam',      int,    default = 0) 
+               #.add('type_embedding',       tf.Tensor,  default=None)
+        class_data = args.parse(jdata)
+        self.type_filter = class_data['type_filter']
+        self.type_one_side = class_data['type_one_side']
+        self.numb_aparam = class_data['numb_aparam']
         if self.numb_aparam > 0:
             add_data_requirement('aparam', 3, atomic=True, must=True, high_prec=False)
-
-
+        #self.type_embedding = tf.Variable( tf.random_uniform((self.ntypes,self.type_filter[-1]),0,1),trainable=True,name='t_embed')
+        
 
     def build (self, 
                coord_ : tf.Tensor, 
@@ -106,7 +37,7 @@ class DescrptSeAEbd (DescrptSeA):
                input_dict : dict, 
                reuse : bool = None,
                suffix : str = ''
-        ) -> tf.Tensor:
+    ) -> tf.Tensor:
         """
         Build the computational graph for the descriptor
 
@@ -142,10 +73,10 @@ class DescrptSeAEbd (DescrptSeA):
             nei_type = np.append(nei_type, ii * np.ones(self.sel_a[ii])) # like a mask 
         self.nei_type = tf.get_variable('t_nei_type', 
                                         [self.nnei],
-                                        dtype = GLOBAL_TF_FLOAT_PRECISION,
+                                        dtype = global_tf_float_precision,
                                         trainable = False,
                                         initializer = tf.constant_initializer(nei_type))
-        #self.type_embedding = tf.get_variable('t_embed',shape=[self.ntypes,self.type_filter[-1]],trainable=True,initializer=tf.random_normal_initializer(),dtype=GLOBAL_TF_FLOAT_PRECISION)
+        #self.type_embedding = tf.get_variable('t_embed',shape=[self.ntypes,self.type_filter[-1]],trainable=True,initializer=tf.random_normal_initializer(),dtype=global_tf_float_precision)
         davg = self.davg
         dstd = self.dstd
         #self.type_filter[-1] = self.filter_neuron[0]
@@ -156,7 +87,7 @@ class DescrptSeAEbd (DescrptSeA):
                 dstd = np.ones ([self.ntypes, self.ndescrpt])
             t_rcut = tf.constant(np.max([self.rcut_r, self.rcut_a]), 
                                  name = 'rcut', 
-                                 dtype = GLOBAL_TF_FLOAT_PRECISION)
+                                 dtype = global_tf_float_precision)
             t_ntypes = tf.constant(self.ntypes, 
                                    name = 'ntypes', 
                                    dtype = tf.int32)
@@ -168,12 +99,12 @@ class DescrptSeAEbd (DescrptSeA):
                                 dtype = tf.int32)            
             self.t_avg = tf.get_variable('t_avg', 
                                          davg.shape, 
-                                         dtype = GLOBAL_TF_FLOAT_PRECISION,
+                                         dtype = global_tf_float_precision,
                                          trainable = False,
                                          initializer = tf.constant_initializer(davg))
             self.t_std = tf.get_variable('t_std', 
                                          dstd.shape, 
-                                         dtype = GLOBAL_TF_FLOAT_PRECISION,
+                                         dtype = global_tf_float_precision,
                                          trainable = False,
                                          initializer = tf.constant_initializer(dstd))
 
@@ -182,7 +113,7 @@ class DescrptSeAEbd (DescrptSeA):
         atype = tf.reshape (atype_, [-1, natoms[1]])
 
         self.descrpt, self.descrpt_deriv, self.rij, self.nlist \
-            = op_module.prod_env_mat_a (coord,
+            = op_module.descrpt_se_a (coord,
                                        atype,
                                        natoms,
                                        box,
@@ -209,14 +140,14 @@ class DescrptSeAEbd (DescrptSeA):
                                                  atype,
                                                  natoms, 
                                                  input_dict,
-                                                 suffix = suffix, 
+                                                 
                                                  reuse = reuse, 
                                                  trainable = self.trainable)
 
         # only used when tensorboard was set as true
         tf.summary.histogram('embedding_net_output', self.dout)
         return type_embedding,self.dout
-
+        
 
 
     def _type_embed(self, 
@@ -239,7 +170,7 @@ class DescrptSeAEbd (DescrptSeA):
                                  trainable = trainable)
 
         ebd_type = tf.reshape(ebd_type, [-1, self.type_filter[-1]]) # nnei * type_filter[-1]
-        return ebd_type                       
+        return ebd_type            
 
 
     def _embedding_net(self, 
@@ -337,12 +268,15 @@ class DescrptSeAEbd (DescrptSeA):
                                         suffix = '') #(nf*natom)*nchnl        
   
             
-
+            print('*'*20+'nei_embed')
+            print(nei_embed.get_shape().as_list())
+            print('*'*20+'atm_embed')
+            print(atm_embed.get_shape().as_list())
             
             _atom_type_ = []
             for ii in range(self.ntypes):
               _atom_type_.append(ii)
-            _atom_type_ = tf.convert_to_tensor(_atom_type_,dtype = GLOBAL_TF_FLOAT_PRECISION)
+            _atom_type_ = tf.convert_to_tensor(_atom_type_,dtype = global_tf_float_precision)
             tmp_type_embedding = self._type_embed( tf.one_hot(tf.cast(_atom_type_,dtype=tf.int32),int(self.ntypes)),
                                         reuse = True,
                                         trainable = True,
@@ -376,6 +310,8 @@ class DescrptSeAEbd (DescrptSeA):
         xyz_scatter = tf.concat(xyz_scatter_total, axis=1)
         # nf x natom x nei x outputs_size
         xyz_scatter = tf.reshape(xyz_scatter, [tf.shape(inputs)[0], natoms[0], self.nnei, outputs_size[-1]])
+        print('*'*20)
+        print(xyz_scatter.get_shape().as_list())
         return xyz_scatter,tmp_type_embedding
         
     def _share_embedding_net_oneside(self, 
@@ -415,7 +351,7 @@ class DescrptSeAEbd (DescrptSeA):
             _atom_type_ = []
             for ii in range(self.ntypes):
               _atom_type_.append(ii)
-            _atom_type_ = tf.convert_to_tensor(_atom_type_,dtype = GLOBAL_TF_FLOAT_PRECISION)
+            _atom_type_ = tf.convert_to_tensor(_atom_type_,dtype = global_tf_float_precision)
             # with [ntypes, nchanl]
             
             
@@ -431,11 +367,14 @@ class DescrptSeAEbd (DescrptSeA):
                                         trainable = True,
                                         suffix = '') #(nf*natom)*nchnl
             '''     
-            
+            print('*'*20+'nei_embed')
+            print(nei_embed.get_shape().as_list())
+            #print('*'*20+'atm_embed')
+            #print(atm_embed.get_shape().as_list())
             _atom_type_ = []
             for ii in range(self.ntypes):
               _atom_type_.append(ii)
-            _atom_type_ = tf.convert_to_tensor(_atom_type_,dtype = GLOBAL_TF_FLOAT_PRECISION)
+            _atom_type_ = tf.convert_to_tensor(_atom_type_,dtype = global_tf_float_precision)
             tmp_type_embedding = self._type_embed( tf.one_hot(tf.cast(_atom_type_,dtype=tf.int32),int(self.ntypes)),
                                         reuse = True,
                                         trainable = True,
@@ -469,7 +408,8 @@ class DescrptSeAEbd (DescrptSeA):
         xyz_scatter = tf.concat(xyz_scatter_total, axis=1)
         # nf x natom x nei x outputs_size
         xyz_scatter = tf.reshape(xyz_scatter, [tf.shape(inputs)[0], natoms[0], self.nnei, outputs_size[-1]])
-        
+        print('*'*20)
+        print(xyz_scatter.get_shape().as_list())
         return xyz_scatter,tmp_type_embedding
     
 
@@ -558,7 +498,8 @@ class DescrptSeAEbd (DescrptSeA):
 
         # natom x 4 x outputs_size
         xyz_scatter_1 = tf.matmul(inputs_reshape, mat_g, transpose_a = True)
-        
+        print('*'*20)
+        print(xyz_scatter_1.get_shape().as_list())
         xyz_scatter_1 = xyz_scatter_1 * (4.0 / shape[1])
         # natom x 4 x outputs_size_2     
         xyz_scatter_2 = tf.slice(xyz_scatter_1, [0,0,0],[-1,-1,outputs_size_2])
