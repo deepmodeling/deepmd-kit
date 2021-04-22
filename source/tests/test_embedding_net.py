@@ -2,6 +2,7 @@ import os,sys
 import numpy as np
 import unittest
 
+
 from deepmd.env import tf
 from tensorflow.python.framework import ops
 
