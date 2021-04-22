@@ -5,29 +5,27 @@ Authors and Credits
 Core Package Contributors
 =========================
 
-* Han Wang
-* Jinzhe Zeng
-* Marián Rynik
-* denghuilu
-* Denghui Lu
-* Lu
-* GeiduanLiu
+* amacadmus
+* AnguseZhang
 * tuoping
-* ziyao
-* Duo
+* denghuilu
+* frankhan91
 * YWolfeee
-* marian-code
-* ZiyaoLi
-* haidi
-* Jiequn Han
-* Yixiao Chen
-* bwang-ecnu
-* hlyang
-* Linfeng Zhang
-* deepmodeling
-* iProzd
 * njzjz
+* ZiyaoLi
+* zhouwei25
+* JiabinYang
+* y1xiaoc
+* iProzd
+* gzq942560379
+* marian-code
+* hsulab
+* bwang-ecnu
+* GeiduanLiu
+* haidi-ustc
+* hlyang1992
 * wsyxbcl
+* frankhan91
 
 Other Credits
 =============

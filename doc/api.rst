@@ -41,11 +41,27 @@ API
    :members:
    :undoc-members:
 
+.. automodule:: deepmd.descriptor.se_r
+   :members:
+   :undoc-members:
+
 .. automodule:: deepmd.descriptor.se_ar
    :members:
    :undoc-members:
 
-.. automodule:: deepmd.descriptor.se_r
+.. automodule:: deepmd.descriptor.se_a_ebd
+   :members:
+   :undoc-members:
+
+.. automodule:: deepmd.descriptor.se_t
+   :members:
+   :undoc-members:
+
+.. automodule:: deepmd.descriptor.se_a_ef
+   :members:
+   :undoc-members:
+
+.. automodule:: deepmd.descriptor.se_hybrid
    :members:
    :undoc-members:
 

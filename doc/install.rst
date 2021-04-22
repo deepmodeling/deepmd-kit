@@ -6,5 +6,4 @@ Installation
    
    install-easy
    install-source
-   install-hardware-platforms
 
