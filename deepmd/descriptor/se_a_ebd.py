@@ -21,7 +21,7 @@ class DescrptSeAEbd (DescrptSeA):
                   resnet_dt: bool = False,
                   trainable: bool = True,
                   seed: int = 1,
-                  type_filter:list[int] = [],
+                  type_filter:List[int] = [5,10,10],
                   type_one_side: bool = True,
                   numb_aparam : int = 0,
                   set_davg_zero: bool = False,
