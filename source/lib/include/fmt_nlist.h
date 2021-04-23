@@ -31,6 +31,16 @@ void format_nbor_list_gpu_cuda(
     const int nall, 
     const float rcut, 
     const std::vector<int> sec);
+
+template <typename FPTYPE>
+void test_encoding_decoding_nbor_info_gpu_cuda(
+    uint_64 * key,
+    int * out_type,
+    int * out_index,
+    const int * in_type,
+    const FPTYPE * in_dist,
+    const int * in_index,
+    const int size_of_array);
 #endif //GOOGLE_CUDA
 }
 
