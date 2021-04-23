@@ -6,11 +6,11 @@ from deepmd.infer.deep_dipole import DeepDipole
 from deepmd.infer.ewald_recp import EwaldRecp
 from deepmd.env import tf
 from deepmd.common import select_idx_map, make_default_mesh
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
-from deepmd.RunOptions import global_cvt_2_tf_float
-from deepmd.RunOptions import global_cvt_2_ener_float
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
+from deepmd.env import global_cvt_2_tf_float
+from deepmd.env import global_cvt_2_ener_float
 from deepmd.env import op_module
 
 
@@ -97,7 +97,7 @@ class DipoleChargeModifier(DeepDipole):
 
 
     def _build_fv_graph_inner(self):
-        self.t_ef = tf.placeholder(global_tf_float_precision, [None], name = 't_ef')
+        self.t_ef = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name = 't_ef')
         nf = 10
         nfxnas = 64*nf
         nfxna = 192*nf
@@ -189,7 +189,7 @@ class DipoleChargeModifier(DeepDipole):
                 sel_start_idx += self.t_natoms[2+type_i]
             else:
                 di = tf.zeros([tf.shape(dipole)[0], self.t_natoms[2+type_i] * dof],
-                              dtype = global_tf_float_precision)
+                              dtype = GLOBAL_TF_FLOAT_PRECISION)
             coll.append(di)
         return tf.concat(coll, axis = 1)
 
@@ -235,8 +235,10 @@ class DipoleChargeModifier(DeepDipole):
         tot_v
                 The virial modification
         """
+        atype = np.array(atype, dtype=int)
         coord, atype, imap = self.sort_input(coord, atype)
-        natoms = coord.shape[1] // 3
+        # natoms = coord.shape[1] // 3
+        natoms = atype.size
         nframes = coord.shape[0]
         box = np.reshape(box, [nframes, 9])
         atype = np.reshape(atype, [natoms])

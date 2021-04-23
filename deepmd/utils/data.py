@@ -6,8 +6,8 @@ import numpy as np
 import os.path
 from typing import Tuple, List
 
-from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 
 class DeepmdData() :
     """
@@ -19,7 +19,8 @@ class DeepmdData() :
                   set_prefix : str = 'set',
                   shuffle_test : bool = True, 
                   type_map : List[str] = None, 
-                  modifier = None) :
+                  modifier = None,
+                  trn_all_set : bool = False) :
         """
         Constructor
         
@@ -35,6 +36,8 @@ class DeepmdData() :
                 Gives the name of different atom types
         modifier
                 Data modifier that has the method `modify_data`
+        trn_all_set
+                Use all sets as training dataset. Otherwise, if the number of sets is more than 1, the last set is left for test.
         """
         self.dirs = glob.glob (os.path.join(sys_path, set_prefix + ".*"))
         self.dirs.sort()
@@ -57,10 +60,13 @@ class DeepmdData() :
         self.idx_map = self._make_idx_map(self.atom_type)
         # train dirs
         self.test_dir = self.dirs[-1]
-        if len(self.dirs) == 1 :
+        if trn_all_set:
             self.train_dirs = self.dirs
-        else :
-            self.train_dirs = self.dirs[:-1]
+        else:
+            if len(self.dirs) == 1 :
+                self.train_dirs = self.dirs
+            else :
+                self.train_dirs = self.dirs[:-1]
         self.data_dict = {}        
         # add box and coord
         self.add('box', 9, must = True)
@@ -157,9 +163,9 @@ class DeepmdData() :
         """
         for ii in self.train_dirs :
             if self.data_dict['coord']['high_prec'] :
-                tmpe = np.load(os.path.join(ii, "coord.npy")).astype(global_ener_float_precision)
+                tmpe = np.load(os.path.join(ii, "coord.npy")).astype(GLOBAL_ENER_FLOAT_PRECISION)
             else:
-                tmpe = np.load(os.path.join(ii, "coord.npy")).astype(global_np_float_precision)
+                tmpe = np.load(os.path.join(ii, "coord.npy")).astype(GLOBAL_NP_FLOAT_PRECISION)
             if tmpe.ndim == 1:
                 tmpe = tmpe.reshape([1,-1])            
             if tmpe.shape[0] < batch_size :
@@ -171,9 +177,9 @@ class DeepmdData() :
         Check if the system can get a test dataset with `test_size` frames.
         """
         if self.data_dict['coord']['high_prec'] :
-            tmpe = np.load(os.path.join(self.test_dir, "coord.npy")).astype(global_ener_float_precision)
+            tmpe = np.load(os.path.join(self.test_dir, "coord.npy")).astype(GLOBAL_ENER_FLOAT_PRECISION)
         else:
-            tmpe = np.load(os.path.join(self.test_dir, "coord.npy")).astype(global_np_float_precision)            
+            tmpe = np.load(os.path.join(self.test_dir, "coord.npy")).astype(GLOBAL_NP_FLOAT_PRECISION)            
         if tmpe.ndim == 1:
             tmpe = tmpe.reshape([1,-1])            
         if tmpe.shape[0] < test_size :
@@ -403,9 +409,9 @@ class DeepmdData() :
         # get nframes
         path = os.path.join(set_name, "coord.npy")
         if self.data_dict['coord']['high_prec'] :
-            coord = np.load(path).astype(global_ener_float_precision)
+            coord = np.load(path).astype(GLOBAL_ENER_FLOAT_PRECISION)
         else:
-            coord = np.load(path).astype(global_np_float_precision)            
+            coord = np.load(path).astype(GLOBAL_NP_FLOAT_PRECISION)            
         if coord.ndim == 1:
             coord = coord.reshape([1,-1])
         nframes = coord.shape[0]
@@ -430,7 +436,7 @@ class DeepmdData() :
                 k_in = self.data_dict[kk]['reduce']
                 ndof = self.data_dict[kk]['ndof']
                 data['find_'+kk] = data['find_'+k_in]
-                tmp_in = data[k_in].astype(global_ener_float_precision)
+                tmp_in = data[k_in].astype(GLOBAL_ENER_FLOAT_PRECISION)
                 data[kk] = np.sum(np.reshape(tmp_in, [nframes, self.natoms, ndof]), axis = 1)
 
         return data
@@ -452,9 +458,9 @@ class DeepmdData() :
         path = os.path.join(set_name, key+".npy")
         if os.path.isfile (path) :
             if high_prec :
-                data = np.load(path).astype(global_ener_float_precision)
+                data = np.load(path).astype(GLOBAL_ENER_FLOAT_PRECISION)
             else:
-                data = np.load(path).astype(global_np_float_precision)
+                data = np.load(path).astype(GLOBAL_NP_FLOAT_PRECISION)
             if atomic :
                 data = data.reshape([nframes, natoms, -1])
                 data = data[:,idx_map,:]
@@ -467,9 +473,9 @@ class DeepmdData() :
             raise RuntimeError("%s not found!" % path)
         else:
             if high_prec :
-                data = np.zeros([nframes,ndof]).astype(global_ener_float_precision)                
+                data = np.zeros([nframes,ndof]).astype(GLOBAL_ENER_FLOAT_PRECISION)                
             else :
-                data = np.zeros([nframes,ndof]).astype(global_np_float_precision)
+                data = np.zeros([nframes,ndof]).astype(GLOBAL_NP_FLOAT_PRECISION)
             if repeat != 1:
                 data = np.repeat(data, repeat).reshape([nframes, -1])
             return np.float32(0.0), data
@@ -696,7 +702,7 @@ class DataSets (object):
                 if ii == "type":
                     new_data[ii] = dd
                 else:
-                    new_data[ii] = dd.astype(global_np_float_precision)
+                    new_data[ii] = dd.astype(GLOBAL_NP_FLOAT_PRECISION)
         return new_data
 
     def get_test (self) :

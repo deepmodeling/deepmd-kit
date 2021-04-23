@@ -5,8 +5,8 @@ from typing import Tuple, List
 from deepmd.env import tf
 from deepmd.common import get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, get_np_precision
 from deepmd.utils.argcheck import list_to_doc
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.utils.network import embedding_net
@@ -101,18 +101,18 @@ class DescrptSeA ():
         self.davg = None
         self.compress = False
         self.place_holders = {}
-        avg_zero = np.zeros([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
-        std_ones = np.ones ([self.ntypes,self.ndescrpt]).astype(global_np_float_precision)
+        avg_zero = np.zeros([self.ntypes,self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
+        std_ones = np.ones ([self.ntypes,self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
         sub_graph = tf.Graph()
         with sub_graph.as_default():
             name_pfx = 'd_sea_'
             for ii in ['coord', 'box']:
-                self.place_holders[ii] = tf.placeholder(global_np_float_precision, [None, None], name = name_pfx+'t_'+ii)
+                self.place_holders[ii] = tf.placeholder(GLOBAL_NP_FLOAT_PRECISION, [None, None], name = name_pfx+'t_'+ii)
             self.place_holders['type'] = tf.placeholder(tf.int32, [None, None], name=name_pfx+'t_type')
             self.place_holders['natoms_vec'] = tf.placeholder(tf.int32, [self.ntypes+2], name=name_pfx+'t_natoms')
             self.place_holders['default_mesh'] = tf.placeholder(tf.int32, [None], name=name_pfx+'t_mesh')
             self.stat_descrpt, descrpt_deriv, rij, nlist \
-                = op_module.descrpt_se_a(self.place_holders['coord'],
+                = op_module.prod_env_mat_a(self.place_holders['coord'],
                                          self.place_holders['type'],
                                          self.place_holders['natoms_vec'],
                                          self.place_holders['box'],
@@ -230,9 +230,12 @@ class DescrptSeA ():
         self.dstd = np.array(all_dstd)
 
     def enable_compression(self,
-                           min_nbor_dist,
-                           model_file = 'frozon_model.pb',
-                           table_config = [5, 0.01, 0.1, -1]
+                           min_nbor_dist : float,
+                           model_file : str = 'frozon_model.pb',
+                           table_extrapolate : float = 5,
+                           table_stride_1 : float = 0.01,
+                           table_stride_2 : float = 0.1,
+                           check_frequency : int = -1
     ) -> None:
         """
         Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
@@ -243,19 +246,24 @@ class DescrptSeA ():
                 The nearest distance between atoms
         model_file
                 The original frozen model, which will be compressed by the program
-        table_config
-                The configuration including:
-                Table_config[0] denotes the scale of model extrapolation
-                Table_config[1] denotes the uniform stride of the first table
-                Table_config[2] denotes the uniform stride of the second table
-                Table_config[3] denotes the overflow check frequency
+        table_extrapolate
+                The scale of model extrapolation
+        table_stride_1
+                The uniform stride of the first table
+        table_stride_2
+                The uniform stride of the second table
+        check_frequency
+                The overflow check frequency
         """
         self.compress = True
         self.model_file = model_file
-        self.table_config = table_config
-        self.table = DeepTabulate(self.model_file, self.filter_np_precision, self.type_one_side)
+        self.table_config = [table_extrapolate, table_stride_1, table_stride_2, check_frequency]
+        self.table = DeepTabulate(self.model_file, self.type_one_side)
         self.lower, self.upper \
-            = self.table.build(min_nbor_dist, self.rcut_r, self.rcut_r_smth, self.table_config[0], self.table_config[1], self.table_config[2])
+            = self.table.build(min_nbor_dist, 
+                               table_extrapolate, 
+                               table_stride_1, 
+                               table_stride_2)
 
     def build (self, 
                coord_ : tf.Tensor, 
@@ -306,7 +314,7 @@ class DescrptSeA ():
                 dstd = np.ones ([self.ntypes, self.ndescrpt])
             t_rcut = tf.constant(np.max([self.rcut_r, self.rcut_a]), 
                                  name = 'rcut', 
-                                 dtype = global_tf_float_precision)
+                                 dtype = GLOBAL_TF_FLOAT_PRECISION)
             t_ntypes = tf.constant(self.ntypes, 
                                    name = 'ntypes', 
                                    dtype = tf.int32)
@@ -318,12 +326,12 @@ class DescrptSeA ():
                                 dtype = tf.int32)            
             self.t_avg = tf.get_variable('t_avg', 
                                          davg.shape, 
-                                         dtype = global_tf_float_precision,
+                                         dtype = GLOBAL_TF_FLOAT_PRECISION,
                                          trainable = False,
                                          initializer = tf.constant_initializer(davg))
             self.t_std = tf.get_variable('t_std', 
                                          dstd.shape, 
-                                         dtype = global_tf_float_precision,
+                                         dtype = GLOBAL_TF_FLOAT_PRECISION,
                                          trainable = False,
                                          initializer = tf.constant_initializer(dstd))
 
@@ -332,7 +340,7 @@ class DescrptSeA ():
         atype = tf.reshape (atype_, [-1, natoms[1]])
 
         self.descrpt, self.descrpt_deriv, self.rij, self.nlist \
-            = op_module.descrpt_se_a (coord,
+            = op_module.prod_env_mat_a (coord,
                                        atype,
                                        natoms,
                                        box,
@@ -552,9 +560,9 @@ class DescrptSeA ():
               else:
                 net = 'filter_' + str(type_input) + '_net_' + str(type_i)
               if type_i == 0:
-                xyz_scatter_1  = op_module.tabulate_fusion(self.table.data[net], info, xyz_scatter, tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])
+                xyz_scatter_1  = op_module.tabulate_fusion(self.table.data[net].astype(self.filter_np_precision), info, xyz_scatter, tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])
               else:
-                xyz_scatter_1 += op_module.tabulate_fusion(self.table.data[net], info, xyz_scatter, tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])
+                xyz_scatter_1 += op_module.tabulate_fusion(self.table.data[net].astype(self.filter_np_precision), info, xyz_scatter, tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])
             else:
               if (type_input, type_i) not in self.exclude_types:
                   xyz_scatter = embedding_net(xyz_scatter, 
@@ -568,7 +576,7 @@ class DescrptSeA ():
                                               seed = seed,
                                               trainable = trainable)
               else:
-                w = tf.zeros((outputs_size[0], outputs_size[-1]), dtype=global_tf_float_precision)
+                w = tf.zeros((outputs_size[0], outputs_size[-1]), dtype=GLOBAL_TF_FLOAT_PRECISION)
                 xyz_scatter = tf.matmul(xyz_scatter, w)
               # natom x nei_type_i x out_size
               xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1]//4, outputs_size[-1]))  

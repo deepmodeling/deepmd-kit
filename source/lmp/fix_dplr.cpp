@@ -105,8 +105,8 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
     dpl_type.push_back(type_asso[sel_type[ii]]);
   }
 
-  pair_nnp = (PairNNP *) force->pair_match("deepmd",1);
-  if (!pair_nnp) {
+  pair_deepmd = (PairDeepMD *) force->pair_match("deepmd",1);
+  if (!pair_deepmd) {
     error->all(FLERR,"pair_style deepmd should be set before this fix\n");
   }
 
@@ -262,8 +262,8 @@ void FixDPLR::pre_force(int vflag)
     }
   }
   // get lammps nlist
-  NeighList * list = pair_nnp->list;
-  LammpsNeighborList lmp_list (list->inum, list->ilist, list->numneigh, list->firstneigh);
+  NeighList * list = pair_deepmd->list;
+  deepmd::InputNlist lmp_list (list->inum, list->ilist, list->numneigh, list->firstneigh);
   // declear output
   vector<FLOAT_PREC> tensor;
   // compute
@@ -299,14 +299,14 @@ void FixDPLR::pre_force(int vflag)
   }
   vector<int> sel_fwd, sel_bwd;
   int sel_nghost;
-  select_by_type(sel_fwd, sel_bwd, sel_nghost, dcoord, dtype, nghost, sel_type);
+  deepmd::select_by_type(sel_fwd, sel_bwd, sel_nghost, dcoord, dtype, nghost, sel_type);
   int sel_nall = sel_bwd.size();
   int sel_nloc = sel_nall - sel_nghost;
   vector<int> sel_type(sel_bwd.size());
-  select_map<int>(sel_type, dtype, sel_fwd, 1);
+  deepmd::select_map<int>(sel_type, dtype, sel_fwd, 1);
   
-  NNPAtomMap<FLOAT_PREC> nnp_map(sel_type.begin(), sel_type.begin() + sel_nloc);
-  const vector<int> & sort_fwd_map(nnp_map.get_fwd_map());
+  deepmd::AtomMap<FLOAT_PREC> atom_map(sel_type.begin(), sel_type.begin() + sel_nloc);
+  const vector<int> & sort_fwd_map(atom_map.get_fwd_map());
 
   vector<pair<int,int> > valid_pairs;
   get_valid_pairs(valid_pairs);  
@@ -416,8 +416,8 @@ void FixDPLR::post_force(int vflag)
     }
   }
   // lmp nlist
-  NeighList * list = pair_nnp->list;
-  LammpsNeighborList lmp_list (list->inum, list->ilist, list->numneigh, list->firstneigh);
+  NeighList * list = pair_deepmd->list;
+  deepmd::InputNlist lmp_list (list->inum, list->ilist, list->numneigh, list->firstneigh);
   // bonded pairs
   vector<pair<int,int> > valid_pairs;
   get_valid_pairs(valid_pairs);  

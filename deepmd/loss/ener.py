@@ -2,8 +2,8 @@ import numpy as np
 from deepmd.env import tf
 from deepmd.common import ClassArg, add_data_requirement
 
-from deepmd.RunOptions import global_cvt_2_tf_float
-from deepmd.RunOptions import global_cvt_2_ener_float
+from deepmd.env import global_cvt_2_tf_float
+from deepmd.env import global_cvt_2_ener_float
 
 class EnerStdLoss () :
     """
@@ -119,7 +119,7 @@ class EnerStdLoss () :
 
         # only used when tensorboard was set as true
         self.l2_loss_summary = tf.summary.scalar('l2_loss', tf.sqrt(l2_loss))
-        self.l2_loss_ener_summary = tf.summary.scalar('l2_ener_loss', tf.sqrt(l2_ener_loss) / global_cvt_2_tf_float(natoms[0]))
+        self.l2_loss_ener_summary = tf.summary.scalar('l2_ener_loss', global_cvt_2_tf_float(tf.sqrt(l2_ener_loss)) / global_cvt_2_tf_float(natoms[0]))
         self.l2_loss_force_summary = tf.summary.scalar('l2_force_loss', tf.sqrt(l2_force_loss))
         self.l2_loss_virial_summary = tf.summary.scalar('l2_virial_loss', tf.sqrt(l2_virial_loss) / global_cvt_2_tf_float(natoms[0]))
 
@@ -127,20 +127,43 @@ class EnerStdLoss () :
         self.l2_more = more_loss
         return l2_loss, more_loss
 
-    def print_header(self):
-        prop_fmt = '   %9s %9s'
+    def eval(self, sess, feed_dict, natoms):
+        run_data = [
+            self.l2_l,
+            self.l2_more['l2_ener_loss'],
+            self.l2_more['l2_force_loss'],
+            self.l2_more['l2_virial_loss'],
+            self.l2_more['l2_atom_ener_loss'],
+            self.l2_more['l2_pref_force_loss']
+        ]
+        error, error_e, error_f, error_v, error_ae, error_pf = sess.run(run_data, feed_dict=feed_dict)
+        results = {"natoms": natoms[0], "rmse": np.sqrt(error)}
+        if self.has_e:
+            results["rmse_e"] = np.sqrt(error_e) / natoms[0]
+        if self.has_ae:
+            results["rmse_ae"] = np.sqrt(error_ae)
+        if self.has_f:
+            results["rmse_f"] = np.sqrt(error_f)
+        if self.has_v:
+            results["rmse_v"] = np.sqrt(error_v) / natoms[0]
+        if self.has_pf:
+            results["rmse_pf"] = np.sqrt(error_pf)
+        return results
+
+    def print_header(self):  # depreciated
+        prop_fmt = '   %11s %11s'
         print_str = ''
-        print_str += prop_fmt % ('l2_tst', 'l2_trn')
+        print_str += prop_fmt % ('rmse_tst', 'rmse_trn')
         if self.has_e :
-            print_str += prop_fmt % ('l2_e_tst', 'l2_e_trn')
+            print_str += prop_fmt % ('rmse_e_tst', 'rmse_e_trn')
         if self.has_ae :
-            print_str += prop_fmt % ('l2_ae_tst', 'l2_ae_trn')
+            print_str += prop_fmt % ('rmse_ae_tst', 'rmse_ae_trn')
         if self.has_f :
-            print_str += prop_fmt % ('l2_f_tst', 'l2_f_trn')
+            print_str += prop_fmt % ('rmse_f_tst', 'rmse_f_trn')
         if self.has_v :
-            print_str += prop_fmt % ('l2_v_tst', 'l2_v_trn')
+            print_str += prop_fmt % ('rmse_v_tst', 'rmse_v_trn')
         if self.has_pf :
-            print_str += prop_fmt % ('l2_pf_tst', 'l2_pf_trn')
+            print_str += prop_fmt % ('rmse_pf_tst', 'rmse_pf_trn')
         return print_str
 
     def print_on_training(self, 
@@ -149,7 +172,7 @@ class EnerStdLoss () :
                           sess, 
                           natoms,
                           feed_dict_test,
-                          feed_dict_batch):
+                          feed_dict_batch):  # depreciated
 
         run_data = [
             self.l2_l,
@@ -180,7 +203,7 @@ class EnerStdLoss () :
 
         
         print_str = ""
-        prop_fmt = "   %9.2e %9.2e"
+        prop_fmt = "   %11.2e %11.2e"
         print_str += prop_fmt % (np.sqrt(error_test), np.sqrt(error_train))
         if self.has_e :
             print_str += prop_fmt % (np.sqrt(error_e_test) / natoms[0], np.sqrt(error_e_train) / natoms[0])
@@ -268,8 +291,23 @@ class EnerDipoleLoss () :
         self.l2_more = more_loss
         return l2_loss, more_loss
 
+    def eval(self, sess, feed_dict, natoms):
+        run_data = [
+            self.l2_l,
+            self.l2_more['l2_ener_loss'],
+            self.l2_more['l2_ener_dipole_loss']
+        ]
+        error, error_e, error_ed = sess.run(run_data, feed_dict=feed_dict)
+        results = {
+            'natoms': natoms[0],
+            'rmse': np.sqrt(error),
+            'rmse_e': np.sqrt(error_e) / natoms[0],
+            'rmse_ed': np.sqrt(error_ed)
+        }
+        return results
+
     @staticmethod
-    def print_header() :
+    def print_header() :  # depreciated
         prop_fmt = '   %9s %9s'
         print_str = ''
         print_str += prop_fmt % ('l2_tst', 'l2_trn')
@@ -283,7 +321,7 @@ class EnerDipoleLoss () :
                           sess, 
                           natoms,
                           feed_dict_test,
-                          feed_dict_batch):
+                          feed_dict_batch):  # depreciated
 
         run_data = [
             self.l2_l,

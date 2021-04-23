@@ -1,10 +1,9 @@
 - [Use DeePMD-kit](#use-deepmd-kit)
 	- [Prepare data](#prepare-data)
 	- [Train a model](#train-a-model)
-	    - [The DeePMD model](#the-deepmd-model)
-	    - [The DeepPot-SE model](#the-deeppot-se-model)
 	- [Freeze a model](#freeze-a-model)
 	- [Test a model](#test-a-model)
+	- [Compress a model](#compress-a-model)
 	- [Model inference](#model-inference)
 	- [Run MD with Lammps](#run-md-with-lammps)
 	    - [Include deepmd in the pair style](#include-deepmd-in-the-pair-style)
@@ -19,7 +18,8 @@ In this text, we will call the deep neural network that is used to represent the
 2. Train a model
 3. Freeze the model
 4. Test the model
-5. Inference with the model
+5. Compress the model
+6. Inference with the model
 
 ## Prepare data
 One needs to provide the following information to train a model: the atom type, the simulation box, the atom coordinate, the atom force, system energy and virial. A snapshot of a system that contains these information is called a **frame**. We use the following convention of units:
@@ -30,6 +30,7 @@ Time	| ps
 Length	| Å
 Energy	| eV
 Force	| eV/Å
+Virial  | eV
 Pressure| Bar
 
 The frames of the system are stored in two formats. A raw file is a plain text file with each information item written in one file and one frame written on one line. The default files that provide box, coordinate, force, energy and virial are `box.raw`, `coord.raw`, `force.raw`, `energy.raw` and `virial.raw`, respectively. *We recommend you use these file names*. Here is an example of force.raw:
@@ -39,13 +40,20 @@ $ cat force.raw
  6.737  1.554 -5.587 -2.803  0.062  2.222
 -1.968 -0.163  1.020 -0.225 -0.789  0.343
 ```
-This `force.raw` contains 3 frames with each frame having the forces of 2 atoms, thus it has 3 lines and 6 columns. Each line provides all the 3 force components of 2 atoms in 1 frame. The first three numbers are the 3 force components of the first atom, while the second three numbers are the 3 force components of the second atom. The coordinate file `coord.raw` is organized similarly. In `box.raw`, the 9 components of the box vectors should be provided on each line. In `virial.raw`, the 9 components of the virial tensor should be provided on each line. The number of lines of all raw files should be identical.
+This `force.raw` contains 3 frames with each frame having the forces of 2 atoms, thus it has 3 lines and 6 columns. Each line provides all the 3 force components of 2 atoms in 1 frame. The first three numbers are the 3 force components of the first atom, while the second three numbers are the 3 force components of the second atom. The coordinate file `coord.raw` is organized similarly. In `box.raw`, the 9 components of the box vectors should be provided on each line. In `virial.raw`, the 9 components of the virial tensor should be provided on each line in the order `XX XY XZ YX YY YZ ZX ZY ZZ`. The number of lines of all raw files should be identical.
 
 We assume that the atom types do not change in all frames. It is provided by `type.raw`, which has one line with the types of atoms written one by one. The atom types should be integers. For example the `type.raw` of a system that has 2 atoms with 0 and 1:
 ```bash
 $ cat type.raw
 0 1
 ```
+
+Sometimes one needs to map the integer types to atom name. The mapping can be given by the file `type_map.raw`. For example
+```bash
+$ cat type_map.raw
+O H
+```
+The type `0` is named by `"O"` and the type `1` is named by `"H"`.
 
 The second format is the data sets of `numpy` binary data that are directly used by the training program. User can use the script `$deepmd_source_dir/data/raw/raw_to_set.sh` to convert the prepared raw files to data sets. For example, if we have a raw file that contains 6000 frames, 
 ```bash
@@ -61,135 +69,40 @@ making set 2 ...
 $ ls 
 box.raw  coord.raw  energy.raw  force.raw  set.000  set.001  set.002  type.raw  virial.raw
 ```
-It generates three sets `set.000`, `set.001` and `set.002`, with each set contains 2000 frames. The last set (`set.002`) is used as testing set, while the rest sets (`set.000` and `set.001`) are used as training sets. One do not need to take care of the binary data files in each of the `set.*` directories. The path containing `set.*` and `type.raw` is called a *system*. 
+It generates three sets `set.000`, `set.001` and `set.002`, with each set contains 2000 frames. One do not need to take care of the binary data files in each of the `set.*` directories. The path containing `set.*` and `type.raw` is called a *system*. 
+
+### Data preparation with dpdata
+
+One can use the a convenient tool `dpdata` to convert data directly from the output of first priciple packages to the DeePMD-kit format. One may follow the [example](data-conv.md) of using `dpdata` to find out how to use it.
 
 ## Train a model
 
 ### Write the input script
 
-The method of training is explained in our [DeePMD][2] and [DeepPot-SE][3] papers. With the source code we provide a small training dataset taken from 400 frames generated by NVT ab-initio water MD trajectory with 300 frames for training and 100 for testing. [An example training parameter file](./examples/water/train/water_se_a.json) is provided. One can try with the training by
-```bash
-$ cd $deepmd_source_dir/examples/water/train/
-$ dp train water_se_a.json
-```
-where `water_se_a.json` is the `json` format parameter file that controls the training. It is also possible to use `yaml` format file with the same keys as json (see `water_se_a.yaml` example). You can use script `json2yaml.py` in `data/json/` dir to convert your json files to yaml. The components of the `water.json` contains four parts, `model`, `learning_rate`, `loss` and `training`.
+A model has two parts, a descriptor that maps atomic configuration to a set of symmetry invariant features, and a fitting net that takes descriptor as input and predicts the atomic contribution to the target physical property.
 
-The `model` section specify how the deep potential model is built. An example of the smooth-edition is provided as follows
-```json
-    "model": {
-	"type_map":	["O", "H"],
-	"descriptor" :{
-	    "type":		"se_a",
-	    "rcut_smth":	5.80,
-	    "rcut":		6.00,
-	    "sel":		[46, 92],
-	    "neuron":		[25, 50, 100],
-	    "axis_neuron":	16,
-	    "resnet_dt":	false,
-	    "seed":		1,
-	    "_comment":		" that's all"
-	},
-	"fitting_net" : {
-	    "neuron":		[240, 240, 240],
-	    "resnet_dt":	true,	    
-	    "seed":		1,
-	    "_comment":		" that's all"
-	},
-	"_comment":	" that's all"
-    }
-```
-The **`type_map`** is optional, which provide the element names (but not restricted to) for corresponding atom types.
+DeePMD-kit implements the following descriptors:
+1. [`se_e2_a`](train-se-e2-a.md#descriptor): DeepPot-SE constructed from all information (both angular and radial) of atomic configurations. The embedding takes the distance between atoms as input.
+2. [`se_e2_r`](train-se-e2-r.md): DeepPot-SE constructed from radial information of atomic configurations. The embedding takes the distance between atoms as input.
+3. [`se_e3`](train-se-e3.md): DeepPot-SE constructed from all information (both angular and radial) of atomic configurations. The embedding takes angles between two neighboring atoms as input.
+4. `loc_frame`: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.
+5. [`hybrid`](train-hybrid.md): Concate a list of descriptors to form a new descriptor.
 
-The construction of the descriptor is given by option **`descriptor`**. The **`type`** of the descriptor is set to `"se_a"`, which means smooth-edition, angular infomation. The  **`rcut`** is the cut-off radius for neighbor searching, and the **`rcut_smth`** gives where the smoothing starts. **`sel`** gives the maximum possible number of neighbors in the cut-off radius. It is a list, the length of which is the same as the number of atom types in the system, and `sel[i]` denote the maximum possible number of neighbors with type `i`. The **`neuron`** specifies the size of the embedding net. From left to right the members denote the sizes of each hidden layers from input end to the output end, respectively. The **`axis_neuron`** specifies the size of submatrix of the embedding matrix, the axis matrix as explained in the [DeepPot-SE paper][3]. If the outer layer is of twice size as the inner layer, then the inner layer is copied and concatenated, then a [ResNet architecture](https://arxiv.org/abs/1512.03385) is build between them. If the option **`resnet_dt`** is set `true`, then a timestep is used in the ResNet. **`seed`** gives the random seed that is used to generate random numbers when initializing the model parameters.
+The fitting of the following physical properties are supported
+1. [`ener`](train-se-e2-a.md#fitting) Fitting the energy of the system. The force (derivative with atom positions) and the virial (derivative with the box tensor) can also be trained. See [the example](train-se-e2-a.md#loss).
+2. `dipole` The dipole moment.
+3. `polar` The polarizability.
 
-The construction of the fitting net is give by **`fitting_net`**. The key **`neuron`** specifies the size of the fitting net. If two neighboring layers are of the same size, then a [ResNet architecture](https://arxiv.org/abs/1512.03385) is build between them. If the option **`resnet_dt`** is set `true`, then a timestep is used in the ResNet. **`seed`** gives the random seed that is used to generate random numbers when initializing the model parameters.
-
-An example of the `learning_rate` is given as follows
-```json
-    "learning_rate" :{
-	"type":		"exp",
-	"start_lr":	0.005,
-	"decay_steps":	5000,
-	"decay_rate":	0.95,
-	"_comment":	"that's all"
-    }
-```
-The option **`start_lr`**, **`decay_rate`** and **`decay_steps`** specify how the learning rate changes. For example, the `t`th batch will be trained with learning rate:
-```math
-lr(t) = start_lr * decay_rate ^ ( t / decay_steps )
-```
-
-An example of the `loss` is 
-```json
-    "loss" : {
-	"start_pref_e":	0.02,
-	"limit_pref_e":	1,
-	"start_pref_f":	1000,
-	"limit_pref_f":	1,
-	"start_pref_v":	0,
-	"limit_pref_v":	0,
-	"_comment":	" that's all"
-    }
-```
-The options **`start_pref_e`**, **`limit_pref_e`**, **`start_pref_f`**, **`limit_pref_f`**, **`start_pref_v`** and **`limit_pref_v`** determine how the prefactors of energy error, force error and virial error changes in the loss function (see the appendix of the [DeePMD paper][2] for details). Taking the prefactor of force error for example, the prefactor at batch `t` is
-```math
-w_f(t) = start_pref_f * ( lr(t) / start_lr ) + limit_pref_f * ( 1 - lr(t) / start_lr )
-```
-Since we do not have virial data, the virial prefactors `start_pref_v` and `limit_pref_v` are set to 0.
-
-An example of `training` is
-```json
-    "training" : {
-	"systems":	["../data1/", "../data2/"],
-	"set_prefix":	"set",    
-	"stop_batch":	1000000,
-	"_comment": " batch_size can be supplied with, e.g. 1, or auto (string) or [10, 20]",
-	"batch_size":	1,
-
-	"seed":		1,
-
-	"_comment": " display and restart",
-	"_comment": " frequencies counted in batch",
-	"disp_file":	"lcurve.out",
-	"disp_freq":	100,
-	"_comment": " numb_test can be supplied with, e.g. 1, or XX% (string) or [10, 20]",
-	"numb_test":	10,
-	"save_freq":	1000,
-	"save_ckpt":	"model.ckpt",
-	"load_ckpt":	"model.ckpt",
-	"disp_training":true,
-	"time_training":true,
-	"profiling":	false,
-	"profiling_file":"timeline.json",
-	"_comment":	"that's all"
-    }
-```
-The option **`systems`** provide location of the systems (path to `set.*` and `type.raw`). It is a vector, thus DeePMD-kit allows you to provide multiple systems. DeePMD-kit will train the model with the systems in the vector one by one in a cyclic manner. **It is warned that the example water data (in folder `examples/data/water`) is of very limited amount, is provided only for testing purpose, and should not be used to train a productive model.**
-
-The option **`batch_size`** specifies the number of frames in each batch. It can be set to `"auto"` to enable a automatic batch size or it can be input as a list setting batch size individually for each system.
-The option **`stop_batch`** specifies the total number of batches will be used in the training.
-
-The option **`numb_test`** specifies the number of tests that will be used for each system. If it is an integer each system will be tested with the same number of tests. It can be set to percentage `"XX%"` to use XX% of frames of each system for its testing or it can be input as a list setting numer of tests individually for each system (the order should correspond to ordering of the systems key in json).
 
 ### Training
 
 The training can be invoked by
 ```bash
-$ dp train water_se_a.json
+$ dp train input.json
 ```
+where `input.json` is the name of the input script. See [the example](train-se-e2-a.md#train-a-deep-potential-model) for more details.
 
-During the training, the error of the model is tested every **`disp_freq`** batches with **`numb_test`** frames from the last set in the **`systems`** directory on the fly, and the results are output to **`disp_file`**. A typical `disp_file` looks like
-```bash
-# batch      l2_tst    l2_trn    l2_e_tst  l2_e_trn    l2_f_tst  l2_f_trn         lr
-      0    2.67e+01  2.57e+01    2.21e-01  2.22e-01    8.44e-01  8.12e-01    1.0e-03
-    100    6.14e+00  5.40e+00    3.01e-01  2.99e-01    1.93e-01  1.70e-01    1.0e-03
-    200    5.02e+00  4.49e+00    1.53e-01  1.53e-01    1.58e-01  1.42e-01    1.0e-03
-    300    4.36e+00  3.71e+00    7.32e-02  7.27e-02    1.38e-01  1.17e-01    1.0e-03
-    400    4.04e+00  3.29e+00    3.16e-02  3.22e-02    1.28e-01  1.04e-01    1.0e-03
-```
-The first column displays the number of batches. The second and third columns display the loss function evaluated by `numb_test` frames randomly chosen from the test set and that evaluated by the current training batch, respectively. The fourth and fifth columns display the RMS energy error (normalized by number of atoms) evaluated by `numb_test` frames randomly chosen from the test set and that evaluated by the current training batch, respectively. The sixth and seventh columns display the RMS force error (component-wise) evaluated by `numb_test` frames randomly chosen from the test set and that evaluated by the current training batch, respectively. The last column displays the current learning rate.
-
-Checkpoints will be written to files with prefix **`save_ckpt`** every **`save_freq`** batches. If **`restart`** is set to `true`, then the training will start from the checkpoint named **`load_ckpt`**, rather than from scratch.
+During the training, checkpoints will be written to files with prefix `save_ckpt` every `save_freq` training steps. 
 
 Several command line options can be passed to `dp train`, which can be checked with
 ```bash
@@ -206,9 +119,8 @@ optional arguments:
                         Initialize a model by the provided checkpoint
   --restart RESTART     Restart the training from the provided checkpoint
 ```
-The keys `intra_op_parallelism_threads` and `inter_op_parallelism_threads` are Tensorflow configurations for multithreading, which are explained [here](https://www.tensorflow.org/performance/performance_guide#optimizing_for_cpu). Skipping `-t` and `OMP_NUM_THREADS` leads to the default setting of these keys in the Tensorflow.
 
-**`--init-model model.ckpt`**, for example, initializes the model training with an existing model that is stored in the checkpoint `model.ckpt`, the network architectures should match.
+**`--init-model model.ckpt`**, initializes the model training with an existing model that is stored in the checkpoint `model.ckpt`, the network architectures should match.
 
 **`--restart model.ckpt`**, continues the training from the checkpoint `model.ckpt`.
 
@@ -270,10 +182,66 @@ optional arguments:
                         accuracy
 ```
 
+## Compress a model
+
+Once the frozen model is obtained from deepmd-kit, we can get the neural network structure and its parameters (weights, biases, etc.) from the trained model, and compress it in the following way:
+```bash
+dp compress input.json -i graph.pb -o graph-compress.pb
+```
+where input.json denotes the original training input script, `-i` gives the original frozen model, `-o` gives the compressed model. Several other command line options can be passed to `dp compress`, which can be checked with
+```bash
+$ dp compress --help
+```
+An explanation will be provided
+```
+usage: dp compress [-h] [-i INPUT] [-o OUTPUT] [-e EXTRAPOLATE] [-s STRIDE]
+                   [-f FREQUENCY] [-d FOLDER]
+                   INPUT
+
+positional arguments:
+  INPUT                 The input parameter file in json or yaml format, which
+                        should be consistent with the original model parameter
+                        file
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -i INPUT, --input INPUT
+                        The original frozen model, which will be compressed by
+                        the deepmd-kit
+  -o OUTPUT, --output OUTPUT
+                        The compressed model
+  -e EXTRAPOLATE, --extrapolate EXTRAPOLATE
+                        The scale of model extrapolation
+  -s STRIDE, --stride STRIDE
+                        The uniform stride of tabulation's first table, the
+                        second table will use 10 * stride as it's uniform
+                        stride
+  -f FREQUENCY, --frequency FREQUENCY
+                        The frequency of tabulation overflow check(If the
+                        input environment matrix overflow the first or second
+                        table range). By default do not check the overflow
+  -d FOLDER, --folder FOLDER
+                        path to checkpoint folder
+```
+**Parameter explanation**
+
+Model compression, which including tabulating the embedding-net.
+The table is composed of fifth-order polynomial coefficients and is assembled from two sub-tables. The first sub-table takes the stride(parameter) as it's uniform stride, while the second sub-table takes 10 * stride as it's uniform stride.
+The range of the first table is automatically detected by deepmd-kit, while the second table ranges from the first table's upper boundary(upper) to the extrapolate(parameter) * upper.
+Finally, we added a check frequency parameter. It indicates how often the program checks for overflow(if the input environment matrix overflow the first or second table range) during the MD inference.
+
+**Justification of model compression**
+
+Model compression, with little loss of accuracy, can greatly speed up MD inference time. According to different simulation systems and training parameters, the speedup can reach more than 10 times at both CPU and GPU devices. At the same time, model compression can greatly change the memory usage, reducing as much as 20 times under the same hardware conditions.
+
+**Acceptable original model version**
+
+The model compression method requires that the version of DeePMD-kit used in original model generation should be 1.3 or above. If one has a frozen 1.2 model, one can first use the convenient conversion interface of DeePMD-kit-v1.2.4 to get a 1.3 executable model.(eg: ```dp convert-to-1.3 -i frozen_1.2.pb -o frozen_1.3.pb```) 
+
 ## Model inference 
 One may use the python interface of DeePMD-kit for model inference, an example is given as follows
 ```python
-from deepmd import DeepPot
+from deepmd.infer import DeepPot
 import numpy as np
 dp = DeepPot('graph.pb')
 coord = np.array([[1,0,0], [0,0,1.5], [1,0,3]]).reshape([1, -1])

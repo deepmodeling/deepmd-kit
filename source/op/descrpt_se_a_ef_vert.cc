@@ -1,19 +1,10 @@
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include <iostream>
-
+#include "custom_op.h"
 #include "ComputeDescriptor.h"
-#include "NeighborList.h"
+#include "neighbor_list.h"
+#include "fmt_nlist.h"
 
 typedef double boxtensor_t ;
 typedef double compute_t;
-
-using namespace tensorflow;
-// using namespace std;
-
-using CPUDevice = Eigen::ThreadPoolDevice;
-using GPUDevice = Eigen::GpuDevice;
 
 REGISTER_OP("DescrptSeAEfVert")
 .Attr("T: {float, double}")
@@ -285,7 +276,7 @@ public:
 	std::vector<int> fmt_nlist_r;
 	int ret = -1;
 	if (fill_nei_a){
-	  if ((ret = format_nlist_fill_a (fmt_nlist_a, fmt_nlist_r, d_coord3, ntypes, d_type, region, b_pbc, ii, d_nlist_a[ii], d_nlist_r[ii], rcut_r, sec_a, sec_r)) != -1){
+	  if ((ret = format_nlist_i_fill_a (fmt_nlist_a, fmt_nlist_r, d_coord3, ntypes, d_type, region, b_pbc, ii, d_nlist_a[ii], d_nlist_r[ii], rcut_r, sec_a, sec_r)) != -1){
 	    if (count_nei_idx_overflow == 0) {
 	      std::cout << "WARNING: Radial neighbor list length of type " << ret << " is not enough" << std::endl;
 	      flush(std::cout);

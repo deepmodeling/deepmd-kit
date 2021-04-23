@@ -4,8 +4,8 @@ from typing import Tuple, List
 from deepmd.env import tf
 from deepmd.common import ClassArg, get_activation_func, get_precision, add_data_requirement
 from deepmd.utils.network import one_layer
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.utils.network import embedding_net
@@ -27,7 +27,8 @@ class DescrptSeAEbd (DescrptSeA):
                   numb_aparam : int = 0,
                   set_davg_zero: bool = False,
                   activation_function: str = 'tanh',
-                  precision: str = 'default'
+                  precision: str = 'default',
+                  exclude_types: List[int] = [],
     ) -> None:
         """
         Constructor
@@ -139,7 +140,7 @@ class DescrptSeAEbd (DescrptSeA):
             nei_type = np.append(nei_type, ii * np.ones(self.sel_a[ii]))
         self.nei_type = tf.get_variable('t_nei_type', 
                                         [self.nnei],
-                                        dtype = global_tf_float_precision,
+                                        dtype = GLOBAL_TF_FLOAT_PRECISION,
                                         trainable = False,
                                         initializer = tf.constant_initializer(nei_type))
         self.dout = DescrptSeA.build(self, coord_, atype_, natoms, box_, mesh, input_dict, suffix = suffix, reuse = reuse)

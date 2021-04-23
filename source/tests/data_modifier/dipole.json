@@ -4,7 +4,7 @@
     "model":{
 	"type_map":		["O", "H"],
 	"descriptor" :{
-	    "type":		"se_a",
+	    "type":		"se_e2_a",
 	    "sel":		[46, 92],
 	    "rcut_smth":	3.80,
 	    "rcut":		4.00,
