@@ -32,6 +32,7 @@ protected:
     3 , 6 , -1, -1, -1, -1, -1, -1, -1, -1, 4 , 2 , 7 , -1, -1, -1, -1, -1, -1, -1
   };      
   std::vector<int> expect_nlist;
+  int max_nbor_size;
 
   void SetUp() override {
     double box[] = {13., 0., 0., 0., 13., 0., 0., 0., 13.};
@@ -53,7 +54,8 @@ protected:
       else{
 	expect_nlist.push_back(-1);
       }
-    }    
+    } 
+    max_nbor_size = 0;   
   }
   void TearDown() override {
   }
@@ -90,6 +92,7 @@ protected:
     3,  6,  4,  2, 
   };      
   std::vector<int> expect_nlist;
+  int max_nbor_size;
 
   void SetUp() override {
     double box[] = {13., 0., 0., 0., 13., 0., 0., 0., 13.};
@@ -111,12 +114,51 @@ protected:
       else{
 	expect_nlist.push_back(-1);
       }
-    }    
+    } 
+    max_nbor_size = 0;      
   }
   void TearDown() override {
   }
 };
 
+class TestEncodingDecodingNborInfo : public ::testing::Test
+{
+protected:
+  std::vector<int > valid_type = {
+    0, 1, 127, 77, 47, 9, 11
+  };
+  std::vector<double > valid_dist = {
+    23.3333, 0.001234, 1.456, 127.7, 2.021, 0.409, 11.2
+  };
+  std::vector<int > valid_index = {
+    0, 16777215, 1000000, 10000000, 202149, 478910, 5006
+  };
+  std::vector<uint_64 > expect_key = {
+    26270960290103296UL, 144116577447444479UL, 18304268195882549824UL, 11240646899941283456UL, 6775689283274741157UL, 1297497185738772158UL, 1597877147777635214UL
+  };
+
+  std::vector<int > invalid_type = {
+    0, 256, 128, 77, 47, 126, 1100
+  };
+  std::vector<double > invalid_dist = {
+    128.0, 0.001234, 1.456, 130.7, 2.021, 0.409, 11.2
+  };
+  std::vector<int > invalid_index = {
+    0, 16777215, 1 << 24, 10000000, 20210409, 478910, 5006
+  };
+  std::vector<bool> expect_cuda_error_check = {
+    false, false, false, false, false, true, false
+  };
+
+  std::vector<int > expect_type = valid_type;
+  std::vector<int > expect_index = valid_index;
+  int size_of_array = valid_type.size();
+
+  void SetUp() override {
+  }
+  void TearDown() override {
+  }
+};
 
 // orginal implementation. copy ghost
 TEST_F(TestFormatNlist, orig_cpy)
@@ -301,3 +343,186 @@ TEST_F(TestFormatNlistShortSel, cpu)
   }
 }
 
+#if GOOGLE_CUDA
+TEST_F(TestFormatNlist, gpu_cuda)
+{
+  std::vector<std::vector<int>> nlist_a_0, nlist_r_0;
+  build_nlist(nlist_a_0, nlist_r_0, posi_cpy, nloc, rc, rc, nat_stt, ncell, ext_stt, ext_end, region, ncell);  
+  // make a input nlist
+  int inum = nlist_a_0.size();
+  std::vector<int > ilist(inum);
+  std::vector<int > numneigh(inum);
+  std::vector<int* > firstneigh(inum);
+  deepmd::InputNlist in_nlist(inum, &ilist[0], &numneigh[0], &firstneigh[0]), gpu_inlist;
+  convert_nlist(in_nlist, nlist_a_0);
+  // allocate the mem for the result
+  std::vector<int> nlist(inum * sec_a.back());
+  EXPECT_EQ(nlist.size(), expect_nlist_cpy.size());
+
+  double * posi_cpy_dev = NULL;
+  int * atype_cpy_dev = NULL, * nlist_dev = NULL, * array_int_dev = NULL, * memory_dev = NULL;
+  uint_64 * array_longlong_dev = NULL;
+  for (int ii = 0; ii < inum; ii++) {
+    max_nbor_size = max_nbor_size >= numneigh[ii] ? max_nbor_size : numneigh[ii];
+  }
+  assert(max_nbor_size <= GPU_MAX_NBOR_SIZE);
+  if (max_nbor_size <= 1024) {
+    max_nbor_size = 1024;
+  }
+  else if (max_nbor_size <= 2048) {
+    max_nbor_size = 2048;
+  }
+  else {
+    max_nbor_size = 4096;
+  }
+  deepmd::malloc_device_memory_sync(posi_cpy_dev, posi_cpy);
+  deepmd::malloc_device_memory_sync(atype_cpy_dev, atype_cpy);
+  deepmd::malloc_device_memory_sync(nlist_dev, nlist);
+  deepmd::malloc_device_memory(array_int_dev, sec_a.size() + nloc * sec_a.size() + nloc);
+  deepmd::malloc_device_memory(array_longlong_dev, nloc * GPU_MAX_NBOR_SIZE * 2);
+  deepmd::malloc_device_memory(memory_dev, nloc * max_nbor_size);
+  deepmd::convert_nlist_gpu_cuda(gpu_inlist, in_nlist, memory_dev, max_nbor_size);
+  // format nlist
+  format_nbor_list_gpu_cuda(
+      nlist_dev, 
+      posi_cpy_dev, atype_cpy_dev, gpu_inlist, array_int_dev, array_longlong_dev, max_nbor_size, nloc, nall, rc, sec_a);
+  deepmd::memcpy_device_to_host(nlist_dev, nlist);
+  deepmd::delete_device_memory(nlist_dev);
+  deepmd::delete_device_memory(posi_cpy_dev);
+  deepmd::delete_device_memory(atype_cpy_dev);
+  deepmd::delete_device_memory(array_int_dev);
+  deepmd::delete_device_memory(array_longlong_dev);
+  deepmd::delete_device_memory(memory_dev);
+  deepmd::free_nlist_gpu_cuda(gpu_inlist);
+  // validate
+  for(int ii = 0; ii < nlist.size(); ++ii){
+    EXPECT_EQ(nlist[ii], expect_nlist_cpy[ii]);
+  }
+}
+
+TEST_F(TestFormatNlistShortSel, gpu_cuda)
+{
+  std::vector<std::vector<int>> nlist_a_0, nlist_r_0;
+  build_nlist(nlist_a_0, nlist_r_0, posi_cpy, nloc, rc, rc, nat_stt, ncell, ext_stt, ext_end, region, ncell);  
+  // make a input nlist
+  int inum = nlist_a_0.size();
+  std::vector<int > ilist(inum);
+  std::vector<int > numneigh(inum);
+  std::vector<int* > firstneigh(inum);
+  deepmd::InputNlist in_nlist(inum, &ilist[0], &numneigh[0], &firstneigh[0]), gpu_inlist;
+  convert_nlist(in_nlist, nlist_a_0);  
+  // mem
+  std::vector<int> nlist(inum * sec_a.back());
+  EXPECT_EQ(nlist.size(), expect_nlist_cpy.size());
+  // format nlist
+  double * posi_cpy_dev = NULL;
+  int * atype_cpy_dev = NULL, * nlist_dev = NULL, * array_int_dev = NULL, * memory_dev = NULL;
+  uint_64 * array_longlong_dev = NULL;
+  for (int ii = 0; ii < inum; ii++) {
+    max_nbor_size = max_nbor_size >= numneigh[ii] ? max_nbor_size : numneigh[ii];
+  }
+  assert(max_nbor_size <= GPU_MAX_NBOR_SIZE);
+  if (max_nbor_size <= 1024) {
+    max_nbor_size = 1024;
+  }
+  else if (max_nbor_size <= 2048) {
+    max_nbor_size = 2048;
+  }
+  else {
+    max_nbor_size = 4096;
+  }
+  deepmd::malloc_device_memory_sync(posi_cpy_dev, posi_cpy);
+  deepmd::malloc_device_memory_sync(atype_cpy_dev, atype_cpy);
+  deepmd::malloc_device_memory_sync(nlist_dev, nlist);
+  deepmd::malloc_device_memory(array_int_dev, sec_a.size() + nloc * sec_a.size() + nloc);
+  deepmd::malloc_device_memory(array_longlong_dev, nloc * GPU_MAX_NBOR_SIZE * 2);
+  deepmd::malloc_device_memory(memory_dev, nloc * max_nbor_size);
+  deepmd::convert_nlist_gpu_cuda(gpu_inlist, in_nlist, memory_dev, max_nbor_size);
+  // format nlist
+  format_nbor_list_gpu_cuda(
+      nlist_dev, 
+      posi_cpy_dev, atype_cpy_dev, gpu_inlist, array_int_dev, array_longlong_dev, max_nbor_size, nloc, nall, rc, sec_a);
+  deepmd::memcpy_device_to_host(nlist_dev, nlist);
+  deepmd::delete_device_memory(nlist_dev);
+  deepmd::delete_device_memory(posi_cpy_dev);
+  deepmd::delete_device_memory(atype_cpy_dev);
+  deepmd::delete_device_memory(array_int_dev);
+  deepmd::delete_device_memory(array_longlong_dev);
+  deepmd::delete_device_memory(memory_dev);
+  deepmd::free_nlist_gpu_cuda(gpu_inlist);
+  // validate
+  for(int ii = 0; ii < nlist.size(); ++ii){
+    EXPECT_EQ(nlist[ii], expect_nlist_cpy[ii]);
+  }
+}
+
+TEST_F(TestEncodingDecodingNborInfo, valid_nbor_info_gpu_cuda) 
+{
+  int * valid_type_dev = NULL, * valid_index_dev = NULL, * out_type_dev = NULL, * out_index_dev = NULL;
+  double * valid_dist_dev = NULL;
+  uint_64 * key_dev = NULL;
+  std::vector<int> out_type(size_of_array, 0);
+  std::vector<int> out_index(size_of_array, 0);
+  std::vector<uint_64> key(size_of_array, 0);
+  deepmd::malloc_device_memory_sync(valid_type_dev, valid_type);
+  deepmd::malloc_device_memory_sync(valid_dist_dev, valid_dist);
+  deepmd::malloc_device_memory_sync(valid_index_dev, valid_index);
+  deepmd::malloc_device_memory_sync(out_type_dev, out_type);
+  deepmd::malloc_device_memory_sync(out_index_dev, out_index);
+  deepmd::malloc_device_memory_sync(key_dev, key);
+
+  deepmd::test_encoding_decoding_nbor_info_gpu_cuda(
+      key_dev, out_type_dev, out_index_dev,
+      valid_type_dev, valid_dist_dev, valid_index_dev, size_of_array
+  );
+
+  deepmd::memcpy_device_to_host(key_dev, key);
+  deepmd::memcpy_device_to_host(out_type_dev, out_type);
+  deepmd::memcpy_device_to_host(out_index_dev, out_index);
+  deepmd::delete_device_memory(valid_type_dev);
+  deepmd::delete_device_memory(valid_dist_dev);
+  deepmd::delete_device_memory(valid_index_dev);
+  deepmd::delete_device_memory(out_type_dev);
+  deepmd::delete_device_memory(out_index_dev);
+  deepmd::delete_device_memory(key_dev);
+  // validate
+  for(int ii = 0; ii < size_of_array; ii++) {
+    EXPECT_EQ(key[ii], expect_key[ii]);
+    EXPECT_EQ(out_type[ii], expect_type[ii]);
+    EXPECT_EQ(out_index[ii], expect_index[ii]);
+  }
+}
+
+// TEST_F(TestEncodingDecodingNborInfo, invalid_nbor_info_gpu_cuda) 
+// {
+//   int * invalid_type_dev = NULL, * invalid_index_dev = NULL, * out_type_dev = NULL, * out_index_dev = NULL;
+//   double * invalid_dist_dev = NULL;
+//   uint_64 * key_dev = NULL;
+//   std::vector<int> out_type(size_of_array, 0);
+//   std::vector<int> out_index(size_of_array, 0);
+//   std::vector<uint_64> key(size_of_array, 0);
+//   deepmd::malloc_device_memory_sync(invalid_type_dev, invalid_type);
+//   deepmd::malloc_device_memory_sync(invalid_dist_dev, invalid_dist);
+//   deepmd::malloc_device_memory_sync(invalid_index_dev, invalid_index);
+//   deepmd::malloc_device_memory_sync(out_type_dev, out_type);
+//   deepmd::malloc_device_memory_sync(out_index_dev, out_index);
+//   deepmd::malloc_device_memory_sync(key_dev, key);
+  
+//   EXPECT_EQ(cudaGetLastError() == cudaSuccess && cudaDeviceSynchronize() == cudaSuccess, true);
+//   deepmd::test_encoding_decoding_nbor_info_gpu_cuda(
+//       key_dev, out_type_dev, out_index_dev,
+//       invalid_type_dev, invalid_dist_dev, invalid_index_dev, size_of_array
+//   );
+//   EXPECT_EQ(cudaGetLastError() == cudaSuccess && cudaDeviceSynchronize() == cudaSuccess, false);
+//   cudaErrcheck(cudaDeviceReset());
+//   deepmd::memcpy_device_to_host(key_dev, key);
+//   deepmd::memcpy_device_to_host(out_type_dev, out_type);
+//   deepmd::memcpy_device_to_host(out_index_dev, out_index);
+//   deepmd::delete_device_memory(invalid_type_dev);
+//   deepmd::delete_device_memory(invalid_dist_dev);
+//   deepmd::delete_device_memory(invalid_index_dev);
+//   deepmd::delete_device_memory(out_type_dev);
+//   deepmd::delete_device_memory(out_index_dev);
+//   deepmd::delete_device_memory(key_dev);
+// }
+#endif // GOOGLE_CUDA

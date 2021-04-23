@@ -6,7 +6,7 @@
 
 #define TPB 256
 #define SQRT_2_PI 0.7978845608028654 
-typedef unsigned long long int_64;
+typedef unsigned long long uint_64;
 
 #if GOOGLE_CUDA
 #include "gpu_cuda.h"
