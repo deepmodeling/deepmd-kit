@@ -6,7 +6,7 @@
 [![conda install](https://img.shields.io/badge/downloads-9k%20total-green.svg?style=round-square&label=conda%20install)](https://anaconda.org/deepmodeling/deepmd-kit)
 [![pip install](https://img.shields.io/pypi/dm/deepmd-kit?label=pip%20install)](https://pypi.org/project/deepmd-kit)
 [![docker pull](https://img.shields.io/docker/pulls/deepmodeling/deepmd-kit)](https://hub.docker.com/r/deepmodeling/deepmd-kit)
-[![Documentation Status](https://readthedocs.org/projects/deepmd/badge/?version=latest)](https://deepmd.readthedocs.io/en/latest/?badge=latest)
+[![Documentation Status](https://readthedocs.org/projects/deepmd/badge/)](https://deepmd.readthedocs.io/)
 
 # Table of contents
 - [About DeePMD-kit](#about-deepmd-kit)
