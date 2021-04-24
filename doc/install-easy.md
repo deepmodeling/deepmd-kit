@@ -4,9 +4,9 @@ There various easy methods to install DeePMD-kit. Choose one that you prefer. If
 
 After your easy installation, DeePMD-kit (`dp`) and LAMMPS (`lmp`) will be available to execute. You can try `dp -h` and `lmp -h` to see the help. `mpirun` is also available considering you may want to run LAMMPS in parallel.
 
-- [Install off-line packages](#Install-off-line-packages)
-- [Install with conda](#Install-with-conda)
-- [Install with docker](#Install-with-docker)
+- [Install off-line packages](#install-off-line-packages)
+- [Install with conda](#install-with-conda)
+- [Install with docker](#install-with-docker)
 
 
 ## Install off-line packages

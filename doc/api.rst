@@ -61,7 +61,7 @@ API
    :members:
    :undoc-members:
 
-.. automodule:: deepmd.descriptor.se_hybrid
+.. automodule:: deepmd.descriptor.hybrid
    :members:
    :undoc-members:
 
