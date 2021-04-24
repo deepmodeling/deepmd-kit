@@ -1,1 +1,2 @@
 .[docs,cpu]
+myst-parser
