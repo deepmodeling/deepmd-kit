@@ -79,7 +79,8 @@ class TensorLoss () :
         polar = model_dict[self.tensor_name]
         
         # YWolfeee: get the 2 norm of label, i.e. polar_hat
-        normalized_term = tf.sqrt(tf.reduce_sum(tf.square(polar_hat)))
+        #normalized_term = tf.sqrt(tf.reduce_sum(tf.square(polar_hat)))
+        normalized_term = global_cvt_2_tf_float(1.0)
 
         # YHT: added for global / local dipole combination
         l2_loss = global_cvt_2_tf_float(0.0)
