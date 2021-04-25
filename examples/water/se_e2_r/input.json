@@ -1,0 +1,66 @@
+{
+    "_comment": " model parameters",
+    "model":	{
+	"type_map":		["O", "H"],
+	"descriptor": {
+	    "type":		"se_e2_r",
+	    "sel":		[46, 92],
+	    "rcut_smth":	0.50,
+	    "rcut":		6.00,
+	    "neuron":		[5, 10, 20],
+	    "resnet_dt":	false,
+	    "seed":		1,
+	    "_comment": " that's all"
+	},
+	"fitting_net" :{
+	    "neuron":		[120, 120, 120],
+	    "resnet_dt":	true,
+	    "seed":		1,
+	    "_comment":		"that's all"
+	},
+	"_comment":	" that's all"
+    },
+
+    "learning_rate" : {
+	"type":		"exp",
+	"decay_steps":	5000,
+	"start_lr":	0.005,	
+	"stop_lr":	3.51e-8,
+	"_comment":	" that's all"
+    },
+
+    "loss" : {
+	"start_pref_e":	0.02,
+	"limit_pref_e":	1,
+	"start_pref_f":	1000,
+	"limit_pref_f":	1,
+	"start_pref_v":	0,
+	"limit_pref_v":	0,
+	"_comment":	" that's all"
+    },
+
+    "_comment": " traing controls",
+    "training" : {
+	"training_data": {
+	    "systems":		["../data/data_0/", "../data/data_1/", "../data/data_2/"],
+	    "batch_size":	"auto",
+	    "_comment":		"that's all"
+	},
+	"validation_data":{
+	    "systems":		["../data/data_3"],
+	    "batch_size":	1,
+	    "numb_btch":	3,
+	    "_comment":		"that's all"
+	},
+	"numb_steps":	1000000,
+	"seed":		1,
+	"disp_file":	"lcurve.out",
+	"disp_freq":	100,
+	"numb_test":	10,
+	"save_freq":	1000,
+	"_comment":	"that's all"
+    },
+
+    "_comment":		"that's all"
+}
+
