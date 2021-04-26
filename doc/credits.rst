@@ -7,25 +7,24 @@ Core Package Contributors
 
 * amacadmus
 * AnguseZhang
-* tuoping
 * denghuilu
-* frankhan91
-* YWolfeee
-* njzjz
-* ZiyaoLi
-* zhouwei25
-* JiabinYang
-* y1xiaoc
-* iProzd
-* gzq942560379
-* marian-code
-* hsulab
 * bwang-ecnu
+* frankhan91
 * GeiduanLiu
+* gzq942560379
 * haidi-ustc
 * hlyang1992
+* hsulab
+* iProzd
+* JiabinYang
+* marian-code
+* njzjz
+* tuoping
 * wsyxbcl
-* frankhan91
+* y1xiaoc
+* YWolfeee
+* zhouwei25
+* ZiyaoLi
 
 Other Credits
 =============
