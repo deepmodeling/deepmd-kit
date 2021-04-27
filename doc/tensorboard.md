@@ -1,4 +1,4 @@
-# DeePMD-kit TensorBoard usage
+# TensorBoard Usage
 
 TensorBoard provides the visualization and tooling needed for machine learning
 experimentation. A full instruction of tensorboard can be found
