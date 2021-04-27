@@ -7,6 +7,7 @@ from deepmd.common import ClassArg
 from deepmd.env import global_cvt_2_ener_float, MODEL_VERSION
 from deepmd.env import op_module
 from .model_stat import make_stat_input, merge_sys_stat
+from deepmd.descriptor import DescrptSeAEbd_type
 
 class EnerModel() :
     model_type = 'ener'
@@ -138,6 +139,7 @@ class EnerModel() :
         coord = tf.reshape (coord_, [-1, natoms[1] * 3])
         atype = tf.reshape (atype_, [-1, natoms[1]])
 
+        
         dout \
             = self.descrpt.build(coord_,
                                  atype_,
@@ -145,21 +147,31 @@ class EnerModel() :
                                  box,
                                  mesh,
                                  input_dict,
-                                 suffix = suffix,
-                                 reuse = reuse)
+                                 reuse = reuse,
+                                 suffix = suffix)
         dout = tf.identity(dout, name='o_descriptor')
-
+        if isinstance(self.descrpt,DescrptSeAEbd_type):
+            type_embedding = self.descrpt.type_embed_net.fetch_type_embedding()
+            type_embedding = tf.identity(type_embedding,name ='t_embed')
         if self.srtab is not None :
             nlist, rij, sel_a, sel_r = self.descrpt.get_nlist()
             nnei_a = np.cumsum(sel_a)[-1]
             nnei_r = np.cumsum(sel_r)[-1]
-
-        atom_ener = self.fitting.build (dout, 
+        
+        if self.fitting.share_fitting:
+            atom_ener = self.fitting.build_share(dout,
+                                        atype_,
+                                        type_embedding,
                                         natoms, 
                                         input_dict, 
                                         reuse = reuse, 
                                         suffix = suffix)
-
+        else:
+            atom_ener = self.fitting.build (dout,
+                                        natoms, 
+                                        input_dict,  
+                                        reuse = reuse, 
+                                        suffix = suffix)
         if self.srtab is not None :
             sw_lambda, sw_deriv \
                 = op_module.soft_min_switch(atype, 

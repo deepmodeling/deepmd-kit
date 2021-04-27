@@ -4,6 +4,7 @@ from .se_r import DescrptSeR
 from .se_ar import DescrptSeAR
 from .se_t import DescrptSeT
 from .se_a_ebd import DescrptSeAEbd
+from .se_a_type import DescrptSeAEbd_type
 from .se_a_ef import DescrptSeAEf
 from .se_a_ef import DescrptSeAEfLower
 from .loc_frame import DescrptLocFrame

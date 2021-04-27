@@ -12,7 +12,7 @@ from deepmd.fit import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFitti
 from deepmd.descriptor import DescrptLocFrame
 from deepmd.descriptor import DescrptSeA
 from deepmd.descriptor import DescrptSeT
-from deepmd.descriptor import DescrptSeAEbd
+from deepmd.descriptor import DescrptSeAEbd,DescrptSeAEbd_type
 from deepmd.descriptor import DescrptSeAEf
 from deepmd.descriptor import DescrptSeR
 from deepmd.descriptor import DescrptSeAR
@@ -61,8 +61,10 @@ def _generate_descrpt_from_param_dict(descrpt_param):
         descrpt = DescrptSeR(**descrpt_param)
     elif descrpt_type == 'se_e3' or descrpt_type == 'se_at' or descrpt_type == 'se_a_3be' :
         descrpt = DescrptSeT(**descrpt_param)
-    elif descrpt_type == 'se_a_tpe' or descrpt_type == 'se_a_ebd' :
+    elif descrpt_type == 'se_a_tpe'  :
         descrpt = DescrptSeAEbd(**descrpt_param)
+    elif descrpt_type == 'se_a_ebd':
+        descrpt = DescrptSeAEbd_type(**descrpt_param)
     elif descrpt_type == 'se_a_ef' :
         descrpt = DescrptSeAEf(**descrpt_param)
     elif descrpt_type == 'se_ar' :
@@ -474,6 +476,8 @@ class DPTrainer (object):
             tb_valid_writer = None
         
         train_time = 0
+        varvar2 = self.sess.graph.get_tensor_by_name('t_embed:0')
+        print(self.sess.run(varvar2))
         while cur_batch < stop_batch :
 
             # first round validation:
@@ -511,6 +515,8 @@ class DPTrainer (object):
                     log.info("batch %7d training time %.2f s, testing time %.2f s"
                                   % (cur_batch, train_time, test_time))
                     train_time = 0
+                    varvar2 = self.sess.graph.get_tensor_by_name('t_embed:0')
+                    print(self.sess.run(varvar2))
                 if self.save_freq > 0 and cur_batch % self.save_freq == 0 and self.run_opt.is_chief :
                     if self.saver is not None :
                         self.saver.save (self.sess, os.getcwd() + "/" + self.save_ckpt)

@@ -109,6 +109,38 @@ def descrpt_se_a_tpe_args():
         Argument("numb_aparam", int, optional = True, default = 0, doc = doc_numb_aparam)
     ]
 
+def descrpt_se_a_ebd_args():
+    doc_sel = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.'
+    doc_rcut = 'The cut-off radius.'
+    doc_rcut_smth = 'Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`'
+    doc_neuron = 'Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.'
+    doc_axis_neuron = 'Size of the submatrix of G (embedding matrix).'
+    doc_type_filter = 'Size of type embed net'
+    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}'
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
+    doc_type_one_side = 'Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets'
+    doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}'
+    doc_trainable = 'If the parameters in the embedding net is trainable'
+    doc_seed = 'Random seed for parameter initialization'
+    doc_exclude_types = 'The Excluded types'
+    doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
+    
+    return [
+        Argument("sel", list, optional = False, doc = doc_sel),
+        Argument("rcut", float, optional = True, default = 6.0, doc = doc_rcut),
+        Argument("rcut_smth", float, optional = True, default = 0.5, doc = doc_rcut_smth),
+        Argument("neuron", list, optional = True, default = [10,20,40], doc = doc_neuron),
+        Argument("axis_neuron", int, optional = True, default = 4, doc = doc_axis_neuron),
+        Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
+        Argument("resnet_dt", bool, optional = True, default = False, doc = doc_resnet_dt),
+        Argument("type_one_side", bool, optional = True, default = False, doc = doc_type_one_side),
+        Argument("type_filter", list, optional = True, default = [5,10,10], doc = doc_type_filter),
+        Argument("precision", str, optional = True, default = "float64", doc = doc_precision),
+        Argument("trainable", bool, optional = True, default = True, doc = doc_trainable),
+        Argument("seed", [int,None], optional = True, doc = doc_seed),
+        Argument("exclude_types", list, optional = True, default = [], doc = doc_exclude_types),
+        Argument("set_davg_zero", bool, optional = True, default = False, doc = doc_set_davg_zero)
+    ]
 
 def descrpt_se_r_args():
     doc_sel = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.'
@@ -166,6 +198,7 @@ def descrpt_variant_type_args():
     link_se_e2_r = make_link('se_e2_r', 'model/descriptor[se_e2_r]')
     link_se_e3 = make_link('se_e3', 'model/descriptor[se_e3]')
     link_se_a_tpe = make_link('se_a_tpe', 'model/descriptor[se_a_tpe]')
+    link_se_a_ebd = make_link('se_a_ebd', 'model/descriptor[se_a_ebd]')
     link_hybrid = make_link('hybrid', 'model/descriptor[hybrid]')
     doc_descrpt_type = f'The type of the descritpor. See explanation below. \n\n\
 - `loc_frame`: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.\n\n\
@@ -173,6 +206,7 @@ def descrpt_variant_type_args():
 - `se_e2_r`: Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor.\n\n\
 - `se_e3`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Three-body embedding will be used by this descriptor.\n\n\
 - `se_a_tpe`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Type embedding will be used by this descriptor.\n\n\
+- `se_a_ebd`: Type embedding will be used by this descriptor.\n\n\
 - `hybrid`: Concatenate of a list of descriptors as a new descriptor.'
     
     return Variant("type", [
@@ -180,7 +214,8 @@ def descrpt_variant_type_args():
         Argument("se_e2_a", dict, descrpt_se_a_args(), alias = ['se_a']),
         Argument("se_e2_r", dict, descrpt_se_r_args(), alias = ['se_r']),
         Argument("se_e3", dict, descrpt_se_t_args(), alias = ['se_at', 'se_a_3be', 'se_t']),
-        Argument("se_a_tpe", dict, descrpt_se_a_tpe_args(), alias = ['se_a_ebd']),
+        Argument("se_a_tpe", dict, descrpt_se_a_tpe_args()),
+        Argument("se_a_ebd", dict, descrpt_se_a_ebd_args(), alias = ['se_a_ebd_type']),
         Argument("hybrid", dict, descrpt_hybrid_args()),
     ], doc = doc_descrpt_type)
 
@@ -193,6 +228,7 @@ def fitting_ener():
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}'
     doc_precision = f'The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
+    doc_share_fitting = 'Whether to share a single fitting net'
     doc_trainable = 'Whether the parameters in the fitting net are trainable. This option can be\n\n\
 - bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
 - list of bool: Specifies if each layer is trainable. Since the fitting net is composed by hidden layers followed by a output layer, the length of tihs list should be equal to len(`neuron`)+1.'
@@ -207,6 +243,7 @@ def fitting_ener():
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
         Argument("precision", str, optional = True, default = 'float64', doc = doc_precision),
         Argument("resnet_dt", bool, optional = True, default = True, doc = doc_resnet_dt),
+        Argument("share_fitting", bool, optional = True, default = False, doc = doc_share_fitting),
         Argument("trainable", [list,bool], optional = True, default = True, doc = doc_trainable),
         Argument("rcond", float, optional = True, default = 1e-3, doc = doc_rcond),
         Argument("seed", [int,None], optional = True, doc = doc_seed),
