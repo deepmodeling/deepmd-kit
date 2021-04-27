@@ -19,7 +19,7 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
 
 For more information, check the [documentation](https://deepmd.readthedocs.io/).
 
-<iframe src="doc/_build/html/highlights.html" />
+<iframe src="doc/_build/html/highlights.html"></iframe>
 
 ## Highlighted features
 * **interfaced with TensorFlow**, one of the most popular deep learning frameworks, making the training process highly automatic and efficient, in addition Tensorboard can be used to visualize training procedure.
