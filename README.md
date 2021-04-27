@@ -19,16 +19,7 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
 
 For more information, check the [documentation](https://deepmd.readthedocs.io/).
 
-## Highlights in DeePMD-kit v2.0
-
-* [Model compression](doc/use-deepmd-kit.md#compress-a-model). Accelerate the efficiency of model inference for 4-15 times.
-* [New descriptors](doc/use-deepmd-kit.md#write-the-input-script). Including [`se_e2_r`](doc/train-se-e2-r.md) and [`se_e3`](doc/train-se-e3.md).
-* [Hybridization of descriptors](doc/train-hybrid.md). Hybrid descriptor constructed from concatenation of several descriptors.
-* Atom type embedding.
-* Training and inference the dipole (vector) and polarizability (matrix).
-* Split of training and validation dataset.
-* Optimized training on GPUs. 
-
+<iframe src="doc/_build/html/highlights.html" />
 
 ## Highlighted features
 * **interfaced with TensorFlow**, one of the most popular deep learning frameworks, making the training process highly automatic and efficient, in addition Tensorboard can be used to visualize training procedure.
