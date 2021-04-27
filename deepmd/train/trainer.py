@@ -476,8 +476,6 @@ class DPTrainer (object):
             tb_valid_writer = None
         
         train_time = 0
-        varvar2 = self.sess.graph.get_tensor_by_name('t_embed:0')
-        print(self.sess.run(varvar2))
         while cur_batch < stop_batch :
 
             # first round validation:
@@ -515,8 +513,6 @@ class DPTrainer (object):
                     log.info("batch %7d training time %.2f s, testing time %.2f s"
                                   % (cur_batch, train_time, test_time))
                     train_time = 0
-                    varvar2 = self.sess.graph.get_tensor_by_name('t_embed:0')
-                    print(self.sess.run(varvar2))
                 if self.save_freq > 0 and cur_batch % self.save_freq == 0 and self.run_opt.is_chief :
                     if self.saver is not None :
                         self.saver.save (self.sess, os.getcwd() + "/" + self.save_ckpt)
