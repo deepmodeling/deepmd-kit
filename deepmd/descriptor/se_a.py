@@ -214,7 +214,7 @@ class DescrptSeA ():
             sumr2 = np.sum(sumr2, axis = 0)
             suma2 = np.sum(suma2, axis = 0)
             for type_i in range(self.ntypes) :
-                davgunit = [sumr[type_i]/sumn[type_i], 0, 0, 0]
+                davgunit = [sumr[type_i]/(sumn[type_i]+1e-15), 0, 0, 0]
                 dstdunit = [self._compute_std(sumr2[type_i], sumr[type_i], sumn[type_i]), 
                             self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
                             self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
@@ -516,6 +516,8 @@ class DescrptSeA ():
 
 
     def _compute_std (self,sumv2, sumv, sumn) :
+        if sumn == 0:
+            return 1e-2
         val = np.sqrt(sumv2/sumn - np.multiply(sumv/sumn, sumv/sumn))
         if np.abs(val) < 1e-2:
             val = 1e-2
