@@ -216,7 +216,7 @@ class EnerFitting ():
             inputs,
             fparam = None,
             aparam = None, 
-            bias_atom_e = None,
+            bias_atom_e = 0.0,
             suffix = '',
             reuse = None
     ):
@@ -281,7 +281,8 @@ class EnerFitting ():
                natoms : tf.Tensor,
                input_dict : dict = {},
                reuse : bool = None,
-               suffix : str = ''
+               suffix : str = '', 
+               atype_embed = None,
     ) -> tf.Tensor:
         """
         Build the computational graph for fitting net
@@ -363,32 +364,51 @@ class EnerFitting ():
             aparam = (aparam - t_aparam_avg) * t_aparam_istd
             aparam = tf.reshape(aparam, [-1, self.numb_aparam * natoms[0]])
 
-        start_index = 0
-        for type_i in range(self.ntypes):
-            if bias_atom_e is None :
-                type_bias_ae = 0.0
-            else :
-                type_bias_ae = bias_atom_e[type_i]
-            final_layer = self._build_lower(
-                start_index, natoms[2+type_i], 
-                inputs, fparam, aparam, 
-                bias_atom_e=type_bias_ae, suffix='_type_'+str(type_i)+suffix, reuse=reuse
-            )
-            # concat the results
-            if type_i < len(self.atom_ener) and self.atom_ener[type_i] is not None:                
-                zero_layer = self._build_lower(
+        if atype_embed is None:
+            start_index = 0
+            for type_i in range(self.ntypes):
+                if bias_atom_e is None :
+                    type_bias_ae = 0.0
+                else :
+                    type_bias_ae = bias_atom_e[type_i]
+                final_layer = self._build_lower(
                     start_index, natoms[2+type_i], 
-                    inputs_zero, fparam, aparam, 
-                    bias_atom_e=type_bias_ae, suffix='_zero_type_'+str(type_i)+suffix, reuse=reuse
+                    inputs, fparam, aparam, 
+                    bias_atom_e=type_bias_ae, suffix='_type_'+str(type_i)+suffix, reuse=reuse
                 )
-                final_layer += self.atom_ener[type_i] - zero_layer
-            final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i]])
-            # concat the results
-            if type_i == 0:
-                outs = final_layer
-            else:
-                outs = tf.concat([outs, final_layer], axis = 1)
-            start_index += natoms[2+type_i]
+                # concat the results
+                if type_i < len(self.atom_ener) and self.atom_ener[type_i] is not None:                
+                    zero_layer = self._build_lower(
+                        start_index, natoms[2+type_i], 
+                        inputs_zero, fparam, aparam, 
+                        bias_atom_e=type_bias_ae, suffix='_zero_type_'+str(type_i)+suffix, reuse=reuse
+                    )
+                    final_layer += self.atom_ener[type_i] - zero_layer
+                final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i]])
+                # concat the results
+                if type_i == 0:
+                    outs = final_layer
+                else:
+                    outs = tf.concat([outs, final_layer], axis = 1)
+                start_index += natoms[2+type_i]
+        # with type embedding
+        else:
+            if len(self.atom_ener) > 0:
+                raise RuntimeError("setting atom_ener is not supported by type embedding")
+            atype_embed = tf.cast(atype_embed, self.fitting_precision)
+            type_shape = atype_embed.get_shape().as_list()
+            inputs = tf.concat(
+                [tf.reshape(inputs,[-1,self.dim_descrpt]),atype_embed],
+                axis=1
+            )
+            self.dim_descrpt = self.dim_descrpt + type_shape[1]
+            inputs = tf.cast(tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]]), self.fitting_precision)
+            final_layer = self._build_lower(
+                0, natoms[0], 
+                inputs, fparam, aparam, 
+                bias_atom_e=0.0, suffix=suffix, reuse=reuse
+            )
+            outs = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[0]])
 
         if self.tot_ener_zero:
             force_tot_ener = 0.0
