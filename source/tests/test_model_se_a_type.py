@@ -1,38 +1,26 @@
 import dpdata,os,sys,unittest
 import numpy as np
 from deepmd.env import tf
+import pickle
 from common import Data,gen_data, j_loader
 
 from deepmd.utils.data_system import DataSystem
 from deepmd.descriptor import DescrptSeA
 from deepmd.fit import EnerFitting
 from deepmd.model import EnerModel
+from deepmd.utils.type_embed import TypeEmbedNet
 from deepmd.common import j_must_have
 
 GLOBAL_ENER_FLOAT_PRECISION = tf.float64
 GLOBAL_TF_FLOAT_PRECISION = tf.float64
 GLOBAL_NP_FLOAT_PRECISION = np.float64
 
-def _make_tab(ntype) :
-    xx = np.arange(0,9,0.001)
-    yy = 1000/(xx+.5)**6
-    prt = xx
-    ninter = ntype * (ntype + 1) // 2
-    for ii in range(ninter) :
-        prt = np.append(prt, yy)
-    prt = np.reshape(prt, [ninter+1, -1])
-    np.savetxt('tab.xvg', prt.T)
-
 class TestModel(unittest.TestCase):
     def setUp(self) :
         gen_data()
-        _make_tab(2)
-
-    def tearDown(self):
-        os.remove('tab.xvg')
 
     def test_model(self):
-        jfile = 'water_se_a_srtab.json'
+        jfile = 'water_se_a_type.json'
         jdata = j_loader(jfile)
 
         systems = j_must_have(jdata, 'systems')
@@ -48,25 +36,17 @@ class TestModel(unittest.TestCase):
         
         test_data = data.get_test ()
         numb_test = 1
-        
+
         jdata['model']['descriptor'].pop('type', None)        
         descrpt = DescrptSeA(**jdata['model']['descriptor'])
         jdata['model']['fitting_net']['descrpt'] = descrpt
         fitting = EnerFitting(**jdata['model']['fitting_net'])
-        # descrpt = DescrptSeA(jdata['model']['descriptor'])
-        # fitting = EnerFitting(jdata['model']['fitting_net'], descrpt)
-        model = EnerModel(
-            descrpt, 
-            fitting, 
-            None,
-            jdata['model'].get('type_map'),
-            jdata['model'].get('data_stat_nbatch'),
-            jdata['model'].get('data_stat_protect'),
-            jdata['model'].get('use_srtab'),
-            jdata['model'].get('smin_alpha'),
-            jdata['model'].get('sw_rmin'),
-            jdata['model'].get('sw_rmax')
-        )
+        typeebd_param = jdata['model']['type_embedding']
+        typeebd = TypeEmbedNet(
+            typeebd_param['neuron'],
+            typeebd_param['resnet_dt'],
+            typeebd_param['seed'])
+        model = EnerModel(descrpt, fitting, typeebd)
 
         # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
         input_data = {'coord' : [test_data['coord']], 
@@ -90,15 +70,16 @@ class TestModel(unittest.TestCase):
         t_mesh             = tf.placeholder(tf.int32,   [None], name='i_mesh')
         is_training        = tf.placeholder(tf.bool)
         t_fparam = None
+        inputs_dict = {}
 
-        model_pred\
+        model_pred \
             = model.build (t_coord, 
                            t_type, 
                            t_natoms, 
                            t_box, 
                            t_mesh,
-                           t_fparam,
-                           suffix = "se_a_srtab", 
+                           inputs_dict,
+                           suffix = "se_a_type", 
                            reuse = False)
         energy = model_pred['energy']
         force  = model_pred['force']
@@ -121,14 +102,24 @@ class TestModel(unittest.TestCase):
         sess.run(tf.global_variables_initializer())
         [e, f, v] = sess.run([energy, force, virial], 
                              feed_dict = feed_dict_test)
+        # print(sess.run(model.type_embedding))
+        # np.savetxt('tmp.out', sess.run(descrpt.dout, feed_dict = feed_dict_test), fmt='%.10e')
+        # # print(sess.run(model.atype_embed, feed_dict = feed_dict_test))
+        # print(sess.run(fitting.inputs, feed_dict = feed_dict_test))
+        # print(sess.run(fitting.outs, feed_dict = feed_dict_test))
+        # print(sess.run(fitting.atype_embed, feed_dict = feed_dict_test))
 
         e = e.reshape([-1])
         f = f.reshape([-1])
         v = v.reshape([-1])
+        np.savetxt('e.out', e.reshape([1, -1]), delimiter=',')
+        np.savetxt('f.out', f.reshape([1, -1]), delimiter=',')
+        np.savetxt('v.out', v.reshape([1, -1]), delimiter=',')
 
-        refe = [1.141610882066236599e+02]
-        reff = [-1.493121233165248043e+02,-1.831419491743885715e+02,-8.439542992300344437e+00,-1.811987095947552859e+02,-1.476380826187439084e+02,1.264271856742560018e+01,1.544377958934875323e+02,-7.816520233903435866e+00,1.287925245463442225e+00,-4.000393268449002449e+00,1.910748885843098890e+02,7.134789955349889468e+00,1.826908441979261113e+02,3.677156386479059513e+00,-1.122312112141401741e+01,-2.617413911684622008e+00,1.438445070562470391e+02,-1.402769654524568033e+00]
-        refv = [3.585047655925112622e+02,-7.569252978336677984e+00,-1.068382043878426124e+01,-7.569252978336677096e+00,3.618439481685132932e+02,5.448668500896081568e+00,-1.068382043878426302e+01,5.448668500896082456e+00,1.050393462151727686e+00]
+        refe = [6.049065170680415804e+01]
+        reff = [1.021832439441947293e-01,1.122650466359011306e-01,3.927874278714531091e-03,1.407089812207832635e-01,1.312473824343091400e-01,-1.228371057389851181e-02,-1.109672154547165501e-01,6.582735820731049070e-02,1.251568633647655391e-03,7.933758749748777428e-02,-1.831777072317984367e-01,-6.173090134630876760e-03,-2.703597126460742794e-01,4.817856571062521104e-02,1.491963457594796399e-02,5.909711543832503466e-02,-1.743406457563475287e-01,-1.642276779780762769e-03]
+        refv = [-6.932736357193732823e-01,1.453756052949563837e-01,2.138263139115256783e-02,1.453756052949564392e-01,-3.880901656480436612e-01,-7.782259726407755700e-03,2.138263139115256437e-02,-7.782259726407749628e-03,-1.225285973678705374e-03]
+
         refe = np.reshape(refe, [-1])
         reff = np.reshape(reff, [-1])
         refv = np.reshape(refv, [-1])

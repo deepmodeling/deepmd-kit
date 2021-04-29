@@ -8,6 +8,7 @@ from deepmd.utils.argcheck import list_to_doc
 from deepmd.utils.network import one_layer
 from deepmd.descriptor import DescrptLocFrame
 from deepmd.descriptor import DescrptSeA
+from deepmd.utils.type_embed import embed_atom_type
 
 from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
@@ -282,7 +283,6 @@ class EnerFitting ():
                input_dict : dict = {},
                reuse : bool = None,
                suffix : str = '', 
-               atype_embed = None,
     ) -> tf.Tensor:
         """
         Build the computational graph for fitting net
@@ -363,6 +363,15 @@ class EnerFitting ():
             aparam = tf.reshape(aparam, [-1, self.numb_aparam])
             aparam = (aparam - t_aparam_avg) * t_aparam_istd
             aparam = tf.reshape(aparam, [-1, self.numb_aparam * natoms[0]])
+            
+        if input_dict is not None:
+            type_embedding = input_dict.get('type_embedding', None)
+        else:
+            type_embedding = None
+        if type_embedding is not None:
+            atype_embed = embed_atom_type(self.ntypes, natoms, type_embedding)
+        else:
+            atype_embed = None
 
         if atype_embed is None:
             start_index = 0
