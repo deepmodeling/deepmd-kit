@@ -72,7 +72,7 @@ The typical procedure of using DeePMD-kit includes 5 steps
 
 A quick-start on using DeePMD-kit can be found [here](doc/use-deepmd-kit.md).
 
-A full [document](doc/train-input.rst) on options in the training input script is available.
+A full [document](doc/train-input-auto.rst) on options in the training input script is available.
 
 
 # Code structure
