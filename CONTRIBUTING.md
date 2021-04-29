@@ -12,8 +12,10 @@ You can start from any one of the following items to help improve deepmd-kit
 - Smash a bug
 - Implement a feature or add a patch, whatever you think deepmd-kit is missing
 - Browse the deepmd-kit [roadmap](doc/roadmap.md) and pick a bug you want to smash or a feature you want to implement
+
 See [here](#before-you-contribute) for some before-hand heads-up. 
-See [here](#how-to-contribute) to learn to contribute.
+
+See [here](#how-to-contribute) to learn how to contribute.
 
 ### Document improvement
 You can start from any one of the following items to help improve [DeePMD-kit Docs](https://deepmd.readthedocs.io/en/latest/?badge=latest):
@@ -36,10 +38,10 @@ Currently, we maintain two main branch:
 - devel :  branch for developers
 
 ### Developer guide
-See [here](#doc/development/index) for coding conventions, API and other neads-to-know of the code.
+See [here](doc/development/index) for coding conventions, API and other neads-to-know of the code.
 
 ## How to contribute
-Please perform the following steps to create your Pull Request to this repository. If don't like to use commands, you can also use [GitHub Desktop](https://desktop.github.com/), which is easier to get started. See [here](https://git-scm.com/doc) if you want to really master git.
+Please perform the following steps to create your Pull Request to this repository. If don't like to use commands, you can also use [GitHub Desktop](https://desktop.github.com/), which is easier to get started. Go to [git documentation](https://git-scm.com/doc) if you want to really master git.
 
 ### Step 1: Fork the repository
 

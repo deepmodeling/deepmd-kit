@@ -97,13 +97,14 @@ The code is organized as follows:
 
 # Troubleshooting
 
-See the [troubleshooting page](doc/troubleshooting/index.md).
+See the [troubleshooting page](doc/troubleshooting/index.rst).
 
 
 # Contributing
 
-See [DeePMD-kit Documentation Contributing Guide](CONTRIBUTING.md) to become a contributor! 🤓
-Welcome to join [DeepModeling Community](https://github.com/deepmodeling/community/)! 🤓
+See [DeePMD-kit Contributing Guide](CONTRIBUTING.md) to become a contributor! 🤓
+
+You are welcome to join [DeepModeling Community](https://github.com/deepmodeling/community/)! 🤓
 
 
 [1]: http://www.global-sci.com/galley/CiCP-2017-0213.pdf
