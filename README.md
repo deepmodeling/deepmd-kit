@@ -19,7 +19,14 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
 
 For more information, check the [documentation](https://deepmd.readthedocs.io/).
 
-<iframe src="doc/_build/html/highlights.html"></iframe>
+# Heighlights in DeePMD-kit v2.0
+* [Model compression](getting-started.md#compress-a-model). Accelerate the efficiency of model inference for 4-15 times.
+* [New descriptors](getting-started.md#write-the-input-script). Including [`se_e2_r`](train-se-e2-r.md) and [`se_e3`](train-se-e3.md).
+* [Hybridization of descriptors](train-hybrid.md). Hybrid descriptor constructed from concatenation of several descriptors.
+* Atom type embedding.
+* Training and inference the dipole (vector) and polarizability (matrix).
+* Split of training and validation dataset.
+* Optimized training on GPUs. 
 
 ## Highlighted features
 * **interfaced with TensorFlow**, one of the most popular deep learning frameworks, making the training process highly automatic and efficient, in addition Tensorboard can be used to visualize training procedure.
@@ -88,13 +95,18 @@ The code is organized as follows:
 * `source/op`: tensorflow op implementation. working with library.
 
 
-
 # Troubleshooting
 
-See the [troubleshooting page](doc/troubleshooting.md).
+See the [troubleshooting page](doc/troubleshooting/index.md).
+
+
+# Contributing
+
+See [DeePMD-kit Documentation Contributing Guide](CONTRIBUTING.md) to become a contributor! 🤓
+Welcome to join [DeepModeling Community](https://github.com/deepmodeling/community/)! 🤓
 
 
 [1]: http://www.global-sci.com/galley/CiCP-2017-0213.pdf
 [2]: https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.120.143001
-[3]:https://arxiv.org/abs/1805.09003
-[4]:https://aip.scitation.org/doi/full/10.1063/1.5027645
+[3]: https://arxiv.org/abs/1805.09003
+[4]: https://aip.scitation.org/doi/full/10.1063/1.5027645
