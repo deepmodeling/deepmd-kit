@@ -50,9 +50,9 @@ class TestModel(unittest.TestCase):
 
         # init models
         typeebd = TypeEmbedNet(
-            typeebd_param['neuron'],
-            typeebd_param['resnet_dt'],
-            typeebd_param['seed'], 
+            neuron = typeebd_param['neuron'],
+            resnet_dt = typeebd_param['resnet_dt'],
+            seed = typeebd_param['seed'], 
         )
 
         jdata['model']['descriptor'].pop('type', None)        

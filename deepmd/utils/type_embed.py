@@ -55,15 +55,34 @@ def embed_atom_type(
     
 
 class TypeEmbedNet():
+    @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__(
             self,
             neuron: List[int]=[],
             resnet_dt: bool = False,
-            seed: int = 1,
             activation_function: str = 'tanh',
             precision: str = 'default',
             trainable: bool = True,
+            seed: int = 1,
     )->None:
+        """
+        Constructor
+        Parameters
+        ----------
+        neuron : list[int]
+                Number of neurons in each hidden layers of the embedding net
+        resnet_dt
+                Time-step `dt` in the resnet construction:
+                y = x + dt * \phi (Wx + b)
+        activation_function
+                The activation function in the embedding net. Supported options are {0}
+        precision
+                The precision of the embedding net parameters. Supported options are {1}        
+        trainable
+                If the weights of embedding net are trainable.
+        seed
+                Random seed for initializing the network parameters.
+        """
         self.neuron = neuron
         self.seed = seed
         self.filter_resnet_dt = resnet_dt
@@ -77,8 +96,24 @@ class TypeEmbedNet():
             ntypes: int,
             reuse = None, 
             suffix = '',
-            trainable = True
     ):
+        """
+        Build the computational graph for the descriptor
+
+        Parameters
+        ----------
+        ntypes
+                Number of atom types.
+        reuse
+                The weights in the networks should be reused when get the variable.
+        suffix
+                Name suffix to identify this descriptor
+
+        Returns
+        -------
+        embedded_types
+                The computational graph for embedded types        
+        """
         types = tf.convert_to_tensor(
             [ii for ii in range(ntypes)],
             dtype = tf.int32
@@ -94,22 +129,9 @@ class TypeEmbedNet():
                 precision = self.filter_precision,
                 resnet_dt = self.filter_resnet_dt,
                 seed = self.seed,
-                trainable = trainable)
+                trainable = self.trainable)
         ebd_type = tf.reshape(ebd_type, [-1, self.neuron[-1]]) # nnei * neuron[-1]
-        ebd_type = ebd_type * 1e-2
         self.ebd_type = tf.identity(ebd_type, name ='t_typeebd')
         return self.ebd_type 
-
-
-    # def fetch_type_embedding(self) -> tf.Tensor:
-    #     _atom_type_ = []
-    #     for ii in range(self.ntypes):
-    #         _atom_type_.append(ii)
-    #     _atom_type_ = tf.convert_to_tensor(_atom_type_,dtype = GLOBAL_TF_FLOAT_PRECISION)
-    #     type_embedding = self.build( tf.one_hot(tf.cast(_atom_type_,dtype=tf.int32),int(self.ntypes)),
-    #                                     reuse = True,
-    #                                     suffix = '',
-    #                                     trainable = True) 
-    #     return type_embedding
 
 

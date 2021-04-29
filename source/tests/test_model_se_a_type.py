@@ -43,9 +43,9 @@ class TestModel(unittest.TestCase):
         fitting = EnerFitting(**jdata['model']['fitting_net'])
         typeebd_param = jdata['model']['type_embedding']
         typeebd = TypeEmbedNet(
-            typeebd_param['neuron'],
-            typeebd_param['resnet_dt'],
-            typeebd_param['seed'])
+            neuron = typeebd_param['neuron'],
+            resnet_dt = typeebd_param['resnet_dt'],
+            seed = typeebd_param['seed'])
         model = EnerModel(descrpt, fitting, typeebd)
 
         # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
