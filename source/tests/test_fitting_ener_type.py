@@ -19,7 +19,7 @@ class TestModel(unittest.TestCase):
     def setUp(self) :
         gen_data()
 
-    def test_model(self):
+    def test_fitting(self):
         jfile = 'water_se_a_type.json'
         jdata = j_loader(jfile)
 
