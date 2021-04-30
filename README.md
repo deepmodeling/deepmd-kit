@@ -20,9 +20,9 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
 For more information, check the [documentation](https://deepmd.readthedocs.io/).
 
 # Heighlights in DeePMD-kit v2.0
-* [Model compression](getting-started.md#compress-a-model). Accelerate the efficiency of model inference for 4-15 times.
-* [New descriptors](getting-started.md#write-the-input-script). Including [`se_e2_r`](train-se-e2-r.md) and [`se_e3`](train-se-e3.md).
-* [Hybridization of descriptors](train-hybrid.md). Hybrid descriptor constructed from concatenation of several descriptors.
+* [Model compression](doc/getting-started.md#compress-a-model). Accelerate the efficiency of model inference for 4-15 times.
+* [New descriptors](doc/getting-started.md#write-the-input-script). Including [`se_e2_r`](doc/train-se-e2-r.md) and [`se_e3`](doc/train-se-e3.md).
+* [Hybridization of descriptors](doc/train-hybrid.md). Hybrid descriptor constructed from concatenation of several descriptors.
 * Atom type embedding.
 * Training and inference the dipole (vector) and polarizability (matrix).
 * Split of training and validation dataset.
@@ -97,14 +97,12 @@ The code is organized as follows:
 
 # Troubleshooting
 
-See the [troubleshooting page](doc/troubleshooting/index.rst).
+See the [troubleshooting page](doc/troubleshooting/index.md).
 
 
 # Contributing
 
 See [DeePMD-kit Contributing Guide](CONTRIBUTING.md) to become a contributor! 🤓
-
-You are welcome to join [DeepModeling Community](https://github.com/deepmodeling/community/)! 🤓
 
 
 [1]: http://www.global-sci.com/galley/CiCP-2017-0213.pdf
