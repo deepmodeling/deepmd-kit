@@ -60,6 +60,62 @@ model:
 
         The upper boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
 
+    .. _`model/type_embedding`: 
+
+    type_embedding: 
+        | type: ``dict``
+        | argument path: ``model/type_embedding``
+
+        The type embedding.
+
+        .. _`model/type_embedding/neuron`: 
+
+        neuron: 
+            | type: ``list``, optional, default: ``[2, 4, 8]``
+            | argument path: ``model/type_embedding/neuron``
+
+            Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.
+
+        .. _`model/type_embedding/activation_function`: 
+
+        activation_function: 
+            | type: ``str``, optional, default: ``tanh``
+            | argument path: ``model/type_embedding/activation_function``
+
+            The activation function in the embedding net. Supported activation functions are "relu", "relu6", "softplus", "sigmoid", "tanh", "gelu".
+
+        .. _`model/type_embedding/resnet_dt`: 
+
+        resnet_dt: 
+            | type: ``bool``, optional, default: ``False``
+            | argument path: ``model/type_embedding/resnet_dt``
+
+            Whether to use a "Timestep" in the skip connection
+
+        .. _`model/type_embedding/precision`: 
+
+        precision: 
+            | type: ``str``, optional, default: ``float64``
+            | argument path: ``model/type_embedding/precision``
+
+            The precision of the embedding net parameters, supported options are "default", "float16", "float32", "float64".
+
+        .. _`model/type_embedding/trainable`: 
+
+        trainable: 
+            | type: ``bool``, optional, default: ``True``
+            | argument path: ``model/type_embedding/trainable``
+
+            If the parameters in the embedding net are trainable
+
+        .. _`model/type_embedding/seed`: 
+
+        seed: 
+            | type: ``int`` | ``NoneType``, optional
+            | argument path: ``model/type_embedding/seed``
+
+            Random seed for parameter initialization
+
     .. _`model/descriptor`: 
 
     descriptor: 
@@ -341,7 +397,7 @@ model:
             | type: ``bool``, optional, default: ``True``
             | argument path: ``model/descriptor[se_e2_r]/trainable``
 
-            If the parameters in the embedding net is trainable
+            If the parameters in the embedding net are trainable
 
         .. _`model/descriptor[se_e2_r]/seed`: 
 
@@ -434,7 +490,7 @@ model:
             | type: ``bool``, optional, default: ``True``
             | argument path: ``model/descriptor[se_e3]/trainable``
 
-            If the parameters in the embedding net is trainable
+            If the parameters in the embedding net are trainable
 
         .. _`model/descriptor[se_e3]/seed`: 
 
@@ -1014,7 +1070,8 @@ loss:
     | type: ``dict``, optional
     | argument path: ``loss``
 
-    The definition of loss function. The type of the loss depends on the type of the fitting. For fitting type `ener`, the prefactors before energy, force, virial and atomic energy losses may be provided. For fitting type `dipole`, `polar` and `global_polar`, the loss may be an empty `dict` or unset.
+    The definition of loss function. The loss type should be set to the fitting type or left unset.
+    \.
 
 
     Depending on the value of *type*, different sub args are accepted. 
@@ -1024,13 +1081,19 @@ loss:
     type:
         | type: ``str`` (flag key), default: ``ener``
         | argument path: ``loss/type`` 
-        | possible choices: |code:loss[ener]|_
+        | possible choices: |code:loss[ener]|_, |code:loss[dipole]|_, |code:loss[polar]|_, |code:loss[global_polar]|_
 
-        The type of the loss. 
+        The type of the loss. The loss type should be set to the fitting type or left unset.
         \.
 
         .. |code:loss[ener]| replace:: ``ener``
         .. _`code:loss[ener]`: `loss[ener]`_
+        .. |code:loss[dipole]| replace:: ``dipole``
+        .. _`code:loss[dipole]`: `loss[dipole]`_
+        .. |code:loss[polar]| replace:: ``polar``
+        .. _`code:loss[polar]`: `loss[polar]`_
+        .. |code:loss[global_polar]| replace:: ``global_polar``
+        .. _`code:loss[global_polar]`: `loss[global_polar]`_
 
     .. |flag:loss/type| replace:: *type*
     .. _`flag:loss/type`: `loss/type`_
@@ -1111,6 +1174,69 @@ loss:
         | argument path: ``loss[ener]/relative_f``
 
         If provided, relative force error will be used in the loss. The difference of force will be normalized by the magnitude of the force in the label with a shift given by `relative_f`, i.e. DF_i / ( || F || + relative_f ) with DF denoting the difference between prediction and label and || F || denoting the L2 norm of the label.
+
+
+    .. _`loss[dipole]`: 
+
+    When |flag:loss/type|_ is set to ``dipole``: 
+
+    .. _`loss[dipole]/pref_weight`: 
+
+    pref_weight: 
+        | type: ``float`` | ``NoneType`` | ``int``, optional, default: ``None``
+        | argument path: ``loss[dipole]/pref_weight``
+
+        The prefactor of the weight of global loss. It should be larger than or equal to 0. If not provided, training will be atomic mode, i.e. atomic label should be provided.
+
+    .. _`loss[dipole]/pref_atomic_weight`: 
+
+    pref_atomic_weight: 
+        | type: ``float`` | ``NoneType`` | ``int``, optional, default: ``None``
+        | argument path: ``loss[dipole]/pref_atomic_weight``
+
+        The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If it's not provided and global weight is provided, training will be global mode, i.e. global label should be provided. If both global and atomic weight are not provided, training will be atomic mode, i.e.  atomic label should be provided.
+
+
+    .. _`loss[polar]`: 
+
+    When |flag:loss/type|_ is set to ``polar``: 
+
+    .. _`loss[polar]/pref_weight`: 
+
+    pref_weight: 
+        | type: ``float`` | ``NoneType`` | ``int``, optional, default: ``None``
+        | argument path: ``loss[polar]/pref_weight``
+
+        The prefactor of the weight of global loss. It should be larger than or equal to 0. If not provided, training will be atomic mode, i.e. atomic label should be provided.
+
+    .. _`loss[polar]/pref_atomic_weight`: 
+
+    pref_atomic_weight: 
+        | type: ``float`` | ``NoneType`` | ``int``, optional, default: ``None``
+        | argument path: ``loss[polar]/pref_atomic_weight``
+
+        The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If it's not provided and global weight is provided, training will be global mode, i.e. global label should be provided. If both global and atomic weight are not provided, training will be atomic mode, i.e.  atomic label should be provided.
+
+
+    .. _`loss[global_polar]`: 
+
+    When |flag:loss/type|_ is set to ``global_polar``: 
+
+    .. _`loss[global_polar]/pref_weight`: 
+
+    pref_weight: 
+        | type: ``float`` | ``NoneType`` | ``int``, optional, default: ``None``
+        | argument path: ``loss[global_polar]/pref_weight``
+
+        The prefactor of the weight of global loss. It should be larger than or equal to 0. If it's not provided and atomic weight is provided, training will be atomic mode, i.e. atomic label should be provided. If both global and atomic weight are not provided, training will be global mode, i.e.  global label should be provided.
+
+    .. _`loss[global_polar]/pref_atomic_weight`: 
+
+    pref_atomic_weight: 
+        | type: ``float`` | ``NoneType`` | ``int``, optional, default: ``None``
+        | argument path: ``loss[global_polar]/pref_atomic_weight``
+
+        The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If not provided, training will be global mode, i.e. global label should be provided.
 
 
 .. _`learning_rate`: 
