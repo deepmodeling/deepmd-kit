@@ -39,13 +39,13 @@ class TestModelMajorCompatability(unittest.TestCase) :
     def tearDown(self):
         os.remove(self.version_pbtxt)
         os.remove(self.version_pb)
-        os.remove("dp-compressed.pb")
-        os.remove("compress.json")
-        os.remove("checkpoint")
-        os.remove("lcurve.out")
-        os.remove("model.ckpt.meta")
-        os.remove("model.ckpt.index")
-        os.remove("model.ckpt.data-00000-of-00001")
+        os.remove(str(tests_path / "dp-compressed.pb"))
+        os.remove(str(tests_path / "compress.json"))
+        os.remove(str(tests_path / "checkpoint"))
+        os.remove(str(tests_path / "lcurve.out"))
+        os.remove(str(tests_path / "model.ckpt.meta"))
+        os.remove(str(tests_path / "model.ckpt.index"))
+        os.remove(str(tests_path / "model.ckpt.data-00000-of-00001"))
 
     def test(self):        
         with self.assertRaises(RuntimeError) as context:
@@ -76,14 +76,13 @@ class TestDeepPotAPBC(unittest.TestCase) :
         self.box = np.array([13., 0., 0., 0., 13., 0., 0., 0., 13.])
 
     def tearDown(self):
-        os.remove("dp-original.pb")
-        os.remove("dp-compressed.pb")
-        os.remove("compress.json")
-        os.remove("checkpoint")
-        os.remove("lcurve.out")
-        os.remove("model.ckpt.meta")
-        os.remove("model.ckpt.index")
-        os.remove("model.ckpt.data-00000-of-00001")
+        os.remove(str(tests_path / "dp-compressed.pb"))
+        os.remove(str(tests_path / "compress.json"))
+        os.remove(str(tests_path / "checkpoint"))
+        os.remove(str(tests_path / "lcurve.out"))
+        os.remove(str(tests_path / "model.ckpt.meta"))
+        os.remove(str(tests_path / "model.ckpt.index"))
+        os.remove(str(tests_path / "model.ckpt.data-00000-of-00001"))
     
     def test_attrs(self):
         self.assertEqual(self.dp_original.get_ntypes(), 2)
@@ -198,14 +197,13 @@ class TestDeepPotANoPBC(unittest.TestCase) :
         self.box = None
 
     def tearDown(self):
-        os.remove("dp-original.pb")
-        os.remove("dp-compressed.pb")
-        os.remove("compress.json")
-        os.remove("checkpoint")
-        os.remove("lcurve.out")
-        os.remove("model.ckpt.meta")
-        os.remove("model.ckpt.index")
-        os.remove("model.ckpt.data-00000-of-00001")
+        os.remove(str(tests_path / "dp-compressed.pb"))
+        os.remove(str(tests_path / "compress.json"))
+        os.remove(str(tests_path / "checkpoint"))
+        os.remove(str(tests_path / "lcurve.out"))
+        os.remove(str(tests_path / "model.ckpt.meta"))
+        os.remove(str(tests_path / "model.ckpt.index"))
+        os.remove(str(tests_path / "model.ckpt.data-00000-of-00001"))
     
     def test_1frame(self):
         ee0, ff0, vv0 = self.dp_original.eval(self.coords, self.box, self.atype, atomic = False)
@@ -257,8 +255,8 @@ class TestDeepPotANoPBC(unittest.TestCase) :
 
     def test_2frame_atm(self):
         coords2 = np.concatenate((self.coords, self.coords))
-        ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(coords2, box, self.atype, atomic = True)
-        ee1, ff1, vv1, ae1, av1 = self.dp_compressed.eval(coords2, box, self.atype, atomic = True)
+        ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(coords2, self.box, self.atype, atomic = True)
+        ee1, ff1, vv1, ae1, av1 = self.dp_compressed.eval(coords2, self.box, self.atype, atomic = True)
         # check shape of the returns
         nframes = 2
         natoms = len(self.atype)
@@ -306,14 +304,13 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase) :
         self.box = np.array([19., 0., 0., 0., 13., 0., 0., 0., 13.])
 
     def tearDown(self):
-        os.remove("dp-original.pb")
-        os.remove("dp-compressed.pb")
-        os.remove("compress.json")
-        os.remove("checkpoint")
-        os.remove("lcurve.out")
-        os.remove("model.ckpt.meta")
-        os.remove("model.ckpt.index")
-        os.remove("model.ckpt.data-00000-of-00001")
+        os.remove(str(tests_path / "dp-compressed.pb"))
+        os.remove(str(tests_path / "compress.json"))
+        os.remove(str(tests_path / "checkpoint"))
+        os.remove(str(tests_path / "lcurve.out"))
+        os.remove(str(tests_path / "model.ckpt.meta"))
+        os.remove(str(tests_path / "model.ckpt.index"))
+        os.remove(str(tests_path / "model.ckpt.data-00000-of-00001"))
     
     def test_1frame(self):
         ee0, ff0, vv0 = self.dp_original.eval(self.coords, self.box, self.atype, atomic = False)

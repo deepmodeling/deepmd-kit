@@ -43,12 +43,12 @@
 
 	"training" : {
 "training_data": {
-		"systems":		["../../examples/water/data/data_0", "../../examples/water/data/data_1", "../../examples/water/data/data_2"],
+		"systems":		["model_compression/data"],
 		"batch_size":	"auto",
 		"_comment":		"that's all"
 },
 "validation_data":{
-		"systems":		["../../examples/water/data/data_3"],
+		"systems":		["model_compression/data"],
 		"batch_size":	1,
 		"numb_btch":	3,
 		"_comment":		"that's all"
@@ -57,7 +57,7 @@
 "seed":		10,
 "disp_file":	"lcurve.out",
 "disp_freq":	100,
-"save_freq":	1000,
+"save_freq":	100,
 "_comment":	"that's all"
 	},    
 
