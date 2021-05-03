@@ -16,7 +16,8 @@ else :
 
 class TestModelMajorCompatability(unittest.TestCase) :
     def setUp(self):
-        model_file = str(tests_path / os.path.join("model_compression","dp-original.pbtxt"))
+        model_file = str(tests_path / os.path.join("model_compression", "dp-original.pbtxt"))
+        train_file = str(tests_path / os.path.join("model_compression", "input.json"))
         with open(model_file, 'r') as fp:
             # data = fp.read().replace('\n', '')
             data = fp.read().split("\n")
@@ -32,7 +33,7 @@ class TestModelMajorCompatability(unittest.TestCase) :
         with open(self.version_pbtxt, "w") as fp:
             fp.write("\n".join(data))
         convert_pbtxt_to_pb(self.version_pbtxt, self.version_pb)
-        ret = os.system('dp compress model_compression/input.json -i dp-original.pb -o dp-compressed.pb')
+        ret = os.system("dp compress " + train_file + " -i dp-original.pb -o dp-compressed.pb")
         assert(ret == 0), "Model compression error!"
 
     def tearDown(self):
@@ -58,8 +59,9 @@ class TestModelMajorCompatability(unittest.TestCase) :
 class TestDeepPotAPBC(unittest.TestCase) :
     def setUp(self):
         model_file = str(tests_path / os.path.join("model_compression","dp-original.pbtxt"))
+        train_file = str(tests_path / os.path.join("model_compression", "input.json"))
         convert_pbtxt_to_pb(model_file, str(tests_path / "dp-original.pb"))
-        ret = os.system('dp compress model_compression/input.json -i dp-original.pb -o dp-compressed.pb')
+        ret = os.system("dp compress " + train_file + " -i dp-original.pb -o dp-compressed.pb")
         assert(ret == 0), "Model compression error!"
         
         self.dp_original = DeepPot("dp-original.pb")
@@ -179,8 +181,9 @@ class TestDeepPotAPBC(unittest.TestCase) :
 class TestDeepPotANoPBC(unittest.TestCase) :
     def setUp(self):
         model_file = str(tests_path / os.path.join("model_compression","dp-original.pbtxt"))
+        train_file = str(tests_path / os.path.join("model_compression", "input.json"))
         convert_pbtxt_to_pb(model_file, str(tests_path / "dp-original.pb"))
-        ret = os.system('dp compress model_compression/input.json -i dp-original.pb -o dp-compressed.pb')
+        ret = os.system("dp compress " + train_file + " -i dp-original.pb -o dp-compressed.pb")
         assert(ret == 0), "Model compression error!"
         
         self.dp_original = DeepPot("dp-original.pb")
@@ -192,7 +195,7 @@ class TestDeepPotANoPBC(unittest.TestCase) :
                                 3.51, 2.51, 2.60,
                                 4.27, 3.22, 1.56])
         self.atype = [0, 1, 1, 0, 1, 1]
-        self.box = np.array([13., 0., 0., 0., 13., 0., 0., 0., 13.])
+        self.box = None
 
     def tearDown(self):
         os.remove("dp-original.pb")
@@ -254,9 +257,8 @@ class TestDeepPotANoPBC(unittest.TestCase) :
 
     def test_2frame_atm(self):
         coords2 = np.concatenate((self.coords, self.coords))
-        box2 = np.concatenate((self.box, self.box))
-        ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(coords2, box2, self.atype, atomic = True)
-        ee1, ff1, vv1, ae1, av1 = self.dp_compressed.eval(coords2, box2, self.atype, atomic = True)
+        ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(coords2, box, self.atype, atomic = True)
+        ee1, ff1, vv1, ae1, av1 = self.dp_compressed.eval(coords2, box, self.atype, atomic = True)
         # check shape of the returns
         nframes = 2
         natoms = len(self.atype)
@@ -287,8 +289,9 @@ class TestDeepPotANoPBC(unittest.TestCase) :
 class TestDeepPotALargeBoxNoPBC(unittest.TestCase) :
     def setUp(self):
         model_file = str(tests_path / os.path.join("model_compression","dp-original.pbtxt"))
+        train_file = str(tests_path / os.path.join("model_compression", "input.json"))
         convert_pbtxt_to_pb(model_file, str(tests_path / "dp-original.pb"))
-        ret = os.system('dp compress model_compression/input.json -i dp-original.pb -o dp-compressed.pb')
+        ret = os.system("dp compress " + train_file + " -i dp-original.pb -o dp-compressed.pb")
         assert(ret == 0), "Model compression error!"
         
         self.dp_original = DeepPot("dp-original.pb")
@@ -300,7 +303,7 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase) :
                                 3.51, 2.51, 2.60,
                                 4.27, 3.22, 1.56])
         self.atype = [0, 1, 1, 0, 1, 1]
-        self.box = np.array([13., 0., 0., 0., 13., 0., 0., 0., 13.])
+        self.box = np.array([19., 0., 0., 0., 13., 0., 0., 0., 13.])
 
     def tearDown(self):
         os.remove("dp-original.pb")
