@@ -5,7 +5,7 @@
 
 # Table of contents
 - [About DeePMD-kit](#about-deepmd-kit)
- 	- [Highlights in v2.0](#highlights-in-deepmd-kit-v2.0)
+ 	- [Highlights in v2.0](#heighlights-in-deepmd-kit-v2.0)
  	- [Highlighted features](#highlighted-features)
  	- [License and credits](#license-and-credits)
  	- [Deep Potential in a nutshell](#deep-potential-in-a-nutshell)
@@ -62,15 +62,15 @@ One may manually install DeePMD-kit by following the instuctions on [installing 
 
 The typical procedure of using DeePMD-kit includes 5 steps 
 
-1. [Prepare data](doc/use-deepmd-kit.md#prepare-data)
-2. [Train a model](doc/use-deepmd-kit.md#train-a-model)
+1. [Prepare data](doc/getting-started.md#prepare-data)
+2. [Train a model](doc/getting-started.md#train-a-model)
 3. [Analyze training with Tensorboard](doc/tensorboard.md)
-4. [Freeze the model](doc/use-deepmd-kit.md#freeze-a-model)
-5. [Test the model](doc/use-deepmd-kit.md#test-a-model)
-6. [Compress the model](doc/use-deepmd-kit.md#compress-a-model)
-7. [Inference the model in python](doc/use-deepmd-kit.md#model-inference) or using the model in other molecular simulation packages like [LAMMPS](doc/use-deepmd-kit.md#run-md-with-lammps), [i-PI](doc/use-deepmd-kit.md#run-path-integral-md-with-i-pi) or [ASE](doc/use-deepmd-kit.md#use-deep-potential-with-ase).
+4. [Freeze the model](doc/getting-started.md#freeze-a-model)
+5. [Test the model](doc/getting-started.md#test-a-model)
+6. [Compress the model](doc/getting-started.md#compress-a-model)
+7. [Inference the model in python](doc/getting-started.md#model-inference) or using the model in other molecular simulation packages like [LAMMPS](doc/getting-started.md#run-md-with-lammps), [i-PI](doc/getting-started.md#run-path-integral-md-with-i-pi) or [ASE](doc/getting-started.md#use-deep-potential-with-ase).
 
-A quick-start on using DeePMD-kit can be found [here](doc/use-deepmd-kit.md).
+A quick-start on using DeePMD-kit can be found [here](doc/getting-started.md).
 
 A full [document](doc/train-input-auto.rst) on options in the training input script is available.
 
@@ -105,7 +105,7 @@ See the [troubleshooting page](doc/troubleshooting/index.md).
 See [DeePMD-kit Contributing Guide](CONTRIBUTING.md) to become a contributor! 🤓
 
 
-[1]: http://www.global-sci.com/galley/CiCP-2017-0213.pdf
+[1]: https://arxiv.org/abs/1707.01478
 [2]: https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.120.143001
 [3]: https://arxiv.org/abs/1805.09003
 [4]: https://aip.scitation.org/doi/full/10.1063/1.5027645

@@ -10,11 +10,51 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
-# import os
+import os
 # import sys
 import recommonmark
 from recommonmark.transform import AutoStructify
 
+def mkindex_troubleshooting():
+    oldfindex = open("troubleshooting/index.md", "r")
+    _oldlist = oldfindex.readlines()
+    oldlist = _oldlist[4:]
+    oldfindex.close()
+    
+    newfindex = open("troubleshooting/index.md", "a")
+    for root, dirs, files in os.walk("./troubleshooting/", topdown=False):
+        for name in files:
+            if (name == "index.md"):
+                continue
+            if (name[-3:] == ".md"):
+                longname = "- ["+name[:-3]+"]("+name+")\n"
+                if (longname not in oldlist):
+                    newfindex.write(longname)
+    
+    newfindex.close()
+
+def mkindex_development():
+    oldfindex = open("development/index.md", "r")
+    _oldlist = oldfindex.readlines()
+    oldlist = _oldlist[2:]
+    oldfindex.close()
+    
+    newfindex = open("development/index.md", "a")
+    for root, dirs, files in os.walk("./development/", topdown=False):
+        for name in files:
+            if (name == "index.md"):
+                continue
+            if (name[-3:] == ".md"):
+                longname = "- ["+name[:-3]+"]("+name+")\n"
+                if (longname not in oldlist):
+                    newfindex.write(longname)
+            else:
+                if (name[-4:] == ".rst"):
+                    longname = "- ["+name[:-4]+"]("+name+")\n"
+                    if (longname not in oldlist):
+                        newfindex.write(longname)
+    
+    newfindex.close()
 
 # -- Project information -----------------------------------------------------
 
@@ -35,6 +75,9 @@ author = 'Deep Potential'
 #     'sphinx_markdown_tables',
 #     'sphinx.ext.autosummary'
 # ]
+
+mkindex_troubleshooting()
+mkindex_development()
 
 extensions = [
     "sphinx_rtd_theme",

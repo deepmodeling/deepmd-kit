@@ -1,6 +1,6 @@
 # DeePMD-kit Contributing Guide
 
-Welcome to [DeePMD-kit](https://github.com/deepmodeling/deepmd-kit)! We are excited about the prospect of you joining [DeepModeling Community](https://github.com/deepmodeling/community/).
+Welcome to [DeePMD-kit](https://github.com/deepmodeling/deepmd-kit)!
 
 ## What you can contribute
 
@@ -11,7 +11,7 @@ You can start from any one of the following items to help improve deepmd-kit
 
 - Smash a bug
 - Implement a feature or add a patch, whatever you think deepmd-kit is missing
-- Browse the deepmd-kit [roadmap](doc/roadmap.md) and pick a bug you want to smash or a feature you want to implement
+- Browse [issues](https://github.com/deepmodeling/deepmd-kit/issues), find an issue labeled enhancement or bug, and help to solve it.
 
 See [here](#before-you-contribute) for some before-hand heads-up. 
 
@@ -78,12 +78,10 @@ Please perform the following steps to create your Pull Request to this repositor
     git add <file> ... # Adds the file(s) you want to commit. If you want to commit all changes, you can directly use `git add.`
     git commit -m "commit-message: update the xx"
     ```
-    See [Commit Message Style](https://github.com/DeepModeling/community/blob/master/contributors/commit-message-pr-style.md#how-to-write-a-good-commit-message).
-
+    
 5. Push the changed codes to your original repo on github. 
     ```
     git push origin devel 
-    
     ```
 
 ### Alternatively: Create a new branch
@@ -112,7 +110,6 @@ Please perform the following steps to create your Pull Request to this repositor
     git add <file> ... # Adds the file(s) you want to commit. If you want to commit all changes, you can directly use `git add.`
     git commit -m "commit-message: update the xx"
     ```
-    See [Commit Message Style](https://github.com/DeepModeling/community/blob/master/contributors/commit-message-pr-style.md#how-to-write-a-good-commit-message).
 
 5. Keep your branch in sync with upstream/master
 
@@ -131,10 +128,9 @@ Please perform the following steps to create your Pull Request to this repositor
 ### Step 3: Create a pull request
 
 1. Visit your fork at <https://github.com/$username/deepmd-kit> (replace `$username` with your GitHub ID)
-2. Click `pull requests`, followed by `New pull request` and `Compare & pull request` to create your PR. See [Pull Request Title Style](https://github.com/DeepModeling/community/blob/master/contributors/commit-message-pr-style.md#pull-request-title-style).
+2. Click `pull requests`, followed by `New pull request` and `Compare & pull request` to create your PR.
 
 Now, your PR is successfully submitted! After this PR is merged, you will automatically become a contributor to DeePMD-kit.
 
-## Join us
-
-Join [DeepModeling Community](https://github.com/deepmodeling/community/)!
+## Contact us
+E-mail: contact@deepmodeling.org
