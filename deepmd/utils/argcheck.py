@@ -342,7 +342,7 @@ def model_args ():
                    Argument("smin_alpha", float, optional = True, doc = doc_smin_alpha),
                    Argument("sw_rmin", float, optional = True, doc = doc_sw_rmin),
                    Argument("sw_rmax", float, optional = True, doc = doc_sw_rmax),
-                   Argument("type_embedding", dict, type_embedding_args(), [], doc = doc_type_embedding),
+                   Argument("type_embedding", dict, type_embedding_args(), [], optional = True, doc = doc_type_embedding),
                    Argument("descriptor", dict, [], [descrpt_variant_type_args()], doc = doc_descrpt),
                    Argument("fitting_net", dict, [], [fitting_variant_type_args()], doc = doc_fitting),
                    Argument("modifier", dict, [], [modifier_variant_type_args()], optional = True, doc = doc_modifier),
