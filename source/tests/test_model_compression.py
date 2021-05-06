@@ -16,7 +16,7 @@ else :
 
 compression_path = 'model_compression'
 input_file = os.path.join(compression_path, 'input.json')
-INPUT = os.path.join(compression_path, 'train_input.json')
+INPUT = str(tests_path / "train_input.json")
 
 class TestModelMajorCompatability(unittest.TestCase) :
     def setUp(self):
