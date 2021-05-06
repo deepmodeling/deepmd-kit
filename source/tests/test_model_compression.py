@@ -2,7 +2,6 @@ import os,sys,platform,shutil,dpdata,json
 import numpy as np
 import unittest
 
-from infer.convert2pb import convert_pbtxt_to_pb
 from deepmd.infer import DeepPot
 from deepmd.env import MODEL_VERSION
 # from deepmd.entrypoints.compress import compress
@@ -14,75 +13,26 @@ if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
 else :
     default_places = 6
 
-compression_path = 'model_compression'
-input_file = os.path.join(compression_path, 'input.json')
-INPUT = str(tests_path / "train_input.json")
-
-class TestModelMajorCompatability(unittest.TestCase) :
-    def setUp(self):
-        model_file = str(tests_path / os.path.join(compression_path, "dp-original.pbtxt"))
-        data_file  = str(tests_path / os.path.join(compression_path, "data"))
-        with open(model_file, 'r') as fp:
-            # data = fp.read().replace('\n', '')
-            data = fp.read().split("\n")
-            for ii in range(len(data)):
-                if "model_attr/model_version" in data[ii]:
-                    for jj in range(ii, len(data)):
-                        if "string_val:" in data[jj]:
-                            data[jj] = data[jj].replace(MODEL_VERSION, "0.0")
-                            break
-        self.version_pbtxt = str(tests_path / "dp-original-ver.pbtxt")
-        self.version_pb = str(tests_path / "dp-original.pb")
-        self.compressed_pb = str(tests_path / "dp-compressed.pb")
-        with open(self.version_pbtxt, "w") as fp:
-            fp.write("\n".join(data))
-        convert_pbtxt_to_pb(self.version_pbtxt, self.version_pb)
-        jdata = j_loader(input_file)
-        jdata["training"]["training_data"]["systems"] = data_file
-        jdata["training"]["validation_data"]["systems"] = data_file
-        with open(INPUT, "w") as fp:
-            json.dump(jdata, fp, indent=4)
-        ret = os.system("dp compress " + INPUT + " -i " + self.version_pb + " -o " + self.compressed_pb)
-        assert(ret == 0), "Model compression error!"
-
-    def tearDown(self):
-        os.remove(self.version_pbtxt)
-        os.remove(self.version_pb)
-        os.remove(INPUT)
-        os.remove(str(tests_path / "dp-compressed.pb"))
-        os.remove(str(tests_path / "compress.json"))
-        os.remove(str(tests_path / "checkpoint"))
-        os.remove(str(tests_path / "lcurve.out"))
-        os.remove(str(tests_path / "model.ckpt.meta"))
-        os.remove(str(tests_path / "model.ckpt.index"))
-        os.remove(str(tests_path / "model.ckpt.data-00000-of-00001"))
-
-    def test(self):        
-        with self.assertRaises(RuntimeError) as context:
-            DeepPot(str(self.version_pb))
-            DeepPot(str(self.compressed_pb))
-        self.assertTrue('incompatible' in str(context.exception))
-        self.assertTrue(MODEL_VERSION in str(context.exception))
-        self.assertTrue('0.0' in str(context.exception))
-
 
 class TestDeepPotAPBC(unittest.TestCase) :
     def setUp(self):
-        model_file = str(tests_path / os.path.join("model_compression","dp-original.pbtxt"))
-        data_file  = str(tests_path / os.path.join(compression_path, "data"))
-        original_file = str(tests_path / "dp-original.pb")
-        compressed_file = str(tests_path / "dp-compressed.pb")
-        convert_pbtxt_to_pb(model_file, original_file)
-        jdata = j_loader(input_file)
-        jdata["training"]["training_data"]["systems"] = data_file
-        jdata["training"]["validation_data"]["systems"] = data_file
-        with open(INPUT, "w") as fp:
+        self.data_file  = str(tests_path / os.path.join("model_compression", "data"))
+        self.frozen_model = str(tests_path / "dp-original.pb")
+        self.compressed_model = str(tests_path / "dp-compressed.pb")
+        self.INPUT = str(tests_path / "input.json")
+        jdata = j_loader(str(tests_path / os.path.join("model_compression", "input.json")))
+        jdata["training"]["training_data"]["systems"] = self.data_file
+        jdata["training"]["validation_data"]["systems"] = self.data_file
+        with open(self.INPUT, "w") as fp:
             json.dump(jdata, fp, indent=4)
-        ret = os.system("dp compress " + INPUT + " -i " + original_file + " -o " + compressed_file)
+
+        ret = os.system("dp train " + self.INPUT)
+        ret = os.system("dp freeze -o " + self.frozen_model)
+        ret = os.system("dp compress " + self.INPUT + " -i " + self.frozen_model + " -o " + self.compressed_model)
         assert(ret == 0), "Model compression error!"
         
-        self.dp_original = DeepPot("dp-original.pb")
-        self.dp_compressed = DeepPot("dp-compressed.pb")
+        self.dp_original = DeepPot(self.frozen_model)
+        self.dp_compressed = DeepPot(self.compressed_model)
         self.coords = np.array([12.83, 2.56, 2.18,
                                 12.09, 2.87, 2.74,
                                 00.25, 3.32, 1.68,
@@ -93,8 +43,9 @@ class TestDeepPotAPBC(unittest.TestCase) :
         self.box = np.array([13., 0., 0., 0., 13., 0., 0., 0., 13.])
 
     def tearDown(self):
-        os.remove(INPUT)
-        os.remove(str(tests_path / "dp-compressed.pb"))
+        os.remove(self.INPUT)
+        os.remove(self.frozen_model)
+        os.remove(self.compressed_model)
         os.remove(str(tests_path / "compress.json"))
         os.remove(str(tests_path / "checkpoint"))
         os.remove(str(tests_path / "lcurve.out"))
@@ -197,21 +148,23 @@ class TestDeepPotAPBC(unittest.TestCase) :
 
 class TestDeepPotANoPBC(unittest.TestCase) :
     def setUp(self):
-        model_file = str(tests_path / os.path.join("model_compression","dp-original.pbtxt"))
-        data_file  = str(tests_path / os.path.join(compression_path, "data"))
-        original_file = str(tests_path / "dp-original.pb")
-        compressed_file = str(tests_path / "dp-compressed.pb")
-        convert_pbtxt_to_pb(model_file, original_file)
-        jdata = j_loader(input_file)
-        jdata["training"]["training_data"]["systems"] = data_file
-        jdata["training"]["validation_data"]["systems"] = data_file
-        with open(INPUT, "w") as fp:
+        self.data_file  = str(tests_path / os.path.join("model_compression", "data"))
+        self.frozen_model = str(tests_path / "dp-original.pb")
+        self.compressed_model = str(tests_path / "dp-compressed.pb")
+        self.INPUT = str(tests_path / "input.json")
+        jdata = j_loader(str(tests_path / os.path.join("model_compression", "input.json")))
+        jdata["training"]["training_data"]["systems"] = self.data_file
+        jdata["training"]["validation_data"]["systems"] = self.data_file
+        with open(self.INPUT, "w") as fp:
             json.dump(jdata, fp, indent=4)
-        ret = os.system("dp compress " + INPUT + " -i " + original_file + " -o " + compressed_file)
+
+        ret = os.system("dp train " + self.INPUT)
+        ret = os.system("dp freeze -o " + self.frozen_model)
+        ret = os.system("dp compress " + self.INPUT + " -i " + self.frozen_model + " -o " + self.compressed_model)
         assert(ret == 0), "Model compression error!"
         
-        self.dp_original = DeepPot("dp-original.pb")
-        self.dp_compressed = DeepPot("dp-compressed.pb")
+        self.dp_original = DeepPot(self.frozen_model)
+        self.dp_compressed = DeepPot(self.compressed_model)
         self.coords = np.array([12.83, 2.56, 2.18,
                                 12.09, 2.87, 2.74,
                                 00.25, 3.32, 1.68,
@@ -222,8 +175,9 @@ class TestDeepPotANoPBC(unittest.TestCase) :
         self.box = None
 
     def tearDown(self):
-        os.remove(INPUT)
-        os.remove(str(tests_path / "dp-compressed.pb"))
+        os.remove(self.INPUT)
+        os.remove(self.frozen_model)
+        os.remove(self.compressed_model)
         os.remove(str(tests_path / "compress.json"))
         os.remove(str(tests_path / "checkpoint"))
         os.remove(str(tests_path / "lcurve.out"))
@@ -312,21 +266,23 @@ class TestDeepPotANoPBC(unittest.TestCase) :
     
 class TestDeepPotALargeBoxNoPBC(unittest.TestCase) :
     def setUp(self):
-        model_file = str(tests_path / os.path.join("model_compression","dp-original.pbtxt"))
-        data_file  = str(tests_path / os.path.join(compression_path, "data"))
-        original_file = str(tests_path / "dp-original.pb")
-        compressed_file = str(tests_path / "dp-compressed.pb")
-        convert_pbtxt_to_pb(model_file, original_file)
-        jdata = j_loader(input_file)
-        jdata["training"]["training_data"]["systems"] = data_file
-        jdata["training"]["validation_data"]["systems"] = data_file
-        with open(INPUT, "w") as fp:
+        self.data_file  = str(tests_path / os.path.join("model_compression", "data"))
+        self.frozen_model = str(tests_path / "dp-original.pb")
+        self.compressed_model = str(tests_path / "dp-compressed.pb")
+        self.INPUT = str(tests_path / "input.json")
+        jdata = j_loader(str(tests_path / os.path.join("model_compression", "input.json")))
+        jdata["training"]["training_data"]["systems"] = self.data_file
+        jdata["training"]["validation_data"]["systems"] = self.data_file
+        with open(self.INPUT, "w") as fp:
             json.dump(jdata, fp, indent=4)
-        ret = os.system("dp compress " + INPUT + " -i " + original_file + " -o " + compressed_file)
+
+        ret = os.system("dp train " + self.INPUT)
+        ret = os.system("dp freeze -o " + self.frozen_model)
+        ret = os.system("dp compress " + self.INPUT + " -i " + self.frozen_model + " -o " + self.compressed_model)
         assert(ret == 0), "Model compression error!"
         
-        self.dp_original = DeepPot("dp-original.pb")
-        self.dp_compressed = DeepPot("dp-compressed.pb")
+        self.dp_original = DeepPot(self.frozen_model)
+        self.dp_compressed = DeepPot(self.compressed_model)
         self.coords = np.array([12.83, 2.56, 2.18,
                                 12.09, 2.87, 2.74,
                                 00.25, 3.32, 1.68,
@@ -337,8 +293,9 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase) :
         self.box = np.array([19., 0., 0., 0., 13., 0., 0., 0., 13.])
 
     def tearDown(self):
-        os.remove(INPUT)
-        os.remove(str(tests_path / "dp-compressed.pb"))
+        os.remove(self.INPUT)
+        os.remove(self.frozen_model)
+        os.remove(self.compressed_model)
         os.remove(str(tests_path / "compress.json"))
         os.remove(str(tests_path / "checkpoint"))
         os.remove(str(tests_path / "lcurve.out"))
