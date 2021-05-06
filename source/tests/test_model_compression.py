@@ -11,7 +11,7 @@ from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
     default_places = 4
 else :
-    default_places = 6
+    default_places = 4
 
 
 class TestDeepPotAPBC(unittest.TestCase) :

@@ -555,6 +555,8 @@ class DescrptSeA ():
 
     def _filter_lower(
             self,
+            type_i,
+            type_input,
             start_index,
             incrs_index,
             inputs,
@@ -641,6 +643,7 @@ class DescrptSeA ():
           if type_embedding is None:
               for type_i in range(self.ntypes):
                   ret = self._filter_lower(
+                      type_i, type_input,
                       start_index, self.sel_a[type_i],
                       inputs,
                       nframes,
@@ -660,6 +663,7 @@ class DescrptSeA ():
                   start_index += self.sel_a[type_i]
           else :
               xyz_scatter_1 = self._filter_lower(
+                  type_i, type_input,
                   start_index, np.cumsum(self.sel_a)[-1],
                   inputs,
                   nframes,
