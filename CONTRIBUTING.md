@@ -51,7 +51,7 @@ Please perform the following steps to create your Pull Request to this repositor
 ### Step 2: Clone the forked repository to local storage and set configurations
 
 1. Clone your own repo, not the public repo (from deepmodeling) ! And change the branch to devel.
-    ```
+    ```bash
     git clone https://github.com/$username/deepmd-kit.git
     # Replace `$username` with your GitHub ID
     
@@ -59,7 +59,7 @@ Please perform the following steps to create your Pull Request to this repositor
     ```
 
 2. Add deepmodeling's repo as your remote repo, we can name it "upstream". And fetch upstream's latest codes to your workstation.
-    ```
+    ```bash
     git remote add upstream https://github.com/deepmodeling/deepmd-kit.git
     # After you add a remote repo, your local repo will be automatically named "origin".
     
@@ -73,14 +73,14 @@ Please perform the following steps to create your Pull Request to this repositor
 3. Modify your codes and design unit tests.
 
 4. Commit your changes
-    ```
+    ```bash
     git status # Checks the local status
     git add <file> ... # Adds the file(s) you want to commit. If you want to commit all changes, you can directly use `git add.`
     git commit -m "commit-message: update the xx"
     ```
     
 5. Push the changed codes to your original repo on github. 
-    ```
+    ```bash
     git push origin devel 
     ```
 
@@ -88,7 +88,7 @@ Please perform the following steps to create your Pull Request to this repositor
 
 1. Get your local master up-to-date with upstream/master.
 
-    ```
+    ```bash
     cd $working_dir/deepmd-kit
     git fetch upstream
     git checkout master
@@ -97,7 +97,7 @@ Please perform the following steps to create your Pull Request to this repositor
 
 2. Create a new branch based on the master branch.
 
-    ```
+    ```bash
     git checkout -b new-branch-name
     ```
 
@@ -105,7 +105,7 @@ Please perform the following steps to create your Pull Request to this repositor
 
 4. Commit your changes
 
-    ```
+    ```bash
     git status # Checks the local status
     git add <file> ... # Adds the file(s) you want to commit. If you want to commit all changes, you can directly use `git add.`
     git commit -m "commit-message: update the xx"
@@ -113,7 +113,7 @@ Please perform the following steps to create your Pull Request to this repositor
 
 5. Keep your branch in sync with upstream/master
 
-    ```
+    ```bash
     # While on your new branch
     git fetch upstream
     git rebase upstream/master
@@ -121,7 +121,7 @@ Please perform the following steps to create your Pull Request to this repositor
 
 6. Push your changes to the remote
 
-    ```
+    ```bash
     git push -u origin new-branch-name # "-u" is used to track the remote branch from origin
     ```
 
