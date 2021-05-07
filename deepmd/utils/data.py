@@ -461,11 +461,16 @@ class DeepmdData() :
                 data = np.load(path).astype(GLOBAL_ENER_FLOAT_PRECISION)
             else:
                 data = np.load(path).astype(GLOBAL_NP_FLOAT_PRECISION)
-            if atomic :
-                data = data.reshape([nframes, natoms, -1])
-                data = data[:,idx_map,:]
-                data = data.reshape([nframes, -1])
-            data = np.reshape(data, [nframes, ndof])
+            try:    # YWolfeee: deal with data shape error
+                if atomic :
+                    data = data.reshape([nframes, natoms, -1])
+                    data = data[:,idx_map,:]
+                    data = data.reshape([nframes, -1])
+                data = np.reshape(data, [nframes, ndof])
+            except ValueError as err_message:
+                print(str(err_message))
+                print("This error may occur when your label mismatch it's name, i.e. you might store global tensor in `atomic_tensor.npy` or atomic tensor in `tensor.npy`.")
+                exit()
             if repeat != 1:
                 data = np.repeat(data, repeat).reshape([nframes, -1])
             return np.float32(1.0), data
