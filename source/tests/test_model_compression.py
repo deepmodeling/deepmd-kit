@@ -13,6 +13,9 @@ if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
 else :
     default_places = 4
 
+def file_delete(file) :
+    if os.path.exists(file):
+        os.remove(file)
 
 class TestDeepPotAPBC(unittest.TestCase) :
     def setUp(self):
@@ -43,15 +46,16 @@ class TestDeepPotAPBC(unittest.TestCase) :
         self.box = np.array([13., 0., 0., 0., 13., 0., 0., 0., 13.])
 
     def tearDown(self):
-        os.remove(self.INPUT)
-        os.remove(self.frozen_model)
-        os.remove(self.compressed_model)
-        os.remove(str(tests_path / "compress.json"))
-        os.remove(str(tests_path / "checkpoint"))
-        os.remove(str(tests_path / "lcurve.out"))
-        os.remove(str(tests_path / "model.ckpt.meta"))
-        os.remove(str(tests_path / "model.ckpt.index"))
-        os.remove(str(tests_path / "model.ckpt.data-00000-of-00001"))
+        file_delete(self.INPUT)
+        file_delete(self.frozen_model)
+        file_delete(self.compressed_model)
+        file_delete("out.json")
+        file_delete("compress.json")
+        file_delete("checkpoint")
+        file_delete("lcurve.out")
+        file_delete("model.ckpt.meta")
+        file_delete("model.ckpt.index")
+        file_delete("model.ckpt.data-00000-of-00001")
 
     def test_attrs(self):
         self.assertEqual(self.dp_original.get_ntypes(), 2)
@@ -175,15 +179,16 @@ class TestDeepPotANoPBC(unittest.TestCase) :
         self.box = None
 
     def tearDown(self):
-        os.remove(self.INPUT)
-        os.remove(self.frozen_model)
-        os.remove(self.compressed_model)
-        os.remove(str(tests_path / "compress.json"))
-        os.remove(str(tests_path / "checkpoint"))
-        os.remove(str(tests_path / "lcurve.out"))
-        os.remove(str(tests_path / "model.ckpt.meta"))
-        os.remove(str(tests_path / "model.ckpt.index"))
-        os.remove(str(tests_path / "model.ckpt.data-00000-of-00001"))
+        file_delete(self.INPUT)
+        file_delete(self.frozen_model)
+        file_delete(self.compressed_model)
+        file_delete("out.json")
+        file_delete("compress.json")
+        file_delete("checkpoint")
+        file_delete("lcurve.out")
+        file_delete("model.ckpt.meta")
+        file_delete("model.ckpt.index")
+        file_delete("model.ckpt.data-00000-of-00001")
     
     def test_1frame(self):
         ee0, ff0, vv0 = self.dp_original.eval(self.coords, self.box, self.atype, atomic = False)
@@ -293,15 +298,16 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase) :
         self.box = np.array([19., 0., 0., 0., 13., 0., 0., 0., 13.])
 
     def tearDown(self):
-        os.remove(self.INPUT)
-        os.remove(self.frozen_model)
-        os.remove(self.compressed_model)
-        os.remove(str(tests_path / "compress.json"))
-        os.remove(str(tests_path / "checkpoint"))
-        os.remove(str(tests_path / "lcurve.out"))
-        os.remove(str(tests_path / "model.ckpt.meta"))
-        os.remove(str(tests_path / "model.ckpt.index"))
-        os.remove(str(tests_path / "model.ckpt.data-00000-of-00001"))
+        file_delete(self.INPUT)
+        file_delete(self.frozen_model)
+        file_delete(self.compressed_model)
+        file_delete("out.json")
+        file_delete("compress.json")
+        file_delete("checkpoint")
+        file_delete("lcurve.out")
+        file_delete("model.ckpt.meta")
+        file_delete("model.ckpt.index")
+        file_delete("model.ckpt.data-00000-of-00001")
     
     def test_1frame(self):
         ee0, ff0, vv0 = self.dp_original.eval(self.coords, self.box, self.atype, atomic = False)
