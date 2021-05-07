@@ -11,7 +11,7 @@ from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
     default_places = 4
 else :
-    default_places = 4
+    default_places = 6
 
 def file_delete(file) :
     if os.path.exists(file):
