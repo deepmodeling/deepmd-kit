@@ -266,6 +266,7 @@ class DeepPot(DeepEval):
         else:
             eval_inputs['default_mesh'] = paddle.to_tensor(np.array([], dtype = np.int32))
 
+        self.model.eval()
         eval_outputs = self.model(eval_inputs['coord'], eval_inputs['type'], eval_inputs['natoms_vec'], eval_inputs['box'], eval_inputs['default_mesh'], eval_inputs, suffix = "", reuse = False)
 
         energy = eval_outputs['energy'].numpy()
