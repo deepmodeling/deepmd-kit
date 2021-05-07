@@ -384,8 +384,8 @@ class DPTrainer (object):
                                   % (self.cur_batch, train_time, test_time))
                     train_time = 0
                 if self.save_freq > 0 and self.cur_batch % self.save_freq == 0 and self.run_opt.is_chief:
-                    #paddle.jit.save(self.model, os.getcwd() + "/" + self.save_ckpt)
-                    paddle.save(self.model.state_dict(), os.getcwd() + "/" + self.save_ckpt)
+                    paddle.jit.save(self.model, os.getcwd() + "/" + self.save_ckpt)
+                    # paddle.save(self.model.state_dict(), os.getcwd() + "/" + self.save_ckpt)
                     log.info("saved checkpoint to %s" % (os.getcwd() + "/" + self.save_ckpt))
         if self.run_opt.is_chief: 
             fp.close ()

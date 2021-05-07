@@ -108,7 +108,7 @@ class EnerModel(paddle.nn.Layer) :
     def _compute_output_stat (self, all_stat) :
         self.fitting.compute_output_stats(all_stat)
 
-    #@paddle.jit.to_static
+    @paddle.jit.to_static
     def forward (self, 
                coord_, 
                atype_,

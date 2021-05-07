@@ -41,18 +41,19 @@ class DeepEval:
         fitting_param['descrpt'] = self.descrpt
         self.fitting = EnerFitting(**fitting_param)
         
-        self.model = EnerModel(
-                self.descrpt, 
-                self.fitting, 
-                model_param.get('type_map'),
-                model_param.get('data_stat_nbatch', 10),
-                model_param.get('data_stat_protect', 1e-2),
-                model_param.get('use_srtab'),
-                model_param.get('smin_alpha'),
-                model_param.get('sw_rmin'),
-                model_param.get('sw_rmax')
-            )
-        self.model.set_dict(paddle.load(model_file))
+        # self.model = EnerModel(
+        #         self.descrpt, 
+        #         self.fitting, 
+        #         model_param.get('type_map'),
+        #         model_param.get('data_stat_nbatch', 10),
+        #         model_param.get('data_stat_protect', 1e-2),
+        #         model_param.get('use_srtab'),
+        #         model_param.get('smin_alpha'),
+        #         model_param.get('sw_rmin'),
+        #         model_param.get('sw_rmax')
+        #     )
+        # self.model.set_dict(paddle.load(model_file))
+        self.model = paddle.jit.load(model_file)
         ################################################################
 
         self.load_prefix = load_prefix
