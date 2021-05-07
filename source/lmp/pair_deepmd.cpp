@@ -422,9 +422,9 @@ void PairDeepMD::compute(int eflag, int vflag)
     else if (multi_models_mod_devi) {
       vector<double > deatom (nall * 1, 0);
       vector<double > dvatom (nall * 9, 0);
+      vector<vector<double>> 	all_virial;	       
 #ifdef HIGH_PREC
       vector<double> 		all_energy;
-      vector<vector<double>> 	all_virial;	       
       vector<vector<double>> 	all_atom_energy;
       vector<vector<double>> 	all_atom_virial;
       deep_pot_model_devi.compute(all_energy, all_force, all_virial, all_atom_energy, all_atom_virial, dcoord, dtype, dbox, nghost, lmp_list, ago, fparam, daparam);
