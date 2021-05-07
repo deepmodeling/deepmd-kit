@@ -151,6 +151,12 @@ class TestDataModifier (unittest.TestCase) :
 	            "seed":		1,
 	        },
             },
+            "loss": {
+                "loss_type":"tensor",
+                "pref_weight":1.0,
+                "pref_atomic_weight":1.0,
+                "_comment": " that's all"
+            },
             "learning_rate" :{
 	        "type":		"exp",
 	        "start_lr":	0.01,
