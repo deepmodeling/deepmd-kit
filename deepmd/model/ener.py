@@ -15,6 +15,7 @@ class EnerModel() :
             self, 
             descrpt, 
             fitting, 
+            typeebd = None,
             type_map : List[str] = None,
             data_stat_nbatch : int = 10,
             data_stat_protect : float = 1e-2,
@@ -55,6 +56,8 @@ class EnerModel() :
         # fitting
         self.fitting = fitting
         self.numb_fparam = self.fitting.get_numb_fparam()
+        # type embedding
+        self.typeebd = typeebd
         # other inputs
         if type_map is None:
             self.type_map = []
@@ -137,6 +140,15 @@ class EnerModel() :
 
         coord = tf.reshape (coord_, [-1, natoms[1] * 3])
         atype = tf.reshape (atype_, [-1, natoms[1]])
+
+        # type embedding if any
+        if self.typeebd is not None:
+            type_embedding = self.typeebd.build(
+                self.ntypes,
+                reuse = reuse,
+                suffix = suffix,
+            )
+            input_dict['type_embedding'] = type_embedding
 
         dout \
             = self.descrpt.build(coord_,

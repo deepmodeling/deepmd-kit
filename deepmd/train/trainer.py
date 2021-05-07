@@ -21,6 +21,7 @@ from deepmd.model import EnerModel, WFCModel, DipoleModel, PolarModel, GlobalPol
 from deepmd.loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
 from deepmd.utils.learning_rate import LearningRateExp
 from deepmd.utils.neighbor_stat import NeighborStat
+from deepmd.utils.type_embed import TypeEmbedNet
 
 from tensorflow.python.client import timeline
 from deepmd.env import op_module
@@ -84,6 +85,7 @@ class DPTrainer (object):
         model_param = j_must_have(jdata, 'model')
         descrpt_param = j_must_have(model_param, 'descriptor')
         fitting_param = j_must_have(model_param, 'fitting_net')
+        typeebd_param = model_param.get('type_embedding', None)
         self.model_param    = model_param
         self.descrpt_param  = descrpt_param
         
@@ -132,12 +134,25 @@ class DPTrainer (object):
         else :
             raise RuntimeError('unknow fitting type ' + fitting_type)
 
+        # type embedding
+        if typeebd_param is not None:
+            self.typeebd = TypeEmbedNet(
+                typeebd_param['neuron'],
+                typeebd_param['resnet_dt'],
+                typeebd_param['seed'], 
+                typeebd_param['activation_function'],
+                typeebd_param['precision']
+            )
+        else:
+            self.typeebd = None
+
         # init model
         # infer model type by fitting_type
         if fitting_type == 'ener':
             self.model = EnerModel(
                 self.descrpt, 
                 self.fitting, 
+                self.typeebd,
                 model_param.get('type_map'),
                 model_param.get('data_stat_nbatch', 10),
                 model_param.get('data_stat_protect', 1e-2),

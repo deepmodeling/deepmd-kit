@@ -286,8 +286,6 @@ void compute_int_data(
     const int * nat_end=cell_info+3;
     const int * ext_stt=cell_info+6;
     const int * ext_end=cell_info+9;
-    const int * ngcell=cell_info+12;
-    const FPTYPE * boxt = region.boxt;
     const FPTYPE * rec_boxt = region.rec_boxt;
     
     const int nblock_loc=(nloc+TPB-1)/TPB;
