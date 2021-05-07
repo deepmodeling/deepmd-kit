@@ -246,7 +246,9 @@ PairDeepMD::PairDeepMD(LAMMPS *lmp)
   out_freq = 0;
   out_each = 0;
   out_rel = 0;
+  out_rel_v = 0;
   eps = 0.;
+  eps_v = 0.;
   scale = NULL;
   do_ttm = false;
   single_model = false;
@@ -556,18 +558,26 @@ void PairDeepMD::compute(int eflag, int vflag)
 	  }
 	}
 	MPI_Reduce(&send_v[0], &recv_v[0], 9 * numb_models, MPI_DOUBLE, MPI_SUM, 0, world);
+#ifdef HIGH_PREC
 	std::vector<std::vector<double>> all_virial_1(numb_models);
+	std::vector<double> avg_virial, std_virial;
+#else
+	std::vector<std::vector<float>> all_virial_1(numb_models);
+	std::vector<float> avg_virial, std_virial;
+#endif
 	for(int kk = 0; kk < numb_models; ++kk){
 	  all_virial_1[kk].resize(9);
 	  for(int ii = 0; ii < 9; ++ii){
 	    all_virial_1[kk][ii] = recv_v[kk*9+ii];
 	  }
 	}	
-	std::vector<double> avg_virial, std_virial;
 	double all_v_min = numeric_limits<double>::max(), all_v_max = 0, all_v_avg = 0;
 	if (rank == 0){
 	  deep_pot_model_devi.compute_avg(avg_virial, all_virial_1);
 	  deep_pot_model_devi.compute_std(std_virial, avg_virial, all_virial_1, 1);
+	  if (out_rel_v == 1){
+	    deep_pot_model_devi.compute_relative_std(std_virial, avg_virial, eps_v, 1);
+	  }
 	  for(int ii = 0; ii < 9; ++ii){
 	    if(std_virial[ii] > all_v_max){
 	      all_v_max = std_virial[ii];
@@ -695,6 +705,7 @@ is_key (const string& input)
   keys.push_back("ttm");
   keys.push_back("atomic");
   keys.push_back("relative");
+  keys.push_back("relative_v");
 
   for (int ii = 0; ii < keys.size(); ++ii){
     if (input == keys[ii]) {
@@ -808,6 +819,15 @@ void PairDeepMD::settings(int narg, char **arg)
       eps = atof(arg[iarg+1]);
 #else
       eps = strtof(arg[iarg+1], NULL);
+#endif
+      iarg += 2;
+    }
+    else if (string(arg[iarg]) == string("relative_v")) {
+      out_rel_v = 1;
+#ifdef HIGH_PREC
+      eps_v = atof(arg[iarg+1]);
+#else
+      eps_v = strtof(arg[iarg+1], NULL);
 #endif
       iarg += 2;
     }
