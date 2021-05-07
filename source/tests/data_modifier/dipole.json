@@ -31,6 +31,13 @@
 	"_comment":	"that's all"
     },
 
+	"loss": {
+		"loss_type":"tensor",
+		"pref_weight":1.0,
+		"pref_atomic_weight":1.0,
+		"_comment": " that's all"
+	},
+
     "_comment": " traing controls",
     "training": {
 	"systems":	["data_modifier/sys_10"], 
