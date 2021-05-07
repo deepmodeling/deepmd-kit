@@ -125,7 +125,7 @@ class TestDataModifier (unittest.TestCase) :
         os.makedirs(dirname+'/set.0', exist_ok = True)
         np.savetxt(os.path.join(dirname, 'type.raw'), atom_types, fmt = '%d')
         np.save(os.path.join(dirname, 'set.0', 'coord.npy'), coords)
-        np.save(os.path.join(dirname, 'set.0', 'dipole.npy'), dipoles)
+        np.save(os.path.join(dirname, 'set.0', 'atomic_dipole.npy'), dipoles)
         np.save(os.path.join(dirname, 'set.0', 'box.npy'), box)
 
     def _setUp_jdata(self):
