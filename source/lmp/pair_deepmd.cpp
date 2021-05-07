@@ -547,6 +547,38 @@ void PairDeepMD::compute(int eflag, int vflag)
 	MPI_Reduce (&max, &all_e_max, 1, MPI_DOUBLE, MPI_MAX, 0, world);
 	MPI_Reduce (&avg, &all_e_avg, 1, MPI_DOUBLE, MPI_SUM, 0, world);
 	all_e_avg /= double(all_nlocal);
+	// std v
+	std::vector<double> send_v(9 * numb_models);
+	std::vector<double> recv_v(9 * numb_models);
+	for(int kk = 0; kk < numb_models; ++kk){
+	  for(int ii = 0; ii < 9; ++ii){
+	    send_v[kk*9+ii] = all_virial[kk][ii] / double(atom->natoms);
+	  }
+	}
+	MPI_Reduce(&send_v[0], &recv_v[0], 9 * numb_models, MPI_DOUBLE, MPI_SUM, 0, world);
+	std::vector<std::vector<double>> all_virial_1(numb_models);
+	for(int kk = 0; kk < numb_models; ++kk){
+	  all_virial_1[kk].resize(9);
+	  for(int ii = 0; ii < 9; ++ii){
+	    all_virial_1[kk][ii] = recv_v[kk*9+ii];
+	  }
+	}	
+	std::vector<double> avg_virial, std_virial;
+	double all_v_min = numeric_limits<double>::max(), all_v_max = 0, all_v_avg = 0;
+	if (rank == 0){
+	  deep_pot_model_devi.compute_avg(avg_virial, all_virial_1);
+	  deep_pot_model_devi.compute_std(std_virial, avg_virial, all_virial_1, 1);
+	  for(int ii = 0; ii < 9; ++ii){
+	    if(std_virial[ii] > all_v_max){
+	      all_v_max = std_virial[ii];
+	    }
+	    if(std_virial[ii] < all_v_min){
+	      all_v_min = std_virial[ii];
+	    }
+	    all_v_avg += std_virial[ii] * std_virial[ii];
+	  }
+	  all_v_avg = sqrt(all_v_avg / 9);
+	}
 	// // total e
 	// vector<double > sum_e(numb_models, 0.);
 	// MPI_Reduce (&all_energy[0], &sum_e[0], numb_models, MPI_DOUBLE, MPI_SUM, 0, world);
@@ -556,12 +588,15 @@ void PairDeepMD::compute(int eflag, int vflag)
 	  // double std_e_1 = 0;
 	  // deep_pot_model_devi.compute_std(std_e_1, avg_e, sum_e);	
 	  fp << setw(12) << update->ntimestep 
-	     << " " << setw(18) << all_e_max 
-	     << " " << setw(18) << all_e_min
-	     << " " << setw(18) << all_e_avg
+	     << " " << setw(18) << 0.
+	     << " " << setw(18) << 0.
+	     << " " << setw(18) << 0.
 	     << " " << setw(18) << all_f_max 
 	     << " " << setw(18) << all_f_min
-	     << " " << setw(18) << all_f_avg;
+	     << " " << setw(18) << all_f_avg
+	     << " " << setw(18) << all_v_max
+	     << " " << setw(18) << all_v_min
+	     << " " << setw(18) << all_v_avg;
 	     // << " " << setw(18) << avg_e
 	     // << " " << setw(18) << std_e_1 / all_nlocal
 	  if (out_each == 1){
@@ -788,12 +823,15 @@ void PairDeepMD::settings(int narg, char **arg)
       fp << scientific;
       fp << "#"
 	 << setw(12-1) << "step" 
-	 << setw(18+1) << "max_devi_e"
-	 << setw(18+1) << "min_devi_e"
-	 << setw(18+1) << "avg_devi_e"
+	 << setw(18+1) << "zeros"
+	 << setw(18+1) << "zeros"
+	 << setw(18+1) << "zeros"
 	 << setw(18+1) << "max_devi_f"
 	 << setw(18+1) << "min_devi_f"
 	 << setw(18+1) << "avg_devi_f"
+	 << setw(18+1) << "max_devi_v"
+	 << setw(18+1) << "min_devi_v"
+	 << setw(18+1) << "avg_devi_v"
 	 << endl;
     }
     string pre = "  ";
