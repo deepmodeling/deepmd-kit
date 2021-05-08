@@ -8,6 +8,7 @@ from deepmd.utils.argcheck import list_to_doc
 from deepmd.utils.network import one_layer
 from deepmd.descriptor import DescrptLocFrame
 from deepmd.descriptor import DescrptSeA
+from deepmd.utils.type_embed import embed_atom_type
 
 from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
@@ -208,6 +209,72 @@ class EnerFitting ():
 
     def _compute_std (self, sumv2, sumv, sumn) :
         return np.sqrt(sumv2/sumn - np.multiply(sumv/sumn, sumv/sumn))
+
+    def _build_lower(
+            self,
+            start_index,
+            natoms,
+            inputs,
+            fparam = None,
+            aparam = None, 
+            bias_atom_e = 0.0,
+            suffix = '',
+            reuse = None
+    ):
+        # cut-out inputs
+        inputs_i = tf.slice (inputs,
+                             [ 0, start_index*      self.dim_descrpt],
+                             [-1, natoms* self.dim_descrpt] )
+        inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
+        layer = inputs_i
+        if fparam is not None:
+            ext_fparam = tf.tile(fparam, [1, natoms])
+            ext_fparam = tf.reshape(ext_fparam, [-1, self.numb_fparam])
+            ext_fparam = tf.cast(ext_fparam,self.fitting_precision)
+            layer = tf.concat([layer, ext_fparam], axis = 1)
+        if aparam is not None:
+            ext_aparam = tf.slice(aparam, 
+                                  [ 0, start_index      * self.numb_aparam],
+                                  [-1, natoms * self.numb_aparam])
+            ext_aparam = tf.reshape(ext_aparam, [-1, self.numb_aparam])
+            ext_aparam = tf.cast(ext_aparam,self.fitting_precision)
+            layer = tf.concat([layer, ext_aparam], axis = 1)
+
+        for ii in range(0,len(self.n_neuron)) :
+            if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
+                layer+= one_layer(
+                    layer,
+                    self.n_neuron[ii],
+                    name='layer_'+str(ii)+suffix,
+                    reuse=reuse,
+                    seed = self.seed,
+                    use_timestep = self.resnet_dt,
+                    activation_fn = self.fitting_activation_fn,
+                    precision = self.fitting_precision,
+                    trainable = self.trainable[ii])
+            else :
+                layer = one_layer(
+                    layer,
+                    self.n_neuron[ii],
+                    name='layer_'+str(ii)+suffix,
+                    reuse=reuse,
+                    seed = self.seed,
+                    activation_fn = self.fitting_activation_fn,
+                    precision = self.fitting_precision,
+                    trainable = self.trainable[ii])
+        final_layer = one_layer(
+            layer, 
+            1, 
+            activation_fn = None, 
+            bavg = bias_atom_e, 
+            name='final_layer_'+suffix, 
+            reuse=reuse, 
+            seed = self.seed, 
+            precision = self.fitting_precision, 
+            trainable = self.trainable[-1])
+
+        return final_layer
+            
             
 
     def build (self, 
@@ -215,7 +282,7 @@ class EnerFitting ():
                natoms : tf.Tensor,
                input_dict : dict = {},
                reuse : bool = None,
-               suffix : str = ''
+               suffix : str = '', 
     ) -> tf.Tensor:
         """
         Build the computational graph for fitting net
@@ -279,12 +346,14 @@ class EnerFitting ():
                                                 trainable = False,
                                                 initializer = tf.constant_initializer(self.aparam_inv_std))
             
-        start_index = 0
         inputs = tf.cast(tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]]), self.fitting_precision)
+        inputs_zero = tf.zeros_like(inputs, dtype=GLOBAL_TF_FLOAT_PRECISION)
 
         if bias_atom_e is not None :
             assert(len(bias_atom_e) == self.ntypes)
 
+        fparam = None
+        aparam = None
         if self.numb_fparam > 0 :
             fparam = input_dict['fparam']
             fparam = tf.reshape(fparam, [-1, self.numb_fparam])
@@ -294,62 +363,61 @@ class EnerFitting ():
             aparam = tf.reshape(aparam, [-1, self.numb_aparam])
             aparam = (aparam - t_aparam_avg) * t_aparam_istd
             aparam = tf.reshape(aparam, [-1, self.numb_aparam * natoms[0]])
+            
+        if input_dict is not None:
+            type_embedding = input_dict.get('type_embedding', None)
+        else:
+            type_embedding = None
+        if type_embedding is not None:
+            atype_embed = embed_atom_type(self.ntypes, natoms, type_embedding)
+        else:
+            atype_embed = None
 
-        for type_i in range(self.ntypes):
-            # cut-out inputs
-            inputs_i = tf.slice (inputs,
-                                 [ 0, start_index*      self.dim_descrpt],
-                                 [-1, natoms[2+type_i]* self.dim_descrpt] )
-            inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
-            layer = inputs_i
-            if self.numb_fparam > 0 :
-                ext_fparam = tf.tile(fparam, [1, natoms[2+type_i]])
-                ext_fparam = tf.reshape(ext_fparam, [-1, self.numb_fparam])
-                ext_fparam = tf.cast(ext_fparam,self.fitting_precision)
-                layer = tf.concat([layer, ext_fparam], axis = 1)
-            if self.numb_aparam > 0 :
-                ext_aparam = tf.slice(aparam, 
-                                      [ 0, start_index      * self.numb_aparam],
-                                      [-1, natoms[2+type_i] * self.numb_aparam])
-                ext_aparam = tf.reshape(ext_aparam, [-1, self.numb_aparam])
-                ext_aparam = tf.cast(ext_aparam,self.fitting_precision)
-                layer = tf.concat([layer, ext_aparam], axis = 1)
-            start_index += natoms[2+type_i]
-                
-            if bias_atom_e is None :
-                type_bias_ae = 0.0
-            else :
-                type_bias_ae = bias_atom_e[type_i]
-
-            for ii in range(0,len(self.n_neuron)) :
-                if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
-                    layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, trainable = self.trainable[ii])
+        if atype_embed is None:
+            start_index = 0
+            for type_i in range(self.ntypes):
+                if bias_atom_e is None :
+                    type_bias_ae = 0.0
                 else :
-                    layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, trainable = self.trainable[ii])
-            final_layer = one_layer(layer, 1, activation_fn = None, bavg = type_bias_ae, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, precision = self.fitting_precision, trainable = self.trainable[-1])
-
-            if type_i < len(self.atom_ener) and self.atom_ener[type_i] is not None:
-                inputs_zero = tf.zeros_like(inputs_i, dtype=GLOBAL_TF_FLOAT_PRECISION)
-                layer = inputs_zero
-                if self.numb_fparam > 0 :
-                    layer = tf.concat([layer, ext_fparam], axis = 1)
-                if self.numb_aparam > 0 :
-                    layer = tf.concat([layer, ext_aparam], axis = 1)
-                for ii in range(0,len(self.n_neuron)) :
-                    if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
-                        layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=True, seed = self.seed, use_timestep = self.resnet_dt, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, trainable = self.trainable[ii])
-                    else :
-                        layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=True, seed = self.seed, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, trainable = self.trainable[ii])
-                zero_layer = one_layer(layer, 1, activation_fn = None, bavg = type_bias_ae, name='final_layer_type_'+str(type_i)+suffix, reuse=True, seed = self.seed, precision = self.fitting_precision, trainable = self.trainable[-1])
-                final_layer += self.atom_ener[type_i] - zero_layer
-
-            final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i]])
-
-            # concat the results
-            if type_i == 0:
-                outs = final_layer
-            else:
-                outs = tf.concat([outs, final_layer], axis = 1)
+                    type_bias_ae = bias_atom_e[type_i]
+                final_layer = self._build_lower(
+                    start_index, natoms[2+type_i], 
+                    inputs, fparam, aparam, 
+                    bias_atom_e=type_bias_ae, suffix='_type_'+str(type_i)+suffix, reuse=reuse
+                )
+                # concat the results
+                if type_i < len(self.atom_ener) and self.atom_ener[type_i] is not None:                
+                    zero_layer = self._build_lower(
+                        start_index, natoms[2+type_i], 
+                        inputs_zero, fparam, aparam, 
+                        bias_atom_e=type_bias_ae, suffix='_zero_type_'+str(type_i)+suffix, reuse=reuse
+                    )
+                    final_layer += self.atom_ener[type_i] - zero_layer
+                final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i]])
+                # concat the results
+                if type_i == 0:
+                    outs = final_layer
+                else:
+                    outs = tf.concat([outs, final_layer], axis = 1)
+                start_index += natoms[2+type_i]
+        # with type embedding
+        else:
+            if len(self.atom_ener) > 0:
+                raise RuntimeError("setting atom_ener is not supported by type embedding")
+            atype_embed = tf.cast(atype_embed, self.fitting_precision)
+            type_shape = atype_embed.get_shape().as_list()
+            inputs = tf.concat(
+                [tf.reshape(inputs,[-1,self.dim_descrpt]),atype_embed],
+                axis=1
+            )
+            self.dim_descrpt = self.dim_descrpt + type_shape[1]
+            inputs = tf.cast(tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]]), self.fitting_precision)
+            final_layer = self._build_lower(
+                0, natoms[0], 
+                inputs, fparam, aparam, 
+                bias_atom_e=0.0, suffix=suffix, reuse=reuse
+            )
+            outs = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[0]])
 
         if self.tot_ener_zero:
             force_tot_ener = 0.0
@@ -361,8 +429,5 @@ class EnerFitting ():
 
         tf.summary.histogram('fitting_net_output', outs)
         return tf.cast(tf.reshape(outs, [-1]), GLOBAL_TF_FLOAT_PRECISION)        
-
-
-
 
 

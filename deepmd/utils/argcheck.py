@@ -18,6 +18,24 @@ def make_link(content, ref_key):
         else f'`{content} <#{ref_key}>`_'
 
 
+def type_embedding_args():
+    doc_neuron = 'Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.'
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
+    doc_seed = 'Random seed for parameter initialization'
+    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}'
+    doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}'
+    doc_trainable = 'If the parameters in the embedding net are trainable'
+    
+    return [
+        Argument("neuron", list, optional = True, default = [2, 4, 8], doc = doc_neuron),
+        Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
+        Argument("resnet_dt", bool, optional = True, default = False, doc = doc_resnet_dt),
+        Argument("precision", str, optional = True, default = "float64", doc = doc_precision),
+        Argument("trainable", bool, optional = True, default = True, doc = doc_trainable),
+        Argument("seed", [int,None], optional = True, doc = doc_seed),
+    ]        
+
+
 #  --- Descriptor configurations: --- #
 def descrpt_local_frame_args ():
     doc_sel_a = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_a[i]` gives the selected number of type-i neighbors. The full relative coordinates of the neighbors are used by the descriptor.'
@@ -79,7 +97,7 @@ def descrpt_se_t_args():
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}'
-    doc_trainable = 'If the parameters in the embedding net is trainable'
+    doc_trainable = 'If the parameters in the embedding net are trainable'
     doc_seed = 'Random seed for parameter initialization'
     doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
     
@@ -119,7 +137,7 @@ def descrpt_se_r_args():
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_type_one_side = 'Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets'
     doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}'
-    doc_trainable = 'If the parameters in the embedding net is trainable'
+    doc_trainable = 'If the parameters in the embedding net are trainable'
     doc_seed = 'Random seed for parameter initialization'
     doc_exclude_types = 'The Excluded types'
     doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
@@ -303,10 +321,11 @@ def modifier_variant_type_args():
                    doc = doc_modifier_type)
 
 
-def model_args ():
+def model_args ():    
     doc_type_map = 'A list of strings. Give the name to each type of atoms.'
     doc_data_stat_nbatch = 'The model determines the normalization from the statistics of the data. This key specifies the number of `frames` in each `system` used for statistics.'
     doc_data_stat_protect = 'Protect parameter for atomic energy regression.'
+    doc_type_embedding = "The type embedding."
     doc_descrpt = 'The descriptor of atomic environment.'
     doc_fitting = 'The fitting of physical properties.'
     doc_modifier = 'The modifier of model output.'
@@ -323,6 +342,7 @@ def model_args ():
                    Argument("smin_alpha", float, optional = True, doc = doc_smin_alpha),
                    Argument("sw_rmin", float, optional = True, doc = doc_sw_rmin),
                    Argument("sw_rmax", float, optional = True, doc = doc_sw_rmax),
+                   Argument("type_embedding", dict, type_embedding_args(), [], optional = True, doc = doc_type_embedding),
                    Argument("descriptor", dict, [], [descrpt_variant_type_args()], doc = doc_descrpt),
                    Argument("fitting_net", dict, [], [fitting_variant_type_args()], doc = doc_fitting),
                    Argument("modifier", dict, [], [modifier_variant_type_args()], optional = True, doc = doc_modifier),

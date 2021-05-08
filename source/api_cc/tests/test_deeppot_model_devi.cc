@@ -80,7 +80,6 @@ TEST_F(TestInferDeepPotModeDevi, attrs)
   EXPECT_EQ(dp1.dim_aparam(), dp_md.dim_aparam());
 }
 
-
 TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list)
 {
   float rc = dp_md.cutoff();
@@ -105,8 +104,7 @@ TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list)
   for(int kk = 0; kk < nmodel; ++kk){
     _fold_back(fdir[kk], fdir_[kk], mapping, nloc, nall, 3);
     _fold_back(fmd[kk], fmd_[kk], mapping, nloc, nall, 3);
-  }
-  
+  }  
 
   EXPECT_EQ(edir.size(), emd.size());
   EXPECT_EQ(fdir.size(), fmd.size());
@@ -123,37 +121,6 @@ TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list)
     for(int ii = 0; ii < vdir[0].size(); ++ii){
       EXPECT_LT(fabs(vdir[kk][ii] - vmd[kk][ii]), 1e-10);
     }
-  }
-
-  std::vector<double > avg_f, std_f;
-  dp_md.compute_avg(avg_f, fmd);
-  dp_md.compute_std_f(std_f, avg_f, fmd);
-  
-  // manual compute std f
-  std::vector<double > manual_std_f(nloc);
-  EXPECT_EQ(fmd[0].size(), nloc * 3);
-  for(int ii = 0; ii < nloc; ++ii){
-    std::vector<double > avg_f(3, 0.0);
-    for(int dd = 0; dd < 3; ++dd){
-      for(int kk = 0; kk < nmodel; ++kk){
-	avg_f[dd] += fmd[kk][ii*3+dd];
-      }
-      avg_f[dd] /= (nmodel) * 1.0;
-    }
-    double std = 0.;
-    for(int kk = 0; kk < nmodel; ++kk){
-      for(int dd = 0; dd < 3; ++dd){
-	double tmp = fmd[kk][ii*3+dd] - avg_f[dd];
-	std += tmp * tmp;
-      }
-    }
-    std /= nmodel * 1.0;
-    manual_std_f[ii] = sqrt(std);
-  }
-
-  EXPECT_EQ(manual_std_f.size(), std_f.size());
-  for(int ii = 0; ii < std_f.size(); ++ii){
-    EXPECT_LT(fabs(manual_std_f[ii] - std_f[ii]), 1e-10);
   }
 }
 
@@ -211,6 +178,113 @@ TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list_atomic)
     for(int ii = 0; ii < avdir[0].size(); ++ii){
       EXPECT_LT(fabs(avdir[kk][ii] - avmd[kk][ii]), 1e-10);
     }
+  }
+}
+
+
+TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list_std)
+{
+  float rc = dp_md.cutoff();
+  int nloc = coord.size() / 3;  
+  std::vector<double> coord_cpy;
+  std::vector<int> atype_cpy, mapping;  
+  std::vector<std::vector<int > > nlist_data;
+  _build_nlist(nlist_data, coord_cpy, atype_cpy, mapping,
+	       coord, atype, box, rc);
+  int nall = coord_cpy.size() / 3;
+  std::vector<int> ilist(nloc), numneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  convert_nlist(inlist, nlist_data);  
+
+  int nmodel = 2;
+  std::vector<double > edir(nmodel), emd;
+  std::vector<std::vector<double> > fdir_(nmodel), fdir(nmodel), vdir(nmodel), fmd_, fmd(nmodel), vmd;
+  std::vector<std::vector<double> > aemd(nmodel), aemd_, avmd(nmodel), avmd_;
+  dp0.compute(edir[0], fdir_[0], vdir[0], coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
+  dp1.compute(edir[1], fdir_[1], vdir[1], coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
+  dp_md.compute(emd, fmd_, vmd, aemd_, avmd_, coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
+  for(int kk = 0; kk < nmodel; ++kk){
+    _fold_back(fdir[kk], fdir_[kk], mapping, nloc, nall, 3);
+    _fold_back(fmd[kk], fmd_[kk], mapping, nloc, nall, 3);
+    _fold_back(avmd[kk], avmd_[kk], mapping, nloc, nall, 9);
+    aemd[kk].resize(nloc);
+    for(int ii = 0; ii < nloc; ++ii){
+      aemd[kk][ii] = aemd_[kk][ii];
+    }
+  }  
+
+  // dp compute std e
+  std::vector<double > avg_e, std_e;
+  dp_md.compute_avg(avg_e, aemd);
+  dp_md.compute_std_e(std_e, avg_e, aemd);
+
+  // manual compute std e
+  std::vector<double > manual_avg_e(nloc);
+  std::vector<double > manual_std_e(nloc);
+  for(int ii = 0; ii < nloc; ++ii){
+    double avg_e(0.0);
+    for(int kk = 0; kk < nmodel; ++kk){
+      avg_e += aemd[kk][ii];
+    }
+    avg_e /= nmodel;
+    manual_avg_e[ii] = avg_e;
+    double std = 0;
+    for (int kk = 0; kk < nmodel; ++kk){
+      std += (aemd[kk][ii] - avg_e) * (aemd[kk][ii] - avg_e);
+    }
+    std = sqrt(std / nmodel);
+    manual_std_e[ii] = std;
+  }
+  EXPECT_EQ(manual_std_e.size(), std_e.size());
+  for(int ii = 0; ii < std_e.size(); ++ii){
+    EXPECT_LT(fabs(manual_avg_e[ii] - avg_e[ii]), 1e-10);
+    EXPECT_LT(fabs(manual_std_e[ii] - std_e[ii]), 1e-10);
+  }
+  
+  // dp compute std f
+  std::vector<double > avg_f, std_f;
+  dp_md.compute_avg(avg_f, fmd);
+  dp_md.compute_std_f(std_f, avg_f, fmd);
+
+  // manual compute std f
+  std::vector<double > manual_std_f(nloc);
+  std::vector<double > manual_rel_std_f(nloc);
+  double eps = 0.2;
+  EXPECT_EQ(fmd[0].size(), nloc * 3);
+  for(int ii = 0; ii < nloc; ++ii){
+    std::vector<double > avg_f(3, 0.0);
+    for(int dd = 0; dd < 3; ++dd){
+      for(int kk = 0; kk < nmodel; ++kk){
+	avg_f[dd] += fmd[kk][ii*3+dd];
+      }
+      avg_f[dd] /= (nmodel) * 1.0;
+    }
+    double std = 0.;
+    for(int kk = 0; kk < nmodel; ++kk){
+      for(int dd = 0; dd < 3; ++dd){
+	double tmp = fmd[kk][ii*3+dd] - avg_f[dd];
+	std += tmp * tmp;
+      }
+    }
+    double f_norm = 0;
+    for (int dd = 0; dd < 3; ++dd){
+      f_norm += avg_f[dd] * avg_f[dd];
+    }
+    f_norm = sqrt(f_norm);
+    std /= nmodel * 1.0;
+    manual_std_f[ii] = sqrt(std);
+    manual_rel_std_f[ii] = manual_std_f[ii] / (f_norm + eps);
+  }
+
+  EXPECT_EQ(manual_std_f.size(), std_f.size());
+  for(int ii = 0; ii < std_f.size(); ++ii){
+    EXPECT_LT(fabs(manual_std_f[ii] - std_f[ii]), 1e-10);
+  }
+  dp_md.compute_relative_std_f(std_f, avg_f, eps);
+  EXPECT_EQ(manual_std_f.size(), std_f.size());
+  for(int ii = 0; ii < std_f.size(); ++ii){  
+    EXPECT_LT(fabs(manual_rel_std_f[ii] - std_f[ii]), 1e-10);
   }
 }
 
