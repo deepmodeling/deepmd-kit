@@ -18,6 +18,12 @@ echo "Installing LAMMPS to ${INSTALL_PREFIX}"
 NPROC=$(nproc --all)
 
 #------------------
+# copy lammps plugin
+BUILD_TMP_DIR2=${SCRIPT_PATH}/../build
+cd ${BUILD_TMP_DIR2}
+make lammps
+
+#------------------
 
 BUILD_TMP_DIR=${SCRIPT_PATH}/../build_lammps
 mkdir -p ${BUILD_TMP_DIR}
@@ -32,6 +38,8 @@ fi
 curl -L -o lammps.patch https://github.com/deepmd-kit-recipes/lammps-dp-feedstock/raw/fdd954a1af4fadabe5c0dd2f3bed260a484175a4/recipe/deepmd.patch
 cd ${BUILD_TMP_DIR}/lammps-${LAMMPS_VERSION}
 patch -f -p1 < ../lammps.patch || true 
+mkdir -p ${BUILD_TMP_DIR}/lammps-${LAMMPS_VERSION}/src/USER-DEEPMD
+cp -r ${BUILD_TMP_DIR2}/USER-DEEPMD/* ${BUILD_TMP_DIR}/lammps-${LAMMPS_VERSION}/src/USER-DEEPMD
 
 mkdir -p ${BUILD_TMP_DIR}/lammps-${LAMMPS_VERSION}/build
 cd ${BUILD_TMP_DIR}/lammps-${LAMMPS_VERSION}/build
