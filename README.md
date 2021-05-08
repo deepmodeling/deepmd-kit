@@ -60,7 +60,7 @@ One may manually install DeePMD-kit by following the instuctions on [installing 
 
 # Use DeePMD-kit
 
-The typical procedure of using DeePMD-kit includes 5 steps 
+The typical procedure of using DeePMD-kit includes the following steps 
 
 1. [Prepare data](doc/getting-started.md#prepare-data)
 2. [Train a model](doc/getting-started.md#train-a-model)
