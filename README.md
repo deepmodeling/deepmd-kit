@@ -5,7 +5,7 @@
 
 # Table of contents
 - [About DeePMD-kit](#about-deepmd-kit)
- 	- [Highlights in v2.0](#heighlights-in-deepmd-kit-v2.0)
+ 	- [Highlights in v2.0](#highlights-in-deepmd-kit-v2.0)
  	- [Highlighted features](#highlighted-features)
  	- [License and credits](#license-and-credits)
  	- [Deep Potential in a nutshell](#deep-potential-in-a-nutshell)
