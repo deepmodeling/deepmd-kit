@@ -320,6 +320,29 @@ def modifier_variant_type_args():
                    optional = False,
                    doc = doc_modifier_type)
 
+#  --- model compression configurations: --- #
+def model_compression():
+    doc_compress = "The name of the frozen model file."
+    doc_model_file = f"The input model file, which will be compressed by the DeePMD-kit."
+    doc_table_config = f"The arguments of model compression, including extrapolate(scale of model extrapolation), stride(uniform stride of tabulation's first and second table), and frequency(frequency of tabulation overflow check)."
+    
+    return [
+        Argument("compress", bool, optional = False, default = True, doc = doc_compress),
+        Argument("model_file", str, optional = False, default = 'frozen_model.pb', doc = doc_model_file),
+        Argument("table_config", list, optional = False, default = [5, 0.01, 0.1, -1], doc = doc_table_config),
+    ]
+
+#  --- model compression configurations: --- #
+def model_compression_type_args():
+    doc_compress_type = "The type of model compression, which should be consistent with the descriptor type."
+    
+    return Variant("type", [
+            Argument("se_e2_a", dict, model_compression(), alias = ['se_a'])
+        ],
+        optional = True,
+        default_tag = 'se_e2_a',
+        doc = doc_compress_type)
+
 
 def model_args ():    
     doc_type_map = 'A list of strings. Give the name to each type of atoms.'
@@ -333,6 +356,7 @@ def model_args ():
     doc_smin_alpha = 'The short-range tabulated interaction will be swithed according to the distance of the nearest neighbor. This distance is calculated by softmin. This parameter is the decaying parameter in the softmin. It is only required when `use_srtab` is provided.'
     doc_sw_rmin = 'The lower boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.'
     doc_sw_rmax = 'The upper boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.'
+    doc_compress_config = 'Model compression configurations'
 
     ca = Argument("model", dict, 
                   [Argument("type_map", list, optional = True, doc = doc_type_map),
@@ -346,6 +370,7 @@ def model_args ():
                    Argument("descriptor", dict, [], [descrpt_variant_type_args()], doc = doc_descrpt),
                    Argument("fitting_net", dict, [], [fitting_variant_type_args()], doc = doc_fitting),
                    Argument("modifier", dict, [], [modifier_variant_type_args()], optional = True, doc = doc_modifier),
+                   Argument("compress", dict, [], [model_compression_type_args()], optional = True, doc = doc_compress_config)
                   ])
     # print(ca.gen_doc())
     return ca

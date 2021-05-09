@@ -267,7 +267,7 @@ class EnerFitting ():
             1, 
             activation_fn = None, 
             bavg = bias_atom_e, 
-            name='final_layer_'+suffix, 
+            name='final_layer'+suffix, 
             reuse=reuse, 
             seed = self.seed, 
             precision = self.fitting_precision, 
