@@ -363,11 +363,11 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase) :
         water0 = Atoms('OHHOHH',
                     positions=self.coords.reshape((-1,3)),
                     cell=self.box.reshape((3,3)),
-                    calculator=DP("dp-original.pb"))
+                    calculator=DP(self.frozen_model))
         water1 = Atoms('OHHOHH',
                     positions=self.coords.reshape((-1,3)),
                     cell=self.box.reshape((3,3)),
-                    calculator=DP("dp-compressed.pb"))
+                    calculator=DP(self.compressed_model))
         ee0 = water0.get_potential_energy()
         ff0 = water0.get_forces()
         ee1 = water1.get_potential_energy()
