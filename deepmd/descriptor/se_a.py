@@ -640,6 +640,7 @@ class DescrptSeA ():
         outputs_size_2 = self.n_axis_neuron
         with tf.variable_scope(name, reuse=reuse):
           start_index = 0
+          type_i = 0
           if type_embedding is None:
               for type_i in range(self.ntypes):
                   ret = self._filter_lower(
