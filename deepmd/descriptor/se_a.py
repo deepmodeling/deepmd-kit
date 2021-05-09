@@ -607,7 +607,7 @@ class DescrptSeA ():
                   self.filter_precision, 
                   activation_fn = activation_fn, 
                   resnet_dt = self.filter_resnet_dt,
-                  name_suffix = "_"+str(type_i),
+                  name_suffix = suffix,
                   stddev = stddev,
                   bavg = bavg,
                   seed = seed,

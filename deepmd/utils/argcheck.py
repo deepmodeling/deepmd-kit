@@ -322,7 +322,7 @@ def modifier_variant_type_args():
 
 #  --- model compression configurations: --- #
 def model_compression():
-    doc_compress = "The name of the frozen dipole model file."
+    doc_compress = "The name of the frozen model file."
     doc_model_file = f"The input model file, which will be compressed by the DeePMD-kit."
     doc_table_config = f"The arguments of model compression, including extrapolate(scale of model extrapolation), stride(uniform stride of tabulation's first and second table), and frequency(frequency of tabulation overflow check)."
     
