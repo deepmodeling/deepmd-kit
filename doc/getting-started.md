@@ -1,37 +1,34 @@
-- [Use DeePMD-kit](#use-deepmd-kit)
-	- [Prepare data](#prepare-data)
-	- [Train a model](#train-a-model)
-	- [Freeze a model](#freeze-a-model)
-	- [Test a model](#test-a-model)
-	- [Compress a model](#compress-a-model)
-	- [Model inference](#model-inference)
-	- [Run MD with Lammps](#run-md-with-lammps)
-	    - [Include deepmd in the pair style](#include-deepmd-in-the-pair-style)
-	    - [Long-range interaction](#long-range-interaction)
-	- [Run path-integral MD with i-PI](#run-path-integral-md-with-i-pi)
-	- [Use deep potential with ASE](#use-deep-potential-with-ase)
-
-# Use DeePMD-kit
+# Getting Started
 In this text, we will call the deep neural network that is used to represent the interatomic interactions (Deep Potential) the **model**. The typical procedure of using DeePMD-kit is 
 
-1. Prepare data
-2. Train a model
-3. Freeze the model
-4. Test the model
-5. Compress the model
-6. Inference with the model
+1. [Prepare data](#prepare-data)
+2. [Train a model](#train-a-model)
+    - [Write the input script](#write-the-input-script)
+    - [Training](#training)
+    - [Training analysis with Tensorboard](#training-analysis-with-tensorboard)
+3. [Freeze a model](#freeze-a-model)
+4. [Test a model](#test-a-model)
+5. [Compress a model](#compress-a-model)
+6. [Model inference](#model-inference)
+7. [Run MD](#run-md)
+    - [Run MD with LAMMPS](#run-md-with-lammps)
+    - [Run path-integral MD with i-PI](#run-path-integral-md-with-i-pi)
+    - [Use deep potential with ASE](#use-deep-potential-with-ase)
+
 
 ## Prepare data
 One needs to provide the following information to train a model: the atom type, the simulation box, the atom coordinate, the atom force, system energy and virial. A snapshot of a system that contains these information is called a **frame**. We use the following convention of units:
 
-Property| Unit
----	| :---:
-Time	| ps
-Length	| Å
-Energy	| eV
-Force	| eV/Å
-Virial  | eV
-Pressure| Bar
+
+Property | Unit 
+---|---
+Time     | ps   
+Length   | Å    
+Energy   | eV   
+Force    | eV/Å 
+Virial   | eV   
+Pressure | Bar  
+
 
 The frames of the system are stored in two formats. A raw file is a plain text file with each information item written in one file and one frame written on one line. The default files that provide box, coordinate, force, energy and virial are `box.raw`, `coord.raw`, `force.raw`, `energy.raw` and `virial.raw`, respectively. *We recommend you use these file names*. Here is an example of force.raw:
 ```bash
@@ -89,9 +86,9 @@ DeePMD-kit implements the following descriptors:
 5. [`hybrid`](train-hybrid.md): Concate a list of descriptors to form a new descriptor.
 
 The fitting of the following physical properties are supported
-1. [`ener`](train-se-e2-a.md#fitting) Fitting the energy of the system. The force (derivative with atom positions) and the virial (derivative with the box tensor) can also be trained. See [the example](train-se-e2-a.md#loss).
-2. `dipole` The dipole moment.
-3. `polar` The polarizability.
+1. [`ener`](train-se-e2-a.md#fitting): Fitting the energy of the system. The force (derivative with atom positions) and the virial (derivative with the box tensor) can also be trained. See [the example](train-se-e2-a.md#loss).
+2. `dipole`: The dipole moment.
+3. `polar`: The polarizability.
 
 
 ### Training
@@ -138,7 +135,7 @@ dp train input.json
 
 If enbled in json/yaml input file DeePMD-kit will create log files which can be
 used to analyze training procedure with Tensorboard. For a short tutorial
-please read this [document](doc/tensorboard.md).
+please read this [document](tensorboard.md).
 
 ## Freeze a model
 
@@ -252,16 +249,63 @@ e, f, v = dp.eval(coord, cell, atype)
 where `e`, `f` and `v` are predicted energy, force and virial of the system, respectively.
 
 
-## Run MD with LAMMPS
-### Include deepmd in the pair style
-Running an MD simulation with LAMMPS is simpler. In the LAMMPS input file, one needs to specify the pair style as follows
-```bash
-pair_style     deepmd graph.pb
-pair_coeff     
-```
-where `graph.pb` is the file name of the frozen model. The `pair_coeff` should be left blank. It should be noted that LAMMPS counts atom types starting from 1, therefore, all LAMMPS atom type will be firstly subtracted by 1, and then passed into the DeePMD-kit engine to compute the interactions. [A detailed documentation of this pair style is available.](doc/lammps-pair-style-deepmd.md).
+## Run MD
 
-### Long-range interaction
+### Run MD with LAMMPS
+Include deepmd in the pair_style
+
+#### Syntax
+```
+pair_style deepmd models ... keyword value ...
+```
+- deepmd = style of this pair_style
+- models = frozen model(s) to compute the interaction. If multiple models are provided, then the model deviation will be computed
+- keyword = *out_file* or *out_freq* or *fparam* or *atomic* or *relative*
+<pre>
+    <i>out_file</i> value = filename
+        filename = The file name for the model deviation output. Default is model_devi.out
+    <i>out_freq</i> value = freq
+        freq = Frequency for the model deviation output. Default is 100.
+    <i>fparam</i> value = parameters
+        parameters = one or more frame parameters required for model evaluation.
+    <i>atomic</i> = no value is required. 
+        If this keyword is set, the model deviation of each atom will be output.
+    <i>relative</i> value = level
+        level = The level parameter for computing the relative model deviation
+</pre>
+
+#### Examples
+```
+pair_style deepmd graph.pb
+pair_style deepmd graph.pb fparam 1.2
+pair_style deepmd graph_0.pb graph_1.pb graph_2.pb out_file md.out out_freq 10 atomic relative 1.0
+```
+
+#### Description
+Evaluate the interaction of the system by using [Deep Potential][DP] or [Deep Potential Smooth Edition][DP-SE]. It is noticed that deep potential is not a "pairwise" interaction, but a multi-body interaction. 
+
+This pair style takes the deep potential defined in a model file that usually has the .pb extension. The model can be trained and frozen by package [DeePMD-kit](https://github.com/deepmodeling/deepmd-kit).
+
+The model deviation evalulate the consistency of the force predictions from multiple models. By default, only the maximal, minimal and averge model deviations are output. If the key `atomic` is set, then the model deviation of force prediction of each atom will be output.
+
+By default, the model deviation is output in absolute value. If the keyword `relative` is set, then the relative model deviation will be output. The relative model deviation of the force on atom `i` is defined by
+```math
+           |Df_i|
+Ef_i = -------------
+       |f_i| + level
+```
+where `Df_i` is the absolute model deviation of the force on atom `i`, `|f_i|` is the norm of the the force and `level` is provided as the parameter of the keyword `relative`.
+
+
+#### Restrictions
+- The `deepmd` pair style is provided in the USER-DEEPMD package, which is compiled from the DeePMD-kit, visit the [DeePMD-kit website](https://github.com/deepmodeling/deepmd-kit) for more information.
+
+- The `atom_style` of the system should be `atomic`.
+
+- When using the `atomic` key word of `deepmd` is set, one should not use this pair style with MPI parallelization.
+
+
+#### Long-range interaction
 The reciprocal space part of the long-range interaction can be calculated by LAMMPS command `kspace_style`. To use it with DeePMD-kit, one writes 
 ```bash
 pair_style	deepmd graph.pb
@@ -271,14 +315,14 @@ kspace_modify	gewald 0.45
 ```
 Please notice that the DeePMD does nothing to the direct space part of the electrostatic interaction, because this part is assumed to be fitted in the DeePMD model (the direct space cut-off is thus the cut-off of the DeePMD model). The splitting parameter `gewald` is modified by the `kspace_modify` command.
 
-## Run path-integral MD with i-PI
+### Run path-integral MD with i-PI
 The i-PI works in a client-server model. The i-PI provides the server for integrating the replica positions of atoms, while the DeePMD-kit provides a client named `dp_ipi` that computes the interactions (including energy, force and virial). The server and client communicates via the Unix domain socket or the Internet socket. The client can be started by
 ```bash
 $ dp_ipi water.json
 ```
 It is noted that multiple instances of the client is allow for computing, in parallel, the interactions of multiple replica of the path-integral MD.
 
-`water.json` is the parameter file for the client `dp_ipi`, and [an example](./examples/ipi/water.json) is provided:
+`water.json` is the parameter file for the client `dp_ipi`, and an example is provided:
 ```json
 {
     "verbose":		false,
@@ -300,7 +344,7 @@ The option **`graph_file`** provides the file name of the frozen model.
 
 The `dp_ipi` gets the atom names from an [XYZ file](https://en.wikipedia.org/wiki/XYZ_file_format) provided by **`coord_file`** (meanwhile ignores all coordinates in it), and translates the names to atom types by rules provided by **`atom_type`**.
 
-## Use deep potential with ASE
+### Use deep potential with ASE
 
 Deep potential can be set up as a calculator with ASE to obtain potential energies and forces.
 ```python
@@ -324,3 +368,5 @@ dyn = BFGS(water)
 dyn.run(fmax=1e-6)
 print(water.get_positions())
 ```
+[DP]:https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.120.143001
+[DP-SE]:https://dl.acm.org/doi/10.5555/3327345.3327356
