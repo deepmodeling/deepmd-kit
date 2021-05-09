@@ -514,10 +514,10 @@ void PairDeepMD::compute(int eflag, int vflag)
 	deep_pot_model_devi.compute_avg (tmp_avg_f_, all_force_);  
 	deep_pot_model_devi.compute_std_f (std_f_, tmp_avg_f_, all_force_);
 	std_f.resize(std_f_.size());
-	for (int dd = 0; dd < std_f_.size(); ++dd) std_f[dd] = std_f_[dd];
 	if (out_rel == 1){
 	    deep_pot_model_devi.compute_relative_std_f (std_f_, tmp_avg_f_, eps);
 	}
+	for (int dd = 0; dd < std_f_.size(); ++dd) std_f[dd] = std_f_[dd];
 #endif
 	double min = numeric_limits<double>::max(), max = 0, avg = 0;
 	ana_st(max, min, avg, std_f, nlocal);
