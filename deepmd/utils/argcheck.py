@@ -418,13 +418,13 @@ def loss_ener():
 
 # YWolfeee: Modified to support tensor type of loss args.
 def loss_tensor():
-    #doc_global_weight = "The prefactor of the weight of global loss. It should be larger than or equal to 0. If only `pref_weight` is provided or both are not provided, training will be global mode, i.e. the shape of 'polarizability.npy` or `dipole.npy` should be #frams x [9 or 3]." 
-    #doc_local_weight =  "The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If only `pref_atomic_weight` is provided, training will be atomic mode, i.e. the shape of `polarizability.npy` or `dipole.npy` should be #frames x ([9 or 3] x #selected atoms). If both `pref_weight` and `pref_atomic_weight` are provided, training will be combined mode, and atomic label should be provided as well." 
+    #doc_global_weight = "The prefactor of the weight of global loss. It should be larger than or equal to 0. If only `pref` is provided or both are not provided, training will be global mode, i.e. the shape of 'polarizability.npy` or `dipole.npy` should be #frams x [9 or 3]." 
+    #doc_local_weight =  "The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If only `pref_atomic` is provided, training will be atomic mode, i.e. the shape of `polarizability.npy` or `dipole.npy` should be #frames x ([9 or 3] x #selected atoms). If both `pref` and `pref_atomic` are provided, training will be combined mode, and atomic label should be provided as well." 
     doc_global_weight = "The prefactor of the weight of global loss. It should be larger than or equal to 0. If controls the weight of loss corresponding to global label, i.e. 'polarizability.npy` or `dipole.npy`, whose shape should be #frames x [9 or 3]. If it's larger than 0.0, this npy should be included." 
-    doc_local_weight =  "The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If controls the weight of loss corresponding to atomic label, i.e. `atomic_polarizability.npy` or `atomic_dipole.npy`, whose shape should be #frames x ([9 or 3] x #selected atoms). If it's larger than 0.0, this npy should be included. Both `pref_weight` and `pref_atomic_weight` should be provided, and either can be set to 0.0." 
+    doc_local_weight =  "The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If controls the weight of loss corresponding to atomic label, i.e. `atomic_polarizability.npy` or `atomic_dipole.npy`, whose shape should be #frames x ([9 or 3] x #selected atoms). If it's larger than 0.0, this npy should be included. Both `pref` and `pref_atomic` should be provided, and either can be set to 0.0." 
     return [
-        Argument("pref_weight", [float,int], optional = False, default = None, doc = doc_global_weight),
-        Argument("pref_atomic_weight", [float,int], optional = False, default = None, doc = doc_local_weight),
+        Argument("pref", [float,int], optional = False, default = None, doc = doc_global_weight),
+        Argument("pref_atomic", [float,int], optional = False, default = None, doc = doc_local_weight),
     ]
 
 

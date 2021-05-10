@@ -25,12 +25,13 @@ class TensorLoss () :
 
         # YHT: added for global / local dipole combination
         assert jdata is not None, "Please provide loss parameters!"
-        self.local_weight = jdata.get('pref_atomic_weight', None)
-        self.global_weight = jdata.get('pref_weight', None)
+        # YWolfeee: modify, use pref / pref_atomic, instead of pref_weight / pref_atomic_weight
+        self.local_weight = jdata.get('pref_atomic', None)
+        self.global_weight = jdata.get('pref', None)
 
-        assert (self.local_weight is not None and self.global_weight is not None), "Both `pref_weight` and `pref_atomic_weight` should be provided."
-        assert self.local_weight >= 0.0 and self.global_weight >= 0.0, "Can not assign negative weight to `pref_weight` and `pref_atomic_weight`"
-        assert (self.local_weight >0.0) or (self.global_weight>0.0), AssertionError('Can not assian zero weight both to `pref_weight` and `pref_atomic_weight`')
+        assert (self.local_weight is not None and self.global_weight is not None), "Both `pref` and `pref_atomic` should be provided."
+        assert self.local_weight >= 0.0 and self.global_weight >= 0.0, "Can not assign negative weight to `pref` and `pref_atomic`"
+        assert (self.local_weight >0.0) or (self.global_weight>0.0), AssertionError('Can not assian zero weight both to `pref` and `pref_atomic`')
 
         # data required
         add_data_requirement("atomic_" + self.label_name, 

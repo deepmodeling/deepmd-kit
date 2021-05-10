@@ -427,7 +427,7 @@ def test_polar(
     data: DeepmdData,
     numb_test: int,
     detail_file: Optional[str],
-    #*, YWolfeee: not understand what is this
+    *,
     atomic: bool,
 ) -> Tuple[List[np.ndarray], List[int]]:
     """Test energy type model.
