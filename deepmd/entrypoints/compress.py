@@ -65,8 +65,8 @@ def compress(
     jdata = j_loader(INPUT)
     if "model" not in jdata.keys():
         jdata = convert_input_v0_v1(jdata, warning=True, dump="input_v1_compat.json")
-    jdata = normalize(jdata)
     jdata["model"]["compress"] = {}
+    jdata["model"]["compress"]["type"] = 'se_e2_a'
     jdata["model"]["compress"]["compress"] = True
     jdata["model"]["compress"]["model_file"] = input
     jdata["model"]["compress"]["table_config"] = [
@@ -75,11 +75,15 @@ def compress(
         10 * stride,
         int(frequency),
     ]
+    # be careful here, if one want to refine the model
+    jdata["training"]["numb_steps"] = jdata["training"]["save_freq"]
+    jdata = normalize(jdata)
+
 
     # check the descriptor info of the input file
     assert (
-        jdata["model"]["descriptor"]["type"] == "se_a"
-    ), "Model compression error: descriptor type must be se_a!"
+        jdata["model"]["descriptor"]["type"] == "se_a" or jdata["model"]["descriptor"]["type"] == "se_e2_a"
+    ), "Model compression error: descriptor type must be se_a or se_e2_a!"
     assert (
         jdata["model"]["descriptor"]["resnet_dt"] is False
     ), "Model compression error: descriptor resnet_dt must be false!"
@@ -87,8 +91,6 @@ def compress(
     # stage 1: training or refining the model with tabulation
     log.info("\n\n")
     log.info("stage 1: train or refine the model with tabulation")
-    # be careful here, if one want to refine the model
-    jdata["training"]["stop_batch"] = jdata["training"]["save_freq"]
     control_file = "compress.json"
     with open(control_file, "w") as fp:
         json.dump(jdata, fp, indent=4)

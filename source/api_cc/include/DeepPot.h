@@ -144,6 +144,16 @@ public:
 		    const std::vector<VALUETYPE > &	all_energy);
   void compute_avg (std::vector<VALUETYPE> &		avg,
 		    const std::vector<std::vector<VALUETYPE> > &	xx);
+  void compute_std (
+      std::vector<VALUETYPE> & std,
+      const std::vector<VALUETYPE> & avg,
+      const std::vector<std::vector<VALUETYPE> >& xx, 
+      const int & stride);
+  void compute_relative_std (
+      std::vector<VALUETYPE> & std,
+      const std::vector<VALUETYPE> & avg,
+      const VALUETYPE eps, 
+      const int & stride);
   void compute_std_e (std::vector<VALUETYPE> &		std,
 		      const std::vector<VALUETYPE> &		avg,
 		      const std::vector<std::vector<VALUETYPE> >&	xx);

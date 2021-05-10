@@ -838,20 +838,40 @@ compute_avg (std::vector<VALUETYPE> &		avg,
 }
 
 
-// void
-// DeepPotModelDevi::
-// compute_std (VALUETYPE &		std, 
-// 	     const VALUETYPE &		avg, 
-// 	     const vector<VALUETYPE >&	xx)
-// {
-//   std = 0;
-//   assert(xx.size() == numb_models);
-//   for (unsigned jj = 0; jj < xx.size(); ++jj){
-//     std += (xx[jj] - avg) * (xx[jj] - avg);
-//   }
-//   std = sqrt(std / VALUETYPE(numb_models));
-//   // std = sqrt(std / VALUETYPE(numb_models-));
-// }
+void
+DeepPotModelDevi::
+compute_std (
+    std::vector<VALUETYPE> &		std, 
+    const std::vector<VALUETYPE> &	avg, 
+    const std::vector<std::vector<VALUETYPE> >&xx,
+    const int & stride)
+{
+  assert (xx.size() == numb_models);
+  if (numb_models == 0) return;
+
+  unsigned ndof = avg.size();
+  unsigned nloc = ndof / stride;
+  assert (nloc * stride == ndof);
+  
+  std.resize(nloc);
+  fill (std.begin(), std.end(), VALUETYPE(0.));
+  
+  for (unsigned ii = 0; ii < numb_models; ++ii) {
+    for (unsigned jj = 0 ; jj < nloc; ++jj){
+      const VALUETYPE * tmp_f = &(xx[ii][jj*stride]);
+      const VALUETYPE * tmp_avg = &(avg[jj*stride]);
+      for (unsigned dd = 0; dd < stride; ++dd){
+	VALUETYPE vdiff = tmp_f[dd] - tmp_avg[dd];
+	std[jj] += vdiff * vdiff;
+      }
+    }
+  }
+
+  for (unsigned jj = 0; jj < nloc; ++jj){
+    std[jj] = sqrt(std[jj] / VALUETYPE(numb_models));
+  }
+}
+
 
 void
 DeepPotModelDevi::
@@ -859,29 +879,7 @@ compute_std_e (std::vector<VALUETYPE> &		std,
 	       const std::vector<VALUETYPE> &	avg, 
 	       const std::vector<std::vector<VALUETYPE> >&xx)  
 {
-  assert (xx.size() == numb_models);
-  if (numb_models == 0) return;
-
-  unsigned ndof = avg.size();
-  unsigned nloc = ndof;
-  assert (nloc == ndof);
-  
-  std.resize(nloc);
-  fill (std.begin(), std.end(), VALUETYPE(0.));
-  
-  for (unsigned ii = 0; ii < numb_models; ++ii) {
-    for (unsigned jj = 0 ; jj < nloc; ++jj){
-      const VALUETYPE * tmp_f = &(xx[ii][jj]);
-      const VALUETYPE * tmp_avg = &(avg[jj]);
-      VALUETYPE vdiff = xx[ii][jj] - avg[jj];
-      std[jj] += vdiff * vdiff;
-    }
-  }
-
-  for (unsigned jj = 0; jj < nloc; ++jj){
-    std[jj] = sqrt(std[jj] / VALUETYPE(numb_models));
-    // std[jj] = sqrt(std[jj] / VALUETYPE(numb_models-1));
-  }
+  compute_std(std, avg, xx, 1);
 }
 
 void
@@ -890,31 +888,29 @@ compute_std_f (std::vector<VALUETYPE> &		std,
 	       const std::vector<VALUETYPE> &	avg, 
 	       const std::vector<std::vector<VALUETYPE> >&xx)  
 {
-  assert (xx.size() == numb_models);
-  if (numb_models == 0) return;
+  compute_std(std, avg, xx, 3);
+}
 
+void
+DeepPotModelDevi::
+compute_relative_std (
+    std::vector<VALUETYPE> &std,
+    const std::vector<VALUETYPE> &avg,
+    const VALUETYPE eps, 
+    const int & stride)
+{
   unsigned ndof = avg.size();
-  unsigned nloc = ndof / 3;
-  assert (nloc * 3 == ndof);
-  
-  std.resize(nloc);
-  fill (std.begin(), std.end(), VALUETYPE(0.));
-  
-  for (unsigned ii = 0; ii < numb_models; ++ii) {
-    for (unsigned jj = 0 ; jj < nloc; ++jj){
-      const VALUETYPE * tmp_f = &(xx[ii][jj*3]);
-      const VALUETYPE * tmp_avg = &(avg[jj*3]);
-      VALUETYPE vdiff[3];
-      vdiff[0] = tmp_f[0] - tmp_avg[0];
-      vdiff[1] = tmp_f[1] - tmp_avg[1];
-      vdiff[2] = tmp_f[2] - tmp_avg[2];
-      std[jj] += deepmd::dot3(vdiff, vdiff);
-    }
-  }
+  unsigned nloc = std.size();
+  assert (nloc * stride == ndof);
 
-  for (unsigned jj = 0; jj < nloc; ++jj){
-    std[jj] = sqrt(std[jj] / VALUETYPE(numb_models));
-    // std[jj] = sqrt(std[jj] / VALUETYPE(numb_models-1));
+  for (unsigned ii = 0; ii < nloc; ++ii){
+    const VALUETYPE * tmp_avg = &(avg[ii*stride]);
+    VALUETYPE f_norm = 0.0;
+    for (unsigned dd = 0; dd < stride; ++dd){
+      f_norm += tmp_avg[dd] * tmp_avg[dd];
+    }
+    f_norm = sqrt(f_norm);
+    std[ii] /= f_norm + eps;
   }
 }
 
@@ -924,16 +920,6 @@ compute_relative_std_f (std::vector<VALUETYPE> &std,
 			const std::vector<VALUETYPE> &avg,
 			const VALUETYPE eps)
 {
-  unsigned nloc = std.size();
-  for (unsigned ii = 0; ii < nloc; ++ii){
-    const VALUETYPE * tmp_avg = &(avg[ii*3]);
-      VALUETYPE vdiff[3];
-      vdiff[0] = tmp_avg[0];
-      vdiff[1] = tmp_avg[1];
-      vdiff[2] = tmp_avg[2];
-      VALUETYPE f_norm = sqrt(deepmd::dot3(vdiff, vdiff));
-      // relative std = std/(abs(f)+eps)
-      std[ii] /= f_norm + eps;
-  }
+  compute_relative_std(std, avg, eps, 3);
 }
 
