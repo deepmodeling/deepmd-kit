@@ -238,11 +238,14 @@ def fitting_polar():
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_precision = f'The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}'
     doc_scale = 'The output of the fitting net (polarizability matrix) will be scaled by ``scale``'
-    doc_diag_shift = 'The diagonal part of the polarizability matrix  will be shifted by ``diag_shift``. The shift operation is carried out after ``scale``.'
+    #doc_diag_shift = 'The diagonal part of the polarizability matrix  will be shifted by ``diag_shift``. The shift operation is carried out after ``scale``.'
     doc_fit_diag = 'Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to normal polarizability matrix by contracting with the rotation matrix.'
     doc_sel_type = 'The atom types for which the atomic polarizability will be provided. If not set, all types will be selected.'
     doc_seed = 'Random seed for parameter initialization of the fitting net'
     
+    # YWolfeee: user can decide whether to use shift diag
+    doc_shift_diag = 'Whether to shift the diagonal of polar, which is beneficial to training. Default is true.'
+
     return [
         Argument("neuron", list, optional = True, default = [120,120,120], doc = doc_neuron),
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
@@ -250,14 +253,15 @@ def fitting_polar():
         Argument("precision", str, optional = True, default = 'float64', doc = doc_precision),
         Argument("fit_diag", bool, optional = True, default = True, doc = doc_fit_diag),
         Argument("scale", [list,float], optional = True, default = 1.0, doc = doc_scale),
-        Argument("diag_shift", [list,float], optional = True, default = 0.0, doc = doc_diag_shift),
+        #Argument("diag_shift", [list,float], optional = True, default = 0.0, doc = doc_diag_shift),
+        Argument("shift_diag", bool, optional = True, default = True, doc = doc_shift_diag),
         Argument("sel_type", [list,int,None], optional = True, doc = doc_sel_type),
         Argument("seed", [int,None], optional = True, doc = doc_seed)
     ]
 
 
-def fitting_global_polar():
-    return fitting_polar()
+#def fitting_global_polar():
+#    return fitting_polar()
 
 
 def fitting_dipole():
@@ -276,18 +280,17 @@ def fitting_dipole():
         Argument("seed", [int,None], optional = True, doc = doc_seed)
     ]    
 
-
+#   YWolfeee: Delete global polar mode, merge it into polar mode and use loss setting to support.
 def fitting_variant_type_args():
     doc_descrpt_type = 'The type of the fitting. See explanation below. \n\n\
 - `ener`: Fit an energy model (potential energy surface).\n\n\
-- `dipole`: Fit an atomic dipole model. Atomic dipole labels for all the selected atoms (see `sel_type`) should be provided by `dipole.npy` in each data system. The file has number of frames lines and 3 times of number of selected atoms columns.\n\n\
-- `polar`: Fit an atomic polarizability model. Atomic polarizability labels for all the selected atoms (see `sel_type`) should be provided by `polarizability.npy` in each data system. The file has number of frames lines and 9 times of number of selected atoms columns.\n\n\
-- `global_polar`: Fit a polarizability model. Polarizability labels should be provided by `polarizability.npy` in each data system. The file has number of frames lines and 9 columns.'
-    
+- `dipole`: Fit an atomic dipole model. Global dipole labels or atomic dipole labels for all the selected atoms (see `sel_type`) should be provided by `dipole.npy` in each data system. The file either has number of frames lines and 3 times of number of selected atoms columns, or has number of frames lines and 3 columns. See `loss` parameter.\n\n\
+- `polar`: Fit an atomic polarizability model. Global polarizazbility labels or atomic polarizability labels for all the selected atoms (see `sel_type`) should be provided by `polarizability.npy` in each data system. The file eith has number of frames lines and 9 times of number of selected atoms columns, or has number of frames lines and 9 columns. See `loss` parameter.\n\n'
+
     return Variant("type", [Argument("ener", dict, fitting_ener()),
                             Argument("dipole", dict, fitting_dipole()),
                             Argument("polar", dict, fitting_polar()),
-                            Argument("global_polar", dict, fitting_global_polar())], 
+                            ], 
                    optional = True,
                    default_tag = 'ener',
                    doc = doc_descrpt_type)
@@ -439,31 +442,26 @@ def loss_ener():
     ]
 
 # YWolfeee: Modified to support tensor type of loss args.
-def loss_tensor(default_mode):
-    if default_mode == "local":
-        doc_global_weight = "The prefactor of the weight of global loss. It should be larger than or equal to 0. If not provided, training will be atomic mode, i.e. atomic label should be provided." 
-        doc_local_weight =  "The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If it's not provided and global weight is provided, training will be global mode, i.e. global label should be provided. If both global and atomic weight are not provided, training will be atomic mode, i.e.  atomic label should be provided." 
-        return [
-            Argument("pref_weight", [float,int], optional = True, default = None, doc = doc_global_weight),
-            Argument("pref_atomic_weight", [float,int], optional = True, default = None, doc = doc_local_weight),
-        ]
-    else:
-        doc_local_weight = "The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If not provided, training will be global mode, i.e. global label should be provided." 
-        doc_global_weight =  "The prefactor of the weight of global loss. It should be larger than or equal to 0. If it's not provided and atomic weight is provided, training will be atomic mode, i.e. atomic label should be provided. If both global and atomic weight are not provided, training will be global mode, i.e.  global label should be provided." 
-        return [
-            Argument("pref_weight", [float,int], optional = True, default = None, doc = doc_global_weight),
-            Argument("pref_atomic_weight", [float,int], optional = True, default = None, doc = doc_local_weight),
-        ]
+def loss_tensor():
+    #doc_global_weight = "The prefactor of the weight of global loss. It should be larger than or equal to 0. If only `pref` is provided or both are not provided, training will be global mode, i.e. the shape of 'polarizability.npy` or `dipole.npy` should be #frams x [9 or 3]." 
+    #doc_local_weight =  "The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If only `pref_atomic` is provided, training will be atomic mode, i.e. the shape of `polarizability.npy` or `dipole.npy` should be #frames x ([9 or 3] x #selected atoms). If both `pref` and `pref_atomic` are provided, training will be combined mode, and atomic label should be provided as well." 
+    doc_global_weight = "The prefactor of the weight of global loss. It should be larger than or equal to 0. If controls the weight of loss corresponding to global label, i.e. 'polarizability.npy` or `dipole.npy`, whose shape should be #frames x [9 or 3]. If it's larger than 0.0, this npy should be included." 
+    doc_local_weight =  "The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If controls the weight of loss corresponding to atomic label, i.e. `atomic_polarizability.npy` or `atomic_dipole.npy`, whose shape should be #frames x ([9 or 3] x #selected atoms). If it's larger than 0.0, this npy should be included. Both `pref` and `pref_atomic` should be provided, and either can be set to 0.0." 
+    return [
+        Argument("pref", [float,int], optional = False, default = None, doc = doc_global_weight),
+        Argument("pref_atomic", [float,int], optional = False, default = None, doc = doc_local_weight),
+    ]
+
 
 def loss_variant_type_args():
-    doc_loss = 'The type of the loss. The loss type should be set to the fitting type or left unset.\n\.'
+    doc_loss = 'The type of the loss. When the fitting type is `ener`, the loss type should be set to `ener` or left unset. When the fitting type is `dipole` or `polar`, the loss type should be set to `tensor`. \n\.'
 
     
     return Variant("type", 
                    [Argument("ener", dict, loss_ener()),
-                    Argument("dipole", dict, loss_tensor("local")),
-                    Argument("polar", dict, loss_tensor("local")),
-                    Argument("global_polar", dict, loss_tensor("global"))
+                    Argument("tensor", dict, loss_tensor()),
+                    #Argument("polar", dict, loss_tensor()),
+                    #Argument("global_polar", dict, loss_tensor("global"))
                     ],
                    optional = True,
                    default_tag = 'ener',
@@ -471,7 +469,7 @@ def loss_variant_type_args():
 
 
 def loss_args():
-    doc_loss = 'The definition of loss function. The loss type should be set to the fitting type or left unset.\n\.'
+    doc_loss = 'The definition of loss function. The loss type should be set to `tensor`, `ener` or left unset.\n\.'
     ca = Argument('loss', dict, [], 
                   [loss_variant_type_args()],
                   optional = True,
