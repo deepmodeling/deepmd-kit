@@ -5,9 +5,12 @@ import glob
 import numpy as np
 import os.path
 from typing import Tuple, List
+import logging
 
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
+
+log = logging.getLogger(__name__)
 
 class DeepmdData() :
     """
@@ -461,11 +464,17 @@ class DeepmdData() :
                 data = np.load(path).astype(GLOBAL_ENER_FLOAT_PRECISION)
             else:
                 data = np.load(path).astype(GLOBAL_NP_FLOAT_PRECISION)
-            if atomic :
-                data = data.reshape([nframes, natoms, -1])
-                data = data[:,idx_map,:]
-                data = data.reshape([nframes, -1])
-            data = np.reshape(data, [nframes, ndof])
+            try:    # YWolfeee: deal with data shape error
+                if atomic :
+                    data = data.reshape([nframes, natoms, -1])
+                    data = data[:,idx_map,:]
+                    data = data.reshape([nframes, -1])
+                data = np.reshape(data, [nframes, ndof])
+            except ValueError as err_message:
+                explanation = "This error may occur when your label mismatch it's name, i.e. you might store global tensor in `atomic_tensor.npy` or atomic tensor in `tensor.npy`." 
+                log.error(str(err_message))
+                log.error(explanation)
+                raise ValueError(str(err_message) + ". " + explanation)
             if repeat != 1:
                 data = np.repeat(data, repeat).reshape([nframes, -1])
             return np.float32(1.0), data

@@ -110,7 +110,8 @@ class PolarFittingSeA () :
                   sel_type : List[int] = None,
                   fit_diag : bool = True,
                   scale : List[float] = None,
-                  diag_shift : List[float] = None,
+                  shift_diag : bool = True,     # YWolfeee: will support the user to decide whether to use this function
+                  #diag_shift : List[float] = None, YWolfeee: will not support the user to assign a shift
                   seed : int = 1,
                   activation_function : str = 'tanh',
                   precision : str = 'default'                  
@@ -162,7 +163,8 @@ class PolarFittingSeA () :
         self.sel_type = sel_type
         self.fit_diag = fit_diag
         self.seed = seed
-        self.diag_shift = diag_shift
+        #self.diag_shift = diag_shift
+        self.shift_diag = shift_diag
         self.scale = scale
         self.fitting_activation_fn = get_activation_func(activation_function)
         self.fitting_precision = get_precision(precision)
@@ -170,12 +172,13 @@ class PolarFittingSeA () :
             self.sel_type = [ii for ii in range(self.ntypes)]
         if self.scale is None:
             self.scale = [1.0 for ii in range(self.ntypes)]
-        if self.diag_shift is None:
-            self.diag_shift = [0.0 for ii in range(self.ntypes)]
+        #if self.diag_shift is None:
+        #    self.diag_shift = [0.0 for ii in range(self.ntypes)]
         if type(self.sel_type) is not list:
             self.sel_type = [self.sel_type]
-        if type(self.diag_shift) is not list:
-            self.diag_shift = [self.diag_shift]
+        self.constant_matrix = np.zeros(len(self.sel_type)) # len(sel_type) x 1, store the average diagonal value
+        #if type(self.diag_shift) is not list:
+        #    self.diag_shift = [self.diag_shift]
         if type(self.scale) is not list:
             self.scale = [self.scale]
         self.dim_rot_mat_1 = descrpt.get_dim_rot_mat_1()
@@ -222,6 +225,42 @@ class PolarFittingSeA () :
             all_tmp.append(tmp)
         all_tmp = np.concatenate(all_tmp, axis = 1)
         self.avgeig = np.average(all_tmp, axis = 0)
+
+        # YWolfeee: support polar normalization, initialize to a more appropriate point 
+        if self.shift_diag:
+            mean_polar = np.zeros([len(self.sel_type), 9])
+            sys_matrix, polar_bias = [], []
+            for ss in range(len(all_stat['type'])):
+                atom_has_polar = [w for w in all_stat['type'][ss][0] if (w in self.sel_type)]   # select atom with polar
+                if all_stat['find_atomic_polarizability'][ss] > 0.0:
+                    for itype in range(len(self.sel_type)): # Atomic polar mode, should specify the atoms
+                        index_lis = [index for index, w in enumerate(atom_has_polar) \
+                                        if atom_has_polar[index] == self.sel_type[itype]]   # select index in this type
+
+                        sys_matrix.append(np.zeros((1,len(self.sel_type))))
+                        sys_matrix[-1][0,itype] = len(index_lis)
+
+                        polar_bias.append(np.sum(
+                            all_stat['atomic_polarizability'][ss].reshape((-1,9))[index_lis],axis=0).reshape((1,9)))
+                else:   # No atomic polar in this system, so it should have global polar
+                    if not all_stat['find_polarizability'][ss] > 0.0: # This system is jsut a joke?
+                        continue
+                    # Till here, we have global polar
+                    sys_matrix.append(np.zeros((1,len(self.sel_type)))) # add a line in the equations
+                    for itype in range(len(self.sel_type)): # Atomic polar mode, should specify the atoms
+                        index_lis = [index for index, w in enumerate(atom_has_polar) \
+                                        if atom_has_polar[index] == self.sel_type[itype]]   # select index in this type
+
+                        sys_matrix[-1][0,itype] = len(index_lis)
+                    
+                    # add polar_bias
+                    polar_bias.append(all_stat['polarizability'][ss].reshape((1,9)))
+
+            matrix, bias = np.concatenate(sys_matrix,axis=0), np.concatenate(polar_bias,axis=0)
+            atom_polar,_,_,_ \
+                = np.linalg.lstsq(matrix, bias, rcond = 1e-3)
+            for itype in range(len(self.sel_type)):
+                self.constant_matrix[itype] = np.mean(np.diagonal(atom_polar[itype].reshape((3,3))))
 
     def build (self, 
                input_d : tf.Tensor,
@@ -308,7 +347,7 @@ class PolarFittingSeA () :
             # shift and scale
             sel_type_idx = self.sel_type.index(type_i)
             final_layer = final_layer * self.scale[sel_type_idx]
-            final_layer = final_layer + self.diag_shift[sel_type_idx] * tf.eye(3, batch_shape=[tf.shape(inputs)[0], natoms[2+type_i]], dtype = GLOBAL_TF_FLOAT_PRECISION)
+            final_layer = final_layer + self.constant_matrix[sel_type_idx] * tf.eye(3, batch_shape=[tf.shape(inputs)[0], natoms[2+type_i]], dtype = GLOBAL_TF_FLOAT_PRECISION)
 
             # concat the results
             if count == 0:

@@ -235,7 +235,7 @@ def parse_args(args: Optional[List[str]] = None):
         "--atomic",
         action="store_true",
         default=False,
-        help="Test the accuracy of atomic label, i.e. energy / dipole / polar",
+        help="Test the accuracy of atomic label, i.e. energy / tensor (dipole, polar)",
     )
 
     # * compress model *****************************************************************
