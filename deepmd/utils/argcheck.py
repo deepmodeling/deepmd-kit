@@ -457,7 +457,7 @@ def loss_variant_type_args():
     doc_loss = 'The type of the loss. When the fitting type is `ener`, the loss type should be set to `ener` or left unset. When the fitting type is `dipole` or `polar`, the loss type should be set to `tensor`. \n\.'
 
     
-    return Variant("loss_type", 
+    return Variant("type", 
                    [Argument("ener", dict, loss_ener()),
                     Argument("tensor", dict, loss_tensor()),
                     #Argument("polar", dict, loss_tensor()),
