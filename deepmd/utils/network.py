@@ -90,7 +90,8 @@ def embedding_net(xx,
     trainable: boolean
         If the netowk is trainable
     """
-    outputs_size = [1] + network_size
+    input_shape = xx.get_shape().as_list()
+    outputs_size = [input_shape[1]] + network_size
     
     for ii in range(1, len(outputs_size)):
         w = tf.get_variable('matrix_'+str(ii)+name_suffix, 

@@ -29,3 +29,8 @@ jobs:
         FLOAT_PREC: ${{ matrix.float_prec }}
         CC: gcc-7
         CXX: g++-7
+    - run: source/install/build_lammps.sh
+      env:
+        FLOAT_PREC: ${{ matrix.float_prec }}
+        CC: gcc-7
+        CXX: g++-7

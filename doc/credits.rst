@@ -2,7 +2,7 @@
 Authors and Credits
 *******************
 
-Core Package Contributors
+Package Contributors
 =========================
 
 * amacadmus

@@ -1,4 +1,4 @@
-import os, sys, dpdata
+import os, sys, dpdata, shutil
 import numpy as np
 import pathlib
 
@@ -21,6 +21,10 @@ tests_path = pathlib.Path(__file__).parent.absolute()
 
 def j_loader(filename):
     return dp_j_loader(tests_path/filename)
+
+def del_data():
+    if os.path.isdir('system'):
+        shutil.rmtree('system')
 
 def gen_data() :
     tmpdata = Data(rand_pert = 0.1, seed = 1)
