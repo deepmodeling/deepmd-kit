@@ -90,7 +90,7 @@ def test(
         elif dp.model_type == "dipole":
             err = test_dipole(dp, data, numb_test, detail_file, atomic)
         elif dp.model_type == "polar":
-            err = test_polar(dp, data, numb_test, detail_file, atomic)
+            err = test_polar(dp, data, numb_test, detail_file, atomic=atomic)
         elif dp.model_type == "global_polar":   # should not appear in this new version
             log.warning("Global polar model is not currently supported. Please directly use the polar mode and change loss parameters.")
             err = test_polar(dp, data, numb_test, detail_file, atomic=False)    # YWolfeee: downward compatibility
