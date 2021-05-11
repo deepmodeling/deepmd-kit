@@ -64,9 +64,9 @@ if (OPENMP_FOUND)
 endif()
 
 if (USE_CUDA_TOOLKIT)
-  target_link_libraries(runUnitTests gtest gtest_main ${libname} pthread deepmd_op_cuda)
+  target_link_libraries(runUnitTests gtest gtest_main ${libname} pthread deepmd_op_cuda coverage_config)
 else()
-  target_link_libraries(runUnitTests gtest gtest_main ${libname} pthread)
+  target_link_libraries(runUnitTests gtest gtest_main ${libname} pthread coverage_config)
 endif()
 add_test( runUnitTests runUnitTests )
 
