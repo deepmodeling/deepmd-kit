@@ -90,9 +90,10 @@ def test(
         elif dp.model_type == "dipole":
             err = test_dipole(dp, data, numb_test, detail_file, atomic)
         elif dp.model_type == "polar":
-            err = test_polar(dp, data, numb_test, detail_file, global_polar=False)
-        elif dp.model_type == "global_polar":
-            err = test_polar(dp, data, numb_test, detail_file, global_polar=True)
+            err = test_polar(dp, data, numb_test, detail_file, atomic=atomic)
+        elif dp.model_type == "global_polar":   # should not appear in this new version
+            log.warning("Global polar model is not currently supported. Please directly use the polar mode and change loss parameters.")
+            err = test_polar(dp, data, numb_test, detail_file, atomic=False)    # YWolfeee: downward compatibility
         log.info("# ----------------------------------------------- ")
         err_coll.append(err)
 
@@ -427,7 +428,7 @@ def test_polar(
     numb_test: int,
     detail_file: Optional[str],
     *,
-    global_polar: bool,
+    atomic: bool,
 ) -> Tuple[List[np.ndarray], List[int]]:
     """Test energy type model.
 
@@ -449,24 +450,15 @@ def test_polar(
     Tuple[List[np.ndarray], List[int]]
         arrays with results and their shapes
     """
-    if not global_polar:
-        data.add(
-            "polarizability",
-            9,
-            atomic=True,
-            must=True,
-            high_prec=False,
-            type_sel=dp.get_sel_type(),
-        )
-    else:
-        data.add(
-            "polarizability",
-            9,
-            atomic=False,
-            must=True,
-            high_prec=False,
-            type_sel=dp.get_sel_type(),
-        )
+    data.add(
+        "polarizability" if not atomic else "atomic_polarizability",
+        9,
+        atomic=atomic,
+        must=True,
+        high_prec=False,
+        type_sel=dp.get_sel_type(),
+    )
+    
     test_data = data.get_test()
     polar, numb_test, atype = run_test(dp, test_data, numb_test)
 
@@ -475,15 +467,21 @@ def test_polar(
     for ii in sel_type:
         sel_natoms += sum(atype == ii)
 
-    rmse_f = rmse(polar - test_data["polarizability"][:numb_test])
-    rmse_fs = rmse_f / np.sqrt(sel_natoms)
-    rmse_fa = rmse_f / sel_natoms
-
+    # YWolfeee: do summation in global polar mode
+    if not atomic:
+        polar = np.sum(polar.reshape((polar.shape[0],-1,9)),axis=1)    
+        rmse_f = rmse(polar - test_data["polarizability"][:numb_test])
+        rmse_fs = rmse_f / np.sqrt(sel_natoms)
+        rmse_fa = rmse_f / sel_natoms
+    else:
+        rmse_f = rmse(polar - test_data["atomic_polarizability"][:numb_test])
+    
     log.info(f"# number of test data : {numb_test:d} ")
-    log.info(f"Polarizability  RMSE       : {rmse_f:e} eV/A")
-    if global_polar:
-        log.info(f"Polarizability  RMSE/sqrtN : {rmse_fs:e} eV/A")
-        log.info(f"Polarizability  RMSE/N     : {rmse_fa:e} eV/A")
+    log.info(f"Polarizability  RMSE       : {rmse_f:e}")
+    if not atomic:
+        log.info(f"Polarizability  RMSE/sqrtN : {rmse_fs:e}")
+        log.info(f"Polarizability  RMSE/N     : {rmse_fa:e}")
+    log.info(f"The unit of error is the same as the unit of provided label.")
 
     if detail_file is not None:
         detail_path = Path(detail_file)
@@ -523,7 +521,7 @@ def test_dipole(
     data: DeepmdData,
     numb_test: int,
     detail_file: Optional[str],
-    has_atom_dipole: bool,
+    atomic: bool,
 ) -> Tuple[List[np.ndarray], List[int]]:
     """Test energy type model.
 
@@ -537,7 +535,7 @@ def test_dipole(
         munber of tests to do
     detail_file : Optional[str]
         file where test details will be output
-    has_atom_dipole : bool
+    atomic : bool
         whether atomic dipole is provided
 
     Returns
@@ -546,24 +544,36 @@ def test_dipole(
         arrays with results and their shapes
     """
     data.add(
-        "dipole", 3, atomic=has_atom_dipole, must=True, high_prec=False, type_sel=dp.get_sel_type()
+        "dipole" if not atomic else "atomic_dipole",
+        3, 
+        atomic=atomic, 
+        must=True, 
+        high_prec=False, 
+        type_sel=dp.get_sel_type()
     )
     test_data = data.get_test()
-    dipole, numb_test, _ = run_test(dp, test_data, numb_test)
+    dipole, numb_test, atype = run_test(dp, test_data, numb_test)
 
+    sel_type = dp.get_sel_type()
+    sel_natoms = 0
+    for ii in sel_type:
+        sel_natoms += sum(atype == ii)
+    
     # do summation in atom dimension
-    if has_atom_dipole == False:
-        dipole = np.reshape(dipole,(dipole.shape[0], -1, 3))
-        atoms = dipole.shape[1]
-        dipole = np.sum(dipole,axis=1)
-
-    rmse_f = rmse(dipole - test_data["dipole"][:numb_test])
-
-    if has_atom_dipole == False:
-        rmse_f = rmse_f / atoms
-
+    if not atomic:
+        dipole = np.sum(dipole.reshape((dipole.shape[0], -1, 3)),axis=1)
+        rmse_f = rmse(dipole - test_data["dipole"][:numb_test])
+        rmse_fs = rmse_f / np.sqrt(sel_natoms)
+        rmse_fa = rmse_f / sel_natoms
+    else:
+        rmse_f = rmse(dipole - test_data["atomic_dipole"][:numb_test])
+    
     log.info(f"# number of test data : {numb_test:d}")
-    log.info(f"Dipole  RMSE         : {rmse_f:e} eV/A")
+    log.info(f"Dipole  RMSE       : {rmse_f:e}")
+    if not atomic:
+        log.info(f"Dipole  RMSE/sqrtN : {rmse_fs:e}")
+        log.info(f"Dipole  RMSE/N     : {rmse_fa:e}")
+    log.info(f"The unit of error is the same as the unit of provided label.")
 
     if detail_file is not None:
         detail_path = Path(detail_file)

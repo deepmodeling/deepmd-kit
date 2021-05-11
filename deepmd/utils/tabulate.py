@@ -41,13 +41,17 @@ class DeepTabulate():
         self.sub_graph, self.sub_graph_def = self._load_sub_graph()
         self.sub_sess = tf.Session(graph = self.sub_graph)
 
-        self.sel_a = self.graph.get_operation_by_name('DescrptSeA').get_attr('sel_a')
+        try:
+            self.sel_a = self.graph.get_operation_by_name('ProdEnvMatA').get_attr('sel_a')
+            self.descrpt = self.graph.get_operation_by_name ('ProdEnvMatA')
+        except Exception:
+            self.sel_a = self.graph.get_operation_by_name('DescrptSeA').get_attr('sel_a')
+            self.descrpt = self.graph.get_operation_by_name ('DescrptSeA')
         self.ntypes = self._get_tensor_value(self.graph.get_tensor_by_name ('descrpt_attr/ntypes:0'))
-
         self.davg = self._get_tensor_value(self.graph.get_tensor_by_name ('descrpt_attr/t_avg:0'))
         self.dstd = self._get_tensor_value(self.graph.get_tensor_by_name ('descrpt_attr/t_std:0'))
 
-        self.descrpt = self.graph.get_operation_by_name ('DescrptSeA')
+        
         self.rcut = self.descrpt.get_attr('rcut_r')
         self.rcut_smth = self.descrpt.get_attr('rcut_r_smth')
 

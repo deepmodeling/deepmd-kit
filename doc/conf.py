@@ -10,10 +10,51 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
-# import os
+import os
 # import sys
-# sys.path.insert(0, os.path.abspath('.'))
+import recommonmark
+from recommonmark.transform import AutoStructify
 
+def mkindex_troubleshooting():
+    oldfindex = open("troubleshooting/index.md", "r")
+    _oldlist = oldfindex.readlines()
+    oldlist = _oldlist[4:]
+    oldfindex.close()
+    
+    newfindex = open("troubleshooting/index.md", "a")
+    for root, dirs, files in os.walk("./troubleshooting/", topdown=False):
+        for name in files:
+            if (name == "index.md"):
+                continue
+            if (name[-3:] == ".md"):
+                longname = "- ["+name[:-3]+"]("+name+")\n"
+                if (longname not in oldlist):
+                    newfindex.write(longname)
+    
+    newfindex.close()
+
+def mkindex_development():
+    oldfindex = open("development/index.md", "r")
+    _oldlist = oldfindex.readlines()
+    oldlist = _oldlist[2:]
+    oldfindex.close()
+    
+    newfindex = open("development/index.md", "a")
+    for root, dirs, files in os.walk("./development/", topdown=False):
+        for name in files:
+            if (name == "index.md"):
+                continue
+            if (name[-3:] == ".md"):
+                longname = "- ["+name[:-3]+"]("+name+")\n"
+                if (longname not in oldlist):
+                    newfindex.write(longname)
+            else:
+                if (name[-4:] == ".rst"):
+                    longname = "- ["+name[:-4]+"]("+name+")\n"
+                    if (longname not in oldlist):
+                        newfindex.write(longname)
+    
+    newfindex.close()
 
 # -- Project information -----------------------------------------------------
 
@@ -27,11 +68,24 @@ author = 'Deep Potential'
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
+# extensions = [
+#     'recommonmark',
+#     "sphinx_rtd_theme",
+#     'myst_parser',
+#     'sphinx_markdown_tables',
+#     'sphinx.ext.autosummary'
+# ]
+
+mkindex_troubleshooting()
+mkindex_development()
+
 extensions = [
-    'recommonmark',
     "sphinx_rtd_theme",
+    'myst_parser',
     'sphinx.ext.autosummary'
 ]
+
+myst_heading_anchors = 4
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
