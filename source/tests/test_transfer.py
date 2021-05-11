@@ -87,7 +87,7 @@ class TestTransform(unittest.TestCase) :
 
     def test(self):
         ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(self.coords, self.box, self.atype, atomic = True)
-        ee1, ff1, vv1, ae1, av1 = self.dp_original.eval(self.coords, self.box, self.atype, atomic = True)
+        ee1, ff1, vv1, ae1, av1 = self.dp_transferred.eval(self.coords, self.box, self.atype, atomic = True)
         # check shape of the returns
         nframes = 1
         natoms = len(self.atype)
