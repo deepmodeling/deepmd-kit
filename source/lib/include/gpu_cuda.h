@@ -13,6 +13,14 @@ inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort=
   }
 }
 
+#define nborErrcheck(res) {nborAssert((res), __FILE__, __LINE__);}
+inline void nborAssert(cudaError_t code, const char *file, int line, bool abort=true) {
+    if (code != cudaSuccess) {
+        fprintf(stderr,"cuda assert: %s %s %d\n", "DeePMD-kit:\tillegal nbor list sorting", file, line);
+        if (abort) exit(code);
+    }
+}
+
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 600
 static __inline__ __device__ double atomicAdd(
     double* address, 

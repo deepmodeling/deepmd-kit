@@ -58,6 +58,7 @@ class TestModel(unittest.TestCase):
         model = EnerModel(
             descrpt, 
             fitting, 
+            None,
             jdata['model'].get('type_map'),
             jdata['model'].get('data_stat_nbatch'),
             jdata['model'].get('data_stat_protect'),

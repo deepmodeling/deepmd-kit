@@ -387,7 +387,7 @@ TEST_F(TestEnvMatR, prod_gpu_cuda)
   double * em_dev = NULL, * em_deriv_dev = NULL, * rij_dev = NULL;
   double * posi_cpy_dev = NULL, * avg_dev = NULL, * std_dev = NULL;
   int * atype_cpy_dev = NULL, * nlist_dev = NULL, * array_int_dev = NULL, * memory_dev = NULL;
-  int_64 * array_longlong_dev = NULL;
+  uint_64 * array_longlong_dev = NULL;
   deepmd::malloc_device_memory_sync(em_dev, em);
   deepmd::malloc_device_memory_sync(em_deriv_dev, em_deriv);
   deepmd::malloc_device_memory_sync(rij_dev, rij);
@@ -477,7 +477,7 @@ TEST_F(TestEnvMatR, prod_gpu_cuda_equal_cpu)
   double * em_dev = NULL, * em_deriv_dev = NULL, * rij_dev = NULL;
   double * posi_cpy_dev = NULL, * avg_dev = NULL, * std_dev = NULL;
   int * atype_cpy_dev = NULL, * nlist_dev = NULL, * array_int_dev = NULL, * memory_dev = NULL;
-  int_64 * array_longlong_dev = NULL;
+  uint_64 * array_longlong_dev = NULL;
   deepmd::malloc_device_memory_sync(em_dev, em);
   deepmd::malloc_device_memory_sync(em_deriv_dev, em_deriv);
   deepmd::malloc_device_memory_sync(rij_dev, rij);

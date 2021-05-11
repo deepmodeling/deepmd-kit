@@ -18,54 +18,32 @@ class TensorLoss () :
         self.tensor_name = kwarg['tensor_name']
         self.tensor_size = kwarg['tensor_size']
         self.label_name = kwarg['label_name']
-        self.atomic = kwarg.get('atomic', None)
         if jdata is not None:
             self.scale = jdata.get('scale', 1.0)
         else:
             self.scale = 1.0
 
         # YHT: added for global / local dipole combination
-        if self.atomic is True: # upper regulation, will control the lower behavior
-            self.local_weight,self.global_weight = 1.0,0.0
-        elif self.atomic is False: # upper regulation, will control the lower behavior
-            self.local_weight,self.global_weight = 0.0,1.0
-        else: # self.atomic is None, let the loss parameter decide which mode to use
-            if jdata is not None:
-                self.local_weight = jdata.get('pref_atomic_' + self.tensor_name,None)
-                self.global_weight = jdata.get('pref_' + self.tensor_name,None)
+        assert jdata is not None, "Please provide loss parameters!"
+        # YWolfeee: modify, use pref / pref_atomic, instead of pref_weight / pref_atomic_weight
+        self.local_weight = jdata.get('pref_atomic', None)
+        self.global_weight = jdata.get('pref', None)
 
-                # get the input parameter first
-                if self.local_weight is None and self.global_weight is None:
-                    # default: downward compatibility, using local mode
-                    self.local_weight , self.global_weight = 1.0, 0.0
-                    self.atomic = True
-                elif self.local_weight is None and self.global_weight is not None:
-                    # using global mode only, normalize to 1
-                    assert self.global_weight > 0.0, AssertionError('assign a zero weight to global dipole without setting a local weight')
-                    self.local_weight = 0.0
-                    self.atomic = False
-                elif self.local_weight is not None and self.global_weight is None:
-                    assert self.local_weight > 0.0, AssertionError('assign a zero weight to local dipole without setting a global weight')
-                    self.global_weight = 0.0
-                    self.atomic = True
-                else:   # Both are not None
-                    self.atomic = True if self.local_weight != 0.0 else False
-                    assert (self.local_weight >0.0) or (self.global_weight>0.0), AssertionError('can not assian zero weight to both local and global mode')
-
-                    # normalize, not do according to Han Wang's suggestion
-                    #temp_sum = self.local_weight + self.global_weight
-                    #self.local_weight   /=  temp_sum
-                    #self.global_weight  /=  temp_sum
-                    
-            else: # Nothing been set, use default setting
-                self.local_weight,self.global_weight = 1.0,0.0
-                self.atomic = True
+        assert (self.local_weight is not None and self.global_weight is not None), "Both `pref` and `pref_atomic` should be provided."
+        assert self.local_weight >= 0.0 and self.global_weight >= 0.0, "Can not assign negative weight to `pref` and `pref_atomic`"
+        assert (self.local_weight >0.0) or (self.global_weight>0.0), AssertionError('Can not assian zero weight both to `pref` and `pref_atomic`')
 
         # data required
+        add_data_requirement("atomic_" + self.label_name, 
+                             self.tensor_size, 
+                             atomic=True,  
+                             must=False, 
+                             high_prec=False, 
+                             type_sel = self.type_sel)
         add_data_requirement(self.label_name, 
                              self.tensor_size, 
-                             atomic=self.atomic,  
-                             must=True, 
+                             atomic=False,  
+                             must=False, 
                              high_prec=False, 
                              type_sel = self.type_sel)
 
@@ -76,10 +54,13 @@ class TensorLoss () :
                label_dict,
                suffix):        
         polar_hat = label_dict[self.label_name]
+        atomic_polar_hat = label_dict["atomic_" + self.label_name]
         polar = model_dict[self.tensor_name]
+
+        find_global = label_dict['find_' + self.label_name]
+        find_atomic = label_dict['find_atomic_' + self.label_name]
         
-        # YWolfeee: get the 2 norm of label, i.e. polar_hat
-        normalized_term = tf.sqrt(tf.reduce_sum(tf.square(polar_hat)))
+        
 
         # YHT: added for global / local dipole combination
         l2_loss = global_cvt_2_tf_float(0.0)
@@ -90,7 +71,7 @@ class TensorLoss () :
 
         
         if self.local_weight > 0.0:
-            local_loss = tf.reduce_mean( tf.square(self.scale*(polar - polar_hat)), name='l2_'+suffix)
+            local_loss = global_cvt_2_tf_float(find_atomic) * tf.reduce_mean( tf.square(self.scale*(polar - atomic_polar_hat)), name='l2_'+suffix)
             more_loss['local_loss'] = local_loss
             l2_loss += self.local_weight * local_loss
             self.l2_loss_local_summary = tf.summary.scalar('l2_local_loss', 
@@ -108,13 +89,13 @@ class TensorLoss () :
             # get global results
             global_polar = tf.reshape(tf.reduce_sum(tf.reshape(
                 polar, [nframes, -1, self.tensor_size]), axis=1),[-1])
-            if self.atomic: # If label is local, however
-                global_polar_hat = tf.reshape(tf.reduce_sum(tf.reshape(
-                    polar_hat, [nframes, -1, self.tensor_size]), axis=1),[-1])
-            else:
-                global_polar_hat = polar_hat
+            #if self.atomic: # If label is local, however
+            #    global_polar_hat = tf.reshape(tf.reduce_sum(tf.reshape(
+            #        polar_hat, [nframes, -1, self.tensor_size]), axis=1),[-1])
+            #else:
+            #    global_polar_hat = polar_hat
             
-            global_loss = tf.reduce_mean( tf.square(self.scale*(global_polar - global_polar_hat)), name='l2_'+suffix)
+            global_loss = global_cvt_2_tf_float(find_global) * tf.reduce_mean( tf.square(self.scale*(global_polar - polar_hat)), name='l2_'+suffix)
 
             more_loss['global_loss'] = global_loss
             self.l2_loss_global_summary = tf.summary.scalar('l2_global_loss', 
@@ -131,12 +112,7 @@ class TensorLoss () :
         self.l2_l = l2_loss
 
         self.l2_loss_summary = tf.summary.scalar('l2_loss', tf.sqrt(l2_loss))
-
-        # YWolfeee: loss normalization, do not influence the printed loss,
-        #           just change the training process
-        #return l2_loss, more_loss
-        return l2_loss / normalized_term, more_loss
-
+        return l2_loss, more_loss
 
     def eval(self, sess, feed_dict, natoms):
         atoms = 0

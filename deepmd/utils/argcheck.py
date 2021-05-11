@@ -18,6 +18,24 @@ def make_link(content, ref_key):
         else f'`{content} <#{ref_key}>`_'
 
 
+def type_embedding_args():
+    doc_neuron = 'Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.'
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
+    doc_seed = 'Random seed for parameter initialization'
+    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}'
+    doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}'
+    doc_trainable = 'If the parameters in the embedding net are trainable'
+    
+    return [
+        Argument("neuron", list, optional = True, default = [2, 4, 8], doc = doc_neuron),
+        Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
+        Argument("resnet_dt", bool, optional = True, default = False, doc = doc_resnet_dt),
+        Argument("precision", str, optional = True, default = "float64", doc = doc_precision),
+        Argument("trainable", bool, optional = True, default = True, doc = doc_trainable),
+        Argument("seed", [int,None], optional = True, doc = doc_seed),
+    ]        
+
+
 #  --- Descriptor configurations: --- #
 def descrpt_local_frame_args ():
     doc_sel_a = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_a[i]` gives the selected number of type-i neighbors. The full relative coordinates of the neighbors are used by the descriptor.'
@@ -79,7 +97,7 @@ def descrpt_se_t_args():
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}'
-    doc_trainable = 'If the parameters in the embedding net is trainable'
+    doc_trainable = 'If the parameters in the embedding net are trainable'
     doc_seed = 'Random seed for parameter initialization'
     doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
     
@@ -119,7 +137,7 @@ def descrpt_se_r_args():
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_type_one_side = 'Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets'
     doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}'
-    doc_trainable = 'If the parameters in the embedding net is trainable'
+    doc_trainable = 'If the parameters in the embedding net are trainable'
     doc_seed = 'Random seed for parameter initialization'
     doc_exclude_types = 'The Excluded types'
     doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
@@ -220,11 +238,14 @@ def fitting_polar():
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_precision = f'The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}'
     doc_scale = 'The output of the fitting net (polarizability matrix) will be scaled by ``scale``'
-    doc_diag_shift = 'The diagonal part of the polarizability matrix  will be shifted by ``diag_shift``. The shift operation is carried out after ``scale``.'
+    #doc_diag_shift = 'The diagonal part of the polarizability matrix  will be shifted by ``diag_shift``. The shift operation is carried out after ``scale``.'
     doc_fit_diag = 'Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to normal polarizability matrix by contracting with the rotation matrix.'
     doc_sel_type = 'The atom types for which the atomic polarizability will be provided. If not set, all types will be selected.'
     doc_seed = 'Random seed for parameter initialization of the fitting net'
     
+    # YWolfeee: user can decide whether to use shift diag
+    doc_shift_diag = 'Whether to shift the diagonal of polar, which is beneficial to training. Default is true.'
+
     return [
         Argument("neuron", list, optional = True, default = [120,120,120], doc = doc_neuron),
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
@@ -232,14 +253,15 @@ def fitting_polar():
         Argument("precision", str, optional = True, default = 'float64', doc = doc_precision),
         Argument("fit_diag", bool, optional = True, default = True, doc = doc_fit_diag),
         Argument("scale", [list,float], optional = True, default = 1.0, doc = doc_scale),
-        Argument("diag_shift", [list,float], optional = True, default = 0.0, doc = doc_diag_shift),
+        #Argument("diag_shift", [list,float], optional = True, default = 0.0, doc = doc_diag_shift),
+        Argument("shift_diag", bool, optional = True, default = True, doc = doc_shift_diag),
         Argument("sel_type", [list,int,None], optional = True, doc = doc_sel_type),
         Argument("seed", [int,None], optional = True, doc = doc_seed)
     ]
 
 
-def fitting_global_polar():
-    return fitting_polar()
+#def fitting_global_polar():
+#    return fitting_polar()
 
 
 def fitting_dipole():
@@ -258,18 +280,17 @@ def fitting_dipole():
         Argument("seed", [int,None], optional = True, doc = doc_seed)
     ]    
 
-
+#   YWolfeee: Delete global polar mode, merge it into polar mode and use loss setting to support.
 def fitting_variant_type_args():
     doc_descrpt_type = 'The type of the fitting. See explanation below. \n\n\
 - `ener`: Fit an energy model (potential energy surface).\n\n\
-- `dipole`: Fit an atomic dipole model. Atomic dipole labels for all the selected atoms (see `sel_type`) should be provided by `dipole.npy` in each data system. The file has number of frames lines and 3 times of number of selected atoms columns.\n\n\
-- `polar`: Fit an atomic polarizability model. Atomic polarizability labels for all the selected atoms (see `sel_type`) should be provided by `polarizability.npy` in each data system. The file has number of frames lines and 9 times of number of selected atoms columns.\n\n\
-- `global_polar`: Fit a polarizability model. Polarizability labels should be provided by `polarizability.npy` in each data system. The file has number of frames lines and 9 columns.'
-    
+- `dipole`: Fit an atomic dipole model. Global dipole labels or atomic dipole labels for all the selected atoms (see `sel_type`) should be provided by `dipole.npy` in each data system. The file either has number of frames lines and 3 times of number of selected atoms columns, or has number of frames lines and 3 columns. See `loss` parameter.\n\n\
+- `polar`: Fit an atomic polarizability model. Global polarizazbility labels or atomic polarizability labels for all the selected atoms (see `sel_type`) should be provided by `polarizability.npy` in each data system. The file eith has number of frames lines and 9 times of number of selected atoms columns, or has number of frames lines and 9 columns. See `loss` parameter.\n\n'
+
     return Variant("type", [Argument("ener", dict, fitting_ener()),
                             Argument("dipole", dict, fitting_dipole()),
                             Argument("polar", dict, fitting_polar()),
-                            Argument("global_polar", dict, fitting_global_polar())], 
+                            ], 
                    optional = True,
                    default_tag = 'ener',
                    doc = doc_descrpt_type)
@@ -302,11 +323,35 @@ def modifier_variant_type_args():
                    optional = False,
                    doc = doc_modifier_type)
 
+#  --- model compression configurations: --- #
+def model_compression():
+    doc_compress = "The name of the frozen model file."
+    doc_model_file = f"The input model file, which will be compressed by the DeePMD-kit."
+    doc_table_config = f"The arguments of model compression, including extrapolate(scale of model extrapolation), stride(uniform stride of tabulation's first and second table), and frequency(frequency of tabulation overflow check)."
+    
+    return [
+        Argument("compress", bool, optional = False, default = True, doc = doc_compress),
+        Argument("model_file", str, optional = False, default = 'frozen_model.pb', doc = doc_model_file),
+        Argument("table_config", list, optional = False, default = [5, 0.01, 0.1, -1], doc = doc_table_config),
+    ]
 
-def model_args ():
+#  --- model compression configurations: --- #
+def model_compression_type_args():
+    doc_compress_type = "The type of model compression, which should be consistent with the descriptor type."
+    
+    return Variant("type", [
+            Argument("se_e2_a", dict, model_compression(), alias = ['se_a'])
+        ],
+        optional = True,
+        default_tag = 'se_e2_a',
+        doc = doc_compress_type)
+
+
+def model_args ():    
     doc_type_map = 'A list of strings. Give the name to each type of atoms.'
     doc_data_stat_nbatch = 'The model determines the normalization from the statistics of the data. This key specifies the number of `frames` in each `system` used for statistics.'
     doc_data_stat_protect = 'Protect parameter for atomic energy regression.'
+    doc_type_embedding = "The type embedding."
     doc_descrpt = 'The descriptor of atomic environment.'
     doc_fitting = 'The fitting of physical properties.'
     doc_modifier = 'The modifier of model output.'
@@ -314,6 +359,7 @@ def model_args ():
     doc_smin_alpha = 'The short-range tabulated interaction will be swithed according to the distance of the nearest neighbor. This distance is calculated by softmin. This parameter is the decaying parameter in the softmin. It is only required when `use_srtab` is provided.'
     doc_sw_rmin = 'The lower boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.'
     doc_sw_rmax = 'The upper boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.'
+    doc_compress_config = 'Model compression configurations'
 
     ca = Argument("model", dict, 
                   [Argument("type_map", list, optional = True, doc = doc_type_map),
@@ -323,9 +369,11 @@ def model_args ():
                    Argument("smin_alpha", float, optional = True, doc = doc_smin_alpha),
                    Argument("sw_rmin", float, optional = True, doc = doc_sw_rmin),
                    Argument("sw_rmax", float, optional = True, doc = doc_sw_rmax),
+                   Argument("type_embedding", dict, type_embedding_args(), [], optional = True, doc = doc_type_embedding),
                    Argument("descriptor", dict, [], [descrpt_variant_type_args()], doc = doc_descrpt),
                    Argument("fitting_net", dict, [], [fitting_variant_type_args()], doc = doc_fitting),
                    Argument("modifier", dict, [], [modifier_variant_type_args()], optional = True, doc = doc_modifier),
+                   Argument("compress", dict, [], [model_compression_type_args()], optional = True, doc = doc_compress_config)
                   ])
     # print(ca.gen_doc())
     return ca
@@ -394,31 +442,26 @@ def loss_ener():
     ]
 
 # YWolfeee: Modified to support tensor type of loss args.
-def loss_tensor(default_mode):
-    if default_mode == "local":
-        doc_global_weight = "The prefactor of the weight of global loss. It should be larger than or equal to 0. If not provided, training will be atomic mode, i.e. atomic label should be provided." 
-        doc_local_weight =  "The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If it's not provided and global weight is provided, training will be global mode, i.e. global label should be provided. If both global and atomic weight are not provided, training will be atomic mode, i.e.  atomic label should be provided." 
-        return [
-            Argument("pref_weight", [float,int], optional = True, default = None, doc = doc_global_weight),
-            Argument("pref_atomic_weight", [float,int], optional = True, default = None, doc = doc_local_weight),
-        ]
-    else:
-        doc_local_weight = "The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If not provided, training will be global mode, i.e. global label should be provided." 
-        doc_global_weight =  "The prefactor of the weight of global loss. It should be larger than or equal to 0. If it's not provided and atomic weight is provided, training will be atomic mode, i.e. atomic label should be provided. If both global and atomic weight are not provided, training will be global mode, i.e.  global label should be provided." 
-        return [
-            Argument("pref_weight", [float,int], optional = True, default = None, doc = doc_global_weight),
-            Argument("pref_atomic_weight", [float,int], optional = True, default = None, doc = doc_local_weight),
-        ]
+def loss_tensor():
+    #doc_global_weight = "The prefactor of the weight of global loss. It should be larger than or equal to 0. If only `pref` is provided or both are not provided, training will be global mode, i.e. the shape of 'polarizability.npy` or `dipole.npy` should be #frams x [9 or 3]." 
+    #doc_local_weight =  "The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If only `pref_atomic` is provided, training will be atomic mode, i.e. the shape of `polarizability.npy` or `dipole.npy` should be #frames x ([9 or 3] x #selected atoms). If both `pref` and `pref_atomic` are provided, training will be combined mode, and atomic label should be provided as well." 
+    doc_global_weight = "The prefactor of the weight of global loss. It should be larger than or equal to 0. If controls the weight of loss corresponding to global label, i.e. 'polarizability.npy` or `dipole.npy`, whose shape should be #frames x [9 or 3]. If it's larger than 0.0, this npy should be included." 
+    doc_local_weight =  "The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If controls the weight of loss corresponding to atomic label, i.e. `atomic_polarizability.npy` or `atomic_dipole.npy`, whose shape should be #frames x ([9 or 3] x #selected atoms). If it's larger than 0.0, this npy should be included. Both `pref` and `pref_atomic` should be provided, and either can be set to 0.0." 
+    return [
+        Argument("pref", [float,int], optional = False, default = None, doc = doc_global_weight),
+        Argument("pref_atomic", [float,int], optional = False, default = None, doc = doc_local_weight),
+    ]
+
 
 def loss_variant_type_args():
-    doc_loss = 'The type of the loss. The loss type should be set to the fitting type or left unset.\n\.'
+    doc_loss = 'The type of the loss. When the fitting type is `ener`, the loss type should be set to `ener` or left unset. When the fitting type is `dipole` or `polar`, the loss type should be set to `tensor`. \n\.'
 
     
     return Variant("type", 
                    [Argument("ener", dict, loss_ener()),
-                    Argument("dipole", dict, loss_tensor("local")),
-                    Argument("polar", dict, loss_tensor("local")),
-                    Argument("global_polar", dict, loss_tensor("global"))
+                    Argument("tensor", dict, loss_tensor()),
+                    #Argument("polar", dict, loss_tensor()),
+                    #Argument("global_polar", dict, loss_tensor("global"))
                     ],
                    optional = True,
                    default_tag = 'ener',
@@ -426,7 +469,7 @@ def loss_variant_type_args():
 
 
 def loss_args():
-    doc_loss = 'The definition of loss function. The loss type should be set to the fitting type or left unset.\n\.'
+    doc_loss = 'The definition of loss function. The loss type should be set to `tensor`, `ener` or left unset.\n\.'
     ca = Argument('loss', dict, [], 
                   [loss_variant_type_args()],
                   optional = True,

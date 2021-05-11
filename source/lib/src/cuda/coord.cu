@@ -72,26 +72,16 @@ __global__ void normalize_one(
 }
 
 template<typename FPTYPE>
-__global__ void _compute_int_data(
+__global__ void _fill_idx_cellmap(
+    int * idx_cellmap,
+    int * idx_cellmap_noshift,
     const FPTYPE *in_c,
+    const FPTYPE *rec_boxt,
     const int *nat_stt,
     const int *nat_end,
     const int *ext_stt,
     const int *ext_end,
-    const int *ngcell,
-    const FPTYPE *boxt,
-    const FPTYPE *rec_boxt,
-    int * idx_cellmap,
-    int * idx_cellmap_noshift,
-    int * total_cellnum_map,
-    int * mask_cellnum_map,
-    int * cell_map,
-    int * loc_cellnum_map,
-    int * cell_shift_map,
-    int * temp_idx_order,
-    const int nloc,
-    const int loc_cellnum,
-    const int total_cellnum)
+    const int nloc)
 {
     int idy = blockIdx.x*blockDim.x+threadIdx.x;
     int ext_ncell[3];
@@ -129,7 +119,16 @@ __global__ void _compute_int_data(
         idx_cellmap_noshift[idy]=collapse_index(idx_noshift, global_grid);
         idx_cellmap[idy]=collapse_index(idx, ext_ncell);
     }
-    __syncthreads();
+}
+
+__global__ void _fill_loc_cellnum_map(
+    int * temp_idx_order,
+    int * loc_cellnum_map,
+    const int * idx_cellmap_noshift,
+    const int nloc,
+    const int loc_cellnum)
+{
+    int idy = blockIdx.x*blockDim.x+threadIdx.x;
     if (idy<loc_cellnum)
     {
         int num=0;
@@ -143,7 +142,30 @@ __global__ void _compute_int_data(
         }
         loc_cellnum_map[idy]=num;
     }
-    __syncthreads();
+}
+
+__global__ void _fill_total_cellnum_map(
+    int * total_cellnum_map,
+    int * mask_cellnum_map,
+    int * cell_map,
+    int * cell_shift_map,
+    const int * nat_stt,
+    const int * nat_end,
+    const int * ext_stt,
+    const int * ext_end,
+    const int * loc_cellnum_map,
+    const int total_cellnum)
+{
+    int idy = blockIdx.x*blockDim.x+threadIdx.x;
+    int ext_ncell[3];
+    int global_grid[3];
+    int idx_orig_shift[3];
+    for (int dd = 0; dd < 3; ++dd) 
+    {
+        ext_ncell[dd] = ext_end[dd] - ext_stt[dd];
+        global_grid[dd] = nat_end[dd] - nat_stt[dd];
+        idx_orig_shift[dd] = nat_stt[dd] - ext_stt[dd];
+    }
     if(idy<total_cellnum)
     {
         int * shift=cell_shift_map+idy*3;
@@ -252,8 +274,6 @@ void compute_int_data(
     const int loc_cellnum, 
     const int total_cellnum)
 {
-    const int nn=(nloc>=total_cellnum)?nloc:total_cellnum; 
-    const int nblock=(nn+TPB-1)/TPB;
     int * idx_cellmap=int_data;
     int * idx_cellmap_noshift=idx_cellmap+nloc;
     int * temp_idx_order=idx_cellmap_noshift+nloc;
@@ -262,17 +282,23 @@ void compute_int_data(
     int * mask_cellnum_map=total_cellnum_map+total_cellnum;
     int * cell_map=mask_cellnum_map+total_cellnum;
     int * cell_shift_map=cell_map+total_cellnum;
-    
     const int * nat_stt=cell_info;
     const int * nat_end=cell_info+3;
     const int * ext_stt=cell_info+6;
     const int * ext_end=cell_info+9;
-    const int * ngcell=cell_info+12;
-    const FPTYPE * boxt = region.boxt;
     const FPTYPE * rec_boxt = region.rec_boxt;
-    _compute_int_data<<<nblock, TPB>>>(in_c, nat_stt, nat_end, ext_stt, ext_end, ngcell,
-        boxt, rec_boxt, idx_cellmap, idx_cellmap_noshift, total_cellnum_map, mask_cellnum_map,
-        cell_map, loc_cellnum_map, cell_shift_map, temp_idx_order, nloc, loc_cellnum, total_cellnum);
+    
+    const int nblock_loc=(nloc+TPB-1)/TPB;
+    _fill_idx_cellmap<<<nblock_loc, TPB>>>(idx_cellmap, idx_cellmap_noshift, in_c, rec_boxt, 
+        nat_stt, nat_end, ext_stt, ext_end, nloc);
+
+    const int nblock_loc_cellnum=(loc_cellnum+TPB-1)/TPB;
+    _fill_loc_cellnum_map<<<nblock_loc_cellnum, TPB>>>(temp_idx_order, loc_cellnum_map, 
+        idx_cellmap_noshift, nloc, loc_cellnum);
+
+    const int nblock_total_cellnum=(total_cellnum+TPB-1)/TPB;
+    _fill_total_cellnum_map<<<nblock_total_cellnum, TPB>>>(total_cellnum_map, mask_cellnum_map, cell_map, 
+        cell_shift_map, nat_stt, nat_end, ext_stt, ext_end, loc_cellnum_map, total_cellnum);
 }
 
 void build_loc_clist(
