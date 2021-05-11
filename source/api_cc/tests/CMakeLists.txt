@@ -21,6 +21,16 @@ set(LIB_BASE_DIR ${CMAKE_SOURCE_DIR}/../../lib)
 include_directories(${LIB_BASE_DIR}/include)
 file(GLOB LIB_SRC ${LIB_BASE_DIR}/src/*.cc ${LIB_BASE_DIR}/src/*.cpp)
 add_library(${libname} SHARED ${LIB_SRC})
+target_compile_options(${libname} INTERFACE
+  -O0        # no optimization
+  -g         # generate debug info
+  --coverage # sets all required flags
+)
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.13)
+  target_link_options(${libname} INTERFACE --coverage)
+else()
+  target_link_libraries(${libname} INTERFACE --coverage)
+endif()
 
 set(apiname "deepmd_api")
 set(API_BASE_DIR ${CMAKE_SOURCE_DIR}/../)

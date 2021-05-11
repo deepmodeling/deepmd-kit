@@ -15,6 +15,7 @@ make -j${NPROC}
 
 #------------------
 ${BUILD_TMP_DIR}/runUnitTests
+bash <(curl -s https://codecov.io/bash) || echo "Codecov did not collect coverage reports"
 
 
 #------------------
@@ -30,4 +31,5 @@ make -j${NPROC}
 #------------------
 cd ${SCRIPT_PATH}/../api_cc/tests
 ${BUILD_TMP_DIR}/runUnitTests
+bash <(curl -s https://codecov.io/bash) || echo "Codecov did not collect coverage reports"
 
