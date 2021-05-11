@@ -137,11 +137,12 @@ class DPTrainer (object):
         # type embedding
         if typeebd_param is not None:
             self.typeebd = TypeEmbedNet(
-                typeebd_param['neuron'],
-                typeebd_param['resnet_dt'],
-                typeebd_param['activation_function'],
-                typeebd_param['precision'],
-                typeebd_param['seed']
+                neuron=typeebd_param['neuron'],
+                resnet_dt=typeebd_param['resnet_dt'],
+                activation_function=typeebd_param['activation_function'],
+                precision=typeebd_param['precision'],
+                trainable=typeebd_param['trainable'],
+                seed=typeebd_param['seed']
             )
         else:
             self.typeebd = None
