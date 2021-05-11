@@ -598,15 +598,12 @@ void PairDeepMD::compute(int eflag, int vflag)
 	  // double std_e_1 = 0;
 	  // deep_pot_model_devi.compute_std(std_e_1, avg_e, sum_e);	
 	  fp << setw(12) << update->ntimestep 
-	     << " " << setw(18) << 0.
-	     << " " << setw(18) << 0.
-	     << " " << setw(18) << 0.
-	     << " " << setw(18) << all_f_max 
-	     << " " << setw(18) << all_f_min
-	     << " " << setw(18) << all_f_avg
 	     << " " << setw(18) << all_v_max
 	     << " " << setw(18) << all_v_min
-	     << " " << setw(18) << all_v_avg;
+	     << " " << setw(18) << all_v_avg
+	     << " " << setw(18) << all_f_max 
+	     << " " << setw(18) << all_f_min
+	     << " " << setw(18) << all_f_avg;
 	     // << " " << setw(18) << avg_e
 	     // << " " << setw(18) << std_e_1 / all_nlocal
 	  if (out_each == 1){
@@ -843,15 +840,12 @@ void PairDeepMD::settings(int narg, char **arg)
       fp << scientific;
       fp << "#"
 	 << setw(12-1) << "step" 
-	 << setw(18+1) << "zeros"
-	 << setw(18+1) << "zeros"
-	 << setw(18+1) << "zeros"
-	 << setw(18+1) << "max_devi_f"
-	 << setw(18+1) << "min_devi_f"
-	 << setw(18+1) << "avg_devi_f"
 	 << setw(18+1) << "max_devi_v"
 	 << setw(18+1) << "min_devi_v"
 	 << setw(18+1) << "avg_devi_v"
+	 << setw(18+1) << "max_devi_f"
+	 << setw(18+1) << "min_devi_f"
+	 << setw(18+1) << "avg_devi_f"
 	 << endl;
     }
     string pre = "  ";
