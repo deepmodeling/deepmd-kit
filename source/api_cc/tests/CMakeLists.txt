@@ -92,7 +92,7 @@ else()
 endif()
 
 if (USE_CUDA_TOOLKIT)
-  target_link_libraries(runUnitTests gtest gtest_main ${libname} pthread deepmd_op_cuda coverage_config)
+  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} deepmd_op_cuda coverage_config)
 else()
   target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} coverage_config)
 endif()

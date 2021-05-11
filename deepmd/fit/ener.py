@@ -348,6 +348,7 @@ class EnerFitting ():
             
         inputs = tf.cast(tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]]), self.fitting_precision)
         inputs_zero = tf.zeros_like(inputs, dtype=GLOBAL_TF_FLOAT_PRECISION)
+        
 
         if bias_atom_e is not None :
             assert(len(bias_atom_e) == self.ntypes)
@@ -370,6 +371,7 @@ class EnerFitting ():
             type_embedding = None
         if type_embedding is not None:
             atype_embed = embed_atom_type(self.ntypes, natoms, type_embedding)
+            atype_embed = tf.tile(atype_embed,[tf.shape(inputs)[0],1])
         else:
             atype_embed = None
 
