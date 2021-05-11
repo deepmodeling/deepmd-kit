@@ -1,10 +1,10 @@
-import os,sys,platform,shutil,dpdata
+import os,sys,platform,shutil,dpdata,json
 import numpy as np
 import unittest
 
 from deepmd.env import tf
 from deepmd.infer import DeepPot
-from common import tests_path
+from common import j_loader, tests_path
 from infer.convert2pb import convert_pbtxt_to_pb
 from deepmd.entrypoints.transfer import load_graph, transform_graph
 
@@ -14,10 +14,52 @@ if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
 else :
     default_places = 10
 
+def _file_delete(file) :
+    if os.path.exists(file):
+        os.remove(file)
+
 class TestTransform(unittest.TestCase) :
     def setUp(self):
-        convert_pbtxt_to_pb(str(tests_path / os.path.join("infer","deeppot.pbtxt")), "deeppot.pb")
-        convert_pbtxt_to_pb(str(tests_path / os.path.join("infer","deeppot-1.pbtxt")), "deeppot-1.pb")        
+        self.data_file  = str(tests_path / os.path.join("model_compression", "data"))
+        self.original_model = str(tests_path / "dp-original.pb")
+        self.frozen_model = str(tests_path / "dp-frozen.pb")
+        self.transferred_model = str(tests_path / "dp-transferred.pb")
+        self.INPUT = str(tests_path / "input.json")
+        jdata = j_loader(str(tests_path / os.path.join("model_compression", "input.json")))
+        jdata["training"]["training_data"]["systems"] = self.data_file
+        jdata["training"]["validation_data"]["systems"] = self.data_file
+        jdata["model"]["descriptor"]["seed"] = 1
+        jdata["model"]["fitting_net"]["seed"] = 1
+        with open(self.INPUT, "w") as fp:
+            json.dump(jdata, fp, indent=4)
+
+        # generate the original input model
+        ret = os.system("dp train " + self.INPUT)
+        assert(ret == 0), "DP train error!"
+        ret = os.system("dp freeze -o " + self.original_model)
+        assert(ret == 0), "DP freeze error!"
+
+        # generate the frozen raw model
+        jdata = j_loader(str(tests_path / os.path.join("model_compression", "input.json")))
+        jdata["training"]["training_data"]["systems"] = self.data_file
+        jdata["training"]["validation_data"]["systems"] = self.data_file
+        jdata["model"]["descriptor"]["seed"] = 2
+        jdata["model"]["fitting_net"]["seed"] = 2
+        _file_delete(self.INPUT)
+        with open(self.INPUT, "w") as fp:
+            json.dump(jdata, fp, indent=4)
+        ret = os.system("dp train " + self.INPUT)
+        assert(ret == 0), "DP train error!"
+        ret = os.system("dp freeze -o " + self.frozen_model)
+        assert(ret == 0), "DP freeze error!"
+        
+        # generate the transferred output model
+        ret = os.system("dp transfer -O " + self.original_model + " -r " + self.frozen_model + " -o " + self.transferred_model)
+        assert(ret == 0), "DP transfer error!"
+        
+        self.dp_original = DeepPot(self.original_model)
+        self.dp_transferred = DeepPot(self.transferred_model)
+
         self.coords = np.array([12.83, 2.56, 2.18,
                                 12.09, 2.87, 2.74,
                                 00.25, 3.32, 1.68,
@@ -31,37 +73,45 @@ class TestTransform(unittest.TestCase) :
         self.expected_v = np.array([-2.912234126853306959e-01,-3.800610846612756388e-02,2.776624987489437202e-01,-5.053761003913598976e-02,-3.152373041953385746e-01,1.060894290092162379e-01,2.826389131596073745e-01,1.039129970665329250e-01,-2.584378792325942586e-01,-3.121722367954994914e-01,8.483275876786681990e-02,2.524662342344257682e-01,4.142176771106586414e-02,-3.820285230785245428e-02,-2.727311173065460545e-02,2.668859789777112135e-01,-6.448243569420382404e-02,-2.121731470426218846e-01,-8.624335220278558922e-02,-1.809695356746038597e-01,1.529875294531883312e-01,-1.283658185172031341e-01,-1.992682279795223999e-01,1.409924999632362341e-01,1.398322735274434292e-01,1.804318474574856390e-01,-1.470309318999652726e-01,-2.593983661598450730e-01,-4.236536279233147489e-02,3.386387920184946720e-02,-4.174017537818433543e-02,-1.003500282164128260e-01,1.525690815194478966e-01,3.398976109910181037e-02,1.522253908435125536e-01,-2.349125581341701963e-01,9.515545977581392825e-04,-1.643218849228543846e-02,1.993234765412972564e-02,6.027265332209678569e-04,-9.563256398907417355e-02,1.510815124001868293e-01,-7.738094816888557714e-03,1.502832772532304295e-01,-2.380965783745832010e-01,-2.309456719810296654e-01,-6.666961081213038098e-02,7.955566551234216632e-02,-8.099093777937517447e-02,-3.386641099800401927e-02,4.447884755740908608e-02,1.008593228579038742e-01,4.556718179228393811e-02,-6.078081273849572641e-02])
         
     def tearDown(self):
-        os.remove("deeppot.pb")
-        os.remove("deeppot-1.pb")
+        _file_delete(self.INPUT)
+        _file_delete(self.original_model)
+        _file_delete(self.frozen_model)
+        _file_delete(self.transferred_model)
+        _file_delete("out.json")
+        _file_delete("compress.json")
+        _file_delete("checkpoint")
+        _file_delete("lcurve.out")
+        _file_delete("model.ckpt.meta")
+        _file_delete("model.ckpt.index")
+        _file_delete("model.ckpt.data-00000-of-00001")
 
     def test(self):
-        self.graph0 = load_graph("deeppot.pb")
-        self.graph1 = load_graph("deeppot-1.pb")
-        new_graph_def = transform_graph(self.graph1, self.graph0)
-        with tf.gfile.GFile("deeppot-2.pb", mode='wb') as f:
-            f.write(new_graph_def.SerializeToString())
-        self.dp = DeepPot("deeppot-2.pb")
-        os.remove("deeppot-2.pb")
-        ee, ff, vv, ae, av = self.dp.eval(self.coords, self.box, self.atype, atomic = True)
+        ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(self.coords, self.box, self.atype, atomic = True)
+        ee1, ff1, vv1, ae1, av1 = self.dp_original.eval(self.coords, self.box, self.atype, atomic = True)
         # check shape of the returns
         nframes = 1
         natoms = len(self.atype)
-        self.assertEqual(ee.shape, (nframes,1))
-        self.assertEqual(ff.shape, (nframes,natoms,3))
-        self.assertEqual(vv.shape, (nframes,9))
-        self.assertEqual(ae.shape, (nframes,natoms,1))
-        self.assertEqual(av.shape, (nframes,natoms,9))
+        self.assertEqual(ee0.shape, (nframes,1))
+        self.assertEqual(ff0.shape, (nframes,natoms,3))
+        self.assertEqual(vv0.shape, (nframes,9))
+        self.assertEqual(ae0.shape, (nframes,natoms,1))
+        self.assertEqual(av0.shape, (nframes,natoms,9))
+        self.assertEqual(ee1.shape, (nframes,1))
+        self.assertEqual(ff1.shape, (nframes,natoms,3))
+        self.assertEqual(vv1.shape, (nframes,9))
+        self.assertEqual(ae1.shape, (nframes,natoms,1))
+        self.assertEqual(av1.shape, (nframes,natoms,9))
         # check values
-        for ii in range(ff.size):
-            self.assertAlmostEqual(ff.reshape([-1])[ii], self.expected_f.reshape([-1])[ii], places = default_places)
-        for ii in range(ae.size):
-            self.assertAlmostEqual(ae.reshape([-1])[ii], self.expected_e.reshape([-1])[ii], places = default_places)
-        for ii in range(av.size):
-            self.assertAlmostEqual(av.reshape([-1])[ii], self.expected_v.reshape([-1])[ii], places = default_places)
+        for ii in range(ff0.size):
+            self.assertAlmostEqual(ff0.reshape([-1])[ii], ff1.reshape([-1])[ii], places = default_places)
+        for ii in range(ae0.size):
+            self.assertAlmostEqual(ae0.reshape([-1])[ii], ae1.reshape([-1])[ii], places = default_places)
+        for ii in range(av0.size):
+            self.assertAlmostEqual(av0.reshape([-1])[ii], av1.reshape([-1])[ii], places = default_places)
         expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis = 1)
         for ii in range(nframes):
-            self.assertAlmostEqual(ee.reshape([-1])[ii], expected_se.reshape([-1])[ii], places = default_places)
+            self.assertAlmostEqual(ee0.reshape([-1])[ii], ee1.reshape([-1])[ii], places = default_places)
         expected_sv = np.sum(self.expected_v.reshape([nframes, -1, 9]), axis = 1)
         for ii in range(nframes, 9):
-            self.assertAlmostEqual(vv.reshape([-1])[ii], expected_sv.reshape([-1])[ii], places = default_places)
+            self.assertAlmostEqual(vv0.reshape([-1])[ii], vv1.reshape([-1])[ii], places = default_places)
 
