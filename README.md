@@ -19,16 +19,14 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
 
 For more information, check the [documentation](https://deepmd.readthedocs.io/).
 
-## Highlights in DeePMD-kit v2.0
-
-* [Model compression](doc/use-deepmd-kit.md#compress-a-model). Accelerate the efficiency of model inference for 4-15 times.
-* [New descriptors](doc/use-deepmd-kit.md#write-the-input-script). Including [`se_e2_r`](doc/train-se-e2-r.md) and [`se_e3`](doc/train-se-e3.md).
+# Highlights in DeePMD-kit v2.0
+* [Model compression](doc/getting-started.md#compress-a-model). Accelerate the efficiency of model inference for 4-15 times.
+* [New descriptors](doc/getting-started.md#write-the-input-script). Including [`se_e2_r`](doc/train-se-e2-r.md) and [`se_e3`](doc/train-se-e3.md).
 * [Hybridization of descriptors](doc/train-hybrid.md). Hybrid descriptor constructed from concatenation of several descriptors.
 * Atom type embedding.
 * Training and inference the dipole (vector) and polarizability (matrix).
 * Split of training and validation dataset.
 * Optimized training on GPUs. 
-
 
 ## Highlighted features
 * **interfaced with TensorFlow**, one of the most popular deep learning frameworks, making the training process highly automatic and efficient, in addition Tensorboard can be used to visualize training procedure.
@@ -62,19 +60,19 @@ One may manually install DeePMD-kit by following the instuctions on [installing 
 
 # Use DeePMD-kit
 
-The typical procedure of using DeePMD-kit includes 5 steps 
+The typical procedure of using DeePMD-kit includes the following steps 
 
-1. [Prepare data](doc/use-deepmd-kit.md#prepare-data)
-2. [Train a model](doc/use-deepmd-kit.md#train-a-model)
+1. [Prepare data](doc/getting-started.md#prepare-data)
+2. [Train a model](doc/getting-started.md#train-a-model)
 3. [Analyze training with Tensorboard](doc/tensorboard.md)
-4. [Freeze the model](doc/use-deepmd-kit.md#freeze-a-model)
-5. [Test the model](doc/use-deepmd-kit.md#test-a-model)
-6. [Compress the model](doc/use-deepmd-kit.md#compress-a-model)
-7. [Inference the model in python](doc/use-deepmd-kit.md#model-inference) or using the model in other molecular simulation packages like [LAMMPS](doc/use-deepmd-kit.md#run-md-with-lammps), [i-PI](doc/use-deepmd-kit.md#run-path-integral-md-with-i-pi) or [ASE](doc/use-deepmd-kit.md#use-deep-potential-with-ase).
+4. [Freeze the model](doc/getting-started.md#freeze-a-model)
+5. [Test the model](doc/getting-started.md#test-a-model)
+6. [Compress the model](doc/getting-started.md#compress-a-model)
+7. [Inference the model in python](doc/getting-started.md#model-inference) or using the model in other molecular simulation packages like [LAMMPS](doc/getting-started.md#run-md-with-lammps), [i-PI](doc/getting-started.md#run-path-integral-md-with-i-pi) or [ASE](doc/getting-started.md#use-deep-potential-with-ase).
 
-A quick-start on using DeePMD-kit can be found [here](doc/use-deepmd-kit.md).
+A quick-start on using DeePMD-kit can be found [here](doc/getting-started.md).
 
-A full [document](doc/train-input.rst) on options in the training input script is available.
+A full [document](doc/train-input-auto.rst) on options in the training input script is available.
 
 
 # Code structure
@@ -97,13 +95,17 @@ The code is organized as follows:
 * `source/op`: tensorflow op implementation. working with library.
 
 
-
 # Troubleshooting
 
-See the [troubleshooting page](doc/troubleshooting.md).
+See the [troubleshooting page](doc/troubleshooting/index.md).
 
 
-[1]: http://www.global-sci.com/galley/CiCP-2017-0213.pdf
+# Contributing
+
+See [DeePMD-kit Contributing Guide](CONTRIBUTING.md) to become a contributor! 🤓
+
+
+[1]: https://arxiv.org/abs/1707.01478
 [2]: https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.120.143001
-[3]:https://arxiv.org/abs/1805.09003
-[4]:https://aip.scitation.org/doi/full/10.1063/1.5027645
+[3]: https://arxiv.org/abs/1805.09003
+[4]: https://aip.scitation.org/doi/full/10.1063/1.5027645
