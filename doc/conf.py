@@ -33,6 +33,7 @@ def mkindex(dirname):
             f = open(dirname + name, "r")
             _lines = f.readlines()
             for _headline in _lines:
+                _headline = _headline.strip("#")
                 headline = _headline.strip()
                 if (len(headline) == 0 or headline[0] == "." or headline[0] == "="):
                     continue

@@ -9,7 +9,7 @@ If other unexpected problems occur, you're welcome to contact us for help.
 
 [Model compatability](model-compatability.md)
 
-[# The temperature undulates violently during early stages of MD](md-energy-undulation.md)
+[The temperature undulates violently during early stages of MD](md-energy-undulation.md)
 
-[# Do we need to set rcut < half boxsize ?](rcut.md)
+[Do we need to set rcut < half boxsize ?](rcut.md)
 
