@@ -15,8 +15,9 @@ import os
 import recommonmark
 from recommonmark.transform import AutoStructify
 
-def mkindex_troubleshooting():
-    oldfindex = open("troubleshooting/index.md", "r")
+def mkindex(dirname):
+    dirname = dirname + "/"
+    oldfindex = open(dirname + "index.md", "r")
     oldlist = oldfindex.readlines()
     oldfindex.close()
 
@@ -25,55 +26,20 @@ def mkindex_troubleshooting():
         _name = entry[entry.find("(")+1 : entry.find(")")]
         oldnames.append(_name)
     
-    newfindex = open("troubleshooting/index.md", "a")
-    for root, dirs, files in os.walk("./troubleshooting/", topdown=False):
-        for name in files:
-            if (name == "index.md"):
-                continue
-            if (name[-3:] == ".md"):
-                if (name not in oldnames):
-                    f = open("./troubleshooting/"+name, "r")
-                    _headline = f.readlines()[0]
-                    headline = _headline[1:].strip()
-                    longname = "["+headline+"]"+"("+name+")\n\n"
-                    newfindex.write(longname)
-
-    
-    newfindex.close()
-
-
-def mkindex_development():
-    oldfindex = open("development/index.md", "r")
-    oldlist = oldfindex.readlines()
-    oldfindex.close()
-
-    oldnames = []
-    for entry in oldlist:
-        _name = entry[entry.find("(")+1 : entry.find(")")]
-        oldnames.append(_name)
-    
-    newfindex = open("development/index.md", "a")
-    for root, dirs, files in os.walk("./development/", topdown=False):
-        for name in files:
-            if (name == "index.md"):
-                continue
-            if (name not in oldnames):
-                if (name[-3:] == ".md"):
-                        f = open("./development/"+name, "r")
-                        _headline = f.readlines()[0]
-                        headline = _headline[1:].strip()
+    newfindex = open(dirname + "index.md", "a")
+    for root, dirs, files in os.walk(dirname, topdown=False):
+        newnames = [name for name in files if name != "index.md" and name not in oldnames]
+        for name in newnames:
+            f = open(dirname + name, "r")
+            _lines = f.readlines()
+            for _headline in _lines:
+                headline = _headline.strip()
+                if (len(headline) == 0 or headline[0] == "." or headline[0] == "="):
+                    continue
                 else:
-                    if (name[-4:] == ".rst"):
-                        f = open("./development/"+name, "r")
-                        _lines = f.readlines()
-                        for _headline in _lines:
-                            headline = _headline.strip()
-                            if (len(headline) == 0):
-                                continue
-                            if (headline[0] != "." and headline[0] != "="):
-                                break
-                longname = "["+headline+"]"+"("+name+")\n\n"
-                newfindex.write(longname)
+                    break
+            longname = "["+headline+"]"+"("+name+")\n\n"
+            newfindex.write(longname)
 
     
     newfindex.close()
@@ -99,8 +65,8 @@ author = 'Deep Potential'
 #     'sphinx.ext.autosummary'
 # ]
 
-mkindex_troubleshooting()
-mkindex_development()
+mkindex("troubleshooting")
+mkindex("development")
 
 extensions = [
     "sphinx_rtd_theme",
