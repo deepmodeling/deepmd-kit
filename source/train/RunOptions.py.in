@@ -227,7 +227,7 @@ class RunOptions (object) :
         self.my_task_index = 0
         self.my_socket = None
         if gpus is not None and len(gpus) > 0:
-            self.my_device = "gpu:%d" % gpus[0]
+            self.my_device = "gpu:" + str(gpus[0])
             # self.my_device = "gpu:0"
         else :
             self.my_device = "cpu:0"

@@ -7,7 +7,7 @@ def get_resource ():
     if gpus is not None :
         if gpus != "" :
             gpus = gpus.split(",")
-            gpus = [int(ii) for ii in gpus]
+            gpus = [ii for ii in gpus]
         else :
             gpus = []
     return nodename, nodelist, gpus
