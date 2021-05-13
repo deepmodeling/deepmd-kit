@@ -82,7 +82,7 @@ tensorboard --logdir path/to/logs
 ### Viewing summaries of trainable variables
 ![ALT](./images/tensorboard-scalar.png "deepmd-kit scalar")
 
-## Atention
+## Attention
 
 **Allowing the tensorboard analysis will takes extra execution time.**(eg, 15% increasing @Nvidia GTX 1080Ti double precision with default water sample)
 

@@ -271,7 +271,7 @@ void deepmd::env_mat_nbor_update(
 	memcpy(&inlist.numneigh, 8 + mesh_host, sizeof(int *));
 	memcpy(&inlist.firstneigh, 12 + mesh_host, sizeof(int **));
   const int ago = mesh_host[0];
-  if (ago == 0) {
+  if (ago == 0 || gpu_inlist.inum < inlist.inum) {
     const int inum = inlist.inum;
     if (gpu_inlist.inum < inum) {
       delete_device_memory(gpu_inlist.ilist);
