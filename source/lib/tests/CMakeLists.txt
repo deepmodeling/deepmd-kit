@@ -43,6 +43,18 @@ endif()
 file(GLOB TEST_SRC test_*.cc)
 add_executable( runUnitTests ${TEST_SRC} )
 
+add_library(coverage_config INTERFACE)
+target_compile_options(coverage_config INTERFACE
+  -O0        # no optimization
+  -g         # generate debug info
+  --coverage # sets all required flags
+)
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.13)
+  target_link_options(coverage_config INTERFACE --coverage)
+else()
+  target_link_libraries(coverage_config INTERFACE --coverage)
+endif()
+
 find_package(Threads)
 # find openmp
 find_package(OpenMP)
@@ -52,9 +64,9 @@ if (OPENMP_FOUND)
 endif()
 
 if (USE_CUDA_TOOLKIT)
-  target_link_libraries(runUnitTests gtest gtest_main ${libname} pthread deepmd_op_cuda)
+  target_link_libraries(runUnitTests gtest gtest_main ${libname} pthread deepmd_op_cuda coverage_config)
 else()
-  target_link_libraries(runUnitTests gtest gtest_main ${libname} pthread)
+  target_link_libraries(runUnitTests gtest gtest_main ${libname} pthread coverage_config)
 endif()
 add_test( runUnitTests runUnitTests )
 
