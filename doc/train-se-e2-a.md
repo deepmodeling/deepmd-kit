@@ -47,7 +47,7 @@ The construction of the descriptor is given by section `descriptor`. An example 
 	    "rcut":		6.00,
 	    "sel":		[46, 92],
 	    "neuron":		[25, 50, 100],
-		"type_one_side":	true,
+	    "type_one_side":	true,
 	    "axis_neuron":	16,
 	    "resnet_dt":	false,
 	    "seed":		1
