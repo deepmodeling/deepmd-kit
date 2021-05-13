@@ -14,6 +14,7 @@ In this text, we will call the deep neural network that is used to represent the
     - [Run MD with LAMMPS](#run-md-with-lammps)
     - [Run path-integral MD with i-PI](#run-path-integral-md-with-i-pi)
     - [Use deep potential with ASE](#use-deep-potential-with-ase)
+8. [Important Hint](#important-hint)
 
 
 ## Prepare data
@@ -370,3 +371,10 @@ print(water.get_positions())
 ```
 [DP]:https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.120.143001
 [DP-SE]:https://dl.acm.org/doi/10.5555/3327345.3327356
+
+## Important hint
+If you use deepmd-kit in a GPU environment, the acceptable value range of some variables are additionally restricted compared to the CPU environment due to the software's GPU implementations: 
+1. The number of atom type of training system must be less than 128.
+2. The maximum distance between an atom and it's neighbor atoms must be less than 128.
+3. The maximum number of atoms that can be accommodated within a single GPU is 10,000,000.
+4. The total sel value of training parameter must be less than 4096.
