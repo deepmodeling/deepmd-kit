@@ -11,9 +11,9 @@ from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
     default_places = 4
 else :
-    default_places = 6
+    default_places = 10
 
-def file_delete(file) :
+def _file_delete(file) :
     if os.path.exists(file):
         os.remove(file)
 
@@ -30,9 +30,11 @@ class TestDeepPotAPBC(unittest.TestCase) :
             json.dump(jdata, fp, indent=4)
 
         ret = os.system("dp train " + self.INPUT)
+        assert(ret == 0), "DP train error!"
         ret = os.system("dp freeze -o " + self.frozen_model)
+        assert(ret == 0), "DP freeze error!"
         ret = os.system("dp compress " + self.INPUT + " -i " + self.frozen_model + " -o " + self.compressed_model)
-        assert(ret == 0), "Model compression error!"
+        assert(ret == 0), "DP model compression error!"
         
         self.dp_original = DeepPot(self.frozen_model)
         self.dp_compressed = DeepPot(self.compressed_model)
@@ -46,16 +48,16 @@ class TestDeepPotAPBC(unittest.TestCase) :
         self.box = np.array([13., 0., 0., 0., 13., 0., 0., 0., 13.])
 
     def tearDown(self):
-        file_delete(self.INPUT)
-        file_delete(self.frozen_model)
-        file_delete(self.compressed_model)
-        file_delete("out.json")
-        file_delete("compress.json")
-        file_delete("checkpoint")
-        file_delete("lcurve.out")
-        file_delete("model.ckpt.meta")
-        file_delete("model.ckpt.index")
-        file_delete("model.ckpt.data-00000-of-00001")
+        _file_delete(self.INPUT)
+        _file_delete(self.frozen_model)
+        _file_delete(self.compressed_model)
+        _file_delete("out.json")
+        _file_delete("compress.json")
+        _file_delete("checkpoint")
+        _file_delete("lcurve.out")
+        _file_delete("model.ckpt.meta")
+        _file_delete("model.ckpt.index")
+        _file_delete("model.ckpt.data-00000-of-00001")
 
     def test_attrs(self):
         self.assertEqual(self.dp_original.get_ntypes(), 2)
@@ -163,9 +165,11 @@ class TestDeepPotANoPBC(unittest.TestCase) :
             json.dump(jdata, fp, indent=4)
 
         ret = os.system("dp train " + self.INPUT)
+        assert(ret == 0), "DP train error!"
         ret = os.system("dp freeze -o " + self.frozen_model)
+        assert(ret == 0), "DP freeze error!"
         ret = os.system("dp compress " + self.INPUT + " -i " + self.frozen_model + " -o " + self.compressed_model)
-        assert(ret == 0), "Model compression error!"
+        assert(ret == 0), "DP model compression error!"
         
         self.dp_original = DeepPot(self.frozen_model)
         self.dp_compressed = DeepPot(self.compressed_model)
@@ -179,16 +183,16 @@ class TestDeepPotANoPBC(unittest.TestCase) :
         self.box = None
 
     def tearDown(self):
-        file_delete(self.INPUT)
-        file_delete(self.frozen_model)
-        file_delete(self.compressed_model)
-        file_delete("out.json")
-        file_delete("compress.json")
-        file_delete("checkpoint")
-        file_delete("lcurve.out")
-        file_delete("model.ckpt.meta")
-        file_delete("model.ckpt.index")
-        file_delete("model.ckpt.data-00000-of-00001")
+        _file_delete(self.INPUT)
+        _file_delete(self.frozen_model)
+        _file_delete(self.compressed_model)
+        _file_delete("out.json")
+        _file_delete("compress.json")
+        _file_delete("checkpoint")
+        _file_delete("lcurve.out")
+        _file_delete("model.ckpt.meta")
+        _file_delete("model.ckpt.index")
+        _file_delete("model.ckpt.data-00000-of-00001")
     
     def test_1frame(self):
         ee0, ff0, vv0 = self.dp_original.eval(self.coords, self.box, self.atype, atomic = False)
@@ -282,9 +286,11 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase) :
             json.dump(jdata, fp, indent=4)
 
         ret = os.system("dp train " + self.INPUT)
+        assert(ret == 0), "DP train error!"
         ret = os.system("dp freeze -o " + self.frozen_model)
+        assert(ret == 0), "DP freeze error!"
         ret = os.system("dp compress " + self.INPUT + " -i " + self.frozen_model + " -o " + self.compressed_model)
-        assert(ret == 0), "Model compression error!"
+        assert(ret == 0), "DP model compression error!"
         
         self.dp_original = DeepPot(self.frozen_model)
         self.dp_compressed = DeepPot(self.compressed_model)
@@ -298,16 +304,16 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase) :
         self.box = np.array([19., 0., 0., 0., 13., 0., 0., 0., 13.])
 
     def tearDown(self):
-        file_delete(self.INPUT)
-        file_delete(self.frozen_model)
-        file_delete(self.compressed_model)
-        file_delete("out.json")
-        file_delete("compress.json")
-        file_delete("checkpoint")
-        file_delete("lcurve.out")
-        file_delete("model.ckpt.meta")
-        file_delete("model.ckpt.index")
-        file_delete("model.ckpt.data-00000-of-00001")
+        _file_delete(self.INPUT)
+        _file_delete(self.frozen_model)
+        _file_delete(self.compressed_model)
+        _file_delete("out.json")
+        _file_delete("compress.json")
+        _file_delete("checkpoint")
+        _file_delete("lcurve.out")
+        _file_delete("model.ckpt.meta")
+        _file_delete("model.ckpt.index")
+        _file_delete("model.ckpt.data-00000-of-00001")
     
     def test_1frame(self):
         ee0, ff0, vv0 = self.dp_original.eval(self.coords, self.box, self.atype, atomic = False)

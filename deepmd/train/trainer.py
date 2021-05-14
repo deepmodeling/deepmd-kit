@@ -137,11 +137,12 @@ class DPTrainer (object):
         # type embedding
         if typeebd_param is not None:
             self.typeebd = TypeEmbedNet(
-                typeebd_param['neuron'],
-                typeebd_param['resnet_dt'],
-                typeebd_param['seed'], 
-                typeebd_param['activation_function'],
-                typeebd_param['precision']
+                neuron=typeebd_param['neuron'],
+                resnet_dt=typeebd_param['resnet_dt'],
+                activation_function=typeebd_param['activation_function'],
+                precision=typeebd_param['precision'],
+                trainable=typeebd_param['trainable'],
+                seed=typeebd_param['seed']
             )
         else:
             self.typeebd = None
@@ -481,7 +482,19 @@ class DPTrainer (object):
         # set tensorboard execution environment
         if self.tensorboard :
             summary_merged_op = tf.summary.merge_all()
-            shutil.rmtree(self.tensorboard_log_dir)
+            # Remove TB old logging directory from previous run
+            try:
+                shutil.rmtree(self.tensorboard_log_dir)
+            except FileNotFoundError:
+                pass  # directory does not exist, this is OK
+            except Exception as e:
+                # general error when removing directory, warn user
+                log.exception(
+                    f"Could not remove old tensorboard logging directory: "
+                    f"{self.tensorboard_log_dir}. Error: {e}"
+                )
+            else:
+                log.debug("Removing old tensorboard log directory.")
             tb_train_writer = tf.summary.FileWriter(self.tensorboard_log_dir + '/train', self.sess.graph)
             tb_valid_writer = tf.summary.FileWriter(self.tensorboard_log_dir + '/test')
         else:
