@@ -21,6 +21,6 @@ def get_resource() -> Tuple[str, List[str], Optional[List[int]]]:
     if not gpus_env:
         gpus = None
     else:
-        gpus = [int(gpu) for gpu in gpus_env.split(",")]
+        gpus = [gpu for gpu in gpus_env.split(",")]
 
     return nodename, nodelist, gpus
