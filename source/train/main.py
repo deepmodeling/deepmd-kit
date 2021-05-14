@@ -5,7 +5,7 @@ from .freeze import freeze
 from .config import config
 from .test import test
 from .transform import transform
-from .convert_to_13 import convert_to_13
+from .convert_to import convert_12_to_13, convert_12_to_20
 
 def main () :    
     parser = argparse.ArgumentParser(
@@ -58,11 +58,14 @@ def main () :
     parser_tst.add_argument("-d", "--detail-file", type=str, 
                             help="The file containing details of energy force and virial accuracy")
 
-    parser_transform = subparsers.add_parser('convert-to-1.3', help='convert dp-1.2 model to dp-1.3 model')
+    parser_transform = subparsers.add_parser('convert-to', help='convert dp-1.2 model to higher model compatibility')
+    parser_transform.add_argument('TO', type = str,
+                                  choices = ['1.3', '2.0'],
+                                  help="The target model compatibility")
     parser_transform.add_argument('-i', "--input-model", default = "frozen_model.pb", type=str, 
 				  help = "the input dp-1.2 model")
-    parser_transform.add_argument("-o","--output-model", default = "frozen_model_1.3.pb", type=str, 
-				  help='the converted dp-1.3 model')
+    parser_transform.add_argument("-o","--output-model", default = "convert_out.pb", type=str, 
+				  help='the output model')
     args = parser.parse_args()
 
     if args.command is None :
@@ -78,7 +81,12 @@ def main () :
         test(args)
     elif args.command == 'transform' :
         transform(args)
-    elif args.command == 'convert-to-1.3' :
-        convert_to_13(args)
+    elif args.command == 'convert-to' :
+        if args.TO == '1.3':
+            convert_12_to_13(args)
+        elif args.TO == '2.0':
+            convert_12_to_20(args)
+        else:
+            raise RuntimeError('unsupported model compatibility ' + args.TO)
     else :
         raise RuntimeError('unknown command ' + args.command)
