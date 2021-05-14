@@ -6,6 +6,7 @@ from .config import config
 from .test import test
 from .transform import transform
 from .doc import doc_train_input
+from .convert_to import convert_13_to_20
 
 def main () :    
     parser = argparse.ArgumentParser(
@@ -61,6 +62,15 @@ def main () :
     parser_tst.add_argument("-d", "--detail-file", type=str, 
                             help="The file containing details of energy force and virial accuracy")
 
+    parser_transform = subparsers.add_parser('convert-to', help='convert dp-1.3 model to higher model compatibility')
+    parser_transform.add_argument('TO', type = str,
+                                  choices = ['2.0'],
+                                  help="The target model compatibility")
+    parser_transform.add_argument('-i', "--input-model", default = "frozen_model.pb", type=str, 
+				  help = "the input dp-1.3 model")
+    parser_transform.add_argument("-o","--output-model", default = "convert_out.pb", type=str, 
+				  help='the output model')
+
     parser_train = subparsers.add_parser('doc-train-input', 
                                          help='print the documentation (in rst format) of input training parameters.')
 
@@ -79,6 +89,11 @@ def main () :
         test(args)
     elif args.command == 'transform' :
         transform(args)
+    elif args.command == 'convert-to' :
+        if args.TO == '2.0':
+            convert_13_to_20(args)
+        else:
+            raise RuntimeError('unsupported model compatibility ' + args.TO)
     elif args.command == 'doc-train-input' :
         doc_train_input(args)
     else :
