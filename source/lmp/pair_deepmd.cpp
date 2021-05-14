@@ -592,8 +592,23 @@ void PairDeepMD::compute(int eflag, int vflag)
 	// // total e
 	// vector<double > sum_e(numb_models, 0.);
 	// MPI_Reduce (&all_energy[0], &sum_e[0], numb_models, MPI_DOUBLE, MPI_SUM, 0, world);
-  vector<double> std_f_all(all_nlocal);
+	if (rank == 0) {
+	  // double avg_e = 0;
+	  // deep_pot_model_devi.compute_avg(avg_e, sum_e);
+	  // double std_e_1 = 0;
+	  // deep_pot_model_devi.compute_std(std_e_1, avg_e, sum_e);	
+	  fp << setw(12) << update->ntimestep 
+	     << " " << setw(18) << all_v_max
+	     << " " << setw(18) << all_v_min
+	     << " " << setw(18) << all_v_avg
+	     << " " << setw(18) << all_f_max 
+	     << " " << setw(18) << all_f_min
+	     << " " << setw(18) << all_f_avg;
+	     // << " " << setw(18) << avg_e
+	     // << " " << setw(18) << std_e_1 / all_nlocal
+  }
   if (out_each == 1){
+    vector<double> std_f_all(all_nlocal);
     // Gather std_f and tags
     tagint *tag = atom->tag;
     int nprocs = comm->nprocs;
@@ -612,27 +627,12 @@ void PairDeepMD::compute(int eflag, int vflag)
       for (int dd = 0; dd < all_nlocal; ++dd) {
         std_f_all[tagrecv[dd]-1] = stdfrecv[dd];
       }
+      for (int dd = 0; dd < all_nlocal; ++dd) {
+        fp << " " << setw(18) << std_f_all[dd];	
+      }
     }
   }
-	if (rank == 0) {
-	  // double avg_e = 0;
-	  // deep_pot_model_devi.compute_avg(avg_e, sum_e);
-	  // double std_e_1 = 0;
-	  // deep_pot_model_devi.compute_std(std_e_1, avg_e, sum_e);	
-	  fp << setw(12) << update->ntimestep 
-	     << " " << setw(18) << all_v_max
-	     << " " << setw(18) << all_v_min
-	     << " " << setw(18) << all_v_avg
-	     << " " << setw(18) << all_f_max 
-	     << " " << setw(18) << all_f_min
-	     << " " << setw(18) << all_f_avg;
-	     // << " " << setw(18) << avg_e
-	     // << " " << setw(18) << std_e_1 / all_nlocal
-	  if (out_each == 1){
-	      for (int dd = 0; dd < all_nlocal; ++dd) {
-            fp << " " << setw(18) << std_f_all[dd];	
-        }
-	  }
+  if (rank == 0) {
 	  fp << endl;
 	}
       }
