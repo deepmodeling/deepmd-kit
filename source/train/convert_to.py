@@ -18,8 +18,8 @@ def convert_12_to_20(args):
     convert_dp12_to_dp13('frozen_model.pbtxt')
     convert_dp13_to_dp20('frozen_model.pbtxt')
     convert_pbtxt_to_pb('frozen_model.pbtxt', args.output_model)
-    # if os.path.isfile('frozen_model.pbtxt'):
-    #     os.remove('frozen_model.pbtxt')
+    if os.path.isfile('frozen_model.pbtxt'):
+        os.remove('frozen_model.pbtxt')
     print("the converted output model(2.0 support) is saved in %s" % args.output_model)
 
 def convert_pb_to_pbtxt(pbfile, pbtxtfile):
