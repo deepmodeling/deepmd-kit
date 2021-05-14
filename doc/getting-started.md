@@ -301,10 +301,6 @@ where `Df_i` is the absolute model deviation of the force on atom `i`, `|f_i|` i
 #### Restrictions
 - The `deepmd` pair style is provided in the USER-DEEPMD package, which is compiled from the DeePMD-kit, visit the [DeePMD-kit website](https://github.com/deepmodeling/deepmd-kit) for more information.
 
-- The `atom_style` of the system should be `atomic`.
-
-- When using the `atomic` key word of `deepmd` is set, one should not use this pair style with MPI parallelization.
-
 
 #### Long-range interaction
 The reciprocal space part of the long-range interaction can be calculated by LAMMPS command `kspace_style`. To use it with DeePMD-kit, one writes 
