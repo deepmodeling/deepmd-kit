@@ -1,6 +1,4 @@
 # Developer Guide
    
-[API](api.rst)
-
-[Coding Conventions](coding-conventions.rst)
-
+- [API](api.rst)
+- [Coding Conventions](coding-conventions.rst)

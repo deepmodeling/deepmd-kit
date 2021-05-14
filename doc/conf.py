@@ -39,7 +39,7 @@ def mkindex(dirname):
                     continue
                 else:
                     break
-            longname = "["+headline+"]"+"("+name+")\n\n"
+            longname = "- ["+headline+"]"+"("+name+")\n"
             newfindex.write(longname)
 
     
