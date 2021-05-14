@@ -606,14 +606,33 @@ void PairDeepMD::compute(int eflag, int vflag)
 	     << " " << setw(18) << all_f_avg;
 	     // << " " << setw(18) << avg_e
 	     // << " " << setw(18) << std_e_1 / all_nlocal
-	  if (out_each == 1){
-	      // TODO: Fix two problems:
-	      // 1. If the atom_style is not atomic (e.g. charge), the order of std_f is different from that of atom ids.
-              // 2. std_f is not gathered by MPI.
-	      for (int dd = 0; dd < all_nlocal; ++dd) {
-            fp << " " << setw(18) << std_f[dd];	
-        }
+	}
+	if (out_each == 1){
+	  vector<double> std_f_all(all_nlocal);
+	  // Gather std_f and tags
+	  tagint *tag = atom->tag;
+	  int nprocs = comm->nprocs;
+	  for (int ii = 0; ii < nlocal; ii++) {
+	    tagsend[ii] = tag[ii];
+	    stdfsend[ii] = std_f[ii];
 	  }
+	  MPI_Gather(&nlocal, 1, MPI_INT, counts, 1, MPI_INT, 0, world);
+	  displacements[0] = 0;
+	  for (int ii = 0; ii < nprocs-1; ii++) displacements[ii+1] = displacements[ii] + counts[ii];
+	  MPI_Gatherv(tagsend, nlocal, MPI_LMP_TAGINT,
+	              tagrecv, counts, displacements, MPI_LMP_TAGINT, 0, world);
+	  MPI_Gatherv(stdfsend, nlocal, MPI_DOUBLE,
+	              stdfrecv, counts, displacements, MPI_DOUBLE, 0, world);
+	  if (rank == 0) {
+	    for (int dd = 0; dd < all_nlocal; ++dd) {
+	      std_f_all[tagrecv[dd]-1] = stdfrecv[dd];
+	    }
+	    for (int dd = 0; dd < all_nlocal; ++dd) {
+	      fp << " " << setw(18) << std_f_all[dd];	
+	    }
+	  }
+	}
+	if (rank == 0) {
 	  fp << endl;
 	}
       }
@@ -925,6 +944,16 @@ void PairDeepMD::init_style()
   neighbor->requests[irequest]->half = 0;
   // neighbor->requests[irequest]->full = 1;  
   // neighbor->requests[irequest]->newton = 2;  
+  if (out_each == 1){
+    int ntotal = atom->natoms;
+    int nprocs = comm->nprocs;
+    memory->create(counts, nprocs, "deepmd:counts");
+    memory->create(displacements, nprocs, "deepmd:displacements");
+    memory->create(stdfsend,ntotal,"deepmd:stdfsendall");
+    memory->create(stdfrecv,ntotal,"deepmd:stdfrecvall");
+    memory->create(tagsend,ntotal,"deepmd:tagsendall");
+    memory->create(tagrecv,ntotal,"deepmd:tagrecvall");
+  }
 }
 
 

@@ -95,6 +95,9 @@ private:
       );
   bool do_ttm;
   std::string ttm_fix_id;
+  int *counts,*displacements;
+  tagint *tagsend, *tagrecv;
+  double *stdfsend, *stdfrecv;
 };
 
 }
