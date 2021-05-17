@@ -29,7 +29,7 @@ The json of `dipole` type should be provided like
 
 ```json
 	"fitting_net" : {
-	    	"type": "dipole",
+	    "type": "dipole",
 		"sel_type": [0],
 		"neuron": [100,100,100],
 		"resnet_dt": true,
@@ -67,8 +67,8 @@ The loss section should be provided like
 
 ```json
 	"loss" : {
-		"type":		"tensor",
-		"pref":		1.0,
+		"type":			"tensor",
+		"pref":			1.0,
 		"pref_atomic":	1.0,
 	},
 ```
@@ -121,5 +121,15 @@ The detailed loss can be found in `lcurve.out`:
   2000     2.59e-02   5.71e-02   1.03e-02   5.71e-02    1.94e-03    0.00e+00   1.0e-08
 ```
 
-One may notice that in each step, some of local loss and global loss will be `0.0`, which is normal since we just select some systems to train in each time step, and it's possible that all data we select are from one type of system. Nevertheless, `rmse_val` and `rmse_trn` is still meaningful.
+One may notice that in each step, some of local loss and global loss will be `0.0`. This is because our training data and validation data consist of global system and atomic system, i.e.
+```
+	--training_data
+		>atomic_system
+		>global_system
+	--validation_data
+		>atomic_system
+		>global_system
+```
+During training, at each step when the lcurve.out is printed, the system used for evaluating the training (validation) error may be either with only global or only atomic labels, thus the corresponding atomic or global errors are missing and are printed as zeros. 
+
 
