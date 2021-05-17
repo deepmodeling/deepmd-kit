@@ -13,9 +13,9 @@ The training and validation data are also provided our examples. But note that *
 
 The directory of this examples:
 
--   [The training input script](# the-training-input-script)
--   [Training Data Preparation](# training-data-preparation)
-- 	[Train the Model](# train-the-model)
+-   [The training input script](#the-training-input-script)
+-   [Training Data Preparation](#training-data-preparation)
+- 	[Train the Model](#train-the-model)
 
 ## The training input script
 
