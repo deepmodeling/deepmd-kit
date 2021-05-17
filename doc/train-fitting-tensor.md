@@ -29,7 +29,7 @@ The json of `dipole` type should be provided like
 
 ```json
 	"fitting_net" : {
-	    "type": "dipole",
+	    	"type": "dipole",
 		"sel_type": [0],
 		"neuron": [100,100,100],
 		"resnet_dt": true,
@@ -40,13 +40,13 @@ The json of `dipole` type should be provided like
 The json of `polar` type should be provided like
 
 ```json
-"fitting_net" : {
-    "type": "polar",
-	"sel_type": [0],
-	"neuron": [100,100,100],
-	"resnet_dt": true,
-	"seed": 1,
-},
+	"fitting_net" : {
+	   	"type": "polar",
+		"sel_type": [0],
+		"neuron": [100,100,100],
+		"resnet_dt": true,
+		"seed": 1,
+	},
 ```
 
 -   `type` specifies which type of fitting net should be used. It should be either `dipole` or `polar`. Note that `global_polar` mode in version 1.x is already **deprecated** and is merged into `polar`. To specify whether a system is global or atomic, please see [here](train-se-e2-a.md).
@@ -67,10 +67,10 @@ The loss section should be provided like
 
 ```json
 	"loss" : {
-		"type":	"tensor",
-		"pref":			1.0,
+		"type":		"tensor",
+		"pref":		1.0,
 		"pref_atomic":	1.0,
-    },
+	},
 ```
 
 -   `type` should be written as `tensor` as a distinction from `ener` mode.
