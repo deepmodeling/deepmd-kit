@@ -67,8 +67,8 @@ The loss section should be provided like
 
 ```json
 	"loss" : {
-		"type":			"tensor",
-		"pref":			1.0,
+		"type":		"tensor",
+		"pref":		1.0,
 		"pref_atomic":	1.0,
 	},
 ```
