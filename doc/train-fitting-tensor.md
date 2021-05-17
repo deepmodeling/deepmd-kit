@@ -55,7 +55,7 @@ The json of `polar` type should be provided like
 
 ### Loss
 
-DP supports a combinational training of global system (only a global `tensor` label, i.e. dipole or polar, is provided in a frame) and atomic system (labels for **each** atom included in `sel_type` are provided). In a global system, each frame has just **one** `tensor` label. For example, when fitting `polar`, each frame will just provide a `1 x 9` vector indicating the summation of polarizability. By contrast, in a atomic system, each atom in `sel_type` has a `tensor` label. For example, when fitting dipole, each frame will provide a `#sel_atom x 3` matrix, where `#sel_atom` is the number of atoms whose type are in `sel_type`.
+DP supports a combinational training of global system (only a global `tensor` label, i.e. dipole or polar, is provided in a frame) and atomic system (labels for **each** atom included in `sel_type` are provided). In a global system, each frame has just **one** `tensor` label. For example, when fitting `polar`, each frame will just provide a `1 x 9` vector which gives the elements of the polarizability tensor of that frame in order XX, XY, XZ, YX, YY, YZ, XZ, ZY, ZZ. By contrast, in a atomic system, each atom in `sel_type` has a `tensor` label. For example, when fitting dipole, each frame will provide a `#sel_atom x 3` matrix, where `#sel_atom` is the number of atoms whose type are in `sel_type`.
 
 The `loss` section tells DP the weight of this two kind of loss, i.e.
 
