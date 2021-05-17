@@ -29,7 +29,7 @@ The json of `dipole` type should be provided like
 
 ```json
 	"fitting_net" : {
-	    "type": "dipole",
+		"type": "dipole",
 		"sel_type": [0],
 		"neuron": [100,100,100],
 		"resnet_dt": true,
