@@ -206,7 +206,7 @@ PairNNP::PairNNP(LAMMPS *lmp)
   if (strcmp(update->unit_style,"metal") != 0) {
     error->all(FLERR,"Pair deepmd requires metal unit, please set it by \"units metal\"");
   }
-  restartinfo = 0;
+  restartinfo = 1;
   pppmflag = 1;
   respa_enable = 0;
   writedata = 0;
@@ -222,6 +222,7 @@ PairNNP::PairNNP(LAMMPS *lmp)
   single_model = false;
   multi_models_mod_devi = false;
   multi_models_no_mod_devi = false;
+  is_restart = false;
   // set comm size needed by this Pair
   comm_reverse = 1;
 
@@ -754,6 +755,7 @@ void PairNNP::settings(int narg, char **arg)
   
   if (comm->me == 0){
     if (numb_models > 1 && out_freq > 0){
+      if (!is_restart) {
       fp.open (out_file);
       fp << scientific;
       fp << "#"
@@ -765,6 +767,10 @@ void PairNNP::settings(int narg, char **arg)
 	 << setw(18+1) << "min_devi_f"
 	 << setw(18+1) << "avg_devi_f"
 	 << endl;
+      } else {
+        fp.open (out_file, std::ofstream::out | std::ofstream::app);
+        fp << scientific;
+      }
     }
     string pre = "  ";
     cout << pre << ">>> Info of model(s):" << endl
@@ -798,6 +804,16 @@ void PairNNP::settings(int narg, char **arg)
   
   comm_reverse = numb_models * 3;
   all_force.resize(numb_models);
+}
+
+void PairDeepMD::read_restart(FILE *)
+{
+  is_restart = true;
+}
+
+void PairDeepMD::write_restart(FILE *)
+{
+  // pass
 }
 
 /* ----------------------------------------------------------------------
