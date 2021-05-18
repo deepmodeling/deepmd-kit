@@ -79,10 +79,22 @@ endif()
 file(GLOB TEST_SRC test_*.cc)
 add_executable( runUnitTests ${TEST_SRC} )
 
-if (USE_CUDA_TOOLKIT)
-  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} deepmd_op_cuda)
+add_library(coverage_config INTERFACE)
+target_compile_options(coverage_config INTERFACE
+  -O0        # no optimization
+  -g         # generate debug info
+  --coverage # sets all required flags
+)
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.13)
+  target_link_options(coverage_config INTERFACE --coverage)
 else()
-  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY})
+  target_link_libraries(coverage_config INTERFACE --coverage)
+endif()
+
+if (USE_CUDA_TOOLKIT)
+  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} deepmd_op_cuda coverage_config)
+else()
+  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} coverage_config)
 endif()
 add_test( runUnitTests runUnitTests )
 
