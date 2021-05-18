@@ -46,6 +46,8 @@ class PairDeepMD : public Pair {
   void settings(int, char **);
   virtual void coeff(int, char **);
   void init_style();
+  virtual void write_restart(FILE *);
+  virtual void read_restart(FILE *);
   double init_one(int i, int j);
   int pack_reverse_comm(int, int, double *);
   void unpack_reverse_comm(int, int *, double *);
@@ -75,6 +77,7 @@ private:
   bool single_model;
   bool multi_models_mod_devi;
   bool multi_models_no_mod_devi;
+  bool is_restart;
 #ifdef HIGH_PREC
   std::vector<double > fparam;
   std::vector<double > aparam;
