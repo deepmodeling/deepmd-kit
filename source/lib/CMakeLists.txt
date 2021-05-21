@@ -18,6 +18,13 @@ if (USE_CUDA_TOOLKIT)
   target_link_libraries (${libname} ${CUDA_LIBRARIES} ${EXTRA_LIBS})
 endif()
 
+if (USE_ROCM_TOOLKIT)
+  add_definitions("-D TENSORFLOW_USE_ROCM")
+  add_subdirectory(src/rocm)
+  set (EXTRA_LIBS ${EXTRA_LIBS} deepmd_op_rocm)
+  target_link_libraries (${libname} ${HIP_LIBRARIES} ${EXTRA_LIBS})
+endif()
+
 if(BUILD_PY_IF)
   install(TARGETS ${libname} DESTINATION deepmd/op/)
 endif(BUILD_PY_IF)
