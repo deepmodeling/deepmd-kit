@@ -11,7 +11,7 @@ In this text, we will call the deep neural network that is used to represent the
 5. [Compress a model](#compress-a-model)
 6. [Model inference](#model-inference)
     - [Python interface](#python-interface)
-    - [C++ interface](#c++-interface)
+    - [C++ interface](#c-interface)
 7. [Run MD](#run-md)
     - [Run MD with LAMMPS](#run-md-with-lammps)
     - [Run path-integral MD with i-PI](#run-path-integral-md-with-i-pi)
