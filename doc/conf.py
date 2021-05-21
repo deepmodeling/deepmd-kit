@@ -20,6 +20,7 @@ def mkindex(dirname):
     oldfindex = open(dirname + "index.md", "r")
     oldlist = oldfindex.readlines()
     oldfindex.close()
+<<<<<<< HEAD
 
     oldnames = []
     for entry in oldlist:
@@ -79,6 +80,20 @@ def classify_index_TS():
             f = open(dirname + name, "r")
             _lines = f.readlines()
             f.close()
+=======
+
+    oldnames = []
+    for entry in oldlist:
+        _name = entry[entry.find("(")+1 : entry.find(")")]
+        oldnames.append(_name)
+    
+    newfindex = open(dirname + "index.md", "a")
+    for root, dirs, files in os.walk(dirname, topdown=False):
+        newnames = [name for name in files if name != "index.md" and name not in oldnames]
+        for name in newnames:
+            f = open(dirname + name, "r")
+            _lines = f.readlines()
+>>>>>>> 363f9ba435f3394f883c1e0a484005b86cb56c45
             for _headline in _lines:
                 _headline = _headline.strip("#")
                 headline = _headline.strip()
@@ -87,10 +102,15 @@ def classify_index_TS():
                 else:
                     break
             longname = "- ["+headline+"]"+"("+name+")\n"
+<<<<<<< HEAD
             if ("howtoset_" in name):
                 sub_lists[1].append(longname)
             else:
                 sub_lists[0].append(longname)
+=======
+            newfindex.write(longname)
+
+>>>>>>> 363f9ba435f3394f883c1e0a484005b86cb56c45
     
     newfindex.write("## Trouble shooting\n")
     for entry in sub_lists[0]:
@@ -124,7 +144,10 @@ author = 'Deep Potential'
 
 mkindex("troubleshooting")
 mkindex("development")
+<<<<<<< HEAD
 classify_index_TS()
+=======
+>>>>>>> 363f9ba435f3394f883c1e0a484005b86cb56c45
 
 extensions = [
     "sphinx_rtd_theme",

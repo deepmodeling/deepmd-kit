@@ -23,7 +23,7 @@ For more information, check the [documentation](https://deepmd.readthedocs.io/).
 * [Model compression](doc/getting-started.md#compress-a-model). Accelerate the efficiency of model inference for 4-15 times.
 * [New descriptors](doc/getting-started.md#write-the-input-script). Including [`se_e2_r`](doc/train-se-e2-r.md) and [`se_e3`](doc/train-se-e3.md).
 * [Hybridization of descriptors](doc/train-hybrid.md). Hybrid descriptor constructed from concatenation of several descriptors.
-* Atom type embedding.
+* [Atom type embedding](doc/train-se-e2-a-tebd.md). Enable atom type embedding to decline training complexity and refine performance.
 * Training and inference the dipole (vector) and polarizability (matrix).
 * Split of training and validation dataset.
 * Optimized training on GPUs. 
