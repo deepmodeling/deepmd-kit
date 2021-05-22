@@ -110,6 +110,10 @@ if (USE_ROCM_TOOLKIT)
   add_subdirectory(${LIB_BASE_DIR}/src/rocm rocm_binary_dir)
 endif()
 
+# Devices that have both ROCM and CUDA are not currently supported
+if (USE_ROCM_TOOLKIT AND USE_CUDA_TOOLKIT)
+  message (FATAL_ERROR "Devices that have both ROCM and CUDA are not currently supported")
+endif()
 
 file(GLOB TEST_SRC test_*.cc)
 add_executable( runUnitTests ${TEST_SRC} )
@@ -128,11 +132,14 @@ endif()
 
 if (USE_CUDA_TOOLKIT)
   target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} deepmd_op_cuda coverage_config)
-elseif(USE_ROCM_TOOLKIT)
+endif(USE_CUDA_TOOLKIT)
+if(USE_ROCM_TOOLKIT)
   target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname}  pthread deepmd_op_rocm ${TensorFlow_LIBRARY} coverage_config)
-else()
+endif(USE_ROCM_TOOLKIT)
+if((NOT USE_ROCM_TOOLKIT) AND (NOT USE_CUDA_TOOLKIT))
   target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} coverage_config)
-endif()
+endif((NOT USE_ROCM_TOOLKIT) AND (NOT USE_CUDA_TOOLKIT))
+
 add_test( runUnitTests runUnitTests )
 
 find_package(GTest)

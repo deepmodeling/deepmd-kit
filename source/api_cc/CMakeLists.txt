@@ -8,10 +8,14 @@ configure_file(
   @ONLY
 )
 
+# Devices that have both ROCM and CUDA are not currently supported
+if (USE_ROCM_TOOLKIT AND USE_CUDA_TOOLKIT)
+  message (FATAL_ERROR "Devices that have both ROCM and CUDA are not currently supported")
+endif()
+
 if (USE_CUDA_TOOLKIT)
   include_directories("${CUDA_INCLUDE_DIRS}")
 endif()
-
 
 file(GLOB LIB_SRC src/*.cc src/*.cpp)
 file(GLOB INC_SRC include/*.h ${CMAKE_CURRENT_BINARY_DIR}/version.h)
@@ -25,6 +29,7 @@ endif()
 if (USE_ROCM_TOOLKIT)
   target_link_libraries(${libname} ${HIP_LIBRARIES})
 endif()
+
 
 install(TARGETS ${libname} DESTINATION lib/)
 

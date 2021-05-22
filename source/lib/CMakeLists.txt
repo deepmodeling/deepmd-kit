@@ -2,6 +2,11 @@
 
 set (libname ${LIB_DEEPMD})
 
+# Devices that have both ROCM and CUDA are not currently supported
+if (USE_ROCM_TOOLKIT AND USE_CUDA_TOOLKIT)
+  message (FATAL_ERROR "Devices that have both ROCM and CUDA are not currently supported")
+endif()
+
 if (USE_CUDA_TOOLKIT)
   include_directories("${CUDA_INCLUDE_DIRS}")
 endif()
