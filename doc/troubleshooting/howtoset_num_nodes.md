@@ -6,7 +6,7 @@ mpirun -np $num_nodes dp
 ```
 Set the number of threads used by DP algorithms with:
 ```bash
-export OMP_NUM_THREADS = $num_threads
+export OMP_NUM_THREADS=$num_threads
 ```
 
 Set the number of CPU nodes used by TF kernels with:
