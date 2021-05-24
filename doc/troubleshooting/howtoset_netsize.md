@@ -21,6 +21,8 @@ Fitting-net size | Energy L2err(eV) | Energy L2err/Natoms(eV) | Force L2err(eV/A
 [1,1,1]       |   2.813596e-02 |  1.172332e-04 |  4.781115e-02 
 []            |   3.135002e-02 |  1.306251e-04 |  5.373120e-02 
 
+_[] means no hidden layer, but there is still a linear output layer. This situation is equal to the linear regression._
+
 ### Embedding net size tuning form on Al2O3: (Fitting-net size: [240,240,240])
 
 Embedding-net size | Energy L2err(eV) | Energy L2err/Natoms(eV) | Force L2err(eV/Angstrom)
