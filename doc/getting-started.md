@@ -10,6 +10,8 @@ In this text, we will call the deep neural network that is used to represent the
 4. [Test a model](#test-a-model)
 5. [Compress a model](#compress-a-model)
 6. [Model inference](#model-inference)
+    - [Python interface](#python-interface)
+    - [C++ interface](#c-interface)
 7. [Run MD](#run-md)
     - [Run MD with LAMMPS](#run-md-with-lammps)
     - [Run path-integral MD with i-PI](#run-path-integral-md-with-i-pi)
@@ -237,6 +239,8 @@ Model compression, with little loss of accuracy, can greatly speed up MD inferen
 The model compression method requires that the version of DeePMD-kit used in original model generation should be 1.3 or above. If one has a frozen 1.2 model, one can first use the convenient conversion interface of DeePMD-kit-v1.2.4 to get a 1.3 executable model.(eg: ```dp convert-to-1.3 -i frozen_1.2.pb -o frozen_1.3.pb```) 
 
 ## Model inference 
+
+### Python interface
 One may use the python interface of DeePMD-kit for model inference, an example is given as follows
 ```python
 from deepmd.infer import DeepPot
@@ -249,6 +253,31 @@ e, f, v = dp.eval(coord, cell, atype)
 ```
 where `e`, `f` and `v` are predicted energy, force and virial of the system, respectively.
 
+### C++ interface
+The C++ interface of DeePMD-kit is also avaiable for model interface, which is considered faster than Python interface. An example `infer_water.cpp` is given below:
+```cpp
+#include "deepmd/DeepPot.h"
+
+int main(){
+  deepmd::DeepPot dp ("graph.pb");
+  std::vector<double > coord = {1., 0., 0., 0., 0., 1.5, 1. ,0. ,3.};
+  std::vector<double > cell = {10., 0., 0., 0., 10., 0., 0., 0., 10.};
+  std::vector<int > atype = {1, 0, 1};
+  double e;
+  std::vector<double > f, v;
+  dp.compute (e, f, v, coord, atype, cell);
+}
+```
+where `e`, `f` and `v` are predicted energy, force and virial of the system, respectively.
+
+You can compile `infer_water.cpp` using `gcc`:
+```sh
+gcc infer_water.cpp -D HIGH_PREC -L $deepmd_root/lib -L $tensorflow_root/lib -I $deepmd_root/include -I $tensorflow_root/lib -Wl,--no-as-needed -ldeepmd_op -ldeepmd -ldeepmd_cc -ltensorflow_cc -ltensorflow_framework -lstdc++ -Wl,-rpath=$deepmd_root/lib -Wl,-rpath=$tensorflow_root/lib -o infer_water
+```
+and then run the program:
+```sh
+./infer_water
+```
 
 ## Run MD
 
