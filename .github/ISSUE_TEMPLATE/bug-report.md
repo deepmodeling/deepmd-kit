@@ -14,7 +14,7 @@ assignees: ''
 
 **Deepmd-kit version, installation way, input file, running commands, error log, etc.**
 
-<!--Please provide necessary information including the version of software and installation way, input file, running commands, error log , etc., AS  DETAILED AS POSSIBLE to help locate and reproduce your problem. -->
+<!--Please provide necessary information including the version of software and installation way, input file, running commands, error log , etc., AS  DETAILED AS POSSIBLE to help locate and reproduce your problem. !!! WARNING: Do not use image to show error log! Paste texts in a code block instead. !!!-->
 
 <!--If applicable, specify what platform you are running on. -->
 
