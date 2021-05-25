@@ -1,10 +1,16 @@
 # How to set sel ?
 
-sel_a[i] is a list of integers. The length of the list should be the same as the number of atom types in the system. 
+`sel` is short for "selected number of atoms in `rcut`".
 
-sel_a[i] gives the selected number of type-i neighbors. The full relative coordinates of the neighbors are used by the descriptor.
+`sel_a[i]` is a list of integers. The length of the list should be the same as the number of atom types in the system. 
 
-The setting of "sel" is related to "rcut" and the coordination number of certain atoms. Some empirical settings on some specific systems are listed below.
+`sel_a[i]` gives the number neighbors of type-i within `rcut`. To ensure that the results are strictly accurate, `sel_a[i]` should be larger than the largest number of neighbors of type-i.
+
+However, the computation overhead increases with `sel_a[i]`, therefore, `sel_a[i]` should be as small as possible.
+
+The setting of `sel_a[i]` should balance the above two considerations.
+
+Here are some empirical settings:
 
 system | rcut | sel
 ---|---|---
