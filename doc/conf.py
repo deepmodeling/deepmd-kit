@@ -11,6 +11,7 @@
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
 import os
+import subprocess
 # import sys
 import recommonmark
 from recommonmark.transform import AutoStructify
@@ -65,6 +66,7 @@ author = 'Deep Potential'
 #     'sphinx_markdown_tables',
 #     'sphinx.ext.autosummary'
 # ]
+subprocess.call("doxygen Doxyfile", shell=True)
 
 mkindex("troubleshooting")
 mkindex("development")
@@ -76,7 +78,7 @@ extensions = [
     'breathe'
 ]
 
-breathe_projects = {"myproject": "xml/"}
+breathe_projects = {"myproject": "_build/xml/"}
 breathe_default_project = "myproject"
 
 myst_heading_anchors = 4
