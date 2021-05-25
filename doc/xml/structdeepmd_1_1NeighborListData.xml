@@ -1,0 +1,163 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="1.9.2" xml:lang="en-US">
+  <compounddef id="structdeepmd_1_1NeighborListData" kind="struct" language="C++" prot="public">
+    <compoundname>deepmd::NeighborListData</compoundname>
+      <sectiondef kind="public-attrib">
+      <memberdef kind="variable" id="structdeepmd_1_1NeighborListData_1ade0fe10ddb2c7c59e3524740b2584ab8" prot="public" static="no" mutable="no">
+        <type>std::vector&lt; int &gt;</type>
+        <definition>std::vector&lt;int &gt; deepmd::NeighborListData::ilist</definition>
+        <argsstring></argsstring>
+        <name>ilist</name>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="/home/abby/deepmd-kit/source/api_cc/include/common.h" line="35" column="15" bodyfile="/home/abby/deepmd-kit/source/api_cc/include/common.h" bodystart="35" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structdeepmd_1_1NeighborListData_1a812ea6ce0018f0848dcf7de2d5426f15" prot="public" static="no" mutable="no">
+        <type>std::vector&lt; std::vector&lt; int &gt; &gt;</type>
+        <definition>std::vector&lt;std::vector&lt;int&gt; &gt; deepmd::NeighborListData::jlist</definition>
+        <argsstring></argsstring>
+        <name>jlist</name>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="/home/abby/deepmd-kit/source/api_cc/include/common.h" line="36" column="15" bodyfile="/home/abby/deepmd-kit/source/api_cc/include/common.h" bodystart="36" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structdeepmd_1_1NeighborListData_1adea3ce6143a430dea7500c7112de1940" prot="public" static="no" mutable="no">
+        <type>std::vector&lt; int &gt;</type>
+        <definition>std::vector&lt;int &gt; deepmd::NeighborListData::numneigh</definition>
+        <argsstring></argsstring>
+        <name>numneigh</name>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="/home/abby/deepmd-kit/source/api_cc/include/common.h" line="37" column="15" bodyfile="/home/abby/deepmd-kit/source/api_cc/include/common.h" bodystart="37" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structdeepmd_1_1NeighborListData_1a424c3cb9ebf8c5066212ba86cca46d67" prot="public" static="no" mutable="no">
+        <type>std::vector&lt; int * &gt;</type>
+        <definition>std::vector&lt;int* &gt; deepmd::NeighborListData::firstneigh</definition>
+        <argsstring></argsstring>
+        <name>firstneigh</name>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="/home/abby/deepmd-kit/source/api_cc/include/common.h" line="38" column="15" bodyfile="/home/abby/deepmd-kit/source/api_cc/include/common.h" bodystart="38" bodyend="-1"/>
+      </memberdef>
+      </sectiondef>
+      <sectiondef kind="public-func">
+      <memberdef kind="function" id="structdeepmd_1_1NeighborListData_1aea4a5775454145c18bcb82e2f03abfa9" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>void</type>
+        <definition>void deepmd::NeighborListData::copy_from_nlist</definition>
+        <argsstring>(const InputNlist &amp;inlist)</argsstring>
+        <name>copy_from_nlist</name>
+        <param>
+          <type>const InputNlist &amp;</type>
+          <declname>inlist</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="/home/abby/deepmd-kit/source/api_cc/include/common.h" line="40" column="8"/>
+      </memberdef>
+      <memberdef kind="function" id="structdeepmd_1_1NeighborListData_1a745297c053e1ee5201b08bf7ce4df255" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>void</type>
+        <definition>void deepmd::NeighborListData::shuffle</definition>
+        <argsstring>(const std::vector&lt; int &gt; &amp;fwd_map)</argsstring>
+        <name>shuffle</name>
+        <param>
+          <type>const std::vector&lt; int &gt; &amp;</type>
+          <declname>fwd_map</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="/home/abby/deepmd-kit/source/api_cc/include/common.h" line="41" column="8"/>
+      </memberdef>
+      <memberdef kind="function" id="structdeepmd_1_1NeighborListData_1a3e74e118d2120f225a4f9f69f2231c89" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>void</type>
+        <definition>void deepmd::NeighborListData::shuffle</definition>
+        <argsstring>(const deepmd::AtomMap&lt; VALUETYPE &gt; &amp;map)</argsstring>
+        <name>shuffle</name>
+        <param>
+          <type>const <ref refid="classdeepmd_1_1AtomMap" kindref="compound">deepmd::AtomMap</ref>&lt; VALUETYPE &gt; &amp;</type>
+          <declname>map</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="/home/abby/deepmd-kit/source/api_cc/include/common.h" line="42" column="8"/>
+      </memberdef>
+      <memberdef kind="function" id="structdeepmd_1_1NeighborListData_1add26265742c56752d02d157bb3a93938" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>void</type>
+        <definition>void deepmd::NeighborListData::shuffle_exclude_empty</definition>
+        <argsstring>(const std::vector&lt; int &gt; &amp;fwd_map)</argsstring>
+        <name>shuffle_exclude_empty</name>
+        <param>
+          <type>const std::vector&lt; int &gt; &amp;</type>
+          <declname>fwd_map</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="/home/abby/deepmd-kit/source/api_cc/include/common.h" line="43" column="8"/>
+      </memberdef>
+      <memberdef kind="function" id="structdeepmd_1_1NeighborListData_1af8f2f20815484a0b8d6140a536291218" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>void</type>
+        <definition>void deepmd::NeighborListData::make_inlist</definition>
+        <argsstring>(InputNlist &amp;inlist)</argsstring>
+        <name>make_inlist</name>
+        <param>
+          <type>InputNlist &amp;</type>
+          <declname>inlist</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="/home/abby/deepmd-kit/source/api_cc/include/common.h" line="44" column="8"/>
+      </memberdef>
+      </sectiondef>
+    <briefdescription>
+    </briefdescription>
+    <detaileddescription>
+    </detaileddescription>
+    <location file="/home/abby/deepmd-kit/source/api_cc/include/common.h" line="33" column="1" bodyfile="/home/abby/deepmd-kit/source/api_cc/include/common.h" bodystart="34" bodyend="45"/>
+    <listofallmembers>
+      <member refid="structdeepmd_1_1NeighborListData_1aea4a5775454145c18bcb82e2f03abfa9" prot="public" virt="non-virtual"><scope>deepmd::NeighborListData</scope><name>copy_from_nlist</name></member>
+      <member refid="structdeepmd_1_1NeighborListData_1a424c3cb9ebf8c5066212ba86cca46d67" prot="public" virt="non-virtual"><scope>deepmd::NeighborListData</scope><name>firstneigh</name></member>
+      <member refid="structdeepmd_1_1NeighborListData_1ade0fe10ddb2c7c59e3524740b2584ab8" prot="public" virt="non-virtual"><scope>deepmd::NeighborListData</scope><name>ilist</name></member>
+      <member refid="structdeepmd_1_1NeighborListData_1a812ea6ce0018f0848dcf7de2d5426f15" prot="public" virt="non-virtual"><scope>deepmd::NeighborListData</scope><name>jlist</name></member>
+      <member refid="structdeepmd_1_1NeighborListData_1af8f2f20815484a0b8d6140a536291218" prot="public" virt="non-virtual"><scope>deepmd::NeighborListData</scope><name>make_inlist</name></member>
+      <member refid="structdeepmd_1_1NeighborListData_1adea3ce6143a430dea7500c7112de1940" prot="public" virt="non-virtual"><scope>deepmd::NeighborListData</scope><name>numneigh</name></member>
+      <member refid="structdeepmd_1_1NeighborListData_1a745297c053e1ee5201b08bf7ce4df255" prot="public" virt="non-virtual"><scope>deepmd::NeighborListData</scope><name>shuffle</name></member>
+      <member refid="structdeepmd_1_1NeighborListData_1a3e74e118d2120f225a4f9f69f2231c89" prot="public" virt="non-virtual"><scope>deepmd::NeighborListData</scope><name>shuffle</name></member>
+      <member refid="structdeepmd_1_1NeighborListData_1add26265742c56752d02d157bb3a93938" prot="public" virt="non-virtual"><scope>deepmd::NeighborListData</scope><name>shuffle_exclude_empty</name></member>
+    </listofallmembers>
+  </compounddef>
+</doxygen>

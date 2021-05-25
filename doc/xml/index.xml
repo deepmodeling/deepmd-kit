@@ -1,0 +1,202 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygenindex xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="index.xsd" version="1.9.2" xml:lang="en-US">
+  <compound refid="classdeepmd_1_1AtomMap" kind="class"><name>deepmd::AtomMap</name>
+    <member refid="classdeepmd_1_1AtomMap_1a54f8861b95adf6aa2a1a1c386d7dff57" kind="variable"><name>idx_map</name></member>
+    <member refid="classdeepmd_1_1AtomMap_1aed62d4606c655edd59c8c720014bb5bf" kind="variable"><name>fwd_idx_map</name></member>
+    <member refid="classdeepmd_1_1AtomMap_1ae753bf0e7cc732ad1a91d873a24f6267" kind="variable"><name>atype</name></member>
+    <member refid="classdeepmd_1_1AtomMap_1ad4ce40e1896aa6c90061b54c441ea157" kind="function"><name>AtomMap</name></member>
+    <member refid="classdeepmd_1_1AtomMap_1ab5efe6b35d98f6c722f9c2b3d69c0930" kind="function"><name>AtomMap</name></member>
+    <member refid="classdeepmd_1_1AtomMap_1a9f286ab992b15eb3245aaf6c6c986fe1" kind="function"><name>forward</name></member>
+    <member refid="classdeepmd_1_1AtomMap_1a6ebecdd7743a1b5fce4012015ea2b89e" kind="function"><name>backward</name></member>
+    <member refid="classdeepmd_1_1AtomMap_1a31c8a3061cef4f0ebe8ddb4b90725ead" kind="function"><name>get_type</name></member>
+    <member refid="classdeepmd_1_1AtomMap_1adae6383ed03aff18deaf9cf41a775baf" kind="function"><name>get_fwd_map</name></member>
+    <member refid="classdeepmd_1_1AtomMap_1ac99b6625069c5ca060308d8f3e431a9e" kind="function"><name>get_bkw_map</name></member>
+  </compound>
+  <compound refid="classdeepmd_1_1DeepPot" kind="class"><name>deepmd::DeepPot</name>
+    <member refid="classdeepmd_1_1DeepPot_1ad91289f355b4db8aff7afa87df2f95f2" kind="variable"><name>session</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1a35faf0690f8e4c1f3974857016ff3ada" kind="variable"><name>num_intra_nthreads</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1ab9b768c327a8b156d08c68509fcea38d" kind="variable"><name>num_inter_nthreads</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1afc34a56f5e055e8f60a72c533a1088a6" kind="variable"><name>graph_def</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1ae34d400a2917bb16e9093d11add64d2c" kind="variable"><name>inited</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1a5ec039ccf6d5fb086ff7c51981a3d04b" kind="variable"><name>rcut</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1a5bc30216cc7031eeba6f62a3e2768447" kind="variable"><name>cell_size</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1a34ffce7880637ca8d513d4d35afee455" kind="variable"><name>model_type</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1a12e2f490e5d7e73ea74802e7394d09e3" kind="variable"><name>model_version</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1a147b8faa6e635a4c25721bb43f6272a2" kind="variable"><name>ntypes</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1ace8747cd1d1f47ec0916526034e881ee" kind="variable"><name>dfparam</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1aeb8f645d433a72dab8bac0430c8396d7" kind="variable"><name>daparam</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1a0a222dde93441a3c406e579f131444c4" kind="variable"><name>init_nbor</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1af83ac7f9f92d8a5646392a5fd8c40ca2" kind="variable"><name>sec_a</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1a57aa686806bdce677ecd432fc1e23482" kind="variable"><name>nlist_data</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1abad7887e09109cb11ff5b2124d897c65" kind="variable"><name>nlist</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1af9e8133b1e9d32854a340e1a538df459" kind="variable"><name>atommap</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1a7e224619dfa51dd352b32898ee722925" kind="function"><name>DeepPot</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1a6c65d1f8c6c8b64bf997a430fe40bb55" kind="function"><name>~DeepPot</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1a5e1e0747ea3576bc9d6340036ef7db34" kind="function"><name>DeepPot</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1aa9da93a150aaa55586b3363239a782cc" kind="function"><name>init</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1a0f33018bef80223f96f80eca6201ac55" kind="function"><name>print_summary</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1aed503d88ec8864285c9dd5a1e5bcc775" kind="function"><name>compute</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1a5e5e82a267dc5305b72315e06d4217c7" kind="function"><name>compute</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1adac80cd0ef4294aca8a7c551d4b247cc" kind="function"><name>compute</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1a57af9614412b91600b4f171abdf6b044" kind="function"><name>compute</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1ac19a13a743733d71229cd6a6dfeee718" kind="function"><name>cutoff</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1ad8ffb0126122be715720e03f6267da47" kind="function"><name>numb_types</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1a0f9263e2f5469256637169126222d923" kind="function"><name>dim_fparam</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1ac6323b7ba3b9bf0a6f868c294252fb65" kind="function"><name>dim_aparam</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1a0b2255ddf325e752b73548d2eba12837" kind="function"><name>get_type_map</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1ae63c819ca292e71deb3c2bfc0d01383c" kind="function"><name>get_scalar</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1ab1391e0eb919ad9c215473fb0173286b" kind="function"><name>validate_fparam_aparam</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1a01a82ea94373903270c49903794bc8f7" kind="function"><name>compute_inner</name></member>
+    <member refid="classdeepmd_1_1DeepPot_1a9ab3a52afc1f51dc627a1e1da5833908" kind="function"><name>get_sel_a</name></member>
+  </compound>
+  <compound refid="classdeepmd_1_1DeepPotModelDevi" kind="class"><name>deepmd::DeepPotModelDevi</name>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a8035cae03f4daf811d757c9dce821940" kind="variable"><name>numb_models</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1aa693e095d2188f474429c487cd8b4f71" kind="variable"><name>sessions</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a3171cabc226fb4d4fb9ca6ca606154ec" kind="variable"><name>num_intra_nthreads</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1ae26c2a500427947716cb66867b9ac014" kind="variable"><name>num_inter_nthreads</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a3d2f64e1b7e73242860ae67031793516" kind="variable"><name>graph_defs</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1aaace24e7a5237992541b698b033168e7" kind="variable"><name>inited</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a51009d0f14c122578e8bcea35cf072ce" kind="variable"><name>rcut</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a79355056796e99e053b5cea6ff800d63" kind="variable"><name>cell_size</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1af534bd7b3d840465a0b107a1bb14bad9" kind="variable"><name>model_type</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1aa0a0fa1a74b0e8167ce17f00e9b3f178" kind="variable"><name>model_version</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a37cfb191a986a622ac9a14efc3e43886" kind="variable"><name>ntypes</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1ab4c0f506b5b904693b7d266c13c3d3e5" kind="variable"><name>dfparam</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a644e362f01e19ddbeb08978923d72edb" kind="variable"><name>daparam</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a6933ef260f6102483df5b3a163e9540e" kind="variable"><name>init_nbor</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a0d66bbb96498b6bcf84217ca78d8072f" kind="variable"><name>sec</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a7bba46dc581337699ac37a0ea748b47d" kind="variable"><name>atommap</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a051031f8dcb486898daafb619d8665dd" kind="variable"><name>nlist_data</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a92af4efa3cb8db15e6488ae4281348d9" kind="variable"><name>nlist</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1aa220a07e71ccd6bf914caeae15cb3280" kind="function"><name>DeepPotModelDevi</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a6ab5149b8612037822386cc560c11798" kind="function"><name>~DeepPotModelDevi</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1af48019fb365f4a00a992249a159fd8a5" kind="function"><name>DeepPotModelDevi</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a32d9a07552439b998e2bc7685f38b693" kind="function"><name>init</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1ac29240bbb38fb6d2081dc9c2b3e6a3f6" kind="function"><name>compute</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1ad2211056f904557ff90393f0df2ac3bd" kind="function"><name>compute</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a180dd05cf4fc8cfe459a738af4899729" kind="function"><name>cutoff</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a8a9eb0ce67ab49469637e7103f9d581b" kind="function"><name>numb_types</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a7875425a7f3fb64fc8edf95969852094" kind="function"><name>dim_fparam</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a0e549b16730fc5b1500e2694e76ae335" kind="function"><name>dim_aparam</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1ae8a0f9cc0f0d846a8710f98c32fd4f71" kind="function"><name>compute_avg</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a979c73d9408212e193a84918083212a0" kind="function"><name>compute_avg</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a23c99bd74f097a3a561c37431562e8db" kind="function"><name>compute_avg</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a3aba81265756de56430d88c7df8e3be7" kind="function"><name>compute_std</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a7b3b09202941db79f219952e08e436c8" kind="function"><name>compute_relative_std</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a217f7b8fcb08e1a89cfa31c9ca0ddc3e" kind="function"><name>compute_std_e</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a65df524fa509fee8718579bd95b27c87" kind="function"><name>compute_std_f</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1ac6dacda129390e007d9d2707f587c80d" kind="function"><name>compute_relative_std_f</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1af1beecf392f208ce754570a3bf630424" kind="function"><name>get_scalar</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1abb3b64a17b6fe999d05a25e6d7ad576c" kind="function"><name>validate_fparam_aparam</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a6b09f235e7703f096fd4c9594386cd4d" kind="function"><name>get_sel</name></member>
+    <member refid="classdeepmd_1_1DeepPotModelDevi_1a977f3a3b5fe6fb511923171ea20acd43" kind="function"><name>cum_sum</name></member>
+  </compound>
+  <compound refid="classdeepmd_1_1DeepTensor" kind="class"><name>deepmd::DeepTensor</name>
+    <member refid="classdeepmd_1_1DeepTensor_1a6b1c7eac01045248737fe636b4576bf6" kind="variable"><name>session</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1aaae7ec11153316eede66d8b8e5cc3053" kind="variable"><name>name_scope</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1a9a9a9b3abe9c99abafb6189bac5ab00a" kind="variable"><name>num_intra_nthreads</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1a5c479f1438804e747049655a9e1d0662" kind="variable"><name>num_inter_nthreads</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1a37a3317dd91e5b69b13858536505a8ae" kind="variable"><name>graph_def</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1a1f0bea924d36ad36c9cbd2043a39379f" kind="variable"><name>inited</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1a6de1ee35044fd250c74723ff47a93b15" kind="variable"><name>rcut</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1a0bd029459a5000948016c466a1a8b9ab" kind="variable"><name>cell_size</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1a87b58104f7105382a0fa5931fe085485" kind="variable"><name>ntypes</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1ab7e7d792b716edf1006ac1077df37a42" kind="variable"><name>model_type</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1a8fe6d3901812728cbc4aa2ca71712546" kind="variable"><name>model_version</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1a1d335481ff637d5f1b361153dbcc5af6" kind="variable"><name>odim</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1a81c9361d5a1f668a1df8bad20e0b01fe" kind="variable"><name>sel_type</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1a51fe238c6bbb9d323256a244dd3d2ea5" kind="function"><name>DeepTensor</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1ab7c5eab158f1a1c1290de8ab6eb2fc05" kind="function"><name>DeepTensor</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1aa75c75560fad5ed5c04d7e694d6a5a7c" kind="function"><name>init</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1ab3301750cab21cb47c9f5e022bc0df5a" kind="function"><name>print_summary</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1a70c904dca4b5d16f665f9fd981b57753" kind="function"><name>compute</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1a516131868a37568372a547e22cd3e014" kind="function"><name>compute</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1a2514131152b277da1b0173f0e941aa84" kind="function"><name>cutoff</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1ae1d1e5e2e1b5e88a56c2db99c62f4c4c" kind="function"><name>numb_types</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1aab921f1ceda49afcf2a0b119d86b3f83" kind="function"><name>output_dim</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1a145d02a70b8d6d83a3983cfee3edef6b" kind="function"><name>sel_types</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1a79c46e9b61f55a9ebeb165bff17cabe2" kind="function"><name>get_scalar</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1a5cb10f7ca6ad4eaa72b21c649dff2542" kind="function"><name>get_vector</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1ab19261ffdf47b85104f74db60a25d1e1" kind="function"><name>run_model</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1ad52f38e393be869609cced7d0063b735" kind="function"><name>compute_inner</name></member>
+    <member refid="classdeepmd_1_1DeepTensor_1a573bc0d0dfafb6deb825d11ba6890b9d" kind="function"><name>compute_inner</name></member>
+  </compound>
+  <compound refid="structDeviceFunctor" kind="struct"><name>DeviceFunctor</name>
+    <member refid="structDeviceFunctor_1a2d15f19642fb2138bd4d213a5086f0eb" kind="function"><name>operator()</name></member>
+  </compound>
+  <compound refid="classdeepmd_1_1DipoleChargeModifier" kind="class"><name>deepmd::DipoleChargeModifier</name>
+    <member refid="classdeepmd_1_1DipoleChargeModifier_1a1799cdb326cc01447f0dd99288ef1ef6" kind="variable"><name>session</name></member>
+    <member refid="classdeepmd_1_1DipoleChargeModifier_1a14dab4c1b4a7a292f1a75ab2109602c6" kind="variable"><name>name_scope</name></member>
+    <member refid="classdeepmd_1_1DipoleChargeModifier_1ac9fa8c81678d397b00864af8a227811e" kind="variable"><name>name_prefix</name></member>
+    <member refid="classdeepmd_1_1DipoleChargeModifier_1a526276909dd7f75eb4d0006c8c4c7fd5" kind="variable"><name>num_intra_nthreads</name></member>
+    <member refid="classdeepmd_1_1DipoleChargeModifier_1a0638e9624cbb87a9c63b7b5ac26c2670" kind="variable"><name>num_inter_nthreads</name></member>
+    <member refid="classdeepmd_1_1DipoleChargeModifier_1a5e950ed4cf3452519a41e61bfb3a99de" kind="variable"><name>graph_def</name></member>
+    <member refid="classdeepmd_1_1DipoleChargeModifier_1a2e1766bdd6142bf22d3bdc62f007b84d" kind="variable"><name>inited</name></member>
+    <member refid="classdeepmd_1_1DipoleChargeModifier_1aa78bc48878205350d480cc1a89cd0d6e" kind="variable"><name>rcut</name></member>
+    <member refid="classdeepmd_1_1DipoleChargeModifier_1aa0b8736cecb9d747f5ca53f3be3593ec" kind="variable"><name>cell_size</name></member>
+    <member refid="classdeepmd_1_1DipoleChargeModifier_1a68186ccbbcf4a6168cc8eef9e85fbf77" kind="variable"><name>ntypes</name></member>
+    <member refid="classdeepmd_1_1DipoleChargeModifier_1adb883e38cc750efe45e025898df0a49e" kind="variable"><name>model_type</name></member>
+    <member refid="classdeepmd_1_1DipoleChargeModifier_1acbfac1635048a5ba6ce56ca8b58bc329" kind="variable"><name>sel_type</name></member>
+    <member refid="classdeepmd_1_1DipoleChargeModifier_1a0a101a8b26dac851fa65563d0e2c5464" kind="function"><name>DipoleChargeModifier</name></member>
+    <member refid="classdeepmd_1_1DipoleChargeModifier_1add0b842526caa7b9dbc19f330517d016" kind="function"><name>DipoleChargeModifier</name></member>
+    <member refid="classdeepmd_1_1DipoleChargeModifier_1a7d25bc9da7f6e3c169ef2eefa06c1cf2" kind="function"><name>~DipoleChargeModifier</name></member>
+    <member refid="classdeepmd_1_1DipoleChargeModifier_1ae0d8bdf4ce2f15f1608cc8a5710992b9" kind="function"><name>init</name></member>
+    <member refid="classdeepmd_1_1DipoleChargeModifier_1a23f623114a4e6903b477a2a379f5b144" kind="function"><name>print_summary</name></member>
+    <member refid="classdeepmd_1_1DipoleChargeModifier_1a1f201372e7ba730d399e184a4aca1016" kind="function"><name>compute</name></member>
+    <member refid="classdeepmd_1_1DipoleChargeModifier_1aaef66f6224fdc4863d67fbacf0d117f9" kind="function"><name>cutoff</name></member>
+    <member refid="classdeepmd_1_1DipoleChargeModifier_1a7e5fbca84efe2f00eede4e36e1842513" kind="function"><name>numb_types</name></member>
+    <member refid="classdeepmd_1_1DipoleChargeModifier_1a062f9264d7b52b147d377872764dfb4e" kind="function"><name>sel_types</name></member>
+    <member refid="classdeepmd_1_1DipoleChargeModifier_1a911ffb0fdffcdba3c5428539ffe4afb4" kind="function"><name>get_scalar</name></member>
+    <member refid="classdeepmd_1_1DipoleChargeModifier_1ab799ade7682da860326343e4fd698a30" kind="function"><name>get_vector</name></member>
+    <member refid="classdeepmd_1_1DipoleChargeModifier_1a689a38e8169c4ce1c6920982ce15e338" kind="function"><name>run_model</name></member>
+  </compound>
+  <compound refid="structdeepmd_1_1NeighborListData" kind="struct"><name>deepmd::NeighborListData</name>
+    <member refid="structdeepmd_1_1NeighborListData_1ade0fe10ddb2c7c59e3524740b2584ab8" kind="variable"><name>ilist</name></member>
+    <member refid="structdeepmd_1_1NeighborListData_1a812ea6ce0018f0848dcf7de2d5426f15" kind="variable"><name>jlist</name></member>
+    <member refid="structdeepmd_1_1NeighborListData_1adea3ce6143a430dea7500c7112de1940" kind="variable"><name>numneigh</name></member>
+    <member refid="structdeepmd_1_1NeighborListData_1a424c3cb9ebf8c5066212ba86cca46d67" kind="variable"><name>firstneigh</name></member>
+    <member refid="structdeepmd_1_1NeighborListData_1aea4a5775454145c18bcb82e2f03abfa9" kind="function"><name>copy_from_nlist</name></member>
+    <member refid="structdeepmd_1_1NeighborListData_1a745297c053e1ee5201b08bf7ce4df255" kind="function"><name>shuffle</name></member>
+    <member refid="structdeepmd_1_1NeighborListData_1a3e74e118d2120f225a4f9f69f2231c89" kind="function"><name>shuffle</name></member>
+    <member refid="structdeepmd_1_1NeighborListData_1add26265742c56752d02d157bb3a93938" kind="function"><name>shuffle_exclude_empty</name></member>
+    <member refid="structdeepmd_1_1NeighborListData_1af8f2f20815484a0b8d6140a536291218" kind="function"><name>make_inlist</name></member>
+  </compound>
+  <compound refid="namespacedeepmd" kind="namespace"><name>deepmd</name>
+    <member refid="common_8h_1a55f0e93ae8ccc3c377e48316bd0e32e7" kind="typedef"><name>STRINGTYPE</name></member>
+    <member refid="common_8h_1a84b8762d39ccfa19f35f8fc65fb47fb7" kind="typedef"><name>VALUETYPE</name></member>
+    <member refid="common_8h_1a0888b00e77221d7a393ae7424ff81e58" kind="typedef"><name>ENERGYTYPE</name></member>
+    <member refid="common_8h_1a389a67ef3d62ae3ceef2708d208549d8" kind="function"><name>model_compatable</name></member>
+    <member refid="common_8h_1a2543b8640801856aa7d97daf80f47d3a" kind="function"><name>select_by_type</name></member>
+    <member refid="common_8h_1a6473c6cbf7105aaaeadd11f1f8194520" kind="function"><name>select_real_atoms</name></member>
+    <member refid="common_8h_1a134b699101977af6fcece2c1127c6734" kind="function"><name>select_map</name></member>
+    <member refid="common_8h_1ab514970b3652ec0a38720ce644200332" kind="function"><name>get_env_nthreads</name></member>
+    <member refid="common_8h_1a6aee510cbfc77ef75841840e869e87a9" kind="function"><name>check_status</name></member>
+    <member refid="common_8h_1a572bcb568a3a3c55d736dce041ba0f75" kind="function"><name>name_prefix</name></member>
+    <member refid="common_8h_1a87aa20c9dd572c2864143ccdef55948e" kind="function"><name>session_get_scalar</name></member>
+    <member refid="common_8h_1a704eb578d64a1f5ff991ae899770def3" kind="function"><name>session_get_vector</name></member>
+    <member refid="common_8h_1a25bffe5ab8fc2a118f97ff4db5e1f4f9" kind="function"><name>session_input_tensors</name></member>
+    <member refid="common_8h_1a5e5b975e7a638145d11592820042c2a0" kind="function"><name>session_input_tensors</name></member>
+  </compound>
+  <compound refid="namespacetensorflow" kind="namespace"><name>tensorflow</name>
+  </compound>
+  <compound refid="AtomMap_8h" kind="file"><name>AtomMap.h</name>
+  </compound>
+  <compound refid="common_8h" kind="file"><name>common.h</name>
+  </compound>
+  <compound refid="custom__op_8h" kind="file"><name>custom_op.h</name>
+    <member refid="custom__op_8h_1a81c76a1b44b3928e27b79d1cdd1ace30" kind="typedef"><name>CPUDevice</name></member>
+    <member refid="custom__op_8h_1aaef75c32ec58c5cee501af039a9aaa13" kind="typedef"><name>GPUDevice</name></member>
+  </compound>
+  <compound refid="DataModifier_8h" kind="file"><name>DataModifier.h</name>
+  </compound>
+  <compound refid="DeepPot_8h" kind="file"><name>DeepPot.h</name>
+  </compound>
+  <compound refid="DeepTensor_8h" kind="file"><name>DeepTensor.h</name>
+  </compound>
+  <compound refid="dir_54ab550dd64f74922d761973e1210332" kind="dir"><name>/home/abby/deepmd-kit/source/api_cc</name>
+  </compound>
+  <compound refid="dir_36d8bfd8037f6b86c9f7c988b1438103" kind="dir"><name>/home/abby/deepmd-kit/source/api_cc/include</name>
+  </compound>
+  <compound refid="dir_b2f33c71d4aa5e7af42a1ca61ff5af1b" kind="dir"><name>/home/abby/deepmd-kit/source</name>
+  </compound>
+</doxygenindex>

@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="1.9.2" xml:lang="en-US">
+  <compounddef id="dir_b2f33c71d4aa5e7af42a1ca61ff5af1b" kind="dir">
+    <compoundname>/home/abby/deepmd-kit/source</compoundname>
+    <innerdir refid="dir_54ab550dd64f74922d761973e1210332">/home/abby/deepmd-kit/source/api_cc</innerdir>
+    <briefdescription>
+    </briefdescription>
+    <detaileddescription>
+    </detaileddescription>
+    <location file="/home/abby/deepmd-kit/source/"/>
+  </compounddef>
+</doxygen>

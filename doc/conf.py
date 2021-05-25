@@ -72,8 +72,12 @@ mkindex("development")
 extensions = [
     "sphinx_rtd_theme",
     'myst_parser',
-    'sphinx.ext.autosummary'
+    'sphinx.ext.autosummary',
+    'breathe'
 ]
+
+breathe_projects = {"myproject": "xml/"}
+breathe_default_project = "myproject"
 
 myst_heading_anchors = 4
 
