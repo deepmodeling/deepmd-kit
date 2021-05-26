@@ -342,9 +342,10 @@ kspace_modify	gewald 0.45
 Please notice that the DeePMD does nothing to the direct space part of the electrostatic interaction, because this part is assumed to be fitted in the DeePMD model (the direct space cut-off is thus the cut-off of the DeePMD model). The splitting parameter `gewald` is modified by the `kspace_modify` command.
 
 ### Run path-integral MD with i-PI
-The i-PI works in a client-server model. The i-PI provides the server for integrating the replica positions of atoms, while the DeePMD-kit provides a client named `dp_ipi` that computes the interactions (including energy, force and virial). The server and client communicates via the Unix domain socket or the Internet socket. The client can be started by
+The i-PI works in a client-server model. The i-PI provides the server for integrating the replica positions of atoms, while the DeePMD-kit provides a client named `dp_ipi` that computes the interactions (including energy, force and virial). The server and client communicates via the Unix domain socket or the Internet socket. Installation instructions of i-PI can be found [here](install.md#install-i-pi). The client can be started by
 ```bash
-$ dp_ipi water.json
+i-pi input.xml &
+dp_ipi water.json
 ```
 It is noted that multiple instances of the client is allow for computing, in parallel, the interactions of multiple replica of the path-integral MD.
 
@@ -365,6 +366,11 @@ It is noted that multiple instances of the client is allow for computing, in par
 }
 ```
 The option **`use_unix`** is set to `true` to activate the Unix domain socket, otherwise, the Internet socket is used.
+
+The option **`port`** should be the same as that in input.xml:
+```xml
+<port>31415</port>
+```
 
 The option **`graph_file`** provides the file name of the frozen model.
 
