@@ -102,6 +102,9 @@ extensions = [
     'breathe'
 ]
 
+breathe_domain_by_extension = {
+        "h" : "cpp",
+}
 breathe_projects = {"myproject": "_build/xml/"}
 breathe_default_project = "myproject"
 
