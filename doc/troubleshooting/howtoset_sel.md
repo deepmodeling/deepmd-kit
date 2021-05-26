@@ -9,12 +9,3 @@
 However, the computation overhead increases with `sel_a[i]`, therefore, `sel_a[i]` should be as small as possible.
 
 The setting of `sel_a[i]` should balance the above two considerations.
-
-Here are some empirical settings:
-
-system | rcut | sel
----|---|---
-Li | 9.0 | [700]
-Li | 6.0 | [200]
-Si | 6.0 | [300]
-water | 6.0 | [200,400]
