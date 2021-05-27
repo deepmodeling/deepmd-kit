@@ -1,5 +1,5 @@
 # Developer Guide
    
-- [API](api.rst)
-- [API of C++](api_cc.rst)
+- [Python API](../api.rst)
+- [C++ API](../API_CC/api_cc.rst)
 - [Coding Conventions](coding-conventions.rst)
