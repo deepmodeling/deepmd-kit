@@ -441,7 +441,7 @@ public:
       deepmd::delete_device_memory(firstneigh);
       #endif //GOOGLE_CUDA
 
-            #if TENSORFLOW_USE_ROCM
+      #if TENSORFLOW_USE_ROCM
       int * idx_mapping = NULL;
       int * ilist = NULL, * numneigh = NULL;
       int ** firstneigh = NULL;

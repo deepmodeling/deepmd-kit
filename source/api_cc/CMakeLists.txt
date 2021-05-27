@@ -1,5 +1,4 @@
 # libmd
-
 set (libname ${LIB_DEEPMD_CC})
 
 configure_file(
@@ -27,7 +26,8 @@ if (USE_CUDA_TOOLKIT)
 endif()
 
 if (USE_ROCM_TOOLKIT)
-  target_link_libraries(${libname} ${HIP_LIBRARIES})
+  LINK_LIBRARIES(${HIP_ROOT_DIR}\lib) 
+  target_link_libraries(${libname} hip_hcc)
 endif()
 
 

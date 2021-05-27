@@ -1,29 +1,17 @@
 # required cmake version
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.5)
 # project name
 project(deepmd_op_rocm)
 set(CMAKE_LINK_WHAT_YOU_USE TRUE)
-#set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "/opt/rocm/hip/cmake")
-if(NOT DEFINED HIP_PATH)
-  if(NOT DEFINED ENV{HIP_PATH})
-    set(HIP_PATH "/opt/rocm/hip" CACHE PATH "Path to which HIP has been installed")
-  else()
-    set(HIP_PATH $ENV{HIP_PATH} CACHE PATH "Path to which HIP has been installed")
-  endif()
-endif()
-set(CMAKE_MODULE_PATH "${HIP_PATH}/cmake" ${CMAKE_MODULE_PATH})
 find_package(HIP REQUIRED)
-
 add_compile_definitions(__HIP_PLATFORM_HCC__)
-link_directories(${HIP_ROOT_DIR}/lib)
 add_definitions("-DTENSORFLOW_USE_ROCM")
 
 # set c++ version c++11
-#SET(CMAKE_CXX_STANDARD 11)
+SET(CMAKE_CXX_STANDARD 11)
 SET(CMAKE_HIP_STANDARD 11)
 
 message(STATUS "HIP major version is " ${HIP_VERSION_MAJOR})
-message(STATUS "HIP major version is " ${HIP_TOOLKIT_ROOT_DIR})
 
 
 set (HIP_HIPCC_FLAGS -hc; -fno-gpu-rdc; --amdgpu-target=gfx906; -fPIC; -O3; --std=c++11; -D__HIP_PLATFORM_HCC__)
@@ -34,9 +22,8 @@ set (SOURCE_FILES
 )
 
 hip_add_library(deepmd_op_rocm SHARED ${SOURCE_FILES})
-target_link_libraries(deepmd_op_rocm ${HIP_LIBRARIES})
 
-#install(TARGETS deepmd_op_rocm DESTINATION lib/)
+install(TARGETS deepmd_op_rocm DESTINATION lib/)
 if (BUILD_CPP_IF)
   install(TARGETS deepmd_op_rocm DESTINATION lib/)
 endif (BUILD_CPP_IF)
