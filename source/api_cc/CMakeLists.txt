@@ -16,6 +16,10 @@ if (USE_CUDA_TOOLKIT)
   include_directories("${CUDA_INCLUDE_DIRS}")
 endif()
 
+if (USE_ROCM_TOOLKIT)
+  include_directories("${ROCM_INCLUDE_DIRS}")
+endif()
+
 file(GLOB LIB_SRC src/*.cc src/*.cpp)
 file(GLOB INC_SRC include/*.h ${CMAKE_CURRENT_BINARY_DIR}/version.h)
 
@@ -26,8 +30,7 @@ if (USE_CUDA_TOOLKIT)
 endif()
 
 if (USE_ROCM_TOOLKIT)
-  LINK_LIBRARIES(${HIP_ROOT_DIR}\lib) 
-  target_link_libraries(${libname} hip_hcc)
+  target_link_libraries (${libname} ${ROCM_LIBRARIES})
 endif()
 
 

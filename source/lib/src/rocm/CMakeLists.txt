@@ -3,16 +3,18 @@ cmake_minimum_required(VERSION 3.5)
 # project name
 project(deepmd_op_rocm)
 set(CMAKE_LINK_WHAT_YOU_USE TRUE)
-find_package(HIP REQUIRED)
+
+#find package ROCM
+list (APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/../../../cmake/)
+find_package(ROCM REQUIRED)
+
 add_compile_definitions(__HIP_PLATFORM_HCC__)
-add_definitions("-DTENSORFLOW_USE_ROCM")
 
 # set c++ version c++11
 SET(CMAKE_CXX_STANDARD 11)
 SET(CMAKE_HIP_STANDARD 11)
 
 message(STATUS "HIP major version is " ${HIP_VERSION_MAJOR})
-
 
 set (HIP_HIPCC_FLAGS -hc; -fno-gpu-rdc; --amdgpu-target=gfx906; -fPIC; -O3; --std=c++11; -D__HIP_PLATFORM_HCC__)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -DCUB_IGNORE_DEPRECATED_CPP_DIALECT -DCUB_IGNORE_DEPRECATED_CPP_DIALECT")

@@ -64,19 +64,11 @@ if (USE_CUDA_TOOLKIT)
 endif(USE_CUDA_TOOLKIT)
 
 #define USE_ROCM_TOOLKIT
-if(NOT DEFINED HIP_PATH)
-  if(NOT DEFINED ENV{HIP_PATH})
-    set(HIP_PATH "/opt/rocm/hip" CACHE PATH "Path to which HIP has been installed")
-  else()
-    set(HIP_PATH $ENV{HIP_PATH} CACHE PATH "Path to which HIP has been installed")
-  endif()
-endif()
-set(CMAKE_MODULE_PATH "${HIP_PATH}/cmake" ${CMAKE_MODULE_PATH})
 if (USE_ROCM_TOOLKIT)
-  find_package(HIP REQUIRED)
+  find_package(ROCM REQUIRED)
   add_definitions("-D TENSORFLOW_USE_ROCM")
   add_compile_definitions(__HIP_PLATFORM_HCC__)
-  message(STATUS "Found ROCM in ${HIP_ROOT_DIR}, build AMD GPU support")
+  message(STATUS "Found ROCM in ${ROCM_ROOT}, build AMD GPU support")
 endif (USE_ROCM_TOOLKIT)
 
 

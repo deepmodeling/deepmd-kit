@@ -1,19 +1,19 @@
 # libmd
 set (libname ${LIB_DEEPMD})
 
-# Devices that have both ROCM and CUDA are not currently supported
-if (USE_ROCM_TOOLKIT AND USE_CUDA_TOOLKIT)
-  message (FATAL_ERROR "Devices that have both ROCM and CUDA are not currently supported")
-endif()
-
 if (USE_CUDA_TOOLKIT)
   include_directories("${CUDA_INCLUDE_DIRS}")
+endif()
+
+if (USE_ROCM_TOOLKIT)
+  include_directories("${ROCM_INCLUDE_DIRS}")
 endif()
 
 file(GLOB LIB_SRC src/*.cc src/*.cpp)
 file(GLOB INC_SRC include/*.h ${CMAKE_CURRENT_BINARY_DIR}/version.h)
 
 add_library(${libname} SHARED ${LIB_SRC})
+
 if (USE_CUDA_TOOLKIT)
   add_definitions("-D GOOGLE_CUDA")
   add_subdirectory(src/cuda)
@@ -25,8 +25,7 @@ if (USE_ROCM_TOOLKIT)
   add_definitions("-D TENSORFLOW_USE_ROCM")
   add_subdirectory(src/rocm)
   set (EXTRA_LIBS ${EXTRA_LIBS} deepmd_op_rocm)
-  LINK_LIBRARIES(${HIP_ROOT_DIR}/lib)
-  target_link_libraries (${libname} ${EXTRA_LIBS} hip_hcc)
+  target_link_libraries (${libname} ${ROCM_LIBRARIES} ${EXTRA_LIBS})
 endif()
 
 if(BUILD_PY_IF)
