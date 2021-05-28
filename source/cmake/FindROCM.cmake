@@ -9,8 +9,6 @@
 # define the search path
 list(APPEND ROCM_search_PATHS ${ROCM_ROOT})
 list(APPEND ROCM_search_PATHS "/opt/rocm/")
-list(APPEND HIP_search_PATHS ${ROCM_ROOT}/hip)
-list(APPEND HIP_search_PATHS "/opt/rocm/hip")
 
 # define the libs to find
 if (NOT ROCM_FIND_COMPONENTS)
@@ -52,8 +50,8 @@ endforeach ()
 find_path (HIP_CMAKE
   NAMES 
   FindHIP.cmake
-  PATHS ${HIP_search_PATHS} 
-  PATH_SUFFIXES "cmake"
+  PATHS ${ROCM_search_PATHS} 
+  PATH_SUFFIXES "hip/cmake"
   NO_DEFAULT_PATH
   )
 
@@ -80,4 +78,3 @@ if (NOT ROCM_FIND_QUIETLY)
 endif ()
 
 unset(ROCM_search_PATHS)
-unset(HIP_search_PATHS)
