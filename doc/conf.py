@@ -119,7 +119,9 @@ exhale_args = {
     # TIP: if using the sphinx-bootstrap-theme, you need
     # "treeViewIsBootstrap": True,
     "exhaleExecutesDoxygen": True,
-    "exhaleDoxygenStdin":    "INPUT = ../source/api_cc/include/"
+    "exhaleDoxygenStdin":    "INPUT = ../source/api_cc/include/",
+    # "unabridgedOrphanKinds": {"namespace"}
+    # "listingExclude": [r"namespace_*"]
 }
 
 # Tell sphinx what the primary language being documented is.
