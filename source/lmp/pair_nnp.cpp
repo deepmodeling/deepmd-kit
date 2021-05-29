@@ -806,12 +806,12 @@ void PairNNP::settings(int narg, char **arg)
   all_force.resize(numb_models);
 }
 
-void PairDeepMD::read_restart(FILE *)
+void PairNNP::read_restart(FILE *)
 {
   is_restart = true;
 }
 
-void PairDeepMD::write_restart(FILE *)
+void PairNNP::write_restart(FILE *)
 {
   // pass
 }
