@@ -74,7 +74,7 @@ endif ()
 # print message
 if (NOT ROCM_FIND_QUIETLY)
   message(STATUS "Found ROCM: ${ROCM_INCLUDE_DIRS}, ${ROCM_LIBRARIES}, ${HIP_CMAKE}"
-    " in ${ROCM_search_PATHS}")
+    " in ${ROCM_search_PATHS}, build AMD GPU support")
 endif ()
 
 unset(ROCM_search_PATHS)
