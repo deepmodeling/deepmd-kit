@@ -4,6 +4,9 @@
 #include "neighbor_list.h"
 
 namespace deepmd{
+/**
+* @brief Deep Potential.
+**/
 class DeepPot 
 {
 public:

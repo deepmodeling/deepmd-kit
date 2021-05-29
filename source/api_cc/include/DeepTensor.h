@@ -4,6 +4,9 @@
 #include "neighbor_list.h"
 
 namespace deepmd{
+/**
+* @brief Deep Tensor.
+**/
 class DeepTensor
 {
 public:
