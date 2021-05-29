@@ -13,6 +13,22 @@ public:
   void init (const std::string & model, const int & gpu_rank = 0, const std::string & file_content = "");
   void print_summary(const std::string &pre) const;
 public:
+  /**
+  * @brief Evaluate the energy, force and virial by using this DP.
+  * @param[out] dener The system energy.
+  * @param[out] dforce_ The force on each atom.
+  * @param[out] dvirial The virial.
+  * @param[in] dcoord_ The coordinates of atoms. The array should be of size nframes x natoms x 3.
+  * @param[in] datype_ The atom types. The list should contain natoms ints.
+  * @param[in] dbox The cell of the region. The array should be of size nframes x 9.
+  * @param[in] fparam The frame parameter. The array can be of size :
+      * nframes x dim_fparam.
+      * dim_fparam. Then all frames are assumed to be provided with the same fparam.
+  * @param[in] aparam The atomic parameter The array can be of size :
+      * nframes x natoms x dim_aparam.
+      * natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
+      * dim_aparam. Then all frames and atoms are provided with the same aparam.
+  **/
   void compute (ENERGYTYPE &			ener,
 		std::vector<VALUETYPE> &	force,
 		std::vector<VALUETYPE> &	virial,
