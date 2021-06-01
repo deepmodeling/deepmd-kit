@@ -320,3 +320,68 @@ void deepmd::env_mat_nbor_update(
   delete [] mesh_host;
 }
 #endif // GOOGLE_CUDA
+
+#if TENSORFLOW_USE_ROCM
+void deepmd::env_mat_nbor_update(
+    InputNlist &inlist,
+    InputNlist &gpu_inlist,
+    int &max_nbor_size,
+    int* &nbor_list_dev,
+    const int * mesh, 
+    const int size)
+{
+  int *mesh_host = new int[size];
+  hipErrcheck(hipMemcpy(mesh_host, mesh, sizeof(int) * size, hipMemcpyDeviceToHost));
+  memcpy(&inlist.ilist, 4 + mesh_host, sizeof(int *));
+	memcpy(&inlist.numneigh, 8 + mesh_host, sizeof(int *));
+	memcpy(&inlist.firstneigh, 12 + mesh_host, sizeof(int **));
+  const int ago = mesh_host[0];
+  if (ago == 0) {
+    const int inum = inlist.inum;
+    if (gpu_inlist.inum < inum) {
+      delete_device_memory(gpu_inlist.ilist);
+      delete_device_memory(gpu_inlist.numneigh);
+      delete_device_memory(gpu_inlist.firstneigh);
+      malloc_device_memory(gpu_inlist.ilist, inum);
+      malloc_device_memory(gpu_inlist.numneigh, inum);
+      malloc_device_memory(gpu_inlist.firstneigh, inum);
+    }
+    memcpy_host_to_device(gpu_inlist.ilist, inlist.ilist, inum);
+    memcpy_host_to_device(gpu_inlist.numneigh, inlist.numneigh, inum);
+    int _max_nbor_size = max_numneigh(inlist);
+    if (_max_nbor_size <= 1024) {
+      _max_nbor_size = 1024;
+    }
+    else if (_max_nbor_size <= 2048) {
+      _max_nbor_size = 2048;
+    }
+    else {
+      _max_nbor_size = 4096;
+    }
+    if ( nbor_list_dev == NULL 
+      || _max_nbor_size > max_nbor_size 
+      || inum > gpu_inlist.inum) 
+    {
+      delete_device_memory(nbor_list_dev);
+      malloc_device_memory(nbor_list_dev, inum * _max_nbor_size);
+    }
+    // update info
+    gpu_inlist.inum = inum;
+    max_nbor_size = _max_nbor_size;
+
+    // copy nbor list from host to the device
+    std::vector<int> nbor_list_host(inum * max_nbor_size, 0);
+    int ** _firstneigh = (int**)malloc(sizeof(int*) * inum);
+    for (int ii = 0; ii < inum; ii++) {
+      _firstneigh[ii] = nbor_list_dev + ii * max_nbor_size;
+      for (int jj = 0; jj < inlist.numneigh[ii]; jj++) {
+        nbor_list_host[ii * max_nbor_size + jj] = inlist.firstneigh[ii][jj];
+      }
+    }
+    memcpy_host_to_device(nbor_list_dev, &nbor_list_host[0], inum * max_nbor_size);
+    memcpy_host_to_device(gpu_inlist.firstneigh, _firstneigh, inum);
+    free(_firstneigh);
+  }
+  delete [] mesh_host;
+}
+#endif // TENSORFLOW_USE_ROCM

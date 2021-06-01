@@ -42,12 +42,12 @@ struct UnaggregatedDyDxSFunctor {
         }
     }
 
-    #if GOOGLE_CUDA
+    #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     void operator()(const GPUDevice& d, const FPTYPE * y, const FPTYPE * w, const int length, const int width, FPTYPE * dy_dx) {
         //Currently, Do nothing at all! 
         return;
     }
-    #endif // GOOGLE_CUDA 
+    #endif // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 };
 
 // calculate the gradient for all variables!
@@ -70,12 +70,12 @@ struct UnaggregatedDyDxFunctor {
         }
     }
 
-    #if GOOGLE_CUDA
+    #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     void operator()(const GPUDevice& d, const FPTYPE * z, const FPTYPE * w, const FPTYPE * dy_dx, const int length, const int width, const int size, FPTYPE * dz_dx) {
         //Currently, Do nothing at all! 
         return;
     }
-    #endif // GOOGLE_CUDA
+    #endif // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 };
 
 template <typename FPTYPE>
@@ -89,12 +89,12 @@ struct UnaggregatedDy2DxSFunctor {
         }
     }
 
-    #if GOOGLE_CUDA
+    #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     void operator()(const GPUDevice& d, const FPTYPE * y, const FPTYPE * w, const int length, const int width, FPTYPE * dy_dx) {
         //Currently, Do nothing at all! 
         return;
     }
-    #endif // GOOGLE_CUDA 
+    #endif // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 };
 
 // calculate the gradient for all variables!
@@ -122,12 +122,12 @@ struct UnaggregatedDy2DxFunctor {
         }
     }
 
-    #if GOOGLE_CUDA
+    #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     void operator()(const GPUDevice& d, const FPTYPE * z, const FPTYPE * w, const FPTYPE * dz_dx, const FPTYPE * dy_dx, const FPTYPE * dy2_dx, const int length, const int width, const int size, FPTYPE * dz2_dx) {
         //Currently, Do nothing at all! 
         return;
     }
-    #endif // GOOGLE_CUDA
+    #endif // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 };
 
 template<typename Device, typename FPTYPE>
