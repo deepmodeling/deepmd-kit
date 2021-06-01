@@ -346,7 +346,7 @@ class RunOptions:
         self.server = None
 
         if gpus is not None:
-            self.my_device = f"gpu:{gpus[0]:d}"
+            self.my_device = "gpu:" + str(gpus[0])
         else:
             self.my_device = "cpu:0"
 

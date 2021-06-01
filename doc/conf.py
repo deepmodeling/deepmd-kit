@@ -15,46 +15,92 @@ import os
 import recommonmark
 from recommonmark.transform import AutoStructify
 
-def mkindex_troubleshooting():
-    oldfindex = open("troubleshooting/index.md", "r")
-    _oldlist = oldfindex.readlines()
-    oldlist = _oldlist[4:]
+def mkindex(dirname):
+    dirname = dirname + "/"
+    oldfindex = open(dirname + "index.md", "r")
+    oldlist = oldfindex.readlines()
     oldfindex.close()
+
+    oldnames = []
+    for entry in oldlist:
+        _name = entry[entry.find("(")+1 : entry.find(")")]
+        oldnames.append(_name)
     
-    newfindex = open("troubleshooting/index.md", "a")
-    for root, dirs, files in os.walk("./troubleshooting/", topdown=False):
-        for name in files:
-            if (name == "index.md"):
-                continue
-            if (name[-3:] == ".md"):
-                longname = "- ["+name[:-3]+"]("+name+")\n"
-                if (longname not in oldlist):
-                    newfindex.write(longname)
+    newfindex = open(dirname + "index.md", "a")
+    for root, dirs, files in os.walk(dirname, topdown=False):
+        newnames = [name for name in files if "index.md" not in name and name not in oldnames]
+        for name in newnames:
+            f = open(dirname + name, "r")
+            _lines = f.readlines()
+            for _headline in _lines:
+                _headline = _headline.strip("#")
+                headline = _headline.strip()
+                if (len(headline) == 0 or headline[0] == "." or headline[0] == "="):
+                    continue
+                else:
+                    break
+            longname = "- ["+headline+"]"+"("+name+")\n"
+            newfindex.write(longname)
+
     
     newfindex.close()
 
-def mkindex_development():
-    oldfindex = open("development/index.md", "r")
-    _oldlist = oldfindex.readlines()
-    oldlist = _oldlist[2:]
+def classify_index_TS():
+    dirname = "troubleshooting/"
+    oldfindex = open(dirname + "index.md", "r")
+    oldlist = oldfindex.readlines()
     oldfindex.close()
+
+    oldnames = []
+    sub_titles = []
+    heads = []
+    while(len(oldlist) > 0):
+        entry = oldlist.pop(0)
+        if (entry.find("(") >= 0):
+            _name = entry[entry.find("(")+1 : entry.find(")")]
+            oldnames.append(_name)
+            continue
+        if (entry.find("##") >= 0):
+            _name = entry[entry.find("##")+3:-1]
+            sub_titles.append(_name)
+            continue
+        entry.strip()
+        if (entry != '\n'):
+            heads.append(entry)
     
-    newfindex = open("development/index.md", "a")
-    for root, dirs, files in os.walk("./development/", topdown=False):
-        for name in files:
-            if (name == "index.md"):
-                continue
-            if (name[-3:] == ".md"):
-                longname = "- ["+name[:-3]+"]("+name+")\n"
-                if (longname not in oldlist):
-                    newfindex.write(longname)
+    newfindex = open(dirname + "index.md", "w")
+    for entry in heads:
+        newfindex.write(entry)
+    newfindex.write('\n')
+    sub_lists = [[],[]]
+    for root, dirs, files in os.walk(dirname, topdown=False):
+        newnames = [name for name in files if "index.md" not in name]
+        for name in newnames:
+            f = open(dirname + name, "r")
+            _lines = f.readlines()
+            f.close()
+            for _headline in _lines:
+                _headline = _headline.strip("#")
+                headline = _headline.strip()
+                if (len(headline) == 0 or headline[0] == "." or headline[0] == "="):
+                    continue
+                else:
+                    break
+            longname = "- ["+headline+"]"+"("+name+")\n"
+            if ("howtoset_" in name):
+                sub_lists[1].append(longname)
             else:
-                if (name[-4:] == ".rst"):
-                    longname = "- ["+name[:-4]+"]("+name+")\n"
-                    if (longname not in oldlist):
-                        newfindex.write(longname)
+                sub_lists[0].append(longname)
     
+    newfindex.write("## Trouble shooting\n")
+    for entry in sub_lists[0]:
+        newfindex.write(entry)
+    newfindex.write("\n")
+    newfindex.write("## Parameters setting\n")
+    for entry in sub_lists[1]:
+        newfindex.write(entry)
     newfindex.close()
+
 
 # -- Project information -----------------------------------------------------
 
@@ -76,8 +122,9 @@ author = 'Deep Potential'
 #     'sphinx.ext.autosummary'
 # ]
 
-mkindex_troubleshooting()
-mkindex_development()
+mkindex("troubleshooting")
+mkindex("development")
+classify_index_TS()
 
 extensions = [
     "sphinx_rtd_theme",

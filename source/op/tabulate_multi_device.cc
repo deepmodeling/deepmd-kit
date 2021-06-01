@@ -67,6 +67,12 @@ class TabulateFusionOp : public OpKernel {
           descriptor,
           table, table_info, em_x, em, nloc, nnei, last_layer_size);
       #endif // GOOGLE_CUDA
+
+      #if TENSORFLOW_USE_ROCM
+      deepmd::tabulate_fusion_gpu_rocm(    
+          descriptor,
+          table, table_info, em_x, em, nloc, nnei, last_layer_size);
+      #endif // TENSORFLOW_USE_ROCM
     }
     else if (device == "CPU") {
       deepmd::tabulate_fusion_cpu(    
@@ -129,6 +135,12 @@ class TabulateFusionGradOp : public OpKernel {
           dy_dem_x, dy_dem,
           table, table_info, em_x, em, dy, nloc, nnei, last_layer_size);
       #endif // GOOGLE_CUDA
+      
+      #if TENSORFLOW_USE_ROCM
+      deepmd::tabulate_fusion_grad_gpu_rocm(    
+          dy_dem_x, dy_dem,
+          table, table_info, em_x, em, dy, nloc, nnei, last_layer_size);
+      #endif // TENSORFLOW_USE_ROCM
     }
     else if (device == "CPU") {
       deepmd::tabulate_fusion_grad_cpu(    
@@ -150,7 +162,7 @@ REGISTER_KERNEL_BUILDER(                                                        
 REGISTER_CPU(float);
 REGISTER_CPU(double);
 
-#if  GOOGLE_CUDA
+#if  GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 #define REGISTER_GPU(T)                                                                             \
 REGISTER_KERNEL_BUILDER(                                                                            \
     Name("TabulateFusion").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("table_info"),      \
@@ -160,4 +172,4 @@ REGISTER_KERNEL_BUILDER(                                                        
     TabulateFusionGradOp<GPUDevice, T>);                                                                
 REGISTER_GPU(float);
 REGISTER_GPU(double);
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
