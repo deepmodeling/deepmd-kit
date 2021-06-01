@@ -19,7 +19,7 @@ class DescrptSeR ():
                   neuron: List[int] = [24,48,96],
                   resnet_dt: bool = False,
                   trainable: bool = True,
-                  seed: int = 1,
+                  seed: int = None,
                   type_one_side: bool = True,
                   exclude_types: List[int] = [],
                   set_davg_zero: bool = False,

@@ -21,7 +21,7 @@ class DipoleFittingSeA () :
                   neuron : List[int] = [120,120,120], 
                   resnet_dt : bool = True,
                   sel_type : List[int] = None,
-                  seed : int = 1,
+                  seed : int = None,
                   activation_function : str = 'tanh',
                   precision : str = 'default'                  
     ) :

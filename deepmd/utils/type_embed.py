@@ -63,7 +63,7 @@ class TypeEmbedNet():
             activation_function: str = 'tanh',
             precision: str = 'default',
             trainable: bool = True,
-            seed: int = 1,
+            seed: int = None,
     )->None:
         """
         Constructor

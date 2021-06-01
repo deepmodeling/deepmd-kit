@@ -19,7 +19,7 @@ class DescrptSeT ():
                   neuron: List[int] = [24,48,96],
                   resnet_dt: bool = False,
                   trainable: bool = True,
-                  seed: int = 1,
+                  seed: int = None,
                   set_davg_zero: bool = False,
                   activation_function: str = 'tanh',
                   precision: str = 'default'

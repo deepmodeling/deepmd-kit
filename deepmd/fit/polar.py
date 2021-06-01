@@ -112,7 +112,7 @@ class PolarFittingSeA () :
                   scale : List[float] = None,
                   shift_diag : bool = True,     # YWolfeee: will support the user to decide whether to use this function
                   #diag_shift : List[float] = None, YWolfeee: will not support the user to assign a shift
-                  seed : int = 1,
+                  seed : int = None,
                   activation_function : str = 'tanh',
                   precision : str = 'default'                  
     ) -> None:
@@ -373,7 +373,7 @@ class GlobalPolarFittingSeA () :
                   fit_diag : bool = True,
                   scale : List[float] = None,
                   diag_shift : List[float] = None,
-                  seed : int = 1,
+                  seed : int = None,
                   activation_function : str = 'tanh',
                   precision : str = 'default'                  
     ) -> None:

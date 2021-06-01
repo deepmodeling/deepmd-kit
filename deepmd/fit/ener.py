@@ -24,7 +24,7 @@ class EnerFitting ():
                   rcond : float = 1e-3,
                   tot_ener_zero : bool = False,
                   trainable : List[bool] = None,
-                  seed : int = 1,
+                  seed : int = None,
                   atom_ener : List[float] = [],
                   activation_function : str = 'tanh',
                   precision : str = 'default'
