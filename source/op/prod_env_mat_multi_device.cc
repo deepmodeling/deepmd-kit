@@ -168,6 +168,7 @@ _prepare_coord_nlist_gpu(
     int & mem_cpy,
     int & mem_nnei,
     int & max_nbor_size,
+    int & cur_step,
     const FPTYPE * box,
     const int * mesh_tensor_data,
     const int mesh_tensor_size,
@@ -205,6 +206,7 @@ public:
     mem_cpy = 256;
     max_nnei_trial = 100;
     mem_nnei = 256;
+    cur_step = 0;
   }
 
   void Compute(OpKernelContext* context) override {
@@ -344,7 +346,7 @@ public:
       _prepare_coord_nlist_gpu<FPTYPE>(
           context, &tensor_list[0], &coord, coord_cpy, &type, type_cpy, idx_mapping, 
           gpu_inlist, ilist, numneigh, firstneigh, jlist, nbor_list_dev,
-          frame_nall, mem_cpy, mem_nnei, max_nbor_size,
+          frame_nall, mem_cpy, mem_nnei, max_nbor_size, cur_step,
           box, mesh_tensor.flat<int>().data(), mesh_tensor_size, nloc, nei_mode, rcut_r, max_cpy_trial, max_nnei_trial);
 
       // allocate temp memory, temp memory must not be used after this operation!
@@ -406,6 +408,7 @@ private:
   int nnei, nnei_a, nnei_r, nloc, nall, max_nbor_size;
   int mem_cpy, max_cpy_trial;
   int mem_nnei, max_nnei_trial;
+  int cur_step;
   std::string device;
   int * array_int = NULL;
   unsigned long long * array_longlong = NULL;
@@ -430,6 +433,7 @@ public:
     mem_cpy = 256;
     max_nnei_trial = 100;
     mem_nnei = 256;
+    cur_step = 0;
   }
 
   void Compute(OpKernelContext* context) override {
@@ -566,7 +570,7 @@ public:
       _prepare_coord_nlist_gpu<FPTYPE>(
           context, &tensor_list[0], &coord, coord_cpy, &type, type_cpy, idx_mapping, 
           gpu_inlist, ilist, numneigh, firstneigh, jlist, nbor_list_dev,
-          frame_nall, mem_cpy, mem_nnei, max_nbor_size,
+          frame_nall, mem_cpy, mem_nnei, max_nbor_size, cur_step,
           box, mesh_tensor.flat<int>().data(), mesh_tensor_size, nloc, nei_mode, rcut, max_cpy_trial, max_nnei_trial);
   
       // allocate temp memory, temp memory must not be used after this operation!
@@ -626,6 +630,7 @@ private:
   int nnei, ndescrpt, nloc, nall, max_nbor_size;
   int mem_cpy, max_cpy_trial;
   int mem_nnei, max_nnei_trial;
+  int cur_step;
   std::string device;
   int * array_int = NULL;
   unsigned long long * array_longlong = NULL;
@@ -945,6 +950,7 @@ _prepare_coord_nlist_gpu(
     int & mem_cpy,
     int & mem_nnei,
     int & max_nbor_size,
+    int & cur_step,
     const FPTYPE * box,
     const int * mesh_tensor_data,
     const int mesh_tensor_size,
@@ -989,7 +995,7 @@ _prepare_coord_nlist_gpu(
     deepmd::InputNlist inlist_temp;
     inlist_temp.inum = nloc;
     deepmd::env_mat_nbor_update(
-        inlist_temp, inlist, max_nbor_size, nbor_list_dev,
+        inlist_temp, inlist, cur_step, max_nbor_size, nbor_list_dev,
         mesh_tensor_data, mesh_tensor_size);
     OP_REQUIRES (context, (max_numneigh(inlist_temp) <= GPU_MAX_NBOR_SIZE), errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_numneigh(inlist_temp)) + " is larger than " + std::to_string(GPU_MAX_NBOR_SIZE) + ", which currently is not supported by deepmd-kit."));
   }

@@ -91,11 +91,11 @@ private:
 
   // copy neighbor list info from host
   bool init_nbor;
+  int cur_step;
   std::vector<int> sec_a;
   NeighborListData nlist_data;
   InputNlist nlist;
   AtomMap<VALUETYPE> atommap;
-
   // function used for neighbor list copy
   std::vector<int> get_sel_a() const;
 };
@@ -185,6 +185,7 @@ private:
 
   // copy neighbor list info from host
   bool init_nbor;
+  int cur_step;
   std::vector<std::vector<int> > sec;
   deepmd::AtomMap<VALUETYPE> atommap;
   NeighborListData nlist_data;

@@ -388,6 +388,7 @@ session_input_tensors (
     const deepmd::AtomMap<deepmd::VALUETYPE>&	atommap,
     const int					nghost,
     const int					ago,
+    const int					cur_step,
     const std::string				scope)
 {
   assert (dbox.size() == 9);
@@ -475,7 +476,7 @@ session_input_tensors (
   assert (stride <= 4);
   mesh (0) = ago;
   mesh (1) = dlist.inum;
-  mesh (2) = 0;
+  mesh (2) = cur_step;
   mesh (3) = 0;
   memcpy (&mesh(4),  &(dlist.ilist), sizeof(int *));
   memcpy (&mesh(8),  &(dlist.numneigh), sizeof(int *));

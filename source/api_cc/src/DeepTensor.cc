@@ -194,7 +194,7 @@ compute_inner (std::vector<VALUETYPE> &		dtensor_,
   nlist_data.make_inlist(nlist);
 
   std::vector<std::pair<std::string, Tensor>> input_tensors;
-  int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, nghost, 0, name_scope);
+  int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, nghost, 0, 0, name_scope);
   assert (nloc == ret);
 
   run_model (dtensor_, session, input_tensors, atommap, nghost);

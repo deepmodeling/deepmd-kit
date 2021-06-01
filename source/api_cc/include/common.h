@@ -124,6 +124,7 @@ session_input_tensors (std::vector<std::pair<std::string, tensorflow::Tensor>> &
 		       const deepmd::AtomMap<VALUETYPE>&atommap,
 		       const int			nghost,
 		       const int			ago,
+		       const int			cur_step,
 		       const std::string		scope = "");
 }
 

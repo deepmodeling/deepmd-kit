@@ -260,6 +260,7 @@ prod_env_mat_r_cpu<float>(
 void deepmd::env_mat_nbor_update(
     InputNlist &inlist,
     InputNlist &gpu_inlist,
+    int &cur_step,
     int &max_nbor_size,
     int* &nbor_list_dev,
     const int * mesh, 
@@ -271,7 +272,7 @@ void deepmd::env_mat_nbor_update(
 	memcpy(&inlist.numneigh, 8 + mesh_host, sizeof(int *));
 	memcpy(&inlist.firstneigh, 12 + mesh_host, sizeof(int **));
   const int ago = mesh_host[0];
-  if (ago == 0 || gpu_inlist.inum < inlist.inum) {
+  if (ago == 0 || (cur_step + 1) != mesh_host[2]) {
     const int inum = inlist.inum;
     if (gpu_inlist.inum < inum) {
       delete_device_memory(gpu_inlist.ilist);
@@ -317,6 +318,7 @@ void deepmd::env_mat_nbor_update(
     memcpy_host_to_device(gpu_inlist.firstneigh, _firstneigh, inum);
     free(_firstneigh);
   }
+  cur_step = mesh_host[2];
   delete [] mesh_host;
 }
 #endif // GOOGLE_CUDA

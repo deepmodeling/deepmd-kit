@@ -237,6 +237,8 @@ init (const std::string & model, const int & gpu_rank, const std::string & file_
   inited = true;
   
   init_nbor = false;
+
+  this->cur_step = 0;
 }
 
 void 
@@ -413,7 +415,9 @@ compute_inner (ENERGYTYPE &			dener,
       nlist_data.shuffle(atommap);
       nlist_data.make_inlist(nlist);
     }
-    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
+    this->cur_step += 1;
+    this->cur_step %= (1 << 30);
+    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago, this->cur_step);
     assert (nloc == ret);
     run_model (dener, dforce_, dvirial, session, input_tensors, atommap, nghost);
 }
@@ -472,8 +476,9 @@ compute (ENERGYTYPE &			dener,
         nlist_data.shuffle(atommap);
 	nlist_data.make_inlist(nlist);
     }
-
-    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
+    this->cur_step += 1;
+    this->cur_step %= (1 << 30);
+    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago, this->cur_step);
     assert (nloc == ret);
     run_model (dener, dforce_, dvirial, datom_energy_, datom_virial_, session, input_tensors, atommap, nghost);
 }
@@ -572,6 +577,8 @@ init (const std::vector<std::string> & models, const int & gpu_rank, const std::
   inited = true;
   
   init_nbor = false;
+
+  this->cur_step = 0;
 }
 
 template<class VT>
@@ -728,7 +735,9 @@ compute (std::vector<ENERGYTYPE> &		all_energy,
         nlist_data.shuffle(atommap);
 	nlist_data.make_inlist(nlist);
     }
-    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
+    this->cur_step += 1;
+    this->cur_step %= (1 << 30);
+    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago, this->cur_step);
 
     all_energy.resize (numb_models);
     all_force.resize (numb_models);
@@ -770,7 +779,9 @@ compute (std::vector<ENERGYTYPE> &		all_energy,
         nlist_data.shuffle(atommap);
 	nlist_data.make_inlist(nlist);
     }
-    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
+    this->cur_step += 1;
+    this->cur_step %= (1 << 30);
+    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago, this->cur_step);
 
     all_energy.resize (numb_models);
     all_force .resize (numb_models);

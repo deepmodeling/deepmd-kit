@@ -85,6 +85,7 @@ void prod_env_mat_r_gpu_cuda(
 void env_mat_nbor_update(
     InputNlist &inlist,
     InputNlist &gpu_inlist,
+    int &cur_step,
     int &max_nbor_size,
     int* &nbor_list_dev,
     const int * mesh, 
