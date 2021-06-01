@@ -117,7 +117,7 @@ public:
     // loop over frames
     for (int kk = 0; kk < nframes; ++kk){
       FPTYPE * grad_net = p_grad_net + kk * nloc * ndescrpt;
-      const FPTYPE * grad = p_grad + kk * nloc * 3;
+      const FPTYPE * grad = p_grad + kk * 9;
       const FPTYPE * in_deriv = p_in_deriv + kk * nloc * ndescrpt * 3;
       const FPTYPE * rij = p_rij + kk * nloc * nnei * 3;
       const int * nlist = p_nlist + kk * nloc * nnei; 
@@ -229,7 +229,7 @@ public:
     // loop over frames
     for (int kk = 0; kk < nframes; ++kk){
       FPTYPE * grad_net = p_grad_net + kk * nloc * ndescrpt;
-      const FPTYPE * grad = p_grad + kk * nloc * 3;
+      const FPTYPE * grad = p_grad + kk * 9;
       const FPTYPE * in_deriv = p_in_deriv + kk * nloc * ndescrpt * 3;
       const FPTYPE * rij = p_rij + kk * nloc * nnei * 3;
       const int * nlist = p_nlist + kk * nloc * nnei; 
