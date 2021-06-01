@@ -38,14 +38,15 @@ class TestModel(unittest.TestCase):
         numb_test = 1
 
         jdata['model']['descriptor'].pop('type', None)        
-        descrpt = DescrptSeA(**jdata['model']['descriptor'])
+        descrpt = DescrptSeA(**jdata['model']['descriptor'], uniform_seed = True)
         jdata['model']['fitting_net']['descrpt'] = descrpt
         fitting = EnerFitting(**jdata['model']['fitting_net'])
         typeebd_param = jdata['model']['type_embedding']
         typeebd = TypeEmbedNet(
             neuron = typeebd_param['neuron'],
             resnet_dt = typeebd_param['resnet_dt'],
-            seed = typeebd_param['seed'])
+            seed = typeebd_param['seed'], 
+            uniform_seed = True)
         model = EnerModel(descrpt, fitting, typeebd)
 
         # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])

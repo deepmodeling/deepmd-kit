@@ -55,6 +55,11 @@ def one_layer(inputs,
                 return hidden
 
 
+def embedding_net_rand_seed_shift(
+        network_size
+):
+    shift = 3 * (len(network_size) + 1)
+    return shift
 
 def embedding_net(xx,
                   network_size,
@@ -65,7 +70,8 @@ def embedding_net(xx,
                   stddev = 1.0,
                   bavg = 0.0,
                   seed = None,
-                  trainable = True):
+                  trainable = True, 
+                  uniform_seed = False):
     """
     Parameters
     ----------
@@ -92,19 +98,26 @@ def embedding_net(xx,
     """
     input_shape = xx.get_shape().as_list()
     outputs_size = [input_shape[1]] + network_size
-    
+
     for ii in range(1, len(outputs_size)):
         w = tf.get_variable('matrix_'+str(ii)+name_suffix, 
                             [outputs_size[ii - 1], outputs_size[ii]], 
                             precision,
-                            tf.random_normal_initializer(stddev=stddev/np.sqrt(outputs_size[ii]+outputs_size[ii-1]), seed = seed), 
+                            tf.random_normal_initializer(
+                                stddev=stddev/np.sqrt(outputs_size[ii]+outputs_size[ii-1]), 
+                                seed = seed if (seed is None or uniform_seed)  else seed + ii*3+0
+                            ), 
                             trainable = trainable)
         variable_summaries(w, 'matrix_'+str(ii)+name_suffix)
 
         b = tf.get_variable('bias_'+str(ii)+name_suffix, 
                             [1, outputs_size[ii]], 
                             precision,
-                            tf.random_normal_initializer(stddev=stddev, mean = bavg, seed = seed), 
+                            tf.random_normal_initializer(
+                                stddev=stddev, 
+                                mean = bavg, 
+                                seed = seed if (seed is None or uniform_seed) else seed + 3*ii+1
+                            ), 
                             trainable = trainable)
         variable_summaries(b, 'bias_'+str(ii)+name_suffix)
 
@@ -113,7 +126,11 @@ def embedding_net(xx,
             idt = tf.get_variable('idt_'+str(ii)+name_suffix, 
                                   [1, outputs_size[ii]], 
                                   precision,
-                                  tf.random_normal_initializer(stddev=0.001, mean = 1.0, seed = seed), 
+                                  tf.random_normal_initializer(
+                                      stddev=0.001, 
+                                      mean = 1.0, 
+                                      seed = seed if (seed is None or uniform_seed) else seed + 3*ii+2
+                                  ), 
                                   trainable = trainable)
             variable_summaries(idt, 'idt_'+str(ii)+name_suffix)
 

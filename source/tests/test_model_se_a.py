@@ -54,7 +54,7 @@ class TestModel(unittest.TestCase):
         numb_test = 1
 
         jdata['model']['descriptor'].pop('type', None)        
-        descrpt = DescrptSeA(**jdata['model']['descriptor'])
+        descrpt = DescrptSeA(**jdata['model']['descriptor'], uniform_seed=True)
         jdata['model']['fitting_net']['descrpt'] = descrpt
         fitting = EnerFitting(**jdata['model']['fitting_net'])
         model = EnerModel(descrpt, fitting)
@@ -135,7 +135,7 @@ class TestModel(unittest.TestCase):
         numb_test = 1
 
         jdata['model']['descriptor'].pop('type', None)        
-        descrpt = DescrptSeA(**jdata['model']['descriptor'])
+        descrpt = DescrptSeA(**jdata['model']['descriptor'], uniform_seed=True)
         jdata['model']['fitting_net']['descrpt'] = descrpt
         fitting = EnerFitting(**jdata['model']['fitting_net'])
         model = EnerModel(descrpt, fitting)

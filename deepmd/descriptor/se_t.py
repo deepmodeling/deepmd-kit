@@ -22,7 +22,8 @@ class DescrptSeT ():
                   seed: int = None,
                   set_davg_zero: bool = False,
                   activation_function: str = 'tanh',
-                  precision: str = 'default'
+                  precision: str = 'default',
+                  uniform_seed: bool = False
     ) -> None:
         """
         Constructor
@@ -50,6 +51,8 @@ class DescrptSeT ():
                 The activation function in the embedding net. Supported options are {0}
         precision
                 The precision of the embedding net parameters. Supported options are {1}
+        uniform_seed
+                Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
         """
         self.sel_a = sel
         self.rcut_r = rcut
@@ -57,6 +60,7 @@ class DescrptSeT ():
         self.filter_neuron = neuron
         self.filter_resnet_dt = resnet_dt
         self.seed = seed
+        self.uniform_seed = uniform_seed
         self.trainable = trainable
         self.filter_activation_fn = get_activation_func(activation_function)
         self.filter_precision = get_precision(precision)
@@ -493,7 +497,8 @@ class DescrptSeT ():
                                                stddev = stddev,
                                                bavg = bavg,
                                                seed = seed,
-                                               trainable = trainable)
+                                               trainable = trainable, 
+                                               uniform_seed = self.uniform_seed)
                     # with natom x nei_type_i x nei_type_j x out_size
                     ebd_env_ij = tf.reshape(ebd_env_ij, [-1, nei_type_i, nei_type_j, outputs_size[-1]])
                     # with natom x out_size

@@ -37,7 +37,7 @@ class TestModel(unittest.TestCase):
         
         jdata['model']['descriptor'].pop('type', None)
         jdata['model']['fitting_net'].pop('type', None)
-        descrpt = DescrptSeA(**jdata['model']['descriptor'])
+        descrpt = DescrptSeA(**jdata['model']['descriptor'], uniform_seed = True)
         jdata['model']['fitting_net']['descrpt'] = descrpt
         fitting = PolarFittingSeA(**jdata['model']['fitting_net'])
         model = PolarModel(descrpt, fitting)
