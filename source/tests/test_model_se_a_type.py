@@ -40,7 +40,7 @@ class TestModel(unittest.TestCase):
         jdata['model']['descriptor'].pop('type', None)        
         descrpt = DescrptSeA(**jdata['model']['descriptor'], uniform_seed = True)
         jdata['model']['fitting_net']['descrpt'] = descrpt
-        fitting = EnerFitting(**jdata['model']['fitting_net'])
+        fitting = EnerFitting(**jdata['model']['fitting_net'], uniform_seed = True)
         typeebd_param = jdata['model']['type_embedding']
         typeebd = TypeEmbedNet(
             neuron = typeebd_param['neuron'],
