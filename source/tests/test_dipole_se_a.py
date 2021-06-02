@@ -73,7 +73,7 @@ class TestModel(unittest.TestCase):
                            t_box, 
                            t_mesh,
                            t_fparam,
-                           suffix = "polar_se_a", 
+                           suffix = "dipole_se_a", 
                            reuse = False)
         dipole = model_pred['dipole']
 
