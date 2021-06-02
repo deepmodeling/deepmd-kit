@@ -8,7 +8,7 @@ from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
-from deepmd.utils.network import embedding_net
+from deepmd.utils.network import embedding_net, embedding_net_rand_seed_shift
 
 class DescrptSeR ():
     @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
@@ -79,6 +79,7 @@ class DescrptSeR ():
         self.filter_resnet_dt = resnet_dt
         self.seed = seed        
         self.uniform_seed = uniform_seed
+        self.seed_shift = embedding_net_rand_seed_shift(self.filter_neuron)
         self.trainable = trainable
         self.filter_activation_fn = get_activation_func(activation_function) 
         self.filter_precision = get_precision(precision)  
@@ -379,7 +380,7 @@ class DescrptSeR ():
                                      [ 0, start_index*      self.ndescrpt],
                                      [-1, natoms[2+type_i]* self.ndescrpt] )
                 inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
-                layer = self._filter_r(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, seed = self.seed, trainable = trainable, activation_fn = self.filter_activation_fn)
+                layer = self._filter_r(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
                 layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_out()])
                 output.append(layer)
                 start_index += natoms[2+type_i]
@@ -387,7 +388,7 @@ class DescrptSeR ():
             inputs_i = inputs
             inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
             type_i = -1
-            layer = self._filter_r(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, seed = self.seed, trainable = trainable, activation_fn = self.filter_activation_fn)
+            layer = self._filter_r(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
             layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0] * self.get_dim_out()])
             output.append(layer)
         output = tf.concat(output, axis = 1)
@@ -447,7 +448,6 @@ class DescrptSeR ():
                   bavg=0.0,
                   name='linear', 
                   reuse=None,
-                  seed=None, 
                   trainable = True):
         # natom x nei
         outputs_size = [1] + self.filter_neuron
@@ -473,9 +473,10 @@ class DescrptSeR ():
                                                 name_suffix = "_"+str(type_i),
                                                 stddev = stddev,
                                                 bavg = bavg,
-                                                seed = seed,
+                                                seed = self.seed,
                                                 trainable = trainable, 
                                                 uniform_seed = self.uniform_seed)
+                    if not self.uniform_seed: self.seed += self.seed_shift
                 else:
                     w = tf.zeros((outputs_size[0], outputs_size[-1]), dtype=GLOBAL_TF_FLOAT_PRECISION)
                     xyz_scatter = tf.matmul(xyz_scatter, w)

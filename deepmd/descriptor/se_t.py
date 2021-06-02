@@ -8,7 +8,7 @@ from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
-from deepmd.utils.network import embedding_net
+from deepmd.utils.network import embedding_net, embedding_net_rand_seed_shift
 
 class DescrptSeT ():
     @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
@@ -61,6 +61,7 @@ class DescrptSeT ():
         self.filter_resnet_dt = resnet_dt
         self.seed = seed
         self.uniform_seed = uniform_seed
+        self.seed_shift = embedding_net_rand_seed_shift(self.filter_neuron)
         self.trainable = trainable
         self.filter_activation_fn = get_activation_func(activation_function)
         self.filter_precision = get_precision(precision)
@@ -376,7 +377,7 @@ class DescrptSeT ():
         inputs_i = inputs
         inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
         type_i = -1
-        layer, qmat = self._filter(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, seed = self.seed, trainable = trainable, activation_fn = self.filter_activation_fn)
+        layer, qmat = self._filter(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
         layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0] * self.get_dim_out()])
         # qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[0] * self.get_dim_rot_mat_1() * 3])
         output.append(layer)
@@ -447,7 +448,6 @@ class DescrptSeT ():
                 bavg=0.0,
                 name='linear', 
                 reuse=None,
-                seed=None, 
                 trainable = True):
         # natom x (nei x 4)
         shape = inputs.get_shape().as_list()
@@ -496,9 +496,10 @@ class DescrptSeT ():
                                                name_suffix = f"_{type_i}_{type_j}",
                                                stddev = stddev,
                                                bavg = bavg,
-                                               seed = seed,
+                                               seed = self.seed,
                                                trainable = trainable, 
                                                uniform_seed = self.uniform_seed)
+                    if not self.uniform_seed: self.seed += self.seed_shift                    
                     # with natom x nei_type_i x nei_type_j x out_size
                     ebd_env_ij = tf.reshape(ebd_env_ij, [-1, nei_type_i, nei_type_j, outputs_size[-1]])
                     # with natom x out_size
