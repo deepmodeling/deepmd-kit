@@ -36,9 +36,9 @@ class TestModel(unittest.TestCase):
         numb_test = 1
         
         jdata['model']['descriptor'].pop('type', None)        
-        descrpt = DescrptSeT(**jdata['model']['descriptor'])
+        descrpt = DescrptSeT(**jdata['model']['descriptor'], uniform_seed = True)
         jdata['model']['fitting_net']['descrpt'] = descrpt
-        fitting = EnerFitting(**jdata['model']['fitting_net'])
+        fitting = EnerFitting(**jdata['model']['fitting_net'], uniform_seed = True)
         model = EnerModel(descrpt, fitting)
 
         input_data = {'coord' : [test_data['coord']], 

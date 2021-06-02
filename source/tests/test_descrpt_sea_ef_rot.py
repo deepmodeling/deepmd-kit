@@ -60,9 +60,9 @@ class TestEfRot(unittest.TestCase):
         efield = self._normalize_3d(efield)
         efield = tf.reshape(efield, [-1, tnatoms[0] * 3])
         if op != op_module.prod_env_mat_a :            
-            descrpt = DescrptSeAEfLower(op, **{'sel':self.sel_a, 'rcut': 6, 'rcut_smth' : 5.5})
+            descrpt = DescrptSeAEfLower(op, **{'sel':self.sel_a, 'rcut': 6, 'rcut_smth' : 5.5, 'seed': 1, 'uniform_seed': True})
         else:
-            descrpt = DescrptSeA(**{'sel':self.sel_a, 'rcut': 6, 'rcut_smth' : 0.5})
+            descrpt = DescrptSeA(**{'sel':self.sel_a, 'rcut': 6, 'rcut_smth' : 0.5, 'seed': 1, 'uniform_seed': True})
         dout = descrpt.build(dcoord,
                              dtype,
                              tnatoms,

@@ -5,7 +5,7 @@ from typing import Tuple, List
 from deepmd.env import tf
 from deepmd.common import add_data_requirement, get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter
 from deepmd.utils.argcheck import list_to_doc
-from deepmd.utils.network import one_layer
+from deepmd.utils.network import one_layer, one_layer_rand_seed_shift
 from deepmd.descriptor import DescrptSeA
 
 from deepmd.env import global_cvt_2_tf_float
@@ -21,10 +21,11 @@ class DipoleFittingSeA () :
                   neuron : List[int] = [120,120,120], 
                   resnet_dt : bool = True,
                   sel_type : List[int] = None,
-                  seed : int = 1,
+                  seed : int = None,
                   activation_function : str = 'tanh',
-                  precision : str = 'default'                  
-    ) :
+                  precision : str = 'default',
+                  uniform_seed: bool = False
+    ) -> None:
         """
         Constructor
 
@@ -45,6 +46,8 @@ class DipoleFittingSeA () :
                 The activation function in the embedding net. Supported options are {0}
         precision : str
                 The precision of the embedding net parameters. Supported options are {1}        
+        uniform_seed
+                Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
         """
         if not isinstance(descrpt, DescrptSeA) :
             raise RuntimeError('DipoleFittingSeA only supports DescrptSeA')
@@ -65,6 +68,8 @@ class DipoleFittingSeA () :
             self.sel_type = [ii for ii in range(self.ntypes)]
         self.sel_type = sel_type
         self.seed = seed
+        self.uniform_seed = uniform_seed
+        self.seed_shift = one_layer_rand_seed_shift()
         self.fitting_activation_fn = get_activation_func(activation_function)
         self.fitting_precision = get_precision(precision)
         self.dim_rot_mat_1 = descrpt.get_dim_rot_mat_1()
@@ -134,11 +139,13 @@ class DipoleFittingSeA () :
             layer = inputs_i
             for ii in range(0,len(self.n_neuron)) :
                 if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
-                    layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision)
+                    layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, uniform_seed = self.uniform_seed)
                 else :
-                    layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision)
+                    layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, uniform_seed = self.uniform_seed)
+                if not self.uniform_seed : self.seed += self.seed_shift
             # (nframes x natoms) x naxis
-            final_layer = one_layer(layer, self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, precision = self.fitting_precision)
+            final_layer = one_layer(layer, self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, precision = self.fitting_precision, uniform_seed = self.uniform_seed)
+            if not self.uniform_seed : self.seed += self.seed_shift
             # (nframes x natoms) x 1 * naxis
             final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], 1, self.dim_rot_mat_1])
             # (nframes x natoms) x 1 x 3(coord)
