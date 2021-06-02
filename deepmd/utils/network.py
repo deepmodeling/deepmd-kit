@@ -3,6 +3,9 @@ import numpy as np
 from deepmd.env import tf
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 
+def one_layer_rand_seed_shift():
+    return 3
+
 def one_layer(inputs, 
               outputs_size, 
               activation_fn=tf.nn.tanh, 
@@ -14,19 +17,27 @@ def one_layer(inputs,
               seed=None, 
               use_timestep = False, 
               trainable = True,
-              useBN = False):
+              useBN = False, 
+              uniform_seed = False):
     with tf.variable_scope(name, reuse=reuse):
         shape = inputs.get_shape().as_list()
         w = tf.get_variable('matrix', 
                             [shape[1], outputs_size], 
                             precision,
-                            tf.random_normal_initializer(stddev=stddev/np.sqrt(shape[1]+outputs_size), seed = seed), 
+                            tf.random_normal_initializer(
+                                stddev=stddev/np.sqrt(shape[1]+outputs_size), 
+                                seed = seed if (seed is None or uniform_seed) else seed + 0
+                            ), 
                             trainable = trainable)
         variable_summaries(w, 'matrix')
         b = tf.get_variable('bias', 
                             [outputs_size], 
                             precision,
-                            tf.random_normal_initializer(stddev=stddev, mean = bavg, seed = seed), 
+                            tf.random_normal_initializer(
+                                stddev=stddev, 
+                                mean = bavg, 
+                                seed = seed if (seed is None or uniform_seed) else seed + 1
+                            ), 
                             trainable = trainable)
         variable_summaries(b, 'bias')
         hidden = tf.matmul(inputs, w) + b
@@ -34,7 +45,11 @@ def one_layer(inputs,
             idt = tf.get_variable('idt',
                                   [outputs_size],
                                   precision,
-                                  tf.random_normal_initializer(stddev=0.001, mean = 0.1, seed = seed), 
+                                  tf.random_normal_initializer(
+                                      stddev=0.001, 
+                                      mean = 0.1, 
+                                      seed = seed if (seed is None or uniform_seed) else seed + 2
+                                  ), 
                                   trainable = trainable)
             variable_summaries(idt, 'idt')
         if activation_fn != None:

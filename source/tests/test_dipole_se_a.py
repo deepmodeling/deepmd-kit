@@ -5,8 +5,8 @@ from common import Data,gen_data, j_loader
 
 from deepmd.utils.data_system import DataSystem
 from deepmd.descriptor import DescrptSeA
-from deepmd.fit import PolarFittingSeA
-from deepmd.model import PolarModel
+from deepmd.fit import DipoleFittingSeA
+from deepmd.model import DipoleModel
 from deepmd.common import j_must_have
 
 GLOBAL_ENER_FLOAT_PRECISION = tf.float64
@@ -36,11 +36,12 @@ class TestModel(unittest.TestCase):
         numb_test = 1
         
         jdata['model']['descriptor'].pop('type', None)
-        jdata['model']['fitting_net'].pop('type', None)
         descrpt = DescrptSeA(**jdata['model']['descriptor'], uniform_seed = True)
+        jdata['model']['fitting_net'].pop('type', None)
+        jdata['model']['fitting_net'].pop('fit_diag', None)
         jdata['model']['fitting_net']['descrpt'] = descrpt
-        fitting = PolarFittingSeA(**jdata['model']['fitting_net'], uniform_seed = True)
-        model = PolarModel(descrpt, fitting)
+        fitting = DipoleFittingSeA(**jdata['model']['fitting_net'], uniform_seed = True)
+        model = DipoleModel(descrpt, fitting)
 
         # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
         input_data = {'coord' : [test_data['coord']], 
@@ -74,7 +75,7 @@ class TestModel(unittest.TestCase):
                            t_fparam,
                            suffix = "polar_se_a", 
                            reuse = False)
-        polar = model_pred['polar']
+        dipole = model_pred['dipole']
 
         feed_dict_test = {t_prop_c:        test_data['prop_c'],
                           t_coord:         np.reshape(test_data['coord']    [:numb_test, :], [-1]),
@@ -86,12 +87,12 @@ class TestModel(unittest.TestCase):
 
         sess = tf.Session()
         sess.run(tf.global_variables_initializer())
-        [p] = sess.run([polar], feed_dict = feed_dict_test)
+        [p] = sess.run([dipole], feed_dict = feed_dict_test)
 
         p = p.reshape([-1])
-        refp = [3.39695248e+01,  2.16564043e+01,  8.18501479e-01,  2.16564043e+01,  1.38211789e+01,  5.22775159e-01,  8.18501479e-01,  5.22775159e-01, 1.97847218e-02, 8.08467431e-01,  3.42081126e+00, -2.01072261e-01,  3.42081126e+00, 1.54924596e+01, -9.06153697e-01, -2.01072261e-01, -9.06153697e-01,  5.30193262e-02]
+        refp = [1.616802262298876514e+01,9.809535439521079425e+00,3.572312180768947854e-01,1.336308874095981203e+00,1.057908563208963848e+01,-5.999602350098874881e-01]
 
-        places = 6
+        places = 10
         for ii in range(p.size) :
             self.assertAlmostEqual(p[ii], refp[ii], places = places)
 
