@@ -25,7 +25,7 @@ class DescrptSeA ():
                   trainable: bool = True,
                   seed: int = None,
                   type_one_side: bool = True,
-                  exclude_types: List[int] = [],
+                  exclude_types: List[List[int]] = [],
                   set_davg_zero: bool = False,
                   activation_function: str = 'tanh',
                   precision: str = 'default',
