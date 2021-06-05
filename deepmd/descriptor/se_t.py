@@ -499,7 +499,7 @@ class DescrptSeT ():
                                                seed = self.seed,
                                                trainable = trainable, 
                                                uniform_seed = self.uniform_seed)
-                    if not self.uniform_seed: self.seed += self.seed_shift                    
+                    if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
                     # with natom x nei_type_i x nei_type_j x out_size
                     ebd_env_ij = tf.reshape(ebd_env_ij, [-1, nei_type_i, nei_type_j, outputs_size[-1]])
                     # with natom x out_size

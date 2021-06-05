@@ -81,10 +81,10 @@ class WFCFitting () :
                     layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, uniform_seed = self.uniform_seed)
                 else :
                     layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, uniform_seed = self.uniform_seed)
-                if not self.uniform_seed : self.seed += self.seed_shift
+                if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
             # (nframes x natoms) x (nwfc x 3)
             final_layer = one_layer(layer, self.wfc_numb * 3, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, precision = self.fitting_precision, uniform_seed = self.uniform_seed)
-            if not self.uniform_seed : self.seed += self.seed_shift
+            if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
             # (nframes x natoms) x nwfc(wc) x 3(coord_local)
             final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], self.wfc_numb, 3])
             # (nframes x natoms) x nwfc(wc) x 3(coord)

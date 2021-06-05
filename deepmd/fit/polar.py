@@ -321,7 +321,7 @@ class PolarFittingSeA () :
                     layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, uniform_seed = self.uniform_seed)
                 else :
                     layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, uniform_seed = self.uniform_seed)
-                if not self.uniform_seed : self.seed += self.seed_shift
+                if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
             if self.fit_diag :
                 bavg = np.zeros(self.dim_rot_mat_1)
                 # bavg[0] = self.avgeig[0]
@@ -329,7 +329,7 @@ class PolarFittingSeA () :
                 # bavg[2] = self.avgeig[2]
                 # (nframes x natoms) x naxis
                 final_layer = one_layer(layer, self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, bavg = bavg, precision = self.fitting_precision, uniform_seed = self.uniform_seed)
-                if not self.uniform_seed : self.seed += self.seed_shift
+                if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
                 # (nframes x natoms) x naxis
                 final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], self.dim_rot_mat_1])
                 # (nframes x natoms) x naxis x naxis
@@ -341,7 +341,7 @@ class PolarFittingSeA () :
                 # bavg[2*self.dim_rot_mat_1+2] = self.avgeig[2]
                 # (nframes x natoms) x (naxis x naxis)
                 final_layer = one_layer(layer, self.dim_rot_mat_1*self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, bavg = bavg, precision = self.fitting_precision, uniform_seed = self.uniform_seed)
-                if not self.uniform_seed : self.seed += self.seed_shift
+                if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
                 # (nframes x natoms) x naxis x naxis
                 final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], self.dim_rot_mat_1, self.dim_rot_mat_1])
                 # (nframes x natoms) x naxis x naxis

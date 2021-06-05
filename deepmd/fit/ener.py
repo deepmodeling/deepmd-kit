@@ -269,7 +269,7 @@ class EnerFitting ():
                     precision = self.fitting_precision,
                     trainable = self.trainable[ii],
                     uniform_seed = self.uniform_seed)
-            if not self.uniform_seed : self.seed += self.seed_shift
+            if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
         final_layer = one_layer(
             layer, 
             1, 
@@ -281,7 +281,7 @@ class EnerFitting ():
             precision = self.fitting_precision, 
             trainable = self.trainable[-1],
             uniform_seed = self.uniform_seed)
-        if not self.uniform_seed : self.seed += self.seed_shift
+        if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
 
         return final_layer
             
