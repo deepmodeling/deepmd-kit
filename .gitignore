@@ -26,3 +26,4 @@ venv*
 .vscode/**
 _build
 _templates
+API_CC

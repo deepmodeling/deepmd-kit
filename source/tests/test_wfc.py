@@ -38,6 +38,7 @@ class TestModel(unittest.TestCase):
         jdata['model']['descriptor'].pop('type', None)        
         jdata['model']['descriptor'].pop('_comment', None)        
         descrpt = DescrptLocFrame(**jdata['model']['descriptor'])
+        jdata['model']['fitting_net']['uniform_seed'] = True
         fitting = WFCFitting(jdata['model']['fitting_net'], descrpt)
         model = WFCModel(descrpt, fitting)
 

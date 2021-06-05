@@ -104,6 +104,48 @@ void use_nlist_map(
 	
 #endif // GOOGLE_CUDA
 
+
+#if TENSORFLOW_USE_ROCM
+void convert_nlist_gpu_rocm(
+    InputNlist & gpu_nlist,
+    InputNlist & cpu_nlist,
+    int* & gpu_memory,
+    const int & max_nbor_size);
+
+void free_nlist_gpu_rocm(
+    InputNlist & gpu_nlist);
+
+// build neighbor list.
+// outputs
+//	nlist, max_list_size
+//	max_list_size is the maximal size of jlist.
+// inputs
+//	c_cpy, nloc, nall, mem_size, rcut, region
+//	mem_size is the size of allocated memory for jlist.
+// returns
+//	0: succssful
+//	1: the memory is not large enough to hold all neighbors.
+//	   i.e. max_list_size > mem_nall
+template <typename FPTYPE>
+int
+build_nlist_gpu_rocm(
+    InputNlist & nlist,
+    int * max_list_size,
+    int * nlist_data,
+    const FPTYPE * c_cpy, 
+    const int & nloc, 
+    const int & nall, 
+    const int & mem_size,
+    const float & rcut);
+
+void use_nlist_map(
+    int * nlist, 
+    const int * nlist_map, 
+    const int nloc, 
+    const int nnei);
+	
+#endif // TENSORFLOW_USE_ROCM
+
 } // namespace deepmd
 
 

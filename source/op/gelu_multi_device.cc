@@ -49,6 +49,12 @@ class GeluOp : public OpKernel {
           out, 
           x, size);
       #endif // GOOGLE_CUDA
+
+      #if TENSORFLOW_USE_ROCM
+      deepmd::gelu_gpu_rocm(
+        out,
+        x,size);
+      #endif//TENSORFLOW_USE_ROCM
     }
     else if (device == "CPU") {
       deepmd::gelu_cpu(
@@ -92,6 +98,12 @@ class GeluGradOp : public OpKernel {
           out, 
           x, dy, size);
       #endif // GOOGLE_CUDA
+      
+      #if TENSORFLOW_USE_ROCM
+      deepmd::gelu_grad_gpu_rocm(
+          out, 
+          x, dy, size);
+      #endif // TENSORFLOW_USE_ROCM
     }
     else if (device == "CPU") {
       deepmd::gelu_grad_cpu(
@@ -133,6 +145,12 @@ class GeluGradGradOp : public OpKernel {
           out, 
           x, dy, dy_2, size);
       #endif // GOOGLE_CUDA
+      
+      #if TENSORFLOW_USE_ROCM
+      deepmd::gelu_grad_grad_gpu_rocm(
+          out, 
+          x, dy, dy_2, size);
+      #endif // TENSORFLOW_USE_ROCM
     }
     else if (device == "CPU") {
       deepmd::gelu_grad_grad_cpu(
@@ -157,7 +175,7 @@ REGISTER_KERNEL_BUILDER(                                                \
 REGISTER_CPU(float);
 REGISTER_CPU(double);
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 #define REGISTER_GPU(T)                                                 \
 REGISTER_KERNEL_BUILDER(                                                \
     Name("Gelu").Device(DEVICE_GPU).TypeConstraint<T>("T"),             \
@@ -170,4 +188,4 @@ REGISTER_KERNEL_BUILDER(                                                \
     GeluGradGradOp<GPUDevice, T>);                                      
 REGISTER_GPU(float);
 REGISTER_GPU(double);
-#endif // GOOGLE_CUDA
+#endif // GOOGLE_CUDA || TENSORFLOW_USE_ROCM

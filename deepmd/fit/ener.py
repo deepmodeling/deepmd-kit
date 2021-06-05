@@ -5,7 +5,7 @@ from typing import Tuple, List
 from deepmd.env import tf
 from deepmd.common import ClassArg, add_data_requirement, get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter
 from deepmd.utils.argcheck import list_to_doc
-from deepmd.utils.network import one_layer
+from deepmd.utils.network import one_layer, one_layer_rand_seed_shift
 from deepmd.descriptor import DescrptLocFrame
 from deepmd.descriptor import DescrptSeA
 from deepmd.utils.type_embed import embed_atom_type
@@ -24,10 +24,11 @@ class EnerFitting ():
                   rcond : float = 1e-3,
                   tot_ener_zero : bool = False,
                   trainable : List[bool] = None,
-                  seed : int = 1,
+                  seed : int = None,
                   atom_ener : List[float] = [],
                   activation_function : str = 'tanh',
-                  precision : str = 'default'
+                  precision : str = 'default',
+                  uniform_seed: bool = False
     ) -> None:
         """
         Constructor
@@ -61,6 +62,8 @@ class EnerFitting ():
                 The activation function in the embedding net. Supported options are {0}
         precision
                 The precision of the embedding net parameters. Supported options are {1}                
+        uniform_seed
+                Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
         """
         # model param
         self.ntypes = descrpt.get_ntypes()
@@ -83,6 +86,8 @@ class EnerFitting ():
         self.resnet_dt = resnet_dt
         self.rcond = rcond
         self.seed = seed
+        self.uniform_seed = uniform_seed
+        self.seed_shift = one_layer_rand_seed_shift()
         self.tot_ener_zero = tot_ener_zero
         self.fitting_activation_fn = get_activation_func(activation_function)
         self.fitting_precision = get_precision(precision)
@@ -251,7 +256,8 @@ class EnerFitting ():
                     use_timestep = self.resnet_dt,
                     activation_fn = self.fitting_activation_fn,
                     precision = self.fitting_precision,
-                    trainable = self.trainable[ii])
+                    trainable = self.trainable[ii],
+                    uniform_seed = self.uniform_seed)
             else :
                 layer = one_layer(
                     layer,
@@ -261,7 +267,9 @@ class EnerFitting ():
                     seed = self.seed,
                     activation_fn = self.fitting_activation_fn,
                     precision = self.fitting_precision,
-                    trainable = self.trainable[ii])
+                    trainable = self.trainable[ii],
+                    uniform_seed = self.uniform_seed)
+            if not self.uniform_seed : self.seed += self.seed_shift
         final_layer = one_layer(
             layer, 
             1, 
@@ -271,7 +279,9 @@ class EnerFitting ():
             reuse=reuse, 
             seed = self.seed, 
             precision = self.fitting_precision, 
-            trainable = self.trainable[-1])
+            trainable = self.trainable[-1],
+            uniform_seed = self.uniform_seed)
+        if not self.uniform_seed : self.seed += self.seed_shift
 
         return final_layer
             

@@ -5,7 +5,7 @@ from typing import Tuple, List
 from deepmd.env import tf
 from deepmd.common import add_data_requirement, get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter
 from deepmd.utils.argcheck import list_to_doc
-from deepmd.utils.network import one_layer
+from deepmd.utils.network import one_layer, one_layer_rand_seed_shift
 from deepmd.descriptor import DescrptLocFrame
 from deepmd.descriptor import DescrptSeA
 
@@ -112,9 +112,10 @@ class PolarFittingSeA () :
                   scale : List[float] = None,
                   shift_diag : bool = True,     # YWolfeee: will support the user to decide whether to use this function
                   #diag_shift : List[float] = None, YWolfeee: will not support the user to assign a shift
-                  seed : int = 1,
+                  seed : int = None,
                   activation_function : str = 'tanh',
-                  precision : str = 'default'                  
+                  precision : str = 'default',
+                  uniform_seed: bool = False                  
     ) -> None:
         """
         Constructor
@@ -142,6 +143,8 @@ class PolarFittingSeA () :
                 The activation function in the embedding net. Supported options are {0}
         precision : str
                 The precision of the embedding net parameters. Supported options are {1}                
+        uniform_seed
+                Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
         """
         if not isinstance(descrpt, DescrptSeA) :
             raise RuntimeError('PolarFittingSeA only supports DescrptSeA')
@@ -163,6 +166,8 @@ class PolarFittingSeA () :
         self.sel_type = sel_type
         self.fit_diag = fit_diag
         self.seed = seed
+        self.uniform_seed = uniform_seed
+        self.seed_shift = one_layer_rand_seed_shift()
         #self.diag_shift = diag_shift
         self.shift_diag = shift_diag
         self.scale = scale
@@ -313,16 +318,18 @@ class PolarFittingSeA () :
             layer = inputs_i
             for ii in range(0,len(self.n_neuron)) :
                 if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
-                    layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision)
+                    layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, uniform_seed = self.uniform_seed)
                 else :
-                    layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision)
+                    layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, uniform_seed = self.uniform_seed)
+                if not self.uniform_seed : self.seed += self.seed_shift
             if self.fit_diag :
                 bavg = np.zeros(self.dim_rot_mat_1)
                 # bavg[0] = self.avgeig[0]
                 # bavg[1] = self.avgeig[1]
                 # bavg[2] = self.avgeig[2]
                 # (nframes x natoms) x naxis
-                final_layer = one_layer(layer, self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, bavg = bavg, precision = self.fitting_precision)
+                final_layer = one_layer(layer, self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, bavg = bavg, precision = self.fitting_precision, uniform_seed = self.uniform_seed)
+                if not self.uniform_seed : self.seed += self.seed_shift
                 # (nframes x natoms) x naxis
                 final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], self.dim_rot_mat_1])
                 # (nframes x natoms) x naxis x naxis
@@ -333,7 +340,8 @@ class PolarFittingSeA () :
                 # bavg[1*self.dim_rot_mat_1+1] = self.avgeig[1]
                 # bavg[2*self.dim_rot_mat_1+2] = self.avgeig[2]
                 # (nframes x natoms) x (naxis x naxis)
-                final_layer = one_layer(layer, self.dim_rot_mat_1*self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, bavg = bavg, precision = self.fitting_precision)
+                final_layer = one_layer(layer, self.dim_rot_mat_1*self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, bavg = bavg, precision = self.fitting_precision, uniform_seed = self.uniform_seed)
+                if not self.uniform_seed : self.seed += self.seed_shift
                 # (nframes x natoms) x naxis x naxis
                 final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], self.dim_rot_mat_1, self.dim_rot_mat_1])
                 # (nframes x natoms) x naxis x naxis
@@ -373,9 +381,9 @@ class GlobalPolarFittingSeA () :
                   fit_diag : bool = True,
                   scale : List[float] = None,
                   diag_shift : List[float] = None,
-                  seed : int = 1,
+                  seed : int = None,
                   activation_function : str = 'tanh',
-                  precision : str = 'default'                  
+                  precision : str = 'default'
     ) -> None:
         """
         Constructor
