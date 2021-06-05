@@ -27,7 +27,7 @@ class TestTypeEbd(unittest.TestCase):
                     atom_embed[ii][jj], expected_out[ii][jj], places=10)
 
     def test_type_embed_net(self):
-        ten = TypeEmbedNet([2, 4, 8])
+        ten = TypeEmbedNet([2, 4, 8], seed = 1, uniform_seed = True)
         type_embedding = ten.build(2)
         sess = tf.Session()
         sess.run(tf.global_variables_initializer())

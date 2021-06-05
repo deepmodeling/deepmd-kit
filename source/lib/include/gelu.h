@@ -46,4 +46,27 @@ void gelu_grad_grad_gpu_cuda(
     const int size);
 #endif // GOOGLE_CUDA
 
+#if TENSORFLOW_USE_ROCM
+template<typename FPTYPE>
+void gelu_gpu_rocm(
+    FPTYPE * out, 
+    const FPTYPE * xx, 
+    const int size);
+
+template<typename FPTYPE>
+void gelu_grad_gpu_rocm(
+    FPTYPE * out, 
+    const FPTYPE * xx,
+    const FPTYPE * dy, 
+    const int size);
+
+template<typename FPTYPE>
+void gelu_grad_grad_gpu_rocm(
+    FPTYPE * out,
+    const FPTYPE * xx,
+    const FPTYPE * dy, 
+    const FPTYPE * dy_2,
+    const int size);
+
+#endif//TENSORFLOW_USE_ROCM
 }

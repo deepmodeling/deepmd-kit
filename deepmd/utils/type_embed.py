@@ -63,7 +63,8 @@ class TypeEmbedNet():
             activation_function: str = 'tanh',
             precision: str = 'default',
             trainable: bool = True,
-            seed: int = 1,
+            seed: int = None,
+            uniform_seed: bool = False,
     )->None:
         """
         Constructor
@@ -82,6 +83,8 @@ class TypeEmbedNet():
                 If the weights of embedding net are trainable.
         seed
                 Random seed for initializing the network parameters.
+        uniform_seed
+                Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
         """
         self.neuron = neuron
         self.seed = seed
@@ -89,6 +92,7 @@ class TypeEmbedNet():
         self.filter_precision = get_precision(precision)
         self.filter_activation_fn = get_activation_func(activation_function)
         self.trainable = trainable
+        self.uniform_seed = uniform_seed
 
 
     def build(
@@ -129,7 +133,8 @@ class TypeEmbedNet():
                 precision = self.filter_precision,
                 resnet_dt = self.filter_resnet_dt,
                 seed = self.seed,
-                trainable = self.trainable)
+                trainable = self.trainable, 
+                uniform_seed = self.uniform_seed)
         ebd_type = tf.reshape(ebd_type, [-1, self.neuron[-1]]) # nnei * neuron[-1]
         self.ebd_type = tf.identity(ebd_type, name ='t_typeebd')
         return self.ebd_type 
