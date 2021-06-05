@@ -617,7 +617,7 @@ class DescrptSeA ():
                   seed = self.seed,
                   trainable = trainable, 
                   uniform_seed = self.uniform_seed)
-              if not self.uniform_seed: self.seed += self.seed_shift
+              if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
           else:
             w = tf.zeros((outputs_size[0], outputs_size[-1]), dtype=GLOBAL_TF_FLOAT_PRECISION)
             xyz_scatter = tf.matmul(xyz_scatter, w)
