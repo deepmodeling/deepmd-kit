@@ -20,7 +20,7 @@ class DescrptSeAEbd (DescrptSeA):
                   axis_neuron: int = 8,
                   resnet_dt: bool = False,
                   trainable: bool = True,
-                  seed: int = 1,
+                  seed: int = None,
                   type_one_side: bool = True,
                   type_nchanl : int = 2,
                   type_nlayer : int = 1,
