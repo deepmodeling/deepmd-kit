@@ -1,7 +1,8 @@
+from typing import Tuple
 import numpy as np
 from deepmd import DeepPotential
 from deepmd.utils.data import DeepmdData
-
+        
 
 def calc_model_devi_f(fs):
     '''
@@ -27,9 +28,8 @@ def calc_model_devi_e(es):
 
 def calc_model_devi_v(vs):
     '''
-        vs : numpy.ndarray, size of `n_models x n_frames x 3 x 3`
+        vs : numpy.ndarray, size of `n_models x n_frames x 9`
     '''
-    vs = np.reshape(vs, (vs.shape[1], vs.shape[2], 9))
     vs_devi = np.std(vs, axis=0)
     max_devi_v = np.max(vs_devi, axis=1)
     min_devi_v = np.min(vs_devi, axis=1)
@@ -44,7 +44,7 @@ def write_model_devi_out(devi, fname, items='vf'):
                     f - forces, v - virial
     '''
     assert devi.shape[1] == len(items) * 3 + 1
-    header = "#%11s" % "step"
+    header = "%10s" % "step"
     for item in items:
         header += "%19s%19s%19s" % (f"max_devi_{item}", f"min_devi_{item}", f"avg_devi_{item}")
     np.savetxt(fname,
@@ -113,54 +113,44 @@ def make_model_devi(
         raise RuntimeError("The models does not have the same type map.")
     
     # create data-system
-    data = DeepmdData(system, set_prefix, shuffle_test=False, type_map=tmap)
-    coord = data["coord"]
-    box = data["box"]
-    nframes = coord.shape[0]
-    if dp_models[0].has_efield:
-        efield = data["efield"]
-    else:
-        efield = None
-    if not data.pbc:
-        box = None
-    atype = data["type"][0]
-    if dp_models[0].get_dim_fparam() > 0:
-        fparam = data["fparam"]
-    else:
-        fparam = None
-    if dp_models[0].get_dim_aparam() > 0:
-        aparam = data["aparam"]
-    else:
-        aparam = None
+    dp_data = DeepmdData(system, set_prefix, shuffle_test=False, type_map=tmap)
+    data_sets = [dp_data._load_set(set_name) for set_name in dp_data.dirs]
+    nframes_tot = 0
+    devis = []
+    for data in data_sets:
+        coord = data["coord"]
+        box = data["box"]
+        nframes = coord.shape[0]
+        nframes_tot += nframes
+        atype = data["type"][0]
+            
+        forces = []
+        virials = []
+        for dp in dp_models:
+            ret = dp.eval(
+                coord,
+                box,
+                atype,
+            )
+            forces.append(ret[1])
+            virials.append(ret[2])
         
-    forces = []
-    virials = []
-    for dp in dp_models:
-        ret = dp.eval(
-            coord,
-            box,
-            atype,
-            fparam=fparam,
-            aparam=aparam,
-            atomic=False,
-            efield=efield,
-        )
-        forces.append(ret[1])
-        virials.append(ret[2])
-    
-    forces = np.array(forces)
-    virials = np.array(virials)
-    
-    devi = [np.arange(nframes) * frequency]
-    devi_f = calc_model_devi_f(forces)
-    devi_v = calc_model_devi_v(virials)
-    for item in items:
-        if item == "v":
-            devi += [devi_v[0], devi_v[1], devi_v[2]]
-        elif item == "f":
-            devi += [devi_f[0], devi_f[1], devi_f[2]]
-        else:
-            raise ValueError(f"Unvaild item {item}")
-    devi = np.vstack(devi).T
-    write_model_devi_out(devi, output, items)
-    return devi
+        forces = np.array(forces)
+        virials = np.array(virials)
+        
+        devi = [np.zeros(nframes)]
+        devi_f = calc_model_devi_f(forces)
+        devi_v = calc_model_devi_v(virials)
+        for item in items:
+            if item == "v":
+                devi += [devi_v[0], devi_v[1], devi_v[2]]
+            elif item == "f":
+                devi += [devi_f[0], devi_f[1], devi_f[2]]
+            else:
+                raise ValueError(f"Unvaild item {item}")
+        devi = np.vstack(devi).T
+        devis.append(devi)
+    devis = np.vstack(devis)
+    devis[:, 0] = np.arange(nframes_tot) * frequency
+    write_model_devi_out(devis, output, items)
+    return devis

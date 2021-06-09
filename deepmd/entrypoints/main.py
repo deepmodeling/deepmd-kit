@@ -315,7 +315,7 @@ def parse_args(args: Optional[List[str]] = None):
     # * make model deviation ***********************************************************
     parser_model_devi = subparsers.add_parser(
         "model-devi",
-        parents=[parser_log, parser_mpi_log],
+        parents=[parser_log],
         help="calculate model deviation",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
