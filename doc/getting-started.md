@@ -274,12 +274,21 @@ optional arguments:
                         (default: model_devi.out)
   -f FREQUENCY, --frequency FREQUENCY
                         The trajectory frequency of the system (default: 1)
-  -i ITEMS, --items ITEMS
-                        The physical quantities of which model deviation is
-                        calculated. (default: vf)
 ```
 
-For more details respect to definition of model deviation and its application, please refer to `Yuzhi Zhang, Haidi Wang, Weijie Chen, Jinzhe Zeng, Linfeng Zhang, Han Wang, and Weinan E, DP-GEN: A concurrent learning platform for the generation of reliable deep learning based potential energy models, Computer Physics Communications, 2020, 107206.`
+Furthermore, one can use the python interface to calulate model deviation.
+```python
+from deepmd.entrypoints.model_devi import calc_model_devi
+from deepmd.infer import DeepPot as DP
+import numpy as np
+
+coord = np.array([[1,0,0], [0,0,1.5], [1,0,3]]).reshape([1, -1])
+cell = np.diag(10 * np.ones(3)).reshape([1, -1])
+atype = [1,0,1]
+graphs = [DP("graph.000.pb"), DP("graph.001.pb")]
+model_devi = calc_model_devi(coord, cell, atype, graphs)
+```
+For more details respect to definition of model deviation and its application, please refer to `Yuzhi Zhang, Haidi Wang, Weijie Chen, Jinzhe Zeng, Linfeng Zhang, Han Wang, and Weinan E, DP-GEN: A concurrent learning platform for the generation of reliable deep learning based potential energy models, Computer Physics Communications, 2020, 253, 107206.`
 
 ## Model inference 
 
