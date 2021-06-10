@@ -73,6 +73,32 @@ def calc_model_devi(coord,
                     fname=None,
                     frequency=1, 
                     nopbc=True):
+    '''
+    Python interface to calculate model deviation
+
+    Parameters:
+    -----------
+    coord : numpy.ndarray, `n_frames x n_atoms x 3`
+        Coordinates of system to calculate
+    box : numpy.ndarray or None, `n_frames x 3 x 3`
+        Box to specify periodic boundary condition. If None, no pbc will be used
+    atype : numpy.ndarray, `n_atoms x 1`
+        Atom types
+    models : list of DeepPot models
+        Models used to evaluate deviation
+    fname : str or None
+        File to dump results, default None
+    frequency : int
+        Steps between frames (if the system is given by molecular dynamics engine), default 1
+    nopbc : bool
+        Whether to use pbc conditions
+    
+    Return:
+    -------
+    model_devi : numpy.ndarray, `n_frames x 7`
+        Model deviation results. The first column is index of steps, the other 6 columns are
+        max_devi_v, min_devi_v, avg_devi_v, max_devi_f, min_devi_f, avg_devi_f.
+    '''
     if nopbc:
         box = None
 
