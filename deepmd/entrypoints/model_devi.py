@@ -8,12 +8,10 @@ def calc_model_devi_f(fs):
     '''
         fs : numpy.ndarray, size of `n_models x n_frames x n_atoms x 3`
     '''
-    fs_mean = np.mean(fs, axis=0)
-    fs_err = np.sum((fs - fs_mean) ** 2, axis=-1)
-    fs_devi = np.mean(fs_err, axis=0) ** 0.5
-    max_devi_f = np.max(fs_devi, axis=1)
-    min_devi_f = np.min(fs_devi, axis=1)
-    avg_devi_f = np.mean(fs_devi, axis=1)
+    fs_devi = np.linalg.norm(np.std(fs, axis=0), axis=-1)
+    max_devi_f = np.max(fs_devi, axis=-1)
+    min_devi_f = np.min(fs_devi, axis=-1)
+    avg_devi_f = np.mean(fs_devi, axis=-1)
     return max_devi_f, min_devi_f, avg_devi_f
 
 def calc_model_devi_e(es):
@@ -31,25 +29,23 @@ def calc_model_devi_v(vs):
         vs : numpy.ndarray, size of `n_models x n_frames x 9`
     '''
     vs_devi = np.std(vs, axis=0)
-    max_devi_v = np.max(vs_devi, axis=1)
-    min_devi_v = np.min(vs_devi, axis=1)
-    avg_devi_v = np.mean(vs_devi, axis=1)
+    max_devi_v = np.max(vs_devi, axis=-1)
+    min_devi_v = np.min(vs_devi, axis=-1)
+    avg_devi_v = np.linalg.norm(vs_devi, axis=-1) / 3
     return max_devi_v, min_devi_v, avg_devi_v
 
-def write_model_devi_out(devi, fname, items='vf'):
+def write_model_devi_out(devi, fname):
     '''
         devi : numpy.ndarray, the first column is the steps index
         fname : str, the file name to dump
-        items : str, specify physical quantities of which model_devi is contained in `devi`
-                    f - forces, v - virial
     '''
-    assert devi.shape[1] == len(items) * 3 + 1
+    assert devi.shape[1] == 7
     header = "%10s" % "step"
-    for item in items:
+    for item in 'vf':
         header += "%19s%19s%19s" % (f"max_devi_{item}", f"min_devi_{item}", f"avg_devi_{item}")
     np.savetxt(fname,
                devi,
-               fmt=['%12d'] + ['%19.6e' for _ in range(len(items) * 3)],
+               fmt=['%12d'] + ['%19.6e' for _ in range(6)],
                delimiter='',
                header=header)
     return devi
@@ -69,6 +65,38 @@ def _check_tmaps(tmaps, ref_tmap=None):
             flag = False
             break
     return flag
+
+def calc_model_devi(coord,
+                    box,
+                    atype,
+                    models,
+                    fname=None,
+                    frequency=1, 
+                    nopbc=True):
+    if nopbc:
+        box = None
+
+    forces = []
+    virials = []
+    for dp in models:
+        ret = dp.eval(
+            coord,
+            box,
+            atype,
+        )
+        forces.append(ret[1])
+        virials.append(ret[2] / len(atype))
+    
+    forces = np.array(forces)
+    virials = np.array(virials)
+    
+    devi = [np.arange(coord.shape[0]) * frequency]
+    devi += list(calc_model_devi_v(virials))
+    devi += list(calc_model_devi_f(forces))
+    devi = np.vstack(devi).T
+    if fname:
+        write_model_devi_out(devi, fname)
+    return devi
     
 def make_model_devi(
     *,
@@ -77,7 +105,6 @@ def make_model_devi(
     set_prefix: str,
     output: str,
     frequency: int,
-    items: str,
     **kwargs
 ):
     '''
@@ -98,9 +125,6 @@ def make_model_devi(
         The number of steps that elapse between writing coordinates 
         in a trajectory by a MD engine (such as Gromacs / Lammps).
         This paramter is used to determine the index in the output file.
-    items: str
-        String to specify physical quantities of which model devi is calculated
-        only f, v (force, virial) is supported.
     '''
     # init models
     dp_models = [DeepPotential(model) for model in models]
@@ -114,43 +138,22 @@ def make_model_devi(
     
     # create data-system
     dp_data = DeepmdData(system, set_prefix, shuffle_test=False, type_map=tmap)
+    if dp_data.pbc:
+        nopbc = False
+    else:
+        nopbc = True
+
     data_sets = [dp_data._load_set(set_name) for set_name in dp_data.dirs]
     nframes_tot = 0
     devis = []
     for data in data_sets:
         coord = data["coord"]
         box = data["box"]
-        nframes = coord.shape[0]
-        nframes_tot += nframes
-        atype = data["type"][0]
-            
-        forces = []
-        virials = []
-        for dp in dp_models:
-            ret = dp.eval(
-                coord,
-                box,
-                atype,
-            )
-            forces.append(ret[1])
-            virials.append(ret[2])
-        
-        forces = np.array(forces)
-        virials = np.array(virials)
-        
-        devi = [np.zeros(nframes)]
-        devi_f = calc_model_devi_f(forces)
-        devi_v = calc_model_devi_v(virials)
-        for item in items:
-            if item == "v":
-                devi += [devi_v[0], devi_v[1], devi_v[2]]
-            elif item == "f":
-                devi += [devi_f[0], devi_f[1], devi_f[2]]
-            else:
-                raise ValueError(f"Unvaild item {item}")
-        devi = np.vstack(devi).T
+        atype = data["type"][0] 
+        devi = calc_model_devi(coord, box, atype, dp_models, nopbc=nopbc)
+        nframes_tot += coord.shape[0]
         devis.append(devi)
     devis = np.vstack(devis)
     devis[:, 0] = np.arange(nframes_tot) * frequency
-    write_model_devi_out(devis, output, items)
+    write_model_devi_out(devis, output)
     return devis

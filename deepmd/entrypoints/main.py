@@ -351,13 +351,6 @@ def parse_args(args: Optional[List[str]] = None):
         type=int,
         help="The trajectory frequency of the system"
     )
-    parser_model_devi.add_argument(
-        "-i",
-        "--items",
-        default="vf",
-        type=str,
-        help="The physical quantities of which model deviation is calculated."
-    )
 
     parsed_args = parser.parse_args(args=args)
     if parsed_args.command is None:
