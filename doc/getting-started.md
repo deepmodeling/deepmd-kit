@@ -9,14 +9,15 @@ In this text, we will call the deep neural network that is used to represent the
 3. [Freeze a model](#freeze-a-model)
 4. [Test a model](#test-a-model)
 5. [Compress a model](#compress-a-model)
-6. [Model inference](#model-inference)
+6. [Calculate model deviation](#calculate-model-deviation)
+7. [Model inference](#model-inference)
     - [Python interface](#python-interface)
     - [C++ interface](#c-interface)
-7. [Run MD](#run-md)
+8. [Run MD](#run-md)
     - [Run MD with LAMMPS](#run-md-with-lammps)
     - [Run path-integral MD with i-PI](#run-path-integral-md-with-i-pi)
     - [Use deep potential with ASE](#use-deep-potential-with-ase)
-8. [Known limitations](#known-limitations)
+9. [Known limitations](#known-limitations)
 
 
 ## Prepare data
@@ -237,6 +238,48 @@ Model compression, with little loss of accuracy, can greatly speed up MD inferen
 **Acceptable original model version**
 
 The model compression method requires that the version of DeePMD-kit used in original model generation should be 1.3 or above. If one has a frozen 1.2 model, one can first use the convenient conversion interface of DeePMD-kit-v1.2.4 to get a 1.3 executable model.(eg: ```dp convert-to-1.3 -i frozen_1.2.pb -o frozen_1.3.pb```) 
+
+## Calculate Model Deviation
+
+One can use a subcommand to calculate deviation of prediced forces or virials for a bunch of models in the following way:
+```bash
+dp model-devi -m graph.000.pb graph.001.pb graph.002.pb graph.003.pb -s ./data -o model_devi.out
+```
+where `-m` specifies graph files to be calculated, `-s` gives the data to be evaluated, `-o` the file to which model deviation results is dumped. Here is more information on this sub-command:
+```
+usage: dp model-devi [-h] [-v {DEBUG,3,INFO,2,WARNING,1,ERROR,0}]
+                     [-l LOG_PATH] [-m MODELS [MODELS ...]] [-s SYSTEM]
+                     [-S SET_PREFIX] [-o OUTPUT] [-f FREQUENCY] [-i ITEMS]
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -v {DEBUG,3,INFO,2,WARNING,1,ERROR,0}, --log-level {DEBUG,3,INFO,2,WARNING,1,ERROR,0}
+                        set verbosity level by string or number, 0=ERROR,
+                        1=WARNING, 2=INFO and 3=DEBUG (default: INFO)
+  -l LOG_PATH, --log-path LOG_PATH
+                        set log file to log messages to disk, if not
+                        specified, the logs will only be output to console
+                        (default: None)
+  -m MODELS [MODELS ...], --models MODELS [MODELS ...]
+                        Frozen models file to import (default:
+                        ['graph.000.pb', 'graph.001.pb', 'graph.002.pb',
+                        'graph.003.pb'])
+  -s SYSTEM, --system SYSTEM
+                        The system directory, not support recursive detection.
+                        (default: .)
+  -S SET_PREFIX, --set-prefix SET_PREFIX
+                        The set prefix (default: set)
+  -o OUTPUT, --output OUTPUT
+                        The output file for results of model deviation
+                        (default: model_devi.out)
+  -f FREQUENCY, --frequency FREQUENCY
+                        The trajectory frequency of the system (default: 1)
+  -i ITEMS, --items ITEMS
+                        The physical quantities of which model deviation is
+                        calculated. (default: vf)
+```
+
+For more details respect to definition of model deviation and its application, please refer to `Yuzhi Zhang, Haidi Wang, Weijie Chen, Jinzhe Zeng, Linfeng Zhang, Han Wang, and Weinan E, DP-GEN: A concurrent learning platform for the generation of reliable deep learning based potential energy models, Computer Physics Communications, 2020, 107206.`
 
 ## Model inference 
 
