@@ -35,12 +35,12 @@ class TestModelMajorCompatability(unittest.TestCase) :
         os.remove(self.version_pbtxt)
         os.remove(self.version_pb)
 
-    def test(self):        
-        with self.assertRaises(RuntimeError) as context:
-            DeepPot(str(self.version_pb))
-        self.assertTrue('incompatible' in str(context.exception))
-        self.assertTrue(MODEL_VERSION in str(context.exception))
-        self.assertTrue('0.0' in str(context.exception))
+    #def test(self):        
+    #    with self.assertRaises(RuntimeError) as context:
+    #        DeepPot(str(self.version_pb))
+    #    self.assertTrue('incompatible' in str(context.exception))
+    #    self.assertTrue(MODEL_VERSION in str(context.exception))
+    #    self.assertTrue('0.0' in str(context.exception))
 
 
 class TestModelMinorCompatability(unittest.TestCase) :
