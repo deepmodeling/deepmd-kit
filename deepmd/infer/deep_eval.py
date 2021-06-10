@@ -77,6 +77,10 @@ class DeepEval:
         model_version_minor = int(self.model_version.split('.')[1])
         MODEL_VERSION_MAJOR = int(MODEL_VERSION.split('.')[0])
         MODEL_VERSION_MINOR = int(MODEL_VERSION.split('.')[1])
+        if model_version_major == 0:
+            # We plan to support model generated from v1.3
+            # We have no way to distinguish versions earlier than v1.3
+            return True
         if (model_version_major != MODEL_VERSION_MAJOR) or \
            (model_version_minor >  MODEL_VERSION_MINOR) :
             return False

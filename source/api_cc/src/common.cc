@@ -36,6 +36,9 @@ model_compatable(
   int model_version_minor = atoi(words_mv[1].c_str());
   int MODEL_VERSION_MAJOR = atoi(words_gmv[0].c_str());
   int MODEL_VERSION_MINOR = atoi(words_gmv[1].c_str());
+  // we plan to support model generated from v1.3,
+  // but have no way to distinguish versions earlier than v1.3
+  if(model_version_major == 0) return true;
   if(model_version_major != MODEL_VERSION_MAJOR ||
      model_version_minor >  MODEL_VERSION_MINOR){
     return false;
@@ -201,7 +204,7 @@ deepmd::
 check_status(const tensorflow::Status& status) {
   if (!status.ok()) {
     std::cout << status.ToString() << std::endl;
-    exit(1);
+    throw deepmd::tf_exception();
   }
 }
 
