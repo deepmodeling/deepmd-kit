@@ -11,7 +11,7 @@ from common import gen_data, tests_path
 class TestMakeModelDevi(unittest.TestCase):
     def setUp(self):
         gen_data()
-        self.data_dir = os.path.join(tests_path, "system")
+        self.data_dir = "system"
         self.pbtxts = [os.path.join(tests_path, "infer/deeppot.pbtxt"),
                        os.path.join(tests_path, "infer/deeppot-1.pbtxt")]
         self.graph_dirs = [pbtxt.replace("pbtxt", "pb") for pbtxt in self.pbtxts]
