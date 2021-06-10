@@ -5,20 +5,20 @@ import numpy as np
 from deepmd.entrypoints.model_devi import calc_model_devi
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from infer.convert2pb import convert_pbtxt_to_pb
-from common import gen_data, test_path
+from common import gen_data, tests_path
 
 
 class TestMakeModelDevi(unittest.TestCase):
     def setUp(self):
         gen_data()
-        self.data_dir = os.path.join(test_path, "system")
-        self.pbtxts = [os.path.join(test_path, "infer/deeppot.pbtxt"),
-                       os.path.join(test_path, "infer/deeppot-1.pbtxt")]
+        self.data_dir = os.path.join(tests_path, "system")
+        self.pbtxts = [os.path.join(tests_path, "infer/deeppot.pbtxt"),
+                       os.path.join(tests_path, "infer/deeppot-1.pbtxt")]
         self.graph_dirs = [pbtxt.replace("pbtxt", "pb") for pbtxt in self.pbtxts]
         for pbtxt, pb in zip(self.pbtxts, self.graph_dirs):
             convert_pbtxt_to_pb(pbtxt, pb)
         self.graphs = [DeepPotential(pb) for pb in self.graph_dirs]
-        self.output = os.path.join(test_path, "model_devi.out")
+        self.output = os.path.join(tests_path, "model_devi.out")
         self.expect = np.array([0, 1.670048e-01, 4.182279e-04, 8.048649e-02, 5.095047e-01, 4.584241e-01, 4.819783e-01])
     
     def test_calc_model_devi(self):
