@@ -646,6 +646,7 @@ class DescrptSeA ():
         with tf.variable_scope(name, reuse=reuse):
           start_index = 0
           type_i = 0
+          # natom x 4 x outputs_size
           if type_embedding is None:
               for type_i in range(self.ntypes):
                   ret = self._filter_lower(

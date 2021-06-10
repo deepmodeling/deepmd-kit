@@ -402,7 +402,7 @@ class EnerFitting ():
                     zero_layer = self._build_lower(
                         start_index, natoms[2+type_i], 
                         inputs_zero, fparam, aparam, 
-                        bias_atom_e=type_bias_ae, suffix='_zero_type_'+str(type_i)+suffix, reuse=reuse
+                        bias_atom_e=type_bias_ae, suffix='_type_'+str(type_i)+suffix, reuse=True
                     )
                     final_layer += self.atom_ener[type_i] - zero_layer
                 final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i]])
