@@ -278,7 +278,7 @@ optional arguments:
 
 Furthermore, one can use the python interface to calulate model deviation.
 ```python
-from deepmd.entrypoints.model_devi import calc_model_devi
+from deepmd.infer import calc_model_devi
 from deepmd.infer import DeepPot as DP
 import numpy as np
 
