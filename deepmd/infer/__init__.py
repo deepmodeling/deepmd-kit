@@ -10,6 +10,7 @@ from .deep_polar import DeepGlobalPolar, DeepPolar
 from .deep_pot import DeepPot
 from .deep_wfc import DeepWFC
 from .ewald_recp import EwaldRecp
+from .model_devi import calc_model_devi
 
 __all__ = [
     "DeepPotential",
@@ -21,6 +22,7 @@ __all__ = [
     "DeepWFC",
     "DipoleChargeModifier",
     "EwaldRecp",
+    "calc_model_devi"
 ]
 
 

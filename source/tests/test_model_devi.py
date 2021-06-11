@@ -2,7 +2,7 @@ from deepmd.infer import DeepPotential
 import unittest
 import os, sys, shutil
 import numpy as np
-from deepmd.infer.model_devi import calc_model_devi
+from deepmd.infer import calc_model_devi
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from infer.convert2pb import convert_pbtxt_to_pb
 from common import gen_data, tests_path
