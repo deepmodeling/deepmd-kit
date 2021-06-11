@@ -7,7 +7,7 @@ from .freeze import freeze
 from .test import test
 from .train import train
 from .transfer import transfer
-from .model_devi import make_model_devi
+from ..infer.model_devi import make_model_devi
 
 __all__ = [
     "config",
