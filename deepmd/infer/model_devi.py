@@ -1,4 +1,3 @@
-from typing import Tuple
 import numpy as np
 from deepmd import DeepPotential
 from deepmd.utils.data import DeepmdData
@@ -6,7 +5,7 @@ from deepmd.utils.data import DeepmdData
 
 def calc_model_devi_f(fs):
     '''
-        fs : numpy.ndarray, size of `n_models x n_frames x n_atoms x 3`
+    fs : numpy.ndarray, size of `n_models x n_frames x n_atoms x 3`
     '''
     fs_devi = np.linalg.norm(np.std(fs, axis=0), axis=-1)
     max_devi_f = np.max(fs_devi, axis=-1)
@@ -16,7 +15,7 @@ def calc_model_devi_f(fs):
 
 def calc_model_devi_e(es):
     '''
-        es : numpy.ndarray, size of `n_models x n_frames x n_atoms
+    es : numpy.ndarray, size of `n_models x n_frames x n_atoms
     '''
     es_devi = np.std(es, axis=0)
     max_devi_e = np.max(es_devi, axis=1)
@@ -26,7 +25,7 @@ def calc_model_devi_e(es):
 
 def calc_model_devi_v(vs):
     '''
-        vs : numpy.ndarray, size of `n_models x n_frames x 9`
+    vs : numpy.ndarray, size of `n_models x n_frames x 9`
     '''
     vs_devi = np.std(vs, axis=0)
     max_devi_v = np.max(vs_devi, axis=-1)
@@ -36,8 +35,8 @@ def calc_model_devi_v(vs):
 
 def write_model_devi_out(devi, fname):
     '''
-        devi : numpy.ndarray, the first column is the steps index
-        fname : str, the file name to dump
+    devi : numpy.ndarray, the first column is the steps index
+    fname : str, the file name to dump
     '''
     assert devi.shape[1] == 7
     header = "%10s" % "step"
@@ -52,7 +51,7 @@ def write_model_devi_out(devi, fname):
 
 def _check_tmaps(tmaps, ref_tmap=None):
     '''
-        Check whether type maps are identical
+    Check whether type maps are identical
     '''
     assert isinstance(tmaps, list)
     if ref_tmap is None:
