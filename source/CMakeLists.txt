@@ -51,6 +51,16 @@ file(READ ${PROJECT_SOURCE_DIR}/config/MODEL_VER MODEL_VERSION)
 string(REPLACE "\n" " " MODEL_VERSION ${MODEL_VERSION})
 message(STATUS "Supported model version: ${MODEL_VERSION}")
 
+if (NOT DEFINED USE_CUDA_TOOLKIT AND NOT DEFINED USE_ROCM_TOOLKIT)
+  # User doesn't decide whether to use CUDA or ROCM, use CUDA if detected
+  find_package(CUDA QUIET)  
+  if (CUDA_FOUND)
+    set(USE_CUDA_TOOLKIT TRUE)
+  else()
+    set(USE_CUDA_TOOLKIT FALSE)
+  endif()
+endif()
+
 # Devices that have both ROCM and CUDA are not currently supported
 if (USE_ROCM_TOOLKIT AND USE_CUDA_TOOLKIT)
   message (FATAL_ERROR "Devices that have both ROCM and CUDA are not currently supported")
