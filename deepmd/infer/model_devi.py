@@ -1,6 +1,6 @@
 import numpy as np
-from deepmd import DeepPotential
-from deepmd.utils.data import DeepmdData
+from .deep_pot import DeepPot
+from ..utils.data import DeepmdData
         
 
 def calc_model_devi_f(fs):
@@ -152,7 +152,7 @@ def make_model_devi(
         This paramter is used to determine the index in the output file.
     '''
     # init models
-    dp_models = [DeepPotential(model) for model in models]
+    dp_models = [DeepPot(model) for model in models]
 
     # check type maps
     tmaps = [dp.get_type_map() for dp in dp_models]
