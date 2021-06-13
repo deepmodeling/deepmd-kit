@@ -180,12 +180,12 @@ One may add the following arguments to `cmake`:
 
 | CMake Aurgements         | Allowed value       | Default value | Usage                   |
 | ------------------------ | ------------------- | ------------- | ------------------------|
-| -DTENSORFLOW_ROOT=<value>  | Path              | -             | The Path to TensorFlow's C++ interface. |
-| -DCMAKE_INSTALL_PREFIX=<value> | Path          | -             | The Path where DeePMD-kit will be installed. |
-| -DFLOAT_PREC=<value>       | `high` or `low`   | `high`        | Build high (double) or low (float) precision. |
-| -DUSE_CUDA_TOOLKIT=<value> | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build GPU support with CUDA toolkit. |
-| -DCUDA_TOOLKIT_ROOT_DIR=<value> | Path         | Detected automatically | The path to the CUDA toolkit directory. |
-| -DUSE_ROCM_TOOLKIT=<value> | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build GPU support with ROCM toolkit. |
+| -DTENSORFLOW_ROOT=&lt;value&gt;  | Path              | -             | The Path to TensorFlow's C++ interface. |
+| -DCMAKE_INSTALL_PREFIX=&lt;value&gt; | Path          | -             | The Path where DeePMD-kit will be installed. |
+| -DFLOAT_PREC=&lt;value&gt;       | `high` or `low`   | `high`        | Build high (double) or low (float) precision. |
+| -DUSE_CUDA_TOOLKIT=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build GPU support with CUDA toolkit. |
+| -DCUDA_TOOLKIT_ROOT_DIR=&lt;value&gt; | Path         | Detected automatically | The path to the CUDA toolkit directory. |
+| -DUSE_ROCM_TOOLKIT=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build GPU support with ROCM toolkit. |
 
 If the cmake has executed successfully, then 
 ```bash
