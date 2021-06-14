@@ -34,6 +34,28 @@ else:
         "gpu": [f"tensorflow=={tf_version}"],
     }
 
+cmake_args = []
+# get variant option from the environment varibles, available: cpu, cuda, rocm
+dp_variant = os.environ.get("DP_VARIANT", "cpu").lower()
+if dp_variant == "cpu" or dp_variant == "":
+    pass
+elif dp_variant == "cuda":
+    cmake_args.append("-DUSE_CUDA_TOOLKIT:BOOL=TRUE")
+elif dp_variant == "rocm":
+    cmake_args.append("-DUSE_ROCM_TOOLKIT:BOOL=TRUE")
+elif dp_variant != "":
+    raise RuntimeError("Unsupported DP_VARIANT option: %s" % dp_variant)
+
+# FLOAT_PREC
+dp_float_prec = os.environ.get("DP_FLOAT_PREC", "").lower()
+if dp_float_prec in ["high", "low"]:
+    cmake_args.append("-DFLOAT_PREC:STRING=%s" % dp_float_prec)
+elif dp_float_prec == "":
+    # default is high
+    cmake_args.append("-DFLOAT_PREC:STRING=high")
+else:
+    raise RuntimeError("Unsupported float precision option: %s" % dp_float_prec)
+
 # get tensorflow spec
 tf_spec = find_spec("tensorflow")
 if not tf_spec:
@@ -101,7 +123,7 @@ setup(
         f"-DTENSORFLOW_ROOT:STRING={tf_install_dir}",
         "-DBUILD_PY_IF:BOOL=TRUE",
         "-DBUILD_CPP_IF:BOOL=FALSE",
-        "-DFLOAT_PREC:STRING=high",
+        *cmake_args,
     ],
     cmake_source_dir="source",
     cmake_minimum_required_version="3.0",
