@@ -434,7 +434,7 @@ TEST_F(TestInferDeepPotModeDeviPython, cpu_lmp_list_std)
   EXPECT_LT(fabs(myavg(std_f) - expected_md_f[2]), 1e-10);
 
   // dp compute std v
-  // we make normalize v by number of atoms
+  // we normalize v by number of atoms
   for (int ii = 0; ii < vmd.size(); ++ii){
     for(int jj = 0; jj < vmd[ii].size(); ++jj){
       vmd[ii][jj] /= double(atype.size());
