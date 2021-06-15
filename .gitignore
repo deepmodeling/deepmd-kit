@@ -27,3 +27,5 @@ venv*
 _build
 _templates
 API_CC
+dp/
+build_lammps/
