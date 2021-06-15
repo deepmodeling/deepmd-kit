@@ -2,4 +2,4 @@ numpy
 scipy
 pyyaml
 dargs >= 0.2.2
-typing_extensions
+typing_extensions; python_version < "3.7"
