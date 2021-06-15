@@ -44,6 +44,11 @@ public:
   void make_inlist(InputNlist & inlist);
 };
 
+/**
+* @brief Check if the model version is supported.
+* @param[in] model_version The model version.
+* @return Whether the model is supported (true or false).
+**/
 bool
 model_compatable(
     std::string & model_version);
@@ -73,10 +78,19 @@ select_map(std::vector<VT> & out,
 	   const std::vector<int > & fwd_map, 
 	   const int & stride);
 
+/**
+* @brief Get the number of threads from the environment variable.
+* @param[out] num_intra_nthreads The number of intra threads. Read from TF_INTRA_OP_PARALLELISM_THREADS.
+* @param[out] num_inter_nthreads The number of inter threads. Read from TF_INTER_OP_PARALLELISM_THREADS.
+**/
 void
 get_env_nthreads(int & num_intra_nthreads,
 		 int & num_inter_nthreads);
 
+/**
+* @brief Check TensorFlow status. Exit if not OK.
+* @param[in] status TensorFlow status.
+**/
 void
 check_status(
     const tensorflow::Status& status);

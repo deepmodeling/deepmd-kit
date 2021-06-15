@@ -59,6 +59,28 @@ volume_gpu(
     const Region<FPTYPE> & region);
 #endif // GOOGLE_CUDA
 
+#if TENSORFLOW_USE_ROCM
+//only for unittest
+template<typename FPTYPE>
+void
+convert_to_inter_gpu_rocm(
+    FPTYPE * ri, 
+    const Region<FPTYPE> & region,
+    const FPTYPE * rp);
+
+template<typename FPTYPE>
+void
+convert_to_phys_gpu_rocm(
+    FPTYPE * rp, 
+    const Region<FPTYPE> & region,
+    const FPTYPE * ri);
+
+template<typename FPTYPE>
+void
+volume_gpu_rocm(
+    FPTYPE * volume, 
+    const Region<FPTYPE> & region);
+#endif // TENSORFLOW_USE_ROCM
 }
 
 

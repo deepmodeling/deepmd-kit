@@ -13,6 +13,7 @@ from deepmd.entrypoints import (
     test,
     train,
     transfer,
+    make_model_devi,
 )
 from deepmd.loggers import set_log_handles
 
@@ -311,6 +312,46 @@ def parse_args(args: Optional[List[str]] = None):
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
+    # * make model deviation ***********************************************************
+    parser_model_devi = subparsers.add_parser(
+        "model-devi",
+        parents=[parser_log],
+        help="calculate model deviation",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser_model_devi.add_argument(
+        "-m",
+        "--models",
+        default=["graph.000.pb", "graph.001.pb", "graph.002.pb", "graph.003.pb"],
+        nargs="+",
+        type=str,
+        help="Frozen models file to import",
+    )
+    parser_model_devi.add_argument(
+        "-s",
+        "--system",
+        default=".",
+        type=str,
+        help="The system directory, not support recursive detection.",
+    )
+    parser_model_devi.add_argument(
+        "-S", "--set-prefix", default="set", type=str, help="The set prefix"
+    )
+    parser_model_devi.add_argument(
+        "-o",
+        "--output", 
+        default="model_devi.out", 
+        type=str, 
+        help="The output file for results of model deviation"
+    )
+    parser_model_devi.add_argument(
+        "-f",
+        "--frequency",
+        default=1,
+        type=int,
+        help="The trajectory frequency of the system"
+    )
+
     parsed_args = parser.parse_args(args=args)
     if parsed_args.command is None:
         parser.print_help()
@@ -352,6 +393,8 @@ def main():
         compress(**dict_args)
     elif args.command == "doc-train-input":
         doc_train_input()
+    elif args.command == "model-devi":
+        make_model_devi(**dict_args)
     elif args.command is None:
         pass
     else:

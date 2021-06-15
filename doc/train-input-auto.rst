@@ -10,7 +10,7 @@ model:
         | type: ``list``, optional
         | argument path: ``model/type_map``
 
-        A list of strings. Give the name to each type of atoms.
+        A list of strings. Give the name to each type of atoms. It is noted that the number of atom type of training system must be less than 128 in a GPU environment.
 
     .. _`model/data_stat_nbatch`: 
 
@@ -63,7 +63,7 @@ model:
     .. _`model/type_embedding`: 
 
     type_embedding: 
-        | type: ``dict``
+        | type: ``dict``, optional
         | argument path: ``model/type_embedding``
 
         The type embedding.
@@ -224,7 +224,7 @@ model:
             | type: ``list``
             | argument path: ``model/descriptor[se_e2_a]/sel``
 
-            A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.
+            A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.
 
         .. _`model/descriptor[se_e2_a]/rcut`: 
 
@@ -333,7 +333,7 @@ model:
             | type: ``list``
             | argument path: ``model/descriptor[se_e2_r]/sel``
 
-            A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.
+            A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.
 
         .. _`model/descriptor[se_e2_r]/rcut`: 
 
@@ -434,7 +434,7 @@ model:
             | type: ``list``
             | argument path: ``model/descriptor[se_e3]/sel``
 
-            A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.
+            A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.
 
         .. _`model/descriptor[se_e3]/rcut`: 
 
@@ -519,7 +519,7 @@ model:
             | type: ``list``
             | argument path: ``model/descriptor[se_a_tpe]/sel``
 
-            A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.
+            A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.
 
         .. _`model/descriptor[se_a_tpe]/rcut`: 
 
@@ -670,17 +670,17 @@ model:
         type:
             | type: ``str`` (flag key), default: ``ener``
             | argument path: ``model/fitting_net/type`` 
-            | possible choices: |code:model/fitting_net[ener]|_, |code:model/fitting_net[dipole]|_, |code:model/fitting_net[polar]|_, |code:model/fitting_net[global_polar]|_
+            | possible choices: |code:model/fitting_net[ener]|_, |code:model/fitting_net[dipole]|_, |code:model/fitting_net[polar]|_
 
             The type of the fitting. See explanation below. 
 
             - `ener`: Fit an energy model (potential energy surface).
 
-            - `dipole`: Fit an atomic dipole model. Atomic dipole labels for all the selected atoms (see `sel_type`) should be provided by `dipole.npy` in each data system. The file has number of frames lines and 3 times of number of selected atoms columns.
+            - `dipole`: Fit an atomic dipole model. Global dipole labels or atomic dipole labels for all the selected atoms (see `sel_type`) should be provided by `dipole.npy` in each data system. The file either has number of frames lines and 3 times of number of selected atoms columns, or has number of frames lines and 3 columns. See `loss` parameter.
 
-            - `polar`: Fit an atomic polarizability model. Atomic polarizability labels for all the selected atoms (see `sel_type`) should be provided by `polarizability.npy` in each data system. The file has number of frames lines and 9 times of number of selected atoms columns.
+            - `polar`: Fit an atomic polarizability model. Global polarizazbility labels or atomic polarizability labels for all the selected atoms (see `sel_type`) should be provided by `polarizability.npy` in each data system. The file eith has number of frames lines and 9 times of number of selected atoms columns, or has number of frames lines and 9 columns. See `loss` parameter.
 
-            - `global_polar`: Fit a polarizability model. Polarizability labels should be provided by `polarizability.npy` in each data system. The file has number of frames lines and 9 columns.
+
 
             .. |code:model/fitting_net[ener]| replace:: ``ener``
             .. _`code:model/fitting_net[ener]`: `model/fitting_net[ener]`_
@@ -688,8 +688,6 @@ model:
             .. _`code:model/fitting_net[dipole]`: `model/fitting_net[dipole]`_
             .. |code:model/fitting_net[polar]| replace:: ``polar``
             .. _`code:model/fitting_net[polar]`: `model/fitting_net[polar]`_
-            .. |code:model/fitting_net[global_polar]| replace:: ``global_polar``
-            .. _`code:model/fitting_net[global_polar]`: `model/fitting_net[global_polar]`_
 
         .. |flag:model/fitting_net/type| replace:: *type*
         .. _`flag:model/fitting_net/type`: `model/fitting_net/type`_
@@ -889,13 +887,13 @@ model:
 
             The output of the fitting net (polarizability matrix) will be scaled by ``scale``
 
-        .. _`model/fitting_net[polar]/diag_shift`: 
+        .. _`model/fitting_net[polar]/shift_diag`: 
 
-        diag_shift: 
-            | type: ``float`` | ``list``, optional, default: ``0.0``
-            | argument path: ``model/fitting_net[polar]/diag_shift``
+        shift_diag: 
+            | type: ``bool``, optional, default: ``True``
+            | argument path: ``model/fitting_net[polar]/shift_diag``
 
-            The diagonal part of the polarizability matrix  will be shifted by ``diag_shift``. The shift operation is carried out after ``scale``.
+            Whether to shift the diagonal of polar, which is beneficial to training. Default is true.
 
         .. _`model/fitting_net[polar]/sel_type`: 
 
@@ -910,83 +908,6 @@ model:
         seed: 
             | type: ``int`` | ``NoneType``, optional
             | argument path: ``model/fitting_net[polar]/seed``
-
-            Random seed for parameter initialization of the fitting net
-
-
-        .. _`model/fitting_net[global_polar]`: 
-
-        When |flag:model/fitting_net/type|_ is set to ``global_polar``: 
-
-        .. _`model/fitting_net[global_polar]/neuron`: 
-
-        neuron: 
-            | type: ``list``, optional, default: ``[120, 120, 120]``
-            | argument path: ``model/fitting_net[global_polar]/neuron``
-
-            The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.
-
-        .. _`model/fitting_net[global_polar]/activation_function`: 
-
-        activation_function: 
-            | type: ``str``, optional, default: ``tanh``
-            | argument path: ``model/fitting_net[global_polar]/activation_function``
-
-            The activation function in the fitting net. Supported activation functions are "relu", "relu6", "softplus", "sigmoid", "tanh", "gelu".
-
-        .. _`model/fitting_net[global_polar]/resnet_dt`: 
-
-        resnet_dt: 
-            | type: ``bool``, optional, default: ``True``
-            | argument path: ``model/fitting_net[global_polar]/resnet_dt``
-
-            Whether to use a "Timestep" in the skip connection
-
-        .. _`model/fitting_net[global_polar]/precision`: 
-
-        precision: 
-            | type: ``str``, optional, default: ``float64``
-            | argument path: ``model/fitting_net[global_polar]/precision``
-
-            The precision of the fitting net parameters, supported options are "default", "float16", "float32", "float64".
-
-        .. _`model/fitting_net[global_polar]/fit_diag`: 
-
-        fit_diag: 
-            | type: ``bool``, optional, default: ``True``
-            | argument path: ``model/fitting_net[global_polar]/fit_diag``
-
-            Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to normal polarizability matrix by contracting with the rotation matrix.
-
-        .. _`model/fitting_net[global_polar]/scale`: 
-
-        scale: 
-            | type: ``float`` | ``list``, optional, default: ``1.0``
-            | argument path: ``model/fitting_net[global_polar]/scale``
-
-            The output of the fitting net (polarizability matrix) will be scaled by ``scale``
-
-        .. _`model/fitting_net[global_polar]/diag_shift`: 
-
-        diag_shift: 
-            | type: ``float`` | ``list``, optional, default: ``0.0``
-            | argument path: ``model/fitting_net[global_polar]/diag_shift``
-
-            The diagonal part of the polarizability matrix  will be shifted by ``diag_shift``. The shift operation is carried out after ``scale``.
-
-        .. _`model/fitting_net[global_polar]/sel_type`: 
-
-        sel_type: 
-            | type: ``int`` | ``NoneType`` | ``list``, optional
-            | argument path: ``model/fitting_net[global_polar]/sel_type``
-
-            The atom types for which the atomic polarizability will be provided. If not set, all types will be selected.
-
-        .. _`model/fitting_net[global_polar]/seed`: 
-
-        seed: 
-            | type: ``int`` | ``NoneType``, optional
-            | argument path: ``model/fitting_net[global_polar]/seed``
 
             Random seed for parameter initialization of the fitting net
 
@@ -1063,6 +984,61 @@ model:
 
             The grid spacing of the FFT grid. Unit is A
 
+    .. _`model/compress`: 
+
+    compress: 
+        | type: ``dict``, optional
+        | argument path: ``model/compress``
+
+        Model compression configurations
+
+
+        Depending on the value of *type*, different sub args are accepted. 
+
+        .. _`model/compress/type`: 
+
+        type:
+            | type: ``str`` (flag key), default: ``se_e2_a``
+            | argument path: ``model/compress/type`` 
+            | possible choices: |code:model/compress[se_e2_a]|_
+
+            The type of model compression, which should be consistent with the descriptor type.
+
+            .. |code:model/compress[se_e2_a]| replace:: ``se_e2_a``
+            .. _`code:model/compress[se_e2_a]`: `model/compress[se_e2_a]`_
+
+        .. |flag:model/compress/type| replace:: *type*
+        .. _`flag:model/compress/type`: `model/compress/type`_
+
+
+        .. _`model/compress[se_e2_a]`: 
+
+        When |flag:model/compress/type|_ is set to ``se_e2_a`` (or its alias ``se_a``): 
+
+        .. _`model/compress[se_e2_a]/compress`: 
+
+        compress: 
+            | type: ``bool``
+            | argument path: ``model/compress[se_e2_a]/compress``
+
+            The name of the frozen model file.
+
+        .. _`model/compress[se_e2_a]/model_file`: 
+
+        model_file: 
+            | type: ``str``
+            | argument path: ``model/compress[se_e2_a]/model_file``
+
+            The input model file, which will be compressed by the DeePMD-kit.
+
+        .. _`model/compress[se_e2_a]/table_config`: 
+
+        table_config: 
+            | type: ``list``
+            | argument path: ``model/compress[se_e2_a]/table_config``
+
+            The arguments of model compression, including extrapolate(scale of model extrapolation), stride(uniform stride of tabulation's first and second table), and frequency(frequency of tabulation overflow check).
+
 
 .. _`loss`: 
 
@@ -1070,7 +1046,7 @@ loss:
     | type: ``dict``, optional
     | argument path: ``loss``
 
-    The definition of loss function. The loss type should be set to the fitting type or left unset.
+    The definition of loss function. The loss type should be set to `tensor`, `ener` or left unset.
     \.
 
 
@@ -1081,19 +1057,15 @@ loss:
     type:
         | type: ``str`` (flag key), default: ``ener``
         | argument path: ``loss/type`` 
-        | possible choices: |code:loss[ener]|_, |code:loss[dipole]|_, |code:loss[polar]|_, |code:loss[global_polar]|_
+        | possible choices: |code:loss[ener]|_, |code:loss[tensor]|_
 
-        The type of the loss. The loss type should be set to the fitting type or left unset.
+        The type of the loss. When the fitting type is `ener`, the loss type should be set to `ener` or left unset. When the fitting type is `dipole` or `polar`, the loss type should be set to `tensor`. 
         \.
 
         .. |code:loss[ener]| replace:: ``ener``
         .. _`code:loss[ener]`: `loss[ener]`_
-        .. |code:loss[dipole]| replace:: ``dipole``
-        .. _`code:loss[dipole]`: `loss[dipole]`_
-        .. |code:loss[polar]| replace:: ``polar``
-        .. _`code:loss[polar]`: `loss[polar]`_
-        .. |code:loss[global_polar]| replace:: ``global_polar``
-        .. _`code:loss[global_polar]`: `loss[global_polar]`_
+        .. |code:loss[tensor]| replace:: ``tensor``
+        .. _`code:loss[tensor]`: `loss[tensor]`_
 
     .. |flag:loss/type| replace:: *type*
     .. _`flag:loss/type`: `loss/type`_
@@ -1176,67 +1148,25 @@ loss:
         If provided, relative force error will be used in the loss. The difference of force will be normalized by the magnitude of the force in the label with a shift given by `relative_f`, i.e. DF_i / ( || F || + relative_f ) with DF denoting the difference between prediction and label and || F || denoting the L2 norm of the label.
 
 
-    .. _`loss[dipole]`: 
+    .. _`loss[tensor]`: 
 
-    When |flag:loss/type|_ is set to ``dipole``: 
+    When |flag:loss/type|_ is set to ``tensor``: 
 
-    .. _`loss[dipole]/pref_weight`: 
+    .. _`loss[tensor]/pref`: 
 
-    pref_weight: 
-        | type: ``float`` | ``NoneType`` | ``int``, optional, default: ``None``
-        | argument path: ``loss[dipole]/pref_weight``
+    pref: 
+        | type: ``float`` | ``int``
+        | argument path: ``loss[tensor]/pref``
 
-        The prefactor of the weight of global loss. It should be larger than or equal to 0. If not provided, training will be atomic mode, i.e. atomic label should be provided.
+        The prefactor of the weight of global loss. It should be larger than or equal to 0. If controls the weight of loss corresponding to global label, i.e. 'polarizability.npy` or `dipole.npy`, whose shape should be #frames x [9 or 3]. If it's larger than 0.0, this npy should be included.
 
-    .. _`loss[dipole]/pref_atomic_weight`: 
+    .. _`loss[tensor]/pref_atomic`: 
 
-    pref_atomic_weight: 
-        | type: ``float`` | ``NoneType`` | ``int``, optional, default: ``None``
-        | argument path: ``loss[dipole]/pref_atomic_weight``
+    pref_atomic: 
+        | type: ``float`` | ``int``
+        | argument path: ``loss[tensor]/pref_atomic``
 
-        The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If it's not provided and global weight is provided, training will be global mode, i.e. global label should be provided. If both global and atomic weight are not provided, training will be atomic mode, i.e.  atomic label should be provided.
-
-
-    .. _`loss[polar]`: 
-
-    When |flag:loss/type|_ is set to ``polar``: 
-
-    .. _`loss[polar]/pref_weight`: 
-
-    pref_weight: 
-        | type: ``float`` | ``NoneType`` | ``int``, optional, default: ``None``
-        | argument path: ``loss[polar]/pref_weight``
-
-        The prefactor of the weight of global loss. It should be larger than or equal to 0. If not provided, training will be atomic mode, i.e. atomic label should be provided.
-
-    .. _`loss[polar]/pref_atomic_weight`: 
-
-    pref_atomic_weight: 
-        | type: ``float`` | ``NoneType`` | ``int``, optional, default: ``None``
-        | argument path: ``loss[polar]/pref_atomic_weight``
-
-        The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If it's not provided and global weight is provided, training will be global mode, i.e. global label should be provided. If both global and atomic weight are not provided, training will be atomic mode, i.e.  atomic label should be provided.
-
-
-    .. _`loss[global_polar]`: 
-
-    When |flag:loss/type|_ is set to ``global_polar``: 
-
-    .. _`loss[global_polar]/pref_weight`: 
-
-    pref_weight: 
-        | type: ``float`` | ``NoneType`` | ``int``, optional, default: ``None``
-        | argument path: ``loss[global_polar]/pref_weight``
-
-        The prefactor of the weight of global loss. It should be larger than or equal to 0. If it's not provided and atomic weight is provided, training will be atomic mode, i.e. atomic label should be provided. If both global and atomic weight are not provided, training will be global mode, i.e.  global label should be provided.
-
-    .. _`loss[global_polar]/pref_atomic_weight`: 
-
-    pref_atomic_weight: 
-        | type: ``float`` | ``NoneType`` | ``int``, optional, default: ``None``
-        | argument path: ``loss[global_polar]/pref_atomic_weight``
-
-        The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If not provided, training will be global mode, i.e. global label should be provided.
+        The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If controls the weight of loss corresponding to atomic label, i.e. `atomic_polarizability.npy` or `atomic_dipole.npy`, whose shape should be #frames x ([9 or 3] x #selected atoms). If it's larger than 0.0, this npy should be included. Both `pref` and `pref_atomic` should be provided, and either can be set to 0.0.
 
 
 .. _`learning_rate`: 
