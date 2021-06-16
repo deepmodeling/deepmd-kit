@@ -20,7 +20,7 @@ class DeepTabulate():
     def __init__(self,
                  model_file : str,
                  type_one_side : bool = False,
-                 exclude_types : List[int] = []) -> None:
+                 exclude_types : List[List[int]] = []) -> None:
         """
         Constructor
 
@@ -30,7 +30,7 @@ class DeepTabulate():
                 The frozen model
         type_one_side
                 Try to build N_types tables. Otherwise, building N_types^2 tables
-        exclude_types : list[int]
+        exclude_types : list[list[int]]
                 The Excluded types
         """
 
