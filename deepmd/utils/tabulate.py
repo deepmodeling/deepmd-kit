@@ -2,7 +2,6 @@ import re
 import math
 import logging
 import numpy as np
-from tqdm import tqdm
 from typing import Tuple, List
 from deepmd.env import tf
 from deepmd.env import op_module
