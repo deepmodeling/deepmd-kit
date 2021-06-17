@@ -225,15 +225,18 @@ def test_ener(
     else:
         aparam = None
 
-    ret = dp.eval(
-        coord,
-        box,
-        atype,
-        fparam=fparam,
-        aparam=aparam,
-        atomic=has_atom_ener,
-        efield=efield,
-    )
+    try:
+        ret = dp.eval(
+            coord,
+            box,
+            atype,
+            fparam=fparam,
+            aparam=aparam,
+            atomic=has_atom_ener,
+            efield=efield,
+        )
+    except[Exception(tensorflow.python.framework.errors_impl.ResourceExhaustedError)]:
+        raise Exception("Error:: Input tensor is too large and memory is drained. Try with \'-n 1\' option of \'dp test\', which means test only one frame of the test data systems.\n If the previous method doesn't work, you may have to reduce the size of embedding net.")
     energy = ret[0]
     force = ret[1]
     virial = ret[2]
@@ -353,7 +356,10 @@ def run_test(dp: "DeepTensor", test_data: dict, numb_test: int):
     coord = test_data["coord"][:numb_test].reshape([numb_test, -1])
     box = test_data["box"][:numb_test]
     atype = test_data["type"][0]
-    prediction = dp.eval(coord, box, atype)
+    try:
+        prediction = dp.eval(coord, box, atype)
+    except[Exception(tensorflow.python.framework.errors_impl.ResourceExhaustedError)]:
+        raise Exception("Error:: Input tensor is too large and memory is drained. Try with \'-n 1\' option of \'dp test\', which means test only one frame of the test data systems.\n If the previous method doesn't work, you may have to reduce the size of embedding net.")
 
     return prediction.reshape([numb_test, -1]), numb_test, atype
 

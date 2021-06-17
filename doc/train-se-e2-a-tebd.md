@@ -40,3 +40,5 @@ A complete training input script of this example can be find in the directory.
 ```bash
 $deepmd_source_dir/examples/water/se_e2_a_tebd/input.json
 ```
+
+**P.S.: You can't apply compression method while using atom type embedding**
