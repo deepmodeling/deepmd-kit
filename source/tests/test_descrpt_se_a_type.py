@@ -53,10 +53,11 @@ class TestModel(unittest.TestCase):
             neuron = typeebd_param['neuron'],
             resnet_dt = typeebd_param['resnet_dt'],
             seed = typeebd_param['seed'], 
+            uniform_seed = True
         )
 
         jdata['model']['descriptor'].pop('type', None)        
-        descrpt = DescrptSeA(**jdata['model']['descriptor'])
+        descrpt = DescrptSeA(**jdata['model']['descriptor'], uniform_seed=True)
 
         # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
         input_data = {'coord' : [test_data['coord']], 
@@ -161,10 +162,11 @@ class TestModel(unittest.TestCase):
             neuron = typeebd_param['neuron'],
             resnet_dt = typeebd_param['resnet_dt'],
             seed = typeebd_param['seed'], 
+            uniform_seed = True
         )
 
         jdata['model']['descriptor'].pop('type', None)        
-        descrpt = DescrptSeA(**jdata['model']['descriptor'])
+        descrpt = DescrptSeA(**jdata['model']['descriptor'], uniform_seed = True)
 
         # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
         input_data = {'coord' : [test_data['coord']], 

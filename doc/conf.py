@@ -11,6 +11,7 @@
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
 import os
+import subprocess
 # import sys
 import recommonmark
 from recommonmark.transform import AutoStructify
@@ -108,6 +109,31 @@ project = 'DeePMD-kit'
 copyright = '2020, Deep Potential'
 author = 'Deep Potential'
 
+def run_doxygen(folder):
+    """Run the doxygen make command in the designated folder"""
+
+    try:
+        retcode = subprocess.call("cd %s; doxygen Doxyfile" % folder, shell=True)
+        if retcode < 0:
+            sys.stderr.write("doxygen terminated by signal %s" % (-retcode))
+    except OSError as e:
+        sys.stderr.write("doxygen execution failed: %s" % e)
+
+
+def generate_doxygen_xml(app):
+    """Run the doxygen make commands if we're on the ReadTheDocs server"""
+
+    read_the_docs_build = os.environ.get('READTHEDOCS', None) == 'True'
+
+    if read_the_docs_build:
+        run_doxygen("./")
+    else:
+        subprocess.call("doxygen Doxyfile", shell=True)
+
+def setup(app):
+
+    # Add hook for building doxygen xml when needed
+    app.connect("builder-inited", generate_doxygen_xml)
 
 # -- General configuration ---------------------------------------------------
 
@@ -129,9 +155,39 @@ classify_index_TS()
 extensions = [
     "sphinx_rtd_theme",
     'myst_parser',
-    'sphinx.ext.autosummary'
+    'sphinx.ext.autosummary',
+    'breathe',
+    'exhale'
 ]
 
+# breathe_domain_by_extension = {
+#         "h" : "cpp",
+# }
+breathe_projects = {"myproject": "_build/xml/"}
+breathe_default_project = "myproject"
+
+exhale_args = {
+   "containmentFolder":     "./API_CC",
+    "rootFileName":          "api_cc.rst",
+    "rootFileTitle":         "C++ API",
+    "doxygenStripFromPath":  "..",
+    # Suggested optional arguments
+    # "createTreeView":        True,
+    # TIP: if using the sphinx-bootstrap-theme, you need
+    # "treeViewIsBootstrap": True,
+    "exhaleExecutesDoxygen": True,
+    "exhaleDoxygenStdin":    "INPUT = ../source/api_cc/include/",
+    # "unabridgedOrphanKinds": {"namespace"}
+    # "listingExclude": [r"namespace_*"]
+}
+
+# Tell sphinx what the primary language being documented is.
+primary_domain = 'cpp'
+
+# Tell sphinx what the pygments highlight language should be.
+highlight_language = 'cpp'
+
+# 
 myst_heading_anchors = 4
 
 # Add any paths that contain templates here, relative to this directory.

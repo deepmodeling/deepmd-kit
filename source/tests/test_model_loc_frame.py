@@ -40,7 +40,8 @@ class TestModel(unittest.TestCase):
         descrpt = DescrptLocFrame(**jdata['model']['descriptor'])
         fitting = EnerFitting(descrpt, 
                               neuron = [240, 120, 60, 30, 10], 
-                              seed = 1)
+                              seed = 1, 
+                              uniform_seed = True)
         model = EnerModel(
             descrpt, 
             fitting, 

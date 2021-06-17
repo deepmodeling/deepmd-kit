@@ -20,12 +20,13 @@ class DescrptSeAEf ():
                  axis_neuron: int = 8,
                  resnet_dt: bool = False,
                  trainable: bool = True,
-                 seed: int = 1,
+                 seed: int = None,
                  type_one_side: bool = True,
                  exclude_types: List[int] = [],
                  set_davg_zero: bool = False,
                  activation_function: str = 'tanh',
-                 precision: str = 'default'
+                 precision: str = 'default',
+                 uniform_seed = False
     ) -> None:        
         """
         Constructor
@@ -59,6 +60,8 @@ class DescrptSeAEf ():
                 The activation function in the embedding net. Supported options are {0}
         precision
                 The precision of the embedding net parameters. Supported options are {1}
+        uniform_seed
+                Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
         """
         self.descrpt_para = DescrptSeAEfLower(
             op_module.descrpt_se_a_ef_para, 
@@ -75,6 +78,7 @@ class DescrptSeAEf ():
             set_davg_zero,
             activation_function,
             precision,
+            uniform_seed,
         )
         self.descrpt_vert = DescrptSeAEfLower(
             op_module.descrpt_se_a_ef_vert,
@@ -91,6 +95,7 @@ class DescrptSeAEf ():
             set_davg_zero,
             activation_function,
             precision,
+            uniform_seed,
         )
         
     def get_rcut (self) -> float:
@@ -274,27 +279,30 @@ class DescrptSeAEfLower (DescrptSeA):
                   axis_neuron: int = 8,
                   resnet_dt: bool = False,
                   trainable: bool = True,
-                  seed: int = 1,
+                  seed: int = None,
                   type_one_side: bool = True,
                   exclude_types: List[int] = [],
                   set_davg_zero: bool = False,
                   activation_function: str = 'tanh',
-                  precision: str = 'default'
+                  precision: str = 'default',
+                  uniform_seed : bool = False,
     ) -> None:
-        DescrptSeA.__init__(self, 
-                  rcut,
-                  rcut_smth,
-                  sel,
-                  neuron,
-                  axis_neuron,
-                  resnet_dt,
-                  trainable,
-                  seed,
-                  type_one_side,
-                  exclude_types,
-                  set_davg_zero,
-                  activation_function,
-                  precision
+        DescrptSeA.__init__(
+            self, 
+            rcut,
+            rcut_smth,
+            sel,
+            neuron,
+            axis_neuron,
+            resnet_dt,
+            trainable,
+            seed,
+            type_one_side,
+            exclude_types,
+            set_davg_zero,
+            activation_function,
+            precision,
+            uniform_seed
         )
         # DescrptSeA.__init__(self, **jdata)
         # args = ClassArg()\

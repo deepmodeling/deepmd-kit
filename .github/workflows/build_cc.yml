@@ -14,19 +14,20 @@ jobs:
         - float_prec: low
           variant: cpu
         - float_prec: high
-          variant: gpu
+          variant: cuda
         - float_prec: low
-          variant: gpu
+          variant: cuda
     steps:
     - uses: actions/checkout@master
       with:
         submodules: true
     - run: sudo apt update && sudo apt install g++-7
     - run: sudo apt install nvidia-cuda-toolkit
-      if: matrix.variant == 'gpu'
+      if: matrix.variant == 'cuda'
     - run: source/install/build_cc.sh
       env:
         FLOAT_PREC: ${{ matrix.float_prec }}
+        DP_VARIANT: ${{ matrix.variant }}
         CC: gcc-7
         CXX: g++-7
     - run: source/install/build_lammps.sh
