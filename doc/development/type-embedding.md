@@ -33,7 +33,7 @@ Energy = F( [ Multi( G_ij( [s_ij, A(j)] ) ), A(j)] )
 The difference between two variants above is whether using the information of centric atom when generating the descriptor. Users can choose by modifying the `type_one_side` hyper-parameter in the input json file.
 
 ## How to use
-A detailed introduction can be found at [`se_e2_a_tebd`](https://github.com/deepmodeling/deepmd-kit/blob/v2.0.0.b1/doc/train-se-e2-a-tebd.md). Looking for a fast start up, you can simply add a `type_embedding` section in the input json file as displayed in the following, and the algorithm will adopt atom type embedding algorithm automatically.
+A detailed introduction can be found at [`se_e2_a_tebd`](../train-se-e2-a-tebd.md). Looking for a fast start up, you can simply add a `type_embedding` section in the input json file as displayed in the following, and the algorithm will adopt atom type embedding algorithm automatically.
 An example of `type_embedding` is like
 ```json=
     "type_embedding":{
