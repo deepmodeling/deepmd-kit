@@ -67,10 +67,10 @@ class DeepTabulate():
         if (self.ntypes * self.ntypes - len(self.exclude_types) == 0):
             raise RuntimeError("empty embedding-net are not supported in model compression!")
         
-        self.layer_size = int(len(self.filter_variable_nodes) / ((self.ntypes * self.ntypes - len(self.exclude_types)) * 2))
+        self.layer_size = len(self.filter_variable_nodes) // ((self.ntypes * self.ntypes - len(self.exclude_types)) * 2)
         self.table_size = self.ntypes * self.ntypes
         if type_one_side :
-            self.layer_size = int(len(self.filter_variable_nodes) / (self.ntypes * 2))
+            self.layer_size = len(self.filter_variable_nodes) // (self.ntypes * 2)
             self.table_size = self.ntypes
         # self.value_type = self.filter_variable_nodes["filter_type_0/matrix_1_0"].dtype #"filter_type_0/matrix_1_0" must exit~
         # get trained variables
@@ -119,12 +119,12 @@ class DeepTabulate():
         xx = np.append(xx, np.array([extrapolate * upper], dtype = self.data_type))
         self.nspline = int((upper - lower) / stride0 + (extrapolate * upper - upper) / stride1)
         for ii in range(self.table_size):
-            if self.type_one_side or ((int(ii / self.ntypes), int(ii % self.ntypes)) not in self.exclude_types):
+            if self.type_one_side or (ii // self.ntypes, int(ii % self.ntypes)) not in self.exclude_types:
                 vv, dd, d2 = self._make_data(xx, ii)
                 if self.type_one_side:
-                    net = "filter_-1_net_" + str(int(ii))
+                    net = "filter_-1_net_" + str(ii)
                 else:
-                    net = "filter_" + str(int(ii / self.ntypes)) + "_net_" + str(int(ii % self.ntypes))
+                    net = "filter_" + str(ii // self.ntypes) + "_net_" + str(int(ii % self.ntypes))
                 self.data[net] = np.zeros([self.nspline, 6 * self.last_layer_size], dtype = self.data_type)
                 # for jj in tqdm(range(self.nspline), desc = 'DEEPMD INFO    |-> deepmd.utils.tabulate\t\t\t' + net + ', tabulating'):
                 for jj in range(self.nspline):
@@ -178,14 +178,14 @@ class DeepTabulate():
             bias["layer_" + str(layer)] = []
             if self.type_one_side:
                 for ii in range(0, self.ntypes):
-                    tensor_value = np.frombuffer (self.filter_variable_nodes["filter_type_all/bias_" + str(layer) + "_" + str(int(ii))].tensor_content)
-                    tensor_shape = tf.TensorShape(self.filter_variable_nodes["filter_type_all/bias_" + str(layer) + "_" + str(int(ii))].tensor_shape).as_list()
+                    tensor_value = np.frombuffer (self.filter_variable_nodes["filter_type_all/bias_" + str(layer) + "_" + str(ii)].tensor_content)
+                    tensor_shape = tf.TensorShape(self.filter_variable_nodes["filter_type_all/bias_" + str(layer) + "_" + str(ii)].tensor_shape).as_list()
                     bias["layer_" + str(layer)].append(np.reshape(tensor_value, tensor_shape))
             else:
                 for ii in range(0, self.ntypes * self.ntypes):
-                    if (int(ii / self.ntypes), int(ii % self.ntypes)) not in self.exclude_types:
-                        tensor_value = np.frombuffer(self.filter_variable_nodes["filter_type_" + str(int(ii / self.ntypes)) + "/bias_" + str(layer) + "_" + str(int(ii % self.ntypes))].tensor_content)
-                        tensor_shape = tf.TensorShape(self.filter_variable_nodes["filter_type_" + str(int(ii / self.ntypes)) + "/bias_" + str(layer) + "_" + str(int(ii % self.ntypes))].tensor_shape).as_list()
+                    if (ii // self.ntypes, int(ii % self.ntypes)) not in self.exclude_types:
+                        tensor_value = np.frombuffer(self.filter_variable_nodes["filter_type_" + str(ii // self.ntypes) + "/bias_" + str(layer) + "_" + str(int(ii % self.ntypes))].tensor_content)
+                        tensor_shape = tf.TensorShape(self.filter_variable_nodes["filter_type_" + str(ii // self.ntypes) + "/bias_" + str(layer) + "_" + str(int(ii % self.ntypes))].tensor_shape).as_list()
                         bias["layer_" + str(layer)].append(np.reshape(tensor_value, tensor_shape))
                     else:
                         bias["layer_" + str(layer)].append(np.array([]))
@@ -197,14 +197,14 @@ class DeepTabulate():
             matrix["layer_" + str(layer)] = []
             if self.type_one_side:
                 for ii in range(0, self.ntypes):
-                    tensor_value = np.frombuffer (self.filter_variable_nodes["filter_type_all/matrix_" + str(layer) + "_" + str(int(ii))].tensor_content)
-                    tensor_shape = tf.TensorShape(self.filter_variable_nodes["filter_type_all/matrix_" + str(layer) + "_" + str(int(ii))].tensor_shape).as_list()
+                    tensor_value = np.frombuffer (self.filter_variable_nodes["filter_type_all/matrix_" + str(layer) + "_" + str(ii)].tensor_content)
+                    tensor_shape = tf.TensorShape(self.filter_variable_nodes["filter_type_all/matrix_" + str(layer) + "_" + str(ii)].tensor_shape).as_list()
                     matrix["layer_" + str(layer)].append(np.reshape(tensor_value, tensor_shape))
             else:
                 for ii in range(0, self.ntypes * self.ntypes):
-                    if (int(ii / self.ntypes), int(ii % self.ntypes)) not in self.exclude_types:
-                        tensor_value = np.frombuffer(self.filter_variable_nodes["filter_type_" + str(int(ii / self.ntypes)) + "/matrix_" + str(layer) + "_" + str(int(ii % self.ntypes))].tensor_content)
-                        tensor_shape = tf.TensorShape(self.filter_variable_nodes["filter_type_" + str(int(ii / self.ntypes)) + "/matrix_" + str(layer) + "_" + str(int(ii % self.ntypes))].tensor_shape).as_list()
+                    if (ii // self.ntypes, int(ii % self.ntypes)) not in self.exclude_types:
+                        tensor_value = np.frombuffer(self.filter_variable_nodes["filter_type_" + str(ii // self.ntypes) + "/matrix_" + str(layer) + "_" + str(int(ii % self.ntypes))].tensor_content)
+                        tensor_shape = tf.TensorShape(self.filter_variable_nodes["filter_type_" + str(ii // self.ntypes) + "/matrix_" + str(layer) + "_" + str(int(ii % self.ntypes))].tensor_shape).as_list()
                         matrix["layer_" + str(layer)].append(np.reshape(tensor_value, tensor_shape))
                     else:
                         matrix["layer_" + str(layer)].append(np.array([]))
@@ -240,8 +240,8 @@ class DeepTabulate():
 
     def _save_data(self):
         for ii in range(self.ntypes * self.ntypes):
-            net = "filter_" + str(int(ii / self.ntypes)) + "_net_" + str(int(ii % self.ntypes))
-            np.savetxt('data_' + str(int(ii)), self.data[net])
+            net = "filter_" + str(ii // self.ntypes) + "_net_" + str(int(ii % self.ntypes))
+            np.savetxt('data_' + str(ii), self.data[net])
 
     def _get_env_mat_range(self,
                            min_nbor_dist):
