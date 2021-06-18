@@ -23,7 +23,7 @@ def compress(
     input: str,
     output: str,
     extrapolate: int,
-    stride: float,
+    step: float,
     frequency: str,
     checkpoint_folder: str,
     mpi_log: str,
@@ -34,9 +34,9 @@ def compress(
     """Compress model.
 
     The table is composed of fifth-order polynomial coefficients and is assembled from
-    two sub-tables. The first table takes the stride(parameter) as it's uniform stride,
-    while the second table takes 10 * stride as it's uniform stride. The range of the
-    first table is automatically detected by deepmd-kit, while the second table ranges
+    two sub-tables. The first table takes the step parameter as the domain's uniform step size,
+    while the second table takes 10 * step as it's uniform step size. The range of the
+    first table is automatically detected by the code, while the second table ranges
     from the first table's upper boundary(upper) to the extrapolate(parameter) * upper.
 
     Parameters
@@ -49,8 +49,8 @@ def compress(
         compressed model filename
     extrapolate : int
         scale of model extrapolation
-    stride : float
-        uniform stride of tabulation's first table
+    step : float
+        uniform step size of the tabulation's first table
     frequency : str
         frequency of tabulation overflow check
     checkpoint_folder : str
@@ -71,8 +71,8 @@ def compress(
     jdata["model"]["compress"]["model_file"] = input
     jdata["model"]["compress"]["table_config"] = [
         extrapolate,
-        stride,
-        10 * stride,
+        step,
+        10 * step,
         int(frequency),
     ]
     # be careful here, if one want to refine the model

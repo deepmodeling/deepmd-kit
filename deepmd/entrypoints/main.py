@@ -242,8 +242,8 @@ def parse_args(args: Optional[List[str]] = None):
     # * compress model *****************************************************************
     # Compress a model, which including tabulating the embedding-net.
     # The table is composed of fifth-order polynomial coefficients and is assembled
-    # from two sub-tables. The first table takes the stride(parameter) as it's uniform
-    # stride, while the second table takes 10 * stride as it\s uniform stride
+    # from two sub-tables. The first table takes the step(parameter) as it's uniform
+    # step, while the second table takes 10 * step as it\s uniform step
     #  The range of the first table is automatically detected by deepmd-kit, while the
     # second table ranges from the first table's upper boundary(upper) to the
     # extrapolate(parameter) * upper.
@@ -273,19 +273,21 @@ def parse_args(args: Optional[List[str]] = None):
         help="The compressed model",
     )
     parser_compress.add_argument(
+        "-s",
+        "--step",
+        default=0.01,
+        type=float,
+        help="Model compression introduces two tables with different uniform step size to store the parameters of the fifth-order polynomials. "
+        "The step parameter denotes the uniform step size of the first table and the second table will "
+        "use 10 * step as it's uniform step size. Smaller step with higher accuracy and bigger model size",
+    )
+    parser_compress.add_argument(
         "-e",
         "--extrapolate",
         default=5,
         type=int,
-        help="The scale of model extrapolation",
-    )
-    parser_compress.add_argument(
-        "-s",
-        "--stride",
-        default=0.01,
-        type=float,
-        help="The uniform stride of tabulation's first table, the second table will "
-        "use 10 * stride as it's uniform stride",
+        help="The domain range of the first table is automatically detected by the code, "
+        "while the second table ranges from the first table's upper boundary(upper) to the extrapolate(parameter) * upper.",
     )
     parser_compress.add_argument(
         "-f",
