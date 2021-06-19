@@ -1,5 +1,5 @@
 # required cmake version
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.3)
 # project name
 project(deepmd_op_cuda)
 
@@ -104,6 +104,16 @@ else ()
 endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -DCUB_IGNORE_DEPRECATED_CPP_DIALECT -DCUB_IGNORE_DEPRECATED_CPP_DIALECT")
+
+if (${CUDA_VERSION_MAJOR} LESS_EQUAL "10")
+	# check unsupported -std=c++17
+	set(CMAKE_CXX_FLAGS_LIST "${CMAKE_CXX_FLAGS}")
+	separate_arguments(CMAKE_CXX_FLAGS_LIST)
+	if ("-std=c++17" IN_LIST CMAKE_CXX_FLAGS_LIST)
+		message(WARNING "Environment variable CXXFLAGS contains flag --std=c++17 which is unsupported by CUDA ${CUDA_VERSION}. Such flag will be removed automatically.")
+		string(REPLACE "-std=c++17" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+	endif()
+endif()
 
 file (GLOB SOURCE_FILES "*.cu" )
 
