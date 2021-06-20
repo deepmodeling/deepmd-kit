@@ -259,24 +259,30 @@ optional arguments:
                         master)
   -i INPUT, --input INPUT
                         The original frozen model, which will be compressed by
-                        the deepmd-kit (default: frozen_model.pb)
+                        the code (default: frozen_model.pb)
   -o OUTPUT, --output OUTPUT
                         The compressed model (default:
-                        frozen_model_compress.pb)
-  -s STEP, --step STEP  Model compression introduces two tables with different
-                        uniform step size to store the parameters of the
-                        fifth-order polynomials. The step parameter denotes
-                        the uniform step size of the first table and the
-                        second table will use 10 * step as it's uniform step
-                        size. Smaller step with higher accuracy and bigger
-                        model size (default: 0.01)
+                        frozen_model_compressed.pb)
+  -s STEP, --step STEP  Model compression uses fifth-order polynomials to
+                        interpolate the embedding-net. It introduces two
+                        tables with different step size to store the
+                        parameters of the polynomials. The first table covers
+                        the range of the training data, while the second table
+                        is an extrapolation of the training data. The domain
+                        of each table is uniformly divided by a given step
+                        size. And the step(parameter) denotes the step size of
+                        the first table and the second table will use 10 *
+                        step as it's step size to save the memory. Usually the
+                        value ranges from 0.1 to 0.001. Smaller step means
+                        higher accuracy and bigger model size (default: 0.01)
   -e EXTRAPOLATE, --extrapolate EXTRAPOLATE
                         The domain range of the first table is automatically
-                        detected by the code, while the second table ranges
-                        from the first table's upper boundary(upper) to the
-                        extrapolate(parameter) * upper. (default: 5)
+                        detected by the code: [d_low, d_up]. While the second
+                        table ranges from the first table's upper
+                        boundary(d_up) to the extrapolate(parameter) * d_up:
+                        [d_up, extrapolate * d_up] (default: 5)
   -f FREQUENCY, --frequency FREQUENCY
-                        The frequency of tabulation overflow check(If the
+                        The frequency of tabulation overflow check(Whether the
                         input environment matrix overflow the first or second
                         table range). By default do not check the overflow
                         (default: -1)
