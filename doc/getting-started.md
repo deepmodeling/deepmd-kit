@@ -244,23 +244,50 @@ positional arguments:
 
 optional arguments:
   -h, --help            show this help message and exit
+  -v {DEBUG,3,INFO,2,WARNING,1,ERROR,0}, --log-level {DEBUG,3,INFO,2,WARNING,1,ERROR,0}
+                        set verbosity level by string or number, 0=ERROR,
+                        1=WARNING, 2=INFO and 3=DEBUG (default: INFO)
+  -l LOG_PATH, --log-path LOG_PATH
+                        set log file to log messages to disk, if not
+                        specified, the logs will only be output to console
+                        (default: None)
+  -m {master,collect,workers}, --mpi-log {master,collect,workers}
+                        Set the manner of logging when running with MPI.
+                        'master' logs only on main process, 'collect'
+                        broadcasts logs from workers to master and 'workers'
+                        means each process will output its own log (default:
+                        master)
   -i INPUT, --input INPUT
                         The original frozen model, which will be compressed by
-                        the deepmd-kit
+                        the code (default: frozen_model.pb)
   -o OUTPUT, --output OUTPUT
-                        The compressed model
+                        The compressed model (default:
+                        frozen_model_compressed.pb)
+  -s STEP, --step STEP  Model compression uses fifth-order polynomials to
+                        interpolate the embedding-net. It introduces two
+                        tables with different step size to store the
+                        parameters of the polynomials. The first table covers
+                        the range of the training data, while the second table
+                        is an extrapolation of the training data. The domain
+                        of each table is uniformly divided by a given step
+                        size. And the step(parameter) denotes the step size of
+                        the first table and the second table will use 10 *
+                        step as it's step size to save the memory. Usually the
+                        value ranges from 0.1 to 0.001. Smaller step means
+                        higher accuracy and bigger model size (default: 0.01)
   -e EXTRAPOLATE, --extrapolate EXTRAPOLATE
-                        The scale of model extrapolation
-  -s STRIDE, --stride STRIDE
-                        The uniform stride of tabulation's first table, the
-                        second table will use 10 * stride as it's uniform
-                        stride
+                        The domain range of the first table is automatically
+                        detected by the code: [d_low, d_up]. While the second
+                        table ranges from the first table's upper
+                        boundary(d_up) to the extrapolate(parameter) * d_up:
+                        [d_up, extrapolate * d_up] (default: 5)
   -f FREQUENCY, --frequency FREQUENCY
-                        The frequency of tabulation overflow check(If the
+                        The frequency of tabulation overflow check(Whether the
                         input environment matrix overflow the first or second
                         table range). By default do not check the overflow
-  -d FOLDER, --folder FOLDER
-                        path to checkpoint folder
+                        (default: -1)
+  -c CHECKPOINT_FOLDER, --checkpoint-folder CHECKPOINT_FOLDER
+                        path to checkpoint folder (default: .)
 ```
 **Parameter explanation**
 

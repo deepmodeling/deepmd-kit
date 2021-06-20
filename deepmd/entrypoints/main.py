@@ -242,8 +242,8 @@ def parse_args(args: Optional[List[str]] = None):
     # * compress model *****************************************************************
     # Compress a model, which including tabulating the embedding-net.
     # The table is composed of fifth-order polynomial coefficients and is assembled
-    # from two sub-tables. The first table takes the stride(parameter) as it's uniform
-    # stride, while the second table takes 10 * stride as it\s uniform stride
+    # from two sub-tables. The first table takes the step(parameter) as it's uniform
+    # step, while the second table takes 10 * step as it\s uniform step
     #  The range of the first table is automatically detected by deepmd-kit, while the
     # second table ranges from the first table's upper boundary(upper) to the
     # extrapolate(parameter) * upper.
@@ -263,36 +263,43 @@ def parse_args(args: Optional[List[str]] = None):
         "--input",
         default="frozen_model.pb",
         type=str,
-        help="The original frozen model, which will be compressed by the deepmd-kit",
+        help="The original frozen model, which will be compressed by the code",
     )
     parser_compress.add_argument(
         "-o",
         "--output",
-        default="frozen_model_compress.pb",
+        default="frozen_model_compressed.pb",
         type=str,
         help="The compressed model",
+    )
+    parser_compress.add_argument(
+        "-s",
+        "--step",
+        default=0.01,
+        type=float,
+        help="Model compression uses fifth-order polynomials to interpolate the embedding-net. " 
+        "It introduces two tables with different step size to store the parameters of the polynomials. "
+        "The first table covers the range of the training data, while the second table is an extrapolation of the training data. "
+        "The domain of each table is uniformly divided by a given step size. "
+        "And the step(parameter) denotes the step size of the first table and the second table will "
+        "use 10 * step as it's step size to save the memory. "
+        "Usually the value ranges from 0.1 to 0.001. " 
+        "Smaller step means higher accuracy and bigger model size",
     )
     parser_compress.add_argument(
         "-e",
         "--extrapolate",
         default=5,
         type=int,
-        help="The scale of model extrapolation",
-    )
-    parser_compress.add_argument(
-        "-s",
-        "--stride",
-        default=0.01,
-        type=float,
-        help="The uniform stride of tabulation's first table, the second table will "
-        "use 10 * stride as it's uniform stride",
+        help="The domain range of the first table is automatically detected by the code: [d_low, d_up]. "
+        "While the second table ranges from the first table's upper boundary(d_up) to the extrapolate(parameter) * d_up: [d_up, extrapolate * d_up]",
     )
     parser_compress.add_argument(
         "-f",
         "--frequency",
         default=-1,
         type=int,
-        help="The frequency of tabulation overflow check(If the input environment "
+        help="The frequency of tabulation overflow check(Whether the input environment "
         "matrix overflow the first or second table range). "
         "By default do not check the overflow",
     )

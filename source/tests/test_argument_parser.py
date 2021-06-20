@@ -272,10 +272,10 @@ class TestParserOutput(unittest.TestCase):
         ARGS = {
             "INPUT": dict(type=str, value="INFILE"),
             "--output": dict(type=str, value="OUTFILE"),
-            "--extrapolate": dict(type=int, value=10),
-            "--stride": dict(type=float, value=0.1),
-            "--frequency": dict(type=int, value=1),
-            "--checkpoint-folder": dict(type=str, value="FOLDER"),
+            "--extrapolate": dict(type=int, value=5),
+            "--step": dict(type=float, value=0.1),
+            "--frequency": dict(type=int, value=-1),
+            "--checkpoint-folder": dict(type=str, value="."),
         }
 
         self.run_test(command="compress", mapping=ARGS)
