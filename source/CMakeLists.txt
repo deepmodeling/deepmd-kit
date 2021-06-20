@@ -56,14 +56,15 @@ find_package(Threads)
 
 # auto op_cxx_abi
 if (NOT DEFINED OP_CXX_ABI)
-  if (BUILD_PY_IF) 
+  if (BUILD_PY_IF)
+    find_package(Python REQUIRED COMPONENTS Interpreter) 
     if (DEFINED TENSORFLOW_ROOT)
       set(FIND_ABI_CMD "import sys,os; sys.path.insert(0, os.path.join('${TENSORFLOW_ROOT}', '..')); import tensorflow; print(tensorflow.CXX11_ABI_FLAG if 'CXX11_ABI_FLAG' in tensorflow.__dict__ else tensorflow.sysconfig.CXX11_ABI_FLAG, end = '')" )
     else()
       set(FIND_ABI_CMD "import tensorflow; print(tensorflow.CXX11_ABI_FLAG if 'CXX11_ABI_FLAG' in tensorflow.__dict__ else tensorflow.sysconfig.CXX11_ABI_FLAG, end = '')")
     endif()
     execute_process(
-      COMMAND ${PYTHON_EXECUTABLE} "-c" "${FIND_ABI_CMD}"
+      COMMAND ${Python_EXECUTABLE} "-c" "${FIND_ABI_CMD}"
       WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
       OUTPUT_VARIABLE PY_CXX_ABI
       RESULT_VARIABLE PY_CXX_ABI_RESULT_VAR
