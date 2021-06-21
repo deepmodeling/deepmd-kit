@@ -3,7 +3,7 @@
 import argparse
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from deepmd.entrypoints import (
     compress,
@@ -14,6 +14,7 @@ from deepmd.entrypoints import (
     train,
     transfer,
     make_model_devi,
+    convert,
 )
 from deepmd.loggers import set_log_handles
 
@@ -359,6 +360,34 @@ def parse_args(args: Optional[List[str]] = None):
         help="The trajectory frequency of the system"
     )
 
+    # * convert models
+    # supported: 1.3->2.0
+    parser_transform = subparsers.add_parser(
+        'convert-from',
+        parents=[parser_log],
+        help='convert lower model version to supported version',
+    )
+    parser_transform.add_argument(
+        'FROM',
+        type = str,
+        choices = ['1.3'],
+        help="The original model compatibility",
+    )
+    parser_transform.add_argument(
+        '-i',
+        "--input-model",
+        default = "frozen_model.pb",
+        type=str, 
+		help = "the input model",
+    )
+    parser_transform.add_argument(
+        "-o",
+        "--output-model",
+        default = "convert_out.pb",
+        type=str, 
+		help='the output model',
+    )
+
     parsed_args = parser.parse_args(args=args)
     if parsed_args.command is None:
         parser.print_help()
@@ -402,6 +431,8 @@ def main():
         doc_train_input()
     elif args.command == "model-devi":
         make_model_devi(**dict_args)
+    elif args.command == "convert-from":
+        convert(**dict_args)
     elif args.command is None:
         pass
     else:
