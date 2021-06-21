@@ -113,6 +113,14 @@ Execute
 cd $deepmd_source_dir
 pip install .
 ```
+
+One may set the following environment variables before executing `pip`:
+
+| Environment variables | Allowed value          | Default value | Usage                      |
+| --------------------- | ---------------------- | ------------- | -------------------------- |
+| DP_VARIANT            | `cpu`, `cuda`, `rocm`  | `cpu`         | Build CPU variant or GPU variant with CUDA or ROCM support. |
+| DP_FLOAT_PREC         | `high`, `low`          | `high`        | Build high (double) or low (float) precision. |
+
 To test the installation, one should firstly jump out of the source directory
 ```
 cd /some/other/workspace
@@ -166,15 +174,27 @@ I assume you want to install DeePMD-kit into path `$deepmd_root`, then execute c
 ```bash
 cmake -DTENSORFLOW_ROOT=$tensorflow_root -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
 ```
-where the variable `tensorflow_root` stores the location where the tensorflow's C++ interface is installed. The DeePMD-kit will automatically detect if a CUDA tool-kit is available on your machine and build the GPU support accordingly. If you want to force the cmake to find CUDA tool-kit, you can speicify the key `USE_CUDA_TOOLKIT`, 
+where the variable `tensorflow_root` stores the location where the TensorFlow's C++ interface is installed. 
+
+One may add the following arguments to `cmake`:
+
+| CMake Aurgements         | Allowed value       | Default value | Usage                   |
+| ------------------------ | ------------------- | ------------- | ------------------------|
+| -DTENSORFLOW_ROOT=&lt;value&gt;  | Path              | -             | The Path to TensorFlow's C++ interface. |
+| -DCMAKE_INSTALL_PREFIX=&lt;value&gt; | Path          | -             | The Path where DeePMD-kit will be installed. |
+| -DFLOAT_PREC=&lt;value&gt;       | `high` or `low`   | `high`        | Build high (double) or low (float) precision. |
+| -DUSE_CUDA_TOOLKIT=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build GPU support with CUDA toolkit. |
+| -DCUDA_TOOLKIT_ROOT_DIR=&lt;value&gt; | Path         | Detected automatically | The path to the CUDA toolkit directory. |
+| -DUSE_ROCM_TOOLKIT=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build GPU support with ROCM toolkit. |
+| -DROCM_ROOT=&lt;value&gt; | Path         | Detected automatically | The path to the ROCM toolkit directory. |
+
+If the cmake has executed successfully, then 
 ```bash
-cmake -DUSE_CUDA_TOOLKIT=true -DTENSORFLOW_ROOT=$tensorflow_root -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
-```
-and you may further asked to provide `CUDA_TOOLKIT_ROOT_DIR`. If the cmake has executed successfully, then 
-```bash
-make
+make -j4
 make install
 ```
+The option `-j4` means using 4 processes in parallel. You may want to use a different number according to your hardware. 
+
 If everything works fine, you will have the following executable and libraries installed in `$deepmd_root/bin` and `$deepmd_root/lib`
 ```bash
 $ ls $deepmd_root/bin
@@ -206,7 +226,6 @@ make yes-kspace
 make yes-user-deepmd
 make mpi -j4
 ```
-The option `-j4` means using 4 processes in parallel. You may want to use a different number according to your hardware. 
 
 If everything works fine, you will end up with an executable `lmp_mpi`.
 ```bash

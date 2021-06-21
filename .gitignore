@@ -27,5 +27,10 @@ venv*
 _build
 _templates
 API_CC
+<<<<<<< HEAD
 dp/**
 build_lammps/**
+=======
+dp/
+build_lammps/
+>>>>>>> devel

@@ -268,7 +268,7 @@ class DescrptSeA ():
         self.compress = True
         self.model_file = model_file
         self.table_config = [table_extrapolate, table_stride_1, table_stride_2, check_frequency]
-        self.table = DeepTabulate(self.model_file, self.type_one_side)
+        self.table = DeepTabulate(self.model_file, self.type_one_side, self.exclude_types)
         self.lower, self.upper \
             = self.table.build(min_nbor_dist, 
                                table_extrapolate, 
@@ -646,6 +646,7 @@ class DescrptSeA ():
         with tf.variable_scope(name, reuse=reuse):
           start_index = 0
           type_i = 0
+          # natom x 4 x outputs_size
           if type_embedding is None:
               for type_i in range(self.ntypes):
                   ret = self._filter_lower(

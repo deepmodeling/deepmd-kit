@@ -182,6 +182,45 @@ optional arguments:
                         accuracy
 ```
 
+### Calculate Model Deviation
+
+One can also use a subcommand to calculate deviation of prediced forces or virials for a bunch of models in the following way:
+```bash
+dp model-devi -m graph.000.pb graph.001.pb graph.002.pb graph.003.pb -s ./data -o model_devi.out
+```
+where `-m` specifies graph files to be calculated, `-s` gives the data to be evaluated, `-o` the file to which model deviation results is dumped. Here is more information on this sub-command:
+```bash
+usage: dp model-devi [-h] [-v {DEBUG,3,INFO,2,WARNING,1,ERROR,0}]
+                     [-l LOG_PATH] [-m MODELS [MODELS ...]] [-s SYSTEM]
+                     [-S SET_PREFIX] [-o OUTPUT] [-f FREQUENCY] [-i ITEMS]
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -v {DEBUG,3,INFO,2,WARNING,1,ERROR,0}, --log-level {DEBUG,3,INFO,2,WARNING,1,ERROR,0}
+                        set verbosity level by string or number, 0=ERROR,
+                        1=WARNING, 2=INFO and 3=DEBUG (default: INFO)
+  -l LOG_PATH, --log-path LOG_PATH
+                        set log file to log messages to disk, if not
+                        specified, the logs will only be output to console
+                        (default: None)
+  -m MODELS [MODELS ...], --models MODELS [MODELS ...]
+                        Frozen models file to import (default:
+                        ['graph.000.pb', 'graph.001.pb', 'graph.002.pb',
+                        'graph.003.pb'])
+  -s SYSTEM, --system SYSTEM
+                        The system directory, not support recursive detection.
+                        (default: .)
+  -S SET_PREFIX, --set-prefix SET_PREFIX
+                        The set prefix (default: set)
+  -o OUTPUT, --output OUTPUT
+                        The output file for results of model deviation
+                        (default: model_devi.out)
+  -f FREQUENCY, --frequency FREQUENCY
+                        The trajectory frequency of the system (default: 1)
+```
+
+For more details with respect to definition of model deviation and its application, please refer to `Yuzhi Zhang, Haidi Wang, Weijie Chen, Jinzhe Zeng, Linfeng Zhang, Han Wang, and Weinan E, DP-GEN: A concurrent learning platform for the generation of reliable deep learning based potential energy models, Computer Physics Communications, 2020, 253, 107206.`
+
 ## Compress a model
 
 Once the frozen model is obtained from deepmd-kit, we can get the neural network structure and its parameters (weights, biases, etc.) from the trained model, and compress it in the following way:
@@ -205,23 +244,50 @@ positional arguments:
 
 optional arguments:
   -h, --help            show this help message and exit
+  -v {DEBUG,3,INFO,2,WARNING,1,ERROR,0}, --log-level {DEBUG,3,INFO,2,WARNING,1,ERROR,0}
+                        set verbosity level by string or number, 0=ERROR,
+                        1=WARNING, 2=INFO and 3=DEBUG (default: INFO)
+  -l LOG_PATH, --log-path LOG_PATH
+                        set log file to log messages to disk, if not
+                        specified, the logs will only be output to console
+                        (default: None)
+  -m {master,collect,workers}, --mpi-log {master,collect,workers}
+                        Set the manner of logging when running with MPI.
+                        'master' logs only on main process, 'collect'
+                        broadcasts logs from workers to master and 'workers'
+                        means each process will output its own log (default:
+                        master)
   -i INPUT, --input INPUT
                         The original frozen model, which will be compressed by
-                        the deepmd-kit
+                        the code (default: frozen_model.pb)
   -o OUTPUT, --output OUTPUT
-                        The compressed model
+                        The compressed model (default:
+                        frozen_model_compressed.pb)
+  -s STEP, --step STEP  Model compression uses fifth-order polynomials to
+                        interpolate the embedding-net. It introduces two
+                        tables with different step size to store the
+                        parameters of the polynomials. The first table covers
+                        the range of the training data, while the second table
+                        is an extrapolation of the training data. The domain
+                        of each table is uniformly divided by a given step
+                        size. And the step(parameter) denotes the step size of
+                        the first table and the second table will use 10 *
+                        step as it's step size to save the memory. Usually the
+                        value ranges from 0.1 to 0.001. Smaller step means
+                        higher accuracy and bigger model size (default: 0.01)
   -e EXTRAPOLATE, --extrapolate EXTRAPOLATE
-                        The scale of model extrapolation
-  -s STRIDE, --stride STRIDE
-                        The uniform stride of tabulation's first table, the
-                        second table will use 10 * stride as it's uniform
-                        stride
+                        The domain range of the first table is automatically
+                        detected by the code: [d_low, d_up]. While the second
+                        table ranges from the first table's upper
+                        boundary(d_up) to the extrapolate(parameter) * d_up:
+                        [d_up, extrapolate * d_up] (default: 5)
   -f FREQUENCY, --frequency FREQUENCY
-                        The frequency of tabulation overflow check(If the
+                        The frequency of tabulation overflow check(Whether the
                         input environment matrix overflow the first or second
                         table range). By default do not check the overflow
-  -d FOLDER, --folder FOLDER
-                        path to checkpoint folder
+                        (default: -1)
+  -c CHECKPOINT_FOLDER, --checkpoint-folder CHECKPOINT_FOLDER
+                        path to checkpoint folder (default: .)
 ```
 **Parameter explanation**
 
@@ -252,6 +318,19 @@ atype = [1,0,1]
 e, f, v = dp.eval(coord, cell, atype)
 ```
 where `e`, `f` and `v` are predicted energy, force and virial of the system, respectively.
+
+Furthermore, one can use the python interface to calulate model deviation.
+```python
+from deepmd.infer import calc_model_devi
+from deepmd.infer import DeepPot as DP
+import numpy as np
+
+coord = np.array([[1,0,0], [0,0,1.5], [1,0,3]]).reshape([1, -1])
+cell = np.diag(10 * np.ones(3)).reshape([1, -1])
+atype = [1,0,1]
+graphs = [DP("graph.000.pb"), DP("graph.001.pb")]
+model_devi = calc_model_devi(coord, cell, atype, graphs)
+```
 
 ### C++ interface
 The C++ interface of DeePMD-kit is also avaiable for model interface, which is considered faster than Python interface. An example `infer_water.cpp` is given below:
