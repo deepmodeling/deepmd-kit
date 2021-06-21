@@ -65,7 +65,7 @@ class TestModelMinorCompatability(unittest.TestCase) :
         os.remove(self.version_pbtxt)
         os.remove(self.version_pb)
 
-    #def test(self):        
+    def test(self):        
         #with self.assertRaises(RuntimeError) as context:
         #    DeepPot(self.version_pb)
         #self.assertTrue('incompatible' in str(context.exception))
