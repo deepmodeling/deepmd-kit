@@ -95,17 +95,17 @@ else()
 endif()
 
 if (USE_CUDA_TOOLKIT)
-  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} deepmd_op_cuda coverage_config)
+  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} rt deepmd_op_cuda coverage_config)
 elseif(USE_ROCM_TOOLKIT)
-  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} deepmd_op_rocm coverage_config)
+  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} rt deepmd_op_rocm coverage_config)
 else()
-  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} coverage_config)
+  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} rt coverage_config)
 endif()
 
 add_test( runUnitTests runUnitTests )
 
 find_package(GTest)
-if(NOT GTEST_LIBRARY)
+if(NOT GTEST_LIBRARIES)
   configure_file(../../cmake/googletest.cmake.in googletest-download/CMakeLists.txt)
   execute_process(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" .
     RESULT_VARIABLE result
