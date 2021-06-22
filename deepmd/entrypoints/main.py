@@ -361,7 +361,7 @@ def parse_args(args: Optional[List[str]] = None):
     )
 
     # * convert models
-    # supported: 1.3->2.0
+    # supported: 1.2->2.0, 1.3->2.0
     parser_transform = subparsers.add_parser(
         'convert-from',
         parents=[parser_log],
@@ -370,7 +370,7 @@ def parse_args(args: Optional[List[str]] = None):
     parser_transform.add_argument(
         'FROM',
         type = str,
-        choices = ['1.3'],
+        choices = ['1.2', '1.3'],
         help="The original model compatibility",
     )
     parser_transform.add_argument(

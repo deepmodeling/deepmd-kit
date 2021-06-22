@@ -6,7 +6,7 @@
 #include "prod_env_mat.h"
 
 REGISTER_OP("ProdEnvMatA")
-    .Attr("T: {float, double}")
+    .Attr("T: {float, double} = DT_DOUBLE")
     .Input("coord: T")          //atomic coordinates
     .Input("type: int32")       //atomic type
     .Input("natoms: int32")     //local atomic number; each type atomic number; daizheyingxiangqude atomic numbers
@@ -27,7 +27,9 @@ REGISTER_OP("ProdEnvMatA")
 
 // an alias of ProdEnvMatA -- Compatible with v1.3
 REGISTER_OP("DescrptSeA")
-    .Attr("T: {float, double}")
+    .Attr("T: {float, double} = DT_DOUBLE")
+    // give a default value to T, compatible with v1.2
+    // See https://www.tensorflow.org/guide/create_op#backwards_compatibility
     .Input("coord: T")
     .Input("type: int32")
     .Input("natoms: int32")
@@ -46,7 +48,7 @@ REGISTER_OP("DescrptSeA")
     .Output("nlist: int32");
 
 REGISTER_OP("ProdEnvMatR")
-    .Attr("T: {float, double}")
+    .Attr("T: {float, double} = DT_DOUBLE")
     .Input("coord: T")
     .Input("type: int32")
     .Input("natoms: int32")
@@ -64,7 +66,7 @@ REGISTER_OP("ProdEnvMatR")
 
 // an alias of ProdEnvMatR -- Compatible with v1.3
 REGISTER_OP("DescrptSeR")
-    .Attr("T: {float, double}")
+    .Attr("T: {float, double} = DT_DOUBLE")
     .Input("coord: T")
     .Input("type: int32")
     .Input("natoms: int32")

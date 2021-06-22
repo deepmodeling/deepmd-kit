@@ -1,7 +1,7 @@
 #include "custom_op.h"
 
 REGISTER_OP("ProdVirialGrad")
-.Attr("T: {float, double}")
+.Attr("T: {float, double} = DT_DOUBLE")
 .Input("grad: T")
 .Input("net_deriv: T")
 .Input("in_deriv: T")
