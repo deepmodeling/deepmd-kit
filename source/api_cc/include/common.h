@@ -87,6 +87,10 @@ void
 get_env_nthreads(int & num_intra_nthreads,
 		 int & num_inter_nthreads);
 
+struct
+tf_exception: public std::exception {
+};
+
 /**
 * @brief Check TensorFlow status. Exit if not OK.
 * @param[in] status TensorFlow status.

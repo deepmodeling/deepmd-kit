@@ -254,7 +254,12 @@ init (const std::string & model, const int & gpu_rank, const std::string & file_
   if (dfparam < 0) dfparam = 0;
   if (daparam < 0) daparam = 0;
   model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
+  try{
   model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
+  } catch (deepmd::tf_exception& e){
+    // no model version defined in old models
+    model_version = "0.0";
+  }
   if(! model_compatable(model_version)){
     throw std::runtime_error(
 	"incompatable model: version " + model_version 
