@@ -25,6 +25,26 @@ REGISTER_OP("ProdEnvMatA")
     .Output("nlist: int32");
     // only sel_a and rcut_r uesd.
 
+// an alias of ProdEnvMatA -- Compatible with v1.3
+REGISTER_OP("DescrptSeA")
+    .Attr("T: {float, double}")
+    .Input("coord: T")
+    .Input("type: int32")
+    .Input("natoms: int32")
+    .Input("box : T")
+    .Input("mesh : int32")
+    .Input("davg: T")
+    .Input("dstd: T")
+    .Attr("rcut_a: float")
+    .Attr("rcut_r: float")
+    .Attr("rcut_r_smth: float")
+    .Attr("sel_a: list(int)")
+    .Attr("sel_r: list(int)")
+    .Output("descrpt: T")
+    .Output("descrpt_deriv: T")
+    .Output("rij: T")
+    .Output("nlist: int32");
+
 REGISTER_OP("ProdEnvMatR")
     .Attr("T: {float, double}")
     .Input("coord: T")
@@ -42,6 +62,23 @@ REGISTER_OP("ProdEnvMatR")
     .Output("rij: T")
     .Output("nlist: int32");
 
+// an alias of ProdEnvMatR -- Compatible with v1.3
+REGISTER_OP("DescrptSeR")
+    .Attr("T: {float, double}")
+    .Input("coord: T")
+    .Input("type: int32")
+    .Input("natoms: int32")
+    .Input("box: T")
+    .Input("mesh: int32")
+    .Input("davg: T")
+    .Input("dstd: T")
+    .Attr("rcut: float")
+    .Attr("rcut_smth: float")
+    .Attr("sel: list(int)")
+    .Output("descrpt: T")
+    .Output("descrpt_deriv: T")
+    .Output("rij: T")
+    .Output("nlist: int32"); 
 
 template<typename FPTYPE>
 static int
@@ -1364,17 +1401,25 @@ _prepare_coord_nlist_gpu_rocm(
 
 
 // Register the CPU kernels.
+// Compatible with v1.3
 #define REGISTER_CPU(T)                                                                                   \
 REGISTER_KERNEL_BUILDER(                                                                                  \
     Name("ProdEnvMatA").Device(DEVICE_CPU).TypeConstraint<T>("T"),                                        \
     ProdEnvMatAOp<CPUDevice, T>);                                                                         \
 REGISTER_KERNEL_BUILDER(                                                                                  \
     Name("ProdEnvMatR").Device(DEVICE_CPU).TypeConstraint<T>("T"),                                        \
-    ProdEnvMatROp<CPUDevice, T>);                   
+    ProdEnvMatROp<CPUDevice, T>);                                                                         \
+REGISTER_KERNEL_BUILDER(                                                                                  \
+    Name("DescrptSeA").Device(DEVICE_CPU).TypeConstraint<T>("T"),                                        \
+    ProdEnvMatAOp<CPUDevice, T>);                                                                         \
+REGISTER_KERNEL_BUILDER(                                                                                  \
+    Name("DescrptSeR").Device(DEVICE_CPU).TypeConstraint<T>("T"),                                        \
+    ProdEnvMatROp<CPUDevice, T>);   
 REGISTER_CPU(float);                  
 REGISTER_CPU(double);                 
             
 // Register the GPU kernels.                  
+// Compatible with v1.3
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM            
 #define REGISTER_GPU(T)                                                                                   \
 REGISTER_KERNEL_BUILDER(                                                                                  \
@@ -1382,6 +1427,12 @@ REGISTER_KERNEL_BUILDER(                                                        
     ProdEnvMatAOp<GPUDevice, T>);                                                                         \
 REGISTER_KERNEL_BUILDER(                                                                                  \
     Name("ProdEnvMatR").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms").HostMemory("box"), \
+    ProdEnvMatROp<GPUDevice, T>);                                                                         \
+REGISTER_KERNEL_BUILDER(                                                                                  \
+    Name("DescrptSeA").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms").HostMemory("box"), \
+    ProdEnvMatAOp<GPUDevice, T>);                                                                         \
+REGISTER_KERNEL_BUILDER(                                                                                  \
+    Name("DescrptSeR").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms").HostMemory("box"), \
     ProdEnvMatROp<GPUDevice, T>);
 REGISTER_GPU(float);
 REGISTER_GPU(double);
