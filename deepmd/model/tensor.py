@@ -132,7 +132,35 @@ class TensorModel() :
                                      suffix = suffix)
         output = tf.identity(output, name = 'o_' + self.model_type)
 
-        return {self.model_type: output}
+        model_dict = {self.model_type: output}
+
+        if "global" not in self.model_type:
+            natomsel = sum(natoms[2+type_i] for type_i in self.get_sel_type())
+            nout = self.get_out_size()
+            atom_out = tf.reshape(output, [-1, natomsel, nout])
+
+            gname = "global_"+self.model_type
+            global_out = tf.reduce_sum(atom_out, axis=1)
+            global_out = tf.reshape(global_out, [-1, nout], name="o_"+gname)
+            
+            out_cpnts = tf.split(atom_out, nout, axis=-1)
+            force_cpnts = []
+            virial_cpnts = []
+            for out_i in out_cpnts:
+                force_i, virial_i, atom_virial_i \
+                    = self.descrpt.prod_force_virial(out_i, natoms)
+                force_cpnts.append(tf.reshape(force_i, [-1, 3*natoms[1]]))
+                virial_cpnts.append(tf.reshape(virial_i, [-1, 9]))
+            # [nframe x nout x (natom x 3)]
+            force = tf.stack(force_cpnts, axis=1, name="o_force")
+            # [nframe x nout x 9]
+            virial = tf.stack(virial_cpnts, axis=1, name="o_virial")
+
+            model_dict[gname] = global_out
+            model_dict["force"] = force
+            model_dict["virial"] = virial
+
+        return model_dict
 
 
 class WFCModel(TensorModel):

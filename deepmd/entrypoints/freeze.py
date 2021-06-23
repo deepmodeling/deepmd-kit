@@ -66,6 +66,9 @@ def _make_node_names(model_type: str, modifier_type: Optional[str] = None) -> Li
     elif model_type == "dipole":
         nodes += [
             "o_dipole",
+            "o_global_dipole",
+            "o_force",
+            "o_virial",
             "o_rmat",
             "o_rmat_deriv",
             "o_nlist",
@@ -78,6 +81,9 @@ def _make_node_names(model_type: str, modifier_type: Optional[str] = None) -> Li
     elif model_type == "polar":
         nodes += [
             "o_polar",
+            "o_global_polar",
+            "o_force",
+            "o_virial",
             "model_attr/sel_type",
             "model_attr/output_dim",
         ]
