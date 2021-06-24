@@ -123,14 +123,14 @@ class TensorModel() :
                                  reuse = reuse)
         dout = tf.identity(dout, name='o_descriptor')
         rot_mat = self.descrpt.get_rot_mat()
-        rot_mat = tf.identity(rot_mat, name = 'o_rot_mat')
+        rot_mat = tf.identity(rot_mat, name = 'o_rot_mat'+suffix)
 
         output = self.fitting.build (dout, 
                                      rot_mat,
                                      natoms, 
                                      reuse = reuse, 
                                      suffix = suffix)
-        output = tf.identity(output, name = 'o_' + self.model_type)
+        output = tf.identity(output, name = 'o_' + self.model_type + suffix)
 
         model_dict = {self.model_type: output}
 
@@ -141,24 +141,31 @@ class TensorModel() :
 
             gname = "global_"+self.model_type
             global_out = tf.reduce_sum(atom_out, axis=1)
-            global_out = tf.reshape(global_out, [-1, nout], name="o_"+gname)
+            global_out = tf.reshape(global_out, [-1, nout], name="o_" + gname + suffix)
             
             out_cpnts = tf.split(atom_out, nout, axis=-1)
             force_cpnts = []
             virial_cpnts = []
+            atom_virial_cpnts = []
+
             for out_i in out_cpnts:
                 force_i, virial_i, atom_virial_i \
                     = self.descrpt.prod_force_virial(out_i, natoms)
-                force_cpnts.append(tf.reshape(force_i, [-1, 3*natoms[1]]))
-                virial_cpnts.append(tf.reshape(virial_i, [-1, 9]))
+                force_cpnts.append      (tf.reshape(force_i,       [-1, 3*natoms[1]]))
+                virial_cpnts.append     (tf.reshape(virial_i,      [-1, 9]))
+                atom_virial_cpnts.append(tf.reshape(atom_virial_i, [-1, 9*natoms[1]]))
+
             # [nframe x nout x (natom x 3)]
-            force = tf.stack(force_cpnts, axis=1, name="o_force")
+            force = tf.stack(force_cpnts, axis=1, name="o_force" + suffix)
             # [nframe x nout x 9]
-            virial = tf.stack(virial_cpnts, axis=1, name="o_virial")
+            virial = tf.stack(virial_cpnts, axis=1, name="o_virial" + suffix)
+            # [nframe x nout x (natom x 9)]
+            atom_virial = tf.stack(atom_virial_cpnts, axis=1, name="o_atom_virial" + suffix)
 
             model_dict[gname] = global_out
             model_dict["force"] = force
             model_dict["virial"] = virial
+            model_dict["atom_virial"] = atom_virial
 
         return model_dict
 

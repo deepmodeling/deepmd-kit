@@ -69,6 +69,7 @@ def _make_node_names(model_type: str, modifier_type: Optional[str] = None) -> Li
             "o_global_dipole",
             "o_force",
             "o_virial",
+            "o_atom_virial",
             "o_rmat",
             "o_rmat_deriv",
             "o_nlist",
@@ -84,6 +85,7 @@ def _make_node_names(model_type: str, modifier_type: Optional[str] = None) -> Li
             "o_global_polar",
             "o_force",
             "o_virial",
+            "o_atom_virial",
             "model_attr/sel_type",
             "model_attr/output_dim",
         ]

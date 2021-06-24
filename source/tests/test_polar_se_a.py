@@ -79,6 +79,7 @@ class TestModel(unittest.TestCase):
         gpolar = model_pred['global_polar']
         force = model_pred['force']
         virial = model_pred['virial']
+        atom_virial = model_pred['atom_virial']
 
         feed_dict_test = {t_prop_c:        test_data['prop_c'],
                           t_coord:         np.reshape(test_data['coord']    [:numb_test, :], [-1]),
@@ -115,8 +116,9 @@ class TestModel(unittest.TestCase):
                             t_mesh:          test_data['default_mesh'],
                             is_training:     False}
 
-        [pf, pv] = sess.run([force, virial], feed_dict = feed_dict_single)
+        [pf, pv, pav] = sess.run([force, virial, atom_virial], feed_dict = feed_dict_single)
         pf, pv = pf.reshape(-1), pv.reshape(-1)
+        spv = pav.reshape(1, 9, -1, 9).sum(2).reshape(-1)
 
         base_dict = feed_dict_single.copy()
         coord0 = base_dict.pop(t_coord)
@@ -141,4 +143,7 @@ class TestModel(unittest.TestCase):
             self.assertAlmostEqual(pf[ii], fdf[ii], delta = delta)
         for ii in range(pv.size) :
             self.assertAlmostEqual(pv[ii], fdv[ii], delta = delta)
-        
+        # make sure atomic virial sum to virial        
+        places = 10
+        for ii in range(pv.size) :
+            self.assertAlmostEqual(pv[ii], spv[ii], places = places)
