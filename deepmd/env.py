@@ -37,6 +37,7 @@ __all__ = [
 
 SHARED_LIB_MODULE = "op"
 
+
 def set_env_if_empty(key: str, value: str, verbose: bool = True):
     """Set environment variable only if it is empty.
 
@@ -74,7 +75,8 @@ def set_mkl():
     """
     if "mkl_rt" in np.__config__.get_info("blas_mkl_info").get("libraries", []):
         set_env_if_empty("KMP_BLOCKTIME", "0")
-        set_env_if_empty("KMP_AFFINITY", "granularity=fine,verbose,compact,1,0")
+        set_env_if_empty(
+            "KMP_AFFINITY", "granularity=fine,verbose,compact,1,0")
         reload(np)
 
 
@@ -118,7 +120,9 @@ def get_tf_session_config() -> Any:
         intra_op_parallelism_threads=intra, inter_op_parallelism_threads=inter
     )
 
+
 default_tf_session_config = get_tf_session_config()
+
 
 def get_module(module_name: str) -> "ModuleType":
     """Load force module.
@@ -153,8 +157,6 @@ def get_module(module_name: str) -> "ModuleType":
         return module
 
 
-
-
 def _get_package_constants(
     config_file: Path = Path(__file__).parent / "pkg_config/run_config.ini",
 ) -> Dict[str, str]:
@@ -174,6 +176,7 @@ def _get_package_constants(
     config.read(config_file)
     return dict(config.items("CONFIG"))
 
+
 GLOBAL_CONFIG = _get_package_constants()
 MODEL_VERSION = GLOBAL_CONFIG["model_version"]
 TF_VERSION = GLOBAL_CONFIG["tf_version"]
@@ -188,25 +191,26 @@ except tf.errors.NotFoundError:
     # ABI should be the same
     tf_cxx11_abi_flag = tf.CXX11_ABI_FLAG if 'CXX11_ABI_FLAG' in tf.__dict__ else tf.sysconfig.CXX11_ABI_FLAG
     if TF_CXX11_ABI_FLAG != tf_cxx11_abi_flag:
-        raise RuntimeError("This deepmd-kit package is compiled with CXX11_ABI_FLAG=%d, "
-            "but TensorFlow runtime is compiled with CXX11_ABI_FLAG=%d. These two "
-            "library ABIs are incompatible and thus an error is raised. You need to "
-            "rebuild deepmd-kit against this TensorFlow runtime." % (
-                TF_CXX11_ABI_FLAG, tf_cxx11_abi_flag
-            ))
+        raise RuntimeError("This deepmd-kit package was compiled with "
+                           "CXX11_ABI_FLAG=%d, but TensorFlow runtime was compiled with "
+                           "CXX11_ABI_FLAG=%d. These two library ABIs are incompatible "
+                           "and thus an error is raised. You need to rebuild deepmd-kit "
+                           "against this TensorFlow runtime." % (
+                               TF_CXX11_ABI_FLAG, tf_cxx11_abi_flag
+                           ))
 
     # different versions may cause incompatibility, see #557 and #796 for example
     # throw a message if versions are different
     if TF_VERSION != tf.version.VERSION:
         raise RuntimeError("The version of TensorFlow used to compile this "
-            "deepmd-kit package is %s, but the version of TensorFlow runtime you "
-            "are using is %s. These two versions are incompatible and thus an error "
-            "is raised. You need to install TensorFlow %s, or rebuild deepmd-kit "
-            "against TensorFlow %s.\nIf you are using a wheel from pypi, you "
-            "may consider to install deepmd-kit execuating "
-            "`pip install deepmd-kit --no-binary deepmd-kit` instead." % (
-                TF_VERSION, tf.version.VERSION, TF_VERSION, tf.version.VERSION,
-            ))
+                           "deepmd-kit package is %s, but the version of TensorFlow runtime you "
+                           "are using is %s. These two versions are incompatible and thus an error "
+                           "is raised. You need to install TensorFlow %s, or rebuild deepmd-kit "
+                           "against TensorFlow %s.\nIf you are using a wheel from pypi, you "
+                           "may consider to install deepmd-kit execuating "
+                           "`pip install deepmd-kit --no-binary deepmd-kit` instead." % (
+                               TF_VERSION, tf.version.VERSION, TF_VERSION, tf.version.VERSION,
+                           ))
     raise
 
 if GLOBAL_CONFIG["precision"] == "-DHIGH_PREC":
@@ -251,5 +255,3 @@ def global_cvt_2_ener_float(xx: tf.Tensor) -> tf.Tensor:
         output tensor cast to `GLOBAL_ENER_FLOAT_PRECISION`
     """
     return tf.cast(xx, GLOBAL_ENER_FLOAT_PRECISION)
-
-
