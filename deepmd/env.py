@@ -177,11 +177,24 @@ def _get_package_constants(
 GLOBAL_CONFIG = _get_package_constants()
 MODEL_VERSION = GLOBAL_CONFIG["model_version"]
 TF_VERSION = GLOBAL_CONFIG["tf_version"]
+TF_CXX11_ABI_FLAG = int(GLOBAL_CONFIG["tf_cxx11_abi_flag"])
 
 try:
     op_module = get_module("libop_abi")
     op_grads_module = get_module("libop_grads")
 except tf.errors.NotFoundError:
+    # check CXX11_ABI_FLAG is compatiblity
+    # see https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html
+    # ABI should be the same
+    tf_cxx11_abi_flag = tf.CXX11_ABI_FLAG if 'CXX11_ABI_FLAG' in tf.__dict__ else tf.sysconfig.CXX11_ABI_FLAG
+    if TF_CXX11_ABI_FLAG != tf_cxx11_abi_flag:
+        raise RuntimeError("This deepmd-kit package is compiled with CXX11_ABI_FLAG=%d, "
+            "but TensorFlow runtime is compiled with CXX11_ABI_FLAG=%d. These two "
+            "library ABIs are incompatible and thus an error is raised. You need to "
+            "rebuild deepmd-kit against this TensorFlow runtime." % (
+                TF_CXX11_ABI_FLAG, tf_cxx11_abi_flag
+            ))
+
     # different versions may cause incompatibility, see #557 and #796 for example
     # throw a message if versions are different
     if TF_VERSION != tf.version.VERSION:
@@ -189,7 +202,7 @@ except tf.errors.NotFoundError:
             "deepmd-kit package is %s, but the version of TensorFlow runtime you "
             "are using is %s. These two versions are incompatible and thus an error "
             "is raised. You need to install TensorFlow %s, or rebuild deepmd-kit "
-            "using TensorFlow %s.\nIf you are using a wheel from pypi, you "
+            "against TensorFlow %s.\nIf you are using a wheel from pypi, you "
             "may consider to install deepmd-kit execuating "
             "`pip install deepmd-kit --no-binary deepmd-kit` instead." % (
                 TF_VERSION, tf.version.VERSION, TF_VERSION, tf.version.VERSION,
