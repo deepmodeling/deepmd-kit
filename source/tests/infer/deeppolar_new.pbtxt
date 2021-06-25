@@ -151356,8 +151356,29 @@ node {
   }
 }
 node {
+  name: "o_force/axis"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
   name: "o_force"
-  op: "Pack"
+  op: "ConcatV2"
   input: "Reshape_24"
   input: "Reshape_28"
   input: "Reshape_32"
@@ -151367,6 +151388,7 @@ node {
   input: "Reshape_48"
   input: "Reshape_52"
   input: "Reshape_56"
+  input: "o_force/axis"
   attr {
     key: "N"
     value {
@@ -151380,15 +151402,36 @@ node {
     }
   }
   attr {
-    key: "axis"
+    key: "Tidx"
     value {
-      i: 1
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "o_virial/axis"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 1
+      }
     }
   }
 }
 node {
   name: "o_virial"
-  op: "Pack"
+  op: "ConcatV2"
   input: "Reshape_25"
   input: "Reshape_29"
   input: "Reshape_33"
@@ -151398,6 +151441,7 @@ node {
   input: "Reshape_49"
   input: "Reshape_53"
   input: "Reshape_57"
+  input: "o_virial/axis"
   attr {
     key: "N"
     value {
@@ -151411,15 +151455,36 @@ node {
     }
   }
   attr {
-    key: "axis"
+    key: "Tidx"
     value {
-      i: 1
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "o_atom_virial/axis"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 1
+      }
     }
   }
 }
 node {
   name: "o_atom_virial"
-  op: "Pack"
+  op: "ConcatV2"
   input: "Reshape_26"
   input: "Reshape_30"
   input: "Reshape_34"
@@ -151429,6 +151494,7 @@ node {
   input: "Reshape_50"
   input: "Reshape_54"
   input: "Reshape_58"
+  input: "o_atom_virial/axis"
   attr {
     key: "N"
     value {
@@ -151442,9 +151508,9 @@ node {
     }
   }
   attr {
-    key: "axis"
+    key: "Tidx"
     value {
-      i: 1
+      type: DT_INT32
     }
   }
 }

@@ -156,11 +156,11 @@ class TensorModel() :
                 atom_virial_cpnts.append(tf.reshape(atom_virial_i, [-1, 9*natoms[1]]))
 
             # [nframe x nout x (natom x 3)]
-            force = tf.stack(force_cpnts, axis=1, name="o_force" + suffix)
+            force = tf.concat(force_cpnts, axis=1, name="o_force" + suffix)
             # [nframe x nout x 9]
-            virial = tf.stack(virial_cpnts, axis=1, name="o_virial" + suffix)
+            virial = tf.concat(virial_cpnts, axis=1, name="o_virial" + suffix)
             # [nframe x nout x (natom x 9)]
-            atom_virial = tf.stack(atom_virial_cpnts, axis=1, name="o_atom_virial" + suffix)
+            atom_virial = tf.concat(atom_virial_cpnts, axis=1, name="o_atom_virial" + suffix)
 
             model_dict[gname] = global_out
             model_dict["force"] = force
