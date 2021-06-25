@@ -153,8 +153,6 @@ def get_module(module_name: str) -> "ModuleType":
         return module
 
 
-op_module = get_module("libop_abi")
-op_grads_module = get_module("libop_grads")
 
 
 def _get_package_constants(
@@ -165,7 +163,7 @@ def _get_package_constants(
     Parameters
     ----------
     config_file : str, optional
-        path to CONFIG file, by default "config/run_config.ini"
+        path to CONFIG file, by default "pkg_config/run_config.ini"
 
     Returns
     -------
@@ -178,6 +176,24 @@ def _get_package_constants(
 
 GLOBAL_CONFIG = _get_package_constants()
 MODEL_VERSION = GLOBAL_CONFIG["model_version"]
+TF_VERSION = GLOBAL_CONFIG["tf_version"]
+
+try:
+    op_module = get_module("libop_abi")
+    op_grads_module = get_module("libop_grads")
+except tf.errors.NotFoundError:
+    # different versions may cause incompatibility, see #557 and #796 for example
+    # throw a message if versions are different
+    if TF_VERSION != tf.version.VERSION:
+        raise RuntimeError("The version of TensorFlow used to compile this "
+            "deepmd-kit package is %s, but the version of TensorFlow runtime you "
+            "are using is %s. These two versions are incompatible and thus an error "
+            "is raised. You need to install TensorFlow %s, or rebuild deepmd-kit "
+            "using TensorFlow %s.\nIf you are using a wheel from pypi, you "
+            "may consider to install deepmd-kit execuating "
+            "`pip install deepmd-kit --no-binary deepmd-kit` instead." % (
+                TF_VERSION, tf.version.VERSION, TF_VERSION, tf.version.VERSION,
+            ))
 
 if GLOBAL_CONFIG["precision"] == "-DHIGH_PREC":
     GLOBAL_TF_FLOAT_PRECISION = tf.float64
