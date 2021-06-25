@@ -194,6 +194,7 @@ except tf.errors.NotFoundError:
             "`pip install deepmd-kit --no-binary deepmd-kit` instead." % (
                 TF_VERSION, tf.version.VERSION, TF_VERSION, tf.version.VERSION,
             ))
+    raise
 
 if GLOBAL_CONFIG["precision"] == "-DHIGH_PREC":
     GLOBAL_TF_FLOAT_PRECISION = tf.float64
