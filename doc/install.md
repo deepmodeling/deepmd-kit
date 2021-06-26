@@ -42,6 +42,11 @@ One may speficy the DeePMD-kit version such as `2.0.0` using
 conda create -n deepmd deepmd-kit=2.0.0=*cpu lammps-dp=2.0.0=*cpu -c https://conda.deepmodeling.org
 ```
 
+One may enable the environment using
+```bash
+conda activate deepmd
+```
+
 ### Install with docker
 A docker for installing the DeePMD-kit is available [here](https://github.com/orgs/deepmodeling/packages/container/package/deepmd-kit).
 
