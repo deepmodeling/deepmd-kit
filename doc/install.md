@@ -3,6 +3,7 @@
 - [Easy installation methods](#easy-installation-methods)
 - [Install from source code](#install-from-source-code)
 - [Install i-PI](#install-i-pi)
+- [Building conda packages](#building-conda-packages)
 
 ## Easy installation methods
 
