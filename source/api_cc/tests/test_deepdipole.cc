@@ -158,7 +158,7 @@ TEST_F(TestInferDeepDipoleFake, cpu_build_nlist)
   EXPECT_EQ(dp.numb_types(), 2);
   EXPECT_EQ(dp.output_dim(), 3);
   std::vector<int> sel_types = dp.sel_types();
-  EXPECT_EQ(sel_types.size(), 1);
+  EXPECT_EQ(sel_types.size(), 2);
   EXPECT_EQ(sel_types[0], 0);
   EXPECT_EQ(sel_types[1], 1);
 

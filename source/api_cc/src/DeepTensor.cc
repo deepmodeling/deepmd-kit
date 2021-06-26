@@ -74,6 +74,7 @@ run_model (std::vector<VALUETYPE> &	d_tensor_,
 	   Session *			session, 
 	   const std::vector<std::pair<std::string, Tensor>> & input_tensors,
 	   const AtomMap<VALUETYPE> &atommap, 
+     const std::vector<int> & sel_fwd,
 	   const int			nghost)
 {
   unsigned nloc = atommap.get_type().size();
@@ -100,7 +101,15 @@ run_model (std::vector<VALUETYPE> &	d_tensor_,
   for (unsigned ii = 0; ii < o_size; ++ii){
     d_tensor[ii] = ot(ii);
   }
+  // now we map the type-sorted sel-atom tensor back to original order
+  // first we have to get the type-sorted select map
+  std::vector<int> sel_srt = sel_fwd;
+  select_map<int>(sel_srt, sel_fwd, atommap.get_fwd_map(), 1);
+  // remove those -1 that correspond to discarded atoms
+  std::remove(sel_srt.begin(), sel_srt.end(), -1);
+  // now map the tensor back
   d_tensor_ = d_tensor;
+  select_map<VALUETYPE>(d_tensor_, d_tensor, sel_srt, odim);
 }
 
 
@@ -165,12 +174,17 @@ compute_inner (std::vector<VALUETYPE> &		dtensor_,
   int nloc = nall;
   AtomMap<VALUETYPE> atommap (datype_.begin(), datype_.begin() + nloc);
   assert (nloc == atommap.get_type().size());
+  
+  std::vector<int> sel_fwd, sel_bkw;
+  int nghost_sel;
+  // this gives the raw selection map, will pass to run model
+  select_by_type(sel_fwd, sel_bkw, nghost_sel, dcoord_, datype_, 0, sel_type);
 
   std::vector<std::pair<std::string, Tensor>> input_tensors;
   int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, name_scope);
   assert (ret == nloc);
 
-  run_model (dtensor_, session, input_tensors, atommap);
+  run_model (dtensor_, session, input_tensors, atommap, sel_fwd);
 }
 
 void
@@ -187,6 +201,12 @@ compute_inner (std::vector<VALUETYPE> &		dtensor_,
   AtomMap<VALUETYPE> atommap (datype_.begin(), datype_.begin() + nloc);
   assert (nloc == atommap.get_type().size());
 
+  std::vector<int> sel_fwd, sel_bkw;
+  int nghost_sel;
+  // this gives the raw selection map, will pass to run model
+  select_by_type(sel_fwd, sel_bkw, nghost_sel, dcoord_, datype_, nghost, sel_type);
+  sel_fwd.resize(nloc);
+
   NeighborListData nlist_data;
   nlist_data.copy_from_nlist(nlist_);
   nlist_data.shuffle(atommap);
@@ -197,5 +217,5 @@ compute_inner (std::vector<VALUETYPE> &		dtensor_,
   int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, nghost, 0, name_scope);
   assert (nloc == ret);
 
-  run_model (dtensor_, session, input_tensors, atommap, nghost);
+  run_model (dtensor_, session, input_tensors, atommap, sel_fwd, nghost);
 }

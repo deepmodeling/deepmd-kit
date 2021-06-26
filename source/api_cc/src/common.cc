@@ -575,6 +575,33 @@ select_map(std::vector<VT> & out,
 }
 
 
+// sel_map(_,_,fwd_map,_) == sel_map_inv(_,_,bkw_map,_)
+template<typename VT>
+void 
+deepmd::
+select_map_inv(std::vector<VT> & out,
+	   const std::vector<VT > & in,
+	   const std::vector<int > & idx_map, 
+	   const int & stride)
+{
+#ifdef DEBUG
+  assert(in.size() / stride * stride == in.size()), "in size should be multiples of stride"
+#endif
+  for (int ii = 0; ii < out.size() / stride; ++ii){
+#ifdef DEBUG
+    assert(ii < idx_map.size()), "idx goes over the idx map size";
+    assert(idx_map[ii] < in.size()), "from idx goes over the in size";
+#endif
+    if (idx_map[ii] >= 0) {
+      int from_ii = idx_map[ii];
+      for (int dd = 0; dd < stride; ++dd){
+	      out[ii * stride + dd] = in[from_ii * stride + dd];
+      }
+    }
+  }
+}
+
+
 template
 int
 deepmd::
@@ -589,6 +616,15 @@ template
 void 
 deepmd::
 select_map<int>(
+    std::vector<int> & out,
+    const std::vector<int > & in,
+    const std::vector<int > & idx_map, 
+    const int & stride);
+
+template
+void 
+deepmd::
+select_map_inv<int>(
     std::vector<int> & out,
     const std::vector<int > & in,
     const std::vector<int > & idx_map, 
@@ -614,6 +650,15 @@ select_map<float>(
     const std::vector<int > & idx_map, 
     const int & stride);
 
+template
+void 
+deepmd::
+select_map_inv<float>(
+    std::vector<float> & out,
+    const std::vector<float > & in,
+    const std::vector<int > & idx_map, 
+    const int & stride);
+
 
 template
 double
@@ -634,6 +679,15 @@ select_map<double>(
     const std::vector<int > & idx_map, 
     const int & stride);
 
+template
+void 
+deepmd::
+select_map_inv<double>(
+    std::vector<double> & out,
+    const std::vector<double > & in,
+    const std::vector<int > & idx_map, 
+    const int & stride);
+
 
 template
 deepmd::STRINGTYPE
@@ -649,6 +703,15 @@ template
 void 
 deepmd::
 select_map<deepmd::STRINGTYPE>(
+    std::vector<deepmd::STRINGTYPE> & out,
+    const std::vector<deepmd::STRINGTYPE > & in,
+    const std::vector<int > & idx_map, 
+    const int & stride);
+
+template
+void 
+deepmd::
+select_map_inv<deepmd::STRINGTYPE>(
     std::vector<deepmd::STRINGTYPE> & out,
     const std::vector<deepmd::STRINGTYPE > & in,
     const std::vector<int > & idx_map, 

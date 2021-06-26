@@ -99,6 +99,7 @@ private:
 		  tensorflow::Session *			session, 
 		  const std::vector<std::pair<std::string, tensorflow::Tensor>> & input_tensors,
 		  const AtomMap<VALUETYPE> &		atommap, 
+      const std::vector<int> &    sel_fwd,
 		  const int				nghost = 0);
   void compute_inner (std::vector<VALUETYPE> &		value,
 		      const std::vector<VALUETYPE> &	coord,
