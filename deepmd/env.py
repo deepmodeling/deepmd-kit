@@ -165,41 +165,44 @@ def get_module(module_name: str) -> "ModuleType":
             else:
                 tf_cxx11_abi_flag = tf.sysconfig.CXX11_ABI_FLAG
             if TF_CXX11_ABI_FLAG != tf_cxx11_abi_flag:
-                raise RuntimeError("This deepmd-kit package was compiled with "
-                                "CXX11_ABI_FLAG=%d, but TensorFlow runtime was compiled "
-                                "with CXX11_ABI_FLAG=%d. These two library ABIs are "
-                                "incompatible and thus an error is raised when loading %s."
-                                "You need to rebuild deepmd-kit against this TensorFlow "
-                                "runtime." % (
-                                    TF_CXX11_ABI_FLAG,
-                                    tf_cxx11_abi_flag,
-                                    module_name,
-                                )) from e
+                raise RuntimeError(
+                    "This deepmd-kit package was compiled with "
+                    "CXX11_ABI_FLAG=%d, but TensorFlow runtime was compiled "
+                    "with CXX11_ABI_FLAG=%d. These two library ABIs are "
+                    "incompatible and thus an error is raised when loading %s."
+                    "You need to rebuild deepmd-kit against this TensorFlow "
+                    "runtime." % (
+                        TF_CXX11_ABI_FLAG,
+                        tf_cxx11_abi_flag,
+                        module_name,
+                    )) from e
 
             # different versions may cause incompatibility, see #557 and #796 for example
             # throw a message if versions are different
             if TF_VERSION != tf.version.VERSION:
-                raise RuntimeError("The version of TensorFlow used to compile this "
-                                "deepmd-kit package is %s, but the version of TensorFlow "
-                                "runtime you are using is %s. These two versions are "
-                                "incompatible and thus an error is raised when loading %s. "
-                                "You need to install TensorFlow %s, or rebuild deepmd-kit "
-                                "against TensorFlow %s.\nIf you are using a wheel from "
-                                "pypi, you may consider to install deepmd-kit execuating "
-                                "`pip install deepmd-kit --no-binary deepmd-kit` "
-                                "instead." % (
-                                    TF_VERSION,
-                                    tf.version.VERSION,
-                                    module_name,
-                                    TF_VERSION,
-                                    tf.version.VERSION,
-                                )) from e
-            raise RuntimeError("This deepmd-kit package is inconsitent with TensorFlow"
-                            "Runtime, thus an error is raised when loading %s."
-                            "You need to rebuild deepmd-kit against this TensorFlow"
-                            "runtime." % (
-                                module_name,
-                            )) from e
+                raise RuntimeError(
+                    "The version of TensorFlow used to compile this "
+                    "deepmd-kit package is %s, but the version of TensorFlow "
+                    "runtime you are using is %s. These two versions are "
+                    "incompatible and thus an error is raised when loading %s. "
+                    "You need to install TensorFlow %s, or rebuild deepmd-kit "
+                    "against TensorFlow %s.\nIf you are using a wheel from "
+                    "pypi, you may consider to install deepmd-kit execuating "
+                    "`pip install deepmd-kit --no-binary deepmd-kit` "
+                    "instead." % (
+                        TF_VERSION,
+                        tf.version.VERSION,
+                        module_name,
+                        TF_VERSION,
+                        tf.version.VERSION,
+                    )) from e
+            raise RuntimeError(
+                "This deepmd-kit package is inconsitent with TensorFlow"
+                "Runtime, thus an error is raised when loading %s."
+                "You need to rebuild deepmd-kit against this TensorFlow"
+                "runtime." % (
+                    module_name,
+                )) from e
         return module
 
 
