@@ -201,7 +201,7 @@ deepmd::
 check_status(const tensorflow::Status& status) {
   if (!status.ok()) {
     std::cout << status.ToString() << std::endl;
-    exit(1);
+    throw deepmd::tf_exception();
   }
 }
 

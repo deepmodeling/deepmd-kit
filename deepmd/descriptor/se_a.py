@@ -268,7 +268,7 @@ class DescrptSeA ():
         self.compress = True
         self.model_file = model_file
         self.table_config = [table_extrapolate, table_stride_1, table_stride_2, check_frequency]
-        self.table = DeepTabulate(self.model_file, self.type_one_side)
+        self.table = DeepTabulate(self.model_file, self.type_one_side, self.exclude_types)
         self.lower, self.upper \
             = self.table.build(min_nbor_dist, 
                                table_extrapolate, 

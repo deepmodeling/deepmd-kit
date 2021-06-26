@@ -357,7 +357,9 @@ class EnerFitting ():
                                                 initializer = tf.constant_initializer(self.aparam_inv_std))
             
         inputs = tf.cast(tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]]), self.fitting_precision)
-        inputs_zero = tf.zeros_like(inputs, dtype=GLOBAL_TF_FLOAT_PRECISION)
+        if len(self.atom_ener):
+            # only for atom_ener
+            inputs_zero = tf.zeros_like(inputs, dtype=GLOBAL_TF_FLOAT_PRECISION)
         
 
         if bias_atom_e is not None :
