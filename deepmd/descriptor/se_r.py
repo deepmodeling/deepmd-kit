@@ -9,6 +9,7 @@ from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.utils.network import embedding_net, embedding_net_rand_seed_shift
+from deepmd.utils.sess import run_sess
 
 class DescrptSeR ():
     @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
@@ -401,7 +402,7 @@ class DescrptSeR ():
                                   natoms_vec,
                                   mesh) :    
         dd_all \
-            = self.sub_sess.run(self.stat_descrpt, 
+            = run_sess(self.sub_sess, self.stat_descrpt, 
                                 feed_dict = {
                                     self.place_holders['coord']: data_coord,
                                     self.place_holders['type']: data_atype,

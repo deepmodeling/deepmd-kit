@@ -21,6 +21,7 @@ from deepmd.model import EnerModel, WFCModel, DipoleModel, PolarModel, GlobalPol
 from deepmd.loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
 from deepmd.utils.learning_rate import LearningRateExp
 from deepmd.utils.neighbor_stat import NeighborStat
+from deepmd.utils.sess import run_sess
 from deepmd.utils.type_embed import TypeEmbedNet
 
 from tensorflow.python.client import timeline
@@ -382,21 +383,21 @@ class DPTrainer (object):
         if self.run_opt.init_mode == 'init_from_scratch' :
             log.info("initialize model from scratch")
             init_op = tf.global_variables_initializer()
-            self.sess.run(init_op)
+            run_sess(self.sess, init_op)
             fp = open(self.disp_file, "w")
             fp.close ()
         elif self.run_opt.init_mode == 'init_from_model' :
             log.info("initialize from model %s" % self.run_opt.init_model)
             init_op = tf.global_variables_initializer()
-            self.sess.run(init_op)
+            run_sess(self.sess, init_op)
             saver.restore (self.sess, self.run_opt.init_model)            
-            self.sess.run(self.global_step.assign(0))
+            run_sess(self.sess, self.global_step.assign(0))
             fp = open(self.disp_file, "w")
             fp.close ()
         elif self.run_opt.init_mode == 'restart' :
             log.info("restart from model %s" % self.run_opt.restart)
             init_op = tf.global_variables_initializer()
-            self.sess.run(init_op)
+            run_sess(self.sess, init_op)
             saver.restore (self.sess, self.run_opt.restart)
         else :
             raise RuntimeError ("unkown init mode")
@@ -462,11 +463,11 @@ class DPTrainer (object):
         if self.run_opt.is_chief :
             fp = open(self.disp_file, "a")
 
-        cur_batch = self.sess.run(self.global_step)
+        cur_batch = run_sess(self.sess, self.global_step)
         is_first_step = True
         self.cur_batch = cur_batch
         log.info("start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e" % 
-                 (self.sess.run(self.learning_rate),
+                 (run_sess(self.sess, self.learning_rate),
                   self.lr.value(cur_batch), 
                   self.lr.decay_steps_,
                   self.lr.decay_rate_,
@@ -516,15 +517,15 @@ class DPTrainer (object):
             # use tensorboard to visualize the training of deepmd-kit
             # it will takes some extra execution time to generate the tensorboard data
             if self.tensorboard :
-                summary, _ = self.sess.run([summary_merged_op, self.train_op], feed_dict=train_feed_dict,
+                summary, _ = run_sess(self.sess, [summary_merged_op, self.train_op], feed_dict=train_feed_dict,
                                            options=prf_options, run_metadata=prf_run_metadata)
                 tb_train_writer.add_summary(summary, cur_batch)
             else :
-                self.sess.run([self.train_op], feed_dict=train_feed_dict,
+                run_sess(self.sess, [self.train_op], feed_dict=train_feed_dict,
                               options=prf_options, run_metadata=prf_run_metadata)
             if self.timing_in_training: toc = time.time()
             if self.timing_in_training: train_time += toc - tic
-            cur_batch = self.sess.run(self.global_step)
+            cur_batch = run_sess(self.sess, self.global_step)
             self.cur_batch = cur_batch
 
             # on-the-fly validation
@@ -568,7 +569,7 @@ class DPTrainer (object):
         return feed_dict
 
     def get_global_step(self):
-        return self.sess.run(self.global_step)
+        return run_sess(self.sess, self.global_step)
 
     # def print_head (self) :  # depreciated
     #     if self.run_opt.is_chief:
@@ -588,7 +589,7 @@ class DPTrainer (object):
         valid_results = self.get_evaluation_results(valid_batches)
 
         cur_batch = self.cur_batch
-        current_lr = self.sess.run(self.learning_rate)
+        current_lr = run_sess(self.sess, self.learning_rate)
         if print_header:
             self.print_header(fp, train_results, valid_results)
         self.print_on_training(fp, train_results, valid_results, cur_batch, current_lr)

@@ -8,6 +8,7 @@ https://blog.metaflow.fr/tensorflow-how-to-freeze-a-model-and-serve-it-with-a-py
 
 from deepmd.env import tf
 from deepmd.env import op_module
+from deepmd.utils.sess import run_sess
 from os.path import abspath
 
 # load grad of force module
@@ -154,9 +155,9 @@ def freeze(
     # We start a session and restore the graph weights
     with tf.Session() as sess:
         saver.restore(sess, input_checkpoint)
-        model_type = sess.run("model_attr/model_type:0", feed_dict={}).decode("utf-8")
+        model_type = run_sess(sess, "model_attr/model_type:0", feed_dict={}).decode("utf-8")
         if "modifier_attr/type" in nodes:
-            modifier_type = sess.run("modifier_attr/type:0", feed_dict={}).decode(
+            modifier_type = run_sess(sess, "modifier_attr/type:0", feed_dict={}).decode(
                 "utf-8"
             )
         else:
