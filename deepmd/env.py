@@ -177,7 +177,8 @@ def get_module(module_name: str) -> "ModuleType":
                         module_name,
                     )) from e
 
-            # different versions may cause incompatibility, see #557 and #796 for example
+            # different versions may cause incompatibility
+            # see #406, #447, #557, #774, and #796 for example
             # throw a message if versions are different
             if TF_VERSION != tf.version.VERSION:
                 raise RuntimeError(
