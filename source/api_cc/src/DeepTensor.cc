@@ -92,10 +92,11 @@ run_model (std::vector<VALUETYPE> &	d_tensor_,
 			    &output_tensors));
   
   Tensor output_t = output_tensors[0];
-  assert (output_t.dims() == 1), "dim of output tensor should be 1";
-  int o_size = output_t.dim_size(0);
-
+  // Yixiao: newer model may output rank 2 tensor [nframes x (natoms x noutdim)]
+  // assert (output_t.dims() == 1), "dim of output tensor should be 1";
   auto ot = output_t.flat<VALUETYPE> ();
+  // this is an Eigen Tensor
+  int o_size = ot.size();
 
   std::vector<VALUETYPE> d_tensor (o_size);
   for (unsigned ii = 0; ii < o_size; ++ii){

@@ -207,6 +207,161 @@ node {
   }
 }
 node {
+  name: "strided_slice/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 2
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 3
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice/stack"
+  input: "strided_slice/stack_1"
+  input: "strided_slice/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "add/x"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "add"
+  op: "AddV2"
+  input: "add/x"
+  input: "strided_slice"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
   name: "descrpt_attr/rcut"
   op: "Const"
   attr {
@@ -386,266 +541,6 @@ node {
   }
 }
 node {
-  name: "strided_slice/stack"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 1
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice/stack_1"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 2
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice/stack_2"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 1
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice"
-  op: "StridedSlice"
-  input: "t_natoms"
-  input: "strided_slice/stack"
-  input: "strided_slice/stack_1"
-  input: "strided_slice/stack_2"
-  attr {
-    key: "Index"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "begin_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "ellipsis_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "end_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "new_axis_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "shrink_axis_mask"
-    value {
-      i: 1
-    }
-  }
-}
-node {
-  name: "mul/y"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-        }
-        int_val: 3
-      }
-    }
-  }
-}
-node {
-  name: "mul"
-  op: "Mul"
-  input: "strided_slice"
-  input: "mul/y"
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-}
-node {
-  name: "Reshape/shape/0"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-        }
-        int_val: -1
-      }
-    }
-  }
-}
-node {
-  name: "Reshape/shape"
-  op: "Pack"
-  input: "Reshape/shape/0"
-  input: "mul"
-  attr {
-    key: "N"
-    value {
-      i: 2
-    }
-  }
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "axis"
-    value {
-      i: 0
-    }
-  }
-}
-node {
-  name: "Reshape"
-  op: "Reshape"
-  input: "t_coord"
-  input: "Reshape/shape"
-  attr {
-    key: "T"
-    value {
-      type: DT_DOUBLE
-    }
-  }
-  attr {
-    key: "Tshape"
-    value {
-      type: DT_INT32
-    }
-  }
-}
-node {
-  name: "Reshape_1/shape"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 2
-          }
-        }
-        tensor_content: "\377\377\377\377\t\000\000\000"
-      }
-    }
-  }
-}
-node {
-  name: "Reshape_1"
-  op: "Reshape"
-  input: "t_box"
-  input: "Reshape_1/shape"
-  attr {
-    key: "T"
-    value {
-      type: DT_DOUBLE
-    }
-  }
-  attr {
-    key: "Tshape"
-    value {
-      type: DT_INT32
-    }
-  }
-}
-node {
   name: "strided_slice_1/stack"
   op: "Const"
   attr {
@@ -768,6 +663,266 @@ node {
   }
 }
 node {
+  name: "mul/y"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 3
+      }
+    }
+  }
+}
+node {
+  name: "mul"
+  op: "Mul"
+  input: "strided_slice_1"
+  input: "mul/y"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "Reshape/shape/0"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: -1
+      }
+    }
+  }
+}
+node {
+  name: "Reshape/shape"
+  op: "Pack"
+  input: "Reshape/shape/0"
+  input: "mul"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "Reshape"
+  op: "Reshape"
+  input: "t_coord"
+  input: "Reshape/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "Reshape_1/shape"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 2
+          }
+        }
+        tensor_content: "\377\377\377\377\t\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_1"
+  op: "Reshape"
+  input: "t_box"
+  input: "Reshape_1/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "strided_slice_2/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_2/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 2
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_2/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_2"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_2/stack"
+  input: "strided_slice_2/stack_1"
+  input: "strided_slice_2/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
   name: "Reshape_2/shape/0"
   op: "Const"
   attr {
@@ -792,7 +947,7 @@ node {
   name: "Reshape_2/shape"
   op: "Pack"
   input: "Reshape_2/shape/0"
-  input: "strided_slice_1"
+  input: "strided_slice_2"
   attr {
     key: "N"
     value {
@@ -970,7 +1125,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_2/stack"
+  name: "strided_slice_3/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -994,224 +1149,6 @@ node {
   }
 }
 node {
-  name: "strided_slice_2/stack_1"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 1
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice_2/stack_2"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 1
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice_2"
-  op: "StridedSlice"
-  input: "t_natoms"
-  input: "strided_slice_2/stack"
-  input: "strided_slice_2/stack_1"
-  input: "strided_slice_2/stack_2"
-  attr {
-    key: "Index"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "begin_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "ellipsis_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "end_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "new_axis_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "shrink_axis_mask"
-    value {
-      i: 1
-    }
-  }
-}
-node {
-  name: "mul_1/x"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-        }
-        int_val: 552
-      }
-    }
-  }
-}
-node {
-  name: "mul_1"
-  op: "Mul"
-  input: "mul_1/x"
-  input: "strided_slice_2"
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-}
-node {
-  name: "Reshape_4/shape/0"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-        }
-        int_val: -1
-      }
-    }
-  }
-}
-node {
-  name: "Reshape_4/shape"
-  op: "Pack"
-  input: "Reshape_4/shape/0"
-  input: "mul_1"
-  attr {
-    key: "N"
-    value {
-      i: 2
-    }
-  }
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "axis"
-    value {
-      i: 0
-    }
-  }
-}
-node {
-  name: "Reshape_4"
-  op: "Reshape"
-  input: "o_rmat"
-  input: "Reshape_4/shape"
-  attr {
-    key: "T"
-    value {
-      type: DT_DOUBLE
-    }
-  }
-  attr {
-    key: "Tshape"
-    value {
-      type: DT_INT32
-    }
-  }
-}
-node {
-  name: "strided_slice_3/stack"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 2
-      }
-    }
-  }
-}
-node {
   name: "strided_slice_3/stack_1"
   op: "Const"
   attr {
@@ -1230,7 +1167,7 @@ node {
             size: 1
           }
         }
-        int_val: 3
+        int_val: 1
       }
     }
   }
@@ -1310,6 +1247,224 @@ node {
   }
 }
 node {
+  name: "mul_1/x"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 552
+      }
+    }
+  }
+}
+node {
+  name: "mul_1"
+  op: "Mul"
+  input: "mul_1/x"
+  input: "strided_slice_3"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "Reshape_4/shape/0"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: -1
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_4/shape"
+  op: "Pack"
+  input: "Reshape_4/shape/0"
+  input: "mul_1"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "Reshape_4"
+  op: "Reshape"
+  input: "o_rmat"
+  input: "Reshape_4/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "strided_slice_4/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 2
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_4/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 3
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_4/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_4"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_4/stack"
+  input: "strided_slice_4/stack_1"
+  input: "strided_slice_4/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
   name: "mul_2/y"
   op: "Const"
   attr {
@@ -1333,7 +1488,7 @@ node {
 node {
   name: "mul_2"
   op: "Mul"
-  input: "strided_slice_3"
+  input: "strided_slice_4"
   input: "mul_2/y"
   attr {
     key: "T"
@@ -3655,7 +3810,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_6/stack"
+  name: "strided_slice_7/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -3679,7 +3834,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_6/stack_1"
+  name: "strided_slice_7/stack_1"
   op: "Const"
   attr {
     key: "dtype"
@@ -3703,7 +3858,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_6/stack_2"
+  name: "strided_slice_7/stack_2"
   op: "Const"
   attr {
     key: "dtype"
@@ -3727,12 +3882,12 @@ node {
   }
 }
 node {
-  name: "strided_slice_6"
+  name: "strided_slice_7"
   op: "StridedSlice"
   input: "Shape_1"
-  input: "strided_slice_6/stack"
-  input: "strided_slice_6/stack_1"
-  input: "strided_slice_6/stack_2"
+  input: "strided_slice_7/stack"
+  input: "strided_slice_7/stack_1"
+  input: "strided_slice_7/stack_2"
   attr {
     key: "Index"
     value {
@@ -3777,7 +3932,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_7/stack"
+  name: "strided_slice_8/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -3801,7 +3956,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_7/stack_1"
+  name: "strided_slice_8/stack_1"
   op: "Const"
   attr {
     key: "dtype"
@@ -3825,7 +3980,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_7/stack_2"
+  name: "strided_slice_8/stack_2"
   op: "Const"
   attr {
     key: "dtype"
@@ -3849,12 +4004,12 @@ node {
   }
 }
 node {
-  name: "strided_slice_7"
+  name: "strided_slice_8"
   op: "StridedSlice"
   input: "t_natoms"
-  input: "strided_slice_7/stack"
-  input: "strided_slice_7/stack_1"
-  input: "strided_slice_7/stack_2"
+  input: "strided_slice_8/stack"
+  input: "strided_slice_8/stack_1"
+  input: "strided_slice_8/stack_2"
   attr {
     key: "Index"
     value {
@@ -3922,7 +4077,7 @@ node {
 node {
   name: "mul_3"
   op: "Mul"
-  input: "strided_slice_7"
+  input: "strided_slice_8"
   input: "mul_3/y"
   attr {
     key: "T"
@@ -3934,7 +4089,7 @@ node {
 node {
   name: "Reshape_7/shape"
   op: "Pack"
-  input: "strided_slice_6"
+  input: "strided_slice_7"
   input: "mul_3"
   attr {
     key: "N"
@@ -3991,7 +4146,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_8/stack"
+  name: "strided_slice_9/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -4015,128 +4170,6 @@ node {
   }
 }
 node {
-  name: "strided_slice_8/stack_1"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 1
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice_8/stack_2"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 1
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice_8"
-  op: "StridedSlice"
-  input: "Shape_2"
-  input: "strided_slice_8/stack"
-  input: "strided_slice_8/stack_1"
-  input: "strided_slice_8/stack_2"
-  attr {
-    key: "Index"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "begin_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "ellipsis_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "end_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "new_axis_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "shrink_axis_mask"
-    value {
-      i: 1
-    }
-  }
-}
-node {
-  name: "strided_slice_9/stack"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 2
-      }
-    }
-  }
-}
-node {
   name: "strided_slice_9/stack_1"
   op: "Const"
   attr {
@@ -4155,7 +4188,7 @@ node {
             size: 1
           }
         }
-        int_val: 3
+        int_val: 1
       }
     }
   }
@@ -4187,7 +4220,7 @@ node {
 node {
   name: "strided_slice_9"
   op: "StridedSlice"
-  input: "t_natoms"
+  input: "Shape_2"
   input: "strided_slice_9/stack"
   input: "strided_slice_9/stack_1"
   input: "strided_slice_9/stack_2"
@@ -4231,114 +4264,6 @@ node {
     key: "shrink_axis_mask"
     value {
       i: 1
-    }
-  }
-}
-node {
-  name: "mul_4/y"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-        }
-        int_val: 10
-      }
-    }
-  }
-}
-node {
-  name: "mul_4"
-  op: "Mul"
-  input: "strided_slice_9"
-  input: "mul_4/y"
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-}
-node {
-  name: "mul_5/y"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-        }
-        int_val: 3
-      }
-    }
-  }
-}
-node {
-  name: "mul_5"
-  op: "Mul"
-  input: "mul_4"
-  input: "mul_5/y"
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-}
-node {
-  name: "Reshape_8/shape"
-  op: "Pack"
-  input: "strided_slice_8"
-  input: "mul_5"
-  attr {
-    key: "N"
-    value {
-      i: 2
-    }
-  }
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "axis"
-    value {
-      i: 0
-    }
-  }
-}
-node {
-  name: "Reshape_8"
-  op: "Reshape"
-  input: "filter_type_0/transpose"
-  input: "Reshape_8/shape"
-  attr {
-    key: "T"
-    value {
-      type: DT_DOUBLE
-    }
-  }
-  attr {
-    key: "Tshape"
-    value {
-      type: DT_INT32
     }
   }
 }
@@ -4465,7 +4390,7 @@ node {
   }
 }
 node {
-  name: "add/x"
+  name: "mul_4/y"
   op: "Const"
   attr {
     key: "dtype"
@@ -4480,51 +4405,93 @@ node {
         dtype: DT_INT32
         tensor_shape {
         }
-        int_val: 0
+        int_val: 10
       }
     }
   }
 }
 node {
-  name: "add"
-  op: "AddV2"
-  input: "add/x"
-  input: "strided_slice_10"
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-}
-node {
-  name: "mul_6/y"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-        }
-        int_val: 552
-      }
-    }
-  }
-}
-node {
-  name: "mul_6"
+  name: "mul_4"
   op: "Mul"
-  input: "add"
-  input: "mul_6/y"
+  input: "strided_slice_10"
+  input: "mul_4/y"
   attr {
     key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "mul_5/y"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 3
+      }
+    }
+  }
+}
+node {
+  name: "mul_5"
+  op: "Mul"
+  input: "mul_4"
+  input: "mul_5/y"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "Reshape_8/shape"
+  op: "Pack"
+  input: "strided_slice_9"
+  input: "mul_5"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "Reshape_8"
+  op: "Reshape"
+  input: "filter_type_0/transpose"
+  input: "Reshape_8/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
     value {
       type: DT_INT32
     }
@@ -4549,7 +4516,7 @@ node {
             size: 1
           }
         }
-        int_val: 3
+        int_val: 2
       }
     }
   }
@@ -4573,7 +4540,7 @@ node {
             size: 1
           }
         }
-        int_val: 4
+        int_val: 3
       }
     }
   }
@@ -4653,6 +4620,194 @@ node {
   }
 }
 node {
+  name: "add_1/x"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "add_1"
+  op: "AddV2"
+  input: "add_1/x"
+  input: "strided_slice_11"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "mul_6/y"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 552
+      }
+    }
+  }
+}
+node {
+  name: "mul_6"
+  op: "Mul"
+  input: "add_1"
+  input: "mul_6/y"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "strided_slice_12/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 3
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_12/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 4
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_12/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_12"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_12/stack"
+  input: "strided_slice_12/stack_1"
+  input: "strided_slice_12/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
   name: "mul_7/y"
   op: "Const"
   attr {
@@ -4676,7 +4831,7 @@ node {
 node {
   name: "mul_7"
   op: "Mul"
-  input: "strided_slice_11"
+  input: "strided_slice_12"
   input: "mul_7/y"
   attr {
     key: "T"
@@ -7019,7 +7174,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_14/stack"
+  name: "strided_slice_15/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -7043,7 +7198,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_14/stack_1"
+  name: "strided_slice_15/stack_1"
   op: "Const"
   attr {
     key: "dtype"
@@ -7067,7 +7222,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_14/stack_2"
+  name: "strided_slice_15/stack_2"
   op: "Const"
   attr {
     key: "dtype"
@@ -7091,12 +7246,12 @@ node {
   }
 }
 node {
-  name: "strided_slice_14"
+  name: "strided_slice_15"
   op: "StridedSlice"
   input: "Shape_4"
-  input: "strided_slice_14/stack"
-  input: "strided_slice_14/stack_1"
-  input: "strided_slice_14/stack_2"
+  input: "strided_slice_15/stack"
+  input: "strided_slice_15/stack_1"
+  input: "strided_slice_15/stack_2"
   attr {
     key: "Index"
     value {
@@ -7141,7 +7296,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_15/stack"
+  name: "strided_slice_16/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -7165,7 +7320,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_15/stack_1"
+  name: "strided_slice_16/stack_1"
   op: "Const"
   attr {
     key: "dtype"
@@ -7189,7 +7344,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_15/stack_2"
+  name: "strided_slice_16/stack_2"
   op: "Const"
   attr {
     key: "dtype"
@@ -7213,12 +7368,12 @@ node {
   }
 }
 node {
-  name: "strided_slice_15"
+  name: "strided_slice_16"
   op: "StridedSlice"
   input: "t_natoms"
-  input: "strided_slice_15/stack"
-  input: "strided_slice_15/stack_1"
-  input: "strided_slice_15/stack_2"
+  input: "strided_slice_16/stack"
+  input: "strided_slice_16/stack_1"
+  input: "strided_slice_16/stack_2"
   attr {
     key: "Index"
     value {
@@ -7286,7 +7441,7 @@ node {
 node {
   name: "mul_8"
   op: "Mul"
-  input: "strided_slice_15"
+  input: "strided_slice_16"
   input: "mul_8/y"
   attr {
     key: "T"
@@ -7298,7 +7453,7 @@ node {
 node {
   name: "Reshape_11/shape"
   op: "Pack"
-  input: "strided_slice_14"
+  input: "strided_slice_15"
   input: "mul_8"
   attr {
     key: "N"
@@ -7355,7 +7510,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_16/stack"
+  name: "strided_slice_17/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -7379,7 +7534,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_16/stack_1"
+  name: "strided_slice_17/stack_1"
   op: "Const"
   attr {
     key: "dtype"
@@ -7403,7 +7558,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_16/stack_2"
+  name: "strided_slice_17/stack_2"
   op: "Const"
   attr {
     key: "dtype"
@@ -7427,12 +7582,12 @@ node {
   }
 }
 node {
-  name: "strided_slice_16"
+  name: "strided_slice_17"
   op: "StridedSlice"
   input: "Shape_5"
-  input: "strided_slice_16/stack"
-  input: "strided_slice_16/stack_1"
-  input: "strided_slice_16/stack_2"
+  input: "strided_slice_17/stack"
+  input: "strided_slice_17/stack_1"
+  input: "strided_slice_17/stack_2"
   attr {
     key: "Index"
     value {
@@ -7477,7 +7632,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_17/stack"
+  name: "strided_slice_18/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -7501,7 +7656,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_17/stack_1"
+  name: "strided_slice_18/stack_1"
   op: "Const"
   attr {
     key: "dtype"
@@ -7525,7 +7680,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_17/stack_2"
+  name: "strided_slice_18/stack_2"
   op: "Const"
   attr {
     key: "dtype"
@@ -7549,12 +7704,12 @@ node {
   }
 }
 node {
-  name: "strided_slice_17"
+  name: "strided_slice_18"
   op: "StridedSlice"
   input: "t_natoms"
-  input: "strided_slice_17/stack"
-  input: "strided_slice_17/stack_1"
-  input: "strided_slice_17/stack_2"
+  input: "strided_slice_18/stack"
+  input: "strided_slice_18/stack_1"
+  input: "strided_slice_18/stack_2"
   attr {
     key: "Index"
     value {
@@ -7622,7 +7777,7 @@ node {
 node {
   name: "mul_9"
   op: "Mul"
-  input: "strided_slice_17"
+  input: "strided_slice_18"
   input: "mul_9/y"
   attr {
     key: "T"
@@ -7667,7 +7822,7 @@ node {
 node {
   name: "Reshape_12/shape"
   op: "Pack"
-  input: "strided_slice_16"
+  input: "strided_slice_17"
   input: "mul_10"
   attr {
     key: "N"
@@ -7821,224 +7976,6 @@ node {
   }
 }
 node {
-  name: "strided_slice_19/stack"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 0
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice_19/stack_1"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 1
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice_19/stack_2"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 1
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice_19"
-  op: "StridedSlice"
-  input: "t_natoms"
-  input: "strided_slice_19/stack"
-  input: "strided_slice_19/stack_1"
-  input: "strided_slice_19/stack_2"
-  attr {
-    key: "Index"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "begin_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "ellipsis_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "end_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "new_axis_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "shrink_axis_mask"
-    value {
-      i: 1
-    }
-  }
-}
-node {
-  name: "mul_11/x"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-        }
-        int_val: 60
-      }
-    }
-  }
-}
-node {
-  name: "mul_11"
-  op: "Mul"
-  input: "mul_11/x"
-  input: "strided_slice_19"
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-}
-node {
-  name: "Reshape_13/shape/0"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-        }
-        int_val: -1
-      }
-    }
-  }
-}
-node {
-  name: "Reshape_13/shape"
-  op: "Pack"
-  input: "Reshape_13/shape/0"
-  input: "mul_11"
-  attr {
-    key: "N"
-    value {
-      i: 2
-    }
-  }
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "axis"
-    value {
-      i: 0
-    }
-  }
-}
-node {
-  name: "Reshape_13"
-  op: "Reshape"
-  input: "o_descriptor"
-  input: "Reshape_13/shape"
-  attr {
-    key: "T"
-    value {
-      type: DT_DOUBLE
-    }
-  }
-  attr {
-    key: "Tshape"
-    value {
-      type: DT_INT32
-    }
-  }
-}
-node {
   name: "strided_slice_20/stack"
   op: "Const"
   attr {
@@ -8161,7 +8098,7 @@ node {
   }
 }
 node {
-  name: "mul_12/x"
+  name: "mul_11/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -8176,15 +8113,15 @@ node {
         dtype: DT_INT32
         tensor_shape {
         }
-        int_val: 30
+        int_val: 60
       }
     }
   }
 }
 node {
-  name: "mul_12"
+  name: "mul_11"
   op: "Mul"
-  input: "mul_12/x"
+  input: "mul_11/x"
   input: "strided_slice_20"
   attr {
     key: "T"
@@ -8194,7 +8131,7 @@ node {
   }
 }
 node {
-  name: "Reshape_14/shape/0"
+  name: "Reshape_13/shape/0"
   op: "Const"
   attr {
     key: "dtype"
@@ -8215,10 +8152,10 @@ node {
   }
 }
 node {
-  name: "Reshape_14/shape"
+  name: "Reshape_13/shape"
   op: "Pack"
-  input: "Reshape_14/shape/0"
-  input: "mul_12"
+  input: "Reshape_13/shape/0"
+  input: "mul_11"
   attr {
     key: "N"
     value {
@@ -8239,10 +8176,10 @@ node {
   }
 }
 node {
-  name: "Reshape_14"
+  name: "Reshape_13"
   op: "Reshape"
-  input: "o_rot_mat"
-  input: "Reshape_14/shape"
+  input: "o_descriptor"
+  input: "Reshape_13/shape"
   attr {
     key: "T"
     value {
@@ -8275,7 +8212,7 @@ node {
             size: 1
           }
         }
-        int_val: 2
+        int_val: 0
       }
     }
   }
@@ -8299,7 +8236,7 @@ node {
             size: 1
           }
         }
-        int_val: 3
+        int_val: 1
       }
     }
   }
@@ -8379,6 +8316,224 @@ node {
   }
 }
 node {
+  name: "mul_12/x"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 30
+      }
+    }
+  }
+}
+node {
+  name: "mul_12"
+  op: "Mul"
+  input: "mul_12/x"
+  input: "strided_slice_21"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "Reshape_14/shape/0"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: -1
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_14/shape"
+  op: "Pack"
+  input: "Reshape_14/shape/0"
+  input: "mul_12"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "Reshape_14"
+  op: "Reshape"
+  input: "o_rot_mat"
+  input: "Reshape_14/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "strided_slice_22/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 2
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_22/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 3
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_22/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_22"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_22/stack"
+  input: "strided_slice_22/stack_1"
+  input: "strided_slice_22/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
   name: "mul_13/y"
   op: "Const"
   attr {
@@ -8402,7 +8557,7 @@ node {
 node {
   name: "mul_13"
   op: "Mul"
-  input: "strided_slice_21"
+  input: "strided_slice_22"
   input: "mul_13/y"
   attr {
     key: "T"
@@ -8542,7 +8697,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_22/stack"
+  name: "strided_slice_23/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -8566,7 +8721,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_22/stack_1"
+  name: "strided_slice_23/stack_1"
   op: "Const"
   attr {
     key: "dtype"
@@ -8590,7 +8745,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_22/stack_2"
+  name: "strided_slice_23/stack_2"
   op: "Const"
   attr {
     key: "dtype"
@@ -8614,12 +8769,12 @@ node {
   }
 }
 node {
-  name: "strided_slice_22"
+  name: "strided_slice_23"
   op: "StridedSlice"
   input: "t_natoms"
-  input: "strided_slice_22/stack"
-  input: "strided_slice_22/stack_1"
-  input: "strided_slice_22/stack_2"
+  input: "strided_slice_23/stack"
+  input: "strided_slice_23/stack_1"
+  input: "strided_slice_23/stack_2"
   attr {
     key: "Index"
     value {
@@ -8687,7 +8842,7 @@ node {
 node {
   name: "mul_14"
   op: "Mul"
-  input: "strided_slice_22"
+  input: "strided_slice_23"
   input: "mul_14/y"
   attr {
     key: "T"
@@ -9238,7 +9393,7 @@ node {
   }
 }
 node {
-  name: "add_3"
+  name: "add_4"
   op: "AddV2"
   input: "layer_0_type_0/Reshape"
   input: "layer_1_type_0/mul"
@@ -9341,7 +9496,7 @@ node {
 node {
   name: "layer_2_type_0/MatMul"
   op: "MatMul"
-  input: "add_3"
+  input: "add_4"
   input: "layer_2_type_0/matrix/read"
   attr {
     key: "T"
@@ -9483,9 +9638,9 @@ node {
   }
 }
 node {
-  name: "add_4"
+  name: "add_5"
   op: "AddV2"
-  input: "add_3"
+  input: "add_4"
   input: "layer_2_type_0/mul"
   attr {
     key: "T"
@@ -9586,7 +9741,7 @@ node {
 node {
   name: "final_layer_type_0/MatMul"
   op: "MatMul"
-  input: "add_4"
+  input: "add_5"
   input: "final_layer_type_0/matrix/read"
   attr {
     key: "T"
@@ -9637,7 +9792,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_24/stack"
+  name: "strided_slice_25/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -9661,128 +9816,6 @@ node {
   }
 }
 node {
-  name: "strided_slice_24/stack_1"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 1
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice_24/stack_2"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 1
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice_24"
-  op: "StridedSlice"
-  input: "Shape_6"
-  input: "strided_slice_24/stack"
-  input: "strided_slice_24/stack_1"
-  input: "strided_slice_24/stack_2"
-  attr {
-    key: "Index"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "begin_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "ellipsis_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "end_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "new_axis_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "shrink_axis_mask"
-    value {
-      i: 1
-    }
-  }
-}
-node {
-  name: "strided_slice_25/stack"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 2
-      }
-    }
-  }
-}
-node {
   name: "strided_slice_25/stack_1"
   op: "Const"
   attr {
@@ -9801,7 +9834,7 @@ node {
             size: 1
           }
         }
-        int_val: 3
+        int_val: 1
       }
     }
   }
@@ -9833,7 +9866,7 @@ node {
 node {
   name: "strided_slice_25"
   op: "StridedSlice"
-  input: "t_natoms"
+  input: "Shape_6"
   input: "strided_slice_25/stack"
   input: "strided_slice_25/stack_1"
   input: "strided_slice_25/stack_2"
@@ -9881,10 +9914,132 @@ node {
   }
 }
 node {
+  name: "strided_slice_26/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 2
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_26/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 3
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_26/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_26"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_26/stack"
+  input: "strided_slice_26/stack_1"
+  input: "strided_slice_26/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
   name: "mul_15"
   op: "Mul"
-  input: "strided_slice_24"
   input: "strided_slice_25"
+  input: "strided_slice_26"
   attr {
     key: "T"
     value {
@@ -10019,7 +10174,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_26/stack"
+  name: "strided_slice_27/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -10043,7 +10198,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_26/stack_1"
+  name: "strided_slice_27/stack_1"
   op: "Const"
   attr {
     key: "dtype"
@@ -10067,7 +10222,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_26/stack_2"
+  name: "strided_slice_27/stack_2"
   op: "Const"
   attr {
     key: "dtype"
@@ -10091,12 +10246,12 @@ node {
   }
 }
 node {
-  name: "strided_slice_26"
+  name: "strided_slice_27"
   op: "StridedSlice"
   input: "Shape_7"
-  input: "strided_slice_26/stack"
-  input: "strided_slice_26/stack_1"
-  input: "strided_slice_26/stack_2"
+  input: "strided_slice_27/stack"
+  input: "strided_slice_27/stack_1"
+  input: "strided_slice_27/stack_2"
   attr {
     key: "Index"
     value {
@@ -10141,7 +10296,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_27/stack"
+  name: "strided_slice_28/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -10165,7 +10320,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_27/stack_1"
+  name: "strided_slice_28/stack_1"
   op: "Const"
   attr {
     key: "dtype"
@@ -10189,7 +10344,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_27/stack_2"
+  name: "strided_slice_28/stack_2"
   op: "Const"
   attr {
     key: "dtype"
@@ -10213,12 +10368,12 @@ node {
   }
 }
 node {
-  name: "strided_slice_27"
+  name: "strided_slice_28"
   op: "StridedSlice"
   input: "t_natoms"
-  input: "strided_slice_27/stack"
-  input: "strided_slice_27/stack_1"
-  input: "strided_slice_27/stack_2"
+  input: "strided_slice_28/stack"
+  input: "strided_slice_28/stack_1"
+  input: "strided_slice_28/stack_2"
   attr {
     key: "Index"
     value {
@@ -10286,8 +10441,8 @@ node {
 node {
   name: "Reshape_18/shape"
   op: "Pack"
-  input: "strided_slice_26"
   input: "strided_slice_27"
+  input: "strided_slice_28"
   input: "Reshape_18/shape/2"
   attr {
     key: "N"
@@ -10369,18 +10524,7 @@ node {
   }
 }
 node {
-  name: "o_dipole"
-  op: "Identity"
-  input: "Reshape_21"
-  attr {
-    key: "T"
-    value {
-      type: DT_DOUBLE
-    }
-  }
-}
-node {
-  name: "strided_slice_31/stack"
+  name: "mul_20/y"
   op: "Const"
   attr {
     key: "dtype"
@@ -10394,33 +10538,6 @@ node {
       tensor {
         dtype: DT_INT32
         tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 2
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice_31/stack_1"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
         }
         int_val: 3
       }
@@ -10428,81 +10545,19 @@ node {
   }
 }
 node {
-  name: "strided_slice_31/stack_2"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 1
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice_31"
-  op: "StridedSlice"
-  input: "t_natoms"
-  input: "strided_slice_31/stack"
-  input: "strided_slice_31/stack_1"
-  input: "strided_slice_31/stack_2"
-  attr {
-    key: "Index"
-    value {
-      type: DT_INT32
-    }
-  }
+  name: "mul_20"
+  op: "Mul"
+  input: "add"
+  input: "mul_20/y"
   attr {
     key: "T"
     value {
       type: DT_INT32
     }
   }
-  attr {
-    key: "begin_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "ellipsis_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "end_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "new_axis_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "shrink_axis_mask"
-    value {
-      i: 1
-    }
-  }
 }
 node {
-  name: "add_6/x"
+  name: "o_dipole/shape/0"
   op: "Const"
   attr {
     key: "dtype"
@@ -10517,18 +10572,48 @@ node {
         dtype: DT_INT32
         tensor_shape {
         }
-        int_val: 0
+        int_val: -1
       }
     }
   }
 }
 node {
-  name: "add_6"
-  op: "AddV2"
-  input: "add_6/x"
-  input: "strided_slice_31"
+  name: "o_dipole/shape"
+  op: "Pack"
+  input: "o_dipole/shape/0"
+  input: "mul_20"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
   attr {
     key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "o_dipole"
+  op: "Reshape"
+  input: "Reshape_21"
+  input: "o_dipole/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
     value {
       type: DT_INT32
     }
@@ -10580,7 +10665,7 @@ node {
   name: "Reshape_22/shape"
   op: "Pack"
   input: "Reshape_22/shape/0"
-  input: "add_6"
+  input: "add"
   input: "Reshape_22/shape/2"
   attr {
     key: "N"
@@ -10885,6 +10970,41 @@ node {
   }
 }
 node {
+  name: "gradients/o_dipole_grad/Shape"
+  op: "Shape"
+  input: "Reshape_21"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/o_dipole_grad/Reshape"
+  op: "Reshape"
+  input: "gradients/Reshape_22_grad/Reshape"
+  input: "gradients/o_dipole_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
   name: "gradients/Reshape_21_grad/Shape"
   op: "Shape"
   input: "Reshape_18"
@@ -10904,7 +11024,7 @@ node {
 node {
   name: "gradients/Reshape_21_grad/Reshape"
   op: "Reshape"
-  input: "gradients/Reshape_22_grad/Reshape"
+  input: "gradients/o_dipole_grad/Reshape"
   input: "gradients/Reshape_21_grad/Shape"
   attr {
     key: "T"
@@ -11818,9 +11938,9 @@ node {
   }
 }
 node {
-  name: "gradients/add_4_grad/Shape"
+  name: "gradients/add_5_grad/Shape"
   op: "Shape"
-  input: "add_3"
+  input: "add_4"
   attr {
     key: "T"
     value {
@@ -11835,7 +11955,7 @@ node {
   }
 }
 node {
-  name: "gradients/add_4_grad/Shape_1"
+  name: "gradients/add_5_grad/Shape_1"
   op: "Shape"
   input: "layer_2_type_0/mul"
   attr {
@@ -11852,10 +11972,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_4_grad/BroadcastGradientArgs"
+  name: "gradients/add_5_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients/add_4_grad/Shape"
-  input: "gradients/add_4_grad/Shape_1"
+  input: "gradients/add_5_grad/Shape"
+  input: "gradients/add_5_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -11864,10 +11984,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_4_grad/Sum"
+  name: "gradients/add_5_grad/Sum"
   op: "Sum"
   input: "gradients/final_layer_type_0/MatMul_grad/MatMul"
-  input: "gradients/add_4_grad/BroadcastGradientArgs"
+  input: "gradients/add_5_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -11888,10 +12008,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_4_grad/Reshape"
+  name: "gradients/add_5_grad/Reshape"
   op: "Reshape"
-  input: "gradients/add_4_grad/Sum"
-  input: "gradients/add_4_grad/Shape"
+  input: "gradients/add_5_grad/Sum"
+  input: "gradients/add_5_grad/Shape"
   attr {
     key: "T"
     value {
@@ -11906,10 +12026,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_4_grad/Sum_1"
+  name: "gradients/add_5_grad/Sum_1"
   op: "Sum"
   input: "gradients/final_layer_type_0/MatMul_grad/MatMul"
-  input: "gradients/add_4_grad/BroadcastGradientArgs:1"
+  input: "gradients/add_5_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -11930,10 +12050,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_4_grad/Reshape_1"
+  name: "gradients/add_5_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients/add_4_grad/Sum_1"
-  input: "gradients/add_4_grad/Shape_1"
+  input: "gradients/add_5_grad/Sum_1"
+  input: "gradients/add_5_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -11996,7 +12116,7 @@ node {
 node {
   name: "gradients/layer_2_type_0/mul_grad/Mul"
   op: "Mul"
-  input: "gradients/add_4_grad/Reshape_1"
+  input: "gradients/add_5_grad/Reshape_1"
   input: "layer_2_type_0/idt/read"
   attr {
     key: "T"
@@ -12893,7 +13013,7 @@ node {
 node {
   name: "gradients/AddN"
   op: "AddN"
-  input: "gradients/add_4_grad/Reshape"
+  input: "gradients/add_5_grad/Reshape"
   input: "gradients/layer_2_type_0/MatMul_grad/MatMul"
   attr {
     key: "N"
@@ -12911,13 +13031,13 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients/add_4_grad/Reshape"
+        s: "loc:@gradients/add_5_grad/Reshape"
       }
     }
   }
 }
 node {
-  name: "gradients/add_3_grad/Shape"
+  name: "gradients/add_4_grad/Shape"
   op: "Shape"
   input: "layer_0_type_0/Reshape"
   attr {
@@ -12934,7 +13054,7 @@ node {
   }
 }
 node {
-  name: "gradients/add_3_grad/Shape_1"
+  name: "gradients/add_4_grad/Shape_1"
   op: "Shape"
   input: "layer_1_type_0/mul"
   attr {
@@ -12951,10 +13071,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_3_grad/BroadcastGradientArgs"
+  name: "gradients/add_4_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients/add_3_grad/Shape"
-  input: "gradients/add_3_grad/Shape_1"
+  input: "gradients/add_4_grad/Shape"
+  input: "gradients/add_4_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -12963,10 +13083,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_3_grad/Sum"
+  name: "gradients/add_4_grad/Sum"
   op: "Sum"
   input: "gradients/AddN"
-  input: "gradients/add_3_grad/BroadcastGradientArgs"
+  input: "gradients/add_4_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -12987,10 +13107,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_3_grad/Reshape"
+  name: "gradients/add_4_grad/Reshape"
   op: "Reshape"
-  input: "gradients/add_3_grad/Sum"
-  input: "gradients/add_3_grad/Shape"
+  input: "gradients/add_4_grad/Sum"
+  input: "gradients/add_4_grad/Shape"
   attr {
     key: "T"
     value {
@@ -13005,10 +13125,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_3_grad/Sum_1"
+  name: "gradients/add_4_grad/Sum_1"
   op: "Sum"
   input: "gradients/AddN"
-  input: "gradients/add_3_grad/BroadcastGradientArgs:1"
+  input: "gradients/add_4_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -13029,10 +13149,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_3_grad/Reshape_1"
+  name: "gradients/add_4_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients/add_3_grad/Sum_1"
-  input: "gradients/add_3_grad/Shape_1"
+  input: "gradients/add_4_grad/Sum_1"
+  input: "gradients/add_4_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -13095,7 +13215,7 @@ node {
 node {
   name: "gradients/layer_1_type_0/mul_grad/Mul"
   op: "Mul"
-  input: "gradients/add_3_grad/Reshape_1"
+  input: "gradients/add_4_grad/Reshape_1"
   input: "layer_1_type_0/idt/read"
   attr {
     key: "T"
@@ -13308,7 +13428,7 @@ node {
 node {
   name: "gradients/AddN_1"
   op: "AddN"
-  input: "gradients/add_3_grad/Reshape"
+  input: "gradients/add_4_grad/Reshape"
   input: "gradients/layer_1_type_0/MatMul_grad/MatMul"
   attr {
     key: "N"
@@ -13326,7 +13446,7 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients/add_3_grad/Reshape"
+        s: "loc:@gradients/add_4_grad/Reshape"
       }
     }
   }
@@ -24328,7 +24448,7 @@ node {
   }
 }
 node {
-  name: "mul_20/y"
+  name: "mul_21/y"
   op: "Const"
   attr {
     key: "dtype"
@@ -24349,10 +24469,10 @@ node {
   }
 }
 node {
-  name: "mul_20"
+  name: "mul_21"
   op: "Mul"
   input: "strided_slice_32"
-  input: "mul_20/y"
+  input: "mul_21/y"
   attr {
     key: "T"
     value {
@@ -24385,7 +24505,7 @@ node {
   name: "Reshape_23/shape"
   op: "Pack"
   input: "Reshape_23/shape/0"
-  input: "mul_20"
+  input: "mul_21"
   attr {
     key: "N"
     value {
@@ -24599,7 +24719,7 @@ node {
   }
 }
 node {
-  name: "mul_21/x"
+  name: "mul_22/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -24620,9 +24740,9 @@ node {
   }
 }
 node {
-  name: "mul_21"
+  name: "mul_22"
   op: "Mul"
-  input: "mul_21/x"
+  input: "mul_22/x"
   input: "strided_slice_33"
   attr {
     key: "T"
@@ -24656,7 +24776,7 @@ node {
   name: "Reshape_24/shape"
   op: "Pack"
   input: "Reshape_24/shape/0"
-  input: "mul_21"
+  input: "mul_22"
   attr {
     key: "N"
     value {
@@ -24859,7 +24979,7 @@ node {
   }
 }
 node {
-  name: "mul_22/x"
+  name: "mul_23/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -24880,9 +25000,9 @@ node {
   }
 }
 node {
-  name: "mul_22"
+  name: "mul_23"
   op: "Mul"
-  input: "mul_22/x"
+  input: "mul_23/x"
   input: "strided_slice_34"
   attr {
     key: "T"
@@ -24916,7 +25036,7 @@ node {
   name: "Reshape_26/shape"
   op: "Pack"
   input: "Reshape_26/shape/0"
-  input: "mul_22"
+  input: "mul_23"
   attr {
     key: "N"
     value {
@@ -25094,6 +25214,41 @@ node {
   }
 }
 node {
+  name: "gradients_1/o_dipole_grad/Shape"
+  op: "Shape"
+  input: "Reshape_21"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients_1/o_dipole_grad/Reshape"
+  op: "Reshape"
+  input: "gradients_1/Reshape_22_grad/Reshape"
+  input: "gradients_1/o_dipole_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
   name: "gradients_1/Reshape_21_grad/Shape"
   op: "Shape"
   input: "Reshape_18"
@@ -25113,7 +25268,7 @@ node {
 node {
   name: "gradients_1/Reshape_21_grad/Reshape"
   op: "Reshape"
-  input: "gradients_1/Reshape_22_grad/Reshape"
+  input: "gradients_1/o_dipole_grad/Reshape"
   input: "gradients_1/Reshape_21_grad/Shape"
   attr {
     key: "T"
@@ -26027,9 +26182,9 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_4_grad/Shape"
+  name: "gradients_1/add_5_grad/Shape"
   op: "Shape"
-  input: "add_3"
+  input: "add_4"
   attr {
     key: "T"
     value {
@@ -26044,7 +26199,7 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_4_grad/Shape_1"
+  name: "gradients_1/add_5_grad/Shape_1"
   op: "Shape"
   input: "layer_2_type_0/mul"
   attr {
@@ -26061,10 +26216,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_4_grad/BroadcastGradientArgs"
+  name: "gradients_1/add_5_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_1/add_4_grad/Shape"
-  input: "gradients_1/add_4_grad/Shape_1"
+  input: "gradients_1/add_5_grad/Shape"
+  input: "gradients_1/add_5_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -26073,10 +26228,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_4_grad/Sum"
+  name: "gradients_1/add_5_grad/Sum"
   op: "Sum"
   input: "gradients_1/final_layer_type_0/MatMul_grad/MatMul"
-  input: "gradients_1/add_4_grad/BroadcastGradientArgs"
+  input: "gradients_1/add_5_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -26097,10 +26252,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_4_grad/Reshape"
+  name: "gradients_1/add_5_grad/Reshape"
   op: "Reshape"
-  input: "gradients_1/add_4_grad/Sum"
-  input: "gradients_1/add_4_grad/Shape"
+  input: "gradients_1/add_5_grad/Sum"
+  input: "gradients_1/add_5_grad/Shape"
   attr {
     key: "T"
     value {
@@ -26115,10 +26270,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_4_grad/Sum_1"
+  name: "gradients_1/add_5_grad/Sum_1"
   op: "Sum"
   input: "gradients_1/final_layer_type_0/MatMul_grad/MatMul"
-  input: "gradients_1/add_4_grad/BroadcastGradientArgs:1"
+  input: "gradients_1/add_5_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -26139,10 +26294,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_4_grad/Reshape_1"
+  name: "gradients_1/add_5_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_1/add_4_grad/Sum_1"
-  input: "gradients_1/add_4_grad/Shape_1"
+  input: "gradients_1/add_5_grad/Sum_1"
+  input: "gradients_1/add_5_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -26205,7 +26360,7 @@ node {
 node {
   name: "gradients_1/layer_2_type_0/mul_grad/Mul"
   op: "Mul"
-  input: "gradients_1/add_4_grad/Reshape_1"
+  input: "gradients_1/add_5_grad/Reshape_1"
   input: "layer_2_type_0/idt/read"
   attr {
     key: "T"
@@ -27102,7 +27257,7 @@ node {
 node {
   name: "gradients_1/AddN"
   op: "AddN"
-  input: "gradients_1/add_4_grad/Reshape"
+  input: "gradients_1/add_5_grad/Reshape"
   input: "gradients_1/layer_2_type_0/MatMul_grad/MatMul"
   attr {
     key: "N"
@@ -27120,13 +27275,13 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_1/add_4_grad/Reshape"
+        s: "loc:@gradients_1/add_5_grad/Reshape"
       }
     }
   }
 }
 node {
-  name: "gradients_1/add_3_grad/Shape"
+  name: "gradients_1/add_4_grad/Shape"
   op: "Shape"
   input: "layer_0_type_0/Reshape"
   attr {
@@ -27143,7 +27298,7 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_3_grad/Shape_1"
+  name: "gradients_1/add_4_grad/Shape_1"
   op: "Shape"
   input: "layer_1_type_0/mul"
   attr {
@@ -27160,10 +27315,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_3_grad/BroadcastGradientArgs"
+  name: "gradients_1/add_4_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_1/add_3_grad/Shape"
-  input: "gradients_1/add_3_grad/Shape_1"
+  input: "gradients_1/add_4_grad/Shape"
+  input: "gradients_1/add_4_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -27172,10 +27327,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_3_grad/Sum"
+  name: "gradients_1/add_4_grad/Sum"
   op: "Sum"
   input: "gradients_1/AddN"
-  input: "gradients_1/add_3_grad/BroadcastGradientArgs"
+  input: "gradients_1/add_4_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -27196,10 +27351,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_3_grad/Reshape"
+  name: "gradients_1/add_4_grad/Reshape"
   op: "Reshape"
-  input: "gradients_1/add_3_grad/Sum"
-  input: "gradients_1/add_3_grad/Shape"
+  input: "gradients_1/add_4_grad/Sum"
+  input: "gradients_1/add_4_grad/Shape"
   attr {
     key: "T"
     value {
@@ -27214,10 +27369,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_3_grad/Sum_1"
+  name: "gradients_1/add_4_grad/Sum_1"
   op: "Sum"
   input: "gradients_1/AddN"
-  input: "gradients_1/add_3_grad/BroadcastGradientArgs:1"
+  input: "gradients_1/add_4_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -27238,10 +27393,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_3_grad/Reshape_1"
+  name: "gradients_1/add_4_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_1/add_3_grad/Sum_1"
-  input: "gradients_1/add_3_grad/Shape_1"
+  input: "gradients_1/add_4_grad/Sum_1"
+  input: "gradients_1/add_4_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -27304,7 +27459,7 @@ node {
 node {
   name: "gradients_1/layer_1_type_0/mul_grad/Mul"
   op: "Mul"
-  input: "gradients_1/add_3_grad/Reshape_1"
+  input: "gradients_1/add_4_grad/Reshape_1"
   input: "layer_1_type_0/idt/read"
   attr {
     key: "T"
@@ -27517,7 +27672,7 @@ node {
 node {
   name: "gradients_1/AddN_1"
   op: "AddN"
-  input: "gradients_1/add_3_grad/Reshape"
+  input: "gradients_1/add_4_grad/Reshape"
   input: "gradients_1/layer_1_type_0/MatMul_grad/MatMul"
   attr {
     key: "N"
@@ -27535,7 +27690,7 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_1/add_3_grad/Reshape"
+        s: "loc:@gradients_1/add_4_grad/Reshape"
       }
     }
   }
@@ -38537,7 +38692,7 @@ node {
   }
 }
 node {
-  name: "mul_23/y"
+  name: "mul_24/y"
   op: "Const"
   attr {
     key: "dtype"
@@ -38558,10 +38713,10 @@ node {
   }
 }
 node {
-  name: "mul_23"
+  name: "mul_24"
   op: "Mul"
   input: "strided_slice_35"
-  input: "mul_23/y"
+  input: "mul_24/y"
   attr {
     key: "T"
     value {
@@ -38594,7 +38749,7 @@ node {
   name: "Reshape_27/shape"
   op: "Pack"
   input: "Reshape_27/shape/0"
-  input: "mul_23"
+  input: "mul_24"
   attr {
     key: "N"
     value {
@@ -38808,7 +38963,7 @@ node {
   }
 }
 node {
-  name: "mul_24/x"
+  name: "mul_25/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -38829,9 +38984,9 @@ node {
   }
 }
 node {
-  name: "mul_24"
+  name: "mul_25"
   op: "Mul"
-  input: "mul_24/x"
+  input: "mul_25/x"
   input: "strided_slice_36"
   attr {
     key: "T"
@@ -38865,7 +39020,7 @@ node {
   name: "Reshape_28/shape"
   op: "Pack"
   input: "Reshape_28/shape/0"
-  input: "mul_24"
+  input: "mul_25"
   attr {
     key: "N"
     value {
@@ -39068,7 +39223,7 @@ node {
   }
 }
 node {
-  name: "mul_25/x"
+  name: "mul_26/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -39089,9 +39244,9 @@ node {
   }
 }
 node {
-  name: "mul_25"
+  name: "mul_26"
   op: "Mul"
-  input: "mul_25/x"
+  input: "mul_26/x"
   input: "strided_slice_37"
   attr {
     key: "T"
@@ -39125,7 +39280,7 @@ node {
   name: "Reshape_30/shape"
   op: "Pack"
   input: "Reshape_30/shape/0"
-  input: "mul_25"
+  input: "mul_26"
   attr {
     key: "N"
     value {
@@ -39303,6 +39458,41 @@ node {
   }
 }
 node {
+  name: "gradients_2/o_dipole_grad/Shape"
+  op: "Shape"
+  input: "Reshape_21"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients_2/o_dipole_grad/Reshape"
+  op: "Reshape"
+  input: "gradients_2/Reshape_22_grad/Reshape"
+  input: "gradients_2/o_dipole_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
   name: "gradients_2/Reshape_21_grad/Shape"
   op: "Shape"
   input: "Reshape_18"
@@ -39322,7 +39512,7 @@ node {
 node {
   name: "gradients_2/Reshape_21_grad/Reshape"
   op: "Reshape"
-  input: "gradients_2/Reshape_22_grad/Reshape"
+  input: "gradients_2/o_dipole_grad/Reshape"
   input: "gradients_2/Reshape_21_grad/Shape"
   attr {
     key: "T"
@@ -40236,9 +40426,9 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_4_grad/Shape"
+  name: "gradients_2/add_5_grad/Shape"
   op: "Shape"
-  input: "add_3"
+  input: "add_4"
   attr {
     key: "T"
     value {
@@ -40253,7 +40443,7 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_4_grad/Shape_1"
+  name: "gradients_2/add_5_grad/Shape_1"
   op: "Shape"
   input: "layer_2_type_0/mul"
   attr {
@@ -40270,10 +40460,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_4_grad/BroadcastGradientArgs"
+  name: "gradients_2/add_5_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_2/add_4_grad/Shape"
-  input: "gradients_2/add_4_grad/Shape_1"
+  input: "gradients_2/add_5_grad/Shape"
+  input: "gradients_2/add_5_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -40282,10 +40472,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_4_grad/Sum"
+  name: "gradients_2/add_5_grad/Sum"
   op: "Sum"
   input: "gradients_2/final_layer_type_0/MatMul_grad/MatMul"
-  input: "gradients_2/add_4_grad/BroadcastGradientArgs"
+  input: "gradients_2/add_5_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -40306,10 +40496,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_4_grad/Reshape"
+  name: "gradients_2/add_5_grad/Reshape"
   op: "Reshape"
-  input: "gradients_2/add_4_grad/Sum"
-  input: "gradients_2/add_4_grad/Shape"
+  input: "gradients_2/add_5_grad/Sum"
+  input: "gradients_2/add_5_grad/Shape"
   attr {
     key: "T"
     value {
@@ -40324,10 +40514,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_4_grad/Sum_1"
+  name: "gradients_2/add_5_grad/Sum_1"
   op: "Sum"
   input: "gradients_2/final_layer_type_0/MatMul_grad/MatMul"
-  input: "gradients_2/add_4_grad/BroadcastGradientArgs:1"
+  input: "gradients_2/add_5_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -40348,10 +40538,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_4_grad/Reshape_1"
+  name: "gradients_2/add_5_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_2/add_4_grad/Sum_1"
-  input: "gradients_2/add_4_grad/Shape_1"
+  input: "gradients_2/add_5_grad/Sum_1"
+  input: "gradients_2/add_5_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -40414,7 +40604,7 @@ node {
 node {
   name: "gradients_2/layer_2_type_0/mul_grad/Mul"
   op: "Mul"
-  input: "gradients_2/add_4_grad/Reshape_1"
+  input: "gradients_2/add_5_grad/Reshape_1"
   input: "layer_2_type_0/idt/read"
   attr {
     key: "T"
@@ -41311,7 +41501,7 @@ node {
 node {
   name: "gradients_2/AddN"
   op: "AddN"
-  input: "gradients_2/add_4_grad/Reshape"
+  input: "gradients_2/add_5_grad/Reshape"
   input: "gradients_2/layer_2_type_0/MatMul_grad/MatMul"
   attr {
     key: "N"
@@ -41329,13 +41519,13 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_2/add_4_grad/Reshape"
+        s: "loc:@gradients_2/add_5_grad/Reshape"
       }
     }
   }
 }
 node {
-  name: "gradients_2/add_3_grad/Shape"
+  name: "gradients_2/add_4_grad/Shape"
   op: "Shape"
   input: "layer_0_type_0/Reshape"
   attr {
@@ -41352,7 +41542,7 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_3_grad/Shape_1"
+  name: "gradients_2/add_4_grad/Shape_1"
   op: "Shape"
   input: "layer_1_type_0/mul"
   attr {
@@ -41369,10 +41559,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_3_grad/BroadcastGradientArgs"
+  name: "gradients_2/add_4_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_2/add_3_grad/Shape"
-  input: "gradients_2/add_3_grad/Shape_1"
+  input: "gradients_2/add_4_grad/Shape"
+  input: "gradients_2/add_4_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -41381,10 +41571,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_3_grad/Sum"
+  name: "gradients_2/add_4_grad/Sum"
   op: "Sum"
   input: "gradients_2/AddN"
-  input: "gradients_2/add_3_grad/BroadcastGradientArgs"
+  input: "gradients_2/add_4_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -41405,10 +41595,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_3_grad/Reshape"
+  name: "gradients_2/add_4_grad/Reshape"
   op: "Reshape"
-  input: "gradients_2/add_3_grad/Sum"
-  input: "gradients_2/add_3_grad/Shape"
+  input: "gradients_2/add_4_grad/Sum"
+  input: "gradients_2/add_4_grad/Shape"
   attr {
     key: "T"
     value {
@@ -41423,10 +41613,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_3_grad/Sum_1"
+  name: "gradients_2/add_4_grad/Sum_1"
   op: "Sum"
   input: "gradients_2/AddN"
-  input: "gradients_2/add_3_grad/BroadcastGradientArgs:1"
+  input: "gradients_2/add_4_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -41447,10 +41637,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_3_grad/Reshape_1"
+  name: "gradients_2/add_4_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_2/add_3_grad/Sum_1"
-  input: "gradients_2/add_3_grad/Shape_1"
+  input: "gradients_2/add_4_grad/Sum_1"
+  input: "gradients_2/add_4_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -41513,7 +41703,7 @@ node {
 node {
   name: "gradients_2/layer_1_type_0/mul_grad/Mul"
   op: "Mul"
-  input: "gradients_2/add_3_grad/Reshape_1"
+  input: "gradients_2/add_4_grad/Reshape_1"
   input: "layer_1_type_0/idt/read"
   attr {
     key: "T"
@@ -41726,7 +41916,7 @@ node {
 node {
   name: "gradients_2/AddN_1"
   op: "AddN"
-  input: "gradients_2/add_3_grad/Reshape"
+  input: "gradients_2/add_4_grad/Reshape"
   input: "gradients_2/layer_1_type_0/MatMul_grad/MatMul"
   attr {
     key: "N"
@@ -41744,7 +41934,7 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_2/add_3_grad/Reshape"
+        s: "loc:@gradients_2/add_4_grad/Reshape"
       }
     }
   }
@@ -52746,7 +52936,7 @@ node {
   }
 }
 node {
-  name: "mul_26/y"
+  name: "mul_27/y"
   op: "Const"
   attr {
     key: "dtype"
@@ -52767,10 +52957,10 @@ node {
   }
 }
 node {
-  name: "mul_26"
+  name: "mul_27"
   op: "Mul"
   input: "strided_slice_38"
-  input: "mul_26/y"
+  input: "mul_27/y"
   attr {
     key: "T"
     value {
@@ -52803,7 +52993,7 @@ node {
   name: "Reshape_31/shape"
   op: "Pack"
   input: "Reshape_31/shape/0"
-  input: "mul_26"
+  input: "mul_27"
   attr {
     key: "N"
     value {
@@ -53017,7 +53207,7 @@ node {
   }
 }
 node {
-  name: "mul_27/x"
+  name: "mul_28/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -53038,9 +53228,9 @@ node {
   }
 }
 node {
-  name: "mul_27"
+  name: "mul_28"
   op: "Mul"
-  input: "mul_27/x"
+  input: "mul_28/x"
   input: "strided_slice_39"
   attr {
     key: "T"
@@ -53074,7 +53264,7 @@ node {
   name: "Reshape_32/shape"
   op: "Pack"
   input: "Reshape_32/shape/0"
-  input: "mul_27"
+  input: "mul_28"
   attr {
     key: "N"
     value {
@@ -53277,7 +53467,7 @@ node {
   }
 }
 node {
-  name: "mul_28/x"
+  name: "mul_29/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -53298,9 +53488,9 @@ node {
   }
 }
 node {
-  name: "mul_28"
+  name: "mul_29"
   op: "Mul"
-  input: "mul_28/x"
+  input: "mul_29/x"
   input: "strided_slice_40"
   attr {
     key: "T"
@@ -53334,7 +53524,7 @@ node {
   name: "Reshape_34/shape"
   op: "Pack"
   input: "Reshape_34/shape/0"
-  input: "mul_28"
+  input: "mul_29"
   attr {
     key: "N"
     value {

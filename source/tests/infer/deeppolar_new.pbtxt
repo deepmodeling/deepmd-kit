@@ -207,6 +207,161 @@ node {
   }
 }
 node {
+  name: "strided_slice/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 2
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 3
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice/stack"
+  input: "strided_slice/stack_1"
+  input: "strided_slice/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "add/x"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "add"
+  op: "AddV2"
+  input: "add/x"
+  input: "strided_slice"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
   name: "descrpt_attr/rcut"
   op: "Const"
   attr {
@@ -341,266 +496,6 @@ node {
   }
 }
 node {
-  name: "strided_slice/stack"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 1
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice/stack_1"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 2
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice/stack_2"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 1
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice"
-  op: "StridedSlice"
-  input: "t_natoms"
-  input: "strided_slice/stack"
-  input: "strided_slice/stack_1"
-  input: "strided_slice/stack_2"
-  attr {
-    key: "Index"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "begin_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "ellipsis_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "end_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "new_axis_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "shrink_axis_mask"
-    value {
-      i: 1
-    }
-  }
-}
-node {
-  name: "mul/y"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-        }
-        int_val: 3
-      }
-    }
-  }
-}
-node {
-  name: "mul"
-  op: "Mul"
-  input: "strided_slice"
-  input: "mul/y"
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-}
-node {
-  name: "Reshape/shape/0"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-        }
-        int_val: -1
-      }
-    }
-  }
-}
-node {
-  name: "Reshape/shape"
-  op: "Pack"
-  input: "Reshape/shape/0"
-  input: "mul"
-  attr {
-    key: "N"
-    value {
-      i: 2
-    }
-  }
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "axis"
-    value {
-      i: 0
-    }
-  }
-}
-node {
-  name: "Reshape"
-  op: "Reshape"
-  input: "t_coord"
-  input: "Reshape/shape"
-  attr {
-    key: "T"
-    value {
-      type: DT_DOUBLE
-    }
-  }
-  attr {
-    key: "Tshape"
-    value {
-      type: DT_INT32
-    }
-  }
-}
-node {
-  name: "Reshape_1/shape"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 2
-          }
-        }
-        tensor_content: "\377\377\377\377\t\000\000\000"
-      }
-    }
-  }
-}
-node {
-  name: "Reshape_1"
-  op: "Reshape"
-  input: "t_box"
-  input: "Reshape_1/shape"
-  attr {
-    key: "T"
-    value {
-      type: DT_DOUBLE
-    }
-  }
-  attr {
-    key: "Tshape"
-    value {
-      type: DT_INT32
-    }
-  }
-}
-node {
   name: "strided_slice_1/stack"
   op: "Const"
   attr {
@@ -723,6 +618,266 @@ node {
   }
 }
 node {
+  name: "mul/y"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 3
+      }
+    }
+  }
+}
+node {
+  name: "mul"
+  op: "Mul"
+  input: "strided_slice_1"
+  input: "mul/y"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "Reshape/shape/0"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: -1
+      }
+    }
+  }
+}
+node {
+  name: "Reshape/shape"
+  op: "Pack"
+  input: "Reshape/shape/0"
+  input: "mul"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "Reshape"
+  op: "Reshape"
+  input: "t_coord"
+  input: "Reshape/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "Reshape_1/shape"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 2
+          }
+        }
+        tensor_content: "\377\377\377\377\t\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_1"
+  op: "Reshape"
+  input: "t_box"
+  input: "Reshape_1/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "strided_slice_2/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_2/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 2
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_2/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_2"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_2/stack"
+  input: "strided_slice_2/stack_1"
+  input: "strided_slice_2/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
   name: "Reshape_2/shape/0"
   op: "Const"
   attr {
@@ -747,7 +902,7 @@ node {
   name: "Reshape_2/shape"
   op: "Pack"
   input: "Reshape_2/shape/0"
-  input: "strided_slice_1"
+  input: "strided_slice_2"
   attr {
     key: "N"
     value {
@@ -925,7 +1080,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_2/stack"
+  name: "strided_slice_3/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -949,224 +1104,6 @@ node {
   }
 }
 node {
-  name: "strided_slice_2/stack_1"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 1
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice_2/stack_2"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 1
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice_2"
-  op: "StridedSlice"
-  input: "t_natoms"
-  input: "strided_slice_2/stack"
-  input: "strided_slice_2/stack_1"
-  input: "strided_slice_2/stack_2"
-  attr {
-    key: "Index"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "begin_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "ellipsis_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "end_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "new_axis_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "shrink_axis_mask"
-    value {
-      i: 1
-    }
-  }
-}
-node {
-  name: "mul_1/x"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-        }
-        int_val: 552
-      }
-    }
-  }
-}
-node {
-  name: "mul_1"
-  op: "Mul"
-  input: "mul_1/x"
-  input: "strided_slice_2"
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-}
-node {
-  name: "Reshape_4/shape/0"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-        }
-        int_val: -1
-      }
-    }
-  }
-}
-node {
-  name: "Reshape_4/shape"
-  op: "Pack"
-  input: "Reshape_4/shape/0"
-  input: "mul_1"
-  attr {
-    key: "N"
-    value {
-      i: 2
-    }
-  }
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "axis"
-    value {
-      i: 0
-    }
-  }
-}
-node {
-  name: "Reshape_4"
-  op: "Reshape"
-  input: "o_rmat"
-  input: "Reshape_4/shape"
-  attr {
-    key: "T"
-    value {
-      type: DT_DOUBLE
-    }
-  }
-  attr {
-    key: "Tshape"
-    value {
-      type: DT_INT32
-    }
-  }
-}
-node {
-  name: "strided_slice_3/stack"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 2
-      }
-    }
-  }
-}
-node {
   name: "strided_slice_3/stack_1"
   op: "Const"
   attr {
@@ -1185,7 +1122,7 @@ node {
             size: 1
           }
         }
-        int_val: 3
+        int_val: 1
       }
     }
   }
@@ -1265,6 +1202,224 @@ node {
   }
 }
 node {
+  name: "mul_1/x"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 552
+      }
+    }
+  }
+}
+node {
+  name: "mul_1"
+  op: "Mul"
+  input: "mul_1/x"
+  input: "strided_slice_3"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "Reshape_4/shape/0"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: -1
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_4/shape"
+  op: "Pack"
+  input: "Reshape_4/shape/0"
+  input: "mul_1"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "Reshape_4"
+  op: "Reshape"
+  input: "o_rmat"
+  input: "Reshape_4/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "strided_slice_4/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 2
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_4/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 3
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_4/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_4"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_4/stack"
+  input: "strided_slice_4/stack_1"
+  input: "strided_slice_4/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
   name: "mul_2/y"
   op: "Const"
   attr {
@@ -1288,7 +1443,7 @@ node {
 node {
   name: "mul_2"
   op: "Mul"
-  input: "strided_slice_3"
+  input: "strided_slice_4"
   input: "mul_2/y"
   attr {
     key: "T"
@@ -3702,7 +3857,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_6/stack"
+  name: "strided_slice_7/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -3726,7 +3881,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_6/stack_1"
+  name: "strided_slice_7/stack_1"
   op: "Const"
   attr {
     key: "dtype"
@@ -3750,7 +3905,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_6/stack_2"
+  name: "strided_slice_7/stack_2"
   op: "Const"
   attr {
     key: "dtype"
@@ -3774,12 +3929,12 @@ node {
   }
 }
 node {
-  name: "strided_slice_6"
+  name: "strided_slice_7"
   op: "StridedSlice"
   input: "Shape_1"
-  input: "strided_slice_6/stack"
-  input: "strided_slice_6/stack_1"
-  input: "strided_slice_6/stack_2"
+  input: "strided_slice_7/stack"
+  input: "strided_slice_7/stack_1"
+  input: "strided_slice_7/stack_2"
   attr {
     key: "Index"
     value {
@@ -3824,7 +3979,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_7/stack"
+  name: "strided_slice_8/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -3848,7 +4003,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_7/stack_1"
+  name: "strided_slice_8/stack_1"
   op: "Const"
   attr {
     key: "dtype"
@@ -3872,7 +4027,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_7/stack_2"
+  name: "strided_slice_8/stack_2"
   op: "Const"
   attr {
     key: "dtype"
@@ -3896,12 +4051,12 @@ node {
   }
 }
 node {
-  name: "strided_slice_7"
+  name: "strided_slice_8"
   op: "StridedSlice"
   input: "t_natoms"
-  input: "strided_slice_7/stack"
-  input: "strided_slice_7/stack_1"
-  input: "strided_slice_7/stack_2"
+  input: "strided_slice_8/stack"
+  input: "strided_slice_8/stack_1"
+  input: "strided_slice_8/stack_2"
   attr {
     key: "Index"
     value {
@@ -3969,7 +4124,7 @@ node {
 node {
   name: "mul_3"
   op: "Mul"
-  input: "strided_slice_7"
+  input: "strided_slice_8"
   input: "mul_3/y"
   attr {
     key: "T"
@@ -3981,7 +4136,7 @@ node {
 node {
   name: "Reshape_7/shape"
   op: "Pack"
-  input: "strided_slice_6"
+  input: "strided_slice_7"
   input: "mul_3"
   attr {
     key: "N"
@@ -4038,7 +4193,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_8/stack"
+  name: "strided_slice_9/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -4062,128 +4217,6 @@ node {
   }
 }
 node {
-  name: "strided_slice_8/stack_1"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 1
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice_8/stack_2"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 1
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice_8"
-  op: "StridedSlice"
-  input: "Shape_2"
-  input: "strided_slice_8/stack"
-  input: "strided_slice_8/stack_1"
-  input: "strided_slice_8/stack_2"
-  attr {
-    key: "Index"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "begin_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "ellipsis_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "end_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "new_axis_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "shrink_axis_mask"
-    value {
-      i: 1
-    }
-  }
-}
-node {
-  name: "strided_slice_9/stack"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 2
-      }
-    }
-  }
-}
-node {
   name: "strided_slice_9/stack_1"
   op: "Const"
   attr {
@@ -4202,7 +4235,7 @@ node {
             size: 1
           }
         }
-        int_val: 3
+        int_val: 1
       }
     }
   }
@@ -4234,7 +4267,7 @@ node {
 node {
   name: "strided_slice_9"
   op: "StridedSlice"
-  input: "t_natoms"
+  input: "Shape_2"
   input: "strided_slice_9/stack"
   input: "strided_slice_9/stack_1"
   input: "strided_slice_9/stack_2"
@@ -4278,114 +4311,6 @@ node {
     key: "shrink_axis_mask"
     value {
       i: 1
-    }
-  }
-}
-node {
-  name: "mul_4/y"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-        }
-        int_val: 20
-      }
-    }
-  }
-}
-node {
-  name: "mul_4"
-  op: "Mul"
-  input: "strided_slice_9"
-  input: "mul_4/y"
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-}
-node {
-  name: "mul_5/y"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-        }
-        int_val: 3
-      }
-    }
-  }
-}
-node {
-  name: "mul_5"
-  op: "Mul"
-  input: "mul_4"
-  input: "mul_5/y"
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-}
-node {
-  name: "Reshape_8/shape"
-  op: "Pack"
-  input: "strided_slice_8"
-  input: "mul_5"
-  attr {
-    key: "N"
-    value {
-      i: 2
-    }
-  }
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "axis"
-    value {
-      i: 0
-    }
-  }
-}
-node {
-  name: "Reshape_8"
-  op: "Reshape"
-  input: "filter_type_0/transpose"
-  input: "Reshape_8/shape"
-  attr {
-    key: "T"
-    value {
-      type: DT_DOUBLE
-    }
-  }
-  attr {
-    key: "Tshape"
-    value {
-      type: DT_INT32
     }
   }
 }
@@ -4512,7 +4437,7 @@ node {
   }
 }
 node {
-  name: "add/x"
+  name: "mul_4/y"
   op: "Const"
   attr {
     key: "dtype"
@@ -4527,51 +4452,93 @@ node {
         dtype: DT_INT32
         tensor_shape {
         }
-        int_val: 0
+        int_val: 20
       }
     }
   }
 }
 node {
-  name: "add"
-  op: "AddV2"
-  input: "add/x"
-  input: "strided_slice_10"
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-}
-node {
-  name: "mul_6/y"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-        }
-        int_val: 552
-      }
-    }
-  }
-}
-node {
-  name: "mul_6"
+  name: "mul_4"
   op: "Mul"
-  input: "add"
-  input: "mul_6/y"
+  input: "strided_slice_10"
+  input: "mul_4/y"
   attr {
     key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "mul_5/y"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 3
+      }
+    }
+  }
+}
+node {
+  name: "mul_5"
+  op: "Mul"
+  input: "mul_4"
+  input: "mul_5/y"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "Reshape_8/shape"
+  op: "Pack"
+  input: "strided_slice_9"
+  input: "mul_5"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "Reshape_8"
+  op: "Reshape"
+  input: "filter_type_0/transpose"
+  input: "Reshape_8/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
     value {
       type: DT_INT32
     }
@@ -4596,7 +4563,7 @@ node {
             size: 1
           }
         }
-        int_val: 3
+        int_val: 2
       }
     }
   }
@@ -4620,7 +4587,7 @@ node {
             size: 1
           }
         }
-        int_val: 4
+        int_val: 3
       }
     }
   }
@@ -4700,6 +4667,194 @@ node {
   }
 }
 node {
+  name: "add_1/x"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "add_1"
+  op: "AddV2"
+  input: "add_1/x"
+  input: "strided_slice_11"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "mul_6/y"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 552
+      }
+    }
+  }
+}
+node {
+  name: "mul_6"
+  op: "Mul"
+  input: "add_1"
+  input: "mul_6/y"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "strided_slice_12/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 3
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_12/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 4
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_12/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_12"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_12/stack"
+  input: "strided_slice_12/stack_1"
+  input: "strided_slice_12/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
   name: "mul_7/y"
   op: "Const"
   attr {
@@ -4723,7 +4878,7 @@ node {
 node {
   name: "mul_7"
   op: "Mul"
-  input: "strided_slice_11"
+  input: "strided_slice_12"
   input: "mul_7/y"
   attr {
     key: "T"
@@ -7158,7 +7313,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_14/stack"
+  name: "strided_slice_15/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -7182,7 +7337,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_14/stack_1"
+  name: "strided_slice_15/stack_1"
   op: "Const"
   attr {
     key: "dtype"
@@ -7206,7 +7361,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_14/stack_2"
+  name: "strided_slice_15/stack_2"
   op: "Const"
   attr {
     key: "dtype"
@@ -7230,12 +7385,12 @@ node {
   }
 }
 node {
-  name: "strided_slice_14"
+  name: "strided_slice_15"
   op: "StridedSlice"
   input: "Shape_4"
-  input: "strided_slice_14/stack"
-  input: "strided_slice_14/stack_1"
-  input: "strided_slice_14/stack_2"
+  input: "strided_slice_15/stack"
+  input: "strided_slice_15/stack_1"
+  input: "strided_slice_15/stack_2"
   attr {
     key: "Index"
     value {
@@ -7280,7 +7435,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_15/stack"
+  name: "strided_slice_16/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -7304,7 +7459,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_15/stack_1"
+  name: "strided_slice_16/stack_1"
   op: "Const"
   attr {
     key: "dtype"
@@ -7328,7 +7483,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_15/stack_2"
+  name: "strided_slice_16/stack_2"
   op: "Const"
   attr {
     key: "dtype"
@@ -7352,12 +7507,12 @@ node {
   }
 }
 node {
-  name: "strided_slice_15"
+  name: "strided_slice_16"
   op: "StridedSlice"
   input: "t_natoms"
-  input: "strided_slice_15/stack"
-  input: "strided_slice_15/stack_1"
-  input: "strided_slice_15/stack_2"
+  input: "strided_slice_16/stack"
+  input: "strided_slice_16/stack_1"
+  input: "strided_slice_16/stack_2"
   attr {
     key: "Index"
     value {
@@ -7425,7 +7580,7 @@ node {
 node {
   name: "mul_8"
   op: "Mul"
-  input: "strided_slice_15"
+  input: "strided_slice_16"
   input: "mul_8/y"
   attr {
     key: "T"
@@ -7437,7 +7592,7 @@ node {
 node {
   name: "Reshape_11/shape"
   op: "Pack"
-  input: "strided_slice_14"
+  input: "strided_slice_15"
   input: "mul_8"
   attr {
     key: "N"
@@ -7494,7 +7649,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_16/stack"
+  name: "strided_slice_17/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -7518,7 +7673,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_16/stack_1"
+  name: "strided_slice_17/stack_1"
   op: "Const"
   attr {
     key: "dtype"
@@ -7542,7 +7697,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_16/stack_2"
+  name: "strided_slice_17/stack_2"
   op: "Const"
   attr {
     key: "dtype"
@@ -7566,12 +7721,12 @@ node {
   }
 }
 node {
-  name: "strided_slice_16"
+  name: "strided_slice_17"
   op: "StridedSlice"
   input: "Shape_5"
-  input: "strided_slice_16/stack"
-  input: "strided_slice_16/stack_1"
-  input: "strided_slice_16/stack_2"
+  input: "strided_slice_17/stack"
+  input: "strided_slice_17/stack_1"
+  input: "strided_slice_17/stack_2"
   attr {
     key: "Index"
     value {
@@ -7616,7 +7771,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_17/stack"
+  name: "strided_slice_18/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -7640,7 +7795,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_17/stack_1"
+  name: "strided_slice_18/stack_1"
   op: "Const"
   attr {
     key: "dtype"
@@ -7664,7 +7819,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_17/stack_2"
+  name: "strided_slice_18/stack_2"
   op: "Const"
   attr {
     key: "dtype"
@@ -7688,12 +7843,12 @@ node {
   }
 }
 node {
-  name: "strided_slice_17"
+  name: "strided_slice_18"
   op: "StridedSlice"
   input: "t_natoms"
-  input: "strided_slice_17/stack"
-  input: "strided_slice_17/stack_1"
-  input: "strided_slice_17/stack_2"
+  input: "strided_slice_18/stack"
+  input: "strided_slice_18/stack_1"
+  input: "strided_slice_18/stack_2"
   attr {
     key: "Index"
     value {
@@ -7761,7 +7916,7 @@ node {
 node {
   name: "mul_9"
   op: "Mul"
-  input: "strided_slice_17"
+  input: "strided_slice_18"
   input: "mul_9/y"
   attr {
     key: "T"
@@ -7806,7 +7961,7 @@ node {
 node {
   name: "Reshape_12/shape"
   op: "Pack"
-  input: "strided_slice_16"
+  input: "strided_slice_17"
   input: "mul_10"
   attr {
     key: "N"
@@ -7960,224 +8115,6 @@ node {
   }
 }
 node {
-  name: "strided_slice_19/stack"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 0
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice_19/stack_1"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 1
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice_19/stack_2"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 1
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice_19"
-  op: "StridedSlice"
-  input: "t_natoms"
-  input: "strided_slice_19/stack"
-  input: "strided_slice_19/stack_1"
-  input: "strided_slice_19/stack_2"
-  attr {
-    key: "Index"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "begin_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "ellipsis_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "end_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "new_axis_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "shrink_axis_mask"
-    value {
-      i: 1
-    }
-  }
-}
-node {
-  name: "mul_11/x"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-        }
-        int_val: 320
-      }
-    }
-  }
-}
-node {
-  name: "mul_11"
-  op: "Mul"
-  input: "mul_11/x"
-  input: "strided_slice_19"
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-}
-node {
-  name: "Reshape_13/shape/0"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-        }
-        int_val: -1
-      }
-    }
-  }
-}
-node {
-  name: "Reshape_13/shape"
-  op: "Pack"
-  input: "Reshape_13/shape/0"
-  input: "mul_11"
-  attr {
-    key: "N"
-    value {
-      i: 2
-    }
-  }
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "axis"
-    value {
-      i: 0
-    }
-  }
-}
-node {
-  name: "Reshape_13"
-  op: "Reshape"
-  input: "o_descriptor"
-  input: "Reshape_13/shape"
-  attr {
-    key: "T"
-    value {
-      type: DT_DOUBLE
-    }
-  }
-  attr {
-    key: "Tshape"
-    value {
-      type: DT_INT32
-    }
-  }
-}
-node {
   name: "strided_slice_20/stack"
   op: "Const"
   attr {
@@ -8300,7 +8237,7 @@ node {
   }
 }
 node {
-  name: "mul_12/x"
+  name: "mul_11/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -8315,15 +8252,15 @@ node {
         dtype: DT_INT32
         tensor_shape {
         }
-        int_val: 60
+        int_val: 320
       }
     }
   }
 }
 node {
-  name: "mul_12"
+  name: "mul_11"
   op: "Mul"
-  input: "mul_12/x"
+  input: "mul_11/x"
   input: "strided_slice_20"
   attr {
     key: "T"
@@ -8333,7 +8270,7 @@ node {
   }
 }
 node {
-  name: "Reshape_14/shape/0"
+  name: "Reshape_13/shape/0"
   op: "Const"
   attr {
     key: "dtype"
@@ -8354,10 +8291,10 @@ node {
   }
 }
 node {
-  name: "Reshape_14/shape"
+  name: "Reshape_13/shape"
   op: "Pack"
-  input: "Reshape_14/shape/0"
-  input: "mul_12"
+  input: "Reshape_13/shape/0"
+  input: "mul_11"
   attr {
     key: "N"
     value {
@@ -8378,10 +8315,10 @@ node {
   }
 }
 node {
-  name: "Reshape_14"
+  name: "Reshape_13"
   op: "Reshape"
-  input: "o_rot_mat"
-  input: "Reshape_14/shape"
+  input: "o_descriptor"
+  input: "Reshape_13/shape"
   attr {
     key: "T"
     value {
@@ -8414,7 +8351,7 @@ node {
             size: 1
           }
         }
-        int_val: 2
+        int_val: 0
       }
     }
   }
@@ -8438,7 +8375,7 @@ node {
             size: 1
           }
         }
-        int_val: 3
+        int_val: 1
       }
     }
   }
@@ -8518,6 +8455,224 @@ node {
   }
 }
 node {
+  name: "mul_12/x"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 60
+      }
+    }
+  }
+}
+node {
+  name: "mul_12"
+  op: "Mul"
+  input: "mul_12/x"
+  input: "strided_slice_21"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "Reshape_14/shape/0"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: -1
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_14/shape"
+  op: "Pack"
+  input: "Reshape_14/shape/0"
+  input: "mul_12"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "Reshape_14"
+  op: "Reshape"
+  input: "o_rot_mat"
+  input: "Reshape_14/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "strided_slice_22/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 2
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_22/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 3
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_22/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_22"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_22/stack"
+  input: "strided_slice_22/stack_1"
+  input: "strided_slice_22/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
   name: "mul_13/y"
   op: "Const"
   attr {
@@ -8541,7 +8696,7 @@ node {
 node {
   name: "mul_13"
   op: "Mul"
-  input: "strided_slice_21"
+  input: "strided_slice_22"
   input: "mul_13/y"
   attr {
     key: "T"
@@ -8681,7 +8836,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_22/stack"
+  name: "strided_slice_23/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -8705,7 +8860,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_22/stack_1"
+  name: "strided_slice_23/stack_1"
   op: "Const"
   attr {
     key: "dtype"
@@ -8729,7 +8884,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_22/stack_2"
+  name: "strided_slice_23/stack_2"
   op: "Const"
   attr {
     key: "dtype"
@@ -8753,12 +8908,12 @@ node {
   }
 }
 node {
-  name: "strided_slice_22"
+  name: "strided_slice_23"
   op: "StridedSlice"
   input: "t_natoms"
-  input: "strided_slice_22/stack"
-  input: "strided_slice_22/stack_1"
-  input: "strided_slice_22/stack_2"
+  input: "strided_slice_23/stack"
+  input: "strided_slice_23/stack_1"
+  input: "strided_slice_23/stack_2"
   attr {
     key: "Index"
     value {
@@ -8826,7 +8981,7 @@ node {
 node {
   name: "mul_14"
   op: "Mul"
-  input: "strided_slice_22"
+  input: "strided_slice_23"
   input: "mul_14/y"
   attr {
     key: "T"
@@ -9377,7 +9532,7 @@ node {
   }
 }
 node {
-  name: "add_3"
+  name: "add_4"
   op: "AddV2"
   input: "layer_0_type_0/Reshape"
   input: "layer_1_type_0/mul"
@@ -9480,7 +9635,7 @@ node {
 node {
   name: "layer_2_type_0/MatMul"
   op: "MatMul"
-  input: "add_3"
+  input: "add_4"
   input: "layer_2_type_0/matrix/read"
   attr {
     key: "T"
@@ -9622,9 +9777,9 @@ node {
   }
 }
 node {
-  name: "add_4"
+  name: "add_5"
   op: "AddV2"
-  input: "add_3"
+  input: "add_4"
   input: "layer_2_type_0/mul"
   attr {
     key: "T"
@@ -9725,7 +9880,7 @@ node {
 node {
   name: "final_layer_type_0/MatMul"
   op: "MatMul"
-  input: "add_4"
+  input: "add_5"
   input: "final_layer_type_0/matrix/read"
   attr {
     key: "T"
@@ -9776,7 +9931,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_24/stack"
+  name: "strided_slice_25/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -9800,128 +9955,6 @@ node {
   }
 }
 node {
-  name: "strided_slice_24/stack_1"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 1
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice_24/stack_2"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 1
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice_24"
-  op: "StridedSlice"
-  input: "Shape_6"
-  input: "strided_slice_24/stack"
-  input: "strided_slice_24/stack_1"
-  input: "strided_slice_24/stack_2"
-  attr {
-    key: "Index"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "begin_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "ellipsis_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "end_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "new_axis_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "shrink_axis_mask"
-    value {
-      i: 1
-    }
-  }
-}
-node {
-  name: "strided_slice_25/stack"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 2
-      }
-    }
-  }
-}
-node {
   name: "strided_slice_25/stack_1"
   op: "Const"
   attr {
@@ -9940,7 +9973,7 @@ node {
             size: 1
           }
         }
-        int_val: 3
+        int_val: 1
       }
     }
   }
@@ -9972,7 +10005,7 @@ node {
 node {
   name: "strided_slice_25"
   op: "StridedSlice"
-  input: "t_natoms"
+  input: "Shape_6"
   input: "strided_slice_25/stack"
   input: "strided_slice_25/stack_1"
   input: "strided_slice_25/stack_2"
@@ -10020,10 +10053,132 @@ node {
   }
 }
 node {
+  name: "strided_slice_26/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 2
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_26/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 3
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_26/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_26"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_26/stack"
+  input: "strided_slice_26/stack_1"
+  input: "strided_slice_26/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
   name: "mul_15"
   op: "Mul"
-  input: "strided_slice_24"
   input: "strided_slice_25"
+  input: "strided_slice_26"
   attr {
     key: "T"
     value {
@@ -10159,7 +10314,7 @@ node {
   }
 }
 node {
-  name: "add_5"
+  name: "add_6"
   op: "AddV2"
   input: "Reshape_17"
   input: "transpose"
@@ -10173,7 +10328,7 @@ node {
 node {
   name: "MatMul"
   op: "BatchMatMulV2"
-  input: "add_5"
+  input: "add_6"
   input: "Reshape_16"
   attr {
     key: "T"
@@ -10236,7 +10391,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_26/stack"
+  name: "strided_slice_27/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -10260,7 +10415,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_26/stack_1"
+  name: "strided_slice_27/stack_1"
   op: "Const"
   attr {
     key: "dtype"
@@ -10284,7 +10439,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_26/stack_2"
+  name: "strided_slice_27/stack_2"
   op: "Const"
   attr {
     key: "dtype"
@@ -10308,12 +10463,12 @@ node {
   }
 }
 node {
-  name: "strided_slice_26"
+  name: "strided_slice_27"
   op: "StridedSlice"
   input: "Shape_7"
-  input: "strided_slice_26/stack"
-  input: "strided_slice_26/stack_1"
-  input: "strided_slice_26/stack_2"
+  input: "strided_slice_27/stack"
+  input: "strided_slice_27/stack_1"
+  input: "strided_slice_27/stack_2"
   attr {
     key: "Index"
     value {
@@ -10358,7 +10513,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_27/stack"
+  name: "strided_slice_28/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -10382,7 +10537,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_27/stack_1"
+  name: "strided_slice_28/stack_1"
   op: "Const"
   attr {
     key: "dtype"
@@ -10406,7 +10561,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_27/stack_2"
+  name: "strided_slice_28/stack_2"
   op: "Const"
   attr {
     key: "dtype"
@@ -10430,12 +10585,12 @@ node {
   }
 }
 node {
-  name: "strided_slice_27"
+  name: "strided_slice_28"
   op: "StridedSlice"
   input: "t_natoms"
-  input: "strided_slice_27/stack"
-  input: "strided_slice_27/stack_1"
-  input: "strided_slice_27/stack_2"
+  input: "strided_slice_28/stack"
+  input: "strided_slice_28/stack_1"
+  input: "strided_slice_28/stack_2"
   attr {
     key: "Index"
     value {
@@ -10524,8 +10679,8 @@ node {
 node {
   name: "Reshape_18/shape"
   op: "Pack"
-  input: "strided_slice_26"
   input: "strided_slice_27"
+  input: "strided_slice_28"
   input: "Reshape_18/shape/2"
   input: "Reshape_18/shape/3"
   attr {
@@ -10616,7 +10771,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_28/stack"
+  name: "strided_slice_29/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -10640,7 +10795,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_28/stack_1"
+  name: "strided_slice_29/stack_1"
   op: "Const"
   attr {
     key: "dtype"
@@ -10664,7 +10819,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_28/stack_2"
+  name: "strided_slice_29/stack_2"
   op: "Const"
   attr {
     key: "dtype"
@@ -10688,12 +10843,12 @@ node {
   }
 }
 node {
-  name: "strided_slice_28"
+  name: "strided_slice_29"
   op: "StridedSlice"
   input: "Shape_8"
-  input: "strided_slice_28/stack"
-  input: "strided_slice_28/stack_1"
-  input: "strided_slice_28/stack_2"
+  input: "strided_slice_29/stack"
+  input: "strided_slice_29/stack_1"
+  input: "strided_slice_29/stack_2"
   attr {
     key: "Index"
     value {
@@ -10738,7 +10893,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_29/stack"
+  name: "strided_slice_30/stack"
   op: "Const"
   attr {
     key: "dtype"
@@ -10762,7 +10917,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_29/stack_1"
+  name: "strided_slice_30/stack_1"
   op: "Const"
   attr {
     key: "dtype"
@@ -10786,7 +10941,7 @@ node {
   }
 }
 node {
-  name: "strided_slice_29/stack_2"
+  name: "strided_slice_30/stack_2"
   op: "Const"
   attr {
     key: "dtype"
@@ -10810,12 +10965,12 @@ node {
   }
 }
 node {
-  name: "strided_slice_29"
+  name: "strided_slice_30"
   op: "StridedSlice"
   input: "t_natoms"
-  input: "strided_slice_29/stack"
-  input: "strided_slice_29/stack_1"
-  input: "strided_slice_29/stack_2"
+  input: "strided_slice_30/stack"
+  input: "strided_slice_30/stack_1"
+  input: "strided_slice_30/stack_2"
   attr {
     key: "Index"
     value {
@@ -10883,8 +11038,8 @@ node {
 node {
   name: "eye/ones/packed"
   op: "Pack"
-  input: "strided_slice_28"
   input: "strided_slice_29"
+  input: "strided_slice_30"
   input: "eye/ones/packed/2"
   attr {
     key: "N"
@@ -11083,7 +11238,7 @@ node {
   }
 }
 node {
-  name: "add_6"
+  name: "add_7"
   op: "AddV2"
   input: "mul_16"
   input: "mul_17"
@@ -11121,7 +11276,7 @@ node {
 node {
   name: "Reshape_21"
   op: "Reshape"
-  input: "add_6"
+  input: "add_7"
   input: "Reshape_21/shape"
   attr {
     key: "T"
@@ -11137,166 +11292,96 @@ node {
   }
 }
 node {
+  name: "mul_22/y"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 9
+      }
+    }
+  }
+}
+node {
+  name: "mul_22"
+  op: "Mul"
+  input: "add"
+  input: "mul_22/y"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "o_polar/shape/0"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: -1
+      }
+    }
+  }
+}
+node {
+  name: "o_polar/shape"
+  op: "Pack"
+  input: "o_polar/shape/0"
+  input: "mul_22"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
   name: "o_polar"
-  op: "Identity"
+  op: "Reshape"
   input: "Reshape_21"
+  input: "o_polar/shape"
   attr {
     key: "T"
     value {
       type: DT_DOUBLE
     }
   }
-}
-node {
-  name: "strided_slice_33/stack"
-  op: "Const"
   attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 2
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice_33/stack_1"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 3
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice_33/stack_2"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: 1
-      }
-    }
-  }
-}
-node {
-  name: "strided_slice_33"
-  op: "StridedSlice"
-  input: "t_natoms"
-  input: "strided_slice_33/stack"
-  input: "strided_slice_33/stack_1"
-  input: "strided_slice_33/stack_2"
-  attr {
-    key: "Index"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "begin_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "ellipsis_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "end_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "new_axis_mask"
-    value {
-      i: 0
-    }
-  }
-  attr {
-    key: "shrink_axis_mask"
-    value {
-      i: 1
-    }
-  }
-}
-node {
-  name: "add_8/x"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-        }
-        int_val: 0
-      }
-    }
-  }
-}
-node {
-  name: "add_8"
-  op: "AddV2"
-  input: "add_8/x"
-  input: "strided_slice_33"
-  attr {
-    key: "T"
+    key: "Tshape"
     value {
       type: DT_INT32
     }
@@ -11348,7 +11433,7 @@ node {
   name: "Reshape_22/shape"
   op: "Pack"
   input: "Reshape_22/shape/0"
-  input: "add_8"
+  input: "add"
   input: "Reshape_22/shape/2"
   attr {
     key: "N"
@@ -11725,9 +11810,44 @@ node {
   }
 }
 node {
+  name: "gradients/o_polar_grad/Shape"
+  op: "Shape"
+  input: "Reshape_21"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/o_polar_grad/Reshape"
+  op: "Reshape"
+  input: "gradients/Reshape_22_grad/Reshape"
+  input: "gradients/o_polar_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
   name: "gradients/Reshape_21_grad/Shape"
   op: "Shape"
-  input: "add_6"
+  input: "add_7"
   attr {
     key: "T"
     value {
@@ -11744,7 +11864,7 @@ node {
 node {
   name: "gradients/Reshape_21_grad/Reshape"
   op: "Reshape"
-  input: "gradients/Reshape_22_grad/Reshape"
+  input: "gradients/o_polar_grad/Reshape"
   input: "gradients/Reshape_21_grad/Shape"
   attr {
     key: "T"
@@ -11760,7 +11880,7 @@ node {
   }
 }
 node {
-  name: "gradients/add_6_grad/Shape"
+  name: "gradients/add_7_grad/Shape"
   op: "Shape"
   input: "mul_16"
   attr {
@@ -11777,7 +11897,7 @@ node {
   }
 }
 node {
-  name: "gradients/add_6_grad/Shape_1"
+  name: "gradients/add_7_grad/Shape_1"
   op: "Shape"
   input: "mul_17"
   attr {
@@ -11794,10 +11914,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_6_grad/BroadcastGradientArgs"
+  name: "gradients/add_7_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients/add_6_grad/Shape"
-  input: "gradients/add_6_grad/Shape_1"
+  input: "gradients/add_7_grad/Shape"
+  input: "gradients/add_7_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -11806,10 +11926,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_6_grad/Sum"
+  name: "gradients/add_7_grad/Sum"
   op: "Sum"
   input: "gradients/Reshape_21_grad/Reshape"
-  input: "gradients/add_6_grad/BroadcastGradientArgs"
+  input: "gradients/add_7_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -11830,10 +11950,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_6_grad/Reshape"
+  name: "gradients/add_7_grad/Reshape"
   op: "Reshape"
-  input: "gradients/add_6_grad/Sum"
-  input: "gradients/add_6_grad/Shape"
+  input: "gradients/add_7_grad/Sum"
+  input: "gradients/add_7_grad/Shape"
   attr {
     key: "T"
     value {
@@ -11896,7 +12016,7 @@ node {
 node {
   name: "gradients/mul_16_grad/Mul"
   op: "Mul"
-  input: "gradients/add_6_grad/Reshape"
+  input: "gradients/add_7_grad/Reshape"
   input: "mul_16/y"
   attr {
     key: "T"
@@ -12431,7 +12551,7 @@ node {
 node {
   name: "gradients/MatMul_grad/MatMul_1"
   op: "BatchMatMulV2"
-  input: "add_5"
+  input: "add_6"
   input: "gradients/MatMul_1_grad/Reshape_1"
   attr {
     key: "T"
@@ -12455,7 +12575,7 @@ node {
 node {
   name: "gradients/MatMul_grad/Shape"
   op: "Shape"
-  input: "add_5"
+  input: "add_6"
   attr {
     key: "T"
     value {
@@ -12827,7 +12947,7 @@ node {
   }
 }
 node {
-  name: "gradients/add_5_grad/Shape"
+  name: "gradients/add_6_grad/Shape"
   op: "Shape"
   input: "Reshape_17"
   attr {
@@ -12844,7 +12964,7 @@ node {
   }
 }
 node {
-  name: "gradients/add_5_grad/Shape_1"
+  name: "gradients/add_6_grad/Shape_1"
   op: "Shape"
   input: "transpose"
   attr {
@@ -12861,10 +12981,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_5_grad/BroadcastGradientArgs"
+  name: "gradients/add_6_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients/add_5_grad/Shape"
-  input: "gradients/add_5_grad/Shape_1"
+  input: "gradients/add_6_grad/Shape"
+  input: "gradients/add_6_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -12873,10 +12993,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_5_grad/Sum"
+  name: "gradients/add_6_grad/Sum"
   op: "Sum"
   input: "gradients/MatMul_grad/Reshape"
-  input: "gradients/add_5_grad/BroadcastGradientArgs"
+  input: "gradients/add_6_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -12897,10 +13017,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_5_grad/Reshape"
+  name: "gradients/add_6_grad/Reshape"
   op: "Reshape"
-  input: "gradients/add_5_grad/Sum"
-  input: "gradients/add_5_grad/Shape"
+  input: "gradients/add_6_grad/Sum"
+  input: "gradients/add_6_grad/Shape"
   attr {
     key: "T"
     value {
@@ -12915,10 +13035,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_5_grad/Sum_1"
+  name: "gradients/add_6_grad/Sum_1"
   op: "Sum"
   input: "gradients/MatMul_grad/Reshape"
-  input: "gradients/add_5_grad/BroadcastGradientArgs:1"
+  input: "gradients/add_6_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -12939,10 +13059,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_5_grad/Reshape_1"
+  name: "gradients/add_6_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients/add_5_grad/Sum_1"
-  input: "gradients/add_5_grad/Shape_1"
+  input: "gradients/add_6_grad/Sum_1"
+  input: "gradients/add_6_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -13031,7 +13151,7 @@ node {
 node {
   name: "gradients/transpose_grad/transpose"
   op: "Transpose"
-  input: "gradients/add_5_grad/Reshape_1"
+  input: "gradients/add_6_grad/Reshape_1"
   input: "gradients/transpose_grad/InvertPermutation"
   attr {
     key: "T"
@@ -13273,7 +13393,7 @@ node {
 node {
   name: "gradients/AddN_1"
   op: "AddN"
-  input: "gradients/add_5_grad/Reshape"
+  input: "gradients/add_6_grad/Reshape"
   input: "gradients/transpose_grad/transpose"
   attr {
     key: "N"
@@ -13291,7 +13411,7 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients/add_5_grad/Reshape"
+        s: "loc:@gradients/add_6_grad/Reshape"
       }
     }
   }
@@ -13587,9 +13707,9 @@ node {
   }
 }
 node {
-  name: "gradients/add_4_grad/Shape"
+  name: "gradients/add_5_grad/Shape"
   op: "Shape"
-  input: "add_3"
+  input: "add_4"
   attr {
     key: "T"
     value {
@@ -13604,7 +13724,7 @@ node {
   }
 }
 node {
-  name: "gradients/add_4_grad/Shape_1"
+  name: "gradients/add_5_grad/Shape_1"
   op: "Shape"
   input: "layer_2_type_0/mul"
   attr {
@@ -13621,10 +13741,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_4_grad/BroadcastGradientArgs"
+  name: "gradients/add_5_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients/add_4_grad/Shape"
-  input: "gradients/add_4_grad/Shape_1"
+  input: "gradients/add_5_grad/Shape"
+  input: "gradients/add_5_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -13633,10 +13753,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_4_grad/Sum"
+  name: "gradients/add_5_grad/Sum"
   op: "Sum"
   input: "gradients/final_layer_type_0/MatMul_grad/MatMul"
-  input: "gradients/add_4_grad/BroadcastGradientArgs"
+  input: "gradients/add_5_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -13657,10 +13777,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_4_grad/Reshape"
+  name: "gradients/add_5_grad/Reshape"
   op: "Reshape"
-  input: "gradients/add_4_grad/Sum"
-  input: "gradients/add_4_grad/Shape"
+  input: "gradients/add_5_grad/Sum"
+  input: "gradients/add_5_grad/Shape"
   attr {
     key: "T"
     value {
@@ -13675,10 +13795,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_4_grad/Sum_1"
+  name: "gradients/add_5_grad/Sum_1"
   op: "Sum"
   input: "gradients/final_layer_type_0/MatMul_grad/MatMul"
-  input: "gradients/add_4_grad/BroadcastGradientArgs:1"
+  input: "gradients/add_5_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -13699,10 +13819,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_4_grad/Reshape_1"
+  name: "gradients/add_5_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients/add_4_grad/Sum_1"
-  input: "gradients/add_4_grad/Shape_1"
+  input: "gradients/add_5_grad/Sum_1"
+  input: "gradients/add_5_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -13835,7 +13955,7 @@ node {
 node {
   name: "gradients/layer_2_type_0/mul_grad/Mul"
   op: "Mul"
-  input: "gradients/add_4_grad/Reshape_1"
+  input: "gradients/add_5_grad/Reshape_1"
   input: "layer_2_type_0/idt/read"
   attr {
     key: "T"
@@ -14554,7 +14674,7 @@ node {
 node {
   name: "gradients/AddN_2"
   op: "AddN"
-  input: "gradients/add_4_grad/Reshape"
+  input: "gradients/add_5_grad/Reshape"
   input: "gradients/layer_2_type_0/MatMul_grad/MatMul"
   attr {
     key: "N"
@@ -14572,13 +14692,13 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients/add_4_grad/Reshape"
+        s: "loc:@gradients/add_5_grad/Reshape"
       }
     }
   }
 }
 node {
-  name: "gradients/add_3_grad/Shape"
+  name: "gradients/add_4_grad/Shape"
   op: "Shape"
   input: "layer_0_type_0/Reshape"
   attr {
@@ -14595,7 +14715,7 @@ node {
   }
 }
 node {
-  name: "gradients/add_3_grad/Shape_1"
+  name: "gradients/add_4_grad/Shape_1"
   op: "Shape"
   input: "layer_1_type_0/mul"
   attr {
@@ -14612,10 +14732,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_3_grad/BroadcastGradientArgs"
+  name: "gradients/add_4_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients/add_3_grad/Shape"
-  input: "gradients/add_3_grad/Shape_1"
+  input: "gradients/add_4_grad/Shape"
+  input: "gradients/add_4_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -14624,10 +14744,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_3_grad/Sum"
+  name: "gradients/add_4_grad/Sum"
   op: "Sum"
   input: "gradients/AddN_2"
-  input: "gradients/add_3_grad/BroadcastGradientArgs"
+  input: "gradients/add_4_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -14648,10 +14768,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_3_grad/Reshape"
+  name: "gradients/add_4_grad/Reshape"
   op: "Reshape"
-  input: "gradients/add_3_grad/Sum"
-  input: "gradients/add_3_grad/Shape"
+  input: "gradients/add_4_grad/Sum"
+  input: "gradients/add_4_grad/Shape"
   attr {
     key: "T"
     value {
@@ -14666,10 +14786,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_3_grad/Sum_1"
+  name: "gradients/add_4_grad/Sum_1"
   op: "Sum"
   input: "gradients/AddN_2"
-  input: "gradients/add_3_grad/BroadcastGradientArgs:1"
+  input: "gradients/add_4_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -14690,10 +14810,10 @@ node {
   }
 }
 node {
-  name: "gradients/add_3_grad/Reshape_1"
+  name: "gradients/add_4_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients/add_3_grad/Sum_1"
-  input: "gradients/add_3_grad/Shape_1"
+  input: "gradients/add_4_grad/Sum_1"
+  input: "gradients/add_4_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -14756,7 +14876,7 @@ node {
 node {
   name: "gradients/layer_1_type_0/mul_grad/Mul"
   op: "Mul"
-  input: "gradients/add_3_grad/Reshape_1"
+  input: "gradients/add_4_grad/Reshape_1"
   input: "layer_1_type_0/idt/read"
   attr {
     key: "T"
@@ -14969,7 +15089,7 @@ node {
 node {
   name: "gradients/AddN_3"
   op: "AddN"
-  input: "gradients/add_3_grad/Reshape"
+  input: "gradients/add_4_grad/Reshape"
   input: "gradients/layer_1_type_0/MatMul_grad/MatMul"
   attr {
     key: "N"
@@ -14987,7 +15107,7 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients/add_3_grad/Reshape"
+        s: "loc:@gradients/add_4_grad/Reshape"
       }
     }
   }
@@ -26425,7 +26545,7 @@ node {
   }
 }
 node {
-  name: "mul_22/y"
+  name: "mul_23/y"
   op: "Const"
   attr {
     key: "dtype"
@@ -26446,10 +26566,10 @@ node {
   }
 }
 node {
-  name: "mul_22"
+  name: "mul_23"
   op: "Mul"
   input: "strided_slice_34"
-  input: "mul_22/y"
+  input: "mul_23/y"
   attr {
     key: "T"
     value {
@@ -26482,7 +26602,7 @@ node {
   name: "Reshape_23/shape"
   op: "Pack"
   input: "Reshape_23/shape/0"
-  input: "mul_22"
+  input: "mul_23"
   attr {
     key: "N"
     value {
@@ -26696,7 +26816,7 @@ node {
   }
 }
 node {
-  name: "mul_23/x"
+  name: "mul_24/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -26717,9 +26837,9 @@ node {
   }
 }
 node {
-  name: "mul_23"
+  name: "mul_24"
   op: "Mul"
-  input: "mul_23/x"
+  input: "mul_24/x"
   input: "strided_slice_35"
   attr {
     key: "T"
@@ -26753,7 +26873,7 @@ node {
   name: "Reshape_24/shape"
   op: "Pack"
   input: "Reshape_24/shape/0"
-  input: "mul_23"
+  input: "mul_24"
   attr {
     key: "N"
     value {
@@ -26956,7 +27076,7 @@ node {
   }
 }
 node {
-  name: "mul_24/x"
+  name: "mul_25/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -26977,9 +27097,9 @@ node {
   }
 }
 node {
-  name: "mul_24"
+  name: "mul_25"
   op: "Mul"
-  input: "mul_24/x"
+  input: "mul_25/x"
   input: "strided_slice_36"
   attr {
     key: "T"
@@ -27013,7 +27133,7 @@ node {
   name: "Reshape_26/shape"
   op: "Pack"
   input: "Reshape_26/shape/0"
-  input: "mul_24"
+  input: "mul_25"
   attr {
     key: "N"
     value {
@@ -27263,9 +27383,44 @@ node {
   }
 }
 node {
+  name: "gradients_1/o_polar_grad/Shape"
+  op: "Shape"
+  input: "Reshape_21"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients_1/o_polar_grad/Reshape"
+  op: "Reshape"
+  input: "gradients_1/Reshape_22_grad/Reshape"
+  input: "gradients_1/o_polar_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
   name: "gradients_1/Reshape_21_grad/Shape"
   op: "Shape"
-  input: "add_6"
+  input: "add_7"
   attr {
     key: "T"
     value {
@@ -27282,7 +27437,7 @@ node {
 node {
   name: "gradients_1/Reshape_21_grad/Reshape"
   op: "Reshape"
-  input: "gradients_1/Reshape_22_grad/Reshape"
+  input: "gradients_1/o_polar_grad/Reshape"
   input: "gradients_1/Reshape_21_grad/Shape"
   attr {
     key: "T"
@@ -27298,7 +27453,7 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_6_grad/Shape"
+  name: "gradients_1/add_7_grad/Shape"
   op: "Shape"
   input: "mul_16"
   attr {
@@ -27315,7 +27470,7 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_6_grad/Shape_1"
+  name: "gradients_1/add_7_grad/Shape_1"
   op: "Shape"
   input: "mul_17"
   attr {
@@ -27332,10 +27487,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_6_grad/BroadcastGradientArgs"
+  name: "gradients_1/add_7_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_1/add_6_grad/Shape"
-  input: "gradients_1/add_6_grad/Shape_1"
+  input: "gradients_1/add_7_grad/Shape"
+  input: "gradients_1/add_7_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -27344,10 +27499,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_6_grad/Sum"
+  name: "gradients_1/add_7_grad/Sum"
   op: "Sum"
   input: "gradients_1/Reshape_21_grad/Reshape"
-  input: "gradients_1/add_6_grad/BroadcastGradientArgs"
+  input: "gradients_1/add_7_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -27368,10 +27523,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_6_grad/Reshape"
+  name: "gradients_1/add_7_grad/Reshape"
   op: "Reshape"
-  input: "gradients_1/add_6_grad/Sum"
-  input: "gradients_1/add_6_grad/Shape"
+  input: "gradients_1/add_7_grad/Sum"
+  input: "gradients_1/add_7_grad/Shape"
   attr {
     key: "T"
     value {
@@ -27434,7 +27589,7 @@ node {
 node {
   name: "gradients_1/mul_16_grad/Mul"
   op: "Mul"
-  input: "gradients_1/add_6_grad/Reshape"
+  input: "gradients_1/add_7_grad/Reshape"
   input: "mul_16/y"
   attr {
     key: "T"
@@ -27969,7 +28124,7 @@ node {
 node {
   name: "gradients_1/MatMul_grad/MatMul_1"
   op: "BatchMatMulV2"
-  input: "add_5"
+  input: "add_6"
   input: "gradients_1/MatMul_1_grad/Reshape_1"
   attr {
     key: "T"
@@ -27993,7 +28148,7 @@ node {
 node {
   name: "gradients_1/MatMul_grad/Shape"
   op: "Shape"
-  input: "add_5"
+  input: "add_6"
   attr {
     key: "T"
     value {
@@ -28365,7 +28520,7 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_5_grad/Shape"
+  name: "gradients_1/add_6_grad/Shape"
   op: "Shape"
   input: "Reshape_17"
   attr {
@@ -28382,7 +28537,7 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_5_grad/Shape_1"
+  name: "gradients_1/add_6_grad/Shape_1"
   op: "Shape"
   input: "transpose"
   attr {
@@ -28399,10 +28554,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_5_grad/BroadcastGradientArgs"
+  name: "gradients_1/add_6_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_1/add_5_grad/Shape"
-  input: "gradients_1/add_5_grad/Shape_1"
+  input: "gradients_1/add_6_grad/Shape"
+  input: "gradients_1/add_6_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -28411,10 +28566,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_5_grad/Sum"
+  name: "gradients_1/add_6_grad/Sum"
   op: "Sum"
   input: "gradients_1/MatMul_grad/Reshape"
-  input: "gradients_1/add_5_grad/BroadcastGradientArgs"
+  input: "gradients_1/add_6_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -28435,10 +28590,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_5_grad/Reshape"
+  name: "gradients_1/add_6_grad/Reshape"
   op: "Reshape"
-  input: "gradients_1/add_5_grad/Sum"
-  input: "gradients_1/add_5_grad/Shape"
+  input: "gradients_1/add_6_grad/Sum"
+  input: "gradients_1/add_6_grad/Shape"
   attr {
     key: "T"
     value {
@@ -28453,10 +28608,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_5_grad/Sum_1"
+  name: "gradients_1/add_6_grad/Sum_1"
   op: "Sum"
   input: "gradients_1/MatMul_grad/Reshape"
-  input: "gradients_1/add_5_grad/BroadcastGradientArgs:1"
+  input: "gradients_1/add_6_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -28477,10 +28632,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_5_grad/Reshape_1"
+  name: "gradients_1/add_6_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_1/add_5_grad/Sum_1"
-  input: "gradients_1/add_5_grad/Shape_1"
+  input: "gradients_1/add_6_grad/Sum_1"
+  input: "gradients_1/add_6_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -28569,7 +28724,7 @@ node {
 node {
   name: "gradients_1/transpose_grad/transpose"
   op: "Transpose"
-  input: "gradients_1/add_5_grad/Reshape_1"
+  input: "gradients_1/add_6_grad/Reshape_1"
   input: "gradients_1/transpose_grad/InvertPermutation"
   attr {
     key: "T"
@@ -28811,7 +28966,7 @@ node {
 node {
   name: "gradients_1/AddN_1"
   op: "AddN"
-  input: "gradients_1/add_5_grad/Reshape"
+  input: "gradients_1/add_6_grad/Reshape"
   input: "gradients_1/transpose_grad/transpose"
   attr {
     key: "N"
@@ -28829,7 +28984,7 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_1/add_5_grad/Reshape"
+        s: "loc:@gradients_1/add_6_grad/Reshape"
       }
     }
   }
@@ -29125,9 +29280,9 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_4_grad/Shape"
+  name: "gradients_1/add_5_grad/Shape"
   op: "Shape"
-  input: "add_3"
+  input: "add_4"
   attr {
     key: "T"
     value {
@@ -29142,7 +29297,7 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_4_grad/Shape_1"
+  name: "gradients_1/add_5_grad/Shape_1"
   op: "Shape"
   input: "layer_2_type_0/mul"
   attr {
@@ -29159,10 +29314,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_4_grad/BroadcastGradientArgs"
+  name: "gradients_1/add_5_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_1/add_4_grad/Shape"
-  input: "gradients_1/add_4_grad/Shape_1"
+  input: "gradients_1/add_5_grad/Shape"
+  input: "gradients_1/add_5_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -29171,10 +29326,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_4_grad/Sum"
+  name: "gradients_1/add_5_grad/Sum"
   op: "Sum"
   input: "gradients_1/final_layer_type_0/MatMul_grad/MatMul"
-  input: "gradients_1/add_4_grad/BroadcastGradientArgs"
+  input: "gradients_1/add_5_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -29195,10 +29350,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_4_grad/Reshape"
+  name: "gradients_1/add_5_grad/Reshape"
   op: "Reshape"
-  input: "gradients_1/add_4_grad/Sum"
-  input: "gradients_1/add_4_grad/Shape"
+  input: "gradients_1/add_5_grad/Sum"
+  input: "gradients_1/add_5_grad/Shape"
   attr {
     key: "T"
     value {
@@ -29213,10 +29368,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_4_grad/Sum_1"
+  name: "gradients_1/add_5_grad/Sum_1"
   op: "Sum"
   input: "gradients_1/final_layer_type_0/MatMul_grad/MatMul"
-  input: "gradients_1/add_4_grad/BroadcastGradientArgs:1"
+  input: "gradients_1/add_5_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -29237,10 +29392,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_4_grad/Reshape_1"
+  name: "gradients_1/add_5_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_1/add_4_grad/Sum_1"
-  input: "gradients_1/add_4_grad/Shape_1"
+  input: "gradients_1/add_5_grad/Sum_1"
+  input: "gradients_1/add_5_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -29373,7 +29528,7 @@ node {
 node {
   name: "gradients_1/layer_2_type_0/mul_grad/Mul"
   op: "Mul"
-  input: "gradients_1/add_4_grad/Reshape_1"
+  input: "gradients_1/add_5_grad/Reshape_1"
   input: "layer_2_type_0/idt/read"
   attr {
     key: "T"
@@ -30092,7 +30247,7 @@ node {
 node {
   name: "gradients_1/AddN_2"
   op: "AddN"
-  input: "gradients_1/add_4_grad/Reshape"
+  input: "gradients_1/add_5_grad/Reshape"
   input: "gradients_1/layer_2_type_0/MatMul_grad/MatMul"
   attr {
     key: "N"
@@ -30110,13 +30265,13 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_1/add_4_grad/Reshape"
+        s: "loc:@gradients_1/add_5_grad/Reshape"
       }
     }
   }
 }
 node {
-  name: "gradients_1/add_3_grad/Shape"
+  name: "gradients_1/add_4_grad/Shape"
   op: "Shape"
   input: "layer_0_type_0/Reshape"
   attr {
@@ -30133,7 +30288,7 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_3_grad/Shape_1"
+  name: "gradients_1/add_4_grad/Shape_1"
   op: "Shape"
   input: "layer_1_type_0/mul"
   attr {
@@ -30150,10 +30305,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_3_grad/BroadcastGradientArgs"
+  name: "gradients_1/add_4_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_1/add_3_grad/Shape"
-  input: "gradients_1/add_3_grad/Shape_1"
+  input: "gradients_1/add_4_grad/Shape"
+  input: "gradients_1/add_4_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -30162,10 +30317,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_3_grad/Sum"
+  name: "gradients_1/add_4_grad/Sum"
   op: "Sum"
   input: "gradients_1/AddN_2"
-  input: "gradients_1/add_3_grad/BroadcastGradientArgs"
+  input: "gradients_1/add_4_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -30186,10 +30341,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_3_grad/Reshape"
+  name: "gradients_1/add_4_grad/Reshape"
   op: "Reshape"
-  input: "gradients_1/add_3_grad/Sum"
-  input: "gradients_1/add_3_grad/Shape"
+  input: "gradients_1/add_4_grad/Sum"
+  input: "gradients_1/add_4_grad/Shape"
   attr {
     key: "T"
     value {
@@ -30204,10 +30359,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_3_grad/Sum_1"
+  name: "gradients_1/add_4_grad/Sum_1"
   op: "Sum"
   input: "gradients_1/AddN_2"
-  input: "gradients_1/add_3_grad/BroadcastGradientArgs:1"
+  input: "gradients_1/add_4_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -30228,10 +30383,10 @@ node {
   }
 }
 node {
-  name: "gradients_1/add_3_grad/Reshape_1"
+  name: "gradients_1/add_4_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_1/add_3_grad/Sum_1"
-  input: "gradients_1/add_3_grad/Shape_1"
+  input: "gradients_1/add_4_grad/Sum_1"
+  input: "gradients_1/add_4_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -30294,7 +30449,7 @@ node {
 node {
   name: "gradients_1/layer_1_type_0/mul_grad/Mul"
   op: "Mul"
-  input: "gradients_1/add_3_grad/Reshape_1"
+  input: "gradients_1/add_4_grad/Reshape_1"
   input: "layer_1_type_0/idt/read"
   attr {
     key: "T"
@@ -30507,7 +30662,7 @@ node {
 node {
   name: "gradients_1/AddN_3"
   op: "AddN"
-  input: "gradients_1/add_3_grad/Reshape"
+  input: "gradients_1/add_4_grad/Reshape"
   input: "gradients_1/layer_1_type_0/MatMul_grad/MatMul"
   attr {
     key: "N"
@@ -30525,7 +30680,7 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_1/add_3_grad/Reshape"
+        s: "loc:@gradients_1/add_4_grad/Reshape"
       }
     }
   }
@@ -41963,7 +42118,7 @@ node {
   }
 }
 node {
-  name: "mul_25/y"
+  name: "mul_26/y"
   op: "Const"
   attr {
     key: "dtype"
@@ -41984,10 +42139,10 @@ node {
   }
 }
 node {
-  name: "mul_25"
+  name: "mul_26"
   op: "Mul"
   input: "strided_slice_37"
-  input: "mul_25/y"
+  input: "mul_26/y"
   attr {
     key: "T"
     value {
@@ -42020,7 +42175,7 @@ node {
   name: "Reshape_27/shape"
   op: "Pack"
   input: "Reshape_27/shape/0"
-  input: "mul_25"
+  input: "mul_26"
   attr {
     key: "N"
     value {
@@ -42234,7 +42389,7 @@ node {
   }
 }
 node {
-  name: "mul_26/x"
+  name: "mul_27/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -42255,9 +42410,9 @@ node {
   }
 }
 node {
-  name: "mul_26"
+  name: "mul_27"
   op: "Mul"
-  input: "mul_26/x"
+  input: "mul_27/x"
   input: "strided_slice_38"
   attr {
     key: "T"
@@ -42291,7 +42446,7 @@ node {
   name: "Reshape_28/shape"
   op: "Pack"
   input: "Reshape_28/shape/0"
-  input: "mul_26"
+  input: "mul_27"
   attr {
     key: "N"
     value {
@@ -42494,7 +42649,7 @@ node {
   }
 }
 node {
-  name: "mul_27/x"
+  name: "mul_28/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -42515,9 +42670,9 @@ node {
   }
 }
 node {
-  name: "mul_27"
+  name: "mul_28"
   op: "Mul"
-  input: "mul_27/x"
+  input: "mul_28/x"
   input: "strided_slice_39"
   attr {
     key: "T"
@@ -42551,7 +42706,7 @@ node {
   name: "Reshape_30/shape"
   op: "Pack"
   input: "Reshape_30/shape/0"
-  input: "mul_27"
+  input: "mul_28"
   attr {
     key: "N"
     value {
@@ -42801,9 +42956,44 @@ node {
   }
 }
 node {
+  name: "gradients_2/o_polar_grad/Shape"
+  op: "Shape"
+  input: "Reshape_21"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients_2/o_polar_grad/Reshape"
+  op: "Reshape"
+  input: "gradients_2/Reshape_22_grad/Reshape"
+  input: "gradients_2/o_polar_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
   name: "gradients_2/Reshape_21_grad/Shape"
   op: "Shape"
-  input: "add_6"
+  input: "add_7"
   attr {
     key: "T"
     value {
@@ -42820,7 +43010,7 @@ node {
 node {
   name: "gradients_2/Reshape_21_grad/Reshape"
   op: "Reshape"
-  input: "gradients_2/Reshape_22_grad/Reshape"
+  input: "gradients_2/o_polar_grad/Reshape"
   input: "gradients_2/Reshape_21_grad/Shape"
   attr {
     key: "T"
@@ -42836,7 +43026,7 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_6_grad/Shape"
+  name: "gradients_2/add_7_grad/Shape"
   op: "Shape"
   input: "mul_16"
   attr {
@@ -42853,7 +43043,7 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_6_grad/Shape_1"
+  name: "gradients_2/add_7_grad/Shape_1"
   op: "Shape"
   input: "mul_17"
   attr {
@@ -42870,10 +43060,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_6_grad/BroadcastGradientArgs"
+  name: "gradients_2/add_7_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_2/add_6_grad/Shape"
-  input: "gradients_2/add_6_grad/Shape_1"
+  input: "gradients_2/add_7_grad/Shape"
+  input: "gradients_2/add_7_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -42882,10 +43072,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_6_grad/Sum"
+  name: "gradients_2/add_7_grad/Sum"
   op: "Sum"
   input: "gradients_2/Reshape_21_grad/Reshape"
-  input: "gradients_2/add_6_grad/BroadcastGradientArgs"
+  input: "gradients_2/add_7_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -42906,10 +43096,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_6_grad/Reshape"
+  name: "gradients_2/add_7_grad/Reshape"
   op: "Reshape"
-  input: "gradients_2/add_6_grad/Sum"
-  input: "gradients_2/add_6_grad/Shape"
+  input: "gradients_2/add_7_grad/Sum"
+  input: "gradients_2/add_7_grad/Shape"
   attr {
     key: "T"
     value {
@@ -42972,7 +43162,7 @@ node {
 node {
   name: "gradients_2/mul_16_grad/Mul"
   op: "Mul"
-  input: "gradients_2/add_6_grad/Reshape"
+  input: "gradients_2/add_7_grad/Reshape"
   input: "mul_16/y"
   attr {
     key: "T"
@@ -43507,7 +43697,7 @@ node {
 node {
   name: "gradients_2/MatMul_grad/MatMul_1"
   op: "BatchMatMulV2"
-  input: "add_5"
+  input: "add_6"
   input: "gradients_2/MatMul_1_grad/Reshape_1"
   attr {
     key: "T"
@@ -43531,7 +43721,7 @@ node {
 node {
   name: "gradients_2/MatMul_grad/Shape"
   op: "Shape"
-  input: "add_5"
+  input: "add_6"
   attr {
     key: "T"
     value {
@@ -43903,7 +44093,7 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_5_grad/Shape"
+  name: "gradients_2/add_6_grad/Shape"
   op: "Shape"
   input: "Reshape_17"
   attr {
@@ -43920,7 +44110,7 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_5_grad/Shape_1"
+  name: "gradients_2/add_6_grad/Shape_1"
   op: "Shape"
   input: "transpose"
   attr {
@@ -43937,10 +44127,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_5_grad/BroadcastGradientArgs"
+  name: "gradients_2/add_6_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_2/add_5_grad/Shape"
-  input: "gradients_2/add_5_grad/Shape_1"
+  input: "gradients_2/add_6_grad/Shape"
+  input: "gradients_2/add_6_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -43949,10 +44139,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_5_grad/Sum"
+  name: "gradients_2/add_6_grad/Sum"
   op: "Sum"
   input: "gradients_2/MatMul_grad/Reshape"
-  input: "gradients_2/add_5_grad/BroadcastGradientArgs"
+  input: "gradients_2/add_6_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -43973,10 +44163,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_5_grad/Reshape"
+  name: "gradients_2/add_6_grad/Reshape"
   op: "Reshape"
-  input: "gradients_2/add_5_grad/Sum"
-  input: "gradients_2/add_5_grad/Shape"
+  input: "gradients_2/add_6_grad/Sum"
+  input: "gradients_2/add_6_grad/Shape"
   attr {
     key: "T"
     value {
@@ -43991,10 +44181,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_5_grad/Sum_1"
+  name: "gradients_2/add_6_grad/Sum_1"
   op: "Sum"
   input: "gradients_2/MatMul_grad/Reshape"
-  input: "gradients_2/add_5_grad/BroadcastGradientArgs:1"
+  input: "gradients_2/add_6_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -44015,10 +44205,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_5_grad/Reshape_1"
+  name: "gradients_2/add_6_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_2/add_5_grad/Sum_1"
-  input: "gradients_2/add_5_grad/Shape_1"
+  input: "gradients_2/add_6_grad/Sum_1"
+  input: "gradients_2/add_6_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -44107,7 +44297,7 @@ node {
 node {
   name: "gradients_2/transpose_grad/transpose"
   op: "Transpose"
-  input: "gradients_2/add_5_grad/Reshape_1"
+  input: "gradients_2/add_6_grad/Reshape_1"
   input: "gradients_2/transpose_grad/InvertPermutation"
   attr {
     key: "T"
@@ -44349,7 +44539,7 @@ node {
 node {
   name: "gradients_2/AddN_1"
   op: "AddN"
-  input: "gradients_2/add_5_grad/Reshape"
+  input: "gradients_2/add_6_grad/Reshape"
   input: "gradients_2/transpose_grad/transpose"
   attr {
     key: "N"
@@ -44367,7 +44557,7 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_2/add_5_grad/Reshape"
+        s: "loc:@gradients_2/add_6_grad/Reshape"
       }
     }
   }
@@ -44663,9 +44853,9 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_4_grad/Shape"
+  name: "gradients_2/add_5_grad/Shape"
   op: "Shape"
-  input: "add_3"
+  input: "add_4"
   attr {
     key: "T"
     value {
@@ -44680,7 +44870,7 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_4_grad/Shape_1"
+  name: "gradients_2/add_5_grad/Shape_1"
   op: "Shape"
   input: "layer_2_type_0/mul"
   attr {
@@ -44697,10 +44887,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_4_grad/BroadcastGradientArgs"
+  name: "gradients_2/add_5_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_2/add_4_grad/Shape"
-  input: "gradients_2/add_4_grad/Shape_1"
+  input: "gradients_2/add_5_grad/Shape"
+  input: "gradients_2/add_5_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -44709,10 +44899,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_4_grad/Sum"
+  name: "gradients_2/add_5_grad/Sum"
   op: "Sum"
   input: "gradients_2/final_layer_type_0/MatMul_grad/MatMul"
-  input: "gradients_2/add_4_grad/BroadcastGradientArgs"
+  input: "gradients_2/add_5_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -44733,10 +44923,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_4_grad/Reshape"
+  name: "gradients_2/add_5_grad/Reshape"
   op: "Reshape"
-  input: "gradients_2/add_4_grad/Sum"
-  input: "gradients_2/add_4_grad/Shape"
+  input: "gradients_2/add_5_grad/Sum"
+  input: "gradients_2/add_5_grad/Shape"
   attr {
     key: "T"
     value {
@@ -44751,10 +44941,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_4_grad/Sum_1"
+  name: "gradients_2/add_5_grad/Sum_1"
   op: "Sum"
   input: "gradients_2/final_layer_type_0/MatMul_grad/MatMul"
-  input: "gradients_2/add_4_grad/BroadcastGradientArgs:1"
+  input: "gradients_2/add_5_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -44775,10 +44965,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_4_grad/Reshape_1"
+  name: "gradients_2/add_5_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_2/add_4_grad/Sum_1"
-  input: "gradients_2/add_4_grad/Shape_1"
+  input: "gradients_2/add_5_grad/Sum_1"
+  input: "gradients_2/add_5_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -44911,7 +45101,7 @@ node {
 node {
   name: "gradients_2/layer_2_type_0/mul_grad/Mul"
   op: "Mul"
-  input: "gradients_2/add_4_grad/Reshape_1"
+  input: "gradients_2/add_5_grad/Reshape_1"
   input: "layer_2_type_0/idt/read"
   attr {
     key: "T"
@@ -45630,7 +45820,7 @@ node {
 node {
   name: "gradients_2/AddN_2"
   op: "AddN"
-  input: "gradients_2/add_4_grad/Reshape"
+  input: "gradients_2/add_5_grad/Reshape"
   input: "gradients_2/layer_2_type_0/MatMul_grad/MatMul"
   attr {
     key: "N"
@@ -45648,13 +45838,13 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_2/add_4_grad/Reshape"
+        s: "loc:@gradients_2/add_5_grad/Reshape"
       }
     }
   }
 }
 node {
-  name: "gradients_2/add_3_grad/Shape"
+  name: "gradients_2/add_4_grad/Shape"
   op: "Shape"
   input: "layer_0_type_0/Reshape"
   attr {
@@ -45671,7 +45861,7 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_3_grad/Shape_1"
+  name: "gradients_2/add_4_grad/Shape_1"
   op: "Shape"
   input: "layer_1_type_0/mul"
   attr {
@@ -45688,10 +45878,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_3_grad/BroadcastGradientArgs"
+  name: "gradients_2/add_4_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_2/add_3_grad/Shape"
-  input: "gradients_2/add_3_grad/Shape_1"
+  input: "gradients_2/add_4_grad/Shape"
+  input: "gradients_2/add_4_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -45700,10 +45890,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_3_grad/Sum"
+  name: "gradients_2/add_4_grad/Sum"
   op: "Sum"
   input: "gradients_2/AddN_2"
-  input: "gradients_2/add_3_grad/BroadcastGradientArgs"
+  input: "gradients_2/add_4_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -45724,10 +45914,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_3_grad/Reshape"
+  name: "gradients_2/add_4_grad/Reshape"
   op: "Reshape"
-  input: "gradients_2/add_3_grad/Sum"
-  input: "gradients_2/add_3_grad/Shape"
+  input: "gradients_2/add_4_grad/Sum"
+  input: "gradients_2/add_4_grad/Shape"
   attr {
     key: "T"
     value {
@@ -45742,10 +45932,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_3_grad/Sum_1"
+  name: "gradients_2/add_4_grad/Sum_1"
   op: "Sum"
   input: "gradients_2/AddN_2"
-  input: "gradients_2/add_3_grad/BroadcastGradientArgs:1"
+  input: "gradients_2/add_4_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -45766,10 +45956,10 @@ node {
   }
 }
 node {
-  name: "gradients_2/add_3_grad/Reshape_1"
+  name: "gradients_2/add_4_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_2/add_3_grad/Sum_1"
-  input: "gradients_2/add_3_grad/Shape_1"
+  input: "gradients_2/add_4_grad/Sum_1"
+  input: "gradients_2/add_4_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -45832,7 +46022,7 @@ node {
 node {
   name: "gradients_2/layer_1_type_0/mul_grad/Mul"
   op: "Mul"
-  input: "gradients_2/add_3_grad/Reshape_1"
+  input: "gradients_2/add_4_grad/Reshape_1"
   input: "layer_1_type_0/idt/read"
   attr {
     key: "T"
@@ -46045,7 +46235,7 @@ node {
 node {
   name: "gradients_2/AddN_3"
   op: "AddN"
-  input: "gradients_2/add_3_grad/Reshape"
+  input: "gradients_2/add_4_grad/Reshape"
   input: "gradients_2/layer_1_type_0/MatMul_grad/MatMul"
   attr {
     key: "N"
@@ -46063,7 +46253,7 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_2/add_3_grad/Reshape"
+        s: "loc:@gradients_2/add_4_grad/Reshape"
       }
     }
   }
@@ -57501,7 +57691,7 @@ node {
   }
 }
 node {
-  name: "mul_28/y"
+  name: "mul_29/y"
   op: "Const"
   attr {
     key: "dtype"
@@ -57522,10 +57712,10 @@ node {
   }
 }
 node {
-  name: "mul_28"
+  name: "mul_29"
   op: "Mul"
   input: "strided_slice_40"
-  input: "mul_28/y"
+  input: "mul_29/y"
   attr {
     key: "T"
     value {
@@ -57558,7 +57748,7 @@ node {
   name: "Reshape_31/shape"
   op: "Pack"
   input: "Reshape_31/shape/0"
-  input: "mul_28"
+  input: "mul_29"
   attr {
     key: "N"
     value {
@@ -57772,7 +57962,7 @@ node {
   }
 }
 node {
-  name: "mul_29/x"
+  name: "mul_30/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -57793,9 +57983,9 @@ node {
   }
 }
 node {
-  name: "mul_29"
+  name: "mul_30"
   op: "Mul"
-  input: "mul_29/x"
+  input: "mul_30/x"
   input: "strided_slice_41"
   attr {
     key: "T"
@@ -57829,7 +58019,7 @@ node {
   name: "Reshape_32/shape"
   op: "Pack"
   input: "Reshape_32/shape/0"
-  input: "mul_29"
+  input: "mul_30"
   attr {
     key: "N"
     value {
@@ -58032,7 +58222,7 @@ node {
   }
 }
 node {
-  name: "mul_30/x"
+  name: "mul_31/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -58053,9 +58243,9 @@ node {
   }
 }
 node {
-  name: "mul_30"
+  name: "mul_31"
   op: "Mul"
-  input: "mul_30/x"
+  input: "mul_31/x"
   input: "strided_slice_42"
   attr {
     key: "T"
@@ -58089,7 +58279,7 @@ node {
   name: "Reshape_34/shape"
   op: "Pack"
   input: "Reshape_34/shape/0"
-  input: "mul_30"
+  input: "mul_31"
   attr {
     key: "N"
     value {
@@ -58339,9 +58529,44 @@ node {
   }
 }
 node {
+  name: "gradients_3/o_polar_grad/Shape"
+  op: "Shape"
+  input: "Reshape_21"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients_3/o_polar_grad/Reshape"
+  op: "Reshape"
+  input: "gradients_3/Reshape_22_grad/Reshape"
+  input: "gradients_3/o_polar_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
   name: "gradients_3/Reshape_21_grad/Shape"
   op: "Shape"
-  input: "add_6"
+  input: "add_7"
   attr {
     key: "T"
     value {
@@ -58358,7 +58583,7 @@ node {
 node {
   name: "gradients_3/Reshape_21_grad/Reshape"
   op: "Reshape"
-  input: "gradients_3/Reshape_22_grad/Reshape"
+  input: "gradients_3/o_polar_grad/Reshape"
   input: "gradients_3/Reshape_21_grad/Shape"
   attr {
     key: "T"
@@ -58374,7 +58599,7 @@ node {
   }
 }
 node {
-  name: "gradients_3/add_6_grad/Shape"
+  name: "gradients_3/add_7_grad/Shape"
   op: "Shape"
   input: "mul_16"
   attr {
@@ -58391,7 +58616,7 @@ node {
   }
 }
 node {
-  name: "gradients_3/add_6_grad/Shape_1"
+  name: "gradients_3/add_7_grad/Shape_1"
   op: "Shape"
   input: "mul_17"
   attr {
@@ -58408,10 +58633,10 @@ node {
   }
 }
 node {
-  name: "gradients_3/add_6_grad/BroadcastGradientArgs"
+  name: "gradients_3/add_7_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_3/add_6_grad/Shape"
-  input: "gradients_3/add_6_grad/Shape_1"
+  input: "gradients_3/add_7_grad/Shape"
+  input: "gradients_3/add_7_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -58420,10 +58645,10 @@ node {
   }
 }
 node {
-  name: "gradients_3/add_6_grad/Sum"
+  name: "gradients_3/add_7_grad/Sum"
   op: "Sum"
   input: "gradients_3/Reshape_21_grad/Reshape"
-  input: "gradients_3/add_6_grad/BroadcastGradientArgs"
+  input: "gradients_3/add_7_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -58444,10 +58669,10 @@ node {
   }
 }
 node {
-  name: "gradients_3/add_6_grad/Reshape"
+  name: "gradients_3/add_7_grad/Reshape"
   op: "Reshape"
-  input: "gradients_3/add_6_grad/Sum"
-  input: "gradients_3/add_6_grad/Shape"
+  input: "gradients_3/add_7_grad/Sum"
+  input: "gradients_3/add_7_grad/Shape"
   attr {
     key: "T"
     value {
@@ -58510,7 +58735,7 @@ node {
 node {
   name: "gradients_3/mul_16_grad/Mul"
   op: "Mul"
-  input: "gradients_3/add_6_grad/Reshape"
+  input: "gradients_3/add_7_grad/Reshape"
   input: "mul_16/y"
   attr {
     key: "T"
@@ -59045,7 +59270,7 @@ node {
 node {
   name: "gradients_3/MatMul_grad/MatMul_1"
   op: "BatchMatMulV2"
-  input: "add_5"
+  input: "add_6"
   input: "gradients_3/MatMul_1_grad/Reshape_1"
   attr {
     key: "T"
@@ -59069,7 +59294,7 @@ node {
 node {
   name: "gradients_3/MatMul_grad/Shape"
   op: "Shape"
-  input: "add_5"
+  input: "add_6"
   attr {
     key: "T"
     value {
@@ -59441,7 +59666,7 @@ node {
   }
 }
 node {
-  name: "gradients_3/add_5_grad/Shape"
+  name: "gradients_3/add_6_grad/Shape"
   op: "Shape"
   input: "Reshape_17"
   attr {
@@ -59458,7 +59683,7 @@ node {
   }
 }
 node {
-  name: "gradients_3/add_5_grad/Shape_1"
+  name: "gradients_3/add_6_grad/Shape_1"
   op: "Shape"
   input: "transpose"
   attr {
@@ -59475,10 +59700,10 @@ node {
   }
 }
 node {
-  name: "gradients_3/add_5_grad/BroadcastGradientArgs"
+  name: "gradients_3/add_6_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_3/add_5_grad/Shape"
-  input: "gradients_3/add_5_grad/Shape_1"
+  input: "gradients_3/add_6_grad/Shape"
+  input: "gradients_3/add_6_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -59487,10 +59712,10 @@ node {
   }
 }
 node {
-  name: "gradients_3/add_5_grad/Sum"
+  name: "gradients_3/add_6_grad/Sum"
   op: "Sum"
   input: "gradients_3/MatMul_grad/Reshape"
-  input: "gradients_3/add_5_grad/BroadcastGradientArgs"
+  input: "gradients_3/add_6_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -59511,10 +59736,10 @@ node {
   }
 }
 node {
-  name: "gradients_3/add_5_grad/Reshape"
+  name: "gradients_3/add_6_grad/Reshape"
   op: "Reshape"
-  input: "gradients_3/add_5_grad/Sum"
-  input: "gradients_3/add_5_grad/Shape"
+  input: "gradients_3/add_6_grad/Sum"
+  input: "gradients_3/add_6_grad/Shape"
   attr {
     key: "T"
     value {
@@ -59529,10 +59754,10 @@ node {
   }
 }
 node {
-  name: "gradients_3/add_5_grad/Sum_1"
+  name: "gradients_3/add_6_grad/Sum_1"
   op: "Sum"
   input: "gradients_3/MatMul_grad/Reshape"
-  input: "gradients_3/add_5_grad/BroadcastGradientArgs:1"
+  input: "gradients_3/add_6_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -59553,10 +59778,10 @@ node {
   }
 }
 node {
-  name: "gradients_3/add_5_grad/Reshape_1"
+  name: "gradients_3/add_6_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_3/add_5_grad/Sum_1"
-  input: "gradients_3/add_5_grad/Shape_1"
+  input: "gradients_3/add_6_grad/Sum_1"
+  input: "gradients_3/add_6_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -59645,7 +59870,7 @@ node {
 node {
   name: "gradients_3/transpose_grad/transpose"
   op: "Transpose"
-  input: "gradients_3/add_5_grad/Reshape_1"
+  input: "gradients_3/add_6_grad/Reshape_1"
   input: "gradients_3/transpose_grad/InvertPermutation"
   attr {
     key: "T"
@@ -59887,7 +60112,7 @@ node {
 node {
   name: "gradients_3/AddN_1"
   op: "AddN"
-  input: "gradients_3/add_5_grad/Reshape"
+  input: "gradients_3/add_6_grad/Reshape"
   input: "gradients_3/transpose_grad/transpose"
   attr {
     key: "N"
@@ -59905,7 +60130,7 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_3/add_5_grad/Reshape"
+        s: "loc:@gradients_3/add_6_grad/Reshape"
       }
     }
   }
@@ -60201,9 +60426,9 @@ node {
   }
 }
 node {
-  name: "gradients_3/add_4_grad/Shape"
+  name: "gradients_3/add_5_grad/Shape"
   op: "Shape"
-  input: "add_3"
+  input: "add_4"
   attr {
     key: "T"
     value {
@@ -60218,7 +60443,7 @@ node {
   }
 }
 node {
-  name: "gradients_3/add_4_grad/Shape_1"
+  name: "gradients_3/add_5_grad/Shape_1"
   op: "Shape"
   input: "layer_2_type_0/mul"
   attr {
@@ -60235,10 +60460,10 @@ node {
   }
 }
 node {
-  name: "gradients_3/add_4_grad/BroadcastGradientArgs"
+  name: "gradients_3/add_5_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_3/add_4_grad/Shape"
-  input: "gradients_3/add_4_grad/Shape_1"
+  input: "gradients_3/add_5_grad/Shape"
+  input: "gradients_3/add_5_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -60247,10 +60472,10 @@ node {
   }
 }
 node {
-  name: "gradients_3/add_4_grad/Sum"
+  name: "gradients_3/add_5_grad/Sum"
   op: "Sum"
   input: "gradients_3/final_layer_type_0/MatMul_grad/MatMul"
-  input: "gradients_3/add_4_grad/BroadcastGradientArgs"
+  input: "gradients_3/add_5_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -60271,10 +60496,10 @@ node {
   }
 }
 node {
-  name: "gradients_3/add_4_grad/Reshape"
+  name: "gradients_3/add_5_grad/Reshape"
   op: "Reshape"
-  input: "gradients_3/add_4_grad/Sum"
-  input: "gradients_3/add_4_grad/Shape"
+  input: "gradients_3/add_5_grad/Sum"
+  input: "gradients_3/add_5_grad/Shape"
   attr {
     key: "T"
     value {
@@ -60289,10 +60514,10 @@ node {
   }
 }
 node {
-  name: "gradients_3/add_4_grad/Sum_1"
+  name: "gradients_3/add_5_grad/Sum_1"
   op: "Sum"
   input: "gradients_3/final_layer_type_0/MatMul_grad/MatMul"
-  input: "gradients_3/add_4_grad/BroadcastGradientArgs:1"
+  input: "gradients_3/add_5_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -60313,10 +60538,10 @@ node {
   }
 }
 node {
-  name: "gradients_3/add_4_grad/Reshape_1"
+  name: "gradients_3/add_5_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_3/add_4_grad/Sum_1"
-  input: "gradients_3/add_4_grad/Shape_1"
+  input: "gradients_3/add_5_grad/Sum_1"
+  input: "gradients_3/add_5_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -60449,7 +60674,7 @@ node {
 node {
   name: "gradients_3/layer_2_type_0/mul_grad/Mul"
   op: "Mul"
-  input: "gradients_3/add_4_grad/Reshape_1"
+  input: "gradients_3/add_5_grad/Reshape_1"
   input: "layer_2_type_0/idt/read"
   attr {
     key: "T"
@@ -61168,7 +61393,7 @@ node {
 node {
   name: "gradients_3/AddN_2"
   op: "AddN"
-  input: "gradients_3/add_4_grad/Reshape"
+  input: "gradients_3/add_5_grad/Reshape"
   input: "gradients_3/layer_2_type_0/MatMul_grad/MatMul"
   attr {
     key: "N"
@@ -61186,13 +61411,13 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_3/add_4_grad/Reshape"
+        s: "loc:@gradients_3/add_5_grad/Reshape"
       }
     }
   }
 }
 node {
-  name: "gradients_3/add_3_grad/Shape"
+  name: "gradients_3/add_4_grad/Shape"
   op: "Shape"
   input: "layer_0_type_0/Reshape"
   attr {
@@ -61209,7 +61434,7 @@ node {
   }
 }
 node {
-  name: "gradients_3/add_3_grad/Shape_1"
+  name: "gradients_3/add_4_grad/Shape_1"
   op: "Shape"
   input: "layer_1_type_0/mul"
   attr {
@@ -61226,10 +61451,10 @@ node {
   }
 }
 node {
-  name: "gradients_3/add_3_grad/BroadcastGradientArgs"
+  name: "gradients_3/add_4_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_3/add_3_grad/Shape"
-  input: "gradients_3/add_3_grad/Shape_1"
+  input: "gradients_3/add_4_grad/Shape"
+  input: "gradients_3/add_4_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -61238,10 +61463,10 @@ node {
   }
 }
 node {
-  name: "gradients_3/add_3_grad/Sum"
+  name: "gradients_3/add_4_grad/Sum"
   op: "Sum"
   input: "gradients_3/AddN_2"
-  input: "gradients_3/add_3_grad/BroadcastGradientArgs"
+  input: "gradients_3/add_4_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -61262,10 +61487,10 @@ node {
   }
 }
 node {
-  name: "gradients_3/add_3_grad/Reshape"
+  name: "gradients_3/add_4_grad/Reshape"
   op: "Reshape"
-  input: "gradients_3/add_3_grad/Sum"
-  input: "gradients_3/add_3_grad/Shape"
+  input: "gradients_3/add_4_grad/Sum"
+  input: "gradients_3/add_4_grad/Shape"
   attr {
     key: "T"
     value {
@@ -61280,10 +61505,10 @@ node {
   }
 }
 node {
-  name: "gradients_3/add_3_grad/Sum_1"
+  name: "gradients_3/add_4_grad/Sum_1"
   op: "Sum"
   input: "gradients_3/AddN_2"
-  input: "gradients_3/add_3_grad/BroadcastGradientArgs:1"
+  input: "gradients_3/add_4_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -61304,10 +61529,10 @@ node {
   }
 }
 node {
-  name: "gradients_3/add_3_grad/Reshape_1"
+  name: "gradients_3/add_4_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_3/add_3_grad/Sum_1"
-  input: "gradients_3/add_3_grad/Shape_1"
+  input: "gradients_3/add_4_grad/Sum_1"
+  input: "gradients_3/add_4_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -61370,7 +61595,7 @@ node {
 node {
   name: "gradients_3/layer_1_type_0/mul_grad/Mul"
   op: "Mul"
-  input: "gradients_3/add_3_grad/Reshape_1"
+  input: "gradients_3/add_4_grad/Reshape_1"
   input: "layer_1_type_0/idt/read"
   attr {
     key: "T"
@@ -61583,7 +61808,7 @@ node {
 node {
   name: "gradients_3/AddN_3"
   op: "AddN"
-  input: "gradients_3/add_3_grad/Reshape"
+  input: "gradients_3/add_4_grad/Reshape"
   input: "gradients_3/layer_1_type_0/MatMul_grad/MatMul"
   attr {
     key: "N"
@@ -61601,7 +61826,7 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_3/add_3_grad/Reshape"
+        s: "loc:@gradients_3/add_4_grad/Reshape"
       }
     }
   }
@@ -73039,7 +73264,7 @@ node {
   }
 }
 node {
-  name: "mul_31/y"
+  name: "mul_32/y"
   op: "Const"
   attr {
     key: "dtype"
@@ -73060,10 +73285,10 @@ node {
   }
 }
 node {
-  name: "mul_31"
+  name: "mul_32"
   op: "Mul"
   input: "strided_slice_43"
-  input: "mul_31/y"
+  input: "mul_32/y"
   attr {
     key: "T"
     value {
@@ -73096,7 +73321,7 @@ node {
   name: "Reshape_35/shape"
   op: "Pack"
   input: "Reshape_35/shape/0"
-  input: "mul_31"
+  input: "mul_32"
   attr {
     key: "N"
     value {
@@ -73310,7 +73535,7 @@ node {
   }
 }
 node {
-  name: "mul_32/x"
+  name: "mul_33/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -73331,9 +73556,9 @@ node {
   }
 }
 node {
-  name: "mul_32"
+  name: "mul_33"
   op: "Mul"
-  input: "mul_32/x"
+  input: "mul_33/x"
   input: "strided_slice_44"
   attr {
     key: "T"
@@ -73367,7 +73592,7 @@ node {
   name: "Reshape_36/shape"
   op: "Pack"
   input: "Reshape_36/shape/0"
-  input: "mul_32"
+  input: "mul_33"
   attr {
     key: "N"
     value {
@@ -73570,7 +73795,7 @@ node {
   }
 }
 node {
-  name: "mul_33/x"
+  name: "mul_34/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -73591,9 +73816,9 @@ node {
   }
 }
 node {
-  name: "mul_33"
+  name: "mul_34"
   op: "Mul"
-  input: "mul_33/x"
+  input: "mul_34/x"
   input: "strided_slice_45"
   attr {
     key: "T"
@@ -73627,7 +73852,7 @@ node {
   name: "Reshape_38/shape"
   op: "Pack"
   input: "Reshape_38/shape/0"
-  input: "mul_33"
+  input: "mul_34"
   attr {
     key: "N"
     value {
@@ -73877,9 +74102,44 @@ node {
   }
 }
 node {
+  name: "gradients_4/o_polar_grad/Shape"
+  op: "Shape"
+  input: "Reshape_21"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients_4/o_polar_grad/Reshape"
+  op: "Reshape"
+  input: "gradients_4/Reshape_22_grad/Reshape"
+  input: "gradients_4/o_polar_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
   name: "gradients_4/Reshape_21_grad/Shape"
   op: "Shape"
-  input: "add_6"
+  input: "add_7"
   attr {
     key: "T"
     value {
@@ -73896,7 +74156,7 @@ node {
 node {
   name: "gradients_4/Reshape_21_grad/Reshape"
   op: "Reshape"
-  input: "gradients_4/Reshape_22_grad/Reshape"
+  input: "gradients_4/o_polar_grad/Reshape"
   input: "gradients_4/Reshape_21_grad/Shape"
   attr {
     key: "T"
@@ -73912,7 +74172,7 @@ node {
   }
 }
 node {
-  name: "gradients_4/add_6_grad/Shape"
+  name: "gradients_4/add_7_grad/Shape"
   op: "Shape"
   input: "mul_16"
   attr {
@@ -73929,7 +74189,7 @@ node {
   }
 }
 node {
-  name: "gradients_4/add_6_grad/Shape_1"
+  name: "gradients_4/add_7_grad/Shape_1"
   op: "Shape"
   input: "mul_17"
   attr {
@@ -73946,10 +74206,10 @@ node {
   }
 }
 node {
-  name: "gradients_4/add_6_grad/BroadcastGradientArgs"
+  name: "gradients_4/add_7_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_4/add_6_grad/Shape"
-  input: "gradients_4/add_6_grad/Shape_1"
+  input: "gradients_4/add_7_grad/Shape"
+  input: "gradients_4/add_7_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -73958,10 +74218,10 @@ node {
   }
 }
 node {
-  name: "gradients_4/add_6_grad/Sum"
+  name: "gradients_4/add_7_grad/Sum"
   op: "Sum"
   input: "gradients_4/Reshape_21_grad/Reshape"
-  input: "gradients_4/add_6_grad/BroadcastGradientArgs"
+  input: "gradients_4/add_7_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -73982,10 +74242,10 @@ node {
   }
 }
 node {
-  name: "gradients_4/add_6_grad/Reshape"
+  name: "gradients_4/add_7_grad/Reshape"
   op: "Reshape"
-  input: "gradients_4/add_6_grad/Sum"
-  input: "gradients_4/add_6_grad/Shape"
+  input: "gradients_4/add_7_grad/Sum"
+  input: "gradients_4/add_7_grad/Shape"
   attr {
     key: "T"
     value {
@@ -74048,7 +74308,7 @@ node {
 node {
   name: "gradients_4/mul_16_grad/Mul"
   op: "Mul"
-  input: "gradients_4/add_6_grad/Reshape"
+  input: "gradients_4/add_7_grad/Reshape"
   input: "mul_16/y"
   attr {
     key: "T"
@@ -74583,7 +74843,7 @@ node {
 node {
   name: "gradients_4/MatMul_grad/MatMul_1"
   op: "BatchMatMulV2"
-  input: "add_5"
+  input: "add_6"
   input: "gradients_4/MatMul_1_grad/Reshape_1"
   attr {
     key: "T"
@@ -74607,7 +74867,7 @@ node {
 node {
   name: "gradients_4/MatMul_grad/Shape"
   op: "Shape"
-  input: "add_5"
+  input: "add_6"
   attr {
     key: "T"
     value {
@@ -74979,7 +75239,7 @@ node {
   }
 }
 node {
-  name: "gradients_4/add_5_grad/Shape"
+  name: "gradients_4/add_6_grad/Shape"
   op: "Shape"
   input: "Reshape_17"
   attr {
@@ -74996,7 +75256,7 @@ node {
   }
 }
 node {
-  name: "gradients_4/add_5_grad/Shape_1"
+  name: "gradients_4/add_6_grad/Shape_1"
   op: "Shape"
   input: "transpose"
   attr {
@@ -75013,10 +75273,10 @@ node {
   }
 }
 node {
-  name: "gradients_4/add_5_grad/BroadcastGradientArgs"
+  name: "gradients_4/add_6_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_4/add_5_grad/Shape"
-  input: "gradients_4/add_5_grad/Shape_1"
+  input: "gradients_4/add_6_grad/Shape"
+  input: "gradients_4/add_6_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -75025,10 +75285,10 @@ node {
   }
 }
 node {
-  name: "gradients_4/add_5_grad/Sum"
+  name: "gradients_4/add_6_grad/Sum"
   op: "Sum"
   input: "gradients_4/MatMul_grad/Reshape"
-  input: "gradients_4/add_5_grad/BroadcastGradientArgs"
+  input: "gradients_4/add_6_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -75049,10 +75309,10 @@ node {
   }
 }
 node {
-  name: "gradients_4/add_5_grad/Reshape"
+  name: "gradients_4/add_6_grad/Reshape"
   op: "Reshape"
-  input: "gradients_4/add_5_grad/Sum"
-  input: "gradients_4/add_5_grad/Shape"
+  input: "gradients_4/add_6_grad/Sum"
+  input: "gradients_4/add_6_grad/Shape"
   attr {
     key: "T"
     value {
@@ -75067,10 +75327,10 @@ node {
   }
 }
 node {
-  name: "gradients_4/add_5_grad/Sum_1"
+  name: "gradients_4/add_6_grad/Sum_1"
   op: "Sum"
   input: "gradients_4/MatMul_grad/Reshape"
-  input: "gradients_4/add_5_grad/BroadcastGradientArgs:1"
+  input: "gradients_4/add_6_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -75091,10 +75351,10 @@ node {
   }
 }
 node {
-  name: "gradients_4/add_5_grad/Reshape_1"
+  name: "gradients_4/add_6_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_4/add_5_grad/Sum_1"
-  input: "gradients_4/add_5_grad/Shape_1"
+  input: "gradients_4/add_6_grad/Sum_1"
+  input: "gradients_4/add_6_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -75183,7 +75443,7 @@ node {
 node {
   name: "gradients_4/transpose_grad/transpose"
   op: "Transpose"
-  input: "gradients_4/add_5_grad/Reshape_1"
+  input: "gradients_4/add_6_grad/Reshape_1"
   input: "gradients_4/transpose_grad/InvertPermutation"
   attr {
     key: "T"
@@ -75425,7 +75685,7 @@ node {
 node {
   name: "gradients_4/AddN_1"
   op: "AddN"
-  input: "gradients_4/add_5_grad/Reshape"
+  input: "gradients_4/add_6_grad/Reshape"
   input: "gradients_4/transpose_grad/transpose"
   attr {
     key: "N"
@@ -75443,7 +75703,7 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_4/add_5_grad/Reshape"
+        s: "loc:@gradients_4/add_6_grad/Reshape"
       }
     }
   }
@@ -75739,9 +75999,9 @@ node {
   }
 }
 node {
-  name: "gradients_4/add_4_grad/Shape"
+  name: "gradients_4/add_5_grad/Shape"
   op: "Shape"
-  input: "add_3"
+  input: "add_4"
   attr {
     key: "T"
     value {
@@ -75756,7 +76016,7 @@ node {
   }
 }
 node {
-  name: "gradients_4/add_4_grad/Shape_1"
+  name: "gradients_4/add_5_grad/Shape_1"
   op: "Shape"
   input: "layer_2_type_0/mul"
   attr {
@@ -75773,10 +76033,10 @@ node {
   }
 }
 node {
-  name: "gradients_4/add_4_grad/BroadcastGradientArgs"
+  name: "gradients_4/add_5_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_4/add_4_grad/Shape"
-  input: "gradients_4/add_4_grad/Shape_1"
+  input: "gradients_4/add_5_grad/Shape"
+  input: "gradients_4/add_5_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -75785,10 +76045,10 @@ node {
   }
 }
 node {
-  name: "gradients_4/add_4_grad/Sum"
+  name: "gradients_4/add_5_grad/Sum"
   op: "Sum"
   input: "gradients_4/final_layer_type_0/MatMul_grad/MatMul"
-  input: "gradients_4/add_4_grad/BroadcastGradientArgs"
+  input: "gradients_4/add_5_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -75809,10 +76069,10 @@ node {
   }
 }
 node {
-  name: "gradients_4/add_4_grad/Reshape"
+  name: "gradients_4/add_5_grad/Reshape"
   op: "Reshape"
-  input: "gradients_4/add_4_grad/Sum"
-  input: "gradients_4/add_4_grad/Shape"
+  input: "gradients_4/add_5_grad/Sum"
+  input: "gradients_4/add_5_grad/Shape"
   attr {
     key: "T"
     value {
@@ -75827,10 +76087,10 @@ node {
   }
 }
 node {
-  name: "gradients_4/add_4_grad/Sum_1"
+  name: "gradients_4/add_5_grad/Sum_1"
   op: "Sum"
   input: "gradients_4/final_layer_type_0/MatMul_grad/MatMul"
-  input: "gradients_4/add_4_grad/BroadcastGradientArgs:1"
+  input: "gradients_4/add_5_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -75851,10 +76111,10 @@ node {
   }
 }
 node {
-  name: "gradients_4/add_4_grad/Reshape_1"
+  name: "gradients_4/add_5_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_4/add_4_grad/Sum_1"
-  input: "gradients_4/add_4_grad/Shape_1"
+  input: "gradients_4/add_5_grad/Sum_1"
+  input: "gradients_4/add_5_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -75987,7 +76247,7 @@ node {
 node {
   name: "gradients_4/layer_2_type_0/mul_grad/Mul"
   op: "Mul"
-  input: "gradients_4/add_4_grad/Reshape_1"
+  input: "gradients_4/add_5_grad/Reshape_1"
   input: "layer_2_type_0/idt/read"
   attr {
     key: "T"
@@ -76706,7 +76966,7 @@ node {
 node {
   name: "gradients_4/AddN_2"
   op: "AddN"
-  input: "gradients_4/add_4_grad/Reshape"
+  input: "gradients_4/add_5_grad/Reshape"
   input: "gradients_4/layer_2_type_0/MatMul_grad/MatMul"
   attr {
     key: "N"
@@ -76724,13 +76984,13 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_4/add_4_grad/Reshape"
+        s: "loc:@gradients_4/add_5_grad/Reshape"
       }
     }
   }
 }
 node {
-  name: "gradients_4/add_3_grad/Shape"
+  name: "gradients_4/add_4_grad/Shape"
   op: "Shape"
   input: "layer_0_type_0/Reshape"
   attr {
@@ -76747,7 +77007,7 @@ node {
   }
 }
 node {
-  name: "gradients_4/add_3_grad/Shape_1"
+  name: "gradients_4/add_4_grad/Shape_1"
   op: "Shape"
   input: "layer_1_type_0/mul"
   attr {
@@ -76764,10 +77024,10 @@ node {
   }
 }
 node {
-  name: "gradients_4/add_3_grad/BroadcastGradientArgs"
+  name: "gradients_4/add_4_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_4/add_3_grad/Shape"
-  input: "gradients_4/add_3_grad/Shape_1"
+  input: "gradients_4/add_4_grad/Shape"
+  input: "gradients_4/add_4_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -76776,10 +77036,10 @@ node {
   }
 }
 node {
-  name: "gradients_4/add_3_grad/Sum"
+  name: "gradients_4/add_4_grad/Sum"
   op: "Sum"
   input: "gradients_4/AddN_2"
-  input: "gradients_4/add_3_grad/BroadcastGradientArgs"
+  input: "gradients_4/add_4_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -76800,10 +77060,10 @@ node {
   }
 }
 node {
-  name: "gradients_4/add_3_grad/Reshape"
+  name: "gradients_4/add_4_grad/Reshape"
   op: "Reshape"
-  input: "gradients_4/add_3_grad/Sum"
-  input: "gradients_4/add_3_grad/Shape"
+  input: "gradients_4/add_4_grad/Sum"
+  input: "gradients_4/add_4_grad/Shape"
   attr {
     key: "T"
     value {
@@ -76818,10 +77078,10 @@ node {
   }
 }
 node {
-  name: "gradients_4/add_3_grad/Sum_1"
+  name: "gradients_4/add_4_grad/Sum_1"
   op: "Sum"
   input: "gradients_4/AddN_2"
-  input: "gradients_4/add_3_grad/BroadcastGradientArgs:1"
+  input: "gradients_4/add_4_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -76842,10 +77102,10 @@ node {
   }
 }
 node {
-  name: "gradients_4/add_3_grad/Reshape_1"
+  name: "gradients_4/add_4_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_4/add_3_grad/Sum_1"
-  input: "gradients_4/add_3_grad/Shape_1"
+  input: "gradients_4/add_4_grad/Sum_1"
+  input: "gradients_4/add_4_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -76908,7 +77168,7 @@ node {
 node {
   name: "gradients_4/layer_1_type_0/mul_grad/Mul"
   op: "Mul"
-  input: "gradients_4/add_3_grad/Reshape_1"
+  input: "gradients_4/add_4_grad/Reshape_1"
   input: "layer_1_type_0/idt/read"
   attr {
     key: "T"
@@ -77121,7 +77381,7 @@ node {
 node {
   name: "gradients_4/AddN_3"
   op: "AddN"
-  input: "gradients_4/add_3_grad/Reshape"
+  input: "gradients_4/add_4_grad/Reshape"
   input: "gradients_4/layer_1_type_0/MatMul_grad/MatMul"
   attr {
     key: "N"
@@ -77139,7 +77399,7 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_4/add_3_grad/Reshape"
+        s: "loc:@gradients_4/add_4_grad/Reshape"
       }
     }
   }
@@ -88577,7 +88837,7 @@ node {
   }
 }
 node {
-  name: "mul_34/y"
+  name: "mul_35/y"
   op: "Const"
   attr {
     key: "dtype"
@@ -88598,10 +88858,10 @@ node {
   }
 }
 node {
-  name: "mul_34"
+  name: "mul_35"
   op: "Mul"
   input: "strided_slice_46"
-  input: "mul_34/y"
+  input: "mul_35/y"
   attr {
     key: "T"
     value {
@@ -88634,7 +88894,7 @@ node {
   name: "Reshape_39/shape"
   op: "Pack"
   input: "Reshape_39/shape/0"
-  input: "mul_34"
+  input: "mul_35"
   attr {
     key: "N"
     value {
@@ -88848,7 +89108,7 @@ node {
   }
 }
 node {
-  name: "mul_35/x"
+  name: "mul_36/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -88869,9 +89129,9 @@ node {
   }
 }
 node {
-  name: "mul_35"
+  name: "mul_36"
   op: "Mul"
-  input: "mul_35/x"
+  input: "mul_36/x"
   input: "strided_slice_47"
   attr {
     key: "T"
@@ -88905,7 +89165,7 @@ node {
   name: "Reshape_40/shape"
   op: "Pack"
   input: "Reshape_40/shape/0"
-  input: "mul_35"
+  input: "mul_36"
   attr {
     key: "N"
     value {
@@ -89108,7 +89368,7 @@ node {
   }
 }
 node {
-  name: "mul_36/x"
+  name: "mul_37/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -89129,9 +89389,9 @@ node {
   }
 }
 node {
-  name: "mul_36"
+  name: "mul_37"
   op: "Mul"
-  input: "mul_36/x"
+  input: "mul_37/x"
   input: "strided_slice_48"
   attr {
     key: "T"
@@ -89165,7 +89425,7 @@ node {
   name: "Reshape_42/shape"
   op: "Pack"
   input: "Reshape_42/shape/0"
-  input: "mul_36"
+  input: "mul_37"
   attr {
     key: "N"
     value {
@@ -89415,9 +89675,44 @@ node {
   }
 }
 node {
+  name: "gradients_5/o_polar_grad/Shape"
+  op: "Shape"
+  input: "Reshape_21"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients_5/o_polar_grad/Reshape"
+  op: "Reshape"
+  input: "gradients_5/Reshape_22_grad/Reshape"
+  input: "gradients_5/o_polar_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
   name: "gradients_5/Reshape_21_grad/Shape"
   op: "Shape"
-  input: "add_6"
+  input: "add_7"
   attr {
     key: "T"
     value {
@@ -89434,7 +89729,7 @@ node {
 node {
   name: "gradients_5/Reshape_21_grad/Reshape"
   op: "Reshape"
-  input: "gradients_5/Reshape_22_grad/Reshape"
+  input: "gradients_5/o_polar_grad/Reshape"
   input: "gradients_5/Reshape_21_grad/Shape"
   attr {
     key: "T"
@@ -89450,7 +89745,7 @@ node {
   }
 }
 node {
-  name: "gradients_5/add_6_grad/Shape"
+  name: "gradients_5/add_7_grad/Shape"
   op: "Shape"
   input: "mul_16"
   attr {
@@ -89467,7 +89762,7 @@ node {
   }
 }
 node {
-  name: "gradients_5/add_6_grad/Shape_1"
+  name: "gradients_5/add_7_grad/Shape_1"
   op: "Shape"
   input: "mul_17"
   attr {
@@ -89484,10 +89779,10 @@ node {
   }
 }
 node {
-  name: "gradients_5/add_6_grad/BroadcastGradientArgs"
+  name: "gradients_5/add_7_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_5/add_6_grad/Shape"
-  input: "gradients_5/add_6_grad/Shape_1"
+  input: "gradients_5/add_7_grad/Shape"
+  input: "gradients_5/add_7_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -89496,10 +89791,10 @@ node {
   }
 }
 node {
-  name: "gradients_5/add_6_grad/Sum"
+  name: "gradients_5/add_7_grad/Sum"
   op: "Sum"
   input: "gradients_5/Reshape_21_grad/Reshape"
-  input: "gradients_5/add_6_grad/BroadcastGradientArgs"
+  input: "gradients_5/add_7_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -89520,10 +89815,10 @@ node {
   }
 }
 node {
-  name: "gradients_5/add_6_grad/Reshape"
+  name: "gradients_5/add_7_grad/Reshape"
   op: "Reshape"
-  input: "gradients_5/add_6_grad/Sum"
-  input: "gradients_5/add_6_grad/Shape"
+  input: "gradients_5/add_7_grad/Sum"
+  input: "gradients_5/add_7_grad/Shape"
   attr {
     key: "T"
     value {
@@ -89586,7 +89881,7 @@ node {
 node {
   name: "gradients_5/mul_16_grad/Mul"
   op: "Mul"
-  input: "gradients_5/add_6_grad/Reshape"
+  input: "gradients_5/add_7_grad/Reshape"
   input: "mul_16/y"
   attr {
     key: "T"
@@ -90121,7 +90416,7 @@ node {
 node {
   name: "gradients_5/MatMul_grad/MatMul_1"
   op: "BatchMatMulV2"
-  input: "add_5"
+  input: "add_6"
   input: "gradients_5/MatMul_1_grad/Reshape_1"
   attr {
     key: "T"
@@ -90145,7 +90440,7 @@ node {
 node {
   name: "gradients_5/MatMul_grad/Shape"
   op: "Shape"
-  input: "add_5"
+  input: "add_6"
   attr {
     key: "T"
     value {
@@ -90517,7 +90812,7 @@ node {
   }
 }
 node {
-  name: "gradients_5/add_5_grad/Shape"
+  name: "gradients_5/add_6_grad/Shape"
   op: "Shape"
   input: "Reshape_17"
   attr {
@@ -90534,7 +90829,7 @@ node {
   }
 }
 node {
-  name: "gradients_5/add_5_grad/Shape_1"
+  name: "gradients_5/add_6_grad/Shape_1"
   op: "Shape"
   input: "transpose"
   attr {
@@ -90551,10 +90846,10 @@ node {
   }
 }
 node {
-  name: "gradients_5/add_5_grad/BroadcastGradientArgs"
+  name: "gradients_5/add_6_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_5/add_5_grad/Shape"
-  input: "gradients_5/add_5_grad/Shape_1"
+  input: "gradients_5/add_6_grad/Shape"
+  input: "gradients_5/add_6_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -90563,10 +90858,10 @@ node {
   }
 }
 node {
-  name: "gradients_5/add_5_grad/Sum"
+  name: "gradients_5/add_6_grad/Sum"
   op: "Sum"
   input: "gradients_5/MatMul_grad/Reshape"
-  input: "gradients_5/add_5_grad/BroadcastGradientArgs"
+  input: "gradients_5/add_6_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -90587,10 +90882,10 @@ node {
   }
 }
 node {
-  name: "gradients_5/add_5_grad/Reshape"
+  name: "gradients_5/add_6_grad/Reshape"
   op: "Reshape"
-  input: "gradients_5/add_5_grad/Sum"
-  input: "gradients_5/add_5_grad/Shape"
+  input: "gradients_5/add_6_grad/Sum"
+  input: "gradients_5/add_6_grad/Shape"
   attr {
     key: "T"
     value {
@@ -90605,10 +90900,10 @@ node {
   }
 }
 node {
-  name: "gradients_5/add_5_grad/Sum_1"
+  name: "gradients_5/add_6_grad/Sum_1"
   op: "Sum"
   input: "gradients_5/MatMul_grad/Reshape"
-  input: "gradients_5/add_5_grad/BroadcastGradientArgs:1"
+  input: "gradients_5/add_6_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -90629,10 +90924,10 @@ node {
   }
 }
 node {
-  name: "gradients_5/add_5_grad/Reshape_1"
+  name: "gradients_5/add_6_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_5/add_5_grad/Sum_1"
-  input: "gradients_5/add_5_grad/Shape_1"
+  input: "gradients_5/add_6_grad/Sum_1"
+  input: "gradients_5/add_6_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -90721,7 +91016,7 @@ node {
 node {
   name: "gradients_5/transpose_grad/transpose"
   op: "Transpose"
-  input: "gradients_5/add_5_grad/Reshape_1"
+  input: "gradients_5/add_6_grad/Reshape_1"
   input: "gradients_5/transpose_grad/InvertPermutation"
   attr {
     key: "T"
@@ -90963,7 +91258,7 @@ node {
 node {
   name: "gradients_5/AddN_1"
   op: "AddN"
-  input: "gradients_5/add_5_grad/Reshape"
+  input: "gradients_5/add_6_grad/Reshape"
   input: "gradients_5/transpose_grad/transpose"
   attr {
     key: "N"
@@ -90981,7 +91276,7 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_5/add_5_grad/Reshape"
+        s: "loc:@gradients_5/add_6_grad/Reshape"
       }
     }
   }
@@ -91277,9 +91572,9 @@ node {
   }
 }
 node {
-  name: "gradients_5/add_4_grad/Shape"
+  name: "gradients_5/add_5_grad/Shape"
   op: "Shape"
-  input: "add_3"
+  input: "add_4"
   attr {
     key: "T"
     value {
@@ -91294,7 +91589,7 @@ node {
   }
 }
 node {
-  name: "gradients_5/add_4_grad/Shape_1"
+  name: "gradients_5/add_5_grad/Shape_1"
   op: "Shape"
   input: "layer_2_type_0/mul"
   attr {
@@ -91311,10 +91606,10 @@ node {
   }
 }
 node {
-  name: "gradients_5/add_4_grad/BroadcastGradientArgs"
+  name: "gradients_5/add_5_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_5/add_4_grad/Shape"
-  input: "gradients_5/add_4_grad/Shape_1"
+  input: "gradients_5/add_5_grad/Shape"
+  input: "gradients_5/add_5_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -91323,10 +91618,10 @@ node {
   }
 }
 node {
-  name: "gradients_5/add_4_grad/Sum"
+  name: "gradients_5/add_5_grad/Sum"
   op: "Sum"
   input: "gradients_5/final_layer_type_0/MatMul_grad/MatMul"
-  input: "gradients_5/add_4_grad/BroadcastGradientArgs"
+  input: "gradients_5/add_5_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -91347,10 +91642,10 @@ node {
   }
 }
 node {
-  name: "gradients_5/add_4_grad/Reshape"
+  name: "gradients_5/add_5_grad/Reshape"
   op: "Reshape"
-  input: "gradients_5/add_4_grad/Sum"
-  input: "gradients_5/add_4_grad/Shape"
+  input: "gradients_5/add_5_grad/Sum"
+  input: "gradients_5/add_5_grad/Shape"
   attr {
     key: "T"
     value {
@@ -91365,10 +91660,10 @@ node {
   }
 }
 node {
-  name: "gradients_5/add_4_grad/Sum_1"
+  name: "gradients_5/add_5_grad/Sum_1"
   op: "Sum"
   input: "gradients_5/final_layer_type_0/MatMul_grad/MatMul"
-  input: "gradients_5/add_4_grad/BroadcastGradientArgs:1"
+  input: "gradients_5/add_5_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -91389,10 +91684,10 @@ node {
   }
 }
 node {
-  name: "gradients_5/add_4_grad/Reshape_1"
+  name: "gradients_5/add_5_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_5/add_4_grad/Sum_1"
-  input: "gradients_5/add_4_grad/Shape_1"
+  input: "gradients_5/add_5_grad/Sum_1"
+  input: "gradients_5/add_5_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -91525,7 +91820,7 @@ node {
 node {
   name: "gradients_5/layer_2_type_0/mul_grad/Mul"
   op: "Mul"
-  input: "gradients_5/add_4_grad/Reshape_1"
+  input: "gradients_5/add_5_grad/Reshape_1"
   input: "layer_2_type_0/idt/read"
   attr {
     key: "T"
@@ -92244,7 +92539,7 @@ node {
 node {
   name: "gradients_5/AddN_2"
   op: "AddN"
-  input: "gradients_5/add_4_grad/Reshape"
+  input: "gradients_5/add_5_grad/Reshape"
   input: "gradients_5/layer_2_type_0/MatMul_grad/MatMul"
   attr {
     key: "N"
@@ -92262,13 +92557,13 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_5/add_4_grad/Reshape"
+        s: "loc:@gradients_5/add_5_grad/Reshape"
       }
     }
   }
 }
 node {
-  name: "gradients_5/add_3_grad/Shape"
+  name: "gradients_5/add_4_grad/Shape"
   op: "Shape"
   input: "layer_0_type_0/Reshape"
   attr {
@@ -92285,7 +92580,7 @@ node {
   }
 }
 node {
-  name: "gradients_5/add_3_grad/Shape_1"
+  name: "gradients_5/add_4_grad/Shape_1"
   op: "Shape"
   input: "layer_1_type_0/mul"
   attr {
@@ -92302,10 +92597,10 @@ node {
   }
 }
 node {
-  name: "gradients_5/add_3_grad/BroadcastGradientArgs"
+  name: "gradients_5/add_4_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_5/add_3_grad/Shape"
-  input: "gradients_5/add_3_grad/Shape_1"
+  input: "gradients_5/add_4_grad/Shape"
+  input: "gradients_5/add_4_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -92314,10 +92609,10 @@ node {
   }
 }
 node {
-  name: "gradients_5/add_3_grad/Sum"
+  name: "gradients_5/add_4_grad/Sum"
   op: "Sum"
   input: "gradients_5/AddN_2"
-  input: "gradients_5/add_3_grad/BroadcastGradientArgs"
+  input: "gradients_5/add_4_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -92338,10 +92633,10 @@ node {
   }
 }
 node {
-  name: "gradients_5/add_3_grad/Reshape"
+  name: "gradients_5/add_4_grad/Reshape"
   op: "Reshape"
-  input: "gradients_5/add_3_grad/Sum"
-  input: "gradients_5/add_3_grad/Shape"
+  input: "gradients_5/add_4_grad/Sum"
+  input: "gradients_5/add_4_grad/Shape"
   attr {
     key: "T"
     value {
@@ -92356,10 +92651,10 @@ node {
   }
 }
 node {
-  name: "gradients_5/add_3_grad/Sum_1"
+  name: "gradients_5/add_4_grad/Sum_1"
   op: "Sum"
   input: "gradients_5/AddN_2"
-  input: "gradients_5/add_3_grad/BroadcastGradientArgs:1"
+  input: "gradients_5/add_4_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -92380,10 +92675,10 @@ node {
   }
 }
 node {
-  name: "gradients_5/add_3_grad/Reshape_1"
+  name: "gradients_5/add_4_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_5/add_3_grad/Sum_1"
-  input: "gradients_5/add_3_grad/Shape_1"
+  input: "gradients_5/add_4_grad/Sum_1"
+  input: "gradients_5/add_4_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -92446,7 +92741,7 @@ node {
 node {
   name: "gradients_5/layer_1_type_0/mul_grad/Mul"
   op: "Mul"
-  input: "gradients_5/add_3_grad/Reshape_1"
+  input: "gradients_5/add_4_grad/Reshape_1"
   input: "layer_1_type_0/idt/read"
   attr {
     key: "T"
@@ -92659,7 +92954,7 @@ node {
 node {
   name: "gradients_5/AddN_3"
   op: "AddN"
-  input: "gradients_5/add_3_grad/Reshape"
+  input: "gradients_5/add_4_grad/Reshape"
   input: "gradients_5/layer_1_type_0/MatMul_grad/MatMul"
   attr {
     key: "N"
@@ -92677,7 +92972,7 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_5/add_3_grad/Reshape"
+        s: "loc:@gradients_5/add_4_grad/Reshape"
       }
     }
   }
@@ -104115,7 +104410,7 @@ node {
   }
 }
 node {
-  name: "mul_37/y"
+  name: "mul_38/y"
   op: "Const"
   attr {
     key: "dtype"
@@ -104136,10 +104431,10 @@ node {
   }
 }
 node {
-  name: "mul_37"
+  name: "mul_38"
   op: "Mul"
   input: "strided_slice_49"
-  input: "mul_37/y"
+  input: "mul_38/y"
   attr {
     key: "T"
     value {
@@ -104172,7 +104467,7 @@ node {
   name: "Reshape_43/shape"
   op: "Pack"
   input: "Reshape_43/shape/0"
-  input: "mul_37"
+  input: "mul_38"
   attr {
     key: "N"
     value {
@@ -104386,7 +104681,7 @@ node {
   }
 }
 node {
-  name: "mul_38/x"
+  name: "mul_39/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -104407,9 +104702,9 @@ node {
   }
 }
 node {
-  name: "mul_38"
+  name: "mul_39"
   op: "Mul"
-  input: "mul_38/x"
+  input: "mul_39/x"
   input: "strided_slice_50"
   attr {
     key: "T"
@@ -104443,7 +104738,7 @@ node {
   name: "Reshape_44/shape"
   op: "Pack"
   input: "Reshape_44/shape/0"
-  input: "mul_38"
+  input: "mul_39"
   attr {
     key: "N"
     value {
@@ -104646,7 +104941,7 @@ node {
   }
 }
 node {
-  name: "mul_39/x"
+  name: "mul_40/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -104667,9 +104962,9 @@ node {
   }
 }
 node {
-  name: "mul_39"
+  name: "mul_40"
   op: "Mul"
-  input: "mul_39/x"
+  input: "mul_40/x"
   input: "strided_slice_51"
   attr {
     key: "T"
@@ -104703,7 +104998,7 @@ node {
   name: "Reshape_46/shape"
   op: "Pack"
   input: "Reshape_46/shape/0"
-  input: "mul_39"
+  input: "mul_40"
   attr {
     key: "N"
     value {
@@ -104953,9 +105248,44 @@ node {
   }
 }
 node {
+  name: "gradients_6/o_polar_grad/Shape"
+  op: "Shape"
+  input: "Reshape_21"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients_6/o_polar_grad/Reshape"
+  op: "Reshape"
+  input: "gradients_6/Reshape_22_grad/Reshape"
+  input: "gradients_6/o_polar_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
   name: "gradients_6/Reshape_21_grad/Shape"
   op: "Shape"
-  input: "add_6"
+  input: "add_7"
   attr {
     key: "T"
     value {
@@ -104972,7 +105302,7 @@ node {
 node {
   name: "gradients_6/Reshape_21_grad/Reshape"
   op: "Reshape"
-  input: "gradients_6/Reshape_22_grad/Reshape"
+  input: "gradients_6/o_polar_grad/Reshape"
   input: "gradients_6/Reshape_21_grad/Shape"
   attr {
     key: "T"
@@ -104988,7 +105318,7 @@ node {
   }
 }
 node {
-  name: "gradients_6/add_6_grad/Shape"
+  name: "gradients_6/add_7_grad/Shape"
   op: "Shape"
   input: "mul_16"
   attr {
@@ -105005,7 +105335,7 @@ node {
   }
 }
 node {
-  name: "gradients_6/add_6_grad/Shape_1"
+  name: "gradients_6/add_7_grad/Shape_1"
   op: "Shape"
   input: "mul_17"
   attr {
@@ -105022,10 +105352,10 @@ node {
   }
 }
 node {
-  name: "gradients_6/add_6_grad/BroadcastGradientArgs"
+  name: "gradients_6/add_7_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_6/add_6_grad/Shape"
-  input: "gradients_6/add_6_grad/Shape_1"
+  input: "gradients_6/add_7_grad/Shape"
+  input: "gradients_6/add_7_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -105034,10 +105364,10 @@ node {
   }
 }
 node {
-  name: "gradients_6/add_6_grad/Sum"
+  name: "gradients_6/add_7_grad/Sum"
   op: "Sum"
   input: "gradients_6/Reshape_21_grad/Reshape"
-  input: "gradients_6/add_6_grad/BroadcastGradientArgs"
+  input: "gradients_6/add_7_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -105058,10 +105388,10 @@ node {
   }
 }
 node {
-  name: "gradients_6/add_6_grad/Reshape"
+  name: "gradients_6/add_7_grad/Reshape"
   op: "Reshape"
-  input: "gradients_6/add_6_grad/Sum"
-  input: "gradients_6/add_6_grad/Shape"
+  input: "gradients_6/add_7_grad/Sum"
+  input: "gradients_6/add_7_grad/Shape"
   attr {
     key: "T"
     value {
@@ -105124,7 +105454,7 @@ node {
 node {
   name: "gradients_6/mul_16_grad/Mul"
   op: "Mul"
-  input: "gradients_6/add_6_grad/Reshape"
+  input: "gradients_6/add_7_grad/Reshape"
   input: "mul_16/y"
   attr {
     key: "T"
@@ -105659,7 +105989,7 @@ node {
 node {
   name: "gradients_6/MatMul_grad/MatMul_1"
   op: "BatchMatMulV2"
-  input: "add_5"
+  input: "add_6"
   input: "gradients_6/MatMul_1_grad/Reshape_1"
   attr {
     key: "T"
@@ -105683,7 +106013,7 @@ node {
 node {
   name: "gradients_6/MatMul_grad/Shape"
   op: "Shape"
-  input: "add_5"
+  input: "add_6"
   attr {
     key: "T"
     value {
@@ -106055,7 +106385,7 @@ node {
   }
 }
 node {
-  name: "gradients_6/add_5_grad/Shape"
+  name: "gradients_6/add_6_grad/Shape"
   op: "Shape"
   input: "Reshape_17"
   attr {
@@ -106072,7 +106402,7 @@ node {
   }
 }
 node {
-  name: "gradients_6/add_5_grad/Shape_1"
+  name: "gradients_6/add_6_grad/Shape_1"
   op: "Shape"
   input: "transpose"
   attr {
@@ -106089,10 +106419,10 @@ node {
   }
 }
 node {
-  name: "gradients_6/add_5_grad/BroadcastGradientArgs"
+  name: "gradients_6/add_6_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_6/add_5_grad/Shape"
-  input: "gradients_6/add_5_grad/Shape_1"
+  input: "gradients_6/add_6_grad/Shape"
+  input: "gradients_6/add_6_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -106101,10 +106431,10 @@ node {
   }
 }
 node {
-  name: "gradients_6/add_5_grad/Sum"
+  name: "gradients_6/add_6_grad/Sum"
   op: "Sum"
   input: "gradients_6/MatMul_grad/Reshape"
-  input: "gradients_6/add_5_grad/BroadcastGradientArgs"
+  input: "gradients_6/add_6_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -106125,10 +106455,10 @@ node {
   }
 }
 node {
-  name: "gradients_6/add_5_grad/Reshape"
+  name: "gradients_6/add_6_grad/Reshape"
   op: "Reshape"
-  input: "gradients_6/add_5_grad/Sum"
-  input: "gradients_6/add_5_grad/Shape"
+  input: "gradients_6/add_6_grad/Sum"
+  input: "gradients_6/add_6_grad/Shape"
   attr {
     key: "T"
     value {
@@ -106143,10 +106473,10 @@ node {
   }
 }
 node {
-  name: "gradients_6/add_5_grad/Sum_1"
+  name: "gradients_6/add_6_grad/Sum_1"
   op: "Sum"
   input: "gradients_6/MatMul_grad/Reshape"
-  input: "gradients_6/add_5_grad/BroadcastGradientArgs:1"
+  input: "gradients_6/add_6_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -106167,10 +106497,10 @@ node {
   }
 }
 node {
-  name: "gradients_6/add_5_grad/Reshape_1"
+  name: "gradients_6/add_6_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_6/add_5_grad/Sum_1"
-  input: "gradients_6/add_5_grad/Shape_1"
+  input: "gradients_6/add_6_grad/Sum_1"
+  input: "gradients_6/add_6_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -106259,7 +106589,7 @@ node {
 node {
   name: "gradients_6/transpose_grad/transpose"
   op: "Transpose"
-  input: "gradients_6/add_5_grad/Reshape_1"
+  input: "gradients_6/add_6_grad/Reshape_1"
   input: "gradients_6/transpose_grad/InvertPermutation"
   attr {
     key: "T"
@@ -106501,7 +106831,7 @@ node {
 node {
   name: "gradients_6/AddN_1"
   op: "AddN"
-  input: "gradients_6/add_5_grad/Reshape"
+  input: "gradients_6/add_6_grad/Reshape"
   input: "gradients_6/transpose_grad/transpose"
   attr {
     key: "N"
@@ -106519,7 +106849,7 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_6/add_5_grad/Reshape"
+        s: "loc:@gradients_6/add_6_grad/Reshape"
       }
     }
   }
@@ -106815,9 +107145,9 @@ node {
   }
 }
 node {
-  name: "gradients_6/add_4_grad/Shape"
+  name: "gradients_6/add_5_grad/Shape"
   op: "Shape"
-  input: "add_3"
+  input: "add_4"
   attr {
     key: "T"
     value {
@@ -106832,7 +107162,7 @@ node {
   }
 }
 node {
-  name: "gradients_6/add_4_grad/Shape_1"
+  name: "gradients_6/add_5_grad/Shape_1"
   op: "Shape"
   input: "layer_2_type_0/mul"
   attr {
@@ -106849,10 +107179,10 @@ node {
   }
 }
 node {
-  name: "gradients_6/add_4_grad/BroadcastGradientArgs"
+  name: "gradients_6/add_5_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_6/add_4_grad/Shape"
-  input: "gradients_6/add_4_grad/Shape_1"
+  input: "gradients_6/add_5_grad/Shape"
+  input: "gradients_6/add_5_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -106861,10 +107191,10 @@ node {
   }
 }
 node {
-  name: "gradients_6/add_4_grad/Sum"
+  name: "gradients_6/add_5_grad/Sum"
   op: "Sum"
   input: "gradients_6/final_layer_type_0/MatMul_grad/MatMul"
-  input: "gradients_6/add_4_grad/BroadcastGradientArgs"
+  input: "gradients_6/add_5_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -106885,10 +107215,10 @@ node {
   }
 }
 node {
-  name: "gradients_6/add_4_grad/Reshape"
+  name: "gradients_6/add_5_grad/Reshape"
   op: "Reshape"
-  input: "gradients_6/add_4_grad/Sum"
-  input: "gradients_6/add_4_grad/Shape"
+  input: "gradients_6/add_5_grad/Sum"
+  input: "gradients_6/add_5_grad/Shape"
   attr {
     key: "T"
     value {
@@ -106903,10 +107233,10 @@ node {
   }
 }
 node {
-  name: "gradients_6/add_4_grad/Sum_1"
+  name: "gradients_6/add_5_grad/Sum_1"
   op: "Sum"
   input: "gradients_6/final_layer_type_0/MatMul_grad/MatMul"
-  input: "gradients_6/add_4_grad/BroadcastGradientArgs:1"
+  input: "gradients_6/add_5_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -106927,10 +107257,10 @@ node {
   }
 }
 node {
-  name: "gradients_6/add_4_grad/Reshape_1"
+  name: "gradients_6/add_5_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_6/add_4_grad/Sum_1"
-  input: "gradients_6/add_4_grad/Shape_1"
+  input: "gradients_6/add_5_grad/Sum_1"
+  input: "gradients_6/add_5_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -107063,7 +107393,7 @@ node {
 node {
   name: "gradients_6/layer_2_type_0/mul_grad/Mul"
   op: "Mul"
-  input: "gradients_6/add_4_grad/Reshape_1"
+  input: "gradients_6/add_5_grad/Reshape_1"
   input: "layer_2_type_0/idt/read"
   attr {
     key: "T"
@@ -107782,7 +108112,7 @@ node {
 node {
   name: "gradients_6/AddN_2"
   op: "AddN"
-  input: "gradients_6/add_4_grad/Reshape"
+  input: "gradients_6/add_5_grad/Reshape"
   input: "gradients_6/layer_2_type_0/MatMul_grad/MatMul"
   attr {
     key: "N"
@@ -107800,13 +108130,13 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_6/add_4_grad/Reshape"
+        s: "loc:@gradients_6/add_5_grad/Reshape"
       }
     }
   }
 }
 node {
-  name: "gradients_6/add_3_grad/Shape"
+  name: "gradients_6/add_4_grad/Shape"
   op: "Shape"
   input: "layer_0_type_0/Reshape"
   attr {
@@ -107823,7 +108153,7 @@ node {
   }
 }
 node {
-  name: "gradients_6/add_3_grad/Shape_1"
+  name: "gradients_6/add_4_grad/Shape_1"
   op: "Shape"
   input: "layer_1_type_0/mul"
   attr {
@@ -107840,10 +108170,10 @@ node {
   }
 }
 node {
-  name: "gradients_6/add_3_grad/BroadcastGradientArgs"
+  name: "gradients_6/add_4_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_6/add_3_grad/Shape"
-  input: "gradients_6/add_3_grad/Shape_1"
+  input: "gradients_6/add_4_grad/Shape"
+  input: "gradients_6/add_4_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -107852,10 +108182,10 @@ node {
   }
 }
 node {
-  name: "gradients_6/add_3_grad/Sum"
+  name: "gradients_6/add_4_grad/Sum"
   op: "Sum"
   input: "gradients_6/AddN_2"
-  input: "gradients_6/add_3_grad/BroadcastGradientArgs"
+  input: "gradients_6/add_4_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -107876,10 +108206,10 @@ node {
   }
 }
 node {
-  name: "gradients_6/add_3_grad/Reshape"
+  name: "gradients_6/add_4_grad/Reshape"
   op: "Reshape"
-  input: "gradients_6/add_3_grad/Sum"
-  input: "gradients_6/add_3_grad/Shape"
+  input: "gradients_6/add_4_grad/Sum"
+  input: "gradients_6/add_4_grad/Shape"
   attr {
     key: "T"
     value {
@@ -107894,10 +108224,10 @@ node {
   }
 }
 node {
-  name: "gradients_6/add_3_grad/Sum_1"
+  name: "gradients_6/add_4_grad/Sum_1"
   op: "Sum"
   input: "gradients_6/AddN_2"
-  input: "gradients_6/add_3_grad/BroadcastGradientArgs:1"
+  input: "gradients_6/add_4_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -107918,10 +108248,10 @@ node {
   }
 }
 node {
-  name: "gradients_6/add_3_grad/Reshape_1"
+  name: "gradients_6/add_4_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_6/add_3_grad/Sum_1"
-  input: "gradients_6/add_3_grad/Shape_1"
+  input: "gradients_6/add_4_grad/Sum_1"
+  input: "gradients_6/add_4_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -107984,7 +108314,7 @@ node {
 node {
   name: "gradients_6/layer_1_type_0/mul_grad/Mul"
   op: "Mul"
-  input: "gradients_6/add_3_grad/Reshape_1"
+  input: "gradients_6/add_4_grad/Reshape_1"
   input: "layer_1_type_0/idt/read"
   attr {
     key: "T"
@@ -108197,7 +108527,7 @@ node {
 node {
   name: "gradients_6/AddN_3"
   op: "AddN"
-  input: "gradients_6/add_3_grad/Reshape"
+  input: "gradients_6/add_4_grad/Reshape"
   input: "gradients_6/layer_1_type_0/MatMul_grad/MatMul"
   attr {
     key: "N"
@@ -108215,7 +108545,7 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_6/add_3_grad/Reshape"
+        s: "loc:@gradients_6/add_4_grad/Reshape"
       }
     }
   }
@@ -119653,7 +119983,7 @@ node {
   }
 }
 node {
-  name: "mul_40/y"
+  name: "mul_41/y"
   op: "Const"
   attr {
     key: "dtype"
@@ -119674,10 +120004,10 @@ node {
   }
 }
 node {
-  name: "mul_40"
+  name: "mul_41"
   op: "Mul"
   input: "strided_slice_52"
-  input: "mul_40/y"
+  input: "mul_41/y"
   attr {
     key: "T"
     value {
@@ -119710,7 +120040,7 @@ node {
   name: "Reshape_47/shape"
   op: "Pack"
   input: "Reshape_47/shape/0"
-  input: "mul_40"
+  input: "mul_41"
   attr {
     key: "N"
     value {
@@ -119924,7 +120254,7 @@ node {
   }
 }
 node {
-  name: "mul_41/x"
+  name: "mul_42/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -119945,9 +120275,9 @@ node {
   }
 }
 node {
-  name: "mul_41"
+  name: "mul_42"
   op: "Mul"
-  input: "mul_41/x"
+  input: "mul_42/x"
   input: "strided_slice_53"
   attr {
     key: "T"
@@ -119981,7 +120311,7 @@ node {
   name: "Reshape_48/shape"
   op: "Pack"
   input: "Reshape_48/shape/0"
-  input: "mul_41"
+  input: "mul_42"
   attr {
     key: "N"
     value {
@@ -120184,7 +120514,7 @@ node {
   }
 }
 node {
-  name: "mul_42/x"
+  name: "mul_43/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -120205,9 +120535,9 @@ node {
   }
 }
 node {
-  name: "mul_42"
+  name: "mul_43"
   op: "Mul"
-  input: "mul_42/x"
+  input: "mul_43/x"
   input: "strided_slice_54"
   attr {
     key: "T"
@@ -120241,7 +120571,7 @@ node {
   name: "Reshape_50/shape"
   op: "Pack"
   input: "Reshape_50/shape/0"
-  input: "mul_42"
+  input: "mul_43"
   attr {
     key: "N"
     value {
@@ -120491,9 +120821,44 @@ node {
   }
 }
 node {
+  name: "gradients_7/o_polar_grad/Shape"
+  op: "Shape"
+  input: "Reshape_21"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients_7/o_polar_grad/Reshape"
+  op: "Reshape"
+  input: "gradients_7/Reshape_22_grad/Reshape"
+  input: "gradients_7/o_polar_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
   name: "gradients_7/Reshape_21_grad/Shape"
   op: "Shape"
-  input: "add_6"
+  input: "add_7"
   attr {
     key: "T"
     value {
@@ -120510,7 +120875,7 @@ node {
 node {
   name: "gradients_7/Reshape_21_grad/Reshape"
   op: "Reshape"
-  input: "gradients_7/Reshape_22_grad/Reshape"
+  input: "gradients_7/o_polar_grad/Reshape"
   input: "gradients_7/Reshape_21_grad/Shape"
   attr {
     key: "T"
@@ -120526,7 +120891,7 @@ node {
   }
 }
 node {
-  name: "gradients_7/add_6_grad/Shape"
+  name: "gradients_7/add_7_grad/Shape"
   op: "Shape"
   input: "mul_16"
   attr {
@@ -120543,7 +120908,7 @@ node {
   }
 }
 node {
-  name: "gradients_7/add_6_grad/Shape_1"
+  name: "gradients_7/add_7_grad/Shape_1"
   op: "Shape"
   input: "mul_17"
   attr {
@@ -120560,10 +120925,10 @@ node {
   }
 }
 node {
-  name: "gradients_7/add_6_grad/BroadcastGradientArgs"
+  name: "gradients_7/add_7_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_7/add_6_grad/Shape"
-  input: "gradients_7/add_6_grad/Shape_1"
+  input: "gradients_7/add_7_grad/Shape"
+  input: "gradients_7/add_7_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -120572,10 +120937,10 @@ node {
   }
 }
 node {
-  name: "gradients_7/add_6_grad/Sum"
+  name: "gradients_7/add_7_grad/Sum"
   op: "Sum"
   input: "gradients_7/Reshape_21_grad/Reshape"
-  input: "gradients_7/add_6_grad/BroadcastGradientArgs"
+  input: "gradients_7/add_7_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -120596,10 +120961,10 @@ node {
   }
 }
 node {
-  name: "gradients_7/add_6_grad/Reshape"
+  name: "gradients_7/add_7_grad/Reshape"
   op: "Reshape"
-  input: "gradients_7/add_6_grad/Sum"
-  input: "gradients_7/add_6_grad/Shape"
+  input: "gradients_7/add_7_grad/Sum"
+  input: "gradients_7/add_7_grad/Shape"
   attr {
     key: "T"
     value {
@@ -120662,7 +121027,7 @@ node {
 node {
   name: "gradients_7/mul_16_grad/Mul"
   op: "Mul"
-  input: "gradients_7/add_6_grad/Reshape"
+  input: "gradients_7/add_7_grad/Reshape"
   input: "mul_16/y"
   attr {
     key: "T"
@@ -121197,7 +121562,7 @@ node {
 node {
   name: "gradients_7/MatMul_grad/MatMul_1"
   op: "BatchMatMulV2"
-  input: "add_5"
+  input: "add_6"
   input: "gradients_7/MatMul_1_grad/Reshape_1"
   attr {
     key: "T"
@@ -121221,7 +121586,7 @@ node {
 node {
   name: "gradients_7/MatMul_grad/Shape"
   op: "Shape"
-  input: "add_5"
+  input: "add_6"
   attr {
     key: "T"
     value {
@@ -121593,7 +121958,7 @@ node {
   }
 }
 node {
-  name: "gradients_7/add_5_grad/Shape"
+  name: "gradients_7/add_6_grad/Shape"
   op: "Shape"
   input: "Reshape_17"
   attr {
@@ -121610,7 +121975,7 @@ node {
   }
 }
 node {
-  name: "gradients_7/add_5_grad/Shape_1"
+  name: "gradients_7/add_6_grad/Shape_1"
   op: "Shape"
   input: "transpose"
   attr {
@@ -121627,10 +121992,10 @@ node {
   }
 }
 node {
-  name: "gradients_7/add_5_grad/BroadcastGradientArgs"
+  name: "gradients_7/add_6_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_7/add_5_grad/Shape"
-  input: "gradients_7/add_5_grad/Shape_1"
+  input: "gradients_7/add_6_grad/Shape"
+  input: "gradients_7/add_6_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -121639,10 +122004,10 @@ node {
   }
 }
 node {
-  name: "gradients_7/add_5_grad/Sum"
+  name: "gradients_7/add_6_grad/Sum"
   op: "Sum"
   input: "gradients_7/MatMul_grad/Reshape"
-  input: "gradients_7/add_5_grad/BroadcastGradientArgs"
+  input: "gradients_7/add_6_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -121663,10 +122028,10 @@ node {
   }
 }
 node {
-  name: "gradients_7/add_5_grad/Reshape"
+  name: "gradients_7/add_6_grad/Reshape"
   op: "Reshape"
-  input: "gradients_7/add_5_grad/Sum"
-  input: "gradients_7/add_5_grad/Shape"
+  input: "gradients_7/add_6_grad/Sum"
+  input: "gradients_7/add_6_grad/Shape"
   attr {
     key: "T"
     value {
@@ -121681,10 +122046,10 @@ node {
   }
 }
 node {
-  name: "gradients_7/add_5_grad/Sum_1"
+  name: "gradients_7/add_6_grad/Sum_1"
   op: "Sum"
   input: "gradients_7/MatMul_grad/Reshape"
-  input: "gradients_7/add_5_grad/BroadcastGradientArgs:1"
+  input: "gradients_7/add_6_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -121705,10 +122070,10 @@ node {
   }
 }
 node {
-  name: "gradients_7/add_5_grad/Reshape_1"
+  name: "gradients_7/add_6_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_7/add_5_grad/Sum_1"
-  input: "gradients_7/add_5_grad/Shape_1"
+  input: "gradients_7/add_6_grad/Sum_1"
+  input: "gradients_7/add_6_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -121797,7 +122162,7 @@ node {
 node {
   name: "gradients_7/transpose_grad/transpose"
   op: "Transpose"
-  input: "gradients_7/add_5_grad/Reshape_1"
+  input: "gradients_7/add_6_grad/Reshape_1"
   input: "gradients_7/transpose_grad/InvertPermutation"
   attr {
     key: "T"
@@ -122039,7 +122404,7 @@ node {
 node {
   name: "gradients_7/AddN_1"
   op: "AddN"
-  input: "gradients_7/add_5_grad/Reshape"
+  input: "gradients_7/add_6_grad/Reshape"
   input: "gradients_7/transpose_grad/transpose"
   attr {
     key: "N"
@@ -122057,7 +122422,7 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_7/add_5_grad/Reshape"
+        s: "loc:@gradients_7/add_6_grad/Reshape"
       }
     }
   }
@@ -122353,9 +122718,9 @@ node {
   }
 }
 node {
-  name: "gradients_7/add_4_grad/Shape"
+  name: "gradients_7/add_5_grad/Shape"
   op: "Shape"
-  input: "add_3"
+  input: "add_4"
   attr {
     key: "T"
     value {
@@ -122370,7 +122735,7 @@ node {
   }
 }
 node {
-  name: "gradients_7/add_4_grad/Shape_1"
+  name: "gradients_7/add_5_grad/Shape_1"
   op: "Shape"
   input: "layer_2_type_0/mul"
   attr {
@@ -122387,10 +122752,10 @@ node {
   }
 }
 node {
-  name: "gradients_7/add_4_grad/BroadcastGradientArgs"
+  name: "gradients_7/add_5_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_7/add_4_grad/Shape"
-  input: "gradients_7/add_4_grad/Shape_1"
+  input: "gradients_7/add_5_grad/Shape"
+  input: "gradients_7/add_5_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -122399,10 +122764,10 @@ node {
   }
 }
 node {
-  name: "gradients_7/add_4_grad/Sum"
+  name: "gradients_7/add_5_grad/Sum"
   op: "Sum"
   input: "gradients_7/final_layer_type_0/MatMul_grad/MatMul"
-  input: "gradients_7/add_4_grad/BroadcastGradientArgs"
+  input: "gradients_7/add_5_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -122423,10 +122788,10 @@ node {
   }
 }
 node {
-  name: "gradients_7/add_4_grad/Reshape"
+  name: "gradients_7/add_5_grad/Reshape"
   op: "Reshape"
-  input: "gradients_7/add_4_grad/Sum"
-  input: "gradients_7/add_4_grad/Shape"
+  input: "gradients_7/add_5_grad/Sum"
+  input: "gradients_7/add_5_grad/Shape"
   attr {
     key: "T"
     value {
@@ -122441,10 +122806,10 @@ node {
   }
 }
 node {
-  name: "gradients_7/add_4_grad/Sum_1"
+  name: "gradients_7/add_5_grad/Sum_1"
   op: "Sum"
   input: "gradients_7/final_layer_type_0/MatMul_grad/MatMul"
-  input: "gradients_7/add_4_grad/BroadcastGradientArgs:1"
+  input: "gradients_7/add_5_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -122465,10 +122830,10 @@ node {
   }
 }
 node {
-  name: "gradients_7/add_4_grad/Reshape_1"
+  name: "gradients_7/add_5_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_7/add_4_grad/Sum_1"
-  input: "gradients_7/add_4_grad/Shape_1"
+  input: "gradients_7/add_5_grad/Sum_1"
+  input: "gradients_7/add_5_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -122601,7 +122966,7 @@ node {
 node {
   name: "gradients_7/layer_2_type_0/mul_grad/Mul"
   op: "Mul"
-  input: "gradients_7/add_4_grad/Reshape_1"
+  input: "gradients_7/add_5_grad/Reshape_1"
   input: "layer_2_type_0/idt/read"
   attr {
     key: "T"
@@ -123320,7 +123685,7 @@ node {
 node {
   name: "gradients_7/AddN_2"
   op: "AddN"
-  input: "gradients_7/add_4_grad/Reshape"
+  input: "gradients_7/add_5_grad/Reshape"
   input: "gradients_7/layer_2_type_0/MatMul_grad/MatMul"
   attr {
     key: "N"
@@ -123338,13 +123703,13 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_7/add_4_grad/Reshape"
+        s: "loc:@gradients_7/add_5_grad/Reshape"
       }
     }
   }
 }
 node {
-  name: "gradients_7/add_3_grad/Shape"
+  name: "gradients_7/add_4_grad/Shape"
   op: "Shape"
   input: "layer_0_type_0/Reshape"
   attr {
@@ -123361,7 +123726,7 @@ node {
   }
 }
 node {
-  name: "gradients_7/add_3_grad/Shape_1"
+  name: "gradients_7/add_4_grad/Shape_1"
   op: "Shape"
   input: "layer_1_type_0/mul"
   attr {
@@ -123378,10 +123743,10 @@ node {
   }
 }
 node {
-  name: "gradients_7/add_3_grad/BroadcastGradientArgs"
+  name: "gradients_7/add_4_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_7/add_3_grad/Shape"
-  input: "gradients_7/add_3_grad/Shape_1"
+  input: "gradients_7/add_4_grad/Shape"
+  input: "gradients_7/add_4_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -123390,10 +123755,10 @@ node {
   }
 }
 node {
-  name: "gradients_7/add_3_grad/Sum"
+  name: "gradients_7/add_4_grad/Sum"
   op: "Sum"
   input: "gradients_7/AddN_2"
-  input: "gradients_7/add_3_grad/BroadcastGradientArgs"
+  input: "gradients_7/add_4_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -123414,10 +123779,10 @@ node {
   }
 }
 node {
-  name: "gradients_7/add_3_grad/Reshape"
+  name: "gradients_7/add_4_grad/Reshape"
   op: "Reshape"
-  input: "gradients_7/add_3_grad/Sum"
-  input: "gradients_7/add_3_grad/Shape"
+  input: "gradients_7/add_4_grad/Sum"
+  input: "gradients_7/add_4_grad/Shape"
   attr {
     key: "T"
     value {
@@ -123432,10 +123797,10 @@ node {
   }
 }
 node {
-  name: "gradients_7/add_3_grad/Sum_1"
+  name: "gradients_7/add_4_grad/Sum_1"
   op: "Sum"
   input: "gradients_7/AddN_2"
-  input: "gradients_7/add_3_grad/BroadcastGradientArgs:1"
+  input: "gradients_7/add_4_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -123456,10 +123821,10 @@ node {
   }
 }
 node {
-  name: "gradients_7/add_3_grad/Reshape_1"
+  name: "gradients_7/add_4_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_7/add_3_grad/Sum_1"
-  input: "gradients_7/add_3_grad/Shape_1"
+  input: "gradients_7/add_4_grad/Sum_1"
+  input: "gradients_7/add_4_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -123522,7 +123887,7 @@ node {
 node {
   name: "gradients_7/layer_1_type_0/mul_grad/Mul"
   op: "Mul"
-  input: "gradients_7/add_3_grad/Reshape_1"
+  input: "gradients_7/add_4_grad/Reshape_1"
   input: "layer_1_type_0/idt/read"
   attr {
     key: "T"
@@ -123735,7 +124100,7 @@ node {
 node {
   name: "gradients_7/AddN_3"
   op: "AddN"
-  input: "gradients_7/add_3_grad/Reshape"
+  input: "gradients_7/add_4_grad/Reshape"
   input: "gradients_7/layer_1_type_0/MatMul_grad/MatMul"
   attr {
     key: "N"
@@ -123753,7 +124118,7 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_7/add_3_grad/Reshape"
+        s: "loc:@gradients_7/add_4_grad/Reshape"
       }
     }
   }
@@ -135191,7 +135556,7 @@ node {
   }
 }
 node {
-  name: "mul_43/y"
+  name: "mul_44/y"
   op: "Const"
   attr {
     key: "dtype"
@@ -135212,10 +135577,10 @@ node {
   }
 }
 node {
-  name: "mul_43"
+  name: "mul_44"
   op: "Mul"
   input: "strided_slice_55"
-  input: "mul_43/y"
+  input: "mul_44/y"
   attr {
     key: "T"
     value {
@@ -135248,7 +135613,7 @@ node {
   name: "Reshape_51/shape"
   op: "Pack"
   input: "Reshape_51/shape/0"
-  input: "mul_43"
+  input: "mul_44"
   attr {
     key: "N"
     value {
@@ -135462,7 +135827,7 @@ node {
   }
 }
 node {
-  name: "mul_44/x"
+  name: "mul_45/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -135483,9 +135848,9 @@ node {
   }
 }
 node {
-  name: "mul_44"
+  name: "mul_45"
   op: "Mul"
-  input: "mul_44/x"
+  input: "mul_45/x"
   input: "strided_slice_56"
   attr {
     key: "T"
@@ -135519,7 +135884,7 @@ node {
   name: "Reshape_52/shape"
   op: "Pack"
   input: "Reshape_52/shape/0"
-  input: "mul_44"
+  input: "mul_45"
   attr {
     key: "N"
     value {
@@ -135722,7 +136087,7 @@ node {
   }
 }
 node {
-  name: "mul_45/x"
+  name: "mul_46/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -135743,9 +136108,9 @@ node {
   }
 }
 node {
-  name: "mul_45"
+  name: "mul_46"
   op: "Mul"
-  input: "mul_45/x"
+  input: "mul_46/x"
   input: "strided_slice_57"
   attr {
     key: "T"
@@ -135779,7 +136144,7 @@ node {
   name: "Reshape_54/shape"
   op: "Pack"
   input: "Reshape_54/shape/0"
-  input: "mul_45"
+  input: "mul_46"
   attr {
     key: "N"
     value {
@@ -136029,9 +136394,44 @@ node {
   }
 }
 node {
+  name: "gradients_8/o_polar_grad/Shape"
+  op: "Shape"
+  input: "Reshape_21"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients_8/o_polar_grad/Reshape"
+  op: "Reshape"
+  input: "gradients_8/Reshape_22_grad/Reshape"
+  input: "gradients_8/o_polar_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
   name: "gradients_8/Reshape_21_grad/Shape"
   op: "Shape"
-  input: "add_6"
+  input: "add_7"
   attr {
     key: "T"
     value {
@@ -136048,7 +136448,7 @@ node {
 node {
   name: "gradients_8/Reshape_21_grad/Reshape"
   op: "Reshape"
-  input: "gradients_8/Reshape_22_grad/Reshape"
+  input: "gradients_8/o_polar_grad/Reshape"
   input: "gradients_8/Reshape_21_grad/Shape"
   attr {
     key: "T"
@@ -136064,7 +136464,7 @@ node {
   }
 }
 node {
-  name: "gradients_8/add_6_grad/Shape"
+  name: "gradients_8/add_7_grad/Shape"
   op: "Shape"
   input: "mul_16"
   attr {
@@ -136081,7 +136481,7 @@ node {
   }
 }
 node {
-  name: "gradients_8/add_6_grad/Shape_1"
+  name: "gradients_8/add_7_grad/Shape_1"
   op: "Shape"
   input: "mul_17"
   attr {
@@ -136098,10 +136498,10 @@ node {
   }
 }
 node {
-  name: "gradients_8/add_6_grad/BroadcastGradientArgs"
+  name: "gradients_8/add_7_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_8/add_6_grad/Shape"
-  input: "gradients_8/add_6_grad/Shape_1"
+  input: "gradients_8/add_7_grad/Shape"
+  input: "gradients_8/add_7_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -136110,10 +136510,10 @@ node {
   }
 }
 node {
-  name: "gradients_8/add_6_grad/Sum"
+  name: "gradients_8/add_7_grad/Sum"
   op: "Sum"
   input: "gradients_8/Reshape_21_grad/Reshape"
-  input: "gradients_8/add_6_grad/BroadcastGradientArgs"
+  input: "gradients_8/add_7_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -136134,10 +136534,10 @@ node {
   }
 }
 node {
-  name: "gradients_8/add_6_grad/Reshape"
+  name: "gradients_8/add_7_grad/Reshape"
   op: "Reshape"
-  input: "gradients_8/add_6_grad/Sum"
-  input: "gradients_8/add_6_grad/Shape"
+  input: "gradients_8/add_7_grad/Sum"
+  input: "gradients_8/add_7_grad/Shape"
   attr {
     key: "T"
     value {
@@ -136200,7 +136600,7 @@ node {
 node {
   name: "gradients_8/mul_16_grad/Mul"
   op: "Mul"
-  input: "gradients_8/add_6_grad/Reshape"
+  input: "gradients_8/add_7_grad/Reshape"
   input: "mul_16/y"
   attr {
     key: "T"
@@ -136735,7 +137135,7 @@ node {
 node {
   name: "gradients_8/MatMul_grad/MatMul_1"
   op: "BatchMatMulV2"
-  input: "add_5"
+  input: "add_6"
   input: "gradients_8/MatMul_1_grad/Reshape_1"
   attr {
     key: "T"
@@ -136759,7 +137159,7 @@ node {
 node {
   name: "gradients_8/MatMul_grad/Shape"
   op: "Shape"
-  input: "add_5"
+  input: "add_6"
   attr {
     key: "T"
     value {
@@ -137131,7 +137531,7 @@ node {
   }
 }
 node {
-  name: "gradients_8/add_5_grad/Shape"
+  name: "gradients_8/add_6_grad/Shape"
   op: "Shape"
   input: "Reshape_17"
   attr {
@@ -137148,7 +137548,7 @@ node {
   }
 }
 node {
-  name: "gradients_8/add_5_grad/Shape_1"
+  name: "gradients_8/add_6_grad/Shape_1"
   op: "Shape"
   input: "transpose"
   attr {
@@ -137165,10 +137565,10 @@ node {
   }
 }
 node {
-  name: "gradients_8/add_5_grad/BroadcastGradientArgs"
+  name: "gradients_8/add_6_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_8/add_5_grad/Shape"
-  input: "gradients_8/add_5_grad/Shape_1"
+  input: "gradients_8/add_6_grad/Shape"
+  input: "gradients_8/add_6_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -137177,10 +137577,10 @@ node {
   }
 }
 node {
-  name: "gradients_8/add_5_grad/Sum"
+  name: "gradients_8/add_6_grad/Sum"
   op: "Sum"
   input: "gradients_8/MatMul_grad/Reshape"
-  input: "gradients_8/add_5_grad/BroadcastGradientArgs"
+  input: "gradients_8/add_6_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -137201,10 +137601,10 @@ node {
   }
 }
 node {
-  name: "gradients_8/add_5_grad/Reshape"
+  name: "gradients_8/add_6_grad/Reshape"
   op: "Reshape"
-  input: "gradients_8/add_5_grad/Sum"
-  input: "gradients_8/add_5_grad/Shape"
+  input: "gradients_8/add_6_grad/Sum"
+  input: "gradients_8/add_6_grad/Shape"
   attr {
     key: "T"
     value {
@@ -137219,10 +137619,10 @@ node {
   }
 }
 node {
-  name: "gradients_8/add_5_grad/Sum_1"
+  name: "gradients_8/add_6_grad/Sum_1"
   op: "Sum"
   input: "gradients_8/MatMul_grad/Reshape"
-  input: "gradients_8/add_5_grad/BroadcastGradientArgs:1"
+  input: "gradients_8/add_6_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -137243,10 +137643,10 @@ node {
   }
 }
 node {
-  name: "gradients_8/add_5_grad/Reshape_1"
+  name: "gradients_8/add_6_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_8/add_5_grad/Sum_1"
-  input: "gradients_8/add_5_grad/Shape_1"
+  input: "gradients_8/add_6_grad/Sum_1"
+  input: "gradients_8/add_6_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -137335,7 +137735,7 @@ node {
 node {
   name: "gradients_8/transpose_grad/transpose"
   op: "Transpose"
-  input: "gradients_8/add_5_grad/Reshape_1"
+  input: "gradients_8/add_6_grad/Reshape_1"
   input: "gradients_8/transpose_grad/InvertPermutation"
   attr {
     key: "T"
@@ -137577,7 +137977,7 @@ node {
 node {
   name: "gradients_8/AddN_1"
   op: "AddN"
-  input: "gradients_8/add_5_grad/Reshape"
+  input: "gradients_8/add_6_grad/Reshape"
   input: "gradients_8/transpose_grad/transpose"
   attr {
     key: "N"
@@ -137595,7 +137995,7 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_8/add_5_grad/Reshape"
+        s: "loc:@gradients_8/add_6_grad/Reshape"
       }
     }
   }
@@ -137891,9 +138291,9 @@ node {
   }
 }
 node {
-  name: "gradients_8/add_4_grad/Shape"
+  name: "gradients_8/add_5_grad/Shape"
   op: "Shape"
-  input: "add_3"
+  input: "add_4"
   attr {
     key: "T"
     value {
@@ -137908,7 +138308,7 @@ node {
   }
 }
 node {
-  name: "gradients_8/add_4_grad/Shape_1"
+  name: "gradients_8/add_5_grad/Shape_1"
   op: "Shape"
   input: "layer_2_type_0/mul"
   attr {
@@ -137925,10 +138325,10 @@ node {
   }
 }
 node {
-  name: "gradients_8/add_4_grad/BroadcastGradientArgs"
+  name: "gradients_8/add_5_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_8/add_4_grad/Shape"
-  input: "gradients_8/add_4_grad/Shape_1"
+  input: "gradients_8/add_5_grad/Shape"
+  input: "gradients_8/add_5_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -137937,10 +138337,10 @@ node {
   }
 }
 node {
-  name: "gradients_8/add_4_grad/Sum"
+  name: "gradients_8/add_5_grad/Sum"
   op: "Sum"
   input: "gradients_8/final_layer_type_0/MatMul_grad/MatMul"
-  input: "gradients_8/add_4_grad/BroadcastGradientArgs"
+  input: "gradients_8/add_5_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -137961,10 +138361,10 @@ node {
   }
 }
 node {
-  name: "gradients_8/add_4_grad/Reshape"
+  name: "gradients_8/add_5_grad/Reshape"
   op: "Reshape"
-  input: "gradients_8/add_4_grad/Sum"
-  input: "gradients_8/add_4_grad/Shape"
+  input: "gradients_8/add_5_grad/Sum"
+  input: "gradients_8/add_5_grad/Shape"
   attr {
     key: "T"
     value {
@@ -137979,10 +138379,10 @@ node {
   }
 }
 node {
-  name: "gradients_8/add_4_grad/Sum_1"
+  name: "gradients_8/add_5_grad/Sum_1"
   op: "Sum"
   input: "gradients_8/final_layer_type_0/MatMul_grad/MatMul"
-  input: "gradients_8/add_4_grad/BroadcastGradientArgs:1"
+  input: "gradients_8/add_5_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -138003,10 +138403,10 @@ node {
   }
 }
 node {
-  name: "gradients_8/add_4_grad/Reshape_1"
+  name: "gradients_8/add_5_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_8/add_4_grad/Sum_1"
-  input: "gradients_8/add_4_grad/Shape_1"
+  input: "gradients_8/add_5_grad/Sum_1"
+  input: "gradients_8/add_5_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -138139,7 +138539,7 @@ node {
 node {
   name: "gradients_8/layer_2_type_0/mul_grad/Mul"
   op: "Mul"
-  input: "gradients_8/add_4_grad/Reshape_1"
+  input: "gradients_8/add_5_grad/Reshape_1"
   input: "layer_2_type_0/idt/read"
   attr {
     key: "T"
@@ -138858,7 +139258,7 @@ node {
 node {
   name: "gradients_8/AddN_2"
   op: "AddN"
-  input: "gradients_8/add_4_grad/Reshape"
+  input: "gradients_8/add_5_grad/Reshape"
   input: "gradients_8/layer_2_type_0/MatMul_grad/MatMul"
   attr {
     key: "N"
@@ -138876,13 +139276,13 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_8/add_4_grad/Reshape"
+        s: "loc:@gradients_8/add_5_grad/Reshape"
       }
     }
   }
 }
 node {
-  name: "gradients_8/add_3_grad/Shape"
+  name: "gradients_8/add_4_grad/Shape"
   op: "Shape"
   input: "layer_0_type_0/Reshape"
   attr {
@@ -138899,7 +139299,7 @@ node {
   }
 }
 node {
-  name: "gradients_8/add_3_grad/Shape_1"
+  name: "gradients_8/add_4_grad/Shape_1"
   op: "Shape"
   input: "layer_1_type_0/mul"
   attr {
@@ -138916,10 +139316,10 @@ node {
   }
 }
 node {
-  name: "gradients_8/add_3_grad/BroadcastGradientArgs"
+  name: "gradients_8/add_4_grad/BroadcastGradientArgs"
   op: "BroadcastGradientArgs"
-  input: "gradients_8/add_3_grad/Shape"
-  input: "gradients_8/add_3_grad/Shape_1"
+  input: "gradients_8/add_4_grad/Shape"
+  input: "gradients_8/add_4_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -138928,10 +139328,10 @@ node {
   }
 }
 node {
-  name: "gradients_8/add_3_grad/Sum"
+  name: "gradients_8/add_4_grad/Sum"
   op: "Sum"
   input: "gradients_8/AddN_2"
-  input: "gradients_8/add_3_grad/BroadcastGradientArgs"
+  input: "gradients_8/add_4_grad/BroadcastGradientArgs"
   attr {
     key: "T"
     value {
@@ -138952,10 +139352,10 @@ node {
   }
 }
 node {
-  name: "gradients_8/add_3_grad/Reshape"
+  name: "gradients_8/add_4_grad/Reshape"
   op: "Reshape"
-  input: "gradients_8/add_3_grad/Sum"
-  input: "gradients_8/add_3_grad/Shape"
+  input: "gradients_8/add_4_grad/Sum"
+  input: "gradients_8/add_4_grad/Shape"
   attr {
     key: "T"
     value {
@@ -138970,10 +139370,10 @@ node {
   }
 }
 node {
-  name: "gradients_8/add_3_grad/Sum_1"
+  name: "gradients_8/add_4_grad/Sum_1"
   op: "Sum"
   input: "gradients_8/AddN_2"
-  input: "gradients_8/add_3_grad/BroadcastGradientArgs:1"
+  input: "gradients_8/add_4_grad/BroadcastGradientArgs:1"
   attr {
     key: "T"
     value {
@@ -138994,10 +139394,10 @@ node {
   }
 }
 node {
-  name: "gradients_8/add_3_grad/Reshape_1"
+  name: "gradients_8/add_4_grad/Reshape_1"
   op: "Reshape"
-  input: "gradients_8/add_3_grad/Sum_1"
-  input: "gradients_8/add_3_grad/Shape_1"
+  input: "gradients_8/add_4_grad/Sum_1"
+  input: "gradients_8/add_4_grad/Shape_1"
   attr {
     key: "T"
     value {
@@ -139060,7 +139460,7 @@ node {
 node {
   name: "gradients_8/layer_1_type_0/mul_grad/Mul"
   op: "Mul"
-  input: "gradients_8/add_3_grad/Reshape_1"
+  input: "gradients_8/add_4_grad/Reshape_1"
   input: "layer_1_type_0/idt/read"
   attr {
     key: "T"
@@ -139273,7 +139673,7 @@ node {
 node {
   name: "gradients_8/AddN_3"
   op: "AddN"
-  input: "gradients_8/add_3_grad/Reshape"
+  input: "gradients_8/add_4_grad/Reshape"
   input: "gradients_8/layer_1_type_0/MatMul_grad/MatMul"
   attr {
     key: "N"
@@ -139291,7 +139691,7 @@ node {
     key: "_class"
     value {
       list {
-        s: "loc:@gradients_8/add_3_grad/Reshape"
+        s: "loc:@gradients_8/add_4_grad/Reshape"
       }
     }
   }
@@ -150729,7 +151129,7 @@ node {
   }
 }
 node {
-  name: "mul_46/y"
+  name: "mul_47/y"
   op: "Const"
   attr {
     key: "dtype"
@@ -150750,10 +151150,10 @@ node {
   }
 }
 node {
-  name: "mul_46"
+  name: "mul_47"
   op: "Mul"
   input: "strided_slice_58"
-  input: "mul_46/y"
+  input: "mul_47/y"
   attr {
     key: "T"
     value {
@@ -150786,7 +151186,7 @@ node {
   name: "Reshape_55/shape"
   op: "Pack"
   input: "Reshape_55/shape/0"
-  input: "mul_46"
+  input: "mul_47"
   attr {
     key: "N"
     value {
@@ -151000,7 +151400,7 @@ node {
   }
 }
 node {
-  name: "mul_47/x"
+  name: "mul_48/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -151021,9 +151421,9 @@ node {
   }
 }
 node {
-  name: "mul_47"
+  name: "mul_48"
   op: "Mul"
-  input: "mul_47/x"
+  input: "mul_48/x"
   input: "strided_slice_59"
   attr {
     key: "T"
@@ -151057,7 +151457,7 @@ node {
   name: "Reshape_56/shape"
   op: "Pack"
   input: "Reshape_56/shape/0"
-  input: "mul_47"
+  input: "mul_48"
   attr {
     key: "N"
     value {
@@ -151260,7 +151660,7 @@ node {
   }
 }
 node {
-  name: "mul_48/x"
+  name: "mul_49/x"
   op: "Const"
   attr {
     key: "dtype"
@@ -151281,9 +151681,9 @@ node {
   }
 }
 node {
-  name: "mul_48"
+  name: "mul_49"
   op: "Mul"
-  input: "mul_48/x"
+  input: "mul_49/x"
   input: "strided_slice_60"
   attr {
     key: "T"
@@ -151317,7 +151717,7 @@ node {
   name: "Reshape_58/shape"
   op: "Pack"
   input: "Reshape_58/shape/0"
-  input: "mul_48"
+  input: "mul_49"
   attr {
     key: "N"
     value {

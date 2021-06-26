@@ -112,6 +112,9 @@ class TensorModel() :
                                name = 'output_dim', 
                                dtype = tf.int32)
 
+        natomsel = sum(natoms[2+type_i] for type_i in self.get_sel_type())
+        nout = self.get_out_size()
+
         dout \
             = self.descrpt.build(coord_,
                                  atype_,
@@ -130,16 +133,14 @@ class TensorModel() :
                                      natoms, 
                                      reuse = reuse, 
                                      suffix = suffix)
-        output = tf.identity(output, name = 'o_' + self.model_type + suffix)
+        framesize = nout if "global" in self.model_type else natomsel * nout
+        output = tf.reshape(output, [-1, framesize], name = 'o_' + self.model_type + suffix)
 
         model_dict = {self.model_type: output}
 
         if "global" not in self.model_type:
-            natomsel = sum(natoms[2+type_i] for type_i in self.get_sel_type())
-            nout = self.get_out_size()
-            atom_out = tf.reshape(output, [-1, natomsel, nout])
-
             gname = "global_"+self.model_type
+            atom_out = tf.reshape(output, [-1, natomsel, nout])
             global_out = tf.reduce_sum(atom_out, axis=1)
             global_out = tf.reshape(global_out, [-1, nout], name="o_" + gname + suffix)
             
