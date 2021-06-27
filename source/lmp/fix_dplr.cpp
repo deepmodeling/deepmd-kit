@@ -319,7 +319,7 @@ void FixDPLR::pre_force(int vflag)
   for (int ii = 0; ii < valid_pairs.size(); ++ii){
     int idx0 = valid_pairs[ii].first;
     int idx1 = valid_pairs[ii].second;
-    assert(idx0 < sel_fwd.size() // && sel_fwd[idx0] < sort_fwd_map.size());
+    assert(idx0 < sel_fwd.size()); // && sel_fwd[idx0] < sort_fwd_map.size());
     // Yixiao: the sort map is no longer needed
     // int res_idx = sort_fwd_map[sel_fwd[idx0]];
     int res_idx = sel_fwd[idx0];
