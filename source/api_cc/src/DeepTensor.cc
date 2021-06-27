@@ -141,7 +141,7 @@ run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
            name_prefix(name_scope) + "o_virial"},
 			    {}, 
 			    &output_tensors));
-  
+
   Tensor output_gt = output_tensors[0];
   Tensor output_f = output_tensors[1];
   Tensor output_v = output_tensors[2];
@@ -172,7 +172,7 @@ run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
   for (unsigned ii = 0; ii < odim * nall * 3; ++ii){
     dforce[ii] = of(ii);
   }
-  dforce_.resize(odim * nall * 3);
+  dforce_ = dforce;
   for (unsigned dd = 0; dd < odim; ++dd){
     atommap.backward (dforce_.begin() + (dd * nall * 3), dforce.begin() + (dd * nall * 3), 3);
   }
@@ -217,7 +217,7 @@ run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
            name_prefix(name_scope) + "o_atom_virial"},
 			    {}, 
 			    &output_tensors));
-  
+
   Tensor output_gt = output_tensors[0];
   Tensor output_f = output_tensors[1];
   Tensor output_v = output_tensors[2];
@@ -258,7 +258,7 @@ run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
   for (unsigned ii = 0; ii < odim * nall * 3; ++ii){
     dforce[ii] = of(ii);
   }
-  dforce_.resize(odim * nall * 3);
+  dforce_ = dforce;
   for (unsigned dd = 0; dd < odim; ++dd){
     atommap.backward (dforce_.begin() + (dd * nall * 3), dforce.begin() + (dd * nall * 3), 3);
   }
@@ -285,7 +285,7 @@ run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
   for (unsigned ii = 0; ii < odim * nall * 9; ++ii){
     datom_virial[ii] = oav(ii);
   }
-  datom_virial_.resize(odim * nall * 9);
+  datom_virial_ = datom_virial;
   for (unsigned dd = 0; dd < odim; ++dd){
     atommap.backward (datom_virial_.begin() + (dd * nall * 9), datom_virial.begin() + (dd * nall * 9), 9);
   }
@@ -467,7 +467,7 @@ compute (std::vector<VALUETYPE> &	dglobal_tensor_,
   nlist_data.shuffle_exclude_empty(fwd_map);  
   InputNlist nlist;
   nlist_data.make_inlist(nlist);
-  compute_inner(dglobal_tensor_, dforce, dvirial_, datom_tensor_, datom_virial, dcoord, datype, dbox);
+  compute_inner(dglobal_tensor_, dforce, dvirial_, datom_tensor_, datom_virial, dcoord, datype, dbox, nghost_real, nlist);
   // bkw map
   dforce_.resize(odim * fwd_map.size() * 3);
   for(int kk = 0; kk < odim; ++kk){

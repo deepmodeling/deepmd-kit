@@ -197,9 +197,6 @@ TEST_F(TestInferDeepDipoleNew, cpu_build_nlist)
   }
   EXPECT_EQ(ff.size(), expected_f.size());
   for(int ii = 0; ii < expected_f.size(); ++ii){
-    // remove the following line later
-    std::cout << ff[ii] << "  ";
-    //
     EXPECT_LT(fabs(ff[ii] - expected_f[ii]), 1e-10);
   }
   EXPECT_EQ(vv.size(), expected_gv.size());
@@ -268,13 +265,7 @@ TEST_F(TestInferDeepDipoleNew, cpu_lmp_nlist)
     _fold_back(rff.begin() + kk * nloc * 3, ff.begin() + kk * nall * 3, mapping, nloc, nall, 3);
   }
   EXPECT_EQ(rff.size(), expected_f.size());
-  // remove the following lines later
-  for(int ii = 0; ii < ff.size(); ++ii){
-    std::cout << ff[ii] << "  ";
-  }
-  //
   for(int ii = 0; ii < expected_f.size(); ++ii){
-    // std::cout << rff[ii] << "  ";
     EXPECT_LT(fabs(rff[ii] - expected_f[ii]), 1e-10);
   }
   // virial
@@ -284,7 +275,7 @@ TEST_F(TestInferDeepDipoleNew, cpu_lmp_nlist)
   }
 
 
-  dp.compute(gt, ff, vv, at, av, coord, atype, box);
+  dp.compute(gt, ff, vv, at, av, coord_cpy, atype_cpy, box, nall-nloc, inlist);
   
   EXPECT_EQ(gt.size(), expected_gt.size());
   for(int ii = 0; ii < expected_gt.size(); ++ii){
@@ -309,9 +300,13 @@ TEST_F(TestInferDeepDipoleNew, cpu_lmp_nlist)
     EXPECT_LT(fabs(at[ii] - expected_t[ii]), 1e-10);
   }
   // atom virial
-  EXPECT_EQ(av.size(), expected_v.size());
+  std::vector<double> rav (odim * nloc * 9);
+  for(int kk = 0; kk < odim; ++kk){
+    _fold_back(rav.begin() + kk * nloc * 9, av.begin() + kk * nall * 9, mapping, nloc, nall, 9);
+  }
+  EXPECT_EQ(rav.size(), expected_v.size());
   for(int ii = 0; ii < expected_v.size(); ++ii){
-    EXPECT_LT(fabs(av[ii] - expected_v[ii]), 1e-10);
+    EXPECT_LT(fabs(rav[ii] - expected_v[ii]), 1e-10);
   }
 }
 
