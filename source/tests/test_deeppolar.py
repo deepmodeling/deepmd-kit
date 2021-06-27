@@ -4,7 +4,8 @@ import unittest
 
 from infer.convert2pb import convert_pbtxt_to_pb
 from deepmd.infer import DeepPolar
-from common import tests_path
+from common import tests_path, tf
+from packaging.version import parse as parse_version
 
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
@@ -101,6 +102,8 @@ class TestDeepPolarNoPBC(unittest.TestCase) :
             self.assertAlmostEqual(dd.reshape([-1])[ii], self.expected_d.reshape([-1])[ii], places = default_places)
 
 
+@unittest.skipIf(parse_version(tf.__version__) < parse_version("1.15"), 
+    f"The current tf version {tf.__version__} is too low to run the new testing model.")
 class TestDeepPolarNewPBC(unittest.TestCase) :
     def setUp(self):
         convert_pbtxt_to_pb(str(tests_path / os.path.join("infer","deeppolar_new.pbtxt")), "deeppolar_new.pb")

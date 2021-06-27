@@ -4,7 +4,8 @@ import unittest
 
 from infer.convert2pb import convert_pbtxt_to_pb
 from deepmd.infer import DeepDipole
-from common import tests_path, finite_difference, strerch_box
+from common import tests_path, finite_difference, strerch_box, tf
+from packaging.version import parse as parse_version
 
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
@@ -100,7 +101,9 @@ class TestDeepDipoleNoPBC(unittest.TestCase) :
         for ii in range(dd.size):
             self.assertAlmostEqual(dd.reshape([-1])[ii], self.expected_d.reshape([-1])[ii], places = default_places)
 
-    
+
+@unittest.skipIf(parse_version(tf.__version__) < parse_version("1.15"), 
+    f"The current tf version {tf.__version__} is too low to run the new testing model.")
 class TestDeepDipoleNewPBC(unittest.TestCase) :
     def setUp(self):
         convert_pbtxt_to_pb(str(tests_path / os.path.join("infer","deepdipole_new.pbtxt")), "deepdipole_new.pb")
@@ -264,6 +267,8 @@ class TestDeepDipoleNewPBC(unittest.TestCase) :
         np.testing.assert_almost_equal(vv.reshape([-1]), expected_gv.reshape([-1]), decimal = default_places)
 
 
+@unittest.skipIf(parse_version(tf.__version__) < parse_version("1.15"), 
+    f"The current tf version {tf.__version__} is too low to run the new testing model.")
 class TestDeepDipoleFakePBC(unittest.TestCase) :
     def setUp(self):
         convert_pbtxt_to_pb(str(tests_path / os.path.join("infer","deepdipole_fake.pbtxt")), "deepdipole_fake.pb")
