@@ -21,6 +21,26 @@ _fold_back(
   }
 }
 
+inline void 
+_fold_back(
+    typename std::vector<double >::iterator out,
+	  const typename std::vector<double >::const_iterator in, 
+    const std::vector<int> &mapping,
+    const int nloc,
+    const int nall,
+    const int ndim)
+{
+  // out.resize(nloc*ndim);
+  std::copy(in, in + nloc*ndim, out);
+  for(int ii = nloc; ii < nall; ++ii){
+    int in_idx = ii;
+    int out_idx = mapping[in_idx];
+    for(int dd = 0; dd < ndim; ++dd){
+      *(out + out_idx * ndim + dd) += *(in + in_idx * ndim + dd);
+    }
+  }
+}
+
 inline void
 _build_nlist(
     std::vector<std::vector<int>> &nlist_data,

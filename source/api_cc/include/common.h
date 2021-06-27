@@ -80,6 +80,13 @@ select_map(std::vector<VT> & out,
 
 template<typename VT>
 void 
+select_map(typename std::vector<VT >::iterator out,
+	   const typename std::vector<VT >::const_iterator in, 
+	   const std::vector<int > & fwd_map, 
+	   const int & stride);
+
+template<typename VT>
+void 
 select_map_inv(std::vector<VT> & out,
 	   const std::vector<VT > & in,
 	   const std::vector<int > & fwd_map, 
