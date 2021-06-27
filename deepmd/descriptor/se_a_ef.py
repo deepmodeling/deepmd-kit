@@ -4,6 +4,7 @@ from typing import Tuple, List
 from deepmd.env import tf
 from deepmd.common import add_data_requirement,get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter
 from deepmd.utils.argcheck import list_to_doc
+from deepmd.utils.sess import run_sess
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import op_module
@@ -518,7 +519,7 @@ class DescrptSeAEfLower (DescrptSeA):
                                   mesh,
                                   data_efield) :
         dd_all \
-            = self.sub_sess.run(self.stat_descrpt, 
+            = run_sess(self.sub_sess, self.stat_descrpt, 
                                 feed_dict = {
                                     self.place_holders['coord']: data_coord,
                                     self.place_holders['type']: data_atype,

@@ -18,6 +18,7 @@ from deepmd.train.trainer import DPTrainer
 from deepmd.utils.argcheck import normalize
 from deepmd.utils.compat import updata_deepmd_input
 from deepmd.utils.data_system import DeepmdDataSystem
+from deepmd.utils.sess import run_sess
 
 if TYPE_CHECKING:
     from deepmd.run_options import TFServerV1
@@ -74,7 +75,7 @@ def wait_done_queue(
     """
     with tf.Session(server.target) as sess:
         for i in range(cluster_spec.num_tasks("worker")):
-            sess.run(queue.dequeue())
+            run_sess(sess, queue.dequeue())
             log.debug(f"ps:{task_index:d} received done from worker:{i:d}")
         log.debug(f"ps:{task_index:f} quitting")
 
@@ -127,7 +128,7 @@ def fill_done_queue(
     """
     with tf.Session(server.target) as sess:
         for i in range(cluster_spec.num_tasks("ps")):
-            sess.run(done_ops[i])
+            run_sess(sess, done_ops[i])
             log.debug(f"worker:{task_index:d} sending done to ps:{i:d}")
 
 
