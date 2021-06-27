@@ -199,6 +199,7 @@ run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
 {
   unsigned nloc = atommap.get_type().size();
   unsigned nall = nloc + nghost;
+  unsigned nsel = nloc - std::count(sel_fwd.begin(), sel_fwd.end(), -1);
   if (nloc == 0) {
     // return empty
     dglobal_tensor_.clear();
@@ -236,7 +237,7 @@ run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
   assert (output_v.dim_size(0) == 1), "nframes should match";
   assert (output_v.dim_size(1) == odim * 9), "dof of virial should be odim * 9";
   assert (output_at.dim_size(0) == 1), "nframes should match";
-  assert (output_at.dim_size(1) == nall * odim), "dof of atomic tensor should be nall * odim";  
+  assert (output_at.dim_size(1) == nsel * odim), "dof of atomic tensor should be nsel * odim";  
   assert (output_av.dim_size(0) == 1), "nframes should match";
   assert (output_av.dim_size(1) == odim * nall * 9), "dof of atomic virial should be odim * nall * 9";  
 
@@ -257,6 +258,7 @@ run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
   for (unsigned ii = 0; ii < odim * nall * 3; ++ii){
     dforce[ii] = of(ii);
   }
+  dforce_.resize(odim * nall * 3);
   for (unsigned dd = 0; dd < odim; ++dd){
     atommap.backward (dforce_.begin() + (dd * nall * 3), dforce.begin() + (dd * nall * 3), 3);
   }
@@ -266,16 +268,16 @@ run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
   for (unsigned ii = 0; ii < odim * 9; ++ii){
     dvirial_[ii] = ov(ii);
   }
-
+  
   // atomic tensor
-  std::vector<VALUETYPE> datom_tensor (nall * odim);
-  for (unsigned ii = 0; ii < nall * odim; ++ii){
+  std::vector<VALUETYPE> datom_tensor (nsel * odim);
+  for (unsigned ii = 0; ii < nsel * odim; ++ii){
     datom_tensor[ii] = oat(ii);
   }
   std::vector<int> sel_srt = sel_fwd;
   select_map<int>(sel_srt, sel_fwd, atommap.get_fwd_map(), 1);
   std::remove(sel_srt.begin(), sel_srt.end(), -1);
-  datom_tensor_.resize(nall * odim);
+  datom_tensor_.resize(nsel * odim);
   select_map<VALUETYPE>(datom_tensor_, datom_tensor, sel_srt, odim);
 
   // component-wise atomic virial
@@ -283,6 +285,7 @@ run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
   for (unsigned ii = 0; ii < odim * nall * 9; ++ii){
     datom_virial[ii] = oav(ii);
   }
+  datom_virial_.resize(odim * nall * 9);
   for (unsigned dd = 0; dd < odim; ++dd){
     atommap.backward (datom_virial_.begin() + (dd * nall * 9), datom_virial.begin() + (dd * nall * 9), 9);
   }
