@@ -2,7 +2,7 @@
 #include "prod_virial.h"
 
 REGISTER_OP("ProdVirialSeA")
-    .Attr("T: {float, double}")
+    .Attr("T: {float, double} = DT_DOUBLE")
     .Input("net_deriv: T")
     .Input("in_deriv: T")
     .Input("rij: T")
@@ -14,7 +14,7 @@ REGISTER_OP("ProdVirialSeA")
     .Output("atom_virial: T");
 
 REGISTER_OP("ProdVirialSeR")
-    .Attr("T: {float, double}")
+    .Attr("T: {float, double} = DT_DOUBLE")
     .Input("net_deriv: T")
     .Input("in_deriv: T")
     .Input("rij: T")

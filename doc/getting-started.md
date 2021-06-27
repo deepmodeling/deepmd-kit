@@ -306,6 +306,8 @@ The model compression method requires that the version of DeePMD-kit used in ori
 
 ## Model inference 
 
+Note that the model for inference is required to be compatible with the DeePMD-kit package. See [Model compatibility](troubleshooting/model-compatability.md) for details. 
+
 ### Python interface
 One may use the python interface of DeePMD-kit for model inference, an example is given as follows
 ```python
@@ -359,6 +361,8 @@ and then run the program:
 ```
 
 ## Run MD
+
+Note that the model for MD simulations is required to be compatible with the DeePMD-kit package. See [Model compatibility](troubleshooting/model-compatability.md) for details. 
 
 ### Run MD with LAMMPS
 Include deepmd in the pair_style

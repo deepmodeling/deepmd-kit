@@ -2,7 +2,7 @@
 #include "prod_force_grad.h"
 
 REGISTER_OP("ProdForceSeAGrad")
-    .Attr("T: {float, double}")
+    .Attr("T: {float, double} = DT_DOUBLE")
     .Input("grad: T")
     .Input("net_deriv: T")
     .Input("in_deriv: T")
@@ -13,7 +13,7 @@ REGISTER_OP("ProdForceSeAGrad")
     .Output("grad_net: T");
 
 REGISTER_OP("ProdForceSeRGrad")
-    .Attr("T: {float, double}")
+    .Attr("T: {float, double} = DT_DOUBLE")
     .Input("grad: T")
     .Input("net_deriv: T")
     .Input("in_deriv: T")

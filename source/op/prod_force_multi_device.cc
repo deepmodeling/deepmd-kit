@@ -2,7 +2,7 @@
 #include "prod_force.h"
 
 REGISTER_OP("ProdForceSeA")
-    .Attr("T: {float, double}")
+    .Attr("T: {float, double} = DT_DOUBLE")
     .Input("net_deriv: T")
     .Input("in_deriv: T")
     .Input("nlist: int32")
@@ -12,7 +12,7 @@ REGISTER_OP("ProdForceSeA")
     .Output("force: T");
 
 REGISTER_OP("ProdForceSeR")
-    .Attr("T: {float, double}")
+    .Attr("T: {float, double} = DT_DOUBLE")
     .Input("net_deriv: T")
     .Input("in_deriv: T")
     .Input("nlist: int32")

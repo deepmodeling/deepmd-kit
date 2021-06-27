@@ -5,7 +5,7 @@ typedef double boxtensor_t ;
 typedef double compute_t;
 
 REGISTER_OP("NeighborStat")
-    .Attr("T: {float, double}")
+    .Attr("T: {float, double} = DT_DOUBLE")
     .Input("coord: T")
     .Input("type: int32")
     .Input("natoms: int32")

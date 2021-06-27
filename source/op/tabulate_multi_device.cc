@@ -2,7 +2,7 @@
 #include "tabulate.h"
 
 REGISTER_OP("TabulateFusion")
-    .Attr("T: {float, double}")
+    .Attr("T: {float, double} = DT_DOUBLE")
     .Input("table: T")
     .Input("table_info: T")
     .Input("em_x: T")
@@ -11,7 +11,7 @@ REGISTER_OP("TabulateFusion")
     .Output("descriptor: T");
 
 REGISTER_OP("TabulateFusionGrad")
-    .Attr("T: {float, double}")
+    .Attr("T: {float, double} = DT_DOUBLE")
     .Input("table: T")
     .Input("table_info: T")
     .Input("em_x: T")
