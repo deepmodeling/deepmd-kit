@@ -7,6 +7,7 @@ from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.utils.data_system import DeepmdDataSystem
+from deepmd.utils.sess import run_sess
 
 log = logging.getLogger(__name__)
 
