@@ -77,6 +77,7 @@ TEST_F(TestInferDeepDipole, cpu_build_nlist)
   }
 }
 
+
 TEST_F(TestInferDeepDipole, cpu_lmp_nlist)
 {
   float rc = dp.cutoff();
@@ -100,6 +101,7 @@ TEST_F(TestInferDeepDipole, cpu_lmp_nlist)
     EXPECT_LT(fabs(value[ii] - expected_d[ii]), 1e-10);
   }
 }
+
 
 
 class TestInferDeepDipoleNew : public ::testing::Test
@@ -225,8 +227,8 @@ TEST_F(TestInferDeepDipoleNew, cpu_build_nlist)
   for(int ii = 0; ii < expected_v.size(); ++ii){
     EXPECT_LT(fabs(av[ii] - expected_v[ii]), 1e-10);
   }
-
 }
+
 
 TEST_F(TestInferDeepDipoleNew, cpu_lmp_nlist)
 {
@@ -376,6 +378,7 @@ TEST_F(TestInferDeepDipoleFake, cpu_build_nlist)
     EXPECT_LT(fabs(value[ii] - expected_d[ii]), 1e-10);
   }
 }
+
 
 TEST_F(TestInferDeepDipoleFake, cpu_lmp_nlist)
 {
