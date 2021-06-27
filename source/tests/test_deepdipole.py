@@ -4,7 +4,7 @@ import unittest
 
 from infer.convert2pb import convert_pbtxt_to_pb
 from deepmd.infer import DeepDipole
-from common import tests_path
+from common import tests_path, finite_difference, strerch_box
 
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
@@ -197,7 +197,6 @@ class TestDeepDipoleNewPBC(unittest.TestCase) :
         np.testing.assert_almost_equal(gt.reshape([-1]), self.expected_gt.reshape([-1]), decimal = default_places)
         np.testing.assert_almost_equal(vv.reshape([-1]), self.expected_gv.reshape([-1]), decimal = default_places)
 
-
     def test_1frame_full_atm_shuffle(self):
         i_sf = [2,1,3,0,5,4]
         isel_sf = [1,0]
@@ -225,6 +224,19 @@ class TestDeepDipoleNewPBC(unittest.TestCase) :
         np.testing.assert_almost_equal(gt.reshape([-1]), self.expected_gt.reshape([-1]), decimal = default_places)
         np.testing.assert_almost_equal(vv.reshape([-1]), self.expected_gv.reshape([-1]), decimal = default_places)
 
+    def test_1frame_num_deriv(self):
+        # numerical force
+        num_f = - finite_difference(
+            lambda coord: self.dp.eval(coord, self.box, self.atype, atomic=False).reshape(-1),
+            self.coords
+        ).reshape(-1)
+        np.testing.assert_allclose(num_f.reshape([-1]), self.expected_f.reshape([-1]), atol=1e-5)
+        # numerical virial
+        num_v = - (finite_difference(
+            lambda box: self.dp.eval(strerch_box(self.coords, self.box, box), box, self.atype, atomic=False).reshape(-1),
+            self.box
+        ).reshape(-1, 3, 3).transpose(0,2,1) @ self.box.reshape(3,3)).reshape(-1)
+        np.testing.assert_allclose(num_v.reshape([-1]), self.expected_gv.reshape([-1]), atol=1e-5)
 
     def test_2frame_full_atm(self):
         coords2 = np.concatenate((self.coords, self.coords))
