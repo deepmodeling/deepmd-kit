@@ -52,6 +52,23 @@ init (const std::string & model,
   inited = true;
 }
 
+void 
+DeepTensor::
+print_summary(const std::string &pre) const
+{
+  std::cout << pre << "installed to:       " + global_install_prefix << std::endl;
+  std::cout << pre << "source:             " + global_git_summ << std::endl;
+  std::cout << pre << "source branch:      " + global_git_branch << std::endl;
+  std::cout << pre << "source commit:      " + global_git_hash << std::endl;
+  std::cout << pre << "source commit at:   " + global_git_date << std::endl;
+  std::cout << pre << "surpport model ver.:" + global_model_version << std::endl;
+  std::cout << pre << "build float prec:   " + global_float_prec << std::endl;
+  std::cout << pre << "build with tf inc:  " + global_tf_include_dir << std::endl;
+  std::cout << pre << "build with tf lib:  " + global_tf_lib << std::endl;
+  std::cout << pre << "set tf intra_op_parallelism_threads: " <<  num_intra_nthreads << std::endl;
+  std::cout << pre << "set tf inter_op_parallelism_threads: " <<  num_inter_nthreads << std::endl;
+}
+
 template<class VT>
 VT
 DeepTensor::
