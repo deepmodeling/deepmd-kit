@@ -203,6 +203,7 @@ void tabulate_fusion_gpu_cuda(
     const int nnei, 
     const int last_layer_size) 
 {
+  if (nloc <= 0) {return;}
   tabulate_fusion_fifth_order_polynomial<FPTYPE, MM, KK> <<<nloc, last_layer_size, sizeof(FPTYPE) * MM * last_layer_size>>>(
       out, 
       table, em_x, em, table_info[0], table_info[1], table_info[2], table_info[3], table_info[4], nnei, last_layer_size);
@@ -221,6 +222,7 @@ void tabulate_fusion_grad_gpu_cuda(
     const int nnei, 
     const int last_layer_size)
 {
+  if (nloc <= 0) {return;}
   cudaErrcheck(cudaMemset(
       dy_dem_x,
       0.0, sizeof(FPTYPE) * nloc * nnei));
