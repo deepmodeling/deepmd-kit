@@ -80,11 +80,11 @@ __global__ void force_deriv_wrt_neighbors_r(
 		const int nnei)
 {  
     // idy -> nnei
-    const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    const unsigned int idy = blockIdx.y;
+    const unsigned int idx = blockIdx.x;
+    const unsigned int idy = blockIdx.y * blockDim.x + threadIdx.x;
     const unsigned int idz = threadIdx.y;
     const int ndescrpt = nnei * 1;
-    if (idx >= nloc) {
+    if (idy >= nnei) {
         return;
     }
     // deriv wrt neighbors
@@ -146,8 +146,8 @@ namespace deepmd {
         net_deriv, in_deriv, ndescrpt);
   
     const int LEN = 64;
-    const int nblock = (nloc + LEN -1) / LEN;
-    dim3 block_grid(nblock, nnei);
+    const int nblock = (nnei + LEN -1) / LEN;
+    dim3 block_grid(nloc, nblock);
     dim3 thread_grid(LEN, 3);
     hipLaunchKernelGGL(force_deriv_wrt_neighbors_r, block_grid, thread_grid, 0, 0, 
         force, 
