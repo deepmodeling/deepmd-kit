@@ -91,7 +91,7 @@ class TestProdEnvMat(unittest.TestCase):
         self.assertEqual(drij.shape, (self.nframes, self.nloc*self.nnei*3))
         self.assertEqual(dnlist.shape, (self.nframes, self.nloc*self.nnei))
         for ff in range(self.nframes):
-            for ii in range(self.ndescrpt):
+            for ii in range(self.nloc*self.ndescrpt):
                 self.assertAlmostEqual(dem[ff][ii], self.pbc_expected_output[ii], places=5)
 
     def test_pbc_self_built_nlist_deriv(self):
@@ -142,7 +142,7 @@ class TestProdEnvMat(unittest.TestCase):
         self.assertEqual(drij.shape, (self.nframes, self.nloc*self.nnei*3))
         self.assertEqual(dnlist.shape, (self.nframes, self.nloc*self.nnei))
         for ff in range(self.nframes):
-            for ii in range(self.ndescrpt):
+            for ii in range(self.nloc*self.ndescrpt):
                 self.assertAlmostEqual(dem[ff][ii], self.nopbc_expected_output[ii], places=5)
 
 

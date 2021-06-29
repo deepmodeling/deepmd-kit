@@ -7,6 +7,8 @@ from .freeze import freeze
 from .test import test
 from .train import train
 from .transfer import transfer
+from ..infer.model_devi import make_model_devi
+from .convert import convert
 
 __all__ = [
     "config",
@@ -17,4 +19,6 @@ __all__ = [
     "transfer",
     "compress",
     "doc_train_input",
+    "make_model_devi",
+    "convert",
 ]

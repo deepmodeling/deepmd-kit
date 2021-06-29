@@ -4,6 +4,7 @@ from deepmd.common import ClassArg, add_data_requirement
 
 from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import global_cvt_2_ener_float
+from deepmd.utils.sess import run_sess
 
 class TensorLoss () :
     """
@@ -123,7 +124,7 @@ class TensorLoss () :
             atoms = natoms[0]
 
         run_data = [self.l2_l, self.l2_more['local_loss'], self.l2_more['global_loss']]
-        error, error_lc, error_gl = sess.run(run_data, feed_dict=feed_dict)
+        error, error_lc, error_gl = run_sess(sess, run_data, feed_dict=feed_dict)
 
         results = {"natoms": atoms, "rmse": np.sqrt(error)}
         if self.local_weight > 0.0:
@@ -166,7 +167,7 @@ class TensorLoss () :
             summary_list.append(self.l2_loss_global_summary)
 
         # first train data
-        error_train = sess.run(run_data, feed_dict=feed_dict_batch)
+        error_train = run_sess(sess, run_data, feed_dict=feed_dict_batch)
 
         # than test data, if tensorboard log writter is present, commpute summary
         # and write tensorboard logs
@@ -175,7 +176,7 @@ class TensorLoss () :
             summary_merged_op = tf.summary.merge(summary_list)
             run_data.insert(0, summary_merged_op)
 
-        test_out = sess.run(run_data, feed_dict=feed_dict_test)
+        test_out = run_sess(sess, run_data, feed_dict=feed_dict_test)
 
         if tb_writer:
             summary = test_out.pop(0)

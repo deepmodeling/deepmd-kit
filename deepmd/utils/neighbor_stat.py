@@ -1,13 +1,13 @@
 import math
 import logging
 import numpy as np
-from tqdm import tqdm
 from deepmd.env import tf
 from typing import Tuple, List
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.utils.data_system import DeepmdDataSystem
+from deepmd.utils.sess import run_sess
 
 log = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ class NeighborStat():
                 data_set = data.data_systems[ii]._load_set(jj)
                 for kk in range(np.array(data_set['type']).shape[0]):
                     mn, dt \
-                        = self.sub_sess.run([self._max_nbor_size, self._min_nbor_dist], 
+                        = run_sess(self.sub_sess, [self._max_nbor_size, self._min_nbor_dist], 
                                             feed_dict = {
                                                 self.place_holders['coord']: np.array(data_set['coord'])[kk].reshape([-1, data.natoms[ii] * 3]),
                                                 self.place_holders['type']: np.array(data_set['type'])[kk].reshape([-1, data.natoms[ii]]),

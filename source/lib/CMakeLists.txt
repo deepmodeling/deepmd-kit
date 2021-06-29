@@ -1,9 +1,12 @@
 # libmd
-
 set (libname ${LIB_DEEPMD})
 
 if (USE_CUDA_TOOLKIT)
   include_directories("${CUDA_INCLUDE_DIRS}")
+endif()
+
+if (USE_ROCM_TOOLKIT)
+  include_directories("${ROCM_INCLUDE_DIRS}")
 endif()
 
 file(GLOB LIB_SRC src/*.cc src/*.cpp)
@@ -12,10 +15,17 @@ file(GLOB INC_SRC include/*.h ${CMAKE_CURRENT_BINARY_DIR}/version.h)
 add_library(${libname} SHARED ${LIB_SRC})
 
 if (USE_CUDA_TOOLKIT)
-  add_definitions("-D GOOGLE_CUDA")
+  add_definitions("-DGOOGLE_CUDA")
   add_subdirectory(src/cuda)
   set (EXTRA_LIBS ${EXTRA_LIBS} deepmd_op_cuda)
   target_link_libraries (${libname} ${CUDA_LIBRARIES} ${EXTRA_LIBS})
+endif()
+
+if (USE_ROCM_TOOLKIT)
+  add_definitions("-DTENSORFLOW_USE_ROCM")
+  add_subdirectory(src/rocm)
+  set (EXTRA_LIBS ${EXTRA_LIBS} deepmd_op_rocm)
+  target_link_libraries (${libname} ${ROCM_LIBRARIES} ${EXTRA_LIBS})
 endif()
 
 if(BUILD_PY_IF)

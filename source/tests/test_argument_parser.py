@@ -44,7 +44,7 @@ def build_args(args: "TEST_DICT", command: str) -> List[str]:
         # arguments without value are passed as such, typically these are where action
         # is 'count' or 'store_true'
         if "value" in test_data:
-            args_list.append(str(test_data["value"]))
+            args_list += str(test_data["value"]).split()
 
     return args_list
 
@@ -272,10 +272,10 @@ class TestParserOutput(unittest.TestCase):
         ARGS = {
             "INPUT": dict(type=str, value="INFILE"),
             "--output": dict(type=str, value="OUTFILE"),
-            "--extrapolate": dict(type=int, value=10),
-            "--stride": dict(type=float, value=0.1),
-            "--frequency": dict(type=int, value=1),
-            "--checkpoint-folder": dict(type=str, value="FOLDER"),
+            "--extrapolate": dict(type=int, value=5),
+            "--step": dict(type=float, value=0.1),
+            "--frequency": dict(type=int, value=-1),
+            "--checkpoint-folder": dict(type=str, value="."),
         }
 
         self.run_test(command="compress", mapping=ARGS)
@@ -285,6 +285,19 @@ class TestParserOutput(unittest.TestCase):
         ARGS = {}
 
         self.run_test(command="doc-train-input", mapping=ARGS)
+    
+    def test_parser_model_devi(self):
+        """Test model-devi subparser"""
+        ARGS = {
+            "--models": dict(type=list, value="GRAPH.000.pb GRAPH.001.pb",
+                             expected=["GRAPH.000.pb", "GRAPH.001.pb"]),
+            "--system": dict(type=str, value="SYSTEM_DIR"),
+            "--set-prefix": dict(type=str, value="SET_PREFIX"),
+            "--output": dict(type=str, value="OUTFILE"),
+            "--frequency": dict(type=int, value=1)
+        }
+
+        self.run_test(command="model-devi", mapping=ARGS)
 
     def test_get_log_level(self):
         MAPPING = {

@@ -35,8 +35,10 @@ The construction of type embedding net is given by `type_embedding`. An example 
 * `seed` gives the random seed that is used to generate random numbers when initializing the model parameters.
 
 
-
 A complete training input script of this example can be find in the directory. 
 ```bash
 $deepmd_source_dir/examples/water/se_e2_a_tebd/input.json
 ```
+See [here](development/type-embedding.md) for further explanation of `type embedding`.
+
+**P.S.: You can't apply compression method while using atom type embedding**

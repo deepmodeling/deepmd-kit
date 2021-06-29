@@ -72,7 +72,7 @@ class DeepmdData() :
                 self.train_dirs = self.dirs[:-1]
         self.data_dict = {}        
         # add box and coord
-        self.add('box', 9, must = True)
+        self.add('box', 9, must = self.pbc)
         self.add('coord', 3, atomic = True, must = True)
         # set counters
         self.set_count = 0

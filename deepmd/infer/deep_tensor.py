@@ -5,6 +5,7 @@ import numpy as np
 from deepmd.common import make_default_mesh
 from deepmd.env import default_tf_session_config, tf
 from deepmd.infer.deep_eval import DeepEval
+from deepmd.utils.sess import run_sess
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -63,7 +64,7 @@ class DeepTensor(DeepEval):
 
     def _run_default_sess(self):
         [self.ntypes, self.rcut, self.tmap, self.tselt, self.output_dim] \
-            = self.sess.run(
+            = run_sess(self.sess, 
                 [self.t_ntypes, self.t_rcut, self.t_tmap, self.t_sel_type, self.t_ouput_dim]
             )
 
