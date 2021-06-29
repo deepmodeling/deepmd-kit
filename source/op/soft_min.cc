@@ -3,7 +3,7 @@
 #include "soft_min_switch.h"
 
 REGISTER_OP("SoftMinSwitch")
-.Attr("T: {float, double}")
+.Attr("T: {float, double} = DT_DOUBLE")
 .Input("type: int32")
 .Input("rij: T")
 .Input("nlist: int32")

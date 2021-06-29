@@ -12,6 +12,7 @@ from deepmd.env import default_tf_session_config
 from deepmd.utils.network import embedding_net, embedding_net_rand_seed_shift
 from deepmd.utils.tabulate import DeepTabulate
 from deepmd.utils.type_embed import embed_atom_type
+from deepmd.utils.sess import run_sess
 
 class DescrptSeA ():
     @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
@@ -491,7 +492,7 @@ class DescrptSeA ():
                                  natoms_vec,
                                  mesh) :    
         dd_all \
-            = self.sub_sess.run(self.stat_descrpt, 
+            = run_sess(self.sub_sess, self.stat_descrpt, 
                                 feed_dict = {
                                     self.place_holders['coord']: data_coord,
                                     self.place_holders['type']: data_atype,

@@ -55,6 +55,9 @@ void gelu_gpu_cuda(
     const FPTYPE * xx, 
     const int size)
 {
+  if(size <= 0){
+    return;
+  }
   const int THREAD_ITEMS = 1024;
   const int BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
 
@@ -68,6 +71,9 @@ void gelu_grad_gpu_cuda(
     const FPTYPE * dy, 
     const int size)
 {
+  if(size <= 0){
+    return;
+  }
   const int THREAD_ITEMS = 1024;
   const int BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
 
@@ -82,6 +88,9 @@ void gelu_grad_grad_gpu_cuda(
     const FPTYPE * dy_2,
     const int size)
 {
+  if(size <= 0){
+    return;
+  }
   const int THREAD_ITEMS = 1024;
   const int BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
   
