@@ -135,77 +135,6 @@ DeepTensor::
 run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
 		  std::vector<VALUETYPE> &	dforce_,
 		  std::vector<VALUETYPE> &	dvirial_,
-		  tensorflow::Session *			session, 
-		  const std::vector<std::pair<std::string, tensorflow::Tensor>> & input_tensors,
-		  const AtomMap<VALUETYPE> &		atommap, 
-		  const std::vector<int> &		sel_fwd,
-		  const int				nghost)
-{
-  unsigned nloc = atommap.get_type().size();
-  unsigned nall = nloc + nghost;
-  if (nloc == 0) {
-    // return empty
-    dglobal_tensor_.clear();
-    dforce_.clear();
-    dvirial_.clear();
-    return;
-  }
-
-  std::vector<Tensor> output_tensors;
-  deepmd::check_status (session->Run(input_tensors, 
-			    {name_prefix(name_scope) + "o_global_" + model_type, 
-			     name_prefix(name_scope) + "o_force", 
-			     name_prefix(name_scope) + "o_virial"},
-			    {}, 
-			    &output_tensors));
-
-  Tensor output_gt = output_tensors[0];
-  Tensor output_f = output_tensors[1];
-  Tensor output_v = output_tensors[2];
-  // this is the new model, output has to be rank 2 tensor
-  assert (output_gt.dims() == 2), "dim of output tensor should be 2";
-  assert (output_f.dims() == 2), "dim of output tensor should be 2";
-  assert (output_v.dims() == 2), "dim of output tensor should be 2";
-  // also check the tensor shapes
-  assert (output_gt.dim_size(0) == 1), "nframes should match";
-  assert (output_gt.dim_size(1) == odim), "dof of global tensor should be odim";  
-  assert (output_f.dim_size(0) == 1), "nframes should match";
-  assert (output_f.dim_size(1) == odim * nall * 3), "dof of force natoms should be odim * nall * 3";
-  assert (output_v.dim_size(0) == 1), "nframes should match";
-  assert (output_v.dim_size(1) == odim * 9), "dof of virial should be odim * 9";
-
-  auto ogt = output_gt.flat <ENERGYTYPE> ();
-  auto of = output_f.flat <VALUETYPE> ();
-  auto ov = output_v.flat <VALUETYPE> ();
-
-  // global tensor
-  dglobal_tensor_.resize(odim);
-  for (unsigned ii = 0; ii < odim; ++ii){
-    dglobal_tensor_[ii] = ogt(ii);
-  }
-
-  // component-wise force
-  std::vector<VALUETYPE> dforce (3 * nall * odim);
-  for (unsigned ii = 0; ii < odim * nall * 3; ++ii){
-    dforce[ii] = of(ii);
-  }
-  dforce_ = dforce;
-  for (unsigned dd = 0; dd < odim; ++dd){
-    atommap.backward (dforce_.begin() + (dd * nall * 3), dforce.begin() + (dd * nall * 3), 3);
-  }
-
-  // component-wise virial
-  dvirial_.resize(odim * 9);
-  for (unsigned ii = 0; ii < odim * 9; ++ii){
-    dvirial_[ii] = ov(ii);
-  }
-}
-
-void
-DeepTensor::
-run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
-		  std::vector<VALUETYPE> &	dforce_,
-		  std::vector<VALUETYPE> &	dvirial_,
 		  std::vector<VALUETYPE> &	datom_tensor_,
 		  std::vector<VALUETYPE> &	datom_virial_,
 		  tensorflow::Session *			session, 
@@ -367,23 +296,8 @@ compute (std::vector<VALUETYPE> &	dglobal_tensor_,
 	 const std::vector<int> &	datype_,
 	 const std::vector<VALUETYPE> &	dbox)
 {
-  std::vector<VALUETYPE> dcoord, dforce;
-  std::vector<int> datype, fwd_map, bkw_map;
-  int nghost_real;
-  select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, 0, ntypes);
-  assert(nghost_real == 0);
-  // resize to nall_real
-  dcoord.resize(bkw_map.size() * 3);
-  datype.resize(bkw_map.size());
-  // fwd map
-  select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3);
-  select_map<int>(datype, datype_, fwd_map, 1);
-  compute_inner(dglobal_tensor_, dforce, dvirial_, dcoord, datype, dbox);
-  // bkw map
-  dforce_.resize(odim * fwd_map.size() * 3);
-  for(int kk = 0; kk < odim; ++kk){
-    select_map<VALUETYPE>(dforce_.begin() + kk * fwd_map.size() * 3, dforce.begin() + kk * bkw_map.size() * 3, bkw_map, 3);
-  }
+  std::vector<VALUETYPE> tmp_at_, tmp_av_;
+  compute(dglobal_tensor_, dforce_, dvirial_, tmp_at_, tmp_av_, dcoord_, datype_, dbox);
 }
 
 void
@@ -397,28 +311,8 @@ compute (std::vector<VALUETYPE> &	dglobal_tensor_,
 	 const int			nghost,
 	 const InputNlist &	lmp_list)
 {
-  std::vector<VALUETYPE> dcoord, dforce;
-  std::vector<int> datype, fwd_map, bkw_map;
-  int nghost_real;
-  select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, nghost, ntypes);
-  // resize to nall_real
-  dcoord.resize(bkw_map.size() * 3);
-  datype.resize(bkw_map.size());
-  // fwd map
-  select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3);
-  select_map<int>(datype, datype_, fwd_map, 1);
-  // internal nlist
-  NeighborListData nlist_data;
-  nlist_data.copy_from_nlist(lmp_list);
-  nlist_data.shuffle_exclude_empty(fwd_map);  
-  InputNlist nlist;
-  nlist_data.make_inlist(nlist);
-  compute_inner(dglobal_tensor_, dforce, dvirial_, dcoord, datype, dbox, nghost_real, nlist);
-  // bkw map
-  dforce_.resize(odim * fwd_map.size() * 3);
-  for(int kk = 0; kk < odim; ++kk){
-    select_map<VALUETYPE>(dforce_.begin() + kk * fwd_map.size() * 3, dforce.begin() + kk * bkw_map.size() * 3, bkw_map, 3);
-  }
+  std::vector<VALUETYPE> tmp_at_, tmp_av_;
+  compute(dglobal_tensor_, dforce_, dvirial_, tmp_at_, tmp_av_, dcoord_, datype_, dbox, nghost, lmp_list);
 }
 
 void
@@ -552,67 +446,6 @@ compute_inner (std::vector<VALUETYPE> &		dtensor_,
   assert (nloc == ret);
 
   run_model (dtensor_, session, input_tensors, atommap, sel_fwd, nghost);
-}
-
-void
-DeepTensor::
-compute_inner (std::vector<VALUETYPE> &		dglobal_tensor_,
-	       std::vector<VALUETYPE> &	dforce_,
-	       std::vector<VALUETYPE> &	dvirial_,
-	       const std::vector<VALUETYPE> &	dcoord_,
-	       const std::vector<int> &		datype_,
-	       const std::vector<VALUETYPE> &	dbox)
-{
-  int nall = dcoord_.size() / 3;
-  int nloc = nall;
-  AtomMap<VALUETYPE> atommap (datype_.begin(), datype_.begin() + nloc);
-  assert (nloc == atommap.get_type().size());
-  
-  std::vector<int> sel_fwd, sel_bkw;
-  int nghost_sel;
-  // this gives the raw selection map, will pass to run model
-  select_by_type(sel_fwd, sel_bkw, nghost_sel, dcoord_, datype_, 0, sel_type);
-
-  std::vector<std::pair<std::string, Tensor>> input_tensors;
-  int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, name_scope);
-  assert (ret == nloc);
-
-  run_model (dglobal_tensor_, dforce_, dvirial_, session, input_tensors, atommap, sel_fwd);
-}
-
-void
-DeepTensor::
-compute_inner (std::vector<VALUETYPE> &		dglobal_tensor_,
-	       std::vector<VALUETYPE> &	dforce_,
-	       std::vector<VALUETYPE> &	dvirial_,
-	       const std::vector<VALUETYPE> &	dcoord_,
-	       const std::vector<int> &		datype_,
-	       const std::vector<VALUETYPE> &	dbox, 
-	       const int			nghost,
-	       const InputNlist &	nlist_)
-{
-  int nall = dcoord_.size() / 3;
-  int nloc = nall - nghost;
-  AtomMap<VALUETYPE> atommap (datype_.begin(), datype_.begin() + nloc);
-  assert (nloc == atommap.get_type().size());
-
-  std::vector<int> sel_fwd, sel_bkw;
-  int nghost_sel;
-  // this gives the raw selection map, will pass to run model
-  select_by_type(sel_fwd, sel_bkw, nghost_sel, dcoord_, datype_, nghost, sel_type);
-  sel_fwd.resize(nloc);
-
-  NeighborListData nlist_data;
-  nlist_data.copy_from_nlist(nlist_);
-  nlist_data.shuffle(atommap);
-  InputNlist nlist;
-  nlist_data.make_inlist(nlist);
-
-  std::vector<std::pair<std::string, Tensor>> input_tensors;
-  int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, nghost, 0, name_scope);
-  assert (nloc == ret);
-
-  run_model (dglobal_tensor_, dforce_, dvirial_, session, input_tensors, atommap, sel_fwd, nghost);
 }
 
 void

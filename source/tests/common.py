@@ -368,8 +368,9 @@ def finite_difference(f, x, delta=1e-6):
     for idx in np.ndindex(*in_shape):
         diff = np.zeros(in_shape)
         diff[idx] += delta
-        y1 = f(x+diff)
-        res[(Ellipsis, *idx)] = (y1-y0) / delta
+        y1p = f(x+diff)
+        y1n = f(x-diff)
+        res[(Ellipsis, *idx)] = (y1p - y1n) / (2 * delta)
     return res
 
 
