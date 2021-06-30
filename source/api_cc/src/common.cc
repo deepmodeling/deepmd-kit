@@ -612,7 +612,7 @@ select_map_inv(std::vector<VT> & out,
     if (idx_map[ii] >= 0) {
       int from_ii = idx_map[ii];
       for (int dd = 0; dd < stride; ++dd){
-	      out[ii * stride + dd] = in[from_ii * stride + dd];
+	out[ii * stride + dd] = in[from_ii * stride + dd];
       }
     }
   }
@@ -650,10 +650,10 @@ template
 void 
 deepmd::
 select_map_inv<int>(
-    std::vector<int> & out,
-    const std::vector<int > & in,
-    const std::vector<int > & idx_map, 
-    const int & stride);
+	   std::vector<int> & out,
+	   const std::vector<int > & in,
+	   const std::vector<int > & idx_map, 
+	   const int & stride);
 
 
 template
@@ -679,9 +679,9 @@ template
 void 
 deepmd::
 select_map<float>(typename std::vector<float >::iterator out,
-	   const typename std::vector<float >::const_iterator in, 
-	   const std::vector<int > & idx_map, 
-	   const int & stride);
+    const typename std::vector<float >::const_iterator in, 
+    const std::vector<int > & idx_map, 
+    const int & stride);
 
 template
 void 
@@ -716,9 +716,9 @@ template
 void 
 deepmd::
 select_map<double >(typename std::vector<double >::iterator out,
-	   const typename std::vector<double >::const_iterator in, 
-	   const std::vector<int > & idx_map, 
-	   const int & stride);
+    const typename std::vector<double >::const_iterator in, 
+    const std::vector<int > & idx_map, 
+    const int & stride);
 
 template
 void 

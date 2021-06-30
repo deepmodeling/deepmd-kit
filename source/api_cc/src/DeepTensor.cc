@@ -88,11 +88,11 @@ get_vector (std::vector<VT> & vec, const std::string & name) const
 void 
 DeepTensor::
 run_model (std::vector<VALUETYPE> &	d_tensor_,
-	   Session *			session, 
-	   const std::vector<std::pair<std::string, Tensor>> & input_tensors,
-	   const AtomMap<VALUETYPE> &atommap, 
-     const std::vector<int> & sel_fwd,
-	   const int			nghost)
+		  Session *			session, 
+		  const std::vector<std::pair<std::string, Tensor>> & input_tensors,
+		  const AtomMap<VALUETYPE> &atommap, 
+		  const std::vector<int> &	sel_fwd,
+		  const int			nghost)
 {
   unsigned nloc = atommap.get_type().size();
   unsigned nall = nloc + nghost;
@@ -133,12 +133,12 @@ run_model (std::vector<VALUETYPE> &	d_tensor_,
 void
 DeepTensor::
 run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
-      std::vector<VALUETYPE> &	dforce_,
-	    std::vector<VALUETYPE> &	dvirial_,
+		  std::vector<VALUETYPE> &	dforce_,
+		  std::vector<VALUETYPE> &	dvirial_,
 		  tensorflow::Session *			session, 
 		  const std::vector<std::pair<std::string, tensorflow::Tensor>> & input_tensors,
 		  const AtomMap<VALUETYPE> &		atommap, 
-      const std::vector<int> &    sel_fwd,
+		  const std::vector<int> &		sel_fwd,
 		  const int				nghost)
 {
   unsigned nloc = atommap.get_type().size();
@@ -154,8 +154,8 @@ run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
   std::vector<Tensor> output_tensors;
   deepmd::check_status (session->Run(input_tensors, 
 			    {name_prefix(name_scope) + "o_global_" + model_type, 
-           name_prefix(name_scope) + "o_force", 
-           name_prefix(name_scope) + "o_virial"},
+			     name_prefix(name_scope) + "o_force", 
+			     name_prefix(name_scope) + "o_virial"},
 			    {}, 
 			    &output_tensors));
 
@@ -204,14 +204,14 @@ run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
 void
 DeepTensor::
 run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
-      std::vector<VALUETYPE> &	dforce_,
-	    std::vector<VALUETYPE> &	dvirial_,
-      std::vector<VALUETYPE> &	datom_tensor_,
-	    std::vector<VALUETYPE> &	datom_virial_,
+		  std::vector<VALUETYPE> &	dforce_,
+		  std::vector<VALUETYPE> &	dvirial_,
+		  std::vector<VALUETYPE> &	datom_tensor_,
+		  std::vector<VALUETYPE> &	datom_virial_,
 		  tensorflow::Session *			session, 
 		  const std::vector<std::pair<std::string, tensorflow::Tensor>> & input_tensors,
 		  const AtomMap<VALUETYPE> &		atommap, 
-      const std::vector<int> &    sel_fwd,
+		  const std::vector<int> &		sel_fwd,
 		  const int				nghost)
 {
   unsigned nloc = atommap.get_type().size();
@@ -228,10 +228,10 @@ run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
   std::vector<Tensor> output_tensors;
   deepmd::check_status (session->Run(input_tensors, 
 			    {name_prefix(name_scope) + "o_global_" + model_type, 
-           name_prefix(name_scope) + "o_force", 
-           name_prefix(name_scope) + "o_virial", 
-           name_prefix(name_scope) + "o_" + model_type,
-           name_prefix(name_scope) + "o_atom_virial"},
+			     name_prefix(name_scope) + "o_force", 
+			     name_prefix(name_scope) + "o_virial", 
+			     name_prefix(name_scope) + "o_" + model_type,
+			     name_prefix(name_scope) + "o_atom_virial"},
 			    {}, 
 			    &output_tensors));
 
@@ -361,8 +361,8 @@ compute (std::vector<VALUETYPE> &	dtensor_,
 void
 DeepTensor::
 compute (std::vector<VALUETYPE> &	dglobal_tensor_,
-   std::vector<VALUETYPE> &	dforce_,
-   std::vector<VALUETYPE> &	dvirial_,
+	 std::vector<VALUETYPE> &	dforce_,
+	 std::vector<VALUETYPE> &	dvirial_,
 	 const std::vector<VALUETYPE> &	dcoord_,
 	 const std::vector<int> &	datype_,
 	 const std::vector<VALUETYPE> &	dbox)
@@ -389,8 +389,8 @@ compute (std::vector<VALUETYPE> &	dglobal_tensor_,
 void
 DeepTensor::
 compute (std::vector<VALUETYPE> &	dglobal_tensor_,
-   std::vector<VALUETYPE> &	dforce_,
-   std::vector<VALUETYPE> &	dvirial_,
+	 std::vector<VALUETYPE> &	dforce_,
+	 std::vector<VALUETYPE> &	dvirial_,
 	 const std::vector<VALUETYPE> &	dcoord_,
 	 const std::vector<int> &	datype_,
 	 const std::vector<VALUETYPE> &	dbox, 
@@ -424,10 +424,10 @@ compute (std::vector<VALUETYPE> &	dglobal_tensor_,
 void
 DeepTensor::
 compute (std::vector<VALUETYPE> &	dglobal_tensor_,
-   std::vector<VALUETYPE> &	dforce_,
-   std::vector<VALUETYPE> &	dvirial_,
-   std::vector<VALUETYPE> &	datom_tensor_,
-   std::vector<VALUETYPE> &	datom_virial_,
+	 std::vector<VALUETYPE> &	dforce_,
+	 std::vector<VALUETYPE> &	dvirial_,
+	 std::vector<VALUETYPE> &	datom_tensor_,
+	 std::vector<VALUETYPE> &	datom_virial_,
 	 const std::vector<VALUETYPE> &	dcoord_,
 	 const std::vector<int> &	datype_,
 	 const std::vector<VALUETYPE> &	dbox)
@@ -458,10 +458,10 @@ compute (std::vector<VALUETYPE> &	dglobal_tensor_,
 void
 DeepTensor::
 compute (std::vector<VALUETYPE> &	dglobal_tensor_,
-   std::vector<VALUETYPE> &	dforce_,
-   std::vector<VALUETYPE> &	dvirial_,
-   std::vector<VALUETYPE> &	datom_tensor_,
-   std::vector<VALUETYPE> &	datom_virial_,
+	 std::vector<VALUETYPE> &	dforce_,
+	 std::vector<VALUETYPE> &	dvirial_,
+	 std::vector<VALUETYPE> &	datom_tensor_,
+	 std::vector<VALUETYPE> &	datom_virial_,
 	 const std::vector<VALUETYPE> &	dcoord_,
 	 const std::vector<int> &	datype_,
 	 const std::vector<VALUETYPE> &	dbox, 
@@ -557,8 +557,8 @@ compute_inner (std::vector<VALUETYPE> &		dtensor_,
 void
 DeepTensor::
 compute_inner (std::vector<VALUETYPE> &		dglobal_tensor_,
-         std::vector<VALUETYPE> &	dforce_,
-         std::vector<VALUETYPE> &	dvirial_,
+	       std::vector<VALUETYPE> &	dforce_,
+	       std::vector<VALUETYPE> &	dvirial_,
 	       const std::vector<VALUETYPE> &	dcoord_,
 	       const std::vector<int> &		datype_,
 	       const std::vector<VALUETYPE> &	dbox)
@@ -583,8 +583,8 @@ compute_inner (std::vector<VALUETYPE> &		dglobal_tensor_,
 void
 DeepTensor::
 compute_inner (std::vector<VALUETYPE> &		dglobal_tensor_,
-         std::vector<VALUETYPE> &	dforce_,
-         std::vector<VALUETYPE> &	dvirial_,
+	       std::vector<VALUETYPE> &	dforce_,
+	       std::vector<VALUETYPE> &	dvirial_,
 	       const std::vector<VALUETYPE> &	dcoord_,
 	       const std::vector<int> &		datype_,
 	       const std::vector<VALUETYPE> &	dbox, 
@@ -618,9 +618,9 @@ compute_inner (std::vector<VALUETYPE> &		dglobal_tensor_,
 void
 DeepTensor::
 compute_inner (std::vector<VALUETYPE> &		dglobal_tensor_,
-         std::vector<VALUETYPE> &	dforce_,
-         std::vector<VALUETYPE> &	dvirial_,
-         std::vector<VALUETYPE> &	datom_tensor_,
+	       std::vector<VALUETYPE> &	dforce_,
+	       std::vector<VALUETYPE> &	dvirial_,
+	       std::vector<VALUETYPE> &	datom_tensor_,
 	       std::vector<VALUETYPE> &	datom_virial_,
 	       const std::vector<VALUETYPE> &	dcoord_,
 	       const std::vector<int> &		datype_,
@@ -646,9 +646,9 @@ compute_inner (std::vector<VALUETYPE> &		dglobal_tensor_,
 void
 DeepTensor::
 compute_inner (std::vector<VALUETYPE> &		dglobal_tensor_,
-         std::vector<VALUETYPE> &	dforce_,
-         std::vector<VALUETYPE> &	dvirial_,
-         std::vector<VALUETYPE> &	datom_tensor_,
+	       std::vector<VALUETYPE> &	dforce_,
+	       std::vector<VALUETYPE> &	dvirial_,
+	       std::vector<VALUETYPE> &	datom_tensor_,
 	       std::vector<VALUETYPE> &	datom_virial_,
 	       const std::vector<VALUETYPE> &	dcoord_,
 	       const std::vector<int> &		datype_,
