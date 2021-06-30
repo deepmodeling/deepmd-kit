@@ -80,12 +80,12 @@ __global__ void virial_deriv_wrt_neighbors_r(
     // idz = dd0 * 3 + dd1
     // dd0 = idz / 3
     // dd1 = idz % 3
-    const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    const unsigned int idy = blockIdx.y;
+    const unsigned int idx = blockIdx.x;
+    const unsigned int idy = blockIdx.y * blockDim.x + threadIdx.x;
     const unsigned int idz = threadIdx.y;
     const int ndescrpt = nnei * 1;
 
-    if (idx >= nloc) {
+    if (idy >= nnei) {
         return;
     }
     int j_idx = nlist[idx * nnei + idy];
@@ -154,8 +154,8 @@ void prod_virial_r_gpu_rocm(
       0.0, sizeof(FPTYPE) * 9 * nall));
     
   const int LEN = 16;
-  int nblock = (nloc + LEN -1) / LEN;
-  dim3 block_grid(nblock, nnei);
+  int nblock = (nnei + LEN -1) / LEN;
+  dim3 block_grid(nloc, nblock);
   dim3 thread_grid(LEN, 9);
   // compute virial of a frame
   hipLaunchKernelGGL(virial_deriv_wrt_neighbors_r, block_grid, thread_grid, 0, 0, 
