@@ -70,13 +70,13 @@ run_model (ENERGYTYPE &			dener,
 
   std::vector<Tensor> output_tensors;
   check_status (session->Run(input_tensors, 
-			    {"o_energy", "o_force", "o_atom_virial"}, 
+			    {"o_energy", "o_force", "o_atom_energy", "o_atom_virial"}, 
 			    {}, 
 			    &output_tensors));
   
   Tensor output_e = output_tensors[0];
   Tensor output_f = output_tensors[1];
-  Tensor output_av = output_tensors[2];
+  Tensor output_av = output_tensors[3];
 
   auto oe = output_e.flat <ENERGYTYPE> ();
   auto of = output_f.flat <VALUETYPE> ();
