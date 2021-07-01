@@ -1,0 +1,3 @@
+op/_*.py
+pkg_config
+!op/__init__.py

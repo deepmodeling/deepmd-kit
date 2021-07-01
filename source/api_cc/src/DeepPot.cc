@@ -277,7 +277,7 @@ print_summary(const std::string &pre) const
 {
   std::cout << pre << "installed to:       " + global_install_prefix << std::endl;
   std::cout << pre << "source:             " + global_git_summ << std::endl;
-  std::cout << pre << "source brach:       " + global_git_branch << std::endl;
+  std::cout << pre << "source branch:       " + global_git_branch << std::endl;
   std::cout << pre << "source commit:      " + global_git_hash << std::endl;
   std::cout << pre << "source commit at:   " + global_git_date << std::endl;
   std::cout << pre << "surpport model ver.:" + global_model_version << std::endl;

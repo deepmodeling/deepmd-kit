@@ -56,7 +56,7 @@ class TensorLoss () :
                suffix):        
         polar_hat = label_dict[self.label_name]
         atomic_polar_hat = label_dict["atomic_" + self.label_name]
-        polar = model_dict[self.tensor_name]
+        polar = tf.reshape(model_dict[self.tensor_name], [-1])
 
         find_global = label_dict['find_' + self.label_name]
         find_atomic = label_dict['find_atomic_' + self.label_name]
