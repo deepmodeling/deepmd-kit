@@ -1,7 +1,7 @@
 #include "custom_op.h"
 
 REGISTER_OP("ProdVirial")
-.Attr("T: {float, double}")
+.Attr("T: {float, double} = DT_DOUBLE")
 .Input("net_deriv: T")
 .Input("in_deriv: T")
 .Input("rij: T")

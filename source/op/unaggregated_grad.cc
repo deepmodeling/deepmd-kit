@@ -3,27 +3,27 @@
 #include "neighbor_list.h"
 
 REGISTER_OP("UnaggregatedDyDxS")
-    .Attr("T: {float, double}") 
+    .Attr("T: {float, double} = DT_DOUBLE") 
     .Input("y: T")                
     .Input("w: T")              
     .Output("dy_dx: T");
 
 REGISTER_OP("UnaggregatedDyDx")
-    .Attr("T: {float, double}")
+    .Attr("T: {float, double} = DT_DOUBLE")
     .Input("z: T")           
     .Input("w: T")     
     .Input("dy_dx: T")     
     .Output("dz_dx: T");
 
 REGISTER_OP("UnaggregatedDy2DxS")
-    .Attr("T: {float, double}") 
+    .Attr("T: {float, double} = DT_DOUBLE") 
     .Input("y: T")                
     .Input("dy: T")                
     .Input("w: T")              
     .Output("dy2_dx: T");
 
 REGISTER_OP("UnaggregatedDy2Dx")
-    .Attr("T: {float, double}")
+    .Attr("T: {float, double} = DT_DOUBLE")
     .Input("z: T")           
     .Input("w: T")     
     .Input("dz_dx: T")     

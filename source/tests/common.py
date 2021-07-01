@@ -359,3 +359,24 @@ def virial_dw_test (inter,
         ana_v = dw_0[ii]
         testCase.assertAlmostEqual(num_v, ana_v, places = places)
 
+
+def finite_difference(f, x, delta=1e-6):
+    in_shape = x.shape
+    y0 = f(x)
+    out_shape = y0.shape
+    res = np.empty(out_shape+in_shape)
+    for idx in np.ndindex(*in_shape):
+        diff = np.zeros(in_shape)
+        diff[idx] += delta
+        y1p = f(x+diff)
+        y1n = f(x-diff)
+        res[(Ellipsis, *idx)] = (y1p - y1n) / (2 * delta)
+    return res
+
+
+def strerch_box(old_coord, old_box, new_box):
+    ocoord = old_coord.reshape(-1,3)
+    obox = old_box.reshape(3,3)
+    nbox = new_box.reshape(3,3)
+    ncoord = ocoord @ np.linalg.inv(obox) @ nbox
+    return ncoord.reshape(old_coord.shape)

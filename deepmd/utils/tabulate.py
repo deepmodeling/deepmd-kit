@@ -5,6 +5,7 @@ import numpy as np
 from typing import Tuple, List
 from deepmd.env import tf
 from deepmd.env import op_module
+from deepmd.utils.sess import run_sess
 from tensorflow.python.platform import gfile
 from tensorflow.python.framework import tensor_util
 
@@ -158,7 +159,7 @@ class DeepTabulate():
 
     def _get_tensor_value(self, tensor) :
         with self.sess.as_default():
-            self.sess.run(tensor)
+            run_sess(self.sess, tensor)
             value = tensor.eval()
         return value
 

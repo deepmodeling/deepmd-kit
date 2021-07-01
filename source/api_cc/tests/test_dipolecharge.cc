@@ -133,8 +133,9 @@ TEST_F(TestDipoleCharge, cpu_lmp_nlist)
   int sel_nloc = sel_nall - sel_nghost;
   std::vector<int> sel_atype(sel_bwd.size());
   deepmd::select_map<int>(sel_atype, atype, sel_fwd, 1);
-  deepmd::AtomMap<double> nnp_map(sel_atype.begin(), sel_atype.begin() + sel_nloc);
-  const std::vector<int> & sort_fwd_map(nnp_map.get_fwd_map());
+  // Yixiao: because the deeptensor already return the correct order, the following map is no longer needed
+  // deepmd::AtomMap<double> nnp_map(sel_atype.begin(), sel_atype.begin() + sel_nloc);
+  // const std::vector<int> & sort_fwd_map(nnp_map.get_fwd_map());
 
   // // add coords
   std::vector<double > add_coord;
@@ -142,7 +143,9 @@ TEST_F(TestDipoleCharge, cpu_lmp_nlist)
   std::vector<std::pair<int,int>> pairs;
   for(int ii = 0; ii < nloc; ++ii){
     if(_in_vec(atype[ii], sel_types)){
-      int res_idx = sort_fwd_map[sel_fwd[ii]];
+      // Yixiao: the sort map is no longer needed
+      // int res_idx = sort_fwd_map[sel_fwd[ii]];
+      int res_idx = sel_fwd[ii];
       std::vector<double > tmp_coord(3);
       for(int dd = 0; dd < 3; ++dd){
 	tmp_coord[dd] = coord[ii*3+dd] + dipole[res_idx*3+dd];

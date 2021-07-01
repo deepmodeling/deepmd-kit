@@ -2,18 +2,18 @@
 #include "gelu.h"
 
 REGISTER_OP("Gelu")
-    .Attr("T: {float, double}")
+    .Attr("T: {float, double} = DT_DOUBLE")
     .Input("x: T")
     .Output("output: T");
 
 REGISTER_OP("GeluGrad")
-    .Attr("T: {float, double}")
+    .Attr("T: {float, double} = DT_DOUBLE")
     .Input("dy: T")
     .Input("x: T")
     .Output("output: T");
 
 REGISTER_OP("GeluGradGrad")
-    .Attr("T: {float, double}")
+    .Attr("T: {float, double} = DT_DOUBLE")
     .Input("dy: T")
     .Input("dy_: T")
     .Input("x: T")

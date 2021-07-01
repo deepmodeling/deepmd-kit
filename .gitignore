@@ -29,3 +29,5 @@ _templates
 API_CC
 dp/
 build_lammps/
+build_tests/
+build_cc_tests

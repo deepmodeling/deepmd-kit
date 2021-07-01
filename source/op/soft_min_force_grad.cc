@@ -2,7 +2,7 @@
 #include "soft_min_switch_force_grad.h"
 
 REGISTER_OP("SoftMinForceGrad")
-.Attr("T: {float, double}")
+.Attr("T: {float, double} = DT_DOUBLE")
 .Input("grad: T")
 .Input("du: T")
 .Input("sw_deriv: T")

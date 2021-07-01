@@ -2,7 +2,7 @@
 #include "soft_min_switch_force.h"
 
 REGISTER_OP("SoftMinForce")
-.Attr("T: {float, double}")
+.Attr("T: {float, double} = DT_DOUBLE")
 .Input("du: T")
 .Input("sw_deriv: T")
 .Input("nlist: int32")

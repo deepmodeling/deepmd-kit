@@ -2,6 +2,7 @@ import dpdata,os,sys,unittest
 import numpy as np
 from deepmd.env import tf
 from common import Data,gen_data, j_loader
+from common import finite_difference, strerch_box
 
 from deepmd.utils.data_system import DataSystem
 from deepmd.descriptor import DescrptSeA
@@ -75,6 +76,10 @@ class TestModel(unittest.TestCase):
                            suffix = "polar_se_a", 
                            reuse = False)
         polar = model_pred['polar']
+        gpolar = model_pred['global_polar']
+        force = model_pred['force']
+        virial = model_pred['virial']
+        atom_virial = model_pred['atom_virial']
 
         feed_dict_test = {t_prop_c:        test_data['prop_c'],
                           t_coord:         np.reshape(test_data['coord']    [:numb_test, :], [-1]),
@@ -86,7 +91,7 @@ class TestModel(unittest.TestCase):
 
         sess = tf.Session()
         sess.run(tf.global_variables_initializer())
-        [p] = sess.run([polar], feed_dict = feed_dict_test)
+        [p, gp] = sess.run([polar, gpolar], feed_dict = feed_dict_test)
 
         p = p.reshape([-1])
         refp = [3.39695248e+01,  2.16564043e+01,  8.18501479e-01,  2.16564043e+01,  1.38211789e+01,  5.22775159e-01,  8.18501479e-01,  5.22775159e-01, 1.97847218e-02, 8.08467431e-01,  3.42081126e+00, -2.01072261e-01,  3.42081126e+00, 1.54924596e+01, -9.06153697e-01, -2.01072261e-01, -9.06153697e-01,  5.30193262e-02]
@@ -95,5 +100,50 @@ class TestModel(unittest.TestCase):
         for ii in range(p.size) :
             self.assertAlmostEqual(p[ii], refp[ii], places = places)
 
-
+        gp = gp.reshape([-1])
+        refgp = np.array(refp).reshape(-1, 9).sum(0)
         
+        places = 5
+        for ii in range(gp.size) :
+            self.assertAlmostEqual(gp[ii], refgp[ii], places = places)
+
+        # make sure only one frame is used
+        feed_dict_single = {t_prop_c:        test_data['prop_c'],
+                            t_coord:         np.reshape(test_data['coord']    [:1, :], [-1]),
+                            t_box:           test_data['box']                 [:1, :],
+                            t_type:          np.reshape(test_data['type']     [:1, :], [-1]),
+                            t_natoms:        test_data['natoms_vec'],
+                            t_mesh:          test_data['default_mesh'],
+                            is_training:     False}
+
+        [pf, pv, pav] = sess.run([force, virial, atom_virial], feed_dict = feed_dict_single)
+        pf, pv = pf.reshape(-1), pv.reshape(-1)
+        spv = pav.reshape(1, 9, -1, 9).sum(2).reshape(-1)
+
+        base_dict = feed_dict_single.copy()
+        coord0 = base_dict.pop(t_coord)
+        box0 = base_dict.pop(t_box)
+
+        fdf = - finite_difference(
+                    lambda coord: sess.run(gpolar, 
+                        feed_dict={**base_dict, 
+                                t_coord:coord, 
+                                t_box:box0}).reshape(-1),
+                    test_data['coord'][:numb_test, :].reshape([-1])).reshape(-1)
+        fdv = - (finite_difference(
+                    lambda box: sess.run(gpolar, 
+                        feed_dict={**base_dict, 
+                                t_coord:strerch_box(coord0, box0, box), 
+                                t_box:box}).reshape(-1),
+                    test_data['box'][:numb_test, :]).reshape([-1,3,3]).transpose(0,2,1)
+                @ box0.reshape(3,3)).reshape(-1)
+
+        delta = 1e-4
+        for ii in range(pf.size) :
+            self.assertAlmostEqual(pf[ii], fdf[ii], delta = delta)
+        for ii in range(pv.size) :
+            self.assertAlmostEqual(pv[ii], fdv[ii], delta = delta)
+        # make sure atomic virial sum to virial        
+        places = 10
+        for ii in range(pv.size) :
+            self.assertAlmostEqual(pv[ii], spv[ii], places = places)
