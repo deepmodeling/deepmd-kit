@@ -78,6 +78,27 @@ select_map(std::vector<VT> & out,
 	   const std::vector<int > & fwd_map, 
 	   const int & stride);
 
+template<typename VT>
+void 
+select_map(typename std::vector<VT >::iterator out,
+	   const typename std::vector<VT >::const_iterator in, 
+	   const std::vector<int > & fwd_map, 
+	   const int & stride);
+
+template<typename VT>
+void 
+select_map_inv(std::vector<VT> & out,
+	   const std::vector<VT > & in,
+	   const std::vector<int > & fwd_map, 
+	   const int & stride);
+
+template<typename VT>
+void 
+select_map_inv(typename std::vector<VT >::iterator out,
+	   const typename std::vector<VT >::const_iterator in, 
+	   const std::vector<int > & fwd_map, 
+	   const int & stride);
+
 /**
 * @brief Get the number of threads from the environment variable.
 * @param[out] num_intra_nthreads The number of intra threads. Read from TF_INTRA_OP_PARALLELISM_THREADS.

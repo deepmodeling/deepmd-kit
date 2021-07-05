@@ -40,10 +40,10 @@ public:
 public:
   /**
   * @brief Evaluate the value by using this model.
-  * @param[out] value The value to evalute.
-  * @param[in] coord The coordinates of atoms. The array should be of size nframes x natoms x 3.
+  * @param[out] value The value to evalute, usually would be the atomic tensor.
+  * @param[in] coord The coordinates of atoms. The array should be of size natoms x 3.
   * @param[in] atype The atom types. The list should contain natoms ints.
-  * @param[in] box The cell of the region. The array should be of size nframes x 9.
+  * @param[in] box The cell of the region. The array should be of size 9.
   **/
   void compute (std::vector<VALUETYPE> &	value,
 		const std::vector<VALUETYPE> &	coord,
@@ -51,14 +51,90 @@ public:
 		const std::vector<VALUETYPE> &	box);
   /**
   * @brief Evaluate the value by using this model.
-  * @param[out] value The value to evalute.
-  * @param[in] coord The coordinates of atoms. The array should be of size nframes x natoms x 3.
+  * @param[out] value The value to evalute, usually would be the atomic tensor.
+  * @param[in] coord The coordinates of atoms. The array should be of size natoms x 3.
   * @param[in] atype The atom types. The list should contain natoms ints.
-  * @param[in] box The cell of the region. The array should be of size nframes x 9.
+  * @param[in] box The cell of the region. The array should be of size 9.
   * @param[in] nghost The number of ghost atoms.
   * @param[in] inlist The input neighbour list.
   **/
   void compute (std::vector<VALUETYPE> &	value,
+		const std::vector<VALUETYPE> &	coord,
+		const std::vector<int> &	atype,
+		const std::vector<VALUETYPE> &	box, 
+		const int			nghost,
+		const InputNlist &	inlist);
+  /**
+  * @brief Evaluate the global tensor and component-wise force and virial.
+  * @param[out] global_tensor The global tensor to evalute.
+  * @param[out] force The component-wise force of the global tensor, size odim x natoms x 3.
+  * @param[out] virial The component-wise virial of the global tensor, size odim x 9.
+  * @param[in] coord The coordinates of atoms. The array should be of size natoms x 3.
+  * @param[in] atype The atom types. The list should contain natoms ints.
+  * @param[in] box The cell of the region. The array should be of size 9.
+  **/
+  void compute (std::vector<VALUETYPE> &	global_tensor,
+		std::vector<VALUETYPE> &	force,
+		std::vector<VALUETYPE> &	virial,
+		const std::vector<VALUETYPE> &	coord,
+		const std::vector<int> &	atype,
+		const std::vector<VALUETYPE> &	box);
+  /**
+  * @brief Evaluate the global tensor and component-wise force and virial.
+  * @param[out] global_tensor The global tensor to evalute.
+  * @param[out] force The component-wise force of the global tensor, size odim x natoms x 3.
+  * @param[out] virial The component-wise virial of the global tensor, size odim x 9.
+  * @param[in] coord The coordinates of atoms. The array should be of size natoms x 3.
+  * @param[in] atype The atom types. The list should contain natoms ints.
+  * @param[in] box The cell of the region. The array should be of size 9.
+  * @param[in] nghost The number of ghost atoms.
+  * @param[in] inlist The input neighbour list.
+  **/
+  void compute (std::vector<VALUETYPE> &	global_tensor,
+		std::vector<VALUETYPE> &	force,
+		std::vector<VALUETYPE> &	virial,
+		const std::vector<VALUETYPE> &	coord,
+		const std::vector<int> &	atype,
+		const std::vector<VALUETYPE> &	box, 
+		const int			nghost,
+		const InputNlist &	inlist);
+  /**
+  * @brief Evaluate the global tensor and component-wise force and virial.
+  * @param[out] global_tensor The global tensor to evalute.
+  * @param[out] force The component-wise force of the global tensor, size odim x natoms x 3.
+  * @param[out] virial The component-wise virial of the global tensor, size odim x 9.
+  * @param[out] atom_tensor The atomic tensor value of the model, size natoms x odim.
+  * @param[out] atom_virial The component-wise atomic virial of the global tensor, size odim x natoms x 9.
+  * @param[in] coord The coordinates of atoms. The array should be of size natoms x 3.
+  * @param[in] atype The atom types. The list should contain natoms ints.
+  * @param[in] box The cell of the region. The array should be of size 9.
+  **/
+  void compute (std::vector<VALUETYPE> &	global_tensor,
+		std::vector<VALUETYPE> &	force,
+		std::vector<VALUETYPE> &	virial,
+		std::vector<VALUETYPE> &	atom_tensor,
+		std::vector<VALUETYPE> &	atom_virial,
+		const std::vector<VALUETYPE> &	coord,
+		const std::vector<int> &	atype,
+		const std::vector<VALUETYPE> &	box);
+  /**
+  * @brief Evaluate the global tensor and component-wise force and virial.
+  * @param[out] global_tensor The global tensor to evalute.
+  * @param[out] force The component-wise force of the global tensor, size odim x natoms x 3.
+  * @param[out] virial The component-wise virial of the global tensor, size odim x 9.
+  * @param[out] atom_tensor The atomic tensor value of the model, size natoms x odim.
+  * @param[out] atom_virial The component-wise atomic virial of the global tensor, size odim x natoms x 9.
+  * @param[in] coord The coordinates of atoms. The array should be of size natoms x 3.
+  * @param[in] atype The atom types. The list should contain natoms ints.
+  * @param[in] box The cell of the region. The array should be of size 9.
+  * @param[in] nghost The number of ghost atoms.
+  * @param[in] inlist The input neighbour list.
+  **/
+  void compute (std::vector<VALUETYPE> &	global_tensor,
+		std::vector<VALUETYPE> &	force,
+		std::vector<VALUETYPE> &	virial,
+		std::vector<VALUETYPE> &	atom_tensor,
+		std::vector<VALUETYPE> &	atom_virial,
 		const std::vector<VALUETYPE> &	coord,
 		const std::vector<int> &	atype,
 		const std::vector<VALUETYPE> &	box, 
@@ -99,12 +175,41 @@ private:
 		  tensorflow::Session *			session, 
 		  const std::vector<std::pair<std::string, tensorflow::Tensor>> & input_tensors,
 		  const AtomMap<VALUETYPE> &		atommap, 
+		  const std::vector<int> &		sel_fwd,
+		  const int				nghost = 0);
+  void run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
+		  std::vector<VALUETYPE> &	dforce_,
+		  std::vector<VALUETYPE> &	dvirial_,
+		  std::vector<VALUETYPE> &	datom_tensor_,
+		  std::vector<VALUETYPE> &	datom_virial_,
+		  tensorflow::Session *			session, 
+		  const std::vector<std::pair<std::string, tensorflow::Tensor>> & input_tensors,
+		  const AtomMap<VALUETYPE> &		atommap, 
+		  const std::vector<int> &		sel_fwd,
 		  const int				nghost = 0);
   void compute_inner (std::vector<VALUETYPE> &		value,
 		      const std::vector<VALUETYPE> &	coord,
 		      const std::vector<int> &		atype,
 		      const std::vector<VALUETYPE> &	box);
   void compute_inner (std::vector<VALUETYPE> &		value,
+		      const std::vector<VALUETYPE> &	coord,
+		      const std::vector<int> &		atype,
+		      const std::vector<VALUETYPE> &	box, 
+		      const int				nghost,
+		      const InputNlist&			inlist);
+  void compute_inner (std::vector<VALUETYPE> &		global_tensor,
+		      std::vector<VALUETYPE> &	force,
+		      std::vector<VALUETYPE> &	virial,
+		      std::vector<VALUETYPE> &	atom_tensor,
+		      std::vector<VALUETYPE> &	atom_virial,
+		      const std::vector<VALUETYPE> &	coord,
+		      const std::vector<int> &		atype,
+		      const std::vector<VALUETYPE> &	box);
+  void compute_inner (std::vector<VALUETYPE> &		global_tensor,
+		      std::vector<VALUETYPE> &	force,
+		      std::vector<VALUETYPE> &	virial,
+		      std::vector<VALUETYPE> &	atom_tensor,
+		      std::vector<VALUETYPE> &	atom_virial,
 		      const std::vector<VALUETYPE> &	coord,
 		      const std::vector<int> &		atype,
 		      const std::vector<VALUETYPE> &	box, 

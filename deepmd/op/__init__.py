@@ -4,7 +4,7 @@ from pathlib import Path
 import importlib
 import logging
 
-NOT_LOADABLE = ("__init__.py")
+NOT_LOADABLE = ("__init__.py",)
 PACKAGE_BASE = "deepmd.op"
 
 log = logging.getLogger(__name__)

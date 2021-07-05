@@ -305,8 +305,9 @@ void FixDPLR::pre_force(int vflag)
   vector<int> sel_type(sel_bwd.size());
   deepmd::select_map<int>(sel_type, dtype, sel_fwd, 1);
   
-  deepmd::AtomMap<FLOAT_PREC> atom_map(sel_type.begin(), sel_type.begin() + sel_nloc);
-  const vector<int> & sort_fwd_map(atom_map.get_fwd_map());
+  // Yixiao: because the deeptensor already return the correct order, the following map is no longer needed
+  // deepmd::AtomMap<FLOAT_PREC> atom_map(sel_type.begin(), sel_type.begin() + sel_nloc);
+  // const vector<int> & sort_fwd_map(atom_map.get_fwd_map());
 
   vector<pair<int,int> > valid_pairs;
   get_valid_pairs(valid_pairs);  
@@ -318,8 +319,10 @@ void FixDPLR::pre_force(int vflag)
   for (int ii = 0; ii < valid_pairs.size(); ++ii){
     int idx0 = valid_pairs[ii].first;
     int idx1 = valid_pairs[ii].second;
-    assert(idx0 < sel_fwd.size() && sel_fwd[idx0] < sort_fwd_map.size());
-    int res_idx = sort_fwd_map[sel_fwd[idx0]];
+    assert(idx0 < sel_fwd.size()); // && sel_fwd[idx0] < sort_fwd_map.size());
+    // Yixiao: the sort map is no longer needed
+    // int res_idx = sort_fwd_map[sel_fwd[idx0]];
+    int res_idx = sel_fwd[idx0];
     // int ret_idx = dpl_bwd[res_idx];
     for (int dd = 0; dd < 3; ++dd){
       x[idx1][dd] = x[idx0][dd] + tensor[res_idx * 3 + dd];
