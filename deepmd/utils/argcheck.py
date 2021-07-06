@@ -73,7 +73,7 @@ def descrpt_se_a_args():
     doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
     
     return [
-        Argument("sel", list, optional = False, doc = doc_sel),
+        Argument("sel", [list,str], optional = True, default = "auto", doc = doc_sel),
         Argument("rcut", float, optional = True, default = 6.0, doc = doc_rcut),
         Argument("rcut_smth", float, optional = True, default = 0.5, doc = doc_rcut_smth),
         Argument("neuron", list, optional = True, default = [10,20,40], doc = doc_neuron),
@@ -102,7 +102,7 @@ def descrpt_se_t_args():
     doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
     
     return [
-        Argument("sel", list, optional = False, doc = doc_sel),
+        Argument("sel", [list,str], optional = True, default = "auto", doc = doc_sel),
         Argument("rcut", float, optional = True, default = 6.0, doc = doc_rcut),
         Argument("rcut_smth", float, optional = True, default = 0.5, doc = doc_rcut_smth),
         Argument("neuron", list, optional = True, default = [10,20,40], doc = doc_neuron),
@@ -143,7 +143,7 @@ def descrpt_se_r_args():
     doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
     
     return [
-        Argument("sel", list, optional = False, doc = doc_sel),
+        Argument("sel", [list,str], optional = True, default = "auto", doc = doc_sel),
         Argument("rcut", float, optional = True, default = 6.0, doc = doc_rcut),
         Argument("rcut_smth", float, optional = True, default = 0.5, doc = doc_rcut_smth),
         Argument("neuron", list, optional = True, default = [10,20,40], doc = doc_neuron),
