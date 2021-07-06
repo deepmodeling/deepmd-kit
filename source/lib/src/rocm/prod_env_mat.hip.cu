@@ -504,7 +504,7 @@ void prod_env_mat_a_gpu_rocm(
   const int ndescrpt = nnei * 4;
   hipErrcheck(hipMemset(em, 0.0, sizeof(FPTYPE) * nloc * ndescrpt));
   hipErrcheck(hipMemset(em_deriv, 0.0, sizeof(FPTYPE) * nloc * ndescrpt * 3));
-  hipErrcheck(hipMemset(rij, 0., sizeof(FPTYPE) * nloc * nnei * 3));
+  hipErrcheck(hipMemset(rij, 0.0, sizeof(FPTYPE) * nloc * nnei * 3));
 
   format_nbor_list_gpu_rocm(
       nlist, 
@@ -541,7 +541,7 @@ void prod_env_mat_r_gpu_rocm(
   const int ndescrpt = nnei * 1;
   hipErrcheck(hipMemset(em, 0.0, sizeof(FPTYPE) * nloc * ndescrpt));
   hipErrcheck(hipMemset(em_deriv, 0.0, sizeof(FPTYPE) * nloc * ndescrpt * 3));
-  hipErrcheck(hipMemset(rij, 0., sizeof(FPTYPE) * nloc * nnei * 3));
+  hipErrcheck(hipMemset(rij, 0.0, sizeof(FPTYPE) * nloc * nnei * 3));
 
   format_nbor_list_gpu_rocm(
       nlist, 

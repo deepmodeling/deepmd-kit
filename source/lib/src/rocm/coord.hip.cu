@@ -66,8 +66,8 @@ __global__ void normalize_one(
     FPTYPE inter[3];
     phys2Inter(inter,out_c+idy*3,rec_boxt);
     for (int dd = 0; dd < 3; ++dd) {
-        while(inter[dd] >= 1.) inter[dd] -= 1.;
-        while(inter[dd] < 0.) inter[dd] += 1.;
+        inter[dd]=(FPTYPE)fmod((double)inter[dd], 1.);
+        if (inter[dd] <  0.) inter[dd] += 1.;
     }
     inter2Phys(out_c+idy*3,inter,boxt);
 }
