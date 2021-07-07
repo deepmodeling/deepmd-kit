@@ -96,7 +96,7 @@ class TestModel(tf.test.TestCase):
                           t_fparam:        np.reshape(test_data['fparam']   [:numb_test, :], [-1]),
                           is_training:     False}
 
-        sess = self.test_session()
+        sess = self.test_session().__enter__()
         sess.run(tf.global_variables_initializer())
         [e, f, v] = sess.run([energy, force, virial], 
                              feed_dict = feed_dict_test)

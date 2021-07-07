@@ -152,7 +152,7 @@ class IntplInter(Inter):
 
     
 
-class TestTabNonSmooth(IntplInter, unittest.TestCase):
+class TestTabNonSmooth(IntplInter, tf.test.TestCase):
     # def __init__ (self, *args, **kwargs):
     #     self.places = 5
     #     data = Data()
