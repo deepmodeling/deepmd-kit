@@ -24,7 +24,7 @@ class Inter():
     def setUp (self, 
                data, 
                pbc = True) :
-        self.sess = tf.Session()
+        self.sess = self.cached_session()
         self.data = data
         self.natoms = self.data.get_natoms()
         self.ntypes = self.data.get_ntypes()
@@ -148,11 +148,11 @@ class Inter():
 
 
 
-class TestSmooth(Inter, unittest.TestCase):
+class TestSmooth(Inter, tf.test.TestCase):
     # def __init__ (self, *args, **kwargs):
     #     data = Data()
     #     Inter.__init__(self, data)
-    #     unittest.TestCase.__init__(self, *args, **kwargs)
+    #     tf.test.TestCase.__init__(self, *args, **kwargs)
     #     self.controller = object()
 
     def setUp(self):

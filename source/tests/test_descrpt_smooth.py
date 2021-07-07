@@ -24,7 +24,7 @@ class Inter():
     def setUp (self, 
                data, 
                pbc = True) :
-        self.sess = tf.Session()
+        self.sess = self.cached_session()
         self.data = data
         self.natoms = self.data.get_natoms()
         self.ntypes = self.data.get_ntypes()
@@ -147,11 +147,11 @@ class Inter():
 
 
 
-class TestSmooth(Inter, unittest.TestCase):
+class TestSmooth(Inter, tf.test.TestCase):
     # def __init__ (self, *args, **kwargs):
     #     data = Data()
     #     Inter.__init__(self, data)
-    #     unittest.TestCase.__init__(self, *args, **kwargs)
+    #     tf.test.TestCase.__init__(self, *args, **kwargs)
     #     self.controller = object()
 
     def setUp(self):
@@ -172,7 +172,7 @@ class TestSmooth(Inter, unittest.TestCase):
         virial_dw_test(self, self, suffix = '_smth')
 
 
-class TestSeAPbc(unittest.TestCase):
+class TestSeAPbc(tf.test.TestCase):
     def test_pbc(self):
         data = Data()
         inter0 = Inter()

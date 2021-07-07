@@ -25,7 +25,7 @@ class Inter():
                data,
                comp = 0, 
                pbc = True) :
-        self.sess = tf.Session()
+        self.sess = self.cached_session()
         self.data = data
         self.natoms = self.data.get_natoms()
         self.ntypes = self.data.get_ntypes()
@@ -155,12 +155,12 @@ class Inter():
 
 
 
-class TestNonSmooth(Inter, unittest.TestCase):
+class TestNonSmooth(Inter, tf.test.TestCase):
     # def __init__ (self, *args, **kwargs):
     #     self.places = 5
     #     data = Data()
     #     Inter.__init__(self, data)
-    #     unittest.TestCase.__init__(self, *args, **kwargs)
+    #     tf.test.TestCase.__init__(self, *args, **kwargs)
     #     self.controller = object()
 
     def setUp(self):
@@ -181,7 +181,7 @@ class TestNonSmooth(Inter, unittest.TestCase):
         virial_dw_test(self, self, suffix = '_se')
 
 
-class TestLFPbc(unittest.TestCase):
+class TestLFPbc(tf.test.TestCase):
     def test_pbc(self):
         data = Data()
         inter0 = Inter()
