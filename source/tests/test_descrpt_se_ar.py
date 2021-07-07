@@ -23,7 +23,7 @@ from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 class Inter():
     def setUp (self, 
                data,
-               sess) :
+               sess = None) :
         self.sess = sess
         self.data = data
         self.natoms = self.data.get_natoms()

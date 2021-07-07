@@ -24,7 +24,7 @@ class Inter():
     def setUp (self, 
                data, 
                pbc = True,
-               sess) :
+               sess = None) :
         self.sess = sess
         self.data = data
         self.natoms = self.data.get_natoms()
