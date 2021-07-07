@@ -97,7 +97,7 @@ class TestModel(tf.test.TestCase):
                           t_mesh:          test_data['default_mesh'],
                           is_training:     False}
 
-        sess = self.cached_session()
+        sess = self.test_session()
         sess.run(tf.global_variables_initializer())
         [pred_atom_ener] = sess.run([atom_ener], 
                              feed_dict = feed_dict_test)

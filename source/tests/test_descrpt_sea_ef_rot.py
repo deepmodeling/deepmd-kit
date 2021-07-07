@@ -14,7 +14,7 @@ from deepmd.descriptor import DescrptSeAEfLower
 
 class TestEfRot(tf.test.TestCase):
     def setUp(self):
-        self.sess = self.cached_session()
+        self.sess = self.test_session()
         self.natoms = [5, 5, 2, 3]
         self.ntypes = 2
         self.sel_a = [12,24]

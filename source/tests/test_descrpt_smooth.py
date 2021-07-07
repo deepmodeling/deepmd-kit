@@ -24,7 +24,7 @@ class Inter():
     def setUp (self, 
                data, 
                pbc = True) :
-        self.sess = self.cached_session()
+        self.sess = self.test_session()
         self.data = data
         self.natoms = self.data.get_natoms()
         self.ntypes = self.data.get_ntypes()

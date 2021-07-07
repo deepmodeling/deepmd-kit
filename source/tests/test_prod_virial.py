@@ -11,7 +11,7 @@ from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 
 class TestProdVirial(tf.test.TestCase):
     def setUp(self):
-        self.sess = self.cached_session()
+        self.sess = self.test_session()
         self.nframes = 2
         self.dcoord = [
             12.83, 2.56, 2.18,

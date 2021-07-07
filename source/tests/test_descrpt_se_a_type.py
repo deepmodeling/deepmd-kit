@@ -110,7 +110,7 @@ class TestModel(tf.test.TestCase):
                           t_mesh:          test_data['default_mesh'],
                           is_training:     False}
 
-        sess = self.cached_session()
+        sess = self.test_session()
         sess.run(tf.global_variables_initializer())
         [model_dout] = sess.run([dout], 
                              feed_dict = feed_dict_test)
@@ -219,7 +219,7 @@ class TestModel(tf.test.TestCase):
                           t_mesh:          test_data['default_mesh'],
                           is_training:     False}
 
-        sess = self.cached_session()
+        sess = self.test_session()
         sess.run(tf.global_variables_initializer())
         [model_dout] = sess.run([dout], 
                              feed_dict = feed_dict_test)
