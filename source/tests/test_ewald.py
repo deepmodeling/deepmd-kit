@@ -62,7 +62,7 @@ class TestEwaldRecp (tf.test.TestCase) :
     def test_py_interface(self):
         hh = 1e-4
         places = 4
-        sess = self.test_session()
+        sess = self.test_session().__enter__()
         t_energy, t_force, t_virial \
             = op_module.ewald_recp(self.coord, self.charge, self.nloc, self.box, 
                                    ewald_h = self.ewald_h,
@@ -96,7 +96,7 @@ class TestEwaldRecp (tf.test.TestCase) :
     def test_force(self):
         hh = 1e-4
         places = 6
-        sess = self.test_session()
+        sess = self.test_session().__enter__()
         t_energy, t_force, t_virial \
             = op_module.ewald_recp(self.coord, self.charge, self.nloc, self.box, 
                                    ewald_h = self.ewald_h,
@@ -138,7 +138,7 @@ class TestEwaldRecp (tf.test.TestCase) :
     def test_virial(self):
         hh = 1e-4
         places = 6
-        sess = self.test_session()
+        sess = self.test_session().__enter__()
         t_energy, t_force, t_virial \
             = op_module.ewald_recp(self.coord, self.charge, self.nloc, self.box, 
                                    ewald_h = self.ewald_h,

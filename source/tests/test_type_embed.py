@@ -19,7 +19,7 @@ class TestTypeEbd(tf.test.TestCase):
                         [7,7,7],
                         [7,7,7]]            
         atom_embed = embed_atom_type(ntypes, natoms, type_embedding)
-        sess = self.test_session()
+        sess = self.test_session().__enter__()
         atom_embed = sess.run(atom_embed)
         for ii in range(5):
             for jj in range(3):                
@@ -29,7 +29,7 @@ class TestTypeEbd(tf.test.TestCase):
     def test_type_embed_net(self):
         ten = TypeEmbedNet([2, 4, 8], seed = 1, uniform_seed = True)
         type_embedding = ten.build(2)
-        sess = self.test_session()
+        sess = self.test_session().__enter__()
         sess.run(tf.global_variables_initializer())
         type_embedding = sess.run(type_embedding)
 

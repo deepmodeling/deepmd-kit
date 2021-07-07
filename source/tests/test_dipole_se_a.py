@@ -90,7 +90,7 @@ class TestModel(tf.test.TestCase):
                           t_mesh:          test_data['default_mesh'],
                           is_training:     False}
 
-        sess = self.test_session()
+        sess = self.test_session().__enter__()
         sess.run(tf.global_variables_initializer())
         [p, gp] = sess.run([dipole, gdipole], feed_dict = feed_dict_test)
 

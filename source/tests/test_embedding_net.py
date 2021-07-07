@@ -13,7 +13,7 @@ from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 
 class Inter(tf.test.TestCase):
     def setUp (self) :
-        self.sess = self.test_session()
+        self.sess = self.test_session().__enter__()
         self.inputs = tf.constant([ 0., 1., 2.], dtype = tf.float64)
         self.ndata = 3
         self.inputs = tf.reshape(self.inputs, [-1, 1])
