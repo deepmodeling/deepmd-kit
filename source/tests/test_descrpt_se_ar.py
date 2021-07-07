@@ -105,7 +105,7 @@ class TestDescrptAR(Inter, tf.test.TestCase):
     def setUp(self):
         self.places = 5
         data = Data()
-        Inter.setUp(self, data)
+        Inter.setUp(self, data, sess=self.test_session().__enter__())
 
     def test_force (self) :
         force_test(self, self, suffix = '_se_ar')
