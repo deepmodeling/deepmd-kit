@@ -11,9 +11,9 @@ from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 
-class Inter(unittest.TestCase):
+class Inter(tf.test.TestCase):
     def setUp (self) :
-        self.sess = tf.Session()
+        self.sess = self.test_session().__enter__()
         self.inputs = tf.constant([ 0., 1., 2.], dtype = tf.float64)
         self.ndata = 3
         self.inputs = tf.reshape(self.inputs, [-1, 1])
