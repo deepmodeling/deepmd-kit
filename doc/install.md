@@ -137,6 +137,8 @@ One may set the following environment variables before executing `pip`:
 | --------------------- | ---------------------- | ------------- | -------------------------- |
 | DP_VARIANT            | `cpu`, `cuda`, `rocm`  | `cpu`         | Build CPU variant or GPU variant with CUDA or ROCM support. |
 | DP_FLOAT_PREC         | `high`, `low`          | `high`        | Build high (double) or low (float) precision. |
+| CUDA_TOOLKIT_ROOT_DIR | Path                   | Detected automatically | The path to the CUDA toolkit directory. |
+| ROCM_ROOT             | Path                   | Detected automatically | The path to the ROCM toolkit directory. |
 
 To test the installation, one should firstly jump out of the source directory
 ```
