@@ -181,7 +181,7 @@ __global__ void format_nlist_fill_b(
     const int max_nbor_size)
 { 
   int row = blockIdx.x;
-  int col = blockIdx.x * blockDim.x + threadIdx.x;
+  int col = blockIdx.y * blockDim.x + threadIdx.x;
   int * nei_iter = nei_iter_dev + row * sec_size;
   FPTYPE * key_out = key + nloc * max_nbor_size + row * max_nbor_size;
   int * row_nlist = nlist + row * nlist_size;
