@@ -394,12 +394,16 @@ def parse_auto_sel_ratio(sel):
         return ratio
 
 
+def wrap_up_4(xx):
+    return 4 * ((int(xx) + 3) // 4)
+
+
 def update_one_sel(jdata, descriptor):
     if parse_auto_sel(descriptor['sel']) :
         ratio = parse_auto_sel_ratio(descriptor['sel'])
         rcut = descriptor['rcut']
         tmp_sel = get_sel(jdata, rcut)
-        descriptor['sel'] = [int(ii * ratio) for ii in tmp_sel]
+        descriptor['sel'] = [int(wrap_up_4(ii * ratio)) for ii in tmp_sel]
     return descriptor
 
 
