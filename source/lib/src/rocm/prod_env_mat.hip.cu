@@ -155,7 +155,7 @@ __global__ void fill_nei_iter(
     const int sec_size)
 {
   int row = blockIdx.x;
-  int col = blockIdx.x * blockDim.x + threadIdx.x;
+  int col = blockIdx.y * blockDim.x + threadIdx.x;
   const FPTYPE * key_out = key + nloc * max_nbor_size + row * max_nbor_size;
   int nei_type_cur = -1, nbor_idx_cur = 0;
   int nei_type_pre = -1, nbor_idx_pre = 0;
