@@ -19,6 +19,7 @@ from deepmd.utils.argcheck import normalize
 from deepmd.utils.compat import updata_deepmd_input
 from deepmd.utils.data_system import DeepmdDataSystem
 from deepmd.utils.sess import run_sess
+from deepmd.utils.neighbor_stat import NeighborStat
 
 if TYPE_CHECKING:
     from deepmd.run_options import TFServerV1
@@ -173,6 +174,9 @@ def train(
     jdata = updata_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
 
     jdata = normalize(jdata)
+
+    jdata = update_sel(jdata)
+
     with open(output, "w") as fp:
         json.dump(jdata, fp, indent=4)
 
@@ -327,3 +331,88 @@ def get_modifier(modi_data=None):
     else:
         modifier = None
     return modifier
+
+
+def get_rcut(jdata):
+    descrpt_data = jdata['model']['descriptor']
+    rcut_list = []
+    if descrpt_data['type'] == 'hybrid':
+        for ii in descrpt_data['list']:
+            rcut_list.append(ii['rcut'])
+    else:
+        rcut_list.append(descrpt_data['rcut'])
+    return max(rcut_list)
+
+
+def get_type_map(jdata):
+    return jdata['model'].get('type_map', None)
+
+
+def get_sel(jdata, rcut):
+    max_rcut = get_rcut(jdata)
+    type_map = get_type_map(jdata)
+
+    if len(type_map) == 0:
+        type_map = None
+    train_data = get_data(jdata["training"]["training_data"], max_rcut, type_map, None)
+    train_data.get_batch()
+    data_ntypes = train_data.get_ntypes()
+    if type_map is not None:
+        map_ntypes = len(type_map)
+    else:
+        map_ntypes = data_ntypes
+    ntypes = max([map_ntypes, data_ntypes])
+
+    neistat = NeighborStat(ntypes, rcut)
+
+    min_nbor_dist, max_nbor_size = neistat.get_stat(train_data)
+
+    return max_nbor_size
+
+
+def parse_auto_sel(sel):
+    if type(sel) is not str:
+        return False
+    words = sel.split(':')
+    if words[0] == 'auto':
+        return True
+    else:
+        return False
+
+    
+def parse_auto_sel_ratio(sel):
+    if not parse_auto_sel(sel):
+        raise RuntimeError(f'invalid auto sel format {sel}')
+    else:
+        words = sel.split(':')
+        if len(words) == 1:
+            ratio = 1.1
+        elif len(words) == 2:
+            ratio = float(words[1])
+        else:
+            raise RuntimeError(f'invalid auto sel format {sel}')
+        return ratio
+
+
+def wrap_up_4(xx):
+    return 4 * ((int(xx) + 3) // 4)
+
+
+def update_one_sel(jdata, descriptor):
+    if parse_auto_sel(descriptor['sel']) :
+        ratio = parse_auto_sel_ratio(descriptor['sel'])
+        rcut = descriptor['rcut']
+        tmp_sel = get_sel(jdata, rcut)
+        descriptor['sel'] = [int(wrap_up_4(ii * ratio)) for ii in tmp_sel]
+    return descriptor
+
+
+def update_sel(jdata):    
+    descrpt_data = jdata['model']['descriptor']
+    if descrpt_data['type'] == 'hybrid':
+        for ii in range(len(descrpt_data['list'])):
+            descrpt_data['list'][ii] = update_one_sel(jdata, descrpt_data['list'][ii])
+    else:
+        descrpt_data = update_one_sel(jdata, descrpt_data)
+    jdata['model']['descriptor'] = descrpt_data
+    return jdata
