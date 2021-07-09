@@ -498,7 +498,7 @@ void format_nbor_list_gpu_rocm(
       nei_iter,
       key, nloc, max_nbor_size, sec.size());
   
-  hipLaunchKernelGGL(format_nlist_fill_b, dim3((max_nbor_size + LEN - 1) / LEN, nloc), LEN, 0, 0, 
+  hipLaunchKernelGGL(format_nlist_fill_b, dim3(nloc, (max_nbor_size + LEN - 1) / LEN), LEN, 0, 0, 
       nlist,
       nnei, nloc, key, sec_dev, sec.size(), nei_iter, max_nbor_size);
 }
