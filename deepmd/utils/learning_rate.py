@@ -14,7 +14,8 @@ class LearningRateExp (object) :
                   start_lr : float,
                   stop_lr : float = 5e-8,
                   decay_steps : int = 5000,
-                  decay_rate : float = 0.95
+                  decay_rate : float = 0.95,
+                  name: str = None
     ) -> None :
         """
         Constructor
@@ -43,6 +44,7 @@ class LearningRateExp (object) :
         self.cd['decay_steps'] = decay_steps
         self.cd['decay_rate'] = decay_rate
         self.start_lr_ = self.cd['start_lr']
+        self.name = name
 
     def build(self, 
               global_step : tf.Tensor, 
@@ -92,4 +94,7 @@ class LearningRateExp (object) :
         Get the lr at a certain step
         """
         return self.start_lr_ * np.power (self.decay_rate_, (step // self.decay_steps_))
+    def get_name(self):
+
+        return self.name
 

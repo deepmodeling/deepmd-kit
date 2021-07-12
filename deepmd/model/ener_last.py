@@ -14,7 +14,7 @@ class EnerModel() :
     def __init__ (
             self, 
             descrpt, 
-            fitting, 
+            fitting_list, 
             typeebd = None,
             type_map : List[str] = None,
             data_stat_nbatch : int = 10,
@@ -52,10 +52,11 @@ class EnerModel() :
         # descriptor
         self.descrpt = descrpt
         self.rcut = self.descrpt.get_rcut()
-        self.ntypes = self.descrpt.get_ntypes()
+        
         # fitting
-        self.fitting = fitting
-        self.numb_fparam = self.fitting.get_numb_fparam()
+        self.fitting_list = fitting_list
+        self.numb_fparam_list = []
+        
         # type embedding
         self.typeebd = typeebd
         # other inputs
@@ -63,6 +64,13 @@ class EnerModel() :
             self.type_map = []
         else:
             self.type_map = type_map
+        self.ntypes = len(self.type_map)
+        self.type_map_list ={} # a dict that 'name':[type_map]
+        for sub_net in self.fitting_list:
+            self.type_map_list[sub_net.get_fitting_name()]=sub_net.get_type_map()
+        self.fitting_map ={}
+        for sub_net in self.fitting_list:
+            self.fitting_map[tf.convert_to_tensor(sub_net.get_fitting_name())]=sub_net
         self.data_stat_nbatch = data_stat_nbatch
         self.data_stat_protect = data_stat_protect
         self.srtab_name = use_srtab
@@ -74,9 +82,7 @@ class EnerModel() :
         else :
             self.srtab = None
 
-    def get_name(self):
-        return self.fitting.get_name()
-        
+
     def get_rcut (self) :
         return self.rcut
 
@@ -86,11 +92,15 @@ class EnerModel() :
     def get_type_map (self) :
         return self.type_map
 
+    def get_type_map_list (self) :
+        return self.type_map_list
+
     def data_stat(self, data):
-        all_stat = make_stat_input(data, self.data_stat_nbatch, merge_sys = False)
-        m_all_stat = merge_sys_stat(all_stat)
-        self._compute_input_stat(m_all_stat, protection = self.data_stat_protect)
-        self._compute_output_stat(all_stat)
+        for sub_data in data.data_systems:
+            all_stat = make_stat_input(sub_data, self.data_stat_nbatch, merge_sys = False)
+            m_all_stat = merge_sys_stat(all_stat)
+            self._compute_input_stat(m_all_stat, protection = self.data_stat_protect)
+            self._compute_output_stat(all_stat)
         # self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
     def _compute_input_stat (self, all_stat, protection = 1e-2) :
@@ -100,10 +110,12 @@ class EnerModel() :
                                          all_stat['natoms_vec'],
                                          all_stat['default_mesh'], 
                                          all_stat)
-        self.fitting.compute_input_stats(all_stat, protection = protection)
+        for sub_fitting in self.fitting_list:
+            sub_fitting.compute_input_stats(all_stat, protection = protection)
 
     def _compute_output_stat (self, all_stat) :
-        self.fitting.compute_output_stats(all_stat)
+        for sub_fitting in self.fitting_list:
+            sub_fitting.compute_output_stats(all_stat)
 
     
     def build (self, 
@@ -112,6 +124,7 @@ class EnerModel() :
                natoms,
                box, 
                mesh,
+               name,
                input_dict,
                suffix = '', 
                reuse = None):
@@ -148,17 +161,9 @@ class EnerModel() :
             type_embedding = self.typeebd.build(
                 self.ntypes,
                 reuse = reuse,
-                suffix = '',
+                suffix = suffix,
             )
-            '''
-            random_embedding = tf.get_variable('random_embedding',
-                                                type_embedding.shape,
-                                                dtype= tf.float64,
-                                                trainable = False,
-                                                initializer = tf.random_normal_initializer(mean=0.0,stddev = 1.0, seed = 1,dtype= tf.float64))
-            '''
             input_dict['type_embedding'] = type_embedding
-            #input_dict["random_embedding"] =  random_embedding
 
         dout \
             = self.descrpt.build(coord_,
@@ -167,7 +172,7 @@ class EnerModel() :
                                  box,
                                  mesh,
                                  input_dict,
-                                 suffix = '',
+                                 suffix = suffix,
                                  reuse = reuse)
         dout = tf.identity(dout, name='o_descriptor')
 
@@ -176,11 +181,13 @@ class EnerModel() :
             nnei_a = np.cumsum(sel_a)[-1]
             nnei_r = np.cumsum(sel_r)[-1]
 
-        atom_ener = self.fitting.build (dout, 
-                                        natoms, 
-                                        input_dict, 
-                                        reuse = reuse, 
-                                        suffix = suffix)
+        for sub_net in self.fitting_list:
+            if sub_net.get_fitting_name()== name:
+                atom_ener = sub_net.build (dout, 
+                                    natoms, 
+                                    input_dict, 
+                                    reuse = reuse, 
+                                    suffix = suffix)
 
         if self.srtab is not None :
             sw_lambda, sw_deriv \

@@ -29,7 +29,8 @@ class DeepmdDataSystem() :
                   modifier = None,
                   trn_all_set = False,
                   sys_probs = None,
-                  auto_prob_style ="prob_sys_size") :
+                  auto_prob_style ="prob_sys_size",
+                  name: str = None) :
         """
         Constructor
         
@@ -72,7 +73,7 @@ class DeepmdDataSystem() :
         self.system_dirs = systems
         self.nsystems = len(self.system_dirs)
         self.data_systems = []
-        for ii in self.system_dirs :
+        for ii in self.system_dirs : #each system as a DeepmdData, these are all from a same method
             self.data_systems.append(
                 DeepmdData(
                     ii, 
@@ -80,7 +81,8 @@ class DeepmdDataSystem() :
                     shuffle_test=shuffle_test, 
                     type_map = type_map, 
                     modifier = modifier, 
-                    trn_all_set = trn_all_set
+                    trn_all_set = trn_all_set,
+                    name = name
                 ))
         # batch size
         self.batch_size = batch_size
@@ -101,6 +103,7 @@ class DeepmdDataSystem() :
             raise RuntimeError('invalid batch_size')            
         assert(isinstance(self.batch_size, (list,np.ndarray)))
         assert(len(self.batch_size) == self.nsystems)
+        self.name = name
 
         # natoms, nbatches
         ntypes = []
@@ -159,7 +162,6 @@ class DeepmdDataSystem() :
             if chk_ret is not None :
                 warnings.warn("system %s required test size is larger than the size of the dataset %s (%d > %d)" % \
                               (self.system_dirs[ii], chk_ret[0], self.test_size[ii], chk_ret[1]))
-
 
     def _load_test(self, ntests = -1):
         self.test_data = collections.defaultdict(list)
@@ -411,6 +413,8 @@ class DeepmdDataSystem() :
         Get the batch size
         """
         return self.batch_size
+    def get_name(self) -> str:
+        return self.name
 
     def _format_name_length(self, name, width) :
         if len(name) <= width:
@@ -507,6 +511,124 @@ class DeepmdDataSystem() :
             tmp_prob = [float(i) for i in nbatch_block] / np.sum(nbatch_block)
             sys_probs[block_stt[ii]:block_end[ii]] = tmp_prob * block_probs[ii]
         return sys_probs
+
+
+class DeepmdDataDocker() :
+    """
+    Class for manipulating many data dockers. 
+    It is implemented with the help of DeepmdData
+    """
+    def __init__ (self,
+                  data_systems : List[DeepmdDataSystem],
+                  batch_size : int,
+                  type_map : List[str] = None
+                  ) :
+        """
+        Constructor
+        
+        Parameters
+        ----------
+        datasystems
+                Combination of several DeepmdDataSystems
+        batch_size
+                The batch size
+        rcut
+                The cut-off radius
+        type_map
+                Gives the name of different atom types
+        """
+        # init data
+        self.batch_size = batch_size
+        self.data_systems = data_systems
+        # natoms, nbatches
+        self.nmethod = len(self.data_systems)
+        self.pick_idx = 0
+        nbatch_list = []
+        batch_size_list=[]
+        name_list = []
+        for ii in range(self.nmethod) :
+            nbatch_list.extend(self.data_systems[ii].get_nbatches())
+            batch_size_list.extend(self.data_systems[ii].get_batch_size())
+            name_list.extend(self.data_systems[ii].get_name())
+        self.type_map = type_map
+        self.nbatches = list(nbatch_list)
+        self.batch_size = list(batch_size_list)
+        self.name_list = list(name_list)
+
+
+    def get_nmethod(self):
+        return self.nmethod
+    def get_batch(self, sys_idx : int = None):
+        
+
+        if sys_idx is not None :
+            self.pick_idx = sys_idx
+        s_data = self.data_systems[self.pick_idx]
+        b_data = s_data.get_batch()
+        
+        return b_data
+
+    def get_data_system(self,name):
+        for i in range(self.nmethod):
+            if self.name_list[sys_name] == name:
+                return self.data_systems[i]
+    def get_data_system_idx(self,idx):
+        return self.data_systems[idx]
+    def get_type_map(self) -> List[str]:
+        """
+        Get the type map
+        """
+        return self.type_map
+
+    def get_nbatches (self) -> int: 
+        """
+        Get the total number of batches
+        """
+
+        return self.nbatches
+    
+    def get_ntypes (self) -> int:
+        """
+        Get the number of types
+        """
+        return len(self.type_map)
+    
+    def get_batch_size(self) -> int:
+        """
+        Get the batch size
+        """
+        return self.batch_size
+
+    def get_data_dict(self, ii: int = 0) -> dict:
+        return self.data_systems[ii].get_data_dict()
+    
+    def get_name(self):
+        return self.name_list
+
+    def print_summary(self, name) :
+        # width 65
+        sys_width = 42
+        log.info(f"---Summary of DataSystem: {name:13s}-----------------------------------------------")
+        log.info("found %d methods(s):" % self.nmethod)
+        for jj in range(self.nmethod):
+            tmp_sys = self.data_systems[jj]
+
+            log.info(("%s  " % tmp_sys._format_name_length('system', sys_width)) + 
+                 ("%6s  %6s  %6s  %5s  %3s" % ('natoms', 'bch_sz', 'n_bch', 'prob', 'pbc')))
+            for ii in range(tmp_sys.nsystems) :
+                log.info("%s  %6d  %6d  %6d  %5.3f  %3s" % 
+                     (tmp_sys._format_name_length(tmp_sys.system_dirs[ii], sys_width),
+                      tmp_sys.natoms[ii], 
+                      # TODO batch size * nbatches = number of structures
+                      tmp_sys.batch_size[ii],
+                      tmp_sys.nbatches[ii],
+                      tmp_sys.sys_probs[ii],
+                      "T" if tmp_sys.data_systems[ii].pbc else "F"
+                     ) )
+            log.info("--------------------------------------------------------------------------------------")
+
+
+
 
 
 

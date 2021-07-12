@@ -5,7 +5,7 @@ from typing import Tuple, List
 from deepmd.env import tf
 from deepmd.common import ClassArg, add_data_requirement, get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter
 from deepmd.utils.argcheck import list_to_doc
-from deepmd.utils.network import one_layer, one_layer_rand_seed_shift
+from deepmd.utils.network import one_layer
 from deepmd.descriptor import DescrptLocFrame
 from deepmd.descriptor import DescrptSeA
 from deepmd.utils.type_embed import embed_atom_type
@@ -24,11 +24,12 @@ class EnerFitting ():
                   rcond : float = 1e-3,
                   tot_ener_zero : bool = False,
                   trainable : List[bool] = None,
-                  seed : int = None,
+                  seed : int = 1,
                   atom_ener : List[float] = [],
                   activation_function : str = 'tanh',
                   precision : str = 'default',
-                  uniform_seed: bool = False
+                  type_map : List[str] = None,
+                  name : str = 'energy',
     ) -> None:
         """
         Constructor
@@ -62,8 +63,6 @@ class EnerFitting ():
                 The activation function in the embedding net. Supported options are {0}
         precision
                 The precision of the embedding net parameters. Supported options are {1}                
-        uniform_seed
-                Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
         """
         # model param
         self.ntypes = descrpt.get_ntypes()
@@ -86,12 +85,11 @@ class EnerFitting ():
         self.resnet_dt = resnet_dt
         self.rcond = rcond
         self.seed = seed
-        self.uniform_seed = uniform_seed
-        self.seed_shift = one_layer_rand_seed_shift()
         self.tot_ener_zero = tot_ener_zero
         self.fitting_activation_fn = get_activation_func(activation_function)
         self.fitting_precision = get_precision(precision)
         self.trainable = trainable
+        self.type_map = type_map
         if self.trainable is None:
             self.trainable = [True for ii in range(len(self.n_neuron) + 1)]
         if type(self.trainable) is bool:
@@ -105,6 +103,7 @@ class EnerFitting ():
                 self.atom_ener.append(None)
         self.useBN = False
         self.bias_atom_e = None
+        self.name = name
         # data requirement
         if self.numb_fparam > 0 :
             add_data_requirement('fparam', self.numb_fparam, atomic=False, must=True, high_prec=False)
@@ -117,6 +116,8 @@ class EnerFitting ():
             self.aparam_std = None
             self.aparam_inv_std = None
 
+    def get_name(self):
+        return self.name
     def get_numb_fparam(self) -> int:
         """
         Get the number of frame parameters
@@ -128,6 +129,16 @@ class EnerFitting ():
         Get the number of atomic parameters
         """
         return self.numb_fparam
+    
+    def get_fitting_name(self) -> tf.string:
+        """
+        Get the number of atomic parameters
+        """
+        return self.name
+    
+    def get_type_map (self):
+        return self.type_map
+
 
     def compute_output_stats(self, 
                              all_stat: dict
@@ -256,8 +267,7 @@ class EnerFitting ():
                     use_timestep = self.resnet_dt,
                     activation_fn = self.fitting_activation_fn,
                     precision = self.fitting_precision,
-                    trainable = self.trainable[ii],
-                    uniform_seed = self.uniform_seed)
+                    trainable = self.trainable[ii])
             else :
                 layer = one_layer(
                     layer,
@@ -267,9 +277,7 @@ class EnerFitting ():
                     seed = self.seed,
                     activation_fn = self.fitting_activation_fn,
                     precision = self.fitting_precision,
-                    trainable = self.trainable[ii],
-                    uniform_seed = self.uniform_seed)
-            if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
+                    trainable = self.trainable[ii])
         final_layer = one_layer(
             layer, 
             1, 
@@ -279,9 +287,7 @@ class EnerFitting ():
             reuse=reuse, 
             seed = self.seed, 
             precision = self.fitting_precision, 
-            trainable = self.trainable[-1],
-            uniform_seed = self.uniform_seed)
-        if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
+            trainable = self.trainable[-1])
 
         return final_layer
             
@@ -357,9 +363,7 @@ class EnerFitting ():
                                                 initializer = tf.constant_initializer(self.aparam_inv_std))
             
         inputs = tf.cast(tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]]), self.fitting_precision)
-        if len(self.atom_ener):
-            # only for atom_ener
-            inputs_zero = tf.zeros_like(inputs, dtype=GLOBAL_TF_FLOAT_PRECISION)
+        inputs_zero = tf.zeros_like(inputs, dtype=GLOBAL_TF_FLOAT_PRECISION)
         
 
         if bias_atom_e is not None :
@@ -404,7 +408,7 @@ class EnerFitting ():
                     zero_layer = self._build_lower(
                         start_index, natoms[2+type_i], 
                         inputs_zero, fparam, aparam, 
-                        bias_atom_e=type_bias_ae, suffix='_type_'+str(type_i)+suffix, reuse=True
+                        bias_atom_e=type_bias_ae, suffix='_zero_type_'+str(type_i)+suffix, reuse=reuse
                     )
                     final_layer += self.atom_ener[type_i] - zero_layer
                 final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i]])

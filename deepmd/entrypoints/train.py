@@ -6,7 +6,6 @@ Can handle local or distributed training.
 import json
 import logging
 import time
-import os
 from typing import Dict, TYPE_CHECKING, List, Optional, Any
 
 import numpy as np
@@ -17,9 +16,7 @@ from deepmd.train.run_options import BUILD, CITATION, WELCOME, RunOptions
 from deepmd.train.trainer import DPTrainer
 from deepmd.utils.argcheck import normalize
 from deepmd.utils.compat import updata_deepmd_input
-from deepmd.utils.data_system import DeepmdDataSystem
-from deepmd.utils.sess import run_sess
-from deepmd.utils.neighbor_stat import NeighborStat
+from deepmd.utils.data_system import DeepmdDataSystem, DeepmdDataDocker
 
 if TYPE_CHECKING:
     from deepmd.run_options import TFServerV1
@@ -76,7 +73,7 @@ def wait_done_queue(
     """
     with tf.Session(server.target) as sess:
         for i in range(cluster_spec.num_tasks("worker")):
-            run_sess(sess, queue.dequeue())
+            sess.run(queue.dequeue())
             log.debug(f"ps:{task_index:d} received done from worker:{i:d}")
         log.debug(f"ps:{task_index:f} quitting")
 
@@ -129,7 +126,7 @@ def fill_done_queue(
     """
     with tf.Session(server.target) as sess:
         for i in range(cluster_spec.num_tasks("ps")):
-            run_sess(sess, done_ops[i])
+            sess.run(done_ops[i])
             log.debug(f"worker:{task_index:d} sending done to ps:{i:d}")
 
 
@@ -173,10 +170,7 @@ def train(
 
     jdata = updata_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
 
-    jdata = normalize(jdata)
-
-    jdata = update_sel(jdata)
-
+    jdata = normalize(jdata,['battery','AlCuMg','HfO2','water'])
     with open(output, "w") as fp:
         json.dump(jdata, fp, indent=4)
 
@@ -236,8 +230,8 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
 
     # init the model
     model = DPTrainer(jdata, run_opt=run_opt)
-    rcut = model.model.get_rcut()
-    type_map = model.model.get_type_map()
+    rcut = model.model_list[0].get_rcut()
+    type_map = model.model_list[0].get_type_map()
     if len(type_map) == 0:
         ipt_type_map = None
     else:
@@ -253,7 +247,7 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
     modifier = get_modifier(jdata["model"].get("modifier", None))
 
     # init data
-    train_data = get_data(jdata["training"]["training_data"], rcut, ipt_type_map, modifier)
+    train_data = get_data(jdata["training"]["training_data"], rcut,ipt_type_map, modifier) #this is a datadocker
     train_data.print_summary("training")
     if jdata["training"].get("validation_data", None) is not None:
         valid_data = get_data(jdata["training"]["validation_data"], rcut, ipt_type_map, modifier)
@@ -263,7 +257,7 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
 
     # get training info
     stop_batch = j_must_have(jdata["training"], "numb_steps")
-    model.build(train_data, stop_batch)
+    model.build(train_data, stop_batch) # DeepmdDataSystem.type_map
 
     # train the model with the provided systems in a cyclic way
     start_time = time.time()
@@ -274,32 +268,18 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
 
 
 def get_data(jdata: Dict[str, Any], rcut, type_map, modifier):
-    systems = j_must_have(jdata, "systems")
-    if isinstance(systems, str):
-        systems = expand_sys_str(systems)
-    help_msg = 'Please check your setting for data systems'
-    # check length of systems
-    if len(systems) == 0:
-        msg = 'cannot find valid a data system'
-        log.fatal(msg)
-        raise IOError(msg, help_msg)
-    # rougly check all items in systems are valid
-    for ii in systems:
-        if (not os.path.isdir(ii)):
-            msg = f'dir {ii} is not a valid dir'
-            log.fatal(msg)
-            raise IOError(msg, help_msg)
-        if (not os.path.isfile(os.path.join(ii, 'type.raw'))):
-            msg = f'dir {ii} is not a valid data system dir'
-            log.fatal(msg)
-            raise IOError(msg, help_msg)
-
+    
     batch_size = j_must_have(jdata, "batch_size")
     sys_probs = jdata.get("sys_probs", None)
     auto_prob = jdata.get("auto_prob", "prob_sys_size")
-
-    data = DeepmdDataSystem(
-        systems=systems,
+    systems = j_must_have(jdata, "systems")
+    names = systems.keys()
+    total_data = []
+    for name in names:
+        
+        sub_sys = systems[name]
+        data = DeepmdDataSystem(
+        systems=sub_sys,
         batch_size=batch_size,
         test_size=1,        # to satisfy the old api
         shuffle_test=True,  # to satisfy the old api
@@ -308,11 +288,17 @@ def get_data(jdata: Dict[str, Any], rcut, type_map, modifier):
         modifier=modifier,
         trn_all_set=True,    # sample from all sets
         sys_probs=sys_probs,
-        auto_prob_style=auto_prob
+        auto_prob_style=auto_prob,
+        name = name
+        )
+        data.add_dict(data_requirement)
+        total_data.append(data)
+    docker = DeepmdDataDocker(
+        data_systems=total_data,
+        batch_size = batch_size,
+        type_map=type_map
     )
-    data.add_dict(data_requirement)
-
-    return data
+    return docker
 
 
 def get_modifier(modi_data=None):
@@ -331,88 +317,3 @@ def get_modifier(modi_data=None):
     else:
         modifier = None
     return modifier
-
-
-def get_rcut(jdata):
-    descrpt_data = jdata['model']['descriptor']
-    rcut_list = []
-    if descrpt_data['type'] == 'hybrid':
-        for ii in descrpt_data['list']:
-            rcut_list.append(ii['rcut'])
-    else:
-        rcut_list.append(descrpt_data['rcut'])
-    return max(rcut_list)
-
-
-def get_type_map(jdata):
-    return jdata['model'].get('type_map', None)
-
-
-def get_sel(jdata, rcut):
-    max_rcut = get_rcut(jdata)
-    type_map = get_type_map(jdata)
-
-    if len(type_map) == 0:
-        type_map = None
-    train_data = get_data(jdata["training"]["training_data"], max_rcut, type_map, None)
-    train_data.get_batch()
-    data_ntypes = train_data.get_ntypes()
-    if type_map is not None:
-        map_ntypes = len(type_map)
-    else:
-        map_ntypes = data_ntypes
-    ntypes = max([map_ntypes, data_ntypes])
-
-    neistat = NeighborStat(ntypes, rcut)
-
-    min_nbor_dist, max_nbor_size = neistat.get_stat(train_data)
-
-    return max_nbor_size
-
-
-def parse_auto_sel(sel):
-    if type(sel) is not str:
-        return False
-    words = sel.split(':')
-    if words[0] == 'auto':
-        return True
-    else:
-        return False
-
-    
-def parse_auto_sel_ratio(sel):
-    if not parse_auto_sel(sel):
-        raise RuntimeError(f'invalid auto sel format {sel}')
-    else:
-        words = sel.split(':')
-        if len(words) == 1:
-            ratio = 1.1
-        elif len(words) == 2:
-            ratio = float(words[1])
-        else:
-            raise RuntimeError(f'invalid auto sel format {sel}')
-        return ratio
-
-
-def wrap_up_4(xx):
-    return 4 * ((int(xx) + 3) // 4)
-
-
-def update_one_sel(jdata, descriptor):
-    if parse_auto_sel(descriptor['sel']) :
-        ratio = parse_auto_sel_ratio(descriptor['sel'])
-        rcut = descriptor['rcut']
-        tmp_sel = get_sel(jdata, rcut)
-        descriptor['sel'] = [int(wrap_up_4(ii * ratio)) for ii in tmp_sel]
-    return descriptor
-
-
-def update_sel(jdata):    
-    descrpt_data = jdata['model']['descriptor']
-    if descrpt_data['type'] == 'hybrid':
-        for ii in range(len(descrpt_data['list'])):
-            descrpt_data['list'][ii] = update_one_sel(jdata, descrpt_data['list'][ii])
-    else:
-        descrpt_data = update_one_sel(jdata, descrpt_data)
-    jdata['model']['descriptor'] = descrpt_data
-    return jdata

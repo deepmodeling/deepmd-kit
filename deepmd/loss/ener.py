@@ -4,13 +4,13 @@ from deepmd.common import ClassArg, add_data_requirement
 
 from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import global_cvt_2_ener_float
-from deepmd.utils.sess import run_sess
 
 class EnerStdLoss () :
     """
     Standard loss function for DP models
     """
     def __init__ (self, 
+                  
                   starter_learning_rate : float, 
                   start_pref_e : float = 0.02,
                   limit_pref_e : float = 1.00,
@@ -22,8 +22,10 @@ class EnerStdLoss () :
                   limit_pref_ae : float = 0.0,
                   start_pref_pf : float = 0.0,
                   limit_pref_pf : float = 0.0,
-                  relative_f : float = None 
+                  relative_f : float = None ,
+                  name : str = None,
     ) -> None:
+        self.name = name
         self.starter_learning_rate = starter_learning_rate
         self.start_pref_e = start_pref_e
         self.limit_pref_e = limit_pref_e
@@ -128,6 +130,8 @@ class EnerStdLoss () :
         self.l2_more = more_loss
         return l2_loss, more_loss
 
+    def get_name(self):
+        return self.name
     def eval(self, sess, feed_dict, natoms):
         run_data = [
             self.l2_l,
@@ -137,7 +141,7 @@ class EnerStdLoss () :
             self.l2_more['l2_atom_ener_loss'],
             self.l2_more['l2_pref_force_loss']
         ]
-        error, error_e, error_f, error_v, error_ae, error_pf = run_sess(sess, run_data, feed_dict=feed_dict)
+        error, error_e, error_f, error_v, error_ae, error_pf = sess.run(run_data, feed_dict=feed_dict)
         results = {"natoms": natoms[0], "rmse": np.sqrt(error)}
         if self.has_e:
             results["rmse_e"] = np.sqrt(error_e) / natoms[0]
@@ -185,7 +189,7 @@ class EnerStdLoss () :
         ]
 
         # first train data
-        train_out = run_sess(sess, run_data, feed_dict=feed_dict_batch)
+        train_out = sess.run(run_data, feed_dict=feed_dict_batch)
         error_train, error_e_train, error_f_train, error_v_train, error_ae_train, error_pf_train = train_out
 
         # than test data, if tensorboard log writter is present, commpute summary
@@ -194,7 +198,7 @@ class EnerStdLoss () :
             summary_merged_op = tf.summary.merge([self.l2_loss_summary, self.l2_loss_ener_summary, self.l2_loss_force_summary, self.l2_loss_virial_summary])
             run_data.insert(0, summary_merged_op)
 
-        test_out = run_sess(sess, run_data, feed_dict=feed_dict_test)
+        test_out = sess.run(run_data, feed_dict=feed_dict_test)
 
         if tb_writer:
             summary = test_out.pop(0)
@@ -298,7 +302,7 @@ class EnerDipoleLoss () :
             self.l2_more['l2_ener_loss'],
             self.l2_more['l2_ener_dipole_loss']
         ]
-        error, error_e, error_ed = run_sess(sess, run_data, feed_dict=feed_dict)
+        error, error_e, error_ed = sess.run(run_data, feed_dict=feed_dict)
         results = {
             'natoms': natoms[0],
             'rmse': np.sqrt(error),
@@ -331,7 +335,7 @@ class EnerDipoleLoss () :
         ]
 
         # first train data
-        train_out = run_sess(sess, run_data, feed_dict=feed_dict_batch)
+        train_out = sess.run(run_data, feed_dict=feed_dict_batch)
         error_train, error_e_train, error_ed_train = train_out
 
         # than test data, if tensorboard log writter is present, commpute summary
@@ -344,7 +348,7 @@ class EnerDipoleLoss () :
             ])
             run_data.insert(0, summary_merged_op)
 
-        test_out = run_sess(sess, run_data, feed_dict=feed_dict_test)
+        test_out = sess.run(run_data, feed_dict=feed_dict_test)
 
         if tb_writer:
             summary = test_out.pop(0)

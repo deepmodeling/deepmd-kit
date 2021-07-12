@@ -8,7 +8,6 @@ https://blog.metaflow.fr/tensorflow-how-to-freeze-a-model-and-serve-it-with-a-py
 
 from deepmd.env import tf
 from deepmd.env import op_module
-from deepmd.utils.sess import run_sess
 from os.path import abspath
 
 # load grad of force module
@@ -66,10 +65,6 @@ def _make_node_names(model_type: str, modifier_type: Optional[str] = None) -> Li
     elif model_type == "dipole":
         nodes += [
             "o_dipole",
-            "o_global_dipole",
-            "o_force",
-            "o_virial",
-            "o_atom_virial",
             "o_rmat",
             "o_rmat_deriv",
             "o_nlist",
@@ -82,10 +77,6 @@ def _make_node_names(model_type: str, modifier_type: Optional[str] = None) -> Li
     elif model_type == "polar":
         nodes += [
             "o_polar",
-            "o_global_polar",
-            "o_force",
-            "o_virial",
-            "o_atom_virial",
             "model_attr/sel_type",
             "model_attr/output_dim",
         ]
@@ -163,9 +154,9 @@ def freeze(
     # We start a session and restore the graph weights
     with tf.Session() as sess:
         saver.restore(sess, input_checkpoint)
-        model_type = run_sess(sess, "model_attr/model_type:0", feed_dict={}).decode("utf-8")
+        model_type = sess.run("model_attr/model_type:0", feed_dict={}).decode("utf-8")
         if "modifier_attr/type" in nodes:
-            modifier_type = run_sess(sess, "modifier_attr/type:0", feed_dict={}).decode(
+            modifier_type = sess.run("modifier_attr/type:0", feed_dict={}).decode(
                 "utf-8"
             )
         else:
@@ -175,7 +166,8 @@ def freeze(
         else:
             output_node_list = node_names.split(",")
         print(f"The following nodes will be frozen: {output_node_list}")
-
+        varvar = tf.get_default_graph().get_tensor_by_name("t_typeebd:0")
+        print(sess.run(varvar))
         # We use a built-in TF helper to export variables to constants
         output_graph_def = tf.graph_util.convert_variables_to_constants(
             sess,  # The session is used to retrieve the weights
