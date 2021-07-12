@@ -277,10 +277,12 @@ class DPTrainer (object):
             self.valid_numb_batch = tr_data["validation_data"].get("numb_btch", 1)
         else:
             self.valid_numb_batch = 1
+        self.iterators = []
 
 
     def build (self, 
                data, 
+               valid_data=None,
                stop_batch = 0) :
         self.ntypes = self.model.get_ntypes()
         # Usually, the type number of the model should be equal to that of the data
@@ -308,12 +310,17 @@ class DPTrainer (object):
                 = self.neighbor_stat.get_stat(data)
             self.descrpt.enable_compression(self.min_nbor_dist, self.model_param['compress']['model_file'], self.model_param['compress']['table_config'][0], self.model_param['compress']['table_config'][1], self.model_param['compress']['table_config'][2], self.model_param['compress']['table_config'][3])
 
-        worker_device = "/job:%s/task:%d/%s" % (self.run_opt.my_job_name,
+        self.worker_device = "/job:%s/task:%d/%s" % (self.run_opt.my_job_name,
                                                 self.run_opt.my_task_index,
                                                 self.run_opt.my_device)
 
-        with tf.device(tf.train.replica_device_setter(worker_device = worker_device,
+        with tf.device(tf.train.replica_device_setter(worker_device = self.worker_device,
                                                       cluster = self.run_opt.cluster_spec)):
+            self.place_holders = {
+                'is_training': tf.placeholder(tf.bool),
+                'is_valid_set': tf.placeholder(tf.bool),
+            }
+            self._build_dataset(data, valid_data)
             self._build_lr()
             self._build_network(data)
             self._build_training()
@@ -326,21 +333,6 @@ class DPTrainer (object):
         log.info("built lr")
 
     def _build_network(self, data):        
-        self.place_holders = {}
-        data_dict = data.get_data_dict()
-        for kk in data_dict.keys():
-            if kk == 'type':
-                continue
-            prec = GLOBAL_TF_FLOAT_PRECISION
-            if data_dict[kk]['high_prec'] :
-                prec = GLOBAL_ENER_FLOAT_PRECISION
-            self.place_holders[kk] = tf.placeholder(prec, [None], name = 't_' + kk)
-            self.place_holders['find_'+kk] = tf.placeholder(tf.float32, name = 't_find_' + kk)
-
-        self.place_holders['type']      = tf.placeholder(tf.int32,   [None], name='t_type')
-        self.place_holders['natoms_vec']        = tf.placeholder(tf.int32,   [self.ntypes+2], name='t_natoms')
-        self.place_holders['default_mesh']      = tf.placeholder(tf.int32,   [None], name='t_mesh')
-        self.place_holders['is_training']       = tf.placeholder(tf.bool)
         self.model_pred\
             = self.model.build (self.place_holders['coord'], 
                                 self.place_holders['type'], 
@@ -449,7 +441,7 @@ class DPTrainer (object):
         # ,
         # save_checkpoint_steps = self.save_freq)
 
-    def train (self, train_data, valid_data=None) :
+    def train (self) :
 
         # if valid_data is None:  # no validation set specified.
         #     valid_data = train_data  # using training set as validation set.
@@ -505,17 +497,17 @@ class DPTrainer (object):
             tb_valid_writer = None
         
         train_time = 0
+        train_feed_dict = self.get_feed_dict(is_training=True)
+        for iterator in self.iterators:
+            run_sess(self.sess, iterator.initializer)
         while cur_batch < stop_batch :
 
             # first round validation:
-            train_batch = train_data.get_batch()
             if self.display_in_training and is_first_step:
-                valid_batches = [valid_data.get_batch() for ii in range(self.valid_numb_batch)] if valid_data is not None else None
-                self.valid_on_the_fly(fp, [train_batch], valid_batches, print_header=True)
+                self.valid_on_the_fly(fp, print_header=True)
                 is_first_step = False
 
             if self.timing_in_training: tic = time.time()
-            train_feed_dict = self.get_feed_dict(train_batch, is_training=True)
             # use tensorboard to visualize the training of deepmd-kit
             # it will takes some extra execution time to generate the tensorboard data
             if self.tensorboard :
@@ -534,8 +526,7 @@ class DPTrainer (object):
             if self.display_in_training and (cur_batch % self.disp_freq == 0):
                 if self.timing_in_training:
                     tic = time.time()
-                valid_batches = [valid_data.get_batch() for ii in range(self.valid_numb_batch)] if valid_data is not None else None
-                self.valid_on_the_fly(fp, [train_batch], valid_batches)
+                self.valid_on_the_fly(fp)
                 if self.timing_in_training:
                     toc = time.time()
                     test_time = toc - tic
@@ -561,20 +552,10 @@ class DPTrainer (object):
             with open(self.profiling_file, 'w') as f:
                 f.write(chrome_trace)
 
-    def get_feed_dict(self, batch, is_training):
+    def get_feed_dict(self, is_training=False, is_valid_set=False):
         feed_dict = {}
-        for kk in batch.keys():
-            if kk == 'find_type' or kk == 'type':
-                continue
-            if 'find_' in kk:
-                feed_dict[self.place_holders[kk]] = batch[kk]
-            else:
-                feed_dict[self.place_holders[kk]] = np.reshape(batch[kk], [-1])
-        for ii in ['type']:
-            feed_dict[self.place_holders[ii]] = np.reshape(batch[ii], [-1])
-        for ii in ['natoms_vec', 'default_mesh']:
-            feed_dict[self.place_holders[ii]] = batch[ii]
         feed_dict[self.place_holders['is_training']] = is_training
+        feed_dict[self.place_holders['is_valid_set']] = is_valid_set
         return feed_dict
 
     def get_global_step(self):
@@ -591,11 +572,9 @@ class DPTrainer (object):
 
     def valid_on_the_fly(self,
                          fp,
-                         train_batches,
-                         valid_batches,
                          print_header=False):
-        train_results = self.get_evaluation_results(train_batches)
-        valid_results = self.get_evaluation_results(valid_batches)
+        train_results = self.get_evaluation_results(is_valid=False)
+        valid_results = self.get_evaluation_results(is_valid=True)
 
         cur_batch = self.cur_batch
         current_lr = run_sess(self.sess, self.learning_rate)
@@ -636,17 +615,17 @@ class DPTrainer (object):
         fp.write(print_str)
         fp.flush()
 
-    def get_evaluation_results(self, batch_list):
-        if batch_list is None: return None
-        numb_batch = len(batch_list)
+    def get_evaluation_results(self, is_valid):
+        if is_valid:
+            numb_batch = self.valid_numb_batch
+        else:
+            numb_batch = 1
 
         sum_results = {}    # sum of losses on all atoms
         sum_natoms = 0
+        feed_dict = self.get_feed_dict(is_training=False, is_valid_set=is_valid)
         for i in range(numb_batch):
-            batch = batch_list[i]
-            natoms = batch["natoms_vec"]
-            feed_dict = self.get_feed_dict(batch, is_training=False)
-            results = self.loss.eval(self.sess, feed_dict, natoms)
+            results = self.loss.eval(self.sess, feed_dict)
 
             for k, v in results.items():
                 if k == "natoms":
@@ -655,3 +634,74 @@ class DPTrainer (object):
                     sum_results[k] = sum_results.get(k, 0.) + v * results["natoms"]
         avg_results = {k: v / sum_natoms for k, v in sum_results.items() if not k == "natoms"}
         return avg_results
+
+    def get_data_keys(self, data):
+        data_dict = data.get_data_dict()
+        # data_key, key, type
+        input_keys = []
+        for kk in data_dict.keys():
+            if kk == 'type':
+                continue
+            prec = GLOBAL_TF_FLOAT_PRECISION
+            if data_dict[kk]['high_prec'] :
+                prec = GLOBAL_ENER_FLOAT_PRECISION
+            input_keys.append({
+                "data_key": kk,
+                "key": kk,
+                "type": prec,
+                "shape": [None],
+            })
+            input_keys.append({
+                "data_key": "find_" + kk,
+                "key": "find_" + kk,
+                "type": tf.float32,
+            })
+        for kk in ['type', 'default_mesh']:
+            input_keys.append({
+                "data_key": kk,
+                "key": kk,
+                "type": tf.int32,
+                "shape": [None],
+            })
+        for kk in ['natoms_vec']:
+            input_keys.append({
+                "data_key": kk,
+                "key": kk,
+                "type": tf.int32,
+                "shape": [self.ntypes+2],
+            })
+        return input_keys
+
+    def _build_dataset(self, data, valid_data=None):
+        """Generate dataset."""
+        keys = self.get_data_keys(data)
+        next_data = self.get_next_data(data, keys)
+        if valid_data:
+            next_valid_data = self.get_next_data(valid_data, keys)
+            next_data = tf.cond(self.place_holders['is_valid_set'], lambda: next_valid_data, lambda: next_data)
+        for ii, kk in enumerate(keys):
+            self.place_holders[kk['key']] = next_data[ii][0]
+
+    def get_next_data(self, data, keys):
+        dtypes = tuple((kk["type"] for kk in keys))
+
+        def data_generator():
+            while True:
+                batch = data.get_batch()
+                batch_data = []
+                for kk in keys:
+                    if kk['key'].startswith('find_') or kk['key'] in ['natoms_vec', 'default_mesh']:
+                        batch_data.append(batch[kk['data_key']])
+                    else:
+                        batch_data.append(np.reshape(batch[kk['data_key']], [-1]))
+                yield tuple(batch_data)
+
+        dataset = tf.data.Dataset.from_generator(data_generator, dtypes)
+        dataset = dataset.batch(1)
+        if tf.test.is_gpu_available():
+            dataset = dataset.apply(tf.data.experimental.copy_to_device(self.worker_device))
+        dataset = dataset.prefetch(tf.data.AUTOTUNE)
+        iterator = tf.data.make_initializable_iterator(dataset)
+        self.iterators.append(iterator)
+        next_data = iterator.get_next()
+        return next_data

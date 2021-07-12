@@ -263,11 +263,11 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
 
     # get training info
     stop_batch = j_must_have(jdata["training"], "numb_steps")
-    model.build(train_data, stop_batch)
+    model.build(train_data, valid_data, stop_batch)
 
     # train the model with the provided systems in a cyclic way
     start_time = time.time()
-    model.train(train_data, valid_data)
+    model.train()
     end_time = time.time()
     log.info("finished training")
     log.info(f"wall time: {(end_time - start_time):.3f} s")

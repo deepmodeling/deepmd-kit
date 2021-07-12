@@ -126,18 +126,20 @@ class EnerStdLoss () :
 
         self.l2_l = l2_loss
         self.l2_more = more_loss
+        self.natoms = natoms
         return l2_loss, more_loss
 
-    def eval(self, sess, feed_dict, natoms):
+    def eval(self, sess, feed_dict):
         run_data = [
             self.l2_l,
             self.l2_more['l2_ener_loss'],
             self.l2_more['l2_force_loss'],
             self.l2_more['l2_virial_loss'],
             self.l2_more['l2_atom_ener_loss'],
-            self.l2_more['l2_pref_force_loss']
+            self.l2_more['l2_pref_force_loss'],
+            self.natoms,
         ]
-        error, error_e, error_f, error_v, error_ae, error_pf = run_sess(sess, run_data, feed_dict=feed_dict)
+        error, error_e, error_f, error_v, error_ae, error_pf, natoms = run_sess(sess, run_data, feed_dict=feed_dict)
         results = {"natoms": natoms[0], "rmse": np.sqrt(error)}
         if self.has_e:
             results["rmse_e"] = np.sqrt(error_e) / natoms[0]
