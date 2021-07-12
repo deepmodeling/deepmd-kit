@@ -649,27 +649,38 @@ class DPTrainer (object):
                 "data_key": kk,
                 "key": kk,
                 "type": prec,
+                "name": "t_" + kk,
                 "shape": [None],
+                "reshape": True,
             })
             input_keys.append({
                 "data_key": "find_" + kk,
                 "key": "find_" + kk,
+                "name": "t_" + kk,
                 "type": tf.float32,
             })
-        for kk in ['type', 'default_mesh']:
-            input_keys.append({
-                "data_key": kk,
-                "key": kk,
-                "type": tf.int32,
-                "shape": [None],
-            })
-        for kk in ['natoms_vec']:
-            input_keys.append({
-                "data_key": kk,
-                "key": kk,
-                "type": tf.int32,
-                "shape": [self.ntypes+2],
-            })
+        input_keys.append({
+            "data_key": 'type',
+            "key": 'type',
+            "name": 't_type',
+            "type": tf.int32,
+            "shape": [None],
+            "reshape": True,
+        })
+        input_keys.append({
+            "data_key": 'default_mesh',
+            "key": 'default_mesh',
+            "name": 't_mesh',
+            "type": tf.int32,
+            "shape": [None],
+        })
+        input_keys.append({
+            "data_key": 'natoms_vec',
+            "key": 'natoms_vec',
+            "name": 't_natoms',
+            "type": tf.int32,
+            "shape": [self.ntypes+2],
+        })
         return input_keys
 
     def _build_dataset(self, data, valid_data=None):
@@ -680,7 +691,7 @@ class DPTrainer (object):
             next_valid_data = self.get_next_data(valid_data, keys)
             next_data = tf.cond(self.place_holders['is_valid_set'], lambda: next_valid_data, lambda: next_data)
         for ii, kk in enumerate(keys):
-            self.place_holders[kk['key']] = next_data[ii][0]
+            self.place_holders[kk['key']] = tf.identity(next_data[ii][0], name=kk['name'])
 
     def get_next_data(self, data, keys):
         dtypes = tuple((kk["type"] for kk in keys))
@@ -690,7 +701,7 @@ class DPTrainer (object):
                 batch = data.get_batch()
                 batch_data = []
                 for kk in keys:
-                    if kk['key'].startswith('find_') or kk['key'] in ['natoms_vec', 'default_mesh']:
+                    if kk.get('reshape', False):
                         batch_data.append(batch[kk['data_key']])
                     else:
                         batch_data.append(np.reshape(batch[kk['data_key']], [-1]))
