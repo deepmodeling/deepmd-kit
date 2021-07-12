@@ -700,7 +700,7 @@ class DPTrainer (object):
         dataset = dataset.batch(1)
         if tf.test.is_gpu_available():
             dataset = dataset.apply(tf.data.experimental.copy_to_device(self.worker_device))
-        dataset = dataset.prefetch(tf.data.AUTOTUNE if 'AUTOTUNE' if tf.data.__dict__ else -1)
+        dataset = dataset.prefetch(tf.data.AUTOTUNE if 'AUTOTUNE' in tf.data.__dict__ else -1)
         iterator = tf.data.make_initializable_iterator(dataset)
         self.iterators.append(iterator)
         next_data = iterator.get_next()
