@@ -492,11 +492,11 @@ void format_nbor_list_gpu_cuda(
         coord, type, gpu_inlist, nloc, rcut, i_idx); 
   }
 
-  fill_nei_iter<<<dim3(nloc, (max_nbor_size + LEN - 1) / LEN) , LEN>>> (
+  fill_nei_iter <<<dim3(nloc, (max_nbor_size + LEN - 1) / LEN) , LEN>>> (
       nei_iter,
       key, nloc, max_nbor_size, sec.size());
   
-  format_nlist_fill_b<<<dim3(nloc, (max_nbor_size + LEN - 1) / LEN), LEN>>> (
+  format_nlist_fill_b <<<dim3(nloc, (max_nbor_size + LEN - 1) / LEN), LEN>>> (
       nlist,
       nnei, nloc, key, sec_dev, sec.size(), nei_iter, max_nbor_size);
 }
