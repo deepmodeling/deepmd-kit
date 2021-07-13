@@ -3,6 +3,7 @@ import logging
 import os
 import time
 import shutil
+import google.protobuf.message
 import numpy as np
 from deepmd.env import tf
 from deepmd.env import default_tf_session_config
@@ -19,6 +20,7 @@ from deepmd.descriptor import DescrptSeAR
 from deepmd.descriptor import DescrptHybrid
 from deepmd.model import EnerModel, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
 from deepmd.loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
+from deepmd.utils.errors import GraphTooLargeError
 from deepmd.utils.learning_rate import LearningRateExp
 from deepmd.utils.neighbor_stat import NeighborStat
 from deepmd.utils.sess import run_sess
@@ -542,7 +544,14 @@ class DPTrainer (object):
                     train_time = 0
                 if self.save_freq > 0 and cur_batch % self.save_freq == 0 and self.run_opt.is_chief :
                     if self.saver is not None :
-                        self.saver.save (self.sess, os.getcwd() + "/" + self.save_ckpt)
+                        try:
+                            self.saver.save (self.sess, os.getcwd() + "/" + self.save_ckpt)
+                        except google.protobuf.message.DecodeError as e:
+                            raise GraphTooLargeError(
+                                "The graph size exceeds 2 GB, the hard limitation of protobuf."
+                                " Then a DecodeError was raised by protobuf. You should "
+                                "reduce the size of your model."
+                            ) from e
                         log.info("saved checkpoint %s" % self.save_ckpt)
         if self.run_opt.is_chief: 
             fp.close ()
