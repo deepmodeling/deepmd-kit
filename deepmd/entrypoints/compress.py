@@ -65,7 +65,7 @@ def compress(
     """
     jdata = j_loader(INPUT)
     if "model" not in jdata.keys():
-        jdata = updata_deepmd_input(jdata, warning=True, dump="input_v1_compat.json")
+        jdata = updata_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
     jdata["model"]["compress"] = {}
     jdata["model"]["compress"]["type"] = 'se_e2_a'
     jdata["model"]["compress"]["compress"] = True
