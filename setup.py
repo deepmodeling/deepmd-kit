@@ -135,7 +135,7 @@ setup(
     cmake_minimum_required_version="3.0",
     extras_require={
         "test": ["dpdata>=0.1.9", "ase", "pytest", "pytest-cov", "pytest-sugar"],
-        "docs": ["sphinx", "recommonmark", "sphinx_rtd_theme", "sphinx_markdown_tables", "myst-parser", "breathe", "exhale"],
+        "docs": ["sphinx<4.1.0", "recommonmark", "sphinx_rtd_theme", "sphinx_markdown_tables", "myst-parser", "breathe", "exhale"],
         **extras_require,
     },
     entry_points={"console_scripts": ["dp = deepmd.entrypoints.main:main"]},
