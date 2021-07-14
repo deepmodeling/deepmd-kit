@@ -292,14 +292,20 @@ void compute_int_data(
     const int nblock_loc=(nloc+TPB-1)/TPB;
     hipLaunchKernelGGL(_fill_idx_cellmap, nblock_loc, TPB, 0, 0, idx_cellmap, idx_cellmap_noshift, in_c, rec_boxt, 
         nat_stt, nat_end, ext_stt, ext_end, nloc);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
 
     const int nblock_loc_cellnum=(loc_cellnum+TPB-1)/TPB;
     hipLaunchKernelGGL(_fill_loc_cellnum_map, nblock_loc_cellnum, TPB, 0, 0, temp_idx_order, loc_cellnum_map, 
         idx_cellmap_noshift, nloc, loc_cellnum);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
 
     const int nblock_total_cellnum=(total_cellnum+TPB-1)/TPB;
     hipLaunchKernelGGL(_fill_total_cellnum_map, nblock_total_cellnum, TPB, 0, 0, total_cellnum_map, mask_cellnum_map, cell_map, 
         cell_shift_map, nat_stt, nat_end, ext_stt, ext_end, loc_cellnum_map, total_cellnum);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
 }
 
 void build_loc_clist(
@@ -314,6 +320,8 @@ void build_loc_clist(
     const int * sec_loc_cellnum_map=temp_idx_order+nloc+loc_cellnum+2*total_cellnum+total_cellnum+3*total_cellnum;
     int * loc_clist=int_data+nloc*3+loc_cellnum+total_cellnum*3+total_cellnum*3+loc_cellnum+1+total_cellnum+1;
     hipLaunchKernelGGL(_build_loc_clist, nblock, TPB, 0, 0, loc_clist, idx_cellmap_noshift, temp_idx_order, sec_loc_cellnum_map, nloc);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -341,6 +349,8 @@ void copy_coord(
     const FPTYPE *rec_boxt = region.rec_boxt;
     hipLaunchKernelGGL(_copy_coord, nblock, TPB, 0, 0, out_c, out_t, mapping, in_c, in_t, cell_map, cell_shift_map, 
         sec_loc_cellnum_map, sec_total_cellnum_map, loc_clist, nloc, nall, total_cellnum, boxt, rec_boxt);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
 }
 
 namespace deepmd {
@@ -355,6 +365,8 @@ normalize_coord_gpu_rocm(
     const FPTYPE * rec_boxt=region.rec_boxt;
     const int nblock=(natom+TPB-1)/TPB;
     hipLaunchKernelGGL(normalize_one, nblock, TPB, 0, 0, coord, boxt, rec_boxt, natom);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -376,7 +388,9 @@ copy_coord_gpu_rocm(
 {
     compute_int_data(int_data, in_c, cell_info, region, nloc, loc_cellnum, total_cellnum);
     int * int_data_cpu=new int [loc_cellnum+2*total_cellnum+loc_cellnum+1+total_cellnum+1];//loc_cellnum_map,total_cellnum_map,mask_cellnum_map,sec_loc_cellnum_map,sec_total_cellnum_map
-    hipErrcheck(hipMemcpy(int_data_cpu, int_data+3*nloc, sizeof(int) * (loc_cellnum + 2 * total_cellnum), hipMemcpyDeviceToHost));
+    DPErrcheck(hipMemcpy(int_data_cpu, int_data+3*nloc, sizeof(int) * (loc_cellnum + 2 * total_cellnum), hipMemcpyDeviceToHost));
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
     int * loc_cellnum_map=int_data_cpu;
     int * total_cellnum_map=loc_cellnum_map+loc_cellnum;
     int * mask_cellnum_map=total_cellnum_map+total_cellnum;
@@ -398,7 +412,7 @@ copy_coord_gpu_rocm(
         return 1;
     }
     else{
-        hipErrcheck(hipMemcpy(int_data+nloc*3+loc_cellnum+total_cellnum*3+total_cellnum*3, 
+        DPErrcheck(hipMemcpy(int_data+nloc*3+loc_cellnum+total_cellnum*3+total_cellnum*3, 
             sec_loc_cellnum_map, sizeof(int) * (loc_cellnum+1+total_cellnum+1), hipMemcpyHostToDevice));
         delete[] int_data_cpu;
         build_loc_clist(int_data, nloc, loc_cellnum, total_cellnum);

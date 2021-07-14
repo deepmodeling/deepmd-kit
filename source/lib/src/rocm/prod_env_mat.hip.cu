@@ -234,12 +234,16 @@ void format_nbor_list_1024 (
   hipLaunchKernelGGL(format_nlist_fill_a, block_grid, thread_grid, 0, 0, 
       key,
       coord, type, gpu_inlist.numneigh, gpu_inlist.firstneigh, rcut, i_idx, MAX_NBOR_SIZE);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
   const int ITEMS_PER_THREAD = 8;
   const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
   // hipLaunchKernelGGL(HIP_KERNEL_NAME(BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD>), g_grid_size, BLOCK_THREADS, 0, 0, 
   hipLaunchKernelGGL(HIP_KERNEL_NAME(BlockSortKernel<uint_64, BLOCK_THREADS, ITEMS_PER_THREAD>), nloc, BLOCK_THREADS, 0, 0, 
       key, 
       key + nloc * MAX_NBOR_SIZE);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
 }
 
 template<typename FPTYPE>
@@ -260,12 +264,16 @@ void format_nbor_list_2048 (
   hipLaunchKernelGGL(format_nlist_fill_a, block_grid, thread_grid, 0, 0, 
       key,
       coord, type, gpu_inlist.numneigh, gpu_inlist.firstneigh, rcut, i_idx, MAX_NBOR_SIZE);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
   const int ITEMS_PER_THREAD = 8;
   const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
   // hipLaunchKernelGGL(HIP_KERNEL_NAME(BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD>), g_grid_size, BLOCK_THREADS, 0, 0, 
   hipLaunchKernelGGL(HIP_KERNEL_NAME(BlockSortKernel<uint_64, BLOCK_THREADS, ITEMS_PER_THREAD>), nloc, BLOCK_THREADS, 0, 0, 
       key, 
       key + nloc * MAX_NBOR_SIZE);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
 }
 
 template<typename FPTYPE>
@@ -286,12 +294,16 @@ void format_nbor_list_4096 (
   hipLaunchKernelGGL(format_nlist_fill_a, block_grid, thread_grid, 0, 0, 
       key,
       coord, type, gpu_inlist.numneigh, gpu_inlist.firstneigh, rcut, i_idx, MAX_NBOR_SIZE);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
   const int ITEMS_PER_THREAD = 16;
   const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
   // hipLaunchKernelGGL(HIP_KERNEL_NAME(BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD>), g_grid_size, BLOCK_THREADS, 0, 0, 
   hipLaunchKernelGGL(HIP_KERNEL_NAME(BlockSortKernel<uint_64, BLOCK_THREADS, ITEMS_PER_THREAD>), nloc, BLOCK_THREADS, 0, 0, 
       key, 
       key + nloc * MAX_NBOR_SIZE);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
 }
 
 template<
@@ -470,13 +482,15 @@ void format_nbor_list_gpu_rocm(
   int * i_idx = array_int + sec.size() + nloc * sec.size();
   uint_64 * key = array_longlong;
   assert(max_nbor_size == 1024 || max_nbor_size == 2048 || max_nbor_size == 4096);
-  hipErrcheck(hipMemset(nlist, -1, sizeof(int) * nloc * nnei));
-  hipErrcheck(hipMemset(key, 0xffffffff, sizeof(uint_64) * nloc * max_nbor_size));
-  hipErrcheck(hipMemcpy(sec_dev, &sec[0], sizeof(int) * sec.size(), hipMemcpyHostToDevice));   
+  DPErrcheck(hipMemset(nlist, -1, sizeof(int) * nloc * nnei));
+  DPErrcheck(hipMemset(key, 0xffffffff, sizeof(uint_64) * nloc * max_nbor_size));
+  DPErrcheck(hipMemcpy(sec_dev, &sec[0], sizeof(int) * sec.size(), hipMemcpyHostToDevice));   
 
   hipLaunchKernelGGL(get_i_idx, nblock, LEN, 0, 0, 
       i_idx,
       nloc, gpu_inlist.ilist);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
 
   if (max_nbor_size == 1024) {
     format_nbor_list_1024 (
@@ -501,6 +515,8 @@ void format_nbor_list_gpu_rocm(
   hipLaunchKernelGGL(format_nlist_fill_b, dim3(nloc, (max_nbor_size + LEN - 1) / LEN), LEN, 0, 0, 
       nlist,
       nnei, nloc, key, sec_dev, sec.size(), nei_iter, max_nbor_size);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -525,9 +541,9 @@ void prod_env_mat_a_gpu_rocm(
 {
   const int nnei = sec.back();
   const int ndescrpt = nnei * 4;
-  hipErrcheck(hipMemset(em, 0.0, sizeof(FPTYPE) * nloc * ndescrpt));
-  hipErrcheck(hipMemset(em_deriv, 0.0, sizeof(FPTYPE) * nloc * ndescrpt * 3));
-  hipErrcheck(hipMemset(rij, 0.0, sizeof(FPTYPE) * nloc * nnei * 3));
+  DPErrcheck(hipMemset(em, 0.0, sizeof(FPTYPE) * nloc * ndescrpt));
+  DPErrcheck(hipMemset(em_deriv, 0.0, sizeof(FPTYPE) * nloc * ndescrpt * 3));
+  DPErrcheck(hipMemset(rij, 0.0, sizeof(FPTYPE) * nloc * nnei * 3));
 
   format_nbor_list_gpu_rocm(
       nlist, 
@@ -538,6 +554,8 @@ void prod_env_mat_a_gpu_rocm(
   hipLaunchKernelGGL(HIP_KERNEL_NAME(compute_env_mat_a<FPTYPE, TPB>), nloc, TPB, 0, 0, 
       em, em_deriv, rij, 
       coord, avg, std, type, nlist, nnei, rcut_smth, rcut);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -562,9 +580,9 @@ void prod_env_mat_r_gpu_rocm(
 {
   const int nnei = sec.back();
   const int ndescrpt = nnei * 1;
-  hipErrcheck(hipMemset(em, 0.0, sizeof(FPTYPE) * nloc * ndescrpt));
-  hipErrcheck(hipMemset(em_deriv, 0.0, sizeof(FPTYPE) * nloc * ndescrpt * 3));
-  hipErrcheck(hipMemset(rij, 0.0, sizeof(FPTYPE) * nloc * nnei * 3));
+  DPErrcheck(hipMemset(em, 0.0, sizeof(FPTYPE) * nloc * ndescrpt));
+  DPErrcheck(hipMemset(em_deriv, 0.0, sizeof(FPTYPE) * nloc * ndescrpt * 3));
+  DPErrcheck(hipMemset(rij, 0.0, sizeof(FPTYPE) * nloc * nnei * 3));
 
   format_nbor_list_gpu_rocm(
       nlist, 
@@ -575,6 +593,8 @@ void prod_env_mat_r_gpu_rocm(
   hipLaunchKernelGGL(HIP_KERNEL_NAME(compute_env_mat_r<FPTYPE, TPB>), nloc, TPB, 0, 0, 
       em, em_deriv, rij, 
       coord, avg, std, type, nlist, nnei, rcut_smth, rcut);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -591,6 +611,8 @@ void test_encoding_decoding_nbor_info_gpu_rocm(
   hipLaunchKernelGGL(encoding_decoding_nbor_info, nblock, TPB, 0, 0, 
       key, out_type, out_index,
       in_type, in_dist, in_index, size_of_array);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
 }
 
 template void prod_env_mat_a_gpu_rocm<float>(float * em, float * em_deriv, float * rij, int * nlist, const float * coord, const int * type, const InputNlist & gpu_inlist, int * array_int, unsigned long long * array_longlong, const int max_nbor_size, const float * avg, const float * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec);

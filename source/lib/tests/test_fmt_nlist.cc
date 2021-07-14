@@ -381,7 +381,7 @@ TEST_F(TestFormatNlist, gpu_cuda)
   deepmd::malloc_device_memory(array_int_dev, sec_a.size() + nloc * sec_a.size() + nloc);
   deepmd::malloc_device_memory(array_longlong_dev, nloc * GPU_MAX_NBOR_SIZE * 2);
   deepmd::malloc_device_memory(memory_dev, nloc * max_nbor_size);
-  deepmd::convert_nlist_gpu_cuda(gpu_inlist, in_nlist, memory_dev, max_nbor_size);
+  deepmd::convert_nlist_gpu_device(gpu_inlist, in_nlist, memory_dev, max_nbor_size);
   // format nlist
   format_nbor_list_gpu_cuda(
       nlist_dev, 
@@ -393,7 +393,7 @@ TEST_F(TestFormatNlist, gpu_cuda)
   deepmd::delete_device_memory(array_int_dev);
   deepmd::delete_device_memory(array_longlong_dev);
   deepmd::delete_device_memory(memory_dev);
-  deepmd::free_nlist_gpu_cuda(gpu_inlist);
+  deepmd::free_nlist_gpu_device(gpu_inlist);
   // validate
   for(int ii = 0; ii < nlist.size(); ++ii){
     EXPECT_EQ(nlist[ii], expect_nlist_cpy[ii]);
@@ -437,7 +437,7 @@ TEST_F(TestFormatNlistShortSel, gpu_cuda)
   deepmd::malloc_device_memory(array_int_dev, sec_a.size() + nloc * sec_a.size() + nloc);
   deepmd::malloc_device_memory(array_longlong_dev, nloc * GPU_MAX_NBOR_SIZE * 2);
   deepmd::malloc_device_memory(memory_dev, nloc * max_nbor_size);
-  deepmd::convert_nlist_gpu_cuda(gpu_inlist, in_nlist, memory_dev, max_nbor_size);
+  deepmd::convert_nlist_gpu_device(gpu_inlist, in_nlist, memory_dev, max_nbor_size);
   // format nlist
   format_nbor_list_gpu_cuda(
       nlist_dev, 
@@ -449,7 +449,7 @@ TEST_F(TestFormatNlistShortSel, gpu_cuda)
   deepmd::delete_device_memory(array_int_dev);
   deepmd::delete_device_memory(array_longlong_dev);
   deepmd::delete_device_memory(memory_dev);
-  deepmd::free_nlist_gpu_cuda(gpu_inlist);
+  deepmd::free_nlist_gpu_device(gpu_inlist);
   // validate
   for(int ii = 0; ii < nlist.size(); ++ii){
     EXPECT_EQ(nlist[ii], expect_nlist_cpy[ii]);
@@ -565,7 +565,7 @@ TEST_F(TestFormatNlist, gpu_rocm)
   deepmd::malloc_device_memory(array_int_dev, sec_a.size() + nloc * sec_a.size() + nloc);
   deepmd::malloc_device_memory(array_longlong_dev, nloc * GPU_MAX_NBOR_SIZE * 2);
   deepmd::malloc_device_memory(memory_dev, nloc * max_nbor_size);
-  deepmd::convert_nlist_gpu_rocm(gpu_inlist, in_nlist, memory_dev, max_nbor_size);
+  deepmd::convert_nlist_gpu_device(gpu_inlist, in_nlist, memory_dev, max_nbor_size);
   // format nlist
   format_nbor_list_gpu_rocm(
       nlist_dev, 
@@ -577,7 +577,7 @@ TEST_F(TestFormatNlist, gpu_rocm)
   deepmd::delete_device_memory(array_int_dev);
   deepmd::delete_device_memory(array_longlong_dev);
   deepmd::delete_device_memory(memory_dev);
-  deepmd::free_nlist_gpu_rocm(gpu_inlist);
+  deepmd::free_nlist_gpu_device(gpu_inlist);
   // validate
   for(int ii = 0; ii < nlist.size(); ++ii){
     EXPECT_EQ(nlist[ii], expect_nlist_cpy[ii]);
@@ -621,7 +621,7 @@ TEST_F(TestFormatNlistShortSel, gpu_rocm)
   deepmd::malloc_device_memory(array_int_dev, sec_a.size() + nloc * sec_a.size() + nloc);
   deepmd::malloc_device_memory(array_longlong_dev, nloc * GPU_MAX_NBOR_SIZE * 2);
   deepmd::malloc_device_memory(memory_dev, nloc * max_nbor_size);
-  deepmd::convert_nlist_gpu_rocm(gpu_inlist, in_nlist, memory_dev, max_nbor_size);
+  deepmd::convert_nlist_gpu_device(gpu_inlist, in_nlist, memory_dev, max_nbor_size);
   // format nlist
   format_nbor_list_gpu_rocm(
       nlist_dev, 
@@ -633,7 +633,7 @@ TEST_F(TestFormatNlistShortSel, gpu_rocm)
   deepmd::delete_device_memory(array_int_dev);
   deepmd::delete_device_memory(array_longlong_dev);
   deepmd::delete_device_memory(memory_dev);
-  deepmd::free_nlist_gpu_rocm(gpu_inlist);
+  deepmd::free_nlist_gpu_device(gpu_inlist);
   // validate
   for(int ii = 0; ii < nlist.size(); ++ii){
     EXPECT_EQ(nlist[ii], expect_nlist_cpy[ii]);

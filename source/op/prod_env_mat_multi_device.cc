@@ -995,7 +995,7 @@ _norm_copy_coord_gpu(
   FPTYPE_shape.AddDim(nall*3);
   context->allocate_temp(DataTypeToEnum<FPTYPE>::value, FPTYPE_shape, tensor_list);
   FPTYPE * tmp_coord = (*tensor_list).flat<FPTYPE>().data();
-  cudaErrcheck(cudaMemcpy(tmp_coord, coord, sizeof(FPTYPE) * nall * 3, cudaMemcpyDeviceToDevice));
+  DPErrcheck(cudaMemcpy(tmp_coord, coord, sizeof(FPTYPE) * nall * 3, cudaMemcpyDeviceToDevice));
   
   deepmd::Region<FPTYPE> region;
   init_region_cpu(region, box);
@@ -1210,7 +1210,7 @@ _norm_copy_coord_gpu_rocm(
   FPTYPE_shape.AddDim(nall*3);
   context->allocate_temp(DataTypeToEnum<FPTYPE>::value, FPTYPE_shape, tensor_list);
   FPTYPE * tmp_coord = (*tensor_list).flat<FPTYPE>().data();
-  hipErrcheck(hipMemcpy(tmp_coord, coord, sizeof(FPTYPE) * nall * 3, hipMemcpyDeviceToDevice));
+  DPErrcheck(hipMemcpy(tmp_coord, coord, sizeof(FPTYPE) * nall * 3, hipMemcpyDeviceToDevice));
   
   deepmd::Region<FPTYPE> region;
   init_region_cpu(region, box);

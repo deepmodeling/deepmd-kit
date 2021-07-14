@@ -115,10 +115,10 @@ void prod_virial_a_gpu_cuda(
     const int nall, 
     const int nnei)
 {
-  cudaErrcheck(cudaMemset(
+  DPErrcheck(cudaMemset(
       virial, 
       0.0, sizeof(FPTYPE) * 9));
-  cudaErrcheck(cudaMemset(
+  DPErrcheck(cudaMemset(
       atom_virial, 
       0.0, sizeof(FPTYPE) * 9 * nall));
     
@@ -130,10 +130,14 @@ void prod_virial_a_gpu_cuda(
   virial_deriv_wrt_neighbors_a<<<block_grid, thread_grid>>>(
       virial, atom_virial, 
       net_deriv, in_deriv, rij, nlist, nloc, nnei);
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   // reduction atom_virial to virial
   atom_virial_reduction<FPTYPE, TPB> <<<9, TPB>>>(
       virial, 
       atom_virial, nall);
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
 }
 
 template<typename FPTYPE>
@@ -148,10 +152,10 @@ void prod_virial_r_gpu_cuda(
     const int nall, 
     const int nnei)
 {
-  cudaErrcheck(cudaMemset(
+  DPErrcheck(cudaMemset(
       virial, 
       0.0, sizeof(FPTYPE) * 9));
-  cudaErrcheck(cudaMemset(
+  DPErrcheck(cudaMemset(
       atom_virial, 
       0.0, sizeof(FPTYPE) * 9 * nall));
     
@@ -163,10 +167,14 @@ void prod_virial_r_gpu_cuda(
   virial_deriv_wrt_neighbors_r<<<block_grid, thread_grid>>>(
       virial, atom_virial, 
       net_deriv, in_deriv, rij, nlist, nloc, nnei);
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   // reduction atom_virial to virial
   atom_virial_reduction<FPTYPE, TPB> <<<9, TPB>>>(
     virial, 
     atom_virial, nall);
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
 }
 
 template void prod_virial_a_gpu_cuda<float>(float * virial, float * atom_virial, const float * net_deriv, const float * in_deriv, const float * rij, const int * nlist, const int nloc, const int nall, const int nnei);
