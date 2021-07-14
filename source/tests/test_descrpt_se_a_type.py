@@ -16,7 +16,7 @@ GLOBAL_ENER_FLOAT_PRECISION = tf.float64
 GLOBAL_TF_FLOAT_PRECISION = tf.float64
 GLOBAL_NP_FLOAT_PRECISION = np.float64
 
-class TestModel(unittest.TestCase):
+class TestModel(tf.test.TestCase):
     def setUp(self) :
         gen_data()
 
@@ -110,7 +110,7 @@ class TestModel(unittest.TestCase):
                           t_mesh:          test_data['default_mesh'],
                           is_training:     False}
 
-        sess = tf.Session()
+        sess = self.test_session().__enter__()
         sess.run(tf.global_variables_initializer())
         [model_dout] = sess.run([dout], 
                              feed_dict = feed_dict_test)
@@ -219,7 +219,7 @@ class TestModel(unittest.TestCase):
                           t_mesh:          test_data['default_mesh'],
                           is_training:     False}
 
-        sess = tf.Session()
+        sess = self.test_session().__enter__()
         sess.run(tf.global_variables_initializer())
         [model_dout] = sess.run([dout], 
                              feed_dict = feed_dict_test)

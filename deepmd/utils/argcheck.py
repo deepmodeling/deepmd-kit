@@ -58,7 +58,9 @@ def descrpt_local_frame_args ():
 
 
 def descrpt_se_a_args():
-    doc_sel = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.'
+    doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
+    - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
     doc_rcut = 'The cut-off radius.'
     doc_rcut_smth = 'Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`'
     doc_neuron = 'Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.'
@@ -73,7 +75,7 @@ def descrpt_se_a_args():
     doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
     
     return [
-        Argument("sel", list, optional = False, doc = doc_sel),
+        Argument("sel", [list,str], optional = True, default = "auto", doc = doc_sel),
         Argument("rcut", float, optional = True, default = 6.0, doc = doc_rcut),
         Argument("rcut_smth", float, optional = True, default = 0.5, doc = doc_rcut_smth),
         Argument("neuron", list, optional = True, default = [10,20,40], doc = doc_neuron),
@@ -90,7 +92,9 @@ def descrpt_se_a_args():
 
 
 def descrpt_se_t_args():
-    doc_sel = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.'
+    doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
+    - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
     doc_rcut = 'The cut-off radius.'
     doc_rcut_smth = 'Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`'
     doc_neuron = 'Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.'
@@ -102,7 +106,7 @@ def descrpt_se_t_args():
     doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
     
     return [
-        Argument("sel", list, optional = False, doc = doc_sel),
+        Argument("sel", [list,str], optional = True, default = "auto", doc = doc_sel),
         Argument("rcut", float, optional = True, default = 6.0, doc = doc_rcut),
         Argument("rcut_smth", float, optional = True, default = 0.5, doc = doc_rcut_smth),
         Argument("neuron", list, optional = True, default = [10,20,40], doc = doc_neuron),
@@ -129,7 +133,9 @@ def descrpt_se_a_tpe_args():
 
 
 def descrpt_se_r_args():
-    doc_sel = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.'
+    doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
+    - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
     doc_rcut = 'The cut-off radius.'
     doc_rcut_smth = 'Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`'
     doc_neuron = 'Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.'
@@ -143,7 +149,7 @@ def descrpt_se_r_args():
     doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
     
     return [
-        Argument("sel", list, optional = False, doc = doc_sel),
+        Argument("sel", [list,str], optional = True, default = "auto", doc = doc_sel),
         Argument("rcut", float, optional = True, default = 6.0, doc = doc_rcut),
         Argument("rcut_smth", float, optional = True, default = 0.5, doc = doc_rcut_smth),
         Argument("neuron", list, optional = True, default = [10,20,40], doc = doc_neuron),

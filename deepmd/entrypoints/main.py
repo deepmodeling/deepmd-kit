@@ -11,7 +11,7 @@ from deepmd.entrypoints import (
     doc_train_input,
     freeze,
     test,
-    train,
+    train_dp,
     transfer,
     make_model_devi,
     convert,
@@ -416,7 +416,7 @@ def main():
     dict_args = vars(args)
 
     if args.command == "train":
-        train(**dict_args)
+        train_dp(**dict_args)
     elif args.command == "freeze":
         freeze(**dict_args)
     elif args.command == "config":

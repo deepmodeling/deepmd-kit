@@ -23,8 +23,9 @@ from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 class Inter():
     def setUp (self, 
                data, 
-               pbc = True) :
-        self.sess = tf.Session()
+               pbc = True,
+               sess = None) :
+        self.sess = sess
         self.data = data
         self.natoms = self.data.get_natoms()
         self.ntypes = self.data.get_ntypes()
@@ -136,17 +137,17 @@ class Inter():
 
 
 
-class TestSmooth(Inter, unittest.TestCase):
+class TestSmooth(Inter, tf.test.TestCase):
     # def __init__ (self, *args, **kwargs):
     #     data = Data()
     #     Inter.__init__(self, data)
-    #     unittest.TestCase.__init__(self, *args, **kwargs)
+    #     tf.test.TestCase.__init__(self, *args, **kwargs)
     #     self.controller = object()
 
     def setUp(self):
         self.places = 5
         data = Data()
-        Inter.setUp(self, data)
+        Inter.setUp(self, data, sess=self.test_session().__enter__())
 
     def test_force (self) :
         force_test(self, self, suffix = '_se_r')
@@ -161,13 +162,13 @@ class TestSmooth(Inter, unittest.TestCase):
         virial_dw_test(self, self, suffix = '_se_r')
 
 
-class TestSeRPbc(unittest.TestCase):
+class TestSeRPbc(tf.test.TestCase):
     def test_pbc(self):
         data = Data()
         inter0 = Inter()
         inter1 = Inter()
-        inter0.setUp(data, pbc = True)
-        inter1.setUp(data, pbc = False)
+        inter0.setUp(data, pbc = True, sess=self.test_session().__enter__())
+        inter1.setUp(data, pbc = False, sess=self.test_session().__enter__())
         inter0.net_w_i = np.copy(np.ones(inter0.ndescrpt))
         inter1.net_w_i = np.copy(np.ones(inter1.ndescrpt))
 
@@ -208,8 +209,8 @@ class TestSeRPbc(unittest.TestCase):
         data1 = Data(box_scale = 2)
         inter0 = Inter()
         inter1 = Inter()
-        inter0.setUp(data0, pbc = True)
-        inter1.setUp(data1, pbc = False)
+        inter0.setUp(data0, pbc = True, sess=self.test_session().__enter__())
+        inter1.setUp(data1, pbc = False, sess=self.test_session().__enter__())
         inter0.net_w_i = np.copy(np.ones(inter0.ndescrpt))
         inter1.net_w_i = np.copy(np.ones(inter1.ndescrpt))
 

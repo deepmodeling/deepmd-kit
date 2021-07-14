@@ -29,7 +29,7 @@ else :
 modifier_datapath = 'data_modifier'
 
 
-class TestDataModifier (unittest.TestCase) :
+class TestDataModifier (tf.test.TestCase) :
 
     def setUp(self):
         # with tf.variable_scope('load', reuse = False) :
@@ -78,7 +78,7 @@ class TestDataModifier (unittest.TestCase) :
         model.build (data)
         
         # freeze the graph
-        with tf.Session() as sess:
+        with self.test_session() as sess:
             init_op = tf.global_variables_initializer()
             sess.run(init_op)
             graph = tf.get_default_graph()

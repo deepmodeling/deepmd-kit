@@ -6,7 +6,8 @@ from typing import Optional
 
 from deepmd.common import j_loader
 from deepmd.utils.argcheck import normalize
-from deepmd.utils.compat import convert_input_v0_v1
+from deepmd.utils.compat import updata_deepmd_input
+from deepmd.utils.errors import GraphTooLargeError
 
 from .freeze import freeze
 from .train import train
@@ -64,7 +65,7 @@ def compress(
     """
     jdata = j_loader(INPUT)
     if "model" not in jdata.keys():
-        jdata = convert_input_v0_v1(jdata, warning=True, dump="input_v1_compat.json")
+        jdata = updata_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
     jdata["model"]["compress"] = {}
     jdata["model"]["compress"]["type"] = 'se_e2_a'
     jdata["model"]["compress"]["compress"] = True
@@ -78,7 +79,6 @@ def compress(
     # be careful here, if one want to refine the model
     jdata["training"]["numb_steps"] = jdata["training"]["save_freq"]
     jdata = normalize(jdata)
-
 
     # check the descriptor info of the input file
     assert (
@@ -94,15 +94,23 @@ def compress(
     control_file = "compress.json"
     with open(control_file, "w") as fp:
         json.dump(jdata, fp, indent=4)
-    train(
-        INPUT=control_file,
-        init_model=None,
-        restart=None,
-        output=control_file,
-        mpi_log=mpi_log,
-        log_level=log_level,
-        log_path=log_path,
-    )
+    try:
+        train(
+            INPUT=control_file,
+            init_model=None,
+            restart=None,
+            output=control_file,
+            mpi_log=mpi_log,
+            log_level=log_level,
+            log_path=log_path,
+        )
+    except GraphTooLargeError as e:
+        raise RuntimeError(
+            "The uniform step size of the tabulation's first table is %f, " 
+            "which is too small. This leads to a very large graph size, "
+            "exceeding protobuf's limitation (2 GB). You should try to "
+            "increase the step size." % step
+        ) from e
 
     # stage 2: freeze the model
     log.info("\n\n")
