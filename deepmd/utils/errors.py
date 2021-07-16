@@ -1,0 +1,2 @@
+class GraphTooLargeError(Exception):
+    pass

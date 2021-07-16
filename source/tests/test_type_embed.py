@@ -3,7 +3,7 @@ import numpy as np
 from deepmd.env import tf
 from deepmd.utils.type_embed import embed_atom_type, TypeEmbedNet
 
-class TestTypeEbd(unittest.TestCase):
+class TestTypeEbd(tf.test.TestCase):
     def test_embed_atom_type(self):
         ntypes = 3
         natoms = tf.constant([5, 5, 3, 0, 2])
@@ -19,7 +19,7 @@ class TestTypeEbd(unittest.TestCase):
                         [7,7,7],
                         [7,7,7]]            
         atom_embed = embed_atom_type(ntypes, natoms, type_embedding)
-        sess = tf.Session()
+        sess = self.test_session().__enter__()
         atom_embed = sess.run(atom_embed)
         for ii in range(5):
             for jj in range(3):                
@@ -29,7 +29,7 @@ class TestTypeEbd(unittest.TestCase):
     def test_type_embed_net(self):
         ten = TypeEmbedNet([2, 4, 8], seed = 1, uniform_seed = True)
         type_embedding = ten.build(2)
-        sess = tf.Session()
+        sess = self.test_session().__enter__()
         sess.run(tf.global_variables_initializer())
         type_embedding = sess.run(type_embedding)
 

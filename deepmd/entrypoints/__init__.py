@@ -5,7 +5,9 @@ from .config import config
 from .doc import doc_train_input
 from .freeze import freeze
 from .test import test
-from .train import train
+# import `train` as `train_dp` to avoid the conflict of the
+# module name `train` and the function name `train`
+from .train import train as train_dp
 from .transfer import transfer
 from ..infer.model_devi import make_model_devi
 from .convert import convert

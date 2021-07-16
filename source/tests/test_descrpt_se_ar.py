@@ -22,8 +22,9 @@ from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 
 class Inter():
     def setUp (self, 
-               data) :
-        self.sess = tf.Session()
+               data,
+               sess = None) :
+        self.sess = sess
         self.data = data
         self.natoms = self.data.get_natoms()
         self.ntypes = self.data.get_ntypes()
@@ -94,17 +95,17 @@ class Inter():
         return energy, force, virial
 
 
-class TestDescrptAR(Inter, unittest.TestCase):
+class TestDescrptAR(Inter, tf.test.TestCase):
     # def __init__ (self, *args, **kwargs):
     #     data = Data()
     #     Inter.__init__(self, data)
-    #     unittest.TestCase.__init__(self, *args, **kwargs)
+    #     tf.test.TestCase.__init__(self, *args, **kwargs)
     #     self.controller = object()
 
     def setUp(self):
         self.places = 5
         data = Data()
-        Inter.setUp(self, data)
+        Inter.setUp(self, data, sess=self.test_session().__enter__())
 
     def test_force (self) :
         force_test(self, self, suffix = '_se_ar')

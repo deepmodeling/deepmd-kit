@@ -9,9 +9,9 @@ from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 
-class TestProdForce(unittest.TestCase):
+class TestProdForce(tf.test.TestCase):
     def setUp(self):
-        self.sess = tf.Session()
+        self.sess = self.test_session().__enter__()
         self.nframes = 2
         self.dcoord = [
             12.83, 2.56, 2.18,

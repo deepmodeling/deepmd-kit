@@ -221,10 +221,14 @@ model:
         .. _`model/descriptor[se_e2_a]/sel`: 
 
         sel: 
-            | type: ``list``
+            | type: ``list`` | ``str``, optional, default: ``auto``
             | argument path: ``model/descriptor[se_e2_a]/sel``
 
-            A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.
+            This parameter set the number of selected neighbors for each type of atom. It can be:
+
+                - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.
+
+                - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".
 
         .. _`model/descriptor[se_e2_a]/rcut`: 
 
@@ -330,10 +334,14 @@ model:
         .. _`model/descriptor[se_e2_r]/sel`: 
 
         sel: 
-            | type: ``list``
+            | type: ``list`` | ``str``, optional, default: ``auto``
             | argument path: ``model/descriptor[se_e2_r]/sel``
 
-            A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.
+            This parameter set the number of selected neighbors for each type of atom. It can be:
+
+                - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.
+
+                - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".
 
         .. _`model/descriptor[se_e2_r]/rcut`: 
 
@@ -431,10 +439,14 @@ model:
         .. _`model/descriptor[se_e3]/sel`: 
 
         sel: 
-            | type: ``list``
+            | type: ``list`` | ``str``, optional, default: ``auto``
             | argument path: ``model/descriptor[se_e3]/sel``
 
-            A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.
+            This parameter set the number of selected neighbors for each type of atom. It can be:
+
+                - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.
+
+                - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".
 
         .. _`model/descriptor[se_e3]/rcut`: 
 
@@ -516,10 +528,14 @@ model:
         .. _`model/descriptor[se_a_tpe]/sel`: 
 
         sel: 
-            | type: ``list``
+            | type: ``list`` | ``str``, optional, default: ``auto``
             | argument path: ``model/descriptor[se_a_tpe]/sel``
 
-            A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.
+            This parameter set the number of selected neighbors for each type of atom. It can be:
+
+                - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.
+
+                - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".
 
         .. _`model/descriptor[se_a_tpe]/rcut`: 
 
@@ -748,7 +764,7 @@ model:
         .. _`model/fitting_net[ener]/trainable`: 
 
         trainable: 
-            | type: ``bool`` | ``list``, optional, default: ``True``
+            | type: ``list`` | ``bool``, optional, default: ``True``
             | argument path: ``model/fitting_net[ener]/trainable``
 
             Whether the parameters in the fitting net are trainable. This option can be
@@ -821,7 +837,7 @@ model:
         .. _`model/fitting_net[dipole]/sel_type`: 
 
         sel_type: 
-            | type: ``int`` | ``NoneType`` | ``list``, optional
+            | type: ``list`` | ``int`` | ``NoneType``, optional
             | argument path: ``model/fitting_net[dipole]/sel_type``
 
             The atom types for which the atomic dipole will be provided. If not set, all types will be selected.
@@ -882,7 +898,7 @@ model:
         .. _`model/fitting_net[polar]/scale`: 
 
         scale: 
-            | type: ``float`` | ``list``, optional, default: ``1.0``
+            | type: ``list`` | ``float``, optional, default: ``1.0``
             | argument path: ``model/fitting_net[polar]/scale``
 
             The output of the fitting net (polarizability matrix) will be scaled by ``scale``
@@ -898,7 +914,7 @@ model:
         .. _`model/fitting_net[polar]/sel_type`: 
 
         sel_type: 
-            | type: ``int`` | ``NoneType`` | ``list``, optional
+            | type: ``list`` | ``int`` | ``NoneType``, optional
             | argument path: ``model/fitting_net[polar]/sel_type``
 
             The atom types for which the atomic polarizability will be provided. If not set, all types will be selected.
@@ -1078,7 +1094,7 @@ loss:
     .. _`loss[ener]/start_pref_e`: 
 
     start_pref_e: 
-        | type: ``float`` | ``int``, optional, default: ``0.02``
+        | type: ``int`` | ``float``, optional, default: ``0.02``
         | argument path: ``loss[ener]/start_pref_e``
 
         The prefactor of energy loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the energy label should be provided by file energy.npy in each data system. If both start_pref_energy and limit_pref_energy are set to 0, then the energy will be ignored.
@@ -1086,7 +1102,7 @@ loss:
     .. _`loss[ener]/limit_pref_e`: 
 
     limit_pref_e: 
-        | type: ``float`` | ``int``, optional, default: ``1.0``
+        | type: ``int`` | ``float``, optional, default: ``1.0``
         | argument path: ``loss[ener]/limit_pref_e``
 
         The prefactor of energy loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity.
@@ -1094,7 +1110,7 @@ loss:
     .. _`loss[ener]/start_pref_f`: 
 
     start_pref_f: 
-        | type: ``float`` | ``int``, optional, default: ``1000``
+        | type: ``int`` | ``float``, optional, default: ``1000``
         | argument path: ``loss[ener]/start_pref_f``
 
         The prefactor of force loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the force label should be provided by file force.npy in each data system. If both start_pref_force and limit_pref_force are set to 0, then the force will be ignored.
@@ -1102,7 +1118,7 @@ loss:
     .. _`loss[ener]/limit_pref_f`: 
 
     limit_pref_f: 
-        | type: ``float`` | ``int``, optional, default: ``1.0``
+        | type: ``int`` | ``float``, optional, default: ``1.0``
         | argument path: ``loss[ener]/limit_pref_f``
 
         The prefactor of force loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity.
@@ -1110,7 +1126,7 @@ loss:
     .. _`loss[ener]/start_pref_v`: 
 
     start_pref_v: 
-        | type: ``float`` | ``int``, optional, default: ``0.0``
+        | type: ``int`` | ``float``, optional, default: ``0.0``
         | argument path: ``loss[ener]/start_pref_v``
 
         The prefactor of virial loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the virial label should be provided by file virial.npy in each data system. If both start_pref_virial and limit_pref_virial are set to 0, then the virial will be ignored.
@@ -1118,7 +1134,7 @@ loss:
     .. _`loss[ener]/limit_pref_v`: 
 
     limit_pref_v: 
-        | type: ``float`` | ``int``, optional, default: ``0.0``
+        | type: ``int`` | ``float``, optional, default: ``0.0``
         | argument path: ``loss[ener]/limit_pref_v``
 
         The prefactor of virial loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity.
@@ -1126,7 +1142,7 @@ loss:
     .. _`loss[ener]/start_pref_ae`: 
 
     start_pref_ae: 
-        | type: ``float`` | ``int``, optional, default: ``0.0``
+        | type: ``int`` | ``float``, optional, default: ``0.0``
         | argument path: ``loss[ener]/start_pref_ae``
 
         The prefactor of atom_ener loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the atom_ener label should be provided by file atom_ener.npy in each data system. If both start_pref_atom_ener and limit_pref_atom_ener are set to 0, then the atom_ener will be ignored.
@@ -1134,7 +1150,7 @@ loss:
     .. _`loss[ener]/limit_pref_ae`: 
 
     limit_pref_ae: 
-        | type: ``float`` | ``int``, optional, default: ``0.0``
+        | type: ``int`` | ``float``, optional, default: ``0.0``
         | argument path: ``loss[ener]/limit_pref_ae``
 
         The prefactor of atom_ener loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity.
@@ -1155,7 +1171,7 @@ loss:
     .. _`loss[tensor]/pref`: 
 
     pref: 
-        | type: ``float`` | ``int``
+        | type: ``int`` | ``float``
         | argument path: ``loss[tensor]/pref``
 
         The prefactor of the weight of global loss. It should be larger than or equal to 0. If controls the weight of loss corresponding to global label, i.e. 'polarizability.npy` or `dipole.npy`, whose shape should be #frames x [9 or 3]. If it's larger than 0.0, this npy should be included.
@@ -1163,7 +1179,7 @@ loss:
     .. _`loss[tensor]/pref_atomic`: 
 
     pref_atomic: 
-        | type: ``float`` | ``int``
+        | type: ``int`` | ``float``
         | argument path: ``loss[tensor]/pref_atomic``
 
         The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If controls the weight of loss corresponding to atomic label, i.e. `atomic_polarizability.npy` or `atomic_dipole.npy`, whose shape should be #frames x ([9 or 3] x #selected atoms). If it's larger than 0.0, this npy should be included. Both `pref` and `pref_atomic` should be provided, and either can be set to 0.0.
@@ -1260,7 +1276,7 @@ training:
         .. _`training/training_data/batch_size`: 
 
         batch_size: 
-            | type: ``int`` | ``list`` | ``str``, optional, default: ``auto``
+            | type: ``list`` | ``str`` | ``int``, optional, default: ``auto``
             | argument path: ``training/training_data/batch_size``
 
             This key can be 
@@ -1290,7 +1306,7 @@ training:
         .. _`training/training_data/sys_probs`: 
 
         sys_probs: 
-            | type: ``NoneType`` | ``list``, optional, default: ``None``, alias: *sys_weights*
+            | type: ``list`` | ``NoneType``, optional, default: ``None``, alias: *sys_weights*
             | argument path: ``training/training_data/sys_probs``
 
             A list of float if specified. Should be of the same length as `systems`, specifying the probability of each system.
@@ -1298,7 +1314,7 @@ training:
     .. _`training/validation_data`: 
 
     validation_data: 
-        | type: ``NoneType`` | ``dict``, optional, default: ``None``
+        | type: ``dict`` | ``NoneType``, optional, default: ``None``
         | argument path: ``training/validation_data``
 
         Configurations of validation data. Similar to that of training data, except that a `numb_btch` argument may be configured
@@ -1322,7 +1338,7 @@ training:
         .. _`training/validation_data/batch_size`: 
 
         batch_size: 
-            | type: ``int`` | ``list`` | ``str``, optional, default: ``auto``
+            | type: ``list`` | ``str`` | ``int``, optional, default: ``auto``
             | argument path: ``training/validation_data/batch_size``
 
             This key can be 
@@ -1352,7 +1368,7 @@ training:
         .. _`training/validation_data/sys_probs`: 
 
         sys_probs: 
-            | type: ``NoneType`` | ``list``, optional, default: ``None``, alias: *sys_weights*
+            | type: ``list`` | ``NoneType``, optional, default: ``None``, alias: *sys_weights*
             | argument path: ``training/validation_data/sys_probs``
 
             A list of float if specified. Should be of the same length as `systems`, specifying the probability of each system.
@@ -1400,7 +1416,7 @@ training:
     .. _`training/numb_test`: 
 
     numb_test: 
-        | type: ``int`` | ``list`` | ``str``, optional, default: ``1``
+        | type: ``list`` | ``str`` | ``int``, optional, default: ``1``
         | argument path: ``training/numb_test``
 
         Number of frames used for the test during training.
