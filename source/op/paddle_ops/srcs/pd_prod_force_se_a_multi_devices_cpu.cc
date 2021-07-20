@@ -10,6 +10,7 @@
 
 
 
+#ifdef PADDLE_WITH_CUDA
 std::vector<paddle::Tensor> PdProdForceSeAOpCUDAForward(
 const paddle::Tensor& net_deriv_tensor,
 const paddle::Tensor& in_deriv_tensor,
@@ -17,6 +18,7 @@ const paddle::Tensor& nlist_tensor,
 const paddle::Tensor& natoms_tensor,
 int n_a_sel, 
 int n_r_sel);
+#endif
 
 template <typename data_t>
 void PdProdForceSeAOpForwardCPUKernel(
@@ -199,8 +201,10 @@ int n_a_sel,
 int n_r_sel){
     if(net_deriv_tensor.place() == paddle::PlaceType::kCPU){
         return PdProdForceSeAOpCPUForward(net_deriv_tensor, in_deriv_tensor, nlist_tensor, natoms_tensor, n_a_sel, n_r_sel);
+#ifdef PADDLE_WITH_CUDA
     }else if(net_deriv_tensor.place() == paddle::PlaceType::kGPU){
         return PdProdForceSeAOpCUDAForward(net_deriv_tensor, in_deriv_tensor, nlist_tensor, natoms_tensor, n_a_sel, n_r_sel);
+#endif
     }else{
         PD_THROW("No Such kernel for PdFrodForceSeAForward!");
     }

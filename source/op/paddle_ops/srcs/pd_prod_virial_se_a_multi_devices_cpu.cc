@@ -9,7 +9,7 @@
 #define CHECK_INPUT_DIM(x, value) PD_CHECK(x.shape().size() == value, #x "'s dim should be " #value ".")
 
 
-
+#ifdef PADDLE_WITH_CUDA
 std::vector<paddle::Tensor> PdProdVirialSeAOpCUDAForward(
 const paddle::Tensor& net_deriv_tensor,
 const paddle::Tensor& in_deriv_tensor,
@@ -18,6 +18,7 @@ const paddle::Tensor& nlist_tensor,
 const paddle::Tensor& natoms_tensor,
 int n_a_sel, 
 int n_r_sel);
+#endif
 
 template <typename data_t>
 void PdProdVirialSeAOpForwardCPUKernel(

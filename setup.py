@@ -101,7 +101,7 @@ setup(
         f"-DTENSORFLOW_ROOT:STRING={tf_install_dir}",
         "-DBUILD_PY_IF:BOOL=TRUE",
         "-DBUILD_CPP_IF:BOOL=FALSE",
-        "-DFLOAT_PREC:STRING=high",
+        "-DFLOAT_PREC:STRING=low",
     ],
     cmake_source_dir="source",
     cmake_minimum_required_version="3.0",

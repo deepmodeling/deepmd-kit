@@ -72,6 +72,7 @@ _prepare_coord_nlist_cpu(
     const int &max_cpy_trial,
     const int &max_nnei_trial);
 
+#ifdef PADDLE_WITH_CUDA
 std::vector<paddle::Tensor> PdProdEnvMatAOpCUDAForward(
     const paddle::Tensor &coord_tensor,
     const paddle::Tensor &type_tensor,
@@ -85,6 +86,7 @@ std::vector<paddle::Tensor> PdProdEnvMatAOpCUDAForward(
     float rcut_r_smth,
     std::vector<int> sel_a,
     std::vector<int> sel_r);
+#endif
 
 template <typename data_t>
 void PdProdEnvMatAOpCPUForwardKernel(
@@ -295,6 +297,7 @@ std::vector<paddle::Tensor> PdProdEnvMatAOpForward(
       sel_a,
       sel_r
     );
+#ifdef PADDLE_WITH_CUDA
   } else if (coord_tensor.place() == paddle::PlaceType::kGPU) {
     return PdProdEnvMatAOpCUDAForward(
       coord_tensor, 
@@ -310,6 +313,7 @@ std::vector<paddle::Tensor> PdProdEnvMatAOpForward(
       sel_a,
       sel_r
     );
+#endif
   } else {
     PD_THROW("Not implemented.");
   }
