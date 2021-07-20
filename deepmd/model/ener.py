@@ -144,6 +144,7 @@ class EnerModel() :
         atype = tf.reshape (atype_, [-1, natoms[1]])
 
         # type embedding if any
+        
         if self.typeebd is not None:
             type_embedding = self.typeebd.build(
                 self.ntypes,

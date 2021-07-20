@@ -7,7 +7,7 @@ typedef double boxtensor_t ;
 typedef double compute_t;
 
 REGISTER_OP("Descrpt")
-.Attr("T: {float, double} = DT_DOUBLE")
+.Attr("T: {float, double}")
 .Input("coord: T")
 .Input("type: int32")
 .Input("natoms: int32")

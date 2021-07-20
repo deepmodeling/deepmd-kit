@@ -2,7 +2,7 @@
 #include "prod_virial_grad.h"
 
 REGISTER_OP("ProdVirialSeAGrad")
-.Attr("T: {float, double} = DT_DOUBLE")
+.Attr("T: {float, double}")
 .Input("grad: T")
 .Input("net_deriv: T")
 .Input("in_deriv: T")

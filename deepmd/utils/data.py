@@ -58,8 +58,9 @@ class DeepmdData() :
         if type_map is not None and self.type_map is not None:
             atom_type_ = [type_map.index(self.type_map[ii]) for ii in self.atom_type] # change the atom type from self.atom_type to global scale atom type
             self.atom_type = np.array(atom_type_, dtype = np.int32)
-            ntypes = len(type_map)
-            self.type_map = type_map
+            ntypes = len(self.type_map)
+            self.type_map = type_map[:ntypes]
+            
         # make idx map
         self.idx_map = self._make_idx_map(self.atom_type)
         # train dirs

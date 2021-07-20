@@ -167,10 +167,11 @@ def train(
     """
     # load json database
     jdata = j_loader(INPUT)
-
-    jdata = updata_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
-
-    jdata = normalize(jdata,['battery','AlCuMg','HfO2','water'])
+    sys_name = 'HfO2'
+    jdata = updata_deepmd_input(jdata, sys_name,warning=True, dump="input_v2_compat.json")
+    print(jdata)
+    
+    jdata = normalize(jdata,[sys_name])
     with open(output, "w") as fp:
         json.dump(jdata, fp, indent=4)
 

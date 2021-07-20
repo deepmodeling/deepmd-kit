@@ -1,0 +1,65 @@
+{
+    "with_distrib":	false,
+    "_comment": " model parameters",
+    "model":{
+	"type_map":		["O", "H"],
+	"descriptor" :{
+	    "type":		"se_e2_a",
+	    "sel":		[46, 92],
+	    "rcut_smth":	3.80,
+	    "rcut":		4.00,
+	    "neuron":		[25, 50, 100],
+	    "resnet_dt":	false,
+	    "axis_neuron":	6,
+	    "seed":		1
+	},
+	"fitting_net": {
+	    "type":		"dipole",
+	    "sel_type":		[0],
+	    "neuron":		[100, 100, 100],
+	    "resnet_dt":	true,
+	    "seed":		1
+	},
+	"_comment":	" that's all"
+    },
+    
+    "learning_rate" :{
+	"type":		"exp",
+	"start_lr":	0.01,
+	"stop_lr":	1e-8,
+	"decay_steps":	5000,
+	"_comment":	"that's all"
+    },
+
+	"loss": {
+		"type":"tensor",
+		"pref":1.0,
+		"pref_atomic":1.0,
+		"_comment": " that's all"
+	},
+
+    "_comment": " traing controls",
+    "training": {
+	"systems":	["data_modifier/sys_10"], 
+	"set_prefix":	"set",    
+	"stop_batch":	1000000,
+	"batch_size":	4,
+
+	"seed":		1,
+
+	"_comment": " display and restart",
+	"_comment": " frequencies counted in batch",
+	"disp_file":	"lcurve.out",
+	"disp_freq":	100,
+	"numb_test":	5,
+	"save_freq":	500,
+	"save_ckpt":	"model.ckpt",
+	"load_ckpt":	"model.ckpt",
+	"disp_training":true,
+	"time_training":true,
+	"_comment":	"that's all"
+    },
+
+    "_comment":		"that's all"
+}
+

@@ -77,7 +77,8 @@ def compress(
     ]
     # be careful here, if one want to refine the model
     jdata["training"]["numb_steps"] = jdata["training"]["save_freq"]
-    jdata = normalize(jdata)
+    sys_name = 'HfO2'
+    jdata = normalize(jdata,[sys_name])
 
 
     # check the descriptor info of the input file

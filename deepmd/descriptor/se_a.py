@@ -333,11 +333,13 @@ class DescrptSeA ():
                                          davg.shape, 
                                          dtype = GLOBAL_TF_FLOAT_PRECISION,
                                          trainable = False,
+                                         
                                          initializer = tf.constant_initializer(davg))
             self.t_std = tf.get_variable('t_std', 
                                          dstd.shape, 
                                          dtype = GLOBAL_TF_FLOAT_PRECISION,
                                          trainable = False,
+                                         
                                          initializer = tf.constant_initializer(dstd))
 
         coord = tf.reshape (coord_, [-1, natoms[1] * 3])

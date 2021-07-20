@@ -2,7 +2,7 @@
 #include "soft_min_switch_virial.h"
 
 REGISTER_OP("SoftMinVirial")
-.Attr("T: {float, double} = DT_DOUBLE")
+.Attr("T: {float, double}")
 .Input("du: T")
 .Input("sw_deriv: T")
 .Input("rij: T")

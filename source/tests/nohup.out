@@ -1,0 +1,136 @@
+2021-07-18 20:36:45.084087: W tensorflow/stream_executor/platform/default/dso_loader.cc:59] Could not load dynamic library 'libcudart.so.10.1'; dlerror: libcudart.so.10.1: cannot open shared object file: No such file or directory; LD_LIBRARY_PATH: /usr/local/cuda-11.0/lib64:
+2021-07-18 20:36:45.084151: I tensorflow/stream_executor/cuda/cudart_stub.cc:29] Ignore above cudart dlerror if you do not have a GPU set up on your machine.
+WARNING:tensorflow:From /root/anaconda3/lib/python3.8/site-packages/tensorflow/python/compat/v2_compat.py:96: disable_resource_variables (from tensorflow.python.ops.variable_scope) is deprecated and will be removed in a future version.
+Instructions for updating:
+non-resource variables are not supported in the long term
+...........usage: python -m unittest [-h]
+                          {config,transfer,train,freeze,test,compress,doc-train-input}
+                          ...
+python -m unittest: error: argument command: invalid choice: 'RANDOM_WRONG_COMMAND' (choose from 'config', 'transfer', 'train', 'freeze', 'test', 'compress', 'doc-train-input')
+..................WARNING:tensorflow:From /root/deepmd-my-newarg/source/tests/infer/convert2pb.py:8: FastGFile.__init__ (from tensorflow.python.platform.gfile) is deprecated and will be removed in a future version.
+Instructions for updating:
+Use tf.gfile.GFile.
+2021-07-18 20:36:47.045698: I tensorflow/core/platform/cpu_feature_guard.cc:142] This TensorFlow binary is optimized with oneAPI Deep Neural Network Library (oneDNN)to use the following CPU instructions in performance-critical operations:  AVX2 AVX512F FMA
+To enable them in other operations, rebuild TensorFlow with the appropriate compiler flags.
+2021-07-18 20:36:47.054662: I tensorflow/core/platform/profile_utils/cpu_utils.cc:104] CPU Frequency: 2500000000 Hz
+2021-07-18 20:36:47.055600: I tensorflow/compiler/xla/service/service.cc:168] XLA service 0x561874891130 initialized for platform Host (this does not guarantee that XLA will be used). Devices:
+2021-07-18 20:36:47.055650: I tensorflow/compiler/xla/service/service.cc:176]   StreamExecutor device (0): Host, Default Version
+2021-07-18 20:36:47.059472: I tensorflow/stream_executor/platform/default/dso_loader.cc:48] Successfully opened dynamic library libcuda.so.1
+2021-07-18 20:36:47.068888: E tensorflow/stream_executor/cuda/cuda_driver.cc:314] failed call to cuInit: CUDA_ERROR_NO_DEVICE: no CUDA-capable device is detected
+2021-07-18 20:36:47.068931: I tensorflow/stream_executor/cuda/cuda_diagnostics.cc:156] kernel driver does not appear to be running on this host (iZ8vbg13sz8l8pupj8b8opZ): /proc/driver/nvidia/version does not exist
+................................................./root/anaconda3/lib/python3.8/site-packages/tensorflow/python/ops/variable_scope.py:454: DeprecationWarning: Using or importing the ABCs from 'collections' instead of from 'collections.abc' is deprecated since Python 3.3, and in 3.9 it will stop working
+  shape is not None and isinstance(shape, collections_lib.Sequence) and
+......FF.................................................WARNING:tensorflow:From /root/anaconda3/lib/python3.8/site-packages/deepmd/model/ener.py:134: calling Constant.__init__ (from tensorflow.python.ops.init_ops) with dtype is deprecated and will be removed in a future version.
+Instructions for updating:
+Call initializer instance with the dtype argument instead of passing it to the constructor
+.F../root/anaconda3/lib/python3.8/site-packages/deepmd/fit/polar.py:215: UserWarning: no polarizability data, cannot do data stat. use zeros as guess
+  warnings.warn('no polarizability data, cannot do data stat. use zeros as guess')
+..................
+======================================================================
+FAIL: test_descriptor_one_side (test_descrpt_se_a_type.TestModel)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/root/deepmd-my-newarg/source/tests/test_descrpt_se_a_type.py", line 236, in test_descriptor_one_side
+    self.assertAlmostEqual(model_dout[ii], ref_dout[ii], places = places)
+AssertionError: 0.0006974593909108279 != 0.0009704469114440277 within 10 places (0.0002729875205331998 difference)
+
+======================================================================
+FAIL: test_descriptor_two_sides (test_descrpt_se_a_type.TestModel)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/root/deepmd-my-newarg/source/tests/test_descrpt_se_a_type.py", line 127, in test_descriptor_two_sides
+    self.assertAlmostEqual(model_dout[ii], ref_dout[ii], places = places)
+AssertionError: 0.001151364108339989 != 0.0005722682145569174 within 10 places (0.0005790958937830717 difference)
+
+======================================================================
+FAIL: test_model (test_model_se_a_type.TestModel)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/root/deepmd-my-newarg/source/tests/test_model_se_a_type.py", line 129, in test_model
+    self.assertAlmostEqual(e[ii], refe[ii], places = places)
+AssertionError: 60.55437274040629 != 60.49065170680416 within 10 places (0.06372103360213544 difference)
+
+----------------------------------------------------------------------
+Ran 157 tests in 832.896s
+
+FAILED (failures=3)
+usage: python -m unittest [-h]
+                          {config,transfer,train,freeze,test,compress,doc-train-input}
+                          ...
+
+DeePMD-kit: A deep learning package for many-body potential energy
+representation and molecular dynamics
+
+optional arguments:
+  -h, --help            show this help message and exit
+
+Valid subcommands:
+  {config,transfer,train,freeze,test,compress,doc-train-input}
+    config              fast configuration of parameter file for smooth model
+    transfer            pass parameters to another model
+    train               train a model
+    freeze              freeze the model
+    test                test the model
+    compress            compress a model
+    doc-train-input     print the documentation (in rst format) of input
+                        training parameters.
+2021-07-19 23:16:48.469900: W tensorflow/stream_executor/platform/default/dso_loader.cc:59] Could not load dynamic library 'libcudart.so.10.1'; dlerror: libcudart.so.10.1: cannot open shared object file: No such file or directory; LD_LIBRARY_PATH: /usr/local/cuda-11.0/lib64:
+2021-07-19 23:16:48.469942: I tensorflow/stream_executor/cuda/cudart_stub.cc:29] Ignore above cudart dlerror if you do not have a GPU set up on your machine.
+WARNING:tensorflow:From /root/anaconda3/lib/python3.8/site-packages/tensorflow/python/compat/v2_compat.py:96: disable_resource_variables (from tensorflow.python.ops.variable_scope) is deprecated and will be removed in a future version.
+Instructions for updating:
+non-resource variables are not supported in the long term
+...........usage: python -m unittest [-h]
+                          {config,transfer,train,freeze,test,compress,doc-train-input}
+                          ...
+python -m unittest: error: argument command: invalid choice: 'RANDOM_WRONG_COMMAND' (choose from 'config', 'transfer', 'train', 'freeze', 'test', 'compress', 'doc-train-input')
+..................WARNING:tensorflow:From /root/deepmd-my-newarg/source/tests/infer/convert2pb.py:8: FastGFile.__init__ (from tensorflow.python.platform.gfile) is deprecated and will be removed in a future version.
+Instructions for updating:
+Use tf.gfile.GFile.
+2021-07-19 23:16:50.364324: I tensorflow/core/platform/cpu_feature_guard.cc:142] This TensorFlow binary is optimized with oneAPI Deep Neural Network Library (oneDNN)to use the following CPU instructions in performance-critical operations:  AVX2 AVX512F FMA
+To enable them in other operations, rebuild TensorFlow with the appropriate compiler flags.
+2021-07-19 23:16:50.372902: I tensorflow/core/platform/profile_utils/cpu_utils.cc:104] CPU Frequency: 2500000000 Hz
+2021-07-19 23:16:50.373949: I tensorflow/compiler/xla/service/service.cc:168] XLA service 0x5575d11270f0 initialized for platform Host (this does not guarantee that XLA will be used). Devices:
+2021-07-19 23:16:50.373995: I tensorflow/compiler/xla/service/service.cc:176]   StreamExecutor device (0): Host, Default Version
+2021-07-19 23:16:50.377686: I tensorflow/stream_executor/platform/default/dso_loader.cc:48] Successfully opened dynamic library libcuda.so.1
+2021-07-19 23:16:50.387490: E tensorflow/stream_executor/cuda/cuda_driver.cc:314] failed call to cuInit: CUDA_ERROR_NO_DEVICE: no CUDA-capable device is detected
+2021-07-19 23:16:50.387531: I tensorflow/stream_executor/cuda/cuda_diagnostics.cc:156] kernel driver does not appear to be running on this host (iZ8vbg13sz8l8pupj8b8opZ): /proc/driver/nvidia/version does not exist
+................................................./root/anaconda3/lib/python3.8/site-packages/tensorflow/python/ops/variable_scope.py:454: DeprecationWarning: Using or importing the ABCs from 'collections' instead of from 'collections.abc' is deprecated since Python 3.3, and in 3.9 it will stop working
+  shape is not None and isinstance(shape, collections_lib.Sequence) and
+.........................................................WARNING:tensorflow:From /root/anaconda3/lib/python3.8/site-packages/deepmd/model/ener.py:136: calling Constant.__init__ (from tensorflow.python.ops.init_ops) with dtype is deprecated and will be removed in a future version.
+Instructions for updating:
+Call initializer instance with the dtype argument instead of passing it to the constructor
+..../root/anaconda3/lib/python3.8/site-packages/deepmd/fit/polar.py:215: UserWarning: no polarizability data, cannot do data stat. use zeros as guess
+  warnings.warn('no polarizability data, cannot do data stat. use zeros as guess')
+................F.
+======================================================================
+FAIL: test_type_embed_net (test_type_embed.TestTypeEbd)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/root/deepmd-my-newarg/source/tests/test_type_embed.py", line 50, in test_type_embed_net
+    self.assertAlmostEqual(
+AssertionError: 1.680875673752839 != 1.429967002262268 within 10 places (0.25090867149057106 difference)
+
+----------------------------------------------------------------------
+Ran 157 tests in 823.533s
+
+FAILED (failures=1)
+usage: python -m unittest [-h]
+                          {config,transfer,train,freeze,test,compress,doc-train-input}
+                          ...
+
+DeePMD-kit: A deep learning package for many-body potential energy
+representation and molecular dynamics
+
+optional arguments:
+  -h, --help            show this help message and exit
+
+Valid subcommands:
+  {config,transfer,train,freeze,test,compress,doc-train-input}
+    config              fast configuration of parameter file for smooth model
+    transfer            pass parameters to another model
+    train               train a model
+    freeze              freeze the model
+    test                test the model
+    compress            compress a model
+    doc-train-input     print the documentation (in rst format) of input
+                        training parameters.

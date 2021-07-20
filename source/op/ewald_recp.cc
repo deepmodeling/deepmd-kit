@@ -5,7 +5,7 @@ typedef double boxtensor_t ;
 typedef double compute_t;
 
 REGISTER_OP("EwaldRecp")
-.Attr("T: {float, double} = DT_DOUBLE")
+.Attr("T: {float, double}")
 .Input("coord: T")
 .Input("charge: T")
 .Input("natoms: int32")

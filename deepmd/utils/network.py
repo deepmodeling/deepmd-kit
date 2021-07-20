@@ -21,13 +21,15 @@ def one_layer(inputs,
                             [shape[1], outputs_size], 
                             precision,
                             tf.random_normal_initializer(stddev=stddev/np.sqrt(shape[1]+outputs_size), seed = seed), 
-                            trainable = trainable)
+                            trainable = trainable,
+                            )
         variable_summaries(w, 'matrix')
         b = tf.get_variable('bias', 
                             [outputs_size], 
                             precision,
                             tf.random_normal_initializer(stddev=stddev, mean = bavg, seed = seed), 
-                            trainable = trainable)
+                            trainable = trainable,
+                            )
         variable_summaries(b, 'bias')
         hidden = tf.matmul(inputs, w) + b
         if activation_fn != None and use_timestep :
@@ -35,7 +37,8 @@ def one_layer(inputs,
                                   [outputs_size],
                                   precision,
                                   tf.random_normal_initializer(stddev=0.001, mean = 0.1, seed = seed), 
-                                  trainable = trainable)
+                                  trainable = trainable,
+                                  )
             variable_summaries(idt, 'idt')
         if activation_fn != None:
             if useBN:
@@ -65,7 +68,8 @@ def embedding_net(xx,
                   stddev = 1.0,
                   bavg = 0.0,
                   seed = None,
-                  trainable = True):
+                  trainable = True,
+                  uniform_seed = False):
     """
     Parameters
     ----------
@@ -98,14 +102,16 @@ def embedding_net(xx,
                             [outputs_size[ii - 1], outputs_size[ii]], 
                             precision,
                             tf.random_normal_initializer(stddev=stddev/np.sqrt(outputs_size[ii]+outputs_size[ii-1]), seed = seed), 
-                            trainable = trainable)
+                            trainable = trainable,
+                            )
         variable_summaries(w, 'matrix_'+str(ii)+name_suffix)
 
         b = tf.get_variable('bias_'+str(ii)+name_suffix, 
                             [1, outputs_size[ii]], 
                             precision,
                             tf.random_normal_initializer(stddev=stddev, mean = bavg, seed = seed), 
-                            trainable = trainable)
+                            trainable = trainable,
+                            )
         variable_summaries(b, 'bias_'+str(ii)+name_suffix)
 
         hidden = tf.reshape(activation_fn(tf.matmul(xx, w) + b), [-1, outputs_size[ii]])
@@ -114,7 +120,8 @@ def embedding_net(xx,
                                   [1, outputs_size[ii]], 
                                   precision,
                                   tf.random_normal_initializer(stddev=0.001, mean = 1.0, seed = seed), 
-                                  trainable = trainable)
+                                  trainable = trainable,
+                                  )
             variable_summaries(idt, 'idt_'+str(ii)+name_suffix)
 
         if outputs_size[ii] == outputs_size[ii-1]:
