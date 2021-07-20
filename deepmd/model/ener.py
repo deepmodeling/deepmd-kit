@@ -108,14 +108,13 @@ class EnerModel(paddle.nn.Layer) :
     def _compute_output_stat (self, all_stat) :
         self.fitting.compute_output_stats(all_stat)
 
-    @paddle.jit.to_static
     def forward (self, 
                coord_, 
                atype_,
                natoms,
                box, 
                mesh,
-               input_dict,
+               input_dict = {},
                suffix = '', 
                reuse = None):
         coord = paddle.reshape(coord_, [-1, natoms[1] * 3])

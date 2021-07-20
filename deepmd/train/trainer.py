@@ -3,6 +3,8 @@ import logging
 import os
 import time
 import shutil
+import copy
+import gc
 import numpy as np
 from deepmd.env import tf, paddle
 from deepmd.env import default_tf_session_config
@@ -74,7 +76,6 @@ def _generate_descrpt_from_param_dict(descrpt_param):
     else :
         raise RuntimeError('unknow model type ' + descrpt_type)
     return descrpt
-    
 
 class DPTrainer (object):
     def __init__(self, 
@@ -91,7 +92,7 @@ class DPTrainer (object):
         fitting_param = j_must_have(model_param, 'fitting_net')
         self.model_param    = model_param
         self.descrpt_param  = descrpt_param
-        
+
         # descriptor
         try:
             descrpt_type = descrpt_param['type']
@@ -105,12 +106,16 @@ class DPTrainer (object):
             for ii in descrpt_param.get('list', []):
                 descrpt_list.append(_generate_descrpt_from_param_dict(ii))
             self.descrpt = DescrptHybrid(descrpt_list)
-
+        
         # fitting net
         try: 
             fitting_type = fitting_param['type']
         except:
             fitting_type = 'ener'
+        
+        self.fitting_type = fitting_type
+        self.descrpt_type = descrpt_type
+
         fitting_param.pop('type', None)
         fitting_param['descrpt'] = self.descrpt
         if fitting_type == 'ener':
@@ -384,10 +389,10 @@ class DPTrainer (object):
                     log.info("batch %7d training time %.2f s, testing time %.2f s"
                                   % (self.cur_batch, train_time, test_time))
                     train_time = 0
-                if self.save_freq > 0 and self.cur_batch % self.save_freq == 0 and self.run_opt.is_chief:
-                    paddle.jit.save(self.model, os.getcwd() + "/" + self.save_ckpt)
-                    # paddle.save(self.model.state_dict(), os.getcwd() + "/" + self.save_ckpt)
-                    log.info("saved checkpoint to %s" % (os.getcwd() + "/" + self.save_ckpt))
+            
+            if self.save_freq > 0 and self.cur_batch % self.save_freq == 0:
+                self.save_model(model_inputs, self.save_ckpt + "/model")
+
         if self.run_opt.is_chief: 
             fp.close ()
         if self.profiling and self.run_opt.is_chief :
@@ -395,6 +400,30 @@ class DPTrainer (object):
             chrome_trace = fetched_timeline.generate_chrome_trace_format()
             with open(self.profiling_file, 'w') as f:
                 f.write(chrome_trace)
+        
+        self.save_model(model_inputs, self.save_ckpt + "/model")
+
+    def save_model(self, model_inputs_, folder_name_):
+        # Since "paddle.jit.to_static" modifiess the model in-place
+        # We have to make a temporary model copy to avoid damage to the original model.
+        model = copy.copy(self.model)
+        save_path = os.getcwd() + "/" + folder_name_
+        if self.fitting_type == "ener" and self.descrpt_type == "se_a":
+          input_names = ['coord', 'type', 'natoms_vec', 'box', 'default_mesh']
+          input_specs = [paddle.static.InputSpec(model_inputs_[name].shape, model_inputs_[name].dtype, name=name) for name in input_names]
+        else:
+          raise NotImplementedError
+
+        try:
+          model = paddle.jit.to_static(model, input_spec=input_specs)
+          paddle.jit.save(model, save_path)
+        except Exception as e:
+          raise e
+        finally:
+          del model
+          gc.collect()
+
+        log.info("saved checkpoint to %s" % (save_path))
 
     def get_global_step (self) :
         return self.cur_batch

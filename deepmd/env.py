@@ -191,7 +191,7 @@ else:
     GLOBAL_TF_FLOAT_PRECISION = tf.float32
     GLOBAL_PD_FLOAT_PRECISION = "float32"
     GLOBAL_NP_FLOAT_PRECISION = np.float32
-    GLOBAL_ENER_FLOAT_PRECISION = np.float64
+    GLOBAL_ENER_FLOAT_PRECISION = np.float32
     global_float_prec = "float"
 
 
