@@ -1,45 +1,10 @@
 #include "DeepPot.h"
 #include "AtomMap.h"
 #include <stdexcept>	
+#include "device.h"
 
 using namespace tensorflow;
 using namespace deepmd;
-
-#if  GOOGLE_CUDA
-#include "cuda_runtime.h"
-
-#define DPErrcheck(res) { DPAssert((res), __FILE__, __LINE__); }
-inline void DPAssert(cudaError_t code, const char *file, int line, bool abort=true)
-{
-    if (code != cudaSuccess)
-    {
-        fprintf(stderr,"cuda assert: %s %s %d\n", cudaGetErrorString(code), file, line);
-        if (abort) exit(code);
-    }
-}
-
-void DPGetDeviceCount(int &gpu_num) { cudaGetDeviceCount(&gpu_num) ;}
-
-cudaError_t DPSetDevice(int rank) { return  cudaSetDevice(rank); }
-#endif
-
-#if  TENSORFLOW_USE_ROCM
-#include<hip/hip_runtime.h>
-
-#define DPErrcheck(res) { DPAssert((res), __FILE__, __LINE__); }
-inline void DPAssert(hipError_t code, const char *file, int line, bool abort=true)
-{
-    if (code != hipSuccess)
-    {
-        fprintf(stderr,"hip assert: %s %s %d\n", hipGetErrorString(code), file, line);
-        if (abort) exit(code);
-    }
-}
-
-void DPGetDeviceCount(int &gpu_num) { hipGetDeviceCount(&gpu_num) ;}
-hipError_t DPSetDevice(int rank) { return  hipSetDevice(rank); }
-
-#endif //TENSORFLOW_USE_ROCM
 
 static 
 std::vector<int> cum_sum (const std::vector<int32> & n_sel) {

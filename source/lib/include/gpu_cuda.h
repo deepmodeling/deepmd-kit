@@ -67,6 +67,11 @@ static __inline__ __device__ double atomicAdd(
 #endif
 
 namespace deepmd {
+  
+inline void DPGetDeviceCount(int &gpu_num) { cudaGetDeviceCount(&gpu_num) ;}
+
+inline cudaError_t DPSetDevice(int rank) { return  cudaSetDevice(rank); }
+
 template <typename FPTYPE>
 void memcpy_host_to_device(
     FPTYPE * device, 

@@ -24,7 +24,12 @@ inline void nborAssert(hipError_t code, const char *file, int line, bool abort=t
     }
 }
 
+
 namespace deepmd {
+inline void DPGetDeviceCount(int &gpu_num) { hipGetDeviceCount(&gpu_num) ;}
+
+inline hipError_t DPSetDevice(int rank) { return  hipSetDevice(rank); }
+
 template <typename FPTYPE>
 void memcpy_host_to_device(
     FPTYPE * device, 
