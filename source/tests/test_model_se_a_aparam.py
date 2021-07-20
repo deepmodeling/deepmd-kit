@@ -13,7 +13,7 @@ GLOBAL_ENER_FLOAT_PRECISION = tf.float64
 GLOBAL_TF_FLOAT_PRECISION = tf.float64
 GLOBAL_NP_FLOAT_PRECISION = np.float64
 
-class TestModel(tf.test.TestCase):
+class TestModel(unittest.TestCase):
     def setUp(self) :
         gen_data()
 
@@ -37,9 +37,9 @@ class TestModel(tf.test.TestCase):
         numb_test = 1
         
         jdata['model']['descriptor'].pop('type', None)        
-        descrpt = DescrptSeA(**jdata['model']['descriptor'], uniform_seed = True)
+        descrpt = DescrptSeA(**jdata['model']['descriptor'])
         jdata['model']['fitting_net']['descrpt'] = descrpt
-        fitting = EnerFitting(**jdata['model']['fitting_net'], uniform_seed = True)
+        fitting = EnerFitting(**jdata['model']['fitting_net'])
         model = EnerModel(descrpt, fitting)
 
         # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
@@ -68,8 +68,9 @@ class TestModel(tf.test.TestCase):
         input_dict = {}
         input_dict['aparam'] = t_aparam
 
-        model_pred\
-            = model.build (t_coord, 
+        with tf.variable_scope('se_a_aparam'):
+            model_pred\
+                = model.build (t_coord, 
                            t_type, 
                            t_natoms, 
                            t_box, 
@@ -95,7 +96,7 @@ class TestModel(tf.test.TestCase):
                           t_aparam:        np.reshape(test_data['aparam']   [:numb_test, :], [-1]),
                           is_training:     False}
 
-        sess = self.test_session().__enter__()
+        sess = tf.Session()
         sess.run(tf.global_variables_initializer())
         [e, f, v] = sess.run([energy, force, virial], 
                              feed_dict = feed_dict_test)

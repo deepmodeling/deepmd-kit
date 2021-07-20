@@ -41,6 +41,40 @@ def convert_input_v0_v1(
     return output
 
 
+def convert_input_v2_multi(
+    jdata: Dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None,name = None
+) -> Dict[str, Any]:
+    """Convert input from v1 format to multi task.
+    Parameters
+    ----------
+    jdata : Dict[str, Any]
+        loaded json/yaml file
+    warning : bool, optional
+        whether to show deprecation warning, by default True
+    dump : Optional[Union[str, Path]], optional
+        whether to dump converted file, by default None
+    Returns
+    -------
+    Dict[str, Any]
+        converted output
+    """
+
+    output = {}
+    if "with_distrib" in jdata:
+        output["with_distrib"] = jdata["with_distrib"]
+    # fitting_net(model), learning_rate, loss, training need another layer.
+    output["model"] = _multi_model(jdata,name)
+    output["learning_rate"] = _multi_learning_rate(jdata,name)
+    output["loss"] = _multi_loss(jdata,name)
+    output["training"] = _multi_training(jdata,name)
+    if warning:
+        _warning_input_v0_v1(dump)
+    if dump is not None:
+        with open(dump, "w") as fp:
+            json.dump(output, fp, indent=4)
+    return output
+
+
 def _warning_input_v0_v1(fname: Optional[Union[str, Path]]):
     msg = "It seems that you are using a deepmd-kit input of version 0.x.x, " \
           "which is deprecated. we have converted the input to >2.0.0 compatible"
@@ -70,6 +104,29 @@ def _model(jdata: Dict[str, Any], smooth: bool) -> Dict[str, Dict[str, Any]]:
     model["fitting_net"] = _fitting_net(jdata)
     return model
 
+
+def _multi_model(jdata: Dict[str, Any], name=None) -> Dict[str, Dict[str, Any]]:
+    """Convert data to v1 input for non-smooth model.
+    Parameters
+    ----------
+    jdata : Dict[str, Any]
+        parsed input json/yaml data
+    smooth : bool
+        whether to use smooth or non-smooth descriptor version
+    Returns
+    -------
+    Dict[str, Dict[str, Any]]
+        dictionary with model input parameters and sub-dictionaries for descriptor and
+        fitting net
+    """
+    model = {}
+    model["type_map"] = jdata["model"]["type_map"]
+    model["descriptor"] = jdata["model"]["descriptor"]
+    if "type_embedding" in jdata["model"].keys():
+        model["type_embedding"] = jdata["model"]["type_embedding"]
+
+    model["fitting_net"] = _multi_fitting_net(jdata,name)
+    return model
 
 def _nonsmth_descriptor(jdata: Dict[str, Any]) -> Dict[str, Any]:
     """Convert data to v1 input for non-smooth descriptor.
@@ -140,6 +197,21 @@ def _fitting_net(jdata: Dict[str, Any]) -> Dict[str, Any]:
         fitting_net["resnet_dt"] = jdata["fitting_resnet_dt"]
     return fitting_net
 
+def _multi_fitting_net(jdata: Dict[str, Any],name=None) -> Dict[str, Any]:
+    """Convert data to v1 input for fitting net.
+    Parameters
+    ----------
+    jdata : Dict[str, Any]
+        parsed input json/yaml data
+    Returns
+    -------
+    Dict[str, Any]
+        dict with fitting net parameters
+    """
+    fitting_net = {}
+    fitting_net[name] = jdata["model"]["fitting_net"]
+    return fitting_net
+
 
 def _learning_rate(jdata: Dict[str, Any]) -> Dict[str, Any]:
     """Convert data to v1 input for learning rate section.
@@ -155,6 +227,21 @@ def _learning_rate(jdata: Dict[str, Any]) -> Dict[str, Any]:
     learning_rate = {}
     learning_rate["type"] = "exp"
     _jcopy(jdata, learning_rate, ("decay_steps", "decay_rate", "start_lr"))
+    return learning_rate
+
+def _multi_learning_rate(jdata: Dict[str, Any],name=None) -> Dict[str, Any]:
+    """Convert data to v1 input for learning rate section.
+    Parameters
+    ----------
+    jdata : Dict[str, Any]
+        parsed input json/yaml data
+    Returns
+    -------
+    Dict[str, Any]
+        dict with learning rate parameters
+    """
+    learning_rate = {}
+    learning_rate[name]= jdata["learning_rate"]
     return learning_rate
 
 
@@ -186,6 +273,21 @@ def _loss(jdata: Dict[str, Any]) -> Dict[str, Any]:
         loss["start_pref_ae"] = jdata["start_pref_ae"]
     if "limit_pref_ae" in jdata:
         loss["limit_pref_ae"] = jdata["limit_pref_ae"]
+    return loss
+
+def _multi_loss(jdata: Dict[str, Any],name = None) -> Dict[str, Any]:
+    """Convert data to v1 input for loss function.
+    Parameters
+    ----------
+    jdata : Dict[str, Any]
+        parsed input json/yaml data
+    Returns
+    -------
+    Dict[str, Any]
+        dict with loss function parameters
+    """
+    loss: Dict[str, Any] = {}
+    loss[name] = jdata["loss"]
     return loss
 
 
@@ -221,6 +323,31 @@ def _training(jdata: Dict[str, Any]) -> Dict[str, Any]:
             training["profiling_file"] = j_must_have(jdata, "profiling_file")
     return training
 
+
+def _multi_training(jdata: Dict[str, Any],name=None) -> Dict[str, Any]:
+    """Convert data to v1 input for training.
+    Parameters
+    ----------
+    jdata : Dict[str, Any]
+        parsed input json/yaml data
+    Returns
+    -------
+    Dict[str, Any]
+        dict with training parameters
+    """
+    training = {}
+    training = jdata["training"]
+    
+    sys_data = {}
+    sys_data[name]=jdata["training"]["training_data"]["systems"]
+    training["training_data"]["systems"]=sys_data
+
+    val_data = {}
+    val_data[name]=jdata["training"]["validation_data"]["systems"]
+    training["validation_data"]["systems"]=val_data
+
+    
+    return training
 
 def _jcopy(src: Dict[str, Any], dst: Dict[str, Any], keys: Sequence[str]):
     """Copy specified keys from one dict to another.
@@ -279,6 +406,7 @@ def _warning_input_v1_v2(fname: Optional[Union[str, Path]]):
 
 
 def updata_deepmd_input(jdata: Dict[str, Any],
+                        name,
                         warning: bool = True,
                         dump: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
     def is_deepmd_v0_input(jdata):
@@ -286,13 +414,20 @@ def updata_deepmd_input(jdata: Dict[str, Any],
 
     def is_deepmd_v1_input(jdata):
         return "systems" in j_must_have(jdata, "training").keys()
+    def is_deepmd_multi_input(jdata):
+        return "neuron" not in jdata["model"]["fitting_net"].keys()
 
     if is_deepmd_v0_input(jdata):
         jdata = convert_input_v0_v1(jdata, warning, None)
         jdata = convert_input_v1_v2(jdata, False, dump)
+        jdata = convert_input_v2_multi(jdata, warning,dump, name)
     elif is_deepmd_v1_input(jdata):
+        
         jdata = convert_input_v1_v2(jdata, warning, dump)
-    else:
+        jdata = convert_input_v2_multi(jdata, warning,dump, name) # add another layer to the config so that we can parse the config
+    elif is_deepmd_multi_input(jdata):
         pass
+    else:
+        jdata = convert_input_v2_multi(jdata, warning,dump, name)
 
     return jdata

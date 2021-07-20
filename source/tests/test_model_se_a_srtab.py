@@ -23,7 +23,7 @@ def _make_tab(ntype) :
     prt = np.reshape(prt, [ninter+1, -1])
     np.savetxt('tab.xvg', prt.T)
 
-class TestModel(tf.test.TestCase):
+class TestModel(unittest.TestCase):
     def setUp(self) :
         gen_data()
         _make_tab(2)
@@ -50,9 +50,9 @@ class TestModel(tf.test.TestCase):
         numb_test = 1
         
         jdata['model']['descriptor'].pop('type', None)        
-        descrpt = DescrptSeA(**jdata['model']['descriptor'], uniform_seed = True)
+        descrpt = DescrptSeA(**jdata['model']['descriptor'])
         jdata['model']['fitting_net']['descrpt'] = descrpt
-        fitting = EnerFitting(**jdata['model']['fitting_net'], uniform_seed = True)
+        fitting = EnerFitting(**jdata['model']['fitting_net'])
         # descrpt = DescrptSeA(jdata['model']['descriptor'])
         # fitting = EnerFitting(jdata['model']['fitting_net'], descrpt)
         model = EnerModel(
@@ -90,9 +90,9 @@ class TestModel(tf.test.TestCase):
         t_mesh             = tf.placeholder(tf.int32,   [None], name='i_mesh')
         is_training        = tf.placeholder(tf.bool)
         t_fparam = None
-
-        model_pred\
-            = model.build (t_coord, 
+        with tf.variable_scope('se_a_srtab'):
+            model_pred\
+                = model.build (t_coord, 
                            t_type, 
                            t_natoms, 
                            t_box, 
@@ -117,7 +117,7 @@ class TestModel(tf.test.TestCase):
                           t_mesh:          test_data['default_mesh'],
                           is_training:     False}
 
-        sess = self.test_session().__enter__()
+        sess = tf.Session()
         sess.run(tf.global_variables_initializer())
         [e, f, v] = sess.run([energy, force, virial], 
                              feed_dict = feed_dict_test)

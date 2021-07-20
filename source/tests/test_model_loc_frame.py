@@ -14,7 +14,7 @@ GLOBAL_TF_FLOAT_PRECISION = tf.float64
 GLOBAL_NP_FLOAT_PRECISION = np.float64
 
 
-class TestModel(tf.test.TestCase):
+class TestModel(unittest.TestCase):
     def setUp(self) :
         gen_data()
 
@@ -40,8 +40,7 @@ class TestModel(tf.test.TestCase):
         descrpt = DescrptLocFrame(**jdata['model']['descriptor'])
         fitting = EnerFitting(descrpt, 
                               neuron = [240, 120, 60, 30, 10], 
-                              seed = 1, 
-                              uniform_seed = True)
+                              seed = 1)
         model = EnerModel(
             descrpt, 
             fitting, 
@@ -69,9 +68,9 @@ class TestModel(tf.test.TestCase):
         t_mesh             = tf.placeholder(tf.int32,   [None], name='i_mesh')
         is_training        = tf.placeholder(tf.bool)
         t_fparam = None
-
-        model_pred \
-            = model.build (t_coord, 
+        with tf.variable_scope('loc_frame'):
+            model_pred \
+                = model.build (t_coord, 
                            t_type, 
                            t_natoms, 
                            t_box, 
@@ -96,7 +95,7 @@ class TestModel(tf.test.TestCase):
                           t_mesh:          test_data['default_mesh'],
                           is_training:     False}
 
-        sess = self.test_session().__enter__()
+        sess = tf.Session()
         sess.run(tf.global_variables_initializer())
         [e, f, v] = sess.run([energy, force, virial], 
                              feed_dict = feed_dict_test)

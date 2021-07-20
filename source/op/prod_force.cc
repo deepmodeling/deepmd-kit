@@ -1,7 +1,7 @@
 #include "custom_op.h"
 
 REGISTER_OP("ProdForce")
-.Attr("T: {float, double} = DT_DOUBLE")
+.Attr("T: {float, double}")
 .Input("net_deriv: T")
 .Input("in_deriv: T")
 .Input("nlist: int32")

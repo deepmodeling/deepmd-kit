@@ -2,7 +2,7 @@
 #include "map_aparam.h"
 
 REGISTER_OP("MapAparam")
-.Attr("T: {float, double} = DT_DOUBLE")
+.Attr("T: {float, double}")
 .Input("aparam: T")
 .Input("nlist: int32")
 .Input("natoms: int32")

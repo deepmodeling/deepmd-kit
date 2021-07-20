@@ -2,7 +2,7 @@
 #include "pair_tab.h"
 
 REGISTER_OP("PairTab")
-.Attr("T: {float, double} = DT_DOUBLE")
+.Attr("T: {float, double}")
 .Input("table_info: double")
 .Input("table_data: double")
 .Input("type: int32")

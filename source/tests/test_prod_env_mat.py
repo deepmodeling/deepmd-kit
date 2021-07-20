@@ -9,9 +9,9 @@ from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 
-class TestProdEnvMat(tf.test.TestCase):
+class TestProdEnvMat(unittest.TestCase):
     def setUp(self):
-        self.sess = self.test_session().__enter__()
+        self.sess = tf.Session()
         self.nframes = 2
         self.dcoord = [
             12.83, 2.56, 2.18,
@@ -91,7 +91,7 @@ class TestProdEnvMat(tf.test.TestCase):
         self.assertEqual(drij.shape, (self.nframes, self.nloc*self.nnei*3))
         self.assertEqual(dnlist.shape, (self.nframes, self.nloc*self.nnei))
         for ff in range(self.nframes):
-            for ii in range(self.nloc*self.ndescrpt):
+            for ii in range(self.ndescrpt):
                 self.assertAlmostEqual(dem[ff][ii], self.pbc_expected_output[ii], places=5)
 
     def test_pbc_self_built_nlist_deriv(self):
@@ -142,7 +142,7 @@ class TestProdEnvMat(tf.test.TestCase):
         self.assertEqual(drij.shape, (self.nframes, self.nloc*self.nnei*3))
         self.assertEqual(dnlist.shape, (self.nframes, self.nloc*self.nnei))
         for ff in range(self.nframes):
-            for ii in range(self.nloc*self.ndescrpt):
+            for ii in range(self.ndescrpt):
                 self.assertAlmostEqual(dem[ff][ii], self.nopbc_expected_output[ii], places=5)
 
 

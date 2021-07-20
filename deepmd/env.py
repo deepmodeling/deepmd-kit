@@ -1,14 +1,13 @@
 """Module that sets tensorflow working environment and exports inportant constants."""
 
-import logging
 import os
-import platform
-from configparser import ConfigParser
-from imp import reload
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
-
+import logging
+import platform
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Any
 import numpy as np
+from imp import reload
+from configparser import ConfigParser
 
 if TYPE_CHECKING:
     from types import ModuleType
@@ -37,7 +36,6 @@ __all__ = [
 ]
 
 SHARED_LIB_MODULE = "op"
-
 
 def set_env_if_empty(key: str, value: str, verbose: bool = True):
     """Set environment variable only if it is empty.
@@ -76,8 +74,7 @@ def set_mkl():
     """
     if "mkl_rt" in np.__config__.get_info("blas_mkl_info").get("libraries", []):
         set_env_if_empty("KMP_BLOCKTIME", "0")
-        set_env_if_empty(
-            "KMP_AFFINITY", "granularity=fine,verbose,compact,1,0")
+        set_env_if_empty("KMP_AFFINITY", "granularity=fine,verbose,compact,1,0")
         reload(np)
 
 
@@ -121,9 +118,7 @@ def get_tf_session_config() -> Any:
         intra_op_parallelism_threads=intra, inter_op_parallelism_threads=inter
     )
 
-
 default_tf_session_config = get_tf_session_config()
-
 
 def get_module(module_name: str) -> "ModuleType":
     """Load force module.
@@ -154,57 +149,12 @@ def get_module(module_name: str) -> "ModuleType":
     if not module_file.is_file():
         raise FileNotFoundError(f"module {module_name} does not exist")
     else:
-        try:
-            module = tf.load_op_library(str(module_file))
-        except tf.errors.NotFoundError as e:
-            # check CXX11_ABI_FLAG is compatiblity
-            # see https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html
-            # ABI should be the same
-            if 'CXX11_ABI_FLAG' in tf.__dict__:
-                tf_cxx11_abi_flag = tf.CXX11_ABI_FLAG
-            else:
-                tf_cxx11_abi_flag = tf.sysconfig.CXX11_ABI_FLAG
-            if TF_CXX11_ABI_FLAG != tf_cxx11_abi_flag:
-                raise RuntimeError(
-                    "This deepmd-kit package was compiled with "
-                    "CXX11_ABI_FLAG=%d, but TensorFlow runtime was compiled "
-                    "with CXX11_ABI_FLAG=%d. These two library ABIs are "
-                    "incompatible and thus an error is raised when loading %s."
-                    "You need to rebuild deepmd-kit against this TensorFlow "
-                    "runtime." % (
-                        TF_CXX11_ABI_FLAG,
-                        tf_cxx11_abi_flag,
-                        module_name,
-                    )) from e
-
-            # different versions may cause incompatibility
-            # see #406, #447, #557, #774, and #796 for example
-            # throw a message if versions are different
-            if TF_VERSION != tf.version.VERSION:
-                raise RuntimeError(
-                    "The version of TensorFlow used to compile this "
-                    "deepmd-kit package is %s, but the version of TensorFlow "
-                    "runtime you are using is %s. These two versions are "
-                    "incompatible and thus an error is raised when loading %s. "
-                    "You need to install TensorFlow %s, or rebuild deepmd-kit "
-                    "against TensorFlow %s.\nIf you are using a wheel from "
-                    "pypi, you may consider to install deepmd-kit execuating "
-                    "`pip install deepmd-kit --no-binary deepmd-kit` "
-                    "instead." % (
-                        TF_VERSION,
-                        tf.version.VERSION,
-                        module_name,
-                        TF_VERSION,
-                        tf.version.VERSION,
-                    )) from e
-            raise RuntimeError(
-                "This deepmd-kit package is inconsitent with TensorFlow"
-                "Runtime, thus an error is raised when loading %s."
-                "You need to rebuild deepmd-kit against this TensorFlow"
-                "runtime." % (
-                    module_name,
-                )) from e
+        module = tf.load_op_library(str(module_file))
         return module
+
+
+op_module = get_module("libop_abi")
+op_grads_module = get_module("libop_grads")
 
 
 def _get_package_constants(
@@ -215,7 +165,7 @@ def _get_package_constants(
     Parameters
     ----------
     config_file : str, optional
-        path to CONFIG file, by default "pkg_config/run_config.ini"
+        path to CONFIG file, by default "config/run_config.ini"
 
     Returns
     -------
@@ -226,14 +176,8 @@ def _get_package_constants(
     config.read(config_file)
     return dict(config.items("CONFIG"))
 
-
 GLOBAL_CONFIG = _get_package_constants()
 MODEL_VERSION = GLOBAL_CONFIG["model_version"]
-TF_VERSION = GLOBAL_CONFIG["tf_version"]
-TF_CXX11_ABI_FLAG = int(GLOBAL_CONFIG["tf_cxx11_abi_flag"])
-
-op_module = get_module("libop_abi")
-op_grads_module = get_module("libop_grads")
 
 if GLOBAL_CONFIG["precision"] == "-DHIGH_PREC":
     GLOBAL_TF_FLOAT_PRECISION = tf.float64
@@ -277,3 +221,5 @@ def global_cvt_2_ener_float(xx: tf.Tensor) -> tf.Tensor:
         output tensor cast to `GLOBAL_ENER_FLOAT_PRECISION`
     """
     return tf.cast(xx, GLOBAL_ENER_FLOAT_PRECISION)
+
+

@@ -13,7 +13,7 @@ GLOBAL_ENER_FLOAT_PRECISION = tf.float64
 GLOBAL_TF_FLOAT_PRECISION = tf.float64
 GLOBAL_NP_FLOAT_PRECISION = np.float64
 
-class TestModel(tf.test.TestCase):
+class TestModel(unittest.TestCase):
     def setUp(self) :
         gen_data()
 
@@ -38,7 +38,6 @@ class TestModel(tf.test.TestCase):
         jdata['model']['descriptor'].pop('type', None)        
         jdata['model']['descriptor'].pop('_comment', None)        
         descrpt = DescrptLocFrame(**jdata['model']['descriptor'])
-        jdata['model']['fitting_net']['uniform_seed'] = True
         fitting = WFCFitting(jdata['model']['fitting_net'], descrpt)
         model = WFCModel(descrpt, fitting)
 
@@ -83,7 +82,7 @@ class TestModel(tf.test.TestCase):
                           t_mesh:          test_data['default_mesh'],
                           is_training:     False}
 
-        sess = self.test_session().__enter__()
+        sess = tf.Session()
         sess.run(tf.global_variables_initializer())
         [p] = sess.run([wfc], feed_dict = feed_dict_test)
 

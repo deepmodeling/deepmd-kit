@@ -15,7 +15,7 @@ GLOBAL_ENER_FLOAT_PRECISION = tf.float64
 GLOBAL_TF_FLOAT_PRECISION = tf.float64
 GLOBAL_NP_FLOAT_PRECISION = np.float64
 
-class TestModel(tf.test.TestCase):
+class TestModel(unittest.TestCase):
     def setUp(self) :
         gen_data()
 
@@ -38,15 +38,14 @@ class TestModel(tf.test.TestCase):
         numb_test = 1
 
         jdata['model']['descriptor'].pop('type', None)        
-        descrpt = DescrptSeA(**jdata['model']['descriptor'], uniform_seed = True)
+        descrpt = DescrptSeA(**jdata['model']['descriptor'])
         jdata['model']['fitting_net']['descrpt'] = descrpt
-        fitting = EnerFitting(**jdata['model']['fitting_net'], uniform_seed = True)
+        fitting = EnerFitting(**jdata['model']['fitting_net'])
         typeebd_param = jdata['model']['type_embedding']
         typeebd = TypeEmbedNet(
             neuron = typeebd_param['neuron'],
             resnet_dt = typeebd_param['resnet_dt'],
-            seed = typeebd_param['seed'], 
-            uniform_seed = True)
+            seed = typeebd_param['seed'])
         model = EnerModel(descrpt, fitting, typeebd)
 
         # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
@@ -72,9 +71,9 @@ class TestModel(tf.test.TestCase):
         is_training        = tf.placeholder(tf.bool)
         t_fparam = None
         inputs_dict = {}
-
-        model_pred \
-            = model.build (t_coord, 
+        with tf.variable_scope('se_a_type'):
+            model_pred \
+                = model.build (t_coord, 
                            t_type, 
                            t_natoms, 
                            t_box, 
@@ -99,7 +98,7 @@ class TestModel(tf.test.TestCase):
                           t_mesh:          test_data['default_mesh'],
                           is_training:     False}
 
-        sess = self.test_session().__enter__()
+        sess = tf.Session()
         sess.run(tf.global_variables_initializer())
         [e, f, v] = sess.run([energy, force, virial], 
                              feed_dict = feed_dict_test)

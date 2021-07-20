@@ -11,9 +11,9 @@ from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 
-class Inter(tf.test.TestCase):
+class Inter(unittest.TestCase):
     def setUp (self) :
-        self.sess = self.test_session().__enter__()
+        self.sess = tf.Session()
         self.inputs = tf.constant([ 0., 1., 2.], dtype = tf.float64)
         self.ndata = 3
         self.inputs = tf.reshape(self.inputs, [-1, 1])
@@ -25,8 +25,7 @@ class Inter(tf.test.TestCase):
                             network_size, 
                             tf.float64,
                             name_suffix = 'enlarger_net',
-                            seed = 1, 
-                            uniform_seed = True)
+                            seed = 1)
         self.sess.run(tf.global_variables_initializer())
         myout = self.sess.run(out)
         refout = [[-0.1482171,  -0.14177827, -0.76181204,  0.21266767],
@@ -43,8 +42,7 @@ class Inter(tf.test.TestCase):
                             network_size, 
                             tf.float64,
                             name_suffix = 'enlarger_net_1',
-                            seed = 1, 
-                            uniform_seed = True)
+                            seed = 1)
         self.sess.run(tf.global_variables_initializer())
         myout = self.sess.run(out)
         refout = [[ 0.10842905, -0.61623145, -1.46738788, -0.01921788],
@@ -61,8 +59,7 @@ class Inter(tf.test.TestCase):
                             tf.float64,
                             name_suffix = 'enlarger_net_1_idt',
                             resnet_dt = True,
-                            seed = 1, 
-                            uniform_seed = True)
+                            seed = 1)
         self.sess.run(tf.global_variables_initializer())
         myout = self.sess.run(out)
         refout = [[ 0.10839754, -0.6161336,  -1.46673253, -0.01927138],
@@ -78,8 +75,7 @@ class Inter(tf.test.TestCase):
                             network_size, 
                             tf.float64,
                             name_suffix = 'enlarger_net_2',
-                            seed = 1, 
-                            uniform_seed = True)
+                            seed = 1)
         self.sess.run(tf.global_variables_initializer())
         myout = self.sess.run(out)
         refout = [[ 0.24023149, -0.66311811, -0.50951819, -0.36873654],
@@ -97,8 +93,7 @@ class Inter(tf.test.TestCase):
                             tf.float64,
                             name_suffix = 'enlarger_net_2_idt',
                             resnet_dt = True,
-                            seed = 1, 
-                            uniform_seed = True)
+                            seed = 1)
         self.sess.run(tf.global_variables_initializer())
         myout = self.sess.run(out)
         refout = [[ 0.2403889,  -0.66290763, -0.50883586, -0.36869913],

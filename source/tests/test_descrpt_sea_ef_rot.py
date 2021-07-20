@@ -12,9 +12,9 @@ from deepmd.env import op_module
 from deepmd.descriptor import DescrptSeA
 from deepmd.descriptor import DescrptSeAEfLower
 
-class TestEfRot(tf.test.TestCase):
+class TestEfRot(unittest.TestCase):
     def setUp(self):
-        self.sess = self.test_session().__enter__()
+        self.sess = tf.Session()
         self.natoms = [5, 5, 2, 3]
         self.ntypes = 2
         self.sel_a = [12,24]
@@ -60,9 +60,9 @@ class TestEfRot(tf.test.TestCase):
         efield = self._normalize_3d(efield)
         efield = tf.reshape(efield, [-1, tnatoms[0] * 3])
         if op != op_module.prod_env_mat_a :            
-            descrpt = DescrptSeAEfLower(op, **{'sel':self.sel_a, 'rcut': 6, 'rcut_smth' : 5.5, 'seed': 1, 'uniform_seed': True})
+            descrpt = DescrptSeAEfLower(op, **{'sel':self.sel_a, 'rcut': 6, 'rcut_smth' : 5.5})
         else:
-            descrpt = DescrptSeA(**{'sel':self.sel_a, 'rcut': 6, 'rcut_smth' : 0.5, 'seed': 1, 'uniform_seed': True})
+            descrpt = DescrptSeA(**{'sel':self.sel_a, 'rcut': 6, 'rcut_smth' : 0.5})
         dout = descrpt.build(dcoord,
                              dtype,
                              tnatoms,

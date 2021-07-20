@@ -12,7 +12,6 @@ from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import global_cvt_2_ener_float
 from deepmd.env import op_module
-from deepmd.utils.sess import run_sess
 
 
 class DipoleChargeModifier(DeepDipole):
@@ -58,7 +57,7 @@ class DipoleChargeModifier(DeepDipole):
         self.ext_dim = 3
         self.t_ndesc  = self.graph.get_tensor_by_name(os.path.join(self.modifier_prefix, 'descrpt_attr/ndescrpt:0'))
         self.t_sela  = self.graph.get_tensor_by_name(os.path.join(self.modifier_prefix, 'descrpt_attr/sel:0'))
-        [self.ndescrpt, self.sel_a] = run_sess(self.sess, [self.t_ndesc, self.t_sela])
+        [self.ndescrpt, self.sel_a] = self.sess.run([self.t_ndesc, self.t_sela])
         self.sel_r = [ 0 for ii in range(len(self.sel_a)) ]
         self.nnei_a = np.cumsum(self.sel_a)[-1]
         self.nnei_r = np.cumsum(self.sel_r)[-1]
@@ -336,9 +335,9 @@ class DipoleChargeModifier(DeepDipole):
         feed_dict_test[self.t_box   ] = cells.reshape([-1])
         feed_dict_test[self.t_mesh  ] = default_mesh.reshape([-1])
         feed_dict_test[self.t_ef    ] = ext_f.reshape([-1])
-        # print(run_sess(self.sess, tf.shape(self.t_tensor), feed_dict = feed_dict_test))
+        # print(self.sess.run(tf.shape(self.t_tensor), feed_dict = feed_dict_test))
         fout, vout, avout \
-            = run_sess(self.sess, [self.force, self.virial, self.av],
+            = self.sess.run([self.force, self.virial, self.av],
                             feed_dict = feed_dict_test)
         # print('fout: ', fout.shape, fout)
         fout = self.reverse_map(np.reshape(fout, [nframes,-1,3]), imap)

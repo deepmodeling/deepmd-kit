@@ -23,7 +23,8 @@ class DeepmdData() :
                   shuffle_test : bool = True, 
                   type_map : List[str] = None, 
                   modifier = None,
-                  trn_all_set : bool = False) :
+                  trn_all_set : bool = False,
+                  name : str=None) :
         """
         Constructor
         
@@ -55,10 +56,11 @@ class DeepmdData() :
         self.pbc = self._check_pbc(sys_path)
         # enforce type_map if necessary
         if type_map is not None and self.type_map is not None:
-            atom_type_ = [type_map.index(self.type_map[ii]) for ii in self.atom_type]
+            atom_type_ = [type_map.index(self.type_map[ii]) for ii in self.atom_type] # change the atom type from self.atom_type to global scale atom type
             self.atom_type = np.array(atom_type_, dtype = np.int32)
-            ntypes = len(self.type_map)
-            self.type_map = type_map[:ntypes]
+            ntypes = len(type_map)
+            #self.type_map = type_map[:ntypes]
+            
         # make idx map
         self.idx_map = self._make_idx_map(self.atom_type)
         # train dirs
@@ -72,7 +74,7 @@ class DeepmdData() :
                 self.train_dirs = self.dirs[:-1]
         self.data_dict = {}        
         # add box and coord
-        self.add('box', 9, must = self.pbc)
+        self.add('box', 9, must = True)
         self.add('coord', 3, atomic = True, must = True)
         # set counters
         self.set_count = 0
@@ -80,6 +82,7 @@ class DeepmdData() :
         self.shuffle_test = shuffle_test
         # set modifier
         self.modifier = modifier
+        self.name = name
 
 
     def add(self, 
@@ -158,7 +161,7 @@ class DeepmdData() :
         """
         Get the `data_dict`
         """
-        return self.data_dict
+        return self.data_dict,self.get_name()
 
     def check_batch_size (self, batch_size) :        
         """
@@ -245,9 +248,10 @@ class DeepmdData() :
 
     def get_ntypes(self) -> int:
         """
-        Number of atom types in the system
+        Number of atom types in the system,this is the len of type map of individual system
         """
         if self.type_map is not None:
+
             return len(self.type_map)
         else:
             return max(self.get_atom_type()) + 1
@@ -269,6 +273,9 @@ class DeepmdData() :
         Get number of training sets
         """
         return len (self.train_dirs)
+    
+    def get_name(self):
+        return self.name
 
     def get_numb_batch (self, 
                         batch_size : int, 
@@ -490,7 +497,7 @@ class DeepmdData() :
             return np.float32(0.0), data
 
         
-    def _load_type (self, sys_path) :
+    def _load_type (self, sys_path) : # a list of int
         atom_type = np.loadtxt (os.path.join(sys_path, "type.raw"), dtype=np.int32, ndmin=1)
         return atom_type
 
@@ -500,7 +507,7 @@ class DeepmdData() :
         idx_map = np.lexsort ((idx, atom_type))
         return idx_map
 
-    def _load_type_map(self, sys_path) :
+    def _load_type_map(self, sys_path) : # a list of element name
         fname = os.path.join(sys_path, 'type_map.raw')
         if os.path.isfile(fname) :            
             with open(os.path.join(sys_path, 'type_map.raw')) as fp:

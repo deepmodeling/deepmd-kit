@@ -58,9 +58,7 @@ def descrpt_local_frame_args ():
 
 
 def descrpt_se_a_args():
-    doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
-    - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
-    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
+    doc_sel = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.'
     doc_rcut = 'The cut-off radius.'
     doc_rcut_smth = 'Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`'
     doc_neuron = 'Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.'
@@ -75,7 +73,7 @@ def descrpt_se_a_args():
     doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
     
     return [
-        Argument("sel", [list,str], optional = True, default = "auto", doc = doc_sel),
+        Argument("sel", list, optional = False, doc = doc_sel),
         Argument("rcut", float, optional = True, default = 6.0, doc = doc_rcut),
         Argument("rcut_smth", float, optional = True, default = 0.5, doc = doc_rcut_smth),
         Argument("neuron", list, optional = True, default = [10,20,40], doc = doc_neuron),
@@ -92,9 +90,7 @@ def descrpt_se_a_args():
 
 
 def descrpt_se_t_args():
-    doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
-    - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
-    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
+    doc_sel = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.'
     doc_rcut = 'The cut-off radius.'
     doc_rcut_smth = 'Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`'
     doc_neuron = 'Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.'
@@ -106,7 +102,7 @@ def descrpt_se_t_args():
     doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
     
     return [
-        Argument("sel", [list,str], optional = True, default = "auto", doc = doc_sel),
+        Argument("sel", list, optional = False, doc = doc_sel),
         Argument("rcut", float, optional = True, default = 6.0, doc = doc_rcut),
         Argument("rcut_smth", float, optional = True, default = 0.5, doc = doc_rcut_smth),
         Argument("neuron", list, optional = True, default = [10,20,40], doc = doc_neuron),
@@ -133,9 +129,7 @@ def descrpt_se_a_tpe_args():
 
 
 def descrpt_se_r_args():
-    doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
-    - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
-    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
+    doc_sel = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.'
     doc_rcut = 'The cut-off radius.'
     doc_rcut_smth = 'Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`'
     doc_neuron = 'Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.'
@@ -149,7 +143,7 @@ def descrpt_se_r_args():
     doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
     
     return [
-        Argument("sel", [list,str], optional = True, default = "auto", doc = doc_sel),
+        Argument("sel", list, optional = False, doc = doc_sel),
         Argument("rcut", float, optional = True, default = 6.0, doc = doc_rcut),
         Argument("rcut_smth", float, optional = True, default = 0.5, doc = doc_rcut_smth),
         Argument("neuron", list, optional = True, default = [10,20,40], doc = doc_neuron),
@@ -210,7 +204,17 @@ def descrpt_variant_type_args():
 
 
 #  --- Fitting net configurations: --- #
+
+def fitting_system_args(method_name):
+    doc_fitting = 'The fitting of physical properties.'
+    args =[]
+    for name in method_name:
+        args.append(Argument(str(name), dict, [], [fitting_variant_type_args()], doc = doc_fitting))
+    return Argument("fitting_net", dict, optional=False,
+                    sub_fields=args, sub_variants=[], doc=doc_fitting)
+
 def fitting_ener():
+    doc_name = 'The name of fitting net'
     doc_numb_fparam = 'The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams.'
     doc_numb_aparam = 'The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams.'
     doc_neuron = 'The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.'
@@ -223,7 +227,8 @@ def fitting_ener():
     doc_rcond = 'The condition number used to determine the inital energy shift for each type of atoms.'
     doc_seed = 'Random seed for parameter initialization of the fitting net'
     doc_atom_ener = 'Specify the atomic energy in vacuum for each type'
-
+    
+    
     return [
         Argument("numb_fparam", int, optional = True, default = 0, doc = doc_numb_fparam),
         Argument("numb_aparam", int, optional = True, default = 0, doc = doc_numb_aparam),
@@ -292,7 +297,7 @@ def fitting_variant_type_args():
 - `ener`: Fit an energy model (potential energy surface).\n\n\
 - `dipole`: Fit an atomic dipole model. Global dipole labels or atomic dipole labels for all the selected atoms (see `sel_type`) should be provided by `dipole.npy` in each data system. The file either has number of frames lines and 3 times of number of selected atoms columns, or has number of frames lines and 3 columns. See `loss` parameter.\n\n\
 - `polar`: Fit an atomic polarizability model. Global polarizazbility labels or atomic polarizability labels for all the selected atoms (see `sel_type`) should be provided by `polarizability.npy` in each data system. The file eith has number of frames lines and 9 times of number of selected atoms columns, or has number of frames lines and 9 columns. See `loss` parameter.\n\n'
-
+    
     return Variant("type", [Argument("ener", dict, fitting_ener()),
                             Argument("dipole", dict, fitting_dipole()),
                             Argument("polar", dict, fitting_polar()),
@@ -353,8 +358,8 @@ def model_compression_type_args():
         doc = doc_compress_type)
 
 
-def model_args ():    
-    doc_type_map = 'A list of strings. Give the name to each type of atoms. It is noted that the number of atom type of training system must be less than 128 in a GPU environment.'
+def model_args (method_name):    
+    doc_type_map = 'A list of strings. Give the name to each type of atoms.'
     doc_data_stat_nbatch = 'The model determines the normalization from the statistics of the data. This key specifies the number of `frames` in each `system` used for statistics.'
     doc_data_stat_protect = 'Protect parameter for atomic energy regression.'
     doc_type_embedding = "The type embedding."
@@ -367,6 +372,7 @@ def model_args ():
     doc_sw_rmax = 'The upper boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.'
     doc_compress_config = 'Model compression configurations'
 
+    fitting_sys = fitting_system_args(method_name)
     ca = Argument("model", dict, 
                   [Argument("type_map", list, optional = True, doc = doc_type_map),
                    Argument("data_stat_nbatch", int, optional = True, default = 10, doc = doc_data_stat_nbatch),
@@ -377,7 +383,8 @@ def model_args ():
                    Argument("sw_rmax", float, optional = True, doc = doc_sw_rmax),
                    Argument("type_embedding", dict, type_embedding_args(), [], optional = True, doc = doc_type_embedding),
                    Argument("descriptor", dict, [], [descrpt_variant_type_args()], doc = doc_descrpt),
-                   Argument("fitting_net", dict, [], [fitting_variant_type_args()], doc = doc_fitting),
+                   #Argument("fitting_net", dict, [], [fitting_variant_type_args()], doc = doc_fitting),
+                   fitting_sys,
                    Argument("modifier", dict, [], [modifier_variant_type_args()], optional = True, doc = doc_modifier),
                    Argument("compress", dict, [], [model_compression_type_args()], optional = True, doc = doc_compress_config)
                   ])
@@ -408,12 +415,18 @@ def learning_rate_variant_type_args():
                    default_tag = 'exp',
                    doc = doc_lr)
 
+def learning_rate_sys(method_name):
+    doc_lr = 'The type of the learning rate.'
+    args =[]
+    for name in method_name:
+        args.append(Argument(str(name), dict, [], [learning_rate_variant_type_args()], doc = doc_lr))
+    return Argument("learning_rate", dict, optional=False,
+                    sub_fields=args, sub_variants=[], doc=doc_lr)
 
-def learning_rate_args():
+def learning_rate_args(method_name):
     doc_lr = "The definitio of learning rate" 
-    return Argument("learning_rate", dict, [], 
-                    [learning_rate_variant_type_args()],
-                    doc = doc_lr)
+    
+    return learning_rate_sys(method_name)
 
 
 #  --- Loss configurations: --- #
@@ -473,18 +486,30 @@ def loss_variant_type_args():
                    default_tag = 'ener',
                    doc = doc_loss)
 
-
-def loss_args():
+def loss_sys(method_name):
     doc_loss = 'The definition of loss function. The loss type should be set to `tensor`, `ener` or left unset.\n\.'
-    ca = Argument('loss', dict, [], 
-                  [loss_variant_type_args()],
-                  optional = True,
-                  doc = doc_loss)
+    args =[]
+    for name in method_name:
+        args.append(Argument(str(name), dict, [], [loss_variant_type_args()], doc = doc_loss))
+    return Argument("loss", dict, optional=False,
+                    sub_fields=args, sub_variants=[], doc=doc_loss)
+
+def loss_args(method_name):
+    doc_loss = 'The definition of loss function. The loss type should be set to `tensor`, `ener` or left unset.\n\.'
+    ca = loss_sys(method_name)
     return ca
 
-
+def data_system_args(method_name):
+    doc_systems = 'The data systems for training. ' \
+        'This key can be provided with a list that specifies the systems, or be provided with a string ' \
+        'by which the prefix of all systems are given and the list of the systems is automatically generated.'
+    args = []
+    for name in method_name:
+        args.append(Argument(str(name), [list,str], optional=False, default=".", doc=doc_systems))
+    return Argument("systems", dict, optional=False,
+                    sub_fields=args, sub_variants=[], doc=doc_systems)
 #  --- Training configurations: --- #
-def training_data_args():  # ! added by Ziyao: new specification style for data systems.
+def training_data_args(method_name):  # ! added by Ziyao: new specification style for data systems.
     link_sys = make_link("systems", "training/training_data/systems")
     doc_systems = 'The data systems for training. ' \
         'This key can be provided with a list that specifies the systems, or be provided with a string ' \
@@ -503,9 +528,10 @@ def training_data_args():  # ! added by Ziyao: new specification style for data 
         "Should be of the same length as `systems`, " \
         "specifying the probability of each system."
 
-
+    data_system = data_system_args(method_name)
     args = [
-        Argument("systems", [list, str], optional=False, default=".", doc=doc_systems),
+        data_system,
+        #Argument("systems", [dict, str], optional=False, default=".", doc=doc_systems),
         Argument("set_prefix", str, optional=True, default='set', doc=doc_set_prefix),
         Argument("batch_size", [list, int, str], optional=True, default='auto', doc=doc_batch_size),
         Argument("auto_prob", str, optional=True, default="prob_sys_size",
@@ -518,7 +544,7 @@ def training_data_args():  # ! added by Ziyao: new specification style for data 
                     sub_fields=args, sub_variants=[], doc=doc_training_data)
 
 
-def validation_data_args():  # ! added by Ziyao: new specification style for data systems.
+def validation_data_args(method_name):  # ! added by Ziyao: new specification style for data systems.
     link_sys = make_link("systems", "training/validation_data/systems")
     doc_systems = 'The data systems for validation. ' \
                   'This key can be provided with a list that specifies the systems, or be provided with a string ' \
@@ -538,8 +564,10 @@ def validation_data_args():  # ! added by Ziyao: new specification style for dat
                     "specifying the probability of each system."
     doc_numb_btch = "An integer that specifies the number of systems to be sampled for each validation period."
 
+    data_system = data_system_args(method_name)
     args = [
-        Argument("systems", [list, str], optional=False, default=".", doc=doc_systems),
+        data_system,
+        #Argument("systems", [list, str], optional=False, default=".", doc=doc_systems),
         Argument("set_prefix", str, optional=True, default='set', doc=doc_set_prefix),
         Argument("batch_size", [list, int, str], optional=True, default='auto', doc=doc_batch_size),
         Argument("auto_prob", str, optional=True, default="prob_sys_size",
@@ -554,7 +582,7 @@ def validation_data_args():  # ! added by Ziyao: new specification style for dat
                     sub_fields=args, sub_variants=[], doc=doc_validation_data)
 
 
-def training_args():  # ! modified by Ziyao: data configuration isolated.
+def training_args(method_name):  # ! modified by Ziyao: data configuration isolated.
     doc_numb_steps = 'Number of training batch. Each training uses one batch of data.'
     doc_seed = 'The random seed for getting frames from the training data set.'
     doc_disp_file = 'The file for printing learning curve.'
@@ -569,8 +597,8 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     doc_tensorboard = 'Enable tensorboard'
     doc_tensorboard_log_dir = 'The log directory of tensorboard outputs'
 
-    arg_training_data = training_data_args()
-    arg_validation_data = validation_data_args()
+    arg_training_data = training_data_args(method_name)
+    arg_validation_data = validation_data_args(method_name)
 
     args = [
         arg_training_data,
@@ -633,15 +661,15 @@ def normalize_hybrid_list(hy_list):
     return new_list
 
 
-def normalize(data):
+def normalize(data,method_name):
     if "hybrid" == data["model"]["descriptor"]["type"]:
         data["model"]["descriptor"]["list"] \
             = normalize_hybrid_list(data["model"]["descriptor"]["list"])
 
-    ma = model_args()
-    lra = learning_rate_args()
-    la = loss_args()
-    ta = training_args()
+    ma = model_args(method_name)
+    lra = learning_rate_args(method_name)
+    la = loss_args(method_name)
+    ta = training_args(method_name)
 
     base = Argument("base", dict, [ma, lra, la, ta])
     data = base.normalize_value(data, trim_pattern="_*")

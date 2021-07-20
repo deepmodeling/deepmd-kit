@@ -45,11 +45,12 @@ __global__ void virial_deriv_wrt_neighbors_a(
   // idz = dd0 * 3 + dd1
   // dd0 = idz / 3
   // dd1 = idz % 3
-  const unsigned int idx = blockIdx.x;
-  const unsigned int idy = blockIdx.y * blockDim.x + threadIdx.x;
+  const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  const unsigned int idy = blockIdx.y;
   const unsigned int idz = threadIdx.y;
+  const unsigned int idw = threadIdx.z;
   const int ndescrpt = nnei * 4;
-  if (idy >= nnei) {
+  if (idx >= nloc) {
       return;
   }
   int j_idx = nlist[idx * nnei + idy];
@@ -59,11 +60,9 @@ __global__ void virial_deriv_wrt_neighbors_a(
   // atomicAdd(
   //    virial + idz, 
   //    net_deriv[idx * ndescrpt + idy * 4 + idw] * rij[idx * nnei * 3 + idy * 3 + idz / 3] * in_deriv[idx * ndescrpt * 3 + (idy * 4 + idw) * 3 + idz % 3]);
-  FPTYPE virial_tmp = 0.f;
-  for (int idw = 0; idw < 4; ++idw) {
-      virial_tmp += net_deriv[idx * ndescrpt + idy * 4 + idw] * rij[idx * nnei * 3 + idy * 3 + idz % 3] * in_deriv[idx * ndescrpt * 3 + (idy * 4 + idw) * 3 + idz / 3];
-  }
-  atomicAdd(atom_virial + j_idx * 9 + idz, virial_tmp);
+  atomicAdd(
+      atom_virial + j_idx * 9 + idz, 
+      net_deriv[idx * ndescrpt + idy * 4 + idw] * rij[idx * nnei * 3 + idy * 3 + idz % 3] * in_deriv[idx * ndescrpt * 3 + (idy * 4 + idw) * 3 + idz / 3]);
 }
 
 template<typename FPTYPE>
@@ -82,12 +81,12 @@ __global__ void virial_deriv_wrt_neighbors_r(
     // idz = dd0 * 3 + dd1
     // dd0 = idz / 3
     // dd1 = idz % 3
-    const unsigned int idx = blockIdx.x;
-    const unsigned int idy = blockIdx.y * blockDim.x + threadIdx.x;
+    const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned int idy = blockIdx.y;
     const unsigned int idz = threadIdx.y;
     const int ndescrpt = nnei * 1;
 
-    if (idy >= nnei) {
+    if (idx >= nloc) {
         return;
     }
     int j_idx = nlist[idx * nnei + idy];
@@ -123,9 +122,9 @@ void prod_virial_a_gpu_cuda(
       0.0, sizeof(FPTYPE) * 9 * nall));
     
   const int LEN = 16;
-  int nblock = (nnei + LEN - 1) / LEN;
-  dim3 block_grid(nloc, nblock);
-  dim3 thread_grid(LEN, 9);
+  int nblock = (nloc + LEN -1) / LEN;
+  dim3 block_grid(nblock, nnei);
+  dim3 thread_grid(LEN, 9, 4);
   // compute virial of a frame
   virial_deriv_wrt_neighbors_a<<<block_grid, thread_grid>>>(
       virial, atom_virial, 
@@ -156,8 +155,8 @@ void prod_virial_r_gpu_cuda(
       0.0, sizeof(FPTYPE) * 9 * nall));
     
   const int LEN = 16;
-  int nblock = (nnei + LEN - 1) / LEN;
-  dim3 block_grid(nloc, nblock);
+  int nblock = (nloc + LEN -1) / LEN;
+  dim3 block_grid(nblock, nnei);
   dim3 thread_grid(LEN, 9);
   // compute virial of a frame
   virial_deriv_wrt_neighbors_r<<<block_grid, thread_grid>>>(

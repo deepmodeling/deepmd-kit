@@ -502,7 +502,6 @@ void prod_env_mat_a_gpu_cuda(
   const int ndescrpt = nnei * 4;
   cudaErrcheck(cudaMemset(em, 0.0, sizeof(FPTYPE) * nloc * ndescrpt));
   cudaErrcheck(cudaMemset(em_deriv, 0.0, sizeof(FPTYPE) * nloc * ndescrpt * 3));
-  cudaErrcheck(cudaMemset(rij, 0., sizeof(FPTYPE) * nloc * nnei * 3));
 
   format_nbor_list_gpu_cuda(
       nlist, 
@@ -539,7 +538,6 @@ void prod_env_mat_r_gpu_cuda(
   const int ndescrpt = nnei * 1;
   cudaErrcheck(cudaMemset(em, 0.0, sizeof(FPTYPE) * nloc * ndescrpt));
   cudaErrcheck(cudaMemset(em_deriv, 0.0, sizeof(FPTYPE) * nloc * ndescrpt * 3));
-  cudaErrcheck(cudaMemset(rij, 0., sizeof(FPTYPE) * nloc * nnei * 3));
 
   format_nbor_list_gpu_cuda(
       nlist, 

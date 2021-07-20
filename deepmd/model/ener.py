@@ -74,7 +74,9 @@ class EnerModel() :
         else :
             self.srtab = None
 
-
+    def get_name(self):
+        return self.fitting.get_name()
+        
     def get_rcut (self) :
         return self.rcut
 
@@ -142,13 +144,22 @@ class EnerModel() :
         atype = tf.reshape (atype_, [-1, natoms[1]])
 
         # type embedding if any
+        
         if self.typeebd is not None:
             type_embedding = self.typeebd.build(
                 self.ntypes,
                 reuse = reuse,
-                suffix = suffix,
+                suffix = '',
             )
+            '''
+            random_embedding = tf.get_variable('random_embedding',
+                                                type_embedding.shape,
+                                                dtype= tf.float64,
+                                                trainable = False,
+                                                initializer = tf.random_normal_initializer(mean=0.0,stddev = 1.0, seed = 1,dtype= tf.float64))
+            '''
             input_dict['type_embedding'] = type_embedding
+            #input_dict["random_embedding"] =  random_embedding
 
         dout \
             = self.descrpt.build(coord_,
@@ -157,7 +168,7 @@ class EnerModel() :
                                  box,
                                  mesh,
                                  input_dict,
-                                 suffix = suffix,
+                                 suffix = '',
                                  reuse = reuse)
         dout = tf.identity(dout, name='o_descriptor')
 

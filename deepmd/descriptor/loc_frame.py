@@ -6,7 +6,6 @@ from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
-from deepmd.utils.sess import run_sess
 
 class DescrptLocFrame () :
     def __init__(self, 
@@ -328,7 +327,7 @@ class DescrptLocFrame () :
                                     natoms_vec,
                                     mesh) :    
         dd_all \
-            = run_sess(self.sub_sess, self.stat_descrpt, 
+            = self.sub_sess.run(self.stat_descrpt, 
                                 feed_dict = {
                                     self.place_holders['coord']: data_coord,
                                     self.place_holders['type']: data_atype,

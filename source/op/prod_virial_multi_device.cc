@@ -2,7 +2,7 @@
 #include "prod_virial.h"
 
 REGISTER_OP("ProdVirialSeA")
-    .Attr("T: {float, double} = DT_DOUBLE")
+    .Attr("T: {float, double}")
     .Input("net_deriv: T")
     .Input("in_deriv: T")
     .Input("rij: T")
@@ -14,7 +14,7 @@ REGISTER_OP("ProdVirialSeA")
     .Output("atom_virial: T");
 
 REGISTER_OP("ProdVirialSeR")
-    .Attr("T: {float, double} = DT_DOUBLE")
+    .Attr("T: {float, double}")
     .Input("net_deriv: T")
     .Input("in_deriv: T")
     .Input("rij: T")
@@ -97,12 +97,6 @@ class ProdVirialSeAOp : public OpKernel {
           virial, atom_virial,
           net_deriv, in_deriv, rij, nlist, nloc, nall, nnei);
       #endif // GOOGLE_CUDA
-      
-      #if TENSORFLOW_USE_ROCM
-      deepmd::prod_virial_a_gpu_rocm(    
-          virial, atom_virial,
-          net_deriv, in_deriv, rij, nlist, nloc, nall, nnei);
-      #endif // TENSORFLOW_USE_ROCM
     }
     else if (device == "CPU") {
       deepmd::prod_virial_a_cpu(    
@@ -189,12 +183,6 @@ class ProdVirialSeROp : public OpKernel {
           virial, atom_virial,
           net_deriv, in_deriv, rij, nlist, nloc, nall, nnei);
       #endif // GOOGLE_CUDA
-      
-      #if TENSORFLOW_USE_ROCM
-      deepmd::prod_virial_r_gpu_rocm(    
-          virial, atom_virial,
-          net_deriv, in_deriv, rij, nlist, nloc, nall, nnei);
-      #endif // TENSORFLOW_USE_ROCM
     }
     else if (device == "CPU") {
       deepmd::prod_virial_r_cpu(    
@@ -218,7 +206,7 @@ REGISTER_KERNEL_BUILDER(                                                        
 REGISTER_CPU(float);
 REGISTER_CPU(double);
 // Register the GPU kernels.
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM 
+#if GOOGLE_CUDA
 #define REGISTER_GPU(T)                                                                   \
 REGISTER_KERNEL_BUILDER(                                                                  \
     Name("ProdVirialSeA").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms"), \
@@ -228,4 +216,4 @@ REGISTER_KERNEL_BUILDER(                                                        
     ProdVirialSeROp<GPUDevice, T>);
 REGISTER_GPU(float);
 REGISTER_GPU(double);
-#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#endif  // GOOGLE_CUDA

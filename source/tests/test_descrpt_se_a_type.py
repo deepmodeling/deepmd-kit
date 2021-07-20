@@ -16,7 +16,7 @@ GLOBAL_ENER_FLOAT_PRECISION = tf.float64
 GLOBAL_TF_FLOAT_PRECISION = tf.float64
 GLOBAL_NP_FLOAT_PRECISION = np.float64
 
-class TestModel(tf.test.TestCase):
+class TestModel(unittest.TestCase):
     def setUp(self) :
         gen_data()
 
@@ -53,11 +53,10 @@ class TestModel(tf.test.TestCase):
             neuron = typeebd_param['neuron'],
             resnet_dt = typeebd_param['resnet_dt'],
             seed = typeebd_param['seed'], 
-            uniform_seed = True
         )
 
         jdata['model']['descriptor'].pop('type', None)        
-        descrpt = DescrptSeA(**jdata['model']['descriptor'], uniform_seed=True)
+        descrpt = DescrptSeA(**jdata['model']['descriptor'])
 
         # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
         input_data = {'coord' : [test_data['coord']], 
@@ -110,7 +109,7 @@ class TestModel(tf.test.TestCase):
                           t_mesh:          test_data['default_mesh'],
                           is_training:     False}
 
-        sess = self.test_session().__enter__()
+        sess = tf.Session()
         sess.run(tf.global_variables_initializer())
         [model_dout] = sess.run([dout], 
                              feed_dict = feed_dict_test)
@@ -162,11 +161,10 @@ class TestModel(tf.test.TestCase):
             neuron = typeebd_param['neuron'],
             resnet_dt = typeebd_param['resnet_dt'],
             seed = typeebd_param['seed'], 
-            uniform_seed = True
         )
 
         jdata['model']['descriptor'].pop('type', None)        
-        descrpt = DescrptSeA(**jdata['model']['descriptor'], uniform_seed = True)
+        descrpt = DescrptSeA(**jdata['model']['descriptor'])
 
         # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
         input_data = {'coord' : [test_data['coord']], 
@@ -219,7 +217,7 @@ class TestModel(tf.test.TestCase):
                           t_mesh:          test_data['default_mesh'],
                           is_training:     False}
 
-        sess = self.test_session().__enter__()
+        sess = tf.Session()
         sess.run(tf.global_variables_initializer())
         [model_dout] = sess.run([dout], 
                              feed_dict = feed_dict_test)

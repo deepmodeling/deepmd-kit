@@ -2,7 +2,7 @@
 #include "prod_virial_grad.h"
 
 REGISTER_OP("ProdVirialSeAGrad")
-    .Attr("T: {float, double} = DT_DOUBLE")
+    .Attr("T: {float, double}")
     .Input("grad: T")
     .Input("net_deriv: T")
     .Input("in_deriv: T")
@@ -14,7 +14,7 @@ REGISTER_OP("ProdVirialSeAGrad")
     .Output("grad_net: T");
 
 REGISTER_OP("ProdVirialSeRGrad")
-    .Attr("T: {float, double} = DT_DOUBLE")
+    .Attr("T: {float, double}")
     .Input("grad: T")
     .Input("net_deriv: T")
     .Input("in_deriv: T")
@@ -117,7 +117,7 @@ public:
     // loop over frames
     for (int kk = 0; kk < nframes; ++kk){
       FPTYPE * grad_net = p_grad_net + kk * nloc * ndescrpt;
-      const FPTYPE * grad = p_grad + kk * 9;
+      const FPTYPE * grad = p_grad + kk * nloc * 3;
       const FPTYPE * in_deriv = p_in_deriv + kk * nloc * ndescrpt * 3;
       const FPTYPE * rij = p_rij + kk * nloc * nnei * 3;
       const int * nlist = p_nlist + kk * nloc * nnei; 
@@ -127,12 +127,6 @@ public:
           grad_net, 
           grad, in_deriv, rij, nlist, nloc, nnei);
         #endif // GOOGLE_CUDA
-        
-        #if TENSORFLOW_USE_ROCM
-        deepmd::prod_virial_grad_a_gpu_rocm(    
-          grad_net, 
-          grad, in_deriv, rij, nlist, nloc, nnei);
-        #endif // TENSORFLOW_USE_ROCM
       }
       else if (device == "CPU") {
         deepmd::prod_virial_grad_a_cpu(    
@@ -235,7 +229,7 @@ public:
     // loop over frames
     for (int kk = 0; kk < nframes; ++kk){
       FPTYPE * grad_net = p_grad_net + kk * nloc * ndescrpt;
-      const FPTYPE * grad = p_grad + kk * 9;
+      const FPTYPE * grad = p_grad + kk * nloc * 3;
       const FPTYPE * in_deriv = p_in_deriv + kk * nloc * ndescrpt * 3;
       const FPTYPE * rij = p_rij + kk * nloc * nnei * 3;
       const int * nlist = p_nlist + kk * nloc * nnei; 
@@ -245,12 +239,6 @@ public:
           grad_net, 
           grad, in_deriv, rij, nlist, nloc, nnei);
         #endif // GOOGLE_CUDA
-        
-        #if TENSORFLOW_USE_ROCM
-        deepmd::prod_virial_grad_r_gpu_rocm(    
-          grad_net, 
-          grad, in_deriv, rij, nlist, nloc, nnei);
-        #endif // TENSORFLOW_USE_ROCM
       }
       else if (device == "CPU") {
         deepmd::prod_virial_grad_r_cpu(    
@@ -274,7 +262,7 @@ REGISTER_KERNEL_BUILDER(                                                        
 REGISTER_CPU(float);
 REGISTER_CPU(double);
 // Register the GPU kernels.
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#if GOOGLE_CUDA
 #define REGISTER_GPU(T)                                                                       \
 REGISTER_KERNEL_BUILDER(                                                                      \
     Name("ProdVirialSeAGrad").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms"), \
@@ -284,4 +272,4 @@ REGISTER_KERNEL_BUILDER(                                                        
     ProdVirialSeRGradOp<GPUDevice, T>);
 REGISTER_GPU(float);
 REGISTER_GPU(double);
-#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#endif  // GOOGLE_CUDA
