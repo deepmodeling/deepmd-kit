@@ -113,10 +113,10 @@ void prod_virial_a_gpu_rocm(
     const int nall, 
     const int nnei)
 {
-  hipErrcheck(hipMemset(
-      virial, 
-      0.0, sizeof(FPTYPE) * 9));
-  hipErrcheck(hipMemset(
+    DPErrcheck(hipMemset(
+        virial, 
+        0.0, sizeof(FPTYPE) * 9));
+    DPErrcheck(hipMemset(
       atom_virial, 
       0.0, sizeof(FPTYPE) * 9 * nall));
     
@@ -128,10 +128,14 @@ void prod_virial_a_gpu_rocm(
   hipLaunchKernelGGL(virial_deriv_wrt_neighbors_a, block_grid, thread_grid, 0, 0, 
       virial, atom_virial, 
       net_deriv, in_deriv, rij, nlist, nloc, nnei);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
   // reduction atom_virial to virial
   hipLaunchKernelGGL(HIP_KERNEL_NAME(atom_virial_reduction<FPTYPE, TPB>), 9, TPB, 0, 0, 
       virial, 
       atom_virial, nall);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
 }
 
 template<typename FPTYPE>
@@ -146,10 +150,10 @@ void prod_virial_r_gpu_rocm(
     const int nall, 
     const int nnei)
 {
-  hipErrcheck(hipMemset(
-      virial, 
-      0.0, sizeof(FPTYPE) * 9));
-  hipErrcheck(hipMemset(
+    DPErrcheck(hipMemset(
+        virial, 
+        0.0, sizeof(FPTYPE) * 9));
+    DPErrcheck(hipMemset(
       atom_virial, 
       0.0, sizeof(FPTYPE) * 9 * nall));
     
@@ -161,10 +165,14 @@ void prod_virial_r_gpu_rocm(
   hipLaunchKernelGGL(virial_deriv_wrt_neighbors_r, block_grid, thread_grid, 0, 0, 
       virial, atom_virial, 
       net_deriv, in_deriv, rij, nlist, nloc, nnei);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
   // reduction atom_virial to virial
   hipLaunchKernelGGL(HIP_KERNEL_NAME(atom_virial_reduction<FPTYPE, TPB>), 9, TPB, 0, 0, 
     virial, 
     atom_virial, nall);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
 }
 
 template void prod_virial_a_gpu_rocm<float>(float * virial, float * atom_virial, const float * net_deriv, const float * in_deriv, const float * rij, const int * nlist, const int nloc, const int nall, const int nnei);

@@ -99,7 +99,7 @@ void prod_virial_grad_a_gpu_rocm(
     const int nnei)
 {
     const int ndescrpt = nnei * 4;
-    hipErrcheck(hipMemset(
+    DPErrcheck(hipMemset(
         grad_net, 
         0.0, sizeof(FPTYPE) * nloc * ndescrpt));
     const int LEN = 128;
@@ -109,6 +109,8 @@ void prod_virial_grad_a_gpu_rocm(
     hipLaunchKernelGGL(virial_grad_wrt_neighbors_a, block_grid, thread_grid, 0, 0, 
         grad_net,
         grad, env_deriv, rij, nlist, nloc, nnei);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
 }
 
 template<typename FPTYPE>
@@ -122,7 +124,7 @@ void prod_virial_grad_r_gpu_rocm(
     const int nnei)
 {
     const int ndescrpt = nnei;
-    hipErrcheck(hipMemset(
+    DPErrcheck(hipMemset(
         grad_net, 
         0.0, sizeof(FPTYPE) * nloc * ndescrpt));
     const int LEN = 128;
@@ -132,6 +134,8 @@ void prod_virial_grad_r_gpu_rocm(
     hipLaunchKernelGGL(virial_grad_wrt_neighbors_r, block_grid, thread_grid, 0, 0, 
         grad_net,
         grad, env_deriv, rij, nlist, nloc, nnei);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
 }
 
 template void prod_virial_grad_a_gpu_rocm<float>(float * grad_net, const float * grad, const float * env_deriv, const float * rij, const int * nlist, const int nloc, const int nnei);
