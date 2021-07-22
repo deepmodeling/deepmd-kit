@@ -23,5 +23,5 @@ file (
   FILES "@CMAKE_BINARY_DIR@/lmp/pair_deepmd.h"
 )
 endfunction()
-_add_lammps_variant("${HIGH_PREC_VARIANT}" "${HIGH_PREC_DEF}")
-_add_lammps_variant("${LOW_PREC_VARIANT}" "${LOW_PREC_DEF}")
+_add_lammps_variant("@HIGH_PREC_VARIANT@" "@HIGH_PREC_DEF@")
+_add_lammps_variant("@LOW_PREC_VARIANT@" "@LOW_PREC_DEF@")
