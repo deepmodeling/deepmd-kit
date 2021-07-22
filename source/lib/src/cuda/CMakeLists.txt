@@ -122,11 +122,17 @@ endif()
 
 file (GLOB SOURCE_FILES "*.cu" )
 
-cuda_add_library(deepmd_op_cuda SHARED ${SOURCE_FILES})
+function(_add_libcuda_variant variant_name prec_def)
+set (libname "deepmd_op_cuda${variant_name}")
+cuda_add_library(${libname} SHARED ${SOURCE_FILES} OPTIONS "-D${prec_def}")
 
 if (BUILD_CPP_IF)
-    install(TARGETS deepmd_op_cuda DESTINATION lib/)
+    install(TARGETS ${libname} DESTINATION lib/)
 endif (BUILD_CPP_IF)
 if (BUILD_PY_IF)
-    install(TARGETS deepmd_op_cuda DESTINATION deepmd/op/)
+    install(TARGETS ${libname} DESTINATION deepmd/op/)
 endif (BUILD_PY_IF)
+endfunction()
+
+_add_libcuda_variant("${HIGH_PREC_VARIANT}" "${HIGH_PREC_DEF}")
+_add_libcuda_variant("${LOW_PREC_VARIANT}" "${LOW_PREC_DEF}")

@@ -136,7 +136,6 @@ One may set the following environment variables before executing `pip`:
 | Environment variables | Allowed value          | Default value | Usage                      |
 | --------------------- | ---------------------- | ------------- | -------------------------- |
 | DP_VARIANT            | `cpu`, `cuda`, `rocm`  | `cpu`         | Build CPU variant or GPU variant with CUDA or ROCM support. |
-| DP_FLOAT_PREC         | `high`, `low`          | `high`        | Build high (double) or low (float) precision. |
 | CUDA_TOOLKIT_ROOT_DIR | Path                   | Detected automatically | The path to the CUDA toolkit directory. |
 | ROCM_ROOT             | Path                   | Detected automatically | The path to the ROCM toolkit directory. |
 
@@ -201,7 +200,6 @@ One may add the following arguments to `cmake`:
 | ------------------------ | ------------------- | ------------- | ------------------------|
 | -DTENSORFLOW_ROOT=&lt;value&gt;  | Path              | -             | The Path to TensorFlow's C++ interface. |
 | -DCMAKE_INSTALL_PREFIX=&lt;value&gt; | Path          | -             | The Path where DeePMD-kit will be installed. |
-| -DFLOAT_PREC=&lt;value&gt;       | `high` or `low`   | `high`        | Build high (double) or low (float) precision. |
 | -DUSE_CUDA_TOOLKIT=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build GPU support with CUDA toolkit. |
 | -DCUDA_TOOLKIT_ROOT_DIR=&lt;value&gt; | Path         | Detected automatically | The path to the CUDA toolkit directory. |
 | -DUSE_ROCM_TOOLKIT=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build GPU support with ROCM toolkit. |
@@ -228,7 +226,7 @@ DeePMD-kit provide module for running MD simulation with LAMMPS. Now make the De
 cd $deepmd_source_dir/source/build
 make lammps
 ```
-DeePMD-kit will generate a module called `USER-DEEPMD` in the `build` directory. Now download the LAMMPS code (`29Oct2020` or later), and uncompress it:
+DeePMD-kit will generate a module called `USER-DEEPMD` (high precision) or `USER-DEEPMD_low` (low precision) in the `build` directory. Now download the LAMMPS code (`29Oct2020` or later), and uncompress it:
 ```bash
 cd /some/workspace
 wget https://github.com/lammps/lammps/archive/stable_29Oct2020.tar.gz

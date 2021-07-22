@@ -1,4 +1,5 @@
-set (LMP_INSTALL_PREFIX "@CMAKE_BINARY_DIR@/USER-DEEPMD")
+function(_add_lammps_variant variant_name prec_def)
+set (LMP_INSTALL_PREFIX "@CMAKE_BINARY_DIR@/USER-DEEPMD${variant_name}")
 file(READ "@CMAKE_BINARY_DIR@/lmp/lammps_install_list.txt" files)
 string(REGEX REPLACE "\n" "" files "${files}")
 
@@ -21,3 +22,6 @@ file (
   TYPE FILE 
   FILES "@CMAKE_BINARY_DIR@/lmp/pair_deepmd.h"
 )
+endfunction()
+_add_lammps_variant("${HIGH_PREC_VARIANT}" "${HIGH_PREC_DEF}")
+_add_lammps_variant("${LOW_PREC_VARIANT}" "${LOW_PREC_DEF}")

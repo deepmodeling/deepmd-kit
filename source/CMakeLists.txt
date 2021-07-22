@@ -162,17 +162,11 @@ if ((NOT DEFINED CMAKE_BUILD_TYPE) OR CMAKE_BUILD_TYPE STREQUAL "")
 endif ()
 
 # set op prec
-if (DEFINED FLOAT_PREC)
-  string ( TOLOWER ${FLOAT_PREC} lower_float_prec )
-  if (lower_float_prec STREQUAL "high")
-    set(PREC_DEF "-DHIGH_PREC")
-  else ()
-    set(PREC_DEF "")    
-  endif ()
-else ()
-    set(PREC_DEF "-DHIGH_PREC")
-endif()
-add_definitions (${PREC_DEF})
+set(HIGH_PREC_DEF "HIGH_PREC")
+# this defination doesn't work, but leaving it empty will cause error
+set(LOW_PREC_DEF "LOW_PREC")
+set(HIGH_PREC_VARIANT "")
+set(LOW_PREC_VARIANT "_low")
 
 # find openmp
 find_package(OpenMP)

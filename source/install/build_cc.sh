@@ -1,10 +1,5 @@
 set -e
 
-if [ -z "$FLOAT_PREC" ]
-then
-  FLOAT_PREC=high
-fi
-
 if [ "$DP_VARIANT" == "cuda" ]
 then
   CUDA_ARGS="-DUSE_CUDA_TOOLKIT=TRUE"
