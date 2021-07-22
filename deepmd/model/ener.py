@@ -75,6 +75,9 @@ class EnerModel() :
             self.srtab = None
 
 
+    def get_name(self):
+        return self.fitting.get_name()
+
     def get_rcut (self) :
         return self.rcut
 
@@ -146,7 +149,7 @@ class EnerModel() :
             type_embedding = self.typeebd.build(
                 self.ntypes,
                 reuse = reuse,
-                suffix = suffix,
+                suffix = '',
             )
             input_dict['type_embedding'] = type_embedding
 
@@ -157,7 +160,7 @@ class EnerModel() :
                                  box,
                                  mesh,
                                  input_dict,
-                                 suffix = suffix,
+                                 suffix = '',
                                  reuse = reuse)
         dout = tf.identity(dout, name='o_descriptor')
 

@@ -67,8 +67,8 @@ class TestModel(tf.test.TestCase):
         is_training        = tf.placeholder(tf.bool)
         input_dict = {}
         input_dict['aparam'] = t_aparam
-
-        model_pred\
+        with tf.variable_scope('se_a_aparam'):
+            model_pred\
             = model.build (t_coord, 
                            t_type, 
                            t_natoms, 

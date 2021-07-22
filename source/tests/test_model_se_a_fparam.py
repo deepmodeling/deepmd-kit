@@ -68,8 +68,8 @@ class TestModel(tf.test.TestCase):
         is_training        = tf.placeholder(tf.bool)
         input_dict = {}
         input_dict['fparam'] = t_fparam
-
-        model_pred\
+        with tf.variable_scope('se_a_fparam'):
+            model_pred\
             = model.build (t_coord, 
                            t_type, 
                            t_natoms, 

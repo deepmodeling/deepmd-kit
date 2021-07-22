@@ -62,8 +62,8 @@ class TestModel(tf.test.TestCase):
         t_mesh             = tf.placeholder(tf.int32,   [None], name='i_mesh')
         is_training        = tf.placeholder(tf.bool)
         t_fparam = None
-
-        model_pred\
+        with tf.variable_scope('se_t'):
+            model_pred\
             = model.build (t_coord, 
                            t_type, 
                            t_natoms, 
