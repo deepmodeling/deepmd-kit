@@ -232,19 +232,18 @@ MODEL_VERSION = GLOBAL_CONFIG["model_version"]
 TF_VERSION = GLOBAL_CONFIG["tf_version"]
 TF_CXX11_ABI_FLAG = int(GLOBAL_CONFIG["tf_cxx11_abi_flag"])
 
+op_module = get_module("libop_abi")
+op_grads_module = get_module("libop_grads")
+
 # FLOAT_PREC
 dp_float_prec = os.environ.get("DP_INTERFACE_PREC", "high").lower()
 if dp_float_prec in ("high", ""):
     # default is high
-    op_module = get_module("libop_abi")
-    op_grads_module = get_module("libop_grads")
     GLOBAL_TF_FLOAT_PRECISION = tf.float64
     GLOBAL_NP_FLOAT_PRECISION = np.float64
     GLOBAL_ENER_FLOAT_PRECISION = np.float64
     global_float_prec = "double"
 elif dp_float_prec == "low":
-    op_module = get_module("libop_abi_low")
-    op_grads_module = get_module("libop_grads_low")
     GLOBAL_TF_FLOAT_PRECISION = tf.float32
     GLOBAL_NP_FLOAT_PRECISION = np.float32
     GLOBAL_ENER_FLOAT_PRECISION = np.float64

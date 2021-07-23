@@ -12,7 +12,7 @@ add_library(${libipiname} SHARED ${IN_SRC})
 
 set(DRIVER_SOURCE_FILES driver.cc)
 add_executable(${ipiname} ${DRIVER_SOURCE_FILES})
-target_link_libraries(${ipiname} ${libipiname} ${LIB_DEEPMD_OP}${variant_name} ${LIB_DEEPMD_CC}${variant_name} ${LIB_DEEPMD}${variant_name} ${TensorFlow_LIBRARY})
+target_link_libraries(${ipiname} ${libipiname} ${LIB_DEEPMD_OP} ${LIB_DEEPMD_CC}${variant_name} ${LIB_DEEPMD} ${TensorFlow_LIBRARY})
 
 set_target_properties(
   ${ipiname}

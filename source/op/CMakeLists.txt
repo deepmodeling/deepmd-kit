@@ -9,86 +9,71 @@ file(GLOB OP_ROCM_SRC prod_force.cc prod_virial.cc descrpt.cc prod_env_mat_multi
 file(GLOB OP_GRADS_SRC prod_force_grad.cc prod_force_grad_multi_device.cc prod_virial_grad.cc prod_virial_grad_multi_device.cc soft_min_force_grad.cc soft_min_virial_grad.cc )
 file(GLOB OP_PY *.py)
 
-function(_add_libop_variant variant_name prec_def)
-set(LIB_DEEPMD_OP_VARIANT "${LIB_DEEPMD_OP}${variant_name}")
-set(LIB_OB_ABI_VARIANT "op_abi${variant_name}")
-set(LIB_OB_GRADS_VARIANT "op_grads${variant_name}")
-
 if (BUILD_CPP_IF) 
   if (USE_CUDA_TOOLKIT)
-    add_library(${LIB_DEEPMD_OP_VARIANT} SHARED ${OP_CUDA_SRC})
+    add_library(${LIB_DEEPMD_OP} SHARED ${OP_CUDA_SRC})
     find_package(CUDA REQUIRED)
     include_directories(${CUDA_INCLUDE_DIRS})
-    target_link_libraries (${LIB_DEEPMD_OP_VARIANT} ${CUDA_LIBRARIES})
+    target_link_libraries (${LIB_DEEPMD_OP} ${CUDA_LIBRARIES})
   elseif (USE_ROCM_TOOLKIT)
-    add_library(${LIB_DEEPMD_OP_VARIANT} SHARED ${OP_ROCM_SRC})
+    add_library(${LIB_DEEPMD_OP} SHARED ${OP_ROCM_SRC})
     find_package(ROCM REQUIRED)
     include_directories(${ROCM_INCLUDE_DIRS})
-    target_link_libraries (${LIB_DEEPMD_OP_VARIANT} ${ROCM_LIBRARIES})
+    target_link_libraries (${LIB_DEEPMD_OP} ${ROCM_LIBRARIES})
   else ()
-    add_library(${LIB_DEEPMD_OP_VARIANT} SHARED ${OP_SRC})
+    add_library(${LIB_DEEPMD_OP} SHARED ${OP_SRC})
   endif()
-  set_target_properties(
-    ${LIB_DEEPMD_OP_VARIANT} 
-    PROPERTIES 
-    COMPILE_DEFINITIONS ${prec_def}
-  )
 endif (BUILD_CPP_IF)
 
 if (BUILD_PY_IF)
   set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
   set(CMAKE_INSTALL_RPATH $ORIGIN)
   if (USE_CUDA_TOOLKIT)
-    add_library(${LIB_OB_ABI_VARIANT} SHARED ${OP_SRC} ${OP_LIB})
-    add_library(${LIB_OB_GRADS_VARIANT} SHARED ${OP_GRADS_SRC})
+    add_library(op_abi SHARED ${OP_SRC} ${OP_LIB})
+    add_library(op_grads SHARED ${OP_GRADS_SRC})
     find_package(CUDA REQUIRED)
     include_directories(${CUDA_INCLUDE_DIRS})
-    target_link_libraries (${LIB_OB_ABI_VARIANT} ${LIB_DEEPMD_OP_DEVICE})
-    target_link_libraries (${LIB_OB_GRADS_VARIANT} ${LIB_DEEPMD_OP_DEVICE})
+    target_link_libraries (op_abi ${LIB_DEEPMD_OP_DEVICE})
+    target_link_libraries (op_grads ${LIB_DEEPMD_OP_DEVICE})
   elseif(USE_ROCM_TOOLKIT)
-    add_library(${LIB_OB_ABI_VARIANT} SHARED ${OP_SRC} ${OP_LIB})
-    add_library(${LIB_OB_GRADS_VARIANT} SHARED ${OP_GRADS_SRC})
+    add_library(op_abi SHARED ${OP_SRC} ${OP_LIB})
+    add_library(op_grads SHARED ${OP_GRADS_SRC})
     find_package(ROCM REQUIRED)
     include_directories(${ROCM_INCLUDE_DIRS})
-    target_link_libraries (${LIB_OB_ABI_VARIANT} ${LIB_DEEPMD_OP_DEVICE})
-    target_link_libraries (${LIB_OB_GRADS_VARIANT} ${LIB_DEEPMD_OP_DEVICE})
+    target_link_libraries (op_abi ${LIB_DEEPMD_OP_DEVICE})
+    target_link_libraries (op_grads ${LIB_DEEPMD_OP_DEVICE})
   else()
-    add_library(${LIB_OB_ABI_VARIANT} SHARED ${OP_SRC} ${OP_LIB})
-    add_library(${LIB_OB_GRADS_VARIANT} SHARED ${OP_GRADS_SRC})
+    add_library(op_abi SHARED ${OP_SRC} ${OP_LIB})
+    add_library(op_grads SHARED ${OP_GRADS_SRC})
   endif()
   
   message(STATUS ${TensorFlowFramework_LIBRARY})
-  target_link_libraries(${LIB_OB_ABI_VARIANT} ${LIB_DEEPMD})
-  target_link_libraries(${LIB_OB_GRADS_VARIANT} ${LIB_DEEPMD})
+  target_link_libraries(op_abi ${LIB_DEEPMD})
+  target_link_libraries(op_grads ${LIB_DEEPMD})
   target_link_libraries(
-    ${LIB_OB_ABI_VARIANT} ${TensorFlowFramework_LIBRARY}
+    op_abi ${TensorFlowFramework_LIBRARY}
     )
   target_link_libraries(
-    ${LIB_OB_GRADS_VARIANT} ${TensorFlowFramework_LIBRARY}
+    op_grads ${TensorFlowFramework_LIBRARY}
     )
   set_target_properties(
-    ${LIB_OB_ABI_VARIANT} 
+    op_abi 
     PROPERTIES 
     COMPILE_FLAGS ${OP_CXX_FLAG}
-    COMPILE_DEFINITIONS ${prec_def}
     )
   set_target_properties(
-    ${LIB_OB_GRADS_VARIANT}
+    op_grads
     PROPERTIES
     COMPILE_FLAGS ${OP_CXX_FLAG}
-    COMPILE_DEFINITIONS ${prec_def}
     )
 endif (BUILD_PY_IF)
 
 if (BUILD_CPP_IF)
-  install(TARGETS ${LIB_DEEPMD_OP_VARIANT}		DESTINATION lib/)
+  install(TARGETS ${LIB_DEEPMD_OP}		DESTINATION lib/)
 endif (BUILD_CPP_IF)
 if (BUILD_PY_IF)
-  install(TARGETS ${LIB_OB_ABI_VARIANT}			DESTINATION deepmd/op/)
-  install(TARGETS ${LIB_OB_GRADS_VARIANT}		DESTINATION deepmd/op/)
+  install(TARGETS op_abi			DESTINATION deepmd/op/)
+  install(TARGETS op_grads			DESTINATION deepmd/op/)
   install(FILES  ${OP_PY}			DESTINATION deepmd/op/)
 endif (BUILD_PY_IF)
 
-endfunction()
-_add_libop_variant("${HIGH_PREC_VARIANT}" "${HIGH_PREC_DEF}")
-_add_libop_variant("${LOW_PREC_VARIANT}" "${LOW_PREC_DEF}")
