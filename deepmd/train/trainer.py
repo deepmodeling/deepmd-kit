@@ -3,8 +3,6 @@ import logging
 import os
 import time
 import shutil
-import copy
-import gc
 import numpy as np
 from deepmd.env import tf, paddle
 from deepmd.env import default_tf_session_config
@@ -81,7 +79,6 @@ class DPTrainer (object):
     def __init__(self, 
                  jdata, 
                  run_opt):
-        paddle.set_device("cpu")
         self.run_opt = run_opt
         self._init_param(jdata)
 
@@ -390,9 +387,6 @@ class DPTrainer (object):
                                   % (self.cur_batch, train_time, test_time))
                     train_time = 0
             
-            if self.save_freq > 0 and self.cur_batch % self.save_freq == 0:
-                self.save_model(model_inputs, self.save_ckpt + "/model")
-
         if self.run_opt.is_chief: 
             fp.close ()
         if self.profiling and self.run_opt.is_chief :
@@ -406,7 +400,6 @@ class DPTrainer (object):
     def save_model(self, model_inputs_, folder_name_):
         # Since "paddle.jit.to_static" modifiess the model in-place
         # We have to make a temporary model copy to avoid damage to the original model.
-        model = copy.copy(self.model)
         save_path = os.getcwd() + "/" + folder_name_
         if self.fitting_type == "ener" and self.descrpt_type == "se_a":
           input_names = ['coord', 'type', 'natoms_vec', 'box', 'default_mesh']
@@ -414,14 +407,8 @@ class DPTrainer (object):
         else:
           raise NotImplementedError
 
-        try:
-          model = paddle.jit.to_static(model, input_spec=input_specs)
-          paddle.jit.save(model, save_path)
-        except Exception as e:
-          raise e
-        finally:
-          del model
-          gc.collect()
+        model = paddle.jit.to_static(self.model, input_spec=input_specs)
+        paddle.jit.save(model, save_path)
 
         log.info("saved checkpoint to %s" % (save_path))
 

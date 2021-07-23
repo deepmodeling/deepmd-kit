@@ -10,6 +10,10 @@
 
 
 
+// Numerical regression between CUDA 10.1 & CUDA 11.2
+// Disable CUDA support until latest changes on
+// /source/lib/src/cuda/xxx.cu get merged
+/*
 #ifdef PADDLE_WITH_CUDA
 std::vector<paddle::Tensor> PdProdForceSeAOpCUDAForward(
 const paddle::Tensor& net_deriv_tensor,
@@ -19,6 +23,7 @@ const paddle::Tensor& natoms_tensor,
 int n_a_sel, 
 int n_r_sel);
 #endif
+*/
 
 template <typename data_t>
 void PdProdForceSeAOpForwardCPUKernel(
@@ -44,10 +49,10 @@ const paddle::Tensor& natoms_tensor,
 int n_a_sel, 
 int n_r_sel
 ){
-    CHECK_INPUT(net_deriv_tensor);
-    CHECK_INPUT(in_deriv_tensor);
-    CHECK_INPUT(nlist_tensor);
-    CHECK_INPUT(natoms_tensor);
+    CHECK_INPUT_READY(net_deriv_tensor);
+    CHECK_INPUT_READY(in_deriv_tensor);
+    CHECK_INPUT_READY(nlist_tensor);
+    CHECK_INPUT_READY(natoms_tensor);
 
     CHECK_INPUT_DIM(net_deriv_tensor, 2);
     CHECK_INPUT_DIM(in_deriv_tensor, 2);
@@ -55,7 +60,13 @@ int n_r_sel
     CHECK_INPUT_DIM(natoms_tensor, 1);
 
     PD_CHECK(natoms_tensor.shape()[0] >= 3, "number of atoms should be larger than (or equal to) 3");
-    const int* natoms = natoms_tensor.data<int>();
+    // TODO: This code should be removed once cuda issue fixed.
+    const int* natoms = nullptr;
+    if(natoms_tensor.place() != paddle::PlaceType::kCPU){
+        natoms = natoms_tensor.copy_to<int>(paddle::PlaceType::kCPU).data<int>();
+    }else{
+        natoms = natoms_tensor.data<int>();
+    }
     int nloc = natoms[0];
     int nall = natoms[1];
     int nframes = net_deriv_tensor.shape()[0];
@@ -79,13 +90,24 @@ int n_r_sel
     assert (nloc * nnei == nlist_tensor.shape()[1]);
     assert (nnei * 4 == ndescrpt);
 
-    PD_DISPATCH_FLOATING_TYPES(
-      net_deriv_tensor.type(), "pd_prod_force_se_a_cpu_forward_kernel", ([&] {
-        PdProdForceSeAOpForwardCPUKernel<data_t>(
-            nloc, nall, nframes, ndescrpt, nnei, 
-            force_tensor.mutable_data<data_t>(), net_deriv_tensor.data<data_t>(), 
-            in_deriv_tensor.data<data_t>(), nlist_tensor.data<int>());
-      }));
+    if(natoms_tensor.place() == paddle::PlaceType::kCPU){
+        PD_DISPATCH_FLOATING_TYPES(
+          net_deriv_tensor.type(), "pd_prod_force_se_a_cpu_forward_kernel", ([&] {
+            PdProdForceSeAOpForwardCPUKernel<data_t>(
+                nloc, nall, nframes, ndescrpt, nnei, 
+                force_tensor.mutable_data<data_t>(), net_deriv_tensor.data<data_t>(), 
+                in_deriv_tensor.data<data_t>(), nlist_tensor.data<int>());
+          }));
+    } else {
+        PD_DISPATCH_FLOATING_TYPES(
+          net_deriv_tensor.type(), "pd_prod_force_se_a_cpu_forward_kernel", ([&] {
+            PdProdForceSeAOpForwardCPUKernel<data_t>(
+                nloc, nall, nframes, ndescrpt, nnei, 
+                force_tensor.mutable_data<data_t>(), net_deriv_tensor.copy_to<data_t>(paddle::PlaceType::kCPU).data<data_t>(), 
+                in_deriv_tensor.copy_to<data_t>(paddle::PlaceType::kCPU).data<data_t>(), nlist_tensor.copy_to<int>(paddle::PlaceType::kCPU).data<int>());
+          }));
+    
+    }
 
     return {force_tensor};
 }
@@ -199,6 +221,9 @@ const paddle::Tensor& nlist_tensor,
 const paddle::Tensor& natoms_tensor,
 int n_a_sel, 
 int n_r_sel){
+    // Force dispatch to CPU until CUDA bug fixed
+    return PdProdForceSeAOpCPUForward(net_deriv_tensor, in_deriv_tensor, nlist_tensor, natoms_tensor, n_a_sel, n_r_sel);
+    /*
     if(net_deriv_tensor.place() == paddle::PlaceType::kCPU){
         return PdProdForceSeAOpCPUForward(net_deriv_tensor, in_deriv_tensor, nlist_tensor, natoms_tensor, n_a_sel, n_r_sel);
 #ifdef PADDLE_WITH_CUDA
@@ -208,6 +233,7 @@ int n_r_sel){
     }else{
         PD_THROW("No Such kernel for PdFrodForceSeAForward!");
     }
+    */
 }
 
 std::vector<paddle::Tensor> PdProdForceSeABackward(
