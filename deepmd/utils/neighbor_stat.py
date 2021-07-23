@@ -1,6 +1,7 @@
 import math
 import logging
 import numpy as np
+import warnings
 from deepmd.env import tf
 from typing import Tuple, List
 from deepmd.env import op_module
@@ -82,7 +83,13 @@ class NeighborStat():
                                                 self.place_holders['box']: np.array(data_set['box'])[kk].reshape([-1, 9]),
                                                 self.place_holders['default_mesh']: np.array(data.default_mesh[ii]),
                                             })
-                    dt = np.min(dt)
+                    
+                    if dt.size != 0:
+                        dt = np.min(dt)
+                        log.warning("Atoms with no neighbors found in %s. Please make sure it's what you expected."%jj)
+                    else:
+                        dt = self.rcut
+
                     if dt < self.min_nbor_dist:
                         self.min_nbor_dist = dt
                     for ww in range(self.ntypes):
