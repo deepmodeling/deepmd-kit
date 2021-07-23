@@ -138,7 +138,7 @@ One can set other environmental variables:
 
 | Environment variables | Allowed value          | Default value | Usage                      |
 | --------------------- | ---------------------- | ------------- | -------------------------- |
-| DP_FLOAT_PREC         | `high`, `low`          | `high`        | Control high (double) or low (float) precision of training. |
+| DP_INTERFACE_PREC     | `high`, `low`          | `high`        | Control high (double) or low (float) precision of training. |
 
 ### Training analysis with Tensorboard
 

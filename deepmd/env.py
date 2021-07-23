@@ -233,7 +233,7 @@ TF_VERSION = GLOBAL_CONFIG["tf_version"]
 TF_CXX11_ABI_FLAG = int(GLOBAL_CONFIG["tf_cxx11_abi_flag"])
 
 # FLOAT_PREC
-dp_float_prec = os.environ.get("DP_FLOAT_PREC", "high").lower()
+dp_float_prec = os.environ.get("DP_INTERFACE_PREC", "high").lower()
 if dp_float_prec in ("high", ""):
     # default is high
     op_module = get_module("libop_abi")
