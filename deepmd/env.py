@@ -252,7 +252,7 @@ else:
     raise RuntimeError(
         "Unsupported float precision option: %s. Supported: high,"
         "low. Please set precision with environmental variable "
-        "DP_FLOAT_PREC." % dp_float_prec
+        "DP_INTERFACE_PREC." % dp_float_prec
     )
 
 
