@@ -86,7 +86,7 @@ class NeighborStat():
                         dt = np.min(dt)              
                     else:
                         dt = self.rcut
-                        log.warn("Atoms with no neighbors found in %s. Please make sure it's what you expected."%jj)
+                        log.warning("Atoms with no neighbors found in %s. Please make sure it's what you expected."%jj)
                         
                     if dt < self.min_nbor_dist:
                         self.min_nbor_dist = dt
