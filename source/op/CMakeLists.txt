@@ -81,7 +81,7 @@ if (BUILD_PY_IF)
 endif (BUILD_PY_IF)
 
 if (BUILD_CPP_IF)
-  install(TARGETS ${LIB_DEEPMD_OP}		DESTINATION lib/)
+  install(TARGETS ${LIB_DEEPMD_OP_VARIANT}		DESTINATION lib/)
 endif (BUILD_CPP_IF)
 if (BUILD_PY_IF)
   install(TARGETS ${LIB_OB_ABI_VARIANT}			DESTINATION deepmd/op/)
