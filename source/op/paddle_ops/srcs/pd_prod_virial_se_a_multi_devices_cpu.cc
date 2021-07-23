@@ -9,6 +9,10 @@
 #define CHECK_INPUT_DIM(x, value) PD_CHECK(x.shape().size() == value, #x "'s dim should be " #value ".")
 
 
+// Numerical regression between CUDA 10.1 & CUDA 11.2
+// Disable CUDA support until latest changes on
+// /source/lib/src/cuda/xxx.cu get merged
+/*
 #ifdef PADDLE_WITH_CUDA
 std::vector<paddle::Tensor> PdProdVirialSeAOpCUDAForward(
 const paddle::Tensor& net_deriv_tensor,
@@ -19,6 +23,7 @@ const paddle::Tensor& natoms_tensor,
 int n_a_sel, 
 int n_r_sel);
 #endif
+*/
 
 template <typename data_t>
 void PdProdVirialSeAOpForwardCPUKernel(
