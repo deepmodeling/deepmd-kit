@@ -124,7 +124,7 @@ int build_nlist_gpu_rocm(
     int * ilist = nlist.ilist;
     int * numneigh = nlist.numneigh;
     int ** firstneigh = nlist.firstneigh;
-    hipErrcheck(hipMemset(nlist_data, -1, sizeof(int) * 2 * nloc * mem_size));
+    DPErrcheck(hipMemset(nlist_data, -1, sizeof(int) * 2 * nloc * mem_size));
     int * temp_nlist = nlist_data; //nloc*mem_size
     int * nei_order = temp_nlist + nloc * mem_size;
     nlist.inum = nloc;
@@ -141,6 +141,8 @@ int build_nlist_gpu_rocm(
                 nloc,
                 nall,
                 mem_size);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
     const int nblock_ = (nloc+TPB-1)/TPB;
     hipLaunchKernelGGL(scan_nlist, nblock_, TPB, 0, 0, 
                 numneigh, 
@@ -149,15 +151,18 @@ int build_nlist_gpu_rocm(
                 mem_size, 
                 nloc, 
                 nall);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
     hipLaunchKernelGGL(fill_nlist, block_grid, thread_grid, 0, 0, 
                 firstneigh,
                 temp_nlist,
                 nei_order,
                 mem_size,
-                nall
-    );
+                nall);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
     int * numneigh_host = new int[nloc];
-    hipErrcheck(hipMemcpy(numneigh_host, numneigh, sizeof(int) * nloc, hipMemcpyDeviceToHost));
+    DPErrcheck(hipMemcpy(numneigh_host, numneigh, sizeof(int) * nloc, hipMemcpyDeviceToHost));
     int max_nei = 0;
     for(int ii=0;ii<nloc;ii++){
         if(numneigh_host[ii]>max_nei)max_nei=numneigh_host[ii];
@@ -177,6 +182,8 @@ void use_nlist_map(
     dim3 block_grid(nloc, nblock);
     dim3 thread_grid(1, TPB);
     hipLaunchKernelGGL(map_nlist, block_grid, thread_grid, 0, 0, nlist, nlist_map, nloc, nnei);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
 }
 
 template int build_nlist_gpu_rocm<float>(InputNlist & nlist, int * max_list_size, int * nlist_data, const float * c_cpy, const int & nloc, const int & nall, const int & mem_size, const float & rcut);
