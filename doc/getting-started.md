@@ -5,6 +5,7 @@ In this text, we will call the deep neural network that is used to represent the
 2. [Train a model](#train-a-model)
     - [Write the input script](#write-the-input-script)
     - [Training](#training)
+    - [Parallel training](#parallel-training)
     - [Training analysis with Tensorboard](#training-analysis-with-tensorboard)
 3. [Freeze a model](#freeze-a-model)
 4. [Test a model](#test-a-model)
@@ -132,6 +133,48 @@ export OMP_NUM_THREADS=6
 export TF_INTRA_OP_PARALLELISM_THREADS=3
 export TF_INTER_OP_PARALLELISM_THREADS=2
 dp train input.json
+```
+
+### Parallel training
+
+Currently, parallel training is enabled in a sychoronized way with help of [Horovod](https://github.com/horovod/horovod). DeePMD-kit will decide parallel training or not according to MPI context. Thus, there is no difference in your json/yaml input file.
+
+Testing `examples/water/se_e2_a` on a 8-GPU host, linear acceleration can be observed with increasing number of cards.
+| Num of GPU cards | Seconds every 100 samples | Samples per second | Speed up |
+|  --  | -- | -- | -- |
+| 1  | 1.6116 | 62.05 | 1.00 |
+| 2  | 1.6310 | 61.31 | 1.98 |
+| 4  | 1.6168 | 61.85 | 3.99 |
+| 8  | 1.6212 | 61.68 | 7.95 |
+
+To experience this powerful feature, please intall Horovod first. For better performance on GPU, please follow tuning steps in [Horovod on GPU](https://github.com/horovod/horovod/blob/master/docs/gpus.rst).
+```bash
+# By default, MPI is used as communicator.
+HOROVOD_WITHOUT_GLOO=1 HOROVOD_WITH_TENSORFLOW=1 pip3 install horovod
+```
+
+Have a quick try!
+```bash
+# Launch 4 processes on the same host
+CUDA_VISIBLE_DEVICES=4,5,6,7 horovodrun -np 4 \
+    dp train --mpi-log=workers input.json
+```
+
+Need to mention, environment variable `CUDA_VISIBLE_DEVICES` must be set to control parallelism on the occupied host where one process is bound to one GPU card.
+
+What's more, 2 command-line arguments are defined to control the logging behvaior.
+```
+optional arguments:
+  -l LOG_PATH, --log-path LOG_PATH
+                        set log file to log messages to disk, if not
+                        specified, the logs will only be output to console
+                        (default: None)
+  -m {master,collect,workers}, --mpi-log {master,collect,workers}
+                        Set the manner of logging when running with MPI.
+                        'master' logs only on main process, 'collect'
+                        broadcasts logs from workers to master and 'workers'
+                        means each process will output its own log (default:
+                        master)
 ```
 
 ### Training analysis with Tensorboard
