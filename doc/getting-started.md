@@ -150,7 +150,7 @@ Testing `examples/water/se_e2_a` on a 8-GPU host, linear acceleration can be obs
 To experience this powerful feature, please intall Horovod first. For better performance on GPU, please follow tuning steps in [Horovod on GPU](https://github.com/horovod/horovod/blob/master/docs/gpus.rst).
 ```bash
 # By default, MPI is used as communicator.
-HOROVOD_WITHOUT_GLOO=1 HOROVOD_WITH_TENSORFLOW=1 pip3 install horovod
+HOROVOD_WITHOUT_GLOO=1 HOROVOD_WITH_TENSORFLOW=1 pip install horovod
 ```
 
 Have a quick try!

@@ -228,7 +228,7 @@ class RunOptions:
             HVD.init()
             self.is_distrib = _is_distributed(HVD)
         except ImportError:
-            log.warn("Switch to serial execution due to lack of horovod module.")
+            log.warning("Switch to serial execution due to lack of horovod module.")
             self.is_distrib = False
 
         # Do real intialization
