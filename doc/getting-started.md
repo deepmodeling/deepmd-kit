@@ -153,7 +153,7 @@ To experience this powerful feature, please intall Horovod and [mpi4py](https://
 HOROVOD_WITHOUT_GLOO=1 HOROVOD_WITH_TENSORFLOW=1 pip install horovod mpi4py
 ```
 
-Horovod works in the data-parallel mode resulting a larger global batch size. For example, the real batch size is 8 when `batch_size` is set to 2 in the input file and you lauch 4 worekrs. Thus, `learning_rate` is automatically scaled by the number of workers for better convergence. Technical details of such heuristic rule are discussed at [Accurate, Large Minibatch SGD: Training ImageNet in 1 Hour](https://arxiv.org/abs/1706.02677).
+Horovod works in the data-parallel mode resulting a larger global batch size. For example, the real batch size is 8 when `batch_size` is set to 2 in the input file and you lauch 4 workers. Thus, `learning_rate` is automatically scaled by the number of workers for better convergence. Technical details of such heuristic rule are discussed at [Accurate, Large Minibatch SGD: Training ImageNet in 1 Hour](https://arxiv.org/abs/1706.02677).
 
 With dependencies installed, have a quick try!
 ```bash

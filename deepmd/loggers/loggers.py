@@ -159,7 +159,7 @@ def set_log_handles(
     Raises
     ------
     RuntimeError
-        if only one of the arguments `mpi_log`, `MPI` is specified
+        If the argument `mpi_log` is specified, package `mpi4py` is not installed.
 
     References
     ----------

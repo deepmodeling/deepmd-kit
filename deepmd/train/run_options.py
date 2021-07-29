@@ -207,8 +207,7 @@ class RunOptions:
             console only from rank==0. `collect` will write messages from all ranks to
             one file opened under rank==0 and to console. `workers` will open one log
             file for each worker designated by its rank, console behaviour is the same
-            as for `collect`. If this argument is specified than also `MPI` object must
-            be passed in. by default None
+            as for `collect`.
         """
         if not self._log_handles_already_set:
             if not self._HVD:

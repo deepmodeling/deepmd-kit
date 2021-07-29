@@ -126,7 +126,7 @@ def get_tf_session_config() -> Any:
 default_tf_session_config = get_tf_session_config()
 
 
-def reset_tf_session_config(cpu_only):
+def reset_default_tf_session_config(cpu_only: bool):
     """Limit tensorflow session to CPU or not.
 
     Parameters
