@@ -375,9 +375,6 @@ class DPTrainer (object):
         if device == "gpu":
             config.gpu_options.allow_growth = True
             config.gpu_options.visible_device_list = idx
-        else:
-            # In case we are running on a GPU host where TensorFlow will always use the GPU#0
-            config.device_count['GPU'] = 0
         self.sess = tf.Session(config=config)
 
         # Initializes or restore global variables
