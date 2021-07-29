@@ -147,10 +147,10 @@ Testing `examples/water/se_e2_a` on a 8-GPU host, linear acceleration can be obs
 | 4  | 1.6168 | 61.85 | 3.99 |
 | 8  | 1.6212 | 61.68 | 7.95 |
 
-To experience this powerful feature, please intall Horovod first. For better performance on GPU, please follow tuning steps in [Horovod on GPU](https://github.com/horovod/horovod/blob/master/docs/gpus.rst).
+To experience this powerful feature, please intall Horovod and [mpi4py](https://github.com/mpi4py/mpi4py) first. For better performance on GPU, please follow tuning steps in [Horovod on GPU](https://github.com/horovod/horovod/blob/master/docs/gpus.rst).
 ```bash
 # By default, MPI is used as communicator.
-HOROVOD_WITHOUT_GLOO=1 HOROVOD_WITH_TENSORFLOW=1 pip install horovod
+HOROVOD_WITHOUT_GLOO=1 HOROVOD_WITH_TENSORFLOW=1 pip install horovod mpi4py
 ```
 
 Have a quick try!
