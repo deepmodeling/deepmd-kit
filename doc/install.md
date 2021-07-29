@@ -226,7 +226,7 @@ DeePMD-kit provide module for running MD simulation with LAMMPS. Now make the De
 cd $deepmd_source_dir/source/build
 make lammps
 ```
-DeePMD-kit will generate a module called `USER-DEEPMD` (high precision) or `USER-DEEPMD_low` (low precision) in the `build` directory. Now download the LAMMPS code (`29Oct2020` or later), and uncompress it:
+DeePMD-kit will generate a module called `USER-DEEPMD` in the `build` directory. If you need low precision version, move `env_low.sh` to `env.sh` in the directory. Now download the LAMMPS code (`29Oct2020` or later), and uncompress it:
 ```bash
 cd /some/workspace
 wget https://github.com/lammps/lammps/archive/stable_29Oct2020.tar.gz

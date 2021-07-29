@@ -47,7 +47,7 @@ curl -L -o lammps.patch https://github.com/deepmd-kit-recipes/lammps-dp-feedstoc
 cd ${BUILD_TMP_DIR}/lammps-${LAMMPS_VERSION}
 patch -f -p1 < ../lammps.patch || true 
 mkdir -p ${BUILD_TMP_DIR}/lammps-${LAMMPS_VERSION}/src/USER-DEEPMD
-cp -r ${BUILD_TMP_DIR2}/USER-DEEPMD${PREC_SUFFIX}/* ${BUILD_TMP_DIR}/lammps-${LAMMPS_VERSION}/src/USER-DEEPMD
+cp -r ${BUILD_TMP_DIR2}/USER-DEEPMD/* ${BUILD_TMP_DIR}/lammps-${LAMMPS_VERSION}/src/USER-DEEPMD
 
 mkdir -p ${BUILD_TMP_DIR}/lammps-${LAMMPS_VERSION}/build
 cd ${BUILD_TMP_DIR}/lammps-${LAMMPS_VERSION}/build
