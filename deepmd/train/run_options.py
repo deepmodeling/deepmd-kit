@@ -213,10 +213,7 @@ class RunOptions:
         if not self._log_handles_already_set:
             if not self._HVD:
                 mpi_log = None
-                MPI = None
-            else:
-                from mpi4py import MPI
-            set_log_handles(log_level, log_path, mpi_log=mpi_log, MPI=MPI)
+            set_log_handles(log_level, log_path, mpi_log=mpi_log)
             self._log_handles_already_set = True
             log.debug("Log handles were successfully set")
         else:
