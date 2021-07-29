@@ -621,8 +621,8 @@ class DescrptSeA ():
                   uniform_seed = self.uniform_seed)
               if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
           else:
-            w = tf.zeros((outputs_size[0], outputs_size[-1]), dtype=GLOBAL_TF_FLOAT_PRECISION)
-            xyz_scatter = tf.matmul(xyz_scatter, w)
+            # we can safely return the final xyz_scatter filled with zero directly
+            return tf.cast(tf.fill((natom, 4, outputs_size[-1]), 0.), GLOBAL_TF_FLOAT_PRECISION)
           # natom x nei_type_i x out_size
           xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1]//4, outputs_size[-1]))  
           # When using tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]) below
@@ -650,6 +650,18 @@ class DescrptSeA ():
         shape = inputs.get_shape().as_list()
         outputs_size = [1] + self.filter_neuron
         outputs_size_2 = self.n_axis_neuron
+        all_excluded = all([(type_input, type_i) in self.exclude_types for type_i in range(self.ntypes)])
+        if all_excluded:
+            # all types are excluded so result and qmat should be zeros
+            # we can safaly return a zero matrix...
+            # See also https://stackoverflow.com/a/34725458/9567349
+            # result: natom x outputs_size x outputs_size_2
+            # qmat: natom x outputs_size x 3
+            natom = tf.shape(inputs)[0]
+            result = tf.cast(tf.fill((natom, outputs_size_2, outputs_size[-1]), 0.), GLOBAL_TF_FLOAT_PRECISION)
+            qmat = tf.cast(tf.fill((natom, outputs_size[-1], 3), 0.), GLOBAL_TF_FLOAT_PRECISION)
+            return result, qmat
+            
         with tf.variable_scope(name, reuse=reuse):
           start_index = 0
           type_i = 0
