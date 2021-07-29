@@ -683,7 +683,8 @@ class DescrptSeA ():
                       suffix = "_"+str(type_i))
                   if type_i == 0:
                       xyz_scatter_1 = ret
-                  else:
+                  elif (type_input, type_i) not in self.exclude_types:
+                      # add zero is meaningless; skip
                       xyz_scatter_1+= ret
                   start_index += self.sel_a[type_i]
           else :
