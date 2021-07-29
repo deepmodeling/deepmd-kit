@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Any
 
 import numpy as np
 from deepmd.common import data_requirement, expand_sys_str, j_loader, j_must_have
-from deepmd.env import tf
+from deepmd.env import reset_tf_session_config
 from deepmd.infer.data_modifier import DipoleChargeModifier
 from deepmd.train.run_options import BUILD, CITATION, WELCOME, RunOptions
 from deepmd.train.trainer import DPTrainer
@@ -106,6 +106,10 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
     """
     # make necessary checks
     assert "training" in jdata
+
+    # avoid conflict of visible gpus among multipe tf sessions in one process
+    if run_opt.is_distrib and len(run_opt.gpus or []) > 1:
+        reset_tf_session_config(cpu_only=True)
 
     # init the model
     model = DPTrainer(jdata, run_opt=run_opt)
