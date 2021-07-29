@@ -131,7 +131,7 @@ def reset_tf_session_config(cpu_only):
 
     Parameters
     ----------
-    cpu_only : bool, optional
+    cpu_only : bool
         If enabled, no GPU device is visible to the TensorFlow Session.
     """
     global default_tf_session_config
