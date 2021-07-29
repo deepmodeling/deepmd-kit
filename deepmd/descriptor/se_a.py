@@ -586,6 +586,7 @@ class DescrptSeA ():
                              [ 0, start_index* 4],
                              [-1, incrs_index* 4] )
         shape_i = inputs_i.get_shape().as_list()
+        natom = tf.shape(inputs_i)[0]
         # with (natom x nei_type_i) x 4
         inputs_reshape = tf.reshape(inputs_i, [-1, 4])
         # with (natom x nei_type_i) x 1
@@ -603,7 +604,7 @@ class DescrptSeA ():
             net = 'filter_-1_net_' + str(type_i)
           else:
             net = 'filter_' + str(type_input) + '_net_' + str(type_i)
-          return op_module.tabulate_fusion(self.table.data[net].astype(self.filter_np_precision), info, xyz_scatter, tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])  
+          return op_module.tabulate_fusion(self.table.data[net].astype(self.filter_np_precision), info, xyz_scatter, tf.reshape(inputs_i, [natom, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])  
         else:
           if (not is_exclude):
               xyz_scatter = embedding_net(
@@ -624,7 +625,12 @@ class DescrptSeA ():
             xyz_scatter = tf.matmul(xyz_scatter, w)
           # natom x nei_type_i x out_size
           xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1]//4, outputs_size[-1]))  
-          return tf.matmul(tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), xyz_scatter, transpose_a = True)
+          # When using tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]) below
+          # [588 24] -> [588 6 4] correct
+          # but if sel is zero
+          # [588 0] -> [147 0 4] incorrect; the correct one is [588 0 4]
+          # So we need to explicitly assign the shape to tf.shape(inputs_i)[0] instead of -1
+          return tf.matmul(tf.reshape(inputs_i, [natom, shape_i[1]//4, 4]), xyz_scatter, transpose_a = True)
 
 
     def _filter(
