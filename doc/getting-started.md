@@ -134,6 +134,12 @@ export TF_INTER_OP_PARALLELISM_THREADS=2
 dp train input.json
 ```
 
+One can set other environmental variables:
+
+| Environment variables | Allowed value          | Default value | Usage                      |
+| --------------------- | ---------------------- | ------------- | -------------------------- |
+| DP_INTERFACE_PREC     | `high`, `low`          | `high`        | Control high (double) or low (float) precision of training. |
+
 ### Training analysis with Tensorboard
 
 If enbled in json/yaml input file DeePMD-kit will create log files which can be
@@ -425,7 +431,7 @@ kspace_modify	gewald 0.45
 Please notice that the DeePMD does nothing to the direct space part of the electrostatic interaction, because this part is assumed to be fitted in the DeePMD model (the direct space cut-off is thus the cut-off of the DeePMD model). The splitting parameter `gewald` is modified by the `kspace_modify` command.
 
 ### Run path-integral MD with i-PI
-The i-PI works in a client-server model. The i-PI provides the server for integrating the replica positions of atoms, while the DeePMD-kit provides a client named `dp_ipi` that computes the interactions (including energy, force and virial). The server and client communicates via the Unix domain socket or the Internet socket. Installation instructions of i-PI can be found [here](install.md#install-i-pi). The client can be started by
+The i-PI works in a client-server model. The i-PI provides the server for integrating the replica positions of atoms, while the DeePMD-kit provides a client named `dp_ipi` (or `dp_ipi_low` for low precision) that computes the interactions (including energy, force and virial). The server and client communicates via the Unix domain socket or the Internet socket. Installation instructions of i-PI can be found [here](install.md#install-i-pi). The client can be started by
 ```bash
 i-pi input.xml &
 dp_ipi water.json

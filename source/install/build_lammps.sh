@@ -6,6 +6,14 @@ if [ -z "$FLOAT_PREC" ]
 then
   FLOAT_PREC=high
 fi
+
+if [ ${FLOAT_PREC} == "high" ]; then
+    PREC_DEF="-DHIGH_PREC"
+    PREC_SUFFIX=""
+else
+    PREC_DEF="-DLOW_PREC"
+    PREC_SUFFIX="_low"
+fi
 #------------------
 
 SCRIPT_PATH=$(dirname $(realpath -s $0))
@@ -43,10 +51,7 @@ cp -r ${BUILD_TMP_DIR2}/USER-DEEPMD/* ${BUILD_TMP_DIR}/lammps-${LAMMPS_VERSION}/
 
 mkdir -p ${BUILD_TMP_DIR}/lammps-${LAMMPS_VERSION}/build
 cd ${BUILD_TMP_DIR}/lammps-${LAMMPS_VERSION}/build
-if [ ${FLOAT_PREC} == "high" ]; then
-    export PREC_DEF="-DHIGH_PREC"
-fi
-cmake -C ../cmake/presets/all_off.cmake -D PKG_USER-DEEPMD=ON -D PKG_KSPACE=ON -D CMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} -D CMAKE_CXX_FLAGS="${PREC_DEF} -I${INSTALL_PREFIX}/include -L${INSTALL_PREFIX}/lib -Wl,--no-as-needed -lrt -ldeepmd_op -ldeepmd -ldeepmd_cc -ltensorflow_cc -ltensorflow_framework -Wl,-rpath=${INSTALL_PREFIX}/lib" ../cmake
+cmake -C ../cmake/presets/all_off.cmake -D PKG_USER-DEEPMD=ON -D PKG_KSPACE=ON -D CMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} -D CMAKE_CXX_FLAGS="${PREC_DEF} -I${INSTALL_PREFIX}/include -L${INSTALL_PREFIX}/lib -Wl,--no-as-needed -lrt -ldeepmd_op -ldeepmd -ldeepmd_cc${PREC_SUFFIX} -ltensorflow_cc -ltensorflow_framework -Wl,-rpath=${INSTALL_PREFIX}/lib" ../cmake
 
 make -j${NPROC}
 make install
