@@ -1,5 +1,4 @@
 {
-    "with_distrib":	false,
     "_comment": " model parameters",
     "model":{
 	"type_map":		["O", "H"],

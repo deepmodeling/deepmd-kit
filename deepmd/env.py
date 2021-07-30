@@ -117,12 +117,29 @@ def get_tf_session_config() -> Any:
     """
     set_tf_default_nthreads()
     intra, inter = get_tf_default_nthreads()
-    return tf.ConfigProto(
+    config = tf.ConfigProto(
         intra_op_parallelism_threads=intra, inter_op_parallelism_threads=inter
     )
+    return config
 
 
 default_tf_session_config = get_tf_session_config()
+
+
+def reset_default_tf_session_config(cpu_only: bool):
+    """Limit tensorflow session to CPU or not.
+
+    Parameters
+    ----------
+    cpu_only : bool
+        If enabled, no GPU device is visible to the TensorFlow Session.
+    """
+    global default_tf_session_config
+    if cpu_only:
+        default_tf_session_config.device_count['GPU'] = 0
+    else:
+        if 'GPU' in default_tf_session_config.device_count:
+            del default_tf_session_config.device_count['GPU']
 
 
 def get_module(module_name: str) -> "ModuleType":
