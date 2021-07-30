@@ -135,6 +135,13 @@ export TF_INTER_OP_PARALLELISM_THREADS=2
 dp train input.json
 ```
 
+One can set other environmental variables:
+
+| Environment variables | Allowed value          | Default value | Usage                      |
+| --------------------- | ---------------------- | ------------- | -------------------------- |
+| DP_INTERFACE_PREC     | `high`, `low`          | `high`        | Control high (double) or low (float) precision of training. |
+
+
 ### Parallel training
 
 Currently, parallel training is enabled in a sychoronized way with help of [Horovod](https://github.com/horovod/horovod). DeePMD-kit will decide parallel training or not according to MPI context. Thus, there is no difference in your json/yaml input file.
@@ -398,7 +405,7 @@ where `e`, `f` and `v` are predicted energy, force and virial of the system, res
 
 You can compile `infer_water.cpp` using `gcc`:
 ```sh
-gcc infer_water.cpp -D HIGH_PREC -L $deepmd_root/lib -L $tensorflow_root/lib -I $deepmd_root/include -I $tensorflow_root/lib -Wl,--no-as-needed -ldeepmd_op -ldeepmd -ldeepmd_cc -ltensorflow_cc -ltensorflow_framework -lstdc++ -Wl,-rpath=$deepmd_root/lib -Wl,-rpath=$tensorflow_root/lib -o infer_water
+gcc infer_water.cpp -D HIGH_PREC -L $deepmd_root/lib -L $tensorflow_root/lib -I $deepmd_root/include -I $tensorflow_root/include -Wl,--no-as-needed -ldeepmd_op -ldeepmd -ldeepmd_cc -ltensorflow_cc -ltensorflow_framework -lstdc++ -Wl,-rpath=$deepmd_root/lib -Wl,-rpath=$tensorflow_root/lib -o infer_water
 ```
 and then run the program:
 ```sh
@@ -470,7 +477,7 @@ kspace_modify	gewald 0.45
 Please notice that the DeePMD does nothing to the direct space part of the electrostatic interaction, because this part is assumed to be fitted in the DeePMD model (the direct space cut-off is thus the cut-off of the DeePMD model). The splitting parameter `gewald` is modified by the `kspace_modify` command.
 
 ### Run path-integral MD with i-PI
-The i-PI works in a client-server model. The i-PI provides the server for integrating the replica positions of atoms, while the DeePMD-kit provides a client named `dp_ipi` that computes the interactions (including energy, force and virial). The server and client communicates via the Unix domain socket or the Internet socket. Installation instructions of i-PI can be found [here](install.md#install-i-pi). The client can be started by
+The i-PI works in a client-server model. The i-PI provides the server for integrating the replica positions of atoms, while the DeePMD-kit provides a client named `dp_ipi` (or `dp_ipi_low` for low precision) that computes the interactions (including energy, force and virial). The server and client communicates via the Unix domain socket or the Internet socket. Installation instructions of i-PI can be found [here](install.md#install-i-pi). The client can be started by
 ```bash
 i-pi input.xml &
 dp_ipi water.json
