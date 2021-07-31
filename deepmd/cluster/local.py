@@ -39,12 +39,8 @@ def get_gpus():
             + " Switch to CPU device for calculation.")
         return None
 
-    # Warn for better GPU visibility
+    # All GPUs are avaiable
     if "CUDA_VISIBLE_DEVICES" not in os.environ:
-        if num_gpus > 1:
-            log.warning("Multiple GPU devices are found while only the first one will be used!"
-            + " It is recommended to limit GPU visibility by the environment variable"
-            + " `CUDA_VISIBLE_DEVICES`.")
         return list(range(num_gpus))
 
     # In case where user set "CUDA_VISIBLE_DEVICES=-1" to disable GPU usage
@@ -54,6 +50,8 @@ def get_gpus():
         if idx >= 0 and idx < num_gpus:
             gpu_id = len(valid_ids)
             valid_ids.append(gpu_id)
+        else:
+            log.warning("GPU ID %d in `` is out of range and thus ignored!")
     return valid_ids if len(valid_ids) > 0 else None  # Always None if no GPU available
 
 
