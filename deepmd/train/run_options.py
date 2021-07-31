@@ -206,7 +206,7 @@ class RunOptions:
             gpu_idx = HVD.local_rank()
             if gpu_idx >= len(gpus):
                 raise RuntimeError('Count of local processes is larger than that of available GPUs!')
-            my_device = f"gpu:{gpu_idx:d}"
+            self.my_device = f"gpu:{gpu_idx:d}"
         else:
             self.my_device = "cpu:0"
 

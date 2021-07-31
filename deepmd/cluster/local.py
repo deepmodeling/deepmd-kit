@@ -1,4 +1,5 @@
 """Get local GPU resources."""
+
 import logging
 import os
 import socket
@@ -35,8 +36,8 @@ def get_gpus():
 
     # Ensure TensorFlow is compatible
     if num_gpus > 0 and not tf.test.is_built_with_gpu_support():
-        log.warning("GPU devices are found while your installed TensorFlow has no GPU support!"
-            + " Switch to CPU device for calculation.")
+        log.warning("GPU devices are found while your installed TensorFlow has no GPU "
+                    "support! Switch to CPU device for calculation.")
         return None
 
     # All GPUs are avaiable
@@ -51,7 +52,8 @@ def get_gpus():
             gpu_id = len(valid_ids)
             valid_ids.append(gpu_id)
         else:
-            log.warning("GPU ID %d in `` is out of range and thus ignored!")
+            log.warning("GPU ID %d in `CUDA_VISIBLE_DEVICES` is out of range and thus "
+                        "ignored!", idx)
     return valid_ids if len(valid_ids) > 0 else None  # Always None if no GPU available
 
 
