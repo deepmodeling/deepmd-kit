@@ -1,5 +1,6 @@
-from dargs import dargs, Argument, Variant
+from dargs import dargs, Argument, Variant, ArgumentEncoder
 from deepmd.common import ACTIVATION_FN_DICT, PRECISION_DICT
+import json
 
 
 def list_to_doc(xx):
@@ -622,6 +623,13 @@ def gen_doc(*, make_anchor=True, make_link=True, **kwargs):
 
     return "\n\n".join(ptr)
 
+def gen_json(**kwargs):
+    return json.dumps((
+        model_args(),
+        learning_rate_args(),
+        loss_args(),
+        training_args(),
+    ), cls=ArgumentEncoder)
 
 def normalize_hybrid_list(hy_list):
     new_list = []
