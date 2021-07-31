@@ -282,7 +282,9 @@ class TestParserOutput(unittest.TestCase):
 
     def test_parser_doc(self):
         """Test doc subparser."""
-        ARGS = {}
+        ARGS = {
+            "--out-type": dict(type=str, value="rst"),
+        }
 
         self.run_test(command="doc-train-input", mapping=ARGS)
     
