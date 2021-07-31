@@ -5,7 +5,7 @@ from deepmd.utils.argcheck import gen_doc, gen_json
 __all__ = ["doc_train_input"]
 
 
-def doc_train_input(*, out_type: bool = "rst", **kwargs):
+def doc_train_input(*, out_type: str = "rst", **kwargs):
     """Print out trining input arguments to console."""
     if out_type == "rst":
         doc_str = gen_doc(make_anchor=True)
