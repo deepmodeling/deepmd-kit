@@ -7,6 +7,8 @@ https://github.com/deepsense-ai/tensorflow_on_slurm ####
 
 import re
 import os
+
+from deepmd.cluster import local
 from typing import List, Tuple, Optional, Iterable
 
 __all__ = ["get_resource"]
@@ -45,11 +47,7 @@ def get_resource() -> Tuple[str, List[str], Optional[List[int]]]:
         raise ValueError(
             f"Nodename({nodename}) not in nodelist({nodelist}). This should not happen!"
         )
-    gpus_env = os.getenv("CUDA_VISIBLE_DEVICES")
-    if not gpus_env:
-        gpus = None
-    else:
-        gpus = [int(gpu) for gpu in gpus_env.split(",")]
+    gpus = local.get_gpus()
     return nodename, nodelist, gpus
 
 

@@ -2,4 +2,5 @@ numpy
 scipy
 pyyaml
 dargs >= 0.2.2
+GPUtil >= 0.14.0
 typing_extensions; python_version < "3.7"
