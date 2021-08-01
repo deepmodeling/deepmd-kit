@@ -1,17 +1,15 @@
 """Get local GPU resources."""
 
-import logging
 import os
 import socket
-
-import GPUtil
+import subprocess as sp
+import sys
 
 from deepmd.env import tf
 from typing import List, Tuple, Optional
 
-__all__ = ["get_gpus", "get_resource"]
 
-log = logging.getLogger(__name__)
+__all__ = ["get_gpus", "get_resource"]
 
 
 def get_gpus():
@@ -23,38 +21,18 @@ def get_gpus():
     Optional[List[int]]
         List of available GPU IDs. Otherwise, None.
     """
-    # TODO: Create a pull request of `GPUtil` to cover ROCM devices.
-    # Currently, even if None is returned, a ROCM device is still visible in TensorFlow.
-    available = GPUtil.getGPUs()
-    num_gpus = len(available)
-    if num_gpus == 0:
-        return None
-
-    # Print help messages
-    gpu_str_list = ["- %d#%s" % (item.id, item.name) for item in available]
-    log.info("Availalbe GPUs are:\n%s", "\n".join(gpu_str_list))
-
-    # Ensure TensorFlow is compatible
-    if num_gpus > 0 and not tf.test.is_built_with_gpu_support():
-        log.warning("GPU devices are found while your installed TensorFlow has no GPU "
-                    "support! Switch to CPU device for calculation.")
-        return None
-
-    # All GPUs are avaiable
-    if "CUDA_VISIBLE_DEVICES" not in os.environ:
-        return list(range(num_gpus))
-
-    # In case where user set "CUDA_VISIBLE_DEVICES=-1" to disable GPU usage
-    valid_ids = []
-    for item in os.environ["CUDA_VISIBLE_DEVICES"].split(","):
-        idx = int(item)
-        if idx >= 0 and idx < num_gpus:
-            gpu_id = len(valid_ids)
-            valid_ids.append(gpu_id)
-        else:
-            log.warning("GPU ID %d in `CUDA_VISIBLE_DEVICES` is out of range and thus "
-                        "ignored!", idx)
-    return valid_ids if len(valid_ids) > 0 else None  # Always None if no GPU available
+    test_cmd = 'from tensorflow.python.client import device_lib; ' \
+               'devices = device_lib.list_local_devices(); ' \
+               'gpus = [d.name for d in devices if d.device_type == "GPU"]; ' \
+               'print(len(gpus))'
+    p = sp.Popen([sys.executable, "-c", test_cmd], stderr=sp.PIPE, stdout=sp.PIPE)
+    stdout, stderr = p.communicate()
+    if p.returncode != 0:
+        decoded = stderr.decode('UTF-8')
+        raise RuntimeError('Failed to detect availbe GPUs due to:\n%s' % decoded)
+    decoded = stdout.decode('UTF-8').strip()
+    num_gpus = int(decoded)
+    return list(range(num_gpus)) if num_gpus > 0 else None
 
 
 def get_resource() -> Tuple[str, List[str], Optional[List[int]]]:

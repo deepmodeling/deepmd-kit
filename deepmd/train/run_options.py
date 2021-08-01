@@ -123,14 +123,15 @@ class RunOptions:
         log.info("---Summary of the training---------------------------------------")
         if self.is_distrib:
             log.info("distributed")
-            log.info(f"world size:              {self.world_size}")
+            log.info(f"world size:           {self.world_size}")
             log.info(f"my rank:              {self.my_rank}")
-            log.info(f"node list:          {self.nodelist}")
+            log.info(f"node list:            {self.nodelist}")
         log.info(f"running on:           {self.nodename}")
-        if self.gpus is None:
-            log.info(f"CUDA_VISIBLE_DEVICES: unset")
-        else:
-            log.info(f"CUDA_VISIBLE_DEVICES: {self.gpus}")
+        log.info(f"computing device:     {self.my_device}")
+        if tf.test.is_built_with_gpu_support():
+            env_value = os.environ.get('CUDA_VISIBLE_DEVICES', 'unset')
+            log.info(f"CUDA_VISIBLE_DEVICES: {env_value}")
+            log.info(f"Count of visible GPU: {len(self.gpus)}")
         intra, inter = get_tf_default_nthreads()
         log.info(f"num_intra_threads:    {intra:d}")
         log.info(f"num_inter_threads:    {inter:d}")
