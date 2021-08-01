@@ -25,14 +25,14 @@ def get_gpus():
                'devices = device_lib.list_local_devices(); ' \
                'gpus = [d.name for d in devices if d.device_type == "GPU"]; ' \
                'print(len(gpus))'
-    p = sp.Popen([sys.executable, "-c", test_cmd], stderr=sp.PIPE, stdout=sp.PIPE)
-    stdout, stderr = p.communicate()
-    if p.returncode != 0:
-        decoded = stderr.decode('UTF-8')
-        raise RuntimeError('Failed to detect availbe GPUs due to:\n%s' % decoded)
-    decoded = stdout.decode('UTF-8').strip()
-    num_gpus = int(decoded)
-    return list(range(num_gpus)) if num_gpus > 0 else None
+    with sp.Popen([sys.executable, "-c", test_cmd], stderr=sp.PIPE, stdout=sp.PIPE) as p:
+        stdout, stderr = p.communicate()
+        if p.returncode != 0:
+            decoded = stderr.decode('UTF-8')
+            raise RuntimeError('Failed to detect availbe GPUs due to:\n%s' % decoded)
+        decoded = stdout.decode('UTF-8').strip()
+        num_gpus = int(decoded)
+        return list(range(num_gpus)) if num_gpus > 0 else None
 
 
 def get_resource() -> Tuple[str, List[str], Optional[List[int]]]:
