@@ -128,10 +128,9 @@ class RunOptions:
             log.info(f"node list:            {self.nodelist}")
         log.info(f"running on:           {self.nodename}")
         log.info(f"computing device:     {self.my_device}")
-        if tf.test.is_built_with_gpu_support():
-            env_value = os.environ.get('CUDA_VISIBLE_DEVICES', 'unset')
-            log.info(f"CUDA_VISIBLE_DEVICES: {env_value}")
-            log.info(f"Count of visible GPU: {len(self.gpus)}")
+        env_value = os.environ.get('CUDA_VISIBLE_DEVICES', 'unset')
+        log.info(f"CUDA_VISIBLE_DEVICES: {env_value}")
+        log.info(f"Count of visible GPU: {len(self.gpus or [])}")
         intra, inter = get_tf_default_nthreads()
         log.info(f"num_intra_threads:    {intra:d}")
         log.info(f"num_inter_threads:    {inter:d}")
