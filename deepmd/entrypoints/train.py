@@ -276,11 +276,22 @@ def wrap_up_4(xx):
 
 
 def update_one_sel(jdata, descriptor):
+    rcut = descriptor['rcut']
+    tmp_sel = get_sel(jdata, rcut)
     if parse_auto_sel(descriptor['sel']) :
         ratio = parse_auto_sel_ratio(descriptor['sel'])
-        rcut = descriptor['rcut']
-        tmp_sel = get_sel(jdata, rcut)
         descriptor['sel'] = [int(wrap_up_4(ii * ratio)) for ii in tmp_sel]
+    else:
+        # sel is set by user
+        for ii, (tt, dd) in enumerate(zip(tmp_sel, descriptor['sel'])):
+            if dd and tt > dd:
+                # we may skip warning for sel=0, where the user is likely
+                # to exclude such type in the descriptor
+                log.warning(
+                    "sel of type %d is not enough! The expected value is "
+                    "not less than %d, but you set it to %d. The accuracy"
+                    " of your model may get worse." %(ii, tt, dd)
+                )
     return descriptor
 
 
