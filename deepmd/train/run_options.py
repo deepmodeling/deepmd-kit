@@ -52,57 +52,6 @@ BUILD = (
 )
 
 
-def _is_distributed(HVD: "HVD") -> bool:
-    """Check if there are more than one MPI processes.
-
-    Parameters
-    ----------
-    HVD : HVD
-        Horovod object
-
-    Returns
-    -------
-    bool
-        True if we have more than 1 MPI process
-    """
-    return HVD.size() > 1
-
-
-def _distributed_task_config(
-    HVD: "HVD",
-    gpu_list: Optional[List[int]] = None
-) -> Tuple[int, int, str]:
-    """Create configuration for distributed tensorflow session.
-
-    Parameters
-    ----------
-    HVD : horovod.tensorflow
-        Horovod TensorFlow module
-    gpu_list : Optional[List[int]], optional
-        the list of GPUs on each node, by default None
-
-    Returns
-    -------
-    Tuple[int, int, str]
-        task count, index of this task, the device for this task
-    """
-    my_rank = HVD.rank()
-    world_size = HVD.size()
-
-    # setup gpu/cpu devices
-    if gpu_list is not None:
-        numb_gpu = len(gpu_list)
-        gpu_idx = HVD.local_rank()
-        if gpu_idx >= numb_gpu:
-            my_device = "cpu:0"  # "cpu:%d" % node_task_idx
-        else:
-            my_device = f"gpu:{gpu_idx:d}"
-    else:
-        my_device = "cpu:0"  # "cpu:%d" % node_task_idx
-
-    return world_size, my_rank, my_device
-
-
 class RunOptions:
     """Class with inf oon how to run training (cluster, MPI and GPU config).
 
@@ -174,14 +123,14 @@ class RunOptions:
         log.info("---Summary of the training---------------------------------------")
         if self.is_distrib:
             log.info("distributed")
-            log.info(f"world size:              {self.world_size}")
+            log.info(f"world size:           {self.world_size}")
             log.info(f"my rank:              {self.my_rank}")
-            log.info(f"node list:          {self.nodelist}")
+            log.info(f"node list:            {self.nodelist}")
         log.info(f"running on:           {self.nodename}")
-        if self.gpus is None:
-            log.info(f"CUDA_VISIBLE_DEVICES: unset")
-        else:
-            log.info(f"CUDA_VISIBLE_DEVICES: {self.gpus}")
+        log.info(f"computing device:     {self.my_device}")
+        env_value = os.environ.get('CUDA_VISIBLE_DEVICES', 'unset')
+        log.info(f"CUDA_VISIBLE_DEVICES: {env_value}")
+        log.info(f"Count of visible GPU: {len(self.gpus or [])}")
         intra, inter = get_tf_default_nthreads()
         log.info(f"num_intra_threads:    {intra:d}")
         log.info(f"num_inter_threads:    {inter:d}")
@@ -225,7 +174,7 @@ class RunOptions:
         try:
             import horovod.tensorflow as HVD
             HVD.init()
-            self.is_distrib = _is_distributed(HVD)
+            self.is_distrib = HVD.size() > 1
         except ImportError:
             log.warning("Switch to serial execution due to lack of horovod module.")
             self.is_distrib = False
@@ -250,11 +199,16 @@ class RunOptions:
         self.nodename = nodename
         self.nodelist = nodelist
         self.gpus = gpus
-        (
-            self.world_size,
-            self.my_rank,
-            self.my_device,
-        ) = _distributed_task_config(HVD, gpus)
+        self.my_rank = HVD.rank()
+        self.world_size = HVD.size()
+
+        if gpus is not None:
+            gpu_idx = HVD.local_rank()
+            if gpu_idx >= len(gpus):
+                raise RuntimeError('Count of local processes is larger than that of available GPUs!')
+            self.my_device = f"gpu:{gpu_idx:d}"
+        else:
+            self.my_device = "cpu:0"
 
     def _init_serial(self):
         """Initialize setting for serial training."""
