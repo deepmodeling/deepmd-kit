@@ -32,6 +32,7 @@ __all__ = [
     "MODEL_VERSION",
     "SHARED_LIB_MODULE",
     "default_tf_session_config",
+    "reset_default_tf_session_config",
     "op_module",
     "op_grads_module",
 ]
