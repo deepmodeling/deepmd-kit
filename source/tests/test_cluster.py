@@ -4,7 +4,7 @@ from deepmd.cluster import local, slurm
 from unittest import mock
 
 
-kHostName = 'org.deepmd.unittest'
+kHostName = 'compute-b24-1'
 
 
 class FakePopen(object):
@@ -39,7 +39,7 @@ class TestGPU(unittest.TestCase):
         mock_Popen.return_value.__enter__.return_value = \
             FakePopen(stderr=b'!', returncode=1)
         with self.assertRaises(RuntimeError) as cm:
-            gpus = local.get_gpus()
+            _ = local.get_gpus()
             self.assertIn('Failed to detect', str(cm.exception))
 
 
@@ -64,46 +64,52 @@ class TestSlurm(unittest.TestCase):
         self.assertEqual(nodelist, [kHostName])
 
     @mock.patch.dict('os.environ', values={
-        'SLURM_JOB_NODELIST': 'org.deepmd.host-[3-5],com.github.jack',
-        'SLURMD_NODENAME': 'org.deepmd.host-4',
-        'SLURM_JOB_NUM_NODES': '4'
+        'SLURM_JOB_NODELIST': 'compute-b24-[1-3,5-9],compute-b25-[4,8]',
+        'SLURMD_NODENAME': 'compute-b24-2',
+        'SLURM_JOB_NUM_NODES': '10'
     })
     def test_multiple(self):
         nodename, nodelist, _ = slurm.get_resource()
-        self.assertEqual(nodename, 'org.deepmd.host-4')
+        self.assertEqual(nodename, 'compute-b24-2')
         self.assertEqual(nodelist, [
-            'org.deepmd.host-3',
-            'org.deepmd.host-4',
-            'org.deepmd.host-5',
-            'com.github.jack'
+            'compute-b24-1',
+            'compute-b24-2',
+            'compute-b24-3',
+            'compute-b24-5',
+            'compute-b24-6',
+            'compute-b24-7',
+            'compute-b24-8',
+            'compute-b24-9',
+            'compute-b25-4',
+            'compute-b25-8'
         ])
 
     def test_illegal(self):
         environ = {
-            'SLURM_JOB_NODELIST': 'org.deepmd.host-[3-5]',
-            'SLURMD_NODENAME': 'org.deepmd.host-4'
+            'SLURM_JOB_NODELIST': 'compute-b24-[3-5]',
+            'SLURMD_NODENAME': 'compute-b24-4'
         }
         with mock.patch.dict('os.environ', environ):
             with self.assertRaises(RuntimeError) as cm:
-                nodename, nodelist, _ = slurm.get_resource()
+                _ = slurm.get_resource()
                 self.assertIn('Could not get SLURM number', str(cm.exception))
 
         environ = {
-            'SLURM_JOB_NODELIST': 'org.deepmd.mike,com.github.jack',
-            'SLURMD_NODENAME': 'org.deepmd.mike',
+            'SLURM_JOB_NODELIST': 'compute-b24-1,compute-b25-2',
+            'SLURMD_NODENAME': 'compute-b25-2',
             'SLURM_JOB_NUM_NODES': '4'
         }
         with mock.patch.dict('os.environ', environ):
             with self.assertRaises(ValueError) as cm:
-                nodename, nodelist, _ = slurm.get_resource()
+                _ = slurm.get_resource()
                 self.assertIn('Number of slurm nodes 2', str(cm.exception))
 
         environ = {
-            'SLURM_JOB_NODELIST': 'org.deepmd.bob,com.github.jack',
-            'SLURMD_NODENAME': 'org.deepmd.mike',
+            'SLURM_JOB_NODELIST': 'compute-b24-1,compute-b25-3',
+            'SLURMD_NODENAME': 'compute-b25-2',
             'SLURM_JOB_NUM_NODES': '2'
         }
         with mock.patch.dict('os.environ', environ):
             with self.assertRaises(ValueError) as cm:
-                nodename, nodelist, _ = slurm.get_resource()
-                self.assertIn('Nodename(org.deepmd.mike', str(cm.exception))
+                _ = slurm.get_resource()
+                self.assertIn('Nodename(compute-b25-2', str(cm.exception))
