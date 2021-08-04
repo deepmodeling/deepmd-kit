@@ -5,6 +5,7 @@
 #include<hip/hip_runtime.h>
 //#include<rocprim/rocprim.hpp>
 //#include <hipcub/hipcub.hpp>
+#include "errors.h"
 
 #define GPU_MAX_NBOR_SIZE 4096
 
@@ -12,7 +13,7 @@
 inline void DPAssert(hipError_t code, const char *file, int line, bool abort=true) {
     if (code != hipSuccess) {
         fprintf(stderr,"hip assert: %s %s %d\n", hipGetErrorString(code), file, line);
-        if (abort) exit(code);
+        if (abort) throw deepmd::deepmd_exception("CUDA Assert");
     }
 }
 
@@ -20,7 +21,7 @@ inline void DPAssert(hipError_t code, const char *file, int line, bool abort=tru
 inline void nborAssert(hipError_t code, const char *file, int line, bool abort=true) {
     if (code != hipSuccess) {
         fprintf(stderr,"hip assert: %s %s %d\n", "DeePMD-kit:\tillegal nbor list sorting", file, line);
-        if (abort) exit(code);
+        if (abort) throw deepmd::deepmd_exception("CUDA Assert");
     }
 }
 

@@ -1,6 +1,7 @@
 #include "custom_op.h"
 #include "ComputeDescriptor.h"
 #include "soft_min_switch.h"
+#include "errors.h"
 
 REGISTER_OP("SoftMinSwitch")
 .Attr("T: {float, double} = DT_DOUBLE")
@@ -37,6 +38,7 @@ class SoftMinSwitchOp : public OpKernel {
   }
 
   void Compute(OpKernelContext* context) override {
+    try {
     // Grab the input tensor
     int tmp_idx = 0;
     const Tensor& type_tensor	= context->input(tmp_idx++);
@@ -101,6 +103,17 @@ class SoftMinSwitchOp : public OpKernel {
 	  alpha,
 	  rmin,
 	  rmax);
+    }
+    } catch (deepmd::deepmd_exception_oom& e){
+      OP_REQUIRES_OK(
+          context,
+          errors::ResourceExhausted("Operation received an exception: ", e.what(),
+                          ", in file ",__FILE__, ":", __LINE__));
+    } catch (deepmd::deepmd_exception& e) {
+      OP_REQUIRES_OK(
+          context,
+          errors::Internal("Operation received an exception: ", e.what(),
+                          ", in file ",__FILE__, ":", __LINE__));
     }
   }
 private:

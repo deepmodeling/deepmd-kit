@@ -1,5 +1,6 @@
 #include "custom_op.h"
 #include "prod_force.h"
+#include "errors.h"
 
 REGISTER_OP("ProdForceSeA")
     .Attr("T: {float, double} = DT_DOUBLE")
@@ -25,6 +26,7 @@ public:
   explicit ProdForceSeAOp(OpKernelConstruction* context) : OpKernel(context) {}
 
   void Compute(OpKernelContext* context) override {
+    try {
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor& net_deriv_tensor  = context->input(context_input_index++);
@@ -101,6 +103,17 @@ public:
           net_deriv, in_deriv, nlist, nloc, nall, nnei);
     }
     }
+    } catch (deepmd::deepmd_exception_oom& e){
+      OP_REQUIRES_OK(
+          context,
+          errors::ResourceExhausted("Operation received an exception: ", e.what(),
+                          ", in file ",__FILE__, ":", __LINE__));
+    } catch (deepmd::deepmd_exception& e) {
+      OP_REQUIRES_OK(
+          context,
+          errors::Internal("Operation received an exception: ", e.what(),
+                          ", in file ",__FILE__, ":", __LINE__));
+    }
   }
  private:
   std::string device;
@@ -111,6 +124,7 @@ class ProdForceSeROp : public OpKernel {
 public:
   explicit ProdForceSeROp(OpKernelConstruction* context) : OpKernel(context) {}
   void Compute(OpKernelContext* context) override {
+    try {
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor& net_deriv_tensor  = context->input(context_input_index++);
@@ -185,6 +199,17 @@ public:
           force, 
           net_deriv, in_deriv, nlist, nloc, nall, nnei);
     }
+    }
+    } catch (deepmd::deepmd_exception_oom& e){
+      OP_REQUIRES_OK(
+          context,
+          errors::ResourceExhausted("Operation received an exception: ", e.what(),
+                          ", in file ",__FILE__, ":", __LINE__));
+    } catch (deepmd::deepmd_exception& e) {
+      OP_REQUIRES_OK(
+          context,
+          errors::Internal("Operation received an exception: ", e.what(),
+                          ", in file ",__FILE__, ":", __LINE__));
     }
   }
  private:

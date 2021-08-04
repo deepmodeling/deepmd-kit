@@ -1,5 +1,6 @@
 #include "custom_op.h"
 #include "prod_force_grad.h"
+#include "errors.h"
 
 REGISTER_OP("ProdForceSeAGrad")
 .Attr("T: {float, double} = DT_DOUBLE")
@@ -25,6 +26,7 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
+    try {
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor& grad_tensor		= context->input(context_input_index++);
@@ -94,6 +96,17 @@ public:
 	  &nlist(nlist_iter),
 	  nloc, 
 	  nnei);
+    }
+    } catch (deepmd::deepmd_exception_oom& e){
+      OP_REQUIRES_OK(
+          context,
+          errors::ResourceExhausted("Operation received an exception: ", e.what(),
+                          ", in file ",__FILE__, ":", __LINE__));
+    } catch (deepmd::deepmd_exception& e) {
+      OP_REQUIRES_OK(
+          context,
+          errors::Internal("Operation received an exception: ", e.what(),
+                          ", in file ",__FILE__, ":", __LINE__));
     }
   }
 private:
