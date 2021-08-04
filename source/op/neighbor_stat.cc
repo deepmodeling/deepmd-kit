@@ -1,5 +1,6 @@
 #include "custom_op.h"
 #include "neighbor_list.h"
+#include "errors.h"
 
 typedef double boxtensor_t ;
 typedef double compute_t;

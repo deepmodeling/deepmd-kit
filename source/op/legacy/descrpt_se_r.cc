@@ -3,6 +3,7 @@
 #include "neighbor_list.h"
 #include "fmt_nlist.h"
 #include "env_mat.h"
+#include "errors.h"
 
 typedef double boxtensor_t ;
 typedef double compute_t;

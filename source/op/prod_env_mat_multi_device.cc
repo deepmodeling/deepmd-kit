@@ -4,6 +4,7 @@
 #include "region.h"
 #include "neighbor_list.h"
 #include "prod_env_mat.h"
+#include "errors.h"
 
 REGISTER_OP("ProdEnvMatA")
     .Attr("T: {float, double} = DT_DOUBLE")
