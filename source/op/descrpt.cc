@@ -2,7 +2,6 @@
 #include "ComputeDescriptor.h"
 #include "neighbor_list.h"
 #include "fmt_nlist.h"
-#include "errors.h"
 
 typedef double boxtensor_t ;
 typedef double compute_t;
@@ -50,7 +49,10 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
-    try {
+    deepmd::save_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     const Tensor& coord_tensor	= context->input(0);
     const Tensor& type_tensor	= context->input(1);
@@ -107,7 +109,7 @@ public:
       nei_mode = -1;
     }
     else {
-      throw deepmd::deepmd_exception("invalid mesh tensor");
+      throw std::runtime_error("invalid mesh tensor");
     }
     bool b_pbc = true;
     // if region is given extended, do not use pbc
@@ -256,7 +258,7 @@ public:
 	::build_nlist (d_nlist_a, d_nlist_r, d_coord3, rcut_a, rcut_r, NULL);
       }
       else {
-	throw deepmd::deepmd_exception("unknow neighbor mode");
+	throw std::runtime_error("unknow neighbor mode");
       }
 
       // loop over atoms, compute descriptors for each atom
@@ -361,17 +363,6 @@ public:
 	  axis (kk, ii * 4 + jj * 2 + 1) = d_axis_idx [jj];
 	}
       }
-    }
-    } catch (deepmd::deepmd_exception_oom& e){
-      OP_REQUIRES_OK(
-          context,
-          errors::ResourceExhausted("Operation received an exception: ", e.what(),
-                          ", in file ",__FILE__, ":", __LINE__));
-    } catch (deepmd::deepmd_exception& e) {
-      OP_REQUIRES_OK(
-          context,
-          errors::Internal("Operation received an exception: ", e.what(),
-                          ", in file ",__FILE__, ":", __LINE__));
     }
   }
 private:

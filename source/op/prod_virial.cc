@@ -1,5 +1,4 @@
 #include "custom_op.h"
-#include "errors.h"
 
 REGISTER_OP("ProdVirial")
 .Attr("T: {float, double} = DT_DOUBLE")
@@ -29,7 +28,10 @@ class ProdVirialOp : public OpKernel {
   }
 
   void Compute(OpKernelContext* context) override {
-    try {
+    deepmd::save_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     const Tensor& net_deriv_tensor	= context->input(0);
     const Tensor& in_deriv_tensor	= context->input(1);
@@ -161,17 +163,6 @@ class ProdVirialOp : public OpKernel {
 	  }
 	}
       }
-    }
-    } catch (deepmd::deepmd_exception_oom& e){
-      OP_REQUIRES_OK(
-          context,
-          errors::ResourceExhausted("Operation received an exception: ", e.what(),
-                          ", in file ",__FILE__, ":", __LINE__));
-    } catch (deepmd::deepmd_exception& e) {
-      OP_REQUIRES_OK(
-          context,
-          errors::Internal("Operation received an exception: ", e.what(),
-                          ", in file ",__FILE__, ":", __LINE__));
     }
   }
 private:

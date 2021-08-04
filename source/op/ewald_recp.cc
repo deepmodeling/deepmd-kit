@@ -1,6 +1,5 @@
 #include "custom_op.h"
 #include "ewald.h"
-#include "errors.h"
 
 typedef double boxtensor_t ;
 typedef double compute_t;
@@ -29,7 +28,10 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
-    try {
+    deepmd::save_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     int cc = 0;
     const Tensor& coord_tensor	= context->input(cc++);
@@ -116,17 +118,6 @@ public:
       for (int ii = 0; ii < 9; ++ii){
 	virial(kk, ii) = d_virial[ii];
       }
-    }
-    } catch (deepmd::deepmd_exception_oom& e){
-      OP_REQUIRES_OK(
-          context,
-          errors::ResourceExhausted("Operation received an exception: ", e.what(),
-                          ", in file ",__FILE__, ":", __LINE__));
-    } catch (deepmd::deepmd_exception& e) {
-      OP_REQUIRES_OK(
-          context,
-          errors::Internal("Operation received an exception: ", e.what(),
-                          ", in file ",__FILE__, ":", __LINE__));
     }
   }
 private:

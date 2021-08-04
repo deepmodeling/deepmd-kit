@@ -27,3 +27,8 @@ struct DeviceFunctor {
   }
   #endif // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 };
+
+namespace deepmd {
+  typedef void ComputeFunction(OpKernelContext*);
+  void save_compute(OpKernelContext* context, std::function<void(OpKernelContext*)> ff);
+};

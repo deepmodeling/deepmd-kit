@@ -1,7 +1,6 @@
 #include "custom_op.h"
 #include "ComputeDescriptor.h"
 #include "neighbor_list.h"
-#include "errors.h"
 
 REGISTER_OP("UnaggregatedDyDxS")
     .Attr("T: {float, double} = DT_DOUBLE") 
@@ -137,7 +136,10 @@ class UnaggregatedDyDxSOp : public OpKernel {
     explicit UnaggregatedDyDxSOp(OpKernelConstruction* context) : OpKernel(context) {}
 
     void Compute(OpKernelContext* context) override {
-        try {
+        deepmd::save_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+    }
+
+    void _Compute(OpKernelContext* context) {
         // Grab the input tensor
         int context_input_index = 0;
         const Tensor& y	= context->input(context_input_index++);
@@ -161,17 +163,6 @@ class UnaggregatedDyDxSOp : public OpKernel {
             y.shape().dim_size(1),
             dy_dx->flat<FPTYPE>().data()
         );
-        } catch (deepmd::deepmd_exception_oom& e){
-            OP_REQUIRES_OK(
-                context,
-                errors::ResourceExhausted("Operation received an exception: ", e.what(),
-                                ", in file ",__FILE__, ":", __LINE__));
-        } catch (deepmd::deepmd_exception& e) {
-            OP_REQUIRES_OK(
-                context,
-                errors::Internal("Operation received an exception: ", e.what(),
-                                ", in file ",__FILE__, ":", __LINE__));
-        }
     }
 private:
 };
@@ -182,7 +173,10 @@ class UnaggregatedDy2DxSOp : public OpKernel {
     explicit UnaggregatedDy2DxSOp(OpKernelConstruction* context) : OpKernel(context) {}
 
     void Compute(OpKernelContext* context) override {
-        try {
+        deepmd::save_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+    }
+
+    void _Compute(OpKernelContext* context) {
         // Grab the input tensor
         int context_input_index = 0;
         const Tensor& y	    = context->input(context_input_index++);
@@ -209,17 +203,6 @@ class UnaggregatedDy2DxSOp : public OpKernel {
             y.shape().dim_size(1),
             dy2_dx->flat<FPTYPE>().data()
         );
-        } catch (deepmd::deepmd_exception_oom& e){
-            OP_REQUIRES_OK(
-                context,
-                errors::ResourceExhausted("Operation received an exception: ", e.what(),
-                                ", in file ",__FILE__, ":", __LINE__));
-        } catch (deepmd::deepmd_exception& e) {
-            OP_REQUIRES_OK(
-                context,
-                errors::Internal("Operation received an exception: ", e.what(),
-                                ", in file ",__FILE__, ":", __LINE__));
-        }
     }
 private:
 };
@@ -230,7 +213,10 @@ class UnaggregatedDyDxOp : public OpKernel {
     explicit UnaggregatedDyDxOp(OpKernelConstruction* context) : OpKernel(context) {}
 
     void Compute(OpKernelContext* context) override {
-        try {
+        deepmd::save_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+    }
+
+    void _Compute(OpKernelContext* context) {
         // Grab the input tensor
         int context_input_index = 0;
         const Tensor& z	= context->input(context_input_index++);
@@ -258,17 +244,6 @@ class UnaggregatedDyDxOp : public OpKernel {
             w.shape().dim_size(0),
             dz_dx->flat<FPTYPE>().data()
         );
-        } catch (deepmd::deepmd_exception_oom& e){
-            OP_REQUIRES_OK(
-                context,
-                errors::ResourceExhausted("Operation received an exception: ", e.what(),
-                                ", in file ",__FILE__, ":", __LINE__));
-        } catch (deepmd::deepmd_exception& e) {
-        OP_REQUIRES_OK(
-            context,
-            errors::Internal("Operation received an exception: ", e.what(),
-                            ", in file ",__FILE__, ":", __LINE__));
-        }
     }
 private:
 };
@@ -279,7 +254,10 @@ class UnaggregatedDy2DxOp : public OpKernel {
     explicit UnaggregatedDy2DxOp(OpKernelConstruction* context) : OpKernel(context) {}
 
     void Compute(OpKernelContext* context) override {
-        try {
+        deepmd::save_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+    }
+
+    void _Compute(OpKernelContext* context) {
         // Grab the input tensor
         int context_input_index = 0;
         const Tensor& z	= context->input(context_input_index++);
@@ -313,17 +291,6 @@ class UnaggregatedDy2DxOp : public OpKernel {
             w.shape().dim_size(0),
             dz2_dx->flat<FPTYPE>().data()
         );
-        } catch (deepmd::deepmd_exception_oom& e){
-            OP_REQUIRES_OK(
-                context,
-                errors::ResourceExhausted("Operation received an exception: ", e.what(),
-                                ", in file ",__FILE__, ":", __LINE__));
-        } catch (deepmd::deepmd_exception& e) {
-            OP_REQUIRES_OK(
-                context,
-                errors::Internal("Operation received an exception: ", e.what(),
-                                ", in file ",__FILE__, ":", __LINE__));
-        }
     }
 private:
 };

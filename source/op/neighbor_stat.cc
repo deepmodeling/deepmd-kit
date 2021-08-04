@@ -1,6 +1,5 @@
 #include "custom_op.h"
 #include "neighbor_list.h"
-#include "errors.h"
 
 typedef double boxtensor_t ;
 typedef double compute_t;
@@ -24,7 +23,10 @@ public:
     }
 
     void Compute(OpKernelContext* context) override {
-        try {
+        deepmd::save_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+    }
+
+    void _Compute(OpKernelContext* context) {
         // Grab the input tensor
         int context_input_index = 0;
         const Tensor& coord_tensor	= context->input(context_input_index++);
@@ -62,7 +64,7 @@ public:
             nei_mode = -1;
         }
         else {
-            throw deepmd::deepmd_exception("invalid mesh tensor");
+            throw std::runtime_error("invalid mesh tensor");
         }
         // if region is given extended, do not use pbc
         bool b_pbc = (nei_mode >= 1 || nei_mode == -1) ? false : true;
@@ -141,7 +143,7 @@ public:
 	        ::build_nlist (d_nlist_a, d_nlist_r, d_coord3, -1, rcut, NULL);
         }
         else {
-	        throw deepmd::deepmd_exception("unknow neighbor mode");
+	        throw std::runtime_error("unknow neighbor mode");
         }
 
         int MAX_NNEI = 0;
@@ -168,17 +170,6 @@ public:
                 compute_t rij[3] = {d_coord3[d_nlist_r[ii][jj] * 3 + 0] - d_coord3[ii * 3 + 0], d_coord3[d_nlist_r[ii][jj] * 3 + 1] - d_coord3[ii * 3 + 1], d_coord3[d_nlist_r[ii][jj] * 3 + 2] - d_coord3[ii * 3 + 2]};
                 min_nbor_dist[ii * MAX_NNEI + jj] = sqrt(rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2]);
             }
-        }
-        } catch (deepmd::deepmd_exception_oom& e){
-            OP_REQUIRES_OK(
-                context,
-                errors::ResourceExhausted("Operation received an exception: ", e.what(),
-                                ", in file ",__FILE__, ":", __LINE__));
-        } catch (deepmd::deepmd_exception& e) {
-            OP_REQUIRES_OK(
-                context,
-                errors::Internal("Operation received an exception: ", e.what(),
-                                ", in file ",__FILE__, ":", __LINE__));
         }
     }
 

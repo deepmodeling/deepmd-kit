@@ -1,6 +1,5 @@
 #include "custom_op.h"
 #include "gelu.h"
-#include "errors.h"
 
 REGISTER_OP("Gelu")
     .Attr("T: {float, double} = DT_DOUBLE")
@@ -27,7 +26,10 @@ class GeluOp : public OpKernel {
  public :
   explicit GeluOp(OpKernelConstruction* context) : OpKernel(context) {}
   void Compute(OpKernelContext* context) override {
-    try {
+    deepmd::save_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     const Tensor& x_tensor = context->input(0);
     Tensor * output_tensor = NULL;
@@ -63,17 +65,6 @@ class GeluOp : public OpKernel {
           out, 
           x, size);
     }
-    } catch (deepmd::deepmd_exception_oom& e){
-      OP_REQUIRES_OK(
-          context,
-          errors::ResourceExhausted("Operation received an exception: ", e.what(),
-                          ", in file ",__FILE__, ":", __LINE__));
-    } catch (deepmd::deepmd_exception& e) {
-      OP_REQUIRES_OK(
-          context,
-          errors::Internal("Operation received an exception: ", e.what(),
-                          ", in file ",__FILE__, ":", __LINE__));
-    }
   }
  private :
   std::string device;
@@ -86,7 +77,10 @@ class GeluGradOp : public OpKernel {
  public :
   explicit GeluGradOp(OpKernelConstruction* context) : OpKernel(context) {}
   void Compute(OpKernelContext* context) override {
-    try {
+    deepmd::save_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     const Tensor& dy_tensor = context->input(0);
     const Tensor& x_tensor  = context->input(1);
@@ -124,17 +118,6 @@ class GeluGradOp : public OpKernel {
           out, 
           x, dy, size);
     }
-    } catch (deepmd::deepmd_exception_oom& e){
-      OP_REQUIRES_OK(
-          context,
-          errors::ResourceExhausted("Operation received an exception: ", e.what(),
-                          ", in file ",__FILE__, ":", __LINE__));
-    } catch (deepmd::deepmd_exception& e) {
-      OP_REQUIRES_OK(
-          context,
-          errors::Internal("Operation received an exception: ", e.what(),
-                          ", in file ",__FILE__, ":", __LINE__));
-    }
   }
  private :
   std::string device;
@@ -147,7 +130,10 @@ class GeluGradGradOp : public OpKernel {
  public :
   explicit GeluGradGradOp(OpKernelConstruction* context) : OpKernel(context) {}
   void Compute(OpKernelContext* context) override {
-    try {
+    deepmd::save_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     const Tensor& dy_tensor = context->input(0);
     const Tensor& dy_2_tensor = context->input(1);
@@ -182,17 +168,6 @@ class GeluGradGradOp : public OpKernel {
       deepmd::gelu_grad_grad_cpu(
           out, 
           x, dy, dy_2, size);
-    }
-    } catch (deepmd::deepmd_exception_oom& e){
-      OP_REQUIRES_OK(
-          context,
-          errors::ResourceExhausted("Operation received an exception: ", e.what(),
-                          ", in file ",__FILE__, ":", __LINE__));
-    } catch (deepmd::deepmd_exception& e) {
-      OP_REQUIRES_OK(
-          context,
-          errors::Internal("Operation received an exception: ", e.what(),
-                          ", in file ",__FILE__, ":", __LINE__));
     }
   }
  private :

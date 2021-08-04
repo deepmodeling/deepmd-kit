@@ -4,7 +4,6 @@
 #include "region.h"
 #include "neighbor_list.h"
 #include "prod_env_mat.h"
-#include "errors.h"
 
 REGISTER_OP("ProdEnvMatA")
     .Attr("T: {float, double} = DT_DOUBLE")
@@ -322,7 +321,10 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
-    try {
+    deepmd::save_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor& coord_tensor	= context->input(context_input_index++);
@@ -384,7 +386,7 @@ public:
       nei_mode = -1;
     }
     else {
-      throw deepmd::deepmd_exception("invalid mesh tensor");
+      throw std::runtime_error("invalid mesh tensor");
     }
 
     // Create output tensors
@@ -544,19 +546,6 @@ public:
       if(b_nlist_map) _map_nlist_cpu(nlist, &idx_mapping[0], nloc, nnei);
     }
     }
-    } catch (deepmd::deepmd_exception_oom& e){
-      OP_REQUIRES_OK(
-          context,
-          errors::ResourceExhausted("Operation received an exception: ", e.what(),
-                          ", in file ",__FILE__, ":", __LINE__));
-    } catch (deepmd::deepmd_exception& e) {
-      // Ref:
-      // https://github.com/tensorflow/tensorflow/blob/5dcfc51118817f27fad5246812d83e5dccdc5f72/tensorflow/core/kernels/mkl/mkl_tfconv_op.h#L120-L126
-      OP_REQUIRES_OK(
-          context,
-          errors::Internal("Operation received an exception: ", e.what(),
-                          ", in file ",__FILE__, ":", __LINE__));
-    }
   }
 
 /////////////////////////////////////////////////////////////////////////////////////////////
@@ -599,7 +588,10 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
-    try {
+    deepmd::save_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor& coord_tensor  = context->input(context_input_index++);
@@ -658,7 +650,7 @@ public:
       nei_mode = -1;
     }
     else {
-      throw deepmd::deepmd_exception("invalid mesh tensor");
+      throw std::runtime_error("invalid mesh tensor");
     }
 
     // Create an output tensor
@@ -817,17 +809,6 @@ public:
           coord, type, inlist, max_nbor_size, avg, std, nloc, frame_nall, rcut, rcut_smth, sec);
       if(b_nlist_map) _map_nlist_cpu(nlist, &idx_mapping[0], nloc, nnei);
     }
-    }
-    } catch (deepmd::deepmd_exception_oom& e){
-      OP_REQUIRES_OK(
-          context,
-          errors::ResourceExhausted("Operation received an exception: ", e.what(),
-                          ", in file ",__FILE__, ":", __LINE__));
-    } catch (deepmd::deepmd_exception& e) {
-      OP_REQUIRES_OK(
-          context,
-          errors::Internal("Operation received an exception: ", e.what(),
-                          ", in file ",__FILE__, ":", __LINE__));
     }
   }
 

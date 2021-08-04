@@ -1,6 +1,5 @@
 #include "custom_op.h"
 #include "tabulate.h"
-#include "errors.h"
 
 REGISTER_OP("TabulateFusion")
     .Attr("T: {float, double} = DT_DOUBLE")
@@ -29,7 +28,10 @@ class TabulateFusionOp : public OpKernel {
     OP_REQUIRES_OK(context, context->GetAttr("last_layer_size", &last_layer_size));
   }
   void Compute(OpKernelContext* context) override {
-    try {
+      deepmd::save_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor& table_tensor	= context->input(context_input_index++);
@@ -81,17 +83,6 @@ class TabulateFusionOp : public OpKernel {
           descriptor,
           table, table_info, em_x, em, nloc, nnei, last_layer_size);
     }
-    } catch (deepmd::deepmd_exception_oom& e){
-      OP_REQUIRES_OK(
-          context,
-          errors::ResourceExhausted("Operation received an exception: ", e.what(),
-                          ", in file ",__FILE__, ":", __LINE__));
-    } catch (deepmd::deepmd_exception& e) {
-      OP_REQUIRES_OK(
-          context,
-          errors::Internal("Operation received an exception: ", e.what(),
-                          ", in file ",__FILE__, ":", __LINE__));
-    }
   }
 private:
     int last_layer_size;
@@ -103,7 +94,10 @@ class TabulateFusionGradOp : public OpKernel {
  public:
   explicit TabulateFusionGradOp(OpKernelConstruction* context) : OpKernel(context) {}
   void Compute(OpKernelContext* context) override {
-    try {
+      deepmd::save_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor& table_tensor	= context->input(context_input_index++);
@@ -160,17 +154,6 @@ class TabulateFusionGradOp : public OpKernel {
       deepmd::tabulate_fusion_grad_cpu(    
           dy_dem_x, dy_dem,
           table, table_info, em_x, em, dy, nloc, nnei, last_layer_size);
-    }
-    } catch (deepmd::deepmd_exception_oom& e){
-      OP_REQUIRES_OK(
-          context,
-          errors::ResourceExhausted("Operation received an exception: ", e.what(),
-                          ", in file ",__FILE__, ":", __LINE__));
-    } catch (deepmd::deepmd_exception& e) {
-      OP_REQUIRES_OK(
-          context,
-          errors::Internal("Operation received an exception: ", e.what(),
-                          ", in file ",__FILE__, ":", __LINE__));
     }
   }
 private:
