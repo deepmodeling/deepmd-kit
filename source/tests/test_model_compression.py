@@ -33,7 +33,7 @@ class TestDeepPotAPBC(unittest.TestCase) :
         assert(ret == 0), "DP train error!"
         ret = os.system("dp freeze -o " + self.frozen_model)
         assert(ret == 0), "DP freeze error!"
-        ret = os.system("dp compress " + self.INPUT + " -i " + self.frozen_model + " -o " + self.compressed_model)
+        ret = os.system("dp compress " + " -i " + self.frozen_model + " -o " + self.compressed_model)
         assert(ret == 0), "DP model compression error!"
         
         self.dp_original = DeepPot(self.frozen_model)
@@ -168,7 +168,7 @@ class TestDeepPotANoPBC(unittest.TestCase) :
         assert(ret == 0), "DP train error!"
         ret = os.system("dp freeze -o " + self.frozen_model)
         assert(ret == 0), "DP freeze error!"
-        ret = os.system("dp compress " + self.INPUT + " -i " + self.frozen_model + " -o " + self.compressed_model)
+        ret = os.system("dp compress " + " -i " + self.frozen_model + " -o " + self.compressed_model)
         assert(ret == 0), "DP model compression error!"
         
         self.dp_original = DeepPot(self.frozen_model)
@@ -289,7 +289,7 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase) :
         assert(ret == 0), "DP train error!"
         ret = os.system("dp freeze -o " + self.frozen_model)
         assert(ret == 0), "DP freeze error!"
-        ret = os.system("dp compress " + self.INPUT + " -i " + self.frozen_model + " -o " + self.compressed_model)
+        ret = os.system("dp compress " + " -i " + self.frozen_model + " -o " + self.compressed_model)
         assert(ret == 0), "DP model compression error!"
         
         self.dp_original = DeepPot(self.frozen_model)
@@ -401,7 +401,7 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase) :
         assert(ret == 0), "DP train error!"
         ret = os.system("dp freeze -o " + self.frozen_model)
         assert(ret == 0), "DP freeze error!"
-        ret = os.system("dp compress " + self.INPUT + " -i " + self.frozen_model + " -o " + self.compressed_model)
+        ret = os.system("dp compress " + " -i " + self.frozen_model + " -o " + self.compressed_model)
         assert(ret == 0), "DP model compression error!"
         
         self.dp_original = DeepPot(self.frozen_model)
