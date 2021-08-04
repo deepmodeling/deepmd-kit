@@ -64,7 +64,7 @@ public:
             nei_mode = -1;
         }
         else {
-            throw std::runtime_error("invalid mesh tensor");
+            throw deepmd::deepmd_exception("invalid mesh tensor");
         }
         // if region is given extended, do not use pbc
         bool b_pbc = (nei_mode >= 1 || nei_mode == -1) ? false : true;
@@ -143,7 +143,7 @@ public:
 	        ::build_nlist (d_nlist_a, d_nlist_r, d_coord3, -1, rcut, NULL);
         }
         else {
-	        throw std::runtime_error("unknow neighbor mode");
+	        throw deepmd::deepmd_exception("unknow neighbor mode");
         }
 
         int MAX_NNEI = 0;
