@@ -72,8 +72,8 @@ class TestModel(tf.test.TestCase):
         is_training        = tf.placeholder(tf.bool)
         t_fparam = None
         inputs_dict = {}
-        with tf.variable_scope('se_a_type'):
-            model_pred \
+
+        model_pred \
             = model.build (t_coord, 
                            t_type, 
                            t_natoms, 

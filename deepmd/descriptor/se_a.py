@@ -30,7 +30,8 @@ class DescrptSeA ():
                   set_davg_zero: bool = False,
                   activation_function: str = 'tanh',
                   precision: str = 'default',
-                  uniform_seed: bool = False
+                  uniform_seed: bool = False,
+                  name: str = None,
     ) -> None:
         """
         Constructor
@@ -89,7 +90,7 @@ class DescrptSeA ():
         self.type_one_side = type_one_side
         if self.type_one_side and len(exclude_types) != 0:
             raise RuntimeError('"type_one_side" is not compatible with "exclude_types"')
-
+        self.name = name
         # descrpt config
         self.sel_r = [ 0 for ii in range(len(self.sel_a)) ]
         self.ntypes = len(self.sel_a)

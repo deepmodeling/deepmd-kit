@@ -87,27 +87,32 @@ class DPTrainer_mt (object):
     def _init_param(self, jdata):
         # model config        
         model_param = j_must_have(jdata, 'model')
+        training_param = j_must_have(jdata, 'training')
         descrpt_param = j_must_have(model_param, 'descriptor')
         fitting_param = j_must_have(model_param, 'fitting_net')
-
         typeebd_param = model_param.get('type_embedding', None)
+        model_build_param = j_must_have(training_param, 'tasks')
         self.model_param    = model_param
         self.descrpt_param  = descrpt_param
         self.fitting_param = fitting_param
+        self.model_build_param = model_build_param
         
         # descriptor
-        try:
-            descrpt_type = descrpt_param['type']
-        except KeyError:
-            raise KeyError('the type of descriptor should be set by `type`')
+        self.descriptor_dict = {}
+        for sub_descrpt in self.descrpt_param:
+            try:
+                descrpt_type = sub_descrpt['type']
+            except KeyError:
+                raise KeyError('the type of descriptor should be set by `type`')
 
-        if descrpt_type != 'hybrid':
-            self.descrpt = _generate_descrpt_from_param_dict(descrpt_param)
-        else :
-            descrpt_list = []
-            for ii in descrpt_param.get('list', []):
-                descrpt_list.append(_generate_descrpt_from_param_dict(ii))
-            self.descrpt = DescrptHybrid(descrpt_list)
+            if descrpt_type != 'hybrid':
+                tmp_descrpt = _generate_descrpt_from_param_dict(sub_descrpt)
+            else :
+                descrpt_list = []
+                for ii in sub_descrpt.get('list', []):
+                    descrpt_list.append(_generate_descrpt_from_param_dict(ii))
+                tmp_descrpt = DescrptHybrid(descrpt_list)
+            self.descriptor_dict[str(sub_descrpt['name'])] = tmp_descrpt
 
         # type embedding (share the same one)
         if typeebd_param is not None:
@@ -123,56 +128,79 @@ class DPTrainer_mt (object):
             self.typeebd = None
 
         lr_param = j_must_have(jdata, 'learning_rate')
+        lr_param_dict = {}
+        for sub_lr in lr_param:
+            lr_param_dict[sub_lr['name']] = sub_lr
         loss_param = jdata['loss']
+        loss_param_dict = {}
+        for sub_loss in loss_param:
+            loss_param_dict[sub_loss['name']] = sub_loss
         
-        # fitting net (correlated to loss, because it have a type)
-        fitting_list = []
-        self.loss_list = []
-        self.lr_list = []
-        self.model_list = []
-        sub_nets = fitting_param.keys()
-        for net in sub_nets:
-            sub_net = fitting_param[net]
+        self.fitting_descrpt = {}
+        for sub_model in self.model_build_param:
+            self.fitting_descrpt[sub_model['fitting_net']] = sub_model['descriptor']
+        # fitting net
+        self.fitting_dict = {}
+        self.loss_dict = {}
+        self.lr_dict = {}
+        self.model_dict = {}
+        self.fitting_type_dict = {}
+        for sub_net in fitting_param:
+            name_fitting = sub_net['name']
             try: 
                 sub_net_type = sub_net['type']
             except:
                 sub_net_type = 'ener'
-            
+            self.fitting_type_dict[name_fitting] = sub_net_type
             sub_net.pop('type', None)
-            sub_net['descrpt'] = self.descrpt
+            name_descrpt = self.fitting_descrpt[name_fitting]
+            sub_net['descrpt'] = self.descriptor_dict[str(name_descrpt)]
             if sub_net_type == 'ener':
-                fitting_list.append(EnerFitting(
-                    descrpt = self.descrpt,
+                self.fitting_dict[name_fitting] = EnerFitting(
+                    descrpt = sub_net['descrpt'],
                     #type_map = model_param.get('type_map'), # this is the total type map
                     neuron = sub_net["neuron"],
                     resnet_dt = sub_net["resnet_dt"],
                     seed = sub_net["seed"],
-                    name = str(net)
-                ))
+                    name = name_fitting
+                )
                 
             elif sub_net_type == 'dipole':
                 if descrpt_type == 'se_e2_a':
-                    fitting_list.append( DipoleFittingSeA(**sub_net))
+                    self.fitting_dict[name_fitting] = DipoleFittingSeA(**sub_net)
                 else :
                     raise RuntimeError('fitting dipole only supports descrptors: se_e2_a')
             elif sub_net_type == 'polar':
                 if descrpt_type == 'se_e2_a':
-                    fitting_list.append( PolarFittingSeA(**sub_net))
+                    self.fitting_dict[name_fitting] = PolarFittingSeA(**sub_net)
                 else :
                     raise RuntimeError('fitting polar only supports descrptors: loc_frame and se_e2_a')
             elif sub_net_type == 'global_polar':
                 if descrpt_type == 'se_e2_a':
-                    fitting_list.append( GlobalPolarFittingSeA(**sub_net))
+                    self.fitting_dict[name_fitting] = GlobalPolarFittingSeA(**sub_net)
                 else :
                     raise RuntimeError('fitting global_polar only supports descrptors: loc_frame and se_e2_a')
             else :
                 raise RuntimeError('unknow fitting type ' + sub_net_type)
 
-        # init model
-        # infer model type by fitting_type
-            tmp_model = EnerModel(
-                self.descrpt, 
-                fitting_list[-1], 
+            # init model
+            # infer model type by fitting_type
+        self.model_component = {}
+        self.method_name_list = []
+        for sub_model in self.model_build_param:
+            fitting_name = sub_model['fitting_net']
+            descrpt_name = sub_model['descriptor']
+            lr_name = sub_model['learning_rate']
+            loss_name = sub_model['loss']
+            model_name = sub_model['name']
+            self.method_name_list.append(model_name)
+            sub_model_component = {}
+            sub_model_component['fitting'] = fitting_name
+            sub_model_component['descrpt'] = descrpt_name
+            self.model_component[model_name] = sub_model_component
+            self.model_dict[model_name] = EnerModel(
+                self.descriptor_dict[descrpt_name], 
+                self.fitting_dict[fitting_name], 
                 self.typeebd,
                 #sub_net.get('type_map'), #this is the local type map
                 model_param.get('type_map'), # this is the total type map
@@ -181,79 +209,79 @@ class DPTrainer_mt (object):
                 model_param.get('use_srtab'),
                 model_param.get('smin_alpha'),
                 model_param.get('sw_rmin'),
-                model_param.get('sw_rmax')
+                model_param.get('sw_rmax'),
+                model_name
             )
-            self.model_list.append(tmp_model)
 
             # learning rate
-            sub_lr = lr_param[net]
+            sub_lr = lr_param_dict[lr_name]
             try: 
                 sub_lr_type = sub_lr['type']
             except:
                 sub_lr_type = 'exp'
             if sub_lr_type == 'exp':
-                tmp_lr = LearningRateExp(sub_lr['start_lr'],
+                self.lr_dict[lr_name] = LearningRateExp(sub_lr['start_lr'],
                                       sub_lr['stop_lr'],
                                       sub_lr['decay_steps'],
-                                      name = net)
-                self.lr_list.append(tmp_lr)
+                                      name = lr_name)
             else :
                 raise RuntimeError('unknown learning_rate type ' + sub_lr_type)        
 
             # loss
             # infer loss type by fitting_type
-            sub_loss = loss_param[net]
+            sub_loss = loss_param_dict[loss_name]
             try :
                 loss_type = sub_loss.get('type', 'ener')
             except:
                 loss_type = 'ener'
 
+            sub_net_type = self.fitting_type_dict[fitting_name]
             if sub_net_type == 'ener':
                 sub_loss.pop('type', None)
-                sub_loss['starter_learning_rate'] = tmp_lr.start_lr()
+                sub_loss['starter_learning_rate'] = self.lr_dict[lr_name].start_lr()
                 if loss_type == 'ener':
-                    self.loss_list.append(EnerStdLoss(**sub_loss,name = net))
+                    self.loss_dict[loss_name] = EnerStdLoss(**sub_loss)
                 elif loss_type == 'ener_dipole':
-                    self.loss_list.append(EnerDipoleLoss(**sub_loss)) 
+                    self.loss_dict[loss_name] = EnerDipoleLoss(**sub_loss)
                 else:
                     raise RuntimeError('unknow loss type')
             elif sub_net_type == 'wfc':
-                self.loss_list.append(TensorLoss(sub_loss, 
-                                   model = tmp_model, 
+                self.loss_dict[loss_name] = TensorLoss(sub_loss, 
+                                   model = self.model_dict[model_name], 
                                    tensor_name = 'wfc',
-                                   tensor_size = tmp_model.get_out_size(),
-                                   label_name = 'wfc'))
+                                   tensor_size = self.model_dict[model_name].get_out_size(),
+                                   label_name = 'wfc')
             elif sub_net_type == 'dipole':
-                self.loss_list.append(TensorLoss(sub_loss, 
-                                   model = tmp_model, 
+                self.loss_dict[loss_name] = TensorLoss(sub_loss, 
+                                   model = self.model_dict[model_name], 
                                    tensor_name = 'dipole',
                                    tensor_size = 3,
-                                   label_name = 'dipole'))
+                                   label_name = 'dipole')
             elif sub_net_type == 'polar':
-                self.loss_list.append(TensorLoss(sub_loss, 
-                                   model = tmp_model, 
+                self.loss_dict[loss_name] = TensorLoss(sub_loss, 
+                                   model = self.model_dict[model_name], 
                                    tensor_name = 'polar',
                                    tensor_size = 9,
-                                   label_name = 'polarizability'))
+                                   label_name = 'polarizability')
             elif sub_net_type == 'global_polar':
-                self.loss_list.append(TensorLoss(sub_loss, 
-                                   model = tmp_model, 
+                self.loss_dict[loss_name] = TensorLoss(sub_loss, 
+                                   model = self.model_dict[model_name], 
                                    tensor_name = 'global_polar',
                                    tensor_size = 9,
                                    atomic = False,
-                                   label_name = 'polarizability'))
+                                   label_name = 'polarizability')
             else :
                 raise RuntimeError('get unknown fitting type when building loss function')
 
         
-        self.l2_l_list = {}
-        self.l2_more_list = {}
-        for sub_loss in self.loss_list:
-            self.l2_l_list[sub_loss.get_name()] = None
-            self.l2_more_list[sub_loss.get_name()] = None
+        self.l2_l_dict = {}
+        self.l2_more_dict = {}
+        for sub_loss in self.loss_dict.keys():
+            self.l2_l_dict[sub_loss] = None
+            self.l2_more_dict[sub_loss] = None
 
         # training
-        fitting_type = 'ener'
+        
         tr_data = jdata['training']
         self.disp_file = tr_data.get('disp_file', 'lcurve.out')
         self.disp_freq = tr_data.get('disp_freq', 1000)
@@ -268,10 +296,14 @@ class DPTrainer_mt (object):
         # self.sys_probs = tr_data['sys_probs']
         # self.auto_prob_style = tr_data['auto_prob']
         self.useBN = False
-        if fitting_type == 'ener' and  fitting_list[0].get_numb_fparam() > 0 :
-            self.numb_fparam = fitting_list[0].get_numb_fparam()
-        else :
-            self.numb_fparam = 0
+        for fitting_name in self.fitting_dict.keys():
+            fitting_type = self.fitting_type_dict[fitting_name]
+            tmp_fitting = self.fitting_dict[fitting_name]
+            if fitting_type == 'ener' and  tmp_fitting.get_numb_fparam() > 0 :
+                self.numb_fparam = tmp_fitting.get_numb_fparam()
+            else :
+                self.numb_fparam = 0
+            break
 
         if tr_data.get("validation_data", None) is not None:
             self.valid_numb_batch = tr_data["validation_data"].get("numb_btch", 1)
@@ -283,7 +315,13 @@ class DPTrainer_mt (object):
                data, 
                stop_batch = 0) :
         # datadocker
-        self.ntypes = self.model_list[0].get_ntypes() # total type number
+        #self.ntypes = len(self.model_param.get('type_map'))
+        self.ntypes = 0
+        for descrpt_name in self.descriptor_dict:
+            sub_descrpt = self.descriptor_dict[descrpt_name]
+            self.ntypes+=sub_descrpt.get_ntypes()
+
+        
         
         # Usually, the type number of the model should be equal to that of the data
         # However, nt_model > nt_data should be allowed, since users may only want to 
@@ -300,8 +338,9 @@ class DPTrainer_mt (object):
 
         self.type_map = data.get_type_map() # this is the total type_map from the datadocker
         
-        for i in range(len(self.model_list)):
-            sub_model = self.model_list[i]
+        for i in range(len(self.model_dict.keys())):
+            model_name = list(self.model_dict.keys())[i]
+            sub_model = self.model_dict[model_name]
             sub_data = data.get_data_system_idx(i)
             sub_model.data_stat(sub_data)
 
@@ -326,10 +365,10 @@ class DPTrainer_mt (object):
 
     def _build_lr(self):
         self._extra_train_ops   = []
-        self.learning_rate_list = []
+        self.learning_rate_dict = {}
         self.global_step = tf.train.get_or_create_global_step()
-        for tmp_lr in self.lr_list:
-            self.learning_rate_list.append(tmp_lr.build(self.global_step, self.stop_batch))
+        for lr_name in self.lr_dict.keys():
+            self.learning_rate_dict[lr_name] = self.lr_dict[lr_name].build(self.global_step, self.stop_batch)
         log.info("built lr")
 
     def _build_network(self, data):        
@@ -349,8 +388,10 @@ class DPTrainer_mt (object):
         self.place_holders['default_mesh']      = tf.placeholder(tf.int32,   [None], name='t_mesh')
         self.place_holders['is_training']       = tf.placeholder(tf.bool)
         
-        for i in range(len(self.model_list)):
-            sub_model = self.model_list[i]
+        for model_name in self.model_dict.keys():
+            sub_model = self.model_dict[model_name]
+            suffix_dict = self.model_component[model_name]
+            suffix_dict['type_embed'] = 'type_embedding'
             tmp_model_pred\
                 = sub_model.build (self.place_holders['coord'], 
                                 self.place_holders['type'], 
@@ -358,31 +399,30 @@ class DPTrainer_mt (object):
                                 self.place_holders['box'], 
                                 self.place_holders['default_mesh'],
                                 self.place_holders,
-                                suffix = sub_model.get_name(), 
+                                suffix = suffix_dict, 
                                 reuse = tf.AUTO_REUSE)
 
         
-            sub_loss = self.loss_list[i]
+            sub_loss = self.loss_dict[model_name] # model name should be the same as fitting and loss 
             #if sub_loss.get_name() == data_name:
             tmp_l2_l, tmp_l2_more\
-                    = sub_loss.build (self.learning_rate_list[i],
+                    = sub_loss.build (self.learning_rate_dict[model_name],
                                self.place_holders['natoms_vec'], 
                                tmp_model_pred,
                                self.place_holders,
-                               suffix = sub_loss.get_name())
-            self.l2_l_list[data_name] = tmp_l2_l
-            self.l2_more_list[data_name] = tmp_l2_more
+                               suffix = model_name)
+            self.l2_l_dict[model_name] = tmp_l2_l
+            self.l2_more_dict[model_name] = tmp_l2_more
 
         log.info("built network")
 
     def _build_training(self,data):
         data_dict,data_name = data.get_data_dict() 
         trainable_variables = tf.trainable_variables()
-        self.optimizer_list = {}
-        for i in range(len(self.loss_list)):
-            sub_loss = self.loss_list[i]
-            optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate_list[i])
-
+        self.optimizer_dict = {}
+        for loss_name in self.loss_dict.keys():
+            sub_loss = self.loss_dict[loss_name]
+            optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate_dict[loss_name])
 
             if self.run_opt.is_distrib :
                 optimizer = tf.train.SyncReplicasOptimizer(
@@ -391,9 +431,9 @@ class DPTrainer_mt (object):
                     total_num_replicas = self.run_opt.cluster_spec.num_tasks("worker"),
                     name = "sync_replicas")
                 self.sync_replicas_hook = optimizer.make_session_run_hook(self.run_opt.is_chief)   
-            self.optimizer_list[sub_loss.get_name()] = optimizer  
-        grads = tf.gradients(self.l2_l_list[data_name], trainable_variables)
-        apply_op = self.optimizer_list[data_name].apply_gradients (zip (grads, trainable_variables),
+            self.optimizer_dict[loss_name] = optimizer  
+        grads = tf.gradients(self.l2_l_dict[data_name], trainable_variables)
+        apply_op = self.optimizer_dict[data_name].apply_gradients (zip (grads, trainable_variables),
                                               global_step=self.global_step,
                                               name='train_step')
         train_ops = [apply_op] + self._extra_train_ops
@@ -490,11 +530,11 @@ class DPTrainer_mt (object):
         cur_batch = self.sess.run(self.global_step)
         is_first_step = True
         self.cur_batch = cur_batch
-        for i in range(len(self.lr_list)):
-            tmp_lr = self.lr_list[i]
+        for lr_name in self.lr_dict.keys():
+            tmp_lr = self.lr_dict[lr_name]
             log.info("system %s, start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e" % 
-                 (tmp_lr.get_name(),
-                  self.sess.run(self.learning_rate_list[i]),
+                 (lr_name,
+                  self.sess.run(self.learning_rate_dict[lr_name]),
                   tmp_lr.value(cur_batch), 
                   tmp_lr.decay_steps_,
                   tmp_lr.decay_rate_,
@@ -519,7 +559,7 @@ class DPTrainer_mt (object):
         
         train_time = 0
         n_methods = train_data.get_nmethod()
-        data_method_list = train_data.get_name()
+        
         while cur_batch < stop_batch :
 
             # first round validation:
@@ -610,7 +650,7 @@ class DPTrainer_mt (object):
         valid_results = self.get_evaluation_results(valid_batches,method)
 
         cur_batch = self.cur_batch
-        current_lr = self.sess.run(self.learning_rate_list[method])
+        current_lr = self.sess.run(self.learning_rate_dict[self.method_name_list[method]])
         if print_header:
             self.print_header(fp, train_results, valid_results)
         self.print_on_training(fp, train_results, valid_results, cur_batch, current_lr,method)
@@ -660,7 +700,7 @@ class DPTrainer_mt (object):
             batch = batch_list[i]
             natoms = batch["natoms_vec"]
             feed_dict = self.get_feed_dict(batch, is_training=False)
-            sub_loss = self.loss_list[method]
+            sub_loss = self.loss_dict[self.method_name_list[method]]
             results = sub_loss.eval(self.sess, feed_dict, natoms)
 
             for k, v in results.items():

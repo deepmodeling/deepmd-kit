@@ -259,7 +259,7 @@ def train_mt(
     jdata = updata_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
 
     sys_name = ['battery','AlCuMg','HfO2','water']
-    jdata = normalize_mt(jdata,sys_name)
+    jdata = normalize_mt(jdata)
 
     jdata = update_sel(jdata)
 
@@ -378,8 +378,10 @@ def _do_work_mt(jdata: Dict[str, Any], run_opt: RunOptions):
 
     # init the model
     model = DPTrainer_mt(jdata, run_opt=run_opt)
-    rcut = model.model_list[0].get_rcut()
-    type_map = model.model_list[0].get_type_map()
+    for model_name in model.model_dict.keys():
+        sub_model = model.model_dict[model_name]
+        rcut = sub_model.get_rcut()
+        type_map = sub_model.get_type_map()
     if len(type_map) == 0:
         ipt_type_map = None
     else:
@@ -460,12 +462,10 @@ def get_data_mt(jdata: Dict[str, Any], rcut, type_map, modifier):
     batch_size = j_must_have(jdata, "batch_size")
     sys_probs = jdata.get("sys_probs", None)
     auto_prob = jdata.get("auto_prob", "prob_sys_size")
-    names = systems.keys()
     total_data = []
-    for name in names:
-        sub_sys = systems[name]
+    for sub_sys in systems:
         data = DeepmdDataSystem_mt(
-            systems=sub_sys,
+            systems=sub_sys['data'],
             batch_size=batch_size,
             test_size=1,        # to satisfy the old api
             shuffle_test=True,  # to satisfy the old api
@@ -476,7 +476,7 @@ def get_data_mt(jdata: Dict[str, Any], rcut, type_map, modifier):
             trn_all_set=True,    # sample from all sets
             sys_probs=sys_probs,
             auto_prob_style=auto_prob,
-            name = name
+            name = sub_sys['name']
         )
         data.add_dict(data_requirement)
         total_data.append(data)
@@ -582,10 +582,21 @@ def update_one_sel(jdata, descriptor):
 
 def update_sel(jdata):    
     descrpt_data = jdata['model']['descriptor']
-    if descrpt_data['type'] == 'hybrid':
-        for ii in range(len(descrpt_data['list'])):
-            descrpt_data['list'][ii] = update_one_sel(jdata, descrpt_data['list'][ii])
+    if isinstance(descrpt_data,list):
+        update_descrpt = []
+        for sub_descrpt in descrpt_data:
+            if sub_descrpt['type'] == 'hybrid':
+                for ii in range(len(sub_descrpt['list'])):
+                    sub_descrpt['list'][ii] = update_one_sel(jdata, sub_descrpt['list'][ii])
+            else:
+                sub_descrpt = update_one_sel(jdata, sub_descrpt)
+            update_descrpt.append(sub_descrpt)
+        jdata['model']['descriptor'] = update_descrpt
     else:
-        descrpt_data = update_one_sel(jdata, descrpt_data)
-    jdata['model']['descriptor'] = descrpt_data
+        if descrpt_data['type'] == 'hybrid':
+            for ii in range(len(descrpt_data['list'])):
+                descrpt_data['list'][ii] = update_one_sel(jdata, descrpt_data['list'][ii])
+        else:
+            descrpt_data = update_one_sel(jdata, descrpt_data)
+        jdata['model']['descriptor'] = descrpt_data
     return jdata
