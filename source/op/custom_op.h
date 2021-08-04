@@ -29,5 +29,5 @@ struct DeviceFunctor {
 };
 
 namespace deepmd {
-  void save_compute(OpKernelContext* context, std::function<void(OpKernelContext*)> ff);
+  void safe_compute(OpKernelContext* context, std::function<void(OpKernelContext*)> ff);
 };

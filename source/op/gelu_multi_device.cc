@@ -26,7 +26,7 @@ class GeluOp : public OpKernel {
  public :
   explicit GeluOp(OpKernelConstruction* context) : OpKernel(context) {}
   void Compute(OpKernelContext* context) override {
-    deepmd::save_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
   }
 
   void _Compute(OpKernelContext* context) {
@@ -77,7 +77,7 @@ class GeluGradOp : public OpKernel {
  public :
   explicit GeluGradOp(OpKernelConstruction* context) : OpKernel(context) {}
   void Compute(OpKernelContext* context) override {
-    deepmd::save_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
   }
 
   void _Compute(OpKernelContext* context) {
@@ -130,7 +130,7 @@ class GeluGradGradOp : public OpKernel {
  public :
   explicit GeluGradGradOp(OpKernelConstruction* context) : OpKernel(context) {}
   void Compute(OpKernelContext* context) override {
-    deepmd::save_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
   }
 
   void _Compute(OpKernelContext* context) {

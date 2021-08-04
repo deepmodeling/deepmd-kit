@@ -2,7 +2,7 @@
 #include "errors.h"
 
 namespace deepmd {
-  void save_compute(OpKernelContext* context, std::function<void(OpKernelContext*)> ff) {
+  void safe_compute(OpKernelContext* context, std::function<void(OpKernelContext*)> ff) {
     try{
       ff(context);
     } catch (deepmd::deepmd_exception_oom& e){

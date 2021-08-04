@@ -28,7 +28,7 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
-    deepmd::save_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
   }
 
   void _Compute(OpKernelContext* context) {

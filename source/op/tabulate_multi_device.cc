@@ -28,7 +28,7 @@ class TabulateFusionOp : public OpKernel {
     OP_REQUIRES_OK(context, context->GetAttr("last_layer_size", &last_layer_size));
   }
   void Compute(OpKernelContext* context) override {
-      deepmd::save_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+      deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
   }
 
   void _Compute(OpKernelContext* context) {
@@ -94,7 +94,7 @@ class TabulateFusionGradOp : public OpKernel {
  public:
   explicit TabulateFusionGradOp(OpKernelConstruction* context) : OpKernel(context) {}
   void Compute(OpKernelContext* context) override {
-      deepmd::save_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+      deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
   }
 
   void _Compute(OpKernelContext* context) {

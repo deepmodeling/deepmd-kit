@@ -136,7 +136,7 @@ class UnaggregatedDyDxSOp : public OpKernel {
     explicit UnaggregatedDyDxSOp(OpKernelConstruction* context) : OpKernel(context) {}
 
     void Compute(OpKernelContext* context) override {
-        deepmd::save_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+        deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
     }
 
     void _Compute(OpKernelContext* context) {
@@ -173,7 +173,7 @@ class UnaggregatedDy2DxSOp : public OpKernel {
     explicit UnaggregatedDy2DxSOp(OpKernelConstruction* context) : OpKernel(context) {}
 
     void Compute(OpKernelContext* context) override {
-        deepmd::save_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+        deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
     }
 
     void _Compute(OpKernelContext* context) {
@@ -213,7 +213,7 @@ class UnaggregatedDyDxOp : public OpKernel {
     explicit UnaggregatedDyDxOp(OpKernelConstruction* context) : OpKernel(context) {}
 
     void Compute(OpKernelContext* context) override {
-        deepmd::save_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+        deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
     }
 
     void _Compute(OpKernelContext* context) {
@@ -254,7 +254,7 @@ class UnaggregatedDy2DxOp : public OpKernel {
     explicit UnaggregatedDy2DxOp(OpKernelConstruction* context) : OpKernel(context) {}
 
     void Compute(OpKernelContext* context) override {
-        deepmd::save_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+        deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
     }
 
     void _Compute(OpKernelContext* context) {
