@@ -196,7 +196,7 @@ class TestParserOutput(unittest.TestCase):
         }
 
         for parser in ("config", "transfer", "train", "freeze", "test", "compress"):
-            if parser in ("compress", "train"):
+            if parser in ("train"):
                 args = {**{"INPUT": dict(type=str, value="INFILE")}, **ARGS}
             else:
                 args = ARGS
@@ -208,7 +208,7 @@ class TestParserOutput(unittest.TestCase):
         ARGS = {"--mpi-log": dict(type=str, value="master")}
 
         for parser in ("train", "compress"):
-            if parser in ("train", "compress"):
+            if parser in ("train"):
                 args = {**{"INPUT": dict(type=str, value="INFILE")}, **ARGS}
             else:
                 args = ARGS
@@ -270,7 +270,6 @@ class TestParserOutput(unittest.TestCase):
     def test_parser_compress(self):
         """Test compress subparser."""
         ARGS = {
-            "INPUT": dict(type=str, value="INFILE"),
             "--output": dict(type=str, value="OUTFILE"),
             "--extrapolate": dict(type=int, value=5),
             "--step": dict(type=float, value=0.1),
