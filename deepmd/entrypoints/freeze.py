@@ -45,8 +45,8 @@ def _make_node_names(model_type: str, modifier_type: Optional[str] = None) -> Li
         "model_attr/tmap",
         "model_attr/model_type",
         "model_attr/model_version",
-        "min_nbor_dist",
-        "training_script",
+        "train_attr/min_nbor_dist",
+        "train_attr/training_script",
     ]
 
     if model_type == "ener":

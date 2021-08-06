@@ -5,10 +5,11 @@ import logging
 from typing import Optional
 
 from deepmd.env import tf
-from deepmd.common import j_loader, load_model_info, GLOBAL_TF_FLOAT_PRECISION
+from deepmd.common import j_loader, get_tensor_by_name, GLOBAL_TF_FLOAT_PRECISION
 from deepmd.utils.argcheck import normalize
 from deepmd.utils.compat import updata_deepmd_input
-from deepmd.utils.errors import GraphTooLargeError, GraphWithoutJdataOrMinNborDistError
+from deepmd.utils.errors import GraphTooLargeError, GraphWithoutTensorError
+from deepmd.utils.constant import add_constant_variable
 
 from .freeze import freeze
 from .train import train
@@ -62,21 +63,24 @@ def compress(
         logging level
     """
     try:
-        jdata, min_nbor_dist = load_model_info(input)
-        tf.constant(min_nbor_dist,
-            name = 'min_nbor_dist',
-            dtype = GLOBAL_TF_FLOAT_PRECISION)
-    except GraphWithoutJdataOrMinNborDistError as e:
+        t_jdata = get_tensor_by_name(input, 'train_attr/training_script')
+        t_min_nbor_dist = get_tensor_by_name(input, 'train_attr/min_nbor_dist')
+    except GraphWithoutTensorError as e:
         raise RuntimeError(
             "The input frozen model: %s has no training script or min_nbor_dist information,"
             "which is not supported by the model compression program."
             "Please consider using the dp convert-from interface to upgrade the model" % input
         ) from e
+    tf.constant(t_min_nbor_dist,
+        name = 'train_attr/min_nbor_dist',
+        dtype = GLOBAL_TF_FLOAT_PRECISION)
+    add_constant_variable('train_attr/min_nbor_dist', t_min_nbor_dist)
+    jdata = json.loads(t_jdata)
     jdata["model"]["compress"] = {}
     jdata["model"]["compress"]["type"] = 'se_e2_a'
     jdata["model"]["compress"]["compress"] = True
     jdata["model"]["compress"]["model_file"] = input
-    jdata["model"]["compress"]["min_nbor_dist"] = min_nbor_dist
+    jdata["model"]["compress"]["min_nbor_dist"] = t_min_nbor_dist
     jdata["model"]["compress"]["table_config"] = [
         extrapolate,
         step,

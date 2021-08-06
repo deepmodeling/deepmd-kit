@@ -22,7 +22,7 @@ import yaml
 from deepmd.env import op_module, tf
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION, GLOBAL_NP_FLOAT_PRECISION
 from deepmd.utils.sess import run_sess
-from deepmd.utils.errors import GraphWithoutJdataOrMinNborDistError
+from deepmd.utils.errors import GraphWithoutTensorError
 
 if TYPE_CHECKING:
     _DICT_VAL = TypeVar("_DICT_VAL")
@@ -486,25 +486,27 @@ def get_np_precision(precision: "_PRECISION") -> np.dtype:
     else:
         raise RuntimeError(f"{precision} is not a valid precision")
 
-def load_model_info(model_file: str) -> Tuple[dict, float]:
-    """Get numpy precision constant from string.
+
+def get_tensor_by_name(model_file: str,
+                       tensor_name: str) -> tf.Tensor:
+    """Load tensor value from the frozen model(model_file)
 
     Parameters
     ----------
     model_file : str
-        The input frozen model, which will be compressed by the deepmd-kit.
+        The input frozen model.
+    tensor : tensor_name
+        Indicates which tensor which will be loaded from the frozen model.
 
     Returns
     -------
-    jdata
-        The training script saved in the frozen model
-    min_nbor_dist
-        The nearest distance between neighbor atoms saved in the frozen model
+    tf.Tensor
+        The tensor which was loaded from the frozen model.
 
     Raises
     ------
-    GraphWithoutJdataOrMinNborDistError
-        If the training script or min_nbor_dist are within the frozen model
+    GraphWithoutTensorError
+        Whether the tensor_name is within the frozen model.
     """
     graph_def = tf.GraphDef()
     with open(model_file, "rb") as f:
@@ -512,12 +514,10 @@ def load_model_info(model_file: str) -> Tuple[dict, float]:
     with tf.Graph().as_default() as graph:
         tf.import_graph_def(graph_def, name = "")
         try:
-            jdata = graph.get_tensor_by_name('training_script:0')
-            min_nbor_dist = graph.get_tensor_by_name('min_nbor_dist:0')
+            tensor = graph.get_tensor_by_name(tensor_name + ":0")
         except KeyError as e:
-            raise GraphWithoutJdataOrMinNborDistError() from e
+            raise GraphWithoutTensorError() from e
         with tf.Session(graph = graph) as sess:
-            run_sess(sess, [jdata, min_nbor_dist])
-            jdata = json.loads(jdata.eval())
-            min_nbor_dist = min_nbor_dist.eval()
-    return jdata, min_nbor_dist
+            run_sess(sess, tensor)
+            tensor = tensor.eval()
+    return tensor

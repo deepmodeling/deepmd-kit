@@ -20,6 +20,7 @@ from deepmd.utils.compat import updata_deepmd_input
 from deepmd.utils.data_system import DeepmdDataSystem
 from deepmd.utils.sess import run_sess
 from deepmd.utils.neighbor_stat import NeighborStat
+from deepmd.utils.constant import add_constant_variable
 
 __all__ = ["train"]
 
@@ -78,7 +79,8 @@ def train(
         json.dump(jdata, fp, indent=4)
 
     # save the training script into the graph
-    tf.constant(json.dumps(jdata), name='training_script', dtype=tf.string)
+    tf.constant(json.dumps(jdata), name='train_attr/training_script', dtype=tf.string)
+    add_constant_variable('train_attr/training_script', jdata)
 
     # run options
     run_opt = RunOptions(
@@ -96,7 +98,7 @@ def train(
     _do_work(jdata, run_opt, is_compress)
 
 
-def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: False):
+def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = False):
     """Run serial model training.
 
     Parameters
@@ -153,12 +155,16 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: False):
     stop_batch = j_must_have(jdata["training"], "numb_steps")
     model.build(train_data, stop_batch)
 
-    # train the model with the provided systems in a cyclic way
-    start_time = time.time()
-    model.train(train_data, valid_data)
-    end_time = time.time()
-    log.info("finished training")
-    log.info(f"wall time: {(end_time - start_time):.3f} s")
+    if is_compress == False:
+        # train the model with the provided systems in a cyclic way
+        start_time = time.time()
+        model.train(train_data, valid_data)
+        end_time = time.time()
+        log.info("finished training")
+        log.info(f"wall time: {(end_time - start_time):.3f} s")
+    else:
+        model.save_compressed()
+        log.info("finished compressing")
 
 
 def get_data(jdata: Dict[str, Any], rcut, type_map, modifier):

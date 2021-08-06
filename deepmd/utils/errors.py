@@ -1,5 +1,5 @@
 class GraphTooLargeError(Exception):
     pass
 
-class GraphWithoutJdataOrMinNborDistError(Exception):
+class GraphWithoutTensorError(Exception):
     pass

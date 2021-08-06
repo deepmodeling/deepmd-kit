@@ -26,6 +26,7 @@ from deepmd.utils.learning_rate import LearningRateExp
 from deepmd.utils.neighbor_stat import NeighborStat
 from deepmd.utils.sess import run_sess
 from deepmd.utils.type_embed import TypeEmbedNet
+from deepmd.utils.constant import add_constant_variable
 
 from tensorflow.python.client import timeline
 from deepmd.env import op_module
@@ -33,7 +34,7 @@ from deepmd.env import op_module
 # load grad of force module
 import deepmd.op
 
-from deepmd.common import j_must_have, ClassArg
+from deepmd.common import j_must_have, ClassArg, data_requirement
 
 log = logging.getLogger(__name__)
 
@@ -281,10 +282,16 @@ class DPTrainer (object):
         else:
             self.valid_numb_batch = 1
 
+
     def build (self, 
                data = None, 
                stop_batch = 0) :
         self.ntypes = self.model.get_ntypes()
+        # Usually, the type number of the model should be equal to that of the data
+        # However, nt_model > nt_data should be allowed, since users may only want to 
+        # train using a dataset that only have some of elements 
+        if self.is_compress == False:
+            assert (self.ntypes >= data.get_ntypes()), "ntypes should match that found in data"
         self.stop_batch = stop_batch
 
         # self.batch_size = data.get_batch_size()
@@ -295,7 +302,7 @@ class DPTrainer (object):
             log.info("training without frame parameter")
 
         # self.type_map = data.get_type_map()
-        if self.is_compress == False :
+        if self.is_compress == False:
             # Usually, the type number of the model should be equal to that of the data
             # However, nt_model > nt_data should be allowed, since users may only want to 
             # train using a dataset that only have some of elements 
@@ -307,11 +314,13 @@ class DPTrainer (object):
             self.min_nbor_dist, self.max_nbor_size \
                 = self.neighbor_stat.get_stat(data)
             tf.constant(self.min_nbor_dist,
-                    name = 'min_nbor_dist',
+                    name = 'train_attr/min_nbor_dist',
                     dtype = GLOBAL_TF_FLOAT_PRECISION)
             tf.constant(self.max_nbor_size,
-                    name = 'max_nbor_size',
+                    name = 'train_attr/max_nbor_size',
                     dtype = GLOBAL_TF_FLOAT_PRECISION)
+            add_constant_variable('train_attr/min_nbor_dist', self.min_nbor_dist)
+            add_constant_variable('train_attr/max_nbor_size', self.max_nbor_size)
         else :
             assert 'rcut' in self.descrpt_param, "Error: descriptor must have attr rcut!"
             self.descrpt.enable_compression(self.model_param['compress']["min_nbor_dist"], self.model_param['compress']['model_file'], self.model_param['compress']['table_config'][0], self.model_param['compress']['table_config'][1], self.model_param['compress']['table_config'][2], self.model_param['compress']['table_config'][3])
@@ -332,9 +341,14 @@ class DPTrainer (object):
         if self.is_compress :
             for kk in ['coord', 'box']:
                 self.place_holders[kk] = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], 't_' + kk)
-            for kk in ['energy', 'force', 'virial', 'atom_ener', 'atom_pref']:
-                self.place_holders[kk] = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], 't_' + kk)
-                self.place_holders['find_' + kk] = tf.placeholder(tf.float32, [None], 't_' + kk)
+            for kk in data_requirement.keys():
+                if kk == 'type':
+                    continue
+                prec = GLOBAL_TF_FLOAT_PRECISION
+                if data_requirement[kk]['high_prec'] :
+                    prec = GLOBAL_ENER_FLOAT_PRECISION
+                self.place_holders[kk] = tf.placeholder(prec, [None], name = 't_' + kk)
+                self.place_holders['find_' + kk] = tf.placeholder(tf.float32, name = 't_find_' + kk)
         else :
             data_dict = data.get_data_dict()
             for kk in data_dict.keys():
@@ -382,6 +396,7 @@ class DPTrainer (object):
                                               name='train_step')
         train_ops = [apply_op] + self._extra_train_ops
         self.train_op = tf.group(*train_ops)
+        self._init_session()
         log.info("built training")
 
     def _init_session(self):
@@ -433,10 +448,6 @@ class DPTrainer (object):
         #     valid_data = train_data  # using training set as validation set.
 
         stop_batch = self.stop_batch
-        self._init_session()
-        if self.is_compress:
-            self.saver.save (self.sess, os.getcwd() + "/" + self.save_ckpt)
-            return
         # Before data shard is enabled, only cheif do evaluation and record it
         # self.print_head()
         fp = None
@@ -635,3 +646,10 @@ class DPTrainer (object):
                     sum_results[k] = sum_results.get(k, 0.) + v * results["natoms"]
         avg_results = {k: v / sum_natoms for k, v in sum_results.items() if not k == "natoms"}
         return avg_results
+    
+    def save_compressed(self):
+        """
+        Save the compressed graph
+        """
+        if self.is_compress:
+            self.saver.save (self.sess, os.getcwd() + "/" + self.save_ckpt)
