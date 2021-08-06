@@ -9,7 +9,6 @@ from deepmd.common import j_loader, get_tensor_by_name, GLOBAL_TF_FLOAT_PRECISIO
 from deepmd.utils.argcheck import normalize
 from deepmd.utils.compat import updata_deepmd_input
 from deepmd.utils.errors import GraphTooLargeError, GraphWithoutTensorError
-from deepmd.utils.constant import add_constant_variable
 
 from .freeze import freeze
 from .train import train
@@ -74,7 +73,6 @@ def compress(
     tf.constant(t_min_nbor_dist,
         name = 'train_attr/min_nbor_dist',
         dtype = GLOBAL_TF_FLOAT_PRECISION)
-    add_constant_variable('train_attr/min_nbor_dist', t_min_nbor_dist)
     jdata = json.loads(t_jdata)
     jdata["model"]["compress"] = {}
     jdata["model"]["compress"]["type"] = 'se_e2_a'

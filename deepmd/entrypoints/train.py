@@ -20,7 +20,6 @@ from deepmd.utils.compat import updata_deepmd_input
 from deepmd.utils.data_system import DeepmdDataSystem
 from deepmd.utils.sess import run_sess
 from deepmd.utils.neighbor_stat import NeighborStat
-from deepmd.utils.constant import add_constant_variable
 
 __all__ = ["train"]
 
@@ -80,7 +79,6 @@ def train(
 
     # save the training script into the graph
     tf.constant(json.dumps(jdata), name='train_attr/training_script', dtype=tf.string)
-    add_constant_variable('train_attr/training_script', jdata)
 
     # run options
     run_opt = RunOptions(

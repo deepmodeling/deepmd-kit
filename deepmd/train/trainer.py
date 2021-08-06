@@ -26,7 +26,6 @@ from deepmd.utils.learning_rate import LearningRateExp
 from deepmd.utils.neighbor_stat import NeighborStat
 from deepmd.utils.sess import run_sess
 from deepmd.utils.type_embed import TypeEmbedNet
-from deepmd.utils.constant import add_constant_variable
 
 from tensorflow.python.client import timeline
 from deepmd.env import op_module
@@ -319,8 +318,6 @@ class DPTrainer (object):
             tf.constant(self.max_nbor_size,
                     name = 'train_attr/max_nbor_size',
                     dtype = GLOBAL_TF_FLOAT_PRECISION)
-            add_constant_variable('train_attr/min_nbor_dist', self.min_nbor_dist)
-            add_constant_variable('train_attr/max_nbor_size', self.max_nbor_size)
         else :
             assert 'rcut' in self.descrpt_param, "Error: descriptor must have attr rcut!"
             self.descrpt.enable_compression(self.model_param['compress']["min_nbor_dist"], self.model_param['compress']['model_file'], self.model_param['compress']['table_config'][0], self.model_param['compress']['table_config'][1], self.model_param['compress']['table_config'][2], self.model_param['compress']['table_config'][3])
