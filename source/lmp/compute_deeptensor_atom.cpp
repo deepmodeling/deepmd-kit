@@ -20,6 +20,12 @@
 
 using namespace LAMMPS_NS;
 
+#ifdef HIGH_PREC
+#define VALUETYPE double
+#else
+#define VALUETYPE float
+#endif
+
 /* ---------------------------------------------------------------------- */
 
 ComputeDeeptensorAtom::ComputeDeeptensorAtom(LAMMPS *lmp, int narg, char **arg) :
@@ -97,8 +103,8 @@ void ComputeDeeptensorAtom::compute_peratom()
   int nall = nlocal + nghost;
   int newton_pair = force->newton_pair;
 
-  std::vector<double > dcoord (nall * 3, 0.);
-  std::vector<double > dbox (9, 0) ;
+  std::vector<VALUETYPE > dcoord (nall * 3, 0.);
+  std::vector<VALUETYPE > dbox (9, 0) ;
   std::vector<int > dtype (nall);
   // get type
   for (int ii = 0; ii < nall; ++ii){
@@ -123,17 +129,11 @@ void ComputeDeeptensorAtom::compute_peratom()
   deepmd::InputNlist lmp_list (list->inum, list->ilist, list->numneigh, list->firstneigh);
   
   // declare outputs
-  std::vector<double > gtensor, force, virial, atensor, avirial;
+  std::vector<VALUETYPE > gtensor, force, virial, atensor, avirial;
 
   // compute tensors
   dt.compute (gtensor, force, virial, atensor, avirial,
 	      dcoord, dtype, dbox, nghost, lmp_list);
-  
-  // std::cout << "atensor " << atensor.size() 
-  // 	    << " nlocal " << nlocal
-  // 	    << " size_peratom_cols " << size_peratom_cols
-  // 	    << std::endl;
-  // assert(atensor.size() == nlocal * size_peratom_cols);
   
   // store the result in tensor
   int iter_tensor = 0;
