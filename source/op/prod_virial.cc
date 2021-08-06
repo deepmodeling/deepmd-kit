@@ -28,6 +28,10 @@ class ProdVirialOp : public OpKernel {
   }
 
   void Compute(OpKernelContext* context) override {
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     const Tensor& net_deriv_tensor	= context->input(0);
     const Tensor& in_deriv_tensor	= context->input(1);

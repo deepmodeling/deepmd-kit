@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <assert.h>
 #include <cuda_runtime.h>
+#include "errors.h"
 
 #define GPU_MAX_NBOR_SIZE 4096
 #define DPErrcheck(res) {DPAssert((res), __FILE__, __LINE__);}
@@ -12,7 +13,6 @@ inline void DPAssert(cudaError_t code, const char *file, int line, bool abort=tr
     fprintf(stderr,"cuda assert: %s %s %d\n", cudaGetErrorString(code), file, line);
     if (code == 2) {
       // out of memory
-      // TODO: I have no idea how to thorw errors back to Python interface
       fprintf(stderr, "Your memory is not enough, thus an error has been raised " \
         "above. You need to take the following actions:\n" \
         "1. Check if the network size of the model is too large.\n" \
@@ -22,8 +22,9 @@ inline void DPAssert(cudaError_t code, const char *file, int line, bool abort=tr
         "4. Check if another program is using the same GPU by execuating `nvidia-smi`. " \
         "The usage of GPUs is controlled by `CUDA_VISIBLE_DEVICES` " \
         "environment variable.\n");
+      if (abort) throw deepmd::deepmd_exception_oom("CUDA Assert");
     }
-    if (abort) exit(code);
+    if (abort) throw deepmd::deepmd_exception("CUDA Assert");
   }
 }
 
@@ -34,7 +35,6 @@ inline void nborAssert(cudaError_t code, const char *file, int line, bool abort=
         fprintf(stderr,"cuda assert: %s %s %d\n", "DeePMD-kit:\tillegal nbor list sorting", file, line);
         if (code == 2) {
           // out of memory
-          // TODO: I have no idea how to thorw errors back to Python interface
           fprintf(stderr, "Your memory is not enough, thus an error has been raised " \
             "above. You need to take the following actions:\n" \
             "1. Check if the network size of the model is too large.\n" \
@@ -44,8 +44,9 @@ inline void nborAssert(cudaError_t code, const char *file, int line, bool abort=
             "4. Check if another program is using the same GPU by execuating `nvidia-smi`. " \
             "The usage of GPUs is controlled by `CUDA_VISIBLE_DEVICES` " \
             "environment variable.\n");
+            if (abort) throw deepmd::deepmd_exception_oom("CUDA Assert");
         }
-        if (abort) exit(code);
+        if (abort) throw deepmd::deepmd_exception("CUDA Assert");
     }
 }
 

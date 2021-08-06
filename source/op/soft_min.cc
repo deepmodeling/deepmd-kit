@@ -37,6 +37,10 @@ class SoftMinSwitchOp : public OpKernel {
   }
 
   void Compute(OpKernelContext* context) override {
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     int tmp_idx = 0;
     const Tensor& type_tensor	= context->input(tmp_idx++);

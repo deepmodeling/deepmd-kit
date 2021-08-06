@@ -4,6 +4,7 @@
 #include "region.h"
 #include "neighbor_list.h"
 #include "prod_env_mat.h"
+#include "errors.h"
 
 REGISTER_OP("ProdEnvMatA")
     .Attr("T: {float, double} = DT_DOUBLE")
@@ -321,6 +322,10 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor& coord_tensor	= context->input(context_input_index++);
@@ -382,7 +387,7 @@ public:
       nei_mode = -1;
     }
     else {
-      throw std::runtime_error("invalid mesh tensor");
+      throw deepmd::deepmd_exception("invalid mesh tensor");
     }
 
     // Create output tensors
@@ -584,6 +589,10 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor& coord_tensor  = context->input(context_input_index++);
@@ -642,7 +651,7 @@ public:
       nei_mode = -1;
     }
     else {
-      throw std::runtime_error("invalid mesh tensor");
+      throw deepmd::deepmd_exception("invalid mesh tensor");
     }
 
     // Create an output tensor
