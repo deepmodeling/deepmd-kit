@@ -10,52 +10,31 @@ file(GLOB OP_GRADS_SRC prod_force_grad.cc prod_force_grad_multi_device.cc prod_v
 file(GLOB OP_PY *.py)
 
 if (BUILD_CPP_IF) 
-  if (USE_CUDA_TOOLKIT)
-    add_library(${LIB_DEEPMD_OP} SHARED ${OP_CUDA_SRC})
-    find_package(CUDA REQUIRED)
-    include_directories(${CUDA_INCLUDE_DIRS})
-    target_link_libraries (${LIB_DEEPMD_OP} ${CUDA_LIBRARIES})
-  elseif (USE_ROCM_TOOLKIT)
-    add_library(${LIB_DEEPMD_OP} SHARED ${OP_ROCM_SRC})
-    find_package(ROCM REQUIRED)
-    include_directories(${ROCM_INCLUDE_DIRS})
-    target_link_libraries (${LIB_DEEPMD_OP} ${ROCM_LIBRARIES})
-  else ()
-    add_library(${LIB_DEEPMD_OP} SHARED ${OP_SRC})
-  endif()
+  add_library(${LIB_DEEPMD_OP} SHARED ${OP_SRC})
+  # link: libdeepmd libtensorflow_cc libtensorflow_framework
+  target_link_libraries (${LIB_DEEPMD_OP} PUBLIC ${TensorFlow_LIBRARY} ${TensorFlowFramework_LIBRARY})
+  target_link_libraries (${LIB_DEEPMD_OP} PRIVATE ${LIB_DEEPMD})
+  target_include_directories(${LIB_DEEPMD_OP} PUBLIC ${TensorFlow_INCLUDE_DIRS})
 endif (BUILD_CPP_IF)
 
 if (BUILD_PY_IF)
   set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
   set(CMAKE_INSTALL_RPATH $ORIGIN)
-  if (USE_CUDA_TOOLKIT)
-    add_library(op_abi SHARED ${OP_SRC} ${OP_LIB})
-    add_library(op_grads SHARED ${OP_GRADS_SRC})
-    find_package(CUDA REQUIRED)
-    include_directories(${CUDA_INCLUDE_DIRS})
-    target_link_libraries (op_abi ${LIB_DEEPMD_OP_DEVICE})
-    target_link_libraries (op_grads ${LIB_DEEPMD_OP_DEVICE})
-  elseif(USE_ROCM_TOOLKIT)
-    add_library(op_abi SHARED ${OP_SRC} ${OP_LIB})
-    add_library(op_grads SHARED ${OP_GRADS_SRC})
-    find_package(ROCM REQUIRED)
-    include_directories(${ROCM_INCLUDE_DIRS})
-    target_link_libraries (op_abi ${LIB_DEEPMD_OP_DEVICE})
-    target_link_libraries (op_grads ${LIB_DEEPMD_OP_DEVICE})
-  else()
-    add_library(op_abi SHARED ${OP_SRC} ${OP_LIB})
-    add_library(op_grads SHARED ${OP_GRADS_SRC})
-  endif()
+  add_library(op_abi SHARED ${OP_SRC} ${OP_LIB})
+  add_library(op_grads SHARED ${OP_GRADS_SRC})
   
   message(STATUS ${TensorFlowFramework_LIBRARY})
-  target_link_libraries(op_abi ${LIB_DEEPMD})
-  target_link_libraries(op_grads ${LIB_DEEPMD})
+  # link: libdeepmd libtensorflow_framework
+  target_link_libraries(op_abi PRIVATE ${LIB_DEEPMD})
+  target_link_libraries(op_grads PRIVATE ${LIB_DEEPMD})
   target_link_libraries(
-    op_abi ${TensorFlowFramework_LIBRARY}
+    op_abi PRIVATE ${TensorFlowFramework_LIBRARY}
     )
   target_link_libraries(
-    op_grads ${TensorFlowFramework_LIBRARY}
+    op_grads PRIVATE ${TensorFlowFramework_LIBRARY}
     )
+  target_include_directories(op_abi PUBLIC ${TensorFlow_INCLUDE_DIRS})
+  target_include_directories(op_grads PUBLIC ${TensorFlow_INCLUDE_DIRS})
   set_target_properties(
     op_abi 
     PROPERTIES 
