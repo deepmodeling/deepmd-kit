@@ -147,7 +147,7 @@ class TestData (unittest.TestCase) :
         self.assertEqual(dd.idx_map[1], 1)
         self.assertEqual(dd.atom_type[0], 0)
         self.assertEqual(dd.atom_type[1], 1)
-        self.assertEqual(dd.type_map, ['bar', 'foo'])
+        self.assertEqual(dd.type_map, ['bar', 'foo', 'tar'])
 
     def test_load_set(self) :
         dd = DeepmdData(self.data_name)\

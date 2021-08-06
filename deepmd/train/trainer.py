@@ -327,7 +327,7 @@ class DPTrainer (object):
 
     def _build_network(self, data):        
         self.place_holders = {}
-        data_dict = data.get_data_dict()
+        data_dict,data_name = data.get_data_dict()
         for kk in data_dict.keys():
             if kk == 'type':
                 continue

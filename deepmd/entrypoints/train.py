@@ -15,9 +15,11 @@ from deepmd.env import tf
 from deepmd.infer.data_modifier import DipoleChargeModifier
 from deepmd.train.run_options import BUILD, CITATION, WELCOME, RunOptions
 from deepmd.train.trainer import DPTrainer
+from deepmd.train.trainer_mt import DPTrainer_mt
 from deepmd.utils.argcheck import normalize
+from deepmd.utils.argcheck_mt import normalize_mt
 from deepmd.utils.compat import updata_deepmd_input
-from deepmd.utils.data_system import DeepmdDataSystem
+from deepmd.utils.data_system import DeepmdDataSystem,DeepmdDataDocker
 from deepmd.utils.sess import run_sess
 from deepmd.utils.neighbor_stat import NeighborStat
 
@@ -142,6 +144,7 @@ def train(
     mpi_log: str,
     log_level: int,
     log_path: Optional[str],
+    multi_task : bool,
     **kwargs,
 ):
     """Run DeePMD model training.
@@ -162,7 +165,8 @@ def train(
         logging level defined by int 0-3
     log_path : Optional[str]
         logging file path or None if logs are to be output only to stdout
-
+    mulit-task : bool
+        whether using logic of multi_tasking
     Raises
     ------
     RuntimeError
@@ -173,7 +177,11 @@ def train(
 
     jdata = updata_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
 
-    jdata = normalize(jdata)
+    if multi_task:
+        jdata = normalize_mt(jdata)
+    else:
+        jdata = normalize(jdata)
+
 
     jdata = update_sel(jdata)
 
@@ -188,6 +196,8 @@ def train(
         log_level=log_level,
         mpi_log=mpi_log,
         try_distrib=jdata.get("with_distrib", False),
+        multi_task = multi_task,
+
     )
 
     for message in WELCOME + CITATION + BUILD:
@@ -216,6 +226,8 @@ def train(
         _do_work(jdata, run_opt)
 
 
+
+
 def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
     """Run serial model training.
 
@@ -235,9 +247,17 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
     assert "training" in jdata
 
     # init the model
-    model = DPTrainer(jdata, run_opt=run_opt)
-    rcut = model.model.get_rcut()
-    type_map = model.model.get_type_map()
+    if not run_opt.multi_task:
+        model = DPTrainer(jdata, run_opt=run_opt)
+        rcut = model.model.get_rcut()
+        type_map = model.model.get_type_map()
+    else:
+        model = DPTrainer_mt(jdata, run_opt=run_opt)
+        for model_name in model.model_dict.keys():
+            sub_model = model.model_dict[model_name]
+            rcut = sub_model.get_rcut()
+            type_map = sub_model.get_type_map()
+
     if len(type_map) == 0:
         ipt_type_map = None
     else:
@@ -253,13 +273,22 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
     modifier = get_modifier(jdata["model"].get("modifier", None))
 
     # init data
-    train_data = get_data(jdata["training"]["training_data"], rcut, ipt_type_map, modifier)
-    train_data.print_summary("training")
-    if jdata["training"].get("validation_data", None) is not None:
-        valid_data = get_data(jdata["training"]["validation_data"], rcut, ipt_type_map, modifier)
-        valid_data.print_summary("validation")
+    if run_opt.multi_task:
+        train_data = get_data_mt(jdata["training"]["training_data"], rcut, ipt_type_map, modifier)
+        train_data.print_summary("training")
+        if jdata["training"].get("validation_data", None) is not None:
+            valid_data = get_data_mt(jdata["training"]["validation_data"], rcut, ipt_type_map, modifier)
+            valid_data.print_summary("validation")
+        else:
+            valid_data = None
     else:
-        valid_data = None
+        train_data = get_data(jdata["training"]["training_data"], rcut, ipt_type_map, modifier)
+        train_data.print_summary("training")
+        if jdata["training"].get("validation_data", None) is not None:
+            valid_data = get_data(jdata["training"]["validation_data"], rcut, ipt_type_map, modifier)
+            valid_data.print_summary("validation")
+        else:
+            valid_data = None
 
     # get training info
     stop_batch = j_must_have(jdata["training"], "numb_steps")
@@ -271,7 +300,6 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
     end_time = time.time()
     log.info("finished training")
     log.info(f"wall time: {(end_time - start_time):.3f} s")
-
 
 def get_data(jdata: Dict[str, Any], rcut, type_map, modifier):
     systems = j_must_have(jdata, "systems")
@@ -313,6 +341,36 @@ def get_data(jdata: Dict[str, Any], rcut, type_map, modifier):
     data.add_dict(data_requirement)
 
     return data
+
+def get_data_mt(jdata: Dict[str, Any], rcut, type_map, modifier):
+    systems = j_must_have(jdata, "systems")
+    batch_size = j_must_have(jdata, "batch_size")
+    sys_probs = jdata.get("sys_probs", None)
+    auto_prob = jdata.get("auto_prob", "prob_sys_size")
+    total_data = []
+    for sub_sys in systems:
+        data = DeepmdDataSystem(
+            systems=sub_sys['data'],
+            batch_size=batch_size,
+            test_size=1,        # to satisfy the old api
+            shuffle_test=True,  # to satisfy the old api
+            rcut=rcut,
+            #type_map=sub_fitting['type_map'],  # this is the local type map
+            type_map=type_map,  # this is the local type map
+            modifier=modifier,
+            trn_all_set=True,    # sample from all sets
+            sys_probs=sys_probs,
+            auto_prob_style=auto_prob,
+            name = sub_sys['name']
+        )
+        data.add_dict(data_requirement)
+        total_data.append(data)
+    docker = DeepmdDataDocker(
+        data_systems=total_data,
+        batch_size = batch_size,
+        type_map=type_map   # in the data docker is the total type
+    )
+    return docker
 
 
 def get_modifier(modi_data=None):
@@ -409,10 +467,21 @@ def update_one_sel(jdata, descriptor):
 
 def update_sel(jdata):    
     descrpt_data = jdata['model']['descriptor']
-    if descrpt_data['type'] == 'hybrid':
-        for ii in range(len(descrpt_data['list'])):
-            descrpt_data['list'][ii] = update_one_sel(jdata, descrpt_data['list'][ii])
+    if isinstance(descrpt_data,list):
+        update_descrpt = []
+        for sub_descrpt in descrpt_data:
+            if sub_descrpt['type'] == 'hybrid':
+                for ii in range(len(sub_descrpt['list'])):
+                    sub_descrpt['list'][ii] = update_one_sel(jdata, sub_descrpt['list'][ii])
+            else:
+                sub_descrpt = update_one_sel(jdata, sub_descrpt)
+            update_descrpt.append(sub_descrpt)
+        jdata['model']['descriptor'] = update_descrpt
     else:
-        descrpt_data = update_one_sel(jdata, descrpt_data)
-    jdata['model']['descriptor'] = descrpt_data
+        if descrpt_data['type'] == 'hybrid':
+            for ii in range(len(descrpt_data['list'])):
+                descrpt_data['list'][ii] = update_one_sel(jdata, descrpt_data['list'][ii])
+        else:
+            descrpt_data = update_one_sel(jdata, descrpt_data)
+        jdata['model']['descriptor'] = descrpt_data
     return jdata

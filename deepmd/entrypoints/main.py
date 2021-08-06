@@ -162,6 +162,13 @@ def parse_args(args: Optional[List[str]] = None):
         default="out.json",
         help="The output file of the parameters used in training.",
     )
+    parser_train.add_argument(
+        "-mu",
+        "--multi_task",
+        type=bool,
+        default=False,
+        help="Whether using multi-task.",
+    )
 
     # * freeze script ******************************************************************
     parser_frz = subparsers.add_parser(

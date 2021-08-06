@@ -103,6 +103,7 @@ def compress(
             mpi_log=mpi_log,
             log_level=log_level,
             log_path=log_path,
+            multi_task = False,
         )
     except GraphTooLargeError as e:
         raise RuntimeError(

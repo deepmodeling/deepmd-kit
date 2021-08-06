@@ -22,8 +22,10 @@ class EnerStdLoss () :
                   limit_pref_ae : float = 0.0,
                   start_pref_pf : float = 0.0,
                   limit_pref_pf : float = 0.0,
-                  relative_f : float = None 
+                  relative_f : float = None ,
+                  name : str = None,
     ) -> None:
+        self.name = name
         self.starter_learning_rate = starter_learning_rate
         self.start_pref_e = start_pref_e
         self.limit_pref_e = limit_pref_e
@@ -128,6 +130,10 @@ class EnerStdLoss () :
         self.l2_more = more_loss
         return l2_loss, more_loss
 
+    def get_name(self):
+        # get name of loss
+        return self.name
+    
     def eval(self, sess, feed_dict, natoms):
         run_data = [
             self.l2_l,
