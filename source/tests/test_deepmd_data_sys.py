@@ -29,7 +29,7 @@ class TestDataSystem (unittest.TestCase) :
             np.savetxt(os.path.join(sys_name, 'type.raw'), 
                        self.atom_type[ii], 
                        fmt = '%d')
-            for jj in range(self.nset) :
+            for jj in range(self.nset):
                 set_name = os.path.join(sys_name, 'set.%03d' % jj)
                 os.makedirs(set_name, exist_ok = True)
                 path = os.path.join(set_name, 'coord.npy')

@@ -1,6 +1,5 @@
 #
 from .data import DeepmdData
-from .data_mt import DeepmdData_mt
 from .data_system import DeepmdDataSystem
 from .data_system import DeepmdDataDocker
 

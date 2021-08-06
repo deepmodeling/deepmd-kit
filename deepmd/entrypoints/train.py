@@ -19,7 +19,7 @@ from deepmd.train.trainer_mt import DPTrainer_mt
 from deepmd.utils.argcheck import normalize
 from deepmd.utils.argcheck_mt import normalize_mt
 from deepmd.utils.compat import updata_deepmd_input
-from deepmd.utils.data_system import DeepmdDataSystem,DeepmdDataSystem_mt,DeepmdDataDocker
+from deepmd.utils.data_system import DeepmdDataSystem,DeepmdDataDocker
 from deepmd.utils.sess import run_sess
 from deepmd.utils.neighbor_stat import NeighborStat
 
@@ -144,6 +144,7 @@ def train(
     mpi_log: str,
     log_level: int,
     log_path: Optional[str],
+    multi_task : bool,
     **kwargs,
 ):
     """Run DeePMD model training.
@@ -164,7 +165,8 @@ def train(
         logging level defined by int 0-3
     log_path : Optional[str]
         logging file path or None if logs are to be output only to stdout
-
+    mulit-task : bool
+        whether using logic of multi_tasking
     Raises
     ------
     RuntimeError
@@ -175,7 +177,11 @@ def train(
 
     jdata = updata_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
 
-    jdata = normalize(jdata)
+    if multi_task:
+        jdata = normalize_mt(jdata)
+    else:
+        jdata = normalize(jdata)
+
 
     jdata = update_sel(jdata)
 
@@ -190,6 +196,8 @@ def train(
         log_level=log_level,
         mpi_log=mpi_log,
         try_distrib=jdata.get("with_distrib", False),
+        multi_task = multi_task,
+
     )
 
     for message in WELCOME + CITATION + BUILD:
@@ -218,88 +226,6 @@ def train(
         _do_work(jdata, run_opt)
 
 
-def train_mt(
-    *,
-    INPUT: str,
-    init_model: Optional[str],
-    restart: Optional[str],
-    output: str,
-    mpi_log: str,
-    log_level: int,
-    log_path: Optional[str],
-    **kwargs,
-):
-    """Run DeePMD model training.
-
-    Parameters
-    ----------
-    INPUT : str
-        json/yaml control file
-    init_model : Optional[str]
-        path to checkpoint folder or None
-    restart : Optional[str]
-        path to checkpoint folder or None
-    output : str
-        path for dump file with arguments
-    mpi_log : str
-        mpi logging mode
-    log_level : int
-        logging level defined by int 0-3
-    log_path : Optional[str]
-        logging file path or None if logs are to be output only to stdout
-
-    Raises
-    ------
-    RuntimeError
-        if distributed training job nem is wrong
-    """
-    # load json database
-    jdata = j_loader(INPUT)
-
-    jdata = updata_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
-
-    sys_name = ['battery','AlCuMg','HfO2','water']
-    jdata = normalize_mt(jdata)
-
-    jdata = update_sel(jdata)
-
-    with open(output, "w") as fp:
-        json.dump(jdata, fp, indent=4)
-
-    # run options
-    run_opt = RunOptions(
-        init_model=init_model,
-        restart=restart,
-        log_path=log_path,
-        log_level=log_level,
-        mpi_log=mpi_log,
-        try_distrib=jdata.get("with_distrib", False),
-    )
-
-    for message in WELCOME + CITATION + BUILD:
-        log.info(message)
-
-    run_opt.print_resource_summary()
-
-    if run_opt.is_distrib:
-        # distributed training
-        if run_opt.my_job_name == "ps":
-            queue = create_done_queue(run_opt.cluster_spec, run_opt.my_task_index)
-            wait_done_queue(
-                run_opt.cluster_spec, run_opt.server, queue, run_opt.my_task_index
-            )
-            # server.join()
-        elif run_opt.my_job_name == "worker":
-            done_ops = connect_done_queue(run_opt.cluster_spec, run_opt.my_task_index)
-            _do_work(jdata, run_opt)
-            fill_done_queue(
-                run_opt.cluster_spec, run_opt.server, done_ops, run_opt.my_task_index
-            )
-        else:
-            raise RuntimeError("unknown job name")
-    else:
-        # serial training
-        _do_work_mt(jdata, run_opt)
 
 
 def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
@@ -321,9 +247,17 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
     assert "training" in jdata
 
     # init the model
-    model = DPTrainer(jdata, run_opt=run_opt)
-    rcut = model.model.get_rcut()
-    type_map = model.model.get_type_map()
+    if not run_opt.multi_task:
+        model = DPTrainer(jdata, run_opt=run_opt)
+        rcut = model.model.get_rcut()
+        type_map = model.model.get_type_map()
+    else:
+        model = DPTrainer_mt(jdata, run_opt=run_opt)
+        for model_name in model.model_dict.keys():
+            sub_model = model.model_dict[model_name]
+            rcut = sub_model.get_rcut()
+            type_map = sub_model.get_type_map()
+
     if len(type_map) == 0:
         ipt_type_map = None
     else:
@@ -339,71 +273,22 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
     modifier = get_modifier(jdata["model"].get("modifier", None))
 
     # init data
-    train_data = get_data(jdata["training"]["training_data"], rcut, ipt_type_map, modifier)
-    train_data.print_summary("training")
-    if jdata["training"].get("validation_data", None) is not None:
-        valid_data = get_data(jdata["training"]["validation_data"], rcut, ipt_type_map, modifier)
-        valid_data.print_summary("validation")
+    if run_opt.multi_task:
+        train_data = get_data_mt(jdata["training"]["training_data"], rcut, ipt_type_map, modifier)
+        train_data.print_summary("training")
+        if jdata["training"].get("validation_data", None) is not None:
+            valid_data = get_data_mt(jdata["training"]["validation_data"], rcut, ipt_type_map, modifier)
+            valid_data.print_summary("validation")
+        else:
+            valid_data = None
     else:
-        valid_data = None
-
-    # get training info
-    stop_batch = j_must_have(jdata["training"], "numb_steps")
-    model.build(train_data, stop_batch)
-
-    # train the model with the provided systems in a cyclic way
-    start_time = time.time()
-    model.train(train_data, valid_data)
-    end_time = time.time()
-    log.info("finished training")
-    log.info(f"wall time: {(end_time - start_time):.3f} s")
-
-def _do_work_mt(jdata: Dict[str, Any], run_opt: RunOptions):
-    """Run serial model training.
-
-    Parameters
-    ----------
-    jdata : Dict[str, Any]
-        arguments read form json/yaml control file
-    run_opt : RunOptions
-        object with run configuration
-
-    Raises
-    ------
-    RuntimeError
-        If unsupported modifier type is selected for model
-    """
-    # make necessary checks
-    assert "training" in jdata
-
-    # init the model
-    model = DPTrainer_mt(jdata, run_opt=run_opt)
-    for model_name in model.model_dict.keys():
-        sub_model = model.model_dict[model_name]
-        rcut = sub_model.get_rcut()
-        type_map = sub_model.get_type_map()
-    if len(type_map) == 0:
-        ipt_type_map = None
-    else:
-        ipt_type_map = type_map
-
-    #  init random seed
-    seed = jdata["training"].get("seed", None)
-    if seed is not None:
-        seed = seed % (2 ** 32)
-    np.random.seed(seed)
-
-    # setup data modifier
-    modifier = get_modifier(jdata["model"].get("modifier", None))
-
-    # init data
-    train_data = get_data_mt(jdata["training"]["training_data"], rcut, ipt_type_map, modifier)
-    train_data.print_summary("training")
-    if jdata["training"].get("validation_data", None) is not None:
-        valid_data = get_data_mt(jdata["training"]["validation_data"], rcut, ipt_type_map, modifier)
-        valid_data.print_summary("validation")
-    else:
-        valid_data = None
+        train_data = get_data(jdata["training"]["training_data"], rcut, ipt_type_map, modifier)
+        train_data.print_summary("training")
+        if jdata["training"].get("validation_data", None) is not None:
+            valid_data = get_data(jdata["training"]["validation_data"], rcut, ipt_type_map, modifier)
+            valid_data.print_summary("validation")
+        else:
+            valid_data = None
 
     # get training info
     stop_batch = j_must_have(jdata["training"], "numb_steps")
@@ -464,7 +349,7 @@ def get_data_mt(jdata: Dict[str, Any], rcut, type_map, modifier):
     auto_prob = jdata.get("auto_prob", "prob_sys_size")
     total_data = []
     for sub_sys in systems:
-        data = DeepmdDataSystem_mt(
+        data = DeepmdDataSystem(
             systems=sub_sys['data'],
             batch_size=batch_size,
             test_size=1,        # to satisfy the old api

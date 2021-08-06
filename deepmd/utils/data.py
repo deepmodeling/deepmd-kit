@@ -23,7 +23,8 @@ class DeepmdData() :
                   shuffle_test : bool = True, 
                   type_map : List[str] = None, 
                   modifier = None,
-                  trn_all_set : bool = False) :
+                  trn_all_set : bool = False,
+                  name : str = None) :
         """
         Constructor
         
@@ -44,6 +45,7 @@ class DeepmdData() :
         """
         self.dirs = glob.glob (os.path.join(sys_path, set_prefix + ".*"))
         self.dirs.sort()
+        self.name = name
         # load atom type
         self.atom_type = self._load_type(sys_path)
         self.natoms = len(self.atom_type)
@@ -57,7 +59,7 @@ class DeepmdData() :
         if type_map is not None and self.type_map is not None:
             atom_type_ = [type_map.index(self.type_map[ii]) for ii in self.atom_type]
             self.atom_type = np.array(atom_type_, dtype = np.int32)
-            ntypes = len(self.type_map)
+            ntypes = len(type_map)
             self.type_map = type_map[:ntypes]
         # make idx map
         self.idx_map = self._make_idx_map(self.atom_type)
@@ -154,11 +156,11 @@ class DeepmdData() :
         }
         return self
 
-    def get_data_dict(self) -> dict:
+    def get_data_dict(self):
         """
         Get the `data_dict`
         """
-        return self.data_dict
+        return self.data_dict,self.name
 
     def check_batch_size (self, batch_size) :        
         """
@@ -242,6 +244,12 @@ class DeepmdData() :
         if self.modifier is not None:
             self.modifier.modify_data(ret)
         return ret
+
+    def get_name(self): 
+        """
+        Get name of the data
+        """
+        return self.name
 
     def get_ntypes(self) -> int:
         """

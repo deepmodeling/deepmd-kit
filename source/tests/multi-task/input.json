@@ -1,0 +1,167 @@
+{
+    "_comment": " model parameters",
+    "model": {
+	"type_map":	["H","O","Hf"],
+	"type_embedding":{
+	    "neuron":		[2, 4, 8],
+	    "resnet_dt":	false,
+	    "seed":		1
+	},	    
+	"descriptor" :[
+		{
+	    	"type":		"se_e2_a",
+			"name":		"HfO2",
+	    	"sel":		[92,120,0],
+	    	"rcut_smth":	2.0,
+	    	"rcut":		9.00,
+	    	"neuron":		[25, 50, 100],
+	    	"resnet_dt":	false,
+	    	"axis_neuron":	16,
+	    	"type_one_side":	true,
+	    	"seed":		1,
+	    	"_comment":		" that's all"
+		},
+		{
+			"type":		"se_e2_a",
+			"name":		"water",
+			"sel":		[0,120,60],
+			"rcut_smth":	2.0,
+			"rcut":		9.00,
+			"neuron":		[25, 50, 100],
+			"resnet_dt":	false,
+			"axis_neuron":	16,
+			"type_one_side":	true,
+			"seed":		1,
+			"_comment":		" that's all"
+		}
+	],
+	"fitting_net" :[
+		{
+		"name":         "HfO2",
+		"neuron":		[240, 240, 240],
+	    "resnet_dt":	true,
+	    "seed":		1,
+	    "_comment":		" that's all"
+		},
+		{
+		"name":         "water",
+		"neuron":		[120, 120, 120],
+	    "resnet_dt":	true,
+	    "seed":		1,
+	    "_comment":		" that's all"
+		}
+	],
+	"_comment":	" that's all"
+    },
+
+    "learning_rate" :[
+		{
+			"name":     "HfO2",
+			"type":		"exp",
+			"decay_steps":	4000,
+			"start_lr":	0.002,	
+			"stop_lr":	5.69e-7,
+			"_comment":	"that's all"
+		},
+		{
+			"name":     "water",
+			"type":		"exp",
+			"decay_steps":	5000,
+			"start_lr":	0.001,	
+			"stop_lr":	3.51e-8,
+			"_comment":	"that's all"
+		}
+	],
+    "loss" :[
+		{
+			"name":     "HfO2",
+			"type":		"ener",
+			"start_pref_e":	0.02,
+			"limit_pref_e":	1,
+			"start_pref_f":	1000,
+			"limit_pref_f":	1,
+			"start_pref_v":	0.0,
+			"limit_pref_v":	0.0,
+			"_comment":	" that's all"
+		},
+		{
+			"name":     "water",
+			"type":		"ener",
+			"start_pref_e":	0.02,
+			"limit_pref_e":	1,
+			"start_pref_f":	1000,
+			"limit_pref_f":	1,
+			"start_pref_v":	0,
+			"limit_pref_v":	0,
+			"_comment":	" that's all"
+		}
+	
+	],
+
+    "training" : {
+	"training_data": {
+	    "systems":[
+			{
+				"name":     "HfO2",
+				"data":[
+					"multi-task/data/HfO2/init.000"
+					]
+			},
+			{
+				"name":		"water",
+				"data":[
+					"multi-task/data/water/data_0/"
+				]
+			}
+		],
+		
+	    "batch_size":	"auto",
+	    "_comment":		"that's all"
+	},
+	"validation_data":{
+		"systems":[
+			{
+				"name":     "HfO2",
+				"data":[
+					"multi-task/data/HfO2/init.000"
+				]
+			},
+			{
+				"name":		"water",
+				"data":[
+					"multi-task/data/water/data_0/"
+				]
+			}
+		],
+			
+	    "batch_size":	1,
+	    "numb_btch":	3,
+	    "_comment":		"that's all"
+	},
+	"tasks":[
+		{
+			"name":				"HfO2",
+			"descriptor":		"HfO2",
+			"fitting_net":		"HfO2",
+			"learning_rate": 	"HfO2",
+			"loss": 			"HfO2"
+		},
+		{
+			"name":				"water",
+			"descriptor":		"water",
+			"fitting_net":		"water",
+			"learning_rate": 	"water",
+			"loss": 			"water"
+		}
+	],
+	"numb_steps":	200,
+	"seed":		1234,
+	"disp_file":	"lcurve.out",
+	"disp_freq":	100,
+	"save_freq":	200,
+	"_comment":	"that's all"
+    },    
+
+    "_comment":		"that's all"
+}
+

@@ -96,6 +96,7 @@ class DPTrainer_mt (object):
         self.descrpt_param  = descrpt_param
         self.fitting_param = fitting_param
         self.model_build_param = model_build_param
+        self.seed = training_param['seed']
         
         # descriptor
         self.descriptor_dict = {}

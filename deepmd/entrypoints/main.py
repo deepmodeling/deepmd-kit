@@ -12,7 +12,6 @@ from deepmd.entrypoints import (
     freeze,
     test,
     train_dp,
-    train_mt_dp,
     transfer,
     make_model_devi,
     convert,
@@ -131,37 +130,7 @@ def parse_args(args: Optional[List[str]] = None):
         type=str,
         help="the model after passing parameters",
     )
-    # * multi task config ******************************************************************
-    parser_train_mt = subparsers.add_parser(
-        "multi-task",
-        parents=[parser_log, parser_mpi_log],
-        help="multi task training",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    parser_train_mt.add_argument(
-        "INPUT", help="the input parameter file in json or yaml format"
-    )
-    parser_train_mt.add_argument(
-        "-i",
-        "--init-model",
-        type=str,
-        default=None,
-        help="Initialize the model by the provided checkpoint.",
-    )
-    parser_train_mt.add_argument(
-        "-r",
-        "--restart",
-        type=str,
-        default=None,
-        help="Restart the training from the provided checkpoint.",
-    )
-    parser_train_mt.add_argument(
-        "-o",
-        "--output",
-        type=str,
-        default="out.json",
-        help="The output file of the parameters used in training.",
-    )
+
     # * config parser ******************************************************************
     parser_train = subparsers.add_parser(
         "train",
@@ -192,6 +161,13 @@ def parse_args(args: Optional[List[str]] = None):
         type=str,
         default="out.json",
         help="The output file of the parameters used in training.",
+    )
+    parser_train.add_argument(
+        "-mu",
+        "--multi_task",
+        type=bool,
+        default=False,
+        help="Whether using multi-task.",
     )
 
     # * freeze script ******************************************************************
@@ -448,8 +424,6 @@ def main():
 
     if args.command == "train":
         train_dp(**dict_args)
-    elif args.command == "multi-task":
-        train_mt_dp(**dict_args)
     elif args.command == "freeze":
         freeze(**dict_args)
     elif args.command == "config":
