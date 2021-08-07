@@ -17,7 +17,7 @@ __all__ = [
     "doc_train_input",
     "freeze",
     "test",
-    "train",
+    "train_dp",
     "transfer",
     "compress",
     "doc_train_input",

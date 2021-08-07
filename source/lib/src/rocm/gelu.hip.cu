@@ -64,6 +64,8 @@ namespace deepmd {
     const int BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
   
     hipLaunchKernelGGL(gelu, BLOCK_NUMS, THREAD_ITEMS, 0, 0, out, xx, size);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
   }
   
   template<typename FPTYPE>
@@ -81,6 +83,8 @@ namespace deepmd {
     const int BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
   
     hipLaunchKernelGGL(gelu_grad, BLOCK_NUMS, THREAD_ITEMS, 0, 0, out, xx, dy, size);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
   }
   
   template<typename FPTYPE>
@@ -99,6 +103,8 @@ namespace deepmd {
     const int BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
     
     hipLaunchKernelGGL(gelu_grad_grad, BLOCK_NUMS, THREAD_ITEMS, 0, 0, out, xx, dy, dy_2, size);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
   }
   
   template void gelu_gpu_rocm<float>(float * out, const float * x, const int size);

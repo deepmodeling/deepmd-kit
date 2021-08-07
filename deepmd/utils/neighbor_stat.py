@@ -82,8 +82,20 @@ class NeighborStat():
                                                 self.place_holders['box']: np.array(data_set['box'])[kk].reshape([-1, 9]),
                                                 self.place_holders['default_mesh']: np.array(data.default_mesh[ii]),
                                             })
-                    dt = np.min(dt)
+                    if dt.size != 0:
+                        dt = np.min(dt)              
+                    else:
+                        dt = self.rcut
+                        log.warning("Atoms with no neighbors found in %s. Please make sure it's what you expected."%jj)
+                        
                     if dt < self.min_nbor_dist:
+                        if math.isclose(dt, 0., rel_tol=1e-6):
+                            # it's unexpected that the distance between two atoms is zero
+                            # zero distance will cause nan (#874) 
+                            raise RuntimeError(
+                                "Some atoms in %s are overlapping. Please check your"
+                                " training data to remove duplicated atoms." % jj
+                            )
                         self.min_nbor_dist = dt
                     for ww in range(self.ntypes):
                         var = np.max(mn[:, ww])

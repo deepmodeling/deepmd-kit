@@ -61,6 +61,7 @@ class DeepmdData() :
             self.atom_type = np.array(atom_type_, dtype = np.int32)
             ntypes = len(type_map)
             self.type_map = type_map[:ntypes]
+
         # make idx map
         self.idx_map = self._make_idx_map(self.atom_type)
         # train dirs

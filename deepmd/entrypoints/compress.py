@@ -6,7 +6,7 @@ from typing import Optional
 
 from deepmd.common import j_loader
 from deepmd.utils.argcheck import normalize
-from deepmd.utils.compat import convert_input_v0_v1
+from deepmd.utils.compat import updata_deepmd_input
 from deepmd.utils.errors import GraphTooLargeError
 
 from .freeze import freeze
@@ -65,7 +65,7 @@ def compress(
     """
     jdata = j_loader(INPUT)
     if "model" not in jdata.keys():
-        jdata = convert_input_v0_v1(jdata, warning=True, dump="input_v1_compat.json")
+        jdata = updata_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
     jdata["model"]["compress"] = {}
     jdata["model"]["compress"]["type"] = 'se_e2_a'
     jdata["model"]["compress"]["compress"] = True

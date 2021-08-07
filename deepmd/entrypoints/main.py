@@ -320,11 +320,17 @@ def parse_args(args: Optional[List[str]] = None):
     )
 
     # * print docs script **************************************************************
-    subparsers.add_parser(
+    parsers_doc = subparsers.add_parser(
         "doc-train-input",
         parents=[parser_log],
         help="print the documentation (in rst format) of input training parameters.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parsers_doc.add_argument(
+        "--out-type", 
+        default="rst", 
+        type=str, 
+        help="The output type"
     )
 
     # * make model deviation ***********************************************************
@@ -435,7 +441,7 @@ def main():
     elif args.command == "compress":
         compress(**dict_args)
     elif args.command == "doc-train-input":
-        doc_train_input()
+        doc_train_input(**dict_args)
     elif args.command == "model-devi":
         make_model_devi(**dict_args)
     elif args.command == "convert-from":
