@@ -417,9 +417,11 @@ and then run the program:
 Note that the model for MD simulations is required to be compatible with the DeePMD-kit package. See [Model compatibility](troubleshooting/model-compatability.md) for details. 
 
 ### Run MD with LAMMPS
-Include deepmd in the pair_style
 
-#### Syntax
+#### pair_style `deepmd`
+
+The DeePMD-kit package provides the pair_style `deepmd`
+
 ```
 pair_style deepmd models ... keyword value ...
 ```
@@ -439,14 +441,14 @@ pair_style deepmd models ... keyword value ...
         level = The level parameter for computing the relative model deviation
 </pre>
 
-#### Examples
+##### Examples
 ```
 pair_style deepmd graph.pb
 pair_style deepmd graph.pb fparam 1.2
 pair_style deepmd graph_0.pb graph_1.pb graph_2.pb out_file md.out out_freq 10 atomic relative 1.0
 ```
 
-#### Description
+##### Description
 Evaluate the interaction of the system by using [Deep Potential][DP] or [Deep Potential Smooth Edition][DP-SE]. It is noticed that deep potential is not a "pairwise" interaction, but a multi-body interaction. 
 
 This pair style takes the deep potential defined in a model file that usually has the .pb extension. The model can be trained and frozen by package [DeePMD-kit](https://github.com/deepmodeling/deepmd-kit).
@@ -461,9 +463,33 @@ Ef_i = -------------
 ```
 where `Df_i` is the absolute model deviation of the force on atom `i`, `|f_i|` is the norm of the the force and `level` is provided as the parameter of the keyword `relative`.
 
-
-#### Restrictions
+##### Restrictions
 - The `deepmd` pair style is provided in the USER-DEEPMD package, which is compiled from the DeePMD-kit, visit the [DeePMD-kit website](https://github.com/deepmodeling/deepmd-kit) for more information.
+
+
+#### Compute tensorial prperties
+
+The DeePMD-kit package provide the compute `deeptensor/atom` for computing atomic tensorial properties. 
+
+```
+compute ID group-ID deeptensor/atom model_file
+```
+- ID: user-assigned name of the computation
+- group-ID: ID of the group of atoms to compute
+- deeptensor/atom: the style of this compute
+- model_file: the name of the binary model file.
+
+##### Examples
+```
+compute         dipole all deeptensor/atom dipole.pb
+```
+The result of the compute can be dump to trajctory file by 
+```
+dump            1 all custom 100 water.dump id type c_dipole[1] c_dipole[2] c_dipole[3] 
+```
+
+##### Restrictions
+- The `deeptensor/atom` compute is provided in the USER-DEEPMD package, which is compiled from the DeePMD-kit, visit the [DeePMD-kit website](https://github.com/deepmodeling/deepmd-kit) for more information.
 
 
 #### Long-range interaction
