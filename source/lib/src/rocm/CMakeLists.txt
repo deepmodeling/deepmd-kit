@@ -16,7 +16,8 @@ set (HIP_HIPCC_FLAGS -hc; -fno-gpu-rdc; --amdgpu-target=gfx906; -fPIC; -O3; --st
 
 file (GLOB SOURCE_FILES "*.hip.cu" )
 
-target_include_directories(deepmd_op_cuda PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../include/)
+hip_add_library(deepmd_op_rocm SHARED ${SOURCE_FILES})
+target_include_directories(deepmd_op_rocm PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../include/)
 
 install(TARGETS deepmd_op_rocm DESTINATION lib/)
 if (BUILD_CPP_IF)
