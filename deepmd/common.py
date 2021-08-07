@@ -512,11 +512,11 @@ def get_tensor_by_name(model_file: str,
     with open(model_file, "rb") as f:
         graph_def.ParseFromString(f.read())
     with tf.Graph().as_default() as graph:
-        tf.import_graph_def(graph_def, name = "")
+        tf.import_graph_def(graph_def, name="")
         try:
             tensor = graph.get_tensor_by_name(tensor_name + ":0")
         except KeyError as e:
             raise GraphWithoutTensorError() from e
-        with tf.Session(graph = graph) as sess:
+        with tf.Session(graph=graph) as sess:
             tensor = run_sess(sess, tensor)
     return tensor
