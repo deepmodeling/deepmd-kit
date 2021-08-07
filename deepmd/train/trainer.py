@@ -2,7 +2,6 @@
 import logging
 import os
 import time
-import json
 import shutil
 import google.protobuf.message
 import numpy as np
@@ -286,10 +285,10 @@ class DPTrainer (object):
                data = None, 
                stop_batch = 0) :
         self.ntypes = self.model.get_ntypes()
-        # Usually, the type number of the model should be equal to that of the data
-        # However, nt_model > nt_data should be allowed, since users may only want to 
-        # train using a dataset that only have some of elements 
         if self.is_compress == False:
+            # Usually, the type number of the model should be equal to that of the data
+            # However, nt_model > nt_data should be allowed, since users may only want to 
+            # train using a dataset that only have some of elements 
             assert (self.ntypes >= data.get_ntypes()), "ntypes should match that found in data"
         self.stop_batch = stop_batch
 
@@ -338,24 +337,9 @@ class DPTrainer (object):
         if self.is_compress :
             for kk in ['coord', 'box']:
                 self.place_holders[kk] = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], 't_' + kk)
-            for kk in data_requirement.keys():
-                if kk == 'type':
-                    continue
-                prec = GLOBAL_TF_FLOAT_PRECISION
-                if data_requirement[kk]['high_prec'] :
-                    prec = GLOBAL_ENER_FLOAT_PRECISION
-                self.place_holders[kk] = tf.placeholder(prec, [None], name = 't_' + kk)
-                self.place_holders['find_' + kk] = tf.placeholder(tf.float32, name = 't_find_' + kk)
+            self._get_place_horders(data_requirement)
         else :
-            data_dict = data.get_data_dict()
-            for kk in data_dict.keys():
-                if kk == 'type':
-                    continue
-                prec = GLOBAL_TF_FLOAT_PRECISION
-                if data_dict[kk]['high_prec'] :
-                    prec = GLOBAL_ENER_FLOAT_PRECISION
-                self.place_holders[kk] = tf.placeholder(prec, [None], name = 't_' + kk)
-                self.place_holders['find_' + kk] = tf.placeholder(tf.float32, name = 't_find_' + kk)
+            self._get_place_horders(data.get_data_dict())
 
         self.place_holders['type']      = tf.placeholder(tf.int32,   [None], name='t_type')
         self.place_holders['natoms_vec']        = tf.placeholder(tf.int32,   [self.ntypes+2], name='t_natoms')
@@ -393,7 +377,6 @@ class DPTrainer (object):
                                               name='train_step')
         train_ops = [apply_op] + self._extra_train_ops
         self.train_op = tf.group(*train_ops)
-        self._init_session()
         log.info("built training")
 
     def _init_session(self):
@@ -445,6 +428,8 @@ class DPTrainer (object):
         #     valid_data = train_data  # using training set as validation set.
 
         stop_batch = self.stop_batch
+        self._init_session()
+
         # Before data shard is enabled, only cheif do evaluation and record it
         # self.print_head()
         fp = None
@@ -533,7 +518,7 @@ class DPTrainer (object):
                     train_time = 0
                 if self.save_freq > 0 and cur_batch % self.save_freq == 0 and self.saver is not None:
                     try:
-                        self.saver.save (self.sess, os.getcwd() + "/" + self.save_ckpt)
+                        self.saver.save (self.sess, os.path.join(os.getcwd(), self.save_ckpt))
                     except google.protobuf.message.DecodeError as e:
                         raise GraphTooLargeError(
                             "The graph size exceeds 2 GB, the hard limitation of protobuf."
@@ -648,5 +633,16 @@ class DPTrainer (object):
         """
         Save the compressed graph
         """
+        self._init_session()
         if self.is_compress:
-            self.saver.save (self.sess, os.getcwd() + "/" + self.save_ckpt)
+            self.saver.save (self.sess, os.path.join(os.getcwd(), self.save_ckpt))
+
+    def _get_place_horders(self, data_dict):
+        for kk in data_dict.keys():
+            if kk == 'type':
+                continue
+            prec = GLOBAL_TF_FLOAT_PRECISION
+            if data_dict[kk]['high_prec'] :
+                prec = GLOBAL_ENER_FLOAT_PRECISION
+            self.place_holders[kk] = tf.placeholder(prec, [None], name = 't_' + kk)
+            self.place_holders['find_' + kk] = tf.placeholder(tf.float32, name = 't_find_' + kk)
