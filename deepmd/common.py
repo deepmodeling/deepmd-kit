@@ -518,6 +518,5 @@ def get_tensor_by_name(model_file: str,
         except KeyError as e:
             raise GraphWithoutTensorError() from e
         with tf.Session(graph = graph) as sess:
-            run_sess(sess, tensor)
-            tensor = tensor.eval()
+            tensor = run_sess(sess, tensor)
     return tensor
