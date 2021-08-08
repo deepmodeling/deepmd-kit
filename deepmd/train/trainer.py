@@ -285,22 +285,20 @@ class DPTrainer (object):
                data = None, 
                stop_batch = 0) :
         self.ntypes = self.model.get_ntypes()
-
         self.stop_batch = stop_batch
-
-        # self.batch_size = data.get_batch_size()
 
         if self.numb_fparam > 0 :
             log.info("training with %d frame parameter(s)" % self.numb_fparam)
         else:
             log.info("training without frame parameter")
 
-        # self.type_map = data.get_type_map()
         if self.is_compress == False:
             # Usually, the type number of the model should be equal to that of the data
             # However, nt_model > nt_data should be allowed, since users may only want to 
             # train using a dataset that only have some of elements 
             assert (self.ntypes >= data.get_ntypes()), "ntypes should match that found in data"
+            self.type_map = data.get_type_map()
+            self.batch_size = data.get_batch_size()
             self.model.data_stat(data)
 
             self.neighbor_stat \
