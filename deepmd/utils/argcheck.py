@@ -80,7 +80,7 @@ def descrpt_se_a_args():
         Argument("rcut", float, optional = True, default = 6.0, doc = doc_rcut),
         Argument("rcut_smth", float, optional = True, default = 0.5, doc = doc_rcut_smth),
         Argument("neuron", list, optional = True, default = [10,20,40], doc = doc_neuron),
-        Argument("axis_neuron", int, optional = True, default = 4, doc = doc_axis_neuron),
+        Argument("axis_neuron", int, optional = True, default = 4, n_axis_neuron = ['n_axis_neuron'], doc = doc_axis_neuron),
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
         Argument("resnet_dt", bool, optional = True, default = False, doc = doc_resnet_dt),
         Argument("type_one_side", bool, optional = True, default = False, doc = doc_type_one_side),
@@ -228,7 +228,7 @@ def fitting_ener():
     return [
         Argument("numb_fparam", int, optional = True, default = 0, doc = doc_numb_fparam),
         Argument("numb_aparam", int, optional = True, default = 0, doc = doc_numb_aparam),
-        Argument("neuron", list, optional = True, default = [120,120,120], doc = doc_neuron),
+        Argument("neuron", list, optional = True, default = [120,120,120], alias = ['n_neuron'], doc = doc_neuron),
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
         Argument("precision", str, optional = True, default = 'float64', doc = doc_precision),
         Argument("resnet_dt", bool, optional = True, default = True, doc = doc_resnet_dt),
@@ -254,7 +254,7 @@ def fitting_polar():
     doc_shift_diag = 'Whether to shift the diagonal of polar, which is beneficial to training. Default is true.'
 
     return [
-        Argument("neuron", list, optional = True, default = [120,120,120], doc = doc_neuron),
+        Argument("neuron", list, optional = True, default = [120,120,120], alias = ['n_neuron'], doc = doc_neuron),
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
         Argument("resnet_dt", bool, optional = True, default = True, doc = doc_resnet_dt),
         Argument("precision", str, optional = True, default = 'float64', doc = doc_precision),
@@ -262,7 +262,7 @@ def fitting_polar():
         Argument("scale", [list,float], optional = True, default = 1.0, doc = doc_scale),
         #Argument("diag_shift", [list,float], optional = True, default = 0.0, doc = doc_diag_shift),
         Argument("shift_diag", bool, optional = True, default = True, doc = doc_shift_diag),
-        Argument("sel_type", [list,int,None], optional = True, doc = doc_sel_type),
+        Argument("sel_type", [list,int,None], optional = True, alias = ['pol_type'], doc = doc_sel_type),
         Argument("seed", [int,None], optional = True, doc = doc_seed)
     ]
 
@@ -279,11 +279,11 @@ def fitting_dipole():
     doc_sel_type = 'The atom types for which the atomic dipole will be provided. If not set, all types will be selected.'
     doc_seed = 'Random seed for parameter initialization of the fitting net'
     return [
-        Argument("neuron", list, optional = True, default = [120,120,120], doc = doc_neuron),
+        Argument("neuron", list, optional = True, default = [120,120,120], alias = ['n_neuron'], doc = doc_neuron),
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
         Argument("resnet_dt", bool, optional = True, default = True, doc = doc_resnet_dt),
         Argument("precision", str, optional = True, default = 'float64', doc = doc_precision),
-        Argument("sel_type", [list,int,None], optional = True, doc = doc_sel_type),
+        Argument("sel_type", [list,int,None], optional = True, alias = ['dipole_type'], doc = doc_sel_type),
         Argument("seed", [int,None], optional = True, doc = doc_seed)
     ]    
 
