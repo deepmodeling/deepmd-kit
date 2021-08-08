@@ -88,7 +88,7 @@ void prod_force_grad_a_gpu_cuda(
     const int nnei)
 {
     const int ndescrpt = nnei * 4;
-    cudaErrcheck(cudaMemset(
+    DPErrcheck(cudaMemset(
         grad_net, 
         0.0, sizeof(FPTYPE) * nloc * ndescrpt));
     const int nblock = (ndescrpt + TPB - 1) / TPB;
@@ -97,6 +97,8 @@ void prod_force_grad_a_gpu_cuda(
     force_grad_wrt_center_atom<<<block_grid, thread_grid>>>(
         grad_net,
         grad, env_deriv, ndescrpt);
+    DPErrcheck(cudaGetLastError());
+    DPErrcheck(cudaDeviceSynchronize());
 
     const int LEN = 128;
     const int nblock_ = (nloc + LEN -1) / LEN;
@@ -105,6 +107,8 @@ void prod_force_grad_a_gpu_cuda(
     force_grad_wrt_neighbors_a<<<block_grid_, thread_grid_>>>(
         grad_net,
         grad, env_deriv, nlist, nloc, nnei);
+    DPErrcheck(cudaGetLastError());
+    DPErrcheck(cudaDeviceSynchronize());
 }
 
 template<typename FPTYPE>
@@ -117,7 +121,7 @@ void prod_force_grad_r_gpu_cuda(
     const int nnei)
 {
     const int ndescrpt = nnei * 1;
-    cudaErrcheck(cudaMemset(
+    DPErrcheck(cudaMemset(
         grad_net, 
         0.0, sizeof(FPTYPE) * nloc * ndescrpt));
     const int nblock = (ndescrpt + TPB - 1) / TPB;
@@ -126,6 +130,8 @@ void prod_force_grad_r_gpu_cuda(
     force_grad_wrt_center_atom<<<block_grid, thread_grid>>>(
         grad_net,
         grad, env_deriv, ndescrpt);
+    DPErrcheck(cudaGetLastError());
+    DPErrcheck(cudaDeviceSynchronize());
 
     const int LEN = 128;
     const int nblock_ = (nloc + LEN -1) / LEN;
@@ -134,6 +140,8 @@ void prod_force_grad_r_gpu_cuda(
     force_grad_wrt_neighbors_r<<<block_grid_, thread_grid_>>>(
         grad_net,
         grad, env_deriv, nlist, nloc, nnei);
+    DPErrcheck(cudaGetLastError());
+    DPErrcheck(cudaDeviceSynchronize());
 }
 
 template void prod_force_grad_a_gpu_cuda<float>(float * grad_net, const float * grad, const float * env_deriv, const int * nlist, const int nloc, const int nnei);

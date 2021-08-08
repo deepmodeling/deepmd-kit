@@ -5,9 +5,11 @@ References
 https://github.com/deepsense-ai/tensorflow_on_slurm ####
 """
 
-import re
+import hostlist
 import os
-from typing import List, Tuple, Optional, Iterable
+
+from deepmd.cluster import local
+from typing import List, Tuple, Optional
 
 __all__ = ["get_resource"]
 
@@ -29,7 +31,7 @@ def get_resource() -> Tuple[str, List[str], Optional[List[int]]]:
     ValueError
         if current nodename is not found in node list
     """
-    nodelist = _expand_nodelist(os.environ["SLURM_JOB_NODELIST"])
+    nodelist = hostlist.expand_hostlist(os.environ["SLURM_JOB_NODELIST"])
     nodename = os.environ["SLURMD_NODENAME"]
     num_nodes_env = os.getenv("SLURM_JOB_NUM_NODES")
     if num_nodes_env:
@@ -45,40 +47,5 @@ def get_resource() -> Tuple[str, List[str], Optional[List[int]]]:
         raise ValueError(
             f"Nodename({nodename}) not in nodelist({nodelist}). This should not happen!"
         )
-    gpus_env = os.getenv("CUDA_VISIBLE_DEVICES")
-    if not gpus_env:
-        gpus = None
-    else:
-        gpus = [int(gpu) for gpu in gpus_env.split(",")]
+    gpus = local.get_gpus()
     return nodename, nodelist, gpus
-
-
-def _pad_zeros(iterable: Iterable, length: int):
-    return (str(t).rjust(length, "0") for t in iterable)
-
-
-def _expand_ids(ids: str) -> List[str]:
-    result = []
-    for _id in ids.split(","):
-        if "-" in _id:
-            str_end = _id.split("-")[1]
-            begin, end = [int(token) for token in _id.split("-")]
-            result.extend(_pad_zeros(range(begin, end + 1), len(str_end)))
-        else:
-            result.append(_id)
-    return result
-
-
-def _expand_nodelist(nodelist: str) -> List[str]:
-    result = []
-    interval_list = nodelist.split(",")
-    for interval in interval_list:
-        match = re.search(r"(.*)\[(.*)\]", interval)
-        if match:
-            prefix = match.group(1)
-            ids = match.group(2)
-            ids_list = _expand_ids(ids)
-            result.extend([f"{prefix}{_id}" for _id in ids_list])
-        else:
-            result.append(interval)
-    return result

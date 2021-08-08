@@ -26,6 +26,10 @@ class GeluOp : public OpKernel {
  public :
   explicit GeluOp(OpKernelConstruction* context) : OpKernel(context) {}
   void Compute(OpKernelContext* context) override {
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     const Tensor& x_tensor = context->input(0);
     Tensor * output_tensor = NULL;
@@ -73,6 +77,10 @@ class GeluGradOp : public OpKernel {
  public :
   explicit GeluGradOp(OpKernelConstruction* context) : OpKernel(context) {}
   void Compute(OpKernelContext* context) override {
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     const Tensor& dy_tensor = context->input(0);
     const Tensor& x_tensor  = context->input(1);
@@ -122,6 +130,10 @@ class GeluGradGradOp : public OpKernel {
  public :
   explicit GeluGradGradOp(OpKernelConstruction* context) : OpKernel(context) {}
   void Compute(OpKernelContext* context) override {
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     const Tensor& dy_tensor = context->input(0);
     const Tensor& dy_2_tensor = context->input(1);

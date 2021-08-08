@@ -52,16 +52,6 @@ elif dp_variant == "rocm":
 else:
     raise RuntimeError("Unsupported DP_VARIANT option: %s" % dp_variant)
 
-# FLOAT_PREC
-dp_float_prec = os.environ.get("DP_FLOAT_PREC", "").lower()
-if dp_float_prec in ["high", "low"]:
-    cmake_args.append("-DFLOAT_PREC:STRING=%s" % dp_float_prec)
-elif dp_float_prec == "":
-    # default is high
-    cmake_args.append("-DFLOAT_PREC:STRING=high")
-else:
-    raise RuntimeError("Unsupported float precision option: %s" % dp_float_prec)
-
 # get tensorflow spec
 tf_spec = find_spec("tensorflow")
 if not tf_spec:
@@ -135,7 +125,7 @@ setup(
     cmake_minimum_required_version="3.0",
     extras_require={
         "test": ["dpdata>=0.1.9", "ase", "pytest", "pytest-cov", "pytest-sugar"],
-        "docs": ["sphinx", "recommonmark", "sphinx_rtd_theme", "sphinx_markdown_tables", "myst-parser", "breathe", "exhale"],
+        "docs": ["sphinx<4.1.0", "recommonmark", "sphinx_rtd_theme", "sphinx_markdown_tables", "myst-parser", "breathe", "exhale"],
         **extras_require,
     },
     entry_points={"console_scripts": ["dp = deepmd.entrypoints.main:main"]},

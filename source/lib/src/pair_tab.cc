@@ -3,6 +3,7 @@
 #include <cassert>
 #include <vector>
 #include "pair_tab.h"
+#include "errors.h"
 
 inline 
 void _pair_tabulated_inter (
@@ -25,7 +26,7 @@ void _pair_tabulated_inter (
   // std::cout << rr << " " << rmin << " " << hh << " " << uu << std::endl;
   if (uu < 0) {
     std::cerr << "coord go beyond table lower boundary" << std::endl;
-    exit(1);
+    throw deepmd::deepmd_exception();
   }
   int idx = uu;
   if (idx >= nspline) {

@@ -109,13 +109,15 @@ namespace deepmd {
       const int nnei)
   {
     const int ndescrpt = nnei * 4;
-    hipErrcheck(hipMemset(
+    DPErrcheck(hipMemset(
         force, 
         0.0, sizeof(FPTYPE) * nall * 3));
   
     hipLaunchKernelGGL(HIP_KERNEL_NAME(force_deriv_wrt_center_atom<FPTYPE, TPB>), nloc, TPB, 0, 0, 
         force, 
         net_deriv, in_deriv, ndescrpt);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
   
     const int LEN = 64;
     const int nblock = (nnei + LEN - 1) / LEN;
@@ -124,6 +126,8 @@ namespace deepmd {
     hipLaunchKernelGGL(force_deriv_wrt_neighbors_a, block_grid, thread_grid, 0, 0, 
         force, 
         net_deriv, in_deriv, nlist, nloc, nnei);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
   }
   
   template<typename FPTYPE> 
@@ -137,13 +141,15 @@ namespace deepmd {
       const int nnei)
   {
     const int ndescrpt = nnei * 1;
-    hipErrcheck(hipMemset(
+    DPErrcheck(hipMemset(
         force, 
         0.0, sizeof(FPTYPE) * nall * 3));
   
     hipLaunchKernelGGL(HIP_KERNEL_NAME(force_deriv_wrt_center_atom<FPTYPE, TPB>), nloc, TPB, 0, 0, 
         force, 
         net_deriv, in_deriv, ndescrpt);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
   
     const int LEN = 64;
     const int nblock = (nnei + LEN -1) / LEN;
@@ -152,6 +158,8 @@ namespace deepmd {
     hipLaunchKernelGGL(force_deriv_wrt_neighbors_r, block_grid, thread_grid, 0, 0, 
         force, 
         net_deriv, in_deriv, nlist, nloc, nnei);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
   }
   
   template void prod_force_a_gpu_rocm<float>(float * force, const float * net_deriv, const float * in_deriv, const int * nlist, const int nloc, const int nall, const int nnei);

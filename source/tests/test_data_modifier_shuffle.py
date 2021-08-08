@@ -49,8 +49,7 @@ class TestDataModifier (tf.test.TestCase) :
             init_model=None,
             log_path=None,
             log_level=30,
-            mpi_log="master",
-            try_distrib=False
+            mpi_log="master"
         )
         jdata = self._setUp_jdata()
         self._setUp_data()

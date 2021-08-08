@@ -3,15 +3,16 @@
 #include <stdio.h>
 #include <assert.h>
 #include <cuda_runtime.h>
+#include "errors.h"
 
 #define GPU_MAX_NBOR_SIZE 4096
-#define cudaErrcheck(res) {cudaAssert((res), __FILE__, __LINE__);}
-inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort=true) {
+#define DPErrcheck(res) {DPAssert((res), __FILE__, __LINE__);}
+inline void DPAssert(cudaError_t code, const char *file, int line, bool abort=true) 
+{
   if (code != cudaSuccess) {
     fprintf(stderr,"cuda assert: %s %s %d\n", cudaGetErrorString(code), file, line);
     if (code == 2) {
       // out of memory
-      // TODO: I have no idea how to thorw errors back to Python interface
       fprintf(stderr, "Your memory is not enough, thus an error has been raised " \
         "above. You need to take the following actions:\n" \
         "1. Check if the network size of the model is too large.\n" \
@@ -21,18 +22,19 @@ inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort=
         "4. Check if another program is using the same GPU by execuating `nvidia-smi`. " \
         "The usage of GPUs is controlled by `CUDA_VISIBLE_DEVICES` " \
         "environment variable.\n");
+      if (abort) throw deepmd::deepmd_exception_oom("CUDA Assert");
     }
-    if (abort) exit(code);
+    if (abort) throw deepmd::deepmd_exception("CUDA Assert");
   }
 }
 
 #define nborErrcheck(res) {nborAssert((res), __FILE__, __LINE__);}
-inline void nborAssert(cudaError_t code, const char *file, int line, bool abort=true) {
+inline void nborAssert(cudaError_t code, const char *file, int line, bool abort=true) 
+{
     if (code != cudaSuccess) {
         fprintf(stderr,"cuda assert: %s %s %d\n", "DeePMD-kit:\tillegal nbor list sorting", file, line);
         if (code == 2) {
           // out of memory
-          // TODO: I have no idea how to thorw errors back to Python interface
           fprintf(stderr, "Your memory is not enough, thus an error has been raised " \
             "above. You need to take the following actions:\n" \
             "1. Check if the network size of the model is too large.\n" \
@@ -42,8 +44,9 @@ inline void nborAssert(cudaError_t code, const char *file, int line, bool abort=
             "4. Check if another program is using the same GPU by execuating `nvidia-smi`. " \
             "The usage of GPUs is controlled by `CUDA_VISIBLE_DEVICES` " \
             "environment variable.\n");
+            if (abort) throw deepmd::deepmd_exception_oom("CUDA Assert");
         }
-        if (abort) exit(code);
+        if (abort) throw deepmd::deepmd_exception("CUDA Assert");
     }
 }
 
@@ -65,12 +68,17 @@ static __inline__ __device__ double atomicAdd(
 #endif
 
 namespace deepmd {
+  
+inline void DPGetDeviceCount(int &gpu_num) { cudaGetDeviceCount(&gpu_num) ;}
+
+inline cudaError_t DPSetDevice(int rank) { return  cudaSetDevice(rank); }
+
 template <typename FPTYPE>
 void memcpy_host_to_device(
     FPTYPE * device, 
     const std::vector<FPTYPE> &host) 
 {
-  cudaErrcheck(cudaMemcpy(device, &host[0], sizeof(FPTYPE) * host.size(), cudaMemcpyHostToDevice));  
+  DPErrcheck(cudaMemcpy(device, &host[0], sizeof(FPTYPE) * host.size(), cudaMemcpyHostToDevice));  
 }
 
 template <typename FPTYPE>
@@ -79,7 +87,7 @@ void memcpy_host_to_device(
     const FPTYPE * host,
     const int size) 
 {
-  cudaErrcheck(cudaMemcpy(device, host, sizeof(FPTYPE) * size, cudaMemcpyHostToDevice));  
+  DPErrcheck(cudaMemcpy(device, host, sizeof(FPTYPE) * size, cudaMemcpyHostToDevice));  
 }
 
 template <typename FPTYPE>
@@ -87,7 +95,7 @@ void memcpy_device_to_host(
     const FPTYPE * device, 
     std::vector<FPTYPE> &host) 
 {
-  cudaErrcheck(cudaMemcpy(&host[0], device, sizeof(FPTYPE) * host.size(), cudaMemcpyDeviceToHost));  
+  DPErrcheck(cudaMemcpy(&host[0], device, sizeof(FPTYPE) * host.size(), cudaMemcpyDeviceToHost));  
 }
 
 template <typename FPTYPE>
@@ -96,7 +104,7 @@ void memcpy_device_to_host(
     FPTYPE * host,
     const int size) 
 {
-  cudaErrcheck(cudaMemcpy(host, device, sizeof(FPTYPE) * size, cudaMemcpyDeviceToHost));  
+  DPErrcheck(cudaMemcpy(host, device, sizeof(FPTYPE) * size, cudaMemcpyDeviceToHost));  
 }
 
 template <typename FPTYPE>
@@ -104,7 +112,7 @@ void malloc_device_memory(
     FPTYPE * &device, 
     const std::vector<FPTYPE> &host) 
 {
-  cudaErrcheck(cudaMalloc((void **)&device, sizeof(FPTYPE) * host.size()));
+  DPErrcheck(cudaMalloc((void **)&device, sizeof(FPTYPE) * host.size()));
 }
 
 template <typename FPTYPE>
@@ -112,7 +120,7 @@ void malloc_device_memory(
     FPTYPE * &device, 
     const int size) 
 {
-  cudaErrcheck(cudaMalloc((void **)&device, sizeof(FPTYPE) * size));
+  DPErrcheck(cudaMalloc((void **)&device, sizeof(FPTYPE) * size));
 }
 
 template <typename FPTYPE>
@@ -120,7 +128,7 @@ void malloc_device_memory_sync(
     FPTYPE * &device,
     const std::vector<FPTYPE> &host) 
 {
-  cudaErrcheck(cudaMalloc((void **)&device, sizeof(FPTYPE) * host.size()));
+  DPErrcheck(cudaMalloc((void **)&device, sizeof(FPTYPE) * host.size()));
   memcpy_host_to_device(device, host);
 }
 
@@ -130,7 +138,7 @@ void malloc_device_memory_sync(
     const FPTYPE * host,
     const int size)
 {
-  cudaErrcheck(cudaMalloc((void **)&device, sizeof(FPTYPE) * size));
+  DPErrcheck(cudaMalloc((void **)&device, sizeof(FPTYPE) * size));
   memcpy_host_to_device(device, host, size);
 }
 
@@ -139,7 +147,7 @@ void delete_device_memory(
     FPTYPE * &device) 
 {
   if (device != NULL) {
-    cudaErrcheck(cudaFree(device));
+    DPErrcheck(cudaFree(device));
   }
 }
 
@@ -149,6 +157,6 @@ void memset_device_memory(
     const FPTYPE var,
     const int size) 
 {
-  cudaErrcheck(cudaMemset(device, var, sizeof(FPTYPE) * size));  
+  DPErrcheck(cudaMemset(device, var, sizeof(FPTYPE) * size));  
 }
 } // end of namespace deepmd

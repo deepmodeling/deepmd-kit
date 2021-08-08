@@ -4,7 +4,7 @@ import deepmd.utils.network as network
 
 from . import cluster, descriptor, fit, loss, utils
 from .env import set_mkl
-from .infer import DeepPotential
+from .infer import DeepEval, DeepPotential
 from .infer.data_modifier import DipoleChargeModifier
 
 set_mkl()

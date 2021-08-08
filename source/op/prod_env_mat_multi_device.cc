@@ -4,6 +4,7 @@
 #include "region.h"
 #include "neighbor_list.h"
 #include "prod_env_mat.h"
+#include "errors.h"
 
 REGISTER_OP("ProdEnvMatA")
     .Attr("T: {float, double} = DT_DOUBLE")
@@ -321,6 +322,10 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor& coord_tensor	= context->input(context_input_index++);
@@ -382,7 +387,7 @@ public:
       nei_mode = -1;
     }
     else {
-      throw std::runtime_error("invalid mesh tensor");
+      throw deepmd::deepmd_exception("invalid mesh tensor");
     }
 
     // Create output tensors
@@ -584,6 +589,10 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor& coord_tensor  = context->input(context_input_index++);
@@ -642,7 +651,7 @@ public:
       nei_mode = -1;
     }
     else {
-      throw std::runtime_error("invalid mesh tensor");
+      throw deepmd::deepmd_exception("invalid mesh tensor");
     }
 
     // Create an output tensor
@@ -995,7 +1004,7 @@ _norm_copy_coord_gpu(
   FPTYPE_shape.AddDim(nall*3);
   context->allocate_temp(DataTypeToEnum<FPTYPE>::value, FPTYPE_shape, tensor_list);
   FPTYPE * tmp_coord = (*tensor_list).flat<FPTYPE>().data();
-  cudaErrcheck(cudaMemcpy(tmp_coord, coord, sizeof(FPTYPE) * nall * 3, cudaMemcpyDeviceToDevice));
+  DPErrcheck(cudaMemcpy(tmp_coord, coord, sizeof(FPTYPE) * nall * 3, cudaMemcpyDeviceToDevice));
   
   deepmd::Region<FPTYPE> region;
   init_region_cpu(region, box);
@@ -1210,7 +1219,7 @@ _norm_copy_coord_gpu_rocm(
   FPTYPE_shape.AddDim(nall*3);
   context->allocate_temp(DataTypeToEnum<FPTYPE>::value, FPTYPE_shape, tensor_list);
   FPTYPE * tmp_coord = (*tensor_list).flat<FPTYPE>().data();
-  hipErrcheck(hipMemcpy(tmp_coord, coord, sizeof(FPTYPE) * nall * 3, hipMemcpyDeviceToDevice));
+  DPErrcheck(hipMemcpy(tmp_coord, coord, sizeof(FPTYPE) * nall * 3, hipMemcpyDeviceToDevice));
   
   deepmd::Region<FPTYPE> region;
   init_region_cpu(region, box);

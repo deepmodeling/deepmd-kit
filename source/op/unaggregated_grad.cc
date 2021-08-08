@@ -136,6 +136,10 @@ class UnaggregatedDyDxSOp : public OpKernel {
     explicit UnaggregatedDyDxSOp(OpKernelConstruction* context) : OpKernel(context) {}
 
     void Compute(OpKernelContext* context) override {
+        deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+    }
+
+    void _Compute(OpKernelContext* context) {
         // Grab the input tensor
         int context_input_index = 0;
         const Tensor& y	= context->input(context_input_index++);
@@ -169,6 +173,10 @@ class UnaggregatedDy2DxSOp : public OpKernel {
     explicit UnaggregatedDy2DxSOp(OpKernelConstruction* context) : OpKernel(context) {}
 
     void Compute(OpKernelContext* context) override {
+        deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+    }
+
+    void _Compute(OpKernelContext* context) {
         // Grab the input tensor
         int context_input_index = 0;
         const Tensor& y	    = context->input(context_input_index++);
@@ -205,6 +213,10 @@ class UnaggregatedDyDxOp : public OpKernel {
     explicit UnaggregatedDyDxOp(OpKernelConstruction* context) : OpKernel(context) {}
 
     void Compute(OpKernelContext* context) override {
+        deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+    }
+
+    void _Compute(OpKernelContext* context) {
         // Grab the input tensor
         int context_input_index = 0;
         const Tensor& z	= context->input(context_input_index++);
@@ -242,6 +254,10 @@ class UnaggregatedDy2DxOp : public OpKernel {
     explicit UnaggregatedDy2DxOp(OpKernelConstruction* context) : OpKernel(context) {}
 
     void Compute(OpKernelContext* context) override {
+        deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+    }
+
+    void _Compute(OpKernelContext* context) {
         // Grab the input tensor
         int context_input_index = 0;
         const Tensor& z	= context->input(context_input_index++);

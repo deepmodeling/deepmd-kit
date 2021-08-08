@@ -1,5 +1,4 @@
 {
-    "with_distrib":	false,
     "model":{
 		"descriptor": {
 			"type":		"loc_frame",
