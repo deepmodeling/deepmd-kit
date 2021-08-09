@@ -24,6 +24,7 @@ set_target_properties(
   ${libname} 
   PROPERTIES 
   COMPILE_DEFINITIONS ${prec_def}
+  INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}"
 )
 
 install(TARGETS ${libname} DESTINATION lib/)

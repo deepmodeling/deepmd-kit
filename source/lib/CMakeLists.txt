@@ -25,6 +25,8 @@ if (USE_ROCM_TOOLKIT)
   target_include_directories(${libname} PUBLIC ${ROCM_INCLUDE_DIRS})
 endif()
 
+set_target_properties(${libname} PROPERTIES INSTALL_RPATH $ORIGIN)
+
 if(BUILD_PY_IF)
   install(TARGETS ${libname} DESTINATION deepmd/op/)
 endif(BUILD_PY_IF)

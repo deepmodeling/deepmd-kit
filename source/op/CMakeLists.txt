@@ -15,11 +15,10 @@ if (BUILD_CPP_IF)
   target_link_libraries (${LIB_DEEPMD_OP} PUBLIC ${TensorFlow_LIBRARY} ${TensorFlowFramework_LIBRARY})
   target_link_libraries (${LIB_DEEPMD_OP} PRIVATE ${LIB_DEEPMD})
   target_include_directories(${LIB_DEEPMD_OP} PUBLIC ${TensorFlow_INCLUDE_DIRS})
+  set_target_properties(${LIB_DEEPMD_OP} PROPERTIES INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}")
 endif (BUILD_CPP_IF)
 
 if (BUILD_PY_IF)
-  set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
-  set(CMAKE_INSTALL_RPATH $ORIGIN)
   add_library(op_abi SHARED ${OP_SRC} ${OP_LIB})
   add_library(op_grads SHARED ${OP_GRADS_SRC})
   
@@ -39,11 +38,13 @@ if (BUILD_PY_IF)
     op_abi 
     PROPERTIES 
     COMPILE_FLAGS ${OP_CXX_FLAG}
+    INSTALL_RPATH $ORIGIN
     )
   set_target_properties(
     op_grads
     PROPERTIES
     COMPILE_FLAGS ${OP_CXX_FLAG}
+    INSTALL_RPATH $ORIGIN
     )
 endif (BUILD_PY_IF)
 
