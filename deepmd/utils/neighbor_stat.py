@@ -7,6 +7,7 @@ from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.utils.data_system import DeepmdDataSystem
+from deepmd.utils.sess import run_sess
 
 log = logging.getLogger(__name__)
 
@@ -73,7 +74,7 @@ class NeighborStat():
                 data_set = data.data_systems[ii]._load_set(jj)
                 for kk in range(np.array(data_set['type']).shape[0]):
                     mn, dt \
-                        = self.sub_sess.run([self._max_nbor_size, self._min_nbor_dist], 
+                        = run_sess(self.sub_sess, [self._max_nbor_size, self._min_nbor_dist], 
                                             feed_dict = {
                                                 self.place_holders['coord']: np.array(data_set['coord'])[kk].reshape([-1, data.natoms[ii] * 3]),
                                                 self.place_holders['type']: np.array(data_set['type'])[kk].reshape([-1, data.natoms[ii]]),
@@ -81,8 +82,20 @@ class NeighborStat():
                                                 self.place_holders['box']: np.array(data_set['box'])[kk].reshape([-1, 9]),
                                                 self.place_holders['default_mesh']: np.array(data.default_mesh[ii]),
                                             })
-                    dt = np.min(dt)
+                    if dt.size != 0:
+                        dt = np.min(dt)              
+                    else:
+                        dt = self.rcut
+                        log.warning("Atoms with no neighbors found in %s. Please make sure it's what you expected."%jj)
+                        
                     if dt < self.min_nbor_dist:
+                        if math.isclose(dt, 0., rel_tol=1e-6):
+                            # it's unexpected that the distance between two atoms is zero
+                            # zero distance will cause nan (#874) 
+                            raise RuntimeError(
+                                "Some atoms in %s are overlapping. Please check your"
+                                " training data to remove duplicated atoms." % jj
+                            )
                         self.min_nbor_dist = dt
                     for ww in range(self.ntypes):
                         var = np.max(mn[:, ww])

@@ -1,7 +1,7 @@
 #include "custom_op.h"
 
 REGISTER_OP("ProdForce")
-.Attr("T: {float, double}")
+.Attr("T: {float, double} = DT_DOUBLE")
 .Input("net_deriv: T")
 .Input("in_deriv: T")
 .Input("nlist: int32")
@@ -26,6 +26,10 @@ class ProdForceOp : public OpKernel {
   }
 
   void Compute(OpKernelContext* context) override {
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     const Tensor& net_deriv_tensor	= context->input(0);
     const Tensor& in_deriv_tensor	= context->input(1);

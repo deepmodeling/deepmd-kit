@@ -41,20 +41,16 @@ if dp_variant == "cpu" or dp_variant == "":
     pass
 elif dp_variant == "cuda":
     cmake_args.append("-DUSE_CUDA_TOOLKIT:BOOL=TRUE")
+    cuda_root = os.environ.get("CUDA_TOOLKIT_ROOT_DIR")
+    if cuda_root:
+        cmake_args.append(f"-DCUDA_TOOLKIT_ROOT_DIR:STRING={cuda_root}")
 elif dp_variant == "rocm":
     cmake_args.append("-DUSE_ROCM_TOOLKIT:BOOL=TRUE")
-elif dp_variant != "":
-    raise RuntimeError("Unsupported DP_VARIANT option: %s" % dp_variant)
-
-# FLOAT_PREC
-dp_float_prec = os.environ.get("DP_FLOAT_PREC", "").lower()
-if dp_float_prec in ["high", "low"]:
-    cmake_args.append("-DFLOAT_PREC:STRING=%s" % dp_float_prec)
-elif dp_float_prec == "":
-    # default is high
-    cmake_args.append("-DFLOAT_PREC:STRING=high")
+    rocm_root = os.environ.get("ROCM_ROOT")
+    if rocm_root:
+        cmake_args.append(f"-DROCM_ROOT:STRING={rocm_root}")
 else:
-    raise RuntimeError("Unsupported float precision option: %s" % dp_float_prec)
+    raise RuntimeError("Unsupported DP_VARIANT option: %s" % dp_variant)
 
 # get tensorflow spec
 tf_spec = find_spec("tensorflow")
@@ -129,7 +125,7 @@ setup(
     cmake_minimum_required_version="3.0",
     extras_require={
         "test": ["dpdata>=0.1.9", "ase", "pytest", "pytest-cov", "pytest-sugar"],
-        "docs": ["sphinx", "recommonmark", "sphinx_rtd_theme", "sphinx_markdown_tables", "myst-parser", "breathe", "exhale"],
+        "docs": ["sphinx<4.1.0", "recommonmark", "sphinx_rtd_theme", "sphinx_markdown_tables", "myst-parser", "breathe", "exhale"],
         **extras_require,
     },
     entry_points={"console_scripts": ["dp = deepmd.entrypoints.main:main"]},

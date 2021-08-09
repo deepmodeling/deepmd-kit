@@ -147,6 +147,29 @@ __global__ void format_nlist_fill_a(
 }
 
 template<typename FPTYPE>
+__global__ void fill_nei_iter(
+    int * nei_iter_dev,
+    const FPTYPE * key,
+    const int nloc,
+    const int max_nbor_size,
+    const int sec_size)
+{
+  int row = blockIdx.x;
+  int col = blockIdx.y * blockDim.x + threadIdx.x;
+  const FPTYPE * key_out = key + nloc * max_nbor_size + row * max_nbor_size;
+  int nei_type_cur = -1, nbor_idx_cur = 0;
+  int nei_type_pre = -1, nbor_idx_pre = 0;
+  if (col < max_nbor_size && key_out[col] != key_out[max_nbor_size - 1]){
+    if (col >= 1) 
+      decoding_nbor_info(nei_type_pre, nbor_idx_pre, key_out[col - 1]);
+    decoding_nbor_info(nei_type_cur, nbor_idx_cur, key_out[col]);
+  }
+  if (nei_type_cur != nei_type_pre){
+    nei_iter_dev[row * sec_size + nei_type_cur] = col;
+  }
+}
+
+template<typename FPTYPE>
 __global__ void format_nlist_fill_b(
     int * nlist,
     const int nlist_size,
@@ -157,23 +180,19 @@ __global__ void format_nlist_fill_b(
     int * nei_iter_dev,
     const int max_nbor_size)
 { 
-  const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-  if(idx >= nloc) {
-    return;
-  }
-  
-  int * row_nlist = nlist + idx * nlist_size;
-  int * nei_iter = nei_iter_dev + idx * sec_size;
-  FPTYPE * key_out = key + nloc * max_nbor_size + idx * max_nbor_size;
-  for (int ii = 0; ii < sec_size; ii++) {
-    nei_iter[ii] = sec[ii];
-  }
-  
-  int nei_type = 0, nbor_idx = 0;
-  for (unsigned int kk = 0; key_out[kk] != key_out[max_nbor_size - 1]; kk++) {
-    decoding_nbor_info(nei_type, nbor_idx, key_out[kk]);
-    if (nei_iter[nei_type] < sec[nei_type + 1]) {
-      row_nlist[nei_iter[nei_type]++] = nbor_idx;
+  int row = blockIdx.x;
+  int col = blockIdx.y * blockDim.x + threadIdx.x;
+  int * nei_iter = nei_iter_dev + row * sec_size;
+  FPTYPE * key_out = key + nloc * max_nbor_size + row * max_nbor_size;
+  int * row_nlist = nlist + row * nlist_size;
+  if (col < max_nbor_size){
+    if (key_out[col] != key_out[max_nbor_size - 1]){
+      int nei_type = 0, nbor_idx = 0;
+      decoding_nbor_info(nei_type, nbor_idx, key_out[col]);
+      int out_indx = col - nei_iter[nei_type] + sec[nei_type];
+      if (out_indx < sec[nei_type + 1]){
+        row_nlist[out_indx] = nbor_idx;
+      }
     }
   }
 }
@@ -215,12 +234,16 @@ void format_nbor_list_1024 (
   hipLaunchKernelGGL(format_nlist_fill_a, block_grid, thread_grid, 0, 0, 
       key,
       coord, type, gpu_inlist.numneigh, gpu_inlist.firstneigh, rcut, i_idx, MAX_NBOR_SIZE);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
   const int ITEMS_PER_THREAD = 8;
   const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
   // hipLaunchKernelGGL(HIP_KERNEL_NAME(BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD>), g_grid_size, BLOCK_THREADS, 0, 0, 
   hipLaunchKernelGGL(HIP_KERNEL_NAME(BlockSortKernel<uint_64, BLOCK_THREADS, ITEMS_PER_THREAD>), nloc, BLOCK_THREADS, 0, 0, 
       key, 
       key + nloc * MAX_NBOR_SIZE);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
 }
 
 template<typename FPTYPE>
@@ -241,12 +264,16 @@ void format_nbor_list_2048 (
   hipLaunchKernelGGL(format_nlist_fill_a, block_grid, thread_grid, 0, 0, 
       key,
       coord, type, gpu_inlist.numneigh, gpu_inlist.firstneigh, rcut, i_idx, MAX_NBOR_SIZE);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
   const int ITEMS_PER_THREAD = 8;
   const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
   // hipLaunchKernelGGL(HIP_KERNEL_NAME(BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD>), g_grid_size, BLOCK_THREADS, 0, 0, 
   hipLaunchKernelGGL(HIP_KERNEL_NAME(BlockSortKernel<uint_64, BLOCK_THREADS, ITEMS_PER_THREAD>), nloc, BLOCK_THREADS, 0, 0, 
       key, 
       key + nloc * MAX_NBOR_SIZE);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
 }
 
 template<typename FPTYPE>
@@ -267,12 +294,16 @@ void format_nbor_list_4096 (
   hipLaunchKernelGGL(format_nlist_fill_a, block_grid, thread_grid, 0, 0, 
       key,
       coord, type, gpu_inlist.numneigh, gpu_inlist.firstneigh, rcut, i_idx, MAX_NBOR_SIZE);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
   const int ITEMS_PER_THREAD = 16;
   const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
   // hipLaunchKernelGGL(HIP_KERNEL_NAME(BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD>), g_grid_size, BLOCK_THREADS, 0, 0, 
   hipLaunchKernelGGL(HIP_KERNEL_NAME(BlockSortKernel<uint_64, BLOCK_THREADS, ITEMS_PER_THREAD>), nloc, BLOCK_THREADS, 0, 0, 
       key, 
       key + nloc * MAX_NBOR_SIZE);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
 }
 
 template<
@@ -451,13 +482,15 @@ void format_nbor_list_gpu_rocm(
   int * i_idx = array_int + sec.size() + nloc * sec.size();
   uint_64 * key = array_longlong;
   assert(max_nbor_size == 1024 || max_nbor_size == 2048 || max_nbor_size == 4096);
-  hipErrcheck(hipMemset(nlist, -1, sizeof(int) * nloc * nnei));
-  hipErrcheck(hipMemset(key, 0xffffffff, sizeof(uint_64) * nloc * max_nbor_size));
-  hipErrcheck(hipMemcpy(sec_dev, &sec[0], sizeof(int) * sec.size(), hipMemcpyHostToDevice));   
+  DPErrcheck(hipMemset(nlist, -1, sizeof(int) * nloc * nnei));
+  DPErrcheck(hipMemset(key, 0xffffffff, sizeof(uint_64) * nloc * max_nbor_size));
+  DPErrcheck(hipMemcpy(sec_dev, &sec[0], sizeof(int) * sec.size(), hipMemcpyHostToDevice));   
 
   hipLaunchKernelGGL(get_i_idx, nblock, LEN, 0, 0, 
       i_idx,
       nloc, gpu_inlist.ilist);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
 
   if (max_nbor_size == 1024) {
     format_nbor_list_1024 (
@@ -474,10 +507,16 @@ void format_nbor_list_gpu_rocm(
         key,
         coord, type, gpu_inlist, nloc, rcut, i_idx); 
   }
-
-  hipLaunchKernelGGL(format_nlist_fill_b, nblock, LEN, 0, 0, 
+    
+  hipLaunchKernelGGL(fill_nei_iter, dim3(nloc, (max_nbor_size + LEN - 1) / LEN) , LEN, 0, 0,
+      nei_iter,
+      key, nloc, max_nbor_size, sec.size());
+  
+  hipLaunchKernelGGL(format_nlist_fill_b, dim3(nloc, (max_nbor_size + LEN - 1) / LEN), LEN, 0, 0, 
       nlist,
       nnei, nloc, key, sec_dev, sec.size(), nei_iter, max_nbor_size);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -502,8 +541,9 @@ void prod_env_mat_a_gpu_rocm(
 {
   const int nnei = sec.back();
   const int ndescrpt = nnei * 4;
-  hipErrcheck(hipMemset(em, 0.0, sizeof(FPTYPE) * nloc * ndescrpt));
-  hipErrcheck(hipMemset(em_deriv, 0.0, sizeof(FPTYPE) * nloc * ndescrpt * 3));
+  DPErrcheck(hipMemset(em, 0.0, sizeof(FPTYPE) * nloc * ndescrpt));
+  DPErrcheck(hipMemset(em_deriv, 0.0, sizeof(FPTYPE) * nloc * ndescrpt * 3));
+  DPErrcheck(hipMemset(rij, 0.0, sizeof(FPTYPE) * nloc * nnei * 3));
 
   format_nbor_list_gpu_rocm(
       nlist, 
@@ -514,6 +554,8 @@ void prod_env_mat_a_gpu_rocm(
   hipLaunchKernelGGL(HIP_KERNEL_NAME(compute_env_mat_a<FPTYPE, TPB>), nloc, TPB, 0, 0, 
       em, em_deriv, rij, 
       coord, avg, std, type, nlist, nnei, rcut_smth, rcut);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -538,8 +580,9 @@ void prod_env_mat_r_gpu_rocm(
 {
   const int nnei = sec.back();
   const int ndescrpt = nnei * 1;
-  hipErrcheck(hipMemset(em, 0.0, sizeof(FPTYPE) * nloc * ndescrpt));
-  hipErrcheck(hipMemset(em_deriv, 0.0, sizeof(FPTYPE) * nloc * ndescrpt * 3));
+  DPErrcheck(hipMemset(em, 0.0, sizeof(FPTYPE) * nloc * ndescrpt));
+  DPErrcheck(hipMemset(em_deriv, 0.0, sizeof(FPTYPE) * nloc * ndescrpt * 3));
+  DPErrcheck(hipMemset(rij, 0.0, sizeof(FPTYPE) * nloc * nnei * 3));
 
   format_nbor_list_gpu_rocm(
       nlist, 
@@ -550,6 +593,8 @@ void prod_env_mat_r_gpu_rocm(
   hipLaunchKernelGGL(HIP_KERNEL_NAME(compute_env_mat_r<FPTYPE, TPB>), nloc, TPB, 0, 0, 
       em, em_deriv, rij, 
       coord, avg, std, type, nlist, nnei, rcut_smth, rcut);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -566,6 +611,8 @@ void test_encoding_decoding_nbor_info_gpu_rocm(
   hipLaunchKernelGGL(encoding_decoding_nbor_info, nblock, TPB, 0, 0, 
       key, out_type, out_index,
       in_type, in_dist, in_index, size_of_array);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
 }
 
 template void prod_env_mat_a_gpu_rocm<float>(float * em, float * em_deriv, float * rij, int * nlist, const float * coord, const int * type, const InputNlist & gpu_inlist, int * array_int, unsigned long long * array_longlong, const int max_nbor_size, const float * avg, const float * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec);

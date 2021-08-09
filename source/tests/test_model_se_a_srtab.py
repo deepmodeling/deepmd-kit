@@ -23,7 +23,7 @@ def _make_tab(ntype) :
     prt = np.reshape(prt, [ninter+1, -1])
     np.savetxt('tab.xvg', prt.T)
 
-class TestModel(unittest.TestCase):
+class TestModel(tf.test.TestCase):
     def setUp(self) :
         gen_data()
         _make_tab(2)
@@ -117,7 +117,7 @@ class TestModel(unittest.TestCase):
                           t_mesh:          test_data['default_mesh'],
                           is_training:     False}
 
-        sess = tf.Session()
+        sess = self.test_session().__enter__()
         sess.run(tf.global_variables_initializer())
         [e, f, v] = sess.run([energy, force, virial], 
                              feed_dict = feed_dict_test)

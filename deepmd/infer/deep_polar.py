@@ -94,7 +94,7 @@ class DeepGlobalPolar(DeepTensor):
         coords: np.array,
         cells: np.array,
         atom_types: List[int],
-        atomic: bool = True,
+        atomic: bool = False,
         fparam: Optional[np.array] = None,
         aparam: Optional[np.array] = None,
         efield: Optional[np.array] = None,
@@ -114,7 +114,7 @@ class DeepGlobalPolar(DeepTensor):
             The atom types
             The list should contain natoms ints
         atomic
-            Calculate the atomic energy and virial
+            Not used in this model
         fparam
             Not used in this model
         aparam

@@ -2,7 +2,7 @@
 #include "tabulate.h"
 
 REGISTER_OP("TabulateFusion")
-    .Attr("T: {float, double}")
+    .Attr("T: {float, double} = DT_DOUBLE")
     .Input("table: T")
     .Input("table_info: T")
     .Input("em_x: T")
@@ -11,7 +11,7 @@ REGISTER_OP("TabulateFusion")
     .Output("descriptor: T");
 
 REGISTER_OP("TabulateFusionGrad")
-    .Attr("T: {float, double}")
+    .Attr("T: {float, double} = DT_DOUBLE")
     .Input("table: T")
     .Input("table_info: T")
     .Input("em_x: T")
@@ -28,6 +28,10 @@ class TabulateFusionOp : public OpKernel {
     OP_REQUIRES_OK(context, context->GetAttr("last_layer_size", &last_layer_size));
   }
   void Compute(OpKernelContext* context) override {
+      deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor& table_tensor	= context->input(context_input_index++);
@@ -90,6 +94,10 @@ class TabulateFusionGradOp : public OpKernel {
  public:
   explicit TabulateFusionGradOp(OpKernelConstruction* context) : OpKernel(context) {}
   void Compute(OpKernelContext* context) override {
+      deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor& table_tensor	= context->input(context_input_index++);

@@ -9,6 +9,7 @@ from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.utils.network import embedding_net, embedding_net_rand_seed_shift
+from deepmd.utils.sess import run_sess
 
 class DescrptSeR ():
     @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
@@ -401,7 +402,7 @@ class DescrptSeR ():
                                   natoms_vec,
                                   mesh) :    
         dd_all \
-            = self.sub_sess.run(self.stat_descrpt, 
+            = run_sess(self.sub_sess, self.stat_descrpt, 
                                 feed_dict = {
                                     self.place_holders['coord']: data_coord,
                                     self.place_holders['type']: data_atype,
@@ -477,11 +478,11 @@ class DescrptSeR ():
                                                 trainable = trainable, 
                                                 uniform_seed = self.uniform_seed)
                     if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
+                    # natom x nei_type_i x out_size
+                    xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1], outputs_size[-1]))
                 else:
-                    w = tf.zeros((outputs_size[0], outputs_size[-1]), dtype=GLOBAL_TF_FLOAT_PRECISION)
-                    xyz_scatter = tf.matmul(xyz_scatter, w)
-                # natom x nei_type_i x out_size
-                xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1], outputs_size[-1]))
+                    natom = tf.shape(inputs)[0]
+                    xyz_scatter = tf.cast(tf.fill((natom, shape_i[1], outputs_size[-1]), 0.), GLOBAL_TF_FLOAT_PRECISION)
                 xyz_scatter_total.append(xyz_scatter)
 
             # natom x nei x outputs_size

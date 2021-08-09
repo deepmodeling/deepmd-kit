@@ -3,6 +3,7 @@
 #include "neighbor_list.h"
 #include "fmt_nlist.h"
 #include "env_mat.h"
+#include "errors.h"
 
 typedef double boxtensor_t ;
 typedef double compute_t;
@@ -99,7 +100,7 @@ public:
       nei_mode = -1;
     }
     else {
-      throw std::runtime_error("invalid mesh tensor");
+      throw deepmd::deepmd_exception("invalid mesh tensor");
     }
     bool b_pbc = true;
     // if region is given extended, do not use pbc
@@ -238,7 +239,7 @@ public:
 	::build_nlist (d_nlist_null, d_nlist, d_coord3, -1, rcut, NULL);
       }
       else {
-	throw std::runtime_error("unknow neighbor mode");
+	throw deepmd::deepmd_exception("unknow neighbor mode");
       }
 
       // loop over atoms, compute descriptors for each atom

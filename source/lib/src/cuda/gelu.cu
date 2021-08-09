@@ -55,10 +55,15 @@ void gelu_gpu_cuda(
     const FPTYPE * xx, 
     const int size)
 {
+  if(size <= 0){
+    return;
+  }
   const int THREAD_ITEMS = 1024;
   const int BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
 
   gelu<<<BLOCK_NUMS, THREAD_ITEMS>>>(out, xx, size);
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
 }
 
 template<typename FPTYPE>
@@ -68,10 +73,15 @@ void gelu_grad_gpu_cuda(
     const FPTYPE * dy, 
     const int size)
 {
+  if(size <= 0){
+    return;
+  }
   const int THREAD_ITEMS = 1024;
   const int BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
 
   gelu_grad<<<BLOCK_NUMS, THREAD_ITEMS>>>(out, xx, dy, size);
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
 }
 
 template<typename FPTYPE>
@@ -82,10 +92,15 @@ void gelu_grad_grad_gpu_cuda(
     const FPTYPE * dy_2,
     const int size)
 {
+  if(size <= 0){
+    return;
+  }
   const int THREAD_ITEMS = 1024;
   const int BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
   
   gelu_grad_grad<<<BLOCK_NUMS, THREAD_ITEMS>>>(out, xx, dy, dy_2, size);
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
 }
 
 template void gelu_gpu_cuda<float>(float * out, const float * x, const int size);

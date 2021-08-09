@@ -1,7 +1,7 @@
 #include "custom_op.h"
 
 REGISTER_OP("ProdVirialGrad")
-.Attr("T: {float, double}")
+.Attr("T: {float, double} = DT_DOUBLE")
 .Input("grad: T")
 .Input("net_deriv: T")
 .Input("in_deriv: T")
@@ -26,6 +26,10 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     const Tensor& grad_tensor		= context->input(0);
     const Tensor& net_deriv_tensor	= context->input(1);

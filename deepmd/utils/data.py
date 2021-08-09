@@ -57,8 +57,7 @@ class DeepmdData() :
         if type_map is not None and self.type_map is not None:
             atom_type_ = [type_map.index(self.type_map[ii]) for ii in self.atom_type]
             self.atom_type = np.array(atom_type_, dtype = np.int32)
-            ntypes = len(self.type_map)
-            self.type_map = type_map[:ntypes]
+            self.type_map = type_map
         # make idx map
         self.idx_map = self._make_idx_map(self.atom_type)
         # train dirs
@@ -72,7 +71,7 @@ class DeepmdData() :
                 self.train_dirs = self.dirs[:-1]
         self.data_dict = {}        
         # add box and coord
-        self.add('box', 9, must = True)
+        self.add('box', 9, must = self.pbc)
         self.add('coord', 3, atomic = True, must = True)
         # set counters
         self.set_count = 0

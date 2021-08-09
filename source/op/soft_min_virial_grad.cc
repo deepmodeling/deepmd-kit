@@ -2,7 +2,7 @@
 #include "soft_min_switch_virial_grad.h"
 
 REGISTER_OP("SoftMinVirialGrad")
-.Attr("T: {float, double}")
+.Attr("T: {float, double} = DT_DOUBLE")
 .Input("grad: T")
 .Input("du: T")
 .Input("sw_deriv: T")
@@ -25,6 +25,10 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor& grad_tensor		= context->input(context_input_index++);

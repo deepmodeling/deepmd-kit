@@ -4,9 +4,10 @@
 #include "region.h"
 #include "neighbor_list.h"
 #include "prod_env_mat.h"
+#include "errors.h"
 
 REGISTER_OP("ProdEnvMatA")
-    .Attr("T: {float, double}")
+    .Attr("T: {float, double} = DT_DOUBLE")
     .Input("coord: T")          //atomic coordinates
     .Input("type: int32")       //atomic type
     .Input("natoms: int32")     //local atomic number; each type atomic number; daizheyingxiangqude atomic numbers
@@ -25,8 +26,30 @@ REGISTER_OP("ProdEnvMatA")
     .Output("nlist: int32");
     // only sel_a and rcut_r uesd.
 
+// an alias of ProdEnvMatA -- Compatible with v1.3
+REGISTER_OP("DescrptSeA")
+    .Attr("T: {float, double} = DT_DOUBLE")
+    // give a default value to T, compatible with v1.2
+    // See https://www.tensorflow.org/guide/create_op#backwards_compatibility
+    .Input("coord: T")
+    .Input("type: int32")
+    .Input("natoms: int32")
+    .Input("box : T")
+    .Input("mesh : int32")
+    .Input("davg: T")
+    .Input("dstd: T")
+    .Attr("rcut_a: float")
+    .Attr("rcut_r: float")
+    .Attr("rcut_r_smth: float")
+    .Attr("sel_a: list(int)")
+    .Attr("sel_r: list(int)")
+    .Output("descrpt: T")
+    .Output("descrpt_deriv: T")
+    .Output("rij: T")
+    .Output("nlist: int32");
+
 REGISTER_OP("ProdEnvMatR")
-    .Attr("T: {float, double}")
+    .Attr("T: {float, double} = DT_DOUBLE")
     .Input("coord: T")
     .Input("type: int32")
     .Input("natoms: int32")
@@ -42,6 +65,23 @@ REGISTER_OP("ProdEnvMatR")
     .Output("rij: T")
     .Output("nlist: int32");
 
+// an alias of ProdEnvMatR -- Compatible with v1.3
+REGISTER_OP("DescrptSeR")
+    .Attr("T: {float, double} = DT_DOUBLE")
+    .Input("coord: T")
+    .Input("type: int32")
+    .Input("natoms: int32")
+    .Input("box: T")
+    .Input("mesh: int32")
+    .Input("davg: T")
+    .Input("dstd: T")
+    .Attr("rcut: float")
+    .Attr("rcut_smth: float")
+    .Attr("sel: list(int)")
+    .Output("descrpt: T")
+    .Output("descrpt_deriv: T")
+    .Output("rij: T")
+    .Output("nlist: int32"); 
 
 template<typename FPTYPE>
 static int
@@ -282,6 +322,10 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor& coord_tensor	= context->input(context_input_index++);
@@ -343,7 +387,7 @@ public:
       nei_mode = -1;
     }
     else {
-      throw std::runtime_error("invalid mesh tensor");
+      throw deepmd::deepmd_exception("invalid mesh tensor");
     }
 
     // Create output tensors
@@ -545,6 +589,10 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor& coord_tensor  = context->input(context_input_index++);
@@ -603,7 +651,7 @@ public:
       nei_mode = -1;
     }
     else {
-      throw std::runtime_error("invalid mesh tensor");
+      throw deepmd::deepmd_exception("invalid mesh tensor");
     }
 
     // Create an output tensor
@@ -956,7 +1004,7 @@ _norm_copy_coord_gpu(
   FPTYPE_shape.AddDim(nall*3);
   context->allocate_temp(DataTypeToEnum<FPTYPE>::value, FPTYPE_shape, tensor_list);
   FPTYPE * tmp_coord = (*tensor_list).flat<FPTYPE>().data();
-  cudaErrcheck(cudaMemcpy(tmp_coord, coord, sizeof(FPTYPE) * nall * 3, cudaMemcpyDeviceToDevice));
+  DPErrcheck(cudaMemcpy(tmp_coord, coord, sizeof(FPTYPE) * nall * 3, cudaMemcpyDeviceToDevice));
   
   deepmd::Region<FPTYPE> region;
   init_region_cpu(region, box);
@@ -1171,7 +1219,7 @@ _norm_copy_coord_gpu_rocm(
   FPTYPE_shape.AddDim(nall*3);
   context->allocate_temp(DataTypeToEnum<FPTYPE>::value, FPTYPE_shape, tensor_list);
   FPTYPE * tmp_coord = (*tensor_list).flat<FPTYPE>().data();
-  hipErrcheck(hipMemcpy(tmp_coord, coord, sizeof(FPTYPE) * nall * 3, hipMemcpyDeviceToDevice));
+  DPErrcheck(hipMemcpy(tmp_coord, coord, sizeof(FPTYPE) * nall * 3, hipMemcpyDeviceToDevice));
   
   deepmd::Region<FPTYPE> region;
   init_region_cpu(region, box);
@@ -1364,17 +1412,25 @@ _prepare_coord_nlist_gpu_rocm(
 
 
 // Register the CPU kernels.
+// Compatible with v1.3
 #define REGISTER_CPU(T)                                                                                   \
 REGISTER_KERNEL_BUILDER(                                                                                  \
     Name("ProdEnvMatA").Device(DEVICE_CPU).TypeConstraint<T>("T"),                                        \
     ProdEnvMatAOp<CPUDevice, T>);                                                                         \
 REGISTER_KERNEL_BUILDER(                                                                                  \
     Name("ProdEnvMatR").Device(DEVICE_CPU).TypeConstraint<T>("T"),                                        \
-    ProdEnvMatROp<CPUDevice, T>);                   
+    ProdEnvMatROp<CPUDevice, T>);                                                                         \
+REGISTER_KERNEL_BUILDER(                                                                                  \
+    Name("DescrptSeA").Device(DEVICE_CPU).TypeConstraint<T>("T"),                                        \
+    ProdEnvMatAOp<CPUDevice, T>);                                                                         \
+REGISTER_KERNEL_BUILDER(                                                                                  \
+    Name("DescrptSeR").Device(DEVICE_CPU).TypeConstraint<T>("T"),                                        \
+    ProdEnvMatROp<CPUDevice, T>);   
 REGISTER_CPU(float);                  
 REGISTER_CPU(double);                 
             
 // Register the GPU kernels.                  
+// Compatible with v1.3
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM            
 #define REGISTER_GPU(T)                                                                                   \
 REGISTER_KERNEL_BUILDER(                                                                                  \
@@ -1382,6 +1438,12 @@ REGISTER_KERNEL_BUILDER(                                                        
     ProdEnvMatAOp<GPUDevice, T>);                                                                         \
 REGISTER_KERNEL_BUILDER(                                                                                  \
     Name("ProdEnvMatR").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms").HostMemory("box"), \
+    ProdEnvMatROp<GPUDevice, T>);                                                                         \
+REGISTER_KERNEL_BUILDER(                                                                                  \
+    Name("DescrptSeA").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms").HostMemory("box"), \
+    ProdEnvMatAOp<GPUDevice, T>);                                                                         \
+REGISTER_KERNEL_BUILDER(                                                                                  \
+    Name("DescrptSeR").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms").HostMemory("box"), \
     ProdEnvMatROp<GPUDevice, T>);
 REGISTER_GPU(float);
 REGISTER_GPU(double);

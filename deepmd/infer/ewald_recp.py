@@ -10,6 +10,7 @@ from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import global_cvt_2_ener_float
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
+from deepmd.utils.sess import run_sess
 
 class EwaldRecp () :
     """
@@ -79,7 +80,7 @@ class EwaldRecp () :
         box = np.reshape(box, [nframes * 9])
 
         [energy, force, virial] \
-            = self.sess.run([self.t_energy, self.t_force, self.t_virial], 
+            = run_sess(self.sess, [self.t_energy, self.t_force, self.t_virial], 
                             feed_dict = {
                                 self.t_coord:  coord,
                                 self.t_charge: charge,

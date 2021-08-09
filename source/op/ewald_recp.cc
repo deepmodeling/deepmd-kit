@@ -5,7 +5,7 @@ typedef double boxtensor_t ;
 typedef double compute_t;
 
 REGISTER_OP("EwaldRecp")
-.Attr("T: {float, double}")
+.Attr("T: {float, double} = DT_DOUBLE")
 .Input("coord: T")
 .Input("charge: T")
 .Input("natoms: int32")
@@ -28,6 +28,10 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     int cc = 0;
     const Tensor& coord_tensor	= context->input(cc++);

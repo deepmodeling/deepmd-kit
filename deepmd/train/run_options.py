@@ -11,18 +11,7 @@ from deepmd.env import get_tf_default_nthreads, tf, GLOBAL_CONFIG, global_float_
 from deepmd.loggers import set_log_handles
 
 if TYPE_CHECKING:
-    from mpi4py import MPI
-
-    try:
-        from typing import Protocol  # python >=3.8
-    except ImportError:
-        from typing_extensions import Protocol  # type: ignore
-
-    class TFServerV1(Protocol):
-        """Prococol mimicking parser object."""
-
-        server_def: tf.train.ServerDef
-        target: str
+    import horovod.tensorflow as HVD
 
 
 __all__ = [
@@ -63,137 +52,36 @@ BUILD = (
 )
 
 
-def _is_distributed(MPI: "MPI") -> bool:
-    """Check if there are more than one MPI processes.
-
-    Parameters
-    ----------
-    MPI : MPI
-        MPI object
-
-    Returns
-    -------
-    bool
-        True if we have more than 1 MPI process
-    """
-    return MPI.COMM_WORLD.Get_size() > 1
-
-
-def _distributed_task_config(
-    MPI: "MPI",
-    node_name: str,
-    node_list_: List[str],
-    gpu_list: Optional[List[int]] = None,
-    default_port: int = 2222,
-) -> Tuple[Dict[str, List[str]], str, int, str, str]:
-    """Create configuration for distributed tensorflow session.
-
-    Parameters
-    ----------
-    MPI : mpi4py.MPI
-        MPI module
-    node_name : str
-        the name of current node
-    node_list_ : List[str]
-        the list of nodes of the current mpirun
-    gpu_list : Optional[List[int]], optional
-        the list of GPUs on each node, by default None
-    default_port : int, optional
-        the default port for socket communication, by default 2222
-
-    Returns
-    -------
-    Tuple[Dict[str, List[str]], str, int, str, str]
-        cluster specification, job name of this task, index of this task,
-        hostname:port socket of this task, the device for this task
-    """
-    # setup cluster
-    node_list = list(set(node_list_))
-    node_list.sort()
-    node_color = node_list.index(node_name)
-    world_idx = MPI.COMM_WORLD.Get_rank()
-    node_comm = MPI.COMM_WORLD.Split(node_color, world_idx)
-    node_task_idx = node_comm.Get_rank()
-    node_numb_task = node_comm.Get_size()
-
-    socket_list = []
-    for ii in node_list:
-        for jj in range(node_numb_task):
-            socket_list.append(f"{ii}:{default_port + jj}")
-    ps_map = socket_list[0:1]
-    worker_map = socket_list[1:]
-
-    if node_color == 0 and node_task_idx == 0:
-        my_job = "ps"
-        my_socket = ps_map[0]
-        my_task_idx = ps_map.index(my_socket)
-    else:
-        my_job = "worker"
-        my_socket = f"{node_name}:{default_port - node_task_idx}"
-        assert my_socket in worker_map
-        my_task_idx = worker_map.index(my_socket)
-
-    # setup gpu/cpu devices
-    if gpu_list is not None:
-        numb_gpu = len(gpu_list)
-        gpu_idx = node_numb_task - node_task_idx - 1
-        if gpu_idx >= numb_gpu:
-            my_device = "cpu:0"  # "cpu:%d" % node_task_idx
-        else:
-            my_device = f"gpu:{gpu_idx:d}"
-    else:
-        my_device = "cpu:0"  # "cpu:%d" % node_task_idx
-
-    cluster = {"worker": worker_map, "ps": ps_map}
-    return cluster, my_job, my_task_idx, my_socket, my_device
-
-
 class RunOptions:
     """Class with inf oon how to run training (cluster, MPI and GPU config).
 
     Attributes
     ----------
-    cluster: Optional[Dict[str, List[str]]]
-        cluster informations as dict
-    cluster_spec: Optional[tf.train.ClusterSpec]
-        `tf.train.ClusterSpec` or None if training is serial
     gpus: Optional[List[int]]
         list of GPUs if any are present else None
     is_chief: bool
         in distribured training it is true for tha main MPI process in serail it is
         always true
-    my_job_name: str
-        name of the training job
-    my_socket: Optional[str]
-        communication socket for distributed training
-    my_task_index: int
+    world_size: int
+        total worker count
+    my_rank: int
         index of the MPI task
     nodename: str
         name of the node
-    num_ps: Optional[int]
-        number of ps
-    num_workers: Optional[int]
-        number of workers
-    server: Optional[tf.train.Server]
-        `tf.train.Server` or `None` for serial training
+    node_list_ : List[str]
+        the list of nodes of the current mpirun
     my_device: str
         deviice type - gpu or cpu
     """
 
-    cluster: Optional[Dict[str, List[str]]]
-    cluster_spec: Optional[tf.train.ClusterSpec]
     gpus: Optional[List[int]]
-    is_chief: bool
-    my_job_name: str
-    my_socket: Optional[str]
-    my_task_index: int
+    world_size: int
+    my_rank: int
     nodename: str
-    num_ps: Optional[int]
-    num_workers: Optional[int]
-    server: Optional["TFServerV1"]
+    nodelist: List[int]
     my_device: str
 
-    _MPI: Optional["MPI"]
+    _HVD: Optional["HVD"]
     _log_handles_already_set: bool = False
 
     def __init__(
@@ -202,15 +90,9 @@ class RunOptions:
         restart: Optional[str] = None,
         log_path: Optional[str] = None,
         log_level: int = 0,
-        mpi_log: str = "master",
-        try_distrib: bool = False
+        mpi_log: str = "master"
     ):
-        # distributed tasks
-        if try_distrib:
-            self._try_init_mpi()
-        else:
-            self.is_distrib = False
-            self._init_serial()
+        self._try_init_distrib()
 
         if all((init_model, restart)):
             raise RuntimeError(
@@ -231,20 +113,24 @@ class RunOptions:
 
         self._setup_logger(Path(log_path) if log_path else None, log_level, mpi_log)
 
+    @property
+    def is_chief(self):
+        """Whether my rank is 0."""
+        return self.my_rank == 0
+
     def print_resource_summary(self):
         """Print build and current running cluster configuration summary."""
         log.info("---Summary of the training---------------------------------------")
         if self.is_distrib:
             log.info("distributed")
-            log.info(f"ps list:              {self.cluster['ps']}")
-            log.info(f"worker list:          {self.cluster['worker']}")
-            log.info(f"chief on:             {self.nodename}")
-        else:
-            log.info(f"running on:           {self.nodename}")
-        if self.gpus is None:
-            log.info(f"CUDA_VISIBLE_DEVICES: unset")
-        else:
-            log.info(f"CUDA_VISIBLE_DEVICES: {self.gpus}")
+            log.info(f"world size:           {self.world_size}")
+            log.info(f"my rank:              {self.my_rank}")
+            log.info(f"node list:            {self.nodelist}")
+        log.info(f"running on:           {self.nodename}")
+        log.info(f"computing device:     {self.my_device}")
+        env_value = os.environ.get('CUDA_VISIBLE_DEVICES', 'unset')
+        log.info(f"CUDA_VISIBLE_DEVICES: {env_value}")
+        log.info(f"Count of visible GPU: {len(self.gpus or [])}")
         intra, inter = get_tf_default_nthreads()
         log.info(f"num_intra_threads:    {intra:d}")
         log.info(f"num_inter_threads:    {inter:d}")
@@ -270,84 +156,73 @@ class RunOptions:
             console only from rank==0. `collect` will write messages from all ranks to
             one file opened under rank==0 and to console. `workers` will open one log
             file for each worker designated by its rank, console behaviour is the same
-            as for `collect`. If this argument is specified than also `MPI` object must
-            be passed in. by default None
+            as for `collect`.
         """
         if not self._log_handles_already_set:
-            if not self._MPI:
+            if not self._HVD:
                 mpi_log = None
-            set_log_handles(log_level, log_path, mpi_log=mpi_log, MPI=self._MPI)
+            set_log_handles(log_level, log_path, mpi_log=mpi_log)
             self._log_handles_already_set = True
             log.debug("Log handles were successfully set")
         else:
             log.warning(
                 f"Log handles have already been set. It is not advisable to "
-                f"reset them{', especially when runnig with MPI!' if self._MPI else ''}"
+                f"reset them{', especially when runnig with MPI!' if self._HVD else ''}"
             )
 
-    def _try_init_mpi(self):
+    def _try_init_distrib(self):
         try:
-            from mpi4py import MPI
+            import horovod.tensorflow as HVD
+            HVD.init()
+            self.is_distrib = HVD.size() > 1
         except ImportError:
-            raise RuntimeError(
-                "cannot import mpi4py module, cannot do distributed simulation"
-            )
-        else:
-            self.is_distrib = _is_distributed(MPI)
-            if self.is_distrib:
-                self._init_distributed(MPI)
-                self._MPI = MPI
-            else:
-                self._init_serial()
-                self._MPI = None
+            log.warning("Switch to serial execution due to lack of horovod module.")
+            self.is_distrib = False
 
-    def _init_distributed(self, MPI: "MPI"):
+        # Do real intialization
+        if self.is_distrib:
+            self._init_distributed(HVD)
+            self._HVD = HVD
+        else:
+            self._init_serial()
+            self._HVD = None
+
+    def _init_distributed(self, HVD: "HVD"):
         """Initialize  settings for distributed training.
 
         Parameters
         ----------
-        MPI : MPI
-            MPI object
+        HVD : HVD
+            horovod object
         """
         nodename, nodelist, gpus = get_resource()
         self.nodename = nodename
+        self.nodelist = nodelist
         self.gpus = gpus
-        (
-            self.cluster,
-            self.my_job_name,
-            self.my_task_index,
-            self.my_socket,
-            self.my_device,
-        ) = _distributed_task_config(MPI, nodename, nodelist, gpus)
-        self.is_chief = self.my_job_name == "worker" and self.my_task_index == 0
-        self.num_ps = len(self.cluster["ps"])
-        self.num_workers = len(self.cluster["worker"])
-        self.cluster_spec = tf.train.ClusterSpec(self.cluster)
-        self.server = tf.train.Server(
-            server_or_cluster_def=self.cluster_spec,
-            job_name=self.my_job_name,
-            task_index=self.my_task_index,
-        )
+        self.my_rank = HVD.rank()
+        self.world_size = HVD.size()
+
+        if gpus is not None:
+            gpu_idx = HVD.local_rank()
+            if gpu_idx >= len(gpus):
+                raise RuntimeError('Count of local processes is larger than that of available GPUs!')
+            self.my_device = f"gpu:{gpu_idx:d}"
+        else:
+            self.my_device = "cpu:0"
 
     def _init_serial(self):
         """Initialize setting for serial training."""
         nodename, _, gpus = get_resource()
 
-        self.cluster = None
-        self.cluster_spec = None
         self.gpus = gpus
-        self.is_chief = True
-        self.my_job_name = nodename
-        self.my_socket = None
-        self.my_task_index = 0
+        self.world_size = 1
+        self.my_rank = 0
         self.nodename = nodename
-        self.num_ps = None
-        self.num_workers = None
-        self.server = None
+        self.nodelist = [nodename]
 
         if gpus is not None:
-            self.my_device = "gpu:" + str(gpus[0])
+            self.my_device = "gpu:0"
         else:
             self.my_device = "cpu:0"
 
-        self._MPI = None
+        self._HVD = None

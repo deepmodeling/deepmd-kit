@@ -50,12 +50,11 @@ __global__ void force_deriv_wrt_neighbors_a(
     const int nnei)
 {  
     // idy -> nnei
-    const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    const unsigned int idy = blockIdx.y;
+    const unsigned int idx = blockIdx.x;
+    const unsigned int idy = blockIdx.y * blockDim.x + threadIdx.x;
     const unsigned int idz = threadIdx.y;
-    const unsigned int idw = threadIdx.z;
     const int ndescrpt = nnei * 4;
-    if (idx >= nloc) {
+    if (idy >= nnei) {
         return;
     }
     // deriv wrt neighbors
@@ -63,9 +62,11 @@ __global__ void force_deriv_wrt_neighbors_a(
     if (j_idx < 0) {
         return;
     }
-    atomicAdd(
-        force + j_idx * 3 + idz, 
-        net_deriv[idx * ndescrpt + idy * 4 + idw] * in_deriv[idx * ndescrpt * 3 + (idy * 4 + idw) * 3 + idz]);
+    FPTYPE force_tmp = 0.f;
+    for (int idw = 0; idw < 4; ++idw) {
+        force_tmp += net_deriv[idx * ndescrpt + idy * 4 + idw] * in_deriv[idx * ndescrpt * 3 + (idy * 4 + idw) * 3 + idz];
+    }
+    atomicAdd(force + j_idx * 3 + idz, force_tmp);
 }
 
 template<typename FPTYPE>
@@ -78,11 +79,11 @@ __global__ void force_deriv_wrt_neighbors_r(
 		const int nnei)
 {  
     // idy -> nnei
-    const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    const unsigned int idy = blockIdx.y;
+    const unsigned int idx = blockIdx.x;
+    const unsigned int idy = blockIdx.y * blockDim.x + threadIdx.x;
     const unsigned int idz = threadIdx.y;
     const int ndescrpt = nnei * 1;
-    if (idx >= nloc) {
+    if (idy >= nnei) {
         return;
     }
     // deriv wrt neighbors
@@ -107,21 +108,25 @@ void prod_force_a_gpu_cuda(
     const int nnei)
 {
   const int ndescrpt = nnei * 4;
-  cudaErrcheck(cudaMemset(
+  DPErrcheck(cudaMemset(
       force, 
       0.0, sizeof(FPTYPE) * nall * 3));
 
   force_deriv_wrt_center_atom<FPTYPE, TPB> <<<nloc, TPB>>>(
       force, 
       net_deriv, in_deriv, ndescrpt);
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
 
   const int LEN = 64;
-  const int nblock = (nloc + LEN -1) / LEN;
-  dim3 block_grid(nblock, nnei);
-  dim3 thread_grid(LEN, 3, 4);
+  const int nblock = (nnei + LEN - 1) / LEN;
+  dim3 block_grid(nloc, nblock);
+  dim3 thread_grid(LEN, 3);
   force_deriv_wrt_neighbors_a<<<block_grid, thread_grid>>>(
       force, 
       net_deriv, in_deriv, nlist, nloc, nnei);
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
 }
 
 template<typename FPTYPE> 
@@ -135,21 +140,25 @@ void prod_force_r_gpu_cuda(
     const int nnei)
 {
   const int ndescrpt = nnei * 1;
-  cudaErrcheck(cudaMemset(
+  DPErrcheck(cudaMemset(
       force, 
       0.0, sizeof(FPTYPE) * nall * 3));
 
   force_deriv_wrt_center_atom<FPTYPE, TPB> <<<nloc, TPB>>>(
       force, 
       net_deriv, in_deriv, ndescrpt);
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
 
   const int LEN = 64;
-  const int nblock = (nloc + LEN -1) / LEN;
-  dim3 block_grid(nblock, nnei);
+  const int nblock = (nnei + LEN - 1) / LEN;
+  dim3 block_grid(nloc, nblock);
   dim3 thread_grid(LEN, 3);
   force_deriv_wrt_neighbors_r<<<block_grid, thread_grid>>>(
       force, 
       net_deriv, in_deriv, nlist, nloc, nnei);
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
 }
 
 template void prod_force_a_gpu_cuda<float>(float * force, const float * net_deriv, const float * in_deriv, const int * nlist, const int nloc, const int nall, const int nnei);

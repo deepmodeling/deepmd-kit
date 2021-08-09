@@ -3,6 +3,7 @@
 - [Easy installation methods](#easy-installation-methods)
 - [Install from source code](#install-from-source-code)
 - [Install i-PI](#install-i-pi)
+- [Building conda packages](#building-conda-packages)
 
 ## Easy installation methods
 
@@ -18,17 +19,33 @@ After your easy installation, DeePMD-kit (`dp`) and LAMMPS (`lmp`) will be avail
 ### Install off-line packages
 Both CPU and GPU version offline packages are avaiable in [the Releases page](https://github.com/deepmodeling/deepmd-kit/releases).
 
+Some packages are splited into two files due to size limit of GitHub. One may merge them into one after downloading:
+```bash
+cat deepmd-kit-2.0.0-cuda11.3_gpu-Linux-x86_64.sh.0 deepmd-kit-2.0.0-cuda11.3_gpu-Linux-x86_64.sh.1 > deepmd-kit-2.0.0-cuda11.3_gpu-Linux-x86_64.sh
+```
+
 ### Install with conda
 DeePMD-kit is avaiable with [conda](https://github.com/conda/conda). Install [Anaconda](https://www.anaconda.com/distribution/#download-section) or [Miniconda](https://docs.conda.io/en/latest/miniconda.html) first.
 
-To install the CPU version:
+One may create an environment that contains the CPU version of DeePMD-kit and LAMMPS:
 ```bash
-conda install deepmd-kit=*=*cpu lammps-dp=*=*cpu -c deepmodeling
+conda create -n deepmd deepmd-kit=*=*cpu libdeepmd=*=*cpu lammps-dp -c https://conda.deepmodeling.org
 ```
 
-To install the GPU version containing [CUDA 10.1](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver):
+Or one may want to create a GPU environment containing [CUDA Toolkit](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver):
 ```bash
-conda install deepmd-kit=*=*gpu lammps-dp=*=*gpu -c deepmodeling
+conda create -n deepmd deepmd-kit=*=*gpu libdeepmd=*=*gpu lammps-dp cudatoolkit=11.3 -c https://conda.deepmodeling.org
+```
+One could change the CUDA Toolkit version from `10.1` or `11.3`.
+
+One may speficy the DeePMD-kit version such as `2.0.0` using
+```bash
+conda create -n deepmd deepmd-kit=2.0.0=*cpu libdeepmd=2.0.0=*cpu lammps-dp=2.0.0 -c https://conda.deepmodeling.org
+```
+
+One may enable the environment using
+```bash
+conda activate deepmd
 ```
 
 ### Install with docker
@@ -119,7 +136,8 @@ One may set the following environment variables before executing `pip`:
 | Environment variables | Allowed value          | Default value | Usage                      |
 | --------------------- | ---------------------- | ------------- | -------------------------- |
 | DP_VARIANT            | `cpu`, `cuda`, `rocm`  | `cpu`         | Build CPU variant or GPU variant with CUDA or ROCM support. |
-| DP_FLOAT_PREC         | `high`, `low`          | `high`        | Build high (double) or low (float) precision. |
+| CUDA_TOOLKIT_ROOT_DIR | Path                   | Detected automatically | The path to the CUDA toolkit directory. |
+| ROCM_ROOT             | Path                   | Detected automatically | The path to the ROCM toolkit directory. |
 
 To test the installation, one should firstly jump out of the source directory
 ```
@@ -182,7 +200,6 @@ One may add the following arguments to `cmake`:
 | ------------------------ | ------------------- | ------------- | ------------------------|
 | -DTENSORFLOW_ROOT=&lt;value&gt;  | Path              | -             | The Path to TensorFlow's C++ interface. |
 | -DCMAKE_INSTALL_PREFIX=&lt;value&gt; | Path          | -             | The Path where DeePMD-kit will be installed. |
-| -DFLOAT_PREC=&lt;value&gt;       | `high` or `low`   | `high`        | Build high (double) or low (float) precision. |
 | -DUSE_CUDA_TOOLKIT=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build GPU support with CUDA toolkit. |
 | -DCUDA_TOOLKIT_ROOT_DIR=&lt;value&gt; | Path         | Detected automatically | The path to the CUDA toolkit directory. |
 | -DUSE_ROCM_TOOLKIT=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build GPU support with ROCM toolkit. |
@@ -209,7 +226,7 @@ DeePMD-kit provide module for running MD simulation with LAMMPS. Now make the De
 cd $deepmd_source_dir/source/build
 make lammps
 ```
-DeePMD-kit will generate a module called `USER-DEEPMD` in the `build` directory. Now download the LAMMPS code (`29Oct2020` or later), and uncompress it:
+DeePMD-kit will generate a module called `USER-DEEPMD` in the `build` directory. If you need low precision version, move `env_low.sh` to `env.sh` in the directory. Now download the LAMMPS code (`29Oct2020` or later), and uncompress it:
 ```bash
 cd /some/workspace
 wget https://github.com/lammps/lammps/archive/stable_29Oct2020.tar.gz
@@ -248,4 +265,25 @@ Test with Pytest:
 ```bash
 pip install pytest
 pytest --pyargs ipi.tests
+```
+
+## Building conda packages
+
+One may want to keep both convenience and personalization of the DeePMD-kit. To achieve this goal, one can consider builing conda packages. We provide building scripts in [deepmd-kit-recipes organization](https://github.com/deepmd-kit-recipes/). These building tools are driven by [conda-build](https://github.com/conda/conda-build) and [conda-smithy](https://github.com/conda-forge/conda-smithy).
+
+For example, if one wants to turn on `MPIIO` package in LAMMPS, go to [`lammps-dp-feedstock`](https://github.com/deepmd-kit-recipes/lammps-dp-feedstock/) repository and modify `recipe/build.sh`. `-D PKG_MPIIO=OFF` should be changed to `-D PKG_MPIIO=ON`. Then go to the main directory and executing
+
+```sh
+./build-locally.py
+```
+
+This requires the Docker has been installed. After the building, the packages will be generated in `build_artifacts/linux-64` and `build_artifacts/noarch`, and then one can install then execuating
+```sh
+conda create -n deepmd lammps-dp -c file:///path/to/build_artifacts -c https://conda.deepmodeling.org -c nvidia
+```
+
+One may also upload packages to one's Anaconda channel, so they can be installed on other machines:
+
+```sh
+anaconda upload /path/to/build_artifacts/linux-64/*.tar.bz2 /path/to/build_artifacts/noarch/*.tar.bz2
 ```

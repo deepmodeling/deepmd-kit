@@ -88,7 +88,7 @@ void prod_force_grad_a_gpu_rocm(
     const int nnei)
 {
     const int ndescrpt = nnei * 4;
-    hipErrcheck(hipMemset(
+    DPErrcheck(hipMemset(
         grad_net, 
         0.0, sizeof(FPTYPE) * nloc * ndescrpt));
     const int nblock = (ndescrpt + TPB - 1) / TPB;
@@ -97,7 +97,8 @@ void prod_force_grad_a_gpu_rocm(
     hipLaunchKernelGGL(force_grad_wrt_center_atom, block_grid, thread_grid, 0, 0, 
         grad_net,
         grad, env_deriv, ndescrpt);
-
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
     const int LEN = 128;
     const int nblock_ = (nloc + LEN -1) / LEN;
     dim3 block_grid_(nblock_, nnei);
@@ -105,6 +106,8 @@ void prod_force_grad_a_gpu_rocm(
     hipLaunchKernelGGL(force_grad_wrt_neighbors_a, block_grid_, thread_grid_, 0, 0, 
         grad_net,
         grad, env_deriv, nlist, nloc, nnei);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
 }
 
 template<typename FPTYPE>
@@ -117,7 +120,7 @@ void prod_force_grad_r_gpu_rocm(
     const int nnei)
 {
     const int ndescrpt = nnei * 1;
-    hipErrcheck(hipMemset(
+    DPErrcheck(hipMemset(
         grad_net, 
         0.0, sizeof(FPTYPE) * nloc * ndescrpt));
     const int nblock = (ndescrpt + TPB - 1) / TPB;
@@ -126,6 +129,8 @@ void prod_force_grad_r_gpu_rocm(
     hipLaunchKernelGGL(force_grad_wrt_center_atom, block_grid, thread_grid, 0, 0, 
         grad_net,
         grad, env_deriv, ndescrpt);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
 
     const int LEN = 128;
     const int nblock_ = (nloc + LEN -1) / LEN;
@@ -134,6 +139,8 @@ void prod_force_grad_r_gpu_rocm(
     hipLaunchKernelGGL(force_grad_wrt_neighbors_r, block_grid_, thread_grid_, 0, 0, 
         grad_net,
         grad, env_deriv, nlist, nloc, nnei);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
 }
 
 template void prod_force_grad_a_gpu_rocm<float>(float * grad_net, const float * grad, const float * env_deriv, const int * nlist, const int nloc, const int nnei);
