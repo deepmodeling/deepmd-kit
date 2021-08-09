@@ -156,7 +156,7 @@ An example of `training` is
 	"numb_test":	10,
 	"save_freq":	1000,
 	"save_ckpt":	"model.ckpt",
-	"load_ckpt":	"model.ckpt",
+
 	"disp_training":true,
 	"time_training":true,
 	"profiling":	false,
@@ -189,7 +189,7 @@ During the training, the error of the model is tested every **`disp_freq`** batc
 ```
 The first column displays the number of batches. The second and third columns display the loss function evaluated by `numb_test` frames randomly chosen from the test set and that evaluated by the current training batch, respectively. The fourth and fifth columns display the RMS energy error (normalized by number of atoms) evaluated by `numb_test` frames randomly chosen from the test set and that evaluated by the current training batch, respectively. The sixth and seventh columns display the RMS force error (component-wise) evaluated by `numb_test` frames randomly chosen from the test set and that evaluated by the current training batch, respectively. The last column displays the current learning rate.
 
-Checkpoints will be written to files with prefix **`save_ckpt`** every **`save_freq`** batches. If **`restart`** is set to `true`, then the training will start from the checkpoint named **`load_ckpt`**, rather than from scratch.
+Checkpoints will be written to files with prefix **`save_ckpt`** every **`save_freq`** batches. 
 
 Several command line options can be passed to `dp train`, which can be checked with
 ```bash
