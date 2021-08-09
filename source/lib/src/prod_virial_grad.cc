@@ -1,6 +1,7 @@
 #include <stdexcept>
 #include <cstring>
 #include "prod_virial_grad.h"
+#include "errors.h"
 
 inline void
 make_index_range (
@@ -14,7 +15,7 @@ make_index_range (
     idx_end   = nei_idx * 4 + 4;
   }
   else {
-    throw std::runtime_error("should no reach here");
+    throw deepmd::deepmd_exception("should no reach here");
   }
 }
 

@@ -137,8 +137,7 @@ class _MPIHandler(logging.FileHandler):
 def set_log_handles(
     level: int,
     log_path: Optional["Path"] = None,
-    mpi_log: Optional[str] = None,
-    MPI: Optional["MPI"] = None,
+    mpi_log: Optional[str] = None
 ):
     """Set desired level for package loggers and add file handlers.
 
@@ -154,16 +153,13 @@ def set_log_handles(
         only from rank==0. `collect` will write messages from all ranks to one file
         opened under rank==0 and to console. `workers` will open one log file for each
         worker designated by its rank, console behaviour is the same as for `collect`.
-        If this argument is specified than also `MPI` object must be passed in.
-        by default None
-    MPI : Optional[MPI, optional]
-        `MPI` communicator object, must be specified if `mpi_log` is specified,
+        If this argument is specified, package 'mpi4py' must be already installed.
         by default None
 
     Raises
     ------
     RuntimeError
-        if only one of the arguments `mpi_log`, `MPI` is specified
+        If the argument `mpi_log` is specified, package `mpi4py` is not installed.
 
     References
     ----------
@@ -204,8 +200,12 @@ def set_log_handles(
         root_log.removeHandler(hdlr)
 
     # check if arguments are present
-    if (mpi_log and not MPI) or (not mpi_log and MPI):
-        raise RuntimeError("You cannot specify only one of 'mpi_log', 'MPI' arguments")
+    MPI = None
+    if mpi_log:
+        try:
+            from mpi4py import MPI
+        except ImportError as e:
+            raise RuntimeError("You cannot specify 'mpi_log' when mpi4py not installed") from e
 
     # * add console handler ************************************************************
     ch = logging.StreamHandler()

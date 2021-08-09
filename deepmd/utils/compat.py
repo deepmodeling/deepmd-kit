@@ -27,8 +27,6 @@ def convert_input_v0_v1(
     """
 
     output = {}
-    if "with_distrib" in jdata:
-        output["with_distrib"] = jdata["with_distrib"]
     output["model"] = _model(jdata, jdata["use_smooth"])
     output["learning_rate"] = _learning_rate(jdata)
     output["loss"] = _loss(jdata)

@@ -5,6 +5,7 @@ In this text, we will call the deep neural network that is used to represent the
 2. [Train a model](#train-a-model)
     - [Write the input script](#write-the-input-script)
     - [Training](#training)
+    - [Parallel training](#parallel-training)
     - [Training analysis with Tensorboard](#training-analysis-with-tensorboard)
 3. [Freeze a model](#freeze-a-model)
 4. [Test a model](#test-a-model)
@@ -134,6 +135,57 @@ export TF_INTER_OP_PARALLELISM_THREADS=2
 dp train input.json
 ```
 
+One can set other environmental variables:
+
+| Environment variables | Allowed value          | Default value | Usage                      |
+| --------------------- | ---------------------- | ------------- | -------------------------- |
+| DP_INTERFACE_PREC     | `high`, `low`          | `high`        | Control high (double) or low (float) precision of training. |
+
+
+### Parallel training
+
+Currently, parallel training is enabled in a sychoronized way with help of [Horovod](https://github.com/horovod/horovod). DeePMD-kit will decide parallel training or not according to MPI context. Thus, there is no difference in your json/yaml input file.
+
+Testing `examples/water/se_e2_a` on a 8-GPU host, linear acceleration can be observed with increasing number of cards.
+| Num of GPU cards | Seconds every 100 samples | Samples per second | Speed up |
+|  --  | -- | -- | -- |
+| 1  | 1.6116 | 62.05 | 1.00 |
+| 2  | 1.6310 | 61.31 | 1.98 |
+| 4  | 1.6168 | 61.85 | 3.99 |
+| 8  | 1.6212 | 61.68 | 7.95 |
+
+To experience this powerful feature, please intall Horovod and [mpi4py](https://github.com/mpi4py/mpi4py) first. For better performance on GPU, please follow tuning steps in [Horovod on GPU](https://github.com/horovod/horovod/blob/master/docs/gpus.rst).
+```bash
+# By default, MPI is used as communicator.
+HOROVOD_WITHOUT_GLOO=1 HOROVOD_WITH_TENSORFLOW=1 pip install horovod mpi4py
+```
+
+Horovod works in the data-parallel mode resulting a larger global batch size. For example, the real batch size is 8 when `batch_size` is set to 2 in the input file and you lauch 4 workers. Thus, `learning_rate` is automatically scaled by the number of workers for better convergence. Technical details of such heuristic rule are discussed at [Accurate, Large Minibatch SGD: Training ImageNet in 1 Hour](https://arxiv.org/abs/1706.02677).
+
+With dependencies installed, have a quick try!
+```bash
+# Launch 4 processes on the same host
+CUDA_VISIBLE_DEVICES=4,5,6,7 horovodrun -np 4 \
+    dp train --mpi-log=workers input.json
+```
+
+Need to mention, environment variable `CUDA_VISIBLE_DEVICES` must be set to control parallelism on the occupied host where one process is bound to one GPU card.
+
+What's more, 2 command-line arguments are defined to control the logging behvaior.
+```
+optional arguments:
+  -l LOG_PATH, --log-path LOG_PATH
+                        set log file to log messages to disk, if not
+                        specified, the logs will only be output to console
+                        (default: None)
+  -m {master,collect,workers}, --mpi-log {master,collect,workers}
+                        Set the manner of logging when running with MPI.
+                        'master' logs only on main process, 'collect'
+                        broadcasts logs from workers to master and 'workers'
+                        means each process will output its own log (default:
+                        master)
+```
+
 ### Training analysis with Tensorboard
 
 If enbled in json/yaml input file DeePMD-kit will create log files which can be
@@ -225,22 +277,18 @@ For more details with respect to definition of model deviation and its applicati
 
 Once the frozen model is obtained from deepmd-kit, we can get the neural network structure and its parameters (weights, biases, etc.) from the trained model, and compress it in the following way:
 ```bash
-dp compress input.json -i graph.pb -o graph-compress.pb
+dp compress -i graph.pb -o graph-compress.pb
 ```
-where input.json denotes the original training input script, `-i` gives the original frozen model, `-o` gives the compressed model. Several other command line options can be passed to `dp compress`, which can be checked with
+where `-i` gives the original frozen model, `-o` gives the compressed model. Several other command line options can be passed to `dp compress`, which can be checked with
 ```bash
 $ dp compress --help
 ```
 An explanation will be provided
 ```
-usage: dp compress [-h] [-i INPUT] [-o OUTPUT] [-e EXTRAPOLATE] [-s STRIDE]
-                   [-f FREQUENCY] [-d FOLDER]
-                   INPUT
-
-positional arguments:
-  INPUT                 The input parameter file in json or yaml format, which
-                        should be consistent with the original model parameter
-                        file
+usage: dp compress [-h] [-v {DEBUG,3,INFO,2,WARNING,1,ERROR,0}] [-l LOG_PATH]
+                   [-m {master,collect,workers}] [-i INPUT] [-o OUTPUT]
+                   [-s STEP] [-e EXTRAPOLATE] [-f FREQUENCY]
+                   [-c CHECKPOINT_FOLDER]
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -353,7 +401,7 @@ where `e`, `f` and `v` are predicted energy, force and virial of the system, res
 
 You can compile `infer_water.cpp` using `gcc`:
 ```sh
-gcc infer_water.cpp -D HIGH_PREC -L $deepmd_root/lib -L $tensorflow_root/lib -I $deepmd_root/include -I $tensorflow_root/lib -Wl,--no-as-needed -ldeepmd_op -ldeepmd -ldeepmd_cc -ltensorflow_cc -ltensorflow_framework -lstdc++ -Wl,-rpath=$deepmd_root/lib -Wl,-rpath=$tensorflow_root/lib -o infer_water
+gcc infer_water.cpp -D HIGH_PREC -L $deepmd_root/lib -L $tensorflow_root/lib -I $deepmd_root/include -I $tensorflow_root/include -Wl,--no-as-needed -ldeepmd_op -ldeepmd -ldeepmd_cc -ltensorflow_cc -ltensorflow_framework -lstdc++ -Wl,-rpath=$deepmd_root/lib -Wl,-rpath=$tensorflow_root/lib -o infer_water
 ```
 and then run the program:
 ```sh
@@ -365,9 +413,11 @@ and then run the program:
 Note that the model for MD simulations is required to be compatible with the DeePMD-kit package. See [Model compatibility](troubleshooting/model-compatability.md) for details. 
 
 ### Run MD with LAMMPS
-Include deepmd in the pair_style
 
-#### Syntax
+#### pair_style `deepmd`
+
+The DeePMD-kit package provides the pair_style `deepmd`
+
 ```
 pair_style deepmd models ... keyword value ...
 ```
@@ -387,14 +437,14 @@ pair_style deepmd models ... keyword value ...
         level = The level parameter for computing the relative model deviation
 </pre>
 
-#### Examples
+##### Examples
 ```
 pair_style deepmd graph.pb
 pair_style deepmd graph.pb fparam 1.2
 pair_style deepmd graph_0.pb graph_1.pb graph_2.pb out_file md.out out_freq 10 atomic relative 1.0
 ```
 
-#### Description
+##### Description
 Evaluate the interaction of the system by using [Deep Potential][DP] or [Deep Potential Smooth Edition][DP-SE]. It is noticed that deep potential is not a "pairwise" interaction, but a multi-body interaction. 
 
 This pair style takes the deep potential defined in a model file that usually has the .pb extension. The model can be trained and frozen by package [DeePMD-kit](https://github.com/deepmodeling/deepmd-kit).
@@ -409,9 +459,33 @@ Ef_i = -------------
 ```
 where `Df_i` is the absolute model deviation of the force on atom `i`, `|f_i|` is the norm of the the force and `level` is provided as the parameter of the keyword `relative`.
 
-
-#### Restrictions
+##### Restrictions
 - The `deepmd` pair style is provided in the USER-DEEPMD package, which is compiled from the DeePMD-kit, visit the [DeePMD-kit website](https://github.com/deepmodeling/deepmd-kit) for more information.
+
+
+#### Compute tensorial prperties
+
+The DeePMD-kit package provide the compute `deeptensor/atom` for computing atomic tensorial properties. 
+
+```
+compute ID group-ID deeptensor/atom model_file
+```
+- ID: user-assigned name of the computation
+- group-ID: ID of the group of atoms to compute
+- deeptensor/atom: the style of this compute
+- model_file: the name of the binary model file.
+
+##### Examples
+```
+compute         dipole all deeptensor/atom dipole.pb
+```
+The result of the compute can be dump to trajctory file by 
+```
+dump            1 all custom 100 water.dump id type c_dipole[1] c_dipole[2] c_dipole[3] 
+```
+
+##### Restrictions
+- The `deeptensor/atom` compute is provided in the USER-DEEPMD package, which is compiled from the DeePMD-kit, visit the [DeePMD-kit website](https://github.com/deepmodeling/deepmd-kit) for more information.
 
 
 #### Long-range interaction
@@ -425,7 +499,7 @@ kspace_modify	gewald 0.45
 Please notice that the DeePMD does nothing to the direct space part of the electrostatic interaction, because this part is assumed to be fitted in the DeePMD model (the direct space cut-off is thus the cut-off of the DeePMD model). The splitting parameter `gewald` is modified by the `kspace_modify` command.
 
 ### Run path-integral MD with i-PI
-The i-PI works in a client-server model. The i-PI provides the server for integrating the replica positions of atoms, while the DeePMD-kit provides a client named `dp_ipi` that computes the interactions (including energy, force and virial). The server and client communicates via the Unix domain socket or the Internet socket. Installation instructions of i-PI can be found [here](install.md#install-i-pi). The client can be started by
+The i-PI works in a client-server model. The i-PI provides the server for integrating the replica positions of atoms, while the DeePMD-kit provides a client named `dp_ipi` (or `dp_ipi_low` for low precision) that computes the interactions (including energy, force and virial). The server and client communicates via the Unix domain socket or the Internet socket. Installation instructions of i-PI can be found [here](install.md#install-i-pi). The client can be started by
 ```bash
 i-pi input.xml &
 dp_ipi water.json

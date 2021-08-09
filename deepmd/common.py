@@ -21,6 +21,8 @@ import yaml
 
 from deepmd.env import op_module, tf
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION, GLOBAL_NP_FLOAT_PRECISION
+from deepmd.utils.sess import run_sess
+from deepmd.utils.errors import GraphWithoutTensorError
 
 if TYPE_CHECKING:
     _DICT_VAL = TypeVar("_DICT_VAL")
@@ -483,3 +485,38 @@ def get_np_precision(precision: "_PRECISION") -> np.dtype:
         return np.float64
     else:
         raise RuntimeError(f"{precision} is not a valid precision")
+
+
+def get_tensor_by_name(model_file: str,
+                       tensor_name: str) -> tf.Tensor:
+    """Load tensor value from the frozen model(model_file)
+
+    Parameters
+    ----------
+    model_file : str
+        The input frozen model.
+    tensor : tensor_name
+        Indicates which tensor which will be loaded from the frozen model.
+
+    Returns
+    -------
+    tf.Tensor
+        The tensor which was loaded from the frozen model.
+
+    Raises
+    ------
+    GraphWithoutTensorError
+        Whether the tensor_name is within the frozen model.
+    """
+    graph_def = tf.GraphDef()
+    with open(model_file, "rb") as f:
+        graph_def.ParseFromString(f.read())
+    with tf.Graph().as_default() as graph:
+        tf.import_graph_def(graph_def, name="")
+        try:
+            tensor = graph.get_tensor_by_name(tensor_name + ":0")
+        except KeyError as e:
+            raise GraphWithoutTensorError() from e
+        with tf.Session(graph=graph) as sess:
+            tensor = run_sess(sess, tensor)
+    return tensor

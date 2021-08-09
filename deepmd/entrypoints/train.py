@@ -7,11 +7,11 @@ import json
 import logging
 import time
 import os
-from typing import Dict, TYPE_CHECKING, List, Optional, Any
+from typing import Dict, List, Optional, Any
 
 import numpy as np
 from deepmd.common import data_requirement, expand_sys_str, j_loader, j_must_have
-from deepmd.env import tf
+from deepmd.env import tf, reset_default_tf_session_config
 from deepmd.infer.data_modifier import DipoleChargeModifier
 from deepmd.train.run_options import BUILD, CITATION, WELCOME, RunOptions
 from deepmd.train.trainer import DPTrainer
@@ -21,116 +21,9 @@ from deepmd.utils.data_system import DeepmdDataSystem
 from deepmd.utils.sess import run_sess
 from deepmd.utils.neighbor_stat import NeighborStat
 
-if TYPE_CHECKING:
-    from deepmd.run_options import TFServerV1
-
 __all__ = ["train"]
 
 log = logging.getLogger(__name__)
-
-
-def create_done_queue(
-    cluster_spec: tf.train.ClusterSpec, task_index: int
-) -> tf.FIFOQueue:
-    """Create FIFO queue for distributed tasks.
-
-    Parameters
-    ----------
-    cluster_spec : tf.train.ClusterSpec
-        tf cluster specification object
-    task_index : int
-        identifying index of a task
-
-    Returns
-    -------
-    tf.FIFOQueue
-        tf distributed FIFI queue
-    """
-    with tf.device(f"/job:ps/task:{task_index:d}"):
-        queue = tf.FIFOQueue(
-            cluster_spec.num_tasks("worker"),
-            tf.int32,
-            shared_name=f"done_queue{task_index}",
-        )
-        return queue
-
-
-def wait_done_queue(
-    cluster_spec: tf.train.ClusterSpec,
-    server: "TFServerV1",
-    queue: tf.FIFOQueue,
-    task_index: int,
-):
-    """Wait until all enqued operation in tf distributed queue are finished.
-
-    Parameters
-    ----------
-    cluster_spec : tf.train.ClusterSpec
-        tf cluster specification object
-    server : TFServerV1
-        tf server specification object
-    queue : tf.FIFOQueue
-        tf distributed queue
-    task_index : int
-        identifying index of a task
-    """
-    with tf.Session(server.target) as sess:
-        for i in range(cluster_spec.num_tasks("worker")):
-            run_sess(sess, queue.dequeue())
-            log.debug(f"ps:{task_index:d} received done from worker:{i:d}")
-        log.debug(f"ps:{task_index:f} quitting")
-
-
-def connect_done_queue(
-    cluster_spec: tf.train.ClusterSpec, task_index: int
-) -> List[tf.Operation]:
-    """Create tf FIFO queue filling operations.
-
-    Parameters
-    ----------
-    cluster_spec : tf.train.ClusterSpec
-        tf cluster specification object
-    task_index : int
-        identifying index of a task
-
-    Returns
-    -------
-    List[tf.Operation]
-        list of tf operations that will populate the queue
-    """
-    done_ops = []
-    for i in range(cluster_spec.num_tasks("ps")):
-        with tf.device(f"/job:ps/task:{i:d}"):
-            queue = tf.FIFOQueue(
-                cluster_spec.num_tasks("worker"), tf.int32, shared_name=f"done_queue{i}"
-            )
-            done_ops.append(queue.enqueue(task_index))
-    return done_ops
-
-
-def fill_done_queue(
-    cluster_spec: tf.train.ClusterSpec,
-    server: "TFServerV1",
-    done_ops: List[tf.Operation],
-    task_index: int,
-):
-    """Run specified operations that will fill the tf distributed FIFO queue.
-
-    Parameters
-    ----------
-    cluster_spec : tf.train.ClusterSpec
-        tf cluster specification object
-    server : TFServerV1
-        tf server specification object
-    done_ops : List[tf.Operation]
-        a list of tf operations that will fill the queue
-    task_index : int
-        identifying index of a task
-    """
-    with tf.Session(server.target) as sess:
-        for i in range(cluster_spec.num_tasks("ps")):
-            run_sess(sess, done_ops[i])
-            log.debug(f"worker:{task_index:d} sending done to ps:{i:d}")
 
 
 def train(
@@ -142,6 +35,7 @@ def train(
     mpi_log: str,
     log_level: int,
     log_path: Optional[str],
+    is_compress: bool = False,
     **kwargs,
 ):
     """Run DeePMD model training.
@@ -162,6 +56,8 @@ def train(
         logging level defined by int 0-3
     log_path : Optional[str]
         logging file path or None if logs are to be output only to stdout
+    is_compress: Bool
+        indicates whether in the model compress mode
 
     Raises
     ------
@@ -175,10 +71,14 @@ def train(
 
     jdata = normalize(jdata)
 
-    jdata = update_sel(jdata)
+    if is_compress == False:
+        jdata = update_sel(jdata)
 
     with open(output, "w") as fp:
         json.dump(jdata, fp, indent=4)
+
+    # save the training script into the graph
+    tf.constant(json.dumps(jdata), name='train_attr/training_script', dtype=tf.string)
 
     # run options
     run_opt = RunOptions(
@@ -186,37 +86,17 @@ def train(
         restart=restart,
         log_path=log_path,
         log_level=log_level,
-        mpi_log=mpi_log,
-        try_distrib=jdata.get("with_distrib", False),
+        mpi_log=mpi_log
     )
 
     for message in WELCOME + CITATION + BUILD:
         log.info(message)
 
     run_opt.print_resource_summary()
-
-    if run_opt.is_distrib:
-        # distributed training
-        if run_opt.my_job_name == "ps":
-            queue = create_done_queue(run_opt.cluster_spec, run_opt.my_task_index)
-            wait_done_queue(
-                run_opt.cluster_spec, run_opt.server, queue, run_opt.my_task_index
-            )
-            # server.join()
-        elif run_opt.my_job_name == "worker":
-            done_ops = connect_done_queue(run_opt.cluster_spec, run_opt.my_task_index)
-            _do_work(jdata, run_opt)
-            fill_done_queue(
-                run_opt.cluster_spec, run_opt.server, done_ops, run_opt.my_task_index
-            )
-        else:
-            raise RuntimeError("unknown job name")
-    else:
-        # serial training
-        _do_work(jdata, run_opt)
+    _do_work(jdata, run_opt, is_compress)
 
 
-def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
+def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = False):
     """Run serial model training.
 
     Parameters
@@ -225,6 +105,8 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
         arguments read form json/yaml control file
     run_opt : RunOptions
         object with run configuration
+    is_compress : Bool
+        indicates whether in model compress mode
 
     Raises
     ------
@@ -234,8 +116,12 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
     # make necessary checks
     assert "training" in jdata
 
+    # avoid conflict of visible gpus among multipe tf sessions in one process
+    if run_opt.is_distrib and len(run_opt.gpus or []) > 1:
+        reset_default_tf_session_config(cpu_only=True)
+
     # init the model
-    model = DPTrainer(jdata, run_opt=run_opt)
+    model = DPTrainer(jdata, run_opt=run_opt, is_compress = is_compress)
     rcut = model.model.get_rcut()
     type_map = model.model.get_type_map()
     if len(type_map) == 0:
@@ -252,25 +138,31 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
     # setup data modifier
     modifier = get_modifier(jdata["model"].get("modifier", None))
 
-    # init data
-    train_data = get_data(jdata["training"]["training_data"], rcut, ipt_type_map, modifier)
-    train_data.print_summary("training")
-    if jdata["training"].get("validation_data", None) is not None:
-        valid_data = get_data(jdata["training"]["validation_data"], rcut, ipt_type_map, modifier)
-        valid_data.print_summary("validation")
-    else:
-        valid_data = None
+    # decouple the training data from the model compress process
+    train_data = None
+    valid_data = None
+    if is_compress == False:
+        # init data
+        train_data = get_data(jdata["training"]["training_data"], rcut, ipt_type_map, modifier)
+        train_data.print_summary("training")
+        if jdata["training"].get("validation_data", None) is not None:
+            valid_data = get_data(jdata["training"]["validation_data"], rcut, ipt_type_map, modifier)
+            valid_data.print_summary("validation")
 
     # get training info
     stop_batch = j_must_have(jdata["training"], "numb_steps")
     model.build(train_data, stop_batch)
 
-    # train the model with the provided systems in a cyclic way
-    start_time = time.time()
-    model.train(train_data, valid_data)
-    end_time = time.time()
-    log.info("finished training")
-    log.info(f"wall time: {(end_time - start_time):.3f} s")
+    if is_compress == False:
+        # train the model with the provided systems in a cyclic way
+        start_time = time.time()
+        model.train(train_data, valid_data)
+        end_time = time.time()
+        log.info("finished training")
+        log.info(f"wall time: {(end_time - start_time):.3f} s")
+    else:
+        model.save_compressed()
+        log.info("finished compressing")
 
 
 def get_data(jdata: Dict[str, Any], rcut, type_map, modifier):
@@ -352,7 +244,7 @@ def get_sel(jdata, rcut):
     max_rcut = get_rcut(jdata)
     type_map = get_type_map(jdata)
 
-    if len(type_map) == 0:
+    if type_map and len(type_map) == 0:
         type_map = None
     train_data = get_data(jdata["training"]["training_data"], max_rcut, type_map, None)
     train_data.get_batch()
@@ -399,11 +291,22 @@ def wrap_up_4(xx):
 
 
 def update_one_sel(jdata, descriptor):
+    rcut = descriptor['rcut']
+    tmp_sel = get_sel(jdata, rcut)
     if parse_auto_sel(descriptor['sel']) :
         ratio = parse_auto_sel_ratio(descriptor['sel'])
-        rcut = descriptor['rcut']
-        tmp_sel = get_sel(jdata, rcut)
         descriptor['sel'] = [int(wrap_up_4(ii * ratio)) for ii in tmp_sel]
+    else:
+        # sel is set by user
+        for ii, (tt, dd) in enumerate(zip(tmp_sel, descriptor['sel'])):
+            if dd and tt > dd:
+                # we may skip warning for sel=0, where the user is likely
+                # to exclude such type in the descriptor
+                log.warning(
+                    "sel of type %d is not enough! The expected value is "
+                    "not less than %d, but you set it to %d. The accuracy"
+                    " of your model may get worse." %(ii, tt, dd)
+                )
     return descriptor
 
 

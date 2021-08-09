@@ -4,6 +4,7 @@
 #include "fmt_nlist.h"
 #include "SimulationRegion.h"
 #include <iostream>
+#include "errors.h"
 
 using namespace deepmd;
 
@@ -185,7 +186,7 @@ format_nlist_cpu (
 		<< fmt_ilist.size()
 		<< " which does not match " 
 		<< nnei	<< std::endl;
-      exit(1);
+      throw deepmd::deepmd_exception();
     }
     std::copy(fmt_ilist.begin(), fmt_ilist.end(), cur_nlist);
   }

@@ -28,6 +28,10 @@ class ProdVirialSeAOp : public OpKernel {
  public:
   explicit ProdVirialSeAOp(OpKernelConstruction* context) : OpKernel(context) {}
   void Compute(OpKernelContext* context) override {
+      deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor& net_deriv_tensor  = context->input(context_input_index++);
@@ -120,6 +124,10 @@ class ProdVirialSeROp : public OpKernel {
  public:
   explicit ProdVirialSeROp(OpKernelConstruction* context) : OpKernel(context) {}
   void Compute(OpKernelContext* context) override {
+      deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor& net_deriv_tensor  = context->input(context_input_index++);
