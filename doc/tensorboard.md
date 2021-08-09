@@ -38,7 +38,7 @@ subsection will enable the tensorboard data analysis. eg. **water_se_a.json**.
 	"numb_test":	10,
 	"save_freq":	1000,
 	"save_ckpt":	"model.ckpt",
-	"load_ckpt":	"model.ckpt",
+
 	"disp_training":true,
 	"time_training":true,
 	"tensorboard":	true,
