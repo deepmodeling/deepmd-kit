@@ -277,22 +277,18 @@ For more details with respect to definition of model deviation and its applicati
 
 Once the frozen model is obtained from deepmd-kit, we can get the neural network structure and its parameters (weights, biases, etc.) from the trained model, and compress it in the following way:
 ```bash
-dp compress input.json -i graph.pb -o graph-compress.pb
+dp compress -i graph.pb -o graph-compress.pb
 ```
-where input.json denotes the original training input script, `-i` gives the original frozen model, `-o` gives the compressed model. Several other command line options can be passed to `dp compress`, which can be checked with
+where `-i` gives the original frozen model, `-o` gives the compressed model. Several other command line options can be passed to `dp compress`, which can be checked with
 ```bash
 $ dp compress --help
 ```
 An explanation will be provided
 ```
-usage: dp compress [-h] [-i INPUT] [-o OUTPUT] [-e EXTRAPOLATE] [-s STRIDE]
-                   [-f FREQUENCY] [-d FOLDER]
-                   INPUT
-
-positional arguments:
-  INPUT                 The input parameter file in json or yaml format, which
-                        should be consistent with the original model parameter
-                        file
+usage: dp compress [-h] [-v {DEBUG,3,INFO,2,WARNING,1,ERROR,0}] [-l LOG_PATH]
+                   [-m {master,collect,workers}] [-i INPUT] [-o OUTPUT]
+                   [-s STEP] [-e EXTRAPOLATE] [-f FREQUENCY]
+                   [-c CHECKPOINT_FOLDER]
 
 optional arguments:
   -h, --help            show this help message and exit

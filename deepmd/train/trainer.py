@@ -32,7 +32,7 @@ from deepmd.env import op_module
 # load grad of force module
 import deepmd.op
 
-from deepmd.common import j_must_have, ClassArg
+from deepmd.common import j_must_have, ClassArg, data_requirement
 
 log = logging.getLogger(__name__)
 
@@ -79,9 +79,11 @@ def _generate_descrpt_from_param_dict(descrpt_param):
 class DPTrainer (object):
     def __init__(self, 
                  jdata, 
-                 run_opt):
+                 run_opt,
+                 is_compress = False):
         self.run_opt = run_opt
         self._init_param(jdata)
+        self.is_compress = is_compress
 
     def _init_param(self, jdata):
         # model config        
@@ -280,33 +282,38 @@ class DPTrainer (object):
 
 
     def build (self, 
-               data, 
+               data = None, 
                stop_batch = 0) :
         self.ntypes = self.model.get_ntypes()
-        # Usually, the type number of the model should be equal to that of the data
-        # However, nt_model > nt_data should be allowed, since users may only want to 
-        # train using a dataset that only have some of elements 
-        assert (self.ntypes >= data.get_ntypes()), "ntypes should match that found in data"
         self.stop_batch = stop_batch
-
-        self.batch_size = data.get_batch_size()
 
         if self.numb_fparam > 0 :
             log.info("training with %d frame parameter(s)" % self.numb_fparam)
         else:
             log.info("training without frame parameter")
 
-        self.type_map = data.get_type_map()
+        if self.is_compress == False:
+            # Usually, the type number of the model should be equal to that of the data
+            # However, nt_model > nt_data should be allowed, since users may only want to 
+            # train using a dataset that only have some of elements 
+            assert (self.ntypes >= data.get_ntypes()), "ntypes should match that found in data"
+            self.type_map = data.get_type_map()
+            self.batch_size = data.get_batch_size()
+            self.model.data_stat(data)
 
-        self.model.data_stat(data)
-
-        if 'compress' in self.model_param and self.model_param['compress']['compress']:
-            assert 'rcut' in self.descrpt_param,      "Error: descriptor must have attr rcut!"
             self.neighbor_stat \
                 = NeighborStat(self.ntypes, self.descrpt_param['rcut'])
             self.min_nbor_dist, self.max_nbor_size \
                 = self.neighbor_stat.get_stat(data)
-            self.descrpt.enable_compression(self.min_nbor_dist, self.model_param['compress']['model_file'], self.model_param['compress']['table_config'][0], self.model_param['compress']['table_config'][1], self.model_param['compress']['table_config'][2], self.model_param['compress']['table_config'][3])
+            tf.constant(self.min_nbor_dist,
+                    name = 'train_attr/min_nbor_dist',
+                    dtype = GLOBAL_TF_FLOAT_PRECISION)
+            tf.constant(self.max_nbor_size,
+                    name = 'train_attr/max_nbor_size',
+                    dtype = GLOBAL_TF_FLOAT_PRECISION)
+        else :
+            assert 'rcut' in self.descrpt_param, "Error: descriptor must have attr rcut!"
+            self.descrpt.enable_compression(self.model_param['compress']["min_nbor_dist"], self.model_param['compress']['model_file'], self.model_param['compress']['table_config'][0], self.model_param['compress']['table_config'][1], self.model_param['compress']['table_config'][2], self.model_param['compress']['table_config'][3])
 
         self._build_lr()
         self._build_network(data)
@@ -321,15 +328,12 @@ class DPTrainer (object):
 
     def _build_network(self, data):        
         self.place_holders = {}
-        data_dict = data.get_data_dict()
-        for kk in data_dict.keys():
-            if kk == 'type':
-                continue
-            prec = GLOBAL_TF_FLOAT_PRECISION
-            if data_dict[kk]['high_prec'] :
-                prec = GLOBAL_ENER_FLOAT_PRECISION
-            self.place_holders[kk] = tf.placeholder(prec, [None], name = 't_' + kk)
-            self.place_holders['find_'+kk] = tf.placeholder(tf.float32, name = 't_find_' + kk)
+        if self.is_compress :
+            for kk in ['coord', 'box']:
+                self.place_holders[kk] = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], 't_' + kk)
+            self._get_place_horders(data_requirement)
+        else :
+            self._get_place_horders(data.get_data_dict())
 
         self.place_holders['type']      = tf.placeholder(tf.int32,   [None], name='t_type')
         self.place_holders['natoms_vec']        = tf.placeholder(tf.int32,   [self.ntypes+2], name='t_natoms')
@@ -412,7 +416,7 @@ class DPTrainer (object):
                 log.info('receive global variables from task#0')
             run_sess(self.sess, bcast_op)
 
-    def train (self, train_data, valid_data=None) :
+    def train (self, train_data = None, valid_data=None) :
 
         # if valid_data is None:  # no validation set specified.
         #     valid_data = train_data  # using training set as validation set.
@@ -466,6 +470,7 @@ class DPTrainer (object):
             tb_valid_writer = None
         
         train_time = 0
+
         while cur_batch < stop_batch :
 
             # first round validation:
@@ -507,7 +512,7 @@ class DPTrainer (object):
                     train_time = 0
                 if self.save_freq > 0 and cur_batch % self.save_freq == 0 and self.saver is not None:
                     try:
-                        self.saver.save (self.sess, os.getcwd() + "/" + self.save_ckpt)
+                        self.saver.save (self.sess, os.path.join(os.getcwd(), self.save_ckpt))
                     except google.protobuf.message.DecodeError as e:
                         raise GraphTooLargeError(
                             "The graph size exceeds 2 GB, the hard limitation of protobuf."
@@ -617,3 +622,21 @@ class DPTrainer (object):
                     sum_results[k] = sum_results.get(k, 0.) + v * results["natoms"]
         avg_results = {k: v / sum_natoms for k, v in sum_results.items() if not k == "natoms"}
         return avg_results
+    
+    def save_compressed(self):
+        """
+        Save the compressed graph
+        """
+        self._init_session()
+        if self.is_compress:
+            self.saver.save (self.sess, os.path.join(os.getcwd(), self.save_ckpt))
+
+    def _get_place_horders(self, data_dict):
+        for kk in data_dict.keys():
+            if kk == 'type':
+                continue
+            prec = GLOBAL_TF_FLOAT_PRECISION
+            if data_dict[kk]['high_prec'] :
+                prec = GLOBAL_ENER_FLOAT_PRECISION
+            self.place_holders[kk] = tf.placeholder(prec, [None], name = 't_' + kk)
+            self.place_holders['find_' + kk] = tf.placeholder(tf.float32, name = 't_find_' + kk)

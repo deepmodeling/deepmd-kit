@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Any
 
 import numpy as np
 from deepmd.common import data_requirement, expand_sys_str, j_loader, j_must_have
-from deepmd.env import reset_default_tf_session_config
+from deepmd.env import tf, reset_default_tf_session_config
 from deepmd.infer.data_modifier import DipoleChargeModifier
 from deepmd.train.run_options import BUILD, CITATION, WELCOME, RunOptions
 from deepmd.train.trainer import DPTrainer
@@ -35,6 +35,7 @@ def train(
     mpi_log: str,
     log_level: int,
     log_path: Optional[str],
+    is_compress: bool = False,
     **kwargs,
 ):
     """Run DeePMD model training.
@@ -55,6 +56,8 @@ def train(
         logging level defined by int 0-3
     log_path : Optional[str]
         logging file path or None if logs are to be output only to stdout
+    is_compress: Bool
+        indicates whether in the model compress mode
 
     Raises
     ------
@@ -68,10 +71,14 @@ def train(
 
     jdata = normalize(jdata)
 
-    jdata = update_sel(jdata)
+    if is_compress == False:
+        jdata = update_sel(jdata)
 
     with open(output, "w") as fp:
         json.dump(jdata, fp, indent=4)
+
+    # save the training script into the graph
+    tf.constant(json.dumps(jdata), name='train_attr/training_script', dtype=tf.string)
 
     # run options
     run_opt = RunOptions(
@@ -86,10 +93,10 @@ def train(
         log.info(message)
 
     run_opt.print_resource_summary()
-    _do_work(jdata, run_opt)
+    _do_work(jdata, run_opt, is_compress)
 
 
-def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
+def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = False):
     """Run serial model training.
 
     Parameters
@@ -98,6 +105,8 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
         arguments read form json/yaml control file
     run_opt : RunOptions
         object with run configuration
+    is_compress : Bool
+        indicates whether in model compress mode
 
     Raises
     ------
@@ -112,7 +121,7 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
         reset_default_tf_session_config(cpu_only=True)
 
     # init the model
-    model = DPTrainer(jdata, run_opt=run_opt)
+    model = DPTrainer(jdata, run_opt=run_opt, is_compress = is_compress)
     rcut = model.model.get_rcut()
     type_map = model.model.get_type_map()
     if len(type_map) == 0:
@@ -129,25 +138,31 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
     # setup data modifier
     modifier = get_modifier(jdata["model"].get("modifier", None))
 
-    # init data
-    train_data = get_data(jdata["training"]["training_data"], rcut, ipt_type_map, modifier)
-    train_data.print_summary("training")
-    if jdata["training"].get("validation_data", None) is not None:
-        valid_data = get_data(jdata["training"]["validation_data"], rcut, ipt_type_map, modifier)
-        valid_data.print_summary("validation")
-    else:
-        valid_data = None
+    # decouple the training data from the model compress process
+    train_data = None
+    valid_data = None
+    if is_compress == False:
+        # init data
+        train_data = get_data(jdata["training"]["training_data"], rcut, ipt_type_map, modifier)
+        train_data.print_summary("training")
+        if jdata["training"].get("validation_data", None) is not None:
+            valid_data = get_data(jdata["training"]["validation_data"], rcut, ipt_type_map, modifier)
+            valid_data.print_summary("validation")
 
     # get training info
     stop_batch = j_must_have(jdata["training"], "numb_steps")
     model.build(train_data, stop_batch)
 
-    # train the model with the provided systems in a cyclic way
-    start_time = time.time()
-    model.train(train_data, valid_data)
-    end_time = time.time()
-    log.info("finished training")
-    log.info(f"wall time: {(end_time - start_time):.3f} s")
+    if is_compress == False:
+        # train the model with the provided systems in a cyclic way
+        start_time = time.time()
+        model.train(train_data, valid_data)
+        end_time = time.time()
+        log.info("finished training")
+        log.info(f"wall time: {(end_time - start_time):.3f} s")
+    else:
+        model.save_compressed()
+        log.info("finished compressing")
 
 
 def get_data(jdata: Dict[str, Any], rcut, type_map, modifier):

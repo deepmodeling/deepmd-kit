@@ -255,11 +255,6 @@ def parse_args(args: Optional[List[str]] = None):
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser_compress.add_argument(
-        "INPUT",
-        help="The input parameter file in json or yaml format, which should be "
-        "consistent with the original model parameter file",
-    )
-    parser_compress.add_argument(
         "-i",
         "--input",
         default="frozen_model.pb",
