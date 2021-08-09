@@ -23,11 +23,11 @@ class TestDataDocker (unittest.TestCase) :
         self.test_ndof = 2
         self.nsys = 4
         self.nset = 3
+        self.data_systems = []
         for method in range(self.nmethod):
+            sub_sys = {}
             nname = 'method_%d' % method
             os.makedirs(nname, exist_ok = True)
-            nbatch_size = 1
-            ntest_size = 1
             sys_name_total = []
             for ii in range(self.nsys) :
                 sys_name = os.path.join(nname, 'sys_%d' % ii)
@@ -48,8 +48,10 @@ class TestDataDocker (unittest.TestCase) :
                     path = os.path.join(set_name, 'test.npy')
                     val = np.random.random([self.nframes[ii]+jj, self.natoms[ii]*self.test_ndof])
                     np.save(path, val)
-            ds = DeepmdDataSystem(sys_name_total, nbatch_size, ntest_size, 2.0, name = nname)
-            self.dsmt_list.append(ds)
+            sub_sys['data'] = sys_name_total
+            sub_sys['name'] = nname
+            self.data_systems.append(sub_sys)
+            
         
     def tearDown(self):
         for method in range(self.nmethod):
@@ -59,15 +61,15 @@ class TestDataDocker (unittest.TestCase) :
 
     def test_ntypes(self) :
         batch_size = 2
-        ds = DeepmdDataDocker(self.dsmt_list, batch_size)
+        ds = DeepmdDataDocker(self.data_systems, batch_size, rcut = 2.0)
         self.assertEqual(ds.get_nmethod(), self.nmethod)
-        self.assertEqual(ds.get_nbatches(), [7, 13, 11, 9, 7, 13, 11, 9])
+        self.assertEqual(ds.get_nbatches(), [5, 10, 8, 7, 5, 10, 8, 7])
         self.assertEqual(ds.get_name(), ['method_0','method_1'])
-        self.assertEqual(list(ds.get_batch_size()), [1, 1, 1, 1, 1, 1, 1, 1])
+        self.assertEqual(list(ds.get_batch_size()), [2, 2, 2, 2, 2, 2, 2, 2])
         
     def test_get_data_system(self):
         batch_size = 2
-        ds = DeepmdDataDocker(self.dsmt_list, batch_size)
+        ds = DeepmdDataDocker(self.data_systems, batch_size, rcut = 2.0)
         pick_idx = 0
         method_name = 'method_%d' % pick_idx
         self.assertEqual(ds.get_data_system_idx(pick_idx).get_name(), method_name)
@@ -75,7 +77,7 @@ class TestDataDocker (unittest.TestCase) :
 
     def test_get_batch(self):
         batch_size = 2
-        ds = DeepmdDataDocker(self.dsmt_list, batch_size)
+        ds = DeepmdDataDocker(self.data_systems, batch_size, rcut = 2.0)
         for i in range(self.nmethod):
             ds.get_data_system_idx(i).add('test', self.test_ndof, atomic = True, must = True)
             ds.get_data_system_idx(i).add('null', self.test_ndof, atomic = True, must = False)

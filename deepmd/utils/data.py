@@ -157,11 +157,11 @@ class DeepmdData() :
         }
         return self
 
-    def get_data_dict(self):
+    def get_data_dict(self) -> (dict, str):
         """
         Get the `data_dict`
         """
-        return self.data_dict,self.name
+        return self.data_dict, self.name
 
     def check_batch_size (self, batch_size) :        
         """

@@ -19,7 +19,7 @@ from deepmd.train.trainer_mt import DPTrainer_mt
 from deepmd.utils.argcheck import normalize
 from deepmd.utils.argcheck_mt import normalize_mt
 from deepmd.utils.compat import updata_deepmd_input
-from deepmd.utils.data_system import DeepmdDataSystem,DeepmdDataDocker
+from deepmd.utils.data_system import DeepmdDataSystem, DeepmdDataDocker
 from deepmd.utils.sess import run_sess
 from deepmd.utils.neighbor_stat import NeighborStat
 
@@ -125,6 +125,7 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
         reset_default_tf_session_config(cpu_only=True)
 
     # init the model
+    rcut_list = []
     if not run_opt.multi_task:
         model = DPTrainer(jdata, run_opt=run_opt)
         rcut = model.model.get_rcut()
@@ -133,8 +134,9 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
         model = DPTrainer_mt(jdata, run_opt=run_opt)
         for model_name in model.model_dict.keys():
             sub_model = model.model_dict[model_name]
-            rcut = sub_model.get_rcut()
+            rcut_list.append(sub_model.get_rcut())
             type_map = sub_model.get_type_map()
+        rcut = max(rcut_list)
 
     if len(type_map) == 0:
         ipt_type_map = None
@@ -225,28 +227,15 @@ def get_data_mt(jdata: Dict[str, Any], rcut, type_map, modifier):
     batch_size = j_must_have(jdata, "batch_size")
     sys_probs = jdata.get("sys_probs", None)
     auto_prob = jdata.get("auto_prob", "prob_sys_size")
-    total_data = []
-    for sub_sys in systems:
-        data = DeepmdDataSystem(
-            systems=sub_sys['data'],
-            batch_size=batch_size,
-            test_size=1,        # to satisfy the old api
-            shuffle_test=True,  # to satisfy the old api
-            rcut=rcut,
-            #type_map=sub_fitting['type_map'],  # this is the local type map
-            type_map=type_map,  # this is the local type map
-            modifier=modifier,
-            trn_all_set=True,    # sample from all sets
-            sys_probs=sys_probs,
-            auto_prob_style=auto_prob,
-            name = sub_sys['name']
-        )
-        data.add_dict(data_requirement)
-        total_data.append(data)
+    
     docker = DeepmdDataDocker(
-        data_systems=total_data,
+        data_systems=systems,
         batch_size = batch_size,
-        type_map=type_map   # in the data docker is the total type
+        rcut = rcut,
+        type_map = type_map,   # in the data docker is the total type
+        sys_probs = sys_probs,
+        auto_prob_style = auto_prob,
+        modifier = modifier,
     )
     return docker
 
@@ -269,14 +258,23 @@ def get_modifier(modi_data=None):
     return modifier
 
 
-def get_rcut(jdata):
-    descrpt_data = jdata['model']['descriptor']
+def parse_rcut(descrpt_data):
     rcut_list = []
     if descrpt_data['type'] == 'hybrid':
         for ii in descrpt_data['list']:
             rcut_list.append(ii['rcut'])
     else:
         rcut_list.append(descrpt_data['rcut'])
+    return rcut_list
+
+def get_rcut(jdata):
+    descrpt_data = jdata['model']['descriptor']
+    rcut_list = []
+    if isinstance(descrpt_data,list):
+        for sub_descrpt in descrpt_data:
+            rcut_list.extend(parse_rcut(sub_descrpt))
+    else:
+        rcut_list.extend(parse_rcut(descrpt_data))
     return max(rcut_list)
 
 
@@ -284,13 +282,18 @@ def get_type_map(jdata):
     return jdata['model'].get('type_map', None)
 
 
-def get_sel(jdata, rcut):
+def get_sel(jdata, rcut, data_sys_name = None): 
     max_rcut = get_rcut(jdata)
     type_map = get_type_map(jdata)
 
     if type_map and len(type_map) == 0:
         type_map = None
-    train_data = get_data(jdata["training"]["training_data"], max_rcut, type_map, None)
+    if 'tasks' in jdata["training"].keys(): 
+        train_data = get_data_mt(jdata["training"]["training_data"], max_rcut, type_map, None)
+        train_data = train_data.get_data_system(data_sys_name)
+    else:
+        train_data = get_data(jdata["training"]["training_data"], max_rcut, type_map, None)
+
     train_data.get_batch()
     data_ntypes = train_data.get_ntypes()
     if type_map is not None:
@@ -336,7 +339,16 @@ def wrap_up_4(xx):
 
 def update_one_sel(jdata, descriptor):
     rcut = descriptor['rcut']
-    tmp_sel = get_sel(jdata, rcut)
+    data_sys_name = ''
+    if 'name' in descriptor.keys():
+        sys_name = descriptor['name']
+        for sub_task in jdata['training']['tasks']: 
+            # find the data system we want, which using the specific descriptor
+            if sub_task['descriptor'] == sys_name:
+                data_sys_name = sub_task['name']
+                break
+    tmp_sel = get_sel(jdata, rcut, data_sys_name)
+
     if parse_auto_sel(descriptor['sel']) :
         ratio = parse_auto_sel_ratio(descriptor['sel'])
         descriptor['sel'] = [int(wrap_up_4(ii * ratio)) for ii in tmp_sel]
@@ -354,23 +366,23 @@ def update_one_sel(jdata, descriptor):
     return descriptor
 
 
+def parse_auto_descrpt(jdata,descrpt_data):
+    if descrpt_data['type'] == 'hybrid':
+        for ii in range(len(descrpt_data['list'])):
+            descrpt_data['list'][ii] = update_one_sel(jdata, descrpt_data['list'][ii])
+    else:
+        descrpt_data = update_one_sel(jdata, descrpt_data)
+    return descrpt_data
+
 def update_sel(jdata):    
     descrpt_data = jdata['model']['descriptor']
     if isinstance(descrpt_data,list):
         update_descrpt = []
         for sub_descrpt in descrpt_data:
-            if sub_descrpt['type'] == 'hybrid':
-                for ii in range(len(sub_descrpt['list'])):
-                    sub_descrpt['list'][ii] = update_one_sel(jdata, sub_descrpt['list'][ii])
-            else:
-                sub_descrpt = update_one_sel(jdata, sub_descrpt)
+            sub_descrpt = parse_auto_descrpt(jdata, sub_descrpt)
             update_descrpt.append(sub_descrpt)
         jdata['model']['descriptor'] = update_descrpt
     else:
-        if descrpt_data['type'] == 'hybrid':
-            for ii in range(len(descrpt_data['list'])):
-                descrpt_data['list'][ii] = update_one_sel(jdata, descrpt_data['list'][ii])
-        else:
-            descrpt_data = update_one_sel(jdata, descrpt_data)
+        descrpt_data = parse_auto_descrpt(jdata, descrpt_data)
         jdata['model']['descriptor'] = descrpt_data
     return jdata

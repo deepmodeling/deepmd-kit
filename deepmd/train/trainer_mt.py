@@ -33,48 +33,9 @@ from deepmd.env import op_module
 import deepmd.op
 
 from deepmd.common import j_must_have, ClassArg
+from .trainer import _is_subdir, _generate_descrpt_from_param_dict
 
 log = logging.getLogger(__name__)
-
-
-def _is_subdir(path, directory):
-    path = os.path.realpath(path)
-    directory = os.path.realpath(directory)
-    if path == directory:
-        return False
-    relative = os.path.relpath(path, directory) + os.sep
-    return not relative.startswith(os.pardir + os.sep)
-
-def _generate_descrpt_from_param_dict(descrpt_param):
-    try:
-        descrpt_type = descrpt_param['type']
-    except KeyError:
-        raise KeyError('the type of descriptor should be set by `type`')
-    descrpt_param.pop('type', None)
-    to_pop = []
-    for kk in descrpt_param:
-        if kk[0] == '_':
-            to_pop.append(kk)
-    for kk in to_pop:
-        descrpt_param.pop(kk, None)
-    if descrpt_type == 'loc_frame':
-        descrpt = DescrptLocFrame(**descrpt_param)
-    elif descrpt_type == 'se_e2_a' or descrpt_type == 'se_a' :
-        descrpt = DescrptSeA(**descrpt_param)
-    elif descrpt_type == 'se_e2_r' or descrpt_type == 'se_r' :
-        descrpt = DescrptSeR(**descrpt_param)
-    elif descrpt_type == 'se_e3' or descrpt_type == 'se_at' or descrpt_type == 'se_a_3be' :
-        descrpt = DescrptSeT(**descrpt_param)
-    elif descrpt_type == 'se_a_tpe' or descrpt_type == 'se_a_ebd' :
-        descrpt = DescrptSeAEbd(**descrpt_param)
-    elif descrpt_type == 'se_a_ef' :
-        descrpt = DescrptSeAEf(**descrpt_param)
-    elif descrpt_type == 'se_ar' :
-        descrpt = DescrptSeAR(descrpt_param)
-    else :
-        raise RuntimeError('unknow model type ' + descrpt_type)
-    return descrpt
-    
 
 
 class DPTrainer_mt (object):
@@ -353,15 +314,12 @@ class DPTrainer_mt (object):
                 = self.neighbor_stat.get_stat(data)
             self.descrpt.enable_compression(self.min_nbor_dist, self.model_param['compress']['model_file'], self.model_param['compress']['table_config'][0], self.model_param['compress']['table_config'][1], self.model_param['compress']['table_config'][2], self.model_param['compress']['table_config'][3])
 
-        worker_device = "/job:%s/task:%d/%s" % (self.run_opt.my_job_name,
-                                                self.run_opt.my_task_index,
-                                                self.run_opt.my_device)
+        
 
-        with tf.device(tf.train.replica_device_setter(worker_device = worker_device,
-                                                      cluster = self.run_opt.cluster_spec)):
-            self._build_lr()
-            self._build_network(data)
-            self._build_training(data)
+
+        self._build_lr()
+        self._build_network(data)
+        self._build_training(data)
 
 
     def _build_lr(self):
@@ -374,7 +332,7 @@ class DPTrainer_mt (object):
 
     def _build_network(self, data):        
         self.place_holders = {}
-        data_dict,data_name = data.get_data_dict() 
+        data_dict, data_name = data.get_data_dict() 
         for kk in data_dict.keys():
             if kk == 'type':
                 continue
@@ -423,15 +381,7 @@ class DPTrainer_mt (object):
         self.optimizer_dict = {}
         for loss_name in self.loss_dict.keys():
             sub_loss = self.loss_dict[loss_name]
-            optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate_dict[loss_name])
-
-            if self.run_opt.is_distrib :
-                optimizer = tf.train.SyncReplicasOptimizer(
-                    optimizer,
-                    replicas_to_aggregate = self.run_opt.cluster_spec.num_tasks("worker"),
-                    total_num_replicas = self.run_opt.cluster_spec.num_tasks("worker"),
-                    name = "sync_replicas")
-                self.sync_replicas_hook = optimizer.make_session_run_hook(self.run_opt.is_chief)   
+            optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate_dict[loss_name])   
             self.optimizer_dict[loss_name] = optimizer  
         grads = tf.gradients(self.l2_l_dict[data_name], trainable_variables)
         apply_op = self.optimizer_dict[data_name].apply_gradients (zip (grads, trainable_variables),
@@ -467,51 +417,6 @@ class DPTrainer_mt (object):
         else :
             raise RuntimeError ("unkown init mode")
 
-    def _init_sess_distrib(self):
-        ckpt_dir = os.path.join(os.getcwd(), self.save_ckpt)
-        assert(_is_subdir(ckpt_dir, os.getcwd())), "the checkpoint dir must be a subdir of the current dir"
-        if self.run_opt.init_mode == 'init_from_scratch' :
-            log.info("initialize model from scratch")
-            if self.run_opt.is_chief :
-                if os.path.exists(ckpt_dir):
-                    shutil.rmtree(ckpt_dir)
-                if not os.path.exists(ckpt_dir) :
-                    os.makedirs(ckpt_dir)
-                fp = open(self.disp_file, "w")
-                fp.close ()
-        elif self.run_opt.init_mode == 'init_from_model' :
-            raise RuntimeError("distributed training does not support %s" % self.run_opt.init_mode)
-        elif self.run_opt.init_mode == 'restart' :
-            log.info("restart from model %s" % ckpt_dir)
-            if self.run_opt.is_chief :
-                assert(os.path.isdir(ckpt_dir)), "the checkpoint dir %s should exists" % ckpt_dir
-        else :
-            raise RuntimeError ("unkown init mode")
-
-        saver = tf.train.Saver(max_to_keep = 1)
-        self.saver = None
-        # gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.5)
-        # config = tf.ConfigProto(allow_soft_placement=True,
-        #                         gpu_options = gpu_options,
-        #                         intra_op_parallelism_threads=self.run_opt.num_intra_threads,
-        #                         inter_op_parallelism_threads=self.run_opt.num_inter_threads)
-        config = tf.ConfigProto(intra_op_parallelism_threads=self.run_opt.num_intra_threads,
-                                inter_op_parallelism_threads=self.run_opt.num_inter_threads)
-        # The stop_hook handles stopping after running given steps
-        # stop_hook = tf.train.StopAtStepHook(last_step = stop_batch)
-        # hooks = [self.sync_replicas_hook, stop_hook]
-        hooks = [self.sync_replicas_hook]
-        scaffold = tf.train.Scaffold(saver=saver)
-        # Use monitor session for distributed computation
-        self.sess = tf.train.MonitoredTrainingSession(master = self.run_opt.server.target,
-                                                      is_chief = self.run_opt.is_chief,
-                                                      config = config,
-                                                      hooks = hooks,
-                                                      scaffold = scaffold,
-                                                      checkpoint_dir = ckpt_dir)
-        # ,
-        # save_checkpoint_steps = self.save_freq)
-
     def train (self, train_data, valid_data=None) :
 
         # if valid_data is None:  # no validation set specified.
@@ -519,7 +424,7 @@ class DPTrainer_mt (object):
 
         stop_batch = self.stop_batch
         if self.run_opt.is_distrib :
-            self._init_sess_distrib()
+            raise RuntimeError('distributed training for multi-task is not supported at the moment')
         else :
             self._init_sess_serial()
 

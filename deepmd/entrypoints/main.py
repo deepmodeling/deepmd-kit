@@ -163,7 +163,7 @@ def parse_args(args: Optional[List[str]] = None):
         help="The output file of the parameters used in training.",
     )
     parser_train.add_argument(
-        "-mu",
+        "-mt",
         "--multi_task",
         type=bool,
         default=False,

@@ -9,6 +9,7 @@ from typing import Tuple, List
 
 from deepmd.utils.data import DataSets
 from deepmd.utils.data import DeepmdData
+from deepmd.common import data_requirement
 
 log = logging.getLogger(__name__)
 
@@ -524,9 +525,13 @@ class DeepmdDataDocker() :
     It is implemented with the help of DeepmdData
     """
     def __init__ (self,
-                  data_systems : List[DeepmdDataSystem],
+                  data_systems,
                   batch_size : int,
-                  type_map : List[str] = None
+                  rcut : int,
+                  type_map : List[str] = None,
+                  sys_probs = None,
+                  auto_prob_style ="prob_sys_size",
+                  modifier = None,
                   ) :
         """
         Constructor
@@ -541,8 +546,27 @@ class DeepmdDataDocker() :
                 Gives the name of different atom types
         """
         # init data
+        total_data = []
+        for sub_sys in data_systems:
+            sys_name = sub_sys['name']
+            data = DeepmdDataSystem(
+                systems=sub_sys['data'],
+                batch_size=batch_size,
+                test_size=1,        # to satisfy the old api
+                shuffle_test=True,  # to satisfy the old api
+                rcut=rcut,
+                #type_map=sub_fitting['type_map'],  # this is the local type map
+                type_map=type_map,  # this is the local type map
+                modifier=modifier,
+                trn_all_set=True,    # sample from all sets
+                sys_probs=sys_probs,
+                auto_prob_style=auto_prob_style,
+                name = sys_name
+            )
+            data.add_dict(data_requirement)
+            total_data.append(data)
+        self.data_systems = total_data
         self.batch_size = batch_size
-        self.data_systems = data_systems
         # natoms, nbatches
         self.nmethod = len(self.data_systems)
         self.pick_idx = 0
