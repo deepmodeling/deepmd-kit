@@ -338,10 +338,10 @@ def model_compression():
     doc_min_nbor_dist = f"The nearest distance between neighbor atoms saved in the frozen model."
     
     return [
-        Argument("compress", bool, optional = False, default = True, doc = doc_compress),
-        Argument("model_file", str, optional = False, default = 'frozen_model.pb', doc = doc_model_file),
-        Argument("table_config", list, optional = False, default = [5, 0.01, 0.1, -1], doc = doc_table_config),
-        Argument("min_nbor_dist", float, optional = False, default = 0.0, doc = doc_min_nbor_dist),
+        Argument("compress", bool, optional = False, doc = doc_compress),
+        Argument("model_file", str, optional = False, doc = doc_model_file),
+        Argument("table_config", list, optional = False, doc = doc_table_config),
+        Argument("min_nbor_dist", float, optional = False, doc = doc_min_nbor_dist),
     ]
 
 #  --- model compression configurations: --- #
