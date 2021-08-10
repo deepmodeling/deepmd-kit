@@ -15,3 +15,5 @@ _add_lmp_variant("${LOW_PREC_VARIANT}" "${LOW_PREC_DEF}")
 
 configure_file("pair_deepmd.h.in" "pair_deepmd.h" @ONLY)
 configure_file("lammps_install_list.txt.in" "lammps_install_list.txt" @ONLY)
+
+add_subdirectory(plugin)

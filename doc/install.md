@@ -2,7 +2,7 @@
 
 - [Easy installation methods](#easy-installation-methods)
 - [Install from source code](#install-from-source-code)
-- [Install i-PI](#install-i-pi)
+- [Install third-party packages](#install-third-party-packages)
 - [Building conda packages](#building-conda-packages)
 
 ## Easy installation methods
@@ -204,6 +204,7 @@ One may add the following arguments to `cmake`:
 | -DCUDA_TOOLKIT_ROOT_DIR=&lt;value&gt; | Path         | Detected automatically | The path to the CUDA toolkit directory. |
 | -DUSE_ROCM_TOOLKIT=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build GPU support with ROCM toolkit. |
 | -DROCM_ROOT=&lt;value&gt; | Path         | Detected automatically | The path to the ROCM toolkit directory. |
+| -LAMMPS_SOURCE_ROOT=&lt;value&gt; | Path         | - | The path to the LAMMPS source code (later than 8Apr2021). |
 
 If the cmake has executed successfully, then 
 ```bash
@@ -215,46 +216,39 @@ The option `-j4` means using 4 processes in parallel. You may want to use a diff
 If everything works fine, you will have the following executable and libraries installed in `$deepmd_root/bin` and `$deepmd_root/lib`
 ```bash
 $ ls $deepmd_root/bin
-dp_ipi
+dp_ipi      dp_ipi_low
 $ ls $deepmd_root/lib
-libdeepmd_ipi.so  libdeepmd_op.so  libdeepmd.so
+libdeepmd_cc_low.so  libdeepmd_ipi_low.so  libdeepmd_lmp_low.so  libdeepmd_low.so          libdeepmd_op_cuda.so  libdeepmd_op.so
+libdeepmd_cc.so      libdeepmd_ipi.so      libdeepmd_lmp.so      libdeepmd_op_cuda_low.so  libdeepmd_op_low.so   libdeepmd.so
 ```
 
-### Install LAMMPS's DeePMD-kit module
-DeePMD-kit provide module for running MD simulation with LAMMPS. Now make the DeePMD-kit module for LAMMPS.
-```bash
-cd $deepmd_source_dir/source/build
-make lammps
-```
-DeePMD-kit will generate a module called `USER-DEEPMD` in the `build` directory. If you need low precision version, move `env_low.sh` to `env.sh` in the directory. Now download the LAMMPS code (`29Oct2020` or later), and uncompress it:
+## Install third-party packages
+### Install LAMMPS
+DeePMD-kit provide module for running MD simulation with LAMMPS.
+
+DeePMD-kit will generate a module called `USER-DEEPMD` in the `build` directory. If you need low precision version, move `env_low.sh` to `env.sh` in the directory. Now download the LAMMPS code (`8Apr2021` or later), and uncompress it:
 ```bash
 cd /some/workspace
-wget https://github.com/lammps/lammps/archive/stable_29Oct2020.tar.gz
-tar xf stable_29Oct2020.tar.gz
+wget https://github.com/lammps/lammps/archive/patch_30Jul2021.tar.gz
+tar xf patch_30Jul2021.tar.gz
 ```
-The source code of LAMMPS is stored in directory `lammps-stable_29Oct2020`. Now go into the LAMMPS code and copy the DeePMD-kit module like this
+The source code of LAMMPS is stored in directory `lammps-patch_30Jul2021`. Now go into the LAMMPS code and create a directory called `build`
 ```bash
-cd lammps-stable_29Oct2020/src/
-cp -r $deepmd_source_dir/source/build/USER-DEEPMD .
+mkdir -p lammps-patch_30Jul2021/build/
+cd lammps-patch_30Jul2021/build/
 ```
-Now build LAMMPS
+Now build LAMMPS. Note that `PLUGIN` and `KSPACE` package must be enabled, and `BUILD_SHARED_LIBS` must be set to `yes`.
 ```bash
-make yes-kspace
-make yes-user-deepmd
-make mpi -j4
+cmake -D PKG_PLUGIN=ON -D PKG_KSPACE=ON -D LAMMPS_INSTALL_RPATH=ON -D BUILD_SHARED_LIBS=yes -D CMAKE_INSTALL_PREFIX=${deepmd_root} ../cmake
+make -j4
 ```
 
-If everything works fine, you will end up with an executable `lmp_mpi`.
+If everything works fine, you will end up with an executable `${deepmd_root}/lmp`.
 ```bash
-./lmp_mpi -h
+${deepmd_root}/lmp -h
 ```
 
-The DeePMD-kit module can be removed from LAMMPS source code by 
-```bash
-make no-user-deepmd
-```
-
-## Install i-PI
+### Install i-PI
 The i-PI works in a client-server model. The i-PI provides the server for integrating the replica positions of atoms, while the DeePMD-kit provides a client named `dp_ipi` that computes the interactions (including energy, force and virial). The server and client communicates via the Unix domain socket or the Internet socket. A full instruction of i-PI can be found [here](http://ipi-code.org/). The source code and a complete installation instructions of i-PI can be found [here](https://github.com/i-pi/i-pi).
 To use i-PI with already existing drivers, install and update using Pip:
 ```bash

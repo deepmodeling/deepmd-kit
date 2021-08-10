@@ -414,6 +414,12 @@ Note that the model for MD simulations is required to be compatible with the Dee
 
 ### Run MD with LAMMPS
 
+Firstly, enable DeePMD-kit package in LAMMPS with `plugin` command:
+
+```
+plugin load path/to/deepmd/lib/libdeepmd_lmp.so
+```
+
 #### pair_style `deepmd`
 
 The DeePMD-kit package provides the pair_style `deepmd`
