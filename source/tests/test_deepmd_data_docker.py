@@ -83,7 +83,7 @@ class TestDataDocker (unittest.TestCase) :
             ds.get_data_system_idx(i).add('null', self.test_ndof, atomic = True, must = False)
         method_idx = 0
         sys_idx = 0
-        data = ds.get_batch(method_idx = method_idx,sys_idx=sys_idx)
+        data = ds.get_batch(method_idx = method_idx,sys_idx=sys_idx)['data']
         self.assertEqual(list(data['type'][0]), list(np.sort(self.atom_type[sys_idx])))
         self._in_array(np.load('method_0/sys_0/set.000/coord.npy'),
                        ds.get_data_system_idx(method_idx).get_sys(sys_idx).idx_map,
@@ -99,7 +99,7 @@ class TestDataDocker (unittest.TestCase) :
                                               data['null']
         ), 0.0)
         sys_idx = 2
-        data = ds.get_batch(method_idx = method_idx,sys_idx=sys_idx)
+        data = ds.get_batch(method_idx = method_idx,sys_idx=sys_idx)['data']
         self.assertEqual(list(data['type'][0]), list(np.sort(self.atom_type[sys_idx])))
         self._in_array(np.load('method_0/sys_2/set.000/coord.npy'),
                        ds.get_data_system_idx(method_idx).get_sys(sys_idx).idx_map,

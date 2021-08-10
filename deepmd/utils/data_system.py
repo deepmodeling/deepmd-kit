@@ -340,7 +340,7 @@ class DeepmdDataSystem() :
         b_data = self.data_systems[self.pick_idx].get_batch(self.batch_size[self.pick_idx])
         b_data["natoms_vec"] = self.natoms_vec[self.pick_idx]
         b_data["default_mesh"] = self.default_mesh[self.pick_idx]
-        return b_data
+        return  b_data
 
     # ! altered by Marián Rynik
     def get_test (self, 
@@ -567,39 +567,102 @@ class DeepmdDataDocker() :
             total_data.append(data)
         self.data_systems = total_data
         self.batch_size = batch_size
+        self.sys_probs = sys_probs
         # natoms, nbatches
         self.nmethod = len(self.data_systems)
         self.pick_idx = 0
         nbatch_list = []
         batch_size_list=[]
         name_list = []
+        method_nbatch = []
         for ii in range(self.nmethod) :
             nbatch_list.extend(self.data_systems[ii].get_nbatches())
+            method_nbatch.append(np.sum(self.data_systems[ii].get_nbatches()))
             batch_size_list.extend(self.data_systems[ii].get_batch_size())
             name_list.append(str(self.data_systems[ii].get_name()))
         self.type_map = type_map
         self.nbatches = list(nbatch_list)
+        self.method_nbatch = list(method_nbatch)
         self.batch_size = list(batch_size_list)
         self.name_list = list(name_list)
+        self.prob_nmethod = [ float(i) for i in self.method_nbatch] / np.sum(self.method_nbatch) 
+        self.set_sys_probs(sys_probs, auto_prob_style)
+        
+
 
 
     def get_nmethod(self):
         return self.nmethod
-        
-    def get_batch(self, method_idx : int = None,sys_idx : int = None):
+    
+    def set_sys_probs(self, sys_probs=None,
+                      auto_prob_style: str = "prob_sys_size"):
+        if sys_probs is None :
+            if auto_prob_style == "prob_uniform":
+                prob_v = 1./float(self.nmethod)
+                probs = [prob_v for ii in range(self.nmethod)]
+            elif auto_prob_style == "prob_sys_size":
+                probs = self.prob_nmethod
+            elif auto_prob_style[:14] == "prob_sys_size;":
+                probs = self._prob_sys_size_ext(auto_prob_style)
+            else:
+                raise RuntimeError("Unknown auto prob style: " + auto_prob_style)
+        else:
+            probs = self._process_sys_probs(sys_probs)
+        self.sys_probs = probs
+
+    def _get_sys_probs(self,
+                       sys_probs,
+                       auto_prob_style) :  # depreciated
+        if sys_probs is None :
+            if auto_prob_style == "prob_uniform" :
+                prob_v = 1./float(self.nmethod)
+                prob = [prob_v for ii in range(self.nmethod)]
+            elif auto_prob_style == "prob_sys_size" :
+                prob = self.prob_nmethod
+            elif auto_prob_style[:14] == "prob_sys_size;" :
+                prob = self._prob_sys_size_ext(auto_prob_style)
+            else :
+                raise RuntimeError("unkown style " + auto_prob_style )
+        else :
+            prob = self._process_sys_probs(sys_probs)
+        return prob
+
+    def get_batch(self, method_idx : int = None, sys_idx : int = None):
+        # batch generation style be the same as DeepmdDataSystem
+        """
+        Get a batch of data from the data systems
+
+        Parameters
+        ----------
+        method_idx: int
+            The index of method from which the batch is get.
+        sys_idx: int
+            The index of system from which the batch is get. 
+            If sys_idx is not None, `sys_probs` and `auto_prob_style` are ignored
+            If sys_idx is None, automatically determine the system according to `sys_probs` or `auto_prob_style`, see the following.
+        """
         if method_idx is not None :
             self.pick_idx = method_idx
+        else :
+            # prob = self._get_sys_probs(sys_probs, auto_prob_style)
+            self.pick_idx = np.random.choice(np.arange(self.nmethod), p=self.sys_probs)
+        
         s_data = self.data_systems[self.pick_idx]
-        b_data = s_data.get_batch(sys_idx)
+        b_data = {}
+        b_data['data'] = s_data.get_batch(sys_idx)
+        b_data['pick_method'] = self.pick_idx
         
         return b_data
 
+
     def get_data_system(self,name):
-        for i in range(self.nmethod):
-            if self.name_list[i] == name:
-                return self.data_systems[i]
+        for iname, idata_system in zip(self.name_list, self.data_systems):
+            if iname == name:
+                return idata_system
+
     def get_data_system_idx(self,idx):
         return self.data_systems[idx]
+
     def get_type_map(self) -> List[str]:
         """
         Get the type map
@@ -638,6 +701,7 @@ class DeepmdDataDocker() :
         log.info("found %d methods(s):" % self.nmethod)
         for jj in range(self.nmethod):
             tmp_sys = self.data_systems[jj]
+            tmp_sys_prob = self.sys_probs[jj]
 
             log.info(("%s  " % tmp_sys._format_name_length('system', sys_width)) + 
                  ("%6s  %6s  %6s  %5s  %3s" % ('natoms', 'bch_sz', 'n_bch', 'prob', 'pbc')))
@@ -648,7 +712,7 @@ class DeepmdDataDocker() :
                       # TODO batch size * nbatches = number of structures
                       tmp_sys.batch_size[ii],
                       tmp_sys.nbatches[ii],
-                      tmp_sys.sys_probs[ii],
+                      tmp_sys_prob*tmp_sys.sys_probs[ii],
                       "T" if tmp_sys.data_systems[ii].pbc else "F"
                      ) )
             log.info("--------------------------------------------------------------------------------------")

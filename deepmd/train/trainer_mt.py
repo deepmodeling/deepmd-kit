@@ -319,7 +319,7 @@ class DPTrainer_mt (object):
 
         self._build_lr()
         self._build_network(data)
-        self._build_training(data)
+        self._build_training()
 
 
     def _build_lr(self):
@@ -363,7 +363,6 @@ class DPTrainer_mt (object):
 
         
             sub_loss = self.loss_dict[model_name] # model name should be the same as fitting and loss 
-            #if sub_loss.get_name() == data_name:
             tmp_l2_l, tmp_l2_more\
                     = sub_loss.build (self.learning_rate_dict[model_name],
                                self.place_holders['natoms_vec'], 
@@ -375,20 +374,20 @@ class DPTrainer_mt (object):
 
         log.info("built network")
 
-    def _build_training(self,data):
-        data_dict,data_name = data.get_data_dict() 
+    def _build_training(self):
         trainable_variables = tf.trainable_variables()
         self.optimizer_dict = {}
+        self.train_op_dict = {}
         for loss_name in self.loss_dict.keys():
             sub_loss = self.loss_dict[loss_name]
             optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate_dict[loss_name])   
             self.optimizer_dict[loss_name] = optimizer  
-        grads = tf.gradients(self.l2_l_dict[data_name], trainable_variables)
-        apply_op = self.optimizer_dict[data_name].apply_gradients (zip (grads, trainable_variables),
+            grads = tf.gradients(self.l2_l_dict[loss_name], trainable_variables)
+            apply_op = self.optimizer_dict[loss_name].apply_gradients (zip (grads, trainable_variables),
                                               global_step=self.global_step,
                                               name='train_step')
-        train_ops = [apply_op] + self._extra_train_ops
-        self.train_op = tf.group(*train_ops)
+            train_ops = [apply_op] + self._extra_train_ops
+            self.train_op_dict[loss_name] = tf.group(*train_ops)
         log.info("built training")
 
     def _init_sess_serial(self) :
@@ -469,10 +468,13 @@ class DPTrainer_mt (object):
         while cur_batch < stop_batch :
 
             # first round validation:
-            pick_method = np.random.randint(0,n_methods)
-            train_batch = train_data.get_batch(pick_method)
+            train_batch = train_data.get_batch()
+            pick_method = train_batch['pick_method']
+            method_name = self.method_name_list[pick_method]
+            train_batch = train_batch['data']
+
             if self.display_in_training and is_first_step:
-                valid_batches = [valid_data.get_batch(pick_method) for ii in range(self.valid_numb_batch)] if valid_data is not None else None
+                valid_batches = [valid_data.get_batch(pick_method)['data'] for ii in range(self.valid_numb_batch)] if valid_data is not None else None
                 self.valid_on_the_fly(fp, [train_batch], valid_batches,print_header=True,method = pick_method)
                 is_first_step = False
 
@@ -481,11 +483,11 @@ class DPTrainer_mt (object):
             # use tensorboard to visualize the training of deepmd-kit
             # it will takes some extra execution time to generate the tensorboard data
             if self.tensorboard :
-                summary, _ = self.sess.run([summary_merged_op, self.train_op], feed_dict=train_feed_dict,
+                summary, _ = self.sess.run([summary_merged_op, self.train_op_dict[method_name]], feed_dict=train_feed_dict,
                                            options=prf_options, run_metadata=prf_run_metadata)
                 tb_train_writer.add_summary(summary, cur_batch)
             else :
-                self.sess.run([self.train_op], feed_dict=train_feed_dict,
+                self.sess.run([self.train_op_dict[method_name]], feed_dict=train_feed_dict,
                               options=prf_options, run_metadata=prf_run_metadata)
             if self.timing_in_training: toc = time.time()
             if self.timing_in_training: train_time += toc - tic
@@ -496,7 +498,7 @@ class DPTrainer_mt (object):
             if self.display_in_training and (cur_batch % self.disp_freq == 0):
                 if self.timing_in_training:
                     tic = time.time()
-                valid_batches = [valid_data.get_batch(pick_method) for ii in range(self.valid_numb_batch)] if valid_data is not None else None
+                valid_batches = [valid_data.get_batch(pick_method)['data'] for ii in range(self.valid_numb_batch)] if valid_data is not None else None
                 self.valid_on_the_fly(fp, [train_batch], valid_batches,method=pick_method)
                 if self.timing_in_training:
                     toc = time.time()

@@ -154,21 +154,16 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
 
     # init data
     if run_opt.multi_task:
-        train_data = get_data_mt(jdata["training"]["training_data"], rcut, ipt_type_map, modifier)
-        train_data.print_summary("training")
-        if jdata["training"].get("validation_data", None) is not None:
-            valid_data = get_data_mt(jdata["training"]["validation_data"], rcut, ipt_type_map, modifier)
-            valid_data.print_summary("validation")
-        else:
-            valid_data = None
+        get_data_func = get_data_mt
     else:
-        train_data = get_data(jdata["training"]["training_data"], rcut, ipt_type_map, modifier)
-        train_data.print_summary("training")
-        if jdata["training"].get("validation_data", None) is not None:
-            valid_data = get_data(jdata["training"]["validation_data"], rcut, ipt_type_map, modifier)
-            valid_data.print_summary("validation")
-        else:
-            valid_data = None
+        get_data_func = get_data
+    train_data = get_data_func(jdata["training"]["training_data"], rcut, ipt_type_map, modifier)
+    train_data.print_summary("training")
+    if jdata["training"].get("validation_data", None) is not None:
+        valid_data = get_data_func(jdata["training"]["validation_data"], rcut, ipt_type_map, modifier)
+        valid_data.print_summary("validation")
+    else:
+        valid_data = None
 
     # get training info
     stop_batch = j_must_have(jdata["training"], "numb_steps")

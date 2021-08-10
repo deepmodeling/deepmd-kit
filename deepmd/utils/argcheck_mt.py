@@ -1,40 +1,13 @@
 from dargs import dargs, Argument, Variant
+from .argcheck import list_to_doc, make_link
+from .argcheck import type_embedding_args, descrpt_se_a_tpe_args, modifier_dipole_charge, modifier_variant_type_args
+from .argcheck import model_compression, model_compression_type_args
+from .argcheck import start_pref, limit_pref
+from .argcheck import training_data_args, validation_data_args, make_index, gen_doc
 # from deepmd.common import ACTIVATION_FN_DICT, PRECISION_DICT
 ACTIVATION_FN_DICT = {}
 PRECISION_DICT = {}
 
-def list_to_doc(xx):
-    items = []
-    for ii in xx:
-        if len(items) == 0:
-            items.append(f'"{ii}"')
-        else:
-            items.append(f', "{ii}"')
-    items.append('.')
-    return ''.join(items)
-
-
-def make_link(content, ref_key):
-    return f'`{content} <{ref_key}_>`_' if not dargs.RAW_ANCHOR \
-        else f'`{content} <#{ref_key}>`_'
-
-
-def type_embedding_args():
-    doc_neuron = 'Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.'
-    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
-    doc_seed = 'Random seed for parameter initialization'
-    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}'
-    doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}'
-    doc_trainable = 'If the parameters in the embedding net are trainable'
-
-    return [
-        Argument("neuron", list, optional=True, default=[2, 4, 8], doc=doc_neuron),
-        Argument("activation_function", str, optional=True, default='tanh', doc=doc_activation_function),
-        Argument("resnet_dt", bool, optional=True, default=False, doc=doc_resnet_dt),
-        Argument("precision", str, optional=True, default="float64", doc=doc_precision),
-        Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
-        Argument("seed", [int, None], optional=True, doc=doc_seed),
-    ]
 
 
 #  --- Descriptor configurations: --- #
@@ -119,16 +92,6 @@ def descrpt_se_t_args():
     ]
 
 
-def descrpt_se_a_tpe_args():
-    doc_type_nchanl = 'number of channels for type embedding'
-    doc_type_nlayer = 'number of hidden layers of type embedding net'
-    doc_numb_aparam = 'dimension of atomic parameter. if set to a value > 0, the atomic parameters are embedded.'
-
-    return descrpt_se_a_args() + [
-        Argument("type_nchanl", int, optional=True, default=4, doc=doc_type_nchanl),
-        Argument("type_nlayer", int, optional=True, default=2, doc=doc_type_nlayer),
-        Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam)
-    ]
 
 
 def descrpt_se_r_args():
@@ -319,8 +282,6 @@ def fitting_dipole():
         Argument("seed", [int, None], optional=True, doc=doc_seed)
     ]
 
-
-#   YWolfeee: Delete global polar mode, merge it into polar mode and use loss setting to support.
 def fitting_variant_type_args():
     doc_descrpt_type = 'The type of the fitting. See explanation below. \n\n\
 - `ener`: Fit an energy model (potential energy surface).\n\n\
@@ -334,60 +295,6 @@ def fitting_variant_type_args():
                    optional=True,
                    default_tag='ener',
                    doc=doc_descrpt_type)
-
-
-#  --- Modifier configurations: --- #
-def modifier_dipole_charge():
-    doc_model_name = "The name of the frozen dipole model file."
-    doc_model_charge_map = f"The charge of the WFCC. The list length should be the same as the {make_link('sel_type', 'model/fitting_net[dipole]/sel_type')}. "
-    doc_sys_charge_map = f"The charge of real atoms. The list length should be the same as the {make_link('type_map', 'model/type_map')}"
-    doc_ewald_h = f"The grid spacing of the FFT grid. Unit is A"
-    doc_ewald_beta = f"The splitting parameter of Ewald sum. Unit is A^{-1}"
-
-    return [
-        Argument("model_name", str, optional=False, doc=doc_model_name),
-        Argument("model_charge_map", list, optional=False, doc=doc_model_charge_map),
-        Argument("sys_charge_map", list, optional=False, doc=doc_sys_charge_map),
-        Argument("ewald_beta", float, optional=True, default=0.4, doc=doc_ewald_beta),
-        Argument("ewald_h", float, optional=True, default=1.0, doc=doc_ewald_h),
-    ]
-
-
-def modifier_variant_type_args():
-    doc_modifier_type = "The type of modifier. See explanation below.\n\n\
--`dipole_charge`: Use WFCC to model the electronic structure of the system. Correct the long-range interaction"
-    return Variant("type",
-                   [
-                       Argument("dipole_charge", dict, modifier_dipole_charge()),
-                   ],
-                   optional=False,
-                   doc=doc_modifier_type)
-
-
-#  --- model compression configurations: --- #
-def model_compression():
-    doc_compress = "The name of the frozen model file."
-    doc_model_file = f"The input model file, which will be compressed by the DeePMD-kit."
-    doc_table_config = f"The arguments of model compression, including extrapolate(scale of model extrapolation), stride(uniform stride of tabulation's first and second table), and frequency(frequency of tabulation overflow check)."
-
-    return [
-        Argument("compress", bool, optional=False, default=True, doc=doc_compress),
-        Argument("model_file", str, optional=False, default='frozen_model.pb', doc=doc_model_file),
-        Argument("table_config", list, optional=False, default=[5, 0.01, 0.1, -1], doc=doc_table_config),
-    ]
-
-
-#  --- model compression configurations: --- #
-def model_compression_type_args():
-    doc_compress_type = "The type of model compression, which should be consistent with the descriptor type."
-
-    return Variant("type", [
-        Argument("se_e2_a", dict, model_compression(), alias=['se_a'])
-    ],
-                   optional=True,
-                   default_tag='se_e2_a',
-                   doc=doc_compress_type)
-
 
 def model_args():
     doc_type_map = 'A list of strings. Give the name to each type of atoms. It is noted that the number of atom type of training system must be less than 128 in a GPU environment.'
@@ -436,7 +343,6 @@ def learning_rate_exp():
     ]
     return args
 
-
 def learning_rate_variant_type_args():
     doc_lr = 'The type of the learning rate.'
 
@@ -446,21 +352,12 @@ def learning_rate_variant_type_args():
                    default_tag='exp',
                    doc=doc_lr)
 
-
 def learning_rate_args():
     doc_lr = "A list of learning rates identified by key arg `name`."
     return Argument("learning_rate", list, doc=doc_lr)
 
 
 #  --- Loss configurations: --- #
-def start_pref(item):
-    return f'The prefactor of {item} loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the {item} label should be provided by file {item}.npy in each data system. If both start_pref_{item} and limit_pref_{item} are set to 0, then the {item} will be ignored.'
-
-
-def limit_pref(item):
-    return f'The prefactor of {item} loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity.'
-
-
 def loss_ener():
     doc_start_pref_e = start_pref('energy')
     doc_limit_pref_e = limit_pref('energy')
@@ -497,7 +394,6 @@ def loss_tensor():
         Argument("pref_atomic", [float, int], optional=False, default=None, doc=doc_local_weight),
     ]
 
-
 def loss_variant_type_args():
     doc_loss = 'The type of the loss. When the fitting type is `ener`, the loss type should be set to `ener` or left unset. When the fitting type is `dipole` or `polar`, the loss type should be set to `tensor`. \n\.'
 
@@ -511,81 +407,12 @@ def loss_variant_type_args():
                    default_tag='ener',
                    doc=doc_loss)
 
-
 def loss_args():
     doc_loss = 'A list of losses identified by key arg `name`.'
     return Argument('loss', list, doc=doc_loss)
 
 
 #  --- Training configurations: --- #
-def training_data_args():  # ! added by Ziyao: new specification style for data systems.
-    link_sys = make_link("systems", "training/training_data/systems")
-    doc_systems = 'The data systems for training. ' \
-                  'This key can be provided with a list that specifies the systems, or be provided with a string ' \
-                  'by which the prefix of all systems are given and the list of the systems is automatically generated.'
-    doc_set_prefix = f'The prefix of the sets in the {link_sys}.'
-    doc_batch_size = f'This key can be \n\n\
-- list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\
-- int: all {link_sys} use the same batch size.\n\n\
-- string "auto": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than 32.\n\n\
-- string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.'
-    doc_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
-- "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
-- "prob_sys_size" : the probability of a system is proportional to the number of batches in the system\n\n\
-- "prob_sys_size;stt_idx:end_idx:weight;stt_idx:end_idx:weight;..." : the list of systems is devided into blocks. A block is specified by `stt_idx:end_idx:weight`, where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system, the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional to the number of batches in the system.'
-    doc_sys_probs = "A list of float if specified. " \
-                    "Should be of the same length as `systems`, " \
-                    "specifying the probability of each system."
-
-    args = [
-        Argument("systems", [list, str], optional=False, default=".", doc=doc_systems),
-        Argument("set_prefix", str, optional=True, default='set', doc=doc_set_prefix),
-        Argument("batch_size", [list, int, str], optional=True, default='auto', doc=doc_batch_size),
-        Argument("auto_prob", str, optional=True, default="prob_sys_size",
-                 doc=doc_auto_prob_style, alias=["auto_prob_style", ]),
-        Argument("sys_probs", list, optional=True, default=None, doc=doc_sys_probs, alias=["sys_weights"]),
-    ]
-
-    doc_training_data = "Configurations of training data."
-    return Argument("training_data", dict, optional=False,
-                    sub_fields=args, sub_variants=[], doc=doc_training_data)
-
-
-def validation_data_args():  # ! added by Ziyao: new specification style for data systems.
-    link_sys = make_link("systems", "training/validation_data/systems")
-    doc_systems = 'The data systems for validation. ' \
-                  'This key can be provided with a list that specifies the systems, or be provided with a string ' \
-                  'by which the prefix of all systems are given and the list of the systems is automatically generated.'
-    doc_set_prefix = f'The prefix of the sets in the {link_sys}.'
-    doc_batch_size = f'This key can be \n\n\
-- list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\
-- int: all {link_sys} use the same batch size.\n\n\
-- string "auto": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than 32.\n\n\
-- string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.'
-    doc_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
-- "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
-- "prob_sys_size" : the probability of a system is proportional to the number of batches in the system\n\n\
-- "prob_sys_size;stt_idx:end_idx:weight;stt_idx:end_idx:weight;..." : the list of systems is devided into blocks. A block is specified by `stt_idx:end_idx:weight`, where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system, the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional to the number of batches in the system.'
-    doc_sys_probs = "A list of float if specified. " \
-                    "Should be of the same length as `systems`, " \
-                    "specifying the probability of each system."
-    doc_numb_btch = "An integer that specifies the number of systems to be sampled for each validation period."
-
-    args = [
-        Argument("systems", [list, str], optional=False, default=".", doc=doc_systems),
-        Argument("set_prefix", str, optional=True, default='set', doc=doc_set_prefix),
-        Argument("batch_size", [list, int, str], optional=True, default='auto', doc=doc_batch_size),
-        Argument("auto_prob", str, optional=True, default="prob_sys_size",
-                 doc=doc_auto_prob_style, alias=["auto_prob_style", ]),
-        Argument("sys_probs", list, optional=True, default=None, doc=doc_sys_probs, alias=["sys_weights"]),
-        Argument("numb_btch", int, optional=True, default=1, doc=doc_numb_btch, alias=["numb_batch", ])
-    ]
-
-    doc_validation_data = "Configurations of validation data. Similar to that of training data, " \
-                          "except that a `numb_btch` argument may be configured"
-    return Argument("validation_data", dict, optional=True, default=None,
-                    sub_fields=args, sub_variants=[], doc=doc_validation_data)
-
 
 def task_args():
     doc_name = 'name of task'
@@ -644,34 +471,6 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     doc_training = 'The training options.'
     return Argument("training", dict, args, [], doc=doc_training)
 
-
-def make_index(keys):
-    ret = []
-    for ii in keys:
-        ret.append(make_link(ii, ii))
-    return ', '.join(ret)
-
-
-def gen_doc(*, make_anchor=True, make_link=True, **kwargs):
-    if make_link:
-        make_anchor = True
-    ma = model_args()
-    lra = learning_rate_args()
-    la = loss_args()
-    ta = training_args()
-    ptr = []
-    ptr.append(ma.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
-    ptr.append(la.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
-    ptr.append(lra.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
-    ptr.append(ta.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
-
-    key_words = []
-    for ii in "\n\n".join(ptr).split('\n'):
-        if 'argument path' in ii:
-            key_words.append(ii.split(':')[1].replace('`', '').strip())
-    # ptr.insert(0, make_index(key_words))
-
-    return "\n\n".join(ptr)
 
 
 def normalize_list_of_args(old_list, pattern_arg):

@@ -67,6 +67,8 @@ class DescrptSeA ():
                 The precision of the embedding net parameters. Supported options are {1}
         uniform_seed
                 Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
+        name
+                Name used to identify the descriptor
         """
         self.sel_a = sel
         self.rcut_r = rcut
