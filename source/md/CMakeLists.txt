@@ -6,10 +6,10 @@ find_package(xdrfile REQUIRED)
 
 list (APPEND MD_INCLUDE_PATH "include")
 list (APPEND MD_INCLUDE_PATH ${XDRFILE_INCLUDE_DIRS})
-include_directories (${MD_INCLUDE_PATH})
 
 file(GLOB MD_SRC src/*.cc src/*.cpp)
 add_library(${LIB_DEEPMD_NATIVE} SHARED ${MD_SRC})
+target_include_directories(${LIB_DEEPMD_NATIVE} PUBLIC ${MD_INCLUDE_PATH})
 
 set(MDNN_SOURCE_FILES mdnn.cc)
 if (MAKE_FF_AD)
@@ -28,10 +28,11 @@ if (MAKE_FF_AD)
   add_executable(${dp_mdad_name} ${MDAD_SOURCE_FILES})
 endif()
 
-target_link_libraries(${dp_mdnn_name} ${LIB_DEEPMD_NATIVE} ${LIB_DEEPMD_OP} ${LIB_DEEPMD} ${XDRFILE_LIBRARIES} ${TensorFlow_LIBRARY})
+# link: libdeepmd_native libdeepmd_cc libxdr
+target_link_libraries(${dp_mdnn_name} PRIVATE ${LIB_DEEPMD_NATIVE} ${LIB_DEEPMD_CC} ${XDRFILE_LIBRARIES})
 if (MAKE_FF_AD)
-  target_link_libraries(${dp_mdad_name} ${LIB_DEEPMD_NATIVE} ${LIB_DEEPMD_OP} ${LIB_DEEPMD} ${XDRFILE_LIBRARIES} ${TensorFlow_LIBRARY})
-  target_link_libraries(${dp_mdff_name} ${LIB_DEEPMD_NATIVE}                  ${LIB_DEEPMD} ${XDRFILE_LIBRARIES} ${TensorFlow_LIBRARY})
+  target_link_libraries(${dp_mdad_name} PRIVATE ${LIB_DEEPMD_NATIVE} ${LIB_DEEPMD_CC} ${XDRFILE_LIBRARIES})
+  target_link_libraries(${dp_mdff_name} PRIVATE ${LIB_DEEPMD_NATIVE} ${LIB_DEEPMD_CC} ${XDRFILE_LIBRARIES})
 endif()
 
 set_target_properties(

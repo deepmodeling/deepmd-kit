@@ -175,18 +175,6 @@ if (OPENMP_FOUND)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
 endif()
 
-# headers of lib
-list (APPEND DeePMD_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/lib/include/)
-list (APPEND DeePMD_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/3rdparty/)
-if (BUILD_CPP_IF)
-  list (APPEND DeePMD_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/api_cc/include/)
-  include_directories(${CMAKE_BINARY_DIR}/api_cc/)
-endif (BUILD_CPP_IF)
-
-# include
-include_directories(${DeePMD_INCLUDE_DIRS})
-include_directories(${TensorFlow_INCLUDE_DIRS})
-
 # define names of libs
 set (LIB_DEEPMD		"deepmd")
 if (BUILD_CPP_IF)

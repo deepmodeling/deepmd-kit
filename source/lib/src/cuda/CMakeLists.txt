@@ -123,6 +123,7 @@ endif()
 file (GLOB SOURCE_FILES "*.cu" )
 
 cuda_add_library(deepmd_op_cuda SHARED ${SOURCE_FILES})
+target_include_directories(deepmd_op_cuda PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../include/)
 
 if (BUILD_CPP_IF)
     install(TARGETS deepmd_op_cuda DESTINATION lib/)
