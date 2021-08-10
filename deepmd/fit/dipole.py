@@ -123,6 +123,7 @@ class DipoleFittingSeA () :
         rot_mat = tf.reshape(rot_mat, [-1, self.dim_rot_mat * natoms[0]])
 
         count = 0
+        outs_list = []
         for type_i in range(self.ntypes):
             # cut-out inputs
             inputs_i = tf.slice (inputs,
@@ -154,11 +155,9 @@ class DipoleFittingSeA () :
             final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i], 3])
 
             # concat the results
-            if count == 0:
-                outs = final_layer
-            else:
-                outs = tf.concat([outs, final_layer], axis = 1)
+            outs_list.append(final_layer)
             count += 1
+        outs = tf.concat(outs_list, axis = 1)
 
         tf.summary.histogram('fitting_net_output', outs)
         return tf.cast(tf.reshape(outs, [-1]),  GLOBAL_TF_FLOAT_PRECISION)

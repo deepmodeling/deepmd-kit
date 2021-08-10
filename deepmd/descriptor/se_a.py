@@ -624,7 +624,7 @@ class DescrptSeA ():
             # we can safely return the final xyz_scatter filled with zero directly
             return tf.cast(tf.fill((natom, 4, outputs_size[-1]), 0.), GLOBAL_TF_FLOAT_PRECISION)
           # natom x nei_type_i x out_size
-          xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1]//4, outputs_size[-1]))  
+          xyz_scatter = tf.reshape(xyz_scatter, (natom, shape_i[1]//4, outputs_size[-1]))  
           # When using tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]) below
           # [588 24] -> [588 6 4] correct
           # but if sel is zero
@@ -667,6 +667,7 @@ class DescrptSeA ():
           type_i = 0
           # natom x 4 x outputs_size
           if type_embedding is None:
+              rets = []
               for type_i in range(self.ntypes):
                   ret = self._filter_lower(
                       type_i, type_input,
@@ -681,12 +682,12 @@ class DescrptSeA ():
                       bavg = bavg,
                       trainable = trainable,
                       suffix = "_"+str(type_i))
-                  if type_i == 0:
-                      xyz_scatter_1 = ret
-                  elif (type_input, type_i) not in self.exclude_types:
+                  if (type_input, type_i) not in self.exclude_types:
                       # add zero is meaningless; skip
-                      xyz_scatter_1+= ret
+                      rets.append(ret)
                   start_index += self.sel_a[type_i]
+              # maybe faster to use accumulate_n than multiple add
+              xyz_scatter_1 = tf.accumulate_n(rets)
           else :
               xyz_scatter_1 = self._filter_lower(
                   type_i, type_input,
@@ -718,6 +719,7 @@ class DescrptSeA ():
           # natom x outputs_size x outputs_size_2
           result = tf.matmul(xyz_scatter_1, xyz_scatter_2, transpose_a = True)
           # natom x (outputs_size x outputs_size_2)
-          result = tf.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
+          # we have reshaped in _pass_filter method
+          #result = tf.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
 
         return result, qmat
