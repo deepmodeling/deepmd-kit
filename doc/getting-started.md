@@ -336,6 +336,9 @@ optional arguments:
                         (default: -1)
   -c CHECKPOINT_FOLDER, --checkpoint-folder CHECKPOINT_FOLDER
                         path to checkpoint folder (default: .)
+  -t TRAINING_SCRIPT, --training-script TRAINING_SCRIPT
+                        The training script of the input frozen model
+                        (default: input.json)
 ```
 **Parameter explanation**
 
