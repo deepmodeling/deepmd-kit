@@ -11,6 +11,9 @@ read_data	water.lmp
 mass 		1 16
 mass		2 2
 
+# load the plugin at <install_prefix>/lib/libdeepmd_lmp.so
+plugin load ../../../dp/lib/libdeepmd_lmp.so
+
 pair_style	deepmd frozen_model.pb
 pair_coeff  * *	
 

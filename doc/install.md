@@ -204,7 +204,7 @@ One may add the following arguments to `cmake`:
 | -DCUDA_TOOLKIT_ROOT_DIR=&lt;value&gt; | Path         | Detected automatically | The path to the CUDA toolkit directory. |
 | -DUSE_ROCM_TOOLKIT=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build GPU support with ROCM toolkit. |
 | -DROCM_ROOT=&lt;value&gt; | Path         | Detected automatically | The path to the ROCM toolkit directory. |
-| -LAMMPS_SOURCE_ROOT=&lt;value&gt; | Path         | - | The path to the LAMMPS source code (later than 8Apr2021). |
+| -DLAMMPS_SOURCE_ROOT=&lt;value&gt; | Path         | - | The path to the LAMMPS source code (later than 8Apr2021). |
 
 If the cmake has executed successfully, then 
 ```bash
@@ -223,10 +223,44 @@ libdeepmd_cc.so      libdeepmd_ipi.so      libdeepmd_lmp.so      libdeepmd_op_cu
 ```
 
 ## Install third-party packages
-### Install LAMMPS
-DeePMD-kit provide module for running MD simulation with LAMMPS.
+### Install LAMMPS's DeePMD-kit module (built-in mode)
+DeePMD-kit provide module for running MD simulation with LAMMPS. Now make the DeePMD-kit module for LAMMPS. If you want to use the plugin mode instead of the built-in mode, you can directly go to the next section.
+```bash
+cd $deepmd_source_dir/source/build
+make lammps
+```
+DeePMD-kit will generate a module called `USER-DEEPMD` in the `build` directory. If you need low precision version, move `env_low.sh` to `env.sh` in the directory. Now download the LAMMPS code (`29Oct2020` or later), and uncompress it:
+```bash
+cd /some/workspace
+wget https://github.com/lammps/lammps/archive/stable_29Oct2020.tar.gz
+tar xf stable_29Oct2020.tar.gz
+```
+The source code of LAMMPS is stored in directory `lammps-stable_29Oct2020`. Now go into the LAMMPS code and copy the DeePMD-kit module like this
+```bash
+cd lammps-stable_29Oct2020/src/
+cp -r $deepmd_source_dir/source/build/USER-DEEPMD .
+```
+Now build LAMMPS
+```bash
+make yes-kspace
+make yes-user-deepmd
+make mpi -j4
+```
 
-DeePMD-kit will generate a module called `USER-DEEPMD` in the `build` directory. If you need low precision version, move `env_low.sh` to `env.sh` in the directory. Now download the LAMMPS code (`8Apr2021` or later), and uncompress it:
+If everything works fine, you will end up with an executable `lmp_mpi`.
+```bash
+./lmp_mpi -h
+```
+
+The DeePMD-kit module can be removed from LAMMPS source code by 
+```bash
+make no-user-deepmd
+```
+
+### Install LAMMPS (plugin mode)
+Starting from `8Apr2021`, LAMMPS also provides a plugin mode, allowing one build LAMMPS and a plugin separately. You can skip the section if you are using the built-in mode.
+
+Now download the LAMMPS code (`8Apr2021` or later), and uncompress it:
 ```bash
 cd /some/workspace
 wget https://github.com/lammps/lammps/archive/patch_30Jul2021.tar.gz
@@ -237,7 +271,7 @@ The source code of LAMMPS is stored in directory `lammps-patch_30Jul2021`. Now g
 mkdir -p lammps-patch_30Jul2021/build/
 cd lammps-patch_30Jul2021/build/
 ```
-Now build LAMMPS. Note that `PLUGIN` and `KSPACE` package must be enabled, and `BUILD_SHARED_LIBS` must be set to `yes`.
+Now build LAMMPS. Note that `PLUGIN` and `KSPACE` package must be enabled, and `BUILD_SHARED_LIBS` must be set to `yes`. You can install any other package you want.
 ```bash
 cmake -D PKG_PLUGIN=ON -D PKG_KSPACE=ON -D LAMMPS_INSTALL_RPATH=ON -D BUILD_SHARED_LIBS=yes -D CMAKE_INSTALL_PREFIX=${deepmd_root} ../cmake
 make -j4
