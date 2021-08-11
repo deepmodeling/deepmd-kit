@@ -25,7 +25,7 @@ fi
 cd ${BUILD_TMP_DIR}/lammps-${LAMMPS_VERSION}
 mkdir -p ${BUILD_TMP_DIR}/lammps-${LAMMPS_VERSION}/build
 cd ${BUILD_TMP_DIR}/lammps-${LAMMPS_VERSION}/build
-cmake -C ../cmake/presets/all_off.cmake -D PKG_PLUGIN=ON -D PKG_KSPACE=ON -D BUILD_SHARED_LIBS=yes -D CMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} ../cmake
+cmake -C ../cmake/presets/all_off.cmake -D PKG_PLUGIN=ON -D PKG_KSPACE=ON -D BUILD_SHARED_LIBS=yes -D LAMMPS_INSTALL_RPATH=ON -D CMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} ../cmake
 
 make -j${NPROC}
 make install

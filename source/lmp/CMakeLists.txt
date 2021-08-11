@@ -1,3 +1,10 @@
+add_subdirectory(plugin)
+if (NOT DEFINED LAMMPS_VERSION_NUMBER)
+    # set the default to 29 Oct 2020
+    set(LAMMPS_VERSION_NUMBER 20201029)
+endif()
+message(STATUS "LAMMPS version is ${LAMMPS_VERSION_NUMBER}")
+
 file(GLOB LMP_HEADER *.h)
 file(GLOB LMP_SRC *.cpp)
 file(GLOB LMP_SHSCRIPT *.sh)
@@ -15,5 +22,3 @@ _add_lmp_variant("${LOW_PREC_VARIANT}" "${LOW_PREC_DEF}")
 
 configure_file("pair_deepmd.h.in" "pair_deepmd.h" @ONLY)
 configure_file("lammps_install_list.txt.in" "lammps_install_list.txt" @ONLY)
-
-add_subdirectory(plugin)

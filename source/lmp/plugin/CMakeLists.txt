@@ -1,18 +1,17 @@
 if (DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
   add_library(lammps_interface INTERFACE)
   if (DEFINED LAMMPS_VERSION)
-    include(ExternalProject)
-    ExternalProject_Add(lammps_download
+    cmake_minimum_required(VERSION 3.11)
+    include(FetchContent)
+    FetchContent_Declare(lammps_download
       GIT_REPOSITORY    https://github.com/lammps/lammps
       GIT_TAG           ${LAMMPS_VERSION}
-      SOURCE_DIR        "${CMAKE_CURRENT_BINARY_DIR}/lammps-src"
-      BINARY_DIR        "${CMAKE_CURRENT_BINARY_DIR}/lammps-build"
-      CONFIGURE_COMMAND ""
-      BUILD_COMMAND     ""
-      INSTALL_COMMAND   ""
-      TEST_COMMAND      ""
     )
-    set(LAMMPS_SOURCE_ROOT ${CMAKE_CURRENT_BINARY_DIR}/lammps-src)
+    FetchContent_GetProperties(lammps_download)
+    if(NOT lammps_download_POPULATED)
+      FetchContent_Populate(lammps_download)
+      set(LAMMPS_SOURCE_ROOT ${lammps_download_SOURCE_DIR})
+    endif()
   endif()
   set(LAMMPS_HEADER_DIR ${LAMMPS_SOURCE_ROOT}/src)
   message(STATUS "LAMMPS_HEADER_DIR is ${LAMMPS_HEADER_DIR}")
@@ -28,6 +27,12 @@ if (DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
     target_include_directories(lammps_interface INTERFACE "${LAMMPS_HEADER_DIR}/STUBS")
   endif()
 
+  # get_lammps_version
+  # https://github.com/lammps/lammps/blob/c2a12f97c5f665852fb38fdd4922f7dd2e77a0a1/cmake/Modules/LAMMPSUtils.cmake#L27-L46
+  include(${LAMMPS_SOURCE_ROOT}/cmake/Modules/LAMMPSUtils.cmake)
+  get_lammps_version(${LAMMPS_HEADER_DIR}/version.h LAMMPS_VERSION_NUMBER)
+  set(LAMMPS_VERSION_NUMBER ${LAMMPS_VERSION_NUMBER} PARENT_SCOPE)
+
   configure_file("../pair_deepmd.h.in" "${CMAKE_CURRENT_BINARY_DIR}/pair_deepmd.h" @ONLY)
 
   file(GLOB LMP_SRC
@@ -42,7 +47,7 @@ if (DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
 
   add_library(${libname} MODULE ${LMP_SRC})
 
-  # link: libdeepmd libdeepmd_op libtensorflow_cc libtensorflow_framework
+  # link: libdeepmd libtensorflow_cc libtensorflow_framework
   target_link_libraries (${libname} PUBLIC
     lammps_interface
     ${LIB_DEEPMD_CC}${variant_name}
@@ -61,10 +66,13 @@ if (DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
   set_target_properties(
     ${libname} 
     PROPERTIES 
-    COMPILE_DEFINITIONS ${prec_def}
-    COMPILE_DEFINITIONS "LMPPLUGIN" # fix header path
     INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}"
     LINK_FLAGS "-rdynamic"
+  )
+  target_compile_definitions(${libname}
+    PUBLIC ${prec_def}
+    PRIVATE "LMPPLUGIN" # fix header path
+    PRIVATE "LAMMPS_VERSION_NUMBER=${LAMMPS_VERSION_NUMBER}"
   )
 
   install(TARGETS ${libname} DESTINATION lib/)
