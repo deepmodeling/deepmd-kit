@@ -1,4 +1,5 @@
 if (DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
+  message(STATUS "enable LAMMPS plugin mode")
   add_library(lammps_interface INTERFACE)
   if (DEFINED LAMMPS_VERSION)
     cmake_minimum_required(VERSION 3.11)
@@ -81,4 +82,6 @@ if (DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
   _add_lmp_plugin_variant("${HIGH_PREC_VARIANT}" "${HIGH_PREC_DEF}")
   _add_lmp_plugin_variant("${LOW_PREC_VARIANT}" "${LOW_PREC_DEF}")
 
+else()
+  message(STATUS "disable LAMMPS plugin mode")
 endif()

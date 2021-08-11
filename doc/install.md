@@ -204,7 +204,8 @@ One may add the following arguments to `cmake`:
 | -DCUDA_TOOLKIT_ROOT_DIR=&lt;value&gt; | Path         | Detected automatically | The path to the CUDA toolkit directory. |
 | -DUSE_ROCM_TOOLKIT=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build GPU support with ROCM toolkit. |
 | -DROCM_ROOT=&lt;value&gt; | Path         | Detected automatically | The path to the ROCM toolkit directory. |
-| -DLAMMPS_SOURCE_ROOT=&lt;value&gt; | Path         | - | The path to the LAMMPS source code (later than 8Apr2021). |
+| -DLAMMPS_VERSION_NUMBER=&lt;value&gt; | Number         | `20201029` | Only neccessary for LAMMPS built-in mode. The version number of LAMMPS (yyyymmdd). |
+| -DLAMMPS_SOURCE_ROOT=&lt;value&gt; | Path         | - | Only neccessary for LAMMPS plugin mode. The path to the LAMMPS source code (later than 8Apr2021). If not assigned, the plugin mode will not be enabled. |
 
 If the cmake has executed successfully, then 
 ```bash
