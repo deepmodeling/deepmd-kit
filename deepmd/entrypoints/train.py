@@ -240,7 +240,7 @@ def get_type_map(jdata):
     return jdata['model'].get('type_map', None)
 
 
-def get_sel(jdata, rcut):
+def get_nbor_stat(jdata, rcut):
     max_rcut = get_rcut(jdata)
     type_map = get_type_map(jdata)
 
@@ -258,9 +258,15 @@ def get_sel(jdata, rcut):
     neistat = NeighborStat(ntypes, rcut)
 
     min_nbor_dist, max_nbor_size = neistat.get_stat(train_data)
+    return min_nbor_dist, max_nbor_size
 
+def get_sel(jdata, rcut):
+    _, max_nbor_size = get_nbor_stat(jdata, rcut)
     return max_nbor_size
 
+def get_min_nbor_dist(jdata, rcut):
+    min_nbor_dist, _ = get_nbor_stat(jdata, rcut)
+    return min_nbor_dist
 
 def parse_auto_sel(sel):
     if type(sel) is not str:

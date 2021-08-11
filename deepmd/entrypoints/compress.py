@@ -1,5 +1,6 @@
 """Compress a model, which including tabulating the embedding-net."""
 
+import os
 import json
 import logging
 from typing import Optional
@@ -11,7 +12,7 @@ from deepmd.utils.compat import updata_deepmd_input
 from deepmd.utils.errors import GraphTooLargeError, GraphWithoutTensorError
 
 from .freeze import freeze
-from .train import train
+from .train import train, get_rcut, get_min_nbor_dist
 from .transfer import transfer
 
 __all__ = ["compress"]
@@ -27,6 +28,7 @@ def compress(
     step: float,
     frequency: str,
     checkpoint_folder: str,
+    training_script: str,
     mpi_log: str,
     log_path: Optional[str],
     log_level: int,
@@ -54,6 +56,8 @@ def compress(
         frequency of tabulation overflow check
     checkpoint_folder : str
         trining checkpoint folder for freezing
+    training_script : str
+        training script of the input frozen model
     mpi_log : str
         mpi logging mode for training
     log_path : Optional[str]
@@ -64,16 +68,27 @@ def compress(
     try:
         t_jdata = get_tensor_by_name(input, 'train_attr/training_script')
         t_min_nbor_dist = get_tensor_by_name(input, 'train_attr/min_nbor_dist')
+        jdata = json.loads(t_jdata)
     except GraphWithoutTensorError as e:
-        raise RuntimeError(
-            "The input frozen model: %s has no training script or min_nbor_dist information,"
-            "which is not supported by the model compression program."
-            "Please consider using the dp convert-from interface to upgrade the model" % input
-        ) from e
+        if training_script == None:
+            raise RuntimeError(
+                "The input frozen model: %s has no training script or min_nbor_dist information, "
+                "which is not supported by the model compression interface. "
+                "Please consider using the --training-script command within the model compression interface to provide the training script of the input frozen model. "
+                "Note that the input training script must contain the correct path to the training data." % input
+            ) from e
+        elif os.path.exists(training_script) == False:
+            raise RuntimeError(
+                "The input training script %s does not exist! Please check the path of the training script. " % (input + "(" + os.path.abspath(input) + ")")
+            ) from e
+        else:
+            log.info("stage 0: compute the min_nbor_dist")
+            jdata = j_loader(training_script)
+            t_min_nbor_dist = get_min_nbor_dist(jdata, get_rcut(jdata))
+
     tf.constant(t_min_nbor_dist,
         name = 'train_attr/min_nbor_dist',
         dtype = GLOBAL_TF_FLOAT_PRECISION)
-    jdata = json.loads(t_jdata)
     jdata["model"]["compress"] = {}
     jdata["model"]["compress"]["type"] = 'se_e2_a'
     jdata["model"]["compress"]["compress"] = True

@@ -306,6 +306,13 @@ def parse_args(args: Optional[List[str]] = None):
         default=".",
         help="path to checkpoint folder",
     )
+    parser_compress.add_argument(
+        "-t",
+        "--training-script",
+        type=str,
+        default=None,
+        help="The training script of the input frozen model",
+    )
 
     # * print docs script **************************************************************
     parsers_doc = subparsers.add_parser(
