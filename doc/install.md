@@ -241,6 +241,7 @@ Now build LAMMPS. Note that `PLUGIN` and `KSPACE` package must be enabled, and `
 ```bash
 cmake -D PKG_PLUGIN=ON -D PKG_KSPACE=ON -D LAMMPS_INSTALL_RPATH=ON -D BUILD_SHARED_LIBS=yes -D CMAKE_INSTALL_PREFIX=${deepmd_root} ../cmake
 make -j4
+make install
 ```
 
 If everything works fine, you will end up with an executable `${deepmd_root}/lmp`.
