@@ -164,6 +164,7 @@
                     "data": []
                 }
             ],
+	    "auto_prob_method": "prob_sys_size",
             "batch_size": "auto",
             "set_prefix": "set",
             "auto_prob": "prob_sys_size",

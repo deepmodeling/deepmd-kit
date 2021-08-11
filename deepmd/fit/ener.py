@@ -65,6 +65,8 @@ class EnerFitting ():
                 The precision of the embedding net parameters. Supported options are {1}                
         uniform_seed
                 Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
+        name
+                Name used to identify the fitting net
         """
         # model param
         self.ntypes = descrpt.get_ntypes()

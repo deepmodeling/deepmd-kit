@@ -42,6 +42,8 @@ class DeepmdData() :
                 Data modifier that has the method `modify_data`
         trn_all_set
                 Use all sets as training dataset. Otherwise, if the number of sets is more than 1, the last set is left for test.
+        name
+                Name used to identify the data
         """
         self.dirs = glob.glob (os.path.join(sys_path, set_prefix + ".*"))
         self.dirs.sort()

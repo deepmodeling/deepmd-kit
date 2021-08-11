@@ -68,7 +68,10 @@ class DeepmdDataSystem() :
                                 the list of systems is devided into blocks. A block is specified by `stt_idx:end_idx:weight`,
                                 where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system,
                                 the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional
-                                to the number of batches in the system."""
+                                to the number of batches in the system.
+        name
+                Name used to identify the data system
+        """
         # init data
         self.rcut = rcut
         self.system_dirs = systems
@@ -340,6 +343,7 @@ class DeepmdDataSystem() :
         b_data = self.data_systems[self.pick_idx].get_batch(self.batch_size[self.pick_idx])
         b_data["natoms_vec"] = self.natoms_vec[self.pick_idx]
         b_data["default_mesh"] = self.default_mesh[self.pick_idx]
+
         return  b_data
 
     # ! altered by Marián Rynik
@@ -530,7 +534,8 @@ class DeepmdDataDocker() :
                   rcut : int,
                   type_map : List[str] = None,
                   sys_probs = None,
-                  auto_prob_style ="prob_sys_size",
+                  auto_prob_style = "prob_sys_size",
+                  auto_prob_style_method = "prob_uniform",
                   modifier = None,
                   ) :
         """
@@ -544,6 +549,14 @@ class DeepmdDataDocker() :
                 The batch size
         type_map
                 Gives the name of different atom types
+        sys_probs
+                sys_probs of systems in a DeepmdDataSystem
+        auto_prob_style
+                auto_prob_style of the systems in a DeepmdDataSystem
+        auto_prob_style_method
+                auto_prob_style of the methods in the DeepmdDataDocker
+        modifier
+                Data modifier that has the method `modify_data` 
         """
         # init data
         total_data = []
@@ -586,7 +599,7 @@ class DeepmdDataDocker() :
         self.batch_size = list(batch_size_list)
         self.name_list = list(name_list)
         self.prob_nmethod = [ float(i) for i in self.method_nbatch] / np.sum(self.method_nbatch) 
-        self.set_sys_probs(sys_probs, auto_prob_style)
+        self.set_sys_probs(sys_probs, auto_prob_style_method)
         
 
 

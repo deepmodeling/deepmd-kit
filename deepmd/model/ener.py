@@ -49,6 +49,8 @@ class EnerModel() :
                 The lower boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
         sw_rmin
                 The upper boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
+        name
+                Name used to identify the model
         """
         # descriptor
         self.descrpt = descrpt

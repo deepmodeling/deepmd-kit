@@ -117,7 +117,7 @@
 				]
 			}
 		],
-		
+	    "auto_prob_method": "prob_uniform",
 	    "batch_size":	"auto",
 	    "_comment":		"that's all"
 	},

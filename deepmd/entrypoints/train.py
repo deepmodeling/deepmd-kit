@@ -222,6 +222,8 @@ def get_data_mt(jdata: Dict[str, Any], rcut, type_map, modifier):
     batch_size = j_must_have(jdata, "batch_size")
     sys_probs = jdata.get("sys_probs", None)
     auto_prob = jdata.get("auto_prob", "prob_sys_size")
+    auto_prob_method = jdata.get("auto_prob_method", "prob_uniform")
+    
     
     docker = DeepmdDataDocker(
         data_systems=systems,
@@ -230,6 +232,7 @@ def get_data_mt(jdata: Dict[str, Any], rcut, type_map, modifier):
         type_map = type_map,   # in the data docker is the total type
         sys_probs = sys_probs,
         auto_prob_style = auto_prob,
+        auto_prob_style_method = auto_prob_method,
         modifier = modifier,
     )
     return docker

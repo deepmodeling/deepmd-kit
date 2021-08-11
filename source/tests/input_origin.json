@@ -110,7 +110,7 @@
 				"data":[]
 			}
 		],
-		
+	    "auto_prob_method": "prob_sys_size",	
 	    "batch_size":	"auto",
 	    "_comment":		"that's all"
 	},

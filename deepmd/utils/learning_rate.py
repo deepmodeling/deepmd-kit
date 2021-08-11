@@ -31,6 +31,8 @@ class LearningRateExp (object) :
         decay_rate 
                 The decay rate. 
                 If `stop_step` is provided in `build`, then it will be determined automatically and overwritten.
+        name
+                Name used to identify the learning rate, which is correlated to loss of the same name
         """
         # args = ClassArg()\
         #        .add('decay_steps',      int,    must = False)\
