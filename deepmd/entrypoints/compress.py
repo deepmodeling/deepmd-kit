@@ -70,12 +70,16 @@ def compress(
         t_min_nbor_dist = get_tensor_by_name(input, 'train_attr/min_nbor_dist')
         jdata = json.loads(t_jdata)
     except GraphWithoutTensorError as e:
-        if os.path.exists(training_script) == False:
+        if training_script == None:
             raise RuntimeError(
                 "The input frozen model: %s has no training script or min_nbor_dist information, "
                 "which is not supported by the model compression interface. "
                 "Please consider using the --training-script command within the model compression interface to provide the training script of the input frozen model. "
                 "Note that the input training script must contain the correct path to the training data." % input
+            ) from e
+        elif os.path.exists(training_script) == False:
+            raise RuntimeError(
+                "The input training script %s does not exist! Please check the path of the training script. " % (input + "(" + os.path.abspath(input) + ")")
             ) from e
         else:
             log.info("stage 0: compute the min_nbor_dist")

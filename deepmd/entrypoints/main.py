@@ -310,7 +310,7 @@ def parse_args(args: Optional[List[str]] = None):
         "-t",
         "--training-script",
         type=str,
-        default="input.json",
+        default=None,
         help="The training script of the input frozen model",
     )
 
