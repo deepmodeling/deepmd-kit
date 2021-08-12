@@ -1,12 +1,13 @@
 """ASE calculator interface module."""
 
-from typing import TYPE_CHECKING, Dict, List, Optional, Union
 from pathlib import Path
+from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
-from deepmd import DeepPotential
 from ase.calculators.calculator import (
     Calculator, all_changes, PropertyNotImplementedError
 )
+
+from deepmd import DeepPotential
 
 if TYPE_CHECKING:
     from ase import Atoms
