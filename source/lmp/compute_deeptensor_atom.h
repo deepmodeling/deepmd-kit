@@ -9,7 +9,11 @@ ComputeStyle(deeptensor/atom,ComputeDeeptensorAtom)
 
 #include "compute.h"
 #include "pair_deepmd.h"
+#ifdef LMPPLUGIN
+#include "DeepTensor.h"
+#else
 #include "deepmd/DeepTensor.h"
+#endif
 
 namespace LAMMPS_NS {
 
