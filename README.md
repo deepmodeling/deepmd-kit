@@ -20,10 +20,10 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
 For more information, check the [documentation](https://deepmd.readthedocs.io/).
 
 # Highlights in DeePMD-kit v2.0
-* [Model compression](doc/getting-started.md#compress-a-model). Accelerate the efficiency of model inference for 4-15 times.
-* [New descriptors](doc/getting-started.md#write-the-input-script). Including [`se_e2_r`](doc/train-se-e2-r.md) and [`se_e3`](doc/train-se-e3.md).
-* [Hybridization of descriptors](doc/train-hybrid.md). Hybrid descriptor constructed from concatenation of several descriptors.
-* [Atom type embedding](doc/train-se-e2-a-tebd.md). Enable atom type embedding to decline training complexity and refine performance.
+* [Model compression](doc/freeze/compress.md). Accelerate the efficiency of model inference for 4-15 times.
+* [New descriptors](doc/model/overall.md). Including [`se_e2_r`](doc/model/train-se-e2-r.md) and [`se_e3`](doc/model/train-se-e3.md).
+* [Hybridization of descriptors](doc/model/train-hybrid.md). Hybrid descriptor constructed from concatenation of several descriptors.
+* [Atom type embedding](doc/model/train-se-e2-a-tebd.md). Enable atom type embedding to decline training complexity and refine performance.
 * Training and inference the dipole (vector) and polarizability (matrix).
 * Split of training and validation dataset.
 * Optimized training on GPUs. 
@@ -51,28 +51,65 @@ In addition to building up potential energy models, DeePMD-kit can also be used 
 
 # Download and install
 
-Please follow our [github](https://github.com/deepmodeling/deepmd-kit) webpage to download the [latest released version](https://github.com/deepmodeling/deepmd-kit/tree/master) and [development version](https://github.com/deepmodeling/deepmd-kit/tree/devel).
+Please follow our [GitHub](https://github.com/deepmodeling/deepmd-kit) webpage to download the [latest released version](https://github.com/deepmodeling/deepmd-kit/tree/master) and [development version](https://github.com/deepmodeling/deepmd-kit/tree/devel).
 
-DeePMD-kit offers multiple installation methods. It is recommend using easily methods like [offline packages](doc/install.md#offline-packages), [conda](doc/install.md#with-conda) and [docker](doc/install.md#with-docker). 
+DeePMD-kit offers multiple installation methods. It is recommend using easily methods like [offline packages](doc/install/easy-install.md#offline-packages), [conda](doc/install/easy-install.md#with-conda) and [docker](doc/install/easy-install.md#with-docker). 
 
-One may manually install DeePMD-kit by following the instuctions on [installing the python interface](doc/install.md#install-the-python-interface) and [installing the C++ interface](doc/install.md#install-the-c-interface). The C++ interface is necessary when using DeePMD-kit with LAMMPS and i-PI.
+One may manually install DeePMD-kit by following the instuctions on [installing the Python interface](doc/install/install-from-source.md#install-the-python-interface) and [installing the C++ interface](doc/install/install-from-source.md#install-the-c-interface). The C++ interface is necessary when using DeePMD-kit with LAMMPS and i-PI.
 
 
 # Use DeePMD-kit
 
-The typical procedure of using DeePMD-kit includes the following steps 
+A quick-start on using DeePMD-kit can be found as follows:
 
-1. [Prepare data](doc/getting-started.md#prepare-data)
-2. [Train a model](doc/getting-started.md#train-a-model)
-3. [Analyze training with Tensorboard](doc/tensorboard.md)
-4. [Freeze the model](doc/getting-started.md#freeze-a-model)
-5. [Test the model](doc/getting-started.md#test-a-model)
-6. [Compress the model](doc/getting-started.md#compress-a-model)
-7. [Inference the model in python](doc/getting-started.md#model-inference) or using the model in other molecular simulation packages like [LAMMPS](doc/getting-started.md#run-md-with-lammps), [i-PI](doc/getting-started.md#run-path-integral-md-with-i-pi) or [ASE](doc/getting-started.md#use-deep-potential-with-ase).
-
-A quick-start on using DeePMD-kit can be found [here](doc/getting-started.md).
+- [Prepare data with dpdata](doc/data/dpdata.md)
+- [Training a model](doc/train/training.md)
+- [Freeze a model](doc/freeze/freeze.md)
+- [Test a model](doc/test/test.md)
+- [Running MD with LAMMPS](doc/third-party/lammps.md)
 
 A full [document](doc/train-input-auto.rst) on options in the training input script is available.
+
+# Advanced
+
+- [Installation](doc/install/index.rst)
+    - [Easy install](doc/install/easy-install.md)
+    - [Install from source code](doc/install-from-source.md)
+    - [Install LAMMPS](doc/install-lammps.md)
+    - [Install i-PI](doc/install-ipi.md)
+    - [Building conda packages](doc/build-conda.md)
+- [Data](doc/index.rst)
+    - [Data conversion](doc/data-conv.md)
+    - [Prepare data with dpdata](doc/dpdata.md)
+- [Model](doc/model/index.rst)
+    - [Overall](doc/model/overall.md)
+    - [Train a Deep Potential model using descriptor `"se_e2_a"`](doc/model/train-se-e2-a.md)
+    - [Train a Deep Potential model using descriptor `"se_e2_r"`](doc/model/train-se-e2-r.md)
+    - [Train a Deep Potential model using `type embedding` approach](doc/model/train-se-e2-a-tebd.md)
+    - [Train a Deep Potential model using descriptor `"se_e3"`](doc/model/train-se-e3.md)
+    - [Train a Deep Potential model using descriptor `"hybrid"`](doc/model/train-hybrid.md)
+    - [Train a Deep Potential model to fit `tensor` like `Dipole` and `Polarizability`](doc/train-fitting-tensor.md)
+- [Training](doc/train/index.rst)
+    - [Training a model](doc/train/training.md)
+    - [Advanced options](doc/train/training-advanced.md)
+    - [Parallel training](doc/train/parallel-training.md)
+    - [TensorBoard Usage](doc/train/tensorboard.md)
+    - [Known limitations of using GPUs](doc/train/gpu-limitations.md)
+    - [Training Parameters](doc/train-input-auto.rst)
+- [Freeze and Compress](doc/freeze/index.rst)
+    - [Freeze a model](doc/freeze/freeze.md)
+    - [Compress a model](doc/freeze/compress.md)
+- [Test](doc/test/index.rst)
+    - [Test a model](doc/test/test.md)
+    - [Calculate Model Deviation](doc/test/model-deviation.md)
+- [Inference](doc/inference/index.rst)
+    - [Python interface](doc/inference/python.md)
+    - [C++ interface](doc/inference/cxx.md)
+- [Integrate with third-party packages](doc/third-party/index.rst)
+    - [Use deep potential with ASE](doc/third-party/ase.md)
+    - [Running MD with LAMMPS](doc/third-party/lammps.md)
+    - [LAMMPS commands](doc/third-party/lammps-command.md)
+    - [Run path-integral MD with i-PI](doc/third-party/ipi.md)
 
 
 # Code structure
@@ -97,7 +134,14 @@ The code is organized as follows:
 
 # Troubleshooting
 
-See the [troubleshooting page](doc/troubleshooting/index.md).
+- [Model compatibility](doc/troubleshooting/model-compatability.md)
+- [Installation](doc/troubleshooting/installation.md)
+- [The temperature undulates violently during early stages of MD](doc/troubleshooting/md-energy-undulation.md)
+- [MD: cannot run LAMMPS after installing a new version of DeePMD-kit](doc/troubleshooting/md-version-compatibility.md)
+- [Do we need to set rcut < half boxsize?](doc/troubleshooting/howtoset-rcut.md)
+- [How to set sel?](doc/troubleshooting/howtoset-sel.md)
+- [How to control the number of nodes used by a job?](doc/troubleshooting/howtoset_num_nodes.md)
+- [How to tune Fitting/embedding-net size?](doc/troubleshooting/howtoset_netsize.md)
 
 
 # Contributing
