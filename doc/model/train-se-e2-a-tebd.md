@@ -1,10 +1,10 @@
-# Train a Deep Potential model using `type embedding` approach
+# Type embedding approach
  
 We generate specific type embedding vector for each atom type, so that we can share one descriptor embedding net and one fitting net in total, which decline training complexity largely. 
 
 The training input script is similar to that of [`se_e2_a`](train-se-e2-a.md#the-training-input-script), but different by adding the `type_embedding` section. 
 
-### Type embedding net
+## Type embedding net
 The `model` defines how the model is constructed, adding a section of type embedding net:
 ```json
     "model": {

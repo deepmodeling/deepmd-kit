@@ -7,8 +7,8 @@ Model
    overall
    train-se-e2-a
    train-se-e2-r
-   train-se-e2-a-tebd
    train-se-e3
    train-hybrid
+   train-energy
    train-fitting-tensor
-   type-embedding
+   train-se-e2-a-tebd

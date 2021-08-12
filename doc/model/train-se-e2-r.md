@@ -1,4 +1,4 @@
-# Train a Deep Potential model using descriptor `"se_e2_r"`
+# Descriptor `"se_e2_r"`
 
 The notation of `se_e2_r` is short for the Deep Potential Smooth Edition (DeepPot-SE) constructed from the radial information of atomic configurations. The `e2` stands for the embedding with two-atom information. 
 

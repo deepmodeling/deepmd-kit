@@ -1,4 +1,4 @@
-# Train a Deep Potential model using descriptor `"hybrid"`
+# Descriptor `"hybrid"`
 
 This descriptor hybridize multiple descriptors to form a new descriptor. For example we have a list of descriptor denoted by D_1, D_2, ..., D_N, the hybrid descriptor this the concatenation of the list, i.e. D = (D_1, D_2, ..., D_N).
 
