@@ -28,6 +28,7 @@ from deepmd.utils.type_embed import TypeEmbedNet
 
 from tensorflow.python.client import timeline
 from deepmd.env import op_module
+from .trainer import DPTrainer
 
 # load grad of force module
 import deepmd.op
@@ -38,12 +39,13 @@ from .trainer import _is_subdir, _generate_descrpt_from_param_dict
 log = logging.getLogger(__name__)
 
 
-class DPTrainer_mt (object):
+class DPMultitaskTrainer (DPTrainer):
     def __init__(self, 
                  jdata, 
                  run_opt):
         self.run_opt = run_opt
         self._init_param(jdata)
+        
 
     def _init_param(self, jdata):
         # model config        
@@ -61,33 +63,18 @@ class DPTrainer_mt (object):
         
         # descriptor
         self.descriptor_dict = {}
+        self.descriptor_type ={}
         for sub_descrpt in self.descrpt_param:
             try:
                 descrpt_type = sub_descrpt['type']
             except KeyError:
                 raise KeyError('the type of descriptor should be set by `type`')
-
-            if descrpt_type != 'hybrid':
-                tmp_descrpt = _generate_descrpt_from_param_dict(sub_descrpt)
-            else :
-                descrpt_list = []
-                for ii in sub_descrpt.get('list', []):
-                    descrpt_list.append(_generate_descrpt_from_param_dict(ii))
-                tmp_descrpt = DescrptHybrid(descrpt_list)
+            tmp_descrpt = DPTrainer._init_descrpt(self, descrpt_type, sub_descrpt)
             self.descriptor_dict[str(sub_descrpt['name'])] = tmp_descrpt
+            self.descriptor_type[str(sub_descrpt['name'])] = descrpt_type
 
         # type embedding (share the same one)
-        if typeebd_param is not None:
-            self.typeebd = TypeEmbedNet(
-                neuron=typeebd_param['neuron'],
-                resnet_dt=typeebd_param['resnet_dt'],
-                activation_function=typeebd_param['activation_function'],
-                precision=typeebd_param['precision'],
-                trainable=typeebd_param['trainable'],
-                seed=typeebd_param['seed']
-            )
-        else:
-            self.typeebd = None
+        self.typeebd = DPTrainer._init_type_embed(self, typeebd_param)
 
         lr_param = j_must_have(jdata, 'learning_rate')
         lr_param_dict = {}
@@ -117,36 +104,13 @@ class DPTrainer_mt (object):
             sub_net.pop('type', None)
             name_descrpt = self.fitting_descrpt[name_fitting]
             sub_net['descrpt'] = self.descriptor_dict[str(name_descrpt)]
-            if sub_net_type == 'ener':
-                self.fitting_dict[name_fitting] = EnerFitting(
-                    descrpt = sub_net['descrpt'],
-                    #type_map = model_param.get('type_map'), # this is the total type map
-                    neuron = sub_net["neuron"],
-                    resnet_dt = sub_net["resnet_dt"],
-                    seed = sub_net["seed"],
-                    name = name_fitting
-                )
-                
-            elif sub_net_type == 'dipole':
-                if descrpt_type == 'se_e2_a':
-                    self.fitting_dict[name_fitting] = DipoleFittingSeA(**sub_net)
-                else :
-                    raise RuntimeError('fitting dipole only supports descrptors: se_e2_a')
-            elif sub_net_type == 'polar':
-                if descrpt_type == 'se_e2_a':
-                    self.fitting_dict[name_fitting] = PolarFittingSeA(**sub_net)
-                else :
-                    raise RuntimeError('fitting polar only supports descrptors: loc_frame and se_e2_a')
-            elif sub_net_type == 'global_polar':
-                if descrpt_type == 'se_e2_a':
-                    self.fitting_dict[name_fitting] = GlobalPolarFittingSeA(**sub_net)
-                else :
-                    raise RuntimeError('fitting global_polar only supports descrptors: loc_frame and se_e2_a')
-            else :
-                raise RuntimeError('unknow fitting type ' + sub_net_type)
+            descrpt_type = self.descriptor_type[str(name_descrpt)]
+            self.fitting_dict[name_fitting] = DPTrainer._init_fitting(self, descrpt_type, sub_net_type, sub_net)
 
-            # init model
-            # infer model type by fitting_type
+        
+        # init model
+        # infer model type by fitting_type
+
         self.model_component = {}
         self.method_name_list = []
         for sub_model in self.model_build_param:
@@ -177,63 +141,15 @@ class DPTrainer_mt (object):
 
             # learning rate
             sub_lr = lr_param_dict[lr_name]
-            try: 
-                sub_lr_type = sub_lr['type']
-            except:
-                sub_lr_type = 'exp'
-            if sub_lr_type == 'exp':
-                self.lr_dict[lr_name] = LearningRateExp(sub_lr['start_lr'],
-                                      sub_lr['stop_lr'],
-                                      sub_lr['decay_steps'],
-                                      name = lr_name)
-            else :
-                raise RuntimeError('unknown learning_rate type ' + sub_lr_type)        
+            self.lr_dict[lr_name] = DPTrainer._init_lr(self, sub_lr)        
 
             # loss
             # infer loss type by fitting_type
             sub_loss = loss_param_dict[loss_name]
-            try :
-                loss_type = sub_loss.get('type', 'ener')
-            except:
-                loss_type = 'ener'
 
             sub_net_type = self.fitting_type_dict[fitting_name]
-            if sub_net_type == 'ener':
-                sub_loss.pop('type', None)
-                sub_loss['starter_learning_rate'] = self.lr_dict[lr_name].start_lr()
-                if loss_type == 'ener':
-                    self.loss_dict[loss_name] = EnerStdLoss(**sub_loss)
-                elif loss_type == 'ener_dipole':
-                    self.loss_dict[loss_name] = EnerDipoleLoss(**sub_loss)
-                else:
-                    raise RuntimeError('unknow loss type')
-            elif sub_net_type == 'wfc':
-                self.loss_dict[loss_name] = TensorLoss(sub_loss, 
-                                   model = self.model_dict[model_name], 
-                                   tensor_name = 'wfc',
-                                   tensor_size = self.model_dict[model_name].get_out_size(),
-                                   label_name = 'wfc')
-            elif sub_net_type == 'dipole':
-                self.loss_dict[loss_name] = TensorLoss(sub_loss, 
-                                   model = self.model_dict[model_name], 
-                                   tensor_name = 'dipole',
-                                   tensor_size = 3,
-                                   label_name = 'dipole')
-            elif sub_net_type == 'polar':
-                self.loss_dict[loss_name] = TensorLoss(sub_loss, 
-                                   model = self.model_dict[model_name], 
-                                   tensor_name = 'polar',
-                                   tensor_size = 9,
-                                   label_name = 'polarizability')
-            elif sub_net_type == 'global_polar':
-                self.loss_dict[loss_name] = TensorLoss(sub_loss, 
-                                   model = self.model_dict[model_name], 
-                                   tensor_name = 'global_polar',
-                                   tensor_size = 9,
-                                   atomic = False,
-                                   label_name = 'polarizability')
-            else :
-                raise RuntimeError('get unknown fitting type when building loss function')
+            self.loss_dict[loss_name] = DPTrainer._init_loss(self, sub_loss, sub_net_type, self.lr_dict[lr_name], self.model_dict[model_name])
+            
 
         
         self.l2_l_dict = {}
@@ -282,9 +198,7 @@ class DPTrainer_mt (object):
         for descrpt_name in self.descriptor_dict:
             sub_descrpt = self.descriptor_dict[descrpt_name]
             self.ntypes+=sub_descrpt.get_ntypes()
-
-        
-        
+            
         # Usually, the type number of the model should be equal to that of the data
         # However, nt_model > nt_data should be allowed, since users may only want to 
         # train using a dataset that only have some of elements 
@@ -416,6 +330,7 @@ class DPTrainer_mt (object):
         else :
             raise RuntimeError ("unkown init mode")
 
+
     def train (self, train_data, valid_data=None) :
 
         # if valid_data is None:  # no validation set specified.
@@ -479,7 +394,7 @@ class DPTrainer_mt (object):
                 is_first_step = False
 
             if self.timing_in_training: tic = time.time()
-            train_feed_dict = self.get_feed_dict(train_batch, is_training=True)
+            train_feed_dict = DPTrainer.get_feed_dict(self, train_batch, is_training=True)
             # use tensorboard to visualize the training of deepmd-kit
             # it will takes some extra execution time to generate the tensorboard data
             if self.tensorboard :
@@ -519,25 +434,6 @@ class DPTrainer_mt (object):
             with open(self.profiling_file, 'w') as f:
                 f.write(chrome_trace)
 
-    def get_feed_dict(self, batch, is_training):
-        feed_dict = {}
-        for kk in batch.keys():
-            if kk == 'find_type' or kk == 'type':
-                continue
-            if 'find_' in kk:
-                feed_dict[self.place_holders[kk]] = batch[kk]
-            else:
-                feed_dict[self.place_holders[kk]] = np.reshape(batch[kk], [-1])
-        for ii in ['type']:
-            feed_dict[self.place_holders[ii]] = np.reshape(batch[ii], [-1])
-        for ii in ['natoms_vec', 'default_mesh']:
-            feed_dict[self.place_holders[ii]] = batch[ii]
-        feed_dict[self.place_holders['is_training']] = is_training
-        
-        return feed_dict
-
-    def get_global_step(self):
-        return self.sess.run(self.global_step)
 
     # def print_head (self) :  # depreciated
     #     if self.run_opt.is_chief:
@@ -560,43 +456,15 @@ class DPTrainer_mt (object):
         cur_batch = self.cur_batch
         current_lr = self.sess.run(self.learning_rate_dict[self.method_name_list[method]])
         if print_header:
-            self.print_header(fp, train_results, valid_results)
-        self.print_on_training(fp, train_results, valid_results, cur_batch, current_lr,method)
-
-    @staticmethod
-    def print_header(fp, train_results, valid_results):
-        print_str = ''
-        print_str += "# %5s" % 'step'
-        print_str += "  %6s" % 'method'
-        if valid_results is not None:
-            prop_fmt =  '   %11s %11s'
-            for k in train_results.keys():
-                print_str += prop_fmt % (k + '_val', k + '_trn')
-        else:
-            prop_fmt = '   %11s'
-            for k in train_results.keys():
-                print_str += prop_fmt % (k + '_trn')
-        print_str += '   %8s\n' % 'lr'
-        fp.write(print_str)
-        fp.flush()
-
-    @staticmethod
-    def print_on_training(fp, train_results, valid_results, cur_batch, cur_lr,method):
-        print_str = ''
-        print_str += "%7d" % cur_batch
+            print_str = DPTrainer.print_header(fp, train_results, valid_results)
+            print_str += "  %6s" % 'method'
+            fp.write(print_str+'\n')
+            fp.flush()
+        print_str = DPTrainer.print_on_training(fp, train_results, valid_results, cur_batch, current_lr)
         print_str += "%8d" % method
-        if valid_results is not None:
-            prop_fmt = "   %11.2e %11.2e"
-            for k in valid_results.keys():
-                # assert k in train_results.keys()
-                print_str += prop_fmt % (valid_results[k], train_results[k])
-        else:
-            prop_fmt = "   %11.2e"
-            for k in train_results.keys():
-                print_str += prop_fmt % (train_results[k])
-        print_str += "   %8.1e\n" % cur_lr
-        fp.write(print_str)
+        fp.write(print_str + '\n')
         fp.flush()
+
 
     def get_evaluation_results(self, batch_list,method):
         if batch_list is None: return None
@@ -607,7 +475,7 @@ class DPTrainer_mt (object):
         for i in range(numb_batch):
             batch = batch_list[i]
             natoms = batch["natoms_vec"]
-            feed_dict = self.get_feed_dict(batch, is_training=False)
+            feed_dict = DPTrainer.get_feed_dict(self, batch, is_training=False)
             sub_loss = self.loss_dict[self.method_name_list[method]]
             results = sub_loss.eval(self.sess, feed_dict, natoms)
 

@@ -15,7 +15,7 @@ from deepmd.env import reset_default_tf_session_config
 from deepmd.infer.data_modifier import DipoleChargeModifier
 from deepmd.train.run_options import BUILD, CITATION, WELCOME, RunOptions
 from deepmd.train.trainer import DPTrainer
-from deepmd.train.trainer_mt import DPTrainer_mt
+from deepmd.train.trainer_mt import DPMultitaskTrainer
 from deepmd.utils.argcheck import normalize
 from deepmd.utils.argcheck_mt import normalize_mt
 from deepmd.utils.compat import updata_deepmd_input
@@ -131,7 +131,7 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
         rcut = model.model.get_rcut()
         type_map = model.model.get_type_map()
     else:
-        model = DPTrainer_mt(jdata, run_opt=run_opt)
+        model = DPMultitaskTrainer(jdata, run_opt=run_opt)
         for model_name in model.model_dict.keys():
             sub_model = model.model_dict[model_name]
             rcut_list.append(sub_model.get_rcut())

@@ -83,6 +83,112 @@ class DPTrainer (object):
         self.run_opt = run_opt
         self._init_param(jdata)
 
+    def _init_descrpt(self, descrpt_type, jdata):
+        if descrpt_type != 'hybrid':
+            tmp_descrpt = _generate_descrpt_from_param_dict(jdata)
+        else :
+            descrpt_list = []
+            for ii in jdata.get('list', []):
+                descrpt_list.append(_generate_descrpt_from_param_dict(ii))
+            tmp_descrpt = DescrptHybrid(descrpt_list)
+        return tmp_descrpt
+
+    def _init_type_embed(self, typeebd_param):
+        if typeebd_param is not None:
+            type_embed = TypeEmbedNet(
+                neuron=typeebd_param['neuron'],
+                resnet_dt=typeebd_param['resnet_dt'],
+                activation_function=typeebd_param['activation_function'],
+                precision=typeebd_param['precision'],
+                trainable=typeebd_param['trainable'],
+                seed=typeebd_param['seed']
+            )
+        else:
+            type_embed = None
+        return type_embed
+
+    def _init_fitting(self, descrpt_type, fitting_type, fitting_param):
+        if fitting_type == 'ener':
+            tmp_fitting = EnerFitting(**fitting_param)
+        # elif fitting_type == 'wfc':            
+        #     self.fitting = WFCFitting(fitting_param, self.descrpt)
+        elif fitting_type == 'dipole':
+            if descrpt_type == 'se_e2_a':
+                tmp_fitting = DipoleFittingSeA(**fitting_param)
+            else :
+                raise RuntimeError('fitting dipole only supports descrptors: se_e2_a')
+        elif fitting_type == 'polar':
+            # if descrpt_type == 'loc_frame':
+            #     self.fitting = PolarFittingLocFrame(fitting_param, self.descrpt)
+            if descrpt_type == 'se_e2_a':
+                tmp_fitting = PolarFittingSeA(**fitting_param)
+            else :
+                raise RuntimeError('fitting polar only supports descrptors: loc_frame and se_e2_a')
+        elif fitting_type == 'global_polar':
+            if descrpt_type == 'se_e2_a':
+                tmp_fitting = GlobalPolarFittingSeA(**fitting_param)
+            else :
+                raise RuntimeError('fitting global_polar only supports descrptors: loc_frame and se_e2_a')
+        else :
+            raise RuntimeError('unknow fitting type ' + fitting_type)
+        return tmp_fitting
+
+    def _init_lr(self, lr_param):
+        try: 
+            lr_type = lr_param['type']
+        except:
+            lr_type = 'exp'
+        if lr_type == 'exp':
+            tmp_lr = LearningRateExp(lr_param['start_lr'],
+                                      lr_param['stop_lr'],
+                                      lr_param['decay_steps'])
+        else :
+            raise RuntimeError('unknown learning_rate type ' + lr_type)   
+        return tmp_lr
+
+    def _init_loss(self, loss_param, fitting_type, lr, model):
+        try :
+            loss_type = loss_param.get('type', 'ener')
+        except:
+            loss_type = 'ener'
+        if fitting_type == 'ener':
+            loss_param.pop('type', None)
+            loss_param['starter_learning_rate'] = lr.start_lr()
+            if loss_type == 'ener':
+                tmp_loss = EnerStdLoss(**loss_param)
+            elif loss_type == 'ener_dipole':
+                tmp_loss = EnerDipoleLoss(**loss_param)
+            else:
+                raise RuntimeError('unknow loss type')
+        elif fitting_type == 'wfc':
+            tmp_loss = TensorLoss(loss_param, 
+                                   model = model, 
+                                   tensor_name = 'wfc',
+                                   tensor_size = model.get_out_size(),
+                                   label_name = 'wfc')
+        elif fitting_type == 'dipole':
+            tmp_loss = TensorLoss(loss_param, 
+                                   model = model, 
+                                   tensor_name = 'dipole',
+                                   tensor_size = 3,
+                                   label_name = 'dipole')
+        elif fitting_type == 'polar':
+            tmp_loss = TensorLoss(loss_param, 
+                                   model = model, 
+                                   tensor_name = 'polar',
+                                   tensor_size = 9,
+                                   label_name = 'polarizability')
+        elif fitting_type == 'global_polar':
+            tmp_loss = TensorLoss(loss_param, 
+                                   model = model, 
+                                   tensor_name = 'global_polar',
+                                   tensor_size = 9,
+                                   atomic = False,
+                                   label_name = 'polarizability')
+        else :
+            raise RuntimeError('get unknown fitting type when building loss function')
+        return tmp_loss
+
     def _init_param(self, jdata):
         # model config        
         model_param = j_must_have(jdata, 'model')
@@ -97,14 +203,7 @@ class DPTrainer (object):
             descrpt_type = descrpt_param['type']
         except KeyError:
             raise KeyError('the type of descriptor should be set by `type`')
-
-        if descrpt_type != 'hybrid':
-            self.descrpt = _generate_descrpt_from_param_dict(descrpt_param)
-        else :
-            descrpt_list = []
-            for ii in descrpt_param.get('list', []):
-                descrpt_list.append(_generate_descrpt_from_param_dict(ii))
-            self.descrpt = DescrptHybrid(descrpt_list)
+        self.descrpt = self._init_descrpt(descrpt_type, self.descrpt_param)
 
         # fitting net
         try: 
@@ -113,42 +212,10 @@ class DPTrainer (object):
             fitting_type = 'ener'
         fitting_param.pop('type', None)
         fitting_param['descrpt'] = self.descrpt
-        if fitting_type == 'ener':
-            self.fitting = EnerFitting(**fitting_param)
-        # elif fitting_type == 'wfc':            
-        #     self.fitting = WFCFitting(fitting_param, self.descrpt)
-        elif fitting_type == 'dipole':
-            if descrpt_type == 'se_e2_a':
-                self.fitting = DipoleFittingSeA(**fitting_param)
-            else :
-                raise RuntimeError('fitting dipole only supports descrptors: se_e2_a')
-        elif fitting_type == 'polar':
-            # if descrpt_type == 'loc_frame':
-            #     self.fitting = PolarFittingLocFrame(fitting_param, self.descrpt)
-            if descrpt_type == 'se_e2_a':
-                self.fitting = PolarFittingSeA(**fitting_param)
-            else :
-                raise RuntimeError('fitting polar only supports descrptors: loc_frame and se_e2_a')
-        elif fitting_type == 'global_polar':
-            if descrpt_type == 'se_e2_a':
-                self.fitting = GlobalPolarFittingSeA(**fitting_param)
-            else :
-                raise RuntimeError('fitting global_polar only supports descrptors: loc_frame and se_e2_a')
-        else :
-            raise RuntimeError('unknow fitting type ' + fitting_type)
+        self.fitting = self._init_fitting(descrpt_type, fitting_type, fitting_param)
 
         # type embedding
-        if typeebd_param is not None:
-            self.typeebd = TypeEmbedNet(
-                neuron=typeebd_param['neuron'],
-                resnet_dt=typeebd_param['resnet_dt'],
-                activation_function=typeebd_param['activation_function'],
-                precision=typeebd_param['precision'],
-                trainable=typeebd_param['trainable'],
-                seed=typeebd_param['seed']
-            )
-        else:
-            self.typeebd = None
+        self.typeebd = self._init_type_embed(typeebd_param)
 
         # init model
         # infer model type by fitting_type
@@ -196,16 +263,7 @@ class DPTrainer (object):
 
         # learning rate
         lr_param = j_must_have(jdata, 'learning_rate')
-        try: 
-            lr_type = lr_param['type']
-        except:
-            lr_type = 'exp'
-        if lr_type == 'exp':
-            self.lr = LearningRateExp(lr_param['start_lr'],
-                                      lr_param['stop_lr'],
-                                      lr_param['decay_steps'])
-        else :
-            raise RuntimeError('unknown learning_rate type ' + lr_type)        
+        self.lr = self._init_lr(lr_param)
 
         # loss
         # infer loss type by fitting_type
@@ -215,43 +273,9 @@ class DPTrainer (object):
         except:
             loss_param = None
             loss_type = 'ener'
+        self.loss = self._init_loss(loss_param, fitting_type, self.lr, self.model)
 
-        if fitting_type == 'ener':
-            loss_param.pop('type', None)
-            loss_param['starter_learning_rate'] = self.lr.start_lr()
-            if loss_type == 'ener':
-                self.loss = EnerStdLoss(**loss_param)
-            elif loss_type == 'ener_dipole':
-                self.loss = EnerDipoleLoss(**loss_param)
-            else:
-                raise RuntimeError('unknow loss type')
-        elif fitting_type == 'wfc':
-            self.loss = TensorLoss(loss_param, 
-                                   model = self.model, 
-                                   tensor_name = 'wfc',
-                                   tensor_size = self.model.get_out_size(),
-                                   label_name = 'wfc')
-        elif fitting_type == 'dipole':
-            self.loss = TensorLoss(loss_param, 
-                                   model = self.model, 
-                                   tensor_name = 'dipole',
-                                   tensor_size = 3,
-                                   label_name = 'dipole')
-        elif fitting_type == 'polar':
-            self.loss = TensorLoss(loss_param, 
-                                   model = self.model, 
-                                   tensor_name = 'polar',
-                                   tensor_size = 9,
-                                   label_name = 'polarizability')
-        elif fitting_type == 'global_polar':
-            self.loss = TensorLoss(loss_param, 
-                                   model = self.model, 
-                                   tensor_name = 'global_polar',
-                                   tensor_size = 9,
-                                   atomic = False,
-                                   label_name = 'polarizability')
-        else :
-            raise RuntimeError('get unknown fitting type when building loss function')
+        
 
         # training
         tr_data = jdata['training']
@@ -551,6 +575,7 @@ class DPTrainer (object):
     #         fp.write(print_str)
     #         fp.close ()
 
+
     def valid_on_the_fly(self,
                          fp,
                          train_batches,
@@ -562,9 +587,13 @@ class DPTrainer (object):
         cur_batch = self.cur_batch
         current_lr = run_sess(self.sess, self.learning_rate)
         if print_header:
-            self.print_header(fp, train_results, valid_results)
-        self.print_on_training(fp, train_results, valid_results, cur_batch, current_lr)
-
+            print_str = self.print_header(fp, train_results, valid_results)
+            fp.write(print_str+'\n')
+            fp.flush()
+        print_str = self.print_on_training(fp, train_results, valid_results, cur_batch, current_lr)
+        fp.write(print_str + '\n')
+        fp.flush()
+        
     @staticmethod
     def print_header(fp, train_results, valid_results):
         print_str = ''
@@ -577,9 +606,8 @@ class DPTrainer (object):
             prop_fmt = '   %11s'
             for k in train_results.keys():
                 print_str += prop_fmt % (k + '_trn')
-        print_str += '   %8s\n' % 'lr'
-        fp.write(print_str)
-        fp.flush()
+        print_str += '   %8s' % 'lr'
+        return print_str
 
     @staticmethod
     def print_on_training(fp, train_results, valid_results, cur_batch, cur_lr):
@@ -594,9 +622,9 @@ class DPTrainer (object):
             prop_fmt = "   %11.2e"
             for k in train_results.keys():
                 print_str += prop_fmt % (train_results[k])
-        print_str += "   %8.1e\n" % cur_lr
-        fp.write(print_str)
-        fp.flush()
+        print_str += "   %8.1e" % cur_lr
+        return print_str
+        
 
     def get_evaluation_results(self, batch_list):
         if batch_list is None: return None

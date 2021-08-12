@@ -10,68 +10,14 @@ from .argcheck import learning_rate_exp, loss_ener, loss_tensor
 from .argcheck import loss_variant_type_args
 from .argcheck import fitting_variant_type_args
 from .argcheck import learning_rate_variant_type_args
+from .argcheck import descrpt_variant_type_args
 # from deepmd.common import ACTIVATION_FN_DICT, PRECISION_DICT
 ACTIVATION_FN_DICT = {}
 PRECISION_DICT = {}
 
 
 
-#  --- Descriptor configurations: --- #
-
-
-def descrpt_se_conv1d_args():
-    doc_conv_windows = 'window sizes of each convolutional layer.'
-    doc_conv_neurons = 'number of neurons in each convolutional layer.'
-    doc_conv_residual = 'whether use residual convolution.'
-    doc_conv_activation_fn = 'the activation function of convolutional layers.'
-
-    return descrpt_se_a_args() + [
-        Argument("conv_windows", list, optional=True, default=[], doc=doc_conv_windows),
-        Argument("conv_neurons", list, optional=True, default=[], doc=doc_conv_neurons),
-        Argument("conv_residual", bool, optional=True, default=False, doc=doc_conv_residual),
-        Argument("conv_activation_fn", str, optional=True, default='tanh', doc=doc_conv_activation_fn)
-    ]
-
-
-def descrpt_se_conv_geo_args():
-    doc_conv_geo_windows = 'window sizes of each convolutional layer for geometric features.'
-    doc_conv_geo_neurons = 'number of neurons in each convolutional layer for geometric features.'
-    doc_conv_geo_residual = 'whether use residual convolution for geometric features.'
-    doc_conv_geo_activation_fn = 'the activation function of convolutional layers for geometric features.'
-
-    return descrpt_se_conv1d_args() + [
-        Argument("conv_geo_windows", list, optional=True, default=[], doc=doc_conv_geo_windows),
-        Argument("conv_geo_neurons", list, optional=True, default=[], doc=doc_conv_geo_neurons),
-        Argument("conv_geo_residual", bool, optional=True, default=False, doc=doc_conv_geo_residual),
-        Argument("conv_geo_activation_fn", str, optional=True, default='tanh', doc=doc_conv_geo_activation_fn)
-    ]
-
-
-def descrpt_variant_type_args():
-    link_lf = make_link('loc_frame', 'model/descriptor[loc_frame]')
-    link_se_e2_a = make_link('se_e2_a', 'model/descriptor[se_e2_a]')
-    link_se_e2_r = make_link('se_e2_r', 'model/descriptor[se_e2_r]')
-    link_se_e3 = make_link('se_e3', 'model/descriptor[se_e3]')
-    link_se_a_tpe = make_link('se_a_tpe', 'model/descriptor[se_a_tpe]')
-    link_hybrid = make_link('hybrid', 'model/descriptor[hybrid]')
-    doc_descrpt_type = f'The type of the descritpor. See explanation below. \n\n\
-- `loc_frame`: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.\n\n\
-- `se_e2_a`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor.\n\n\
-- `se_e2_r`: Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor.\n\n\
-- `se_e3`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Three-body embedding will be used by this descriptor.\n\n\
-- `se_a_tpe`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Type embedding will be used by this descriptor.\n\n\
-- `hybrid`: Concatenate of a list of descriptors as a new descriptor.'
-
-    return Variant("type", [
-        Argument("loc_frame", dict, descrpt_local_frame_args()),
-        Argument("se_e2_a", dict, descrpt_se_a_args(), alias=['se_a']),
-        Argument("se_e2_r", dict, descrpt_se_r_args(), alias=['se_r']),
-        Argument("se_e3", dict, descrpt_se_t_args(), alias=['se_at', 'se_a_3be', 'se_t']),
-        Argument("se_a_tpe", dict, descrpt_se_a_tpe_args(), alias=['se_a_ebd']),
-        Argument("se_conv1d", dict, descrpt_se_conv1d_args(), alias=['se_conv']),
-        Argument("se_conv_geo", dict, descrpt_se_conv_geo_args(), alias=['se_seq_geo']),
-        Argument("hybrid", dict, descrpt_hybrid_args()),
-    ], doc=doc_descrpt_type)
+#  --- model configurations: --- #
 
 
 def model_args():
@@ -234,7 +180,6 @@ def normalize_hybrid_list(hy_list):
     base = Argument("base", dict, [
         Argument("name", str, optional=True, default='', doc="Descriptor name."),
     ], [descrpt_variant_type_args()], doc="")
-    #base = Argument("base", dict, [], [descrpt_variant_type_args()], doc="")
     for ii in range(len(hy_list)):
         data = base.normalize_value(hy_list[ii], trim_pattern="_*")
         base.check_value(data, strict=True)
