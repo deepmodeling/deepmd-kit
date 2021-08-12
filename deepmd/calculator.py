@@ -103,15 +103,15 @@ class DP(Calculator):
         e, f, v = self.dp.eval(coords=coord, cells=cell, atom_types=atype)
         self.results['energy'] = e[0][0]
         self.results['forces'] = f[0]
-        self.results['virial'] = v[0].reshape(3,3)
+        self.results['virial'] = v[0].reshape(3, 3)
 
         # convert virial into stress for lattice relaxation
         if "stress" in properties:
             if sum(atoms.get_pbc()) > 0:
                 # the usual convention (tensile stress is positive)
                 # stress = -virial / volume
-                stress = -0.5*(v[0].copy()+v[0].copy().T) / atoms.get_volume()
-                # Voigt notation 
-                self.results['stress'] = stress.flat[[0,4,8,5,2,1]] 
+                stress = -0.5 * (v[0].copy() + v[0].copy().T) / atoms.get_volume()
+                # Voigt notation
+                self.results['stress'] = stress.flat[[0, 4, 8, 5, 2, 1]]
             else:
                 raise PropertyNotImplementedError
