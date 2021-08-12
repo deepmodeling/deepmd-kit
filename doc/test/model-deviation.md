@@ -35,4 +35,4 @@ optional arguments:
                         The trajectory frequency of the system (default: 1)
 ```
 
-For more details with respect to definition of model deviation and its application, please refer to `Yuzhi Zhang, Haidi Wang, Weijie Chen, Jinzhe Zeng, Linfeng Zhang, Han Wang, and Weinan E, DP-GEN: A concurrent learning platform for the generation of reliable deep learning based potential energy models, Computer Physics Communications, 2020, 253, 107206.`
+For more details with respect to definition of model deviation and its application, please refer to [Yuzhi Zhang, Haidi Wang, Weijie Chen, Jinzhe Zeng, Linfeng Zhang, Han Wang, and Weinan E, DP-GEN: A concurrent learning platform for the generation of reliable deep learning based potential energy models, Computer Physics Communications, 2020, 253, 107206.](https://doi.org/10.1016/j.cpc.2020.107206)
