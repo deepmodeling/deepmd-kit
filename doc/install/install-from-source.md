@@ -92,7 +92,7 @@ Valid subcommands:
     test               test the model
 ```
 
-### Install the C++ interface 
+## Install the C++ interface 
 
 If one does not need to use DeePMD-kit with Lammps or I-Pi, then the python interface installed in the previous section does everything and he/she can safely skip this section. 
 

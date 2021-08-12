@@ -4,7 +4,7 @@ The training can be invoked by
 ```bash
 $ dp train input.json
 ```
-where `input.json` is the name of the input script. See [the example](../training/train-se-e2-a.md#train-a-deep-potential-model) for more details.
+where `input.json` is the name of the input script. See [the example](../train/train-se-e2-a.md#train-a-deep-potential-model) for more details.
 
 During the training, checkpoints will be written to files with prefix `save_ckpt` every `save_freq` training steps. 
 
