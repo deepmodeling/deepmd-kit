@@ -1,18 +1,18 @@
 import math
-import numpy as np
-from typing import Tuple, List
+from typing import List, Tuple
 
-from deepmd.env import tf
-from deepmd.common import get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, get_np_precision
+import numpy as np
+from deepmd.common import (ACTIVATION_FN_DICT, PRECISION_DICT,
+                           docstring_parameter, get_activation_func,
+                           get_np_precision, get_precision)
+from deepmd.env import (GLOBAL_NP_FLOAT_PRECISION, GLOBAL_TF_FLOAT_PRECISION,
+                        default_tf_session_config, op_module, tf)
 from deepmd.utils.argcheck import list_to_doc
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
-from deepmd.env import op_module
-from deepmd.env import default_tf_session_config
 from deepmd.utils.network import embedding_net, embedding_net_rand_seed_shift
+from deepmd.utils.sess import run_sess
 from deepmd.utils.tabulate import DeepTabulate
 from deepmd.utils.type_embed import embed_atom_type
-from deepmd.utils.sess import run_sess
+
 
 class DescrptSeA ():
     @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))

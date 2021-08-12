@@ -4,25 +4,16 @@ import json
 import warnings
 from functools import wraps
 from pathlib import Path
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Tuple,
-    TypeVar,
-    Union,
-)
+from typing import (TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple,
+                    TypeVar, Union)
 
 import numpy as np
 import yaml
 
-from deepmd.env import op_module, tf
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION, GLOBAL_NP_FLOAT_PRECISION
-from deepmd.utils.sess import run_sess
+from deepmd.env import (GLOBAL_NP_FLOAT_PRECISION, GLOBAL_TF_FLOAT_PRECISION,
+                        op_module, tf)
 from deepmd.utils.errors import GraphWithoutTensorError
+from deepmd.utils.sess import run_sess
 
 if TYPE_CHECKING:
     _DICT_VAL = TypeVar("_DICT_VAL")

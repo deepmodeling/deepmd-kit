@@ -1,11 +1,11 @@
-import numpy as np
-from typing import Tuple, List
+from typing import List, Tuple
 
-from deepmd.env import tf
+import numpy as np
 from deepmd.common import ClassArg
-from deepmd.env import op_module
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.env import (GLOBAL_NP_FLOAT_PRECISION, GLOBAL_TF_FLOAT_PRECISION,
+                        op_module, tf)
+
+from .loc_frame import DescrptLocFrame
 # from deepmd.descriptor import DescrptLocFrame
 # from deepmd.descriptor import DescrptSeA
 # from deepmd.descriptor import DescrptSeT
@@ -13,17 +13,17 @@ from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 # from deepmd.descriptor import DescrptSeAEf
 # from deepmd.descriptor import DescrptSeR
 from .se_a import DescrptSeA
-from .se_r import DescrptSeR
-from .se_ar import DescrptSeAR
-from .se_t import DescrptSeT
 from .se_a_ebd import DescrptSeAEbd
 from .se_a_ef import DescrptSeAEf
-from .loc_frame import DescrptLocFrame
+from .se_ar import DescrptSeAR
+from .se_r import DescrptSeR
+from .se_t import DescrptSeT
+
 
 class DescrptHybrid ():
-    def __init__ (self, 
-                  descrpt_list : list
-    ) -> None :
+    def __init__(self,
+                 descrpt_list: list
+                ) -> None:
         """
         Constructor
 
@@ -41,8 +41,8 @@ class DescrptHybrid ():
         self.descrpt_list = descrpt_list
         self.numb_descrpt = len(self.descrpt_list)
         for ii in range(1, self.numb_descrpt):
-            assert(self.descrpt_list[ii].get_ntypes() == 
-                   self.descrpt_list[ 0].get_ntypes()), \
+            assert(self.descrpt_list[ii].get_ntypes() ==
+                   self.descrpt_list[0].get_ntypes()), \
                    f'number of atom types in {ii}th descrptor does not match others'
 
 
