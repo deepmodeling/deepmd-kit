@@ -23,7 +23,7 @@ For more information, one can find the [a full documentation](https://deepmd.rea
 
 ### Model
 The `model` defines how the model is constructed, for example
-```json=
+```json
     "model": {
 	"type_map":	["O", "H"],
 	"descriptor" :{
@@ -40,7 +40,7 @@ The model has two subsections `descritpor` and `fitting_net`, which defines the 
 
 #### Descriptor
 The construction of the descriptor is given by section `descriptor`. An example of the descriptor is provided as follows
-```json=
+```json
 	"descriptor" :{
 	    "type":		"se_e2_a",
 	    "rcut_smth":	0.50,
@@ -65,7 +65,7 @@ The construction of the descriptor is given by section `descriptor`. An example 
 
 #### Fitting
 The construction of the fitting net is give by section `fitting_net`
-```json=
+```json
 	"fitting_net" : {
 	    "neuron":		[240, 240, 240],
 	    "resnet_dt":	true,
@@ -79,7 +79,7 @@ The construction of the fitting net is give by section `fitting_net`
 ### Learning rate
 
 The `learning_rate` section in `input.json` is given as follows
-```json=
+```json
     "learning_rate" :{
 	"type":		"exp",
 	"start_lr":	0.001,
@@ -109,7 +109,7 @@ pref_f(t) = start_pref_f * ( lr(t) / start_lr ) + limit_pref_f * ( 1 - lr(t) / s
 where `lr(t)` denotes the learning rate at step `t`. `start_pref_f` and `limit_pref_f` specifies the `pref_f` at the start of the training and at the limit of `t -> inf`.
 
 The `loss` section in the `input.json` is 
-```json=
+```json
     "loss" : {
 	"start_pref_e":	0.02,
 	"limit_pref_e":	1,
@@ -126,7 +126,7 @@ If one does not want to train with virial, then he/she may set the virial prefac
 ### Training parameters
 
 Other training parameters are given in the `training` section.
-```json=
+```json
     "training": {
  	"training_data": {
 	    "systems":		["../data_water/data_0/", "../data_water/data_1/", "../data_water/data_2/"],
@@ -154,7 +154,7 @@ The sections `"training_data"` and `"validation_data"` give the training dataset
     * `"prob_sys_size"` the probability of using a system is in proportional to its size (number of frames).
     * `"prob_sys_size; sidx_0:eidx_0:w_0; sidx_1:eidx_1:w_1;..."` the `list` of systems are divided into blocks. The block `i` has systems ranging from `sidx_i` to `eidx_i`. The probability of using a system from block `i` is in proportional to `w_i`. Within one block, the probability of using a system is in proportional to its size.
 * An example of using `"auto_prob"` is given as below. The probability of using `systems[2]` is 0.4, and the sum of the probabilities of using `systems[0]` and `systems[1]` is 0.6. If the number of frames in `systems[1]` is twice as `system[0]`, then the probability of using `system[1]` is 0.4 and that of `system[0]` is 0.2.
-```json=
+```json
  	"training_data": {
 	    "systems":		["../data_water/data_0/", "../data_water/data_1/", "../data_water/data_2/"],
 	    "auto_prob":	"prob_sys_size; 0:2:0.6; 2:3:0.4",
@@ -162,7 +162,7 @@ The sections `"training_data"` and `"validation_data"` give the training dataset
 	}
 ```
 * The probability of using systems can also be specified explicitly with key `"sys_prob"` that is a list having the length of the number of systems. For example
-```json=
+```json
  	"training_data": {
 	    "systems":		["../data_water/data_0/", "../data_water/data_1/", "../data_water/data_2/"],
 	    "sys_prob":	[0.5, 0.3, 0.2],
@@ -186,11 +186,11 @@ Other keys in the `training` section are explained below:
 
 ## Train a Deep Potential model
 When the input script is prepared, one may start training by 
-```bash=
+```bash
 dp train input.json
 ```
 By default, the verbosity level of the DeePMD-kit is `INFO`, one may see a lot of important information on the code and environment showing on the screen. Among them two pieces of information regarding data systems worth special notice. 
-```bash=
+```bash
 DEEPMD INFO    ---Summary of DataSystem: training     -----------------------------------------------
 DEEPMD INFO    found 3 system(s):
 DEEPMD INFO                                        system  natoms  bch_sz   n_bch   prob  pbc
@@ -207,7 +207,7 @@ DEEPMD INFO    -----------------------------------------------------------------
 The DeePMD-kit prints detailed informaiton on the training and validation data sets. The data sets are defined by `"training_data"` and `"validation_data"` defined in the `"training"` section of the input script. The training data set is composed by three data systems, while the validation data set is composed by one data system. The number of atoms, batch size, number of batches in the system and the probability of using the system are all shown on the screen. The last column presents if the periodic boundary condition is assumed for the system. 
 
 During the training, the error of the model is tested every `disp_freq` training steps with the batch used to train the model and with `numb_btch` batches from the validating data. The training error and validation error are printed correspondingly in the file `disp_file`. The batch size can be set in the input script by the key `batch_size` in the corresponding sections for training and validation data set. An example of the output 
-```bash=
+```bash
 #  step      rmse_val    rmse_trn    rmse_e_val  rmse_e_trn    rmse_f_val  rmse_f_trn         lr
       0      3.33e+01    3.41e+01      1.03e+01    1.03e+01      8.39e-01    8.72e-01    1.0e-03
     100      2.57e+01    2.56e+01      1.87e+00    1.88e+00      8.03e-01    8.02e-01    1.0e-03

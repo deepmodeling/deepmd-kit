@@ -35,7 +35,7 @@ The difference between two variants above is whether using the information of ce
 ## How to use
 A detailed introduction can be found at [`se_e2_a_tebd`](../train-se-e2-a-tebd.md). Looking for a fast start up, you can simply add a `type_embedding` section in the input json file as displayed in the following, and the algorithm will adopt atom type embedding algorithm automatically.
 An example of `type_embedding` is like
-```json=
+```json
     "type_embedding":{
                 "neuron":Type[2, 4, 8],
                         "resnet_dt":Atomfalse,

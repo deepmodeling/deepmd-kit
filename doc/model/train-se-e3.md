@@ -8,7 +8,7 @@ $deepmd_source_dir/examples/water/se_e3/input.json
 ```
 
 The training input script is very similar to that of [`se_e2_a`](train-se-e2-a.md#the-training-input-script). The only difference lies in the `descriptor` section
-```json=
+```json
 	"descriptor": {
 	    "type":		"se_e3",
 	    "sel":		[40, 80],

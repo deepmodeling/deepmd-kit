@@ -63,24 +63,24 @@ tensorboard --logdir path/to/logs
 
 ### Tracking and visualizing loss metrics(red:train, blue:test)
 
-![ALT](./images/l2_loss.png "l2 loss")
+![ALT](../images/l2_loss.png "l2 loss")
 
-![ALT](./images/l2_energy_loss.png "l2 energy loss")
+![ALT](../images/l2_energy_loss.png "l2 energy loss")
 
-![ALT](./images/l2_force_loss.png "l2 force loss")
+![ALT](../images/l2_force_loss.png "l2 force loss")
 
 ### Visualizing deepmd-kit model graph
 
-![ALT](./images/tensorboard-graph.png "deepmd-kit graph")
+![ALT](../images/tensorboard-graph.png "deepmd-kit graph")
 
 ### Viewing histograms of weights, biases, or other tensors as they change over time
 
-![ALT](./images/tensorboard-histograms.png "deepmd-kit histograms")
+![ALT](../images/tensorboard-histograms.png "deepmd-kit histograms")
 
-![ALT](./images/tensorboard-distribution.png "deepmd-kit distribution")
+![ALT](../images/tensorboard-distribution.png "deepmd-kit distribution")
 
 ### Viewing summaries of trainable variables
-![ALT](./images/tensorboard-scalar.png "deepmd-kit scalar")
+![ALT](../images/tensorboard-scalar.png "deepmd-kit scalar")
 
 ## Attention
 
