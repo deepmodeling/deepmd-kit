@@ -37,10 +37,10 @@ A detailed introduction can be found at [`se_e2_a_tebd`](../train-se-e2-a-tebd.m
 An example of `type_embedding` is like
 ```json
     "type_embedding":{
-                "neuron":Type[2, 4, 8],
-                        "resnet_dt":Atomfalse,
-                                "seed":Type1
-                                    }
+       "neuron":    [2, 4, 8],
+       "resnet_dt": false,
+       "seed":      1
+    }
 ```
 
 
