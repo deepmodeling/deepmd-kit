@@ -170,7 +170,6 @@ def freeze(
             )
         else:
             modifier_type = None
-            
         if node_names is None:
             output_node_list = _make_node_names(model_type, modifier_type)
         else:

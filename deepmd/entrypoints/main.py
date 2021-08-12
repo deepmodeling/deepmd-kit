@@ -178,9 +178,6 @@ def parse_args(args: Optional[List[str]] = None):
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser_frz.add_argument(
-        "INPUT", help="the input parameter file in json or yaml format"
-    )
-    parser_frz.add_argument(
         "-c",
         "--checkpoint-folder",
         type=str,
@@ -201,14 +198,6 @@ def parse_args(args: Optional[List[str]] = None):
         default=None,
         help="the frozen nodes, if not set, determined from the model type",
     )
-    parser_frz.add_argument(
-        "-mt",
-        "--multi_task",
-        type=bool,
-        default=False,
-        help="Whether using multi-task.",
-    )
-    
 
     # * test script ********************************************************************
     parser_tst = subparsers.add_parser(
