@@ -43,8 +43,8 @@ struct InputNlist
 /**
  *@brief              Construct the InputNlist with a two-dimensional vector.
  *
- *@param           	  to_nlist:   InputNlist struct which stores the neighbor information of the core region atoms.
- *@param           	  from_nlist: Vector which stores the neighbor information of the core region atoms.
+ *@param              to_nlist:   InputNlist struct which stores the neighbor information of the core region atoms.
+ *@param              from_nlist: Vector which stores the neighbor information of the core region atoms.
  */
 void convert_nlist(
     InputNlist & to_nlist,
@@ -54,7 +54,7 @@ void convert_nlist(
 /**
  *@brief              Compute the max number of neighbors within the core region atoms
  *
- *@param           	  to_nlist:   InputNlist struct which stores the neighbor information of the core region atoms.
+ *@param              to_nlist:   InputNlist struct which stores the neighbor information of the core region atoms.
  *
  *@return             integer
  *@retval             max number of neighbors
@@ -89,10 +89,10 @@ build_nlist_cpu(
 /**
  *@brief              Convert the a host memory InputNlist to a device memory InputNlist
  *
- *@param           	  cpu_nlist:    Host memory InputNlist struct which stores the neighbor information of the core region atoms
- *@param           	  gpu_nlist:    Device memory InputNlist struct which stores the neighbor information of the core region atoms
- *@param           	  gpu_memory:   Device array which stores the elements of gpu_nlist
- *@param           	  max_nbor_size
+ *@param              cpu_nlist:    Host memory InputNlist struct which stores the neighbor information of the core region atoms
+ *@param              gpu_nlist:    Device memory InputNlist struct which stores the neighbor information of the core region atoms
+ *@param              gpu_memory:   Device array which stores the elements of gpu_nlist
+ *@param              max_nbor_size
  */
 void convert_nlist_gpu_device(
     InputNlist & gpu_nlist,
@@ -103,7 +103,7 @@ void convert_nlist_gpu_device(
 /**
  *@brief              Reclaim the allocated device memory of struct InputNlist
  *
- *@param           	  gpu_nlist:    Device memory InputNlist struct which stores the neighbor information of the core region atoms
+ *@param              gpu_nlist:    Device memory InputNlist struct which stores the neighbor information of the core region atoms
  */
 void free_nlist_gpu_device(
     InputNlist & gpu_nlist);
