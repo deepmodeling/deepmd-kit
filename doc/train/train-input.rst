@@ -1,3 +1,3 @@
 Training Parameters
 ======================================
-.. include:: train-input-auto.rst
+.. include:: ../train-input-auto.rst

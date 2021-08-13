@@ -168,7 +168,7 @@ breathe_default_project = "myproject"
 
 exhale_args = {
    "containmentFolder":     "./API_CC",
-    "rootFileName":          "api_cc.rst",
+    "rootFileName":          "../development/api_cc.rst",
     "rootFileTitle":         "C++ API",
     "doxygenStripFromPath":  "..",
     # Suggested optional arguments

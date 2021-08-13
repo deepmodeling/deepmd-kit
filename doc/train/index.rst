@@ -6,7 +6,7 @@ Training
 
    training
    training-advanced
-   ../train-input
+   train-input
    parallel-training
    tensorboard
    gpu-limitations

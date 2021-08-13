@@ -7,21 +7,8 @@ If other unexpected problems occur, you're welcome to contact us for help.
 .. _trouble:
 
 .. toctree::
-   :maxdepth: 3
-   :caption: Getting Started
-   
-   model-compatability
-   installation
-   md-energy-undulation
-   md-version-compatibility
+   :maxdepth: 1
+   :caption: Trouble shooting
+   :glob:
 
-.. _parameter_setting:
-
-.. toctree::
-   :maxdepth: 3
-   :caption: Parameters setting
-
-   howtoset_rcut
-   howtoset_sel
-   howtoset_num_nodes
-   howtoset_netsize
+   ./*
