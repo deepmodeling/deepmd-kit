@@ -59,7 +59,7 @@ where `Df_i` is the absolute model deviation of the force on atom `i`, `|f_i|` i
 - The `deepmd` pair style is provided in the USER-DEEPMD package, which is compiled from the DeePMD-kit, visit the [DeePMD-kit website](https://github.com/deepmodeling/deepmd-kit) for more information.
 
 
-## Compute tensorial prperties
+## Compute tensorial properties
 
 The DeePMD-kit package provide the compute `deeptensor/atom` for computing atomic tensorial properties. 
 
