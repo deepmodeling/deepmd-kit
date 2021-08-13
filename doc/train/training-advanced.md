@@ -1,5 +1,27 @@
 # Advanced options
 
+In this section, we will take `$deepmd_source_dir/examples/water/se_e2_a/input.json` as an example of the input file.
+
+## Learning rate
+
+The `learning_rate` section in `input.json` is given as follows
+```json
+    "learning_rate" :{
+	"type":		"exp",
+	"start_lr":	0.001,
+	"stop_lr":	3.51e-8,
+	"decay_steps":	5000,
+	"_comment":	"that's all"
+    }
+```
+* `start_lr` gives the learning rate at the beginning of the training.
+* `stop_lr` gives the learning rate at the end of the training. It should be small enough to ensure that the network parameters satisfactorily converge. 
+* During the training, the learning rate decays exponentially from `start_lr` to `stop_lr` following the formula.
+    ```
+    lr(t) = start_lr * decay_rate ^ ( t / decay_steps )
+    ```
+    where `t` is the training step.
+
 ## Training parameters
 
 Other training parameters are given in the `training` section.

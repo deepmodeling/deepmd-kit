@@ -37,37 +37,3 @@ The construction of the descriptor is given by section `descriptor`. An example 
 * If the option `resnet_dt` is set `true`, then a timestep is used in the ResNet.
 * `seed` gives the random seed that is used to generate random numbers when initializing the model parameters.
 
-
-#### Fitting
-The construction of the fitting net is give by section `fitting_net`
-```json
-	"fitting_net" : {
-	    "neuron":		[240, 240, 240],
-	    "resnet_dt":	true,
-	    "seed":		1
-	},
-```
-* `neuron` specifies the size of the fitting net. If two neighboring layers are of the same size, then a [ResNet architecture](https://arxiv.org/abs/1512.03385) is built between them. 
-* If the option `resnet_dt` is set `true`, then a timestep is used in the ResNet. 
-* `seed` gives the random seed that is used to generate random numbers when initializing the model parameters.
-
-### Learning rate
-
-The `learning_rate` section in `input.json` is given as follows
-```json
-    "learning_rate" :{
-	"type":		"exp",
-	"start_lr":	0.001,
-	"stop_lr":	3.51e-8,
-	"decay_steps":	5000,
-	"_comment":	"that's all"
-    }
-```
-* `start_lr` gives the learning rate at the beginning of the training.
-* `stop_lr` gives the learning rate at the end of the training. It should be small enough to ensure that the network parameters satisfactorily converge. 
-* During the training, the learning rate decays exponentially from `start_lr` to `stop_lr` following the formula.
-    ```
-    lr(t) = start_lr * decay_rate ^ ( t / decay_steps )
-    ```
-    where `t` is the training step.
-

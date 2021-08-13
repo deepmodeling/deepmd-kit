@@ -1,36 +1,20 @@
 # Fit energy
 
+In this section, we will take `$deepmd_source_dir/examples/water/se_e2_a/input.json` as an example of the input file.
+
 ## Fitting network
 
-The `fitting_net` section tells DP which fitting net to use.
-
-The json of `dipole` type should be provided like
-
+The construction of the fitting net is give by section `fitting_net`
 ```json
 	"fitting_net" : {
-		"type": "dipole",
-		"sel_type": [0],
-		"neuron": [100,100,100],
-		"resnet_dt": true,
-		"seed": 1,
+	    "neuron":		[240, 240, 240],
+	    "resnet_dt":	true,
+	    "seed":		1
 	},
 ```
-
-The json of `polar` type should be provided like
-
-```json
-	"fitting_net" : {
-	   	"type": "polar",
-		"sel_type": [0],
-		"neuron": [100,100,100],
-		"resnet_dt": true,
-		"seed": 1,
-	},
-```
-
--   `type` specifies which type of fitting net should be used. It should be either `dipole` or `polar`. Note that `global_polar` mode in version 1.x is already **deprecated** and is merged into `polar`. To specify whether a system is global or atomic, please see [here](train-se-e2-a.md).
--   `sel_type` is a list specifying which type of atoms have the quantity you want to fit. For example, in water system, `sel_type` is `[0]` since `0` represents for atom `O`. If left unset, all type of atoms will be fitted.
--   The rest `args` has the same meaning as they do in `ener` mode.
+* `neuron` specifies the size of the fitting net. If two neighboring layers are of the same size, then a [ResNet architecture](https://arxiv.org/abs/1512.03385) is built between them. 
+* If the option `resnet_dt` is set `true`, then a timestep is used in the ResNet. 
+* `seed` gives the random seed that is used to generate random numbers when initializing the model parameters.
 
 ## Loss
 
