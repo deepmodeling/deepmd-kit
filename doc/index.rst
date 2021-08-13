@@ -41,11 +41,10 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
 .. toctree::
    :maxdepth: 3
    :caption: Developer Guide
-   
-   development/api
-   ./API_CC/api_cc
-   development/coding-conventions
-   development/type-embedding
+   :glob:
+
+   development/*
+   API_CC/api_cc
 
 
 .. _project-details:
