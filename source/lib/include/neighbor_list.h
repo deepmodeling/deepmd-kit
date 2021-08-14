@@ -11,12 +11,20 @@
 
 namespace deepmd{
 
-// format of the input neighbor list
+/**
+ * @brief             Construct InputNlist with the input LAMMPS nbor list info.
+ * 
+ * @struct            InputNlist
+*/
 struct InputNlist
 {
+  /// Number of core region atoms
   int inum;
+  /// Array stores the core region atom's index
   int * ilist;
+  /// Array stores the core region atom's neighbor atom number
   int * numneigh;
+  /// Array stores the core region atom's neighbor index
   int ** firstneigh;
   InputNlist () 
       : inum(0), ilist(NULL), numneigh(NULL), firstneigh(NULL)
@@ -32,11 +40,25 @@ struct InputNlist
   ~InputNlist(){};
 };
 
+/**
+ *@brief              Construct the InputNlist with a two-dimensional vector.
+ *
+ *@param              to_nlist:   InputNlist struct which stores the neighbor information of the core region atoms.
+ *@param              from_nlist: Vector which stores the neighbor information of the core region atoms.
+ */
 void convert_nlist(
     InputNlist & to_nlist,
     std::vector<std::vector<int> > & from_nlist
     );
 
+/**
+ *@brief              Compute the max number of neighbors within the core region atoms
+ *
+ *@param              to_nlist:   InputNlist struct which stores the neighbor information of the core region atoms.
+ *
+ *@return             integer
+ *@retval             max number of neighbors
+ */
 int max_numneigh(
     const InputNlist & to_nlist
     );
@@ -64,12 +86,25 @@ build_nlist_cpu(
     const float & rcut);
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+/**
+ *@brief              Convert the a host memory InputNlist to a device memory InputNlist
+ *
+ *@param              cpu_nlist:    Host memory InputNlist struct which stores the neighbor information of the core region atoms
+ *@param              gpu_nlist:    Device memory InputNlist struct which stores the neighbor information of the core region atoms
+ *@param              gpu_memory:   Device array which stores the elements of gpu_nlist
+ *@param              max_nbor_size
+ */
 void convert_nlist_gpu_device(
     InputNlist & gpu_nlist,
     InputNlist & cpu_nlist,
     int* & gpu_memory,
     const int & max_nbor_size);
 
+/**
+ *@brief              Reclaim the allocated device memory of struct InputNlist
+ *
+ *@param              gpu_nlist:    Device memory InputNlist struct which stores the neighbor information of the core region atoms
+ */
 void free_nlist_gpu_device(
     InputNlist & gpu_nlist);
 
