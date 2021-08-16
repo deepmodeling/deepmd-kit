@@ -106,8 +106,8 @@ def classify_index_TS():
 # -- Project information -----------------------------------------------------
 
 project = 'DeePMD-kit'
-copyright = '2020, Deep Potential'
-author = 'Deep Potential'
+copyright = '2017-2021, Deep Modeling'
+author = 'Deep Modeling'
 
 def run_doxygen(folder):
     """Run the doxygen make command in the designated folder"""
@@ -148,9 +148,9 @@ def setup(app):
 #     'sphinx.ext.autosummary'
 # ]
 
-mkindex("troubleshooting")
-mkindex("development")
-classify_index_TS()
+#mkindex("troubleshooting")
+#mkindex("development")
+#classify_index_TS()
 
 extensions = [
     "sphinx_rtd_theme",

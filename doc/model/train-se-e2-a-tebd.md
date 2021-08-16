@@ -1,12 +1,12 @@
-# Train a Deep Potential model using `type embedding` approach
+# Type embedding approach
  
 We generate specific type embedding vector for each atom type, so that we can share one descriptor embedding net and one fitting net in total, which decline training complexity largely. 
 
 The training input script is similar to that of [`se_e2_a`](train-se-e2-a.md#the-training-input-script), but different by adding the `type_embedding` section. 
 
-### Type embedding net
+## Type embedding net
 The `model` defines how the model is constructed, adding a section of type embedding net:
-```json=
+```json
     "model": {
 	"type_map":	["O", "H"],
 	"type_embedding":{
@@ -23,7 +23,7 @@ The `model` defines how the model is constructed, adding a section of type embed
 Model will automatically apply type embedding approach and generate type embedding vectors. If type embedding vector is detected, descriptor and fitting net would take it as a part of input.
 
 The construction of type embedding net is given by `type_embedding`. An example of `type_embedding` is provided as follows
-```json=
+```json
 	"type_embedding":{
 	    "neuron":		[2, 4, 8],
 	    "resnet_dt":	false,
@@ -39,6 +39,6 @@ A complete training input script of this example can be find in the directory.
 ```bash
 $deepmd_source_dir/examples/water/se_e2_a_tebd/input.json
 ```
-See [here](development/type-embedding.md) for further explanation of `type embedding`.
+See [here](../development/type-embedding.md) for further explanation of `type embedding`.
 
 **P.S.: You can't apply compression method while using atom type embedding**

@@ -1,4 +1,4 @@
-# Train a Deep Potential model to fit `tensor` like `Dipole` and `Polarizability`
+# Fit `tensor` like `Dipole` and `Polarizability`
 
 Unlike `energy` which is a scalar, one may want to fit some high dimensional physical quantity, like `dipole` (vector) and `polarizability` (matrix, shorted as `polar`). Deep Potential has provided different API to allow this. In this example we will show you how to train a model to fit them for a water system. A complete training input script of the examples can be found in 
 
@@ -9,19 +9,9 @@ $deepmd_source_dir/examples/water_tensor/polar/polar_input.json
 
 The training and validation data are also provided our examples. But note that **the data provided along with the examples are of limited amount, and should not be used to train a productive model.**
 
-
-
-The directory of this examples:
-
--   [The training input script](#the-training-input-script)
--   [Training Data Preparation](#training-data-preparation)
-- 	[Train the Model](#train-the-model)
-
-## The training input script
-
 Similar to the `input.json` used in `ener` mode, training json is also divided into `model`, `learning_rate`, `loss` and `training`. Most keywords remains the same as `ener` mode, and their meaning can be found [here](train-se-e2-a.md). To fit a tensor, one need to modify `model.fitting_net` and `loss`.
 
-### Model
+## Fitting Network
 
 The `fitting_net` section tells DP which fitting net to use.
 
@@ -53,7 +43,7 @@ The json of `polar` type should be provided like
 -   `sel_type` is a list specifying which type of atoms have the quantity you want to fit. For example, in water system, `sel_type` is `[0]` since `0` represents for atom `O`. If left unset, all type of atoms will be fitted.
 -   The rest `args` has the same meaning as they do in `ener` mode.
 
-### Loss
+## Loss
 
 DP supports a combinational training of global system (only a global `tensor` label, i.e. dipole or polar, is provided in a frame) and atomic system (labels for **each** atom included in `sel_type` are provided). In a global system, each frame has just **one** `tensor` label. For example, when fitting `polar`, each frame will just provide a `1 x 9` vector which gives the elements of the polarizability tensor of that frame in order XX, XY, XZ, YX, YY, YZ, XZ, ZY, ZZ. By contrast, in a atomic system, each atom in `sel_type` has a `tensor` label. For example, when fitting dipole, each frame will provide a `#sel_atom x 3` matrix, where `#sel_atom` is the number of atoms whose type are in `sel_type`.
 
@@ -69,7 +59,7 @@ The loss section should be provided like
 	"loss" : {
 		"type":		"tensor",
 		"pref":		1.0,
-		"pref_atomic":	1.0,
+		"pref_atomic":	1.0
 	},
 ```
 

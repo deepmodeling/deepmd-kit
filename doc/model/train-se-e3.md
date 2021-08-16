@@ -1,4 +1,4 @@
-# Train a Deep Potential model using descriptor `"se_e3"`
+# Descriptor `"se_e3"`
 
 The notation of `se_e3` is short for the Deep Potential Smooth Edition (DeepPot-SE) constructed from all information (both angular and radial) of atomic configurations. The embedding takes angles between two neighboring atoms as input (denoted by `e3`).
 
@@ -8,7 +8,7 @@ $deepmd_source_dir/examples/water/se_e3/input.json
 ```
 
 The training input script is very similar to that of [`se_e2_a`](train-se-e2-a.md#the-training-input-script). The only difference lies in the `descriptor` section
-```json=
+```json
 	"descriptor": {
 	    "type":		"se_e3",
 	    "sel":		[40, 80],

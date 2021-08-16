@@ -11,41 +11,46 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
 
 .. Important:: The project DeePMD-kit is licensed under `GNU LGPLv3.0 <https://github.com/deepmodeling/deepmd-kit/blob/master/LICENSE>`_. If you use this code in any future publications, please cite this using *Han Wang, Linfeng Zhang, Jiequn Han, and Weinan E. "DeePMD-kit: A deep learning package for many-body potential energy representation and molecular dynamics." Computer Physics Communications 228 (2018): 178-184.*
 
-.. _user-guide:
+.. _getting-started:
 
 .. toctree::
-   :maxdepth: 2
-   :caption: User Guide
+   :maxdepth: 3
+   :caption: Getting Started
    
-   install
-   getting-started
-   tensorboard
-   troubleshooting/index
+   getting-started/index
 
-
-.. _data-and-parameters:
+.. _advanced:
 
 .. toctree::
-   :maxdepth: 2
-   :caption: Data and Parameters
+   :maxdepth: 3
+   :numbered:
+   :caption: Advanced
 
-   data-conv
-   train-input
-
+   install/index
+   data/index
+   model/index
+   train/index
+   freeze/index
+   test/index
+   inference/index
+   third-party/index
+   troubleshooting/index
 
 .. _developer-guide:
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 3
    :caption: Developer Guide
-   
-   development/index
+   :glob:
+
+   development/*
+   API_CC/api_cc
 
 
 .. _project-details:
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 3
    :caption: Project Details
 
    license

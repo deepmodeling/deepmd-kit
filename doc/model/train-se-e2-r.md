@@ -1,4 +1,4 @@
-# Train a Deep Potential model using descriptor `"se_e2_r"`
+# Descriptor `"se_e2_r"`
 
 The notation of `se_e2_r` is short for the Deep Potential Smooth Edition (DeepPot-SE) constructed from the radial information of atomic configurations. The `e2` stands for the embedding with two-atom information. 
 
@@ -8,7 +8,7 @@ $deepmd_source_dir/examples/water/se_e2_r/input.json
 ```
 
 The training input script is very similar to that of [`se_e2_a`](train-se-e2-a.md#the-training-input-script). The only difference lies in the `descriptor` section
-```json=
+```json
 	"descriptor": {
 	    "type":		"se_e2_r",
 	    "sel":		[46, 92],
