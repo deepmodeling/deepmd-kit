@@ -76,10 +76,11 @@ class DeepTensor(DeepEval):
             # then put those into self.attrs
             for attr_name, tensor_name in optional_tensors.items():
                 self._get_tensor(tensor_name, attr_name)
-            self.tensors.update(optional_tensors)
-            self._support_gfv = True
         except KeyError:
             self._support_gfv = False
+        else:
+            self.tensors.update(optional_tensors)
+            self._support_gfv = True
             
         # start a tf session associated to the graph
         self.sess = tf.Session(graph=self.graph, config=default_tf_session_config)

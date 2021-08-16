@@ -109,10 +109,7 @@ class DPTrainer (object):
             self.descrpt = DescrptHybrid(descrpt_list)
 
         # fitting net
-        try: 
-            fitting_type = fitting_param['type']
-        except:
-            fitting_type = 'ener'
+        fitting_type = fitting_param.get('type', 'ener')
         fitting_param.pop('type', None)
         fitting_param['descrpt'] = self.descrpt
         if fitting_type == 'ener':
@@ -198,10 +195,7 @@ class DPTrainer (object):
 
         # learning rate
         lr_param = j_must_have(jdata, 'learning_rate')
-        try: 
-            lr_type = lr_param['type']
-        except:
-            lr_type = 'exp'
+        lr_type = lr_param.get('type', 'exp')
         if lr_type == 'exp':
             self.lr = LearningRateExp(lr_param['start_lr'],
                                       lr_param['stop_lr'],
@@ -211,12 +205,8 @@ class DPTrainer (object):
 
         # loss
         # infer loss type by fitting_type
-        try :
-            loss_param = jdata['loss']
-            loss_type = loss_param.get('type', 'ener')
-        except:
-            loss_param = None
-            loss_type = 'ener'
+        loss_param = jdata.get('loss', None)
+        loss_type = loss_param.get('type', 'ener')
 
         if fitting_type == 'ener':
             loss_param.pop('type', None)

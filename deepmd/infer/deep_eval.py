@@ -57,12 +57,13 @@ class DeepEval:
         if not self._model_version:
             try:
                 t_mt = self._get_tensor("model_attr/model_version:0")
-                sess = tf.Session(graph=self.graph, config=default_tf_session_config)
-                [mt] = run_sess(sess, [t_mt], feed_dict={})
-                self._model_version = mt.decode("utf-8")
             except KeyError:
                 # For deepmd-kit version 0.x - 1.x, set model version to 0.0
                 self._model_version = "0.0"
+            else:
+                sess = tf.Session(graph=self.graph, config=default_tf_session_config)
+                [mt] = run_sess(sess, [t_mt], feed_dict={})
+                self._model_version = mt.decode("utf-8")
         return self._model_version    
 
     def _graph_compatable(
