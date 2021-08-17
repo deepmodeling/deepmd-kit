@@ -61,8 +61,7 @@ class DeepmdData() :
         if type_map is not None and self.type_map is not None:
             atom_type_ = [type_map.index(self.type_map[ii]) for ii in self.atom_type]
             self.atom_type = np.array(atom_type_, dtype = np.int32)
-            ntypes = len(type_map)
-            self.type_map = type_map[:ntypes]
+            self.type_map = type_map
 
         # make idx map
         self.idx_map = self._make_idx_map(self.atom_type)
@@ -159,11 +158,11 @@ class DeepmdData() :
         }
         return self
 
-    def get_data_dict(self) -> (dict, str):
+    def get_data_dict(self) -> dict:
         """
         Get the `data_dict`
         """
-        return self.data_dict, self.name
+        return self.data_dict
 
     def check_batch_size (self, batch_size) :        
         """

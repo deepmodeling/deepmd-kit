@@ -12,6 +12,7 @@ from deepmd.entrypoints import (
     freeze,
     test,
     train_dp,
+    train_dp_mt,
     transfer,
     make_model_devi,
     convert,
@@ -169,6 +170,7 @@ def parse_args(args: Optional[List[str]] = None):
         default=False,
         help="Whether using multi-task.",
     )
+
 
     # * freeze script ******************************************************************
     parser_frz = subparsers.add_parser(
@@ -429,7 +431,10 @@ def main():
     dict_args = vars(args)
 
     if args.command == "train":
-        train_dp(**dict_args)
+        if dict_args['multi_task']:
+            train_dp_mt(**dict_args)
+        else:
+            train_dp(**dict_args)
     elif args.command == "freeze":
         freeze(**dict_args)
     elif args.command == "config":

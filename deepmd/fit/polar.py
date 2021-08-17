@@ -115,7 +115,8 @@ class PolarFittingSeA () :
                   seed : int = None,
                   activation_function : str = 'tanh',
                   precision : str = 'default',
-                  uniform_seed: bool = False                  
+                  uniform_seed: bool = False,
+                  name : str = None,              
     ) -> None:
         """
         Constructor
@@ -189,6 +190,7 @@ class PolarFittingSeA () :
         self.dim_rot_mat_1 = descrpt.get_dim_rot_mat_1()
         self.dim_rot_mat = self.dim_rot_mat_1 * 3
         self.useBN = False
+        self.name = name
 
     def get_sel_type(self) -> List[int]:
         """
@@ -201,6 +203,12 @@ class PolarFittingSeA () :
         Get the output size. Should be 9
         """
         return 9
+
+    def get_name(self) -> str:
+        """
+        Get the name of fitting net
+        """
+        return self.name
 
     def compute_input_stats(self, 
                             all_stat, 
@@ -383,7 +391,8 @@ class GlobalPolarFittingSeA () :
                   diag_shift : List[float] = None,
                   seed : int = None,
                   activation_function : str = 'tanh',
-                  precision : str = 'default'
+                  precision : str = 'default',
+                  name : str = None,
     ) -> None:
         """
         Constructor
@@ -438,6 +447,12 @@ class GlobalPolarFittingSeA () :
         Get the output size. Should be 9
         """
         return self.polar_fitting.get_out_size()
+        
+    def get_name(self) -> str:
+        """
+        Get the name of fitting net
+        """
+        return self.name
 
     def build (self,
                input_d,

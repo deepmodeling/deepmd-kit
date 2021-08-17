@@ -1,7 +1,7 @@
 #
 from .data import DeepmdData
 from .data_system import DeepmdDataSystem
-from .data_system import DeepmdDataDocker
+from .data_docker import DeepmdDataDocker
 
 # out-of-dated
 from .data import DataSets

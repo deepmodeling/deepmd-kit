@@ -91,8 +91,6 @@ class RunOptions:
         log_path: Optional[str] = None,
         log_level: int = 0,
         mpi_log: str = "master",
-        try_distrib: bool = False,
-        multi_task : bool = False,
     ):
         self._try_init_distrib()
 
@@ -105,7 +103,6 @@ class RunOptions:
         self.restart = restart
         self.init_model = init_model
         self.init_mode = "init_from_scratch"
-        self.multi_task = multi_task
 
         if restart is not None:
             self.restart = os.path.abspath(restart)

@@ -101,7 +101,7 @@ class EnerModel() :
         self.descrpt.compute_input_stats(all_stat['coord'],
                                          all_stat['box'],
                                          all_stat['type'],
-                                         all_stat['natoms_vec'], # this should be the global one(dim 14) or local one(dim 11)?
+                                         all_stat['natoms_vec'], 
                                          all_stat['default_mesh'], 
                                          all_stat)
         self.fitting.compute_input_stats(all_stat, protection = protection)
