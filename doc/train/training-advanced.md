@@ -45,7 +45,7 @@ Other training parameters are given in the `training` section.
     }
 ```
 The sections `"training_data"` and `"validation_data"` give the training dataset and validation dataset, respectively. Taking the training dataset for example, the keys are explained below:
-* `systems` provide paths of the training data systems. DeePMD-kit allows you to provide multiple systems. This key can be a `list` or a `str`.
+* `systems` provide paths of the training data systems. DeePMD-kit allows you to provide multiple systems with different numbers of atoms. This key can be a `list` or a `str`.
     * `list`: `systems` gives the training data systems.
     * `str`: `systems` should be a valid path. DeePMD-kit will recursively search all data systems in this path.
 * At each training step, DeePMD-kit randomly pick `batch_size` frame(s) from one of the systems. The probability of using a system is by default in proportion to the number of batches in the system. More optional are available for automatically determining the probability of using systems. One can set the key `auto_prob` to
