@@ -50,3 +50,6 @@ $ ls
 box.raw  coord.raw  energy.raw  force.raw  set.000  set.001  set.002  type.raw  virial.raw
 ```
 It generates three sets `set.000`, `set.001` and `set.002`, with each set contains 2000 frames. One do not need to take care of the binary data files in each of the `set.*` directories. The path containing `set.*` and `type.raw` is called a *system*. 
+
+If one needs to train a non-periodic system, an empty `nopbc` file should be put under the system directory. `box.raw` is not necessary is a non-periodic system.
+
