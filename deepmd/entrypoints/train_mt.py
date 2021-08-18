@@ -40,7 +40,6 @@ def train_mt(
     mpi_log: str,
     log_level: int,
     log_path: Optional[str],
-    multi_task: bool,
     **kwargs,
 ):
     """Run DeePMD model training.

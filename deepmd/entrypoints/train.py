@@ -15,12 +15,9 @@ from deepmd.env import reset_default_tf_session_config
 from deepmd.infer.data_modifier import DipoleChargeModifier
 from deepmd.train.run_options import BUILD, CITATION, WELCOME, RunOptions
 from deepmd.train.trainer import DPTrainer
-from deepmd.train.trainer_mt import DPMultitaskTrainer
 from deepmd.utils.argcheck import normalize
-from deepmd.utils.argcheck_mt import normalize_mt
 from deepmd.utils.compat import updata_deepmd_input
 from deepmd.utils.data_system import DeepmdDataSystem
-from deepmd.utils.data_docker import DeepmdDataDocker
 from deepmd.utils.sess import run_sess
 from deepmd.utils.neighbor_stat import NeighborStat
 
@@ -38,7 +35,6 @@ def train(
     mpi_log: str,
     log_level: int,
     log_path: Optional[str],
-    multi_task: bool,
     **kwargs,
 ):
     """Run DeePMD model training.

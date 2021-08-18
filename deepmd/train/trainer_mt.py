@@ -262,7 +262,9 @@ class DPMultitaskTrainer (DPTrainer):
         self.place_holders['default_mesh']      = tf.placeholder(tf.int32,   [None], name='t_mesh')
         self.place_holders['is_training']       = tf.placeholder(tf.bool)
         
-        for model_name in self.model_dict.keys():
+        # we will send a suffix dict into the model, 
+        # so that each model can be build by combining these sub module together
+        for model_name in self.model_dict.keys(): 
             sub_model = self.model_dict[model_name]
             suffix_dict = self.model_component[model_name]
             suffix_dict['type_embed'] = 'type_embedding'
@@ -390,6 +392,7 @@ class DPMultitaskTrainer (DPTrainer):
             train_batch = train_batch['data']
 
             if self.display_in_training and is_first_step:
+                # we choose valid batch according to the training system
                 valid_batches = [valid_data.get_batch(pick_method)['data'] for ii in range(self.valid_numb_batch)] if valid_data is not None else None
                 self.valid_on_the_fly(fp, [train_batch], valid_batches,print_header=True,method = pick_method)
                 is_first_step = False

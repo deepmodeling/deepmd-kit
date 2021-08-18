@@ -90,7 +90,9 @@ class DeepmdDataDocker() :
         self.batch_size = list(batch_size_list)
         self.name_list = list(name_list)
         self.prob_nmethod = [ float(i) for i in self.method_nbatch] / np.sum(self.method_nbatch) 
-        self.set_sys_probs(sys_probs, auto_prob_style_method)
+        self.set_sys_probs(sys_probs, auto_prob_style_method) 
+        # self.sys_probs is a probability of choosing different DeepmdDataSystem
+        # first choose the prob of DeepmdDataSystem and then choose the prob of DeepmdData
         
 
 
@@ -221,17 +223,3 @@ class DeepmdDataDocker() :
                      ) )
             log.info("--------------------------------------------------------------------------------------")
 
-def _main () :
-    sys =  ['/home/wanghan/study/deep.md/results.01/data/mos2/only_raws/20', 
-            '/home/wanghan/study/deep.md/results.01/data/mos2/only_raws/30', 
-            '/home/wanghan/study/deep.md/results.01/data/mos2/only_raws/38', 
-            '/home/wanghan/study/deep.md/results.01/data/mos2/only_raws/MoS2', 
-            '/home/wanghan/study/deep.md/results.01/data/mos2/only_raws/Pt_cluster']
-    set_prefix = 'set'
-    ds = DataSystem (sys, set_prefix, 4, 6)
-    r = ds.get_batch()
-    print(r[1][0])
-
-if __name__ == '__main__':
-    _main()
-            

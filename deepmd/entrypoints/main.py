@@ -166,8 +166,7 @@ def parse_args(args: Optional[List[str]] = None):
     parser_train.add_argument(
         "-mt",
         "--multi_task",
-        type=bool,
-        default=False,
+        action = 'store_true',
         help="Whether using multi-task.",
     )
 

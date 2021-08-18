@@ -341,7 +341,7 @@ class DeepmdDataSystem() :
         b_data = self.data_systems[self.pick_idx].get_batch(self.batch_size[self.pick_idx])
         b_data["natoms_vec"] = self.natoms_vec[self.pick_idx]
         b_data["default_mesh"] = self.default_mesh[self.pick_idx]
-        return  b_data
+        return b_data
 
     # ! altered by Marián Rynik
     def get_test (self, 
@@ -518,6 +518,8 @@ class DeepmdDataSystem() :
             tmp_prob = [float(i) for i in nbatch_block] / np.sum(nbatch_block)
             sys_probs[block_stt[ii]:block_end[ii]] = tmp_prob * block_probs[ii]
         return sys_probs
+
+
 
 class DataSystem (object) :
     """
@@ -713,17 +715,4 @@ class DataSystem (object) :
     def numb_fparam(self) :
         return self.has_fparam
 
-def _main () :
-    sys =  ['/home/wanghan/study/deep.md/results.01/data/mos2/only_raws/20', 
-            '/home/wanghan/study/deep.md/results.01/data/mos2/only_raws/30', 
-            '/home/wanghan/study/deep.md/results.01/data/mos2/only_raws/38', 
-            '/home/wanghan/study/deep.md/results.01/data/mos2/only_raws/MoS2', 
-            '/home/wanghan/study/deep.md/results.01/data/mos2/only_raws/Pt_cluster']
-    set_prefix = 'set'
-    ds = DataSystem (sys, set_prefix, 4, 6)
-    r = ds.get_batch()
-    print(r[1][0])
-
-if __name__ == '__main__':
-    _main()
             
