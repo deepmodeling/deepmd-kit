@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from deepmd import __version__
 from deepmd.entrypoints import (
     compress,
     config,
@@ -395,6 +396,8 @@ def parse_args(args: Optional[List[str]] = None):
         type=str, 
 		help='the output model',
     )
+    # --version
+    parser.add_argument('--version', action='version', version='DeePMD-kit v%s' % __version__)
 
     parsed_args = parser.parse_args(args=args)
     if parsed_args.command is None:
