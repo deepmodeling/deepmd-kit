@@ -18,8 +18,7 @@ def _file_delete(file) :
 
 class TestModel(tf.test.TestCase):
     def setUp(self) :
-        self.INPUT = str(tests_path / os.path.join("multi-task", "input.json"))
-        self.data_file  = str(tests_path / os.path.join("multi-task", "data"))
+        self.INPUT = str(tests_path / 'input_mt.json')
         jdata = j_loader(self.INPUT)
         for sub_sys in jdata['training']['training_data']['systems']:
             for i in range(len(sub_sys['data'])):
@@ -43,10 +42,10 @@ class TestModel(tf.test.TestCase):
         assert(ret == 0), "DP train error!"
         dd = np.loadtxt("lcurve.out",skiprows=1)[:,:9]
         dd = dd.reshape([3,-1])
-        ref_loss = [24.8,19.6,
-                    3.79,1.81,
-                    2110.0,2110.0]
+                
+        ref_loss = [0.0,307.0,307.0,156.0,156.0,0.765,0.809,0.001,1.0,1.0,2150.0,2150.0,156.0,156.0,0.792,0.813,5.9e-06,1.0,
+        2.0,2160.0,2160.0,156.0,156.0,0.829,0.787,3.5e-08,1.0]
 
         for ii in range(3):
-            for jj in range(2):
-                self.assertAlmostEqual(dd[ii][jj+1], ref_loss[ii*2+jj], places = 8)
+            for jj in range(9):
+                self.assertAlmostEqual(dd[ii][jj], ref_loss[ii*9+jj], places = 8)

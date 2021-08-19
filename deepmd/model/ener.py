@@ -117,7 +117,7 @@ class EnerModel() :
                box, 
                mesh,
                input_dict,
-               suffix, # a dict of suffix, including type_embed, descrpt and fitting.
+               suffix = '', # a dict of suffix, including type_embed, descrpt and fitting.
                reuse = None):
         if not isinstance(suffix,dict):
             suffix_dict = {}

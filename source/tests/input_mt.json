@@ -133,13 +133,13 @@
                 {
                     "name": "HfO2",
                     "data": [
-                        "multi-task/data/HfO2/init.001"
+                        "model_compression/data_1"
                     ]
                 },
                 {
                     "name": "water",
                     "data": [
-                        "multi-task/data/water/data_0"
+                        "model_compression/data"
                     ]
                 }
             ],
@@ -152,13 +152,13 @@
                 {
                     "name": "HfO2",
                     "data": [
-                        "multi-task/data/HfO2/init.001"
+                        "model_compression/data_1"
                     ]
                 },
                 {
                     "name": "water",
                     "data": [
-                        "multi-task/data/water/data_0"
+                        "model_compression/data"
                     ]
                 }
             ],
@@ -182,11 +182,11 @@
                 "loss": "water"
             }
         ],
-        "numb_steps": 200,
+        "numb_steps": 2,
         "seed": 1234,
         "disp_file": "lcurve.out",
-        "disp_freq": 100,
-        "save_freq": 200,
+        "disp_freq": 1,
+        "save_freq": 2,
         "_comment": "that's all"
     }
 }
