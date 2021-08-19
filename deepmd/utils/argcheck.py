@@ -571,6 +571,7 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     doc_profiling_file = 'Output file for profiling.'
     doc_tensorboard = 'Enable tensorboard'
     doc_tensorboard_log_dir = 'The log directory of tensorboard outputs'
+    doc_tensorboard_freq = 'The frequency of writing tensorboard events.'
 
     arg_training_data = training_data_args()
     arg_validation_data = validation_data_args()
@@ -591,6 +592,7 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
         Argument("profiling_file", str, optional=True, default='timeline.json', doc=doc_profiling_file),
         Argument("tensorboard", bool, optional=True, default=False, doc=doc_tensorboard),
         Argument("tensorboard_log_dir", str, optional=True, default='log', doc=doc_tensorboard_log_dir),
+        Argument("tensorboard_freq", int, optional=True, default=1, doc=doc_tensorboard_freq),
     ]
 
     doc_training = 'The training options.'
