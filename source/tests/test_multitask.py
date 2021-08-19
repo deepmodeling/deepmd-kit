@@ -42,10 +42,11 @@ class TestModel(tf.test.TestCase):
         ret = os.system("dp train -mt " + self.INPUT)
         assert(ret == 0), "DP train error!"
         dd = np.loadtxt("lcurve.out",skiprows=1)[:,:9]
-        dd = dd.reshape([-1])
-        ref_loss = [0.0,24.8,19.6,10.2,10.1,0.608,0.434,0.002,0.0,
-                    100.0,3.79,1.81,0.0575,0.183,0.842,0.0866,3.5e-05,
-                    0.0,200.0,2110.0,2110.0,152.0,152.0,1.9,1.98,3.9e-08,1.0]
+        dd = dd.reshape([3,-1])
+        ref_loss = [24.8,19.6,
+                    3.79,1.81,
+                    2110.0,2110.0]
 
-        for ii in range(dd.size):
-            self.assertAlmostEqual(dd[ii], ref_loss[ii], places = 8)
+        for ii in range(3):
+            for jj in range(2):
+                self.assertAlmostEqual(dd[ii][jj+1], ref_loss[ii*2+jj], places = 8)
