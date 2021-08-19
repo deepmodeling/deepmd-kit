@@ -90,7 +90,7 @@ class RunOptions:
         restart: Optional[str] = None,
         log_path: Optional[str] = None,
         log_level: int = 0,
-        mpi_log: str = "master",
+        mpi_log: str = "master"
     ):
         self._try_init_distrib()
 

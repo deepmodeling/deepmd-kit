@@ -55,6 +55,7 @@ def train(
         logging level defined by int 0-3
     log_path : Optional[str]
         logging file path or None if logs are to be output only to stdout
+
     Raises
     ------
     RuntimeError
@@ -64,7 +65,9 @@ def train(
     jdata = j_loader(INPUT)
 
     jdata = updata_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
+
     jdata = normalize(jdata)
+
     jdata = update_sel(jdata)
 
     with open(output, "w") as fp:
@@ -77,7 +80,6 @@ def train(
         log_path=log_path,
         log_level=log_level,
         mpi_log=mpi_log,
-
     )
 
     for message in WELCOME + CITATION + BUILD:
@@ -85,8 +87,6 @@ def train(
 
     run_opt.print_resource_summary()
     _do_work(jdata, run_opt)
-
-
 
 
 def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
@@ -115,8 +115,6 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
     model = DPTrainer(jdata, run_opt=run_opt)
     rcut = model.model.get_rcut()
     type_map = model.model.get_type_map()
-
-
     if len(type_map) == 0:
         ipt_type_map = None
     else:
@@ -150,6 +148,7 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions):
     end_time = time.time()
     log.info("finished training")
     log.info(f"wall time: {(end_time - start_time):.3f} s")
+
 
 def get_data(jdata: Dict[str, Any], rcut, type_map, modifier):
     systems = j_must_have(jdata, "systems")
@@ -192,6 +191,7 @@ def get_data(jdata: Dict[str, Any], rcut, type_map, modifier):
 
     return data
 
+
 def get_modifier(modi_data=None):
     modifier: Optional[DipoleChargeModifier]
     if modi_data is not None:
@@ -230,14 +230,13 @@ def get_type_map(jdata):
     return jdata['model'].get('type_map', None)
 
 
-def get_sel(jdata, rcut): 
+def get_sel(jdata, rcut):
     max_rcut = get_rcut(jdata)
     type_map = get_type_map(jdata)
 
     if type_map and len(type_map) == 0:
         type_map = None
     train_data = get_data(jdata["training"]["training_data"], max_rcut, type_map, None)
-
     train_data.get_batch()
     data_ntypes = train_data.get_ntypes()
     if type_map is not None:
@@ -284,7 +283,6 @@ def wrap_up_4(xx):
 def update_one_sel(jdata, descriptor):
     rcut = descriptor['rcut']
     tmp_sel = get_sel(jdata, rcut)
-
     if parse_auto_sel(descriptor['sel']) :
         ratio = parse_auto_sel_ratio(descriptor['sel'])
         descriptor['sel'] = [int(wrap_up_4(ii * ratio)) for ii in tmp_sel]
