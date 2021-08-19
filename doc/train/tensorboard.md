@@ -43,6 +43,7 @@ subsection will enable the tensorboard data analysis. eg. **water_se_a.json**.
 	"time_training":true,
 	"tensorboard":	true,
 	"tensorboard_log_dir":"log",
+	"tensorboard_freq": 1000,
 	"profiling":	false,
 	"profiling_file":"timeline.json",
 	"_comment":	"that's all"
@@ -53,7 +54,7 @@ Once you have event files, run TensorBoard and provide the log directory. This
 should print that TensorBoard has started. Next, connect to http://tensorboard_server_ip:6006.
 
 TensorBoard requires a logdir to read logs from. For info on configuring TensorBoard, run tensorboard --help.
-One can easily change the log name with "tensorboard_log_dir".
+One can easily change the log name with "tensorboard_log_dir" and the sampling frequency with "tensorboard_freq".
 
 ```bash
 tensorboard --logdir path/to/logs

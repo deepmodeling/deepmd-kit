@@ -1485,3 +1485,10 @@ training:
 
         The log directory of tensorboard outputs
 
+    .. _`training/tensorboard_freq`: 
+
+    tensorboard_freq: 
+        | type: ``int``, optional, default: ``1``
+        | argument path: ``training/tensorboard_freq``
+
+        The frequency of writing tensorboard events.

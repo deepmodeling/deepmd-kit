@@ -257,6 +257,7 @@ class DPTrainer (object):
         self.profiling_file = tr_data.get('profiling_file', 'timeline.json')
         self.tensorboard = self.run_opt.is_chief and tr_data.get('tensorboard', False)
         self.tensorboard_log_dir = tr_data.get('tensorboard_log_dir', 'log')
+        self.tensorboard_freq = tr_data.get('tensorboard_freq', 1)
         # self.sys_probs = tr_data['sys_probs']
         # self.auto_prob_style = tr_data['auto_prob']
         self.useBN = False
@@ -475,11 +476,11 @@ class DPTrainer (object):
             train_feed_dict = self.get_feed_dict(train_batch, is_training=True)
             # use tensorboard to visualize the training of deepmd-kit
             # it will takes some extra execution time to generate the tensorboard data
-            if self.tensorboard :
+            if self.tensorboard and (cur_batch % self.tensorboard_freq == 0):
                 summary, _ = run_sess(self.sess, [summary_merged_op, self.train_op], feed_dict=train_feed_dict,
                                            options=prf_options, run_metadata=prf_run_metadata)
                 tb_train_writer.add_summary(summary, cur_batch)
-            else :
+            else:
                 run_sess(self.sess, [self.train_op], feed_dict=train_feed_dict,
                               options=prf_options, run_metadata=prf_run_metadata)
             if self.timing_in_training: toc = time.time()
