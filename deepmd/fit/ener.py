@@ -28,7 +28,8 @@ class EnerFitting ():
                   atom_ener : List[float] = [],
                   activation_function : str = 'tanh',
                   precision : str = 'default',
-                  uniform_seed: bool = False
+                  uniform_seed: bool = False,
+                  name: str = None
     ) -> None:
         """
         Constructor
@@ -64,6 +65,8 @@ class EnerFitting ():
                 The precision of the embedding net parameters. Supported options are {1}                
         uniform_seed
                 Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
+        name
+                Name used to identify the fitting net
         """
         # model param
         self.ntypes = descrpt.get_ntypes()
@@ -86,6 +89,7 @@ class EnerFitting ():
         self.resnet_dt = resnet_dt
         self.rcond = rcond
         self.seed = seed
+        self.name = name
         self.uniform_seed = uniform_seed
         self.seed_shift = one_layer_rand_seed_shift()
         self.tot_ener_zero = tot_ener_zero
@@ -122,6 +126,12 @@ class EnerFitting ():
         Get the number of frame parameters
         """
         return self.numb_fparam
+
+    def get_name(self) -> str:
+        """
+        Get the name of fitting net
+        """
+        return self.name
 
     def get_numb_aparam(self) -> int:
         """

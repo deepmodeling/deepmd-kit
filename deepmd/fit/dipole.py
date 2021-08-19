@@ -24,7 +24,8 @@ class DipoleFittingSeA () :
                   seed : int = None,
                   activation_function : str = 'tanh',
                   precision : str = 'default',
-                  uniform_seed: bool = False
+                  uniform_seed: bool = False,
+                  name : str = None,
     ) -> None:
         """
         Constructor
@@ -68,6 +69,7 @@ class DipoleFittingSeA () :
             self.sel_type = [ii for ii in range(self.ntypes)]
         self.sel_type = sel_type
         self.seed = seed
+        self.name = name
         self.uniform_seed = uniform_seed
         self.seed_shift = one_layer_rand_seed_shift()
         self.fitting_activation_fn = get_activation_func(activation_function)
@@ -88,6 +90,12 @@ class DipoleFittingSeA () :
         """
         return 3
 
+    def get_name(self) -> str:
+        """
+        Get the name of fitting net
+        """
+        return self.name
+        
     def build (self, 
                input_d : tf.Tensor,
                rot_mat : tf.Tensor,

@@ -9,6 +9,7 @@ from typing import Tuple, List
 
 from deepmd.utils.data import DataSets
 from deepmd.utils.data import DeepmdData
+from deepmd.common import data_requirement
 
 log = logging.getLogger(__name__)
 
@@ -29,7 +30,8 @@ class DeepmdDataSystem() :
                   modifier = None,
                   trn_all_set = False,
                   sys_probs = None,
-                  auto_prob_style ="prob_sys_size") :
+                  auto_prob_style ="prob_sys_size",
+                  name : str = None,) :
         """
         Constructor
         
@@ -48,7 +50,7 @@ class DeepmdDataSystem() :
         shuffle_test
                 If the test data are shuffled
         type_map
-                Gives the name of different atom types
+                Gives the name of different atom types, input is the total type map
         modifier
                 Data modifier that has the method `modify_data`        
         trn_all_set
@@ -66,21 +68,26 @@ class DeepmdDataSystem() :
                                 the list of systems is devided into blocks. A block is specified by `stt_idx:end_idx:weight`,
                                 where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system,
                                 the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional
-                                to the number of batches in the system."""
+                                to the number of batches in the system.
+        name
+                Name used to identify the data system
+        """
         # init data
         self.rcut = rcut
         self.system_dirs = systems
         self.nsystems = len(self.system_dirs)
         self.data_systems = []
-        for ii in self.system_dirs :
+        self.name = name
+        for ii in self.system_dirs : #each system as a DeepmdData, these are all from a same method
             self.data_systems.append(
                 DeepmdData(
-                    ii, 
+                    sys_path = ii, 
                     set_prefix=set_prefix, 
                     shuffle_test=shuffle_test, 
                     type_map = type_map, 
                     modifier = modifier, 
-                    trn_all_set = trn_all_set
+                    trn_all_set = trn_all_set,
+                    name = name
                 ))
         # batch size
         self.batch_size = batch_size
@@ -107,6 +114,8 @@ class DeepmdDataSystem() :
         for ii in self.data_systems :
             ntypes.append(ii.get_ntypes())
         self.sys_ntypes = max(ntypes)
+        if type_map is not None:
+            self.sys_ntypes = len(type_map)
         self.natoms = []
         self.natoms_vec = []
         self.nbatches = []
@@ -116,7 +125,7 @@ class DeepmdDataSystem() :
             self.natoms_vec.append(self.data_systems[ii].get_natoms_vec(self.sys_ntypes).astype(int))
             self.nbatches.append(self.data_systems[ii].get_sys_numb_batch(self.batch_size[ii]))
             type_map_list.append(self.data_systems[ii].get_type_map())
-        self.type_map = self._check_type_map_consistency(type_map_list)
+        self.type_map = self._check_type_map_consistency(type_map_list) # this is the type map of this system
 
         # ! altered by Marián Rynik
         # test size
@@ -159,7 +168,6 @@ class DeepmdDataSystem() :
             if chk_ret is not None :
                 warnings.warn("system %s required test size is larger than the size of the dataset %s (%d > %d)" % \
                               (self.system_dirs[ii], chk_ret[0], self.test_size[ii], chk_ret[1]))
-
 
     def _load_test(self, ntests = -1):
         self.test_data = collections.defaultdict(list)
@@ -411,6 +419,9 @@ class DeepmdDataSystem() :
         Get the batch size
         """
         return self.batch_size
+
+    def get_name(self) -> str:
+        return self.name
 
     def _format_name_length(self, name, width) :
         if len(name) <= width:
@@ -704,17 +715,4 @@ class DataSystem (object) :
     def numb_fparam(self) :
         return self.has_fparam
 
-def _main () :
-    sys =  ['/home/wanghan/study/deep.md/results.01/data/mos2/only_raws/20', 
-            '/home/wanghan/study/deep.md/results.01/data/mos2/only_raws/30', 
-            '/home/wanghan/study/deep.md/results.01/data/mos2/only_raws/38', 
-            '/home/wanghan/study/deep.md/results.01/data/mos2/only_raws/MoS2', 
-            '/home/wanghan/study/deep.md/results.01/data/mos2/only_raws/Pt_cluster']
-    set_prefix = 'set'
-    ds = DataSystem (sys, set_prefix, 4, 6)
-    r = ds.get_batch()
-    print(r[1][0])
-
-if __name__ == '__main__':
-    _main()
             

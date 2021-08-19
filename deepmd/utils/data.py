@@ -23,7 +23,8 @@ class DeepmdData() :
                   shuffle_test : bool = True, 
                   type_map : List[str] = None, 
                   modifier = None,
-                  trn_all_set : bool = False) :
+                  trn_all_set : bool = False,
+                  name : str = None) :
         """
         Constructor
         
@@ -41,9 +42,12 @@ class DeepmdData() :
                 Data modifier that has the method `modify_data`
         trn_all_set
                 Use all sets as training dataset. Otherwise, if the number of sets is more than 1, the last set is left for test.
+        name
+                Name used to identify the data
         """
         self.dirs = glob.glob (os.path.join(sys_path, set_prefix + ".*"))
         self.dirs.sort()
+        self.name = name
         # load atom type
         self.atom_type = self._load_type(sys_path)
         self.natoms = len(self.atom_type)
@@ -58,6 +62,7 @@ class DeepmdData() :
             atom_type_ = [type_map.index(self.type_map[ii]) for ii in self.atom_type]
             self.atom_type = np.array(atom_type_, dtype = np.int32)
             self.type_map = type_map
+
         # make idx map
         self.idx_map = self._make_idx_map(self.atom_type)
         # train dirs
@@ -241,6 +246,12 @@ class DeepmdData() :
         if self.modifier is not None:
             self.modifier.modify_data(ret)
         return ret
+
+    def get_name(self): 
+        """
+        Get name of the data
+        """
+        return self.name
 
     def get_ntypes(self) -> int:
         """

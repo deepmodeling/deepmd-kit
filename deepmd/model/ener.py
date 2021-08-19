@@ -22,7 +22,8 @@ class EnerModel() :
             use_srtab : str = None,
             smin_alpha : float = None,
             sw_rmin : float = None,
-            sw_rmax : float = None
+            sw_rmax : float = None,
+            name : str = None
     ) -> None:
         """
         Constructor
@@ -48,6 +49,8 @@ class EnerModel() :
                 The lower boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
         sw_rmin
                 The upper boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
+        name
+                Name used to identify the model
         """
         # descriptor
         self.descrpt = descrpt
@@ -73,7 +76,10 @@ class EnerModel() :
             self.sw_rmax = sw_rmax
         else :
             self.srtab = None
+        self.name = name
 
+    def get_name(self):
+        return self.name
 
     def get_rcut (self) :
         return self.rcut
@@ -111,10 +117,15 @@ class EnerModel() :
                box, 
                mesh,
                input_dict,
-               suffix = '', 
+               suffix = '', # a dict of suffix, including type_embed, descrpt and fitting.
                reuse = None):
-
-        with tf.variable_scope('model_attr' + suffix, reuse = reuse) :
+        if not isinstance(suffix,dict):
+            suffix_dict = {}
+            suffix_dict['fitting'] = suffix
+            suffix_dict['descrpt'] = suffix
+            suffix_dict['type_embed'] = suffix
+            suffix = suffix_dict
+        with tf.variable_scope('model_attr' + suffix["fitting"], reuse = reuse) :
             t_tmap = tf.constant(' '.join(self.type_map), 
                                  name = 'tmap', 
                                  dtype = tf.string)
@@ -146,7 +157,7 @@ class EnerModel() :
             type_embedding = self.typeebd.build(
                 self.ntypes,
                 reuse = reuse,
-                suffix = suffix,
+                suffix = suffix["type_embed"],
             )
             input_dict['type_embedding'] = type_embedding
 
@@ -157,7 +168,7 @@ class EnerModel() :
                                  box,
                                  mesh,
                                  input_dict,
-                                 suffix = suffix,
+                                 suffix = suffix["descrpt"],
                                  reuse = reuse)
         dout = tf.identity(dout, name='o_descriptor')
 
@@ -170,7 +181,7 @@ class EnerModel() :
                                         natoms, 
                                         input_dict, 
                                         reuse = reuse, 
-                                        suffix = suffix)
+                                        suffix = suffix["fitting"])
 
         if self.srtab is not None :
             sw_lambda, sw_deriv \
@@ -204,8 +215,8 @@ class EnerModel() :
         else :
             energy_raw = atom_ener
 
-        energy_raw = tf.reshape(energy_raw, [-1, natoms[0]], name = 'o_atom_energy'+suffix)
-        energy = tf.reduce_sum(global_cvt_2_ener_float(energy_raw), axis=1, name='o_energy'+suffix)
+        energy_raw = tf.reshape(energy_raw, [-1, natoms[0]], name = 'o_atom_energy'+suffix["fitting"])
+        energy = tf.reduce_sum(global_cvt_2_ener_float(energy_raw), axis=1, name='o_energy'+suffix["fitting"])
 
         force, virial, atom_virial \
             = self.descrpt.prod_force_virial (atom_ener, natoms)
@@ -220,7 +231,7 @@ class EnerModel() :
                                            n_r_sel = nnei_r)
             force = force + sw_force + tab_force
 
-        force = tf.reshape (force, [-1, 3 * natoms[1]], name = "o_force"+suffix)
+        force = tf.reshape (force, [-1, 3 * natoms[1]], name = "o_force"+suffix["fitting"])
 
         if self.srtab is not None :
             sw_virial, sw_atom_virial \
@@ -235,8 +246,8 @@ class EnerModel() :
             virial = virial + sw_virial \
                      + tf.reduce_sum(tf.reshape(tab_atom_virial, [-1, natoms[1], 9]), axis = 1)
 
-        virial = tf.reshape (virial, [-1, 9], name = "o_virial"+suffix)
-        atom_virial = tf.reshape (atom_virial, [-1, 9 * natoms[1]], name = "o_atom_virial"+suffix)
+        virial = tf.reshape (virial, [-1, 9], name = "o_virial"+suffix["fitting"])
+        atom_virial = tf.reshape (atom_virial, [-1, 9 * natoms[1]], name = "o_atom_virial"+suffix["fitting"])
 
         model_dict = {}
         model_dict['energy'] = energy

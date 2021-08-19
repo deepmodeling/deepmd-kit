@@ -79,7 +79,7 @@ def train(
         restart=restart,
         log_path=log_path,
         log_level=log_level,
-        mpi_log=mpi_log
+        mpi_log=mpi_log,
     )
 
     for message in WELCOME + CITATION + BUILD:
@@ -210,14 +210,19 @@ def get_modifier(modi_data=None):
     return modifier
 
 
-def get_rcut(jdata):
-    descrpt_data = jdata['model']['descriptor']
+def parse_rcut(descrpt_data):
     rcut_list = []
     if descrpt_data['type'] == 'hybrid':
         for ii in descrpt_data['list']:
             rcut_list.append(ii['rcut'])
     else:
         rcut_list.append(descrpt_data['rcut'])
+    return rcut_list
+
+def get_rcut(jdata):
+    descrpt_data = jdata['model']['descriptor']
+    rcut_list = []
+    rcut_list.extend(parse_rcut(descrpt_data))
     return max(rcut_list)
 
 
@@ -295,12 +300,16 @@ def update_one_sel(jdata, descriptor):
     return descriptor
 
 
-def update_sel(jdata):    
-    descrpt_data = jdata['model']['descriptor']
+def parse_auto_descrpt(jdata,descrpt_data):
     if descrpt_data['type'] == 'hybrid':
         for ii in range(len(descrpt_data['list'])):
             descrpt_data['list'][ii] = update_one_sel(jdata, descrpt_data['list'][ii])
     else:
         descrpt_data = update_one_sel(jdata, descrpt_data)
+    return descrpt_data
+
+def update_sel(jdata):    
+    descrpt_data = jdata['model']['descriptor']
+    descrpt_data = parse_auto_descrpt(jdata, descrpt_data)
     jdata['model']['descriptor'] = descrpt_data
     return jdata
