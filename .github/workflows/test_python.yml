@@ -38,16 +38,16 @@ jobs:
             tf: 1.14
           - python: 3.7
             gcc: 5
-            tf: 2
+            tf: 2.*
           - python: 3.7
             gcc: 8
-            tf: 2
+            tf: 2.*
           - python: 3.8
             gcc: 5
-            tf: 2
+            tf: 2.*
           - python: 3.8
             gcc: 8
-            tf: 2
+            tf: 2.*
 
     steps:
     - uses: actions/checkout@master
