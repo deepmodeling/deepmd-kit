@@ -21,9 +21,14 @@ setup_requires = ["setuptools_scm", "scikit-build"]
 readme_file = Path(__file__).parent / "README.md"
 readme = readme_file.read_text()
 
-tf_version = os.environ.get("TENSORFLOW_VERSION", "2.3")
+tf_version = os.environ.get("TENSORFLOW_VERSION", "")
 
-if tf_version in SpecifierSet("<1.15") or tf_version in SpecifierSet(">=2.0,<2.1"):
+if tf_version == "":
+    extras_require = {
+        "cpu": ["tensorflow-cpu"],
+        "gpu": ["tensorflow"],
+    }
+elif tf_version in SpecifierSet("<1.15") or tf_version in SpecifierSet(">=2.0,<2.1"):
     extras_require = {
         "cpu": [f"tensorflow=={tf_version}"],
         "gpu": [f"tensorflow-gpu=={tf_version}"],
