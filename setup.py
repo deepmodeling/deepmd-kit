@@ -8,7 +8,6 @@ from pathlib import Path
 from sysconfig import get_path
 
 from packaging.specifiers import SpecifierSet
-from pkg_resources import Distribution
 from skbuild import setup
 from skbuild.cmaker import get_cmake_version
 from skbuild.exceptions import SKBuildError
