@@ -6,10 +6,11 @@ import logging
 from typing import Optional
 
 from deepmd.env import tf
-from deepmd.common import j_loader, get_tensor_by_name, GLOBAL_TF_FLOAT_PRECISION
+from deepmd.common import j_loader, GLOBAL_TF_FLOAT_PRECISION
 from deepmd.utils.argcheck import normalize
 from deepmd.utils.compat import updata_deepmd_input
 from deepmd.utils.errors import GraphTooLargeError, GraphWithoutTensorError
+from deepmd.utils.graph import get_tensor_by_name
 
 from .freeze import freeze
 from .train import train, get_rcut, get_min_nbor_dist
@@ -121,6 +122,7 @@ def compress(
             INPUT=control_file,
             init_model=None,
             restart=None,
+            init_frz_model=None,
             output=control_file,
             mpi_log=mpi_log,
             log_level=log_level,

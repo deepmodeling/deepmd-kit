@@ -2,6 +2,7 @@
 
 from typing import Dict, Optional, Sequence, Tuple
 from deepmd.env import tf
+from deepmd.common import PRECISION_MAPPING
 import re
 import numpy as np
 import logging
@@ -9,12 +10,6 @@ import logging
 __all__ = ["transfer"]
 
 log = logging.getLogger(__name__)
-
-PRECISION_MAPPING: Dict[int, type] = {
-    1: np.float32,
-    2: np.float64,
-    19: np.float16,
-}
 
 
 @np.vectorize

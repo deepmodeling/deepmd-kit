@@ -117,6 +117,9 @@ class EnerFitting ():
             self.aparam_std = None
             self.aparam_inv_std = None
 
+        self.compress = False
+        self.fitting_net_variables = None
+
     def get_numb_fparam(self) -> int:
         """
         Get the number of frame parameters
@@ -257,7 +260,8 @@ class EnerFitting ():
                     activation_fn = self.fitting_activation_fn,
                     precision = self.fitting_precision,
                     trainable = self.trainable[ii],
-                    uniform_seed = self.uniform_seed)
+                    uniform_seed = self.uniform_seed,
+                    initial_variables = self.fitting_net_variables)
             else :
                 layer = one_layer(
                     layer,
@@ -268,7 +272,8 @@ class EnerFitting ():
                     activation_fn = self.fitting_activation_fn,
                     precision = self.fitting_precision,
                     trainable = self.trainable[ii],
-                    uniform_seed = self.uniform_seed)
+                    uniform_seed = self.uniform_seed,
+                    initial_variables = self.fitting_net_variables)
             if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
         final_layer = one_layer(
             layer, 
@@ -280,7 +285,8 @@ class EnerFitting ():
             seed = self.seed, 
             precision = self.fitting_precision, 
             trainable = self.trainable[-1],
-            uniform_seed = self.uniform_seed)
+            uniform_seed = self.uniform_seed,
+            initial_variables = self.fitting_net_variables)
         if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
 
         return final_layer
@@ -445,3 +451,16 @@ class EnerFitting ():
         return tf.cast(tf.reshape(outs, [-1]), GLOBAL_TF_FLOAT_PRECISION)        
 
 
+    def init_variables(self,
+                       fitting_net_variables: dict
+    ) -> None:
+        """
+        Init the fitting net variables with the given dict
+
+        Parameters
+        ----------
+        fitting_net_variables
+                The input dict which stores the fitting net variables
+        """
+        self.compress = True
+        self.fitting_net_variables = fitting_net_variables

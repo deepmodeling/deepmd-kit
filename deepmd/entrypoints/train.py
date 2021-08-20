@@ -32,6 +32,7 @@ def train(
     init_model: Optional[str],
     restart: Optional[str],
     output: str,
+    init_frz_model: str,
     mpi_log: str,
     log_level: int,
     log_path: Optional[str],
@@ -50,13 +51,15 @@ def train(
         path to checkpoint folder or None
     output : str
         path for dump file with arguments
+    init_frz_model : str
+        path to frozen model or None
     mpi_log : str
         mpi logging mode
     log_level : int
         logging level defined by int 0-3
     log_path : Optional[str]
         logging file path or None if logs are to be output only to stdout
-    is_compress: Bool
+    is_compress: bool
         indicates whether in the model compress mode
 
     Raises
@@ -84,6 +87,7 @@ def train(
     run_opt = RunOptions(
         init_model=init_model,
         restart=restart,
+        init_frz_model=init_frz_model,
         log_path=log_path,
         log_level=log_level,
         mpi_log=mpi_log

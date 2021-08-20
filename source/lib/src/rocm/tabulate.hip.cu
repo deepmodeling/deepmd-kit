@@ -197,56 +197,81 @@ __global__ void tabulate_fusion_grad_fifth_order_polynomial(
 }
 
 namespace deepmd {
-    
 template<typename FPTYPE>
-    void tabulate_fusion_gpu_rocm(
-        FPTYPE * out,
-        const FPTYPE * table, 
-        const FPTYPE * table_info, 
-        const FPTYPE * em_x, 
-        const FPTYPE * em, 
-        const int nloc,
-        const int nnei, 
-        const int last_layer_size) 
-    {
-      if(nloc <= 0){return;}
-      hipLaunchKernelGGL(HIP_KERNEL_NAME(tabulate_fusion_fifth_order_polynomial<FPTYPE, MM, KK>), nloc, last_layer_size, sizeof(FPTYPE) * MM * last_layer_size, 0, 
-          out, 
-          table, em_x, em, table_info[0], table_info[1], table_info[2], table_info[3], table_info[4], nnei, last_layer_size);
-      DPErrcheck(hipGetLastError());
-      DPErrcheck(hipDeviceSynchronize());
-    }
-    
-    template<typename FPTYPE>
-    void tabulate_fusion_grad_gpu_rocm(
-        FPTYPE * dy_dem_x, 
-        FPTYPE * dy_dem,
-        const FPTYPE * table, 
-        const FPTYPE * table_info, 
-        const FPTYPE * em_x, 
-        const FPTYPE * em, 
-        const FPTYPE * dy, 
-        const int nloc, 
-        const int nnei, 
-        const int last_layer_size)
-    {
-      if( nloc<=0 ) { return;}
-      DPErrcheck(hipMemset(
-          dy_dem_x,
-          0.0, sizeof(FPTYPE) * nloc * nnei));
-      DPErrcheck(hipMemset(
-          dy_dem,
-          0.0, sizeof(FPTYPE) * nloc * nnei * 4));
-    
-      hipLaunchKernelGGL(HIP_KERNEL_NAME(tabulate_fusion_grad_fifth_order_polynomial<FPTYPE, MM, KK>), nloc, KK * WARP_SIZE, sizeof(FPTYPE) * MM * last_layer_size, 0, 
-          dy_dem_x, dy_dem,
-          table, em_x, em, dy,  table_info[0], table_info[1], table_info[2], table_info[3], table_info[4], nnei, last_layer_size);
-      DPErrcheck(hipGetLastError());
-      DPErrcheck(hipDeviceSynchronize());
-    }
-    
-    template void tabulate_fusion_gpu_rocm<float>(float * out, const float * table, const float * table_info, const float * em_x, const float * em, const int nloc, const int nnei, const int last_layer_size);
-    template void tabulate_fusion_gpu_rocm<double>(double * out, const double * table, const double * table_info, const double * em_x, const double * em, const int nloc, const int nnei, const int last_layer_size);
-    template void tabulate_fusion_grad_gpu_rocm<float> (float * dy_dem_x, float * dy_dem, const float * table, const float * table_info, const float * em_x, const float * em, const float * dy, const int nloc, const int nnei, const int last_layer_size); 
-    template void tabulate_fusion_grad_gpu_rocm<double> (double * dy_dem_x, double * dy_dem, const double * table, const double * table_info, const double * em_x, const double * em, const double * dy, const int nloc, const int nnei, const int last_layer_size);
-    }
+void tabulate_fusion_gpu_rocm(
+    FPTYPE * out,
+    const FPTYPE * table, 
+    const FPTYPE * table_info, 
+    const FPTYPE * em_x, 
+    const FPTYPE * em, 
+    const int nloc,
+    const int nnei, 
+    const int last_layer_size) 
+{
+  if(nloc <= 0){return;}
+  hipLaunchKernelGGL(HIP_KERNEL_NAME(tabulate_fusion_fifth_order_polynomial<FPTYPE, MM, KK>), nloc, last_layer_size, sizeof(FPTYPE) * MM * last_layer_size, 0, 
+      out, 
+      table, em_x, em, table_info[0], table_info[1], table_info[2], table_info[3], table_info[4], nnei, last_layer_size);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
+}
+
+template<typename FPTYPE>
+void tabulate_fusion_grad_gpu_rocm(
+    FPTYPE * dy_dem_x, 
+    FPTYPE * dy_dem,
+    const FPTYPE * table, 
+    const FPTYPE * table_info, 
+    const FPTYPE * em_x, 
+    const FPTYPE * em, 
+    const FPTYPE * dy, 
+    const int nloc, 
+    const int nnei, 
+    const int last_layer_size)
+{
+  if(nloc <= 0) {return;}
+  DPErrcheck(hipMemset(
+      dy_dem_x,
+      0.0, sizeof(FPTYPE) * nloc * nnei));
+  DPErrcheck(hipMemset(
+      dy_dem,
+      0.0, sizeof(FPTYPE) * nloc * nnei * 4));
+
+  hipLaunchKernelGGL(HIP_KERNEL_NAME(tabulate_fusion_grad_fifth_order_polynomial<FPTYPE, MM, KK>), nloc, KK * WARP_SIZE, sizeof(FPTYPE) * MM * last_layer_size, 0, 
+      dy_dem_x, dy_dem,
+      table, em_x, em, dy,  table_info[0], table_info[1], table_info[2], table_info[3], table_info[4], nnei, last_layer_size);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
+}
+
+template<typename FPTYPE>
+void tabulate_fusion_grad_grad_gpu_rocm(
+    FPTYPE * dz_dy,
+    const FPTYPE * table,
+    const FPTYPE * table_info,
+    const FPTYPE * em_x,
+    const FPTYPE * em,
+    const FPTYPE * dz_dy_dem_x,
+    const FPTYPE * dz_dy_dem,
+    const int nloc,
+    const int nnei,
+    const int last_layer_size)
+{
+  if(nloc <= 0) {return;}
+  DPErrcheck(hipMemset(
+    dz_dy,
+    0.0, sizeof(FPTYPE) * nloc * 4 * last_layer_size));
+  hipLaunchKernelGGL(HIP_KERNEL_NAME(tabulate_fusion_grad_grad_fifth_order_polynomial<FPTYPE, MM, KK>), nloc, last_layer_size, sizeof(FPTYPE) * MM * last_layer_size, 0, 
+    dz_dy,
+    table, em_x, em, dz_dy_dem_x, dz_dy_dem, table_info[0], table_info[1], table_info[2], table_info[3], table_info[4], nnei, last_layer_size);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
+}
+
+template void tabulate_fusion_gpu_rocm<float>(float * out, const float * table, const float * table_info, const float * em_x, const float * em, const int nloc, const int nnei, const int last_layer_size);
+template void tabulate_fusion_gpu_rocm<double>(double * out, const double * table, const double * table_info, const double * em_x, const double * em, const int nloc, const int nnei, const int last_layer_size);
+template void tabulate_fusion_grad_gpu_rocm<float> (float * dy_dem_x, float * dy_dem, const float * table, const float * table_info, const float * em_x, const float * em, const float * dy, const int nloc, const int nnei, const int last_layer_size); 
+template void tabulate_fusion_grad_gpu_rocm<double> (double * dy_dem_x, double * dy_dem, const double * table, const double * table_info, const double * em_x, const double * em, const double * dy, const int nloc, const int nnei, const int last_layer_size);
+template void tabulate_fusion_grad_grad_gpu_rocm<float> (float * dz_dy, const float * table, const float * table_info, const float * em_x, const float * em, const float * dz_dy_dem_x, const float * dz_dy_dem, const int nloc, const int nnei, const int last_layer_size);
+template void tabulate_fusion_grad_grad_gpu_rocm<double> (double * dz_dy, const double * table, const double * table_info, const double * em_x, const double * em, const double * dz_dy_dem_x, const double * dz_dy_dem, const int nloc, const int nnei, const int last_layer_size);
+}
