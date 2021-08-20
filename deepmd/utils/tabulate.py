@@ -6,9 +6,9 @@ from typing import Tuple, List
 from deepmd.env import tf
 from deepmd.env import op_module
 from deepmd.utils.sess import run_sess
-from deepmd.utils.graph import get_tensor_by_name, load_graph_def 
-from deepmd.utils.graph import get_fitting_net_nodes, get_embedding_net_nodes
-from deepmd.utils.graph import get_fitting_net_variables, get_embedding_net_variables
+from deepmd.utils.graph import get_tensor_by_name_from_graph, load_graph_def 
+from deepmd.utils.graph import get_embedding_net_nodes_from_graph_def
+from deepmd.utils.graph import get_fitting_net_variables_from_graph_def
 from tensorflow.python.platform import gfile
 from tensorflow.python.framework import tensor_util
 
@@ -57,16 +57,15 @@ class DPTabulate():
             self.sel_a = self.graph.get_operation_by_name('DescrptSeA').get_attr('sel_a')
             self.descrpt = self.graph.get_operation_by_name ('DescrptSeA')
 
-        self.davg = get_tensor_by_name(self.model_file, 'descrpt_attr/t_avg')
-        self.dstd = get_tensor_by_name(self.model_file, 'descrpt_attr/t_std')
-        self.ntypes = get_tensor_by_name(self.model_file, 'descrpt_attr/ntypes')
+        self.davg = get_tensor_by_name_from_graph(self.graph, 'descrpt_attr/t_avg')
+        self.dstd = get_tensor_by_name_from_graph(self.graph, 'descrpt_attr/t_std')
+        self.ntypes = get_tensor_by_name_from_graph(self.graph, 'descrpt_attr/ntypes')
 
         
         self.rcut = self.descrpt.get_attr('rcut_r')
         self.rcut_smth = self.descrpt.get_attr('rcut_r_smth')
 
-        self.fitting_net_nodes = get_fitting_net_nodes(self.model_file)
-        self.embedding_net_nodes = get_embedding_net_nodes(self.model_file)
+        self.embedding_net_nodes = get_embedding_net_nodes_from_graph_def(self.graph_def)
 
         for tt in self.exclude_types:
             if (tt[0] not in range(self.ntypes)) or (tt[1] not in range(self.ntypes)):
@@ -91,8 +90,7 @@ class DPTabulate():
         # define tables
         self.data = {}
 
-        self.fitting_net_variables = get_fitting_net_variables(self.model_file)
-        self.embedding_net_variables = get_embedding_net_variables(self.model_file)
+        self.fitting_net_variables = get_fitting_net_variables_from_graph_def(self.graph_def)
 
     def build(self, 
               min_nbor_dist : float,
