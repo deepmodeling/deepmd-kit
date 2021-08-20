@@ -90,7 +90,6 @@ class DPTabulate():
         # define tables
         self.data = {}
 
-        self.fitting_net_variables = get_fitting_net_variables_from_graph_def(self.graph_def)
 
     def build(self, 
               min_nbor_dist : float,
