@@ -25,8 +25,8 @@ tf_version = os.environ.get("TENSORFLOW_VERSION", "")
 
 if tf_version == "":
     extras_require = {
-        "cpu": ["tensorflow"],
-        "gpu": ["tensorflow-gpu"],
+        "cpu": ["tensorflow-cpu"],
+        "gpu": ["tensorflow"],
     }
 elif tf_version in SpecifierSet("<1.15") or tf_version in SpecifierSet(">=2.0,<2.1"):
     extras_require = {
