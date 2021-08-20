@@ -13,6 +13,7 @@ def convert_input_v0_v1(
     jdata: Dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
 ) -> Dict[str, Any]:
     """Convert input from v0 format to v1.
+
     Parameters
     ----------
     jdata : Dict[str, Any]
@@ -21,6 +22,7 @@ def convert_input_v0_v1(
         whether to show deprecation warning, by default True
     dump : Optional[Union[str, Path]], optional
         whether to dump converted file, by default None
+
     Returns
     -------
     Dict[str, Any]
@@ -50,12 +52,14 @@ def _warning_input_v0_v1(fname: Optional[Union[str, Path]]):
 
 def _model(jdata: Dict[str, Any], smooth: bool) -> Dict[str, Dict[str, Any]]:
     """Convert data to v1 input for non-smooth model.
+
     Parameters
     ----------
     jdata : Dict[str, Any]
         parsed input json/yaml data
     smooth : bool
         whether to use smooth or non-smooth descriptor version
+
     Returns
     -------
     Dict[str, Dict[str, Any]]
@@ -72,10 +76,12 @@ def _model(jdata: Dict[str, Any], smooth: bool) -> Dict[str, Dict[str, Any]]:
 
 def _nonsmth_descriptor(jdata: Dict[str, Any]) -> Dict[str, Any]:
     """Convert data to v1 input for non-smooth descriptor.
+
     Parameters
     ----------
     jdata : Dict[str, Any]
         parsed input json/yaml data
+
     Returns
     -------
     Dict[str, Any]
@@ -89,10 +95,12 @@ def _nonsmth_descriptor(jdata: Dict[str, Any]) -> Dict[str, Any]:
 
 def _smth_descriptor(jdata: Dict[str, Any]) -> Dict[str, Any]:
     """Convert data to v1 input for smooth descriptor.
+
     Parameters
     ----------
     jdata : Dict[str, Any]
         parsed input json/yaml data
+
     Returns
     -------
     Dict[str, Any]
@@ -117,10 +125,12 @@ def _smth_descriptor(jdata: Dict[str, Any]) -> Dict[str, Any]:
 
 def _fitting_net(jdata: Dict[str, Any]) -> Dict[str, Any]:
     """Convert data to v1 input for fitting net.
+
     Parameters
     ----------
     jdata : Dict[str, Any]
         parsed input json/yaml data
+
     Returns
     -------
     Dict[str, Any]
@@ -142,10 +152,12 @@ def _fitting_net(jdata: Dict[str, Any]) -> Dict[str, Any]:
 
 def _learning_rate(jdata: Dict[str, Any]) -> Dict[str, Any]:
     """Convert data to v1 input for learning rate section.
+
     Parameters
     ----------
     jdata : Dict[str, Any]
         parsed input json/yaml data
+
     Returns
     -------
     Dict[str, Any]
@@ -159,10 +171,12 @@ def _learning_rate(jdata: Dict[str, Any]) -> Dict[str, Any]:
 
 def _loss(jdata: Dict[str, Any]) -> Dict[str, Any]:
     """Convert data to v1 input for loss function.
+
     Parameters
     ----------
     jdata : Dict[str, Any]
         parsed input json/yaml data
+
     Returns
     -------
     Dict[str, Any]
@@ -190,10 +204,12 @@ def _loss(jdata: Dict[str, Any]) -> Dict[str, Any]:
 
 def _training(jdata: Dict[str, Any]) -> Dict[str, Any]:
     """Convert data to v1 input for training.
+
     Parameters
     ----------
     jdata : Dict[str, Any]
         parsed input json/yaml data
+
     Returns
     -------
     Dict[str, Any]
@@ -223,6 +239,7 @@ def _training(jdata: Dict[str, Any]) -> Dict[str, Any]:
 
 def _jcopy(src: Dict[str, Any], dst: Dict[str, Any], keys: Sequence[str]):
     """Copy specified keys from one dict to another.
+
     Parameters
     ----------
     src : Dict[str, Any]

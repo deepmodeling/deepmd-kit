@@ -409,7 +409,8 @@ class DescrptSeA ():
                 natoms[0]: number of local atoms
                 natoms[1]: total number of atoms held by this processor
                 natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
-        Return
+
+        Returns
         ------
         force
                 The force on atoms

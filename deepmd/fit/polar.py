@@ -208,7 +208,8 @@ class PolarFittingSeA () :
         """
         Compute the input statistics
 
-        Parameters:
+        Parameters
+        ----------
         all_stat
                 Dictionary of inputs. 
                 can be prepared by model.make_stat_input
@@ -292,8 +293,8 @@ class PolarFittingSeA () :
         suffix
                 Name suffix to identify this descriptor
 
-        Return
-        ------
+        Returns
+        -------
         atomic_polar
                 The atomic polarizability        
         """
@@ -464,8 +465,8 @@ class GlobalPolarFittingSeA () :
         suffix
                 Name suffix to identify this descriptor
 
-        Return
-        ------
+        Returns
+        -------
         polar
                 The system polarizability        
         """

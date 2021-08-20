@@ -68,6 +68,7 @@ class TypeEmbedNet():
     )->None:
         """
         Constructor
+
         Parameters
         ----------
         neuron : list[int]

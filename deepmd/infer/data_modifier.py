@@ -208,11 +208,11 @@ class DipoleChargeModifier(DeepDipole):
 
 
     def eval(self, 
-             coord : np.array, 
-             box : np.array, 
-             atype : np.array, 
+             coord : np.ndarray, 
+             box : np.ndarray, 
+             atype : np.ndarray, 
              eval_fv : bool = True
-    ) -> Tuple[np.array, np.array, np.array]:
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Evaluate the modification
         

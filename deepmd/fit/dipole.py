@@ -113,8 +113,8 @@ class DipoleFittingSeA () :
         suffix
                 Name suffix to identify this descriptor
 
-        Return
-        ------
+        Returns
+        -------
         dipole
                 The atomic dipole.
         """
