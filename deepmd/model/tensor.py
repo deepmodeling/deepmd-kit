@@ -137,7 +137,8 @@ class TensorModel() :
                 dtype = tf.int32)
             feed_dict = self.descrpt.get_feed_dict(coord_, atype_, natoms, box, mesh)
             return_elements = ['o_rmat:0', 'o_rmat_deriv:0', 'o_rij:0', 'o_nlist:0', 'o_descriptor:0']
-            descrpt_reshape, descrpt_deriv, rij, nlist, dout = self._import_graph_def_from_frz_model(frz_model, feed_dict, return_elements)
+            descrpt_reshape, descrpt_deriv, rij, nlist, dout \
+                = self._import_graph_def_from_frz_model(frz_model, feed_dict, return_elements)
             self.descrpt.pass_tensors_from_frz_model(descrpt_reshape, descrpt_deriv, rij, nlist)
 
         rot_mat = self.descrpt.get_rot_mat()

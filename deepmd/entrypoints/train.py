@@ -74,7 +74,7 @@ def train(
 
     jdata = normalize(jdata)
 
-    if is_compress == False:
+    if not is_compress:
         jdata = update_sel(jdata)
 
     with open(output, "w") as fp:
@@ -145,7 +145,7 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
     # decouple the training data from the model compress process
     train_data = None
     valid_data = None
-    if is_compress == False:
+    if not is_compress:
         # init data
         train_data = get_data(jdata["training"]["training_data"], rcut, ipt_type_map, modifier)
         train_data.print_summary("training")
@@ -157,7 +157,7 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
     stop_batch = j_must_have(jdata["training"], "numb_steps")
     model.build(train_data, stop_batch)
 
-    if is_compress == False:
+    if not is_compress:
         # train the model with the provided systems in a cyclic way
         start_time = time.time()
         model.train(train_data, valid_data)

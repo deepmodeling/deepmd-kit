@@ -38,7 +38,7 @@ def get_tensor_by_name(model_file: str,
     ----------
     model_file : str
         The input frozen model.
-    tensor : tensor_name
+    tensor_name : str
         Indicates which tensor which will be loaded from the frozen model.
 
     Returns
@@ -62,7 +62,7 @@ def get_tensor_by_name(model_file: str,
 
 
 def get_tensor_by_type(node,
-                       data_type : str):
+                       data_type : np.dtype):
     """
     Get the tensor value within the given node according to the input data_type
 

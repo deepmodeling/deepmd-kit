@@ -291,7 +291,7 @@ class DPTrainer (object):
         else:
             log.info("training without frame parameter")
 
-        if self.is_compress == False:
+        if not self.is_compress:
             # Usually, the type number of the model should be equal to that of the data
             # However, nt_model > nt_data should be allowed, since users may only want to 
             # train using a dataset that only have some of elements 
@@ -319,7 +319,7 @@ class DPTrainer (object):
             self.descrpt.enable_compression(self.model_param['compress']["min_nbor_dist"], self.model_param['compress']['model_file'], self.model_param['compress']['table_config'][0], self.model_param['compress']['table_config'][1], self.model_param['compress']['table_config'][2], self.model_param['compress']['table_config'][3])
             self.fitting.init_variables(get_fitting_net_variables(self.model_param['compress']['model_file']))
         
-        if self.is_compress == True or self.model_type == 'compressed_model':
+        if self.is_compress or self.model_type == 'compressed_model':
             tf.constant("compressed_model", name = 'model_type', dtype = tf.string)
         else:
             tf.constant("original_model", name = 'model_type', dtype = tf.string)
@@ -663,9 +663,9 @@ class DPTrainer (object):
             self.model_type = bytes.decode(t_model_type)
         except GraphWithoutTensorError as e:
             # throw runtime error if there's no frozen model
-            if os.path.exists(self.run_opt.init_frz_model) == False:
+            if not os.path.exists(self.run_opt.init_frz_model):
                 raise RuntimeError(
-                    "The input frozen model %s does not exist! Please check the path of the training script. " % (self.run_opt.init_frz_model + "(" + os.path.abspath(self.run_opt.init_frz_model) + ")")
+                    "The input frozen model %s (%s) does not exist! Please check the path of the frozen model. " % (self.run_opt.init_frz_model, os.path.abspath(self.run_opt.init_frz_model))
                 ) from e
             # throw runtime error if the frozen_model has no model type information...
             else:

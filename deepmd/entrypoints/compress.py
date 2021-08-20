@@ -78,9 +78,9 @@ def compress(
                 "Please consider using the --training-script command within the model compression interface to provide the training script of the input frozen model. "
                 "Note that the input training script must contain the correct path to the training data." % input
             ) from e
-        elif os.path.exists(training_script) == False:
+        elif not os.path.exists(training_script):
             raise RuntimeError(
-                "The input training script %s does not exist! Please check the path of the training script. " % (input + "(" + os.path.abspath(input) + ")")
+                "The input training script %s (%s) does not exist! Please check the path of the training script. " % (input, os.path.abspath(input))
             ) from e
         else:
             log.info("stage 0: compute the min_nbor_dist")
