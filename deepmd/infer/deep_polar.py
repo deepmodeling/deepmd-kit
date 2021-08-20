@@ -92,7 +92,7 @@ class DeepGlobalPolar(DeepTensor):
     def eval(
         self,
         coords: np.ndarray,
-        cells: np.ndrray,
+        cells: np.ndarray,
         atom_types: List[int],
         atomic: bool = False,
         fparam: Optional[np.ndarray] = None,
