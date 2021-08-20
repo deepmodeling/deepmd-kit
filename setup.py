@@ -72,11 +72,9 @@ try:
     # TypeError if submodule_search_locations are None
     # IndexError if submodule_search_locations is an empty list
 except (AttributeError, TypeError, IndexError):
-    setup_requires.append(f"tensorflow=={tf_version}")
-    dist = Distribution(
-        project_name="tensorflow", version=tf_version, platform=get_platform()
-    ).egg_name()
-    tf_install_dir = Path(__file__).parent.resolve().joinpath(".egg", dist, "tensorflow").resolve()
+    setup_requires.extend(extras_require['cpu'])
+    # setuptools will re-find tensorflow after installing setup_requires
+    tf_install_dir = None
 
 # add cmake as a build requirement if cmake>3.7 is not installed
 try:
