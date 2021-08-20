@@ -8,7 +8,6 @@ from deepmd.env import op_module
 from deepmd.utils.sess import run_sess
 from deepmd.utils.graph import get_tensor_by_name_from_graph, load_graph_def 
 from deepmd.utils.graph import get_embedding_net_nodes_from_graph_def
-from deepmd.utils.graph import get_fitting_net_variables_from_graph_def
 from tensorflow.python.platform import gfile
 from tensorflow.python.framework import tensor_util
 
