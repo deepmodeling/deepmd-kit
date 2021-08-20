@@ -217,7 +217,7 @@ intersphinx_mapping = {
         "https://www.tensorflow.org/api_docs/python",
         "https://github.com/mr-ubik/tensorflow-intersphinx/raw/master/tf2_py_objects.inv",
     ), 
-    "ase": ("https://wiki.fysik.dtu.dk/ase/", "objects.inv"),
+    "ase": ("https://wiki.fysik.dtu.dk/ase/", None),
 }
 
 # -- Options for HTML output -------------------------------------------------
