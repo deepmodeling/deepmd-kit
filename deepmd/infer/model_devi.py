@@ -110,6 +110,17 @@ def calc_model_devi(coord,
     model_devi : numpy.ndarray, `n_frames x 7`
         Model deviation results. The first column is index of steps, the other 6 columns are
         max_devi_v, min_devi_v, avg_devi_v, max_devi_f, min_devi_f, avg_devi_f.
+    
+    Examples
+    --------
+    >>> from deepmd.infer import calc_model_devi
+    >>> from deepmd.infer import DeepPot as DP
+    >>> import numpy as np
+    >>> coord = np.array([[1,0,0], [0,0,1.5], [1,0,3]]).reshape([1, -1])
+    >>> cell = np.diag(10 * np.ones(3)).reshape([1, -1])
+    >>> atype = [1,0,1]
+    >>> graphs = [DP("graph.000.pb"), DP("graph.001.pb")]
+    >>> model_devi = calc_model_devi(coord, cell, atype, graphs)
     '''
     if nopbc:
         box = None
