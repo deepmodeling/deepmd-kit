@@ -56,8 +56,9 @@ class DescrptSeA ():
                 Random seed for initializing the network parameters.
         type_one_side
                 Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
-        exclude_types : list[int]
-                The Excluded types
+        exclude_types : List[List[int]]
+                The excluded pairs of types which have no interaction with each other.
+                For example, `[[0, 1]]` means no interaction between type 0 and type 1.
         set_davg_zero
                 Set the shift of embedding net input to zero.
         activation_function

@@ -6,14 +6,8 @@ In this example we will train a DeepPot-SE model for a water system.  A complete
 ```bash
 $deepmd_source_dir/examples/water/se_e2_a/input.json
 ```
-With the training input script, data (please read the [warning](#warning)) are also provided in the example directory. One may train the model with the DeePMD-kit from the directory.
+With the training input script, data are also provided in the example directory. One may train the model with the DeePMD-kit from the directory.
 
-The contents of the example:
-- [The training input](#the-training-input-script)
-- [Warning](#warning)
-
-
-#### Descriptor
 The construction of the descriptor is given by section `descriptor`. An example of the descriptor is provided as follows
 ```json
 	"descriptor" :{
