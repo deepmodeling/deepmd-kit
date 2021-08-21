@@ -70,7 +70,7 @@ def get_tensor_by_name(model_file: str,
     ----------
     model_file : str
         The input frozen model path
-pathpath    tensor_name : str
+    tensor_name : str
         Indicates which tensor which will be loaded from the frozen model
 
     Returns
@@ -146,7 +146,7 @@ def get_embedding_net_nodes(model_file: str) -> Dict:
     ----------
     model_file
         The input frozen model path
-pathpath    
+   
     Returns
     ----------
     Dict
@@ -191,7 +191,7 @@ def get_embedding_net_variables(model_file : str) -> Dict:
     ----------
     model_file
         The input frozen model path
-pathpath    
+    
     Returns
     ----------
     Dict
