@@ -15,6 +15,44 @@ from deepmd.utils.type_embed import embed_atom_type
 from deepmd.utils.sess import run_sess
 
 class DescrptSeA ():
+    """DeepPot-SE constructed from all information (both angular and radial) of
+    atomic configurations.
+    
+    The embedding takes the distance between atoms as input.
+
+    Parameters
+    ----------
+    rcut
+            The cut-off radius
+    rcut_smth
+            From where the environment matrix should be smoothed
+    sel : list[str]
+            sel[i] specifies the maxmum number of type i atoms in the cut-off radius
+    neuron : list[int]
+            Number of neurons in each hidden layers of the embedding net
+    axis_neuron
+            Number of the axis neuron (number of columns of the sub-matrix of the embedding matrix)
+    resnet_dt
+            Time-step `dt` in the resnet construction:
+            y = x + dt * \phi (Wx + b)
+    trainable
+            If the weights of embedding net are trainable.
+    seed
+            Random seed for initializing the network parameters.
+    type_one_side
+            Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
+    exclude_types : List[List[int]]
+            The excluded pairs of types which have no interaction with each other.
+            For example, `[[0, 1]]` means no interaction between type 0 and type 1.
+    set_davg_zero
+            Set the shift of embedding net input to zero.
+    activation_function
+            The activation function in the embedding net. Supported options are {0}
+    precision
+            The precision of the embedding net parameters. Supported options are {1}
+    uniform_seed
+            Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
+    """
     @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   rcut: float,
@@ -34,39 +72,6 @@ class DescrptSeA ():
     ) -> None:
         """
         Constructor
-
-        Parameters
-        ----------
-        rcut
-                The cut-off radius
-        rcut_smth
-                From where the environment matrix should be smoothed
-        sel : list[str]
-                sel[i] specifies the maxmum number of type i atoms in the cut-off radius
-        neuron : list[int]
-                Number of neurons in each hidden layers of the embedding net
-        axis_neuron
-                Number of the axis neuron (number of columns of the sub-matrix of the embedding matrix)
-        resnet_dt
-                Time-step `dt` in the resnet construction:
-                y = x + dt * \phi (Wx + b)
-        trainable
-                If the weights of embedding net are trainable.
-        seed
-                Random seed for initializing the network parameters.
-        type_one_side
-                Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
-        exclude_types : List[List[int]]
-                The excluded pairs of types which have no interaction with each other.
-                For example, `[[0, 1]]` means no interaction between type 0 and type 1.
-        set_davg_zero
-                Set the shift of embedding net input to zero.
-        activation_function
-                The activation function in the embedding net. Supported options are {0}
-        precision
-                The precision of the embedding net parameters. Supported options are {1}
-        uniform_seed
-                Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
         """
         self.sel_a = sel
         self.rcut_r = rcut

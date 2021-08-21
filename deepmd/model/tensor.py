@@ -9,6 +9,24 @@ from deepmd.utils.graph import load_graph_def
 from .model_stat import make_stat_input, merge_sys_stat
 
 class TensorModel() :
+    """Tensor model.
+
+    Parameters
+    ----------
+    tensor_name
+            Name of the tensor.
+    descrpt
+            Descriptor
+    fitting
+            Fitting net
+    type_map
+            Mapping atom type to the name (str) of the type.
+            For example `type_map[1]` gives the name of the type 1.
+    data_stat_nbatch
+            Number of frames used for data statistic
+    data_stat_protect
+            Protect parameter for atomic energy regression
+    """
     def __init__ (
             self, 
             tensor_name : str,
@@ -20,22 +38,6 @@ class TensorModel() :
     )->None:
         """
         Constructor
-
-        Parameters
-        ----------
-        tensor_name
-                Name of the tensor.
-        descrpt
-                Descriptor
-        fitting
-                Fitting net
-        type_map
-                Mapping atom type to the name (str) of the type.
-                For example `type_map[1]` gives the name of the type 1.
-        data_stat_nbatch
-                Number of frames used for data statistic
-        data_stat_protect
-                Protect parameter for atomic energy regression        
         """
         self.model_type = tensor_name
         # descriptor

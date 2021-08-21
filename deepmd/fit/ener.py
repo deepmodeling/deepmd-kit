@@ -14,6 +14,40 @@ from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 
 class EnerFitting ():
+    """Fitting the energy of the system. The force and the virial can also be trained.
+
+    Parameters
+    ----------
+    descrpt
+            The descrptor
+    neuron
+            Number of neurons in each hidden layer of the fitting net
+    resnet_dt
+            Time-step `dt` in the resnet construction:
+            y = x + dt * \phi (Wx + b)
+    numb_fparam
+            Number of frame parameter
+    numb_aparam
+            Number of atomic parameter
+    rcond
+            The condition number for the regression of atomic energy.
+    tot_ener_zero
+            Force the total energy to zero. Useful for the charge fitting.
+    trainable
+            If the weights of fitting net are trainable. 
+            Suppose that we have N_l hidden layers in the fitting net, 
+            this list is of length N_l + 1, specifying if the hidden layers and the output layer are trainable.
+    seed
+            Random seed for initializing the network parameters.
+    atom_ener
+            Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
+    activation_function
+            The activation function in the embedding net. Supported options are {0}
+    precision
+            The precision of the embedding net parameters. Supported options are {1}                
+    uniform_seed
+            Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
+    """
     @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   descrpt : tf.Tensor,
@@ -32,38 +66,6 @@ class EnerFitting ():
     ) -> None:
         """
         Constructor
-
-        Parameters
-        ----------
-        descrpt
-                The descrptor
-        neuron
-                Number of neurons in each hidden layer of the fitting net
-        resnet_dt
-                Time-step `dt` in the resnet construction:
-                y = x + dt * \phi (Wx + b)
-        numb_fparam
-                Number of frame parameter
-        numb_aparam
-                Number of atomic parameter
-        rcond
-                The condition number for the regression of atomic energy.
-        tot_ener_zero
-                Force the total energy to zero. Useful for the charge fitting.
-        trainable
-                If the weights of fitting net are trainable. 
-                Suppose that we have N_l hidden layers in the fitting net, 
-                this list is of length N_l + 1, specifying if the hidden layers and the output layer are trainable.
-        seed
-                Random seed for initializing the network parameters.
-        atom_ener
-                Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
-        activation_function
-                The activation function in the embedding net. Supported options are {0}
-        precision
-                The precision of the embedding net parameters. Supported options are {1}                
-        uniform_seed
-                Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
         """
         # model param
         self.ntypes = descrpt.get_ntypes()

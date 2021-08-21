@@ -16,9 +16,20 @@ log = logging.getLogger(__name__)
 class DPTabulate():
     """
     Class for tabulation.
+
     Compress a model, which including tabulating the embedding-net. 
     The table is composed of fifth-order polynomial coefficients and is assembled from two sub-tables. The first table takes the stride(parameter) as it\'s uniform stride, while the second table takes 10 * stride as it\s uniform stride 
     The range of the first table is automatically detected by deepmd-kit, while the second table ranges from the first table\'s upper boundary(upper) to the extrapolate(parameter) * upper.
+
+    Parameters
+    ----------
+    model_file
+            The frozen model
+    type_one_side
+            Try to build N_types tables. Otherwise, building N_types^2 tables
+    exclude_types : List[List[int]]
+            The excluded pairs of types which have no interaction with each other.
+            For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     """
     def __init__(self,
                  model_file : str,
@@ -26,16 +37,6 @@ class DPTabulate():
                  exclude_types : List[List[int]] = []) -> None:
         """
         Constructor
-
-        Parameters
-        ----------
-        model_file
-                The frozen model
-        type_one_side
-                Try to build N_types tables. Otherwise, building N_types^2 tables
-        exclude_types : List[List[int]]
-                The excluded pairs of types which have no interaction with each other.
-                For example, `[[0, 1]]` means no interaction between type 0 and type 1.
         """
 
         self.model_file = model_file

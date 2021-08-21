@@ -15,7 +15,23 @@ log = logging.getLogger(__name__)
 class DeepmdData() :
     """
     Class for a data system. 
+
     It loads data from hard disk, and mantains the data as a `data_dict`
+
+    Parameters
+    ----------
+    sys_path
+            Path to the data system
+    set_prefix
+            Prefix for the directories of different sets
+    shuffle_test
+            If the test data are shuffled
+    type_map
+            Gives the name of different atom types
+    modifier
+            Data modifier that has the method `modify_data`
+    trn_all_set
+            Use all sets as training dataset. Otherwise, if the number of sets is more than 1, the last set is left for test.
     """
     def __init__ (self, 
                   sys_path : str, 
@@ -26,21 +42,6 @@ class DeepmdData() :
                   trn_all_set : bool = False) :
         """
         Constructor
-        
-        Parameters
-        ----------
-        sys_path
-                Path to the data system
-        set_prefix
-                Prefix for the directories of different sets
-        shuffle_test
-                If the test data are shuffled
-        type_map
-                Gives the name of different atom types
-        modifier
-                Data modifier that has the method `modify_data`
-        trn_all_set
-                Use all sets as training dataset. Otherwise, if the number of sets is more than 1, the last set is left for test.
         """
         self.dirs = glob.glob (os.path.join(sys_path, set_prefix + ".*"))
         self.dirs.sort()
@@ -516,7 +517,10 @@ class DeepmdData() :
 
 class DataSets (object):
     """
-    Outdated class for one data system. Not maintained anymore.
+    Outdated class for one data system.
+
+    .. deprecated:: 2.0.0
+        This class is not maintained any more.
     """
     def __init__ (self, 
                   sys_path,

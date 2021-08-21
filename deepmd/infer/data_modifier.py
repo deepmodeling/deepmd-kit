@@ -16,6 +16,21 @@ from deepmd.utils.sess import run_sess
 
 
 class DipoleChargeModifier(DeepDipole):
+    """
+    
+    Parameters
+    ----------
+    model_name
+            The model file for the DeepDipole model
+    model_charge_map
+            Gives the amount of charge for the wfcc
+    sys_charge_map
+            Gives the amount of charge for the real atoms
+    ewald_h
+            Grid spacing of the reciprocal part of Ewald sum. Unit: A
+    ewald_beta
+            Splitting parameter of the Ewald sum. Unit: A^{-1}
+    """
     def __init__(self, 
                  model_name : str, 
                  model_charge_map : List[float],
@@ -25,19 +40,6 @@ class DipoleChargeModifier(DeepDipole):
     ) -> None:
         """
         Constructor 
-
-        Parameters
-        ----------
-        model_name
-                The model file for the DeepDipole model
-        model_charge_map
-                Gives the amount of charge for the wfcc
-        sys_charge_map
-                Gives the amount of charge for the real atoms
-        ewald_h
-                Grid spacing of the reciprocal part of Ewald sum. Unit: A
-        ewald_beta
-                Splitting parameter of the Ewald sum. Unit: A^{-1}
         """
         # the dipole model is loaded with prefix 'dipole_charge'
         self.modifier_prefix = 'dipole_charge'

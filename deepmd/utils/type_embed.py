@@ -54,6 +54,26 @@ def embed_atom_type(
     
 
 class TypeEmbedNet():
+    """
+
+    Parameters
+    ----------
+    neuron : list[int]
+            Number of neurons in each hidden layers of the embedding net
+    resnet_dt
+            Time-step `dt` in the resnet construction:
+            y = x + dt * \phi (Wx + b)
+    activation_function
+            The activation function in the embedding net. Supported options are {0}
+    precision
+            The precision of the embedding net parameters. Supported options are {1}        
+    trainable
+            If the weights of embedding net are trainable.
+    seed
+            Random seed for initializing the network parameters.
+    uniform_seed
+            Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
+    """
     @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__(
             self,
@@ -67,24 +87,6 @@ class TypeEmbedNet():
     )->None:
         """
         Constructor
-
-        Parameters
-        ----------
-        neuron : list[int]
-                Number of neurons in each hidden layers of the embedding net
-        resnet_dt
-                Time-step `dt` in the resnet construction:
-                y = x + dt * \phi (Wx + b)
-        activation_function
-                The activation function in the embedding net. Supported options are {0}
-        precision
-                The precision of the embedding net parameters. Supported options are {1}        
-        trainable
-                If the weights of embedding net are trainable.
-        seed
-                Random seed for initializing the network parameters.
-        uniform_seed
-                Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
         """
         self.neuron = neuron
         self.seed = seed
