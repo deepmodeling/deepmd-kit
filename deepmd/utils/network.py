@@ -4,6 +4,8 @@ from deepmd.env import tf
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 
 def one_layer_rand_seed_shift():
+    """one_layer_rand_seed_shift.
+    """
     return 3
 
 def one_layer(inputs, 
@@ -19,6 +21,37 @@ def one_layer(inputs,
               trainable = True,
               useBN = False, 
               uniform_seed = False):
+    """one_layer.
+
+    Parameters
+    ----------
+    inputs :
+        inputs
+    outputs_size :
+        outputs_size
+    activation_fn :
+        activation_fn
+    precision :
+        precision
+    stddev :
+        stddev
+    bavg :
+        bavg
+    name :
+        name
+    reuse :
+        reuse
+    seed :
+        seed
+    use_timestep :
+        use_timestep
+    trainable :
+        trainable
+    useBN :
+        useBN
+    uniform_seed :
+        uniform_seed
+    """
     with tf.variable_scope(name, reuse=reuse):
         shape = inputs.get_shape().as_list()
         w = tf.get_variable('matrix', 
@@ -73,6 +106,13 @@ def one_layer(inputs,
 def embedding_net_rand_seed_shift(
         network_size
 ):
+    """embedding_net_rand_seed_shift.
+
+    Parameters
+    ----------
+    network_size :
+        network_size
+    """
     shift = 3 * (len(network_size) + 1)
     return shift
 

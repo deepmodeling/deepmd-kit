@@ -343,6 +343,15 @@ class DeepmdData() :
             return np.average(eners, axis = 0)
 
     def _idx_map_sel(self, atom_type, type_sel) :
+        """_idx_map_sel.
+
+        Parameters
+        ----------
+        atom_type :
+            atom_type
+        type_sel :
+            type_sel
+        """
         new_types = []
         for ii in atom_type :
             if ii in type_sel:
@@ -354,6 +363,13 @@ class DeepmdData() :
         return idx_map
 
     def _get_natoms_2 (self, ntypes) :
+        """_get_natoms_2.
+
+        Parameters
+        ----------
+        ntypes :
+            ntypes
+        """
         sample_type = self.atom_type
         natoms = len(sample_type)
         natoms_vec = np.zeros (ntypes).astype(int)
@@ -362,6 +378,15 @@ class DeepmdData() :
         return natoms, natoms_vec
 
     def _get_subdata(self, data, idx = None) :
+        """_get_subdata.
+
+        Parameters
+        ----------
+        data :
+            data
+        idx :
+            idx
+        """
         new_data = {}
         for ii in data:
             dd = data[ii]
@@ -375,15 +400,33 @@ class DeepmdData() :
         return new_data
 
     def _load_batch_set (self,
+        """_load_batch_set.
+
+        Parameters
+        ----------
+        set_name :
+            set_name
+        """
                          set_name) :
         self.batch_set = self._load_set(set_name)
         self.batch_set, _ = self._shuffle_data(self.batch_set)
         self.reset_get_batch()
 
     def reset_get_batch(self):
+        """reset_get_batch.
+        """
         self.iterator = 0
 
     def _load_test_set (self,
+        """_load_test_set.
+
+        Parameters
+        ----------
+        set_name :
+            set_name
+        shuffle_test :
+            shuffle_test
+        """
                        set_name, 
                        shuffle_test) :
         self.test_set = self._load_set(set_name)        
@@ -391,6 +434,13 @@ class DeepmdData() :
             self.test_set, _ = self._shuffle_data(self.test_set)
 
     def _shuffle_data (self,
+        """_shuffle_data.
+
+        Parameters
+        ----------
+        data :
+            data
+        """
                        data) :
         ret = {}
         nframes = data['coord'].shape[0]
@@ -408,6 +458,13 @@ class DeepmdData() :
         return ret, idx
 
     def _load_set(self, set_name) :
+        """_load_set.
+
+        Parameters
+        ----------
+        set_name :
+            set_name
+        """
         # get nframes
         path = os.path.join(set_name, "coord.npy")
         if self.data_dict['coord']['high_prec'] :
@@ -445,6 +502,29 @@ class DeepmdData() :
 
 
     def _load_data(self, set_name, key, nframes, ndof_, atomic = False, must = True, repeat = 1, high_prec = False, type_sel = None):
+        """_load_data.
+
+        Parameters
+        ----------
+        set_name :
+            set_name
+        key :
+            key
+        nframes :
+            nframes
+        ndof_ :
+            ndof_
+        atomic :
+            atomic
+        must :
+            must
+        repeat :
+            repeat
+        high_prec :
+            high_prec
+        type_sel :
+            type_sel
+        """
         if atomic:
             natoms = self.natoms
             idx_map = self.idx_map
@@ -490,16 +570,37 @@ class DeepmdData() :
 
         
     def _load_type (self, sys_path) :
+        """_load_type.
+
+        Parameters
+        ----------
+        sys_path :
+            sys_path
+        """
         atom_type = np.loadtxt (os.path.join(sys_path, "type.raw"), dtype=np.int32, ndmin=1)
         return atom_type
 
     def _make_idx_map(self, atom_type):
+        """_make_idx_map.
+
+        Parameters
+        ----------
+        atom_type :
+            atom_type
+        """
         natoms = atom_type.shape[0]
         idx = np.arange (natoms)
         idx_map = np.lexsort ((idx, atom_type))
         return idx_map
 
     def _load_type_map(self, sys_path) :
+        """_load_type_map.
+
+        Parameters
+        ----------
+        sys_path :
+            sys_path
+        """
         fname = os.path.join(sys_path, 'type_map.raw')
         if os.path.isfile(fname) :            
             with open(os.path.join(sys_path, 'type_map.raw')) as fp:
@@ -508,6 +609,13 @@ class DeepmdData() :
             return None
 
     def _check_pbc(self, sys_path):
+        """_check_pbc.
+
+        Parameters
+        ----------
+        sys_path :
+            sys_path
+        """
         pbc = True
         if os.path.isfile(os.path.join(sys_path, 'nopbc')) :
             pbc = False
@@ -519,6 +627,19 @@ class DataSets (object):
     Outdated class for one data system. Not maintained anymore.
     """
     def __init__ (self, 
+        """__init__.
+
+        Parameters
+        ----------
+        sys_path :
+            sys_path
+        set_prefix :
+            set_prefix
+        seed :
+            seed
+        shuffle_test :
+            shuffle_test
+        """
                   sys_path,
                   set_prefix,
                   seed = None, 
@@ -561,6 +682,13 @@ class DataSets (object):
         self.load_test_set (self.test_dir, shuffle_test)
 
     def check_batch_size (self, batch_size) :
+        """check_batch_size.
+
+        Parameters
+        ----------
+        batch_size :
+            batch_size
+        """
         for ii in self.train_dirs :
             tmpe = np.load(os.path.join(ii, "coord.npy"))
             if tmpe.shape[0] < batch_size :
@@ -568,6 +696,13 @@ class DataSets (object):
         return None
 
     def check_test_size (self, test_size) :
+        """check_test_size.
+
+        Parameters
+        ----------
+        test_size :
+            test_size
+        """
         tmpe = np.load(os.path.join(self.test_dir, "coord.npy"))
         if tmpe.shape[0] < test_size :
             return self.test_dir, tmpe.shape[0]
@@ -575,6 +710,13 @@ class DataSets (object):
             return None
 
     def load_type (self, sys_path) :
+        """load_type.
+
+        Parameters
+        ----------
+        sys_path :
+            sys_path
+        """
         atom_type = np.loadtxt (os.path.join(sys_path, "type.raw"), dtype=np.int32, ndmin=1)
         natoms = atom_type.shape[0]
         idx = np.arange (natoms)
@@ -585,6 +727,13 @@ class DataSets (object):
         return atom_type, idx_map, idx3_map
 
     def load_type_map(self, sys_path) :
+        """load_type_map.
+
+        Parameters
+        ----------
+        sys_path :
+            sys_path
+        """
         fname = os.path.join(sys_path, 'type_map.raw')
         if os.path.isfile(fname) :            
             with open(os.path.join(sys_path, 'type_map.raw')) as fp:
@@ -593,12 +742,18 @@ class DataSets (object):
             return None
 
     def get_type_map(self) :
+        """get_type_map.
+        """
         return self.type_map
 
     def get_numb_set (self) :
+        """get_numb_set.
+        """
         return len (self.train_dirs)
     
     def stats_energy (self) :
+        """stats_energy.
+        """
         eners = np.array([])
         for ii in self.train_dirs:
             ener_file = os.path.join(ii, "energy.npy")
@@ -631,6 +786,19 @@ class DataSets (object):
         return coeff_ener, ener, coeff_atom_ener, atom_ener
 
     def load_data(self, set_name, data_name, shape, is_necessary = True):
+        """load_data.
+
+        Parameters
+        ----------
+        set_name :
+            set_name
+        data_name :
+            data_name
+        shape :
+            shape
+        is_necessary :
+            is_necessary
+        """
         path = os.path.join(set_name, data_name+".npy")
         if os.path.isfile (path) :
             data = np.load(path)
@@ -645,6 +813,15 @@ class DataSets (object):
         return 0, data
 
     def load_set(self, set_name, shuffle = True):
+        """load_set.
+
+        Parameters
+        ----------
+        set_name :
+            set_name
+        shuffle :
+            shuffle
+        """
         data = {}
         data["box"] = self.load_data(set_name, "box", [-1, 9])
         nframe = data["box"].shape[0]
@@ -685,20 +862,47 @@ class DataSets (object):
         return data
 
     def load_batch_set (self,
+        """load_batch_set.
+
+        Parameters
+        ----------
+        set_name :
+            set_name
+        """
                         set_name) :
         self.batch_set = self.load_set(set_name, True)
         self.reset_iter ()
 
     def load_test_set (self,
+        """load_test_set.
+
+        Parameters
+        ----------
+        set_name :
+            set_name
+        shuffle_test :
+            shuffle_test
+        """
                        set_name, 
                        shuffle_test) :
         self.test_set = self.load_set(set_name, shuffle_test)
         
     def reset_iter (self) :
+        """reset_iter.
+        """
         self.iterator = 0              
         self.set_count += 1
     
     def get_set(self, data, idx = None) :
+        """get_set.
+
+        Parameters
+        ----------
+        data :
+            data
+        idx :
+            idx
+        """
         new_data = {}
         for ii in data:
             dd = data[ii]
@@ -740,11 +944,20 @@ class DataSets (object):
         return self.get_set(self.batch_set, idx)
     
     def get_natoms (self) :
+        """get_natoms.
+        """
         sample_type = self.batch_set["type"][0]
         natoms = len(sample_type)
         return natoms
 
     def get_natoms_2 (self, ntypes) :
+        """get_natoms_2.
+
+        Parameters
+        ----------
+        ntypes :
+            ntypes
+        """
         sample_type = self.batch_set["type"][0]
         natoms = len(sample_type)
         natoms_vec = np.zeros (ntypes).astype(int)
@@ -753,24 +966,51 @@ class DataSets (object):
         return natoms, natoms_vec
 
     def get_natoms_vec (self, ntypes) :
+        """get_natoms_vec.
+
+        Parameters
+        ----------
+        ntypes :
+            ntypes
+        """
         natoms, natoms_vec = self.get_natoms_2 (ntypes)
         tmp = [natoms, natoms]
         tmp = np.append (tmp, natoms_vec)
         return tmp.astype(np.int32)
 
     def set_numb_batch (self, 
+        """set_numb_batch.
+
+        Parameters
+        ----------
+        batch_size :
+            batch_size
+        """
                         batch_size) :
         return self.batch_set["energy"].shape[0] // batch_size
 
     def get_sys_numb_batch (self, batch_size) :
+        """get_sys_numb_batch.
+
+        Parameters
+        ----------
+        batch_size :
+            batch_size
+        """
         return self.set_numb_batch(batch_size) * self.get_numb_set()
 
     def get_ener (self) :
+        """get_ener.
+        """
         return self.eavg
 
     def numb_fparam(self) :
+        """numb_fparam.
+        """
         return self.has_fparam
 
     def numb_aparam(self) :
+        """numb_aparam.
+        """
         return self.has_aparam
 

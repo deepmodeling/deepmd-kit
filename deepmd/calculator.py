@@ -63,6 +63,24 @@ class DP(Calculator):
         type_dict: Dict[str, int] = None,
         **kwargs
     ) -> None:
+        """__init__.
+
+        Parameters
+        ----------
+        model : Union[str, "Path"]
+            model
+        label : str
+            label
+        type_dict : Dict[str, int]
+            type_dict
+        kwargs :
+            kwargs
+
+        Returns
+        -------
+        None
+
+        """
         Calculator.__init__(self, label=label, **kwargs)
         self.dp = DeepPotential(str(Path(model).resolve()))
         if type_dict:

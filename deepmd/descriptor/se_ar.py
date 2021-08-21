@@ -7,7 +7,17 @@ from .se_r import DescrptSeR
 from deepmd.env import op_module
 
 class DescrptSeAR ():
+    """DescrptSeAR.
+    """
+
     def __init__ (self, jdata):
+        """__init__.
+
+        Parameters
+        ----------
+        jdata :
+            jdata
+        """
         args = ClassArg()\
                .add('a',      dict,   must = True) \
                .add('r',      dict,   must = True) 
@@ -21,21 +31,48 @@ class DescrptSeAR ():
         self.dstd = None
 
     def get_rcut (self) :
+        """get_rcut.
+        """
         return np.max([self.descrpt_a.get_rcut(), self.descrpt_r.get_rcut()])
 
     def get_ntypes (self) :
+        """get_ntypes.
+        """
         return self.descrpt_r.get_ntypes()
 
     def get_dim_out (self) :
+        """get_dim_out.
+        """
         return (self.descrpt_a.get_dim_out() + self.descrpt_r.get_dim_out())
 
     def get_nlist_a (self) :
+        """get_nlist_a.
+        """
         return self.descrpt_a.nlist, self.descrpt_a.rij, self.descrpt_a.sel_a, self.descrpt_a.sel_r
 
     def get_nlist_r (self) :
+        """get_nlist_r.
+        """
         return self.descrpt_r.nlist, self.descrpt_r.rij, self.descrpt_r.sel_a, self.descrpt_r.sel_r
 
     def compute_input_stats (self,
+        """compute_input_stats.
+
+        Parameters
+        ----------
+        data_coord :
+            data_coord
+        data_box :
+            data_box
+        data_atype :
+            data_atype
+        natoms_vec :
+            natoms_vec
+        mesh :
+            mesh
+        input_dict :
+            input_dict
+        """
                         data_coord, 
                         data_box, 
                         data_atype, 
@@ -57,6 +94,27 @@ class DescrptSeAR ():
                input_dict,
                suffix = '', 
                reuse = None):
+        """build.
+
+        Parameters
+        ----------
+        coord_ :
+            coord_
+        atype_ :
+            atype_
+        natoms :
+            natoms
+        box :
+            box
+        mesh :
+            mesh
+        input_dict :
+            input_dict
+        suffix :
+            suffix
+        reuse :
+            reuse
+        """
         davg = self.davg
         dstd = self.dstd
         if davg is None:
@@ -78,6 +136,15 @@ class DescrptSeAR ():
 
 
     def prod_force_virial(self, atom_ener, natoms) :
+        """prod_force_virial.
+
+        Parameters
+        ----------
+        atom_ener :
+            atom_ener
+        natoms :
+            natoms
+        """
         f_a, v_a, av_a = self.descrpt_a.prod_force_virial(atom_ener, natoms)
         f_r, v_r, av_r = self.descrpt_r.prod_force_virial(atom_ener, natoms)
         force = f_a + f_r

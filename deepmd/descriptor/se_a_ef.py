@@ -12,6 +12,9 @@ from deepmd.env import default_tf_session_config
 from .se_a import DescrptSeA
 
 class DescrptSeAEf ():
+    """DescrptSeAEf.
+    """
+
     @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__(self,
                  rcut: float,
@@ -288,6 +291,46 @@ class DescrptSeAEfLower (DescrptSeA):
                   precision: str = 'default',
                   uniform_seed : bool = False,
     ) -> None:
+        """__init__.
+
+        Parameters
+        ----------
+        op :
+            op
+        rcut : float
+            rcut
+        rcut_smth : float
+            rcut_smth
+        sel : List[str]
+            sel
+        neuron : List[int]
+            neuron
+        axis_neuron : int
+            axis_neuron
+        resnet_dt : bool
+            resnet_dt
+        trainable : bool
+            trainable
+        seed : int
+            seed
+        type_one_side : bool
+            type_one_side
+        exclude_types : List[int]
+            exclude_types
+        set_davg_zero : bool
+            set_davg_zero
+        activation_function : str
+            activation_function
+        precision : str
+            precision
+        uniform_seed : bool
+            uniform_seed
+
+        Returns
+        -------
+        None
+
+        """
         DescrptSeA.__init__(
             self, 
             rcut,
@@ -383,6 +426,23 @@ class DescrptSeAEfLower (DescrptSeA):
 
 
     def compute_input_stats (self,
+        """compute_input_stats.
+
+        Parameters
+        ----------
+        data_coord :
+            data_coord
+        data_box :
+            data_box
+        data_atype :
+            data_atype
+        natoms_vec :
+            natoms_vec
+        mesh :
+            mesh
+        input_dict :
+            input_dict
+        """
                              data_coord, 
                              data_box, 
                              data_atype, 
@@ -427,6 +487,13 @@ class DescrptSeAEfLower (DescrptSeA):
         self.dstd = np.array(all_dstd)
 
     def _normalize_3d(self, a):
+        """_normalize_3d.
+
+        Parameters
+        ----------
+        a :
+            a
+        """
         na = tf.norm(a, axis = 1)
         na = tf.tile(tf.reshape(na, [-1,1]), tf.constant([1, 3]))
         return tf.divide(a, na)
@@ -440,6 +507,27 @@ class DescrptSeAEfLower (DescrptSeA):
                input_dict,
                suffix = '', 
                reuse = None):
+        """build.
+
+        Parameters
+        ----------
+        coord_ :
+            coord_
+        atype_ :
+            atype_
+        natoms :
+            natoms
+        box_ :
+            box_
+        mesh :
+            mesh
+        input_dict :
+            input_dict
+        suffix :
+            suffix
+        reuse :
+            reuse
+        """
         efield = input_dict['efield']
         davg = self.davg
         dstd = self.dstd
@@ -522,6 +610,23 @@ class DescrptSeAEfLower (DescrptSeA):
             = run_sess(self.sub_sess, self.stat_descrpt, 
                                 feed_dict = {
                                     self.place_holders['coord']: data_coord,
+        """_compute_dstats_sys_smth.
+
+        Parameters
+        ----------
+        data_coord :
+            data_coord
+        data_box :
+            data_box
+        data_atype :
+            data_atype
+        natoms_vec :
+            natoms_vec
+        mesh :
+            mesh
+        data_efield :
+            data_efield
+        """
                                     self.place_holders['type']: data_atype,
                                     self.place_holders['natoms_vec']: natoms_vec,
                                     self.place_holders['box']: data_box,

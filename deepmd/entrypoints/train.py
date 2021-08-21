@@ -166,6 +166,19 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
 
 
 def get_data(jdata: Dict[str, Any], rcut, type_map, modifier):
+    """get_data.
+
+    Parameters
+    ----------
+    jdata : Dict[str, Any]
+        jdata
+    rcut :
+        rcut
+    type_map :
+        type_map
+    modifier :
+        modifier
+    """
     systems = j_must_have(jdata, "systems")
     if isinstance(systems, str):
         systems = expand_sys_str(systems)
@@ -208,6 +221,13 @@ def get_data(jdata: Dict[str, Any], rcut, type_map, modifier):
 
 
 def get_modifier(modi_data=None):
+    """get_modifier.
+
+    Parameters
+    ----------
+    modi_data :
+        modi_data
+    """
     modifier: Optional[DipoleChargeModifier]
     if modi_data is not None:
         if modi_data["type"] == "dipole_charge":
@@ -226,6 +246,13 @@ def get_modifier(modi_data=None):
 
 
 def get_rcut(jdata):
+    """get_rcut.
+
+    Parameters
+    ----------
+    jdata :
+        jdata
+    """
     descrpt_data = jdata['model']['descriptor']
     rcut_list = []
     if descrpt_data['type'] == 'hybrid':
@@ -237,10 +264,26 @@ def get_rcut(jdata):
 
 
 def get_type_map(jdata):
+    """get_type_map.
+
+    Parameters
+    ----------
+    jdata :
+        jdata
+    """
     return jdata['model'].get('type_map', None)
 
 
 def get_nbor_stat(jdata, rcut):
+    """get_nbor_stat.
+
+    Parameters
+    ----------
+    jdata :
+        jdata
+    rcut :
+        rcut
+    """
     max_rcut = get_rcut(jdata)
     type_map = get_type_map(jdata)
 
@@ -261,14 +304,39 @@ def get_nbor_stat(jdata, rcut):
     return min_nbor_dist, max_nbor_size
 
 def get_sel(jdata, rcut):
+    """get_sel.
+
+    Parameters
+    ----------
+    jdata :
+        jdata
+    rcut :
+        rcut
+    """
     _, max_nbor_size = get_nbor_stat(jdata, rcut)
     return max_nbor_size
 
 def get_min_nbor_dist(jdata, rcut):
+    """get_min_nbor_dist.
+
+    Parameters
+    ----------
+    jdata :
+        jdata
+    rcut :
+        rcut
+    """
     min_nbor_dist, _ = get_nbor_stat(jdata, rcut)
     return min_nbor_dist
 
 def parse_auto_sel(sel):
+    """parse_auto_sel.
+
+    Parameters
+    ----------
+    sel :
+        sel
+    """
     if type(sel) is not str:
         return False
     words = sel.split(':')
@@ -279,6 +347,13 @@ def parse_auto_sel(sel):
 
     
 def parse_auto_sel_ratio(sel):
+    """parse_auto_sel_ratio.
+
+    Parameters
+    ----------
+    sel :
+        sel
+    """
     if not parse_auto_sel(sel):
         raise RuntimeError(f'invalid auto sel format {sel}')
     else:
@@ -293,10 +368,26 @@ def parse_auto_sel_ratio(sel):
 
 
 def wrap_up_4(xx):
+    """wrap_up_4.
+
+    Parameters
+    ----------
+    xx :
+        xx
+    """
     return 4 * ((int(xx) + 3) // 4)
 
 
 def update_one_sel(jdata, descriptor):
+    """update_one_sel.
+
+    Parameters
+    ----------
+    jdata :
+        jdata
+    descriptor :
+        descriptor
+    """
     rcut = descriptor['rcut']
     tmp_sel = get_sel(jdata, rcut)
     if parse_auto_sel(descriptor['sel']) :
@@ -317,6 +408,13 @@ def update_one_sel(jdata, descriptor):
 
 
 def update_sel(jdata):    
+    """update_sel.
+
+    Parameters
+    ----------
+    jdata :
+        jdata
+    """
     descrpt_data = jdata['model']['descriptor']
     if descrpt_data['type'] == 'hybrid':
         for ii in range(len(descrpt_data['list'])):

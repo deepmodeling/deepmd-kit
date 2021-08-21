@@ -6,6 +6,9 @@ from typing import Tuple, List
 from scipy.interpolate import CubicSpline
 
 class PairTab (object):
+    """PairTab.
+    """
+
     def __init__(self,
                  filename : str
     ) -> None:
@@ -59,6 +62,8 @@ class PairTab (object):
         return self.tab_info, self.tab_data
 
     def _make_data(self) :
+        """_make_data.
+        """
         data = np.zeros([self.ntypes * self.ntypes * 4 * self.nspline])
         stride = 4 * self.nspline
         idx_iter = 0

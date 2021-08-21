@@ -16,6 +16,15 @@ class WFCFitting () :
     Fitting Wannier function centers (WFCs) with local frame descriptor. Not supported anymore. 
     """
     def __init__ (self, jdata, descrpt):
+        """__init__.
+
+        Parameters
+        ----------
+        jdata :
+            jdata
+        descrpt :
+            descrpt
+        """
         if not isinstance(descrpt, DescrptLocFrame) :
             raise RuntimeError('WFC only supports DescrptLocFrame')
         self.ntypes = descrpt.get_ntypes()
@@ -43,12 +52,18 @@ class WFCFitting () :
 
 
     def get_sel_type(self):
+        """get_sel_type.
+        """
         return self.sel_type
 
     def get_wfc_numb(self):
+        """get_wfc_numb.
+        """
         return self.wfc_numb
 
     def get_out_size(self):
+        """get_out_size.
+        """
         return self.wfc_numb * 3
 
     def build (self, 
@@ -63,6 +78,21 @@ class WFCFitting () :
 
         count = 0
         for type_i in range(self.ntypes):
+        """build.
+
+        Parameters
+        ----------
+        input_d :
+            input_d
+        rot_mat :
+            rot_mat
+        natoms :
+            natoms
+        reuse :
+            reuse
+        suffix :
+            suffix
+        """
             # cut-out inputs
             inputs_i = tf.slice (inputs,
                                  [ 0, start_index*      self.dim_descrpt],

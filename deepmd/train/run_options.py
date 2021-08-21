@@ -92,6 +92,21 @@ class RunOptions:
         log_level: int = 0,
         mpi_log: str = "master"
     ):
+        """__init__.
+
+        Parameters
+        ----------
+        init_model : Optional[str]
+            init_model
+        restart : Optional[str]
+            restart
+        log_path : Optional[str]
+            log_path
+        log_level : int
+            log_level
+        mpi_log : str
+            mpi_log
+        """
         self._try_init_distrib()
 
         if all((init_model, restart)):
@@ -171,6 +186,8 @@ class RunOptions:
             )
 
     def _try_init_distrib(self):
+        """_try_init_distrib.
+        """
         try:
             import horovod.tensorflow as HVD
             HVD.init()

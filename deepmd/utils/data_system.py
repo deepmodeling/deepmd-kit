@@ -162,6 +162,13 @@ class DeepmdDataSystem() :
 
 
     def _load_test(self, ntests = -1):
+        """_load_test.
+
+        Parameters
+        ----------
+        ntests :
+            ntests
+        """
         self.test_data = collections.defaultdict(list)
         for ii in range(self.nsystems) :
             test_system_data = self.data_systems[ii].get_test(ntests = ntests)
@@ -170,6 +177,8 @@ class DeepmdDataSystem() :
 
 
     def _make_default_mesh(self):
+        """_make_default_mesh.
+        """
         self.default_mesh = []
         cell_size = np.max (self.rcut)
         for ii in range(self.nsystems) :
@@ -189,6 +198,15 @@ class DeepmdDataSystem() :
 
 
     def compute_energy_shift(self, rcond = 1e-3, key = 'energy') :
+        """compute_energy_shift.
+
+        Parameters
+        ----------
+        rcond :
+            rcond
+        key :
+            key
+        """
         sys_ener = np.array([])
         for ss in self.data_systems :
             sys_ener = np.append(sys_ener, ss.avg(key))
@@ -272,10 +290,31 @@ class DeepmdDataSystem() :
             ii.reduce(key_out, key_in)
 
     def get_data_dict(self, ii: int = 0) -> dict:
+        """get_data_dict.
+
+        Parameters
+        ----------
+        ii : int
+            ii
+
+        Returns
+        -------
+        dict
+
+        """
         return self.data_systems[ii].get_data_dict()
 
     def set_sys_probs(self, sys_probs=None,
                       auto_prob_style: str = "prob_sys_size"):
+        """set_sys_probs.
+
+        Parameters
+        ----------
+        sys_probs :
+            sys_probs
+        auto_prob_style : str
+            auto_prob_style
+        """
         if sys_probs is None :
             if auto_prob_style == "prob_uniform":
                 prob_v = 1./float(self.nsystems)
@@ -291,6 +330,15 @@ class DeepmdDataSystem() :
         self.sys_probs = probs
 
     def _get_sys_probs(self,
+        """_get_sys_probs.
+
+        Parameters
+        ----------
+        sys_probs :
+            sys_probs
+        auto_prob_style :
+            auto_prob_style
+        """
                        sys_probs,
                        auto_prob_style) :  # depreciated
         if sys_probs is None :
@@ -413,6 +461,15 @@ class DeepmdDataSystem() :
         return self.batch_size
 
     def _format_name_length(self, name, width) :
+        """_format_name_length.
+
+        Parameters
+        ----------
+        name :
+            name
+        width :
+            width
+        """
         if len(name) <= width:
             return '{: >{}}'.format(name, width)
         else :
@@ -421,6 +478,13 @@ class DeepmdDataSystem() :
             return name 
 
     def print_summary(self, name) :
+        """print_summary.
+
+        Parameters
+        ----------
+        name :
+            name
+        """
         # width 65
         sys_width = 42
         log.info(f"---Summary of DataSystem: {name:13s}-----------------------------------------------")
@@ -440,6 +504,13 @@ class DeepmdDataSystem() :
         log.info("--------------------------------------------------------------------------------------")
 
     def _make_auto_bs(self, rule) :
+        """_make_auto_bs.
+
+        Parameters
+        ----------
+        rule :
+            rule
+        """
         bs = []
         for ii in self.data_systems:
             ni = ii.get_natoms()
@@ -451,6 +522,13 @@ class DeepmdDataSystem() :
 
     # ! added by Marián Rynik
     def _make_auto_ts(self, percent):
+        """_make_auto_ts.
+
+        Parameters
+        ----------
+        percent :
+            percent
+        """
         ts = []
         for ii in range(self.nsystems):
             ni = self.batch_size[ii] * self.nbatches[ii]
@@ -460,6 +538,13 @@ class DeepmdDataSystem() :
         return ts
 
     def _check_type_map_consistency(self, type_map_list):
+        """_check_type_map_consistency.
+
+        Parameters
+        ----------
+        type_map_list :
+            type_map_list
+        """
         ret = []
         for ii in type_map_list:
             if ii is not None:
@@ -472,6 +557,13 @@ class DeepmdDataSystem() :
         return ret
 
     def _process_sys_probs(self, sys_probs) :
+        """_process_sys_probs.
+
+        Parameters
+        ----------
+        sys_probs :
+            sys_probs
+        """
         sys_probs = np.array(sys_probs)
         type_filter = sys_probs >= 0
         assigned_sum_prob = np.sum(type_filter * sys_probs)
@@ -487,6 +579,13 @@ class DeepmdDataSystem() :
         return ret_prob
     
     def _prob_sys_size_ext(self, keywords):
+        """_prob_sys_size_ext.
+
+        Parameters
+        ----------
+        keywords :
+            keywords
+        """
         block_str = keywords.split(';')[1:]
         block_stt = []
         block_end = []
@@ -515,6 +614,23 @@ class DataSystem (object) :
     Outdated class for the data systems. Not maintained anymore.    
     """
     def __init__ (self,
+        """__init__.
+
+        Parameters
+        ----------
+        systems :
+            systems
+        set_prefix :
+            set_prefix
+        batch_size :
+            batch_size
+        test_size :
+            test_size
+        rcut :
+            rcut
+        run_opt :
+            run_opt
+        """
                   systems,
                   set_prefix,
                   batch_size,
@@ -587,6 +703,13 @@ class DataSystem (object) :
 
 
     def check_type_map_consistency(self, type_map_list):
+        """check_type_map_consistency.
+
+        Parameters
+        ----------
+        type_map_list :
+            type_map_list
+        """
         ret = []
         for ii in type_map_list:
             if ii is not None:
@@ -600,10 +723,21 @@ class DataSystem (object) :
 
 
     def get_type_map(self):
+        """get_type_map.
+        """
         return self.type_map
 
 
     def format_name_length(self, name, width) :
+        """format_name_length.
+
+        Parameters
+        ----------
+        name :
+            name
+        width :
+            width
+        """
         if len(name) <= width:
             return '{: >{}}'.format(name, width)
         else :
@@ -612,6 +746,8 @@ class DataSystem (object) :
             return name 
 
     def print_summary(self) :
+        """print_summary.
+        """
         tmp_msg = ""
         # width 65
         sys_width = 42
@@ -629,6 +765,8 @@ class DataSystem (object) :
         log.info(tmp_msg)
 
     def compute_energy_shift(self) :
+        """compute_energy_shift.
+        """
         sys_ener = np.array([])
         for ss in self.data_systems :
             sys_ener = np.append(sys_ener, ss.get_ener())
@@ -640,6 +778,13 @@ class DataSystem (object) :
         return energy_shift
 
     def process_sys_weights(self, sys_weights) :
+        """process_sys_weights.
+
+        Parameters
+        ----------
+        sys_weights :
+            sys_weights
+        """
         sys_weights = np.array(sys_weights)
         type_filter = sys_weights >= 0
         assigned_sum_prob = np.sum(type_filter * sys_weights)
@@ -652,6 +797,17 @@ class DataSystem (object) :
         return ret_prob
 
     def get_batch (self, 
+        """get_batch.
+
+        Parameters
+        ----------
+        sys_idx :
+            sys_idx
+        sys_weights :
+            sys_weights
+        style :
+            style
+        """
                    sys_idx = None,
                    sys_weights = None,
                    style = "prob_sys_size") :
@@ -674,6 +830,13 @@ class DataSystem (object) :
         return b_data
 
     def get_test (self, 
+        """get_test.
+
+        Parameters
+        ----------
+        sys_idx :
+            sys_idx
+        """
                   sys_idx = None) :
         if sys_idx is not None :
             idx = sys_idx
@@ -687,24 +850,43 @@ class DataSystem (object) :
         return test_system_data
             
     def get_nbatches (self) : 
+        """get_nbatches.
+        """
         return self.nbatches
     
     def get_ntypes (self) :
+        """get_ntypes.
+        """
         return self.sys_ntypes
 
     def get_nsystems (self) :
+        """get_nsystems.
+        """
         return self.nsystems
 
     def get_sys (self, sys_idx) :
+        """get_sys.
+
+        Parameters
+        ----------
+        sys_idx :
+            sys_idx
+        """
         return self.data_systems[sys_idx]
 
     def get_batch_size(self) :
+        """get_batch_size.
+        """
         return self.batch_size
 
     def numb_fparam(self) :
+        """numb_fparam.
+        """
         return self.has_fparam
 
 def _main () :
+    """_main.
+    """
     sys =  ['/home/wanghan/study/deep.md/results.01/data/mos2/only_raws/20', 
             '/home/wanghan/study/deep.md/results.01/data/mos2/only_raws/30', 
             '/home/wanghan/study/deep.md/results.01/data/mos2/only_raws/38', 

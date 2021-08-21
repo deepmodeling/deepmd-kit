@@ -191,6 +191,16 @@ class ClassArg:
     """
 
     def __init__(self) -> None:
+        """__init__.
+
+        Parameters
+        ----------
+
+        Returns
+        -------
+        None
+
+        """
         self.arg_dict = {}
         self.alias_map = {}
 
@@ -246,6 +256,15 @@ class ClassArg:
         return self
 
     def _add_single(self, key: str, data: Any):
+        """_add_single.
+
+        Parameters
+        ----------
+        key : str
+            key
+        data : Any
+            data
+        """
         vtype = type(data)
         if data is None:
             return data
@@ -267,6 +286,8 @@ class ClassArg:
         self.arg_dict[key]["value"] = vv
 
     def _check_must(self):
+        """_check_must.
+        """
         for kk in self.arg_dict:
             if self.arg_dict[kk]["must"] and self.arg_dict[kk]["value"] is None:
                 raise RuntimeError(f"key {kk} must be provided")
@@ -450,6 +471,18 @@ def docstring_parameter(*sub: Tuple[str, ...]):
 
     @wraps
     def dec(obj: "_OBJ") -> "_OBJ":
+        """dec.
+
+        Parameters
+        ----------
+        obj : "_OBJ"
+            obj
+
+        Returns
+        -------
+        "_OBJ"
+
+        """
         if obj.__doc__ is not None:
             obj.__doc__ = obj.__doc__.format(*sub)
         return obj

@@ -4,6 +4,13 @@ import json
 
 
 def list_to_doc(xx):
+    """list_to_doc.
+
+    Parameters
+    ----------
+    xx :
+        xx
+    """
     items = []
     for ii in xx:
         if len(items) == 0:
@@ -15,11 +22,22 @@ def list_to_doc(xx):
 
 
 def make_link(content, ref_key):
+    """make_link.
+
+    Parameters
+    ----------
+    content :
+        content
+    ref_key :
+        ref_key
+    """
     return f'`{content} <{ref_key}_>`_' if not dargs.RAW_ANCHOR \
         else f'`{content} <#{ref_key}>`_'
 
 
 def type_embedding_args():
+    """type_embedding_args.
+    """
     doc_neuron = 'Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_seed = 'Random seed for parameter initialization'
@@ -39,6 +57,8 @@ def type_embedding_args():
 
 #  --- Descriptor configurations: --- #
 def descrpt_local_frame_args ():
+    """descrpt_local_frame_args.
+    """
     doc_sel_a = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_a[i]` gives the selected number of type-i neighbors. The full relative coordinates of the neighbors are used by the descriptor.'
     doc_sel_r = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_r[i]` gives the selected number of type-i neighbors. Only relative distance of the neighbors are used by the descriptor. sel_a[i] + sel_r[i] is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.'
     doc_rcut = 'The cut-off radius. The default value is 6.0'
@@ -59,6 +79,8 @@ def descrpt_local_frame_args ():
 
 
 def descrpt_se_a_args():
+    """descrpt_se_a_args.
+    """
     doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
     - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
     - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
@@ -93,6 +115,8 @@ def descrpt_se_a_args():
 
 
 def descrpt_se_t_args():
+    """descrpt_se_t_args.
+    """
     doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
     - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
     - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
@@ -122,6 +146,8 @@ def descrpt_se_t_args():
 
 
 def descrpt_se_a_tpe_args():
+    """descrpt_se_a_tpe_args.
+    """
     doc_type_nchanl = 'number of channels for type embedding'
     doc_type_nlayer = 'number of hidden layers of type embedding net'
     doc_numb_aparam = 'dimension of atomic parameter. if set to a value > 0, the atomic parameters are embedded.'
@@ -134,6 +160,8 @@ def descrpt_se_a_tpe_args():
 
 
 def descrpt_se_r_args():
+    """descrpt_se_r_args.
+    """
     doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
     - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
     - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
@@ -166,6 +194,8 @@ def descrpt_se_r_args():
 
 
 def descrpt_se_ar_args():
+    """descrpt_se_ar_args.
+    """
     link = make_link('se_a', 'model/descriptor[se_a]')
     doc_a = f'The parameters of descriptor {link}'
     link = make_link('se_r', 'model/descriptor[se_r]')
@@ -178,6 +208,8 @@ def descrpt_se_ar_args():
 
 
 def descrpt_hybrid_args():
+    """descrpt_hybrid_args.
+    """
     doc_list = f'A list of descriptor definitions'
     
     return [
@@ -186,6 +218,8 @@ def descrpt_hybrid_args():
 
 
 def descrpt_variant_type_args():
+    """descrpt_variant_type_args.
+    """
     link_lf = make_link('loc_frame', 'model/descriptor[loc_frame]')
     link_se_e2_a = make_link('se_e2_a', 'model/descriptor[se_e2_a]')
     link_se_e2_r = make_link('se_e2_r', 'model/descriptor[se_e2_r]')
@@ -212,6 +246,8 @@ def descrpt_variant_type_args():
 
 #  --- Fitting net configurations: --- #
 def fitting_ener():
+    """fitting_ener.
+    """
     doc_numb_fparam = 'The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams.'
     doc_numb_aparam = 'The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams.'
     doc_neuron = 'The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.'
@@ -240,6 +276,8 @@ def fitting_ener():
 
 
 def fitting_polar():
+    """fitting_polar.
+    """
     doc_neuron = 'The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.'
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
@@ -272,6 +310,8 @@ def fitting_polar():
 
 
 def fitting_dipole():
+    """fitting_dipole.
+    """
     doc_neuron = 'The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.'
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
@@ -289,6 +329,8 @@ def fitting_dipole():
 
 #   YWolfeee: Delete global polar mode, merge it into polar mode and use loss setting to support.
 def fitting_variant_type_args():
+    """fitting_variant_type_args.
+    """
     doc_descrpt_type = 'The type of the fitting. See explanation below. \n\n\
 - `ener`: Fit an energy model (potential energy surface).\n\n\
 - `dipole`: Fit an atomic dipole model. Global dipole labels or atomic dipole labels for all the selected atoms (see `sel_type`) should be provided by `dipole.npy` in each data system. The file either has number of frames lines and 3 times of number of selected atoms columns, or has number of frames lines and 3 columns. See `loss` parameter.\n\n\
@@ -305,6 +347,8 @@ def fitting_variant_type_args():
 
 #  --- Modifier configurations: --- #
 def modifier_dipole_charge():
+    """modifier_dipole_charge.
+    """
     doc_model_name = "The name of the frozen dipole model file."
     doc_model_charge_map = f"The charge of the WFCC. The list length should be the same as the {make_link('sel_type', 'model/fitting_net[dipole]/sel_type')}. "
     doc_sys_charge_map = f"The charge of real atoms. The list length should be the same as the {make_link('type_map', 'model/type_map')}"
@@ -321,6 +365,8 @@ def modifier_dipole_charge():
 
 
 def modifier_variant_type_args():
+    """modifier_variant_type_args.
+    """
     doc_modifier_type = "The type of modifier. See explanation below.\n\n\
 -`dipole_charge`: Use WFCC to model the electronic structure of the system. Correct the long-range interaction"
     return Variant("type", 
@@ -332,6 +378,8 @@ def modifier_variant_type_args():
 
 #  --- model compression configurations: --- #
 def model_compression():
+    """model_compression.
+    """
     doc_compress = f"The name of the frozen model file."
     doc_model_file = f"The input model file, which will be compressed by the DeePMD-kit."
     doc_table_config = f"The arguments of model compression, including extrapolate(scale of model extrapolation), stride(uniform stride of tabulation's first and second table), and frequency(frequency of tabulation overflow check)."
@@ -346,6 +394,8 @@ def model_compression():
 
 #  --- model compression configurations: --- #
 def model_compression_type_args():
+    """model_compression_type_args.
+    """
     doc_compress_type = "The type of model compression, which should be consistent with the descriptor type."
     
     return Variant("type", [
@@ -357,6 +407,8 @@ def model_compression_type_args():
 
 
 def model_args ():    
+    """model_args.
+    """
     doc_type_map = 'A list of strings. Give the name to each type of atoms. It is noted that the number of atom type of training system must be less than 128 in a GPU environment.'
     doc_data_stat_nbatch = 'The model determines the normalization from the statistics of the data. This key specifies the number of `frames` in each `system` used for statistics.'
     doc_data_stat_protect = 'Protect parameter for atomic energy regression.'
@@ -390,6 +442,8 @@ def model_args ():
 
 #  --- Learning rate configurations: --- #
 def learning_rate_exp():
+    """learning_rate_exp.
+    """
     doc_start_lr = 'The learning rate the start of the training.'
     doc_stop_lr = 'The desired learning rate at the end of the training.'
     doc_decay_steps = 'The learning rate is decaying every this number of training steps.'
@@ -403,6 +457,8 @@ def learning_rate_exp():
     
 
 def learning_rate_variant_type_args():
+    """learning_rate_variant_type_args.
+    """
     doc_lr = 'The type of the learning rate.'
 
     return Variant("type", 
@@ -413,6 +469,8 @@ def learning_rate_variant_type_args():
 
 
 def learning_rate_args():
+    """learning_rate_args.
+    """
     doc_lr = "The definitio of learning rate" 
     return Argument("learning_rate", dict, [], 
                     [learning_rate_variant_type_args()],
@@ -421,14 +479,30 @@ def learning_rate_args():
 
 #  --- Loss configurations: --- #
 def start_pref(item):
+    """start_pref.
+
+    Parameters
+    ----------
+    item :
+        item
+    """
     return f'The prefactor of {item} loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the {item} label should be provided by file {item}.npy in each data system. If both start_pref_{item} and limit_pref_{item} are set to 0, then the {item} will be ignored.'
 
 
 def limit_pref(item):
+    """limit_pref.
+
+    Parameters
+    ----------
+    item :
+        item
+    """
     return f'The prefactor of {item} loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity.'
 
 
 def loss_ener():
+    """loss_ener.
+    """
     doc_start_pref_e = start_pref('energy')
     doc_limit_pref_e = limit_pref('energy')
     doc_start_pref_f = start_pref('force')
@@ -452,6 +526,8 @@ def loss_ener():
 
 # YWolfeee: Modified to support tensor type of loss args.
 def loss_tensor():
+    """loss_tensor.
+    """
     #doc_global_weight = "The prefactor of the weight of global loss. It should be larger than or equal to 0. If only `pref` is provided or both are not provided, training will be global mode, i.e. the shape of 'polarizability.npy` or `dipole.npy` should be #frams x [9 or 3]." 
     #doc_local_weight =  "The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If only `pref_atomic` is provided, training will be atomic mode, i.e. the shape of `polarizability.npy` or `dipole.npy` should be #frames x ([9 or 3] x #selected atoms). If both `pref` and `pref_atomic` are provided, training will be combined mode, and atomic label should be provided as well." 
     doc_global_weight = "The prefactor of the weight of global loss. It should be larger than or equal to 0. If controls the weight of loss corresponding to global label, i.e. 'polarizability.npy` or `dipole.npy`, whose shape should be #frames x [9 or 3]. If it's larger than 0.0, this npy should be included." 
@@ -463,6 +539,8 @@ def loss_tensor():
 
 
 def loss_variant_type_args():
+    """loss_variant_type_args.
+    """
     doc_loss = 'The type of the loss. When the fitting type is `ener`, the loss type should be set to `ener` or left unset. When the fitting type is `dipole` or `polar`, the loss type should be set to `tensor`. \n\.'
 
     
@@ -478,6 +556,8 @@ def loss_variant_type_args():
 
 
 def loss_args():
+    """loss_args.
+    """
     doc_loss = 'The definition of loss function. The loss type should be set to `tensor`, `ener` or left unset.\n\.'
     ca = Argument('loss', dict, [], 
                   [loss_variant_type_args()],
@@ -488,6 +568,8 @@ def loss_args():
 
 #  --- Training configurations: --- #
 def training_data_args():  # ! added by Ziyao: new specification style for data systems.
+    """training_data_args.
+    """
     link_sys = make_link("systems", "training/training_data/systems")
     doc_systems = 'The data systems for training. ' \
         'This key can be provided with a list that specifies the systems, or be provided with a string ' \
@@ -522,6 +604,8 @@ def training_data_args():  # ! added by Ziyao: new specification style for data 
 
 
 def validation_data_args():  # ! added by Ziyao: new specification style for data systems.
+    """validation_data_args.
+    """
     link_sys = make_link("systems", "training/validation_data/systems")
     doc_systems = 'The data systems for validation. ' \
                   'This key can be provided with a list that specifies the systems, or be provided with a string ' \
@@ -558,6 +642,8 @@ def validation_data_args():  # ! added by Ziyao: new specification style for dat
 
 
 def training_args():  # ! modified by Ziyao: data configuration isolated.
+    """training_args.
+    """
     doc_numb_steps = 'Number of training batch. Each training uses one batch of data.'
     doc_seed = 'The random seed for getting frames from the training data set.'
     doc_disp_file = 'The file for printing learning curve.'
@@ -600,6 +686,13 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
 
 
 def make_index(keys):
+    """make_index.
+
+    Parameters
+    ----------
+    keys :
+        keys
+    """
     ret = []
     for ii in keys:
         ret.append(make_link(ii, ii))
@@ -607,6 +700,17 @@ def make_index(keys):
 
 
 def gen_doc(*, make_anchor=True, make_link=True, **kwargs):
+    """gen_doc.
+
+    Parameters
+    ----------
+    make_anchor :
+        make_anchor
+    make_link :
+        make_link
+    kwargs :
+        kwargs
+    """
     if make_link:
         make_anchor = True
     ma = model_args()
@@ -628,6 +732,13 @@ def gen_doc(*, make_anchor=True, make_link=True, **kwargs):
     return "\n\n".join(ptr)
 
 def gen_json(**kwargs):
+    """gen_json.
+
+    Parameters
+    ----------
+    kwargs :
+        kwargs
+    """
     return json.dumps((
         model_args(),
         learning_rate_args(),
@@ -636,6 +747,13 @@ def gen_json(**kwargs):
     ), cls=ArgumentEncoder)
 
 def normalize_hybrid_list(hy_list):
+    """normalize_hybrid_list.
+
+    Parameters
+    ----------
+    hy_list :
+        hy_list
+    """
     new_list = []
     base = Argument("base", dict, [], [descrpt_variant_type_args()], doc = "")
     for ii in range(len(hy_list)):
@@ -646,6 +764,13 @@ def normalize_hybrid_list(hy_list):
 
 
 def normalize(data):
+    """normalize.
+
+    Parameters
+    ----------
+    data :
+        data
+    """
     if "hybrid" == data["model"]["descriptor"]["type"]:
         data["model"]["descriptor"]["list"] \
             = normalize_hybrid_list(data["model"]["descriptor"]["list"])

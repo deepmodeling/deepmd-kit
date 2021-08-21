@@ -4,6 +4,15 @@ from google.protobuf import text_format
 from tensorflow.python.platform import gfile
 
 def convert_13_to_20(input_model: str, output_model: str):
+    """convert_13_to_20.
+
+    Parameters
+    ----------
+    input_model : str
+        input_model
+    output_model : str
+        output_model
+    """
     convert_pb_to_pbtxt(input_model, 'frozen_model.pbtxt')
     convert_dp13_to_dp20('frozen_model.pbtxt')
     convert_pbtxt_to_pb('frozen_model.pbtxt', output_model)
@@ -12,6 +21,15 @@ def convert_13_to_20(input_model: str, output_model: str):
     print("the converted output model (2.0 support) is saved in %s" % output_model)
 
 def convert_12_to_20(input_model: str, output_model: str):
+    """convert_12_to_20.
+
+    Parameters
+    ----------
+    input_model : str
+        input_model
+    output_model : str
+        output_model
+    """
     convert_pb_to_pbtxt(input_model, 'frozen_model.pbtxt')
     convert_dp12_to_dp13('frozen_model.pbtxt')
     convert_dp13_to_dp20('frozen_model.pbtxt')
@@ -21,6 +39,15 @@ def convert_12_to_20(input_model: str, output_model: str):
     print("the converted output model (2.0 support) is saved in %s" % output_model)
 
 def convert_pb_to_pbtxt(pbfile: str, pbtxtfile: str):
+    """convert_pb_to_pbtxt.
+
+    Parameters
+    ----------
+    pbfile : str
+        pbfile
+    pbtxtfile : str
+        pbtxtfile
+    """
     with gfile.FastGFile(pbfile, 'rb') as f:
         graph_def = tf.GraphDef()
         graph_def.ParseFromString(f.read())
@@ -28,6 +55,15 @@ def convert_pb_to_pbtxt(pbfile: str, pbtxtfile: str):
         tf.train.write_graph(graph_def, './', pbtxtfile, as_text=True)
 
 def convert_pbtxt_to_pb(pbtxtfile: str, pbfile: str):
+    """convert_pbtxt_to_pb.
+
+    Parameters
+    ----------
+    pbtxtfile : str
+        pbtxtfile
+    pbfile : str
+        pbfile
+    """
     with tf.gfile.FastGFile(pbtxtfile, 'r') as f:
         graph_def = tf.GraphDef()
         file_content = f.read()
@@ -36,6 +72,13 @@ def convert_pbtxt_to_pb(pbtxtfile: str, pbfile: str):
         tf.train.write_graph(graph_def, './', pbfile, as_text=False)
 
 def convert_dp12_to_dp13(file):
+    """convert_dp12_to_dp13.
+
+    Parameters
+    ----------
+    file :
+        file
+    """
     file_data = ""
     with open(file, "r", encoding="utf-8") as f:
         ii = 0
@@ -58,6 +101,13 @@ def convert_dp12_to_dp13(file):
         f.write(file_data)
 
 def convert_dp13_to_dp20(fname: str):
+    """convert_dp13_to_dp20.
+
+    Parameters
+    ----------
+    fname : str
+        fname
+    """
     with open(fname) as fp:
         file_content = fp.read()
     file_content += """

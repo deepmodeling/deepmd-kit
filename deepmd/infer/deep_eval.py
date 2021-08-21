@@ -23,6 +23,17 @@ class DeepEval:
         load_prefix: str = "load",
         default_tf_graph: bool = False
     ):
+        """__init__.
+
+        Parameters
+        ----------
+        model_file : "Path"
+            model_file
+        load_prefix : str
+            load_prefix
+        default_tf_graph : bool
+            default_tf_graph
+        """
         self.graph = self._load_graph(
             model_file, prefix=load_prefix, default_tf_graph=default_tf_graph
         )
@@ -115,6 +126,17 @@ class DeepEval:
     def _load_graph(
         frozen_graph_filename: "Path", prefix: str = "load", default_tf_graph: bool = False
     ):
+        """_load_graph.
+
+        Parameters
+        ----------
+        frozen_graph_filename : "Path"
+            frozen_graph_filename
+        prefix : str
+            prefix
+        default_tf_graph : bool
+            default_tf_graph
+        """
         # We load the protobuf file from the disk and parse it to retrieve the
         # unserialized graph_def
         with tf.gfile.GFile(str(frozen_graph_filename), "rb") as f:

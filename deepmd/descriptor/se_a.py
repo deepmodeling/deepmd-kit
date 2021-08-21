@@ -15,6 +15,9 @@ from deepmd.utils.type_embed import embed_atom_type
 from deepmd.utils.sess import run_sess
 
 class DescrptSeA ():
+    """DescrptSeA.
+    """
+
     @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   rcut: float,
@@ -461,6 +464,25 @@ class DescrptSeA ():
         output_qmat = []
         if not self.type_one_side and type_embedding is None:
             for type_i in range(self.ntypes):
+        """_pass_filter.
+
+        Parameters
+        ----------
+        inputs :
+            inputs
+        atype :
+            atype
+        natoms :
+            natoms
+        input_dict :
+            input_dict
+        reuse :
+            reuse
+        suffix :
+            suffix
+        trainable :
+            trainable
+        """
                 inputs_i = tf.slice (inputs,
                                      [ 0, start_index*      self.ndescrpt],
                                      [-1, natoms[2+type_i]* self.ndescrpt] )
@@ -495,6 +517,21 @@ class DescrptSeA ():
             = run_sess(self.sub_sess, self.stat_descrpt, 
                                 feed_dict = {
                                     self.place_holders['coord']: data_coord,
+        """_compute_dstats_sys_smth.
+
+        Parameters
+        ----------
+        data_coord :
+            data_coord
+        data_box :
+            data_box
+        data_atype :
+            data_atype
+        natoms_vec :
+            natoms_vec
+        mesh :
+            mesh
+        """
                                     self.place_holders['type']: data_atype,
                                     self.place_holders['natoms_vec']: natoms_vec,
                                     self.place_holders['box']: data_box,
@@ -531,6 +568,17 @@ class DescrptSeA ():
 
 
     def _compute_std (self,sumv2, sumv, sumn) :
+        """_compute_std.
+
+        Parameters
+        ----------
+        sumv2 :
+            sumv2
+        sumv :
+            sumv
+        sumn :
+            sumn
+        """
         if sumn == 0:
             return 1e-2
         val = np.sqrt(sumv2/sumn - np.multiply(sumv/sumn, sumv/sumn))
@@ -546,6 +594,19 @@ class DescrptSeA ():
             natoms,
             type_embedding,
     ):            
+        """_concat_type_embedding.
+
+        Parameters
+        ----------
+        xyz_scatter :
+            xyz_scatter
+        nframes :
+            nframes
+        natoms :
+            natoms
+        type_embedding :
+            type_embedding
+        """
         te_out_dim = type_embedding.get_shape().as_list()[-1]        
         nei_embed = tf.nn.embedding_lookup(type_embedding,tf.cast(self.nei_type,dtype=tf.int32)) #nnei*nchnl
         nei_embed = tf.tile(nei_embed,(nframes*natoms[0],1))
@@ -645,6 +706,31 @@ class DescrptSeA ():
             name='linear', 
             reuse=None,
             trainable = True):
+        """_filter.
+
+        Parameters
+        ----------
+        inputs :
+            inputs
+        type_input :
+            type_input
+        natoms :
+            natoms
+        type_embedding :
+            type_embedding
+        activation_fn :
+            activation_fn
+        stddev :
+            stddev
+        bavg :
+            bavg
+        name :
+            name
+        reuse :
+            reuse
+        trainable :
+            trainable
+        """
         nframes = tf.shape(tf.reshape(inputs, [-1, natoms[0], self.ndescrpt]))[0]
         # natom x (nei x 4)
         shape = inputs.get_shape().as_list()

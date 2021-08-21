@@ -9,6 +9,9 @@ from deepmd.env import default_tf_session_config
 from deepmd.utils.sess import run_sess
 
 class DescrptLocFrame () :
+    """DescrptLocFrame.
+    """
+
     def __init__(self, 
                  rcut: float,
                  sel_a : List[int],
@@ -331,6 +334,21 @@ class DescrptLocFrame () :
             = run_sess(self.sub_sess, self.stat_descrpt, 
                                 feed_dict = {
                                     self.place_holders['coord']: data_coord,
+        """_compute_dstats_sys_nonsmth.
+
+        Parameters
+        ----------
+        data_coord :
+            data_coord
+        data_box :
+            data_box
+        data_atype :
+            data_atype
+        natoms_vec :
+            natoms_vec
+        mesh :
+            mesh
+        """
                                     self.place_holders['type']: data_atype,
                                     self.place_holders['natoms_vec']: natoms_vec,
                                     self.place_holders['box']: data_box,
@@ -358,6 +376,17 @@ class DescrptLocFrame () :
 
 
     def _compute_std (self,sumv2, sumv, sumn) :
+        """_compute_std.
+
+        Parameters
+        ----------
+        sumv2 :
+            sumv2
+        sumv :
+            sumv
+        sumn :
+            sumn
+        """
         return np.sqrt(sumv2/sumn - np.multiply(sumv/sumn, sumv/sumn))
 
     

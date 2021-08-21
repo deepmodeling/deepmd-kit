@@ -14,6 +14,9 @@ from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 
 class EnerFitting ():
+    """EnerFitting.
+    """
+
     @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   descrpt : tf.Tensor,
@@ -146,6 +149,15 @@ class EnerFitting ():
 
     @classmethod
     def _compute_output_stats(self, all_stat, rcond = 1e-3):
+        """_compute_output_stats.
+
+        Parameters
+        ----------
+        all_stat :
+            all_stat
+        rcond :
+            rcond
+        """
         data = all_stat['energy']
         # data[sys_idx][batch_idx][frame_idx]
         sys_ener = np.array([])
@@ -213,6 +225,17 @@ class EnerFitting ():
 
 
     def _compute_std (self, sumv2, sumv, sumn) :
+        """_compute_std.
+
+        Parameters
+        ----------
+        sumv2 :
+            sumv2
+        sumv :
+            sumv
+        sumn :
+            sumn
+        """
         return np.sqrt(sumv2/sumn - np.multiply(sumv/sumn, sumv/sumn))
 
     def _build_lower(
@@ -226,6 +249,27 @@ class EnerFitting ():
             suffix = '',
             reuse = None
     ):
+        """_build_lower.
+
+        Parameters
+        ----------
+        start_index :
+            start_index
+        natoms :
+            natoms
+        inputs :
+            inputs
+        fparam :
+            fparam
+        aparam :
+            aparam
+        bias_atom_e :
+            bias_atom_e
+        suffix :
+            suffix
+        reuse :
+            reuse
+        """
         # cut-out inputs
         inputs_i = tf.slice (inputs,
                              [ 0, start_index*      self.dim_descrpt],

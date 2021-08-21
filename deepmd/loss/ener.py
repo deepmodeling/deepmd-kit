@@ -24,6 +24,40 @@ class EnerStdLoss () :
                   limit_pref_pf : float = 0.0,
                   relative_f : float = None 
     ) -> None:
+        """__init__.
+
+        Parameters
+        ----------
+        starter_learning_rate : float
+            starter_learning_rate
+        start_pref_e : float
+            start_pref_e
+        limit_pref_e : float
+            limit_pref_e
+        start_pref_f : float
+            start_pref_f
+        limit_pref_f : float
+            limit_pref_f
+        start_pref_v : float
+            start_pref_v
+        limit_pref_v : float
+            limit_pref_v
+        start_pref_ae : float
+            start_pref_ae
+        limit_pref_ae : float
+            limit_pref_ae
+        start_pref_pf : float
+            start_pref_pf
+        limit_pref_pf : float
+            limit_pref_pf
+        relative_f : float
+            relative_f
+
+        Returns
+        -------
+        None
+
+        """
         self.starter_learning_rate = starter_learning_rate
         self.start_pref_e = start_pref_e
         self.limit_pref_e = limit_pref_e
@@ -54,6 +88,21 @@ class EnerStdLoss () :
                model_dict,
                label_dict,
                suffix):        
+        """build.
+
+        Parameters
+        ----------
+        learning_rate :
+            learning_rate
+        natoms :
+            natoms
+        model_dict :
+            model_dict
+        label_dict :
+            label_dict
+        suffix :
+            suffix
+        """
         energy = model_dict['energy']
         force = model_dict['force']
         virial = model_dict['virial']
@@ -129,6 +178,17 @@ class EnerStdLoss () :
         return l2_loss, more_loss
 
     def eval(self, sess, feed_dict, natoms):
+        """eval.
+
+        Parameters
+        ----------
+        sess :
+            sess
+        feed_dict :
+            feed_dict
+        natoms :
+            natoms
+        """
         run_data = [
             self.l2_l,
             self.l2_more['l2_ener_loss'],
@@ -152,6 +212,8 @@ class EnerStdLoss () :
         return results
 
     def print_header(self):  # depreciated
+        """print_header.
+        """
         prop_fmt = '   %11s %11s'
         print_str = ''
         print_str += prop_fmt % ('rmse_tst', 'rmse_trn')
@@ -174,6 +236,23 @@ class EnerStdLoss () :
                           natoms,
                           feed_dict_test,
                           feed_dict_batch):  # depreciated
+        """print_on_training.
+
+        Parameters
+        ----------
+        tb_writer :
+            tb_writer
+        cur_batch :
+            cur_batch
+        sess :
+            sess
+        natoms :
+            natoms
+        feed_dict_test :
+            feed_dict_test
+        feed_dict_batch :
+            feed_dict_batch
+        """
 
         run_data = [
             self.l2_l,
@@ -221,6 +300,9 @@ class EnerStdLoss () :
 
 
 class EnerDipoleLoss () :
+    """EnerDipoleLoss.
+    """
+
     def __init__ (self, 
                   starter_learning_rate : float,
                   start_pref_e : float = 0.1,
@@ -228,6 +310,26 @@ class EnerDipoleLoss () :
                   start_pref_ed : float = 1.0,
                   limit_pref_ed : float = 1.0
     ) -> None :
+        """__init__.
+
+        Parameters
+        ----------
+        starter_learning_rate : float
+            starter_learning_rate
+        start_pref_e : float
+            start_pref_e
+        limit_pref_e : float
+            limit_pref_e
+        start_pref_ed : float
+            start_pref_ed
+        limit_pref_ed : float
+            limit_pref_ed
+
+        Returns
+        -------
+        None
+
+        """
         self.starter_learning_rate = kwarg['starter_learning_rate']
         args = ClassArg()\
             .add('start_pref_e',        float,  must = True, default = 0.1) \
@@ -249,6 +351,21 @@ class EnerDipoleLoss () :
                model_dict,
                label_dict,
                suffix):        
+        """build.
+
+        Parameters
+        ----------
+        learning_rate :
+            learning_rate
+        natoms :
+            natoms
+        model_dict :
+            model_dict
+        label_dict :
+            label_dict
+        suffix :
+            suffix
+        """
         coord = model_dict['coord']
         energy = model_dict['energy']
         atom_ener = model_dict['atom_ener']
@@ -293,6 +410,17 @@ class EnerDipoleLoss () :
         return l2_loss, more_loss
 
     def eval(self, sess, feed_dict, natoms):
+        """eval.
+
+        Parameters
+        ----------
+        sess :
+            sess
+        feed_dict :
+            feed_dict
+        natoms :
+            natoms
+        """
         run_data = [
             self.l2_l,
             self.l2_more['l2_ener_loss'],
@@ -309,6 +437,8 @@ class EnerDipoleLoss () :
 
     @staticmethod
     def print_header() :  # depreciated
+        """print_header.
+        """
         prop_fmt = '   %9s %9s'
         print_str = ''
         print_str += prop_fmt % ('l2_tst', 'l2_trn')
@@ -323,6 +453,23 @@ class EnerDipoleLoss () :
                           natoms,
                           feed_dict_test,
                           feed_dict_batch):  # depreciated
+        """print_on_training.
+
+        Parameters
+        ----------
+        tb_writer :
+            tb_writer
+        cur_batch :
+            cur_batch
+        sess :
+            sess
+        natoms :
+            natoms
+        feed_dict_test :
+            feed_dict_test
+        feed_dict_batch :
+            feed_dict_batch
+        """
 
         run_data = [
             self.l2_l,

@@ -21,6 +21,9 @@ from .se_a_ef import DescrptSeAEf
 from .loc_frame import DescrptLocFrame
 
 class DescrptHybrid ():
+    """DescrptHybrid.
+    """
+
     def __init__ (self, 
                   descrpt_list : list
     ) -> None :

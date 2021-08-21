@@ -29,6 +29,22 @@ class DeepPolar(DeepTensor):
     def __init__(
         self, model_file: "Path", load_prefix: str = "load", default_tf_graph: bool = False
     ) -> None:
+        """__init__.
+
+        Parameters
+        ----------
+        model_file : "Path"
+            model_file
+        load_prefix : str
+            load_prefix
+        default_tf_graph : bool
+            default_tf_graph
+
+        Returns
+        -------
+        None
+
+        """
 
         # use this in favor of dict update to move attribute from class to
         # instance namespace
@@ -72,6 +88,22 @@ class DeepGlobalPolar(DeepTensor):
     def __init__(
         self, model_file: str, load_prefix: str = "load", default_tf_graph: bool = False
     ) -> None:
+        """__init__.
+
+        Parameters
+        ----------
+        model_file : str
+            model_file
+        load_prefix : str
+            load_prefix
+        default_tf_graph : bool
+            default_tf_graph
+
+        Returns
+        -------
+        None
+
+        """
 
         self.tensors.update(
             {

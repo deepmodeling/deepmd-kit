@@ -12,6 +12,9 @@ from deepmd.utils.network import embedding_net, embedding_net_rand_seed_shift
 from deepmd.utils.sess import run_sess
 
 class DescrptSeT ():
+    """DescrptSeT.
+    """
+
     @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   rcut: float,
@@ -364,6 +367,25 @@ class DescrptSeT ():
         
 
     def _pass_filter(self, 
+        """_pass_filter.
+
+        Parameters
+        ----------
+        inputs :
+            inputs
+        atype :
+            atype
+        natoms :
+            natoms
+        input_dict :
+            input_dict
+        reuse :
+            reuse
+        suffix :
+            suffix
+        trainable :
+            trainable
+        """
                      inputs,
                      atype,
                      natoms,
@@ -398,6 +420,21 @@ class DescrptSeT ():
             = run_sess(self.sub_sess, self.stat_descrpt, 
                                 feed_dict = {
                                     self.place_holders['coord']: data_coord,
+        """_compute_dstats_sys_smth.
+
+        Parameters
+        ----------
+        data_coord :
+            data_coord
+        data_box :
+            data_box
+        data_atype :
+            data_atype
+        natoms_vec :
+            natoms_vec
+        mesh :
+            mesh
+        """
                                     self.place_holders['type']: data_atype,
                                     self.place_holders['natoms_vec']: natoms_vec,
                                     self.place_holders['box']: data_box,
@@ -434,6 +471,17 @@ class DescrptSeT ():
 
 
     def _compute_std (self,sumv2, sumv, sumn) :
+        """_compute_std.
+
+        Parameters
+        ----------
+        sumv2 :
+            sumv2
+        sumv :
+            sumv
+        sumn :
+            sumn
+        """
         val = np.sqrt(sumv2/sumn - np.multiply(sumv/sumn, sumv/sumn))
         if np.abs(val) < 1e-2:
             val = 1e-2
@@ -450,6 +498,29 @@ class DescrptSeT ():
                 name='linear', 
                 reuse=None,
                 trainable = True):
+        """_filter.
+
+        Parameters
+        ----------
+        inputs :
+            inputs
+        type_input :
+            type_input
+        natoms :
+            natoms
+        activation_fn :
+            activation_fn
+        stddev :
+            stddev
+        bavg :
+            bavg
+        name :
+            name
+        reuse :
+            reuse
+        trainable :
+            trainable
+        """
         # natom x (nei x 4)
         shape = inputs.get_shape().as_list()
         outputs_size = [1] + self.filter_neuron

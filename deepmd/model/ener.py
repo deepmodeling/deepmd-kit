@@ -9,6 +9,9 @@ from deepmd.env import op_module
 from .model_stat import make_stat_input, merge_sys_stat
 
 class EnerModel() :
+    """EnerModel.
+    """
+
     model_type = 'ener'
 
     def __init__ (
@@ -76,15 +79,28 @@ class EnerModel() :
 
 
     def get_rcut (self) :
+        """get_rcut.
+        """
         return self.rcut
 
     def get_ntypes (self) :
+        """get_ntypes.
+        """
         return self.ntypes
 
     def get_type_map (self) :
+        """get_type_map.
+        """
         return self.type_map
 
     def data_stat(self, data):
+        """data_stat.
+
+        Parameters
+        ----------
+        data :
+            data
+        """
         all_stat = make_stat_input(data, self.data_stat_nbatch, merge_sys = False)
         m_all_stat = merge_sys_stat(all_stat)
         self._compute_input_stat(m_all_stat, protection = self.data_stat_protect)
@@ -92,6 +108,15 @@ class EnerModel() :
         # self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
     def _compute_input_stat (self, all_stat, protection = 1e-2) :
+        """_compute_input_stat.
+
+        Parameters
+        ----------
+        all_stat :
+            all_stat
+        protection :
+            protection
+        """
         self.descrpt.compute_input_stats(all_stat['coord'],
                                          all_stat['box'],
                                          all_stat['type'],
@@ -101,6 +126,13 @@ class EnerModel() :
         self.fitting.compute_input_stats(all_stat, protection = protection)
 
     def _compute_output_stat (self, all_stat) :
+        """_compute_output_stat.
+
+        Parameters
+        ----------
+        all_stat :
+            all_stat
+        """
         self.fitting.compute_output_stats(all_stat)
 
     
@@ -113,6 +145,27 @@ class EnerModel() :
                input_dict,
                suffix = '', 
                reuse = None):
+        """build.
+
+        Parameters
+        ----------
+        coord_ :
+            coord_
+        atype_ :
+            atype_
+        natoms :
+            natoms
+        box :
+            box
+        mesh :
+            mesh
+        input_dict :
+            input_dict
+        suffix :
+            suffix
+        reuse :
+            reuse
+        """
 
         with tf.variable_scope('model_attr' + suffix, reuse = reuse) :
             t_tmap = tf.constant(' '.join(self.type_map), 

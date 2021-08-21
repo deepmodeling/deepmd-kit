@@ -144,6 +144,8 @@ class DeepTabulate():
         return lower, upper
 
     def _load_graph(self):
+        """_load_graph.
+        """
         graph_def = tf.GraphDef()
         with open(self.model_file, "rb") as f:
             graph_def.ParseFromString(f.read())
@@ -152,18 +154,29 @@ class DeepTabulate():
         return graph, graph_def
 
     def _load_sub_graph(self):
+        """_load_sub_graph.
+        """
         sub_graph_def = tf.GraphDef()
         with tf.Graph().as_default() as sub_graph:
             tf.import_graph_def(sub_graph_def, name = "")
         return sub_graph, sub_graph_def
 
     def _get_tensor_value(self, tensor) :
+        """_get_tensor_value.
+
+        Parameters
+        ----------
+        tensor :
+            tensor
+        """
         with self.sess.as_default():
             run_sess(self.sess, tensor)
             value = tensor.eval()
         return value
 
     def _load_matrix_node(self):
+        """_load_matrix_node.
+        """
         matrix_node = {}
         matrix_node_pattern = "filter_type_\d+/matrix_\d+_\d+|filter_type_\d+/bias_\d+_\d+|filter_type_\d+/idt_\d+_\d+|filter_type_all/matrix_\d+_\d+|filter_type_all/bias_\d+_\d+|filter_type_all/idt_\d+_\d"
         for node in self.graph_def.node:
@@ -174,6 +187,8 @@ class DeepTabulate():
         return matrix_node
 
     def _get_bias(self):
+        """_get_bias.
+        """
         bias = {}
         for layer in range(1, self.layer_size + 1):
             bias["layer_" + str(layer)] = []
@@ -193,6 +208,8 @@ class DeepTabulate():
         return bias
 
     def _get_matrix(self):
+        """_get_matrix.
+        """
         matrix = {}
         for layer in range(1, self.layer_size + 1):
             matrix["layer_" + str(layer)] = []
@@ -213,6 +230,15 @@ class DeepTabulate():
 
     # one-by-one executions
     def _make_data(self, xx, idx):
+        """_make_data.
+
+        Parameters
+        ----------
+        xx :
+            xx
+        idx :
+            idx
+        """
         with self.sub_graph.as_default():
             with self.sub_sess.as_default():
                 xx = tf.reshape(xx, [xx.size, -1])
@@ -233,19 +259,50 @@ class DeepTabulate():
         return vv, dd, d2
 
     def _layer_0(self, x, w, b):
+        """_layer_0.
+
+        Parameters
+        ----------
+        x :
+            x
+        w :
+            w
+        b :
+            b
+        """
         return tf.nn.tanh(tf.matmul(x, w) + b)
 
     def _layer_1(self, x, w, b):
+        """_layer_1.
+
+        Parameters
+        ----------
+        x :
+            x
+        w :
+            w
+        b :
+            b
+        """
         t = tf.concat([x, x], axis = 1)
         return t, tf.nn.tanh(tf.matmul(x, w) + b) + t
 
     def _save_data(self):
+        """_save_data.
+        """
         for ii in range(self.ntypes * self.ntypes):
             net = "filter_" + str(ii // self.ntypes) + "_net_" + str(int(ii % self.ntypes))
             np.savetxt('data_' + str(ii), self.data[net])
 
     def _get_env_mat_range(self,
                            min_nbor_dist):
+        """_get_env_mat_range.
+
+        Parameters
+        ----------
+        min_nbor_dist :
+            min_nbor_dist
+        """
         lower = 100.0
         upper = -10.0
         sw    = self._spline5_switch(min_nbor_dist, self.rcut_smth, self.rcut)
@@ -262,6 +319,17 @@ class DeepTabulate():
                         xx,
                         rmin,
                         rmax):
+        """_spline5_switch.
+
+        Parameters
+        ----------
+        xx :
+            xx
+        rmin :
+            rmin
+        rmax :
+            rmax
+        """
         if xx < rmin:
             vv = 1
         elif xx < rmax:

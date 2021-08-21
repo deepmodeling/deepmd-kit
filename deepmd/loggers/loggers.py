@@ -36,6 +36,13 @@ class _AppFilter(logging.Filter):
     """Add field `app_name` to log messages."""
 
     def filter(self, record):
+        """filter.
+
+        Parameters
+        ----------
+        record :
+            record
+        """
         record.app_name = "DEEPMD"
         return True
 
@@ -44,10 +51,29 @@ class _MPIRankFilter(logging.Filter):
     """Add MPI rank number to log messages, adds field `rank`."""
 
     def __init__(self, rank: int) -> None:
+        """__init__.
+
+        Parameters
+        ----------
+        rank : int
+            rank
+
+        Returns
+        -------
+        None
+
+        """
         super().__init__(name="MPI_rank_id")
         self.mpi_rank = str(rank)
 
     def filter(self, record):
+        """filter.
+
+        Parameters
+        ----------
+        record :
+            record
+        """
         record.rank = self.mpi_rank
         return True
 
@@ -56,10 +82,29 @@ class _MPIMasterFilter(logging.Filter):
     """Filter that lets through only messages emited from rank==0."""
 
     def __init__(self, rank: int) -> None:
+        """__init__.
+
+        Parameters
+        ----------
+        rank : int
+            rank
+
+        Returns
+        -------
+        None
+
+        """
         super().__init__(name="MPI_master_log")
         self.mpi_rank = rank
 
     def filter(self, record):
+        """filter.
+
+        Parameters
+        ----------
+        record :
+            record
+        """
         if self.mpi_rank == 0:
             return True
         else:
@@ -82,6 +127,22 @@ class _MPIFileStream:
     def __init__(
         self, filename: "Path", MPI: "MPI", mode: str = "_MPI_APPEND_MODE"
     ) -> None:
+        """__init__.
+
+        Parameters
+        ----------
+        filename : "Path"
+            filename
+        MPI : "MPI"
+            MPI
+        mode : str
+            mode
+
+        Returns
+        -------
+        None
+
+        """
         self.stream = MPI.File.Open(MPI.COMM_WORLD, filename, mode)
         self.stream.Set_atomicity(True)
         self.name = "MPIfilestream"
@@ -123,10 +184,28 @@ class _MPIHandler(logging.FileHandler):
         MPI: "MPI",
         mode: str = "_MPI_APPEND_MODE",
     ) -> None:
+        """__init__.
+
+        Parameters
+        ----------
+        filename : "Path"
+            filename
+        MPI : "MPI"
+            MPI
+        mode : str
+            mode
+
+        Returns
+        -------
+        None
+
+        """
         self.MPI = MPI
         super().__init__(filename, mode=mode, encoding=None, delay=False)
 
     def _open(self):
+        """_open.
+        """
         return _MPIFileStream(self.baseFilename, self.MPI, self.mode)
 
     def setStream(self, stream):

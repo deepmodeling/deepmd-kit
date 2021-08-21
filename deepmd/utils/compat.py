@@ -41,6 +41,13 @@ def convert_input_v0_v1(
 
 
 def _warning_input_v0_v1(fname: Optional[Union[str, Path]]):
+    """_warning_input_v0_v1.
+
+    Parameters
+    ----------
+    fname : Optional[Union[str, Path]]
+        fname
+    """
     msg = "It seems that you are using a deepmd-kit input of version 0.x.x, " \
           "which is deprecated. we have converted the input to >2.0.0 compatible"
     if fname is not None:
@@ -260,6 +267,22 @@ def remove_decay_rate(jdata: Dict[str, Any]):
 def convert_input_v1_v2(jdata: Dict[str, Any],
                         warning: bool = True,
                         dump: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
+    """convert_input_v1_v2.
+
+    Parameters
+    ----------
+    jdata : Dict[str, Any]
+        jdata
+    warning : bool
+        warning
+    dump : Optional[Union[str, Path]]
+        dump
+
+    Returns
+    -------
+    Dict[str, Any]
+
+    """
 
     tr_cfg = jdata["training"]
     tr_data_keys = {
@@ -292,6 +315,13 @@ def convert_input_v1_v2(jdata: Dict[str, Any],
 
 
 def _warning_input_v1_v2(fname: Optional[Union[str, Path]]):
+    """_warning_input_v1_v2.
+
+    Parameters
+    ----------
+    fname : Optional[Union[str, Path]]
+        fname
+    """
     msg = "It seems that you are using a deepmd-kit input of version 1.x.x, " \
           "which is deprecated. we have converted the input to >2.0.0 compatible"
     if fname is not None:
@@ -302,10 +332,40 @@ def _warning_input_v1_v2(fname: Optional[Union[str, Path]]):
 def updata_deepmd_input(jdata: Dict[str, Any],
                         warning: bool = True,
                         dump: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
+    """updata_deepmd_input.
+
+    Parameters
+    ----------
+    jdata : Dict[str, Any]
+        jdata
+    warning : bool
+        warning
+    dump : Optional[Union[str, Path]]
+        dump
+
+    Returns
+    -------
+    Dict[str, Any]
+
+    """
     def is_deepmd_v0_input(jdata):
+        """is_deepmd_v0_input.
+
+        Parameters
+        ----------
+        jdata :
+            jdata
+        """
         return "model" not in jdata.keys()
 
     def is_deepmd_v1_input(jdata):
+        """is_deepmd_v1_input.
+
+        Parameters
+        ----------
+        jdata :
+            jdata
+        """
         return "systems" in j_must_have(jdata, "training").keys()
 
     if is_deepmd_v0_input(jdata):

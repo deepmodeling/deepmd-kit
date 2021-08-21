@@ -38,6 +38,15 @@ log = logging.getLogger(__name__)
 
 
 def _is_subdir(path, directory):
+    """_is_subdir.
+
+    Parameters
+    ----------
+    path :
+        path
+    directory :
+        directory
+    """
     path = os.path.realpath(path)
     directory = os.path.realpath(directory)
     if path == directory:
@@ -46,6 +55,13 @@ def _is_subdir(path, directory):
     return not relative.startswith(os.pardir + os.sep)
 
 def _generate_descrpt_from_param_dict(descrpt_param):
+    """_generate_descrpt_from_param_dict.
+
+    Parameters
+    ----------
+    descrpt_param :
+        descrpt_param
+    """
     try:
         descrpt_type = descrpt_param['type']
     except KeyError:
@@ -77,15 +93,36 @@ def _generate_descrpt_from_param_dict(descrpt_param):
     
 
 class DPTrainer (object):
+    """DPTrainer.
+    """
+
     def __init__(self, 
                  jdata, 
                  run_opt,
                  is_compress = False):
+        """__init__.
+
+        Parameters
+        ----------
+        jdata :
+            jdata
+        run_opt :
+            run_opt
+        is_compress :
+            is_compress
+        """
         self.run_opt = run_opt
         self._init_param(jdata)
         self.is_compress = is_compress
 
     def _init_param(self, jdata):
+        """_init_param.
+
+        Parameters
+        ----------
+        jdata :
+            jdata
+        """
         # model config        
         model_param = j_must_have(jdata, 'model')
         descrpt_param = j_must_have(model_param, 'descriptor')
@@ -273,6 +310,15 @@ class DPTrainer (object):
 
 
     def build (self, 
+        """build.
+
+        Parameters
+        ----------
+        data :
+            data
+        stop_batch :
+            stop_batch
+        """
                data = None, 
                stop_batch = 0) :
         self.ntypes = self.model.get_ntypes()
@@ -312,12 +358,21 @@ class DPTrainer (object):
 
 
     def _build_lr(self):
+        """_build_lr.
+        """
         self._extra_train_ops   = []
         self.global_step = tf.train.get_or_create_global_step()
         self.learning_rate = self.lr.build(self.global_step, self.stop_batch)
         log.info("built lr")
 
     def _build_network(self, data):        
+        """_build_network.
+
+        Parameters
+        ----------
+        data :
+            data
+        """
         self.place_holders = {}
         if self.is_compress :
             for kk in ['coord', 'box']:
@@ -350,6 +405,8 @@ class DPTrainer (object):
         log.info("built network")
 
     def _build_training(self):
+        """_build_training.
+        """
         trainable_variables = tf.trainable_variables()
         if self.run_opt.is_distrib:
             optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate*self.run_opt.world_size)
@@ -365,6 +422,8 @@ class DPTrainer (object):
         log.info("built training")
 
     def _init_session(self):
+        """_init_session.
+        """
         config = get_tf_session_config()
         device, idx = self.run_opt.my_device.split(":", 1)
         if device == "gpu":
@@ -408,6 +467,15 @@ class DPTrainer (object):
             run_sess(self.sess, bcast_op)
 
     def train (self, train_data = None, valid_data=None) :
+        """train.
+
+        Parameters
+        ----------
+        train_data :
+            train_data
+        valid_data :
+            valid_data
+        """
 
         # if valid_data is None:  # no validation set specified.
         #     valid_data = train_data  # using training set as validation set.
@@ -520,6 +588,15 @@ class DPTrainer (object):
                 f.write(chrome_trace)
 
     def get_feed_dict(self, batch, is_training):
+        """get_feed_dict.
+
+        Parameters
+        ----------
+        batch :
+            batch
+        is_training :
+            is_training
+        """
         feed_dict = {}
         for kk in batch.keys():
             if kk == 'find_type' or kk == 'type':
@@ -536,6 +613,8 @@ class DPTrainer (object):
         return feed_dict
 
     def get_global_step(self):
+        """get_global_step.
+        """
         return run_sess(self.sess, self.global_step)
 
     # def print_head (self) :  # depreciated
@@ -552,6 +631,19 @@ class DPTrainer (object):
                          train_batches,
                          valid_batches,
                          print_header=False):
+        """valid_on_the_fly.
+
+        Parameters
+        ----------
+        fp :
+            fp
+        train_batches :
+            train_batches
+        valid_batches :
+            valid_batches
+        print_header :
+            print_header
+        """
         train_results = self.get_evaluation_results(train_batches)
         valid_results = self.get_evaluation_results(valid_batches)
 
@@ -563,6 +655,17 @@ class DPTrainer (object):
 
     @staticmethod
     def print_header(fp, train_results, valid_results):
+        """print_header.
+
+        Parameters
+        ----------
+        fp :
+            fp
+        train_results :
+            train_results
+        valid_results :
+            valid_results
+        """
         print_str = ''
         print_str += "# %5s" % 'step'
         if valid_results is not None:
@@ -579,6 +682,21 @@ class DPTrainer (object):
 
     @staticmethod
     def print_on_training(fp, train_results, valid_results, cur_batch, cur_lr):
+        """print_on_training.
+
+        Parameters
+        ----------
+        fp :
+            fp
+        train_results :
+            train_results
+        valid_results :
+            valid_results
+        cur_batch :
+            cur_batch
+        cur_lr :
+            cur_lr
+        """
         print_str = ''
         print_str += "%7d" % cur_batch
         if valid_results is not None:
@@ -595,6 +713,13 @@ class DPTrainer (object):
         fp.flush()
 
     def get_evaluation_results(self, batch_list):
+        """get_evaluation_results.
+
+        Parameters
+        ----------
+        batch_list :
+            batch_list
+        """
         if batch_list is None: return None
         numb_batch = len(batch_list)
 
@@ -623,6 +748,13 @@ class DPTrainer (object):
             self.saver.save (self.sess, os.path.join(os.getcwd(), self.save_ckpt))
 
     def _get_place_horders(self, data_dict):
+        """_get_place_horders.
+
+        Parameters
+        ----------
+        data_dict :
+            data_dict
+        """
         for kk in data_dict.keys():
             if kk == 'type':
                 continue

@@ -39,6 +39,22 @@ class DeepPot(DeepEval):
         load_prefix: str = "load",
         default_tf_graph: bool = False
     ) -> None:
+        """__init__.
+
+        Parameters
+        ----------
+        model_file : "Path"
+            model_file
+        load_prefix : str
+            load_prefix
+        default_tf_graph : bool
+            default_tf_graph
+
+        Returns
+        -------
+        None
+
+        """
 
         # add these tensors on top of what is defined by DeepTensor Class
         # use this in favor of dict update to move attribute from class to
@@ -130,6 +146,8 @@ class DeepPot(DeepEval):
             self.dm = DipoleChargeModifier(mdl_name, mdl_charge_map, sys_charge_map, ewald_h = ewald_h, ewald_beta = ewald_beta)
 
     def _run_default_sess(self):
+        """_run_default_sess.
+        """
         [self.ntypes, self.rcut, self.dfparam, self.daparam, self.tmap] = run_sess(self.sess, 
             [self.t_ntypes, self.t_rcut, self.t_dfparam, self.t_daparam, self.t_tmap]
         )
@@ -234,6 +252,25 @@ class DeepPot(DeepEval):
         atomic=False,
         efield=None
     ):
+        """_eval_inner.
+
+        Parameters
+        ----------
+        coords :
+            coords
+        cells :
+            cells
+        atom_types :
+            atom_types
+        fparam :
+            fparam
+        aparam :
+            aparam
+        atomic :
+            atomic
+        efield :
+            efield
+        """
         # standarize the shape of inputs
         atom_types = np.array(atom_types, dtype = int).reshape([-1])
         natoms = atom_types.size

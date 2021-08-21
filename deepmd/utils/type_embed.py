@@ -55,6 +55,9 @@ def embed_atom_type(
     
 
 class TypeEmbedNet():
+    """TypeEmbedNet.
+    """
+
     @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__(
             self,

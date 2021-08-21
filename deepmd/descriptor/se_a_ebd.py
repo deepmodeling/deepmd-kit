@@ -12,6 +12,9 @@ from deepmd.utils.network import embedding_net
 from .se_a import DescrptSeA
 
 class DescrptSeAEbd (DescrptSeA):
+    """DescrptSeAEbd.
+    """
+
     def __init__ (self, 
                   rcut: float,
                   rcut_smth: float,
@@ -155,6 +158,21 @@ class DescrptSeAEbd (DescrptSeA):
                     reuse = None, 
                     suffix = '',
                     trainable = True):
+        """_type_embed.
+
+        Parameters
+        ----------
+        atype :
+            atype
+        ndim :
+            ndim
+        reuse :
+            reuse
+        suffix :
+            suffix
+        trainable :
+            trainable
+        """
         ebd_type = tf.cast(atype, self.filter_precision)
         ebd_type = ebd_type / float(self.ntypes)
         ebd_type = tf.reshape(ebd_type, [-1, ndim])
@@ -237,6 +255,25 @@ class DescrptSeAEbd (DescrptSeA):
                                       reuse = None,
                                       seed = None,
                                       trainable = True):
+        """_type_embedding_net_two_sides.
+
+        Parameters
+        ----------
+        mat_g :
+            mat_g
+        atype :
+            atype
+        natoms :
+            natoms
+        name :
+            name
+        reuse :
+            reuse
+        seed :
+            seed
+        trainable :
+            trainable
+        """
         outputs_size = self.filter_neuron[-1]
         nframes = tf.shape(mat_g)[0]
         # (nf x natom x nei) x (outputs_size x chnl x chnl)
@@ -302,6 +339,25 @@ class DescrptSeAEbd (DescrptSeA):
                                      reuse = None,
                                      seed = None,
                                      trainable = True):
+        """_type_embedding_net_one_side.
+
+        Parameters
+        ----------
+        mat_g :
+            mat_g
+        atype :
+            atype
+        natoms :
+            natoms
+        name :
+            name
+        reuse :
+            reuse
+        seed :
+            seed
+        trainable :
+            trainable
+        """
         outputs_size = self.filter_neuron[-1]
         nframes = tf.shape(mat_g)[0]
         # (nf x natom x nei) x (outputs_size x chnl x chnl)
@@ -351,6 +407,27 @@ class DescrptSeAEbd (DescrptSeA):
                                             reuse = None,
                                             seed = None,
                                             trainable = True):
+        """_type_embedding_net_one_side_aparam.
+
+        Parameters
+        ----------
+        mat_g :
+            mat_g
+        atype :
+            atype
+        natoms :
+            natoms
+        aparam :
+            aparam
+        name :
+            name
+        reuse :
+            reuse
+        seed :
+            seed
+        trainable :
+            trainable
+        """
         outputs_size = self.filter_neuron[-1]
         nframes = tf.shape(mat_g)[0]
         # (nf x natom x nei) x (outputs_size x chnl x chnl)
@@ -406,6 +483,25 @@ class DescrptSeAEbd (DescrptSeA):
 
 
     def _pass_filter(self, 
+        """_pass_filter.
+
+        Parameters
+        ----------
+        inputs :
+            inputs
+        atype :
+            atype
+        natoms :
+            natoms
+        input_dict :
+            input_dict
+        reuse :
+            reuse
+        suffix :
+            suffix
+        trainable :
+            trainable
+        """
                      inputs,
                      atype,
                      natoms,
@@ -442,6 +538,33 @@ class DescrptSeAEbd (DescrptSeA):
                     reuse=None,
                     seed=None, 
                     trainable = True):
+        """_ebd_filter.
+
+        Parameters
+        ----------
+        inputs :
+            inputs
+        atype :
+            atype
+        natoms :
+            natoms
+        input_dict :
+            input_dict
+        activation_fn :
+            activation_fn
+        stddev :
+            stddev
+        bavg :
+            bavg
+        name :
+            name
+        reuse :
+            reuse
+        seed :
+            seed
+        trainable :
+            trainable
+        """
         outputs_size = self.filter_neuron[-1]
         outputs_size_2 = self.n_axis_neuron
         # nf x natom x (nei x 4)

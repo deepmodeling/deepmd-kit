@@ -47,6 +47,22 @@ class DeepTensor(DeepEval):
         load_prefix: str = 'load',
         default_tf_graph: bool = False
     ) -> None:
+        """__init__.
+
+        Parameters
+        ----------
+        model_file : "Path"
+            model_file
+        load_prefix : str
+            load_prefix
+        default_tf_graph : bool
+            default_tf_graph
+
+        Returns
+        -------
+        None
+
+        """
         DeepEval.__init__(
             self,
             model_file,
@@ -88,6 +104,8 @@ class DeepTensor(DeepEval):
         self.tmap = self.tmap.decode('UTF-8').split()
 
     def _run_default_sess(self):
+        """_run_default_sess.
+        """
         [self.ntypes, self.rcut, self.tmap, self.tselt, self.output_dim] \
             = run_sess(self.sess, 
                 [self.t_ntypes, self.t_rcut, self.t_tmap, self.t_sel_type, self.t_ouput_dim]

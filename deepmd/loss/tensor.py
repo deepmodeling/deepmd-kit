@@ -11,6 +11,15 @@ class TensorLoss () :
     Loss function for tensorial properties.
     """
     def __init__ (self, jdata, **kwarg) :
+        """__init__.
+
+        Parameters
+        ----------
+        jdata :
+            jdata
+        kwarg :
+            kwarg
+        """
         model = kwarg.get('model', None)
         if model is not None:
             self.type_sel = model.get_sel_type()
@@ -54,6 +63,21 @@ class TensorLoss () :
                model_dict,
                label_dict,
                suffix):        
+        """build.
+
+        Parameters
+        ----------
+        learning_rate :
+            learning_rate
+        natoms :
+            natoms
+        model_dict :
+            model_dict
+        label_dict :
+            label_dict
+        suffix :
+            suffix
+        """
         polar_hat = label_dict[self.label_name]
         atomic_polar_hat = label_dict["atomic_" + self.label_name]
         polar = tf.reshape(model_dict[self.tensor_name], [-1])
@@ -116,6 +140,17 @@ class TensorLoss () :
         return l2_loss, more_loss
 
     def eval(self, sess, feed_dict, natoms):
+        """eval.
+
+        Parameters
+        ----------
+        sess :
+            sess
+        feed_dict :
+            feed_dict
+        natoms :
+            natoms
+        """
         atoms = 0
         if self.type_sel is not None:
             for w in self.type_sel:
@@ -134,6 +169,8 @@ class TensorLoss () :
         return results
 
     def print_header(self):  # depreciated
+        """print_header.
+        """
         prop_fmt = '   %11s %11s'
         print_str = ''
         print_str += prop_fmt % ('rmse_tst', 'rmse_trn')
@@ -144,6 +181,23 @@ class TensorLoss () :
         return print_str
 
     def print_on_training(self, 
+        """print_on_training.
+
+        Parameters
+        ----------
+        tb_writer :
+            tb_writer
+        cur_batch :
+            cur_batch
+        sess :
+            sess
+        natoms :
+            natoms
+        feed_dict_test :
+            feed_dict_test
+        feed_dict_batch :
+            feed_dict_batch
+        """
                           tb_writer,
                           cur_batch,
                           sess, 

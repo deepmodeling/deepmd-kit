@@ -19,6 +19,18 @@ PRECISION_MAPPING: Dict[int, type] = {
 
 @np.vectorize
 def convert_number(number: int) -> float:
+    """convert_number.
+
+    Parameters
+    ----------
+    number : int
+        number
+
+    Returns
+    -------
+    float
+
+    """
     binary = bin(number).replace("0b", "").zfill(16)
     sign = int(binary[0]) * -2 + 1
     exp = int(binary[1:6], 2)
@@ -167,12 +179,38 @@ def transform_graph(raw_graph: tf.Graph, old_graph: tf.Graph) -> tf.Graph:
 
 
 class CopyNodeAttr:
+    """CopyNodeAttr.
+    """
+
     def __init__(self, node) -> None:
+        """__init__.
+
+        Parameters
+        ----------
+        node :
+            node
+
+        Returns
+        -------
+        None
+
+        """
         self.node = node
 
     def from_array(
         self, tensor: np.ndarray, dtype: type, shape: Optional[Sequence[int]] = None
     ):
+        """from_array.
+
+        Parameters
+        ----------
+        tensor : np.ndarray
+            tensor
+        dtype : type
+            dtype
+        shape : Optional[Sequence[int]]
+            shape
+        """
         if shape is None:
             shape = tensor.shape
         self.node.attr["value"].CopyFrom(
@@ -180,10 +218,33 @@ class CopyNodeAttr:
         )
 
     def from_str(self, tensor: np.ndarray):
+        """from_str.
+
+        Parameters
+        ----------
+        tensor : np.ndarray
+            tensor
+        """
         self.node.attr["value"].tensor.tensor_content = tensor.tostring()
 
 
 def load_tensor(node: tf.Tensor, dtype_old: type, dtype_new: type) -> np.ndarray:
+    """load_tensor.
+
+    Parameters
+    ----------
+    node : tf.Tensor
+        node
+    dtype_old : type
+        dtype_old
+    dtype_new : type
+        dtype_new
+
+    Returns
+    -------
+    np.ndarray
+
+    """
     if dtype_old == np.float64:
         tensor = np.array(node.double_val).astype(dtype_new)
     elif dtype_old == np.float32:

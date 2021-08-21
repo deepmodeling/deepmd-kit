@@ -7,6 +7,19 @@ def convert(
     output_model: str,
     **kwargs,
 ):
+    """convert.
+
+    Parameters
+    ----------
+    FROM : str
+        FROM
+    input_model : str
+        input_model
+    output_model : str
+        output_model
+    kwargs :
+        kwargs
+    """
     if FROM == '1.2':
         convert_12_to_20(input_model, output_model)
     elif FROM == '1.3':

@@ -2,6 +2,15 @@ import numpy as np
 from collections import defaultdict
 
 def _make_all_stat_ref(data, nbatches):
+    """_make_all_stat_ref.
+
+    Parameters
+    ----------
+    data :
+        data
+    nbatches :
+        nbatches
+    """
     all_stat = defaultdict(list)
     for ii in range(data.get_nsystems()) :
         for jj in range(nbatches) :
@@ -49,6 +58,13 @@ def make_stat_input(data, nbatches, merge_sys = True):
     return all_stat
 
 def merge_sys_stat(all_stat):
+    """merge_sys_stat.
+
+    Parameters
+    ----------
+    all_stat :
+        all_stat
+    """
     first_key = list(all_stat.keys())[0]
     nsys = len(all_stat[first_key])
     ret = defaultdict(list)

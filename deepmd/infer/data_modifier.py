@@ -16,6 +16,9 @@ from deepmd.utils.sess import run_sess
 
 
 class DipoleChargeModifier(DeepDipole):
+    """DipoleChargeModifier.
+    """
+
     def __init__(self, 
                  model_name : str, 
                  model_charge_map : List[float],
@@ -98,6 +101,8 @@ class DipoleChargeModifier(DeepDipole):
 
 
     def _build_fv_graph_inner(self):
+        """_build_fv_graph_inner.
+        """
         self.t_ef = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name = 't_ef')
         nf = 10
         nfxnas = 64*nf
@@ -180,6 +185,15 @@ class DipoleChargeModifier(DeepDipole):
 
 
     def _enrich(self, dipole, dof = 3):
+        """_enrich.
+
+        Parameters
+        ----------
+        dipole :
+            dipole
+        dof :
+            dof
+        """
         coll = []                
         sel_start_idx = 0
         for type_i in range(self.ntypes):
@@ -195,6 +209,13 @@ class DipoleChargeModifier(DeepDipole):
         return tf.concat(coll, axis = 1)
 
     def _slice_descrpt_deriv(self, deriv):
+        """_slice_descrpt_deriv.
+
+        Parameters
+        ----------
+        deriv :
+            deriv
+        """
         coll = []
         start_idx = 0
         for type_i in range(self.ntypes):
@@ -313,6 +334,19 @@ class DipoleChargeModifier(DeepDipole):
 
 
     def _eval_fv(self, coords, cells, atom_types, ext_f) :
+        """_eval_fv.
+
+        Parameters
+        ----------
+        coords :
+            coords
+        cells :
+            cells
+        atom_types :
+            atom_types
+        ext_f :
+            ext_f
+        """
         # reshape the inputs 
         cells = np.reshape(cells, [-1, 9])
         nframes = cells.shape[0]
@@ -347,6 +381,19 @@ class DipoleChargeModifier(DeepDipole):
 
 
     def _extend_system(self, coord, box, atype, charge):
+        """_extend_system.
+
+        Parameters
+        ----------
+        coord :
+            coord
+        box :
+            box
+        atype :
+            atype
+        charge :
+            charge
+        """
         natoms = coord.shape[1] // 3
         nframes = coord.shape[0]
         # sel atoms and setup ref coord
