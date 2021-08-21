@@ -196,6 +196,66 @@ __global__ void tabulate_fusion_grad_fifth_order_polynomial(
   }
 }
 
+template <
+    typename FPTYPE,
+    int      MTILE,
+    int      KTILE>
+__global__ void tabulate_fusion_grad_grad_fifth_order_polynomial(
+    FPTYPE * dz_dy,
+    const FPTYPE * table,
+    const FPTYPE * em_x,
+    const FPTYPE * em,
+    const FPTYPE * dz_dy_dem_x,
+    const FPTYPE * dz_dy_dem,
+    const FPTYPE lower,
+    const FPTYPE upper,
+    const FPTYPE max,
+    const FPTYPE stride0,
+    const FPTYPE stride1,
+    const int nnei,
+    const int last_layer_size)
+{
+  extern __shared__ int _data[];
+  const int block_idx = blockIdx.x;   // nloc
+  const int thread_idx = threadIdx.x; // last_layer_size
+  FPTYPE ago = __shfl( em_x[block_idx * nnei + nnei - 1], 0);
+  bool unloop = false;
+  int breakpoint = nnei - 1;
+  FPTYPE * iteratorC = (FPTYPE*) &_data[0];
+  for (int kk = 0; kk < MTILE; kk++)
+    iteratorC[kk * last_layer_size + thread_idx] = 0.f;
+  __syncthreads();
+
+  for (int ii = 0; ii < nnei; ii++) {
+    FPTYPE var[6];
+    FPTYPE xx = em_x[block_idx * nnei + ii];
+    FPTYPE dz_xx = dz_dy_dem_x[block_idx * nnei + ii];
+    if (xx == ago) {
+      unloop = true;
+      breakpoint = ii;
+    }
+    int table_idx = 0;
+    locate_xx(xx, table_idx, lower, upper, max, stride0, stride1);
+    var[0] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 0];
+    var[1] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 1];
+    var[2] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 2];
+    var[3] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 3];
+    var[4] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 4];
+    var[5] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 5];
+    FPTYPE res = var[0] + (var[1] + (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) * xx;
+    FPTYPE res_grad = var[1] + (2 * var[2] + (3 * var[3] + (4 * var[4] + 5 * var[5] * xx) * xx) * xx) * xx;
+
+    for (int kk = 0; kk < MTILE; kk++) {
+      int em_index = block_idx * nnei * MTILE + ii * MTILE + kk;
+      iteratorC[kk * last_layer_size + thread_idx] += (nnei - breakpoint) * (em[em_index] * res_grad * dz_xx + dz_dy_dem[em_index] * res);
+    }
+    if (unloop) break;
+  }
+  for (int ii = 0; ii < MTILE; ii++) {
+    dz_dy[block_idx * MTILE * last_layer_size + ii * last_layer_size + thread_idx] = iteratorC[ii * last_layer_size + thread_idx];
+  }
+}
+
 namespace deepmd {
 template<typename FPTYPE>
 void tabulate_fusion_gpu_rocm(
