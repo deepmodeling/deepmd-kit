@@ -16,7 +16,7 @@ def get_gpus():
     """Get available IDs of GPU cards at local.
     These IDs are valid when used as the TensorFlow device ID.
 
-    Returns:
+    Returns
     -------
     Optional[List[int]]
         List of available GPU IDs. Otherwise, None.

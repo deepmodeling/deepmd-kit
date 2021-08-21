@@ -173,7 +173,8 @@ class EnerFitting ():
         """
         Compute the input statistics
 
-        Parameters:
+        Parameters
+        ----------
         all_stat
                 if numb_fparam > 0 must have all_stat['fparam']
                 if numb_aparam > 0 must have all_stat['aparam']
@@ -315,8 +316,8 @@ class EnerFitting ():
         suffix
                 Name suffix to identify this descriptor
 
-        Return
-        ------
+        Returns
+        -------
         ener
                 The system energy
         """

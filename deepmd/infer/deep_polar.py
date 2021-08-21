@@ -91,14 +91,14 @@ class DeepGlobalPolar(DeepTensor):
 
     def eval(
         self,
-        coords: np.array,
-        cells: np.array,
+        coords: np.ndarray,
+        cells: np.ndarray,
         atom_types: List[int],
         atomic: bool = False,
-        fparam: Optional[np.array] = None,
-        aparam: Optional[np.array] = None,
-        efield: Optional[np.array] = None,
-    ) -> np.array:
+        fparam: Optional[np.ndarray] = None,
+        aparam: Optional[np.ndarray] = None,
+        efield: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
         """Evaluate the model.
 
         Parameters

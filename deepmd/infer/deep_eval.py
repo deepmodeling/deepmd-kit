@@ -52,7 +52,10 @@ class DeepEval:
     def model_version(self) -> str:
         """Get type of model.
 
-        :type:str
+        Returns
+        -------
+        str
+            type of model
         """
         if not self._model_version:
             try:
@@ -71,7 +74,8 @@ class DeepEval:
     ) -> bool :
         """ Check the model compatability
         
-        Return
+        Returns
+        -------
         bool
             If the model stored in the graph file is compatable with the current code
         """
@@ -146,7 +150,7 @@ class DeepEval:
 
     @staticmethod
     def sort_input(
-        coord : np.array, atom_type : np.array, sel_atoms : List[int] = None
+        coord : np.ndarray, atom_type : np.ndarray, sel_atoms : List[int] = None
     ):
         """
         Sort atoms in the system according their types.
