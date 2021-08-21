@@ -40,6 +40,7 @@ def _make_node_names(model_type: str, modifier_type: Optional[str] = None) -> Li
         if unknown model type
     """
     nodes = [
+        "model_type",
         "descrpt_attr/rcut",
         "descrpt_attr/ntypes",
         "model_attr/tmap",

@@ -6,12 +6,14 @@ from typing import Tuple, List
 from deepmd.env import tf
 from deepmd.env import op_module
 from deepmd.utils.sess import run_sess
+from deepmd.utils.graph import get_tensor_by_name_from_graph, load_graph_def 
+from deepmd.utils.graph import get_embedding_net_nodes_from_graph_def
 from tensorflow.python.platform import gfile
 from tensorflow.python.framework import tensor_util
 
 log = logging.getLogger(__name__)
 
-class DeepTabulate():
+class DPTabulate():
     """
     Class for tabulation.
     Compress a model, which including tabulating the embedding-net. 
@@ -42,7 +44,7 @@ class DeepTabulate():
         if self.type_one_side and len(self.exclude_types) != 0:
             raise RunTimeError('"type_one_side" is not compatible with "exclude_types"')
 
-        self.graph, self.graph_def = self._load_graph()
+        self.graph, self.graph_def = load_graph_def(self.model_file)
         self.sess = tf.Session(graph = self.graph)
 
         self.sub_graph, self.sub_graph_def = self._load_sub_graph()
@@ -54,27 +56,29 @@ class DeepTabulate():
         except Exception:
             self.sel_a = self.graph.get_operation_by_name('DescrptSeA').get_attr('sel_a')
             self.descrpt = self.graph.get_operation_by_name ('DescrptSeA')
-        self.ntypes = self._get_tensor_value(self.graph.get_tensor_by_name ('descrpt_attr/ntypes:0'))
-        self.davg = self._get_tensor_value(self.graph.get_tensor_by_name ('descrpt_attr/t_avg:0'))
-        self.dstd = self._get_tensor_value(self.graph.get_tensor_by_name ('descrpt_attr/t_std:0'))
+
+        self.davg = get_tensor_by_name_from_graph(self.graph, 'descrpt_attr/t_avg')
+        self.dstd = get_tensor_by_name_from_graph(self.graph, 'descrpt_attr/t_std')
+        self.ntypes = get_tensor_by_name_from_graph(self.graph, 'descrpt_attr/ntypes')
 
         
         self.rcut = self.descrpt.get_attr('rcut_r')
         self.rcut_smth = self.descrpt.get_attr('rcut_r_smth')
 
-        self.filter_variable_nodes = self._load_matrix_node()
+        self.embedding_net_nodes = get_embedding_net_nodes_from_graph_def(self.graph_def)
+
         for tt in self.exclude_types:
             if (tt[0] not in range(self.ntypes)) or (tt[1] not in range(self.ntypes)):
                 raise RuntimeError("exclude types" + str(tt) + " must within the number of atomic types " + str(self.ntypes) + "!")
         if (self.ntypes * self.ntypes - len(self.exclude_types) == 0):
             raise RuntimeError("empty embedding-net are not supported in model compression!")
         
-        self.layer_size = len(self.filter_variable_nodes) // ((self.ntypes * self.ntypes - len(self.exclude_types)) * 2)
+        self.layer_size = len(self.embedding_net_nodes) // ((self.ntypes * self.ntypes - len(self.exclude_types)) * 2)
         self.table_size = self.ntypes * self.ntypes
         if type_one_side :
-            self.layer_size = len(self.filter_variable_nodes) // (self.ntypes * 2)
+            self.layer_size = len(self.embedding_net_nodes) // (self.ntypes * 2)
             self.table_size = self.ntypes
-        # self.value_type = self.filter_variable_nodes["filter_type_0/matrix_1_0"].dtype #"filter_type_0/matrix_1_0" must exit~
+        # self.value_type = self.embedding_net_nodes["filter_type_0/matrix_1_0"].dtype #"filter_type_0/matrix_1_0" must exit~
         # get trained variables
         self.bias = self._get_bias()
         self.matrix = self._get_matrix()
@@ -86,7 +90,6 @@ class DeepTabulate():
         # define tables
         self.data = {}
 
-        # TODO: Need a check function to determine if the current model is properly
 
     def build(self, 
               min_nbor_dist : float,
@@ -144,35 +147,11 @@ class DeepTabulate():
                         self.data[net][jj][kk * 6 + 5] = (1 / (2 * tt * tt * tt * tt * tt)) * (12 * hh - 6 * (dd[jj + 1][kk] + dd[jj][kk]) * tt + (d2[jj + 1][kk] - d2[jj][kk]) * tt * tt)
         return lower, upper
 
-    def _load_graph(self):
-        graph_def = tf.GraphDef()
-        with open(self.model_file, "rb") as f:
-            graph_def.ParseFromString(f.read())
-        with tf.Graph().as_default() as graph:
-            tf.import_graph_def(graph_def, name = "")
-        return graph, graph_def
-
     def _load_sub_graph(self):
         sub_graph_def = tf.GraphDef()
         with tf.Graph().as_default() as sub_graph:
             tf.import_graph_def(sub_graph_def, name = "")
         return sub_graph, sub_graph_def
-
-    def _get_tensor_value(self, tensor) :
-        with self.sess.as_default():
-            run_sess(self.sess, tensor)
-            value = tensor.eval()
-        return value
-
-    def _load_matrix_node(self):
-        matrix_node = {}
-        matrix_node_pattern = "filter_type_\d+/matrix_\d+_\d+|filter_type_\d+/bias_\d+_\d+|filter_type_\d+/idt_\d+_\d+|filter_type_all/matrix_\d+_\d+|filter_type_all/bias_\d+_\d+|filter_type_all/idt_\d+_\d"
-        for node in self.graph_def.node:
-            if re.fullmatch(matrix_node_pattern, node.name) != None:
-                matrix_node[node.name] = node.attr["value"].tensor
-        for key in matrix_node.keys() :
-            assert key.find('bias') > 0 or key.find('matrix') > 0, "currently, only support weight matrix and bias matrix at the tabulation op!"
-        return matrix_node
 
     def _get_bias(self):
         bias = {}
@@ -180,14 +159,14 @@ class DeepTabulate():
             bias["layer_" + str(layer)] = []
             if self.type_one_side:
                 for ii in range(0, self.ntypes):
-                    tensor_value = np.frombuffer (self.filter_variable_nodes["filter_type_all/bias_" + str(layer) + "_" + str(ii)].tensor_content)
-                    tensor_shape = tf.TensorShape(self.filter_variable_nodes["filter_type_all/bias_" + str(layer) + "_" + str(ii)].tensor_shape).as_list()
+                    tensor_value = np.frombuffer (self.embedding_net_nodes["filter_type_all/bias_" + str(layer) + "_" + str(ii)].tensor_content)
+                    tensor_shape = tf.TensorShape(self.embedding_net_nodes["filter_type_all/bias_" + str(layer) + "_" + str(ii)].tensor_shape).as_list()
                     bias["layer_" + str(layer)].append(np.reshape(tensor_value, tensor_shape))
             else:
                 for ii in range(0, self.ntypes * self.ntypes):
                     if (ii // self.ntypes, int(ii % self.ntypes)) not in self.exclude_types:
-                        tensor_value = np.frombuffer(self.filter_variable_nodes["filter_type_" + str(ii // self.ntypes) + "/bias_" + str(layer) + "_" + str(int(ii % self.ntypes))].tensor_content)
-                        tensor_shape = tf.TensorShape(self.filter_variable_nodes["filter_type_" + str(ii // self.ntypes) + "/bias_" + str(layer) + "_" + str(int(ii % self.ntypes))].tensor_shape).as_list()
+                        tensor_value = np.frombuffer(self.embedding_net_nodes["filter_type_" + str(ii // self.ntypes) + "/bias_" + str(layer) + "_" + str(int(ii % self.ntypes))].tensor_content)
+                        tensor_shape = tf.TensorShape(self.embedding_net_nodes["filter_type_" + str(ii // self.ntypes) + "/bias_" + str(layer) + "_" + str(int(ii % self.ntypes))].tensor_shape).as_list()
                         bias["layer_" + str(layer)].append(np.reshape(tensor_value, tensor_shape))
                     else:
                         bias["layer_" + str(layer)].append(np.array([]))
@@ -199,14 +178,14 @@ class DeepTabulate():
             matrix["layer_" + str(layer)] = []
             if self.type_one_side:
                 for ii in range(0, self.ntypes):
-                    tensor_value = np.frombuffer (self.filter_variable_nodes["filter_type_all/matrix_" + str(layer) + "_" + str(ii)].tensor_content)
-                    tensor_shape = tf.TensorShape(self.filter_variable_nodes["filter_type_all/matrix_" + str(layer) + "_" + str(ii)].tensor_shape).as_list()
+                    tensor_value = np.frombuffer (self.embedding_net_nodes["filter_type_all/matrix_" + str(layer) + "_" + str(ii)].tensor_content)
+                    tensor_shape = tf.TensorShape(self.embedding_net_nodes["filter_type_all/matrix_" + str(layer) + "_" + str(ii)].tensor_shape).as_list()
                     matrix["layer_" + str(layer)].append(np.reshape(tensor_value, tensor_shape))
             else:
                 for ii in range(0, self.ntypes * self.ntypes):
                     if (ii // self.ntypes, int(ii % self.ntypes)) not in self.exclude_types:
-                        tensor_value = np.frombuffer(self.filter_variable_nodes["filter_type_" + str(ii // self.ntypes) + "/matrix_" + str(layer) + "_" + str(int(ii % self.ntypes))].tensor_content)
-                        tensor_shape = tf.TensorShape(self.filter_variable_nodes["filter_type_" + str(ii // self.ntypes) + "/matrix_" + str(layer) + "_" + str(int(ii % self.ntypes))].tensor_shape).as_list()
+                        tensor_value = np.frombuffer(self.embedding_net_nodes["filter_type_" + str(ii // self.ntypes) + "/matrix_" + str(layer) + "_" + str(int(ii % self.ntypes))].tensor_content)
+                        tensor_shape = tf.TensorShape(self.embedding_net_nodes["filter_type_" + str(ii // self.ntypes) + "/matrix_" + str(layer) + "_" + str(int(ii % self.ntypes))].tensor_shape).as_list()
                         matrix["layer_" + str(layer)].append(np.reshape(tensor_value, tensor_shape))
                     else:
                         matrix["layer_" + str(layer)].append(np.array([]))

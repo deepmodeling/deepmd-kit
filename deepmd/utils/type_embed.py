@@ -12,7 +12,6 @@ from deepmd.utils.network import  embedding_net
 import math
 from deepmd.common import get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, get_np_precision
 from deepmd.utils.argcheck import list_to_doc
-from deepmd.utils.tabulate import DeepTabulate
 
 
 def embed_atom_type(

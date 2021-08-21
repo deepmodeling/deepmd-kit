@@ -32,6 +32,7 @@ def train(
     init_model: Optional[str],
     restart: Optional[str],
     output: str,
+    init_frz_model: str,
     mpi_log: str,
     log_level: int,
     log_path: Optional[str],
@@ -50,13 +51,15 @@ def train(
         path to checkpoint folder or None
     output : str
         path for dump file with arguments
+    init_frz_model : str
+        path to frozen model or None
     mpi_log : str
         mpi logging mode
     log_level : int
         logging level defined by int 0-3
     log_path : Optional[str]
         logging file path or None if logs are to be output only to stdout
-    is_compress: Bool
+    is_compress: bool
         indicates whether in the model compress mode
 
     Raises
@@ -71,7 +74,7 @@ def train(
 
     jdata = normalize(jdata)
 
-    if is_compress == False:
+    if not is_compress:
         jdata = update_sel(jdata)
 
     with open(output, "w") as fp:
@@ -84,6 +87,7 @@ def train(
     run_opt = RunOptions(
         init_model=init_model,
         restart=restart,
+        init_frz_model=init_frz_model,
         log_path=log_path,
         log_level=log_level,
         mpi_log=mpi_log
@@ -141,7 +145,7 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
     # decouple the training data from the model compress process
     train_data = None
     valid_data = None
-    if is_compress == False:
+    if not is_compress:
         # init data
         train_data = get_data(jdata["training"]["training_data"], rcut, ipt_type_map, modifier)
         train_data.print_summary("training")
@@ -153,7 +157,7 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
     stop_batch = j_must_have(jdata["training"], "numb_steps")
     model.build(train_data, stop_batch)
 
-    if is_compress == False:
+    if not is_compress:
         # train the model with the provided systems in a cyclic way
         start_time = time.time()
         model.train(train_data, valid_data)

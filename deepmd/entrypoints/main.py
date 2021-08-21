@@ -163,6 +163,13 @@ def parse_args(args: Optional[List[str]] = None):
         default="out.json",
         help="The output file of the parameters used in training.",
     )
+    parser_train.add_argument(
+        "-f",
+        "--init-frz-model",
+        type=str,
+        default=None,
+        help="Initialize the training from the frozen model.",
+    )
 
     # * freeze script ******************************************************************
     parser_frz = subparsers.add_parser(

@@ -18,38 +18,44 @@ def one_layer(inputs,
               use_timestep = False, 
               trainable = True,
               useBN = False, 
-              uniform_seed = False):
+              uniform_seed = False,
+              initial_variables = None):
     with tf.variable_scope(name, reuse=reuse):
         shape = inputs.get_shape().as_list()
+        w_initializer  = tf.random_normal_initializer(
+                            stddev=stddev / np.sqrt(shape[1] + outputs_size),
+                            seed=seed if (seed is None or uniform_seed) else seed + 0)
+        b_initializer  = tf.random_normal_initializer(
+                            stddev=stddev,
+                            mean=bavg,
+                            seed=seed if (seed is None or uniform_seed) else seed + 1)
+        if initial_variables is not None:
+            w_initializer = tf.constant_initializer(initial_variables[name + '/matrix'])
+            b_initializer = tf.constant_initializer(initial_variables[name + '/bias'])
         w = tf.get_variable('matrix', 
                             [shape[1], outputs_size], 
                             precision,
-                            tf.random_normal_initializer(
-                                stddev=stddev/np.sqrt(shape[1]+outputs_size), 
-                                seed = seed if (seed is None or uniform_seed) else seed + 0
-                            ), 
+                            w_initializer, 
                             trainable = trainable)
         variable_summaries(w, 'matrix')
         b = tf.get_variable('bias', 
                             [outputs_size], 
                             precision,
-                            tf.random_normal_initializer(
-                                stddev=stddev, 
-                                mean = bavg, 
-                                seed = seed if (seed is None or uniform_seed) else seed + 1
-                            ), 
+                            b_initializer, 
                             trainable = trainable)
         variable_summaries(b, 'bias')
         hidden = tf.matmul(inputs, w) + b
         if activation_fn != None and use_timestep :
+            idt_initializer = tf.random_normal_initializer(
+                                    stddev=0.001,
+                                    mean=0.1,
+                                    seed=seed if (seed is None or uniform_seed) else seed + 2)
+            if initial_variables is not None:
+                idt_initializer = tf.constant_initializer(initial_variables[name + '/idt'])
             idt = tf.get_variable('idt',
                                   [outputs_size],
                                   precision,
-                                  tf.random_normal_initializer(
-                                      stddev=0.001, 
-                                      mean = 0.1, 
-                                      seed = seed if (seed is None or uniform_seed) else seed + 2
-                                  ), 
+                                  idt_initializer, 
                                   trainable = trainable)
             variable_summaries(idt, 'idt')
         if activation_fn != None:
