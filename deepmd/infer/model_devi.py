@@ -161,7 +161,6 @@ def make_model_devi(
 
     Parameters
     ----------
-
     models: list
         A list of paths of models to use for making model deviation
     system: str

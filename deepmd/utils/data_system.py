@@ -16,6 +16,7 @@ log = logging.getLogger(__name__)
 class DeepmdDataSystem() :
     """
     Class for manipulating many data systems. 
+
     It is implemented with the help of DeepmdData
     """
     def __init__ (self,
@@ -512,7 +513,10 @@ class DeepmdDataSystem() :
 
 class DataSystem (object) :
     """
-    Outdated class for the data systems. Not maintained anymore.    
+    Outdated class for the data systems.
+
+    .. deprecated:: 2.0.0
+        This class is not maintained any more.  
     """
     def __init__ (self,
                   systems,

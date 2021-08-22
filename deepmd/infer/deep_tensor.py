@@ -13,8 +13,6 @@ if TYPE_CHECKING:
 class DeepTensor(DeepEval):
     """Evaluates a tensor model.
 
-    Constructor
-
     Parameters
     ----------
     model_file: str
@@ -47,6 +45,7 @@ class DeepTensor(DeepEval):
         load_prefix: str = 'load',
         default_tf_graph: bool = False
     ) -> None:
+        """Constructor"""
         DeepEval.__init__(
             self,
             model_file,
