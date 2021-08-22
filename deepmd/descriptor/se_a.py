@@ -13,6 +13,7 @@ from deepmd.utils.network import embedding_net, embedding_net_rand_seed_shift
 from deepmd.utils.tabulate import DPTabulate
 from deepmd.utils.type_embed import embed_atom_type
 from deepmd.utils.sess import run_sess
+from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph
 
 class DescrptSeA ():
     @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
@@ -275,6 +276,11 @@ class DescrptSeA ():
                                table_extrapolate, 
                                table_stride_1, 
                                table_stride_2)
+        
+        graph, _ = load_graph_def(model_file)
+        self.davg = get_tensor_by_name_from_graph(graph, 'descrpt_attr/t_avg')
+        self.dstd = get_tensor_by_name_from_graph(graph, 'descrpt_attr/t_std')
+
 
 
     def build (self, 
