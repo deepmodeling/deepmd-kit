@@ -141,8 +141,3 @@ def compress(
     log.info("\n\n")
     log.info("stage 2: freeze the model")
     freeze(checkpoint_folder=checkpoint_folder, output=output, node_names=None)
-
-    # stage 3: transfer the model
-    log.info("\n\n")
-    log.info("stage 3: transfer the model")
-    transfer(old_model=input, raw_model=output, output=output)
