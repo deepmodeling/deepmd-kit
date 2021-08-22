@@ -1,0 +1,19 @@
+preferred-citation:
+  type: article
+  authors:
+  - family-names: "Wang"
+    given-names: "Han"
+  - family-names: "Zhang"
+    given-names: "Linfeng"
+  - family-names: "Han"
+    given-names: "Jiequn"
+  - family-names: "E"
+    given-names: "Weinan"
+  doi: "10.1016/j.cpc.2018.03.016"
+  journal: "Computer Physics Communications"
+  month: 7
+  start: 178 # First page number
+  end: 184 # Last page number
+  title: "DeePMD-kit: A deep learning package for many-body potential energy representation and molecular dynamics"
+  volume: 228
+  year: 2018
