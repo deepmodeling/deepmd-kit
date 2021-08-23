@@ -292,7 +292,7 @@ class DescrptLocFrame () :
                 natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
 
         Returns
-        ------
+        -------
         force
                 The force on atoms
         virial

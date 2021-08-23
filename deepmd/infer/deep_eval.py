@@ -50,12 +50,12 @@ class DeepEval:
 
     @property
     def model_version(self) -> str:
-        """Get type of model.
+        """Get version of model.
 
         Returns
         -------
         str
-            type of model
+            version of model
         """
         if not self._model_version:
             try:
