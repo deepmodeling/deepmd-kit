@@ -32,9 +32,13 @@ typedef double ENERGYTYPE;
 
 struct NeighborListData 
 {
+  /// Array stores the core region atom's index
   std::vector<int > ilist;
+  /// Array stores the core region atom's neighbor index
   std::vector<std::vector<int> > jlist;
+  /// Array stores the number of neighbors of core region atoms
   std::vector<int > numneigh;
+  /// Array stores the the location of the first neighbor of core region atoms
   std::vector<int* > firstneigh;  
 public:
   void copy_from_nlist(const InputNlist & inlist);
@@ -43,6 +47,9 @@ public:
   void shuffle_exclude_empty(const std::vector<int> & fwd_map);
   void make_inlist(InputNlist & inlist);
 };
+
+/** @struct deepmd::InputNlist
+ **/
 
 /**
 * @brief Check if the model version is supported.
