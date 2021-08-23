@@ -128,7 +128,7 @@ public:
   * @param[in] atype The atom types. The list should contain natoms ints.
   * @param[in] box The cell of the region. The array should be of size nframes x 9.
   * @param[in] nghost The number of ghost atoms.
-  * @param[in] inlist The input neighbour list.
+  * @param[in] lmp_list The input neighbour list.
   * @param[in] ago Update the internal neighbour list if ago is 0.
   * @param[in] fparam The frame parameter. The array can be of size :
       * nframes x dim_fparam.
