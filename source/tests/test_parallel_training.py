@@ -13,14 +13,13 @@ class TestSingleMachine(unittest.TestCase):
             import horovod
         except ImportError:
             raise unittest.SkipTest("Package horovod is required for parallel-training tests.")
-        if len(get_gpus() or []) < 2:
-            raise unittest.SkipTest("At least 2 GPU cards are required for parallel training.")
         self.input_file = str(tests_path / "model_compression" / "input.json")
 
     def test_two_workers(self):
         command = 'horovodrun -np 2 dp train -m workers ' + self.input_file
         penv = os.environ.copy()
-        penv['CUDA_VISIBLE_DEVICES'] = '0,1'
+        if len(get_gpus() or []) > 1:
+            penv['CUDA_VISIBLE_DEVICES'] = '0,1'
         popen = sp.Popen(command, shell=True, env=penv, stdout=sp.PIPE, stderr=sp.STDOUT)
         for line in iter(popen.stdout.readline, b''):
             if hasattr(line, 'decode'):
