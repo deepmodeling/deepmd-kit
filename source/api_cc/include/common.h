@@ -32,9 +32,9 @@ typedef double ENERGYTYPE;
 
 struct NeighborListData 
 {
-  /// Number of core region atoms
-  std::vector<int > ilist;
   /// Array stores the core region atom's index
+  std::vector<int > ilist;
+  /// Array stores the core region atom's neighbor index
   std::vector<std::vector<int> > jlist;
   /// Array stores the core region atom's neighbor atom number
   std::vector<int > numneigh;
