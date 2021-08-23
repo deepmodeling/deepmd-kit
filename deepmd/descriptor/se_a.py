@@ -42,7 +42,7 @@ class DescrptSeA ():
         s(r)=
         \begin{cases}
         \frac{1}{r}, & r<r_s \\
-        \frac{1}{r} \{ \frac{1}{2} \cos (\frac{\pi (r - r_s)}{ r_c - r_s} ) +\frac{1}{2} \}, & r_s \leq r<r_c \\
+        \frac{1}{r} \{ {(\frac{r - r_s}{ r_c - r_s})}^3 (-6 {(\frac{r - r_s}{ r_c - r_s})}^2 +15 \frac{r - r_s}{ r_c - r_s} -10) +1 \}, & r_s \leq r<r_c \\
         0, & r \geq r_c
         \end{cases}
 
