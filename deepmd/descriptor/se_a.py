@@ -16,23 +16,58 @@ from deepmd.utils.sess import run_sess
 from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph
 
 class DescrptSeA ():
-    """DeepPot-SE constructed from all information (both angular and radial) of
-    atomic configurations.
-    
-    The embedding takes the distance between atoms as input.
+    r"""DeepPot-SE constructed from all information (both angular and radial) of
+    atomic configurations. The embedding takes the distance between atoms as input.
+
+    The descriptor :math:`\mathcal{D}^i \in \mathcal{R}^{M_1 \times M_2}` is given by [1]_
+
+    .. math::
+        \mathcal{D}^i = (\mathcal{G}^i)^T \mathcal{R}^i (\mathcal{R}^i)^T \mathcal{G}^i_<
+
+    where :math:`\mathcal{R}^i \in \mathbb{R}^{N \times 4}` is the coordinate
+    matrix, and each row of :math:`\mathcal{R}^i` can be constructed as follows
+
+    .. math::
+        (\mathcal{R}^i)_j = [
+        \begin{array}{c}
+            s(r_{ji}) & x_{ji} & y_{ji} & z_{ji}
+        \end{array}
+        ]
+
+    where :math:`\mathbf{R}_{ji}=\mathbf{R}_j-\mathbf{R}_i = (x_{ji}, y_{ji}, z_{ji})` is 
+    the relative coordinate and :math:`r_{ji}=\lVert \mathbf{R}_{ji} \lVert` is its norm.
+    The switching function :math:`s(r)` is defined as:
+
+    .. math::
+        s(r)=
+        \begin{cases}
+        \frac{1}{r}, & r<r_s \\
+        \frac{1}{r} \{ {(\frac{r - r_s}{ r_c - r_s})}^3 (-6 {(\frac{r - r_s}{ r_c - r_s})}^2 +15 \frac{r - r_s}{ r_c - r_s} -10) +1 \}, & r_s \leq r<r_c \\
+        0, & r \geq r_c
+        \end{cases}
+
+    Each row of the embedding matrix  :math:`\mathcal{G}^i \in \mathbb{R}^{N \times M_1}` consists of outputs
+    of a embedding network :math:`\mathcal{N}` of :math:`s(r_{ji})`:
+
+    .. math::
+        (\mathcal{G}^i)_j = \mathcal{N}(s(r_{ji}))
+
+    :math:`\mathcal{G}^i_< \in \mathbb{R}^{N \times M_2}` takes first :math:`M_2`$` columns of
+    :math:`\mathcal{G}^i`$`. The equation of embedding network :math:`\mathcal{N}` can be found at
+    :meth:`deepmd.utils.network.embedding_net`.
 
     Parameters
     ----------
     rcut
-            The cut-off radius
+            The cut-off radius :math:`r_c`
     rcut_smth
-            From where the environment matrix should be smoothed
+            From where the environment matrix should be smoothed :math:`r_s`
     sel : list[str]
             sel[i] specifies the maxmum number of type i atoms in the cut-off radius
     neuron : list[int]
-            Number of neurons in each hidden layers of the embedding net
+            Number of neurons in each hidden layers of the embedding net :math:`\mathcal{N}`
     axis_neuron
-            Number of the axis neuron (number of columns of the sub-matrix of the embedding matrix)
+            Number of the axis neuron :math:`M_2` (number of columns of the sub-matrix of the embedding matrix)
     resnet_dt
             Time-step `dt` in the resnet construction:
             y = x + dt * \phi (Wx + b)
@@ -53,6 +88,13 @@ class DescrptSeA ():
             The precision of the embedding net parameters. Supported options are {1}
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
+    
+    References
+    ----------
+    .. [1] Linfeng Zhang, Jiequn Han, Han Wang, Wissam A. Saidi, Roberto Car, and E. Weinan. 2018.
+       End-to-end symmetry preserving inter-atomic potential energy model for finite and extended
+       systems. In Proceedings of the 32nd International Conference on Neural Information Processing
+       Systems (NIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4441–4451.
     """
     @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
@@ -488,7 +530,7 @@ class DescrptSeA ():
                 natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
 
         Returns
-        ------
+        -------
         force
                 The force on atoms
         virial

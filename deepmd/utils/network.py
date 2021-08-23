@@ -93,17 +93,42 @@ def embedding_net(xx,
                   seed = None,
                   trainable = True, 
                   uniform_seed = False):
-    """
+    r"""The embedding network.
+
+    The embedding network function :math:`\mathcal{N}` is constructed by is the
+    composition of multiple layers :math:`\mathcal{L}^{(i)}`:
+
+    .. math::
+        \mathcal{N} = \mathcal{L}^{(n)} \circ \mathcal{L}^{(n-1)}
+        \circ \cdots \circ \mathcal{L}^{(1)}
+
+    A layer :math:`\mathcal{L}` is given by one of the following forms,
+    depending on the number of nodes: [1]_
+
+    .. math::
+        \mathbf{y}=\mathcal{L}(\mathbf{x};\mathbf{w},\mathbf{b})=
+        \begin{cases}
+            \boldsymbol{\phi}(\mathbf{x}^T\mathbf{w}+\mathbf{b}) + \mathbf{x}, & N_2=N_1 \\
+            \boldsymbol{\phi}(\mathbf{x}^T\mathbf{w}+\mathbf{b}) + (\mathbf{x}, \mathbf{x}), & N_2 = 2N_1\\
+            \boldsymbol{\phi}(\mathbf{x}^T\mathbf{w}+\mathbf{b}), & \text{otherwise} \\
+        \end{cases}
+
+    where :math:`\mathbf{x} \in \mathbb{R}^{N_1}`$` is the input vector and :math:`\mathbf{y} \in \mathbb{R}^{N_2}`
+    is the output vector. :math:`\mathbf{w} \in \mathbb{R}^{N_1 \times N_2}` and
+    :math:`\mathbf{b} \in \mathbb{R}^{N_2}`$` are weights and biases, respectively,
+    both of which are trainable if `trainable` is `True`. :math:`\boldsymbol{\phi}`
+    is the activation function.
+
     Parameters
     ----------
     xx : Tensor   
-        Input tensor of shape [-1,1]
+        Input tensor :math:`\mathbf{x}` of shape [-1,1]
     network_size: list of int
         Size of the embedding network. For example [16,32,64]
     precision: 
         Precision of network weights. For example, tf.float64
     activation_fn:
-        Activation function
+        Activation function :math:`\boldsymbol{\phi}`
     resnet_dt: boolean
         Using time-step in the ResNet construction
     name_suffix: str
@@ -115,7 +140,13 @@ def embedding_net(xx,
     seed: int
         Random seed for initializing network parameters
     trainable: boolean
-        If the netowk is trainable
+        If the network is trainable
+
+    References
+    ----------
+    .. [1] Kaiming  He,  Xiangyu  Zhang,  Shaoqing  Ren,  and  Jian  Sun. Identitymappings
+       in deep residual networks. InComputer Vision – ECCV 2016,pages 630–645. Springer
+       International Publishing, 2016.
     """
     input_shape = xx.get_shape().as_list()
     outputs_size = [input_shape[1]] + network_size
