@@ -67,6 +67,18 @@ def train(
     RuntimeError
         if distributed training job nem is wrong
     """
+    run_opt = RunOptions(
+        init_model=init_model,
+        restart=restart,
+        init_frz_model=init_frz_model,
+        log_path=log_path,
+        log_level=log_level,
+        mpi_log=mpi_log
+    )
+    if run_opt.is_distrib and len(run_opt.gpus or []) > 1:
+        # avoid conflict of visible gpus among multipe tf sessions in one process
+        reset_default_tf_session_config(cpu_only=True)
+
     # load json database
     jdata = j_loader(INPUT)
 
@@ -82,16 +94,6 @@ def train(
 
     # save the training script into the graph
     tf.constant(json.dumps(jdata), name='train_attr/training_script', dtype=tf.string)
-
-    # run options
-    run_opt = RunOptions(
-        init_model=init_model,
-        restart=restart,
-        init_frz_model=init_frz_model,
-        log_path=log_path,
-        log_level=log_level,
-        mpi_log=mpi_log
-    )
 
     for message in WELCOME + CITATION + BUILD:
         log.info(message)
@@ -119,10 +121,6 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
     """
     # make necessary checks
     assert "training" in jdata
-
-    # avoid conflict of visible gpus among multipe tf sessions in one process
-    if run_opt.is_distrib and len(run_opt.gpus or []) > 1:
-        reset_default_tf_session_config(cpu_only=True)
 
     # init the model
     model = DPTrainer(jdata, run_opt=run_opt, is_compress = is_compress)
