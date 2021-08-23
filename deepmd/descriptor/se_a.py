@@ -126,6 +126,7 @@ class DescrptSeA ():
         self.uniform_seed = uniform_seed
         self.seed_shift = embedding_net_rand_seed_shift(self.filter_neuron)
         self.trainable = trainable
+        self.compress_activation_fn = get_activation_func(activation_function)
         self.filter_activation_fn = get_activation_func(activation_function)
         self.filter_precision = get_precision(precision)
         self.filter_np_precision = get_np_precision(precision)
@@ -316,7 +317,8 @@ class DescrptSeA ():
                 The overflow check frequency
         """
         self.compress = True
-        self.table = DPTabulate(model_file, self.type_one_side, self.exclude_types)
+        self.table = DPTabulate(
+            model_file, self.type_one_side, self.exclude_types, self.compress_activation_fn)
         self.table_config = [table_extrapolate, table_stride_1, table_stride_2, check_frequency]
         self.lower, self.upper \
             = self.table.build(min_nbor_dist, 
