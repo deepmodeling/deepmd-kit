@@ -10,7 +10,7 @@ After your easy installation, DeePMD-kit (`dp`) and LAMMPS (`lmp`) will be avail
 
 
 ## Install off-line packages
-Both CPU and GPU version offline packages are avaiable in [the Releases page](https://github.com/deepmodeling/deepmd-kit/releases).
+Both CPU and GPU version offline packages are available in [the Releases page](https://github.com/deepmodeling/deepmd-kit/releases).
 
 Some packages are splited into two files due to size limit of GitHub. One may merge them into one after downloading:
 ```bash
