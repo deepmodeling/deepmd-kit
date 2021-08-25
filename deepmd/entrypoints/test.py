@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, List, Dict, Optional, Tuple
 
 import numpy as np
 from deepmd import DeepPotential
+from deepmd import random as dp_random
 from deepmd.common import expand_sys_str
 from deepmd.utils.data import DeepmdData
 from deepmd.utils.weight_avg import weighted_average
@@ -64,7 +65,7 @@ def test(
 
     # init random seed
     if rand_seed is not None:
-        np.random.seed(rand_seed % (2 ** 32))
+        dp_random.seed(rand_seed % (2 ** 32))
 
     # init model
     dp = DeepPotential(model)
