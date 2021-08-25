@@ -2,7 +2,7 @@
 
 import logging
 import os
-import platform
+import distutils.ccompiler
 from configparser import ConfigParser
 from imp import reload
 from pathlib import Path
@@ -156,12 +156,8 @@ def get_module(module_name: str) -> "ModuleType":
     FileNotFoundError
         if module is not found in directory
     """
-    if platform.system() == "Windows":
-        ext = ".dll"
-    elif platform.system() == "Darwin":
-        ext = ".dylib"
-    else:
-        ext = ".so"
+    # https://discuss.python.org/t/how-to-get-the-file-extension-of-dynamic-libraries-for-current-os/3916/5
+    ext = distutils.ccompiler.new_compiler().shared_lib_extension
 
     module_file = (
         (Path(__file__).parent / SHARED_LIB_MODULE / module_name)
