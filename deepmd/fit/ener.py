@@ -14,17 +14,46 @@ from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 
 class EnerFitting ():
-    """Fitting the energy of the system. The force and the virial can also be trained.
+    r"""Fitting the energy of the system. The force and the virial can also be trained.
+
+    The potential energy :math:`E` is a fitting network function of the descriptor :math:`\mathcal{D}`:
+
+    .. math::
+        E(\mathcal{D}) = \mathcal{L}^{(n)} \circ \mathcal{L}^{(n-1)}
+        \circ \cdots \circ \mathcal{L}^{(1)} \circ \mathcal{L}^{(0)}
+
+    The first :math:`n` hidden layers :math:`\mathcal{L}^{(0)}, \cdots, \mathcal{L}^{(n-1)}` are given by
+
+    .. math::
+        \mathbf{y}=\mathcal{L}(\mathbf{x};\mathbf{w},\mathbf{b})=
+            \boldsymbol{\phi}(\mathbf{x}^T\mathbf{w}+\mathbf{b})
+
+    where :math:`\mathbf{x} \in \mathbb{R}^{N_1}`$` is the input vector and :math:`\mathbf{y} \in \mathbb{R}^{N_2}`
+    is the output vector. :math:`\mathbf{w} \in \mathbb{R}^{N_1 \times N_2}` and
+    :math:`\mathbf{b} \in \mathbb{R}^{N_2}`$` are weights and biases, respectively,
+    both of which are trainable if `trainable[i]` is `True`. :math:`\boldsymbol{\phi}`
+    is the activation function.
+
+    The output layer :math:`\mathcal{L}^{(n)}` is given by
+
+    .. math::
+        \mathbf{y}=\mathcal{L}^{(n)}(\mathbf{x};\mathbf{w},\mathbf{b})=
+            \mathbf{x}^T\mathbf{w}+\mathbf{b}
+
+    where :math:`\mathbf{x} \in \mathbb{R}^{N_{n-1}}`$` is the input vector and :math:`\mathbf{y} \in \mathbb{R}`
+    is the output scalar. :math:`\mathbf{w} \in \mathbb{R}^{N_{n-1}}` and
+    :math:`\mathbf{b} \in \mathbb{R}`$` are weights and bias, respectively,
+    both of which are trainable if `trainable[n]` is `True`.
 
     Parameters
     ----------
     descrpt
-            The descrptor
+            The descrptor :math:`\mathcal{D}`
     neuron
-            Number of neurons in each hidden layer of the fitting net
+            Number of neurons :math:`N` in each hidden layer of the fitting net
     resnet_dt
             Time-step `dt` in the resnet construction:
-            y = x + dt * \phi (Wx + b)
+            :math:`y = x + dt * \phi (Wx + b)`
     numb_fparam
             Number of frame parameter
     numb_aparam
@@ -35,14 +64,14 @@ class EnerFitting ():
             Force the total energy to zero. Useful for the charge fitting.
     trainable
             If the weights of fitting net are trainable. 
-            Suppose that we have N_l hidden layers in the fitting net, 
-            this list is of length N_l + 1, specifying if the hidden layers and the output layer are trainable.
+            Suppose that we have :math:`N_l` hidden layers in the fitting net, 
+            this list is of length :math:`N_l + 1`, specifying if the hidden layers and the output layer are trainable.
     seed
             Random seed for initializing the network parameters.
     atom_ener
             Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
     activation_function
-            The activation function in the embedding net. Supported options are {0}
+            The activation function :math:`\boldsymbol{\phi}` in the embedding net. Supported options are {0}
     precision
             The precision of the embedding net parameters. Supported options are {1}                
     uniform_seed
