@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import logging
 import os
+import glob
 import time
 import shutil
 import google.protobuf.message
@@ -403,7 +404,7 @@ class DPTrainer (object):
         # Initializes or restore global variables
         init_op = tf.global_variables_initializer()
         if self.run_opt.is_chief:
-            self.saver = tf.train.Saver()
+            self.saver = tf.train.Saver(save_relative_paths=True)
             if self.run_opt.init_mode == 'init_from_scratch' :
                 log.info("initialize model from scratch")
                 run_sess(self.sess, init_op)
@@ -536,13 +537,24 @@ class DPTrainer (object):
                     train_time = 0
                 if self.save_freq > 0 and cur_batch % self.save_freq == 0 and self.saver is not None:
                     try:
-                        self.saver.save (self.sess, os.path.join(os.getcwd(), self.save_ckpt))
+                        ckpt_prefix = self.saver.save (self.sess, os.path.join(os.getcwd(), self.save_ckpt), global_step=cur_batch)
                     except google.protobuf.message.DecodeError as e:
                         raise GraphTooLargeError(
                             "The graph size exceeds 2 GB, the hard limitation of protobuf."
                             " Then a DecodeError was raised by protobuf. You should "
                             "reduce the size of your model."
                         ) from e
+                    # make symlinks from prefix with step to that without step to break nothing
+                    # get all checkpoint files
+                    original_files = glob.glob(ckpt_prefix + ".*")
+                    for ori_ff in original_files:
+                        new_ff = self.save_ckpt + ori_ff[len(ckpt_prefix):]
+                        try:
+                            # remove old one
+                            os.remove(new_ff)
+                        except OSError:
+                            pass
+                        os.symlink(ori_ff, new_ff)
                     log.info("saved checkpoint %s" % self.save_ckpt)
         if self.run_opt.is_chief: 
             fp.close ()
