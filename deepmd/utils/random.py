@@ -33,7 +33,7 @@ def random(size=None):
     Returns
     -------
     np.ndarray
-        arrays with results and their shapes
+        Arrays with results and their shapes.
     """
     return _RANDOM_GENERATOR.random_sample(size)
 

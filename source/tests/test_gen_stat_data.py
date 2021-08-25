@@ -1,8 +1,9 @@
-import os,sys,platform,json,shutil
+import shutil
 import numpy as np
 import unittest
 import dpdata
 
+from deepmd.utils import random as dp_random
 from deepmd.utils.data_system import DeepmdDataSystem
 from deepmd.fit import EnerFitting
 from deepmd.model.model_stat import make_stat_input, merge_sys_stat, _make_all_stat_ref
@@ -46,31 +47,31 @@ class TestGenStatData(unittest.TestCase) :
                     self.assertAlmostEqual(d0[ii][jj][kk], d1[ii][jj][kk])
 
     def test_merge_all_stat(self):
-        np.random.seed(0)
+        dp_random.seed(0)
         data0 = DeepmdDataSystem(['system_0', 'system_1'], 
                                 5, 
                                 10, 
                                 1.0)
         data0.add('energy', 1, must = True)
-        np.random.seed(0)
+        dp_random.seed(0)
         data1 = DeepmdDataSystem(['system_0', 'system_1'], 
                                 5, 
                                 10, 
                                 1.0)
         data1.add('force', 3, atomic = True, must = True)
-        np.random.seed(0)
+        dp_random.seed(0)
         data2 = DeepmdDataSystem(['system_0', 'system_1'], 
                                 5, 
                                 10, 
                                 1.0)
         data2.add('force', 3, atomic = True, must = True)
         
-        np.random.seed(0)
+        dp_random.seed(0)
         all_stat_0 = make_stat_input(data0, 10, merge_sys = False)
-        np.random.seed(0)
+        dp_random.seed(0)
         all_stat_1 = make_stat_input(data1, 10, merge_sys = True)
         all_stat_2 = merge_sys_stat(all_stat_0)
-        np.random.seed(0)
+        dp_random.seed(0)
         all_stat_3 = _make_all_stat_ref(data2, 10)
         
         ####################################
@@ -109,7 +110,7 @@ class TestEnerShift(unittest.TestCase):
         shutil.rmtree('system_1')
 
     def test_ener_shift(self):
-        np.random.seed(0)
+        dp_random.seed(0)
         data = DeepmdDataSystem(['system_0', 'system_1'], 
                                 5, 
                                 10, 
