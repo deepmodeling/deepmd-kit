@@ -22,7 +22,7 @@ class EnerFitting ():
         E(\mathcal{D}) = \mathcal{L}^{(n)} \circ \mathcal{L}^{(n-1)}
         \circ \cdots \circ \mathcal{L}^{(1)} \circ \mathcal{L}^{(0)}
 
-    The first :math:`n` layers :math:`\mathcal{L}^{(0)}, \cdots, \mathcal{L}^{(n-1)}` is given by
+    The first :math:`n` hidden layers :math:`\mathcal{L}^{(0)}, \cdots, \mathcal{L}^{(n-1)}` are given by
 
     .. math::
         \mathbf{y}=\mathcal{L}(\mathbf{x};\mathbf{w},\mathbf{b})=
@@ -34,7 +34,7 @@ class EnerFitting ():
     both of which are trainable if `trainable[i]` is `True`. :math:`\boldsymbol{\phi}`
     is the activation function.
 
-    The last layer :math:`\mathcal{L}^{(n)}` is given by
+    The output layer :math:`\mathcal{L}^{(n)}` is given by
 
     .. math::
         \mathbf{y}=\mathcal{L}^{(n)}(\mathbf{x};\mathbf{w},\mathbf{b})=
