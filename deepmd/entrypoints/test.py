@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING, List, Dict, Optional, Tuple
 
 import numpy as np
 from deepmd import DeepPotential
-from deepmd import random as dp_random
 from deepmd.common import expand_sys_str
+from deepmd.utils import random as dp_random
 from deepmd.utils.data import DeepmdData
 from deepmd.utils.weight_avg import weighted_average
 

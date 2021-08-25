@@ -7,9 +7,9 @@ import os.path
 from typing import Tuple, List
 import logging
 
-from deepmd import random as dp_random
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
+from deepmd.utils import random as dp_random
 
 log = logging.getLogger(__name__)
 

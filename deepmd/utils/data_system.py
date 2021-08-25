@@ -7,7 +7,7 @@ import warnings
 import numpy as np
 from typing import Tuple, List
 
-from deepmd import random as dp_random
+from deepmd.utils import random as dp_random
 from deepmd.utils.data import DataSets
 from deepmd.utils.data import DeepmdData
 
@@ -672,7 +672,7 @@ class DataSystem (object) :
                     raise RuntimeError("unkown get_batch style")
             else :
                 prob = self.process_sys_weights(sys_weights)
-            self.pick_idx = dp_random.choice(np.arange(self.nsystems), p = prob)
+            self.pick_idx = dp_random.choice(np.arange(self.nsystems), p=prob)
         b_data = self.data_systems[self.pick_idx].get_batch(self.batch_size[self.pick_idx])
         b_data["natoms_vec"] = self.natoms_vec[self.pick_idx]
         b_data["default_mesh"] = self.default_mesh[self.pick_idx]

@@ -9,12 +9,12 @@ import time
 import os
 from typing import Dict, List, Optional, Any
 
-from deepmd import random as dp_random
 from deepmd.common import data_requirement, expand_sys_str, j_loader, j_must_have
 from deepmd.env import tf, reset_default_tf_session_config
 from deepmd.infer.data_modifier import DipoleChargeModifier
 from deepmd.train.run_options import BUILD, CITATION, WELCOME, RunOptions
 from deepmd.train.trainer import DPTrainer
+from deepmd.utils import random as dp_random
 from deepmd.utils.argcheck import normalize
 from deepmd.utils.compat import updata_deepmd_input
 from deepmd.utils.data_system import DeepmdDataSystem
