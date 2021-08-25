@@ -59,6 +59,7 @@ __global__ void parallel_prefix_scan(
     }
     // Store numneigh into the output array
     if (ii == nall - 1) {
+        o_data += i_data == -1 ? 0 : 1;
         numneigh[blockIdx.x] = o_data; 
     }
   }
