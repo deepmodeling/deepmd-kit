@@ -5,6 +5,7 @@ import numpy as np
 from typing import Tuple, List
 from deepmd.env import tf
 from deepmd.env import op_module
+from deepmd.common import ACTIVATION_FN_DICT
 from deepmd.utils.sess import run_sess
 from deepmd.utils.graph import get_tensor_by_name_from_graph, load_graph_def 
 from deepmd.utils.graph import get_embedding_net_nodes_from_graph_def
@@ -30,6 +31,8 @@ class DPTabulate():
     exclude_types : List[List[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
+    activation_function
+            The activation function in the embedding net. Supported options are {"tanh","gelu"} in common.ACTIVATION_FN_DICT.
     """
     def __init__(self,
                  model_file : str,
@@ -47,9 +50,9 @@ class DPTabulate():
             raise RunTimeError('"type_one_side" is not compatible with "exclude_types"')
         
         # functype
-        if activation_fn.__name__ == 'tf.nn.tanh' or activation_fn.__name__ == 'tanh':
+        if activation_fn == ACTIVATION_FN_DICT["tanh"]:
             self.functype = 1
-        elif activation_fn.__name__ == 'gelu':
+        elif activation_fn == ACTIVATION_FN_DICT["gelu"]:
             self.functype = 2
         else:
             raise RunTimeError("Unknown actication function type!")

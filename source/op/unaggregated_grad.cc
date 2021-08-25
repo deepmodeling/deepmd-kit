@@ -1,9 +1,8 @@
 #include "custom_op.h"
 #include "ComputeDescriptor.h"
 #include "neighbor_list.h"
+#include "device.h"
 
-
-#define SQRT2_PI 0.7978845608028654
 #define GGELU 0.044715
 
 REGISTER_OP("UnaggregatedDyDxS")
@@ -50,8 +49,8 @@ FPTYPE grad(const FPTYPE xbar, const FPTYPE y, const int functype)  //functype=t
 			return (1 - y * y);
 		case 2:
 		{
-			const FPTYPE var = tanh(SQRT2_PI * (xbar + GGELU * xbar * xbar * xbar));
-			return 0.5 * SQRT2_PI * xbar * (1 - var * var) * (3 * GGELU * xbar * xbar + 1) + 0.5 * var + 0.5;
+			const FPTYPE var = tanh(SQRT_2_PI * (xbar + GGELU * xbar * xbar * xbar));
+			return 0.5 * SQRT_2_PI * xbar * (1 - var * var) * (3 * GGELU * xbar * xbar + 1) + 0.5 * var + 0.5;
 		}
 		default:
 			return -1;
@@ -68,9 +67,9 @@ FPTYPE grad_grad(const FPTYPE xbar, const FPTYPE y, const int functype)
 			return -2 * y * (1 - y * y);
 		case 2:
 		{
-			const FPTYPE var1 = tanh(SQRT2_PI * (xbar + GGELU * xbar * xbar * xbar));
-			const FPTYPE var2 = SQRT2_PI * (1 - var1 * var1) * (3 * GGELU * xbar * xbar + 1);
-			return  3 * GGELU * SQRT2_PI * xbar * xbar * (1 - var1 * var1) - SQRT2_PI * xbar * var2 * (3 * GGELU * xbar * xbar + 1) * var1 + var2;
+			const FPTYPE var1 = tanh(SQRT_2_PI * (xbar + GGELU * xbar * xbar * xbar));
+			const FPTYPE var2 = SQRT_2_PI * (1 - var1 * var1) * (3 * GGELU * xbar * xbar + 1);
+			return  3 * GGELU * SQRT_2_PI * xbar * xbar * (1 - var1 * var1) - SQRT_2_PI * xbar * var2 * (3 * GGELU * xbar * xbar + 1) * var1 + var2;
 		}
 		default:
 			return -1;
