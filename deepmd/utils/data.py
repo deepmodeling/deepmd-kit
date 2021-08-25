@@ -9,6 +9,7 @@ import logging
 
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
+from deepmd.utils import random as dp_random
 
 log = logging.getLogger(__name__)
 
@@ -396,7 +397,7 @@ class DeepmdData() :
         ret = {}
         nframes = data['coord'].shape[0]
         idx = np.arange (nframes)
-        np.random.shuffle (idx)
+        dp_random.shuffle(idx)
         for kk in data :
             if type(data[kk]) == np.ndarray and \
                len(data[kk].shape) == 2 and \
@@ -676,7 +677,7 @@ class DataSets (object):
         # shuffle data
         if shuffle:
             idx = np.arange (nframe)
-            np.random.shuffle (idx)
+            dp_random.shuffle(idx)
             for ii in data:
                 if ii != "prop_c":
                     data[ii] = data[ii][idx]
