@@ -2,6 +2,7 @@ import re
 import math
 import logging
 import numpy as np
+from typing import Callable
 from typing import Tuple, List
 from deepmd.env import tf
 from deepmd.env import op_module
@@ -38,7 +39,7 @@ class DPTabulate():
                  model_file : str,
                  type_one_side : bool = False,
                  exclude_types : List[List[int]] = [],
-                 activation_fn=tf.nn.tanh) -> None:
+                 activation_fn : Callable[[tf.Tensor], tf.Tensor] = tf.nn.tanh) -> None:
         """
         Constructor
         """
