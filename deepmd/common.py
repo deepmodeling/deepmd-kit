@@ -42,12 +42,6 @@ PRECISION_DICT = {
     "float64": tf.float64,
 }
 
-PRECISION_MAPPING: Dict[int, type] = {
-    1: np.float32,
-    2: np.float64,
-    19: np.float16,
-}
-
 
 def gelu(x: tf.Tensor) -> tf.Tensor:
     """Gaussian Error Linear Unit.
