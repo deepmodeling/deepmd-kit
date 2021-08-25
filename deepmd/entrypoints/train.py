@@ -131,9 +131,11 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
     else:
         ipt_type_map = type_map
 
-    #  init random seed
+    # init random seed of data systems
     seed = jdata["training"].get("seed", None)
     if seed is not None:
+        # avoid the same batch sequence among workers
+        seed += run_opt.my_rank
         seed = seed % (2 ** 32)
     dp_random.seed(seed)
 
