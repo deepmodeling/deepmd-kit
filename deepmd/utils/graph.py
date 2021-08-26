@@ -2,7 +2,6 @@ import re
 import numpy as np
 from typing import Tuple, Dict
 from deepmd.env import tf
-from deepmd.common import PRECISION_MAPPING
 from deepmd.utils.sess import run_sess
 from deepmd.utils.errors import GraphWithoutTensorError
 
@@ -174,7 +173,7 @@ def get_embedding_net_variables_from_graph_def(graph_def : tf.GraphDef) -> Dict:
     embedding_net_nodes = get_embedding_net_nodes_from_graph_def(graph_def)
     for item in embedding_net_nodes:
         node = embedding_net_nodes[item]
-        dtype = PRECISION_MAPPING[node.dtype]
+        dtype = tf.as_dtype(node.dtype).as_numpy_dtype
         tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
         if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
             tensor_value = np.frombuffer(node.tensor_content)
@@ -262,7 +261,7 @@ def get_fitting_net_variables_from_graph_def(graph_def : tf.GraphDef) -> Dict:
     fitting_net_nodes = get_fitting_net_nodes_from_graph_def(graph_def)
     for item in fitting_net_nodes:
         node = fitting_net_nodes[item]
-        dtype= PRECISION_MAPPING[node.dtype]
+        dtype= tf.as_dtype(node.dtype).as_numpy_dtype
         tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
         if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
             tensor_value = np.frombuffer(node.tensor_content)

@@ -2,7 +2,6 @@
 
 from typing import Dict, Optional, Sequence, Tuple
 from deepmd.env import tf
-from deepmd.common import PRECISION_MAPPING
 import re
 import numpy as np
 import logging
@@ -121,8 +120,8 @@ def transform_graph(raw_graph: tf.Graph, old_graph: tf.Graph) -> tf.Graph:
 
         check_dim(raw_graph_node, old_graph_node, node.name)
         tensor_shape = [dim.size for dim in raw_node.tensor_shape.dim]
-        old_graph_dtype = PRECISION_MAPPING[old_node.dtype]
-        raw_graph_dtype = PRECISION_MAPPING[raw_node.dtype]
+        old_graph_dtype = tf.as_dtype(old_node.dtype).as_numpy_dtype
+        raw_graph_dtype = tf.as_dtype(raw_node.dtype).as_numpy_dtype
         log.info(
             f"{node.name} is passed from old graph({old_graph_dtype}) "
             f"to raw graph({raw_graph_dtype})"
