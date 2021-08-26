@@ -1,4 +1,4 @@
-#include "gpu_cuda.h"
+#include "device.h"
 #include "fmt_nlist.h"
 #include "prod_env_mat.h"
 #include <cub/block/block_load.cuh>

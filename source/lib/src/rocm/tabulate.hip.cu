@@ -1,7 +1,4 @@
-#include "hip/hip_runtime.h"
 #include "tabulate.h"
-#include<hip/hip_runtime.h>
-#include<rocprim/rocprim.hpp>
 #include "device.h"
 
 #define MM 4

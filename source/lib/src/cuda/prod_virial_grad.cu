@@ -1,5 +1,4 @@
 #include "device.h"
-#include "gpu_cuda.h"
 #include "prod_virial_grad.h"
 
 template<typename FPTYPE>

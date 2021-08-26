@@ -1,5 +1,4 @@
 #include "device.h"
-#include "gpu_cuda.h"
 #include "prod_force.h"
 
 template <

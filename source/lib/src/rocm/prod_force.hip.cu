@@ -1,7 +1,5 @@
-#include "hip/hip_runtime.h"
 #include "device.h"
 #include "prod_force.h"
-#include "rocprim/rocprim.hpp"
 
 template <
     typename FPTYPE,

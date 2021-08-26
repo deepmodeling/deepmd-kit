@@ -1,4 +1,3 @@
-#include "hip/hip_runtime.h"
 #include "gelu.h"
 #include "device.h"
 
