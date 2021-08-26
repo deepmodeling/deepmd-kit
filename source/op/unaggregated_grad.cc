@@ -205,8 +205,8 @@ class UnaggregatedDyDxSOp : public OpKernel {
         int context_output_index = 0;
         Tensor* dy_dx = NULL;
         OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
-                                 y.shape(),
-                                 &dy_dx));
+                                                         y.shape(),
+                                                         &dy_dx));
 
         UnaggregatedDyDxSFunctor<FPTYPE>()(
             context->eigen_device<Device>(),            // define actually graph execution device
@@ -219,7 +219,6 @@ class UnaggregatedDyDxSOp : public OpKernel {
             functype.flat<int32>()(0)
         );
     }
-
 private:
 };
 
@@ -248,10 +247,10 @@ class UnaggregatedDy2DxSOp : public OpKernel {
         OP_REQUIRES (context, (xbar.shape().dims()  == 2),		errors::InvalidArgument ("Dim of input should be 2"));
     
         int context_output_index = 0;
-        Tensor* dy2_dx = NULL; 
+        Tensor* dy2_dx = NULL;
         OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
-                                 y.shape(),
-                                 &dy2_dx));
+                                                         y.shape(),
+                                                         &dy2_dx));
 
         UnaggregatedDy2DxSFunctor<FPTYPE>()(
             context->eigen_device<Device>(),            // define actually graph execution device
@@ -265,7 +264,6 @@ class UnaggregatedDy2DxSOp : public OpKernel {
             functype.flat<int32>()(0)
         );
     }
-
 private:
 };
 
@@ -296,8 +294,8 @@ class UnaggregatedDyDxOp : public OpKernel {
         int context_output_index = 0;
         Tensor* dz_dx = NULL;
         OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
-                                 z.shape(),
-                                 &dz_dx));
+                                                         z.shape(),
+                                                         &dz_dx));
 
         UnaggregatedDyDxFunctor<FPTYPE>()(
             context->eigen_device<Device>(),            // define actually graph execution device
@@ -312,7 +310,6 @@ class UnaggregatedDyDxOp : public OpKernel {
             functype.flat<int32>()(0)
         );
     }
-
 private:
 };
 
@@ -345,8 +342,8 @@ class UnaggregatedDy2DxOp : public OpKernel {
         int context_output_index = 0;
         Tensor* dz2_dx = NULL;
         OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
-                                 z.shape(),
-                                 &dz2_dx));
+                                                         z.shape(),
+                                                         &dz2_dx));
 
         UnaggregatedDy2DxFunctor<FPTYPE>()(
             context->eigen_device<Device>(),            // define actually graph execution device
@@ -362,7 +359,6 @@ class UnaggregatedDy2DxOp : public OpKernel {
             functype.flat<int32>()(0)
         );
     }
-
 private:
 };
 
