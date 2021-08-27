@@ -222,6 +222,7 @@ class TabulateFusionGradGradOp : public OpKernel {
           dz_dy,
           table, table_info, em_x, em, dz_dy_dem_x, dz_dy_dem, nloc, nnei, last_layer_size);
       #endif // TENSORFLOW_USE_ROCM
+      OP_REQUIRES (context, (last_layer_size <= 1024),      errors::InvalidArgument ("In the process of model compression, the size of the last layer of embedding net must be less than 1024!"));
     }
     else if (device == "CPU") {
       deepmd::tabulate_fusion_grad_grad_cpu(
