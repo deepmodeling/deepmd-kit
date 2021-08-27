@@ -1,13 +1,8 @@
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include <iostream>
-
-using namespace tensorflow;
-using namespace std;
+#include "custom_op.h"
+#include "prod_virial_grad.h"
 
 REGISTER_OP("ProdVirialSeAGrad")
-.Attr("T: {float, double}")
+.Attr("T: {float, double} = DT_DOUBLE")
 .Input("grad: T")
 .Input("net_deriv: T")
 .Input("in_deriv: T")
@@ -31,6 +26,10 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor& grad_tensor		= context->input(context_input_index++);
@@ -95,39 +94,19 @@ public:
     for (int kk = 0; kk < nframes; ++kk){
 
       int grad_iter	= kk * 9;
-      int net_iter	= kk * nloc * ndescrpt;
       int in_iter	= kk * nloc * ndescrpt * 3;
       int rij_iter	= kk * nloc * nnei * 3;
       int nlist_iter	= kk * nloc * nnei;
       int grad_net_iter	= kk * nloc * ndescrpt;
 
-      // reset the frame to 0
-      for (int ii = 0; ii < nloc; ++ii){
-	for (int aa = 0; aa < ndescrpt; ++aa){
-	  grad_net (grad_net_iter + ii * ndescrpt + aa) = 0;
-	}
-      }      
-
-      // compute grad of one frame
-      for (int ii = 0; ii < nloc; ++ii){
-	int i_idx = ii;
-	
-	// loop over neighbors
-	for (int jj = 0; jj < nnei; ++jj){
-	  int j_idx = nlist (nlist_iter + i_idx * nnei + jj);	  
-	  if (j_idx < 0) continue;
-	  int aa_start, aa_end;
-	  make_descript_range (aa_start, aa_end, jj);
-	  for (int aa = aa_start; aa < aa_end; ++aa){
-	    for (int dd0 = 0; dd0 < 3; ++dd0){
-	      for (int dd1 = 0; dd1 < 3; ++dd1){
-		grad_net (grad_net_iter + i_idx * ndescrpt + aa) -= 
-		    -1.0 * grad (grad_iter + dd0 * 3 + dd1) * rij (rij_iter + i_idx * nnei * 3 + jj * 3 + dd1) * in_deriv (in_iter + i_idx * ndescrpt * 3 + aa * 3 + dd0);
-	      }
-	    }
-	  }
-	}
-      }
+      deepmd::prod_virial_grad_a_cpu(
+	  &grad_net(grad_net_iter),
+	  &grad(grad_iter),
+	  &in_deriv(in_iter),
+	  &rij(rij_iter),
+	  &nlist(nlist_iter),
+	  nloc,
+	  nnei);
     }
   }
 private:

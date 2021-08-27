@@ -1,5 +1,4 @@
 {
-    "with_distrib":	false,
     "_comment": " model parameters",
     "model":{
 	"type":			"polar",
@@ -12,17 +11,15 @@
 	    "neuron":		[25, 50, 100],
 	    "resnet_dt":	false,
 	    "axis_neuron":	16,
-	    "seed":		1,
-	    "_comment":		" that's all"
+	    "seed":		1
 	},
 	"fitting_net": {
 	    "type":		"polar",
-	    "pol_type":		[0],
+	    "sel_type":		[0],
 	    "fit_diag":		false,
 	    "neuron":		[100, 100, 100],
 	    "resnet_dt":	true,
-	    "seed":		1,
-	    "_comment":		" that's all"
+	    "seed":		1
 	},
 	"_comment":	" that's all"
     },
@@ -36,7 +33,9 @@
     },
 
     "loss" : {
-	"type":		"polar",
+	"type":	"tensor",
+	"pref":			1.0,
+	"pref_atomic":	1.0,
 	"_comment":	"that's all"
     },
 

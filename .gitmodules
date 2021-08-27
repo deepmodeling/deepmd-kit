@@ -1,3 +1,3 @@
-[submodule "source/op/cuda/cub"]
-	path = source/op/cuda/cub
-	url = git://github.com/NVlabs/cub.git
+[submodule "source/lib/src/cuda/cub"]
+	path = source/lib/src/cuda/cub
+	url = git://github.com/NVIDIA/cub.git

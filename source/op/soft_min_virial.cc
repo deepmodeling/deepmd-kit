@@ -1,13 +1,8 @@
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include <iostream>
-
-using namespace tensorflow;
-using namespace std;
+#include "custom_op.h"
+#include "soft_min_switch_virial.h"
 
 REGISTER_OP("SoftMinVirial")
-.Attr("T: {float, double}")
+.Attr("T: {float, double} = DT_DOUBLE")
 .Input("du: T")
 .Input("sw_deriv: T")
 .Input("rij: T")
@@ -31,6 +26,10 @@ class SoftMinVirialOp : public OpKernel {
   }
 
   void Compute(OpKernelContext* context) override {
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor& du_tensor		= context->input(context_input_index++);
@@ -87,31 +86,16 @@ class SoftMinVirialOp : public OpKernel {
     // loop over samples
 #pragma omp parallel for
     for (int kk = 0; kk < nframes; ++kk){
-
-      for (int ii = 0; ii < 9; ++ ii){
-	virial (kk, ii) = 0.;
-      }
-      for (int ii = 0; ii < 9 * nall; ++ ii){
-	atom_virial (kk, ii) = 0.;
-      }
-
-      // compute virial of a frame
-      for (int ii = 0; ii < nloc; ++ii){
-	int i_idx = ii;
-	// loop over neighbors
-	for (int jj = 0; jj < nnei; ++jj){	  
-	  int j_idx = nlist (kk, i_idx * nnei + jj);
-	  if (j_idx < 0) continue;
-	  int rij_idx_shift = (ii * nnei + jj) * 3;
-	  for (int dd0 = 0; dd0 < 3; ++dd0){
-	    for (int dd1 = 0; dd1 < 3; ++dd1){
-	      FPTYPE tmp_v = du(kk, i_idx) * sw_deriv(kk, rij_idx_shift + dd0) * rij(kk, rij_idx_shift + dd1);
-	      virial(kk, dd0 * 3 + dd1) -= tmp_v;		  
-	      atom_virial(kk, j_idx * 9 + dd0 * 3 + dd1) -= tmp_v;
-	    }
-	  }
-	}
-      }      
+      deepmd::soft_min_switch_virial_cpu(
+	  &virial(kk,0),
+	  &atom_virial(kk,0),
+	  &du(kk,0),
+	  &sw_deriv(kk,0),
+	  &rij(kk,0),
+	  &nlist(kk,0),
+	  nloc,
+	  nall,
+	  nnei);
     }
   }
 private:

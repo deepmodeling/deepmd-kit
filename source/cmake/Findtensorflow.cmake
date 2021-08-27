@@ -10,7 +10,28 @@
 # TensorFlowFramework_LIBRARY    
 # TensorFlowFramework_LIBRARY_PATH
 
-string(REPLACE "lib64" "lib" TENSORFLOW_ROOT_NO64 ${TENSORFLOW_ROOT})
+
+if (BUILD_CPP_IF AND INSTALL_TENSORFLOW)
+  # Here we try to install libtensorflow_cc using conda install.
+
+  if (USE_CUDA_TOOLKIT)
+    set (VARIANT gpu)
+  else ()
+    set (VARIANT cpu)
+  endif ()
+
+  if (NOT DEFINED TENSORFLOW_ROOT)
+    set (TENSORFLOW_ROOT ${CMAKE_INSTALL_PREFIX})
+  endif ()
+  # execute conda install
+  execute_process(
+	  COMMAND conda install libtensorflow_cc=*=${VARIANT}* -c deepmodeling -y -p ${TENSORFLOW_ROOT}
+	  )
+endif ()
+
+if(DEFINED TENSORFLOW_ROOT)
+  string(REPLACE "lib64" "lib" TENSORFLOW_ROOT_NO64 ${TENSORFLOW_ROOT})
+endif(DEFINED TENSORFLOW_ROOT)
 
 # define the search path
 list(APPEND TensorFlow_search_PATHS ${TENSORFLOW_ROOT})
@@ -118,10 +139,27 @@ else (BUILD_CPP_IF)
   endif ()
 endif (BUILD_CPP_IF)
 
+# detect TensorFlow version
+try_run(
+  TENSORFLOW_VERSION_RUN_RESULT_VAR TENSORFLOW_VERSION_COMPILE_RESULT_VAR
+  ${CMAKE_CURRENT_BINARY_DIR}/tf_version
+  "${CMAKE_CURRENT_LIST_DIR}/tf_version.cpp"
+  LINK_LIBRARIES ${TensorFlowFramework_LIBRARY}
+  CMAKE_FLAGS "-DINCLUDE_DIRECTORIES:STRING=${TensorFlow_INCLUDE_DIRS}"
+  RUN_OUTPUT_VARIABLE TENSORFLOW_VERSION
+  COMPILE_OUTPUT_VARIABLE TENSORFLOW_VERSION_COMPILE_OUTPUT_VAR
+)
+if (NOT ${TENSORFLOW_VERSION_COMPILE_RESULT_VAR})
+  message(FATAL_ERROR "Failed to compile: \n ${TENSORFLOW_VERSION_COMPILE_OUTPUT_VAR}" )
+endif()
+if (NOT ${TENSORFLOW_VERSION_RUN_RESULT_VAR} EQUAL "0")
+  message(FATAL_ERROR "Failed to run, return code: ${TENSORFLOW_VERSION}" )
+endif()
+
 # print message
 if (NOT TensorFlow_FIND_QUIETLY)
   message(STATUS "Found TensorFlow: ${TensorFlow_INCLUDE_DIRS}, ${TensorFlow_LIBRARY}, ${TensorFlowFramework_LIBRARY} "
-    " in ${TensorFlow_search_PATHS}")
+    " in ${TensorFlow_search_PATHS} (found version \"${TENSORFLOW_VERSION}\")")
 endif ()
 
 unset(TensorFlow_search_PATHS)

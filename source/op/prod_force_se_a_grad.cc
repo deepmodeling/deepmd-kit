@@ -1,13 +1,8 @@
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include <iostream>
-
-using namespace tensorflow;
-using namespace std;
+#include "custom_op.h"
+#include "prod_force_grad.h"
 
 REGISTER_OP("ProdForceSeAGrad")
-.Attr("T: {float, double}")
+.Attr("T: {float, double} = DT_DOUBLE")
 .Input("grad: T")
 .Input("net_deriv: T")
 .Input("in_deriv: T")
@@ -30,6 +25,10 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor& grad_tensor		= context->input(context_input_index++);
@@ -88,43 +87,17 @@ public:
     for (int kk = 0; kk < nframes; ++kk){
 
       int grad_iter	= kk * nloc * 3;
-      int net_iter	= kk * nloc * ndescrpt;
       int in_iter	= kk * nloc * ndescrpt * 3;
       int nlist_iter	= kk * nloc * nnei;
       int grad_net_iter	= kk * nloc * ndescrpt;
 
-      // reset the frame to 0
-      for (int ii = 0; ii < nloc; ++ii){
-	for (int aa = 0; aa < ndescrpt; ++aa){
-	  grad_net (grad_net_iter + ii * ndescrpt + aa) = 0;
-	}
-      }      
-
-      // compute grad of one frame
-      for (int ii = 0; ii < nloc; ++ii){
-	int i_idx = ii;
-	
-	// deriv wrt center atom
-	for (int aa = 0; aa < ndescrpt; ++aa){
-	  for (int dd = 0; dd < 3; ++dd){
-	    grad_net (grad_net_iter + i_idx * ndescrpt + aa) -= grad (grad_iter + i_idx * 3 + dd) * in_deriv (in_iter + i_idx * ndescrpt * 3 + aa * 3 + dd);
-	  }
-	}
-
-	// loop over neighbors
-	for (int jj = 0; jj < nnei; ++jj){
-	  int j_idx = nlist (nlist_iter + i_idx * nnei + jj);	  
-	  if (j_idx > nloc) j_idx = j_idx % nloc;
-	  if (j_idx < 0) continue;
-	  int aa_start, aa_end;
-	  make_descript_range (aa_start, aa_end, jj);
-	  for (int aa = aa_start; aa < aa_end; ++aa){
-	    for (int dd = 0; dd < 3; ++dd){
-	      grad_net (grad_net_iter + i_idx * ndescrpt + aa) += grad (grad_iter + j_idx * 3 + dd) * in_deriv (in_iter + i_idx * ndescrpt * 3 + aa * 3 + dd);
-	    }
-	  }
-	}
-      }
+      deepmd::prod_force_grad_a_cpu(
+	  &grad_net(grad_net_iter),
+	  &grad(grad_iter),
+	  &in_deriv(in_iter),
+	  &nlist(nlist_iter),
+	  nloc, 
+	  nnei);
     }
   }
 private:

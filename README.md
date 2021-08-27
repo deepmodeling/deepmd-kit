@@ -10,12 +10,13 @@
 
 # Table of contents
 - [About DeePMD-kit](#about-deepmd-kit)
+ 	- [Highlights in v2.0](#highlights-in-deepmd-kit-v2.0)
  	- [Highlighted features](#highlighted-features)
- 	- [Code structure](#code-structure)
  	- [License and credits](#license-and-credits)
  	- [Deep Potential in a nutshell](#deep-potential-in-a-nutshell)
 - [Download and install](#download-and-install)
 - [Use DeePMD-kit](#use-deepmd-kit)
+- [Code structure](#code-structure)
 - [Troubleshooting](#troubleshooting)
 
 # About DeePMD-kit
@@ -23,36 +24,21 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
 
 For more information, check the [documentation](https://deepmd.readthedocs.io/).
 
+# Highlights in DeePMD-kit v2.0
+* [Model compression](doc/freeze/compress.md). Accelerate the efficiency of model inference for 4-15 times.
+* [New descriptors](doc/model/overall.md). Including [`se_e2_r`](doc/model/train-se-e2-r.md) and [`se_e3`](doc/model/train-se-e3.md).
+* [Hybridization of descriptors](doc/model/train-hybrid.md). Hybrid descriptor constructed from concatenation of several descriptors.
+* [Atom type embedding](doc/model/train-se-e2-a-tebd.md). Enable atom type embedding to decline training complexity and refine performance.
+* Training and inference the dipole (vector) and polarizability (matrix).
+* Split of training and validation dataset.
+* Optimized training on GPUs. 
+
 ## Highlighted features
-* **interfaced with TensorFlow**, one of the most popular deep learning frameworks, making the training process highly automatic and efficient.
+* **interfaced with TensorFlow**, one of the most popular deep learning frameworks, making the training process highly automatic and efficient, in addition Tensorboard can be used to visualize training procedure.
 * **interfaced with high-performance classical MD and quantum (path-integral) MD packages**, i.e., LAMMPS and i-PI, respectively. 
 * **implements the Deep Potential series models**, which have been successfully applied to  finite and extended systems including organic molecules, metals, semiconductors, and insulators, etc.
 * **implements MPI and GPU supports**, makes it highly efficient for high performance parallel and distributed computing.
 * **highly modularized**, easy to adapt to different descriptors for deep learning based potential energy models.
-
-## Code structure
-The code is organized as follows:
-
-* `data/raw`: tools manipulating the raw data files.
-
-* `examples`: example json parameter files.
-
-* `source/3rdparty`: third-party packages used by DeePMD-kit.
-
-* `source/cmake`: cmake scripts for building.
-
-* `source/ipi`: source code of i-PI client.
-
-* `source/lib`: source code of DeePMD-kit library.
-
-* `source/lmp`: source code of Lammps module.
-
-* `source/op`: tensorflow op implementation. working with library.
-
-* `source/scripts`: Python script for model freezing.
-
-* `source/train`: Python modules and scripts for training and testing.
-
 
 ## License and credits
 The project DeePMD-kit is licensed under [GNU LGPLv3.0](./LICENSE).
@@ -70,68 +56,106 @@ In addition to building up potential energy models, DeePMD-kit can also be used 
 
 # Download and install
 
-Please follow our [github](https://github.com/deepmodeling/deepmd-kit) webpage to download the [latest released version](https://github.com/deepmodeling/deepmd-kit/tree/master) and [development version](https://github.com/deepmodeling/deepmd-kit/tree/devel).
+Please follow our [GitHub](https://github.com/deepmodeling/deepmd-kit) webpage to download the [latest released version](https://github.com/deepmodeling/deepmd-kit/tree/master) and [development version](https://github.com/deepmodeling/deepmd-kit/tree/devel).
 
-DeePMD-kit offers multiple installation methods. It is recommend using easily methods like [offline packages](doc/install.md#offline-packages), [conda](doc/install.md#with-conda) and [docker](doc/install.md#with-docker). 
+DeePMD-kit offers multiple installation methods. It is recommend using easily methods like [offline packages](doc/install/easy-install.md#offline-packages), [conda](doc/install/easy-install.md#with-conda) and [docker](doc/install/easy-install.md#with-docker). 
 
-One may manually install DeePMD-kit by following the instuctions on [installing the python interface](doc/install.md#install-the-python-interface) and [installing the C++ interface](doc/install.md#install-the-c-interface). The C++ interface is necessary when using DeePMD-kit with LAMMPS and i-PI.
+One may manually install DeePMD-kit by following the instuctions on [installing the Python interface](doc/install/install-from-source.md#install-the-python-interface) and [installing the C++ interface](doc/install/install-from-source.md#install-the-c-interface). The C++ interface is necessary when using DeePMD-kit with LAMMPS and i-PI.
 
 
 # Use DeePMD-kit
 
-The typical procedure of using DeePMD-kit includes 5 steps 
+A quick-start on using DeePMD-kit can be found as follows:
 
-1. [Prepare data](doc/use-deepmd-kit.md#prepare-data)
-2. [Train a model](doc/use-deepmd-kit.md#train-a-model)
-3. [Freeze the model](doc/use-deepmd-kit.md#freeze-a-model)
-4. [Test the model](doc/use-deepmd-kit.md#test-a-model)
-5. [Inference the model in python](doc/use-deepmd-kit.md#model-inference) or using the model in other molecular simulation packages like [LAMMPS](doc/use-deepmd-kit.md#run-md-with-lammps), [i-PI](doc/use-deepmd-kit.md#run-path-integral-md-with-i-pi) or [ASE](doc/use-deepmd-kit.md#use-deep-potential-with-ase).
+- [Prepare data with dpdata](doc/data/dpdata.md)
+- [Training a model](doc/train/training.md)
+- [Freeze a model](doc/freeze/freeze.md)
+- [Test a model](doc/test/test.md)
+- [Running MD with LAMMPS](doc/third-party/lammps.md)
 
-A quick-start on using DeePMD-kit can be found [here](doc/use-deepmd-kit.md).
+A full [document](doc/train/train-input-auto.rst) on options in the training input script is available.
 
-A full [document](doc/train-input-auto.rst) on options in the training input script is available.
+# Advanced
+
+- [Installation](doc/install/index.md)
+    - [Easy install](doc/install/easy-install.md)
+    - [Install from source code](doc/install/install-from-source.md)
+    - [Install LAMMPS](doc/install/install-lammps.md)
+    - [Install i-PI](doc/install/install-ipi.md)
+    - [Building conda packages](doc/install/build-conda.md)
+- [Data](doc/data/index.md)
+    - [Data conversion](doc/data/data-conv.md)
+    - [Prepare data with dpdata](doc/data/dpdata.md)
+- [Model](doc/model/index.md)
+    - [Overall](doc/model/overall.md)
+    - [Descriptor `"se_e2_a"`](doc/model/train-se-e2-a.md)
+    - [Descriptor `"se_e2_r"`](doc/model/train-se-e2-r.md)
+    - [Descriptor `"se_e3"`](doc/model/train-se-e3.md)
+    - [Descriptor `"hybrid"`](doc/model/train-hybrid.md)
+    - [Fit energy](doc/model/train-energy.md)
+    - [Fit `tensor` like `Dipole` and `Polarizability`](doc/model/train-fitting-tensor.md)
+    - [Train a Deep Potential model using `type embedding` approach](doc/model/train-se-e2-a-tebd.md)
+- [Training](doc/train/index.md)
+    - [Training a model](doc/train/training.md)
+    - [Advanced options](doc/train/training-advanced.md)
+    - [Parallel training](doc/train/parallel-training.md)
+    - [TensorBoard Usage](doc/train/tensorboard.md)
+    - [Known limitations of using GPUs](doc/train/gpu-limitations.md)
+    - [Training Parameters](doc/train/train-input-auto.rst)
+- [Freeze and Compress](doc/freeze/index.rst)
+    - [Freeze a model](doc/freeze/freeze.md)
+    - [Compress a model](doc/freeze/compress.md)
+- [Test](doc/test/index.rst)
+    - [Test a model](doc/test/test.md)
+    - [Calculate Model Deviation](doc/test/model-deviation.md)
+- [Inference](doc/inference/index.rst)
+    - [Python interface](doc/inference/python.md)
+    - [C++ interface](doc/inference/cxx.md)
+- [Integrate with third-party packages](doc/third-party/index.rst)
+    - [Use deep potential with ASE](doc/third-party/ase.md)
+    - [Running MD with LAMMPS](doc/third-party/lammps.md)
+    - [LAMMPS commands](doc/third-party/lammps-command.md)
+    - [Run path-integral MD with i-PI](doc/third-party/ipi.md)
+
+
+# Code structure
+The code is organized as follows:
+
+* `data/raw`: tools manipulating the raw data files.
+
+* `examples`: examples.
+
+* `deepmd`: DeePMD-kit python modules.
+
+* `source/api_cc`: source code of DeePMD-kit C++ API.
+
+* `source/ipi`: source code of i-PI client.
+
+* `source/lib`: source code of DeePMD-kit library.
+
+* `source/lmp`: source code of Lammps module.
+
+* `source/op`: tensorflow op implementation. working with library.
 
 
 # Troubleshooting
-In consequence of various differences of computers or systems, problems may occur. Some common circumstances are listed as follows. 
-If other unexpected problems occur, you're welcome to contact us for help.
 
-## Model compatability
-
-When the version of DeePMD-kit used to training model is different from the that of DeePMD-kit running MDs, one has the problem of model compatability.
-
-DeePMD-kit guarantees that the codes with the same major and minor revisions are compatible. That is to say v0.12.5 is compatible to v0.12.0, but is not compatible to v0.11.0 nor v1.0.0. 
-
-## Installation: inadequate versions of gcc/g++
-Sometimes you may use a gcc/g++ of version <4.9. If you have a gcc/g++ of version > 4.9, say, 7.2.0, you may choose to use it by doing 
-```bash
-export CC=/path/to/gcc-7.2.0/bin/gcc
-export CXX=/path/to/gcc-7.2.0/bin/g++
-```
-
-If, for any reason, for example, you only have a gcc/g++ of version 4.8.5, you can still compile all the parts of TensorFlow and most of the parts of DeePMD-kit. i-Pi will be disabled automatically.
-
-## Installation: build files left in DeePMD-kit
-When you try to build a second time when installing DeePMD-kit, files produced before may contribute to failure. Thus, you may clear them by
-```bash
-cd build
-rm -r *
-```
-and redo the `cmake` process.
-
-## MD: cannot run LAMMPS after installing a new version of DeePMD-kit
-This typically happens when you install a new version of DeePMD-kit and copy directly the generated `USER-DEEPMD` to a LAMMPS source code folder and re-install LAMMPS.
-
-To solve this problem, it suffices to first remove `USER-DEEPMD` from LAMMPS source code by 
-```bash
-make no-user-deepmd
-```
-and then install the new `USER-DEEPMD`.
-
-If this does not solve your problem, try to decompress the LAMMPS source tarball and install LAMMPS from scratch again, which typically should be very fast.
+- [Model compatibility](doc/troubleshooting/model-compatability.md)
+- [Installation](doc/troubleshooting/installation.md)
+- [The temperature undulates violently during early stages of MD](doc/troubleshooting/md-energy-undulation.md)
+- [MD: cannot run LAMMPS after installing a new version of DeePMD-kit](doc/troubleshooting/md-version-compatibility.md)
+- [Do we need to set rcut < half boxsize?](doc/troubleshooting/howtoset-rcut.md)
+- [How to set sel?](doc/troubleshooting/howtoset-sel.md)
+- [How to control the number of nodes used by a job?](doc/troubleshooting/howtoset_num_nodes.md)
+- [How to tune Fitting/embedding-net size?](doc/troubleshooting/howtoset_netsize.md)
 
 
-[1]: http://www.global-sci.com/galley/CiCP-2017-0213.pdf
+# Contributing
+
+See [DeePMD-kit Contributing Guide](CONTRIBUTING.md) to become a contributor! 🤓
+
+
+[1]: https://arxiv.org/abs/1707.01478
 [2]: https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.120.143001
-[3]:https://arxiv.org/abs/1805.09003
-[4]:https://aip.scitation.org/doi/full/10.1063/1.5027645
+[3]: https://arxiv.org/abs/1805.09003
+[4]: https://aip.scitation.org/doi/full/10.1063/1.5027645

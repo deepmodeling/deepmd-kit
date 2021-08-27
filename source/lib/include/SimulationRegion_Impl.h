@@ -6,8 +6,9 @@
 #include <limits>
 #include <typeinfo>
 #include <stdexcept>
+#include "errors.h"
 
-using namespace std;
+// using namespace std;
 
 template<typename VALUETYPE>
 SimulationRegion<VALUETYPE>::
@@ -20,9 +21,9 @@ SimulationRegion<VALUETYPE>::
 SimulationRegion ()
 {
   is_periodic[0] = is_periodic[1] = is_periodic[2] = true;
-  fill (boxt,		boxt    + SPACENDIM*SPACENDIM, 0);
-  fill (boxt_bk,	boxt_bk + SPACENDIM*SPACENDIM, 0);
-  fill (origin,		origin  + SPACENDIM, 0);
+  std::fill (boxt,		boxt    + SPACENDIM*SPACENDIM, 0);
+  std::fill (boxt_bk,		boxt_bk + SPACENDIM*SPACENDIM, 0);
+  std::fill (origin,		origin  + SPACENDIM, 0);
 }
 
 template <typename VALUETYPE>
@@ -105,7 +106,7 @@ reinitOrigin (const double * orig)
 template <typename VALUETYPE>
 inline void
 SimulationRegion<VALUETYPE>::
-reinitOrigin (const vector<double>& orig)
+reinitOrigin (const std::vector<double>& orig)
 {
   for (int ii = 0; ii < SPACENDIM ; ++ii){
     origin[ii] = orig[ii];
@@ -417,12 +418,12 @@ SimulationRegion<VALUETYPE>::
 toFaceDistance	(double * dd) const
 {
   double tmp[3];
-  MathUtilities::cprod (boxt+3, boxt+6, tmp);
-  dd[0] = volume * MathUtilities::invsqrt (MathUtilities::dot(tmp,tmp));
-  MathUtilities::cprod (boxt+6, boxt+0, tmp);
-  dd[1] = volume * MathUtilities::invsqrt (MathUtilities::dot(tmp,tmp));
-  MathUtilities::cprod (boxt+0, boxt+3, tmp);
-  dd[2] = volume * MathUtilities::invsqrt (MathUtilities::dot(tmp,tmp));
+  deepmd::cprod(boxt+3, boxt+6, tmp);
+  dd[0] = volume * deepmd::invsqrt(deepmd::dot3(tmp,tmp));
+  deepmd::cprod(boxt+6, boxt+0, tmp);
+  dd[1] = volume * deepmd::invsqrt(deepmd::dot3(tmp,tmp));
+  deepmd::cprod(boxt+0, boxt+3, tmp);
+  dd[2] = volume * deepmd::invsqrt(deepmd::dot3(tmp,tmp));
 }
 
 // static int tmp_count = 0;
@@ -502,7 +503,7 @@ computeVolume()
       boxt[0*3+2] * (boxt[1*3+0]*boxt[2*3+1] - boxt[2*3+0]*boxt[1*3+1]);
   volumei = static_cast<double>(1.)/volume;
   if (volume < 0) {
-    throw std::runtime_error("Negative volume detected. Please make sure the simulation cell obeys the right-hand rule.");
+    throw deepmd::deepmd_exception("Negative volume detected. Please make sure the simulation cell obeys the right-hand rule.");
   }
 }
 
