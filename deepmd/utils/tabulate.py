@@ -2,9 +2,11 @@ import re
 import math
 import logging
 import numpy as np
+from typing import Callable
 from typing import Tuple, List
 from deepmd.env import tf
 from deepmd.env import op_module
+from deepmd.common import ACTIVATION_FN_DICT
 from deepmd.utils.sess import run_sess
 from deepmd.utils.graph import get_tensor_by_name_from_graph, load_graph_def 
 from deepmd.utils.graph import get_embedding_net_nodes_from_graph_def
@@ -30,11 +32,14 @@ class DPTabulate():
     exclude_types : List[List[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
+    activation_function
+            The activation function in the embedding net. Supported options are {"tanh","gelu"} in common.ACTIVATION_FN_DICT.
     """
     def __init__(self,
                  model_file : str,
                  type_one_side : bool = False,
-                 exclude_types : List[List[int]] = []) -> None:
+                 exclude_types : List[List[int]] = [],
+                 activation_fn : Callable[[tf.Tensor], tf.Tensor] = tf.nn.tanh) -> None:
         """
         Constructor
         """
@@ -44,6 +49,15 @@ class DPTabulate():
         self.exclude_types = exclude_types
         if self.type_one_side and len(self.exclude_types) != 0:
             raise RunTimeError('"type_one_side" is not compatible with "exclude_types"')
+        
+        # functype
+        if activation_fn == ACTIVATION_FN_DICT["tanh"]:
+            self.functype = 1
+        elif activation_fn == ACTIVATION_FN_DICT["gelu"]:
+            self.functype = 2
+        else:
+            raise RunTimeError("Unknown actication function type!")
+        self.activation_fn = activation_fn
 
         self.graph, self.graph_def = load_graph_def(self.model_file)
         self.sess = tf.Session(graph = self.graph)
@@ -199,26 +213,37 @@ class DPTabulate():
                 xx = tf.reshape(xx, [xx.size, -1])
                 for layer in range(self.layer_size):
                     if layer == 0:
-                        yy = self._layer_0(xx, self.matrix["layer_" + str(layer + 1)][idx], self.bias["layer_" + str(layer + 1)][idx])
-                        dy = op_module.unaggregated_dy_dx_s(yy, self.matrix["layer_" + str(layer + 1)][idx])
-                        dy2 = op_module.unaggregated_dy2_dx_s(yy, dy, self.matrix["layer_" + str(layer + 1)][idx])
+                        xbar = tf.matmul(
+                            xx, self.matrix["layer_" + str(layer + 1)][idx]) + self.bias["layer_" + str(layer + 1)][idx]
+                        yy = self._layer_0(
+                            xx, self.matrix["layer_" + str(layer + 1)][idx], self.bias["layer_" + str(layer + 1)][idx])
+                        dy = op_module.unaggregated_dy_dx_s(
+                            yy, self.matrix["layer_" + str(layer + 1)][idx], xbar, tf.constant(self.functype))
+                        dy2 = op_module.unaggregated_dy2_dx_s(
+                            yy, dy, self.matrix["layer_" + str(layer + 1)][idx], xbar, tf.constant(self.functype))
                     else:
-                        tt, yy = self._layer_1(yy, self.matrix["layer_" + str(layer + 1)][idx], self.bias["layer_" + str(layer + 1)][idx])
-                        dz = op_module.unaggregated_dy_dx(yy - tt, self.matrix["layer_" + str(layer + 1)][idx], dy)
-                        dy2 = op_module.unaggregated_dy2_dx(yy - tt, self.matrix["layer_" + str(layer + 1)][idx], dz, dy, dy2)
+                        ybar = tf.matmul(
+                            yy, self.matrix["layer_" + str(layer + 1)][idx]) + self.bias["layer_" + str(layer + 1)][idx]
+                        tt, zz = self._layer_1(
+                            yy, self.matrix["layer_" + str(layer + 1)][idx], self.bias["layer_" + str(layer + 1)][idx])
+                        dz = op_module.unaggregated_dy_dx(
+                            zz - tt, self.matrix["layer_" + str(layer + 1)][idx], dy, ybar, tf.constant(self.functype))
+                        dy2 = op_module.unaggregated_dy2_dx(
+                            zz - tt, self.matrix["layer_" + str(layer + 1)][idx], dy, dy2, ybar, tf.constant(self.functype))
                         dy = dz
- 
-                vv = yy.eval()
+                        yy = zz
+
+                vv = zz.eval()
                 dd = dy.eval()
                 d2 = dy2.eval()
         return vv, dd, d2
 
     def _layer_0(self, x, w, b):
-        return tf.nn.tanh(tf.matmul(x, w) + b)
+        return self.activation_fn(tf.matmul(x, w) + b)
 
     def _layer_1(self, x, w, b):
-        t = tf.concat([x, x], axis = 1)
-        return t, tf.nn.tanh(tf.matmul(x, w) + b) + t
+        t = tf.concat([x, x], axis=1)
+        return t, self.activation_fn(tf.matmul(x, w) + b) + t
 
     def _save_data(self):
         for ii in range(self.ntypes * self.ntypes):
