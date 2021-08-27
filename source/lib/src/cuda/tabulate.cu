@@ -135,8 +135,8 @@ __global__ void tabulate_fusion_grad_fifth_order_polynomial(
   bool unloop = false;
   FPTYPE * iteratorA = (FPTYPE *)&_data[0]; // dy
   for (int ii = 0; ii < MTILE; ii++) {
-    if (thread_idx < last_layer_size) {
-      iteratorA[ii * last_layer_size + thread_idx] = dy[block_idx * MTILE * last_layer_size + ii * last_layer_size + thread_idx];
+    for (int jj = thread_idx; jj < last_layer_size; jj += blockDim.x) {
+      iteratorA[ii * last_layer_size + jj] = dy[block_idx * MTILE * last_layer_size + ii * last_layer_size + jj];
     }
   }
   __syncthreads();
