@@ -102,6 +102,11 @@ When the version of DeePMD-kit used to training model is different from the that
 
 DeePMD-kit guarantees that the codes with the same major and minor revisions are compatible. That is to say v0.12.5 is compatible to v0.12.0, but is not compatible to v0.11.0 nor v1.0.0. 
 
+One can convert the model trained with DeePMD-kit v1.3 to v2 compatible by using the command 
+```shell
+dp convert-to 2.0 -i frozen_model.pb  -o frozen_model_2.0.pb
+```
+
 ## Installation: inadequate versions of gcc/g++
 Sometimes you may use a gcc/g++ of version <4.9. If you have a gcc/g++ of version > 4.9, say, 7.2.0, you may choose to use it by doing 
 ```bash
