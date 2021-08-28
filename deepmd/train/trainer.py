@@ -315,7 +315,7 @@ class DPTrainer (object):
                 self._init_from_frz_model()
             
             self.neighbor_stat \
-                = NeighborStat(self.ntypes, self.descrpt_param['rcut'])
+                = NeighborStat(self.ntypes, self.descrpt.get_rcut())
             self.min_nbor_dist, self.max_nbor_size \
                 = self.neighbor_stat.get_stat(data)
             tf.constant(self.min_nbor_dist,
