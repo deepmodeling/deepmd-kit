@@ -1,0 +1,25 @@
+on:
+  push:
+  pull_request:
+name: Build C++
+jobs:
+  testpython:
+    name: Build C++
+    runs-on: ubuntu-20.04
+    strategy:  
+      matrix:
+        include:
+        - variant: cpu
+        - variant: cuda
+    steps:
+    - uses: actions/checkout@master
+      with:
+        submodules: true
+    - run: sudo apt update && sudo apt install g++-7
+    - run: sudo apt install nvidia-cuda-toolkit
+      if: matrix.variant == 'cuda'
+    - run: source/install/build_cc.sh
+      env:
+        DP_VARIANT: ${{ matrix.variant }}
+        CC: gcc-7
+        CXX: g++-7

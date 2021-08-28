@@ -1,16 +1,3 @@
-/* ----------------------------------------------------------------------
-   LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://lammps.sandia.gov/, Sandia National Laboratories
-   Steve Plimpton, sjplimp@sandia.gov
-
-   Copyright (2003) Sandia Corporation.  Under the terms of Contract
-   DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
-   certain rights in this software.  This software is distributed under
-   the GNU General Public License.
-
-   See the README file in the top-level LAMMPS directory.
-------------------------------------------------------------------------- */
-
 #include <math.h>
 #include "pppm_dplr.h"
 #include "atom.h"
@@ -41,7 +28,8 @@ enum{FORWARD_IK,FORWARD_AD,FORWARD_IK_PERATOM,FORWARD_AD_PERATOM};
 
 /* ---------------------------------------------------------------------- */
 
-#ifdef OLD_LMP_PPPM
+#if LAMMPS_VERSION_NUMBER<20190201
+// See lammps/lammps#1165
 PPPMDPLR::PPPMDPLR(LAMMPS *lmp, int narg, char **arg) :
   PPPM(lmp, narg, arg)
 #else

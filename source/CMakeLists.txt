@@ -48,6 +48,36 @@ endif(GIT_FOUND)
 list (APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/)
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wno-ignored-attributes")
 
+# model version
+file(READ ${PROJECT_SOURCE_DIR}/config/MODEL_VER MODEL_VERSION)
+string(REPLACE "\n" " " MODEL_VERSION ${MODEL_VERSION})
+message(STATUS "Supported model version: ${MODEL_VERSION}")
+
+# Devices that have both ROCM and CUDA are not currently supported
+if (USE_ROCM_TOOLKIT AND USE_CUDA_TOOLKIT)
+  message (FATAL_ERROR "Devices that have both ROCM and CUDA are not currently supported")
+endif()
+
+# define USE_CUDA_TOOLKIT
+if (USE_CUDA_TOOLKIT)
+  find_package(CUDA REQUIRED)
+  add_definitions("-DGOOGLE_CUDA")
+  message(STATUS "Found CUDA in ${CUDA_TOOLKIT_ROOT_DIR}, build nv GPU support")
+else()
+  message(STATUS "Will not build nv GPU support")
+endif(USE_CUDA_TOOLKIT)
+
+#define USE_ROCM_TOOLKIT
+if (USE_ROCM_TOOLKIT)
+  find_package(ROCM REQUIRED)
+  add_definitions("-DTENSORFLOW_USE_ROCM")
+  add_compile_definitions(__HIP_PLATFORM_HCC__)
+  message(STATUS "Found ROCM in ${ROCM_ROOT}, build AMD GPU support")
+else()
+  message(STATUS "Will not build AMD GPU support")  
+endif (USE_ROCM_TOOLKIT)
+
+
 # find tensorflow, I need tf abi info
 find_package(tensorflow REQUIRED)
 
@@ -109,27 +139,6 @@ else ()
   message (STATUS "Set GLIBCXX_USE_CXX_ABI=1 when compiling ops")
 endif ()
 
-# define USE_CUDA_TOOLKIT
-if (DEFINED USE_CUDA_TOOLKIT)
-  if (USE_CUDA_TOOLKIT)
-    find_package(CUDA REQUIRED)
-  else()
-    message(STATUS "Will not build nv GPU support")
-  endif()
-else()
-  find_package(CUDA QUIET)  
-  if (CUDA_FOUND)
-    set(USE_CUDA_TOOLKIT TRUE)
-    message(STATUS "Found CUDA in ${CUDA_TOOLKIT_ROOT_DIR}, build nv GPU support")
-  else()
-    set(USE_CUDA_TOOLKIT FALSE)
-    message(STATUS "No cuda support found, will not build nv GPU support")
-  endif()
-endif()
-if (USE_CUDA_TOOLKIT)
-  add_definitions("-D GOOGLE_CUDA")
-endif()
-
 # define USE_TTM
 if (NOT DEFINED USE_TTM)
   set(USE_TTM FALSE)
@@ -139,33 +148,17 @@ if (USE_TTM)
   set(TTM_DEF "-DUSE_TTM")
 endif (USE_TTM)
 
-# old pppm interface
-if(NOT DEFINED OLD_LMP_PPPM)
-  set(OLD_LMP_PPPM FALSE)
-endif(NOT DEFINED OLD_LMP_PPPM)
-if (OLD_LMP_PPPM)
-  set(OLD_LMP_PPPM_DEF "-DOLD_LMP_PPPM")
-  message(STATUS "Use old lammps pppm interface")
-endif()
-add_definitions (${OLD_LMP_PPPM_DEF})
-
 # define build type
 if ((NOT DEFINED CMAKE_BUILD_TYPE) OR CMAKE_BUILD_TYPE STREQUAL "")
    set (CMAKE_BUILD_TYPE release)
 endif ()
 
 # set op prec
-if (DEFINED FLOAT_PREC)
-  string ( TOLOWER ${FLOAT_PREC} lower_float_prec )
-  if (lower_float_prec STREQUAL "high")
-    set(PREC_DEF "-DHIGH_PREC")
-  else ()
-    set(PREC_DEF "")    
-  endif ()
-else ()
-    set(PREC_DEF "-DHIGH_PREC")
-endif()
-add_definitions (${PREC_DEF})
+set(HIGH_PREC_DEF "HIGH_PREC")
+# this defination doesn't work, but leaving it empty will cause error
+set(LOW_PREC_DEF "LOW_PREC")
+set(HIGH_PREC_VARIANT "")
+set(LOW_PREC_VARIANT "_low")
 
 # find openmp
 find_package(OpenMP)
@@ -174,22 +167,17 @@ if (OPENMP_FOUND)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
 endif()
 
-# headers of lib
-list (APPEND DeePMD_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/lib/include/)
-list (APPEND DeePMD_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/3rdparty/)
-
-# include
-include_directories(${DeePMD_INCLUDE_DIRS})
-include_directories(${TensorFlow_INCLUDE_DIRS})
-
 # define names of libs
+set (LIB_DEEPMD		"deepmd")
 if (BUILD_CPP_IF)
-  set (LIB_DEEPMD		"deepmd")
   set (LIB_DEEPMD_OP		"deepmd_op")
+  set (LIB_DEEPMD_CC		"deepmd_cc")
   if (USE_CUDA_TOOLKIT)
-    set (LIB_DEEPMD_OP_CUDA		"deepmd_op_cuda")
-  else ()
-    set (LIB_DEEPMD_OP_CUDA		"deepmd_op")
+    set (LIB_DEEPMD_OP_DEVICE		"deepmd_op_cuda")
+  elseif (USE_ROCM_TOOLKIT)
+    set (LIB_DEEPMD_OP_DEVICE   "deepmd_op_rocm")
+  else()
+    set (LIB_DEEPMD_OP_DEVICE		"deepmd_op")
   endif()
   if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 4.9)
     set (LIB_DEEPMD_NATIVE	"deepmd_native_md")
@@ -199,15 +187,14 @@ if (BUILD_CPP_IF)
   endif ()
 endif (BUILD_CPP_IF)
 
-include_directories(${CMAKE_BINARY_DIR}/lib/)
 add_subdirectory (op/)
+add_subdirectory (lib/)
 if (BUILD_PY_IF)
-  add_subdirectory (train/)
-  add_subdirectory (scripts/)
-  add_subdirectory (tests/)
+  add_subdirectory (config/)
+  # add_subdirectory (tests/)
 endif (BUILD_PY_IF)
 if (BUILD_CPP_IF) 
-  add_subdirectory (lib/)
+  add_subdirectory (api_cc/)
   add_subdirectory (lmp/)
   if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 4.9)
 #   add_subdirectory (md/)

@@ -2,10 +2,10 @@ import os,sys,shutil,copy
 import numpy as np
 import unittest
 
-from deepmd.Data import DeepmdData
-from deepmd.RunOptions import global_np_float_precision
+from deepmd.utils.data import DeepmdData
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 
-if global_np_float_precision == np.float32 :
+if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
     places = 6
 else:
     places = 12
@@ -147,7 +147,7 @@ class TestData (unittest.TestCase) :
         self.assertEqual(dd.idx_map[1], 1)
         self.assertEqual(dd.atom_type[0], 0)
         self.assertEqual(dd.atom_type[1], 1)
-        self.assertEqual(dd.type_map, ['bar', 'foo'])
+        self.assertEqual(dd.type_map, ['bar', 'foo', 'tar'])
 
     def test_load_set(self) :
         dd = DeepmdData(self.data_name)\

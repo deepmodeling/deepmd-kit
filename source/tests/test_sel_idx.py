@@ -4,8 +4,6 @@ import unittest
 
 from deepmd.common import select_idx_map
 
-def test():
-    raise RuntimeError
 
 class TestSelIdx (unittest.TestCase) :
     def test_add (self) :
