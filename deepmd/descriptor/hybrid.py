@@ -21,16 +21,18 @@ from .se_a_ef import DescrptSeAEf
 from .loc_frame import DescrptLocFrame
 
 class DescrptHybrid ():
+    """Concate a list of descriptors to form a new descriptor.
+
+    Parameters
+    ----------
+    descrpt_list : list
+            Build a descriptor from the concatenation of the list of descriptors.
+    """
     def __init__ (self, 
                   descrpt_list : list
     ) -> None :
         """
         Constructor
-
-        Parameters
-        ----------
-        descrpt_list : list
-                Build a descriptor from the concatenation of the list of descriptors.
         """
         if descrpt_list == [] or descrpt_list is None:
             raise RuntimeError('cannot build descriptor from an empty list of descriptors.')
@@ -72,11 +74,13 @@ class DescrptHybrid ():
     def get_nlist_i(self, 
                     ii : int
     ) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
-        """
+        """Get the neighbor information of the ii-th descriptor
+
         Parameters
         ----------
         ii : int
-                Get the neighbor information of the ii-th descriptor
+                The index of the descriptor
+
         Returns
         -------
         nlist
@@ -194,8 +198,9 @@ class DescrptHybrid ():
                 natoms[0]: number of local atoms
                 natoms[1]: total number of atoms held by this processor
                 natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
-        Return
-        ------
+
+        Returns
+        -------
         force
                 The force on atoms
         virial

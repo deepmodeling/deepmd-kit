@@ -14,6 +14,26 @@ from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 class DipoleFittingSeA () :
     """
     Fit the atomic dipole with descriptor se_a
+    
+    Parameters
+    ----------
+    descrpt : tf.Tensor
+            The descrptor
+    neuron : List[int]
+            Number of neurons in each hidden layer of the fitting net
+    resnet_dt : bool
+            Time-step `dt` in the resnet construction:
+            y = x + dt * \phi (Wx + b)
+    sel_type : List[int]
+            The atom types selected to have an atomic dipole prediction. If is None, all atoms are selected.
+    seed : int
+            Random seed for initializing the network parameters.
+    activation_function : str
+            The activation function in the embedding net. Supported options are {0}
+    precision : str
+            The precision of the embedding net parameters. Supported options are {1}        
+    uniform_seed
+            Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
     """
     @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
@@ -28,26 +48,6 @@ class DipoleFittingSeA () :
     ) -> None:
         """
         Constructor
-
-        Parameters
-        ----------
-        descrpt : tf.Tensor
-                The descrptor
-        neuron : List[int]
-                Number of neurons in each hidden layer of the fitting net
-        resnet_dt : bool
-                Time-step `dt` in the resnet construction:
-                y = x + dt * \phi (Wx + b)
-        sel_type : List[int]
-                The atom types selected to have an atomic dipole prediction. If is None, all atoms are selected.
-        seed : int
-                Random seed for initializing the network parameters.
-        activation_function : str
-                The activation function in the embedding net. Supported options are {0}
-        precision : str
-                The precision of the embedding net parameters. Supported options are {1}        
-        uniform_seed
-                Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
         """
         if not isinstance(descrpt, DescrptSeA) :
             raise RuntimeError('DipoleFittingSeA only supports DescrptSeA')
@@ -113,8 +113,8 @@ class DipoleFittingSeA () :
         suffix
                 Name suffix to identify this descriptor
 
-        Return
-        ------
+        Returns
+        -------
         dipole
                 The atomic dipole.
         """

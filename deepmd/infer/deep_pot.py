@@ -26,6 +26,18 @@ class DeepPot(DeepEval):
     default_tf_graph : bool
         If uses the default tf graph, otherwise build a new tf graph for evaluation
 
+    Examples
+    --------
+    >>> from deepmd.infer import DeepPot
+    >>> import numpy as np
+    >>> dp = DeepPot('graph.pb')
+    >>> coord = np.array([[1,0,0], [0,0,1.5], [1,0,3]]).reshape([1, -1])
+    >>> cell = np.diag(10 * np.ones(3)).reshape([1, -1])
+    >>> atype = [1,0,1]
+    >>> e, f, v = dp.eval(coord, cell, atype)
+    
+    where `e`, `f` and `v` are predicted energy, force and virial of the system, respectively.
+
     Warnings
     --------
     For developers: `DeepTensor` initializer must be called at the end after
@@ -159,13 +171,13 @@ class DeepPot(DeepEval):
 
     def eval(
         self,
-        coords: np.array,
-        cells: np.array,
+        coords: np.ndarray,
+        cells: np.ndarray,
         atom_types: List[int],
         atomic: bool = False,
-        fparam: Optional[np.array] = None,
-        aparam: Optional[np.array] = None,
-        efield: Optional[np.array] = None
+        fparam: Optional[np.ndarray] = None,
+        aparam: Optional[np.ndarray] = None,
+        efield: Optional[np.ndarray] = None
     ) -> Tuple[np.ndarray, ...]:
         """Evaluate the energy, force and virial by using this DP.
 

@@ -1,10 +1,6 @@
-#include "hip/hip_runtime.h"
-#include "gpu_rocm.h"
 #include "fmt_nlist.h"
 #include "prod_env_mat.h"
 #include "device.h"
-#include "prod_env_mat.h"
-#include "rocprim/rocprim.hpp"
 #include "hipcub/hipcub.hpp"
 
 // common part of prod_env_mat

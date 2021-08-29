@@ -6,14 +6,6 @@ configure_file(
   @ONLY
 )
 
-if (USE_CUDA_TOOLKIT)
-  include_directories("${CUDA_INCLUDE_DIRS}")
-endif()
-
-if (USE_ROCM_TOOLKIT)
-  include_directories("${ROCM_INCLUDE_DIRS}")
-endif()
-
 file(GLOB LIB_SRC src/*.cc src/*.cpp)
 file(GLOB INC_SRC include/*.h ${CMAKE_CURRENT_BINARY_DIR}/version.h)
 
@@ -23,18 +15,16 @@ set (libname "${LIB_DEEPMD_CC}${variant_name}")
 
 add_library(${libname} SHARED ${LIB_SRC})
 
-if (USE_CUDA_TOOLKIT)
-  target_link_libraries (${libname} ${CUDA_LIBRARIES})
-endif()
-
-if (USE_ROCM_TOOLKIT)
-  target_link_libraries (${libname} ${ROCM_LIBRARIES})
-endif()
+# link: libdeepmd libdeepmd_op libtensorflow_cc libtensorflow_framework
+target_link_libraries (${libname} PUBLIC ${LIB_DEEPMD}	${TensorFlow_LIBRARY} ${TensorFlowFramework_LIBRARY})
+target_link_libraries (${libname} PRIVATE	${LIB_DEEPMD_OP})
+target_include_directories(${libname} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR} ${TensorFlow_INCLUDE_DIRS})
 
 set_target_properties(
   ${libname} 
   PROPERTIES 
   COMPILE_DEFINITIONS ${prec_def}
+  INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}"
 )
 
 install(TARGETS ${libname} DESTINATION lib/)

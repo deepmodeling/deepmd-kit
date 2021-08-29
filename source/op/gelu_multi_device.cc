@@ -144,6 +144,10 @@ class GeluGradGradOp : public OpKernel {
         context_output_index++, 
         x_tensor.shape(),
         &output_tensor));
+    DeviceFunctor() (
+        device,
+        context->eigen_device<Device>()
+    );
     // flat the tensors
     FPTYPE * out = output_tensor->flat<FPTYPE>().data();
     const FPTYPE * x = x_tensor.flat<FPTYPE>().data();

@@ -38,16 +38,16 @@ jobs:
             tf: 1.14
           - python: 3.7
             gcc: 5
-            tf: 2.3
+            tf:
           - python: 3.7
             gcc: 8
-            tf: 2.3
+            tf:
           - python: 3.8
             gcc: 5
-            tf: 2.3
+            tf:
           - python: 3.8
             gcc: 8
-            tf: 2.3
+            tf:
 
     steps:
     - uses: actions/checkout@master
@@ -70,4 +70,5 @@ jobs:
         CC: gcc-${{ matrix.gcc }}
         CXX: g++-${{ matrix.gcc }}
         TENSORFLOW_VERSION: ${{ matrix.tf }}
+    - run: dp --version
     - run: pytest --cov=deepmd source/tests && codecov

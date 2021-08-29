@@ -257,7 +257,7 @@ model:
         .. _`model/descriptor[se_e2_a]/axis_neuron`: 
 
         axis_neuron: 
-            | type: ``int``, optional, default: ``4``
+            | type: ``int``, optional, default: ``4``, alias: *n_axis_neuron*
             | argument path: ``model/descriptor[se_e2_a]/axis_neuron``
 
             Size of the submatrix of G (embedding matrix).
@@ -316,7 +316,7 @@ model:
             | type: ``list``, optional, default: ``[]``
             | argument path: ``model/descriptor[se_e2_a]/exclude_types``
 
-            The Excluded types
+            The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1.
 
         .. _`model/descriptor[se_e2_a]/set_davg_zero`: 
 
@@ -421,7 +421,7 @@ model:
             | type: ``list``, optional, default: ``[]``
             | argument path: ``model/descriptor[se_e2_r]/exclude_types``
 
-            The Excluded types
+            The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1.
 
         .. _`model/descriptor[se_e2_r]/set_davg_zero`: 
 
@@ -564,7 +564,7 @@ model:
         .. _`model/descriptor[se_a_tpe]/axis_neuron`: 
 
         axis_neuron: 
-            | type: ``int``, optional, default: ``4``
+            | type: ``int``, optional, default: ``4``, alias: *n_axis_neuron*
             | argument path: ``model/descriptor[se_a_tpe]/axis_neuron``
 
             Size of the submatrix of G (embedding matrix).
@@ -623,7 +623,7 @@ model:
             | type: ``list``, optional, default: ``[]``
             | argument path: ``model/descriptor[se_a_tpe]/exclude_types``
 
-            The Excluded types
+            The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1.
 
         .. _`model/descriptor[se_a_tpe]/set_davg_zero`: 
 
@@ -732,7 +732,7 @@ model:
         .. _`model/fitting_net[ener]/neuron`: 
 
         neuron: 
-            | type: ``list``, optional, default: ``[120, 120, 120]``
+            | type: ``list``, optional, default: ``[120, 120, 120]``, alias: *n_neuron*
             | argument path: ``model/fitting_net[ener]/neuron``
 
             The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.
@@ -805,7 +805,7 @@ model:
         .. _`model/fitting_net[dipole]/neuron`: 
 
         neuron: 
-            | type: ``list``, optional, default: ``[120, 120, 120]``
+            | type: ``list``, optional, default: ``[120, 120, 120]``, alias: *n_neuron*
             | argument path: ``model/fitting_net[dipole]/neuron``
 
             The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.
@@ -837,7 +837,7 @@ model:
         .. _`model/fitting_net[dipole]/sel_type`: 
 
         sel_type: 
-            | type: ``list`` | ``int`` | ``NoneType``, optional
+            | type: ``list`` | ``int`` | ``NoneType``, optional, alias: *dipole_type*
             | argument path: ``model/fitting_net[dipole]/sel_type``
 
             The atom types for which the atomic dipole will be provided. If not set, all types will be selected.
@@ -858,7 +858,7 @@ model:
         .. _`model/fitting_net[polar]/neuron`: 
 
         neuron: 
-            | type: ``list``, optional, default: ``[120, 120, 120]``
+            | type: ``list``, optional, default: ``[120, 120, 120]``, alias: *n_neuron*
             | argument path: ``model/fitting_net[polar]/neuron``
 
             The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.
@@ -914,7 +914,7 @@ model:
         .. _`model/fitting_net[polar]/sel_type`: 
 
         sel_type: 
-            | type: ``list`` | ``int`` | ``NoneType``, optional
+            | type: ``list`` | ``int`` | ``NoneType``, optional, alias: *pol_type*
             | argument path: ``model/fitting_net[polar]/sel_type``
 
             The atom types for which the atomic polarizability will be provided. If not set, all types will be selected.
@@ -1055,6 +1055,14 @@ model:
 
             The arguments of model compression, including extrapolate(scale of model extrapolation), stride(uniform stride of tabulation's first and second table), and frequency(frequency of tabulation overflow check).
 
+        .. _`model/compress[se_e2_a]/min_nbor_dist`: 
+
+        min_nbor_dist: 
+            | type: ``float``
+            | argument path: ``model/compress[se_e2_a]/min_nbor_dist``
+
+            The nearest distance between neighbor atoms saved in the frozen model.
+
 
 .. _`loss`: 
 
@@ -1158,7 +1166,7 @@ loss:
     .. _`loss[ener]/relative_f`: 
 
     relative_f: 
-        | type: ``float`` | ``NoneType``, optional
+        | type: ``NoneType`` | ``float``, optional
         | argument path: ``loss[ener]/relative_f``
 
         If provided, relative force error will be used in the loss. The difference of force will be normalized by the magnitude of the force in the label with a shift given by `relative_f`, i.e. DF_i / ( || F || + relative_f ) with DF denoting the difference between prediction and label and || F || denoting the L2 norm of the label.
@@ -1276,7 +1284,7 @@ training:
         .. _`training/training_data/batch_size`: 
 
         batch_size: 
-            | type: ``list`` | ``str`` | ``int``, optional, default: ``auto``
+            | type: ``list`` | ``int`` | ``str``, optional, default: ``auto``
             | argument path: ``training/training_data/batch_size``
 
             This key can be 
@@ -1338,7 +1346,7 @@ training:
         .. _`training/validation_data/batch_size`: 
 
         batch_size: 
-            | type: ``list`` | ``str`` | ``int``, optional, default: ``auto``
+            | type: ``list`` | ``int`` | ``str``, optional, default: ``auto``
             | argument path: ``training/validation_data/batch_size``
 
             This key can be 
@@ -1416,7 +1424,7 @@ training:
     .. _`training/numb_test`: 
 
     numb_test: 
-        | type: ``list`` | ``str`` | ``int``, optional, default: ``1``
+        | type: ``list`` | ``int`` | ``str``, optional, default: ``1``
         | argument path: ``training/numb_test``
 
         Number of frames used for the test during training.
@@ -1484,4 +1492,12 @@ training:
         | argument path: ``training/tensorboard_log_dir``
 
         The log directory of tensorboard outputs
+
+    .. _`training/tensorboard_freq`: 
+
+    tensorboard_freq: 
+        | type: ``int``, optional, default: ``1``
+        | argument path: ``training/tensorboard_freq``
+
+        The frequency of writing tensorboard events.
 

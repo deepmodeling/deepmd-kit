@@ -1,4 +1,3 @@
-#include "hip/hip_runtime.h"
 #include "device.h"
 #include "region.h"
 #include "region.cuh"

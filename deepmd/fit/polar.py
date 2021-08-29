@@ -15,7 +15,10 @@ from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 
 class PolarFittingLocFrame () :
     """
-    Fitting polarizability with local frame descriptor. not supported anymore. 
+    Fitting polarizability with local frame descriptor.
+
+    .. deprecated:: 2.0.0
+        This class is not supported any more.
     """
     def __init__ (self, jdata, descrpt) :
         if not isinstance(descrpt, DescrptLocFrame) :
@@ -208,7 +211,8 @@ class PolarFittingSeA () :
         """
         Compute the input statistics
 
-        Parameters:
+        Parameters
+        ----------
         all_stat
                 Dictionary of inputs. 
                 can be prepared by model.make_stat_input
@@ -292,8 +296,8 @@ class PolarFittingSeA () :
         suffix
                 Name suffix to identify this descriptor
 
-        Return
-        ------
+        Returns
+        -------
         atomic_polar
                 The atomic polarizability        
         """
@@ -371,6 +375,30 @@ class PolarFittingSeA () :
 class GlobalPolarFittingSeA () :
     """
     Fit the system polarizability with descriptor se_a
+
+    Parameters
+    ----------
+    descrpt : tf.Tensor
+            The descrptor
+    neuron : List[int]
+            Number of neurons in each hidden layer of the fitting net
+    resnet_dt : bool
+            Time-step `dt` in the resnet construction:
+            y = x + dt * \phi (Wx + b)
+    sel_type : List[int]
+            The atom types selected to have an atomic polarizability prediction
+    fit_diag : bool
+            Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to normal polarizability matrix by contracting with the rotation matrix.
+    scale : List[float]
+            The output of the fitting net (polarizability matrix) for type i atom will be scaled by scale[i]
+    diag_shift : List[float]
+            The diagonal part of the polarizability matrix of type i will be shifted by diag_shift[i]. The shift operation is carried out after scale.        
+    seed : int
+            Random seed for initializing the network parameters.
+    activation_function : str
+            The activation function in the embedding net. Supported options are {0}
+    precision : str
+            The precision of the embedding net parameters. Supported options are {1}    
     """
     @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
@@ -386,31 +414,7 @@ class GlobalPolarFittingSeA () :
                   precision : str = 'default'
     ) -> None:
         """
-        Constructor
-
-        Parameters
-        ----------
-        descrpt : tf.Tensor
-                The descrptor
-        neuron : List[int]
-                Number of neurons in each hidden layer of the fitting net
-        resnet_dt : bool
-                Time-step `dt` in the resnet construction:
-                y = x + dt * \phi (Wx + b)
-        sel_type : List[int]
-                The atom types selected to have an atomic polarizability prediction
-        fit_diag : bool
-                Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to normal polarizability matrix by contracting with the rotation matrix.
-        scale : List[float]
-                The output of the fitting net (polarizability matrix) for type i atom will be scaled by scale[i]
-        diag_shift : List[float]
-                The diagonal part of the polarizability matrix of type i will be shifted by diag_shift[i]. The shift operation is carried out after scale.        
-        seed : int
-                Random seed for initializing the network parameters.
-        activation_function : str
-                The activation function in the embedding net. Supported options are {0}
-        precision : str
-                The precision of the embedding net parameters. Supported options are {1}                
+        Constructor            
         """
         if not isinstance(descrpt, DescrptSeA) :
             raise RuntimeError('GlobalPolarFittingSeA only supports DescrptSeA')
@@ -464,8 +468,8 @@ class GlobalPolarFittingSeA () :
         suffix
                 Name suffix to identify this descriptor
 
-        Return
-        ------
+        Returns
+        -------
         polar
                 The system polarizability        
         """

@@ -3,12 +3,37 @@ from typing import Tuple, List
 
 from deepmd.env import tf
 from deepmd.utils.pair_tab import PairTab
+from deepmd.utils.graph import load_graph_def
 from deepmd.common import ClassArg
-from deepmd.env import global_cvt_2_ener_float, MODEL_VERSION
+from deepmd.env import global_cvt_2_ener_float, MODEL_VERSION, GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import op_module
 from .model_stat import make_stat_input, merge_sys_stat
 
 class EnerModel() :
+    """Energy model.
+    
+    Parameters
+    ----------
+    descrpt
+            Descriptor
+    fitting
+            Fitting net
+    type_map
+            Mapping atom type to the name (str) of the type.
+            For example `type_map[1]` gives the name of the type 1.
+    data_stat_nbatch
+            Number of frames used for data statistic
+    data_stat_protect
+            Protect parameter for atomic energy regression
+    use_srtab
+            The table for the short-range pairwise interaction added on top of DP. The table is a text data file with (N_t + 1) * N_t / 2 + 1 columes. The first colume is the distance between atoms. The second to the last columes are energies for pairs of certain types. For example we have two atom types, 0 and 1. The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly.
+    smin_alpha
+            The short-range tabulated interaction will be swithed according to the distance of the nearest neighbor. This distance is calculated by softmin. This parameter is the decaying parameter in the softmin. It is only required when `use_srtab` is provided.
+    sw_rmin
+            The lower boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
+    sw_rmin
+            The upper boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
+    """
     model_type = 'ener'
 
     def __init__ (
@@ -26,28 +51,6 @@ class EnerModel() :
     ) -> None:
         """
         Constructor
-
-        Parameters
-        ----------
-        descrpt
-                Descriptor
-        fitting
-                Fitting net
-        type_map
-                Mapping atom type to the name (str) of the type.
-                For example `type_map[1]` gives the name of the type 1.
-        data_stat_nbatch
-                Number of frames used for data statistic
-        data_stat_protect
-                Protect parameter for atomic energy regression
-        use_srtab
-                The table for the short-range pairwise interaction added on top of DP. The table is a text data file with (N_t + 1) * N_t / 2 + 1 columes. The first colume is the distance between atoms. The second to the last columes are energies for pairs of certain types. For example we have two atom types, 0 and 1. The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly.
-        smin_alpha
-                The short-range tabulated interaction will be swithed according to the distance of the nearest neighbor. This distance is calculated by softmin. This parameter is the decaying parameter in the softmin. It is only required when `use_srtab` is provided.
-        sw_rmin
-                The lower boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
-        sw_rmin
-                The upper boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
         """
         # descriptor
         self.descrpt = descrpt
@@ -111,6 +114,7 @@ class EnerModel() :
                box, 
                mesh,
                input_dict,
+               frz_model = None,
                suffix = '', 
                reuse = None):
 
@@ -150,16 +154,30 @@ class EnerModel() :
             )
             input_dict['type_embedding'] = type_embedding
 
-        dout \
-            = self.descrpt.build(coord_,
-                                 atype_,
-                                 natoms,
-                                 box,
-                                 mesh,
-                                 input_dict,
-                                 suffix = suffix,
-                                 reuse = reuse)
-        dout = tf.identity(dout, name='o_descriptor')
+        if frz_model == None:
+            dout \
+                = self.descrpt.build(coord_,
+                                     atype_,
+                                     natoms,
+                                     box,
+                                     mesh,
+                                     input_dict,
+                                     suffix = suffix,
+                                     reuse = reuse)
+            dout = tf.identity(dout, name='o_descriptor')
+        else:
+            tf.constant(self.rcut,
+                name = 'descrpt_attr/rcut',
+                dtype = GLOBAL_TF_FLOAT_PRECISION)
+            tf.constant(self.ntypes,
+                name = 'descrpt_attr/ntypes',
+                dtype = tf.int32)
+            feed_dict = self.descrpt.get_feed_dict(coord_, atype_, natoms, box, mesh)
+            return_elements = ['o_rmat:0', 'o_rmat_deriv:0', 'o_rij:0', 'o_nlist:0', 'o_descriptor:0']
+            descrpt_reshape, descrpt_deriv, rij, nlist, dout \
+                = self._import_graph_def_from_frz_model(frz_model, feed_dict, return_elements)
+            self.descrpt.pass_tensors_from_frz_model(descrpt_reshape, descrpt_deriv, rij, nlist)
+
 
         if self.srtab is not None :
             nlist, rij, sel_a, sel_r = self.descrpt.get_nlist()
@@ -249,3 +267,6 @@ class EnerModel() :
         
         return model_dict
 
+    def _import_graph_def_from_frz_model(self, frz_model, feed_dict, return_elements):
+        graph, graph_def = load_graph_def(frz_model)
+        return tf.import_graph_def(graph_def, input_map = feed_dict, return_elements = return_elements)

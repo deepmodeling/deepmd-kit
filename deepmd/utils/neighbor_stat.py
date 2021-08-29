@@ -14,20 +14,21 @@ log = logging.getLogger(__name__)
 class NeighborStat():
     """
     Class for getting training data information. 
+
     It loads data from DeepmdData object, and measures the data info, including neareest nbor distance between atoms, max nbor size of atoms and the output data range of the environment matrix.
+
+    Parameters
+    ----------
+    ntypes
+            The num of atom types
+    rcut
+            The cut-off radius
     """
     def __init__(self,
                  ntypes : int,
                  rcut: float) -> None:
         """
         Constructor
-
-        Parameters
-        ----------
-        ntypes
-                The num of atom types
-        rcut
-                The cut-off radius
         """
         self.rcut = rcut
         self.ntypes = ntypes

@@ -5,17 +5,17 @@ Here is an overview of the deepmd-kit algorithm. Given a specific centric atom, 
 ## Preliminary
 In the following chart, you can find the meaning of symbols used to clarify the atom type embedding algorithm.
 
-Symbol| Meaning
----Atom| :---:
-is| Type of centric atom
-j| Type of neighbor atom
-s_ij| Distance between centric atom and neighbor atom
-G_ij(·)Atom| Origin embedding net, take s_ij as input and output embedding vector of M1 dim
-G(·) | Shared embedding net
-Multi(·) | Matrix multiplication and flattening, output the descriptor vector of M1*M2 dim
-F_i(·) | Origin fitting net, take the descriptor vector as input and output energy
-F(·) | Shared fitting net
-A(·) | Atom type embedding net, input is atom type, output is type embedding vector of dim `nchanl`
+|Symbol| Meaning|
+|---| :---:|
+|i| Type of centric atom|
+|j| Type of neighbor atom|
+|s_ij| Distance between centric atom and neighbor atom|
+|G_ij(·)| Origin embedding net, take s_ij as input and output embedding vector of M1 dim|
+|G(·) | Shared embedding net|
+|Multi(·) | Matrix multiplication and flattening, output the descriptor vector of M1*M2 dim|
+|F_i(·) | Origin fitting net, take the descriptor vector as input and output energy|
+|F(·) | Shared fitting net|
+|A(·) | Atom type embedding net, input is atom type, output is type embedding vector of dim `nchanl`|
 
 So, we can formulate the training process as follows.
 Vanilla deepmd-kit algorithm:
@@ -24,23 +24,23 @@ Energy = F_i( Multi( G_ij( s_ij ) ) )
 ```
 Deepmd-kit applying atom type embedding:
 ```
-Energy = F( [ Multi( G_ij( [s_ij, A(i), A(j)] ) ), A(j)] )
+Energy = F( [ Multi( G( [s_ij, A(i), A(j)] ) ), A(j)] )
 ```
 or 
 ```
-Energy = F( [ Multi( G_ij( [s_ij, A(j)] ) ), A(j)] )
+Energy = F( [ Multi( G( [s_ij, A(j)] ) ), A(j)] )
 ```
 The difference between two variants above is whether using the information of centric atom when generating the descriptor. Users can choose by modifying the `type_one_side` hyper-parameter in the input json file.
 
 ## How to use
 A detailed introduction can be found at [`se_e2_a_tebd`](../train-se-e2-a-tebd.md). Looking for a fast start up, you can simply add a `type_embedding` section in the input json file as displayed in the following, and the algorithm will adopt atom type embedding algorithm automatically.
 An example of `type_embedding` is like
-```json=
+```json
     "type_embedding":{
-                "neuron":Type[2, 4, 8],
-                        "resnet_dt":Atomfalse,
-                                "seed":Type1
-                                    }
+       "neuron":    [2, 4, 8],
+       "resnet_dt": false,
+       "seed":      1
+    }
 ```
 
 

@@ -7,6 +7,7 @@ import warnings
 import numpy as np
 from typing import Tuple, List
 
+from deepmd.utils import random as dp_random
 from deepmd.utils.data import DataSets
 from deepmd.utils.data import DeepmdData
 
@@ -16,6 +17,7 @@ log = logging.getLogger(__name__)
 class DeepmdDataSystem() :
     """
     Class for manipulating many data systems. 
+
     It is implemented with the help of DeepmdData
     """
     def __init__ (self,
@@ -329,7 +331,7 @@ class DeepmdDataSystem() :
             self.pick_idx = sys_idx
         else :
             # prob = self._get_sys_probs(sys_probs, auto_prob_style)
-            self.pick_idx = np.random.choice(np.arange(self.nsystems), p=self.sys_probs)
+            self.pick_idx = dp_random.choice(np.arange(self.nsystems), p=self.sys_probs)
         b_data = self.data_systems[self.pick_idx].get_batch(self.batch_size[self.pick_idx])
         b_data["natoms_vec"] = self.natoms_vec[self.pick_idx]
         b_data["default_mesh"] = self.default_mesh[self.pick_idx]
@@ -512,7 +514,10 @@ class DeepmdDataSystem() :
 
 class DataSystem (object) :
     """
-    Outdated class for the data systems. Not maintained anymore.    
+    Outdated class for the data systems.
+
+    .. deprecated:: 2.0.0
+        This class is not maintained any more.  
     """
     def __init__ (self,
                   systems,
@@ -667,7 +672,7 @@ class DataSystem (object) :
                     raise RuntimeError("unkown get_batch style")
             else :
                 prob = self.process_sys_weights(sys_weights)
-            self.pick_idx = np.random.choice(np.arange(self.nsystems), p = prob)
+            self.pick_idx = dp_random.choice(np.arange(self.nsystems), p=prob)
         b_data = self.data_systems[self.pick_idx].get_batch(self.batch_size[self.pick_idx])
         b_data["natoms_vec"] = self.natoms_vec[self.pick_idx]
         b_data["default_mesh"] = self.default_mesh[self.pick_idx]

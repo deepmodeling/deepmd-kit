@@ -41,7 +41,13 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
      efield_fsum_all(4, 0.0), 
      efield_force_flag(0)
 {
+#if LAMMPS_VERSION_NUMBER>=20210702
+  // lammps/lammps#2560
+  energy_global_flag = 1;
+  virial_global_flag = 1;
+#else
   virial_flag = 1;
+#endif
 
   if (strcmp(update->unit_style,"metal") != 0) {
     error->all(FLERR,"Pair deepmd requires metal unit, please set it by \"units metal\"");
@@ -117,7 +123,10 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
 int FixDPLR::setmask()
 {
   int mask = 0;
+#if LAMMPS_VERSION_NUMBER<20210702
+  // THERMO_ENERGY removed in lammps/lammps#2560
   mask |= THERMO_ENERGY;
+#endif
   mask |= POST_INTEGRATE;
   mask |= PRE_FORCE;
   mask |= POST_FORCE;

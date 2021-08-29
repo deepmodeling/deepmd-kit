@@ -106,8 +106,8 @@ def classify_index_TS():
 # -- Project information -----------------------------------------------------
 
 project = 'DeePMD-kit'
-copyright = '2020, Deep Potential'
-author = 'Deep Potential'
+copyright = '2017-2021, Deep Modeling'
+author = 'Deep Modeling'
 
 def run_doxygen(folder):
     """Run the doxygen make command in the designated folder"""
@@ -130,10 +130,19 @@ def generate_doxygen_xml(app):
     else:
         subprocess.call("doxygen Doxyfile", shell=True)
 
+def run_apidoc(_):
+    from sphinx.ext.apidoc import main
+    import sys
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+    cur_dir = os.path.abspath(os.path.dirname(__file__))
+    module = os.path.join(cur_dir,"..","deepmd")
+    main(['-M', '--tocfile', 'api_py', '-H', 'Python API', '-o', os.path.join(cur_dir, "api_py"), module, '--force'])
+
 def setup(app):
 
     # Add hook for building doxygen xml when needed
     app.connect("builder-inited", generate_doxygen_xml)
+    app.connect('builder-inited', run_apidoc)
 
 # -- General configuration ---------------------------------------------------
 
@@ -148,14 +157,18 @@ def setup(app):
 #     'sphinx.ext.autosummary'
 # ]
 
-mkindex("troubleshooting")
-mkindex("development")
-classify_index_TS()
+#mkindex("troubleshooting")
+#mkindex("development")
+#classify_index_TS()
 
 extensions = [
     "sphinx_rtd_theme",
     'myst_parser',
     'sphinx.ext.autosummary',
+    'sphinx.ext.mathjax',
+    'sphinx.ext.viewcode',
+    'sphinx.ext.intersphinx',
+    'numpydoc',
     'breathe',
     'exhale'
 ]
@@ -182,10 +195,10 @@ exhale_args = {
 }
 
 # Tell sphinx what the primary language being documented is.
-primary_domain = 'cpp'
+#primary_domain = 'cpp'
 
 # Tell sphinx what the pygments highlight language should be.
-highlight_language = 'cpp'
+#highlight_language = 'cpp'
 
 # 
 myst_heading_anchors = 4
@@ -198,6 +211,15 @@ templates_path = ['_templates']
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
+intersphinx_mapping = {
+    "numpy": ("https://docs.scipy.org/doc/numpy/", None),
+    "python": ("https://docs.python.org/", None),
+    "tensorflow": (
+        "https://www.tensorflow.org/api_docs/python",
+        "https://github.com/mr-ubik/tensorflow-intersphinx/raw/master/tf2_py_objects.inv",
+    ), 
+    "ase": ("https://wiki.fysik.dtu.dk/ase/", None),
+}
 
 # -- Options for HTML output -------------------------------------------------
 

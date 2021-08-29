@@ -1,43 +1,90 @@
 #include "custom_op.h"
 #include "ComputeDescriptor.h"
 #include "neighbor_list.h"
+#include "device.h"
+
+#define GGELU 0.044715
 
 REGISTER_OP("UnaggregatedDyDxS")
     .Attr("T: {float, double} = DT_DOUBLE") 
     .Input("y: T")                
-    .Input("w: T")              
+    .Input("w: T")     
+    .Input("xbar: T")
+    .Input("functype: int32")
     .Output("dy_dx: T");
 
 REGISTER_OP("UnaggregatedDyDx")
     .Attr("T: {float, double} = DT_DOUBLE")
     .Input("z: T")           
     .Input("w: T")     
-    .Input("dy_dx: T")     
+    .Input("dy_dx: T")   
+    .Input("ybar: T")
+    .Input("functype: int32")
     .Output("dz_dx: T");
 
 REGISTER_OP("UnaggregatedDy2DxS")
     .Attr("T: {float, double} = DT_DOUBLE") 
     .Input("y: T")                
     .Input("dy: T")                
-    .Input("w: T")              
+    .Input("w: T")  
+    .Input("xbar: T")
+    .Input("functype: int32")
     .Output("dy2_dx: T");
 
 REGISTER_OP("UnaggregatedDy2Dx")
     .Attr("T: {float, double} = DT_DOUBLE")
     .Input("z: T")           
-    .Input("w: T")     
-    .Input("dz_dx: T")     
+    .Input("w: T")       
     .Input("dy_dx: T")     
     .Input("dy2_dx: T")     
+    .Input("ybar: T")
+    .Input("functype: int32")
     .Output("dz2_dx: T");
+template <typename FPTYPE>
+FPTYPE grad(const FPTYPE xbar, const FPTYPE y, const int functype)  //functype=tanh, gelu, ..
+{
+    switch (functype)
+    {
+        case 1:
+            return (1 - y * y);
+        case 2:
+        {
+            const FPTYPE var = tanh(SQRT_2_PI * (xbar + GGELU * xbar * xbar * xbar));
+            return 0.5 * SQRT_2_PI * xbar * (1 - var * var) * (3 * GGELU * xbar * xbar + 1) + 0.5 * var + 0.5;
+        }
+        default:
+            return -1;
+    }
+    
+}
+
+template <typename FPTYPE>
+FPTYPE grad_grad(const FPTYPE xbar, const FPTYPE y, const int functype)
+{
+    switch (functype)
+    {
+        case 1:
+            return -2 * y * (1 - y * y);
+        case 2:
+        {
+            const FPTYPE var1 = tanh(SQRT_2_PI * (xbar + GGELU * xbar * xbar * xbar));
+            const FPTYPE var2 = SQRT_2_PI * (1 - var1 * var1) * (3 * GGELU * xbar * xbar + 1);
+            return  3 * GGELU * SQRT_2_PI * xbar * xbar * (1 - var1 * var1) - SQRT_2_PI * xbar * var2 * (3 * GGELU * xbar * xbar + 1) * var1 + var2;
+        }
+        default:
+            return -1;
+    }
+}
+    
+
 
 template <typename FPTYPE>
 struct UnaggregatedDyDxSFunctor {
-    void operator()(const CPUDevice& d, const FPTYPE * y, const FPTYPE * w, const int length, const int width, FPTYPE * dy_dx) {
+    void operator()(const CPUDevice& d, const FPTYPE * y, const FPTYPE * w, const FPTYPE* xbar, const int length, const int width, FPTYPE * dy_dx, const int functype) {
         #pragma omp parallel for
         for (int ii = 0; ii < length; ii++) {
             for (int jj = 0; jj < width; jj++) {
-                dy_dx[ii * width + jj] = (1 - y[ii * width + jj] * y[ii * width + jj]) * w[jj];
+                dy_dx[ii * width + jj] = grad(xbar[ii * width + jj], y[ii * width + jj],functype)*w[jj];
             }
         }
     }
@@ -53,12 +100,13 @@ struct UnaggregatedDyDxSFunctor {
 // calculate the gradient for all variables!
 template <typename FPTYPE>
 struct UnaggregatedDyDxFunctor {
-    void operator()(const CPUDevice& d, const FPTYPE * z, const FPTYPE * w, const FPTYPE * dy_dx, const int length, const int width, const int size, FPTYPE * dz_dx) {
+    void operator()(const CPUDevice& d, const FPTYPE * z, const FPTYPE * w, const FPTYPE * dy_dx, const FPTYPE * ybar,  const int length, const int width, const int size, FPTYPE * dz_dx, const int functype) {
+        //width=2*size
         #pragma omp parallel for
         for (int kk = 0; kk < length; kk++) {
             for (int ii = 0; ii < width; ii++) {
                 //FPTYPE dz_drou = 1 - (z[kk * width + ii] - y[kk * size + ii % size]) * (z[kk * width + ii] - y[kk * size + ii % size]);
-                FPTYPE dz_drou = 1 - z[kk * width + ii] * z[kk * width + ii];
+                FPTYPE dz_drou = grad(ybar[kk*width+ii], z[kk * width + ii],functype);
                 FPTYPE accumulator = 0.0;
                 for (int jj = 0; jj < size; jj++) {
                     accumulator += w[jj * width + ii] * dy_dx[kk * size + jj];
@@ -80,11 +128,11 @@ struct UnaggregatedDyDxFunctor {
 
 template <typename FPTYPE>
 struct UnaggregatedDy2DxSFunctor {
-    void operator()(const CPUDevice& d, const FPTYPE * y, const FPTYPE * dy, const FPTYPE * w, const int length, const int width, FPTYPE * dy2_dx) {
+    void operator()(const CPUDevice& d, const FPTYPE * y, const FPTYPE * dy, const FPTYPE * w, const FPTYPE* xbar, const int length, const int width, FPTYPE * dy2_dx, const int functype) {
         #pragma omp parallel for
         for (int ii = 0; ii < length; ii++) {
             for (int jj = 0; jj < width; jj++) {
-                dy2_dx[ii * width + jj] = -2 * w[jj] * y[ii * width + jj] * dy[ii * width + jj];
+                dy2_dx[ii * width + jj] =  grad_grad(xbar[ii * width + jj],y[ii * width + jj],functype)*w[jj]*w[jj];
             }
         }
     }
@@ -100,12 +148,12 @@ struct UnaggregatedDy2DxSFunctor {
 // calculate the gradient for all variables!
 template <typename FPTYPE>
 struct UnaggregatedDy2DxFunctor {
-    void operator()(const CPUDevice& d, const FPTYPE * z, const FPTYPE * w, const FPTYPE * dz_dx, const FPTYPE * dy_dx, const FPTYPE * dy2_dx, const int length, const int width, const int size, FPTYPE * dz2_dx) {
+    void operator()(const CPUDevice& d, const FPTYPE * z, const FPTYPE * w, const FPTYPE * dy_dx, const FPTYPE * dy2_dx, const FPTYPE * ybar, const int length, const int width, const int size, FPTYPE * dz2_dx, const int functype) {
         #pragma omp parallel for
         for (int kk = 0; kk < length; kk++) {
             for (int ii = 0; ii < width; ii++) {
                 //FPTYPE dz_drou = 1 - (z[kk * width + ii] - y[kk * size + ii % size]) * (z[kk * width + ii] - y[kk * size + ii % size]);
-                FPTYPE dz_drou = 1 - z[kk * width + ii] * z[kk * width + ii];
+                FPTYPE dz_drou = grad(ybar[kk*width+ii], z[kk * width + ii],functype);
                 FPTYPE accumulator = 0.0;
                 for (int jj = 0; jj < size; jj++) {
                     accumulator += w[jj * width + ii] * dy2_dx[kk * size + jj];
@@ -115,7 +163,7 @@ struct UnaggregatedDy2DxFunctor {
                 for (int jj = 0; jj < size; jj++) {
                     accumulator += w[jj * width + ii] * dy_dx[kk * size + jj];
                 }
-                dz_drou -= 2 * z[kk * width + ii] * (dz_dx[kk * width + ii] - dy_dx[kk * size + ii % size]) * accumulator;
+                dz_drou += grad_grad(ybar[kk * width + ii], z[kk * width + ii],functype) * accumulator * accumulator;
                 dz_drou += dy2_dx[kk * size + ii % size];
                 dz2_dx[kk * width + ii] = dz_drou;
             }
@@ -141,13 +189,18 @@ class UnaggregatedDyDxSOp : public OpKernel {
 
     void _Compute(OpKernelContext* context) {
         // Grab the input tensor
+        //xbar=xw+b
         int context_input_index = 0;
         const Tensor& y	= context->input(context_input_index++);
         const Tensor& w	= context->input(context_input_index++);
+        const Tensor& xbar = context->input(context_input_index++);
+        const Tensor& functype = context->input(context_input_index++);
 
         // set size of the sample
-        OP_REQUIRES (context, (y.shape().dims() == 2),	    errors::InvalidArgument ("Dim of table should be 1"));
+        OP_REQUIRES (context, (y.shape().dims() == 2),	    errors::InvalidArgument ("Dim of input should be 2"));
         OP_REQUIRES (context, (w.shape().dims() == 2),		errors::InvalidArgument ("Dim of input should be 2"));
+        OP_REQUIRES(context, (xbar.shape().dims() == 2),    errors::InvalidArgument("Dim of input should be 2"));
+        //check functype
 
         int context_output_index = 0;
         Tensor* dy_dx = NULL;
@@ -159,9 +212,11 @@ class UnaggregatedDyDxSOp : public OpKernel {
             context->eigen_device<Device>(),            // define actually graph execution device
             y.flat<FPTYPE>().data(),
             w.flat<FPTYPE>().data(),
+            xbar.flat<FPTYPE>().data(),
             y.shape().dim_size(0),
             y.shape().dim_size(1),
-            dy_dx->flat<FPTYPE>().data()
+            dy_dx->flat<FPTYPE>().data(),
+            functype.flat<int32>()(0)
         );
     }
 private:
@@ -182,14 +237,17 @@ class UnaggregatedDy2DxSOp : public OpKernel {
         const Tensor& y	    = context->input(context_input_index++);
         const Tensor& dy	= context->input(context_input_index++);
         const Tensor& w	    = context->input(context_input_index++);
+        const Tensor& xbar = context->input(context_input_index++);
+        const Tensor& functype = context->input(context_input_index++);
 
         // set size of the sample
         OP_REQUIRES (context, (y.shape().dims()  == 2),	    errors::InvalidArgument ("Dim of input should be 2"));
         OP_REQUIRES (context, (dy.shape().dims() == 2),	    errors::InvalidArgument ("Dim of input should be 2"));
         OP_REQUIRES (context, (w.shape().dims()  == 2),		errors::InvalidArgument ("Dim of input should be 2"));
+        OP_REQUIRES (context, (xbar.shape().dims()  == 2),		errors::InvalidArgument ("Dim of input should be 2"));
     
         int context_output_index = 0;
-        Tensor* dy2_dx = NULL; 
+        Tensor* dy2_dx = NULL;
         OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
 	    					     y.shape(),
 	    					     &dy2_dx));
@@ -199,9 +257,11 @@ class UnaggregatedDy2DxSOp : public OpKernel {
             y.flat<FPTYPE>().data(),
             dy.flat<FPTYPE>().data(),
             w.flat<FPTYPE>().data(),
+            xbar.flat<FPTYPE>().data(),
             y.shape().dim_size(0),
             y.shape().dim_size(1),
-            dy2_dx->flat<FPTYPE>().data()
+            dy2_dx->flat<FPTYPE>().data(),
+            functype.flat<int32>()(0)
         );
     }
 private:
@@ -222,11 +282,14 @@ class UnaggregatedDyDxOp : public OpKernel {
         const Tensor& z	= context->input(context_input_index++);
         const Tensor& w	= context->input(context_input_index++);
         const Tensor& dy_dx	= context->input(context_input_index++);
+        const Tensor& ybar	= context->input(context_input_index++);
+        const Tensor& functype = context->input(context_input_index++);
 
         // set size of the sample
-        OP_REQUIRES (context, (z.shape().dims() == 2),	        errors::InvalidArgument ("Dim of table should be 1"));
+        OP_REQUIRES (context, (z.shape().dims() == 2),	        errors::InvalidArgument ("Dim of input should be 2"));
         OP_REQUIRES (context, (w.shape().dims() == 2),		    errors::InvalidArgument ("Dim of input should be 2"));
         OP_REQUIRES (context, (dy_dx.shape().dims() == 2),		errors::InvalidArgument ("Dim of input should be 2"));
+        OP_REQUIRES (context, (ybar.shape().dims() == 2),		errors::InvalidArgument ("Dim of input should be 2"));
 
         int context_output_index = 0;
         Tensor* dz_dx = NULL;
@@ -239,10 +302,12 @@ class UnaggregatedDyDxOp : public OpKernel {
             z.flat<FPTYPE>().data(),
             w.flat<FPTYPE>().data(),
             dy_dx.flat<FPTYPE>().data(),
+            ybar.flat<FPTYPE>().data(),
             z.shape().dim_size(0),
-            z.shape().dim_size(1),
-            w.shape().dim_size(0),
-            dz_dx->flat<FPTYPE>().data()
+            z.shape().dim_size(1),        //N1
+            w.shape().dim_size(0),      //N0 , N1=2N0
+            dz_dx->flat<FPTYPE>().data(),
+            functype.flat<int32>()(0)
         );
     }
 private:
@@ -262,16 +327,17 @@ class UnaggregatedDy2DxOp : public OpKernel {
         int context_input_index = 0;
         const Tensor& z	= context->input(context_input_index++);
         const Tensor& w	= context->input(context_input_index++);
-        const Tensor& dz_dx	= context->input(context_input_index++);
         const Tensor& dy_dx	= context->input(context_input_index++);
         const Tensor& dy2_dx = context->input(context_input_index++);
+        const Tensor& ybar = context->input(context_input_index++);
+        const Tensor& functype = context->input(context_input_index++);
 
         // set size of the sample
         OP_REQUIRES (context, (z.shape().dims() == 2),	        errors::InvalidArgument ("Dim of input should be 2"));
         OP_REQUIRES (context, (w.shape().dims() == 2),		    errors::InvalidArgument ("Dim of input should be 2"));
-        OP_REQUIRES (context, (dz_dx.shape().dims() == 2),		errors::InvalidArgument ("Dim of input should be 2"));
         OP_REQUIRES (context, (dy_dx.shape().dims() == 2),		errors::InvalidArgument ("Dim of input should be 2"));
         OP_REQUIRES (context, (dy2_dx.shape().dims() == 2),		errors::InvalidArgument ("Dim of input should be 2"));
+        OP_REQUIRES (context, (ybar.shape().dims() == 2),		errors::InvalidArgument ("Dim of input should be 2"));
 
         int context_output_index = 0;
         Tensor* dz2_dx = NULL;
@@ -283,13 +349,14 @@ class UnaggregatedDy2DxOp : public OpKernel {
             context->eigen_device<Device>(),            // define actually graph execution device
             z.flat<FPTYPE>().data(),
             w.flat<FPTYPE>().data(),
-            dz_dx.flat<FPTYPE>().data(),
             dy_dx.flat<FPTYPE>().data(),
             dy2_dx.flat<FPTYPE>().data(),
+            ybar.flat<FPTYPE>().data(),
             z.shape().dim_size(0),
             z.shape().dim_size(1),
             w.shape().dim_size(0),
-            dz2_dx->flat<FPTYPE>().data()
+            dz2_dx->flat<FPTYPE>().data(),
+            functype.flat<int32>()(0)
         );
     }
 private:
