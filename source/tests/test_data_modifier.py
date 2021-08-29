@@ -119,7 +119,7 @@ class TestDataModifier (tf.test.TestCase) :
             ep, _, __ = dcm.eval(coordp, box, atype, eval_fv = False)
             em, _, __ = dcm.eval(coordm, box, atype, eval_fv = False)
             num_f = -(ep - em) / (2.*hh)
-            np.testing.assert_almost_equal(vf[:,ii], num_f, 
+            np.testing.assert_almost_equal(vf[:,ii].ravel(), num_f.ravel(), 
                                            places,
                                            err_msg = 'dof %d does not match' % (ii))
 

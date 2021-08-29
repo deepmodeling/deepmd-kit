@@ -200,7 +200,7 @@ class TestEwaldRecp (tf.test.TestCase) :
         # print(0.5 * (t_esti[0] + t_esti[0].T) - virial[0].reshape([3,3]))        
         np.testing.assert_almost_equal(t_esti, virial, 
                                            places,
-                                           err_msg = "frame %d virial component [%d,%d] failed" % (ff, ii, jj))
+                                           err_msg = "virial component failed")
             
                 
 

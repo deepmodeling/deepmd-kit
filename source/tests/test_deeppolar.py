@@ -44,7 +44,7 @@ class TestDeepPolarPBC(unittest.TestCase) :
         nsel = 2
         self.assertEqual(dd.shape, (nframes,nsel,9))
         # check values
-        np.testing.assert_almost_equal(dd, self.expected_d, default_places)
+        np.testing.assert_almost_equal(dd.ravel(), self.expected_d, default_places)
 
     def test_2frame_atm(self):
         coords2 = np.concatenate((self.coords, self.coords))
@@ -57,7 +57,7 @@ class TestDeepPolarPBC(unittest.TestCase) :
         self.assertEqual(dd.shape, (nframes,nsel,9))
         # check values
         expected_d = np.concatenate((self.expected_d, self.expected_d))
-        np.testing.assert_almost_equal(dd, expected_d, default_places)
+        np.testing.assert_almost_equal(dd.ravel(), expected_d, default_places)
 
 
 
@@ -86,7 +86,7 @@ class TestDeepPolarNoPBC(unittest.TestCase) :
         nsel = 2
         self.assertEqual(dd.shape, (nframes,nsel,9))
         # check values
-        np.testing.assert_almost_equal(dd, self.expected_d, default_places)
+        np.testing.assert_almost_equal(dd.ravel(), self.expected_d, default_places)
 
     def test_1frame_atm_large_box(self):
         dd = self.dp.eval(self.coords, self.box, self.atype)
@@ -96,7 +96,7 @@ class TestDeepPolarNoPBC(unittest.TestCase) :
         nsel = 2
         self.assertEqual(dd.shape, (nframes,nsel,9))
         # check values
-        np.testing.assert_almost_equal(dd, self.expected_d, default_places)
+        np.testing.assert_almost_equal(dd.ravel(), self.expected_d, default_places)
 
 
 @unittest.skipIf(parse_version(tf.__version__) < parse_version("1.15"), 
