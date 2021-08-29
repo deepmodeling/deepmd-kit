@@ -55,13 +55,13 @@ class TestGenStatData(unittest.TestCase) :
                                 5, 
                                 10, 
                                 1.0)
-        data1.add('force', 3, atomic = True, must = True)
+        data1.add('energy', 1, must = True)
         dp_random.seed(0)
         data2 = DeepmdDataSystem(['system_0', 'system_1'], 
                                 5, 
                                 10, 
                                 1.0)
-        data2.add('force', 3, atomic = True, must = True)
+        data2.add('energy', 1, must = True)
         
         dp_random.seed(0)
         all_stat_0 = make_stat_input(data0, 10, merge_sys = False)

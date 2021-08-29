@@ -134,7 +134,7 @@ class TestDeepDipoleNewPBC(unittest.TestCase) :
         nframes = 1
         self.assertEqual(gt.shape, (nframes,self.nout))
         # check values
-        np.testing.assert_almost_equal(gt, self.expected_gt, default_places)
+        np.testing.assert_almost_equal(gt.ravel(), self.expected_gt, default_places)
 
     def test_1frame_old_atm(self):
         at = self.dp.eval(self.coords, self.box, self.atype)
@@ -144,7 +144,7 @@ class TestDeepDipoleNewPBC(unittest.TestCase) :
         nsel = 2
         self.assertEqual(at.shape, (nframes,nsel,self.nout))
         # check values
-        np.testing.assert_almost_equal(at, self.expected_t, default_places)
+        np.testing.assert_almost_equal(at.ravel(), self.expected_t, default_places)
 
     def test_2frame_old_atm(self):
         coords2 = np.concatenate((self.coords, self.coords))
@@ -157,7 +157,7 @@ class TestDeepDipoleNewPBC(unittest.TestCase) :
         self.assertEqual(at.shape, (nframes,nsel,self.nout))
         # check values
         expected_d = np.concatenate((self.expected_t, self.expected_t))
-        np.testing.assert_almost_equal(at, expected_d, default_places)
+        np.testing.assert_almost_equal(at.ravel(), expected_d, default_places)
 
     def test_1frame_full(self):
         gt, ff, vv = self.dp.eval_full(self.coords, self.box, self.atype, atomic = False)
@@ -168,9 +168,9 @@ class TestDeepDipoleNewPBC(unittest.TestCase) :
         self.assertEqual(ff.shape, (nframes,self.nout,natoms,3))
         self.assertEqual(vv.shape, (nframes,self.nout,9))
         # check values
-        np.testing.assert_almost_equal(ff, self.expected_f, default_places)
-        np.testing.assert_almost_equal(gt, self.expected_gt, default_places)
-        np.testing.assert_almost_equal(vv, self.expected_gv, default_places)
+        np.testing.assert_almost_equal(ff.ravel(), self.expected_f, default_places)
+        np.testing.assert_almost_equal(gt.ravel(), self.expected_gt, default_places)
+        np.testing.assert_almost_equal(vv.ravel(), self.expected_gv, default_places)
 
     def test_1frame_full_atm(self):
         gt, ff, vv, at, av = self.dp.eval_full(self.coords, self.box, self.atype, atomic = True)

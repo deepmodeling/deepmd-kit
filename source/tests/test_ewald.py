@@ -126,7 +126,7 @@ class TestEwaldRecp (tf.test.TestCase) :
                 c_force = -(energyp[0] - energym[0]) / (2*hh)
                 np.testing.assert_almost_equal(c_force, force[:,idx*3+dd], 
                                            places,
-                                           err_msg = "frame %d force component [%d,%d] failed" % (ff, idx, dd))
+                                           err_msg = "force component [%d,%d] failed" % (idx, dd))
 
 
     def test_virial(self):
