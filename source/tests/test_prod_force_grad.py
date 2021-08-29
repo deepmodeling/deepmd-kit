@@ -105,5 +105,4 @@ class TestProdForceGrad(tf.test.TestCase):
         )
         self.assertEqual(dgrad_net.shape, (self.nframes, self.nloc*self.ndescrpt))
         for ff in range(self.nframes):
-            for ii in range(self.nloc*self.ndescrpt):
-                self.assertAlmostEqual(dgrad_net[ff][ii], self.expected_grad_net[ii], places=5)
+            np.testing.assert_almost_equal(dgrad_net[ff], self.expected_grad_net, 5)

@@ -185,11 +185,9 @@ class TestDataModifier (tf.test.TestCase) :
         dv01 = dv01.reshape([self.nframes, -1])
         dv1 = dv1.reshape([self.nframes, -1])
 
-        for ii in range(self.nframes):
-            for jj in range(self.nsel):
-                self.assertAlmostEqual(
-                    dv01[ii][jj], dv1[ii][jj], 
-                    msg = "dipole [%d,%d] dose not match" % (ii, jj))
+        np.testing.assert_almost_equal(
+                    dv01, dv1, 
+                    err_msg = "dipole dose not match")
 
 
     def test_modify(self):
@@ -202,18 +200,12 @@ class TestDataModifier (tf.test.TestCase) :
         ve1, vf1, vv1 = dcm.eval(self.coords1, self.box1, self.atom_types1)
         vf01 = vf0[:,self.idx_map, :]
 
-        for ii in range(self.nframes):
-            self.assertAlmostEqual(ve0[ii], ve1[ii], 
-                                   msg = 'energy %d should match' % ii)
-        for ii in range(self.nframes):
-            for jj in range(9):
-                self.assertAlmostEqual(vv0[ii][jj], vv1[ii][jj], 
-                                       msg = 'virial [%d,%d] should match' % (ii,jj))
-        for ii in range(self.nframes):
-            for jj in range(self.natoms):
-                for dd in range(3):
-                    self.assertAlmostEqual(
-                        vf01[ii][jj][dd], vf1[ii][jj][dd], 
-                        msg = "force [%d,%d,%d] dose not match" % (ii,jj,dd))
+        np.testing.assert_almost_equal(ve0, ve1, 
+                                       err_msg = 'energy should match')
+        np.testing.assert_almost_equal(vv0, vv1, 
+                                       err_msg = 'virial should match')
+        np.testing.assert_almost_equal(
+                        vf01, vf1, 
+                        err_msg = "force dose not match")
                     
         

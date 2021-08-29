@@ -102,16 +102,11 @@ class TestTransform(unittest.TestCase) :
         self.assertEqual(ae1.shape, (nframes,natoms,1))
         self.assertEqual(av1.shape, (nframes,natoms,9))
         # check values
-        for ii in range(ff0.size):
-            self.assertAlmostEqual(ff0.reshape([-1])[ii], ff1.reshape([-1])[ii], places = default_places)
-        for ii in range(ae0.size):
-            self.assertAlmostEqual(ae0.reshape([-1])[ii], ae1.reshape([-1])[ii], places = default_places)
-        for ii in range(av0.size):
-            self.assertAlmostEqual(av0.reshape([-1])[ii], av1.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ff0, ff1, default_places)
+        np.testing.assert_almost_equal(ae0, ae1, default_places)
+        np.testing.assert_almost_equal(av0, av1, default_places)
         expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis = 1)
-        for ii in range(nframes):
-            self.assertAlmostEqual(ee0.reshape([-1])[ii], ee1.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ee0, ee1, default_places)
         expected_sv = np.sum(self.expected_v.reshape([nframes, -1, 9]), axis = 1)
-        for ii in range(nframes, 9):
-            self.assertAlmostEqual(vv0.reshape([-1])[ii], vv1.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(vv0, vv1, default_places)
 
