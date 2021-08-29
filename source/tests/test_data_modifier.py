@@ -149,7 +149,7 @@ class TestDataModifier (tf.test.TestCase) :
         t_esti = np.matmul(num_deriv, box3)
 
         # print(t_esti, '\n', vv.reshape([-1, 3, 3]))
-        np.testing.assert_almost_equal(t_esti, vv, 
+        np.testing.assert_almost_equal(t_esti.ravel(), vv.ravel(), 
                                        places,
                                        err_msg = "virial component failed")
             
