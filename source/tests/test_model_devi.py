@@ -38,8 +38,8 @@ class TestMakeModelDevi(unittest.TestCase):
                                      fname=self.output)
         self.assertAlmostEqual(model_devi[0][0], 0)
         self.assertAlmostEqual(model_devi[1][0], self.freq)
-        np.testing.assert_almost_equal(model_devi[0], self.expect)
-        np.testing.assert_almost_equal(model_devi[0], model_devi[1])
+        np.testing.assert_almost_equal(model_devi[0], self.expect, 6)
+        np.testing.assert_almost_equal(model_devi[0], model_devi[1], 6)
         self.assertTrue(os.path.isfile(self.output))
     
     def tearDown(self):
