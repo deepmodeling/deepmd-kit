@@ -24,8 +24,8 @@ class TestTransform(unittest.TestCase) :
         self.old_model = str(tests_path / "dp-old.pb")
         self.raw_model = str(tests_path / "dp-raw.pb")
         self.new_model = str(tests_path / "dp-new.pb")
-        convert_pbtxt_to_pb(str(tests_path / os.path.join("infer","deeppot.pbtxt")), "dp-old.pb")
-        convert_pbtxt_to_pb(str(tests_path / os.path.join("infer","deeppot-1.pbtxt")), "dp-raw.pb")
+        convert_pbtxt_to_pb(str(tests_path / os.path.join("infer","deeppot.pbtxt")), self.old_model)
+        convert_pbtxt_to_pb(str(tests_path / os.path.join("infer","deeppot-1.pbtxt")), self.raw_model)
         ret = os.system("dp transfer -O " + self.old_model + " -r " + self.raw_model + " -o " + self.new_model)
         assert(ret == 0), "DP transfer error!"
 
