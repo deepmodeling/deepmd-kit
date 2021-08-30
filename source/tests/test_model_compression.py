@@ -40,11 +40,11 @@ def _init_models():
         json.dump(jdata, fp, indent=4)
 
     ret = _subprocess_run("dp train " + INPUT)
-    np.testing.assertEqual(ret, 0, 'DP train failed!')
+    np.testing.assert_equal(ret, 0, 'DP train failed!')
     ret = _subprocess_run("dp freeze -o " + frozen_model)
-    np.testing.assertEqual(ret, 0, 'DP freeze failed!')
+    np.testing.assert_equal(ret, 0, 'DP freeze failed!')
     ret = _subprocess_run("dp compress " + " -i " + frozen_model + " -o " + compressed_model)
-    np.testing.assertEqual(ret, 0, 'DP model compression failed!')
+    np.testing.assert_equal(ret, 0, 'DP model compression failed!')
     return INPUT, frozen_model, compressed_model
 
 INPUT, FROZEN_MODEL, COMPRESSED_MODEL = _init_models()
