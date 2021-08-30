@@ -109,8 +109,8 @@ class TestTransform(unittest.TestCase) :
         np.testing.assert_almost_equal(ff.ravel(), expected_f.ravel(), default_places)
         np.testing.assert_almost_equal(ae.ravel(), expected_e.ravel(), default_places)
         np.testing.assert_almost_equal(av.ravel(), expected_v.ravel(), default_places)
-        expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis = 1)
+        expected_se = np.sum(expected_e.reshape([nframes, -1]), axis = 1)
         np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
-        expected_sv = np.sum(self.expected_v.reshape([nframes, -1, 9]), axis = 1)
+        expected_sv = np.sum(expected_v.reshape([nframes, -1, 9]), axis = 1)
         np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
 
