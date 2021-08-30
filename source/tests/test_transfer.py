@@ -20,7 +20,7 @@ def _file_delete(file) :
         os.remove(file)
 
 def _subprocess_run(command):
-    popen = sp.Popen(command, shell=True, stdout=sp.PIPE, stderr=sp.STDOUT)
+    popen = sp.Popen(command.split(), shell=False, stdout=sp.PIPE, stderr=sp.STDOUT)
     for line in iter(popen.stdout.readline, b''):
         if hasattr(line, 'decode'):
             line = line.decode('utf-8')
