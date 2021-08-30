@@ -64,11 +64,11 @@ class TestTransform(unittest.TestCase) :
         self.assertEqual(ff.shape, (nframes,natoms,3))
         self.assertEqual(vv.shape, (nframes,9))
         # check values
-        np.testing.assert_almost_equal(ff.ravel(), self.expected_f, default_places)
+        np.testing.assert_almost_equal(ff.ravel(), self.expected_f.ravel(), default_places)
         expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis = 1)
-        np.testing.assert_almost_equal(ee.ravel(), expected_se, default_places)
+        np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
         expected_sv = np.sum(self.expected_v.reshape([nframes, -1, 9]), axis = 1)
-        np.testing.assert_almost_equal(vv.ravel(), expected_sv, default_places)
+        np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
 
     def test_1frame_atm(self):
         ee, ff, vv, ae, av = self.dp.eval(self.coords, self.box, self.atype, atomic = True)
@@ -81,13 +81,13 @@ class TestTransform(unittest.TestCase) :
         self.assertEqual(ae.shape, (nframes,natoms,1))
         self.assertEqual(av.shape, (nframes,natoms,9))
         # check values
-        np.testing.assert_almost_equal(ff.ravel(), self.expected_f, default_places)
-        np.testing.assert_almost_equal(ae.ravel(), self.expected_e, default_places)
-        np.testing.assert_almost_equal(av.ravel(), self.expected_v, default_places)
+        np.testing.assert_almost_equal(ff.ravel(), self.expected_f.ravel(), default_places)
+        np.testing.assert_almost_equal(ae.ravel(), self.expected_e.ravel(), default_places)
+        np.testing.assert_almost_equal(av.ravel(), self.expected_v.ravel(), default_places)
         expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis = 1)
-        np.testing.assert_almost_equal(ee.ravel(), expected_se, default_places)
+        np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
         expected_sv = np.sum(self.expected_v.reshape([nframes, -1, 9]), axis = 1)
-        np.testing.assert_almost_equal(vv.ravel(), expected_sv, default_places)
+        np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
 
 
     def test_2frame_atm(self):
@@ -106,11 +106,11 @@ class TestTransform(unittest.TestCase) :
         expected_f = np.concatenate((self.expected_f, self.expected_f), axis = 0)
         expected_e = np.concatenate((self.expected_e, self.expected_e), axis = 0)
         expected_v = np.concatenate((self.expected_v, self.expected_v), axis = 0)
-        np.testing.assert_almost_equal(ff.ravel(), expected_f, default_places)
-        np.testing.assert_almost_equal(ae.ravel(), expected_e, default_places)
-        np.testing.assert_almost_equal(av.ravel(), expected_v, default_places)
+        np.testing.assert_almost_equal(ff.ravel(), expected_f.ravel(), default_places)
+        np.testing.assert_almost_equal(ae.ravel(), expected_e.ravel(), default_places)
+        np.testing.assert_almost_equal(av.ravel(), expected_v.ravel(), default_places)
         expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis = 1)
-        np.testing.assert_almost_equal(ee.ravel(), expected_se, default_places)
+        np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
         expected_sv = np.sum(self.expected_v.reshape([nframes, -1, 9]), axis = 1)
-        np.testing.assert_almost_equal(vv.ravel(), expected_sv, default_places)
+        np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
 
