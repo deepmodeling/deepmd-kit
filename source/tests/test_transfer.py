@@ -1,6 +1,7 @@
 import os,sys,platform,shutil,dpdata,json
 import numpy as np
 import unittest
+import subprocess as sp
 
 from deepmd.env import tf
 from deepmd.infer import DeepPot
@@ -18,6 +19,16 @@ def _file_delete(file) :
     if os.path.exists(file):
         os.remove(file)
 
+def _subprocess_run(command):
+    popen = sp.Popen(command, shell=True, stdout=sp.PIPE, stderr=sp.STDOUT)
+    for line in iter(popen.stdout.readline, b''):
+        if hasattr(line, 'decode'):
+            line = line.decode('utf-8')
+        line = line.rstrip()
+        print(line)
+    popen.wait()
+    return popen.returncode
+
 class TestTransform(unittest.TestCase) :
     @classmethod
     def setUpClass(self):
@@ -26,8 +37,8 @@ class TestTransform(unittest.TestCase) :
         self.new_model = str(tests_path / "dp-new.pb")
         convert_pbtxt_to_pb(str(tests_path / os.path.join("infer","deeppot.pbtxt")), self.old_model)
         convert_pbtxt_to_pb(str(tests_path / os.path.join("infer","deeppot-1.pbtxt")), self.raw_model)
-        ret = os.system("dp transfer -O " + self.old_model + " -r " + self.raw_model + " -o " + self.new_model)
-        assert(ret == 0), "DP transfer error!"
+        ret = _subprocess_run("dp transfer -O " + self.old_model + " -r " + self.raw_model + " -o " + self.new_model)
+        self.assertEqual(ret, 0, 'DP transfer failed!')
 
         self.dp = DeepPot(self.new_model)
         self.coords = np.array([12.83, 2.56, 2.18,

@@ -1,6 +1,7 @@
 import os,sys,platform,shutil,dpdata,json
 import numpy as np
 import unittest
+import subprocess as sp
 
 from deepmd.infer import DeepPot
 from deepmd.env import MODEL_VERSION
@@ -17,6 +18,16 @@ def _file_delete(file) :
     if os.path.exists(file):
         os.remove(file)
 
+def _subprocess_run(command):
+    popen = sp.Popen(command, shell=True, stdout=sp.PIPE, stderr=sp.STDOUT)
+    for line in iter(popen.stdout.readline, b''):
+        if hasattr(line, 'decode'):
+            line = line.decode('utf-8')
+        line = line.rstrip()
+        print(line)
+    popen.wait()
+    return popen.returncode
+
 def _init_models():
     data_file  = str(tests_path / os.path.join("model_compression", "data"))
     frozen_model = str(tests_path / "dp-original.pb")
@@ -28,12 +39,12 @@ def _init_models():
     with open(INPUT, "w") as fp:
         json.dump(jdata, fp, indent=4)
 
-    ret = os.system("dp train " + INPUT)
-    assert(ret == 0), "DP train error!"
-    ret = os.system("dp freeze -o " + frozen_model)
-    assert(ret == 0), "DP freeze error!"
-    ret = os.system("dp compress " + " -i " + frozen_model + " -o " + compressed_model)
-    assert(ret == 0), "DP model compression error!"
+    ret = _subprocess_run("dp train " + INPUT)
+    np.testing.assertEqual(ret, 0, 'DP train failed!')
+    ret = _subprocess_run("dp freeze -o " + frozen_model)
+    np.testing.assertEqual(ret, 0, 'DP freeze failed!')
+    ret = _subprocess_run("dp compress " + " -i " + frozen_model + " -o " + compressed_model)
+    np.testing.assertEqual(ret, 0, 'DP model compression failed!')
     return INPUT, frozen_model, compressed_model
 
 INPUT, FROZEN_MODEL, COMPRESSED_MODEL = _init_models()
