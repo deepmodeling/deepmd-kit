@@ -478,6 +478,13 @@ void PairDeepMD::compute(int eflag, int vflag)
 	  all_force[ii][jj] = all_force_[ii][jj];
 	}
       }
+      all_virial.resize(all_virial_.size());
+      for (unsigned ii = 0; ii < all_virial_.size(); ++ii){
+        all_virial[ii].resize(all_virial_[ii].size());
+        for (unsigned jj = 0; jj < all_virial_[ii].size(); ++jj){
+          all_virial[ii][jj] = all_virial_[ii][jj];
+        }
+      }
 #endif
       if (eflag_atom) {
 	for (int ii = 0; ii < nlocal; ++ii) eatom[ii] += deatom[ii];
