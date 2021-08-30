@@ -38,7 +38,7 @@ class TestTransform(unittest.TestCase) :
         convert_pbtxt_to_pb(str(tests_path / os.path.join("infer","deeppot.pbtxt")), self.old_model)
         convert_pbtxt_to_pb(str(tests_path / os.path.join("infer","deeppot-1.pbtxt")), self.raw_model)
         ret = _subprocess_run("dp transfer -O " + self.old_model + " -r " + self.raw_model + " -o " + self.new_model)
-        self.assertEqual(ret, 0, 'DP transfer failed!')
+        np.testing.assert_equal(ret, 0, 'DP transfer failed!')
 
         self.dp = DeepPot(self.new_model)
         self.coords = np.array([12.83, 2.56, 2.18,
