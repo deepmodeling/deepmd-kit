@@ -101,6 +101,7 @@ def compress(
         10 * step,
         int(frequency),
     ]
+    jdata["training"]["save_ckpt"] = "model-compression/model.ckpt"
     jdata = normalize(jdata)
 
     # check the descriptor info of the input file

@@ -311,7 +311,7 @@ def parse_args(args: Optional[List[str]] = None):
         "-c",
         "--checkpoint-folder",
         type=str,
-        default=".",
+        default="model-compression",
         help="path to checkpoint folder",
     )
     parser_compress.add_argument(
