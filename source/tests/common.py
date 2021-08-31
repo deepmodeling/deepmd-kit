@@ -3,10 +3,9 @@ import numpy as np
 import pathlib
 
 from deepmd.env import tf
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
-from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.common import j_loader as dp_j_loader
+from deepmd.utils import random as dp_random
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
     global_default_fv_hh = 1e-2
@@ -54,8 +53,8 @@ class Data():
         self.nframes = nframes
         self.coord = np.array(coord)
         self.coord = self._copy_nframes(self.coord)
-        np.random.seed(seed)
-        self.coord += rand_pert * np.random.random(self.coord.shape)
+        dp_random.seed(seed)
+        self.coord += rand_pert * dp_random.random(self.coord.shape)
         self.fparam = np.array([[0.1, 0.2]])
         self.aparam = np.tile(self.fparam, [1, 6])
         self.fparam = self._copy_nframes(self.fparam)
@@ -70,7 +69,7 @@ class Data():
         self.coord = self.coord.reshape([self.nframes, -1, 3])
         self.coord = self.coord[:,self.idx_map,:]
         self.coord = self.coord.reshape([self.nframes, -1])        
-        self.efield = np.random.random(self.coord.shape)
+        self.efield = dp_random.random(self.coord.shape)
         self.atype = self.atype[self.idx_map]
         self.datype = self._copy_nframes(self.atype)
 
@@ -129,7 +128,7 @@ class Data():
         coord0_, box0_, type0_ = self.get_data()
         coord = coord0_[0]
         box = box0_[0]
-        box += rand_pert * np.random.random(box.shape)
+        box += rand_pert * dp_random.random(box.shape)
         atype = type0_[0]
         nframes = 1
         natoms = coord.size // 3
