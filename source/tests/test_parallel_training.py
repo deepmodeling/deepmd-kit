@@ -20,7 +20,7 @@ class TestSingleMachine(unittest.TestCase):
         penv = os.environ.copy()
         if len(get_gpus() or []) > 1:
             penv['CUDA_VISIBLE_DEVICES'] = '0,1'
-        popen = sp.Popen(command, shell=True, env=penv, stdout=sp.PIPE, stderr=sp.STDOUT)
+        popen = sp.Popen(command, shell=True, cwd=str(tests_path), env=penv, stdout=sp.PIPE, stderr=sp.STDOUT)
         for line in iter(popen.stdout.readline, b''):
             if hasattr(line, 'decode'):
                 line = line.decode('utf-8')
