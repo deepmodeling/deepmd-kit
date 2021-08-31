@@ -258,11 +258,9 @@ def virial_test (inter,
     num_vir = np.transpose(num_vir, [1,0])    
     box3 = dbox[0].reshape([3,3])
     num_vir = np.matmul(num_vir, box3)
-    for ii in range(3):
-        for jj in range(3):
-            testCase.assertAlmostEqual(ana_vir[ii][jj], num_vir[ii][jj],
-                                       places=places, 
-                                       msg = 'virial component %d %d ' % (ii,jj))
+    np.testing.assert_almost_equal(ana_vir, num_vir,
+                                   places, 
+                                   err_msg = 'virial component')
     
 
 

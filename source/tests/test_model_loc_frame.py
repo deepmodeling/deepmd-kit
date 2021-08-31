@@ -112,10 +112,7 @@ class TestModel(tf.test.TestCase):
         refv = np.reshape(refv, [-1])
 
         places = 10
-        for ii in range(e.size) :
-            self.assertAlmostEqual(e[ii], refe[ii], places = places)
-        for ii in range(f.size) :
-            self.assertAlmostEqual(f[ii], reff[ii], places = places)
-        for ii in range(v.size) :
-            self.assertAlmostEqual(v[ii], refv[ii], places = places)
+        np.testing.assert_almost_equal(e, refe, places)
+        np.testing.assert_almost_equal(f, reff, places)
+        np.testing.assert_almost_equal(v, refv, places)
 

@@ -124,8 +124,7 @@ class TestModel(tf.test.TestCase):
                     0.0004482204892297628,-0.00016887749501640607,-0.00016887749501640607,6.364643102775375e-05,-0.001181345877677835,0.0004452029242063362,-0.0008941636427724908,0.0003369586197174627,0.0004677878512312651,-0.00017625260641095753]
     
         places = 10
-        for ii in range(model_dout.size) :
-            self.assertAlmostEqual(model_dout[ii], ref_dout[ii], places = places)
+        np.testing.assert_almost_equal(model_dout, ref_dout, places)
 
 
     def test_descriptor_one_side(self):
@@ -234,8 +233,7 @@ class TestModel(tf.test.TestCase):
                     -0.0015760302086346792,-0.0012475134925387294,-0.001041074331192672,-0.0008239586048523492,0.0015319673563669856,0.0012124704278707746]
     
         places = 10
-        for ii in range(model_dout.size) :
-            self.assertAlmostEqual(model_dout[ii], ref_dout[ii], places = places)
+        np.testing.assert_almost_equal(model_dout, ref_dout, places)
 
         
     

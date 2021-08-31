@@ -76,12 +76,9 @@ class TestDipoleCharge(unittest.TestCase) :
         ee = ee.reshape([-1])
         ff = ff.reshape([-1])
         vv = vv.reshape([-1])        
-        for ii in range(ee.size):
-            self.assertAlmostEqual(ee[ii], self.expected_e[ii])
-        for ii in range(ff.size):
-            self.assertAlmostEqual(ff[ii], self.expected_f[ii])
-        for ii in range(vv.size):
-            self.assertAlmostEqual(vv[ii], self.expected_v[ii])
+        np.testing.assert_almost_equal(ee, self.expected_e)
+        np.testing.assert_almost_equal(ff, self.expected_f)
+        np.testing.assert_almost_equal(vv, self.expected_v)
 
     def test_2frame(self):
         nframes = 2
@@ -103,10 +100,7 @@ class TestDipoleCharge(unittest.TestCase) :
         ee = ee.reshape([-1])
         ff = ff.reshape([-1])
         vv = vv.reshape([-1])
-        for ii in range(ee.size):
-            self.assertAlmostEqual(ee[ii], self.expected_e[ii])
-        for ii in range(ff.size):
-            self.assertAlmostEqual(ff[ii], self.expected_f[ii])
-        for ii in range(vv.size):
-            self.assertAlmostEqual(vv[ii], self.expected_v[ii])
+        np.testing.assert_almost_equal(ee, self.expected_e)
+        np.testing.assert_almost_equal(ff, self.expected_f)
+        np.testing.assert_almost_equal(vv, self.expected_v)
 

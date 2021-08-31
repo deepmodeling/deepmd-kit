@@ -103,5 +103,4 @@ class TestProdForce(tf.test.TestCase):
         )
         self.assertEqual(dforce.shape, (self.nframes, self.nall*3))
         for ff in range(self.nframes):
-            for ii in range(self.nall*3):
-                self.assertAlmostEqual(dforce[ff][ii], self.expected_force[ii], places=5)
+            np.testing.assert_almost_equal(dforce[ff], self.expected_force, 5)

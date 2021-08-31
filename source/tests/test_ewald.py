@@ -76,20 +76,15 @@ class TestEwaldRecp (tf.test.TestCase) :
                            })
         er = EwaldRecp(self.ewald_h, self.ewald_beta)
         e1, f1, v1 = er.eval(self.dcoord, self.dcharge, self.dbox)        
-        for ff in range(self.nframes):
-            self.assertAlmostEqual(e[ff], e1[ff], 
-                                   places = places,
-                                   msg = "frame %d energy failed" % (ff))
-            for idx in range(self.natoms):
-                for dd in range(3):
-                    self.assertAlmostEqual(f[ff, idx*3+dd], f1[ff,idx*3+dd], 
-                                           places = places,
-                                           msg = "frame %d force component [%d,%d] failed" % (ff, idx, dd))
-            for d0 in range(3):
-                for d1 in range(3):
-                    self.assertAlmostEqual(v[ff, d0*3+d1], v[ff,d0*3+d1], 
-                                           places = places,
-                                           msg = "frame %d virial component [%d,%d] failed" % (ff, d0, d1))
+        np.testing.assert_almost_equal(e, e1, 
+                                       places,
+                                       err_msg = "energy failed")
+        np.testing.assert_almost_equal(f, f1, 
+                                       places,
+                                       err_msg = "force component failed")
+        np.testing.assert_almost_equal(v, v, 
+                                       places,
+                                       err_msg = "virial component failed")
 
 
 
@@ -129,10 +124,9 @@ class TestEwaldRecp (tf.test.TestCase) :
                                        self.nloc:   [self.natoms],
                                    })
                 c_force = -(energyp[0] - energym[0]) / (2*hh)
-                for ff in range(self.nframes):
-                    self.assertAlmostEqual(c_force[ff], force[ff,idx*3+dd], 
-                                           places = places,
-                                           msg = "frame %d force component [%d,%d] failed" % (ff, idx, dd))
+                np.testing.assert_almost_equal(c_force, force[:,idx*3+dd], 
+                                           places,
+                                           err_msg = "force component [%d,%d] failed" % (idx, dd))
 
 
     def test_virial(self):
@@ -204,12 +198,9 @@ class TestEwaldRecp (tf.test.TestCase) :
         # # print(0.5 * (t_esti[0] + t_esti[0].T) - virial[0].reshape([3,3]))
         # print(0.5 * (t_esti[0] + t_esti[0]) - virial[0].reshape([3,3]))
         # print(0.5 * (t_esti[0] + t_esti[0].T) - virial[0].reshape([3,3]))        
-        for ff in range(self.nframes):
-            for ii in range(3):
-                for jj in range(3):                
-                    self.assertAlmostEqual(t_esti[ff][ii][jj], virial[ff,ii*3+jj], 
-                                           places = places,
-                                           msg = "frame %d virial component [%d,%d] failed" % (ff, ii, jj))
+        np.testing.assert_almost_equal(t_esti.ravel(), virial.ravel(), 
+                                           places,
+                                           err_msg = "virial component failed")
             
                 
 

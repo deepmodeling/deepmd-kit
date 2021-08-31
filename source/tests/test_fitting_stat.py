@@ -81,8 +81,7 @@ class TestEnerFittingStat (unittest.TestCase) :
         arefa, arefs = _brute_aparam(all_data, len(avgs))
         fitting.compute_input_stats(all_data, protection = 1e-2)
         # print(frefa, frefs)
-        for ii in range(len(avgs)):
-            self.assertAlmostEqual(frefa[ii], fitting.fparam_avg[ii])
-            self.assertAlmostEqual(frefs[ii], fitting.fparam_std[ii])
-            self.assertAlmostEqual(arefa[ii], fitting.aparam_avg[ii])
-            self.assertAlmostEqual(arefs[ii], fitting.aparam_std[ii])
+        np.testing.assert_almost_equal(frefa, fitting.fparam_avg)
+        np.testing.assert_almost_equal(frefs, fitting.fparam_std)
+        np.testing.assert_almost_equal(arefa, fitting.aparam_avg)
+        np.testing.assert_almost_equal(arefs, fitting.aparam_std)
