@@ -667,17 +667,36 @@ class DescrptSeA ():
             nframes,
             natoms,
             type_embedding,
-    ):            
+    ):
+        '''Concatenate `type_embedding` of neighbors and `xyz_scatter`.
+        If not self.type_one_side, concatenate `type_embedding` of center atoms as well.
+
+        Parameters
+        ----------
+        xyz_scatter:
+                shape is [nframes*natoms[0]*self.nnei, 1]
+        nframes:
+                shape is []
+        natoms:
+                shape is [1+1+self.ntypes]
+        type_embedding:
+                shape is [self.ntypes, Y] where Y=jdata['type_embedding']['neuron'][-1]
+
+        Returns
+        -------
+            embedding:
+                environment of each atom represented by embedding.
+        '''
         te_out_dim = type_embedding.get_shape().as_list()[-1]        
-        nei_embed = tf.nn.embedding_lookup(type_embedding,tf.cast(self.nei_type,dtype=tf.int32)) #nnei*nchnl
-        nei_embed = tf.tile(nei_embed,(nframes*natoms[0],1))
+        nei_embed = tf.nn.embedding_lookup(type_embedding,tf.cast(self.nei_type,dtype=tf.int32))  # shape is [self.nnei, 1+te_out_dim]
+        nei_embed = tf.tile(nei_embed,(nframes*natoms[0],1))  # shape is [nframes*natoms[0]*self.nnei, te_out_dim]
         nei_embed = tf.reshape(nei_embed,[-1,te_out_dim])
-        embedding_input = tf.concat([xyz_scatter,nei_embed],1)
+        embedding_input = tf.concat([xyz_scatter,nei_embed],1)  # shape is [nframes*natoms[0]*self.nnei, 1+te_out_dim]
         if not self.type_one_side:
-            atm_embed = embed_atom_type(self.ntypes, natoms, type_embedding)
-            atm_embed = tf.tile(atm_embed,(1,self.nnei))
-            atm_embed = tf.reshape(atm_embed,[-1,te_out_dim])
-            embedding_input = tf.concat([embedding_input,atm_embed],1)  
+            atm_embed = embed_atom_type(self.ntypes, natoms, type_embedding)  # shape is [natoms[0], te_out_dim]
+            atm_embed = tf.tile(atm_embed,(nframes,self.nnei))  # shape is [nframes*natoms[0], self.nnei*te_out_dim]
+            atm_embed = tf.reshape(atm_embed,[-1,te_out_dim])  # shape is [nframes*natoms[0]*self.nnei, te_out_dim]
+            embedding_input = tf.concat([embedding_input,atm_embed],1)  # shape is [nframes*natoms[0]*self.nnei, 1+te_out_dim+te_out_dim]
         return embedding_input
 
 
