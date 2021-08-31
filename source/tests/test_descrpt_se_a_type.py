@@ -17,8 +17,8 @@ GLOBAL_TF_FLOAT_PRECISION = tf.float64
 GLOBAL_NP_FLOAT_PRECISION = np.float64
 
 class TestModel(tf.test.TestCase):
-    def setUp(self) :
-        gen_data()
+    def setUp(self):
+        gen_data(nframes=2)
 
     def test_descriptor_two_sides(self):
         jfile = 'water_se_a_type.json'
@@ -28,7 +28,7 @@ class TestModel(tf.test.TestCase):
         set_pfx = j_must_have(jdata, 'set_prefix')
         batch_size = j_must_have(jdata, 'batch_size')
         test_size = j_must_have(jdata, 'numb_test')
-        batch_size = 1
+        batch_size = 2
         test_size = 1
         stop_batch = j_must_have(jdata, 'stop_batch')
         rcut = j_must_have (jdata['model']['descriptor'], 'rcut')

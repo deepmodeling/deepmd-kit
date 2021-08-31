@@ -26,8 +26,8 @@ def del_data():
     if os.path.isdir('system'):
         shutil.rmtree('system')
 
-def gen_data() :
-    tmpdata = Data(rand_pert = 0.1, seed = 1)
+def gen_data(nframes = 1) :
+    tmpdata = Data(rand_pert = 0.1, seed = 1, nframes = nframes)
     sys = dpdata.LabeledSystem()
     sys.data['atom_names'] = ['foo', 'bar']
     sys.data['coords'] = tmpdata.coord
@@ -47,10 +47,11 @@ class Data():
     def __init__ (self, 
                   rand_pert = 0.1, 
                   seed = 1, 
-                  box_scale = 20) :
+                  box_scale = 20,
+                  nframes = 1):
         coord = [[0.0, 0.0, 0.1], [1.1, 0.0, 0.1], [0.0, 1.1, 0.1], 
                  [4.0, 0.0, 0.0], [5.1, 0.0, 0.0], [4.0, 1.1, 0.0]]
-        self.nframes = 1
+        self.nframes = nframes
         self.coord = np.array(coord)
         self.coord = self._copy_nframes(self.coord)
         np.random.seed(seed)
