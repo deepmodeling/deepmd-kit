@@ -22,8 +22,8 @@ Region<FPTYPE>::
   delete [] rec_boxt;
 }
 
-template struct Region<double>;
-template struct Region<float>;
+template struct deepmd::Region<double>;
+template struct deepmd::Region<float>;
 
 template<typename FPTYPE>
 inline FPTYPE
