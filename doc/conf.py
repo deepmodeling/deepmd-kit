@@ -222,6 +222,12 @@ intersphinx_mapping = {
 }
 numpydoc_xref_param_type = True
 
+
+numpydoc_xref_aliases = {}
+import typing
+for typing_type in typing.__all__:
+    numpydoc_xref_aliases[typing_type] = "typing.%s" % typing_type
+
 # -- Options for HTML output -------------------------------------------------
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
