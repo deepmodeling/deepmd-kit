@@ -220,6 +220,7 @@ intersphinx_mapping = {
     ), 
     "ase": ("https://wiki.fysik.dtu.dk/ase/", None),
 }
+numpydoc_xref_param_type = True
 
 # -- Options for HTML output -------------------------------------------------
 
