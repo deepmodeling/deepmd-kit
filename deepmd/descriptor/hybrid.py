@@ -12,6 +12,7 @@ from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 # from deepmd.descriptor import DescrptSeAEbd
 # from deepmd.descriptor import DescrptSeAEf
 # from deepmd.descriptor import DescrptSeR
+from .descriptor import Descriptor
 from .se_a import DescrptSeA
 from .se_r import DescrptSeR
 from .se_ar import DescrptSeAR
@@ -20,7 +21,7 @@ from .se_a_ebd import DescrptSeAEbd
 from .se_a_ef import DescrptSeAEf
 from .loc_frame import DescrptLocFrame
 
-class DescrptHybrid ():
+class DescrptHybrid (Descriptor):
     """Concate a list of descriptors to form a new descriptor.
 
     Parameters
