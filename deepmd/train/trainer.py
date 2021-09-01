@@ -397,7 +397,6 @@ class DPTrainer (object):
         config = get_tf_session_config()
         device, idx = self.run_opt.my_device.split(":", 1)
         if device == "gpu":
-            config.gpu_options.allow_growth = True
             config.gpu_options.visible_device_list = idx
         self.sess = tf.Session(config=config)
 
