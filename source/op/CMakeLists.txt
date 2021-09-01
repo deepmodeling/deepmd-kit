@@ -32,6 +32,20 @@ if (BUILD_PY_IF)
     )
   target_include_directories(op_abi PUBLIC ${TensorFlow_INCLUDE_DIRS})
   target_include_directories(op_grads PUBLIC ${TensorFlow_INCLUDE_DIRS})
+  if (APPLE)
+    set_target_properties(
+      op_abi 
+      PROPERTIES 
+      COMPILE_FLAGS ${OP_CXX_FLAG}
+      INSTALL_RPATH @loader_path
+      )
+    set_target_properties(
+      op_grads
+      PROPERTIES
+      COMPILE_FLAGS ${OP_CXX_FLAG}
+      INSTALL_RPATH @loader_path
+      )
+  else()
   set_target_properties(
     op_abi 
     PROPERTIES 
@@ -44,6 +58,7 @@ if (BUILD_PY_IF)
     COMPILE_FLAGS ${OP_CXX_FLAG}
     INSTALL_RPATH $ORIGIN
     )
+  endif ()
 endif (BUILD_PY_IF)
 
 if (BUILD_CPP_IF)
