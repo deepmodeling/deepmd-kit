@@ -408,8 +408,9 @@ class DPTrainer (object):
             if self.run_opt.init_mode == 'init_from_scratch' :
                 log.info("initialize model from scratch")
                 run_sess(self.sess, init_op)
-                fp = open(self.disp_file, "w")
-                fp.close ()
+                if not self.is_compress:
+                    fp = open(self.disp_file, "w")
+                    fp.close ()
             elif self.run_opt.init_mode == 'init_from_model' :
                 log.info("initialize from model %s" % self.run_opt.init_model)
                 run_sess(self.sess, init_op)
