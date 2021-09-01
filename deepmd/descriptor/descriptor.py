@@ -1,13 +1,12 @@
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
-if TYPE_CHECKING:
-    import numpy as np
-    from deepmd.env import tf
+import numpy as np
+from deepmd.env import tf
 
 
 class Descriptor(ABC):
-    """The abstract class for descriptors. All specific descriptors should
+    r"""The abstract class for descriptors. All specific descriptors should
     be based on this class.
 
     The descriptor :math:`\mathcal{D}` describes the environment of an atom,
