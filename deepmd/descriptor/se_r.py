@@ -10,8 +10,9 @@ from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.utils.network import embedding_net, embedding_net_rand_seed_shift
 from deepmd.utils.sess import run_sess
+from .descriptor import Descriptor
 
-class DescrptSeR ():
+class DescrptSeR (Descriptor):
     """DeepPot-SE constructed from radial information of atomic configurations.
     
     The embedding takes the distance between atoms as input.

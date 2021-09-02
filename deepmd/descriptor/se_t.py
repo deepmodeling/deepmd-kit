@@ -10,8 +10,9 @@ from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.utils.network import embedding_net, embedding_net_rand_seed_shift
 from deepmd.utils.sess import run_sess
+from .descriptor import Descriptor
 
-class DescrptSeT ():
+class DescrptSeT (Descriptor):
     """DeepPot-SE constructed from all information (both angular and radial) of atomic
     configurations.
     
