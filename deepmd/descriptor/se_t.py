@@ -477,7 +477,7 @@ class DescrptSeT (Descriptor):
                 env_i = tf.reshape(inputs_i, [-1, nei_type_i, 4])
                 # with natom x nei_type_i x 3
                 env_i = tf.slice(env_i, [0, 0, 1], [-1, -1, -1])
-                start_index_j = 0
+                start_index_j = start_index_i - self.sel_a[type_i]
                 for type_j in range(type_i, self.ntypes):
                     # with natom x (nei_type_j x 4)  
                     inputs_j = tf.slice (inputs,
