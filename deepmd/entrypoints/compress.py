@@ -105,12 +105,7 @@ def compress(
     jdata = normalize(jdata)
 
     # check the descriptor info of the input file
-    assert (
-        jdata["model"]["descriptor"]["type"] == "se_a" or jdata["model"]["descriptor"]["type"] == "se_e2_a"
-    ), "Model compression error: descriptor type must be se_a or se_e2_a!"
-    assert (
-        jdata["model"]["descriptor"]["resnet_dt"] is False
-    ), "Model compression error: descriptor resnet_dt must be false!"
+    # move to the specific Descriptor class
 
     # stage 1: training or refining the model with tabulation
     log.info("\n\n")

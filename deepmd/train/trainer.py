@@ -325,7 +325,6 @@ class DPTrainer (object):
                     name = 'train_attr/max_nbor_size',
                     dtype = GLOBAL_TF_FLOAT_PRECISION)
         else :
-            assert 'rcut' in self.descrpt_param, "Error: descriptor must have attr rcut!"
             self.descrpt.enable_compression(self.model_param['compress']["min_nbor_dist"], self.model_param['compress']['model_file'], self.model_param['compress']['table_config'][0], self.model_param['compress']['table_config'][1], self.model_param['compress']['table_config'][2], self.model_param['compress']['table_config'][3])
             self.fitting.init_variables(get_fitting_net_variables(self.model_param['compress']['model_file']))
         

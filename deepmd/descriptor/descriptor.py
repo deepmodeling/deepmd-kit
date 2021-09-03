@@ -188,7 +188,8 @@ class Descriptor(ABC):
                            table_extrapolate: float = 5.,
                            table_stride_1: float = 0.01,
                            table_stride_2: float = 0.1,
-                           check_frequency: int = -1
+                           check_frequency: int = -1,
+                           suffix : str = "",
                            ) -> None:
         """
         Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the
@@ -208,13 +209,15 @@ class Descriptor(ABC):
                 The uniform stride of the second table
         check_frequency : int, default: -1
                 The overflow check frequency
+        suffix : str, optional
+                The suffix of the scope
 
         Notes
         -----
         This method is called by others when the descriptor supported compression.
         """
         raise NotImplementedError(
-            "Descriptor %s doesn't support compression!" % self.__name__)
+            "Descriptor %s doesn't support compression!" % type(self).__name__)
 
     @abstractmethod
     def prod_force_virial(self,
