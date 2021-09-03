@@ -469,6 +469,7 @@ class DescrptSeT (Descriptor):
                 inputs_i = tf.slice (inputs,
                                      [ 0, start_index_i      *4],
                                      [-1, self.sel_a[type_i] *4] )
+                start_index_j = start_index_i
                 start_index_i += self.sel_a[type_i]
                 nei_type_i = self.sel_a[type_i]
                 shape_i = inputs_i.get_shape().as_list()
@@ -477,7 +478,6 @@ class DescrptSeT (Descriptor):
                 env_i = tf.reshape(inputs_i, [-1, nei_type_i, 4])
                 # with natom x nei_type_i x 3
                 env_i = tf.slice(env_i, [0, 0, 1], [-1, -1, -1])
-                start_index_j = 0
                 for type_j in range(type_i, self.ntypes):
                     # with natom x (nei_type_j x 4)  
                     inputs_j = tf.slice (inputs,
