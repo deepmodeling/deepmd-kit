@@ -213,9 +213,12 @@ def parse_args(args: Optional[List[str]] = None):
         type=str,
         help="The system dir. Recursively detect systems in this directory",
     )
-    parser_tst.add_argument(
-        "-S", "--set-prefix", default="set", type=str, help="The set prefix"
-    )
+    # the function named expand_sys_str(system) [=>`Path(system).rglob('*')`] in test.py  
+    # has walk through all the sub directories in provided  `system` path
+    # 
+    #parser_tst.add_argument(
+    #   "-S", "--set-prefix", default="set", type=str, help="The set prefix"
+    #)
     parser_tst.add_argument(
         "-n", "--numb-test", default=100, type=int, help="The number of data for test"
     )
