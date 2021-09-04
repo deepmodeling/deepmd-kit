@@ -71,4 +71,9 @@ jobs:
         CXX: g++-${{ matrix.gcc }}
         TENSORFLOW_VERSION: ${{ matrix.tf }}
     - run: dp --version
+    - name: Prepare parallel runtime
+      if: ${{ matrix.tf == '' }}
+      run: |
+        sudo apt install libopenmpi-dev openmpi-bin
+        HOROVOD_WITHOUT_GLOO=1 HOROVOD_WITH_TENSORFLOW=1 pip install horovod mpi4py
     - run: pytest --cov=deepmd source/tests && codecov

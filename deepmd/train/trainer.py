@@ -315,7 +315,7 @@ class DPTrainer (object):
                 self._init_from_frz_model()
             
             self.neighbor_stat \
-                = NeighborStat(self.ntypes, self.descrpt_param['rcut'])
+                = NeighborStat(self.ntypes, self.descrpt.get_rcut())
             self.min_nbor_dist, self.max_nbor_size \
                 = self.neighbor_stat.get_stat(data)
             tf.constant(self.min_nbor_dist,
@@ -325,7 +325,6 @@ class DPTrainer (object):
                     name = 'train_attr/max_nbor_size',
                     dtype = GLOBAL_TF_FLOAT_PRECISION)
         else :
-            assert 'rcut' in self.descrpt_param, "Error: descriptor must have attr rcut!"
             self.descrpt.enable_compression(self.model_param['compress']["min_nbor_dist"], self.model_param['compress']['model_file'], self.model_param['compress']['table_config'][0], self.model_param['compress']['table_config'][1], self.model_param['compress']['table_config'][2], self.model_param['compress']['table_config'][3])
             self.fitting.init_variables(get_fitting_net_variables(self.model_param['compress']['model_file']))
         
@@ -397,7 +396,6 @@ class DPTrainer (object):
         config = get_tf_session_config()
         device, idx = self.run_opt.my_device.split(":", 1)
         if device == "gpu":
-            config.gpu_options.allow_growth = True
             config.gpu_options.visible_device_list = idx
         self.sess = tf.Session(config=config)
 
@@ -408,8 +406,9 @@ class DPTrainer (object):
             if self.run_opt.init_mode == 'init_from_scratch' :
                 log.info("initialize model from scratch")
                 run_sess(self.sess, init_op)
-                fp = open(self.disp_file, "w")
-                fp.close ()
+                if not self.is_compress:
+                    fp = open(self.disp_file, "w")
+                    fp.close ()
             elif self.run_opt.init_mode == 'init_from_model' :
                 log.info("initialize from model %s" % self.run_opt.init_model)
                 run_sess(self.sess, init_op)

@@ -898,7 +898,7 @@ model:
         .. _`model/fitting_net[polar]/scale`: 
 
         scale: 
-            | type: ``list`` | ``float``, optional, default: ``1.0``
+            | type: ``float`` | ``list``, optional, default: ``1.0``
             | argument path: ``model/fitting_net[polar]/scale``
 
             The output of the fitting net (polarizability matrix) will be scaled by ``scale``
@@ -1102,7 +1102,7 @@ loss:
     .. _`loss[ener]/start_pref_e`: 
 
     start_pref_e: 
-        | type: ``int`` | ``float``, optional, default: ``0.02``
+        | type: ``float`` | ``int``, optional, default: ``0.02``
         | argument path: ``loss[ener]/start_pref_e``
 
         The prefactor of energy loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the energy label should be provided by file energy.npy in each data system. If both start_pref_energy and limit_pref_energy are set to 0, then the energy will be ignored.
@@ -1110,7 +1110,7 @@ loss:
     .. _`loss[ener]/limit_pref_e`: 
 
     limit_pref_e: 
-        | type: ``int`` | ``float``, optional, default: ``1.0``
+        | type: ``float`` | ``int``, optional, default: ``1.0``
         | argument path: ``loss[ener]/limit_pref_e``
 
         The prefactor of energy loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity.
@@ -1118,7 +1118,7 @@ loss:
     .. _`loss[ener]/start_pref_f`: 
 
     start_pref_f: 
-        | type: ``int`` | ``float``, optional, default: ``1000``
+        | type: ``float`` | ``int``, optional, default: ``1000``
         | argument path: ``loss[ener]/start_pref_f``
 
         The prefactor of force loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the force label should be provided by file force.npy in each data system. If both start_pref_force and limit_pref_force are set to 0, then the force will be ignored.
@@ -1126,7 +1126,7 @@ loss:
     .. _`loss[ener]/limit_pref_f`: 
 
     limit_pref_f: 
-        | type: ``int`` | ``float``, optional, default: ``1.0``
+        | type: ``float`` | ``int``, optional, default: ``1.0``
         | argument path: ``loss[ener]/limit_pref_f``
 
         The prefactor of force loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity.
@@ -1134,7 +1134,7 @@ loss:
     .. _`loss[ener]/start_pref_v`: 
 
     start_pref_v: 
-        | type: ``int`` | ``float``, optional, default: ``0.0``
+        | type: ``float`` | ``int``, optional, default: ``0.0``
         | argument path: ``loss[ener]/start_pref_v``
 
         The prefactor of virial loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the virial label should be provided by file virial.npy in each data system. If both start_pref_virial and limit_pref_virial are set to 0, then the virial will be ignored.
@@ -1142,7 +1142,7 @@ loss:
     .. _`loss[ener]/limit_pref_v`: 
 
     limit_pref_v: 
-        | type: ``int`` | ``float``, optional, default: ``0.0``
+        | type: ``float`` | ``int``, optional, default: ``0.0``
         | argument path: ``loss[ener]/limit_pref_v``
 
         The prefactor of virial loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity.
@@ -1150,7 +1150,7 @@ loss:
     .. _`loss[ener]/start_pref_ae`: 
 
     start_pref_ae: 
-        | type: ``int`` | ``float``, optional, default: ``0.0``
+        | type: ``float`` | ``int``, optional, default: ``0.0``
         | argument path: ``loss[ener]/start_pref_ae``
 
         The prefactor of atom_ener loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the atom_ener label should be provided by file atom_ener.npy in each data system. If both start_pref_atom_ener and limit_pref_atom_ener are set to 0, then the atom_ener will be ignored.
@@ -1158,7 +1158,7 @@ loss:
     .. _`loss[ener]/limit_pref_ae`: 
 
     limit_pref_ae: 
-        | type: ``int`` | ``float``, optional, default: ``0.0``
+        | type: ``float`` | ``int``, optional, default: ``0.0``
         | argument path: ``loss[ener]/limit_pref_ae``
 
         The prefactor of atom_ener loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity.
@@ -1166,7 +1166,7 @@ loss:
     .. _`loss[ener]/relative_f`: 
 
     relative_f: 
-        | type: ``NoneType`` | ``float``, optional
+        | type: ``float`` | ``NoneType``, optional
         | argument path: ``loss[ener]/relative_f``
 
         If provided, relative force error will be used in the loss. The difference of force will be normalized by the magnitude of the force in the label with a shift given by `relative_f`, i.e. DF_i / ( || F || + relative_f ) with DF denoting the difference between prediction and label and || F || denoting the L2 norm of the label.
@@ -1179,7 +1179,7 @@ loss:
     .. _`loss[tensor]/pref`: 
 
     pref: 
-        | type: ``int`` | ``float``
+        | type: ``float`` | ``int``
         | argument path: ``loss[tensor]/pref``
 
         The prefactor of the weight of global loss. It should be larger than or equal to 0. If controls the weight of loss corresponding to global label, i.e. 'polarizability.npy` or `dipole.npy`, whose shape should be #frames x [9 or 3]. If it's larger than 0.0, this npy should be included.
@@ -1187,7 +1187,7 @@ loss:
     .. _`loss[tensor]/pref_atomic`: 
 
     pref_atomic: 
-        | type: ``int`` | ``float``
+        | type: ``float`` | ``int``
         | argument path: ``loss[tensor]/pref_atomic``
 
         The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If controls the weight of loss corresponding to atomic label, i.e. `atomic_polarizability.npy` or `atomic_dipole.npy`, whose shape should be #frames x ([9 or 3] x #selected atoms). If it's larger than 0.0, this npy should be included. Both `pref` and `pref_atomic` should be provided, and either can be set to 0.0.
@@ -1408,7 +1408,7 @@ training:
     .. _`training/disp_file`: 
 
     disp_file: 
-        | type: ``str``, optional, default: ``lcueve.out``
+        | type: ``str``, optional, default: ``lcurve.out``
         | argument path: ``training/disp_file``
 
         The file for printing learning curve.

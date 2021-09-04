@@ -109,7 +109,6 @@ class TestModel(tf.test.TestCase):
         places = 10
                 
         
-        for ii in range(pred_atom_ener.size) :
-            self.assertAlmostEqual(pred_atom_ener[ii], ref_atom_ener[ii], places = places)
+        np.testing.assert_almost_equal(pred_atom_ener, ref_atom_ener, places)
         
         

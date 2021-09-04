@@ -3,10 +3,9 @@ import numpy as np
 import pathlib
 
 from deepmd.env import tf
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
-from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.common import j_loader as dp_j_loader
+from deepmd.utils import random as dp_random
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
     global_default_fv_hh = 1e-2
@@ -26,8 +25,8 @@ def del_data():
     if os.path.isdir('system'):
         shutil.rmtree('system')
 
-def gen_data() :
-    tmpdata = Data(rand_pert = 0.1, seed = 1)
+def gen_data(nframes = 1) :
+    tmpdata = Data(rand_pert = 0.1, seed = 1, nframes = nframes)
     sys = dpdata.LabeledSystem()
     sys.data['atom_names'] = ['foo', 'bar']
     sys.data['coords'] = tmpdata.coord
@@ -47,14 +46,15 @@ class Data():
     def __init__ (self, 
                   rand_pert = 0.1, 
                   seed = 1, 
-                  box_scale = 20) :
+                  box_scale = 20,
+                  nframes = 1):
         coord = [[0.0, 0.0, 0.1], [1.1, 0.0, 0.1], [0.0, 1.1, 0.1], 
                  [4.0, 0.0, 0.0], [5.1, 0.0, 0.0], [4.0, 1.1, 0.0]]
-        self.nframes = 1
+        self.nframes = nframes
         self.coord = np.array(coord)
         self.coord = self._copy_nframes(self.coord)
-        np.random.seed(seed)
-        self.coord += rand_pert * np.random.random(self.coord.shape)
+        dp_random.seed(seed)
+        self.coord += rand_pert * dp_random.random(self.coord.shape)
         self.fparam = np.array([[0.1, 0.2]])
         self.aparam = np.tile(self.fparam, [1, 6])
         self.fparam = self._copy_nframes(self.fparam)
@@ -69,7 +69,7 @@ class Data():
         self.coord = self.coord.reshape([self.nframes, -1, 3])
         self.coord = self.coord[:,self.idx_map,:]
         self.coord = self.coord.reshape([self.nframes, -1])        
-        self.efield = np.random.random(self.coord.shape)
+        self.efield = dp_random.random(self.coord.shape)
         self.atype = self.atype[self.idx_map]
         self.datype = self._copy_nframes(self.atype)
 
@@ -128,7 +128,7 @@ class Data():
         coord0_, box0_, type0_ = self.get_data()
         coord = coord0_[0]
         box = box0_[0]
-        box += rand_pert * np.random.random(box.shape)
+        box += rand_pert * dp_random.random(box.shape)
         atype = type0_[0]
         nframes = 1
         natoms = coord.size // 3
@@ -258,11 +258,9 @@ def virial_test (inter,
     num_vir = np.transpose(num_vir, [1,0])    
     box3 = dbox[0].reshape([3,3])
     num_vir = np.matmul(num_vir, box3)
-    for ii in range(3):
-        for jj in range(3):
-            testCase.assertAlmostEqual(ana_vir[ii][jj], num_vir[ii][jj],
-                                       places=places, 
-                                       msg = 'virial component %d %d ' % (ii,jj))
+    np.testing.assert_almost_equal(ana_vir, num_vir,
+                                   places, 
+                                   err_msg = 'virial component')
     
 
 
