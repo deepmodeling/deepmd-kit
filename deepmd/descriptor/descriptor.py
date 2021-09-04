@@ -189,7 +189,7 @@ class Descriptor(ABC):
                            table_stride_1: float = 0.01,
                            table_stride_2: float = 0.1,
                            check_frequency: int = -1,
-                           suffix : str = "",
+                           suffix: str = "",
                            ) -> None:
         """
         Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the

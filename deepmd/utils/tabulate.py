@@ -79,7 +79,7 @@ class DPTabulate():
 
         self.davg = get_tensor_by_name_from_graph(self.graph, f'descrpt_attr{self.suffix}/t_avg')
         self.dstd = get_tensor_by_name_from_graph(self.graph, f'descrpt_attr{self.suffix}/t_std')
-        self.ntypes = get_tensor_by_name_from_graph(self.graph, f'descrpt_attr/ntypes')
+        self.ntypes = get_tensor_by_name_from_graph(self.graph, 'descrpt_attr/ntypes')
 
         
         self.rcut = self.descrpt.get_attr('rcut_r')
