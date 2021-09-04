@@ -112,7 +112,7 @@ def get_tensor_by_type(node,
     return tensor
 
 
-def get_embedding_net_nodes_from_graph_def(graph_def: tf.GraphDef) -> Dict:
+def get_embedding_net_nodes_from_graph_def(graph_def: tf.GraphDef, suffix: str = "") -> Dict:
     """
     Get the embedding net nodes with the given tf.GraphDef object
 
@@ -120,6 +120,8 @@ def get_embedding_net_nodes_from_graph_def(graph_def: tf.GraphDef) -> Dict:
     ----------
     graph_def
         The input tf.GraphDef object
+    suffix : str, optional
+        The scope suffix
     
     Returns
     ----------
@@ -127,7 +129,7 @@ def get_embedding_net_nodes_from_graph_def(graph_def: tf.GraphDef) -> Dict:
         The embedding net nodes within the given tf.GraphDef object
     """
     embedding_net_nodes = {}
-    embedding_net_pattern = "filter_type_\d+/matrix_\d+_\d+|filter_type_\d+/bias_\d+_\d+|filter_type_\d+/idt_\d+_\d+|filter_type_all/matrix_\d+_\d+|filter_type_all/bias_\d+_\d+|filter_type_all/idt_\d+_\d"
+    embedding_net_pattern = f"filter_type_\d+{suffix}/matrix_\d+_\d+|filter_type_\d+{suffix}/bias_\d+_\d+|filter_type_\d+{suffix}/idt_\d+_\d+|filter_type_all{suffix}/matrix_\d+_\d+|filter_type_all{suffix}/bias_\d+_\d+|filter_type_all{suffix}/idt_\d+_\d"
     for node in graph_def.node:
         if re.fullmatch(embedding_net_pattern, node.name) != None:
             embedding_net_nodes[node.name] = node.attr["value"].tensor

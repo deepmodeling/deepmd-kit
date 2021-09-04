@@ -297,7 +297,8 @@ class DescrptSeA (Descriptor):
                            table_extrapolate : float = 5,
                            table_stride_1 : float = 0.01,
                            table_stride_2 : float = 0.1,
-                           check_frequency : int = -1
+                           check_frequency : int = -1,
+                           suffix : str = "",
     ) -> None:
         """
         Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
@@ -316,10 +317,15 @@ class DescrptSeA (Descriptor):
                 The uniform stride of the second table
         check_frequency
                 The overflow check frequency
+        suffix : str, optional
+                The suffix of the scope
         """
+        assert (
+            not self.filter_resnet_dt
+        ), "Model compression error: descriptor resnet_dt must be false!"
         self.compress = True
         self.table = DPTabulate(
-            model_file, self.type_one_side, self.exclude_types, self.compress_activation_fn)
+            model_file, self.type_one_side, self.exclude_types, self.compress_activation_fn, suffix=suffix)
         self.table_config = [table_extrapolate, table_stride_1, table_stride_2, check_frequency]
         self.lower, self.upper \
             = self.table.build(min_nbor_dist, 
@@ -328,8 +334,8 @@ class DescrptSeA (Descriptor):
                                table_stride_2)
         
         graph, _ = load_graph_def(model_file)
-        self.davg = get_tensor_by_name_from_graph(graph, 'descrpt_attr/t_avg')
-        self.dstd = get_tensor_by_name_from_graph(graph, 'descrpt_attr/t_std')
+        self.davg = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_avg' % suffix)
+        self.dstd = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_std' % suffix)
 
 
 
