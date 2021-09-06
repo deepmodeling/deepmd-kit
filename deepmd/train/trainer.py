@@ -313,16 +313,9 @@ class DPTrainer (object):
             if self.run_opt.init_mode == 'init_from_frz_model':
                 self._init_from_frz_model()
             
-            self.neighbor_stat \
-                = NeighborStat(self.ntypes, self.descrpt.get_rcut())
-            self.min_nbor_dist, self.max_nbor_size \
-                = self.neighbor_stat.get_stat(data)
-            tf.constant(self.min_nbor_dist,
-                    name = 'train_attr/min_nbor_dist',
-                    dtype = GLOBAL_TF_FLOAT_PRECISION)
-            tf.constant(self.max_nbor_size,
-                    name = 'train_attr/max_nbor_size',
-                    dtype = GLOBAL_TF_FLOAT_PRECISION)
+            # neighbor_stat is moved to train.py as duplicated
+            # TODO: this is a simple fix but we should have a clear
+            #       architecture to call neighbor stat
         else :
             self.descrpt.enable_compression(self.model_param['compress']["min_nbor_dist"], self.model_param['compress']['model_file'], self.model_param['compress']['table_config'][0], self.model_param['compress']['table_config'][1], self.model_param['compress']['table_config'][2], self.model_param['compress']['table_config'][3])
             self.fitting.init_variables(get_fitting_net_variables(self.model_param['compress']['model_file']))
