@@ -26,7 +26,7 @@ from deepmd.utils.learning_rate import LearningRateExp
 from deepmd.utils.neighbor_stat import NeighborStat
 from deepmd.utils.sess import run_sess
 from deepmd.utils.type_embed import TypeEmbedNet
-from deepmd.utils.graph import get_tensor_by_name, get_fitting_net_variables
+from deepmd.utils.graph import get_tensor_by_name, get_embedding_net_variables, get_fitting_net_variables
 
 from tensorflow.python.client import timeline
 from deepmd.env import op_module
@@ -278,7 +278,6 @@ class DPTrainer (object):
         # if init the graph with the frozen model
         self.frz_model = None
         self.model_type = None
-        self.init_from_frz_model = False
 
 
     def build (self, 
@@ -694,14 +693,17 @@ class DPTrainer (object):
                     "which is not supported by the 'dp train init-frz-model' interface. " % self.run_opt.init_frz_model
                 ) from e
         
+        if self.fitting_type != 'ener':
+            raise RuntimeError("The 'dp train init-frz-model' command only supports the 'ener' type fitting net currently!")
         # self.frz_model will control the self.model to import the descriptor from the given frozen model instead of building from scratch...
         # initialize fitting net with the given compressed frozen model
-        if self.model_type == 'compressed_model' and self.fitting_type == 'ener':
-            self.init_from_frz_model = True
+        if self.model_type == 'original_model':
+            self.descrpt.init_variables(get_embedding_net_variables(self.run_opt.init_frz_model))
+            self.fitting.init_variables(get_fitting_net_variables(self.run_opt.init_frz_model))
+            tf.constant("original_model", name = 'model_type', dtype = tf.string)
+        elif self.model_type == 'compressed_model':
             self.frz_model = self.run_opt.init_frz_model
             self.fitting.init_variables(get_fitting_net_variables(self.frz_model))
             tf.constant("compressed_model", name = 'model_type', dtype = tf.string)
-        elif self.fitting_type != 'ener':
-            raise RuntimeError("The 'dp train init-frz-model' command only supports the 'ener' type fitting net currently!")
         else:
-            raise RuntimeError("The 'dp train init-frz-model' command only supports the compressed model currently!")
+            raise RuntimeError("Unknown model type %s" % self.model_type)

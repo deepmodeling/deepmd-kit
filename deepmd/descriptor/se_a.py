@@ -157,6 +157,7 @@ class DescrptSeA (Descriptor):
         self.dstd = None
         self.davg = None
         self.compress = False
+        self.embedding_net_variables = None
         self.place_holders = {}
         nei_type = np.array([])
         for ii in range(self.ntypes):
@@ -521,6 +522,21 @@ class DescrptSeA (Descriptor):
         }
         return feed_dict
 
+
+    def init_variables(self,
+                       embedding_net_variables: dict
+    ) -> None:
+        """
+        Init the embedding net variables with the given dict
+
+        Parameters
+        ----------
+        embedding_net_variables
+                The input dict which stores the embedding net variables
+        """
+        self.embedding_net_variables = embedding_net_variables
+
+
     def prod_force_virial(self, 
                           atom_ener : tf.Tensor, 
                           natoms : tf.Tensor
@@ -766,7 +782,8 @@ class DescrptSeA (Descriptor):
                   bavg = bavg,
                   seed = self.seed,
                   trainable = trainable, 
-                  uniform_seed = self.uniform_seed)
+                  uniform_seed = self.uniform_seed,
+                  initial_variables = self.embedding_net_variables)
               if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
           else:
             # we can safely return the final xyz_scatter filled with zero directly
