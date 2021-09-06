@@ -142,6 +142,11 @@ def embedding_net(xx,
         Random seed for initializing network parameters
     trainable: boolean
         If the network is trainable
+    uniform_seed : boolean
+        Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
+    initial_variables : dict
+        The input dict which stores the embedding net variables
+
 
     References
     ----------
