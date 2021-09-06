@@ -10,7 +10,7 @@ import os
 from typing import Dict, List, Optional, Any
 
 from deepmd.common import data_requirement, expand_sys_str, j_loader, j_must_have
-from deepmd.env import tf, reset_default_tf_session_config, GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import tf, reset_default_tf_session_config, GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.infer.data_modifier import DipoleChargeModifier
 from deepmd.train.run_options import BUILD, CITATION, WELCOME, RunOptions
 from deepmd.train.trainer import DPTrainer
@@ -268,10 +268,10 @@ def get_nbor_stat(jdata, rcut):
     #       architecture to call neighbor stat
     tf.constant(min_nbor_dist,
         name = 'train_attr/min_nbor_dist',
-        dtype = GLOBAL_TF_FLOAT_PRECISION)
+        dtype = GLOBAL_ENER_FLOAT_PRECISION)
     tf.constant(max_nbor_size,
         name = 'train_attr/max_nbor_size',
-        dtype = GLOBAL_TF_FLOAT_PRECISION)
+        dtype = tf.int32)
     return min_nbor_dist, max_nbor_size
 
 def get_sel(jdata, rcut):
