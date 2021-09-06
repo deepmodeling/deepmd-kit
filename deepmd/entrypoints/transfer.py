@@ -130,7 +130,7 @@ def transform_graph(raw_graph: tf.Graph, old_graph: tf.Graph) -> tf.Graph:
         if raw_graph_dtype == np.float16:
             if old_graph_dtype == np.float64 or old_graph_dtype == np.float32:
                 if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
-                    tensor = np.frombuffer(old_node.tensor_content).astype(raw_graph_dtype)
+                    tensor = np.frombuffer(old_node.tensor_content, dtype = raw_graph_dtype)
                     cp_attr.from_array(tensor, tf.float16, shape = tensor_shape)
                 else:
                     tensor = load_tensor(old_node, old_graph_dtype, raw_graph_dtype)
@@ -143,7 +143,7 @@ def transform_graph(raw_graph: tf.Graph, old_graph: tf.Graph) -> tf.Graph:
         elif raw_graph_dtype == np.float64 or raw_graph_dtype == np.float32:
             if old_graph_dtype == np.float64 or old_graph_dtype == np.float32:
                 if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
-                    tensor = np.frombuffer(old_node.tensor_content).astype(raw_graph_dtype)
+                    tensor = np.frombuffer(old_node.tensor_content, dtype = raw_graph_dtype)
                     cp_attr.from_str(tensor)
                 else:
                     tensor = load_tensor(old_node, old_graph_dtype, raw_graph_dtype)
