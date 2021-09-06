@@ -283,3 +283,23 @@ class Descriptor(ABC):
         # TODO: currently only SeA has this method, but I think the method can be
         # moved here as it doesn't contain anything related to a specific descriptor
         raise NotImplementedError
+
+    def init_variables(self,
+                       embedding_net_variables: dict
+                       ) -> None:
+        """
+        Init the embedding net variables with the given dict
+
+        Parameters
+        ----------
+        embedding_net_variables
+                The input dict which stores the embedding net variables
+        
+        Notes
+        -----
+        This method is called by others when the descriptor supported initialization from the given variables.
+        """
+        # TODO: currently only SeA has this method, but I think the method can be
+        # moved here as it doesn't contain anything related to a specific descriptor
+        raise NotImplementedError(
+            "Descriptor %s doesn't support initialization from the given variables!" % type(self).__name__)
