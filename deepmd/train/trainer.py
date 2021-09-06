@@ -384,10 +384,10 @@ class DPTrainer (object):
             optimizer = self.run_opt._HVD.DistributedOptimizer(optimizer)
         else:
             optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate)
-        grads = tf.gradients(self.l2_l, trainable_variables)
-        apply_op = optimizer.apply_gradients (zip (grads, trainable_variables),
-                                              global_step=self.global_step,
-                                              name='train_step')
+        apply_op = optimizer.minimize(loss=self.l2_l,
+                                      global_step=self.global_step,
+                                      var_list=trainable_variables,
+                                      name='train_step')
         train_ops = [apply_op] + self._extra_train_ops
         self.train_op = tf.group(*train_ops)
         log.info("built training")
