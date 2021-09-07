@@ -179,14 +179,16 @@ class DPTabulate():
             bias["layer_" + str(layer)] = []
             if self.type_one_side:
                 for ii in range(0, self.ntypes):
-                    tensor_value = np.frombuffer (self.embedding_net_nodes[f"filter_type_all{self.suffix}/bias_{layer}_{ii}"].tensor_content)
-                    tensor_shape = tf.TensorShape(self.embedding_net_nodes[f"filter_type_all{self.suffix}/bias_{layer}_{ii}"].tensor_shape).as_list()
+                    node = self.embedding_net_nodes[f"filter_type_all{self.suffix}/bias_{layer}_{ii}"]
+                    tensor_value = np.frombuffer (node.tensor_content, dtype = tf.as_dtype(node.dtype).as_numpy_dtype)
+                    tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
                     bias["layer_" + str(layer)].append(np.reshape(tensor_value, tensor_shape))
             else:
                 for ii in range(0, self.ntypes * self.ntypes):
                     if (ii // self.ntypes, int(ii % self.ntypes)) not in self.exclude_types:
-                        tensor_value = np.frombuffer(self.embedding_net_nodes[f"filter_type_{ii // self.ntypes}{self.suffix}/bias_{layer}_{ii % self.ntypes}"].tensor_content)
-                        tensor_shape = tf.TensorShape(self.embedding_net_nodes[f"filter_type_{ii // self.ntypes}{self.suffix}/bias_{layer}_{ii % self.ntypes}"].tensor_shape).as_list()
+                        node = self.embedding_net_nodes[f"filter_type_{ii // self.ntypes}{self.suffix}/bias_{layer}_{ii % self.ntypes}"]
+                        tensor_value = np.frombuffer(node.tensor_content, dtype = tf.as_dtype(node.dtype).as_numpy_dtype)
+                        tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
                         bias["layer_" + str(layer)].append(np.reshape(tensor_value, tensor_shape))
                     else:
                         bias["layer_" + str(layer)].append(np.array([]))
@@ -198,14 +200,16 @@ class DPTabulate():
             matrix["layer_" + str(layer)] = []
             if self.type_one_side:
                 for ii in range(0, self.ntypes):
-                    tensor_value = np.frombuffer (self.embedding_net_nodes[f"filter_type_all{self.suffix}/matrix_{layer}_{ii}"].tensor_content)
-                    tensor_shape = tf.TensorShape(self.embedding_net_nodes[f"filter_type_all{self.suffix}/matrix_{layer}_{ii}"].tensor_shape).as_list()
+                    node = self.embedding_net_nodes[f"filter_type_all{self.suffix}/matrix_{layer}_{ii}"]
+                    tensor_value = np.frombuffer (node.tensor_content, dtype = tf.as_dtype(node.dtype).as_numpy_dtype)
+                    tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
                     matrix["layer_" + str(layer)].append(np.reshape(tensor_value, tensor_shape))
             else:
                 for ii in range(0, self.ntypes * self.ntypes):
                     if (ii // self.ntypes, int(ii % self.ntypes)) not in self.exclude_types:
-                        tensor_value = np.frombuffer(self.embedding_net_nodes[f"filter_type_{ii // self.ntypes}{self.suffix}/matrix_{layer}_{ii % self.ntypes}"].tensor_content)
-                        tensor_shape = tf.TensorShape(self.embedding_net_nodes[f"filter_type_{ii // self.ntypes}{self.suffix}/matrix_{layer}_{ii % self.ntypes}"].tensor_shape).as_list()
+                        node = self.embedding_net_nodes[f"filter_type_{ii // self.ntypes}{self.suffix}/matrix_{layer}_{ii % self.ntypes}"]
+                        tensor_value = np.frombuffer(node.tensor_content, dtype = tf.as_dtype(node.dtype).as_numpy_dtype)
+                        tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
                         matrix["layer_" + str(layer)].append(np.reshape(tensor_value, tensor_shape))
                     else:
                         matrix["layer_" + str(layer)].append(np.array([]))

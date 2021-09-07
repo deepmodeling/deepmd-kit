@@ -178,7 +178,7 @@ def get_embedding_net_variables_from_graph_def(graph_def : tf.GraphDef) -> Dict:
         dtype = tf.as_dtype(node.dtype).as_numpy_dtype
         tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
         if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
-            tensor_value = np.frombuffer(node.tensor_content)
+            tensor_value = np.frombuffer(node.tensor_content, dtype = tf.as_dtype(node.dtype).as_numpy_dtype)
         else:
             tensor_value = get_tensor_by_type(node, dtype)
         embedding_net_variables[item] = np.reshape(tensor_value, tensor_shape)
@@ -266,7 +266,7 @@ def get_fitting_net_variables_from_graph_def(graph_def : tf.GraphDef) -> Dict:
         dtype= tf.as_dtype(node.dtype).as_numpy_dtype
         tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
         if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
-            tensor_value = np.frombuffer(node.tensor_content)
+            tensor_value = np.frombuffer(node.tensor_content, dtype = tf.as_dtype(node.dtype).as_numpy_dtype)
         else:
             tensor_value = get_tensor_by_type(node, dtype)
         fitting_net_variables[item] = np.reshape(tensor_value, tensor_shape)
