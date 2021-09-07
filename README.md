@@ -82,6 +82,7 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [Install from source code](doc/install/install-from-source.md)
     - [Install LAMMPS](doc/install/install-lammps.md)
     - [Install i-PI](doc/install/install-ipi.md)
+    - [Install GROMACS](doc/install/install-gromacs.md)
     - [Building conda packages](doc/install/build-conda.md)
 - [Data](doc/data/index.md)
     - [Data conversion](doc/data/data-conv.md)
@@ -116,6 +117,7 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [Running MD with LAMMPS](doc/third-party/lammps.md)
     - [LAMMPS commands](doc/third-party/lammps-command.md)
     - [Run path-integral MD with i-PI](doc/third-party/ipi.md)
+    - [Run MD with GROMACS](doc/third-party/gromacs.md)
 
 
 # Code structure
@@ -134,6 +136,8 @@ The code is organized as follows:
 * `source/lib`: source code of DeePMD-kit library.
 
 * `source/lmp`: source code of Lammps module.
+
+* `source/gmx`: source code of Gromacs plugin and patches.
 
 * `source/op`: tensorflow op implementation. working with library.
 
