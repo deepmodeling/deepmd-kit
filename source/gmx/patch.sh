@@ -1,0 +1,132 @@
+#!/bin/bash
+DEEPMD_PATCH_ROOT=$(dirname $(readlink -f "$0"))
+VERSION="NULL"
+PATCH_FILES=("CMakeLists.txt" "src/gromacs/mdlib/forcerec.cpp" "src/gromacs/mdlib/sim_util.cpp")
+INSTALL_FILES=("src/gromacs/mdlib/deepmd_plugin.cpp" "src/gromacs/mdlib/deepmd_plugin.h" "src/gromacs/mdlib/json.hpp")
+FILES=("CMakeLists.txt" "src/gromacs/mdlib/forcerec.cpp" "src/gromacs/mdlib/json.hpp" "src/gromacs/mdlib/sim_util.cpp" "src/gromacs/mdlib/deepmd_plugin.cpp" "src/gromacs/mdlib/deepmd_plugin.h")
+
+MANUAL="\
+usage: this is a deepmd-kit patch program for gromacs
+
+arguments:
+    -h      print this help and exit
+    -d      gromacs root
+    -p      patch mode
+    -r      revert mode
+    -v      gromacs version (only support 2020.2 now)
+"
+
+check () {
+    echo "- Checking GROMACS root: $1"
+    for ((i=0;i<${#PATCH_FILES[*]};i++))
+    do
+        file=${PATCH_FILES[$i]}
+        if [ ! -e $1/${file} ]; then
+            echo "- $1/${file} not exist"
+            exit 1
+        fi
+    done
+    echo "- Done"
+}
+
+check_unpatched () {
+    for ((i=0;i<${#PATCH_FILES[*]};i++))
+    do
+        file=${PATCH_FILES[$i]}
+        if [ -e ${GMX_ROOT}/${file}.predp ]; then
+            echo "- ERROR: This is a patched gromacs code, please revert first"
+            exit 1
+        fi
+    done
+}
+
+check_patched () {
+    for ((i=0;i<${#INSTALL_FILES[*]};i++))
+    do
+        file=${INSTALL_FILES[$i]}
+        if [ ! -e ${GMX_ROOT}/${file} ]; then
+            echo "- WARNING: ${GMX_ROOT}/${file} not found"
+        fi
+    done
+
+    for ((i=0;i<${#PATCH_FILES[*]};i++))
+    do
+        file=${PATCH_FILES[$i]}
+        if [ ! -e ${GMX_ROOT}/${file}.predp ]; then
+            echo "- ERROR: backup file ${GMX_ROOT}/${file}.predp is lost"
+            exit 1
+        fi
+    done
+}
+
+patch () {
+    echo "- Staring DeepMD patch program to GROMACS ${VERSION}"
+    echo "- Mode: patch"
+    if [ ! -d $1 ]; then
+        echo "- ERROR: invalid gromacs root: $1"
+        exit 1
+    else
+        check_unpatched $1
+        check $1
+        for ((i=0;i<${#PATCH_FILES[*]};i++))
+        do
+            file=${PATCH_FILES[$i]}
+            cp ${GMX_ROOT}/${file} ${GMX_ROOT}/${file}.predp
+            echo "- Backing up ${GMX_ROOT}/${file}.predp"
+        done
+
+        for ((i=0;i<${#FILES[*]};i++))
+        do
+            file=${FILES[$i]}
+            cp ${DEEPMD_PATCH_ROOT}/${file} ${GMX_ROOT}/${file}
+            echo "- Installing ${GMX_ROOT}/${file}"
+        done
+        echo "- Finished"
+    fi
+}
+
+revert () {
+    echo "- Staring DeepMD patch program to GROMACS ${VERSION}"
+    echo "- Mode: revert"
+    check_patched $1
+    if [ ! -d $1 ]; then
+        echo "- ERROR: invalid gromacs root: $1"
+        exit 1
+    else
+        for ((i=0;i<${#INSTALL_FILES[*]};i++))
+        do
+            file=${INSTALL_FILES[$i]}
+            rm ${GMX_ROOT}/${file}
+            echo "- Removing ${GMX_ROOT}/${file}"
+        done
+
+        for ((i=0;i<${#PATCH_FILES[*]};i++))
+        do
+            file=${PATCH_FILES[$i]}
+            mv ${GMX_ROOT}/${file}.predp ${GMX_ROOT}/${file}
+            echo "- Restoring from ${GMX_ROOT}/${file}.predp"
+        done
+        echo "- Finished"
+    fi
+}
+
+check_version () {
+    case $1 in
+        "NULL") echo "- ERROR: Please specify a version from -v option" && exit 1;;
+        "2020.2") echo "- GROMACS version: 2020.2" ;;
+        *) echo "- ERROR: Invalid version" && exit 1 ;;
+    esac
+}
+
+
+while getopts "hprd:v:" opt
+do
+    case ${opt} in
+        h) echo "${MANUAL}" && exit 0 ;;
+        d) GMX_ROOT=$OPTARG;;
+        v) VERSION=$OPTARG && DEEPMD_PATCH_ROOT=${DEEPMD_PATCH_ROOT}/${VERSION} ;;
+        p) check_version $VERSION && patch ${GMX_ROOT} ;;
+        r) check_version $VERSION && revert ${GMX_ROOT} ;;
+        *) echo "- ERROR: Invaild option ${opt}" && exit 1 ;;
+    esac
+done
