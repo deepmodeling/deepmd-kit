@@ -238,6 +238,7 @@ PairDeepMD::PairDeepMD(LAMMPS *lmp)
     error->all(FLERR,"Pair deepmd requires metal unit, please set it by \"units metal\"");
   }
   restartinfo = 1;
+  centroidstressflag = 2 ; // set centroidstressflag = 2 to allow the use of the centroid/stress/atom. Added by Davide Tisi
   pppmflag = 1;
   respa_enable = 0;
   writedata = 0;
@@ -366,7 +367,8 @@ void PairDeepMD::compute(int eflag, int vflag)
   if (do_ghost) {
     deepmd::InputNlist lmp_list (list->inum, list->ilist, list->numneigh, list->firstneigh);
     if (single_model || multi_models_no_mod_devi) {
-      if ( ! (eflag_atom || vflag_atom) ) {      
+      //cvflag_atom is the right flag for the cvatom matrix 
+      if ( ! (eflag_atom || cvflag_atom) ) {      
 #ifdef HIGH_PREC
 	deep_pot.compute (dener, dforce, dvirial, dcoord, dtype, dbox, nghost, lmp_list, ago, fparam, daparam);
 #else
@@ -409,14 +411,26 @@ void PairDeepMD::compute(int eflag, int vflag)
 	if (eflag_atom) {
 	  for (int ii = 0; ii < nlocal; ++ii) eatom[ii] += deatom[ii];
 	}
-	if (vflag_atom) {
+	// Added by Davide Tisi 2020
+	// interface the atomic virial computed by DeepMD 
+	// with the one used in centroid atoms
+	if (cvflag_atom) {
 	  for (int ii = 0; ii < nall; ++ii){
-	    vatom[ii][0] += 1.0 * dvatom[9*ii+0];
-	    vatom[ii][1] += 1.0 * dvatom[9*ii+4];
-	    vatom[ii][2] += 1.0 * dvatom[9*ii+8];
-	    vatom[ii][3] += 1.0 * dvatom[9*ii+3];
-	    vatom[ii][4] += 1.0 * dvatom[9*ii+6];
-	    vatom[ii][5] += 1.0 * dvatom[9*ii+7];
+	    //vatom[ii][0] += 1.0 * dvatom[9*ii+0];
+	    //vatom[ii][1] += 1.0 * dvatom[9*ii+4];
+	    //vatom[ii][2] += 1.0 * dvatom[9*ii+8];
+	    //vatom[ii][3] += 1.0 * dvatom[9*ii+3];
+	    //vatom[ii][4] += 1.0 * dvatom[9*ii+6];
+	    //vatom[ii][5] += 1.0 * dvatom[9*ii+7];
+            cvatom[ii][0] += -1.0 * dvatom[9*ii+0]; // xx
+            cvatom[ii][1] += -1.0 * dvatom[9*ii+4]; // yy 
+            cvatom[ii][2] += -1.0 * dvatom[9*ii+8]; // zz
+            cvatom[ii][3] += -1.0 * dvatom[9*ii+3]; // xy
+            cvatom[ii][4] += -1.0 * dvatom[9*ii+6]; // xz
+            cvatom[ii][5] += -1.0 * dvatom[9*ii+7]; // yz
+            cvatom[ii][6] += -1.0 * dvatom[9*ii+1]; // yx
+            cvatom[ii][7] += -1.0 * dvatom[9*ii+2]; // zx
+            cvatom[ii][8] += -1.0 * dvatom[9*ii+5]; // zy
 	  }
 	}
       }
@@ -478,18 +492,37 @@ void PairDeepMD::compute(int eflag, int vflag)
 	  all_force[ii][jj] = all_force_[ii][jj];
 	}
       }
+      all_virial.resize(all_virial_.size());
+      for (unsigned ii = 0; ii < all_virial_.size(); ++ii){
+        all_virial[ii].resize(all_virial_[ii].size());
+        for (unsigned jj = 0; jj < all_virial_[ii].size(); ++jj){
+          all_virial[ii][jj] = all_virial_[ii][jj];
+        }
+      }
 #endif
       if (eflag_atom) {
 	for (int ii = 0; ii < nlocal; ++ii) eatom[ii] += deatom[ii];
       }
-      if (vflag_atom) {
+	// Added by Davide Tisi 2020
+	// interface the atomic virial computed by DeepMD 
+	// with the one used in centroid atoms
+      if (cvflag_atom) {
 	for (int ii = 0; ii < nall; ++ii){
-	  vatom[ii][0] += 1.0 * dvatom[9*ii+0];
-	  vatom[ii][1] += 1.0 * dvatom[9*ii+4];
-	  vatom[ii][2] += 1.0 * dvatom[9*ii+8];
-	  vatom[ii][3] += 1.0 * dvatom[9*ii+3];
-	  vatom[ii][4] += 1.0 * dvatom[9*ii+6];
-	  vatom[ii][5] += 1.0 * dvatom[9*ii+7];
+	  //vatom[ii][0] += 1.0 * dvatom[9*ii+0];
+	  //vatom[ii][1] += 1.0 * dvatom[9*ii+4];
+	  //vatom[ii][2] += 1.0 * dvatom[9*ii+8];
+	  //vatom[ii][3] += 1.0 * dvatom[9*ii+3];
+	  //vatom[ii][4] += 1.0 * dvatom[9*ii+6];
+	  //vatom[ii][5] += 1.0 * dvatom[9*ii+7];
+            cvatom[ii][0] += -1.0 * dvatom[9*ii+0]; // xx
+            cvatom[ii][1] += -1.0 * dvatom[9*ii+4]; // yy 
+            cvatom[ii][2] += -1.0 * dvatom[9*ii+8]; // zz
+            cvatom[ii][3] += -1.0 * dvatom[9*ii+3]; // xy
+            cvatom[ii][4] += -1.0 * dvatom[9*ii+6]; // xz
+            cvatom[ii][5] += -1.0 * dvatom[9*ii+7]; // yz
+            cvatom[ii][6] += -1.0 * dvatom[9*ii+1]; // yx
+            cvatom[ii][7] += -1.0 * dvatom[9*ii+2]; // zx
+            cvatom[ii][8] += -1.0 * dvatom[9*ii+5]; // zy
 	}
       }      
       if (out_freq > 0 && update->ntimestep % out_freq == 0) {

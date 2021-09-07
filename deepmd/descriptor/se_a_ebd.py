@@ -12,6 +12,45 @@ from deepmd.utils.network import embedding_net
 from .se_a import DescrptSeA
 
 class DescrptSeAEbd (DescrptSeA):
+    """DeepPot-SE descriptor with type embedding approach.
+
+    Parameters
+    ----------
+    rcut
+            The cut-off radius
+    rcut_smth
+            From where the environment matrix should be smoothed
+    sel : list[str]
+            sel[i] specifies the maxmum number of type i atoms in the cut-off radius
+    neuron : list[int]
+            Number of neurons in each hidden layers of the embedding net
+    axis_neuron
+            Number of the axis neuron (number of columns of the sub-matrix of the embedding matrix)
+    resnet_dt
+            Time-step `dt` in the resnet construction:
+            y = x + dt * \phi (Wx + b)
+    trainable
+            If the weights of embedding net are trainable.
+    seed
+            Random seed for initializing the network parameters.
+    type_one_side
+            Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
+    type_nchanl
+            Number of channels for type representation
+    type_nlayer
+            Number of hidden layers for the type embedding net (skip connected).
+    numb_aparam
+            Number of atomic parameters. If >0 it will be embedded with atom types.
+    set_davg_zero
+            Set the shift of embedding net input to zero.
+    activation_function
+            The activation function in the embedding net. Supported options are {0}
+    precision
+            The precision of the embedding net parameters. Supported options are {1}
+    exclude_types : List[List[int]]
+            The excluded pairs of types which have no interaction with each other.
+            For example, `[[0, 1]]` means no interaction between type 0 and type 1.
+    """
     def __init__ (self, 
                   rcut: float,
                   rcut_smth: float,
@@ -28,44 +67,10 @@ class DescrptSeAEbd (DescrptSeA):
                   set_davg_zero: bool = False,
                   activation_function: str = 'tanh',
                   precision: str = 'default',
-                  exclude_types: List[int] = [],
+                  exclude_types: List[List[int]] = [],
     ) -> None:
         """
         Constructor
-
-        Parameters
-        ----------
-        rcut
-                The cut-off radius
-        rcut_smth
-                From where the environment matrix should be smoothed
-        sel : list[str]
-                sel[i] specifies the maxmum number of type i atoms in the cut-off radius
-        neuron : list[int]
-                Number of neurons in each hidden layers of the embedding net
-        axis_neuron
-                Number of the axis neuron (number of columns of the sub-matrix of the embedding matrix)
-        resnet_dt
-                Time-step `dt` in the resnet construction:
-                y = x + dt * \phi (Wx + b)
-        trainable
-                If the weights of embedding net are trainable.
-        seed
-                Random seed for initializing the network parameters.
-        type_one_side
-                Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
-        type_nchanl
-                Number of channels for type representation
-        type_nlayer
-                Number of hidden layers for the type embedding net (skip connected).
-        numb_aparam
-                Number of atomic parameters. If >0 it will be embedded with atom types.
-        set_davg_zero
-                Set the shift of embedding net input to zero.
-        activation_function
-                The activation function in the embedding net. Supported options are {0}
-        precision
-                The precision of the embedding net parameters. Supported options are {1}
         """
         # args = ClassArg()\
         #        .add('type_nchanl',      int,    default = 4) \

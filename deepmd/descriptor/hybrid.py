@@ -12,6 +12,7 @@ from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 # from deepmd.descriptor import DescrptSeAEbd
 # from deepmd.descriptor import DescrptSeAEf
 # from deepmd.descriptor import DescrptSeR
+from .descriptor import Descriptor
 from .se_a import DescrptSeA
 from .se_r import DescrptSeR
 from .se_ar import DescrptSeAR
@@ -20,17 +21,19 @@ from .se_a_ebd import DescrptSeAEbd
 from .se_a_ef import DescrptSeAEf
 from .loc_frame import DescrptLocFrame
 
-class DescrptHybrid ():
+class DescrptHybrid (Descriptor):
+    """Concate a list of descriptors to form a new descriptor.
+
+    Parameters
+    ----------
+    descrpt_list : list
+            Build a descriptor from the concatenation of the list of descriptors.
+    """
     def __init__ (self, 
                   descrpt_list : list
     ) -> None :
         """
         Constructor
-
-        Parameters
-        ----------
-        descrpt_list : list
-                Build a descriptor from the concatenation of the list of descriptors.
         """
         if descrpt_list == [] or descrpt_list is None:
             raise RuntimeError('cannot build descriptor from an empty list of descriptors.')
@@ -72,11 +75,13 @@ class DescrptHybrid ():
     def get_nlist_i(self, 
                     ii : int
     ) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
-        """
+        """Get the neighbor information of the ii-th descriptor
+
         Parameters
         ----------
         ii : int
-                Get the neighbor information of the ii-th descriptor
+                The index of the descriptor
+
         Returns
         -------
         nlist
@@ -194,8 +199,9 @@ class DescrptHybrid ():
                 natoms[0]: number of local atoms
                 natoms[1]: total number of atoms held by this processor
                 natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
-        Return
-        ------
+
+        Returns
+        -------
         force
                 The force on atoms
         virial
@@ -214,3 +220,36 @@ class DescrptHybrid ():
                 virial += vv
                 atom_virial += av
         return force, virial, atom_virial
+
+    def enable_compression(self,
+                           min_nbor_dist: float,
+                           model_file: str = 'frozon_model.pb',
+                           table_extrapolate: float = 5.,
+                           table_stride_1: float = 0.01,
+                           table_stride_2: float = 0.1,
+                           check_frequency: int = -1,
+                           suffix: str = ""
+                           ) -> None:
+        """
+        Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the
+        training data.
+
+        Parameters
+        ----------
+        min_nbor_dist : float
+                The nearest distance between atoms
+        model_file : str, default: 'frozon_model.pb'
+                The original frozen model, which will be compressed by the program
+        table_extrapolate : float, default: 5.
+                The scale of model extrapolation
+        table_stride_1 : float, default: 0.01
+                The uniform stride of the first table
+        table_stride_2 : float, default: 0.1
+                The uniform stride of the second table
+        check_frequency : int, default: -1
+                The overflow check frequency
+        suffix : str, optional
+                The suffix of the scope
+        """
+        for idx, ii in enumerate(self.descrpt_list):
+            ii.enable_compression(min_nbor_dist, model_file, table_extrapolate, table_stride_1, table_stride_2, check_frequency, suffix=f"{suffix}_{idx}")

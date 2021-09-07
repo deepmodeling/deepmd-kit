@@ -87,6 +87,7 @@ class RunOptions:
     def __init__(
         self,
         init_model: Optional[str] = None,
+        init_frz_model: Optional[str] = None,
         restart: Optional[str] = None,
         log_path: Optional[str] = None,
         log_level: int = 0,
@@ -110,6 +111,9 @@ class RunOptions:
         elif init_model is not None:
             self.init_model = os.path.abspath(init_model)
             self.init_mode = "init_from_model"
+        elif init_frz_model is not None:
+            self.init_frz_model = os.path.abspath(init_frz_model)
+            self.init_mode = "init_from_frz_model"
 
         self._setup_logger(Path(log_path) if log_path else None, log_level, mpi_log)
 

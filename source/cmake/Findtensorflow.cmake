@@ -53,6 +53,7 @@ find_path(TensorFlow_INCLUDE_DIRS
   PATH_SUFFIXES "/include"
   NO_DEFAULT_PATH
   )
+if (BUILD_CPP_IF)
 find_path(TensorFlow_INCLUDE_DIRS_GOOGLE
   NAMES 
   google/protobuf/type.pb.h
@@ -61,6 +62,7 @@ find_path(TensorFlow_INCLUDE_DIRS_GOOGLE
   NO_DEFAULT_PATH
   )
 list(APPEND TensorFlow_INCLUDE_DIRS ${TensorFlow_INCLUDE_DIRS_GOOGLE})
+endif ()
   
 if (NOT TensorFlow_INCLUDE_DIRS AND tensorflow_FIND_REQUIRED)
   message(FATAL_ERROR 

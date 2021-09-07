@@ -27,6 +27,7 @@ venv*
 _build
 _templates
 API_CC
+doc/api_py/
 dp/
 build_lammps/
 build_tests/

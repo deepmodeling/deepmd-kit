@@ -1,6 +1,6 @@
 import math
 import numpy as np
-from typing import Tuple, List
+from typing import Tuple, List, Dict, Any
 
 from deepmd.env import tf
 from deepmd.common import get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, get_np_precision
@@ -10,11 +10,93 @@ from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.utils.network import embedding_net, embedding_net_rand_seed_shift
-from deepmd.utils.tabulate import DeepTabulate
+from deepmd.utils.tabulate import DPTabulate
 from deepmd.utils.type_embed import embed_atom_type
 from deepmd.utils.sess import run_sess
+from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph
+from .descriptor import Descriptor
 
-class DescrptSeA ():
+class DescrptSeA (Descriptor):
+    r"""DeepPot-SE constructed from all information (both angular and radial) of
+    atomic configurations. The embedding takes the distance between atoms as input.
+
+    The descriptor :math:`\mathcal{D}^i \in \mathcal{R}^{M_1 \times M_2}` is given by [1]_
+
+    .. math::
+        \mathcal{D}^i = (\mathcal{G}^i)^T \mathcal{R}^i (\mathcal{R}^i)^T \mathcal{G}^i_<
+
+    where :math:`\mathcal{R}^i \in \mathbb{R}^{N \times 4}` is the coordinate
+    matrix, and each row of :math:`\mathcal{R}^i` can be constructed as follows
+
+    .. math::
+        (\mathcal{R}^i)_j = [
+        \begin{array}{c}
+            s(r_{ji}) & x_{ji} & y_{ji} & z_{ji}
+        \end{array}
+        ]
+
+    where :math:`\mathbf{R}_{ji}=\mathbf{R}_j-\mathbf{R}_i = (x_{ji}, y_{ji}, z_{ji})` is 
+    the relative coordinate and :math:`r_{ji}=\lVert \mathbf{R}_{ji} \lVert` is its norm.
+    The switching function :math:`s(r)` is defined as:
+
+    .. math::
+        s(r)=
+        \begin{cases}
+        \frac{1}{r}, & r<r_s \\
+        \frac{1}{r} \{ {(\frac{r - r_s}{ r_c - r_s})}^3 (-6 {(\frac{r - r_s}{ r_c - r_s})}^2 +15 \frac{r - r_s}{ r_c - r_s} -10) +1 \}, & r_s \leq r<r_c \\
+        0, & r \geq r_c
+        \end{cases}
+
+    Each row of the embedding matrix  :math:`\mathcal{G}^i \in \mathbb{R}^{N \times M_1}` consists of outputs
+    of a embedding network :math:`\mathcal{N}` of :math:`s(r_{ji})`:
+
+    .. math::
+        (\mathcal{G}^i)_j = \mathcal{N}(s(r_{ji}))
+
+    :math:`\mathcal{G}^i_< \in \mathbb{R}^{N \times M_2}` takes first :math:`M_2`$` columns of
+    :math:`\mathcal{G}^i`$`. The equation of embedding network :math:`\mathcal{N}` can be found at
+    :meth:`deepmd.utils.network.embedding_net`.
+
+    Parameters
+    ----------
+    rcut
+            The cut-off radius :math:`r_c`
+    rcut_smth
+            From where the environment matrix should be smoothed :math:`r_s`
+    sel : list[str]
+            sel[i] specifies the maxmum number of type i atoms in the cut-off radius
+    neuron : list[int]
+            Number of neurons in each hidden layers of the embedding net :math:`\mathcal{N}`
+    axis_neuron
+            Number of the axis neuron :math:`M_2` (number of columns of the sub-matrix of the embedding matrix)
+    resnet_dt
+            Time-step `dt` in the resnet construction:
+            y = x + dt * \phi (Wx + b)
+    trainable
+            If the weights of embedding net are trainable.
+    seed
+            Random seed for initializing the network parameters.
+    type_one_side
+            Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
+    exclude_types : List[List[int]]
+            The excluded pairs of types which have no interaction with each other.
+            For example, `[[0, 1]]` means no interaction between type 0 and type 1.
+    set_davg_zero
+            Set the shift of embedding net input to zero.
+    activation_function
+            The activation function in the embedding net. Supported options are {0}
+    precision
+            The precision of the embedding net parameters. Supported options are {1}
+    uniform_seed
+            Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
+    
+    References
+    ----------
+    .. [1] Linfeng Zhang, Jiequn Han, Han Wang, Wissam A. Saidi, Roberto Car, and E. Weinan. 2018.
+       End-to-end symmetry preserving inter-atomic potential energy model for finite and extended
+       systems. In Proceedings of the 32nd International Conference on Neural Information Processing
+       Systems (NIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4441–4451.
+    """
     @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   rcut: float,
@@ -34,38 +116,6 @@ class DescrptSeA ():
     ) -> None:
         """
         Constructor
-
-        Parameters
-        ----------
-        rcut
-                The cut-off radius
-        rcut_smth
-                From where the environment matrix should be smoothed
-        sel : list[str]
-                sel[i] specifies the maxmum number of type i atoms in the cut-off radius
-        neuron : list[int]
-                Number of neurons in each hidden layers of the embedding net
-        axis_neuron
-                Number of the axis neuron (number of columns of the sub-matrix of the embedding matrix)
-        resnet_dt
-                Time-step `dt` in the resnet construction:
-                y = x + dt * \phi (Wx + b)
-        trainable
-                If the weights of embedding net are trainable.
-        seed
-                Random seed for initializing the network parameters.
-        type_one_side
-                Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
-        exclude_types : list[int]
-                The Excluded types
-        set_davg_zero
-                Set the shift of embedding net input to zero.
-        activation_function
-                The activation function in the embedding net. Supported options are {0}
-        precision
-                The precision of the embedding net parameters. Supported options are {1}
-        uniform_seed
-                Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
         """
         self.sel_a = sel
         self.rcut_r = rcut
@@ -77,6 +127,7 @@ class DescrptSeA ():
         self.uniform_seed = uniform_seed
         self.seed_shift = embedding_net_rand_seed_shift(self.filter_neuron)
         self.trainable = trainable
+        self.compress_activation_fn = get_activation_func(activation_function)
         self.filter_activation_fn = get_activation_func(activation_function)
         self.filter_precision = get_precision(precision)
         self.filter_np_precision = get_np_precision(precision)
@@ -106,6 +157,7 @@ class DescrptSeA ():
         self.dstd = None
         self.davg = None
         self.compress = False
+        self.embedding_net_variables = None
         self.place_holders = {}
         nei_type = np.array([])
         for ii in range(self.ntypes):
@@ -246,7 +298,8 @@ class DescrptSeA ():
                            table_extrapolate : float = 5,
                            table_stride_1 : float = 0.01,
                            table_stride_2 : float = 0.1,
-                           check_frequency : int = -1
+                           check_frequency : int = -1,
+                           suffix : str = "",
     ) -> None:
         """
         Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
@@ -265,16 +318,27 @@ class DescrptSeA ():
                 The uniform stride of the second table
         check_frequency
                 The overflow check frequency
+        suffix : str, optional
+                The suffix of the scope
         """
+        assert (
+            not self.filter_resnet_dt
+        ), "Model compression error: descriptor resnet_dt must be false!"
         self.compress = True
-        self.model_file = model_file
+        self.table = DPTabulate(
+            model_file, self.type_one_side, self.exclude_types, self.compress_activation_fn, suffix=suffix)
         self.table_config = [table_extrapolate, table_stride_1, table_stride_2, check_frequency]
-        self.table = DeepTabulate(self.model_file, self.type_one_side, self.exclude_types)
         self.lower, self.upper \
             = self.table.build(min_nbor_dist, 
                                table_extrapolate, 
                                table_stride_1, 
                                table_stride_2)
+        
+        graph, _ = load_graph_def(model_file)
+        self.davg = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_avg' % suffix)
+        self.dstd = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_std' % suffix)
+
+
 
     def build (self, 
                coord_ : tf.Tensor, 
@@ -392,6 +456,86 @@ class DescrptSeA ():
         """
         return self.qmat
 
+    def pass_tensors_from_frz_model(self,
+                                    descrpt_reshape : tf.Tensor,
+                                    descrpt_deriv   : tf.Tensor,
+                                    rij             : tf.Tensor,
+                                    nlist           : tf.Tensor
+    ):
+        """
+        Pass the descrpt_reshape tensor as well as descrpt_deriv tensor from the frz graph_def
+
+        Parameters
+        ----------
+        descrpt_reshape
+                The passed descrpt_reshape tensor
+        descrpt_deriv
+                The passed descrpt_deriv tensor
+        rij
+                The passed rij tensor
+        nlist
+                The passed nlist tensor
+        """
+        self.rij = rij
+        self.nlist = nlist
+        self.descrpt_deriv = descrpt_deriv
+        self.descrpt_reshape = descrpt_reshape
+
+    def get_feed_dict(self,
+                      coord_, 
+                      atype_, 
+                      natoms, 
+                      box, 
+                      mesh):
+        """
+        generate the deed_dict for current descriptor
+
+        Parameters
+        ----------
+        coord_
+                The coordinate of atoms
+        atype_
+                The type of atoms
+        natoms
+                The number of atoms. This tensor has the length of Ntypes + 2
+                natoms[0]: number of local atoms
+                natoms[1]: total number of atoms held by this processor
+                natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+        box
+                The box. Can be generated by deepmd.model.make_stat_input
+        mesh
+                For historical reasons, only the length of the Tensor matters.
+                if size of mesh == 6, pbc is assumed. 
+                if size of mesh == 0, no-pbc is assumed. 
+
+        Returns
+        -------
+        feed_dict
+                The output feed_dict of current descriptor
+        """
+        feed_dict = {
+            't_coord:0'  :coord_,
+            't_type:0'   :atype_,
+            't_natoms:0' :natoms,
+            't_box:0'    :box,
+            't_mesh:0'   :mesh
+        }
+        return feed_dict
+
+
+    def init_variables(self,
+                       embedding_net_variables: dict
+    ) -> None:
+        """
+        Init the embedding net variables with the given dict
+
+        Parameters
+        ----------
+        embedding_net_variables
+                The input dict which stores the embedding net variables
+        """
+        self.embedding_net_variables = embedding_net_variables
+
 
     def prod_force_virial(self, 
                           atom_ener : tf.Tensor, 
@@ -409,8 +553,9 @@ class DescrptSeA ():
                 natoms[0]: number of local atoms
                 natoms[1]: total number of atoms held by this processor
                 natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
-        Return
-        ------
+
+        Returns
+        -------
         force
                 The force on atoms
         virial
@@ -545,17 +690,36 @@ class DescrptSeA ():
             nframes,
             natoms,
             type_embedding,
-    ):            
+    ):
+        '''Concatenate `type_embedding` of neighbors and `xyz_scatter`.
+        If not self.type_one_side, concatenate `type_embedding` of center atoms as well.
+
+        Parameters
+        ----------
+        xyz_scatter:
+                shape is [nframes*natoms[0]*self.nnei, 1]
+        nframes:
+                shape is []
+        natoms:
+                shape is [1+1+self.ntypes]
+        type_embedding:
+                shape is [self.ntypes, Y] where Y=jdata['type_embedding']['neuron'][-1]
+
+        Returns
+        -------
+            embedding:
+                environment of each atom represented by embedding.
+        '''
         te_out_dim = type_embedding.get_shape().as_list()[-1]        
-        nei_embed = tf.nn.embedding_lookup(type_embedding,tf.cast(self.nei_type,dtype=tf.int32)) #nnei*nchnl
-        nei_embed = tf.tile(nei_embed,(nframes*natoms[0],1))
+        nei_embed = tf.nn.embedding_lookup(type_embedding,tf.cast(self.nei_type,dtype=tf.int32))  # shape is [self.nnei, 1+te_out_dim]
+        nei_embed = tf.tile(nei_embed,(nframes*natoms[0],1))  # shape is [nframes*natoms[0]*self.nnei, te_out_dim]
         nei_embed = tf.reshape(nei_embed,[-1,te_out_dim])
-        embedding_input = tf.concat([xyz_scatter,nei_embed],1)
+        embedding_input = tf.concat([xyz_scatter,nei_embed],1)  # shape is [nframes*natoms[0]*self.nnei, 1+te_out_dim]
         if not self.type_one_side:
-            atm_embed = embed_atom_type(self.ntypes, natoms, type_embedding)
-            atm_embed = tf.tile(atm_embed,(1,self.nnei))
-            atm_embed = tf.reshape(atm_embed,[-1,te_out_dim])
-            embedding_input = tf.concat([embedding_input,atm_embed],1)  
+            atm_embed = embed_atom_type(self.ntypes, natoms, type_embedding)  # shape is [natoms[0], te_out_dim]
+            atm_embed = tf.tile(atm_embed,(nframes,self.nnei))  # shape is [nframes*natoms[0], self.nnei*te_out_dim]
+            atm_embed = tf.reshape(atm_embed,[-1,te_out_dim])  # shape is [nframes*natoms[0]*self.nnei, te_out_dim]
+            embedding_input = tf.concat([embedding_input,atm_embed],1)  # shape is [nframes*natoms[0]*self.nnei, 1+te_out_dim+te_out_dim]
         return embedding_input
 
 
@@ -618,7 +782,8 @@ class DescrptSeA ():
                   bavg = bavg,
                   seed = self.seed,
                   trainable = trainable, 
-                  uniform_seed = self.uniform_seed)
+                  uniform_seed = self.uniform_seed,
+                  initial_variables = self.embedding_net_variables)
               if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
           else:
             # we can safely return the final xyz_scatter filled with zero directly

@@ -72,7 +72,7 @@ def descrpt_se_a_args():
     doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}'
     doc_trainable = 'If the parameters in the embedding net is trainable'
     doc_seed = 'Random seed for parameter initialization'
-    doc_exclude_types = 'The Excluded types'
+    doc_exclude_types = 'The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1.'
     doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
     
     return [
@@ -146,7 +146,7 @@ def descrpt_se_r_args():
     doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}'
     doc_trainable = 'If the parameters in the embedding net are trainable'
     doc_seed = 'Random seed for parameter initialization'
-    doc_exclude_types = 'The Excluded types'
+    doc_exclude_types = 'The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1.'
     doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
     
     return [
@@ -571,6 +571,7 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     doc_profiling_file = 'Output file for profiling.'
     doc_tensorboard = 'Enable tensorboard'
     doc_tensorboard_log_dir = 'The log directory of tensorboard outputs'
+    doc_tensorboard_freq = 'The frequency of writing tensorboard events.'
 
     arg_training_data = training_data_args()
     arg_validation_data = validation_data_args()
@@ -580,7 +581,7 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
         arg_validation_data,
         Argument("numb_steps", int, optional=False, doc=doc_numb_steps, alias=["stop_batch"]),
         Argument("seed", [int,None], optional=True, doc=doc_seed),
-        Argument("disp_file", str, optional=True, default='lcueve.out', doc=doc_disp_file),
+        Argument("disp_file", str, optional=True, default='lcurve.out', doc=doc_disp_file),
         Argument("disp_freq", int, optional=True, default=1000, doc=doc_disp_freq),
         Argument("numb_test", [list,int,str], optional=True, default=1, doc=doc_numb_test),
         Argument("save_freq", int, optional=True, default=1000, doc=doc_save_freq),
@@ -591,6 +592,7 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
         Argument("profiling_file", str, optional=True, default='timeline.json', doc=doc_profiling_file),
         Argument("tensorboard", bool, optional=True, default=False, doc=doc_tensorboard),
         Argument("tensorboard_log_dir", str, optional=True, default='log', doc=doc_tensorboard_log_dir),
+        Argument("tensorboard_freq", int, optional=True, default=1, doc=doc_tensorboard_freq),
     ]
 
     doc_training = 'The training options.'

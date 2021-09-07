@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.7)
 project(DeePMD)
-set(CMAKE_LINK_WHAT_YOU_USE TRUE)
+if (CMAKE_COMPILER_IS_GNUCXX)
+  set(CMAKE_LINK_WHAT_YOU_USE TRUE)
+endif ()
 
 # build cpp or python interfaces
 if (NOT DEFINED BUILD_CPP_IF) 
@@ -146,16 +148,6 @@ if (USE_TTM)
   set(TTM_DEF "-DUSE_TTM")
 endif (USE_TTM)
 
-# old pppm interface
-if(NOT DEFINED OLD_LMP_PPPM)
-  set(OLD_LMP_PPPM FALSE)
-endif(NOT DEFINED OLD_LMP_PPPM)
-if (OLD_LMP_PPPM)
-  set(OLD_LMP_PPPM_DEF "-DOLD_LMP_PPPM")
-  message(STATUS "Use old lammps pppm interface")
-endif()
-add_definitions (${OLD_LMP_PPPM_DEF})
-
 # define build type
 if ((NOT DEFINED CMAKE_BUILD_TYPE) OR CMAKE_BUILD_TYPE STREQUAL "")
    set (CMAKE_BUILD_TYPE release)
@@ -174,18 +166,6 @@ if (OPENMP_FOUND)
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
 endif()
-
-# headers of lib
-list (APPEND DeePMD_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/lib/include/)
-list (APPEND DeePMD_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/3rdparty/)
-if (BUILD_CPP_IF)
-  list (APPEND DeePMD_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/api_cc/include/)
-  include_directories(${CMAKE_BINARY_DIR}/api_cc/)
-endif (BUILD_CPP_IF)
-
-# include
-include_directories(${DeePMD_INCLUDE_DIRS})
-include_directories(${TensorFlow_INCLUDE_DIRS})
 
 # define names of libs
 set (LIB_DEEPMD		"deepmd")

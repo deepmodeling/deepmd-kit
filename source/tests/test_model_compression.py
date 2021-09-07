@@ -1,6 +1,7 @@
 import os,sys,platform,shutil,dpdata,json
 import numpy as np
 import unittest
+import subprocess as sp
 
 from deepmd.infer import DeepPot
 from deepmd.env import MODEL_VERSION
@@ -14,30 +15,47 @@ else :
     default_places = 10
 
 def _file_delete(file) :
-    if os.path.exists(file):
+    if os.path.isdir(file):
+        os.rmdir(file)
+    elif os.path.isfile(file):
         os.remove(file)
 
-class TestDeepPotAPBC(unittest.TestCase) :
-    def setUp(self):
-        self.data_file  = str(tests_path / os.path.join("model_compression", "data"))
-        self.frozen_model = str(tests_path / "dp-original.pb")
-        self.compressed_model = str(tests_path / "dp-compressed.pb")
-        self.INPUT = str(tests_path / "input.json")
-        jdata = j_loader(str(tests_path / os.path.join("model_compression", "input.json")))
-        jdata["training"]["training_data"]["systems"] = self.data_file
-        jdata["training"]["validation_data"]["systems"] = self.data_file
-        with open(self.INPUT, "w") as fp:
-            json.dump(jdata, fp, indent=4)
+def _subprocess_run(command):
+    popen = sp.Popen(command.split(), shell=False, stdout=sp.PIPE, stderr=sp.STDOUT)
+    for line in iter(popen.stdout.readline, b''):
+        if hasattr(line, 'decode'):
+            line = line.decode('utf-8')
+        line = line.rstrip()
+        print(line)
+    popen.wait()
+    return popen.returncode
 
-        ret = os.system("dp train " + self.INPUT)
-        assert(ret == 0), "DP train error!"
-        ret = os.system("dp freeze -o " + self.frozen_model)
-        assert(ret == 0), "DP freeze error!"
-        ret = os.system("dp compress " + " -i " + self.frozen_model + " -o " + self.compressed_model)
-        assert(ret == 0), "DP model compression error!"
-        
-        self.dp_original = DeepPot(self.frozen_model)
-        self.dp_compressed = DeepPot(self.compressed_model)
+def _init_models():
+    data_file  = str(tests_path / os.path.join("model_compression", "data"))
+    frozen_model = str(tests_path / "dp-original.pb")
+    compressed_model = str(tests_path / "dp-compressed.pb")
+    INPUT = str(tests_path / "input.json")
+    jdata = j_loader(str(tests_path / os.path.join("model_compression", "input.json")))
+    jdata["training"]["training_data"]["systems"] = data_file
+    jdata["training"]["validation_data"]["systems"] = data_file
+    with open(INPUT, "w") as fp:
+        json.dump(jdata, fp, indent=4)
+
+    ret = _subprocess_run("dp train " + INPUT)
+    np.testing.assert_equal(ret, 0, 'DP train failed!')
+    ret = _subprocess_run("dp freeze -o " + frozen_model)
+    np.testing.assert_equal(ret, 0, 'DP freeze failed!')
+    ret = _subprocess_run("dp compress " + " -i " + frozen_model + " -o " + compressed_model)
+    np.testing.assert_equal(ret, 0, 'DP model compression failed!')
+    return INPUT, frozen_model, compressed_model
+
+INPUT, FROZEN_MODEL, COMPRESSED_MODEL = _init_models()
+
+class TestDeepPotAPBC(unittest.TestCase) :
+    @classmethod
+    def setUpClass(self):
+        self.dp_original = DeepPot(FROZEN_MODEL)
+        self.dp_compressed = DeepPot(COMPRESSED_MODEL)
         self.coords = np.array([12.83, 2.56, 2.18,
                                 12.09, 2.87, 2.74,
                                 00.25, 3.32, 1.68,
@@ -46,18 +64,6 @@ class TestDeepPotAPBC(unittest.TestCase) :
                                 4.27, 3.22, 1.56])
         self.atype = [0, 1, 1, 0, 1, 1]
         self.box = np.array([13., 0., 0., 0., 13., 0., 0., 0., 13.])
-
-    def tearDown(self):
-        _file_delete(self.INPUT)
-        _file_delete(self.frozen_model)
-        _file_delete(self.compressed_model)
-        _file_delete("out.json")
-        _file_delete("compress.json")
-        _file_delete("checkpoint")
-        _file_delete("lcurve.out")
-        _file_delete("model.ckpt.meta")
-        _file_delete("model.ckpt.index")
-        _file_delete("model.ckpt.data-00000-of-00001")
 
     def test_attrs(self):
         self.assertEqual(self.dp_original.get_ntypes(), 2)
@@ -85,12 +91,9 @@ class TestDeepPotAPBC(unittest.TestCase) :
         self.assertEqual(ff1.shape, (nframes,natoms,3))
         self.assertEqual(vv1.shape, (nframes,9))
         # check values
-        for ii in range(ff0.size):
-            self.assertAlmostEqual(ff0.reshape([-1])[ii], ff1.reshape([-1])[ii], places = default_places)
-        for ii in range(nframes):
-            self.assertAlmostEqual(ee0.reshape([-1])[ii], ee1.reshape([-1])[ii], places = default_places)
-        for ii in range(nframes, 9):
-            self.assertAlmostEqual(vv0.reshape([-1])[ii], vv1.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ff0, ff1, default_places)
+        np.testing.assert_almost_equal(ee0, ee1, default_places)
+        np.testing.assert_almost_equal(vv0, vv1, default_places)
 
     def test_1frame_atm(self):
         ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(self.coords, self.box, self.atype, atomic = True)
@@ -109,16 +112,11 @@ class TestDeepPotAPBC(unittest.TestCase) :
         self.assertEqual(ae1.shape, (nframes,natoms,1))
         self.assertEqual(av1.shape, (nframes,natoms,9))
         # check values
-        for ii in range(ff0.size):
-            self.assertAlmostEqual(ff0.reshape([-1])[ii], ff1.reshape([-1])[ii], places = default_places)
-        for ii in range(ae0.size):
-            self.assertAlmostEqual(ae0.reshape([-1])[ii], ae1.reshape([-1])[ii], places = default_places)
-        for ii in range(av0.size):
-            self.assertAlmostEqual(av0.reshape([-1])[ii], av1.reshape([-1])[ii], places = default_places)
-        for ii in range(nframes):
-            self.assertAlmostEqual(ee0.reshape([-1])[ii], ee1.reshape([-1])[ii], places = default_places)
-        for ii in range(nframes, 9):
-            self.assertAlmostEqual(vv0.reshape([-1])[ii], vv1.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ff0, ff1, default_places)
+        np.testing.assert_almost_equal(ae0, ae1, default_places)
+        np.testing.assert_almost_equal(av0, av1, default_places)
+        np.testing.assert_almost_equal(ee0, ee1, default_places)
+        np.testing.assert_almost_equal(vv0, vv1, default_places)
 
     def test_2frame_atm(self):
         coords2 = np.concatenate((self.coords, self.coords))
@@ -140,39 +138,18 @@ class TestDeepPotAPBC(unittest.TestCase) :
         self.assertEqual(av1.shape, (nframes,natoms,9))
 
         # check values
-        for ii in range(ff0.size):
-            self.assertAlmostEqual(ff0.reshape([-1])[ii], ff1.reshape([-1])[ii], places = default_places)
-        for ii in range(ae0.size):
-            self.assertAlmostEqual(ae0.reshape([-1])[ii], ae1.reshape([-1])[ii], places = default_places)
-        for ii in range(av0.size):
-            self.assertAlmostEqual(av0.reshape([-1])[ii], av1.reshape([-1])[ii], places = default_places)
-        for ii in range(nframes):
-            self.assertAlmostEqual(ee0.reshape([-1])[ii], ee1.reshape([-1])[ii], places = default_places)
-        for ii in range(nframes, 9):
-            self.assertAlmostEqual(vv0.reshape([-1])[ii], vv1.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ff0, ff1, default_places)
+        np.testing.assert_almost_equal(ae0, ae1, default_places)
+        np.testing.assert_almost_equal(av0, av1, default_places)
+        np.testing.assert_almost_equal(ee0, ee1, default_places)
+        np.testing.assert_almost_equal(vv0, vv1, default_places)
 
 
 class TestDeepPotANoPBC(unittest.TestCase) :
-    def setUp(self):
-        self.data_file  = str(tests_path / os.path.join("model_compression", "data"))
-        self.frozen_model = str(tests_path / "dp-original.pb")
-        self.compressed_model = str(tests_path / "dp-compressed.pb")
-        self.INPUT = str(tests_path / "input.json")
-        jdata = j_loader(str(tests_path / os.path.join("model_compression", "input.json")))
-        jdata["training"]["training_data"]["systems"] = self.data_file
-        jdata["training"]["validation_data"]["systems"] = self.data_file
-        with open(self.INPUT, "w") as fp:
-            json.dump(jdata, fp, indent=4)
-
-        ret = os.system("dp train " + self.INPUT)
-        assert(ret == 0), "DP train error!"
-        ret = os.system("dp freeze -o " + self.frozen_model)
-        assert(ret == 0), "DP freeze error!"
-        ret = os.system("dp compress " + " -i " + self.frozen_model + " -o " + self.compressed_model)
-        assert(ret == 0), "DP model compression error!"
-        
-        self.dp_original = DeepPot(self.frozen_model)
-        self.dp_compressed = DeepPot(self.compressed_model)
+    @classmethod
+    def setUpClass(self):
+        self.dp_original = DeepPot(FROZEN_MODEL)
+        self.dp_compressed = DeepPot(COMPRESSED_MODEL)
         self.coords = np.array([12.83, 2.56, 2.18,
                                 12.09, 2.87, 2.74,
                                 00.25, 3.32, 1.68,
@@ -182,18 +159,6 @@ class TestDeepPotANoPBC(unittest.TestCase) :
         self.atype = [0, 1, 1, 0, 1, 1]
         self.box = None
 
-    def tearDown(self):
-        _file_delete(self.INPUT)
-        _file_delete(self.frozen_model)
-        _file_delete(self.compressed_model)
-        _file_delete("out.json")
-        _file_delete("compress.json")
-        _file_delete("checkpoint")
-        _file_delete("lcurve.out")
-        _file_delete("model.ckpt.meta")
-        _file_delete("model.ckpt.index")
-        _file_delete("model.ckpt.data-00000-of-00001")
-    
     def test_1frame(self):
         ee0, ff0, vv0 = self.dp_original.eval(self.coords, self.box, self.atype, atomic = False)
         ee1, ff1, vv1 = self.dp_compressed.eval(self.coords, self.box, self.atype, atomic = False)
@@ -207,12 +172,9 @@ class TestDeepPotANoPBC(unittest.TestCase) :
         self.assertEqual(ff1.shape, (nframes,natoms,3))
         self.assertEqual(vv1.shape, (nframes,9))
         # check values
-        for ii in range(ff0.size):
-            self.assertAlmostEqual(ff0.reshape([-1])[ii], ff1.reshape([-1])[ii], places = default_places)
-        for ii in range(nframes):
-            self.assertAlmostEqual(ee0.reshape([-1])[ii], ee1.reshape([-1])[ii], places = default_places)
-        for ii in range(nframes, 9):
-            self.assertAlmostEqual(vv0.reshape([-1])[ii], vv1.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ff0, ff1, default_places)
+        np.testing.assert_almost_equal(ee0, ee1, default_places)
+        np.testing.assert_almost_equal(vv0, vv1, default_places)
 
     def test_1frame_atm(self):
         ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(self.coords, self.box, self.atype, atomic = True)
@@ -231,16 +193,11 @@ class TestDeepPotANoPBC(unittest.TestCase) :
         self.assertEqual(ae1.shape, (nframes,natoms,1))
         self.assertEqual(av1.shape, (nframes,natoms,9))
         # check values
-        for ii in range(ff0.size):
-            self.assertAlmostEqual(ff0.reshape([-1])[ii], ff1.reshape([-1])[ii], places = default_places)
-        for ii in range(ae0.size):
-            self.assertAlmostEqual(ae0.reshape([-1])[ii], ae1.reshape([-1])[ii], places = default_places)
-        for ii in range(av0.size):
-            self.assertAlmostEqual(av0.reshape([-1])[ii], av1.reshape([-1])[ii], places = default_places)
-        for ii in range(nframes):
-            self.assertAlmostEqual(ee0.reshape([-1])[ii], ee1.reshape([-1])[ii], places = default_places)
-        for ii in range(nframes, 9):
-            self.assertAlmostEqual(vv0.reshape([-1])[ii], vv1.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ff0, ff1, default_places)
+        np.testing.assert_almost_equal(ae0, ae1, default_places)
+        np.testing.assert_almost_equal(av0, av1, default_places)
+        np.testing.assert_almost_equal(ee0, ee1, default_places)
+        np.testing.assert_almost_equal(vv0, vv1, default_places)
 
     def test_2frame_atm(self):
         coords2 = np.concatenate((self.coords, self.coords))
@@ -261,39 +218,18 @@ class TestDeepPotANoPBC(unittest.TestCase) :
         self.assertEqual(av1.shape, (nframes,natoms,9))
 
         # check values
-        for ii in range(ff0.size):
-            self.assertAlmostEqual(ff0.reshape([-1])[ii], ff1.reshape([-1])[ii], places = default_places)
-        for ii in range(ae0.size):
-            self.assertAlmostEqual(ae0.reshape([-1])[ii], ae1.reshape([-1])[ii], places = default_places)
-        for ii in range(av0.size):
-            self.assertAlmostEqual(av0.reshape([-1])[ii], av1.reshape([-1])[ii], places = default_places)
-        for ii in range(nframes):
-            self.assertAlmostEqual(ee0.reshape([-1])[ii], ee1.reshape([-1])[ii], places = default_places)
-        for ii in range(nframes, 9):
-            self.assertAlmostEqual(vv0.reshape([-1])[ii], vv1.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ff0, ff1, default_places)
+        np.testing.assert_almost_equal(ae0, ae1, default_places)
+        np.testing.assert_almost_equal(av0, av1, default_places)
+        np.testing.assert_almost_equal(ee0, ee1, default_places)
+        np.testing.assert_almost_equal(vv0, vv1, default_places)
 
     
 class TestDeepPotALargeBoxNoPBC(unittest.TestCase) :
-    def setUp(self):
-        self.data_file  = str(tests_path / os.path.join("model_compression", "data"))
-        self.frozen_model = str(tests_path / "dp-original.pb")
-        self.compressed_model = str(tests_path / "dp-compressed.pb")
-        self.INPUT = str(tests_path / "input.json")
-        jdata = j_loader(str(tests_path / os.path.join("model_compression", "input.json")))
-        jdata["training"]["training_data"]["systems"] = self.data_file
-        jdata["training"]["validation_data"]["systems"] = self.data_file
-        with open(self.INPUT, "w") as fp:
-            json.dump(jdata, fp, indent=4)
-
-        ret = os.system("dp train " + self.INPUT)
-        assert(ret == 0), "DP train error!"
-        ret = os.system("dp freeze -o " + self.frozen_model)
-        assert(ret == 0), "DP freeze error!"
-        ret = os.system("dp compress " + " -i " + self.frozen_model + " -o " + self.compressed_model)
-        assert(ret == 0), "DP model compression error!"
-        
-        self.dp_original = DeepPot(self.frozen_model)
-        self.dp_compressed = DeepPot(self.compressed_model)
+    @classmethod
+    def setUpClass(self):
+        self.dp_original = DeepPot(FROZEN_MODEL)
+        self.dp_compressed = DeepPot(COMPRESSED_MODEL)
         self.coords = np.array([12.83, 2.56, 2.18,
                                 12.09, 2.87, 2.74,
                                 00.25, 3.32, 1.68,
@@ -303,18 +239,6 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase) :
         self.atype = [0, 1, 1, 0, 1, 1]
         self.box = np.array([19., 0., 0., 0., 13., 0., 0., 0., 13.])
 
-    def tearDown(self):
-        _file_delete(self.INPUT)
-        _file_delete(self.frozen_model)
-        _file_delete(self.compressed_model)
-        _file_delete("out.json")
-        _file_delete("compress.json")
-        _file_delete("checkpoint")
-        _file_delete("lcurve.out")
-        _file_delete("model.ckpt.meta")
-        _file_delete("model.ckpt.index")
-        _file_delete("model.ckpt.data-00000-of-00001")
-    
     def test_1frame(self):
         ee0, ff0, vv0 = self.dp_original.eval(self.coords, self.box, self.atype, atomic = False)
         ee1, ff1, vv1 = self.dp_compressed.eval(self.coords, self.box, self.atype, atomic = False)
@@ -328,12 +252,9 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase) :
         self.assertEqual(ff1.shape, (nframes,natoms,3))
         self.assertEqual(vv1.shape, (nframes,9))
         # check values
-        for ii in range(ff0.size):
-            self.assertAlmostEqual(ff0.reshape([-1])[ii], ff1.reshape([-1])[ii], places = default_places)
-        for ii in range(nframes):
-            self.assertAlmostEqual(ee0.reshape([-1])[ii], ee1.reshape([-1])[ii], places = default_places)
-        for ii in range(nframes, 9):
-            self.assertAlmostEqual(vv0.reshape([-1])[ii], vv1.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ff0, ff1, default_places)
+        np.testing.assert_almost_equal(ee0, ee1, default_places)
+        np.testing.assert_almost_equal(vv0, vv1, default_places)
 
     def test_1frame_atm(self):
         ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(self.coords, self.box, self.atype, atomic = True)
@@ -352,16 +273,11 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase) :
         self.assertEqual(ae1.shape, (nframes,natoms,1))
         self.assertEqual(av1.shape, (nframes,natoms,9))
         # check values
-        for ii in range(ff0.size):
-            self.assertAlmostEqual(ff0.reshape([-1])[ii], ff1.reshape([-1])[ii], places = default_places)
-        for ii in range(ae0.size):
-            self.assertAlmostEqual(ae0.reshape([-1])[ii], ae1.reshape([-1])[ii], places = default_places)
-        for ii in range(av0.size):
-            self.assertAlmostEqual(av0.reshape([-1])[ii], av1.reshape([-1])[ii], places = default_places)
-        for ii in range(nframes):
-            self.assertAlmostEqual(ee0.reshape([-1])[ii], ee1.reshape([-1])[ii], places = default_places)
-        for ii in range(nframes, 9):
-            self.assertAlmostEqual(vv0.reshape([-1])[ii], vv1.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ff0, ff1, default_places)
+        np.testing.assert_almost_equal(ae0, ae1, default_places)
+        np.testing.assert_almost_equal(av0, av1, default_places)
+        np.testing.assert_almost_equal(ee0, ee1, default_places)
+        np.testing.assert_almost_equal(vv0, vv1, default_places)
 
     def test_ase(self):
         from ase import Atoms
@@ -369,43 +285,24 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase) :
         water0 = Atoms('OHHOHH',
                     positions=self.coords.reshape((-1,3)),
                     cell=self.box.reshape((3,3)),
-                    calculator=DP(self.frozen_model))
+                    calculator=DP(FROZEN_MODEL))
         water1 = Atoms('OHHOHH',
                     positions=self.coords.reshape((-1,3)),
                     cell=self.box.reshape((3,3)),
-                    calculator=DP(self.compressed_model))
+                    calculator=DP(COMPRESSED_MODEL))
         ee0 = water0.get_potential_energy()
         ff0 = water0.get_forces()
         ee1 = water1.get_potential_energy()
         ff1 = water1.get_forces()
         nframes = 1
-        for ii in range(ff0.size):
-            self.assertAlmostEqual(ff0.reshape([-1])[ii], ff1.reshape([-1])[ii], places = default_places)
-        for ii in range(nframes):
-            self.assertAlmostEqual(ee0.reshape([-1])[ii], ee1.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ff0, ff1, default_places)
+        np.testing.assert_almost_equal(ee0, ee1, default_places)
 
 class TestDeepPotAPBCExcludeTypes(unittest.TestCase) :
-    def setUp(self):
-        self.data_file  = str(tests_path / os.path.join("model_compression", "data"))
-        self.frozen_model = str(tests_path / "dp-original.pb")
-        self.compressed_model = str(tests_path / "dp-compressed.pb")
-        self.INPUT = str(tests_path / "input.json")
-        jdata = j_loader(str(tests_path / os.path.join("model_compression", "input.json")))
-        jdata["training"]["training_data"]["systems"] = self.data_file
-        jdata["training"]["validation_data"]["systems"] = self.data_file
-        jdata["model"]["descriptor"]["exclude_types"] = [[0, 1]]
-        with open(self.INPUT, "w") as fp:
-            json.dump(jdata, fp, indent=4)
-
-        ret = os.system("dp train " + self.INPUT)
-        assert(ret == 0), "DP train error!"
-        ret = os.system("dp freeze -o " + self.frozen_model)
-        assert(ret == 0), "DP freeze error!"
-        ret = os.system("dp compress " + " -i " + self.frozen_model + " -o " + self.compressed_model)
-        assert(ret == 0), "DP model compression error!"
-        
-        self.dp_original = DeepPot(self.frozen_model)
-        self.dp_compressed = DeepPot(self.compressed_model)
+    @classmethod
+    def setUpClass(self):
+        self.dp_original = DeepPot(FROZEN_MODEL)
+        self.dp_compressed = DeepPot(COMPRESSED_MODEL)
         self.coords = np.array([12.83, 2.56, 2.18,
                                 12.09, 2.87, 2.74,
                                 00.25, 3.32, 1.68,
@@ -415,17 +312,25 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase) :
         self.atype = [0, 1, 1, 0, 1, 1]
         self.box = np.array([13., 0., 0., 0., 13., 0., 0., 0., 13.])
 
-    def tearDown(self):
-        _file_delete(self.INPUT)
-        _file_delete(self.frozen_model)
-        _file_delete(self.compressed_model)
+    @classmethod
+    def tearDownClass(self):
+        _file_delete(INPUT)
+        _file_delete(FROZEN_MODEL)
+        _file_delete(COMPRESSED_MODEL)
         _file_delete("out.json")
         _file_delete("compress.json")
         _file_delete("checkpoint")
-        _file_delete("lcurve.out")
         _file_delete("model.ckpt.meta")
         _file_delete("model.ckpt.index")
         _file_delete("model.ckpt.data-00000-of-00001")
+        _file_delete("model.ckpt-100.meta")
+        _file_delete("model.ckpt-100.index")
+        _file_delete("model.ckpt-100.data-00000-of-00001")
+        _file_delete("model-compression/checkpoint")
+        _file_delete("model-compression/model.ckpt.meta")
+        _file_delete("model-compression/model.ckpt.index")
+        _file_delete("model-compression/model.ckpt.data-00000-of-00001")
+        _file_delete("model-compression")
 
     def test_attrs(self):
         self.assertEqual(self.dp_original.get_ntypes(), 2)
@@ -453,12 +358,9 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase) :
         self.assertEqual(ff1.shape, (nframes,natoms,3))
         self.assertEqual(vv1.shape, (nframes,9))
         # check values
-        for ii in range(ff0.size):
-            self.assertAlmostEqual(ff0.reshape([-1])[ii], ff1.reshape([-1])[ii], places = default_places)
-        for ii in range(nframes):
-            self.assertAlmostEqual(ee0.reshape([-1])[ii], ee1.reshape([-1])[ii], places = default_places)
-        for ii in range(nframes, 9):
-            self.assertAlmostEqual(vv0.reshape([-1])[ii], vv1.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ff0, ff1, default_places)
+        np.testing.assert_almost_equal(ee0, ee1, default_places)
+        np.testing.assert_almost_equal(vv0, vv1, default_places)
 
     def test_1frame_atm(self):
         ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(self.coords, self.box, self.atype, atomic = True)
@@ -477,16 +379,11 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase) :
         self.assertEqual(ae1.shape, (nframes,natoms,1))
         self.assertEqual(av1.shape, (nframes,natoms,9))
         # check values
-        for ii in range(ff0.size):
-            self.assertAlmostEqual(ff0.reshape([-1])[ii], ff1.reshape([-1])[ii], places = default_places)
-        for ii in range(ae0.size):
-            self.assertAlmostEqual(ae0.reshape([-1])[ii], ae1.reshape([-1])[ii], places = default_places)
-        for ii in range(av0.size):
-            self.assertAlmostEqual(av0.reshape([-1])[ii], av1.reshape([-1])[ii], places = default_places)
-        for ii in range(nframes):
-            self.assertAlmostEqual(ee0.reshape([-1])[ii], ee1.reshape([-1])[ii], places = default_places)
-        for ii in range(nframes, 9):
-            self.assertAlmostEqual(vv0.reshape([-1])[ii], vv1.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ff0, ff1, default_places)
+        np.testing.assert_almost_equal(ae0, ae1, default_places)
+        np.testing.assert_almost_equal(av0, av1, default_places)
+        np.testing.assert_almost_equal(ee0, ee1, default_places)
+        np.testing.assert_almost_equal(vv0, vv1, default_places)
 
     def test_2frame_atm(self):
         coords2 = np.concatenate((self.coords, self.coords))
@@ -508,13 +405,8 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase) :
         self.assertEqual(av1.shape, (nframes,natoms,9))
 
         # check values
-        for ii in range(ff0.size):
-            self.assertAlmostEqual(ff0.reshape([-1])[ii], ff1.reshape([-1])[ii], places = default_places)
-        for ii in range(ae0.size):
-            self.assertAlmostEqual(ae0.reshape([-1])[ii], ae1.reshape([-1])[ii], places = default_places)
-        for ii in range(av0.size):
-            self.assertAlmostEqual(av0.reshape([-1])[ii], av1.reshape([-1])[ii], places = default_places)
-        for ii in range(nframes):
-            self.assertAlmostEqual(ee0.reshape([-1])[ii], ee1.reshape([-1])[ii], places = default_places)
-        for ii in range(nframes, 9):
-            self.assertAlmostEqual(vv0.reshape([-1])[ii], vv1.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ff0, ff1, default_places)
+        np.testing.assert_almost_equal(ae0, ae1, default_places)
+        np.testing.assert_almost_equal(av0, av1, default_places)
+        np.testing.assert_almost_equal(ee0, ee1, default_places)
+        np.testing.assert_almost_equal(vv0, vv1, default_places)

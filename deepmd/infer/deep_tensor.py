@@ -13,8 +13,6 @@ if TYPE_CHECKING:
 class DeepTensor(DeepEval):
     """Evaluates a tensor model.
 
-    Constructor
-
     Parameters
     ----------
     model_file: str
@@ -47,6 +45,7 @@ class DeepTensor(DeepEval):
         load_prefix: str = 'load',
         default_tf_graph: bool = False
     ) -> None:
+        """Constructor"""
         DeepEval.__init__(
             self,
             model_file,
@@ -76,10 +75,11 @@ class DeepTensor(DeepEval):
             # then put those into self.attrs
             for attr_name, tensor_name in optional_tensors.items():
                 self._get_tensor(tensor_name, attr_name)
-            self.tensors.update(optional_tensors)
-            self._support_gfv = True
         except KeyError:
             self._support_gfv = False
+        else:
+            self.tensors.update(optional_tensors)
+            self._support_gfv = True
             
         # start a tf session associated to the graph
         self.sess = tf.Session(graph=self.graph, config=default_tf_session_config)
@@ -118,14 +118,14 @@ class DeepTensor(DeepEval):
 
     def eval(
         self,
-        coords: np.array,
-        cells: np.array,
+        coords: np.ndarray,
+        cells: np.ndarray,
         atom_types: List[int],
         atomic: bool = True,
-        fparam: Optional[np.array] = None,
-        aparam: Optional[np.array] = None,
-        efield: Optional[np.array] = None
-    ) -> np.array:
+        fparam: Optional[np.ndarray] = None,
+        aparam: Optional[np.ndarray] = None,
+        efield: Optional[np.ndarray] = None
+    ) -> np.ndarray:
         """Evaluate the model.
 
         Parameters
@@ -210,8 +210,8 @@ class DeepTensor(DeepEval):
 
     def eval_full(
         self,
-        coords: np.array,
-        cells: np.array,
+        coords: np.ndarray,
+        cells: np.ndarray,
         atom_types: List[int],
         atomic: bool = False,
         fparam: Optional[np.array] = None,

@@ -1,3 +1,10 @@
+add_subdirectory(plugin)
+if (NOT DEFINED LAMMPS_VERSION_NUMBER)
+    # set the default to 29 Oct 2020
+    set(LAMMPS_VERSION_NUMBER 20201029)
+endif()
+message(STATUS "LAMMPS version is ${LAMMPS_VERSION_NUMBER}")
+
 file(GLOB LMP_HEADER *.h)
 file(GLOB LMP_SRC *.cpp)
 file(GLOB LMP_SHSCRIPT *.sh)
