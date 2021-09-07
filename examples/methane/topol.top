@@ -1,0 +1,15 @@
+#include "amber99sb.ff/forcefield.itp"
+
+; Include methane_GMX.itp topology
+#include "methane.itp"
+
+; Include water topology
+#include "amber99sb.ff/tip3p.itp"
+
+[ system ]
+methane in water
+
+[ molecules ]
+; Compound        nmols
+methane          1     
+SOL               218

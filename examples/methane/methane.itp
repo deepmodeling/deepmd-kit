@@ -1,0 +1,31 @@
+[ atomtypes ]
+;name btype  mass  charge ptype    sigma  epsilon
+  c3    c3   0.0     0.0     A 0.339771 0.451035
+  hc    hc   0.0     0.0     A 0.260018 0.087027
+
+[ moleculetype ]
+;name            nrexcl
+ methane          3
+
+[ atoms ]
+; nr type  resnr residue atom  cgnr  charge   mass
+  1   c3      1     MOL   C1     1 -0.1068 12.010
+  2   hc      1     MOL   H1     2  0.0267  1.008
+  3   hc      1     MOL   H2     3  0.0267  1.008
+  4   hc      1     MOL   H3     4  0.0267  1.008
+  5   hc      1     MOL   H4     5  0.0267  1.008
+
+[ bonds ]
+; i  j  func  b0  kb
+ 1  2     5        
+ 1  3     5        
+ 1  4     5        
+ 1  5     5        
+
+[ exclusions ]
+; ai  aj1  aj2  aj3  aj4
+  1    2    3    4    5
+  2    1    3    4    5
+  3    1    2    4    5
+  4    1    2    3    5
+  5    1    2    3    4
