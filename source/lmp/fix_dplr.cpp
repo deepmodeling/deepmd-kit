@@ -41,7 +41,7 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
      efield_fsum_all(4, 0.0), 
      efield_force_flag(0)
 {
-#if LAMMPS_VERSION_NUMBER>=20210702
+#if LAMMPS_VERSION_NUMBER>=20210210
   // lammps/lammps#2560
   energy_global_flag = 1;
   virial_global_flag = 1;
@@ -123,7 +123,7 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
 int FixDPLR::setmask()
 {
   int mask = 0;
-#if LAMMPS_VERSION_NUMBER<20210702
+#if LAMMPS_VERSION_NUMBER<20210210
   // THERMO_ENERGY removed in lammps/lammps#2560
   mask |= THERMO_ENERGY;
 #endif
