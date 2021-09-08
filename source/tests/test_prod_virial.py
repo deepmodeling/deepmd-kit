@@ -106,7 +106,5 @@ class TestProdVirial(tf.test.TestCase):
         self.assertEqual(dvirial.shape, (self.nframes, 9))
         self.assertEqual(datom_virial.shape, (self.nframes, self.nall*9))
         for ff in range(self.nframes):
-            for ii in range(9):
-                self.assertAlmostEqual(dvirial[ff][ii], self.expected_virial[ii], places=5)
-            for ii in range(self.nall*9):
-                self.assertAlmostEqual(datom_virial[ff][ii], self.expected_atom_virial[ii], places=5)
+            np.testing.assert_almost_equal(dvirial[ff], self.expected_virial, 5)
+            np.testing.assert_almost_equal(datom_virial[ff], self.expected_atom_virial, 5)

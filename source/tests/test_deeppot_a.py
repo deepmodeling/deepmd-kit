@@ -108,14 +108,11 @@ class TestDeepPotAPBC(unittest.TestCase) :
         self.assertEqual(ff.shape, (nframes,natoms,3))
         self.assertEqual(vv.shape, (nframes,9))
         # check values
-        for ii in range(ff.size):
-            self.assertAlmostEqual(ff.reshape([-1])[ii], self.expected_f.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ff.ravel(), self.expected_f.ravel(), default_places)
         expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis = 1)
-        for ii in range(nframes):
-            self.assertAlmostEqual(ee.reshape([-1])[ii], expected_se.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
         expected_sv = np.sum(self.expected_v.reshape([nframes, -1, 9]), axis = 1)
-        for ii in range(nframes, 9):
-            self.assertAlmostEqual(vv.reshape([-1])[ii], expected_sv.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
 
     def test_1frame_atm(self):
         ee, ff, vv, ae, av = self.dp.eval(self.coords, self.box, self.atype, atomic = True)
@@ -128,18 +125,13 @@ class TestDeepPotAPBC(unittest.TestCase) :
         self.assertEqual(ae.shape, (nframes,natoms,1))
         self.assertEqual(av.shape, (nframes,natoms,9))
         # check values
-        for ii in range(ff.size):
-            self.assertAlmostEqual(ff.reshape([-1])[ii], self.expected_f.reshape([-1])[ii], places = default_places)
-        for ii in range(ae.size):
-            self.assertAlmostEqual(ae.reshape([-1])[ii], self.expected_e.reshape([-1])[ii], places = default_places)
-        for ii in range(av.size):
-            self.assertAlmostEqual(av.reshape([-1])[ii], self.expected_v.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ff.ravel(), self.expected_f.ravel(), default_places)
+        np.testing.assert_almost_equal(ae.ravel(), self.expected_e.ravel(), default_places)
+        np.testing.assert_almost_equal(av.ravel(), self.expected_v.ravel(), default_places)
         expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis = 1)
-        for ii in range(nframes):
-            self.assertAlmostEqual(ee.reshape([-1])[ii], expected_se.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
         expected_sv = np.sum(self.expected_v.reshape([nframes, -1, 9]), axis = 1)
-        for ii in range(nframes, 9):
-            self.assertAlmostEqual(vv.reshape([-1])[ii], expected_sv.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
 
 
     def test_2frame_atm(self):
@@ -158,18 +150,13 @@ class TestDeepPotAPBC(unittest.TestCase) :
         expected_f = np.concatenate((self.expected_f, self.expected_f), axis = 0)
         expected_e = np.concatenate((self.expected_e, self.expected_e), axis = 0)
         expected_v = np.concatenate((self.expected_v, self.expected_v), axis = 0)
-        for ii in range(ff.size):
-            self.assertAlmostEqual(ff.reshape([-1])[ii], expected_f.reshape([-1])[ii], places = default_places)
-        for ii in range(ae.size):
-            self.assertAlmostEqual(ae.reshape([-1])[ii], expected_e.reshape([-1])[ii], places = default_places)
-        for ii in range(av.size):
-            self.assertAlmostEqual(av.reshape([-1])[ii], expected_v.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ff.ravel(), expected_f.ravel(), default_places)
+        np.testing.assert_almost_equal(ae.ravel(), expected_e.ravel(), default_places)
+        np.testing.assert_almost_equal(av.ravel(), expected_v.ravel(), default_places)
         expected_se = np.sum(expected_e.reshape([nframes, -1]), axis = 1)
-        for ii in range(nframes):
-            self.assertAlmostEqual(ee.reshape([-1])[ii], expected_se.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
         expected_sv = np.sum(expected_v.reshape([nframes, -1, 9]), axis = 1)
-        for ii in range(nframes, 9):
-            self.assertAlmostEqual(vv.reshape([-1])[ii], expected_sv.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
 
 
 class TestDeepPotANoPBC(unittest.TestCase) :
@@ -200,14 +187,11 @@ class TestDeepPotANoPBC(unittest.TestCase) :
         self.assertEqual(ff.shape, (nframes,natoms,3))
         self.assertEqual(vv.shape, (nframes,9))
         # check values
-        for ii in range(ff.size):
-            self.assertAlmostEqual(ff.reshape([-1])[ii], self.expected_f.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ff.ravel(), self.expected_f.ravel(), default_places)
         expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis = 1)
-        for ii in range(nframes):
-            self.assertAlmostEqual(ee.reshape([-1])[ii], expected_se.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
         expected_sv = np.sum(self.expected_v.reshape([nframes, -1, 9]), axis = 1)
-        for ii in range(nframes, 9):
-            self.assertAlmostEqual(vv.reshape([-1])[ii], expected_sv.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
 
     def test_1frame_atm(self):
         ee, ff, vv, ae, av = self.dp.eval(self.coords, self.box, self.atype, atomic = True)
@@ -220,18 +204,13 @@ class TestDeepPotANoPBC(unittest.TestCase) :
         self.assertEqual(ae.shape, (nframes,natoms,1))
         self.assertEqual(av.shape, (nframes,natoms,9))
         # check values
-        for ii in range(ff.size):
-            self.assertAlmostEqual(ff.reshape([-1])[ii], self.expected_f.reshape([-1])[ii], places = default_places)
-        for ii in range(ae.size):
-            self.assertAlmostEqual(ae.reshape([-1])[ii], self.expected_e.reshape([-1])[ii], places = default_places)
-        for ii in range(av.size):
-            self.assertAlmostEqual(av.reshape([-1])[ii], self.expected_v.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ff.ravel(), self.expected_f.ravel(), default_places)
+        np.testing.assert_almost_equal(ae.ravel(), self.expected_e.ravel(), default_places)
+        np.testing.assert_almost_equal(av.ravel(), self.expected_v.ravel(), default_places)
         expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis = 1)
-        for ii in range(nframes):
-            self.assertAlmostEqual(ee.reshape([-1])[ii], expected_se.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
         expected_sv = np.sum(self.expected_v.reshape([nframes, -1, 9]), axis = 1)
-        for ii in range(nframes, 9):
-            self.assertAlmostEqual(vv.reshape([-1])[ii], expected_sv.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
 
 
     def test_2frame_atm(self):
@@ -249,18 +228,13 @@ class TestDeepPotANoPBC(unittest.TestCase) :
         expected_f = np.concatenate((self.expected_f, self.expected_f), axis = 0)
         expected_e = np.concatenate((self.expected_e, self.expected_e), axis = 0)
         expected_v = np.concatenate((self.expected_v, self.expected_v), axis = 0)
-        for ii in range(ff.size):
-            self.assertAlmostEqual(ff.reshape([-1])[ii], expected_f.reshape([-1])[ii], places = default_places)
-        for ii in range(ae.size):
-            self.assertAlmostEqual(ae.reshape([-1])[ii], expected_e.reshape([-1])[ii], places = default_places)
-        for ii in range(av.size):
-            self.assertAlmostEqual(av.reshape([-1])[ii], expected_v.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ff.ravel(), expected_f.ravel(), default_places)
+        np.testing.assert_almost_equal(ae.ravel(), expected_e.ravel(), default_places)
+        np.testing.assert_almost_equal(av.ravel(), expected_v.ravel(), default_places)
         expected_se = np.sum(expected_e.reshape([nframes, -1]), axis = 1)
-        for ii in range(nframes):
-            self.assertAlmostEqual(ee.reshape([-1])[ii], expected_se.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
         expected_sv = np.sum(expected_v.reshape([nframes, -1, 9]), axis = 1)
-        for ii in range(nframes, 9):
-            self.assertAlmostEqual(vv.reshape([-1])[ii], expected_sv.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
 
     
 class TestDeepPotALargeBoxNoPBC(unittest.TestCase) :
@@ -291,14 +265,11 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase) :
         self.assertEqual(ff.shape, (nframes,natoms,3))
         self.assertEqual(vv.shape, (nframes,9))
         # check values
-        for ii in range(ff.size):
-            self.assertAlmostEqual(ff.reshape([-1])[ii], self.expected_f.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ff.ravel(), self.expected_f.ravel(), default_places)
         expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis = 1)
-        for ii in range(nframes):
-            self.assertAlmostEqual(ee.reshape([-1])[ii], expected_se.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
         expected_sv = np.sum(self.expected_v.reshape([nframes, -1, 9]), axis = 1)
-        for ii in range(nframes, 9):
-            self.assertAlmostEqual(vv.reshape([-1])[ii], expected_sv.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
 
     def test_1frame_atm(self):
         ee, ff, vv, ae, av = self.dp.eval(self.coords, self.box, self.atype, atomic = True)
@@ -311,18 +282,13 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase) :
         self.assertEqual(ae.shape, (nframes,natoms,1))
         self.assertEqual(av.shape, (nframes,natoms,9))
         # check values
-        for ii in range(ff.size):
-            self.assertAlmostEqual(ff.reshape([-1])[ii], self.expected_f.reshape([-1])[ii], places = default_places)
-        for ii in range(ae.size):
-            self.assertAlmostEqual(ae.reshape([-1])[ii], self.expected_e.reshape([-1])[ii], places = default_places)
-        for ii in range(av.size):
-            self.assertAlmostEqual(av.reshape([-1])[ii], self.expected_v.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ff.ravel(), self.expected_f.ravel(), default_places)
+        np.testing.assert_almost_equal(ae.ravel(), self.expected_e.ravel(), default_places)
+        np.testing.assert_almost_equal(av.ravel(), self.expected_v.ravel(), default_places)
         expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis = 1)
-        for ii in range(nframes):
-            self.assertAlmostEqual(ee.reshape([-1])[ii], expected_se.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
         expected_sv = np.sum(self.expected_v.reshape([nframes, -1, 9]), axis = 1)
-        for ii in range(nframes, 9):
-            self.assertAlmostEqual(vv.reshape([-1])[ii], expected_sv.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
 
     def test_ase(self):
         from ase import Atoms
@@ -334,9 +300,6 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase) :
         ee = water.get_potential_energy()
         ff = water.get_forces()
         nframes = 1
-        for ii in range(ff.size):
-            self.assertAlmostEqual(ff.reshape([-1])[ii], self.expected_f.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ff.ravel(), self.expected_f.ravel(), default_places)
         expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis = 1)
-        for ii in range(nframes):
-            self.assertAlmostEqual(ee.reshape([-1])[ii], expected_se.reshape([-1])[ii], places = default_places)
-
+        np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)

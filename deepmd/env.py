@@ -2,7 +2,7 @@
 
 import logging
 import os
-import distutils.ccompiler
+import platform
 from configparser import ConfigParser
 from imp import reload
 from pathlib import Path
@@ -119,6 +119,7 @@ def get_tf_session_config() -> Any:
     set_tf_default_nthreads()
     intra, inter = get_tf_default_nthreads()
     config = tf.ConfigProto(
+        gpu_options=tf.GPUOptions(allow_growth=True),
         intra_op_parallelism_threads=intra, inter_op_parallelism_threads=inter
     )
     return config
@@ -156,8 +157,12 @@ def get_module(module_name: str) -> "ModuleType":
     FileNotFoundError
         if module is not found in directory
     """
-    # https://discuss.python.org/t/how-to-get-the-file-extension-of-dynamic-libraries-for-current-os/3916/5
-    ext = distutils.ccompiler.new_compiler().shared_lib_extension
+    if platform.system() == "Windows":
+        ext = ".dll"
+    elif platform.system() == "Darwin":
+        ext = ".dylib"
+    else:
+        ext = ".so"
 
     module_file = (
         (Path(__file__).parent / SHARED_LIB_MODULE / module_name)

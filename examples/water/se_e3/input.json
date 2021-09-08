@@ -4,9 +4,9 @@
 	"type_map":	["O", "H"],
 	"descriptor" :{
 	    "type":		"se_e3",
-	    "sel":		[40, 80],
+	    "sel":		"auto",
 	    "rcut_smth":	0.50,
-	    "rcut":		6.00,
+	    "rcut":		5.80,
 	    "neuron":		[2, 4, 8],
 	    "resnet_dt":	false,
 	    "seed":		1,

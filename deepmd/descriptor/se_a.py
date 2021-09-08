@@ -14,8 +14,9 @@ from deepmd.utils.tabulate import DPTabulate
 from deepmd.utils.type_embed import embed_atom_type
 from deepmd.utils.sess import run_sess
 from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph
+from .descriptor import Descriptor
 
-class DescrptSeA ():
+class DescrptSeA (Descriptor):
     r"""DeepPot-SE constructed from all information (both angular and radial) of
     atomic configurations. The embedding takes the distance between atoms as input.
 
@@ -156,6 +157,7 @@ class DescrptSeA ():
         self.dstd = None
         self.davg = None
         self.compress = False
+        self.embedding_net_variables = None
         self.place_holders = {}
         nei_type = np.array([])
         for ii in range(self.ntypes):
@@ -296,7 +298,8 @@ class DescrptSeA ():
                            table_extrapolate : float = 5,
                            table_stride_1 : float = 0.01,
                            table_stride_2 : float = 0.1,
-                           check_frequency : int = -1
+                           check_frequency : int = -1,
+                           suffix : str = "",
     ) -> None:
         """
         Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
@@ -315,10 +318,15 @@ class DescrptSeA ():
                 The uniform stride of the second table
         check_frequency
                 The overflow check frequency
+        suffix : str, optional
+                The suffix of the scope
         """
+        assert (
+            not self.filter_resnet_dt
+        ), "Model compression error: descriptor resnet_dt must be false!"
         self.compress = True
         self.table = DPTabulate(
-            model_file, self.type_one_side, self.exclude_types, self.compress_activation_fn)
+            model_file, self.type_one_side, self.exclude_types, self.compress_activation_fn, suffix=suffix)
         self.table_config = [table_extrapolate, table_stride_1, table_stride_2, check_frequency]
         self.lower, self.upper \
             = self.table.build(min_nbor_dist, 
@@ -327,8 +335,8 @@ class DescrptSeA ():
                                table_stride_2)
         
         graph, _ = load_graph_def(model_file)
-        self.davg = get_tensor_by_name_from_graph(graph, 'descrpt_attr/t_avg')
-        self.dstd = get_tensor_by_name_from_graph(graph, 'descrpt_attr/t_std')
+        self.davg = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_avg' % suffix)
+        self.dstd = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_std' % suffix)
 
 
 
@@ -514,6 +522,21 @@ class DescrptSeA ():
         }
         return feed_dict
 
+
+    def init_variables(self,
+                       embedding_net_variables: dict
+    ) -> None:
+        """
+        Init the embedding net variables with the given dict
+
+        Parameters
+        ----------
+        embedding_net_variables
+                The input dict which stores the embedding net variables
+        """
+        self.embedding_net_variables = embedding_net_variables
+
+
     def prod_force_virial(self, 
                           atom_ener : tf.Tensor, 
                           natoms : tf.Tensor
@@ -667,17 +690,36 @@ class DescrptSeA ():
             nframes,
             natoms,
             type_embedding,
-    ):            
+    ):
+        '''Concatenate `type_embedding` of neighbors and `xyz_scatter`.
+        If not self.type_one_side, concatenate `type_embedding` of center atoms as well.
+
+        Parameters
+        ----------
+        xyz_scatter:
+                shape is [nframes*natoms[0]*self.nnei, 1]
+        nframes:
+                shape is []
+        natoms:
+                shape is [1+1+self.ntypes]
+        type_embedding:
+                shape is [self.ntypes, Y] where Y=jdata['type_embedding']['neuron'][-1]
+
+        Returns
+        -------
+            embedding:
+                environment of each atom represented by embedding.
+        '''
         te_out_dim = type_embedding.get_shape().as_list()[-1]        
-        nei_embed = tf.nn.embedding_lookup(type_embedding,tf.cast(self.nei_type,dtype=tf.int32)) #nnei*nchnl
-        nei_embed = tf.tile(nei_embed,(nframes*natoms[0],1))
+        nei_embed = tf.nn.embedding_lookup(type_embedding,tf.cast(self.nei_type,dtype=tf.int32))  # shape is [self.nnei, 1+te_out_dim]
+        nei_embed = tf.tile(nei_embed,(nframes*natoms[0],1))  # shape is [nframes*natoms[0]*self.nnei, te_out_dim]
         nei_embed = tf.reshape(nei_embed,[-1,te_out_dim])
-        embedding_input = tf.concat([xyz_scatter,nei_embed],1)
+        embedding_input = tf.concat([xyz_scatter,nei_embed],1)  # shape is [nframes*natoms[0]*self.nnei, 1+te_out_dim]
         if not self.type_one_side:
-            atm_embed = embed_atom_type(self.ntypes, natoms, type_embedding)
-            atm_embed = tf.tile(atm_embed,(1,self.nnei))
-            atm_embed = tf.reshape(atm_embed,[-1,te_out_dim])
-            embedding_input = tf.concat([embedding_input,atm_embed],1)  
+            atm_embed = embed_atom_type(self.ntypes, natoms, type_embedding)  # shape is [natoms[0], te_out_dim]
+            atm_embed = tf.tile(atm_embed,(nframes,self.nnei))  # shape is [nframes*natoms[0], self.nnei*te_out_dim]
+            atm_embed = tf.reshape(atm_embed,[-1,te_out_dim])  # shape is [nframes*natoms[0]*self.nnei, te_out_dim]
+            embedding_input = tf.concat([embedding_input,atm_embed],1)  # shape is [nframes*natoms[0]*self.nnei, 1+te_out_dim+te_out_dim]
         return embedding_input
 
 
@@ -740,7 +782,8 @@ class DescrptSeA ():
                   bavg = bavg,
                   seed = self.seed,
                   trainable = trainable, 
-                  uniform_seed = self.uniform_seed)
+                  uniform_seed = self.uniform_seed,
+                  initial_variables = self.embedding_net_variables)
               if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
           else:
             # we can safely return the final xyz_scatter filled with zero directly

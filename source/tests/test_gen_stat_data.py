@@ -41,10 +41,7 @@ class TestGenStatData(unittest.TestCase) :
         shutil.rmtree('system_1')
 
     def _comp_data(self, d0, d1) :
-        for ii in range(d0.shape[0]):
-            for jj in range(d0.shape[1]):
-                for kk in range(d0.shape[2]):
-                    self.assertAlmostEqual(d0[ii][jj][kk], d1[ii][jj][kk])
+        np.testing.assert_almost_equal(d0, d1)
 
     def test_merge_all_stat(self):
         dp_random.seed(0)
@@ -58,13 +55,13 @@ class TestGenStatData(unittest.TestCase) :
                                 5, 
                                 10, 
                                 1.0)
-        data1.add('force', 3, atomic = True, must = True)
+        data1.add('energy', 1, must = True)
         dp_random.seed(0)
         data2 = DeepmdDataSystem(['system_0', 'system_1'], 
                                 5, 
                                 10, 
                                 1.0)
-        data2.add('force', 3, atomic = True, must = True)
+        data2.add('energy', 1, must = True)
         
         dp_random.seed(0)
         all_stat_0 = make_stat_input(data0, 10, merge_sys = False)
@@ -119,5 +116,4 @@ class TestEnerShift(unittest.TestCase):
         ener_shift0 = data.compute_energy_shift(rcond = 1)
         all_stat = make_stat_input(data, 4, merge_sys = False)
         ener_shift1 = EnerFitting._compute_output_stats(all_stat, rcond = 1)        
-        for ii in range(len(ener_shift0)):
-            self.assertAlmostEqual(ener_shift0[ii], ener_shift1[ii])
+        np.testing.assert_almost_equal(ener_shift0, ener_shift1)

@@ -22,9 +22,7 @@ class TestDPTabulate(unittest.TestCase):
                            [5.492686739421748753e-03, 5.754985286040992763e-03, 4.493113544969218158e-03, 3.107638130764600777e-03]])
         
         places = 18
-        for ii in range(dy_array.shape[0]):
-            for jj in range(dy_array.shape[1]):
-                self.assertAlmostEqual(dy_array[ii,jj], answer[ii,jj], places=places)
+        np.testing.assert_almost_equal(dy_array, answer, places)
 
     def test_op_gelu(self):
         w = tf.constant([[0.1, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8], [
@@ -42,9 +40,7 @@ class TestDPTabulate(unittest.TestCase):
                            [1.072173273655498138e-01, 2.082159073100979807e-01, 3.059816075270163083e-01, 4.032981557798429595e-01]])
 
         places = 18
-        for ii in range(dy_array.shape[0]):
-            for jj in range(dy_array.shape[1]):
-                self.assertAlmostEqual(dy_array[ii, jj], answer[ii, jj], places=places)
+        np.testing.assert_almost_equal(dy_array, answer, places)
 
 
 
