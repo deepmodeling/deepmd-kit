@@ -253,3 +253,55 @@ class DescrptHybrid (Descriptor):
         """
         for idx, ii in enumerate(self.descrpt_list):
             ii.enable_compression(min_nbor_dist, model_file, table_extrapolate, table_stride_1, table_stride_2, check_frequency, suffix=f"{suffix}_{idx}")
+
+    def init_variables(self,
+                       model_file : str,
+                       suffix : str = "",
+    ) -> None:
+        """
+        Init the embedding net variables with the given dict
+
+        Parameters
+        ----------
+        model_file : str
+            The input frozen model file
+        suffix : str, optional
+            The suffix of the scope
+        """
+        for idx, ii in enumerate(self.descrpt_list):
+            ii.init_variables(model_file, suffix=f"{suffix}_{idx}")
+
+    def get_tensor_names(self, suffix : str = "") -> Tuple[str]:
+        """Get names of tensors.
+        
+        Parameters
+        ----------
+        suffix : str
+            The suffix of the scope
+
+        Returns
+        -------
+        Tuple[str]
+            Names of tensors
+        """
+        tensor_names = []
+        for idx, ii in enumerate(self.descrpt_list):
+            tensor_names.extend(ii.get_tensor_names(suffix=f"{suffix}_{idx}"))
+        return tuple(tensor_names)
+
+    def pass_tensors_from_frz_model(self,
+                                    *tensors : tf.Tensor,
+    ) -> None:
+        """
+        Pass the descrpt_reshape tensor as well as descrpt_deriv tensor from the frz graph_def
+
+        Parameters
+        ----------
+        *tensors : tf.Tensor
+            passed tensors
+        """
+        jj = 0
+        for ii in self.descrpt_list:
+            n_tensors = len(ii.get_tensor_names())
+            ii.pass_tensors_from_frz_model(*tensors[jj:jj+n_tensors])
+            jj += n_tensors

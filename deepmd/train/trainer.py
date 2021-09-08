@@ -691,7 +691,7 @@ class DPTrainer (object):
         # self.frz_model will control the self.model to import the descriptor from the given frozen model instead of building from scratch...
         # initialize fitting net with the given compressed frozen model
         if self.model_type == 'original_model':
-            self.descrpt.init_variables(get_embedding_net_variables(self.run_opt.init_frz_model))
+            self.descrpt.init_variables(self.run_opt.init_frz_model)
             self.fitting.init_variables(get_fitting_net_variables(self.run_opt.init_frz_model))
             tf.constant("original_model", name = 'model_type', dtype = tf.string)
         elif self.model_type == 'compressed_model':
