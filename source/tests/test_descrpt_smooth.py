@@ -207,12 +207,8 @@ class TestSeAPbc(tf.test.TestCase):
                                             inter1.tnatoms:   inter1.natoms})
 
         self.assertAlmostEqual(e0[0], e1[0])
-        for ii in range(f0[0].size):
-            # print(ii)
-            self.assertAlmostEqual(f0[0][ii], f1[0][ii])
-        for ii in range(v0[0].size):
-            # print(ii)
-            self.assertAlmostEqual(v0[0][ii], v1[0][ii])
+        np.testing.assert_almost_equal(f0[0], f1[0])
+        np.testing.assert_almost_equal(v0[0], v1[0])
 
     def test_pbc_small_box(self):
         data0 = Data()
@@ -248,12 +244,8 @@ class TestSeAPbc(tf.test.TestCase):
                                             inter1.tnatoms:   inter1.natoms})
 
         self.assertAlmostEqual(e0[0], e1[0])
-        for ii in range(f0[0].size):
-            # print(ii)
-            self.assertAlmostEqual(f0[0][ii], f1[0][ii])
-        for ii in range(v0[0].size):
-            # print(ii)
-            self.assertAlmostEqual(v0[0][ii], v1[0][ii])
+        np.testing.assert_almost_equal(f0[0], f1[0])
+        np.testing.assert_almost_equal(v0[0], v1[0])
 
 
 if __name__ == '__main__':

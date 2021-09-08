@@ -10,7 +10,7 @@ import os
 from typing import Dict, List, Optional, Any
 
 from deepmd.common import data_requirement, expand_sys_str, j_loader, j_must_have
-from deepmd.env import tf, reset_default_tf_session_config
+from deepmd.env import tf, reset_default_tf_session_config, GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.infer.data_modifier import DipoleChargeModifier
 from deepmd.train.run_options import BUILD, CITATION, WELCOME, RunOptions
 from deepmd.train.trainer import DPTrainer
@@ -262,6 +262,16 @@ def get_nbor_stat(jdata, rcut):
     neistat = NeighborStat(ntypes, rcut)
 
     min_nbor_dist, max_nbor_size = neistat.get_stat(train_data)
+
+    # moved from traier.py as duplicated
+    # TODO: this is a simple fix but we should have a clear
+    #       architecture to call neighbor stat
+    tf.constant(min_nbor_dist,
+        name = 'train_attr/min_nbor_dist',
+        dtype = GLOBAL_ENER_FLOAT_PRECISION)
+    tf.constant(max_nbor_size,
+        name = 'train_attr/max_nbor_size',
+        dtype = tf.int32)
     return min_nbor_dist, max_nbor_size
 
 def get_sel(jdata, rcut):

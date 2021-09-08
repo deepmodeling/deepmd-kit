@@ -5,8 +5,8 @@ import json
 import logging
 from typing import Optional
 
-from deepmd.env import tf
-from deepmd.common import j_loader, GLOBAL_TF_FLOAT_PRECISION
+from deepmd.common import j_loader
+from deepmd.env import tf, GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.utils.argcheck import normalize
 from deepmd.utils.compat import updata_deepmd_input
 from deepmd.utils.errors import GraphTooLargeError, GraphWithoutTensorError
@@ -89,7 +89,7 @@ def compress(
 
     tf.constant(t_min_nbor_dist,
         name = 'train_attr/min_nbor_dist',
-        dtype = GLOBAL_TF_FLOAT_PRECISION)
+        dtype = GLOBAL_ENER_FLOAT_PRECISION)
     jdata["model"]["compress"] = {}
     jdata["model"]["compress"]["type"] = 'se_e2_a'
     jdata["model"]["compress"]["compress"] = True
@@ -101,15 +101,11 @@ def compress(
         10 * step,
         int(frequency),
     ]
+    jdata["training"]["save_ckpt"] = "model-compression/model.ckpt"
     jdata = normalize(jdata)
 
     # check the descriptor info of the input file
-    assert (
-        jdata["model"]["descriptor"]["type"] == "se_a" or jdata["model"]["descriptor"]["type"] == "se_e2_a"
-    ), "Model compression error: descriptor type must be se_a or se_e2_a!"
-    assert (
-        jdata["model"]["descriptor"]["resnet_dt"] is False
-    ), "Model compression error: descriptor resnet_dt must be false!"
+    # move to the specific Descriptor class
 
     # stage 1: training or refining the model with tabulation
     log.info("\n\n")

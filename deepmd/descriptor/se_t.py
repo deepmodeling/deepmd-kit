@@ -10,8 +10,9 @@ from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.utils.network import embedding_net, embedding_net_rand_seed_shift
 from deepmd.utils.sess import run_sess
+from .descriptor import Descriptor
 
-class DescrptSeT ():
+class DescrptSeT (Descriptor):
     """DeepPot-SE constructed from all information (both angular and radial) of atomic
     configurations.
     
@@ -468,6 +469,7 @@ class DescrptSeT ():
                 inputs_i = tf.slice (inputs,
                                      [ 0, start_index_i      *4],
                                      [-1, self.sel_a[type_i] *4] )
+                start_index_j = start_index_i
                 start_index_i += self.sel_a[type_i]
                 nei_type_i = self.sel_a[type_i]
                 shape_i = inputs_i.get_shape().as_list()
@@ -476,7 +478,6 @@ class DescrptSeT ():
                 env_i = tf.reshape(inputs_i, [-1, nei_type_i, 4])
                 # with natom x nei_type_i x 3
                 env_i = tf.slice(env_i, [0, 0, 1], [-1, -1, -1])
-                start_index_j = 0
                 for type_j in range(type_i, self.ntypes):
                     # with natom x (nei_type_j x 4)  
                     inputs_j = tf.slice (inputs,

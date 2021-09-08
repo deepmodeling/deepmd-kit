@@ -5,12 +5,18 @@ Currently, parallel training is enabled in a sychoronized way with help of [Horo
 Testing `examples/water/se_e2_a` on a 8-GPU host, linear acceleration can be observed with increasing number of cards.
 | Num of GPU cards | Seconds every 100 samples | Samples per second | Speed up |
 |  --  | -- | -- | -- |
-| 1  | 1.6116 | 62.05 | 1.00 |
-| 2  | 1.6310 | 61.31 | 1.98 |
-| 4  | 1.6168 | 61.85 | 3.99 |
-| 8  | 1.6212 | 61.68 | 7.95 |
+| 1  | 1.4515 | 68.89 | 1.00 |
+| 2  | 1.5962 | 62.65*2 | 1.82 |
+| 4  | 1.7635 | 56.71*4 | 3.29 |
+| 8  | 1.7267 | 57.91*8 | 6.72 |
 
 To experience this powerful feature, please intall Horovod and [mpi4py](https://github.com/mpi4py/mpi4py) first. For better performance on GPU, please follow tuning steps in [Horovod on GPU](https://github.com/horovod/horovod/blob/master/docs/gpus.rst).
+```bash
+# With GPU, prefer NCCL as communicator.
+HOROVOD_WITHOUT_GLOO=1 HOROVOD_WITH_TENSORFLOW=1 HOROVOD_GPU_OPERATIONS=NCCL HOROVOD_NCCL_HOME=/path/to/nccl pip3 install horovod mpi4py
+```
+
+If your work in CPU environment, please prepare runtime as below:
 ```bash
 # By default, MPI is used as communicator.
 HOROVOD_WITHOUT_GLOO=1 HOROVOD_WITH_TENSORFLOW=1 pip install horovod mpi4py
