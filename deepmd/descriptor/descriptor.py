@@ -290,7 +290,7 @@ class Descriptor(ABC):
         return feed_dict
 
     def init_variables(self,
-                       graph_def : tf.GraphDef,
+                       model_file: str,
                        suffix : str = "",
     ) -> None:
         """
@@ -298,8 +298,8 @@ class Descriptor(ABC):
 
         Parameters
         ----------
-        graph_def : tf.GraphDef
-            The input tf.GraphDef object
+        model_file : str
+            The input model file
         suffix : str, optional
             The suffix of the scope
         

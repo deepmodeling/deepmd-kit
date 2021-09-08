@@ -497,7 +497,7 @@ class DescrptSeA (Descriptor):
         self.descrpt_reshape = descrpt_reshape
 
     def init_variables(self,
-                       graph_def : tf.GraphDef,
+                       model_file : str,
                        suffix : str = "",
     ) -> None:
         """
@@ -505,12 +505,12 @@ class DescrptSeA (Descriptor):
 
         Parameters
         ----------
-        graph_def : tf.GraphDef
-            The input tf.GraphDef object
+        model_file : str
+            The input frozen model file
         suffix : str, optional
             The suffix of the scope
         """
-        self.embedding_net_variables = get_embedding_net_variables(graph_def, suffix = suffix)
+        self.embedding_net_variables = get_embedding_net_variables(model_file, suffix = suffix)
 
 
     def prod_force_virial(self, 

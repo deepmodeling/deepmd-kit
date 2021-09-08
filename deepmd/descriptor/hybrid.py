@@ -255,7 +255,7 @@ class DescrptHybrid (Descriptor):
             ii.enable_compression(min_nbor_dist, model_file, table_extrapolate, table_stride_1, table_stride_2, check_frequency, suffix=f"{suffix}_{idx}")
 
     def init_variables(self,
-                       graph_def : tf.GraphDef,
+                       model_file : str,
                        suffix : str = "",
     ) -> None:
         """
@@ -263,13 +263,13 @@ class DescrptHybrid (Descriptor):
 
         Parameters
         ----------
-        graph_def : tf.GraphDef
-            The input tf.GraphDef object
+        model_file : str
+            The input frozen model file
         suffix : str, optional
             The suffix of the scope
         """
         for idx, ii in enumerate(self.descrpt_list):
-            ii.init_variables(graph_def, suffix=f"{suffix}_{idx}")
+            ii.init_variables(model_file, suffix=f"{suffix}_{idx}")
 
     def get_tensor_names(self, suffix : str = "") -> Tuple[str]:
         """Get names of tensors.
