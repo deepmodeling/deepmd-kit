@@ -28,7 +28,7 @@ enum{FORWARD_IK,FORWARD_AD,FORWARD_IK_PERATOM,FORWARD_AD_PERATOM};
 
 /* ---------------------------------------------------------------------- */
 
-#if LAMMPS_VERSION_NUMBER<20190201
+#if LAMMPS_VERSION_NUMBER<20181109
 // See lammps/lammps#1165
 PPPMDPLR::PPPMDPLR(LAMMPS *lmp, int narg, char **arg) :
   PPPM(lmp, narg, arg)
