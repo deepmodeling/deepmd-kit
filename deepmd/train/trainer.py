@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from deepmd.descriptor.descriptor import Descriptor
 import logging
 import os
 import glob
@@ -11,14 +12,7 @@ from deepmd.env import get_tf_session_config
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.fit import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
-from deepmd.descriptor import DescrptLocFrame
-from deepmd.descriptor import DescrptSeA
-from deepmd.descriptor import DescrptSeT
-from deepmd.descriptor import DescrptSeAEbd
-from deepmd.descriptor import DescrptSeAEf
-from deepmd.descriptor import DescrptSeR
-from deepmd.descriptor import DescrptSeAR
-from deepmd.descriptor import DescrptHybrid
+from deepmd.descriptor import Descriptor
 from deepmd.model import EnerModel, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
 from deepmd.loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
 from deepmd.utils.errors import GraphTooLargeError
@@ -47,36 +41,6 @@ def _is_subdir(path, directory):
         return False
     relative = os.path.relpath(path, directory) + os.sep
     return not relative.startswith(os.pardir + os.sep)
-
-def _generate_descrpt_from_param_dict(descrpt_param):
-    try:
-        descrpt_type = descrpt_param['type']
-    except KeyError:
-        raise KeyError('the type of descriptor should be set by `type`')
-    descrpt_param.pop('type', None)
-    to_pop = []
-    for kk in descrpt_param:
-        if kk[0] == '_':
-            to_pop.append(kk)
-    for kk in to_pop:
-        descrpt_param.pop(kk, None)
-    if descrpt_type == 'loc_frame':
-        descrpt = DescrptLocFrame(**descrpt_param)
-    elif descrpt_type == 'se_e2_a' or descrpt_type == 'se_a' :
-        descrpt = DescrptSeA(**descrpt_param)
-    elif descrpt_type == 'se_e2_r' or descrpt_type == 'se_r' :
-        descrpt = DescrptSeR(**descrpt_param)
-    elif descrpt_type == 'se_e3' or descrpt_type == 'se_at' or descrpt_type == 'se_a_3be' :
-        descrpt = DescrptSeT(**descrpt_param)
-    elif descrpt_type == 'se_a_tpe' or descrpt_type == 'se_a_ebd' :
-        descrpt = DescrptSeAEbd(**descrpt_param)
-    elif descrpt_type == 'se_a_ef' :
-        descrpt = DescrptSeAEf(**descrpt_param)
-    elif descrpt_type == 'se_ar' :
-        descrpt = DescrptSeAR(descrpt_param)
-    else :
-        raise RuntimeError('unknow model type ' + descrpt_type)
-    return descrpt
     
 
 class DPTrainer (object):
@@ -103,13 +67,7 @@ class DPTrainer (object):
         except KeyError:
             raise KeyError('the type of descriptor should be set by `type`')
 
-        if descrpt_type != 'hybrid':
-            self.descrpt = _generate_descrpt_from_param_dict(descrpt_param)
-        else :
-            descrpt_list = []
-            for ii in descrpt_param.get('list', []):
-                descrpt_list.append(_generate_descrpt_from_param_dict(ii))
-            self.descrpt = DescrptHybrid(descrpt_list)
+        self.descrpt = Descriptor(**descrpt_param)
 
         # fitting net
         fitting_type = fitting_param.get('type', 'ener')

@@ -7,8 +7,9 @@ from .se_r import DescrptSeR
 from deepmd.env import op_module
 from .descriptor import Descriptor
 
+@Descriptor.register("se_ar")
 class DescrptSeAR (Descriptor):
-    def __init__ (self, jdata):
+    def __init__ (self, **jdata):
         args = ClassArg()\
                .add('a',      dict,   must = True) \
                .add('r',      dict,   must = True) 
