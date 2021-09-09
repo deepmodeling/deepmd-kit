@@ -79,6 +79,6 @@ class VariantMeta:
 class VariantABCMeta(VariantMeta, ABCMeta):
     pass
 
-class Variant(metaclass=VariantABCMeta):
+class PluginVariant(metaclass=VariantABCMeta):
     """A class to remove `type` from input arguments."""
     pass

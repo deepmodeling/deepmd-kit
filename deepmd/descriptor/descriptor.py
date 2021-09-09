@@ -3,9 +3,9 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 from deepmd.env import tf
-from deepmd.utils import Plugin, Variant
+from deepmd.utils import Plugin, PluginVariant
 
-class Descriptor(Variant):
+class Descriptor(PluginVariant):
     r"""The abstract class for descriptors. All specific descriptors should
     be based on this class.
 
