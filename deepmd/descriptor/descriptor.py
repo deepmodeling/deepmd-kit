@@ -27,7 +27,7 @@ class Descriptor(PluginVariant):
     __plugins = Plugin()
 
     @staticmethod
-    def register(key) -> "Descriptor":
+    def register(key : str) -> "Descriptor":
         """Regiester a descriptor plugin.
         
         Parameters
