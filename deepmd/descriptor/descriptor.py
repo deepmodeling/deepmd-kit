@@ -5,6 +5,7 @@ import numpy as np
 from deepmd.env import tf
 from deepmd.utils import Plugin, PluginVariant
 
+
 class Descriptor(PluginVariant):
     r"""The abstract class for descriptors. All specific descriptors should
     be based on this class.
@@ -27,9 +28,9 @@ class Descriptor(PluginVariant):
     __plugins = Plugin()
 
     @staticmethod
-    def register(key : str) -> "Descriptor":
+    def register(key: str) -> "Descriptor":
         """Regiester a descriptor plugin.
-        
+
         Parameters
         ----------
         key : str
@@ -39,7 +40,7 @@ class Descriptor(PluginVariant):
         -------
         Descriptor
             the regiestered descriptor
-        
+
         Examples
         --------
         >>> @Descriptor.register("some_descrpt")
@@ -47,7 +48,7 @@ class Descriptor(PluginVariant):
                 pass
         """
         return Descriptor.__plugins.register(key)
-    
+
     def __new__(cls, *args, **kwargs):
         if cls is Descriptor:
             try:
