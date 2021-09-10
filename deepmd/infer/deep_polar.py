@@ -84,7 +84,6 @@ class DeepGlobalPolar(DeepTensor):
         DeepTensor.__init__(
             self,
             model_file,
-            9,
             load_prefix=load_prefix,
             default_tf_graph=default_tf_graph,
         )
