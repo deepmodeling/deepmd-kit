@@ -43,7 +43,7 @@ class Inter():
             'seed': 1,
         }
         param = {'a': param_a, 'r': param_r}
-        self.descrpt = DescrptSeAR(**param)
+        self.descrpt = DescrptSeAR(param)
         self.ndescrpt = self.descrpt.get_dim_out()
         # davg = np.zeros ([self.ntypes, self.ndescrpt])
         # dstd = np.ones  ([self.ntypes, self.ndescrpt])
