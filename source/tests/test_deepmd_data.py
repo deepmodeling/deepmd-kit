@@ -49,10 +49,7 @@ class TestDataTypeSel(unittest.TestCase):
              .add('value_1', 1, atomic=True, must=True, type_sel = [0])
         data = dd._load_set(os.path.join(self.data_name, 'set.foo'))
         self.assertEqual(data['value_1'].shape, (self.nframes, 2))
-        for ii in range(self.nframes):
-            for jj in range(2):
-                self.assertAlmostEqual(data['value_1'][ii][jj],
-                                       self.value_1[ii][jj])
+        np.testing.assert_almost_equal(data['value_1'], self.value_1)
                 
 
     def test_load_set_2(self) :
@@ -60,10 +57,7 @@ class TestDataTypeSel(unittest.TestCase):
              .add('value_2', 1, atomic=True, must=True, type_sel = [1])
         data = dd._load_set(os.path.join(self.data_name, 'set.foo'))
         self.assertEqual(data['value_2'].shape, (self.nframes, 4))
-        for ii in range(self.nframes):
-            for jj in range(4):
-                self.assertAlmostEqual(data['value_2'][ii][jj],
-                                       self.value_2[ii][jj])                
+        np.testing.assert_almost_equal(data['value_2'], self.value_2)          
 
 
 class TestData (unittest.TestCase) :
@@ -217,8 +211,7 @@ class TestData (unittest.TestCase) :
              .add('test_frame', 5, atomic=False, must=True)
         favg = dd.avg('test_frame')
         fcmp = np.average(np.concatenate((self.test_frame, self.test_frame_bar), axis = 0), axis = 0)
-        for ii in range(favg.size) :
-            self.assertAlmostEqual((favg[ii]), (fcmp[ii]), places = places)
+        np.testing.assert_almost_equal(favg, fcmp, places)
 
     def test_check_batch_size(self) :
         dd = DeepmdData(self.data_name)
@@ -263,8 +256,4 @@ class TestData (unittest.TestCase) :
         self.assertEqual(nb, 2)
         
     def _comp_np_mat2(self, first, second) :
-        for ii in range(first.shape[0]) :
-            for jj in range(first.shape[1]) :
-                self.assertAlmostEqual(first[ii][jj], second[ii][jj], 
-                                       msg = 'item [%d][%d] does not match' % (ii,jj), 
-                                       places = places)
+        np.testing.assert_almost_equal(first, second, places)

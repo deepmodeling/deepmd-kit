@@ -94,5 +94,53 @@ kspace_modify	gewald 0.45
 ```
 Please notice that the DeePMD does nothing to the direct space part of the electrostatic interaction, because this part is assumed to be fitted in the DeePMD model (the direct space cut-off is thus the cut-off of the DeePMD model). The splitting parameter `gewald` is modified by the `kspace_modify` command.
 
+## Use of the centroid/stress/atom to get the full 3x3 "atomic-virial" 
+
+The [DeePMD-kit](https://github.com/deepmodeling/deepmd-kit) allows also the computation of per-atom stress tensor defined as:
+
+<img src="https://render.githubusercontent.com/render/math?math=dvatom=\sum_{m}( \mathbf{r}_n- \mathbf{r}_m) \frac{de_m}{d\mathbf{r}_n} ">
+
+Where <img src="https://render.githubusercontent.com/render/math?math=\mathbf{r}_n "> is the atomic position of nth atom, <img src="https://render.githubusercontent.com/render/math?math=\mathbf{v}_n "> velocity of atom and <img src="https://render.githubusercontent.com/render/math?math=\frac{de_m}{d\mathbf{r}_n} "> the derivative of the atomic energy.
+
+In LAMMPS one can get the per-atom stress using the command `centroid/stress/atom`:
+```bash
+compute ID group-ID centroid/stress/atom NULL virial
+```
+see [LAMMPS doc page](https://docs.lammps.org/compute_stress_atom.html#thompson2) for more detailes on the meaning of the keywords.
+### Examples
+In order of computing the 9-component per-atom stress
+```bash
+compute stress all centroid/stress/atom NULL virial
+```
+Thus `c_stress` is an array with 9 component in the order `xx,yy,zz,xy,xz,yz,yx,zx,zy`.
+
+If you use this feature please cite [D. Tisi, L. Zhang, R. Bertossa, H. Wang, R. Car, S. Baroni - arXiv preprint arXiv:2108.10850, 2021](https://arxiv.org/abs/2108.10850)
+
+## Computation of heat flux
+Using per-atom stress tensor one can, for example, compute the heat flux defined as:
+
+<img src="https://render.githubusercontent.com/render/math?math=\mathbf{J}=\sum_n e_n \mathbf{v}_n + \sum_{nm}( \mathbf{r}_m- \mathbf{r}_n) \frac{de_m}{d\mathbf{r}_n} \mathbf{v}_n">
+
+to compute the heat flux with LAMMPS: 
+```bash
+compute ke_ID all ke/atom
+compute pe_ID all pe/atom
+compute stress_ID group-ID centroid/stress/atom NULL virial
+compute flux_ID all heat/flux ke_ID pe_ID stress_ID
+```
+
+### Examples
+
+```bash
+compute ke all ke/atom
+compute pe all pe/atom
+compute stress all centroid/stress/atom NULL virial
+compute flux all heat/flux ke pe stress
+```
+`c_flux` is a global vector of length 6. The first three components are the `x`, `y` and `z` components of the full heat flux vector. The others are the components of the so-called convective portion, see [LAMMPS doc page](https://docs.lammps.org/compute_heat_flux.html) for more detailes.
+
+If you use these features please cite [D. Tisi, L. Zhang, R. Bertossa, H. Wang, R. Car, S. Baroni - arXiv preprint arXiv:2108.10850, 2021](https://arxiv.org/abs/2108.10850)
+
+
 [DP]:https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.120.143001
 [DP-SE]:https://dl.acm.org/doi/10.5555/3327345.3327356

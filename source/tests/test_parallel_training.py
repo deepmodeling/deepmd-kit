@@ -18,9 +18,12 @@ class TestSingleMachine(unittest.TestCase):
     def test_two_workers(self):
         command = 'horovodrun -np 2 dp train -m workers ' + self.input_file
         penv = os.environ.copy()
-        if len(get_gpus() or []) > 1:
+        num_gpus = len(get_gpus() or [])
+        if num_gpus > 1:
             penv['CUDA_VISIBLE_DEVICES'] = '0,1'
-        popen = sp.Popen(command, shell=True, env=penv, stdout=sp.PIPE, stderr=sp.STDOUT)
+        elif num_gpus == 1:
+            raise unittest.SkipTest("At least 2 GPU cards are needed for parallel-training tests.")
+        popen = sp.Popen(command, shell=True, cwd=str(tests_path), env=penv, stdout=sp.PIPE, stderr=sp.STDOUT)
         for line in iter(popen.stdout.readline, b''):
             if hasattr(line, 'decode'):
                 line = line.decode('utf-8')

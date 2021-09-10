@@ -34,12 +34,16 @@ class DPTabulate():
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     activation_function
             The activation function in the embedding net. Supported options are {"tanh","gelu"} in common.ACTIVATION_FN_DICT.
+    suffix : str, optional
+            The suffix of the scope
     """
     def __init__(self,
                  model_file : str,
                  type_one_side : bool = False,
                  exclude_types : List[List[int]] = [],
-                 activation_fn : Callable[[tf.Tensor], tf.Tensor] = tf.nn.tanh) -> None:
+                 activation_fn : Callable[[tf.Tensor], tf.Tensor] = tf.nn.tanh,
+                 suffix : str = "",
+                 ) -> None:
         """
         Constructor
         """
@@ -47,8 +51,9 @@ class DPTabulate():
         self.model_file = model_file
         self.type_one_side = type_one_side
         self.exclude_types = exclude_types
+        self.suffix = suffix
         if self.type_one_side and len(self.exclude_types) != 0:
-            raise RunTimeError('"type_one_side" is not compatible with "exclude_types"')
+            raise RuntimeError('"type_one_side" is not compatible with "exclude_types"')
         
         # functype
         if activation_fn == ACTIVATION_FN_DICT["tanh"]:
@@ -56,7 +61,7 @@ class DPTabulate():
         elif activation_fn == ACTIVATION_FN_DICT["gelu"]:
             self.functype = 2
         else:
-            raise RunTimeError("Unknown actication function type!")
+            raise RuntimeError("Unknown actication function type!")
         self.activation_fn = activation_fn
 
         self.graph, self.graph_def = load_graph_def(self.model_file)
@@ -72,15 +77,15 @@ class DPTabulate():
             self.sel_a = self.graph.get_operation_by_name('DescrptSeA').get_attr('sel_a')
             self.descrpt = self.graph.get_operation_by_name ('DescrptSeA')
 
-        self.davg = get_tensor_by_name_from_graph(self.graph, 'descrpt_attr/t_avg')
-        self.dstd = get_tensor_by_name_from_graph(self.graph, 'descrpt_attr/t_std')
+        self.davg = get_tensor_by_name_from_graph(self.graph, f'descrpt_attr{self.suffix}/t_avg')
+        self.dstd = get_tensor_by_name_from_graph(self.graph, f'descrpt_attr{self.suffix}/t_std')
         self.ntypes = get_tensor_by_name_from_graph(self.graph, 'descrpt_attr/ntypes')
 
         
         self.rcut = self.descrpt.get_attr('rcut_r')
         self.rcut_smth = self.descrpt.get_attr('rcut_r_smth')
 
-        self.embedding_net_nodes = get_embedding_net_nodes_from_graph_def(self.graph_def)
+        self.embedding_net_nodes = get_embedding_net_nodes_from_graph_def(self.graph_def, suffix=self.suffix)
 
         for tt in self.exclude_types:
             if (tt[0] not in range(self.ntypes)) or (tt[1] not in range(self.ntypes)):
@@ -174,14 +179,16 @@ class DPTabulate():
             bias["layer_" + str(layer)] = []
             if self.type_one_side:
                 for ii in range(0, self.ntypes):
-                    tensor_value = np.frombuffer (self.embedding_net_nodes["filter_type_all/bias_" + str(layer) + "_" + str(ii)].tensor_content)
-                    tensor_shape = tf.TensorShape(self.embedding_net_nodes["filter_type_all/bias_" + str(layer) + "_" + str(ii)].tensor_shape).as_list()
+                    node = self.embedding_net_nodes[f"filter_type_all{self.suffix}/bias_{layer}_{ii}"]
+                    tensor_value = np.frombuffer (node.tensor_content, dtype = tf.as_dtype(node.dtype).as_numpy_dtype)
+                    tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
                     bias["layer_" + str(layer)].append(np.reshape(tensor_value, tensor_shape))
             else:
                 for ii in range(0, self.ntypes * self.ntypes):
                     if (ii // self.ntypes, int(ii % self.ntypes)) not in self.exclude_types:
-                        tensor_value = np.frombuffer(self.embedding_net_nodes["filter_type_" + str(ii // self.ntypes) + "/bias_" + str(layer) + "_" + str(int(ii % self.ntypes))].tensor_content)
-                        tensor_shape = tf.TensorShape(self.embedding_net_nodes["filter_type_" + str(ii // self.ntypes) + "/bias_" + str(layer) + "_" + str(int(ii % self.ntypes))].tensor_shape).as_list()
+                        node = self.embedding_net_nodes[f"filter_type_{ii // self.ntypes}{self.suffix}/bias_{layer}_{ii % self.ntypes}"]
+                        tensor_value = np.frombuffer(node.tensor_content, dtype = tf.as_dtype(node.dtype).as_numpy_dtype)
+                        tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
                         bias["layer_" + str(layer)].append(np.reshape(tensor_value, tensor_shape))
                     else:
                         bias["layer_" + str(layer)].append(np.array([]))
@@ -193,14 +200,16 @@ class DPTabulate():
             matrix["layer_" + str(layer)] = []
             if self.type_one_side:
                 for ii in range(0, self.ntypes):
-                    tensor_value = np.frombuffer (self.embedding_net_nodes["filter_type_all/matrix_" + str(layer) + "_" + str(ii)].tensor_content)
-                    tensor_shape = tf.TensorShape(self.embedding_net_nodes["filter_type_all/matrix_" + str(layer) + "_" + str(ii)].tensor_shape).as_list()
+                    node = self.embedding_net_nodes[f"filter_type_all{self.suffix}/matrix_{layer}_{ii}"]
+                    tensor_value = np.frombuffer (node.tensor_content, dtype = tf.as_dtype(node.dtype).as_numpy_dtype)
+                    tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
                     matrix["layer_" + str(layer)].append(np.reshape(tensor_value, tensor_shape))
             else:
                 for ii in range(0, self.ntypes * self.ntypes):
                     if (ii // self.ntypes, int(ii % self.ntypes)) not in self.exclude_types:
-                        tensor_value = np.frombuffer(self.embedding_net_nodes["filter_type_" + str(ii // self.ntypes) + "/matrix_" + str(layer) + "_" + str(int(ii % self.ntypes))].tensor_content)
-                        tensor_shape = tf.TensorShape(self.embedding_net_nodes["filter_type_" + str(ii // self.ntypes) + "/matrix_" + str(layer) + "_" + str(int(ii % self.ntypes))].tensor_shape).as_list()
+                        node = self.embedding_net_nodes[f"filter_type_{ii // self.ntypes}{self.suffix}/matrix_{layer}_{ii % self.ntypes}"]
+                        tensor_value = np.frombuffer(node.tensor_content, dtype = tf.as_dtype(node.dtype).as_numpy_dtype)
+                        tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
                         matrix["layer_" + str(layer)].append(np.reshape(tensor_value, tensor_shape))
                     else:
                         matrix["layer_" + str(layer)].append(np.array([]))

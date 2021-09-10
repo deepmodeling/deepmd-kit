@@ -581,7 +581,7 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
         arg_validation_data,
         Argument("numb_steps", int, optional=False, doc=doc_numb_steps, alias=["stop_batch"]),
         Argument("seed", [int,None], optional=True, doc=doc_seed),
-        Argument("disp_file", str, optional=True, default='lcueve.out', doc=doc_disp_file),
+        Argument("disp_file", str, optional=True, default='lcurve.out', doc=doc_disp_file),
         Argument("disp_freq", int, optional=True, default=1000, doc=doc_disp_freq),
         Argument("numb_test", [list,int,str], optional=True, default=1, doc=doc_numb_test),
         Argument("save_freq", int, optional=True, default=1000, doc=doc_save_freq),

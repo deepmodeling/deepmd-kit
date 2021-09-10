@@ -358,7 +358,16 @@ class DipoleChargeModifier(DeepDipole):
         ref_coord = coord3[:,sel_idx_map,:]
         ref_coord = np.reshape(ref_coord, [nframes, nsel * 3])
         
-        dipole = DeepDipole.eval(self, coord, box, atype)
+        batch_size = 8
+        all_dipole = []
+        for ii in range(0,nframes,batch_size):
+            dipole = DeepDipole.eval(self,
+                                     coord[ii:ii+batch_size],
+                                     box[ii:ii+batch_size],
+                                     atype)
+            all_dipole.append(dipole)
+        dipole = np.concatenate(all_dipole, axis = 0)
+        assert(dipole.shape[0] == nframes)
         dipole = np.reshape(dipole, [nframes, nsel * 3])
         
         wfcc_coord = ref_coord + dipole

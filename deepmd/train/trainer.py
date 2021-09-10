@@ -26,7 +26,7 @@ from deepmd.utils.learning_rate import LearningRateExp
 from deepmd.utils.neighbor_stat import NeighborStat
 from deepmd.utils.sess import run_sess
 from deepmd.utils.type_embed import TypeEmbedNet
-from deepmd.utils.graph import get_tensor_by_name, get_fitting_net_variables
+from deepmd.utils.graph import get_tensor_by_name, get_embedding_net_variables, get_fitting_net_variables
 
 from tensorflow.python.client import timeline
 from deepmd.env import op_module
@@ -278,7 +278,6 @@ class DPTrainer (object):
         # if init the graph with the frozen model
         self.frz_model = None
         self.model_type = None
-        self.init_from_frz_model = False
 
 
     def build (self, 
@@ -314,18 +313,10 @@ class DPTrainer (object):
             if self.run_opt.init_mode == 'init_from_frz_model':
                 self._init_from_frz_model()
             
-            self.neighbor_stat \
-                = NeighborStat(self.ntypes, self.descrpt_param['rcut'])
-            self.min_nbor_dist, self.max_nbor_size \
-                = self.neighbor_stat.get_stat(data)
-            tf.constant(self.min_nbor_dist,
-                    name = 'train_attr/min_nbor_dist',
-                    dtype = GLOBAL_TF_FLOAT_PRECISION)
-            tf.constant(self.max_nbor_size,
-                    name = 'train_attr/max_nbor_size',
-                    dtype = GLOBAL_TF_FLOAT_PRECISION)
+            # neighbor_stat is moved to train.py as duplicated
+            # TODO: this is a simple fix but we should have a clear
+            #       architecture to call neighbor stat
         else :
-            assert 'rcut' in self.descrpt_param, "Error: descriptor must have attr rcut!"
             self.descrpt.enable_compression(self.model_param['compress']["min_nbor_dist"], self.model_param['compress']['model_file'], self.model_param['compress']['table_config'][0], self.model_param['compress']['table_config'][1], self.model_param['compress']['table_config'][2], self.model_param['compress']['table_config'][3])
             self.fitting.init_variables(get_fitting_net_variables(self.model_param['compress']['model_file']))
         
@@ -385,10 +376,10 @@ class DPTrainer (object):
             optimizer = self.run_opt._HVD.DistributedOptimizer(optimizer)
         else:
             optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate)
-        grads = tf.gradients(self.l2_l, trainable_variables)
-        apply_op = optimizer.apply_gradients (zip (grads, trainable_variables),
-                                              global_step=self.global_step,
-                                              name='train_step')
+        apply_op = optimizer.minimize(loss=self.l2_l,
+                                      global_step=self.global_step,
+                                      var_list=trainable_variables,
+                                      name='train_step')
         train_ops = [apply_op] + self._extra_train_ops
         self.train_op = tf.group(*train_ops)
         log.info("built training")
@@ -397,7 +388,6 @@ class DPTrainer (object):
         config = get_tf_session_config()
         device, idx = self.run_opt.my_device.split(":", 1)
         if device == "gpu":
-            config.gpu_options.allow_growth = True
             config.gpu_options.visible_device_list = idx
         self.sess = tf.Session(config=config)
 
@@ -408,8 +398,9 @@ class DPTrainer (object):
             if self.run_opt.init_mode == 'init_from_scratch' :
                 log.info("initialize model from scratch")
                 run_sess(self.sess, init_op)
-                fp = open(self.disp_file, "w")
-                fp.close ()
+                if not self.is_compress:
+                    fp = open(self.disp_file, "w")
+                    fp.close ()
             elif self.run_opt.init_mode == 'init_from_model' :
                 log.info("initialize from model %s" % self.run_opt.init_model)
                 run_sess(self.sess, init_op)
@@ -695,14 +686,17 @@ class DPTrainer (object):
                     "which is not supported by the 'dp train init-frz-model' interface. " % self.run_opt.init_frz_model
                 ) from e
         
+        if self.fitting_type != 'ener':
+            raise RuntimeError("The 'dp train init-frz-model' command only supports the 'ener' type fitting net currently!")
         # self.frz_model will control the self.model to import the descriptor from the given frozen model instead of building from scratch...
         # initialize fitting net with the given compressed frozen model
-        if self.model_type == 'compressed_model' and self.fitting_type == 'ener':
-            self.init_from_frz_model = True
+        if self.model_type == 'original_model':
+            self.descrpt.init_variables(self.run_opt.init_frz_model)
+            self.fitting.init_variables(get_fitting_net_variables(self.run_opt.init_frz_model))
+            tf.constant("original_model", name = 'model_type', dtype = tf.string)
+        elif self.model_type == 'compressed_model':
             self.frz_model = self.run_opt.init_frz_model
             self.fitting.init_variables(get_fitting_net_variables(self.frz_model))
             tf.constant("compressed_model", name = 'model_type', dtype = tf.string)
-        elif self.fitting_type != 'ener':
-            raise RuntimeError("The 'dp train init-frz-model' command only supports the 'ener' type fitting net currently!")
         else:
-            raise RuntimeError("The 'dp train init-frz-model' command only supports the compressed model currently!")
+            raise RuntimeError("Unknown model type %s" % self.model_type)
