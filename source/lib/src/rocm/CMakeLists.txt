@@ -12,7 +12,7 @@ add_definitions("-DCUB_IGNORE_DEPRECATED_CPP_DIALECT")
 
 message(STATUS "HIP major version is " ${HIP_VERSION_MAJOR})
 
-set (HIP_HIPCC_FLAGS -hc; -fno-gpu-rdc; --amdgpu-target=gfx906; -fPIC; -O3; --std=c++11)
+set (HIP_HIPCC_FLAGS  -fno-gpu-rdc; --amdgpu-target=gfx906; -fPIC; -O3; --std=c++11)
 
 file (GLOB SOURCE_FILES "*.hip.cu" )
 

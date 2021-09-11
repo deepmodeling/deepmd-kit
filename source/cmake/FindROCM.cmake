@@ -8,11 +8,13 @@
 
 # define the search path
 list(APPEND ROCM_search_PATHS ${ROCM_ROOT})
-list(APPEND ROCM_search_PATHS "/opt/rocm/")
+list(APPEND ROCM_search_PATHS "/public/software/compiler/dtk/dtk-21.04/")
+list(APPEND ROCM_search_PATHS "/public/software/compiler/rocm/dtk-21.04/")
+
 
 # define the libs to find
 if (NOT ROCM_FIND_COMPONENTS)
-  set(ROCM_FIND_COMPONENTS hip_hcc hiprtc)
+  set(ROCM_FIND_COMPONENTS amd_comgr)
 endif ()
 
 # includes
@@ -35,7 +37,7 @@ endif ()
 foreach (module ${ROCM_FIND_COMPONENTS})
   find_library(ROCM_LIBRARIES_${module}
     NAMES ${module}
-    PATHS ${ROCM_search_PATHS} PATH_SUFFIXES "lib" NO_DEFAULT_PATH
+    PATHS ${ROCM_search_PATHS} PATH_SUFFIXES "lib64" NO_DEFAULT_PATH
     )
   if (ROCM_LIBRARIES_${module})
     list(APPEND ROCM_LIBRARIES ${ROCM_LIBRARIES_${module}})
