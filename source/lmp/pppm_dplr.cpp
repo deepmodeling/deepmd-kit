@@ -110,7 +110,7 @@ void PPPMDPLR::compute(int eflag, int vflag)
   // remap from 3d decomposition to FFT decomposition
 
 #if LAMMPS_VERSION_NUMBER>=20210831
-  gc->forward_comm(GridComm::KSPACE,this,1,sizeof(FFT_SCALAR),REVERSE_RHO,
+  gc->reverse_comm(GridComm::KSPACE,this,1,sizeof(FFT_SCALAR),REVERSE_RHO,
                           gc_buf1,gc_buf2,MPI_FFT_SCALAR);
 #else
   gc->reverse_comm_kspace(this,1,sizeof(FFT_SCALAR),REVERSE_RHO,
