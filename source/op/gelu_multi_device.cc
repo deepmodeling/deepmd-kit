@@ -1,4 +1,4 @@
-#include "custom_op.h"
+/*#include "custom_op.h"
 #include "gelu.h"
 
 REGISTER_OP("Gelu")
@@ -205,3 +205,4 @@ REGISTER_KERNEL_BUILDER(                                                \
 REGISTER_GPU(float);
 REGISTER_GPU(double);
 #endif // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+*/
