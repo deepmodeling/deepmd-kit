@@ -16,6 +16,8 @@ from deepmd.utils.sess import run_sess
 from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph, get_embedding_net_variables
 from .descriptor import Descriptor
 
+@Descriptor.register("se_e2_a")
+@Descriptor.register("se_a")
 class DescrptSeA (Descriptor):
     r"""DeepPot-SE constructed from all information (both angular and radial) of
     atomic configurations. The embedding takes the distance between atoms as input.

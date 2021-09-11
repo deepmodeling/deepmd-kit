@@ -12,6 +12,9 @@ from deepmd.utils.network import embedding_net, embedding_net_rand_seed_shift
 from deepmd.utils.sess import run_sess
 from .descriptor import Descriptor
 
+@Descriptor.register("se_e3")
+@Descriptor.register("se_at")
+@Descriptor.register("se_a_3be")
 class DescrptSeT (Descriptor):
     """DeepPot-SE constructed from all information (both angular and radial) of atomic
     configurations.

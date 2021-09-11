@@ -10,7 +10,10 @@ from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.utils.network import embedding_net
 from .se_a import DescrptSeA
+from .descriptor import Descriptor
 
+@Descriptor.register("se_a_tpe")
+@Descriptor.register("se_a_ebd")
 class DescrptSeAEbd (DescrptSeA):
     """DeepPot-SE descriptor with type embedding approach.
 
