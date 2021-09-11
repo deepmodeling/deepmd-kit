@@ -15,7 +15,6 @@ from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from .descriptor import Descriptor
 from .se_a import DescrptSeA
 from .se_r import DescrptSeR
-from .se_ar import DescrptSeAR
 from .se_t import DescrptSeT
 from .se_a_ebd import DescrptSeAEbd
 from .se_a_ef import DescrptSeAEf

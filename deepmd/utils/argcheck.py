@@ -222,18 +222,6 @@ def descrpt_se_r_args():
     ]
 
 
-def descrpt_se_ar_args():
-    link = make_link('se_a', 'model/descriptor[se_a]')
-    doc_a = f'The parameters of descriptor {link}'
-    link = make_link('se_r', 'model/descriptor[se_r]')
-    doc_r = f'The parameters of descriptor {link}'
-    
-    return [
-        Argument("a", dict, optional = False, doc = doc_a),
-        Argument("r", dict, optional = False, doc = doc_r),
-    ]
-
-
 @descrpt_args_plugin.register("hybrid")
 def descrpt_hybrid_args():
     doc_list = f'A list of descriptor definitions'
