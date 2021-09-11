@@ -1,5 +1,4 @@
 {
-    "with_distrib":	false,
     "_comment": " model parameters",
     "use_smooth":	false,
     "sel_a":		[16, 32],

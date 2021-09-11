@@ -3,13 +3,13 @@ import numpy as np
 import unittest
 from deepmd.env import tf
 
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
-from deepmd.EwaldRecp import op_module
-from deepmd.EwaldRecp import EwaldRecp
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
+from deepmd.infer.ewald_recp import op_module
+from deepmd.infer.ewald_recp import EwaldRecp
 
-if global_np_float_precision == np.float32 :
+if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
     global_default_fv_hh = 1e-2
     global_default_dw_hh = 1e-2
     global_default_places = 3
@@ -19,7 +19,7 @@ else :
     global_default_places = 5
 
 
-class TestEwaldRecp (unittest.TestCase) :
+class TestEwaldRecp (tf.test.TestCase) :
     def setUp(self):
         boxl = 4.5 # NOTICE grid should not change before and after box pert...
         box_pert = 0.2
@@ -54,15 +54,15 @@ class TestEwaldRecp (unittest.TestCase) :
         self.dcoord = np.array(self.dcoord).reshape([self.nframes, 3*self.natoms])
         self.dcharge = np.array(self.dcharge).reshape([self.nframes, self.natoms])
         # place holders
-        self.coord      = tf.placeholder(global_tf_float_precision, [None], name='t_coord')
-        self.charge     = tf.placeholder(global_tf_float_precision, [None], name='t_charge')
-        self.box        = tf.placeholder(global_tf_float_precision, [None], name='t_box')
+        self.coord      = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='t_coord')
+        self.charge     = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='t_charge')
+        self.box        = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='t_box')
         self.nloc    = tf.placeholder(tf.int32, [1], name = "t_nloc")        
 
     def test_py_interface(self):
         hh = 1e-4
         places = 4
-        sess = tf.Session()
+        sess = self.test_session().__enter__()
         t_energy, t_force, t_virial \
             = op_module.ewald_recp(self.coord, self.charge, self.nloc, self.box, 
                                    ewald_h = self.ewald_h,
@@ -76,27 +76,22 @@ class TestEwaldRecp (unittest.TestCase) :
                            })
         er = EwaldRecp(self.ewald_h, self.ewald_beta)
         e1, f1, v1 = er.eval(self.dcoord, self.dcharge, self.dbox)        
-        for ff in range(self.nframes):
-            self.assertAlmostEqual(e[ff], e1[ff], 
-                                   places = places,
-                                   msg = "frame %d energy failed" % (ff))
-            for idx in range(self.natoms):
-                for dd in range(3):
-                    self.assertAlmostEqual(f[ff, idx*3+dd], f1[ff,idx*3+dd], 
-                                           places = places,
-                                           msg = "frame %d force component [%d,%d] failed" % (ff, idx, dd))
-            for d0 in range(3):
-                for d1 in range(3):
-                    self.assertAlmostEqual(v[ff, d0*3+d1], v[ff,d0*3+d1], 
-                                           places = places,
-                                           msg = "frame %d virial component [%d,%d] failed" % (ff, d0, d1))
+        np.testing.assert_almost_equal(e, e1, 
+                                       places,
+                                       err_msg = "energy failed")
+        np.testing.assert_almost_equal(f, f1, 
+                                       places,
+                                       err_msg = "force component failed")
+        np.testing.assert_almost_equal(v, v, 
+                                       places,
+                                       err_msg = "virial component failed")
 
 
 
     def test_force(self):
         hh = 1e-4
-        places = 4
-        sess = tf.Session()
+        places = 6
+        sess = self.test_session().__enter__()
         t_energy, t_force, t_virial \
             = op_module.ewald_recp(self.coord, self.charge, self.nloc, self.box, 
                                    ewald_h = self.ewald_h,
@@ -129,16 +124,15 @@ class TestEwaldRecp (unittest.TestCase) :
                                        self.nloc:   [self.natoms],
                                    })
                 c_force = -(energyp[0] - energym[0]) / (2*hh)
-                for ff in range(self.nframes):
-                    self.assertAlmostEqual(c_force[ff], force[ff,idx*3+dd], 
-                                           places = places,
-                                           msg = "frame %d force component [%d,%d] failed" % (ff, idx, dd))
+                np.testing.assert_almost_equal(c_force, force[:,idx*3+dd], 
+                                           places,
+                                           err_msg = "force component [%d,%d] failed" % (idx, dd))
 
 
     def test_virial(self):
         hh = 1e-4
-        places = 5
-        sess = tf.Session()
+        places = 6
+        sess = self.test_session().__enter__()
         t_energy, t_force, t_virial \
             = op_module.ewald_recp(self.coord, self.charge, self.nloc, self.box, 
                                    ewald_h = self.ewald_h,
@@ -194,8 +188,8 @@ class TestEwaldRecp (unittest.TestCase) :
                                        self.nloc:   [self.natoms],
                                    })
                 num_deriv[:,ii,jj] = -(energyp[0] - energym[0]) / (2.*hh)
-        dbox3t = np.transpose(self.dbox3, [0,2,1])
-        t_esti = np.matmul(num_deriv, dbox3t)
+        num_deriv_t = np.transpose(num_deriv, [0,2,1])
+        t_esti = np.matmul(num_deriv_t, self.dbox3)
         # # t_esti = np.matmul(num_deriv, self.dbox3)
         # print(num_deriv[0])
         # print(t_esti[0])
@@ -204,12 +198,9 @@ class TestEwaldRecp (unittest.TestCase) :
         # # print(0.5 * (t_esti[0] + t_esti[0].T) - virial[0].reshape([3,3]))
         # print(0.5 * (t_esti[0] + t_esti[0]) - virial[0].reshape([3,3]))
         # print(0.5 * (t_esti[0] + t_esti[0].T) - virial[0].reshape([3,3]))        
-        for ff in range(self.nframes):
-            for ii in range(3):
-                for jj in range(3):                
-                    self.assertAlmostEqual(t_esti[ff][ii][jj], virial[ff,ii*3+jj], 
-                                           places = places,
-                                           msg = "frame %d virial component [%d,%d] failed" % (ff, ii, jj))
+        np.testing.assert_almost_equal(t_esti.ravel(), virial.ravel(), 
+                                           places,
+                                           err_msg = "virial component failed")
             
                 
 

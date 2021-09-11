@@ -1,20 +1,19 @@
 import dpdata,os,sys,unittest
 import numpy as np
 from deepmd.env import tf
-from common import Data,gen_data
+from common import Data,gen_data, j_loader
 
-from deepmd.RunOptions import RunOptions
-from deepmd.DataSystem import DataSystem
-from deepmd.DescrptLocFrame import DescrptLocFrame
-from deepmd.Fitting import WFCFitting
-from deepmd.Model import WFCModel
-from deepmd.common import j_must_have, j_must_have_d, j_have, j_loader
+from deepmd.utils.data_system import DataSystem
+from deepmd.descriptor import DescrptLocFrame
+from deepmd.fit import WFCFitting
+from deepmd.model import WFCModel
+from deepmd.common import j_must_have
 
-global_ener_float_precision = tf.float64
-global_tf_float_precision = tf.float64
-global_np_float_precision = np.float64
+GLOBAL_ENER_FLOAT_PRECISION = tf.float64
+GLOBAL_TF_FLOAT_PRECISION = tf.float64
+GLOBAL_NP_FLOAT_PRECISION = np.float64
 
-class TestModel(unittest.TestCase):
+class TestModel(tf.test.TestCase):
     def setUp(self) :
         gen_data()
 
@@ -22,7 +21,6 @@ class TestModel(unittest.TestCase):
         jfile = 'wfc.json'
         jdata = j_loader(jfile)
 
-        run_opt = RunOptions(None) 
         systems = j_must_have(jdata, 'systems')
         set_pfx = j_must_have(jdata, 'set_prefix')
         batch_size = j_must_have(jdata, 'batch_size')
@@ -37,9 +35,12 @@ class TestModel(unittest.TestCase):
         test_data = data.get_test ()
         numb_test = 1
         
-        descrpt = DescrptLocFrame(jdata['model']['descriptor'])
+        jdata['model']['descriptor'].pop('type', None)        
+        jdata['model']['descriptor'].pop('_comment', None)        
+        descrpt = DescrptLocFrame(**jdata['model']['descriptor'])
+        jdata['model']['fitting_net']['uniform_seed'] = True
         fitting = WFCFitting(jdata['model']['fitting_net'], descrpt)
-        model = WFCModel(jdata['model'], descrpt, fitting)
+        model = WFCModel(descrpt, fitting)
 
         input_data = {'coord' : [test_data['coord']], 
                       'box': [test_data['box']], 
@@ -51,14 +52,14 @@ class TestModel(unittest.TestCase):
         model._compute_input_stat(input_data)
 
         t_prop_c           = tf.placeholder(tf.float32, [5],    name='t_prop_c')
-        t_energy           = tf.placeholder(global_ener_float_precision, [None], name='t_energy')
-        t_force            = tf.placeholder(global_tf_float_precision, [None], name='t_force')
-        t_virial           = tf.placeholder(global_tf_float_precision, [None], name='t_virial')
-        t_atom_ener        = tf.placeholder(global_tf_float_precision, [None], name='t_atom_ener')
-        t_coord            = tf.placeholder(global_tf_float_precision, [None], name='i_coord')
+        t_energy           = tf.placeholder(GLOBAL_ENER_FLOAT_PRECISION, [None], name='t_energy')
+        t_force            = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='t_force')
+        t_virial           = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='t_virial')
+        t_atom_ener        = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='t_atom_ener')
+        t_coord            = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='i_coord')
         t_type             = tf.placeholder(tf.int32,   [None], name='i_type')
         t_natoms           = tf.placeholder(tf.int32,   [model.ntypes+2], name='i_natoms')
-        t_box              = tf.placeholder(global_tf_float_precision, [None, 9], name='i_box')
+        t_box              = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, 9], name='i_box')
         t_mesh             = tf.placeholder(tf.int32,   [None], name='i_mesh')
         is_training        = tf.placeholder(tf.bool)
         t_fparam = None
@@ -82,7 +83,7 @@ class TestModel(unittest.TestCase):
                           t_mesh:          test_data['default_mesh'],
                           is_training:     False}
 
-        sess = tf.Session()
+        sess = self.test_session().__enter__()
         sess.run(tf.global_variables_initializer())
         [p] = sess.run([wfc], feed_dict = feed_dict_test)
 
@@ -90,8 +91,7 @@ class TestModel(unittest.TestCase):
         refp = [-9.105016838228578990e-01,7.196284362034099935e-01,-9.548516928185298014e-02,2.764615027095288724e+00,2.661319598995644520e-01,7.579512949131941846e-02,-2.107409067376114997e+00,-1.299080016614967414e-01,-5.962778584850070285e-01,2.913899917663253514e-01,-1.226917174638697094e+00,1.829523069930876655e+00,1.015704024959750873e+00,-1.792333611099589386e-01,5.032898080485321834e-01,1.808561721292949453e-01,2.468863482075112081e+00,-2.566442546384765100e-01,-1.467453783795173994e-01,-1.822963931552128658e+00,5.843600156865462747e-01,-1.493875280832117403e+00,1.693322352814763398e-01,-1.877325443995481624e+00]
 
         places = 6
-        for ii in range(p.size) :
-            self.assertAlmostEqual(p[ii], refp[ii], places = places)
+        np.testing.assert_almost_equal(p, refp, places)
 
 
         

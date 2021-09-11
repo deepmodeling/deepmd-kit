@@ -1,11 +1,12 @@
-import os,sys,platform,json,shutil
+import shutil
 import numpy as np
 import unittest
 import dpdata
 
-from deepmd.DataSystem import DeepmdDataSystem
-from deepmd.Fitting import EnerFitting
-from deepmd.Model import make_all_stat, merge_sys_stat, _make_all_stat_ref
+from deepmd.utils import random as dp_random
+from deepmd.utils.data_system import DeepmdDataSystem
+from deepmd.fit import EnerFitting
+from deepmd.model.model_stat import make_stat_input, merge_sys_stat, _make_all_stat_ref
 
 def gen_sys(nframes, atom_types):
     natoms = len(atom_types)
@@ -40,37 +41,34 @@ class TestGenStatData(unittest.TestCase) :
         shutil.rmtree('system_1')
 
     def _comp_data(self, d0, d1) :
-        for ii in range(d0.shape[0]):
-            for jj in range(d0.shape[1]):
-                for kk in range(d0.shape[2]):
-                    self.assertAlmostEqual(d0[ii][jj][kk], d1[ii][jj][kk])
+        np.testing.assert_almost_equal(d0, d1)
 
     def test_merge_all_stat(self):
-        np.random.seed(0)
+        dp_random.seed(0)
         data0 = DeepmdDataSystem(['system_0', 'system_1'], 
                                 5, 
                                 10, 
                                 1.0)
         data0.add('energy', 1, must = True)
-        np.random.seed(0)
+        dp_random.seed(0)
         data1 = DeepmdDataSystem(['system_0', 'system_1'], 
                                 5, 
                                 10, 
                                 1.0)
-        data1.add('force', 3, atomic = True, must = True)
-        np.random.seed(0)
+        data1.add('energy', 1, must = True)
+        dp_random.seed(0)
         data2 = DeepmdDataSystem(['system_0', 'system_1'], 
                                 5, 
                                 10, 
                                 1.0)
-        data2.add('force', 3, atomic = True, must = True)
+        data2.add('energy', 1, must = True)
         
-        np.random.seed(0)
-        all_stat_0 = make_all_stat(data0, 10, merge_sys = False)
-        np.random.seed(0)
-        all_stat_1 = make_all_stat(data1, 10, merge_sys = True)
+        dp_random.seed(0)
+        all_stat_0 = make_stat_input(data0, 10, merge_sys = False)
+        dp_random.seed(0)
+        all_stat_1 = make_stat_input(data1, 10, merge_sys = True)
         all_stat_2 = merge_sys_stat(all_stat_0)
-        np.random.seed(0)
+        dp_random.seed(0)
         all_stat_3 = _make_all_stat_ref(data2, 10)
         
         ####################################
@@ -109,14 +107,13 @@ class TestEnerShift(unittest.TestCase):
         shutil.rmtree('system_1')
 
     def test_ener_shift(self):
-        np.random.seed(0)
+        dp_random.seed(0)
         data = DeepmdDataSystem(['system_0', 'system_1'], 
                                 5, 
                                 10, 
                                 1.0)
         data.add('energy', 1, must = True)
         ener_shift0 = data.compute_energy_shift(rcond = 1)
-        all_stat = make_all_stat(data, 4, merge_sys = False)
+        all_stat = make_stat_input(data, 4, merge_sys = False)
         ener_shift1 = EnerFitting._compute_output_stats(all_stat, rcond = 1)        
-        for ii in range(len(ener_shift0)):
-            self.assertAlmostEqual(ener_shift0[ii], ener_shift1[ii])
+        np.testing.assert_almost_equal(ener_shift0, ener_shift1)

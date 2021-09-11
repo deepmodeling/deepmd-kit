@@ -6,12 +6,7 @@ from deepmd.env import tf
 from tensorflow.python.framework import ops
 
 # load grad of force module
-import deepmd._prod_force_grad
-import deepmd._prod_virial_grad
-import deepmd._prod_force_se_r_grad
-import deepmd._prod_virial_se_r_grad
-import deepmd._soft_min_force_grad
-import deepmd._soft_min_virial_grad
+import deepmd.op
 
 from common import force_test
 from common import virial_test
@@ -19,16 +14,17 @@ from common import force_dw_test
 from common import virial_dw_test
 from common import Data
 
-from deepmd.DescrptSeAR import DescrptSeAR
+from deepmd.descriptor import DescrptSeAR
 
-from deepmd.RunOptions import global_tf_float_precision
-from deepmd.RunOptions import global_np_float_precision
-from deepmd.RunOptions import global_ener_float_precision
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 
 class Inter():
     def setUp (self, 
-               data) :
-        self.sess = tf.Session()
+               data,
+               sess = None) :
+        self.sess = sess
         self.data = data
         self.natoms = self.data.get_natoms()
         self.ntypes = self.data.get_ntypes()
@@ -64,10 +60,11 @@ class Inter():
         self.default_mesh[4] = 2
         self.default_mesh[5] = 2
         # make place holder
-        self.coord      = tf.placeholder(global_tf_float_precision, [None, self.natoms[0] * 3], name='t_coord')
-        self.box        = tf.placeholder(global_tf_float_precision, [None, 9], name='t_box')
+        self.coord      = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, self.natoms[0] * 3], name='t_coord')
+        self.box        = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, 9], name='t_box')
         self.type       = tf.placeholder(tf.int32,   [None, self.natoms[0]], name = "t_type")
         self.tnatoms    = tf.placeholder(tf.int32,   [None], name = "t_natoms")
+        self.efield     = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, self.natoms[0] * 3], name='t_efield')
         
     def _net (self,
               inputs, 
@@ -76,7 +73,7 @@ class Inter():
         with tf.variable_scope(name, reuse=reuse):
             net_w = tf.get_variable ('net_w', 
                                      [self.descrpt.get_dim_out()], 
-                                     global_tf_float_precision,
+                                     GLOBAL_TF_FLOAT_PRECISION,
                                      tf.constant_initializer (self.net_w_i))
         dot_v = tf.matmul (tf.reshape (inputs, [-1, self.descrpt.get_dim_out()]),
                            tf.reshape (net_w, [self.descrpt.get_dim_out(), 1]))
@@ -89,7 +86,7 @@ class Inter():
                  tnatoms,
                  name,
                  reuse = None) :
-        dout = self.descrpt.build(dcoord, dtype, tnatoms, dbox, self.default_mesh, suffix=name, reuse=reuse)
+        dout = self.descrpt.build(dcoord, dtype, tnatoms, dbox, self.default_mesh, {"efield": self.efield}, suffix=name, reuse=reuse)
         inputs_reshape = tf.reshape (dout, [-1, self.descrpt.get_dim_out()])
         atom_ener = self._net (inputs_reshape, name, reuse = reuse)
         atom_ener_reshape = tf.reshape(atom_ener, [-1, self.natoms[0]])       
@@ -98,17 +95,17 @@ class Inter():
         return energy, force, virial
 
 
-class TestDescrptAR(Inter, unittest.TestCase):
+class TestDescrptAR(Inter, tf.test.TestCase):
     # def __init__ (self, *args, **kwargs):
     #     data = Data()
     #     Inter.__init__(self, data)
-    #     unittest.TestCase.__init__(self, *args, **kwargs)
+    #     tf.test.TestCase.__init__(self, *args, **kwargs)
     #     self.controller = object()
 
     def setUp(self):
         self.places = 5
         data = Data()
-        Inter.setUp(self, data)
+        Inter.setUp(self, data, sess=self.test_session().__enter__())
 
     def test_force (self) :
         force_test(self, self, suffix = '_se_ar')

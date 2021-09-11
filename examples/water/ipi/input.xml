@@ -1,0 +1,58 @@
+<simulation verbosity='high'>
+  <output prefix='simulation'>
+    <properties stride='50' filename='out'>  [ step, time{picosecond}, conserved{electronvolt}, temperature{kelvin}, kinetic_cv{electronvolt}, potential{electronvolt}, pressure_cv{megapascal}, pressure_md{megapascal}, density{g/cm3} ] </properties>
+    <!--trajectory filename='pos' stride='1'> positions </trajectory-->
+    <trajectory stride='50' format='xyz' filename='pos'> positions{angstrom} </trajectory>
+    <checkpoint stride='200'/>
+  </output>
+  <total_steps>2000000</total_steps>
+  <prng>
+    <seed>31415</seed>
+  </prng>
+  <ffsocket name='lammps' mode='unix'>
+    <address>localhost</address>
+    <latency>0.001</latency>
+	 <port>31415</port>
+  </ffsocket>
+  <system>
+    <initialize nbeads='1'>
+      <file mode='xyz'> conf.xyz </file>
+      <velocities mode='thermal' units='kelvin'> 300 </velocities>
+    </initialize>
+    <forces>
+      <force forcefield='lammps'> </force>
+    </forces>
+    <motion mode='dynamics'>
+      <dynamics mode='npt'>
+       <timestep units='femtosecond'> 0.5 </timestep>
+       <barostat mode='isotropic'>
+        <thermostat mode='gle'>
+          <A shape='(5,5)'>
+            [   1.119252684345e-2,    8.975945537096e-6,   -2.728650447177e-5,   -7.011051989908e-4,    8.414373543550e-3, 
+          1.194065829660e-7,    1.071876106695e-6,   -9.439643019253e-6,   -1.329262116026e-5,   -2.667325152958e-6, 
+          2.161979961890e-4,    9.439643019253e-6,    4.639122293442e-5,    4.329184279724e-6,    8.132076333400e-5, 
+         -7.322257663569e-4,    1.329262116026e-5,   -4.329184279724e-6,    5.173717780694e-4,    1.590872642196e-5, 
+          8.299189140989e-3,    2.667325152958e-6,   -8.132076333400e-5,   -1.590872642196e-5,    6.992095202254e-3
+           ]
+          </A>
+        </thermostat>
+        <tau units='femtosecond'> 1000 </tau>
+       </barostat>
+       <thermostat mode='gle'>
+          <A shape='(5,5)'>
+            [   1.119252684345e-2,    8.975945537096e-6,   -2.728650447177e-5,   -7.011051989908e-4,    8.414373543550e-3,
+          1.194065829660e-7,    1.071876106695e-6,   -9.439643019253e-6,   -1.329262116026e-5,   -2.667325152958e-6,
+          2.161979961890e-4,    9.439643019253e-6,    4.639122293442e-5,    4.329184279724e-6,    8.132076333400e-5,
+         -7.322257663569e-4,    1.329262116026e-5,   -4.329184279724e-6,    5.173717780694e-4,    1.590872642196e-5,
+          8.299189140989e-3,    2.667325152958e-6,   -8.132076333400e-5,   -1.590872642196e-5,    6.992095202254e-3
+           ]
+          </A>
+       </thermostat>
+      </dynamics>
+    </motion>
+    <ensemble>
+      <temperature units='kelvin'> 300 </temperature>
+      <pressure units='megapascal'> 0.1013 </pressure>
+    </ensemble>
+  </system>
+</simulation>
