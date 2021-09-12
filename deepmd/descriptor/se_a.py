@@ -33,7 +33,7 @@ class DescrptSeA (Descriptor):
     .. math::
         (\mathcal{R}^i)_j = [
         \begin{array}{c}
-            s(r_{ji}) & x_{ji} & y_{ji} & z_{ji}
+            s(r_{ji}) & \frac{s(r_{ji})x_{ji}}{r_{ji}} & \frac{s(r_{ji})y_{ji}}{r_{ji}} & \frac{s(r_{ji})z_{ji}}{r_{ji}}
         \end{array}
         ]
 
