@@ -1,0 +1,2 @@
+conda:
+  environment: doc/environment.yml
