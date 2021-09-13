@@ -2,6 +2,6 @@ version: 2
 conda:
   environment: doc/environment.yml
 python:
-  version: 3.9
+  version: 3.8
   install:
     - requirements: doc/requirements.txt
