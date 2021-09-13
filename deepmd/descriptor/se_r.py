@@ -9,6 +9,7 @@ from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.utils.network import embedding_net, embedding_net_rand_seed_shift
+from deepmd.utils.graph import get_embedding_net_variables
 from deepmd.utils.sess import run_sess
 from .descriptor import Descriptor
 
@@ -114,6 +115,7 @@ class DescrptSeR (Descriptor):
         self.useBN = False
         self.davg = None
         self.dstd = None
+        self.embedding_net_variables = None
 
         self.place_holders = {}
         avg_zero = np.zeros([self.ntypes,self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
@@ -312,10 +314,10 @@ class DescrptSeR (Descriptor):
                                       sel = self.sel_r)
 
         self.descrpt_reshape = tf.reshape(self.descrpt, [-1, self.ndescrpt])
-        self.descrpt_reshape = tf.identity(self.descrpt_reshape, name = 'o_rmat')
-        self.descrpt_deriv = tf.identity(self.descrpt_deriv, name = 'o_rmat_deriv')
-        self.rij = tf.identity(self.rij, name = 'o_rij')
-        self.nlist = tf.identity(self.nlist, name = 'o_nlist')
+        self.descrpt_reshape = tf.identity(self.descrpt_reshape, name = 'o_rmat' + suffix)
+        self.descrpt_deriv = tf.identity(self.descrpt_deriv, name = 'o_rmat_deriv' + suffix)
+        self.rij = tf.identity(self.rij, name = 'o_rij' + suffix)
+        self.nlist = tf.identity(self.nlist, name = 'o_nlist' + suffix)
 
         # only used when tensorboard was set as true
         tf.summary.histogram('descrpt', self.descrpt)
@@ -485,7 +487,9 @@ class DescrptSeR (Descriptor):
                                                 bavg = bavg,
                                                 seed = self.seed,
                                                 trainable = trainable, 
-                                                uniform_seed = self.uniform_seed)
+                                                uniform_seed = self.uniform_seed,
+                                                initial_variables = self.embedding_net_variables,
+                                                )
                     if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
                     # natom x nei_type_i x out_size
                     xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1], outputs_size[-1]))
@@ -502,3 +506,59 @@ class DescrptSeR (Descriptor):
             result = tf.reduce_mean(xyz_scatter, axis = 1) * res_rescale
 
         return result
+
+    def get_tensor_names(self, suffix : str = "") -> Tuple[str]:
+        """Get names of tensors.
+        
+        Parameters
+        ----------
+        suffix : str
+            The suffix of the scope
+
+        Returns
+        -------
+        Tuple[str]
+            Names of tensors
+        """
+        return (f'o_rmat{suffix}:0', f'o_rmat_deriv{suffix}:0', f'o_rij{suffix}:0', f'o_nlist{suffix}:0')
+
+    def pass_tensors_from_frz_model(self,
+                                    descrpt_reshape : tf.Tensor,
+                                    descrpt_deriv   : tf.Tensor,
+                                    rij             : tf.Tensor,
+                                    nlist           : tf.Tensor
+    ):
+        """
+        Pass the descrpt_reshape tensor as well as descrpt_deriv tensor from the frz graph_def
+
+        Parameters
+        ----------
+        descrpt_reshape
+                The passed descrpt_reshape tensor
+        descrpt_deriv
+                The passed descrpt_deriv tensor
+        rij
+                The passed rij tensor
+        nlist
+                The passed nlist tensor
+        """
+        self.rij = rij
+        self.nlist = nlist
+        self.descrpt_deriv = descrpt_deriv
+        self.descrpt_reshape = descrpt_reshape
+
+    def init_variables(self,
+                       model_file : str,
+                       suffix : str = "",
+    ) -> None:
+        """
+        Init the embedding net variables with the given dict
+
+        Parameters
+        ----------
+        model_file : str
+            The input frozen model file
+        suffix : str, optional
+            The suffix of the scope
+        """
+        self.embedding_net_variables = get_embedding_net_variables(model_file, suffix = suffix)
