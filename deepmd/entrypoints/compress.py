@@ -144,7 +144,7 @@ def _check_compress_type(model_file):
     try:
         t_model_type = bytes.decode(get_tensor_by_name(model_file, 'model_type'))
     except GraphWithoutTensorError as e:
-        # Compatible with the upgraded model， which has no 'model_type' info
+        # Compatible with the upgraded model, which has no 'model_type' info
         t_model_type = None
     
     if t_model_type == "compressed_model":
