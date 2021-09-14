@@ -11,11 +11,12 @@ from deepmd.env import default_tf_session_config
 from deepmd.utils.network import embedding_net, embedding_net_rand_seed_shift
 from deepmd.utils.sess import run_sess
 from .descriptor import Descriptor
+from .se import DescrptSe
 
 @Descriptor.register("se_e3")
 @Descriptor.register("se_at")
 @Descriptor.register("se_a_3be")
-class DescrptSeT (Descriptor):
+class DescrptSeT (DescrptSe):
     """DeepPot-SE constructed from all information (both angular and radial) of atomic
     configurations.
     
@@ -97,6 +98,7 @@ class DescrptSeT (Descriptor):
         self.useBN = False
         self.dstd = None
         self.davg = None
+        self.embedding_net_variables = None
 
         self.place_holders = {}
         avg_zero = np.zeros([self.ntypes,self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
@@ -311,10 +313,7 @@ class DescrptSeT (Descriptor):
                                        sel_r = self.sel_r)
 
         self.descrpt_reshape = tf.reshape(self.descrpt, [-1, self.ndescrpt])
-        self.descrpt_reshape = tf.identity(self.descrpt_reshape, name = 'o_rmat')
-        self.descrpt_deriv = tf.identity(self.descrpt_deriv, name = 'o_rmat_deriv')
-        self.rij = tf.identity(self.rij, name = 'o_rij')
-        self.nlist = tf.identity(self.nlist, name = 'o_nlist')
+        self._identity_tensors(suffix=suffix)
 
         self.dout, self.qmat = self._pass_filter(self.descrpt_reshape, 
                                                  atype,
@@ -509,7 +508,9 @@ class DescrptSeT (Descriptor):
                                                bavg = bavg,
                                                seed = self.seed,
                                                trainable = trainable, 
-                                               uniform_seed = self.uniform_seed)
+                                               uniform_seed = self.uniform_seed,
+                                               initial_variables = self.embedding_net_variables,
+                                               )
                     if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
                     # with natom x nei_type_i x nei_type_j x out_size
                     ebd_env_ij = tf.reshape(ebd_env_ij, [-1, nei_type_i, nei_type_j, outputs_size[-1]])
