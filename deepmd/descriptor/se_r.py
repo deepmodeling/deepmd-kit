@@ -12,10 +12,12 @@ from deepmd.utils.network import embedding_net, embedding_net_rand_seed_shift
 from deepmd.utils.graph import get_embedding_net_variables
 from deepmd.utils.sess import run_sess
 from .descriptor import Descriptor
+from .se import DescrptSe
+
 
 @Descriptor.register("se_e2_r")
 @Descriptor.register("se_r")
-class DescrptSeR (Descriptor):
+class DescrptSeR (DescrptSe):
     """DeepPot-SE constructed from radial information of atomic configurations.
     
     The embedding takes the distance between atoms as input.
@@ -314,10 +316,7 @@ class DescrptSeR (Descriptor):
                                       sel = self.sel_r)
 
         self.descrpt_reshape = tf.reshape(self.descrpt, [-1, self.ndescrpt])
-        self.descrpt_reshape = tf.identity(self.descrpt_reshape, name = 'o_rmat' + suffix)
-        self.descrpt_deriv = tf.identity(self.descrpt_deriv, name = 'o_rmat_deriv' + suffix)
-        self.rij = tf.identity(self.rij, name = 'o_rij' + suffix)
-        self.nlist = tf.identity(self.nlist, name = 'o_nlist' + suffix)
+        self._identity_tensors(suffix=suffix)
 
         # only used when tensorboard was set as true
         tf.summary.histogram('descrpt', self.descrpt)
@@ -506,59 +505,3 @@ class DescrptSeR (Descriptor):
             result = tf.reduce_mean(xyz_scatter, axis = 1) * res_rescale
 
         return result
-
-    def get_tensor_names(self, suffix : str = "") -> Tuple[str]:
-        """Get names of tensors.
-        
-        Parameters
-        ----------
-        suffix : str
-            The suffix of the scope
-
-        Returns
-        -------
-        Tuple[str]
-            Names of tensors
-        """
-        return (f'o_rmat{suffix}:0', f'o_rmat_deriv{suffix}:0', f'o_rij{suffix}:0', f'o_nlist{suffix}:0')
-
-    def pass_tensors_from_frz_model(self,
-                                    descrpt_reshape : tf.Tensor,
-                                    descrpt_deriv   : tf.Tensor,
-                                    rij             : tf.Tensor,
-                                    nlist           : tf.Tensor
-    ):
-        """
-        Pass the descrpt_reshape tensor as well as descrpt_deriv tensor from the frz graph_def
-
-        Parameters
-        ----------
-        descrpt_reshape
-                The passed descrpt_reshape tensor
-        descrpt_deriv
-                The passed descrpt_deriv tensor
-        rij
-                The passed rij tensor
-        nlist
-                The passed nlist tensor
-        """
-        self.rij = rij
-        self.nlist = nlist
-        self.descrpt_deriv = descrpt_deriv
-        self.descrpt_reshape = descrpt_reshape
-
-    def init_variables(self,
-                       model_file : str,
-                       suffix : str = "",
-    ) -> None:
-        """
-        Init the embedding net variables with the given dict
-
-        Parameters
-        ----------
-        model_file : str
-            The input frozen model file
-        suffix : str, optional
-            The suffix of the scope
-        """
-        self.embedding_net_variables = get_embedding_net_variables(model_file, suffix = suffix)
