@@ -522,3 +522,4 @@ class DescrptSeT (DescrptSe):
                     else:
                         result += res_ij
         return result, None
+

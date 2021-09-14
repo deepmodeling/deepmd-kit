@@ -9,7 +9,6 @@ from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.utils.network import embedding_net, embedding_net_rand_seed_shift
-from deepmd.utils.graph import get_embedding_net_variables
 from deepmd.utils.sess import run_sess
 from .descriptor import Descriptor
 from .se import DescrptSe
