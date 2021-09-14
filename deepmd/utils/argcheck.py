@@ -90,7 +90,7 @@ class ArgsPlugin:
 
 descrpt_args_plugin = ArgsPlugin()
 
-@descrpt_args_plugin.register("local_frame")
+@descrpt_args_plugin.register("loc_frame")
 def descrpt_local_frame_args ():
     doc_sel_a = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_a[i]` gives the selected number of type-i neighbors. The full relative coordinates of the neighbors are used by the descriptor.'
     doc_sel_r = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_r[i]` gives the selected number of type-i neighbors. Only relative distance of the neighbors are used by the descriptor. sel_a[i] + sel_r[i] is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.'
