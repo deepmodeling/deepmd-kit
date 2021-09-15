@@ -92,6 +92,22 @@ Valid subcommands:
     test               test the model
 ```
 
+### Install horovod and mpi4py
+
+[Horovod](https://github.com/horovod/horovod) and [mpi4py](https://github.com/mpi4py/mpi4py) is used for parallel training. For better performance on GPU, please follow tuning steps in [Horovod on GPU](https://github.com/horovod/horovod/blob/master/docs/gpus.rst).
+```bash
+# With GPU, prefer NCCL as communicator.
+HOROVOD_WITHOUT_GLOO=1 HOROVOD_WITH_TENSORFLOW=1 HOROVOD_GPU_OPERATIONS=NCCL HOROVOD_NCCL_HOME=/path/to/nccl pip install horovod mpi4py
+```
+
+If your work in CPU environment, please prepare runtime as below:
+```bash
+# By default, MPI is used as communicator.
+HOROVOD_WITHOUT_GLOO=1 HOROVOD_WITH_TENSORFLOW=1 pip install horovod mpi4py
+```
+
+If you don't install horovod, DeePMD-kit will fallback to serial mode.
+
 ## Install the C++ interface 
 
 If one does not need to use DeePMD-kit with Lammps or I-Pi, then the python interface installed in the previous section does everything and he/she can safely skip this section. 
