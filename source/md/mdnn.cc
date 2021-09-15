@@ -1,6 +1,6 @@
 #include "common.h"
 #include "Integrator.h"
-#include "NNPInter.h"
+#include "DeepPot.h"
 #include "Statistics.h"
 
 #include "Trajectory.h"
@@ -148,7 +148,7 @@ int main(int argc, char * argv[])
 
   Integrator<VALUETYPE> inte;
   ThermostatLangevin<VALUETYPE> thm (temperature, tau_t, seed);
-  NNPInter nnp (graph_file);
+  deepmd::DeepPot nnp (graph_file);
   
   Statistics<VALUETYPE> st;
   XtcSaver sxtc (xtc_file.c_str(), nloc);

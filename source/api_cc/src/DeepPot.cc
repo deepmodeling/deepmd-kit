@@ -1,37 +1,10 @@
 #include "DeepPot.h"
 #include "AtomMap.h"
 #include <stdexcept>	
+#include "device.h"
 
 using namespace tensorflow;
 using namespace deepmd;
-
-#if  GOOGLE_CUDA
-#include "cuda_runtime.h"
-
-#define cudaErrcheck(res) { cudaAssert((res), __FILE__, __LINE__); }
-inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort=true)
-{
-    if (code != cudaSuccess)
-    {
-        fprintf(stderr,"cuda assert: %s %s %d\n", cudaGetErrorString(code), file, line);
-        if (abort) exit(code);
-    }
-}
-#endif
-
-#if  TENSORFLOW_USE_ROCM
-#include<hip/hip_runtime.h>
-
-#define hipErrcheck(res) { hipAssert((res), __FILE__, __LINE__); }
-inline void hipAssert(hipError_t code, const char *file, int line, bool abort=true)
-{
-    if (code != hipSuccess)
-    {
-        fprintf(stderr,"hip assert: %s %s %d\n", hipGetErrorString(code), file, line);
-        if (abort) exit(code);
-    }
-}
-#endif //TENSORFLOW_USE_ROCM
 
 static 
 std::vector<int> cum_sum (const std::vector<int32> & n_sel) {
@@ -70,13 +43,13 @@ run_model (ENERGYTYPE &			dener,
 
   std::vector<Tensor> output_tensors;
   check_status (session->Run(input_tensors, 
-			    {"o_energy", "o_force", "o_atom_virial"}, 
+			    {"o_energy", "o_force", "o_atom_energy", "o_atom_virial"}, 
 			    {}, 
 			    &output_tensors));
   
   Tensor output_e = output_tensors[0];
   Tensor output_f = output_tensors[1];
-  Tensor output_av = output_tensors[2];
+  Tensor output_av = output_tensors[3];
 
   auto oe = output_e.flat <ENERGYTYPE> ();
   auto of = output_f.flat <VALUETYPE> ();
@@ -218,32 +191,18 @@ init (const std::string & model, const int & gpu_rank, const std::string & file_
   else
     graph_def.ParseFromString(file_content);
   int gpu_num = -1;
-  #if GOOGLE_CUDA
-  cudaGetDeviceCount(&gpu_num); // check current device environment
+  #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+  DPGetDeviceCount(gpu_num); // check current device environment
   if (gpu_num > 0) {
     options.config.set_allow_soft_placement(true);
     options.config.mutable_gpu_options()->set_per_process_gpu_memory_fraction(0.9);
     options.config.mutable_gpu_options()->set_allow_growth(true);
-    cudaErrcheck(cudaSetDevice(gpu_rank % gpu_num));
+    DPErrcheck(DPSetDevice(gpu_rank % gpu_num));
     std::string str = "/gpu:";
     str += std::to_string(gpu_rank % gpu_num);
     graph::SetDefaultDevice(str, &graph_def);
   }
-  #endif // GOOGLE_CUDA
-
-  #if TENSORFLOW_USE_ROCM
-  hipGetDeviceCount(&gpu_num); // check current device environment
-  if (gpu_num > 0) {
-    options.config.set_allow_soft_placement(true);
-    options.config.mutable_gpu_options()->set_per_process_gpu_memory_fraction(0.9);
-    options.config.mutable_gpu_options()->set_allow_growth(true);
-    hipErrcheck(hipSetDevice(gpu_rank % gpu_num));
-    std::string str = "/gpu:";
-    str += std::to_string(gpu_rank % gpu_num);
-    graph::SetDefaultDevice(str, &graph_def);
-  }
-  #endif // TENSORFLOW_USE_ROCM
-
+  #endif // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   check_status (NewSession(options, &session));
   check_status (session->Create(graph_def));
   rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
@@ -254,7 +213,12 @@ init (const std::string & model, const int & gpu_rank, const std::string & file_
   if (dfparam < 0) dfparam = 0;
   if (daparam < 0) daparam = 0;
   model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
+  try{
   model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
+  } catch (deepmd::tf_exception& e){
+    // no model version defined in old models
+    model_version = "0.0";
+  }
   if(! model_compatable(model_version)){
     throw std::runtime_error(
 	"incompatable model: version " + model_version 
@@ -272,7 +236,7 @@ print_summary(const std::string &pre) const
 {
   std::cout << pre << "installed to:       " + global_install_prefix << std::endl;
   std::cout << pre << "source:             " + global_git_summ << std::endl;
-  std::cout << pre << "source brach:       " + global_git_branch << std::endl;
+  std::cout << pre << "source branch:       " + global_git_branch << std::endl;
   std::cout << pre << "source commit:      " + global_git_hash << std::endl;
   std::cout << pre << "source commit at:   " + global_git_date << std::endl;
   std::cout << pre << "surpport model ver.:" + global_model_version << std::endl;
@@ -547,13 +511,9 @@ init (const std::vector<std::string> & models, const int & gpu_rank, const std::
   graph_defs.resize(numb_models);
   
   int gpu_num = -1;
-  #if GOOGLE_CUDA 
-  cudaGetDeviceCount(&gpu_num);
-  #endif // GOOGLE_CUDA
-
-  #if TENSORFLOW_USE_ROCM
-  hipGetDeviceCount(&gpu_num);
-  #endif //TENSORFLOW_USE_ROCM
+  #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+  DPGetDeviceCount(gpu_num);
+  #endif // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
   SessionOptions options;
   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
@@ -564,24 +524,14 @@ init (const std::vector<std::string> & models, const int & gpu_rank, const std::
     else
       graph_defs[ii].ParseFromString(file_contents[ii]);
   }
-  #if GOOGLE_CUDA 
+  #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   if (gpu_num > 0) {
       options.config.set_allow_soft_placement(true);
       options.config.mutable_gpu_options()->set_per_process_gpu_memory_fraction(0.9);
       options.config.mutable_gpu_options()->set_allow_growth(true);
-      cudaErrcheck(cudaSetDevice(gpu_rank % gpu_num));
+      DPErrcheck(DPSetDevice(gpu_rank % gpu_num));
   }
-  #endif // GOOGLE_CUDA
-
-
-  #if TENSORFLOW_USE_ROCM
-  if (gpu_num > 0) {
-      options.config.set_allow_soft_placement(true);
-      options.config.mutable_gpu_options()->set_per_process_gpu_memory_fraction(0.9);
-      options.config.mutable_gpu_options()->set_allow_growth(true);
-      hipErrcheck(hipSetDevice(gpu_rank % gpu_num));
-  }
-  #endif // TENSORFLOW_USE_ROCM
+  #endif // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   
   for (unsigned ii = 0; ii < numb_models; ++ii) {
     if (gpu_num > 0) {

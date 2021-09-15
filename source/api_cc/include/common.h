@@ -32,9 +32,13 @@ typedef double ENERGYTYPE;
 
 struct NeighborListData 
 {
+  /// Array stores the core region atom's index
   std::vector<int > ilist;
+  /// Array stores the core region atom's neighbor index
   std::vector<std::vector<int> > jlist;
+  /// Array stores the number of neighbors of core region atoms
   std::vector<int > numneigh;
+  /// Array stores the the location of the first neighbor of core region atoms
   std::vector<int* > firstneigh;  
 public:
   void copy_from_nlist(const InputNlist & inlist);
@@ -43,6 +47,9 @@ public:
   void shuffle_exclude_empty(const std::vector<int> & fwd_map);
   void make_inlist(InputNlist & inlist);
 };
+
+/** @struct deepmd::InputNlist
+ **/
 
 /**
 * @brief Check if the model version is supported.
@@ -78,6 +85,27 @@ select_map(std::vector<VT> & out,
 	   const std::vector<int > & fwd_map, 
 	   const int & stride);
 
+template<typename VT>
+void 
+select_map(typename std::vector<VT >::iterator out,
+	   const typename std::vector<VT >::const_iterator in, 
+	   const std::vector<int > & fwd_map, 
+	   const int & stride);
+
+template<typename VT>
+void 
+select_map_inv(std::vector<VT> & out,
+	   const std::vector<VT > & in,
+	   const std::vector<int > & fwd_map, 
+	   const int & stride);
+
+template<typename VT>
+void 
+select_map_inv(typename std::vector<VT >::iterator out,
+	   const typename std::vector<VT >::const_iterator in, 
+	   const std::vector<int > & fwd_map, 
+	   const int & stride);
+
 /**
 * @brief Get the number of threads from the environment variable.
 * @param[out] num_intra_nthreads The number of intra threads. Read from TF_INTRA_OP_PARALLELISM_THREADS.
@@ -86,6 +114,10 @@ select_map(std::vector<VT> & out,
 void
 get_env_nthreads(int & num_intra_nthreads,
 		 int & num_inter_nthreads);
+
+struct
+tf_exception: public std::exception {
+};
 
 /**
 * @brief Check TensorFlow status. Exit if not OK.

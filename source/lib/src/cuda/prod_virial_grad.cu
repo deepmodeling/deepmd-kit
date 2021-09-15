@@ -1,5 +1,4 @@
 #include "device.h"
-#include "gpu_cuda.h"
 #include "prod_virial_grad.h"
 
 template<typename FPTYPE>
@@ -99,7 +98,7 @@ void prod_virial_grad_a_gpu_cuda(
     const int nnei)
 {
     const int ndescrpt = nnei * 4;
-    cudaErrcheck(cudaMemset(
+    DPErrcheck(cudaMemset(
         grad_net, 
         0.0, sizeof(FPTYPE) * nloc * ndescrpt));
     const int LEN = 128;
@@ -109,6 +108,8 @@ void prod_virial_grad_a_gpu_cuda(
     virial_grad_wrt_neighbors_a<<<block_grid, thread_grid>>>(
         grad_net,
         grad, env_deriv, rij, nlist, nloc, nnei);
+    DPErrcheck(cudaGetLastError());
+    DPErrcheck(cudaDeviceSynchronize());
 }
 
 template<typename FPTYPE>
@@ -122,7 +123,7 @@ void prod_virial_grad_r_gpu_cuda(
     const int nnei)
 {
     const int ndescrpt = nnei;
-    cudaErrcheck(cudaMemset(
+    DPErrcheck(cudaMemset(
         grad_net, 
         0.0, sizeof(FPTYPE) * nloc * ndescrpt));
     const int LEN = 128;
@@ -132,6 +133,8 @@ void prod_virial_grad_r_gpu_cuda(
     virial_grad_wrt_neighbors_r<<<block_grid, thread_grid>>>(
         grad_net,
         grad, env_deriv, rij, nlist, nloc, nnei);
+    DPErrcheck(cudaGetLastError());
+    DPErrcheck(cudaDeviceSynchronize());
 }
 
 template void prod_virial_grad_a_gpu_cuda<float>(float * grad_net, const float * grad, const float * env_deriv, const float * rij, const int * nlist, const int nloc, const int nnei);

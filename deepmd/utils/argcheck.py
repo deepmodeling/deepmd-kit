@@ -1,5 +1,10 @@
-from dargs import dargs, Argument, Variant
+from typing import List, Callable
+
+from dargs import dargs, Argument, Variant, ArgumentEncoder
+from deepmd import descriptor
 from deepmd.common import ACTIVATION_FN_DICT, PRECISION_DICT
+from deepmd.utils.plugin import Plugin
+import json
 
 
 def list_to_doc(xx):
@@ -37,6 +42,55 @@ def type_embedding_args():
 
 
 #  --- Descriptor configurations: --- #
+
+class ArgsPlugin:
+    def __init__(self) -> None:
+        self.__plugin = Plugin()
+
+    def register(self, name : str, alias : List[str] = None) -> Callable[[], List[Argument]]:
+        """Regiester a descriptor argument plugin.
+        
+        Parameters
+        ----------
+        name : str
+            the name of a descriptor
+        alias : List[str], optional
+            the list of aliases of this descriptor
+
+        Returns
+        -------
+        Callable[[], List[Argument]]
+            the regiestered descriptor argument method
+        
+        Examples
+        --------
+        >>> some_plugin = ArgsPlugin()
+        >>> @some_plugin.register("some_descrpt")
+            def descrpt_some_descrpt_args():
+                return []
+        """
+        # convert alias to hashed item
+        if isinstance(alias, list):
+            alias = tuple(alias)
+        return self.__plugin.register((name, alias))
+
+    def get_all_argument(self) -> List[Argument]:
+        """Get all arguments.
+        
+        Returns
+        -------
+        List[Argument]
+            all arguments
+        """
+        arguments = []
+        for (name, alias), metd in self.__plugin.plugins.items():
+            arguments.append(Argument(name=name, dtype=dict, sub_fields=metd(), alias=alias))
+        return arguments
+
+
+descrpt_args_plugin = ArgsPlugin()
+
+@descrpt_args_plugin.register("loc_frame")
 def descrpt_local_frame_args ():
     doc_sel_a = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_a[i]` gives the selected number of type-i neighbors. The full relative coordinates of the neighbors are used by the descriptor.'
     doc_sel_r = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_r[i]` gives the selected number of type-i neighbors. Only relative distance of the neighbors are used by the descriptor. sel_a[i] + sel_r[i] is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.'
@@ -57,8 +111,11 @@ def descrpt_local_frame_args ():
     ]
 
 
+@descrpt_args_plugin.register("se_e2_a", alias=["se_a"])
 def descrpt_se_a_args():
-    doc_sel = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.'
+    doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
+    - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
     doc_rcut = 'The cut-off radius.'
     doc_rcut_smth = 'Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`'
     doc_neuron = 'Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.'
@@ -69,15 +126,15 @@ def descrpt_se_a_args():
     doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}'
     doc_trainable = 'If the parameters in the embedding net is trainable'
     doc_seed = 'Random seed for parameter initialization'
-    doc_exclude_types = 'The Excluded types'
+    doc_exclude_types = 'The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1.'
     doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
     
     return [
-        Argument("sel", list, optional = False, doc = doc_sel),
+        Argument("sel", [list,str], optional = True, default = "auto", doc = doc_sel),
         Argument("rcut", float, optional = True, default = 6.0, doc = doc_rcut),
         Argument("rcut_smth", float, optional = True, default = 0.5, doc = doc_rcut_smth),
         Argument("neuron", list, optional = True, default = [10,20,40], doc = doc_neuron),
-        Argument("axis_neuron", int, optional = True, default = 4, doc = doc_axis_neuron),
+        Argument("axis_neuron", int, optional = True, default = 4, alias = ['n_axis_neuron'], doc = doc_axis_neuron),
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
         Argument("resnet_dt", bool, optional = True, default = False, doc = doc_resnet_dt),
         Argument("type_one_side", bool, optional = True, default = False, doc = doc_type_one_side),
@@ -89,8 +146,11 @@ def descrpt_se_a_args():
     ]
 
 
+@descrpt_args_plugin.register("se_e3", alias=['se_at', 'se_a_3be', 'se_t'])
 def descrpt_se_t_args():
-    doc_sel = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.'
+    doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
+    - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
     doc_rcut = 'The cut-off radius.'
     doc_rcut_smth = 'Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`'
     doc_neuron = 'Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.'
@@ -102,7 +162,7 @@ def descrpt_se_t_args():
     doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
     
     return [
-        Argument("sel", list, optional = False, doc = doc_sel),
+        Argument("sel", [list,str], optional = True, default = "auto", doc = doc_sel),
         Argument("rcut", float, optional = True, default = 6.0, doc = doc_rcut),
         Argument("rcut_smth", float, optional = True, default = 0.5, doc = doc_rcut_smth),
         Argument("neuron", list, optional = True, default = [10,20,40], doc = doc_neuron),
@@ -116,6 +176,7 @@ def descrpt_se_t_args():
 
 
 
+@descrpt_args_plugin.register("se_a_tpe", alias=['se_a_ebd'])
 def descrpt_se_a_tpe_args():
     doc_type_nchanl = 'number of channels for type embedding'
     doc_type_nlayer = 'number of hidden layers of type embedding net'
@@ -128,8 +189,11 @@ def descrpt_se_a_tpe_args():
     ]
 
 
+@descrpt_args_plugin.register("se_e2_r", alias=['se_r'])
 def descrpt_se_r_args():
-    doc_sel = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.'
+    doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
+    - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
     doc_rcut = 'The cut-off radius.'
     doc_rcut_smth = 'Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`'
     doc_neuron = 'Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.'
@@ -139,11 +203,11 @@ def descrpt_se_r_args():
     doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}'
     doc_trainable = 'If the parameters in the embedding net are trainable'
     doc_seed = 'Random seed for parameter initialization'
-    doc_exclude_types = 'The Excluded types'
+    doc_exclude_types = 'The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1.'
     doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
     
     return [
-        Argument("sel", list, optional = False, doc = doc_sel),
+        Argument("sel", [list,str], optional = True, default = "auto", doc = doc_sel),
         Argument("rcut", float, optional = True, default = 6.0, doc = doc_rcut),
         Argument("rcut_smth", float, optional = True, default = 0.5, doc = doc_rcut_smth),
         Argument("neuron", list, optional = True, default = [10,20,40], doc = doc_neuron),
@@ -158,18 +222,7 @@ def descrpt_se_r_args():
     ]
 
 
-def descrpt_se_ar_args():
-    link = make_link('se_a', 'model/descriptor[se_a]')
-    doc_a = f'The parameters of descriptor {link}'
-    link = make_link('se_r', 'model/descriptor[se_r]')
-    doc_r = f'The parameters of descriptor {link}'
-    
-    return [
-        Argument("a", dict, optional = False, doc = doc_a),
-        Argument("r", dict, optional = False, doc = doc_r),
-    ]
-
-
+@descrpt_args_plugin.register("hybrid")
 def descrpt_hybrid_args():
     doc_list = f'A list of descriptor definitions'
     
@@ -193,14 +246,7 @@ def descrpt_variant_type_args():
 - `se_a_tpe`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Type embedding will be used by this descriptor.\n\n\
 - `hybrid`: Concatenate of a list of descriptors as a new descriptor.'
     
-    return Variant("type", [
-        Argument("loc_frame", dict, descrpt_local_frame_args()),
-        Argument("se_e2_a", dict, descrpt_se_a_args(), alias = ['se_a']),
-        Argument("se_e2_r", dict, descrpt_se_r_args(), alias = ['se_r']),
-        Argument("se_e3", dict, descrpt_se_t_args(), alias = ['se_at', 'se_a_3be', 'se_t']),
-        Argument("se_a_tpe", dict, descrpt_se_a_tpe_args(), alias = ['se_a_ebd']),
-        Argument("hybrid", dict, descrpt_hybrid_args()),
-    ], doc = doc_descrpt_type)
+    return Variant("type", descrpt_args_plugin.get_all_argument(), doc = doc_descrpt_type)
 
 
 #  --- Fitting net configurations: --- #
@@ -221,7 +267,7 @@ def fitting_ener():
     return [
         Argument("numb_fparam", int, optional = True, default = 0, doc = doc_numb_fparam),
         Argument("numb_aparam", int, optional = True, default = 0, doc = doc_numb_aparam),
-        Argument("neuron", list, optional = True, default = [120,120,120], doc = doc_neuron),
+        Argument("neuron", list, optional = True, default = [120,120,120], alias = ['n_neuron'], doc = doc_neuron),
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
         Argument("precision", str, optional = True, default = 'float64', doc = doc_precision),
         Argument("resnet_dt", bool, optional = True, default = True, doc = doc_resnet_dt),
@@ -247,7 +293,7 @@ def fitting_polar():
     doc_shift_diag = 'Whether to shift the diagonal of polar, which is beneficial to training. Default is true.'
 
     return [
-        Argument("neuron", list, optional = True, default = [120,120,120], doc = doc_neuron),
+        Argument("neuron", list, optional = True, default = [120,120,120], alias = ['n_neuron'], doc = doc_neuron),
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
         Argument("resnet_dt", bool, optional = True, default = True, doc = doc_resnet_dt),
         Argument("precision", str, optional = True, default = 'float64', doc = doc_precision),
@@ -255,7 +301,7 @@ def fitting_polar():
         Argument("scale", [list,float], optional = True, default = 1.0, doc = doc_scale),
         #Argument("diag_shift", [list,float], optional = True, default = 0.0, doc = doc_diag_shift),
         Argument("shift_diag", bool, optional = True, default = True, doc = doc_shift_diag),
-        Argument("sel_type", [list,int,None], optional = True, doc = doc_sel_type),
+        Argument("sel_type", [list,int,None], optional = True, alias = ['pol_type'], doc = doc_sel_type),
         Argument("seed", [int,None], optional = True, doc = doc_seed)
     ]
 
@@ -272,11 +318,11 @@ def fitting_dipole():
     doc_sel_type = 'The atom types for which the atomic dipole will be provided. If not set, all types will be selected.'
     doc_seed = 'Random seed for parameter initialization of the fitting net'
     return [
-        Argument("neuron", list, optional = True, default = [120,120,120], doc = doc_neuron),
+        Argument("neuron", list, optional = True, default = [120,120,120], alias = ['n_neuron'], doc = doc_neuron),
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
         Argument("resnet_dt", bool, optional = True, default = True, doc = doc_resnet_dt),
         Argument("precision", str, optional = True, default = 'float64', doc = doc_precision),
-        Argument("sel_type", [list,int,None], optional = True, doc = doc_sel_type),
+        Argument("sel_type", [list,int,None], optional = True, alias = ['dipole_type'], doc = doc_sel_type),
         Argument("seed", [int,None], optional = True, doc = doc_seed)
     ]    
 
@@ -325,14 +371,16 @@ def modifier_variant_type_args():
 
 #  --- model compression configurations: --- #
 def model_compression():
-    doc_compress = "The name of the frozen model file."
+    doc_compress = f"The name of the frozen model file."
     doc_model_file = f"The input model file, which will be compressed by the DeePMD-kit."
     doc_table_config = f"The arguments of model compression, including extrapolate(scale of model extrapolation), stride(uniform stride of tabulation's first and second table), and frequency(frequency of tabulation overflow check)."
+    doc_min_nbor_dist = f"The nearest distance between neighbor atoms saved in the frozen model."
     
     return [
-        Argument("compress", bool, optional = False, default = True, doc = doc_compress),
-        Argument("model_file", str, optional = False, default = 'frozen_model.pb', doc = doc_model_file),
-        Argument("table_config", list, optional = False, default = [5, 0.01, 0.1, -1], doc = doc_table_config),
+        Argument("compress", bool, optional = False, doc = doc_compress),
+        Argument("model_file", str, optional = False, doc = doc_model_file),
+        Argument("table_config", list, optional = False, doc = doc_table_config),
+        Argument("min_nbor_dist", float, optional = False, doc = doc_min_nbor_dist),
     ]
 
 #  --- model compression configurations: --- #
@@ -562,6 +610,7 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     doc_profiling_file = 'Output file for profiling.'
     doc_tensorboard = 'Enable tensorboard'
     doc_tensorboard_log_dir = 'The log directory of tensorboard outputs'
+    doc_tensorboard_freq = 'The frequency of writing tensorboard events.'
 
     arg_training_data = training_data_args()
     arg_validation_data = validation_data_args()
@@ -571,7 +620,7 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
         arg_validation_data,
         Argument("numb_steps", int, optional=False, doc=doc_numb_steps, alias=["stop_batch"]),
         Argument("seed", [int,None], optional=True, doc=doc_seed),
-        Argument("disp_file", str, optional=True, default='lcueve.out', doc=doc_disp_file),
+        Argument("disp_file", str, optional=True, default='lcurve.out', doc=doc_disp_file),
         Argument("disp_freq", int, optional=True, default=1000, doc=doc_disp_freq),
         Argument("numb_test", [list,int,str], optional=True, default=1, doc=doc_numb_test),
         Argument("save_freq", int, optional=True, default=1000, doc=doc_save_freq),
@@ -582,6 +631,7 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
         Argument("profiling_file", str, optional=True, default='timeline.json', doc=doc_profiling_file),
         Argument("tensorboard", bool, optional=True, default=False, doc=doc_tensorboard),
         Argument("tensorboard_log_dir", str, optional=True, default='log', doc=doc_tensorboard_log_dir),
+        Argument("tensorboard_freq", int, optional=True, default=1, doc=doc_tensorboard_freq),
     ]
 
     doc_training = 'The training options.'
@@ -616,6 +666,13 @@ def gen_doc(*, make_anchor=True, make_link=True, **kwargs):
 
     return "\n\n".join(ptr)
 
+def gen_json(**kwargs):
+    return json.dumps((
+        model_args(),
+        learning_rate_args(),
+        loss_args(),
+        training_args(),
+    ), cls=ArgumentEncoder)
 
 def normalize_hybrid_list(hy_list):
     new_list = []

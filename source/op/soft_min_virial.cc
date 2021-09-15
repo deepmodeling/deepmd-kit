@@ -2,7 +2,7 @@
 #include "soft_min_switch_virial.h"
 
 REGISTER_OP("SoftMinVirial")
-.Attr("T: {float, double}")
+.Attr("T: {float, double} = DT_DOUBLE")
 .Input("du: T")
 .Input("sw_deriv: T")
 .Input("rij: T")
@@ -26,6 +26,10 @@ class SoftMinVirialOp : public OpKernel {
   }
 
   void Compute(OpKernelContext* context) override {
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor& du_tensor		= context->input(context_input_index++);

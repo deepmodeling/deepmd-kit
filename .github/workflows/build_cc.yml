@@ -9,14 +9,8 @@ jobs:
     strategy:  
       matrix:
         include:
-        - float_prec: high
-          variant: cpu
-        - float_prec: low
-          variant: cpu
-        - float_prec: high
-          variant: cuda
-        - float_prec: low
-          variant: cuda
+        - variant: cpu
+        - variant: cuda
     steps:
     - uses: actions/checkout@master
       with:
@@ -26,12 +20,6 @@ jobs:
       if: matrix.variant == 'cuda'
     - run: source/install/build_cc.sh
       env:
-        FLOAT_PREC: ${{ matrix.float_prec }}
         DP_VARIANT: ${{ matrix.variant }}
-        CC: gcc-7
-        CXX: g++-7
-    - run: source/install/build_lammps.sh
-      env:
-        FLOAT_PREC: ${{ matrix.float_prec }}
         CC: gcc-7
         CXX: g++-7

@@ -2,7 +2,7 @@
 #include "soft_min_switch_force.h"
 
 REGISTER_OP("SoftMinForce")
-.Attr("T: {float, double}")
+.Attr("T: {float, double} = DT_DOUBLE")
 .Input("du: T")
 .Input("sw_deriv: T")
 .Input("nlist: int32")
@@ -24,6 +24,10 @@ class SoftMinForceOp : public OpKernel {
   }
 
   void Compute(OpKernelContext* context) override {
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     const Tensor& du_tensor		= context->input(0);
     const Tensor& sw_deriv_tensor	= context->input(1);

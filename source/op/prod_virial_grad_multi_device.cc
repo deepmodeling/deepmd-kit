@@ -2,7 +2,7 @@
 #include "prod_virial_grad.h"
 
 REGISTER_OP("ProdVirialSeAGrad")
-    .Attr("T: {float, double}")
+    .Attr("T: {float, double} = DT_DOUBLE")
     .Input("grad: T")
     .Input("net_deriv: T")
     .Input("in_deriv: T")
@@ -14,7 +14,7 @@ REGISTER_OP("ProdVirialSeAGrad")
     .Output("grad_net: T");
 
 REGISTER_OP("ProdVirialSeRGrad")
-    .Attr("T: {float, double}")
+    .Attr("T: {float, double} = DT_DOUBLE")
     .Input("grad: T")
     .Input("net_deriv: T")
     .Input("in_deriv: T")
@@ -34,6 +34,10 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor& grad_tensor		= context->input(context_input_index++);
@@ -153,6 +157,10 @@ public:
   explicit ProdVirialSeRGradOp(OpKernelConstruction* context) : OpKernel(context) {}
 
   void Compute(OpKernelContext* context) override {
+    deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
+  }
+
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
     int context_input_index = 0;
     const Tensor& grad_tensor		= context->input(context_input_index++);

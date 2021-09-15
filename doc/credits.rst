@@ -5,24 +5,35 @@ Authors and Credits
 Package Contributors
 =========================
 
-* amacadmus
 * AnguseZhang
-* denghuilu
+* baohan
 * bwang-ecnu
+* denghuilu
 * frankhan91
 * GeiduanLiu
 * gzq942560379
+* Han Wang
 * haidi-ustc
 * hlyang1992
 * hsulab
 * iProzd
+* Jiequn Han
 * JiabinYang
+* jxxiaoshaoye
+* Linfeng Zhang
 * marian-code
 * njzjz
+* Nick Lin
+* pkulzy
+* Shaochen Shi
 * tuoping
 * wsyxbcl
-* y1xiaoc
+* Xia, Yu
+* Ye Ding
+* Yingze Wang
+* Yixiao Chen
 * YWolfeee
+* Zhanlue Yang
 * zhouwei25
 * ZiyaoLi
 

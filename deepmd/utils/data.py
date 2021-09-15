@@ -9,13 +9,30 @@ import logging
 
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
+from deepmd.utils import random as dp_random
 
 log = logging.getLogger(__name__)
 
 class DeepmdData() :
     """
     Class for a data system. 
+
     It loads data from hard disk, and mantains the data as a `data_dict`
+
+    Parameters
+    ----------
+    sys_path
+            Path to the data system
+    set_prefix
+            Prefix for the directories of different sets
+    shuffle_test
+            If the test data are shuffled
+    type_map
+            Gives the name of different atom types
+    modifier
+            Data modifier that has the method `modify_data`
+    trn_all_set
+            Use all sets as training dataset. Otherwise, if the number of sets is more than 1, the last set is left for test.
     """
     def __init__ (self, 
                   sys_path : str, 
@@ -26,21 +43,6 @@ class DeepmdData() :
                   trn_all_set : bool = False) :
         """
         Constructor
-        
-        Parameters
-        ----------
-        sys_path
-                Path to the data system
-        set_prefix
-                Prefix for the directories of different sets
-        shuffle_test
-                If the test data are shuffled
-        type_map
-                Gives the name of different atom types
-        modifier
-                Data modifier that has the method `modify_data`
-        trn_all_set
-                Use all sets as training dataset. Otherwise, if the number of sets is more than 1, the last set is left for test.
         """
         self.dirs = glob.glob (os.path.join(sys_path, set_prefix + ".*"))
         self.dirs.sort()
@@ -57,8 +59,7 @@ class DeepmdData() :
         if type_map is not None and self.type_map is not None:
             atom_type_ = [type_map.index(self.type_map[ii]) for ii in self.atom_type]
             self.atom_type = np.array(atom_type_, dtype = np.int32)
-            ntypes = len(self.type_map)
-            self.type_map = type_map[:ntypes]
+            self.type_map = type_map
         # make idx map
         self.idx_map = self._make_idx_map(self.atom_type)
         # train dirs
@@ -72,7 +73,7 @@ class DeepmdData() :
                 self.train_dirs = self.dirs[:-1]
         self.data_dict = {}        
         # add box and coord
-        self.add('box', 9, must = True)
+        self.add('box', 9, must = self.pbc)
         self.add('coord', 3, atomic = True, must = True)
         # set counters
         self.set_count = 0
@@ -396,7 +397,7 @@ class DeepmdData() :
         ret = {}
         nframes = data['coord'].shape[0]
         idx = np.arange (nframes)
-        np.random.shuffle (idx)
+        dp_random.shuffle(idx)
         for kk in data :
             if type(data[kk]) == np.ndarray and \
                len(data[kk].shape) == 2 and \
@@ -517,7 +518,10 @@ class DeepmdData() :
 
 class DataSets (object):
     """
-    Outdated class for one data system. Not maintained anymore.
+    Outdated class for one data system.
+
+    .. deprecated:: 2.0.0
+        This class is not maintained any more.
     """
     def __init__ (self, 
                   sys_path,
@@ -673,7 +677,7 @@ class DataSets (object):
         # shuffle data
         if shuffle:
             idx = np.arange (nframe)
-            np.random.shuffle (idx)
+            dp_random.shuffle(idx)
             for ii in data:
                 if ii != "prop_c":
                     data[ii] = data[ii][idx]

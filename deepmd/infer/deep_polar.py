@@ -84,21 +84,20 @@ class DeepGlobalPolar(DeepTensor):
         DeepTensor.__init__(
             self,
             model_file,
-            9,
             load_prefix=load_prefix,
             default_tf_graph=default_tf_graph,
         )
 
     def eval(
         self,
-        coords: np.array,
-        cells: np.array,
+        coords: np.ndarray,
+        cells: np.ndarray,
         atom_types: List[int],
-        atomic: bool = True,
-        fparam: Optional[np.array] = None,
-        aparam: Optional[np.array] = None,
-        efield: Optional[np.array] = None,
-    ) -> np.array:
+        atomic: bool = False,
+        fparam: Optional[np.ndarray] = None,
+        aparam: Optional[np.ndarray] = None,
+        efield: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
         """Evaluate the model.
 
         Parameters
@@ -114,7 +113,7 @@ class DeepGlobalPolar(DeepTensor):
             The atom types
             The list should contain natoms ints
         atomic
-            Calculate the atomic energy and virial
+            Not used in this model
         fparam
             Not used in this model
         aparam

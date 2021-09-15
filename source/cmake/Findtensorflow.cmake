@@ -53,6 +53,7 @@ find_path(TensorFlow_INCLUDE_DIRS
   PATH_SUFFIXES "/include"
   NO_DEFAULT_PATH
   )
+if (BUILD_CPP_IF)
 find_path(TensorFlow_INCLUDE_DIRS_GOOGLE
   NAMES 
   google/protobuf/type.pb.h
@@ -61,6 +62,7 @@ find_path(TensorFlow_INCLUDE_DIRS_GOOGLE
   NO_DEFAULT_PATH
   )
 list(APPEND TensorFlow_INCLUDE_DIRS ${TensorFlow_INCLUDE_DIRS_GOOGLE})
+endif ()
   
 if (NOT TensorFlow_INCLUDE_DIRS AND tensorflow_FIND_REQUIRED)
   message(FATAL_ERROR 
@@ -137,10 +139,27 @@ else (BUILD_CPP_IF)
   endif ()
 endif (BUILD_CPP_IF)
 
+# detect TensorFlow version
+try_run(
+  TENSORFLOW_VERSION_RUN_RESULT_VAR TENSORFLOW_VERSION_COMPILE_RESULT_VAR
+  ${CMAKE_CURRENT_BINARY_DIR}/tf_version
+  "${CMAKE_CURRENT_LIST_DIR}/tf_version.cpp"
+  LINK_LIBRARIES ${TensorFlowFramework_LIBRARY}
+  CMAKE_FLAGS "-DINCLUDE_DIRECTORIES:STRING=${TensorFlow_INCLUDE_DIRS}"
+  RUN_OUTPUT_VARIABLE TENSORFLOW_VERSION
+  COMPILE_OUTPUT_VARIABLE TENSORFLOW_VERSION_COMPILE_OUTPUT_VAR
+)
+if (NOT ${TENSORFLOW_VERSION_COMPILE_RESULT_VAR})
+  message(FATAL_ERROR "Failed to compile: \n ${TENSORFLOW_VERSION_COMPILE_OUTPUT_VAR}" )
+endif()
+if (NOT ${TENSORFLOW_VERSION_RUN_RESULT_VAR} EQUAL "0")
+  message(FATAL_ERROR "Failed to run, return code: ${TENSORFLOW_VERSION}" )
+endif()
+
 # print message
 if (NOT TensorFlow_FIND_QUIETLY)
   message(STATUS "Found TensorFlow: ${TensorFlow_INCLUDE_DIRS}, ${TensorFlow_LIBRARY}, ${TensorFlowFramework_LIBRARY} "
-    " in ${TensorFlow_search_PATHS}")
+    " in ${TensorFlow_search_PATHS} (found version \"${TENSORFLOW_VERSION}\")")
 endif ()
 
 unset(TensorFlow_search_PATHS)

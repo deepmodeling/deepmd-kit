@@ -1,6 +1,68 @@
 #include "device.h"
-#include "gpu_cuda.h"
 #include "neighbor_list.h"
+
+#include <cub/block/block_scan.cuh>
+// A stateful callback functor that maintains a running prefix to be applied
+// during consecutive scan operations.
+struct parallel_prefix_scan_op
+{
+  // Running prefix
+  int running_total;
+  // Constructor
+  __device__ parallel_prefix_scan_op(int running_total) : running_total(running_total) {}
+  // Callback operator to be entered by the first warp of threads in the block.
+  // Thread-0 is responsible for returning a value for seeding the block-wide scan.
+  __device__ int operator()(int block_aggregate)
+  {
+    int old_prefix = running_total;
+    running_total += block_aggregate;
+    return old_prefix;
+  }
+};
+
+template <
+  int   THREADS_PER_BLOCK>
+__global__ void parallel_prefix_scan(
+  int * numneigh, 
+  int * nei_order, 
+  const int * temp_nlist, 
+  const int mem_size, 
+  const int nloc,
+  const int nall
+)
+{
+  // Specialize BlockLoad, BlockStore, and BlockScan for a 1D block of 128 threads, 4 ints per thread
+  typedef cub::BlockScan<int,  THREADS_PER_BLOCK> BlockScan;
+  // Allocate aliased shared memory for BlockLoad, BlockStore, and BlockScan
+  __shared__ typename BlockScan::TempStorage temp_storage;
+
+  // Initialize running total
+  parallel_prefix_scan_op prefix_op(0);
+
+  // Have the block iterate over segments of items
+  for (int ii = threadIdx.x; ii < nall; ii += THREADS_PER_BLOCK)
+  {
+    int block_offset = blockIdx.x * mem_size; 
+    // Load a segment of consecutive items that are blocked across threads
+    int i_data = temp_nlist[block_offset + ii];
+    int o_data = i_data == -1 ? 0 : 1;
+
+    // Collectively compute the block-wide exclusive prefix sum
+    BlockScan(temp_storage).ExclusiveSum(
+        o_data, o_data, prefix_op);
+
+    __syncthreads();
+    // Store scanned items to output segment
+    if (i_data != -1) {
+        nei_order[block_offset + ii] = o_data; 
+    }
+    // Store numneigh into the output array
+    if (ii == nall - 1) {
+        o_data += i_data == -1 ? 0 : 1;
+        numneigh[blockIdx.x] = o_data; 
+    }
+  }
+}
 
 template<typename FPTYPE>
 __device__ inline FPTYPE dev_dot(
@@ -42,29 +104,6 @@ __global__ void build_nlist(
                 neighbor_row[neighbor_idx]=neighbor_idx;
             }
         }
-    }
-}
-
-__global__ void scan_nlist(
-    int * numneigh, 
-    int * nei_order, 
-    const int * temp_nlist, 
-    const int mem_size, 
-    const int nloc,
-    const int nall)
-{
-    const unsigned int atom_idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if(atom_idx<nloc){
-        const int * row_nlist = temp_nlist + atom_idx * mem_size;
-        int * row_order = nei_order + atom_idx * mem_size;
-        int nei_num=0;
-        for(int i=0;i<nall;i++){
-            if(row_nlist[i]!=-1){
-                row_order[i]=nei_num;
-                nei_num++;
-            }
-        }
-        numneigh[atom_idx]=nei_num;
     }
 }
 
@@ -124,7 +163,7 @@ int build_nlist_gpu(
     int * ilist = nlist.ilist;
     int * numneigh = nlist.numneigh;
     int ** firstneigh = nlist.firstneigh;
-    cudaErrcheck(cudaMemset(nlist_data, -1, sizeof(int) * 2 * nloc * mem_size));
+    DPErrcheck(cudaMemset(nlist_data, -1, sizeof(int) * 2 * nloc * mem_size));
     int * temp_nlist = nlist_data; //nloc*mem_size
     int * nei_order = temp_nlist + nloc * mem_size;
     nlist.inum = nloc;
@@ -141,23 +180,23 @@ int build_nlist_gpu(
                 nloc,
                 nall,
                 mem_size);
-    const int nblock_ = (nloc+TPB-1)/TPB;
-    scan_nlist<<<nblock_, TPB>>>(
-                numneigh, 
-                nei_order, 
-                temp_nlist, 
-                mem_size, 
-                nloc, 
-                nall);
+    DPErrcheck(cudaGetLastError());
+    DPErrcheck(cudaDeviceSynchronize());
+    parallel_prefix_scan<TPB> <<<nloc, TPB>>>(
+      numneigh, nei_order, 
+      temp_nlist, mem_size, nloc, nall);
+    DPErrcheck(cudaGetLastError());
+    DPErrcheck(cudaDeviceSynchronize());
     fill_nlist<<<block_grid, thread_grid>>>(
                 firstneigh,
                 temp_nlist,
                 nei_order,
                 mem_size,
-                nall
-    );
+                nall);
+    DPErrcheck(cudaGetLastError());
+    DPErrcheck(cudaDeviceSynchronize());
     int * numneigh_host = new int[nloc];
-    cudaErrcheck(cudaMemcpy(numneigh_host, numneigh, sizeof(int) * nloc, cudaMemcpyDeviceToHost));
+    DPErrcheck(cudaMemcpy(numneigh_host, numneigh, sizeof(int) * nloc, cudaMemcpyDeviceToHost));
     int max_nei = 0;
     for(int ii=0;ii<nloc;ii++){
         if(numneigh_host[ii]>max_nei)max_nei=numneigh_host[ii];
@@ -177,6 +216,8 @@ void use_nlist_map(
     dim3 block_grid(nloc, nblock);
     dim3 thread_grid(1, TPB);
     map_nlist<<<block_grid,thread_grid>>>(nlist, nlist_map, nloc, nnei);
+    DPErrcheck(cudaGetLastError());
+    DPErrcheck(cudaDeviceSynchronize());
 }
 
 template int build_nlist_gpu<float>(InputNlist & nlist, int * max_list_size, int * nlist_data, const float * c_cpy, const int & nloc, const int & nall, const int & mem_size, const float & rcut);

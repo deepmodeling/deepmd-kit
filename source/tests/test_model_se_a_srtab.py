@@ -23,7 +23,7 @@ def _make_tab(ntype) :
     prt = np.reshape(prt, [ninter+1, -1])
     np.savetxt('tab.xvg', prt.T)
 
-class TestModel(unittest.TestCase):
+class TestModel(tf.test.TestCase):
     def setUp(self) :
         gen_data()
         _make_tab(2)
@@ -117,7 +117,7 @@ class TestModel(unittest.TestCase):
                           t_mesh:          test_data['default_mesh'],
                           is_training:     False}
 
-        sess = tf.Session()
+        sess = self.test_session().__enter__()
         sess.run(tf.global_variables_initializer())
         [e, f, v] = sess.run([energy, force, virial], 
                              feed_dict = feed_dict_test)
@@ -134,9 +134,6 @@ class TestModel(unittest.TestCase):
         refv = np.reshape(refv, [-1])
 
         places = 10
-        for ii in range(e.size) :
-            self.assertAlmostEqual(e[ii], refe[ii], places = places)
-        for ii in range(f.size) :
-            self.assertAlmostEqual(f[ii], reff[ii], places = places)
-        for ii in range(v.size) :
-            self.assertAlmostEqual(v[ii], refv[ii], places = places)
+        np.testing.assert_almost_equal(e, refe, places)
+        np.testing.assert_almost_equal(f, reff, places)
+        np.testing.assert_almost_equal(v, refv, places)

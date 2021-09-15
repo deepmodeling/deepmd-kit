@@ -1,10 +1,5 @@
 set -e
 
-if [ -z "$FLOAT_PREC" ]
-then
-  FLOAT_PREC=high
-fi
-
 if [ "$DP_VARIANT" == "cuda" ]
 then
   CUDA_ARGS="-DUSE_CUDA_TOOLKIT=TRUE"
@@ -25,10 +20,9 @@ NPROC=$(nproc --all)
 BUILD_TMP_DIR=${SCRIPT_PATH}/../build
 mkdir -p ${BUILD_TMP_DIR}
 cd ${BUILD_TMP_DIR}
-cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} -DFLOAT_PREC=${FLOAT_PREC} -DINSTALL_TENSORFLOW=TRUE ${CUDA_ARGS} ..
+cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} -DINSTALL_TENSORFLOW=TRUE ${CUDA_ARGS} -DLAMMPS_VERSION=patch_30Jul2021 -DUSE_TTM=TRUE ..
 make -j${NPROC}
 make install
 
 #------------------
 echo "Congratulations! DeePMD-kit has been installed at ${INSTALL_PREFIX}"
-

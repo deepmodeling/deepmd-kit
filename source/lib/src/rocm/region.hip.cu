@@ -1,4 +1,3 @@
-#include "hip/hip_runtime.h"
 #include "device.h"
 #include "region.h"
 #include "region.cuh"
@@ -39,6 +38,8 @@ convert_to_inter_gpu_rocm(
     const FPTYPE * rp)
 {
     hipLaunchKernelGGL(_phys2Inter, 1, 1, 0, 0, ri, rp, region.rec_boxt);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
 }
 
 template<typename FPTYPE>
@@ -49,6 +50,8 @@ convert_to_phys_gpu_rocm(
     const FPTYPE * ri)
 {
     hipLaunchKernelGGL(_inter2Phys, 1, 1, 0, 0, rp, ri, region.boxt);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
 }
 
 template<typename FPTYPE>
@@ -58,6 +61,8 @@ volume_gpu_rocm(
     const Region<FPTYPE> & region)
 {
     hipLaunchKernelGGL(_compute_volume, 1, 1, 0, 0, volume, region.boxt);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
 }
 
 template void convert_to_inter_gpu_rocm<float>(float * ri, const Region<float> & region, const float * rp);

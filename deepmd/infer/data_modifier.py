@@ -12,9 +12,25 @@ from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import global_cvt_2_ener_float
 from deepmd.env import op_module
+from deepmd.utils.sess import run_sess
 
 
 class DipoleChargeModifier(DeepDipole):
+    """
+    
+    Parameters
+    ----------
+    model_name
+            The model file for the DeepDipole model
+    model_charge_map
+            Gives the amount of charge for the wfcc
+    sys_charge_map
+            Gives the amount of charge for the real atoms
+    ewald_h
+            Grid spacing of the reciprocal part of Ewald sum. Unit: A
+    ewald_beta
+            Splitting parameter of the Ewald sum. Unit: A^{-1}
+    """
     def __init__(self, 
                  model_name : str, 
                  model_charge_map : List[float],
@@ -24,19 +40,6 @@ class DipoleChargeModifier(DeepDipole):
     ) -> None:
         """
         Constructor 
-
-        Parameters
-        ----------
-        model_name
-                The model file for the DeepDipole model
-        model_charge_map
-                Gives the amount of charge for the wfcc
-        sys_charge_map
-                Gives the amount of charge for the real atoms
-        ewald_h
-                Grid spacing of the reciprocal part of Ewald sum. Unit: A
-        ewald_beta
-                Splitting parameter of the Ewald sum. Unit: A^{-1}
         """
         # the dipole model is loaded with prefix 'dipole_charge'
         self.modifier_prefix = 'dipole_charge'
@@ -57,7 +60,7 @@ class DipoleChargeModifier(DeepDipole):
         self.ext_dim = 3
         self.t_ndesc  = self.graph.get_tensor_by_name(os.path.join(self.modifier_prefix, 'descrpt_attr/ndescrpt:0'))
         self.t_sela  = self.graph.get_tensor_by_name(os.path.join(self.modifier_prefix, 'descrpt_attr/sel:0'))
-        [self.ndescrpt, self.sel_a] = self.sess.run([self.t_ndesc, self.t_sela])
+        [self.ndescrpt, self.sel_a] = run_sess(self.sess, [self.t_ndesc, self.t_sela])
         self.sel_r = [ 0 for ii in range(len(self.sel_a)) ]
         self.nnei_a = np.cumsum(self.sel_a)[-1]
         self.nnei_r = np.cumsum(self.sel_r)[-1]
@@ -207,11 +210,11 @@ class DipoleChargeModifier(DeepDipole):
 
 
     def eval(self, 
-             coord : np.array, 
-             box : np.array, 
-             atype : np.array, 
+             coord : np.ndarray, 
+             box : np.ndarray, 
+             atype : np.ndarray, 
              eval_fv : bool = True
-    ) -> Tuple[np.array, np.array, np.array]:
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Evaluate the modification
         
@@ -335,9 +338,9 @@ class DipoleChargeModifier(DeepDipole):
         feed_dict_test[self.t_box   ] = cells.reshape([-1])
         feed_dict_test[self.t_mesh  ] = default_mesh.reshape([-1])
         feed_dict_test[self.t_ef    ] = ext_f.reshape([-1])
-        # print(self.sess.run(tf.shape(self.t_tensor), feed_dict = feed_dict_test))
+        # print(run_sess(self.sess, tf.shape(self.t_tensor), feed_dict = feed_dict_test))
         fout, vout, avout \
-            = self.sess.run([self.force, self.virial, self.av],
+            = run_sess(self.sess, [self.force, self.virial, self.av],
                             feed_dict = feed_dict_test)
         # print('fout: ', fout.shape, fout)
         fout = self.reverse_map(np.reshape(fout, [nframes,-1,3]), imap)
@@ -355,7 +358,16 @@ class DipoleChargeModifier(DeepDipole):
         ref_coord = coord3[:,sel_idx_map,:]
         ref_coord = np.reshape(ref_coord, [nframes, nsel * 3])
         
-        dipole = DeepDipole.eval(self, coord, box, atype)
+        batch_size = 8
+        all_dipole = []
+        for ii in range(0,nframes,batch_size):
+            dipole = DeepDipole.eval(self,
+                                     coord[ii:ii+batch_size],
+                                     box[ii:ii+batch_size],
+                                     atype)
+            all_dipole.append(dipole)
+        dipole = np.concatenate(all_dipole, axis = 0)
+        assert(dipole.shape[0] == nframes)
         dipole = np.reshape(dipole, [nframes, nsel * 3])
         
         wfcc_coord = ref_coord + dipole

@@ -3,9 +3,12 @@ from .deep_pot import DeepPot
 from ..utils.data import DeepmdData
         
 
-def calc_model_devi_f(fs):
+def calc_model_devi_f(fs: np.ndarray):
     '''
-    fs : numpy.ndarray, size of `n_models x n_frames x n_atoms x 3`
+    Parameters
+    ----------
+    fs : numpy.ndarray
+        size of `n_models x n_frames x n_atoms x 3`
     '''
     fs_devi = np.linalg.norm(np.std(fs, axis=0), axis=-1)
     max_devi_f = np.max(fs_devi, axis=-1)
@@ -13,9 +16,12 @@ def calc_model_devi_f(fs):
     avg_devi_f = np.mean(fs_devi, axis=-1)
     return max_devi_f, min_devi_f, avg_devi_f
 
-def calc_model_devi_e(es):
+def calc_model_devi_e(es: np.ndarray):
     '''
-    es : numpy.ndarray, size of `n_models x n_frames x n_atoms
+    Parameters
+    ----------
+    es : numpy.ndarray
+        size of `n_models x n_frames x n_atoms
     '''
     es_devi = np.std(es, axis=0)
     max_devi_e = np.max(es_devi, axis=1)
@@ -23,9 +29,12 @@ def calc_model_devi_e(es):
     avg_devi_e = np.mean(es_devi, axis=1)
     return max_devi_e, min_devi_e, avg_devi_e
 
-def calc_model_devi_v(vs):
+def calc_model_devi_v(vs: np.ndarray):
     '''
-    vs : numpy.ndarray, size of `n_models x n_frames x 9`
+    Parameters
+    ----------
+    vs : numpy.ndarray
+        size of `n_models x n_frames x 9`
     '''
     vs_devi = np.std(vs, axis=0)
     max_devi_v = np.max(vs_devi, axis=-1)
@@ -33,10 +42,14 @@ def calc_model_devi_v(vs):
     avg_devi_v = np.linalg.norm(vs_devi, axis=-1) / 3
     return max_devi_v, min_devi_v, avg_devi_v
 
-def write_model_devi_out(devi, fname):
+def write_model_devi_out(devi: np.ndarray, fname: str):
     '''
-    devi : numpy.ndarray, the first column is the steps index
-    fname : str, the file name to dump
+    Parameters
+    ----------
+    devi : numpy.ndarray
+        the first column is the steps index
+    fname : str
+        the file name to dump
     '''
     assert devi.shape[1] == 7
     header = "%10s" % "step"
@@ -75,7 +88,7 @@ def calc_model_devi(coord,
     '''
     Python interface to calculate model deviation
 
-    Parameters:
+    Parameters
     -----------
     coord : numpy.ndarray, `n_frames x n_atoms x 3`
         Coordinates of system to calculate
@@ -92,11 +105,22 @@ def calc_model_devi(coord,
     nopbc : bool
         Whether to use pbc conditions
     
-    Return:
+    Returns
     -------
     model_devi : numpy.ndarray, `n_frames x 7`
         Model deviation results. The first column is index of steps, the other 6 columns are
         max_devi_v, min_devi_v, avg_devi_v, max_devi_f, min_devi_f, avg_devi_f.
+    
+    Examples
+    --------
+    >>> from deepmd.infer import calc_model_devi
+    >>> from deepmd.infer import DeepPot as DP
+    >>> import numpy as np
+    >>> coord = np.array([[1,0,0], [0,0,1.5], [1,0,3]]).reshape([1, -1])
+    >>> cell = np.diag(10 * np.ones(3)).reshape([1, -1])
+    >>> atype = [1,0,1]
+    >>> graphs = [DP("graph.000.pb"), DP("graph.001.pb")]
+    >>> model_devi = calc_model_devi(coord, cell, atype, graphs)
     '''
     if nopbc:
         box = None
@@ -137,7 +161,6 @@ def make_model_devi(
 
     Parameters
     ----------
-
     models: list
         A list of paths of models to use for making model deviation
     system: str

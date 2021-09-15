@@ -1,35 +1,35 @@
 #!/usr/bin/env python3
+from deepmd.descriptor.descriptor import Descriptor
 import logging
 import os
+import glob
 import time
 import shutil
+import google.protobuf.message
 import numpy as np
 from deepmd.env import tf
-from deepmd.env import default_tf_session_config
+from deepmd.env import get_tf_session_config
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.fit import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
-from deepmd.descriptor import DescrptLocFrame
-from deepmd.descriptor import DescrptSeA
-from deepmd.descriptor import DescrptSeT
-from deepmd.descriptor import DescrptSeAEbd
-from deepmd.descriptor import DescrptSeAEf
-from deepmd.descriptor import DescrptSeR
-from deepmd.descriptor import DescrptSeAR
-from deepmd.descriptor import DescrptHybrid
+from deepmd.descriptor import Descriptor
 from deepmd.model import EnerModel, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
 from deepmd.loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
+from deepmd.utils.errors import GraphTooLargeError
 from deepmd.utils.learning_rate import LearningRateExp
 from deepmd.utils.neighbor_stat import NeighborStat
+from deepmd.utils.sess import run_sess
 from deepmd.utils.type_embed import TypeEmbedNet
+from deepmd.utils.graph import get_tensor_by_name, get_embedding_net_variables, get_fitting_net_variables
 
 from tensorflow.python.client import timeline
 from deepmd.env import op_module
+from deepmd.utils.errors import GraphWithoutTensorError
 
 # load grad of force module
 import deepmd.op
 
-from deepmd.common import j_must_have, ClassArg
+from deepmd.common import j_must_have, ClassArg, data_requirement
 
 log = logging.getLogger(__name__)
 
@@ -41,44 +41,16 @@ def _is_subdir(path, directory):
         return False
     relative = os.path.relpath(path, directory) + os.sep
     return not relative.startswith(os.pardir + os.sep)
-
-def _generate_descrpt_from_param_dict(descrpt_param):
-    try:
-        descrpt_type = descrpt_param['type']
-    except KeyError:
-        raise KeyError('the type of descriptor should be set by `type`')
-    descrpt_param.pop('type', None)
-    to_pop = []
-    for kk in descrpt_param:
-        if kk[0] == '_':
-            to_pop.append(kk)
-    for kk in to_pop:
-        descrpt_param.pop(kk, None)
-    if descrpt_type == 'loc_frame':
-        descrpt = DescrptLocFrame(**descrpt_param)
-    elif descrpt_type == 'se_e2_a' or descrpt_type == 'se_a' :
-        descrpt = DescrptSeA(**descrpt_param)
-    elif descrpt_type == 'se_e2_r' or descrpt_type == 'se_r' :
-        descrpt = DescrptSeR(**descrpt_param)
-    elif descrpt_type == 'se_e3' or descrpt_type == 'se_at' or descrpt_type == 'se_a_3be' :
-        descrpt = DescrptSeT(**descrpt_param)
-    elif descrpt_type == 'se_a_tpe' or descrpt_type == 'se_a_ebd' :
-        descrpt = DescrptSeAEbd(**descrpt_param)
-    elif descrpt_type == 'se_a_ef' :
-        descrpt = DescrptSeAEf(**descrpt_param)
-    elif descrpt_type == 'se_ar' :
-        descrpt = DescrptSeAR(descrpt_param)
-    else :
-        raise RuntimeError('unknow model type ' + descrpt_type)
-    return descrpt
     
 
 class DPTrainer (object):
     def __init__(self, 
                  jdata, 
-                 run_opt):
+                 run_opt,
+                 is_compress = False):
         self.run_opt = run_opt
         self._init_param(jdata)
+        self.is_compress = is_compress
 
     def _init_param(self, jdata):
         # model config        
@@ -95,19 +67,11 @@ class DPTrainer (object):
         except KeyError:
             raise KeyError('the type of descriptor should be set by `type`')
 
-        if descrpt_type != 'hybrid':
-            self.descrpt = _generate_descrpt_from_param_dict(descrpt_param)
-        else :
-            descrpt_list = []
-            for ii in descrpt_param.get('list', []):
-                descrpt_list.append(_generate_descrpt_from_param_dict(ii))
-            self.descrpt = DescrptHybrid(descrpt_list)
+        self.descrpt = Descriptor(**descrpt_param)
 
         # fitting net
-        try: 
-            fitting_type = fitting_param['type']
-        except:
-            fitting_type = 'ener'
+        fitting_type = fitting_param.get('type', 'ener')
+        self.fitting_type = fitting_type
         fitting_param.pop('type', None)
         fitting_param['descrpt'] = self.descrpt
         if fitting_type == 'ener':
@@ -193,10 +157,7 @@ class DPTrainer (object):
 
         # learning rate
         lr_param = j_must_have(jdata, 'learning_rate')
-        try: 
-            lr_type = lr_param['type']
-        except:
-            lr_type = 'exp'
+        lr_type = lr_param.get('type', 'exp')
         if lr_type == 'exp':
             self.lr = LearningRateExp(lr_param['start_lr'],
                                       lr_param['stop_lr'],
@@ -206,12 +167,8 @@ class DPTrainer (object):
 
         # loss
         # infer loss type by fitting_type
-        try :
-            loss_param = jdata['loss']
-            loss_type = loss_param.get('type', 'ener')
-        except:
-            loss_param = None
-            loss_type = 'ener'
+        loss_param = jdata.get('loss', None)
+        loss_type = loss_param.get('type', 'ener')
 
         if fitting_type == 'ener':
             loss_param.pop('type', None)
@@ -258,10 +215,11 @@ class DPTrainer (object):
         self.save_ckpt = tr_data.get('save_ckpt', 'model.ckpt')
         self.display_in_training = tr_data.get('disp_training', True)
         self.timing_in_training  = tr_data.get('time_training', True)
-        self.profiling = tr_data.get('profiling', False)
+        self.profiling = self.run_opt.is_chief and tr_data.get('profiling', False)
         self.profiling_file = tr_data.get('profiling_file', 'timeline.json')
-        self.tensorboard = tr_data.get('tensorboard', False)
+        self.tensorboard = self.run_opt.is_chief and tr_data.get('tensorboard', False)
         self.tensorboard_log_dir = tr_data.get('tensorboard_log_dir', 'log')
+        self.tensorboard_freq = tr_data.get('tensorboard_freq', 1)
         # self.sys_probs = tr_data['sys_probs']
         # self.auto_prob_style = tr_data['auto_prob']
         self.useBN = False
@@ -275,45 +233,59 @@ class DPTrainer (object):
         else:
             self.valid_numb_batch = 1
 
+        # if init the graph with the frozen model
+        self.frz_model = None
+        self.model_type = None
+
 
     def build (self, 
-               data, 
+               data = None, 
                stop_batch = 0) :
         self.ntypes = self.model.get_ntypes()
-        # Usually, the type number of the model should be equal to that of the data
-        # However, nt_model > nt_data should be allowed, since users may only want to 
-        # train using a dataset that only have some of elements 
-        assert (self.ntypes >= data.get_ntypes()), "ntypes should match that found in data"
         self.stop_batch = stop_batch
-
-        self.batch_size = data.get_batch_size()
 
         if self.numb_fparam > 0 :
             log.info("training with %d frame parameter(s)" % self.numb_fparam)
         else:
             log.info("training without frame parameter")
 
-        self.type_map = data.get_type_map()
+        if not self.is_compress:
+            # Usually, the type number of the model should be equal to that of the data
+            # However, nt_model > nt_data should be allowed, since users may only want to 
+            # train using a dataset that only have some of elements 
+            if self.ntypes < data.get_ntypes():
+                raise ValueError(
+                    "The number of types of the training data is %d, but that of the "
+                    "model is only %d. The latter must be no less than the former. "
+                    "You may need to reset one or both of them. Usually, the former "
+                    "is given by `model/type_map` in the training parameter (if set) "
+                    "or the maximum number in the training data. The latter is given "
+                    "by `model/descriptor/sel` in the training parameter." % (
+                        data.get_ntypes(), self.ntypes
+                ))
+            self.type_map = data.get_type_map()
+            self.batch_size = data.get_batch_size()
+            self.model.data_stat(data)
 
-        self.model.data_stat(data)
+            # config the init_frz_model command
+            if self.run_opt.init_mode == 'init_from_frz_model':
+                self._init_from_frz_model()
+            
+            # neighbor_stat is moved to train.py as duplicated
+            # TODO: this is a simple fix but we should have a clear
+            #       architecture to call neighbor stat
+        else :
+            self.descrpt.enable_compression(self.model_param['compress']["min_nbor_dist"], self.model_param['compress']['model_file'], self.model_param['compress']['table_config'][0], self.model_param['compress']['table_config'][1], self.model_param['compress']['table_config'][2], self.model_param['compress']['table_config'][3])
+            self.fitting.init_variables(get_fitting_net_variables(self.model_param['compress']['model_file']))
+        
+        if self.is_compress or self.model_type == 'compressed_model':
+            tf.constant("compressed_model", name = 'model_type', dtype = tf.string)
+        else:
+            tf.constant("original_model", name = 'model_type', dtype = tf.string)
 
-        if 'compress' in self.model_param and self.model_param['compress']['compress']:
-            assert 'rcut' in self.descrpt_param,      "Error: descriptor must have attr rcut!"
-            self.neighbor_stat \
-                = NeighborStat(self.ntypes, self.descrpt_param['rcut'])
-            self.min_nbor_dist, self.max_nbor_size \
-                = self.neighbor_stat.get_stat(data)
-            self.descrpt.enable_compression(self.min_nbor_dist, self.model_param['compress']['model_file'], self.model_param['compress']['table_config'][0], self.model_param['compress']['table_config'][1], self.model_param['compress']['table_config'][2], self.model_param['compress']['table_config'][3])
-
-        worker_device = "/job:%s/task:%d/%s" % (self.run_opt.my_job_name,
-                                                self.run_opt.my_task_index,
-                                                self.run_opt.my_device)
-
-        with tf.device(tf.train.replica_device_setter(worker_device = worker_device,
-                                                      cluster = self.run_opt.cluster_spec)):
-            self._build_lr()
-            self._build_network(data)
-            self._build_training()
+        self._build_lr()
+        self._build_network(data)
+        self._build_training()
 
 
     def _build_lr(self):
@@ -324,15 +296,12 @@ class DPTrainer (object):
 
     def _build_network(self, data):        
         self.place_holders = {}
-        data_dict = data.get_data_dict()
-        for kk in data_dict.keys():
-            if kk == 'type':
-                continue
-            prec = GLOBAL_TF_FLOAT_PRECISION
-            if data_dict[kk]['high_prec'] :
-                prec = GLOBAL_ENER_FLOAT_PRECISION
-            self.place_holders[kk] = tf.placeholder(prec, [None], name = 't_' + kk)
-            self.place_holders['find_'+kk] = tf.placeholder(tf.float32, name = 't_find_' + kk)
+        if self.is_compress :
+            for kk in ['coord', 'box']:
+                self.place_holders[kk] = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], 't_' + kk)
+            self._get_place_horders(data_requirement)
+        else :
+            self._get_place_horders(data.get_data_dict())
 
         self.place_holders['type']      = tf.placeholder(tf.int32,   [None], name='t_type')
         self.place_holders['natoms_vec']        = tf.placeholder(tf.int32,   [self.ntypes+2], name='t_natoms')
@@ -345,6 +314,7 @@ class DPTrainer (object):
                                 self.place_holders['box'], 
                                 self.place_holders['default_mesh'],
                                 self.place_holders,
+                                self.frz_model,
                                 suffix = "", 
                                 reuse = False)
 
@@ -359,114 +329,86 @@ class DPTrainer (object):
 
     def _build_training(self):
         trainable_variables = tf.trainable_variables()
-        optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate)
-        if self.run_opt.is_distrib :
-            optimizer = tf.train.SyncReplicasOptimizer(
-                optimizer,
-                replicas_to_aggregate = self.run_opt.cluster_spec.num_tasks("worker"),
-                total_num_replicas = self.run_opt.cluster_spec.num_tasks("worker"),
-                name = "sync_replicas")
-            self.sync_replicas_hook = optimizer.make_session_run_hook(self.run_opt.is_chief)            
-        grads = tf.gradients(self.l2_l, trainable_variables)
-        apply_op = optimizer.apply_gradients (zip (grads, trainable_variables),
-                                              global_step=self.global_step,
-                                              name='train_step')
+        if self.run_opt.is_distrib:
+            optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate*self.run_opt.world_size)
+            optimizer = self.run_opt._HVD.DistributedOptimizer(optimizer)
+        else:
+            optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate)
+        apply_op = optimizer.minimize(loss=self.l2_l,
+                                      global_step=self.global_step,
+                                      var_list=trainable_variables,
+                                      name='train_step')
         train_ops = [apply_op] + self._extra_train_ops
         self.train_op = tf.group(*train_ops)
         log.info("built training")
 
-    def _init_sess_serial(self) :
-        self.sess = tf.Session(config=default_tf_session_config)
-        self.saver = tf.train.Saver()
-        saver = self.saver
-        if self.run_opt.init_mode == 'init_from_scratch' :
-            log.info("initialize model from scratch")
-            init_op = tf.global_variables_initializer()
-            self.sess.run(init_op)
-            fp = open(self.disp_file, "w")
-            fp.close ()
-        elif self.run_opt.init_mode == 'init_from_model' :
-            log.info("initialize from model %s" % self.run_opt.init_model)
-            init_op = tf.global_variables_initializer()
-            self.sess.run(init_op)
-            saver.restore (self.sess, self.run_opt.init_model)            
-            self.sess.run(self.global_step.assign(0))
-            fp = open(self.disp_file, "w")
-            fp.close ()
-        elif self.run_opt.init_mode == 'restart' :
-            log.info("restart from model %s" % self.run_opt.restart)
-            init_op = tf.global_variables_initializer()
-            self.sess.run(init_op)
-            saver.restore (self.sess, self.run_opt.restart)
-        else :
-            raise RuntimeError ("unkown init mode")
+    def _init_session(self):
+        config = get_tf_session_config()
+        device, idx = self.run_opt.my_device.split(":", 1)
+        if device == "gpu":
+            config.gpu_options.visible_device_list = idx
+        self.sess = tf.Session(config=config)
 
-    def _init_sess_distrib(self):
-        ckpt_dir = os.path.join(os.getcwd(), self.save_ckpt)
-        assert(_is_subdir(ckpt_dir, os.getcwd())), "the checkpoint dir must be a subdir of the current dir"
-        if self.run_opt.init_mode == 'init_from_scratch' :
-            log.info("initialize model from scratch")
-            if self.run_opt.is_chief :
-                if os.path.exists(ckpt_dir):
-                    shutil.rmtree(ckpt_dir)
-                if not os.path.exists(ckpt_dir) :
-                    os.makedirs(ckpt_dir)
+        # Initializes or restore global variables
+        init_op = tf.global_variables_initializer()
+        if self.run_opt.is_chief:
+            self.saver = tf.train.Saver(save_relative_paths=True)
+            if self.run_opt.init_mode == 'init_from_scratch' :
+                log.info("initialize model from scratch")
+                run_sess(self.sess, init_op)
+                if not self.is_compress:
+                    fp = open(self.disp_file, "w")
+                    fp.close ()
+            elif self.run_opt.init_mode == 'init_from_model' :
+                log.info("initialize from model %s" % self.run_opt.init_model)
+                run_sess(self.sess, init_op)
+                self.saver.restore (self.sess, self.run_opt.init_model)            
+                run_sess(self.sess, self.global_step.assign(0))
                 fp = open(self.disp_file, "w")
                 fp.close ()
-        elif self.run_opt.init_mode == 'init_from_model' :
-            raise RuntimeError("distributed training does not support %s" % self.run_opt.init_mode)
-        elif self.run_opt.init_mode == 'restart' :
-            log.info("restart from model %s" % ckpt_dir)
-            if self.run_opt.is_chief :
-                assert(os.path.isdir(ckpt_dir)), "the checkpoint dir %s should exists" % ckpt_dir
-        else :
-            raise RuntimeError ("unkown init mode")
+            elif self.run_opt.init_mode == 'restart' :
+                log.info("restart from model %s" % self.run_opt.restart)
+                run_sess(self.sess, init_op)
+                self.saver.restore (self.sess, self.run_opt.restart)
+            elif self.run_opt.init_mode == 'init_from_frz_model' :
+                log.info("initialize training from the frozen model")
+                run_sess(self.sess, init_op)
+                fp = open(self.disp_file, "w")
+                fp.close ()
+            else :
+                raise RuntimeError ("unkown init mode")
+        else:
+            run_sess(self.sess, init_op)
+            self.saver = None
 
-        saver = tf.train.Saver(max_to_keep = 1)
-        self.saver = None
-        # gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.5)
-        # config = tf.ConfigProto(allow_soft_placement=True,
-        #                         gpu_options = gpu_options,
-        #                         intra_op_parallelism_threads=self.run_opt.num_intra_threads,
-        #                         inter_op_parallelism_threads=self.run_opt.num_inter_threads)
-        config = tf.ConfigProto(intra_op_parallelism_threads=self.run_opt.num_intra_threads,
-                                inter_op_parallelism_threads=self.run_opt.num_inter_threads)
-        # The stop_hook handles stopping after running given steps
-        # stop_hook = tf.train.StopAtStepHook(last_step = stop_batch)
-        # hooks = [self.sync_replicas_hook, stop_hook]
-        hooks = [self.sync_replicas_hook]
-        scaffold = tf.train.Scaffold(saver=saver)
-        # Use monitor session for distributed computation
-        self.sess = tf.train.MonitoredTrainingSession(master = self.run_opt.server.target,
-                                                      is_chief = self.run_opt.is_chief,
-                                                      config = config,
-                                                      hooks = hooks,
-                                                      scaffold = scaffold,
-                                                      checkpoint_dir = ckpt_dir)
-        # ,
-        # save_checkpoint_steps = self.save_freq)
+        # Ensure variable consistency among tasks when training starts
+        if self.run_opt.is_distrib:
+            bcast_op = self.run_opt._HVD.broadcast_global_variables(0)
+            if self.run_opt.is_chief:
+                log.info('broadcast global variables to other tasks')
+            else:
+                log.info('receive global variables from task#0')
+            run_sess(self.sess, bcast_op)
 
-    def train (self, train_data, valid_data=None) :
+    def train (self, train_data = None, valid_data=None) :
 
         # if valid_data is None:  # no validation set specified.
         #     valid_data = train_data  # using training set as validation set.
 
         stop_batch = self.stop_batch
-        if self.run_opt.is_distrib :
-            self._init_sess_distrib()
-        else :
-            self._init_sess_serial()
+        self._init_session()
 
+        # Before data shard is enabled, only cheif do evaluation and record it
         # self.print_head()
         fp = None
         if self.run_opt.is_chief :
             fp = open(self.disp_file, "a")
 
-        cur_batch = self.sess.run(self.global_step)
+        cur_batch = run_sess(self.sess, self.global_step)
         is_first_step = True
         self.cur_batch = cur_batch
         log.info("start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e" % 
-                 (self.sess.run(self.learning_rate),
+                 (run_sess(self.sess, self.learning_rate),
                   self.lr.value(cur_batch), 
                   self.lr.decay_steps_,
                   self.lr.decay_rate_,
@@ -475,12 +417,12 @@ class DPTrainer (object):
 
         prf_options = None
         prf_run_metadata = None
-        if self.profiling :
+        if self.profiling:
             prf_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
             prf_run_metadata = tf.RunMetadata()
 
         # set tensorboard execution environment
-        if self.tensorboard :
+        if self.tensorboard:
             summary_merged_op = tf.summary.merge_all()
             # Remove TB old logging directory from previous run
             try:
@@ -502,47 +444,67 @@ class DPTrainer (object):
             tb_valid_writer = None
         
         train_time = 0
+
         while cur_batch < stop_batch :
 
             # first round validation:
             train_batch = train_data.get_batch()
             if self.display_in_training and is_first_step:
-                valid_batches = [valid_data.get_batch() for ii in range(self.valid_numb_batch)] if valid_data is not None else None
-                self.valid_on_the_fly(fp, [train_batch], valid_batches, print_header=True)
+                if self.run_opt.is_chief:
+                    valid_batches = [valid_data.get_batch() for ii in range(self.valid_numb_batch)] if valid_data is not None else None
+                    self.valid_on_the_fly(fp, [train_batch], valid_batches, print_header=True)
                 is_first_step = False
 
             if self.timing_in_training: tic = time.time()
             train_feed_dict = self.get_feed_dict(train_batch, is_training=True)
             # use tensorboard to visualize the training of deepmd-kit
             # it will takes some extra execution time to generate the tensorboard data
-            if self.tensorboard :
-                summary, _ = self.sess.run([summary_merged_op, self.train_op], feed_dict=train_feed_dict,
+            if self.tensorboard and (cur_batch % self.tensorboard_freq == 0):
+                summary, _ = run_sess(self.sess, [summary_merged_op, self.train_op], feed_dict=train_feed_dict,
                                            options=prf_options, run_metadata=prf_run_metadata)
                 tb_train_writer.add_summary(summary, cur_batch)
-            else :
-                self.sess.run([self.train_op], feed_dict=train_feed_dict,
+            else:
+                run_sess(self.sess, [self.train_op], feed_dict=train_feed_dict,
                               options=prf_options, run_metadata=prf_run_metadata)
             if self.timing_in_training: toc = time.time()
             if self.timing_in_training: train_time += toc - tic
-            cur_batch = self.sess.run(self.global_step)
+            cur_batch = run_sess(self.sess, self.global_step)
             self.cur_batch = cur_batch
 
             # on-the-fly validation
             if self.display_in_training and (cur_batch % self.disp_freq == 0):
                 if self.timing_in_training:
                     tic = time.time()
-                valid_batches = [valid_data.get_batch() for ii in range(self.valid_numb_batch)] if valid_data is not None else None
-                self.valid_on_the_fly(fp, [train_batch], valid_batches)
+                if self.run_opt.is_chief:
+                    valid_batches = [valid_data.get_batch() for ii in range(self.valid_numb_batch)] if valid_data is not None else None
+                    self.valid_on_the_fly(fp, [train_batch], valid_batches)
                 if self.timing_in_training:
                     toc = time.time()
                     test_time = toc - tic
                     log.info("batch %7d training time %.2f s, testing time %.2f s"
                                   % (cur_batch, train_time, test_time))
                     train_time = 0
-                if self.save_freq > 0 and cur_batch % self.save_freq == 0 and self.run_opt.is_chief :
-                    if self.saver is not None :
-                        self.saver.save (self.sess, os.getcwd() + "/" + self.save_ckpt)
-                        log.info("saved checkpoint %s" % self.save_ckpt)
+                if self.save_freq > 0 and cur_batch % self.save_freq == 0 and self.saver is not None:
+                    try:
+                        ckpt_prefix = self.saver.save (self.sess, os.path.join(os.getcwd(), self.save_ckpt), global_step=cur_batch)
+                    except google.protobuf.message.DecodeError as e:
+                        raise GraphTooLargeError(
+                            "The graph size exceeds 2 GB, the hard limitation of protobuf."
+                            " Then a DecodeError was raised by protobuf. You should "
+                            "reduce the size of your model."
+                        ) from e
+                    # make symlinks from prefix with step to that without step to break nothing
+                    # get all checkpoint files
+                    original_files = glob.glob(ckpt_prefix + ".*")
+                    for ori_ff in original_files:
+                        new_ff = self.save_ckpt + ori_ff[len(ckpt_prefix):]
+                        try:
+                            # remove old one
+                            os.remove(new_ff)
+                        except OSError:
+                            pass
+                        os.symlink(ori_ff, new_ff)
+                    log.info("saved checkpoint %s" % self.save_ckpt)
         if self.run_opt.is_chief: 
             fp.close ()
         if self.profiling and self.run_opt.is_chief :
@@ -568,7 +530,7 @@ class DPTrainer (object):
         return feed_dict
 
     def get_global_step(self):
-        return self.sess.run(self.global_step)
+        return run_sess(self.sess, self.global_step)
 
     # def print_head (self) :  # depreciated
     #     if self.run_opt.is_chief:
@@ -588,7 +550,7 @@ class DPTrainer (object):
         valid_results = self.get_evaluation_results(valid_batches)
 
         cur_batch = self.cur_batch
-        current_lr = self.sess.run(self.learning_rate)
+        current_lr = run_sess(self.sess, self.learning_rate)
         if print_header:
             self.print_header(fp, train_results, valid_results)
         self.print_on_training(fp, train_results, valid_results, cur_batch, current_lr)
@@ -645,3 +607,54 @@ class DPTrainer (object):
                     sum_results[k] = sum_results.get(k, 0.) + v * results["natoms"]
         avg_results = {k: v / sum_natoms for k, v in sum_results.items() if not k == "natoms"}
         return avg_results
+    
+    def save_compressed(self):
+        """
+        Save the compressed graph
+        """
+        self._init_session()
+        if self.is_compress:
+            self.saver.save (self.sess, os.path.join(os.getcwd(), self.save_ckpt))
+
+    def _get_place_horders(self, data_dict):
+        for kk in data_dict.keys():
+            if kk == 'type':
+                continue
+            prec = GLOBAL_TF_FLOAT_PRECISION
+            if data_dict[kk]['high_prec'] :
+                prec = GLOBAL_ENER_FLOAT_PRECISION
+            self.place_holders[kk] = tf.placeholder(prec, [None], name = 't_' + kk)
+            self.place_holders['find_' + kk] = tf.placeholder(tf.float32, name = 't_find_' + kk)
+
+    def _init_from_frz_model(self):
+        # get the model type from the frozen model(self.run_opt.init_frz_model)
+        try:
+            t_model_type = get_tensor_by_name(self.run_opt.init_frz_model, 'model_type')
+            self.model_type = bytes.decode(t_model_type)
+        except GraphWithoutTensorError as e:
+            # throw runtime error if there's no frozen model
+            if not os.path.exists(self.run_opt.init_frz_model):
+                raise RuntimeError(
+                    "The input frozen model %s (%s) does not exist! Please check the path of the frozen model. " % (self.run_opt.init_frz_model, os.path.abspath(self.run_opt.init_frz_model))
+                ) from e
+            # throw runtime error if the frozen_model has no model type information...
+            else:
+                raise RuntimeError(
+                    "The input frozen model: %s has no 'model_type' information, "
+                    "which is not supported by the 'dp train init-frz-model' interface. " % self.run_opt.init_frz_model
+                ) from e
+        
+        if self.fitting_type != 'ener':
+            raise RuntimeError("The 'dp train init-frz-model' command only supports the 'ener' type fitting net currently!")
+        # self.frz_model will control the self.model to import the descriptor from the given frozen model instead of building from scratch...
+        # initialize fitting net with the given compressed frozen model
+        if self.model_type == 'original_model':
+            self.descrpt.init_variables(self.run_opt.init_frz_model)
+            self.fitting.init_variables(get_fitting_net_variables(self.run_opt.init_frz_model))
+            tf.constant("original_model", name = 'model_type', dtype = tf.string)
+        elif self.model_type == 'compressed_model':
+            self.frz_model = self.run_opt.init_frz_model
+            self.fitting.init_variables(get_fitting_net_variables(self.frz_model))
+            tf.constant("compressed_model", name = 'model_type', dtype = tf.string)
+        else:
+            raise RuntimeError("Unknown model type %s" % self.model_type)

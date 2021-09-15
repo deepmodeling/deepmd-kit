@@ -1,10 +1,13 @@
 """ASE calculator interface module."""
 
-from typing import TYPE_CHECKING, Dict, List, Optional, Union
 from pathlib import Path
+from typing import TYPE_CHECKING, Dict, List, Optional, Union
+
+from ase.calculators.calculator import (
+    Calculator, all_changes, PropertyNotImplementedError
+)
 
 from deepmd import DeepPotential
-from ase.calculators.calculator import Calculator, all_changes
 
 if TYPE_CHECKING:
     from ase import Atoms
@@ -51,7 +54,7 @@ class DP(Calculator):
     """
 
     name = "DP"
-    implemented_properties = ["energy", "forces", "stress"]
+    implemented_properties = ["energy", "forces", "virial", "stress"]
 
     def __init__(
         self,
@@ -72,7 +75,7 @@ class DP(Calculator):
     def calculate(
         self,
         atoms: Optional["Atoms"] = None,
-        properties: List[str] = ["energy", "forces", "stress"],
+        properties: List[str] = ["energy", "forces", "virial"],
         system_changes: List[str] = all_changes,
     ):
         """Run calculation with deepmd model.
@@ -98,6 +101,17 @@ class DP(Calculator):
         symbols = self.atoms.get_chemical_symbols()
         atype = [self.type_dict[k] for k in symbols]
         e, f, v = self.dp.eval(coords=coord, cells=cell, atom_types=atype)
-        self.results["energy"] = e[0]
-        self.results["forces"] = f[0]
-        self.results["stress"] = v[0]
+        self.results['energy'] = e[0][0]
+        self.results['forces'] = f[0]
+        self.results['virial'] = v[0].reshape(3, 3)
+
+        # convert virial into stress for lattice relaxation
+        if "stress" in properties:
+            if sum(atoms.get_pbc()) > 0:
+                # the usual convention (tensile stress is positive)
+                # stress = -virial / volume
+                stress = -0.5 * (v[0].copy() + v[0].copy().T) / atoms.get_volume()
+                # Voigt notation
+                self.results['stress'] = stress.flat[[0, 4, 8, 5, 2, 1]]
+            else:
+                raise PropertyNotImplementedError

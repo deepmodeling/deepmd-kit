@@ -1,0 +1,10 @@
+name: RTD
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - doxygen>=1.9.1
+  - python=3.9
+  - pip>=20.1
+  - pip:
+    - ..[docs,cpu]

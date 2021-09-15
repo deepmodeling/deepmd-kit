@@ -6,6 +6,7 @@ from deepmd.common import make_default_mesh
 from deepmd.env import default_tf_session_config, tf
 from deepmd.infer.data_modifier import DipoleChargeModifier
 from deepmd.infer.deep_eval import DeepEval
+from deepmd.utils.sess import run_sess
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -24,6 +25,18 @@ class DeepPot(DeepEval):
         The prefix in the load computational graph
     default_tf_graph : bool
         If uses the default tf graph, otherwise build a new tf graph for evaluation
+
+    Examples
+    --------
+    >>> from deepmd.infer import DeepPot
+    >>> import numpy as np
+    >>> dp = DeepPot('graph.pb')
+    >>> coord = np.array([[1,0,0], [0,0,1.5], [1,0,3]]).reshape([1, -1])
+    >>> cell = np.diag(10 * np.ones(3)).reshape([1, -1])
+    >>> atype = [1,0,1]
+    >>> e, f, v = dp.eval(coord, cell, atype)
+    
+    where `e`, `f` and `v` are predicted energy, force and virial of the system, respectively.
 
     Warnings
     --------
@@ -113,7 +126,7 @@ class DeepPot(DeepEval):
         # setup modifier
         try:
             t_modifier_type = self._get_tensor("modifier_attr/type:0")
-            self.modifier_type = self.sess.run(t_modifier_type).decode("UTF-8")
+            self.modifier_type = run_sess(self.sess, t_modifier_type).decode("UTF-8")
         except (ValueError, KeyError):
             self.modifier_type = None
 
@@ -123,13 +136,14 @@ class DeepPot(DeepEval):
             t_sys_charge_map = self._get_tensor("modifier_attr/sys_charge_map:0")
             t_ewald_h = self._get_tensor("modifier_attr/ewald_h:0")
             t_ewald_beta = self._get_tensor("modifier_attr/ewald_beta:0")
-            [mdl_name, mdl_charge_map, sys_charge_map, ewald_h, ewald_beta] = self.sess.run([t_mdl_name, t_mdl_charge_map, t_sys_charge_map, t_ewald_h, t_ewald_beta])
+            [mdl_name, mdl_charge_map, sys_charge_map, ewald_h, ewald_beta] = run_sess(self.sess, [t_mdl_name, t_mdl_charge_map, t_sys_charge_map, t_ewald_h, t_ewald_beta])
+            mdl_name = mdl_name.decode("UTF-8")
             mdl_charge_map = [int(ii) for ii in mdl_charge_map.decode("UTF-8").split()]
             sys_charge_map = [int(ii) for ii in sys_charge_map.decode("UTF-8").split()]
             self.dm = DipoleChargeModifier(mdl_name, mdl_charge_map, sys_charge_map, ewald_h = ewald_h, ewald_beta = ewald_beta)
 
     def _run_default_sess(self):
-        [self.ntypes, self.rcut, self.dfparam, self.daparam, self.tmap] = self.sess.run(
+        [self.ntypes, self.rcut, self.dfparam, self.daparam, self.tmap] = run_sess(self.sess, 
             [self.t_ntypes, self.t_rcut, self.t_dfparam, self.t_daparam, self.t_tmap]
         )
 
@@ -158,13 +172,13 @@ class DeepPot(DeepEval):
 
     def eval(
         self,
-        coords: np.array,
-        cells: np.array,
+        coords: np.ndarray,
+        cells: np.ndarray,
         atom_types: List[int],
         atomic: bool = False,
-        fparam: Optional[np.array] = None,
-        aparam: Optional[np.array] = None,
-        efield: Optional[np.array] = None
+        fparam: Optional[np.ndarray] = None,
+        aparam: Optional[np.ndarray] = None,
+        efield: Optional[np.ndarray] = None
     ) -> Tuple[np.ndarray, ...]:
         """Evaluate the energy, force and virial by using this DP.
 

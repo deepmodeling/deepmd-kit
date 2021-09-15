@@ -41,7 +41,13 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
      efield_fsum_all(4, 0.0), 
      efield_force_flag(0)
 {
+#if LAMMPS_VERSION_NUMBER>=20210210
+  // lammps/lammps#2560
+  energy_global_flag = 1;
+  virial_global_flag = 1;
+#else
   virial_flag = 1;
+#endif
 
   if (strcmp(update->unit_style,"metal") != 0) {
     error->all(FLERR,"Pair deepmd requires metal unit, please set it by \"units metal\"");
@@ -117,7 +123,10 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
 int FixDPLR::setmask()
 {
   int mask = 0;
+#if LAMMPS_VERSION_NUMBER<20210210
+  // THERMO_ENERGY removed in lammps/lammps#2560
   mask |= THERMO_ENERGY;
+#endif
   mask |= POST_INTEGRATE;
   mask |= PRE_FORCE;
   mask |= POST_FORCE;
@@ -305,8 +314,9 @@ void FixDPLR::pre_force(int vflag)
   vector<int> sel_type(sel_bwd.size());
   deepmd::select_map<int>(sel_type, dtype, sel_fwd, 1);
   
-  deepmd::AtomMap<FLOAT_PREC> atom_map(sel_type.begin(), sel_type.begin() + sel_nloc);
-  const vector<int> & sort_fwd_map(atom_map.get_fwd_map());
+  // Yixiao: because the deeptensor already return the correct order, the following map is no longer needed
+  // deepmd::AtomMap<FLOAT_PREC> atom_map(sel_type.begin(), sel_type.begin() + sel_nloc);
+  // const vector<int> & sort_fwd_map(atom_map.get_fwd_map());
 
   vector<pair<int,int> > valid_pairs;
   get_valid_pairs(valid_pairs);  
@@ -318,8 +328,10 @@ void FixDPLR::pre_force(int vflag)
   for (int ii = 0; ii < valid_pairs.size(); ++ii){
     int idx0 = valid_pairs[ii].first;
     int idx1 = valid_pairs[ii].second;
-    assert(idx0 < sel_fwd.size() && sel_fwd[idx0] < sort_fwd_map.size());
-    int res_idx = sort_fwd_map[sel_fwd[idx0]];
+    assert(idx0 < sel_fwd.size()); // && sel_fwd[idx0] < sort_fwd_map.size());
+    // Yixiao: the sort map is no longer needed
+    // int res_idx = sort_fwd_map[sel_fwd[idx0]];
+    int res_idx = sel_fwd[idx0];
     // int ret_idx = dpl_bwd[res_idx];
     for (int dd = 0; dd < 3; ++dd){
       x[idx1][dd] = x[idx0][dd] + tensor[res_idx * 3 + dd];

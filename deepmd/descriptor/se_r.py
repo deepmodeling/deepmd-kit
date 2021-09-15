@@ -9,8 +9,47 @@ from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.utils.network import embedding_net, embedding_net_rand_seed_shift
+from deepmd.utils.sess import run_sess
+from .descriptor import Descriptor
+from .se import DescrptSe
 
-class DescrptSeR ():
+
+@Descriptor.register("se_e2_r")
+@Descriptor.register("se_r")
+class DescrptSeR (DescrptSe):
+    """DeepPot-SE constructed from radial information of atomic configurations.
+    
+    The embedding takes the distance between atoms as input.
+
+    Parameters
+    ----------
+    rcut
+            The cut-off radius
+    rcut_smth
+            From where the environment matrix should be smoothed
+    sel : list[str]
+            sel[i] specifies the maxmum number of type i atoms in the cut-off radius
+    neuron : list[int]
+            Number of neurons in each hidden layers of the embedding net
+    resnet_dt
+            Time-step `dt` in the resnet construction:
+            y = x + dt * \phi (Wx + b)
+    trainable
+            If the weights of embedding net are trainable.
+    seed
+            Random seed for initializing the network parameters.
+    type_one_side
+            Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
+    exclude_types : List[List[int]]
+            The excluded pairs of types which have no interaction with each other.
+            For example, `[[0, 1]]` means no interaction between type 0 and type 1.
+    activation_function
+            The activation function in the embedding net. Supported options are {0}
+    precision
+            The precision of the embedding net parameters. Supported options are {1}
+    uniform_seed
+            Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
+    """
     @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   rcut: float,
@@ -21,7 +60,7 @@ class DescrptSeR ():
                   trainable: bool = True,
                   seed: int = None,
                   type_one_side: bool = True,
-                  exclude_types: List[int] = [],
+                  exclude_types: List[List[int]] = [],
                   set_davg_zero: bool = False,
                   activation_function: str = 'tanh',
                   precision: str = 'default',
@@ -29,34 +68,6 @@ class DescrptSeR ():
     ) -> None:
         """
         Constructor
-
-        Parameters
-        ----------
-        rcut
-                The cut-off radius
-        rcut_smth
-                From where the environment matrix should be smoothed
-        sel : list[str]
-                sel[i] specifies the maxmum number of type i atoms in the cut-off radius
-        neuron : list[int]
-                Number of neurons in each hidden layers of the embedding net
-        resnet_dt
-                Time-step `dt` in the resnet construction:
-                y = x + dt * \phi (Wx + b)
-        trainable
-                If the weights of embedding net are trainable.
-        seed
-                Random seed for initializing the network parameters.
-        type_one_side
-                Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
-        exclude_types : list[int]
-                The Excluded types
-        activation_function
-                The activation function in the embedding net. Supported options are {0}
-        precision
-                The precision of the embedding net parameters. Supported options are {1}
-        uniform_seed
-                Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
         """
         # args = ClassArg()\
         #        .add('sel',      list,   must = True) \
@@ -105,6 +116,7 @@ class DescrptSeR ():
         self.useBN = False
         self.davg = None
         self.dstd = None
+        self.embedding_net_variables = None
 
         self.place_holders = {}
         avg_zero = np.zeros([self.ntypes,self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
@@ -303,10 +315,7 @@ class DescrptSeR ():
                                       sel = self.sel_r)
 
         self.descrpt_reshape = tf.reshape(self.descrpt, [-1, self.ndescrpt])
-        self.descrpt_reshape = tf.identity(self.descrpt_reshape, name = 'o_rmat')
-        self.descrpt_deriv = tf.identity(self.descrpt_deriv, name = 'o_rmat_deriv')
-        self.rij = tf.identity(self.rij, name = 'o_rij')
-        self.nlist = tf.identity(self.nlist, name = 'o_nlist')
+        self._identity_tensors(suffix=suffix)
 
         # only used when tensorboard was set as true
         tf.summary.histogram('descrpt', self.descrpt)
@@ -335,8 +344,9 @@ class DescrptSeR ():
                 natoms[0]: number of local atoms
                 natoms[1]: total number of atoms held by this processor
                 natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
-        Return
-        ------
+
+        Returns
+        -------
         force
                 The force on atoms
         virial
@@ -401,7 +411,7 @@ class DescrptSeR ():
                                   natoms_vec,
                                   mesh) :    
         dd_all \
-            = self.sub_sess.run(self.stat_descrpt, 
+            = run_sess(self.sub_sess, self.stat_descrpt, 
                                 feed_dict = {
                                     self.place_holders['coord']: data_coord,
                                     self.place_holders['type']: data_atype,
@@ -475,13 +485,15 @@ class DescrptSeR ():
                                                 bavg = bavg,
                                                 seed = self.seed,
                                                 trainable = trainable, 
-                                                uniform_seed = self.uniform_seed)
+                                                uniform_seed = self.uniform_seed,
+                                                initial_variables = self.embedding_net_variables,
+                                                )
                     if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
+                    # natom x nei_type_i x out_size
+                    xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1], outputs_size[-1]))
                 else:
-                    w = tf.zeros((outputs_size[0], outputs_size[-1]), dtype=GLOBAL_TF_FLOAT_PRECISION)
-                    xyz_scatter = tf.matmul(xyz_scatter, w)
-                # natom x nei_type_i x out_size
-                xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1], outputs_size[-1]))
+                    natom = tf.shape(inputs)[0]
+                    xyz_scatter = tf.cast(tf.fill((natom, shape_i[1], outputs_size[-1]), 0.), GLOBAL_TF_FLOAT_PRECISION)
                 xyz_scatter_total.append(xyz_scatter)
 
             # natom x nei x outputs_size

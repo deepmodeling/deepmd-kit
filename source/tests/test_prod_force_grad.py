@@ -9,9 +9,9 @@ from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 
-class TestProdForceGrad(unittest.TestCase):
+class TestProdForceGrad(tf.test.TestCase):
     def setUp(self):
-        self.sess = tf.Session()
+        self.sess = self.test_session().__enter__()
         self.nframes = 2
         self.dcoord = [
             12.83, 2.56, 2.18,
@@ -105,5 +105,4 @@ class TestProdForceGrad(unittest.TestCase):
         )
         self.assertEqual(dgrad_net.shape, (self.nframes, self.nloc*self.ndescrpt))
         for ff in range(self.nframes):
-            for ii in range(self.nloc*self.ndescrpt):
-                self.assertAlmostEqual(dgrad_net[ff][ii], self.expected_grad_net[ii], places=5)
+            np.testing.assert_almost_equal(dgrad_net[ff], self.expected_grad_net, 5)

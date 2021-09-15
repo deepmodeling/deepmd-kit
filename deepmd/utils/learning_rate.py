@@ -3,12 +3,29 @@ from deepmd.env import tf
 from deepmd.common import ClassArg
 
 class LearningRateExp (object) :
-    """
+    r"""
     The exponentially decaying learning rate.
 
-    The learning rate at step t is given by
+    The learning rate at step :math:`t` is given by
 
-    lr(t) = start_lr * decay_rate ^ ( t / decay_steps )
+    .. math::
+
+        \alpha(t) = \alpha_0 \lambda ^ { t / \tau }
+    
+    where :math:`\alpha` is the learning rate, :math:`\alpha_0` is the starting learning rate,
+    :math:`\lambda` is the decay rate, and :math:`\tau` is the decay steps.
+
+    Parameters
+    ----------
+    start_lr
+            Starting learning rate :math:`\alpha_0`
+    stop_lr
+            Stop learning rate :math:`\alpha_1`
+    decay_steps
+            Learning rate decay every this number of steps :math:`\tau`
+    decay_rate
+            The decay rate :math:`\lambda`. 
+            If `stop_step` is provided in `build`, then it will be determined automatically and overwritten.
     """
     def __init__ (self, 
                   start_lr : float,
@@ -18,18 +35,6 @@ class LearningRateExp (object) :
     ) -> None :
         """
         Constructor
-        
-        Parameters
-        ----------
-        start_lr
-                Starting learning rate
-        stop_lr
-                Stop learning rate
-        decay_steps
-                Learning rate decay every this number of steps
-        decay_rate 
-                The decay rate. 
-                If `stop_step` is provided in `build`, then it will be determined automatically and overwritten.
         """
         # args = ClassArg()\
         #        .add('decay_steps',      int,    must = False)\

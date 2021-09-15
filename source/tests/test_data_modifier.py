@@ -28,7 +28,7 @@ modifier_datapath = 'data_modifier'
 INPUT = os.path.join(modifier_datapath, 'dipole.json')
 
 
-class TestDataModifier (unittest.TestCase) :
+class TestDataModifier (tf.test.TestCase) :
 
     def setUp(self):
         # with tf.variable_scope('load', reuse = False) :
@@ -44,8 +44,7 @@ class TestDataModifier (unittest.TestCase) :
             init_model=None,
             log_path=None,
             log_level=30,
-            mpi_log="master",
-            try_distrib=False
+            mpi_log="master"
         )
         jdata = j_loader(INPUT)
 
@@ -74,7 +73,7 @@ class TestDataModifier (unittest.TestCase) :
         model.build (data)
         
         # freeze the graph
-        with tf.Session() as sess:
+        with self.test_session() as sess:
             init_op = tf.global_variables_initializer()
             sess.run(init_op)
             graph = tf.get_default_graph()
@@ -120,10 +119,9 @@ class TestDataModifier (unittest.TestCase) :
             ep, _, __ = dcm.eval(coordp, box, atype, eval_fv = False)
             em, _, __ = dcm.eval(coordm, box, atype, eval_fv = False)
             num_f = -(ep - em) / (2.*hh)
-            for ff in range(nframes):
-                self.assertAlmostEqual(vf[ff,ii], num_f[ff], 
-                                       places = places,
-                                       msg = 'frame %d dof %d does not match' % (ff, ii))
+            np.testing.assert_almost_equal(vf[:,ii].ravel(), num_f.ravel(), 
+                                           places,
+                                           err_msg = 'dof %d does not match' % (ii))
 
         box3 = np.reshape(box, [nframes, 3,3])
         rbox3 = np.linalg.inv(box3)
@@ -151,10 +149,7 @@ class TestDataModifier (unittest.TestCase) :
         t_esti = np.matmul(num_deriv, box3)
 
         # print(t_esti, '\n', vv.reshape([-1, 3, 3]))
-        for ff in range(nframes):
-            for ii in range(3):
-                for jj in range(3):                
-                    self.assertAlmostEqual(t_esti[ff][ii][jj], vv[ff,ii*3+jj], 
-                                           places = places,
-                                           msg = "frame %d virial component [%d,%d] failed" % (ff, ii, jj))
+        np.testing.assert_almost_equal(t_esti.ravel(), vv.ravel(), 
+                                       places,
+                                       err_msg = "virial component failed")
             

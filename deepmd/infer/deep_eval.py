@@ -4,6 +4,7 @@ from typing import List, Optional, TYPE_CHECKING
 import numpy as np
 from deepmd.common import make_default_mesh
 from deepmd.env import default_tf_session_config, tf, MODEL_VERSION
+from deepmd.utils.sess import run_sess
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -43,25 +44,29 @@ class DeepEval:
         if not self._model_type:
             t_mt = self._get_tensor("model_attr/model_type:0")
             sess = tf.Session(graph=self.graph, config=default_tf_session_config)
-            [mt] = sess.run([t_mt], feed_dict={})
+            [mt] = run_sess(sess, [t_mt], feed_dict={})
             self._model_type = mt.decode("utf-8")
         return self._model_type
 
     @property
     def model_version(self) -> str:
-        """Get type of model.
+        """Get version of model.
 
-        :type:str
+        Returns
+        -------
+        str
+            version of model
         """
         if not self._model_version:
             try:
                 t_mt = self._get_tensor("model_attr/model_version:0")
-                sess = tf.Session(graph=self.graph, config=default_tf_session_config)
-                [mt] = sess.run([t_mt], feed_dict={})
-                self._model_version = mt.decode("utf-8")
             except KeyError:
                 # For deepmd-kit version 0.x - 1.x, set model version to 0.0
                 self._model_version = "0.0"
+            else:
+                sess = tf.Session(graph=self.graph, config=default_tf_session_config)
+                [mt] = run_sess(sess, [t_mt], feed_dict={})
+                self._model_version = mt.decode("utf-8")
         return self._model_version    
 
     def _graph_compatable(
@@ -69,7 +74,8 @@ class DeepEval:
     ) -> bool :
         """ Check the model compatability
         
-        Return
+        Returns
+        -------
         bool
             If the model stored in the graph file is compatable with the current code
         """
@@ -144,7 +150,7 @@ class DeepEval:
 
     @staticmethod
     def sort_input(
-        coord : np.array, atom_type : np.array, sel_atoms : List[int] = None
+        coord : np.ndarray, atom_type : np.ndarray, sel_atoms : List[int] = None
     ):
         """
         Sort atoms in the system according their types.
@@ -214,8 +220,9 @@ class DeepEval:
                 Reverse mapped vector.
         """
         ret = np.zeros(vec.shape)        
-        for idx,ii in enumerate(imap) :
-            ret[:,ii,:] = vec[:,idx,:]
+        # for idx,ii in enumerate(imap) :
+        #     ret[:,ii,:] = vec[:,idx,:]
+        ret[:, imap, :] = vec
         return ret
 
 

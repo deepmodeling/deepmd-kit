@@ -3,6 +3,26 @@
 
 inline void 
 _fold_back(
+    typename std::vector<double >::iterator out,
+    const typename std::vector<double >::const_iterator in, 
+    const std::vector<int> &mapping,
+    const int nloc,
+    const int nall,
+    const int ndim)
+{
+  // out.resize(nloc*ndim);
+  std::copy(in, in + nloc*ndim, out);
+  for(int ii = nloc; ii < nall; ++ii){
+    int in_idx = ii;
+    int out_idx = mapping[in_idx];
+    for(int dd = 0; dd < ndim; ++dd){
+      *(out + out_idx * ndim + dd) += *(in + in_idx * ndim + dd);
+    }
+  }
+}
+
+inline void 
+_fold_back(
     std::vector<double > &out,
     const std::vector<double > &in,
     const std::vector<int> &mapping,
@@ -11,14 +31,7 @@ _fold_back(
     const int ndim)
 {
   out.resize(nloc*ndim);
-  std::copy(in.begin(), in.begin() + nloc*ndim, out.begin());
-  for(int ii = nloc; ii < nall; ++ii){
-    int in_idx = ii;
-    int out_idx = mapping[in_idx];
-    for(int dd = 0; dd < ndim; ++dd){
-      out[out_idx * ndim + dd] += in[in_idx * ndim + dd];
-    }
-  }
+  _fold_back(out.begin(), in.begin(), mapping, nloc, nall, ndim);
 }
 
 inline void

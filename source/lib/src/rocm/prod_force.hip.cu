@@ -1,7 +1,5 @@
-#include "hip/hip_runtime.h"
 #include "device.h"
 #include "prod_force.h"
-#include "rocprim/rocprim.hpp"
 
 template <
     typename FPTYPE,
@@ -51,12 +49,11 @@ __global__ void force_deriv_wrt_neighbors_a(
     const int nnei)
 {  
     // idy -> nnei
-    const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    const unsigned int idy = blockIdx.y;
+    const unsigned int idx = blockIdx.x;
+    const unsigned int idy = blockIdx.y * blockDim.x + threadIdx.x;
     const unsigned int idz = threadIdx.y;
-    const unsigned int idw = threadIdx.z;
     const int ndescrpt = nnei * 4;
-    if (idx >= nloc) {
+    if (idy >= nnei) {
         return;
     }
     // deriv wrt neighbors
@@ -64,9 +61,11 @@ __global__ void force_deriv_wrt_neighbors_a(
     if (j_idx < 0) {
         return;
     }
-    atomicAdd(
-        force + j_idx * 3 + idz, 
-        net_deriv[idx * ndescrpt + idy * 4 + idw] * in_deriv[idx * ndescrpt * 3 + (idy * 4 + idw) * 3 + idz]);
+    FPTYPE force_tmp = 0.f;
+    for (int idw = 0; idw < 4; ++idw) {
+        force_tmp += net_deriv[idx * ndescrpt + idy * 4 + idw] * in_deriv[idx * ndescrpt * 3 + (idy * 4 + idw) * 3 + idz];
+    }
+    atomicAdd(force + j_idx * 3 + idz, force_tmp);
 }
 
 template<typename FPTYPE>
@@ -79,11 +78,11 @@ __global__ void force_deriv_wrt_neighbors_r(
 		const int nnei)
 {  
     // idy -> nnei
-    const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    const unsigned int idy = blockIdx.y;
+    const unsigned int idx = blockIdx.x;
+    const unsigned int idy = blockIdx.y * blockDim.x + threadIdx.x;
     const unsigned int idz = threadIdx.y;
     const int ndescrpt = nnei * 1;
-    if (idx >= nloc) {
+    if (idy >= nnei) {
         return;
     }
     // deriv wrt neighbors
@@ -108,21 +107,25 @@ namespace deepmd {
       const int nnei)
   {
     const int ndescrpt = nnei * 4;
-    hipErrcheck(hipMemset(
+    DPErrcheck(hipMemset(
         force, 
         0.0, sizeof(FPTYPE) * nall * 3));
   
     hipLaunchKernelGGL(HIP_KERNEL_NAME(force_deriv_wrt_center_atom<FPTYPE, TPB>), nloc, TPB, 0, 0, 
         force, 
         net_deriv, in_deriv, ndescrpt);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
   
     const int LEN = 64;
-    const int nblock = (nloc + LEN -1) / LEN;
-    dim3 block_grid(nblock, nnei);
-    dim3 thread_grid(LEN, 3, 4);
+    const int nblock = (nnei + LEN - 1) / LEN;
+    dim3 block_grid(nloc, nblock);
+    dim3 thread_grid(LEN, 3);
     hipLaunchKernelGGL(force_deriv_wrt_neighbors_a, block_grid, thread_grid, 0, 0, 
         force, 
         net_deriv, in_deriv, nlist, nloc, nnei);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
   }
   
   template<typename FPTYPE> 
@@ -136,21 +139,25 @@ namespace deepmd {
       const int nnei)
   {
     const int ndescrpt = nnei * 1;
-    hipErrcheck(hipMemset(
+    DPErrcheck(hipMemset(
         force, 
         0.0, sizeof(FPTYPE) * nall * 3));
   
     hipLaunchKernelGGL(HIP_KERNEL_NAME(force_deriv_wrt_center_atom<FPTYPE, TPB>), nloc, TPB, 0, 0, 
         force, 
         net_deriv, in_deriv, ndescrpt);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
   
     const int LEN = 64;
-    const int nblock = (nloc + LEN -1) / LEN;
-    dim3 block_grid(nblock, nnei);
+    const int nblock = (nnei + LEN -1) / LEN;
+    dim3 block_grid(nloc, nblock);
     dim3 thread_grid(LEN, 3);
     hipLaunchKernelGGL(force_deriv_wrt_neighbors_r, block_grid, thread_grid, 0, 0, 
         force, 
         net_deriv, in_deriv, nlist, nloc, nnei);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
   }
   
   template void prod_force_a_gpu_rocm<float>(float * force, const float * net_deriv, const float * in_deriv, const int * nlist, const int nloc, const int nall, const int nnei);

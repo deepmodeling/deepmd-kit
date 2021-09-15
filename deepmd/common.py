@@ -21,6 +21,8 @@ import yaml
 
 from deepmd.env import op_module, tf
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION, GLOBAL_NP_FLOAT_PRECISION
+from deepmd.utils.sess import run_sess
+from deepmd.utils.errors import GraphWithoutTensorError
 
 if TYPE_CHECKING:
     _DICT_VAL = TypeVar("_DICT_VAL")

@@ -221,10 +221,14 @@ model:
         .. _`model/descriptor[se_e2_a]/sel`: 
 
         sel: 
-            | type: ``list``
+            | type: ``list`` | ``str``, optional, default: ``auto``
             | argument path: ``model/descriptor[se_e2_a]/sel``
 
-            A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.
+            This parameter set the number of selected neighbors for each type of atom. It can be:
+
+                - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.
+
+                - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".
 
         .. _`model/descriptor[se_e2_a]/rcut`: 
 
@@ -253,7 +257,7 @@ model:
         .. _`model/descriptor[se_e2_a]/axis_neuron`: 
 
         axis_neuron: 
-            | type: ``int``, optional, default: ``4``
+            | type: ``int``, optional, default: ``4``, alias: *n_axis_neuron*
             | argument path: ``model/descriptor[se_e2_a]/axis_neuron``
 
             Size of the submatrix of G (embedding matrix).
@@ -312,7 +316,7 @@ model:
             | type: ``list``, optional, default: ``[]``
             | argument path: ``model/descriptor[se_e2_a]/exclude_types``
 
-            The Excluded types
+            The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1.
 
         .. _`model/descriptor[se_e2_a]/set_davg_zero`: 
 
@@ -330,10 +334,14 @@ model:
         .. _`model/descriptor[se_e2_r]/sel`: 
 
         sel: 
-            | type: ``list``
+            | type: ``list`` | ``str``, optional, default: ``auto``
             | argument path: ``model/descriptor[se_e2_r]/sel``
 
-            A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.
+            This parameter set the number of selected neighbors for each type of atom. It can be:
+
+                - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.
+
+                - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".
 
         .. _`model/descriptor[se_e2_r]/rcut`: 
 
@@ -413,7 +421,7 @@ model:
             | type: ``list``, optional, default: ``[]``
             | argument path: ``model/descriptor[se_e2_r]/exclude_types``
 
-            The Excluded types
+            The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1.
 
         .. _`model/descriptor[se_e2_r]/set_davg_zero`: 
 
@@ -431,10 +439,14 @@ model:
         .. _`model/descriptor[se_e3]/sel`: 
 
         sel: 
-            | type: ``list``
+            | type: ``list`` | ``str``, optional, default: ``auto``
             | argument path: ``model/descriptor[se_e3]/sel``
 
-            A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.
+            This parameter set the number of selected neighbors for each type of atom. It can be:
+
+                - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.
+
+                - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".
 
         .. _`model/descriptor[se_e3]/rcut`: 
 
@@ -516,10 +528,14 @@ model:
         .. _`model/descriptor[se_a_tpe]/sel`: 
 
         sel: 
-            | type: ``list``
+            | type: ``list`` | ``str``, optional, default: ``auto``
             | argument path: ``model/descriptor[se_a_tpe]/sel``
 
-            A list of integers. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.
+            This parameter set the number of selected neighbors for each type of atom. It can be:
+
+                - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.
+
+                - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".
 
         .. _`model/descriptor[se_a_tpe]/rcut`: 
 
@@ -548,7 +564,7 @@ model:
         .. _`model/descriptor[se_a_tpe]/axis_neuron`: 
 
         axis_neuron: 
-            | type: ``int``, optional, default: ``4``
+            | type: ``int``, optional, default: ``4``, alias: *n_axis_neuron*
             | argument path: ``model/descriptor[se_a_tpe]/axis_neuron``
 
             Size of the submatrix of G (embedding matrix).
@@ -607,7 +623,7 @@ model:
             | type: ``list``, optional, default: ``[]``
             | argument path: ``model/descriptor[se_a_tpe]/exclude_types``
 
-            The Excluded types
+            The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1.
 
         .. _`model/descriptor[se_a_tpe]/set_davg_zero`: 
 
@@ -716,7 +732,7 @@ model:
         .. _`model/fitting_net[ener]/neuron`: 
 
         neuron: 
-            | type: ``list``, optional, default: ``[120, 120, 120]``
+            | type: ``list``, optional, default: ``[120, 120, 120]``, alias: *n_neuron*
             | argument path: ``model/fitting_net[ener]/neuron``
 
             The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.
@@ -748,7 +764,7 @@ model:
         .. _`model/fitting_net[ener]/trainable`: 
 
         trainable: 
-            | type: ``bool`` | ``list``, optional, default: ``True``
+            | type: ``list`` | ``bool``, optional, default: ``True``
             | argument path: ``model/fitting_net[ener]/trainable``
 
             Whether the parameters in the fitting net are trainable. This option can be
@@ -789,7 +805,7 @@ model:
         .. _`model/fitting_net[dipole]/neuron`: 
 
         neuron: 
-            | type: ``list``, optional, default: ``[120, 120, 120]``
+            | type: ``list``, optional, default: ``[120, 120, 120]``, alias: *n_neuron*
             | argument path: ``model/fitting_net[dipole]/neuron``
 
             The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.
@@ -821,7 +837,7 @@ model:
         .. _`model/fitting_net[dipole]/sel_type`: 
 
         sel_type: 
-            | type: ``int`` | ``NoneType`` | ``list``, optional
+            | type: ``list`` | ``int`` | ``NoneType``, optional, alias: *dipole_type*
             | argument path: ``model/fitting_net[dipole]/sel_type``
 
             The atom types for which the atomic dipole will be provided. If not set, all types will be selected.
@@ -842,7 +858,7 @@ model:
         .. _`model/fitting_net[polar]/neuron`: 
 
         neuron: 
-            | type: ``list``, optional, default: ``[120, 120, 120]``
+            | type: ``list``, optional, default: ``[120, 120, 120]``, alias: *n_neuron*
             | argument path: ``model/fitting_net[polar]/neuron``
 
             The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.
@@ -898,7 +914,7 @@ model:
         .. _`model/fitting_net[polar]/sel_type`: 
 
         sel_type: 
-            | type: ``int`` | ``NoneType`` | ``list``, optional
+            | type: ``list`` | ``int`` | ``NoneType``, optional, alias: *pol_type*
             | argument path: ``model/fitting_net[polar]/sel_type``
 
             The atom types for which the atomic polarizability will be provided. If not set, all types will be selected.
@@ -1038,6 +1054,14 @@ model:
             | argument path: ``model/compress[se_e2_a]/table_config``
 
             The arguments of model compression, including extrapolate(scale of model extrapolation), stride(uniform stride of tabulation's first and second table), and frequency(frequency of tabulation overflow check).
+
+        .. _`model/compress[se_e2_a]/min_nbor_dist`: 
+
+        min_nbor_dist: 
+            | type: ``float``
+            | argument path: ``model/compress[se_e2_a]/min_nbor_dist``
+
+            The nearest distance between neighbor atoms saved in the frozen model.
 
 
 .. _`loss`: 
@@ -1260,7 +1284,7 @@ training:
         .. _`training/training_data/batch_size`: 
 
         batch_size: 
-            | type: ``int`` | ``list`` | ``str``, optional, default: ``auto``
+            | type: ``list`` | ``int`` | ``str``, optional, default: ``auto``
             | argument path: ``training/training_data/batch_size``
 
             This key can be 
@@ -1290,7 +1314,7 @@ training:
         .. _`training/training_data/sys_probs`: 
 
         sys_probs: 
-            | type: ``NoneType`` | ``list``, optional, default: ``None``, alias: *sys_weights*
+            | type: ``list`` | ``NoneType``, optional, default: ``None``, alias: *sys_weights*
             | argument path: ``training/training_data/sys_probs``
 
             A list of float if specified. Should be of the same length as `systems`, specifying the probability of each system.
@@ -1298,7 +1322,7 @@ training:
     .. _`training/validation_data`: 
 
     validation_data: 
-        | type: ``NoneType`` | ``dict``, optional, default: ``None``
+        | type: ``dict`` | ``NoneType``, optional, default: ``None``
         | argument path: ``training/validation_data``
 
         Configurations of validation data. Similar to that of training data, except that a `numb_btch` argument may be configured
@@ -1322,7 +1346,7 @@ training:
         .. _`training/validation_data/batch_size`: 
 
         batch_size: 
-            | type: ``int`` | ``list`` | ``str``, optional, default: ``auto``
+            | type: ``list`` | ``int`` | ``str``, optional, default: ``auto``
             | argument path: ``training/validation_data/batch_size``
 
             This key can be 
@@ -1352,7 +1376,7 @@ training:
         .. _`training/validation_data/sys_probs`: 
 
         sys_probs: 
-            | type: ``NoneType`` | ``list``, optional, default: ``None``, alias: *sys_weights*
+            | type: ``list`` | ``NoneType``, optional, default: ``None``, alias: *sys_weights*
             | argument path: ``training/validation_data/sys_probs``
 
             A list of float if specified. Should be of the same length as `systems`, specifying the probability of each system.
@@ -1384,7 +1408,7 @@ training:
     .. _`training/disp_file`: 
 
     disp_file: 
-        | type: ``str``, optional, default: ``lcueve.out``
+        | type: ``str``, optional, default: ``lcurve.out``
         | argument path: ``training/disp_file``
 
         The file for printing learning curve.
@@ -1400,7 +1424,7 @@ training:
     .. _`training/numb_test`: 
 
     numb_test: 
-        | type: ``int`` | ``list`` | ``str``, optional, default: ``1``
+        | type: ``list`` | ``int`` | ``str``, optional, default: ``1``
         | argument path: ``training/numb_test``
 
         Number of frames used for the test during training.
@@ -1468,4 +1492,12 @@ training:
         | argument path: ``training/tensorboard_log_dir``
 
         The log directory of tensorboard outputs
+
+    .. _`training/tensorboard_freq`: 
+
+    tensorboard_freq: 
+        | type: ``int``, optional, default: ``1``
+        | argument path: ``training/tensorboard_freq``
+
+        The frequency of writing tensorboard events.
 
