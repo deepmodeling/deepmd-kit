@@ -10,6 +10,8 @@ Testing `examples/water/se_e2_a` on a 8-GPU host, linear acceleration can be obs
 | 4  | 1.7635 | 56.71*4 | 3.29 |
 | 8  | 1.7267 | 57.91*8 | 6.72 |
 
+## Environment setup
+
 To experience this powerful feature, please intall Horovod and [mpi4py](https://github.com/mpi4py/mpi4py) first. For better performance on GPU, please follow tuning steps in [Horovod on GPU](https://github.com/horovod/horovod/blob/master/docs/gpus.rst).
 ```bash
 # With GPU, prefer NCCL as communicator.
@@ -22,6 +24,34 @@ If your work in CPU environment, please prepare runtime as below:
 HOROVOD_WITHOUT_GLOO=1 HOROVOD_WITH_TENSORFLOW=1 pip install horovod mpi4py
 ```
 
+To ensure Horovod has been built with proper framework support enabled, one can invoke the `horovodrun --check-build` command, e.g.,
+
+```bash
+$ horovodrun --check-build
+
+Horovod v0.22.1:
+
+Available Frameworks:
+    [X] TensorFlow
+    [X] PyTorch
+    [ ] MXNet
+
+Available Controllers:
+    [X] MPI
+    [X] Gloo
+
+Available Tensor Operations:
+    [X] NCCL
+    [ ] DDL
+    [ ] CCL
+    [X] MPI
+    [X] Gloo
+```
+
+From version 2.0.1, Horovod and mpi4py with MPICH support is shipped with the installer.
+
+## Training
+
 Horovod works in the data-parallel mode resulting a larger global batch size. For example, the real batch size is 8 when `batch_size` is set to 2 in the input file and you lauch 4 workers. Thus, `learning_rate` is automatically scaled by the number of workers for better convergence. Technical details of such heuristic rule are discussed at [Accurate, Large Minibatch SGD: Training ImageNet in 1 Hour](https://arxiv.org/abs/1706.02677).
 
 With dependencies installed, have a quick try!
@@ -33,7 +63,32 @@ CUDA_VISIBLE_DEVICES=4,5,6,7 horovodrun -np 4 \
 
 Need to mention, environment variable `CUDA_VISIBLE_DEVICES` must be set to control parallelism on the occupied host where one process is bound to one GPU card.
 
-What's more, 2 command-line arguments are defined to control the logging behvaior.
+When using MPI with Horovod, `horovodrun` is a simple wrapper around `mpirun`. In the case where fine-grained control over options passed to `mpirun`, [`mpirun` can be invoked directly](https://horovod.readthedocs.io/en/stable/mpi_include.html), and it will be detected automatically by Horovod, e.g.,
+```bash
+CUDA_VISIBLE_DEVICES=4,5,6,7 mpirun -l -launcher=fork -hosts=localhost -np 4 \
+    dp train --mpi-log=workers input.json
+```
+this is sometimes neccessary on HPC environment.
+
+Whether distributed workers are initiated can be observed at the "Summary of the training" section in the log (`world size` > 1, and `distributed`).
+```
+[0] DEEPMD INFO    ---Summary of the training---------------------------------------
+[0] DEEPMD INFO    distributed
+[0] DEEPMD INFO    world size:           4
+[0] DEEPMD INFO    my rank:              0
+[0] DEEPMD INFO    node list:            ['exp-13-57']
+[0] DEEPMD INFO    running on:           exp-13-57
+[0] DEEPMD INFO    computing device:     gpu:0
+[0] DEEPMD INFO    CUDA_VISIBLE_DEVICES: 0,1,2,3
+[0] DEEPMD INFO    Count of visible GPU: 4
+[0] DEEPMD INFO    num_intra_threads:    0
+[0] DEEPMD INFO    num_inter_threads:    0
+[0] DEEPMD INFO    -----------------------------------------------------------------
+```
+
+## Logging
+
+What's more, 2 command-line arguments are defined to control the logging behvaior when performing performing parallel training with MPI.
 ```
 optional arguments:
   -l LOG_PATH, --log-path LOG_PATH
