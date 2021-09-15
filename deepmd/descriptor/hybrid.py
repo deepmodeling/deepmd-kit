@@ -15,12 +15,12 @@ from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from .descriptor import Descriptor
 from .se_a import DescrptSeA
 from .se_r import DescrptSeR
-from .se_ar import DescrptSeAR
 from .se_t import DescrptSeT
 from .se_a_ebd import DescrptSeAEbd
 from .se_a_ef import DescrptSeAEf
 from .loc_frame import DescrptLocFrame
 
+@Descriptor.register("hybrid")
 class DescrptHybrid (Descriptor):
     """Concate a list of descriptors to form a new descriptor.
 
@@ -37,11 +37,19 @@ class DescrptHybrid (Descriptor):
         """
         if descrpt_list == [] or descrpt_list is None:
             raise RuntimeError('cannot build descriptor from an empty list of descriptors.')
+        formatted_descript_list = []
+        for ii in descrpt_list:
+            if isinstance(ii, Descriptor):
+                formatted_descript_list.append(ii)
+            elif isinstance(ii, dict):
+                formatted_descript_list.append(Descriptor(**ii))
+            else:
+                raise NotImplementedError
         # args = ClassArg()\
         #        .add('list', list, must = True)
         # class_data = args.parse(jdata)
         # dict_list = class_data['list']
-        self.descrpt_list = descrpt_list
+        self.descrpt_list = formatted_descript_list
         self.numb_descrpt = len(self.descrpt_list)
         for ii in range(1, self.numb_descrpt):
             assert(self.descrpt_list[ii].get_ntypes() == 
@@ -253,3 +261,55 @@ class DescrptHybrid (Descriptor):
         """
         for idx, ii in enumerate(self.descrpt_list):
             ii.enable_compression(min_nbor_dist, model_file, table_extrapolate, table_stride_1, table_stride_2, check_frequency, suffix=f"{suffix}_{idx}")
+
+    def init_variables(self,
+                       model_file : str,
+                       suffix : str = "",
+    ) -> None:
+        """
+        Init the embedding net variables with the given dict
+
+        Parameters
+        ----------
+        model_file : str
+            The input frozen model file
+        suffix : str, optional
+            The suffix of the scope
+        """
+        for idx, ii in enumerate(self.descrpt_list):
+            ii.init_variables(model_file, suffix=f"{suffix}_{idx}")
+
+    def get_tensor_names(self, suffix : str = "") -> Tuple[str]:
+        """Get names of tensors.
+        
+        Parameters
+        ----------
+        suffix : str
+            The suffix of the scope
+
+        Returns
+        -------
+        Tuple[str]
+            Names of tensors
+        """
+        tensor_names = []
+        for idx, ii in enumerate(self.descrpt_list):
+            tensor_names.extend(ii.get_tensor_names(suffix=f"{suffix}_{idx}"))
+        return tuple(tensor_names)
+
+    def pass_tensors_from_frz_model(self,
+                                    *tensors : tf.Tensor,
+    ) -> None:
+        """
+        Pass the descrpt_reshape tensor as well as descrpt_deriv tensor from the frz graph_def
+
+        Parameters
+        ----------
+        *tensors : tf.Tensor
+            passed tensors
+        """
+        jj = 0
+        for ii in self.descrpt_list:
+            n_tensors = len(ii.get_tensor_names())
+            ii.pass_tensors_from_frz_model(*tensors[jj:jj+n_tensors])
+            jj += n_tensors

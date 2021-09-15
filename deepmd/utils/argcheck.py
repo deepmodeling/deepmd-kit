@@ -1,5 +1,9 @@
+from typing import List, Callable
+
 from dargs import dargs, Argument, Variant, ArgumentEncoder
+from deepmd import descriptor
 from deepmd.common import ACTIVATION_FN_DICT, PRECISION_DICT
+from deepmd.utils.plugin import Plugin
 import json
 
 
@@ -38,6 +42,55 @@ def type_embedding_args():
 
 
 #  --- Descriptor configurations: --- #
+
+class ArgsPlugin:
+    def __init__(self) -> None:
+        self.__plugin = Plugin()
+
+    def register(self, name : str, alias : List[str] = None) -> Callable[[], List[Argument]]:
+        """Regiester a descriptor argument plugin.
+        
+        Parameters
+        ----------
+        name : str
+            the name of a descriptor
+        alias : List[str], optional
+            the list of aliases of this descriptor
+
+        Returns
+        -------
+        Callable[[], List[Argument]]
+            the regiestered descriptor argument method
+        
+        Examples
+        --------
+        >>> some_plugin = ArgsPlugin()
+        >>> @some_plugin.register("some_descrpt")
+            def descrpt_some_descrpt_args():
+                return []
+        """
+        # convert alias to hashed item
+        if isinstance(alias, list):
+            alias = tuple(alias)
+        return self.__plugin.register((name, alias))
+
+    def get_all_argument(self) -> List[Argument]:
+        """Get all arguments.
+        
+        Returns
+        -------
+        List[Argument]
+            all arguments
+        """
+        arguments = []
+        for (name, alias), metd in self.__plugin.plugins.items():
+            arguments.append(Argument(name=name, dtype=dict, sub_fields=metd(), alias=alias))
+        return arguments
+
+
+descrpt_args_plugin = ArgsPlugin()
+
+@descrpt_args_plugin.register("loc_frame")
 def descrpt_local_frame_args ():
     doc_sel_a = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_a[i]` gives the selected number of type-i neighbors. The full relative coordinates of the neighbors are used by the descriptor.'
     doc_sel_r = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_r[i]` gives the selected number of type-i neighbors. Only relative distance of the neighbors are used by the descriptor. sel_a[i] + sel_r[i] is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.'
@@ -58,6 +111,7 @@ def descrpt_local_frame_args ():
     ]
 
 
+@descrpt_args_plugin.register("se_e2_a", alias=["se_a"])
 def descrpt_se_a_args():
     doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
     - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
@@ -92,6 +146,7 @@ def descrpt_se_a_args():
     ]
 
 
+@descrpt_args_plugin.register("se_e3", alias=['se_at', 'se_a_3be', 'se_t'])
 def descrpt_se_t_args():
     doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
     - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
@@ -121,6 +176,7 @@ def descrpt_se_t_args():
 
 
 
+@descrpt_args_plugin.register("se_a_tpe", alias=['se_a_ebd'])
 def descrpt_se_a_tpe_args():
     doc_type_nchanl = 'number of channels for type embedding'
     doc_type_nlayer = 'number of hidden layers of type embedding net'
@@ -133,6 +189,7 @@ def descrpt_se_a_tpe_args():
     ]
 
 
+@descrpt_args_plugin.register("se_e2_r", alias=['se_r'])
 def descrpt_se_r_args():
     doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
     - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
@@ -165,18 +222,7 @@ def descrpt_se_r_args():
     ]
 
 
-def descrpt_se_ar_args():
-    link = make_link('se_a', 'model/descriptor[se_a]')
-    doc_a = f'The parameters of descriptor {link}'
-    link = make_link('se_r', 'model/descriptor[se_r]')
-    doc_r = f'The parameters of descriptor {link}'
-    
-    return [
-        Argument("a", dict, optional = False, doc = doc_a),
-        Argument("r", dict, optional = False, doc = doc_r),
-    ]
-
-
+@descrpt_args_plugin.register("hybrid")
 def descrpt_hybrid_args():
     doc_list = f'A list of descriptor definitions'
     
@@ -200,14 +246,7 @@ def descrpt_variant_type_args():
 - `se_a_tpe`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Type embedding will be used by this descriptor.\n\n\
 - `hybrid`: Concatenate of a list of descriptors as a new descriptor.'
     
-    return Variant("type", [
-        Argument("loc_frame", dict, descrpt_local_frame_args()),
-        Argument("se_e2_a", dict, descrpt_se_a_args(), alias = ['se_a']),
-        Argument("se_e2_r", dict, descrpt_se_r_args(), alias = ['se_r']),
-        Argument("se_e3", dict, descrpt_se_t_args(), alias = ['se_at', 'se_a_3be', 'se_t']),
-        Argument("se_a_tpe", dict, descrpt_se_a_tpe_args(), alias = ['se_a_ebd']),
-        Argument("hybrid", dict, descrpt_hybrid_args()),
-    ], doc = doc_descrpt_type)
+    return Variant("type", descrpt_args_plugin.get_all_argument(), doc = doc_descrpt_type)
 
 
 #  --- Fitting net configurations: --- #

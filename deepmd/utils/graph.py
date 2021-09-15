@@ -108,7 +108,7 @@ def get_tensor_by_type(node,
     elif data_type == np.float32:
         tensor = np.array(node.float_val)
     else:
-        raise RunTimeError('model compression does not support the half precision')
+        raise RuntimeError('model compression does not support the half precision')
     return tensor
 
 
@@ -129,7 +129,7 @@ def get_embedding_net_nodes_from_graph_def(graph_def: tf.GraphDef, suffix: str =
         The embedding net nodes within the given tf.GraphDef object
     """
     embedding_net_nodes = {}
-    embedding_net_pattern = f"filter_type_\d+{suffix}/matrix_\d+_\d+|filter_type_\d+{suffix}/bias_\d+_\d+|filter_type_\d+{suffix}/idt_\d+_\d+|filter_type_all{suffix}/matrix_\d+_\d+|filter_type_all{suffix}/bias_\d+_\d+|filter_type_all{suffix}/idt_\d+_\d"
+    embedding_net_pattern = f"filter_type_\d+{suffix}/matrix_\d+_\d+|filter_type_\d+{suffix}/bias_\d+_\d+|filter_type_\d+{suffix}/idt_\d+_\d+|filter_type_all{suffix}/matrix_\d+_\d+|filter_type_all{suffix}/matrix_\d+_\d+_\d+|filter_type_all{suffix}/bias_\d+_\d+|filter_type_all{suffix}/bias_\d+_\d+_\d+|filter_type_all{suffix}/idt_\d+_\d+"
     for node in graph_def.node:
         if re.fullmatch(embedding_net_pattern, node.name) != None:
             embedding_net_nodes[node.name] = node.attr["value"].tensor
@@ -139,7 +139,7 @@ def get_embedding_net_nodes_from_graph_def(graph_def: tf.GraphDef, suffix: str =
     return embedding_net_nodes
 
 
-def get_embedding_net_nodes(model_file: str) -> Dict:
+def get_embedding_net_nodes(model_file: str, suffix: str = "") -> Dict:
     """
     Get the embedding net nodes with the given frozen model(model_file)
 
@@ -147,6 +147,8 @@ def get_embedding_net_nodes(model_file: str) -> Dict:
     ----------
     model_file
         The input frozen model path
+    suffix : str, optional
+        The suffix of the scope
    
     Returns
     ----------
@@ -154,10 +156,10 @@ def get_embedding_net_nodes(model_file: str) -> Dict:
         The embedding net nodes with the given frozen model
     """
     _, graph_def = load_graph_def(model_file)
-    return get_embedding_net_nodes_from_graph_def(graph_def)
+    return get_embedding_net_nodes_from_graph_def(graph_def, suffix=suffix)
 
 
-def get_embedding_net_variables_from_graph_def(graph_def : tf.GraphDef) -> Dict:
+def get_embedding_net_variables_from_graph_def(graph_def : tf.GraphDef, suffix: str = "") -> Dict:
     """
     Get the embedding net variables with the given tf.GraphDef object
 
@@ -165,6 +167,8 @@ def get_embedding_net_variables_from_graph_def(graph_def : tf.GraphDef) -> Dict:
     ----------
     graph_def
         The input tf.GraphDef object
+    suffix : str, optional
+        The suffix of the scope
     
     Returns
     ----------
@@ -172,7 +176,7 @@ def get_embedding_net_variables_from_graph_def(graph_def : tf.GraphDef) -> Dict:
         The embedding net variables within the given tf.GraphDef object 
     """
     embedding_net_variables = {}
-    embedding_net_nodes = get_embedding_net_nodes_from_graph_def(graph_def)
+    embedding_net_nodes = get_embedding_net_nodes_from_graph_def(graph_def, suffix=suffix)
     for item in embedding_net_nodes:
         node = embedding_net_nodes[item]
         dtype = tf.as_dtype(node.dtype).as_numpy_dtype
@@ -184,7 +188,7 @@ def get_embedding_net_variables_from_graph_def(graph_def : tf.GraphDef) -> Dict:
         embedding_net_variables[item] = np.reshape(tensor_value, tensor_shape)
     return embedding_net_variables
 
-def get_embedding_net_variables(model_file : str) -> Dict:
+def get_embedding_net_variables(model_file : str, suffix: str = "") -> Dict:
     """
     Get the embedding net variables with the given frozen model(model_file)
 
@@ -192,6 +196,8 @@ def get_embedding_net_variables(model_file : str) -> Dict:
     ----------
     model_file
         The input frozen model path
+    suffix : str, optional
+        The suffix of the scope
     
     Returns
     ----------
@@ -199,7 +205,7 @@ def get_embedding_net_variables(model_file : str) -> Dict:
         The embedding net variables within the given frozen model
     """
     _, graph_def = load_graph_def(model_file)
-    return get_embedding_net_variables_from_graph_def(graph_def)
+    return get_embedding_net_variables_from_graph_def(graph_def, suffix=suffix)
 
 
 def get_fitting_net_nodes_from_graph_def(graph_def: tf.GraphDef) -> Dict:
