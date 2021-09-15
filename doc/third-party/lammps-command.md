@@ -18,7 +18,10 @@ The DeePMD-kit package provides the pair_style `deepmd`
 pair_style deepmd models ... keyword value ...
 ```
 - deepmd = style of this pair_style
-- models = frozen model(s) to compute the interaction. If multiple models are provided, then the model deviation will be computed
+- models = frozen model(s) to compute the interaction. 
+If multiple models are provided, then only the first model serves to provide energy and force prediction for molecular dynamics, 
+and the model deviation will be computed among all models.
+
 - keyword = *out_file* or *out_freq* or *fparam* or *atomic* or *relative*
 <pre>
     <i>out_file</i> value = filename
