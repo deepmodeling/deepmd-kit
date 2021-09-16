@@ -1,8 +1,16 @@
 # Parallel training
 
-Currently, parallel training is enabled in a sychoronized way with help of [Horovod](https://github.com/horovod/horovod). DeePMD-kit will decide parallel training or not according to MPI context. Thus, there is no difference in your json/yaml input file.
+Currently, parallel training is enabled in a sychoronized way with help of [Horovod](https://github.com/horovod/horovod).
+Depend on the number of training processes (according to MPI context) and number of GPU cards avaliable, DeePMD-kit will decide whether to launch the training in parallel (distributed) mode or in serial mode. Therefore, no additional options is specified in your JSON/YAML input file.
+
+Horovod works in the data-parallel mode resulting a larger global batch size. For example, the real batch size is 8 when `batch_size` is set to 2 in the input file and you lauch 4 workers. Thus, `learning_rate` is automatically scaled by the number of workers for better convergence. The number of decay steps required to achieve same accuracy will also reduce, but needs to be scaled based on the number of cards manually.
+
+Technical details of such heuristic rule are discussed at [Accurate, Large Minibatch SGD: Training ImageNet in 1 Hour](https://arxiv.org/abs/1706.02677).
+
+## Scaling test
 
 Testing `examples/water/se_e2_a` on a 8-GPU host, linear acceleration can be observed with increasing number of cards.
+
 | Num of GPU cards | Seconds every 100 samples | Samples per second | Speed up |
 |  --  | -- | -- | -- |
 | 1  | 1.4515 | 68.89 | 1.00 |
@@ -10,9 +18,7 @@ Testing `examples/water/se_e2_a` on a 8-GPU host, linear acceleration can be obs
 | 4  | 1.7635 | 56.71*4 | 3.29 |
 | 8  | 1.7267 | 57.91*8 | 6.72 |
 
-## Training
-
-Horovod works in the data-parallel mode resulting a larger global batch size. For example, the real batch size is 8 when `batch_size` is set to 2 in the input file and you lauch 4 workers. Thus, `learning_rate` is automatically scaled by the number of workers for better convergence. Technical details of such heuristic rule are discussed at [Accurate, Large Minibatch SGD: Training ImageNet in 1 Hour](https://arxiv.org/abs/1706.02677).
+## How to use
 
 ```bash
 # Launch 4 processes on the same host
