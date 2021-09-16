@@ -71,7 +71,7 @@ dp_gmx_patch () {
         for ((i=0;i<${#PATCH_FILES[*]};i++))
         do
             file=${PATCH_FILES[$i]}
-            diff ${GMX_ROOT}/${file} ${DEEPMD_PATCH_ROOT}/${file} | patch -b ${GMX_ROOT}/${file} --suffix=.predp > /dev/null
+            patch -b -u ${GMX_ROOT}/${file} --suffix=.predp < ${DEEPMD_PATCH_ROOT}/${file}.patch > /dev/null
             echo "- Installing ${GMX_ROOT}/${file}"
             echo "- Backing up ${GMX_ROOT}/${file}.predp"
         done
@@ -104,7 +104,7 @@ dp_gmx_revert () {
         for ((i=0;i<${#PATCH_FILES[*]};i++))
         do
             file=${PATCH_FILES[$i]}
-            diff ${GMX_ROOT}/${file}.predp ${DEEPMD_PATCH_ROOT}/${file} | patch ${GMX_ROOT}/${file} -R > /dev/null
+            patch ${GMX_ROOT}/${file} -R -u < ${DEEPMD_PATCH_ROOT}/${file}.patch > /dev/null
             rm ${GMX_ROOT}/${file}.predp
             echo "- Restoring from ${GMX_ROOT}/${file}.predp"
         done

@@ -6,3 +6,4 @@ Note that the model for inference is required to be compatible with the DeePMD-k
 - [Running MD with LAMMPS](lammps.md)
 - [LAMMPS commands](lammps-command.md)
 - [Run path-integral MD with i-PI](ipi.md)
+- [Running MD with GROMACS](gromacs.md)
