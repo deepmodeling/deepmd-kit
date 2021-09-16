@@ -9,3 +9,4 @@ Installation
    install-lammps
    install-ipi
    build-conda
+   install-gromacs
