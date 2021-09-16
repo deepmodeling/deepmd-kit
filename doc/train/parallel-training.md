@@ -47,7 +47,7 @@ Whether distributed workers are initiated can be observed at the "Summary of the
 
 ## Logging
 
-What's more, 2 command-line arguments are defined to control the logging behvaior when performing performing parallel training with MPI.
+What's more, 2 command-line arguments are defined to control the logging behvaior when performing parallel training with MPI.
 ```
 optional arguments:
   -l LOG_PATH, --log-path LOG_PATH
