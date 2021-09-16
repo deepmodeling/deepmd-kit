@@ -1,0 +1,19 @@
+--- /data1/anguse/yingze/gromacs-2020.2/src/gromacs/mdlib/forcerec.cpp	2021-09-16 00:25:17.215621769 +0800
++++ forcerec.cpp	2021-09-16 14:54:13.545224790 +0800
+@@ -98,6 +98,8 @@
+ #include "gromacs/utility/smalloc.h"
+ #include "gromacs/utility/strconvert.h"
+ 
++#include "gromacs/mdlib/deepmd_plugin.h"
++
+ /*! \brief environment variable to enable GPU P2P communication */
+ static const bool c_enableGpuPmePpComms =
+         (getenv("GMX_GPU_PME_PP_COMMS") != nullptr) && GMX_THREAD_MPI && (GMX_GPU == GMX_GPU_CUDA);
+@@ -1491,6 +1493,7 @@
+     {
+         fr->pmePpCommGpu = std::make_unique<gmx::PmePpCommGpu>(cr->mpi_comm_mysim, cr->dd->pme_nodeid);
+     }
++    init_deepmd();
+ }
+ 
+ t_forcerec::t_forcerec() = default;
