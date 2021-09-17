@@ -106,6 +106,32 @@ If your work in CPU environment, please prepare runtime as below:
 HOROVOD_WITHOUT_GLOO=1 HOROVOD_WITH_TENSORFLOW=1 pip install horovod mpi4py
 ```
 
+To ensure Horovod has been built with proper framework support enabled, one can invoke the `horovodrun --check-build` command, e.g.,
+
+```bash
+$ horovodrun --check-build
+
+Horovod v0.22.1:
+
+Available Frameworks:
+    [X] TensorFlow
+    [X] PyTorch
+    [ ] MXNet
+
+Available Controllers:
+    [X] MPI
+    [X] Gloo
+
+Available Tensor Operations:
+    [X] NCCL
+    [ ] DDL
+    [ ] CCL
+    [X] MPI
+    [X] Gloo
+```
+
+From version 2.0.1, Horovod and mpi4py with MPICH support is shipped with the installer.
+
 If you don't install horovod, DeePMD-kit will fallback to serial mode.
 
 ## Install the C++ interface 
