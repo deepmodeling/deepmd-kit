@@ -1,7 +1,7 @@
 # Running MD with GROMACS
 ## DP/MM Simulation
 This part gives a simple tutorial on how to run a DP/MM simulation for methane in water, which means using DP for methane and TIP3P for water. All relevant files can be found in `examples/methane`.
-### 1. Topology Preparation
+### Topology Preparation
 Similar to QM/MM simulation, the internal interactions (including bond, angle, dihedrals, LJ, Columb) of the region descibed by a neural network potential (NNP) have to be **turned off**. In GROMACS, bonded interactions can be turned off by modifying `[ bonds ]`, `[ angles ]`, `[ dihedrals ]` and `[ pairs ]` sections. And LJ and Columb interactions must be turned off by `[ exclusions ]` section.
 
 For example, if one wants to simulate ethane in water, using DeepPotential for methane and TIP3P for water, the topology of methane should be like the following (as presented in `examples/methane/methane.itp`):
@@ -75,7 +75,7 @@ For comparsion, the original topology file genearted by `acpype` will be:
      3      1      5      1    1.0758e+02    3.2635e+02 ;     H2 - C1     - H4    
      4      1      5      1    1.0758e+02    3.2635e+02 ;     H3 - C1     - H4    
 ```
-### 2. DeepMD Settings
+### DeepMD Settings
 Before running simulation, we need to tell GROMACS to use DeepPotential by setting environment variable `GMX_DEEPMD_INPUT_JSON`:
 ```bash
 export GMX_DEEPMD_INPUT_JSON=input.json
@@ -106,7 +106,7 @@ Here is an explanation for these settings:
 ### 3. Run Simulation
 Finally, you can run GROMACS using `gmx mdrun` as usual.
 
-## All-atom NNP Simulation
+## All-atom DP Simulation
 This part gives an example on how to run a simulation with all atoms described by a DeepPotential with Gromacs, taking water as an example. Instead of using `[ exclusions ]` to turn off the non-bonded energies, we can simply do this by setting LJ parameters (i.e. epsilon and sigma) and partial charges to 0, as shown in `examples/water/gmx/water.top`:
 ```
 [ atomtypes ]
