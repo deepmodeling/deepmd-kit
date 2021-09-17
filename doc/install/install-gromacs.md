@@ -21,12 +21,13 @@ export CMAKE_PREFIX_PATH="/path/to/fftw-3.3.9" # fftw libraries
 mkdir build
 cd build
 TENSORFLOW_ROOT="/path/to/tensorflow"
-DEEPMD_ROOT="/path/to/tensorflow"
+DEEPMD_ROOT="/path/to/deepmd"
 
 cmake3 .. -DCMAKE_CXX_STANDARD=14 \ # not required, but c++14 seems to be more compatible with higher version of tensorflow
           -DGMX_TENSORFLOW_ROOT=${TENSORFLOW_ROOT} \
           -DGMX_DEEPMD_ROOT=${DEEPMD_ROOT} \
-          -DGMX_MPI=ON -DGMX_GPU=CUDA \
+          -DGMX_MPI=ON \
+          -DGMX_GPU=CUDA \ # Gromacs haven't supported ROCm yet
           -DCUDA_TOOLKIT_ROOT_DIR=/path/to/cuda \
           -DCMAKE_INSTALL_PREFIX=/path/to/gromacs-2020.2-deepmd
 make -j
