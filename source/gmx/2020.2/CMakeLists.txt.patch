@@ -12,7 +12,7 @@
 +link_directories(${GMX_DEEPMD_ROOT}/lib)
 +link_directories(${GMX_TENSORFLOW_ROOT}/lib)
 +# define high precision
-+add_definitions("-D HIGH_PREC")
++add_definitions("-D HIGH_PREC") # only high precision of deepmd-kit is supported now
 +# ensure all dynamic libraries linked
 +set (CMAKE_EXE_LINKER_FLAGS "-Wl,--no-as-needed")
 +# add link libraries

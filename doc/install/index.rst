@@ -8,5 +8,5 @@ Installation
    install-from-source
    install-lammps
    install-ipi
-   build-conda
    install-gromacs
+   build-conda
