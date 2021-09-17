@@ -19,9 +19,8 @@ pair_style deepmd models ... keyword value ...
 ```
 - deepmd = style of this pair_style
 - models = frozen model(s) to compute the interaction. 
-If multiple models are provided, then only the first model serves to provide energy and force prediction for molecular dynamics, 
-and the model deviation will be computed among all models.
-
+If multiple models are provided, then only the first model serves to provide energy and force prediction for each timestep of molecular dynamics, 
+and the model deviation will be computed among all models every `out_freq` timesteps.
 - keyword = *out_file* or *out_freq* or *fparam* or *atomic* or *relative*
 <pre>
     <i>out_file</i> value = filename
