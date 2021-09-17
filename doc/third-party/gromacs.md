@@ -103,7 +103,7 @@ Here is an explanation for these settings:
 + `lambda`: Optional, default 1.0. Used in alchemical calculations.
 + `pbc`: Optional, default true. If true, the GROMACS peroidic condition is passed to DeepMD.
 
-### 3. Run Simulation
+### Run Simulation
 Finally, you can run GROMACS using `gmx mdrun` as usual.
 
 ## All-atom DP Simulation
