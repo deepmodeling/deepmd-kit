@@ -2,10 +2,10 @@
 ## Patch source code of GROMACS 
 Download source code of a supported gromacs version (2020.2) from https://manual.gromacs.org/2020.2/download.html. Run the following command:
 ```bash
-cd $deepmd_root/source/gmx
-./patch.sh -d $gromacs_root -v $version -p
+export PATH=$PATH:$deepmd_kit_root/bin
+dp_gmx_patch -d $gromacs_root -v $version -p
 ```
-where `deepmd_root` and `gromacs_root` refer to source code directory of deepmd-kit and gromacs respectively. And `version` represents the version of gromacs, **only support 2020.2 now**. You may patch another version of gromacs but still setting `version` to `2020.2`. However, we cannot ensure that it works.
+where `deepmd_kit_root` is the directory where the latest version of deepmd-kit is installed, and `gromacs_root` refers to source code directory of gromacs. And `version` represents the version of gromacs, **only support 2020.2 now**. You may patch another version of gromacs but still setting `version` to `2020.2`. However, we cannot ensure that it works.
 
 <!-- ## Install C++ api of deepmd-kit and tensorflow
 The C++ interface of `deepmd-kit 2.x` and `tensorflow 2.x` are required. -->
