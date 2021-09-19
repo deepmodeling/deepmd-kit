@@ -30,5 +30,6 @@ API_CC
 doc/api_py/
 dp/
 build_lammps/
+.idea/
 build_tests/
 build_cc_tests
