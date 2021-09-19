@@ -1,3 +1,5 @@
+#include <iostream>
+#include <iomanip>
 #include <fstream>
 #include <cstdint>
 #include "sockets.h"
