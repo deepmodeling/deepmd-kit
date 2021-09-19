@@ -9,15 +9,19 @@
 [![Documentation Status](https://readthedocs.org/projects/deepmd/badge/)](https://deepmd.readthedocs.io/)
 
 # Table of contents
+- [<span style="font-size:larger;">DeePMD-kit Manual</span>](#deepmd-kit-manual)
+- [Table of contents](#table-of-contents)
 - [About DeePMD-kit](#about-deepmd-kit)
- 	- [Highlights in v2.0](#highlights-in-deepmd-kit-v2.0)
- 	- [Highlighted features](#highlighted-features)
- 	- [License and credits](#license-and-credits)
- 	- [Deep Potential in a nutshell](#deep-potential-in-a-nutshell)
+- [Highlights in DeePMD-kit v2.0](#highlights-in-deepmd-kit-v20)
+  - [Highlighted features](#highlighted-features)
+  - [License and credits](#license-and-credits)
+  - [Deep Potential in a nutshell](#deep-potential-in-a-nutshell)
 - [Download and install](#download-and-install)
 - [Use DeePMD-kit](#use-deepmd-kit)
+- [Advanced](#advanced)
 - [Code structure](#code-structure)
 - [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
 
 # About DeePMD-kit
 DeePMD-kit is a package written in Python/C++, designed to minimize the effort required to build deep learning based model of interatomic potential energy and force field and to perform molecular dynamics (MD). This brings new hopes to addressing the accuracy-versus-efficiency dilemma in molecular simulations. Applications of DeePMD-kit span from finite molecules to extended systems and from metallic systems to chemically bonded systems. 
@@ -82,6 +86,7 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [Install from source code](doc/install/install-from-source.md)
     - [Install LAMMPS](doc/install/install-lammps.md)
     - [Install i-PI](doc/install/install-ipi.md)
+    - [Install GROMACS](doc/install/install-gromacs.md)
     - [Building conda packages](doc/install/build-conda.md)
 - [Data](doc/data/index.md)
     - [Data conversion](doc/data/data-conv.md)
@@ -113,9 +118,10 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [C++ interface](doc/inference/cxx.md)
 - [Integrate with third-party packages](doc/third-party/index.rst)
     - [Use deep potential with ASE](doc/third-party/ase.md)
-    - [Running MD with LAMMPS](doc/third-party/lammps.md)
+    - [Run MD with LAMMPS](doc/third-party/lammps.md)
     - [LAMMPS commands](doc/third-party/lammps-command.md)
     - [Run path-integral MD with i-PI](doc/third-party/ipi.md)
+    - [Run MD with GROMACS](doc/third-party/gromacs.md)
 
 
 # Code structure
@@ -134,6 +140,8 @@ The code is organized as follows:
 * `source/lib`: source code of DeePMD-kit library.
 
 * `source/lmp`: source code of Lammps module.
+
+* `source/gmx`: source code of Gromacs plugin and patches.
 
 * `source/op`: tensorflow op implementation. working with library.
 
