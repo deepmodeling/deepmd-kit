@@ -1,0 +1,33 @@
+--- /public/wangyingze/soft/gromacs-2020.2/src/gromacs/mdlib/forcerec.cpp	2020-04-30 16:33:43.000000000 +0000
++++ /public/wangyingze/soft/gromacs-2020.2-deepmd/src/gromacs/mdlib/forcerec.cpp	2021-09-19 07:45:19.000000000 +0000
+@@ -98,6 +98,11 @@
+ #include "gromacs/utility/smalloc.h"
+ #include "gromacs/utility/strconvert.h"
+ 
++// Deepmd
++// #include "deepmd/gmx_plugin.h"
++deepmd::DeepmdPlugin* deepmdPlugin;
++bool useDeepmd;
++
+ /*! \brief environment variable to enable GPU P2P communication */
+ static const bool c_enableGpuPmePpComms =
+         (getenv("GMX_GPU_PME_PP_COMMS") != nullptr) && GMX_THREAD_MPI && (GMX_GPU == GMX_GPU_CUDA);
+@@ -1491,6 +1496,18 @@
+     {
+         fr->pmePpCommGpu = std::make_unique<gmx::PmePpCommGpu>(cr->mpi_comm_mysim, cr->dd->pme_nodeid);
+     }
++    // Deepmd
++    deepmdPlugin = new deepmd::DeepmdPlugin;
++    char* json_file = getenv("GMX_DEEPMD_INPUT_JSON");
++    if (json_file == NULL)
++    {
++        useDeepmd = false;
++    }
++    else
++    {
++        deepmdPlugin->init_from_json(json_file);
++        useDeepmd = true;
++    }
+ }
+ 
+ t_forcerec::t_forcerec() = default;
