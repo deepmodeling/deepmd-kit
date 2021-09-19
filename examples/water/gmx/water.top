@@ -1,0 +1,43 @@
+[ defaults ]
+; nbfunc        comb-rule       gen-pairs       fudgeLJ fudgeQQ
+1               2               yes             0.5     0.8333
+
+[ atomtypes ]
+; name      at.num  mass     charge ptype  sigma      epsilon
+HW           1       1.008   0.0000  A   0.00000e+00  0.00000e+00
+OW           8      16.00    0.0000  A   0.00000e+00  0.00000e+00
+
+
+[ bondtypes ]
+; i    j  func       b0          kb
+  OW HW         1    0.09572   462750.4 ; P water
+  HW HW         1    0.15136   462750.4 ; P water
+
+
+[ angletypes ]
+;  i    j    k  func       th0       cth
+HW  OW  HW           1   104.520    836.800 ; TIP3P water
+HW  HW  OW           1   127.740      0.000 ; (found in crystallographic water with 3 bonds)
+
+
+; Include water topology
+[ moleculetype ]
+; molname	nrexcl
+SOL		2
+
+[ atoms ]
+; id  at type     res nr  res name  at name  cg nr  charge    mass
+  ; 1   OW          1       SOL       OW       1      -0.834    16.00000
+  ; 2   HW          1       SOL       HW1      1       0.417     1.00800
+  ; 3   HW          1       SOL       HW2      1       0.417     1.00800
+  1   OW          1       SOL       OW       1      0.000    16.00000
+  2   HW          1       SOL       HW1      1      0.000     1.00800
+  3   HW          1       SOL       HW2      1      0.00     1.00800
+
+[ system ]
+; Name
+lw_256.pdb
+
+[ molecules ]
+; Compound        #mols
+SOL               256
