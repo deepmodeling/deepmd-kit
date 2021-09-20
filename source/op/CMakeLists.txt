@@ -11,7 +11,7 @@ if(USE_ROCM_TOOLKIT AND ROCM_DTK)
   file(GLOB OP_SRC custom_op.cc prod_force.cc prod_virial.cc descrpt.cc descrpt_se_a_ef.cc descrpt_se_a_ef.cc descrpt_se_a_ef_para.cc descrpt_se_a_ef_vert.cc pair_tab.cc prod_force_multi_device.cc prod_virial_multi_device.cc soft_min.cc soft_min_force.cc soft_min_virial.cc ewald_recp.cc map_aparam.cc neighbor_stat.cc unaggregated_grad.cc tabulate_multi_device.cc prod_env_mat_multi_device.cc)
   file(GLOB OP_GRADS_SRC custom_op.cc prod_force_grad.cc prod_force_grad_multi_device.cc prod_virial_grad.cc prod_virial_grad_multi_device.cc soft_min_force_grad.cc soft_min_virial_grad.cc )
   file(GLOB OP_PY _prod*.py _soft*.py _tabulate_grad.py)  
-endif(USE_ROCM_TOOLKIT)
+endif(USE_ROCM_TOOLKIT AND ROCM_DTK)
 
 if (BUILD_CPP_IF) 
   add_library(${LIB_DEEPMD_OP} SHARED ${OP_SRC})

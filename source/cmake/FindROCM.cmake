@@ -6,15 +6,6 @@
 # ROCM_INCLUDE_DIRS 
 # ROCM_LIBRARIES
 
-
-if(ROCM_DTK AND ROCM_TWO)
-  message(FATAL_ERROR "CANNOT SELECT TWO VERSIONS OF ROCM AT THA SAME TIME")
-endif()
-
-if(NOT ROCM_DTK AND ROCM_TWO)
-  message(FATAL_ERROR "PLEASE USE -DROCM_DTK=TRUE OR -DROCM_TWO TO TELL ME THE VERSION OF ROCM")
-endif()
-
 # define the search path
 if(ROCM_ROOT)
   list(APPEND ROCM_SEARCH_PATHS ${ROCM_ROOT})
@@ -22,7 +13,7 @@ else()
   if(ROCM_DTK)
     list(APPEND ROCM_SEARCH_PATHS "/public/software/compiler/dtk/dtk-21.04/")
     list(APPEND ROCM_SEARCH_PATHS "/public/software/compiler/rocm/dtk-21.04/")
-  elseif(ROCM_TWO)
+  else
     list(APPEND ROCM_SEARCH_PATHS "/opt/rocm")
   endif(ROCM_DTK)
 endif(ROCM_ROOT)
@@ -30,7 +21,7 @@ endif(ROCM_ROOT)
 # define the libs to find
 if (NOT ROCM_FIND_COMPONENTS and ROCM_DTK)
   set(ROCM_FIND_COMPONENTS amd_comgr amdhip64)
-elseif(NOT ROCM_FIND_COMPONENTS and ROCM_TWO)
+else
   set(ROCM_FIND_COMPONENTS hip_hcc hiprtc)
 endif ()
 
@@ -46,7 +37,7 @@ find_path (ROCM_INCLUDE_DIRS
   )
 if (NOT ROCM_INCLUDE_DIRS AND ROCM_FIND_REQUIRED)
   message(FATAL_ERROR 
-    "Not found 'hip' or 'rocprim' or 'hipcub' directory in path '${ROCM_search_PATHS}' "
+    "Not found 'hip' or 'rocprim' or 'hipcub' directory in path '${ROCM_SEARCH_PATHS}' "
     "You can manually set the ROCM install path by -DROCM_ROOT ")
 endif ()
 
@@ -54,13 +45,13 @@ endif ()
 foreach (module ${ROCM_FIND_COMPONENTS})
   find_library(ROCM_LIBRARIES_${module}
     NAMES ${module}
-    PATHS ${ROCM_search_PATHS} PATH_SUFFIXES "lib64" "lib" NO_DEFAULT_PATH
+    PATHS ${ROCM_SEARCH_PATHS} PATH_SUFFIXES "lib64" "lib" NO_DEFAULT_PATH
     )
   if (ROCM_LIBRARIES_${module})
     list(APPEND ROCM_LIBRARIES ${ROCM_LIBRARIES_${module}})
   elseif (ROCM_FIND_REQUIRED)
     message(FATAL_ERROR 
-      "Not found lib/'${module}' in '${ROCM_search_PATHS}' "
+      "Not found lib/'${module}' in '${ROCM_SEARCH_PATHS}' "
       "You can manually set the ROCM install path by -DROCM_ROOT ")
   endif ()
 endforeach ()
@@ -69,14 +60,14 @@ endforeach ()
 find_path (HIP_CMAKE
   NAMES 
   FindHIP.cmake
-  PATHS ${ROCM_search_PATHS} 
+  PATHS ${ROCM_SEARCH_PATHS} 
   PATH_SUFFIXES "hip/cmake"
   NO_DEFAULT_PATH
   )
 
 if (NOT HIP_CMAKE AND ROCM_FIND_REQUIRED)
   message(FATAL_ERROR 
-    "Not found 'FindHIP.cmake' file in path '${ROCM_search_PATHS}' "
+    "Not found 'FindHIP.cmake' file in path '${ROCM_SEARCH_PATHS}' "
     "You can manually set the ROCM install path by -DROCM_ROOT ")
 endif ()
 
@@ -93,7 +84,7 @@ endif ()
 # print message
 if (NOT ROCM_FIND_QUIETLY)
   message(STATUS "Found ROCM: ${ROCM_INCLUDE_DIRS}, ${ROCM_LIBRARIES}, ${HIP_CMAKE}"
-    " in ${ROCM_search_PATHS}, build AMD GPU support")
+    " in ${ROCM_SEARCH_PATHS}, build AMD GPU support")
 endif ()
 
 unset(ROCM_SEARCH_PATHS)
