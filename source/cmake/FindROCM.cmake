@@ -13,7 +13,7 @@ else()
   if(ROCM_DTK)
     list(APPEND ROCM_SEARCH_PATHS "/public/software/compiler/dtk/dtk-21.04/")
     list(APPEND ROCM_SEARCH_PATHS "/public/software/compiler/rocm/dtk-21.04/")
-  else
+  else()
     list(APPEND ROCM_SEARCH_PATHS "/opt/rocm")
   endif(ROCM_DTK)
 endif(ROCM_ROOT)
@@ -21,7 +21,7 @@ endif(ROCM_ROOT)
 # define the libs to find
 if (NOT ROCM_FIND_COMPONENTS and ROCM_DTK)
   set(ROCM_FIND_COMPONENTS amd_comgr amdhip64)
-else
+else()
   set(ROCM_FIND_COMPONENTS hip_hcc hiprtc)
 endif ()
 

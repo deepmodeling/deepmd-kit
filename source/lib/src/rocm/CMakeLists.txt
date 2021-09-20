@@ -14,7 +14,7 @@ message(STATUS "HIP major version is " ${HIP_VERSION_MAJOR})
 
 if(ROCM_DTK)
   set (HIP_HIPCC_FLAGS  -fno-gpu-rdc; --amdgpu-target=gfx906; -fPIC; -O3; --std=c++11)
-else
+else()
   set (HIP_HIPCC_FLAGS  -hc;  -fno-gpu-rdc; --amdgpu-target=gfx906; -fPIC; -O3; --std=c++11)
 endif()
 
