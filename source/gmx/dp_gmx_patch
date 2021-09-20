@@ -1,6 +1,6 @@
 #!/bin/bash
 DEEPMD_PATCH_SCRIPT_DIR=$(dirname $(readlink -f "$0"))
-DEEPMD_PATCH_ROOT=${DEEPMD_PATCH_SCRIPT_DIR}/../lib/patches
+DEEPMD_PATCH_ROOT=${DEEPMD_PATCH_SCRIPT_DIR}/../share/deepmd_gromacs_patches
 VERSION="NULL"
 PATCH_FILES=("CMakeLists.txt" "src/gromacs/mdlib/forcerec.cpp" "src/gromacs/mdlib/sim_util.cpp" "src/gromacs/mdlib/forcerec.h")
 

@@ -1,5 +1,14 @@
 message(STATUS "Build GROMACS plugin")
 
+file(GLOB PATCH_VERSIONS patches/*)
+FOREACH(PATCH_VERSION ${PATCH_VERSIONS})
+  configure_file(
+    "${PATCH_VERSION}/CMakeLists.txt.patch.in"
+    "${PATCH_VERSION}/CMakeLists.txt.patch"
+    @ONLY
+  )
+ENDFOREACH(PATCH_VERSION)
+
 set(libgmxname ${LIB_DEEPMD_GROMACS})
 file(GLOB LIB_SRC src/*.cpp)
 file(GLOB INC_SRC include/*.h)
@@ -24,7 +33,8 @@ install (
 
 install (
   DIRECTORY patches/
-  DESTINATION lib/patches
+  DESTINATION share/deepmd_gromacs_patches
+  PATTERN */CMakeLists.txt.patch.in EXCLUDE
 )
 
 install (

@@ -9,10 +9,10 @@
 +add_definitions(-w) # close warning
 +# define deepmd and tensorflow root
 +if (NOT DEFINED GMX_DEEPMD_ROOT)
-+    set (GMX_DEEPMD_ROOT /public/wangyingze/local/deepmd-kit-2.0.0)
++    set (GMX_DEEPMD_ROOT @CMAKE_INSTALL_PREFIX@)
 +endif()
 +if (NOT DEFINED GMX_TENSORFLOW_ROOT)
-+    set (GMX_TENSORFLOW_ROOT /public/shared-data-fep/local/tensorflow-2.3.0)
++    set (GMX_TENSORFLOW_ROOT @TENSORFLOW_ROOT@)
 +endif()
 +include_directories(${GMX_DEEPMD_ROOT}/include)
 +include_directories(${GMX_TENSORFLOW_ROOT}/include)
