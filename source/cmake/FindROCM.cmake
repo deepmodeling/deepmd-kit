@@ -6,15 +6,32 @@
 # ROCM_INCLUDE_DIRS 
 # ROCM_LIBRARIES
 
-# define the search path
-list(APPEND ROCM_search_PATHS ${ROCM_ROOT})
-list(APPEND ROCM_search_PATHS "/public/software/compiler/dtk/dtk-21.04/")
-list(APPEND ROCM_search_PATHS "/public/software/compiler/rocm/dtk-21.04/")
 
+if(ROCM_DTK AND ROCM_TWO)
+  message(FATAL_ERROR "CANNOT SELECT TWO VERSIONS OF ROCM AT THA SAME TIME")
+endif()
+
+if(NOT ROCM_DTK AND ROCM_TWO)
+  message(FATAL_ERROR "PLEASE USE -DROCM_DTK=TRUE OR -DROCM_TWO TO TELL ME THE VERSION OF ROCM")
+endif()
+
+# define the search path
+if(ROCM_ROOT)
+  list(APPEND ROCM_SEARCH_PATHS ${ROCM_ROOT})
+else()
+  if(ROCM_DTK)
+    list(APPEND ROCM_SEARCH_PATHS "/public/software/compiler/dtk/dtk-21.04/")
+    list(APPEND ROCM_SEARCH_PATHS "/public/software/compiler/rocm/dtk-21.04/")
+  elseif(ROCM_TWO)
+    list(APPEND ROCM_SEARCH_PATHS "/opt/rocm")
+  endif(ROCM_DTK)
+endif(ROCM_ROOT)
 
 # define the libs to find
-if (NOT ROCM_FIND_COMPONENTS)
-  set(ROCM_FIND_COMPONENTS amd_comgr)
+if (NOT ROCM_FIND_COMPONENTS and ROCM_DTK)
+  set(ROCM_FIND_COMPONENTS amd_comgr amdhip64)
+elseif(NOT ROCM_FIND_COMPONENTS and ROCM_TWO)
+  set(ROCM_FIND_COMPONENTS hip_hcc hiprtc)
 endif ()
 
 # includes
@@ -23,7 +40,7 @@ find_path (ROCM_INCLUDE_DIRS
   hip/hip_runtime.h
   rocprim/rocprim.hpp
   hipcub/hipcub.hpp
-  PATHS ${ROCM_search_PATHS} 
+  PATHS ${ROCM_SEARCH_PATHS} 
   PATH_SUFFIXES "include"
   NO_DEFAULT_PATH
   )
@@ -37,7 +54,7 @@ endif ()
 foreach (module ${ROCM_FIND_COMPONENTS})
   find_library(ROCM_LIBRARIES_${module}
     NAMES ${module}
-    PATHS ${ROCM_search_PATHS} PATH_SUFFIXES "lib64" NO_DEFAULT_PATH
+    PATHS ${ROCM_search_PATHS} PATH_SUFFIXES "lib64" "lib" NO_DEFAULT_PATH
     )
   if (ROCM_LIBRARIES_${module})
     list(APPEND ROCM_LIBRARIES ${ROCM_LIBRARIES_${module}})
@@ -79,4 +96,4 @@ if (NOT ROCM_FIND_QUIETLY)
     " in ${ROCM_search_PATHS}, build AMD GPU support")
 endif ()
 
-unset(ROCM_search_PATHS)
+unset(ROCM_SEARCH_PATHS)
