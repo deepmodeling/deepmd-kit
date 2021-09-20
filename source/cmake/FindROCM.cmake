@@ -21,7 +21,7 @@ endif(ROCM_ROOT)
 # define the libs to find
 if (NOT ROCM_FIND_COMPONENTS AND ROCM_DTK)
   set(ROCM_FIND_COMPONENTS amd_comgr amdhip64)
-else()
+else(NOT ROCM_FIND_COMPONENTS)
   set(ROCM_FIND_COMPONENTS hip_hcc hiprtc)
 endif ()
 
