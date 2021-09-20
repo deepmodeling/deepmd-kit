@@ -146,7 +146,7 @@ Check the compiler version on your machine
 gcc --version
 ```
 
-The C++ interface of DeePMD-kit was tested with compiler gcc >= 4.8. It is noticed that the I-Pi support is only compiled with gcc >= 4.9.
+The C++ interface of DeePMD-kit was tested with compiler gcc >= 4.8. It is noticed that the I-Pi support is only compiled with gcc >= 4.8.
 
 First the C++ interface of Tensorflow should be installed. It is noted that the version of Tensorflow should be in consistent with the python interface. You may follow [the instruction](install-tf.2.3.md) to install the corresponding C++ interface.
 

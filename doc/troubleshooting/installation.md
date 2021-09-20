@@ -1,6 +1,6 @@
 # Installation
 ## Inadequate versions of gcc/g++
-Sometimes you may use a gcc/g++ of version <4.9. If you have a gcc/g++ of version > 4.9, say, 7.2.0, you may choose to use it by doing 
+Sometimes you may use a gcc/g++ of version < 4.8. If you have a gcc/g++ of version > 4.8, say, 7.2.0, you may choose to use it by doing 
 ```bash
 export CC=/path/to/gcc-7.2.0/bin/gcc
 export CXX=/path/to/gcc-7.2.0/bin/g++
