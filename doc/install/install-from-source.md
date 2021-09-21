@@ -61,9 +61,9 @@ pip install .
 
 One may set the following environment variables before executing `pip`:
 
-| Environment variables | Allowed value          | Default value | Usage                      |
-| --------------------- | ---------------------- | ------------- | -------------------------- |
-| DP_VARIANT            | `cpu`, `cuda`, `rocm`  | `cpu`         | Build CPU variant or GPU variant with CUDA or ROCM support. |
+| Environment variables | Allowed value                     | Default value | Usage                      |
+| --------------------- | --------------------------------- | ------------- | -------------------------- |
+| DP_VARIANT            | `cpu`, `cuda`, `rocm`, `rocm_dtk` | `cpu`         | Build CPU variant or GPU variant with CUDA/ROCM-2.9/ROCM-4.0 support. |
 | CUDA_TOOLKIT_ROOT_DIR | Path                   | Detected automatically | The path to the CUDA toolkit directory. |
 | ROCM_ROOT             | Path                   | Detected automatically | The path to the ROCM toolkit directory. |
 
@@ -130,7 +130,8 @@ One may add the following arguments to `cmake`:
 | -DCMAKE_INSTALL_PREFIX=&lt;value&gt; | Path          | -             | The Path where DeePMD-kit will be installed. |
 | -DUSE_CUDA_TOOLKIT=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build GPU support with CUDA toolkit. |
 | -DCUDA_TOOLKIT_ROOT_DIR=&lt;value&gt; | Path         | Detected automatically | The path to the CUDA toolkit directory. |
-| -DUSE_ROCM_TOOLKIT=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build GPU support with ROCM toolkit. |
+| -DUSE_ROCM_TOOLKIT=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build GPU support with ROCM-2.9 toolkit. |
+| -DROCM_DTK=&lt;value&gt;         | `TRUE` or 'FALSE' | `FALSE`       | If 'TRUE', Build GPU support with ROCM-4.0 toolkit. |
 | -DROCM_ROOT=&lt;value&gt; | Path         | Detected automatically | The path to the ROCM toolkit directory. |
 | -DLAMMPS_VERSION_NUMBER=&lt;value&gt; | Number         | `20201029` | Only neccessary for LAMMPS built-in mode. The version number of LAMMPS (yyyymmdd). |
 | -DLAMMPS_SOURCE_ROOT=&lt;value&gt; | Path         | - | Only neccessary for LAMMPS plugin mode. The path to the LAMMPS source code (later than 8Apr2021). If not assigned, the plugin mode will not be enabled. |
