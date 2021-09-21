@@ -62,6 +62,7 @@ class DPPath(ABC):
             list of paths
         """
     
+    @abstractmethod
     def rglob(self, pattern: str) -> List["DPPath"]:
         """This is like calling :metd:`DPPath.glob()` with `**/` added in front
         of the given relative pattern.
@@ -76,7 +77,6 @@ class DPPath(ABC):
         List[DPPath]
             list of paths
         """
-        return self.glob("**" + pattern)
     
     @abstractmethod
     def is_file(self) -> bool:
@@ -159,6 +159,22 @@ class DPOSPath(DPPath):
         # currently DPOSPath will only derivative DPOSPath
         # TODO: discuss if we want to mix DPOSPath and DPH5Path?
         return list([type(self)(p) for p in self.path.glob(pattern)])
+
+    def rglob(self, pattern: str) -> List["DPPath"]:
+        """This is like calling :metd:`DPPath.glob()` with `**/` added in front
+        of the given relative pattern.
+        
+        Parameters
+        ----------
+        pattern : str
+            glob pattern
+        
+        Returns
+        -------
+        List[DPPath]
+            list of paths
+        """
+        return list([type(self)(p) for p in self.path.rglob(pattern)])
 
     def is_file(self) -> bool:
         """Check if self is file."""
@@ -257,6 +273,22 @@ class DPH5Path(DPPath):
             list of paths
         """
         return list([type(self)("%s#%s"%(self.root_path, pp)) for pp in globfilter(self._keys, self._connect_path(pattern))])
+
+    def rglob(self, pattern: str) -> List["DPPath"]:
+        """This is like calling :metd:`DPPath.glob()` with `**/` added in front
+        of the given relative pattern.
+        
+        Parameters
+        ----------
+        pattern : str
+            glob pattern
+        
+        Returns
+        -------
+        List[DPPath]
+            list of paths
+        """
+        return self.glob("**" + pattern)
 
     @property
     @lru_cache
