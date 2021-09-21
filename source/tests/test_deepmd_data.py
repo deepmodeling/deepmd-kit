@@ -268,8 +268,8 @@ class TestH5Data (unittest.TestCase) :
         dd = DeepmdData(self.data_name)
         self.assertEqual(dd.idx_map[0], 0)
         self.assertEqual(dd.type_map, ['X'])
-        self.assertEqual(dd.test_dir, 'test.hdf5#/set.000')
-        self.assertEqual(dd.train_dirs, ['test.hdf5#/set.000'])
+        self.assertEqual(dd.test_dir, self.data_name + '#/set.000')
+        self.assertEqual(dd.train_dirs, [self.data_name + '#/set.000'])
 
     def test_get_batch(self) :
         dd = DeepmdData(self.data_name)
