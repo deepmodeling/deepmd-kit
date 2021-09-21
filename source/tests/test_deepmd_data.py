@@ -262,7 +262,7 @@ class TestData (unittest.TestCase) :
 
 class TestH5Data (unittest.TestCase) :
     def setUp (self) :
-        self.data_name = tests_path / 'test.hdf5'
+        self.data_name = str(tests_path / 'test.hdf5')
 
     def test_init (self) :
         dd = DeepmdData(self.data_name)
