@@ -272,7 +272,9 @@ class DPH5Path(DPPath):
         List[DPPath]
             list of paths
         """
-        return list([type(self)("%s#%s"%(self.root_path, pp)) for pp in globfilter(self._keys, self._connect_path(pattern))])
+        # got paths starts with current path first, which is faster
+        subpaths = [ii for ii in self._keys if ii.startswith(self.name)]
+        return list([type(self)("%s#%s"%(self.root_path, pp)) for pp in globfilter(subpaths, self._connect_path(pattern))])
 
     def rglob(self, pattern: str) -> List["DPPath"]:
         """This is like calling :metd:`DPPath.glob()` with `**/` added in front
