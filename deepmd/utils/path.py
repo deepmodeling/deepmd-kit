@@ -291,11 +291,16 @@ class DPH5Path(DPPath):
         return self.glob("**" + pattern)
 
     @property
+    def _keys(self) -> List[str]:
+        """Walk all groups and dataset"""
+        return self._file_keys(self.root)
+
+    @classmethod
     @lru_cache(None)
-    def _keys(self):
+    def _file_keys(cls, file: h5py.File) -> List[str]:
         """Walk all groups and dataset"""
         l = []
-        self.root.visit(lambda x: l.append("/" + x))
+        file.visit(lambda x: l.append("/" + x))
         return l
 
     def is_file(self) -> bool:
