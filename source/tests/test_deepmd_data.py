@@ -4,6 +4,7 @@ import unittest
 
 from deepmd.utils.data import DeepmdData
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
+from common import tests_path
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
     places = 6
@@ -261,7 +262,7 @@ class TestData (unittest.TestCase) :
 
 class TestH5Data (unittest.TestCase) :
     def setUp (self) :
-        self.data_name = 'test.hdf5'
+        self.data_name = tests_path / 'test.hdf5'
 
     def test_init (self) :
         dd = DeepmdData(self.data_name)
