@@ -20,6 +20,7 @@ from deepmd.utils.compat import updata_deepmd_input
 from deepmd.utils.data_system import DeepmdDataSystem
 from deepmd.utils.sess import run_sess
 from deepmd.utils.neighbor_stat import NeighborStat
+from deepmd.utils.path import DPPath
 
 __all__ = ["train"]
 
@@ -181,11 +182,12 @@ def get_data(jdata: Dict[str, Any], rcut, type_map, modifier):
         raise IOError(msg, help_msg)
     # rougly check all items in systems are valid
     for ii in systems:
-        if (not os.path.isdir(ii)):
+        ii = DPPath(ii)
+        if (not ii.is_dir()):
             msg = f'dir {ii} is not a valid dir'
             log.fatal(msg)
             raise IOError(msg, help_msg)
-        if (not os.path.isfile(os.path.join(ii, 'type.raw'))):
+        if (not (ii / 'type.raw').is_file()):
             msg = f'dir {ii} is not a valid data system dir'
             log.fatal(msg)
             raise IOError(msg, help_msg)
