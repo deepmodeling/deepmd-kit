@@ -295,7 +295,7 @@ class DPH5Path(DPPath):
     def _keys(self):
         """Walk all groups and dataset"""
         l = []
-        self.root.visititems(lambda x, _: l.append("/" + x))
+        self.root.visit(lambda x: l.append("/" + x))
         return l
 
     def is_file(self) -> bool:
