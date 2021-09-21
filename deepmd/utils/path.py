@@ -259,7 +259,7 @@ class DPH5Path(DPPath):
         return list([type(self)("%s#%s"%(self.root_path, pp)) for pp in globfilter(self._keys, self._connect_path(pattern))])
 
     @property
-    @lru_cache
+    @lru_cache(None)
     def _keys(self):
         """Walk all groups and dataset"""
         l = []
