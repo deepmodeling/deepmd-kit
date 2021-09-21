@@ -1,0 +1,6 @@
+{
+    "graph_file" : "frozen_model.pb",
+    "type_file": "type.raw",
+    "index_file": "index.raw",
+    "lambda": 1.0
+}
