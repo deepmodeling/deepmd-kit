@@ -291,7 +291,7 @@ class DPH5Path(DPPath):
         return self.glob("**" + pattern)
 
     @property
-    @lru_cache
+    @lru_cache(None)
     def _keys(self):
         """Walk all groups and dataset"""
         l = []
