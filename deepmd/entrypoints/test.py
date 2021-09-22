@@ -9,10 +9,11 @@ from deepmd.common import expand_sys_str
 from deepmd.utils import random as dp_random
 from deepmd.utils.data import DeepmdData
 from deepmd.utils.weight_avg import weighted_average
+from deepmd.utils.batch_size import AutoBatchSize
 
 if TYPE_CHECKING:
     from deepmd.infer import DeepDipole, DeepPolar, DeepPot, DeepWFC
-    from deepmd.infer.deep_eval import DeepTensor
+    from deepmd.infer.deep_tensor import DeepTensor
 
 __all__ = ["test"]
 
@@ -69,6 +70,7 @@ def test(
 
     # init model
     dp = DeepPotential(model)
+    auto_batch_size = AutoBatchSize()
 
     for cc, system in enumerate(all_sys):
         log.info("# ---------------output of dp test--------------- ")
@@ -82,6 +84,7 @@ def test(
             err = test_ener(
                 dp,
                 data,
+                auto_batch_size,
                 system,
                 numb_test,
                 detail_file,
@@ -159,6 +162,7 @@ def save_txt_file(
 def test_ener(
     dp: "DeepPot",
     data: DeepmdData,
+    auto_batch_size: AutoBatchSize,
     system: str,
     numb_test: int,
     detail_file: Optional[str],
@@ -226,7 +230,10 @@ def test_ener(
     else:
         aparam = None
 
-    ret = dp.eval(
+    ret = auto_batch_size.execuate_all(
+        dp.eval,
+        numb_test,
+        natoms,
         coord,
         box,
         atype,
