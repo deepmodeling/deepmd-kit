@@ -17,6 +17,8 @@ class AutoBatchSize:
     ----------
     initial_batch_size : int, default: 1024
         initial batch size (number of total atoms)
+    factor : float, default: 2.
+        increased factor
 
     Attributes
     ----------
@@ -27,12 +29,13 @@ class AutoBatchSize:
     minimal_not_working_batch_size : int
         minimal not working batch size
     """
-    def __init__(self, initial_batch_size: int = 1024) -> None:
+    def __init__(self, initial_batch_size: int = 1024, factor: float = 2.) -> None:
         # See also PyTorchLightning/pytorch-lightning#1638
         # TODO: discuss a proper initial batch size
         self.current_batch_size = initial_batch_size
         self.maximum_working_batch_size = 0
         self.minimal_not_working_batch_size = 2**31
+        self.factor = factor
 
     def execute(self, callable: Callable, start_index: int, natoms: int) -> Tuple[int, tuple]:
         """Excuate a method with given batch size.
@@ -53,6 +56,11 @@ class AutoBatchSize:
             executed batch size * number of atoms
         tuple
             result from callable, None if failing to execute
+
+        Raises
+        ------
+        OutOfMemoryError
+            OOM when batch size is 1
         """
         try:
             n_batch, result = callable(max(self.current_batch_size // natoms, 1), start_index)
@@ -61,18 +69,18 @@ class AutoBatchSize:
             # but luckily we only need to catch once
             self.minimal_not_working_batch_size = min(self.minimal_not_working_batch_size, self.current_batch_size)
             if self.maximum_working_batch_size >= self.minimal_not_working_batch_size:
-                self.maximum_working_batch_size = self.minimal_not_working_batch_size // 2
+                self.maximum_working_batch_size = int(self.minimal_not_working_batch_size / self.factor)
             if self.minimal_not_working_batch_size <= natoms:
                 raise OutOfMemoryError("The callable still throws an out-of-memory (OOM) error even when batch size is 1!") from e
             # adjust the next batch size
-            self._adjust_batch_size(0.5)
+            self._adjust_batch_size(1./self.factor)
             return 0, None
         else:
             n_tot = n_batch * natoms
             self.maximum_working_batch_size = max(self.maximum_working_batch_size, n_tot)
             # adjust the next batch size
-            if n_tot >= self.current_batch_size and self.current_batch_size * 2 < self.minimal_not_working_batch_size:
-                self._adjust_batch_size(2)
+            if n_tot >= self.current_batch_size and self.current_batch_size * self.factor < self.minimal_not_working_batch_size:
+                self._adjust_batch_size(self.factor)
             return n_batch, result
 
     def _adjust_batch_size(self, factor: float):
@@ -114,4 +122,8 @@ class AutoBatchSize:
                     rr.reshape((n_batch, -1))
                 results.append(result)
         
-        return tuple([np.concatenate(r, axis=0) for r in zip(*results)])
+        r = tuple([np.concatenate(r, axis=0) for r in zip(*results)])
+        if len(r) == 1:
+            # avoid returning tuple if callable doesn't return tuple
+            r = r[0]
+        return r
