@@ -230,7 +230,7 @@ def test_ener(
     else:
         aparam = None
 
-    ret = auto_batch_size.execuate_all(
+    ret = auto_batch_size.execute_all(
         dp.eval,
         numb_test,
         natoms,

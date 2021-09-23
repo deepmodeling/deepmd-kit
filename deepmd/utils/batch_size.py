@@ -34,14 +34,14 @@ class AutoBatchSize:
         self.maximum_working_batch_size = 0
         self.minimal_not_working_batch_size = 2**31
 
-    def execuate(self, callable: Callable, start_index: int, natoms: int) -> Tuple[int, tuple]:
+    def execute(self, callable: Callable, start_index: int, natoms: int) -> Tuple[int, tuple]:
         """Excuate a method with given batch size.
         
         Parameters
         ----------
         callable : Callable
             The method should accept the batch size and start_index as parameters,
-            and returns execuated batch size and data.
+            and returns executed batch size and data.
         start_index : int
             start index
         natoms : int
@@ -50,9 +50,9 @@ class AutoBatchSize:
         Returns
         -------
         int
-            execuated batch size * number of atoms
+            executed batch size * number of atoms
         tuple
-            result from callable, None if failing to execuate
+            result from callable, None if failing to execute
         """
         try:
             n_batch, result = callable(max(self.current_batch_size // natoms, 1), start_index)
@@ -80,7 +80,7 @@ class AutoBatchSize:
         self.current_batch_size = int(self.current_batch_size * factor)
         logging.info("Adjust batch size from %d to %d" % (old_batch_size, self.current_batch_size))
 
-    def execuate_all(self, callable: Callable, total_size: int, natoms: int, *args, **kwargs) -> Tuple[np.ndarray]:
+    def execute_all(self, callable: Callable, total_size: int, natoms: int, *args, **kwargs) -> Tuple[np.ndarray]:
         """Excuate a method with all given data. 
         
         Parameters
@@ -94,7 +94,7 @@ class AutoBatchSize:
         **kwargs
             If 2D np.ndarray, assume the first axis is batch; otherwise do nothing.
         """
-        def execuate_with_batch_size(batch_size: int, start_index: int) -> Tuple[int, Tuple[np.ndarray]]:
+        def execute_with_batch_size(batch_size: int, start_index: int) -> Tuple[int, Tuple[np.ndarray]]:
             end_index = start_index + batch_size
             end_index = min(end_index, total_size)
             return (end_index - start_index), callable(
@@ -105,7 +105,7 @@ class AutoBatchSize:
         index = 0
         results = []
         while index < total_size:
-            n_batch, result = self.execuate(execuate_with_batch_size, index, natoms)
+            n_batch, result = self.execute(execute_with_batch_size, index, natoms)
             if not isinstance(result, tuple):
                 result = (result,)
             index += n_batch
