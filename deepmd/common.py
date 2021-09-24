@@ -23,6 +23,7 @@ from deepmd.env import op_module, tf
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION, GLOBAL_NP_FLOAT_PRECISION
 from deepmd.utils.sess import run_sess
 from deepmd.utils.errors import GraphWithoutTensorError
+from deepmd.utils.path import DPPath
 
 if TYPE_CHECKING:
     _DICT_VAL = TypeVar("_DICT_VAL")
@@ -429,9 +430,10 @@ def expand_sys_str(root_dir: Union[str, Path]) -> List[str]:
     List[str]
         list of string pointing to system directories
     """
-    matches = [str(d) for d in Path(root_dir).rglob("*") if (d / "type.raw").is_file()]
-    if (Path(root_dir) / "type.raw").is_file():
-        matches += [root_dir]
+    root_dir = DPPath(root_dir)
+    matches = [str(d) for d in root_dir.rglob("*") if (d / "type.raw").is_file()]
+    if (root_dir / "type.raw").is_file():
+        matches.append(str(root_dir))
     return matches
 
 

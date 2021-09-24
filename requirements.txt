@@ -4,3 +4,5 @@ pyyaml
 dargs >= 0.2.6
 python-hostlist >= 1.21
 typing_extensions; python_version < "3.7"
+h5py
+wcmatch
