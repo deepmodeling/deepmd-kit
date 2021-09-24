@@ -197,8 +197,8 @@ def make_model_devi(
     for data in data_sets:
         coords = data["coord"]
         boxs = data["box"]
-        atype = data["type"][0]
-        for coord, box in zip(coords, boxs):
+        atypes = data["type"]
+        for coord, box, atype in zip(coords, boxs, atypes):
             devi = calc_model_devi(np.array([coord]), np.array([box]), atype, dp_models, nopbc=nopbc)
             nframes_tot += 1
             devis.append(devi)
