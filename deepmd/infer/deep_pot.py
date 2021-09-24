@@ -324,7 +324,7 @@ class DeepPot(DeepEval):
             feed_dict_test[self.t_fparam] = np.reshape(fparam, [-1])
         if self.has_aparam:
             feed_dict_test[self.t_aparam] = np.reshape(aparam, [-1])
-        v_out = self.sess.run (t_out, feed_dict = feed_dict_test)
+        v_out = run_sess(self.sess, t_out, feed_dict = feed_dict_test)
         energy = v_out[0]
         force = v_out[1]
         virial = v_out[2]
