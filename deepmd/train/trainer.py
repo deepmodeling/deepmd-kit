@@ -157,6 +157,13 @@ class DPTrainer (object):
 
         # learning rate
         lr_param = j_must_have(jdata, 'learning_rate')
+        scale_by_worker = lr_param.get('scale_by_worker', 'linear')
+        if scale_by_worker == 'linear':
+            self.scale_lr_coef = float(self.run_opt.world_size)
+        elif scale_by_worker == 'sqrt':
+            self.scale_lr_coef = np.sqrt(self.run_opt.world_size).real
+        else:
+            self.scale_lr_coef = 1.
         lr_type = lr_param.get('type', 'exp')
         if lr_type == 'exp':
             self.lr = LearningRateExp(lr_param['start_lr'],
@@ -330,7 +337,11 @@ class DPTrainer (object):
     def _build_training(self):
         trainable_variables = tf.trainable_variables()
         if self.run_opt.is_distrib:
-            optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate*self.run_opt.world_size)
+            if self.scale_lr_coef > 1.:
+                log.info('Scale learning rate by coef: %f', self.scale_lr_coef)
+                optimizer = tf.train.AdamOptimizer(self.learning_rate*self.scale_lr_coef)
+            else:
+                optimizer = tf.train.AdamOptimizer(self.learning_rate)
             optimizer = self.run_opt._HVD.DistributedOptimizer(optimizer)
         else:
             optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate)
