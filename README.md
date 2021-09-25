@@ -82,6 +82,7 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [Install from source code](doc/install/install-from-source.md)
     - [Install LAMMPS](doc/install/install-lammps.md)
     - [Install i-PI](doc/install/install-ipi.md)
+    - [Install GROMACS](doc/install/install-gromacs.md)
     - [Building conda packages](doc/install/build-conda.md)
 - [Data](doc/data/index.md)
     - [Data conversion](doc/data/data-conv.md)
