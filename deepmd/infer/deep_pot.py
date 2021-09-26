@@ -230,19 +230,19 @@ class DeepPot(DeepEval):
         atom_virial
             The atomic virial. Only returned when atomic == True
         """
+        # reshape coords before getting shape
+        natoms = len(atom_types)
+        coords = np.reshape(np.array(coords), [-1, natoms * 3])
+        numb_test = coords.shape[0]
         if atomic:
             if self.modifier_type is not None:
                 raise RuntimeError('modifier does not support atomic modification')
             if self.auto_batch_size is not None:
-                numb_test = coords.shape[0]
-                natoms = len(atom_types)
                 return self.auto_batch_size.execute_all(self._eval_inner, numb_test, natoms,
                            coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
             return self._eval_inner(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
         else :
             if self.auto_batch_size is not None:
-                numb_test = coords.shape[0]
-                natoms = len(atom_types)
                 e, f, v = self.auto_batch_size.execute_all(self._eval_inner, numb_test, natoms,
                               coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
             else:
