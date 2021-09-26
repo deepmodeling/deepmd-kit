@@ -12,7 +12,7 @@
 #
 import os
 import subprocess
-# import sys
+import sys
 import recommonmark
 from recommonmark.transform import AutoStructify
 
@@ -130,6 +130,12 @@ def generate_doxygen_xml(app):
     else:
         subprocess.call("doxygen Doxyfile", shell=True)
 
+def generate_train_input(app):
+    with open("train-input-auto.rst", 'w') as f:
+        f.write(subprocess.check_output((sys.executable, "-m", "deepmd", "doc-train-input")))
+    with open("train-input-auto.json", 'w') as f:
+        f.write(subprocess.check_output((sys.executable, "-m", "deepmd", "doc-train-input", "--out-type", "json")))
+
 def run_apidoc(_):
     from sphinx.ext.apidoc import main
     import sys
@@ -143,6 +149,7 @@ def setup(app):
     # Add hook for building doxygen xml when needed
     app.connect("builder-inited", generate_doxygen_xml)
     app.connect('builder-inited', run_apidoc)
+    app.connect('builder-inited', generate_train_input)
 
 # -- General configuration ---------------------------------------------------
 
