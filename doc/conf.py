@@ -133,8 +133,6 @@ def generate_doxygen_xml(app):
 def generate_train_input(app):
     with open("train-input-auto.rst", 'w') as f:
         f.write(subprocess.check_output((sys.executable, "-m", "deepmd", "doc-train-input"), universal_newlines=True))
-    with open("train-input-auto.json", 'w') as f:
-        f.write(subprocess.check_output((sys.executable, "-m", "deepmd", "doc-train-input", "--out-type", "json"), universal_newlines=True))
 
 def run_apidoc(_):
     from sphinx.ext.apidoc import main
