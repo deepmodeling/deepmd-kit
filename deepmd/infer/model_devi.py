@@ -195,13 +195,12 @@ def make_model_devi(
     nframes_tot = 0
     devis = []
     for data in data_sets:
-        coords = data["coord"]
-        boxs = data["box"]
-        atypes = data["type"]
-        for coord, box, atype in zip(coords, boxs, atypes):
-            devi = calc_model_devi(np.array([coord]), np.array([box]), atype, dp_models, nopbc=nopbc)
-            nframes_tot += 1
-            devis.append(devi)
+        coord = data["coord"]
+        box = data["box"]
+        atype = data["type"][0] 
+        devi = calc_model_devi(coord, box, atype, dp_models, nopbc=nopbc)
+        nframes_tot += coord.shape[0]
+        devis.append(devi)
     devis = np.vstack(devis)
     devis[:, 0] = np.arange(nframes_tot) * frequency
     write_model_devi_out(devis, output)
