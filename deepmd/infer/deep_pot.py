@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 
 import numpy as np
 from deepmd.common import make_default_mesh
@@ -7,6 +7,7 @@ from deepmd.env import default_tf_session_config, tf
 from deepmd.infer.data_modifier import DipoleChargeModifier
 from deepmd.infer.deep_eval import DeepEval
 from deepmd.utils.sess import run_sess
+from deepmd.utils.batch_size import AutoBatchSize
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -25,6 +26,9 @@ class DeepPot(DeepEval):
         The prefix in the load computational graph
     default_tf_graph : bool
         If uses the default tf graph, otherwise build a new tf graph for evaluation
+    auto_batch_size : bool or int or AutomaticBatchSize, default: True
+        If True, automatic batch size will be used. If int, it will be used
+        as the initial batch size.
 
     Examples
     --------
@@ -49,7 +53,8 @@ class DeepPot(DeepEval):
         self,
         model_file: "Path",
         load_prefix: str = "load",
-        default_tf_graph: bool = False
+        default_tf_graph: bool = False,
+        auto_batch_size: Union[bool, int, AutoBatchSize] = True,
     ) -> None:
 
         # add these tensors on top of what is defined by DeepTensor Class
@@ -83,7 +88,8 @@ class DeepPot(DeepEval):
             self,
             model_file,
             load_prefix=load_prefix,
-            default_tf_graph=default_tf_graph
+            default_tf_graph=default_tf_graph,
+            auto_batch_size=auto_batch_size,
         )
 
         # load optional tensors
@@ -227,9 +233,20 @@ class DeepPot(DeepEval):
         if atomic:
             if self.modifier_type is not None:
                 raise RuntimeError('modifier does not support atomic modification')
+            if self.auto_batch_size is not None:
+                numb_test = coords.shape[0]
+                natoms = len(atom_types)
+                return self.auto_batch_size.execute_all(self._eval_inner, numb_test, natoms,
+                           coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
             return self._eval_inner(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
         else :
-            e, f, v = self._eval_inner(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
+            if self.auto_batch_size is not None:
+                numb_test = coords.shape[0]
+                natoms = len(atom_types)
+                e, f, v = self.auto_batch_size.execute_all(self._eval_inner, numb_test, natoms,
+                              coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
+            else:
+                e, f, v = self._eval_inner(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
             if self.modifier_type is not None:
                 me, mf, mv = self.dm.eval(coords, cells, atom_types)
                 e += me.reshape(e.shape)
