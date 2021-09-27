@@ -93,8 +93,6 @@ def compress(
         name = 'train_attr/min_nbor_dist',
         dtype = GLOBAL_ENER_FLOAT_PRECISION)
     jdata["model"]["compress"] = {}
-    jdata["model"]["compress"]["type"] = 'se_e2_a'
-    jdata["model"]["compress"]["compress"] = True
     jdata["model"]["compress"]["model_file"] = input
     jdata["model"]["compress"]["min_nbor_dist"] = t_min_nbor_dist
     jdata["model"]["compress"]["table_config"] = [
