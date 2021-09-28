@@ -317,7 +317,7 @@ __global__ void tabulate_fusion_se_t_fifth_order_polynomial(
         breakpoint = jj - 1;
       }
       int table_idx = 0;
-      locate_xx(xx, table_idx, lower, upper, max, stride0, stride1);
+      locate_xx_se_t(xx, table_idx, lower, upper, -max, max, stride0, stride1);
       FPTYPE var[6];
       var[0] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 0];
       var[1] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 1];
@@ -375,7 +375,7 @@ __global__ void tabulate_fusion_se_t_grad_fifth_order_polynomial(
         unloop = true;
       }
       int table_idx = 0;
-      locate_xx(xx, table_idx, lower, upper, max, stride0, stride1);
+      locate_xx_se_t(xx, table_idx, lower, upper, -max, max, stride0, stride1);
       FPTYPE sum  = 0.f;
       FPTYPE Csub = 0.f;
       for (int kk = lane_idx; kk < last_layer_size; kk += WARP_SIZE) {

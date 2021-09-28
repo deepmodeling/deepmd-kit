@@ -264,12 +264,12 @@ class DescrptSeT (DescrptSe):
         self.compress = True
         self.table = DPTabulate(
             self.descrpt_name, model_file, activation_fn = self.filter_activation_fn, suffix=suffix)
-        self.table_config = [table_extrapolate, table_stride_1, table_stride_2, check_frequency]
+        self.table_config = [table_extrapolate, table_stride_1 * 10, table_stride_2 * 10, check_frequency]
         self.lower, self.upper \
             = self.table.build(min_nbor_dist, 
                                table_extrapolate, 
-                               table_stride_1, 
-                               table_stride_2)
+                               table_stride_1 * 10, 
+                               table_stride_2 * 10)
         
         graph, _ = load_graph_def(model_file)
         self.davg = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_avg' % suffix)

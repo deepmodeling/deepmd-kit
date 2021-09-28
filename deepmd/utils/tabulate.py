@@ -135,43 +135,49 @@ class DPTabulate():
         """
         # tabulate range [lower, upper] with stride0 'stride0'
         lower, upper = self._get_env_mat_range(min_nbor_dist)
-        xx = np.arange(lower, upper, stride0, dtype = self.data_type)
-        xx = np.append(xx, np.arange(upper, extrapolate * upper, stride1, dtype = self.data_type))
-        xx = np.append(xx, np.array([extrapolate * upper], dtype = self.data_type))
-        self.nspline = int((upper - lower) / stride0 + (extrapolate * upper - upper) / stride1)
 
         if self.descrpt_name == "DescrptSeA":
+            xx = np.arange(lower, upper, stride0, dtype = self.data_type)
+            xx = np.append(xx, np.arange(upper, extrapolate * upper, stride1, dtype = self.data_type))
+            xx = np.append(xx, np.array([extrapolate * upper], dtype = self.data_type))
+            self.nspline = int((upper - lower) / stride0 + (extrapolate * upper - upper) / stride1)
             for ii in range(self.table_size):
                 if self.type_one_side or (ii // self.ntypes, int(ii % self.ntypes)) not in self.exclude_types:
                     if self.type_one_side:
                         net = "filter_-1_net_" + str(ii)
                     else:
                         net = "filter_" + str(ii // self.ntypes) + "_net_" + str(int(ii % self.ntypes))
-                    self._build_lower(net, xx, ii, upper, lower, stride0, stride1)
+                    self._build_lower(net, xx, ii, upper, lower, stride0, stride1, extrapolate)
         elif self.descrpt_name == "DescrptSeT":
-            # xx = np.arange(extrapolate * lower, lower, stride1, dtype = self.data_type)
-            # xx = np.append(xx, np.arange(lower, upper, stride0, dtype = self.data_type))
-            # xx = np.append(xx, np.arange(upper, extrapolate * upper, stride1, dtype = self.data_type))
-            # xx = np.append(xx, np.array([extrapolate * upper], dtype = self.data_type))
-            # self.nspline = int((upper - lower) / stride0 + 2 * ((extrapolate * upper - upper) / stride1))
+            xx = np.arange(extrapolate * lower, lower, stride1, dtype = self.data_type)
+            xx = np.append(xx, np.arange(lower, upper, stride0, dtype = self.data_type))
+            xx = np.append(xx, np.arange(upper, extrapolate * upper, stride1, dtype = self.data_type))
+            xx = np.append(xx, np.array([extrapolate * upper], dtype = self.data_type))
+            self.nspline = int((upper - lower) / stride0 + 2 * ((extrapolate * upper - upper) / stride1))
             idx = 0
             for ii in range(self.ntypes):
                 for jj in range(ii, self.ntypes):
                     net = "filter_" + str(ii) + "_net_" + str(jj)
-                    self._build_lower(net, xx, idx, upper, lower, stride0, stride1)
+                    self._build_lower(net, xx, idx, upper, lower, stride0, stride1, extrapolate)
                     idx += 1
         return lower, upper
 
-    def _build_lower(self, net, xx, idx, upper, lower, stride0, stride1):
+    def _build_lower(self, net, xx, idx, upper, lower, stride0, stride1, extrapolate):
         vv, dd, d2 = self._make_data(xx, idx)
         self.data[net] = np.zeros([self.nspline, 6 * self.last_layer_size], dtype = self.data_type)
         # for jj in tqdm(range(self.nspline), desc = 'DEEPMD INFO    |-> deepmd.utils.tabulate\t\t\t' + net + ', tabulating'):
         for jj in range(self.nspline):
             for kk in range(self.last_layer_size):
-                if jj < int((upper - lower) / stride0):
-                    tt = stride0
-                else:
-                    tt = stride1
+                if self.descrpt_name == "DescrptSeA":
+                    if jj < int((upper - lower) / stride0):
+                        tt = stride0
+                    else:
+                        tt = stride1
+                elif self.descrpt_name == "DescrptSeT":
+                    if jj > int((lower - extrapolate * lower) / stride1) and jj < (int((lower - extrapolate * lower) / stride1) + int((upper - lower) / stride0)):
+                        tt = stride0
+                    else:
+                        tt = stride1
                 hh = vv[jj + 1][kk] - vv[jj][kk]
                 self.data[net][jj][kk * 6 + 0] = vv[jj][kk]
                 self.data[net][jj][kk * 6 + 1] = dd[jj][kk]
@@ -279,8 +285,8 @@ class DPTabulate():
     # Change the embedding net range to sw / min_nbor_dist
     def _get_env_mat_range(self,
                            min_nbor_dist):
-        lower = -100.0
-        upper = +100.0
+        lower = +100.0
+        upper = -100.0
         sw    = self._spline5_switch(min_nbor_dist, self.rcut_smth, self.rcut)
         if self.descrpt_name == "DescrptSeA":
             for ii in range(self.ntypes):
