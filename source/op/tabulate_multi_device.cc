@@ -354,9 +354,9 @@ class TabulateFusionSeTOp : public OpKernel {
       #endif // TENSORFLOW_USE_ROCM
     }
     else if (device == "CPU") {
-    //   deepmd::tabulate_fusion_se_t_cpu(    
-    //       descriptor,
-    //       table, table_info, em_x, em, nloc, nnei_i, nnei_j, last_layer_size);
+      deepmd::tabulate_fusion_se_t_cpu(    
+          descriptor,
+          table, table_info, em_x, em, nloc, nnei_i, nnei_j, last_layer_size);
     }
   }
 private:
@@ -427,9 +427,9 @@ class TabulateFusionSeTGradOp : public OpKernel {
       #endif // TENSORFLOW_USE_ROCM
     }
     else if (device == "CPU") {
-    //   deepmd::tabulate_fusion_se_t_grad_cpu(    
-    //       dy_dem_x, dy_dem,
-    //       table, table_info, em_x, em, dy, nloc, nnei_i, nnei_j, last_layer_size);
+      deepmd::tabulate_fusion_se_t_grad_cpu(    
+          dy_dem_x, dy_dem,
+          table, table_info, em_x, em, dy, nloc, nnei_i, nnei_j, last_layer_size);
     }
   }
 private:
@@ -491,9 +491,9 @@ class TabulateFusionSeTGradGradOp : public OpKernel {
       OP_REQUIRES (context, (last_layer_size <= 1024),      errors::InvalidArgument ("In the process of model compression, the size of the last layer of embedding net must be less than 1024!"));
     }
     else if (device == "CPU") {
-    //   deepmd::tabulate_fusion_se_t_grad_grad_cpu(
-    //       dz_dy,
-    //       table, table_info, em_x, em, dz_dy_dem_x, dz_dy_dem, nloc, nnei, last_layer_size);
+      deepmd::tabulate_fusion_se_t_grad_grad_cpu(
+          dz_dy,
+          table, table_info, em_x, em, dz_dy_dem_x, dz_dy_dem, nloc, nnei_i, nnei_j, last_layer_size);
     }
   }
 private:
