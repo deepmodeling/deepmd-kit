@@ -2,6 +2,7 @@ import re
 import math
 import logging
 import numpy as np
+import deepmd
 from typing import Callable
 from typing import Tuple, List
 from scipy.special import comb
@@ -11,6 +12,7 @@ from deepmd.common import ACTIVATION_FN_DICT
 from deepmd.utils.sess import run_sess
 from deepmd.utils.graph import get_tensor_by_name_from_graph, load_graph_def 
 from deepmd.utils.graph import get_embedding_net_nodes_from_graph_def
+from deepmd.descriptor import Descriptor
 from tensorflow.python.platform import gfile
 from tensorflow.python.framework import tensor_util
 
@@ -26,8 +28,8 @@ class DPTabulate():
 
     Parameters
     ----------
-    descrpt_name
-            The descriptor name of the frozen model
+    descrpt
+            Descriptor of the original model
     model_file
             The frozen model
     type_one_side
@@ -41,7 +43,7 @@ class DPTabulate():
             The suffix of the scope
     """
     def __init__(self,
-                 descrpt_name : str,
+                 descrpt : Descriptor,
                  model_file : str,
                  type_one_side : bool = False,
                  exclude_types : List[List[int]] = [],
@@ -51,7 +53,7 @@ class DPTabulate():
         """
         Constructor
         """
-        self.descrpt_name = descrpt_name
+        self.descrpt = descrpt
         self.model_file = model_file
         self.type_one_side = type_one_side
         self.exclude_types = exclude_types
@@ -74,18 +76,18 @@ class DPTabulate():
 
         try:
             self.sel_a = self.graph.get_operation_by_name('ProdEnvMatA').get_attr('sel_a')
-            self.descrpt = self.graph.get_operation_by_name ('ProdEnvMatA')
+            self.prod_env_mat_op = self.graph.get_operation_by_name ('ProdEnvMatA')
         except Exception:
             self.sel_a = self.graph.get_operation_by_name('DescrptSeA').get_attr('sel_a')
-            self.descrpt = self.graph.get_operation_by_name ('DescrptSeA')
+            self.prod_env_mat_op = self.graph.get_operation_by_name ('DescrptSeA')
 
         self.davg = get_tensor_by_name_from_graph(self.graph, f'descrpt_attr{self.suffix}/t_avg')
         self.dstd = get_tensor_by_name_from_graph(self.graph, f'descrpt_attr{self.suffix}/t_std')
         self.ntypes = get_tensor_by_name_from_graph(self.graph, 'descrpt_attr/ntypes')
 
         
-        self.rcut = self.descrpt.get_attr('rcut_r')
-        self.rcut_smth = self.descrpt.get_attr('rcut_r_smth')
+        self.rcut = self.prod_env_mat_op.get_attr('rcut_r')
+        self.rcut_smth = self.prod_env_mat_op.get_attr('rcut_r_smth')
 
         self.embedding_net_nodes = get_embedding_net_nodes_from_graph_def(self.graph_def, suffix=self.suffix)
 
@@ -136,7 +138,7 @@ class DPTabulate():
         # tabulate range [lower, upper] with stride0 'stride0'
         lower, upper = self._get_env_mat_range(min_nbor_dist)
 
-        if self.descrpt_name == "DescrptSeA":
+        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
             xx = np.arange(lower, upper, stride0, dtype = self.data_type)
             xx = np.append(xx, np.arange(upper, extrapolate * upper, stride1, dtype = self.data_type))
             xx = np.append(xx, np.array([extrapolate * upper], dtype = self.data_type))
@@ -148,7 +150,7 @@ class DPTabulate():
                     else:
                         net = "filter_" + str(ii // self.ntypes) + "_net_" + str(int(ii % self.ntypes))
                     self._build_lower(net, xx, ii, upper, lower, stride0, stride1, extrapolate)
-        elif self.descrpt_name == "DescrptSeT":
+        elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeT):
             xx = np.arange(extrapolate * lower, lower, stride1, dtype = self.data_type)
             xx = np.append(xx, np.arange(lower, upper, stride0, dtype = self.data_type))
             xx = np.append(xx, np.arange(upper, extrapolate * upper, stride1, dtype = self.data_type))
@@ -168,12 +170,12 @@ class DPTabulate():
         # for jj in tqdm(range(self.nspline), desc = 'DEEPMD INFO    |-> deepmd.utils.tabulate\t\t\t' + net + ', tabulating'):
         for jj in range(self.nspline):
             for kk in range(self.last_layer_size):
-                if self.descrpt_name == "DescrptSeA":
+                if isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
                     if jj < int((upper - lower) / stride0):
                         tt = stride0
                     else:
                         tt = stride1
-                elif self.descrpt_name == "DescrptSeT":
+                elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeT):
                     if jj > int((lower - extrapolate * lower) / stride1) and jj < (int((lower - extrapolate * lower) / stride1) + int((upper - lower) / stride0)):
                         tt = stride0
                     else:
@@ -196,7 +198,7 @@ class DPTabulate():
         bias = {}
         for layer in range(1, self.layer_size + 1):
             bias["layer_" + str(layer)] = []
-            if self.descrpt_name == "DescrptSeA":
+            if isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
                 if self.type_one_side:
                     for ii in range(0, self.ntypes):
                         node = self.embedding_net_nodes[f"filter_type_all{self.suffix}/bias_{layer}_{ii}"]
@@ -208,7 +210,7 @@ class DPTabulate():
                             bias["layer_" + str(layer)].append(self._get_tensor_by_node(node))
                         else:
                             bias["layer_" + str(layer)].append(np.array([]))
-            elif self.descrpt_name == "DescrptSeT":
+            elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeT):
                 for ii in range(self.ntypes):
                     for jj in range(ii, self.ntypes):
                         node = self.embedding_net_nodes[f"filter_type_all{self.suffix}/bias_{layer}_{ii}_{jj}"]
@@ -219,7 +221,7 @@ class DPTabulate():
         matrix = {}
         for layer in range(1, self.layer_size + 1):
             matrix["layer_" + str(layer)] = []
-            if self.descrpt_name == "DescrptSeA":
+            if isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
                 if self.type_one_side:
                     for ii in range(0, self.ntypes):
                         node = self.embedding_net_nodes[f"filter_type_all{self.suffix}/matrix_{layer}_{ii}"]
@@ -231,7 +233,7 @@ class DPTabulate():
                             matrix["layer_" + str(layer)].append(self._get_tensor_by_node(node))
                         else:
                             matrix["layer_" + str(layer)].append(np.array([]))
-            elif self.descrpt_name == "DescrptSeT":
+            elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeT):
                 for ii in range(self.ntypes):
                     for jj in range(ii, self.ntypes):
                         node = self.embedding_net_nodes[f"filter_type_all{self.suffix}/matrix_{layer}_{ii}_{jj}"]
@@ -288,20 +290,13 @@ class DPTabulate():
         lower = +100.0
         upper = -100.0
         sw    = self._spline5_switch(min_nbor_dist, self.rcut_smth, self.rcut)
-        if self.descrpt_name == "DescrptSeA":
-            for ii in range(self.ntypes):
-                if lower > -self.davg[ii][0] / self.dstd[ii][0]:
-                    lower = -self.davg[ii][0] / self.dstd[ii][0]
-                if upper < ((1 / min_nbor_dist) * sw - self.davg[ii][0]) / self.dstd[ii][0]:
-                    upper = ((1 / min_nbor_dist) * sw - self.davg[ii][0]) / self.dstd[ii][0]
-        elif self.descrpt_name == "DescrptSeT":
-            for ii in range(self.ntypes):
-                for jj in range(1, 4):
-                    var = (sw * sw) / (min_nbor_dist * min_nbor_dist * self.dstd[ii][jj] * self.dstd[ii][jj])
-                    if lower > -var:
-                        lower = -var
-                    if upper < var:
-                        upper = var
+        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
+            lower = np.min(-self.davg[:, 0] / self.dstd[:, 0])
+            upper = np.max(((1 / min_nbor_dist) * sw - self.davg[:, 0]) / self.dstd[:, 0])
+        elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeT):
+            var = np.square(sw / (min_nbor_dist * self.dstd[:, 1:4]))
+            lower = np.min(-var)
+            upper = np.max(var)
         log.info('training data with lower boundary: ' + str(lower))
         log.info('training data with upper boundary: ' + str(upper))
         return math.floor(lower), math.ceil(upper)
@@ -321,21 +316,21 @@ class DPTabulate():
 
     def _get_layer_size(self):
         layer_size = 0
-        if self.descrpt_name == "DescrptSeA":
+        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
             layer_size = len(self.embedding_net_nodes) // ((self.ntypes * self.ntypes - len(self.exclude_types)) * 2)
             if self.type_one_side :
                 layer_size = len(self.embedding_net_nodes) // (self.ntypes * 2)
-        elif self.descrpt_name == "DescrptSeT":
+        elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeT):
             layer_size = len(self.embedding_net_nodes) // int(comb(self.ntypes + 1, 2) * 2)
         return layer_size
 
     def _get_table_size(self):
         table_size = 0
-        if self.descrpt_name == "DescrptSeA":
+        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
             table_size = self.ntypes * self.ntypes
             if self.type_one_side :
                 table_size = self.ntypes
-        elif self.descrpt_name == "DescrptSeT":
+        elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeT):
             table_size = int(comb(self.ntypes + 1, 2))
         return table_size
     

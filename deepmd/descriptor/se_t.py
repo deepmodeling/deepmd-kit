@@ -103,7 +103,6 @@ class DescrptSeT (DescrptSe):
         self.davg = None
         self.compress = False
         self.embedding_net_variables = None
-        self.descrpt_name = type(self).__name__
 
         self.place_holders = {}
         avg_zero = np.zeros([self.ntypes,self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
@@ -263,7 +262,7 @@ class DescrptSeT (DescrptSe):
         ), "Model compression error: descriptor resnet_dt must be false!"
         self.compress = True
         self.table = DPTabulate(
-            self.descrpt_name, model_file, activation_fn = self.filter_activation_fn, suffix=suffix)
+            self, model_file, activation_fn = self.filter_activation_fn, suffix=suffix)
         self.table_config = [table_extrapolate, table_stride_1 * 10, table_stride_2 * 10, check_frequency]
         self.lower, self.upper \
             = self.table.build(min_nbor_dist, 
