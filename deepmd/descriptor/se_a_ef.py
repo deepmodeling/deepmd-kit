@@ -12,6 +12,7 @@ from deepmd.env import default_tf_session_config
 from .se_a import DescrptSeA
 from .descriptor import Descriptor
 
+@Descriptor.register("se_a_ef")
 class DescrptSeAEf (Descriptor):
     """
 

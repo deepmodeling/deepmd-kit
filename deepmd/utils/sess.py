@@ -1,6 +1,7 @@
 import os
 
 from deepmd.env import tf
+from deepmd.utils.errors import OutOfMemoryError
 
 
 def run_sess(sess: tf.Session, *args, **kwargs):
@@ -35,4 +36,4 @@ def run_sess(sess: tf.Session, *args, **kwargs):
                 "variable (current value: %s).\n" % (
                     os.getenv("CUDA_VISIBLE_DEVICES", None),
                 ))
-        raise RuntimeError(MESSAGE) from e
+        raise OutOfMemoryError(MESSAGE) from e

@@ -12,7 +12,7 @@ from deepmd.utils.weight_avg import weighted_average
 
 if TYPE_CHECKING:
     from deepmd.infer import DeepDipole, DeepPolar, DeepPot, DeepWFC
-    from deepmd.infer.deep_eval import DeepTensor
+    from deepmd.infer.deep_tensor import DeepTensor
 
 __all__ = ["test"]
 

@@ -3,20 +3,63 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 from deepmd.env import tf
+from deepmd.utils import Plugin, PluginVariant
 
 
-class Descriptor(ABC):
+class Descriptor(PluginVariant):
     r"""The abstract class for descriptors. All specific descriptors should
     be based on this class.
 
     The descriptor :math:`\mathcal{D}` describes the environment of an atom,
     which should be a function of coordinates and types of its neighbour atoms.
 
+    Examples
+    --------
+    >>> descript = Descriptor(type="se_e2_a", rcut=6., rcut_smth=0.5, sel=[50])
+    >>> type(descript)
+    <class 'deepmd.descriptor.se_a.DescrptSeA'>
+
     Notes
     -----
     Only methods and attributes defined in this class are generally public,
     that can be called by other classes.
     """
+
+    __plugins = Plugin()
+
+    @staticmethod
+    def register(key: str) -> "Descriptor":
+        """Regiester a descriptor plugin.
+
+        Parameters
+        ----------
+        key : str
+            the key of a descriptor
+
+        Returns
+        -------
+        Descriptor
+            the regiestered descriptor
+
+        Examples
+        --------
+        >>> @Descriptor.register("some_descrpt")
+            class SomeDescript(Descriptor):
+                pass
+        """
+        return Descriptor.__plugins.register(key)
+
+    def __new__(cls, *args, **kwargs):
+        if cls is Descriptor:
+            try:
+                descrpt_type = kwargs['type']
+            except KeyError:
+                raise KeyError('the type of descriptor should be set by `type`')
+            if descrpt_type in Descriptor.__plugins.plugins:
+                cls = Descriptor.__plugins.plugins[descrpt_type]
+            else:
+                raise RuntimeError('Unknown descriptor type: ' + descrpt_type)
+        return super().__new__(cls)
 
     @abstractmethod
     def get_rcut(self) -> float:

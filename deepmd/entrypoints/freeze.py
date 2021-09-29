@@ -159,6 +159,11 @@ def freeze(
     clear_devices = True
 
     # We import the meta graph and retrieve a Saver
+    try:
+        # In case paralle training
+        import horovod.tensorflow as _
+    except ImportError:
+        pass
     saver = tf.train.import_meta_graph(
         f"{input_checkpoint}.meta", clear_devices=clear_devices
     )

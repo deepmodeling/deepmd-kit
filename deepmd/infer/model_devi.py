@@ -1,6 +1,7 @@
 import numpy as np
 from .deep_pot import DeepPot
 from ..utils.data import DeepmdData
+from ..utils.batch_size import AutoBatchSize
         
 
 def calc_model_devi_f(fs: np.ndarray):
@@ -174,8 +175,9 @@ def make_model_devi(
         in a trajectory by a MD engine (such as Gromacs / Lammps).
         This paramter is used to determine the index in the output file.
     '''
+    auto_batch_size = AutoBatchSize()
     # init models
-    dp_models = [DeepPot(model) for model in models]
+    dp_models = [DeepPot(model, auto_batch_size=auto_batch_size) for model in models]
 
     # check type maps
     tmaps = [dp.get_type_map() for dp in dp_models]

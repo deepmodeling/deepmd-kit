@@ -1,17 +1,31 @@
 import os
-from typing import List, Optional, TYPE_CHECKING
+from typing import List, Optional, TYPE_CHECKING, Union
 
 import numpy as np
 from deepmd.common import make_default_mesh
 from deepmd.env import default_tf_session_config, tf, MODEL_VERSION
 from deepmd.utils.sess import run_sess
+from deepmd.utils.batch_size import AutoBatchSize
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
 class DeepEval:
-    """Common methods for DeepPot, DeepWFC, DeepPolar, ..."""
+    """Common methods for DeepPot, DeepWFC, DeepPolar, ...
+    
+    Parameters
+    ----------
+    model_file : Path
+        The name of the frozen model file.
+    load_prefix: str
+        The prefix in the load computational graph
+    default_tf_graph : bool
+        If uses the default tf graph, otherwise build a new tf graph for evaluation
+    auto_batch_size : bool or int or AutomaticBatchSize, default: False
+        If True, automatic batch size will be used. If int, it will be used
+        as the initial batch size.
+    """
 
     _model_type: Optional[str] = None
     _model_version: Optional[str] = None
@@ -21,7 +35,8 @@ class DeepEval:
         self,
         model_file: "Path",
         load_prefix: str = "load",
-        default_tf_graph: bool = False
+        default_tf_graph: bool = False,
+        auto_batch_size: Union[bool, int, AutoBatchSize] = False,
     ):
         self.graph = self._load_graph(
             model_file, prefix=load_prefix, default_tf_graph=default_tf_graph
@@ -34,6 +49,19 @@ class DeepEval:
                 f"model in graph (version {self.model_version}) is incompatible"
                 f"with the model (version {MODEL_VERSION}) supported by the current code."
             )
+        
+        # set default to False, as subclasses may not support
+        if isinstance(auto_batch_size, bool):
+            if auto_batch_size:
+                self.auto_batch_size = AutoBatchSize()
+            else:
+                self.auto_batch_size = None
+        elif isinstance(auto_batch_size, int):
+            self.auto_batch_size = AutoBatchSize(auto_batch_size)
+        elif isinstance(auto_batch_size, AutoBatchSize):
+            self.auto_batch_size = auto_batch_size
+        else:
+            raise TypeError("auto_batch_size should be bool, int, or AutoBatchSize")
 
     @property
     def model_type(self) -> str:

@@ -60,7 +60,7 @@ Please follow our [GitHub](https://github.com/deepmodeling/deepmd-kit) webpage t
 
 DeePMD-kit offers multiple installation methods. It is recommend using easily methods like [offline packages](doc/install/easy-install.md#offline-packages), [conda](doc/install/easy-install.md#with-conda) and [docker](doc/install/easy-install.md#with-docker). 
 
-One may manually install DeePMD-kit by following the instuctions on [installing the Python interface](doc/install/install-from-source.md#install-the-python-interface) and [installing the C++ interface](doc/install/install-from-source.md#install-the-c-interface). The C++ interface is necessary when using DeePMD-kit with LAMMPS and i-PI.
+One may manually install DeePMD-kit by following the instuctions on [installing the Python interface](doc/install/install-from-source.md#install-the-python-interface) and [installing the C++ interface](doc/install/install-from-source.md#install-the-c-interface). The C++ interface is necessary when using DeePMD-kit with LAMMPS, i-PI or GROMACS.
 
 
 # Use DeePMD-kit
@@ -71,7 +71,7 @@ A quick-start on using DeePMD-kit can be found as follows:
 - [Training a model](doc/train/training.md)
 - [Freeze a model](doc/freeze/freeze.md)
 - [Test a model](doc/test/test.md)
-- [Running MD with LAMMPS](doc/third-party/lammps.md)
+- [Run MD with LAMMPS](doc/third-party/lammps.md)
 
 A full [document](doc/train/train-input-auto.rst) on options in the training input script is available.
 
@@ -82,6 +82,7 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [Install from source code](doc/install/install-from-source.md)
     - [Install LAMMPS](doc/install/install-lammps.md)
     - [Install i-PI](doc/install/install-ipi.md)
+    - [Install GROMACS](doc/install/install-gromacs.md)
     - [Building conda packages](doc/install/build-conda.md)
 - [Data](doc/data/index.md)
     - [Data conversion](doc/data/data-conv.md)
@@ -113,10 +114,10 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [C++ interface](doc/inference/cxx.md)
 - [Integrate with third-party packages](doc/third-party/index.rst)
     - [Use deep potential with ASE](doc/third-party/ase.md)
-    - [Running MD with LAMMPS](doc/third-party/lammps.md)
+    - [Run MD with LAMMPS](doc/third-party/lammps.md)
     - [LAMMPS commands](doc/third-party/lammps-command.md)
     - [Run path-integral MD with i-PI](doc/third-party/ipi.md)
-
+    - [Run MD with GROMACS](doc/third-party/gromacs.md)
 
 # Code structure
 The code is organized as follows:
@@ -134,6 +135,8 @@ The code is organized as follows:
 * `source/lib`: source code of DeePMD-kit library.
 
 * `source/lmp`: source code of Lammps module.
+
+* `source/gmx`: source code of Gromacs plugin.
 
 * `source/op`: tensorflow op implementation. working with library.
 
