@@ -77,7 +77,7 @@ node {
         dtype: DT_STRING
         tensor_shape {
         }
-        string_val: "1.0"
+        string_val: "1.1"
       }
     }
   }
