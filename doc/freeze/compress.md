@@ -82,4 +82,4 @@ The model compression interface requires the version of deepmd-kit used in origi
 
 **Acceptable descriptor type**
 
-Note only descriptors with `se_e3_a` or `se_t` type are supported by the model compression feature.
+Note only descriptors with `se_e2_a` or `se_e3` type are supported by the model compression feature. Hybrid mixed with above descriptors is also supported.
