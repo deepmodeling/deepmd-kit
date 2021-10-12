@@ -507,15 +507,9 @@ class DeepmdData() :
 
     def _load_type_map(self, sys_path: DPPath) :
         fname = sys_path / 'type_map.raw'
-        if fname.is_file():
-            tmap = fname.load_txt(dtype=str).tolist()
-            # if there is an array file of length=1 array will load only the string
-            # not an array of length=1 containing the string 
-            if isinstance(tmap, str):
-                return [tmap]
-            else:
-                return tmap
-        else:
+        if fname.is_file() :            
+            return fname.load_txt(dtype=str, ndmin=1).tolist()
+        else :
             return None
 
     def _check_pbc(self, sys_path: DPPath):
