@@ -508,7 +508,7 @@ class DeepmdData() :
     def _load_type_map(self, sys_path: DPPath) :
         fname = sys_path / 'type_map.raw'
         if fname.is_file() :            
-            return fname.load_txt(dtype=str).tolist()
+            return fname.load_txt(dtype=str, ndmin=1).tolist()
         else :
             return None
 
