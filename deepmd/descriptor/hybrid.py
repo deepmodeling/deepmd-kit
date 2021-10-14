@@ -26,15 +26,17 @@ class DescrptHybrid (Descriptor):
 
     Parameters
     ----------
-    descrpt_list : list
+    list : list
             Build a descriptor from the concatenation of the list of descriptors.
     """
     def __init__ (self, 
-                  descrpt_list : list
+                  list : list
     ) -> None :
         """
         Constructor
         """
+        # warning: list is conflict with built-in list
+        descrpt_list = list
         if descrpt_list == [] or descrpt_list is None:
             raise RuntimeError('cannot build descriptor from an empty list of descriptors.')
         formatted_descript_list = []
