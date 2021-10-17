@@ -5,7 +5,7 @@
 If you are using the plugin mode, enable DeePMD-kit package in LAMMPS with `plugin` command:
 
 ```
-plugin load path/to/deepmd/lib/libdeepmd_lmp.so
+plugin load libdeepmd_lmp.so
 ```
 
 The built-in mode doesn't need this step.

@@ -13,7 +13,7 @@ from deepmd.utils.network import embedding_net, embedding_net_rand_seed_shift
 from deepmd.utils.tabulate import DPTabulate
 from deepmd.utils.type_embed import embed_atom_type
 from deepmd.utils.sess import run_sess
-from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph, get_embedding_net_variables
+from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph
 from .descriptor import Descriptor
 from .se import DescrptSe
 
