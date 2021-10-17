@@ -30,6 +30,8 @@ class DPTabulate():
     ----------
     descrpt
             Descriptor of the original model
+    neuron
+            Number of neurons in each hidden layers of the embedding net :math:`\mathcal{N}`
     model_file
             The frozen model
     type_one_side
@@ -44,6 +46,7 @@ class DPTabulate():
     """
     def __init__(self,
                  descrpt : Descriptor,
+                 neuron : List[int],
                  model_file : str,
                  type_one_side : bool = False,
                  exclude_types : List[List[int]] = [],
@@ -54,6 +57,7 @@ class DPTabulate():
         Constructor
         """
         self.descrpt = descrpt
+        self.neuron = neuron
         self.model_file = model_file
         self.type_one_side = type_one_side
         self.exclude_types = exclude_types
@@ -127,6 +131,8 @@ class DPTabulate():
                 The uniform stride of the first table
         stride1
                 The uniform stride of the second table
+        neuron
+            Number of neurons in each hidden layers of the embedding net :math:`\mathcal{N}`
 
         Returns
         ----------
@@ -202,19 +208,19 @@ class DPTabulate():
                 if self.type_one_side:
                     for ii in range(0, self.ntypes):
                         node = self.embedding_net_nodes[f"filter_type_all{self.suffix}/bias_{layer}_{ii}"]
-                        bias["layer_" + str(layer)].append(self._get_tensor_by_node(node))
+                        bias["layer_" + str(layer)].append(tf.make_ndarray(node))
                 else:
                     for ii in range(0, self.ntypes * self.ntypes):
                         if (ii // self.ntypes, int(ii % self.ntypes)) not in self.exclude_types:
                             node = self.embedding_net_nodes[f"filter_type_{ii // self.ntypes}{self.suffix}/bias_{layer}_{ii % self.ntypes}"]
-                            bias["layer_" + str(layer)].append(self._get_tensor_by_node(node))
+                            bias["layer_" + str(layer)].append(tf.make_ndarray(node))
                         else:
                             bias["layer_" + str(layer)].append(np.array([]))
             elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeT):
                 for ii in range(self.ntypes):
                     for jj in range(ii, self.ntypes):
                         node = self.embedding_net_nodes[f"filter_type_all{self.suffix}/bias_{layer}_{ii}_{jj}"]
-                        bias["layer_" + str(layer)].append(self._get_tensor_by_node(node))
+                        bias["layer_" + str(layer)].append(tf.make_ndarray(node))
         return bias
 
     def _get_matrix(self):
@@ -225,25 +231,20 @@ class DPTabulate():
                 if self.type_one_side:
                     for ii in range(0, self.ntypes):
                         node = self.embedding_net_nodes[f"filter_type_all{self.suffix}/matrix_{layer}_{ii}"]
-                        matrix["layer_" + str(layer)].append(self._get_tensor_by_node(node))
+                        matrix["layer_" + str(layer)].append(tf.make_ndarray(node))
                 else:
                     for ii in range(0, self.ntypes * self.ntypes):
                         if (ii // self.ntypes, int(ii % self.ntypes)) not in self.exclude_types:
                             node = self.embedding_net_nodes[f"filter_type_{ii // self.ntypes}{self.suffix}/matrix_{layer}_{ii % self.ntypes}"]
-                            matrix["layer_" + str(layer)].append(self._get_tensor_by_node(node))
+                            matrix["layer_" + str(layer)].append(tf.make_ndarray(node))
                         else:
                             matrix["layer_" + str(layer)].append(np.array([]))
             elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeT):
                 for ii in range(self.ntypes):
                     for jj in range(ii, self.ntypes):
                         node = self.embedding_net_nodes[f"filter_type_all{self.suffix}/matrix_{layer}_{ii}_{jj}"]
-                        matrix["layer_" + str(layer)].append(self._get_tensor_by_node(node))
+                        matrix["layer_" + str(layer)].append(tf.make_ndarray(node))
         return matrix
-
-    def _get_tensor_by_node(self, node):
-        tensor_value = np.frombuffer (node.tensor_content, dtype = tf.as_dtype(node.dtype).as_numpy_dtype)
-        tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
-        return np.reshape(tensor_value, tensor_shape)
 
     # one-by-one executions
     def _make_data(self, xx, idx):
@@ -253,13 +254,28 @@ class DPTabulate():
                 for layer in range(self.layer_size):
                     if layer == 0:
                         xbar = tf.matmul(
-                            xx, self.matrix["layer_" + str(layer + 1)][idx]) + self.bias["layer_" + str(layer + 1)][idx]
-                        yy = self._layer_0(
-                            xx, self.matrix["layer_" + str(layer + 1)][idx], self.bias["layer_" + str(layer + 1)][idx])
-                        dy = op_module.unaggregated_dy_dx_s(
-                            yy, self.matrix["layer_" + str(layer + 1)][idx], xbar, tf.constant(self.functype))
-                        dy2 = op_module.unaggregated_dy2_dx_s(
-                            yy, dy, self.matrix["layer_" + str(layer + 1)][idx], xbar, tf.constant(self.functype))
+                        xx, self.matrix["layer_" + str(layer + 1)][idx]) + self.bias["layer_" + str(layer + 1)][idx]
+                        if self.neuron[0] == 1:
+                            yy = self._layer_0(
+                                xx, self.matrix["layer_" + str(layer + 1)][idx], self.bias["layer_" + str(layer + 1)][idx]) + xx
+                            dy = op_module.unaggregated_dy_dx_s(
+                                yy, self.matrix["layer_" + str(layer + 1)][idx], xbar, tf.constant(self.functype)) + tf.ones([1, 1], yy.dtype)
+                            dy2 = op_module.unaggregated_dy2_dx_s(
+                                yy, dy, self.matrix["layer_" + str(layer + 1)][idx], xbar, tf.constant(self.functype))
+                        elif self.neuron[0] == 2:
+                            tt, yy = self._layer_1(
+                                xx, self.matrix["layer_" + str(layer + 1)][idx], self.bias["layer_" + str(layer + 1)][idx])
+                            dy = op_module.unaggregated_dy_dx_s(
+                                yy - tt, self.matrix["layer_" + str(layer + 1)][idx], xbar, tf.constant(self.functype)) + tf.ones([1, 2], yy.dtype)
+                            dy2 = op_module.unaggregated_dy2_dx_s(
+                                yy - tt, dy, self.matrix["layer_" + str(layer + 1)][idx], xbar, tf.constant(self.functype))
+                        else:
+                            yy = self._layer_0(
+                                xx, self.matrix["layer_" + str(layer + 1)][idx], self.bias["layer_" + str(layer + 1)][idx])
+                            dy = op_module.unaggregated_dy_dx_s(
+                                yy, self.matrix["layer_" + str(layer + 1)][idx], xbar, tf.constant(self.functype))
+                            dy2 = op_module.unaggregated_dy2_dx_s(
+                                yy, dy, self.matrix["layer_" + str(layer + 1)][idx], xbar, tf.constant(self.functype))
                     else:
                         ybar = tf.matmul(
                             yy, self.matrix["layer_" + str(layer + 1)][idx]) + self.bias["layer_" + str(layer + 1)][idx]
