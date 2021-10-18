@@ -150,11 +150,11 @@ class DPTabulate():
             xx = np.append(xx, np.array([extrapolate * upper], dtype = self.data_type))
             self.nspline = int((upper - lower) / stride0 + (extrapolate * upper - upper) / stride1)
             for ii in range(self.table_size):
-                if self.type_one_side or (ii // self.ntypes, int(ii % self.ntypes)) not in self.exclude_types:
+                if self.type_one_side or (ii // self.ntypes, ii % self.ntypes) not in self.exclude_types:
                     if self.type_one_side:
                         net = "filter_-1_net_" + str(ii)
                     else:
-                        net = "filter_" + str(ii // self.ntypes) + "_net_" + str(int(ii % self.ntypes))
+                        net = "filter_" + str(ii // self.ntypes) + "_net_" + str(ii % self.ntypes)
                     self._build_lower(net, xx, ii, upper, lower, stride0, stride1, extrapolate)
         elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeT):
             xx = np.arange(extrapolate * lower, lower, stride1, dtype = self.data_type)
@@ -211,7 +211,7 @@ class DPTabulate():
                         bias["layer_" + str(layer)].append(tf.make_ndarray(node))
                 else:
                     for ii in range(0, self.ntypes * self.ntypes):
-                        if (ii // self.ntypes, int(ii % self.ntypes)) not in self.exclude_types:
+                        if (ii // self.ntypes, ii % self.ntypes) not in self.exclude_types:
                             node = self.embedding_net_nodes[f"filter_type_{ii // self.ntypes}{self.suffix}/bias_{layer}_{ii % self.ntypes}"]
                             bias["layer_" + str(layer)].append(tf.make_ndarray(node))
                         else:
@@ -234,7 +234,7 @@ class DPTabulate():
                         matrix["layer_" + str(layer)].append(tf.make_ndarray(node))
                 else:
                     for ii in range(0, self.ntypes * self.ntypes):
-                        if (ii // self.ntypes, int(ii % self.ntypes)) not in self.exclude_types:
+                        if (ii // self.ntypes, ii % self.ntypes) not in self.exclude_types:
                             node = self.embedding_net_nodes[f"filter_type_{ii // self.ntypes}{self.suffix}/matrix_{layer}_{ii % self.ntypes}"]
                             matrix["layer_" + str(layer)].append(tf.make_ndarray(node))
                         else:
