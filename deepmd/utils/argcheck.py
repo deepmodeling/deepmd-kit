@@ -371,13 +371,11 @@ def modifier_variant_type_args():
 
 #  --- model compression configurations: --- #
 def model_compression():
-    doc_compress = f"The name of the frozen model file."
     doc_model_file = f"The input model file, which will be compressed by the DeePMD-kit."
     doc_table_config = f"The arguments of model compression, including extrapolate(scale of model extrapolation), stride(uniform stride of tabulation's first and second table), and frequency(frequency of tabulation overflow check)."
     doc_min_nbor_dist = f"The nearest distance between neighbor atoms saved in the frozen model."
     
     return [
-        Argument("compress", bool, optional = False, doc = doc_compress),
         Argument("model_file", str, optional = False, doc = doc_model_file),
         Argument("table_config", list, optional = False, doc = doc_table_config),
         Argument("min_nbor_dist", float, optional = False, doc = doc_min_nbor_dist),

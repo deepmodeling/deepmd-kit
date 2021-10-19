@@ -323,12 +323,19 @@ class DescrptSeA (DescrptSe):
         suffix : str, optional
                 The suffix of the scope
         """
+        # do some checks before the mocel compression process
         assert (
             not self.filter_resnet_dt
         ), "Model compression error: descriptor resnet_dt must be false!"
+        for tt in self.exclude_types:
+            if (tt[0] not in range(self.ntypes)) or (tt[1] not in range(self.ntypes)):
+                raise RuntimeError("exclude types" + str(tt) + " must within the number of atomic types " + str(self.ntypes) + "!")
+        if (self.ntypes * self.ntypes - len(self.exclude_types) == 0):
+            raise RuntimeError("empty embedding-net are not supported in model compression!")
+
         self.compress = True
         self.table = DPTabulate(
-            model_file, self.type_one_side, self.exclude_types, self.compress_activation_fn, suffix=suffix)
+            self, self.filter_neuron, model_file, self.type_one_side, self.exclude_types, self.compress_activation_fn, suffix=suffix)
         self.table_config = [table_extrapolate, table_stride_1, table_stride_2, check_frequency]
         self.lower, self.upper \
             = self.table.build(min_nbor_dist, 
@@ -686,7 +693,7 @@ class DescrptSeA (DescrptSe):
             net = 'filter_-1_net_' + str(type_i)
           else:
             net = 'filter_' + str(type_input) + '_net_' + str(type_i)
-          return op_module.tabulate_fusion(tf.cast(self.table.data[net], self.filter_precision), info, xyz_scatter, tf.reshape(inputs_i, [natom, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])  
+          return op_module.tabulate_fusion_se_a(tf.cast(self.table.data[net], self.filter_precision), info, xyz_scatter, tf.reshape(inputs_i, [natom, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])  
         else:
           if (not is_exclude):
               xyz_scatter = embedding_net(
