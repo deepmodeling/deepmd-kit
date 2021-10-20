@@ -20,7 +20,7 @@ from deepmd.utils.learning_rate import LearningRateExp
 from deepmd.utils.neighbor_stat import NeighborStat
 from deepmd.utils.sess import run_sess
 from deepmd.utils.type_embed import TypeEmbedNet
-from deepmd.utils.graph import get_tensor_by_name, get_embedding_net_variables, get_fitting_net_variables
+from deepmd.utils.graph import get_tensor_by_name
 
 from tensorflow.python.client import timeline
 from deepmd.env import op_module
@@ -283,7 +283,7 @@ class DPTrainer (object):
             #       architecture to call neighbor stat
         else :
             self.descrpt.enable_compression(self.model_param['compress']["min_nbor_dist"], self.model_param['compress']['model_file'], self.model_param['compress']['table_config'][0], self.model_param['compress']['table_config'][1], self.model_param['compress']['table_config'][2], self.model_param['compress']['table_config'][3])
-            self.fitting.init_variables(get_fitting_net_variables(self.model_param['compress']['model_file']))
+            self.fitting.init_variables(self.model_param['compress']['model_file'])
         
         if self.is_compress or self.model_type == 'compressed_model':
             tf.constant("compressed_model", name = 'model_type', dtype = tf.string)
@@ -661,11 +661,11 @@ class DPTrainer (object):
         # initialize fitting net with the given compressed frozen model
         if self.model_type == 'original_model':
             self.descrpt.init_variables(self.run_opt.init_frz_model)
-            self.fitting.init_variables(get_fitting_net_variables(self.run_opt.init_frz_model))
+            self.fitting.init_variables(self.run_opt.init_frz_model)
             tf.constant("original_model", name = 'model_type', dtype = tf.string)
         elif self.model_type == 'compressed_model':
             self.frz_model = self.run_opt.init_frz_model
-            self.fitting.init_variables(get_fitting_net_variables(self.frz_model))
+            self.fitting.init_variables(self.frz_model)
             tf.constant("compressed_model", name = 'model_type', dtype = tf.string)
         else:
             raise RuntimeError("Unknown model type %s" % self.model_type)

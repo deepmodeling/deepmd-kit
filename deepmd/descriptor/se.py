@@ -96,7 +96,7 @@ class DescrptSe (Descriptor):
                        suffix : str = "",
     ) -> None:
         """
-        Init the embedding net variables with the given dict
+        Init the embedding net variables with the given frozen model
 
         Parameters
         ----------
