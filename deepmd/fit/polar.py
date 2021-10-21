@@ -385,7 +385,6 @@ class PolarFittingSeA () :
             The input frozen model file
         """
         self.fitting_net_variables = get_fitting_net_variables(model_file)
-        print(self.fitting_net_variables.keys())
 
 
 class GlobalPolarFittingSeA () :
