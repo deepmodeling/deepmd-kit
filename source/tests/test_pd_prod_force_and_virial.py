@@ -18,10 +18,11 @@ from deepmd.env import tf
 from tensorflow.python.framework import ops
 
 from common import Data
+
 if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
     global_default_fv_hh = 1e-2
     global_default_dw_hh = 1e-2
-    global_default_places = 2
+    global_default_places = 3
 else :
     global_default_fv_hh = 1e-5
     global_default_dw_hh = 1e-4
