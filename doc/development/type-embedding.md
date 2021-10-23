@@ -28,7 +28,7 @@ Energy = F( [ Multi( G( [s_ij, A(i), A(j)] ) ), A(j)] )
 ```
 or 
 ```
-Energy = F( [ Multi( G( [s_ij, A(j)] ) ), A(j)] )
+Energy = F( [ Multi( G( [s_ij, A(j)] ) ), A(i)] )
 ```
 The difference between two variants above is whether using the information of centric atom when generating the descriptor. Users can choose by modifying the `type_one_side` hyper-parameter in the input json file.
 
