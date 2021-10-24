@@ -37,7 +37,7 @@ def _transfer_graph_def(sess, old_graph_def, raw_graph_def):
             raw_graph_def,  # The graph_def is used to retrieve the nodes
             [n + '_1' for n in old_graph_nodes],  # The output node names are used to select the usefull nodes
         )
-    except Exception:
+    except AssertionError:
         # if there's no additional nodes
         return old_graph_def
 
