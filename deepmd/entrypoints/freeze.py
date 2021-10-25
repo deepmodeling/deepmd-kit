@@ -21,7 +21,7 @@ __all__ = ["freeze"]
 
 log = logging.getLogger(__name__)
 
-def _transfer_graph_def(sess, old_graph_def, raw_graph_def):
+def _transfer_fitting_net_trainable_variables(sess, old_graph_def, raw_graph_def):
     old_pattern = FITTING_NET_PATTERN
     raw_pattern = FITTING_NET_PATTERN\
         .replace('idt',    'idt+_\d+')\
@@ -236,7 +236,7 @@ def freeze(
         )
 
         # If we need to transfer the fitting net variables
-        output_graph_def = _transfer_graph_def(
+        output_graph_def = _transfer_fitting_net_trainable_variables(
             sess,
             output_graph_def,
             input_graph_def
