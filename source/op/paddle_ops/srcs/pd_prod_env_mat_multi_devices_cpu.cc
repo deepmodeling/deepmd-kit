@@ -72,10 +72,6 @@ _prepare_coord_nlist_cpu(
     const int &max_cpy_trial,
     const int &max_nnei_trial);
 
-// Numerical regression between CUDA 10.1 & CUDA 11.2
-// Disable CUDA support until latest changes on
-// /source/lib/src/cuda/xxx.cu get merged
-/*
 #ifdef PADDLE_WITH_CUDA
 std::vector<paddle::Tensor> PdProdEnvMatAOpCUDAForward(
     const paddle::Tensor &coord_tensor,
@@ -91,7 +87,6 @@ std::vector<paddle::Tensor> PdProdEnvMatAOpCUDAForward(
     std::vector<int> sel_a,
     std::vector<int> sel_r);
 #endif
-*/
 
 template <typename data_t>
 void PdProdEnvMatAOpCPUForwardKernel(
@@ -149,13 +144,13 @@ std::vector<paddle::Tensor> PdProdEnvMatAOpCPUForward(
     std::vector<int> sel_a,
     std::vector<int> sel_r)
 {
-  CHECK_INPUT_READY(coord_tensor);
-  CHECK_INPUT_READY(type_tensor);
-  CHECK_INPUT_READY(natoms_tensor);
-  CHECK_INPUT_READY(box_tensor);
-  CHECK_INPUT_READY(mesh_tensor);
-  CHECK_INPUT_READY(avg_tensor);
-  CHECK_INPUT_READY(std_tensor);
+  CHECK_INPUT(coord_tensor);
+  CHECK_INPUT(type_tensor);
+  CHECK_INPUT(natoms_tensor);
+  CHECK_INPUT(box_tensor);
+  CHECK_INPUT(mesh_tensor);
+  CHECK_INPUT(avg_tensor);
+  CHECK_INPUT(std_tensor);
   
   std::vector<int> sec_a;
   std::vector<int> sec_r;
@@ -195,15 +190,7 @@ std::vector<paddle::Tensor> PdProdEnvMatAOpCPUForward(
   PD_CHECK(sec_r.back() == 0, "Rotational free descriptor only support all-angular information: sel_r should be all zero.");
   PD_CHECK(natoms_tensor.shape()[0] >= 3, "Number of atoms should be larger than (or equal to) 3");
   // Paddle Set device on Python not in custom op
-  
-  // TODO: This code should be removed once cuda issue fixed.
-  const int* natoms = nullptr;
-  if(natoms_tensor.place() != paddle::PlaceType::kCPU){
-      natoms = natoms_tensor.copy_to<int>(paddle::PlaceType::kCPU).data<int>();
-  }else{
-      natoms = natoms_tensor.data<int>();
-  }
-
+  const int *natoms = natoms_tensor.data<int>();
   int nloc = natoms[0];
   int nall = natoms[1];
   int ntypes = natoms_tensor.shape()[0] - 2; //nloc and nall mean something.
@@ -256,41 +243,21 @@ std::vector<paddle::Tensor> PdProdEnvMatAOpCPUForward(
   paddle::Tensor descrpt_deriv_tensor = paddle::Tensor(paddle::PlaceType::kCPU, descrpt_deriv_shape);
   paddle::Tensor rij_tensor = paddle::Tensor(paddle::PlaceType::kCPU, rij_shape);
   paddle::Tensor nlist_tensor = paddle::Tensor(paddle::PlaceType::kCPU, nlist_shape);
-  
-  if(natoms_tensor.place() == paddle::PlaceType::kCPU) {
-      PD_DISPATCH_FLOATING_TYPES(
-          coord_tensor.type(), "pd_prod_env_mat_a_cpu_forward_kernel", ([&] {
-            PdProdEnvMatAOpCPUForwardKernel<data_t>(
-                nsamples, nloc, ndescrpt, nnei, nall, mem_cpy, mem_nnei, max_nbor_size,
-                mesh_tensor.data<int>(), nei_mode, rcut_a, rcut_r, rcut_r_smth, max_cpy_trial, max_nnei_trial, b_nlist_map, sec_a, sec_r,
-                descrpt_tensor.mutable_data<data_t>(),
-                descrpt_deriv_tensor.mutable_data<data_t>(),
-                rij_tensor.mutable_data<data_t>(),
-                nlist_tensor.mutable_data<int>(),
-                coord_tensor.data<data_t>(),
-                box_tensor.data<data_t>(),
-                avg_tensor.data<data_t>(),
-                std_tensor.data<data_t>(),
-                type_tensor.data<int>());
-          }));
-  } else {
-      PD_DISPATCH_FLOATING_TYPES(
-          coord_tensor.type(), "pd_prod_env_mat_a_cpu_forward_kernel", ([&] {
-            PdProdEnvMatAOpCPUForwardKernel<data_t>(
-                nsamples, nloc, ndescrpt, nnei, nall, mem_cpy, mem_nnei, max_nbor_size,
-                mesh_tensor.size() == 0 ? mesh_tensor.data<int>() : mesh_tensor.copy_to<int>(paddle::PlaceType::kCPU).data<int>(), 
-                nei_mode, rcut_a, rcut_r, rcut_r_smth, max_cpy_trial, max_nnei_trial, b_nlist_map, sec_a, sec_r,
-                descrpt_tensor.mutable_data<data_t>(),
-                descrpt_deriv_tensor.mutable_data<data_t>(),
-                rij_tensor.mutable_data<data_t>(),
-                nlist_tensor.mutable_data<int>(),
-                coord_tensor.copy_to<data_t>(paddle::PlaceType::kCPU).data<data_t>(),
-                box_tensor.copy_to<data_t>(paddle::PlaceType::kCPU).data<data_t>(),
-                avg_tensor.copy_to<data_t>(paddle::PlaceType::kCPU).data<data_t>(),
-                std_tensor.copy_to<data_t>(paddle::PlaceType::kCPU).data<data_t>(),
-                type_tensor.copy_to<int>(paddle::PlaceType::kCPU).data<int>());
-          }));
-  }
+  PD_DISPATCH_FLOATING_TYPES(
+      coord_tensor.type(), "pd_prod_env_mat_a_cpu_forward_kernel", ([&] {
+        PdProdEnvMatAOpCPUForwardKernel<data_t>(
+            nsamples, nloc, ndescrpt, nnei, nall, mem_cpy, mem_nnei, max_nbor_size,
+            mesh_tensor.data<int>(), nei_mode, rcut_a, rcut_r, rcut_r_smth, max_cpy_trial, max_nnei_trial, b_nlist_map, sec_a, sec_r,
+            descrpt_tensor.mutable_data<data_t>(),
+            descrpt_deriv_tensor.mutable_data<data_t>(),
+            rij_tensor.mutable_data<data_t>(),
+            nlist_tensor.mutable_data<int>(),
+            coord_tensor.data<data_t>(),
+            box_tensor.data<data_t>(),
+            avg_tensor.data<data_t>(),
+            std_tensor.data<data_t>(),
+            type_tensor.data<int>());
+      }));
       
   return {descrpt_tensor, descrpt_deriv_tensor, rij_tensor, nlist_tensor};
 }
@@ -315,23 +282,6 @@ std::vector<paddle::Tensor> PdProdEnvMatAOpForward(
   CHECK_INPUT_READY(mesh_tensor);
   CHECK_INPUT_READY(avg_tensor);
   CHECK_INPUT_READY(std_tensor);
-  
-  // Force dispatch to CPU until CUDA bug fixed
-  return PdProdEnvMatAOpCPUForward(
-      coord_tensor, 
-      type_tensor, 
-      natoms_tensor, 
-      box_tensor, 
-      mesh_tensor, 
-      avg_tensor, 
-      std_tensor,
-      rcut_a,
-      rcut_r,
-      rcut_r_smth,
-      sel_a,
-      sel_r
-  );
-  /*
   if (coord_tensor.place() == paddle::PlaceType::kCPU) {
     return PdProdEnvMatAOpCPUForward(
       coord_tensor, 
@@ -367,7 +317,6 @@ std::vector<paddle::Tensor> PdProdEnvMatAOpForward(
   } else {
     PD_THROW("Not implemented.");
   }
-  */
 }
 template <typename FPTYPE>
 static void
