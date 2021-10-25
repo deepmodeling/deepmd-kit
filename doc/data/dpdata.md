@@ -1,6 +1,6 @@
 # Prepare data with dpdata
 
-One can use the a convenient tool [`dpdata`](https://github.com/deepmodeling/dpdata) to convert data directly from the output of first priciple packages to the DeePMD-kit format.
+One can use the a convenient tool [`dpdata`](https://github.com/deepmodeling/dpdata) to convert data directly from the output of first principle packages to the DeePMD-kit format.
 
 To install one can execute 
 ```bash
