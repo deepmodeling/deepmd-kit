@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import platform
 from configparser import ConfigParser
 from imp import reload
@@ -35,10 +36,45 @@ __all__ = [
     "reset_default_tf_session_config",
     "op_module",
     "op_grads_module",
+    "TRANSFER_PATTERN",
+    "FITTING_NET_PATTERN",
+    "EMBEDDING_NET_PATTERN",
 ]
 
 SHARED_LIB_MODULE = "op"
 
+EMBEDDING_NET_PATTERN = str(
+    r"filter_type_\d+/matrix_\d+_\d+|"
+    r"filter_type_\d+/bias_\d+_\d+|"
+    r"filter_type_\d+/idt_\d+_\d+|"
+    r"filter_type_all/matrix_\d+_\d+|"
+    r"filter_type_all/matrix_\d+_\d+_\d+|"
+    r"filter_type_all/bias_\d+_\d+|"
+    r"filter_type_all/bias_\d+_\d+_\d+|"
+    r"filter_type_all/idt_\d+_\d+|"
+)
+
+FITTING_NET_PATTERN = str(
+    r"layer_\d+_type_\d+/matrix|"
+    r"layer_\d+_type_\d+/bias|"
+    r"layer_\d+_type_\d+/idt|"
+    r"final_layer_type_\d+/matrix|"
+    r"final_layer_type_\d+/bias|"
+)
+
+TRANSFER_PATTERN = \
+    EMBEDDING_NET_PATTERN + \
+    FITTING_NET_PATTERN + \
+    str(
+        r"descrpt_attr/t_avg|"
+        r"descrpt_attr/t_std|"
+        r"fitting_attr/t_fparam_avg|"
+        r"fitting_attr/t_fparam_istd|"
+        r"fitting_attr/t_aparam_avg|"
+        r"fitting_attr/t_aparam_istd|"
+        r"model_attr/t_tab_info|"
+        r"model_attr/t_tab_data|"
+)
 
 def set_env_if_empty(key: str, value: str, verbose: bool = True):
     """Set environment variable only if it is empty.
