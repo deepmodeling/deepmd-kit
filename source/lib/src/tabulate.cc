@@ -422,11 +422,11 @@ void deepmd::tabulate_fusion_se_t_grad_grad_cpu(
     const FPTYPE * dz_dy_dem_x,
     const FPTYPE * dz_dy_dem,
     const int nloc,
-    const int nnei,
+    const int nnei_i,
     const int nnei_j,
     const int last_layer_size)
 {
-  memset(dz_dy, 0.0, sizeof(FPTYPE) * nloc * 4 * last_layer_size);
+  memset(dz_dy, 0.0, sizeof(FPTYPE) * nloc * last_layer_size);
   const FPTYPE lower   = table_info[0];
   const FPTYPE upper   = table_info[1];
   const FPTYPE _max    = table_info[2];
@@ -436,49 +436,34 @@ void deepmd::tabulate_fusion_se_t_grad_grad_cpu(
   // FPTYPE * res = new FPTYPE[4 * last_layer_size];
   #pragma omp parallel for
   for (int ii = 0; ii < nloc; ii++) {
-    FPTYPE ll[4];
-    FPTYPE hh[4];
-    FPTYPE ago = em_x[ii * nnei + nnei - 1];
-    bool unloop = false;
-    for (int jj = 0; jj < nnei; jj++) {
-      ll[0] = em[ii * nnei * 4 + jj * 4 + 0];
-      ll[1] = em[ii * nnei * 4 + jj * 4 + 1];
-      ll[2] = em[ii * nnei * 4 + jj * 4 + 2];
-      ll[3] = em[ii * nnei * 4 + jj * 4 + 3];
-      hh[0] = dz_dy_dem[ii * nnei * 4 + jj * 4 + 0];
-      hh[1] = dz_dy_dem[ii * nnei * 4 + jj * 4 + 1];
-      hh[2] = dz_dy_dem[ii * nnei * 4 + jj * 4 + 2];
-      hh[3] = dz_dy_dem[ii * nnei * 4 + jj * 4 + 3];
-      FPTYPE xx = em_x[ii * nnei + jj];
-      FPTYPE dz_xx = dz_dy_dem_x[ii * nnei + jj];
-      if (ago == xx) {
-        unloop = true;
-      }
-      int table_idx = 0;
-      locate_xx(lower, upper, _max, stride0, stride1, xx, table_idx);
-      for (int kk = 0; kk < last_layer_size; kk++) {
-        FPTYPE a0  = table[table_idx * last_layer_size * 6 + 6 * kk + 0];
-        FPTYPE a1  = table[table_idx * last_layer_size * 6 + 6 * kk + 1];
-        FPTYPE a2  = table[table_idx * last_layer_size * 6 + 6 * kk + 2];
-        FPTYPE a3  = table[table_idx * last_layer_size * 6 + 6 * kk + 3];
-        FPTYPE a4  = table[table_idx * last_layer_size * 6 + 6 * kk + 4];
-        FPTYPE a5  = table[table_idx * last_layer_size * 6 + 6 * kk + 5];
-        FPTYPE var = a0 + (a1 + (a2 + (a3 + (a4 + a5 * xx) * xx) * xx) * xx) * xx;
-        FPTYPE var_grad = a1 + (2 * a2 + (3 * a3 + (4 * a4 + 5 * a5 * xx) * xx) * xx) * xx;
-        if (unloop) {
-          dz_dy[ii * last_layer_size * 4 + 0 * last_layer_size + kk] += (nnei - jj) * (var * hh[0] + dz_xx * var_grad * ll[0]);
-          dz_dy[ii * last_layer_size * 4 + 1 * last_layer_size + kk] += (nnei - jj) * (var * hh[1] + dz_xx * var_grad * ll[1]);
-          dz_dy[ii * last_layer_size * 4 + 2 * last_layer_size + kk] += (nnei - jj) * (var * hh[2] + dz_xx * var_grad * ll[2]);
-          dz_dy[ii * last_layer_size * 4 + 3 * last_layer_size + kk] += (nnei - jj) * (var * hh[3] + dz_xx * var_grad * ll[3]);
+    for (int jj = 0; jj < nnei_i; jj++) {
+      FPTYPE ago = em_x[ii * nnei_i * nnei_j + jj * nnei_j + nnei_j - 1];
+      bool unloop = false; 
+      for (int kk = 0; kk < nnei_j; kk++) { 
+        FPTYPE xx = em_x[ii * nnei_i * nnei_j + jj * nnei_j + kk];
+        FPTYPE tmp = xx;
+        FPTYPE dz_em = dz_dy_dem  [ii * nnei_i * nnei_j + jj * nnei_j + kk];
+        FPTYPE dz_xx = dz_dy_dem_x[ii * nnei_i * nnei_j + jj * nnei_j + kk];
+
+        if (ago == xx) {
+          unloop = true;
         }
-        else {
-          dz_dy[ii * last_layer_size * 4 + 0 * last_layer_size + kk] += var * hh[0] + dz_xx * var_grad * ll[0];
-          dz_dy[ii * last_layer_size * 4 + 1 * last_layer_size + kk] += var * hh[1] + dz_xx * var_grad * ll[1];
-          dz_dy[ii * last_layer_size * 4 + 2 * last_layer_size + kk] += var * hh[2] + dz_xx * var_grad * ll[2];
-          dz_dy[ii * last_layer_size * 4 + 3 * last_layer_size + kk] += var * hh[3] + dz_xx * var_grad * ll[3];
+        int table_idx = 0;
+        locate_xx_se_t(lower, upper, -_max, _max, stride0, stride1, xx, table_idx);
+        for (int mm = 0; mm < last_layer_size; mm++) {
+          FPTYPE a0  = table[table_idx * last_layer_size * 6 + 6 * mm + 0]; 
+          FPTYPE a1  = table[table_idx * last_layer_size * 6 + 6 * mm + 1]; 
+          FPTYPE a2  = table[table_idx * last_layer_size * 6 + 6 * mm + 2]; 
+          FPTYPE a3  = table[table_idx * last_layer_size * 6 + 6 * mm + 3];
+          FPTYPE a4  = table[table_idx * last_layer_size * 6 + 6 * mm + 4];
+          FPTYPE a5  = table[table_idx * last_layer_size * 6 + 6 * mm + 5];
+          FPTYPE var = a0 + (a1 + (a2 + (a3 + (a4 + a5 * xx) * xx) * xx) * xx) * xx;
+          FPTYPE var_grad = a1 + (2 * a2 + (3 * a3 + (4 * a4 + 5 * a5 * xx) * xx) * xx) * xx;
+          
+          dz_dy[ii * last_layer_size + mm] += var * dz_em + dz_xx * var_grad * tmp;
         }
+        if (unloop) break;
       }
-      if (unloop) break;
     }
   }
 }
