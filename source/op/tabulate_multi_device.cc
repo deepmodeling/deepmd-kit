@@ -472,10 +472,10 @@ class TabulateFusionSeTGradGradOp : public OpKernel {
     const FPTYPE * em = em_tensor.flat<FPTYPE>().data();
     const FPTYPE * dz_dy_dem_x = dz_dy_dem_x_tensor.flat<FPTYPE>().data();
     const FPTYPE * dz_dy_dem = dz_dy_dem_tensor.flat<FPTYPE>().data();
-    const int nloc = em_tensor.shape().dim_size(0);
+    const int nloc   = em_tensor.shape().dim_size(0);
     const int nnei_i = em_tensor.shape().dim_size(1);
     const int nnei_j = em_tensor.shape().dim_size(2);
-    const int last_layer_size = descriptor_tensor.shape().dim_size(2);
+    const int last_layer_size = descriptor_tensor.shape().dim_size(1);
 
     if (device == "GPU") {
       #if GOOGLE_CUDA
