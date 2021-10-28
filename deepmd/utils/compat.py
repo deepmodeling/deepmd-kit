@@ -351,6 +351,7 @@ def deprecate_numb_test(jdata: Dict[str, Any],
     if dump is not None:
         with open(dump, "w") as fp:
             json.dump(jdata, fp, indent=4)
+    return jdata
 
 
 def updata_deepmd_input(jdata: Dict[str, Any],
