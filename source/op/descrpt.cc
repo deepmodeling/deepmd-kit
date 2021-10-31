@@ -228,7 +228,7 @@ public:
 	    int j_idx = pfirstneigh[ii][jj];
 	    d_nlist_r[i_idx].push_back(j_idx);
 	  }
-	}      
+	}
       }
       else if (nei_mode == 2) {
 	std::vector<int > nat_stt = {mesh(1-1), mesh(2-1), mesh(3-1)};
