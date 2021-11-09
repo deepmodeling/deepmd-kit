@@ -91,32 +91,6 @@ void load_polynomial_params(
 }
 
 
-template<
-    typename FPTYPE,
-    int MTILE>
-__forceinline__ __device__
-void loop_grad_se_a(
-  FPTYPE Csub,
-  FPTYPE var[6],
-  FPTYPE sum[MTILE],
-  FPTYPE reg_em[MTILE],
-  const FPTYPE * iteratorA,
-  const FPTYPE& xx,
-  const int& idx,
-  const int& scalar,
-  const int& last_layer_size)
-{
-  FPTYPE res = var[0] + (var[1] + (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) * xx;
-  for (int kk = 0; kk < MTILE; kk++) {
-    sum[kk] += scalar * iteratorA[kk * last_layer_size + idx] * res;
-  }
-  res  = reg_em[0] * iteratorA[0 * last_layer_size + idx];
-  res += reg_em[1] * iteratorA[1 * last_layer_size + idx];
-  res += reg_em[2] * iteratorA[2 * last_layer_size + idx];
-  res += reg_em[3] * iteratorA[3 * last_layer_size + idx];
-  Csub += scalar * (var[1] + (2 * var[2] + (3 * var[3] + (4 * var[4] + 5 * var[5] * xx) * xx) * xx) * xx) * res;
-}
-
 template <typename FPTYPE>
 __forceinline__ __device__ 
 FPTYPE dot(
