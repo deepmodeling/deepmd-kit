@@ -5,7 +5,9 @@ Training Parameters
    
    
    **Available activation functions for descriptor:**
+   
    tanh
+   
    gelu
    relu
    relu6
