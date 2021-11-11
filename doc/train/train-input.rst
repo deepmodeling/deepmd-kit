@@ -6,10 +6,10 @@ Training Parameters
    
    **Available activation functions for descriptor:**
    
-   tanh
+   -tanh
    
-   gelu
-   relu
+   -gelu
+-relu
    relu6
    softplus
    sigmoid
