@@ -6,9 +6,8 @@ Training Parameters
    
    **Available activation functions for descriptor:**
    
-   -tanh
-   
-   -gelu
+-tanh
+-gelu
 -relu
    relu6
    softplus
