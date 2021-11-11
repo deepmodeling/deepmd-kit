@@ -6,11 +6,11 @@ Training Parameters
    
    **Available activation functions for descriptor:**
 - tanh
-   - gelu
-   - relu
-   - relu6
-   - softplus
-   - sigmoid
+- gelu
+- relu
+- relu6
+- softplus
+- sigmoid
    You can specify one of the above functions as the activation function in the descriptor's configuration in "input.json".
    For example:
       "activation_function": "sigmoid"
