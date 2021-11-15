@@ -68,6 +68,14 @@ class DPTabulate():
             self.functype = 1
         elif activation_fn == ACTIVATION_FN_DICT["gelu"]:
             self.functype = 2
+        elif activation_fn == ACTIVATION_FN_DICT["relu"]:
+            self.functype = 3
+        elif activation_fn == ACTIVATION_FN_DICT["relu6"]:
+            self.functype = 4
+        elif activation_fn == ACTIVATION_FN_DICT["softplus"]:
+            self.functype = 5
+        elif activation_fn == ACTIVATION_FN_DICT["sigmoid"]:
+            self.functype = 6
         else:
             raise RuntimeError("Unknown actication function type!")
         self.activation_fn = activation_fn
