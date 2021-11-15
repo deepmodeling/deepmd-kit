@@ -44,7 +44,7 @@ def one_layer(inputs,
                             precision,
                             w_initializer, 
                             trainable = trainable)
-        variable_summaries(w, 'matrix')      
+        variable_summaries(w, 'matrix')
         b = tf.get_variable('bias', 
                             [outputs_size], 
                             precision,
