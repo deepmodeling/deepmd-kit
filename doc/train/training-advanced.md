@@ -126,3 +126,4 @@ One can set other environmental variables:
 | Environment variables | Allowed value          | Default value | Usage                      |
 | --------------------- | ---------------------- | ------------- | -------------------------- |
 | DP_INTERFACE_PREC     | `high`, `low`          | `high`        | Control high (double) or low (float) precision of training. |
+| DP_ENABLE_MIXED_PREC  | `fp16`                 |               | Control mixed precision(fp16) of training and inference.    |
