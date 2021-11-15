@@ -24,6 +24,7 @@ except ImportError:
 
 __all__ = [
     "GLOBAL_CONFIG",
+    "GLOBAL_FLOAT_PRECISION",
     "GLOBAL_TF_FLOAT_PRECISION",
     "GLOBAL_NP_FLOAT_PRECISION",
     "GLOBAL_ENER_FLOAT_PRECISION",
@@ -297,11 +298,13 @@ op_grads_module = get_module("libop_grads")
 dp_float_prec = os.environ.get("DP_INTERFACE_PREC", "high").lower()
 if dp_float_prec in ("high", ""):
     # default is high
+    GLOBAL_FLOAT_PRECISION = "float64"
     GLOBAL_TF_FLOAT_PRECISION = tf.float64
     GLOBAL_NP_FLOAT_PRECISION = np.float64
     GLOBAL_ENER_FLOAT_PRECISION = np.float64
     global_float_prec = "double"
 elif dp_float_prec == "low":
+    GLOBAL_FLOAT_PRECISION = "float32"
     GLOBAL_TF_FLOAT_PRECISION = tf.float32
     GLOBAL_NP_FLOAT_PRECISION = np.float32
     GLOBAL_ENER_FLOAT_PRECISION = np.float64
@@ -318,6 +321,7 @@ else:
 dp_mixed_prec = os.environ.get("DP_ENABLE_MIXED_PREC", "").lower()
 if dp_mixed_prec is "fp16":
     # default setting of the global precision
+    GLOBAL_FLOAT_PRECISION = "float32"
     GLOBAL_TF_FLOAT_PRECISION = tf.float32
     GLOBAL_NP_FLOAT_PRECISION = np.float32
     GLOBAL_ENER_FLOAT_PRECISION = np.float64

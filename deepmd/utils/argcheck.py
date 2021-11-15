@@ -4,6 +4,7 @@ from dargs import dargs, Argument, Variant, ArgumentEncoder
 from deepmd import descriptor
 from deepmd.common import ACTIVATION_FN_DICT, PRECISION_DICT
 from deepmd.utils.plugin import Plugin
+from deepmd.env import GLOBAL_FLOAT_PRECISION
 import json
 
 
@@ -35,7 +36,7 @@ def type_embedding_args():
         Argument("neuron", list, optional = True, default = [2, 4, 8], doc = doc_neuron),
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
         Argument("resnet_dt", bool, optional = True, default = False, doc = doc_resnet_dt),
-        Argument("precision", str, optional = True, default = "float64", doc = doc_precision),
+        Argument("precision", str, optional = True, default = GLOBAL_FLOAT_PRECISION, doc = doc_precision),
         Argument("trainable", bool, optional = True, default = True, doc = doc_trainable),
         Argument("seed", [int,None], optional = True, doc = doc_seed),
     ]        
@@ -138,7 +139,7 @@ def descrpt_se_a_args():
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
         Argument("resnet_dt", bool, optional = True, default = False, doc = doc_resnet_dt),
         Argument("type_one_side", bool, optional = True, default = False, doc = doc_type_one_side),
-        Argument("precision", str, optional = True, default = "float64", doc = doc_precision),
+        Argument("precision", str, optional = True, default = GLOBAL_FLOAT_PRECISION, doc = doc_precision),
         Argument("trainable", bool, optional = True, default = True, doc = doc_trainable),
         Argument("seed", [int,None], optional = True, doc = doc_seed),
         Argument("exclude_types", list, optional = True, default = [], doc = doc_exclude_types),
@@ -168,7 +169,7 @@ def descrpt_se_t_args():
         Argument("neuron", list, optional = True, default = [10,20,40], doc = doc_neuron),
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
         Argument("resnet_dt", bool, optional = True, default = False, doc = doc_resnet_dt),
-        Argument("precision", str, optional = True, default = "float64", doc = doc_precision),
+        Argument("precision", str, optional = True, default = GLOBAL_FLOAT_PRECISION, doc = doc_precision),
         Argument("trainable", bool, optional = True, default = True, doc = doc_trainable),
         Argument("seed", [int,None], optional = True, doc = doc_seed),
         Argument("set_davg_zero", bool, optional = True, default = False, doc = doc_set_davg_zero)
@@ -214,7 +215,7 @@ def descrpt_se_r_args():
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
         Argument("resnet_dt", bool, optional = True, default = False, doc = doc_resnet_dt),
         Argument("type_one_side", bool, optional = True, default = False, doc = doc_type_one_side),
-        Argument("precision", str, optional = True, default = "float64", doc = doc_precision),
+        Argument("precision", str, optional = True, default = GLOBAL_FLOAT_PRECISION, doc = doc_precision),
         Argument("trainable", bool, optional = True, default = True, doc = doc_trainable),
         Argument("seed", [int,None], optional = True, doc = doc_seed),
         Argument("exclude_types", list, optional = True, default = [], doc = doc_exclude_types),
@@ -269,7 +270,7 @@ def fitting_ener():
         Argument("numb_aparam", int, optional = True, default = 0, doc = doc_numb_aparam),
         Argument("neuron", list, optional = True, default = [120,120,120], alias = ['n_neuron'], doc = doc_neuron),
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
-        Argument("precision", str, optional = True, default = 'float64', doc = doc_precision),
+        Argument("precision", str, optional = True, default = GLOBAL_FLOAT_PRECISION, doc = doc_precision),
         Argument("resnet_dt", bool, optional = True, default = True, doc = doc_resnet_dt),
         Argument("trainable", [list,bool], optional = True, default = True, doc = doc_trainable),
         Argument("rcond", float, optional = True, default = 1e-3, doc = doc_rcond),
@@ -296,7 +297,7 @@ def fitting_polar():
         Argument("neuron", list, optional = True, default = [120,120,120], alias = ['n_neuron'], doc = doc_neuron),
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
         Argument("resnet_dt", bool, optional = True, default = True, doc = doc_resnet_dt),
-        Argument("precision", str, optional = True, default = 'float64', doc = doc_precision),
+        Argument("precision", str, optional = True, default = GLOBAL_FLOAT_PRECISION, doc = doc_precision),
         Argument("fit_diag", bool, optional = True, default = True, doc = doc_fit_diag),
         Argument("scale", [list,float], optional = True, default = 1.0, doc = doc_scale),
         #Argument("diag_shift", [list,float], optional = True, default = 0.0, doc = doc_diag_shift),
@@ -321,7 +322,7 @@ def fitting_dipole():
         Argument("neuron", list, optional = True, default = [120,120,120], alias = ['n_neuron'], doc = doc_neuron),
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
         Argument("resnet_dt", bool, optional = True, default = True, doc = doc_resnet_dt),
-        Argument("precision", str, optional = True, default = 'float64', doc = doc_precision),
+        Argument("precision", str, optional = True, default = GLOBAL_FLOAT_PRECISION, doc = doc_precision),
         Argument("sel_type", [list,int,None], optional = True, alias = ['dipole_type'], doc = doc_sel_type),
         Argument("seed", [int,None], optional = True, doc = doc_seed)
     ]    
