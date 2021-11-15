@@ -2,6 +2,7 @@ import numpy as np
 
 from deepmd.env import tf
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import DP_ENABLE_MIXED_PRECISION, cast_to_compute, cast_to_output
 
 def one_layer_rand_seed_shift():
     return 3
@@ -20,6 +21,12 @@ def one_layer(inputs,
               useBN = False, 
               uniform_seed = False,
               initial_variables = None):
+    # Do mixed precision training check
+    if DP_ENABLE_MIXED_PRECISION and precision is not tf.float32:
+        raise RuntimeError("The network precision %s does not match the mixed precision training settting! Please check the input training script. " % (precision))
+    # For good accuracy, the last layer of the fitting network uses a single-precision neuron network.
+    if DP_ENABLE_MIXED_PRECISION and outputs_size is 1:
+        inputs = cast_to_output(inputs)
     with tf.variable_scope(name, reuse=reuse):
         shape = inputs.get_shape().as_list()
         w_initializer  = tf.random_normal_initializer(
@@ -37,13 +44,17 @@ def one_layer(inputs,
                             precision,
                             w_initializer, 
                             trainable = trainable)
-        variable_summaries(w, 'matrix')
+        variable_summaries(w, 'matrix')      
         b = tf.get_variable('bias', 
                             [outputs_size], 
                             precision,
                             b_initializer, 
                             trainable = trainable)
         variable_summaries(b, 'bias')
+        if DP_ENABLE_MIXED_PRECISION and outputs_size is not 1:
+            inputs = cast_to_compute(inputs)
+            w = cast_to_compute(w)
+            b = cast_to_compute(b)
         hidden = tf.matmul(inputs, w) + b
         if activation_fn != None and use_timestep :
             idt_initializer = tf.random_normal_initializer(
@@ -65,6 +76,8 @@ def one_layer(inputs,
                 # return activation_fn(hidden_bn)
             else:
                 if use_timestep :
+                    if DP_ENABLE_MIXED_PRECISION and outputs_size is not 1:
+                       idt = cast_to_compute(idt)
                     return tf.reshape(activation_fn(hidden), [-1, outputs_size]) * idt
                 else :
                     return tf.reshape(activation_fn(hidden), [-1, outputs_size])                    
@@ -154,6 +167,9 @@ def embedding_net(xx,
        in deep residual networks. InComputer Vision – ECCV 2016,pages 630–645. Springer
        International Publishing, 2016.
     """
+    # Do mixed precision training check
+    if DP_ENABLE_MIXED_PRECISION and precision is not tf.float32:
+        raise RuntimeError("The network precision %s does not match the mixed precision training settting! Please check the input training script. " % (precision))
     input_shape = xx.get_shape().as_list()
     outputs_size = [input_shape[1]] + network_size
 
@@ -185,6 +201,10 @@ def embedding_net(xx,
                             trainable = trainable)
         variable_summaries(b, 'bias_'+str(ii)+name_suffix)
 
+        if DP_ENABLE_MIXED_PRECISION:
+            xx = cast_to_compute(xx)
+            w  = cast_to_compute(w)
+            b  = cast_to_compute(b)
         hidden = tf.reshape(activation_fn(tf.matmul(xx, w) + b), [-1, outputs_size[ii]])
         if resnet_dt :
             idt_initializer = tf.random_normal_initializer(
@@ -201,6 +221,8 @@ def embedding_net(xx,
                                   idt_initializer, 
                                   trainable = trainable)
             variable_summaries(idt, 'idt_'+str(ii)+name_suffix)
+            if DP_ENABLE_MIXED_PRECISION:
+                idt = cast_to_compute(idt)
 
         if outputs_size[ii] == outputs_size[ii-1]:
             if resnet_dt :

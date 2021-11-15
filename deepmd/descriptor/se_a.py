@@ -9,6 +9,7 @@ from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
+from deepmd.env import DP_ENABLE_MIXED_PRECISION, cast_to_compute
 from deepmd.utils.network import embedding_net, embedding_net_rand_seed_shift
 from deepmd.utils.tabulate import DPTabulate
 from deepmd.utils.type_embed import embed_atom_type
@@ -735,6 +736,8 @@ class DescrptSeA (DescrptSe):
             name='linear', 
             reuse=None,
             trainable = True):
+        if DP_ENABLE_MIXED_PRECISION:
+            inputs = cast_to_compute(inputs)
         nframes = tf.shape(tf.reshape(inputs, [-1, natoms[0], self.ndescrpt]))[0]
         # natom x (nei x 4)
         shape = inputs.get_shape().as_list()

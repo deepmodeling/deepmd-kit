@@ -11,6 +11,7 @@ from deepmd.env import tf
 from deepmd.env import get_tf_session_config
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
+from deepmd.env import DP_ENABLE_MIXED_PRECISION
 from deepmd.fit import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
 from deepmd.descriptor import Descriptor
 from deepmd.model import EnerModel, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
@@ -332,6 +333,8 @@ class DPTrainer (object):
                                self.place_holders,
                                suffix = "test")
 
+        if DP_ENABLE_MIXED_PRECISION:
+            self.l2_l = tf.cast(self.l2_l, GLOBAL_TF_FLOAT_PRECISION)
         log.info("built network")
 
     def _build_training(self):
@@ -345,6 +348,9 @@ class DPTrainer (object):
             optimizer = self.run_opt._HVD.DistributedOptimizer(optimizer)
         else:
             optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate)
+        if DP_ENABLE_MIXED_PRECISION:
+            # enable dynamic loss scale of the gradients
+            optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
         apply_op = optimizer.minimize(loss=self.l2_l,
                                       global_step=self.global_step,
                                       var_list=trainable_variables,
