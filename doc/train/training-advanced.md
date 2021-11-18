@@ -115,7 +115,7 @@ On some resources limited machines, one may want to control the number of thread
 
 For example if you wish to use 3 cores of 2 CPUs on one node, you may set the environmental variables and run DeePMD-kit as follows:
 ```bash
-export OMP_NUM_THREADS=6
+export OMP_NUM_THREADS=3
 export TF_INTRA_OP_PARALLELISM_THREADS=3
 export TF_INTER_OP_PARALLELISM_THREADS=2
 dp train input.json
