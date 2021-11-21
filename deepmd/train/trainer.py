@@ -362,8 +362,10 @@ class DPTrainer (object):
             # check the TF_VERSION, when TF < 1.12, mixed precision is not allowed 
             if TF_VERSION < "1.12":
                 raise RuntimeError("TensorFlow version %s is not compatible with the mixed precision setting. Please consider upgrading your TF version!" % TF_VERSION)
-            # enable dynamic loss scale of the gradients
-            optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
+            elif TF_VERSION < "2.4":
+                optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
+            else:
+                optimizer = tf.mixed_precision.enable_mixed_precision_graph_rewrite(optimizer)
         apply_op = optimizer.minimize(loss=self.l2_l,
                                       global_step=self.global_step,
                                       var_list=trainable_variables,
