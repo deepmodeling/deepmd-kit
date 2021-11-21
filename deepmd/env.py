@@ -24,14 +24,10 @@ except ImportError:
 
 __all__ = [
     "GLOBAL_CONFIG",
-    "GLOBAL_FLOAT_PRECISION",
     "GLOBAL_TF_FLOAT_PRECISION",
     "GLOBAL_NP_FLOAT_PRECISION",
     "GLOBAL_ENER_FLOAT_PRECISION",
     "global_float_prec",
-    "DP_ENABLE_MIXED_PRECISION",
-    "DP_MIXED_OUTPUT_PRECISION",
-    "DP_MIXED_COMPUTE_PRECISION",
     "global_cvt_2_tf_float",
     "global_cvt_2_ener_float",
     "MODEL_VERSION",
@@ -298,13 +294,11 @@ op_grads_module = get_module("libop_grads")
 dp_float_prec = os.environ.get("DP_INTERFACE_PREC", "high").lower()
 if dp_float_prec in ("high", ""):
     # default is high
-    GLOBAL_FLOAT_PRECISION = "float64"
     GLOBAL_TF_FLOAT_PRECISION = tf.float64
     GLOBAL_NP_FLOAT_PRECISION = np.float64
     GLOBAL_ENER_FLOAT_PRECISION = np.float64
     global_float_prec = "double"
 elif dp_float_prec == "low":
-    GLOBAL_FLOAT_PRECISION = "float32"
     GLOBAL_TF_FLOAT_PRECISION = tf.float32
     GLOBAL_NP_FLOAT_PRECISION = np.float32
     GLOBAL_ENER_FLOAT_PRECISION = np.float64
@@ -316,83 +310,6 @@ else:
         "DP_INTERFACE_PREC." % dp_float_prec
     )
 
-# MIXED_PREC
-# only support tf.float16 mixed precision training.
-dp_mixed_prec = os.environ.get("DP_ENABLE_MIXED_PREC", "").lower()
-if dp_mixed_prec == "fp16":
-    # default setting of the global precision
-    GLOBAL_FLOAT_PRECISION = "float32"
-    GLOBAL_TF_FLOAT_PRECISION = tf.float32
-    GLOBAL_NP_FLOAT_PRECISION = np.float32
-    GLOBAL_ENER_FLOAT_PRECISION = np.float64
-    global_float_prec = "half"
-    #
-    DP_ENABLE_MIXED_PRECISION = True
-    DP_MIXED_OUTPUT_PRECISION = tf.float32
-    DP_MIXED_COMPUTE_PRECISION = tf.float16
-elif dp_mixed_prec == "":
-    DP_ENABLE_MIXED_PRECISION = False
-    DP_MIXED_OUTPUT_PRECISION = None
-    DP_MIXED_COMPUTE_PRECISION = None
-else:
-    raise RuntimeError(
-        "Unsupported mixed precision option: %s. Supported: fp16. "
-        "Please set mixed precision training with environmental variable "
-        "DP_ENABLE_MIXED_PREC." % dp_mixed_prec
-    )
-
-
-def cast_to_compute(xx: tf.Tensor) -> tf.Tensor:
-    """Cast tensor to compute precision.
-
-    Parameters
-    ----------
-    xx : tf.Tensor
-        input tensor
-
-    Returns
-    -------
-    tf.Tensor
-        output tensor cast to compute precision
-    
-    Raises
-    ------
-    RuntimeError
-        if mixed precision training mode is on
-    """
-    if DP_MIXED_COMPUTE_PRECISION is None:
-        raise RuntimeError(
-            "'cast_to_compute' function only support the mixed precision mode."
-            "Please set mixed precision training with environmental variable "
-            "DP_ENABLE_MIXED_PREC."
-        )
-    return tf.cast(xx, DP_MIXED_COMPUTE_PRECISION)
-
-def cast_to_output(xx: tf.Tensor) -> tf.Tensor:
-    """Cast tensor to output precision.
-
-    Parameters
-    ----------
-    xx : tf.Tensor
-        input tensor
-
-    Returns
-    -------
-    tf.Tensor
-        output tensor cast to output precision
-    
-    Raises
-    ------
-    RuntimeError
-        if mixed precision training mode is on
-    """
-    if DP_MIXED_COMPUTE_PRECISION is None:
-        raise RuntimeError(
-            "'cast_to_output' function only support the mixed precision mode."
-            "Please set mixed precision training with environmental variable "
-            "DP_ENABLE_MIXED_PREC."
-        )
-    return tf.cast(xx, DP_MIXED_OUTPUT_PRECISION)
 
 def global_cvt_2_tf_float(xx: tf.Tensor) -> tf.Tensor:
     """Cast tensor to globally set TF precision.

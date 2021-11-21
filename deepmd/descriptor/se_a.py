@@ -9,7 +9,6 @@ from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
-from deepmd.env import DP_ENABLE_MIXED_PRECISION, cast_to_compute
 from deepmd.utils.network import embedding_net, embedding_net_rand_seed_shift
 from deepmd.utils.tabulate import DPTabulate
 from deepmd.utils.type_embed import embed_atom_type
@@ -161,6 +160,7 @@ class DescrptSeA (DescrptSe):
         self.davg = None
         self.compress = False
         self.embedding_net_variables = None
+        self.mixed_prec = None
         self.place_holders = {}
         nei_type = np.array([])
         for ii in range(self.ntypes):
@@ -348,6 +348,18 @@ class DescrptSeA (DescrptSe):
         self.davg = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_avg' % suffix)
         self.dstd = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_std' % suffix)
 
+
+    def enable_mixed_precision(self, mixed_prec : dict = None) -> None:
+        """
+        Reveive the mixed precision setting.
+
+        Parameters
+        ----------
+        mixed_prec
+                The mixed precision setting used in the embedding net
+        """
+        self.mixed_prec = mixed_prec
+        self.filter_precision = get_precision(mixed_prec['output_prec'])
 
 
     def build (self, 
@@ -709,7 +721,8 @@ class DescrptSeA (DescrptSe):
                   seed = self.seed,
                   trainable = trainable, 
                   uniform_seed = self.uniform_seed,
-                  initial_variables = self.embedding_net_variables)
+                  initial_variables = self.embedding_net_variables,
+                  mixed_prec = self.mixed_prec)
               if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
           else:
             # we can safely return the final xyz_scatter filled with zero directly
@@ -736,8 +749,8 @@ class DescrptSeA (DescrptSe):
             name='linear', 
             reuse=None,
             trainable = True):
-        if DP_ENABLE_MIXED_PRECISION:
-            inputs = cast_to_compute(inputs)
+        if self.mixed_prec is not None:
+            inputs = tf.cast(inputs, get_precision(self.mixed_prec['compute_prec']))
         nframes = tf.shape(tf.reshape(inputs, [-1, natoms[0], self.ndescrpt]))[0]
         # natom x (nei x 4)
         shape = inputs.get_shape().as_list()

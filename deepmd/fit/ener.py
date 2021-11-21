@@ -150,6 +150,7 @@ class EnerFitting ():
             self.aparam_inv_std = None
 
         self.fitting_net_variables = None
+        self.mixed_prec = None
 
     def get_numb_fparam(self) -> int:
         """
@@ -293,7 +294,8 @@ class EnerFitting ():
                     precision = self.fitting_precision,
                     trainable = self.trainable[ii],
                     uniform_seed = self.uniform_seed,
-                    initial_variables = self.fitting_net_variables)
+                    initial_variables = self.fitting_net_variables,
+                    mixed_prec = self.mixed_prec)
             else :
                 layer = one_layer(
                     layer,
@@ -305,7 +307,8 @@ class EnerFitting ():
                     precision = self.fitting_precision,
                     trainable = self.trainable[ii],
                     uniform_seed = self.uniform_seed,
-                    initial_variables = self.fitting_net_variables)
+                    initial_variables = self.fitting_net_variables,
+                    mixed_prec = self.mixed_prec)
             if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
         final_layer = one_layer(
             layer, 
@@ -318,7 +321,8 @@ class EnerFitting ():
             precision = self.fitting_precision, 
             trainable = self.trainable[-1],
             uniform_seed = self.uniform_seed,
-            initial_variables = self.fitting_net_variables)
+            initial_variables = self.fitting_net_variables,
+            mixed_prec = self.mixed_prec)
         if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
 
         return final_layer
@@ -495,3 +499,16 @@ class EnerFitting ():
             The input frozen model file
         """
         self.fitting_net_variables = get_fitting_net_variables(model_file)
+
+
+    def enable_mixed_precision(self, mixed_prec : dict = None) -> None:
+        """
+        Reveive the mixed precision setting.
+
+        Parameters
+        ----------
+        mixed_prec
+                The mixed precision setting used in the embedding net
+        """
+        self.mixed_prec = mixed_prec
+        self.fitting_precision = get_precision(mixed_prec['output_prec'])

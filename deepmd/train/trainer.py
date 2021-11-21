@@ -11,7 +11,6 @@ from deepmd.env import tf
 from deepmd.env import get_tf_session_config
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
-from deepmd.env import DP_ENABLE_MIXED_PRECISION
 from deepmd.fit import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
 from deepmd.descriptor import Descriptor
 from deepmd.model import EnerModel, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
@@ -30,7 +29,7 @@ from deepmd.utils.errors import GraphWithoutTensorError
 # load grad of force module
 import deepmd.op
 
-from deepmd.common import j_must_have, ClassArg, data_requirement
+from deepmd.common import j_must_have, ClassArg, data_requirement, get_precision
 
 log = logging.getLogger(__name__)
 
@@ -228,6 +227,13 @@ class DPTrainer (object):
         self.tensorboard = self.run_opt.is_chief and tr_data.get('tensorboard', False)
         self.tensorboard_log_dir = tr_data.get('tensorboard_log_dir', 'log')
         self.tensorboard_freq = tr_data.get('tensorboard_freq', 1)
+        self.mixed_prec = tr_data.get('mixed_precision', None)
+        if self.mixed_prec is not None:
+            if (self.mixed_prec['compute_prec'] != 'float16' or self.mixed_prec['output_prec'] != 'float32'):
+                raise RuntimeError(
+                    "Unsupported mixed precision option [output_prec, compute_prec]: [%s, %s], "
+                    " Supported: [float32, float16], Please set mixed precision option correctly!"
+                     % (self.mixed_prec['output_prec'], self.mixed_prec['compute_prec']))
         # self.sys_probs = tr_data['sys_probs']
         # self.auto_prob_style = tr_data['auto_prob']
         self.useBN = False
@@ -290,6 +296,10 @@ class DPTrainer (object):
             tf.constant("compressed_model", name = 'model_type', dtype = tf.string)
         else:
             tf.constant("original_model", name = 'model_type', dtype = tf.string)
+        
+        if self.mixed_prec is not None:
+            self.descrpt.enable_mixed_precision(self.mixed_prec)
+            self.fitting.enable_mixed_precision(self.mixed_prec)
 
         self._build_lr()
         self._build_network(data)
@@ -333,8 +343,8 @@ class DPTrainer (object):
                                self.place_holders,
                                suffix = "test")
 
-        if DP_ENABLE_MIXED_PRECISION:
-            self.l2_l = tf.cast(self.l2_l, GLOBAL_TF_FLOAT_PRECISION)
+        if self.mixed_prec is not None:
+            self.l2_l = tf.cast(self.l2_l, get_precision(self.mixed_prec['output_prec']))
         log.info("built network")
 
     def _build_training(self):
@@ -348,7 +358,7 @@ class DPTrainer (object):
             optimizer = self.run_opt._HVD.DistributedOptimizer(optimizer)
         else:
             optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate)
-        if DP_ENABLE_MIXED_PRECISION:
+        if self.mixed_prec is not None:
             # enable dynamic loss scale of the gradients
             optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
         apply_op = optimizer.minimize(loss=self.l2_l,
