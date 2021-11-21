@@ -39,6 +39,7 @@ __all__ = [
     "TRANSFER_PATTERN",
     "FITTING_NET_PATTERN",
     "EMBEDDING_NET_PATTERN",
+    "TF_VERSION"
 ]
 
 SHARED_LIB_MODULE = "op"
