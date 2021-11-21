@@ -102,6 +102,7 @@ def compress(
         int(frequency),
     ]
     jdata["training"]["save_ckpt"] = "model-compression/model.ckpt"
+    jdata = updata_deepmd_input(jdata)
     jdata = normalize(jdata)
 
     # check the descriptor info of the input file
