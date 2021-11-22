@@ -8,7 +8,7 @@ from typing import Optional
 from deepmd.common import j_loader
 from deepmd.env import tf, GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.utils.argcheck import normalize
-from deepmd.utils.compat import updata_deepmd_input
+from deepmd.utils.compat import update_deepmd_input
 from deepmd.utils.errors import GraphTooLargeError, GraphWithoutTensorError
 from deepmd.utils.graph import get_tensor_by_name
 
@@ -102,6 +102,7 @@ def compress(
         int(frequency),
     ]
     jdata["training"]["save_ckpt"] = "model-compression/model.ckpt"
+    jdata = update_deepmd_input(jdata)
     jdata = normalize(jdata)
 
     # check the descriptor info of the input file
