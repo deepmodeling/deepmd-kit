@@ -25,7 +25,7 @@ class DescrptSeAMaskOp : public OpKernel
 public:
     explicit DescrptSeAMaskOp(OpKernelConstruction *context) : OpKernel(context)
     {
-        OP_REQUIRES_OK(context, context->GetAttr("total_atom_number", &total_atom_num));
+        OP_REQUIRES_OK(context, context->GetAttr("total_atom_num", &total_atom_num));
     }
 
     void Compute(OpKernelContext *context) override
