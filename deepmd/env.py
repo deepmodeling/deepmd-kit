@@ -126,6 +126,14 @@ def set_tf_default_nthreads():
     `TF_INTRA_OP_PARALLELISM_THREADS` and `TF_INTER_OP_PARALLELISM_THREADS`
     control TF configuration of multithreading.
     """
+    if "OMP_NUM_THREADS" not in os.environ or \
+       "TF_INTRA_OP_PARALLELISM_THREADS" not in os.environ or \
+       "TF_INTER_OP_PARALLELISM_THREADS" not in os.environ:
+        logging.warning(
+            "To get the best performance, it is recommended to adjust "
+            "the number of threads by setting the environment variables "
+            "OMP_NUM_THREADS, TF_INTRA_OP_PARALLELISM_THREADS, and "
+            "TF_INTER_OP_PARALLELISM_THREADS.")
     set_env_if_empty("TF_INTRA_OP_PARALLELISM_THREADS", "0", verbose=False)
     set_env_if_empty("TF_INTER_OP_PARALLELISM_THREADS", "0", verbose=False)
 
