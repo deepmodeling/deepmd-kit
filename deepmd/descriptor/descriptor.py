@@ -277,7 +277,9 @@ class Descriptor(PluginVariant):
         This method is called by others when the descriptor supported compression.
         """
         raise NotImplementedError(
-            "Descriptor %s doesn't support mixed precision training!" % type(self).__name__)
+            "Descriptor %s doesn't support mixed precision training!"
+            % type(self).__name__
+        )
 
 
     @abstractmethod

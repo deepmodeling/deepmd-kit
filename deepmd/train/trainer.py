@@ -7,6 +7,8 @@ import time
 import shutil
 import google.protobuf.message
 import numpy as np
+from packaging.version import Version
+
 from deepmd.env import tf
 from deepmd.env import get_tf_session_config
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
@@ -359,11 +361,11 @@ class DPTrainer (object):
         else:
             optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate)
         if self.mixed_prec is not None:
-            TF_VERSION_LIST = [int(item) for item in TF_VERSION.split('.')]
+            _TF_VERSION = Version(TF_VERSION)
             # check the TF_VERSION, when TF < 1.12, mixed precision is not allowed 
-            if TF_VERSION_LIST < [1, 12, 0]:
+            if _TF_VERSION < Version('1.12.0'):
                 raise RuntimeError("TensorFlow version %s is not compatible with the mixed precision setting. Please consider upgrading your TF version!" % TF_VERSION)
-            elif TF_VERSION_LIST < [2, 4, 0]:
+            elif _TF_VERSION < Version('2.4.0'):
                 optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
             else:
                 optimizer = tf.mixed_precision.enable_mixed_precision_graph_rewrite(optimizer)
