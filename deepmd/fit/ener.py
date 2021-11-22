@@ -9,6 +9,7 @@ from deepmd.utils.network import one_layer, one_layer_rand_seed_shift
 from deepmd.descriptor import DescrptLocFrame
 from deepmd.descriptor import DescrptSeA
 from deepmd.utils.type_embed import embed_atom_type
+from deepmd.utils.graph import get_fitting_net_variables
 
 from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
@@ -148,7 +149,6 @@ class EnerFitting ():
             self.aparam_std = None
             self.aparam_inv_std = None
 
-        self.compress = False
         self.fitting_net_variables = None
 
     def get_numb_fparam(self) -> int:
@@ -484,15 +484,14 @@ class EnerFitting ():
 
 
     def init_variables(self,
-                       fitting_net_variables: dict
+                       model_file: str
     ) -> None:
         """
-        Init the fitting net variables with the given dict
+        Init the fitting net variables with the given frozen model
 
         Parameters
         ----------
-        fitting_net_variables
-                The input dict which stores the fitting net variables
+        model_file : str
+            The input frozen model file
         """
-        self.compress = True
-        self.fitting_net_variables = fitting_net_variables
+        self.fitting_net_variables = get_fitting_net_variables(model_file)

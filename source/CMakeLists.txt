@@ -46,7 +46,6 @@ endif(GIT_FOUND)
 
 # global defines
 list (APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/)
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wno-ignored-attributes")
 
 # model version
 file(READ ${PROJECT_SOURCE_DIR}/config/MODEL_VER MODEL_VERSION)
@@ -80,6 +79,12 @@ endif (USE_ROCM_TOOLKIT)
 
 # find tensorflow, I need tf abi info
 find_package(tensorflow REQUIRED)
+
+if (TENSORFLOW_VERSION GREATER_EQUAL 2.7)
+  set (CMAKE_CXX_STANDARD 14)
+else()
+  set (CMAKE_CXX_STANDARD 11)
+endif()
 
 # find threads
 find_package(Threads)
@@ -179,11 +184,12 @@ if (BUILD_CPP_IF)
   else()
     set (LIB_DEEPMD_OP_DEVICE		"deepmd_op")
   endif()
-  if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 4.9)
+  if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 4.8)
     set (LIB_DEEPMD_NATIVE	"deepmd_native_md")
-    set (LIB_DEEPMD_IPI		"deepmd_ipi")
+    set (LIB_DEEPMD_IPI		  "deepmd_ipi")
+    set (LIB_DEEPMD_GROMACS "deepmd_gromacs")
   else ()
-    message (STATUS "Your gcc/g++ version is ${CMAKE_CXX_COMPILER_VERSION}, so native MD and ipi are disabled. To enable them, use gcc/g++ >= 4.9.")
+    message (STATUS "Your gcc/g++ version is ${CMAKE_CXX_COMPILER_VERSION}, so native MD, ipi and gromacs plugin are disabled. To enable them, use gcc/g++ >= 4.8.")
   endif ()
 endif (BUILD_CPP_IF)
 
@@ -196,9 +202,10 @@ endif (BUILD_PY_IF)
 if (BUILD_CPP_IF) 
   add_subdirectory (api_cc/)
   add_subdirectory (lmp/)
-  if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 4.9)
+  if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 4.8)
 #   add_subdirectory (md/)
     add_subdirectory (ipi/)
+    add_subdirectory (gmx/)
   endif ()
 endif (BUILD_CPP_IF)
 

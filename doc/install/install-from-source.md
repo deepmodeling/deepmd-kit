@@ -92,6 +92,48 @@ Valid subcommands:
     test               test the model
 ```
 
+### Install horovod and mpi4py
+
+[Horovod](https://github.com/horovod/horovod) and [mpi4py](https://github.com/mpi4py/mpi4py) is used for parallel training. For better performance on GPU, please follow tuning steps in [Horovod on GPU](https://github.com/horovod/horovod/blob/master/docs/gpus.rst).
+```bash
+# With GPU, prefer NCCL as communicator.
+HOROVOD_WITHOUT_GLOO=1 HOROVOD_WITH_TENSORFLOW=1 HOROVOD_GPU_OPERATIONS=NCCL HOROVOD_NCCL_HOME=/path/to/nccl pip install horovod mpi4py
+```
+
+If your work in CPU environment, please prepare runtime as below:
+```bash
+# By default, MPI is used as communicator.
+HOROVOD_WITHOUT_GLOO=1 HOROVOD_WITH_TENSORFLOW=1 pip install horovod mpi4py
+```
+
+To ensure Horovod has been built with proper framework support enabled, one can invoke the `horovodrun --check-build` command, e.g.,
+
+```bash
+$ horovodrun --check-build
+
+Horovod v0.22.1:
+
+Available Frameworks:
+    [X] TensorFlow
+    [X] PyTorch
+    [ ] MXNet
+
+Available Controllers:
+    [X] MPI
+    [X] Gloo
+
+Available Tensor Operations:
+    [X] NCCL
+    [ ] DDL
+    [ ] CCL
+    [X] MPI
+    [X] Gloo
+```
+
+From version 2.0.1, Horovod and mpi4py with MPICH support is shipped with the installer.
+
+If you don't install horovod, DeePMD-kit will fallback to serial mode.
+
 ## Install the C++ interface 
 
 If one does not need to use DeePMD-kit with Lammps or I-Pi, then the python interface installed in the previous section does everything and he/she can safely skip this section. 
@@ -104,7 +146,7 @@ Check the compiler version on your machine
 gcc --version
 ```
 
-The C++ interface of DeePMD-kit was tested with compiler gcc >= 4.8. It is noticed that the I-Pi support is only compiled with gcc >= 4.9.
+The C++ interface of DeePMD-kit was tested with compiler gcc >= 4.8. It is noticed that the I-Pi support is only compiled with gcc >= 4.8.
 
 First the C++ interface of Tensorflow should be installed. It is noted that the version of Tensorflow should be in consistent with the python interface. You may follow [the instruction](install-tf.2.3.md) to install the corresponding C++ interface.
 
@@ -132,7 +174,7 @@ One may add the following arguments to `cmake`:
 | -DCUDA_TOOLKIT_ROOT_DIR=&lt;value&gt; | Path         | Detected automatically | The path to the CUDA toolkit directory. |
 | -DUSE_ROCM_TOOLKIT=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build GPU support with ROCM toolkit. |
 | -DROCM_ROOT=&lt;value&gt; | Path         | Detected automatically | The path to the ROCM toolkit directory. |
-| -DLAMMPS_VERSION_NUMBER=&lt;value&gt; | Number         | `20201029` | Only neccessary for LAMMPS built-in mode. The version number of LAMMPS (yyyymmdd). |
+| -DLAMMPS_VERSION_NUMBER=&lt;value&gt; | Number         | `20210929` | Only neccessary for LAMMPS built-in mode. The version number of LAMMPS (yyyymmdd). |
 | -DLAMMPS_SOURCE_ROOT=&lt;value&gt; | Path         | - | Only neccessary for LAMMPS plugin mode. The path to the LAMMPS source code (later than 8Apr2021). If not assigned, the plugin mode will not be enabled. |
 
 If the cmake has executed successfully, then 

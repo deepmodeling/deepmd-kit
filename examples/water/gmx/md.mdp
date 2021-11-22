@@ -1,0 +1,49 @@
+integrator               = md
+ld-seed                  = -1
+bd-fric                  = 0
+dt                       = 0.0005
+nsteps                   = 1000000
+nstcomm                  = 100
+
+nstxout                  = 100  ; != nstdhdl (in case of -rerun)
+nstvout                  = 0
+nstfout                  = 0
+nstlog                   = 0
+nstenergy                = 100
+nstxout-compressed       = 0
+
+tcoupl                   = nose-hoover
+nsttcouple               = 10
+tc_grps                  = System
+tau_t                    = 0.5
+ref_t                    = 298.0
+
+constraints              = none
+constraint_algorithm     = Lincs
+lincs_order              = 4
+lincs_warnangle          = 30
+
+comm-mode                = Linear
+
+cutoff-scheme            = Verlet
+nstlist                  = 10
+ns_type                  = grid
+pbc                      = xyz
+rlist                    = 0.8
+
+coulombtype              = cutoff
+coulomb-modifier         = none
+rcoulomb                 = 0.8
+fourierspacing           = 0.1
+pme_order                = 4
+ewald_rtol               = 1.0E-5
+
+vdwtype                  = cut-off
+vdw-modifier             = none
+rvdw                     = 0.8
+DispCorr                 = AllEnerPres
+
+pcoupl                   = no
+
+gen-vel                  = yes
+

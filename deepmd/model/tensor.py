@@ -191,7 +191,7 @@ class TensorModel() :
 
     def _import_graph_def_from_frz_model(self, frz_model, feed_dict, return_elements):
         graph, graph_def = load_graph_def(frz_model)
-        return tf.import_graph_def(graph_def, input_map = feed_dict, return_elements = return_elements)
+        return tf.import_graph_def(graph_def, input_map = feed_dict, return_elements = return_elements, name = "")
 
 class WFCModel(TensorModel):
     def __init__(

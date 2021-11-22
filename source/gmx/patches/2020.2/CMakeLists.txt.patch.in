@@ -1,0 +1,29 @@
+--- gromacs-2020.2/CMakeLists.txt	2020-04-30 16:33:43.000000000 +0000
++++ gromacs-2020.2-deepmd/CMakeLists.txt	2021-09-20 08:07:34.000000000 +0000
+@@ -134,6 +134,26 @@
+ #    (i.e., something that is exposed in installed headers).
+ set(GMX_PUBLIC_LIBRARIES "")
+ 
++# DeepMD
++message(STATUS "Compling with DeepMD...")
++add_definitions(-w) # close warning
++# define deepmd and tensorflow root
++if (NOT DEFINED GMX_DEEPMD_ROOT)
++    set (GMX_DEEPMD_ROOT @CMAKE_INSTALL_PREFIX@)
++endif()
++if (NOT DEFINED GMX_TENSORFLOW_ROOT)
++    set (GMX_TENSORFLOW_ROOT @TENSORFLOW_ROOT@)
++endif()
++include_directories(${GMX_DEEPMD_ROOT}/include)
++include_directories(${GMX_TENSORFLOW_ROOT}/include)
++link_directories(${GMX_DEEPMD_ROOT}/lib)
++link_directories(${GMX_TENSORFLOW_ROOT}/lib)
++# define high precision, only support high precision now
++add_definitions("-D HIGH_PREC")
++# add link libraries
++list (APPEND GMX_PUBLIC_LIBRARIES deepmd_gromacs)
++# DeepMD
++
+ ########################################################################
+ # Check and warn if cache generated on a different host is being reused
+ ########################################################################

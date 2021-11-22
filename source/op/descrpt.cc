@@ -213,22 +213,20 @@ public:
       std::vector<int> nlist_map;
       bool b_nlist_map = false;
       if (nei_mode == 3) {	
-	int * pilist, *pjrange, *pjlist;
+	int *pilist, *pnumneigh, **pfirstneigh;
 	memcpy (&pilist, &mesh(4), sizeof(int *));
-	memcpy (&pjrange, &mesh(8), sizeof(int *));
-	memcpy (&pjlist, &mesh(12), sizeof(int *));
+	memcpy (&pnumneigh, &mesh(8), sizeof(int *));
+	memcpy (&pfirstneigh, &mesh(12), sizeof(int **));
 	int inum = mesh(1);
 	assert (inum == nloc);
 	d_nlist_a.resize (inum);
 	d_nlist_r.resize (inum);
 	for (unsigned ii = 0; ii < inum; ++ii){
-	  d_nlist_r.reserve (pjrange[inum] / inum + 10);
-	}
-	for (unsigned ii = 0; ii < inum; ++ii){
 	  int i_idx = pilist[ii];
-	  for (unsigned jj = pjrange[ii]; jj < pjrange[ii+1]; ++jj){
-	    int j_idx = pjlist[jj];
-	    d_nlist_r[i_idx].push_back (j_idx);
+	  d_nlist_r[i_idx].reserve(pnumneigh[ii]);
+	  for (unsigned jj = 0; jj < pnumneigh[ii]; ++jj){
+	    int j_idx = pfirstneigh[ii][jj];
+	    d_nlist_r[i_idx].push_back(j_idx);
 	  }
 	}
       }

@@ -52,6 +52,36 @@ FPTYPE grad(const FPTYPE xbar, const FPTYPE y, const int functype)  //functype=t
             const FPTYPE var = tanh(SQRT_2_PI * (xbar + GGELU * xbar * xbar * xbar));
             return 0.5 * SQRT_2_PI * xbar * (1 - var * var) * (3 * GGELU * xbar * xbar + 1) + 0.5 * var + 0.5;
         }
+        case 3:
+        {
+            if(xbar<=0)
+            {
+                return 0;
+            }
+            else
+            {
+                return 1;
+            }
+        }
+        case 4:
+        {
+            if(xbar<=0 || xbar>=6)
+            {
+                return 0;
+            }
+            else
+            {
+                return 1;
+            }
+        }
+        case 5:
+        {
+            return 1.0-1.0/(1.0+exp(xbar));
+        }
+        case 6:
+        {
+            return y*(1-y);
+        }
         default:
             return -1;
     }
@@ -70,6 +100,22 @@ FPTYPE grad_grad(const FPTYPE xbar, const FPTYPE y, const int functype)
             const FPTYPE var1 = tanh(SQRT_2_PI * (xbar + GGELU * xbar * xbar * xbar));
             const FPTYPE var2 = SQRT_2_PI * (1 - var1 * var1) * (3 * GGELU * xbar * xbar + 1);
             return  3 * GGELU * SQRT_2_PI * xbar * xbar * (1 - var1 * var1) - SQRT_2_PI * xbar * var2 * (3 * GGELU * xbar * xbar + 1) * var1 + var2;
+        }
+        case 3:
+        {
+            return 0;
+        }
+        case 4:
+        {
+            return 0;
+        }
+        case 5:
+        {
+            return exp(xbar)/((1+exp(xbar))*(1+exp(xbar)));
+        }
+        case 6:
+        {
+            return y*(1-y)*(1-2*y);
         }
         default:
             return -1;

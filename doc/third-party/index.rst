@@ -10,3 +10,4 @@ Note that the model for inference is required to be compatible with the DeePMD-k
    lammps
    lammps-command
    ipi
+   gromacs

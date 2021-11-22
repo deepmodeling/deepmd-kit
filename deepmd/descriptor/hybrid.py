@@ -15,33 +15,43 @@ from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from .descriptor import Descriptor
 from .se_a import DescrptSeA
 from .se_r import DescrptSeR
-from .se_ar import DescrptSeAR
 from .se_t import DescrptSeT
 from .se_a_ebd import DescrptSeAEbd
 from .se_a_ef import DescrptSeAEf
 from .loc_frame import DescrptLocFrame
 
+@Descriptor.register("hybrid")
 class DescrptHybrid (Descriptor):
     """Concate a list of descriptors to form a new descriptor.
 
     Parameters
     ----------
-    descrpt_list : list
+    list : list
             Build a descriptor from the concatenation of the list of descriptors.
     """
     def __init__ (self, 
-                  descrpt_list : list
+                  list : list
     ) -> None :
         """
         Constructor
         """
+        # warning: list is conflict with built-in list
+        descrpt_list = list
         if descrpt_list == [] or descrpt_list is None:
             raise RuntimeError('cannot build descriptor from an empty list of descriptors.')
+        formatted_descript_list = []
+        for ii in descrpt_list:
+            if isinstance(ii, Descriptor):
+                formatted_descript_list.append(ii)
+            elif isinstance(ii, dict):
+                formatted_descript_list.append(Descriptor(**ii))
+            else:
+                raise NotImplementedError
         # args = ClassArg()\
         #        .add('list', list, must = True)
         # class_data = args.parse(jdata)
         # dict_list = class_data['list']
-        self.descrpt_list = descrpt_list
+        self.descrpt_list = formatted_descript_list
         self.numb_descrpt = len(self.descrpt_list)
         for ii in range(1, self.numb_descrpt):
             assert(self.descrpt_list[ii].get_ntypes() == 

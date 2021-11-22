@@ -992,7 +992,7 @@ void PairDeepMD::init_style()
 {
   int irequest = neighbor->request(this,instance_me);
   neighbor->requests[irequest]->half = 0;
-  // neighbor->requests[irequest]->full = 1;  
+  neighbor->requests[irequest]->full = 1;  
   // neighbor->requests[irequest]->newton = 2;  
   if (out_each == 1){
     int ntotal = atom->natoms;
