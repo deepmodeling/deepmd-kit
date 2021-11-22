@@ -322,7 +322,8 @@ class EnerFitting ():
             trainable = self.trainable[-1],
             uniform_seed = self.uniform_seed,
             initial_variables = self.fitting_net_variables,
-            mixed_prec = self.mixed_prec)
+            mixed_prec = self.mixed_prec,
+            final_layer = True)
         if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
 
         return final_layer

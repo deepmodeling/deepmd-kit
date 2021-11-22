@@ -21,9 +21,10 @@ def one_layer(inputs,
               useBN = False, 
               uniform_seed = False,
               initial_variables = None,
-              mixed_prec = None):
+              mixed_prec = None,
+              final_layer = False):
     # For good accuracy, the last layer of the fitting network uses a higher precision neuron network.
-    if mixed_prec is not None and outputs_size == 1:
+    if mixed_prec is not None and final_layer:
         inputs = tf.cast(inputs, get_precision(mixed_prec['output_prec']))
     with tf.variable_scope(name, reuse=reuse):
         shape = inputs.get_shape().as_list()
@@ -50,7 +51,7 @@ def one_layer(inputs,
                             trainable = trainable)
         variable_summaries(b, 'bias')
 
-        if mixed_prec is not None and outputs_size != 1:
+        if mixed_prec is not None and not final_layer:
             inputs = tf.cast(inputs, get_precision(mixed_prec['compute_prec']))
             w = tf.cast(w, get_precision(mixed_prec['compute_prec']))
             b = tf.cast(b, get_precision(mixed_prec['compute_prec']))
@@ -76,7 +77,7 @@ def one_layer(inputs,
                 # return activation_fn(hidden_bn)
             else:
                 if use_timestep :
-                    if mixed_prec is not None and outputs_size != 1:
+                    if mixed_prec is not None and not final_layer:
                        idt = tf.cast(idt, get_precision(mixed_prec['compute_prec']))
                     return tf.reshape(activation_fn(hidden), [-1, outputs_size]) * idt
                 else :
