@@ -9,7 +9,7 @@ from deepmd.utils.network import one_layer, one_layer_rand_seed_shift
 from deepmd.descriptor import DescrptLocFrame
 from deepmd.descriptor import DescrptSeA
 from deepmd.utils.type_embed import embed_atom_type
-from deepmd.utils.graph import get_fitting_net_variables
+from deepmd.utils.graph import get_fitting_net_variables, load_graph_def, get_tensor_by_name_from_graph
 
 from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
@@ -150,6 +150,7 @@ class EnerFitting ():
             self.aparam_inv_std = None
 
         self.fitting_net_variables = None
+        self.compress = False
 
     def get_numb_fparam(self) -> int:
         """
@@ -359,9 +360,9 @@ class EnerFitting ():
                 The system energy
         """
         bias_atom_e = self.bias_atom_e
-        if self.numb_fparam > 0 and ( self.fparam_avg is None or self.fparam_inv_std is None ):
+        if self.numb_fparam > 0 and ( self.fparam_avg is None or self.fparam_inv_std is None ) and not self.compress:
             raise RuntimeError('No data stat result. one should do data statisitic, before build')
-        if self.numb_aparam > 0 and ( self.aparam_avg is None or self.aparam_inv_std is None ):
+        if self.numb_aparam > 0 and ( self.aparam_avg is None or self.aparam_inv_std is None ) and not self.compress:
             raise RuntimeError('No data stat result. one should do data statisitic, before build')
 
         with tf.variable_scope('fitting_attr' + suffix, reuse = reuse) :
@@ -495,3 +496,27 @@ class EnerFitting ():
             The input frozen model file
         """
         self.fitting_net_variables = get_fitting_net_variables(model_file)
+
+
+    def enable_compression(self,
+                           model_file: str,
+                           suffix: str = ""
+    ) -> None:
+        """
+        Set the fitting net attributes from the frozen model_file when fparam or aparam is not zero
+
+        Parameters
+        ----------
+        model_file : str
+            The input frozen model file
+        suffix : str, optional
+                The suffix of the scope
+        """
+        self.compress = True
+        graph, _ = load_graph_def(model_file)
+        if self.numb_fparam > 0:
+            self.fparam_avg = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_fparam_avg' % suffix)
+            self.fparam_inv_std = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_fparam_istd' % suffix)
+        if self.numb_aparam > 0:
+            self.aparam_avg = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_aparam_avg' % suffix)
+            self.aparam_inv_std = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_aparam_istd' % suffix)
