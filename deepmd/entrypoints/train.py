@@ -16,7 +16,7 @@ from deepmd.train.run_options import BUILD, CITATION, WELCOME, RunOptions
 from deepmd.train.trainer import DPTrainer
 from deepmd.utils import random as dp_random
 from deepmd.utils.argcheck import normalize
-from deepmd.utils.compat import updata_deepmd_input
+from deepmd.utils.compat import update_deepmd_input
 from deepmd.utils.data_system import DeepmdDataSystem
 from deepmd.utils.sess import run_sess
 from deepmd.utils.neighbor_stat import NeighborStat
@@ -83,7 +83,7 @@ def train(
     # load json database
     jdata = j_loader(INPUT)
 
-    jdata = updata_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
+    jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
 
     jdata = normalize(jdata)
 

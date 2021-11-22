@@ -354,7 +354,7 @@ def deprecate_numb_test(jdata: Dict[str, Any],
     return jdata
 
 
-def updata_deepmd_input(jdata: Dict[str, Any],
+def update_deepmd_input(jdata: Dict[str, Any],
                         warning: bool = True,
                         dump: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
     def is_deepmd_v0_input(jdata):
