@@ -600,6 +600,24 @@ def validation_data_args():  # ! added by Ziyao: new specification style for dat
                     sub_fields=args, sub_variants=[], doc=doc_validation_data)
 
 
+def mixed_precision_args():  # ! added by Denghui.
+    doc_output_prec  = 'The precision for mixed precision params. " \
+        "The trainable variables precision during the mixed precision training process, " \
+        "supported options are float32 only currently.'
+    doc_compute_prec  = 'The precision for mixed precision compute. " \
+        "The compute precision during the mixed precision training process, "" \
+        "supported options are float16 only currently.'
+
+    args = [
+        Argument("output_prec", str, optional=True, default="float32", doc=doc_output_prec),
+        Argument("compute_prec", str, optional=False, default="float16", doc=doc_compute_prec),
+    ]
+
+    doc_mixed_precision = "Configurations of mixed precision."
+    return Argument("mixed_precision", dict, optional=True,
+                    sub_fields=args, sub_variants=[], doc=doc_mixed_precision)
+
+
 def training_args():  # ! modified by Ziyao: data configuration isolated.
     doc_numb_steps = 'Number of training batch. Each training uses one batch of data.'
     doc_seed = 'The random seed for getting frames from the training data set.'
@@ -617,10 +635,12 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
 
     arg_training_data = training_data_args()
     arg_validation_data = validation_data_args()
+    mixed_precision_data = mixed_precision_args()
 
     args = [
         arg_training_data,
         arg_validation_data,
+        mixed_precision_data,
         Argument("numb_steps", int, optional=False, doc=doc_numb_steps, alias=["stop_batch"]),
         Argument("seed", [int,None], optional=True, doc=doc_seed),
         Argument("disp_file", str, optional=True, default='lcurve.out', doc=doc_disp_file),
