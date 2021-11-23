@@ -293,6 +293,9 @@ class DPTrainer (object):
         else :
             self.descrpt.enable_compression(self.model_param['compress']["min_nbor_dist"], self.model_param['compress']['model_file'], self.model_param['compress']['table_config'][0], self.model_param['compress']['table_config'][1], self.model_param['compress']['table_config'][2], self.model_param['compress']['table_config'][3])
             self.fitting.init_variables(self.model_param['compress']['model_file'])
+            # for fparam or aparam settings in 'ener' type fitting net
+            if self.fitting_type == 'ener':
+                self.fitting.enable_compression(self.model_param['compress']['model_file'])
         
         if self.is_compress or self.model_type == 'compressed_model':
             tf.constant("compressed_model", name = 'model_type', dtype = tf.string)
