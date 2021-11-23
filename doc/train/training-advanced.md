@@ -36,6 +36,10 @@ Other training parameters are given in the `training` section.
 	    "batch_size":	1,
 	    "numb_btch":	3
 	},
+	"mixed_precision": {
+	    "output_prec":      "float32",
+	    "compute_prec":     "float16"
+	},
 
 	"numb_step":	1000000,
 	"seed":		1,
@@ -74,6 +78,13 @@ The sections `"training_data"` and `"validation_data"` give the training dataset
     * `"auto"`: the same as `"auto:32"`, see `"auto:N"`
     * `"auto:N"`: automatically determines the batch size so that the `batch_size` times the number of atoms in the system is no less than `N`.
 * The key `numb_batch` in `validate_data` gives the number of batches of model validation. Note that the batches may not be from the same system
+
+The section `mixed_precision` specifies the mixed precision settings, which will enable the mixed precision training workflow for deepmd-kit. The keys are explained below:
+* `output_prec`  precision used in the output tensors, only `float32` is supported currently.
+* `compute_prec` precision used in the computing tensors, only `float16` is supported currently.
+Note there are severial limitations about the mixed precision training:
+* Only 'se_e2_a' type descriptor is supported by the mixed precision training workflow.
+* The precision of embedding net and fitting net are forced to be set to `float32`.
 
 Other keys in the `training` section are explained below:
 * `numb_step` The number of training steps.
