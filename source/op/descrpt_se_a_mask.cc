@@ -11,7 +11,7 @@ typedef double compute_t;
 REGISTER_OP("DescrptSeAMask")
     .Attr("T: {float, double} = DT_DOUBLE")
     .Input("coord: T")
-    .Input("types: int32")
+    .Input("type: int32")
     .Input("mask: int32")
     .Attr("total_atom_num: int")
     .Output("descrpt: T")
@@ -39,18 +39,18 @@ public:
         // Grab the input tensor
         int context_input_index = 0;
         const Tensor &coord_tensor = context->input(context_input_index++);
-        const Tensor &types_tensor = context->input(context_input_index++);
+        const Tensor &type_tensor = context->input(context_input_index++);
         const Tensor &mask_matrix_tensor = context->input(context_input_index++);
 
         // set size of the sample
         OP_REQUIRES(context, (coord_tensor.shape().dims() == 2), errors::InvalidArgument("Dim of coord should be 2"));
-        OP_REQUIRES(context, (types_tensor.shape().dims() == 2), errors::InvalidArgument("Dim of types for se_e2_a_mask op should be 2"));
+        OP_REQUIRES(context, (type_tensor.shape().dims() == 2), errors::InvalidArgument("Dim of type for se_e2_a_mask op should be 2"));
         OP_REQUIRES(context, (mask_matrix_tensor.shape().dims() == 2), errors::InvalidArgument("Dim of mask matrix should be 2"));
 
         int nsamples = coord_tensor.shape().dim_size(0);
 
         // check the sizes
-        OP_REQUIRES(context, (nsamples == types_tensor.shape().dim_size(0)), errors::InvalidArgument("number of samples should match"));
+        OP_REQUIRES(context, (nsamples == type_tensor.shape().dim_size(0)), errors::InvalidArgument("number of samples should match"));
         OP_REQUIRES(context, (nsamples == mask_matrix_tensor.shape().dim_size(0)), errors::InvalidArgument("number of samples should match"));
 
         // Set n_descrpt for each atom. Include 1/rr, cos(theta), cos(phi), sin(phi)
@@ -89,7 +89,7 @@ public:
                                                          &nlist_tensor));
 
         auto coord = coord_tensor.matrix<FPTYPE>();
-        auto types = types_tensor.matrix<int>();
+        auto type = type_tensor.matrix<int>();
         auto mask_matrix = mask_matrix_tensor.matrix<int>();
 
         auto descrpt = descrpt_tensor->matrix<FPTYPE>();
@@ -97,12 +97,12 @@ public:
         auto rij = rij_tensor->matrix<FPTYPE>();
         auto nlist = nlist_tensor->matrix<int>();
 
-        // // check the types
+        // // check the type
         // int max_type_v = 0;
         // for (int ii = 0; ii < natoms; ++ii){
         //   if (type(0, ii) > max_type_v) max_type_v = type(0, ii);
         // }
-        // int ntypes = max_type_v + 1;
+        // int ntype = max_type_v + 1;
 
         // loop over atoms, compute descriptors for each atom
 #pragma omp parallel for
@@ -124,7 +124,7 @@ public:
             vector<int> d_type(natoms);
             for (int ii = 0; ii < natoms; ++ii)
             {
-                d_type[ii] = types(kk, ii);
+                d_type[ii] = type(kk, ii);
             }
 
             vector<int> d_mask(natoms);
