@@ -15,7 +15,7 @@ using namespace tensorflow;
 using CPUDevice = Eigen::ThreadPoolDevice;
 
 template <typename Device, typename FPTYPE>
-class ProdForceOp : public OpKernel
+class ProdForceSeAMaskOp : public OpKernel
 {
 public:
     explicit ProdForceSeAMaskOp(OpKernelConstruction *context) : OpKernel(context)
