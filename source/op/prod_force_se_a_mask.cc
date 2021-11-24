@@ -36,6 +36,7 @@ public:
         const Tensor &in_deriv_tensor = context->input(1);
         const Tensor &mask_tensor = context->input(2);
         const Tensor &nlist_tensor = context->input(3);
+        const Tensor &natoms_tensor = context->input(4);
 
         // set size of the sample
         OP_REQUIRES(context, (net_deriv_tensor.shape().dims() == 2), errors::InvalidArgument("Dim of net deriv should be 2"));
