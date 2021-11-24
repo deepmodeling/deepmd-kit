@@ -8,27 +8,6 @@
 
 using namespace deepmd;
 
-struct NeighborInfo 
-{
-  int type;
-  double dist;
-  int index;
-  NeighborInfo () 
-      : type (0), dist(0), index(0) 
-      {
-      }
-  NeighborInfo (int tt, double dd, int ii) 
-      : type (tt), dist(dd), index(ii) 
-      {
-      }
-  bool operator < (const NeighborInfo & b) const 
-      {
-	return (type < b.type || 
-		(type == b.type && 
-		 (dist < b.dist || 
-		  (dist == b.dist && index < b.index) ) ) );
-      }
-};
 
 int format_nlist_i_fill_a (
     std::vector<int > &			fmt_nei_idx_a,

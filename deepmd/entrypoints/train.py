@@ -16,7 +16,7 @@ from deepmd.train.run_options import BUILD, CITATION, WELCOME, RunOptions
 from deepmd.train.trainer import DPTrainer
 from deepmd.utils import random as dp_random
 from deepmd.utils.argcheck import normalize
-from deepmd.utils.compat import updata_deepmd_input
+from deepmd.utils.compat import update_deepmd_input
 from deepmd.utils.data_system import DeepmdDataSystem
 from deepmd.utils.sess import run_sess
 from deepmd.utils.neighbor_stat import NeighborStat
@@ -83,7 +83,7 @@ def train(
     # load json database
     jdata = j_loader(INPUT)
 
-    jdata = updata_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
+    jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
 
     jdata = normalize(jdata)
 
@@ -337,7 +337,7 @@ def update_sel(jdata):
     if descrpt_data['type'] == 'hybrid':
         for ii in range(len(descrpt_data['list'])):
             descrpt_data['list'][ii] = update_one_sel(jdata, descrpt_data['list'][ii])
-    else:
+    elif descrpt_data['type'] != 'loc_frame':
         descrpt_data = update_one_sel(jdata, descrpt_data)
     jdata['model']['descriptor'] = descrpt_data
     return jdata
