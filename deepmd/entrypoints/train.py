@@ -38,6 +38,7 @@ def train(
     log_level: int,
     log_path: Optional[str],
     is_compress: bool = False,
+    skip_neighbor_stat: bool = False,
     **kwargs,
 ):
     """Run DeePMD model training.
@@ -62,6 +63,8 @@ def train(
         logging file path or None if logs are to be output only to stdout
     is_compress: bool
         indicates whether in the model compress mode
+    skip_neighbor_stat : bool, default=False
+        skip checking neighbor statistics
 
     Raises
     ------
@@ -87,7 +90,7 @@ def train(
 
     jdata = normalize(jdata)
 
-    if not is_compress:
+    if not is_compress and not skip_neighbor_stat:
         jdata = update_sel(jdata)
 
     with open(output, "w") as fp:
@@ -333,10 +336,12 @@ def update_one_sel(jdata, descriptor):
 
 
 def update_sel(jdata):    
+    log.info("Calculate neighbor statistics... (add --skip-neighbor-stat to skip this step)")
     descrpt_data = jdata['model']['descriptor']
     if descrpt_data['type'] == 'hybrid':
         for ii in range(len(descrpt_data['list'])):
-            descrpt_data['list'][ii] = update_one_sel(jdata, descrpt_data['list'][ii])
+            if descrpt_data['list'][ii]['type'] != 'loc_frame':
+                descrpt_data['list'][ii] = update_one_sel(jdata, descrpt_data['list'][ii])
     elif descrpt_data['type'] != 'loc_frame':
         descrpt_data = update_one_sel(jdata, descrpt_data)
     jdata['model']['descriptor'] = descrpt_data
