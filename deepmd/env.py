@@ -233,7 +233,7 @@ def get_module(module_name: str) -> "ModuleType":
                     "This deepmd-kit package was compiled with "
                     "CXX11_ABI_FLAG=%d, but TensorFlow runtime was compiled "
                     "with CXX11_ABI_FLAG=%d. These two library ABIs are "
-                    "incompatible and thus an error is raised when loading %s."
+                    "incompatible and thus an error is raised when loading %s. "
                     "You need to rebuild deepmd-kit against this TensorFlow "
                     "runtime." % (
                         TF_CXX11_ABI_FLAG,
@@ -262,9 +262,9 @@ def get_module(module_name: str) -> "ModuleType":
                         tf.version.VERSION,
                     )) from e
             raise RuntimeError(
-                "This deepmd-kit package is inconsitent with TensorFlow"
-                "Runtime, thus an error is raised when loading %s."
-                "You need to rebuild deepmd-kit against this TensorFlow"
+                "This deepmd-kit package is inconsitent with TensorFlow "
+                "Runtime, thus an error is raised when loading %s. "
+                "You need to rebuild deepmd-kit against this TensorFlow "
                 "runtime." % (
                     module_name,
                 )) from e
