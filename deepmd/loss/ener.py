@@ -360,4 +360,102 @@ class EnerDipoleLoss () :
         return print_str   
 
 
-
+class EnerForcesMaskLoss():
+    def __init__(self, jdata, **kwarg)-> None :
+        model = kwarg.get('model', None)
+        if model is not None:
+            self.ntypes = model.ntypes
+            self.type_map = model.type_map
+        else:
+            self.type_sel = None
+        self.model = model
+        
+        if jdata is not None:
+            self.starter_learning_rate = jdata.get('starter_learning_rate')
+            self.start_pref_e = jdata.get('start_pref_e')
+            self.limit_pref_e = jdata.get('limit_pref_e')
+            self.start_pref_f = jdata.get('start_pref_f')
+            self.limit_pref_f = jdata.get('limit_pref_f')
+            self.has_e = (self.start_pref_e != 0.0 or self.limit_pref_e != 0.0)
+            self.has_f = (self.start_pref_f != 0.0 or self.limit_pref_f != 0.0)
+        else:
+            raise RuntimeError("Json data for learning prefactors are not provided.")
+        
+        # data required
+        add_data_requirement('energy', 1, atomic=False, must=False, high_prec=True)
+        add_data_requirement('force',  3, atomic=True,  must=False, high_prec=False)
+        add_data_requirement('mask_matrix', 1, atomic=True, must=False, high_prec=False)
+        add_data_requirement('mask_matrix4force', 3, atomic=True, must=False, high_prec=False)
+        add_data_requirement('atom_pref', 1, atomic=True, must=False, high_prec=False, repeat=3)
+        return None
+    
+    def build(self, 
+              learning_rate, 
+              natoms, 
+              model_dict, 
+              label_dict, 
+              suffix):
+        assert self.ntypes + 2 == len(natoms), "nstypes is not matchable with natoms length."
+        assert len(self.type_map) == self.ntypes, "type_map length is not equal to ntypes."
+        
+        energy = model_dict['energy']
+        force = model_dict['force']
+        atom_ener = model_dict['atom_ener']
+        energy_hat = label_dict['energy']
+        force_hat = label_dict['force']
+        
+        # Used when calculate the loss with masked matrix.
+        mask_matrix = label_dict['mask_matrix']
+        mask_matrix4force = label_dict['mask_matrix4force']
+        atom_num4element = label_dict['atom_num4element']
+        atom_num4frame = label_dict['atom_num4frame']
+        
+        find_energy = label_dict['find_energy']
+        find_force = label_dict['find_force']
+        
+        # Recalculate the total energy with mask matrix.
+        mask_matrix = tf.reshape(mask_matrix, [-1, natoms[0]])
+        energy = tf.reduce_sum(global_cvt_2_ener_float(tf.multiply(atom_ener, mask_matrix)), axis=1, name='o_energy'+suffix)
+        l2_energy_loss = tf.reduce_mean( tf.square(energy - energy_hat), name='l2_'+suffix)
+        
+        # Calculate the loss on forces.
+        force_reshape = tf.reshape(force, [-1, natoms[0] * 3])
+        force_hat_reshape = tf.reshape(force_hat, [-1, natoms[0] * 3])
+        diff_f = force_hat_reshape - force_reshape
+        
+        mask_matrix4force = tf.reshape(mask_matrix4force, [-1, natoms[0] * 3])
+        diff_f = tf.multiply(diff_f, mask_matrix4force)
+        
+        
+        diff_force4element = dict()
+        l2_force4element = dict()
+        for ii, element in enumerate(self.type_map):
+            start_index = natoms[2 + ii]
+            end_index = natoms[2 + ii + 1]
+            num4element = end_index - start_index
+            diff_force4element[element] = tf.slice(diff_f, [0, start_index * 3], [-1, num4element * 3])
+            l2_force4element[element] = tf.reduce_sum(tf.square(diff_force4element[element]), axis=1)
+            atom_num_vec = tf.gather(atom_num4element,[ii], axis = 1)
+            atom_num_vec = tf.reshape(atom_num_vec * 3,shape = tf.shape(l2_force4element[element]))
+            
+            l2_force4element[element] = tf.divide(l2_force4element[element], atom_num_vec)
+            # Replace nan value in sample with zero.
+            l2_force4element[element] = tf.where(tf.is_nan(l2_force4element[element]), tf.zeros_like(l2_force4element[element]), l2_force4element[element])
+            l2_force4element[element] = tf.reduce_mean(l2_force4element[element], name = "l2_masked_force_4%s"%element)         
+            
+        l2_force_loss = tf.math.reduce_sum(tf.square(diff_f), axis = 1)
+        
+        atom_num4frame = tf.reshape(atom_num4frame * 3 , shape = tf.shape(l2_force_loss))
+        l2_force_loss = tf.reduce_mean(tf.divide(l2_force_loss, atom_num4frame), name = "l2_masked_force_frame_mean")
+        
+        pref_e = global_cvt_2_ener_float(find_energy * (self.limit_pref_e + (self.start_pref_e - self.limit_pref_e) * learning_rate / self.starter_learning_rate) )
+        pref_f = global_cvt_2_tf_float(find_force * (self.limit_pref_f + (self.start_pref_f - self.limit_pref_f) * learning_rate / self.starter_learning_rate) )
+                
+        
+        return None
+    
+    def print_header(self):
+        return None
+    
+    def print_on_training(self):
+        return None

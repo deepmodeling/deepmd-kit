@@ -14,7 +14,7 @@ from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.fit import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
 from deepmd.descriptor import Descriptor
 from deepmd.model import EnerModel, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
-from deepmd.loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
+from deepmd.loss import EnerStdLoss, EnerDipoleLoss, TensorLoss, EnerForceMaskLoss
 from deepmd.utils.errors import GraphTooLargeError
 from deepmd.utils.learning_rate import LearningRateExp
 from deepmd.utils.neighbor_stat import NeighborStat
@@ -211,9 +211,12 @@ class DPTrainer (object):
                                    tensor_size = 9,
                                    atomic = False,
                                    label_name = 'polarizability')
+        elif fitting_type == "masked_energy_forces":
+            self.loss = EnerForcesMaskLoss(loss_param, model = self.model)
         else :
             raise RuntimeError('get unknown fitting type when building loss function')
-
+        self.loss_param = loss_param
+        
         # training
         tr_data = jdata['training']
         self.disp_file = tr_data.get('disp_file', 'lcurve.out')
@@ -314,6 +317,13 @@ class DPTrainer (object):
         self.place_holders['natoms_vec']        = tf.placeholder(tf.int32,   [self.ntypes+2], name='t_natoms')
         self.place_holders['default_mesh']      = tf.placeholder(tf.int32,   [None], name='t_mesh')
         self.place_holders['is_training']       = tf.placeholder(tf.bool)
+        # Add for mask matrix force loss.
+        if self.descrpt_param["type"] == "se_a_mask":
+            self.place_holders['mask_matrix']       = tf.placeholder(tf.int32)
+        loss_type = self.loss_param.get('type', 'ener')
+        if loss_type == "ener_masked_forces":
+            self.place_holders["mask_matrix4forces"] = tf.placeholder(tf.int32)
+            
         self.model_pred\
             = self.model.build (self.place_holders['coord'], 
                                 self.place_holders['type'], 
