@@ -106,11 +106,11 @@ else()
   target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} rt coverage_config)
 endif()
 
-set_target_properties(
-  runUnitTests
-  PROPERTIES
-  INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}"
-)
+find_package(Protobuf)
+if(Protobuf_FOUND)
+  include_directories(${Protobuf_INCLUDE_DIRS})
+  target_link_libraries(runUnitTests ${Protobuf_LIBRARIES})
+endif()
 
 add_test( runUnitTests runUnitTests )
 
