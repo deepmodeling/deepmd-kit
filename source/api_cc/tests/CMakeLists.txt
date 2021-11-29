@@ -106,6 +106,12 @@ else()
   target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} rt coverage_config)
 endif()
 
+set_target_properties(
+  runUnitTests
+  PROPERTIES
+  INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}"
+)
+
 add_test( runUnitTests runUnitTests )
 
 find_package(GTest)
