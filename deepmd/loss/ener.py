@@ -416,7 +416,8 @@ class EnerForcesMaskLoss():
         # Recalculate the total energy with mask matrix.
         mask_matrix = tf.reshape(mask_matrix, [-1, natoms[0]])
         energy = tf.reduce_sum(global_cvt_2_ener_float(tf.multiply(atom_ener, mask_matrix)), axis=1, name='o_energy'+suffix)
-        l2_energy_loss = tf.reduce_mean( tf.square(energy - energy_hat), name='l2_'+suffix)
+        l2_energy_loss_per_atom = tf.divide(tf.square(energy - energy_hat), atom_num4frame)
+        l2_energy_loss = tf.reduce_mean( tf.square(energy - energy_hat), name='l2_masked_energy_frame_mean'+suffix)
         
         # Calculate the loss on forces.
         force_reshape = tf.reshape(force, [-1, natoms[0] * 3])
@@ -444,15 +445,59 @@ class EnerForcesMaskLoss():
             l2_force4element[element] = tf.reduce_mean(l2_force4element[element], name = "l2_masked_force_4%s"%element)         
             
         l2_force_loss = tf.math.reduce_sum(tf.square(diff_f), axis = 1)
+        atom_num4frame_forces = tf.reshape(atom_num4frame * 3 , shape = tf.shape(l2_force_loss))
+        l2_force_loss = tf.reduce_mean(tf.divide(l2_force_loss, atom_num4frame_forces), name = "l2_masked_force_frame_mean")
         
-        atom_num4frame = tf.reshape(atom_num4frame * 3 , shape = tf.shape(l2_force_loss))
-        l2_force_loss = tf.reduce_mean(tf.divide(l2_force_loss, atom_num4frame), name = "l2_masked_force_frame_mean")
         
         pref_e = global_cvt_2_ener_float(find_energy * (self.limit_pref_e + (self.start_pref_e - self.limit_pref_e) * learning_rate / self.starter_learning_rate) )
         pref_f = global_cvt_2_tf_float(find_force * (self.limit_pref_f + (self.start_pref_f - self.limit_pref_f) * learning_rate / self.starter_learning_rate) )
-                
         
-        return None
+        l2_loss = 0
+        more_loss = {}
+        if self.has_e:
+            l2_loss += pref_e * l2_energy_loss
+        more_loss["l2_ener_loss"] = l2_energy_loss
+        more_loss["l2_ener_loss_per_atom"] = l2_energy_loss_per_atom
+        if self.has_f:
+            l2_loss += pref_f * l2_force_loss
+        more_loss["l2_force_loss"] = l2_force_loss
+        
+        more_loss["l2_force4element"] = l2_force4element
+        
+        # only used when tensorboard was set as true
+        self.l2_loss_summary = tf.summary.scalar('l2_loss', tf.sqrt(l2_loss))
+        self.l2_loss_ener_summary = tf.summary.scalar('l2_ener_loss', global_cvt_2_tf_float(tf.sqrt(l2_energy_loss)))
+        self.l2_loss_ener_per_atom_summary = tf.summary.scalar('l2_ener_loss_per_atom', global_cvt_2_tf_float(tf.sqrt(l2_energy_loss_per_atom)))
+        self.l2_loss_force_summary = tf.summary.scalar('l2_force_loss', tf.sqrt(l2_force_loss))
+        
+        self.l2_l = l2_loss
+        self.l2_more = more_loss
+        
+        return l2_loss, more_loss
+    
+    def eval(self, sess, feed_dict, natoms):
+        run_data = [
+            self.l2_l,
+            self.l2_more['l2_ener_loss'],
+            self.l2_more['l2_force_loss'],
+            self.l2_more['l2_ener_loss_per_atom']
+        ]
+        for ele in self.l2_more["l2_force4element"].keys():
+            run_data.append(self.l2_more["l2_force4element"][ele])
+            
+        error, error_e, error_f, error_e_per_atom, error_on_element = run_sess(sess, run_data, feed_dict=feed_dict)
+        
+        results = {"natoms": natoms[0], "rmse": np.sqrt(error)}
+        if self.has_e:
+            results["rmse_e"] = np.sqrt(error_e)
+            results["rmse_e_per_atom"] = np.sqrt(error_e_per_atom)
+        if self.has_f:
+            results["rmse_f"] = np.sqrt(error_f)
+            for ii, ele in self.l2_more["l2_force4element"].keys():
+                results["rmse_f_%s"%ele] = np.sqrt(error_on_element[ii])
+        
+        return results
+    
     
     def print_header(self):
         return None
