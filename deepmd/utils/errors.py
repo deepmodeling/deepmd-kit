@@ -1,5 +1,5 @@
 class GraphTooLargeError(Exception):
-    pass
+    """The graph is too large, exceeding protobuf's hard limit of 2GB."""
 
 class GraphWithoutTensorError(Exception):
     pass

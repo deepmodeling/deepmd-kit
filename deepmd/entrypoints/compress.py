@@ -137,7 +137,15 @@ def compress(
     # stage 2: freeze the model
     log.info("\n\n")
     log.info("stage 2: freeze the model")
-    freeze(checkpoint_folder=checkpoint_folder, output=output, node_names=None)
+    try:
+        freeze(checkpoint_folder=checkpoint_folder, output=output, node_names=None)
+    except GraphTooLargeError as e:
+        raise RuntimeError(
+            "The uniform step size of the tabulation's first table is %f, " 
+            "which is too small. This leads to a very large graph size, "
+            "exceeding protobuf's limitation (2 GB). You should try to "
+            "increase the step size." % step
+        ) from e
 
 def _check_compress_type(model_file):
     try:
