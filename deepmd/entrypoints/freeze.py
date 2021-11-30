@@ -200,7 +200,14 @@ def freeze(
 
     # We retrieve the protobuf graph definition
     graph = tf.get_default_graph()
-    input_graph_def = graph.as_graph_def()
+    try:
+        input_graph_def = graph.as_graph_def()
+    except google.protobuf.message.DecodeError as e:
+        raise GraphTooLargeError(
+            "The graph size exceeds 2 GB, the hard limitation of protobuf."
+            " Then a DecodeError was raised by protobuf. You should "
+            "reduce the size of your model."
+        ) from e
     nodes = [n.name for n in input_graph_def.node]
 
     # We start a session and restore the graph weights
