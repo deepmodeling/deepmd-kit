@@ -267,6 +267,12 @@ void
 PairDeepMD::print_summary(const string pre) const
 {
   if (comm->me == 0){
+    // capture cout to a string, then call LAMMPS's utils::logmesg
+    // https://stackoverflow.com/a/4043813/9567349
+    std::stringstream buffer;
+    std::streambuf *sbuf = std::cout.rdbuf();
+    std::cout.rdbuf(buffer.rdbuf());
+
     cout << "Summary of lammps deepmd module ..." << endl;
     cout << pre << ">>> Info of deepmd-kit:" << endl;
     deep_pot.print_summary(pre);
@@ -279,6 +285,9 @@ PairDeepMD::print_summary(const string pre) const
     cout << pre << "build float prec:   " << STR_FLOAT_PREC << endl;
     cout << pre << "build with tf inc:  " << STR_TensorFlow_INCLUDE_DIRS << endl;
     cout << pre << "build with tf lib:  " << STR_TensorFlow_LIBRARY << endl;
+
+    std::cout.rdbuf(sbuf);
+    utils::logmesg(lmp, buffer.str());
   }
 }
 
