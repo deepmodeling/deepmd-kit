@@ -14,7 +14,7 @@ from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.fit import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
 from deepmd.descriptor import Descriptor
 from deepmd.model import EnerModel, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
-from deepmd.loss import EnerStdLoss, EnerDipoleLoss, TensorLoss, EnerForceMaskLoss
+from deepmd.loss import EnerStdLoss, EnerDipoleLoss, TensorLoss, EnerForcesMaskLoss
 from deepmd.utils.errors import GraphTooLargeError
 from deepmd.utils.learning_rate import LearningRateExp
 from deepmd.utils.neighbor_stat import NeighborStat

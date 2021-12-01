@@ -19,7 +19,7 @@ from .se import DescrptSe
 
 
 @Descriptor.register("se_a_mask")
-class DescrptSeA (DescrptSe):
+class DescrptSeA (Descriptor):
     r"""DeepPot-SE constructed from all information (both angular and radial) of
     atomic configurations. The embedding takes the distance between atoms as input.
 
@@ -120,6 +120,7 @@ class DescrptSeA (DescrptSe):
         self.sel_a = sel
         self.total_atom_num = np.cumsum(self.sel_a)[-1]
         self.ntypes = len(self.sel_a)
+        self.descrpt_type = "se_a_mask"
         
         self.filter_neuron = neuron
         self.n_axis_neuron = axis_neuron
@@ -383,7 +384,8 @@ class DescrptSeA (DescrptSe):
 
     def prod_force_virial(self, 
                           atom_ener : tf.Tensor, 
-                          natoms : tf.Tensor
+                          natoms : tf.Tensor,
+                          mask_matrix : tf.Tensor
     ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         """
         Compute force and virial
@@ -413,6 +415,7 @@ class DescrptSeA (DescrptSe):
         force \
             = op_module.prod_force_se_a_mask (net_deriv_reshape,
                                           self.descrpt_deriv,
+                                          mask_matrix,
                                           self.nlist,
                                           natoms,
                                           total_atom_num = natoms[1])

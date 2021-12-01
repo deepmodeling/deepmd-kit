@@ -226,8 +226,14 @@ class EnerModel() :
         energy_raw = tf.reshape(energy_raw, [-1, natoms[0]], name = 'o_atom_energy'+suffix)
         energy = tf.reduce_sum(global_cvt_2_ener_float(energy_raw), axis=1, name='o_energy'+suffix)
 
-        force, virial, atom_virial \
-            = self.descrpt.prod_force_virial (atom_ener, natoms)
+        
+        # TODO : add mask matrix input for prod_force_virial
+        if hasattr(self.descrpt, 'descrpt_type') and self.descrpt.descrpt_type == "se_a_mask":
+            force, virial, atom_virial \
+                = self.descrpt.prod_force_virial (atom_ener, natoms, input_dict["mask_matrix"])
+        else:    
+            force, virial, atom_virial \
+                = self.descrpt.prod_force_virial (atom_ener, natoms)
 
         if self.srtab is not None :
             sw_force \
