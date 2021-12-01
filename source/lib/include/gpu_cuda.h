@@ -154,7 +154,7 @@ void delete_device_memory(
 template <typename FPTYPE>
 void memset_device_memory(
     FPTYPE * device, 
-    const FPTYPE var,
+    const int var,
     const int size) 
 {
   DPErrcheck(cudaMemset(device, var, sizeof(FPTYPE) * size));  

@@ -170,6 +170,11 @@ def parse_args(args: Optional[List[str]] = None):
         default=None,
         help="Initialize the training from the frozen model.",
     )
+    parser_train.add_argument(
+        "--skip-neighbor-stat",
+        action="store_true",
+        help="Skip calculating neighbor statistics. Sel checking, automatic sel, and model compression will be disabled.",
+    )
 
     # * freeze script ******************************************************************
     parser_frz = subparsers.add_parser(

@@ -7,6 +7,8 @@ import time
 import shutil
 import google.protobuf.message
 import numpy as np
+from packaging.version import Version
+
 from deepmd.env import tf
 from deepmd.env import get_tf_session_config
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
@@ -23,13 +25,13 @@ from deepmd.utils.type_embed import TypeEmbedNet
 from deepmd.utils.graph import get_tensor_by_name
 
 from tensorflow.python.client import timeline
-from deepmd.env import op_module
+from deepmd.env import op_module, TF_VERSION
 from deepmd.utils.errors import GraphWithoutTensorError
 
 # load grad of force module
 import deepmd.op
 
-from deepmd.common import j_must_have, ClassArg, data_requirement
+from deepmd.common import j_must_have, ClassArg, data_requirement, get_precision
 
 log = logging.getLogger(__name__)
 
@@ -230,6 +232,13 @@ class DPTrainer (object):
         self.tensorboard = self.run_opt.is_chief and tr_data.get('tensorboard', False)
         self.tensorboard_log_dir = tr_data.get('tensorboard_log_dir', 'log')
         self.tensorboard_freq = tr_data.get('tensorboard_freq', 1)
+        self.mixed_prec = tr_data.get('mixed_precision', None)
+        if self.mixed_prec is not None:
+            if (self.mixed_prec['compute_prec'] != 'float16' or self.mixed_prec['output_prec'] != 'float32'):
+                raise RuntimeError(
+                    "Unsupported mixed precision option [output_prec, compute_prec]: [%s, %s], "
+                    " Supported: [float32, float16], Please set mixed precision option correctly!"
+                     % (self.mixed_prec['output_prec'], self.mixed_prec['compute_prec']))
         # self.sys_probs = tr_data['sys_probs']
         # self.auto_prob_style = tr_data['auto_prob']
         self.useBN = False
@@ -287,11 +296,18 @@ class DPTrainer (object):
         else :
             self.descrpt.enable_compression(self.model_param['compress']["min_nbor_dist"], self.model_param['compress']['model_file'], self.model_param['compress']['table_config'][0], self.model_param['compress']['table_config'][1], self.model_param['compress']['table_config'][2], self.model_param['compress']['table_config'][3])
             self.fitting.init_variables(self.model_param['compress']['model_file'])
+            # for fparam or aparam settings in 'ener' type fitting net
+            if self.fitting_type == 'ener':
+                self.fitting.enable_compression(self.model_param['compress']['model_file'])
         
         if self.is_compress or self.model_type == 'compressed_model':
             tf.constant("compressed_model", name = 'model_type', dtype = tf.string)
         else:
             tf.constant("original_model", name = 'model_type', dtype = tf.string)
+        
+        if self.mixed_prec is not None:
+            self.descrpt.enable_mixed_precision(self.mixed_prec)
+            self.fitting.enable_mixed_precision(self.mixed_prec)
 
         self._build_lr()
         self._build_network(data)
@@ -342,6 +358,8 @@ class DPTrainer (object):
                                self.place_holders,
                                suffix = "test")
 
+        if self.mixed_prec is not None:
+            self.l2_l = tf.cast(self.l2_l, get_precision(self.mixed_prec['output_prec']))
         log.info("built network")
 
     def _build_training(self):
@@ -355,6 +373,15 @@ class DPTrainer (object):
             optimizer = self.run_opt._HVD.DistributedOptimizer(optimizer)
         else:
             optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate)
+        if self.mixed_prec is not None:
+            _TF_VERSION = Version(TF_VERSION)
+            # check the TF_VERSION, when TF < 1.12, mixed precision is not allowed 
+            if _TF_VERSION < Version('1.12.0'):
+                raise RuntimeError("TensorFlow version %s is not compatible with the mixed precision setting. Please consider upgrading your TF version!" % TF_VERSION)
+            elif _TF_VERSION < Version('2.4.0'):
+                optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
+            else:
+                optimizer = tf.mixed_precision.enable_mixed_precision_graph_rewrite(optimizer)
         apply_op = optimizer.minimize(loss=self.l2_l,
                                       global_step=self.global_step,
                                       var_list=trainable_variables,

@@ -23,3 +23,4 @@ jobs:
         DP_VARIANT: ${{ matrix.variant }}
         CC: gcc-7
         CXX: g++-7
+        CONDA_OVERRIDE_CUDA: 11.3
