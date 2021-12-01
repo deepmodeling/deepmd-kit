@@ -1,4 +1,3 @@
-import re
 import math
 import logging
 import numpy as np
@@ -9,12 +8,9 @@ from scipy.special import comb
 from deepmd.env import tf
 from deepmd.env import op_module
 from deepmd.common import ACTIVATION_FN_DICT
-from deepmd.utils.sess import run_sess
 from deepmd.utils.graph import get_tensor_by_name_from_graph, load_graph_def 
 from deepmd.utils.graph import get_embedding_net_nodes_from_graph_def
 from deepmd.descriptor import Descriptor
-from tensorflow.python.platform import gfile
-from tensorflow.python.framework import tensor_util
 
 log = logging.getLogger(__name__)
 

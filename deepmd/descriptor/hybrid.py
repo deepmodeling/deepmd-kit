@@ -264,6 +264,20 @@ class DescrptHybrid (Descriptor):
         for idx, ii in enumerate(self.descrpt_list):
             ii.enable_compression(min_nbor_dist, model_file, table_extrapolate, table_stride_1, table_stride_2, check_frequency, suffix=f"{suffix}_{idx}")
 
+
+    def enable_mixed_precision(self, mixed_prec : dict = None) -> None:
+        """
+        Reveive the mixed precision setting.
+
+        Parameters
+        ----------
+        mixed_prec
+                The mixed precision setting used in the embedding net
+        """
+        for idx, ii in enumerate(self.descrpt_list):
+            ii.enable_mixed_precision(mixed_prec)
+
+
     def init_variables(self,
                        model_file : str,
                        suffix : str = "",

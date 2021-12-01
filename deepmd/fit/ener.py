@@ -9,7 +9,7 @@ from deepmd.utils.network import one_layer, one_layer_rand_seed_shift
 from deepmd.descriptor import DescrptLocFrame
 from deepmd.descriptor import DescrptSeA
 from deepmd.utils.type_embed import embed_atom_type
-from deepmd.utils.graph import get_fitting_net_variables
+from deepmd.utils.graph import get_fitting_net_variables, load_graph_def, get_tensor_by_name_from_graph
 
 from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
@@ -150,6 +150,7 @@ class EnerFitting ():
             self.aparam_inv_std = None
 
         self.fitting_net_variables = None
+        self.mixed_prec = None
 
     def get_numb_fparam(self) -> int:
         """
@@ -293,7 +294,8 @@ class EnerFitting ():
                     precision = self.fitting_precision,
                     trainable = self.trainable[ii],
                     uniform_seed = self.uniform_seed,
-                    initial_variables = self.fitting_net_variables)
+                    initial_variables = self.fitting_net_variables,
+                    mixed_prec = self.mixed_prec)
             else :
                 layer = one_layer(
                     layer,
@@ -305,7 +307,8 @@ class EnerFitting ():
                     precision = self.fitting_precision,
                     trainable = self.trainable[ii],
                     uniform_seed = self.uniform_seed,
-                    initial_variables = self.fitting_net_variables)
+                    initial_variables = self.fitting_net_variables,
+                    mixed_prec = self.mixed_prec)
             if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
         final_layer = one_layer(
             layer, 
@@ -318,7 +321,9 @@ class EnerFitting ():
             precision = self.fitting_precision, 
             trainable = self.trainable[-1],
             uniform_seed = self.uniform_seed,
-            initial_variables = self.fitting_net_variables)
+            initial_variables = self.fitting_net_variables,
+            mixed_prec = self.mixed_prec,
+            final_layer = True)
         if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
 
         return final_layer
@@ -495,3 +500,40 @@ class EnerFitting ():
             The input frozen model file
         """
         self.fitting_net_variables = get_fitting_net_variables(model_file)
+
+
+    def enable_compression(self,
+                           model_file: str,
+                           suffix: str = ""
+    ) -> None:
+        """
+        Set the fitting net attributes from the frozen model_file when fparam or aparam is not zero
+
+        Parameters
+        ----------
+        model_file : str
+            The input frozen model file
+        suffix : str, optional
+                The suffix of the scope
+        """
+        if self.numb_fparam > 0 or self.numb_aparam > 0:
+            graph, _ = load_graph_def(model_file)
+        if self.numb_fparam > 0:
+            self.fparam_avg = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_fparam_avg' % suffix)
+            self.fparam_inv_std = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_fparam_istd' % suffix)
+        if self.numb_aparam > 0:
+            self.aparam_avg = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_aparam_avg' % suffix)
+            self.aparam_inv_std = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_aparam_istd' % suffix)
+ 
+
+    def enable_mixed_precision(self, mixed_prec: dict = None) -> None:
+        """
+        Reveive the mixed precision setting.
+
+        Parameters
+        ----------
+        mixed_prec
+                The mixed precision setting used in the embedding net
+        """
+        self.mixed_prec = mixed_prec
+        self.fitting_precision = get_precision(mixed_prec['output_prec'])

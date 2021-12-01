@@ -262,6 +262,24 @@ class Descriptor(PluginVariant):
         raise NotImplementedError(
             "Descriptor %s doesn't support compression!" % type(self).__name__)
 
+    def enable_mixed_precision(self, mixed_prec: dict = None) -> None:
+        """
+        Reveive the mixed precision setting.
+
+        Parameters
+        ----------
+        mixed_prec
+                The mixed precision setting used in the embedding net
+
+        Notes
+        -----
+        This method is called by others when the descriptor supported compression.
+        """
+        raise NotImplementedError(
+            "Descriptor %s doesn't support mixed precision training!"
+            % type(self).__name__
+        )
+
     @abstractmethod
     def prod_force_virial(self,
                           atom_ener: tf.Tensor,
