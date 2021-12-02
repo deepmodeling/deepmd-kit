@@ -44,7 +44,7 @@ init (const std::string & model,
   model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
   model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
   if(! model_compatable(model_version)){
-    throw std::runtime_error(
+    throw deepmd::deepmd_exception(
 	"incompatable model: version " + model_version 
 	+ " in graph, but version " + global_model_version 
 	+ " supported ");
