@@ -72,7 +72,7 @@ public:
 
 // loop over samples
 #pragma omp parallel for
-        for (int kk = 0; kk < nsamples; ++kk)
+        for (int kk = 0; kk < nframes; ++kk)
         {
             int natoms = total_atom_num;
             int nloc = natoms;
