@@ -19,7 +19,7 @@ from .se import DescrptSe
 
 
 @Descriptor.register("se_a_mask")
-class DescrptSeA (Descriptor):
+class DescrptSeAMask (Descriptor):
     r"""DeepPot-SE constructed from all information (both angular and radial) of
     atomic configurations. The embedding takes the distance between atoms as input.
 
