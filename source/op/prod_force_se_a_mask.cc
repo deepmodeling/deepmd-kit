@@ -15,7 +15,7 @@ using namespace tensorflow;
 using CPUDevice = Eigen::ThreadPoolDevice;
 
 template <typename Device, typename FPTYPE>
-class ProdForceOp : public OpKernel
+class ProdForceSeAMaskOp : public OpKernel
 {
 public:
     explicit ProdForceSeAMaskOp(OpKernelConstruction *context) : OpKernel(context)
@@ -72,7 +72,7 @@ public:
 
 // loop over samples
 #pragma omp parallel for
-        for (int kk = 0; kk < nsamples; ++kk)
+        for (int kk = 0; kk < nframes; ++kk)
         {
             int natoms = total_atom_num;
             int nloc = natoms;

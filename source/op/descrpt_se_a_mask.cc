@@ -112,7 +112,7 @@ public:
             int nloc = total_atom_num;
             int natoms = total_atom_num;
 
-            vector<compute_t> d_coord3(natoms * 3);
+            std::vector<compute_t> d_coord3(natoms * 3);
             for (int ii = 0; ii < natoms; ++ii)
             {
                 for (int dd = 0; dd < 3; ++dd)
@@ -121,18 +121,18 @@ public:
                 }
             }
 
-            vector<int> d_type(natoms);
+            std::vector<int> d_type(natoms);
             for (int ii = 0; ii < natoms; ++ii)
             {
                 d_type[ii] = type(kk, ii);
             }
 
-            vector<int> d_mask(natoms);
+            std::vector<int> d_mask(natoms);
             for (int ii = 0; ii < natoms; ++ii)
             {
                 d_mask[ii] = mask_matrix(kk, ii);
             }
-            vector<int> sorted_nlist(total_atom_num);
+            std::vector<int> sorted_nlist(total_atom_num);
 
             for (int ii = 0; ii < nloc; ii++)
             {
@@ -166,28 +166,28 @@ public:
                 buildAndSortNeighborList(ii, d_coord3, d_type, d_mask, sorted_nlist, total_atom_num);
 
                 // Set the center atom coordinates.
-                vector<compute_t> rloc(3);
+                std::vector<compute_t> rloc(3);
                 for (int dd = 0; dd < 3; ++dd)
                 {
                     rloc[dd] = coord(kk, ii * 3 + dd);
                 }
 
                 // Compute the descriptor and derive for the descriptor for each atom.
-                vector<compute_t> descrpt_atom(natoms * 4);
-                vector<compute_t> descrpt_deriv_atom(natoms * 12);
-                vector<compute_t> rij_atom(natoms * 3);
+                std::vector<compute_t> descrpt_atom(natoms * 4);
+                std::vector<compute_t> descrpt_deriv_atom(natoms * 12);
+                std::vector<compute_t> rij_atom(natoms * 3);
 
                 fill(descrpt_deriv_atom.begin(), descrpt_deriv_atom.end(), 0.0);
                 fill(descrpt_atom.begin(), descrpt_atom.end(), 0.0);
                 fill(rij_atom.begin(), rij_atom.end(), 0.0);
 
-                // Compute the each environment vector for each atom.
+                // Compute the each environment std::vector for each atom.
                 for (int jj = 0; jj < natoms; jj++)
                 {
                     int j_idx = sorted_nlist[jj];
 
                     compute_t temp_rr;
-                    VALUETYPE temp_diff[3];
+                    compute_t temp_diff[3];
                     temp_rr = 0.;
 
                     // Once ii == j_idx, the descriptor and derivation should be set to zero.
@@ -228,7 +228,7 @@ public:
                         rij_atom[jj * 3 + dd] = temp_diff[dd];
                     }
 
-                    temp_rr = MathUtilities::dot<VALUETYPE>(temp_diff, temp_diff);
+                    temp_rr = deepmd::dot3<compute_t>(temp_diff, temp_diff);
 
                     compute_t x = temp_diff[0];
                     compute_t y = temp_diff[1];
@@ -294,29 +294,29 @@ public:
 private:
     int total_atom_num;
     compute_t max_distance = 10000.0;
-    void buildAndSortNeighborList(int i_idx, const vector<compute_t> d_coord3, vector<int> &d_type, vector<int> &d_mask, vector<int> &sorted_nlist, int total_atom_num)
+    void buildAndSortNeighborList(int i_idx, const std::vector<compute_t> d_coord3, std::vector<int> &d_type, std::vector<int> &d_mask, std::vector<int> &sorted_nlist, int total_atom_num)
     {
         //sorted_nlist.resize(total_atom_num);
-        vector<NeighborInfo> sel_nei;
+        std::vector<deepmd::NeighborInfo> sel_nei;
         for (int jj = 0; jj < total_atom_num; jj++)
         {
-            VALUETYPE diff[3];
+            compute_t diff[3];
             const int j_idx = jj;
             for (int dd = 0; dd < 3; ++dd)
             {
                 diff[dd] = d_coord3[j_idx * 3 + dd] - d_coord3[i_idx * 3 + dd];
             }
             // Check if j_idx atom is virtual particle or not.
-            VALUETYPE rr = 0.0;
+            compute_t rr = 0.0;
             if (d_mask[j_idx] == 0 || j_idx == i_idx)
             {
                 rr = max_distance;
             }
             else
             {
-                rr = sqrt(MathUtilities::dot<VALUETYPE>(diff, diff));
+                rr = sqrt(deepmd::dot3<compute_t>(diff, diff));
             }
-            sel_nei.push_back(NeighborInfo(d_type[j_idx], rr, j_idx));
+            sel_nei.push_back(deepmd::NeighborInfo(d_type[j_idx], rr, j_idx));
         }
         sort(sel_nei.begin(), sel_nei.end());
         // Save the sorted atom index.
