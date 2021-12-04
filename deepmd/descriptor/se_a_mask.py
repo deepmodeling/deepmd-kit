@@ -102,6 +102,8 @@ class DescrptSeAMask (Descriptor):
     """
     @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
+                  rcut: float,
+                  rcut_smth: float,
                   sel: List[str],
                   neuron: List[int] = [24,48,96],
                   axis_neuron: int = 8,
@@ -121,6 +123,9 @@ class DescrptSeAMask (Descriptor):
         self.total_atom_num = np.cumsum(self.sel_a)[-1]
         self.ntypes = len(self.sel_a)
         self.descrpt_type = "se_a_mask"
+        # rcut and rcut_smth will not be used in se_a_mask op.
+        self.rcut = rcut
+        self.rcut_smth = rcut_smth
         
         self.filter_neuron = neuron
         self.n_axis_neuron = axis_neuron
@@ -176,6 +181,11 @@ class DescrptSeAMask (Descriptor):
                                          total_atom_num = self.total_atom_num)
         self.sub_sess = tf.Session(graph = sub_graph, config=default_tf_session_config)
 
+    def get_rcut (self) -> float:
+        """
+        Returns the cut-off radius
+        """
+        return self.rcut
 
     def get_ntypes (self) -> int:
         """

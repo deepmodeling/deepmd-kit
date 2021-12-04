@@ -250,6 +250,8 @@ def descrpt_se_a_mask_args():
     
     return [
         Argument("sel", [list,str], optional = True, default = "auto", doc = doc_sel),
+        Argument("rcut", float, optional = True, default = 6.0, doc = doc_rcut),
+        Argument("rcut_smth", float, optional = True, default = 0.5, doc = doc_rcut_smth),
         Argument("neuron", list, optional = True, default = [10,20,40], doc = doc_neuron),
         Argument("axis_neuron", int, optional = True, default = 4, alias = ['n_axis_neuron'], doc = doc_axis_neuron),
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
