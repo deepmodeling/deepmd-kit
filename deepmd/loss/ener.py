@@ -381,6 +381,8 @@ class EnerForcesMaskLoss():
         else:
             raise RuntimeError("Json data for learning prefactors are not provided.")
         
+        self.debug_op = []
+        
         # data required
         add_data_requirement('energy', 1, atomic=False, must=False, high_prec=True)
         add_data_requirement('force',  3, atomic=True,  must=False, high_prec=False)
@@ -438,9 +440,9 @@ class EnerForcesMaskLoss():
             if ii == 0:
                 start_index = 0
             else:
-                start_index = natoms[2 + ii - 1]
-            end_index = natoms[2 + ii]
-            num4element = end_index - start_index
+                start_index = start_index + natoms[2 + ii - 1]
+            num4element = natoms[2 + ii]
+            
             diff_force4element[element] = tf.slice(diff_f, [0, start_index * 3], [-1, num4element * 3])
             l2_force4element[element] = tf.reduce_sum(tf.square(diff_force4element[element]), axis=1)
             atom_num_vec = tf.gather(atom_num4element,[ii], axis = 1)
@@ -492,7 +494,13 @@ class EnerForcesMaskLoss():
         for ele in self.l2_more["l2_force4element"].keys():
             run_data.append(self.l2_more["l2_force4element"][ele])
             
-        error, error_e, error_f, error_e_per_atom, error_on_element = run_sess(sess, run_data, feed_dict=feed_dict)
+        #error, error_e, error_f, error_e_per_atom, error_on_element = run_sess(sess, run_data, feed_dict=feed_dict)
+        error_all = run_sess(sess, run_data, feed_dict=feed_dict)
+        
+        error = error_all[0]
+        error_e = error_all[1]
+        error_f = error_all[2]
+        error_e_per_atom = error_all[3]
         
         results = {"natoms": natoms[0], "rmse": np.sqrt(error)}
         if self.has_e:
@@ -500,8 +508,8 @@ class EnerForcesMaskLoss():
             results["rmse_e_per_atom"] = np.sqrt(error_e_per_atom)
         if self.has_f:
             results["rmse_f"] = np.sqrt(error_f)
-            for ii, ele in self.l2_more["l2_force4element"].keys():
-                results["rmse_f_%s"%ele] = np.sqrt(error_on_element[ii])
+            for ii, ele in enumerate(self.l2_more["l2_force4element"].keys()):
+                results["rmse_f_%s"%ele] = np.sqrt(error_all[ii + 4])
         
         return results
     

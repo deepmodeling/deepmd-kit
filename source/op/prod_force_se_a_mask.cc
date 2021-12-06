@@ -48,7 +48,6 @@ public:
         int ndescrpt = nall * 4;
         int nnei = nlist_tensor.shape().dim_size(1) / nloc;
 
-        std::cout<<nloc<<" "<<ndescrpt<<" "<<in_deriv_tensor.shape().DebugString()<<std::endl;
 
         // check the sizes
         OP_REQUIRES(context, (nframes == in_deriv_tensor.shape().dim_size(0)), errors::InvalidArgument("number of samples should match"));
