@@ -173,13 +173,13 @@ class DescrptSeAMask (Descriptor):
             for ii in ['coord']:
                 self.place_holders[ii] = tf.placeholder(GLOBAL_NP_FLOAT_PRECISION, [None, None], name = name_pfx+'t_'+ii)
             self.place_holders['type'] = tf.placeholder(tf.int32, [None, None], name=name_pfx+'t_type')
-            self.place_holders['mask'] = tf.placeholder(tf.int32, [None, None], name=name_pfx+'t_mask')
+            self.place_holders['mask_matrix'] = tf.placeholder(tf.int32, [None, None], name=name_pfx+'t_mask')
             self.place_holders['natoms_vec'] = tf.placeholder(tf.int32, [self.ntypes+2], name=name_pfx+'t_natoms')
             self.place_holders['default_mesh'] = tf.placeholder(tf.int32, [None], name=name_pfx+'t_mesh')
             self.stat_descrpt, descrpt_deriv, rij, nlist \
                 = op_module.descrpt_se_a_mask(self.place_holders['coord'],
                                          self.place_holders['type'],
-                                         self.place_holders['mask'],
+                                         self.place_holders['mask_matrix'],
                                          total_atom_num = self.total_atom_num)
         self.sub_sess = tf.Session(graph = sub_graph, config=default_tf_session_config)
 
@@ -328,9 +328,10 @@ class DescrptSeAMask (Descriptor):
         descriptor
                 The output descriptor
         """
-        davg = self.davg
-        dstd = self.dstd
-        mask = input_dict["mask_matrix"]
+        #davg = self.davg
+        #dstd = self.dstd
+        davg = None
+        dstd = None
         with tf.variable_scope('descrpt_attr' + suffix, reuse = reuse) :
             if davg is None:
                 davg = np.zeros([self.ntypes, self.ndescrpt]) 
@@ -364,11 +365,13 @@ class DescrptSeAMask (Descriptor):
         coord = tf.reshape (coord_, [-1, natoms[1] * 3])
         box   = tf.reshape (box_, [-1, 9])
         atype = tf.reshape (atype_, [-1, natoms[1]])
-
+        mask_matrix = input_dict["mask_matrix"]
+        mask_matrix = tf.reshape (mask_matrix, [-1, natoms[1]])
+        
         self.descrpt, self.descrpt_deriv, self.rij, self.nlist \
             = op_module.descrpt_se_a_mask (coord,
                                        atype,
-                                       mask,
+                                       mask_matrix,
                                        total_atom_num = self.total_atom_num)
         # only used when tensorboard was set as true
         tf.summary.histogram('descrpt', self.descrpt)
@@ -425,13 +428,13 @@ class DescrptSeAMask (Descriptor):
         """
         [net_deriv] = tf.gradients (atom_ener, self.descrpt_reshape)
         tf.summary.histogram('net_derivative', net_deriv)
-        net_deriv_reshape = tf.reshape (net_deriv, [-1, natoms[0] * self.ndescrpt])        
+        net_deriv_reshape = tf.reshape (net_deriv, [-1, natoms[0] * self.ndescrpt])
+        mask_matrix = tf.reshape(mask_matrix, [-1, natoms[0]])        
         force \
             = op_module.prod_force_se_a_mask (net_deriv_reshape,
                                           self.descrpt_deriv,
                                           mask_matrix,
                                           self.nlist,
-                                          natoms,
                                           total_atom_num = self.total_atom_num)
         
         tf.summary.histogram('force', force)
@@ -493,7 +496,7 @@ class DescrptSeAMask (Descriptor):
                                 feed_dict = {
                                     self.place_holders['coord']: data_coord,
                                     self.place_holders['type']: data_atype,
-                                    self.place_holders['mask']: data_mask_matrix
+                                    self.place_holders['mask_matrix']: data_mask_matrix
                                     #self.place_holders['box']: data_box,
                                 })
         #natoms = self.total_atom_num

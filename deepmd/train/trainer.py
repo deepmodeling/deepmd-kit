@@ -335,10 +335,10 @@ class DPTrainer (object):
         self.place_holders['is_training']       = tf.placeholder(tf.bool)
         # Add for mask matrix force loss.
         if self.descrpt_param["type"] == "se_a_mask":
-            self.place_holders['mask_matrix']       = tf.placeholder(tf.int32)
+            self.place_holders['mask_matrix']       = tf.placeholder(tf.int32, [None], name='t_mask_matrix')
         loss_type = self.loss_param.get('type', 'ener')
         if loss_type == "ener_masked_forces":
-            self.place_holders["mask_matrix4forces"] = tf.placeholder(tf.int32)
+            self.place_holders["mask_matrix4forces"] = tf.placeholder(tf.int32, [None], name='t_mask_matrix4forces')
             
         self.model_pred\
             = self.model.build (self.place_holders['coord'], 

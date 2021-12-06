@@ -6,7 +6,6 @@ REGISTER_OP("ProdForceSeAMask")
     .Input("in_deriv: T")
     .Input("mask: int32")
     .Input("nlist: int32")
-    .Input("natoms: int32")
     .Attr("total_atom_num: int")
     .Output("force: T");
 
@@ -36,7 +35,6 @@ public:
         const Tensor &in_deriv_tensor = context->input(1);
         const Tensor &mask_tensor = context->input(2);
         const Tensor &nlist_tensor = context->input(3);
-        const Tensor &natoms_tensor = context->input(4);
 
         // set size of the sample
         OP_REQUIRES(context, (net_deriv_tensor.shape().dims() == 2), errors::InvalidArgument("Dim of net deriv should be 2"));
@@ -50,10 +48,12 @@ public:
         int ndescrpt = nall * 4;
         int nnei = nlist_tensor.shape().dim_size(1) / nloc;
 
+        std::cout<<nloc<<" "<<ndescrpt<<" "<<in_deriv_tensor.shape().DebugString()<<std::endl;
+
         // check the sizes
         OP_REQUIRES(context, (nframes == in_deriv_tensor.shape().dim_size(0)), errors::InvalidArgument("number of samples should match"));
         OP_REQUIRES(context, (nframes == nlist_tensor.shape().dim_size(0)), errors::InvalidArgument("number of samples should match"));
-        OP_REQUIRES(context, (nloc * ndescrpt * 12 == in_deriv_tensor.shape().dim_size(1)), errors::InvalidArgument("number of descriptors should match"));
+        OP_REQUIRES(context, (nloc * ndescrpt * 3 == in_deriv_tensor.shape().dim_size(1)), errors::InvalidArgument("number of descriptors should match"));
 
         // Create an output tensor
         TensorShape force_shape;
