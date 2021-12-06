@@ -258,9 +258,14 @@ class EnerModel() :
             atom_virial = atom_virial + sw_atom_virial + tab_atom_virial
             virial = virial + sw_virial \
                      + tf.reduce_sum(tf.reshape(tab_atom_virial, [-1, natoms[1], 9]), axis = 1)
-
-        virial = tf.reshape (virial, [-1, 9], name = "o_virial"+suffix)
-        atom_virial = tf.reshape (atom_virial, [-1, 9 * natoms[1]], name = "o_atom_virial"+suffix)
+                     
+        # se_a_mask is not supported for virial
+        if hasattr(self.descrpt, 'descrpt_type') and self.descrpt.descrpt_type == "se_a_mask":
+            virial = None
+            atom_virial = None
+        else:
+            virial = tf.reshape (virial, [-1, 9], name = "o_virial"+suffix)
+            atom_virial = tf.reshape (atom_virial, [-1, 9 * natoms[1]], name = "o_atom_virial"+suffix)
 
         model_dict = {}
         model_dict['energy'] = energy

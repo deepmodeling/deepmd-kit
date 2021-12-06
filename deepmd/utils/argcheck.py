@@ -542,6 +542,7 @@ def loss_variant_type_args():
     return Variant("type", 
                    [Argument("ener", dict, loss_ener()),
                     Argument("tensor", dict, loss_tensor()),
+                    Argument("masked_energy_forces", dict, loss_ener())
                     #Argument("polar", dict, loss_tensor()),
                     #Argument("global_polar", dict, loss_tensor("global"))
                     ],

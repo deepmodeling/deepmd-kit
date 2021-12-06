@@ -186,6 +186,8 @@ class DPTrainer (object):
                 self.loss = EnerStdLoss(**loss_param)
             elif loss_type == 'ener_dipole':
                 self.loss = EnerDipoleLoss(**loss_param)
+            elif loss_type == 'masked_energy_forces':
+                self.loss = EnerForcesMaskLoss(loss_param, model = self.model)
             else:
                 raise RuntimeError('unknow loss type')
         elif fitting_type == 'wfc':
@@ -213,8 +215,6 @@ class DPTrainer (object):
                                    tensor_size = 9,
                                    atomic = False,
                                    label_name = 'polarizability')
-        elif fitting_type == "masked_energy_forces":
-            self.loss = EnerForcesMaskLoss(loss_param, model = self.model)
         else :
             raise RuntimeError('get unknown fitting type when building loss function')
         self.loss_param = loss_param

@@ -395,7 +395,7 @@ class EnerForcesMaskLoss():
               model_dict, 
               label_dict, 
               suffix):
-        assert self.ntypes + 2 == len(natoms), "nstypes is not matchable with natoms length."
+        assert self.ntypes + 2 == natoms.shape[0], "nstypes is not matchable with natoms length."
         assert len(self.type_map) == self.ntypes, "type_map length is not equal to ntypes."
         
         energy = model_dict['energy']

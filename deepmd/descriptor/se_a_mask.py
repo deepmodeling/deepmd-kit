@@ -111,7 +111,7 @@ class DescrptSeAMask (Descriptor):
                   trainable: bool = True,
                   seed: int = None,
                   exclude_types: List[List[int]] = [],
-                  set_davg_zero: bool = False,
+                  set_davg_zero: bool = True,
                   activation_function: str = 'tanh',
                   precision: str = 'default',
                   uniform_seed: bool = False
@@ -126,6 +126,8 @@ class DescrptSeAMask (Descriptor):
         # rcut and rcut_smth will not be used in se_a_mask op.
         self.rcut = rcut
         self.rcut_smth = rcut_smth
+        self.type_one_side = False
+        self.type_embedding = None
         
         self.filter_neuron = neuron
         self.n_axis_neuron = axis_neuron
@@ -172,8 +174,8 @@ class DescrptSeAMask (Descriptor):
                 self.place_holders[ii] = tf.placeholder(GLOBAL_NP_FLOAT_PRECISION, [None, None], name = name_pfx+'t_'+ii)
             self.place_holders['type'] = tf.placeholder(tf.int32, [None, None], name=name_pfx+'t_type')
             self.place_holders['mask'] = tf.placeholder(tf.int32, [None, None], name=name_pfx+'t_mask')
-            #self.place_holders['natoms_vec'] = tf.placeholder(tf.int32, [self.ntypes+2], name=name_pfx+'t_natoms')
-            #self.place_holders['default_mesh'] = tf.placeholder(tf.int32, [None], name=name_pfx+'t_mesh')
+            self.place_holders['natoms_vec'] = tf.placeholder(tf.int32, [self.ntypes+2], name=name_pfx+'t_natoms')
+            self.place_holders['default_mesh'] = tf.placeholder(tf.int32, [None], name=name_pfx+'t_mesh')
             self.stat_descrpt, descrpt_deriv, rij, nlist \
                 = op_module.descrpt_se_a_mask(self.place_holders['coord'],
                                          self.place_holders['type'],
@@ -246,6 +248,7 @@ class DescrptSeAMask (Descriptor):
         input_dict
                 Dictionary for additional input
         """
+        mask_matrix = input_dict['mask_matrix']
         all_davg = []
         all_dstd = []
         if True:
@@ -254,9 +257,9 @@ class DescrptSeAMask (Descriptor):
             sumn = []
             sumr2 = []
             suma2 = []
-            for cc,bb,tt,nn,mm in zip(data_coord,data_box,data_atype,natoms_vec,mesh) :
+            for cc,tt,mm,nn in zip(data_coord,data_atype,mask_matrix, natoms_vec) :
                 sysr,sysr2,sysa,sysa2,sysn \
-                    = self._compute_dstats_sys_smth(cc,bb,tt,nn,mm)
+                    = self._compute_dstats_sys_smth(cc,tt,mm, nn)
                 sumr.append(sysr)
                 suma.append(sysa)
                 sumn.append(sysn)
@@ -268,14 +271,15 @@ class DescrptSeAMask (Descriptor):
             sumr2 = np.sum(sumr2, axis = 0)
             suma2 = np.sum(suma2, axis = 0)
             for type_i in range(self.ntypes) :
-                davgunit = [sumr[type_i]/(sumn[type_i]+1e-15), 0, 0, 0]
-                dstdunit = [self._compute_std(sumr2[type_i], sumr[type_i], sumn[type_i]), 
-                            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
-                            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
-                            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i])
-                            ]
-                davg = np.tile(davgunit, self.ndescrpt // 4)
-                dstd = np.tile(dstdunit, self.ndescrpt // 4)
+                #davgunit = [sumr[type_i]/(sumn[type_i]+1e-15), 0, 0, 0]
+                #dstdunit = [self._compute_std(sumr2[type_i], sumr[type_i], sumn[type_i]), 
+                #            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
+                #            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
+                #            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i])
+                #            ]
+                
+                davg = np.tile(0, self.ndescrpt // 4)
+                dstd = np.tile(1, self.ndescrpt // 4)
                 all_davg.append(davg)
                 all_dstd.append(dstd)
 
@@ -326,7 +330,7 @@ class DescrptSeAMask (Descriptor):
         """
         davg = self.davg
         dstd = self.dstd
-        mask = input_dict["mask"]
+        mask = input_dict["mask_matrix"]
         with tf.variable_scope('descrpt_attr' + suffix, reuse = reuse) :
             if davg is None:
                 davg = np.zeros([self.ntypes, self.ndescrpt]) 
@@ -428,7 +432,7 @@ class DescrptSeAMask (Descriptor):
                                           mask_matrix,
                                           self.nlist,
                                           natoms,
-                                          total_atom_num = natoms[1])
+                                          total_atom_num = self.total_atom_num)
         
         tf.summary.histogram('force', force)
         #tf.summary.histogram('virial', virial)
@@ -481,20 +485,18 @@ class DescrptSeAMask (Descriptor):
 
     def _compute_dstats_sys_smth (self,
                                  data_coord, 
-                                 data_box, 
                                  data_atype,                             
-                                 natoms_vec,
-                                 mesh) :    
+                                 data_mask_matrix,
+                                 natoms) :    
         dd_all \
             = run_sess(self.sub_sess, self.stat_descrpt, 
                                 feed_dict = {
                                     self.place_holders['coord']: data_coord,
                                     self.place_holders['type']: data_atype,
-                                    self.place_holders['natoms_vec']: natoms_vec,
-                                    self.place_holders['box']: data_box,
-                                    self.place_holders['default_mesh']: mesh,
+                                    self.place_holders['mask']: data_mask_matrix
+                                    #self.place_holders['box']: data_box,
                                 })
-        natoms = natoms_vec
+        #natoms = self.total_atom_num
         dd_all = np.reshape(dd_all, [-1, self.ndescrpt * natoms[0]])
         start_index = 0
         sysr = []
@@ -735,3 +737,26 @@ class DescrptSeAMask (Descriptor):
           result = tf.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
 
         return result, qmat
+    
+    def _identity_tensors(self, suffix : str = "") -> None:
+        """Identify tensors which are expected to be stored and restored.
+        
+        Notes
+        -----
+        These tensors will be indentitied:
+            self.descrpt_reshape : o_rmat
+            self.descrpt_deriv : o_rmat_deriv
+            self.rij : o_rij
+            self.nlist : o_nlist
+        Thus, this method should be called during building the descriptor and
+        after these tensors are initialized.
+
+        Parameters
+        ----------
+        suffix : str
+            The suffix of the scope
+        """
+        self.descrpt_reshape = tf.identity(self.descrpt_reshape, name = 'o_rmat' + suffix)
+        self.descrpt_deriv = tf.identity(self.descrpt_deriv, name = 'o_rmat_deriv' + suffix)
+        self.rij = tf.identity(self.rij, name = 'o_rij' + suffix)
+        self.nlist = tf.identity(self.nlist, name = 'o_nlist' + suffix)
