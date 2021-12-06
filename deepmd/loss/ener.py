@@ -384,9 +384,11 @@ class EnerForcesMaskLoss():
         # data required
         add_data_requirement('energy', 1, atomic=False, must=False, high_prec=True)
         add_data_requirement('force',  3, atomic=True,  must=False, high_prec=False)
-        add_data_requirement('mask_matrix', 1, atomic=True, must=False, high_prec=False)
+        add_data_requirement('mask_matrix', 1, atomic=True, must=True, high_prec=False)
         add_data_requirement('mask_matrix4force', 3, atomic=True, must=False, high_prec=False)
-        add_data_requirement('atom_pref', 1, atomic=True, must=False, high_prec=False, repeat=3)
+        add_data_requirement('atom_num4element', len(self.type_map), atomic=False, must=False, high_prec=False)
+        add_data_requirement('atom_num4frame', 1, atomic=False, must=False, high_prec=False)
+        #add_data_requirement('atom_pref', 1, atomic=True, must=False, high_prec=False, repeat=3)
         return None
     
     def build(self, 
@@ -414,7 +416,7 @@ class EnerForcesMaskLoss():
         find_force = label_dict['find_force']
         
         # Recalculate the total energy with mask matrix.
-        mask_matrix = tf.reshape(mask_matrix, [-1, natoms[0]])
+        mask_matrix = global_cvt_2_ener_float(tf.reshape(mask_matrix, [-1, natoms[0]]))
         energy = tf.reduce_sum(global_cvt_2_ener_float(tf.multiply(atom_ener, mask_matrix)), axis=1, name='o_energy'+suffix)
         l2_energy_loss_per_atom = tf.divide(tf.square(energy - energy_hat), atom_num4frame)
         l2_energy_loss = tf.reduce_mean( tf.square(energy - energy_hat), name='l2_masked_energy_frame_mean'+suffix)
@@ -424,15 +426,20 @@ class EnerForcesMaskLoss():
         force_hat_reshape = tf.reshape(force_hat, [-1, natoms[0] * 3])
         diff_f = force_hat_reshape - force_reshape
         
-        mask_matrix4force = tf.reshape(mask_matrix4force, [-1, natoms[0] * 3])
+        mask_matrix4force = global_cvt_2_tf_float(tf.reshape(mask_matrix4force, [-1, natoms[0] * 3]))
         diff_f = tf.multiply(diff_f, mask_matrix4force)
         
+        atom_num4element = tf.reshape(atom_num4element, [-1, len(self.type_map)])
+        #atom_num4frame = tf.reshape(atom_num4frame, [-1])
         
         diff_force4element = dict()
         l2_force4element = dict()
         for ii, element in enumerate(self.type_map):
-            start_index = natoms[2 + ii]
-            end_index = natoms[2 + ii + 1]
+            if ii == 0:
+                start_index = 0
+            else:
+                start_index = natoms[2 + ii - 1]
+            end_index = natoms[2 + ii]
             num4element = end_index - start_index
             diff_force4element[element] = tf.slice(diff_f, [0, start_index * 3], [-1, num4element * 3])
             l2_force4element[element] = tf.reduce_sum(tf.square(diff_force4element[element]), axis=1)
