@@ -470,14 +470,18 @@ class EnerForcesMaskLoss():
         if self.has_f:
             l2_loss += pref_f * l2_force_loss
         more_loss["l2_force_loss"] = l2_force_loss
-        
         more_loss["l2_force4element"] = l2_force4element
         
         # only used when tensorboard was set as true
         self.l2_loss_summary = tf.summary.scalar('l2_loss', tf.sqrt(l2_loss))
-        self.l2_loss_ener_summary = tf.summary.scalar('l2_ener_loss', global_cvt_2_tf_float(tf.sqrt(l2_energy_loss)))
-        self.l2_loss_ener_per_atom_summary = tf.summary.scalar('l2_ener_loss_per_atom', global_cvt_2_tf_float(tf.sqrt(l2_energy_loss_per_atom)))
-        self.l2_loss_force_summary = tf.summary.scalar('l2_force_loss', tf.sqrt(l2_force_loss))
+        if self.has_e:
+            self.l2_loss_ener_summary = tf.summary.scalar('l2_ener_loss', global_cvt_2_tf_float(tf.sqrt(l2_energy_loss)))
+            self.l2_loss_ener_per_atom_summary = tf.summary.scalar('l2_ener_loss_per_atom', global_cvt_2_tf_float(tf.sqrt(l2_energy_loss_per_atom)))
+        if self.has_f:
+            self.l2_loss_force_summary = tf.summary.scalar('l2_force_loss', tf.sqrt(l2_force_loss))
+            self.l2_loss_force4element_summary = {}
+            for ele in more_loss["l2_force4element"].keys():
+                self.l2_loss_force4element_summary[ele] = tf.summary.scalar("l2_force4%s_loss"%ele, tf.sqrt(more_loss["l2_force4element"][ele]))
         
         self.l2_l = l2_loss
         self.l2_more = more_loss
