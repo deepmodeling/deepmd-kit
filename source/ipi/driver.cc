@@ -158,7 +158,7 @@ int main(int argc, char * argv[])
       readbuffer_ (&socket, (char *)(cell_h),  9*sizeof(double));
       readbuffer_ (&socket, (char *)(cell_ih), 9*sizeof(double));
       for (int dd = 0; dd < 9; ++dd){
-	dbox[dd] = cell_ih[dd] * cvt_len;
+	dbox[dd] = cell_h[(ii%3)*3+(ii/3)] * cvt_len;
       }
       region.reinitBox (&dbox[0]);
       
