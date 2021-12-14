@@ -83,6 +83,8 @@ class DescrptSeR (DescrptSe):
         #        .add("activation_function", str, default = "tanh") \
         #        .add("precision",           str, default = "default")
         # class_data = args.parse(jdata)
+        if rcut < rcut_smth:
+            raise RuntimeError("rcut_smth (%f) should be no more than rcut (%f)!" % (rcut_smth, rcut))
         self.sel_r = sel
         self.rcut = rcut
         self.rcut_smth = rcut_smth
