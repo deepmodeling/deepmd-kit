@@ -9,7 +9,7 @@
 +add_definitions(-w) # close warning
 +# define deepmd and tensorflow root
 +if (NOT DEFINED GMX_DEEPMD_ROOT)
-+    set (GMX_DEEPMD_ROOT /usr/local)
++    set (GMX_DEEPMD_ROOT /home/dingye/.local/libdeepmd/dp4mask)
 +endif()
 +if (NOT DEFINED GMX_TENSORFLOW_ROOT)
 +    set (GMX_TENSORFLOW_ROOT /home/dingye/.local/tensorflow/v2.4.1)

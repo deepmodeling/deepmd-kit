@@ -428,6 +428,90 @@ private:
   std::vector<std::vector<int> > get_sel() const;
   void cum_sum(const std::vector<std::vector<tensorflow::int32> > n_sel);
 };
+
+class DeepPotMaskModel: public DeepPot{
+public:
+  /**
+  * @brief DPMaskModel constructor without initialization.
+  **/
+  DeepPotMaskModel () ;
+  ~DeepPotMaskModel() ;
+  /**
+  * @brief DP constructor with initialization.
+  * @param[in] model The name of the frozen model file.
+  * @param[in] gpu_rank The GPU rank. Default is 0.
+  * @param[in] file_content The content of the model file. If it is not empty, DP will read from the string instead of the file.
+  **/
+  DeepPotMaskModel(const std::string & model, const int & gpu_rank = 0, const std::string & file_content = "");
+  /**
+  * @brief Initialize the DP.
+  * @param[in] model The name of the frozen model file.
+  * @param[in] gpu_rank The GPU rank. Default is 0.
+  * @param[in] file_content The content of the model file. If it is not empty, DP will read from the string instead of the file.
+  **/
+  void init (const std::string & model, const int & gpu_rank = 0, const std::string & file_content = "");
+public:
+  /**
+  * @brief Evaluate the energy, force and virial by using this DP.
+  * @param[out] ener The system energy.
+  * @param[out] force The force on each atom.
+  * @param[out] virial The virial.
+  * @param[in] coord The coordinates of atoms. The array should be of size nframes x natoms x 3.
+  * @param[in] atype The atom types. The list should contain natoms ints.
+  * @param[in] box The cell of the region. The array should be of size nframes x 9.
+  * @param[in] fparam The frame parameter. The array can be of size :
+      * nframes x dim_fparam.
+      * dim_fparam. Then all frames are assumed to be provided with the same fparam.
+  * @param[in] aparam The atomic parameter The array can be of size :
+      * nframes x natoms x dim_aparam.
+      * natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
+      * dim_aparam. Then all frames and atoms are provided with the same aparam.
+  **/
+  void compute (ENERGYTYPE &			dener,
+	 std::vector<VALUETYPE> &	dforce_,
+	 const std::vector<VALUETYPE> &	dcoord_,
+	 const std::vector<int> &	datype_,
+	 const std::vector<int> &	dmask);
+private:
+  tensorflow::Session* session;
+  int num_intra_nthreads, num_inter_nthreads;
+  tensorflow::GraphDef graph_def;
+  bool inited;
+  template<class VT> VT get_scalar(const std::string & name) const;
+  // VALUETYPE get_rcut () const;
+  // int get_ntypes () const;
+  VALUETYPE rcut;
+  VALUETYPE cell_size;
+  std::string model_type;
+  std::string model_version;
+  int ntypes;
+  int dfparam;
+  int daparam;
+  void validate_fparam_aparam(const int & nloc,
+			      const std::vector<VALUETYPE> &fparam,
+			      const std::vector<VALUETYPE> &aparam)const ;
+  void compute_inner (ENERGYTYPE &			ener,
+		      std::vector<VALUETYPE> &		force,
+		      std::vector<VALUETYPE> &		virial,
+		      const std::vector<VALUETYPE> &	coord,
+		      const std::vector<int> &		atype,
+		      const std::vector<VALUETYPE> &	box, 
+		      const int				nghost,
+		      const int &			ago,
+		      const std::vector<VALUETYPE>&	fparam = std::vector<VALUETYPE>(),
+		      const std::vector<VALUETYPE>&	aparam = std::vector<VALUETYPE>());
+
+  // copy neighbor list info from host
+  bool init_nbor;
+  std::vector<int> sec_a;
+  NeighborListData nlist_data;
+  InputNlist nlist;
+  AtomMap<VALUETYPE> atommap;
+
+  // function used for neighbor list copy
+  std::vector<int> get_sel_a() const;
+
+};
 }
 
 

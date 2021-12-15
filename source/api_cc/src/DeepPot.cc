@@ -914,3 +914,88 @@ compute_relative_std_f (std::vector<VALUETYPE> &std,
   compute_relative_std(std, avg, eps, 3);
 }
 
+
+// Implement the methods for DeepPotMaskModel
+
+void 
+DeepPotMaskModel::
+init(const std::string & model, const int & gpu_rank, const std::string & file_content)
+{
+  if (inited){
+    std::cerr << "WARNING: deepmd-kit should not be initialized twice, do nothing at the second call of initializer" << std::endl;
+    return ;
+  }
+  SessionOptions options;
+  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
+  options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
+  options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
+
+  if(file_content.size() == 0)
+    check_status (ReadBinaryProto(Env::Default(), model, &graph_def));
+  else
+    graph_def.ParseFromString(file_content);
+  int gpu_num = -1;
+  #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+  DPGetDeviceCount(gpu_num); // check current device environment
+  if (gpu_num > 0) {
+    options.config.set_allow_soft_placement(true);
+    options.config.mutable_gpu_options()->set_per_process_gpu_memory_fraction(0.9);
+    options.config.mutable_gpu_options()->set_allow_growth(true);
+    DPErrcheck(DPSetDevice(gpu_rank % gpu_num));
+    std::string str = "/gpu:";
+    str += std::to_string(gpu_rank % gpu_num);
+    graph::SetDefaultDevice(str, &graph_def);
+  }
+  #endif // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+  check_status (NewSession(options, &session));
+  check_status (session->Create(graph_def));
+  cell_size = rcut;
+  ntypes = get_scalar<int>("descrpt_attr/ntypes");
+  dfparam = get_scalar<int>("fitting_attr/dfparam");
+  daparam = get_scalar<int>("fitting_attr/daparam");
+  if (dfparam < 0) dfparam = 0;
+  if (daparam < 0) daparam = 0;
+  model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
+  try{
+  model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
+  } catch (deepmd::tf_exception& e){
+    // no model version defined in old models
+    model_version = "0.0";
+  }
+  if(! model_compatable(model_version)){
+    throw std::runtime_error(
+	"incompatable model: version " + model_version 
+	+ " in graph, but version " + global_model_version 
+	+ " supported ");
+  }
+  inited = true; 
+  init_nbor = false;
+}
+
+void 
+DeepPotMaskModel::
+compute(ENERGYTYPE &			dener,
+	 std::vector<VALUETYPE> &	dforce_,
+	 const std::vector<VALUETYPE> &	dcoord_,
+	 const std::vector<int> &	datype_,
+	 const std::vector<int> &	dmask_){
+    int nall = dcoord_.size() / 3;
+    int nloc = nall;
+    //atommap = deepmd::AtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
+    assert (nloc == atommap.get_type().size());
+    //validate_fparam_aparam(nloc, fparam, aparam);
+
+    std::vector<std::pair<std::string, Tensor>> input_tensors;
+    //int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, aparam, atommap);
+    //assert (ret == nloc);
+
+    //run_model (dener, dforce_, dvirial, session, input_tensors, atommap);
+}
+
+template<class VT>
+VT
+DeepPotMaskModel::
+get_scalar (const std::string & name) const
+{
+  return session_get_scalar<VT>(session, name);
+}
