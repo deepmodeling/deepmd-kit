@@ -468,6 +468,123 @@ void deepmd::tabulate_fusion_se_t_grad_grad_cpu(
   }
 }
 
+template<typename FPTYPE>
+void deepmd::tabulate_fusion_se_r_cpu(
+    FPTYPE * out,
+    const FPTYPE * table, 
+    const FPTYPE * table_info, 
+    const FPTYPE * em, 
+    const int nloc, 
+    const int nnei, 
+    const int last_layer_size)
+{
+  memset(out, 0.0, sizeof(FPTYPE) * nloc * nnei * last_layer_size);
+  const FPTYPE lower   = table_info[0];
+  const FPTYPE upper   = table_info[1];
+  const FPTYPE _max    = table_info[2];
+  const FPTYPE stride0 = table_info[3];
+  const FPTYPE stride1 = table_info[4];
+  // for every atom, execute a small manual gemm ~
+  // FPTYPE * res = new FPTYPE[4 * last_layer_size];
+  #pragma omp parallel for
+  for (int ii = 0; ii < nloc; ii++) {
+    for (int jj = 0; jj < nnei; jj++) { 
+      FPTYPE xx = em[ii * nnei + jj]; 
+      int table_idx = 0;
+      locate_xx(lower, upper, _max, stride0, stride1, xx, table_idx);
+      for (int kk = 0; kk < last_layer_size; kk++) {
+        FPTYPE a0  = table[table_idx * last_layer_size * 6 + 6 * kk + 0]; 
+        FPTYPE a1  = table[table_idx * last_layer_size * 6 + 6 * kk + 1]; 
+        FPTYPE a2  = table[table_idx * last_layer_size * 6 + 6 * kk + 2]; 
+        FPTYPE a3  = table[table_idx * last_layer_size * 6 + 6 * kk + 3];
+        FPTYPE a4  = table[table_idx * last_layer_size * 6 + 6 * kk + 4];
+        FPTYPE a5  = table[table_idx * last_layer_size * 6 + 6 * kk + 5];
+        out[ii * last_layer_size * nnei + jj * last_layer_size + kk] = a0 + (a1 + (a2 + (a3 + (a4 + a5 * xx) * xx) * xx) * xx) * xx;
+      }
+    }
+  }
+}
+
+template<typename FPTYPE>
+void deepmd::tabulate_fusion_se_r_grad_cpu(
+    FPTYPE * dy_dem,
+    const FPTYPE * table, 
+    const FPTYPE * table_info, 
+    const FPTYPE * em, 
+    const FPTYPE * dy, 
+    const int nloc, 
+    const int nnei, 
+    const int last_layer_size) 
+{
+  memset(dy_dem, 0.0, sizeof(FPTYPE) * nloc * nnei);
+  FPTYPE const lower   = table_info[0];
+  FPTYPE const upper   = table_info[1];
+  FPTYPE const _max    = table_info[2];
+  FPTYPE const stride0 = table_info[3];
+  FPTYPE const stride1 = table_info[4];
+  // for every atom, execute a small gemm~
+  // FPTYPE * res = new FPTYPE[4 * last_layer_size];
+  #pragma omp parallel for
+  for (int ii = 0; ii < nloc; ii++) {
+    for (int jj = 0; jj < nnei; jj++) {
+      // construct the dy/dx
+      FPTYPE xx = em[ii * nnei + jj]; 
+      int table_idx = 0;
+      locate_xx(lower, upper, _max, stride0, stride1, xx, table_idx);
+      FPTYPE grad = 0.0;
+      for (int kk = 0; kk < last_layer_size; kk++) {
+        FPTYPE a0  = table[table_idx * last_layer_size * 6 + 6 * kk + 0]; 
+        FPTYPE a1  = table[table_idx * last_layer_size * 6 + 6 * kk + 1]; 
+        FPTYPE a2  = table[table_idx * last_layer_size * 6 + 6 * kk + 2]; 
+        FPTYPE a3  = table[table_idx * last_layer_size * 6 + 6 * kk + 3];
+        FPTYPE a4  = table[table_idx * last_layer_size * 6 + 6 * kk + 4];
+        FPTYPE a5  = table[table_idx * last_layer_size * 6 + 6 * kk + 5];
+        grad += (a1 + (2 * a2 + (3 * a3 + (4 * a4 + 5 * a5 * xx) * xx) * xx) * xx) * dy[ii * last_layer_size * nnei + jj * last_layer_size + kk];
+      }
+      dy_dem[ii * nnei + jj] = grad;
+    }
+  }
+}
+
+template<typename FPTYPE>
+void deepmd::tabulate_fusion_se_r_grad_grad_cpu(
+    FPTYPE * dz_dy,
+    const FPTYPE * table,
+    const FPTYPE * table_info,
+    const FPTYPE * em,
+    const FPTYPE * dz_dy_dem,
+    const int nloc,
+    const int nnei,
+    const int last_layer_size)
+{
+  memset(dz_dy, 0.0, sizeof(FPTYPE) * nloc * nnei * last_layer_size);
+  const FPTYPE lower   = table_info[0];
+  const FPTYPE upper   = table_info[1];
+  const FPTYPE _max    = table_info[2];
+  const FPTYPE stride0 = table_info[3];
+  const FPTYPE stride1 = table_info[4];
+  // for every atom, execute a small manual gemm ~
+  // FPTYPE * res = new FPTYPE[4 * last_layer_size];
+  #pragma omp parallel for
+  for (int ii = 0; ii < nloc; ii++) {
+    for (int jj = 0; jj < nnei; jj++) {
+      FPTYPE xx = em[ii * nnei + jj];
+      int table_idx = 0;
+      locate_xx(lower, upper, _max, stride0, stride1, xx, table_idx);
+      for (int kk = 0; kk < last_layer_size; kk++) {
+        FPTYPE a0  = table[table_idx * last_layer_size * 6 + 6 * kk + 0];
+        FPTYPE a1  = table[table_idx * last_layer_size * 6 + 6 * kk + 1];
+        FPTYPE a2  = table[table_idx * last_layer_size * 6 + 6 * kk + 2];
+        FPTYPE a3  = table[table_idx * last_layer_size * 6 + 6 * kk + 3];
+        FPTYPE a4  = table[table_idx * last_layer_size * 6 + 6 * kk + 4];
+        FPTYPE a5  = table[table_idx * last_layer_size * 6 + 6 * kk + 5];
+        FPTYPE var_grad = a1 + (2 * a2 + (3 * a3 + (4 * a4 + 5 * a5 * xx) * xx) * xx) * xx;
+        dz_dy[ii * last_layer_size * nnei + jj * last_layer_size + kk] = dz_dy_dem[ii * nnei + jj] * var_grad;
+      }
+    }
+  }
+}
+
 template void deepmd::tabulate_fusion_se_a_cpu<float>(float * out, const float * table, const float * table_info, const float * em_x, const float * em, const int nloc, const int nnei, const int last_layer_size);
 template void deepmd::tabulate_fusion_se_a_cpu<double>(double * out, const double * table, const double * table_info, const double * em_x, const double * em, const int nloc, const int nnei, const int last_layer_size);
 template void deepmd::tabulate_fusion_se_a_grad_cpu<float> (float * dy_dem_x, float * dy_dem, const float * table, const float * table_info, const float * em_x, const float * em, const float * dy, const int nloc, const int nnei, const int last_layer_size); 
@@ -481,3 +598,10 @@ template void deepmd::tabulate_fusion_se_t_grad_cpu<float> (float * dy_dem_x, fl
 template void deepmd::tabulate_fusion_se_t_grad_cpu<double> (double * dy_dem_x, double * dy_dem, const double * table, const double * table_info, const double * em_x, const double * em, const double * dy, const int nloc, const int nnei_i, const int nnei_j, const int last_layer_size);
 template void deepmd::tabulate_fusion_se_t_grad_grad_cpu<float>(float * dz_dy, const float * table, const float * table_info, const float * em_x, const float * em, const float * dz_dy_dem_x, const float * dz_dy_dem, const int nloc, const int nnei_i, const int nnei_j, const int last_layer_size);
 template void deepmd::tabulate_fusion_se_t_grad_grad_cpu<double>(double * dz_dy, const double * table, const double * table_info, const double * em_x, const double * em, const double * dz_dy_dem_x, const double * dz_dy_dem, const int nloc, const int nnei_i, const int nnei_j, const int last_layer_size);
+
+template void deepmd::tabulate_fusion_se_r_cpu<float>(float * out, const float * table, const float * table_info, const float * em, const int nloc, const int nnei, const int last_layer_size);
+template void deepmd::tabulate_fusion_se_r_cpu<double>(double * out, const double * table, const double * table_info, const double * em, const int nloc, const int nnei, const int last_layer_size);
+template void deepmd::tabulate_fusion_se_r_grad_cpu<float> (float * dy_dem, const float * table, const float * table_info, const float * em, const float * dy, const int nloc, const int nnei, const int last_layer_size); 
+template void deepmd::tabulate_fusion_se_r_grad_cpu<double> (double * dy_dem, const double * table, const double * table_info, const double * em, const double * dy, const int nloc, const int nnei, const int last_layer_size);
+template void deepmd::tabulate_fusion_se_r_grad_grad_cpu<float>(float * dz_dy, const float * table, const float * table_info, const float * em, const float * dz_dy_dem, const int nloc, const int nnei, const int last_layer_size);
+template void deepmd::tabulate_fusion_se_r_grad_grad_cpu<double>(double * dz_dy, const double * table, const double * table_info, const double * em, const double * dz_dy_dem, const int nloc, const int nnei, const int last_layer_size);

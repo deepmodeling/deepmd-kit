@@ -120,8 +120,6 @@ class DescrptSeA (DescrptSe):
         """
         Constructor
         """
-        if rcut < rcut_smth:
-            raise RuntimeError("rcut_smth (%f) should be no more than rcut (%f)!" % (rcut_smth, rcut))
         self.sel_a = sel
         self.rcut_r = rcut
         self.rcut_r_smth = rcut_smth
@@ -709,7 +707,7 @@ class DescrptSeA (DescrptSe):
                 xyz_scatter, nframes, natoms, type_embedding)
             if self.compress:
                 raise RuntimeError('compression of type embedded descriptor is not supported at the moment')
-        # with (natom x nei_type_i) x out_size
+        # natom x 4 x outputs_size
         if self.compress and (not is_exclude):
           info = [self.lower, self.upper, self.upper * self.table_config[0], self.table_config[1], self.table_config[2], self.table_config[3]]
           if self.type_one_side:
@@ -719,6 +717,7 @@ class DescrptSeA (DescrptSe):
           return op_module.tabulate_fusion_se_a(tf.cast(self.table.data[net], self.filter_precision), info, xyz_scatter, tf.reshape(inputs_i, [natom, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])  
         else:
           if (not is_exclude):
+              # with (natom x nei_type_i) x out_size
               xyz_scatter = embedding_net(
                   xyz_scatter, 
                   self.filter_neuron, 
@@ -744,6 +743,7 @@ class DescrptSeA (DescrptSe):
           # but if sel is zero
           # [588 0] -> [147 0 4] incorrect; the correct one is [588 0 4]
           # So we need to explicitly assign the shape to tf.shape(inputs_i)[0] instead of -1
+          # natom x 4 x outputs_size
           return tf.matmul(tf.reshape(inputs_i, [natom, shape_i[1]//4, 4]), xyz_scatter, transpose_a = True)
 
 
