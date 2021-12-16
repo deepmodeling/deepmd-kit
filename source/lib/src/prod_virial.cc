@@ -44,6 +44,7 @@ prod_virial_a_cpu(
   }
 
   // compute virial of a frame
+  #pragma omp parallel for
   for (int ii = 0; ii < nloc; ++ii){
     int i_idx = ii;
 
@@ -120,6 +121,7 @@ prod_virial_r_cpu(
   }
 
   // compute virial of a frame
+  #pragma omp parallel for
   for (int ii = 0; ii < nloc; ++ii){
     int i_idx = ii;
 

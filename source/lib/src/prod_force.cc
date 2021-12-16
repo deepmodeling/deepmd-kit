@@ -36,6 +36,7 @@ prod_force_a_cpu(
 
   memset(force, 0.0, sizeof(FPTYPE) * nall * 3);
   // compute force of a frame
+  #pragma omp parallel for
   for (int i_idx = 0; i_idx < nloc; ++i_idx) {
     // deriv wrt center atom
     for (int aa = 0; aa < ndescrpt; ++aa) {
@@ -105,6 +106,7 @@ prod_force_r_cpu(
   }
 
   // compute force of a frame
+  #pragma omp parallel for
   for (int ii = 0; ii < nloc; ++ii){
     int i_idx = ii;	
     // deriv wrt center atom
