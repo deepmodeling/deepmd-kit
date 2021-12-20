@@ -120,6 +120,8 @@ class DescrptSeA (DescrptSe):
         """
         Constructor
         """
+        if rcut < rcut_smth:
+             raise RuntimeError("rcut_smth (%f) should be no more than rcut (%f)!" % (rcut_smth, rcut))
         self.sel_a = sel
         self.rcut_r = rcut
         self.rcut_r_smth = rcut_smth
@@ -336,7 +338,7 @@ class DescrptSeA (DescrptSe):
 
         for ii in range(len(self.filter_neuron) - 1):
             if self.filter_neuron[ii] * 2 != self.filter_neuron[ii + 1]:
-                raise RecursionError(
+                raise NotImplementedError(
                     "Model Compression error: descriptor neuron [%s] is not supported by model compression! "
                     "The size of the next layer of the neural network must be twice the size of the previous layer." 
                     % ','.join([str(item) for item in self.filter_neuron])

@@ -86,16 +86,25 @@ class DPTabulate():
             try:
                 self.sel_a = self.graph.get_operation_by_name('ProdEnvMatR').get_attr('sel')
                 self.prod_env_mat_op = self.graph.get_operation_by_name ('ProdEnvMatR')
-            except Exception:
+            except KeyError:
                 self.sel_a = self.graph.get_operation_by_name('DescrptSeR').get_attr('sel')
                 self.prod_env_mat_op = self.graph.get_operation_by_name ('DescrptSeR')
-        else:
+        elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
             try:
                 self.sel_a = self.graph.get_operation_by_name('ProdEnvMatA').get_attr('sel_a')
                 self.prod_env_mat_op = self.graph.get_operation_by_name ('ProdEnvMatA')
-            except Exception:
+            except KeyError:
                 self.sel_a = self.graph.get_operation_by_name('DescrptSeA').get_attr('sel_a')
                 self.prod_env_mat_op = self.graph.get_operation_by_name ('DescrptSeA')
+        elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeT):
+            try:
+                self.sel_a = self.graph.get_operation_by_name('ProdEnvMatA').get_attr('sel_a')
+                self.prod_env_mat_op = self.graph.get_operation_by_name ('ProdEnvMatA')
+            except KeyError:
+                self.sel_a = self.graph.get_operation_by_name('DescrptSeA').get_attr('sel_a')
+                self.prod_env_mat_op = self.graph.get_operation_by_name ('DescrptSeA')
+        else:
+            raise RuntimeError("Unsupported descriptor")
 
         self.davg = get_tensor_by_name_from_graph(self.graph, f'descrpt_attr{self.suffix}/t_avg')
         self.dstd = get_tensor_by_name_from_graph(self.graph, f'descrpt_attr{self.suffix}/t_std')
@@ -195,6 +204,9 @@ class DPTabulate():
                     else:
                         net = "filter_" + str(ii // self.ntypes) + "_net_" + str(ii % self.ntypes)
                     self._build_lower(net, xx, ii, upper, lower, stride0, stride1, extrapolate)
+        else:
+            raise RuntimeError("Unsupported descriptor")
+
         return lower, upper
 
     def _build_lower(self, net, xx, idx, upper, lower, stride0, stride1, extrapolate):
