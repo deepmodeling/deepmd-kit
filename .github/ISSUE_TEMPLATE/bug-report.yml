@@ -1,8 +1,9 @@
 name: Bug report
-about: Create a bug report to help us eliminate issues and improve deepmd-kit.
+description: Create a bug report to help us eliminate issues and improve deepmd-kit.
 title: "[BUG] _Replace With Suitable Title_"
 labels: bug
 assignees: ''
+body:
   - type: textarea
     id: summary
     attributes:
