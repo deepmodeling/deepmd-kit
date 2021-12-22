@@ -31,7 +31,7 @@ body:
     id: other-version
     attributes:
       label: Python Version, CUDA Version, GCC Version, LAMMPS Version, etc
-      description: ""
+      description: "If applicable, specify what platform you are running on."
       placeholder: 
       value:
     validations:
