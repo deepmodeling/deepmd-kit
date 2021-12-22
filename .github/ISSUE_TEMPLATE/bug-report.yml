@@ -21,6 +21,13 @@ body:
     validations:
       required: true
   - type: input
+    id: tf-version
+    attributes:
+      label: TensorFlow Version
+      description: "The version will be printed when running DeePMD-kit."
+    validations:
+      required: true
+  - type: input
     id: installation-way
     attributes:
       label: Installation Way
