@@ -7,7 +7,7 @@ body:
   - type: textarea
     id: summary
     attributes:
-      label: Bug summary
+      label: Summary
       description: "Please provide a brief and concise description of the suggested feature or change"
       placeholder: 
       value:
