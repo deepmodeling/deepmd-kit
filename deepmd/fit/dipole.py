@@ -67,7 +67,6 @@ class DipoleFittingSeA () :
         self.sel_type = sel_type
         if self.sel_type is None:
             self.sel_type = [ii for ii in range(self.ntypes)]
-        self.sel_type = sel_type
         self.seed = seed
         self.uniform_seed = uniform_seed
         self.seed_shift = one_layer_rand_seed_shift()
