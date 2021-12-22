@@ -79,7 +79,7 @@ class AutoBatchSize:
             n_tot = n_batch * natoms
             self.maximum_working_batch_size = max(self.maximum_working_batch_size, n_tot)
             # adjust the next batch size
-            if n_tot >= self.current_batch_size and self.current_batch_size * self.factor < self.minimal_not_working_batch_size:
+            if n_tot + natoms > self.current_batch_size and self.current_batch_size * self.factor < self.minimal_not_working_batch_size:
                 self._adjust_batch_size(self.factor)
             return n_batch, result
 
