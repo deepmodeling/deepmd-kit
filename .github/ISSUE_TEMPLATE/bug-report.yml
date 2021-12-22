@@ -51,4 +51,4 @@ body:
       placeholder: 
       value:
     validations:
-      required: true
+      required: false
