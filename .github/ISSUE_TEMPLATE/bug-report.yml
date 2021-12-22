@@ -27,11 +27,19 @@ body:
       description: "The version will be printed when running DeePMD-kit."
     validations:
       required: true
-  - type: input
+  - type: dropdown
     id: installation-way
     attributes:
-      label: Installation Way
-      description: Offline packages, conda, docker, pip, CMake, etc.
+      label: How did you download the software?
+      options:
+        - Offline packages
+        - conda
+        - docker
+        - pip
+        - Built from source
+        - Others (write below)
+    validations:
+      required: true
   - type: textarea
     id: log
     attributes:
