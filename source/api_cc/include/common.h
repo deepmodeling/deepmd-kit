@@ -6,6 +6,7 @@
 #include "version.h"
 #include "neighbor_list.h"
 #include "AtomMap.h"
+#include "errors.h"
 
 #include "tensorflow/core/platform/env.h"
 #include "tensorflow/core/public/session.h"
@@ -115,8 +116,17 @@ void
 get_env_nthreads(int & num_intra_nthreads,
 		 int & num_inter_nthreads);
 
+/** @struct deepmd::deepmd_exception
+ **/
+
+/**
+* @brief Throw exception if TensorFlow doesn't work.
+**/
 struct
-tf_exception: public std::exception {
+tf_exception: public deepmd::deepmd_exception {
+public:
+	tf_exception(): deepmd::deepmd_exception("TensorFlow Error!") {};
+	tf_exception(const std::string& msg): deepmd::deepmd_exception(std::string("TensorFlow Error: ") + msg) {};
 };
 
 /**

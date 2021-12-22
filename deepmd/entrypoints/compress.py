@@ -8,7 +8,7 @@ from typing import Optional
 from deepmd.common import j_loader
 from deepmd.env import tf, GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.utils.argcheck import normalize
-from deepmd.utils.compat import updata_deepmd_input
+from deepmd.utils.compat import update_deepmd_input
 from deepmd.utils.errors import GraphTooLargeError, GraphWithoutTensorError
 from deepmd.utils.graph import get_tensor_by_name
 
@@ -93,8 +93,6 @@ def compress(
         name = 'train_attr/min_nbor_dist',
         dtype = GLOBAL_ENER_FLOAT_PRECISION)
     jdata["model"]["compress"] = {}
-    jdata["model"]["compress"]["type"] = 'se_e2_a'
-    jdata["model"]["compress"]["compress"] = True
     jdata["model"]["compress"]["model_file"] = input
     jdata["model"]["compress"]["min_nbor_dist"] = t_min_nbor_dist
     jdata["model"]["compress"]["table_config"] = [
@@ -104,6 +102,7 @@ def compress(
         int(frequency),
     ]
     jdata["training"]["save_ckpt"] = "model-compression/model.ckpt"
+    jdata = update_deepmd_input(jdata)
     jdata = normalize(jdata)
 
     # check the descriptor info of the input file
@@ -138,7 +137,15 @@ def compress(
     # stage 2: freeze the model
     log.info("\n\n")
     log.info("stage 2: freeze the model")
-    freeze(checkpoint_folder=checkpoint_folder, output=output, node_names=None)
+    try:
+        freeze(checkpoint_folder=checkpoint_folder, output=output, node_names=None)
+    except GraphTooLargeError as e:
+        raise RuntimeError(
+            "The uniform step size of the tabulation's first table is %f, " 
+            "which is too small. This leads to a very large graph size, "
+            "exceeding protobuf's limitation (2 GB). You should try to "
+            "increase the step size." % step
+        ) from e
 
 def _check_compress_type(model_file):
     try:

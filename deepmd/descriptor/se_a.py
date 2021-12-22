@@ -160,6 +160,7 @@ class DescrptSeA (DescrptSe):
         self.davg = None
         self.compress = False
         self.embedding_net_variables = None
+        self.mixed_prec = None
         self.place_holders = {}
         nei_type = np.array([])
         for ii in range(self.ntypes):
@@ -323,12 +324,27 @@ class DescrptSeA (DescrptSe):
         suffix : str, optional
                 The suffix of the scope
         """
+        # do some checks before the mocel compression process
         assert (
             not self.filter_resnet_dt
         ), "Model compression error: descriptor resnet_dt must be false!"
+        for tt in self.exclude_types:
+            if (tt[0] not in range(self.ntypes)) or (tt[1] not in range(self.ntypes)):
+                raise RuntimeError("exclude types" + str(tt) + " must within the number of atomic types " + str(self.ntypes) + "!")
+        if (self.ntypes * self.ntypes - len(self.exclude_types) == 0):
+            raise RuntimeError("empty embedding-net are not supported in model compression!")
+
+        for ii in range(len(self.filter_neuron) - 1):
+            if self.filter_neuron[ii] * 2 != self.filter_neuron[ii + 1]:
+                raise RecursionError(
+                    "Model Compression error: descriptor neuron [%s] is not supported by model compression! "
+                    "The size of the next layer of the neural network must be twice the size of the previous layer." 
+                    % ','.join([str(item) for item in self.filter_neuron])
+                )
+
         self.compress = True
         self.table = DPTabulate(
-            model_file, self.type_one_side, self.exclude_types, self.compress_activation_fn, suffix=suffix)
+            self, self.filter_neuron, model_file, self.type_one_side, self.exclude_types, self.compress_activation_fn, suffix=suffix)
         self.table_config = [table_extrapolate, table_stride_1, table_stride_2, check_frequency]
         self.lower, self.upper \
             = self.table.build(min_nbor_dist, 
@@ -340,6 +356,18 @@ class DescrptSeA (DescrptSe):
         self.davg = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_avg' % suffix)
         self.dstd = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_std' % suffix)
 
+
+    def enable_mixed_precision(self, mixed_prec : dict = None) -> None:
+        """
+        Reveive the mixed precision setting.
+
+        Parameters
+        ----------
+        mixed_prec
+                The mixed precision setting used in the embedding net
+        """
+        self.mixed_prec = mixed_prec
+        self.filter_precision = get_precision(mixed_prec['output_prec'])
 
 
     def build (self, 
@@ -686,7 +714,7 @@ class DescrptSeA (DescrptSe):
             net = 'filter_-1_net_' + str(type_i)
           else:
             net = 'filter_' + str(type_input) + '_net_' + str(type_i)
-          return op_module.tabulate_fusion(tf.cast(self.table.data[net], self.filter_precision), info, xyz_scatter, tf.reshape(inputs_i, [natom, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])  
+          return op_module.tabulate_fusion_se_a(tf.cast(self.table.data[net], self.filter_precision), info, xyz_scatter, tf.reshape(inputs_i, [natom, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])  
         else:
           if (not is_exclude):
               xyz_scatter = embedding_net(
@@ -701,7 +729,8 @@ class DescrptSeA (DescrptSe):
                   seed = self.seed,
                   trainable = trainable, 
                   uniform_seed = self.uniform_seed,
-                  initial_variables = self.embedding_net_variables)
+                  initial_variables = self.embedding_net_variables,
+                  mixed_prec = self.mixed_prec)
               if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
           else:
             # we can safely return the final xyz_scatter filled with zero directly
@@ -728,6 +757,8 @@ class DescrptSeA (DescrptSe):
             name='linear', 
             reuse=None,
             trainable = True):
+        if self.mixed_prec is not None:
+            inputs = tf.cast(inputs, get_precision(self.mixed_prec['compute_prec']))
         nframes = tf.shape(tf.reshape(inputs, [-1, natoms[0], self.ndescrpt]))[0]
         # natom x (nei x 4)
         shape = inputs.get_shape().as_list()

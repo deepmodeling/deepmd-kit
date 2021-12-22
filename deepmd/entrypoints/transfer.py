@@ -1,7 +1,7 @@
 """Module used for transfering parameters between models."""
 
 from typing import Dict, Optional, Sequence, Tuple
-from deepmd.env import tf
+from deepmd.env import tf, TRANSFER_PATTERN
 import re
 import numpy as np
 import logging
@@ -130,8 +130,9 @@ def transform_graph(raw_graph: tf.Graph, old_graph: tf.Graph) -> tf.Graph:
         if raw_graph_dtype == np.float16:
             if old_graph_dtype == np.float64 or old_graph_dtype == np.float32:
                 if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
-                    tensor = np.frombuffer(old_node.tensor_content, dtype = raw_graph_dtype)
-                    cp_attr.from_array(tensor, tf.float16, shape = tensor_shape)
+                    tensor = np.frombuffer(old_node.tensor_content, dtype = old_graph_dtype)
+                    tensor = tensor.astype(raw_graph_dtype)
+                    cp_attr.from_str(tensor)
                 else:
                     tensor = load_tensor(old_node, old_graph_dtype, raw_graph_dtype)
                     cp_attr.from_array(tensor, tf.float16, [1])
@@ -143,7 +144,8 @@ def transform_graph(raw_graph: tf.Graph, old_graph: tf.Graph) -> tf.Graph:
         elif raw_graph_dtype == np.float64 or raw_graph_dtype == np.float32:
             if old_graph_dtype == np.float64 or old_graph_dtype == np.float32:
                 if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
-                    tensor = np.frombuffer(old_node.tensor_content, dtype = raw_graph_dtype)
+                    tensor = np.frombuffer(old_node.tensor_content, dtype = old_graph_dtype)
+                    tensor = tensor.astype(raw_graph_dtype)
                     cp_attr.from_str(tensor)
                 else:
                     tensor = load_tensor(old_node, old_graph_dtype, raw_graph_dtype)
@@ -225,24 +227,7 @@ def load_transform_node(graph: tf.Graph) -> Dict[str, tf.Tensor]:
     Dict[str, tf.Tensor]
         mapping on graph node names and corresponding tensors
     """
-    transform_node_pattern = re.compile(
-        r"filter_type_\d+/matrix_\d+_\d+|"
-        r"filter_type_\d+/bias_\d+_\d+|"
-        r"filter_type_\d+/idt_\d+_\d+|"
-        r"layer_\d+_type_\d+/matrix|"
-        r"layer_\d+_type_\d+/bias|"
-        r"layer_\d+_type_\d+/idt|"
-        r"final_layer_type_\d+/matrix|"
-        r"descrpt_attr/t_avg|"
-        r"descrpt_attr/t_std|"
-        r"final_layer_type_\d+/bias|"
-        r"fitting_attr/t_fparam_avg|"
-        r"fitting_attr/t_fparam_istd|"
-        r"fitting_attr/t_aparam_avg|"
-        r"fitting_attr/t_aparam_istd|"
-        r"model_attr/t_tab_info|"
-        r"model_attr/t_tab_data|"
-    )
+    transform_node_pattern = re.compile(TRANSFER_PATTERN)
 
     transform_node = {}
     for node in graph.node:
