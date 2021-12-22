@@ -275,6 +275,8 @@ class DPTabulate():
                             bias["layer_" + str(layer)].append(tf.make_ndarray(node))
                         else:
                             bias["layer_" + str(layer)].append(np.array([]))
+            else:
+                raise RuntimeError("Unsupported descriptor")
         return bias
 
     def _get_matrix(self):
@@ -310,6 +312,9 @@ class DPTabulate():
                             matrix["layer_" + str(layer)].append(tf.make_ndarray(node))
                         else:
                             matrix["layer_" + str(layer)].append(np.array([]))
+            else:
+                raise RuntimeError("Unsupported descriptor")
+
         return matrix
 
     # one-by-one executions
@@ -382,6 +387,8 @@ class DPTabulate():
         elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeR):
             lower = np.min(-self.davg[:, 0] / self.dstd[:, 0])
             upper = np.max(((1 / min_nbor_dist) * sw - self.davg[:, 0]) / self.dstd[:, 0])
+        else:
+            raise RuntimeError("Unsupported descriptor")
         log.info('training data with lower boundary: ' + str(lower))
         log.info('training data with upper boundary: ' + str(upper))
         return math.floor(lower), math.ceil(upper)
@@ -411,6 +418,8 @@ class DPTabulate():
             layer_size = len(self.embedding_net_nodes) // ((self.ntypes * self.ntypes - len(self.exclude_types)) * 2)
             if self.type_one_side :
                 layer_size = len(self.embedding_net_nodes) // (self.ntypes * 2)
+        else:
+            raise RuntimeError("Unsupported descriptor")
         return layer_size
 
     def _get_table_size(self):
@@ -425,6 +434,8 @@ class DPTabulate():
             table_size = self.ntypes * self.ntypes
             if self.type_one_side :
                 table_size = self.ntypes
+        else:
+            raise RuntimeError("Unsupported descriptor")
         return table_size
     
     def _get_data_type(self):

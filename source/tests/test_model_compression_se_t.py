@@ -339,6 +339,8 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase) :
         _file_delete("model-compression/model.ckpt.index")
         _file_delete("model-compression/model.ckpt.data-00000-of-00001")
         _file_delete("model-compression")
+        _file_delete("input_v2_compat.json")
+        _file_delete("lcurve.out")
 
     def test_attrs(self):
         self.assertEqual(self.dp_original.get_ntypes(), 2)
