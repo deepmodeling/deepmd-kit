@@ -29,7 +29,7 @@ make -j${NPROC}
 
 #------------------
 cd ${SCRIPT_PATH}/../api_cc/tests
-${BUILD_TMP_DIR}/runUnitTests
+LD_LIBRARY_PATH=${BUILD_TMP_DIR}:$LD_LIBRARY_PATH ${BUILD_TMP_DIR}/runUnitTests
 
 #------------------
 # upload to codecov
