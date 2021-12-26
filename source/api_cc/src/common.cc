@@ -228,6 +228,16 @@ get_env_nthreads(int & num_intra_nthreads,
   }
 }
 
+void
+deepmd::
+load_op_library()
+{
+  tensorflow::Env* env = tensorflow::Env::Default();
+  void* dso_handle;
+  std::string dso_path = env->FormatLibraryFileName("deepmd_op", NULL);
+  deepmd::check_status(env->LoadDynamicLibrary(dso_path.c_str(), &dso_handle));
+}
+
 std::string
 deepmd::
 name_prefix(const std::string & scope)

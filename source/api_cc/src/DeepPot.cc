@@ -185,6 +185,7 @@ init (const std::string & model, const int & gpu_rank, const std::string & file_
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
+  deepmd::load_op_library();
 
   if(file_content.size() == 0)
     check_status (ReadBinaryProto(Env::Default(), model, &graph_def));
