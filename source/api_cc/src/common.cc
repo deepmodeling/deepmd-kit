@@ -234,7 +234,7 @@ load_op_library()
 {
   tensorflow::Env* env = tensorflow::Env::Default();
   void* dso_handle;
-  std::string dso_path = env->FormatLibraryFileName("deepmd_op", NULL);
+  std::string dso_path = env->FormatLibraryFileName("deepmd_op", "");
   deepmd::check_status(env->LoadDynamicLibrary(dso_path.c_str(), &dso_handle));
 }
 
