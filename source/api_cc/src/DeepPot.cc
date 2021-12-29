@@ -916,11 +916,20 @@ compute_relative_std_f (std::vector<VALUETYPE> &std,
 
 
 // Implement the methods for DeepPotMaskModel
+DeepPotMaskModel::~DeepPotMaskModel(){}
+
+DeepPotMaskModel::
+DeepPotMaskModel(const std::string & model, const int & gpu_rank, const std::string & file_content): DeepPot(), inited(false), init_nbor (false)
+{
+  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
+  init(model, gpu_rank, file_content);
+}
 
 void 
 DeepPotMaskModel::
 init(const std::string & model, const int & gpu_rank, const std::string & file_content)
 {
+  std::cout<<"DeepPotMaskModel::init "<<std::endl;
   if (inited){
     std::cerr << "WARNING: deepmd-kit should not be initialized twice, do nothing at the second call of initializer" << std::endl;
     return ;
@@ -978,16 +987,18 @@ compute(ENERGYTYPE &			dener,
 	 std::vector<VALUETYPE> &	dforce_,
 	 const std::vector<VALUETYPE> &	dcoord_,
 	 const std::vector<int> &	datype_,
-	 const std::vector<int> &	dmask_){
+	 const std::vector<int> &	dmask_,
+   const std::vector<VALUETYPE> &	fparam,
+	 const std::vector<VALUETYPE> &	aparam){
     int nall = dcoord_.size() / 3;
     int nloc = nall;
-    //atommap = deepmd::AtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
+    atommap = deepmd::AtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
     assert (nloc == atommap.get_type().size());
-    //validate_fparam_aparam(nloc, fparam, aparam);
+    validate_fparam_aparam(nloc, fparam, aparam);
 
     std::vector<std::pair<std::string, Tensor>> input_tensors;
-    //int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, aparam, atommap);
-    //assert (ret == nloc);
+    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dmask_, cell_size, fparam, aparam, atommap);
+    assert (ret == nloc);
 
     //run_model (dener, dforce_, dvirial, session, input_tensors, atommap);
 }

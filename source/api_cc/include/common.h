@@ -171,5 +171,20 @@ session_input_tensors (std::vector<std::pair<std::string, tensorflow::Tensor>> &
 		       const int			nghost,
 		       const int			ago,
 		       const std::string		scope = "");
+
+
+int
+session_input_tensors(
+  std::vector<std::pair<std::string, tensorflow::Tensor>> & input_tensors,
+  const std::vector<deepmd::VALUETYPE> &	dcoord_,
+  const int &					ntypes,
+  const std::vector<int> &			datype_,
+  const std::vector<int> &	dmask_, 
+  const deepmd::VALUETYPE &			cell_size,
+  const std::vector<deepmd::VALUETYPE> &	fparam_,
+  const std::vector<deepmd::VALUETYPE> &	aparam_,
+  const deepmd::AtomMap<deepmd::VALUETYPE>&	atommap,
+  const std::string				scope="");
+
 }
 

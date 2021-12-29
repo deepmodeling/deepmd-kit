@@ -434,8 +434,8 @@ public:
   /**
   * @brief DPMaskModel constructor without initialization.
   **/
-  DeepPotMaskModel () ;
-  ~DeepPotMaskModel() ;
+  DeepPotMaskModel (): DeepPot() {}; 
+  ~DeepPotMaskModel();
   /**
   * @brief DP constructor with initialization.
   * @param[in] model The name of the frozen model file.
@@ -471,7 +471,9 @@ public:
 	 std::vector<VALUETYPE> &	dforce_,
 	 const std::vector<VALUETYPE> &	dcoord_,
 	 const std::vector<int> &	datype_,
-	 const std::vector<int> &	dmask);
+	 const std::vector<int> &	dmask,
+   const std::vector<VALUETYPE>&	fparam = std::vector<VALUETYPE>(),
+	 const std::vector<VALUETYPE>&	aparam = std::vector<VALUETYPE>());
 private:
   tensorflow::Session* session;
   int num_intra_nthreads, num_inter_nthreads;
