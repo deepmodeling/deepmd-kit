@@ -177,26 +177,26 @@ class DPTabulate():
     def _build_lower(self, net, xx, idx, upper, lower, stride0, stride1, extrapolate):
         vv, dd, d2 = self._make_data(xx, idx)
         self.data[net] = np.zeros([self.nspline, 6 * self.last_layer_size], dtype = self.data_type)
-        # for jj in tqdm(range(self.nspline), desc = 'DEEPMD INFO    |-> deepmd.utils.tabulate\t\t\t' + net + ', tabulating'):
-        for jj in range(self.nspline):
-            for kk in range(self.last_layer_size):
-                if isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
-                    if jj < int((upper - lower) / stride0):
-                        tt = stride0
-                    else:
-                        tt = stride1
-                elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeT):
-                    if jj > int((lower - extrapolate * lower) / stride1) and jj < (int((lower - extrapolate * lower) / stride1) + int((upper - lower) / stride0)):
-                        tt = stride0
-                    else:
-                        tt = stride1
-                hh = vv[jj + 1][kk] - vv[jj][kk]
-                self.data[net][jj][kk * 6 + 0] = vv[jj][kk]
-                self.data[net][jj][kk * 6 + 1] = dd[jj][kk]
-                self.data[net][jj][kk * 6 + 2] = 0.5 * d2[jj][kk]
-                self.data[net][jj][kk * 6 + 3] = (1 / (2 * tt * tt * tt)) * (20 * hh - (8 * dd[jj + 1][kk] + 12 * dd[jj][kk]) * tt - (3 * d2[jj][kk] - d2[jj + 1][kk]) * tt * tt)
-                self.data[net][jj][kk * 6 + 4] = (1 / (2 * tt * tt * tt * tt)) * (-30 * hh + (14 * dd[jj + 1][kk] + 16 * dd[jj][kk]) * tt + (3 * d2[jj][kk] - 2 * d2[jj + 1][kk]) * tt * tt)
-                self.data[net][jj][kk * 6 + 5] = (1 / (2 * tt * tt * tt * tt * tt)) * (12 * hh - 6 * (dd[jj + 1][kk] + dd[jj][kk]) * tt + (d2[jj + 1][kk] - d2[jj][kk]) * tt * tt)
+
+        # tt.shape: [self.nspline, self.last_layer_size]
+        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
+            tt = np.full((self.nspline, self.last_layer_size), stride1)
+            tt[:int((upper - lower) / stride0), :] = stride0
+        elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeT):
+            tt = np.full((self.nspline, self.last_layer_size), stride1)
+            tt[int((lower - extrapolate * lower) / stride1) + 1:(int((lower - extrapolate * lower) / stride1) + int((upper - lower) / stride0)), :] = stride0
+        else:
+            raise RuntimeError("Unsupported descriptor")
+
+        # hh.shape: [self.nspline, self.last_layer_size]
+        hh = vv[1:self.nspline+1, :self.last_layer_size] - vv[:self.nspline, :self.last_layer_size]
+
+        self.data[net][:, :6 * self.last_layer_size:6] = vv[:self.nspline, :self.last_layer_size]
+        self.data[net][:, 1:6 * self.last_layer_size:6] = dd[:self.nspline, :self.last_layer_size]
+        self.data[net][:, 2:6 * self.last_layer_size:6] = 0.5 * d2[:self.nspline, :self.last_layer_size]
+        self.data[net][:, 3:6 * self.last_layer_size:6] = (1 / (2 * tt * tt * tt)) * (20 * hh - (8 * dd[1:self.nspline+1, :self.last_layer_size] + 12 * dd[:self.nspline, :self.last_layer_size]) * tt - (3 * d2[:self.nspline, :self.last_layer_size] - d2[1:self.nspline+1, :self.last_layer_size]) * tt * tt)
+        self.data[net][:, 4:6 * self.last_layer_size:6] = (1 / (2 * tt * tt * tt * tt)) * (-30 * hh + (14 * dd[1:self.nspline+1, :self.last_layer_size] + 16 * dd[:self.nspline, :self.last_layer_size]) * tt + (3 * d2[:self.nspline, :self.last_layer_size] - 2 * d2[1:self.nspline+1, :self.last_layer_size]) * tt * tt)
+        self.data[net][:, 5:6 * self.last_layer_size:6] = (1 / (2 * tt * tt * tt * tt * tt)) * (12 * hh - 6 * (dd[1:self.nspline+1, :self.last_layer_size] + dd[:self.nspline, :self.last_layer_size]) * tt + (d2[1:self.nspline+1, :self.last_layer_size] - d2[:self.nspline, :self.last_layer_size]) * tt * tt)
 
     def _load_sub_graph(self):
         sub_graph_def = tf.GraphDef()

@@ -27,10 +27,10 @@ model_compatable(
   std::vector<std::string> words_mv = split(model_version, ".");
   std::vector<std::string> words_gmv = split(global_model_version, ".");
   if(words_mv.size() != 2){
-    throw std::runtime_error("invalid graph model version string " + model_version);
+    throw deepmd::deepmd_exception("invalid graph model version string " + model_version);
   }
   if(words_gmv.size() != 2){
-    throw std::runtime_error("invalid supported model version string " + global_model_version);
+    throw deepmd::deepmd_exception("invalid supported model version string " + global_model_version);
   }
   int model_version_major = atoi(words_mv[0].c_str());
   int model_version_minor = atoi(words_mv[1].c_str());
@@ -201,7 +201,7 @@ deepmd::
 check_status(const tensorflow::Status& status) {
   if (!status.ok()) {
     std::cout << status.ToString() << std::endl;
-    throw deepmd::tf_exception();
+    throw deepmd::tf_exception(status.ToString());
   }
 }
 

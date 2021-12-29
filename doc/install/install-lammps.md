@@ -58,7 +58,7 @@ make -j4
 make install
 ```
 
-If everything works fine, you will end up with an executable `${deepmd_root}/lmp`.
+If everything works fine, you will end up with an executable `${deepmd_root}/bin/lmp`.
 ```bash
-${deepmd_root}/lmp -h
+${deepmd_root}/bin/lmp -h
 ```

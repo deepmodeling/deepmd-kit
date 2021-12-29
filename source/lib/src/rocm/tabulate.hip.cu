@@ -426,7 +426,7 @@ __global__ void tabulate_fusion_se_t_grad_grad_fifth_order_polynomial(
     const FPTYPE max,
     const FPTYPE stride0,
     const FPTYPE stride1,
-    const int nnei,
+    const int nnei_i,
     const int nnei_j,
     const int last_layer_size)
 {
