@@ -736,7 +736,7 @@ class DescrptSeA (DescrptSe):
               if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
           else:
             # we can safely return the final xyz_scatter filled with zero directly
-            return tf.cast(tf.fill((natom, 4, outputs_size[-1]), 0.), GLOBAL_TF_FLOAT_PRECISION)
+            return tf.cast(tf.fill((natom, 4, outputs_size[-1]), 0.), self.filter_precision)
           # natom x nei_type_i x out_size
           xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1]//4, outputs_size[-1]))  
           # When using tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]) below
@@ -774,8 +774,8 @@ class DescrptSeA (DescrptSe):
             # result: natom x outputs_size x outputs_size_2
             # qmat: natom x outputs_size x 3
             natom = tf.shape(inputs)[0]
-            result = tf.cast(tf.fill((natom, outputs_size_2, outputs_size[-1]), 0.), GLOBAL_TF_FLOAT_PRECISION)
-            qmat = tf.cast(tf.fill((natom, outputs_size[-1], 3), 0.), GLOBAL_TF_FLOAT_PRECISION)
+            result = tf.cast(tf.fill((natom, outputs_size_2, outputs_size[-1]), 0.), self.filter_precision)
+            qmat = tf.cast(tf.fill((natom, outputs_size[-1], 3), 0.), self.filter_precision)
             return result, qmat
             
         with tf.variable_scope(name, reuse=reuse):

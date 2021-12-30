@@ -495,7 +495,7 @@ class DescrptSeR (DescrptSe):
                     xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1], outputs_size[-1]))
                 else:
                     natom = tf.shape(inputs)[0]
-                    xyz_scatter = tf.cast(tf.fill((natom, shape_i[1], outputs_size[-1]), 0.), GLOBAL_TF_FLOAT_PRECISION)
+                    xyz_scatter = tf.cast(tf.fill((natom, shape_i[1], outputs_size[-1]), 0.), self.filter_precision)
                 xyz_scatter_total.append(xyz_scatter)
 
             # natom x nei x outputs_size
