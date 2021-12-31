@@ -491,20 +491,20 @@ def get_np_precision(precision: "_PRECISION") -> np.dtype:
 
 
 def safe_cast_tensor(input: tf.Tensor,
-                from_precision: tf.DType,
-                to_precision: tf.DType) -> tf.Tensor:
+                     from_precision: tf.DType,
+                     to_precision: tf.DType) -> tf.Tensor:
     """Convert a Tensor from a precision to another precision.
 
     If input is not a Tensor or without the specific precision, the method will not
     cast it.
-    
+
     Parameters
     ----------
     input: tf.Tensor
         input tensor
     precision : tf.DType
         Tensor data type that casts to
-    
+
     Returns
     -------
     tf.Tensor
@@ -531,25 +531,25 @@ def cast_precision(func: Callable) -> Callable:
     `GLOBAL_TF_FLOAT_PRECISION` and `precision`, respectively.
     If it does not match (e.g. it is an integer), the decorator
     will do nothing on it.
-    
+
     Parameters
     ----------
     precision : tf.DType
         Tensor data type that casts to
-    
+
     Returns
     -------
     Callable
         a decorator that casts and casts back the input and
         output tensor of a method
-    
+
     Examples
     --------
     >>> class A:
     ...   @property
     ...   def precision(self):
     ...     return tf.float32
-    ... 
+    ...
     ...   @cast_precision
     ...   def f(x: tf.Tensor, y: tf.Tensor) -> tf.Tensor:
     ...     return x ** 2 + y
