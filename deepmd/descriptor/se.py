@@ -106,3 +106,8 @@ class DescrptSe (Descriptor):
             The suffix of the scope
         """
         self.embedding_net_variables = get_embedding_net_variables(model_file, suffix = suffix)
+
+    @property
+    def precision(self) -> tf.DType:
+        """Precision of filter network."""
+        return self.filter_precision
