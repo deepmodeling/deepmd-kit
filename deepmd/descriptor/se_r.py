@@ -504,5 +504,6 @@ class DescrptSeR (DescrptSe):
             # 
             res_rescale = 1./5.
             result = tf.reduce_mean(xyz_scatter, axis = 1) * res_rescale
+            result = tf.cast(result, GLOBAL_TF_FLOAT_PRECISION)
 
         return result

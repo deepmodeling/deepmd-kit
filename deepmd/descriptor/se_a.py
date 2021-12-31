@@ -774,8 +774,8 @@ class DescrptSeA (DescrptSe):
             # result: natom x outputs_size x outputs_size_2
             # qmat: natom x outputs_size x 3
             natom = tf.shape(inputs)[0]
-            result = tf.cast(tf.fill((natom, outputs_size_2, outputs_size[-1]), 0.), self.filter_precision)
-            qmat = tf.cast(tf.fill((natom, outputs_size[-1], 3), 0.), self.filter_precision)
+            result = tf.cast(tf.fill((natom, outputs_size_2, outputs_size[-1]), 0.), GLOBAL_TF_FLOAT_PRECISION)
+            qmat = tf.cast(tf.fill((natom, outputs_size[-1], 3), 0.), GLOBAL_TF_FLOAT_PRECISION)
             return result, qmat
             
         with tf.variable_scope(name, reuse=reuse):
@@ -835,5 +835,7 @@ class DescrptSeA (DescrptSe):
           result = tf.matmul(xyz_scatter_1, xyz_scatter_2, transpose_a = True)
           # natom x (outputs_size x outputs_size_2)
           result = tf.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
+          result = tf.cast(result, GLOBAL_TF_FLOAT_PRECISION)
+          qmat = tf.cast(qmat, GLOBAL_TF_FLOAT_PRECISION)
 
         return result, qmat
