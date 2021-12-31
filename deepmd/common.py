@@ -490,8 +490,8 @@ def get_np_precision(precision: "_PRECISION") -> np.dtype:
 
 
 def cast_tensor(input: tf.Tensor,
-                from_precision: tf.DTypes,
-                to_precision: tf.DTypes) -> tf.Tensor:
+                from_precision: tf.DType,
+                to_precision: tf.DType) -> tf.Tensor:
     """Convert a Tensor from a precision to another precision.
     
     Parameters
