@@ -552,6 +552,7 @@ def cast_precision(func: Callable) -> Callable:
     def wrapper(self, *args, **kwargs):
         # only convert tensors
         returned_tensor = func(
+            self,
             *[cast_tensor(vv, GLOBAL_TF_FLOAT_PRECISION, self.precision) for vv in args],
             **{kk: cast_tensor(vv, GLOBAL_TF_FLOAT_PRECISION, self.precision) for kk, vv in kwargs.items()},
         )
