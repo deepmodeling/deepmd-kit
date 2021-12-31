@@ -3,18 +3,17 @@ import numpy as np
 from typing import Tuple, List
 
 from deepmd.env import tf
-from deepmd.common import ClassArg, add_data_requirement, get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter
+from deepmd.common import add_data_requirement, get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, cast_precision
 from deepmd.utils.argcheck import list_to_doc
 from deepmd.utils.network import one_layer, one_layer_rand_seed_shift
-from deepmd.descriptor import DescrptLocFrame
-from deepmd.descriptor import DescrptSeA
 from deepmd.utils.type_embed import embed_atom_type
 from deepmd.utils.graph import get_fitting_net_variables, load_graph_def, get_tensor_by_name_from_graph
+from deepmd.fit.fitting import Fitting
 
 from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 
-class EnerFitting ():
+class EnerFitting (Fitting):
     r"""Fitting the energy of the system. The force and the virial can also be trained.
 
     The potential energy :math:`E` is a fitting network function of the descriptor :math:`\mathcal{D}`:
@@ -329,7 +328,7 @@ class EnerFitting ():
         return final_layer
             
             
-
+    @cast_precision
     def build (self, 
                inputs : tf.Tensor,
                natoms : tf.Tensor,
@@ -399,7 +398,7 @@ class EnerFitting ():
                                                 trainable = False,
                                                 initializer = tf.constant_initializer(self.aparam_inv_std))
             
-        inputs = tf.cast(tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]]), self.fitting_precision)
+        inputs = tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]])
         if len(self.atom_ener):
             # only for atom_ener
             inputs_zero = tf.zeros_like(inputs, dtype=self.fitting_precision)
@@ -468,7 +467,7 @@ class EnerFitting ():
                 axis=1
             )
             self.dim_descrpt = self.dim_descrpt + type_shape[1]
-            inputs = tf.cast(tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]]), self.fitting_precision)
+            inputs = tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]])
             final_layer = self._build_lower(
                 0, natoms[0], 
                 inputs, fparam, aparam, 
@@ -485,7 +484,7 @@ class EnerFitting ():
             outs = tf.reshape(outs, [-1])
 
         tf.summary.histogram('fitting_net_output', outs)
-        return tf.cast(tf.reshape(outs, [-1]), GLOBAL_TF_FLOAT_PRECISION)        
+        return tf.reshape(outs, [-1])
 
 
     def init_variables(self,

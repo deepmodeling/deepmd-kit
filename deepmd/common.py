@@ -487,3 +487,75 @@ def get_np_precision(precision: "_PRECISION") -> np.dtype:
         return np.float64
     else:
         raise RuntimeError(f"{precision} is not a valid precision")
+
+
+def cast_tensor(input: tf.Tensor,
+                from_precision: tf.DTypes,
+                to_precision: tf.DTypes) -> tf.Tensor:
+    """Convert a Tensor from a precision to another precision.
+    
+    Parameters
+    ----------
+    input: tf.Tensor
+        input tensor
+    precision : tf.DType
+        Tensor data type that casts to
+    
+    Returns
+    -------
+    tf.Tensor
+        casted Tensor
+    
+    Notes
+    -----
+    If input is not a Tensor or without the specific precision, the method will not
+    cast it.
+    """
+    if tf.is_tensor(input) and input.dtype == from_precision:
+        return tf.cast(input, to_precision)
+    return input
+
+
+def cast_precision(func: Callable) -> Callable:
+    """A decorator that casts and casts back the input
+    and output tensor of a method.
+    
+    Parameters
+    ----------
+    precision : tf.DType
+        Tensor data type that casts to
+    
+    Returns
+    -------
+    Callable
+        a decorator that casts and casts back the input and
+        output tensor of a method
+    
+    Notes
+    -----
+    The decorator should only be used in a classmethod where
+    the class has the property `precision`. The decorator will
+    only cast Tensors with global precision.
+    
+    Examples
+    --------
+    >>> class A:
+    ...   @property
+    ...   def precision(self):
+    ...     return tf.float32
+    ... 
+    ...   @cast_precision
+    ...   def f(x: tf.Tensor, y: tf.Tensor) -> tf.Tensor:
+    ...     return x ** 2 + y
+    """
+    def wrapper(self, *args, **kwargs):
+        # only convert tensors
+        returned_tensor = func(
+            *[cast_tensor(vv, GLOBAL_TF_FLOAT_PRECISION, self.precision) for vv in args],
+            **{kk: cast_tensor(vv, GLOBAL_TF_FLOAT_PRECISION, self.precision) for kk, vv in kwargs.items()},
+        )
+        if isinstance(returned_tensor, tuple):
+            return tuple((cast_tensor(vv, self.precision, GLOBAL_TF_FLOAT_PRECISION) for vv in returned_tensor))
+        else:
+            return cast_tensor(returned_tensor, self.precision, GLOBAL_TF_FLOAT_PRECISION)
+    return wrapper

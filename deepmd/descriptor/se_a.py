@@ -3,7 +3,7 @@ import numpy as np
 from typing import Tuple, List, Dict, Any
 
 from deepmd.env import tf
-from deepmd.common import get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter
+from deepmd.common import get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, cast_precision
 from deepmd.utils.argcheck import list_to_doc
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
@@ -558,7 +558,7 @@ class DescrptSeA (DescrptSe):
                                      [ 0, start_index*      self.ndescrpt],
                                      [-1, natoms[2+type_i]* self.ndescrpt] )
                 inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
-                layer, qmat = self._filter(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
+                layer, qmat = self._filter(inputs_i, type_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
                 layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_out()])
                 qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_rot_mat_1() * 3])
                 output.append(layer)
@@ -568,7 +568,7 @@ class DescrptSeA (DescrptSe):
             inputs_i = inputs
             inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
             type_i = -1
-            layer, qmat = self._filter(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn, type_embedding=type_embedding)
+            layer, qmat = self._filter(inputs_i, type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn, type_embedding=type_embedding)
             layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0] * self.get_dim_out()])
             qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[0] * self.get_dim_rot_mat_1() * 3])
             output.append(layer)
@@ -704,7 +704,6 @@ class DescrptSeA (DescrptSe):
         # with (natom x nei_type_i) x 1
         xyz_scatter = tf.reshape(tf.slice(inputs_reshape, [0,0],[-1,1]),[-1,1])
         if type_embedding is not None:
-            type_embedding = tf.cast(type_embedding, self.filter_precision)
             xyz_scatter = self._concat_type_embedding(
                 xyz_scatter, nframes, natoms, type_embedding)
             if self.compress:
@@ -747,6 +746,7 @@ class DescrptSeA (DescrptSe):
           return tf.matmul(tf.reshape(inputs_i, [natom, shape_i[1]//4, 4]), xyz_scatter, transpose_a = True)
 
 
+    @cast_precision
     def _filter(
             self, 
             inputs, 
@@ -759,8 +759,6 @@ class DescrptSeA (DescrptSe):
             name='linear', 
             reuse=None,
             trainable = True):
-        if self.mixed_prec is not None:
-            inputs = tf.cast(inputs, get_precision(self.mixed_prec['compute_prec']))
         nframes = tf.shape(tf.reshape(inputs, [-1, natoms[0], self.ndescrpt]))[0]
         # natom x (nei x 4)
         shape = inputs.get_shape().as_list()
@@ -835,7 +833,5 @@ class DescrptSeA (DescrptSe):
           result = tf.matmul(xyz_scatter_1, xyz_scatter_2, transpose_a = True)
           # natom x (outputs_size x outputs_size_2)
           result = tf.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
-          result = tf.cast(result, GLOBAL_TF_FLOAT_PRECISION)
-          qmat = tf.cast(qmat, GLOBAL_TF_FLOAT_PRECISION)
 
         return result, qmat
