@@ -20,6 +20,7 @@ import numpy as np
 import yaml
 
 from deepmd.env import op_module, tf
+from tensorflow.python.framework import tensor_util
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION, GLOBAL_NP_FLOAT_PRECISION
 from deepmd.utils.sess import run_sess
 from deepmd.utils.errors import GraphWithoutTensorError
@@ -511,7 +512,7 @@ def cast_tensor(input: tf.Tensor,
     If input is not a Tensor or without the specific precision, the method will not
     cast it.
     """
-    if tf.is_tensor(input) and input.dtype == from_precision:
+    if tensor_util.is_tensor(input) and input.dtype == from_precision:
         return tf.cast(input, to_precision)
     return input
 
