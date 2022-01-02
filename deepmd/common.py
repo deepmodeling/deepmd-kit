@@ -20,6 +20,7 @@ import numpy as np
 import yaml
 
 from deepmd.env import op_module, tf
+from tensorflow.python.framework import tensor_util
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION, GLOBAL_NP_FLOAT_PRECISION
 from deepmd.utils.sess import run_sess
 from deepmd.utils.errors import GraphWithoutTensorError
@@ -487,3 +488,81 @@ def get_np_precision(precision: "_PRECISION") -> np.dtype:
         return np.float64
     else:
         raise RuntimeError(f"{precision} is not a valid precision")
+
+
+def safe_cast_tensor(input: tf.Tensor,
+                     from_precision: tf.DType,
+                     to_precision: tf.DType) -> tf.Tensor:
+    """Convert a Tensor from a precision to another precision.
+
+    If input is not a Tensor or without the specific precision, the method will not
+    cast it.
+
+    Parameters
+    ----------
+    input: tf.Tensor
+        input tensor
+    precision : tf.DType
+        Tensor data type that casts to
+
+    Returns
+    -------
+    tf.Tensor
+        casted Tensor
+    """
+    if tensor_util.is_tensor(input) and input.dtype == from_precision:
+        return tf.cast(input, to_precision)
+    return input
+
+
+def cast_precision(func: Callable) -> Callable:
+    """A decorator that casts and casts back the input
+    and output tensor of a method.
+
+    The decorator should be used in a classmethod.
+
+    The decorator will do the following thing:
+    (1) It casts input Tensors from `GLOBAL_TF_FLOAT_PRECISION`
+    to precision defined by property `precision`.
+    (2) It casts output Tensors from `precision` to
+    `GLOBAL_TF_FLOAT_PRECISION`.
+    (3) It checks inputs and outputs and only casts when
+    input or output is a Tensor and its dtype matches
+    `GLOBAL_TF_FLOAT_PRECISION` and `precision`, respectively.
+    If it does not match (e.g. it is an integer), the decorator
+    will do nothing on it.
+
+    Parameters
+    ----------
+    precision : tf.DType
+        Tensor data type that casts to
+
+    Returns
+    -------
+    Callable
+        a decorator that casts and casts back the input and
+        output tensor of a method
+
+    Examples
+    --------
+    >>> class A:
+    ...   @property
+    ...   def precision(self):
+    ...     return tf.float32
+    ...
+    ...   @cast_precision
+    ...   def f(x: tf.Tensor, y: tf.Tensor) -> tf.Tensor:
+    ...     return x ** 2 + y
+    """
+    def wrapper(self, *args, **kwargs):
+        # only convert tensors
+        returned_tensor = func(
+            self,
+            *[safe_cast_tensor(vv, GLOBAL_TF_FLOAT_PRECISION, self.precision) for vv in args],
+            **{kk: safe_cast_tensor(vv, GLOBAL_TF_FLOAT_PRECISION, self.precision) for kk, vv in kwargs.items()},
+        )
+        if isinstance(returned_tensor, tuple):
+            return tuple((safe_cast_tensor(vv, self.precision, GLOBAL_TF_FLOAT_PRECISION) for vv in returned_tensor))
+        else:
+            return safe_cast_tensor(returned_tensor, self.precision, GLOBAL_TF_FLOAT_PRECISION)
+    return wrapper
