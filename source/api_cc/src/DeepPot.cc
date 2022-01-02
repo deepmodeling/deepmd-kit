@@ -61,6 +61,8 @@ run_model (ENERGYTYPE &			dener,
   for (unsigned ii = 0; ii < nall * 3; ++ii){
     dforce[ii] = of(ii);
   }
+  // set dvirial to zero, prevent input vector is not zero (#1123)
+  std::fill(dvirial.begin(), dvirial.end(), 0.);
   for (int ii = 0; ii < nall; ++ii) {
     dvirial[0] += 1.0 * oav(9*ii+0);
     dvirial[1] += 1.0 * oav(9*ii+1);
@@ -136,6 +138,8 @@ static void run_model (ENERGYTYPE   &		dener,
     for (int ii = 0; ii < nall * 9; ++ii) {
         datom_virial[ii] = oav(ii);
     }
+    // set dvirial to zero, prevent input vector is not zero (#1123)
+    std::fill(dvirial.begin(), dvirial.end(), 0.);
     for (int ii = 0; ii < nall; ++ii) {
         dvirial[0] += 1.0 * datom_virial[9*ii+0];
         dvirial[1] += 1.0 * datom_virial[9*ii+1];
