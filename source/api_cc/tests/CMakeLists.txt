@@ -134,3 +134,16 @@ if(NOT GTEST_LIBRARIES)
 else ()
   include_directories(${GTEST_INCLUDE_DIRS})
 endif ()
+
+set_target_properties(
+  runUnitTests
+  PROPERTIES 
+  INSTALL_RPATH "$ORIGIN/../lib"
+)
+set_target_properties(
+  ${apiname}
+  PROPERTIES 
+  INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}"
+)
+install(TARGETS runUnitTests DESTINATION bin/)
+install(TARGETS ${libname} ${apiname} ${opname} DESTINATION lib/)

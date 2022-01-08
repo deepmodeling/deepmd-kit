@@ -29,6 +29,8 @@ _templates
 API_CC
 doc/api_py/
 dp/
+dp_test/
+dp_test_cc/
 build_lammps/
 .idea/
 build_tests/
