@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 3.9)
 project(deepmd_api_test)
-set(CMAKE_LINK_WHAT_YOU_USE TRUE)
 
 if (NOT DEFINED BUILD_CPP_IF) 
   set(BUILD_CPP_IF TRUE)
