@@ -15,7 +15,7 @@ BUILD_TMP_DIR=${SCRIPT_PATH}/../build_lammps
 mkdir -p ${BUILD_TMP_DIR}
 cd ${BUILD_TMP_DIR}
 # download LAMMMPS
-LAMMPS_VERSION=stable_29Sep2021
+LAMMPS_VERSION=stable_29Sep2021_update2
 if [ ! -d "lammps-${LAMMPS_VERSION}" ]
 then
 	curl -L -o lammps.tar.gz https://github.com/lammps/lammps/archive/refs/tags/${LAMMPS_VERSION}.tar.gz
