@@ -2,6 +2,7 @@
 
 import json
 import warnings
+import tensorflow
 from functools import wraps
 from pathlib import Path
 from typing import (
@@ -64,7 +65,11 @@ def gelu(x: tf.Tensor) -> tf.Tensor:
     Original paper
     https://arxiv.org/abs/1606.08415
     """
-    return op_module.gelu(x)
+    try:
+        gelu = tensorflow.nn.gelu
+    except AttributeError:
+        gelu = op_module.gelu
+    return gelu(x)
 
 
 # TODO this is not a good way to do things. This is some global variable to which
