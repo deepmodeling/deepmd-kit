@@ -334,7 +334,7 @@ __global__ void tabulate_fusion_se_t_fifth_order_polynomial(
       FPTYPE tmp = xx;
       if (xx == ago) {
         unloop = true;
-        breakpoint = jj - 1;
+        breakpoint = jj;
       }
       int table_idx = 0;
       locate_xx_se_t(xx, table_idx, lower, upper, -max, max, stride0, stride1);
