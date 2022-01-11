@@ -465,6 +465,142 @@ __global__ void tabulate_fusion_se_t_grad_grad_fifth_order_polynomial(
   dz_dy[block_idx * last_layer_size + thread_idx] = sum;
 }
 
+template <
+    typename FPTYPE,
+    int      MTILE,
+    int      KTILE> 
+__global__ void tabulate_fusion_se_r_fifth_order_polynomial(
+    FPTYPE * out, 
+    const FPTYPE * table,  
+    const FPTYPE * em, 
+    const FPTYPE lower, 
+    const FPTYPE upper, 
+    const FPTYPE max, 
+    const FPTYPE stride0, 
+    const FPTYPE stride1, 
+    const int nnei, 
+    const int last_layer_size) 
+{
+  HIP_DYNAMIC_SHARED( int, _data)
+  const int block_idx = blockIdx.x;   // nloc
+  const int thread_idx = threadIdx.x; // last_layer_size
+  
+  for (int ii = 0; ii < nnei; ii++) {
+    FPTYPE var[6]; 
+    FPTYPE xx = em[block_idx * nnei + ii];
+    int table_idx = 0;
+    locate_xx(xx, table_idx, lower, upper, max, stride0, stride1);
+    var[0] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 0];
+    var[1] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 1];
+    var[2] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 2];
+    var[3] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 3];
+    var[4] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 4];
+    var[5] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 5];
+    out[block_idx * nnei * last_layer_size + ii * last_layer_size + thread_idx] = var[0] + (var[1] + (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) * xx;
+  }
+
+}
+
+template <
+    typename FPTYPE,
+    int      MTILE,
+    int      KTILE> 
+__global__ void tabulate_fusion_se_r_grad_fifth_order_polynomial(
+    FPTYPE * dy_dem,   
+    const FPTYPE * table, 
+    const FPTYPE * em, 
+    const FPTYPE * dy, 
+    const FPTYPE lower, 
+    const FPTYPE upper, 
+    const FPTYPE max, 
+    const FPTYPE stride0, 
+    const FPTYPE stride1, 
+    const int nnei, 
+    const int last_layer_size) 
+{
+  HIP_DYNAMIC_SHARED( int, _data)
+  const int block_idx = blockIdx.x;  // nloc
+  const int thread_idx = threadIdx.x; // KTILE * WARP_SIZE, usally 128 here~
+  int warp_idx = __shfl(threadIdx.x / 64, 0);
+  int lane_idx = threadIdx.x % 64;
+
+  bool unloop = false;
+  FPTYPE * iteratorA = (FPTYPE *)&_data[0]; // dy
+  for (int ii = 0; ii < MTILE; ii++) {
+    for (int jj = thread_idx; jj < last_layer_size; jj += blockDim.x) {
+      iteratorA[ii * last_layer_size + jj] = ;
+    }
+  }
+  __syncthreads();
+
+  for (int ii = 0; ii < nnei; ii += KTILE) {
+    FPTYPE xx = em[block_idx * nnei + ii + warp_idx];
+    
+    int table_idx = 0;
+    locate_xx(xx, table_idx, lower, upper, max, stride0, stride1);
+    FPTYPE Csub = 0.f;
+    for (int jj = lane_idx; jj < last_layer_size; jj += WARP_SIZE) {
+      FPTYPE var[6]; 
+      // load iteratorB through table 
+      var[0]  = table[table_idx * last_layer_size * 6 + 6 * jj + 0]; 
+      var[1]  = table[table_idx * last_layer_size * 6 + 6 * jj + 1]; 
+      var[2]  = table[table_idx * last_layer_size * 6 + 6 * jj + 2]; 
+      var[3]  = table[table_idx * last_layer_size * 6 + 6 * jj + 3];
+      var[4]  = table[table_idx * last_layer_size * 6 + 6 * jj + 4];
+      var[5]  = table[table_idx * last_layer_size * 6 + 6 * jj + 5];
+      Csub +=(var[1] + (2 * var[2] + (3 * var[3] + (4 * var[4] + 5 * var[5] * xx) * xx) * xx) * xx) * dy[block_idx * nnei * last_layer_size + ii * last_layer_size + jj];
+    }
+    //__syncwarp();->syncwrap
+    __syncthreads();
+    warp_reduce(Csub);
+    if (lane_idx == 0) {
+      dy_dem[block_idx * nnei + ii + warp_idx] = Csub;
+    }
+
+  }
+}
+
+template <
+    typename FPTYPE,
+    int      MTILE,
+    int      KTILE>
+__global__ void tabulate_fusion_se_r_grad_grad_fifth_order_polynomial(
+    FPTYPE * dz_dy,
+    const FPTYPE * table,
+    const FPTYPE * em,
+    const FPTYPE * dz_dy_dem,
+    const FPTYPE lower,
+    const FPTYPE upper,
+    const FPTYPE max,
+    const FPTYPE stride0,
+    const FPTYPE stride1,
+    const int nnei,
+    const int last_layer_size)
+{
+  extern __shared__ int _data[];
+  const int block_idx = blockIdx.x;   // nloc
+  const int thread_idx = threadIdx.x; // last_layer_size
+
+  __syncthreads();
+
+  for (int ii = 0; ii < nnei; ii++) {
+    FPTYPE var[6];
+    FPTYPE xx = em[block_idx * nnei + ii];
+    int table_idx = 0;
+    locate_xx(xx, table_idx, lower, upper, max, stride0, stride1);
+    var[0] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 0];
+    var[1] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 1];
+    var[2] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 2];
+    var[3] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 3];
+    var[4] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 4];
+    var[5] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 5];
+    FPTYPE res_grad = var[1] + (2 * var[2] + (3 * var[3] + (4 * var[4] + 5 * var[5] * xx) * xx) * xx) * xx;
+    dz_dy[block_idx * nnei * last_layer_size + ii * last_layer_size + thread_idx] = dz_dy_dem[block_idx * nnei + ii]*res_grad;
+
+  }
+}
+
+
 namespace deepmd {
 template<typename FPTYPE>
 void tabulate_fusion_se_a_gpu_rocm(
@@ -611,6 +747,69 @@ void tabulate_fusion_se_t_grad_grad_gpu_rocm(
   DPErrcheck(hipDeviceSynchronize());
 }
 
+template<typename FPTYPE>
+void tabulate_fusion_se_r_gpu_rocm(
+    FPTYPE * out,
+    const FPTYPE * table, 
+    const FPTYPE * table_info,  
+    const FPTYPE * em, 
+    const int nloc,
+    const int nnei, 
+    const int last_layer_size) 
+{
+  if(nloc <= 0){return;}
+  hipLaunchKernelGGL(HIP_KERNEL_NAME(tabulate_fusion_se_r_fifth_order_polynomial<FPTYPE, MM, KK>), nloc, last_layer_size, sizeof(FPTYPE) * MM * last_layer_size, 0, 
+      out, 
+      table, em, table_info[0], table_info[1], table_info[2], table_info[3], table_info[4], nnei, last_layer_size);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
+}
+
+template<typename FPTYPE>
+void tabulate_fusion_se_r_grad_gpu_rocm(
+    FPTYPE * dy_dem,
+    const FPTYPE * table, 
+    const FPTYPE * table_info, 
+    const FPTYPE * em, 
+    const FPTYPE * dy, 
+    const int nloc, 
+    const int nnei, 
+    const int last_layer_size)
+{
+  if(nloc <= 0) {return;}
+  DPErrcheck(hipMemset(
+      dy_dem,
+      0.0, sizeof(FPTYPE) * nloc * nnei));
+
+  hipLaunchKernelGGL(HIP_KERNEL_NAME(tabulate_fusion_se_r_grad_fifth_order_polynomial<FPTYPE, MM, KK>), nloc, KK * WARP_SIZE, sizeof(FPTYPE) * MM * last_layer_size, 0, 
+      dy_dem,
+      table, em, dy,  table_info[0], table_info[1], table_info[2], table_info[3], table_info[4], nnei, last_layer_size);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
+}
+
+template<typename FPTYPE>
+void tabulate_fusion_se_r_grad_grad_gpu_rocm(
+    FPTYPE * dz_dy,
+    const FPTYPE * table,
+    const FPTYPE * table_info,
+    const FPTYPE * em,
+    const FPTYPE * dz_dy_dem,
+    const int nloc,
+    const int nnei,
+    const int last_layer_size)
+{
+  if(nloc <= 0) {return;}
+  DPErrcheck(hipMemset(
+    dz_dy,
+    0.0, sizeof(FPTYPE) * nloc * nnei * last_layer_size));
+  hipLaunchKernelGGL(HIP_KERNEL_NAME(tabulate_fusion_se_r_grad_grad_fifth_order_polynomial<FPTYPE, MM, KK>), nloc, last_layer_size, sizeof(FPTYPE) * MM * last_layer_size, 0, 
+    dz_dy,
+    table, em, dz_dy_dem, table_info[0], table_info[1], table_info[2], table_info[3], table_info[4], nnei, last_layer_size);
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
+}
+
 template void tabulate_fusion_se_a_gpu_rocm<float>(float * out, const float * table, const float * table_info, const float * em_x, const float * em, const int nloc, const int nnei, const int last_layer_size);
 template void tabulate_fusion_se_a_gpu_rocm<double>(double * out, const double * table, const double * table_info, const double * em_x, const double * em, const int nloc, const int nnei, const int last_layer_size);
 template void tabulate_fusion_se_a_grad_gpu_rocm<float> (float * dy_dem_x, float * dy_dem, const float * table, const float * table_info, const float * em_x, const float * em, const float * dy, const int nloc, const int nnei, const int last_layer_size); 
@@ -624,4 +823,12 @@ template void tabulate_fusion_se_t_grad_gpu_rocm<float> (float * dy_dem_x, float
 template void tabulate_fusion_se_t_grad_gpu_rocm<double> (double * dy_dem_x, double * dy_dem, const double * table, const double * table_info, const double * em_x, const double * em, const double * dy, const int nloc, const int nnei_i, const int nnei_j, const int last_layer_size);
 template void tabulate_fusion_se_t_grad_grad_gpu_rocm<float> (float * dz_dy, const float * table, const float * table_info, const float * em_x, const float * em, const float * dz_dy_dem_x, const float * dz_dy_dem, const int nloc, const int nnei_i, const int nnei_j, const int last_layer_size);
 template void tabulate_fusion_se_t_grad_grad_gpu_rocm<double> (double * dz_dy, const double * table, const double * table_info, const double * em_x, const double * em, const double * dz_dy_dem_x, const double * dz_dy_dem, const int nloc, const int nnei_i, const int nnei_j, const int last_layer_size);
+
+template void tabulate_fusion_se_r_gpu_rocm<float>(float * out, const float * table, const float * table_info, const float * em, const int nloc, const int nnei, const int last_layer_size);
+template void tabulate_fusion_se_r_gpu_rocm<double>(double * out, const double * table, const double * table_info,const double * em, const int nloc, const int nnei, const int last_layer_size);
+template void tabulate_fusion_se_r_grad_gpu_rocm<float> (float * dy_dem, const float * table, const float * table_info, const float * em, const float * dy, const int nloc, const int nnei, const int last_layer_size); 
+template void tabulate_fusion_se_r_grad_gpu_rocm<double> (double * dy_dem, const double * table, const double * table_info, const double * em, const double * dy, const int nloc, const int nnei, const int last_layer_size);
+template void tabulate_fusion_se_r_grad_grad_gpu_rocm<float> (float * dz_dy, const float * table, const float * table_info, const float * em, const float * dz_dy_dem, const int nloc, const int nnei, const int last_layer_size);
+template void tabulate_fusion_se_r_grad_grad_gpu_rocm<double> (double * dz_dy, const double * table, const double * table_info, const double * em, const double * dz_dy_dem, const int nloc, const int nnei, const int last_layer_size);
+
 }
