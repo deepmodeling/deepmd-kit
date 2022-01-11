@@ -18,6 +18,7 @@ from .se import DescrptSe
 @Descriptor.register("se_e3")
 @Descriptor.register("se_at")
 @Descriptor.register("se_a_3be")
+@docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
 class DescrptSeT (DescrptSe):
     """DeepPot-SE constructed from all information (both angular and radial) of atomic
     configurations.
@@ -50,7 +51,6 @@ class DescrptSeT (DescrptSe):
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
     """
-    @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   rcut: float,
                   rcut_smth: float,

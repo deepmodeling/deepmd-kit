@@ -13,6 +13,7 @@ from deepmd.fit.fitting import Fitting
 from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 
+@docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
 class DipoleFittingSeA (Fitting) :
     """
     Fit the atomic dipole with descriptor se_a
@@ -37,7 +38,6 @@ class DipoleFittingSeA (Fitting) :
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
     """
-    @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   descrpt : tf.Tensor,
                   neuron : List[int] = [120,120,120], 

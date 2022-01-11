@@ -19,6 +19,7 @@ from .se import DescrptSe
 
 @Descriptor.register("se_e2_a")
 @Descriptor.register("se_a")
+@docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
 class DescrptSeA (DescrptSe):
     r"""DeepPot-SE constructed from all information (both angular and radial) of
     atomic configurations. The embedding takes the distance between atoms as input.
@@ -100,7 +101,6 @@ class DescrptSeA (DescrptSe):
        systems. In Proceedings of the 32nd International Conference on Neural Information Processing
        Systems (NIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4441–4451.
     """
-    @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   rcut: float,
                   rcut_smth: float,
