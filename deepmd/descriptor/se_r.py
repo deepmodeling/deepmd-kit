@@ -449,7 +449,7 @@ class DescrptSeR (DescrptSe):
                                      [ 0, start_index*      self.ndescrpt],
                                      [-1, natoms[2+type_i]* self.ndescrpt] )
                 inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
-                layer = self._filter_r(self.filter_precision, type_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
+                layer = self._filter_r(inputs_i, type_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
                 layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_out()])
                 output.append(layer)
                 start_index += natoms[2+type_i]
