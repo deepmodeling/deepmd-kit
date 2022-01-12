@@ -66,7 +66,7 @@ def gelu(x: tf.Tensor) -> tf.Tensor:
     https://arxiv.org/abs/1606.08415
     """
     try:
-        gelu = tensorflow.nn.gelu
+        gelu = lambda x: tensorflow.nn.gelu(x, approximate=True)
     except AttributeError:
         gelu = op_module.gelu
     return gelu(x)
