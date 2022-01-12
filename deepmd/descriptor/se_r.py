@@ -450,11 +450,7 @@ class DescrptSeR (DescrptSe):
                                      [-1, natoms[2+type_i]* self.ndescrpt] )
                 inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
                 if self.type_one_side:
-                    # reuse NN parameters for all types, which should be equivalent to lines below `else`
-                    # the number of NN parameters are reduced
-                    # however, we can still apply exclude_types by this way
-                    # Note: compared to lines below `else`, it cannot utilize 100% GPU
-                    # but ops on CPUs have the same performance
+                    # see comments in se_a
                     reuse = tf.AUTO_REUSE
                     filter_name = 'filter_type_all'+suffix
                 else:

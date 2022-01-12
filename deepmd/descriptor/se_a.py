@@ -560,7 +560,7 @@ class DescrptSeA (DescrptSe):
                     # reuse NN parameters for all types, which should be equivalent to lines below `else`
                     # the number of NN parameters are reduced
                     # however, we can still apply exclude_types by this way
-                    # Note: compared to lines below `else`, it cannot utilize 100% GPU
+                    # Note: compared to lines below `else`, it cannot utilize 100% GPU, as TF doesn't allow multi-GPU streaming
                     # but ops on CPUs have the same performance
                     reuse = tf.AUTO_REUSE
                     filter_name = 'filter_type_all'+suffix
