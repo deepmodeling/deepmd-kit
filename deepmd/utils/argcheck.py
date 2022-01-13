@@ -629,6 +629,7 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     doc_time_training = 'Timing durining training.'
     doc_profiling = 'Profiling during training.'
     doc_profiling_file = 'Output file for profiling.'
+    doc_enable_profiler = 'Enable TensorFlow Profiler (available in TensorFlow 2.3) to analyze performance. The log will be saved to `tensorboard_log_dir`.'
     doc_tensorboard = 'Enable tensorboard'
     doc_tensorboard_log_dir = 'The log directory of tensorboard outputs'
     doc_tensorboard_freq = 'The frequency of writing tensorboard events.'
@@ -651,6 +652,7 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
         Argument("time_training", bool, optional=True, default=True, doc=doc_time_training),
         Argument("profiling", bool, optional=True, default=False, doc=doc_profiling),
         Argument("profiling_file", str, optional=True, default='timeline.json', doc=doc_profiling_file),
+        Argument("enable_profiler", bool, optional=True, default=False, doc=doc_enable_profiler),
         Argument("tensorboard", bool, optional=True, default=False, doc=doc_tensorboard),
         Argument("tensorboard_log_dir", str, optional=True, default='log', doc=doc_tensorboard_log_dir),
         Argument("tensorboard_freq", int, optional=True, default=1, doc=doc_tensorboard_freq),

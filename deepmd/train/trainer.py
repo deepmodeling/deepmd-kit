@@ -9,7 +9,7 @@ import google.protobuf.message
 import numpy as np
 from packaging.version import Version
 
-from deepmd.env import tf
+from deepmd.env import tf, tfv2
 from deepmd.env import get_tf_session_config
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
@@ -226,6 +226,7 @@ class DPTrainer (object):
         self.timing_in_training  = tr_data.get('time_training', True)
         self.profiling = self.run_opt.is_chief and tr_data.get('profiling', False)
         self.profiling_file = tr_data.get('profiling_file', 'timeline.json')
+        self.enable_profiler = tr_data.get('enable_profiler', False)
         self.tensorboard = self.run_opt.is_chief and tr_data.get('tensorboard', False)
         self.tensorboard_log_dir = tr_data.get('tensorboard_log_dir', 'log')
         self.tensorboard_freq = tr_data.get('tensorboard_freq', 1)
@@ -480,6 +481,9 @@ class DPTrainer (object):
         else:
             tb_train_writer = None
             tb_valid_writer = None
+        if self.enable_profiler:
+            # https://www.tensorflow.org/guide/profiler
+            tfv2.profiler.experimental.start(self.tensorboard_log_dir)
         
         train_time = 0
 
@@ -550,6 +554,8 @@ class DPTrainer (object):
             chrome_trace = fetched_timeline.generate_chrome_trace_format()
             with open(self.profiling_file, 'w') as f:
                 f.write(chrome_trace)
+        if self.enable_profiler and self.run_opt.is_chief:
+            tfv2.profiler.experimental.stop()
 
     def get_feed_dict(self, batch, is_training):
         feed_dict = {}
