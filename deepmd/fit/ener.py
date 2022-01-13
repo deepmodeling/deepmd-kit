@@ -332,6 +332,7 @@ class EnerFitting (Fitting):
     def build (self, 
                inputs : tf.Tensor,
                natoms : tf.Tensor,
+               nframes : tf.Tensor,
                input_dict : dict = {},
                reuse : bool = None,
                suffix : str = '', 
@@ -352,6 +353,8 @@ class EnerFitting (Fitting):
                 natoms[0]: number of local atoms
                 natoms[1]: total number of atoms held by this processor
                 natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+        nframes : tf.Tensor
+                The number of frames
         reuse
                 The weights in the networks should be reused when get the variable.
         suffix
@@ -398,10 +401,11 @@ class EnerFitting (Fitting):
                                                 trainable = False,
                                                 initializer = tf.constant_initializer(self.aparam_inv_std))
             
-        inputs = tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]])
+        inputs = tf.reshape(inputs, [nframes, self.dim_descrpt * natoms[0]])
         if len(self.atom_ener):
             # only for atom_ener
-            inputs_zero = tf.zeros_like(inputs, dtype=self.fitting_precision)
+            # like inputs, but we don't want to add a dependency on inputs
+            inputs_zero = tf.zeros((nframes, self.dim_descrpt * natoms[0]), dtype=self.fitting_precision)
         
 
         if bias_atom_e is not None :
