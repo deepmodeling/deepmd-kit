@@ -2,6 +2,7 @@
 
 import json
 import warnings
+import tensorflow
 from functools import wraps
 from pathlib import Path
 from typing import (
@@ -64,7 +65,12 @@ def gelu(x: tf.Tensor) -> tf.Tensor:
     Original paper
     https://arxiv.org/abs/1606.08415
     """
-    return op_module.gelu(x)
+    def gelu_wrapper(x):
+        try:
+            return tensorflow.nn.gelu(x, approximate=True)
+        except AttributeError:
+            return op_module.gelu(x)
+    return (lambda x: gelu_wrapper(x))(x)
 
 
 # TODO this is not a good way to do things. This is some global variable to which
