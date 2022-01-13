@@ -81,6 +81,7 @@ class TestModel(tf.test.TestCase):
         type_embedding = type_embedding.reshape([ntypes,-1])
         atom_ener = fitting.build(tf.convert_to_tensor(dout),
                                   t_natoms, 
+                                  tf.constant(numb_test, dtype=tf.int32),
                                   {'type_embedding':tf.convert_to_tensor(type_embedding)},
                                   reuse = False,
                                   suffix = "se_a_type_fit_")
