@@ -65,7 +65,6 @@ class WFCFitting () :
         rot_mat = tf.reshape(rot_mat, [-1, 9 * natoms[0]])
 
         count = 0
-        outs_list = []
         for type_i in range(self.ntypes):
             # cut-out inputs
             inputs_i = tf.slice (inputs,
@@ -97,9 +96,11 @@ class WFCFitting () :
             final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i], self.wfc_numb, 3])
 
             # concat the results
-            outs_list.append(final_layer)
+            if count == 0:
+                outs = final_layer
+            else:
+                outs = tf.concat([outs, final_layer], axis = 1)
             count += 1
-        outs = tf.concat(outs_list, axis = 1)
         
         tf.summary.histogram('fitting_net_output', outs)
         return tf.cast(tf.reshape(outs, [-1]),  GLOBAL_TF_FLOAT_PRECISION)
