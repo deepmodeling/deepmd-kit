@@ -3,17 +3,80 @@ import numpy as np
 from typing import Tuple, List
 
 from deepmd.env import tf
-from deepmd.common import ClassArg, add_data_requirement, get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter
+from deepmd.common import add_data_requirement, get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, cast_precision
 from deepmd.utils.argcheck import list_to_doc
 from deepmd.utils.network import one_layer, one_layer_rand_seed_shift
-from deepmd.descriptor import DescrptLocFrame
-from deepmd.descriptor import DescrptSeA
 from deepmd.utils.type_embed import embed_atom_type
+from deepmd.utils.graph import get_fitting_net_variables, load_graph_def, get_tensor_by_name_from_graph
+from deepmd.fit.fitting import Fitting
 
 from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 
-class EnerFitting ():
+class EnerFitting (Fitting):
+    r"""Fitting the energy of the system. The force and the virial can also be trained.
+
+    The potential energy :math:`E` is a fitting network function of the descriptor :math:`\mathcal{D}`:
+
+    .. math::
+        E(\mathcal{D}) = \mathcal{L}^{(n)} \circ \mathcal{L}^{(n-1)}
+        \circ \cdots \circ \mathcal{L}^{(1)} \circ \mathcal{L}^{(0)}
+
+    The first :math:`n` hidden layers :math:`\mathcal{L}^{(0)}, \cdots, \mathcal{L}^{(n-1)}` are given by
+
+    .. math::
+        \mathbf{y}=\mathcal{L}(\mathbf{x};\mathbf{w},\mathbf{b})=
+            \boldsymbol{\phi}(\mathbf{x}^T\mathbf{w}+\mathbf{b})
+
+    where :math:`\mathbf{x} \in \mathbb{R}^{N_1}`$` is the input vector and :math:`\mathbf{y} \in \mathbb{R}^{N_2}`
+    is the output vector. :math:`\mathbf{w} \in \mathbb{R}^{N_1 \times N_2}` and
+    :math:`\mathbf{b} \in \mathbb{R}^{N_2}`$` are weights and biases, respectively,
+    both of which are trainable if `trainable[i]` is `True`. :math:`\boldsymbol{\phi}`
+    is the activation function.
+
+    The output layer :math:`\mathcal{L}^{(n)}` is given by
+
+    .. math::
+        \mathbf{y}=\mathcal{L}^{(n)}(\mathbf{x};\mathbf{w},\mathbf{b})=
+            \mathbf{x}^T\mathbf{w}+\mathbf{b}
+
+    where :math:`\mathbf{x} \in \mathbb{R}^{N_{n-1}}`$` is the input vector and :math:`\mathbf{y} \in \mathbb{R}`
+    is the output scalar. :math:`\mathbf{w} \in \mathbb{R}^{N_{n-1}}` and
+    :math:`\mathbf{b} \in \mathbb{R}`$` are weights and bias, respectively,
+    both of which are trainable if `trainable[n]` is `True`.
+
+    Parameters
+    ----------
+    descrpt
+            The descrptor :math:`\mathcal{D}`
+    neuron
+            Number of neurons :math:`N` in each hidden layer of the fitting net
+    resnet_dt
+            Time-step `dt` in the resnet construction:
+            :math:`y = x + dt * \phi (Wx + b)`
+    numb_fparam
+            Number of frame parameter
+    numb_aparam
+            Number of atomic parameter
+    rcond
+            The condition number for the regression of atomic energy.
+    tot_ener_zero
+            Force the total energy to zero. Useful for the charge fitting.
+    trainable
+            If the weights of fitting net are trainable. 
+            Suppose that we have :math:`N_l` hidden layers in the fitting net, 
+            this list is of length :math:`N_l + 1`, specifying if the hidden layers and the output layer are trainable.
+    seed
+            Random seed for initializing the network parameters.
+    atom_ener
+            Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
+    activation_function
+            The activation function :math:`\boldsymbol{\phi}` in the embedding net. Supported options are {0}
+    precision
+            The precision of the embedding net parameters. Supported options are {1}                
+    uniform_seed
+            Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
+    """
     @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   descrpt : tf.Tensor,
@@ -32,38 +95,6 @@ class EnerFitting ():
     ) -> None:
         """
         Constructor
-
-        Parameters
-        ----------
-        descrpt
-                The descrptor
-        neuron
-                Number of neurons in each hidden layer of the fitting net
-        resnet_dt
-                Time-step `dt` in the resnet construction:
-                y = x + dt * \phi (Wx + b)
-        numb_fparam
-                Number of frame parameter
-        numb_aparam
-                Number of atomic parameter
-        rcond
-                The condition number for the regression of atomic energy.
-        tot_ener_zero
-                Force the total energy to zero. Useful for the charge fitting.
-        trainable
-                If the weights of fitting net are trainable. 
-                Suppose that we have N_l hidden layers in the fitting net, 
-                this list is of length N_l + 1, specifying if the hidden layers and the output layer are trainable.
-        seed
-                Random seed for initializing the network parameters.
-        atom_ener
-                Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
-        activation_function
-                The activation function in the embedding net. Supported options are {0}
-        precision
-                The precision of the embedding net parameters. Supported options are {1}                
-        uniform_seed
-                Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
         """
         # model param
         self.ntypes = descrpt.get_ntypes()
@@ -100,7 +131,7 @@ class EnerFitting ():
         self.atom_ener = []
         for at, ae in enumerate(atom_ener):
             if ae is not None:
-                self.atom_ener.append(tf.constant(ae, GLOBAL_TF_FLOAT_PRECISION, name = "atom_%d_ener" % at))
+                self.atom_ener.append(tf.constant(ae, self.fitting_precision, name = "atom_%d_ener" % at))
             else:
                 self.atom_ener.append(None)
         self.useBN = False
@@ -116,6 +147,9 @@ class EnerFitting ():
             self.aparam_avg = None
             self.aparam_std = None
             self.aparam_inv_std = None
+
+        self.fitting_net_variables = None
+        self.mixed_prec = None
 
     def get_numb_fparam(self) -> int:
         """
@@ -173,7 +207,8 @@ class EnerFitting ():
         """
         Compute the input statistics
 
-        Parameters:
+        Parameters
+        ----------
         all_stat
                 if numb_fparam > 0 must have all_stat['fparam']
                 if numb_aparam > 0 must have all_stat['aparam']
@@ -257,7 +292,9 @@ class EnerFitting ():
                     activation_fn = self.fitting_activation_fn,
                     precision = self.fitting_precision,
                     trainable = self.trainable[ii],
-                    uniform_seed = self.uniform_seed)
+                    uniform_seed = self.uniform_seed,
+                    initial_variables = self.fitting_net_variables,
+                    mixed_prec = self.mixed_prec)
             else :
                 layer = one_layer(
                     layer,
@@ -268,7 +305,9 @@ class EnerFitting ():
                     activation_fn = self.fitting_activation_fn,
                     precision = self.fitting_precision,
                     trainable = self.trainable[ii],
-                    uniform_seed = self.uniform_seed)
+                    uniform_seed = self.uniform_seed,
+                    initial_variables = self.fitting_net_variables,
+                    mixed_prec = self.mixed_prec)
             if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
         final_layer = one_layer(
             layer, 
@@ -280,13 +319,16 @@ class EnerFitting ():
             seed = self.seed, 
             precision = self.fitting_precision, 
             trainable = self.trainable[-1],
-            uniform_seed = self.uniform_seed)
+            uniform_seed = self.uniform_seed,
+            initial_variables = self.fitting_net_variables,
+            mixed_prec = self.mixed_prec,
+            final_layer = True)
         if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
 
         return final_layer
             
             
-
+    @cast_precision
     def build (self, 
                inputs : tf.Tensor,
                natoms : tf.Tensor,
@@ -315,8 +357,8 @@ class EnerFitting ():
         suffix
                 Name suffix to identify this descriptor
 
-        Return
-        ------
+        Returns
+        -------
         ener
                 The system energy
         """
@@ -356,10 +398,10 @@ class EnerFitting ():
                                                 trainable = False,
                                                 initializer = tf.constant_initializer(self.aparam_inv_std))
             
-        inputs = tf.cast(tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]]), self.fitting_precision)
+        inputs = tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]])
         if len(self.atom_ener):
             # only for atom_ener
-            inputs_zero = tf.zeros_like(inputs, dtype=GLOBAL_TF_FLOAT_PRECISION)
+            inputs_zero = tf.zeros_like(inputs, dtype=self.fitting_precision)
         
 
         if bias_atom_e is not None :
@@ -425,7 +467,7 @@ class EnerFitting ():
                 axis=1
             )
             self.dim_descrpt = self.dim_descrpt + type_shape[1]
-            inputs = tf.cast(tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]]), self.fitting_precision)
+            inputs = tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]])
             final_layer = self._build_lower(
                 0, natoms[0], 
                 inputs, fparam, aparam, 
@@ -442,6 +484,55 @@ class EnerFitting ():
             outs = tf.reshape(outs, [-1])
 
         tf.summary.histogram('fitting_net_output', outs)
-        return tf.cast(tf.reshape(outs, [-1]), GLOBAL_TF_FLOAT_PRECISION)        
+        return tf.reshape(outs, [-1])
 
 
+    def init_variables(self,
+                       model_file: str
+    ) -> None:
+        """
+        Init the fitting net variables with the given frozen model
+
+        Parameters
+        ----------
+        model_file : str
+            The input frozen model file
+        """
+        self.fitting_net_variables = get_fitting_net_variables(model_file)
+
+
+    def enable_compression(self,
+                           model_file: str,
+                           suffix: str = ""
+    ) -> None:
+        """
+        Set the fitting net attributes from the frozen model_file when fparam or aparam is not zero
+
+        Parameters
+        ----------
+        model_file : str
+            The input frozen model file
+        suffix : str, optional
+                The suffix of the scope
+        """
+        if self.numb_fparam > 0 or self.numb_aparam > 0:
+            graph, _ = load_graph_def(model_file)
+        if self.numb_fparam > 0:
+            self.fparam_avg = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_fparam_avg' % suffix)
+            self.fparam_inv_std = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_fparam_istd' % suffix)
+        if self.numb_aparam > 0:
+            self.aparam_avg = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_aparam_avg' % suffix)
+            self.aparam_inv_std = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_aparam_istd' % suffix)
+ 
+
+    def enable_mixed_precision(self, mixed_prec: dict = None) -> None:
+        """
+        Reveive the mixed precision setting.
+
+        Parameters
+        ----------
+        mixed_prec
+                The mixed precision setting used in the embedding net
+        """
+        self.mixed_prec = mixed_prec
+        self.fitting_precision = get_precision(mixed_prec['output_prec'])

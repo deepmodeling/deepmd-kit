@@ -13,7 +13,10 @@ from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 
 class WFCFitting () :
     """
-    Fitting Wannier function centers (WFCs) with local frame descriptor. Not supported anymore. 
+    Fitting Wannier function centers (WFCs) with local frame descriptor.
+
+    .. deprecated:: 2.0.0
+        This class is not supported any more.
     """
     def __init__ (self, jdata, descrpt):
         if not isinstance(descrpt, DescrptLocFrame) :

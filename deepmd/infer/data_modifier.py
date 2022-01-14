@@ -16,6 +16,21 @@ from deepmd.utils.sess import run_sess
 
 
 class DipoleChargeModifier(DeepDipole):
+    """
+    
+    Parameters
+    ----------
+    model_name
+            The model file for the DeepDipole model
+    model_charge_map
+            Gives the amount of charge for the wfcc
+    sys_charge_map
+            Gives the amount of charge for the real atoms
+    ewald_h
+            Grid spacing of the reciprocal part of Ewald sum. Unit: A
+    ewald_beta
+            Splitting parameter of the Ewald sum. Unit: A^{-1}
+    """
     def __init__(self, 
                  model_name : str, 
                  model_charge_map : List[float],
@@ -25,19 +40,6 @@ class DipoleChargeModifier(DeepDipole):
     ) -> None:
         """
         Constructor 
-
-        Parameters
-        ----------
-        model_name
-                The model file for the DeepDipole model
-        model_charge_map
-                Gives the amount of charge for the wfcc
-        sys_charge_map
-                Gives the amount of charge for the real atoms
-        ewald_h
-                Grid spacing of the reciprocal part of Ewald sum. Unit: A
-        ewald_beta
-                Splitting parameter of the Ewald sum. Unit: A^{-1}
         """
         # the dipole model is loaded with prefix 'dipole_charge'
         self.modifier_prefix = 'dipole_charge'
@@ -208,11 +210,11 @@ class DipoleChargeModifier(DeepDipole):
 
 
     def eval(self, 
-             coord : np.array, 
-             box : np.array, 
-             atype : np.array, 
+             coord : np.ndarray, 
+             box : np.ndarray, 
+             atype : np.ndarray, 
              eval_fv : bool = True
-    ) -> Tuple[np.array, np.array, np.array]:
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Evaluate the modification
         
@@ -356,7 +358,16 @@ class DipoleChargeModifier(DeepDipole):
         ref_coord = coord3[:,sel_idx_map,:]
         ref_coord = np.reshape(ref_coord, [nframes, nsel * 3])
         
-        dipole = DeepDipole.eval(self, coord, box, atype)
+        batch_size = 8
+        all_dipole = []
+        for ii in range(0,nframes,batch_size):
+            dipole = DeepDipole.eval(self,
+                                     coord[ii:ii+batch_size],
+                                     box[ii:ii+batch_size],
+                                     atype)
+            all_dipole.append(dipole)
+        dipole = np.concatenate(all_dipole, axis = 0)
+        assert(dipole.shape[0] == nframes)
         dipole = np.reshape(dipole, [nframes, nsel * 3])
         
         wfcc_coord = ref_coord + dipole

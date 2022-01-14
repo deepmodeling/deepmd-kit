@@ -11,10 +11,10 @@ class TensorLoss () :
     Loss function for tensorial properties.
     """
     def __init__ (self, jdata, **kwarg) :
-        try:
-            model = kwarg['model']
+        model = kwarg.get('model', None)
+        if model is not None:
             self.type_sel = model.get_sel_type()
-        except :
+        else:
             self.type_sel = None
         self.tensor_name = kwarg['tensor_name']
         self.tensor_size = kwarg['tensor_size']

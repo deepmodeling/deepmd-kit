@@ -8,7 +8,6 @@ from pathlib import Path
 from sysconfig import get_path
 
 from packaging.specifiers import SpecifierSet
-from pkg_resources import Distribution
 from skbuild import setup
 from skbuild.cmaker import get_cmake_version
 from skbuild.exceptions import SKBuildError
@@ -21,9 +20,14 @@ setup_requires = ["setuptools_scm", "scikit-build"]
 readme_file = Path(__file__).parent / "README.md"
 readme = readme_file.read_text()
 
-tf_version = os.environ.get("TENSORFLOW_VERSION", "2.3")
+tf_version = os.environ.get("TENSORFLOW_VERSION", "")
 
-if tf_version in SpecifierSet("<1.15") or tf_version in SpecifierSet(">=2.0,<2.1"):
+if tf_version == "":
+    extras_require = {
+        "cpu": ["tensorflow-cpu"],
+        "gpu": ["tensorflow"],
+    }
+elif tf_version in SpecifierSet("<1.15") or tf_version in SpecifierSet(">=2.0,<2.1"):
     extras_require = {
         "cpu": [f"tensorflow=={tf_version}"],
         "gpu": [f"tensorflow-gpu=={tf_version}"],
@@ -67,11 +71,9 @@ try:
     # TypeError if submodule_search_locations are None
     # IndexError if submodule_search_locations is an empty list
 except (AttributeError, TypeError, IndexError):
-    setup_requires.append(f"tensorflow=={tf_version}")
-    dist = Distribution(
-        project_name="tensorflow", version=tf_version, platform=get_platform()
-    ).egg_name()
-    tf_install_dir = Path(__file__).parent.resolve().joinpath(".egg", dist, "tensorflow").resolve()
+    setup_requires.extend(extras_require['cpu'])
+    # setuptools will re-find tensorflow after installing setup_requires
+    tf_install_dir = None
 
 # add cmake as a build requirement if cmake>3.7 is not installed
 try:
@@ -125,7 +127,7 @@ setup(
     cmake_minimum_required_version="3.0",
     extras_require={
         "test": ["dpdata>=0.1.9", "ase", "pytest", "pytest-cov", "pytest-sugar"],
-        "docs": ["sphinx<4.1.0", "recommonmark", "sphinx_rtd_theme", "sphinx_markdown_tables", "myst-parser", "breathe", "exhale"],
+        "docs": ["sphinx>=3.1.1", "recommonmark", "sphinx_rtd_theme>=1.0.0rc1", "sphinx_markdown_tables", "myst-parser", "breathe", "exhale", "numpydoc", "ase"],
         **extras_require,
     },
     entry_points={"console_scripts": ["dp = deepmd.entrypoints.main:main"]},

@@ -1,17 +1,19 @@
 """Compress a model, which including tabulating the embedding-net."""
 
+import os
 import json
 import logging
 from typing import Optional
 
-from deepmd.env import tf
-from deepmd.common import j_loader, get_tensor_by_name, GLOBAL_TF_FLOAT_PRECISION
+from deepmd.common import j_loader
+from deepmd.env import tf, GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.utils.argcheck import normalize
-from deepmd.utils.compat import updata_deepmd_input
+from deepmd.utils.compat import update_deepmd_input
 from deepmd.utils.errors import GraphTooLargeError, GraphWithoutTensorError
+from deepmd.utils.graph import get_tensor_by_name
 
 from .freeze import freeze
-from .train import train
+from .train import train, get_rcut, get_min_nbor_dist
 from .transfer import transfer
 
 __all__ = ["compress"]
@@ -27,6 +29,7 @@ def compress(
     step: float,
     frequency: str,
     checkpoint_folder: str,
+    training_script: str,
     mpi_log: str,
     log_path: Optional[str],
     log_level: int,
@@ -54,6 +57,8 @@ def compress(
         frequency of tabulation overflow check
     checkpoint_folder : str
         trining checkpoint folder for freezing
+    training_script : str
+        training script of the input frozen model
     mpi_log : str
         mpi logging mode for training
     log_path : Optional[str]
@@ -64,19 +69,30 @@ def compress(
     try:
         t_jdata = get_tensor_by_name(input, 'train_attr/training_script')
         t_min_nbor_dist = get_tensor_by_name(input, 'train_attr/min_nbor_dist')
+        jdata = json.loads(t_jdata)
     except GraphWithoutTensorError as e:
-        raise RuntimeError(
-            "The input frozen model: %s has no training script or min_nbor_dist information,"
-            "which is not supported by the model compression program."
-            "Please consider using the dp convert-from interface to upgrade the model" % input
-        ) from e
+        if training_script == None:
+            raise RuntimeError(
+                "The input frozen model: %s has no training script or min_nbor_dist information, "
+                "which is not supported by the model compression interface. "
+                "Please consider using the --training-script command within the model compression interface to provide the training script of the input frozen model. "
+                "Note that the input training script must contain the correct path to the training data." % input
+            ) from e
+        elif not os.path.exists(training_script):
+            raise RuntimeError(
+                "The input training script %s (%s) does not exist! Please check the path of the training script. " % (input, os.path.abspath(input))
+            ) from e
+        else:
+            log.info("stage 0: compute the min_nbor_dist")
+            jdata = j_loader(training_script)
+            t_min_nbor_dist = get_min_nbor_dist(jdata, get_rcut(jdata))
+
+    _check_compress_type(input)
+
     tf.constant(t_min_nbor_dist,
         name = 'train_attr/min_nbor_dist',
-        dtype = GLOBAL_TF_FLOAT_PRECISION)
-    jdata = json.loads(t_jdata)
+        dtype = GLOBAL_ENER_FLOAT_PRECISION)
     jdata["model"]["compress"] = {}
-    jdata["model"]["compress"]["type"] = 'se_e2_a'
-    jdata["model"]["compress"]["compress"] = True
     jdata["model"]["compress"]["model_file"] = input
     jdata["model"]["compress"]["min_nbor_dist"] = t_min_nbor_dist
     jdata["model"]["compress"]["table_config"] = [
@@ -85,15 +101,12 @@ def compress(
         10 * step,
         int(frequency),
     ]
+    jdata["training"]["save_ckpt"] = "model-compression/model.ckpt"
+    jdata = update_deepmd_input(jdata)
     jdata = normalize(jdata)
 
     # check the descriptor info of the input file
-    assert (
-        jdata["model"]["descriptor"]["type"] == "se_a" or jdata["model"]["descriptor"]["type"] == "se_e2_a"
-    ), "Model compression error: descriptor type must be se_a or se_e2_a!"
-    assert (
-        jdata["model"]["descriptor"]["resnet_dt"] is False
-    ), "Model compression error: descriptor resnet_dt must be false!"
+    # move to the specific Descriptor class
 
     # stage 1: training or refining the model with tabulation
     log.info("\n\n")
@@ -106,6 +119,7 @@ def compress(
             INPUT=control_file,
             init_model=None,
             restart=None,
+            init_frz_model=None,
             output=control_file,
             mpi_log=mpi_log,
             log_level=log_level,
@@ -123,9 +137,22 @@ def compress(
     # stage 2: freeze the model
     log.info("\n\n")
     log.info("stage 2: freeze the model")
-    freeze(checkpoint_folder=checkpoint_folder, output=output, node_names=None)
+    try:
+        freeze(checkpoint_folder=checkpoint_folder, output=output, node_names=None)
+    except GraphTooLargeError as e:
+        raise RuntimeError(
+            "The uniform step size of the tabulation's first table is %f, " 
+            "which is too small. This leads to a very large graph size, "
+            "exceeding protobuf's limitation (2 GB). You should try to "
+            "increase the step size." % step
+        ) from e
 
-    # stage 3: transfer the model
-    log.info("\n\n")
-    log.info("stage 3: transfer the model")
-    transfer(old_model=input, raw_model=output, output=output)
+def _check_compress_type(model_file):
+    try:
+        t_model_type = bytes.decode(get_tensor_by_name(model_file, 'model_type'))
+    except GraphWithoutTensorError as e:
+        # Compatible with the upgraded model, which has no 'model_type' info
+        t_model_type = None
+    
+    if t_model_type == "compressed_model":
+        raise RuntimeError("The input frozen model %s has already been compressed! Please do not compress the model repeatedly. " % model_file)

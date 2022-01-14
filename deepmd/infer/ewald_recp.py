@@ -45,10 +45,10 @@ class EwaldRecp () :
         self.sess = tf.Session(graph=graph, config=default_tf_session_config)
 
     def eval(self, 
-             coord : np.array, 
-             charge : np.array, 
-             box : np.array
-    ) -> Tuple[np.array, np.array, np.array] :
+             coord : np.ndarray, 
+             charge : np.ndarray, 
+             box : np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray] :
         """
         Evaluate 
         

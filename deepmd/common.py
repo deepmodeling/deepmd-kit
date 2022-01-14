@@ -2,6 +2,7 @@
 
 import json
 import warnings
+import tensorflow
 from functools import wraps
 from pathlib import Path
 from typing import (
@@ -20,9 +21,11 @@ import numpy as np
 import yaml
 
 from deepmd.env import op_module, tf
+from tensorflow.python.framework import tensor_util
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION, GLOBAL_NP_FLOAT_PRECISION
 from deepmd.utils.sess import run_sess
 from deepmd.utils.errors import GraphWithoutTensorError
+from deepmd.utils.path import DPPath
 
 if TYPE_CHECKING:
     _DICT_VAL = TypeVar("_DICT_VAL")
@@ -62,7 +65,12 @@ def gelu(x: tf.Tensor) -> tf.Tensor:
     Original paper
     https://arxiv.org/abs/1606.08415
     """
-    return op_module.gelu(x)
+    def gelu_wrapper(x):
+        try:
+            return tensorflow.nn.gelu(x, approximate=True)
+        except AttributeError:
+            return op_module.gelu(x)
+    return (lambda x: gelu_wrapper(x))(x)
 
 
 # TODO this is not a good way to do things. This is some global variable to which
@@ -429,9 +437,10 @@ def expand_sys_str(root_dir: Union[str, Path]) -> List[str]:
     List[str]
         list of string pointing to system directories
     """
-    matches = [str(d) for d in Path(root_dir).rglob("*") if (d / "type.raw").is_file()]
-    if (Path(root_dir) / "type.raw").is_file():
-        matches += [root_dir]
+    root_dir = DPPath(root_dir)
+    matches = [str(d) for d in root_dir.rglob("*") if (d / "type.raw").is_file()]
+    if (root_dir / "type.raw").is_file():
+        matches.append(str(root_dir))
     return matches
 
 
@@ -487,36 +496,79 @@ def get_np_precision(precision: "_PRECISION") -> np.dtype:
         raise RuntimeError(f"{precision} is not a valid precision")
 
 
-def get_tensor_by_name(model_file: str,
-                       tensor_name: str) -> tf.Tensor:
-    """Load tensor value from the frozen model(model_file)
+def safe_cast_tensor(input: tf.Tensor,
+                     from_precision: tf.DType,
+                     to_precision: tf.DType) -> tf.Tensor:
+    """Convert a Tensor from a precision to another precision.
+
+    If input is not a Tensor or without the specific precision, the method will not
+    cast it.
 
     Parameters
     ----------
-    model_file : str
-        The input frozen model.
-    tensor : tensor_name
-        Indicates which tensor which will be loaded from the frozen model.
+    input: tf.Tensor
+        input tensor
+    precision : tf.DType
+        Tensor data type that casts to
 
     Returns
     -------
     tf.Tensor
-        The tensor which was loaded from the frozen model.
-
-    Raises
-    ------
-    GraphWithoutTensorError
-        Whether the tensor_name is within the frozen model.
+        casted Tensor
     """
-    graph_def = tf.GraphDef()
-    with open(model_file, "rb") as f:
-        graph_def.ParseFromString(f.read())
-    with tf.Graph().as_default() as graph:
-        tf.import_graph_def(graph_def, name="")
-        try:
-            tensor = graph.get_tensor_by_name(tensor_name + ":0")
-        except KeyError as e:
-            raise GraphWithoutTensorError() from e
-        with tf.Session(graph=graph) as sess:
-            tensor = run_sess(sess, tensor)
-    return tensor
+    if tensor_util.is_tensor(input) and input.dtype == from_precision:
+        return tf.cast(input, to_precision)
+    return input
+
+
+def cast_precision(func: Callable) -> Callable:
+    """A decorator that casts and casts back the input
+    and output tensor of a method.
+
+    The decorator should be used in a classmethod.
+
+    The decorator will do the following thing:
+    (1) It casts input Tensors from `GLOBAL_TF_FLOAT_PRECISION`
+    to precision defined by property `precision`.
+    (2) It casts output Tensors from `precision` to
+    `GLOBAL_TF_FLOAT_PRECISION`.
+    (3) It checks inputs and outputs and only casts when
+    input or output is a Tensor and its dtype matches
+    `GLOBAL_TF_FLOAT_PRECISION` and `precision`, respectively.
+    If it does not match (e.g. it is an integer), the decorator
+    will do nothing on it.
+
+    Parameters
+    ----------
+    precision : tf.DType
+        Tensor data type that casts to
+
+    Returns
+    -------
+    Callable
+        a decorator that casts and casts back the input and
+        output tensor of a method
+
+    Examples
+    --------
+    >>> class A:
+    ...   @property
+    ...   def precision(self):
+    ...     return tf.float32
+    ...
+    ...   @cast_precision
+    ...   def f(x: tf.Tensor, y: tf.Tensor) -> tf.Tensor:
+    ...     return x ** 2 + y
+    """
+    def wrapper(self, *args, **kwargs):
+        # only convert tensors
+        returned_tensor = func(
+            self,
+            *[safe_cast_tensor(vv, GLOBAL_TF_FLOAT_PRECISION, self.precision) for vv in args],
+            **{kk: safe_cast_tensor(vv, GLOBAL_TF_FLOAT_PRECISION, self.precision) for kk, vv in kwargs.items()},
+        )
+        if isinstance(returned_tensor, tuple):
+            return tuple((safe_cast_tensor(vv, self.precision, GLOBAL_TF_FLOAT_PRECISION) for vv in returned_tensor))
+        else:
+            return safe_cast_tensor(returned_tensor, self.precision, GLOBAL_TF_FLOAT_PRECISION)
+    return wrapper

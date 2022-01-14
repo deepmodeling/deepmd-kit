@@ -44,8 +44,7 @@ class TestDeepDipolePBC(unittest.TestCase) :
         nsel = 2
         self.assertEqual(dd.shape, (nframes,nsel,3))
         # check values
-        for ii in range(dd.size):
-            self.assertAlmostEqual(dd.reshape([-1])[ii], self.expected_d.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(dd.ravel(), self.expected_d, default_places)
 
     def test_2frame_atm(self):
         coords2 = np.concatenate((self.coords, self.coords))
@@ -58,8 +57,7 @@ class TestDeepDipolePBC(unittest.TestCase) :
         self.assertEqual(dd.shape, (nframes,nsel,3))
         # check values
         expected_d = np.concatenate((self.expected_d, self.expected_d))
-        for ii in range(dd.size):
-            self.assertAlmostEqual(dd.reshape([-1])[ii], expected_d.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(dd.ravel(), expected_d, default_places)
 
 
 class TestDeepDipoleNoPBC(unittest.TestCase) :
@@ -87,8 +85,7 @@ class TestDeepDipoleNoPBC(unittest.TestCase) :
         nsel = 2
         self.assertEqual(dd.shape, (nframes,nsel,3))
         # check values
-        for ii in range(dd.size):
-            self.assertAlmostEqual(dd.reshape([-1])[ii], self.expected_d.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(dd.ravel(), self.expected_d, default_places)
 
     def test_1frame_atm_large_box(self):
         dd = self.dp.eval(self.coords, self.box, self.atype)
@@ -98,8 +95,7 @@ class TestDeepDipoleNoPBC(unittest.TestCase) :
         nsel = 2
         self.assertEqual(dd.shape, (nframes,nsel,3))
         # check values
-        for ii in range(dd.size):
-            self.assertAlmostEqual(dd.reshape([-1])[ii], self.expected_d.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(dd.ravel(), self.expected_d, default_places)
 
 
 @unittest.skipIf(parse_version(tf.__version__) < parse_version("1.15"), 
@@ -138,8 +134,7 @@ class TestDeepDipoleNewPBC(unittest.TestCase) :
         nframes = 1
         self.assertEqual(gt.shape, (nframes,self.nout))
         # check values
-        for ii in range(gt.size):
-            self.assertAlmostEqual(gt.reshape([-1])[ii], self.expected_gt.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(gt.ravel(), self.expected_gt, default_places)
 
     def test_1frame_old_atm(self):
         at = self.dp.eval(self.coords, self.box, self.atype)
@@ -149,8 +144,7 @@ class TestDeepDipoleNewPBC(unittest.TestCase) :
         nsel = 2
         self.assertEqual(at.shape, (nframes,nsel,self.nout))
         # check values
-        for ii in range(at.size):
-            self.assertAlmostEqual(at.reshape([-1])[ii], self.expected_t.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(at.ravel(), self.expected_t, default_places)
 
     def test_2frame_old_atm(self):
         coords2 = np.concatenate((self.coords, self.coords))
@@ -163,8 +157,7 @@ class TestDeepDipoleNewPBC(unittest.TestCase) :
         self.assertEqual(at.shape, (nframes,nsel,self.nout))
         # check values
         expected_d = np.concatenate((self.expected_t, self.expected_t))
-        for ii in range(at.size):
-            self.assertAlmostEqual(at.reshape([-1])[ii], expected_d.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(at.ravel(), expected_d, default_places)
 
     def test_1frame_full(self):
         gt, ff, vv = self.dp.eval_full(self.coords, self.box, self.atype, atomic = False)
@@ -175,12 +168,9 @@ class TestDeepDipoleNewPBC(unittest.TestCase) :
         self.assertEqual(ff.shape, (nframes,self.nout,natoms,3))
         self.assertEqual(vv.shape, (nframes,self.nout,9))
         # check values
-        for ii in range(ff.size):
-            self.assertAlmostEqual(ff.reshape([-1])[ii], self.expected_f.reshape([-1])[ii], places = default_places)
-        for ii in range(gt.size):
-            self.assertAlmostEqual(gt.reshape([-1])[ii], self.expected_gt.reshape([-1])[ii], places = default_places)
-        for ii in range(vv.size):
-            self.assertAlmostEqual(vv.reshape([-1])[ii], self.expected_gv.reshape([-1])[ii], places = default_places)
+        np.testing.assert_almost_equal(ff.ravel(), self.expected_f, default_places)
+        np.testing.assert_almost_equal(gt.ravel(), self.expected_gt, default_places)
+        np.testing.assert_almost_equal(vv.ravel(), self.expected_gv, default_places)
 
     def test_1frame_full_atm(self):
         gt, ff, vv, at, av = self.dp.eval_full(self.coords, self.box, self.atype, atomic = True)

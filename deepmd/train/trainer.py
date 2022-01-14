@@ -1,23 +1,20 @@
 #!/usr/bin/env python3
+from deepmd.descriptor.descriptor import Descriptor
 import logging
 import os
+import glob
 import time
 import shutil
 import google.protobuf.message
 import numpy as np
-from deepmd.env import tf
+from packaging.version import Version
+
+from deepmd.env import tf, tfv2
 from deepmd.env import get_tf_session_config
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.fit import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
-from deepmd.descriptor import DescrptLocFrame
-from deepmd.descriptor import DescrptSeA
-from deepmd.descriptor import DescrptSeT
-from deepmd.descriptor import DescrptSeAEbd
-from deepmd.descriptor import DescrptSeAEf
-from deepmd.descriptor import DescrptSeR
-from deepmd.descriptor import DescrptSeAR
-from deepmd.descriptor import DescrptHybrid
+from deepmd.descriptor import Descriptor
 from deepmd.model import EnerModel, WFCModel, DipoleModel, PolarModel, GlobalPolarModel
 from deepmd.loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
 from deepmd.utils.errors import GraphTooLargeError
@@ -25,14 +22,16 @@ from deepmd.utils.learning_rate import LearningRateExp
 from deepmd.utils.neighbor_stat import NeighborStat
 from deepmd.utils.sess import run_sess
 from deepmd.utils.type_embed import TypeEmbedNet
+from deepmd.utils.graph import get_tensor_by_name
 
 from tensorflow.python.client import timeline
-from deepmd.env import op_module
+from deepmd.env import op_module, TF_VERSION
+from deepmd.utils.errors import GraphWithoutTensorError
 
 # load grad of force module
 import deepmd.op
 
-from deepmd.common import j_must_have, ClassArg, data_requirement
+from deepmd.common import j_must_have, ClassArg, data_requirement, get_precision
 
 log = logging.getLogger(__name__)
 
@@ -44,36 +43,6 @@ def _is_subdir(path, directory):
         return False
     relative = os.path.relpath(path, directory) + os.sep
     return not relative.startswith(os.pardir + os.sep)
-
-def _generate_descrpt_from_param_dict(descrpt_param):
-    try:
-        descrpt_type = descrpt_param['type']
-    except KeyError:
-        raise KeyError('the type of descriptor should be set by `type`')
-    descrpt_param.pop('type', None)
-    to_pop = []
-    for kk in descrpt_param:
-        if kk[0] == '_':
-            to_pop.append(kk)
-    for kk in to_pop:
-        descrpt_param.pop(kk, None)
-    if descrpt_type == 'loc_frame':
-        descrpt = DescrptLocFrame(**descrpt_param)
-    elif descrpt_type == 'se_e2_a' or descrpt_type == 'se_a' :
-        descrpt = DescrptSeA(**descrpt_param)
-    elif descrpt_type == 'se_e2_r' or descrpt_type == 'se_r' :
-        descrpt = DescrptSeR(**descrpt_param)
-    elif descrpt_type == 'se_e3' or descrpt_type == 'se_at' or descrpt_type == 'se_a_3be' :
-        descrpt = DescrptSeT(**descrpt_param)
-    elif descrpt_type == 'se_a_tpe' or descrpt_type == 'se_a_ebd' :
-        descrpt = DescrptSeAEbd(**descrpt_param)
-    elif descrpt_type == 'se_a_ef' :
-        descrpt = DescrptSeAEf(**descrpt_param)
-    elif descrpt_type == 'se_ar' :
-        descrpt = DescrptSeAR(descrpt_param)
-    else :
-        raise RuntimeError('unknow model type ' + descrpt_type)
-    return descrpt
     
 
 class DPTrainer (object):
@@ -100,19 +69,11 @@ class DPTrainer (object):
         except KeyError:
             raise KeyError('the type of descriptor should be set by `type`')
 
-        if descrpt_type != 'hybrid':
-            self.descrpt = _generate_descrpt_from_param_dict(descrpt_param)
-        else :
-            descrpt_list = []
-            for ii in descrpt_param.get('list', []):
-                descrpt_list.append(_generate_descrpt_from_param_dict(ii))
-            self.descrpt = DescrptHybrid(descrpt_list)
+        self.descrpt = Descriptor(**descrpt_param)
 
         # fitting net
-        try: 
-            fitting_type = fitting_param['type']
-        except:
-            fitting_type = 'ener'
+        fitting_type = fitting_param.get('type', 'ener')
+        self.fitting_type = fitting_type
         fitting_param.pop('type', None)
         fitting_param['descrpt'] = self.descrpt
         if fitting_type == 'ener':
@@ -198,10 +159,14 @@ class DPTrainer (object):
 
         # learning rate
         lr_param = j_must_have(jdata, 'learning_rate')
-        try: 
-            lr_type = lr_param['type']
-        except:
-            lr_type = 'exp'
+        scale_by_worker = lr_param.get('scale_by_worker', 'linear')
+        if scale_by_worker == 'linear':
+            self.scale_lr_coef = float(self.run_opt.world_size)
+        elif scale_by_worker == 'sqrt':
+            self.scale_lr_coef = np.sqrt(self.run_opt.world_size).real
+        else:
+            self.scale_lr_coef = 1.
+        lr_type = lr_param.get('type', 'exp')
         if lr_type == 'exp':
             self.lr = LearningRateExp(lr_param['start_lr'],
                                       lr_param['stop_lr'],
@@ -211,12 +176,8 @@ class DPTrainer (object):
 
         # loss
         # infer loss type by fitting_type
-        try :
-            loss_param = jdata['loss']
-            loss_type = loss_param.get('type', 'ener')
-        except:
-            loss_param = None
-            loss_type = 'ener'
+        loss_param = jdata.get('loss', None)
+        loss_type = loss_param.get('type', 'ener')
 
         if fitting_type == 'ener':
             loss_param.pop('type', None)
@@ -265,8 +226,17 @@ class DPTrainer (object):
         self.timing_in_training  = tr_data.get('time_training', True)
         self.profiling = self.run_opt.is_chief and tr_data.get('profiling', False)
         self.profiling_file = tr_data.get('profiling_file', 'timeline.json')
+        self.enable_profiler = tr_data.get('enable_profiler', False)
         self.tensorboard = self.run_opt.is_chief and tr_data.get('tensorboard', False)
         self.tensorboard_log_dir = tr_data.get('tensorboard_log_dir', 'log')
+        self.tensorboard_freq = tr_data.get('tensorboard_freq', 1)
+        self.mixed_prec = tr_data.get('mixed_precision', None)
+        if self.mixed_prec is not None:
+            if (self.mixed_prec['compute_prec'] != 'float16' or self.mixed_prec['output_prec'] != 'float32'):
+                raise RuntimeError(
+                    "Unsupported mixed precision option [output_prec, compute_prec]: [%s, %s], "
+                    " Supported: [float32, float16], Please set mixed precision option correctly!"
+                     % (self.mixed_prec['output_prec'], self.mixed_prec['compute_prec']))
         # self.sys_probs = tr_data['sys_probs']
         # self.auto_prob_style = tr_data['auto_prob']
         self.useBN = False
@@ -280,6 +250,10 @@ class DPTrainer (object):
         else:
             self.valid_numb_batch = 1
 
+        # if init the graph with the frozen model
+        self.frz_model = None
+        self.model_type = None
+
 
     def build (self, 
                data = None, 
@@ -292,28 +266,46 @@ class DPTrainer (object):
         else:
             log.info("training without frame parameter")
 
-        if self.is_compress == False:
+        if not self.is_compress:
             # Usually, the type number of the model should be equal to that of the data
             # However, nt_model > nt_data should be allowed, since users may only want to 
             # train using a dataset that only have some of elements 
-            assert (self.ntypes >= data.get_ntypes()), "ntypes should match that found in data"
+            if self.ntypes < data.get_ntypes():
+                raise ValueError(
+                    "The number of types of the training data is %d, but that of the "
+                    "model is only %d. The latter must be no less than the former. "
+                    "You may need to reset one or both of them. Usually, the former "
+                    "is given by `model/type_map` in the training parameter (if set) "
+                    "or the maximum number in the training data. The latter is given "
+                    "by `model/descriptor/sel` in the training parameter." % (
+                        data.get_ntypes(), self.ntypes
+                ))
             self.type_map = data.get_type_map()
             self.batch_size = data.get_batch_size()
             self.model.data_stat(data)
 
-            self.neighbor_stat \
-                = NeighborStat(self.ntypes, self.descrpt_param['rcut'])
-            self.min_nbor_dist, self.max_nbor_size \
-                = self.neighbor_stat.get_stat(data)
-            tf.constant(self.min_nbor_dist,
-                    name = 'train_attr/min_nbor_dist',
-                    dtype = GLOBAL_TF_FLOAT_PRECISION)
-            tf.constant(self.max_nbor_size,
-                    name = 'train_attr/max_nbor_size',
-                    dtype = GLOBAL_TF_FLOAT_PRECISION)
+            # config the init_frz_model command
+            if self.run_opt.init_mode == 'init_from_frz_model':
+                self._init_from_frz_model()
+            
+            # neighbor_stat is moved to train.py as duplicated
+            # TODO: this is a simple fix but we should have a clear
+            #       architecture to call neighbor stat
         else :
-            assert 'rcut' in self.descrpt_param, "Error: descriptor must have attr rcut!"
             self.descrpt.enable_compression(self.model_param['compress']["min_nbor_dist"], self.model_param['compress']['model_file'], self.model_param['compress']['table_config'][0], self.model_param['compress']['table_config'][1], self.model_param['compress']['table_config'][2], self.model_param['compress']['table_config'][3])
+            self.fitting.init_variables(self.model_param['compress']['model_file'])
+            # for fparam or aparam settings in 'ener' type fitting net
+            if self.fitting_type == 'ener':
+                self.fitting.enable_compression(self.model_param['compress']['model_file'])
+        
+        if self.is_compress or self.model_type == 'compressed_model':
+            tf.constant("compressed_model", name = 'model_type', dtype = tf.string)
+        else:
+            tf.constant("original_model", name = 'model_type', dtype = tf.string)
+        
+        if self.mixed_prec is not None:
+            self.descrpt.enable_mixed_precision(self.mixed_prec)
+            self.fitting.enable_mixed_precision(self.mixed_prec)
 
         self._build_lr()
         self._build_network(data)
@@ -346,6 +338,7 @@ class DPTrainer (object):
                                 self.place_holders['box'], 
                                 self.place_holders['default_mesh'],
                                 self.place_holders,
+                                self.frz_model,
                                 suffix = "", 
                                 reuse = False)
 
@@ -356,19 +349,34 @@ class DPTrainer (object):
                                self.place_holders,
                                suffix = "test")
 
+        if self.mixed_prec is not None:
+            self.l2_l = tf.cast(self.l2_l, get_precision(self.mixed_prec['output_prec']))
         log.info("built network")
 
     def _build_training(self):
         trainable_variables = tf.trainable_variables()
         if self.run_opt.is_distrib:
-            optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate*self.run_opt.world_size)
+            if self.scale_lr_coef > 1.:
+                log.info('Scale learning rate by coef: %f', self.scale_lr_coef)
+                optimizer = tf.train.AdamOptimizer(self.learning_rate*self.scale_lr_coef)
+            else:
+                optimizer = tf.train.AdamOptimizer(self.learning_rate)
             optimizer = self.run_opt._HVD.DistributedOptimizer(optimizer)
         else:
             optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate)
-        grads = tf.gradients(self.l2_l, trainable_variables)
-        apply_op = optimizer.apply_gradients (zip (grads, trainable_variables),
-                                              global_step=self.global_step,
-                                              name='train_step')
+        if self.mixed_prec is not None:
+            _TF_VERSION = Version(TF_VERSION)
+            # check the TF_VERSION, when TF < 1.12, mixed precision is not allowed 
+            if _TF_VERSION < Version('1.12.0'):
+                raise RuntimeError("TensorFlow version %s is not compatible with the mixed precision setting. Please consider upgrading your TF version!" % TF_VERSION)
+            elif _TF_VERSION < Version('2.4.0'):
+                optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
+            else:
+                optimizer = tf.mixed_precision.enable_mixed_precision_graph_rewrite(optimizer)
+        apply_op = optimizer.minimize(loss=self.l2_l,
+                                      global_step=self.global_step,
+                                      var_list=trainable_variables,
+                                      name='train_step')
         train_ops = [apply_op] + self._extra_train_ops
         self.train_op = tf.group(*train_ops)
         log.info("built training")
@@ -377,19 +385,19 @@ class DPTrainer (object):
         config = get_tf_session_config()
         device, idx = self.run_opt.my_device.split(":", 1)
         if device == "gpu":
-            config.gpu_options.allow_growth = True
             config.gpu_options.visible_device_list = idx
         self.sess = tf.Session(config=config)
 
         # Initializes or restore global variables
         init_op = tf.global_variables_initializer()
         if self.run_opt.is_chief:
-            self.saver = tf.train.Saver()
+            self.saver = tf.train.Saver(save_relative_paths=True)
             if self.run_opt.init_mode == 'init_from_scratch' :
                 log.info("initialize model from scratch")
                 run_sess(self.sess, init_op)
-                fp = open(self.disp_file, "w")
-                fp.close ()
+                if not self.is_compress:
+                    fp = open(self.disp_file, "w")
+                    fp.close ()
             elif self.run_opt.init_mode == 'init_from_model' :
                 log.info("initialize from model %s" % self.run_opt.init_model)
                 run_sess(self.sess, init_op)
@@ -401,6 +409,11 @@ class DPTrainer (object):
                 log.info("restart from model %s" % self.run_opt.restart)
                 run_sess(self.sess, init_op)
                 self.saver.restore (self.sess, self.run_opt.restart)
+            elif self.run_opt.init_mode == 'init_from_frz_model' :
+                log.info("initialize training from the frozen model")
+                run_sess(self.sess, init_op)
+                fp = open(self.disp_file, "w")
+                fp.close ()
             else :
                 raise RuntimeError ("unkown init mode")
         else:
@@ -468,6 +481,9 @@ class DPTrainer (object):
         else:
             tb_train_writer = None
             tb_valid_writer = None
+        if self.enable_profiler:
+            # https://www.tensorflow.org/guide/profiler
+            tfv2.profiler.experimental.start(self.tensorboard_log_dir)
         
         train_time = 0
 
@@ -485,11 +501,11 @@ class DPTrainer (object):
             train_feed_dict = self.get_feed_dict(train_batch, is_training=True)
             # use tensorboard to visualize the training of deepmd-kit
             # it will takes some extra execution time to generate the tensorboard data
-            if self.tensorboard :
+            if self.tensorboard and (cur_batch % self.tensorboard_freq == 0):
                 summary, _ = run_sess(self.sess, [summary_merged_op, self.train_op], feed_dict=train_feed_dict,
                                            options=prf_options, run_metadata=prf_run_metadata)
                 tb_train_writer.add_summary(summary, cur_batch)
-            else :
+            else:
                 run_sess(self.sess, [self.train_op], feed_dict=train_feed_dict,
                               options=prf_options, run_metadata=prf_run_metadata)
             if self.timing_in_training: toc = time.time()
@@ -512,13 +528,24 @@ class DPTrainer (object):
                     train_time = 0
                 if self.save_freq > 0 and cur_batch % self.save_freq == 0 and self.saver is not None:
                     try:
-                        self.saver.save (self.sess, os.path.join(os.getcwd(), self.save_ckpt))
+                        ckpt_prefix = self.saver.save (self.sess, os.path.join(os.getcwd(), self.save_ckpt), global_step=cur_batch)
                     except google.protobuf.message.DecodeError as e:
                         raise GraphTooLargeError(
                             "The graph size exceeds 2 GB, the hard limitation of protobuf."
                             " Then a DecodeError was raised by protobuf. You should "
                             "reduce the size of your model."
                         ) from e
+                    # make symlinks from prefix with step to that without step to break nothing
+                    # get all checkpoint files
+                    original_files = glob.glob(ckpt_prefix + ".*")
+                    for ori_ff in original_files:
+                        new_ff = self.save_ckpt + ori_ff[len(ckpt_prefix):]
+                        try:
+                            # remove old one
+                            os.remove(new_ff)
+                        except OSError:
+                            pass
+                        os.symlink(ori_ff, new_ff)
                     log.info("saved checkpoint %s" % self.save_ckpt)
         if self.run_opt.is_chief: 
             fp.close ()
@@ -527,6 +554,8 @@ class DPTrainer (object):
             chrome_trace = fetched_timeline.generate_chrome_trace_format()
             with open(self.profiling_file, 'w') as f:
                 f.write(chrome_trace)
+        if self.enable_profiler and self.run_opt.is_chief:
+            tfv2.profiler.experimental.stop()
 
     def get_feed_dict(self, batch, is_training):
         feed_dict = {}
@@ -640,3 +669,36 @@ class DPTrainer (object):
                 prec = GLOBAL_ENER_FLOAT_PRECISION
             self.place_holders[kk] = tf.placeholder(prec, [None], name = 't_' + kk)
             self.place_holders['find_' + kk] = tf.placeholder(tf.float32, name = 't_find_' + kk)
+
+    def _init_from_frz_model(self):
+        # get the model type from the frozen model(self.run_opt.init_frz_model)
+        try:
+            t_model_type = get_tensor_by_name(self.run_opt.init_frz_model, 'model_type')
+            self.model_type = bytes.decode(t_model_type)
+        except GraphWithoutTensorError as e:
+            # throw runtime error if there's no frozen model
+            if not os.path.exists(self.run_opt.init_frz_model):
+                raise RuntimeError(
+                    "The input frozen model %s (%s) does not exist! Please check the path of the frozen model. " % (self.run_opt.init_frz_model, os.path.abspath(self.run_opt.init_frz_model))
+                ) from e
+            # throw runtime error if the frozen_model has no model type information...
+            else:
+                raise RuntimeError(
+                    "The input frozen model: %s has no 'model_type' information, "
+                    "which is not supported by the 'dp train init-frz-model' interface. " % self.run_opt.init_frz_model
+                ) from e
+        
+        if self.fitting_type != 'ener':
+            raise RuntimeError("The 'dp train init-frz-model' command only supports the 'ener' type fitting net currently!")
+        # self.frz_model will control the self.model to import the descriptor from the given frozen model instead of building from scratch...
+        # initialize fitting net with the given compressed frozen model
+        if self.model_type == 'original_model':
+            self.descrpt.init_variables(self.run_opt.init_frz_model)
+            self.fitting.init_variables(self.run_opt.init_frz_model)
+            tf.constant("original_model", name = 'model_type', dtype = tf.string)
+        elif self.model_type == 'compressed_model':
+            self.frz_model = self.run_opt.init_frz_model
+            self.fitting.init_variables(self.frz_model)
+            tf.constant("compressed_model", name = 'model_type', dtype = tf.string)
+        else:
+            raise RuntimeError("Unknown model type %s" % self.model_type)

@@ -9,17 +9,18 @@ import time
 import os
 from typing import Dict, List, Optional, Any
 
-import numpy as np
 from deepmd.common import data_requirement, expand_sys_str, j_loader, j_must_have
-from deepmd.env import tf, reset_default_tf_session_config
+from deepmd.env import tf, reset_default_tf_session_config, GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.infer.data_modifier import DipoleChargeModifier
 from deepmd.train.run_options import BUILD, CITATION, WELCOME, RunOptions
 from deepmd.train.trainer import DPTrainer
+from deepmd.utils import random as dp_random
 from deepmd.utils.argcheck import normalize
-from deepmd.utils.compat import updata_deepmd_input
+from deepmd.utils.compat import update_deepmd_input
 from deepmd.utils.data_system import DeepmdDataSystem
 from deepmd.utils.sess import run_sess
 from deepmd.utils.neighbor_stat import NeighborStat
+from deepmd.utils.path import DPPath
 
 __all__ = ["train"]
 
@@ -32,10 +33,12 @@ def train(
     init_model: Optional[str],
     restart: Optional[str],
     output: str,
+    init_frz_model: str,
     mpi_log: str,
     log_level: int,
     log_path: Optional[str],
     is_compress: bool = False,
+    skip_neighbor_stat: bool = False,
     **kwargs,
 ):
     """Run DeePMD model training.
@@ -50,28 +53,44 @@ def train(
         path to checkpoint folder or None
     output : str
         path for dump file with arguments
+    init_frz_model : str
+        path to frozen model or None
     mpi_log : str
         mpi logging mode
     log_level : int
         logging level defined by int 0-3
     log_path : Optional[str]
         logging file path or None if logs are to be output only to stdout
-    is_compress: Bool
+    is_compress: bool
         indicates whether in the model compress mode
+    skip_neighbor_stat : bool, default=False
+        skip checking neighbor statistics
 
     Raises
     ------
     RuntimeError
         if distributed training job nem is wrong
     """
+    run_opt = RunOptions(
+        init_model=init_model,
+        restart=restart,
+        init_frz_model=init_frz_model,
+        log_path=log_path,
+        log_level=log_level,
+        mpi_log=mpi_log
+    )
+    if run_opt.is_distrib and len(run_opt.gpus or []) > 1:
+        # avoid conflict of visible gpus among multipe tf sessions in one process
+        reset_default_tf_session_config(cpu_only=True)
+
     # load json database
     jdata = j_loader(INPUT)
 
-    jdata = updata_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
+    jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
 
     jdata = normalize(jdata)
 
-    if is_compress == False:
+    if not is_compress and not skip_neighbor_stat:
         jdata = update_sel(jdata)
 
     with open(output, "w") as fp:
@@ -79,15 +98,6 @@ def train(
 
     # save the training script into the graph
     tf.constant(json.dumps(jdata), name='train_attr/training_script', dtype=tf.string)
-
-    # run options
-    run_opt = RunOptions(
-        init_model=init_model,
-        restart=restart,
-        log_path=log_path,
-        log_level=log_level,
-        mpi_log=mpi_log
-    )
 
     for message in WELCOME + CITATION + BUILD:
         log.info(message)
@@ -116,10 +126,6 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
     # make necessary checks
     assert "training" in jdata
 
-    # avoid conflict of visible gpus among multipe tf sessions in one process
-    if run_opt.is_distrib and len(run_opt.gpus or []) > 1:
-        reset_default_tf_session_config(cpu_only=True)
-
     # init the model
     model = DPTrainer(jdata, run_opt=run_opt, is_compress = is_compress)
     rcut = model.model.get_rcut()
@@ -129,11 +135,13 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
     else:
         ipt_type_map = type_map
 
-    #  init random seed
+    # init random seed of data systems
     seed = jdata["training"].get("seed", None)
     if seed is not None:
+        # avoid the same batch sequence among workers
+        seed += run_opt.my_rank
         seed = seed % (2 ** 32)
-    np.random.seed(seed)
+    dp_random.seed(seed)
 
     # setup data modifier
     modifier = get_modifier(jdata["model"].get("modifier", None))
@@ -141,7 +149,7 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
     # decouple the training data from the model compress process
     train_data = None
     valid_data = None
-    if is_compress == False:
+    if not is_compress:
         # init data
         train_data = get_data(jdata["training"]["training_data"], rcut, ipt_type_map, modifier)
         train_data.print_summary("training")
@@ -153,7 +161,7 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
     stop_batch = j_must_have(jdata["training"], "numb_steps")
     model.build(train_data, stop_batch)
 
-    if is_compress == False:
+    if not is_compress:
         # train the model with the provided systems in a cyclic way
         start_time = time.time()
         model.train(train_data, valid_data)
@@ -177,11 +185,12 @@ def get_data(jdata: Dict[str, Any], rcut, type_map, modifier):
         raise IOError(msg, help_msg)
     # rougly check all items in systems are valid
     for ii in systems:
-        if (not os.path.isdir(ii)):
+        ii = DPPath(ii)
+        if (not ii.is_dir()):
             msg = f'dir {ii} is not a valid dir'
             log.fatal(msg)
             raise IOError(msg, help_msg)
-        if (not os.path.isfile(os.path.join(ii, 'type.raw'))):
+        if (not (ii / 'type.raw').is_file()):
             msg = f'dir {ii} is not a valid data system dir'
             log.fatal(msg)
             raise IOError(msg, help_msg)
@@ -240,7 +249,7 @@ def get_type_map(jdata):
     return jdata['model'].get('type_map', None)
 
 
-def get_sel(jdata, rcut):
+def get_nbor_stat(jdata, rcut):
     max_rcut = get_rcut(jdata)
     type_map = get_type_map(jdata)
 
@@ -259,8 +268,24 @@ def get_sel(jdata, rcut):
 
     min_nbor_dist, max_nbor_size = neistat.get_stat(train_data)
 
+    # moved from traier.py as duplicated
+    # TODO: this is a simple fix but we should have a clear
+    #       architecture to call neighbor stat
+    tf.constant(min_nbor_dist,
+        name = 'train_attr/min_nbor_dist',
+        dtype = GLOBAL_ENER_FLOAT_PRECISION)
+    tf.constant(max_nbor_size,
+        name = 'train_attr/max_nbor_size',
+        dtype = tf.int32)
+    return min_nbor_dist, max_nbor_size
+
+def get_sel(jdata, rcut):
+    _, max_nbor_size = get_nbor_stat(jdata, rcut)
     return max_nbor_size
 
+def get_min_nbor_dist(jdata, rcut):
+    min_nbor_dist, _ = get_nbor_stat(jdata, rcut)
+    return min_nbor_dist
 
 def parse_auto_sel(sel):
     if type(sel) is not str:
@@ -311,11 +336,13 @@ def update_one_sel(jdata, descriptor):
 
 
 def update_sel(jdata):    
+    log.info("Calculate neighbor statistics... (add --skip-neighbor-stat to skip this step)")
     descrpt_data = jdata['model']['descriptor']
     if descrpt_data['type'] == 'hybrid':
         for ii in range(len(descrpt_data['list'])):
-            descrpt_data['list'][ii] = update_one_sel(jdata, descrpt_data['list'][ii])
-    else:
+            if descrpt_data['list'][ii]['type'] != 'loc_frame':
+                descrpt_data['list'][ii] = update_one_sel(jdata, descrpt_data['list'][ii])
+    elif descrpt_data['type'] != 'loc_frame':
         descrpt_data = update_one_sel(jdata, descrpt_data)
     jdata['model']['descriptor'] = descrpt_data
     return jdata

@@ -1,5 +1,4 @@
 #include "device.h"
-#include "gpu_cuda.h"
 #include "coord.h"
 #include "region.cuh"
 

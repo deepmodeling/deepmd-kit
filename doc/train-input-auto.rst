@@ -257,7 +257,7 @@ model:
         .. _`model/descriptor[se_e2_a]/axis_neuron`: 
 
         axis_neuron: 
-            | type: ``int``, optional, default: ``4``
+            | type: ``int``, optional, default: ``4``, alias: *n_axis_neuron*
             | argument path: ``model/descriptor[se_e2_a]/axis_neuron``
 
             Size of the submatrix of G (embedding matrix).
@@ -316,7 +316,7 @@ model:
             | type: ``list``, optional, default: ``[]``
             | argument path: ``model/descriptor[se_e2_a]/exclude_types``
 
-            The Excluded types
+            The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1.
 
         .. _`model/descriptor[se_e2_a]/set_davg_zero`: 
 
@@ -421,7 +421,7 @@ model:
             | type: ``list``, optional, default: ``[]``
             | argument path: ``model/descriptor[se_e2_r]/exclude_types``
 
-            The Excluded types
+            The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1.
 
         .. _`model/descriptor[se_e2_r]/set_davg_zero`: 
 
@@ -564,7 +564,7 @@ model:
         .. _`model/descriptor[se_a_tpe]/axis_neuron`: 
 
         axis_neuron: 
-            | type: ``int``, optional, default: ``4``
+            | type: ``int``, optional, default: ``4``, alias: *n_axis_neuron*
             | argument path: ``model/descriptor[se_a_tpe]/axis_neuron``
 
             Size of the submatrix of G (embedding matrix).
@@ -623,7 +623,7 @@ model:
             | type: ``list``, optional, default: ``[]``
             | argument path: ``model/descriptor[se_a_tpe]/exclude_types``
 
-            The Excluded types
+            The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1.
 
         .. _`model/descriptor[se_a_tpe]/set_davg_zero`: 
 
@@ -732,7 +732,7 @@ model:
         .. _`model/fitting_net[ener]/neuron`: 
 
         neuron: 
-            | type: ``list``, optional, default: ``[120, 120, 120]``
+            | type: ``list``, optional, default: ``[120, 120, 120]``, alias: *n_neuron*
             | argument path: ``model/fitting_net[ener]/neuron``
 
             The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.
@@ -805,7 +805,7 @@ model:
         .. _`model/fitting_net[dipole]/neuron`: 
 
         neuron: 
-            | type: ``list``, optional, default: ``[120, 120, 120]``
+            | type: ``list``, optional, default: ``[120, 120, 120]``, alias: *n_neuron*
             | argument path: ``model/fitting_net[dipole]/neuron``
 
             The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.
@@ -837,7 +837,7 @@ model:
         .. _`model/fitting_net[dipole]/sel_type`: 
 
         sel_type: 
-            | type: ``list`` | ``int`` | ``NoneType``, optional
+            | type: ``list`` | ``int`` | ``NoneType``, optional, alias: *dipole_type*
             | argument path: ``model/fitting_net[dipole]/sel_type``
 
             The atom types for which the atomic dipole will be provided. If not set, all types will be selected.
@@ -858,7 +858,7 @@ model:
         .. _`model/fitting_net[polar]/neuron`: 
 
         neuron: 
-            | type: ``list``, optional, default: ``[120, 120, 120]``
+            | type: ``list``, optional, default: ``[120, 120, 120]``, alias: *n_neuron*
             | argument path: ``model/fitting_net[polar]/neuron``
 
             The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.
@@ -898,7 +898,7 @@ model:
         .. _`model/fitting_net[polar]/scale`: 
 
         scale: 
-            | type: ``list`` | ``float``, optional, default: ``1.0``
+            | type: ``float`` | ``list``, optional, default: ``1.0``
             | argument path: ``model/fitting_net[polar]/scale``
 
             The output of the fitting net (polarizability matrix) will be scaled by ``scale``
@@ -914,7 +914,7 @@ model:
         .. _`model/fitting_net[polar]/sel_type`: 
 
         sel_type: 
-            | type: ``list`` | ``int`` | ``NoneType``, optional
+            | type: ``list`` | ``int`` | ``NoneType``, optional, alias: *pol_type*
             | argument path: ``model/fitting_net[polar]/sel_type``
 
             The atom types for which the atomic polarizability will be provided. If not set, all types will be selected.
@@ -1055,6 +1055,14 @@ model:
 
             The arguments of model compression, including extrapolate(scale of model extrapolation), stride(uniform stride of tabulation's first and second table), and frequency(frequency of tabulation overflow check).
 
+        .. _`model/compress[se_e2_a]/min_nbor_dist`: 
+
+        min_nbor_dist: 
+            | type: ``float``
+            | argument path: ``model/compress[se_e2_a]/min_nbor_dist``
+
+            The nearest distance between neighbor atoms saved in the frozen model.
+
 
 .. _`loss`: 
 
@@ -1094,7 +1102,7 @@ loss:
     .. _`loss[ener]/start_pref_e`: 
 
     start_pref_e: 
-        | type: ``int`` | ``float``, optional, default: ``0.02``
+        | type: ``float`` | ``int``, optional, default: ``0.02``
         | argument path: ``loss[ener]/start_pref_e``
 
         The prefactor of energy loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the energy label should be provided by file energy.npy in each data system. If both start_pref_energy and limit_pref_energy are set to 0, then the energy will be ignored.
@@ -1102,7 +1110,7 @@ loss:
     .. _`loss[ener]/limit_pref_e`: 
 
     limit_pref_e: 
-        | type: ``int`` | ``float``, optional, default: ``1.0``
+        | type: ``float`` | ``int``, optional, default: ``1.0``
         | argument path: ``loss[ener]/limit_pref_e``
 
         The prefactor of energy loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity.
@@ -1110,7 +1118,7 @@ loss:
     .. _`loss[ener]/start_pref_f`: 
 
     start_pref_f: 
-        | type: ``int`` | ``float``, optional, default: ``1000``
+        | type: ``float`` | ``int``, optional, default: ``1000``
         | argument path: ``loss[ener]/start_pref_f``
 
         The prefactor of force loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the force label should be provided by file force.npy in each data system. If both start_pref_force and limit_pref_force are set to 0, then the force will be ignored.
@@ -1118,7 +1126,7 @@ loss:
     .. _`loss[ener]/limit_pref_f`: 
 
     limit_pref_f: 
-        | type: ``int`` | ``float``, optional, default: ``1.0``
+        | type: ``float`` | ``int``, optional, default: ``1.0``
         | argument path: ``loss[ener]/limit_pref_f``
 
         The prefactor of force loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity.
@@ -1126,7 +1134,7 @@ loss:
     .. _`loss[ener]/start_pref_v`: 
 
     start_pref_v: 
-        | type: ``int`` | ``float``, optional, default: ``0.0``
+        | type: ``float`` | ``int``, optional, default: ``0.0``
         | argument path: ``loss[ener]/start_pref_v``
 
         The prefactor of virial loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the virial label should be provided by file virial.npy in each data system. If both start_pref_virial and limit_pref_virial are set to 0, then the virial will be ignored.
@@ -1134,7 +1142,7 @@ loss:
     .. _`loss[ener]/limit_pref_v`: 
 
     limit_pref_v: 
-        | type: ``int`` | ``float``, optional, default: ``0.0``
+        | type: ``float`` | ``int``, optional, default: ``0.0``
         | argument path: ``loss[ener]/limit_pref_v``
 
         The prefactor of virial loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity.
@@ -1142,7 +1150,7 @@ loss:
     .. _`loss[ener]/start_pref_ae`: 
 
     start_pref_ae: 
-        | type: ``int`` | ``float``, optional, default: ``0.0``
+        | type: ``float`` | ``int``, optional, default: ``0.0``
         | argument path: ``loss[ener]/start_pref_ae``
 
         The prefactor of atom_ener loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the atom_ener label should be provided by file atom_ener.npy in each data system. If both start_pref_atom_ener and limit_pref_atom_ener are set to 0, then the atom_ener will be ignored.
@@ -1150,7 +1158,7 @@ loss:
     .. _`loss[ener]/limit_pref_ae`: 
 
     limit_pref_ae: 
-        | type: ``int`` | ``float``, optional, default: ``0.0``
+        | type: ``float`` | ``int``, optional, default: ``0.0``
         | argument path: ``loss[ener]/limit_pref_ae``
 
         The prefactor of atom_ener loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity.
@@ -1171,7 +1179,7 @@ loss:
     .. _`loss[tensor]/pref`: 
 
     pref: 
-        | type: ``int`` | ``float``
+        | type: ``float`` | ``int``
         | argument path: ``loss[tensor]/pref``
 
         The prefactor of the weight of global loss. It should be larger than or equal to 0. If controls the weight of loss corresponding to global label, i.e. 'polarizability.npy` or `dipole.npy`, whose shape should be #frames x [9 or 3]. If it's larger than 0.0, this npy should be included.
@@ -1179,7 +1187,7 @@ loss:
     .. _`loss[tensor]/pref_atomic`: 
 
     pref_atomic: 
-        | type: ``int`` | ``float``
+        | type: ``float`` | ``int``
         | argument path: ``loss[tensor]/pref_atomic``
 
         The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If controls the weight of loss corresponding to atomic label, i.e. `atomic_polarizability.npy` or `atomic_dipole.npy`, whose shape should be #frames x ([9 or 3] x #selected atoms). If it's larger than 0.0, this npy should be included. Both `pref` and `pref_atomic` should be provided, and either can be set to 0.0.
@@ -1276,7 +1284,7 @@ training:
         .. _`training/training_data/batch_size`: 
 
         batch_size: 
-            | type: ``list`` | ``str`` | ``int``, optional, default: ``auto``
+            | type: ``list`` | ``int`` | ``str``, optional, default: ``auto``
             | argument path: ``training/training_data/batch_size``
 
             This key can be 
@@ -1338,7 +1346,7 @@ training:
         .. _`training/validation_data/batch_size`: 
 
         batch_size: 
-            | type: ``list`` | ``str`` | ``int``, optional, default: ``auto``
+            | type: ``list`` | ``int`` | ``str``, optional, default: ``auto``
             | argument path: ``training/validation_data/batch_size``
 
             This key can be 
@@ -1400,7 +1408,7 @@ training:
     .. _`training/disp_file`: 
 
     disp_file: 
-        | type: ``str``, optional, default: ``lcueve.out``
+        | type: ``str``, optional, default: ``lcurve.out``
         | argument path: ``training/disp_file``
 
         The file for printing learning curve.
@@ -1416,7 +1424,7 @@ training:
     .. _`training/numb_test`: 
 
     numb_test: 
-        | type: ``list`` | ``str`` | ``int``, optional, default: ``1``
+        | type: ``list`` | ``int`` | ``str``, optional, default: ``1``
         | argument path: ``training/numb_test``
 
         Number of frames used for the test during training.
@@ -1484,4 +1492,12 @@ training:
         | argument path: ``training/tensorboard_log_dir``
 
         The log directory of tensorboard outputs
+
+    .. _`training/tensorboard_freq`: 
+
+    tensorboard_freq: 
+        | type: ``int``, optional, default: ``1``
+        | argument path: ``training/tensorboard_freq``
+
+        The frequency of writing tensorboard events.
 

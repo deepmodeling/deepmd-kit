@@ -1,5 +1,9 @@
+from typing import List, Callable
+
 from dargs import dargs, Argument, Variant, ArgumentEncoder
+from deepmd import descriptor
 from deepmd.common import ACTIVATION_FN_DICT, PRECISION_DICT
+from deepmd.utils.plugin import Plugin
 import json
 
 
@@ -38,6 +42,55 @@ def type_embedding_args():
 
 
 #  --- Descriptor configurations: --- #
+
+class ArgsPlugin:
+    def __init__(self) -> None:
+        self.__plugin = Plugin()
+
+    def register(self, name : str, alias : List[str] = None) -> Callable[[], List[Argument]]:
+        """Regiester a descriptor argument plugin.
+        
+        Parameters
+        ----------
+        name : str
+            the name of a descriptor
+        alias : List[str], optional
+            the list of aliases of this descriptor
+
+        Returns
+        -------
+        Callable[[], List[Argument]]
+            the regiestered descriptor argument method
+        
+        Examples
+        --------
+        >>> some_plugin = ArgsPlugin()
+        >>> @some_plugin.register("some_descrpt")
+            def descrpt_some_descrpt_args():
+                return []
+        """
+        # convert alias to hashed item
+        if isinstance(alias, list):
+            alias = tuple(alias)
+        return self.__plugin.register((name, alias))
+
+    def get_all_argument(self) -> List[Argument]:
+        """Get all arguments.
+        
+        Returns
+        -------
+        List[Argument]
+            all arguments
+        """
+        arguments = []
+        for (name, alias), metd in self.__plugin.plugins.items():
+            arguments.append(Argument(name=name, dtype=dict, sub_fields=metd(), alias=alias))
+        return arguments
+
+
+descrpt_args_plugin = ArgsPlugin()
+
+@descrpt_args_plugin.register("loc_frame")
 def descrpt_local_frame_args ():
     doc_sel_a = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_a[i]` gives the selected number of type-i neighbors. The full relative coordinates of the neighbors are used by the descriptor.'
     doc_sel_r = 'A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_r[i]` gives the selected number of type-i neighbors. Only relative distance of the neighbors are used by the descriptor. sel_a[i] + sel_r[i] is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.'
@@ -58,6 +111,7 @@ def descrpt_local_frame_args ():
     ]
 
 
+@descrpt_args_plugin.register("se_e2_a", alias=["se_a"])
 def descrpt_se_a_args():
     doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
     - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
@@ -72,7 +126,7 @@ def descrpt_se_a_args():
     doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}'
     doc_trainable = 'If the parameters in the embedding net is trainable'
     doc_seed = 'Random seed for parameter initialization'
-    doc_exclude_types = 'The Excluded types'
+    doc_exclude_types = 'The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1.'
     doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
     
     return [
@@ -92,6 +146,7 @@ def descrpt_se_a_args():
     ]
 
 
+@descrpt_args_plugin.register("se_e3", alias=['se_at', 'se_a_3be', 'se_t'])
 def descrpt_se_t_args():
     doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
     - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
@@ -121,6 +176,7 @@ def descrpt_se_t_args():
 
 
 
+@descrpt_args_plugin.register("se_a_tpe", alias=['se_a_ebd'])
 def descrpt_se_a_tpe_args():
     doc_type_nchanl = 'number of channels for type embedding'
     doc_type_nlayer = 'number of hidden layers of type embedding net'
@@ -133,6 +189,7 @@ def descrpt_se_a_tpe_args():
     ]
 
 
+@descrpt_args_plugin.register("se_e2_r", alias=['se_r'])
 def descrpt_se_r_args():
     doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
     - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
@@ -146,7 +203,7 @@ def descrpt_se_r_args():
     doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}'
     doc_trainable = 'If the parameters in the embedding net are trainable'
     doc_seed = 'Random seed for parameter initialization'
-    doc_exclude_types = 'The Excluded types'
+    doc_exclude_types = 'The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1.'
     doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
     
     return [
@@ -165,18 +222,7 @@ def descrpt_se_r_args():
     ]
 
 
-def descrpt_se_ar_args():
-    link = make_link('se_a', 'model/descriptor[se_a]')
-    doc_a = f'The parameters of descriptor {link}'
-    link = make_link('se_r', 'model/descriptor[se_r]')
-    doc_r = f'The parameters of descriptor {link}'
-    
-    return [
-        Argument("a", dict, optional = False, doc = doc_a),
-        Argument("r", dict, optional = False, doc = doc_r),
-    ]
-
-
+@descrpt_args_plugin.register("hybrid")
 def descrpt_hybrid_args():
     doc_list = f'A list of descriptor definitions'
     
@@ -200,14 +246,7 @@ def descrpt_variant_type_args():
 - `se_a_tpe`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Type embedding will be used by this descriptor.\n\n\
 - `hybrid`: Concatenate of a list of descriptors as a new descriptor.'
     
-    return Variant("type", [
-        Argument("loc_frame", dict, descrpt_local_frame_args()),
-        Argument("se_e2_a", dict, descrpt_se_a_args(), alias = ['se_a']),
-        Argument("se_e2_r", dict, descrpt_se_r_args(), alias = ['se_r']),
-        Argument("se_e3", dict, descrpt_se_t_args(), alias = ['se_at', 'se_a_3be', 'se_t']),
-        Argument("se_a_tpe", dict, descrpt_se_a_tpe_args(), alias = ['se_a_ebd']),
-        Argument("hybrid", dict, descrpt_hybrid_args()),
-    ], doc = doc_descrpt_type)
+    return Variant("type", descrpt_args_plugin.get_all_argument(), doc = doc_descrpt_type)
 
 
 #  --- Fitting net configurations: --- #
@@ -332,13 +371,11 @@ def modifier_variant_type_args():
 
 #  --- model compression configurations: --- #
 def model_compression():
-    doc_compress = f"The name of the frozen model file."
     doc_model_file = f"The input model file, which will be compressed by the DeePMD-kit."
     doc_table_config = f"The arguments of model compression, including extrapolate(scale of model extrapolation), stride(uniform stride of tabulation's first and second table), and frequency(frequency of tabulation overflow check)."
     doc_min_nbor_dist = f"The nearest distance between neighbor atoms saved in the frozen model."
     
     return [
-        Argument("compress", bool, optional = False, doc = doc_compress),
         Argument("model_file", str, optional = False, doc = doc_model_file),
         Argument("table_config", list, optional = False, doc = doc_table_config),
         Argument("min_nbor_dist", float, optional = False, doc = doc_min_nbor_dist),
@@ -413,8 +450,10 @@ def learning_rate_variant_type_args():
 
 
 def learning_rate_args():
+    doc_scale_by_worker = 'When parallel training or batch size scaled, how to alter learning rate. Valid values are `linear`(default), `sqrt` or `none`.'
     doc_lr = "The definitio of learning rate" 
-    return Argument("learning_rate", dict, [], 
+    return Argument("learning_rate", dict,
+                    [Argument("scale_by_worker", str, optional=True, default='linear', doc=doc_scale_by_worker)],
                     [learning_rate_variant_type_args()],
                     doc = doc_lr)
 
@@ -437,6 +476,8 @@ def loss_ener():
     doc_limit_pref_v = limit_pref('virial')
     doc_start_pref_ae = start_pref('atom_ener')
     doc_limit_pref_ae = limit_pref('atom_ener')
+    doc_start_pref_pf = start_pref('atom_pref')
+    doc_limit_pref_pf = limit_pref('atom_pref')
     doc_relative_f = 'If provided, relative force error will be used in the loss. The difference of force will be normalized by the magnitude of the force in the label with a shift given by `relative_f`, i.e. DF_i / ( || F || + relative_f ) with DF denoting the difference between prediction and label and || F || denoting the L2 norm of the label.'
     return [
         Argument("start_pref_e", [float,int], optional = True, default = 0.02, doc = doc_start_pref_e),
@@ -447,6 +488,8 @@ def loss_ener():
         Argument("limit_pref_v", [float,int], optional = True, default = 0.00, doc = doc_limit_pref_v),
         Argument("start_pref_ae", [float,int], optional = True, default = 0.00, doc = doc_start_pref_ae),
         Argument("limit_pref_ae", [float,int], optional = True, default = 0.00, doc = doc_limit_pref_ae),
+        Argument("start_pref_pf", [float,int], optional = True, default = 0.00, doc = doc_start_pref_pf),
+        Argument("limit_pref_pf", [float,int], optional = True, default = 0.00, doc = doc_limit_pref_pf),
         Argument("relative_f", [float,None], optional = True, doc = doc_relative_f)
     ]
 
@@ -557,40 +600,62 @@ def validation_data_args():  # ! added by Ziyao: new specification style for dat
                     sub_fields=args, sub_variants=[], doc=doc_validation_data)
 
 
+def mixed_precision_args():  # ! added by Denghui.
+    doc_output_prec  = 'The precision for mixed precision params. " \
+        "The trainable variables precision during the mixed precision training process, " \
+        "supported options are float32 only currently.'
+    doc_compute_prec  = 'The precision for mixed precision compute. " \
+        "The compute precision during the mixed precision training process, "" \
+        "supported options are float16 only currently.'
+
+    args = [
+        Argument("output_prec", str, optional=True, default="float32", doc=doc_output_prec),
+        Argument("compute_prec", str, optional=False, default="float16", doc=doc_compute_prec),
+    ]
+
+    doc_mixed_precision = "Configurations of mixed precision."
+    return Argument("mixed_precision", dict, optional=True,
+                    sub_fields=args, sub_variants=[], doc=doc_mixed_precision)
+
+
 def training_args():  # ! modified by Ziyao: data configuration isolated.
     doc_numb_steps = 'Number of training batch. Each training uses one batch of data.'
     doc_seed = 'The random seed for getting frames from the training data set.'
     doc_disp_file = 'The file for printing learning curve.'
     doc_disp_freq = 'The frequency of printing learning curve.'
-    doc_numb_test = 'Number of frames used for the test during training.'
     doc_save_freq = 'The frequency of saving check point.'
     doc_save_ckpt = 'The file name of saving check point.'
     doc_disp_training = 'Displaying verbose information during training.'
     doc_time_training = 'Timing durining training.'
     doc_profiling = 'Profiling during training.'
     doc_profiling_file = 'Output file for profiling.'
+    doc_enable_profiler = 'Enable TensorFlow Profiler (available in TensorFlow 2.3) to analyze performance. The log will be saved to `tensorboard_log_dir`.'
     doc_tensorboard = 'Enable tensorboard'
     doc_tensorboard_log_dir = 'The log directory of tensorboard outputs'
+    doc_tensorboard_freq = 'The frequency of writing tensorboard events.'
 
     arg_training_data = training_data_args()
     arg_validation_data = validation_data_args()
+    mixed_precision_data = mixed_precision_args()
 
     args = [
         arg_training_data,
         arg_validation_data,
+        mixed_precision_data,
         Argument("numb_steps", int, optional=False, doc=doc_numb_steps, alias=["stop_batch"]),
         Argument("seed", [int,None], optional=True, doc=doc_seed),
-        Argument("disp_file", str, optional=True, default='lcueve.out', doc=doc_disp_file),
+        Argument("disp_file", str, optional=True, default='lcurve.out', doc=doc_disp_file),
         Argument("disp_freq", int, optional=True, default=1000, doc=doc_disp_freq),
-        Argument("numb_test", [list,int,str], optional=True, default=1, doc=doc_numb_test),
         Argument("save_freq", int, optional=True, default=1000, doc=doc_save_freq),
         Argument("save_ckpt", str, optional=True, default='model.ckpt', doc=doc_save_ckpt),
         Argument("disp_training", bool, optional=True, default=True, doc=doc_disp_training),
         Argument("time_training", bool, optional=True, default=True, doc=doc_time_training),
         Argument("profiling", bool, optional=True, default=False, doc=doc_profiling),
         Argument("profiling_file", str, optional=True, default='timeline.json', doc=doc_profiling_file),
+        Argument("enable_profiler", bool, optional=True, default=False, doc=doc_enable_profiler),
         Argument("tensorboard", bool, optional=True, default=False, doc=doc_tensorboard),
         Argument("tensorboard_log_dir", str, optional=True, default='log', doc=doc_tensorboard_log_dir),
+        Argument("tensorboard_freq", int, optional=True, default=1, doc=doc_tensorboard_freq),
     ]
 
     doc_training = 'The training options.'

@@ -1,0 +1,13 @@
+--- /public/wangyingze/soft/gromacs-2020.2/src/gromacs/mdlib/forcerec.h	2020-04-30 16:33:43.000000000 +0000
++++ /public/wangyingze/soft/gromacs-2020.2-deepmd/src/gromacs/mdlib/forcerec.h	2021-09-19 07:32:41.000000000 +0000
+@@ -44,6 +44,10 @@
+ #include "gromacs/timing/wallcycle.h"
+ #include "gromacs/utility/arrayref.h"
+ 
++#include "deepmd/gmx_plugin.h"
++extern deepmd::DeepmdPlugin* deepmdPlugin;
++extern bool                  useDeepmd;
++
+ struct gmx_device_info_t;
+ struct gmx_hw_info_t;
+ struct t_commrec;

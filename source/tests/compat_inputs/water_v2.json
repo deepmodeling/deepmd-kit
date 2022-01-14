@@ -17,7 +17,7 @@
     "learning_rate" :{
 		"type":		"exp",
 		"decay_steps":	5000,
-		"decay_rate":	0.95,
+		"stop_lr":	3.505266624882874e-08,
 		"start_lr":	0.001
     },
 

@@ -97,15 +97,13 @@ class TestModel(tf.test.TestCase):
         refp = [3.39695248e+01,  2.16564043e+01,  8.18501479e-01,  2.16564043e+01,  1.38211789e+01,  5.22775159e-01,  8.18501479e-01,  5.22775159e-01, 1.97847218e-02, 8.08467431e-01,  3.42081126e+00, -2.01072261e-01,  3.42081126e+00, 1.54924596e+01, -9.06153697e-01, -2.01072261e-01, -9.06153697e-01,  5.30193262e-02]
 
         places = 6
-        for ii in range(p.size) :
-            self.assertAlmostEqual(p[ii], refp[ii], places = places)
+        np.testing.assert_almost_equal(p, refp, places)
 
         gp = gp.reshape([-1])
         refgp = np.array(refp).reshape(-1, 9).sum(0)
         
         places = 5
-        for ii in range(gp.size) :
-            self.assertAlmostEqual(gp[ii], refgp[ii], places = places)
+        np.testing.assert_almost_equal(gp, refgp, places)
 
         # make sure only one frame is used
         feed_dict_single = {t_prop_c:        test_data['prop_c'],
@@ -139,11 +137,8 @@ class TestModel(tf.test.TestCase):
                 @ box0.reshape(3,3)).reshape(-1)
 
         delta = 1e-4
-        for ii in range(pf.size) :
-            self.assertAlmostEqual(pf[ii], fdf[ii], delta = delta)
-        for ii in range(pv.size) :
-            self.assertAlmostEqual(pv[ii], fdv[ii], delta = delta)
+        np.testing.assert_allclose(pf, fdf, delta)
+        np.testing.assert_allclose(pv, fdv, delta)
         # make sure atomic virial sum to virial        
         places = 10
-        for ii in range(pv.size) :
-            self.assertAlmostEqual(pv[ii], spv[ii], places = places)
+        np.testing.assert_almost_equal(pv, spv, places)

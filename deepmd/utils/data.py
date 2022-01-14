@@ -9,13 +9,31 @@ import logging
 
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
+from deepmd.utils import random as dp_random
+from deepmd.utils.path import DPPath
 
 log = logging.getLogger(__name__)
 
 class DeepmdData() :
     """
     Class for a data system. 
+
     It loads data from hard disk, and mantains the data as a `data_dict`
+
+    Parameters
+    ----------
+    sys_path
+            Path to the data system
+    set_prefix
+            Prefix for the directories of different sets
+    shuffle_test
+            If the test data are shuffled
+    type_map
+            Gives the name of different atom types
+    modifier
+            Data modifier that has the method `modify_data`
+    trn_all_set
+            Use all sets as training dataset. Otherwise, if the number of sets is more than 1, the last set is left for test.
     """
     def __init__ (self, 
                   sys_path : str, 
@@ -26,33 +44,19 @@ class DeepmdData() :
                   trn_all_set : bool = False) :
         """
         Constructor
-        
-        Parameters
-        ----------
-        sys_path
-                Path to the data system
-        set_prefix
-                Prefix for the directories of different sets
-        shuffle_test
-                If the test data are shuffled
-        type_map
-                Gives the name of different atom types
-        modifier
-                Data modifier that has the method `modify_data`
-        trn_all_set
-                Use all sets as training dataset. Otherwise, if the number of sets is more than 1, the last set is left for test.
         """
-        self.dirs = glob.glob (os.path.join(sys_path, set_prefix + ".*"))
+        root = DPPath(sys_path)
+        self.dirs = root.glob(set_prefix + ".*")
         self.dirs.sort()
         # load atom type
-        self.atom_type = self._load_type(sys_path)
+        self.atom_type = self._load_type(root)
         self.natoms = len(self.atom_type)
         # load atom type map
-        self.type_map = self._load_type_map(sys_path)
+        self.type_map = self._load_type_map(root)
         if self.type_map is not None:
             assert(len(self.type_map) >= max(self.atom_type)+1)
         # check pbc
-        self.pbc = self._check_pbc(sys_path)
+        self.pbc = self._check_pbc(root)
         # enforce type_map if necessary
         if type_map is not None and self.type_map is not None:
             atom_type_ = [type_map.index(self.type_map[ii]) for ii in self.atom_type]
@@ -165,9 +169,9 @@ class DeepmdData() :
         """
         for ii in self.train_dirs :
             if self.data_dict['coord']['high_prec'] :
-                tmpe = np.load(os.path.join(ii, "coord.npy")).astype(GLOBAL_ENER_FLOAT_PRECISION)
+                tmpe = (ii / "coord.npy").load_numpy().astype(GLOBAL_ENER_FLOAT_PRECISION)
             else:
-                tmpe = np.load(os.path.join(ii, "coord.npy")).astype(GLOBAL_NP_FLOAT_PRECISION)
+                tmpe = (ii / "coord.npy").load_numpy().astype(GLOBAL_NP_FLOAT_PRECISION)
             if tmpe.ndim == 1:
                 tmpe = tmpe.reshape([1,-1])            
             if tmpe.shape[0] < batch_size :
@@ -179,9 +183,9 @@ class DeepmdData() :
         Check if the system can get a test dataset with `test_size` frames.
         """
         if self.data_dict['coord']['high_prec'] :
-            tmpe = np.load(os.path.join(self.test_dir, "coord.npy")).astype(GLOBAL_ENER_FLOAT_PRECISION)
+            tmpe = (self.test_dir / "coord.npy").load_numpy().astype(GLOBAL_ENER_FLOAT_PRECISION)
         else:
-            tmpe = np.load(os.path.join(self.test_dir, "coord.npy")).astype(GLOBAL_NP_FLOAT_PRECISION)            
+            tmpe = (self.test_dir / "coord.npy").load_numpy().astype(GLOBAL_NP_FLOAT_PRECISION)            
         if tmpe.ndim == 1:
             tmpe = tmpe.reshape([1,-1])            
         if tmpe.shape[0] < test_size :
@@ -375,7 +379,7 @@ class DeepmdData() :
         return new_data
 
     def _load_batch_set (self,
-                         set_name) :
+                         set_name: DPPath) :
         self.batch_set = self._load_set(set_name)
         self.batch_set, _ = self._shuffle_data(self.batch_set)
         self.reset_get_batch()
@@ -384,7 +388,7 @@ class DeepmdData() :
         self.iterator = 0
 
     def _load_test_set (self,
-                       set_name, 
+                       set_name: DPPath, 
                        shuffle_test) :
         self.test_set = self._load_set(set_name)        
         if shuffle_test :
@@ -395,7 +399,7 @@ class DeepmdData() :
         ret = {}
         nframes = data['coord'].shape[0]
         idx = np.arange (nframes)
-        np.random.shuffle (idx)
+        dp_random.shuffle(idx)
         for kk in data :
             if type(data[kk]) == np.ndarray and \
                len(data[kk].shape) == 2 and \
@@ -407,13 +411,15 @@ class DeepmdData() :
                 ret[kk] = data[kk]
         return ret, idx
 
-    def _load_set(self, set_name) :
+    def _load_set(self, set_name: DPPath) :
         # get nframes
-        path = os.path.join(set_name, "coord.npy")
+        if not isinstance(set_name, DPPath):
+            set_name = DPPath(set_name)
+        path = set_name / "coord.npy"
         if self.data_dict['coord']['high_prec'] :
-            coord = np.load(path).astype(GLOBAL_ENER_FLOAT_PRECISION)
+            coord = path.load_numpy().astype(GLOBAL_ENER_FLOAT_PRECISION)
         else:
-            coord = np.load(path).astype(GLOBAL_NP_FLOAT_PRECISION)            
+            coord = path.load_numpy().astype(GLOBAL_NP_FLOAT_PRECISION)            
         if coord.ndim == 1:
             coord = coord.reshape([1,-1])
         nframes = coord.shape[0]
@@ -457,12 +463,12 @@ class DeepmdData() :
             ndof = ndof_ * natoms
         else:
             ndof = ndof_
-        path = os.path.join(set_name, key+".npy")
-        if os.path.isfile (path) :
+        path = set_name / (key+".npy")
+        if path.is_file() :
             if high_prec :
-                data = np.load(path).astype(GLOBAL_ENER_FLOAT_PRECISION)
+                data = path.load_numpy().astype(GLOBAL_ENER_FLOAT_PRECISION)
             else:
-                data = np.load(path).astype(GLOBAL_NP_FLOAT_PRECISION)
+                data = path.load_numpy().astype(GLOBAL_NP_FLOAT_PRECISION)
             try:    # YWolfeee: deal with data shape error
                 if atomic :
                     data = data.reshape([nframes, natoms, -1])
@@ -489,8 +495,8 @@ class DeepmdData() :
             return np.float32(0.0), data
 
         
-    def _load_type (self, sys_path) :
-        atom_type = np.loadtxt (os.path.join(sys_path, "type.raw"), dtype=np.int32, ndmin=1)
+    def _load_type (self, sys_path: DPPath) :
+        atom_type = (sys_path / "type.raw").load_txt(dtype=np.int32, ndmin=1)
         return atom_type
 
     def _make_idx_map(self, atom_type):
@@ -499,24 +505,26 @@ class DeepmdData() :
         idx_map = np.lexsort ((idx, atom_type))
         return idx_map
 
-    def _load_type_map(self, sys_path) :
-        fname = os.path.join(sys_path, 'type_map.raw')
-        if os.path.isfile(fname) :            
-            with open(os.path.join(sys_path, 'type_map.raw')) as fp:
-                return fp.read().split()                
+    def _load_type_map(self, sys_path: DPPath) :
+        fname = sys_path / 'type_map.raw'
+        if fname.is_file() :            
+            return fname.load_txt(dtype=str, ndmin=1).tolist()
         else :
             return None
 
-    def _check_pbc(self, sys_path):
+    def _check_pbc(self, sys_path: DPPath):
         pbc = True
-        if os.path.isfile(os.path.join(sys_path, 'nopbc')) :
+        if (sys_path / 'nopbc').is_file() :
             pbc = False
         return pbc
 
 
 class DataSets (object):
     """
-    Outdated class for one data system. Not maintained anymore.
+    Outdated class for one data system.
+
+    .. deprecated:: 2.0.0
+        This class is not maintained any more.
     """
     def __init__ (self, 
                   sys_path,
@@ -672,7 +680,7 @@ class DataSets (object):
         # shuffle data
         if shuffle:
             idx = np.arange (nframe)
-            np.random.shuffle (idx)
+            dp_random.shuffle(idx)
             for ii in data:
                 if ii != "prop_c":
                     data[ii] = data[ii][idx]

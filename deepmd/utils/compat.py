@@ -5,6 +5,7 @@ import warnings
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence, Union
 
+import numpy as np
 from deepmd.common import j_must_have
 
 
@@ -12,6 +13,7 @@ def convert_input_v0_v1(
     jdata: Dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
 ) -> Dict[str, Any]:
     """Convert input from v0 format to v1.
+
     Parameters
     ----------
     jdata : Dict[str, Any]
@@ -20,6 +22,7 @@ def convert_input_v0_v1(
         whether to show deprecation warning, by default True
     dump : Optional[Union[str, Path]], optional
         whether to dump converted file, by default None
+
     Returns
     -------
     Dict[str, Any]
@@ -49,12 +52,14 @@ def _warning_input_v0_v1(fname: Optional[Union[str, Path]]):
 
 def _model(jdata: Dict[str, Any], smooth: bool) -> Dict[str, Dict[str, Any]]:
     """Convert data to v1 input for non-smooth model.
+
     Parameters
     ----------
     jdata : Dict[str, Any]
         parsed input json/yaml data
     smooth : bool
         whether to use smooth or non-smooth descriptor version
+
     Returns
     -------
     Dict[str, Dict[str, Any]]
@@ -71,10 +76,12 @@ def _model(jdata: Dict[str, Any], smooth: bool) -> Dict[str, Dict[str, Any]]:
 
 def _nonsmth_descriptor(jdata: Dict[str, Any]) -> Dict[str, Any]:
     """Convert data to v1 input for non-smooth descriptor.
+
     Parameters
     ----------
     jdata : Dict[str, Any]
         parsed input json/yaml data
+
     Returns
     -------
     Dict[str, Any]
@@ -88,10 +95,12 @@ def _nonsmth_descriptor(jdata: Dict[str, Any]) -> Dict[str, Any]:
 
 def _smth_descriptor(jdata: Dict[str, Any]) -> Dict[str, Any]:
     """Convert data to v1 input for smooth descriptor.
+
     Parameters
     ----------
     jdata : Dict[str, Any]
         parsed input json/yaml data
+
     Returns
     -------
     Dict[str, Any]
@@ -116,10 +125,12 @@ def _smth_descriptor(jdata: Dict[str, Any]) -> Dict[str, Any]:
 
 def _fitting_net(jdata: Dict[str, Any]) -> Dict[str, Any]:
     """Convert data to v1 input for fitting net.
+
     Parameters
     ----------
     jdata : Dict[str, Any]
         parsed input json/yaml data
+
     Returns
     -------
     Dict[str, Any]
@@ -141,10 +152,12 @@ def _fitting_net(jdata: Dict[str, Any]) -> Dict[str, Any]:
 
 def _learning_rate(jdata: Dict[str, Any]) -> Dict[str, Any]:
     """Convert data to v1 input for learning rate section.
+
     Parameters
     ----------
     jdata : Dict[str, Any]
         parsed input json/yaml data
+
     Returns
     -------
     Dict[str, Any]
@@ -158,10 +171,12 @@ def _learning_rate(jdata: Dict[str, Any]) -> Dict[str, Any]:
 
 def _loss(jdata: Dict[str, Any]) -> Dict[str, Any]:
     """Convert data to v1 input for loss function.
+
     Parameters
     ----------
     jdata : Dict[str, Any]
         parsed input json/yaml data
+
     Returns
     -------
     Dict[str, Any]
@@ -189,10 +204,12 @@ def _loss(jdata: Dict[str, Any]) -> Dict[str, Any]:
 
 def _training(jdata: Dict[str, Any]) -> Dict[str, Any]:
     """Convert data to v1 input for training.
+
     Parameters
     ----------
     jdata : Dict[str, Any]
         parsed input json/yaml data
+
     Returns
     -------
     Dict[str, Any]
@@ -222,6 +239,7 @@ def _training(jdata: Dict[str, Any]) -> Dict[str, Any]:
 
 def _jcopy(src: Dict[str, Any], dst: Dict[str, Any], keys: Sequence[str]):
     """Copy specified keys from one dict to another.
+
     Parameters
     ----------
     src : Dict[str, Any]
@@ -235,6 +253,25 @@ def _jcopy(src: Dict[str, Any], dst: Dict[str, Any], keys: Sequence[str]):
     """
     for k in keys:
         dst[k] = src[k]
+
+
+def remove_decay_rate(jdata: Dict[str, Any]):
+    """convert decay_rate to stop_lr.
+    
+    Parameters
+    ----------
+    jdata: Dict[str, Any]
+        input data
+    """
+    lr = jdata["learning_rate"]
+    if "decay_rate" in lr:
+        decay_rate = lr["decay_rate"]
+        start_lr = lr["start_lr"]
+        stop_step = jdata["training"]["stop_batch"]
+        decay_steps = lr["decay_steps"]
+        stop_lr = np.exp(np.log(decay_rate) * (stop_step / decay_steps)) * start_lr
+        lr["stop_lr"] = stop_lr
+        lr.pop("decay_rate")
 
 
 def convert_input_v1_v2(jdata: Dict[str, Any],
@@ -259,6 +296,9 @@ def convert_input_v1_v2(jdata: Dict[str, Any],
 
     jdata["training"] = new_tr_cfg
 
+    # remove deprecated arguments
+    remove_decay_rate(jdata)
+
     if warning:
         _warning_input_v1_v2(dump)
     if dump is not None:
@@ -276,7 +316,45 @@ def _warning_input_v1_v2(fname: Optional[Union[str, Path]]):
     warnings.warn(msg)
 
 
-def updata_deepmd_input(jdata: Dict[str, Any],
+def deprecate_numb_test(jdata: Dict[str, Any],
+                        warning: bool = True,
+                        dump: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
+    """Deprecate `numb_test` since v2.1. It has taken no effect since v2.0.
+    
+    See `#1243 <https://github.com/deepmodeling/deepmd-kit/discussions/1243>`_.
+    
+    Parameters
+    ----------
+    jdata : Dict[str, Any]
+        loaded json/yaml file
+    warning : bool, optional
+        whether to show deprecation warning, by default True
+    dump : Optional[Union[str, Path]], optional
+        whether to dump converted file, by default None
+
+    Returns
+    -------
+    Dict[str, Any]
+        converted output
+    """
+    try:
+        jdata.get("training", {}).pop("numb_test")
+    except KeyError:
+        pass
+    else:
+        if warning:
+            warnings.warn(
+                "The argument training->numb_test has been deprecated since v2.0.0. "
+                "Use training->validation_data->batch_size instead."
+            )
+
+    if dump is not None:
+        with open(dump, "w") as fp:
+            json.dump(jdata, fp, indent=4)
+    return jdata
+
+
+def update_deepmd_input(jdata: Dict[str, Any],
                         warning: bool = True,
                         dump: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
     def is_deepmd_v0_input(jdata):
@@ -287,10 +365,12 @@ def updata_deepmd_input(jdata: Dict[str, Any],
 
     if is_deepmd_v0_input(jdata):
         jdata = convert_input_v0_v1(jdata, warning, None)
-        jdata = convert_input_v1_v2(jdata, False, dump)
+        jdata = convert_input_v1_v2(jdata, False, None)
+        jdata = deprecate_numb_test(jdata, False, dump)
     elif is_deepmd_v1_input(jdata):
-        jdata = convert_input_v1_v2(jdata, warning, dump)
+        jdata = convert_input_v1_v2(jdata, warning, None)
+        jdata = deprecate_numb_test(jdata, False, dump)
     else:
-        pass
+        jdata = deprecate_numb_test(jdata, warning, dump)
 
     return jdata

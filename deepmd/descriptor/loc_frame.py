@@ -7,8 +7,35 @@ from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.utils.sess import run_sess
+from .descriptor import Descriptor
 
-class DescrptLocFrame () :
+@Descriptor.register("loc_frame")
+class DescrptLocFrame (Descriptor) :
+    """Defines a local frame at each atom, and the compute the descriptor as local
+    coordinates under this frame.
+
+    Parameters
+    ----------
+    rcut
+            The cut-off radius
+    sel_a : list[str]
+            The length of the list should be the same as the number of atom types in the system. 
+            `sel_a[i]` gives the selected number of type-i neighbors. 
+            The full relative coordinates of the neighbors are used by the descriptor.
+    sel_r : list[str]
+            The length of the list should be the same as the number of atom types in the system. 
+            `sel_r[i]` gives the selected number of type-i neighbors. 
+            Only relative distance of the neighbors are used by the descriptor.
+            sel_a[i] + sel_r[i] is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.        
+    axis_rule: list[int]
+            The length should be 6 times of the number of types. 
+            - axis_rule[i*6+0]: class of the atom defining the first axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.\n\n\
+            - axis_rule[i*6+1]: type of the atom defining the first axis of type-i atom.\n\n\
+            - axis_rule[i*6+2]: index of the axis atom defining the first axis. Note that the neighbors with the same class and type are sorted according to their relative distance.\n\n\
+            - axis_rule[i*6+3]: class of the atom defining the first axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.\n\n\
+            - axis_rule[i*6+4]: type of the atom defining the second axis of type-i atom.\n\n\
+            - axis_rule[i*6+5]: class of the atom defining the second axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.    
+    """
     def __init__(self, 
                  rcut: float,
                  sel_a : List[int],
@@ -16,28 +43,7 @@ class DescrptLocFrame () :
                  axis_rule : List[int]
     ) -> None:
         """
-        Constructor
-
-        Parameters
-        rcut
-                The cut-off radius
-        sel_a : list[str]
-                The length of the list should be the same as the number of atom types in the system. 
-                `sel_a[i]` gives the selected number of type-i neighbors. 
-                The full relative coordinates of the neighbors are used by the descriptor.
-        sel_r : list[str]
-                The length of the list should be the same as the number of atom types in the system. 
-                `sel_r[i]` gives the selected number of type-i neighbors. 
-                Only relative distance of the neighbors are used by the descriptor.
-                sel_a[i] + sel_r[i] is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.        
-        axis_rule: list[int]
-                The length should be 6 times of the number of types. 
-                - axis_rule[i*6+0]: class of the atom defining the first axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.\n\n\
-                - axis_rule[i*6+1]: type of the atom defining the first axis of type-i atom.\n\n\
-                - axis_rule[i*6+2]: index of the axis atom defining the first axis. Note that the neighbors with the same class and type are sorted according to their relative distance.\n\n\
-                - axis_rule[i*6+3]: class of the atom defining the first axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.\n\n\
-                - axis_rule[i*6+4]: type of the atom defining the second axis of type-i atom.\n\n\
-                - axis_rule[i*6+5]: class of the atom defining the second axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.        
+        Constructor    
         """
         # args = ClassArg()\
         #        .add('sel_a',    list,   must = True) \
@@ -286,8 +292,9 @@ class DescrptLocFrame () :
                 natoms[0]: number of local atoms
                 natoms[1]: total number of atoms held by this processor
                 natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
-        Return
-        ------
+
+        Returns
+        -------
         force
                 The force on atoms
         virial

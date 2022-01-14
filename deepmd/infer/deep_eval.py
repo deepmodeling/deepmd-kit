@@ -1,17 +1,31 @@
 import os
-from typing import List, Optional, TYPE_CHECKING
+from typing import List, Optional, TYPE_CHECKING, Union
 
 import numpy as np
 from deepmd.common import make_default_mesh
 from deepmd.env import default_tf_session_config, tf, MODEL_VERSION
 from deepmd.utils.sess import run_sess
+from deepmd.utils.batch_size import AutoBatchSize
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
 class DeepEval:
-    """Common methods for DeepPot, DeepWFC, DeepPolar, ..."""
+    """Common methods for DeepPot, DeepWFC, DeepPolar, ...
+    
+    Parameters
+    ----------
+    model_file : Path
+        The name of the frozen model file.
+    load_prefix: str
+        The prefix in the load computational graph
+    default_tf_graph : bool
+        If uses the default tf graph, otherwise build a new tf graph for evaluation
+    auto_batch_size : bool or int or AutomaticBatchSize, default: False
+        If True, automatic batch size will be used. If int, it will be used
+        as the initial batch size.
+    """
 
     _model_type: Optional[str] = None
     _model_version: Optional[str] = None
@@ -21,7 +35,8 @@ class DeepEval:
         self,
         model_file: "Path",
         load_prefix: str = "load",
-        default_tf_graph: bool = False
+        default_tf_graph: bool = False,
+        auto_batch_size: Union[bool, int, AutoBatchSize] = False,
     ):
         self.graph = self._load_graph(
             model_file, prefix=load_prefix, default_tf_graph=default_tf_graph
@@ -34,6 +49,19 @@ class DeepEval:
                 f"model in graph (version {self.model_version}) is incompatible"
                 f"with the model (version {MODEL_VERSION}) supported by the current code."
             )
+        
+        # set default to False, as subclasses may not support
+        if isinstance(auto_batch_size, bool):
+            if auto_batch_size:
+                self.auto_batch_size = AutoBatchSize()
+            else:
+                self.auto_batch_size = None
+        elif isinstance(auto_batch_size, int):
+            self.auto_batch_size = AutoBatchSize(auto_batch_size)
+        elif isinstance(auto_batch_size, AutoBatchSize):
+            self.auto_batch_size = auto_batch_size
+        else:
+            raise TypeError("auto_batch_size should be bool, int, or AutoBatchSize")
 
     @property
     def model_type(self) -> str:
@@ -50,19 +78,23 @@ class DeepEval:
 
     @property
     def model_version(self) -> str:
-        """Get type of model.
+        """Get version of model.
 
-        :type:str
+        Returns
+        -------
+        str
+            version of model
         """
         if not self._model_version:
             try:
                 t_mt = self._get_tensor("model_attr/model_version:0")
-                sess = tf.Session(graph=self.graph, config=default_tf_session_config)
-                [mt] = run_sess(sess, [t_mt], feed_dict={})
-                self._model_version = mt.decode("utf-8")
             except KeyError:
                 # For deepmd-kit version 0.x - 1.x, set model version to 0.0
                 self._model_version = "0.0"
+            else:
+                sess = tf.Session(graph=self.graph, config=default_tf_session_config)
+                [mt] = run_sess(sess, [t_mt], feed_dict={})
+                self._model_version = mt.decode("utf-8")
         return self._model_version    
 
     def _graph_compatable(
@@ -70,7 +102,8 @@ class DeepEval:
     ) -> bool :
         """ Check the model compatability
         
-        Return
+        Returns
+        -------
         bool
             If the model stored in the graph file is compatable with the current code
         """
@@ -145,7 +178,7 @@ class DeepEval:
 
     @staticmethod
     def sort_input(
-        coord : np.array, atom_type : np.array, sel_atoms : List[int] = None
+        coord : np.ndarray, atom_type : np.ndarray, sel_atoms : List[int] = None
     ):
         """
         Sort atoms in the system according their types.

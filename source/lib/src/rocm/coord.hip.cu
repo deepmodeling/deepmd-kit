@@ -1,6 +1,4 @@
-#include "hip/hip_runtime.h"
 #include "device.h"
-#include "gpu_rocm.h"
 #include "coord.h"
 #include "region.cuh"
 

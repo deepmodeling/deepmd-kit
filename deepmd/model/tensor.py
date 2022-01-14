@@ -3,11 +3,30 @@ from typing import Tuple, List
 
 from deepmd.env import tf
 from deepmd.common import ClassArg
-from deepmd.env import global_cvt_2_ener_float, MODEL_VERSION
+from deepmd.env import global_cvt_2_ener_float, MODEL_VERSION, GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import op_module
+from deepmd.utils.graph import load_graph_def
 from .model_stat import make_stat_input, merge_sys_stat
 
 class TensorModel() :
+    """Tensor model.
+
+    Parameters
+    ----------
+    tensor_name
+            Name of the tensor.
+    descrpt
+            Descriptor
+    fitting
+            Fitting net
+    type_map
+            Mapping atom type to the name (str) of the type.
+            For example `type_map[1]` gives the name of the type 1.
+    data_stat_nbatch
+            Number of frames used for data statistic
+    data_stat_protect
+            Protect parameter for atomic energy regression
+    """
     def __init__ (
             self, 
             tensor_name : str,
@@ -19,22 +38,6 @@ class TensorModel() :
     )->None:
         """
         Constructor
-
-        Parameters
-        ----------
-        tensor_name
-                Name of the tensor.
-        descrpt
-                Descriptor
-        fitting
-                Fitting net
-        type_map
-                Mapping atom type to the name (str) of the type.
-                For example `type_map[1]` gives the name of the type 1.
-        data_stat_nbatch
-                Number of frames used for data statistic
-        data_stat_protect
-                Protect parameter for atomic energy regression        
         """
         self.model_type = tensor_name
         # descriptor
@@ -93,6 +96,7 @@ class TensorModel() :
                box, 
                mesh,
                input_dict,
+               frz_model = None,         
                suffix = '', 
                reuse = None):
         with tf.variable_scope('model_attr' + suffix, reuse = reuse) :
@@ -115,16 +119,31 @@ class TensorModel() :
         natomsel = sum(natoms[2+type_i] for type_i in self.get_sel_type())
         nout = self.get_out_size()
 
-        dout \
-            = self.descrpt.build(coord_,
-                                 atype_,
-                                 natoms,
-                                 box,
-                                 mesh,
-                                 input_dict,
-                                 suffix = suffix,
-                                 reuse = reuse)
-        dout = tf.identity(dout, name='o_descriptor')
+        if frz_model == None:
+            dout \
+                = self.descrpt.build(coord_,
+                                     atype_,
+                                     natoms,
+                                     box,
+                                     mesh,
+                                     input_dict,
+                                     suffix = suffix,
+                                     reuse = reuse)
+            dout = tf.identity(dout, name='o_descriptor')
+        else:
+            tf.constant(self.rcut,
+                name = 'descrpt_attr/rcut',
+                dtype = GLOBAL_TF_FLOAT_PRECISION)
+            tf.constant(self.ntypes,
+                name = 'descrpt_attr/ntypes',
+                dtype = tf.int32)
+            feed_dict = self.descrpt.get_feed_dict(coord_, atype_, natoms, box, mesh)
+            return_elements = [*self.descrpt.get_tensor_names(), 'o_descriptor:0']
+            imported_tensors \
+                = self._import_graph_def_from_frz_model(frz_model, feed_dict, return_elements)
+            dout = imported_tensors[-1]
+            self.descrpt.pass_tensors_from_frz_model(*imported_tensors[:-1])
+
         rot_mat = self.descrpt.get_rot_mat()
         rot_mat = tf.identity(rot_mat, name = 'o_rot_mat'+suffix)
 
@@ -170,6 +189,9 @@ class TensorModel() :
 
         return model_dict
 
+    def _import_graph_def_from_frz_model(self, frz_model, feed_dict, return_elements):
+        graph, graph_def = load_graph_def(frz_model)
+        return tf.import_graph_def(graph_def, input_map = feed_dict, return_elements = return_elements, name = "")
 
 class WFCModel(TensorModel):
     def __init__(

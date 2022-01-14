@@ -9,7 +9,6 @@ add_definitions ("-DHIGH_PREC")
 
 enable_testing()
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
 # model version
 file(READ ${PROJECT_SOURCE_DIR}/../../config/MODEL_VER MODEL_VERSION)
@@ -42,6 +41,11 @@ add_library(${opname} SHARED ${OP_SRC})
 
 list (APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/../../cmake/)
 find_package(tensorflow REQUIRED)
+if (TENSORFLOW_VERSION GREATER_EQUAL 2.7)
+  set (CMAKE_CXX_STANDARD 14)
+else()
+  set (CMAKE_CXX_STANDARD 11)
+endif()
 include_directories(${TensorFlow_INCLUDE_DIRS})
 
 find_package(Threads)
@@ -100,6 +104,12 @@ elseif(USE_ROCM_TOOLKIT)
   target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} rt deepmd_op_rocm coverage_config)
 else()
   target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} rt coverage_config)
+endif()
+
+find_package(Protobuf)
+if(Protobuf_FOUND)
+  include_directories(${Protobuf_INCLUDE_DIRS})
+  target_link_libraries(runUnitTests ${Protobuf_LIBRARIES})
 endif()
 
 add_test( runUnitTests runUnitTests )

@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from deepmd import __version__
 from deepmd.entrypoints import (
     compress,
     config,
@@ -162,6 +163,18 @@ def parse_args(args: Optional[List[str]] = None):
         default="out.json",
         help="The output file of the parameters used in training.",
     )
+    parser_train.add_argument(
+        "-f",
+        "--init-frz-model",
+        type=str,
+        default=None,
+        help="Initialize the training from the frozen model.",
+    )
+    parser_train.add_argument(
+        "--skip-neighbor-stat",
+        action="store_true",
+        help="Skip calculating neighbor statistics. Sel checking, automatic sel, and model compression will be disabled.",
+    )
 
     # * freeze script ******************************************************************
     parser_frz = subparsers.add_parser(
@@ -303,8 +316,15 @@ def parse_args(args: Optional[List[str]] = None):
         "-c",
         "--checkpoint-folder",
         type=str,
-        default=".",
+        default="model-compression",
         help="path to checkpoint folder",
+    )
+    parser_compress.add_argument(
+        "-t",
+        "--training-script",
+        type=str,
+        default=None,
+        help="The training script of the input frozen model",
     )
 
     # * print docs script **************************************************************
@@ -371,7 +391,7 @@ def parse_args(args: Optional[List[str]] = None):
     parser_transform.add_argument(
         'FROM',
         type = str,
-        choices = ['1.2', '1.3'],
+        choices = ['1.2', '1.3', '2.0'],
         help="The original model compatibility",
     )
     parser_transform.add_argument(
@@ -388,6 +408,8 @@ def parse_args(args: Optional[List[str]] = None):
         type=str, 
 		help='the output model',
     )
+    # --version
+    parser.add_argument('--version', action='version', version='DeePMD-kit v%s' % __version__)
 
     parsed_args = parser.parse_args(args=args)
     if parsed_args.command is None:

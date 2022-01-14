@@ -8,7 +8,11 @@ PairStyle(deepmd,PairDeepMD)
 #define LMP_PAIR_NNP_H
 
 #include "pair.h"
+#ifdef LMPPLUGIN
+#include "DeepPot.h"
+#else
 #include "deepmd/DeepPot.h"
+#endif
 #include <iostream>
 #include <fstream>
 
