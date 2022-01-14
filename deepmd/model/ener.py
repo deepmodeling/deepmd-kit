@@ -117,7 +117,9 @@ class EnerModel() :
                frz_model = None,
                suffix = '', 
                reuse = None):
-
+ 
+        if input_dict is None:
+            input_dict = {}
         with tf.variable_scope('model_attr' + suffix, reuse = reuse) :
             t_tmap = tf.constant(' '.join(self.type_map), 
                                  name = 'tmap', 
