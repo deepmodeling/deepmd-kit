@@ -56,7 +56,7 @@ def one_layer(inputs,
             w = tf.cast(w, get_precision(mixed_prec['compute_prec']))
             b = tf.cast(b, get_precision(mixed_prec['compute_prec']))
 
-        hidden = tf.matmul(inputs, w) + b
+        hidden = tf.nn.bias_add(tf.matmul(inputs, w), b)
         if activation_fn != None and use_timestep :
             idt_initializer = tf.random_normal_initializer(
                                     stddev=0.001,
@@ -196,7 +196,7 @@ def embedding_net(xx,
         variable_summaries(w, 'matrix_'+str(ii)+name_suffix)
 
         b = tf.get_variable('bias_'+str(ii)+name_suffix, 
-                            [1, outputs_size[ii]], 
+                            [outputs_size[ii]], 
                             precision,
                             b_initializer, 
                             trainable = trainable)
@@ -206,7 +206,7 @@ def embedding_net(xx,
             xx = tf.cast(xx, get_precision(mixed_prec['compute_prec']))
             w  = tf.cast(w,  get_precision(mixed_prec['compute_prec']))
             b  = tf.cast(b,  get_precision(mixed_prec['compute_prec']))
-        hidden = tf.reshape(activation_fn(tf.matmul(xx, w) + b), [-1, outputs_size[ii]])
+        hidden = tf.reshape(activation_fn(tf.nn.bias_add(tf.matmul(xx, w), b)), [-1, outputs_size[ii]])
         if resnet_dt :
             idt_initializer = tf.random_normal_initializer(
                                   stddev=0.001, 
