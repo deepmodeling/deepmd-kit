@@ -738,7 +738,7 @@ class DescrptSeA (DescrptSe):
             # we can safely return the final xyz_scatter filled with zero directly
             return tf.cast(tf.fill((natom, 4, outputs_size[-1]), 0.), self.filter_precision)
           # natom x nei_type_i x out_size
-          xyz_scatter = tf.reshape(xyz_scatter, (natom, shape_i[1]//4, outputs_size[-1]))  
+          xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1]//4, outputs_size[-1]))  
           # When using tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]) below
           # [588 24] -> [588 6 4] correct
           # but if sel is zero
@@ -802,7 +802,7 @@ class DescrptSeA (DescrptSe):
                       # add zero is meaningless; skip
                       rets.append(ret)
                   start_index += self.sel_a[type_i]
-              # maybe faster to use accumulate_n than multiple add
+              # faster to use accumulate_n than multiple add
               xyz_scatter_1 = tf.accumulate_n(rets)
           else :
               xyz_scatter_1 = self._filter_lower(
@@ -835,7 +835,6 @@ class DescrptSeA (DescrptSe):
           # natom x outputs_size x outputs_size_2
           result = tf.matmul(xyz_scatter_1, xyz_scatter_2, transpose_a = True)
           # natom x (outputs_size x outputs_size_2)
-          # we have reshaped in _pass_filter method
-          #result = tf.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
+          result = tf.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
 
         return result, qmat
