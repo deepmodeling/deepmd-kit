@@ -144,7 +144,7 @@ class EnerModel() :
 
         coord = tf.reshape (coord_, [-1, natoms[1] * 3])
         atype = tf.reshape (atype_, [-1, natoms[1]])
-        nframes = tf.shape(coord)[0]
+        input_dict['nframes'] = tf.shape(coord)[0]
 
         # type embedding if any
         if self.typeebd is not None:
@@ -188,7 +188,6 @@ class EnerModel() :
 
         atom_ener = self.fitting.build (dout, 
                                         natoms, 
-                                        nframes,
                                         input_dict, 
                                         reuse = reuse, 
                                         suffix = suffix)
