@@ -406,7 +406,7 @@ class EnerFitting (Fitting):
                 # like inputs, but we don't want to add a dependency on inputs
                 inputs_zero = tf.zeros((nframes, self.dim_descrpt * natoms[0]), dtype=self.fitting_precision)
             else:
-                inputs_zero = tf.zeros((nframes, self.dim_descrpt * natoms[0]), dtype=self.fitting_precision)
+                inputs_zero = tf.zeros_like(inputs, dtype=self.fitting_precision)
         
 
         if bias_atom_e is not None :
