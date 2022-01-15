@@ -332,7 +332,7 @@ class EnerFitting (Fitting):
     def build (self, 
                inputs : tf.Tensor,
                natoms : tf.Tensor,
-               input_dict : dict = {},
+               input_dict : dict = None,
                reuse : bool = None,
                suffix : str = '', 
     ) -> tf.Tensor:
@@ -362,6 +362,8 @@ class EnerFitting (Fitting):
         ener
                 The system energy
         """
+        if input_dict is None:
+            input_dict = {}
         bias_atom_e = self.bias_atom_e
         if self.numb_fparam > 0 and ( self.fparam_avg is None or self.fparam_inv_std is None ):
             raise RuntimeError('No data stat result. one should do data statisitic, before build')
@@ -401,7 +403,12 @@ class EnerFitting (Fitting):
         inputs = tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]])
         if len(self.atom_ener):
             # only for atom_ener
-            inputs_zero = tf.zeros_like(inputs, dtype=self.fitting_precision)
+            nframes = input_dict.get('nframes')
+            if nframes is not None:
+                # like inputs, but we don't want to add a dependency on inputs
+                inputs_zero = tf.zeros((nframes, self.dim_descrpt * natoms[0]), dtype=self.fitting_precision)
+            else:
+                inputs_zero = tf.zeros_like(inputs, dtype=self.fitting_precision)
         
 
         if bias_atom_e is not None :
@@ -419,10 +426,7 @@ class EnerFitting (Fitting):
             aparam = (aparam - t_aparam_avg) * t_aparam_istd
             aparam = tf.reshape(aparam, [-1, self.numb_aparam * natoms[0]])
             
-        if input_dict is not None:
-            type_embedding = input_dict.get('type_embedding', None)
-        else:
-            type_embedding = None
+        type_embedding = input_dict.get('type_embedding', None)
         if type_embedding is not None:
             atype_embed = embed_atom_type(self.ntypes, natoms, type_embedding)
             atype_embed = tf.tile(atype_embed,[tf.shape(inputs)[0],1])
