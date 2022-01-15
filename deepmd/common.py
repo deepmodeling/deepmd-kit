@@ -451,13 +451,24 @@ def docstring_parameter(*sub: Tuple[str, ...]):
     Can be used on both object and classes.
     """
 
-    @wraps
-    def dec(obj: "_OBJ") -> "_OBJ":
-        if obj.__doc__ is not None:
-            obj.__doc__ = obj.__doc__.format(*sub)
-        return obj
+    def decorator(base: "_OBJ"):
+        if inspect.isclass(base):
+            @wraps(base, updated=())
+            class Obj(base):
+                pass
+            if Obj.__doc__ is not None:
+                Obj.__doc__ = Obj.__doc__.format(*sub)
+            return Obj
 
-    return dec
+        # is a method
+        @wraps
+        def dec(obj: "_OBJ") -> "_OBJ":
+            if obj.__doc__ is not None:
+                obj.__doc__ = obj.__doc__.format(*sub)
+            return obj
+
+        return dec(base)
+    return decorator
 
 
 def get_np_precision(precision: "_PRECISION") -> np.dtype:
