@@ -21,6 +21,10 @@ try:
     tf.disable_v2_behavior()
 except ImportError:
     import tensorflow as tf
+try:
+    import tensorflow.compat.v2 as tfv2
+except ImportError:
+    tfv2 = None
 
 __all__ = [
     "GLOBAL_CONFIG",

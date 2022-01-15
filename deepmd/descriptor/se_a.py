@@ -338,7 +338,7 @@ class DescrptSeA (DescrptSe):
 
         for ii in range(len(self.filter_neuron) - 1):
             if self.filter_neuron[ii] * 2 != self.filter_neuron[ii + 1]:
-                raise RecursionError(
+                raise NotImplementedError(
                     "Model Compression error: descriptor neuron [%s] is not supported by model compression! "
                     "The size of the next layer of the neural network must be twice the size of the previous layer." 
                     % ','.join([str(item) for item in self.filter_neuron])
@@ -708,7 +708,7 @@ class DescrptSeA (DescrptSe):
                 xyz_scatter, nframes, natoms, type_embedding)
             if self.compress:
                 raise RuntimeError('compression of type embedded descriptor is not supported at the moment')
-        # with (natom x nei_type_i) x out_size
+        # natom x 4 x outputs_size
         if self.compress and (not is_exclude):
           info = [self.lower, self.upper, self.upper * self.table_config[0], self.table_config[1], self.table_config[2], self.table_config[3]]
           if self.type_one_side:
@@ -718,6 +718,7 @@ class DescrptSeA (DescrptSe):
           return op_module.tabulate_fusion_se_a(tf.cast(self.table.data[net], self.filter_precision), info, xyz_scatter, tf.reshape(inputs_i, [natom, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])  
         else:
           if (not is_exclude):
+              # with (natom x nei_type_i) x out_size
               xyz_scatter = embedding_net(
                   xyz_scatter, 
                   self.filter_neuron, 
@@ -743,6 +744,7 @@ class DescrptSeA (DescrptSe):
           # but if sel is zero
           # [588 0] -> [147 0 4] incorrect; the correct one is [588 0 4]
           # So we need to explicitly assign the shape to tf.shape(inputs_i)[0] instead of -1
+          # natom x 4 x outputs_size
           return tf.matmul(tf.reshape(inputs_i, [natom, shape_i[1]//4, 4]), xyz_scatter, transpose_a = True)
 
 
