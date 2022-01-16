@@ -450,7 +450,7 @@ class DescrptSeR (DescrptSe):
                                      [-1, natoms[2+type_i]* self.ndescrpt] )
                 inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
                 if self.type_one_side:
-                    # see comments in se_a
+                    # reuse NN parameters for all types to support type_one_side along with exclude_types
                     reuse = tf.AUTO_REUSE
                     filter_name = 'filter_type_all'+suffix
                 else:
