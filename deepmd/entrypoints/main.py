@@ -361,7 +361,7 @@ def parse_args(args: Optional[List[str]] = None):
         "--system",
         default=".",
         type=str,
-        help="The system directory, not support recursive detection.",
+        help="The system directory. Recursively detect systems in this directory.",
     )
     parser_model_devi.add_argument(
         "-S", "--set-prefix", default="set", type=str, help="The set prefix"
