@@ -6,6 +6,7 @@ set (OP_CXX_FLAG -D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI} )
 file(GLOB OP_SRC custom_op.cc prod_force.cc prod_virial.cc descrpt.cc descrpt_se_a_ef.cc descrpt_se_a_ef.cc descrpt_se_a_ef_para.cc descrpt_se_a_ef_vert.cc pair_tab.cc prod_force_multi_device.cc prod_virial_multi_device.cc soft_min.cc soft_min_force.cc soft_min_virial.cc ewald_recp.cc gelu_multi_device.cc map_aparam.cc neighbor_stat.cc unaggregated_grad.cc tabulate_multi_device.cc prod_env_mat_multi_device.cc)
 file(GLOB OP_GRADS_SRC custom_op.cc prod_force_grad.cc prod_force_grad_multi_device.cc prod_virial_grad.cc prod_virial_grad_multi_device.cc soft_min_force_grad.cc soft_min_virial_grad.cc )
 file(GLOB OP_PY *.py)
+file(GLOB OP_REMAPPER_SRC optimizer/parallel.cc)
 
 if (BUILD_CPP_IF) 
   add_library(${LIB_DEEPMD_OP} SHARED ${OP_SRC})
@@ -17,7 +18,7 @@ if (BUILD_CPP_IF)
 endif (BUILD_CPP_IF)
 
 if (BUILD_PY_IF)
-  add_library(op_abi SHARED ${OP_SRC} ${OP_LIB})
+  add_library(op_abi SHARED ${OP_SRC} ${OP_LIB} ${OP_REMAPPER_SRC})
   add_library(op_grads SHARED ${OP_GRADS_SRC})
   
   message(STATUS ${TensorFlowFramework_LIBRARY})
