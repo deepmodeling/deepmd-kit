@@ -172,7 +172,7 @@ def get_tf_session_config() -> Any:
         gpu_options=tf.GPUOptions(allow_growth=True),
         intra_op_parallelism_threads=intra, inter_op_parallelism_threads=inter
     )
-    if Version(TF_VERSION) >= Version('1.15') and int(os.environ.get("DP_AUTO_PARALLELIZATION", 0)):
+    if Version(tf.version.VERSION) >= Version('1.15') and int(os.environ.get("DP_AUTO_PARALLELIZATION", 0)):
         config.graph_options.rewrite_options.custom_optimizers.add().name = "dpparallel"
     return config
 
