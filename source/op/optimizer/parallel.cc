@@ -1,3 +1,6 @@
+// only support v1.15 or v2
+#if TF_MAJOR_VERSION >= 2 && (TF_MAJOR_VERSION == 1 || TF_MINOR_VERSION >= 15)
+
 #include "parallel.h"
 
 #include "tensorflow/core/grappler/devices.h"
@@ -147,3 +150,5 @@ Status DPParallel::Optimize(Cluster *cluster, const GrapplerItem &item,
 }
 
 REGISTER_GRAPH_OPTIMIZER_AS(DPParallel, "dpparallel");
+
+#endif
