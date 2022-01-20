@@ -53,3 +53,8 @@ To pull the GPU version:
 ```bash
 docker pull ghcr.io/deepmodeling/deepmd-kit:2.0.0_cuda10.1_gpu
 ```
+
+To pull the ROCm version:
+```bash
+docker pull deepmodeling/dpmdkit-rocm:dp2.0.4-rocm4.5.2-tf2.6-lmp29Sep2021
+```
