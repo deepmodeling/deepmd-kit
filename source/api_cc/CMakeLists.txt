@@ -17,7 +17,6 @@ add_library(${libname} SHARED ${LIB_SRC})
 
 # link: libdeepmd libdeepmd_op libtensorflow_cc libtensorflow_framework
 target_link_libraries (${libname} PUBLIC ${LIB_DEEPMD}	${TensorFlow_LIBRARY} ${TensorFlowFramework_LIBRARY})
-target_link_libraries (${libname} PRIVATE	${LIB_DEEPMD_OP})
 target_include_directories(${libname} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR} ${TensorFlow_INCLUDE_DIRS})
 
 set_target_properties(

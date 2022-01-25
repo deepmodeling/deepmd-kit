@@ -33,6 +33,7 @@ init (const std::string & model,
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
+  deepmd::load_op_library();
   deepmd::check_status(NewSession(options, &session));
   deepmd::check_status(ReadBinaryProto(Env::Default(), model, &graph_def));
   deepmd::check_status(session->Create(graph_def));  
