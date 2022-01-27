@@ -1,7 +1,6 @@
 # Deep potential long-range (DPLR)
 
-.. warning::
-The interfaces of DPLR are not stable and subject to change
+Notice: **The interfaces of DPLR are not stable and subject to change**
 
 The method of DPLR is described in [this paper][1]. One is recommended to read the paper before using the DPLR.
 
