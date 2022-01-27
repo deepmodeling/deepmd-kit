@@ -30,7 +30,7 @@ group		virtual_atom type 3
 # to setup a map between real and virtual atoms. However, no real
 # bonded interaction is applied, thus bond_sytle "zero" is used.
 pair_style	deepmd ener.pb
-pair_coeff	
+pair_coeff	* *
 bond_style	zero
 bond_coeff	*
 special_bonds   lj/coul 1 1 1 angle no

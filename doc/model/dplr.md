@@ -1,6 +1,7 @@
 # Deep potential long-range (DPLR)
 
-:warning: **The interfaces of DPLR are not stable and subject to change**
+.. warning::
+The interfaces of DPLR are not stable and subject to change
 
 The method of DPLR is described in [this paper][1]. One is recommended to read the paper before using the DPLR.
 
@@ -117,7 +118,7 @@ group           virtual_atom type 3
 # to setup a map between real and virtual atoms. However, no real
 # bonded interaction is applied, thus bond_sytle "zero" is used.
 pair_style      deepmd ener.pb
-pair_coeff      
+pair_coeff      * *
 bond_style      zero
 bond_coeff      *
 special_bonds   lj/coul 1 1 1 angle no
