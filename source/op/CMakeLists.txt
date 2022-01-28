@@ -8,7 +8,7 @@ file(GLOB OP_GRADS_SRC custom_op.cc prod_force_grad.cc prod_force_grad_multi_dev
 file(GLOB OP_PY *.py)
 
 if (BUILD_CPP_IF) 
-  add_library(${LIB_DEEPMD_OP} SHARED ${OP_SRC})
+  add_library(${LIB_DEEPMD_OP} MODULE ${OP_SRC})
   # link: libdeepmd libtensorflow_cc libtensorflow_framework
   target_link_libraries (${LIB_DEEPMD_OP} PUBLIC ${TensorFlow_LIBRARY} ${TensorFlowFramework_LIBRARY})
   target_link_libraries (${LIB_DEEPMD_OP} PRIVATE ${LIB_DEEPMD})
@@ -17,8 +17,8 @@ if (BUILD_CPP_IF)
 endif (BUILD_CPP_IF)
 
 if (BUILD_PY_IF)
-  add_library(op_abi SHARED ${OP_SRC} ${OP_LIB})
-  add_library(op_grads SHARED ${OP_GRADS_SRC})
+  add_library(op_abi MODULE ${OP_SRC} ${OP_LIB})
+  add_library(op_grads MODULE ${OP_GRADS_SRC})
   
   message(STATUS ${TensorFlowFramework_LIBRARY})
   # link: libdeepmd libtensorflow_framework

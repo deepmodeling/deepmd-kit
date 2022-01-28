@@ -116,6 +116,12 @@ void
 get_env_nthreads(int & num_intra_nthreads,
 		 int & num_inter_nthreads);
 
+/**
+ * @brief Dynamically load OP library. This should be called before loading graphs.
+ */
+void
+load_op_library();
+
 /** @struct deepmd::deepmd_exception
  **/
 

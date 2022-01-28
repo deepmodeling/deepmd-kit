@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 3.9)
 project(deepmd_api_test)
-set(CMAKE_LINK_WHAT_YOU_USE TRUE)
 
 if (NOT DEFINED BUILD_CPP_IF) 
   set(BUILD_CPP_IF TRUE)
@@ -99,11 +98,11 @@ else()
 endif()
 
 if (USE_CUDA_TOOLKIT)
-  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} rt deepmd_op_cuda coverage_config)
+  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} pthread ${TensorFlow_LIBRARY} rt deepmd_op_cuda coverage_config)
 elseif(USE_ROCM_TOOLKIT)
-  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} rt deepmd_op_rocm coverage_config)
+  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} pthread ${TensorFlow_LIBRARY} rt deepmd_op_rocm coverage_config)
 else()
-  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} rt coverage_config)
+  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} pthread ${TensorFlow_LIBRARY} rt coverage_config)
 endif()
 
 find_package(Protobuf)
@@ -134,3 +133,16 @@ if(NOT GTEST_LIBRARIES)
 else ()
   include_directories(${GTEST_INCLUDE_DIRS})
 endif ()
+
+set_target_properties(
+  runUnitTests
+  PROPERTIES 
+  INSTALL_RPATH "$ORIGIN/../lib"
+)
+set_target_properties(
+  ${apiname}
+  PROPERTIES 
+  INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}"
+)
+install(TARGETS runUnitTests DESTINATION bin/)
+install(TARGETS ${libname} ${apiname} ${opname} DESTINATION lib/)

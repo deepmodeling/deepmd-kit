@@ -97,6 +97,7 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [Fit energy](doc/model/train-energy.md)
     - [Fit `tensor` like `Dipole` and `Polarizability`](doc/model/train-fitting-tensor.md)
     - [Train a Deep Potential model using `type embedding` approach](doc/model/train-se-e2-a-tebd.md)
+    - [Deep potential long-range](doc/model/dplr.md)
 - [Training](doc/train/index.md)
     - [Training a model](doc/train/training.md)
     - [Advanced options](doc/train/training-advanced.md)
