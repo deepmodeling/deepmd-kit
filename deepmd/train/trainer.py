@@ -282,7 +282,12 @@ class DPTrainer (object):
                 ))
             self.type_map = data.get_type_map()
             self.batch_size = data.get_batch_size()
-            self.model.data_stat(data)
+            if self.run_opt.init_mode not in ('init_from_model', 'restart'):
+                # self.saver.restore (in self._init_session) will restore avg and std variables, so data_stat is useless
+                # currently init_from_frz_model does not restore data_stat variables
+                # TODO: restore avg and std in the init_from_frz_model mode
+                log.info("data stating... (this step may take long time)")
+                self.model.data_stat(data)
 
             # config the init_frz_model command
             if self.run_opt.init_mode == 'init_from_frz_model':
