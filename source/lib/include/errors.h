@@ -4,6 +4,9 @@
 #include <string>
 
 namespace deepmd{
+    /**
+    * @brief General DeePMD-kit exception. Throw if anything doesn't work.
+    **/
     struct
     deepmd_exception: public std::runtime_error {
     public:
@@ -12,9 +15,9 @@ namespace deepmd{
     };
 
     struct
-    deepmd_exception_oom: public std::runtime_error{
+    deepmd_exception_oom: public deepmd_exception{
     public:
-        deepmd_exception_oom(): runtime_error("DeePMD-kit OOM!") {};
-        deepmd_exception_oom(const std::string& msg): runtime_error(std::string("DeePMD-kit OOM: ") + msg) {};
+        deepmd_exception_oom(): deepmd_exception("DeePMD-kit OOM!") {};
+        deepmd_exception_oom(const std::string& msg): deepmd_exception(std::string("DeePMD-kit OOM: ") + msg) {};
     };
 };

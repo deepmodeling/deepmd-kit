@@ -1,6 +1,7 @@
 #include "common.h"
 #include "AtomMap.h"
 #include "device.h"
+#include <dlfcn.h>
 
 using namespace tensorflow;
 
@@ -27,10 +28,10 @@ model_compatable(
   std::vector<std::string> words_mv = split(model_version, ".");
   std::vector<std::string> words_gmv = split(global_model_version, ".");
   if(words_mv.size() != 2){
-    throw std::runtime_error("invalid graph model version string " + model_version);
+    throw deepmd::deepmd_exception("invalid graph model version string " + model_version);
   }
   if(words_gmv.size() != 2){
-    throw std::runtime_error("invalid supported model version string " + global_model_version);
+    throw deepmd::deepmd_exception("invalid supported model version string " + global_model_version);
   }
   int model_version_major = atoi(words_mv[0].c_str());
   int model_version_minor = atoi(words_mv[1].c_str());
@@ -201,7 +202,7 @@ deepmd::
 check_status(const tensorflow::Status& status) {
   if (!status.ok()) {
     std::cout << status.ToString() << std::endl;
-    throw deepmd::tf_exception();
+    throw deepmd::tf_exception(status.ToString());
   }
 }
 
@@ -225,6 +226,18 @@ get_env_nthreads(int & num_intra_nthreads,
       atoi(env_inter_nthreads) >= 0
       ) {
     num_inter_nthreads = atoi(env_inter_nthreads);
+  }
+}
+
+void
+deepmd::
+load_op_library()
+{
+  tensorflow::Env* env = tensorflow::Env::Default();
+  std::string dso_path = env->FormatLibraryFileName("deepmd_op", "");
+  void* dso_handle = dlopen(dso_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+  if (!dso_handle) {
+    throw deepmd::deepmd_exception(dso_path + " is not found! You can add the library directory to LD_LIBRARY_PATH");
   }
 }
 

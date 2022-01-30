@@ -3,22 +3,32 @@ from deepmd.env import tf
 from google.protobuf import text_format
 from tensorflow.python.platform import gfile
 
-def convert_13_to_20(input_model: str, output_model: str):
+def convert_13_to_21(input_model: str, output_model: str):
     convert_pb_to_pbtxt(input_model, 'frozen_model.pbtxt')
     convert_dp13_to_dp20('frozen_model.pbtxt')
+    convert_dp20_to_dp21('frozen_model.pbtxt')
     convert_pbtxt_to_pb('frozen_model.pbtxt', output_model)
     if os.path.isfile('frozen_model.pbtxt'):
         os.remove('frozen_model.pbtxt')
-    print("the converted output model (2.0 support) is saved in %s" % output_model)
+    print("the converted output model (2.1 support) is saved in %s" % output_model)
 
-def convert_12_to_20(input_model: str, output_model: str):
+def convert_12_to_21(input_model: str, output_model: str):
     convert_pb_to_pbtxt(input_model, 'frozen_model.pbtxt')
     convert_dp12_to_dp13('frozen_model.pbtxt')
     convert_dp13_to_dp20('frozen_model.pbtxt')
+    convert_dp20_to_dp21('frozen_model.pbtxt')
     convert_pbtxt_to_pb('frozen_model.pbtxt', output_model)
     if os.path.isfile('frozen_model.pbtxt'):
         os.remove('frozen_model.pbtxt')
-    print("the converted output model (2.0 support) is saved in %s" % output_model)
+    print("the converted output model (2.1 support) is saved in %s" % output_model)
+
+def convert_20_to_21(input_model: str, output_model: str):
+    convert_pb_to_pbtxt(input_model, 'frozen_model.pbtxt')
+    convert_dp20_to_dp21('frozen_model.pbtxt')
+    convert_pbtxt_to_pb('frozen_model.pbtxt', output_model)
+    if os.path.isfile('frozen_model.pbtxt'):
+        os.remove('frozen_model.pbtxt')
+    print("the converted output model (2.1 support) is saved in %s" % output_model)
 
 def convert_pb_to_pbtxt(pbfile: str, pbtxtfile: str):
     with gfile.FastGFile(pbfile, 'rb') as f:
@@ -86,5 +96,62 @@ node {
     file_content = file_content\
                    .replace('DescrptSeA', 'ProdEnvMatA')\
                    .replace('DescrptSeR', 'ProdEnvMatR')
+    with open(fname, 'w') as fp:
+        fp.write(file_content)
+
+def convert_dp20_to_dp21(fname: str):
+    with open(fname) as fp:
+        file_content = fp.read()
+    old_model_version_node = """
+node {
+  name: "model_attr/model_version"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_STRING
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_STRING
+        tensor_shape {
+        }
+        string_val: "1.0"
+      }
+    }
+  }
+}
+"""
+    new_model_version_node = """
+node {
+  name: "model_attr/model_version"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_STRING
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_STRING
+        tensor_shape {
+        }
+        string_val: "1.1"
+      }
+    }
+  }
+}
+"""
+    file_content = file_content\
+                   .replace(old_model_version_node, new_model_version_node)\
+                   .replace('TabulateFusion', 'TabulateFusionSeA')\
+                   .replace('TabulateFusionGrad', 'TabulateFusionSeAGrad')\
+                   .replace('TabulateFusionGradGrad', 'TabulateFusionSeAGradGrad')
     with open(fname, 'w') as fp:
         fp.write(file_content)

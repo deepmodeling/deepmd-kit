@@ -3,7 +3,7 @@ import numpy as np
 from typing import Tuple, List, Dict, Any
 
 from deepmd.env import tf
-from deepmd.common import get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, get_np_precision
+from deepmd.common import get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, cast_precision
 from deepmd.utils.argcheck import list_to_doc
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
@@ -15,8 +15,11 @@ from deepmd.utils.type_embed import embed_atom_type
 from deepmd.utils.sess import run_sess
 from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph
 from .descriptor import Descriptor
+from .se import DescrptSe
 
-class DescrptSeA (Descriptor):
+@Descriptor.register("se_e2_a")
+@Descriptor.register("se_a")
+class DescrptSeA (DescrptSe):
     r"""DeepPot-SE constructed from all information (both angular and radial) of
     atomic configurations. The embedding takes the distance between atoms as input.
 
@@ -31,7 +34,7 @@ class DescrptSeA (Descriptor):
     .. math::
         (\mathcal{R}^i)_j = [
         \begin{array}{c}
-            s(r_{ji}) & x_{ji} & y_{ji} & z_{ji}
+            s(r_{ji}) & \frac{s(r_{ji})x_{ji}}{r_{ji}} & \frac{s(r_{ji})y_{ji}}{r_{ji}} & \frac{s(r_{ji})z_{ji}}{r_{ji}}
         \end{array}
         ]
 
@@ -117,6 +120,8 @@ class DescrptSeA (Descriptor):
         """
         Constructor
         """
+        if rcut < rcut_smth:
+            raise RuntimeError("rcut_smth (%f) should be no more than rcut (%f)!" % (rcut_smth, rcut))
         self.sel_a = sel
         self.rcut_r = rcut
         self.rcut_r_smth = rcut_smth
@@ -130,7 +135,6 @@ class DescrptSeA (Descriptor):
         self.compress_activation_fn = get_activation_func(activation_function)
         self.filter_activation_fn = get_activation_func(activation_function)
         self.filter_precision = get_precision(precision)
-        self.filter_np_precision = get_np_precision(precision)
         self.exclude_types = set()
         for tt in exclude_types:
             assert(len(tt) == 2)
@@ -158,6 +162,7 @@ class DescrptSeA (Descriptor):
         self.davg = None
         self.compress = False
         self.embedding_net_variables = None
+        self.mixed_prec = None
         self.place_holders = {}
         nei_type = np.array([])
         for ii in range(self.ntypes):
@@ -321,12 +326,27 @@ class DescrptSeA (Descriptor):
         suffix : str, optional
                 The suffix of the scope
         """
+        # do some checks before the mocel compression process
         assert (
             not self.filter_resnet_dt
         ), "Model compression error: descriptor resnet_dt must be false!"
+        for tt in self.exclude_types:
+            if (tt[0] not in range(self.ntypes)) or (tt[1] not in range(self.ntypes)):
+                raise RuntimeError("exclude types" + str(tt) + " must within the number of atomic types " + str(self.ntypes) + "!")
+        if (self.ntypes * self.ntypes - len(self.exclude_types) == 0):
+            raise RuntimeError("empty embedding-net are not supported in model compression!")
+
+        for ii in range(len(self.filter_neuron) - 1):
+            if self.filter_neuron[ii] * 2 != self.filter_neuron[ii + 1]:
+                raise NotImplementedError(
+                    "Model Compression error: descriptor neuron [%s] is not supported by model compression! "
+                    "The size of the next layer of the neural network must be twice the size of the previous layer." 
+                    % ','.join([str(item) for item in self.filter_neuron])
+                )
+
         self.compress = True
         self.table = DPTabulate(
-            model_file, self.type_one_side, self.exclude_types, self.compress_activation_fn, suffix=suffix)
+            self, self.filter_neuron, model_file, self.type_one_side, self.exclude_types, self.compress_activation_fn, suffix=suffix)
         self.table_config = [table_extrapolate, table_stride_1, table_stride_2, check_frequency]
         self.lower, self.upper \
             = self.table.build(min_nbor_dist, 
@@ -338,6 +358,18 @@ class DescrptSeA (Descriptor):
         self.davg = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_avg' % suffix)
         self.dstd = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_std' % suffix)
 
+
+    def enable_mixed_precision(self, mixed_prec : dict = None) -> None:
+        """
+        Reveive the mixed precision setting.
+
+        Parameters
+        ----------
+        mixed_prec
+                The mixed precision setting used in the embedding net
+        """
+        self.mixed_prec = mixed_prec
+        self.filter_precision = get_precision(mixed_prec['output_prec'])
 
 
     def build (self, 
@@ -433,10 +465,7 @@ class DescrptSeA (Descriptor):
         tf.summary.histogram('nlist', self.nlist)
 
         self.descrpt_reshape = tf.reshape(self.descrpt, [-1, self.ndescrpt])
-        self.descrpt_reshape = tf.identity(self.descrpt_reshape, name = 'o_rmat')
-        self.descrpt_deriv = tf.identity(self.descrpt_deriv, name = 'o_rmat_deriv')
-        self.rij = tf.identity(self.rij, name = 'o_rij')
-        self.nlist = tf.identity(self.nlist, name = 'o_nlist')
+        self._identity_tensors(suffix=suffix)
 
         self.dout, self.qmat = self._pass_filter(self.descrpt_reshape, 
                                                  atype,
@@ -455,87 +484,6 @@ class DescrptSeA (Descriptor):
         Get rotational matrix
         """
         return self.qmat
-
-    def pass_tensors_from_frz_model(self,
-                                    descrpt_reshape : tf.Tensor,
-                                    descrpt_deriv   : tf.Tensor,
-                                    rij             : tf.Tensor,
-                                    nlist           : tf.Tensor
-    ):
-        """
-        Pass the descrpt_reshape tensor as well as descrpt_deriv tensor from the frz graph_def
-
-        Parameters
-        ----------
-        descrpt_reshape
-                The passed descrpt_reshape tensor
-        descrpt_deriv
-                The passed descrpt_deriv tensor
-        rij
-                The passed rij tensor
-        nlist
-                The passed nlist tensor
-        """
-        self.rij = rij
-        self.nlist = nlist
-        self.descrpt_deriv = descrpt_deriv
-        self.descrpt_reshape = descrpt_reshape
-
-    def get_feed_dict(self,
-                      coord_, 
-                      atype_, 
-                      natoms, 
-                      box, 
-                      mesh):
-        """
-        generate the deed_dict for current descriptor
-
-        Parameters
-        ----------
-        coord_
-                The coordinate of atoms
-        atype_
-                The type of atoms
-        natoms
-                The number of atoms. This tensor has the length of Ntypes + 2
-                natoms[0]: number of local atoms
-                natoms[1]: total number of atoms held by this processor
-                natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
-        box
-                The box. Can be generated by deepmd.model.make_stat_input
-        mesh
-                For historical reasons, only the length of the Tensor matters.
-                if size of mesh == 6, pbc is assumed. 
-                if size of mesh == 0, no-pbc is assumed. 
-
-        Returns
-        -------
-        feed_dict
-                The output feed_dict of current descriptor
-        """
-        feed_dict = {
-            't_coord:0'  :coord_,
-            't_type:0'   :atype_,
-            't_natoms:0' :natoms,
-            't_box:0'    :box,
-            't_mesh:0'   :mesh
-        }
-        return feed_dict
-
-
-    def init_variables(self,
-                       embedding_net_variables: dict
-    ) -> None:
-        """
-        Init the embedding net variables with the given dict
-
-        Parameters
-        ----------
-        embedding_net_variables
-                The input dict which stores the embedding net variables
-        """
-        self.embedding_net_variables = embedding_net_variables
-
 
     def prod_force_virial(self, 
                           atom_ener : tf.Tensor, 
@@ -610,7 +558,7 @@ class DescrptSeA (Descriptor):
                                      [ 0, start_index*      self.ndescrpt],
                                      [-1, natoms[2+type_i]* self.ndescrpt] )
                 inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
-                layer, qmat = self._filter(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
+                layer, qmat = self._filter(inputs_i, type_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
                 layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_out()])
                 qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_rot_mat_1() * 3])
                 output.append(layer)
@@ -620,7 +568,7 @@ class DescrptSeA (Descriptor):
             inputs_i = inputs
             inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
             type_i = -1
-            layer, qmat = self._filter(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn, type_embedding=type_embedding)
+            layer, qmat = self._filter(inputs_i, type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn, type_embedding=type_embedding)
             layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0] * self.get_dim_out()])
             qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[0] * self.get_dim_rot_mat_1() * 3])
             output.append(layer)
@@ -756,21 +704,21 @@ class DescrptSeA (Descriptor):
         # with (natom x nei_type_i) x 1
         xyz_scatter = tf.reshape(tf.slice(inputs_reshape, [0,0],[-1,1]),[-1,1])
         if type_embedding is not None:
-            type_embedding = tf.cast(type_embedding, self.filter_precision)
             xyz_scatter = self._concat_type_embedding(
                 xyz_scatter, nframes, natoms, type_embedding)
             if self.compress:
                 raise RuntimeError('compression of type embedded descriptor is not supported at the moment')
-        # with (natom x nei_type_i) x out_size
+        # natom x 4 x outputs_size
         if self.compress and (not is_exclude):
           info = [self.lower, self.upper, self.upper * self.table_config[0], self.table_config[1], self.table_config[2], self.table_config[3]]
           if self.type_one_side:
             net = 'filter_-1_net_' + str(type_i)
           else:
             net = 'filter_' + str(type_input) + '_net_' + str(type_i)
-          return op_module.tabulate_fusion(self.table.data[net].astype(self.filter_np_precision), info, xyz_scatter, tf.reshape(inputs_i, [natom, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])  
+          return op_module.tabulate_fusion_se_a(tf.cast(self.table.data[net], self.filter_precision), info, xyz_scatter, tf.reshape(inputs_i, [natom, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])  
         else:
           if (not is_exclude):
+              # with (natom x nei_type_i) x out_size
               xyz_scatter = embedding_net(
                   xyz_scatter, 
                   self.filter_neuron, 
@@ -783,11 +731,12 @@ class DescrptSeA (Descriptor):
                   seed = self.seed,
                   trainable = trainable, 
                   uniform_seed = self.uniform_seed,
-                  initial_variables = self.embedding_net_variables)
+                  initial_variables = self.embedding_net_variables,
+                  mixed_prec = self.mixed_prec)
               if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
           else:
             # we can safely return the final xyz_scatter filled with zero directly
-            return tf.cast(tf.fill((natom, 4, outputs_size[-1]), 0.), GLOBAL_TF_FLOAT_PRECISION)
+            return tf.cast(tf.fill((natom, 4, outputs_size[-1]), 0.), self.filter_precision)
           # natom x nei_type_i x out_size
           xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1]//4, outputs_size[-1]))  
           # When using tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]) below
@@ -795,9 +744,11 @@ class DescrptSeA (Descriptor):
           # but if sel is zero
           # [588 0] -> [147 0 4] incorrect; the correct one is [588 0 4]
           # So we need to explicitly assign the shape to tf.shape(inputs_i)[0] instead of -1
+          # natom x 4 x outputs_size
           return tf.matmul(tf.reshape(inputs_i, [natom, shape_i[1]//4, 4]), xyz_scatter, transpose_a = True)
 
 
+    @cast_precision
     def _filter(
             self, 
             inputs, 

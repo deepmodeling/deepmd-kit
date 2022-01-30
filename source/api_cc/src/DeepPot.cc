@@ -61,6 +61,8 @@ run_model (ENERGYTYPE &			dener,
   for (unsigned ii = 0; ii < nall * 3; ++ii){
     dforce[ii] = of(ii);
   }
+  // set dvirial to zero, prevent input vector is not zero (#1123)
+  std::fill(dvirial.begin(), dvirial.end(), 0.);
   for (int ii = 0; ii < nall; ++ii) {
     dvirial[0] += 1.0 * oav(9*ii+0);
     dvirial[1] += 1.0 * oav(9*ii+1);
@@ -136,6 +138,8 @@ static void run_model (ENERGYTYPE   &		dener,
     for (int ii = 0; ii < nall * 9; ++ii) {
         datom_virial[ii] = oav(ii);
     }
+    // set dvirial to zero, prevent input vector is not zero (#1123)
+    std::fill(dvirial.begin(), dvirial.end(), 0.);
     for (int ii = 0; ii < nall; ++ii) {
         dvirial[0] += 1.0 * datom_virial[9*ii+0];
         dvirial[1] += 1.0 * datom_virial[9*ii+1];
@@ -185,6 +189,7 @@ init (const std::string & model, const int & gpu_rank, const std::string & file_
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
+  deepmd::load_op_library();
 
   if(file_content.size() == 0)
     check_status (ReadBinaryProto(Env::Default(), model, &graph_def));
@@ -220,7 +225,7 @@ init (const std::string & model, const int & gpu_rank, const std::string & file_
     model_version = "0.0";
   }
   if(! model_compatable(model_version)){
-    throw std::runtime_error(
+    throw deepmd::deepmd_exception(
 	"incompatable model: version " + model_version 
 	+ " in graph, but version " + global_model_version 
 	+ " supported ");
@@ -307,10 +312,10 @@ validate_fparam_aparam(const int & nloc,
 		       const std::vector<VALUETYPE> &aparam)const 
 {
   if (fparam.size() != dfparam) {
-    throw std::runtime_error("the dim of frame parameter provided is not consistent with what the model uses");
+    throw deepmd::deepmd_exception("the dim of frame parameter provided is not consistent with what the model uses");
   }
   if (aparam.size() != daparam * nloc) {
-    throw std::runtime_error("the dim of atom parameter provided is not consistent with what the model uses");
+    throw deepmd::deepmd_exception("the dim of atom parameter provided is not consistent with what the model uses");
   }  
 }
 
@@ -552,7 +557,7 @@ init (const std::vector<std::string> & models, const int & gpu_rank, const std::
   model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
   model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
   if(! model_compatable(model_version)){
-    throw std::runtime_error(
+    throw deepmd::deepmd_exception(
 	"incompatable model: version " + model_version 
 	+ " in graph, but version " + global_model_version 
 	+ " supported ");
@@ -636,10 +641,10 @@ validate_fparam_aparam(const int & nloc,
 		       const std::vector<VALUETYPE> &aparam)const 
 {
   if (fparam.size() != dfparam) {
-    throw std::runtime_error("the dim of frame parameter provided is not consistent with what the model uses");
+    throw deepmd::deepmd_exception("the dim of frame parameter provided is not consistent with what the model uses");
   }
   if (aparam.size() != daparam * nloc) {
-    throw std::runtime_error("the dim of atom parameter provided is not consistent with what the model uses");
+    throw deepmd::deepmd_exception("the dim of atom parameter provided is not consistent with what the model uses");
   }  
 }
 

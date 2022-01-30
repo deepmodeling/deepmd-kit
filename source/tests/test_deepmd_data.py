@@ -4,6 +4,7 @@ import unittest
 
 from deepmd.utils.data import DeepmdData
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
+from common import tests_path
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
     places = 6
@@ -257,3 +258,19 @@ class TestData (unittest.TestCase) :
         
     def _comp_np_mat2(self, first, second) :
         np.testing.assert_almost_equal(first, second, places)
+
+
+class TestH5Data (unittest.TestCase) :
+    def setUp (self) :
+        self.data_name = str(tests_path / 'test.hdf5')
+
+    def test_init (self) :
+        dd = DeepmdData(self.data_name)
+        self.assertEqual(dd.idx_map[0], 0)
+        self.assertEqual(dd.type_map, ['X'])
+        self.assertEqual(dd.test_dir, self.data_name + '#/set.000')
+        self.assertEqual(dd.train_dirs, [self.data_name + '#/set.000'])
+
+    def test_get_batch(self) :
+        dd = DeepmdData(self.data_name)
+        data = dd.get_batch(5)

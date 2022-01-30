@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Request for Help
+    url: https://github.com/deepmodeling/deepmd-kit/discussions/491
+    about: If you have a usage question

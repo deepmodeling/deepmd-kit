@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import platform
 from configparser import ConfigParser
 from imp import reload
@@ -20,6 +21,10 @@ try:
     tf.disable_v2_behavior()
 except ImportError:
     import tensorflow as tf
+try:
+    import tensorflow.compat.v2 as tfv2
+except ImportError:
+    tfv2 = None
 
 __all__ = [
     "GLOBAL_CONFIG",
@@ -35,10 +40,46 @@ __all__ = [
     "reset_default_tf_session_config",
     "op_module",
     "op_grads_module",
+    "TRANSFER_PATTERN",
+    "FITTING_NET_PATTERN",
+    "EMBEDDING_NET_PATTERN",
+    "TF_VERSION"
 ]
 
 SHARED_LIB_MODULE = "op"
 
+EMBEDDING_NET_PATTERN = str(
+    r"filter_type_\d+/matrix_\d+_\d+|"
+    r"filter_type_\d+/bias_\d+_\d+|"
+    r"filter_type_\d+/idt_\d+_\d+|"
+    r"filter_type_all/matrix_\d+_\d+|"
+    r"filter_type_all/matrix_\d+_\d+_\d+|"
+    r"filter_type_all/bias_\d+_\d+|"
+    r"filter_type_all/bias_\d+_\d+_\d+|"
+    r"filter_type_all/idt_\d+_\d+|"
+)
+
+FITTING_NET_PATTERN = str(
+    r"layer_\d+_type_\d+/matrix|"
+    r"layer_\d+_type_\d+/bias|"
+    r"layer_\d+_type_\d+/idt|"
+    r"final_layer_type_\d+/matrix|"
+    r"final_layer_type_\d+/bias|"
+)
+
+TRANSFER_PATTERN = \
+    EMBEDDING_NET_PATTERN + \
+    FITTING_NET_PATTERN + \
+    str(
+        r"descrpt_attr/t_avg|"
+        r"descrpt_attr/t_std|"
+        r"fitting_attr/t_fparam_avg|"
+        r"fitting_attr/t_fparam_istd|"
+        r"fitting_attr/t_aparam_avg|"
+        r"fitting_attr/t_aparam_istd|"
+        r"model_attr/t_tab_info|"
+        r"model_attr/t_tab_data|"
+)
 
 def set_env_if_empty(key: str, value: str, verbose: bool = True):
     """Set environment variable only if it is empty.
@@ -90,6 +131,14 @@ def set_tf_default_nthreads():
     `TF_INTRA_OP_PARALLELISM_THREADS` and `TF_INTER_OP_PARALLELISM_THREADS`
     control TF configuration of multithreading.
     """
+    if "OMP_NUM_THREADS" not in os.environ or \
+       "TF_INTRA_OP_PARALLELISM_THREADS" not in os.environ or \
+       "TF_INTER_OP_PARALLELISM_THREADS" not in os.environ:
+        logging.warning(
+            "To get the best performance, it is recommended to adjust "
+            "the number of threads by setting the environment variables "
+            "OMP_NUM_THREADS, TF_INTRA_OP_PARALLELISM_THREADS, and "
+            "TF_INTER_OP_PARALLELISM_THREADS.")
     set_env_if_empty("TF_INTRA_OP_PARALLELISM_THREADS", "0", verbose=False)
     set_env_if_empty("TF_INTER_OP_PARALLELISM_THREADS", "0", verbose=False)
 
@@ -188,7 +237,7 @@ def get_module(module_name: str) -> "ModuleType":
                     "This deepmd-kit package was compiled with "
                     "CXX11_ABI_FLAG=%d, but TensorFlow runtime was compiled "
                     "with CXX11_ABI_FLAG=%d. These two library ABIs are "
-                    "incompatible and thus an error is raised when loading %s."
+                    "incompatible and thus an error is raised when loading %s. "
                     "You need to rebuild deepmd-kit against this TensorFlow "
                     "runtime." % (
                         TF_CXX11_ABI_FLAG,
@@ -217,9 +266,9 @@ def get_module(module_name: str) -> "ModuleType":
                         tf.version.VERSION,
                     )) from e
             raise RuntimeError(
-                "This deepmd-kit package is inconsitent with TensorFlow"
-                "Runtime, thus an error is raised when loading %s."
-                "You need to rebuild deepmd-kit against this TensorFlow"
+                "This deepmd-kit package is inconsitent with TensorFlow "
+                "Runtime, thus an error is raised when loading %s. "
+                "You need to rebuild deepmd-kit against this TensorFlow "
                 "runtime." % (
                     module_name,
                 )) from e

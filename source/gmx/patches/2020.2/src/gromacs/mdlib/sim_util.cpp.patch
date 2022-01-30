@@ -1,0 +1,103 @@
+--- /public/wangyingze/soft/gromacs-2020.2/src/gromacs/mdlib/sim_util.cpp	2020-04-30 16:33:43.000000000 +0000
++++ /public/wangyingze/soft/gromacs-2020.2-deepmd/src/gromacs/mdlib/sim_util.cpp	2021-09-19 07:47:12.000000000 +0000
+@@ -34,6 +34,8 @@
+  * To help us fund GROMACS development, we humbly ask that you cite
+  * the research papers on the package. Check out http://www.gromacs.org.
+  */
++
++#include <iostream>
+ #include "gmxpre.h"
+ 
+ #include "config.h"
+@@ -114,6 +116,8 @@
+ #include "gromacs/utility/strconvert.h"
+ #include "gromacs/utility/sysinfo.h"
+ 
++#include "deepmd/gmx_plugin.h"
++
+ using gmx::AtomLocality;
+ using gmx::DomainLifetimeWorkload;
+ using gmx::ForceOutputs;
+@@ -1838,6 +1842,64 @@
+                                simulationWork.useGpuPmePpCommunication, false, wcycle);
+     }
+ 
++    /* DeepMD */
++    double               dener;
++    std::vector<double > dforce;
++    if (useDeepmd)
++    {
++        if (DIM != 3)
++        {
++            gmx_fatal(FARGS, "DeepMD does not support DIM < 3.");
++        }
++        else
++        {
++            std::vector<double > dcoord;
++            std::vector<double > dvirial;
++            dcoord.resize(deepmdPlugin->natom * DIM);
++            dforce.resize(deepmdPlugin->natom * DIM);
++            dvirial.resize(9);
++            /* init coord */
++            for (int i = 0; i < deepmdPlugin->natom; i++)
++            {
++                for (int j = 0; j < DIM; j++)
++                {
++                    dcoord[i * DIM + j] = as_rvec_array(x.unpaddedArrayRef().data())[deepmdPlugin->dindex[i]][j] / c_dp2gmx;
++                    // std::cout << dcoord[i * DIM + j] << " ";
++                }
++                // std::cout << std::endl;
++            }
++            /* init coord */
++
++            /* init box */
++            std::vector<double > dbox;
++            if (deepmdPlugin->pbc)
++            {
++                dbox.resize(9);
++                for (int i = 0; i < DIM; i++)
++                {
++                    for (int j = 0; j < DIM; j++)
++                    {
++                        dbox[i * DIM + j] = box[i][j] / c_dp2gmx;
++                    }
++                }
++            }
++            else
++            {
++                dbox = {};
++            }
++            /* init box */
++            deepmdPlugin->nnp->compute(dener, dforce, dvirial, dcoord, deepmdPlugin->dtype, dbox);
++
++            for (int i = 0; i < deepmdPlugin->natom; i++)
++            {
++                for (int j = 0; j < DIM; j++)
++                {
++                    as_rvec_array(forceOut.forceWithShiftForces().force().data())[deepmdPlugin->dindex[i]][j] += dforce[i * DIM + j] * f_dp2gmx * deepmdPlugin->lmd;
++                }
++            }
++        }
++    }
++
+     if (stepWork.computeForces)
+     {
+         post_process_forces(cr, step, nrnb, wcycle, top, box, as_rvec_array(x.unpaddedArrayRef().data()),
+@@ -1848,13 +1910,16 @@
+     {
+         /* Sum the potential energy terms from group contributions */
+         sum_epot(&(enerd->grpp), enerd->term);
++        if (useDeepmd)
++        {
++            enerd->term[F_EPOT] += dener * e_dp2gmx * deepmdPlugin->lmd;
++        }
+ 
+         if (!EI_TPI(inputrec->eI))
+         {
+             checkPotentialEnergyValidity(step, *enerd, *inputrec);
+         }
+     }
+-
+     /* In case we don't have constraints and are using GPUs, the next balancing
+      * region starts here.
+      * Some "special" work at the end of do_force_cuts?, such as vsite spread,

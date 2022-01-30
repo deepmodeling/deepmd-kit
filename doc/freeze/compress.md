@@ -68,7 +68,7 @@ optional arguments:
 **Parameter explanation**
 
 Model compression, which including tabulating the embedding-net.
-The table is composed of fifth-order polynomial coefficients and is assembled from two sub-tables. The first sub-table takes the stride(parameter) as it's uniform stride, while the second sub-table takes 10 * stride as it's uniform stride.
+The table is composed of fifth-order polynomial coefficients and is assembled from two sub-tables. For model descriptor with `se_e2_a` type, the first sub-table takes the stride(parameter) as it's uniform stride, while the second sub-table takes 10 * stride as it's uniform stride; For model descriptor with `se_e3` type, the first sub-table takes 10 * stride as it's uniform stride, while the second sub-table takes 100 * stride as it's uniform stride.
 The range of the first table is automatically detected by deepmd-kit, while the second table ranges from the first table's upper boundary(upper) to the extrapolate(parameter) * upper.
 Finally, we added a check frequency parameter. It indicates how often the program checks for overflow(if the input environment matrix overflow the first or second table range) during the MD inference.
 
@@ -79,3 +79,18 @@ Model compression, with little loss of accuracy, can greatly speed up MD inferen
 **Acceptable original model version**
 
 The model compression interface requires the version of deepmd-kit used in original model generation should be `2.0.0-alpha.0` or above. If one has a frozen 1.2 or 1.3 model, one can upgrade it through the `dp convert-from` interface.(eg: ```dp convert-from 1.2/1.3 -i old_frozen_model.pb -o new_frozen_model.pb```) 
+
+**Acceptable descriptor type**
+
+Descriptors with `se_e2_a`,`se_e3`,'se_e2_r' type are supported by the model compression feature. Hybrid mixed with above descriptors is also supported.
+
+
+**Available activation functions for descriptor:**
+- tanh
+- gelu
+- relu
+- relu6
+- softplus
+- sigmoid
+
+

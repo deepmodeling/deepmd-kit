@@ -5,14 +5,14 @@
 #include <gtest/gtest.h>
 #include "utilities.h"
 
-class TestTabulate : public ::testing::Test
+class TestTabulateSeR : public ::testing::Test
 {
 protected:
   // em_x = tf.random.uniform([4, 16], minval=0, maxval=0.2, dtype = tf.float64)
   std::vector<double > info = {
     0, 0.2, 0.4, 0.01, 0.1, -1 
   };  
-  std::vector<double > em_x = {
+  std::vector<double > em = {
     0.0343909 ,
     0.11357423,
     0.0858676 ,
@@ -30,20 +30,7 @@ protected:
     0.17527857,
     0.04249097
   };
-  std::vector<double > em = {
-    0.0343909 , 0.08394249, 0.06791791, 0.00903334, 0.11357423, 0.10597251,
-    0.05738069, 0.10071109, 0.0858676 , 0.17410445, 0.05390256, 0.09495758,
-    0.19337772, 0.02045487, 0.04095526, 0.18431305,
-    0.1935728 , 0.03930614, 0.0304133 , 0.15261676, 0.0477744,  0.06838737,
-    0.12824902, 0.14125861, 0.05845198, 0.12731053, 0.0315968,  0.14927774,
-    0.19080509, 0.19206871, 0.14361383, 0.04083437,
-    0.16111261, 0.19944826, 0.16563484, 0.00797179, 0.07179262, 0.16993159,
-    0.01834742, 0.08405   , 0.10078013, 0.0773945 , 0.09541813, 0.0042979,
-    0.04640909, 0.07968697, 0.18046262, 0.11724063,
-    0.10433399, 0.16910201, 0.10653732, 0.07434702, 0.15650861, 0.0350976,
-    0.04088021, 0.15753491, 0.17527857, 0.03178642, 0.01599623, 0.08095053,
-    0.04249097, 0.17082205, 0.18275348, 0.02921504
-  }; 
+
   std::vector<double> table = {
     6.348551343037398542e-01, 4.209465843706336474e-04, 6.390862740714405368e-03, -1.544448595628262176e-04, -1.891095227974180087e-04, 2.695025951562175852e-05, -1.317549846042939343e+00, -5.624478206903206490e-02, 1.274284553146523905e-02, -6.836227424141475689e-04, -1.438066096020836407e-04, -1.854932873974712940e-06, -9.996964112615246423e-01, 6.928234423723647617e-02, -4.974719973810486084e-03, -2.019584729176823030e-04, 1.077254539742680247e-04, -8.024209768588029797e-06, 3.552689563657350780e-01, -3.578299775339799371e-02, -1.319946251007718743e-03, 1.016701374495701440e-03, -1.057336720791906388e-04,  5.182678943855506567e-06, 1.227750369557627286e+00, 4.100352079064395472e-02, 3.586869164810712295e-03, -4.304540913340443135e-04, -1.269943482892440004e-04, 1.459465404430219674e-05, -1.472642501673147031e+00, -1.611354921283318364e-01, 1.645427874390196360e-02, 2.107392978135091402e-04, -2.193541011180757461e-04, 1.915392497459551146e-05, -2.855174490181606739e-01, 9.774337856626263976e-02, -2.140891880666230714e-03, -7.148328890055103638e-04, 1.965696332267534503e-05,-4.593489654121371453e-06, -1.468441009949382314e+00, -6.360828127262234399e-02, 4.751283295356955282e-03, 8.711899561753186068e-05, -9.937008678852959884e-06,  4.273569346584811685e-07,
     6.348599826995243722e-01, 5.487167506364742930e-04, 6.386116198716365253e-03, -1.619832375568118791e-04, -1.877328309473502049e-04, 2.134130914519164856e-05, -1.318111020264137512e+00, -5.599013082054477008e-02, 1.272225054666903735e-02, -6.893710047488201898e-04, -1.434367581078517366e-04, 3.329508890614227371e-05 , -9.990040854920316793e-01, 6.918278968071900348e-02, -4.980714172967731085e-03, -1.976574487947816198e-04, 1.070037204086153902e-04, -7.859875077388093586e-06, 3.549109954092205532e-01, -3.580909209068139365e-02, -1.289508598157979719e-03, 1.012474257117017967e-03, -1.054418924402112718e-04, -1.245498322204730900e-05, 1.228160763020727630e+00, 4.107512853046493134e-02, 3.573879491390910459e-03, -4.355190226638688713e-04, -1.258433981470396103e-04, 1.610862268100766631e-05, -1.474252210958008291e+00, -1.608063442081248406e-01, 1.646046950167207382e-02, 2.019843636566674109e-04, -2.185756589083626730e-04, 1.978479879983412190e-05, -2.845402300363228942e-01, 9.770034635718018168e-02, -2.162325119197382531e-03, -7.140472215558940627e-04, 1.956302663031799223e-05, 1.932584474244053378e-05, -1.469076617546759334e+00, -6.351322951074317436e-02, 4.753890907276497185e-03, 8.672114560243554321e-05, -1.004574434175897967e-05, -4.345700882560937596e-06,
@@ -69,71 +56,12 @@ protected:
     6.355509554770921721e-01, 4.194364255265300989e-03, 6.156587518227093006e-03, -3.584539136959086518e-04, -1.505562336471176987e-04, 2.631189526673375584e-05, -1.333295991901433553e+00, -4.879824528740911438e-02, 1.205629889598585497e-02, -8.346035033896359156e-04, -1.072962342948566929e-04, 2.412331753624817981e-05 , -9.793640468817854661e-01, 6.625405011186732973e-02, -5.102126473064734317e-03, -8.551069374443776396e-05, 8.618032279329005427e-05, -1.422030758858379208e-05, 3.444418516979214084e-01, -3.631195473807800889e-02, -4.625381215785304145e-04, 8.881537622047225473e-04, -1.080757789189670570e-04,  5.820590714360855199e-08, 1.240361649325028681e+00, 4.302664794411619614e-02, 3.137220402938139478e-03, -5.615677039256951981e-04, -9.125763978623760322e-05, 2.367398552885374808e-05, -1.519498310980496925e+00, -1.512290469691385253e-01, 1.652996628226939199e-02,-3.745688059096337011e-05, -1.938906911473592626e-04, 1.811217640451412989e-05, -2.564062357251438717e-01, 9.626832379335603651e-02, -2.771163091665611831e-03, -6.829069315554202020e-04, 3.363238372709415958e-05, 8.623099725596635004e-06, -1.487093617252511990e+00, -6.073523464295225993e-02, 4.823154268625621383e-03, 7.122599345182346051e-05, -1.664931178025436733e-05, -4.312450972708557703e-06
   };
   std::vector<double > expected_xyz_scatter = {
-    0.2713011,  -0.56606281, -0.42305039,  0.14965803,  0.52695372,
-   -0.63845663, -0.11624505, -0.63103203,
-    0.24412213, -0.50842224, -0.38203148,  0.1353771,   0.47343798,
-   -0.57158622, -0.10647548, -0.56671287,
-    0.13979394, -0.29123603, -0.21862063,  0.07744574,  0.27118433,
-   -0.32761487, -0.06077287, -0.32463492,
-    0.24704819, -0.51555848, -0.38509326,  0.1362072,   0.47992214,
-   -0.58168358, -0.10566162, -0.57473633,
-    0.31158834, -0.65068838, -0.48501479,  0.17143258,  0.60565326,
-   -0.73506803, -0.13233106, -0.72541595,
-    0.27121003, -0.5656669 , -0.42318034,  0.14974857,  0.52662422,
-   -0.637633  , -0.11658482, -0.6305842 ,
-    0.21202135, -0.44212972, -0.33094666,  0.11713047,  0.41162829,
-   -0.4982129 , -0.0913087 , -0.49286515,
-    0.30733526, -0.64054639, -0.48022212,  0.17004692,  0.59640929,
-   -0.72111726, -0.13304347, -0.71402776,
-    0.24135931, -0.50316388, -0.37699907,  0.13347531,  0.46846154,
-   -0.56664651, -0.10429212, -0.56088123,
-    0.33429479, -0.69669061, -0.52246841,  0.18502927,  0.64867706,
-   -0.78417021, -0.14487244, -0.77659533,
-    0.29200237, -0.60840668, -0.45656557,  0.16172246,  0.56650319,
-   -0.68453038, -0.12681616, -0.67817995,
-    0.13559139, -0.28210652, -0.21258614,  0.07539812,  0.26274303,
-   -0.3166084 , -0.05968776, -0.31443544,
-    0.30394432, -0.63428311, -0.47381417,  0.16759396,  0.59043739,
-   -0.71559513, -0.13003802, -0.70708354,
-    0.25830471, -0.53796239, -0.40421268,  0.14323456,  0.50094757,
-   -0.6048126 , -0.11264426, -0.59964242,
-    0.21979687, -0.45763438, -0.34413143,  0.12197404,  0.42616899,
-   -0.51425659, -0.09609854, -0.51009828,
-    0.2172166 , -0.45326447, -0.33866506,  0.11979851,  0.421936,
-   -0.51130404, -0.09300045, -0.50528542
+   0.634877, -1.319469, -0.997320, 0.354037, 1.229165, -1.478165, -0.282159, -1.470623, 0.634985, -1.323774, -0.991892, 0.351189, 1.232453, -1.490731, -0.274445, -1.475604, 0.634938, -1.322286, -0.993784, 0.352187, 1.231297, -1.486357, -0.277141, -1.473868, 0.635174, -1.327955, -0.986486, 0.348307, 1.235810, -1.503186, -0.266701, -1.480563, 0.635175, -1.327965, -0.986473, 0.348300, 1.235819, -1.503216, -0.266682, -1.480575, 0.634890, -1.320208, -0.996398, 0.353557, 1.229717, -1.480303, -0.280853, -1.471469, 0.634902, -1.320794, -0.995664, 0.353173, 1.230159, -1.482005, -0.279812, -1.472143, 0.635167, -1.327823, -0.986659, 0.348400, 1.235701, -1.502788, -0.266950, -1.480404, 0.635088, -1.326284, -0.988664, 0.349474, 1.234448, -1.498176, -0.269828, -1.478565, 0.634918, -1.321522, -0.994748, 0.352694, 1.230712, -1.484126, -0.278511, -1.472983, 0.634962, -1.323089, -0.992765, 0.351650, 1.231919, -1.488714, -0.275689, -1.474803, 0.634888, -1.320133, -0.996492, 0.353606, 1.229661, -1.480085, -0.280986, -1.471383, 0.634968, -1.323280, -0.992522, 0.351522, 1.232067, -1.489275, -0.275344, -1.475026, 0.635077, -1.326043, -0.988976, 0.349640, 1.234254, -1.497458, -0.270275, -1.478280, 0.635124, -1.327021, -0.987707, 0.348962, 1.235045, -1.500380, -0.268455, -1.479444, 0.634885, -1.319917, -0.996762, 0.353746, 1.229499, -1.479460, -0.281368, -1.471135
   }; 
-  std::vector<double > expected_dy_dem_x = {
-    -0.02067741,
-    -0.03787612,
-    -0.04180199,
-    -0.04158797,
-    -0.03938578,
-    -0.04047081,
-    -0.03819692,
-    -0.05383372,
-    -0.05179508,
-    -0.03552708,
-    -0.02812173,
-    -0.04451295,
-    -0.04586229,
-    -0.03794369,
-    -0.02917727,
-    -0.04478649
-  };
   std::vector<double > expected_dy_dem = {
-    -3.32965609, -3.32965609, -3.32965609, -3.32965609, -3.33781886, -3.33781886,
-    -3.33781886, -3.33781886, -3.33501296, -3.33501296, -3.33501296, -3.33501296,
-    -3.34559974, -3.34559974, -3.34559974, -3.34559974,
-    -3.34561821, -3.34561821, -3.34561821, -3.34561821, -3.33106684, -3.33106684,
-    -3.33106684, -3.33106684, -3.33218328, -3.33218328, -3.33218328, -3.33218328,
-    -3.34535585, -3.34535585, -3.34535585, -3.34535585,
-    -3.34250754, -3.34250754, -3.34250754, -3.34250754, -3.33356685, -3.33356685,
-    -3.33356685, -3.33356685, -3.33652989, -3.33652989, -3.33652989, -3.33652989,
-    -3.3309235 , -3.3309235 , -3.3309235 , -3.3309235 ,
-    -3.33688909, -3.33688909, -3.33688909, -3.33688909, -3.34206038, -3.34206038,
-    -3.34206038, -3.34206038, -3.34387412, -3.34387412, -3.34387412, -3.34387412,
-    -3.33051143, -3.33051143, -3.33051143, -3.33051143
+   -0.105883, -0.100297, -0.102247, -0.094712, -0.094698, -0.104937, -0.104182, -0.094891, -0.096964, -0.103240, -0.101197, -0.105033, -0.100947, -0.097286, -0.095974, -0.105310
   };
+
   const int nloc = 4;
   const int nnei = 4;
   const int last_layer_size = 8;
@@ -144,10 +72,10 @@ protected:
   }
 };
 
-TEST_F(TestTabulate, tabulate_fusion_cpu)
+TEST_F(TestTabulateSeR, tabulate_fusion_se_r_cpu)
 {
   std::vector<double> xyz_scatter(nloc * nnei * last_layer_size);
-  deepmd::tabulate_fusion_cpu<double>(&xyz_scatter[0], &table[0], &info[0], &em_x[0], &em[0], nloc, nnei, last_layer_size);
+  deepmd::tabulate_fusion_se_r_cpu<double>(&xyz_scatter[0], &table[0], &info[0], &em[0], nloc, nnei, last_layer_size);
   EXPECT_EQ(xyz_scatter.size(), nloc * nnei * last_layer_size);
   EXPECT_EQ(xyz_scatter.size(), expected_xyz_scatter.size());
   for (int jj = 0; jj < xyz_scatter.size(); ++jj){
@@ -155,39 +83,31 @@ TEST_F(TestTabulate, tabulate_fusion_cpu)
   }
 }
 
-TEST_F(TestTabulate, tabulate_fusion_grad_cpu)
+TEST_F(TestTabulateSeR, tabulate_fusion_se_r_grad_cpu)
 {
-  std::vector<double> dy_dem_x(em_x.size());
   std::vector<double> dy_dem(em.size());
   std::vector<double> dy(nloc * nnei * last_layer_size, 1.0);
-  deepmd::tabulate_fusion_grad_cpu<double>(&dy_dem_x[0], &dy_dem[0], &table[0], &info[0], &em_x[0], &em[0], &dy[0], nloc, nnei, last_layer_size);
-  EXPECT_EQ(dy_dem_x.size(), nloc * nnei);
-  EXPECT_EQ(dy_dem.size(), nloc * nnei * 4);
-  EXPECT_EQ(dy_dem_x.size(), expected_dy_dem_x.size());
+  deepmd::tabulate_fusion_se_r_grad_cpu<double>(&dy_dem[0], &table[0], &info[0], &em[0], &dy[0], nloc, nnei, last_layer_size);
+  EXPECT_EQ(dy_dem.size(), nloc * nnei);
   EXPECT_EQ(dy_dem.size(), expected_dy_dem.size());
-  for (int jj = 0; jj < dy_dem_x.size(); ++jj){
-    EXPECT_LT(fabs(dy_dem_x[jj] - expected_dy_dem_x[jj]) , 1e-5);
-  }
   for (int jj = 0; jj < dy_dem.size(); ++jj){
     EXPECT_LT(fabs(dy_dem[jj] - expected_dy_dem[jj]) , 1e-5);
   }
 }
 
 #if GOOGLE_CUDA
-TEST_F(TestTabulate, tabulate_fusion_gpu_cuda)
+TEST_F(TestTabulateSeR, tabulate_fusion_se_r_gpu_cuda)
 {
   std::vector<double> xyz_scatter(nloc * nnei * last_layer_size, 0.0);
 
-  double * xyz_scatter_dev = NULL, * table_dev = NULL, * em_x_dev = NULL, * em_dev = NULL;
+  double * xyz_scatter_dev = NULL, * table_dev = NULL,  * em_dev = NULL;
   deepmd::malloc_device_memory_sync(xyz_scatter_dev, xyz_scatter);
   deepmd::malloc_device_memory_sync(table_dev, table);
-  deepmd::malloc_device_memory_sync(em_x_dev, em_x);
   deepmd::malloc_device_memory_sync(em_dev, em);
-  deepmd::tabulate_fusion_gpu_cuda<double>(xyz_scatter_dev, table_dev, &info[0], em_x_dev, em_dev, nloc, nnei, last_layer_size);
+  deepmd::tabulate_fusion_se_r_gpu_cuda<double>(xyz_scatter_dev, table_dev, &info[0], em_dev, nloc, nnei, last_layer_size);
   deepmd::memcpy_device_to_host(xyz_scatter_dev, xyz_scatter);
   deepmd::delete_device_memory(xyz_scatter_dev);
   deepmd::delete_device_memory(table_dev);
-  deepmd::delete_device_memory(em_x_dev);
   deepmd::delete_device_memory(em_dev);
 
   EXPECT_EQ(xyz_scatter.size(), nloc * nnei * last_layer_size);
@@ -197,36 +117,26 @@ TEST_F(TestTabulate, tabulate_fusion_gpu_cuda)
   }
 }
 
-TEST_F(TestTabulate, tabulate_fusion_grad_gpu_cuda)
+TEST_F(TestTabulateSeR, tabulate_fusion_se_r_grad_gpu_cuda)
 {
-  std::vector<double> dy_dem_x(em_x.size(), 0.0);
   std::vector<double> dy_dem(em.size(), 0.0);
   std::vector<double> dy(nloc * nnei * last_layer_size, 1.0);
 
-  double * dy_dem_x_dev = NULL, * dy_dem_dev = NULL, * table_dev = NULL, * em_x_dev = NULL, * em_dev = NULL, * dy_dev = NULL;
-  deepmd::malloc_device_memory_sync(dy_dem_x_dev, dy_dem_x);
+  * dy_dem_dev = NULL, * table_dev = NULL, * em_dev = NULL, * dy_dev = NULL;
   deepmd::malloc_device_memory_sync(dy_dem_dev, dy_dem);
   deepmd::malloc_device_memory_sync(table_dev, table);
-  deepmd::malloc_device_memory_sync(em_x_dev, em_x);
   deepmd::malloc_device_memory_sync(em_dev, em);
   deepmd::malloc_device_memory_sync(dy_dev, dy);
-  deepmd::tabulate_fusion_grad_gpu_cuda<double>(dy_dem_x_dev, dy_dem_dev, table_dev, &info[0], em_x_dev, em_dev, dy_dev, nloc, nnei, last_layer_size);
-  deepmd::memcpy_device_to_host(dy_dem_x_dev, dy_dem_x);
+  deepmd::tabulate_fusion_se_r_grad_gpu_cuda<double>(dy_dem_dev, table_dev, &info[0], em_dev, dy_dev, nloc, nnei, last_layer_size);
   deepmd::memcpy_device_to_host(dy_dem_dev, dy_dem);
-  deepmd::delete_device_memory(dy_dem_x_dev);
   deepmd::delete_device_memory(dy_dem_dev);
   deepmd::delete_device_memory(table_dev);
-  deepmd::delete_device_memory(em_x_dev);
   deepmd::delete_device_memory(em_dev);
   deepmd::delete_device_memory(dy_dev);
 
-  EXPECT_EQ(dy_dem_x.size(), nloc * nnei);
-  EXPECT_EQ(dy_dem.size(), nloc * nnei * 4);
-  EXPECT_EQ(dy_dem_x.size(), expected_dy_dem_x.size());
+  EXPECT_EQ(dy_dem.size(), nloc * nnei);
   EXPECT_EQ(dy_dem.size(), expected_dy_dem.size());
-  for (int jj = 0; jj < dy_dem_x.size(); ++jj){
-    EXPECT_LT(fabs(dy_dem_x[jj] - expected_dy_dem_x[jj]) , 1e-5);
-  }
+
   for (int jj = 0; jj < dy_dem.size(); ++jj){
     EXPECT_LT(fabs(dy_dem[jj] - expected_dy_dem[jj]) , 1e-5);
   }
@@ -234,20 +144,18 @@ TEST_F(TestTabulate, tabulate_fusion_grad_gpu_cuda)
 #endif // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
-TEST_F(TestTabulate, tabulate_fusion_gpu_rocm)
+TEST_F(TestTabulateSeR, tabulate_fusion_se_r_gpu_rocm)
 {
   std::vector<double> xyz_scatter(nloc * nnei * last_layer_size, 0.0);
 
-  double * xyz_scatter_dev = NULL, * table_dev = NULL, * em_x_dev = NULL, * em_dev = NULL;
+  double * xyz_scatter_dev = NULL, * table_dev = NULL, * em_dev = NULL;
   deepmd::malloc_device_memory_sync(xyz_scatter_dev, xyz_scatter);
   deepmd::malloc_device_memory_sync(table_dev, table);
-  deepmd::malloc_device_memory_sync(em_x_dev, em_x);
   deepmd::malloc_device_memory_sync(em_dev, em);
-  deepmd::tabulate_fusion_gpu_rocm<double>(xyz_scatter_dev, table_dev, &info[0], em_x_dev, em_dev, nloc, nnei, last_layer_size);
+  deepmd::tabulate_fusion_se_r_gpu_rocm<double>(xyz_scatter_dev, table_dev, &info[0], em_dev, nloc, nnei, last_layer_size);
   deepmd::memcpy_device_to_host(xyz_scatter_dev, xyz_scatter);
   deepmd::delete_device_memory(xyz_scatter_dev);
   deepmd::delete_device_memory(table_dev);
-  deepmd::delete_device_memory(em_x_dev);
   deepmd::delete_device_memory(em_dev);
 
   EXPECT_EQ(xyz_scatter.size(), nloc * nnei * last_layer_size);
@@ -257,36 +165,26 @@ TEST_F(TestTabulate, tabulate_fusion_gpu_rocm)
   }
 }
 
-TEST_F(TestTabulate, tabulate_fusion_grad_gpu_rocm)
+TEST_F(TestTabulateSeR, tabulate_fusion_se_r_grad_gpu_rocm)
 {
-  std::vector<double> dy_dem_x(em_x.size(), 0.0);
   std::vector<double> dy_dem(em.size(), 0.0);
   std::vector<double> dy(nloc * nnei * last_layer_size, 1.0);
 
-  double * dy_dem_x_dev = NULL, * dy_dem_dev = NULL, * table_dev = NULL, * em_x_dev = NULL, * em_dev = NULL, * dy_dev = NULL;
-  deepmd::malloc_device_memory_sync(dy_dem_x_dev, dy_dem_x);
+  * dy_dem_dev = NULL, * table_dev = NULL, * em_dev = NULL, * dy_dev = NULL;
   deepmd::malloc_device_memory_sync(dy_dem_dev, dy_dem);
   deepmd::malloc_device_memory_sync(table_dev, table);
-  deepmd::malloc_device_memory_sync(em_x_dev, em_x);
   deepmd::malloc_device_memory_sync(em_dev, em);
   deepmd::malloc_device_memory_sync(dy_dev, dy);
-  deepmd::tabulate_fusion_grad_gpu_rocm<double>(dy_dem_x_dev, dy_dem_dev, table_dev, &info[0], em_x_dev, em_dev, dy_dev, nloc, nnei, last_layer_size);
-  deepmd::memcpy_device_to_host(dy_dem_x_dev, dy_dem_x);
+  deepmd::tabulate_fusion_se_r_grad_gpu_rocm<double>(dy_dem_dev, table_dev, &info[0], em_dev, dy_dev, nloc, nnei, last_layer_size);
   deepmd::memcpy_device_to_host(dy_dem_dev, dy_dem);
-  deepmd::delete_device_memory(dy_dem_x_dev);
   deepmd::delete_device_memory(dy_dem_dev);
   deepmd::delete_device_memory(table_dev);
-  deepmd::delete_device_memory(em_x_dev);
   deepmd::delete_device_memory(em_dev);
   deepmd::delete_device_memory(dy_dev);
 
-  EXPECT_EQ(dy_dem_x.size(), nloc * nnei);
-  EXPECT_EQ(dy_dem.size(), nloc * nnei * 4);
-  EXPECT_EQ(dy_dem_x.size(), expected_dy_dem_x.size());
+  EXPECT_EQ(dy_dem.size(), nloc * nnei);
   EXPECT_EQ(dy_dem.size(), expected_dy_dem.size());
-  for (int jj = 0; jj < dy_dem_x.size(); ++jj){
-    EXPECT_LT(fabs(dy_dem_x[jj] - expected_dy_dem_x[jj]) , 1e-5);
-  }
+
   for (int jj = 0; jj < dy_dem.size(); ++jj){
     EXPECT_LT(fabs(dy_dem[jj] - expected_dy_dem[jj]) , 1e-5);
   }

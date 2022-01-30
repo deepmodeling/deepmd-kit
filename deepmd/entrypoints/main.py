@@ -170,6 +170,11 @@ def parse_args(args: Optional[List[str]] = None):
         default=None,
         help="Initialize the training from the frozen model.",
     )
+    parser_train.add_argument(
+        "--skip-neighbor-stat",
+        action="store_true",
+        help="Skip calculating neighbor statistics. Sel checking, automatic sel, and model compression will be disabled.",
+    )
 
     # * freeze script ******************************************************************
     parser_frz = subparsers.add_parser(
@@ -356,7 +361,7 @@ def parse_args(args: Optional[List[str]] = None):
         "--system",
         default=".",
         type=str,
-        help="The system directory, not support recursive detection.",
+        help="The system directory. Recursively detect systems in this directory.",
     )
     parser_model_devi.add_argument(
         "-S", "--set-prefix", default="set", type=str, help="The set prefix"
@@ -386,7 +391,7 @@ def parse_args(args: Optional[List[str]] = None):
     parser_transform.add_argument(
         'FROM',
         type = str,
-        choices = ['1.2', '1.3'],
+        choices = ['1.2', '1.3', '2.0'],
         help="The original model compatibility",
     )
     parser_transform.add_argument(

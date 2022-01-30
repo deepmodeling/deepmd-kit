@@ -3,20 +3,63 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 from deepmd.env import tf
+from deepmd.utils import Plugin, PluginVariant
 
 
-class Descriptor(ABC):
+class Descriptor(PluginVariant):
     r"""The abstract class for descriptors. All specific descriptors should
     be based on this class.
 
     The descriptor :math:`\mathcal{D}` describes the environment of an atom,
     which should be a function of coordinates and types of its neighbour atoms.
 
+    Examples
+    --------
+    >>> descript = Descriptor(type="se_e2_a", rcut=6., rcut_smth=0.5, sel=[50])
+    >>> type(descript)
+    <class 'deepmd.descriptor.se_a.DescrptSeA'>
+
     Notes
     -----
     Only methods and attributes defined in this class are generally public,
     that can be called by other classes.
     """
+
+    __plugins = Plugin()
+
+    @staticmethod
+    def register(key: str) -> "Descriptor":
+        """Regiester a descriptor plugin.
+
+        Parameters
+        ----------
+        key : str
+            the key of a descriptor
+
+        Returns
+        -------
+        Descriptor
+            the regiestered descriptor
+
+        Examples
+        --------
+        >>> @Descriptor.register("some_descrpt")
+            class SomeDescript(Descriptor):
+                pass
+        """
+        return Descriptor.__plugins.register(key)
+
+    def __new__(cls, *args, **kwargs):
+        if cls is Descriptor:
+            try:
+                descrpt_type = kwargs['type']
+            except KeyError:
+                raise KeyError('the type of descriptor should be set by `type`')
+            if descrpt_type in Descriptor.__plugins.plugins:
+                cls = Descriptor.__plugins.plugins[descrpt_type]
+            else:
+                raise RuntimeError('Unknown descriptor type: ' + descrpt_type)
+        return super().__new__(cls)
 
     @abstractmethod
     def get_rcut(self) -> float:
@@ -219,6 +262,24 @@ class Descriptor(ABC):
         raise NotImplementedError(
             "Descriptor %s doesn't support compression!" % type(self).__name__)
 
+    def enable_mixed_precision(self, mixed_prec: dict = None) -> None:
+        """
+        Reveive the mixed precision setting.
+
+        Parameters
+        ----------
+        mixed_prec
+                The mixed precision setting used in the embedding net
+
+        Notes
+        -----
+        This method is called by others when the descriptor supported compression.
+        """
+        raise NotImplementedError(
+            "Descriptor %s doesn't support mixed precision training!"
+            % type(self).__name__
+        )
+
     @abstractmethod
     def prod_force_virial(self,
                           atom_ener: tf.Tensor,
@@ -280,26 +341,65 @@ class Descriptor(ABC):
         feed_dict : dict[str, tf.Tensor]
             The output feed_dict of current descriptor
         """
-        # TODO: currently only SeA has this method, but I think the method can be
-        # moved here as it doesn't contain anything related to a specific descriptor
-        raise NotImplementedError
+        feed_dict = {
+            't_coord:0'  :coord_,
+            't_type:0'   :atype_,
+            't_natoms:0' :natoms,
+            't_box:0'    :box,
+            't_mesh:0'   :mesh
+        }
+        return feed_dict
 
     def init_variables(self,
-                       embedding_net_variables: dict
-                       ) -> None:
+                       model_file: str,
+                       suffix : str = "",
+    ) -> None:
         """
         Init the embedding net variables with the given dict
 
         Parameters
         ----------
-        embedding_net_variables
-                The input dict which stores the embedding net variables
+        model_file : str
+            The input model file
+        suffix : str, optional
+            The suffix of the scope
         
         Notes
         -----
         This method is called by others when the descriptor supported initialization from the given variables.
         """
-        # TODO: currently only SeA has this method, but I think the method can be
-        # moved here as it doesn't contain anything related to a specific descriptor
         raise NotImplementedError(
             "Descriptor %s doesn't support initialization from the given variables!" % type(self).__name__)
+
+    def get_tensor_names(self, suffix : str = "") -> Tuple[str]:
+        """Get names of tensors.
+        
+        Parameters
+        ----------
+        suffix : str
+            The suffix of the scope
+
+        Returns
+        -------
+        Tuple[str]
+            Names of tensors
+        """
+        raise NotImplementedError("Descriptor %s doesn't support this property!" % type(self).__name__)
+
+    def pass_tensors_from_frz_model(self,
+                                    *tensors : tf.Tensor,
+    ) -> None:
+        """
+        Pass the descrpt_reshape tensor as well as descrpt_deriv tensor from the frz graph_def
+
+        Parameters
+        ----------
+        *tensors : tf.Tensor
+            passed tensors
+        
+        Notes
+        -----
+        The number of parameters in the method must be equal to the numbers of returns in
+        :meth:`get_tensor_names`.
+        """
+        raise NotImplementedError("Descriptor %s doesn't support this method!" % type(self).__name__)

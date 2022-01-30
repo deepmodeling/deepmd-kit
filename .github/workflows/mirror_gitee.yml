@@ -8,11 +8,12 @@ concurrency:
 
 jobs:
   git-mirror:
+    if: github.repository_owner == 'deepmodeling'
     runs-on: ubuntu-latest
     steps:
       - uses: wearerequired/git-mirror-action@v1
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SYNC_GITEE_PRIVATE_KEY }}
         with:
-          source-repo: "git@github.com:deepmodeling/deepmd-kit.git"
+          source-repo: "https://github.com/deepmodeling/deepmd-kit.git"
           destination-repo: "git@gitee.com:deepmodeling/deepmd-kit.git"

@@ -1,0 +1,56 @@
+; TI/FEP mdp template for solution
+; Note: this is for Gromacs 2016 and later
+integrator = sd
+ld-seed = -1
+bd-fric = 0
+dt = 0.001
+nsteps = 100
+nstcomm = 5
+
+nstxout = 5
+nstvout = 0
+nstfout = 0
+nstlog = 5
+nstenergy = 5
+nstxout-compressed = 0
+
+tcoupl = no
+nsttcouple = 10
+tc_grps = System
+tau_t = 0.2
+ref_t = 298
+
+constraints = h-bonds
+constraint_algorithm = lincs
+lincs_order = 4
+lincs_warnangle = 30
+
+comm-mode = Linear
+
+cutoff-scheme = verlet
+nstlist = 80
+ns_type = grid
+pbc = xyz
+rlist = 0.8
+
+coulombtype = pme
+coulomb-modifier = none
+rcoulomb = 0.8
+fourierspacing = 0.1
+pme_order = 4
+ewald_rtol = 1e-05
+
+vdwtype = cut-off
+vdw-modifier = none
+rvdw = 0.8
+DispCorr = AllEnerPres
+
+pcoupl = Parrinello-Rahman
+pcoupltype = isotropic
+tau_p = 5.0
+compressibility = 4.5e-05
+ref_p = 1.0
+refcoord-scaling = com
+
+gen-vel = yes
+continuation = no
