@@ -129,7 +129,7 @@ class EnerStdLoss () :
         return l2_loss, more_loss
 
     def eval(self, sess, feed_dict, natoms):
-        placeholder = tf.no_op()
+        placeholder = self.l2_l
         run_data = [
             self.l2_l,
             self.l2_more['l2_ener_loss'] if self.has_e else placeholder,

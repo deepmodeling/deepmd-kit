@@ -1,0 +1,71 @@
+# bulk water
+variable        NSTEPS          equal 20
+variable	DT		equal 0.0005
+variable	BETA		equal 0.4
+variable	KMESH		equal 32
+variable        THERMO_FREQ     equal 2
+variable        DUMP_FREQ       equal 20
+variable        TEMP            equal 300.000000
+variable        PRES            equal 1.000000
+variable        TAU_T           equal 0.100000
+variable        TAU_P           equal 0.500000
+
+units           metal
+boundary        p p p
+atom_style      full
+
+# the neighbor list between real (1) and its corresponding virtual
+# type (3) should be excluded
+neighbor        2.0 bin
+neigh_modify    every 10 delay 0 check no exclude type 1 3
+
+read_data	conf.lmp
+write_data	init.lmp
+
+# groups of real and virtual atoms
+group		real_atom type 1 2
+group		virtual_atom type 3
+
+# bond between real and its corresponding virtual site should be given
+# to setup a map between real and virtual atoms. However, no real
+# bonded interaction is applied, thus bond_sytle "zero" is used.
+pair_style	deepmd ener.pb
+pair_coeff	* *
+bond_style	zero
+bond_coeff	*
+special_bonds   lj/coul 1 1 1 angle no
+
+# kspace_style "pppm/dplr" should be used. in addition the
+# gewald(1/distance) should be set the same as that used in
+# training. Currently only ik differentiation is supported.
+kspace_style	pppm/dplr 1e-5
+kspace_modify	gewald ${BETA} diff ik mesh ${KMESH} ${KMESH} ${KMESH}
+
+# "fix dplr" set the position of the virtual atom, and spread the
+# electrostatic interaction asserting on the virtual atom to the real
+# atoms. "type_associate" associates the real atom type the its
+# corresponding virtual atom type. "bond_type" gives the type of the
+# bond between the real and virtual atoms.
+fix		0 all dplr model ener.pb type_associate 1 3 bond_type 1
+fix_modify	0 virial yes
+
+# compute the temperature of real atoms, excluding virtual atom contribution
+compute		real_temp real_atom temp
+compute		real_press all pressure real_temp
+fix		1 real_atom nvt temp ${TEMP} ${TEMP} ${TAU_T}
+fix_modify	1 temp real_temp
+
+timestep        ${DT}
+thermo          ${THERMO_FREQ}
+thermo_style    custom step ke pe etotal enthalpy temp press vol lx ly lz pxx pyy pzz
+thermo_modify	temp real_temp press real_press
+dump            1 real_atom custom ${DUMP_FREQ} water.dump id type x y z vx vy vz
+fix             thermo_print all print ${THERMO_FREQ} "$(step) $(pe) $(ke) $(etotal) $(enthalpy) $(c_real_temp) $(c_real_press) $(vol) $(c_real_press[1]) $(c_real_press[2]) $(c_real_press[3])" append thermo.out screen no title "# step pe ke etotal enthalpy temp press vol pxx pyy pzz"
+
+velocity        real_atom create ${TEMP} 23456784
+velocity        real_atom zero linear
+
+run             ${NSTEPS}
+write_data	out.lmp nocoeff
+
+
