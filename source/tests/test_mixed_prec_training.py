@@ -42,7 +42,7 @@ class TestMixedPrecTraining(unittest.TestCase):
     def test_training(self):
         _TF_VERSION = Version(TF_VERSION)
         # check the TF_VERSION, when TF < 1.12, mixed precision is not allowed 
-        if _TF_VERSION >= Version('1.12.0'):
+        if _TF_VERSION >= Version('1.14.0'):
             ret = _subprocess_run("dp train " + self.INPUT)
             np.testing.assert_equal(ret, 0, 'DP train failed!')
 
