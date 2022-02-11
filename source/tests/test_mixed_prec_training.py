@@ -2,10 +2,11 @@ import os,json
 import numpy as np
 import unittest
 import subprocess as sp
+from packaging.version import Version
 
 from deepmd.infer import DeepPot
 # from deepmd.entrypoints.compress import compress
-from common import j_loader, tests_path
+from common import j_loader, tests_path, TF_VERSION
 
 
 def _file_delete(file) :
@@ -38,8 +39,11 @@ class TestMixedPrecTraining(unittest.TestCase):
             json.dump(jdata, fp, indent=4)
 
     def test_training(self):
-        ret = _subprocess_run("dp train " + self.INPUT)
-        np.testing.assert_equal(ret, 0, 'DP train failed!')
+        _TF_VERSION = Version(TF_VERSION)
+        # check the TF_VERSION, when TF < 1.12, mixed precision is not allowed 
+        if _TF_VERSION >= Version('1.12.0'):
+            ret = _subprocess_run("dp train " + self.INPUT)
+            np.testing.assert_equal(ret, 0, 'DP train failed!')
 
     def tearDown(self):
         _file_delete(self.INPUT)
