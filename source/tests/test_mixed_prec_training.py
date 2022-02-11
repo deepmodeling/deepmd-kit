@@ -6,7 +6,8 @@ from packaging.version import Version
 
 from deepmd.infer import DeepPot
 # from deepmd.entrypoints.compress import compress
-from common import j_loader, tests_path, TF_VERSION
+from common import j_loader, tests_path
+from deepmd.env import TF_VERSION
 
 
 def _file_delete(file) :
