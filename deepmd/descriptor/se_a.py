@@ -738,7 +738,7 @@ class DescrptSeA (DescrptSe):
             # we can safely return the final xyz_scatter filled with zero directly
             return tf.cast(tf.fill((natom, 4, outputs_size[-1]), 0.), self.filter_precision)
           # natom x nei_type_i x out_size
-          xyz_scatter = tf.cast(tf.reshape(xyz_scatter, (-1, shape_i[1]//4, outputs_size[-1])), self.filter_precision)  
+          xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1]//4, outputs_size[-1]))  
           # When using tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]) below
           # [588 24] -> [588 6 4] correct
           # but if sel is zero
