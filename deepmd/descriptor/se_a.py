@@ -787,6 +787,7 @@ class DescrptSeA (DescrptSe):
           type_i = 0
           # natom x 4 x outputs_size
           if type_embedding is None:
+              rets = []
               for type_i in range(self.ntypes):
                   ret = self._filter_lower(
                       type_i, type_input,
@@ -801,12 +802,12 @@ class DescrptSeA (DescrptSe):
                       bavg = bavg,
                       trainable = trainable,
                       suffix = "_"+str(type_i))
-                  if type_i == 0:
-                      xyz_scatter_1 = ret
-                  elif (type_input, type_i) not in self.exclude_types:
+                  if (type_input, type_i) not in self.exclude_types:
                       # add zero is meaningless; skip
-                      xyz_scatter_1+= ret
+                      rets.append(ret)
                   start_index += self.sel_a[type_i]
+              # faster to use accumulate_n than multiple add
+              xyz_scatter_1 = tf.accumulate_n(rets)
           else :
               xyz_scatter_1 = self._filter_lower(
                   type_i, type_input,

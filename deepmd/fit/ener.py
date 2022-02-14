@@ -435,6 +435,7 @@ class EnerFitting (Fitting):
 
         if atype_embed is None:
             start_index = 0
+            outs_list = []
             for type_i in range(self.ntypes):
                 if bias_atom_e is None :
                     type_bias_ae = 0.0
@@ -454,12 +455,11 @@ class EnerFitting (Fitting):
                     )
                     final_layer += self.atom_ener[type_i] - zero_layer
                 final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i]])
-                # concat the results
-                if type_i == 0:
-                    outs = final_layer
-                else:
-                    outs = tf.concat([outs, final_layer], axis = 1)
+                outs_list.append(final_layer)
                 start_index += natoms[2+type_i]
+            # concat the results
+            # concat once may be faster than multiple concat
+            outs = tf.concat(outs_list, axis = 1)
         # with type embedding
         else:
             if len(self.atom_ener) > 0:
