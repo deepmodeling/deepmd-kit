@@ -1,7 +1,7 @@
 import logging
 from typing import List
 
-from deepmd.common import data_requirement, expand_sys_str
+from deepmd.common import expand_sys_str
 from deepmd.utils.data_system import DeepmdDataSystem
 from deepmd.utils.neighbor_stat import NeighborStat
 
@@ -41,7 +41,6 @@ def neighbor_stat(
         rcut=rcut,
         type_map=type_map,
     )
-    data.add_dict(data_requirement)
     data.get_batch()
     nei = NeighborStat(data.get_ntypes(), rcut)
     min_nbor_dist, max_nbor_size = nei.get_stat(data)
