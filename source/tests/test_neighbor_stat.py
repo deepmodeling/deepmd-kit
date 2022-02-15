@@ -20,7 +20,7 @@ def gen_sys(nframes):
     return data
 
 
-class TestEnerShift(unittest.TestCase):
+class TestNeighborStat(unittest.TestCase):
     def setUp(self):
         data0 = gen_sys(1)
         sys0 = dpdata.LabeledSystem()
@@ -30,7 +30,7 @@ class TestEnerShift(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree('system_0')
 
-    def test_ener_shift(self):
+    def test_neighbor_stat(self):
         # set rcut to 0. will cause a core dumped
         # TODO: check what is wrong
         for rcut in (3., 6., 11.):
