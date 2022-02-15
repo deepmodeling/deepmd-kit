@@ -8,6 +8,6 @@ To determine a proper `sel`, one can calculate the neighbor stat of the training
 ```sh
 dp neighbor-stat -s data -r 6.0 -t O H
 ```
-where `data` is the directory of data, `6.0` is the cutoff radius, and `O` and `H` is the type map.The program will give the `max_nbor_size`. For example, `max_nbor_size` of the water example is `[38, 72]`, meaning an atom may have 38 O neighbors and 72 H neighbors in the training data.
+where `data` is the directory of data, `6.0` is the cutoff radius, and `O` and `H` is the type map. The program will give the `max_nbor_size`. For example, `max_nbor_size` of the water example is `[38, 72]`, meaning an atom may have 38 O neighbors and 72 H neighbors in the training data.
 
 The `sel` should be set to a higher value than that of the training data, considering there may be some extreme geometries during MD simulations. As a result, we set to `[46, 92]` in the water example.
