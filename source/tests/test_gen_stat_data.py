@@ -146,4 +146,10 @@ class TestEnerShift(unittest.TestCase):
                               resnet_dt = True,
                               atom_ener=[ae0, None, None])
         ener_shift1 = fitting._compute_output_stats(all_stat, rcond = 1)
+        # check assigned energy
         np.testing.assert_almost_equal(ae0, ener_shift1[0])
+        # check if total energy are the same
+        natoms = data.natoms_vec[0][2:]
+        tot0 = np.dot(data.compute_energy_shift(rcond = 1), natoms)
+        tot1 = np.dot(ener_shift1, natoms)
+        np.testing.assert_almost_equal(tot0, tot1)

@@ -201,9 +201,10 @@ class EnerFitting (Fitting):
             # Atomic energies stats are incorrect if atomic energies are assigned.
             # In this situation, we directly use these assigned energies instead of computing stats.
             # This will make the loss decrease quickly
-            tot_assigned_ener = np.sum((ee for ee in self.atom_ener_v if ee is not None))
-            sys_ener -= tot_assigned_ener
+            assigned_atom_ener = np.array(list((ee for ee in self.atom_ener_v if ee is not None)))
             assigned_ener_idx = list((ii for ii, ee in enumerate(self.atom_ener_v) if ee is not None))
+            # np.dot out size: nframe
+            sys_ener -= np.dot(sys_tynatom[:, assigned_ener_idx], assigned_atom_ener)
             sys_tynatom[:, assigned_ener_idx] = 0.
         energy_shift,resd,rank,s_value \
             = np.linalg.lstsq(sys_tynatom, sys_ener, rcond = rcond)
