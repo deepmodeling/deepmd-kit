@@ -372,7 +372,7 @@ class DPTrainer (object):
         if self.mixed_prec is not None:
             _TF_VERSION = Version(TF_VERSION)
             # check the TF_VERSION, when TF < 1.12, mixed precision is not allowed 
-            if _TF_VERSION < Version('1.12.0'):
+            if _TF_VERSION < Version('1.14.0'):
                 raise RuntimeError("TensorFlow version %s is not compatible with the mixed precision setting. Please consider upgrading your TF version!" % TF_VERSION)
             elif _TF_VERSION < Version('2.4.0'):
                 optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
