@@ -47,4 +47,4 @@ def neighbor_stat(
     min_nbor_dist, max_nbor_size = nei.get_stat(data)
     log.info("min_nbor_dist: %f" % min_nbor_dist)
     log.info("max_nbor_size: %s" % str(max_nbor_size))
-
+    return min_nbor_dist, max_nbor_size
