@@ -6,7 +6,7 @@ import dpdata
 from deepmd.utils import random as dp_random
 from deepmd.utils.data_system import DeepmdDataSystem
 from deepmd.descriptor import DescrptSeA
-from deepmd.fit import EnerFitting, ener
+from deepmd.fit import EnerFitting
 from deepmd.model.model_stat import make_stat_input, merge_sys_stat, _make_all_stat_ref
 
 def gen_sys(nframes, atom_types):
