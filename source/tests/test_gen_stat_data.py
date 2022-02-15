@@ -5,6 +5,7 @@ import dpdata
 
 from deepmd.utils import random as dp_random
 from deepmd.utils.data_system import DeepmdDataSystem
+from deepmd.descriptor import DescrptSeA
 from deepmd.fit import EnerFitting
 from deepmd.model.model_stat import make_stat_input, merge_sys_stat, _make_all_stat_ref
 
@@ -115,5 +116,13 @@ class TestEnerShift(unittest.TestCase):
         data.add('energy', 1, must = True)
         ener_shift0 = data.compute_energy_shift(rcond = 1)
         all_stat = make_stat_input(data, 4, merge_sys = False)
-        ener_shift1 = EnerFitting._compute_output_stats(all_stat, rcond = 1)        
+        descrpt = DescrptSeA(6.0, 
+                             5.8,
+                             [46, 92],
+                             neuron = [25, 50, 100], 
+                             axis_neuron = 16)
+        fitting = EnerFitting(descrpt,
+                              neuron = [240, 240, 240],
+                              resnet_dt = True)
+        ener_shift1 = fitting._compute_output_stats(all_stat, rcond = 1)        
         np.testing.assert_almost_equal(ener_shift0, ener_shift1)
