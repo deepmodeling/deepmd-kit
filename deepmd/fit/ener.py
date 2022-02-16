@@ -129,6 +129,7 @@ class EnerFitting (Fitting):
             self.trainable = [self.trainable] * (len(self.n_neuron)+1)
         assert(len(self.trainable) == len(self.n_neuron) + 1), 'length of trainable should be that of n_neuron + 1'
         self.atom_ener = []
+        self.atom_ener_v = atom_ener
         for at, ae in enumerate(atom_ener):
             if ae is not None:
                 self.atom_ener.append(tf.constant(ae, self.fitting_precision, name = "atom_%d_ener" % at))
@@ -178,7 +179,6 @@ class EnerFitting (Fitting):
         """
         self.bias_atom_e = self._compute_output_stats(all_stat, rcond = self.rcond)
 
-    @classmethod
     def _compute_output_stats(self, all_stat, rcond = 1e-3):
         data = all_stat['energy']
         # data[sys_idx][batch_idx][frame_idx]
@@ -197,8 +197,20 @@ class EnerFitting (Fitting):
             sys_tynatom = np.append(sys_tynatom, data[ss][0].astype(np.float64))
         sys_tynatom = np.reshape(sys_tynatom, [nsys,-1])
         sys_tynatom = sys_tynatom[:,2:]
+        if len(self.atom_ener) > 0:
+            # Atomic energies stats are incorrect if atomic energies are assigned.
+            # In this situation, we directly use these assigned energies instead of computing stats.
+            # This will make the loss decrease quickly
+            assigned_atom_ener = np.array(list((ee for ee in self.atom_ener_v if ee is not None)))
+            assigned_ener_idx = list((ii for ii, ee in enumerate(self.atom_ener_v) if ee is not None))
+            # np.dot out size: nframe
+            sys_ener -= np.dot(sys_tynatom[:, assigned_ener_idx], assigned_atom_ener)
+            sys_tynatom[:, assigned_ener_idx] = 0.
         energy_shift,resd,rank,s_value \
             = np.linalg.lstsq(sys_tynatom, sys_ener, rcond = rcond)
+        if len(self.atom_ener) > 0:
+            for ii in assigned_ener_idx:
+                energy_shift[ii] = self.atom_ener_v[ii]
         return energy_shift    
 
     def compute_input_stats(self, 
