@@ -94,6 +94,7 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [Descriptor `"se_e2_r"`](doc/model/train-se-e2-r.md)
     - [Descriptor `"se_e3"`](doc/model/train-se-e3.md)
     - [Descriptor `"hybrid"`](doc/model/train-hybrid.md)
+    - [Descriptor `sel`](doc/model/sel.md)
     - [Fit energy](doc/model/train-energy.md)
     - [Fit `tensor` like `Dipole` and `Polarizability`](doc/model/train-fitting-tensor.md)
     - [Train a Deep Potential model using `type embedding` approach](doc/model/train-se-e2-a-tebd.md)
