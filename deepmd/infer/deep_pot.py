@@ -81,7 +81,8 @@ class DeepPot(DeepEval):
                 "t_force": "o_force:0",
                 "t_virial": "o_virial:0",
                 "t_ae": "o_atom_energy:0",
-                "t_av": "o_atom_virial:0"
+                "t_av": "o_atom_virial:0",
+                "t_descriptor": "o_descriptor:0",
             },
         )
         DeepEval.__init__(
@@ -184,7 +185,8 @@ class DeepPot(DeepEval):
         atomic: bool = False,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
-        efield: Optional[np.ndarray] = None
+        efield: Optional[np.ndarray] = None,
+        eval_descriptor=False,
     ) -> Tuple[np.ndarray, ...]:
         """Evaluate the energy, force and virial by using this DP.
 
@@ -216,6 +218,8 @@ class DeepPot(DeepEval):
         efield
             The external field on atoms.
             The array should be of size nframes x natoms x 3
+        eval_descriptor : bool
+            Eval descriptors.
 
         Returns
         -------
@@ -229,30 +233,29 @@ class DeepPot(DeepEval):
             The atomic energy. Only returned when atomic == True
         atom_virial
             The atomic virial. Only returned when atomic == True
+        descriptor
+            Descriptors. Only returned when eval_descriptor == True
         """
         # reshape coords before getting shape
         natoms = len(atom_types)
         coords = np.reshape(np.array(coords), [-1, natoms * 3])
         numb_test = coords.shape[0]
-        if atomic:
-            if self.modifier_type is not None:
+        if self.auto_batch_size is not None:
+            def eval_func(*args, **kwargs):
+                return self.auto_batch_size.execute_all(self._eval_inner, numb_test, natoms, *args, **kwargs)
+        else:
+            eval_func = self._eval_inner
+        output = eval_func(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield, eval_descriptor=eval_descriptor)
+
+        if self.modifier_type is not None:
+            if atomic:
                 raise RuntimeError('modifier does not support atomic modification')
-            if self.auto_batch_size is not None:
-                return self.auto_batch_size.execute_all(self._eval_inner, numb_test, natoms,
-                           coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
-            return self._eval_inner(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
-        else :
-            if self.auto_batch_size is not None:
-                e, f, v = self.auto_batch_size.execute_all(self._eval_inner, numb_test, natoms,
-                              coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
-            else:
-                e, f, v = self._eval_inner(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
-            if self.modifier_type is not None:
-                me, mf, mv = self.dm.eval(coords, cells, atom_types)
-                e += me.reshape(e.shape)
-                f += mf.reshape(f.shape)
-                v += mv.reshape(v.shape)
-            return e, f, v
+            me, mf, mv = self.dm.eval(coords, cells, atom_types)
+            e, f, v = output[:3]
+            e += me.reshape(e.shape)
+            f += mf.reshape(f.shape)
+            v += mv.reshape(v.shape)
+        return output
 
     def _eval_inner(
         self,
@@ -262,7 +265,8 @@ class DeepPot(DeepEval):
         fparam=None,
         aparam=None,
         atomic=False,
-        efield=None
+        efield=None,
+        eval_descriptor=False,
     ):
         # standarize the shape of inputs
         atom_types = np.array(atom_types, dtype = int).reshape([-1])
@@ -328,6 +332,8 @@ class DeepPot(DeepEval):
         if atomic :
             t_out += [self.t_ae, 
                       self.t_av]
+        if eval_descriptor:
+            t_out.append(self.t_descriptor)
 
         feed_dict_test[self.t_coord] = np.reshape(coords, [-1])
         feed_dict_test[self.t_box  ] = np.reshape(cells , [-1])
@@ -345,9 +351,13 @@ class DeepPot(DeepEval):
         energy = v_out[0]
         force = v_out[1]
         virial = v_out[2]
+        t_idx = 3
         if atomic:
             ae = v_out[3]
             av = v_out[4]
+            t_idx += 2
+        if eval_descriptor:
+            descriptor = v_out[t_idx]
 
         # reverse map of the outputs
         force  = self.reverse_map(np.reshape(force, [nframes,-1,3]), imap)
@@ -358,9 +368,12 @@ class DeepPot(DeepEval):
         energy = np.reshape(energy, [nframes, 1])
         force = np.reshape(force, [nframes, natoms, 3])
         virial = np.reshape(virial, [nframes, 9])
+        output = [energy, force, virial]
         if atomic:
             ae = np.reshape(ae, [nframes, natoms, 1])
             av = np.reshape(av, [nframes, natoms, 9])
-            return energy, force, virial, ae, av
-        else :
-            return energy, force, virial
+            output.extend([ae, av])
+        if eval_descriptor:
+            descriptor = np.reshape(descriptor, [nframes, natoms, -1])
+            output.append(descriptor)
+        return tuple(output)

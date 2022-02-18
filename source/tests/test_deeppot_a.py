@@ -133,6 +133,10 @@ class TestDeepPotAPBC(unittest.TestCase) :
         expected_sv = np.sum(self.expected_v.reshape([nframes, -1, 9]), axis = 1)
         np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
 
+    def test_descriptor(self):
+        _, _, _, descpt = self.dp.eval(self.coords, self.box, self.atype, eval_descriptor=True)
+        expected_descpt = np.loadtxt(str(tests_path / "infer" / "deeppot_descpt.txt"))
+        np.testing.assert_almost_equal(descpt.ravel(), expected_descpt.ravel())
 
     def test_2frame_atm(self):
         coords2 = np.concatenate((self.coords, self.coords))
