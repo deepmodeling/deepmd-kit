@@ -134,7 +134,7 @@ class TestDeepPolarNewPBC(unittest.TestCase) :
         self.expected_gv = self.expected_v.reshape(1, self.nout, 6, 9).sum(-2).reshape(-1)
 
     @classmethod
-    def tearDown(cls):
+    def tearDownClass(cls):
         os.remove("deeppolar_new.pb")    
         cls.dp = None
 
