@@ -354,7 +354,7 @@ class DeepPot(DeepEval):
             feed_dict_test[self.t_fparam] = np.reshape(fparam, [-1])
         if self.has_aparam:
             feed_dict_test[self.t_aparam] = np.reshape(aparam, [-1])
-        return feed_dict_test
+        return feed_dict_test, imap
 
     def _eval_inner(
         self,
@@ -367,7 +367,7 @@ class DeepPot(DeepEval):
         efield=None
     ):
         natoms, nframes = self._get_natoms_and_nframes(coords, atom_types)
-        feed_dict_test = self._prepare_feed_dict(coords, cells, atom_types, fparam, aparam, efield)
+        feed_dict_test, imap = self._prepare_feed_dict(coords, cells, atom_types, fparam, aparam, efield)
         t_out = [self.t_energy, 
                  self.t_force, 
                  self.t_virial]
@@ -453,6 +453,6 @@ class DeepPot(DeepEval):
             efield: Optional[np.ndarray] = None,
             ) -> np.array:
         natoms, nframes = self._get_natoms_and_nframes(coords, atom_types)
-        feed_dict_test = self._prepare_feed_dict(coords, cells, atom_types, fparam, aparam, efield)
+        feed_dict_test, imap = self._prepare_feed_dict(coords, cells, atom_types, fparam, aparam, efield)
         descriptor, = run_sess(self.sess, [self.t_descriptor], feed_dict = feed_dict_test)
-        return np.reshape(descriptor, [nframes, natoms, -1])
+        return self.reverse_map(np.reshape(descriptor, [nframes, natoms, -1]), imap)
