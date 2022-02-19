@@ -134,7 +134,7 @@ class TestDeepPotAPBC(unittest.TestCase) :
         np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
 
     def test_descriptor(self):
-        _, _, _, descpt = self.dp.eval(self.coords, self.box, self.atype, eval_descriptor=True)
+        _, _, _, descpt = self.dp.eval_descriptor(self.coords, self.box, self.atype)
         expected_descpt = np.loadtxt(str(tests_path / "infer" / "deeppot_descpt.txt"))
         np.testing.assert_almost_equal(descpt.ravel(), expected_descpt.ravel())
 

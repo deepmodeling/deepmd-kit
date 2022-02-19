@@ -186,7 +186,6 @@ class DeepPot(DeepEval):
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
         efield: Optional[np.ndarray] = None,
-        eval_descriptor=False,
     ) -> Tuple[np.ndarray, ...]:
         """Evaluate the energy, force and virial by using this DP.
 
@@ -218,8 +217,6 @@ class DeepPot(DeepEval):
         efield
             The external field on atoms.
             The array should be of size nframes x natoms x 3
-        eval_descriptor : bool
-            Eval descriptors.
 
         Returns
         -------
@@ -233,8 +230,6 @@ class DeepPot(DeepEval):
             The atomic energy. Only returned when atomic == True
         atom_virial
             The atomic virial. Only returned when atomic == True
-        descriptor
-            Descriptors. Only returned when eval_descriptor == True
         """
         # reshape coords before getting shape
         natoms = len(atom_types)
@@ -245,7 +240,7 @@ class DeepPot(DeepEval):
                 return self.auto_batch_size.execute_all(self._eval_inner, numb_test, natoms, *args, **kwargs)
         else:
             eval_func = self._eval_inner
-        output = eval_func(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield, eval_descriptor=eval_descriptor)
+        output = eval_func(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
 
         if self.modifier_type is not None:
             if atomic:
@@ -257,7 +252,7 @@ class DeepPot(DeepEval):
             v += mv.reshape(v.shape)
         return output
 
-    def _eval_inner(
+    def _prepare_feed_dict(
         self,
         coords,
         cells,
@@ -266,7 +261,6 @@ class DeepPot(DeepEval):
         aparam=None,
         atomic=False,
         efield=None,
-        eval_descriptor=False,
     ):
         # standarize the shape of inputs
         atom_types = np.array(atom_types, dtype = int).reshape([-1])
@@ -326,15 +320,6 @@ class DeepPot(DeepEval):
         feed_dict_test = {}
         feed_dict_test[self.t_natoms] = natoms_vec
         feed_dict_test[self.t_type  ] = np.tile(atom_types, [nframes, 1]).reshape([-1])
-        t_out = [self.t_energy, 
-                 self.t_force, 
-                 self.t_virial]
-        if atomic :
-            t_out += [self.t_ae, 
-                      self.t_av]
-        if eval_descriptor:
-            t_out.append(self.t_descriptor)
-
         feed_dict_test[self.t_coord] = np.reshape(coords, [-1])
         feed_dict_test[self.t_box  ] = np.reshape(cells , [-1])
         if self.has_efield:
@@ -347,17 +332,36 @@ class DeepPot(DeepEval):
             feed_dict_test[self.t_fparam] = np.reshape(fparam, [-1])
         if self.has_aparam:
             feed_dict_test[self.t_aparam] = np.reshape(aparam, [-1])
+        return feed_dict_test
+
+    def _eval_inner(
+        self,
+        coords,
+        cells,
+        atom_types,
+        fparam=None,
+        aparam=None,
+        atomic=False,
+        efield=None,
+    ):
+        natoms = atom_types.size
+        coords = np.reshape(np.array(coords), [-1, natoms * 3])
+        nframes = coords.shape[0]
+        feed_dict_test = self._prepare_feed_dict(coords, cells, atom_types, fparam, aparam, efield)
+        t_out = [self.t_energy, 
+                 self.t_force, 
+                 self.t_virial]
+        if atomic :
+            t_out += [self.t_ae, 
+                      self.t_av]
+
         v_out = run_sess(self.sess, t_out, feed_dict = feed_dict_test)
         energy = v_out[0]
         force = v_out[1]
         virial = v_out[2]
-        t_idx = 3
         if atomic:
             ae = v_out[3]
             av = v_out[4]
-            t_idx += 2
-        if eval_descriptor:
-            descriptor = v_out[t_idx]
 
         # reverse map of the outputs
         force  = self.reverse_map(np.reshape(force, [nframes,-1,3]), imap)
@@ -373,7 +377,71 @@ class DeepPot(DeepEval):
             ae = np.reshape(ae, [nframes, natoms, 1])
             av = np.reshape(av, [nframes, natoms, 9])
             output.extend([ae, av])
-        if eval_descriptor:
-            descriptor = np.reshape(descriptor, [nframes, natoms, -1])
-            output.append(descriptor)
         return tuple(output)
+
+    def eval_descriptor(self,
+            coords: np.ndarray,
+            cells: np.ndarray,
+            atom_types: List[int],
+            fparam: Optional[np.ndarray] = None,
+            aparam: Optional[np.ndarray] = None,
+            efield: Optional[np.ndarray] = None,
+            ) -> np.array:
+        """Evaluate descriptors by using this DP.
+
+        Parameters
+        ----------
+        coords
+            The coordinates of atoms.
+            The array should be of size nframes x natoms x 3
+        cells
+            The cell of the region.
+            If None then non-PBC is assumed, otherwise using PBC.
+            The array should be of size nframes x 9
+        atom_types
+            The atom types
+            The list should contain natoms ints
+        fparam
+            The frame parameter.
+            The array can be of size :
+            - nframes x dim_fparam.
+            - dim_fparam. Then all frames are assumed to be provided with the same fparam.
+        aparam
+            The atomic parameter
+            The array can be of size :
+            - nframes x natoms x dim_aparam.
+            - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
+            - dim_aparam. Then all frames and atoms are provided with the same aparam.
+        efield
+            The external field on atoms.
+            The array should be of size nframes x natoms x 3
+
+        Returns
+        -------
+        descriptor
+            Descriptors.
+        """
+        natoms = len(atom_types)
+        coords = np.reshape(np.array(coords), [-1, natoms * 3])
+        numb_test = coords.shape[0]
+        if self.auto_batch_size is not None:
+            def eval_func(*args, **kwargs):
+                return self.auto_batch_size.execute_all(self._eval_descriptor_inner, numb_test, natoms, *args, **kwargs)
+        else:
+            eval_func = self._eval_descriptor_inner
+        output = eval_func(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
+    
+    def _eval_descriptor_inner(self,
+            coords: np.ndarray,
+            cells: np.ndarray,
+            atom_types: List[int],
+            fparam: Optional[np.ndarray] = None,
+            aparam: Optional[np.ndarray] = None,
+            efield: Optional[np.ndarray] = None,
+            ) -> np.array:
+        natoms = atom_types.size
+        coords = np.reshape(np.array(coords), [-1, natoms * 3])
+        nframes = coords.shape[0]
+        feed_dict_test = self._prepare_feed_dict(coords, cells, atom_types, fparam, aparam, efield)
+        descriptor, = run_sess(self.sess, [self.t_descriptor], feed_dict = feed_dict_test)
+        return np.reshape(descriptor, [nframes, natoms, -1])
