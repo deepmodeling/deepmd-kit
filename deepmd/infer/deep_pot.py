@@ -177,13 +177,17 @@ class DeepPot(DeepEval):
         """Get the number (dimension) of atomic parameters of this DP."""
         return self.daparam
     
-    def _eval_func(self, inner_func: Callable) -> Callable:
+    def _eval_func(self, inner_func: Callable, numb_test: int, natoms: int) -> Callable:
         """Wrapper method with auto batch size.
         
         Parameters
         ----------
         inner_func : Callable
             the method to be wrapped
+        numb_test: int
+            number of tests
+        natoms : int
+            number of atoms
         
         Returns
         -------
@@ -259,7 +263,7 @@ class DeepPot(DeepEval):
         """
         # reshape coords before getting shape
         natoms, numb_test = self._get_natoms_and_nframes(coords, atom_types)
-        output = self._eval_func(self._eval_inner)(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
+        output = self._eval_func(self._eval_inner, numb_test, natoms)(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
 
         if self.modifier_type is not None:
             if atomic:
@@ -438,7 +442,7 @@ class DeepPot(DeepEval):
             Descriptors.
         """
         natoms, numb_test = self._get_natoms_and_nframes(coords, atom_types)
-        return self._eval_func(self._eval_descriptor_inner)(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
+        return self._eval_func(self._eval_descriptor_inner, numb_test, natoms)(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
     
     def _eval_descriptor_inner(self,
             coords: np.ndarray,
