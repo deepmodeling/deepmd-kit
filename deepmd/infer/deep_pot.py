@@ -442,7 +442,8 @@ class DeepPot(DeepEval):
             Descriptors.
         """
         natoms, numb_test = self._get_natoms_and_nframes(coords, atom_types)
-        return self._eval_func(self._eval_descriptor_inner, numb_test, natoms)(coords, cells, atom_types, fparam = fparam, aparam = aparam, efield = efield)
+        descriptor, = self._eval_func(self._eval_descriptor_inner, numb_test, natoms)(coords, cells, atom_types, fparam = fparam, aparam = aparam, efield = efield)
+        return descriptor
     
     def _eval_descriptor_inner(self,
             coords: np.ndarray,
