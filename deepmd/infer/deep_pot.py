@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, List, Optional, Tuple, Union, Callable
 
 import numpy as np
 from deepmd.common import make_default_mesh
@@ -176,6 +176,32 @@ class DeepPot(DeepEval):
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this DP."""
         return self.daparam
+    
+    def _eval_func(self, inner_func: Callable) -> Callable:
+        """Wrapper method with auto batch size.
+        
+        Parameters
+        ----------
+        inner_func : Callable
+            the method to be wrapped
+        
+        Returns
+        -------
+        Callable
+            the wrapper
+        """
+        if self.auto_batch_size is not None:
+            def eval_func(*args, **kwargs):
+                return self.auto_batch_size.execute_all(self._eval_inner, numb_test, natoms, *args, **kwargs)
+        else:
+            eval_func = self._eval_inner
+        return eval_func
+
+    def _get_natoms_and_nframes(self, coords: np.ndarray, atom_types: List[int]) -> Tuple[int, int]:
+        natoms = len(atom_types)
+        coords = np.reshape(np.array(coords), [-1, natoms * 3])
+        nframes = coords.shape[0]
+        return natoms, nframes
 
     def eval(
         self,
@@ -232,15 +258,8 @@ class DeepPot(DeepEval):
             The atomic virial. Only returned when atomic == True
         """
         # reshape coords before getting shape
-        natoms = len(atom_types)
-        coords = np.reshape(np.array(coords), [-1, natoms * 3])
-        numb_test = coords.shape[0]
-        if self.auto_batch_size is not None:
-            def eval_func(*args, **kwargs):
-                return self.auto_batch_size.execute_all(self._eval_inner, numb_test, natoms, *args, **kwargs)
-        else:
-            eval_func = self._eval_inner
-        output = eval_func(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
+        natoms, numb_test = self._get_natoms_and_nframes(coords, atom_types)
+        output = self._eval_func(self._eval_inner)(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
 
         if self.modifier_type is not None:
             if atomic:
@@ -263,10 +282,9 @@ class DeepPot(DeepEval):
         efield=None
     ):
         # standarize the shape of inputs
+        natoms, nframes = self._get_natoms_and_nframes(coords, atom_types)
         atom_types = np.array(atom_types, dtype = int).reshape([-1])
-        natoms = atom_types.size
         coords = np.reshape(np.array(coords), [-1, natoms * 3])
-        nframes = coords.shape[0]
         if cells is None:
             pbc = False
             # make cells to work around the requirement of pbc
@@ -344,9 +362,7 @@ class DeepPot(DeepEval):
         atomic=False,
         efield=None
     ):
-        natoms = atom_types.size
-        coords = np.reshape(np.array(coords), [-1, natoms * 3])
-        nframes = coords.shape[0]
+        natoms, nframes = self._get_natoms_and_nframes(coords, atom_types)
         feed_dict_test = self._prepare_feed_dict(coords, cells, atom_types, fparam, aparam, efield)
         t_out = [self.t_energy, 
                  self.t_force, 
@@ -421,15 +437,8 @@ class DeepPot(DeepEval):
         descriptor
             Descriptors.
         """
-        natoms = len(atom_types)
-        coords = np.reshape(np.array(coords), [-1, natoms * 3])
-        numb_test = coords.shape[0]
-        if self.auto_batch_size is not None:
-            def eval_func(*args, **kwargs):
-                return self.auto_batch_size.execute_all(self._eval_descriptor_inner, numb_test, natoms, *args, **kwargs)
-        else:
-            eval_func = self._eval_descriptor_inner
-        return eval_func(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
+        natoms, numb_test = self._get_natoms_and_nframes(coords, atom_types)
+        return self._eval_func(self._eval_descriptor_inner)(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
     
     def _eval_descriptor_inner(self,
             coords: np.ndarray,
@@ -439,9 +448,7 @@ class DeepPot(DeepEval):
             aparam: Optional[np.ndarray] = None,
             efield: Optional[np.ndarray] = None,
             ) -> np.array:
-        natoms = atom_types.size
-        coords = np.reshape(np.array(coords), [-1, natoms * 3])
-        nframes = coords.shape[0]
+        natoms, nframes = self._get_natoms_and_nframes(coords, atom_types)
         feed_dict_test = self._prepare_feed_dict(coords, cells, atom_types, fparam, aparam, efield)
         descriptor, = run_sess(self.sess, [self.t_descriptor], feed_dict = feed_dict_test)
         return np.reshape(descriptor, [nframes, natoms, -1])
