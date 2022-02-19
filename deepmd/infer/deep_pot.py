@@ -260,7 +260,7 @@ class DeepPot(DeepEval):
         fparam=None,
         aparam=None,
         atomic=False,
-        efield=None,
+        efield=None
     ):
         # standarize the shape of inputs
         atom_types = np.array(atom_types, dtype = int).reshape([-1])
@@ -342,7 +342,7 @@ class DeepPot(DeepEval):
         fparam=None,
         aparam=None,
         atomic=False,
-        efield=None,
+        efield=None
     ):
         natoms = atom_types.size
         coords = np.reshape(np.array(coords), [-1, natoms * 3])
@@ -372,12 +372,12 @@ class DeepPot(DeepEval):
         energy = np.reshape(energy, [nframes, 1])
         force = np.reshape(force, [nframes, natoms, 3])
         virial = np.reshape(virial, [nframes, 9])
-        output = [energy, force, virial]
         if atomic:
             ae = np.reshape(ae, [nframes, natoms, 1])
             av = np.reshape(av, [nframes, natoms, 9])
-            output.extend([ae, av])
-        return tuple(output)
+            return energy, force, virial, ae, av
+        else :
+            return energy, force, virial
 
     def eval_descriptor(self,
             coords: np.ndarray,
@@ -429,7 +429,7 @@ class DeepPot(DeepEval):
                 return self.auto_batch_size.execute_all(self._eval_descriptor_inner, numb_test, natoms, *args, **kwargs)
         else:
             eval_func = self._eval_descriptor_inner
-        output = eval_func(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
+        return eval_func(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
     
     def _eval_descriptor_inner(self,
             coords: np.ndarray,
