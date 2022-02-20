@@ -196,9 +196,9 @@ class DeepPot(DeepEval):
         """
         if self.auto_batch_size is not None:
             def eval_func(*args, **kwargs):
-                return self.auto_batch_size.execute_all(self._eval_inner, numb_test, natoms, *args, **kwargs)
+                return self.auto_batch_size.execute_all(inner_func, numb_test, natoms, *args, **kwargs)
         else:
-            eval_func = self._eval_inner
+            eval_func = inner_func
         return eval_func
 
     def _get_natoms_and_nframes(self, coords: np.ndarray, atom_types: List[int]) -> Tuple[int, int]:
@@ -442,7 +442,7 @@ class DeepPot(DeepEval):
             Descriptors.
         """
         natoms, numb_test = self._get_natoms_and_nframes(coords, atom_types)
-        descriptor, = self._eval_func(self._eval_descriptor_inner, numb_test, natoms)(coords, cells, atom_types, fparam = fparam, aparam = aparam, efield = efield)
+        descriptor = self._eval_func(self._eval_descriptor_inner, numb_test, natoms)(coords, cells, atom_types, fparam = fparam, aparam = aparam, efield = efield)
         return descriptor
     
     def _eval_descriptor_inner(self,
