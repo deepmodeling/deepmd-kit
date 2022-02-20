@@ -61,7 +61,7 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-pip-
     - run: python -m pip install -U pip>=21.3.1
-    - run: pip install -e .[cpu,test] codecov
+    - run: python -m pip install -e .[cpu,test] codecov
       env:
         CC: gcc-${{ matrix.gcc }}
         CXX: g++-${{ matrix.gcc }}
