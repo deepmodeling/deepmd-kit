@@ -269,10 +269,12 @@ class DeepPot(DeepEval):
             if atomic:
                 raise RuntimeError('modifier does not support atomic modification')
             me, mf, mv = self.dm.eval(coords, cells, atom_types)
+            output = list(output) # tuple to list
             e, f, v = output[:3]
-            e += me.reshape(e.shape)
-            f += mf.reshape(f.shape)
-            v += mv.reshape(v.shape)
+            output[0] += me.reshape(e.shape)
+            output[1] += mf.reshape(f.shape)
+            output[2] += mv.reshape(v.shape)
+            output = tuple(output)
         return output
 
     def _prepare_feed_dict(
