@@ -89,7 +89,7 @@ void prod_force_grad_a_gpu_rocm(
     const int ndescrpt = nnei * 4;
     DPErrcheck(hipMemset(
         grad_net, 
-        0.0, sizeof(FPTYPE) * nloc * ndescrpt));
+        0, sizeof(FPTYPE) * nloc * ndescrpt));
     const int nblock = (ndescrpt + TPB - 1) / TPB;
     dim3 block_grid(nloc, nblock);
     dim3 thread_grid(TPB, 1);
@@ -121,7 +121,7 @@ void prod_force_grad_r_gpu_rocm(
     const int ndescrpt = nnei * 1;
     DPErrcheck(hipMemset(
         grad_net, 
-        0.0, sizeof(FPTYPE) * nloc * ndescrpt));
+        0, sizeof(FPTYPE) * nloc * ndescrpt));
     const int nblock = (ndescrpt + TPB - 1) / TPB;
     dim3 block_grid(nloc, nblock);
     dim3 thread_grid(TPB, 1);

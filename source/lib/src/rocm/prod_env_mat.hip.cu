@@ -537,9 +537,9 @@ void prod_env_mat_a_gpu_rocm(
 {
   const int nnei = sec.back();
   const int ndescrpt = nnei * 4;
-  DPErrcheck(hipMemset(em, 0.0, sizeof(FPTYPE) * nloc * ndescrpt));
-  DPErrcheck(hipMemset(em_deriv, 0.0, sizeof(FPTYPE) * nloc * ndescrpt * 3));
-  DPErrcheck(hipMemset(rij, 0.0, sizeof(FPTYPE) * nloc * nnei * 3));
+  DPErrcheck(hipMemset(em, 0, sizeof(FPTYPE) * nloc * ndescrpt));
+  DPErrcheck(hipMemset(em_deriv, 0, sizeof(FPTYPE) * nloc * ndescrpt * 3));
+  DPErrcheck(hipMemset(rij, 0, sizeof(FPTYPE) * nloc * nnei * 3));
 
   format_nbor_list_gpu_rocm(
       nlist, 
@@ -576,9 +576,9 @@ void prod_env_mat_r_gpu_rocm(
 {
   const int nnei = sec.back();
   const int ndescrpt = nnei * 1;
-  DPErrcheck(hipMemset(em, 0.0, sizeof(FPTYPE) * nloc * ndescrpt));
-  DPErrcheck(hipMemset(em_deriv, 0.0, sizeof(FPTYPE) * nloc * ndescrpt * 3));
-  DPErrcheck(hipMemset(rij, 0.0, sizeof(FPTYPE) * nloc * nnei * 3));
+  DPErrcheck(hipMemset(em, 0, sizeof(FPTYPE) * nloc * ndescrpt));
+  DPErrcheck(hipMemset(em_deriv, 0, sizeof(FPTYPE) * nloc * ndescrpt * 3));
+  DPErrcheck(hipMemset(rij, 0, sizeof(FPTYPE) * nloc * nnei * 3));
 
   format_nbor_list_gpu_rocm(
       nlist, 
