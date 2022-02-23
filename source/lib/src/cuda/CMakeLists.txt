@@ -36,8 +36,7 @@ if (${CUDA_VERSION_MAJOR} GREATER "11")
         )
 elseif (${CUDA_VERSION_MAJOR} STREQUAL "11" AND ${CUDA_VERSION_MINOR} GREATER "0")
     # nvcc flags
-    set(CUDA_NVCC_FLAGS -gencode arch=compute_50,code=sm_50;
-                        -gencode arch=compute_52,code=sm_52; # Tesla M40, Tesla M40, Quadro M6000...
+    set(CUDA_NVCC_FLAGS -gencode arch=compute_52,code=sm_52; # Tesla M40, Tesla M40, Quadro M6000...
                         -gencode arch=compute_53,code=sm_53; 
                         -gencode arch=compute_60,code=sm_60; # Pascal – GP100/Tesla P100 – DGX-1 (Generic Pascal)
                         -gencode arch=compute_61,code=sm_61; # Pascal - GTX 1080, GTX 1070, GTX 1060, GTX 1050, GTX 1030, Titan Xp, Tesla P40, Tesla P4, Discrete GPU on the NVIDIA Drive PX2
@@ -49,8 +48,7 @@ elseif (${CUDA_VERSION_MAJOR} STREQUAL "11" AND ${CUDA_VERSION_MINOR} GREATER "0
         )
 elseif (${CUDA_VERSION_MAJOR} STREQUAL "11" AND ${CUDA_VERSION_MINOR} STREQUAL "0")
     # nvcc flags
-    set(CUDA_NVCC_FLAGS -gencode arch=compute_50,code=sm_50;
-                        -gencode arch=compute_52,code=sm_52; # Tesla M40, Tesla M40, Quadro M6000...
+    set(CUDA_NVCC_FLAGS -gencode arch=compute_52,code=sm_52; # Tesla M40, Tesla M40, Quadro M6000...
                         -gencode arch=compute_53,code=sm_53; 
                         -gencode arch=compute_60,code=sm_60; # Pascal – GP100/Tesla P100 – DGX-1 (Generic Pascal)
                         -gencode arch=compute_61,code=sm_61; # Pascal - GTX 1080, GTX 1070, GTX 1060, GTX 1050, GTX 1030, Titan Xp, Tesla P40, Tesla P4, Discrete GPU on the NVIDIA Drive PX2

@@ -15,7 +15,7 @@ if (BUILD_CPP_IF AND INSTALL_TENSORFLOW)
   # Here we try to install libtensorflow_cc using conda install.
 
   if (USE_CUDA_TOOLKIT)
-    set (VARIANT gpu)
+    set (VARIANT cuda)
   else ()
     set (VARIANT cpu)
   endif ()

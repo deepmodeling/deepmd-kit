@@ -18,7 +18,7 @@ setup_requires = ["setuptools_scm", "scikit-build"]
 
 # read readme to markdown
 readme_file = Path(__file__).parent / "README.md"
-readme = readme_file.read_text()
+readme = readme_file.read_text(encoding="utf-8")
 
 tf_version = os.environ.get("TENSORFLOW_VERSION", "")
 

@@ -8,7 +8,9 @@ from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.utils.sess import run_sess
 from .descriptor import Descriptor
+from deepmd.utils.graph import get_tensor_by_name
 
+@Descriptor.register("loc_frame")
 class DescrptLocFrame (Descriptor) :
     """Defines a local frame at each atom, and the compute the descriptor as local
     coordinates under this frame.
@@ -366,4 +368,19 @@ class DescrptLocFrame (Descriptor) :
     def _compute_std (self,sumv2, sumv, sumn) :
         return np.sqrt(sumv2/sumn - np.multiply(sumv/sumn, sumv/sumn))
 
-    
+    def init_variables(self,
+                       model_file : str,
+                       suffix : str = "",
+    ) -> None:
+        """
+        Init the embedding net variables with the given frozen model
+
+        Parameters
+        ----------
+        model_file : str
+            The input frozen model file
+        suffix : str, optional
+            The suffix of the scope
+        """
+        self.davg = get_tensor_by_name(model_file, 'descrpt_attr%s/t_avg' % suffix)
+        self.tavg = get_tensor_by_name(model_file, 'descrpt_attr%s/t_std' % suffix)

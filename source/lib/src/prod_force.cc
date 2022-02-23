@@ -34,16 +34,19 @@ prod_force_a_cpu(
 {
   const int ndescrpt = 4 * nnei;
 
-  memset(force, 0.0, sizeof(FPTYPE) * nall * 3);
+  memset(force, 0, sizeof(FPTYPE) * nall * 3);
   // compute force of a frame
+  #pragma omp parallel
   for (int i_idx = 0; i_idx < nloc; ++i_idx) {
     // deriv wrt center atom
+    #pragma omp single
     for (int aa = 0; aa < ndescrpt; ++aa) {
       force[i_idx * 3 + 0] -= net_deriv[i_idx * ndescrpt + aa] * env_deriv[i_idx * ndescrpt * 3 + aa * 3 + 0];
       force[i_idx * 3 + 1] -= net_deriv[i_idx * ndescrpt + aa] * env_deriv[i_idx * ndescrpt * 3 + aa * 3 + 1];
       force[i_idx * 3 + 2] -= net_deriv[i_idx * ndescrpt + aa] * env_deriv[i_idx * ndescrpt * 3 + aa * 3 + 2];
     }
     // deriv wrt neighbors
+    #pragma omp for
     for (int jj = 0; jj < nnei; ++jj) {
       int j_idx = nlist[i_idx * nnei + jj];
       if (j_idx < 0) continue;
@@ -105,15 +108,18 @@ prod_force_r_cpu(
   }
 
   // compute force of a frame
+  #pragma omp parallel
   for (int ii = 0; ii < nloc; ++ii){
     int i_idx = ii;	
     // deriv wrt center atom
+    #pragma omp single
     for (int aa = 0; aa < ndescrpt; ++aa){
       force[i_idx * 3 + 0] -= net_deriv[i_idx * ndescrpt + aa] * env_deriv[i_idx * ndescrpt * 3 + aa * 3 + 0];
       force[i_idx * 3 + 1] -= net_deriv[i_idx * ndescrpt + aa] * env_deriv[i_idx * ndescrpt * 3 + aa * 3 + 1];
       force[i_idx * 3 + 2] -= net_deriv[i_idx * ndescrpt + aa] * env_deriv[i_idx * ndescrpt * 3 + aa * 3 + 2];
     }
     // deriv wrt neighbors
+    #pragma omp for
     for (int jj = 0; jj < nnei; ++jj){
       int j_idx = nlist[i_idx * nnei + jj];
       // if (j_idx > nloc) j_idx = j_idx % nloc;

@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 3.9)
 project(deepmd_api_test)
-set(CMAKE_LINK_WHAT_YOU_USE TRUE)
 
 if (NOT DEFINED BUILD_CPP_IF) 
   set(BUILD_CPP_IF TRUE)
@@ -9,7 +8,6 @@ add_definitions ("-DHIGH_PREC")
 
 enable_testing()
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
 # model version
 file(READ ${PROJECT_SOURCE_DIR}/../../config/MODEL_VER MODEL_VERSION)
@@ -42,6 +40,11 @@ add_library(${opname} SHARED ${OP_SRC})
 
 list (APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/../../cmake/)
 find_package(tensorflow REQUIRED)
+if (TENSORFLOW_VERSION GREATER_EQUAL 2.7)
+  set (CMAKE_CXX_STANDARD 14)
+else()
+  set (CMAKE_CXX_STANDARD 11)
+endif()
 include_directories(${TensorFlow_INCLUDE_DIRS})
 
 find_package(Threads)
@@ -95,11 +98,17 @@ else()
 endif()
 
 if (USE_CUDA_TOOLKIT)
-  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} rt deepmd_op_cuda coverage_config)
+  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} pthread ${TensorFlow_LIBRARY} rt deepmd_op_cuda coverage_config)
 elseif(USE_ROCM_TOOLKIT)
-  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} rt deepmd_op_rocm coverage_config)
+  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} pthread ${TensorFlow_LIBRARY} rt deepmd_op_rocm coverage_config)
 else()
-  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} rt coverage_config)
+  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} pthread ${TensorFlow_LIBRARY} rt coverage_config)
+endif()
+
+find_package(Protobuf)
+if(Protobuf_FOUND)
+  include_directories(${Protobuf_INCLUDE_DIRS})
+  target_link_libraries(runUnitTests ${Protobuf_LIBRARIES})
 endif()
 
 add_test( runUnitTests runUnitTests )
@@ -124,3 +133,16 @@ if(NOT GTEST_LIBRARIES)
 else ()
   include_directories(${GTEST_INCLUDE_DIRS})
 endif ()
+
+set_target_properties(
+  runUnitTests
+  PROPERTIES 
+  INSTALL_RPATH "$ORIGIN/../lib"
+)
+set_target_properties(
+  ${apiname}
+  PROPERTIES 
+  INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}"
+)
+install(TARGETS runUnitTests DESTINATION bin/)
+install(TARGETS ${libname} ${apiname} ${opname} DESTINATION lib/)

@@ -539,9 +539,9 @@ void prod_env_mat_a_gpu_cuda(
 {
   const int nnei = sec.back();
   const int ndescrpt = nnei * 4;
-  DPErrcheck(cudaMemset(em, 0.0, sizeof(FPTYPE) * nloc * ndescrpt));
-  DPErrcheck(cudaMemset(em_deriv, 0.0, sizeof(FPTYPE) * nloc * ndescrpt * 3));
-  DPErrcheck(cudaMemset(rij, 0., sizeof(FPTYPE) * nloc * nnei * 3));
+  DPErrcheck(cudaMemset(em, 0, sizeof(FPTYPE) * nloc * ndescrpt));
+  DPErrcheck(cudaMemset(em_deriv, 0, sizeof(FPTYPE) * nloc * ndescrpt * 3));
+  DPErrcheck(cudaMemset(rij, 0, sizeof(FPTYPE) * nloc * nnei * 3));
 
   format_nbor_list_gpu_cuda(
       nlist, 
@@ -578,9 +578,9 @@ void prod_env_mat_r_gpu_cuda(
 {
   const int nnei = sec.back();
   const int ndescrpt = nnei * 1;
-  DPErrcheck(cudaMemset(em, 0.0, sizeof(FPTYPE) * nloc * ndescrpt));
-  DPErrcheck(cudaMemset(em_deriv, 0.0, sizeof(FPTYPE) * nloc * ndescrpt * 3));
-  DPErrcheck(cudaMemset(rij, 0., sizeof(FPTYPE) * nloc * nnei * 3));
+  DPErrcheck(cudaMemset(em, 0, sizeof(FPTYPE) * nloc * ndescrpt));
+  DPErrcheck(cudaMemset(em_deriv, 0, sizeof(FPTYPE) * nloc * ndescrpt * 3));
+  DPErrcheck(cudaMemset(rij, 0, sizeof(FPTYPE) * nloc * nnei * 3));
 
   format_nbor_list_gpu_cuda(
       nlist, 

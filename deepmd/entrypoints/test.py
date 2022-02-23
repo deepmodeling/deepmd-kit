@@ -262,8 +262,9 @@ def test_ener(
     log.info(f"Energy RMSE        : {rmse_e:e} eV")
     log.info(f"Energy RMSE/Natoms : {rmse_ea:e} eV")
     log.info(f"Force  RMSE        : {rmse_f:e} eV/A")
-    log.info(f"Virial RMSE        : {rmse_v:e} eV")
-    log.info(f"Virial RMSE/Natoms : {rmse_va:e} eV")
+    if data.pbc:
+        log.info(f"Virial RMSE        : {rmse_v:e} eV")
+        log.info(f"Virial RMSE/Natoms : {rmse_va:e} eV")
     if has_atom_ener:
         log.info(f"Atomic ener RMSE   : {rmse_ae:e} eV")
 

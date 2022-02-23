@@ -33,6 +33,7 @@ init (const std::string & model,
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
+  deepmd::load_op_library();
   deepmd::check_status (NewSession(options, &session));
   deepmd::check_status (ReadBinaryProto(Env::Default(), model, &graph_def));
   deepmd::check_status (session->Create(graph_def));  
@@ -44,7 +45,7 @@ init (const std::string & model,
   model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
   model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
   if(! model_compatable(model_version)){
-    throw std::runtime_error(
+    throw deepmd::deepmd_exception(
 	"incompatable model: version " + model_version 
 	+ " in graph, but version " + global_model_version 
 	+ " supported ");

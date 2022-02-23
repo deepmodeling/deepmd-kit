@@ -1,4 +1,4 @@
-from deepmd.utils.convert import convert_13_to_20, convert_12_to_20
+from deepmd.utils.convert import convert_20_to_21, convert_13_to_21, convert_12_to_21 
 
 def convert(
     *,
@@ -8,8 +8,10 @@ def convert(
     **kwargs,
 ):
     if FROM == '1.2':
-        convert_12_to_20(input_model, output_model)
+        convert_12_to_21(input_model, output_model)
     elif FROM == '1.3':
-        convert_13_to_20(input_model, output_model)
+        convert_13_to_21(input_model, output_model)
+    elif FROM == '2.0':
+        convert_20_to_21(input_model, output_model)
     else:
         raise RuntimeError('unsupported model version ' + FROM)

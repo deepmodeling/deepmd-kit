@@ -36,6 +36,10 @@ Other training parameters are given in the `training` section.
 	    "batch_size":	1,
 	    "numb_btch":	3
 	},
+	"mixed_precision": {
+	    "output_prec":      "float32",
+	    "compute_prec":     "float16"
+	},
 
 	"numb_step":	1000000,
 	"seed":		1,
@@ -75,6 +79,13 @@ The sections `"training_data"` and `"validation_data"` give the training dataset
     * `"auto:N"`: automatically determines the batch size so that the `batch_size` times the number of atoms in the system is no less than `N`.
 * The key `numb_batch` in `validate_data` gives the number of batches of model validation. Note that the batches may not be from the same system
 
+The section `mixed_precision` specifies the mixed precision settings, which will enable the mixed precision training workflow for deepmd-kit. The keys are explained below:
+* `output_prec`  precision used in the output tensors, only `float32` is supported currently.
+* `compute_prec` precision used in the computing tensors, only `float16` is supported currently.
+Note there are severial limitations about the mixed precision training:
+* Only 'se_e2_a' type descriptor is supported by the mixed precision training workflow.
+* The precision of embedding net and fitting net are forced to be set to `float32`.
+
 Other keys in the `training` section are explained below:
 * `numb_step` The number of training steps.
 * `seed` The random seed for getting frames from the training data set.
@@ -103,6 +114,7 @@ optional arguments:
  
   --init-frz-model INIT_FRZ_MODEL
                         Initialize the training from the frozen model.
+  --skip-neighbor-stat  Skip calculating neighbor statistics. Sel checking, automatic sel, and model compression will be disabled. (default: False)
 ```
 
 **`--init-model model.ckpt`**, initializes the model training with an existing model that is stored in the checkpoint `model.ckpt`, the network architectures should match.
@@ -111,15 +123,27 @@ optional arguments:
 
 **`--init-frz-model frozen_model.pb`**, initializes the training with an existing model that is stored in `frozen_model.pb`.
 
-On some resources limited machines, one may want to control the number of threads used by DeePMD-kit. This is achieved by three environmental variables: `OMP_NUM_THREADS`, `TF_INTRA_OP_PARALLELISM_THREADS` and `TF_INTER_OP_PARALLELISM_THREADS`. `OMP_NUM_THREADS` controls the multithreading of DeePMD-kit implemented operations. `TF_INTRA_OP_PARALLELISM_THREADS` and `TF_INTER_OP_PARALLELISM_THREADS` controls `intra_op_parallelism_threads` and `inter_op_parallelism_threads`, which are  Tensorflow configurations for multithreading. An explanation is found [here](https://stackoverflow.com/questions/41233635/meaning-of-inter-op-parallelism-threads-and-intra-op-parallelism-threads).
+**`--skip-neighbor-stat`** will skip calculating neighbor statistics if one is concerned about performance. Some features will be disabled.
+
+To get the best performance, one should control the number of threads used by DeePMD-kit. This is achieved by three environmental variables: `OMP_NUM_THREADS`, `TF_INTRA_OP_PARALLELISM_THREADS` and `TF_INTER_OP_PARALLELISM_THREADS`. `OMP_NUM_THREADS` controls the multithreading of DeePMD-kit implemented operations. `TF_INTRA_OP_PARALLELISM_THREADS` and `TF_INTER_OP_PARALLELISM_THREADS` controls `intra_op_parallelism_threads` and `inter_op_parallelism_threads`, which are  Tensorflow configurations for multithreading. An explanation is found [here](https://www.intel.com/content/www/us/en/developer/articles/technical/maximize-tensorflow-performance-on-cpu-considerations-and-recommendations-for-inference.html).
 
 For example if you wish to use 3 cores of 2 CPUs on one node, you may set the environmental variables and run DeePMD-kit as follows:
 ```bash
-export OMP_NUM_THREADS=6
+export OMP_NUM_THREADS=3
 export TF_INTRA_OP_PARALLELISM_THREADS=3
 export TF_INTER_OP_PARALLELISM_THREADS=2
 dp train input.json
 ```
+
+For a node with 128 cores, it is recommended to start with the following variables:
+
+```bash
+export OMP_NUM_THREADS=16
+export TF_INTRA_OP_PARALLELISM_THREADS=16
+export TF_INTER_OP_PARALLELISM_THREADS=8
+```
+
+It is encouraged to adjust the configurations after empirical testing.
 
 One can set other environmental variables:
 

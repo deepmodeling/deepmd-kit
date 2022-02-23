@@ -16,6 +16,7 @@ from deepmd.entrypoints import (
     transfer,
     make_model_devi,
     convert,
+    neighbor_stat,
 )
 from deepmd.loggers import set_log_handles
 
@@ -169,6 +170,11 @@ def parse_args(args: Optional[List[str]] = None):
         type=str,
         default=None,
         help="Initialize the training from the frozen model.",
+    )
+    parser_train.add_argument(
+        "--skip-neighbor-stat",
+        action="store_true",
+        help="Skip calculating neighbor statistics. Sel checking, automatic sel, and model compression will be disabled.",
     )
 
     # * freeze script ******************************************************************
@@ -356,7 +362,7 @@ def parse_args(args: Optional[List[str]] = None):
         "--system",
         default=".",
         type=str,
-        help="The system directory, not support recursive detection.",
+        help="The system directory. Recursively detect systems in this directory.",
     )
     parser_model_devi.add_argument(
         "-S", "--set-prefix", default="set", type=str, help="The set prefix"
@@ -386,7 +392,7 @@ def parse_args(args: Optional[List[str]] = None):
     parser_transform.add_argument(
         'FROM',
         type = str,
-        choices = ['1.2', '1.3'],
+        choices = ['1.2', '1.3', '2.0'],
         help="The original model compatibility",
     )
     parser_transform.add_argument(
@@ -403,6 +409,36 @@ def parse_args(args: Optional[List[str]] = None):
         type=str, 
 		help='the output model',
     )
+
+    # neighbor_stat
+    parser_neighbor_stat = subparsers.add_parser(
+        'neighbor-stat',
+        parents=[parser_log],
+        help='Calculate neighbor statistics',
+    )
+    parser_neighbor_stat.add_argument(
+        "-s",
+        "--system",
+        default=".",
+        type=str,
+        help="The system dir. Recursively detect systems in this directory",
+    )
+    parser_neighbor_stat.add_argument(
+        "-r",
+        "--rcut",
+        type=float,
+        required=True,
+        help="cutoff radius",
+    )
+    parser_neighbor_stat.add_argument(
+        "-t",
+        "--type-map",
+        type=str,
+        nargs='+',
+        required=True,
+        help="type map",
+    )
+        
     # --version
     parser.add_argument('--version', action='version', version='DeePMD-kit v%s' % __version__)
 
@@ -451,6 +487,8 @@ def main():
         make_model_devi(**dict_args)
     elif args.command == "convert-from":
         convert(**dict_args)
+    elif args.command == "neighbor-stat":
+        neighbor_stat(**dict_args)
     elif args.command is None:
         pass
     else:
