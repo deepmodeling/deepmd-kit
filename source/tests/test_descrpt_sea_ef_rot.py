@@ -353,10 +353,9 @@ class TestEfRot(tf.test.TestCase):
                                     self.efield:    new_defield,
                                     self.tnatoms:   self.natoms})
 
-        for ii in range(0, self.natoms[0]):
-            self.assertAlmostEqual(p_ae0[ii], p_ae1[ii])
-            self.assertAlmostEqual(v_ae0[ii], v_ae1[ii])
-            self.assertAlmostEqual(ae0[ii], ae1[ii])
+        np.testing.assert_almost_equal(p_ae0, p_ae1)
+        np.testing.assert_almost_equal(v_ae0, v_ae1)
+        np.testing.assert_almost_equal(ae0, ae1)
         
 
 

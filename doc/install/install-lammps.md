@@ -12,12 +12,12 @@ make lammps
 DeePMD-kit will generate a module called `USER-DEEPMD` in the `build` directory. If you need low precision version, move `env_low.sh` to `env.sh` in the directory. Now download the LAMMPS code (`29Oct2020` or later), and uncompress it:
 ```bash
 cd /some/workspace
-wget https://github.com/lammps/lammps/archive/stable_29Oct2020.tar.gz
-tar xf stable_29Oct2020.tar.gz
+wget https://github.com/lammps/lammps/archive/stable_29Sep2021_update2.tar.gz
+tar xf stable_29Sep2021_update2.tar.gz
 ```
-The source code of LAMMPS is stored in directory `lammps-stable_29Oct2020`. Now go into the LAMMPS code and copy the DeePMD-kit module like this
+The source code of LAMMPS is stored in directory `lammps-stable_29Sep2021_update2`. Now go into the LAMMPS code and copy the DeePMD-kit module like this
 ```bash
-cd lammps-stable_29Oct2020/src/
+cd lammps-stable_29Sep2021_update2/src/
 cp -r $deepmd_source_dir/source/build/USER-DEEPMD .
 ```
 Now build LAMMPS
@@ -43,22 +43,22 @@ Starting from `8Apr2021`, LAMMPS also provides a plugin mode, allowing one build
 Now download the LAMMPS code (`8Apr2021` or later), and uncompress it:
 ```bash
 cd /some/workspace
-wget https://github.com/lammps/lammps/archive/patch_30Jul2021.tar.gz
-tar xf patch_30Jul2021.tar.gz
+wget https://github.com/lammps/lammps/archive/stable_29Sep2021_update2.tar.gz
+tar xf stable_29Sep2021_update2.tar.gz
 ```
-The source code of LAMMPS is stored in directory `lammps-patch_30Jul2021`. Now go into the LAMMPS code and create a directory called `build`
+The source code of LAMMPS is stored in directory `lammps-stable_29Sep2021_update2`. Now go into the LAMMPS code and create a directory called `build`
 ```bash
-mkdir -p lammps-patch_30Jul2021/build/
-cd lammps-patch_30Jul2021/build/
+mkdir -p lammps-stable_29Sep2021_update2/build/
+cd lammps-stable_29Sep2021_update2/build/
 ```
 Now build LAMMPS. Note that `PLUGIN` and `KSPACE` package must be enabled, and `BUILD_SHARED_LIBS` must be set to `yes`. You can install any other package you want.
 ```bash
-cmake -D PKG_PLUGIN=ON -D PKG_KSPACE=ON -D LAMMPS_INSTALL_RPATH=ON -D BUILD_SHARED_LIBS=yes -D CMAKE_INSTALL_PREFIX=${deepmd_root} ../cmake
+cmake -D PKG_PLUGIN=ON -D PKG_KSPACE=ON -D LAMMPS_INSTALL_RPATH=ON -D BUILD_SHARED_LIBS=yes -D CMAKE_INSTALL_PREFIX=${deepmd_root} -D CMAKE_INSTALL_LIBDIR=lib -D CMAKE_INSTALL_FULL_LIBDIR=${deepmd_root}/lib ../cmake
 make -j4
 make install
 ```
 
-If everything works fine, you will end up with an executable `${deepmd_root}/lmp`.
+If everything works fine, you will end up with an executable `${deepmd_root}/bin/lmp`.
 ```bash
-${deepmd_root}/lmp -h
+${deepmd_root}/bin/lmp -h
 ```

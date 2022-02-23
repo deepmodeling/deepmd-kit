@@ -13,15 +13,18 @@ else :
     default_places = 10
 
 class TestDipoleCharge(unittest.TestCase) :
-    def setUp(self):
+    @classmethod
+    def setUpClass(cls):
         convert_pbtxt_to_pb(str(tests_path / os.path.join("infer","dipolecharge_d.pbtxt")), "dipolecharge_d.pb")
-        self.dp = DipoleChargeModifier(
+        cls.dp = DipoleChargeModifier(
             "dipolecharge_d.pb", 
             [-1.0, -3.0],
             [1.0, 1.0, 1.0, 1.0, 1.0],
             4.0,
             0.2
         )
+
+    def setUp(self):
         self.coords = np.array([
             4.6067455554,    8.8719311819,    6.3886531197,
             4.0044515745,    4.2449530507,    7.7902855220,
@@ -50,8 +53,10 @@ class TestDipoleCharge(unittest.TestCase) :
         self.natoms = self.atype.size
         self.coords = self.coords.reshape([-1, self.natoms, 3])
 
-    def tearDown(self):
+    @classmethod
+    def tearDownClass(cls):
         os.remove("dipolecharge_d.pb")
+        cls.dp = None
 
     def test_attrs(self):
         self.assertEqual(self.dp.get_ntypes(), 5)
@@ -76,12 +81,9 @@ class TestDipoleCharge(unittest.TestCase) :
         ee = ee.reshape([-1])
         ff = ff.reshape([-1])
         vv = vv.reshape([-1])        
-        for ii in range(ee.size):
-            self.assertAlmostEqual(ee[ii], self.expected_e[ii])
-        for ii in range(ff.size):
-            self.assertAlmostEqual(ff[ii], self.expected_f[ii])
-        for ii in range(vv.size):
-            self.assertAlmostEqual(vv[ii], self.expected_v[ii])
+        np.testing.assert_almost_equal(ee, self.expected_e)
+        np.testing.assert_almost_equal(ff, self.expected_f)
+        np.testing.assert_almost_equal(vv, self.expected_v)
 
     def test_2frame(self):
         nframes = 2
@@ -103,10 +105,7 @@ class TestDipoleCharge(unittest.TestCase) :
         ee = ee.reshape([-1])
         ff = ff.reshape([-1])
         vv = vv.reshape([-1])
-        for ii in range(ee.size):
-            self.assertAlmostEqual(ee[ii], self.expected_e[ii])
-        for ii in range(ff.size):
-            self.assertAlmostEqual(ff[ii], self.expected_f[ii])
-        for ii in range(vv.size):
-            self.assertAlmostEqual(vv[ii], self.expected_v[ii])
+        np.testing.assert_almost_equal(ee, self.expected_e)
+        np.testing.assert_almost_equal(ff, self.expected_f)
+        np.testing.assert_almost_equal(vv, self.expected_v)
 

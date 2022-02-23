@@ -117,7 +117,9 @@ class EnerModel() :
                frz_model = None,
                suffix = '', 
                reuse = None):
-
+ 
+        if input_dict is None:
+            input_dict = {}
         with tf.variable_scope('model_attr' + suffix, reuse = reuse) :
             t_tmap = tf.constant(' '.join(self.type_map), 
                                  name = 'tmap', 
@@ -144,6 +146,7 @@ class EnerModel() :
 
         coord = tf.reshape (coord_, [-1, natoms[1] * 3])
         atype = tf.reshape (atype_, [-1, natoms[1]])
+        input_dict['nframes'] = tf.shape(coord)[0]
 
         # type embedding if any
         if self.typeebd is not None:
@@ -173,10 +176,11 @@ class EnerModel() :
                 name = 'descrpt_attr/ntypes',
                 dtype = tf.int32)
             feed_dict = self.descrpt.get_feed_dict(coord_, atype_, natoms, box, mesh)
-            return_elements = ['o_rmat:0', 'o_rmat_deriv:0', 'o_rij:0', 'o_nlist:0', 'o_descriptor:0']
-            descrpt_reshape, descrpt_deriv, rij, nlist, dout \
+            return_elements = [*self.descrpt.get_tensor_names(), 'o_descriptor:0']
+            imported_tensors \
                 = self._import_graph_def_from_frz_model(frz_model, feed_dict, return_elements)
-            self.descrpt.pass_tensors_from_frz_model(descrpt_reshape, descrpt_deriv, rij, nlist)
+            dout = imported_tensors[-1]
+            self.descrpt.pass_tensors_from_frz_model(*imported_tensors[:-1])
 
 
         if self.srtab is not None :
@@ -269,4 +273,4 @@ class EnerModel() :
 
     def _import_graph_def_from_frz_model(self, frz_model, feed_dict, return_elements):
         graph, graph_def = load_graph_def(frz_model)
-        return tf.import_graph_def(graph_def, input_map = feed_dict, return_elements = return_elements)
+        return tf.import_graph_def(graph_def, input_map = feed_dict, return_elements = return_elements, name = "")

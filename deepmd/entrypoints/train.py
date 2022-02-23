@@ -10,16 +10,17 @@ import os
 from typing import Dict, List, Optional, Any
 
 from deepmd.common import data_requirement, expand_sys_str, j_loader, j_must_have
-from deepmd.env import tf, reset_default_tf_session_config
+from deepmd.env import tf, reset_default_tf_session_config, GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.infer.data_modifier import DipoleChargeModifier
 from deepmd.train.run_options import BUILD, CITATION, WELCOME, RunOptions
 from deepmd.train.trainer import DPTrainer
 from deepmd.utils import random as dp_random
 from deepmd.utils.argcheck import normalize
-from deepmd.utils.compat import updata_deepmd_input
+from deepmd.utils.compat import update_deepmd_input
 from deepmd.utils.data_system import DeepmdDataSystem
 from deepmd.utils.sess import run_sess
 from deepmd.utils.neighbor_stat import NeighborStat
+from deepmd.utils.path import DPPath
 
 __all__ = ["train"]
 
@@ -37,6 +38,7 @@ def train(
     log_level: int,
     log_path: Optional[str],
     is_compress: bool = False,
+    skip_neighbor_stat: bool = False,
     **kwargs,
 ):
     """Run DeePMD model training.
@@ -61,6 +63,8 @@ def train(
         logging file path or None if logs are to be output only to stdout
     is_compress: bool
         indicates whether in the model compress mode
+    skip_neighbor_stat : bool, default=False
+        skip checking neighbor statistics
 
     Raises
     ------
@@ -82,11 +86,11 @@ def train(
     # load json database
     jdata = j_loader(INPUT)
 
-    jdata = updata_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
+    jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
 
     jdata = normalize(jdata)
 
-    if not is_compress:
+    if not is_compress and not skip_neighbor_stat:
         jdata = update_sel(jdata)
 
     with open(output, "w") as fp:
@@ -181,11 +185,12 @@ def get_data(jdata: Dict[str, Any], rcut, type_map, modifier):
         raise IOError(msg, help_msg)
     # rougly check all items in systems are valid
     for ii in systems:
-        if (not os.path.isdir(ii)):
+        ii = DPPath(ii)
+        if (not ii.is_dir()):
             msg = f'dir {ii} is not a valid dir'
             log.fatal(msg)
             raise IOError(msg, help_msg)
-        if (not os.path.isfile(os.path.join(ii, 'type.raw'))):
+        if (not (ii / 'type.raw').is_file()):
             msg = f'dir {ii} is not a valid data system dir'
             log.fatal(msg)
             raise IOError(msg, help_msg)
@@ -262,6 +267,16 @@ def get_nbor_stat(jdata, rcut):
     neistat = NeighborStat(ntypes, rcut)
 
     min_nbor_dist, max_nbor_size = neistat.get_stat(train_data)
+
+    # moved from traier.py as duplicated
+    # TODO: this is a simple fix but we should have a clear
+    #       architecture to call neighbor stat
+    tf.constant(min_nbor_dist,
+        name = 'train_attr/min_nbor_dist',
+        dtype = GLOBAL_ENER_FLOAT_PRECISION)
+    tf.constant(max_nbor_size,
+        name = 'train_attr/max_nbor_size',
+        dtype = tf.int32)
     return min_nbor_dist, max_nbor_size
 
 def get_sel(jdata, rcut):
@@ -321,11 +336,13 @@ def update_one_sel(jdata, descriptor):
 
 
 def update_sel(jdata):    
+    log.info("Calculate neighbor statistics... (add --skip-neighbor-stat to skip this step)")
     descrpt_data = jdata['model']['descriptor']
     if descrpt_data['type'] == 'hybrid':
         for ii in range(len(descrpt_data['list'])):
-            descrpt_data['list'][ii] = update_one_sel(jdata, descrpt_data['list'][ii])
-    else:
+            if descrpt_data['list'][ii]['type'] != 'loc_frame':
+                descrpt_data['list'][ii] = update_one_sel(jdata, descrpt_data['list'][ii])
+    elif descrpt_data['type'] != 'loc_frame':
         descrpt_data = update_one_sel(jdata, descrpt_data)
     jdata['model']['descriptor'] = descrpt_data
     return jdata

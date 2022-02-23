@@ -12,7 +12,7 @@ from deepmd.utils.weight_avg import weighted_average
 
 if TYPE_CHECKING:
     from deepmd.infer import DeepDipole, DeepPolar, DeepPot, DeepWFC
-    from deepmd.infer.deep_eval import DeepTensor
+    from deepmd.infer.deep_tensor import DeepTensor
 
 __all__ = ["test"]
 
@@ -262,8 +262,9 @@ def test_ener(
     log.info(f"Energy RMSE        : {rmse_e:e} eV")
     log.info(f"Energy RMSE/Natoms : {rmse_ea:e} eV")
     log.info(f"Force  RMSE        : {rmse_f:e} eV/A")
-    log.info(f"Virial RMSE        : {rmse_v:e} eV")
-    log.info(f"Virial RMSE/Natoms : {rmse_va:e} eV")
+    if data.pbc:
+        log.info(f"Virial RMSE        : {rmse_v:e} eV")
+        log.info(f"Virial RMSE/Natoms : {rmse_va:e} eV")
     if has_atom_ener:
         log.info(f"Atomic ener RMSE   : {rmse_ae:e} eV")
 
