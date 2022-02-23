@@ -34,7 +34,7 @@ prod_force_a_cpu(
 {
   const int ndescrpt = 4 * nnei;
 
-  memset(force, 0.0, sizeof(FPTYPE) * nall * 3);
+  memset(force, 0, sizeof(FPTYPE) * nall * 3);
   // compute force of a frame
   #pragma omp parallel
   for (int i_idx = 0; i_idx < nloc; ++i_idx) {

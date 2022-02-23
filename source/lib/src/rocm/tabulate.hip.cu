@@ -637,10 +637,10 @@ void tabulate_fusion_se_a_grad_gpu_rocm(
   if(nloc <= 0) {return;}
   DPErrcheck(hipMemset(
       dy_dem_x,
-      0.0, sizeof(FPTYPE) * nloc * nnei));
+      0, sizeof(FPTYPE) * nloc * nnei));
   DPErrcheck(hipMemset(
       dy_dem,
-      0.0, sizeof(FPTYPE) * nloc * nnei * 4));
+      0, sizeof(FPTYPE) * nloc * nnei * 4));
 
   hipLaunchKernelGGL(HIP_KERNEL_NAME(tabulate_fusion_se_a_grad_fifth_order_polynomial<FPTYPE, MM, KK>), nloc, KK * WARP_SIZE, sizeof(FPTYPE) * MM * last_layer_size, 0, 
       dy_dem_x, dy_dem,
@@ -665,7 +665,7 @@ void tabulate_fusion_se_a_grad_grad_gpu_rocm(
   if(nloc <= 0) {return;}
   DPErrcheck(hipMemset(
     dz_dy,
-    0.0, sizeof(FPTYPE) * nloc * 4 * last_layer_size));
+    0, sizeof(FPTYPE) * nloc * 4 * last_layer_size));
   hipLaunchKernelGGL(HIP_KERNEL_NAME(tabulate_fusion_se_a_grad_grad_fifth_order_polynomial<FPTYPE, MM, KK>), nloc, last_layer_size, sizeof(FPTYPE) * MM * last_layer_size, 0, 
     dz_dy,
     table, em_x, em, dz_dy_dem_x, dz_dy_dem, table_info[0], table_info[1], table_info[2], table_info[3], table_info[4], nnei, last_layer_size);
@@ -710,10 +710,10 @@ void tabulate_fusion_se_t_grad_gpu_rocm(
   if(nloc <= 0) {return;}
   DPErrcheck(hipMemset(
       dy_dem_x,
-      0.0, sizeof(FPTYPE) * nloc * nnei_i * nnei_j));
+      0, sizeof(FPTYPE) * nloc * nnei_i * nnei_j));
   DPErrcheck(hipMemset(
       dy_dem,
-      0.0, sizeof(FPTYPE) * nloc * nnei_i * nnei_j));
+      0, sizeof(FPTYPE) * nloc * nnei_i * nnei_j));
 
   hipLaunchKernelGGL(HIP_KERNEL_NAME(tabulate_fusion_se_t_grad_fifth_order_polynomial<FPTYPE, MM, KK>), nloc, KK * WARP_SIZE, sizeof(FPTYPE) * last_layer_size, 0, 
       dy_dem_x, dy_dem,
@@ -739,7 +739,7 @@ void tabulate_fusion_se_t_grad_grad_gpu_rocm(
   if(nloc <= 0) {return;}
   DPErrcheck(hipMemset(
     dz_dy,
-    0.0, sizeof(FPTYPE) * nloc * last_layer_size));
+    0, sizeof(FPTYPE) * nloc * last_layer_size));
   hipLaunchKernelGGL(HIP_KERNEL_NAME(tabulate_fusion_se_t_grad_grad_fifth_order_polynomial<FPTYPE, MM, KK>), nloc, last_layer_size, 0, 0, 
     dz_dy,
     table, em_x, em, dz_dy_dem_x, dz_dy_dem, table_info[0], table_info[1], table_info[2], table_info[3], table_info[4], nnei_i, nnei_j, last_layer_size);
@@ -779,7 +779,7 @@ void tabulate_fusion_se_r_grad_gpu_rocm(
   if(nloc <= 0) {return;}
   DPErrcheck(hipMemset(
       dy_dem,
-      0.0, sizeof(FPTYPE) * nloc * nnei));
+      0, sizeof(FPTYPE) * nloc * nnei));
 
   hipLaunchKernelGGL(HIP_KERNEL_NAME(tabulate_fusion_se_r_grad_fifth_order_polynomial<FPTYPE, MM, KK>), nloc, KK * WARP_SIZE, sizeof(FPTYPE) * MM * last_layer_size, 0, 
       dy_dem,
@@ -802,7 +802,7 @@ void tabulate_fusion_se_r_grad_grad_gpu_rocm(
   if(nloc <= 0) {return;}
   DPErrcheck(hipMemset(
     dz_dy,
-    0.0, sizeof(FPTYPE) * nloc * nnei * last_layer_size));
+    0, sizeof(FPTYPE) * nloc * nnei * last_layer_size));
   hipLaunchKernelGGL(HIP_KERNEL_NAME(tabulate_fusion_se_r_grad_grad_fifth_order_polynomial<FPTYPE, MM, KK>), nloc, last_layer_size, sizeof(FPTYPE) * MM * last_layer_size, 0, 
     dz_dy,
     table, em, dz_dy_dem, table_info[0], table_info[1], table_info[2], table_info[3], table_info[4], nnei, last_layer_size);
