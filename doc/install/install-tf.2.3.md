@@ -8,14 +8,14 @@ chmod +x bazel-3.1.0-installer-linux-x86_64.sh
 export PATH=/some/workspace/bazel/bin:$PATH
 ```
 
-Firstly get the source code of the tensorflow
+Firstly get the source code of the TensorFlow
 ```bash
 git clone https://github.com/tensorflow/tensorflow tensorflow -b v2.3.0 --depth=1
 cd tensorflow
 ./configure
 ```
 
-You will answer a list of questions that help configure the building of tensorflow. You may want to answer the question like the following. If you do not want to add CUDA support, please answer no.
+You will answer a list of questions that help configure the building of TensorFlow. You may want to answer the question like the following. If you do not want to add CUDA support, please answer no.
 
 ```
 Please specify the location of python. [Default is xxx]:
@@ -58,17 +58,17 @@ Would you like to interactively configure ./WORKSPACE for Android builds? [y/N]:
 Not configuring the WORKSPACE for Android builds.
 
 Preconfigured Bazel build configs. You can use any of the below by adding "--config=<>" to your build command. See .bazelrc for more details.
-	--config=mkl         	# Build with MKL support.
-	--config=monolithic  	# Config for mostly static monolithic build.
-	--config=ngraph      	# Build with Intel nGraph support.
-	--config=numa        	# Build with NUMA support.
-	--config=dynamic_kernels	# (Experimental) Build kernels into separate shared objects.
-	--config=v2          	# Build TensorFlow 2.x instead of 1.x.
+    --config=mkl            # Build with MKL support.
+    --config=monolithic     # Config for mostly static monolithic build.
+    --config=ngraph         # Build with Intel nGraph support.
+    --config=numa           # Build with NUMA support.
+    --config=dynamic_kernels    # (Experimental) Build kernels into separate shared objects.
+    --config=v2             # Build TensorFlow 2.x instead of 1.x.
 Preconfigured Bazel build configs to DISABLE default on features:
-	--config=noaws       	# Disable AWS S3 filesystem support.
-	--config=nogcp       	# Disable GCP support.
-	--config=nohdfs      	# Disable HDFS support.
-	--config=nonccl      	# Disable NVIDIA NCCL support.
+    --config=noaws          # Disable AWS S3 filesystem support.
+    --config=nogcp          # Disable GCP support.
+    --config=nohdfs         # Disable HDFS support.
+    --config=nonccl         # Disable NVIDIA NCCL support.
 Configuration finished
 ```
 
@@ -80,7 +80,7 @@ bazel build -c opt --verbose_failures //tensorflow:libtensorflow_cc.so
 ```
 You may want to add options `--copt=-msse4.2`,  `--copt=-mavx`, `--copt=-mavx2` and `--copt=-mfma` to enable SSE4.2, AVX, AVX2 and FMA SIMD accelerations, respectively. It is noted that these options should be chosen according to the CPU architecture. If the RAM becomes an issue of your machine, you may limit the RAM usage by using `--local_resources 2048,.5,1.0`. 
 
-Now I assume you want to install tensorflow in directory `$tensorflow_root`. Create the directory if it does not exists
+Now I assume you want to install TensorFlow in directory `$tensorflow_root`. Create the directory if it does not exist
 ```bash
 mkdir -p $tensorflow_root
 ```
@@ -108,4 +108,4 @@ rsync -avzh --include '*/' --include '*.h' --include '*.inc' --exclude '*' bazel
 ```bash
 git: unknown command -C ...
 ```
-This may be your git version issue, because low version of git does not support this command. Upgrading your git maybe helpful.
+This may be an issue with your git version issue. Early versions of git do not support this command, in this case upgrading your git to a newer version may resolve any issues.
