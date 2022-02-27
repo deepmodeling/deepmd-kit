@@ -51,7 +51,7 @@ plt.legend()
 plt.xlabel('Step')
 plt.ylabel('Loss')
 plt.xscale('symlog')
-plt.yscale('symlog')
+plt.yscale('log')
 plt.grid()
 plt.show()
 ```
