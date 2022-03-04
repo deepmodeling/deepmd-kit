@@ -15,6 +15,7 @@ import subprocess
 import sys
 import recommonmark
 from recommonmark.transform import AutoStructify
+from datetime import date
 
 def mkindex(dirname):
     dirname = dirname + "/"
@@ -106,8 +107,8 @@ def classify_index_TS():
 # -- Project information -----------------------------------------------------
 
 project = 'DeePMD-kit'
-copyright = '2017-2021, Deep Modeling'
-author = 'Deep Modeling'
+copyright = '2017-%d, DeepModeling' % date.today().year
+author = 'DeepModeling'
 
 def run_doxygen(folder):
     """Run the doxygen make command in the designated folder"""
@@ -167,6 +168,7 @@ def setup(app):
 #classify_index_TS()
 
 extensions = [
+    "deepmodeling_sphinx",
     "sphinx_rtd_theme",
     'myst_parser',
     'sphinx.ext.autosummary',
