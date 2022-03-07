@@ -53,10 +53,12 @@ class TestTrain (unittest.TestCase) :
                     'type' : 'hybrid',
                     'list' : [
                         {
+                            'type': 'se_e2_a',
                             'rcut': 6,
                             'sel': "auto"                            
                         },
                         {
+                            'type': 'se_e2_a',
                             'rcut': 6,
                             'sel': "auto:1.5"
                         }
@@ -70,10 +72,12 @@ class TestTrain (unittest.TestCase) :
                     'type' : 'hybrid',
                     'list' : [
                         {
+                            'type': 'se_e2_a',
                             'rcut': 6,
                             'sel': [12,24] 
                         },
                         {
+                            'type': 'se_e2_a',
                             'rcut': 6,
                             'sel': [16,32]
                         }

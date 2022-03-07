@@ -1,6 +1,6 @@
 # Easy install
 
-There various easy methods to install DeePMD-kit. Choose one that you prefer. If you want to build by yourself, jump to the next two sections.
+There are various easy methods to install DeePMD-kit. Choose one that you prefer. If you want to build by yourself, jump to the next two sections.
 
 After your easy installation, DeePMD-kit (`dp`) and LAMMPS (`lmp`) will be available to execute. You can try `dp -h` and `lmp -h` to see the help. `mpirun` is also available considering you may want to train models or run LAMMPS in parallel.
 
@@ -52,4 +52,9 @@ docker pull ghcr.io/deepmodeling/deepmd-kit:2.0.0_cpu
 To pull the GPU version:
 ```bash
 docker pull ghcr.io/deepmodeling/deepmd-kit:2.0.0_cuda10.1_gpu
+```
+
+To pull the ROCm version:
+```bash
+docker pull deepmodeling/dpmdkit-rocm:dp2.0.3-rocm4.5.2-tf2.6-lmp29Sep2021
 ```

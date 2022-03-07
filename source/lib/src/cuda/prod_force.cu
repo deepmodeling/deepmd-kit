@@ -109,7 +109,7 @@ void prod_force_a_gpu_cuda(
   const int ndescrpt = nnei * 4;
   DPErrcheck(cudaMemset(
       force, 
-      0.0, sizeof(FPTYPE) * nall * 3));
+      0, sizeof(FPTYPE) * nall * 3));
 
   force_deriv_wrt_center_atom<FPTYPE, TPB> <<<nloc, TPB>>>(
       force, 
@@ -141,7 +141,7 @@ void prod_force_r_gpu_cuda(
   const int ndescrpt = nnei * 1;
   DPErrcheck(cudaMemset(
       force, 
-      0.0, sizeof(FPTYPE) * nall * 3));
+      0, sizeof(FPTYPE) * nall * 3));
 
   force_deriv_wrt_center_atom<FPTYPE, TPB> <<<nloc, TPB>>>(
       force, 

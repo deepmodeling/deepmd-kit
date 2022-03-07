@@ -41,6 +41,7 @@ prod_virial_grad_a_cpu(
   }      
 
   // compute grad of one frame
+  #pragma omp parallel for
   for (int ii = 0; ii < nloc; ++ii){
     int i_idx = ii;
 	
@@ -117,6 +118,7 @@ prod_virial_grad_r_cpu(
   }      
 
   // compute grad of one frame
+  #pragma omp parallel for
   for (int ii = 0; ii < nloc; ++ii){
     int i_idx = ii;
 	

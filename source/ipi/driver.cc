@@ -158,7 +158,7 @@ int main(int argc, char * argv[])
       readbuffer_ (&socket, (char *)(cell_h),  9*sizeof(double));
       readbuffer_ (&socket, (char *)(cell_ih), 9*sizeof(double));
       for (int dd = 0; dd < 9; ++dd){
-	dbox[dd] = cell_h[dd] * cvt_len;
+	dbox[dd] = cell_h[(dd%3)*3+(dd/3)] * cvt_len;
       }
       region.reinitBox (&dbox[0]);
       
@@ -209,7 +209,7 @@ int main(int argc, char * argv[])
 	msg_buff[ii] = dforce[ii] * icvt_f;
       }
       for (int ii = 0; ii < 9; ++ii){
-	virial[ii] = dvirial[ii] * icvt_ener * (1.0);
+	virial[ii] = dvirial[(ii%3)*3+(ii/3)] * icvt_ener * (1.0);
       }
       if (b_verb) std::cout << "# energy of sys. : " << std::scientific << std::setprecision(10) << dener << std::endl;
       writebuffer_ (&socket, msg_forceready, MSGLEN);

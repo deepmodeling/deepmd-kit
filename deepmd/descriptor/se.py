@@ -1,7 +1,7 @@
 from typing import Tuple, List
 
 from deepmd.env import tf
-from deepmd.utils.graph import get_embedding_net_variables
+from deepmd.utils.graph import get_embedding_net_variables, get_tensor_by_name
 from .descriptor import Descriptor
 
 
@@ -96,7 +96,7 @@ class DescrptSe (Descriptor):
                        suffix : str = "",
     ) -> None:
         """
-        Init the embedding net variables with the given dict
+        Init the embedding net variables with the given frozen model
 
         Parameters
         ----------
@@ -106,3 +106,10 @@ class DescrptSe (Descriptor):
             The suffix of the scope
         """
         self.embedding_net_variables = get_embedding_net_variables(model_file, suffix = suffix)
+        self.davg = get_tensor_by_name(model_file, 'descrpt_attr%s/t_avg' % suffix)
+        self.tavg = get_tensor_by_name(model_file, 'descrpt_attr%s/t_std' % suffix)
+
+    @property
+    def precision(self) -> tf.DType:
+        """Precision of filter network."""
+        return self.filter_precision

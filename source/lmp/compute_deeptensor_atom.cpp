@@ -70,7 +70,7 @@ void ComputeDeeptensorAtom::init()
   neighbor->requests[irequest]->half = 0;
   neighbor->requests[irequest]->pair = 0;
   neighbor->requests[irequest]->compute = 1;
-  // neighbor->requests[irequest]->full = 1;
+  neighbor->requests[irequest]->full = 1;
   neighbor->requests[irequest]->occasional = 1;
 }
 
