@@ -32,8 +32,8 @@ def _subprocess_run(command):
 
 def _init_models():
     data_file  = str(tests_path / os.path.join("model_compression", "data"))
-    frozen_model = str(tests_path / "dp-original.pb")
-    compressed_model = str(tests_path / "dp-compressed.pb")
+    frozen_model = str(tests_path / "dp-original-type-one-side-exclude-types.pb")
+    compressed_model = str(tests_path / "dp-compressed-type-one-side-exclude-types.pb")
     INPUT = str(tests_path / "input.json")
     jdata = j_loader(str(tests_path / os.path.join("model_compression", "input.json")))
     jdata["training"]["training_data"]["systems"] = data_file
