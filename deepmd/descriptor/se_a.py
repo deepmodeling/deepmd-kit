@@ -13,7 +13,8 @@ from deepmd.utils.network import embedding_net, embedding_net_rand_seed_shift
 from deepmd.utils.tabulate import DPTabulate
 from deepmd.utils.type_embed import embed_atom_type
 from deepmd.utils.sess import run_sess
-from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph
+from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph, get_tensor_by_name
+from deepmd.utils.errors import GraphWithoutTensorError
 from .descriptor import Descriptor
 from .se import DescrptSe
 
@@ -193,6 +194,7 @@ class DescrptSeA (DescrptSe):
                                          sel_a = self.sel_a,
                                          sel_r = self.sel_r)
         self.sub_sess = tf.Session(graph = sub_graph, config=default_tf_session_config)
+        self.original_sel = None
 
 
     def get_rcut (self) -> float:
@@ -442,7 +444,8 @@ class DescrptSeA (DescrptSe):
                                          trainable = False,
                                          initializer = tf.constant_initializer(dstd))
 
-        coord = tf.reshape (coord_, [-1, natoms[1] * 3])
+        with tf.control_dependencies([t_sel]):
+            coord = tf.reshape (coord_, [-1, natoms[1] * 3])
         box   = tf.reshape (box_, [-1, 9])
         atype = tf.reshape (atype_, [-1, natoms[1]])
 
@@ -823,7 +826,12 @@ class DescrptSeA (DescrptSe):
           # inputs_reshape = tf.reshape(inputs, [-1, shape[1]//4, 4])
           # natom x 4 x outputs_size
           # xyz_scatter_1 = tf.matmul(inputs_reshape, xyz_scatter, transpose_a = True)
-          xyz_scatter_1 = xyz_scatter_1 * (4.0 / shape[1])
+          if self.original_sel is None:
+              # shape[1] = nnei * 4
+              sel_input = shape[1] / 4
+          else:
+              sel_input = np.sum(self.original_sel)
+          xyz_scatter_1 = xyz_scatter_1 / sel_input
           # natom x 4 x outputs_size_2
           xyz_scatter_2 = tf.slice(xyz_scatter_1, [0,0,0],[-1,-1,outputs_size_2])
           # # natom x 3 x outputs_size_2
@@ -838,3 +846,39 @@ class DescrptSeA (DescrptSe):
           result = tf.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
 
         return result, qmat
+
+    def init_variables(self,
+                       model_file : str,
+                       suffix : str = "",
+    ) -> None:
+        """
+        Init the embedding net variables with the given frozen model
+
+        Parameters
+        ----------
+        model_file : str
+            The input frozen model file
+        suffix : str, optional
+            The suffix of the scope
+        """
+        super().init_variables(model_file=model_file, suffix=suffix)
+        # check sel == original sel?
+        try:
+            sel = get_tensor_by_name(model_file, 'descrpt_attr%s/sel' % suffix)
+        except GraphWithoutTensorError:
+            # sel is not restored in old graphs
+            pass
+        else:
+            if not np.array_equal(np.array(self.sel_a), sel):
+                if not self.set_davg_zero:
+                    raise RuntimeError("Adjusting sel is only supported when `set_davg_zero` is true!")
+                if np.any(sel < np.array(self.sel_a)):
+                    raise RuntimeError("New sel should not be more than old sel!")
+                # shape of davg and dstd is (ntypes, ndescrpt), ndescrpt = 4*sel
+                n_descpt = np.array(self.sel_a) * 4
+                start_index = np.cumsum(n_descpt)
+                new_davg = [self.davg[:, ii:ii+nn] for nn, ii in zip(n_descpt, start_index)]
+                new_dstd = [self.dstd[:, ii:ii+nn] for nn, ii in zip(n_descpt, start_index)]
+                self.davg = np.concatenate(new_davg, axis=1)
+                self.dstd = np.concatenate(new_dstd, axis=1)
+                self.original_sel = sel
