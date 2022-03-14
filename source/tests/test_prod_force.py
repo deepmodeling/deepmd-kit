@@ -113,7 +113,7 @@ class TestProdForce(tf.test.TestCase):
         forces = []
         for ii in range(4):
             tforce \
-                = op_module.prod_force_se_a(
+                = op_module.parallel_prod_force_se_a(
                     self.tnet_deriv,
                     self.tem_deriv,
                     self.tnlist,

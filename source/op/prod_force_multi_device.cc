@@ -10,6 +10,17 @@ REGISTER_OP("ProdForceSeA")
     .Input("natoms: int32")
     .Attr("n_a_sel: int")
     .Attr("n_r_sel: int")
+    .Output("force: T");
+
+// rename temp op
+REGISTER_OP("ParallelProdForceSeA")
+    .Attr("T: {float, double} = DT_DOUBLE")
+    .Input("net_deriv: T")
+    .Input("in_deriv: T")
+    .Input("nlist: int32")
+    .Input("natoms: int32")
+    .Attr("n_a_sel: int")
+    .Attr("n_r_sel: int")
     .Attr("parallel: bool = false")
     .Attr("start_frac: float = 0.")
     .Attr("end_frac: float = 1.")
@@ -27,9 +38,9 @@ template<typename Device, typename FPTYPE>
 class ProdForceSeAOp : public OpKernel {
 public:
   explicit ProdForceSeAOp(OpKernelConstruction* context) : OpKernel(context) {
-    OP_REQUIRES_OK(context, context->GetAttr("parallel", &parallel));
-    OP_REQUIRES_OK(context, context->GetAttr("start_frac", &start_frac));
-    OP_REQUIRES_OK(context, context->GetAttr("end_frac", &end_frac));
+    if(context->HasAttr("parallel")) OP_REQUIRES_OK(context, context->GetAttr("parallel", &parallel));
+    if(context->HasAttr("start_frac")) OP_REQUIRES_OK(context, context->GetAttr("start_frac", &start_frac));
+    if(context->HasAttr("end_frac")) OP_REQUIRES_OK(context, context->GetAttr("end_frac", &end_frac));
   }
 
   void Compute(OpKernelContext* context) override {
@@ -129,9 +140,9 @@ public:
   }
  private:
   std::string device;
-  bool parallel;
-  float start_frac;
-  float end_frac;
+  bool parallel = false;
+  float start_frac = 0.f;
+  float end_frac = 1.f;
 };
 
 template<typename Device, typename FPTYPE>
@@ -223,6 +234,9 @@ public:
 #define REGISTER_CPU(T)                                                                  \
 REGISTER_KERNEL_BUILDER(                                                                 \
     Name("ProdForceSeA").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
+    ProdForceSeAOp<CPUDevice, T>);                                                       \
+REGISTER_KERNEL_BUILDER(                                                                 \
+    Name("ParallelProdForceSeA").Device(DEVICE_CPU).TypeConstraint<T>("T"),             \
     ProdForceSeAOp<CPUDevice, T>);                                                       \
 REGISTER_KERNEL_BUILDER(                                                                 \
     Name("ProdForceSeR").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \

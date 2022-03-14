@@ -54,9 +54,6 @@ Status ParallelProdForce(RemapperContext *ctx, int node_index,
 
   const NodeDef *ori_node = ctx->graph_view.GetNode(node_index)->node();
   auto &src_attr = ori_node->attr();
-  // check if it has been splited..
-  if (src_attr.at("parallel").b())
-    return Status::OK();
   int64_t tot = GetNThreads();
   if (tot <= 1)
     return Status::OK();
@@ -75,7 +72,7 @@ Status ParallelProdForce(RemapperContext *ctx, int node_index,
   for (int ii = 0; ii < tot; ++ii) {
     NodeDef sub_node;
     sub_node.set_name(ori_node->name() + "/sub_" + std::to_string(ii));
-    sub_node.set_op(ori_node->op());
+    sub_node.set_op("ParallelProdForceSeA");
     sub_node.set_device(ori_node->device());
     // copy input
     for (int jj = 0; jj < 4; ++jj)
