@@ -383,4 +383,4 @@ class DescrptLocFrame (Descriptor) :
             The suffix of the scope
         """
         self.davg = get_tensor_by_name(model_file, 'descrpt_attr%s/t_avg' % suffix)
-        self.tavg = get_tensor_by_name(model_file, 'descrpt_attr%s/t_std' % suffix)
+        self.dstd = get_tensor_by_name(model_file, 'descrpt_attr%s/t_std' % suffix)
