@@ -876,13 +876,25 @@ class DescrptSeA (DescrptSe):
             if not np.array_equal(np.array(self.sel_a), sel):
                 if not self.set_davg_zero:
                     raise RuntimeError("Adjusting sel is only supported when `set_davg_zero` is true!")
-                if np.any(sel < np.array(self.sel_a)):
-                    raise RuntimeError("New sel should not be more than old sel!")
+                # as set_davg_zero, self.davg is safely zero
+                self.davg = np.zeros([self.ntypes, self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
+                new_dstd = np.ones([self.ntypes, self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
                 # shape of davg and dstd is (ntypes, ndescrpt), ndescrpt = 4*sel
                 n_descpt = np.array(self.sel_a) * 4
-                start_index = np.cumsum(n_descpt)
-                new_davg = [self.davg[:, ii:ii+nn] for nn, ii in zip(n_descpt, start_index)]
-                new_dstd = [self.dstd[:, ii:ii+nn] for nn, ii in zip(n_descpt, start_index)]
-                self.davg = np.concatenate(new_davg, axis=1)
-                self.dstd = np.concatenate(new_dstd, axis=1)
+                n_descpt_old = np.array(sel) * 4
+                end_index = np.cumsum(n_descpt)
+                end_index_old = np.cumsum(n_descpt_old)
+                start_index = np.roll(end_index, 1)
+                start_index[0] = 0
+                start_index_old = np.roll(end_index_old, 1)
+                start_index_old[0] = 0
+
+                for nn, oo, ii, jj in zip(n_descpt, n_descpt_old, start_index, start_index_old):
+                    if nn < oo:
+                        # new size is smaller, copy part of std
+                        new_dstd[:, ii:ii+nn] = self.dstd[:, jj:jj+nn]
+                    else:
+                        # new size is larger, copy all, the rest remains 1
+                        new_dstd[:, ii:ii+oo] = self.dstd[:, jj:jj+oo]
+                self.dstd = new_dstd
                 self.original_sel = sel
