@@ -282,10 +282,9 @@ class DPTrainer (object):
                 ))
             self.type_map = data.get_type_map()
             self.batch_size = data.get_batch_size()
-            if self.run_opt.init_mode not in ('init_from_model', 'restart'):
+            if self.run_opt.init_mode not in ('init_from_model', 'restart', 'init_from_frz_model'):
                 # self.saver.restore (in self._init_session) will restore avg and std variables, so data_stat is useless
-                # currently init_from_frz_model does not restore data_stat variables
-                # TODO: restore avg and std in the init_from_frz_model mode
+                # init_from_frz_model will restore data_stat variables in `init_variables` method
                 log.info("data stating... (this step may take long time)")
                 self.model.data_stat(data)
 
@@ -372,7 +371,7 @@ class DPTrainer (object):
         if self.mixed_prec is not None:
             _TF_VERSION = Version(TF_VERSION)
             # check the TF_VERSION, when TF < 1.12, mixed precision is not allowed 
-            if _TF_VERSION < Version('1.12.0'):
+            if _TF_VERSION < Version('1.14.0'):
                 raise RuntimeError("TensorFlow version %s is not compatible with the mixed precision setting. Please consider upgrading your TF version!" % TF_VERSION)
             elif _TF_VERSION < Version('2.4.0'):
                 optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)

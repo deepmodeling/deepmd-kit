@@ -11,6 +11,7 @@ from .train import train as train_dp
 from .transfer import transfer
 from ..infer.model_devi import make_model_devi
 from .convert import convert
+from .neighbor_stat import neighbor_stat
 
 __all__ = [
     "config",
@@ -23,4 +24,5 @@ __all__ = [
     "doc_train_input",
     "make_model_devi",
     "convert",
+    "neighbor_stat",
 ]

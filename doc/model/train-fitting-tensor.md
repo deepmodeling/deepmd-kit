@@ -7,7 +7,7 @@ $deepmd_source_dir/examples/water_tensor/dipole/dipole_input.json
 $deepmd_source_dir/examples/water_tensor/polar/polar_input.json
 ```
 
-The training and validation data are also provided our examples. But note that **the data provided along with the examples are of limited amount, and should not be used to train a productive model.**
+The training and validation data are also provided our examples. But note that **the data provided along with the examples are of limited amount, and should not be used to train a production model.**
 
 Similar to the `input.json` used in `ener` mode, training json is also divided into `model`, `learning_rate`, `loss` and `training`. Most keywords remains the same as `ener` mode, and their meaning can be found [here](train-se-e2-a.md). To fit a tensor, one need to modify `model.fitting_net` and `loss`.
 
