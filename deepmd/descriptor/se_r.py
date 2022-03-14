@@ -443,13 +443,19 @@ class DescrptSeR (DescrptSe):
         start_index = 0
         inputs = tf.reshape(inputs, [-1, self.ndescrpt * natoms[0]])
         output = []
-        if not self.type_one_side:
+        if not (self.type_one_side and len(self.exclude_types) == 0):
             for type_i in range(self.ntypes):
                 inputs_i = tf.slice (inputs,
                                      [ 0, start_index*      self.ndescrpt],
                                      [-1, natoms[2+type_i]* self.ndescrpt] )
                 inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
-                layer = self._filter_r(inputs_i, type_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
+                if self.type_one_side:
+                    # reuse NN parameters for all types to support type_one_side along with exclude_types
+                    reuse = tf.AUTO_REUSE
+                    filter_name = 'filter_type_all'+suffix
+                else:
+                    filter_name = 'filter_type_'+str(type_i)+suffix
+                layer = self._filter_r(inputs_i, type_i, name=filter_name, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
                 layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_out()])
                 output.append(layer)
                 start_index += natoms[2+type_i]
