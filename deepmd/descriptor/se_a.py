@@ -832,10 +832,10 @@ class DescrptSeA (DescrptSe):
           # xyz_scatter_1 = tf.matmul(inputs_reshape, xyz_scatter, transpose_a = True)
           if self.original_sel is None:
               # shape[1] = nnei * 4
-              sel_input = shape[1] / 4
+              nnei = shape[1] / 4
           else:
-              sel_input = np.sum(self.original_sel)
-          xyz_scatter_1 = xyz_scatter_1 / sel_input
+              nnei = np.sum(self.original_sel)
+          xyz_scatter_1 = xyz_scatter_1 / nnei
           # natom x 4 x outputs_size_2
           xyz_scatter_2 = tf.slice(xyz_scatter_1, [0,0,0],[-1,-1,outputs_size_2])
           # # natom x 3 x outputs_size_2
