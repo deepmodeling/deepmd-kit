@@ -107,7 +107,7 @@ class DescrptSe (Descriptor):
         """
         self.embedding_net_variables = get_embedding_net_variables(model_file, suffix = suffix)
         self.davg = get_tensor_by_name(model_file, 'descrpt_attr%s/t_avg' % suffix)
-        self.tavg = get_tensor_by_name(model_file, 'descrpt_attr%s/t_std' % suffix)
+        self.dstd = get_tensor_by_name(model_file, 'descrpt_attr%s/t_std' % suffix)
 
     @property
     def precision(self) -> tf.DType:

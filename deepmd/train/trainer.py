@@ -531,26 +531,9 @@ class DPTrainer (object):
                                   % (cur_batch, train_time, test_time))
                     train_time = 0
                 if self.save_freq > 0 and cur_batch % self.save_freq == 0 and self.saver is not None:
-                    try:
-                        ckpt_prefix = self.saver.save (self.sess, os.path.join(os.getcwd(), self.save_ckpt), global_step=cur_batch)
-                    except google.protobuf.message.DecodeError as e:
-                        raise GraphTooLargeError(
-                            "The graph size exceeds 2 GB, the hard limitation of protobuf."
-                            " Then a DecodeError was raised by protobuf. You should "
-                            "reduce the size of your model."
-                        ) from e
-                    # make symlinks from prefix with step to that without step to break nothing
-                    # get all checkpoint files
-                    original_files = glob.glob(ckpt_prefix + ".*")
-                    for ori_ff in original_files:
-                        new_ff = self.save_ckpt + ori_ff[len(ckpt_prefix):]
-                        try:
-                            # remove old one
-                            os.remove(new_ff)
-                        except OSError:
-                            pass
-                        os.symlink(ori_ff, new_ff)
-                    log.info("saved checkpoint %s" % self.save_ckpt)
+                    self.save_checkpoint(cur_batch)
+        if (self.save_freq == 0 or cur_batch == 0 or cur_batch % self.save_freq != 0) and self.saver is not None:
+            self.save_checkpoint(cur_batch)
         if self.run_opt.is_chief: 
             fp.close ()
         if self.profiling and self.run_opt.is_chief :
@@ -560,6 +543,28 @@ class DPTrainer (object):
                 f.write(chrome_trace)
         if self.enable_profiler and self.run_opt.is_chief:
             tfv2.profiler.experimental.stop()
+
+    def save_checkpoint(self, cur_batch: int):
+        try:
+            ckpt_prefix = self.saver.save (self.sess, os.path.join(os.getcwd(), self.save_ckpt), global_step=cur_batch)
+        except google.protobuf.message.DecodeError as e:
+            raise GraphTooLargeError(
+                "The graph size exceeds 2 GB, the hard limitation of protobuf."
+                " Then a DecodeError was raised by protobuf. You should "
+                "reduce the size of your model."
+            ) from e
+        # make symlinks from prefix with step to that without step to break nothing
+        # get all checkpoint files
+        original_files = glob.glob(ckpt_prefix + ".*")
+        for ori_ff in original_files:
+            new_ff = self.save_ckpt + ori_ff[len(ckpt_prefix):]
+            try:
+                # remove old one
+                os.remove(new_ff)
+            except OSError:
+                pass
+            os.symlink(ori_ff, new_ff)
+        log.info("saved checkpoint %s" % self.save_ckpt)
 
     def get_feed_dict(self, batch, is_training):
         feed_dict = {}
