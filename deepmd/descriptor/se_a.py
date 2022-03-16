@@ -431,6 +431,9 @@ class DescrptSeA (DescrptSe):
             t_sel = tf.constant(self.sel_a, 
                                 name = 'sel', 
                                 dtype = tf.int32)            
+            t_original_sel = tf.constant(self.original_sel if self.original_sel is not None else self.sel_a,
+                name = 'original_sel',
+                dtype = tf.int32)
             self.t_avg = tf.get_variable('t_avg', 
                                          davg.shape, 
                                          dtype = GLOBAL_TF_FLOAT_PRECISION,
@@ -442,7 +445,7 @@ class DescrptSeA (DescrptSe):
                                          trainable = False,
                                          initializer = tf.constant_initializer(dstd))
 
-        with tf.control_dependencies([t_sel]):
+        with tf.control_dependencies([t_sel, t_original_sel]):
             coord = tf.reshape (coord_, [-1, natoms[1] * 3])
         box   = tf.reshape (box_, [-1, 9])
         atype = tf.reshape (atype_, [-1, natoms[1]])
@@ -866,6 +869,11 @@ class DescrptSeA (DescrptSe):
             The suffix of the scope
         """
         super().init_variables(model_file=model_file, suffix=suffix)
+        try:
+            self.original_sel = get_tensor_by_name(model_file, 'descrpt_attr%s/original_sel' % suffix)
+        except GraphWithoutTensorError:
+            # original_sel is not restored in old graphs, assume sel never changed before
+            pass
         # check sel == original sel?
         try:
             sel = get_tensor_by_name(model_file, 'descrpt_attr%s/sel' % suffix)
@@ -897,4 +905,5 @@ class DescrptSeA (DescrptSe):
                         # new size is larger, copy all, the rest remains 1
                         new_dstd[:, ii:ii+oo] = self.dstd[:, jj:jj+oo]
                 self.dstd = new_dstd
-                self.original_sel = sel
+                if self.original_sel is None:
+                    self.original_sel = sel
