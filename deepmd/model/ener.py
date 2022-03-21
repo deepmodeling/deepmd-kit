@@ -117,7 +117,9 @@ class EnerModel() :
                frz_model = None,
                suffix = '', 
                reuse = None):
-
+ 
+        if input_dict is None:
+            input_dict = {}
         with tf.variable_scope('model_attr' + suffix, reuse = reuse) :
             t_tmap = tf.constant(' '.join(self.type_map), 
                                  name = 'tmap', 
@@ -144,6 +146,7 @@ class EnerModel() :
 
         coord = tf.reshape (coord_, [-1, natoms[1] * 3])
         atype = tf.reshape (atype_, [-1, natoms[1]])
+        input_dict['nframes'] = tf.shape(coord)[0]
 
         # type embedding if any
         if self.typeebd is not None:

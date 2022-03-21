@@ -2,6 +2,7 @@
 
 import json
 import warnings
+import tensorflow
 from functools import wraps
 from pathlib import Path
 from typing import (
@@ -64,7 +65,12 @@ def gelu(x: tf.Tensor) -> tf.Tensor:
     Original paper
     https://arxiv.org/abs/1606.08415
     """
-    return op_module.gelu(x)
+    def gelu_wrapper(x):
+        try:
+            return tensorflow.nn.gelu(x, approximate=True)
+        except AttributeError:
+            return op_module.gelu(x)
+    return (lambda x: gelu_wrapper(x))(x)
 
 
 # TODO this is not a good way to do things. This is some global variable to which
@@ -532,11 +538,6 @@ def cast_precision(func: Callable) -> Callable:
     If it does not match (e.g. it is an integer), the decorator
     will do nothing on it.
 
-    Parameters
-    ----------
-    precision : tf.DType
-        Tensor data type that casts to
-
     Returns
     -------
     Callable
@@ -554,6 +555,7 @@ def cast_precision(func: Callable) -> Callable:
     ...   def f(x: tf.Tensor, y: tf.Tensor) -> tf.Tensor:
     ...     return x ** 2 + y
     """
+    @wraps(func)
     def wrapper(self, *args, **kwargs):
         # only convert tensors
         returned_tensor = func(

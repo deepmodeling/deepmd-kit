@@ -129,6 +129,7 @@ class EnerFitting (Fitting):
             self.trainable = [self.trainable] * (len(self.n_neuron)+1)
         assert(len(self.trainable) == len(self.n_neuron) + 1), 'length of trainable should be that of n_neuron + 1'
         self.atom_ener = []
+        self.atom_ener_v = atom_ener
         for at, ae in enumerate(atom_ener):
             if ae is not None:
                 self.atom_ener.append(tf.constant(ae, self.fitting_precision, name = "atom_%d_ener" % at))
@@ -178,7 +179,6 @@ class EnerFitting (Fitting):
         """
         self.bias_atom_e = self._compute_output_stats(all_stat, rcond = self.rcond)
 
-    @classmethod
     def _compute_output_stats(self, all_stat, rcond = 1e-3):
         data = all_stat['energy']
         # data[sys_idx][batch_idx][frame_idx]
@@ -197,8 +197,20 @@ class EnerFitting (Fitting):
             sys_tynatom = np.append(sys_tynatom, data[ss][0].astype(np.float64))
         sys_tynatom = np.reshape(sys_tynatom, [nsys,-1])
         sys_tynatom = sys_tynatom[:,2:]
+        if len(self.atom_ener) > 0:
+            # Atomic energies stats are incorrect if atomic energies are assigned.
+            # In this situation, we directly use these assigned energies instead of computing stats.
+            # This will make the loss decrease quickly
+            assigned_atom_ener = np.array(list((ee for ee in self.atom_ener_v if ee is not None)))
+            assigned_ener_idx = list((ii for ii, ee in enumerate(self.atom_ener_v) if ee is not None))
+            # np.dot out size: nframe
+            sys_ener -= np.dot(sys_tynatom[:, assigned_ener_idx], assigned_atom_ener)
+            sys_tynatom[:, assigned_ener_idx] = 0.
         energy_shift,resd,rank,s_value \
             = np.linalg.lstsq(sys_tynatom, sys_ener, rcond = rcond)
+        if len(self.atom_ener) > 0:
+            for ii in assigned_ener_idx:
+                energy_shift[ii] = self.atom_ener_v[ii]
         return energy_shift    
 
     def compute_input_stats(self, 
@@ -332,7 +344,7 @@ class EnerFitting (Fitting):
     def build (self, 
                inputs : tf.Tensor,
                natoms : tf.Tensor,
-               input_dict : dict = {},
+               input_dict : dict = None,
                reuse : bool = None,
                suffix : str = '', 
     ) -> tf.Tensor:
@@ -362,6 +374,8 @@ class EnerFitting (Fitting):
         ener
                 The system energy
         """
+        if input_dict is None:
+            input_dict = {}
         bias_atom_e = self.bias_atom_e
         if self.numb_fparam > 0 and ( self.fparam_avg is None or self.fparam_inv_std is None ):
             raise RuntimeError('No data stat result. one should do data statisitic, before build')
@@ -401,7 +415,12 @@ class EnerFitting (Fitting):
         inputs = tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]])
         if len(self.atom_ener):
             # only for atom_ener
-            inputs_zero = tf.zeros_like(inputs, dtype=self.fitting_precision)
+            nframes = input_dict.get('nframes')
+            if nframes is not None:
+                # like inputs, but we don't want to add a dependency on inputs
+                inputs_zero = tf.zeros((nframes, self.dim_descrpt * natoms[0]), dtype=self.fitting_precision)
+            else:
+                inputs_zero = tf.zeros_like(inputs, dtype=self.fitting_precision)
         
 
         if bias_atom_e is not None :
@@ -419,10 +438,7 @@ class EnerFitting (Fitting):
             aparam = (aparam - t_aparam_avg) * t_aparam_istd
             aparam = tf.reshape(aparam, [-1, self.numb_aparam * natoms[0]])
             
-        if input_dict is not None:
-            type_embedding = input_dict.get('type_embedding', None)
-        else:
-            type_embedding = None
+        type_embedding = input_dict.get('type_embedding', None)
         if type_embedding is not None:
             atype_embed = embed_atom_type(self.ntypes, natoms, type_embedding)
             atype_embed = tf.tile(atype_embed,[tf.shape(inputs)[0],1])
@@ -431,6 +447,7 @@ class EnerFitting (Fitting):
 
         if atype_embed is None:
             start_index = 0
+            outs_list = []
             for type_i in range(self.ntypes):
                 if bias_atom_e is None :
                     type_bias_ae = 0.0
@@ -450,12 +467,11 @@ class EnerFitting (Fitting):
                     )
                     final_layer += self.atom_ener[type_i] - zero_layer
                 final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i]])
-                # concat the results
-                if type_i == 0:
-                    outs = final_layer
-                else:
-                    outs = tf.concat([outs, final_layer], axis = 1)
+                outs_list.append(final_layer)
                 start_index += natoms[2+type_i]
+            # concat the results
+            # concat once may be faster than multiple concat
+            outs = tf.concat(outs_list, axis = 1)
         # with type embedding
         else:
             if len(self.atom_ener) > 0:

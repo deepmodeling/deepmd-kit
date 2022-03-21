@@ -5,14 +5,14 @@ Download source code of a supported gromacs version (2020.2) from https://manual
 export PATH=$PATH:$deepmd_kit_root/bin
 dp_gmx_patch -d $gromacs_root -v $version -p
 ```
-where `deepmd_kit_root` is the directory where the latest version of deepmd-kit is installed, and `gromacs_root` refers to source code directory of gromacs. And `version` represents the version of gromacs, **only support 2020.2 now**. You may patch another version of gromacs but still setting `version` to `2020.2`. However, we cannot ensure that it works.
+where `deepmd_kit_root` is the directory where the latest version of deepmd-kit is installed, and `gromacs_root` refers to the source code directory of gromacs. And `version` represents the version of gromacs, **only support 2020.2 now**. If attempting to patch another version of gromacs you will still need to set `version` to `2020.2` as this is the only supported version, we cannot guarantee that patching other versions of gromacs will work.
 
 <!-- ## Install C++ api of deepmd-kit and tensorflow
 The C++ interface of `deepmd-kit 2.x` and `tensorflow 2.x` are required. -->
-<!-- + Tips: C++ api of deepmd and tensorflow could be easily installed from the deepmd-kit offline packages. But before using tensorflow, you need to manually change the protobuf package to [version 3.9.2](https://github.com/protocolbuffers/protobuf/releases/tag/v3.9.2) in `$deepmd_env_dir/include/google/protobuf` (the offline package will install a version of 3.14, which will cause incompability). Here `deepmd_env_dir` refers to the directory of conda environment created by the deepmd-kit offline packages.  -->
+<!-- + Tips: C++ api of deepmd and TensorFlow could be easily installed from the deepmd-kit offline packages. But before using tensorflow, you need to manually change the protobuf package to [version 3.9.2](https://github.com/protocolbuffers/protobuf/releases/tag/v3.9.2) in `$deepmd_env_dir/include/google/protobuf` (the offline package will install a version of 3.14, which will cause incompatibility). Here `deepmd_env_dir` refers to the directory of conda environment created by the deepmd-kit offline packages.  -->
 
 ## Compile GROMACS with deepmd-kit
-The C++ interface of `deepmd-kit 2.x` and `tensorflow 2.x` are required. And be aware that only deepmd-kit with **high precision** is supported now, since we cannot ensure single precision is enough for a GROMACS simulation. Here is a sample compile scipt:
+The C++ interface of `deepmd-kit 2.x` and `tensorflow 2.x` are required. And be aware that only deepmd-kit with **high precision** is supported now, since we cannot ensure single precision is enough for a GROMACS simulation. Here is a sample compile script:
 ```bash
 #!/bin/bash
 export CC=/usr/bin/gcc
