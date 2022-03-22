@@ -7,7 +7,8 @@ def convert(
     output_model: str,
     **kwargs,
 ):
-    if FROM == '1.2':
+    if FROM in ['1.1', '1.2']:
+        # no difference between 1.1 and 1.2
         convert_12_to_21(input_model, output_model)
     elif FROM == '1.3':
         convert_13_to_21(input_model, output_model)
