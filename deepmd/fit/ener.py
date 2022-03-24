@@ -494,7 +494,7 @@ class EnerFitting (Fitting):
             # add atom energy bias; TF will broadcast to all batches
             # tf.repeat is avaiable in TF>=2.1 or TF 1.15
             _TF_VERSION = Version(TF_VERSION)
-            if Version('1.15') <= _TF_VERSION < Version('2') or _TF_VERSION >= Version('2.1'):
+            if (Version('1.15') <= _TF_VERSION < Version('2') or _TF_VERSION >= Version('2.1')) and self.bias_atom_e is not None:
                 outs += tf.repeat(tf.constant(self.bias_atom_e, dtype=self.fitting_precision), natoms[2:])
 
         if self.tot_ener_zero:
