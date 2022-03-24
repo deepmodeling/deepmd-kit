@@ -12,12 +12,12 @@ make lammps
 DeePMD-kit will generate a module called `USER-DEEPMD` in the `build` directory. If you need the low precision version, move `env_low.sh` to `env.sh` in the directory. Now download the LAMMPS code (`29Oct2020` or later), and uncompress it:
 ```bash
 cd /some/workspace
-wget https://github.com/lammps/lammps/archive/stable_29Sep2021_update2.tar.gz
-tar xf stable_29Sep2021_update2.tar.gz
+wget https://github.com/lammps/lammps/archive/stable_29Sep2021_update3.tar.gz
+tar xf stable_29Sep2021_update3.tar.gz
 ```
-The source code of LAMMPS is stored in directory `lammps-stable_29Sep2021_update2`. Now go into the LAMMPS code and copy the DeePMD-kit module like this
+The source code of LAMMPS is stored in directory `lammps-stable_29Sep2021_update3`. Now go into the LAMMPS code and copy the DeePMD-kit module like this
 ```bash
-cd lammps-stable_29Sep2021_update2/src/
+cd lammps-stable_29Sep2021_update3/src/
 cp -r $deepmd_source_dir/source/build/USER-DEEPMD .
 ```
 Now build LAMMPS
@@ -43,15 +43,15 @@ Starting from `8Apr2021`, LAMMPS also provides a plugin mode, allowing one to bu
 Now download the LAMMPS code (`8Apr2021` or later), and uncompress it:
 ```bash
 cd /some/workspace
-wget https://github.com/lammps/lammps/archive/stable_29Sep2021_update2.tar.gz
-tar xf stable_29Sep2021_update2.tar.gz
+wget https://github.com/lammps/lammps/archive/stable_29Sep2021_update3.tar.gz
+tar xf stable_29Sep2021_update3.tar.gz
 ```
 
-The source code of LAMMPS is stored in directory `lammps-stable_29Sep2021_update2`. Now go into the LAMMPS directory and create a directory called `build`
+The source code of LAMMPS is stored in directory `lammps-stable_29Sep2021_update3`. Now go into the LAMMPS directory and create a directory called `build`
 
 ```bash
-mkdir -p lammps-stable_29Sep2021_update2/build/
-cd lammps-stable_29Sep2021_update2/build/
+mkdir -p lammps-stable_29Sep2021_update3/build/
+cd lammps-stable_29Sep2021_update3/build/
 ```
 Now build LAMMPS. Note that `PLUGIN` and `KSPACE` package must be enabled, and `BUILD_SHARED_LIBS` must be set to `yes`. You can install any other package you want.
 ```bash
