@@ -490,6 +490,8 @@ class EnerFitting (Fitting):
                 bias_atom_e=0.0, suffix=suffix, reuse=reuse
             )
             outs = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[0]])
+            # add atom energy bias; TF will broadcast to all batches
+            outs += tf.repeat(tf.constant(self.bias_atom_e, dtype=self.fitting_precision), natoms[2:])
 
         if self.tot_ener_zero:
             force_tot_ener = 0.0
