@@ -78,6 +78,16 @@ if (DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
 
   install(TARGETS ${libname} DESTINATION lib/)
 
+  if (${LAMMPS_VERSION_NUMBER} GREATER_EQUAL 20220324)
+    set(PLUGINNAME "dpplugin.so")
+    INSTALL(CODE "execute_process( \
+        COMMAND ${CMAKE_COMMAND} -E create_symlink \
+        lib/$<TARGET_FILE_NAME:${libname}> \
+        lib/${libname}/${PLUGINNAME}   \
+        )"
+    )
+  endif()
+
   endfunction()
   _add_lmp_plugin_variant("${HIGH_PREC_VARIANT}" "${HIGH_PREC_DEF}")
   _add_lmp_plugin_variant("${LOW_PREC_VARIANT}" "${LOW_PREC_DEF}")
