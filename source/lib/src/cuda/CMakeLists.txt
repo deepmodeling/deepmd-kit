@@ -1,5 +1,5 @@
 # required cmake version
-cmake_minimum_required(VERSION 3.3)
+cmake_minimum_required(VERSION 3.7)
 # project name
 project(deepmd_op_cuda)
 
@@ -24,7 +24,7 @@ endif ()
 
 message(STATUS "CUDA major version is " ${CUDA_VERSION_MAJOR})
 
-if (${CUDA_VERSION_MAJOR} GREATER "11" OR (${CUDA_VERSION_MAJOR} STREQUAL "11" AND ${CUDA_VERSION_MINOR} STREQUAL "5"))
+if (${CUDA_VERSION_MAJOR} GREATER "11" OR (${CUDA_VERSION_MAJOR} STREQUAL "11" AND ${CUDA_VERSION_MINOR} GREATER_EQUAL "5"))
     # nvcc flags
     set(CUDA_NVCC_FLAGS -arch=all; # embeds a compiled code image for all supported architectures (sm_*), and a PTX program for the highest major virtual architecture
                         -O3; -Xcompiler -fPIC;
