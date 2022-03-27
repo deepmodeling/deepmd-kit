@@ -81,9 +81,14 @@ if (DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
   if (${LAMMPS_VERSION_NUMBER} GREATER_EQUAL 20220324)
     set(PLUGINNAME "dpplugin.so")
     INSTALL(CODE "execute_process( \
+        COMMAND ${CMAKE_COMMAND} -E make_directory \
+		${CMAKE_INSTALL_PREFIX}/lib/${libname}/   \
+        )"
+	)
+    INSTALL(CODE "execute_process( \
         COMMAND ${CMAKE_COMMAND} -E create_symlink \
-        lib/$<TARGET_FILE_NAME:${libname}> \
-        lib/${libname}/${PLUGINNAME}   \
+		../${CMAKE_SHARED_LIBRARY_PREFIX}${libname}${CMAKE_SHARED_LIBRARY_SUFFIX} \
+        ${CMAKE_INSTALL_PREFIX}/lib/${libname}/${PLUGINNAME}   \
         )"
     )
   endif()
