@@ -837,7 +837,7 @@ class DescrptSeA (DescrptSe):
               # shape[1] = nnei * 4
               nnei = shape[1] / 4
           else:
-              nnei = tf.Variable(np.sum(self.original_sel), trainable=False, name="nnei")
+              nnei = tf.Variable(np.sum(self.original_sel), dtype=tf.int32, trainable=False, name="nnei")
           xyz_scatter_1 = xyz_scatter_1 / nnei
           # natom x 4 x outputs_size_2
           xyz_scatter_2 = tf.slice(xyz_scatter_1, [0,0,0],[-1,-1,outputs_size_2])

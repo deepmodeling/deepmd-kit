@@ -496,7 +496,7 @@ class EnerFitting (Fitting):
             _TF_VERSION = Version(TF_VERSION)
             if (Version('1.15') <= _TF_VERSION < Version('2') or _TF_VERSION >= Version('2.1')) and self.bias_atom_e is not None:
                 bias_atom_ei = tf.repeat(tf.constant(self.bias_atom_e, dtype=self.fitting_precision), natoms[2:])
-                outs += tf.Variable(bias_atom_ei, trainable=False, name="bias_atom_ei")
+                outs += tf.Variable(bias_atom_ei, trainable=False, name="bias_atom_ei", dtype=self.fitting_precision)
 
         if self.tot_ener_zero:
             force_tot_ener = 0.0
