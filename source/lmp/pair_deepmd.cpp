@@ -238,7 +238,7 @@ PairDeepMD::PairDeepMD(LAMMPS *lmp)
     error->all(FLERR,"Pair deepmd requires metal unit, please set it by \"units metal\"");
   }
   restartinfo = 1;
-  centroidstressflag = 2 ; // set centroidstressflag = 2 to allow the use of the centroid/stress/atom. Added by Davide Tisi
+  centroidstressflag = CENTROID_AVAIL ; // set centroidstressflag = CENTROID_AVAIL to allow the use of the centroid/stress/atom. Added by Davide Tisi
   pppmflag = 1;
   respa_enable = 0;
   writedata = 0;
