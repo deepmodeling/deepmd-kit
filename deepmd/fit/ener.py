@@ -495,7 +495,8 @@ class EnerFitting (Fitting):
             # tf.repeat is avaiable in TF>=2.1 or TF 1.15
             _TF_VERSION = Version(TF_VERSION)
             if (Version('1.15') <= _TF_VERSION < Version('2') or _TF_VERSION >= Version('2.1')) and self.bias_atom_e is not None:
-                outs += tf.repeat(tf.constant(self.bias_atom_e, dtype=self.fitting_precision), natoms[2:])
+                bias_atom_ei = tf.repeat(tf.constant(self.bias_atom_e, dtype=self.fitting_precision), natoms[2:])
+                outs += tf.Variable(bias_atom_ei, trainable=False, name="bias_atom_ei")
 
         if self.tot_ener_zero:
             force_tot_ener = 0.0
