@@ -8,6 +8,14 @@ If you are using the plugin mode, enable DeePMD-kit package in LAMMPS with `plug
 plugin load libdeepmd_lmp.so
 ```
 
+After LAMMPS version `patch_24Mar2022`, another way to load plugins is to set the environmental variable `LAMMPS_PLUGIN_PATH`:
+
+```sh
+LAMMPS_PLUGIN_PATH=$deepmd_root/lib/deepmd_lmp
+```
+
+where `$deepmd_root` is the directory to [install C++ interface](../install/install-from-source.md).
+
 The built-in mode doesn't need this step.
 
 ## pair_style `deepmd`
