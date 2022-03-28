@@ -137,7 +137,7 @@ class EnerFitting (Fitting):
             else:
                 self.atom_ener.append(None)
         self.useBN = False
-        self.bias_atom_e = None
+        self.bias_atom_e = np.zeros(self.ntypes, dtype=np.float64)
         # data requirement
         if self.numb_fparam > 0 :
             add_data_requirement('fparam', self.numb_fparam, atomic=False, must=True, high_prec=False)
