@@ -8,7 +8,7 @@ from deepmd.common import add_data_requirement, get_activation_func, get_precisi
 from deepmd.utils.argcheck import list_to_doc
 from deepmd.utils.network import one_layer, one_layer_rand_seed_shift
 from deepmd.utils.type_embed import embed_atom_type
-from deepmd.utils.graph import get_fitting_net_variables, load_graph_def, get_tensor_by_name_from_graph
+from deepmd.utils.graph import get_fitting_net_variables_from_graph_def, load_graph_def, get_tensor_by_name_from_graph
 from deepmd.fit.fitting import Fitting
 
 from deepmd.env import global_cvt_2_tf_float
@@ -510,17 +510,23 @@ class EnerFitting (Fitting):
 
 
     def init_variables(self,
-                       model_file: str
+                       graph: tf.Graph,
+                       graph_def: tf.GraphDef,
+                       suffix : str = "",
     ) -> None:
         """
-        Init the fitting net variables with the given frozen model
+        Init the fitting net variables with the given dict
 
         Parameters
         ----------
-        model_file : str
-            The input frozen model file
+        graph : tf.Graph
+            The input frozen model graph
+        graph_def : tf.GraphDef
+            The input frozen model graph_def
+        suffix : str
+            suffix to name scope
         """
-        self.fitting_net_variables = get_fitting_net_variables(model_file)
+        self.fitting_net_variables = get_fitting_net_variables_from_graph_def(graph_def)
 
 
     def enable_compression(self,
