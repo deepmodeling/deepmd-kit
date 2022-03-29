@@ -296,8 +296,9 @@ class DPTrainer (object):
             # TODO: this is a simple fix but we should have a clear
             #       architecture to call neighbor stat
         else :
+            graph, graph_def = load_graph_def(self.model_param['compress']['model_file'])
             self.descrpt.enable_compression(self.model_param['compress']["min_nbor_dist"], self.model_param['compress']['model_file'], self.model_param['compress']['table_config'][0], self.model_param['compress']['table_config'][1], self.model_param['compress']['table_config'][2], self.model_param['compress']['table_config'][3])
-            self.fitting.init_variables(self.model_param['compress']['model_file'])
+            self.fitting.init_variables(graph, graph_def)
             # for fparam or aparam settings in 'ener' type fitting net
             if self.fitting_type == 'ener':
                 self.fitting.enable_compression(self.model_param['compress']['model_file'])
