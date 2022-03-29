@@ -13,7 +13,8 @@ from deepmd.utils.network import embedding_net, embedding_net_rand_seed_shift
 from deepmd.utils.tabulate import DPTabulate
 from deepmd.utils.type_embed import embed_atom_type
 from deepmd.utils.sess import run_sess
-from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph
+from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph, get_tensor_by_name
+from deepmd.utils.errors import GraphWithoutTensorError
 from .descriptor import Descriptor
 from .se import DescrptSe
 
@@ -142,8 +143,6 @@ class DescrptSeA (DescrptSe):
             self.exclude_types.add((tt[1], tt[0]))
         self.set_davg_zero = set_davg_zero
         self.type_one_side = type_one_side
-        if self.type_one_side and len(exclude_types) != 0:
-            raise RuntimeError('"type_one_side" is not compatible with "exclude_types"')
 
         # descrpt config
         self.sel_r = [ 0 for ii in range(len(self.sel_a)) ]
@@ -193,6 +192,7 @@ class DescrptSeA (DescrptSe):
                                          sel_a = self.sel_a,
                                          sel_r = self.sel_r)
         self.sub_sess = tf.Session(graph = sub_graph, config=default_tf_session_config)
+        self.original_sel = None
 
 
     def get_rcut (self) -> float:
@@ -431,6 +431,9 @@ class DescrptSeA (DescrptSe):
             t_sel = tf.constant(self.sel_a, 
                                 name = 'sel', 
                                 dtype = tf.int32)            
+            t_original_sel = tf.constant(self.original_sel if self.original_sel is not None else self.sel_a,
+                name = 'original_sel',
+                dtype = tf.int32)
             self.t_avg = tf.get_variable('t_avg', 
                                          davg.shape, 
                                          dtype = GLOBAL_TF_FLOAT_PRECISION,
@@ -442,7 +445,8 @@ class DescrptSeA (DescrptSe):
                                          trainable = False,
                                          initializer = tf.constant_initializer(dstd))
 
-        coord = tf.reshape (coord_, [-1, natoms[1] * 3])
+        with tf.control_dependencies([t_sel, t_original_sel]):
+            coord = tf.reshape (coord_, [-1, natoms[1] * 3])
         box   = tf.reshape (box_, [-1, 9])
         atype = tf.reshape (atype_, [-1, natoms[1]])
 
@@ -552,13 +556,19 @@ class DescrptSeA (DescrptSe):
         inputs = tf.reshape(inputs, [-1, self.ndescrpt * natoms[0]])
         output = []
         output_qmat = []
-        if not self.type_one_side and type_embedding is None:
+        if not (self.type_one_side and len(self.exclude_types) == 0) and type_embedding is None:
             for type_i in range(self.ntypes):
                 inputs_i = tf.slice (inputs,
                                      [ 0, start_index*      self.ndescrpt],
                                      [-1, natoms[2+type_i]* self.ndescrpt] )
                 inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
-                layer, qmat = self._filter(inputs_i, type_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
+                if self.type_one_side:
+                    # reuse NN parameters for all types to support type_one_side along with exclude_types
+                    reuse = tf.AUTO_REUSE
+                    filter_name = 'filter_type_all'+suffix
+                else:
+                    filter_name = 'filter_type_'+str(type_i)+suffix
+                layer, qmat = self._filter(inputs_i, type_i, name=filter_name, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
                 layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_out()])
                 qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_rot_mat_1() * 3])
                 output.append(layer)
@@ -783,6 +793,7 @@ class DescrptSeA (DescrptSe):
           type_i = 0
           # natom x 4 x outputs_size
           if type_embedding is None:
+              rets = []
               for type_i in range(self.ntypes):
                   ret = self._filter_lower(
                       type_i, type_input,
@@ -797,12 +808,12 @@ class DescrptSeA (DescrptSe):
                       bavg = bavg,
                       trainable = trainable,
                       suffix = "_"+str(type_i))
-                  if type_i == 0:
-                      xyz_scatter_1 = ret
-                  elif (type_input, type_i) not in self.exclude_types:
+                  if (type_input, type_i) not in self.exclude_types:
                       # add zero is meaningless; skip
-                      xyz_scatter_1+= ret
+                      rets.append(ret)
                   start_index += self.sel_a[type_i]
+              # faster to use accumulate_n than multiple add
+              xyz_scatter_1 = tf.accumulate_n(rets)
           else :
               xyz_scatter_1 = self._filter_lower(
                   type_i, type_input,
@@ -822,7 +833,12 @@ class DescrptSeA (DescrptSe):
           # inputs_reshape = tf.reshape(inputs, [-1, shape[1]//4, 4])
           # natom x 4 x outputs_size
           # xyz_scatter_1 = tf.matmul(inputs_reshape, xyz_scatter, transpose_a = True)
-          xyz_scatter_1 = xyz_scatter_1 * (4.0 / shape[1])
+          if self.original_sel is None:
+              # shape[1] = nnei * 4
+              nnei = shape[1] / 4
+          else:
+              nnei = tf.cast(tf.Variable(np.sum(self.original_sel), dtype=tf.int32, trainable=False, name="nnei"), self.filter_precision)
+          xyz_scatter_1 = xyz_scatter_1 / nnei
           # natom x 4 x outputs_size_2
           xyz_scatter_2 = tf.slice(xyz_scatter_1, [0,0,0],[-1,-1,outputs_size_2])
           # # natom x 3 x outputs_size_2
@@ -837,3 +853,57 @@ class DescrptSeA (DescrptSe):
           result = tf.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
 
         return result, qmat
+
+    def init_variables(self,
+                       model_file : str,
+                       suffix : str = "",
+    ) -> None:
+        """
+        Init the embedding net variables with the given frozen model
+
+        Parameters
+        ----------
+        model_file : str
+            The input frozen model file
+        suffix : str, optional
+            The suffix of the scope
+        """
+        super().init_variables(model_file=model_file, suffix=suffix)
+        try:
+            self.original_sel = get_tensor_by_name(model_file, 'descrpt_attr%s/original_sel' % suffix)
+        except GraphWithoutTensorError:
+            # original_sel is not restored in old graphs, assume sel never changed before
+            pass
+        # check sel == original sel?
+        try:
+            sel = get_tensor_by_name(model_file, 'descrpt_attr%s/sel' % suffix)
+        except GraphWithoutTensorError:
+            # sel is not restored in old graphs
+            pass
+        else:
+            if not np.array_equal(np.array(self.sel_a), sel):
+                if not self.set_davg_zero:
+                    raise RuntimeError("Adjusting sel is only supported when `set_davg_zero` is true!")
+                # as set_davg_zero, self.davg is safely zero
+                self.davg = np.zeros([self.ntypes, self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
+                new_dstd = np.ones([self.ntypes, self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
+                # shape of davg and dstd is (ntypes, ndescrpt), ndescrpt = 4*sel
+                n_descpt = np.array(self.sel_a) * 4
+                n_descpt_old = np.array(sel) * 4
+                end_index = np.cumsum(n_descpt)
+                end_index_old = np.cumsum(n_descpt_old)
+                start_index = np.roll(end_index, 1)
+                start_index[0] = 0
+                start_index_old = np.roll(end_index_old, 1)
+                start_index_old[0] = 0
+
+                for nn, oo, ii, jj in zip(n_descpt, n_descpt_old, start_index, start_index_old):
+                    if nn < oo:
+                        # new size is smaller, copy part of std
+                        new_dstd[:, ii:ii+nn] = self.dstd[:, jj:jj+nn]
+                    else:
+                        # new size is larger, copy all, the rest remains 1
+                        new_dstd[:, ii:ii+oo] = self.dstd[:, jj:jj+oo]
+                self.dstd = new_dstd
+                if self.original_sel is None:
+                    self.original_sel = sel

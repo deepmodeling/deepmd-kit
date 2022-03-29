@@ -97,7 +97,7 @@ void deepmd::tabulate_fusion_se_a_cpu(
     const int nnei, 
     const int last_layer_size)
 {
-  memset(out, 0.0, sizeof(FPTYPE) * nloc * 4 * last_layer_size);
+  memset(out, 0, sizeof(FPTYPE) * nloc * 4 * last_layer_size);
   const FPTYPE lower   = table_info[0];
   const FPTYPE upper   = table_info[1];
   const FPTYPE _max    = table_info[2];
@@ -160,8 +160,8 @@ void deepmd::tabulate_fusion_se_a_grad_cpu(
     const int nnei, 
     const int last_layer_size) 
 {
-  memset(dy_dem_x, 0.0, sizeof(FPTYPE) * nloc * nnei);
-  memset(dy_dem, 0.0, sizeof(FPTYPE) * nloc * nnei * 4);
+  memset(dy_dem_x, 0, sizeof(FPTYPE) * nloc * nnei);
+  memset(dy_dem, 0, sizeof(FPTYPE) * nloc * nnei * 4);
   FPTYPE const lower   = table_info[0];
   FPTYPE const upper   = table_info[1];
   FPTYPE const _max    = table_info[2];
@@ -235,7 +235,7 @@ void deepmd::tabulate_fusion_se_a_grad_grad_cpu(
     const int nnei,
     const int last_layer_size)
 {
-  memset(dz_dy, 0.0, sizeof(FPTYPE) * nloc * 4 * last_layer_size);
+  memset(dz_dy, 0, sizeof(FPTYPE) * nloc * 4 * last_layer_size);
   const FPTYPE lower   = table_info[0];
   const FPTYPE upper   = table_info[1];
   const FPTYPE _max    = table_info[2];
@@ -304,7 +304,7 @@ void deepmd::tabulate_fusion_se_t_cpu(
     const int nnei_j, 
     const int last_layer_size)
 {
-  memset(out, 0.0, sizeof(FPTYPE) * nloc * last_layer_size);
+  memset(out, 0, sizeof(FPTYPE) * nloc * last_layer_size);
   const FPTYPE lower   = table_info[0];
   const FPTYPE upper   = table_info[1];
   const FPTYPE _max    = table_info[2];
@@ -360,8 +360,8 @@ void deepmd::tabulate_fusion_se_t_grad_cpu(
     const int nnei_j, 
     const int last_layer_size) 
 {
-  memset(dy_dem_x, 0.0, sizeof(FPTYPE) * nloc * nnei_i * nnei_j);
-  memset(dy_dem,   0.0, sizeof(FPTYPE) * nloc * nnei_i * nnei_j);
+  memset(dy_dem_x, 0, sizeof(FPTYPE) * nloc * nnei_i * nnei_j);
+  memset(dy_dem,   0, sizeof(FPTYPE) * nloc * nnei_i * nnei_j);
   FPTYPE const lower   = table_info[0];
   FPTYPE const upper   = table_info[1];
   FPTYPE const _max    = table_info[2];
@@ -426,7 +426,7 @@ void deepmd::tabulate_fusion_se_t_grad_grad_cpu(
     const int nnei_j,
     const int last_layer_size)
 {
-  memset(dz_dy, 0.0, sizeof(FPTYPE) * nloc * last_layer_size);
+  memset(dz_dy, 0, sizeof(FPTYPE) * nloc * last_layer_size);
   const FPTYPE lower   = table_info[0];
   const FPTYPE upper   = table_info[1];
   const FPTYPE _max    = table_info[2];
@@ -478,7 +478,7 @@ void deepmd::tabulate_fusion_se_r_cpu(
     const int nnei, 
     const int last_layer_size)
 {
-  memset(out, 0.0, sizeof(FPTYPE) * nloc * nnei * last_layer_size);
+  memset(out, 0, sizeof(FPTYPE) * nloc * nnei * last_layer_size);
   const FPTYPE lower   = table_info[0];
   const FPTYPE upper   = table_info[1];
   const FPTYPE _max    = table_info[2];
@@ -516,7 +516,7 @@ void deepmd::tabulate_fusion_se_r_grad_cpu(
     const int nnei, 
     const int last_layer_size) 
 {
-  memset(dy_dem, 0.0, sizeof(FPTYPE) * nloc * nnei);
+  memset(dy_dem, 0, sizeof(FPTYPE) * nloc * nnei);
   FPTYPE const lower   = table_info[0];
   FPTYPE const upper   = table_info[1];
   FPTYPE const _max    = table_info[2];
@@ -557,7 +557,7 @@ void deepmd::tabulate_fusion_se_r_grad_grad_cpu(
     const int nnei,
     const int last_layer_size)
 {
-  memset(dz_dy, 0.0, sizeof(FPTYPE) * nloc * nnei * last_layer_size);
+  memset(dz_dy, 0, sizeof(FPTYPE) * nloc * nnei * last_layer_size);
   const FPTYPE lower   = table_info[0];
   const FPTYPE upper   = table_info[1];
   const FPTYPE _max    = table_info[2];

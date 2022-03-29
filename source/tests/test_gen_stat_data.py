@@ -5,6 +5,7 @@ import dpdata
 
 from deepmd.utils import random as dp_random
 from deepmd.utils.data_system import DeepmdDataSystem
+from deepmd.descriptor import DescrptSeA
 from deepmd.fit import EnerFitting
 from deepmd.model.model_stat import make_stat_input, merge_sys_stat, _make_all_stat_ref
 
@@ -115,5 +116,40 @@ class TestEnerShift(unittest.TestCase):
         data.add('energy', 1, must = True)
         ener_shift0 = data.compute_energy_shift(rcond = 1)
         all_stat = make_stat_input(data, 4, merge_sys = False)
-        ener_shift1 = EnerFitting._compute_output_stats(all_stat, rcond = 1)        
+        descrpt = DescrptSeA(6.0, 
+                             5.8,
+                             [46, 92],
+                             neuron = [25, 50, 100], 
+                             axis_neuron = 16)
+        fitting = EnerFitting(descrpt,
+                              neuron = [240, 240, 240],
+                              resnet_dt = True)
+        ener_shift1 = fitting._compute_output_stats(all_stat, rcond = 1)        
         np.testing.assert_almost_equal(ener_shift0, ener_shift1)
+
+    def test_ener_shift_assigned(self):
+        dp_random.seed(0)
+        ae0 = dp_random.random()
+        data = DeepmdDataSystem(['system_0'],
+                                5,
+                                10,
+                                1.0)
+        data.add('energy', 1, must = True)
+        all_stat = make_stat_input(data, 4, merge_sys = False)
+        descrpt = DescrptSeA(6.0,
+                             5.8,
+                             [46, 92],
+                             neuron = [25, 50, 100],
+                             axis_neuron = 16)
+        fitting = EnerFitting(descrpt,
+                              neuron = [240, 240, 240],
+                              resnet_dt = True,
+                              atom_ener=[ae0, None, None])
+        ener_shift1 = fitting._compute_output_stats(all_stat, rcond = 1)
+        # check assigned energy
+        np.testing.assert_almost_equal(ae0, ener_shift1[0])
+        # check if total energy are the same
+        natoms = data.natoms_vec[0][2:]
+        tot0 = np.dot(data.compute_energy_shift(rcond = 1), natoms)
+        tot1 = np.dot(ener_shift1, natoms)
+        np.testing.assert_almost_equal(tot0, tot1)

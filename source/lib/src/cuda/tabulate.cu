@@ -164,7 +164,7 @@ __global__ void tabulate_fusion_se_a_fifth_order_polynomial(
   int breakpoint = nnei - 1;
 
   FPTYPE sum[MTILE] = {0.f};
-  int mark_table_idx = 0;
+  int mark_table_idx = -1;
   FPTYPE var[6];
   for (int ii = 0; ii < nnei; ii++) {
     FPTYPE xx = em_x[block_idx * nnei + ii];
@@ -518,7 +518,7 @@ __global__ void tabulate_fusion_se_r_fifth_order_polynomial(
   const int block_idx = blockIdx.x;   // nloc
   const int thread_idx = threadIdx.x; // last_layer_size
 
-  int mark_table_idx = 0;
+  int mark_table_idx = -1;
   FPTYPE var[6];
   for (int ii = 0; ii < nnei; ii++) {
     FPTYPE xx = em[block_idx * nnei + ii];
@@ -528,6 +528,7 @@ __global__ void tabulate_fusion_se_r_fifth_order_polynomial(
       load_polynomial_params(var, table, table_idx, thread_idx, last_layer_size);
     }
     out[block_idx * nnei * last_layer_size + ii * last_layer_size + thread_idx] = var[0] + (var[1] + (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) * xx;
+    mark_table_idx = table_idx;
   }
 }
 
@@ -648,10 +649,10 @@ void tabulate_fusion_se_a_grad_gpu_cuda(
   if (nloc <= 0) {return;}
   DPErrcheck(cudaMemset(
       dy_dem_x,
-      0.0, sizeof(FPTYPE) * nloc * nnei));
+      0, sizeof(FPTYPE) * nloc * nnei));
   DPErrcheck(cudaMemset(
       dy_dem,
-      0.0, sizeof(FPTYPE) * nloc * nnei * 4));
+      0, sizeof(FPTYPE) * nloc * nnei * 4));
 
   tabulate_fusion_se_a_grad_fifth_order_polynomial<FPTYPE, MM, KK> <<<nloc, KK * WARP_SIZE, sizeof(FPTYPE) * MM * last_layer_size>>>(
       dy_dem_x, dy_dem,
@@ -676,7 +677,7 @@ void tabulate_fusion_se_a_grad_grad_gpu_cuda(
   if (nloc <= 0) {return;}
   DPErrcheck(cudaMemset(
     dz_dy,
-    0.0, sizeof(FPTYPE) * nloc * 4 * last_layer_size));
+    0, sizeof(FPTYPE) * nloc * 4 * last_layer_size));
   tabulate_fusion_se_a_grad_grad_fifth_order_polynomial<FPTYPE, MM, KK> <<<nloc, last_layer_size, sizeof(FPTYPE) * MM * last_layer_size>>>(
       dz_dy,
       table, em_x, em, dz_dy_dem_x, dz_dy_dem, table_info[0], table_info[1], table_info[2], table_info[3], table_info[4], nnei, last_layer_size);
@@ -721,10 +722,10 @@ void tabulate_fusion_se_t_grad_gpu_cuda(
   if (nloc <= 0) {return;}
   DPErrcheck(cudaMemset(
       dy_dem_x,
-      0.0, sizeof(FPTYPE) * nloc * nnei_i * nnei_j));
+      0, sizeof(FPTYPE) * nloc * nnei_i * nnei_j));
   DPErrcheck(cudaMemset(
       dy_dem,
-      0.0, sizeof(FPTYPE) * nloc * nnei_i * nnei_j));
+      0, sizeof(FPTYPE) * nloc * nnei_i * nnei_j));
 
   tabulate_fusion_se_t_grad_fifth_order_polynomial<FPTYPE, MM, KK> <<<nloc, KK * WARP_SIZE, sizeof(FPTYPE) * last_layer_size>>>(
       dy_dem_x, dy_dem,
@@ -750,7 +751,7 @@ void tabulate_fusion_se_t_grad_grad_gpu_cuda(
   if (nloc <= 0) {return;}
   DPErrcheck(cudaMemset(
     dz_dy,
-    0.0, sizeof(FPTYPE) * nloc * last_layer_size));
+    0, sizeof(FPTYPE) * nloc * last_layer_size));
 
   tabulate_fusion_se_t_grad_grad_fifth_order_polynomial<FPTYPE, MM, KK> <<<nloc, last_layer_size>>>(
       dz_dy,
@@ -791,7 +792,7 @@ void tabulate_fusion_se_r_grad_gpu_cuda(
   if (nloc <= 0) {return;}
   DPErrcheck(cudaMemset(
       dy_dem,
-      0.0, sizeof(FPTYPE) * nloc * nnei));
+      0, sizeof(FPTYPE) * nloc * nnei));
 
   tabulate_fusion_se_r_grad_fifth_order_polynomial<FPTYPE, MM, KK> <<<nloc, KK * WARP_SIZE, sizeof(FPTYPE) * MM * last_layer_size>>>(
       dy_dem,
@@ -814,7 +815,7 @@ void tabulate_fusion_se_r_grad_grad_gpu_cuda(
   if (nloc <= 0) {return;}
   DPErrcheck(cudaMemset(
     dz_dy,
-    0.0, sizeof(FPTYPE) * nloc * nnei * last_layer_size));
+    0, sizeof(FPTYPE) * nloc * nnei * last_layer_size));
   tabulate_fusion_se_r_grad_grad_fifth_order_polynomial<FPTYPE, MM, KK> <<<nloc, last_layer_size, sizeof(FPTYPE) * MM * last_layer_size>>>(
       dz_dy,
       table, em, dz_dy_dem, table_info[0], table_info[1], table_info[2], table_info[3], table_info[4], nnei, last_layer_size);

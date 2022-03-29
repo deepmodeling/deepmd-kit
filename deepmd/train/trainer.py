@@ -282,7 +282,11 @@ class DPTrainer (object):
                 ))
             self.type_map = data.get_type_map()
             self.batch_size = data.get_batch_size()
-            self.model.data_stat(data)
+            if self.run_opt.init_mode not in ('init_from_model', 'restart', 'init_from_frz_model'):
+                # self.saver.restore (in self._init_session) will restore avg and std variables, so data_stat is useless
+                # init_from_frz_model will restore data_stat variables in `init_variables` method
+                log.info("data stating... (this step may take long time)")
+                self.model.data_stat(data)
 
             # config the init_frz_model command
             if self.run_opt.init_mode == 'init_from_frz_model':
@@ -367,7 +371,7 @@ class DPTrainer (object):
         if self.mixed_prec is not None:
             _TF_VERSION = Version(TF_VERSION)
             # check the TF_VERSION, when TF < 1.12, mixed precision is not allowed 
-            if _TF_VERSION < Version('1.12.0'):
+            if _TF_VERSION < Version('1.14.0'):
                 raise RuntimeError("TensorFlow version %s is not compatible with the mixed precision setting. Please consider upgrading your TF version!" % TF_VERSION)
             elif _TF_VERSION < Version('2.4.0'):
                 optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
@@ -527,26 +531,9 @@ class DPTrainer (object):
                                   % (cur_batch, train_time, test_time))
                     train_time = 0
                 if self.save_freq > 0 and cur_batch % self.save_freq == 0 and self.saver is not None:
-                    try:
-                        ckpt_prefix = self.saver.save (self.sess, os.path.join(os.getcwd(), self.save_ckpt), global_step=cur_batch)
-                    except google.protobuf.message.DecodeError as e:
-                        raise GraphTooLargeError(
-                            "The graph size exceeds 2 GB, the hard limitation of protobuf."
-                            " Then a DecodeError was raised by protobuf. You should "
-                            "reduce the size of your model."
-                        ) from e
-                    # make symlinks from prefix with step to that without step to break nothing
-                    # get all checkpoint files
-                    original_files = glob.glob(ckpt_prefix + ".*")
-                    for ori_ff in original_files:
-                        new_ff = self.save_ckpt + ori_ff[len(ckpt_prefix):]
-                        try:
-                            # remove old one
-                            os.remove(new_ff)
-                        except OSError:
-                            pass
-                        os.symlink(ori_ff, new_ff)
-                    log.info("saved checkpoint %s" % self.save_ckpt)
+                    self.save_checkpoint(cur_batch)
+        if (self.save_freq == 0 or cur_batch == 0 or cur_batch % self.save_freq != 0) and self.saver is not None:
+            self.save_checkpoint(cur_batch)
         if self.run_opt.is_chief: 
             fp.close ()
         if self.profiling and self.run_opt.is_chief :
@@ -556,6 +543,28 @@ class DPTrainer (object):
                 f.write(chrome_trace)
         if self.enable_profiler and self.run_opt.is_chief:
             tfv2.profiler.experimental.stop()
+
+    def save_checkpoint(self, cur_batch: int):
+        try:
+            ckpt_prefix = self.saver.save (self.sess, os.path.join(os.getcwd(), self.save_ckpt), global_step=cur_batch)
+        except google.protobuf.message.DecodeError as e:
+            raise GraphTooLargeError(
+                "The graph size exceeds 2 GB, the hard limitation of protobuf."
+                " Then a DecodeError was raised by protobuf. You should "
+                "reduce the size of your model."
+            ) from e
+        # make symlinks from prefix with step to that without step to break nothing
+        # get all checkpoint files
+        original_files = glob.glob(ckpt_prefix + ".*")
+        for ori_ff in original_files:
+            new_ff = self.save_ckpt + ori_ff[len(ckpt_prefix):]
+            try:
+                # remove old one
+                os.remove(new_ff)
+            except OSError:
+                pass
+            os.symlink(ori_ff, new_ff)
+        log.info("saved checkpoint %s" % self.save_ckpt)
 
     def get_feed_dict(self, batch, is_training):
         feed_dict = {}

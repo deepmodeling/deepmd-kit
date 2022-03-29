@@ -100,7 +100,7 @@ void prod_virial_grad_a_gpu_cuda(
     const int ndescrpt = nnei * 4;
     DPErrcheck(cudaMemset(
         grad_net, 
-        0.0, sizeof(FPTYPE) * nloc * ndescrpt));
+        0, sizeof(FPTYPE) * nloc * ndescrpt));
     const int LEN = 128;
     const int nblock = (nloc + LEN -1) / LEN;
     dim3 block_grid(nblock, nnei);
@@ -125,7 +125,7 @@ void prod_virial_grad_r_gpu_cuda(
     const int ndescrpt = nnei;
     DPErrcheck(cudaMemset(
         grad_net, 
-        0.0, sizeof(FPTYPE) * nloc * ndescrpt));
+        0, sizeof(FPTYPE) * nloc * ndescrpt));
     const int LEN = 128;
     const int nblock = (nloc + LEN -1) / LEN;
     dim3 block_grid(nblock, nnei);
