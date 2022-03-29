@@ -137,7 +137,7 @@ class EnerFitting (Fitting):
             else:
                 self.atom_ener.append(None)
         self.useBN = False
-        self.bias_atom_e = None
+        self.bias_atom_e = np.zeros(self.ntypes, dtype=np.float64)
         # data requirement
         if self.numb_fparam > 0 :
             add_data_requirement('fparam', self.numb_fparam, atomic=False, must=True, high_prec=False)
@@ -495,7 +495,7 @@ class EnerFitting (Fitting):
             # tf.repeat is avaiable in TF>=2.1 or TF 1.15
             _TF_VERSION = Version(TF_VERSION)
             if (Version('1.15') <= _TF_VERSION < Version('2') or _TF_VERSION >= Version('2.1')) and self.bias_atom_e is not None:
-                outs += tf.repeat(tf.constant(self.bias_atom_e, dtype=self.fitting_precision), natoms[2:])
+                outs += tf.repeat(tf.Variable(self.bias_atom_e, dtype=self.fitting_precision, trainable=False, name="bias_atom_ei"), natoms[2:])
 
         if self.tot_ener_zero:
             force_tot_ener = 0.0
