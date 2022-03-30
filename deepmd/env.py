@@ -8,6 +8,7 @@ from configparser import ConfigParser
 from imp import reload
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from packaging.version import Version
 
 import numpy as np
 
@@ -47,6 +48,12 @@ __all__ = [
 ]
 
 SHARED_LIB_MODULE = "op"
+
+# Python library version
+try:
+    tf_py_version = tf.version.VERSION
+except AttributeError:
+    tf_py_version = tf.__version__
 
 EMBEDDING_NET_PATTERN = str(
     r"filter_type_\d+/matrix_\d+_\d+|"
@@ -171,6 +178,8 @@ def get_tf_session_config() -> Any:
         gpu_options=tf.GPUOptions(allow_growth=True),
         intra_op_parallelism_threads=intra, inter_op_parallelism_threads=inter
     )
+    if Version(tf_py_version) >= Version('1.15') and int(os.environ.get("DP_AUTO_PARALLELIZATION", 0)):
+        config.graph_options.rewrite_options.custom_optimizers.add().name = "dpparallel"
     return config
 
 
@@ -248,7 +257,7 @@ def get_module(module_name: str) -> "ModuleType":
             # different versions may cause incompatibility
             # see #406, #447, #557, #774, and #796 for example
             # throw a message if versions are different
-            if TF_VERSION != tf.version.VERSION:
+            if TF_VERSION != tf_py_version:
                 raise RuntimeError(
                     "The version of TensorFlow used to compile this "
                     "deepmd-kit package is %s, but the version of TensorFlow "
@@ -260,10 +269,10 @@ def get_module(module_name: str) -> "ModuleType":
                     "`pip install deepmd-kit --no-binary deepmd-kit` "
                     "instead." % (
                         TF_VERSION,
-                        tf.version.VERSION,
+                        tf_py_version,
                         module_name,
                         TF_VERSION,
-                        tf.version.VERSION,
+                        tf_py_version,
                     )) from e
             raise RuntimeError(
                 "This deepmd-kit package is inconsitent with TensorFlow "
