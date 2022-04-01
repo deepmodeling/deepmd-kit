@@ -74,9 +74,16 @@ FITTING_NET_PATTERN = str(
     r"final_layer_type_\d+/bias|"
 )
 
+TYPE_EMBEDDING_PATTERN = str(
+    r"type_embed_net+/matrix_\d+|"
+    r"type_embed_net+/bias_\d+|"
+    r"type_embed_net+/idt_\d+|"
+)
+
 TRANSFER_PATTERN = \
     EMBEDDING_NET_PATTERN + \
     FITTING_NET_PATTERN + \
+    TYPE_EMBEDDING_PATTERN + \
     str(
         r"descrpt_attr/t_avg|"
         r"descrpt_attr/t_std|"

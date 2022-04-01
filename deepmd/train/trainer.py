@@ -22,7 +22,7 @@ from deepmd.utils.learning_rate import LearningRateExp
 from deepmd.utils.neighbor_stat import NeighborStat
 from deepmd.utils.sess import run_sess
 from deepmd.utils.type_embed import TypeEmbedNet
-from deepmd.utils.graph import get_tensor_by_name
+from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph
 
 from tensorflow.python.client import timeline
 from deepmd.env import op_module, TF_VERSION
@@ -296,8 +296,9 @@ class DPTrainer (object):
             # TODO: this is a simple fix but we should have a clear
             #       architecture to call neighbor stat
         else :
+            graph, graph_def = load_graph_def(self.model_param['compress']['model_file'])
             self.descrpt.enable_compression(self.model_param['compress']["min_nbor_dist"], self.model_param['compress']['model_file'], self.model_param['compress']['table_config'][0], self.model_param['compress']['table_config'][1], self.model_param['compress']['table_config'][2], self.model_param['compress']['table_config'][3])
-            self.fitting.init_variables(self.model_param['compress']['model_file'])
+            self.fitting.init_variables(graph, graph_def)
             # for fparam or aparam settings in 'ener' type fitting net
             if self.fitting_type == 'ener':
                 self.fitting.enable_compression(self.model_param['compress']['model_file'])
@@ -680,34 +681,22 @@ class DPTrainer (object):
             self.place_holders['find_' + kk] = tf.placeholder(tf.float32, name = 't_find_' + kk)
 
     def _init_from_frz_model(self):
+        try:
+            graph, graph_def = load_graph_def(self.run_opt.init_frz_model)
+        except FileNotFoundError as e:
+            # throw runtime error if there's no frozen model
+            raise RuntimeError(
+                "The input frozen model %s (%s) does not exist! Please check the path of the frozen model. " % (self.run_opt.init_frz_model, os.path.abspath(self.run_opt.init_frz_model))
+            ) from e
         # get the model type from the frozen model(self.run_opt.init_frz_model)
         try:
-            t_model_type = get_tensor_by_name(self.run_opt.init_frz_model, 'model_type')
-            self.model_type = bytes.decode(t_model_type)
+            t_model_type = get_tensor_by_name_from_graph(graph, 'model_type')
         except GraphWithoutTensorError as e:
-            # throw runtime error if there's no frozen model
-            if not os.path.exists(self.run_opt.init_frz_model):
-                raise RuntimeError(
-                    "The input frozen model %s (%s) does not exist! Please check the path of the frozen model. " % (self.run_opt.init_frz_model, os.path.abspath(self.run_opt.init_frz_model))
-                ) from e
             # throw runtime error if the frozen_model has no model type information...
-            else:
-                raise RuntimeError(
-                    "The input frozen model: %s has no 'model_type' information, "
-                    "which is not supported by the 'dp train init-frz-model' interface. " % self.run_opt.init_frz_model
-                ) from e
-        
-        if self.fitting_type != 'ener':
-            raise RuntimeError("The 'dp train init-frz-model' command only supports the 'ener' type fitting net currently!")
-        # self.frz_model will control the self.model to import the descriptor from the given frozen model instead of building from scratch...
-        # initialize fitting net with the given compressed frozen model
-        if self.model_type == 'original_model':
-            self.descrpt.init_variables(self.run_opt.init_frz_model)
-            self.fitting.init_variables(self.run_opt.init_frz_model)
-            tf.constant("original_model", name = 'model_type', dtype = tf.string)
-        elif self.model_type == 'compressed_model':
-            self.frz_model = self.run_opt.init_frz_model
-            self.fitting.init_variables(self.frz_model)
-            tf.constant("compressed_model", name = 'model_type', dtype = tf.string)
+            raise RuntimeError(
+                "The input frozen model: %s has no 'model_type' information, "
+                "which is not supported by the 'dp train init-frz-model' interface. " % self.run_opt.init_frz_model
+            ) from e
         else:
-            raise RuntimeError("Unknown model type %s" % self.model_type)
+            self.model_type = bytes.decode(t_model_type)
+        self.model.init_variables(graph, graph_def, model_type=self.model_type)
