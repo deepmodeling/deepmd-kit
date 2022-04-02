@@ -109,8 +109,7 @@ class DipoleChargeModifier(DeepDipole):
         nfxna = -1
         self.t_box_reshape = tf.reshape(self.t_box, [-1, 9])
         t_nframes = tf.shape(self.t_box_reshape)[0]
-        # (nframes x natoms_sel) x 1 x 3
-        self.t_ef_reshape = tf.reshape(self.t_ef, [nfxnas, 1, 3])
+
         # (nframes x natoms) x ndescrpt
         self.descrpt = self.graph.get_tensor_by_name(os.path.join(self.modifier_prefix, 'o_rmat:0'))
         self.descrpt_deriv = self.graph.get_tensor_by_name(os.path.join(self.modifier_prefix, 'o_rmat_deriv:0'))
@@ -120,43 +119,20 @@ class DipoleChargeModifier(DeepDipole):
         # self.descrpt_deriv = tf.reshape(self.descrpt_deriv, [nf, 192 * self.ndescrpt * 3])
 
         # nframes x (natoms_sel x 3)
-        self.t_tensor_reshpe = tf.reshape(self.t_tensor, [t_nframes, -1])
+        self.t_ef_reshape = tf.reshape(self.t_ef,  [t_nframes, -1])
         # nframes x (natoms x 3)
-        self.t_tensor_reshpe = self._enrich(self.t_tensor_reshpe, dof = 3)
+        self.t_ef_reshape = self._enrich(self.t_ef_reshape, dof = 3)
         # (nframes x natoms) x 3
-        self.t_tensor_reshpe = tf.reshape(self.t_tensor_reshpe, [nfxna, 3])
-        # (nframes x natoms) x 1
-        self.t_dipole_x = tf.slice(self.t_tensor_reshpe, [0, 0], [nfxna, 1])
-        self.t_dipole_y = tf.slice(self.t_tensor_reshpe, [0, 1], [nfxna, 1])
-        self.t_dipole_z = tf.slice(self.t_tensor_reshpe, [0, 2], [nfxna, 1])
-        self.t_dipole_z = tf.reshape(self.t_dipole_z, [nfxna, 1])
+        self.t_ef_reshape = tf.reshape(self.t_ef_reshape, [nfxna, 3])
+        # nframes x (natoms_sel x 3)
+        self.t_tensor_reshape = tf.reshape(self.t_tensor, [t_nframes, -1])
+        # nframes x (natoms x 3)
+        self.t_tensor_reshape = self._enrich(self.t_tensor_reshape, dof = 3)
+        # (nframes x natoms) x 3
+        self.t_tensor_reshape = tf.reshape(self.t_tensor_reshape, [nfxna, 3])
         # (nframes x natoms) x ndescrpt
-        [self.t_dipole_x_d] = tf.gradients(self.t_dipole_x, self.descrpt)
-        [self.t_dipole_y_d] = tf.gradients(self.t_dipole_y, self.descrpt)
-        [self.t_dipole_z_d] = tf.gradients(self.t_dipole_z, self.descrpt)
+        [self.t_ef_d] = tf.gradients(self.t_tensor_reshape, self.descrpt, self.t_ef_reshape)
         # nframes x (natoms x ndescrpt)
-        self.t_dipole_x_d = tf.reshape(self.t_dipole_x_d, [-1, self.t_natoms[0] * self.ndescrpt])
-        self.t_dipole_y_d = tf.reshape(self.t_dipole_y_d, [-1, self.t_natoms[0] * self.ndescrpt])
-        self.t_dipole_z_d = tf.reshape(self.t_dipole_z_d, [-1, self.t_natoms[0] * self.ndescrpt])
-        # nframes x (natoms_sel x ndescrpt)
-        self.t_dipole_x_d = self._slice_descrpt_deriv(self.t_dipole_x_d)
-        self.t_dipole_y_d = self._slice_descrpt_deriv(self.t_dipole_y_d)
-        self.t_dipole_z_d = self._slice_descrpt_deriv(self.t_dipole_z_d)
-        # (nframes x natoms_sel) x ndescrpt
-        self.t_dipole_x_d = tf.reshape(self.t_dipole_x_d, [nfxnas, self.ndescrpt])
-        self.t_dipole_y_d = tf.reshape(self.t_dipole_y_d, [nfxnas, self.ndescrpt])
-        self.t_dipole_z_d = tf.reshape(self.t_dipole_z_d, [nfxnas, self.ndescrpt])
-        # (nframes x natoms_sel) x 3 x ndescrpt
-        self.t_dipole_d = tf.concat([self.t_dipole_x_d, self.t_dipole_y_d, self.t_dipole_z_d], axis = 1)
-        self.t_dipole_d = tf.reshape(self.t_dipole_d, [nfxnas, 3*self.ndescrpt])
-        # (nframes x natoms_sel) x 3 x ndescrpt
-        self.t_dipole_d = tf.reshape(self.t_dipole_d, [-1, 3, self.ndescrpt])
-        # (nframes x natoms_sel) x 1 x ndescrpt
-        self.t_ef_d = tf.matmul(self.t_ef_reshape, self.t_dipole_d)
-        # nframes x (natoms_sel x ndescrpt)
-        self.t_ef_d = tf.reshape(self.t_ef_d, [t_nframes, -1])
-        # nframes x (natoms x ndescrpt)
-        self.t_ef_d = self._enrich(self.t_ef_d, dof = self.ndescrpt)
         self.t_ef_d = tf.reshape(self.t_ef_d, [nf, self.t_natoms[0] * self.ndescrpt])
         # t_ef_d is force (with -1), prod_forc takes deriv, so we need the opposite
         self.t_ef_d_oppo = -self.t_ef_d
