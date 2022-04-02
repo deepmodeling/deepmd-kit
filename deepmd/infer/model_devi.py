@@ -56,7 +56,7 @@ def write_model_devi_out(devi: np.ndarray, fname: str, header: str=""):
         the header to dump
     '''
     assert devi.shape[1] == 7
-    header = "%s: %10s" % (header, "step")
+    header = "%s\n%10s" % (header, "step")
     for item in 'vf':
         header += "%19s%19s%19s" % (f"max_devi_{item}", f"min_devi_{item}", f"avg_devi_{item}")
     with open(fname, "ab") as fp:
