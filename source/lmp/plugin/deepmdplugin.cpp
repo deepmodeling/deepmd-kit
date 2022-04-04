@@ -6,6 +6,9 @@
 #include "pair_deepmd.h"
 #include "fix_dplr.h"
 #include "compute_deeptensor_atom.h"
+#if LAMMPS_VERSION_NUMBER>=20220328
+#include "pppm_dplr.h"
+#endif
 
 using namespace LAMMPS_NS;
 
@@ -24,6 +27,13 @@ static Fix *fixdplr(LAMMPS *lmp, int narg, char **arg)
   return new FixDPLR(lmp, narg, arg);
 }
 
+#if LAMMPS_VERSION_NUMBER>=20220328
+static KSpace *pppmdplr(LAMMPS *lmp)
+{
+  return new PPPMDPLR(lmp);
+}
+#endif
+
 extern "C" void lammpsplugin_init(void *lmp, void *handle, void *regfunc)
 {
   lammpsplugin_t plugin;
@@ -39,12 +49,23 @@ extern "C" void lammpsplugin_init(void *lmp, void *handle, void *regfunc)
   (*register_plugin)(&plugin, lmp);
 
   plugin.style = "compute";
+  plugin.name = "deeptensor/atom";
   plugin.info = "compute deeptensor/atom v2.0";
-  plugin.creator.v1 = (lammpsplugin_factory1 *) &computedeepmdtensoratom;
+  plugin.creator.v2 = (lammpsplugin_factory2 *) &computedeepmdtensoratom;
   (*register_plugin)(&plugin, lmp);
 
   plugin.style = "fix";
+  plugin.name = "dplr";
   plugin.info = "fix dplr v2.0";
-  plugin.creator.v1 = (lammpsplugin_factory1 *) &fixdplr;
+  plugin.creator.v2 = (lammpsplugin_factory2 *) &fixdplr;
   (*register_plugin)(&plugin, lmp);
+
+#if LAMMPS_VERSION_NUMBER>=20220328
+  // lammps/lammps#
+  plugin.style = "kspace";
+  plugin.name = "pppm/dplr";
+  plugin.info = "kspace pppm/dplr v2.0";
+  plugin.creator.v1 = (lammpsplugin_factory1 *) &pppmdplr;
+  (*register_plugin)(&plugin, lmp);
+#endif
 }

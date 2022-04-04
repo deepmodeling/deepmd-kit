@@ -1,0 +1,47 @@
+name: Generic issue
+description: For issues that do not fit any of the other categories.
+title: _Replace With a Descriptive Title_
+labels: wontfix
+assignees: []
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: "Please provide a clear and concise description of what the question is."
+      placeholder: 
+      value:
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: DeePMD-kit Version
+      description: "`dp --version`"
+    validations:
+      required: true
+  - type: input
+    id: tf-version
+    attributes:
+      label: TensorFlow Version
+      description: "The version will be printed when running DeePMD-kit."
+    validations:
+      required: true
+  - type: textarea
+    id: other-version
+    attributes:
+      label: Python Version, CUDA Version, GCC Version, LAMMPS Version, etc
+      description: "If applicable, specify what platform you are running on."
+      placeholder: 
+      value:
+    validations:
+      required: false
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: "Please explain the issue in detail here."
+      placeholder: 
+      value:
+    validations:
+      required: true

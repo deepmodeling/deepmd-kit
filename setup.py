@@ -18,7 +18,7 @@ setup_requires = ["setuptools_scm", "scikit-build"]
 
 # read readme to markdown
 readme_file = Path(__file__).parent / "README.md"
-readme = readme_file.read_text()
+readme = readme_file.read_text(encoding="utf-8")
 
 tf_version = os.environ.get("TENSORFLOW_VERSION", "")
 
@@ -127,7 +127,7 @@ setup(
     cmake_minimum_required_version="3.0",
     extras_require={
         "test": ["dpdata>=0.1.9", "ase", "pytest", "pytest-cov", "pytest-sugar"],
-        "docs": ["sphinx>=3.1.1", "recommonmark", "sphinx_rtd_theme>=1.0.0rc1", "sphinx_markdown_tables", "myst-parser", "breathe", "exhale", "numpydoc", "ase"],
+        "docs": ["sphinx>=3.1.1", "recommonmark", "sphinx_rtd_theme>=1.0.0rc1", "sphinx_markdown_tables", "myst-parser", "breathe", "exhale", "numpydoc", "ase", "deepmodeling-sphinx"],
         **extras_require,
     },
     entry_points={"console_scripts": ["dp = deepmd.entrypoints.main:main"]},

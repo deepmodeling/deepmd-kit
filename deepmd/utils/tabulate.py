@@ -4,6 +4,7 @@ import numpy as np
 import deepmd
 from typing import Callable
 from typing import Tuple, List
+from functools import lru_cache
 from scipy.special import comb
 from deepmd.env import tf
 from deepmd.env import op_module
@@ -82,20 +83,40 @@ class DPTabulate():
         self.sub_graph, self.sub_graph_def = self._load_sub_graph()
         self.sub_sess = tf.Session(graph = self.sub_graph)
 
-        try:
-            self.sel_a = self.graph.get_operation_by_name('ProdEnvMatA').get_attr('sel_a')
-            self.prod_env_mat_op = self.graph.get_operation_by_name ('ProdEnvMatA')
-        except Exception:
-            self.sel_a = self.graph.get_operation_by_name('DescrptSeA').get_attr('sel_a')
-            self.prod_env_mat_op = self.graph.get_operation_by_name ('DescrptSeA')
+        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeR):
+            try:
+                self.sel_a = self.graph.get_operation_by_name('ProdEnvMatR').get_attr('sel')
+                self.prod_env_mat_op = self.graph.get_operation_by_name ('ProdEnvMatR')
+            except KeyError:
+                self.sel_a = self.graph.get_operation_by_name('DescrptSeR').get_attr('sel')
+                self.prod_env_mat_op = self.graph.get_operation_by_name ('DescrptSeR')
+        elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
+            try:
+                self.sel_a = self.graph.get_operation_by_name('ProdEnvMatA').get_attr('sel_a')
+                self.prod_env_mat_op = self.graph.get_operation_by_name ('ProdEnvMatA')
+            except KeyError:
+                self.sel_a = self.graph.get_operation_by_name('DescrptSeA').get_attr('sel_a')
+                self.prod_env_mat_op = self.graph.get_operation_by_name ('DescrptSeA')
+        elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeT):
+            try:
+                self.sel_a = self.graph.get_operation_by_name('ProdEnvMatA').get_attr('sel_a')
+                self.prod_env_mat_op = self.graph.get_operation_by_name ('ProdEnvMatA')
+            except KeyError:
+                self.sel_a = self.graph.get_operation_by_name('DescrptSeA').get_attr('sel_a')
+                self.prod_env_mat_op = self.graph.get_operation_by_name ('DescrptSeA')
+        else:
+            raise RuntimeError("Unsupported descriptor")
 
         self.davg = get_tensor_by_name_from_graph(self.graph, f'descrpt_attr{self.suffix}/t_avg')
         self.dstd = get_tensor_by_name_from_graph(self.graph, f'descrpt_attr{self.suffix}/t_std')
         self.ntypes = get_tensor_by_name_from_graph(self.graph, 'descrpt_attr/ntypes')
 
-        
-        self.rcut = self.prod_env_mat_op.get_attr('rcut_r')
-        self.rcut_smth = self.prod_env_mat_op.get_attr('rcut_r_smth')
+        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeR):
+            self.rcut = self.prod_env_mat_op.get_attr('rcut')
+            self.rcut_smth = self.prod_env_mat_op.get_attr('rcut_smth')
+        else:
+            self.rcut = self.prod_env_mat_op.get_attr('rcut_r')
+            self.rcut_smth = self.prod_env_mat_op.get_attr('rcut_r_smth')
 
         self.embedding_net_nodes = get_embedding_net_nodes_from_graph_def(self.graph_def, suffix=self.suffix)
 
@@ -154,7 +175,7 @@ class DPTabulate():
             xx = np.append(xx, np.array([extrapolate * upper], dtype = self.data_type))
             self.nspline = int((upper - lower) / stride0 + (extrapolate * upper - upper) / stride1)
             for ii in range(self.table_size):
-                if self.type_one_side or (ii // self.ntypes, ii % self.ntypes) not in self.exclude_types:
+                if (self.type_one_side and not self._all_excluded(ii)) or (not self.type_one_side and (ii // self.ntypes, ii % self.ntypes) not in self.exclude_types):
                     if self.type_one_side:
                         net = "filter_-1_net_" + str(ii)
                     else:
@@ -172,6 +193,21 @@ class DPTabulate():
                     net = "filter_" + str(ii) + "_net_" + str(jj)
                     self._build_lower(net, xx, idx, upper, lower, stride0, stride1, extrapolate)
                     idx += 1
+        elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeR):
+            xx = np.arange(lower, upper, stride0, dtype = self.data_type)
+            xx = np.append(xx, np.arange(upper, extrapolate * upper, stride1, dtype = self.data_type))
+            xx = np.append(xx, np.array([extrapolate * upper], dtype = self.data_type))
+            self.nspline = int((upper - lower) / stride0 + (extrapolate * upper - upper) / stride1)
+            for ii in range(self.table_size):
+                if (self.type_one_side and not self._all_excluded(ii)) or (not self.type_one_side and (ii // self.ntypes, ii % self.ntypes) not in self.exclude_types):
+                    if self.type_one_side:
+                        net = "filter_-1_net_" + str(ii)
+                    else:
+                        net = "filter_" + str(ii // self.ntypes) + "_net_" + str(ii % self.ntypes)
+                    self._build_lower(net, xx, ii, upper, lower, stride0, stride1, extrapolate)
+        else:
+            raise RuntimeError("Unsupported descriptor")
+
         return lower, upper
 
     def _build_lower(self, net, xx, idx, upper, lower, stride0, stride1, extrapolate):
@@ -185,6 +221,9 @@ class DPTabulate():
         elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeT):
             tt = np.full((self.nspline, self.last_layer_size), stride1)
             tt[int((lower - extrapolate * lower) / stride1) + 1:(int((lower - extrapolate * lower) / stride1) + int((upper - lower) / stride0)), :] = stride0
+        elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeR):
+            tt = np.full((self.nspline, self.last_layer_size), stride1)
+            tt[:int((upper - lower) / stride0), :] = stride0
         else:
             raise RuntimeError("Unsupported descriptor")
 
@@ -211,8 +250,11 @@ class DPTabulate():
             if isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
                 if self.type_one_side:
                     for ii in range(0, self.ntypes):
-                        node = self.embedding_net_nodes[f"filter_type_all{self.suffix}/bias_{layer}_{ii}"]
-                        bias["layer_" + str(layer)].append(tf.make_ndarray(node))
+                        if not self._all_excluded(ii):
+                            node = self.embedding_net_nodes[f"filter_type_all{self.suffix}/bias_{layer}_{ii}"]
+                            bias["layer_" + str(layer)].append(tf.make_ndarray(node))
+                        else:
+                            bias["layer_" + str(layer)].append(np.array([]))
                 else:
                     for ii in range(0, self.ntypes * self.ntypes):
                         if (ii // self.ntypes, ii % self.ntypes) not in self.exclude_types:
@@ -225,6 +267,23 @@ class DPTabulate():
                     for jj in range(ii, self.ntypes):
                         node = self.embedding_net_nodes[f"filter_type_all{self.suffix}/bias_{layer}_{ii}_{jj}"]
                         bias["layer_" + str(layer)].append(tf.make_ndarray(node))
+            elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeR):
+                if self.type_one_side:
+                    for ii in range(0, self.ntypes):
+                        if not self._all_excluded(ii):
+                            node = self.embedding_net_nodes[f"filter_type_all{self.suffix}/bias_{layer}_{ii}"]
+                            bias["layer_" + str(layer)].append(tf.make_ndarray(node))
+                        else:
+                            bias["layer_" + str(layer)].append(np.array([]))
+                else:
+                    for ii in range(0, self.ntypes * self.ntypes):
+                        if (ii // self.ntypes, ii % self.ntypes) not in self.exclude_types:
+                            node = self.embedding_net_nodes[f"filter_type_{ii // self.ntypes}{self.suffix}/bias_{layer}_{ii % self.ntypes}"]
+                            bias["layer_" + str(layer)].append(tf.make_ndarray(node))
+                        else:
+                            bias["layer_" + str(layer)].append(np.array([]))
+            else:
+                raise RuntimeError("Unsupported descriptor")
         return bias
 
     def _get_matrix(self):
@@ -234,8 +293,11 @@ class DPTabulate():
             if isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
                 if self.type_one_side:
                     for ii in range(0, self.ntypes):
-                        node = self.embedding_net_nodes[f"filter_type_all{self.suffix}/matrix_{layer}_{ii}"]
-                        matrix["layer_" + str(layer)].append(tf.make_ndarray(node))
+                        if not self._all_excluded(ii):
+                            node = self.embedding_net_nodes[f"filter_type_all{self.suffix}/matrix_{layer}_{ii}"]
+                            matrix["layer_" + str(layer)].append(tf.make_ndarray(node))
+                        else:
+                            matrix["layer_" + str(layer)].append(np.array([]))
                 else:
                     for ii in range(0, self.ntypes * self.ntypes):
                         if (ii // self.ntypes, ii % self.ntypes) not in self.exclude_types:
@@ -248,6 +310,24 @@ class DPTabulate():
                     for jj in range(ii, self.ntypes):
                         node = self.embedding_net_nodes[f"filter_type_all{self.suffix}/matrix_{layer}_{ii}_{jj}"]
                         matrix["layer_" + str(layer)].append(tf.make_ndarray(node))
+            elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeR):
+                if self.type_one_side:
+                    for ii in range(0, self.ntypes):
+                        if not self._all_excluded(ii):
+                            node = self.embedding_net_nodes[f"filter_type_all{self.suffix}/matrix_{layer}_{ii}"]
+                            matrix["layer_" + str(layer)].append(tf.make_ndarray(node))
+                        else:
+                            matrix["layer_" + str(layer)].append(np.array([]))
+                else:
+                    for ii in range(0, self.ntypes * self.ntypes):
+                        if (ii // self.ntypes, ii % self.ntypes) not in self.exclude_types:
+                            node = self.embedding_net_nodes[f"filter_type_{ii // self.ntypes}{self.suffix}/matrix_{layer}_{ii % self.ntypes}"]
+                            matrix["layer_" + str(layer)].append(tf.make_ndarray(node))
+                        else:
+                            matrix["layer_" + str(layer)].append(np.array([]))
+            else:
+                raise RuntimeError("Unsupported descriptor")
+
         return matrix
 
     # one-by-one executions
@@ -317,6 +397,11 @@ class DPTabulate():
             var = np.square(sw / (min_nbor_dist * self.dstd[:, 1:4]))
             lower = np.min(-var)
             upper = np.max(var)
+        elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeR):
+            lower = np.min(-self.davg[:, 0] / self.dstd[:, 0])
+            upper = np.max(((1 / min_nbor_dist) * sw - self.davg[:, 0]) / self.dstd[:, 0])
+        else:
+            raise RuntimeError("Unsupported descriptor")
         log.info('training data with lower boundary: ' + str(lower))
         log.info('training data with upper boundary: ' + str(upper))
         return math.floor(lower), math.ceil(upper)
@@ -339,10 +424,38 @@ class DPTabulate():
         if isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
             layer_size = len(self.embedding_net_nodes) // ((self.ntypes * self.ntypes - len(self.exclude_types)) * 2)
             if self.type_one_side :
-                layer_size = len(self.embedding_net_nodes) // (self.ntypes * 2)
+                layer_size = len(self.embedding_net_nodes) // ((self.ntypes - self._n_all_excluded) * 2)
         elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeT):
             layer_size = len(self.embedding_net_nodes) // int(comb(self.ntypes + 1, 2) * 2)
+        elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeR):
+            layer_size = len(self.embedding_net_nodes) // ((self.ntypes * self.ntypes - len(self.exclude_types)) * 2)
+            if self.type_one_side :
+                layer_size = len(self.embedding_net_nodes) // ((self.ntypes - self._n_all_excluded) * 2)
+        else:
+            raise RuntimeError("Unsupported descriptor")
         return layer_size
+    
+    @property
+    @lru_cache()
+    def _n_all_excluded(self) -> int:
+        """Then number of types excluding all types."""
+        return sum((int(self._all_excluded(ii)) for ii in range(0, self.ntypes)))
+
+    @lru_cache()
+    def _all_excluded(self, ii: int) -> bool:
+        """Check if type ii excluds all types.
+        
+        Parameters
+        ----------
+        ii : int
+            type index
+
+        Returns
+        -------
+        bool
+            if type ii excluds all types
+        """
+        return all([(ii, type_i) in self.exclude_types for type_i in range(self.ntypes)])
 
     def _get_table_size(self):
         table_size = 0
@@ -352,6 +465,12 @@ class DPTabulate():
                 table_size = self.ntypes
         elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeT):
             table_size = int(comb(self.ntypes + 1, 2))
+        elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeR):
+            table_size = self.ntypes * self.ntypes
+            if self.type_one_side :
+                table_size = self.ntypes
+        else:
+            raise RuntimeError("Unsupported descriptor")
         return table_size
     
     def _get_data_type(self):

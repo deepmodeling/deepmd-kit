@@ -14,9 +14,12 @@ else :
     default_places = 10
 
 class TestDeepDipolePBC(unittest.TestCase) :
-    def setUp(self):
+    @classmethod
+    def setUpClass(cls):
         convert_pbtxt_to_pb(str(tests_path / os.path.join("infer","deepdipole.pbtxt")), "deepdipole.pb")
-        self.dp = DeepDipole("deepdipole.pb")
+        cls.dp = DeepDipole("deepdipole.pb")
+
+    def setUp(self):
         self.coords = np.array([12.83, 2.56, 2.18,
                                 12.09, 2.87, 2.74,
                                 00.25, 3.32, 1.68,
@@ -27,8 +30,10 @@ class TestDeepDipolePBC(unittest.TestCase) :
         self.box = np.array([13., 0., 0., 0., 13., 0., 0., 0., 13.])
         self.expected_d = np.array([-9.274180565967479195e-01,2.698028341272042496e+00,2.521268387140979117e-01,2.927260638453461628e+00,-8.571926301526779923e-01,1.667785136187720063e+00])
 
-    def tearDown(self):
-        os.remove("deepdipole.pb")    
+    @classmethod
+    def tearDownClass(cls):
+        os.remove("deepdipole.pb")
+        cls.dp = None
 
     def test_attrs(self):
         self.assertEqual(self.dp.get_ntypes(), 2)
@@ -61,9 +66,12 @@ class TestDeepDipolePBC(unittest.TestCase) :
 
 
 class TestDeepDipoleNoPBC(unittest.TestCase) :
-    def setUp(self):
+    @classmethod
+    def setUpClass(cls):
         convert_pbtxt_to_pb(str(tests_path / os.path.join("infer","deepdipole.pbtxt")), "deepdipole.pb")
-        self.dp = DeepDipole("deepdipole.pb")
+        cls.dp = DeepDipole("deepdipole.pb")
+
+    def setUp(self):
         self.coords = np.array([12.83, 2.56, 2.18,
                                 12.09, 2.87, 2.74,
                                 00.25, 3.32, 1.68,
@@ -74,8 +82,10 @@ class TestDeepDipoleNoPBC(unittest.TestCase) :
         self.box = np.array([20., 0., 0., 0., 20., 0., 0., 0., 20.])
         self.expected_d = np.array([-1.982092647058316e+00, 8.303361089028074e-01, 1.499962003179265e+00, 2.927112547154802e+00, -8.572096473802318e-01, 1.667798310054391e+00])
 
-    def tearDown(self):
-        os.remove("deepdipole.pb")    
+    @classmethod
+    def tearDownClass(cls):
+        os.remove("deepdipole.pb")
+        cls.dp = None
 
     def test_1frame_atm(self):
         dd = self.dp.eval(self.coords, None, self.atype)
@@ -101,9 +111,12 @@ class TestDeepDipoleNoPBC(unittest.TestCase) :
 @unittest.skipIf(parse_version(tf.__version__) < parse_version("1.15"), 
     f"The current tf version {tf.__version__} is too low to run the new testing model.")
 class TestDeepDipoleNewPBC(unittest.TestCase) :
-    def setUp(self):
+    @classmethod
+    def setUpClass(cls):
         convert_pbtxt_to_pb(str(tests_path / os.path.join("infer","deepdipole_new.pbtxt")), "deepdipole_new.pb")
-        self.dp = DeepDipole("deepdipole_new.pb")
+        cls.dp = DeepDipole("deepdipole_new.pb")
+
+    def setUp(self):
         self.coords = np.array([12.83, 2.56, 2.18,
                                 12.09, 2.87, 2.74,
                                 00.25, 3.32, 1.68,
@@ -119,8 +132,10 @@ class TestDeepDipoleNewPBC(unittest.TestCase) :
         self.expected_gt = self.expected_t.reshape(-1, self.nout).sum(0).reshape(-1)
         self.expected_gv = self.expected_v.reshape(1, self.nout, 6, 9).sum(-2).reshape(-1)
 
-    def tearDown(self):
-        os.remove("deepdipole_new.pb")    
+    @classmethod
+    def tearDownClass(cls):
+        os.remove("deepdipole_new.pb")
+        cls.dp = None
 
     def test_attrs(self):
         self.assertEqual(self.dp.get_ntypes(), 2)
@@ -260,9 +275,12 @@ class TestDeepDipoleNewPBC(unittest.TestCase) :
 @unittest.skipIf(parse_version(tf.__version__) < parse_version("1.15"), 
     f"The current tf version {tf.__version__} is too low to run the new testing model.")
 class TestDeepDipoleFakePBC(unittest.TestCase) :
-    def setUp(self):
+    @classmethod
+    def setUpClass(cls):
         convert_pbtxt_to_pb(str(tests_path / os.path.join("infer","deepdipole_fake.pbtxt")), "deepdipole_fake.pb")
-        self.dp = DeepDipole("deepdipole_fake.pb")
+        cls.dp = DeepDipole("deepdipole_fake.pb")
+
+    def setUp(self):
         self.coords = np.array([12.83, 2.56, 2.18,
                                 12.09, 2.87, 2.74,
                                 00.25, 3.32, 1.68,
@@ -286,8 +304,10 @@ class TestDeepDipoleFakePBC(unittest.TestCase) :
         fake_target = fake_target - 13 * np.rint(fake_target / 13)
         self.target_t = fake_target.reshape(-1)
 
-    def tearDown(self):
-        os.remove("deepdipole_fake.pb")    
+    @classmethod
+    def tearDownClass(cls):
+        os.remove("deepdipole_fake.pb")
+        cls.dp = None
 
     def test_attrs(self):
         self.assertEqual(self.dp.get_ntypes(), 2)

@@ -22,14 +22,14 @@ First, check the python version on your machine
 python --version
 ```
 
-We follow the virtual environment approach to install the tensorflow's Python interface. The full instruction can be found on [the tensorflow's official website](https://www.tensorflow.org/install/pip). Now we assume that the Python interface will be installed to virtual environment directory `$tensorflow_venv`
+We follow the virtual environment approach to install TensorFlow's Python interface. The full instruction can be found on the official [TensorFlow website](https://www.tensorflow.org/install/pip). Now we assume that the Python interface will be installed to virtual environment directory `$tensorflow_venv`
 ```bash
 virtualenv -p python3 $tensorflow_venv
 source $tensorflow_venv/bin/activate
 pip install --upgrade pip
 pip install --upgrade tensorflow
 ```
-It is notice that everytime a new shell is started and one wants to use `DeePMD-kit`, the virtual environment should be activated by 
+It is important that everytime a new shell is started and one wants to use `DeePMD-kit`, the virtual environment should be activated by 
 ```bash
 source $tensorflow_venv/bin/activate
 ```
@@ -41,8 +41,8 @@ If one has multiple python interpreters named like python3.x, it can be specifie
 ```bash
 virtualenv -p python3.7 $tensorflow_venv
 ```
-If one does not need the GPU support of deepmd-kit and is concerned about package size, the CPU-only version of tensorflow should be installed by	
-```bash	
+If one does not need the GPU support of deepmd-kit and is concerned about package size, the CPU-only version of TensorFlow should be installed by 
+```bash 
 pip install --upgrade tensorflow-cpu
 ```
 To verify the installation, run
@@ -96,7 +96,7 @@ Valid subcommands:
 
 [Horovod](https://github.com/horovod/horovod) and [mpi4py](https://github.com/mpi4py/mpi4py) is used for parallel training. For better performance on GPU, please follow tuning steps in [Horovod on GPU](https://github.com/horovod/horovod/blob/master/docs/gpus.rst).
 ```bash
-# With GPU, prefer NCCL as communicator.
+# With GPU, prefer NCCL as a communicator.
 HOROVOD_WITHOUT_GLOO=1 HOROVOD_WITH_TENSORFLOW=1 HOROVOD_GPU_OPERATIONS=NCCL HOROVOD_NCCL_HOME=/path/to/nccl pip install horovod mpi4py
 ```
 
@@ -132,7 +132,7 @@ Available Tensor Operations:
 
 From version 2.0.1, Horovod and mpi4py with MPICH support is shipped with the installer.
 
-If you don't install horovod, DeePMD-kit will fallback to serial mode.
+If you don't install horovod, DeePMD-kit will fall back to serial mode.
 
 ## Install the C++ interface 
 
@@ -148,11 +148,11 @@ gcc --version
 
 The C++ interface of DeePMD-kit was tested with compiler gcc >= 4.8. It is noticed that the I-Pi support is only compiled with gcc >= 4.8.
 
-First the C++ interface of Tensorflow should be installed. It is noted that the version of Tensorflow should be in consistent with the python interface. You may follow [the instruction](install-tf.2.3.md) to install the corresponding C++ interface.
+First the C++ interface of Tensorflow should be installed. It is noted that the version of Tensorflow should be consistent with the python interface. You may follow [the instruction](install-tf.2.3.md) to install the corresponding C++ interface.
 
 ### Install the DeePMD-kit's C++ interface
 
-Now goto the source code directory of DeePMD-kit and make a build place.
+Now go to the source code directory of DeePMD-kit and make a build place.
 ```bash
 cd $deepmd_source_dir/source
 mkdir build 
@@ -177,7 +177,7 @@ One may add the following arguments to `cmake`:
 | -DLAMMPS_VERSION_NUMBER=&lt;value&gt; | Number         | `20210929` | Only neccessary for LAMMPS built-in mode. The version number of LAMMPS (yyyymmdd). |
 | -DLAMMPS_SOURCE_ROOT=&lt;value&gt; | Path         | - | Only neccessary for LAMMPS plugin mode. The path to the LAMMPS source code (later than 8Apr2021). If not assigned, the plugin mode will not be enabled. |
 
-If the cmake has executed successfully, then 
+If the cmake has been executed successfully, then run the following make commands to build the package:  
 ```bash
 make -j4
 make install

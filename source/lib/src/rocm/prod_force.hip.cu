@@ -109,7 +109,7 @@ namespace deepmd {
     const int ndescrpt = nnei * 4;
     DPErrcheck(hipMemset(
         force, 
-        0.0, sizeof(FPTYPE) * nall * 3));
+        0, sizeof(FPTYPE) * nall * 3));
   
     hipLaunchKernelGGL(HIP_KERNEL_NAME(force_deriv_wrt_center_atom<FPTYPE, TPB>), nloc, TPB, 0, 0, 
         force, 
@@ -141,7 +141,7 @@ namespace deepmd {
     const int ndescrpt = nnei * 1;
     DPErrcheck(hipMemset(
         force, 
-        0.0, sizeof(FPTYPE) * nall * 3));
+        0, sizeof(FPTYPE) * nall * 3));
   
     hipLaunchKernelGGL(HIP_KERNEL_NAME(force_deriv_wrt_center_atom<FPTYPE, TPB>), nloc, TPB, 0, 0, 
         force, 

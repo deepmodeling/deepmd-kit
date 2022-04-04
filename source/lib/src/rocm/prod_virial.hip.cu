@@ -113,10 +113,10 @@ void prod_virial_a_gpu_rocm(
 {
     DPErrcheck(hipMemset(
         virial, 
-        0.0, sizeof(FPTYPE) * 9));
+        0, sizeof(FPTYPE) * 9));
     DPErrcheck(hipMemset(
       atom_virial, 
-      0.0, sizeof(FPTYPE) * 9 * nall));
+      0, sizeof(FPTYPE) * 9 * nall));
     
   const int LEN = 16;
   int nblock = (nnei + LEN -1) / LEN;
@@ -150,10 +150,10 @@ void prod_virial_r_gpu_rocm(
 {
     DPErrcheck(hipMemset(
         virial, 
-        0.0, sizeof(FPTYPE) * 9));
+        0, sizeof(FPTYPE) * 9));
     DPErrcheck(hipMemset(
       atom_virial, 
-      0.0, sizeof(FPTYPE) * 9 * nall));
+      0, sizeof(FPTYPE) * 9 * nall));
     
   const int LEN = 16;
   int nblock = (nnei + LEN -1) / LEN;

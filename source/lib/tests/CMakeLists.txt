@@ -106,3 +106,6 @@ if(NOT GTEST_LIBRARIES)
 else ()
   include_directories(${GTEST_INCLUDE_DIRS})
 endif ()
+
+install(TARGETS runUnitTests DESTINATION bin/)
+install(TARGETS runUnitTests DESTINATION lib/)

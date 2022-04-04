@@ -1,6 +1,7 @@
 #include "common.h"
 #include "AtomMap.h"
 #include "device.h"
+#include <dlfcn.h>
 
 using namespace tensorflow;
 
@@ -225,6 +226,18 @@ get_env_nthreads(int & num_intra_nthreads,
       atoi(env_inter_nthreads) >= 0
       ) {
     num_inter_nthreads = atoi(env_inter_nthreads);
+  }
+}
+
+void
+deepmd::
+load_op_library()
+{
+  tensorflow::Env* env = tensorflow::Env::Default();
+  std::string dso_path = env->FormatLibraryFileName("deepmd_op", "");
+  void* dso_handle = dlopen(dso_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+  if (!dso_handle) {
+    throw deepmd::deepmd_exception(dso_path + " is not found! You can add the library directory to LD_LIBRARY_PATH");
   }
 }
 
