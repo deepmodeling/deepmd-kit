@@ -53,7 +53,7 @@ class ParallelOp:
 
         Parameters
         ----------
-        feed: Generator[dict, None, None]
+        feed : Generator[dict, None, None]
             generator which yields feed_dict
         
         Yields
