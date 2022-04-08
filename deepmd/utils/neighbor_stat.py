@@ -87,7 +87,7 @@ class NeighborStat():
                             'natoms_vec': np.array(data.natoms_vec[ii]),
                             'box': np.array(data_set['box'])[kk].reshape([-1, 9]),
                             'default_mesh': np.array(data.default_mesh[ii]),
-                            'dir': jj,
+                            'dir': str(jj),
                         }
 
         for mn, dt, jj in self.p.generate(self.sub_sess, feed()):
