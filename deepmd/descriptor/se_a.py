@@ -837,7 +837,7 @@ class DescrptSeA (DescrptSe):
               # shape[1] = nnei * 4
               nnei = shape[1] / 4
           else:
-              nnei = np.sum(self.original_sel)
+              nnei = tf.cast(tf.Variable(np.sum(self.original_sel), dtype=tf.int32, trainable=False, name="nnei"), self.filter_precision)
           xyz_scatter_1 = xyz_scatter_1 / nnei
           # natom x 4 x outputs_size_2
           xyz_scatter_2 = tf.slice(xyz_scatter_1, [0,0,0],[-1,-1,outputs_size_2])
@@ -855,28 +855,31 @@ class DescrptSeA (DescrptSe):
         return result, qmat
 
     def init_variables(self,
-                       model_file : str,
+                       graph: tf.Graph,
+                       graph_def: tf.GraphDef,
                        suffix : str = "",
     ) -> None:
         """
-        Init the embedding net variables with the given frozen model
+        Init the embedding net variables with the given dict
 
         Parameters
         ----------
-        model_file : str
-            The input frozen model file
+        graph : tf.Graph
+            The input frozen model graph
+        graph_def : tf.GraphDef
+            The input frozen model graph_def
         suffix : str, optional
             The suffix of the scope
         """
-        super().init_variables(model_file=model_file, suffix=suffix)
+        super().init_variables(graph=graph, graph_def=graph_def, suffix=suffix)
         try:
-            self.original_sel = get_tensor_by_name(model_file, 'descrpt_attr%s/original_sel' % suffix)
+            self.original_sel = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/original_sel' % suffix)
         except GraphWithoutTensorError:
             # original_sel is not restored in old graphs, assume sel never changed before
             pass
         # check sel == original sel?
         try:
-            sel = get_tensor_by_name(model_file, 'descrpt_attr%s/sel' % suffix)
+            sel = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/sel' % suffix)
         except GraphWithoutTensorError:
             # sel is not restored in old graphs
             pass

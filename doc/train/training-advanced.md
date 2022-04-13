@@ -150,6 +150,7 @@ One can set other environmental variables:
 | Environment variables | Allowed value          | Default value | Usage                      |
 | --------------------- | ---------------------- | ------------- | -------------------------- |
 | DP_INTERFACE_PREC     | `high`, `low`          | `high`        | Control high (double) or low (float) precision of training. |
+| DP_AUTO_PARALLELIZATION | 0, 1                 | 0             | Enable auto parallelization for CPU operators. |
 
 
 ## Adjust `sel` of a frozen model
