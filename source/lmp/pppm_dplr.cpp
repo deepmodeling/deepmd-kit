@@ -138,7 +138,7 @@ void PPPMDPLR::compute(int eflag, int vflag)
 #endif
   else
 #if LAMMPS_VERSION_NUMBER>=20210831
-    gc->forward_comm(GridComm::KSPACE,this,1,sizeof(FFT_SCALAR),FORWARD_IK,
+    gc->forward_comm(GridComm::KSPACE,this,3,sizeof(FFT_SCALAR),FORWARD_IK,
                             gc_buf1,gc_buf2,MPI_FFT_SCALAR);
 #else
     gc->forward_comm_kspace(this,3,sizeof(FFT_SCALAR),FORWARD_IK,
