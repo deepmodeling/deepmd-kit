@@ -442,7 +442,11 @@ void FixDPLR::post_force(int vflag)
   // backward communication of fcorr
   dfcorr_buff.resize(dfcorr.size());
   copy(dfcorr.begin(), dfcorr.end(), dfcorr_buff.begin());
+#if LAMMPS_VERSION_NUMBER>=20220324
+  comm->reverse_comm(this,3);
+#else
   comm->reverse_comm_fix(this,3);
+#endif
   copy(dfcorr_buff.begin(), dfcorr_buff.end(), dfcorr.begin());
   // // check and print
   // cout << "-------------------- fix/dplr: post force " << endl;

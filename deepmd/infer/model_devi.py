@@ -44,7 +44,7 @@ def calc_model_devi_v(vs: np.ndarray):
     avg_devi_v = np.linalg.norm(vs_devi, axis=-1) / 3
     return max_devi_v, min_devi_v, avg_devi_v
 
-def write_model_devi_out(devi: np.ndarray, fname: str):
+def write_model_devi_out(devi: np.ndarray, fname: str, header: str=""):
     '''
     Parameters
     ----------
@@ -52,9 +52,11 @@ def write_model_devi_out(devi: np.ndarray, fname: str):
         the first column is the steps index
     fname : str
         the file name to dump
+    header : str, default=""
+        the header to dump
     '''
     assert devi.shape[1] == 7
-    header = "%10s" % "step"
+    header = "%s\n%10s" % (header, "step")
     for item in 'vf':
         header += "%19s%19s%19s" % (f"max_devi_{item}", f"min_devi_{item}", f"avg_devi_{item}")
     with open(fname, "ab") as fp:
@@ -212,6 +214,6 @@ def make_model_devi(
             devis.append(devi)
         devis = np.vstack(devis)
         devis[:, 0] = np.arange(nframes_tot) * frequency
-        write_model_devi_out(devis, output)
+        write_model_devi_out(devis, output, header=system)
         devis_coll.append(devis)
     return devis_coll

@@ -6,7 +6,7 @@ from deepmd.env import tf
 from deepmd.common import add_data_requirement, get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, cast_precision
 from deepmd.utils.argcheck import list_to_doc
 from deepmd.utils.network import one_layer, one_layer_rand_seed_shift
-from deepmd.utils.graph import get_fitting_net_variables
+from deepmd.utils.graph import get_fitting_net_variables_from_graph_def
 from deepmd.descriptor import DescrptSeA
 from deepmd.fit.fitting import Fitting
 
@@ -168,17 +168,23 @@ class DipoleFittingSeA (Fitting) :
         # return tf.reshape(outs, [tf.shape(inputs)[0] * natoms[0] * 3 // 3])
 
     def init_variables(self,
-                       model_file: str
+                       graph: tf.Graph,
+                       graph_def: tf.GraphDef,
+                       suffix : str = "",
     ) -> None:
         """
-        Init the fitting net variables with the given frozen model
+        Init the fitting net variables with the given dict
 
         Parameters
         ----------
-        model_file : str
-            The input frozen model file
+        graph : tf.Graph
+            The input frozen model graph
+        graph_def : tf.GraphDef
+            The input frozen model graph_def
+        suffix : str
+            suffix to name scope
         """
-        self.fitting_net_variables = get_fitting_net_variables(model_file)
+        self.fitting_net_variables = get_fitting_net_variables_from_graph_def(graph_def)
 
 
     def enable_mixed_precision(self, mixed_prec : dict = None) -> None:
