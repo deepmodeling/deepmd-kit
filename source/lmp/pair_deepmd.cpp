@@ -238,7 +238,11 @@ PairDeepMD::PairDeepMD(LAMMPS *lmp)
     error->all(FLERR,"Pair deepmd requires metal unit, please set it by \"units metal\"");
   }
   restartinfo = 1;
+#if LAMMPS_VERSION_NUMBER>=20201130
+  centroidstressflag = CENTROID_AVAIL ; // set centroidstressflag = CENTROID_AVAIL to allow the use of the centroid/stress/atom. Added by Davide Tisi
+#else 
   centroidstressflag = 2 ; // set centroidstressflag = 2 to allow the use of the centroid/stress/atom. Added by Davide Tisi
+#endif
   pppmflag = 1;
   respa_enable = 0;
   writedata = 0;
@@ -558,7 +562,11 @@ void PairDeepMD::compute(int eflag, int vflag)
 	int rank = comm->me;
 	// std force 
 	if (newton_pair) {
-	  comm->reverse_comm_pair(this);
+#if LAMMPS_VERSION_NUMBER>=20220324
+	  comm->reverse_comm(this);
+#else
+    comm->reverse_comm_pair(this);
+#endif
 	}
 	vector<double> std_f;
 #ifdef HIGH_PREC
@@ -1035,10 +1043,14 @@ void PairDeepMD::coeff(int narg, char **arg)
 
 void PairDeepMD::init_style()
 {
+#if LAMMPS_VERSION_NUMBER>=20220324
+  neighbor->add_request(this, NeighConst::REQ_FULL);
+#else
   int irequest = neighbor->request(this,instance_me);
   neighbor->requests[irequest]->half = 0;
   neighbor->requests[irequest]->full = 1;  
   // neighbor->requests[irequest]->newton = 2;  
+#endif
   if (out_each == 1){
     int ntotal = atom->natoms;
     int nprocs = comm->nprocs;

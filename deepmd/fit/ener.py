@@ -1,17 +1,18 @@
 import warnings
 import numpy as np
 from typing import Tuple, List
+from packaging.version import Version
 
 from deepmd.env import tf
 from deepmd.common import add_data_requirement, get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, cast_precision
 from deepmd.utils.argcheck import list_to_doc
 from deepmd.utils.network import one_layer, one_layer_rand_seed_shift
 from deepmd.utils.type_embed import embed_atom_type
-from deepmd.utils.graph import get_fitting_net_variables, load_graph_def, get_tensor_by_name_from_graph
+from deepmd.utils.graph import get_fitting_net_variables_from_graph_def, load_graph_def, get_tensor_by_name_from_graph
 from deepmd.fit.fitting import Fitting
 
 from deepmd.env import global_cvt_2_tf_float
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION, TF_VERSION
 
 class EnerFitting (Fitting):
     r"""Fitting the energy of the system. The force and the virial can also be trained.
@@ -136,7 +137,7 @@ class EnerFitting (Fitting):
             else:
                 self.atom_ener.append(None)
         self.useBN = False
-        self.bias_atom_e = None
+        self.bias_atom_e = np.zeros(self.ntypes, dtype=np.float64)
         # data requirement
         if self.numb_fparam > 0 :
             add_data_requirement('fparam', self.numb_fparam, atomic=False, must=True, high_prec=False)
@@ -490,6 +491,11 @@ class EnerFitting (Fitting):
                 bias_atom_e=0.0, suffix=suffix, reuse=reuse
             )
             outs = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[0]])
+            # add atom energy bias; TF will broadcast to all batches
+            # tf.repeat is avaiable in TF>=2.1 or TF 1.15
+            _TF_VERSION = Version(TF_VERSION)
+            if (Version('1.15') <= _TF_VERSION < Version('2') or _TF_VERSION >= Version('2.1')) and self.bias_atom_e is not None:
+                outs += tf.repeat(tf.Variable(self.bias_atom_e, dtype=self.fitting_precision, trainable=False, name="bias_atom_ei"), natoms[2:])
 
         if self.tot_ener_zero:
             force_tot_ener = 0.0
@@ -504,17 +510,23 @@ class EnerFitting (Fitting):
 
 
     def init_variables(self,
-                       model_file: str
+                       graph: tf.Graph,
+                       graph_def: tf.GraphDef,
+                       suffix : str = "",
     ) -> None:
         """
-        Init the fitting net variables with the given frozen model
+        Init the fitting net variables with the given dict
 
         Parameters
         ----------
-        model_file : str
-            The input frozen model file
+        graph : tf.Graph
+            The input frozen model graph
+        graph_def : tf.GraphDef
+            The input frozen model graph_def
+        suffix : str
+            suffix to name scope
         """
-        self.fitting_net_variables = get_fitting_net_variables(model_file)
+        self.fitting_net_variables = get_fitting_net_variables_from_graph_def(graph_def)
 
 
     def enable_compression(self,

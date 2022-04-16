@@ -1,5 +1,5 @@
 # required cmake version
-cmake_minimum_required(VERSION 3.3)
+cmake_minimum_required(VERSION 3.7)
 # project name
 project(deepmd_op_cuda)
 
@@ -24,14 +24,9 @@ endif ()
 
 message(STATUS "CUDA major version is " ${CUDA_VERSION_MAJOR})
 
-if (${CUDA_VERSION_MAJOR} GREATER "11")
+if (${CUDA_VERSION_MAJOR} GREATER "11" OR (${CUDA_VERSION_MAJOR} STREQUAL "11" AND ${CUDA_VERSION_MINOR} GREATER_EQUAL "5"))
     # nvcc flags
-    set(CUDA_NVCC_FLAGS -gencode arch=compute_60,code=sm_60; # Pascal – GP100/Tesla P100 – DGX-1 (Generic Pascal)
-                        -gencode arch=compute_61,code=sm_61; # Pascal - GTX 1080, GTX 1070, GTX 1060, GTX 1050, GTX 1030, Titan Xp, Tesla P40, Tesla P4, Discrete GPU on the NVIDIA Drive PX2
-                        -gencode arch=compute_70,code=sm_70; # Volta  - GV100/Tesla V100, GTX 1180 (GV104)
-                        -gencode arch=compute_75,code=sm_75; # Turing - RTX 2080, Titan RTX, Quadro R8000
-                        -gencode arch=compute_80,code=sm_80; # Anpere - A100
-                        -gencode arch=compute_86,code=sm_86; # Anpere - RTX 3090
+    set(CUDA_NVCC_FLAGS -arch=all; # embeds a compiled code image for all supported architectures (sm_*), and a PTX program for the highest major virtual architecture
                         -O3; -Xcompiler -fPIC;
         )
 elseif (${CUDA_VERSION_MAJOR} STREQUAL "11" AND ${CUDA_VERSION_MINOR} GREATER "0")

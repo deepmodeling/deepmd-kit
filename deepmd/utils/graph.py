@@ -1,10 +1,11 @@
 import re
 import numpy as np
 from typing import Tuple, Dict
-from deepmd.env import tf, EMBEDDING_NET_PATTERN, FITTING_NET_PATTERN
+from deepmd.env import tf, EMBEDDING_NET_PATTERN, FITTING_NET_PATTERN, TYPE_EMBEDDING_PATTERN
 from deepmd.utils.sess import run_sess
 from deepmd.utils.errors import GraphWithoutTensorError
 
+# TODO (JZ): I think in this file we can merge some duplicated lines into one method... 
 def load_graph_def(model_file: str) -> Tuple[tf.Graph, tf.GraphDef]:
     """
     Load graph as well as the graph_def from the frozen model(model_file)
@@ -319,3 +320,61 @@ def get_fitting_net_variables(model_file : str) -> Dict:
     """
     _, graph_def = load_graph_def(model_file)
     return get_fitting_net_variables_from_graph_def(graph_def)
+
+
+def get_type_embedding_net_nodes_from_graph_def(graph_def: tf.GraphDef, suffix: str = "") -> Dict:
+    """
+    Get the type embedding net nodes with the given tf.GraphDef object
+
+    Parameters
+    ----------
+    graph_def
+        The input tf.GraphDef object
+    suffix : str, optional
+        The scope suffix
+    
+    Returns
+    ----------
+    Dict
+        The type embedding net nodes within the given tf.GraphDef object
+    """
+    if suffix != "":
+        type_embedding_net_pattern = TYPE_EMBEDDING_PATTERN\
+            .replace('/idt',    suffix + '/idt')\
+            .replace('/bias',   suffix + '/bias')\
+            .replace('/matrix', suffix + '/matrix')
+    else:
+        type_embedding_net_pattern = TYPE_EMBEDDING_PATTERN
+
+    type_embedding_net_nodes = get_pattern_nodes_from_graph_def(graph_def, type_embedding_net_pattern)
+    return type_embedding_net_nodes
+
+
+def get_type_embedding_net_variables_from_graph_def(graph_def: tf.GraphDef, suffix: str = "") -> Dict:
+    """
+    Get the type embedding net variables with the given tf.GraphDef object
+
+    Parameters
+    ----------
+    graph_def : tf.GraphDef
+        The input tf.GraphDef object
+    suffix : str, optional
+        The suffix of the scope
+    
+    Returns
+    ----------
+    Dict
+        The embedding net variables within the given tf.GraphDef object 
+    """
+    type_embedding_net_variables = {}
+    type_embedding_net_nodes = get_type_embedding_net_nodes_from_graph_def(graph_def, suffix=suffix)
+    for item in type_embedding_net_nodes:
+        node = type_embedding_net_nodes[item]
+        dtype = tf.as_dtype(node.dtype).as_numpy_dtype
+        tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
+        if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
+            tensor_value = np.frombuffer(node.tensor_content, dtype = tf.as_dtype(node.dtype).as_numpy_dtype)
+        else:
+            tensor_value = get_tensor_by_type(node, dtype)
+        type_embedding_net_variables[item] = np.reshape(tensor_value, tensor_shape)
+    return type_embedding_net_variables
