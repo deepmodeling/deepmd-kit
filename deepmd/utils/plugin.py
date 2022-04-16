@@ -52,7 +52,7 @@ class Plugin:
         
         Parameters
         ----------
-        key ： str
+        key : str
             key of the plugin
         
         Returns

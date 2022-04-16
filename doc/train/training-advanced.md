@@ -150,3 +150,32 @@ One can set other environmental variables:
 | Environment variables | Allowed value          | Default value | Usage                      |
 | --------------------- | ---------------------- | ------------- | -------------------------- |
 | DP_INTERFACE_PREC     | `high`, `low`          | `high`        | Control high (double) or low (float) precision of training. |
+| DP_AUTO_PARALLELIZATION | 0, 1                 | 0             | Enable auto parallelization for CPU operators. |
+
+
+## Adjust `sel` of a frozen model
+
+One can use `--init-frz-model` features to adjust (increase or decrease) [`sel`](../model/sel.md) of a existing model. Firstly, one need to adjust [`sel`](./train-input.rst) in `input.json`. For example, adjust from `[46, 92]` to `[23, 46]`.
+```json
+"model": {
+	"descriptor": {
+		"sel": [23, 46]
+	}
+}
+```
+To obtain the new model at once, [`numb_steps`](./train-input.rst) should be set to zero:
+```json
+"training": {
+	"numb_steps": 0
+}
+```
+
+Then, one can initialize the training from the frozen model and freeze the new model at once:
+```sh
+dp train input.json --init-frz-model frozen_model.pb
+dp freeze -o frozen_model_adjusted_sel.pb
+```
+
+Two models should give the same result when the input satisfies both constraints.
+
+Note: At this time, this feature is only supported by [`se_e2_a`](../model/train-se-e2-a.md) descriptor with [`set_davg_true`](./train-input.rst) enable, or `hybrid` composed of above descriptors.
