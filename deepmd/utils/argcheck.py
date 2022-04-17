@@ -28,14 +28,14 @@ def type_embedding_args():
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_seed = 'Random seed for parameter initialization'
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}'
-    doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}'
+    doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}. Default follows the interface precision.'
     doc_trainable = 'If the parameters in the embedding net are trainable'
     
     return [
         Argument("neuron", list, optional = True, default = [2, 4, 8], doc = doc_neuron),
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
         Argument("resnet_dt", bool, optional = True, default = False, doc = doc_resnet_dt),
-        Argument("precision", str, optional = True, default = "float64", doc = doc_precision),
+        Argument("precision", str, optional = True, default = "default", doc = doc_precision),
         Argument("trainable", bool, optional = True, default = True, doc = doc_trainable),
         Argument("seed", [int,None], optional = True, doc = doc_seed),
     ]        
