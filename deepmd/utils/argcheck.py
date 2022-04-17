@@ -314,7 +314,7 @@ def fitting_dipole():
     doc_neuron = 'The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.'
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
-    doc_precision = f'The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}. Default follows the interface precision.'
+    doc_precision = f'The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision.'
     doc_sel_type = 'The atom types for which the atomic dipole will be provided. If not set, all types will be selected.'
     doc_seed = 'Random seed for parameter initialization of the fitting net'
     return [
