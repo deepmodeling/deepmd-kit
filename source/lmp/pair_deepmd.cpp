@@ -1,3 +1,5 @@
+#include <fstream>
+#include <sstream>
 #include <iostream>
 #include <string.h>
 #include <iomanip>
@@ -27,6 +29,7 @@ using namespace std;
 
 static const char cite_user_deepmd_package[] =
 	"USER-DEEPMD package:\n\n"
+  "based on PaddlePaddle framework and inference"
     "@article{Wang_ComputPhysCommun_2018_v228_p178,\n"
     "  author = {Wang, Han and Zhang, Linfeng and Han, Jiequn and E, Weinan},\n"
     "  doi = {10.1016/j.cpc.2018.03.016},\n"
@@ -58,60 +61,22 @@ static int stringCmp(const void *a, const void* b)
     return sum;
 }
 
-int PairDeepMD::get_node_rank() {
-    char host_name[MPI_MAX_PROCESSOR_NAME];
-    memset(host_name, '\0', sizeof(char) * MPI_MAX_PROCESSOR_NAME);
-    char (*host_names)[MPI_MAX_PROCESSOR_NAME];
-    int n, namelen, color, rank, nprocs, myrank;
-    size_t bytes;
-    MPI_Comm nodeComm;
-    
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
-    MPI_Get_processor_name(host_name,&namelen);
-
-    bytes = nprocs * sizeof(char[MPI_MAX_PROCESSOR_NAME]);
-    host_names = (char (*)[MPI_MAX_PROCESSOR_NAME]) malloc(bytes);
-    for (int ii = 0; ii < nprocs; ii++) {
-        memset(host_names[ii], '\0', sizeof(char) * MPI_MAX_PROCESSOR_NAME);
-    }
-    
-    strcpy(host_names[rank], host_name);
-
-    for (n=0; n<nprocs; n++)
-        MPI_Bcast(&(host_names[n]),MPI_MAX_PROCESSOR_NAME, MPI_CHAR, n, MPI_COMM_WORLD);
-    qsort(host_names, nprocs,  sizeof(char[MPI_MAX_PROCESSOR_NAME]), stringCmp);
-
-    color = 0;
-    for (n=0; n<nprocs-1; n++)
-    {
-        if(strcmp(host_name, host_names[n]) == 0)
-        {
-            break;
-        }
-        if(strcmp(host_names[n], host_names[n+1]))
-        {
-            color++;
-        }
-    }
-
-    MPI_Comm_split(MPI_COMM_WORLD, color, 0, &nodeComm);
-    MPI_Comm_rank(nodeComm, &myrank);
-
-    MPI_Barrier(MPI_COMM_WORLD);
-    int looprank=myrank;
-    // printf (" Assigning device %d  to process on node %s rank %d, OK\n",looprank,  host_name, rank );
-    free(host_names);
-    return looprank;
+std::string readfile(std::string filename)
+{
+  auto ss = std::ostringstream{};
+  std::ifstream input_file(filename);
+  ss << input_file.rdbuf();
+  return ss.str();
+  // return std::string(std::istreambuf_iterator<char>(file));
 }
 
-std::string PairDeepMD::get_file_content(const std::string & model) {
+std::string PairDeepMD::get_prog_file_content(const std::string & model) {
   int myrank = 0, root = 0;
   MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
   int nchar = 0;
   std::string file_content;
   if (myrank == root) {
-    deepmd::check_status(tensorflow::ReadFileToString(tensorflow::Env::Default(), model, &file_content));
+    file_content = readfile(model);
     nchar = file_content.size();
   }
   MPI_Bcast(&nchar, 1, MPI_INT, root, MPI_COMM_WORLD);  
@@ -128,19 +93,50 @@ std::string PairDeepMD::get_file_content(const std::string & model) {
   return file_content;
 }
 
-std::vector<std::string> PairDeepMD::get_file_content(const std::vector<std::string> & models) {
+std::string PairDeepMD::get_params_file_content(const std::string & model) {
+  int myrank = 0, root = 0;
+  MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
+  int nchar = 0;
+  std::string file_content;
+  if (myrank == root) {
+    file_content = readfile(model);
+    nchar = file_content.size();
+  }
+  MPI_Bcast(&nchar, 1, MPI_INT, root, MPI_COMM_WORLD);  
+  char * buff = (char *)malloc(sizeof(char) * nchar);  
+  if (myrank == root) {  
+    memcpy(buff, file_content.c_str(), sizeof(char) * nchar);
+  }
+  MPI_Bcast(buff, nchar, MPI_CHAR, root, MPI_COMM_WORLD);
+  file_content.resize(nchar);
+  for (unsigned ii = 0; ii < nchar; ++ii) {
+    file_content[ii] = buff[ii];
+  }
+  free(buff);
+  return file_content;
+}
+
+std::vector<std::string> PairDeepMD::get_prog_file_content(const std::vector<std::string> & models) {
   std::vector<std::string> file_contents(models.size());
   for (unsigned ii = 0; ii < models.size(); ++ii) {
-    file_contents[ii] = get_file_content(models[ii]);
+    file_contents[ii] = get_prog_file_content(models[ii]);
+  }
+  return file_contents;
+}
+
+std::vector<std::string> PairDeepMD::get_params_file_content(const std::vector<std::string> & models) {
+  std::vector<std::string> file_contents(models.size());
+  for (unsigned ii = 0; ii < models.size(); ++ii) {
+    file_contents[ii] = get_params_file_content(models[ii]);
   }
   return file_contents;
 }
 
 static void 
-ana_st (double & max, 
-	double & min, 
-	double & sum, 
-	const vector<double> & vec, 
+ana_st (float & max, 
+	float & min, 
+	float & sum, 
+	const vector<float> & vec, 
 	const int & nloc) 
 {
   if (nloc == 0) return;
@@ -157,8 +153,8 @@ ana_st (double & max,
 static void 
 make_uniform_aparam(
 #ifdef HIGH_PREC    
-    vector<double > & daparam,
-    const vector<double > & aparam,
+    vector<float > & daparam,
+    const vector<float > & aparam,
     const int & nlocal
 #else
     vector<float > & daparam,
@@ -179,7 +175,7 @@ make_uniform_aparam(
 #ifdef USE_TTM
 void PairDeepMD::make_ttm_aparam(
 #ifdef HIGH_PREC
-    vector<double > & daparam
+    vector<float > & daparam
 #else
     vector<float > & daparam
 #endif
@@ -202,18 +198,18 @@ void PairDeepMD::make_ttm_aparam(
   int nxnodes = nnodes[0];
   int nynodes = nnodes[1];
   int nznodes = nnodes[2];
-  double *** const T_electron = ttm_fix->get_T_electron();
-  double dx = domain->xprd/nxnodes;
-  double dy = domain->yprd/nynodes;
-  double dz = domain->zprd/nynodes;
+  float *** const T_electron = ttm_fix->get_T_electron();
+  float dx = domain->xprd/nxnodes;
+  float dy = domain->yprd/nynodes;
+  float dz = domain->zprd/nynodes;
   // resize daparam
   daparam.resize(nlocal);
   // loop over atoms to assign aparam
   for (int ii = 0; ii < nlocal; ii++) {
     if (mask[ii] & ttm_fix->groupbit) {
-      double xscale = (x[ii][0] - domain->boxlo[0])/domain->xprd;
-      double yscale = (x[ii][1] - domain->boxlo[1])/domain->yprd;
-      double zscale = (x[ii][2] - domain->boxlo[2])/domain->zprd;
+      float xscale = static_cast<float>((x[ii][0] - domain->boxlo[0])/domain->xprd);
+      float yscale = static_cast<float>((x[ii][1] - domain->boxlo[1])/domain->yprd);
+      float zscale = static_cast<float>((x[ii][2] - domain->boxlo[2])/domain->zprd);
       int ixnode = static_cast<int>(xscale*nxnodes);
       int iynode = static_cast<int>(yscale*nynodes);
       int iznode = static_cast<int>(zscale*nznodes);
@@ -263,7 +259,7 @@ PairDeepMD::print_summary(const string pre) const
 {
   if (comm->me == 0){
     cout << "Summary of lammps deepmd module ..." << endl;
-    cout << pre << ">>> Info of deepmd-kit:" << endl;
+    cout << pre << ">>> Info of deepmd-kit based on Paddle:" << endl;
     deep_pot.print_summary(pre);
     cout << pre << ">>> Info of lammps module:" << endl;
     cout << pre << "use deepmd-kit at:  " << STR_DEEPMD_ROOT << endl;
@@ -272,11 +268,8 @@ PairDeepMD::print_summary(const string pre) const
     cout << pre << "source commit:      " << STR_GIT_HASH << endl;
     cout << pre << "source commit at:   " << STR_GIT_DATE << endl;
     cout << pre << "build float prec:   " << STR_FLOAT_PREC << endl;
-    cout << pre << "build with tf inc:  " << STR_TensorFlow_INCLUDE_DIRS << endl;
-    cout << pre << "build with tf lib:  " << STR_TensorFlow_LIBRARY << endl;
   }
 }
-
 
 PairDeepMD::~PairDeepMD()
 {
@@ -309,13 +302,13 @@ void PairDeepMD::compute(int eflag, int vflag)
     dtype[ii] = type[ii] - 1;
   }  
 
-  double dener (0);
-  vector<double > dforce (nall * 3);
-  vector<double > dvirial (9, 0);
-  vector<double > dcoord (nall * 3, 0.);
-  vector<double > dbox (9, 0) ;
+  float dener (0);
+  vector<float > dforce (nall * 3);
+  vector<float > dvirial (9, 0);
+  vector<float > dcoord (nall * 3, 0.);
+  vector<float > dbox (9, 0) ;
 #ifdef HIGH_PREC
-  vector<double > daparam;
+  vector<float > daparam;
 #else 
   vector<float > daparam;
 #endif
@@ -372,7 +365,7 @@ void PairDeepMD::compute(int eflag, int vflag)
 	for (unsigned dd = 0; dd < dbox.size(); ++dd) dbox_[dd] = dbox[dd];
 	vector<float> dforce_(dforce.size(), 0);
 	vector<float> dvirial_(dvirial.size(), 0);
-	double dener_ = 0;
+	float dener_ = 0;
 	deep_pot.compute (dener_, dforce_, dvirial_, dcoord_, dtype, dbox_, nghost, lmp_list, ago, fparam, daparam);
 	for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];	
 	for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	
@@ -381,8 +374,8 @@ void PairDeepMD::compute(int eflag, int vflag)
       }
       // do atomic energy and virial
       else {
-	vector<double > deatom (nall * 1, 0);
-	vector<double > dvatom (nall * 9, 0);
+	vector<float > deatom (nall * 1, 0);
+	vector<float > dvatom (nall * 9, 0);
 #ifdef HIGH_PREC
 	deep_pot.compute (dener, dforce, dvirial, deatom, dvatom, dcoord, dtype, dbox, nghost, lmp_list, ago, fparam, daparam);
 #else 
@@ -394,7 +387,7 @@ void PairDeepMD::compute(int eflag, int vflag)
 	vector<float> dvirial_(dvirial.size(), 0);
 	vector<float> deatom_(dforce.size(), 0);
 	vector<float> dvatom_(dforce.size(), 0);
-	double dener_ = 0;
+	float dener_ = 0;
 	deep_pot.compute (dener_, dforce_, dvirial_, deatom_, dvatom_, dcoord_, dtype, dbox_, nghost, lmp_list, ago, fparam, daparam);
 	for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];	
 	for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	
@@ -418,13 +411,13 @@ void PairDeepMD::compute(int eflag, int vflag)
       }
     }
     else if (multi_models_mod_devi) {
-      vector<double > deatom (nall * 1, 0);
-      vector<double > dvatom (nall * 9, 0);
+      vector<float > deatom (nall * 1, 0);
+      vector<float > dvatom (nall * 9, 0);
 #ifdef HIGH_PREC
-      vector<double> 		all_energy;
-      vector<vector<double>> 	all_virial;	       
-      vector<vector<double>> 	all_atom_energy;
-      vector<vector<double>> 	all_atom_virial;
+      vector<float> 		all_energy;
+      vector<vector<float>> 	all_virial;	       
+      vector<vector<float>> 	all_atom_energy;
+      vector<vector<float>> 	all_atom_virial;
       deep_pot_model_devi.compute(all_energy, all_force, all_virial, all_atom_energy, all_atom_virial, dcoord, dtype, dbox, nghost, lmp_list, ago, fparam, daparam);
       // deep_pot_model_devi.compute_avg (dener, all_energy);
       // deep_pot_model_devi.compute_avg (dforce, all_force);
@@ -445,8 +438,8 @@ void PairDeepMD::compute(int eflag, int vflag)
       vector<float> dvirial_(dvirial.size(), 0);
       vector<float> deatom_(dforce.size(), 0);
       vector<float> dvatom_(dforce.size(), 0);
-      double dener_ = 0;
-      vector<double> 		all_energy_;
+      float dener_ = 0;
+      vector<float> 		all_energy_;
       vector<vector<float>>	all_force_;
       vector<vector<float>> 	all_virial_;	       
       vector<vector<float>> 	all_atom_energy_;
@@ -494,9 +487,9 @@ void PairDeepMD::compute(int eflag, int vflag)
 	if (newton_pair) {
 	  comm->reverse_comm_pair(this);
 	}
-	vector<double> std_f;
+	vector<float> std_f;
 #ifdef HIGH_PREC
-	vector<double> tmp_avg_f;
+	vector<float> tmp_avg_f;
 	deep_pot_model_devi.compute_avg (tmp_avg_f, all_force);  
 	deep_pot_model_devi.compute_std_f (std_f, tmp_avg_f, all_force);
 	if (out_rel == 1){
@@ -517,19 +510,19 @@ void PairDeepMD::compute(int eflag, int vflag)
 	    deep_pot_model_devi.compute_relative_std_f (std_f_, tmp_avg_f_, eps);
 	}
 #endif
-	double min = numeric_limits<double>::max(), max = 0, avg = 0;
+	float min = numeric_limits<float>::max(), max = 0, avg = 0;
 	ana_st(max, min, avg, std_f, nlocal);
 	int all_nlocal = 0;
 	MPI_Reduce (&nlocal, &all_nlocal, 1, MPI_INT, MPI_SUM, 0, world);
-	double all_f_min = 0, all_f_max = 0, all_f_avg = 0;
+	float all_f_min = 0, all_f_max = 0, all_f_avg = 0;
 	MPI_Reduce (&min, &all_f_min, 1, MPI_DOUBLE, MPI_MIN, 0, world);
 	MPI_Reduce (&max, &all_f_max, 1, MPI_DOUBLE, MPI_MAX, 0, world);
 	MPI_Reduce (&avg, &all_f_avg, 1, MPI_DOUBLE, MPI_SUM, 0, world);
-	all_f_avg /= double(all_nlocal);
+	all_f_avg /= float(all_nlocal);
 	// std energy
-	vector<double > std_e;
+	vector<float > std_e;
 #ifdef HIGH_PREC
-	vector<double > tmp_avg_e;
+	vector<float > tmp_avg_e;
 	deep_pot_model_devi.compute_avg (tmp_avg_e, all_atom_energy);
 	deep_pot_model_devi.compute_std_e (std_e, tmp_avg_e, all_atom_energy);
 #else 
@@ -540,20 +533,20 @@ void PairDeepMD::compute(int eflag, int vflag)
 	for (int dd = 0; dd < std_e_.size(); ++dd) std_e[dd] = std_e_[dd];
 #endif	
 	max = avg = 0;
-	min = numeric_limits<double>::max();
+	min = numeric_limits<float>::max();
 	ana_st(max, min, avg, std_e, nlocal);
-	double all_e_min = 0, all_e_max = 0, all_e_avg = 0;
+	float all_e_min = 0, all_e_max = 0, all_e_avg = 0;
 	MPI_Reduce (&min, &all_e_min, 1, MPI_DOUBLE, MPI_MIN, 0, world);
 	MPI_Reduce (&max, &all_e_max, 1, MPI_DOUBLE, MPI_MAX, 0, world);
 	MPI_Reduce (&avg, &all_e_avg, 1, MPI_DOUBLE, MPI_SUM, 0, world);
-	all_e_avg /= double(all_nlocal);
+	all_e_avg /= float(all_nlocal);
 	// // total e
-	// vector<double > sum_e(numb_models, 0.);
+	// vector<float > sum_e(numb_models, 0.);
 	// MPI_Reduce (&all_energy[0], &sum_e[0], numb_models, MPI_DOUBLE, MPI_SUM, 0, world);
 	if (rank == 0) {
-	  // double avg_e = 0;
+	  // float avg_e = 0;
 	  // deep_pot_model_devi.compute_avg(avg_e, sum_e);
-	  // double std_e_1 = 0;
+	  // float std_e_1 = 0;
 	  // deep_pot_model_devi.compute_std(std_e_1, avg_e, sum_e);	
 	  fp << setw(12) << update->ntimestep 
 	     << " " << setw(18) << all_e_max 
@@ -591,7 +584,7 @@ void PairDeepMD::compute(int eflag, int vflag)
       for (unsigned dd = 0; dd < dbox.size(); ++dd) dbox_[dd] = dbox[dd];
       vector<float> dforce_(dforce.size(), 0);
       vector<float> dvirial_(dvirial.size(), 0);
-      double dener_ = 0;
+      float dener_ = 0;
       deep_pot.compute (dener_, dforce_, dvirial_, dcoord_, dtype, dbox_);
       for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];	
       for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	
@@ -674,7 +667,8 @@ void PairDeepMD::settings(int narg, char **arg)
 {
   if (narg <= 0) error->all(FLERR,"Illegal pair_style command");
 
-  vector<string> models;
+  vector<string> models_prog;
+  vector<string> models_params;
   int iarg = 0;
   while (iarg < narg){
     if (is_key(arg[iarg])) {
@@ -683,19 +677,21 @@ void PairDeepMD::settings(int narg, char **arg)
     iarg ++;
   }
   for (int ii = 0; ii < iarg; ++ii){
-    models.push_back(arg[ii]);
+    models_prog.push_back(arg[ii]);
+    models_params.push_back(arg[++ii]);
   }
-  numb_models = models.size();
+  numb_models = models_prog.size();
   if (numb_models == 1) {
-    deep_pot.init (arg[0], get_node_rank(), get_file_content(arg[0]));
+    // deep_pot.init (get_prog_file_content(arg[0]), get_params_file_content(arg[1]));
+    deep_pot.init ("/home/paddle-deepmd/setting/lmp/" + models_prog[0], "/home/paddle-deepmd/setting/lmp/" +  models_params[0]);
     cutoff = deep_pot.cutoff ();
     numb_types = deep_pot.numb_types();
     dim_fparam = deep_pot.dim_fparam();
     dim_aparam = deep_pot.dim_aparam();
   }
   else {
-    deep_pot.init (arg[0], get_node_rank(), get_file_content(arg[0]));
-    deep_pot_model_devi.init(models, get_node_rank(), get_file_content(models));
+    deep_pot.init (get_prog_file_content(arg[0]), get_params_file_content(arg[1]));
+    deep_pot_model_devi.init(get_prog_file_content(models_prog), get_params_file_content(models_params));
     cutoff = deep_pot_model_devi.cutoff();
     numb_types = deep_pot_model_devi.numb_types();
     dim_fparam = deep_pot_model_devi.dim_fparam();
@@ -803,8 +799,8 @@ void PairDeepMD::settings(int narg, char **arg)
       cout << arg[0] << " ";
     }
     else {
-      for (int ii = 0; ii < models.size(); ++ii){
-      	cout << models[ii] << " ";
+      for (int ii = 0; ii < models_prog.size(); ++ii){
+      	cout << models_prog[ii] << " ";
       }
     }
     cout << endl
@@ -893,7 +889,7 @@ double PairDeepMD::init_one(int i, int j)
 
 /* ---------------------------------------------------------------------- */
 
-int PairDeepMD::pack_reverse_comm(int n, int first, double *buf)
+int PairDeepMD::pack_reverse_comm(int n, int first, float *buf)
 {
   int i,m,last;
 
@@ -911,7 +907,7 @@ int PairDeepMD::pack_reverse_comm(int n, int first, double *buf)
 
 /* ---------------------------------------------------------------------- */
 
-void PairDeepMD::unpack_reverse_comm(int n, int *list, double *buf)
+void PairDeepMD::unpack_reverse_comm(int n, int *list, float *buf)
 {
   int i,j,m;
 

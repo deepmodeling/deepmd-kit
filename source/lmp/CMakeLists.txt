@@ -9,4 +9,6 @@ list (APPEND LMP_INSTALL_FILES ${LMP_SHSCRIPT})
 
 configure_file("env.sh.in" "env.sh" @ONLY)
 configure_file("pair_deepmd.h.in" "pair_deepmd.h" @ONLY)
+#configure_file("pair_paddledeepmd.h.in" "pair_paddledeepmd.h" @ONLY)
 configure_file("lammps_install_list.txt.in" "lammps_install_list.txt" @ONLY)
+

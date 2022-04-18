@@ -1,8 +1,8 @@
 #include <assert.h>
 #include "prod_force.h"
 #include "prod_force_grad.h"
-#include "paddle/extension.h"
-
+//#include "paddle/extension.h"
+#include "paddle/include/experimental/ext_all.h"
 
 #define CHECK_INPUT(x) PD_CHECK(x.place() == paddle::PlaceType::kCPU, #x " must be a CPU Tensor.")
 #define CHECK_INPUT_READY(x) PD_CHECK(x.is_initialized(), #x " must be initialized before usage.")
@@ -55,7 +55,9 @@ int n_r_sel
     CHECK_INPUT_DIM(natoms_tensor, 1);
 
     PD_CHECK(natoms_tensor.shape()[0] >= 3, "number of atoms should be larger than (or equal to) 3");
-    const int* natoms = natoms_tensor.data<int>();
+    // TODO: This code should be removed once cuda issue fixed.
+    const int* natoms = nullptr;
+    natoms = natoms_tensor.data<int>();
     int nloc = natoms[0];
     int nall = natoms[1];
     int nframes = net_deriv_tensor.shape()[0];
@@ -80,12 +82,12 @@ int n_r_sel
     assert (nnei * 4 == ndescrpt);
 
     PD_DISPATCH_FLOATING_TYPES(
-      net_deriv_tensor.type(), "pd_prod_force_se_a_cpu_forward_kernel", ([&] {
+        net_deriv_tensor.type(), "pd_prod_force_se_a_cpu_forward_kernel", ([&] {
         PdProdForceSeAOpForwardCPUKernel<data_t>(
             nloc, nall, nframes, ndescrpt, nnei, 
             force_tensor.mutable_data<data_t>(), net_deriv_tensor.data<data_t>(), 
             in_deriv_tensor.data<data_t>(), nlist_tensor.data<int>());
-      }));
+        }));
 
     return {force_tensor};
 }
@@ -145,11 +147,7 @@ int n_r_sel
 
     PD_CHECK(natoms_shape[0] >= 3, "number of atoms should be larger than (or equal to) 3");
     const int* natoms = nullptr;
-    if(natoms_tensor.place() != paddle::PlaceType::kCPU){
-        natoms = natoms_tensor.copy_to<int>(paddle::PlaceType::kCPU).data<int>();
-    }else{
-        natoms = natoms_tensor.data<int>();
-    }
+    natoms = natoms_tensor.data<int>();
     int nloc = natoms[0];
     int nframes = net_deriv_shape[0];
     int ndescrpt = net_deriv_shape[1] / nloc;
@@ -164,30 +162,16 @@ int n_r_sel
 
     std::vector<int64_t> grad_net_shape {nframes, nloc * ndescrpt};
     paddle::Tensor grad_net_tensor = paddle::Tensor(paddle::PlaceType::kCPU, grad_net_shape);
-    if(grad_tensor.place() == paddle::PlaceType::kCPU){
-        PD_DISPATCH_FLOATING_TYPES(
-        grad_tensor.type(), "pd_prod_force_se_a_cpu_backward_kernel", ([&] {
-            PdProdForceSeAOpCPUBackwardKernel<data_t>(
-                nloc, nframes, ndescrpt, nnei, 
-                grad_tensor.data<data_t>(), 
-                net_deriv_tensor.data<data_t>(), 
-                in_deriv_tensor.data<data_t>(), 
-                nlist_tensor.data<int>(),
-                grad_net_tensor.mutable_data<data_t>());
-        }));
-    }else{
-        PD_DISPATCH_FLOATING_TYPES(
-        grad_tensor.type(), "pd_prod_force_se_a_cpu_backward_kernel", ([&] {
-            PdProdForceSeAOpCPUBackwardKernel<data_t>(
-                nloc, nframes, ndescrpt, nnei, 
-                grad_tensor.copy_to<data_t>(paddle::PlaceType::kCPU).data<data_t>(), 
-                net_deriv_tensor.copy_to<data_t>(paddle::PlaceType::kCPU).data<data_t>(), 
-                in_deriv_tensor.copy_to<data_t>(paddle::PlaceType::kCPU).data<data_t>(), 
-                nlist_tensor.copy_to<int>(paddle::PlaceType::kCPU).data<int>(),
-                grad_net_tensor.mutable_data<data_t>());
-        }));
-    }
-
+    PD_DISPATCH_FLOATING_TYPES(
+    grad_tensor.type(), "pd_prod_force_se_a_cpu_backward_kernel", ([&] {
+        PdProdForceSeAOpCPUBackwardKernel<data_t>(
+            nloc, nframes, ndescrpt, nnei, 
+            grad_tensor.data<data_t>(), 
+            net_deriv_tensor.data<data_t>(), 
+            in_deriv_tensor.data<data_t>(), 
+            nlist_tensor.data<int>(),
+            grad_net_tensor.mutable_data<data_t>());
+    }));
 
     return {grad_net_tensor};
 }

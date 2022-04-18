@@ -1,4 +1,5 @@
-#include "paddle/extension.h"
+//#include "paddle/extension.h"
+#include "paddle/include/experimental/ext_all.h"
 #include "utilities.h"
 #include "coord.h"
 #include "region.h"
@@ -190,7 +191,11 @@ std::vector<paddle::Tensor> PdProdEnvMatAOpCPUForward(
   PD_CHECK(sec_r.back() == 0, "Rotational free descriptor only support all-angular information: sel_r should be all zero.");
   PD_CHECK(natoms_tensor.shape()[0] >= 3, "Number of atoms should be larger than (or equal to) 3");
   // Paddle Set device on Python not in custom op
-  const int *natoms = natoms_tensor.data<int>();
+  
+  // TODO: This code should be removed once cuda issue fixed.
+  const int* natoms = nullptr;
+  natoms = natoms_tensor.data<int>();
+
   int nloc = natoms[0];
   int nall = natoms[1];
   int ntypes = natoms_tensor.shape()[0] - 2; //nloc and nall mean something.
@@ -258,7 +263,6 @@ std::vector<paddle::Tensor> PdProdEnvMatAOpCPUForward(
             std_tensor.data<data_t>(),
             type_tensor.data<int>());
       }));
-      
   return {descrpt_tensor, descrpt_deriv_tensor, rij_tensor, nlist_tensor};
 }
 std::vector<paddle::Tensor> PdProdEnvMatAOpForward(    

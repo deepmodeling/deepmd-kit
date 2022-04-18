@@ -102,6 +102,8 @@ setup(
         "-DBUILD_PY_IF:BOOL=TRUE",
         "-DBUILD_CPP_IF:BOOL=FALSE",
         "-DFLOAT_PREC:STRING=low",
+        "-DPADDLE_ROOT=/home/Paddle/build/paddle_inference_install_dir",
+        "-DUSE_CUDA_TOOLKIT:BOOL=FALSE",
     ],
     cmake_source_dir="source",
     cmake_minimum_required_version="3.0",

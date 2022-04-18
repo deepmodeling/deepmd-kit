@@ -1,16 +1,16 @@
 #pragma once
-
-#include "common.h"
+#include "paddle/include/paddle_inference_api.h"
+#include "paddle_common.h"
 #include "neighbor_list.h"
 
 namespace deepmd{
-class DeepPot 
+class PaddleDeepPot
 {
 public:
-  DeepPot () ;
-  ~DeepPot() ;
-  DeepPot  (const std::string & model, const int & gpu_rank = 0, const std::string & file_content = "");
-  void init (const std::string & model, const int & gpu_rank = 0, const std::string & file_content = "");
+  PaddleDeepPot() ;
+  ~PaddleDeepPot() ;
+  PaddleDeepPot(const std::string & prog_str, const std::string & params_str);
+  void init (const std::string & prog_str = "", const std::string & params_str = "");
   void print_summary(const std::string &pre) const;
 public:
   void compute (ENERGYTYPE &			ener,
@@ -60,24 +60,24 @@ public:
   int dim_fparam () const {assert(inited); return dfparam;};
   int dim_aparam () const {assert(inited); return daparam;};
   void get_type_map (std::string & type_map);
-private:
-  tensorflow::Session* session;
-  int num_intra_nthreads, num_inter_nthreads;
-  tensorflow::GraphDef graph_def;
-  bool inited;
-  template<class VT> VT get_scalar(const std::string & name) const;
-  // VALUETYPE get_rcut () const;
-  // int get_ntypes () const;
-  VALUETYPE rcut;
-  VALUETYPE cell_size;
-  std::string model_type;
-  std::string model_version;
-  int ntypes;
-  int dfparam;
-  int daparam;
   void validate_fparam_aparam(const int & nloc,
 			      const std::vector<VALUETYPE> &fparam,
-			      const std::vector<VALUETYPE> &aparam)const ;
+			      const std::vector<VALUETYPE> &aparam,
+			      const int &dfparam,
+                              const int &daparam)const ;
+public:
+  paddle_infer::Config config;
+  std::shared_ptr<paddle_infer::Predictor> predictor;
+  int math_lib_num_threads;
+  bool inited;
+  template<class VT> VT get_scalar(const std::string & name) const;
+
+  VALUETYPE rcut = 1.0;
+  VALUETYPE cell_size;
+  int ntypes = 2;
+  int dfparam;
+  int daparam;
+  
   void compute_inner (ENERGYTYPE &			ener,
 		      std::vector<VALUETYPE> &		force,
 		      std::vector<VALUETYPE> &		virial,
@@ -89,24 +89,22 @@ private:
 		      const std::vector<VALUETYPE>&	fparam = std::vector<VALUETYPE>(),
 		      const std::vector<VALUETYPE>&	aparam = std::vector<VALUETYPE>());
 
-  // copy neighbor list info from host
   bool init_nbor;
   std::vector<int> sec_a;
   NeighborListData nlist_data;
   InputNlist nlist;
   AtomMap<VALUETYPE> atommap;
 
-  // function used for neighbor list copy
   std::vector<int> get_sel_a() const;
 };
 
-class DeepPotModelDevi
+class PaddleDeepPotModelDevi
 {
 public:
-  DeepPotModelDevi () ;
-  ~DeepPotModelDevi() ;
-  DeepPotModelDevi  (const std::vector<std::string> & models, const int & gpu_rank = 0, const std::vector<std::string> & file_contents = std::vector<std::string>());
-  void init (const std::vector<std::string> & models, const int & gpu_rank = 0, const std::vector<std::string> & file_contents = std::vector<std::string>());
+  PaddleDeepPotModelDevi () ;
+  ~PaddleDeepPotModelDevi() ;
+  PaddleDeepPotModelDevi  (const std::vector<std::string> & prog_strs, const std::vector<std::string> & params_strs);
+  void init (const std::vector<std::string> & prog_strs = std::vector<std::string>(), const std::vector<std::string> & params_strs = std::vector<std::string>());
 public:
   void compute (std::vector<ENERGYTYPE> &		all_ener,
 		std::vector<std::vector<VALUETYPE> > &	all_force,
@@ -153,15 +151,18 @@ public:
   void compute_relative_std_f (std::vector<VALUETYPE> &		std,
 		      const std::vector<VALUETYPE> &		avg,
 		      const VALUETYPE eps);
-private:
+  void validate_fparam_aparam(const int & nloc,
+			      const std::vector<VALUETYPE> &fparam,
+			      const std::vector<VALUETYPE> &aparam,
+			      const int &dfparam,
+                              const int &daparam)const ;
+public:
   unsigned numb_models;
-  std::vector<tensorflow::Session*> sessions;
-  int num_intra_nthreads, num_inter_nthreads;
-  std::vector<tensorflow::GraphDef> graph_defs;
+  std::vector<paddle_infer::Config> configs;
+  int math_lib_num_threads;
+  std::vector<std::shared_ptr<paddle_infer::Predictor>> predictors;
   bool inited;
   template<class VT> VT get_scalar(const std::string name) const;
-  // VALUETYPE get_rcut () const;
-  // int get_ntypes () const;
   VALUETYPE rcut;
   VALUETYPE cell_size;
   std::string model_type;
@@ -169,21 +170,15 @@ private:
   int ntypes;
   int dfparam;
   int daparam;
-  void validate_fparam_aparam(const int & nloc,
-			      const std::vector<VALUETYPE> &fparam,
-			      const std::vector<VALUETYPE> &aparam)const ;
+  
 
-  // copy neighbor list info from host
   bool init_nbor;
   std::vector<std::vector<int> > sec;
   deepmd::AtomMap<VALUETYPE> atommap;
   NeighborListData nlist_data;
   InputNlist nlist;
 
-  // function used for nborlist copy
   std::vector<std::vector<int> > get_sel() const;
-  void cum_sum(const std::vector<std::vector<tensorflow::int32> > n_sel);
+  void cum_sum(const std::vector<std::vector<int> > n_sel);
 };
 }
-
-
