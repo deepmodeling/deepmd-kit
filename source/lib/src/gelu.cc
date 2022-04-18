@@ -1,5 +1,5 @@
 #include "gelu.h"
-#include "math.h"
+#include <cmath>
 #include "device.h"
 
 template<typename FPTYPE>

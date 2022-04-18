@@ -5,9 +5,6 @@
 
 using namespace deepmd;
 
-double _fmod(double x, double y) {return fmod(x, y);}
-float _fmod(float x, float y) {return fmodf(x, y);}
-
 // normalize coords
 template <typename FPTYPE>
 void
@@ -21,7 +18,7 @@ normalize_coord_cpu(
     FPTYPE ri[3];
     convert_to_inter_cpu(ri, region, coord+3*ii);
     for(int dd = 0; dd < 3; ++dd){
-      ri[dd] = _fmod(ri[dd], (FPTYPE)1.);
+      ri[dd] = fmod(ri[dd], (FPTYPE)1.);
       if (ri[dd] < (FPTYPE)0.) ri[dd] += (FPTYPE)1.;
     }
     convert_to_phys_cpu(coord+3*ii, region, ri);
