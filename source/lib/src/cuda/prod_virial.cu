@@ -12,7 +12,7 @@ __global__ void atom_virial_reduction(
     unsigned int bid = blockIdx.x;
     unsigned int tid = threadIdx.x;
     __shared__ FPTYPE data[THREADS_PER_BLOCK];
-    data[tid] = 0.f;
+    data[tid] = (FPTYPE)0.;
     for (int ii = tid; ii < nall; ii += THREADS_PER_BLOCK) {
         data[tid] += atom_virial[ii * 9 + bid];
     }
@@ -58,7 +58,7 @@ __global__ void virial_deriv_wrt_neighbors_a(
   // atomicAdd(
   //    virial + idz, 
   //    net_deriv[idx * ndescrpt + idy * 4 + idw] * rij[idx * nnei * 3 + idy * 3 + idz / 3] * in_deriv[idx * ndescrpt * 3 + (idy * 4 + idw) * 3 + idz % 3]);
-  FPTYPE virial_tmp = 0.f;
+  FPTYPE virial_tmp = (FPTYPE)0.;
   for (int idw = 0; idw < 4; ++idw) {
       virial_tmp += net_deriv[idx * ndescrpt + idy * 4 + idw] * rij[idx * nnei * 3 + idy * 3 + idz % 3] * in_deriv[idx * ndescrpt * 3 + (idy * 4 + idw) * 3 + idz / 3];
   }
