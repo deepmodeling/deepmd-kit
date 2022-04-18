@@ -105,9 +105,9 @@ prod_force_r_cpu(
 
   for (int ii = 0; ii < nall; ++ii){
     int i_idx = ii;
-    force[i_idx * 3 + 0] = 0;
-    force[i_idx * 3 + 1] = 0;
-    force[i_idx * 3 + 2] = 0;
+    force[i_idx * 3 + 0] = (FPTYPE)0.;
+    force[i_idx * 3 + 1] = (FPTYPE)0.;
+    force[i_idx * 3 + 2] = (FPTYPE)0.;
   }
 
   // compute force of a frame

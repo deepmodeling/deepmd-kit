@@ -6,7 +6,7 @@ __device__ inline FPTYPE dev_dot9(
     const FPTYPE * arr1, 
     const FPTYPE * arr2) 
 {
-    FPTYPE result = 0.0;
+    FPTYPE result = (FPTYPE)0.0;
     for(int ii=0; ii<9; ii++){
         result += arr1[ii] * arr2[ii];
     }
