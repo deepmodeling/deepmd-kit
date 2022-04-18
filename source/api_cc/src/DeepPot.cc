@@ -34,10 +34,10 @@ run_model (ENERGYTYPE &			dener,
     // no backward map needed
     // dforce of size nall * 3
     dforce_.resize(nall * 3);
-    fill(dforce_.begin(), dforce_.end(), 0.0);
+    fill(dforce_.begin(), dforce_.end(), (VALUETYPE)0.0);
     // dvirial of size 9
     dvirial.resize(9);
-    fill(dvirial.begin(), dvirial.end(), 0.0);
+    fill(dvirial.begin(), dvirial.end(), (VALUETYPE)0.0);
     return;
   }
 
@@ -62,17 +62,17 @@ run_model (ENERGYTYPE &			dener,
     dforce[ii] = of(ii);
   }
   // set dvirial to zero, prevent input vector is not zero (#1123)
-  std::fill(dvirial.begin(), dvirial.end(), 0.);
+  std::fill(dvirial.begin(), dvirial.end(), (VALUETYPE)0.);
   for (int ii = 0; ii < nall; ++ii) {
-    dvirial[0] += 1.0 * oav(9*ii+0);
-    dvirial[1] += 1.0 * oav(9*ii+1);
-    dvirial[2] += 1.0 * oav(9*ii+2);
-    dvirial[3] += 1.0 * oav(9*ii+3);
-    dvirial[4] += 1.0 * oav(9*ii+4);
-    dvirial[5] += 1.0 * oav(9*ii+5);
-    dvirial[6] += 1.0 * oav(9*ii+6);
-    dvirial[7] += 1.0 * oav(9*ii+7);
-    dvirial[8] += 1.0 * oav(9*ii+8);
+    dvirial[0] += (VALUETYPE)1.0 * oav(9*ii+0);
+    dvirial[1] += (VALUETYPE)1.0 * oav(9*ii+1);
+    dvirial[2] += (VALUETYPE)1.0 * oav(9*ii+2);
+    dvirial[3] += (VALUETYPE)1.0 * oav(9*ii+3);
+    dvirial[4] += (VALUETYPE)1.0 * oav(9*ii+4);
+    dvirial[5] += (VALUETYPE)1.0 * oav(9*ii+5);
+    dvirial[6] += (VALUETYPE)1.0 * oav(9*ii+6);
+    dvirial[7] += (VALUETYPE)1.0 * oav(9*ii+7);
+    dvirial[8] += (VALUETYPE)1.0 * oav(9*ii+8);
   }
   dforce_ = dforce;
   atommap.backward (dforce_.begin(), dforce.begin(), 3);
@@ -95,16 +95,16 @@ static void run_model (ENERGYTYPE   &		dener,
         // no backward map needed
         // dforce of size nall * 3
         dforce_.resize(nall * 3);
-        fill(dforce_.begin(), dforce_.end(), 0.0);
+        fill(dforce_.begin(), dforce_.end(), (VALUETYPE)0.0);
         // dvirial of size 9
         dvirial.resize(9);
-        fill(dvirial.begin(), dvirial.end(), 0.0);
+        fill(dvirial.begin(), dvirial.end(), (VALUETYPE)0.0);
         // datom_energy_ of size nall
         datom_energy_.resize(nall);
-        fill(datom_energy_.begin(), datom_energy_.end(), 0.0);
+        fill(datom_energy_.begin(), datom_energy_.end(), (VALUETYPE)0.0);
         // datom_virial_ of size nall * 9
         datom_virial_.resize(nall * 9);
-        fill(datom_virial_.begin(), datom_virial_.end(), 0.0);
+        fill(datom_virial_.begin(), datom_virial_.end(), (VALUETYPE)0.0);
         return;
     }
     std::vector<Tensor> output_tensors;
@@ -139,17 +139,17 @@ static void run_model (ENERGYTYPE   &		dener,
         datom_virial[ii] = oav(ii);
     }
     // set dvirial to zero, prevent input vector is not zero (#1123)
-    std::fill(dvirial.begin(), dvirial.end(), 0.);
+    std::fill(dvirial.begin(), dvirial.end(), (VALUETYPE)0.);
     for (int ii = 0; ii < nall; ++ii) {
-        dvirial[0] += 1.0 * datom_virial[9*ii+0];
-        dvirial[1] += 1.0 * datom_virial[9*ii+1];
-        dvirial[2] += 1.0 * datom_virial[9*ii+2];
-        dvirial[3] += 1.0 * datom_virial[9*ii+3];
-        dvirial[4] += 1.0 * datom_virial[9*ii+4];
-        dvirial[5] += 1.0 * datom_virial[9*ii+5];
-        dvirial[6] += 1.0 * datom_virial[9*ii+6];
-        dvirial[7] += 1.0 * datom_virial[9*ii+7];
-        dvirial[8] += 1.0 * datom_virial[9*ii+8];
+        dvirial[0] += (VALUETYPE)1.0 * datom_virial[9*ii+0];
+        dvirial[1] += (VALUETYPE)1.0 * datom_virial[9*ii+1];
+        dvirial[2] += (VALUETYPE)1.0 * datom_virial[9*ii+2];
+        dvirial[3] += (VALUETYPE)1.0 * datom_virial[9*ii+3];
+        dvirial[4] += (VALUETYPE)1.0 * datom_virial[9*ii+4];
+        dvirial[5] += (VALUETYPE)1.0 * datom_virial[9*ii+5];
+        dvirial[6] += (VALUETYPE)1.0 * datom_virial[9*ii+6];
+        dvirial[7] += (VALUETYPE)1.0 * datom_virial[9*ii+7];
+        dvirial[8] += (VALUETYPE)1.0 * datom_virial[9*ii+8];
 	}
     dforce_ = dforce;
     datom_energy_ = datom_energy;
