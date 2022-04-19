@@ -5,6 +5,9 @@
 #include <cub/block/block_store.cuh>
 #include <cub/block/block_radix_sort.cuh>
 
+__device__ inline double _sqrt(double x) {return sqrt(x);}
+__device__ inline float _sqrt(float x) {return sqrtf(x);}
+
 // common part of prod_env_mat
 template <
     typename    Key,
@@ -138,7 +141,7 @@ __global__ void format_nlist_fill_a(
   for (int dd = 0; dd < 3; dd++) {
     diff[dd] = coord[j_idx * 3 + dd] - coord[idx * 3 + dd];
   }
-  FPTYPE rr = sqrt(dev_dot(diff, diff)); 
+  FPTYPE rr = _sqrt(dev_dot(diff, diff)); 
   if (rr <= rcut) {
     key_in[idy] = encoding_nbor_info(type[j_idx], rr, j_idx);
   }
@@ -345,7 +348,7 @@ __global__ void compute_env_mat_a(
       }
       // const FPTYPE * rr = &row_rij[ii * 3];
       FPTYPE nr2 = dev_dot(rr, rr);
-      FPTYPE inr = (FPTYPE)1./sqrt(nr2);
+      FPTYPE inr = (FPTYPE)1./_sqrt(nr2);
       FPTYPE nr = nr2 * inr;
       FPTYPE inr2 = inr * inr;
       FPTYPE inr4 = inr2 * inr2;
@@ -431,7 +434,7 @@ __global__ void compute_env_mat_r(
       }
       // const FPTYPE * rr = &row_rij[ii * 3];
       FPTYPE nr2 = dev_dot(rr, rr);
-      FPTYPE inr = (FPTYPE)1./sqrt(nr2);
+      FPTYPE inr = (FPTYPE)1./_sqrt(nr2);
       FPTYPE nr = nr2 * inr;
       FPTYPE inr2 = inr * inr;
       FPTYPE inr4 = inr2 * inr2;

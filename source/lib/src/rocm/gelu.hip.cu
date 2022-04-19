@@ -1,6 +1,9 @@
 #include "gelu.h"
 #include "device.h"
 
+__device__ inline double _tanh(double x) {return tanh(x);}
+__device__ inline float _tanh(float x) {return tanh(x);}
+
 template <typename FPTYPE>
 __global__ void gelu(
     FPTYPE * out, 
@@ -11,7 +14,7 @@ __global__ void gelu(
   if (idx >= size) {
     return;
   }
-  out[idx] = xx[idx] * (FPTYPE)0.5 * ((FPTYPE)1.0 + tanh((FPTYPE)SQRT_2_PI * (xx[idx] + (FPTYPE)0.044715 * xx[idx] * xx[idx] *xx[idx])));
+  out[idx] = xx[idx] * (FPTYPE)0.5 * ((FPTYPE)1.0 + _tanh((FPTYPE)SQRT_2_PI * (xx[idx] + (FPTYPE)0.044715 * xx[idx] * xx[idx] *xx[idx])));
 }
 
 template <typename FPTYPE>
@@ -26,7 +29,7 @@ __global__ void gelu_grad(
     return;
   }
   // out[idx] = xx[idx] * 0.5 * (1.0 + tanh(SQRT_2_PI * (xx[idx] + 0.044715 * xx[idx] * xx[idx] *xx[idx])));
-  const FPTYPE var = tanh((FPTYPE)SQRT_2_PI * (xx[idx] + (FPTYPE)0.044715 * xx[idx] * xx[idx] *xx[idx]));
+  const FPTYPE var = _tanh((FPTYPE)SQRT_2_PI * (xx[idx] + (FPTYPE)0.044715 * xx[idx] * xx[idx] *xx[idx]));
   out[idx] = dy[idx] * ((FPTYPE)0.5 * (FPTYPE)SQRT_2_PI * xx[idx] * ((FPTYPE)1. - var * var) * ((FPTYPE)0.134145 * xx[idx] * xx[idx] + (FPTYPE)1.) + (FPTYPE)0.5 * var + (FPTYPE)0.5);
 }
 
@@ -43,7 +46,7 @@ __global__ void gelu_grad_grad(
     return;
   }
   // out[idx] = xx[idx] * 0.5 * (1.0 + tanh(SQRT_2_PI * (xx[idx] + 0.044715 * xx[idx] * xx[idx] *xx[idx])));
-  const FPTYPE var1 = tanh((FPTYPE)SQRT_2_PI * (xx[idx] + (FPTYPE)0.044715 * xx[idx] * xx[idx] *xx[idx]));
+  const FPTYPE var1 = _tanh((FPTYPE)SQRT_2_PI * (xx[idx] + (FPTYPE)0.044715 * xx[idx] * xx[idx] *xx[idx]));
   const FPTYPE var2 = (FPTYPE)SQRT_2_PI * ((FPTYPE)1. - var1 * var1) * ((FPTYPE)0.134145 * xx[idx] * xx[idx] + (FPTYPE)1.);
   out[idx] = dy[idx] * dy_2[idx] * ((FPTYPE)0.134145 * (FPTYPE)SQRT_2_PI * xx[idx] * xx[idx] * ((FPTYPE)1. - var1 * var1) - (FPTYPE)SQRT_2_PI * xx[idx] * var2 * ((FPTYPE)0.134145 * xx[idx] * xx[idx] + (FPTYPE)1.) * var1 + var2);
 }
