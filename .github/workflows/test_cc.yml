@@ -6,6 +6,10 @@ jobs:
   testpython:
     name: Test C++
     runs-on: ubuntu-latest
+    container: floopcz/tensorflow_cc:ubuntu
     steps:
     - uses: actions/checkout@master
-    - run: source/install/test_cc.sh
+    - run: source/install/test_cc_local.sh
+      env:
+        tensorflow_root: /usr/local
+    - run: source/install/codecov.sh
