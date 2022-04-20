@@ -23,10 +23,12 @@ ${INSTALL_PREFIX}/bin/runUnitTests
 
 BUILD_TMP_DIR=${SCRIPT_PATH}/../build_cc_tests
 INSTALL_PREFIX=${SCRIPT_PATH}/../../dp_test_cc
+TF_PREFIX=${SCRIPT_PATH}/../../dp_test_cc_tf
 mkdir -p ${BUILD_TMP_DIR}
 mkdir -p ${INSTALL_PREFIX}
+mkdir -p ${TF_PREFIX}
 cd ${BUILD_TMP_DIR}
-cmake -DINSTALL_TENSORFLOW=TRUE -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} ../api_cc/tests
+cmake -DINSTALL_TENSORFLOW=TRUE -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} -DTENSORFLOW_ROOT=${TF_PREFIX} ../api_cc/tests
 make -j${NPROC}
 make install
 
