@@ -6,7 +6,7 @@ jobs:
   testpython:
     name: Test C++
     runs-on: ubuntu-latest
-    container: ghcr.io/deepmodeling/libtensorflow_cc:latest
+    container: ghcr.io/deepmodeling/deepmd-kit-test-cc:latest
     steps:
     - uses: actions/checkout@master
     - run: source/install/test_cc_local.sh
