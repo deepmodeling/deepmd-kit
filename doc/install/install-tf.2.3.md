@@ -1,16 +1,16 @@
 # Install TensorFlow's C++ interface 
-The tensorflow's C++ interface will be compiled from the source code. Firstly one installs bazel. The bazel version 3.1.0 should be used. A full instruction of bazel installation can be found [here](https://docs.bazel.build/versions/master/install.html).
+The tensorflow's C++ interface will be compiled from the source code. Firstly one installs bazel. [bazelisk](https://github.com/bazelbuild/bazelisk) can be lanuched to use [bazel](https://github.com/bazelbuild/bazel).
+
 ```bash
-cd /some/workspace
-wget https://github.com/bazelbuild/bazel/releases/download/3.1.0/bazel-3.1.0-installer-linux-x86_64.sh
-chmod +x bazel-3.1.0-installer-linux-x86_64.sh
+wget https://github.com/bazelbuild/bazelisk/releases/download/v1.11.0/bazelisk-linux-amd64 -O /some/workspace/bazel/bin/bazel
+chmod +x /some/workspace/bazel/bin/bazel
 ./bazel-3.1.0-installer-linux-x86_64.sh --prefix /some/workspace/bazel
 export PATH=/some/workspace/bazel/bin:$PATH
 ```
 
 Firstly get the source code of the TensorFlow
 ```bash
-git clone https://github.com/tensorflow/tensorflow tensorflow -b v2.3.0 --depth=1
+git clone https://github.com/tensorflow/tensorflow tensorflow -b v2.8.0 --depth=1
 cd tensorflow
 ./configure
 ```
@@ -78,7 +78,7 @@ Now build the shared library of tensorflow:
 ```bash
 bazel build -c opt --verbose_failures //tensorflow:libtensorflow_cc.so
 ```
-You may want to add options `--copt=-msse4.2`,  `--copt=-mavx`, `--copt=-mavx2` and `--copt=-mfma` to enable SSE4.2, AVX, AVX2 and FMA SIMD accelerations, respectively. It is noted that these options should be chosen according to the CPU architecture. If the RAM becomes an issue of your machine, you may limit the RAM usage by using `--local_resources 2048,.5,1.0`. 
+You may want to add options `--copt=-msse4.2`,  `--copt=-mavx`, `--copt=-mavx2` and `--copt=-mfma` to enable SSE4.2, AVX, AVX2 and FMA SIMD accelerations, respectively. It is noted that these options should be chosen according to the CPU architecture. If the RAM becomes an issue of your machine, you may limit the RAM usage by using `--local_resources 2048,.5,1.0`. If you want to enable oneDNN optimization, add `--config=mkl`.
 
 Now I assume you want to install TensorFlow in directory `$tensorflow_root`. Create the directory if it does not exist
 ```bash
@@ -102,6 +102,11 @@ rsync -avzh --include '*/' --include '*' --exclude '*.txt' bazel-tensorflow/exte
 rsync -avzh --include '*/' --include '*' --exclude '*.txt' bazel-tensorflow/external/eigen_archive/unsupported/ $tensorflow_root/include/unsupported/
 rsync -avzh --include '*/' --include '*.h' --include '*.inc' --exclude '*' bazel-tensorflow/external/com_google_protobuf/src/google/ $tensorflow_root/include/google/
 rsync -avzh --include '*/' --include '*.h' --include '*.inc' --exclude '*' bazel-tensorflow/external/com_google_absl/absl/ $tensorflow_root/include/absl/
+```
+
+If you've enabled oneDNN, also copy `libiomp5.so`:
+```bash
+cp -d bazel-out/k8-opt/bin/external/llvm_openmp/libiomp5.so $tensorflow_root/lib/
 ```
 
 # Troubleshooting
