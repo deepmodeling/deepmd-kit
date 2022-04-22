@@ -4,7 +4,6 @@ The tensorflow's C++ interface will be compiled from the source code. Firstly on
 ```bash
 wget https://github.com/bazelbuild/bazelisk/releases/download/v1.11.0/bazelisk-linux-amd64 -O /some/workspace/bazel/bin/bazel
 chmod +x /some/workspace/bazel/bin/bazel
-./bazel-3.1.0-installer-linux-x86_64.sh --prefix /some/workspace/bazel
 export PATH=/some/workspace/bazel/bin:$PATH
 ```
 
