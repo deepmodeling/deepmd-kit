@@ -34,8 +34,4 @@ make install
 cd ${SCRIPT_PATH}/../api_cc/tests
 ${INSTALL_PREFIX}/bin/runUnitTests
 
-#------------------
-# upload to codecov
-cd ${SCRIPT_PATH}
-bash <(curl -s https://codecov.io/bash) || echo "Codecov did not collect coverage reports"
 
