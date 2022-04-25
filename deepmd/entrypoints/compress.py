@@ -135,6 +135,9 @@ def compress(
             "increase the step size." % step
         ) from e
 
+    # reset the graph, otherwise the size limitation will be only 2 GB / 2 = 1 GB
+    tf.reset_default_graph()
+
     # stage 2: freeze the model
     log.info("\n\n")
     log.info("stage 2: freeze the model")
