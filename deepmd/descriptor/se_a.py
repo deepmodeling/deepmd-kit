@@ -720,7 +720,7 @@ class DescrptSeA (DescrptSe):
                 raise RuntimeError('compression of type embedded descriptor is not supported at the moment')
         # natom x 4 x outputs_size
         if self.compress and (not is_exclude):
-          info = [self.lower, self.upper, self.upper * self.table_config[0], self.table_config[1], self.table_config[2], self.table_config[3]]
+          info = [self.lower[type_input], self.upper[type_input], self.upper[type_input] * self.table_config[0], self.table_config[1], self.table_config[2], self.table_config[3]]
           if self.type_one_side:
             net = 'filter_-1_net_' + str(type_i)
           else:
