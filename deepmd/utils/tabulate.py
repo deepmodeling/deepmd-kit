@@ -85,8 +85,8 @@ class DPTabulate():
 
         if isinstance(self.descrpt, deepmd.descriptor.DescrptSeR):
             self.sel_a = self.descrpt.sel_r
-            self.rcut = self.descrpt.rcut_r
-            self.rcut_smth = self.descrpt.rcut_r_smth
+            self.rcut = self.descrpt.rcut
+            self.rcut_smth = self.descrpt.rcut_smth
         elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
             self.sel_a = self.descrpt.sel_a
             self.rcut = self.descrpt.rcut_r
