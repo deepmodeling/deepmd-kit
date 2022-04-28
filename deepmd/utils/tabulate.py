@@ -414,8 +414,8 @@ class DPTabulate():
             upper = ((1 / min_nbor_dist) * sw - self.davg[:, 0]) / self.dstd[:, 0]
         elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeT):
             var = np.square(sw / (min_nbor_dist * self.dstd[:, 1:4]))
-            lower = -var
-            upper = var
+            lower = np.min(-var, axis=1)
+            upper = np.max(var, axis=1)
         elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeR):
             lower = -self.davg[:, 0] / self.dstd[:, 0]
             upper = ((1 / min_nbor_dist) * sw - self.davg[:, 0]) / self.dstd[:, 0]
