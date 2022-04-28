@@ -20,10 +20,10 @@ void deepmd::soft_min_switch_virial_cpu(
 //
 {
   for (int ii = 0; ii < 9; ++ ii){
-    virial[ii] = 0.;
+    virial[ii] = (FPTYPE)0.;
   }
   for (int ii = 0; ii < 9 * nall; ++ ii){
-    atom_virial[ii] = 0.;
+    atom_virial[ii] = (FPTYPE)0.;
   }
 
   // compute virial of a frame

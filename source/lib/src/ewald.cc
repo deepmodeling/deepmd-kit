@@ -13,7 +13,7 @@ dir_err_esti(const VALUETYPE & test_q,
   const VALUETYPE & rcut = param.rcut;
   const VALUETYPE & beta = param.beta;
   const VALUETYPE rho_q2 = c2/nn;  
-  VALUETYPE sum = 2 * test_q 
+  VALUETYPE sum = (VALUETYPE)2. * test_q 
       * sqrt (rho_q2 / rcut)
       * exp (- beta*beta*rcut*rcut) * ElectrostaticConvertion;
   return sum;
@@ -215,7 +215,7 @@ ewald_recp(
 	VALUETYPE eincr = expnmm2 * (sqr[mc] * sqr[mc] + sqi[mc] * sqi[mc]);
 	thread_ener[thread_id] += eincr;
 	// virial
-	VALUETYPE vpref = -2. * (1. + M_PI * M_PI * nmm2 / (param.beta * param.beta)) / nmm2;
+	VALUETYPE vpref = (VALUETYPE)-2. * ((VALUETYPE)1. + M_PI * M_PI * nmm2 / (param.beta * param.beta)) / nmm2;
 	for (int dd0 = 0; dd0 < 3; ++dd0){
 	  for (int dd1 = 0; dd1 < 3; ++dd1){	    
 	    VALUETYPE tmp = vpref * rm[dd0] * rm[dd1];
@@ -225,10 +225,10 @@ ewald_recp(
 	}
 	// force
 	for (int ii = 0; ii < natoms; ++ii){
-	  VALUETYPE mdotr = - 2. * M_PI * (coord[ii*3+0]*rm[0] + coord[ii*3+1]*rm[1] + coord[ii*3+2]*rm[2]);
+	  VALUETYPE mdotr = (VALUETYPE)-2. * M_PI * (coord[ii*3+0]*rm[0] + coord[ii*3+1]*rm[1] + coord[ii*3+2]*rm[2]);
 	  VALUETYPE tmpr = charge[ii] * cos(mdotr);
 	  VALUETYPE tmpi = charge[ii] * sin(mdotr);
-	  VALUETYPE cc = 4. * M_PI * (tmpr * sqi[mc] + tmpi * sqr[mc]) * expnmm2;
+	  VALUETYPE cc = (VALUETYPE)4. * M_PI * (tmpr * sqi[mc] + tmpi * sqr[mc]) * expnmm2;
 	  thread_force[thread_id][ii*3+0] -= rm[0] * cc;
 	  thread_force[thread_id][ii*3+1] -= rm[1] * cc;
 	  thread_force[thread_id][ii*3+2] -= rm[2] * cc;
@@ -252,14 +252,14 @@ ewald_recp(
   }
 
   VALUETYPE vol = volume_cpu(region);
-  ener /= 2 * M_PI * vol;
+  ener /= (VALUETYPE)2. * M_PI * vol;
   ener *= ElectrostaticConvertion;
   for (int ii = 0; ii < 3*natoms; ++ii){
-    force[ii] /= 2 * M_PI * vol;
+    force[ii] /= (VALUETYPE)2. * M_PI * vol;
     force[ii] *= ElectrostaticConvertion;
   }  
   for (int ii = 0; ii < 3*3; ++ii){
-    virial[ii] /= 2 * M_PI * vol;
+    virial[ii] /= (VALUETYPE)2. * M_PI * vol;
     virial[ii] *= ElectrostaticConvertion;
   }  
   delete[]sqr;

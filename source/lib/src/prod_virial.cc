@@ -37,10 +37,10 @@ prod_virial_a_cpu(
   const int ndescrpt = 4 * nnei;
 
   for (int ii = 0; ii < 9; ++ ii){
-    virial[ii] = 0.;
+    virial[ii] = (FPTYPE)0.;
   }
   for (int ii = 0; ii < 9 * nall; ++ ii){
-    atom_virial[ii] = 0.;
+    atom_virial[ii] = (FPTYPE)0.;
   }
 
   // compute virial of a frame
@@ -55,7 +55,7 @@ prod_virial_a_cpu(
       int aa_start, aa_end;
       make_index_range (aa_start, aa_end, jj, nnei);
       for (int aa = aa_start; aa < aa_end; ++aa) {
-	FPTYPE pref = -1.0 * net_deriv[i_idx * ndescrpt + aa];
+	FPTYPE pref = (FPTYPE)-1.0 * net_deriv[i_idx * ndescrpt + aa];
 	for (int dd0 = 0; dd0 < 3; ++dd0){
 	  for (int dd1 = 0; dd1 < 3; ++dd1){
 	    FPTYPE tmp_v = pref * rij[i_idx * nnei * 3 + jj * 3 + dd1] *  env_deriv[i_idx * ndescrpt * 3 + aa * 3 + dd0];
@@ -116,10 +116,10 @@ prod_virial_r_cpu(
   const int ndescrpt = nnei;
 
   for (int ii = 0; ii < 9; ++ ii){
-    virial[ii] = 0.;
+    virial[ii] = (FPTYPE)0.;
   }
   for (int ii = 0; ii < 9 * nall; ++ ii){
-    atom_virial[ii] = 0.;
+    atom_virial[ii] = (FPTYPE)0.;
   }
 
   // compute virial of a frame

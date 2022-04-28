@@ -5,6 +5,9 @@
 #include <cub/block/block_store.cuh>
 #include <cub/block/block_radix_sort.cuh>
 
+__device__ inline double _sqrt(double x) {return sqrt(x);}
+__device__ inline float _sqrt(float x) {return sqrtf(x);}
+
 // common part of prod_env_mat
 template <
     typename    Key,
@@ -57,18 +60,18 @@ __device__ inline void spline5_switch(
     const float & rmax) 
 {
   if (xx < rmin) {
-    dd = 0;
-    vv = 1;
+    dd = (FPTYPE)0.;
+    vv = (FPTYPE)1.;
   }
   else if (xx < rmax) {
     FPTYPE uu = (xx - rmin) / (rmax - rmin) ;
-    FPTYPE du = 1. / (rmax - rmin) ;
-    vv = uu*uu*uu * (-6 * uu*uu + 15 * uu - 10) + 1;
-    dd = ( 3 * uu*uu * (-6 * uu*uu + 15 * uu - 10) + uu*uu*uu * (-12 * uu + 15) ) * du;
+    FPTYPE du = (FPTYPE)1. / (rmax - rmin) ;
+    vv = uu*uu*uu * ((FPTYPE)-6. * uu*uu + (FPTYPE)15. * uu - (FPTYPE)10.) + (FPTYPE)1.;
+    dd = ( (FPTYPE)3. * uu*uu * ((FPTYPE)-6. * uu*uu + (FPTYPE)15. * uu - (FPTYPE)10.) + uu*uu*uu * ((FPTYPE)-12. * uu + (FPTYPE)15.) ) * du;
   }
   else {
-    dd = 0;
-    vv = 0;
+    dd = (FPTYPE)0.;
+    vv = (FPTYPE)0.;
   }
 }
 
@@ -82,7 +85,7 @@ __device__ inline uint_64 encoding_nbor_info(
   // the type of nbor atom must be smaller than 128
   // the distance of center atom between nbor atom must be smaller than 128
   // the index of nbor atom(including ghost region) must be smaller than 16777216(1 << 24)
-  if(type >= 128 || dist >= 128.0 || index >= (1 << 24)) {
+  if(type >= 128 || dist >= (FPTYPE)128.0 || index >= (1 << 24)) {
     asm("trap;");
   }
   return ((uint_64)type << 57) + (uint_64)((double)dist * ((uint_64)1 << 50)) / (1 << 24) * (1 << 24) + index;
@@ -138,7 +141,7 @@ __global__ void format_nlist_fill_a(
   for (int dd = 0; dd < 3; dd++) {
     diff[dd] = coord[j_idx * 3 + dd] - coord[idx * 3 + dd];
   }
-  FPTYPE rr = sqrt(dev_dot(diff, diff)); 
+  FPTYPE rr = _sqrt(dev_dot(diff, diff)); 
   if (rr <= rcut) {
     key_in[idy] = encoding_nbor_info(type[j_idx], rr, j_idx);
   }
@@ -345,14 +348,14 @@ __global__ void compute_env_mat_a(
       }
       // const FPTYPE * rr = &row_rij[ii * 3];
       FPTYPE nr2 = dev_dot(rr, rr);
-      FPTYPE inr = 1./sqrt(nr2);
+      FPTYPE inr = (FPTYPE)1./_sqrt(nr2);
       FPTYPE nr = nr2 * inr;
       FPTYPE inr2 = inr * inr;
       FPTYPE inr4 = inr2 * inr2;
       FPTYPE inr3 = inr4 * nr;
       FPTYPE sw, dsw;
       spline5_switch(sw, dsw, nr, rmin, rmax);
-      dd[0] = (1./nr)       ;//* sw;
+      dd[0] = ((FPTYPE)1./nr)       ;//* sw;
       dd[1] = (rr[0] / nr2) ;//* sw;
       dd[2] = (rr[1] / nr2) ;//* sw;
       dd[3] = (rr[2] / nr2) ;//* sw;
@@ -360,17 +363,17 @@ __global__ void compute_env_mat_a(
       vv[1] = (rr[1] * inr3 * sw - dd[0] * dsw * rr[1] * inr); // avg[type[(idx_deriv + 1) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 1) % (ndescrpt * 3)) / 3];
       vv[2] = (rr[2] * inr3 * sw - dd[0] * dsw * rr[2] * inr); // avg[type[(idx_deriv + 2) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 2) % (ndescrpt * 3)) / 3];
       // ****deriv of component x/r2
-      vv[3] = ((2. * rr[0] * rr[0] * inr4 - inr2) * sw - dd[1] * dsw * rr[0] * inr); // avg[type[(idx_deriv + 3) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 3) % (ndescrpt * 3)) / 3];
-      vv[4] = ((2. * rr[0] * rr[1] * inr4	) * sw - dd[1] * dsw * rr[1] * inr); // avg[type[(idx_deriv + 4) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 4) % (ndescrpt * 3)) / 3];
-      vv[5] = ((2. * rr[0] * rr[2] * inr4	) * sw - dd[1] * dsw * rr[2] * inr); // avg[type[(idx_deriv + 5) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 5) % (ndescrpt * 3)) / 3];
+      vv[3] = (((FPTYPE)2. * rr[0] * rr[0] * inr4 - inr2) * sw - dd[1] * dsw * rr[0] * inr); // avg[type[(idx_deriv + 3) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 3) % (ndescrpt * 3)) / 3];
+      vv[4] = (((FPTYPE)2. * rr[0] * rr[1] * inr4	) * sw - dd[1] * dsw * rr[1] * inr); // avg[type[(idx_deriv + 4) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 4) % (ndescrpt * 3)) / 3];
+      vv[5] = (((FPTYPE)2. * rr[0] * rr[2] * inr4	) * sw - dd[1] * dsw * rr[2] * inr); // avg[type[(idx_deriv + 5) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 5) % (ndescrpt * 3)) / 3];
       // ***deriv of component y/r2
-      vv[6] = ((2. * rr[1] * rr[0] * inr4	) * sw - dd[2] * dsw * rr[0] * inr); // avg[type[(idx_deriv + 6) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 6) % (ndescrpt * 3)) / 3];
-      vv[7] = ((2. * rr[1] * rr[1] * inr4 - inr2) * sw - dd[2] * dsw * rr[1] * inr); // avg[type[(idx_deriv + 7) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 7) % (ndescrpt * 3)) / 3];
-      vv[8] = ((2. * rr[1] * rr[2] * inr4	) * sw - dd[2] * dsw * rr[2] * inr); // avg[type[(idx_deriv + 8) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 8) % (ndescrpt * 3)) / 3];
+      vv[6] = (((FPTYPE)2. * rr[1] * rr[0] * inr4	) * sw - dd[2] * dsw * rr[0] * inr); // avg[type[(idx_deriv + 6) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 6) % (ndescrpt * 3)) / 3];
+      vv[7] = (((FPTYPE)2. * rr[1] * rr[1] * inr4 - inr2) * sw - dd[2] * dsw * rr[1] * inr); // avg[type[(idx_deriv + 7) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 7) % (ndescrpt * 3)) / 3];
+      vv[8] = (((FPTYPE)2. * rr[1] * rr[2] * inr4	) * sw - dd[2] * dsw * rr[2] * inr); // avg[type[(idx_deriv + 8) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 8) % (ndescrpt * 3)) / 3];
       // ***deriv of component z/r2 
-      vv[9] = ((2. * rr[2] * rr[0] * inr4	) * sw - dd[3] * dsw * rr[0] * inr); // avg[type[(idx_deriv + 9) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 9) % (ndescrpt * 3)) / 3];
-      vv[10]= ((2. * rr[2] * rr[1] * inr4	) * sw - dd[3] * dsw * rr[1] * inr); // avg[type[(idx_deriv + 10) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 10) % (ndescrpt * 3)) / 3];
-      vv[11]= ((2. * rr[2] * rr[2] * inr4 - inr2) * sw - dd[3] * dsw * rr[2] * inr); // avg[type[(idx_deriv + 11) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 11) % (ndescrpt * 3)) / 3];
+      vv[9] = (((FPTYPE)2. * rr[2] * rr[0] * inr4	) * sw - dd[3] * dsw * rr[0] * inr); // avg[type[(idx_deriv + 9) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 9) % (ndescrpt * 3)) / 3];
+      vv[10]= (((FPTYPE)2. * rr[2] * rr[1] * inr4	) * sw - dd[3] * dsw * rr[1] * inr); // avg[type[(idx_deriv + 10) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 10) % (ndescrpt * 3)) / 3];
+      vv[11]= (((FPTYPE)2. * rr[2] * rr[2] * inr4 - inr2) * sw - dd[3] * dsw * rr[2] * inr); // avg[type[(idx_deriv + 11) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 11) % (ndescrpt * 3)) / 3];
       // 4 value components
       dd[0] *= sw; // * em[idx * ndescrpt + idx_value + 0]);// - avg[type[idx] * ndescrpt + idx_value + 0]) / std[type[idx] * ndescrpt + idx_value + 0];
       dd[1] *= sw; // * em[idx * ndescrpt + idx_value + 1]);// - avg[type[idx] * ndescrpt + idx_value + 1]) / std[type[idx] * ndescrpt + idx_value + 1];
@@ -431,14 +434,14 @@ __global__ void compute_env_mat_r(
       }
       // const FPTYPE * rr = &row_rij[ii * 3];
       FPTYPE nr2 = dev_dot(rr, rr);
-      FPTYPE inr = 1./sqrt(nr2);
+      FPTYPE inr = (FPTYPE)1./_sqrt(nr2);
       FPTYPE nr = nr2 * inr;
       FPTYPE inr2 = inr * inr;
       FPTYPE inr4 = inr2 * inr2;
       FPTYPE inr3 = inr4 * nr;
       FPTYPE sw, dsw;
       spline5_switch(sw, dsw, nr, rmin, rmax);
-      dd = (1./nr)       ;//* sw;
+      dd = ((FPTYPE)1./nr)       ;//* sw;
       vv[0] = (rr[0] * inr3 * sw - dd * dsw * rr[0] * inr); // avg[type[(idx_deriv + 0) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 0) % (ndescrpt * 3)) / 3];
       vv[1] = (rr[1] * inr3 * sw - dd * dsw * rr[1] * inr); // avg[type[(idx_deriv + 1) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 1) % (ndescrpt * 3)) / 3];
       vv[2] = (rr[2] * inr3 * sw - dd * dsw * rr[2] * inr); // avg[type[(idx_deriv + 2) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 2) % (ndescrpt * 3)) / 3];

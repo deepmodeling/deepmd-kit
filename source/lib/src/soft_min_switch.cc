@@ -17,12 +17,12 @@ void deepmd::soft_min_switch_cpu(
 {
   // fill results with 0
   for (int ii = 0; ii < nloc; ++ii){
-    sw_value[ii] = 0;
+    sw_value[ii] = (FPTYPE)0.;
   }
   for (int ii = 0; ii < nloc * nnei; ++ii){
-    sw_deriv[ii * 3 + 0] = 0;
-    sw_deriv[ii * 3 + 1] = 0;
-    sw_deriv[ii * 3 + 2] = 0;
+    sw_deriv[ii * 3 + 0] = (FPTYPE)0.;
+    sw_deriv[ii * 3 + 1] = (FPTYPE)0.;
+    sw_deriv[ii * 3 + 2] = (FPTYPE)0.;
   }
   // compute force of a frame      
   for (int ii = 0; ii < nloc; ++ii){
@@ -62,8 +62,8 @@ void deepmd::soft_min_switch_cpu(
       FPTYPE rr2 = dr[0] * dr[0] + dr[1] * dr[1] + dr[2] * dr[2];
       FPTYPE rr = sqrt(rr2);
       FPTYPE ee = exp(-rr / alpha);
-      FPTYPE pref_c = (1./rr - 1./alpha) * ee ;
-      FPTYPE pref_d = 1./(rr * alpha) * ee;
+      FPTYPE pref_c = ((FPTYPE)1./rr - (FPTYPE)1./alpha) * ee ;
+      FPTYPE pref_d = (FPTYPE)1./(rr * alpha) * ee;
       FPTYPE ts;
       ts = dd / (aa * aa) * (aa * pref_c + bb * pref_d);
       sw_deriv[rij_idx_shift + 0] += ts * dr[0];
