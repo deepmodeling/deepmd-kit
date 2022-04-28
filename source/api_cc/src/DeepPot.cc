@@ -369,7 +369,7 @@ compute (ENERGYTYPE &			dener,
   select_map<int>(datype, datype_, fwd_map, 1);
   // aparam
   if (daparam > 0){
-    aparam.resize(bkw_map.size());
+    aparam.resize(bkw_map.size() - nghost_real);
     select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam);
   }
   // internal nlist
