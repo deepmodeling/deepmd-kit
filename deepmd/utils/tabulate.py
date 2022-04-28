@@ -170,31 +170,25 @@ class DPTabulate():
         """
         # tabulate range [lower, upper] with stride0 'stride0'
         lower, upper = self._get_env_mat_range(min_nbor_dist)
-
         if isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
-            xx_all = []
-            for ii in range(self.ntypes):
-                xx = np.arange(lower[ii], upper[ii], stride0, dtype = self.data_type)
-                xx = np.append(xx, np.arange(upper[ii], extrapolate * upper[ii], stride1, dtype = self.data_type))
-                xx = np.append(xx, np.array([extrapolate * upper[ii]], dtype = self.data_type))
-                xx_all.append(xx)
-            nspline = ((upper - lower) / stride0 + (extrapolate * upper - upper) / stride1).astype(int)
             for ii in range(self.table_size):
                 if (self.type_one_side and not self._all_excluded(ii)) or (not self.type_one_side and (ii // self.ntypes, ii % self.ntypes) not in self.exclude_types):
-                    ielement = ii // self.ntypes
                     if self.type_one_side:
                         net = "filter_-1_net_" + str(ii)
-                    else:
-                        net = "filter_" + str(ielement) + "_net_" + str(ii % self.ntypes)
-                    if self.type_one_side:
-                        # upper and lower should consider all types which are not excluded
-                        idx = [(ielement, type_i) in self.exclude_types for type_i in range(self.ntypes)]
+                        # upper and lower should consider all types which are not excluded and sel>0
+                        idx = [(type_i, ii) not in self.exclude_types and self.sel_a[type_i] > 0 for type_i in range(self.ntypes)]
                         uu = np.max(upper[idx])
                         ll = np.min(lower[idx])
                     else:
+                        ielement = ii // self.ntypes
+                        net = "filter_" + str(ielement) + "_net_" + str(ii % self.ntypes)
                         uu = upper[ielement]
                         ll = lower[ielement]
-                    self._build_lower(net, xx_all[ielement], ii, uu, ll, stride0, stride1, extrapolate, nspline[ielement])
+                    xx = np.arange(ll, uu, stride0, dtype = self.data_type)
+                    xx = np.append(xx, np.arange(uu, extrapolate * uu, stride1, dtype = self.data_type))
+                    xx = np.append(xx, np.array([extrapolate * uu], dtype = self.data_type))
+                    nspline = ((uu - ll) / stride0 + (extrapolate * uu - uu) / stride1).astype(int)
+                    self._build_lower(net, xx, ii, uu, ll, stride0, stride1, extrapolate, nspline)
         elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeT):
             xx_all = []
             for ii in range(self.ntypes):
@@ -211,28 +205,24 @@ class DPTabulate():
                     self._build_lower(net, xx_all[ii], idx, upper[ii], lower[ii], stride0, stride1, extrapolate, nspline[ii])
                     idx += 1
         elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeR):
-            xx_all = []
-            for ii in range(self.ntypes):
-                xx = np.arange(lower[ii], upper[ii], stride0, dtype = self.data_type)
-                xx = np.append(xx, np.arange(upper[ii], extrapolate * upper[ii], stride1, dtype = self.data_type))
-                xx = np.append(xx, np.array([extrapolate * upper[ii]], dtype = self.data_type))
-                xx_all.append(xx)
-            nspline = ((upper - lower) / stride0 + (extrapolate * upper - upper) / stride1).astype(int)
             for ii in range(self.table_size):
                 if (self.type_one_side and not self._all_excluded(ii)) or (not self.type_one_side and (ii // self.ntypes, ii % self.ntypes) not in self.exclude_types):
-                    ielement = ii // self.ntypes
                     if self.type_one_side:
                         net = "filter_-1_net_" + str(ii)
-                    else:
-                        net = "filter_" + str(ielement) + "_net_" + str(ii % self.ntypes)
-                    if self.type_one_side:
-                        idx = [(ielement, type_i) in self.exclude_types for type_i in range(self.ntypes)]
+                        # upper and lower should consider all types which are not excluded and sel>0
+                        idx = [(type_i, ii) not in self.exclude_types and self.sel_a[type_i] > 0 for type_i in range(self.ntypes)]
                         uu = np.max(upper[idx])
                         ll = np.min(lower[idx])
                     else:
+                        ielement = ii // self.ntypes
+                        net = "filter_" + str(ielement) + "_net_" + str(ii % self.ntypes)
                         uu = upper[ielement]
                         ll = lower[ielement]
-                    self._build_lower(net, xx_all[ielement], ii, uu, ll, stride0, stride1, extrapolate, nspline[ielement])
+                    xx = np.arange(ll, uu, stride0, dtype = self.data_type)
+                    xx = np.append(xx, np.arange(uu, extrapolate * uu, stride1, dtype = self.data_type))
+                    xx = np.append(xx, np.array([extrapolate * uu], dtype = self.data_type))
+                    nspline = ((uu - ll) / stride0 + (extrapolate * uu - uu) / stride1).astype(int)
+                    self._build_lower(net, xx, ii, uu, ll, stride0, stride1, extrapolate, nspline)
         else:
             raise RuntimeError("Unsupported descriptor")
 
