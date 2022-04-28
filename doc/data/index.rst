@@ -7,5 +7,6 @@ The DeePMD-kit organize data in :code:`systems`. Each :code:`system` is composed
 .. toctree::
    :maxdepth: 1
 
+   system
    data-conv
    dpdata
