@@ -2,7 +2,7 @@ import logging
 import numpy as np
 import deepmd
 from typing import Callable
-from typing import Tuple, List
+from typing import Tuple, List, Dict
 from functools import lru_cache
 from scipy.special import comb
 from deepmd.env import tf
@@ -136,12 +136,15 @@ class DPTabulate():
 
         self.data = {}
 
+        self.upper = {}
+        self.lower = {}
+
 
     def build(self, 
               min_nbor_dist : float,
               extrapolate : float, 
               stride0 : float, 
-              stride1 : float) -> Tuple[int, int]:
+              stride1 : float) -> Tuple[Dict[str, int], Dict[str, int]]:
         """
         Build the tables for model compression
 
@@ -160,10 +163,10 @@ class DPTabulate():
 
         Returns
         ----------
-        lower
-                The lower boundary of environment matrix
-        upper
-                The upper boundary of environment matrix
+        lower : dict[str, int]
+                The lower boundary of environment matrix by net
+        upper : dict[str, int]
+                The upper boundary of environment matrix by net
         """
         # tabulate range [lower, upper] with stride0 'stride0'
         lower, upper = self._get_env_mat_range(min_nbor_dist)
@@ -183,7 +186,15 @@ class DPTabulate():
                         net = "filter_-1_net_" + str(ii)
                     else:
                         net = "filter_" + str(ielement) + "_net_" + str(ii % self.ntypes)
-                    self._build_lower(net, xx_all[ielement], ii, upper[ielement], lower[ielement], stride0, stride1, extrapolate, nspline[ielement])
+                    if self.type_one_side:
+                        # upper and lower should consider all types which are not excluded
+                        idx = [(ielement, type_i) in self.exclude_types for type_i in range(self.ntypes)]
+                        uu = np.max(upper[idx])
+                        ll = np.min(lower[idx])
+                    else:
+                        uu = upper[ielement]
+                        ll = lower[ielement]
+                    self._build_lower(net, xx_all[ielement], ii, uu, ll, stride0, stride1, extrapolate, nspline[ielement])
         elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeT):
             xx_all = []
             for ii in range(self.ntypes):
@@ -214,11 +225,18 @@ class DPTabulate():
                         net = "filter_-1_net_" + str(ii)
                     else:
                         net = "filter_" + str(ielement) + "_net_" + str(ii % self.ntypes)
-                    self._build_lower(net, xx_all[ielement], ii, upper[ielement], lower[ielement], stride0, stride1, extrapolate, nspline[ielement])
+                    if self.type_one_side:
+                        idx = [(ielement, type_i) in self.exclude_types for type_i in range(self.ntypes)]
+                        uu = np.max(upper[idx])
+                        ll = np.min(lower[idx])
+                    else:
+                        uu = upper[ielement]
+                        ll = lower[ielement]
+                    self._build_lower(net, xx_all[ielement], ii, uu, ll, stride0, stride1, extrapolate, nspline[ielement])
         else:
             raise RuntimeError("Unsupported descriptor")
 
-        return lower, upper
+        return self.lower, self.upper
 
     def _build_lower(self, net, xx, idx, upper, lower, stride0, stride1, extrapolate, nspline):
         vv, dd, d2 = self._make_data(xx, idx)
@@ -238,7 +256,6 @@ class DPTabulate():
             raise RuntimeError("Unsupported descriptor")
 
         # hh.shape: [nspline, self.last_layer_size]
-        print(vv.shape, nspline)
         hh = vv[1:nspline+1, :self.last_layer_size] - vv[:nspline, :self.last_layer_size]
 
         self.data[net][:, :6 * self.last_layer_size:6] = vv[:nspline, :self.last_layer_size]
@@ -247,6 +264,9 @@ class DPTabulate():
         self.data[net][:, 3:6 * self.last_layer_size:6] = (1 / (2 * tt * tt * tt)) * (20 * hh - (8 * dd[1:nspline+1, :self.last_layer_size] + 12 * dd[:nspline, :self.last_layer_size]) * tt - (3 * d2[:nspline, :self.last_layer_size] - d2[1:nspline+1, :self.last_layer_size]) * tt * tt)
         self.data[net][:, 4:6 * self.last_layer_size:6] = (1 / (2 * tt * tt * tt * tt)) * (-30 * hh + (14 * dd[1:nspline+1, :self.last_layer_size] + 16 * dd[:nspline, :self.last_layer_size]) * tt + (3 * d2[:nspline, :self.last_layer_size] - 2 * d2[1:nspline+1, :self.last_layer_size]) * tt * tt)
         self.data[net][:, 5:6 * self.last_layer_size:6] = (1 / (2 * tt * tt * tt * tt * tt)) * (12 * hh - 6 * (dd[1:nspline+1, :self.last_layer_size] + dd[:nspline, :self.last_layer_size]) * tt + (d2[1:nspline+1, :self.last_layer_size] - d2[:nspline, :self.last_layer_size]) * tt * tt)
+
+        self.upper[net] = upper
+        self.lower[net] = lower
 
     def _load_sub_graph(self):
         sub_graph_def = tf.GraphDef()
