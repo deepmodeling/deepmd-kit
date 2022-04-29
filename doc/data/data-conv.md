@@ -1,26 +1,21 @@
-# Data conversion
+# Formats of a system
 
-One needs to provide the following information to train a model: the atom type, the simulation box, the atom coordinate, the atom force, system energy and virial. A snapshot of a system that contains these information is called a **frame**. We use the following convention of units:
+Two binaray formats, NumPy and HDF5, are supported for training. The raw format is not directly supported, but a tool is provided to convert data from the raw format to the NumPy format.
 
+## NumPy format
 
-Property | Unit 
----|---
-Time     | ps   
-Length   | Å    
-Energy   | eV   
-Force    | eV/Å 
-Virial   | eV   
-Pressure | Bar  
-
-
-The frames of the system are stored in two formats. A raw file is a plain text file with each information item written in one file and one frame written on one line. The default files that provide box, coordinate, force, energy and virial are `box.raw`, `coord.raw`, `force.raw`, `energy.raw` and `virial.raw`, respectively. *We recommend you use these file names*. Here is an example of force.raw:
-```bash
-$ cat force.raw
--0.724  2.039 -0.951  0.841 -0.464  0.363
- 6.737  1.554 -5.587 -2.803  0.062  2.222
--1.968 -0.163  1.020 -0.225 -0.789  0.343
+In a system with the Numpy format, the system properties are stored as text files ending with `.raw`, such as `type.raw` amd `type_map.raw`, under the system directory. If one needs to train a non-periodic system, an empty `nopbc` file should be put under the system directory. Both input and labeled frame properties are saved as the [NumPy binary data (NPY) files](https://numpy.org/doc/stable/reference/generated/numpy.lib.format.html#npy-format) ending with `.npy` in each of the `set.*` directories. Take an example, a system may contain the following files:
 ```
-This `force.raw` contains 3 frames with each frame having the forces of 2 atoms, thus it has 3 lines and 6 columns. Each line provides all the 3 force components of 2 atoms in 1 frame. The first three numbers are the 3 force components of the first atom, while the second three numbers are the 3 force components of the second atom. The coordinate file `coord.raw` is organized similarly. In `box.raw`, the 9 components of the box vectors should be provided on each line in the order `XX XY XZ YX YY YZ ZX ZY ZZ`. In `virial.raw`, the 9 components of the virial tensor should be provided on each line in the order `XX XY XZ YX YY YZ ZX ZY ZZ`. The number of lines of all raw files should be identical.
+type.raw
+type_map.raw
+nopbc
+set.000/coord.npy
+set.000/energy.npy
+set.000/force.npy
+set.001/coord.npy
+set.001/energy.npy
+set.001/force.npy
+```
 
 We assume that the atom types do not change in all frames. It is provided by `type.raw`, which has one line with the types of atoms written one by one. The atom types should be integers. For example the `type.raw` of a system that has 2 atoms with 0 and 1:
 ```bash
@@ -35,7 +30,30 @@ O H
 ```
 The type `0` is named by `"O"` and the type `1` is named by `"H"`.
 
-The second format is the data sets of `numpy` binary data that are directly used by the training program. User can use the script `$deepmd_source_dir/data/raw/raw_to_set.sh` to convert the prepared raw files to data sets. For example, if we have a raw file that contains 6000 frames, 
+## HDF5 format
+
+A system with the HDF5 format has the same strucutre as the Numpy format, but in a HDF5 file, a system is organized as an [HDF5 group](https://docs.h5py.org/en/stable/high/group.html). The file name of a Numpy file is the key in a HDF5 file, and the data is the value to the key. One need to use `#` in a DP path to divide the path to the HDF5 file and the HDF5 key:
+```
+/path/to/data.hdf5#H2O
+```
+Here, `/path/to/data.hdf5` is the path and `H2O` is the key. There should be some data in the `H2O` group, such as `H2O/type.raw` and `H2O/set.000/force.npy`.
+
+A HDF5 files with a large number of systems has better performance than multiple NumPy files in a large cluster.
+
+## Raw format and data conversion
+
+A raw file is a plain text file with each information item written in one file and one frame written on one line. **It's not directly supported**, but we provide a tool to convert them.
+
+In the raw format, the property of one frame are provided per line, ending with `.raw`. Take an example, the default files that provide box, coordinate, force, energy and virial are `box.raw`, `coord.raw`, `force.raw`, `energy.raw` and `virial.raw`, respectively. Here is an example of `force.raw`:
+```bash
+$ cat force.raw
+-0.724  2.039 -0.951  0.841 -0.464  0.363
+ 6.737  1.554 -5.587 -2.803  0.062  2.222
+-1.968 -0.163  1.020 -0.225 -0.789  0.343
+```
+This `force.raw` contains 3 frames with each frame having the forces of 2 atoms, thus it has 3 lines and 6 columns. Each line provides all the 3 force components of 2 atoms in 1 frame. The first three numbers are the 3 force components of the first atom, while the second three numbers are the 3 force components of the second atom. Other files are organized similarly. The number of lines of all raw files should be identical.
+
+One can use the script `$deepmd_source_dir/data/raw/raw_to_set.sh` to convert the prepared raw files to the NumPy format. For example, if we have a raw file that contains 6000 frames, 
 ```bash
 $ ls 
 box.raw  coord.raw  energy.raw  force.raw  type.raw  virial.raw
@@ -49,7 +67,4 @@ making set 2 ...
 $ ls 
 box.raw  coord.raw  energy.raw  force.raw  set.000  set.001  set.002  type.raw  virial.raw
 ```
-It generates three sets `set.000`, `set.001` and `set.002`, with each set contains 2000 frames. One do not need to take care of the binary data files in each of the `set.*` directories. The path containing `set.*` and `type.raw` is called a *system*. 
-
-If one needs to train a non-periodic system, an empty `nopbc` file should be put under the system directory. `box.raw` is not necessary in a non-periodic system.
-
+It generates three sets `set.000`, `set.001` and `set.002`, with each set contains 2000 frames with the Numpy format.
