@@ -207,6 +207,7 @@ class DPTabulate():
                     self._build_lower(net, xx, ii, upper, lower, stride0, stride1, extrapolate)
         else:
             raise RuntimeError("Unsupported descriptor")
+        self._convert_numpy_to_tensor()
 
         return lower, upper
 
@@ -484,3 +485,8 @@ class DPTabulate():
             if len(item) != 0:
                 return item.shape[1]
         return 0
+
+    def _convert_numpy_to_tensor(self):
+        """Convert self.data from np.ndarray to tf.Tensor."""
+        for ii in self.data:
+            self.data[ii] = tf.constant(self.data[ii])
