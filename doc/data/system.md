@@ -12,26 +12,26 @@ nopbc    | Non-periodic system     | nopbc        | Optional             | 1    
 
 The input frame properties contains the following property, the first axis of which is the number of frames:
 
-ID       | Property                | Unit | Required/Optional    | Shape                    | Description
--------- | ----------------------  | ---- | -------------------- | -----------------------  | -----------
-coord    | Atomic coordinates      | Å    | Required             | Nframes \* Natoms \* 3   | 
-box      | Boxes                   | Å    | Required if periodic | Nframes \* 3 \* 3        | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`
-fparam   | Extra frame parameters  | Any  | Optional             | Nframes \* Any           |
-aparam   | Extra atomic parameters | Any  | Optional             | Nframes \* aparam \* Any |
+ID       | Property                | Raw file       | Unit | Required/Optional    | Shape                    | Description
+-------- | ----------------------  | -------------- | ---- | -------------------- | -----------------------  | -----------
+coord    | Atomic coordinates      | coord.raw      | Å    | Required             | Nframes \* Natoms \* 3   | 
+box      | Boxes                   | box.raw        | Å    | Required if periodic | Nframes \* 3 \* 3        | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`
+fparam   | Extra frame parameters  | fparam.raw     | Any  | Optional             | Nframes \* Any           |
+aparam   | Extra atomic parameters | aparam.raw     | Any  | Optional             | Nframes \* aparam \* Any |
 
 The labeled frame properties is listed as follows, all of which will be used for training if and only if the loss function contains such property:
 
-ID                     | Property                 | Unit   | Shape                    | Description
----------------------- | -----------------------  | ----   | -----------------------  | -----------
-energy                 | Frame energies           | eV     | Nframes                  | 
-force                  | Atomic forces            | eV/Å   | Nframes \* Natoms \* 3   | 
-virial                 | Frame virial             | eV     | Nframes \* 3             | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`
-atom_ener              | Atomic energies          | eV     | Nframes \* Natoms        |
-atom_pref              | Weights of atomic forces | 1      | Nframes \* Natoms        |
-dipole                 | Frame dipole             | Any    | Nframes \* 3             |
-atomic_dipole          | Atomic dipole            | Any    | Nframes \* Natoms \* 3   |
-polarizability         | Frame polarizability     | Any    | Nframes \* 9             | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`
-atomic_polarizability  | Atomic polarizability    | Any    | Nframes \* Natoms \* 9   | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`
+ID                     | Property                 | Raw file                 | Unit   | Shape                    | Description
+---------------------- | -----------------------  | ------------------------ | ----   | -----------------------  | -----------
+energy                 | Frame energies           | energy.raw               | eV     | Nframes                  | 
+force                  | Atomic forces            | force.raw                | eV/Å   | Nframes \* Natoms \* 3   | 
+virial                 | Frame virial             | virial.raw               | eV     | Nframes \* 3             | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`
+atom_ener              | Atomic energies          | atom_ener.raw            | eV     | Nframes \* Natoms        |
+atom_pref              | Weights of atomic forces | atom_pref.raw            | 1      | Nframes \* Natoms        |
+dipole                 | Frame dipole             | dipole.raw               | Any    | Nframes \* 3             |
+atomic_dipole          | Atomic dipole            | atomic_dipole.raw        | Any    | Nframes \* Natoms \* 3   |
+polarizability         | Frame polarizability     | polarizability.raw       | Any    | Nframes \* 9             | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`
+atomic_polarizability  | Atomic polarizability    | atomic_polarizability.raw| Any    | Nframes \* Natoms \* 9   | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`
 
 In general, we always use the following convention of units:
 
