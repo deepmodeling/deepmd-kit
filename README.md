@@ -124,24 +124,17 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [Run MD with GROMACS](doc/third-party/gromacs.md)
 
 # Code structure
+
 The code is organized as follows:
 
 * `data/raw`: tools manipulating the raw data files.
-
 * `examples`: examples.
-
 * `deepmd`: DeePMD-kit python modules.
-
 * `source/api_cc`: source code of DeePMD-kit C++ API.
-
 * `source/ipi`: source code of i-PI client.
-
 * `source/lib`: source code of DeePMD-kit library.
-
 * `source/lmp`: source code of Lammps module.
-
 * `source/gmx`: source code of Gromacs plugin.
-
 * `source/op`: tensorflow op implementation. working with library.
 
 
