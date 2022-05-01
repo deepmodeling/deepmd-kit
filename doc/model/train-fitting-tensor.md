@@ -1,6 +1,6 @@
 # Fit `tensor` like `Dipole` and `Polarizability`
 
-Unlike `energy` which is a scalar, one may want to fit some high dimensional physical quantity, like `dipole` (vector) and `polarizability` (matrix, shorted as `polar`). Deep Potential has provided different API to allow this. In this example we will show you how to train a model to fit them for a water system. A complete training input script of the examples can be found in 
+Unlike `energy`, which is a scalar, one may want to fit some high dimensional physical quantity, like `dipole` (vector) and `polarizability` (matrix, shorted as `polar`). Deep Potential has provided different API to allow this. In this example we will show you how to train a model to fit them for a water system. A complete training input script of the examples can be found in 
 
 ```bash
 $deepmd_source_dir/examples/water_tensor/dipole/dipole_input.json
