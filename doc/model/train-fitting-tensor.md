@@ -11,7 +11,7 @@ The training and validation data are also provided our examples. But note that *
 
 Similar to the `input.json` used in `ener` mode, training json is also divided into `model`, `learning_rate`, `loss` and `training`. Most keywords remains the same as `ener` mode, and their meaning can be found [here](train-se-e2-a.md). To fit a tensor, one need to modify `model.fitting_net` and `loss`.
 
-## Fitting Network
+## The fitting Network
 
 The `fitting_net` section tells DP which fitting net to use.
 
