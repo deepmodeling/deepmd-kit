@@ -2,7 +2,7 @@
 
 In this section, we will take `$deepmd_source_dir/examples/water/se_e2_a/input.json` as an example of the input file.
 
-## Fitting network
+## The fitting network
 
 The construction of the fitting net is give by section `fitting_net`
 ```json
