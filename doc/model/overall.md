@@ -15,7 +15,7 @@ A model has two parts, a descriptor that maps atomic configuration to a set of s
 
 Assume that we are looking for a model for water, we will have two types of atoms. The atom types are recorded as integers. In this example, we denote `0` for oxygen and `1` for hydrogen. A mapping from the atom type to their names is provided by `type_map`. 
 
-The model has two subsections `descritpor` and `fitting_net`, which defines the descriptor and the fitting net, respectively. The `type_map` is optional, which provides the element names (but not necessarily to be the element name) of the corresponding atom types.
+The model has two subsections `descriptor` and `fitting_net`, which defines the descriptor and the fitting net, respectively. The `type_map` is optional, which provides the element names (but not necessarily to be the element name) of the corresponding atom types.
 
 DeePMD-kit implements the following descriptors:
 1. [`se_e2_a`](train-se-e2-a.md): DeepPot-SE constructed from all information (both angular and radial) of atomic configurations. The embedding takes the distance between atoms as input.
