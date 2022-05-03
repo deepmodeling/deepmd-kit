@@ -124,35 +124,28 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [Run MD with GROMACS](doc/third-party/gromacs.md)
 
 # Code structure
+
 The code is organized as follows:
 
 * `data/raw`: tools manipulating the raw data files.
-
 * `examples`: examples.
-
 * `deepmd`: DeePMD-kit python modules.
-
 * `source/api_cc`: source code of DeePMD-kit C++ API.
-
 * `source/ipi`: source code of i-PI client.
-
 * `source/lib`: source code of DeePMD-kit library.
-
 * `source/lmp`: source code of Lammps module.
-
 * `source/gmx`: source code of Gromacs plugin.
-
 * `source/op`: tensorflow op implementation. working with library.
 
 
 # Troubleshooting
 
-- [Model compatibility](doc/troubleshooting/model-compatability.md)
+- [Model compatibility](doc/troubleshooting/model_compatability.md)
 - [Installation](doc/troubleshooting/installation.md)
-- [The temperature undulates violently during early stages of MD](doc/troubleshooting/md-energy-undulation.md)
-- [MD: cannot run LAMMPS after installing a new version of DeePMD-kit](doc/troubleshooting/md-version-compatibility.md)
-- [Do we need to set rcut < half boxsize?](doc/troubleshooting/howtoset-rcut.md)
-- [How to set sel?](doc/troubleshooting/howtoset-sel.md)
+- [The temperature undulates violently during early stages of MD](doc/troubleshooting/md_energy_undulation.md)
+- [MD: cannot run LAMMPS after installing a new version of DeePMD-kit](doc/troubleshooting/md_version_compatibility.md)
+- [Do we need to set rcut < half boxsize?](doc/troubleshooting/howtoset_rcut.md)
+- [How to set sel?](doc/troubleshooting/howtoset_sel.md)
 - [How to control the number of nodes used by a job?](doc/troubleshooting/howtoset_num_nodes.md)
 - [How to tune Fitting/embedding-net size?](doc/troubleshooting/howtoset_netsize.md)
 

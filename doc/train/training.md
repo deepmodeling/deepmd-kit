@@ -1,4 +1,4 @@
-# Training a model
+# Train a model
 
 Several examples of training can be found at the `examples` directory:
 ```bash

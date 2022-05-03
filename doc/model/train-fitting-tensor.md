@@ -1,6 +1,6 @@
 # Fit `tensor` like `Dipole` and `Polarizability`
 
-Unlike `energy` which is a scalar, one may want to fit some high dimensional physical quantity, like `dipole` (vector) and `polarizability` (matrix, shorted as `polar`). Deep Potential has provided different API to allow this. In this example we will show you how to train a model to fit them for a water system. A complete training input script of the examples can be found in 
+Unlike `energy`, which is a scalar, one may want to fit some high dimensional physical quantity, like `dipole` (vector) and `polarizability` (matrix, shorted as `polar`). Deep Potential has provided different APIs to do this. In this example, we will show you how to train a model to fit them for a water system. A complete training input script of the examples can be found in 
 
 ```bash
 $deepmd_source_dir/examples/water_tensor/dipole/dipole_input.json
@@ -11,7 +11,7 @@ The training and validation data are also provided our examples. But note that *
 
 Similar to the `input.json` used in `ener` mode, training json is also divided into `model`, `learning_rate`, `loss` and `training`. Most keywords remains the same as `ener` mode, and their meaning can be found [here](train-se-e2-a.md). To fit a tensor, one need to modify `model.fitting_net` and `loss`.
 
-## Fitting Network
+## The fitting Network
 
 The `fitting_net` section tells DP which fitting net to use.
 
