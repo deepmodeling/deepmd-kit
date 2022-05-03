@@ -10,7 +10,7 @@ For example, if one wants to turn on `MPIIO` package in LAMMPS, go to [`lammps-d
 
 This requires that Docker has been installed. After the building, the packages will be generated in `build_artifacts/linux-64` and `build_artifacts/noarch`, and then one can install then executing
 ```sh
-conda create -n deepmd lammps-dp -c file:///path/to/build_artifacts -c https://conda.deepmodeling.org -c nvidia
+conda create -n deepmd lammps-dp -c file:///path/to/build_artifacts -c https://conda.deepmodeling.com -c nvidia
 ```
 
 One may also upload packages to one's Anaconda channel, so they can be installed on other machines:
