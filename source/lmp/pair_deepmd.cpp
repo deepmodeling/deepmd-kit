@@ -6,6 +6,7 @@
 #include "domain.h"
 #include "comm.h"
 #include "force.h"
+#include "compute.h"
 #include "memory.h"
 #include "update.h"
 #include "output.h"
@@ -175,6 +176,81 @@ make_uniform_aparam(
     }
   }
 }
+
+void PairDeepMD::make_compute_fparam(
+#ifdef HIGH_PREC
+  vector<double > & fparam
+#else
+  vector<float > & fparam
+#endif
+)
+{
+  assert(do_compute);
+
+  int icompute = modify->find_compute(compute_id);
+  Compute *compute = modify->compute[icompute];
+
+  assert(compute);
+  fparam.resize(dim_fparam);
+
+  if (dim_fparam == 1){
+    compute->compute_scalar();
+    fparam[0] = compute->scalar;
+  }
+  else if (dim_fparam >1){
+    compute->compute_vector();
+    double *cvector = compute->vector;
+    for (int jj = 0; jj < dim_aparam; ++jj){
+    fparam[jj] =cvector[jj];
+    }
+  }
+}
+
+#ifdef USE_TTM
+void PairDeepMD::make_ttm_fparam(
+#ifdef HIGH_PREC
+    vector<double > & fparam
+#else
+    vector<float > & fparam
+#endif
+    )
+{
+  assert(do_ttm);
+  // get ttm_fix
+  const FixTTMMod * ttm_fix = NULL;
+  for (int ii = 0; ii < modify->nfix; ii++) {
+    if (string(modify->fix[ii]->id) == ttm_fix_id){
+      ttm_fix = dynamic_cast<FixTTMMod*>(modify->fix[ii]);
+    }
+  }
+  assert(ttm_fix);
+
+  fparam.resize(dim_fparam);
+
+  vector<int> nnodes = ttm_fix->get_nodes();
+  int nxnodes = nnodes[0];
+  int nynodes = nnodes[1];
+  int nznodes = nnodes[2];
+  double *** const T_electron = ttm_fix->get_T_electron();
+
+  int numb_effective_nodes = 0;
+  double total_Te = 0;
+
+  // loop over grids to get average electron temperature 
+  for (int ixnode = 0; ixnode < nxnodes; ixnode++)
+      for (int iynode = 0; iynode < nynodes; iynode++)
+        for (int iznode = 0; iznode < nznodes; iznode++) 
+        {
+          if (T_electron[ixnode][iynode][iznode] != 0)
+          {
+            numb_effective_nodes += 1;
+            total_Te += T_electron[ixnode][iynode][iznode];
+          }
+        }
+
+  fparam[0] = total_Te/numb_effective_nodes;
+}
+#endif
 
 #ifdef USE_TTM
 void PairDeepMD::make_ttm_aparam(
@@ -359,8 +435,17 @@ void PairDeepMD::compute(int eflag, int vflag)
   }
   else if (do_ttm) {
 #ifdef USE_TTM
+    if (aparam.size() > 0){
     make_ttm_aparam(daparam);
+    }
+    if (dim_fparam > 0){
+    make_ttm_fparam(fparam);
+    }
 #endif
+  }
+	
+  if (do_compute){
+    make_compute_fparam(fparam);
   }
 
   // int ago = numb_models > 1 ? 0 : neighbor->ago;
@@ -798,6 +883,7 @@ is_key (const string& input)
   keys.push_back("out_file");
   keys.push_back("fparam");
   keys.push_back("aparam");
+  keys.push_back("compute");
   keys.push_back("ttm");
   keys.push_back("atomic");
   keys.push_back("relative");
@@ -913,6 +999,22 @@ void PairDeepMD::settings(int narg, char **arg)
       error->all(FLERR, "The deepmd-kit was compiled without support for TTM, please rebuild it with -DUSE_TTM");
 #endif      
     }
+	  
+    ///////////////////////////////////////////////
+    // pair_style     deepmd cp.pb compute TEMP
+    // compute        TEMP all temp
+    //////////////////////////////////////////////
+    else if (string(arg[iarg]) == string("compute")) {
+      for (int ii = 0; ii < 1; ++ii){
+        if (iarg+1+ii >= narg || is_key(arg[iarg+1+ii])) {
+          error->all(FLERR, "invalid compute key: should be compute compute_id(str)");
+        }
+      }	
+      do_compute = true;
+      compute_id = arg[iarg+1];
+      iarg += 1 + 1;
+    }
+	  
     else if (string(arg[iarg]) == string("atomic")) {
       out_each = 1;
       iarg += 1;
@@ -939,6 +1041,9 @@ void PairDeepMD::settings(int narg, char **arg)
   if (out_freq < 0) error->all(FLERR,"Illegal out_freq, should be >= 0");
   if (do_ttm && aparam.size() > 0) {
     error->all(FLERR,"aparam and ttm should NOT be set simultaneously");
+  }
+  if (do_compute && fparam.size() > 0) {
+    error->all(FLERR,"fparam and compute should NOT be set simultaneously");
   }
   
   if (comm->me == 0){
@@ -974,12 +1079,16 @@ void PairDeepMD::settings(int narg, char **arg)
     cout << endl
 	 << pre << "rcut in model:      " << cutoff << endl
 	 << pre << "ntypes in model:    " << numb_types << endl;
-    if (dim_fparam > 0) {
+    if (dim_fparam > 0 && do_compute ==0 && do_ttm ==0) {
       cout << pre << "using fparam(s):    " ;
       for (int ii = 0; ii < dim_fparam; ++ii){
 	cout << fparam[ii] << "  " ;
       }
       cout << endl;
+    }
+    if (do_compute){
+      cout << pre << "using compute compute:      " ;
+      cout << compute_id << "  " << endl;
     }
     if (aparam.size() > 0) {
       cout << pre << "using aparam(s):    " ;
@@ -988,6 +1097,10 @@ void PairDeepMD::settings(int narg, char **arg)
       }
       cout << endl;
     }
+    if (do_ttm){
+      cout << pre << "using ttm fix:      " ;
+      cout << ttm_fix_id << "  " << endl;
+    }  
   }
   
   comm_reverse = numb_models * 3;
