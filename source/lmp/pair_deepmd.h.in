@@ -8,7 +8,11 @@ PairStyle(deepmd,PairDeepMD)
 #define LMP_PAIR_NNP_H
 
 #include "pair.h"
+#ifdef LMPPLUGIN
+#include "DeepPot.h"
+#else
 #include "deepmd/DeepPot.h"
+#endif
 #include <iostream>
 #include <fstream>
 
@@ -89,17 +93,6 @@ private:
   float eps;
   float eps_v;
 #endif
-
-  void make_compute_fparam(
-#ifdef HIGH_PREC
-      std::vector<double > & fparam
-#else
-      std::vector<float > & fparam
-#endif
-      );
-  bool do_compute;
-  std::string compute_id;
-
   void make_ttm_aparam(
 #ifdef HIGH_PREC
       std::vector<double > & dparam
@@ -107,15 +100,6 @@ private:
       std::vector<float > & dparam
 #endif
       );
-      
-  void make_ttm_fparam(
-#ifdef HIGH_PREC
-      std::vector<double > & fparam
-#else
-      std::vector<float > & fparam
-#endif
-      );
-
   bool do_ttm;
   std::string ttm_fix_id;
   int *counts,*displacements;
