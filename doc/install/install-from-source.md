@@ -22,7 +22,7 @@ First, check the python version on your machine
 python --version
 ```
 
-We follow the virtual environment approach to install TensorFlow's Python interface. The full instruction can be found on the official [TensorFlow website](https://www.tensorflow.org/install/pip). Now we assume that the Python interface will be installed to virtual environment directory `$tensorflow_venv`
+We follow the virtual environment approach to install TensorFlow's Python interface. The full instruction can be found on the official [TensorFlow website](https://www.tensorflow.org/install/pip). TensorFlow 1.8 or later is supported. Now we assume that the Python interface will be installed to virtual environment directory `$tensorflow_venv`
 ```bash
 virtualenv -p python3 $tensorflow_venv
 source $tensorflow_venv/bin/activate
@@ -51,7 +51,17 @@ python -c "import tensorflow as tf;print(tf.reduce_sum(tf.random.normal([1000, 1
 ```
 One should remember to activate the virtual environment every time he/she uses deepmd-kit.
 
+One can also [build TensorFlow Python interface from source](https://www.tensorflow.org/install/source) for custom hardward optimization, such as CUDA, ROCM, or OneDNN support.
+
 ### Install the DeePMD-kit's python interface
+
+Check the compiler version on your machine
+
+```
+gcc --version
+```
+
+The compiler gcc 4.8 or later is supported in the DeePMD-kit. Note that TensorFlow may have specific requirement of the compiler version. It is recommended to use the same compiler version as TensorFlow, which can be printed by `python -c "import tensorflow;print(tensorflow.version.COMPILER_VERSION)"`.
 
 Execute
 ```bash
@@ -64,7 +74,7 @@ One may set the following environment variables before executing `pip`:
 | Environment variables | Allowed value          | Default value | Usage                      |
 | --------------------- | ---------------------- | ------------- | -------------------------- |
 | DP_VARIANT            | `cpu`, `cuda`, `rocm`  | `cpu`         | Build CPU variant or GPU variant with CUDA or ROCM support. |
-| CUDA_TOOLKIT_ROOT_DIR | Path                   | Detected automatically | The path to the CUDA toolkit directory. |
+| CUDA_TOOLKIT_ROOT_DIR | Path                   | Detected automatically | The path to the CUDA toolkit directory. CUDA 7.0 or later is supported. NVCC is required. |
 | ROCM_ROOT             | Path                   | Detected automatically | The path to the ROCM toolkit directory. |
 
 To test the installation, one should firstly jump out of the source directory
@@ -140,13 +150,7 @@ If one does not need to use DeePMD-kit with Lammps or I-Pi, then the python inte
 
 ### Install the Tensorflow's C++ interface
 
-Check the compiler version on your machine
-
-```
-gcc --version
-```
-
-The C++ interface of DeePMD-kit was tested with compiler gcc >= 4.8. It is noticed that the I-Pi support is only compiled with gcc >= 4.8.
+The C++ interface of DeePMD-kit was tested with compiler gcc >= 4.8. It is noticed that the I-Pi support is only compiled with gcc >= 4.8. Note that TensorFlow may have specific requirement of the compiler version.
 
 First the C++ interface of Tensorflow should be installed. It is noted that the version of Tensorflow should be consistent with the python interface. You may follow [the instruction](install-tf.2.8.md) to install the corresponding C++ interface.
 
@@ -171,11 +175,11 @@ One may add the following arguments to `cmake`:
 | -DTENSORFLOW_ROOT=&lt;value&gt;  | Path              | -             | The Path to TensorFlow's C++ interface. |
 | -DCMAKE_INSTALL_PREFIX=&lt;value&gt; | Path          | -             | The Path where DeePMD-kit will be installed. |
 | -DUSE_CUDA_TOOLKIT=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build GPU support with CUDA toolkit. |
-| -DCUDA_TOOLKIT_ROOT_DIR=&lt;value&gt; | Path         | Detected automatically | The path to the CUDA toolkit directory. |
+| -DCUDA_TOOLKIT_ROOT_DIR=&lt;value&gt; | Path         | Detected automatically | The path to the CUDA toolkit directory. CUDA 7.0 or later is supported. NVCC is required. |
 | -DUSE_ROCM_TOOLKIT=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build GPU support with ROCM toolkit. |
 | -DROCM_ROOT=&lt;value&gt; | Path         | Detected automatically | The path to the ROCM toolkit directory. |
-| -DLAMMPS_VERSION_NUMBER=&lt;value&gt; | Number         | `20210929` | Only neccessary for LAMMPS built-in mode. The version number of LAMMPS (yyyymmdd). |
-| -DLAMMPS_SOURCE_ROOT=&lt;value&gt; | Path         | - | Only neccessary for LAMMPS plugin mode. The path to the LAMMPS source code (later than 8Apr2021). If not assigned, the plugin mode will not be enabled. |
+| -DLAMMPS_VERSION_NUMBER=&lt;value&gt; | Number         | `20210929` | Only neccessary for LAMMPS built-in mode. The version number of LAMMPS (yyyymmdd). LAMMPS 29Oct2020 (20201029) or later is supported. |
+| -DLAMMPS_SOURCE_ROOT=&lt;value&gt; | Path         | - | Only neccessary for LAMMPS plugin mode. The path to the [LAMMPS source code](install-lammps.md). LAMMPS 8Apr2021 or later is supported. If not assigned, the plugin mode will not be enabled. |
 
 If the cmake has been executed successfully, then run the following make commands to build the package:  
 ```bash

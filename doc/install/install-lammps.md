@@ -3,13 +3,15 @@
 There are two ways to install LAMMPS: the built-in mode and the plugin mode. The built-in mode builds LAMMPS along with the DeePMD-kit and DeePMD-kit will be loaded automatically when running LAMMPS. The plugin mode builds LAMMPS and a plugin separately, so one needs to use `plugin load` command to load the DeePMD-kit's LAMMPS plugin library. 
 
 ## Install LAMMPS's DeePMD-kit module (built-in mode)
+Before following this section, [DeePMD-kit C++ interface](install-from-source.md) should have be installed.
+
 DeePMD-kit provides a module for running MD simulation with LAMMPS. Now make the DeePMD-kit module for LAMMPS.
 
 ```bash
 cd $deepmd_source_dir/source/build
 make lammps
 ```
-DeePMD-kit will generate a module called `USER-DEEPMD` in the `build` directory. If you need the low precision version, move `env_low.sh` to `env.sh` in the directory. Now download the LAMMPS code (`29Oct2020` or later), and uncompress it:
+DeePMD-kit will generate a module called `USER-DEEPMD` in the `build` directory. If you need the low precision version, move `env_low.sh` to `env.sh` in the directory. Now download the LAMMPS code, and uncompress it. The LAMMPS version should be the same as what is specified as the CMAKE argument `LAMMPS_VERSION_NUMBER`.
 ```bash
 cd /some/workspace
 wget https://github.com/lammps/lammps/archive/stable_29Sep2021_update3.tar.gz
@@ -19,11 +21,11 @@ The source code of LAMMPS is stored in directory `lammps-stable_29Sep2021_update
 ```bash
 cd lammps-stable_29Sep2021_update3/src/
 cp -r $deepmd_source_dir/source/build/USER-DEEPMD .
-```
-Now build LAMMPS
-```bash
 make yes-kspace
 make yes-user-deepmd
+```
+You can enable any other package you want. Now build LAMMPS
+```bash
 make mpi -j4
 ```
 
@@ -47,7 +49,7 @@ wget https://github.com/lammps/lammps/archive/stable_29Sep2021_update3.tar.gz
 tar xf stable_29Sep2021_update3.tar.gz
 ```
 
-The source code of LAMMPS is stored in directory `lammps-stable_29Sep2021_update3`. Now go into the LAMMPS directory and create a directory called `build`
+The source code of LAMMPS is stored in directory `lammps-stable_29Sep2021_update3`. The directory of the source code should be specified as the CMAKE argument `LAMMPS_SOURCE_ROOT` during installation of the DeePMD-kit C++ interface. Now go into the LAMMPS directory and create a directory called `build`
 
 ```bash
 mkdir -p lammps-stable_29Sep2021_update3/build/
