@@ -666,7 +666,7 @@ class TabulateFusionSeRGradGradOp : public OpKernel {
     const Tensor& dz_dy_dem_tensor	= context->input(context_input_index++);
     const Tensor& descriptor_tensor = context->input(context_input_index++);
     // set size of the sample
-    OP_REQUIRES (context, (dz_dy_dem_tensor.shape().dims() == 3),      errors::InvalidArgument ("Dim of input should be 3"));
+    OP_REQUIRES (context, (dz_dy_dem_tensor.shape().dims() == 2),      errors::InvalidArgument ("Dim of input should be 2"));
     int context_output_index = 0;
     Tensor* dz_dy_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(
