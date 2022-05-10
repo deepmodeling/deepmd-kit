@@ -2,6 +2,13 @@
 #include "tensorflow/core/public/version.h"
 #if TF_MAJOR_VERSION >= 2 || (TF_MAJOR_VERSION == 1 && TF_MINOR_VERSION >= 15)
 
+#if TF_MAJOR_VERSION >= 2 && TF_MINOR_VERSION >= 7
+// breaking change in tf 2.7: Renaming of tensorflow::int64 to int_64_t
+#define TF_INT64 int64_t 
+#else
+#define TF_INT64 tensorflow::int64 
+#endif
+
 #include "parallel.h"
 
 #include "tensorflow/core/grappler/devices.h"
@@ -34,10 +41,10 @@ bool FindProdForce(RemapperContext *ctx, int node_index) {
   return IsProdForce(*node_def);
 }
 
-int64_t GetNThreads() {
+TF_INT64 GetNThreads() {
   // the number of threads is based on the session...
   // For convenience, we use environment variable directly
-  int64_t tot = 1;
+  TF_INT64 tot = 1;
   Status status =
       ReadInt64FromEnvVar("TF_INTER_OP_PARALLELISM_THREADS", 1, &tot);
   if (!status.ok()) {
@@ -55,7 +62,7 @@ Status ParallelProdForce(RemapperContext *ctx, int node_index,
 
   const NodeDef *ori_node = ctx->graph_view.GetNode(node_index)->node();
   auto &src_attr = ori_node->attr();
-  int64_t tot = GetNThreads();
+  TF_INT64 tot = GetNThreads();
   if (tot <= 1)
     return Status::OK();
 
