@@ -378,12 +378,16 @@ class EnerFitting (Fitting):
         if input_dict is None:
             input_dict = {}
         bias_atom_e = self.bias_atom_e
-        if self.numb_fparam > 0 and ( self.fparam_avg is None or self.fparam_inv_std is None ):
-            self.fparam_avg = 0.
-            self.fparam_inv_std = 1.
-        if self.numb_aparam > 0 and ( self.aparam_avg is None or self.aparam_inv_std is None ):
-            self.aparam_avg = 0.
-            self.aparam_inv_std = 1.
+        if self.numb_fparam > 0:
+            if self.fparam_avg is None:
+                self.fparam_avg = 0.
+            if self.fparam_inv_std is None:
+                self.fparam_inv_std = 1.
+        if self.numb_aparam > 0:
+            if self.aparam_avg is None:
+                self.aparam_avg = 0.
+            if self.aparam_inv_std is None:
+                self.aparam_inv_std = 1.
 
         with tf.variable_scope('fitting_attr' + suffix, reuse = reuse) :
             t_dfparam = tf.constant(self.numb_fparam, 
