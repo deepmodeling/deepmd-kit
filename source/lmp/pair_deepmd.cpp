@@ -65,9 +65,7 @@ std::string readfile(std::string filename)
 {
   auto ss = std::ostringstream{};
   std::ifstream input_file(filename);
-  ss << input_file.rdbuf();
-  return ss.str();
-  // return std::string(std::istreambuf_iterator<char>(file));
+  return std::string(std::istreambuf_iterator<char>(input_file), std::istreambuf_iterator<char>());
 }
 
 std::string PairDeepMD::get_prog_file_content(const std::string & model) {
@@ -682,16 +680,19 @@ void PairDeepMD::settings(int narg, char **arg)
   }
   numb_models = models_prog.size();
   if (numb_models == 1) {
-    // deep_pot.init (get_prog_file_content(arg[0]), get_params_file_content(arg[1]));
-    deep_pot.init ("/home/paddle-deepmd/setting/lmp/" + models_prog[0], "/home/paddle-deepmd/setting/lmp/" +  models_params[0]);
+    auto prog_model = get_prog_file_content(arg[0]);
+    auto prog_params = get_params_file_content(arg[1]);
+    deep_pot.init (prog_model, prog_params);
+    // deep_pot.init (models_prog[0], models_params[0]);
     cutoff = deep_pot.cutoff ();
     numb_types = deep_pot.numb_types();
     dim_fparam = deep_pot.dim_fparam();
     dim_aparam = deep_pot.dim_aparam();
   }
   else {
-    deep_pot.init (get_prog_file_content(arg[0]), get_params_file_content(arg[1]));
-    deep_pot_model_devi.init(get_prog_file_content(models_prog), get_params_file_content(models_params));
+    auto progs_model = get_prog_file_content(models_prog);
+    auto progs_params = get_params_file_content(models_params);
+    deep_pot_model_devi.init(progs_model, progs_params);
     cutoff = deep_pot_model_devi.cutoff();
     numb_types = deep_pot_model_devi.numb_types();
     dim_fparam = deep_pot_model_devi.dim_fparam();

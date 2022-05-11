@@ -9,8 +9,8 @@ class PaddleDeepPot
 public:
   PaddleDeepPot() ;
   ~PaddleDeepPot() ;
-  PaddleDeepPot(const std::string & prog_str, const std::string & params_str);
-  void init (const std::string & prog_str = "", const std::string & params_str = "");
+  PaddleDeepPot(std::string & prog_str, std::string & params_str);
+  void init (std::string & prog_str, std::string & params_str);
   void print_summary(const std::string &pre) const;
 public:
   void compute (ENERGYTYPE &			ener,
@@ -103,8 +103,8 @@ class PaddleDeepPotModelDevi
 public:
   PaddleDeepPotModelDevi () ;
   ~PaddleDeepPotModelDevi() ;
-  PaddleDeepPotModelDevi  (const std::vector<std::string> & prog_strs, const std::vector<std::string> & params_strs);
-  void init (const std::vector<std::string> & prog_strs = std::vector<std::string>(), const std::vector<std::string> & params_strs = std::vector<std::string>());
+  PaddleDeepPotModelDevi  (std::vector<std::string> & prog_strs, std::vector<std::string> & params_strs);
+  void init (std::vector<std::string>& prog_strs, std::vector<std::string>& params_strs);
 public:
   void compute (std::vector<ENERGYTYPE> &		all_ener,
 		std::vector<std::vector<VALUETYPE> > &	all_force,

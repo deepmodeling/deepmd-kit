@@ -193,7 +193,7 @@ PaddleDeepPot::PaddleDeepPot (): inited (false),init_nbor (false)
 
 }
 
-PaddleDeepPot::PaddleDeepPot (const std::string & prog_str, const std::string & params_str)
+PaddleDeepPot::PaddleDeepPot (std::string& prog_str, std::string& params_str)
     : inited (false), init_nbor (false)
 {
   init(prog_str, params_str);  
@@ -201,20 +201,17 @@ PaddleDeepPot::PaddleDeepPot (const std::string & prog_str, const std::string & 
 
 PaddleDeepPot::~PaddleDeepPot() {}
 
-void PaddleDeepPot::init (const std::string & prog_str, const std::string & params_str)
+void PaddleDeepPot::init (std::string& prog_str, std::string& params_str)
 {
   if (inited){
     std::cerr << "Init error" << std::endl;
     return ;
   }
   math_lib_num_threads = deepmd::get_math_lib_num_threads();
-  // config.SetModelBuffer(prog_str.c_str(), prog_str.size(), params_str.c_str(), params_str.size());
-  config.SetModel(prog_str, params_str);
+  config.SetModelBuffer(prog_str.c_str(), prog_str.size(), params_str.c_str(), params_str.size());
   // config.SwitchIrOptim();
   // config.EnableMKLDNN();
   config.SetCpuMathLibraryNumThreads(math_lib_num_threads);
-  std::cout<<">>> Info of model path: "<< prog_str <<std::endl;
-  std::cout<<">>> Info of param path: "<< params_str <<std::endl;
   std::cout<<">>> Info of cpu math lib num threads: "<< deepmd::get_math_lib_num_threads() <<std::endl;
   predictor = paddle_infer::CreatePredictor(config);
 
@@ -421,14 +418,14 @@ PaddleDeepPotModelDevi::PaddleDeepPotModelDevi ()
 
 }
 
-PaddleDeepPotModelDevi::PaddleDeepPotModelDevi (const std::vector<std::string> & prog_strs, const std::vector<std::string> & params_strs)
+PaddleDeepPotModelDevi::PaddleDeepPotModelDevi (std::vector<std::string> & prog_strs, std::vector<std::string> & params_strs)
 {
   init(prog_strs, params_strs);
 }
 
 PaddleDeepPotModelDevi::~PaddleDeepPotModelDevi() {}
 
-void PaddleDeepPotModelDevi::init (const std::vector<std::string> & prog_strs, const std::vector<std::string> & params_strs){
+void PaddleDeepPotModelDevi::init (std::vector<std::string>& prog_strs, std::vector<std::string>& params_strs){
   if (inited){
     std::cerr << "Init error" << std::endl;
     return ;
