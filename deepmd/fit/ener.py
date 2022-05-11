@@ -378,10 +378,16 @@ class EnerFitting (Fitting):
         if input_dict is None:
             input_dict = {}
         bias_atom_e = self.bias_atom_e
-        if self.numb_fparam > 0 and ( self.fparam_avg is None or self.fparam_inv_std is None ):
-            raise RuntimeError('No data stat result. one should do data statisitic, before build')
-        if self.numb_aparam > 0 and ( self.aparam_avg is None or self.aparam_inv_std is None ):
-            raise RuntimeError('No data stat result. one should do data statisitic, before build')
+        if self.numb_fparam > 0:
+            if self.fparam_avg is None:
+                self.fparam_avg = 0.
+            if self.fparam_inv_std is None:
+                self.fparam_inv_std = 1.
+        if self.numb_aparam > 0:
+            if self.aparam_avg is None:
+                self.aparam_avg = 0.
+            if self.aparam_inv_std is None:
+                self.aparam_inv_std = 1.
 
         with tf.variable_scope('fitting_attr' + suffix, reuse = reuse) :
             t_dfparam = tf.constant(self.numb_fparam, 
@@ -527,7 +533,12 @@ class EnerFitting (Fitting):
             suffix to name scope
         """
         self.fitting_net_variables = get_fitting_net_variables_from_graph_def(graph_def)
-
+        if self.numb_fparam > 0:
+            self.fparam_avg = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_fparam_avg' % suffix)
+            self.fparam_inv_std = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_fparam_istd' % suffix)
+        if self.numb_aparam > 0:
+            self.aparam_avg = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_aparam_avg' % suffix)
+            self.aparam_inv_std = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_aparam_istd' % suffix)
 
     def enable_compression(self,
                            model_file: str,
