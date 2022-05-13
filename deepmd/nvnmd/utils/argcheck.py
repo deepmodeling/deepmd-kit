@@ -1,0 +1,28 @@
+
+
+from dargs import Argument
+
+def nvnmd_args():
+    doc_net_size_file = "configuration the number of nodes of fitting_net"
+    doc_map_file = "A file containing the mapping tables which replace the calculation of embedding nets"
+    doc_config_file = "A file containing the parameters about how to implement the model in certain hardware"
+    doc_weight_file = "the *.npy file containing the weights of the model"
+    doc_enable = "enable the nvnmd training"
+    doc_restore_descriptor = "enable to restroe the parameter of embedding_net from weight.npy"
+    doc_restore_fitting_net = "enable to restroe the parameter of fitting_net from weight.npy"
+    doc_quantize_descriptor = "enable the quantizatioin of descriptor"
+    doc_quantize_fitting_net = "enable the quantizatioin of fitting_net"
+    args = [
+        Argument("net_size", int, optional=False, default=32, doc=doc_net_size_file),
+        Argument("map_file", str, optional=False, default='none', doc=doc_map_file),
+        Argument("config_file", str, optional=False, default='none', doc=doc_config_file),
+        Argument("weight_file", str, optional=False, default='none', doc=doc_weight_file),
+        Argument("enable", bool, optional=False, default=False, doc=doc_enable),
+        Argument("restore_descriptor", bool, optional=False, default=False, doc=doc_restore_descriptor),
+        Argument("restore_fitting_net", bool, optional=False, default=False, doc=doc_restore_fitting_net),
+        Argument("quantize_descriptor", bool, optional=False, default=False, doc=doc_quantize_descriptor),
+        Argument("quantize_fitting_net", bool, optional=False, default=False, doc=doc_quantize_fitting_net),
+    ]
+
+    doc_nvnmd = 'The nvnmd options.'
+    return Argument("nvnmd", dict, args, [], optional=True, doc = doc_nvnmd)
