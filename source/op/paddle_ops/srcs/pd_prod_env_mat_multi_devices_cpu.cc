@@ -1,5 +1,9 @@
-//#include "paddle/extension.h"
+#ifdef ON_INFER
 #include "paddle/include/experimental/ext_all.h"
+#else
+#include "paddle/extension.h"
+#endif
+// #include "paddle/include/experimental/ext_all.h"
 #include "utilities.h"
 #include "coord.h"
 #include "region.h"

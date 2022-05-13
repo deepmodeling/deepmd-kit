@@ -1,8 +1,11 @@
 #include <assert.h>
 #include "prod_virial.h"
 #include "prod_virial_grad.h"
-//#include "paddle/extension.h"
+#ifdef ON_INFER
 #include "paddle/include/experimental/ext_all.h"
+#else
+#include "paddle/extension.h"
+#endif
 
 
 #define CHECK_INPUT(x) PD_CHECK(x.place() == paddle::PlaceType::kCPU, #x " must be a CPU Tensor.")

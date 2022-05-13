@@ -5,7 +5,10 @@ set(CMAKE_LINK_WHAT_YOU_USE TRUE)
 # build cpp or python interfaces
 if (NOT DEFINED BUILD_CPP_IF) 
   set(BUILD_CPP_IF TRUE)
-endif (NOT DEFINED BUILD_CPP_IF)
+  message(WARNING "WARNING! -DON_INFER is set")
+  add_definitions("-DON_INFER")
+endif()
+
 if (NOT DEFINED BUILD_PY_IF) 
   set(BUILD_PY_IF FALSE)
 endif (NOT DEFINED BUILD_PY_IF)
@@ -72,72 +75,72 @@ if (USE_CUDA_TOOLKIT)
   add_definitions("-D GOOGLE_CUDA")
 endif()
 
-# find paddle
+if(BUILD_PY_IF)
+find_package(tensorflow REQUIRED)
+else()
 find_package(Fluid REQUIRED)
-
-# find tensorflow, I need tf abi info
-if (BUILD_PY_IF)
-  find_package(tensorflow REQUIRED)
-endif (BUILD_PY_IF)
+endif()
 
 # find threads
 find_package(Threads)
 
 # auto op_cxx_abi
-#if (NOT DEFINED OP_CXX_ABI)
-#  if (BUILD_PY_IF) 
-#    if (DEFINED TENSORFLOW_ROOT)
-#      set(FIND_ABI_CMD "import sys,os; sys.path.insert(0, os.path.join('${TENSORFLOW_ROOT}', '..')); import tensorflow; print(tensorflow.CXX11_ABI_FLAG if 'CXX11_ABI_FLAG' in tensorflow.__dict__ else tensorflow.sysconfig.CXX11_ABI_FLAG, end = '')" )
-#    else()
-#      set(FIND_ABI_CMD "import tensorflow; print(tensorflow.CXX11_ABI_FLAG if 'CXX11_ABI_FLAG' in tensorflow.__dict__ else tensorflow.sysconfig.CXX11_ABI_FLAG, end = '')")
-#    endif()
-#    execute_process(
-#      COMMAND ${PYTHON_EXECUTABLE} "-c" "${FIND_ABI_CMD}"
-#      WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-#      OUTPUT_VARIABLE PY_CXX_ABI
-#      RESULT_VARIABLE PY_CXX_ABI_RESULT_VAR
-#      ERROR_VARIABLE PY_CXX_ABI_ERROR_VAR
-#      )
-#    if (NOT ${PY_CXX_ABI_RESULT_VAR} EQUAL 0)
-#      message(FATAL_ERROR "Cannot determine cxx abi, error message: ${PY_CXX_ABI_ERROR_VAR}")
-#    endif()
-#    set(OP_CXX_ABI ${PY_CXX_ABI})
-#  endif()
-#  if (BUILD_CPP_IF)
-#    try_run(
-#      CPP_CXX_ABI_RUN_RESULT_VAR CPP_CXX_ABI_COMPILE_RESULT_VAR
-#      ${CMAKE_CURRENT_BINARY_DIR}/tf_cxx_abi
-#      "${CMAKE_CURRENT_SOURCE_DIR}/cmake/tf_cxx_abi.cpp"
-#      LINK_LIBRARIES ${TensorFlowFramework_LIBRARY}
-#      CMAKE_FLAGS "-DINCLUDE_DIRECTORIES:STRING=${TensorFlow_INCLUDE_DIRS}"
-#      RUN_OUTPUT_VARIABLE CPP_CXX_ABI
-#      COMPILE_OUTPUT_VARIABLE CPP_CXX_ABI_COMPILE_OUTPUT_VAR
-#      )
-#    if (NOT ${CPP_CXX_ABI_COMPILE_RESULT_VAR})
-#      message(FATAL_ERROR "Failed to compile: \n ${CPP_CXX_ABI_COMPILE_OUTPUT_VAR}" )
-#    endif()
-#    if (NOT ${CPP_CXX_ABI_RUN_RESULT_VAR} EQUAL "0")
-#      message(FATAL_ERROR "Failed to run, return code: ${CPP_CXX_ABI}" )
-#    endif()
-#    if (DEFINED PY_CXX_ABI)
-#      if (NOT (${CPP_CXX_ABI} EQUAL ${PY_CXX_ABI}))
-#	message (WARNNING "NOT consistent CXX_ABIs: python interface of tf uses ${PY_CXX_ABI}, while c++ interface of tf uses ${CPP_CXX_ABI}, we follow c++ interface ")
-#      endif()
-#    endif()
-#    set(OP_CXX_ABI ${CPP_CXX_ABI})
-#  endif()
-#  message (STATUS "Automatically determined OP_CXX_ABI=${OP_CXX_ABI} ")
-#else()
-#  message (STATUS "User set OP_CXX_ABI=${OP_CXX_ABI} ")  
-#endif()    
-# message (STATUS "No set OP_CXX_ABI=${OP_CXX_ABI} ")  
-# # message the cxx_abi used during compiling
-# if (${OP_CXX_ABI} EQUAL 0) 
-#   message (STATUS "Set GLIBCXX_USE_CXX_ABI=0 when compiling ops")
-# else ()
-#   set (OP_CXX_ABI 1)
-#   message (STATUS "Set GLIBCXX_USE_CXX_ABI=1 when compiling ops")
-# endif ()
+if (BUILD_PY_IF)
+if (NOT DEFINED OP_CXX_ABI)
+ if (BUILD_PY_IF) 
+   if (DEFINED TENSORFLOW_ROOT)
+     set(FIND_ABI_CMD "import sys,os; sys.path.insert(0, os.path.join('${TENSORFLOW_ROOT}', '..')); import tensorflow; print(tensorflow.CXX11_ABI_FLAG if 'CXX11_ABI_FLAG' in tensorflow.__dict__ else tensorflow.sysconfig.CXX11_ABI_FLAG, end = '')" )
+   else()
+     set(FIND_ABI_CMD "import tensorflow; print(tensorflow.CXX11_ABI_FLAG if 'CXX11_ABI_FLAG' in tensorflow.__dict__ else tensorflow.sysconfig.CXX11_ABI_FLAG, end = '')")
+   endif()
+   execute_process(
+     COMMAND ${PYTHON_EXECUTABLE} "-c" "${FIND_ABI_CMD}"
+     WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+     OUTPUT_VARIABLE PY_CXX_ABI
+     RESULT_VARIABLE PY_CXX_ABI_RESULT_VAR
+     ERROR_VARIABLE PY_CXX_ABI_ERROR_VAR
+     )
+   if (NOT ${PY_CXX_ABI_RESULT_VAR} EQUAL 0)
+     message(FATAL_ERROR "Cannot determine cxx abi, error message: ${PY_CXX_ABI_ERROR_VAR}")
+   endif()
+   set(OP_CXX_ABI ${PY_CXX_ABI})
+ endif()
+ if (BUILD_CPP_IF)
+   try_run(
+     CPP_CXX_ABI_RUN_RESULT_VAR CPP_CXX_ABI_COMPILE_RESULT_VAR
+     ${CMAKE_CURRENT_BINARY_DIR}/tf_cxx_abi
+     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/tf_cxx_abi.cpp"
+     LINK_LIBRARIES ${TensorFlowFramework_LIBRARY}
+     CMAKE_FLAGS "-DINCLUDE_DIRECTORIES:STRING=${TensorFlow_INCLUDE_DIRS}"
+     RUN_OUTPUT_VARIABLE CPP_CXX_ABI
+     COMPILE_OUTPUT_VARIABLE CPP_CXX_ABI_COMPILE_OUTPUT_VAR
+     )
+   if (NOT ${CPP_CXX_ABI_COMPILE_RESULT_VAR})
+     message(FATAL_ERROR "Failed to compile: \n ${CPP_CXX_ABI_COMPILE_OUTPUT_VAR}" )
+   endif()
+   if (NOT ${CPP_CXX_ABI_RUN_RESULT_VAR} EQUAL "0")
+     message(FATAL_ERROR "Failed to run, return code: ${CPP_CXX_ABI}" )
+   endif()
+   if (DEFINED PY_CXX_ABI)
+     if (NOT (${CPP_CXX_ABI} EQUAL ${PY_CXX_ABI}))
+	message (WARNNING "NOT consistent CXX_ABIs: python interface of tf uses ${PY_CXX_ABI}, while c++ interface of tf uses ${CPP_CXX_ABI}, we follow c++ interface ")
+     endif()
+   endif()
+   set(OP_CXX_ABI ${CPP_CXX_ABI})
+ endif()
+ message (STATUS "Automatically determined OP_CXX_ABI=${OP_CXX_ABI} ")
+else()
+ message (STATUS "User set OP_CXX_ABI=${OP_CXX_ABI} ")  
+endif()    
+message (STATUS "No set OP_CXX_ABI=${OP_CXX_ABI} ")  
+# message the cxx_abi used during compiling
+if (${OP_CXX_ABI} EQUAL 0) 
+  message (STATUS "Set GLIBCXX_USE_CXX_ABI=0 when compiling ops")
+else ()
+  set (OP_CXX_ABI 1)
+  message (STATUS "Set GLIBCXX_USE_CXX_ABI=1 when compiling ops")
+endif ()
+endif()
 
 # define USE_TTM
 if (NOT DEFINED USE_TTM)
@@ -193,7 +196,7 @@ endif (BUILD_CPP_IF)
 
 # include
 include_directories(${DeePMD_INCLUDE_DIRS})
-#include_directories(${TensorFlow_INCLUDE_DIRS})
+include_directories(${TensorFlow_INCLUDE_DIRS})
 
 # define names of libs
 set (LIB_DEEPMD		"deepmd")
@@ -216,6 +219,7 @@ endif (BUILD_CPP_IF)
 # add_subdirectory (op/)
 add_subdirectory (lib/)
 if (BUILD_PY_IF)
+  add_subdirectory (op/)
   add_subdirectory (config/)
   # add_subdirectory (tests/)
 endif (BUILD_PY_IF)
