@@ -89,7 +89,7 @@ def calc_model_devi(coord,
                     models,
                     fname=None,
                     frequency=1, 
-                    nopbc=True):
+                    ):
     '''
     Python interface to calculate model deviation
 
@@ -107,8 +107,6 @@ def calc_model_devi(coord,
         File to dump results, default None
     frequency : int
         Steps between frames (if the system is given by molecular dynamics engine), default 1
-    nopbc : bool
-        Whether to use pbc conditions
     
     Returns
     -------
@@ -127,8 +125,10 @@ def calc_model_devi(coord,
     >>> graphs = [DP("graph.000.pb"), DP("graph.001.pb")]
     >>> model_devi = calc_model_devi(coord, cell, atype, graphs)
     '''
-    if nopbc:
-        box = None
+    if not box:
+        nopbc = True
+    else:
+        nopbc = False
 
     forces = []
     virials = []
