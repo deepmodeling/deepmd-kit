@@ -6,6 +6,7 @@ from deepmd.common import ACTIVATION_FN_DICT, PRECISION_DICT
 from deepmd.utils.plugin import Plugin
 import json
 
+from deepmd.nvnmd.utils.argcheck import nvnmd_args
 
 def list_to_doc(xx):
     items = []
