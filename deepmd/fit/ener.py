@@ -1,20 +1,22 @@
 import warnings
 import numpy as np
 from typing import Tuple, List
-from packaging.version import Version
 
 from deepmd.env import tf
-from deepmd.common import add_data_requirement, get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, cast_precision
-from deepmd.utils.argcheck import list_to_doc
+from deepmd.common import ClassArg, add_data_requirement, get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter
+from deepmd.utils.argcheck import list_to_doc, nvnmd_args
 from deepmd.utils.network import one_layer, one_layer_rand_seed_shift
+from deepmd.descriptor import DescrptLocFrame
+from deepmd.descriptor import DescrptSeA
 from deepmd.utils.type_embed import embed_atom_type
-from deepmd.utils.graph import get_fitting_net_variables_from_graph_def, load_graph_def, get_tensor_by_name_from_graph
-from deepmd.fit.fitting import Fitting
 
 from deepmd.env import global_cvt_2_tf_float
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION, TF_VERSION
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 
-class EnerFitting (Fitting):
+from deepmd.nvnmd.utils.config import nvnmd_cfg
+from deepmd.nvnmd.fit.ener import one_layer_nvnmd, one_layer_deepmd
+
+class EnerFitting ():
     r"""Fitting the energy of the system. The force and the virial can also be trained.
 
     The potential energy :math:`E` is a fitting network function of the descriptor :math:`\mathcal{D}`:
@@ -130,14 +132,13 @@ class EnerFitting (Fitting):
             self.trainable = [self.trainable] * (len(self.n_neuron)+1)
         assert(len(self.trainable) == len(self.n_neuron) + 1), 'length of trainable should be that of n_neuron + 1'
         self.atom_ener = []
-        self.atom_ener_v = atom_ener
         for at, ae in enumerate(atom_ener):
             if ae is not None:
-                self.atom_ener.append(tf.constant(ae, self.fitting_precision, name = "atom_%d_ener" % at))
+                self.atom_ener.append(tf.constant(ae, GLOBAL_TF_FLOAT_PRECISION, name = "atom_%d_ener" % at))
             else:
                 self.atom_ener.append(None)
         self.useBN = False
-        self.bias_atom_e = np.zeros(self.ntypes, dtype=np.float64)
+        self.bias_atom_e = None
         # data requirement
         if self.numb_fparam > 0 :
             add_data_requirement('fparam', self.numb_fparam, atomic=False, must=True, high_prec=False)
@@ -150,8 +151,8 @@ class EnerFitting (Fitting):
             self.aparam_std = None
             self.aparam_inv_std = None
 
+        self.compress = False
         self.fitting_net_variables = None
-        self.mixed_prec = None
 
     def get_numb_fparam(self) -> int:
         """
@@ -180,6 +181,7 @@ class EnerFitting (Fitting):
         """
         self.bias_atom_e = self._compute_output_stats(all_stat, rcond = self.rcond)
 
+    @classmethod
     def _compute_output_stats(self, all_stat, rcond = 1e-3):
         data = all_stat['energy']
         # data[sys_idx][batch_idx][frame_idx]
@@ -198,20 +200,8 @@ class EnerFitting (Fitting):
             sys_tynatom = np.append(sys_tynatom, data[ss][0].astype(np.float64))
         sys_tynatom = np.reshape(sys_tynatom, [nsys,-1])
         sys_tynatom = sys_tynatom[:,2:]
-        if len(self.atom_ener) > 0:
-            # Atomic energies stats are incorrect if atomic energies are assigned.
-            # In this situation, we directly use these assigned energies instead of computing stats.
-            # This will make the loss decrease quickly
-            assigned_atom_ener = np.array(list((ee for ee in self.atom_ener_v if ee is not None)))
-            assigned_ener_idx = list((ii for ii, ee in enumerate(self.atom_ener_v) if ee is not None))
-            # np.dot out size: nframe
-            sys_ener -= np.dot(sys_tynatom[:, assigned_ener_idx], assigned_atom_ener)
-            sys_tynatom[:, assigned_ener_idx] = 0.
         energy_shift,resd,rank,s_value \
             = np.linalg.lstsq(sys_tynatom, sys_ener, rcond = rcond)
-        if len(self.atom_ener) > 0:
-            for ii in assigned_ener_idx:
-                energy_shift[ii] = self.atom_ener_v[ii]
         return energy_shift    
 
     def compute_input_stats(self, 
@@ -293,8 +283,12 @@ class EnerFitting (Fitting):
             ext_aparam = tf.cast(ext_aparam,self.fitting_precision)
             layer = tf.concat([layer, ext_aparam], axis = 1)
 
+        if nvnmd_cfg.enable: 
+            one_layer = one_layer_nvnmd
+        else: 
+            one_layer = one_layer_deepmd
         for ii in range(0,len(self.n_neuron)) :
-            if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
+            if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] and (not nvnmd_cfg.enable):
                 layer+= one_layer(
                     layer,
                     self.n_neuron[ii],
@@ -306,8 +300,7 @@ class EnerFitting (Fitting):
                     precision = self.fitting_precision,
                     trainable = self.trainable[ii],
                     uniform_seed = self.uniform_seed,
-                    initial_variables = self.fitting_net_variables,
-                    mixed_prec = self.mixed_prec)
+                    initial_variables = self.fitting_net_variables)
             else :
                 layer = one_layer(
                     layer,
@@ -319,8 +312,7 @@ class EnerFitting (Fitting):
                     precision = self.fitting_precision,
                     trainable = self.trainable[ii],
                     uniform_seed = self.uniform_seed,
-                    initial_variables = self.fitting_net_variables,
-                    mixed_prec = self.mixed_prec)
+                    initial_variables = self.fitting_net_variables)
             if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
         final_layer = one_layer(
             layer, 
@@ -333,19 +325,17 @@ class EnerFitting (Fitting):
             precision = self.fitting_precision, 
             trainable = self.trainable[-1],
             uniform_seed = self.uniform_seed,
-            initial_variables = self.fitting_net_variables,
-            mixed_prec = self.mixed_prec,
-            final_layer = True)
+            initial_variables = self.fitting_net_variables)
         if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
 
         return final_layer
             
             
-    @cast_precision
+
     def build (self, 
                inputs : tf.Tensor,
                natoms : tf.Tensor,
-               input_dict : dict = None,
+               input_dict : dict = {},
                reuse : bool = None,
                suffix : str = '', 
     ) -> tf.Tensor:
@@ -375,19 +365,11 @@ class EnerFitting (Fitting):
         ener
                 The system energy
         """
-        if input_dict is None:
-            input_dict = {}
         bias_atom_e = self.bias_atom_e
-        if self.numb_fparam > 0:
-            if self.fparam_avg is None:
-                self.fparam_avg = 0.
-            if self.fparam_inv_std is None:
-                self.fparam_inv_std = 1.
-        if self.numb_aparam > 0:
-            if self.aparam_avg is None:
-                self.aparam_avg = 0.
-            if self.aparam_inv_std is None:
-                self.aparam_inv_std = 1.
+        if self.numb_fparam > 0 and ( self.fparam_avg is None or self.fparam_inv_std is None ):
+            raise RuntimeError('No data stat result. one should do data statisitic, before build')
+        if self.numb_aparam > 0 and ( self.aparam_avg is None or self.aparam_inv_std is None ):
+            raise RuntimeError('No data stat result. one should do data statisitic, before build')
 
         with tf.variable_scope('fitting_attr' + suffix, reuse = reuse) :
             t_dfparam = tf.constant(self.numb_fparam, 
@@ -419,15 +401,10 @@ class EnerFitting (Fitting):
                                                 trainable = False,
                                                 initializer = tf.constant_initializer(self.aparam_inv_std))
             
-        inputs = tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]])
+        inputs = tf.cast(tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]]), self.fitting_precision)
         if len(self.atom_ener):
             # only for atom_ener
-            nframes = input_dict.get('nframes')
-            if nframes is not None:
-                # like inputs, but we don't want to add a dependency on inputs
-                inputs_zero = tf.zeros((nframes, self.dim_descrpt * natoms[0]), dtype=self.fitting_precision)
-            else:
-                inputs_zero = tf.zeros_like(inputs, dtype=self.fitting_precision)
+            inputs_zero = tf.zeros_like(inputs, dtype=GLOBAL_TF_FLOAT_PRECISION)
         
 
         if bias_atom_e is not None :
@@ -445,7 +422,10 @@ class EnerFitting (Fitting):
             aparam = (aparam - t_aparam_avg) * t_aparam_istd
             aparam = tf.reshape(aparam, [-1, self.numb_aparam * natoms[0]])
             
-        type_embedding = input_dict.get('type_embedding', None)
+        if input_dict is not None:
+            type_embedding = input_dict.get('type_embedding', None)
+        else:
+            type_embedding = None
         if type_embedding is not None:
             atype_embed = embed_atom_type(self.ntypes, natoms, type_embedding)
             atype_embed = tf.tile(atype_embed,[tf.shape(inputs)[0],1])
@@ -454,7 +434,6 @@ class EnerFitting (Fitting):
 
         if atype_embed is None:
             start_index = 0
-            outs_list = []
             for type_i in range(self.ntypes):
                 if bias_atom_e is None :
                     type_bias_ae = 0.0
@@ -474,11 +453,12 @@ class EnerFitting (Fitting):
                     )
                     final_layer += self.atom_ener[type_i] - zero_layer
                 final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i]])
-                outs_list.append(final_layer)
+                # concat the results
+                if type_i == 0:
+                    outs = final_layer
+                else:
+                    outs = tf.concat([outs, final_layer], axis = 1)
                 start_index += natoms[2+type_i]
-            # concat the results
-            # concat once may be faster than multiple concat
-            outs = tf.concat(outs_list, axis = 1)
         # with type embedding
         else:
             if len(self.atom_ener) > 0:
@@ -490,18 +470,13 @@ class EnerFitting (Fitting):
                 axis=1
             )
             self.dim_descrpt = self.dim_descrpt + type_shape[1]
-            inputs = tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]])
+            inputs = tf.cast(tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]]), self.fitting_precision)
             final_layer = self._build_lower(
                 0, natoms[0], 
                 inputs, fparam, aparam, 
                 bias_atom_e=0.0, suffix=suffix, reuse=reuse
             )
             outs = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[0]])
-            # add atom energy bias; TF will broadcast to all batches
-            # tf.repeat is avaiable in TF>=2.1 or TF 1.15
-            _TF_VERSION = Version(TF_VERSION)
-            if (Version('1.15') <= _TF_VERSION < Version('2') or _TF_VERSION >= Version('2.1')) and self.bias_atom_e is not None:
-                outs += tf.repeat(tf.Variable(self.bias_atom_e, dtype=self.fitting_precision, trainable=False, name="bias_atom_ei"), natoms[2:])
 
         if self.tot_ener_zero:
             force_tot_ener = 0.0
@@ -512,66 +487,19 @@ class EnerFitting (Fitting):
             outs = tf.reshape(outs, [-1])
 
         tf.summary.histogram('fitting_net_output', outs)
-        return tf.reshape(outs, [-1])
+        return tf.cast(tf.reshape(outs, [-1]), GLOBAL_TF_FLOAT_PRECISION)        
 
 
     def init_variables(self,
-                       graph: tf.Graph,
-                       graph_def: tf.GraphDef,
-                       suffix : str = "",
+                       fitting_net_variables: dict
     ) -> None:
         """
         Init the fitting net variables with the given dict
 
         Parameters
         ----------
-        graph : tf.Graph
-            The input frozen model graph
-        graph_def : tf.GraphDef
-            The input frozen model graph_def
-        suffix : str
-            suffix to name scope
+        fitting_net_variables
+                The input dict which stores the fitting net variables
         """
-        self.fitting_net_variables = get_fitting_net_variables_from_graph_def(graph_def)
-        if self.numb_fparam > 0:
-            self.fparam_avg = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_fparam_avg' % suffix)
-            self.fparam_inv_std = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_fparam_istd' % suffix)
-        if self.numb_aparam > 0:
-            self.aparam_avg = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_aparam_avg' % suffix)
-            self.aparam_inv_std = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_aparam_istd' % suffix)
-
-    def enable_compression(self,
-                           model_file: str,
-                           suffix: str = ""
-    ) -> None:
-        """
-        Set the fitting net attributes from the frozen model_file when fparam or aparam is not zero
-
-        Parameters
-        ----------
-        model_file : str
-            The input frozen model file
-        suffix : str, optional
-                The suffix of the scope
-        """
-        if self.numb_fparam > 0 or self.numb_aparam > 0:
-            graph, _ = load_graph_def(model_file)
-        if self.numb_fparam > 0:
-            self.fparam_avg = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_fparam_avg' % suffix)
-            self.fparam_inv_std = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_fparam_istd' % suffix)
-        if self.numb_aparam > 0:
-            self.aparam_avg = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_aparam_avg' % suffix)
-            self.aparam_inv_std = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_aparam_istd' % suffix)
- 
-
-    def enable_mixed_precision(self, mixed_prec: dict = None) -> None:
-        """
-        Reveive the mixed precision setting.
-
-        Parameters
-        ----------
-        mixed_prec
-                The mixed precision setting used in the embedding net
-        """
-        self.mixed_prec = mixed_prec
-        self.fitting_precision = get_precision(mixed_prec['output_prec'])
+        self.compress = True
+        self.fitting_net_variables = fitting_net_variables

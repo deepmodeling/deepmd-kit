@@ -16,12 +16,14 @@ from deepmd.entrypoints import (
     transfer,
     make_model_devi,
     convert,
-    neighbor_stat,
 )
 from deepmd.loggers import set_log_handles
 
 __all__ = ["main", "parse_args", "get_ll"]
 
+from deepmd.nvnmd.entrypoints.map import map
+from deepmd.nvnmd.entrypoints.wrap import wrap 
+from deepmd.nvnmd.entrypoints.train import train_nvnmd 
 
 def get_ll(log_level: str) -> int:
     """Convert string to python logging level.
@@ -171,12 +173,6 @@ def parse_args(args: Optional[List[str]] = None):
         default=None,
         help="Initialize the training from the frozen model.",
     )
-    parser_train.add_argument(
-        "--skip-neighbor-stat",
-        action="store_true",
-        help="Skip calculating neighbor statistics. Sel checking, automatic sel, and model compression will be disabled.",
-    )
-
     # * freeze script ******************************************************************
     parser_frz = subparsers.add_parser(
         "freeze",
@@ -204,6 +200,13 @@ def parse_args(args: Optional[List[str]] = None):
         type=str,
         default=None,
         help="the frozen nodes, if not set, determined from the model type",
+    )
+    parser_frz.add_argument( #nvnmd
+        "-w",
+        "--nvnmd_weight",
+        type=str,
+        default=None,
+        help="the frozen weights, if set, save the weights of model into the file nvnmd/weight.npy",
     )
 
     # * test script ********************************************************************
@@ -362,7 +365,7 @@ def parse_args(args: Optional[List[str]] = None):
         "--system",
         default=".",
         type=str,
-        help="The system directory. Recursively detect systems in this directory.",
+        help="The system directory, not support recursive detection.",
     )
     parser_model_devi.add_argument(
         "-S", "--set-prefix", default="set", type=str, help="The set prefix"
@@ -381,8 +384,8 @@ def parse_args(args: Optional[List[str]] = None):
         type=int,
         help="The trajectory frequency of the system"
     )
-
     # * convert models
+    # supported: 1.2->2.0, 1.3->2.0
     parser_transform = subparsers.add_parser(
         'convert-from',
         parents=[parser_log],
@@ -391,7 +394,7 @@ def parse_args(args: Optional[List[str]] = None):
     parser_transform.add_argument(
         'FROM',
         type = str,
-        choices = ['0.12', '1.0', '1.1', '1.2', '1.3', '2.0'],
+        choices = ['1.2', '1.3'],
         help="The original model compatibility",
     )
     parser_transform.add_argument(
@@ -408,38 +411,89 @@ def parse_args(args: Optional[List[str]] = None):
         type=str, 
 		help='the output model',
     )
-
-    # neighbor_stat
-    parser_neighbor_stat = subparsers.add_parser(
-        'neighbor-stat',
-        parents=[parser_log],
-        help='Calculate neighbor statistics',
-    )
-    parser_neighbor_stat.add_argument(
-        "-s",
-        "--system",
-        default=".",
-        type=str,
-        help="The system dir. Recursively detect systems in this directory",
-    )
-    parser_neighbor_stat.add_argument(
-        "-r",
-        "--rcut",
-        type=float,
-        required=True,
-        help="cutoff radius",
-    )
-    parser_neighbor_stat.add_argument(
-        "-t",
-        "--type-map",
-        type=str,
-        nargs='+',
-        required=True,
-        help="type map",
-    )
-        
     # --version
     parser.add_argument('--version', action='version', version='DeePMD-kit v%s' % __version__)
+
+    # * train nvnmd script ******************************************************************
+    parser_train_nvnmd = subparsers.add_parser(
+        "train_nvnmd",
+        parents=[parser_log],
+        help="train nvnmd model",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser_train_nvnmd.add_argument(
+        "INPUT", help="the input parameter file in json format"
+    )
+    parser_train_nvnmd.add_argument(
+        "-s", 
+        "--step",
+        default="s1",
+        type=str,
+        help="step of training: s1 (train CNN), s2 (train QNN)"
+    )
+    # * map script ******************************************************************
+    parser_map = subparsers.add_parser(
+        "map",
+        parents=[parser_log],
+        help="build the mapping table for embedding network",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser_map.add_argument(
+        "-c",
+        "--nvnmd-config",
+        type=str,
+        default="nvnmd/config.npy",
+        help="the configuration file",
+    )
+    parser_map.add_argument(
+        "-w",
+        "--nvnmd-weight",
+        type=str,
+        default="nvnmd/weight.npy",
+        help="the weight file",
+    )
+    parser_map.add_argument(
+        "-m",
+        "--nvnmd-map",
+        type=str,
+        default="nvnmd/map.npy",
+        help="the file containing the mapping tables",
+    )
+    # * wrap script ******************************************************************
+    parser_wrap = subparsers.add_parser(
+        "wrap",
+        parents=[parser_log],
+        help="wrap a model file for running nvnmd",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser_wrap.add_argument(
+        "-c",
+        "--nvnmd-config",
+        type=str,
+        default="nvnmd/config.npy",
+        help="the configuration file",
+    )
+    parser_wrap.add_argument(
+        "-w",
+        "--nvnmd-weight",
+        type=str,
+        default="nvnmd/weight.npy",
+        help="the weight file",
+    )
+    parser_wrap.add_argument(
+        "-m",
+        "--nvnmd-map",
+        type=str,
+        default="nvnmd/map.npy",
+        help="the file containing the mapping tables",
+    )
+    parser_wrap.add_argument(
+        "-o",
+        "--nvnmd-model",
+        type=str,
+        default="nvnmd/model.pb",
+        help="the model file",
+    )
 
     parsed_args = parser.parse_args(args=args)
     if parsed_args.command is None:
@@ -486,8 +540,12 @@ def main():
         make_model_devi(**dict_args)
     elif args.command == "convert-from":
         convert(**dict_args)
-    elif args.command == "neighbor-stat":
-        neighbor_stat(**dict_args)
+    elif args.command == "map":
+        map(**dict_args)
+    elif args.command == "wrap":
+        wrap(**dict_args)
+    elif args.command == "train_nvnmd":
+        train_nvnmd(**dict_args)
     elif args.command is None:
         pass
     else:

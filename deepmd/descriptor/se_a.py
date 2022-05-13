@@ -3,7 +3,7 @@ import numpy as np
 from typing import Tuple, List, Dict, Any
 
 from deepmd.env import tf
-from deepmd.common import get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, cast_precision
+from deepmd.common import get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter
 from deepmd.utils.argcheck import list_to_doc
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
@@ -13,10 +13,12 @@ from deepmd.utils.network import embedding_net, embedding_net_rand_seed_shift
 from deepmd.utils.tabulate import DPTabulate
 from deepmd.utils.type_embed import embed_atom_type
 from deepmd.utils.sess import run_sess
-from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph, get_tensor_by_name
-from deepmd.utils.errors import GraphWithoutTensorError
+from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph
 from .descriptor import Descriptor
 from .se import DescrptSe
+
+from deepmd.nvnmd.descriptor.se_a import descrpt2r4, build_davg_dstd, build_op_descriptor, filter_lower_R42GR, filter_GR2D
+from deepmd.nvnmd.utils.config import nvnmd_cfg 
 
 @Descriptor.register("se_e2_a")
 @Descriptor.register("se_a")
@@ -121,8 +123,6 @@ class DescrptSeA (DescrptSe):
         """
         Constructor
         """
-        if rcut < rcut_smth:
-            raise RuntimeError("rcut_smth (%f) should be no more than rcut (%f)!" % (rcut_smth, rcut))
         self.sel_a = sel
         self.rcut_r = rcut
         self.rcut_r_smth = rcut_smth
@@ -143,6 +143,8 @@ class DescrptSeA (DescrptSe):
             self.exclude_types.add((tt[1], tt[0]))
         self.set_davg_zero = set_davg_zero
         self.type_one_side = type_one_side
+        if self.type_one_side and len(exclude_types) != 0:
+            raise RuntimeError('"type_one_side" is not compatible with "exclude_types"')
 
         # descrpt config
         self.sel_r = [ 0 for ii in range(len(self.sel_a)) ]
@@ -161,7 +163,6 @@ class DescrptSeA (DescrptSe):
         self.davg = None
         self.compress = False
         self.embedding_net_variables = None
-        self.mixed_prec = None
         self.place_holders = {}
         nei_type = np.array([])
         for ii in range(self.ntypes):
@@ -192,7 +193,6 @@ class DescrptSeA (DescrptSe):
                                          sel_a = self.sel_a,
                                          sel_r = self.sel_r)
         self.sub_sess = tf.Session(graph = sub_graph, config=default_tf_session_config)
-        self.original_sel = None
 
 
     def get_rcut (self) -> float:
@@ -326,27 +326,12 @@ class DescrptSeA (DescrptSe):
         suffix : str, optional
                 The suffix of the scope
         """
-        # do some checks before the mocel compression process
         assert (
             not self.filter_resnet_dt
         ), "Model compression error: descriptor resnet_dt must be false!"
-        for tt in self.exclude_types:
-            if (tt[0] not in range(self.ntypes)) or (tt[1] not in range(self.ntypes)):
-                raise RuntimeError("exclude types" + str(tt) + " must within the number of atomic types " + str(self.ntypes) + "!")
-        if (self.ntypes * self.ntypes - len(self.exclude_types) == 0):
-            raise RuntimeError("empty embedding-net are not supported in model compression!")
-
-        for ii in range(len(self.filter_neuron) - 1):
-            if self.filter_neuron[ii] * 2 != self.filter_neuron[ii + 1]:
-                raise NotImplementedError(
-                    "Model Compression error: descriptor neuron [%s] is not supported by model compression! "
-                    "The size of the next layer of the neural network must be twice the size of the previous layer." 
-                    % ','.join([str(item) for item in self.filter_neuron])
-                )
-
         self.compress = True
         self.table = DPTabulate(
-            self, self.filter_neuron, model_file, self.type_one_side, self.exclude_types, self.compress_activation_fn, suffix=suffix)
+            model_file, self.type_one_side, self.exclude_types, self.compress_activation_fn, suffix=suffix)
         self.table_config = [table_extrapolate, table_stride_1, table_stride_2, check_frequency]
         self.lower, self.upper \
             = self.table.build(min_nbor_dist, 
@@ -358,18 +343,6 @@ class DescrptSeA (DescrptSe):
         self.davg = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_avg' % suffix)
         self.dstd = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_std' % suffix)
 
-
-    def enable_mixed_precision(self, mixed_prec : dict = None) -> None:
-        """
-        Reveive the mixed precision setting.
-
-        Parameters
-        ----------
-        mixed_prec
-                The mixed precision setting used in the embedding net
-        """
-        self.mixed_prec = mixed_prec
-        self.filter_precision = get_precision(mixed_prec['output_prec'])
 
 
     def build (self, 
@@ -414,6 +387,7 @@ class DescrptSeA (DescrptSe):
         """
         davg = self.davg
         dstd = self.dstd
+        if nvnmd_cfg.enable and nvnmd_cfg.restore_descriptor: davg, dstd = build_davg_dstd()
         with tf.variable_scope('descrpt_attr' + suffix, reuse = reuse) :
             if davg is None:
                 davg = np.zeros([self.ntypes, self.ndescrpt]) 
@@ -431,9 +405,6 @@ class DescrptSeA (DescrptSe):
             t_sel = tf.constant(self.sel_a, 
                                 name = 'sel', 
                                 dtype = tf.int32)            
-            t_original_sel = tf.constant(self.original_sel if self.original_sel is not None else self.sel_a,
-                name = 'original_sel',
-                dtype = tf.int32)
             self.t_avg = tf.get_variable('t_avg', 
                                          davg.shape, 
                                          dtype = GLOBAL_TF_FLOAT_PRECISION,
@@ -445,24 +416,24 @@ class DescrptSeA (DescrptSe):
                                          trainable = False,
                                          initializer = tf.constant_initializer(dstd))
 
-        with tf.control_dependencies([t_sel, t_original_sel]):
-            coord = tf.reshape (coord_, [-1, natoms[1] * 3])
+        coord = tf.reshape (coord_, [-1, natoms[1] * 3])
         box   = tf.reshape (box_, [-1, 9])
         atype = tf.reshape (atype_, [-1, natoms[1]])
 
+        op_descriptor = build_op_descriptor() if nvnmd_cfg.enable else op_module.prod_env_mat_a
         self.descrpt, self.descrpt_deriv, self.rij, self.nlist \
-            = op_module.prod_env_mat_a (coord,
-                                       atype,
-                                       natoms,
-                                       box,
-                                       mesh,
-                                       self.t_avg,
-                                       self.t_std,
-                                       rcut_a = self.rcut_a,
-                                       rcut_r = self.rcut_r,
-                                       rcut_r_smth = self.rcut_r_smth,
-                                       sel_a = self.sel_a,
-                                       sel_r = self.sel_r)
+            = op_descriptor (coord,
+                            atype,
+                            natoms,
+                            box,
+                            mesh,
+                            self.t_avg,
+                            self.t_std,
+                            rcut_a = self.rcut_a,
+                            rcut_r = self.rcut_r,
+                            rcut_r_smth = self.rcut_r_smth,
+                            sel_a = self.sel_a,
+                            sel_r = self.sel_r)
         # only used when tensorboard was set as true
         tf.summary.histogram('descrpt', self.descrpt)
         tf.summary.histogram('rij', self.rij)
@@ -556,19 +527,13 @@ class DescrptSeA (DescrptSe):
         inputs = tf.reshape(inputs, [-1, self.ndescrpt * natoms[0]])
         output = []
         output_qmat = []
-        if not (self.type_one_side and len(self.exclude_types) == 0) and type_embedding is None:
+        if not self.type_one_side and type_embedding is None:
             for type_i in range(self.ntypes):
                 inputs_i = tf.slice (inputs,
                                      [ 0, start_index*      self.ndescrpt],
                                      [-1, natoms[2+type_i]* self.ndescrpt] )
                 inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
-                if self.type_one_side:
-                    # reuse NN parameters for all types to support type_one_side along with exclude_types
-                    reuse = tf.AUTO_REUSE
-                    filter_name = 'filter_type_all'+suffix
-                else:
-                    filter_name = 'filter_type_'+str(type_i)+suffix
-                layer, qmat = self._filter(inputs_i, type_i, name=filter_name, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
+                layer, qmat = self._filter(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
                 layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_out()])
                 qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_rot_mat_1() * 3])
                 output.append(layer)
@@ -578,7 +543,9 @@ class DescrptSeA (DescrptSe):
             inputs_i = inputs
             inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
             type_i = -1
-            layer, qmat = self._filter(inputs_i, type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn, type_embedding=type_embedding)
+            if nvnmd_cfg.enable and nvnmd_cfg.quantize_descriptor: 
+                inputs_i = descrpt2r4(inputs_i, natoms)
+            layer, qmat = self._filter(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn, type_embedding=type_embedding)
             layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0] * self.get_dim_out()])
             qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[0] * self.get_dim_rot_mat_1() * 3])
             output.append(layer)
@@ -714,21 +681,29 @@ class DescrptSeA (DescrptSe):
         # with (natom x nei_type_i) x 1
         xyz_scatter = tf.reshape(tf.slice(inputs_reshape, [0,0],[-1,1]),[-1,1])
         if type_embedding is not None:
+            type_embedding = tf.cast(type_embedding, self.filter_precision)
             xyz_scatter = self._concat_type_embedding(
                 xyz_scatter, nframes, natoms, type_embedding)
             if self.compress:
                 raise RuntimeError('compression of type embedded descriptor is not supported at the moment')
-        # natom x 4 x outputs_size
+        # with (natom x nei_type_i) x out_size
+        if nvnmd_cfg.enable:
+          return filter_lower_R42GR(
+            type_i, type_input, inputs_i, is_exclude,
+            activation_fn, bavg, stddev, trainable, 
+            suffix, self.seed, self.seed_shift, self.uniform_seed,
+            self.filter_neuron, self.filter_precision, self.filter_resnet_dt,
+            self.embedding_net_variables
+          )
         if self.compress and (not is_exclude):
           info = [self.lower, self.upper, self.upper * self.table_config[0], self.table_config[1], self.table_config[2], self.table_config[3]]
           if self.type_one_side:
             net = 'filter_-1_net_' + str(type_i)
           else:
             net = 'filter_' + str(type_input) + '_net_' + str(type_i)
-          return op_module.tabulate_fusion_se_a(tf.cast(self.table.data[net], self.filter_precision), info, xyz_scatter, tf.reshape(inputs_i, [natom, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])  
+          return op_module.tabulate_fusion(tf.cast(self.table.data[net], self.filter_precision), info, xyz_scatter, tf.reshape(inputs_i, [natom, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])  
         else:
           if (not is_exclude):
-              # with (natom x nei_type_i) x out_size
               xyz_scatter = embedding_net(
                   xyz_scatter, 
                   self.filter_neuron, 
@@ -741,12 +716,11 @@ class DescrptSeA (DescrptSe):
                   seed = self.seed,
                   trainable = trainable, 
                   uniform_seed = self.uniform_seed,
-                  initial_variables = self.embedding_net_variables,
-                  mixed_prec = self.mixed_prec)
+                  initial_variables = self.embedding_net_variables)
               if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
           else:
             # we can safely return the final xyz_scatter filled with zero directly
-            return tf.cast(tf.fill((natom, 4, outputs_size[-1]), 0.), self.filter_precision)
+            return tf.cast(tf.fill((natom, 4, outputs_size[-1]), 0.), GLOBAL_TF_FLOAT_PRECISION)
           # natom x nei_type_i x out_size
           xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1]//4, outputs_size[-1]))  
           # When using tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]) below
@@ -754,11 +728,9 @@ class DescrptSeA (DescrptSe):
           # but if sel is zero
           # [588 0] -> [147 0 4] incorrect; the correct one is [588 0 4]
           # So we need to explicitly assign the shape to tf.shape(inputs_i)[0] instead of -1
-          # natom x 4 x outputs_size
           return tf.matmul(tf.reshape(inputs_i, [natom, shape_i[1]//4, 4]), xyz_scatter, transpose_a = True)
 
 
-    @cast_precision
     def _filter(
             self, 
             inputs, 
@@ -793,7 +765,6 @@ class DescrptSeA (DescrptSe):
           type_i = 0
           # natom x 4 x outputs_size
           if type_embedding is None:
-              rets = []
               for type_i in range(self.ntypes):
                   ret = self._filter_lower(
                       type_i, type_input,
@@ -808,12 +779,12 @@ class DescrptSeA (DescrptSe):
                       bavg = bavg,
                       trainable = trainable,
                       suffix = "_"+str(type_i))
-                  if (type_input, type_i) not in self.exclude_types:
+                  if type_i == 0:
+                      xyz_scatter_1 = ret
+                  elif (type_input, type_i) not in self.exclude_types:
                       # add zero is meaningless; skip
-                      rets.append(ret)
+                      xyz_scatter_1+= ret
                   start_index += self.sel_a[type_i]
-              # faster to use accumulate_n than multiple add
-              xyz_scatter_1 = tf.accumulate_n(rets)
           else :
               xyz_scatter_1 = self._filter_lower(
                   type_i, type_input,
@@ -827,18 +798,14 @@ class DescrptSeA (DescrptSe):
                   stddev = stddev,
                   bavg = bavg,
                   trainable = trainable)
+          if nvnmd_cfg.enable: return filter_GR2D(xyz_scatter_1)
           # natom x nei x outputs_size
           # xyz_scatter = tf.concat(xyz_scatter_total, axis=1)
           # natom x nei x 4
           # inputs_reshape = tf.reshape(inputs, [-1, shape[1]//4, 4])
           # natom x 4 x outputs_size
           # xyz_scatter_1 = tf.matmul(inputs_reshape, xyz_scatter, transpose_a = True)
-          if self.original_sel is None:
-              # shape[1] = nnei * 4
-              nnei = shape[1] / 4
-          else:
-              nnei = tf.cast(tf.Variable(np.sum(self.original_sel), dtype=tf.int32, trainable=False, name="nnei"), self.filter_precision)
-          xyz_scatter_1 = xyz_scatter_1 / nnei
+          xyz_scatter_1 = xyz_scatter_1 * (4.0 / shape[1])
           # natom x 4 x outputs_size_2
           xyz_scatter_2 = tf.slice(xyz_scatter_1, [0,0,0],[-1,-1,outputs_size_2])
           # # natom x 3 x outputs_size_2
@@ -853,60 +820,3 @@ class DescrptSeA (DescrptSe):
           result = tf.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
 
         return result, qmat
-
-    def init_variables(self,
-                       graph: tf.Graph,
-                       graph_def: tf.GraphDef,
-                       suffix : str = "",
-    ) -> None:
-        """
-        Init the embedding net variables with the given dict
-
-        Parameters
-        ----------
-        graph : tf.Graph
-            The input frozen model graph
-        graph_def : tf.GraphDef
-            The input frozen model graph_def
-        suffix : str, optional
-            The suffix of the scope
-        """
-        super().init_variables(graph=graph, graph_def=graph_def, suffix=suffix)
-        try:
-            self.original_sel = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/original_sel' % suffix)
-        except GraphWithoutTensorError:
-            # original_sel is not restored in old graphs, assume sel never changed before
-            pass
-        # check sel == original sel?
-        try:
-            sel = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/sel' % suffix)
-        except GraphWithoutTensorError:
-            # sel is not restored in old graphs
-            pass
-        else:
-            if not np.array_equal(np.array(self.sel_a), sel):
-                if not self.set_davg_zero:
-                    raise RuntimeError("Adjusting sel is only supported when `set_davg_zero` is true!")
-                # as set_davg_zero, self.davg is safely zero
-                self.davg = np.zeros([self.ntypes, self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
-                new_dstd = np.ones([self.ntypes, self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
-                # shape of davg and dstd is (ntypes, ndescrpt), ndescrpt = 4*sel
-                n_descpt = np.array(self.sel_a) * 4
-                n_descpt_old = np.array(sel) * 4
-                end_index = np.cumsum(n_descpt)
-                end_index_old = np.cumsum(n_descpt_old)
-                start_index = np.roll(end_index, 1)
-                start_index[0] = 0
-                start_index_old = np.roll(end_index_old, 1)
-                start_index_old[0] = 0
-
-                for nn, oo, ii, jj in zip(n_descpt, n_descpt_old, start_index, start_index_old):
-                    if nn < oo:
-                        # new size is smaller, copy part of std
-                        new_dstd[:, ii:ii+nn] = self.dstd[:, jj:jj+nn]
-                    else:
-                        # new size is larger, copy all, the rest remains 1
-                        new_dstd[:, ii:ii+oo] = self.dstd[:, jj:jj+oo]
-                self.dstd = new_dstd
-                if self.original_sel is None:
-                    self.original_sel = sel

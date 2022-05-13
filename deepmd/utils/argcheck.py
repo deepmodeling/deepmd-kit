@@ -6,6 +6,7 @@ from deepmd.common import ACTIVATION_FN_DICT, PRECISION_DICT
 from deepmd.utils.plugin import Plugin
 import json
 
+from deepmd.nvnmd.utils.argcheck import nvnmd_args
 
 def list_to_doc(xx):
     items = []
@@ -28,14 +29,14 @@ def type_embedding_args():
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_seed = 'Random seed for parameter initialization'
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}'
-    doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision.'
+    doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}'
     doc_trainable = 'If the parameters in the embedding net are trainable'
     
     return [
         Argument("neuron", list, optional = True, default = [2, 4, 8], doc = doc_neuron),
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
         Argument("resnet_dt", bool, optional = True, default = False, doc = doc_resnet_dt),
-        Argument("precision", str, optional = True, default = "default", doc = doc_precision),
+        Argument("precision", str, optional = True, default = "float64", doc = doc_precision),
         Argument("trainable", bool, optional = True, default = True, doc = doc_trainable),
         Argument("seed", [int,None], optional = True, doc = doc_seed),
     ]        
@@ -123,7 +124,7 @@ def descrpt_se_a_args():
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_type_one_side = 'Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets'
-    doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision.'
+    doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}'
     doc_trainable = 'If the parameters in the embedding net is trainable'
     doc_seed = 'Random seed for parameter initialization'
     doc_exclude_types = 'The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1.'
@@ -138,7 +139,7 @@ def descrpt_se_a_args():
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
         Argument("resnet_dt", bool, optional = True, default = False, doc = doc_resnet_dt),
         Argument("type_one_side", bool, optional = True, default = False, doc = doc_type_one_side),
-        Argument("precision", str, optional = True, default = "default", doc = doc_precision),
+        Argument("precision", str, optional = True, default = "float64", doc = doc_precision),
         Argument("trainable", bool, optional = True, default = True, doc = doc_trainable),
         Argument("seed", [int,None], optional = True, doc = doc_seed),
         Argument("exclude_types", list, optional = True, default = [], doc = doc_exclude_types),
@@ -156,7 +157,7 @@ def descrpt_se_t_args():
     doc_neuron = 'Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.'
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
-    doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision.'
+    doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}'
     doc_trainable = 'If the parameters in the embedding net are trainable'
     doc_seed = 'Random seed for parameter initialization'
     doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
@@ -168,7 +169,7 @@ def descrpt_se_t_args():
         Argument("neuron", list, optional = True, default = [10,20,40], doc = doc_neuron),
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
         Argument("resnet_dt", bool, optional = True, default = False, doc = doc_resnet_dt),
-        Argument("precision", str, optional = True, default = "default", doc = doc_precision),
+        Argument("precision", str, optional = True, default = "float64", doc = doc_precision),
         Argument("trainable", bool, optional = True, default = True, doc = doc_trainable),
         Argument("seed", [int,None], optional = True, doc = doc_seed),
         Argument("set_davg_zero", bool, optional = True, default = False, doc = doc_set_davg_zero)
@@ -200,7 +201,7 @@ def descrpt_se_r_args():
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_type_one_side = 'Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets'
-    doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision.'
+    doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}'
     doc_trainable = 'If the parameters in the embedding net are trainable'
     doc_seed = 'Random seed for parameter initialization'
     doc_exclude_types = 'The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1.'
@@ -214,7 +215,7 @@ def descrpt_se_r_args():
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
         Argument("resnet_dt", bool, optional = True, default = False, doc = doc_resnet_dt),
         Argument("type_one_side", bool, optional = True, default = False, doc = doc_type_one_side),
-        Argument("precision", str, optional = True, default = "default", doc = doc_precision),
+        Argument("precision", str, optional = True, default = "float64", doc = doc_precision),
         Argument("trainable", bool, optional = True, default = True, doc = doc_trainable),
         Argument("seed", [int,None], optional = True, doc = doc_seed),
         Argument("exclude_types", list, optional = True, default = [], doc = doc_exclude_types),
@@ -255,7 +256,7 @@ def fitting_ener():
     doc_numb_aparam = 'The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams.'
     doc_neuron = 'The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.'
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}'
-    doc_precision = f'The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision.'
+    doc_precision = f'The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_trainable = 'Whether the parameters in the fitting net are trainable. This option can be\n\n\
 - bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
@@ -269,7 +270,7 @@ def fitting_ener():
         Argument("numb_aparam", int, optional = True, default = 0, doc = doc_numb_aparam),
         Argument("neuron", list, optional = True, default = [120,120,120], alias = ['n_neuron'], doc = doc_neuron),
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
-        Argument("precision", str, optional = True, default = 'default', doc = doc_precision),
+        Argument("precision", str, optional = True, default = 'float64', doc = doc_precision),
         Argument("resnet_dt", bool, optional = True, default = True, doc = doc_resnet_dt),
         Argument("trainable", [list,bool], optional = True, default = True, doc = doc_trainable),
         Argument("rcond", float, optional = True, default = 1e-3, doc = doc_rcond),
@@ -282,7 +283,7 @@ def fitting_polar():
     doc_neuron = 'The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.'
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
-    doc_precision = f'The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision.'
+    doc_precision = f'The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}'
     doc_scale = 'The output of the fitting net (polarizability matrix) will be scaled by ``scale``'
     #doc_diag_shift = 'The diagonal part of the polarizability matrix  will be shifted by ``diag_shift``. The shift operation is carried out after ``scale``.'
     doc_fit_diag = 'Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to normal polarizability matrix by contracting with the rotation matrix.'
@@ -296,7 +297,7 @@ def fitting_polar():
         Argument("neuron", list, optional = True, default = [120,120,120], alias = ['n_neuron'], doc = doc_neuron),
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
         Argument("resnet_dt", bool, optional = True, default = True, doc = doc_resnet_dt),
-        Argument("precision", str, optional = True, default = 'default', doc = doc_precision),
+        Argument("precision", str, optional = True, default = 'float64', doc = doc_precision),
         Argument("fit_diag", bool, optional = True, default = True, doc = doc_fit_diag),
         Argument("scale", [list,float], optional = True, default = 1.0, doc = doc_scale),
         #Argument("diag_shift", [list,float], optional = True, default = 0.0, doc = doc_diag_shift),
@@ -314,14 +315,14 @@ def fitting_dipole():
     doc_neuron = 'The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.'
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
-    doc_precision = f'The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision.'
+    doc_precision = f'The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())}'
     doc_sel_type = 'The atom types for which the atomic dipole will be provided. If not set, all types will be selected.'
     doc_seed = 'Random seed for parameter initialization of the fitting net'
     return [
         Argument("neuron", list, optional = True, default = [120,120,120], alias = ['n_neuron'], doc = doc_neuron),
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
         Argument("resnet_dt", bool, optional = True, default = True, doc = doc_resnet_dt),
-        Argument("precision", str, optional = True, default = 'default', doc = doc_precision),
+        Argument("precision", str, optional = True, default = 'float64', doc = doc_precision),
         Argument("sel_type", [list,int,None], optional = True, alias = ['dipole_type'], doc = doc_sel_type),
         Argument("seed", [int,None], optional = True, doc = doc_seed)
     ]    
@@ -371,11 +372,13 @@ def modifier_variant_type_args():
 
 #  --- model compression configurations: --- #
 def model_compression():
+    doc_compress = f"The name of the frozen model file."
     doc_model_file = f"The input model file, which will be compressed by the DeePMD-kit."
     doc_table_config = f"The arguments of model compression, including extrapolate(scale of model extrapolation), stride(uniform stride of tabulation's first and second table), and frequency(frequency of tabulation overflow check)."
     doc_min_nbor_dist = f"The nearest distance between neighbor atoms saved in the frozen model."
     
     return [
+        Argument("compress", bool, optional = False, doc = doc_compress),
         Argument("model_file", str, optional = False, doc = doc_model_file),
         Argument("table_config", list, optional = False, doc = doc_table_config),
         Argument("min_nbor_dist", float, optional = False, doc = doc_min_nbor_dist),
@@ -600,59 +603,39 @@ def validation_data_args():  # ! added by Ziyao: new specification style for dat
                     sub_fields=args, sub_variants=[], doc=doc_validation_data)
 
 
-def mixed_precision_args():  # ! added by Denghui.
-    doc_output_prec  = 'The precision for mixed precision params. " \
-        "The trainable variables precision during the mixed precision training process, " \
-        "supported options are float32 only currently.'
-    doc_compute_prec  = 'The precision for mixed precision compute. " \
-        "The compute precision during the mixed precision training process, "" \
-        "supported options are float16 only currently.'
-
-    args = [
-        Argument("output_prec", str, optional=True, default="float32", doc=doc_output_prec),
-        Argument("compute_prec", str, optional=False, default="float16", doc=doc_compute_prec),
-    ]
-
-    doc_mixed_precision = "Configurations of mixed precision."
-    return Argument("mixed_precision", dict, optional=True,
-                    sub_fields=args, sub_variants=[], doc=doc_mixed_precision)
-
-
 def training_args():  # ! modified by Ziyao: data configuration isolated.
     doc_numb_steps = 'Number of training batch. Each training uses one batch of data.'
     doc_seed = 'The random seed for getting frames from the training data set.'
     doc_disp_file = 'The file for printing learning curve.'
     doc_disp_freq = 'The frequency of printing learning curve.'
+    doc_numb_test = 'Number of frames used for the test during training.'
     doc_save_freq = 'The frequency of saving check point.'
     doc_save_ckpt = 'The file name of saving check point.'
     doc_disp_training = 'Displaying verbose information during training.'
     doc_time_training = 'Timing durining training.'
     doc_profiling = 'Profiling during training.'
     doc_profiling_file = 'Output file for profiling.'
-    doc_enable_profiler = 'Enable TensorFlow Profiler (available in TensorFlow 2.3) to analyze performance. The log will be saved to `tensorboard_log_dir`.'
     doc_tensorboard = 'Enable tensorboard'
     doc_tensorboard_log_dir = 'The log directory of tensorboard outputs'
     doc_tensorboard_freq = 'The frequency of writing tensorboard events.'
 
     arg_training_data = training_data_args()
     arg_validation_data = validation_data_args()
-    mixed_precision_data = mixed_precision_args()
 
     args = [
         arg_training_data,
         arg_validation_data,
-        mixed_precision_data,
         Argument("numb_steps", int, optional=False, doc=doc_numb_steps, alias=["stop_batch"]),
         Argument("seed", [int,None], optional=True, doc=doc_seed),
         Argument("disp_file", str, optional=True, default='lcurve.out', doc=doc_disp_file),
         Argument("disp_freq", int, optional=True, default=1000, doc=doc_disp_freq),
+        Argument("numb_test", [list,int,str], optional=True, default=1, doc=doc_numb_test),
         Argument("save_freq", int, optional=True, default=1000, doc=doc_save_freq),
         Argument("save_ckpt", str, optional=True, default='model.ckpt', doc=doc_save_ckpt),
         Argument("disp_training", bool, optional=True, default=True, doc=doc_disp_training),
         Argument("time_training", bool, optional=True, default=True, doc=doc_time_training),
         Argument("profiling", bool, optional=True, default=False, doc=doc_profiling),
         Argument("profiling_file", str, optional=True, default='timeline.json', doc=doc_profiling_file),
-        Argument("enable_profiler", bool, optional=True, default=False, doc=doc_enable_profiler),
         Argument("tensorboard", bool, optional=True, default=False, doc=doc_tensorboard),
         Argument("tensorboard_log_dir", str, optional=True, default='log', doc=doc_tensorboard_log_dir),
         Argument("tensorboard_freq", int, optional=True, default=1, doc=doc_tensorboard_freq),
@@ -660,7 +643,6 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
 
     doc_training = 'The training options.'
     return Argument("training", dict, args, [], doc = doc_training)
-
 
 def make_index(keys):
     ret = []
@@ -676,11 +658,13 @@ def gen_doc(*, make_anchor=True, make_link=True, **kwargs):
     lra = learning_rate_args()
     la = loss_args()
     ta = training_args()
+    nvnmda = nvnmd_args()
     ptr = []
     ptr.append(ma.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
     ptr.append(la.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
     ptr.append(lra.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
     ptr.append(ta.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
+    ptr.append(nvnmda.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
 
     key_words = []
     for ii in "\n\n".join(ptr).split('\n'):
@@ -696,6 +680,7 @@ def gen_json(**kwargs):
         learning_rate_args(),
         loss_args(),
         training_args(),
+        nvnmd_args(),
     ), cls=ArgumentEncoder)
 
 def normalize_hybrid_list(hy_list):
@@ -717,8 +702,9 @@ def normalize(data):
     lra = learning_rate_args()
     la = loss_args()
     ta = training_args()
+    nvnmda = nvnmd_args()
 
-    base = Argument("base", dict, [ma, lra, la, ta])
+    base = Argument("base", dict, [ma, lra, la, ta, nvnmda])
     data = base.normalize_value(data, trim_pattern="_*")
     base.check_value(data, strict=True)
 

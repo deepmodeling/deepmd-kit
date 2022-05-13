@@ -7,11 +7,9 @@ https://blog.metaflow.fr/tensorflow-how-to-freeze-a-model-and-serve-it-with-a-py
 """
 
 import logging
-import google.protobuf.message
-from deepmd.env import tf, FITTING_NET_PATTERN
-from deepmd.utils.errors import GraphTooLargeError
+from deepmd.env import tf
+from deepmd.env import op_module
 from deepmd.utils.sess import run_sess
-from deepmd.utils.graph import get_pattern_nodes_from_graph_def
 from os.path import abspath
 
 # load grad of force module
@@ -23,36 +21,8 @@ __all__ = ["freeze"]
 
 log = logging.getLogger(__name__)
 
-def _transfer_fitting_net_trainable_variables(sess, old_graph_def, raw_graph_def):
-    old_pattern = FITTING_NET_PATTERN
-    raw_pattern = FITTING_NET_PATTERN\
-        .replace('idt',    'idt+_\d+')\
-        .replace('bias',   'bias+_\d+')\
-        .replace('matrix', 'matrix+_\d+')
-    old_graph_nodes = get_pattern_nodes_from_graph_def(
-        old_graph_def, 
-        old_pattern
-    )
-    try :
-        raw_graph_def = tf.graph_util.convert_variables_to_constants(
-            sess,  # The session is used to retrieve the weights
-            raw_graph_def,  # The graph_def is used to retrieve the nodes
-            [n + '_1' for n in old_graph_nodes],  # The output node names are used to select the usefull nodes
-        )
-    except AssertionError:
-        # if there's no additional nodes
-        return old_graph_def
-
-    raw_graph_nodes = get_pattern_nodes_from_graph_def(
-        raw_graph_def, 
-        raw_pattern
-    )
-    for node in old_graph_def.node:
-        if node.name not in old_graph_nodes.keys():
-            continue
-        tensor = tf.make_ndarray(raw_graph_nodes[node.name + '_1'])
-        node.attr["value"].tensor.tensor_content = tensor.tostring()
-    return old_graph_def
+# nvnmd
+from deepmd.nvnmd.entrypoints.freeze import save_weight
 
 def _make_node_names(model_type: str, modifier_type: Optional[str] = None) -> List[str]:
     """Get node names based on model type.
@@ -160,7 +130,7 @@ def _make_node_names(model_type: str, modifier_type: Optional[str] = None) -> Li
 
 
 def freeze(
-    *, checkpoint_folder: str, output: str, node_names: Optional[str] = None, **kwargs
+    *, checkpoint_folder: str, output: str, node_names: Optional[str] = None, nvnmd_weight: Optional[str] = None, **kwargs
 ):
     """Freeze the graph in supplied folder.
 
@@ -202,14 +172,7 @@ def freeze(
 
     # We retrieve the protobuf graph definition
     graph = tf.get_default_graph()
-    try:
-        input_graph_def = graph.as_graph_def()
-    except google.protobuf.message.DecodeError as e:
-        raise GraphTooLargeError(
-            "The graph size exceeds 2 GB, the hard limitation of protobuf."
-            " Then a DecodeError was raised by protobuf. You should "
-            "reduce the size of your model."
-        ) from e
+    input_graph_def = graph.as_graph_def()
     nodes = [n.name for n in input_graph_def.node]
 
     # We start a session and restore the graph weights
@@ -237,18 +200,14 @@ def freeze(
             output_node_list = node_names.split(",")
         log.info(f"The following nodes will be frozen: {output_node_list}")
 
+        if nvnmd_weight != None:
+            save_weight(sess, nvnmd_weight) # nvnmd
+
         # We use a built-in TF helper to export variables to constants
         output_graph_def = tf.graph_util.convert_variables_to_constants(
             sess,  # The session is used to retrieve the weights
             input_graph_def,  # The graph_def is used to retrieve the nodes
             output_node_list,  # The output node names are used to select the usefull nodes
-        )
-
-        # If we need to transfer the fitting net variables
-        output_graph_def = _transfer_fitting_net_trainable_variables(
-            sess,
-            output_graph_def,
-            input_graph_def
         )
 
         # Finally we serialize and dump the output graph to the filesystem
