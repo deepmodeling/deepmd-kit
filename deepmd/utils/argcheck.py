@@ -718,8 +718,9 @@ def normalize(data):
     lra = learning_rate_args()
     la = loss_args()
     ta = training_args()
+    nvnmda = nvnmd_args()
 
-    base = Argument("base", dict, [ma, lra, la, ta])
+    base = Argument("base", dict, [ma, lra, la, ta, nvnmda])
     data = base.normalize_value(data, trim_pattern="_*")
     base.check_value(data, strict=True)
 

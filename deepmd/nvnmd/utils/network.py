@@ -127,7 +127,9 @@ def one_layer(inputs,
               trainable = True,
               useBN = False, 
               uniform_seed = False,
-              initial_variables = None):
+              initial_variables = None,
+              mixed_prec = None,
+              final_layer = False):
     if activation_fn != None: activation_fn = tanh4 
     with tf.variable_scope(name, reuse=reuse):
         shape = inputs.get_shape().as_list()
