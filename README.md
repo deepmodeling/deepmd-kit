@@ -73,7 +73,6 @@ A quick-start on using DeePMD-kit can be found as follows:
 - [Freeze a model](doc/freeze/freeze.md)
 - [Test a model](doc/test/test.md)
 - [Run MD with LAMMPS](doc/third-party/lammps.md)
-- [Use NVNMD](doc/nvnmd/nvnmd.md)
 
 A full [document](doc/train/train-input-auto.rst) on options in the training input script is available.
 
@@ -124,6 +123,7 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [Run path-integral MD with i-PI](doc/third-party/ipi.md)
     - [Run MD with GROMACS](doc/third-party/gromacs.md)
     - [Interfaces out of DeePMD-kit](doc/third-party/out-of-deepmd-kit.md)
+- [Use NVNMD](doc/nvnmd/nvnmd.md)
 
 # Code structure
 

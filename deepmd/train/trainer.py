@@ -66,7 +66,7 @@ class DPTrainer (object):
         self.descrpt_param  = descrpt_param
         
         # nvnmd
-        self.nvnmd_param = j_must_have(jdata, 'nvnmd') if 'nvnmd' in jdata.keys() else {}
+        self.nvnmd_param = jdata.get('nvnmd', {})
         nvnmd_cfg.init_from_jdata(self.nvnmd_param)
         nvnmd_cfg.init_from_deepmd_input(model_param)
         if nvnmd_cfg.enable : nvnmd_cfg.save()

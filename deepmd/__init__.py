@@ -32,5 +32,5 @@ __all__ = [
     "DeepEval",
     "DeepPotential",
     "DipoleChargeModifier",
-    "nvnmd"
+    "nvnmd",
 ]

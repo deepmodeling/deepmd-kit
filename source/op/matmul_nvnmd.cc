@@ -4,17 +4,18 @@
 // --------------------------------------------------------------------
 /*
 
-# 功能
-将输入的 x 量化为 nbit 位小数位的定点数，然后输出
+# Function
+y = q(matmul(x, w), nbit)
+q is a quantization function
 
-# 参数
-nbit x 量化的小数位
-nbit2 dy_dx量化的小数位
-nbit3 dy2_dx2量化的小数位
+# Parameter
+nbit nbit for x
+nbit2 nbit for dy_dx
+nbit3 nbit for dy2_dx2
 
-# 注意
-1. nbit < 0 时， 表示不需要量化，直接输出浮点数
-2. 为了实现简便，且范用，x的维度为2个维度
+# Note
+1. if nbit < 0, y = matmul(x, w)
+2. the input and output dimensions must be 2
 
 */
 // --------------------------------------------------------------------

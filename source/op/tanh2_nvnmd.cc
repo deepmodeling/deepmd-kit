@@ -1,11 +1,11 @@
 
 
-//
+// Activation Function of NVNMD
 // --------------------------------------------------------------------
 /*
 
-# 功能
-输入x, 输出y=tanh2(x)
+# Function
+y = tanh2(x)
 
 x1 = clip(x, -2, 2)
 x2 = clip(x, -4, 4)
@@ -121,8 +121,8 @@ public:
           x = (sign) ? -xs(ii, jj) : xs(ii, jj);
           x1 = (x >  2) ?  2 : x;
           x2 = (x >  4) ?  4 : x;
-          y1 = x1 - x1 * x1 * 0.25;
-          y2 = x2 * 0.03125 - x2 * x2 * 0.00390625;
+          y1 = x1 - x1 * x1 * (FPTYPE)0.25;
+          y2 = x2 * (FPTYPE)0.03125 - x2 * x2 * (FPTYPE)0.00390625;
           ys(ii, jj) = (sign) ? -(y1 + y2) : (y1 + y2);
         }
       }
@@ -139,8 +139,8 @@ public:
           x =  round(x * prec) / prec;
           x1 = (x >  2) ?  2 : x;
           x2 = (x >  4) ?  4 : x;
-          y1 = round((x1 - x1 * x1 * 0.25) * prec) / prec;
-          y2 = round((x2 * 0.03125 - x2 * x2 * 0.00390625) * prec) / prec;
+          y1 = round((x1 - x1 * x1 * (FPTYPE)0.25) * prec) / prec;
+          y2 = round((x2 * (FPTYPE)0.03125 - x2 * x2 * (FPTYPE)0.00390625) * prec) / prec;
           ys(ii, jj) = (sign) ? -(y1 + y2) : (y1 + y2);
         }
       }
@@ -153,8 +153,8 @@ public:
           x =  floor(x * prec) / prec;
           x1 = (x >  2) ?  2 : x;
           x2 = (x >  4) ?  4 : x;
-          y1 = floor((x1 - x1 * x1 * 0.25) * prec) / prec;
-          y2 = floor((x2 * 0.03125 - x2 * x2 * 0.00390625) * prec) / prec;
+          y1 = floor((x1 - x1 * x1 * (FPTYPE)0.25) * prec) / prec;
+          y2 = floor((x2 * (FPTYPE)0.03125 - x2 * x2 * (FPTYPE)0.00390625) * prec) / prec;
           ys(ii, jj) = (sign) ? -(y1 + y2) : (y1 + y2);
         }
       }

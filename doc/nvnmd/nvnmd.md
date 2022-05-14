@@ -40,7 +40,7 @@ mkdir -p data
 cp -r $dataset data
 ```
 
-where `$dataset` is the path to the data set and `$workspace` is the path to working directory. `$deepmd_source_dir/examples/nvnmd/data` is the path to the data set used in this example.
+where `$dataset` is the path to the data set and `$workspace` is the path to working directory. 
 
 ## 2-1 Input script
 
@@ -55,8 +55,10 @@ cd train
 Then copy the input script `train.json` to the directory `train`
 
 ```bash
-cp -r $deepmd_source_dir/examples/nvnmd/train/train.json train.json
+cp -r $example_dir/train/train.json train.json
 ```
+
+`$example_dir` is the path to the data set and input script used in this example, which can be downloaded from the [website](https://github.com/LiuGroupHNU/nvnmd).
 
 The structure of the input script is as follows
 
@@ -180,7 +182,7 @@ where items are defined as:
 training can be invoked by
 
 ```bash
-dp train_nvnmd train.json
+dp train-nvnmd train.json
 ```
 
 After training process, you will get two folders: `nvnmd_cnn` and `nvnmd_qnn`. The `nvnmd_cnn` contains the model after continuous neural network (CNN) training. The `nvnmd_qnn` contains the model after quantized neural network (QNN) training. The binary file `nvnmd_qnn/model.pb` is the model file which is used to performs NVNMD in server [http://nvnmd.picp.vip]

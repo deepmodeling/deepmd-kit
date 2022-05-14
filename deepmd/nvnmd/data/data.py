@@ -1,13 +1,13 @@
 
 jdata_sys = {
-    "debug":True
+    "debug": False
 }
 
-jdata_config ={
-    "dscp" : {
-        "sel" : [60, 60],
-        "rcut" : 6.0,
-        "rcut_smth" : 0.5,
+jdata_config = {
+    "dscp": {
+        "sel": [60, 60],
+        "rcut": 6.0,
+        "rcut_smth": 0.5,
         "neuron": [8, 16, 32],
         "resnet_dt": False,
         "axis_neuron": 4,
@@ -21,10 +21,10 @@ jdata_config ={
         "NNODE_FEAS": "(1, neuron)",
         "nlayer_fea": "len(neuron)",
         "same_net": "type_one_side",
-        "NIDP": "sum(sel)", 
+        "NIDP": "sum(sel)",
         "NIX": "2^ceil(ln2(NIDP/1.5))",
         "ntype": "len(sel)",
-        "ntypex": "same_net ? 1 : ntype",
+        "ntypex": "same_net ? 1: ntype",
         "ntypex_max": 1,
         "ntype_max": 4
     },
@@ -38,7 +38,7 @@ jdata_config ={
         "NLAYER": "nlayer_fit"
     },
 
-    "size" : {
+    "size": {
         "NTYPE_MAX": 4,
         "NSPU": 4096,
         "MSPU": 32768,
@@ -46,40 +46,40 @@ jdata_config ={
         "NaX": "MSPU"
     },
 
-    "ctrl" : {
-        "NSTDM": 16, 
-        "NSTDM_M1": 16, 
-        "NSTDM_M2": 1, 
+    "ctrl": {
+        "NSTDM": 16,
+        "NSTDM_M1": 16,
+        "NSTDM_M2": 1,
         "NSADV": "NSTDM+1",
-        "NSEL" : "NSTDM*ntype_max",  
-        "NSTDM_M1X": 4, 
+        "NSEL": "NSTDM*ntype_max",
+        "NSTDM_M1X": 4,
         "NSTEP_DELAY": 20,
         "MAX_FANOUT": 30
     },
 
-    "nbit" : {
+    "nbit": {
         "NBIT_DATA": 21,
         "NBIT_DATA_FL": 13,
         "NBIT_LONG_DATA": 32,
         "NBIT_LONG_DATA_FL": 24,
         "NBIT_DIFF_DATA": 24,
-        
-        "NBIT_SPE": 2, 
+
+        "NBIT_SPE": 2,
         "NBIT_CRD": "NBIT_DATA*3",
-        "NBIT_LST": "ln2(NaX)", 
-        
-        "NBIT_SPE_MAX": 8, 
-        "NBIT_LST_MAX": 16, 
-        
-        "NBIT_ATOM": "NBIT_SPE+NBIT_CRD", 
-        "NBIT_LONG_ATOM": "NBIT_SPE+NBIT_LONG_DATA*3", 
-        
-        "NBIT_RIJ": "NBIT_DATA_FL+5", 
-        "NBIT_FEA_X": 10, 
-        "NBIT_FEA_X_FL": 4, 
-        "NBIT_FEA_X2_FL": 6, 
-        "NBIT_FEA": 18, 
-        "NBIT_FEA_FL": 10, 
+        "NBIT_LST": "ln2(NaX)",
+
+        "NBIT_SPE_MAX": 8,
+        "NBIT_LST_MAX": 16,
+
+        "NBIT_ATOM": "NBIT_SPE+NBIT_CRD",
+        "NBIT_LONG_ATOM": "NBIT_SPE+NBIT_LONG_DATA*3",
+
+        "NBIT_RIJ": "NBIT_DATA_FL+5",
+        "NBIT_FEA_X": 10,
+        "NBIT_FEA_X_FL": 4,
+        "NBIT_FEA_X2_FL": 6,
+        "NBIT_FEA": 18,
+        "NBIT_FEA_FL": 10,
         "NBIT_SHIFT": 4,
 
         "NBIT_DATA2": "NBIT_DATA+NBIT_DATA_FL",
@@ -89,32 +89,32 @@ jdata_config ={
 
         "NBIT_FORCE": 32,
         "NBIT_FORCE_FL": "2*NBIT_DATA_FL-1",
-        
-        "NBIT_SUM": "NBIT_DATA_FL+8", 
-        "NBIT_WEIGHT": 18, 
-        "NBIT_WEIGHT_FL": 13, 
-        
-        "NBIT_RAM": 72, 
-        "NBIT_ADDR": 32, 
+
+        "NBIT_SUM": "NBIT_DATA_FL+8",
+        "NBIT_WEIGHT": 18,
+        "NBIT_WEIGHT_FL": 13,
+
+        "NBIT_RAM": 72,
+        "NBIT_ADDR": 32,
 
         "NBTI_MODEL_HEAD": 32,
-        
-        "NBIT_TH_LONG_ADD": 30, 
+
+        "NBIT_TH_LONG_ADD": 30,
         "NBIT_ADD": 15,
 
-        "RANGE_B" : [-100, 100], 
-        "RANGE_W" : [-20, 20],
+        "RANGE_B": [-100, 100],
+        "RANGE_W": [-20, 20],
 
-        "NCFG" : 35,
-        "NNET" : 4920,
-        "NFEA" : 8192
+        "NCFG": 35,
+        "NNET": 4920,
+        "NFEA": 8192
     },
 
-    "end": ""    
+    "end": ""
 }
 
-jdata_config_16 ={
-    "dscp" : {
+jdata_config_16 = {
+    "dscp": {
         "neuron": [8, 16, 32],
         "axis_neuron": 4,
         "NI": 128
@@ -124,16 +124,16 @@ jdata_config_16 ={
         "neuron": [16, 16, 16]
     },
 
-    "ctrl" : {
-        "NSTDM": 16, 
-        "NSTDM_M1": 16, 
-        "NSTDM_M2": 1, 
+    "ctrl": {
+        "NSTDM": 16,
+        "NSTDM_M1": 16,
+        "NSTDM_M2": 1,
         "NSTDM_M1X": 4
-    } 
+    }
 }
 
-jdata_config_32 ={
-    "dscp" : {
+jdata_config_32 = {
+    "dscp": {
         "neuron": [8, 16, 32],
         "axis_neuron": 4,
         "NI": 128
@@ -143,16 +143,16 @@ jdata_config_32 ={
         "neuron": [32, 32, 32]
     },
 
-    "ctrl" : {
-        "NSTDM": 16, 
-        "NSTDM_M1": 16, 
-        "NSTDM_M2": 1, 
+    "ctrl": {
+        "NSTDM": 16,
+        "NSTDM_M1": 16,
+        "NSTDM_M2": 1,
         "NSTDM_M1X": 4
-    } 
+    }
 }
 
-jdata_config_64 ={
-    "dscp" : {
+jdata_config_64 = {
+    "dscp": {
         "neuron": [8, 16, 32],
         "axis_neuron": 4,
         "NI": 128
@@ -162,16 +162,16 @@ jdata_config_64 ={
         "neuron": [64, 64, 64]
     },
 
-    "ctrl" : {
-        "NSTDM": 32, 
-        "NSTDM_M1": 32, 
-        "NSTDM_M2": 1, 
+    "ctrl": {
+        "NSTDM": 32,
+        "NSTDM_M1": 32,
+        "NSTDM_M2": 1,
         "NSTDM_M1X": 4
-    } 
+    }
 }
 
-jdata_config_128 ={
-    "dscp" : {
+jdata_config_128 = {
+    "dscp": {
         "neuron": [8, 16, 32],
         "axis_neuron": 4,
         "NI": 128
@@ -181,19 +181,19 @@ jdata_config_128 ={
         "neuron": [128, 128, 128]
     },
 
-    "ctrl" : {
-        "NSTDM": 32, 
-        "NSTDM_M1": 32, 
-        "NSTDM_M2": 1, 
+    "ctrl": {
+        "NSTDM": 32,
+        "NSTDM_M1": 32,
+        "NSTDM_M2": 1,
         "NSTDM_M1X": 4
     }
 }
 
 jdata_configs = {
-    "16" : jdata_config_16,
-    "32" : jdata_config_32,
-    "64" : jdata_config_64,
-    "128" : jdata_config_128
+    "16": jdata_config_16,
+    "32": jdata_config_32,
+    "64": jdata_config_64,
+    "128": jdata_config_128
 }
 
 jdata_deepmd_input = {
@@ -226,16 +226,16 @@ jdata_deepmd_input = {
             "resnet_dt": False
         }
     },
-    "nvnmd":{
-        "net_size":32,
-        "config_file":"none",
-        "weight_file":"none",
-        "map_file":"none",
-        "enable":False,
-        "restore_descriptor":False,
+    "nvnmd": {
+        "net_size": 32,
+        "config_file": "none",
+        "weight_file": "none",
+        "map_file": "none",
+        "enable": False,
+        "restore_descriptor": False,
         "restore_fitting_net": False,
-        "quantize_descriptor":False,
-        "quantize_fitting_net":False
+        "quantize_descriptor": False,
+        "quantize_fitting_net": False
     },
     "learning_rate": {
         "type": "exp",

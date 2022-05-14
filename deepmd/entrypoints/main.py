@@ -21,8 +21,9 @@ from deepmd.entrypoints import (
 from deepmd.loggers import set_log_handles
 
 from deepmd.nvnmd.entrypoints.map import map
-from deepmd.nvnmd.entrypoints.wrap import wrap 
+from deepmd.nvnmd.entrypoints.wrap import wrap
 from deepmd.nvnmd.entrypoints.train import train_nvnmd 
+from deepmd.nvnmd.entrypoints.freeze import freeze_nvnmd 
 
 __all__ = ["main", "parse_args", "get_ll"]
 
@@ -208,13 +209,6 @@ def parse_args(args: Optional[List[str]] = None):
         type=str,
         default=None,
         help="the frozen nodes, if not set, determined from the model type",
-    )
-    parser_frz.add_argument( #nvnmd
-        "-w",
-        "--nvnmd_weight",
-        type=str,
-        default=None,
-        help="the frozen weights, if set, save the weights of model into the file nvnmd/weight.npy",
     )
 
     # * test script ********************************************************************
@@ -454,7 +448,7 @@ def parse_args(args: Optional[List[str]] = None):
 
     # * train nvnmd script ******************************************************************
     parser_train_nvnmd = subparsers.add_parser(
-        "train_nvnmd",
+        "train-nvnmd",
         parents=[parser_log],
         help="train nvnmd model",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -471,7 +465,7 @@ def parse_args(args: Optional[List[str]] = None):
     )
     # * map script ******************************************************************
     parser_map = subparsers.add_parser(
-        "map",
+        "map-nvnmd",
         parents=[parser_log],
         help="build the mapping table for embedding network",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -532,6 +526,41 @@ def parse_args(args: Optional[List[str]] = None):
         default="nvnmd/model.pb",
         help="the model file",
     )
+    # * freeze script ******************************************************************
+    parser_frz_nvn = subparsers.add_parser(
+        "freeze-nvnmd",
+        parents=[parser_log],
+        help="freeze the model",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser_frz_nvn.add_argument(
+        "-c",
+        "--checkpoint-folder",
+        type=str,
+        default=".",
+        help="path to checkpoint folder",
+    )
+    parser_frz_nvn.add_argument(
+        "-o",
+        "--output",
+        type=str,
+        default="frozen_model.pb",
+        help="name of graph, will output to the checkpoint folder",
+    )
+    parser_frz_nvn.add_argument(
+        "-n",
+        "--node-names",
+        type=str,
+        default=None,
+        help="the frozen nodes, if not set, determined from the model type",
+    )
+    parser_frz_nvn.add_argument(
+        "-w",
+        "--nvnmd-weight",
+        type=str,
+        default=None,
+        help="the frozen weights, if set, save the weights of model into the file nvnmd/weight.npy",
+    )
 
     parsed_args = parser.parse_args(args=args)
     if parsed_args.command is None:
@@ -580,12 +609,14 @@ def main():
         convert(**dict_args)
     elif args.command == "neighbor-stat":
         neighbor_stat(**dict_args)
-    elif args.command == "map": # nvnmd
+    elif args.command == "map":  # nvnmd
         map(**dict_args)
-    elif args.command == "wrap": # nvnmd
+    elif args.command == "wrap":  # nvnmd
         wrap(**dict_args)
-    elif args.command == "train_nvnmd": # nvnmd
+    elif args.command == "train-nvnmd":  # nvnmd
         train_nvnmd(**dict_args)
+    elif args.command == "freeze-nvnmd":  # nvnmd
+        freeze_nvnmd(**dict_args)
     elif args.command is None:
         pass
     else:

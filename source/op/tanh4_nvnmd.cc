@@ -1,21 +1,15 @@
 
 
-//
+// New Activation Function of NVNMD
 // --------------------------------------------------------------------
 /*
 
-# 功能
-输入x, 输出y=tanh4(x)
-
-    
-if L=2, H=1
-  y = F(x, 2, 1) = f(x) = a*x4 + b*x2*xa + d*xa
-
-if L=4, H=1/4
-  y = F(x, 4, 1/4) = f(x/2)/4 = a*x4 / (2^6) + b*x2*xa/(2^5) + d*xa/(2^3)
-
-y = F(x, 2, 1) + F(x, 4, 1/4)
-    
+# Function
+y = tanh4(x)
+y = f(x) = a*x3*|x| + b*x3 + d*x
+a = 1/16
+b = -1/4
+d = 1
 
 */
 // --------------------------------------------------------------------
@@ -130,7 +124,7 @@ public:
           xx = x*x;
           //
           if (xa<2) {
-            y = xx * (xx/16 - xa/4) + xa; 
+            y = xx * (xx * (FPTYPE)0.0625 - xa * (FPTYPE)0.25) + xa; 
           } else {
             y = 1;
           }
@@ -152,7 +146,7 @@ public:
           xx = round(xx * prec) / prec;
           //
           if (xa<2) {
-            y = xx * (xx/16 - xa/4) + xa;
+            y = xx * (xx * (FPTYPE)0.0625 - xa * (FPTYPE)0.25) + xa;
           } else {
             y = 1;
           }
@@ -171,7 +165,7 @@ public:
           xx = floor(xx * prec) / prec;
           //
           if (xa<2) {
-            y = xx * (xx/16 - xa/4) + xa;
+            y = xx * (xx * (FPTYPE)0.0625 - xa * (FPTYPE)0.25) + xa;
           } else {
             y = 1;
           }

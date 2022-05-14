@@ -3,12 +3,21 @@
 // --------------------------------------------------------------------
 /*
 
-# 功能
-使用 X 来检索 W 中的元素
-X (D1, D2)
-W (D3, D4)
-Y (D1, D2*D4)
+# Function
+x = xk+dx
+y = vk+dvk*dx
 
+build a mapping table V, use the X as index to select value Y
+
+# Parameters
+x index
+v mapping table
+dv mapping table of slope
+grad_v mapping table of 1st order derivative
+grad_dv  mapping table of slope of 1st order derivative
+prec precision
+nbit number of bits
+y output
 */
 // --------------------------------------------------------------------
 //
@@ -114,7 +123,7 @@ public:
     int ii, jj, kk, jk, n;
     FPTYPE dx;
     for(ii=0; ii<D1; ii++){
-      n = floor(x(ii, 0) * div_prec); // 向下取整
+      n = floor(x(ii, 0) * div_prec);
       dx = x(ii, 0) - n * prec;
       //check
       if (n < 0)  std::cout<<"ERROR: index ( " << n <<" ) is smaller than 0 \n";
