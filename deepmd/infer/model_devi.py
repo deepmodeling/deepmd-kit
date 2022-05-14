@@ -125,7 +125,7 @@ def calc_model_devi(coord,
     >>> graphs = [DP("graph.000.pb"), DP("graph.001.pb")]
     >>> model_devi = calc_model_devi(coord, cell, atype, graphs)
     '''
-    if not box:
+    if box is not None:
         nopbc = True
     else:
         nopbc = False
