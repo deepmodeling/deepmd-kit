@@ -33,15 +33,15 @@ jdata_cmd_freeze = {
 
 
 def replace_path(p, p2):
-    pars = p.split('/')
+    pars = p.split(os.sep)
     pars[-2] = p2
-    return '/'.join(pars)
+    return os.path.join(*pars)
 
 
 def add_path(p, p2):
     pars = p.split('/')
     pars.insert(-1, p2)
-    return '/'.join(pars)
+    return os.path.join(*pars)
 
 
 def normalized_input(fn, PATH_CNN):

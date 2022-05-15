@@ -1,7 +1,8 @@
 
 import numpy as np
+import logging
 
-from deepmd.nvnmd.utils.fio import FioHead, FioBin, FioTxt
+from deepmd.nvnmd.utils.fio import FioBin, FioTxt
 from deepmd.nvnmd.utils.config import nvnmd_cfg
 from deepmd.nvnmd.utils.weight import get_fitnet_weight
 from deepmd.nvnmd.utils.encode import Encode
@@ -10,6 +11,7 @@ from deepmd.nvnmd.utils.op import map_nvnmd
 from deepmd.nvnmd.data.data import jdata_deepmd_input, jdata_sys
 from typing import List, Optional
 
+log = logging.getLogger(__name__)
 
 class Wrap():
     r""" Generate the binary model file (model.pb)
@@ -61,9 +63,6 @@ class Wrap():
         nvnmd_cfg.init_from_jdata(jdata)
 
     def wrap(self):
-        # head = FioHead().info()
-        # print(f"{head}: star to wrap model")
-
         dscp = nvnmd_cfg.dscp
         ctrl = nvnmd_cfg.ctrl
 
@@ -110,14 +109,14 @@ class Wrap():
         hfea = e.extend_hex(hfea, nhex)
         hgra = e.extend_hex(hgra, nhex)
 
-        head = FioHead().info()
-        print("%s: len(hcfg): %d" % (head, len(hcfg)))
-        print("%s: len(hfps): %d" % (head, len(hfps)))
-        print("%s: len(hbps): %d" % (head, len(hbps)))
-        print("%s: len(hfea): %d" % (head, len(hfea)))
-        print("%s: len(hgra): %d" % (head, len(hgra)))
         # DEVELOP_DEBUG
         if jdata_sys['debug']:
+            log.info("len(hcfg): %d" % (len(hcfg)))
+            log.info("len(hfps): %d" % (len(hfps)))
+            log.info("len(hbps): %d" % (len(hbps)))
+            log.info("len(hfea): %d" % (len(hfea)))
+            log.info("len(hgra): %d" % (len(hgra)))
+            #
             FioTxt().save('nvnmd/wrap/hcfg.txt', hcfg)
             FioTxt().save('nvnmd/wrap/hfps.txt', hfps)
             FioTxt().save('nvnmd/wrap/hbps.txt', hbps)
@@ -141,9 +140,7 @@ class Wrap():
         hs.extend(hgra)
 
         FioBin().save(self.model_file, hs)
-
-        head = FioHead().info()
-        print(f"{head}: finish wrapping model file")
+        log.info("NVNMD: finish wrapping model file")
 
     def wrap_head(self, NCFG, NNET, NFEA):
         nbit = nvnmd_cfg.nbit
@@ -167,9 +164,6 @@ class Wrap():
         return hs
 
     def wrap_dscp(self):
-        # head = FioHead().info()
-        # print(f"{head}: star to wrap model/dscp")
-
         dscp = nvnmd_cfg.dscp
         nbit = nvnmd_cfg.nbit
         maps = nvnmd_cfg.map
@@ -221,9 +215,6 @@ class Wrap():
     def wrap_fitn(self):
         """: wrap the weights of fitting net
         """
-        # head = FioHead().info()
-        # print(f"{head}: star to wrap model/fitn")
-
         dscp = nvnmd_cfg.dscp
         fitn = nvnmd_cfg.fitn
         weight = nvnmd_cfg.weight
@@ -315,9 +306,6 @@ class Wrap():
         return bfps, bbps
 
     def wrap_bias(self, bias, NBIT_SUM, NBIT_DATA_FL):
-        # head = FioHead().info()
-        # print(f"{head}: star to wrap model/fitn/bias")
-
         e = Encode()
         bias = e.qr(bias, NBIT_DATA_FL)
         Bs = e.dec2bin(bias, NBIT_SUM, True)
@@ -333,9 +321,6 @@ class Wrap():
         return Ws
 
     def wrap_map(self):
-        # head = FioHead().info()
-        # print(f"{head}: star to wrap model/map")
-
         dscp = nvnmd_cfg.dscp
         maps = nvnmd_cfg.map
         nbit = nvnmd_cfg.nbit

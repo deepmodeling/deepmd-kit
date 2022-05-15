@@ -1,9 +1,10 @@
 
 import numpy as np
+import logging 
 
-from deepmd.nvnmd.utils.fio import FioHead
 from deepmd.nvnmd.data.data import jdata_sys
 
+log = logging.getLogger(__name__)
 
 class Encode():
     r""": encoding value as hex, bin, and dec format
@@ -44,11 +45,9 @@ class Encode():
 
         if jdata_sys['debug']:
             if np.sum(I1) > 0:
-                head = FioHead.warning()
-                print(f"{head}: there are data {name} smaller than the lower limit {pmin}")
+                log.warn(f"NVNMD: there are data {name} smaller than the lower limit {pmin}")
             if np.sum(I2) > 0:
-                head = FioHead.warning()
-                print(f"{head}: there are data {name} bigger than the upper limit {pmax}")
+                log.warn(f"NVNMD: there are data {name} bigger than the upper limit {pmax}")
 
     def extend_list(self, slbin, nfull):
         """: extend the list (slbin) to the length (nfull)

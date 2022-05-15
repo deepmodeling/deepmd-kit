@@ -10,6 +10,8 @@ https://blog.metaflow.fr/tensorflow-how-to-freeze-a-model-and-serve-it-with-a-py
 import logging
 import google.protobuf.message
 from deepmd.env import tf, FITTING_NET_PATTERN
+from deepmd.entrypoints.freeze import _transfer_fitting_net_trainable_variables, _make_node_names
+
 from deepmd.utils.errors import GraphTooLargeError
 from deepmd.utils.sess import run_sess
 from deepmd.utils.graph import get_pattern_nodes_from_graph_def
@@ -26,142 +28,6 @@ from deepmd.nvnmd.utils.fio import FioDic
 __all__ = ["freeze_nvnmd"]
 
 log = logging.getLogger(__name__)
-
-def _transfer_fitting_net_trainable_variables(sess, old_graph_def, raw_graph_def):
-    old_pattern = FITTING_NET_PATTERN
-    raw_pattern = FITTING_NET_PATTERN\
-        .replace('idt',    'idt+_\d+')\
-        .replace('bias',   'bias+_\d+')\
-        .replace('matrix', 'matrix+_\d+')
-    old_graph_nodes = get_pattern_nodes_from_graph_def(
-        old_graph_def, 
-        old_pattern
-    )
-    try :
-        raw_graph_def = tf.graph_util.convert_variables_to_constants(
-            sess,  # The session is used to retrieve the weights
-            raw_graph_def,  # The graph_def is used to retrieve the nodes
-            [n + '_1' for n in old_graph_nodes],  # The output node names are used to select the usefull nodes
-        )
-    except AssertionError:
-        # if there's no additional nodes
-        return old_graph_def
-
-    raw_graph_nodes = get_pattern_nodes_from_graph_def(
-        raw_graph_def, 
-        raw_pattern
-    )
-    for node in old_graph_def.node:
-        if node.name not in old_graph_nodes.keys():
-            continue
-        tensor = tf.make_ndarray(raw_graph_nodes[node.name + '_1'])
-        node.attr["value"].tensor.tensor_content = tensor.tostring()
-    return old_graph_def
-
-def _make_node_names(model_type: str, modifier_type: Optional[str] = None) -> List[str]:
-    """Get node names based on model type.
-
-    Parameters
-    ----------
-    model_type : str
-        str type of model
-    modifier_type : Optional[str], optional
-        modifier type if any, by default None
-
-    Returns
-    -------
-    List[str]
-        list with all node names to freeze
-
-    Raises
-    ------
-    RuntimeError
-        if unknown model type
-    """
-    nodes = [
-        "model_type",
-        "descrpt_attr/rcut",
-        "descrpt_attr/ntypes",
-        "model_attr/tmap",
-        "model_attr/model_type",
-        "model_attr/model_version",
-        "train_attr/min_nbor_dist",
-        "train_attr/training_script",
-    ]
-
-    if model_type == "ener":
-        nodes += [
-            "o_energy",
-            "o_force",
-            "o_virial",
-            "o_atom_energy",
-            "o_atom_virial",
-            "fitting_attr/dfparam",
-            "fitting_attr/daparam",
-        ]
-    elif model_type == "wfc":
-        nodes += [
-            "o_wfc",
-            "model_attr/sel_type",
-            "model_attr/output_dim",
-        ]
-    elif model_type == "dipole":
-        nodes += [
-            "o_dipole",
-            "o_global_dipole",
-            "o_force",
-            "o_virial",
-            "o_atom_virial",
-            "o_rmat",
-            "o_rmat_deriv",
-            "o_nlist",
-            "o_rij",
-            "descrpt_attr/sel",
-            "descrpt_attr/ndescrpt",
-            "model_attr/sel_type",
-            "model_attr/output_dim",
-        ]
-    elif model_type == "polar":
-        nodes += [
-            "o_polar",
-            "o_global_polar",
-            "o_force",
-            "o_virial",
-            "o_atom_virial",
-            "model_attr/sel_type",
-            "model_attr/output_dim",
-        ]
-    elif model_type == "global_polar":
-        nodes += [
-            "o_global_polar",
-            "model_attr/sel_type",
-            "model_attr/output_dim",
-        ]
-    else:
-        raise RuntimeError(f"unknow model type {model_type}")
-    if modifier_type == "dipole_charge":
-        nodes += [
-            "modifier_attr/type",
-            "modifier_attr/mdl_name",
-            "modifier_attr/mdl_charge_map",
-            "modifier_attr/sys_charge_map",
-            "modifier_attr/ewald_h",
-            "modifier_attr/ewald_beta",
-            "dipole_charge/model_type",
-            "dipole_charge/descrpt_attr/rcut",
-            "dipole_charge/descrpt_attr/ntypes",
-            "dipole_charge/model_attr/tmap",
-            "dipole_charge/model_attr/model_type",
-            "dipole_charge/model_attr/model_version",
-            "o_dm_force",
-            "dipole_charge/model_attr/sel_type",
-            "dipole_charge/o_dipole",
-            "dipole_charge/model_attr/output_dim",
-            "o_dm_virial",
-            "o_dm_av",
-        ]
-    return nodes
-
 
 def freeze_nvnmd(
     *, checkpoint_folder: str, output: str, node_names: Optional[str] = None, nvnmd_weight: Optional[str] = None, **kwargs

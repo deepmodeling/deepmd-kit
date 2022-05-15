@@ -1,9 +1,11 @@
 
 import numpy as np
+import logging
 
 from deepmd.nvnmd.data.data import jdata_config, jdata_configs, jdata_deepmd_input
-from deepmd.nvnmd.utils.fio import FioDic, FioHead
+from deepmd.nvnmd.utils.fio import FioDic
 
+log = logging.getLogger(__name__)
 
 class NvnmdConfig():
     r"""Configuration for NVNMD
@@ -30,9 +32,6 @@ class NvnmdConfig():
         self.init_from_jdata(jdata)
 
     def init_from_jdata(self, jdata: dict = {}):
-        head = FioHead().info()
-        print(f"{head}: configure the nvnmd")
-
         if jdata == {}:
             return None
 
@@ -94,12 +93,10 @@ class NvnmdConfig():
         if self.enable:
             key = str(self.net_size)
             if key in jdata_configs.keys():
-                head = FioHead().info()
-                print(f"{head}: configure the net_size is {key}")
+                log.info(f"NVNMD: configure the net_size is {key}")
                 self.init_from_config(jdata_configs[key])
             else:
-                head = FioHead().error()
-                print(f"{head}: don't have the configure for nvnmd")
+                log.error("NVNMD: don't have the configure of net_size")
 
     def init_from_deepmd_input(self, jdata):
         self.config['dscp'] = FioDic().update(jdata['descriptor'], self.config['dscp'])
@@ -144,8 +141,7 @@ class NvnmdConfig():
         jdata['NSADV'] = jdata['NSTDM'] + 1
         jdata['NSEL'] = jdata['NSTDM'] * ntype_max
         if (32 % jdata['NSTDM_M1X'] > 0):
-            head = FioHead().warning()
-            print(f"{head}: NSTDM_M1X must be divisor of 32 for the right runing in data_merge module")
+            log.warn("NVNMD: NSTDM_M1X must be divisor of 32 for the right runing in data_merge module")
         return jdata
 
     def init_nbit(self, jdata: dict, jdata_parent: dict = {}) -> dict:

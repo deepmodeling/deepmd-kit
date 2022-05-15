@@ -160,7 +160,7 @@ def one_layer(inputs,
                 if activation_fn is not None:
                     y = activation_fn(hidden, NBIT_DATA_FL, NBIT_DATA_FL)
                 else:
-                    y = hidden + 0
+                    y = hidden
         else:
             hidden = tf.matmul(inputs, w) + b
             y = activation_fn(hidden, -1, -1) if (activation_fn is not None) else hidden

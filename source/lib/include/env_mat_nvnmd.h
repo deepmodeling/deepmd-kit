@@ -25,20 +25,6 @@ date: 2021-12-6
 namespace deepmd{
 
 template<typename FPTYPE> 
-void env_mat_a_nvnmd_cpu (
-    std::vector<FPTYPE > &	        descrpt_a,
-    std::vector<FPTYPE > &	        descrpt_a_deriv,
-    std::vector<FPTYPE > &	        rij_a,
-    const std::vector<FPTYPE > &	posi,
-    const std::vector<int > &		type,
-    const int &				i_idx,
-    const std::vector<int > &		fmt_nlist,
-    const std::vector<int > &		sec, 
-    const float &			rmin,
-    const float &			rmax,
-    const FPTYPE            precs[3]);
-
-template<typename FPTYPE> 
 void env_mat_a_nvnmd_quantize_cpu (
     std::vector<FPTYPE > &	        descrpt_a,
     std::vector<FPTYPE > &	        descrpt_a_deriv,

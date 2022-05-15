@@ -7,21 +7,21 @@
         - [2-1-3 loss](#2-1-3-loss)
         - [2-1-4 training](#2-1-4-training)
     - [2-2 Training](#2-2-training)
-    - [2-3 Testing](#2-3-testing)
-- [3 Running MD](#3-running-md)
-    - [3-1 Account application](#3-1-account-application)
-    - [3-2 Adding task](#3-2-adding-task)
-    - [3-3 Cancelling calculation](#3-3-cancelling-calculation)
-    - [3-4 Downloading results](#3-4-downloading-results)
-    - [3-5 Deleting record](#3-5-deleting-record)
-    - [3-6 Clearing records](#3-6-clearing-records)
+- [3 Testing](#3-testing)
+- [4 Running MD](#4-running-md)
+    - [4-1 Account application](#4-1-account-application)
+    - [4-2 Adding task](#4-2-adding-task)
+    - [4-3 Cancelling calculation](#4-3-cancelling-calculation)
+    - [4-4 Downloading results](#4-4-downloading-results)
+    - [4-5 Deleting record](#4-5-deleting-record)
+    - [4-6 Clearing records](#4-6-clearing-records)
 
 
 # 1 Introduction
 
-This is the training code we used to generate the results in our paper entitled "Accurate and Efficient Molecular Dynamics based on Machine Learning and Non Von Neumann Architecture", which has been accepted by npj Computational Materials (DOI: 10.1038/s41524-022-00773-z).
-
 NVNMD stands for non-von Neumann molecular dynamics.
+
+This is the training code we used to generate the results in our paper entitled "Accurate and Efficient Molecular Dynamics based on Machine Learning and Non Von Neumann Architecture", which has been accepted by npj Computational Materials (DOI: 10.1038/s41524-022-00773-z).
 
 Any user can follow two consecutive steps to run molecular dynamics (MD) on the proposed NVNMD computer, which has been released online: (i) to train a machine learning (ML) model that can decently reproduce the potential energy surface (PES); and (ii) to deploy the trained ML model on the proposed NVNMD computer, then run MD there to obtain the atomistic trajectories.
 
@@ -58,7 +58,7 @@ Then copy the input script `train.json` to the directory `train`
 cp -r $example_dir/train/train.json train.json
 ```
 
-`$example_dir` is the path to the data set and input script used in this example, which can be downloaded from the [website](https://github.com/LiuGroupHNU/nvnmd).
+`$example_dir` is the path to the data set and input script used in this example, which can be downloaded from the [website](https://github.com/LiuGroupHNU/nvnmd-example).
 
 The structure of the input script is as follows
 
@@ -188,7 +188,7 @@ dp train-nvnmd train.json
 After training process, you will get two folders: `nvnmd_cnn` and `nvnmd_qnn`. The `nvnmd_cnn` contains the model after continuous neural network (CNN) training. The `nvnmd_qnn` contains the model after quantized neural network (QNN) training. The binary file `nvnmd_qnn/model.pb` is the model file which is used to performs NVNMD in server [http://nvnmd.picp.vip]
 
 
-## 2-3 Testing
+# 3 Testing
 
 The frozen model can be used in many ways. The most straightforward testing can be invoked by
 
@@ -199,11 +199,11 @@ dp test -m ./nvnmd_qnn/frozen_model.pb -s path/to/system -d ./test/detail -n 999
 
 where the frozen model file to import is given via the `-m` command line flag, the path to the testing data set is given via the `-s` command line flag, the file containing details of energy, force and virial accuracy is given via the `-d` command line flag, the amount of data for testing is given via the `-n` command line flag.
 
-# 3 Running MD
+# 4 Running MD
 
 After CNN and QNN training, you can upload the ML model to our online NVNMD system and run MD there.
 
-## 3-1 Account application
+## 4-1 Account application
 
 The server website of NVNMD is available at http://nvnmd.picp.vip. You can visit the URL and enter the login interface (Figure.1).
 
@@ -216,7 +216,7 @@ The server website of NVNMD is available at http://nvnmd.picp.vip. You can visit
 
 To obtain an account, please send your application to the email (jie_liu@hnu.edu.cn, liujie@uw.edu). The username and password will be sent to you by email.
 
-## 3-2 Adding task
+## 4-2 Adding task
 
 After successfully obtaining the account, enter the username and password in the login interface, and click "Login" to enter the homepage (Figure.2).
 
@@ -261,7 +261,7 @@ Next, you can click `Submit` to submit the task and then automatically return to
 
 Then, click `Refresh` to view the latest status of all calculation tasks.
 
-## 3-3 Cancelling calculation
+## 4-3 Cancelling calculation
 
 For the task whose calculation status is `Pending` and `Running`, you can click the corresponding `Cancel` on the homepage to stop the calculation (Figure.5).
 
@@ -272,7 +272,7 @@ For the task whose calculation status is `Pending` and `Running`, you can click 
   </div>
 </p>
 
-## 3-4 Downloading results
+## 4-4 Downloading results
 
 For the task whose calculation status is `Completed`, `Failed` and `Cancelled`, you can click the corresponding `Package` or `Separate files` in the `Download results` bar on the homepage to download results.
 
@@ -296,13 +296,13 @@ Click `Separate files` to download the required separate files (Figure.7).
 
 If `Manual upload` mode is selected or the file has expired, click `Upload` on the download interface to upload manually.
 
-## 3-5 Deleting record
+## 4-5 Deleting record
 
 For the task no longer needed, you can click the corresponding `Delete` on the homepage to delete the record.
 
 Records cannot be retrieved after deletion.
 
-## 3-6 Clearing records
+## 4-6 Clearing records
 
 Click `Clear calculation records` on the homepage to clear all records.
 

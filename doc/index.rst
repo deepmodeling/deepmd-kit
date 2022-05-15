@@ -34,6 +34,7 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
    test/index
    inference/index
    third-party/index
+   nvnmd/index
    troubleshooting/index
 
 .. _developer-guide:

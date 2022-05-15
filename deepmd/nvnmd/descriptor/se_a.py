@@ -24,11 +24,10 @@ def build_davg_dstd():
 def build_op_descriptor():
     """:replace se_a.py/DescrptSeA/build
     """
-    # return op_module.prod_env_mat_a
     if nvnmd_cfg.quantize_descriptor:
         return op_module.prod_env_mat_a_nvnmd_quantize
     else:
-        return op_module.prod_env_mat_a_nvnmd
+        return op_module.prod_env_mat_a
 
 
 def descrpt2r4(inputs, natoms):

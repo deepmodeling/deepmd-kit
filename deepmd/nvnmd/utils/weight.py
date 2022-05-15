@@ -1,16 +1,17 @@
 
 import numpy as np
+import logging
 
 from deepmd.env import tf
-from deepmd.nvnmd.utils.fio import FioHead
+
+log = logging.getLogger(__name__)
 
 
 def get_weight(weights, key):
     if key in weights.keys():
         return weights[key]
     else:
-        head = FioHead().warning()
-        print(f"{head}: There is not {key} in weights.")
+        log.warn(f"There is not {key} in weights.")
         return None
 
 

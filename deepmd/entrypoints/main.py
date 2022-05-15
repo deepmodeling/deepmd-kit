@@ -530,7 +530,7 @@ def parse_args(args: Optional[List[str]] = None):
     parser_frz_nvn = subparsers.add_parser(
         "freeze-nvnmd",
         parents=[parser_log],
-        help="freeze the model",
+        help="freeze the model trained by NVNMD",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser_frz_nvn.add_argument(

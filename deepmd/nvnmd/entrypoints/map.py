@@ -1,8 +1,11 @@
 
 import numpy as np
+import logging
 
 from deepmd.env import tf
-from deepmd.nvnmd.utils.fio import FioDic, FioHead
+from deepmd.utils.sess import run_sess
+
+from deepmd.nvnmd.utils.fio import FioDic
 from deepmd.nvnmd.utils.config import nvnmd_cfg
 from deepmd.nvnmd.utils.weight import get_normalize, get_rng_s, get_filter_weight
 from deepmd.nvnmd.utils.network import get_sess
@@ -11,6 +14,7 @@ from deepmd.nvnmd.data.data import jdata_deepmd_input
 
 from typing import List, Optional
 
+log = logging.getLogger(__name__)
 
 class Map:
     r""" Generate the mapping table describing the relastionship of
@@ -118,8 +122,7 @@ class Map:
         self.map = maps2
 
         FioDic().save(self.map_file, self.map)
-        head = FioHead().info()
-        print(f"{head} : finish building mapping table")
+        log.info("NVNMD: finish building mapping table")
         return self.map
 
 # =====================================================================
@@ -195,7 +198,8 @@ class Map:
         feed_dic = {dic_ph['r2']: r2}
         key = 'r2,s,sr,ds_dr2,dsr_dr2'
         tlst = [dic_ph[k] for k in key.split(',')]
-        res = sess.run(tlst, feed_dic)
+        # res = sess.run(tlst, feed_dic)
+        res = run_sess(sess, tlst, feed_dict=feed_dic)
 
         res2 = {}
         key = key.split(',')
@@ -281,8 +285,7 @@ class Map:
         s_min, s_max = get_rng_s(nvnmd_cfg.weight)
         #
         if (s_min < -2.0) or (s_max > 14.0):
-            head = FioHead().warning()
-            print(f"{head} : the range of s [{s_min}, {s_max}] is over the limit [-2.0, 14.0]")
+            log.warn(f"the range of s [{s_min}, {s_max}] is over the limit [-2.0, 14.0]")
         s_min = -2.0
         s = s_min + np.arange(0, N + 1) / N2
         s = np.reshape(s, [-1, 1])
@@ -291,7 +294,8 @@ class Map:
         feed_dic = {dic_ph['s2']: s}
         key = 's2,G,dG_ds'
         tlst = [dic_ph[k] for k in key.split(',')]
-        res = sess.run(tlst, feed_dic)
+        # res = sess.run(tlst, feed_dic)
+        res = run_sess(sess, tlst, feed_dict=feed_dic)
 
         res2 = {}
         key = key.split(',')
