@@ -21,7 +21,7 @@
 
 NVNMD stands for non-von Neumann molecular dynamics.
 
-This is the training code we used to generate the results in our paper entitled "Accurate and Efficient Molecular Dynamics based on Machine Learning and Non Von Neumann Architecture", which has been accepted by npj Computational Materials (DOI: 10.1038/s41524-022-00773-z).
+This is the training code we used to generate the results in our paper entitled "Accurate and Efficient Molecular Dynamics based on Machine Learning and Non Von Neumann Architecture", which has been accepted by npj Computational Materials ([DOI: 10.1038/s41524-022-00773-z](https://www.nature.com/articles/s41524-022-00773-z)).
 
 Any user can follow two consecutive steps to run molecular dynamics (MD) on the proposed NVNMD computer, which has been released online: (i) to train a machine learning (ML) model that can decently reproduce the potential energy surface (PES); and (ii) to deploy the trained ML model on the proposed NVNMD computer, then run MD there to obtain the atomistic trajectories.
 
@@ -30,6 +30,8 @@ Any user can follow two consecutive steps to run molecular dynamics (MD) on the 
 Our training procedure consists of not only the continuous neural network (CNN) training, but also the quantized neural network (QNN) training which uses the results of CNN as inputs. It is performed on CPU or GPU by using the training codes we open-sourced online.
 
 To train a ML model that can decently reproduce the PES, training and testing data set should be prepared first. This can be done by using either the state-of-the-art active learning tools, or the outdated (i.e., less efficient) brute-force density functional theory (DFT)-based ab-initio molecular dynamics (AIMD) sampling.
+
+If you just want to simply test the training function, you can use the example in the `$deepmd_source_dir/examples/nvnmd` directory. If you want to fully experience training and running MD functions, you can download the complete example from the [website](https://github.com/LiuGroupHNU/nvnmd-example).
 
 Then, copy the data set to working directory
 
@@ -55,10 +57,8 @@ cd train
 Then copy the input script `train.json` to the directory `train`
 
 ```bash
-cp -r $example_dir/train/train.json train.json
+cp -r $deepmd_source_dir/examples/nvnmd/train/train.json train.json
 ```
-
-`$example_dir` is the path to the data set and input script used in this example, which can be downloaded from the [website](https://github.com/LiuGroupHNU/nvnmd-example).
 
 The structure of the input script is as follows
 
@@ -79,7 +79,7 @@ The "nvnmd" section is defined as
 {
     "net_size":128,
     "sel":[60, 60],
-    "rcut":7.0,
+    "rcut":6.0,
     "rcut_smth":0.5
 }
 ```
@@ -100,8 +100,8 @@ The "learning_rate" section is defined as
 ```json
 {
     "type":"exp",
-    "start_lr": 5e-3,
-    "stop_lr": 5e-6,
+    "start_lr": 1e-3,
+    "stop_lr": 3e-8,
     "decay_steps": 5000
 }
 ```
@@ -148,10 +148,10 @@ The "training" section is defined as
 ```json
 {
   "seed": 1,
-    "stop_batch": 500000,
-    "numb_test": 10,
+    "stop_batch": 1000000,
+    "numb_test": 1,
     "disp_file": "lcurve.out",
-    "disp_freq": 100,
+    "disp_freq": 1000,
     "save_ckpt": "model.ckpt",
     "save_freq": 10000,
     "training_data":{
@@ -179,7 +179,7 @@ where items are defined as:
 
 ## 2-2 Training
 
-training can be invoked by
+Training can be invoked by
 
 ```bash
 dp train-nvnmd train.json
@@ -194,7 +194,7 @@ The frozen model can be used in many ways. The most straightforward testing can 
 
 ```bash
 mkdir test
-dp test -m ./nvnmd_qnn/frozen_model.pb -s path/to/system -d ./test/detail -n 99999 | tee test/output
+dp test -m ./nvnmd_qnn/frozen_model.pb -s path/to/system -d ./test/detail -n 99999 -l test/output.log
 ```
 
 where the frozen model file to import is given via the `-m` command line flag, the path to the testing data set is given via the `-s` command line flag, the file containing details of energy, force and virial accuracy is given via the `-d` command line flag, the amount of data for testing is given via the `-n` command line flag.

@@ -285,7 +285,7 @@ class Map:
         s_min, s_max = get_rng_s(nvnmd_cfg.weight)
         #
         if (s_min < -2.0) or (s_max > 14.0):
-            log.warn(f"the range of s [{s_min}, {s_max}] is over the limit [-2.0, 14.0]")
+            log.warning(f"the range of s [{s_min}, {s_max}] is over the limit [-2.0, 14.0]")
         s_min = -2.0
         s = s_min + np.arange(0, N + 1) / N2
         s = np.reshape(s, [-1, 1])

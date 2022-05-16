@@ -141,7 +141,7 @@ class NvnmdConfig():
         jdata['NSADV'] = jdata['NSTDM'] + 1
         jdata['NSEL'] = jdata['NSTDM'] * ntype_max
         if (32 % jdata['NSTDM_M1X'] > 0):
-            log.warn("NVNMD: NSTDM_M1X must be divisor of 32 for the right runing in data_merge module")
+            log.warning("NVNMD: NSTDM_M1X must be divisor of 32 for the right runing in data_merge module")
         return jdata
 
     def init_nbit(self, jdata: dict, jdata_parent: dict = {}) -> dict:

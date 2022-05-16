@@ -105,7 +105,7 @@ class FioNpyDic:
             dat = np.load(file_name, allow_pickle=True)[0]
             return dat
         else:
-            log.warn(f"can not find {file_name}")
+            log.warning(f"can not find {file_name}")
             return default_value
 
     def save(self, file_name='', dic={}):
@@ -127,7 +127,7 @@ class FioJsonDic:
             dat = json.loads(jdata)
             return dat
         else:
-            log.warn(f"can not find {file_name}")
+            log.warning(f"can not find {file_name}")
             return default_value
 
     def save(self, file_name='', dic={}):
@@ -151,7 +151,7 @@ class FioBin():
                 dat = fr.read()
             return dat
         else:
-            log.warn(f"can not find {file_name}")
+            log.warning(f"can not find {file_name}")
             return default_value
 
     def save(self, file_name: str = '', data: str = ''):

@@ -3,9 +3,9 @@ import os
 
 from deepmd.env import tf
 from deepmd.entrypoints.train import train
+from deepmd.entrypoints.freeze import freeze
 from deepmd.nvnmd.entrypoints.map import map
 from deepmd.nvnmd.entrypoints.wrap import wrap
-from deepmd.nvnmd.entrypoints.freeze import freeze_nvnmd as freeze
 
 from deepmd.nvnmd.utils.fio import FioDic
 from deepmd.nvnmd.utils.config import nvnmd_cfg

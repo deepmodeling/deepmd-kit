@@ -15,7 +15,7 @@ from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION, TF_VERSION
 
 from deepmd.nvnmd.utils.config import nvnmd_cfg
-from deepmd.nvnmd.fit.ener import one_layer_nvnmd, one_layer_deepmd
+from deepmd.nvnmd.fit.ener import one_layer_nvnmd
 
 class EnerFitting (Fitting):
     r"""Fitting the energy of the system. The force and the virial can also be trained.
@@ -298,8 +298,6 @@ class EnerFitting (Fitting):
 
         if nvnmd_cfg.enable: 
             one_layer = one_layer_nvnmd
-        else: 
-            one_layer = one_layer_deepmd
         for ii in range(0,len(self.n_neuron)) :
             if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] and (not nvnmd_cfg.enable):
                 layer+= one_layer(

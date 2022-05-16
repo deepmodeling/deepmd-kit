@@ -11,7 +11,7 @@ def get_weight(weights, key):
     if key in weights.keys():
         return weights[key]
     else:
-        log.warn(f"There is not {key} in weights.")
+        log.warning(f"There is not {key} in weights.")
         return None
 
 

@@ -45,9 +45,9 @@ class Encode():
 
         if jdata_sys['debug']:
             if np.sum(I1) > 0:
-                log.warn(f"NVNMD: there are data {name} smaller than the lower limit {pmin}")
+                log.warning(f"NVNMD: there are data {name} smaller than the lower limit {pmin}")
             if np.sum(I2) > 0:
-                log.warn(f"NVNMD: there are data {name} bigger than the upper limit {pmax}")
+                log.warning(f"NVNMD: there are data {name} bigger than the upper limit {pmax}")
 
     def extend_list(self, slbin, nfull):
         """: extend the list (slbin) to the length (nfull)
