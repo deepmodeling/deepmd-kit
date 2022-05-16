@@ -72,7 +72,7 @@ public:
   bool inited;
   template<class VT> VT get_scalar(const std::string & name) const;
 
-  VALUETYPE rcut = 1.0;
+  VALUETYPE rcut = 6.0;
   VALUETYPE cell_size;
   int ntypes = 2;
   int dfparam;
