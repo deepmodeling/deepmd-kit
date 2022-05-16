@@ -21,9 +21,3 @@ file (
   TYPE FILE 
   FILES "@CMAKE_BINARY_DIR@/lmp/pair_deepmd.h"
 )
-
-#file (
-#  INSTALL DESTINATION "${LMP_INSTALL_PREFIX}"
-#  TYPE FILE
-#  FILES "@CMAKE_BINARY_DIR@/lmp/pair_paddledeepmd.h"
-#)

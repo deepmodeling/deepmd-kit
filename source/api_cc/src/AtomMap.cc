@@ -66,5 +66,5 @@ backward (typename std::vector<VALUETYPE >::iterator out,
 }
 
 template class AtomMap<float>;
-//template class AtomMap<double>;
+template class AtomMap<double>;
 

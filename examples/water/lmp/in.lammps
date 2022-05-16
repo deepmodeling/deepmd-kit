@@ -11,7 +11,7 @@ read_data	water.lmp
 mass 		1 16
 mass		2 2
 
-pair_style	deepmd /home/deepmd-kit/examples/water/lmp/model.pdmodel /home/deepmd-kit/examples/water/lmp/model.pdiparams
+pair_style	deepmd model.pdmodel model.pdiparams
 pair_coeff	
 
 velocity        all create 330.0 23456789

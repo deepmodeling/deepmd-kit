@@ -68,7 +68,6 @@ else()
   return()
 endif()
 
-
 # including directory of third_party libraries
 set(PADDLE_THIRD_PARTY_INC_DIRS)
 function(third_party_include TARGET_NAME HEADER_NAME TARGET_DIRNAME)
@@ -109,7 +108,6 @@ function(third_party_library TARGET_NAME TARGET_DIRNAME)
     else()
       message(FATAL_ERROR "Unknown library type: ${lib}")
     endif()
-    #message(STATUS "libname: ${libname}")
     find_library(${libname}_LIBRARY NAMES "${lib}" PATHS
         ${TARGET_DIRNAME}
         NO_DEFAULT_PATH)
@@ -133,9 +131,9 @@ if(USE_CUDA_TOOLKIT)
   file(GLOB CUSTOM_OPERATOR_FILES ${OP_DIR}/*.cc)
 else()
   file(GLOB CUSTOM_OPERATOR_FILES ${OP_DIR}/*_cpu.cc)
-  # set(CUSTOM_OPERATOR_FILES "${OP_DIR}/pd_prod_env_mat_multi_devices_cpu.cc;${OP_DIR}/pd_prod_force_se_a_multi_devices_cpu.cc;${OP_DIR}/pd_prod_virial_se_a_multi_devices_cpu.cc;")
 endif()
 add_library(pd_infer_custom_op SHARED ${CUSTOM_OPERATOR_FILES})
+install(TARGETS pd_infer_custom_op		DESTINATION lib/)
 endif()
 
 third_party_library(mklml ${THIRD_PARTY_ROOT}/install/mklml/lib libiomp5.so libmklml_intel.so)

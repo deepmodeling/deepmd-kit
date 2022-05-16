@@ -8,12 +8,6 @@
 #include "AtomMap.h"
 #include "string.h"
 #include <numeric>
-// #include "tensorflow/core/platform/env.h"
-// #include "tensorflow/core/public/session.h"
-// #include "tensorflow/core/public/version.h"
-// #include <tensorflow/core/graph/default_device.h>
-// #include <tensorflow/core/graph/graph_def_builder.h>
-
 
 namespace deepmd{
 
@@ -81,28 +75,9 @@ void
 get_env_nthreads(int & num_intra_nthreads,
 		 int & num_inter_nthreads);
 
-// void
-// check_status(
-//     const tensorflow::Status& status);
-
 std::string 
 name_prefix(
     const std::string & name_scope);
-
-// template<typename VT>
-// VT
-// session_get_scalar(
-//     tensorflow::Session* session, 
-//     const std::string name, 
-//     const std::string scope = "");
-
-// template<typename VT>
-// void
-// session_get_vector(
-//     std::vector<VT> & o_vec, 
-//     tensorflow::Session* session, 
-//     const std::string name_, 
-//     const std::string scope = "");
 
 }
 
