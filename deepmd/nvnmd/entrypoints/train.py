@@ -1,16 +1,18 @@
 
 import os 
+import logging
 
 from deepmd.env import tf
 from deepmd.entrypoints.train import train
 from deepmd.entrypoints.freeze import freeze
-from deepmd.nvnmd.entrypoints.map import map
+from deepmd.nvnmd.entrypoints.mapt import mapt
 from deepmd.nvnmd.entrypoints.wrap import wrap
 
 from deepmd.nvnmd.utils.fio import FioDic
 from deepmd.nvnmd.utils.config import nvnmd_cfg
 from deepmd.nvnmd.data.data import jdata_deepmd_input
 
+log = logging.getLogger(__name__)
 
 jdata_cmd_train = {
     "INPUT": "train.json",
@@ -89,25 +91,8 @@ def normalized_input_qnn(jdata, PATH_QNN, CONFIG_CNN, WEIGHT_CNN, MAP_CNN):
     nvnmd_cfg.init_from_jdata(jdata_nvnmd)
     nvnmd_cfg.init_train_mode('qnn')
     jdata['nvnmd'] = nvnmd_cfg.get_nvnmd_jdata()
-    # learning_rate
-    jdata1 = jdata['learning_rate']
-    jdata2 = jdata1.copy()
-    jdata2['start_lr'] = 1e-8
-    jdata2['stop_lr'] = 1e-9
-    jdata['learning_rate'] = jdata2
-    # loss
-    jdata1 = jdata['loss']
-    jdata2 = jdata1.copy()
-    # jdata2['start_pref_e'] = jdata1['limit_pref_e']
-    # jdata2['start_pref_f'] = jdata1['limit_pref_f']
-    # jdata2['start_pref_v'] = jdata1['limit_pref_v']
-    jdata['loss'] = jdata2
     # training
-    jdata1 = jdata['training']
-    jdata2 = jdata1.copy()
-    jdata2['stop_batch'] = 100000
-    jdata2['save_freq'] = 10000
-    jdata2['disp_freq'] = 1000
+    jdata2 = jdata['training']
     jdata2['disp_file'] = replace_path(jdata2['disp_file'], PATH_QNN)
     jdata2['save_ckpt'] = replace_path(jdata2['save_ckpt'], PATH_QNN)
     jdata['training'] = jdata2
@@ -120,25 +105,21 @@ def train_nvnmd(
     step: str,
     **kwargs,
 ):
-    #
+    # test input
+    if not os.path.exists(INPUT):
+        log.warning("The input script %s does not exist"%(INPUT))
+    # STEP1
     PATH_CNN = 'nvnmd_cnn'
     CONFIG_CNN = os.path.join(PATH_CNN, 'config.npy')
     INPUT_CNN = os.path.join(PATH_CNN, 'train.json')
     WEIGHT_CNN = os.path.join(PATH_CNN, 'weight.npy')
     FRZ_MODEL_CNN = os.path.join(PATH_CNN, 'frozen_model.pb')
     MAP_CNN = os.path.join(PATH_CNN, 'map.npy')
-    #
-    PATH_QNN = 'nvnmd_qnn'
-    CONFIG_QNN = os.path.join(PATH_QNN, 'config.npy')
-    INPUT_QNN = os.path.join(PATH_QNN, 'train.json')
-    WEIGHT_QNN = os.path.join(PATH_QNN, 'weight.npy')
-    FRZ_MODEL_QNN = os.path.join(PATH_QNN, 'frozen_model.pb')
-    MODEL_QNN = os.path.join(PATH_QNN, 'model.pb')
-    # normailize input file
-    jdata = normalized_input(INPUT, PATH_CNN)
-    FioDic().save(INPUT_CNN, jdata)
-    nvnmd_cfg.save(CONFIG_CNN)
     if step == "s1":
+        # normailize input file
+        jdata = normalized_input(INPUT, PATH_CNN)
+        FioDic().save(INPUT_CNN, jdata)
+        nvnmd_cfg.save(CONFIG_CNN)
         # train cnn
         jdata = jdata_cmd_train.copy()
         jdata['INPUT'] = INPUT_CNN
@@ -151,23 +132,28 @@ def train_nvnmd(
         jdata['nvnmd_weight'] = WEIGHT_CNN
         freeze(**jdata)
         tf.reset_default_graph()
-        # map
+        # map table
         jdata = {
             "nvnmd_config": CONFIG_CNN,
             "nvnmd_weight": WEIGHT_CNN,
             "nvnmd_map": MAP_CNN
         }
-        map(**jdata)
+        mapt(**jdata)
         tf.reset_default_graph()
-        #
-        step = "s2"
-    # normailize input file
-    jdata = FioDic().load(INPUT_CNN)
-    jdata = normalized_input_qnn(jdata, PATH_QNN, CONFIG_CNN, WEIGHT_CNN, MAP_CNN)
-    FioDic().save(INPUT_QNN, jdata)
-    nvnmd_cfg.save(CONFIG_QNN)
+    # STEP2
+    PATH_QNN = 'nvnmd_qnn'
+    CONFIG_QNN = os.path.join(PATH_QNN, 'config.npy')
+    INPUT_QNN = os.path.join(PATH_QNN, 'train.json')
+    WEIGHT_QNN = os.path.join(PATH_QNN, 'weight.npy')
+    FRZ_MODEL_QNN = os.path.join(PATH_QNN, 'frozen_model.pb')
+    MODEL_QNN = os.path.join(PATH_QNN, 'model.pb')
 
     if step == "s2":
+        # normailize input file
+        jdata = normalized_input(INPUT, PATH_CNN)
+        jdata = normalized_input_qnn(jdata, PATH_QNN, CONFIG_CNN, WEIGHT_CNN, MAP_CNN)
+        FioDic().save(INPUT_QNN, jdata)
+        nvnmd_cfg.save(CONFIG_QNN)
         # train qnn
         jdata = jdata_cmd_train.copy()
         jdata['INPUT'] = INPUT_QNN
@@ -189,5 +175,3 @@ def train_nvnmd(
         }
         wrap(**jdata)
         tf.reset_default_graph()
-        #
-        step = "s3"

@@ -54,10 +54,11 @@ mkdir train
 cd train 
 ```
 
-Then copy the input script `train.json` to the directory `train`
+Then copy the input script `train_cnn.json` and `train_qnn.json` to the directory `train`
 
 ```bash
-cp -r $deepmd_source_dir/examples/nvnmd/train/train.json train.json
+cp -r $deepmd_source_dir/examples/nvnmd/train/train_cnn.json train_cnn.json
+cp -r $deepmd_source_dir/examples/nvnmd/train/train_qnn.json train_qnn.json
 ```
 
 The structure of the input script is as follows
@@ -182,7 +183,10 @@ where items are defined as:
 Training can be invoked by
 
 ```bash
-dp train-nvnmd train.json
+# step1: train CNN
+dp train-nvnmd train_cnn.json -s s1
+# step2: train QNN
+dp train-nvnmd train_qnn.json -s s2
 ```
 
 After training process, you will get two folders: `nvnmd_cnn` and `nvnmd_qnn`. The `nvnmd_cnn` contains the model after continuous neural network (CNN) training. The `nvnmd_qnn` contains the model after quantized neural network (QNN) training. The binary file `nvnmd_qnn/model.pb` is the model file which is used to performs NVNMD in server [http://nvnmd.picp.vip]
@@ -207,12 +211,8 @@ After CNN and QNN training, you can upload the ML model to our online NVNMD syst
 
 The server website of NVNMD is available at http://nvnmd.picp.vip. You can visit the URL and enter the login interface (Figure.1).
 
-<p align="center">
-  <img width = "40%", src="figure_1.png">
-  <div align="center">
-  Figure.1 The login interface
-  </div>
-</p>
+![ALT](./figure_1.png "The login interface")
+<center>Figure.1 The login interface</center>
 
 To obtain an account, please send your application to the email (jie_liu@hnu.edu.cn, liujie@uw.edu). The username and password will be sent to you by email.
 
@@ -220,21 +220,13 @@ To obtain an account, please send your application to the email (jie_liu@hnu.edu
 
 After successfully obtaining the account, enter the username and password in the login interface, and click "Login" to enter the homepage (Figure.2).
 
-<p align="center">
-  <img width = "90%", src="figure_2.png">
-  <div align="center">
-  Figure.2 The homepage
-  </div>
-</p>
+![ALT](./figure_2.png "The homepage")
+<center>Figure.2 The homepage</center>
 
 The homepage displays the remaining calculation time and all calculation records not deleted. Click `Add a new task` to enter the interface for adding a new task (Figure.3).
 
-<p align="center">
-  <img width = "50%", src="figure_3.png">
-  <div align="center">
-  Figure.3 The interface for adding a new task
-  </div>
-</p>
+![ALT](./figure_3.png "The interface for adding a new task")
+<center>Figure.3 The interface for adding a new task</center>
 
 - Task name: name of the task
 - Upload mode: two modes of uploading results to online data storage, including `Manual upload` and `Automatic upload`. Results need to be uploaded manually to online data storage with `Manual upload` mode, and will be uploaded automatically with `Automatic upload` mode.
@@ -243,8 +235,8 @@ The homepage displays the remaining calculation time and all calculation records
 In the input script, one needs to specify the pair style as follows
 
 ```lammps
-pair_style nvnmd
-pair_coeff
+pair_style nvnmd model.pb
+pair_coeff * *
 ```
 
 - Model file: the ML model named `model.pb` obtained by QNN training.
@@ -252,12 +244,8 @@ pair_coeff
 
 Next, you can click `Submit` to submit the task and then automatically return to the homepage (Figure.4).
 
-<p align="center">
-  <img width = "90%", src="figure_4.png">
-  <div align="center">
-  Figure.4 The homepage with a new record
-  </div>
-</p>
+![ALT](./figure_4.png "The homepage with a new record")
+<center>Figure.4 The homepage with a new record</center>
 
 Then, click `Refresh` to view the latest status of all calculation tasks.
 
@@ -265,12 +253,8 @@ Then, click `Refresh` to view the latest status of all calculation tasks.
 
 For the task whose calculation status is `Pending` and `Running`, you can click the corresponding `Cancel` on the homepage to stop the calculation (Figure.5).
 
-<p align="center">
-  <img width = "90%", src="figure_5.png">
-  <div align="center">
-  Figure.5 The homepage with a cancelled task
-  </div>
-</p>
+![ALT](./figure_5.png "The homepage with a cancelled task")
+<center>Figure.5 The homepage with a cancelled task</center>
 
 ## 4-4 Downloading results
 
@@ -278,21 +262,13 @@ For the task whose calculation status is `Completed`, `Failed` and `Cancelled`, 
 
 Click `Package` to download a zipped package of all files including input files and output results (Figure.6).
 
-<p align="center">
-  <img width = "90%", src="figure_6.png">
-  <div align="center">
-  Figure.6 The interface for downloading a zipped package
-  </div>
-</p>
+![ALT](./figure_6.png "The interface for downloading a zipped package")
+<center>Figure.6 The interface for downloading a zipped package</center>
 
 Click `Separate files` to download the required separate files (Figure.7).
 
-<p align="center">
-  <img width = "90%", src="figure_7.png">
-  <div align="center">
-  Figure.7 The interface for downloading separate files
-  </div>
-</p>
+![ALT](./figure_7.png "The interface for downloading separate files")
+<center>Figure.7 The interface for downloading separate files</center>
 
 If `Manual upload` mode is selected or the file has expired, click `Upload` on the download interface to upload manually.
 

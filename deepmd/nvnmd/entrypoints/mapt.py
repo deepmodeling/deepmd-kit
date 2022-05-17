@@ -16,7 +16,7 @@ from typing import List, Optional
 
 log = logging.getLogger(__name__)
 
-class Map:
+class MapTable:
     r""" Generate the mapping table describing the relastionship of
     r_ij->s_ij, r_ij->sr_ij, and s_ij->G_ij
     
@@ -306,12 +306,13 @@ class Map:
         return res2
 
 
-def map(
+def mapt(
     *,
     nvnmd_config: Optional[str] = 'nvnmd/config.npy',
     nvnmd_weight: Optional[str] = 'nvnmd/weight.npy',
     nvnmd_map: Optional[str] = 'nvnmd/map.npy',
     **kwargs
 ):
-    mapObj = Map(nvnmd_config, nvnmd_weight, nvnmd_map)
+    # build mapping table
+    mapObj = MapTable(nvnmd_config, nvnmd_weight, nvnmd_map)
     mapObj.build_map()
