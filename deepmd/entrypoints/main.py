@@ -465,8 +465,8 @@ def parse_args(args: Optional[List[str]] = None):
         "--step",
         default="s12",
         type=str,
-        choices=['s1','s2','s12'],
-        help="steps to train model of NVNMD: s1 (train CNN), s2 (train QNN), s12 (a1 and s2)"
+        choices=['s1','s2'],
+        help="steps to train model of NVNMD: s1 (train CNN), s2 (train QNN)"
     )
 
     parsed_args = parser.parse_args(args=args)

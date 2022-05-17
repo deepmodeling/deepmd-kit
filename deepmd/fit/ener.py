@@ -5,7 +5,7 @@ from packaging.version import Version
 
 from deepmd.env import tf
 from deepmd.common import add_data_requirement, get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, cast_precision
-from deepmd.utils.argcheck import list_to_doc, nvnmd_args
+from deepmd.utils.argcheck import list_to_doc
 from deepmd.utils.network import one_layer_rand_seed_shift
 from deepmd.utils.network import one_layer as one_layer_deepmd
 from deepmd.utils.type_embed import embed_atom_type
