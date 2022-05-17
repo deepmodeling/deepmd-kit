@@ -463,7 +463,7 @@ def parse_args(args: Optional[List[str]] = None):
     parser_train_nvnmd.add_argument(
         "-s", 
         "--step",
-        default="s12",
+        default="s1",
         type=str,
         choices=['s1','s2'],
         help="steps to train model of NVNMD: s1 (train CNN), s2 (train QNN)"
