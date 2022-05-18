@@ -51,6 +51,8 @@ jobs:
 
     container: ghcr.io/deepmodeling/deepmd-kit-test-environment:py${{ matrix.python }}-gcc${{ matrix.gcc }}-tf${{ matrix.tf }}
     steps:
+    - name: work around permission issue
+      run: git config --global --add safe.directory /__w/deepmd-kit/deepmd-kit
     - uses: actions/checkout@master
     - name: pip cache
       uses: actions/cache@v2
