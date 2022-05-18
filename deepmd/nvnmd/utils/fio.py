@@ -7,6 +7,7 @@ import struct
 import logging
 log = logging.getLogger(__name__)
 
+
 class Fio:
     """ basic class for FIO
     """

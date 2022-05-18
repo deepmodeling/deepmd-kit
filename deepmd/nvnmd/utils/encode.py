@@ -6,6 +6,7 @@ from deepmd.nvnmd.data.data import jdata_sys
 
 log = logging.getLogger(__name__)
 
+
 class Encode():
     r""": encoding value as hex, bin, and dec format
     """

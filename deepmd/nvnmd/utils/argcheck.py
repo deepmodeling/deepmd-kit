@@ -2,6 +2,7 @@
 
 from dargs import Argument
 
+
 def nvnmd_args():
     doc_net_size_file = "configuration the number of nodes of fitting_net"
     doc_map_file = "A file containing the mapping tables which replace the calculation of embedding nets"

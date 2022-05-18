@@ -1,5 +1,5 @@
 
-import os 
+import os
 import logging
 
 from deepmd.env import tf

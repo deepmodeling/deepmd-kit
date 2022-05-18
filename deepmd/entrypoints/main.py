@@ -20,7 +20,7 @@ from deepmd.entrypoints import (
 )
 from deepmd.loggers import set_log_handles
 
-from deepmd.nvnmd.entrypoints.train import train_nvnmd 
+from deepmd.nvnmd.entrypoints.train import train_nvnmd
 
 __all__ = ["main", "parse_args", "get_ll"]
 
@@ -461,11 +461,11 @@ def parse_args(args: Optional[List[str]] = None):
         "INPUT", help="the input parameter file in json format"
     )
     parser_train_nvnmd.add_argument(
-        "-s", 
+        "-s",
         "--step",
         default="s1",
         type=str,
-        choices=['s1','s2'],
+        choices=['s1', 's2'],
         help="steps to train model of NVNMD: s1 (train CNN), s2 (train QNN)"
     )
 

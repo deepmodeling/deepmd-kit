@@ -16,6 +16,7 @@ from typing import List, Optional
 
 log = logging.getLogger(__name__)
 
+
 class MapTable:
     r""" Generate the mapping table describing the relastionship of
     r_ij->s_ij, r_ij->sr_ij, and s_ij->G_ij

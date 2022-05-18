@@ -1,9 +1,9 @@
 
 #!/usr/bin/env python3
 
-
 from deepmd.env import tf
 from deepmd.nvnmd.utils.fio import FioDic
+
 
 def filter_tensorVariableList(tensorVariableList) -> dict:
     """: get the name of variable for NVNMD

@@ -13,6 +13,7 @@ from typing import List, Optional
 
 log = logging.getLogger(__name__)
 
+
 class Wrap():
     r""" Generate the binary model file (model.pb)
     the model file can be use to run the NVNMD with lammps

@@ -1,4 +1,5 @@
-import os,sys
+import os
+import sys
 import numpy as np
 import unittest
 
@@ -9,11 +10,13 @@ from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 
+
 def qr(x, nbit):
-        return np.round(x * 2**nbit) / (2**nbit)
+    return np.round(x * 2**nbit) / (2**nbit)
+
 
 def qf(x, nbit):
-        return np.floor(x * 2**nbit) / (2**nbit)
+    return np.floor(x * 2**nbit) / (2**nbit)
 
 
 class TestNvnmdMapOp(tf.test.TestCase):
@@ -22,12 +25,12 @@ class TestNvnmdMapOp(tf.test.TestCase):
         if int(os.environ.get("DP_AUTO_PARALLELIZATION", 0)):
             config.graph_options.rewrite_options.custom_optimizers.add().name = "dpparallel"
         self.sess = self.test_session(config=config).__enter__()
-        self.nbit_x  = 14
+        self.nbit_x = 14
         self.nbit_xk = 10
         self.nbit_yk = 10
-        self.prec_x =  1/2**self.nbit_x
+        self.prec_x = 1/2**self.nbit_x
         self.prec_xk = 1/2**self.nbit_xk
-        self.prec_yk = 1/2**self.nbit_yk 
+        self.prec_yk = 1/2**self.nbit_yk
 
     def gen_map_table(self):
         n = 2**self.nbit_xk
@@ -39,7 +42,7 @@ class TestNvnmdMapOp(tf.test.TestCase):
         self.v = qr(v, self.nbit_yk).reshape([-1, 1])
         self.dv = qr(dv, self.nbit_yk).reshape([-1, 1])
         self.dv2 = qr(dv2, self.nbit_yk).reshape([-1, 1])
-    
+
     def map_nvnmd_py(self, x, v, d_v, dv, d_dv, prec_xk, nbit_yk):
         pv = []
         for ii in range(len(x)):
@@ -56,12 +59,13 @@ class TestNvnmdMapOp(tf.test.TestCase):
 
     def test_map_op(self):
         self.gen_map_table()
-        x =  qr(np.random.rand(100)*0.9, self.nbit_x).reshape([-1, 1])
+        x = qr(np.random.rand(100)*0.9, self.nbit_x).reshape([-1, 1])
         y = self.map_nvnmd_py(x, self.v, self.dv, self.dv, self.dv2, self.prec_xk, self.nbit_yk)
         ty = op_module.map_nvnmd(x, self.v, self.dv, self.dv, self.dv2, self.prec_xk, self.nbit_yk)
         self.sess.run(tf.global_variables_initializer())
         typ = self.sess.run(ty)
         np.testing.assert_almost_equal(typ, y, 5)
+
 
 class TestNvnmdMatmulOp(tf.test.TestCase):
     def setUp(self):
@@ -79,7 +83,7 @@ class TestNvnmdMatmulOp(tf.test.TestCase):
                 return qr(np.matmul(x, w), nbit)
             else:
                 return qf(np.matmul(x, w), nbit)
-    
+
     def test_nvnmd_matmul(self):
         N = 10
         M = 10
@@ -90,7 +94,7 @@ class TestNvnmdMatmulOp(tf.test.TestCase):
         w = qr(x, self.nbit)
         y = self.nvnmd_matmul_py(x, w, 1, self.nbit, self.nbit, -1)
         ty = op_module.matmul_nvnmd(x, w, 1, self.nbit, self.nbit, -1)
-        self.sess.run (tf.global_variables_initializer())
+        self.sess.run(tf.global_variables_initializer())
         typ = self.sess.run(ty)
         np.testing.assert_almost_equal(typ, y, 5)
 
@@ -102,7 +106,7 @@ class TestNvnmdQuantizeOp(tf.test.TestCase):
             config.graph_options.rewrite_options.custom_optimizers.add().name = "dpparallel"
         self.sess = self.test_session(config=config).__enter__()
         self.nbit = 13
-    
+
     def nvnmd_quantize_py(self, x, is_round, nbit, nbit2, nbit3):
         if nbit < 0:
             return x
@@ -111,16 +115,17 @@ class TestNvnmdQuantizeOp(tf.test.TestCase):
                 return qr(x, nbit)
             else:
                 return qf(x, nbit)
-    
+
     def test_nvnmd_quantize(self):
         N = 10
         M = 10
         x = np.random.rand(N, M)
         y = self.nvnmd_quantize_py(x, 1, self.nbit, self.nbit, -1)
         ty = op_module.quantize_nvnmd(x, 1, self.nbit, self.nbit, -1)
-        self.sess.run (tf.global_variables_initializer())
+        self.sess.run(tf.global_variables_initializer())
         typ = self.sess.run(ty)
         np.testing.assert_almost_equal(typ, y, 5)
+
 
 class TestNvnmdTanh2Op(tf.test.TestCase):
     def setUp(self):
@@ -129,7 +134,7 @@ class TestNvnmdTanh2Op(tf.test.TestCase):
             config.graph_options.rewrite_options.custom_optimizers.add().name = "dpparallel"
         self.sess = self.test_session(config=config).__enter__()
         self.nbit = 13
-    
+
     def nvnmd_tanh2_py(self, x, is_round, nbit, nbit2, nbit3):
         if nbit < 0:
             x1 = np.clip(x, -2, 2)
@@ -169,9 +174,10 @@ class TestNvnmdTanh2Op(tf.test.TestCase):
         x = np.random.rand(N, M)
         y = self.nvnmd_tanh2_py(x, 1, self.nbit, self.nbit, -1)
         ty = op_module.tanh2_nvnmd(x, 1, self.nbit, self.nbit, -1)
-        self.sess.run (tf.global_variables_initializer())
+        self.sess.run(tf.global_variables_initializer())
         typ = self.sess.run(ty)
         np.testing.assert_almost_equal(typ, y, 5)
+
 
 class TestNvnmdTanh4Op(tf.test.TestCase):
     def setUp(self):
@@ -186,7 +192,7 @@ class TestNvnmdTanh4Op(tf.test.TestCase):
             x = np.clip(x, -2, 2)
             xa = np.abs(x)
             xx = x * x
-            y = xx * (xx * 0.0625 - xa * 0.25) + xa 
+            y = xx * (xx * 0.0625 - xa * 0.25) + xa
             y = y * np.sign(x)
             return y
         else:
@@ -202,7 +208,7 @@ class TestNvnmdTanh4Op(tf.test.TestCase):
                 x = np.clip(x, -2, 2)
                 xa = np.abs(x)
                 xx = qf(x * x, nbit)
-                y = xx * (xx * 0.0625 - xa * 0.25) + xa 
+                y = xx * (xx * 0.0625 - xa * 0.25) + xa
                 y = qf(y, nbit)
                 y = y * np.sign(x)
                 return y
@@ -223,7 +229,7 @@ class TestProdEnvMatANvnmdQuantize(tf.test.TestCase):
         config = tf.ConfigProto()
         if int(os.environ.get("DP_AUTO_PARALLELIZATION", 0)):
             config.graph_options.rewrite_options.custom_optimizers.add().name = "dpparallel"
-        self.sess = self.test_session(config=config).__enter__() 
+        self.sess = self.test_session(config=config).__enter__()
 
     def prod_env_mat_a_nvnmd_quantize_py(self):
         coord = [
@@ -282,11 +288,11 @@ class TestProdEnvMatANvnmdQuantize(tf.test.TestCase):
             mesh,
             t_avg,
             t_std,
-            rcut_a = 0,
-            rcut_r = 6.0,
-            rcut_r_smth = 0.5,
-            sel_a = [2, 4],
-            sel_r = [0, 0]
+            rcut_a=0,
+            rcut_r=6.0,
+            rcut_r_smth=0.5,
+            sel_a=[2, 4],
+            sel_r=[0, 0]
         )
         self.sess.run(tf.global_variables_initializer())
         typ, tdyp, trijp, tnlistp = self.sess.run([ty, tdy, trij, tnlist])

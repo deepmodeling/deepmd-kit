@@ -7,6 +7,7 @@ from deepmd.nvnmd.utils.fio import FioDic
 
 log = logging.getLogger(__name__)
 
+
 class NvnmdConfig():
     r"""Configuration for NVNMD
     record the message of model such as size, using nvnmd or not
