@@ -8,16 +8,17 @@
 
 using namespace deepmd;
 
+template<typename FPTYPE> 
 struct NeighborInfo 
 {
   int type;
-  double dist;
+  FPTYPE dist;
   int index;
   NeighborInfo () 
       : type (0), dist(0), index(0) 
       {
       }
-  NeighborInfo (int tt, double dd, int ii) 
+  NeighborInfo (int tt, FPTYPE dd, int ii) 
       : type (tt), dist(dd), index(ii) 
       {
       }
@@ -60,7 +61,7 @@ int format_nlist_i_fill_a (
   nei_idx.insert (nei_idx.end(), nei_idx_r.begin(), nei_idx_r.end());
   assert (nei_idx.size() == nei_idx_a.size() + nei_idx_r.size());
   // allocate the information for all neighbors
-  std::vector<NeighborInfo > sel_nei ;
+  std::vector<NeighborInfo<double> > sel_nei ;
   sel_nei.reserve (nei_idx_a.size() + nei_idx_r.size());
   for (unsigned kk = 0; kk < nei_idx.size(); ++kk){
     double diff[3];
@@ -75,7 +76,7 @@ int format_nlist_i_fill_a (
     }
     double rr = sqrt(deepmd::dot3(diff, diff));    
     if (rr <= rcut) {
-      sel_nei.push_back(NeighborInfo (type[j_idx], rr, j_idx));
+      sel_nei.push_back(NeighborInfo<double> (type[j_idx], rr, j_idx));
     }
   }
   sort (sel_nei.begin(), sel_nei.end());  
@@ -118,17 +119,19 @@ int format_nlist_i_cpu (
     // gether all neighbors
     std::vector<int > nei_idx (nei_idx_a);
     // allocate the information for all neighbors
-    std::vector<NeighborInfo > sel_nei;
+    std::vector<NeighborInfo<float> > sel_nei;
     sel_nei.reserve (nei_idx_a.size());
+    float rcut2 = rcut * rcut;
     for (unsigned kk = 0; kk < nei_idx.size(); ++kk) {
-        FPTYPE diff[3];
+        // rcut is float in this function, so float rr is enough
+        float diff[3];
         const int & j_idx = nei_idx[kk];
         for (int dd = 0; dd < 3; ++dd) {
-            diff[dd] = posi[j_idx * 3 + dd] - posi[i_idx * 3 + dd];
+            diff[dd] = (float)posi[j_idx * 3 + dd] - (float)posi[i_idx * 3 + dd];
         }
-        FPTYPE rr = sqrt(deepmd::dot3(diff, diff));    
-        if (rr <= rcut) {
-            sel_nei.push_back(NeighborInfo(type[j_idx], rr, j_idx));
+        float rr2 = deepmd::dot3(diff, diff);    
+        if (rr2 <= rcut2) {
+            sel_nei.push_back(NeighborInfo<float>(type[j_idx], rr2, j_idx));
         }
     }
     sort(sel_nei.begin(), sel_nei.end());  
