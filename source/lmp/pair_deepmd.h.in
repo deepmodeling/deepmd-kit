@@ -43,8 +43,8 @@ class PairDeepMD : public Pair {
   virtual void coeff(int, char **);
   void init_style();
   double init_one(int i, int j);
-  int pack_reverse_comm(int, int, float *);
-  void unpack_reverse_comm(int, int *, float *);
+  int pack_reverse_comm(int, int, double *);
+  void unpack_reverse_comm(int, int *, double *);
   void print_summary(const std::string pre) const;
   int get_node_rank();
   std::string get_prog_file_content(const std::string & model);

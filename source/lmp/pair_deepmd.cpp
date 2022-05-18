@@ -131,10 +131,10 @@ std::vector<std::string> PairDeepMD::get_params_file_content(const std::vector<s
 }
 
 static void 
-ana_st (float & max, 
-	float & min, 
-	float & sum, 
-	const vector<float> & vec, 
+ana_st (double & max, 
+	double & min, 
+	double & sum, 
+	const vector<double> & vec, 
 	const int & nloc) 
 {
   if (nloc == 0) return;
@@ -151,8 +151,8 @@ ana_st (float & max,
 static void 
 make_uniform_aparam(
 #ifdef HIGH_PREC    
-    vector<float > & daparam,
-    const vector<float > & aparam,
+    vector<double > & daparam,
+    const vector<double > & aparam,
     const int & nlocal
 #else
     vector<float > & daparam,
@@ -173,7 +173,7 @@ make_uniform_aparam(
 #ifdef USE_TTM
 void PairDeepMD::make_ttm_aparam(
 #ifdef HIGH_PREC
-    vector<float > & daparam
+    vector<double > & daparam
 #else
     vector<float > & daparam
 #endif
@@ -196,18 +196,18 @@ void PairDeepMD::make_ttm_aparam(
   int nxnodes = nnodes[0];
   int nynodes = nnodes[1];
   int nznodes = nnodes[2];
-  float *** const T_electron = ttm_fix->get_T_electron();
-  float dx = domain->xprd/nxnodes;
-  float dy = domain->yprd/nynodes;
-  float dz = domain->zprd/nynodes;
+  double *** const T_electron = ttm_fix->get_T_electron();
+  double dx = domain->xprd/nxnodes;
+  double dy = domain->yprd/nynodes;
+  double dz = domain->zprd/nynodes;
   // resize daparam
   daparam.resize(nlocal);
   // loop over atoms to assign aparam
   for (int ii = 0; ii < nlocal; ii++) {
     if (mask[ii] & ttm_fix->groupbit) {
-      float xscale = static_cast<float>((x[ii][0] - domain->boxlo[0])/domain->xprd);
-      float yscale = static_cast<float>((x[ii][1] - domain->boxlo[1])/domain->yprd);
-      float zscale = static_cast<float>((x[ii][2] - domain->boxlo[2])/domain->zprd);
+      double xscale = static_cast<double>((x[ii][0] - domain->boxlo[0])/domain->xprd);
+      double yscale = static_cast<double>((x[ii][1] - domain->boxlo[1])/domain->yprd);
+      double zscale = static_cast<double>((x[ii][2] - domain->boxlo[2])/domain->zprd);
       int ixnode = static_cast<int>(xscale*nxnodes);
       int iynode = static_cast<int>(yscale*nynodes);
       int iznode = static_cast<int>(zscale*nznodes);
@@ -300,13 +300,13 @@ void PairDeepMD::compute(int eflag, int vflag)
     dtype[ii] = type[ii] - 1;
   }  
 
-  float dener (0);
-  vector<float > dforce (nall * 3);
-  vector<float > dvirial (9, 0);
-  vector<float > dcoord (nall * 3, 0.);
-  vector<float > dbox (9, 0) ;
+  double dener (0);
+  vector<double > dforce (nall * 3);
+  vector<double > dvirial (9, 0);
+  vector<double > dcoord (nall * 3, 0.);
+  vector<double > dbox (9, 0) ;
 #ifdef HIGH_PREC
-  vector<float > daparam;
+  vector<double > daparam;
 #else 
   vector<float > daparam;
 #endif
@@ -363,7 +363,7 @@ void PairDeepMD::compute(int eflag, int vflag)
 	for (unsigned dd = 0; dd < dbox.size(); ++dd) dbox_[dd] = dbox[dd];
 	vector<float> dforce_(dforce.size(), 0);
 	vector<float> dvirial_(dvirial.size(), 0);
-	float dener_ = 0;
+	double dener_ = 0;
 	deep_pot.compute (dener_, dforce_, dvirial_, dcoord_, dtype, dbox_, nghost, lmp_list, ago, fparam, daparam);
 	for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];	
 	for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	
@@ -372,8 +372,8 @@ void PairDeepMD::compute(int eflag, int vflag)
       }
       // do atomic energy and virial
       else {
-	vector<float > deatom (nall * 1, 0);
-	vector<float > dvatom (nall * 9, 0);
+	vector<double > deatom (nall * 1, 0);
+	vector<double > dvatom (nall * 9, 0);
 #ifdef HIGH_PREC
 	deep_pot.compute (dener, dforce, dvirial, deatom, dvatom, dcoord, dtype, dbox, nghost, lmp_list, ago, fparam, daparam);
 #else 
@@ -385,7 +385,7 @@ void PairDeepMD::compute(int eflag, int vflag)
 	vector<float> dvirial_(dvirial.size(), 0);
 	vector<float> deatom_(dforce.size(), 0);
 	vector<float> dvatom_(dforce.size(), 0);
-	float dener_ = 0;
+	double dener_ = 0;
 	deep_pot.compute (dener_, dforce_, dvirial_, deatom_, dvatom_, dcoord_, dtype, dbox_, nghost, lmp_list, ago, fparam, daparam);
 	for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];	
 	for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	
@@ -409,12 +409,12 @@ void PairDeepMD::compute(int eflag, int vflag)
       }
     }
     else if (multi_models_mod_devi) {
-      vector<float > deatom (nall * 1, 0);
-      vector<float > dvatom (nall * 9, 0);
+      vector<double > deatom (nall * 1, 0);
+      vector<double > dvatom (nall * 9, 0);
 #ifdef HIGH_PREC
-      vector<float> 		all_energy;
-      vector<vector<float>> 	all_virial;	       
-      vector<vector<float>> 	all_atom_energy;
+      vector<double> 		all_energy;
+      vector<vector<double>> 	all_virial;	       
+      vector<vector<double>> 	all_atom_energy;
       vector<vector<float>> 	all_atom_virial;
       deep_pot_model_devi.compute(all_energy, all_force, all_virial, all_atom_energy, all_atom_virial, dcoord, dtype, dbox, nghost, lmp_list, ago, fparam, daparam);
       // deep_pot_model_devi.compute_avg (dener, all_energy);
@@ -436,8 +436,8 @@ void PairDeepMD::compute(int eflag, int vflag)
       vector<float> dvirial_(dvirial.size(), 0);
       vector<float> deatom_(dforce.size(), 0);
       vector<float> dvatom_(dforce.size(), 0);
-      float dener_ = 0;
-      vector<float> 		all_energy_;
+      double dener_ = 0;
+      vector<double> 		all_energy_;
       vector<vector<float>>	all_force_;
       vector<vector<float>> 	all_virial_;	       
       vector<vector<float>> 	all_atom_energy_;
@@ -485,9 +485,9 @@ void PairDeepMD::compute(int eflag, int vflag)
 	if (newton_pair) {
 	  comm->reverse_comm_pair(this);
 	}
-	vector<float> std_f;
+	vector<double> std_f;
 #ifdef HIGH_PREC
-	vector<float> tmp_avg_f;
+	vector<double> tmp_avg_f;
 	deep_pot_model_devi.compute_avg (tmp_avg_f, all_force);  
 	deep_pot_model_devi.compute_std_f (std_f, tmp_avg_f, all_force);
 	if (out_rel == 1){
@@ -508,19 +508,19 @@ void PairDeepMD::compute(int eflag, int vflag)
 	    deep_pot_model_devi.compute_relative_std_f (std_f_, tmp_avg_f_, eps);
 	}
 #endif
-	float min = numeric_limits<float>::max(), max = 0, avg = 0;
+	double min = numeric_limits<double>::max(), max = 0, avg = 0;
 	ana_st(max, min, avg, std_f, nlocal);
 	int all_nlocal = 0;
 	MPI_Reduce (&nlocal, &all_nlocal, 1, MPI_INT, MPI_SUM, 0, world);
-	float all_f_min = 0, all_f_max = 0, all_f_avg = 0;
+	double all_f_min = 0, all_f_max = 0, all_f_avg = 0;
 	MPI_Reduce (&min, &all_f_min, 1, MPI_DOUBLE, MPI_MIN, 0, world);
 	MPI_Reduce (&max, &all_f_max, 1, MPI_DOUBLE, MPI_MAX, 0, world);
 	MPI_Reduce (&avg, &all_f_avg, 1, MPI_DOUBLE, MPI_SUM, 0, world);
-	all_f_avg /= float(all_nlocal);
+	all_f_avg /= double(all_nlocal);
 	// std energy
-	vector<float > std_e;
+	vector<double > std_e;
 #ifdef HIGH_PREC
-	vector<float > tmp_avg_e;
+	vector<double > tmp_avg_e;
 	deep_pot_model_devi.compute_avg (tmp_avg_e, all_atom_energy);
 	deep_pot_model_devi.compute_std_e (std_e, tmp_avg_e, all_atom_energy);
 #else 
@@ -531,20 +531,20 @@ void PairDeepMD::compute(int eflag, int vflag)
 	for (int dd = 0; dd < std_e_.size(); ++dd) std_e[dd] = std_e_[dd];
 #endif	
 	max = avg = 0;
-	min = numeric_limits<float>::max();
+	min = numeric_limits<double>::max();
 	ana_st(max, min, avg, std_e, nlocal);
-	float all_e_min = 0, all_e_max = 0, all_e_avg = 0;
+	double all_e_min = 0, all_e_max = 0, all_e_avg = 0;
 	MPI_Reduce (&min, &all_e_min, 1, MPI_DOUBLE, MPI_MIN, 0, world);
 	MPI_Reduce (&max, &all_e_max, 1, MPI_DOUBLE, MPI_MAX, 0, world);
 	MPI_Reduce (&avg, &all_e_avg, 1, MPI_DOUBLE, MPI_SUM, 0, world);
-	all_e_avg /= float(all_nlocal);
+	all_e_avg /= double(all_nlocal);
 	// // total e
-	// vector<float > sum_e(numb_models, 0.);
+	// vector<double > sum_e(numb_models, 0.);
 	// MPI_Reduce (&all_energy[0], &sum_e[0], numb_models, MPI_DOUBLE, MPI_SUM, 0, world);
 	if (rank == 0) {
-	  // float avg_e = 0;
+	  // double avg_e = 0;
 	  // deep_pot_model_devi.compute_avg(avg_e, sum_e);
-	  // float std_e_1 = 0;
+	  // double std_e_1 = 0;
 	  // deep_pot_model_devi.compute_std(std_e_1, avg_e, sum_e);	
 	  fp << setw(12) << update->ntimestep 
 	     << " " << setw(18) << all_e_max 
@@ -582,7 +582,7 @@ void PairDeepMD::compute(int eflag, int vflag)
       for (unsigned dd = 0; dd < dbox.size(); ++dd) dbox_[dd] = dbox[dd];
       vector<float> dforce_(dforce.size(), 0);
       vector<float> dvirial_(dvirial.size(), 0);
-      float dener_ = 0;
+      double dener_ = 0;
       deep_pot.compute (dener_, dforce_, dvirial_, dcoord_, dtype, dbox_);
       for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];	
       for (unsigned dd = 0; dd < dvirial.size(); ++dd) dvirial[dd] = dvirial_[dd];	
@@ -890,7 +890,7 @@ double PairDeepMD::init_one(int i, int j)
 
 /* ---------------------------------------------------------------------- */
 
-int PairDeepMD::pack_reverse_comm(int n, int first, float *buf)
+int PairDeepMD::pack_reverse_comm(int n, int first, double *buf)
 {
   int i,m,last;
 
@@ -908,7 +908,7 @@ int PairDeepMD::pack_reverse_comm(int n, int first, float *buf)
 
 /* ---------------------------------------------------------------------- */
 
-void PairDeepMD::unpack_reverse_comm(int n, int *list, float *buf)
+void PairDeepMD::unpack_reverse_comm(int n, int *list, double *buf)
 {
   int i,j,m;
 

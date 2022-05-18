@@ -18,14 +18,14 @@ typedef std::string STRINGTYPE;
 #endif
 
 #ifdef HIGH_PREC
-//typedef double VALUETYPE;
-//typedef double ENERGYTYPE;
-typedef float  VALUETYPE;
-typedef float ENERGYTYPE;
+typedef double VALUETYPE;
+typedef double ENERGYTYPE;
+// typedef float  VALUETYPE;
+// typedef float ENERGYTYPE;
 #else 
 typedef float  VALUETYPE;
-//typedef double ENERGYTYPE;
-typedef float ENERGYTYPE;
+typedef double ENERGYTYPE;
+// typedef float ENERGYTYPE;
 #endif
 
 struct NeighborListData 

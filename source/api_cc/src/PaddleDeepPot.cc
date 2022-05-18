@@ -41,7 +41,8 @@ paddle_run_model(ENERGYTYPE &	dener,
     }
     predictor->Run();
     // Deal with output
-    std::vector<ENERGYTYPE> oe;
+    // std::vector<deepmd::ENERGYTYPE> oe;
+    std::vector<float> oe;
     std::vector<VALUETYPE> of, oav;
     auto output_names = predictor->GetOutputNames();
 
@@ -66,7 +67,7 @@ paddle_run_model(ENERGYTYPE &	dener,
     oav.resize(out_v_num);
     out_v_t->CopyToCpu(oav.data());
 
-    dener = oe[0];
+    dener = static_cast<deepmd::ENERGYTYPE>(oe[0]);
     std::vector<VALUETYPE> dforce (3 * nall, 0.0);
     dvirial.resize(9);
     for (int i = 0; i < nall * 3; ++i) {
@@ -123,7 +124,8 @@ paddle_run_model (deepmd::ENERGYTYPE   &		dener,
     predictor->Run();
     // {"o_energy", "o_force", "o_atom_energy", "o_atom_virial"},
     // Deal with output
-    std::vector<deepmd::ENERGYTYPE> oe;
+    // std::vector<deepmd::ENERGYTYPE> oe;
+    std::vector<float> oe;
     std::vector<deepmd::VALUETYPE> of, oav, oae;
     auto output_names = predictor->GetOutputNames();
 
@@ -155,7 +157,7 @@ paddle_run_model (deepmd::ENERGYTYPE   &		dener,
     oav.resize(out_av_num);
     out_av_t->CopyToCpu(oav.data());
 
-    dener = oe[0];
+    dener = static_cast<deepmd::ENERGYTYPE>(oe[0]);
     std::vector<VALUETYPE> dforce (3 * nall);
     std::vector<VALUETYPE> datom_energy (nall, 0);
     std::vector<VALUETYPE> datom_virial (9 * nall);
@@ -583,10 +585,26 @@ compute (std::vector<ENERGYTYPE> &		all_energy,
     assert (nloc == ret[ii]);
   }
   for (unsigned ii = 0; ii < numb_models; ++ii) {
-      // paddle_run_model (all_energy[ii], all_force[ii], all_virial[ii], all_atom_energy[ii], all_atom_virial[ii], sessions[ii], predictor_, atommap, nghost);
-      paddle_run_model (all_energy[ii], all_force[ii], all_virial[ii], all_atom_energy[ii], all_atom_virial[ii], predictors[ii], atommap, nghost);
+    paddle_run_model (all_energy[ii], all_force[ii], all_virial[ii], all_atom_energy[ii], all_atom_virial[ii], predictors[ii], atommap, nghost);
   }
 }
+
+#ifndef HIGH_PREC
+void
+PaddleDeepPotModelDevi::
+compute_avg (ENERGYTYPE &		dener, 
+	     const std::vector<ENERGYTYPE >&	all_energy) 
+{
+  assert (all_energy.size() == numb_models);
+  if (numb_models == 0) return;
+
+  dener = 0;
+  for (unsigned ii = 0; ii < numb_models; ++ii){
+    dener += all_energy[ii];
+  }
+  dener /= (ENERGYTYPE)(numb_models);  
+}
+#endif
 
 void
 PaddleDeepPotModelDevi::
@@ -602,23 +620,6 @@ compute_avg (VALUETYPE &		dener,
   }
   dener /= (VALUETYPE)(numb_models);  
 }
-
-#ifndef HIGH_PREC
-void
-DeepPotModelDevi::
-compute_avg (ENERGYTYPE &		dener, 
-	     const std::vector<ENERGYTYPE >&	all_energy) 
-{
-  assert (all_energy.size() == numb_models);
-  if (numb_models == 0) return;
-
-  dener = 0;
-  for (unsigned ii = 0; ii < numb_models; ++ii){
-    dener += all_energy[ii];
-  }
-  dener /= (ENERGYTYPE)(numb_models);  
-}
-#endif
 
 void
 PaddleDeepPotModelDevi::
@@ -641,7 +642,6 @@ compute_avg (std::vector<VALUETYPE> &		avg,
     avg[jj] /= VALUETYPE(numb_models);
   }
 }
-
 
 void
 PaddleDeepPotModelDevi::
