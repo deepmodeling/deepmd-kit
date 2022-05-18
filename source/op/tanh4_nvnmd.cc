@@ -17,8 +17,6 @@ d = 1
 
 //- import the library of tensorflow
 #include "custom_op.h"
-#include <cmath>
-#include <stdio.h>
 
 using namespace tensorflow;
 

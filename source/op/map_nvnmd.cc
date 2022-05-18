@@ -24,8 +24,6 @@ y output
 
 //- import the library of tensorflow
 #include "custom_op.h"
-#include <cmath>
-#include <stdio.h>
 
 using namespace tensorflow;
 
@@ -126,8 +124,14 @@ public:
       n = floor(x(ii, 0) * div_prec);
       dx = x(ii, 0) - n * prec;
       //check
-      if (n < 0)  std::cerr<<"ERROR: index ( " << n <<" ) is smaller than 0 \n";
-      if (n > D3) std::cerr<<"ERROR: index ( " << n <<" ) is bigger  than " << D3 <<" \n";
+      if (n < 0)  {
+        std::cerr<<"ERROR: index is smaller than 0 \n"; 
+        n = 0;
+      }
+      if (n > D3) {
+        std::cerr<<"ERROR: index is bigger  than range \n";
+        n = 0;
+      }
       n = (n == D3) ? 0 : n;
       //map
       for(kk=0; kk<D4; kk++){
