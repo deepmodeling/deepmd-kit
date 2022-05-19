@@ -540,8 +540,8 @@ class DescrptSeR (DescrptSe):
                 # with (natom x nei_type_i) x 1
                 xyz_scatter = tf.reshape(inputs_i, [-1, 1])
                 if self.compress and ((type_input, type_i) not in self.exclude_types):
-                    info = [self.lower, self.upper, self.upper * self.table_config[0], self.table_config[1], self.table_config[2], self.table_config[3]]
                     net = 'filter_' + str(type_input) + '_net_' + str(type_i)
+                    info = [self.lower[net], self.upper[net], self.upper[net] * self.table_config[0], self.table_config[1], self.table_config[2], self.table_config[3]]
                     xyz_scatter = op_module.tabulate_fusion_se_r(tf.cast(self.table.data[net], self.filter_precision), info, inputs_i, last_layer_size = outputs_size[-1]) 
                 elif (type_input, type_i) not in self.exclude_types:
                     xyz_scatter = embedding_net(xyz_scatter, 
