@@ -24,9 +24,9 @@ $$L = p_e L_e + p_f L_f + p_v L_v$$
 
 where $L_e$, $L_f$, and $L_v$ denote the loss in energy, force and virial, respectively. $p_e$, $p_f$, and $p_v$ give the prefactors of the energy, force and virial losses. The prefectors may not be a constant, rather it changes linearly with the learning rate. Taking the force prefactor for example, at training step $t$, it is given by
 
-$$p_f(t) = \text{start_pref_f} \times ( \text{lr}(t) / \text{start_lr} ) + \text{limit_pref_f} \times ( 1 - \text{lr}(t) / \text{start_lr} )$$
+$$p_f(t) = p_f^0 \frac{ \alpha(t) }{ \alpha(0) } + p_f^\infty ( 1 - \frac{ \alpha(t) }{ \alpha(0) })$$
 
-where $\text{lr}(t)$ denotes the learning rate at step $t$. $\text{start_pref_f}$ and $\text{limit_pref_f}$ specifies the $\text{pref_f}$ at the start of the training and at the limit of $t \to \infity$.
+where $\alpha(t)$ denotes the learning rate at step $t$. $p_f^0$ and $p_f^\infty$ specifies the $p_f$ at the start of the training and at the limit of $t \to \infty$.
 
 The `loss` section in the `input.json` is 
 ```json
