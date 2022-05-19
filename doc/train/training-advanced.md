@@ -16,9 +16,11 @@ The `learning_rate` section in `input.json` is given as follows
 ```
 * `start_lr` gives the learning rate at the beginning of the training.
 * `stop_lr` gives the learning rate at the end of the training. It should be small enough to ensure that the network parameters satisfactorily converge. 
-* During the training, the learning rate decays exponentially from `start_lr` to `stop_lr` following the formula.
-$$\text{lr}(t)=\text{start_lr} \times \text{decay_rate} ^ {t / \text{decay_steps}} $$
-where $t$ is the training step.
+* During the training, the learning rate decays exponentially from `start_lr` to `stop_lr` following the formula:
+
+$$ \alpha(t) = \alpha_0 \lambda ^ { t / \tau } $$
+
+where $t$ is the training step, $\alpha$ is the learning rate, $\alpha_0$ is the starting learning rate, $\lambda$ is the decay rate, and $\tau$ is the decay steps.
 
 ## Training parameters
 
