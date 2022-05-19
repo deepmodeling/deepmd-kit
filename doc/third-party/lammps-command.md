@@ -58,9 +58,9 @@ This pair style takes the deep potential defined in a model file that usually ha
 The model deviation evalulate the consistency of the force predictions from multiple models. By default, only the maximal, minimal and averge model deviations are output. If the key `atomic` is set, then the model deviation of force prediction of each atom will be output.
 
 By default, the model deviation is output in absolute value. If the keyword `relative` is set, then the relative model deviation will be output. The relative model deviation of the force on atom $i$ is defined by
-$$Ef_i=\frac{\left|Df_i\right|}{\left|f_i\right|+\text{level}}$$
+$$E_{f_i}=\frac{\left|D_{f_i}\right|}{\left|f_i\right|+l}$$
 
-where $Df_i$ is the absolute model deviation of the force on atom $i$, $f_i$ is the norm of the the force and $\text{level}$ is provided as the parameter of the keyword `relative`.
+where $D_{f_i}$ is the absolute model deviation of the force on atom $i$, $f_i$ is the norm of the the force and $l$ is provided as the parameter of the keyword `relative`.
 
 ### Restrictions
 - The `deepmd` pair style is provided in the USER-DEEPMD package, which is compiled from the DeePMD-kit, visit the [DeePMD-kit website](https://github.com/deepmodeling/deepmd-kit) for more information.
@@ -126,7 +126,7 @@ If you use this feature please cite [D. Tisi, L. Zhang, R. Bertossa, H. Wang, R.
 ## Computation of heat flux
 Using per-atom stress tensor one can, for example, compute the heat flux defined as:
 
-$$\mathbf{J}=\sum_n e_n \mathbf{v}_n + \sum_{nm}( \mathbf{r}_m- \mathbf{r}_n) \frac{de_m}{d\mathbf{r}_n} \mathbf{v}_n$$
+$$\mathbf J = \sum_n e_n \mathbf v_n + \sum_{n,m} ( \mathbf r_m- \mathbf r_n) \frac{de_m}{d\mathbf r_n} \mathbf v_n$$
 
 to compute the heat flux with LAMMPS: 
 ```bash
