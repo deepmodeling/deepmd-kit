@@ -58,6 +58,7 @@ This pair style takes the deep potential defined in a model file that usually ha
 The model deviation evalulate the consistency of the force predictions from multiple models. By default, only the maximal, minimal and averge model deviations are output. If the key `atomic` is set, then the model deviation of force prediction of each atom will be output.
 
 By default, the model deviation is output in absolute value. If the keyword `relative` is set, then the relative model deviation will be output. The relative model deviation of the force on atom $i$ is defined by
+
 $$E_{f_i}=\frac{\left|D_{f_i}\right|}{\left|f_i\right|+l}$$
 
 where $D_{f_i}$ is the absolute model deviation of the force on atom $i$, $f_i$ is the norm of the the force and $l$ is provided as the parameter of the keyword `relative`.
