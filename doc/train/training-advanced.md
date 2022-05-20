@@ -20,7 +20,11 @@ The `learning_rate` section in `input.json` is given as follows
 
 $$ \alpha(t) = \alpha_0 \lambda ^ { t / \tau } $$
 
-where $t$ is the training step, $\alpha$ is the learning rate, $\alpha_0$ is the starting learning rate, $\lambda$ is the decay rate, and $\tau$ is the decay steps.
+where $t$ is the training step, $\alpha$ is the learning rate, $\alpha_0$ is the starting learning rate (set by `start_lr`), $\lambda$ is the decay rate, and $\tau$ is the decay steps, i.e.
+
+    ```
+    lr(t) = start_lr * decay_rate ^ ( t / decay_steps )
+    ```
 
 ## Training parameters
 

@@ -26,7 +26,10 @@ where $L_e$, $L_f$, and $L_v$ denote the loss in energy, force and virial, respe
 
 $$p_f(t) = p_f^0 \frac{ \alpha(t) }{ \alpha(0) } + p_f^\infty ( 1 - \frac{ \alpha(t) }{ \alpha(0) })$$
 
-where $\alpha(t)$ denotes the learning rate at step $t$. $p_f^0$ and $p_f^\infty$ specifies the $p_f$ at the start of the training and at the limit of $t \to \infty$.
+where $\alpha(t)$ denotes the learning rate at step $t$. $p_f^0$ and $p_f^\infty$ specifies the $p_f$ at the start of the training and at the limit of $t \to \infty$ (set by `start_pref_f` and `limit_pref_f`, respectively), i.e.
+```math
+pref_f(t) = start_pref_f * ( lr(t) / start_lr ) + limit_pref_f * ( 1 - lr(t) / start_lr )
+```
 
 The `loss` section in the `input.json` is 
 ```json
