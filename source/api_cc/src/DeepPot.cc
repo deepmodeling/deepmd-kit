@@ -164,14 +164,12 @@ DeepPot::
 DeepPot ()
     : inited (false), init_nbor (false)
 {
-  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
 }
 
 DeepPot::
 DeepPot (const std::string & model, const int & gpu_rank, const std::string & file_content)
     : inited (false), init_nbor (false)
 {
-  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   init(model, gpu_rank, file_content);  
 }
 
@@ -488,7 +486,6 @@ DeepPotModelDevi ()
       init_nbor (false),
       numb_models (0)
 {
-  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
 }
 
 DeepPotModelDevi::
@@ -497,7 +494,6 @@ DeepPotModelDevi (const std::vector<std::string> & models, const int & gpu_rank,
       init_nbor(false),
       numb_models (0)
 {
-  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   init(models, gpu_rank, file_contents);
 }
 
@@ -521,6 +517,7 @@ init (const std::vector<std::string> & models, const int & gpu_rank, const std::
   #endif // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
   SessionOptions options;
+  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
   for (unsigned ii = 0; ii < numb_models; ++ii){
