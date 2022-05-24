@@ -453,25 +453,52 @@ compute (ENERGYTYPE &			dener,
 	 const InputNlist &	lmp_list,
 	 const int               &	ago,
 	 const std::vector<VALUETYPE> &	fparam,
-	 const std::vector<VALUETYPE> &	aparam)
+	 const std::vector<VALUETYPE> &	aparam_)
 {
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
-    validate_fparam_aparam(nloc, fparam, aparam);
+  validate_fparam_aparam(nloc, fparam, aparam_);
     std::vector<std::pair<std::string, Tensor>> input_tensors;
-
+  // select real atoms
+  std::vector<VALUETYPE> dcoord, dforce, aparam, datom_energy, datom_virial;
+  std::vector<int> datype, fwd_map, bkw_map;
+  int nghost_real;
+  select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, nghost, ntypes);
+  // resize to nall_real
+  int nall_real = bkw_map.size();
+  int nloc_real = nall_real - nghost_real;
+  dcoord.resize(nall_real * 3);
+  datype.resize(nall_real);
+  datom_energy.resize(nall_real);
+  // fwd map
+  select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3);
+  select_map<int>(datype, datype_, fwd_map, 1);
+  select_map<VALUETYPE>(datom_energy, datom_energy_, fwd_map, 1);
+  // aparam
+  if (daparam > 0){
+    aparam.resize(nloc_real);
+    select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam);
+  }
     if (ago == 0) {
-        atommap = AtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
-        assert (nloc == atommap.get_type().size());
+    atommap = AtomMap<VALUETYPE> (datype.begin(), datype.begin() + nloc_real);
+    assert (nloc_real == atommap.get_type().size());
 
         nlist_data.copy_from_nlist(lmp_list);
         nlist_data.shuffle(atommap);
 	nlist_data.make_inlist(nlist);
     }
 
-    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
-    assert (nloc == ret);
-    run_model (dener, dforce_, dvirial, datom_energy_, datom_virial_, session, input_tensors, atommap, nghost);
+  int ret = session_input_tensors (input_tensors, dcoord, ntypes, datype, dbox, nlist, fparam, aparam, atommap, nghost_real, ago);
+  assert (nloc_real == ret);
+  run_model (dener, dforce, dvirial, datom_energy, datom_virial, session, input_tensors, atommap, nghost_real);
+
+  // bkw map
+  dforce_.resize(fwd_map.size() * 3);
+  datom_energy_.resize(fwd_map.size());
+  datom_virial_.resize(fwd_map.size() * 9);
+  select_map<VALUETYPE>(dforce_, dforce, bkw_map, 3);
+  select_map<VALUETYPE>(datom_energy_, datom_energy, bkw_map, 1);
+  select_map<VALUETYPE>(datom_virial_, datom_virial, bkw_map, 9);
 }
 
 void
