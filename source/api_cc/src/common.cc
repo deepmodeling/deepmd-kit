@@ -207,6 +207,14 @@ check_status(const tensorflow::Status& status) {
 }
 
 void
+throw_env_not_set_warning(std::string env_name)
+{
+  std::cerr << "DeePMD-kit WARNING: Environmental variable " << env_name << " is not set. "
+    << "Tune " << env_name << " for the best performance."
+    << std::endl;
+}
+
+void
 deepmd::
 get_env_nthreads(int & num_intra_nthreads,
 		 int & num_inter_nthreads)
@@ -215,17 +223,28 @@ get_env_nthreads(int & num_intra_nthreads,
   num_inter_nthreads = 0;
   const char* env_intra_nthreads = std::getenv("TF_INTRA_OP_PARALLELISM_THREADS");
   const char* env_inter_nthreads = std::getenv("TF_INTER_OP_PARALLELISM_THREADS");
+  const char* env_omp_nthreads = std::getenv("OMP_NUM_THREADS");
   if (env_intra_nthreads && 
       std::string(env_intra_nthreads) != std::string("") && 
       atoi(env_intra_nthreads) >= 0
       ) {
     num_intra_nthreads = atoi(env_intra_nthreads);
+  } else {
+    throw_env_not_set_warning("TF_INTRA_OP_PARALLELISM_THREADS");
   }
   if (env_inter_nthreads && 
       std::string(env_inter_nthreads) != std::string("") &&
       atoi(env_inter_nthreads) >= 0
       ) {
     num_inter_nthreads = atoi(env_inter_nthreads);
+  } else {
+    throw_env_not_set_warning("TF_INTER_OP_PARALLELISM_THREADS");
+  }
+  if (!(env_omp_nthreads && 
+      std::string(env_omp_nthreads) != std::string("") &&
+      atoi(env_omp_nthreads) >= 0
+      )) {
+    throw_env_not_set_warning("OMP_NUM_THREADS");
   }
 }
 
