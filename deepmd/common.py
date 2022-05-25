@@ -20,7 +20,7 @@ from typing import (
 import numpy as np
 import yaml
 
-from deepmd.env import op_module, tf
+from deepmd.env import op_module, tf, jit_wrapper
 from tensorflow.python.framework import tensor_util
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION, GLOBAL_NP_FLOAT_PRECISION
 from deepmd.utils.sess import run_sess
@@ -67,9 +67,13 @@ def gelu(x: tf.Tensor) -> tf.Tensor:
     """
     def gelu_wrapper(x):
         try:
-            return tensorflow.nn.gelu(x, approximate=True)
+            tensorflow.nn.gelu
         except AttributeError:
             return op_module.gelu(x)
+        else:
+            def tf_gelu(x: tf.Tensor) -> tf.Tensor:
+                return tensorflow.nn.gelu(x, approximate=True)
+            return jit_wrapper(tf_gelu, 1)(x)
     return (lambda x: gelu_wrapper(x))(x)
 
 

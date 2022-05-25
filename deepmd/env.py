@@ -7,7 +7,7 @@ import platform
 from configparser import ConfigParser
 from imp import reload
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 from packaging.version import Version
 
 import numpy as np
@@ -338,6 +338,33 @@ else:
         "low. Please set precision with environmental variable "
         "DP_INTERFACE_PREC." % dp_float_prec
     )
+
+
+"""JIT level.
+0: not enabled
+1: enabled for GELU
+"""
+DP_JIT_LEVEL = int(os.environ.get("DP_JIT_LEVEL", 0))
+
+
+def jit_wrapper(func: Callable, level: int=0) -> Callable:
+    """Enable JIT when DP_JIT_LEVEL >= level.
+    
+    Parameters
+    ----------
+    func : Callable
+        original function, both parameters and returns must be tf.Tensor
+    level : int, default=0
+        minimal level to enable JIT compile
+
+    Returns
+    -------
+    Callable
+        function which has enabled JIT compile
+    """
+    if DP_JIT_LEVEL >= level:
+        return tf.function(func, jit_compile=True, experimental_follow_type_hints=True)
+    return func
 
 
 def global_cvt_2_tf_float(xx: tf.Tensor) -> tf.Tensor:
