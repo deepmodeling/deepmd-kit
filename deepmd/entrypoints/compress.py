@@ -102,7 +102,7 @@ def compress(
         10 * step,
         int(frequency),
     ]
-    jdata["training"]["save_ckpt"] = "model-compression/model.ckpt"
+    jdata["training"]["save_ckpt"] = os.path.join("model-compression", "model.ckpt")
     jdata = update_deepmd_input(jdata)
     jdata = normalize(jdata)
 
