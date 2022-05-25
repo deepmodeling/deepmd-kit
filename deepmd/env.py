@@ -181,6 +181,8 @@ def get_tf_session_config() -> Any:
     """
     set_tf_default_nthreads()
     intra, inter = get_tf_default_nthreads()
+    if int(os.environ.get("DP_JIT", 0)):
+        set_env_if_empty("TF_XLA_FLAGS", "--tf_xla_auto_jit=2")
     config = tf.ConfigProto(
         gpu_options=tf.GPUOptions(allow_growth=True),
         intra_op_parallelism_threads=intra, inter_op_parallelism_threads=inter
