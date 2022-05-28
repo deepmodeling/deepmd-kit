@@ -44,7 +44,7 @@ def calc_model_devi_v(vs: np.ndarray):
     avg_devi_v = np.linalg.norm(vs_devi, axis=-1) / 3
     return max_devi_v, min_devi_v, avg_devi_v
 
-def write_model_devi_out(devi: np.ndarray, fname: str):
+def write_model_devi_out(devi: np.ndarray, fname: str, header: str=""):
     '''
     Parameters
     ----------
@@ -52,9 +52,11 @@ def write_model_devi_out(devi: np.ndarray, fname: str):
         the first column is the steps index
     fname : str
         the file name to dump
+    header : str, default=""
+        the header to dump
     '''
     assert devi.shape[1] == 7
-    header = "%10s" % "step"
+    header = "%s\n%10s" % (header, "step")
     for item in 'vf':
         header += "%19s%19s%19s" % (f"max_devi_{item}", f"min_devi_{item}", f"avg_devi_{item}")
     with open(fname, "ab") as fp:
@@ -87,7 +89,7 @@ def calc_model_devi(coord,
                     models,
                     fname=None,
                     frequency=1, 
-                    nopbc=True):
+                    ):
     '''
     Python interface to calculate model deviation
 
@@ -105,8 +107,6 @@ def calc_model_devi(coord,
         File to dump results, default None
     frequency : int
         Steps between frames (if the system is given by molecular dynamics engine), default 1
-    nopbc : bool
-        Whether to use pbc conditions
     
     Returns
     -------
@@ -125,8 +125,10 @@ def calc_model_devi(coord,
     >>> graphs = [DP("graph.000.pb"), DP("graph.001.pb")]
     >>> model_devi = calc_model_devi(coord, cell, atype, graphs)
     '''
-    if nopbc:
-        box = None
+    if box is not None:
+        nopbc = True
+    else:
+        nopbc = False
 
     forces = []
     virials = []
@@ -195,10 +197,6 @@ def make_model_devi(
     for system in all_sys:
         # create data-system
         dp_data = DeepmdData(system, set_prefix, shuffle_test=False, type_map=tmap)
-        if dp_data.pbc:
-            nopbc = False
-        else:
-            nopbc = True
 
         data_sets = [dp_data._load_set(set_name) for set_name in dp_data.dirs]
         nframes_tot = 0
@@ -207,11 +205,13 @@ def make_model_devi(
             coord = data["coord"]
             box = data["box"]
             atype = data["type"][0] 
-            devi = calc_model_devi(coord, box, atype, dp_models, nopbc=nopbc)
+            if not dp_data.pbc:
+                box = None
+            devi = calc_model_devi(coord, box, atype, dp_models)
             nframes_tot += coord.shape[0]
             devis.append(devi)
         devis = np.vstack(devis)
         devis[:, 0] = np.arange(nframes_tot) * frequency
-        write_model_devi_out(devis, output)
+        write_model_devi_out(devis, output, header=system)
         devis_coll.append(devis)
     return devis_coll

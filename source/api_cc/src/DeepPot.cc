@@ -34,10 +34,10 @@ run_model (ENERGYTYPE &			dener,
     // no backward map needed
     // dforce of size nall * 3
     dforce_.resize(nall * 3);
-    fill(dforce_.begin(), dforce_.end(), 0.0);
+    fill(dforce_.begin(), dforce_.end(), (VALUETYPE)0.0);
     // dvirial of size 9
     dvirial.resize(9);
-    fill(dvirial.begin(), dvirial.end(), 0.0);
+    fill(dvirial.begin(), dvirial.end(), (VALUETYPE)0.0);
     return;
   }
 
@@ -62,17 +62,17 @@ run_model (ENERGYTYPE &			dener,
     dforce[ii] = of(ii);
   }
   // set dvirial to zero, prevent input vector is not zero (#1123)
-  std::fill(dvirial.begin(), dvirial.end(), 0.);
+  std::fill(dvirial.begin(), dvirial.end(), (VALUETYPE)0.);
   for (int ii = 0; ii < nall; ++ii) {
-    dvirial[0] += 1.0 * oav(9*ii+0);
-    dvirial[1] += 1.0 * oav(9*ii+1);
-    dvirial[2] += 1.0 * oav(9*ii+2);
-    dvirial[3] += 1.0 * oav(9*ii+3);
-    dvirial[4] += 1.0 * oav(9*ii+4);
-    dvirial[5] += 1.0 * oav(9*ii+5);
-    dvirial[6] += 1.0 * oav(9*ii+6);
-    dvirial[7] += 1.0 * oav(9*ii+7);
-    dvirial[8] += 1.0 * oav(9*ii+8);
+    dvirial[0] += (VALUETYPE)1.0 * oav(9*ii+0);
+    dvirial[1] += (VALUETYPE)1.0 * oav(9*ii+1);
+    dvirial[2] += (VALUETYPE)1.0 * oav(9*ii+2);
+    dvirial[3] += (VALUETYPE)1.0 * oav(9*ii+3);
+    dvirial[4] += (VALUETYPE)1.0 * oav(9*ii+4);
+    dvirial[5] += (VALUETYPE)1.0 * oav(9*ii+5);
+    dvirial[6] += (VALUETYPE)1.0 * oav(9*ii+6);
+    dvirial[7] += (VALUETYPE)1.0 * oav(9*ii+7);
+    dvirial[8] += (VALUETYPE)1.0 * oav(9*ii+8);
   }
   dforce_ = dforce;
   atommap.backward (dforce_.begin(), dforce.begin(), 3);
@@ -95,16 +95,16 @@ static void run_model (ENERGYTYPE   &		dener,
         // no backward map needed
         // dforce of size nall * 3
         dforce_.resize(nall * 3);
-        fill(dforce_.begin(), dforce_.end(), 0.0);
+        fill(dforce_.begin(), dforce_.end(), (VALUETYPE)0.0);
         // dvirial of size 9
         dvirial.resize(9);
-        fill(dvirial.begin(), dvirial.end(), 0.0);
+        fill(dvirial.begin(), dvirial.end(), (VALUETYPE)0.0);
         // datom_energy_ of size nall
         datom_energy_.resize(nall);
-        fill(datom_energy_.begin(), datom_energy_.end(), 0.0);
+        fill(datom_energy_.begin(), datom_energy_.end(), (VALUETYPE)0.0);
         // datom_virial_ of size nall * 9
         datom_virial_.resize(nall * 9);
-        fill(datom_virial_.begin(), datom_virial_.end(), 0.0);
+        fill(datom_virial_.begin(), datom_virial_.end(), (VALUETYPE)0.0);
         return;
     }
     std::vector<Tensor> output_tensors;
@@ -139,17 +139,17 @@ static void run_model (ENERGYTYPE   &		dener,
         datom_virial[ii] = oav(ii);
     }
     // set dvirial to zero, prevent input vector is not zero (#1123)
-    std::fill(dvirial.begin(), dvirial.end(), 0.);
+    std::fill(dvirial.begin(), dvirial.end(), (VALUETYPE)0.);
     for (int ii = 0; ii < nall; ++ii) {
-        dvirial[0] += 1.0 * datom_virial[9*ii+0];
-        dvirial[1] += 1.0 * datom_virial[9*ii+1];
-        dvirial[2] += 1.0 * datom_virial[9*ii+2];
-        dvirial[3] += 1.0 * datom_virial[9*ii+3];
-        dvirial[4] += 1.0 * datom_virial[9*ii+4];
-        dvirial[5] += 1.0 * datom_virial[9*ii+5];
-        dvirial[6] += 1.0 * datom_virial[9*ii+6];
-        dvirial[7] += 1.0 * datom_virial[9*ii+7];
-        dvirial[8] += 1.0 * datom_virial[9*ii+8];
+        dvirial[0] += (VALUETYPE)1.0 * datom_virial[9*ii+0];
+        dvirial[1] += (VALUETYPE)1.0 * datom_virial[9*ii+1];
+        dvirial[2] += (VALUETYPE)1.0 * datom_virial[9*ii+2];
+        dvirial[3] += (VALUETYPE)1.0 * datom_virial[9*ii+3];
+        dvirial[4] += (VALUETYPE)1.0 * datom_virial[9*ii+4];
+        dvirial[5] += (VALUETYPE)1.0 * datom_virial[9*ii+5];
+        dvirial[6] += (VALUETYPE)1.0 * datom_virial[9*ii+6];
+        dvirial[7] += (VALUETYPE)1.0 * datom_virial[9*ii+7];
+        dvirial[8] += (VALUETYPE)1.0 * datom_virial[9*ii+8];
 	}
     dforce_ = dforce;
     datom_energy_ = datom_energy;
@@ -164,14 +164,12 @@ DeepPot::
 DeepPot ()
     : inited (false), init_nbor (false)
 {
-  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
 }
 
 DeepPot::
 DeepPot (const std::string & model, const int & gpu_rank, const std::string & file_content)
     : inited (false), init_nbor (false)
 {
-  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   init(model, gpu_rank, file_content);  
 }
 
@@ -369,7 +367,7 @@ compute (ENERGYTYPE &			dener,
   select_map<int>(datype, datype_, fwd_map, 1);
   // aparam
   if (daparam > 0){
-    aparam.resize(bkw_map.size());
+    aparam.resize(bkw_map.size() - nghost_real);
     select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam);
   }
   // internal nlist
@@ -453,25 +451,52 @@ compute (ENERGYTYPE &			dener,
 	 const InputNlist &	lmp_list,
 	 const int               &	ago,
 	 const std::vector<VALUETYPE> &	fparam,
-	 const std::vector<VALUETYPE> &	aparam)
+	 const std::vector<VALUETYPE> &	aparam_)
 {
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
-    validate_fparam_aparam(nloc, fparam, aparam);
+  validate_fparam_aparam(nloc, fparam, aparam_);
     std::vector<std::pair<std::string, Tensor>> input_tensors;
-
+  // select real atoms
+  std::vector<VALUETYPE> dcoord, dforce, aparam, datom_energy, datom_virial;
+  std::vector<int> datype, fwd_map, bkw_map;
+  int nghost_real;
+  select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, nghost, ntypes);
+  // resize to nall_real
+  int nall_real = bkw_map.size();
+  int nloc_real = nall_real - nghost_real;
+  dcoord.resize(nall_real * 3);
+  datype.resize(nall_real);
+  datom_energy.resize(nall_real);
+  // fwd map
+  select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3);
+  select_map<int>(datype, datype_, fwd_map, 1);
+  select_map<VALUETYPE>(datom_energy, datom_energy_, fwd_map, 1);
+  // aparam
+  if (daparam > 0){
+    aparam.resize(nloc_real);
+    select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam);
+  }
     if (ago == 0) {
-        atommap = AtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
-        assert (nloc == atommap.get_type().size());
+    atommap = AtomMap<VALUETYPE> (datype.begin(), datype.begin() + nloc_real);
+    assert (nloc_real == atommap.get_type().size());
 
         nlist_data.copy_from_nlist(lmp_list);
         nlist_data.shuffle(atommap);
 	nlist_data.make_inlist(nlist);
     }
 
-    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
-    assert (nloc == ret);
-    run_model (dener, dforce_, dvirial, datom_energy_, datom_virial_, session, input_tensors, atommap, nghost);
+  int ret = session_input_tensors (input_tensors, dcoord, ntypes, datype, dbox, nlist, fparam, aparam, atommap, nghost_real, ago);
+  assert (nloc_real == ret);
+  run_model (dener, dforce, dvirial, datom_energy, datom_virial, session, input_tensors, atommap, nghost_real);
+
+  // bkw map
+  dforce_.resize(fwd_map.size() * 3);
+  datom_energy_.resize(fwd_map.size());
+  datom_virial_.resize(fwd_map.size() * 9);
+  select_map<VALUETYPE>(dforce_, dforce, bkw_map, 3);
+  select_map<VALUETYPE>(datom_energy_, datom_energy, bkw_map, 1);
+  select_map<VALUETYPE>(datom_virial_, datom_virial, bkw_map, 9);
 }
 
 void
@@ -488,7 +513,6 @@ DeepPotModelDevi ()
       init_nbor (false),
       numb_models (0)
 {
-  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
 }
 
 DeepPotModelDevi::
@@ -497,7 +521,6 @@ DeepPotModelDevi (const std::vector<std::string> & models, const int & gpu_rank,
       init_nbor(false),
       numb_models (0)
 {
-  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   init(models, gpu_rank, file_contents);
 }
 
@@ -521,6 +544,7 @@ init (const std::vector<std::string> & models, const int & gpu_rank, const std::
   #endif // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
   SessionOptions options;
+  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
   for (unsigned ii = 0; ii < numb_models; ++ii){

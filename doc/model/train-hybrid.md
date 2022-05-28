@@ -1,6 +1,6 @@
 # Descriptor `"hybrid"`
 
-This descriptor hybridize multiple descriptors to form a new descriptor. For example we have a list of descriptor denoted by D_1, D_2, ..., D_N, the hybrid descriptor this the concatenation of the list, i.e. D = (D_1, D_2, ..., D_N).
+This descriptor hybridize multiple descriptors to form a new descriptor. For example we have a list of descriptor denoted by $\mathcal D_1$, $\mathcal D_2$, ..., $\mathcal D_N$, the hybrid descriptor this the concatenation of the list, i.e. $\mathcal D = (\mathcal D_1, \mathcal D_2, \cdots, \mathcal D_N)$.
 
 To use the descriptor in DeePMD-kit, one firstly set the `type` to `"hybrid"`, then provide the definitions of the descriptors by the items in the `list`,
 ```json

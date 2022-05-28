@@ -2,7 +2,7 @@
 
 In this section, we will take `$deepmd_source_dir/examples/water/se_e2_a/input.json` as an example of the input file.
 
-## Fitting network
+## The fitting network
 
 The construction of the fitting net is give by section `fitting_net`
 ```json
@@ -18,15 +18,18 @@ The construction of the fitting net is give by section `fitting_net`
 
 ## Loss
 
-The loss function for training energy is given by
-```
-loss = pref_e * loss_e + pref_f * loss_f + pref_v * loss_v
-```
-where `loss_e`, `loss_f` and `loss_v` denote the loss in energy, force and virial, respectively. `pref_e`, `pref_f` and `pref_v` give the prefactors of the energy, force and virial losses. The prefectors may not be a constant, rather it changes linearly with the learning rate. Taking the force prefactor for example, at training step `t`, it is given by
+The loss function $L$ for training energy is given by
+
+$$L = p_e L_e + p_f L_f + p_v L_v$$
+
+where $L_e$, $L_f$, and $L_v$ denote the loss in energy, force and virial, respectively. $p_e$, $p_f$, and $p_v$ give the prefactors of the energy, force and virial losses. The prefectors may not be a constant, rather it changes linearly with the learning rate. Taking the force prefactor for example, at training step $t$, it is given by
+
+$$p_f(t) = p_f^0 \frac{ \alpha(t) }{ \alpha(0) } + p_f^\infty ( 1 - \frac{ \alpha(t) }{ \alpha(0) })$$
+
+where $\alpha(t)$ denotes the learning rate at step $t$. $p_f^0$ and $p_f^\infty$ specifies the $p_f$ at the start of the training and at the limit of $t \to \infty$ (set by `start_pref_f` and `limit_pref_f`, respectively), i.e.
 ```math
 pref_f(t) = start_pref_f * ( lr(t) / start_lr ) + limit_pref_f * ( 1 - lr(t) / start_lr )
 ```
-where `lr(t)` denotes the learning rate at step `t`. `start_pref_f` and `limit_pref_f` specifies the `pref_f` at the start of the training and at the limit of `t -> inf`.
 
 The `loss` section in the `input.json` is 
 ```json

@@ -30,14 +30,15 @@ prod_force_a_cpu(
     const int * nlist, 
     const int nloc, 
     const int nall, 
-    const int nnei) 
+    const int nnei,
+    const int start_index) 
 {
   const int ndescrpt = 4 * nnei;
 
-  memset(force, 0.0, sizeof(FPTYPE) * nall * 3);
+  memset(force, 0, sizeof(FPTYPE) * nall * 3);
   // compute force of a frame
   #pragma omp parallel
-  for (int i_idx = 0; i_idx < nloc; ++i_idx) {
+  for (int i_idx = start_index; i_idx < start_index + nloc; ++i_idx) {
     // deriv wrt center atom
     #pragma omp single
     for (int aa = 0; aa < ndescrpt; ++aa) {
@@ -71,7 +72,8 @@ prod_force_a_cpu<double>(
     const int * nlist, 
     const int nloc, 
     const int nall, 
-    const int nnei);
+    const int nnei,
+    const int start_index);
 
 template
 void 
@@ -83,7 +85,8 @@ prod_force_a_cpu<float>(
     const int * nlist, 
     const int nloc, 
     const int nall, 
-    const int nnei);
+    const int nnei,
+    const int start_index);
 
 
 template<typename FPTYPE>
@@ -102,9 +105,9 @@ prod_force_r_cpu(
 
   for (int ii = 0; ii < nall; ++ii){
     int i_idx = ii;
-    force[i_idx * 3 + 0] = 0;
-    force[i_idx * 3 + 1] = 0;
-    force[i_idx * 3 + 2] = 0;
+    force[i_idx * 3 + 0] = (FPTYPE)0.;
+    force[i_idx * 3 + 1] = (FPTYPE)0.;
+    force[i_idx * 3 + 2] = (FPTYPE)0.;
   }
 
   // compute force of a frame

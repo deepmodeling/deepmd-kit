@@ -72,12 +72,21 @@ endif()
 
 if (USE_CUDA_TOOLKIT)
   target_link_libraries(runUnitTests gtest gtest_main ${libname} pthread deepmd_op_cuda coverage_config)
+  install(TARGETS deepmd_op_cuda DESTINATION lib/)
+
 elseif (USE_ROCM_TOOLKIT)
   target_link_libraries(runUnitTests gtest gtest_main ${libname} pthread deepmd_op_rocm coverage_config ${ROCM_LIBRARIES})
+  install(TARGETS deepmd_op_rocm DESTINATION lib/)
 else()
   target_link_libraries(runUnitTests gtest gtest_main ${libname} pthread coverage_config)
 endif()
 add_test( runUnitTests runUnitTests )
+
+set_target_properties(
+  runUnitTests
+  PROPERTIES 
+  INSTALL_RPATH "$ORIGIN/../lib"
+)
 
 # include(GoogleTest)
 # add_executable(FooTest tests/test_simulation_region.cc)
@@ -108,4 +117,4 @@ else ()
 endif ()
 
 install(TARGETS runUnitTests DESTINATION bin/)
-install(TARGETS runUnitTests DESTINATION lib/)
+

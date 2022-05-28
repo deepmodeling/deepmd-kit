@@ -14,7 +14,7 @@ __global__ void force_deriv_wrt_center_atom(
   unsigned int bid = blockIdx.x;
   unsigned int tid = threadIdx.x;
   for (int ii = tid; ii < THREADS_PER_BLOCK * 3; ii += THREADS_PER_BLOCK) {
-    data[ii] = 0.f;
+    data[ii] = (FPTYPE)0.;
   }
   for (int ii = tid; ii < ndescrpt; ii += THREADS_PER_BLOCK) {
     for (int jj = 0; jj < 3; jj++) {
@@ -61,7 +61,7 @@ __global__ void force_deriv_wrt_neighbors_a(
     if (j_idx < 0) {
         return;
     }
-    FPTYPE force_tmp = 0.f;
+    FPTYPE force_tmp = (FPTYPE)0.;
     for (int idw = 0; idw < 4; ++idw) {
         force_tmp += net_deriv[idx * ndescrpt + idy * 4 + idw] * in_deriv[idx * ndescrpt * 3 + (idy * 4 + idw) * 3 + idz];
     }
@@ -109,7 +109,7 @@ namespace deepmd {
     const int ndescrpt = nnei * 4;
     DPErrcheck(hipMemset(
         force, 
-        0.0, sizeof(FPTYPE) * nall * 3));
+        0, sizeof(FPTYPE) * nall * 3));
   
     hipLaunchKernelGGL(HIP_KERNEL_NAME(force_deriv_wrt_center_atom<FPTYPE, TPB>), nloc, TPB, 0, 0, 
         force, 
@@ -141,7 +141,7 @@ namespace deepmd {
     const int ndescrpt = nnei * 1;
     DPErrcheck(hipMemset(
         force, 
-        0.0, sizeof(FPTYPE) * nall * 3));
+        0, sizeof(FPTYPE) * nall * 3));
   
     hipLaunchKernelGGL(HIP_KERNEL_NAME(force_deriv_wrt_center_atom<FPTYPE, TPB>), nloc, TPB, 0, 0, 
         force, 

@@ -66,12 +66,16 @@ void ComputeDeeptensorAtom::init()
 {
   // need an occasional full neighbor list
 
+#if LAMMPS_VERSION_NUMBER>=20220324
+  neighbor->add_request(this, NeighConst::REQ_FULL | NeighConst::REQ_OCCASIONAL);
+#else
   int irequest = neighbor->request(this,instance_me);
   neighbor->requests[irequest]->half = 0;
   neighbor->requests[irequest]->pair = 0;
   neighbor->requests[irequest]->compute = 1;
   neighbor->requests[irequest]->full = 1;
   neighbor->requests[irequest]->occasional = 1;
+#endif
 }
 
 void ComputeDeeptensorAtom::init_list(int /*id*/, NeighList *ptr)

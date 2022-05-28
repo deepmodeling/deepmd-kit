@@ -3,13 +3,15 @@ from typing import Tuple, List
 
 from deepmd.env import tf
 from deepmd.utils.pair_tab import PairTab
-from deepmd.utils.graph import load_graph_def
+from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph
+from deepmd.utils.errors import GraphWithoutTensorError
 from deepmd.common import ClassArg
 from deepmd.env import global_cvt_2_ener_float, MODEL_VERSION, GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import op_module
+from .model import Model
 from .model_stat import make_stat_input, merge_sys_stat
 
-class EnerModel() :
+class EnerModel(Model) :
     """Energy model.
     
     Parameters
@@ -274,3 +276,37 @@ class EnerModel() :
     def _import_graph_def_from_frz_model(self, frz_model, feed_dict, return_elements):
         graph, graph_def = load_graph_def(frz_model)
         return tf.import_graph_def(graph_def, input_map = feed_dict, return_elements = return_elements, name = "")
+
+    def init_variables(self,
+                       graph : tf.Graph,
+                       graph_def : tf.GraphDef,
+                       model_type : str = "original_model",
+                       suffix : str = "",
+    ) -> None:
+        """
+        Init the embedding net variables with the given frozen model
+
+        Parameters
+        ----------
+        graph : tf.Graph
+            The input frozen model graph
+        graph_def : tf.GraphDef
+            The input frozen model graph_def
+        model_type : str
+            the type of the model
+        suffix : str
+            suffix to name scope
+        """
+        # self.frz_model will control the self.model to import the descriptor from the given frozen model instead of building from scratch...
+        # initialize fitting net with the given compressed frozen model
+        if model_type == 'original_model':
+            self.descrpt.init_variables(graph, graph_def, suffix=suffix)
+            self.fitting.init_variables(graph, graph_def, suffix=suffix)
+            tf.constant("original_model", name = 'model_type', dtype = tf.string)
+        elif model_type == 'compressed_model':
+            self.fitting.init_variables(graph, graph_def, suffix=suffix)
+            tf.constant("compressed_model", name = 'model_type', dtype = tf.string)
+        else:
+            raise RuntimeError("Unknown model type %s" % model_type)
+        if self.typeebd is not None:
+            self.typeebd.init_variables(graph, graph_def, suffix=suffix)

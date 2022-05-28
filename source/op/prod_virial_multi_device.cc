@@ -12,6 +12,18 @@ REGISTER_OP("ProdVirialSeA")
     .Attr("n_r_sel: int")
     .Output("virial: T")
     .Output("atom_virial: T");
+// compatible with v0.12
+REGISTER_OP("ProdVirialNorot")
+    .Attr("T: {float, double} = DT_DOUBLE")
+    .Input("net_deriv: T")
+    .Input("in_deriv: T")
+    .Input("rij: T")
+    .Input("nlist: int32")
+    .Input("natoms: int32")
+    .Attr("n_a_sel: int")
+    .Attr("n_r_sel: int")
+    .Output("virial: T")
+    .Output("atom_virial: T");
 
 REGISTER_OP("ProdVirialSeR")
     .Attr("T: {float, double} = DT_DOUBLE")
@@ -221,6 +233,9 @@ REGISTER_KERNEL_BUILDER(                                                        
     Name("ProdVirialSeA").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
     ProdVirialSeAOp<CPUDevice, T>);                                                       \
 REGISTER_KERNEL_BUILDER(                                                                  \
+    Name("ProdVirialNorot").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
+    ProdVirialSeAOp<CPUDevice, T>);                                                       \
+REGISTER_KERNEL_BUILDER(                                                                  \
     Name("ProdVirialSeR").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
     ProdVirialSeROp<CPUDevice, T>);
 REGISTER_CPU(float);
@@ -230,6 +245,9 @@ REGISTER_CPU(double);
 #define REGISTER_GPU(T)                                                                   \
 REGISTER_KERNEL_BUILDER(                                                                  \
     Name("ProdVirialSeA").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms"), \
+    ProdVirialSeAOp<GPUDevice, T>);                                                       \
+REGISTER_KERNEL_BUILDER(                                                                  \
+    Name("ProdVirialNorot").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms"), \
     ProdVirialSeAOp<GPUDevice, T>);                                                       \
 REGISTER_KERNEL_BUILDER(                                                                  \
     Name("ProdVirialSeR").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms"), \

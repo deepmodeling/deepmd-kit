@@ -1,4 +1,4 @@
-# Training a model
+# Train a model
 
 Several examples of training can be found at the `examples` directory:
 ```bash
@@ -51,7 +51,7 @@ plt.legend()
 plt.xlabel('Step')
 plt.ylabel('Loss')
 plt.xscale('symlog')
-plt.yscale('symlog')
+plt.yscale('log')
 plt.grid()
 plt.show()
 ```
@@ -59,4 +59,5 @@ plt.show()
 Checkpoints will be written to files with prefix `save_ckpt` every `save_freq` training steps. 
 
 ## Warning
-It is warned that the example water data (in folder `examples/water/data`) is of very limited amount, is provided only for testing purpose, and should not be used to train a productive model.
+It is warned that the example water data (in folder `examples/water/data`) is of very limited amount, is provided only for testing purpose, and should not be used to train a production model.
+

@@ -48,6 +48,26 @@ REGISTER_OP("DescrptSeA")
     .Output("rij: T")
     .Output("nlist: int32");
 
+// alias of ProdEnvMatA -- compatible with v0.12
+REGISTER_OP("DescrptNorot")
+    .Attr("T: {float, double} = DT_DOUBLE")
+    .Input("coord: T")
+    .Input("type: int32")
+    .Input("natoms: int32")
+    .Input("box : T")
+    .Input("mesh : int32")
+    .Input("davg: T")
+    .Input("dstd: T")
+    .Attr("rcut_a: float")
+    .Attr("rcut_r: float")
+    .Attr("rcut_r_smth: float")
+    .Attr("sel_a: list(int)")
+    .Attr("sel_r: list(int)")
+    .Output("descrpt: T")
+    .Output("descrpt_deriv: T")
+    .Output("rij: T")
+    .Output("nlist: int32");
+
 REGISTER_OP("ProdEnvMatR")
     .Attr("T: {float, double} = DT_DOUBLE")
     .Input("coord: T")
@@ -1424,6 +1444,9 @@ REGISTER_KERNEL_BUILDER(                                                        
     Name("DescrptSeA").Device(DEVICE_CPU).TypeConstraint<T>("T"),                                        \
     ProdEnvMatAOp<CPUDevice, T>);                                                                         \
 REGISTER_KERNEL_BUILDER(                                                                                  \
+    Name("DescrptNorot").Device(DEVICE_CPU).TypeConstraint<T>("T"),                                        \
+    ProdEnvMatAOp<CPUDevice, T>);                                                                         \
+REGISTER_KERNEL_BUILDER(                                                                                  \
     Name("DescrptSeR").Device(DEVICE_CPU).TypeConstraint<T>("T"),                                        \
     ProdEnvMatROp<CPUDevice, T>);   
 REGISTER_CPU(float);                  
@@ -1441,6 +1464,9 @@ REGISTER_KERNEL_BUILDER(                                                        
     ProdEnvMatROp<GPUDevice, T>);                                                                         \
 REGISTER_KERNEL_BUILDER(                                                                                  \
     Name("DescrptSeA").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms").HostMemory("box"), \
+    ProdEnvMatAOp<GPUDevice, T>);                                                                         \
+REGISTER_KERNEL_BUILDER(                                                                                  \
+    Name("DescrptNorot").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms").HostMemory("box"), \
     ProdEnvMatAOp<GPUDevice, T>);                                                                         \
 REGISTER_KERNEL_BUILDER(                                                                                  \
     Name("DescrptSeR").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms").HostMemory("box"), \

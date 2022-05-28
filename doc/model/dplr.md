@@ -51,7 +51,7 @@ The training of the DPLR model is very similar to the standard short-range DP mo
             "ewald_beta":       0.40
         },
 ```
-The `"model_name"` specifies which DW model is used to predict the position of WCs. `"model_charge_map"` gives the amount of charge assigned to WCs. `"sys_charge_map"` provides the nuclear charge of oxygen (type 0) and hydrogen (type 1) atoms. `"ewald_beta"` (unit A^{-1}) gives the spread parameter controls the spread of Gaussian charges, and `"ewald_h"`  (unit A) assigns the grid size of Fourier transform. 
+The `"model_name"` specifies which DW model is used to predict the position of WCs. `"model_charge_map"` gives the amount of charge assigned to WCs. `"sys_charge_map"` provides the nuclear charge of oxygen (type 0) and hydrogen (type 1) atoms. `"ewald_beta"` (unit $\text{Å}^{-1}$) gives the spread parameter controls the spread of Gaussian charges, and `"ewald_h"`  (unit Å) assigns the grid size of Fourier transform. 
 The DPLR model can be trained and frozen by (from the example directory)
 ```
 dp train ener.json && dp freeze -o ener.pb

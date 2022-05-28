@@ -79,15 +79,13 @@ def one_layer(inputs,
                 if use_timestep :
                     if mixed_prec is not None and not final_layer:
                        idt = tf.cast(idt, get_precision(mixed_prec['compute_prec']))
-                    return tf.reshape(activation_fn(hidden), [-1, outputs_size]) * idt
+                    hidden = tf.reshape(activation_fn(hidden), [-1, outputs_size]) * idt
                 else :
-                    return tf.reshape(activation_fn(hidden), [-1, outputs_size])                    
-        else:
-            if useBN:
-                None
-                # return self._batch_norm(hidden, name=name+'_normalization', reuse=reuse)
-            else:
-                return hidden
+                    hidden = tf.reshape(activation_fn(hidden), [-1, outputs_size])                    
+
+        if mixed_prec is not None:
+            hidden = tf.cast(hidden, get_precision(mixed_prec['output_prec']))
+        return hidden
 
 
 def embedding_net_rand_seed_shift(
@@ -237,6 +235,8 @@ def embedding_net(xx,
                 xx = tf.concat([xx,xx], 1) + hidden
         else:
             xx = hidden
+    if mixed_prec is not None:
+        xx = tf.cast(xx, get_precision(mixed_prec['output_prec']))
     return xx
 
 def variable_summaries(var: tf.Variable, name: str):
