@@ -5,8 +5,10 @@ from deepmd.common import ClassArg, add_data_requirement
 from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import global_cvt_2_ener_float
 from deepmd.utils.sess import run_sess
+from .loss import Loss
 
-class EnerStdLoss () :
+
+class EnerStdLoss (Loss) :
     """
     Standard loss function for DP models
     """
@@ -221,7 +223,7 @@ class EnerStdLoss () :
         return print_str      
 
 
-class EnerDipoleLoss () :
+class EnerDipoleLoss (Loss) :
     def __init__ (self, 
                   starter_learning_rate : float,
                   start_pref_e : float = 0.1,
