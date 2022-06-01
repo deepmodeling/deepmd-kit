@@ -492,7 +492,7 @@ public:
       OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, int_shape, &int_temp));
       Tensor uint64_temp;
       TensorShape uint64_shape;
-      uint64_shape.AddDim(int_64(nloc) * GPU_MAX_NBOR_SIZE * 2);
+      uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
       OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape, &uint64_temp));
       array_int = int_temp.flat<int>().data(); 
       array_longlong = uint64_temp.flat<unsigned long long>().data();
@@ -530,7 +530,7 @@ public:
       OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, int_shape, &int_temp));
       Tensor uint64_temp;
       TensorShape uint64_shape;
-      uint64_shape.AddDim(int_64(nloc) * GPU_MAX_NBOR_SIZE * 2);
+      uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
       OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape, &uint64_temp));
       array_int = int_temp.flat<int>().data(); 
       array_longlong = uint64_temp.flat<unsigned long long>().data();
@@ -756,7 +756,7 @@ public:
       OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, int_shape, &int_temp));
       Tensor uint64_temp;
       TensorShape uint64_shape;
-      uint64_shape.AddDim(int_64(nloc) * GPU_MAX_NBOR_SIZE * 2);
+      uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
       OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape, &uint64_temp));
       array_int = int_temp.flat<int>().data(); 
       array_longlong = uint64_temp.flat<unsigned long long>().data();
@@ -795,7 +795,7 @@ public:
       OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, int_shape, &int_temp));
       Tensor uint64_temp;
       TensorShape uint64_shape;
-      uint64_shape.AddDim(int_64(nloc) * GPU_MAX_NBOR_SIZE * 2);
+      uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
       OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape, &uint64_temp));
       array_int = int_temp.flat<int>().data(); 
       array_longlong = uint64_temp.flat<unsigned long long>().data();
@@ -1210,7 +1210,7 @@ _prepare_coord_nlist_gpu(
     deepmd::env_mat_nbor_update(
         inlist_temp, inlist, max_nbor_size, nbor_list_dev,
         mesh_tensor_data, mesh_tensor_size);
-    OP_REQUIRES (context, (max_numneigh(inlist_temp) <= GPU_MAX_NBOR_SIZE), errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_numneigh(inlist_temp)) + " is larger than " + std::to_string(GPU_MAX_NBOR_SIZE) + ", which currently is not supported by deepmd-kit."));
+    OP_REQUIRES (context, (max_numneigh(inlist_temp) <= max_nbor_size), errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_numneigh(inlist_temp)) + " is larger than " + std::to_string(max_nbor_size) + ", which currently is not supported by deepmd-kit."));
   }
 }
 #endif  // GOOGLE_CUDA
@@ -1425,7 +1425,7 @@ _prepare_coord_nlist_gpu_rocm(
     deepmd::env_mat_nbor_update(
         inlist_temp, inlist, max_nbor_size, nbor_list_dev,
         mesh_tensor_data, mesh_tensor_size);
-    OP_REQUIRES (context, (max_numneigh(inlist_temp) <= GPU_MAX_NBOR_SIZE), errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_numneigh(inlist_temp)) + " is larger than " + std::to_string(GPU_MAX_NBOR_SIZE) + ", which currently is not supported by deepmd-kit."));
+    OP_REQUIRES (context, (max_numneigh(inlist_temp) <= max_nbor_size), errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_numneigh(inlist_temp)) + " is larger than " + std::to_string(max_nbor_size) + ", which currently is not supported by deepmd-kit."));
   }
 }
 #endif  // TENSORFLOW_USE_ROCM
