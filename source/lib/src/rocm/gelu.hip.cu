@@ -8,9 +8,9 @@ template <typename FPTYPE>
 __global__ void gelu(
     FPTYPE * out, 
     const FPTYPE * xx, 
-    int const size) 
+    const int_64 size) 
 {
-  int const idx = blockIdx.x * blockDim.x + threadIdx.x;
+  const int_64 idx = int_64(blockIdx.x) * blockDim.x + threadIdx.x;
   if (idx >= size) {
     return;
   }
@@ -22,9 +22,9 @@ __global__ void gelu_grad(
     FPTYPE * out, 
     const FPTYPE * xx, 
     const FPTYPE * dy, 
-    int const size) 
+    const int_64 size) 
 {
-  const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  const int_64 idx = int_64(blockIdx.x) * blockDim.x + threadIdx.x;
   if (idx >= size) {
     return;
   }
@@ -39,9 +39,9 @@ __global__ void gelu_grad_grad(
     const FPTYPE * xx, 
     const FPTYPE * dy, 
     const FPTYPE * dy_2,
-    int const size) 
+    const int_64 size) 
 {
-  const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  const int_64 idx = int_64(blockIdx.x) * blockDim.x + threadIdx.x;
   if (idx >= size) {
     return;
   }
@@ -56,7 +56,7 @@ namespace deepmd {
   void gelu_gpu_rocm(
       FPTYPE * out, 
       const FPTYPE * xx, 
-      const int size)
+      const int_64 size)
   {
     if(size <= 0)
     {
@@ -75,7 +75,7 @@ namespace deepmd {
       FPTYPE * out, 
       const FPTYPE * xx,
       const FPTYPE * dy, 
-      const int size)
+      const int_64 size)
   {
     if(size <= 0)
     {
@@ -95,7 +95,7 @@ namespace deepmd {
       const FPTYPE * xx,
       const FPTYPE * dy, 
       const FPTYPE * dy_2,
-      const int size)
+      const int_64 size)
   {
     if(size <= 0)
     {
@@ -109,10 +109,10 @@ namespace deepmd {
     DPErrcheck(hipDeviceSynchronize());
   }
   
-  template void gelu_gpu_rocm<float>(float * out, const float * x, const int size);
-  template void gelu_gpu_rocm<double>(double * out, const double * x, const int size);
-  template void gelu_grad_gpu_rocm<float>(float * out, const float * x, const float * dy, const int size);
-  template void gelu_grad_gpu_rocm<double>(double * out, const double * x, const double * dy, const int size);
-  template void gelu_grad_grad_gpu_rocm<float>(float * out, const float * x, const float * dy, const float * dy_2, const int size);
-  template void gelu_grad_grad_gpu_rocm<double>(double * out, const double * x, const double * dy, const double * dy_2, const int size);
+  template void gelu_gpu_rocm<float>(float * out, const float * x, const int_64 size);
+  template void gelu_gpu_rocm<double>(double * out, const double * x, const int_64 size);
+  template void gelu_grad_gpu_rocm<float>(float * out, const float * x, const float * dy, const int_64 size);
+  template void gelu_grad_gpu_rocm<double>(double * out, const double * x, const double * dy, const int_64 size);
+  template void gelu_grad_grad_gpu_rocm<float>(float * out, const float * x, const float * dy, const float * dy_2, const int_64 size);
+  template void gelu_grad_grad_gpu_rocm<double>(double * out, const double * x, const double * dy, const double * dy_2, const int_64 size);
 }

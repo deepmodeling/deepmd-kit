@@ -80,7 +80,7 @@ public:
     // check the sizes
     OP_REQUIRES (context, (nframes == in_deriv_tensor.shape().dim_size(0)), errors::InvalidArgument ("number of samples should match"));
     OP_REQUIRES (context, (nframes == nlist_tensor.shape().dim_size(0)),    errors::InvalidArgument ("number of samples should match"));
-    OP_REQUIRES (context, (nloc * ndescrpt * 3 == in_deriv_tensor.shape().dim_size(1)), errors::InvalidArgument ("number of descriptors should match"));
+    OP_REQUIRES (context, (int_64(nloc) * ndescrpt * 3 == in_deriv_tensor.shape().dim_size(1)), errors::InvalidArgument ("number of descriptors should match"));
     // Create an output tensor
     TensorShape force_shape ;
     force_shape.AddDim (nframes);
@@ -124,7 +124,7 @@ public:
       nloc_loc = end_index - start_index;
     }
 
-    for(int kk = 0; kk < nframes; ++kk){
+    for(int_64 kk = 0; kk < nframes; ++kk){
       FPTYPE * force = p_force + kk * nall * 3;
       const FPTYPE * net_deriv = p_net_deriv + kk * nloc * ndescrpt;
       const FPTYPE * in_deriv = p_in_deriv + kk * nloc * ndescrpt * 3;
@@ -212,7 +212,7 @@ public:
     const FPTYPE * p_in_deriv = in_deriv_tensor.flat<FPTYPE>().data();
     const int * p_nlist = nlist_tensor.flat<int>().data();
 
-    for(int kk = 0; kk < nframes; ++kk){
+    for(int_64 kk = 0; kk < nframes; ++kk){
       FPTYPE * force = p_force + kk * nall * 3;
       const FPTYPE * net_deriv = p_net_deriv + kk * nloc * ndescrpt;
       const FPTYPE * in_deriv = p_in_deriv + kk * nloc * ndescrpt * 3;

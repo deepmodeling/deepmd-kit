@@ -413,16 +413,16 @@ public:
     // Create output tensors
     TensorShape descrpt_shape ;
     descrpt_shape.AddDim (nsamples);
-    descrpt_shape.AddDim (nloc * ndescrpt);
+    descrpt_shape.AddDim (int_64(nloc) * ndescrpt);
     TensorShape descrpt_deriv_shape ;
     descrpt_deriv_shape.AddDim (nsamples);
-    descrpt_deriv_shape.AddDim (nloc * ndescrpt * 3);
+    descrpt_deriv_shape.AddDim (int_64(nloc) * ndescrpt * 3);
     TensorShape rij_shape ;
     rij_shape.AddDim (nsamples);
-    rij_shape.AddDim (nloc * nnei * 3);
+    rij_shape.AddDim (int_64(nloc) * nnei * 3);
     TensorShape nlist_shape ;
     nlist_shape.AddDim (nsamples);
-    nlist_shape.AddDim (nloc * nnei);
+    nlist_shape.AddDim (int_64(nloc) * nnei);
     // define output tensor
     int context_output_index = 0;
     Tensor* descrpt_tensor = NULL;
@@ -457,7 +457,7 @@ public:
     const int * p_type = type_tensor.flat<int>().data();
 
     // loop over samples
-    for(int ff = 0; ff < nsamples; ++ff){
+    for(int_64 ff = 0; ff < nsamples; ++ff){
       FPTYPE * em = p_em + ff*nloc*ndescrpt;
       FPTYPE * em_deriv = p_em_deriv + ff*nloc*ndescrpt*3;
       FPTYPE * rij = p_rij + ff*nloc*nnei*3;
@@ -488,11 +488,11 @@ public:
       // allocate temp memory, temp memory must not be used after this operation!
       Tensor int_temp;
       TensorShape int_shape;
-      int_shape.AddDim(sec_a.size() + nloc * sec_a.size() + nloc);
+      int_shape.AddDim(sec_a.size() + int_64(nloc) * sec_a.size() + nloc);
       OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, int_shape, &int_temp));
       Tensor uint64_temp;
       TensorShape uint64_shape;
-      uint64_shape.AddDim(nloc * GPU_MAX_NBOR_SIZE * 2);
+      uint64_shape.AddDim(int_64(nloc) * GPU_MAX_NBOR_SIZE * 2);
       OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape, &uint64_temp));
       array_int = int_temp.flat<int>().data(); 
       array_longlong = uint64_temp.flat<unsigned long long>().data();
@@ -526,11 +526,11 @@ public:
       // allocate temp memory, temp memory must not be used after this operation!
       Tensor int_temp;
       TensorShape int_shape;
-      int_shape.AddDim(sec_a.size() + nloc * sec_a.size() + nloc);
+      int_shape.AddDim(sec_a.size() + int_64(nloc) * sec_a.size() + nloc);
       OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, int_shape, &int_temp));
       Tensor uint64_temp;
       TensorShape uint64_shape;
-      uint64_shape.AddDim(nloc * GPU_MAX_NBOR_SIZE * 2);
+      uint64_shape.AddDim(int_64(nloc) * GPU_MAX_NBOR_SIZE * 2);
       OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape, &uint64_temp));
       array_int = int_temp.flat<int>().data(); 
       array_longlong = uint64_temp.flat<unsigned long long>().data();
@@ -677,16 +677,16 @@ public:
     // Create an output tensor
     TensorShape descrpt_shape ;
     descrpt_shape.AddDim (nsamples);
-    descrpt_shape.AddDim (nloc * ndescrpt);
+    descrpt_shape.AddDim (int_64(nloc) * ndescrpt);
     TensorShape descrpt_deriv_shape ;
     descrpt_deriv_shape.AddDim (nsamples);
-    descrpt_deriv_shape.AddDim (nloc * ndescrpt * 3);
+    descrpt_deriv_shape.AddDim (int_64(nloc) * ndescrpt * 3);
     TensorShape rij_shape ;
     rij_shape.AddDim (nsamples);
-    rij_shape.AddDim (nloc * nnei * 3);
+    rij_shape.AddDim (int_64(nloc) * nnei * 3);
     TensorShape nlist_shape ;
     nlist_shape.AddDim (nsamples);
-    nlist_shape.AddDim (nloc * nnei);
+    nlist_shape.AddDim (int_64(nloc) * nnei);
 
     int context_output_index = 0;
     Tensor* descrpt_tensor = NULL;
@@ -721,7 +721,7 @@ public:
     const int * p_type = type_tensor.flat<int>().data();
 
     // loop over samples
-    for(int ff = 0; ff < nsamples; ++ff){
+    for(int_64 ff = 0; ff < nsamples; ++ff){
       FPTYPE * em = p_em + ff*nloc*ndescrpt;
       FPTYPE * em_deriv = p_em_deriv + ff*nloc*ndescrpt*3;
       FPTYPE * rij = p_rij + ff*nloc*nnei*3;
@@ -752,11 +752,11 @@ public:
       // allocate temp memory, temp memory must not be used after this operation!
       Tensor int_temp;
       TensorShape int_shape;
-      int_shape.AddDim(sec.size() + nloc * sec.size() + nloc);
+      int_shape.AddDim(sec.size() + int_64(nloc) * sec.size() + nloc);
       OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, int_shape, &int_temp));
       Tensor uint64_temp;
       TensorShape uint64_shape;
-      uint64_shape.AddDim(nloc * GPU_MAX_NBOR_SIZE * 2);
+      uint64_shape.AddDim(int_64(nloc) * GPU_MAX_NBOR_SIZE * 2);
       OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape, &uint64_temp));
       array_int = int_temp.flat<int>().data(); 
       array_longlong = uint64_temp.flat<unsigned long long>().data();
@@ -791,11 +791,11 @@ public:
       // allocate temp memory, temp memory must not be used after this operation!
       Tensor int_temp;
       TensorShape int_shape;
-      int_shape.AddDim(sec.size() + nloc * sec.size() + nloc);
+      int_shape.AddDim(sec.size() + int_64(nloc) * sec.size() + nloc);
       OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, int_shape, &int_temp));
       Tensor uint64_temp;
       TensorShape uint64_shape;
-      uint64_shape.AddDim(nloc * GPU_MAX_NBOR_SIZE * 2);
+      uint64_shape.AddDim(int_64(nloc) * GPU_MAX_NBOR_SIZE * 2);
       OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape, &uint64_temp));
       array_int = int_temp.flat<int>().data(); 
       array_longlong = uint64_temp.flat<unsigned long long>().data();
@@ -935,8 +935,8 @@ _map_nlist_cpu(
     const int & nloc,
     const int & nnei)
 {
-  for (int ii = 0; ii < nloc; ++ii){
-    for (int jj = 0; jj < nnei; ++jj){
+  for (int_64 ii = 0; ii < nloc; ++ii){
+    for (int_64 jj = 0; jj < nnei; ++jj){
       int record = nlist[ii*nnei+jj];
       if (record >= 0) {		
 	nlist[ii*nnei+jj] = idx_mapping[record];	      
@@ -1112,11 +1112,11 @@ _build_nlist_gpu(
   int tt;
   for(tt = 0; tt < max_nnei_trial; ++tt){
     TensorShape jlist_shape;
-    jlist_shape.AddDim(3*nloc*mem_nnei);
+    jlist_shape.AddDim(3*int_64(nloc)*mem_nnei);
     context->allocate_temp(DT_INT32, jlist_shape, tensor_list+1);
     jlist = (*(tensor_list+1)).flat<int>().data();
     ind_data = jlist + nloc * mem_nnei;
-    for(int ii = 0; ii < nloc; ++ii){
+    for(int_64 ii = 0; ii < nloc; ++ii){
       firstneigh_host[ii] = jlist + ii * mem_nnei;
     }
     deepmd::memcpy_host_to_device(firstneigh, firstneigh_host);
@@ -1327,11 +1327,11 @@ _build_nlist_gpu_rocm(
   int tt;
   for(tt = 0; tt < max_nnei_trial; ++tt){
     TensorShape jlist_shape;
-    jlist_shape.AddDim(3*nloc*mem_nnei);
+    jlist_shape.AddDim(3*int_64(nloc)*mem_nnei);
     context->allocate_temp(DT_INT32, jlist_shape, tensor_list+1);
     jlist = (*(tensor_list+1)).flat<int>().data();
     ind_data = jlist + nloc * mem_nnei;
-    for(int ii = 0; ii < nloc; ++ii){
+    for(int_64 ii = 0; ii < nloc; ++ii){
       firstneigh_host[ii] = jlist + ii * mem_nnei;
     }
     deepmd::memcpy_host_to_device(firstneigh, firstneigh_host);
