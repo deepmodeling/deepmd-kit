@@ -277,7 +277,7 @@ class EnerFitting (Fitting):
         # cut-out inputs
         inputs_i = tf.slice (inputs,
                              [ 0, start_index, 0],
-                             [-1, natoms, self.dim_descrpt] )
+                             [-1, natoms, -1] )
         inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
         layer = inputs_i
         if fparam is not None:

@@ -433,8 +433,8 @@ class DescrptSeAEbd (DescrptSeA):
                                        seed = self.seed, 
                                        trainable = trainable, 
                                        activation_fn = self.filter_activation_fn)
-        output      = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0] * self.get_dim_out()])
-        output_qmat = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[0] * self.get_dim_rot_mat_1() * 3])
+        output      = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0], self.get_dim_out()])
+        output_qmat = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[0], self.get_dim_rot_mat_1() * 3])
         return output, output_qmat
 
 

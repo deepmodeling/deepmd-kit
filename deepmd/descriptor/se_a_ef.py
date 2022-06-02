@@ -230,7 +230,7 @@ class DescrptSeAEf (Descriptor):
         self.dout_vert = tf.reshape(self.dout_vert, [nframes * natoms[0], self.descrpt_vert.get_dim_out()])
         self.dout_para = tf.reshape(self.dout_para, [nframes * natoms[0], self.descrpt_para.get_dim_out()])
         self.dout = tf.concat([self.dout_vert, self.dout_para], axis = 1)
-        self.dout = tf.reshape(self.dout, [nframes, natoms[0] * self.get_dim_out()])
+        self.dout = tf.reshape(self.dout, [nframes, natoms[0], self.get_dim_out()])
         self.qmat = self.descrpt_vert.qmat + self.descrpt_para.qmat
 
         tf.summary.histogram('embedding_net_output', self.dout)
