@@ -49,6 +49,7 @@ class EnerStdLoss (Loss) :
         add_data_requirement('virial', 9, atomic=False, must=False, high_prec=False)
         add_data_requirement('atom_ener', 1, atomic=True, must=False, high_prec=False)
         add_data_requirement('atom_pref', 1, atomic=True, must=False, high_prec=False, repeat=3)
+        add_data_requirement('atom_ener_coeff', 1, atomic=True, must=False, high_prec=False)
 
     def build (self, 
                learning_rate,
@@ -71,7 +72,17 @@ class EnerStdLoss (Loss) :
         find_atom_ener = label_dict['find_atom_ener']                
         find_atom_pref = label_dict['find_atom_pref']                
 
-        l2_ener_loss = tf.reduce_mean( tf.square(energy - energy_hat), name='l2_'+suffix)
+        if 'atom_ener_coeff' in label_dict:
+            # when ener_coeff (\nu) is defined, the energy is defined as 
+            # E = \sum_i \nu_i E_i
+            # instead of the sum of atomic energies.
+            #
+            # A case is that we want to train reaction energy
+            # A + B -> C + D
+            # E = - E(A) - E(B) + E(C) + E(D)
+            # A, B, C, D could be put far away from each otehr
+            atom_ener_coeff = label_dict['atom_ener_coeff']
+            energy = tf.reduce_sum(weighted_atom_ener * atom_ener, 1)
 
         force_reshape = tf.reshape (force, [-1])
         force_hat_reshape = tf.reshape (force_hat, [-1])
