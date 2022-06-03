@@ -305,7 +305,7 @@ class DescrptLocFrame (Descriptor) :
         """
         [net_deriv] = tf.gradients (atom_ener, self.descrpt)
         tf.summary.histogram('net_derivative', net_deriv)
-        net_deriv_reshape = tf.reshape (net_deriv, [-1, tf.cast(natoms[0], tf.int64) * tf.cast(self.ndescrpt, tf.int64)])
+        net_deriv_reshape = tf.reshape (net_deriv, [np.cast['int64'](-1), natoms[0] * np.cast['int64'](self.ndescrpt)])
         force = op_module.prod_force (net_deriv_reshape,
                                       self.descrpt_deriv,
                                       self.nlist,
