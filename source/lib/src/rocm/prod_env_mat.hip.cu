@@ -5,6 +5,8 @@
 
 __device__ inline double _sqrt(double x) {return sqrt(x);}
 __device__ inline float _sqrt(float x) {return sqrtf(x);}
+__device__ inline double _rsqrt(double x) {return rsqrt(x);}
+__device__ inline float _rsqrt(float x) {return rsqrtf(x);}
 
 // common part of prod_env_mat
 template <
@@ -406,7 +408,7 @@ __global__ void compute_env_mat_a(
       }
       // const FPTYPE * rr = &row_rij[ii * 3];
       FPTYPE nr2 = dev_dot(rr, rr);
-      FPTYPE inr = (FPTYPE)1./_sqrt(nr2);
+      FPTYPE inr = _rsqrt(nr2);
       FPTYPE nr = nr2 * inr;
       FPTYPE inr2 = inr * inr;
       FPTYPE inr4 = inr2 * inr2;
@@ -492,7 +494,7 @@ __global__ void compute_env_mat_r(
       }
       // const FPTYPE * rr = &row_rij[ii * 3];
       FPTYPE nr2 = dev_dot(rr, rr);
-      FPTYPE inr = (FPTYPE)1./_sqrt(nr2);
+      FPTYPE inr = _rsqrt(nr2);
       FPTYPE nr = nr2 * inr;
       FPTYPE inr2 = inr * inr;
       FPTYPE inr4 = inr2 * inr2;
