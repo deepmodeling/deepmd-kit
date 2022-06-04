@@ -542,7 +542,7 @@ void format_nbor_list_gpu_cuda(
   int * nei_iter = array_int + sec.size(); // = new int[sec_size];
   int * i_idx = array_int + sec.size() + nloc * sec.size();
   uint_64 * key = array_longlong;
-  assert(max_nbor_size == 1024 || max_nbor_size == 2048 || max_nbor_size == 4096);
+  assert(max_nbor_size == 256 || max_nbor_size == 512 || max_nbor_size == 1024 || max_nbor_size == 2048 || max_nbor_size == 4096);
   DPErrcheck(cudaMemset(nlist, -1, sizeof(int) * int_64(nloc) * nnei));
   DPErrcheck(cudaMemset(key, 0xffffffff, sizeof(uint_64) * int_64(nloc) * max_nbor_size));
   DPErrcheck(cudaMemcpy(sec_dev, &sec[0], sizeof(int) * sec.size(), cudaMemcpyHostToDevice));   
