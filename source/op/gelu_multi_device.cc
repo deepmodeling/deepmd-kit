@@ -45,7 +45,7 @@ class GeluOp : public OpKernel {
     // flat the tensors
     FPTYPE * out = output_tensor->flat<FPTYPE>().data();
     const FPTYPE * x = x_tensor.flat<FPTYPE>().data();
-    const int size = static_cast<int>(output_tensor->NumElements());
+    const int_64 size = static_cast<int_64>(output_tensor->NumElements());
 
     if (device == "GPU") {
       #if GOOGLE_CUDA
@@ -98,7 +98,7 @@ class GeluGradOp : public OpKernel {
     FPTYPE * out = output_tensor->flat<FPTYPE>().data();
     const FPTYPE * x = x_tensor.flat<FPTYPE>().data();
     const FPTYPE * dy = dy_tensor.flat<FPTYPE>().data();
-    const int size = static_cast<int>(output_tensor->NumElements());
+    const int_64 size = static_cast<int_64>(output_tensor->NumElements());
 
     if (device == "GPU") {
       #if GOOGLE_CUDA
@@ -153,7 +153,7 @@ class GeluGradGradOp : public OpKernel {
     const FPTYPE * x = x_tensor.flat<FPTYPE>().data();
     const FPTYPE * dy = dy_tensor.flat<FPTYPE>().data();
     const FPTYPE * dy_2 = dy_2_tensor.flat<FPTYPE>().data();
-    const int size = static_cast<int>(output_tensor->NumElements());
+    const int_64 size = static_cast<int_64>(output_tensor->NumElements());
 
     if (device == "GPU") {
       #if GOOGLE_CUDA

@@ -189,7 +189,7 @@ class DescrptHybrid (Descriptor):
             dout = tf.reshape(dout, [-1, ii.get_dim_out()])
             all_dout.append(dout)
         dout = tf.concat(all_dout, axis = 1)
-        dout = tf.reshape(dout, [-1, natoms[0] * self.get_dim_out()])
+        dout = tf.reshape(dout, [-1, natoms[0], self.get_dim_out()])
         return dout
         
 

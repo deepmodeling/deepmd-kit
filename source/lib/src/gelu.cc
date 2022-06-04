@@ -6,7 +6,7 @@ template<typename FPTYPE>
 void deepmd::gelu_cpu(
     FPTYPE * out, 
     const FPTYPE * xx, 
-    const int size)
+    const int_64 size)
 {
   for (int ii = 0; ii < size; ii++) {
     out[ii] = xx[ii] * (FPTYPE)0.5 * ((FPTYPE)1.0 + tanh((FPTYPE)SQRT_2_PI * (xx[ii] + (FPTYPE)0.044715 * xx[ii] * xx[ii] *xx[ii])));
@@ -18,7 +18,7 @@ void deepmd::gelu_grad_cpu(
     FPTYPE * out, 
     const FPTYPE * xx,
     const FPTYPE * dy, 
-    const int size)
+    const int_64 size)
 {
   for (int ii = 0; ii < size; ii++) {
     const FPTYPE var = tanh((FPTYPE)SQRT_2_PI * (xx[ii] + (FPTYPE)0.044715 * xx[ii] * xx[ii] * xx[ii]));
@@ -32,7 +32,7 @@ void deepmd::gelu_grad_grad_cpu(
     const FPTYPE * xx,
     const FPTYPE * dy, 
     const FPTYPE * dy_2,
-    const int size) 
+    const int_64 size) 
 {
   for (int ii = 0; ii < size; ii++) {
     const FPTYPE var1 = tanh((FPTYPE)SQRT_2_PI * (xx[ii] + (FPTYPE)0.044715 * xx[ii] * xx[ii] *xx[ii]));
@@ -41,9 +41,9 @@ void deepmd::gelu_grad_grad_cpu(
   }
 }
 
-template void deepmd::gelu_cpu<float>(float * out, const float * x, const int size);
-template void deepmd::gelu_cpu<double>(double * out, const double * x, const int size);
-template void deepmd::gelu_grad_cpu<float>(float * out, const float * x, const float * dy, const int size);
-template void deepmd::gelu_grad_cpu<double>(double * out, const double * x, const double * dy, const int size);
-template void deepmd::gelu_grad_grad_cpu<float>(float * out, const float * x, const float * dy, const float * dy_2, const int size);
-template void deepmd::gelu_grad_grad_cpu<double>(double * out, const double * x, const double * dy, const double * dy_2, const int size);
+template void deepmd::gelu_cpu<float>(float * out, const float * x, const int_64 size);
+template void deepmd::gelu_cpu<double>(double * out, const double * x, const int_64 size);
+template void deepmd::gelu_grad_cpu<float>(float * out, const float * x, const float * dy, const int_64 size);
+template void deepmd::gelu_grad_cpu<double>(double * out, const double * x, const double * dy, const int_64 size);
+template void deepmd::gelu_grad_grad_cpu<float>(float * out, const float * x, const float * dy, const float * dy_2, const int_64 size);
+template void deepmd::gelu_grad_grad_cpu<double>(double * out, const double * x, const double * dy, const double * dy_2, const int_64 size);
