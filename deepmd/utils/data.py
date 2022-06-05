@@ -491,9 +491,9 @@ class DeepmdData() :
             raise RuntimeError("%s not found!" % path)
         else:
             if high_prec :
-                data = np.full([nframes,ndof], default).astype(GLOBAL_ENER_FLOAT_PRECISION)                
+                data = np.full([nframes, ndof], default, dtype=GLOBAL_ENER_FLOAT_PRECISION)                
             else :
-                data = np.full([nframes,ndof], default).astype(GLOBAL_NP_FLOAT_PRECISION)
+                data = np.full([nframes, ndof], default, dtype=GLOBAL_NP_FLOAT_PRECISION)
             if repeat != 1:
                 data = np.repeat(data, repeat).reshape([nframes, -1])
             return np.float32(0.0), data

@@ -90,6 +90,7 @@ class EnerStdLoss (Loss) :
             # E = - E(A) - E(B) + E(C) + E(D)
             # A, B, C, D could be put far away from each other
             atom_ener_coeff = label_dict['atom_ener_coeff']
+            atom_ener_coeff = tf.reshape(atom_ener_coeff, tf.shape(atom_ener))
             energy = tf.reduce_sum(atom_ener_coeff * atom_ener, 1)
         l2_ener_loss = tf.reduce_mean( tf.square(energy - energy_hat), name='l2_'+suffix)
 
