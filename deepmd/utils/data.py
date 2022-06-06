@@ -93,7 +93,7 @@ class DeepmdData() :
             high_prec : bool = False,
             type_sel : List[int] = None,
             repeat : int = 1,
-            default: bool=True,
+            default: float=0.,
     ) :
         """
         Add a data item that to be loaded
@@ -117,6 +117,8 @@ class DeepmdData() :
                 Select certain type of atoms
         repeat
                 The data will be repeated `repeat` times.
+        default : float, default=0.
+                default value of data
         """
         self.data_dict[key] = {'ndof': ndof, 
                                'atomic': atomic,
