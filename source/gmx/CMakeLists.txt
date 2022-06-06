@@ -25,6 +25,14 @@ set_target_properties(
   INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}"
 )
 
+if (USE_TF_PYTHON_LIBS)
+  set_target_properties(
+    ${libgmxname} 
+    PROPERTIES 
+    COMPILE_FLAGS -D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI}
+  )
+endif (USE_TF_PYTHON_LIBS)
+
 install (
   FILES dp_gmx_patch
   DESTINATION bin

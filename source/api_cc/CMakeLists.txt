@@ -19,6 +19,12 @@ add_library(${libname} SHARED ${LIB_SRC})
 target_link_libraries (${libname} PUBLIC ${LIB_DEEPMD}	${TensorFlow_LIBRARY} ${TensorFlowFramework_LIBRARY})
 target_include_directories(${libname} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR} ${TensorFlow_INCLUDE_DIRS})
 
+# link: libpython3.x.so
+if (USE_TF_PYTHON_LIBS)
+  target_link_libraries (${libname} PUBLIC ${Python_LIBRARIES})
+  set_target_properties(${libname} PROPERTIES COMPILE_FLAGS -D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
+endif(USE_TF_PYTHON_LIBS)
+
 set_target_properties(
   ${libname} 
   PROPERTIES 

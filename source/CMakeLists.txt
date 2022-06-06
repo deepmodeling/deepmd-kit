@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.7)
+cmake_minimum_required(VERSION 3.12)
 project(DeePMD)
 
 # build cpp or python interfaces
@@ -74,6 +74,10 @@ else()
   message(STATUS "Will not build AMD GPU support")  
 endif (USE_ROCM_TOOLKIT)
 
+# setup tensorflow libraries by python
+if (USE_TF_PYTHON_LIBS)
+  find_package (Python COMPONENTS Interpreter Development REQUIRED)
+endif(USE_TF_PYTHON_LIBS)
 
 # find tensorflow, I need tf abi info
 find_package(tensorflow REQUIRED)
@@ -202,8 +206,12 @@ if (BUILD_CPP_IF)
   add_subdirectory (lmp/)
   if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 4.8)
 #   add_subdirectory (md/)
-    add_subdirectory (ipi/)
-    add_subdirectory (gmx/)
+    if (${OP_CXX_ABI} EQUAL 0 AND USE_TF_PYTHON_LIBS)
+      add_subdirectory (gmx/)
+    else()
+      add_subdirectory (ipi/)
+      add_subdirectory (gmx/)
+    endif()
   endif ()
 endif (BUILD_CPP_IF)
 
