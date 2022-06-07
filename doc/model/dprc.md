@@ -69,7 +69,7 @@ Also, DPRc assumes MM atom energies (`atom_ener`) are zero:
 "fitting_net": {
    "neuron": [240, 240, 240],
    "resnet_dt": true,
-   "atom_ener": [null, null, 0., null, 0., null]
+   "atom_ener": [null, null, 0.0, null, 0.0, null]
 }
 ```
 
