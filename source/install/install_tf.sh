@@ -33,7 +33,7 @@ fi
 #----------------------------------------
 cp -r ${TF_INSTALL_PATH}/include ${TENSORFLOW_ROOT}
 cp ${TF_INSTALL_PATH}/libtensorflow_framework.so* ${TENSORFLOW_ROOT}/lib
-cp ${TF_INSTALL_PATH}/libtensorflow_framework.so* ${TENSORFLOW_ROOT}/lib/libtensorflow_framework.so
 cp ${TF_INSTALL_PATH}/python/_pywrap_tensorflow_internal.so ${TENSORFLOW_ROOT}/lib
-cp ${TF_INSTALL_PATH}/python/_pywrap_tensorflow_internal.so ${TENSORFLOW_ROOT}/lib/libtensorflow_cc.so
+ln -s ${TENSORFLOW_ROOT}/lib/libtensorflow_framework.so* ${TENSORFLOW_ROOT}/lib/libtensorflow_framework.so
+ln -s ${TENSORFLOW_ROOT}/lib/_pywrap_tensorflow_internal.so ${TENSORFLOW_ROOT}/lib/libtensorflow_cc.so
 
