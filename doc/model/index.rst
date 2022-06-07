@@ -14,3 +14,4 @@ Model
    train-fitting-tensor
    train-se-e2-a-tebd
    dplr
+   dprc
