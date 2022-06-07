@@ -479,6 +479,7 @@ def loss_ener():
     doc_start_pref_pf = start_pref('atom_pref')
     doc_limit_pref_pf = limit_pref('atom_pref')
     doc_relative_f = 'If provided, relative force error will be used in the loss. The difference of force will be normalized by the magnitude of the force in the label with a shift given by `relative_f`, i.e. DF_i / ( || F || + relative_f ) with DF denoting the difference between prediction and label and || F || denoting the L2 norm of the label.'
+    doc_enable_atom_ener_coeff = "If true, the energy will be computed as \sum_i c_i E_i. c_i should be provided by file atom_ener_coeff.npy in each data system, otherwise it's 1."
     return [
         Argument("start_pref_e", [float,int], optional = True, default = 0.02, doc = doc_start_pref_e),
         Argument("limit_pref_e", [float,int], optional = True, default = 1.00, doc = doc_limit_pref_e),
@@ -490,7 +491,8 @@ def loss_ener():
         Argument("limit_pref_ae", [float,int], optional = True, default = 0.00, doc = doc_limit_pref_ae),
         Argument("start_pref_pf", [float,int], optional = True, default = 0.00, doc = doc_start_pref_pf),
         Argument("limit_pref_pf", [float,int], optional = True, default = 0.00, doc = doc_limit_pref_pf),
-        Argument("relative_f", [float,None], optional = True, doc = doc_relative_f)
+        Argument("relative_f", [float,None], optional = True, doc = doc_relative_f),
+        Argument("enable_atom_ener_coeff", [bool], optional=True, default=False, doc=doc_enable_atom_ener_coeff),
     ]
 
 # YWolfeee: Modified to support tensor type of loss args.

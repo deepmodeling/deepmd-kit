@@ -95,6 +95,7 @@ def add_data_requirement(
     high_prec: bool = False,
     type_sel: bool = None,
     repeat: int = 1,
+    default: float = 0.,
 ):
     """Specify data requirements for training.
 
@@ -116,6 +117,8 @@ def add_data_requirement(
         select only certain type of atoms, by default None
     repeat : int, optional
         if specify repaeat data `repeat` times, by default 1
+    default : float, optional, default=0.
+        default value of data
     """
     data_requirement[key] = {
         "ndof": ndof,
@@ -124,6 +127,7 @@ def add_data_requirement(
         "high_prec": high_prec,
         "type_sel": type_sel,
         "repeat": repeat,
+        "default": default,
     }
 
 
