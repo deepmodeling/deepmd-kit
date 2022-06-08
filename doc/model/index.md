@@ -10,3 +10,4 @@
 - [Fit `tensor` like `Dipole` and `Polarizability`](train-fitting-tensor.md)
 - [Train a Deep Potential model using `type embedding` approach](train-se-e2-a-tebd.md)
 - [Deep potential long-range](dplr.md)
+- [Deep Potential - Range Correction (DPRc)](dprc.md)
