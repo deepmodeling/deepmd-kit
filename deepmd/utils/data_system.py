@@ -205,14 +205,17 @@ class DeepmdDataSystem() :
         """
         Add items to the data system by a `dict`.
         `adict` should have items like
-        adict[key] = {
+        .. code-block:: python
+
+           adict[key] = {
                    'ndof': ndof, 
                    'atomic': atomic,
                    'must': must, 
                    'high_prec': high_prec,
                    'type_sel': type_sel,
                    'repeat': repeat,
-        }        
+           }
+
         For the explaination of the keys see `add`
         """
         for kk in adict :
