@@ -8,10 +8,10 @@ from deepmd.utils.errors import OutOfMemoryError
 class AutoBatchSize:
     """This class allows DeePMD-kit to automatically decide the maximum
     batch size that will not cause an OOM error.
-    
+
     Notes
     -----
-    We assume all OOM error will raise :metd:`OutOfMemoryError`.
+    We assume all OOM error will raise :class:`OutOfMemoryError`.
 
     Parameters
     ----------

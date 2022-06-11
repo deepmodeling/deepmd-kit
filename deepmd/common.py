@@ -456,8 +456,8 @@ def docstring_parameter(*sub: Tuple[str, ...]):
     sub: Tuple[str, ...]
         list of strings that will be inserted into prepared locations in docstring.
 
-    Note
-    ----
+    Notes
+    -----
     Can be used on both object and classes.
     """
 

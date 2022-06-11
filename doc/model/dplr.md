@@ -6,7 +6,7 @@ The method of DPLR is described in [this paper][1]. One is recommended to read t
 
 In the following, we take the DPLR model for example to introduce the training and LAMMPS simulation with the DPLR model. The DPLR model is training in two steps.
 
-### Train a deep Wannier model for Wannier centroids
+## Train a deep Wannier model for Wannier centroids
 
 We use the deep Wannier model (DW) to represent the relative position of the Wannier centroid (WC) with the atom to which it is associated. One may consult the introduction of the [dipole model](train-fitting-tensor.md) for a detailed introduction. An example input `wc.json` and a small dataset `data` for tutorial purposes can be found in
 ```bash
@@ -38,7 +38,7 @@ The training and freezing can be started from the example directory by
 dp train dw.json && dp freeze -o dw.pb
 ```
 
-### Train the DPLR model
+## Train the DPLR model
 
 The training of the DPLR model is very similar to the standard short-range DP models. An example input script can be found in the example directory. The following section is introduced to compute the long-range energy contribution of the DPLR model, and modify the short-range DP model by this part. 
 ```json

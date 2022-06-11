@@ -226,16 +226,16 @@ public:
   ~DeepPotModelDevi() ;
   /**
   * @brief DP model deviation constructor with initialization.
-  * @param[in] model The names of the frozen model files.
+  * @param[in] models The names of the frozen model files.
   * @param[in] gpu_rank The GPU rank. Default is 0.
-  * @param[in] file_content The contents of the model files. If it is not empty, DP will read from the strings instead of the files.
+  * @param[in] file_contents The contents of the model files. If it is not empty, DP will read from the strings instead of the files.
   **/
   DeepPotModelDevi  (const std::vector<std::string> & models, const int & gpu_rank = 0, const std::vector<std::string> & file_contents = std::vector<std::string>());
   /**
   * @brief Initialize the DP model deviation contrcutor.
-  * @param[in] model The names of the frozen model files.
+  * @param[in] models The names of the frozen model files.
   * @param[in] gpu_rank The GPU rank. Default is 0.
-  * @param[in] file_content The contents of the model files. If it is not empty, DP will read from the strings instead of the files.
+  * @param[in] file_contents The contents of the model files. If it is not empty, DP will read from the strings instead of the files.
   **/
   void init (const std::vector<std::string> & models, const int & gpu_rank = 0, const std::vector<std::string> & file_contents = std::vector<std::string>());
 public:
