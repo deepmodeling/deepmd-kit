@@ -590,7 +590,6 @@ class BuildTensorFlow(Build):
                 "TF_NEED_CUDA": "1",
                 # /usr is path to driver
                 "TF_CUDA_PATHS": ",".join((str(CUDA_PATH), str(CUDNN_PATH), "/usr")),
-                # TODO: detect from CUDA?
                 "TF_CUDA_VERSION": str(self.dependencies['cuda'].cuda_version),
                 "TF_CUDNN_VERSION": str(self.dependencies['cuda'].cudnn_version),
                 "TF_NCCL_VERSION": "",
