@@ -20,7 +20,7 @@ from deepmd.entrypoints import (
 )
 from deepmd.loggers import set_log_handles
 
-__all__ = ["main", "parse_args", "get_ll"]
+__all__ = ["main", "parse_args", "get_ll", "main_parser"]
 
 
 def get_ll(log_level: str) -> int:
@@ -44,14 +44,13 @@ def get_ll(log_level: str) -> int:
     return int_level
 
 
-def parse_args(args: Optional[List[str]] = None):
+def main_parser() -> argparse.ArgumentParser:
     """DeePMD-Kit commandline options argument parser.
 
-    Parameters
-    ----------
-    args: List[str]
-        list of command line arguments, main purpose is testing default option None
-        takes arguments from sys.argv
+    Returns
+    -------
+    argparse.ArgumentParser
+        main parser of DeePMD-kit
     """
     parser = argparse.ArgumentParser(
         description="DeePMD-kit: A deep learning package for many-body potential energy"
@@ -440,7 +439,24 @@ def parse_args(args: Optional[List[str]] = None):
         
     # --version
     parser.add_argument('--version', action='version', version='DeePMD-kit v%s' % __version__)
+    return parser
 
+
+def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
+    """Parse arguments and convert argument strings to objects.
+
+    Parameters
+    ----------
+    args: List[str]
+        list of command line arguments, main purpose is testing default option None
+        takes arguments from sys.argv
+
+    Returns
+    -------
+    argparse.Namespace
+        the populated namespace
+    """
+    parser = main_parser()
     parsed_args = parser.parse_args(args=args)
     if parsed_args.command is None:
         parser.print_help()
