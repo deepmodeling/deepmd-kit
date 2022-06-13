@@ -152,7 +152,7 @@ If one does not need to use DeePMD-kit with Lammps or I-Pi, then the python inte
 
 The C++ interface of DeePMD-kit was tested with compiler gcc >= 4.8. It is noticed that the I-Pi support is only compiled with gcc >= 4.8. Note that TensorFlow may have specific requirement of the compiler version.
 
-First the C++ interface of Tensorflow should be installed. It is noted that the version of Tensorflow should be consistent with the python interface. You may follow [the instruction](install-tf.2.8.md) to install the corresponding C++ interface.
+First the C++ interface of Tensorflow should be installed. It is noted that the version of Tensorflow should be consistent with the python interface. You may follow [the instruction](install-tf.2.8.md) or run the script `$deepmd_source_dir/source/install/build_tf.py` to install the corresponding C++ interface.
 
 ### Install the DeePMD-kit's C++ interface
 
