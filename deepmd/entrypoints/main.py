@@ -20,13 +20,9 @@ from deepmd.entrypoints import (
 )
 from deepmd.loggers import set_log_handles
 
-<<<<<<< HEAD
 from deepmd.nvnmd.entrypoints.train import train_nvnmd
 
-__all__ = ["main", "parse_args", "get_ll"]
-=======
 __all__ = ["main", "parse_args", "get_ll", "main_parser"]
->>>>>>> upstream/devel
 
 
 def get_ll(log_level: str) -> int:
@@ -449,16 +445,10 @@ def main_parser() -> argparse.ArgumentParser:
         required=True,
         help="type map",
     )
-        
+
     # --version
     parser.add_argument('--version', action='version', version='DeePMD-kit v%s' % __version__)
-    return parser
 
-
-def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
-    """Parse arguments and convert argument strings to objects.
-
-<<<<<<< HEAD
     # * train nvnmd script ******************************************************************
     parser_train_nvnmd = subparsers.add_parser(
         "train-nvnmd",
@@ -477,8 +467,12 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
         choices=['s1', 's2'],
         help="steps to train model of NVNMD: s1 (train CNN), s2 (train QNN)"
     )
+    return parser
 
-=======
+
+def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
+    """Parse arguments and convert argument strings to objects.
+
     Parameters
     ----------
     args: List[str]
@@ -491,7 +485,6 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
         the populated namespace
     """
     parser = main_parser()
->>>>>>> upstream/devel
     parsed_args = parser.parse_args(args=args)
     if parsed_args.command is None:
         parser.print_help()
