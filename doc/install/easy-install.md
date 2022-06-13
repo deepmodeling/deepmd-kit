@@ -16,7 +16,7 @@ Both CPU and GPU version offline packages are available in [the Releases page](h
 
 Some packages are splited into two files due to size limit of GitHub. One may merge them into one after downloading:
 ```bash
-cat deepmd-kit-2.0.0-cuda11.3_gpu-Linux-x86_64.sh.0 deepmd-kit-2.0.0-cuda11.3_gpu-Linux-x86_64.sh.1 > deepmd-kit-2.0.0-cuda11.3_gpu-Linux-x86_64.sh
+cat deepmd-kit-2.1.1-cuda11.6_gpu-Linux-x86_64.sh.0 deepmd-kit-2.1.1-cuda11.6_gpu-Linux-x86_64.sh.1 > deepmd-kit-2.1.1-cuda11.6_gpu-Linux-x86_64.sh
 ```
 
 ## Install with conda
@@ -29,13 +29,13 @@ conda create -n deepmd deepmd-kit=*=*cpu libdeepmd=*=*cpu lammps-dp -c https://c
 
 Or one may want to create a GPU environment containing [CUDA Toolkit](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver):
 ```bash
-conda create -n deepmd deepmd-kit=*=*gpu libdeepmd=*=*gpu lammps-dp cudatoolkit=11.3 horovod -c https://conda.deepmodeling.com
+conda create -n deepmd deepmd-kit=*=*gpu libdeepmd=*=*gpu lammps-dp cudatoolkit=11.6 horovod -c https://conda.deepmodeling.com
 ```
-One could change the CUDA Toolkit version from `10.1` or `11.3`.
+One could change the CUDA Toolkit version from `10.2` or `11.6`.
 
-One may speficy the DeePMD-kit version such as `2.0.0` using
+One may speficy the DeePMD-kit version such as `2.1.1` using
 ```bash
-conda create -n deepmd deepmd-kit=2.0.0=*cpu libdeepmd=2.0.0=*cpu lammps-dp=2.0.0 horovod -c https://conda.deepmodeling.com
+conda create -n deepmd deepmd-kit=2.1.1=*cpu libdeepmd=2.1.1=*cpu lammps-dp horovod -c https://conda.deepmodeling.com
 ```
 
 One may enable the environment using
@@ -48,12 +48,12 @@ A docker for installing the DeePMD-kit is available [here](https://github.com/or
 
 To pull the CPU version:
 ```bash
-docker pull ghcr.io/deepmodeling/deepmd-kit:2.0.0_cpu
+docker pull ghcr.io/deepmodeling/deepmd-kit:2.1.1_cpu
 ```
 
 To pull the GPU version:
 ```bash
-docker pull ghcr.io/deepmodeling/deepmd-kit:2.0.0_cuda10.1_gpu
+docker pull ghcr.io/deepmodeling/deepmd-kit:2.1.1_cuda11.6_gpu
 ```
 
 To pull the ROCm version:

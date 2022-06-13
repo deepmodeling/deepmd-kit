@@ -110,7 +110,7 @@ __global__ void tabulate_fusion_se_a_fifth_order_polynomial(
     const int last_layer_size) 
 {
   HIP_DYNAMIC_SHARED( int, _data)
-  const int block_idx = blockIdx.x;   // nloc
+  const int_64 block_idx = blockIdx.x;   // nloc
   const int thread_idx = threadIdx.x; // last_layer_size
   FPTYPE ago = __shfl(em_x[block_idx * nnei + nnei - 1], 0);
   bool unloop = false;
@@ -167,7 +167,7 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
     const int last_layer_size) 
 {
   HIP_DYNAMIC_SHARED( int, _data)
-  const int block_idx = blockIdx.x;  // nloc
+  const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x; // KTILE * WARP_SIZE, usally 128 here~
   int warp_idx = __shfl(threadIdx.x / 64, 0);
   int lane_idx = threadIdx.x % 64;
@@ -248,7 +248,7 @@ __global__ void tabulate_fusion_se_a_grad_grad_fifth_order_polynomial(
     const int last_layer_size)
 {
   extern __shared__ int _data[];
-  const int block_idx = blockIdx.x;   // nloc
+  const int_64 block_idx = blockIdx.x;   // nloc
   const int thread_idx = threadIdx.x; // last_layer_size
   FPTYPE ago = __shfl( em_x[block_idx * nnei + nnei - 1], 0);
   bool unloop = false;
@@ -307,7 +307,7 @@ __global__ void tabulate_fusion_se_t_fifth_order_polynomial(
     const int last_layer_size) 
 {
   HIP_DYNAMIC_SHARED( int, _data)
-  const int block_idx = blockIdx.x;   // nloc
+  const int_64 block_idx = blockIdx.x;   // nloc
   const int thread_idx = threadIdx.x; // last_layer_size
 
   FPTYPE sum = (FPTYPE)0.;
@@ -361,7 +361,7 @@ __global__ void tabulate_fusion_se_t_grad_fifth_order_polynomial(
     const int last_layer_size) 
 {
   HIP_DYNAMIC_SHARED( int, _data)
-  const int block_idx = blockIdx.x;  // nloc
+  const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x; // KTILE * WARP_SIZE, usally 128 here~
   int warp_idx = __shfl(threadIdx.x / 64, 0);
   int lane_idx = threadIdx.x % 64;
@@ -430,7 +430,7 @@ __global__ void tabulate_fusion_se_t_grad_grad_fifth_order_polynomial(
     const int nnei_j,
     const int last_layer_size)
 {
-  const int block_idx  = blockIdx.x;   // nloc
+  const int_64 block_idx  = blockIdx.x;   // nloc
   const int thread_idx = threadIdx.x; // last_layer_size
 
   FPTYPE sum = (FPTYPE)0.;
@@ -482,7 +482,7 @@ __global__ void tabulate_fusion_se_r_fifth_order_polynomial(
     const int last_layer_size) 
 {
   HIP_DYNAMIC_SHARED( int, _data)
-  const int block_idx = blockIdx.x;   // nloc
+  const int_64 block_idx = blockIdx.x;   // nloc
   const int thread_idx = threadIdx.x; // last_layer_size
   
   for (int ii = 0; ii < nnei; ii++) {
@@ -519,7 +519,7 @@ __global__ void tabulate_fusion_se_r_grad_fifth_order_polynomial(
     const int last_layer_size) 
 {
   HIP_DYNAMIC_SHARED( int, _data)
-  const int block_idx = blockIdx.x;  // nloc
+  const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x; // KTILE * WARP_SIZE, usally 128 here~
   int warp_idx = __shfl(threadIdx.x / 64, 0);
   int lane_idx = threadIdx.x % 64;
@@ -569,7 +569,7 @@ __global__ void tabulate_fusion_se_r_grad_grad_fifth_order_polynomial(
     const int last_layer_size)
 {
   extern __shared__ int _data[];
-  const int block_idx = blockIdx.x;   // nloc
+  const int_64 block_idx = blockIdx.x;   // nloc
   const int thread_idx = threadIdx.x; // last_layer_size
 
   __syncthreads();

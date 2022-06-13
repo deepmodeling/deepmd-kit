@@ -36,18 +36,7 @@ REGISTER_OP("MatmulNvnmd")
   .Attr("nbit1: int")
   .Attr("nbit2: int")
   .Attr("nbit3: int")
-  .Output("y: T")
-  .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c){
-    shape_inference::ShapeHandle shX, shW;
-    TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 2, &shX));
-    TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 2, &shW));
-    shape_inference::DimensionHandle D1 = c->Dim(shX, 0);
-    shape_inference::DimensionHandle D2 = c->Dim(shX, 1);
-    shape_inference::DimensionHandle D3 = c->Dim(shW, 0);
-    shape_inference::DimensionHandle D4 = c->Dim(shW, 1);
-    c->set_output(0, c->Matrix(D1, D4));
-    return Status::OK();
-  });
+  .Output("y: T");
 
 
 

@@ -20,7 +20,7 @@ An [OpenMM](https://github.com/openmm/openmm) plugin is provided from [JingHuang
 
 ## AMBER interface to DeePMD-kit
 
-An [AMBER](https://ambermd.org/) interface to DeePMD-kit is written by the [York Lab](https://theory.rutgers.edu/) from the Rutgers University. Details can be found in [this paper](https://doi.org/10.1021/acs.jctc.1c00201). The code is available upon request from the authors.
+An [AMBER](https://ambermd.org/) interface to DeePMD-kit is written by the [York Lab](https://theory.rutgers.edu/) from the Rutgers University. It is open-source at [GitLab RutgersLBSR/AmberDPRc](https://gitlab.com/RutgersLBSR/AmberDPRc/). Details can be found in [this paper](https://doi.org/10.1021/acs.jctc.1c00201).
 
 ## DP-GEN
 

@@ -56,7 +56,7 @@ class PolarFittingLocFrame () :
                reuse = None,
                suffix = '') :
         start_index = 0
-        inputs = tf.cast(tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]]), self.fitting_precision)
+        inputs = tf.cast(tf.reshape(input_d, [-1, natoms[0], self.dim_descrpt]), self.fitting_precision)
         rot_mat = tf.reshape(rot_mat, [-1, 9 * natoms[0]])
 
         count = 0
@@ -64,8 +64,8 @@ class PolarFittingLocFrame () :
         for type_i in range(self.ntypes):
             # cut-out inputs
             inputs_i = tf.slice (inputs,
-                                 [ 0, start_index*      self.dim_descrpt],
-                                 [-1, natoms[2+type_i]* self.dim_descrpt] )
+                                 [ 0, start_index, 0],
+                                 [-1, natoms[2+type_i], -1] )
             inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
             rot_mat_i = tf.slice (rot_mat,
                                   [ 0, start_index*      9],

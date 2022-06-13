@@ -137,7 +137,7 @@ class MapTable:
         # ntypex = nvnmd_cfg.dscp['ntypex']
         ntype = nvnmd_cfg.dscp['ntype']
         avg, std = get_normalize(nvnmd_cfg.weight)
-
+        avg, std = np.float32(avg), np.float32(std)
         r = tf.sqrt(r2)
         r_ = tf.clip_by_value(r, rmin, rmax)
         r__ = tf.clip_by_value(r, 0, rmax)
@@ -185,6 +185,7 @@ class MapTable:
         # ntypex = nvnmd_cfg.dscp['ntypex']
         ntype = nvnmd_cfg.dscp['ntype']
         avg, std = get_normalize(nvnmd_cfg.weight)
+        avg, std = np.float32(avg), np.float32(std)
         NBIT_FEA_X = nvnmd_cfg.nbit['NBIT_FEA_X']
         NBIT_FEA_X_FL = nvnmd_cfg.nbit['NBIT_FEA_X_FL']
 
@@ -236,6 +237,7 @@ class MapTable:
                 xyz_scatter = s
                 for ll in range(1, len(outputs_size)):
                     w, b = get_filter_weight(nvnmd_cfg.weight, tt, tt2, ll)
+                    w, b = np.float32(w), np.float32(b)
                     if outputs_size[ll] == outputs_size[ll - 1]:
                         xyz_scatter += activation_fn(tf.matmul(xyz_scatter, w) + b)
                     elif outputs_size[ll] == outputs_size[ll - 1] * 2:

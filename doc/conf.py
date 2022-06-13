@@ -131,10 +131,6 @@ def generate_doxygen_xml(app):
     else:
         subprocess.call("doxygen Doxyfile", shell=True)
 
-def generate_train_input(app):
-    with open("train-input-auto.rst", 'w') as f:
-        f.write(subprocess.check_output((sys.executable, "-m", "deepmd", "doc-train-input"), universal_newlines=True))
-
 def run_apidoc(_):
     from sphinx.ext.apidoc import main
     import sys
@@ -148,7 +144,6 @@ def setup(app):
     # Add hook for building doxygen xml when needed
     app.connect("builder-inited", generate_doxygen_xml)
     app.connect('builder-inited', run_apidoc)
-    app.connect('builder-inited', generate_train_input)
 
 # -- General configuration ---------------------------------------------------
 
@@ -169,12 +164,14 @@ def setup(app):
 
 extensions = [
     "deepmodeling_sphinx",
+    "dargs.sphinx",
     "sphinx_rtd_theme",
     'myst_parser',
     'sphinx.ext.autosummary',
     'sphinx.ext.mathjax',
     'sphinx.ext.viewcode',
     'sphinx.ext.intersphinx',
+    'sphinxarg.ext',
     'numpydoc',
     'breathe',
     'exhale'
@@ -252,3 +249,15 @@ autodoc_default_flags = ['members']
 autosummary_generate = True
 master_doc = 'index'
 mathjax_path = 'https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.0/es5/tex-mml-chtml.min.js'
+myst_enable_extensions = [
+    'dollarmath',
+]
+# fix emoji issue in pdf
+latex_engine = "xelatex"
+latex_elements = {
+    'fontpkg': r'''
+\usepackage{fontspec}
+\setmainfont{Symbola}
+''',
+}
+

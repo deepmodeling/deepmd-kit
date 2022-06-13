@@ -123,20 +123,20 @@ class DipoleFittingSeA (Fitting) :
                 The atomic dipole.
         """
         start_index = 0
-        inputs = tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]])
-        rot_mat = tf.reshape(rot_mat, [-1, self.dim_rot_mat * natoms[0]])
+        inputs = tf.reshape(input_d, [-1, natoms[0], self.dim_descrpt])
+        rot_mat = tf.reshape(rot_mat, [-1, natoms[0], self.dim_rot_mat])
 
         count = 0
         outs_list = []
         for type_i in range(self.ntypes):
             # cut-out inputs
             inputs_i = tf.slice (inputs,
-                                 [ 0, start_index*      self.dim_descrpt],
-                                 [-1, natoms[2+type_i]* self.dim_descrpt] )
+                                 [ 0, start_index, 0],
+                                 [-1, natoms[2+type_i], -1] )
             inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
             rot_mat_i = tf.slice (rot_mat,
-                                  [ 0, start_index*      self.dim_rot_mat],
-                                  [-1, natoms[2+type_i]* self.dim_rot_mat] )
+                                  [ 0, start_index, 0],
+                                  [-1, natoms[2+type_i], -1] )
             rot_mat_i = tf.reshape(rot_mat_i, [-1, self.dim_rot_mat_1, 3])
             start_index += natoms[2+type_i]
             if not type_i in self.sel_type :

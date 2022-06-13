@@ -284,7 +284,13 @@ void deepmd::env_mat_nbor_update(
     memcpy_host_to_device(gpu_inlist.ilist, inlist.ilist, inum);
     memcpy_host_to_device(gpu_inlist.numneigh, inlist.numneigh, inum);
     int _max_nbor_size = max_numneigh(inlist);
-    if (_max_nbor_size <= 1024) {
+    if (_max_nbor_size <= 256) {
+      _max_nbor_size = 256;
+    }
+    else if (_max_nbor_size <= 512) {
+      _max_nbor_size = 512;
+    }
+    else if (_max_nbor_size <= 1024) {
       _max_nbor_size = 1024;
     }
     else if (_max_nbor_size <= 2048) {

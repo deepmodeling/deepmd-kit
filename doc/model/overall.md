@@ -24,6 +24,6 @@ DeePMD-kit implements the following descriptors:
 5. [`hybrid`](train-hybrid.md): Concate a list of descriptors to form a new descriptor.
 
 The fitting of the following physical properties are supported
-1. [`ener`](train-energy.md): Fit the energy of the system. The force (derivative with atom positions) and the virial (derivative with the box tensor) can also be trained. See [the example](train-se-e2-a.md#loss).
+1. [`ener`](train-energy.md): Fit the energy of the system. The force (derivative with atom positions) and the virial (derivative with the box tensor) can also be trained.
 2. [`dipole`](train-fitting-tensor.md): The dipole moment.
 3. [`polar`](train-fitting-tensor.md): The polarizability.

@@ -37,20 +37,7 @@ REGISTER_OP("MapNvnmd")
   .Input("grad_dv: T")
   .Attr("prec: float")
   .Attr("nbit: int")
-  .Output("y: T")
-  .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
-    shape_inference::ShapeHandle shX, shV;
-    TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 2, &shX));
-    TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 2, &shV));
-    
-    shape_inference::DimensionHandle D1 = c->Dim(shX, 0);
-    shape_inference::DimensionHandle D2 = c->Dim(shX, 1);
-    shape_inference::DimensionHandle D3 = c->Dim(shV, 0);
-    shape_inference::DimensionHandle D4 = c->Dim(shV, 1);
-
-    c->set_output(0, c->Matrix(D1, D4));
-    return Status::OK();
-  });
+  .Output("y: T");
 
 //- create the operator class
 //* the class must inherit the OpKernel Class

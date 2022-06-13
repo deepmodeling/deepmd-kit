@@ -31,15 +31,7 @@ REGISTER_OP("Tanh2Nvnmd")
   .Attr("nbit1: int")
   .Attr("nbit2: int")
   .Attr("nbit3: int")
-  .Output("y: T")
-  .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c){
-    shape_inference::ShapeHandle shX;
-    TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 2, &shX));
-    shape_inference::DimensionHandle D1 = c->Dim(shX, 0);
-    shape_inference::DimensionHandle D2 = c->Dim(shX, 1);
-    c->set_output(0, c->Matrix(D1, D2));
-    return Status::OK();
-  });
+  .Output("y: T");
 
 
 

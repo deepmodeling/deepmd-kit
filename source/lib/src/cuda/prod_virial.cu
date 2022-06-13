@@ -44,7 +44,7 @@ __global__ void virial_deriv_wrt_neighbors_a(
   // idz = dd0 * 3 + dd1
   // dd0 = idz / 3
   // dd1 = idz % 3
-  const unsigned int idx = blockIdx.x;
+  const int_64 idx = blockIdx.x;
   const unsigned int idy = blockIdx.y * blockDim.x + threadIdx.x;
   const unsigned int idz = threadIdx.y;
   const int ndescrpt = nnei * 4;
@@ -81,7 +81,7 @@ __global__ void virial_deriv_wrt_neighbors_r(
     // idz = dd0 * 3 + dd1
     // dd0 = idz / 3
     // dd1 = idz % 3
-    const unsigned int idx = blockIdx.x;
+    const int_64 idx = blockIdx.x;
     const unsigned int idy = blockIdx.y * blockDim.x + threadIdx.x;
     const unsigned int idz = threadIdx.y;
     const int ndescrpt = nnei * 1;
