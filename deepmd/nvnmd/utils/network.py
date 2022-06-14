@@ -164,4 +164,5 @@ def one_layer(inputs,
         else:
             hidden = tf.matmul(inputs, w) + b
             y = activation_fn(hidden, -1, -1) if (activation_fn is not None) else hidden
+    y = tf.reshape(y, [-1, outputs_size])
     return y

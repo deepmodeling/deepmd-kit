@@ -3,6 +3,7 @@ import numpy as np
 import logging
 
 from deepmd.nvnmd.data.data import jdata_config, jdata_configs, jdata_deepmd_input
+from deepmd.nvnmd.data.data import NVNMD_WELCOME, NVNMD_CITATION
 from deepmd.nvnmd.utils.fio import FioDic
 
 log = logging.getLogger(__name__)
@@ -76,8 +77,6 @@ class NvnmdConfig():
             self.restore_fitting_net = True
             self.quantize_descriptor = True
             self.quantize_fitting_net = True
-        else:
-            pass
 
     def init_from_config(self, jdata):
         self.config = FioDic().update(jdata, self.config)
@@ -94,7 +93,7 @@ class NvnmdConfig():
         if self.enable:
             key = str(self.net_size)
             if key in jdata_configs.keys():
-                log.info(f"NVNMD: configure the net_size is {key}")
+                # log.info(f"NVNMD: configure the net_size is {key}")
                 self.init_from_config(jdata_configs[key])
             else:
                 log.error("NVNMD: don't have the configure of net_size")
@@ -222,6 +221,21 @@ class NvnmdConfig():
         jdata['loss'] = self.get_loss_jdata()
         jdata['training'] = self.get_training_jdata()
         return jdata
+    
+    def disp_message(self):
+        NVNMD_CONFIG = (
+            f"enable: {self.enable}",
+            f"net_size: {self.net_size}",
+            f"map_file: {self.map_file}",
+            f"config_file: {self.config_file}",
+            f"weight_file: {self.weight_file}",
+            f"restore_descriptor: {self.restore_descriptor}",
+            f"restore_fitting_net: {self.restore_fitting_net}",
+            f"quantize_descriptor: {self.quantize_descriptor}",
+            f"quantize_fitting_net: {self.quantize_fitting_net}",
+        )
+        for message in NVNMD_WELCOME + NVNMD_CITATION + NVNMD_CONFIG:
+            log.info(message)
 
 
 # global configuration for nvnmd

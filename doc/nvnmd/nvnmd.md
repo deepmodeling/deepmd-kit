@@ -1,4 +1,7 @@
-# Use NVNMD
+<span style="font-size:larger;">NVNMD Manual</span>
+========
+
+# Table of contents
 - [1 Introduction](#1-introduction)
 - [2 Training](#2-training)
     - [2-1 Input script](#2-1-input-script)

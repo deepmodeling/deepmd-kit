@@ -36,7 +36,7 @@ def descrpt2r4(inputs, natoms):
     NBIT_DATA_FL = nvnmd_cfg.nbit['NBIT_DATA_FL']
     NBIT_FEA_X_FL = nvnmd_cfg.nbit['NBIT_FEA_X_FL']
     NBIT_FEA_FL = nvnmd_cfg.nbit['NBIT_FEA_FL']
-    prec = 1 / (2 ** NBIT_FEA_X_FL)
+    prec = 1.0 / (2 ** NBIT_FEA_X_FL)
 
     ntypes = nvnmd_cfg.dscp['ntype']
     NIDP = nvnmd_cfg.dscp['NIDP']
@@ -143,7 +143,7 @@ def filter_lower_R42GR(
     NBIT_FEA_X_FL = nvnmd_cfg.nbit['NBIT_FEA_X_FL']
     NBIT_FEA_X2_FL = nvnmd_cfg.nbit['NBIT_FEA_X2_FL']
     NBIT_FEA_FL = nvnmd_cfg.nbit['NBIT_FEA_FL']
-    prec = 1 / (2 ** NBIT_FEA_X2_FL)
+    prec = 1.0 / (2 ** NBIT_FEA_X2_FL)
     type_input = 0 if (type_input < 0) else type_input
     postfix = f"_t{type_input}_t{type_i}"
 

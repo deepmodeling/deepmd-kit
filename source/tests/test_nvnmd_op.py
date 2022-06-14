@@ -28,9 +28,9 @@ class TestNvnmdMapOp(tf.test.TestCase):
         self.nbit_x = 14
         self.nbit_xk = 10
         self.nbit_yk = 10
-        self.prec_x = 1/2**self.nbit_x
-        self.prec_xk = 1/2**self.nbit_xk
-        self.prec_yk = 1/2**self.nbit_yk
+        self.prec_x = 1.0/2**self.nbit_x
+        self.prec_xk = 1.0/2**self.nbit_xk
+        self.prec_yk = 1.0/2**self.nbit_yk
 
     def gen_map_table(self):
         n = 2**self.nbit_xk
@@ -242,7 +242,7 @@ class TestProdEnvMatANvnmdQuantize(tf.test.TestCase):
         coord = np.reshape(np.array(coord), [1, -1])
         #
         atype = [
-            0, 1, 1, 
+            0, 1, 1,
             0, 1, 1]
         atype = np.reshape(np.array(atype), [1, -1])
         #

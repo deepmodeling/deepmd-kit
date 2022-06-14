@@ -112,7 +112,7 @@ public:
     
     for(ii=0; ii<D1; ii++){
         for(kk=0; kk<D4; kk++){
-          y(ii, kk) = 0.0;
+          y(ii, kk) = (FPTYPE)0.0;
         }
       }
 

@@ -42,10 +42,10 @@ class Fio:
             listdir = os.listdir(path)
             file_lst = []
             for name in listdir:
-                if self.is_file(path + '/' + name):
-                    file_lst.append(path + '/' + name)
+                if self.is_file(os.path.join(path, name)):
+                    file_lst.append(os.path.join(path, name))
                 else:
-                    file_lst_ = self.get_file_list(path + '/' + name)
+                    file_lst_ = self.get_file_list(os.path.join(path, name))
                     file_lst.extend(file_lst_)
             return file_lst
         return []
@@ -191,4 +191,5 @@ class FioTxt():
         if isinstance(data, str):
             data = [data]
         data = [d + '\n' for d in data]
-        open(file_name, 'w').writelines(data)
+        with open(file_name, 'w') as fw:
+            fw.writelines(data)

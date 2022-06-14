@@ -28,6 +28,7 @@ y output
 using namespace tensorflow;
 
 //- register the operator
+// prec = 2^n, so it doesn't need to match `T`
 REGISTER_OP("MapNvnmd")
   .Attr("T: {float, double} = DT_DOUBLE")
   .Input("x: T")

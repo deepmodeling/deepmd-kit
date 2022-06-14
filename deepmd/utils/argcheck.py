@@ -679,11 +679,13 @@ def gen_doc(*, make_anchor=True, make_link=True, **kwargs):
     lra = learning_rate_args()
     la = loss_args()
     ta = training_args()
+    nvnmda = nvnmd_args()
     ptr = []
     ptr.append(ma.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
     ptr.append(la.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
     ptr.append(lra.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
     ptr.append(ta.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
+    ptr.append(nvnmda.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
 
     key_words = []
     for ii in "\n\n".join(ptr).split('\n'):
@@ -699,6 +701,7 @@ def gen_json(**kwargs):
         learning_rate_args(),
         loss_args(),
         training_args(),
+        nvnmd_args(),
     ), cls=ArgumentEncoder)
 
 def normalize_hybrid_list(hy_list):

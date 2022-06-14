@@ -190,9 +190,9 @@ jdata_config_128 = {
 }
 
 jdata_configs = {
-    "16": jdata_config_16,
-    "32": jdata_config_32,
-    "64": jdata_config_64,
+    "_16": jdata_config_16,
+    "_32": jdata_config_32,
+    "_64": jdata_config_64,
     "128": jdata_config_128
 }
 
@@ -219,15 +219,15 @@ jdata_deepmd_input = {
         "fitting_net": {
             "seed": 1,
             "neuron": [
-                32,
-                32,
-                32
+                128,
+                128,
+                128
             ],
             "resnet_dt": False
         }
     },
     "nvnmd": {
-        "net_size": 32,
+        "net_size": 128,
         "config_file": "none",
         "weight_file": "none",
         "map_file": "none",
@@ -269,3 +269,15 @@ jdata_deepmd_input = {
         }
     }
 }
+NVNMD_WELCOME = (
+    " _   _  __     __  _   _   __  __   ____  ",
+    "| \ | | \ \   / / | \ | | |  \/  | |  _ \ ",
+    "|  \| |  \ \ / /  |  \| | | |\/| | | | | |",
+    "| |\  |   \ V /   | |\  | | |  | | | |_| |",
+    "|_| \_|    \_/    |_| \_| |_|  |_| |____/ ",
+)
+
+NVNMD_CITATION = (
+    "Please read and cite:",
+    "Mo et al., npj Comput Mater 8, 107 (2022)",
+)
