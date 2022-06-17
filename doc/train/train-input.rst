@@ -18,3 +18,7 @@ Training Parameters
 .. dargs::
    :module: deepmd.utils.argcheck
    :func: training_args
+
+.. dargs::
+   :module: deepmd.utils.argcheck
+   :func: nvnmd_args

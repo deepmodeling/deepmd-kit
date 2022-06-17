@@ -19,12 +19,25 @@ log = logging.getLogger(__name__)
 
 class MapTable:
     r""" Generate the mapping table describing the relastionship of
-    r_ij->s_ij, r_ij->sr_ij, and s_ij->G_ij
-    
-    r_ij = |r_i - r_j|
-    s_ji is the cut-off function about r_ij
-    sr_ji = s_ji / r_ji
-    G_ij is the embeddingNet output
+    atomic distance, cutoff function, and embedding matrix.
+
+    three mapping table will be built:
+    .. math::
+        r^2_{ji} \rightarrow s_{ji}
+        r^2_{ji} \rightarrow sr_{ji}
+        r^2_{ji} \rightarrow \mathcal{G}_{ji}
+
+    where :math:`s_{ji}` is cut-off function,
+     :math:`sr_{ji} = \frac{s(r_{ji})}{r_{ji}}`, and
+    :math:`\mathcal{G}_{ji}` is embedding matrix.
+
+    The mapping funciton can be define as:
+    .. math::
+        y = f(x) = y_{k} + (x - x_{k}) * dy_{k}
+        y_{k} = f(x_{k})
+        dy_{k} = \frac{f(x_{k+1}) - f(x_{k})}{dx}
+        x_{k} \leq x < x_{k+1}
+        x_{k} = k * dx
 
     Parameters
     ----------
@@ -34,10 +47,10 @@ class MapTable:
     weight_file
         input file name
         an .npy file containing the weights of NVNMD model
-    map_file 
+    map_file
         output file name
         an .npy file containing the mapping tables of NVNMD model
-    
+
     References
     ----------
     DOI: 10.1038/s41524-022-00773-z

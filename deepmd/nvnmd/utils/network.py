@@ -138,6 +138,9 @@ def one_layer(inputs,
               initial_variables=None,
               mixed_prec=None,
               final_layer=False):
+    """: build one layer with continuous or quantized value.
+    Its weight and bias can be initialed with random or constant value.
+    """
     if activation_fn is not None:
         activation_fn = tanh4
     with tf.variable_scope(name, reuse=reuse):
@@ -164,5 +167,7 @@ def one_layer(inputs,
         else:
             hidden = tf.matmul(inputs, w) + b
             y = activation_fn(hidden, -1, -1) if (activation_fn is not None) else hidden
+    # 'reshape' is necessary
+    # the next layer needs shape of input tensor to build weight
     y = tf.reshape(y, [-1, outputs_size])
     return y

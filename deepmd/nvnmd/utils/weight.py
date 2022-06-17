@@ -31,10 +31,19 @@ def get_rng_s(weights: dict):
 
 
 def get_filter_weight(weights: dict, spe_i: int, spe_j: int, layer_l: int):
-    """:
-    spe_i(int): 0~ntype-1
-    spe_j(int): 0~ntype-1
-    layer_l: 1~nlayer
+    """: get weight and bias of embedding network
+
+    Parameters
+    ----------
+    spe_i(int)
+        special order of central atom i
+        0~ntype-1
+    spe_j(int)
+        special order of neighbor atom j
+        0~ntype-1
+    layer_l
+        layer order in embedding network
+        1~nlayer
     """
     # key = f"filter_type_{spe_i}.matrix_{layer_l}_{spe_j}" # type_one_side = false
     key = f"filter_type_all.matrix_{layer_l}_{spe_j}"  # type_one_side = true
@@ -46,9 +55,16 @@ def get_filter_weight(weights: dict, spe_i: int, spe_j: int, layer_l: int):
 
 
 def get_fitnet_weight(weights: dict, spe_i: int, layer_l: int, nlayer: int = 10):
-    """:
-    spe_i(int): 0~ntype-1
-    layer_l(int): 0~nlayer-1
+    """: get weight and bias of fitting network
+
+    Parameters
+    ----------
+    spe_i(int)
+        special order of central atom i
+        0~ntype-1
+    layer_l(int)
+        layer order in embedding network
+        0~nlayer-1
     """
     if layer_l == nlayer - 1:
         key = f"final_layer_type_{spe_i}.matrix"
