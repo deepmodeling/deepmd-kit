@@ -536,6 +536,8 @@ class BuildTensorFlow(Build):
                 "TEST_TMPDIR": str(PACKAGE_DIR / "bazelcache"),
                 # for libstdc++
                 "LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH"),
+                "CC": str(Path(GCC).resolve()),
+                "CXX": str(Path(GXX).resolve()),
             })
 
         # copy libraries and directories
