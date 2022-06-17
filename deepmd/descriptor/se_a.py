@@ -635,7 +635,7 @@ class DescrptSeA (DescrptSe):
 
     def _compute_std (self,sumv2, sumv, sumn) :
         if sumn == 0:
-            return 1e-2
+            return 1. / self.rcut_r
         val = np.sqrt(sumv2/sumn - np.multiply(sumv/sumn, sumv/sumn))
         if np.abs(val) < 1e-2:
             val = 1e-2
