@@ -22,7 +22,7 @@ Two settings make the training input script different from an energy training in
 	    "seed":		1
 	},
 ```
-The type of fitting is set to `"dipole"`. The dipole is associate to type 0 atoms (oxygens), by the setting `"dipole_type": [0]`. What we trained is the displacement of the WC from the corresponding oxygen atom. It shares the same training input as atomic dipole because both are 3-dimensional vectors defined on atoms. 
+The type of fitting is set to {ref}`dipole <model/fitting_net[dipole]>`. The dipole is associate to type 0 atoms (oxygens), by the setting `"dipole_type": [0]`. What we trained is the displacement of the WC from the corresponding oxygen atom. It shares the same training input as atomic dipole because both are 3-dimensional vectors defined on atoms. 
 The loss section is provided as follows
 ```json
     "loss": {
@@ -51,7 +51,7 @@ The training of the DPLR model is very similar to the standard short-range DP mo
             "ewald_beta":       0.40
         },
 ```
-The `"model_name"` specifies which DW model is used to predict the position of WCs. `"model_charge_map"` gives the amount of charge assigned to WCs. `"sys_charge_map"` provides the nuclear charge of oxygen (type 0) and hydrogen (type 1) atoms. `"ewald_beta"` (unit $\text{Å}^{-1}$) gives the spread parameter controls the spread of Gaussian charges, and `"ewald_h"`  (unit Å) assigns the grid size of Fourier transform. 
+The {ref}`model_name <model/modifier[dipole_charge]/model_name>` specifies which DW model is used to predict the position of WCs. {ref}`model_charge_map <model/modifier[dipole_charge]/model_charge_map>` gives the amount of charge assigned to WCs. {ref}`sys_charge_map <model/modifier[dipole_charge]/sys_charge_map>` provides the nuclear charge of oxygen (type 0) and hydrogen (type 1) atoms. {ref}`ewald_beta <model/modifier[dipole_charge]/ewald_beta>` (unit $\text{Å}^{-1}$) gives the spread parameter controls the spread of Gaussian charges, and {ref}`ewald_h <model/modifier[dipole_charge]/ewald_h>`  (unit Å) assigns the grid size of Fourier transform. 
 The DPLR model can be trained and frozen by (from the example directory)
 ```
 dp train ener.json && dp freeze -o ener.pb
