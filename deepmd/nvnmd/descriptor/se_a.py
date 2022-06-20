@@ -14,15 +14,15 @@ from deepmd.nvnmd.utils.weight import get_normalize, get_rng_s
 
 
 def build_davg_dstd():
-    """:get the davg and dstd from the dictionary nvnmd_cfg
-    the davg and dstd have been obtained by training CNN
+    """ get the davg and dstd from the dictionary nvnmd_cfg.
+    The davg and dstd have been obtained by training CNN
     """
     davg, dstd = get_normalize(nvnmd_cfg.weight)
     return davg, dstd
 
 
 def build_op_descriptor():
-    """:replace se_a.py/DescrptSeA/build
+    """ replace se_a.py/DescrptSeA/build
     """
     if nvnmd_cfg.quantize_descriptor:
         return op_module.prod_env_mat_a_nvnmd_quantize
@@ -31,7 +31,9 @@ def build_op_descriptor():
 
 
 def descrpt2r4(inputs, natoms):
-    """: replace R->R4
+    """ replace :math:`r_{ji} \rightarrow r'_{ji}`
+    where :math:`r_{ji} = (x_{ji}, y_{ji}, z_{ji})` and
+    :math:`r'_{ji} = (s_{ji}, \frac{s_{ji} x_{ji}}{r_{ji}}, \frac{s_{ji} y_{ji}}{r_{ji}}, \frac{s_{ji} z_{ji}}{r_{ji}})`
     """
     NBIT_DATA_FL = nvnmd_cfg.nbit['NBIT_DATA_FL']
     NBIT_FEA_X_FL = nvnmd_cfg.nbit['NBIT_FEA_X_FL']
@@ -132,7 +134,7 @@ def filter_lower_R42GR(
         filter_precision,
         filter_resnet_dt,
         embedding_net_variables):
-    """:replace se_a.py/DescrptSeA/_filter_lower
+    """ replace se_a.py/DescrptSeA/_filter_lower
     """
     shape_i = inputs_i.get_shape().as_list()
     inputs_reshape = tf.reshape(inputs_i, [-1, 4])
@@ -216,7 +218,7 @@ def filter_lower_R42GR(
 
 
 def filter_GR2D(xyz_scatter_1):
-    """:replace se_a.py/_filter
+    """ replace se_a.py/_filter
     """
     NIX = nvnmd_cfg.dscp['NIX']
     NBIT_DATA_FL = nvnmd_cfg.nbit['NBIT_DATA_FL']

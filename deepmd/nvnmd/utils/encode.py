@@ -15,24 +15,24 @@ class Encode():
         pass
 
     def qr(self, v, nbit: int = 14):
-        """:quantize using round
+        """ quantize using round
         """
         return np.round(v * (2**nbit))
 
     def qf(self, v, nbit: int = 14):
-        """:quantize using floor
+        """ quantize using floor
         """
         return np.floor(v * (2**nbit))
 
     def qc(self, v, nbit: int = 14):
-        """:quantize using ceil
+        """ quantize using ceil
         """
         return np.ceil(v * (2**nbit))
 
     def check_dec(self, idec, nbit, signed=False, name=''):
-        """:Check whether the data (idec) is in the range
-        range is [0, 2**nbit-1] for unsigned
-        range is [-2**(nbit-1), 2**(nbit-1)-1] for signed
+        """ Check whether the data (idec) is in the range
+        range is :math:`[0, 2^nbit-1]` for unsigned
+        range is :math:`[-2^{nbit-1}, 2^{nbit-1}-1]` for signed
         """
         prec = np.int64(2**nbit)
         if signed:
@@ -51,14 +51,17 @@ class Encode():
                 log.warning(f"NVNMD: there are data {name} bigger than the upper limit {pmax}")
 
     def extend_list(self, slbin, nfull):
-        """: extend the list (slbin) to the length (nfull)
+        """ extend the list (slbin) to the length (nfull)
         the attched element of list is 0
 
         such as, when
-            slbin = ['10010','10100'],
-            nfull = 4
-        extent to
-            ['10010','10100','00000','00000]
+
+        | slbin = ['10010','10100'],
+        | nfull = 4
+
+        extent it to
+
+        ['10010','10100','00000','00000]
         """
         nfull = int(nfull)
         n = len(slbin)
@@ -67,13 +70,16 @@ class Encode():
         return slbin + [ds for ii in range(dn)]
 
     def extend_bin(self, slbin, nfull):
-        """: extend the element of list (slbin) to the length (nfull)
+        """ extend the element of list (slbin) to the length (nfull)
 
         such as, when
-            slbin = ['10010','10100'],
-            nfull = 6
+        
+        | slbin = ['10010','10100'],
+        | nfull = 6
+
         extent to
-            ['010010','010100']
+
+        ['010010','010100']
         """
         nfull = int(nfull)
         n = len(slbin[0])
@@ -82,7 +88,7 @@ class Encode():
         return [ds + s for s in slbin]
 
     def extend_hex(self, slhex, nfull):
-        """: extend the element of list (slhex) to the length (nfull)
+        """ extend the element of list (slhex) to the length (nfull)
         """
         nfull = int(nfull)
         n = len(slhex[0])
@@ -91,7 +97,7 @@ class Encode():
         return [ds + s for s in slhex]
 
     def split_bin(self, sbin, nbit: int):
-        """: split sbin into many segment with the length nbit
+        """ split sbin into many segment with the length nbit
         """
         if isinstance(sbin, list):
             sl = []
@@ -109,6 +115,8 @@ class Encode():
             return sl
 
     def reverse_bin(self, slbin, nreverse):
+        """ reverse binary string list per `nreverse` value
+        """
         nreverse = int(nreverse)
         # consider that {len(slbin)} can not be divided by {nreverse} without remainder
         n = int(np.ceil(len(slbin) / nreverse))
@@ -116,6 +124,8 @@ class Encode():
         return [slbin[ii * nreverse + nreverse - 1 - jj] for ii in range(n) for jj in range(nreverse)]
 
     def merge_bin(self, slbin, nmerge):
+        """ merge binary string list per `nmerge` value
+        """
         nmerge = int(nmerge)
         # consider that {len(slbin)} can not be divided by {nmerge} without remainder
         n = int(np.ceil(len(slbin) / nmerge))
@@ -123,6 +133,8 @@ class Encode():
         return [''.join(slbin[nmerge * ii: nmerge * (ii + 1)]) for ii in range(n)]
 
     def dec2bin(self, idec, nbit=10, signed=False, name=''):
+        """ convert dec array to binary string list
+        """
         idec = np.int64(np.reshape(np.array(idec), [-1]))
         self.check_dec(idec, nbit, signed, name)
 
@@ -146,6 +158,8 @@ class Encode():
         return sl
 
     def hex2bin_str(self, shex):
+        """ convert hex string to binary string
+        """
         n = len(shex)
         sl = []
         for ii in range(n):
@@ -154,10 +168,14 @@ class Encode():
         return ''.join(sl)
 
     def hex2bin(self, data):
+        """ convert hex string list to binary string list
+        """
         data = np.reshape(np.array(data), [-1])
         return [self.hex2bin_str(d) for d in data]
 
     def bin2hex_str(self, sbin):
+        """ convert binary string to hex string
+        """
         n = len(sbin)
         nx = int(np.ceil(n / 4))
         sbin = ('0' * (nx * 4 - n)) + sbin
@@ -168,5 +186,7 @@ class Encode():
         return ''.join(sl)
 
     def bin2hex(self, data):
+        """ convert binary string list to hex string list
+        """
         data = np.reshape(np.array(data), [-1])
         return [self.bin2hex_str(d) for d in data]

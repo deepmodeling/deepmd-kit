@@ -18,10 +18,9 @@ class Wrap():
     r""" Generate the binary model file (model.pb)
     the model file can be use to run the NVNMD with lammps
     the pair style need set as:
-    ``` lammps
-    pair_style nvnmd model.pb
-    pair_coeff * *
-    ```
+
+    | :code:`pair_style nvnmd model.pb`
+    | :code:`pair_coeff * *`
 
     Parameters
     ----------

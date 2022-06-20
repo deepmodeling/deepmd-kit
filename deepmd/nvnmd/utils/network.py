@@ -18,6 +18,9 @@ def get_sess():
 
 
 def matmul2_qq(a, b, nbit):
+    """ quantized matmul operation for 2d tensor.
+    a and b is input tensor, nbit represent quantification precision
+    """
     sh_a = a.get_shape().as_list()
     sh_b = b.get_shape().as_list()
     a = tf.reshape(a, [-1, 1, sh_a[1]])
@@ -29,6 +32,9 @@ def matmul2_qq(a, b, nbit):
 
 
 def matmul3_qq(a, b, nbit):
+    """ quantized matmul operation for 3d tensor.
+    a and b is input tensor, nbit represent quantification precision
+    """
     sh_a = a.get_shape().as_list()
     sh_b = b.get_shape().as_list()
     a = tf.reshape(a, [-1, sh_a[1], 1, sh_a[2]])
@@ -43,6 +49,8 @@ def matmul3_qq(a, b, nbit):
 
 
 def qf(x, nbit):
+    """ quantize and floor tensor `x` with quantification precision `nbit`.
+    """
     prec = 2**nbit
 
     y = tf.floor(x * prec) / prec
@@ -51,6 +59,8 @@ def qf(x, nbit):
 
 
 def qr(x, nbit):
+    """ quantize and round tensor `x` with quantification precision `nbit`.
+    """
     prec = 2**nbit
 
     y = tf.round(x * prec) / prec
@@ -60,21 +70,34 @@ def qr(x, nbit):
 
 # fitting_net
 def tanh2(x, nbit=-1, nbit2=-1):
+    """ user-defined activation function tanh2
+
+    Parameter
+    ---------
+    x
+        input tensor
+    nbit
+        quantification precision for forward calculation
+    nbit2
+        quantification precision for backward calculation
+    """
     y = op_module.tanh2_nvnmd(x, 0, nbit, nbit2, -1)
-    # y = tf.tanh(x)
-    # x1 = tf.clip_by_value(x, -2, 2)
-    # xa = tf.abs(x1)
-    # x2 = x1 * x1
-    # x3 = x2 * x1
-    # a = 1/16
-    # b = -1/4
-    # y = a*x3*xa + b*x3 + x1
     return y
 
 
 def tanh4(x, nbit=-1, nbit2=-1):
+    """ user-defined activation function tanh4
+
+    Parameter
+    ---------
+    x
+        input tensor
+    nbit
+        quantification precision for forward calculation
+    nbit2
+        quantification precision for backward calculation
+    """
     y = op_module.tanh4_nvnmd(x, 0, nbit, nbit2, -1)
-    # y = tf.tanh(x)
     return y
 
 
@@ -138,7 +161,7 @@ def one_layer(inputs,
               initial_variables=None,
               mixed_prec=None,
               final_layer=False):
-    """: build one layer with continuous or quantized value.
+    """ build one layer with continuous or quantized value.
     Its weight and bias can be initialed with random or constant value.
     """
     if activation_fn is not None:

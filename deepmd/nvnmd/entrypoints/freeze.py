@@ -8,14 +8,14 @@ from deepmd.nvnmd.utils.fio import FioDic
 def filter_tensorVariableList(tensorVariableList) -> dict:
     """: get the name of variable for NVNMD
 
-    descrpt_attr/t_avg:0
-    descrpt_attr/t_std:0
-    filter_type_{atom i}/matrix_{layer l}_{atomj}:0
-    filter_type_{atom i}/bias_{layer l}_{atomj}:0
-    layer_{layer l}_type_{atom i}/matrix:0
-    layer_{layer l}_type_{atom i}/bias:0
-    final_layer_type_{atom i}/matrix:0
-    final_layer_type_{atom i}/bias:0
+    | :code:`descrpt_attr/t_avg:0`
+    | :code:`descrpt_attr/t_std:0`
+    | :code:`filter_type_{atom i}/matrix_{layer l}_{atomj}:0`
+    | :code:`filter_type_{atom i}/bias_{layer l}_{atomj}:0`
+    | :code:`layer_{layer l}_type_{atom i}/matrix:0`
+    | :code:`layer_{layer l}_type_{atom i}/bias:0`
+    | :code:`final_layer_type_{atom i}/matrix:0`
+    | :code:`final_layer_type_{atom i}/bias:0`
     """
     nameList = [tv.name for tv in tensorVariableList]
     nameList = [name.replace(':0', '') for name in nameList]

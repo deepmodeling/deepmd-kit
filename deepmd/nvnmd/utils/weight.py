@@ -8,6 +8,8 @@ log = logging.getLogger(__name__)
 
 
 def get_weight(weights, key):
+    """get weight value according to key
+    """
     if key in weights.keys():
         return weights[key]
     else:
@@ -16,6 +18,8 @@ def get_weight(weights, key):
 
 
 def get_normalize(weights: dict):
+    """Get normalize parameter (avg and std) of :math:`s_{ji}`
+    """
     key = f"descrpt_attr.t_avg"
     avg = get_weight(weights, key)
     key = f"descrpt_attr.t_std"
@@ -24,6 +28,8 @@ def get_normalize(weights: dict):
 
 
 def get_rng_s(weights: dict):
+    """ guess the range of :math:`s_{ji}`
+    """
     avg, std = get_normalize(weights)
     smin = np.min(-avg[:, 0] / std[:, 0])
     smax = np.max(2.0 / std[:, 0])
@@ -31,7 +37,7 @@ def get_rng_s(weights: dict):
 
 
 def get_filter_weight(weights: dict, spe_i: int, spe_j: int, layer_l: int):
-    """: get weight and bias of embedding network
+    """ get weight and bias of embedding network
 
     Parameters
     ----------
@@ -55,7 +61,7 @@ def get_filter_weight(weights: dict, spe_i: int, spe_j: int, layer_l: int):
 
 
 def get_fitnet_weight(weights: dict, spe_i: int, layer_l: int, nlayer: int = 10):
-    """: get weight and bias of fitting network
+    """ get weight and bias of fitting network
 
     Parameters
     ----------
@@ -81,6 +87,8 @@ def get_fitnet_weight(weights: dict, spe_i: int, layer_l: int, nlayer: int = 10)
 
 
 def get_constant_initializer(weights, name):
+    """ get initial value by name and create a initializer
+    """
     scope = tf.get_variable_scope().name
     name = scope + '.' + name
     value = get_weight(weights, name)
