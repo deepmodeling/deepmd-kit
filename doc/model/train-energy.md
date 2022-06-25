@@ -42,6 +42,6 @@ The {ref}`loss <loss>` section in the `input.json` is
 	"limit_pref_v":	0
     }
 ```
-The options {ref}`start_pref_e <loss[ener]/start_pref_e>`, {ref}`limit_pref_e <loss[ener]/limit_pref_e>`, {ref}`start_pref_f <loss[ener]/start_pref_f>`, {ref}`limit_pref_f <loss[ener]/limit_pref_f>`, {ref}`start_pref_v <start_pref_v>` and {ref}`limit_pref_v <limit_pref_v>` determine the start and limit prefactors of energy, force and virial, respectively.
+The options {ref}`start_pref_e <loss[ener]/start_pref_e>`, {ref}`limit_pref_e <loss[ener]/limit_pref_e>`, {ref}`start_pref_f <loss[ener]/start_pref_f>`, {ref}`limit_pref_f <loss[ener]/limit_pref_f>`, {ref}`start_pref_v <loss[ener]/start_pref_v>` and {ref}`limit_pref_v <loss[ener]/limit_pref_v>` determine the start and limit prefactors of energy, force and virial, respectively.
 
-If one does not want to train with virial, then he/she may set the virial prefactors {ref}`start_pref_v <start_pref_v>` and {ref}`limit_pref_v <limit_pref_v>` to 0.
+If one does not want to train with virial, then he/she may set the virial prefactors {ref}`start_pref_v <loss[ener]/start_pref_v>` and {ref}`limit_pref_v <loss[ener]/limit_pref_v>` to 0.
