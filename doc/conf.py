@@ -16,6 +16,8 @@ import sys
 import recommonmark
 from recommonmark.transform import AutoStructify
 from datetime import date
+from deepmd.common import ACTIVATION_FN_DICT, PRECISION_DICT
+from deepmd.utils.argcheck import list_to_doc
 
 def mkindex(dirname):
     dirname = dirname + "/"
@@ -231,6 +233,11 @@ numpydoc_xref_aliases = {}
 import typing
 for typing_type in typing.__all__:
     numpydoc_xref_aliases[typing_type] = "typing.%s" % typing_type
+
+rst_epilog = """
+.. |ACTIVATION_FN| replace:: %s
+.. |PRECISION| replace:: %s
+""" % (list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
 
 # -- Options for HTML output -------------------------------------------------
 
