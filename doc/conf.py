@@ -112,27 +112,6 @@ project = 'DeePMD-kit'
 copyright = '2017-%d, DeepModeling' % date.today().year
 author = 'DeepModeling'
 
-def run_doxygen(folder):
-    """Run the doxygen make command in the designated folder"""
-
-    try:
-        retcode = subprocess.call("cd %s; doxygen Doxyfile" % folder, shell=True)
-        if retcode < 0:
-            sys.stderr.write("doxygen terminated by signal %s" % (-retcode))
-    except OSError as e:
-        sys.stderr.write("doxygen execution failed: %s" % e)
-
-
-def generate_doxygen_xml(app):
-    """Run the doxygen make commands if we're on the ReadTheDocs server"""
-
-    read_the_docs_build = os.environ.get('READTHEDOCS', None) == 'True'
-
-    if read_the_docs_build:
-        run_doxygen("./")
-    else:
-        subprocess.call("doxygen Doxyfile", shell=True)
-
 def run_apidoc(_):
     from sphinx.ext.apidoc import main
     import sys
@@ -144,7 +123,6 @@ def run_apidoc(_):
 def setup(app):
 
     # Add hook for building doxygen xml when needed
-    app.connect("builder-inited", generate_doxygen_xml)
     app.connect('builder-inited', run_apidoc)
 
 # -- General configuration ---------------------------------------------------
