@@ -6,7 +6,7 @@ from deepmd.nvnmd.utils.fio import FioDic
 
 
 def filter_tensorVariableList(tensorVariableList) -> dict:
-    """: get the name of variable for NVNMD
+    r"""Get the name of variable for NVNMD
 
     | :code:`descrpt_attr/t_avg:0`
     | :code:`descrpt_attr/t_std:0`
@@ -37,7 +37,7 @@ def filter_tensorVariableList(tensorVariableList) -> dict:
 
 
 def save_weight(sess, file_name: str = 'nvnmd/weight.npy'):
-    """: save the dictionary of weight to a npy file
+    r"""Save the dictionary of weight to a npy file
     """
     tvs = tf.global_variables()
     dic_key_tv = filter_tensorVariableList(tvs)

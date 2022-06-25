@@ -9,7 +9,7 @@ log = logging.getLogger(__name__)
 
 
 class Fio:
-    """ basic class for FIO
+    r"""Basic class for FIO
     """
     def __init__(self):
         pass
@@ -52,7 +52,7 @@ class Fio:
 
 
 class FioDic:
-    r""": input and output for dict class data
+    r"""Input and output for dict class data
     the file can be .json or .npy file containing a dictionary
     """
     def __init__(self) -> None:
@@ -81,7 +81,7 @@ class FioDic:
             return default_value
 
     def update(self, jdata, jdata_o):
-        """ update key-value pair is key in jdata_o.keys()
+        r"""Update key-value pair is key in jdata_o.keys()
 
         Parameter
         =========
@@ -100,7 +100,7 @@ class FioDic:
 
 
 class FioNpyDic:
-    r""" input and output for .npy file containing dictionary
+    r"""Input and output for .npy file containing dictionary
     """
     def __init__(self):
         pass
@@ -120,13 +120,13 @@ class FioNpyDic:
 
 
 class FioJsonDic:
-    r""" input and output for .json file containing dictionary
+    r"""Input and output for .json file containing dictionary
     """
     def __init__(self):
         pass
 
     def load(self, file_name='', default_value={}):
-        """ load .json file into dict
+        r"""Load .json file into dict
         """
         if Fio().exits(file_name):
             log.info(f"load {file_name}")
@@ -139,7 +139,7 @@ class FioJsonDic:
             return default_value
 
     def save(self, file_name='', dic={}):
-        """ save dict into .json file
+        r"""Save dict into .json file
         """
         log.info(f"write jdata to {file_name}")
         Fio().create_file_path(file_name)
@@ -148,13 +148,13 @@ class FioJsonDic:
 
 
 class FioBin():
-    r""" input and output for binary file
+    r"""Input and output for binary file
     """
     def __init__(self):
         pass
 
     def load(self, file_name='', default_value=''):
-        """ load binary file into bytes value
+        r"""Load binary file into bytes value
         """
         if Fio().exits(file_name):
             log.info(f"load {file_name}")
@@ -167,7 +167,7 @@ class FioBin():
             return default_value
 
     def save(self, file_name: str = '', data: str = ''):
-        """ save hex string into binary file
+        r"""Save hex string into binary file
         """
         log.info(f"write binary to {file_name}")
         Fio().create_file_path(file_name)
@@ -181,13 +181,13 @@ class FioBin():
 
 
 class FioTxt():
-    r""": input and output for .txt file with string
+    r"""Input and output for .txt file with string
     """
     def __init__(self):
         pass
 
     def load(self, file_name='', default_value=[]):
-        """ load .txt file into string list
+        r"""Load .txt file into string list
         """
         if Fio().exits(file_name):
             log.info(f"load {file_name}")
@@ -200,7 +200,7 @@ class FioTxt():
             return default_value
 
     def save(self, file_name: str = '', data: list = []):
-        """ save string list into .txt file
+        r"""Save string list into .txt file
         """
         log.info(f"write string to txt file {file_name}")
         Fio().create_file_path(file_name)

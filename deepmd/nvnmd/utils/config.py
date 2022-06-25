@@ -34,7 +34,7 @@ class NvnmdConfig():
         self.init_from_jdata(jdata)
 
     def init_from_jdata(self, jdata: dict = {}):
-        """ initial this class with `jdata` loaded from input script
+        r"""Initial this class with `jdata` loaded from input script
         """
         if jdata == {}:
             return None
@@ -62,7 +62,7 @@ class NvnmdConfig():
             self.init_net_size()
 
     def init_value(self):
-        """ initial member with dict
+        r"""Initial member with dict
         """
         self.dscp = self.config['dscp']
         self.fitn = self.config['fitn']
@@ -71,7 +71,7 @@ class NvnmdConfig():
         self.nbit = self.config['nbit']
 
     def init_train_mode(self, mod='cnn'):
-        """ configure for taining cnn or qnn
+        r"""Configure for taining cnn or qnn
         """
         if mod == 'cnn':
             self.restore_descriptor = False
@@ -85,7 +85,7 @@ class NvnmdConfig():
             self.quantize_fitting_net = True
 
     def init_from_config(self, jdata):
-        """ initial member element one by one
+        r"""Initial member element one by one
         """
         self.config = FioDic().update(jdata, self.config)
         self.config['dscp'] = self.init_dscp(self.config['dscp'], self.config)
@@ -96,7 +96,7 @@ class NvnmdConfig():
         self.init_value()
 
     def init_net_size(self):
-        """ initial net_size
+        r"""Initial net_size
         """
         # self.net_size = self.fitn['neuron'][0]
         self.net_size = self.config['fitn']['neuron'][0]
@@ -109,7 +109,7 @@ class NvnmdConfig():
                 log.error("NVNMD: don't have the configure of net_size")
 
     def init_from_deepmd_input(self, jdata):
-        """ initial members with input script of deepmd
+        r"""Initial members with input script of deepmd
         """
         self.config['dscp'] = FioDic().update(jdata['descriptor'], self.config['dscp'])
         self.config['fitn'] = FioDic().update(jdata['fitting_net'], self.config['fitn'])
@@ -120,7 +120,7 @@ class NvnmdConfig():
         self.init_value()
 
     def init_dscp(self, jdata: dict, jdata_parent: dict = {}) -> dict:
-        """ initial members about descriptor
+        r"""Initial members about descriptor
         """
         jdata['M1'] = jdata['neuron'][-1]
         jdata['M2'] = jdata['axis_neuron']
@@ -136,7 +136,7 @@ class NvnmdConfig():
         return jdata
 
     def init_fitn(self, jdata: dict, jdata_parent: dict = {}) -> dict:
-        """ initial members about fitting network
+        r"""Initial members about fitting network
         """
         M1 = jdata_parent['dscp']['M1']
         M2 = jdata_parent['dscp']['M2']
@@ -148,14 +148,14 @@ class NvnmdConfig():
         return jdata
 
     def init_size(self, jdata: dict, jdata_parent: dict = {}) -> dict:
-        """ initial members about ram capacity
+        r"""Initial members about ram capacity
         """
         jdata['Na'] = jdata['NSPU']
         jdata['NaX'] = jdata['MSPU']
         return jdata
 
     def init_ctrl(self, jdata: dict, jdata_parent: dict = {}) -> dict:
-        """ initial members about control signal
+        r"""Initial members about control signal
         """
         ntype_max = jdata_parent['dscp']['ntype_max']
         jdata['NSADV'] = jdata['NSTDM'] + 1
@@ -165,7 +165,7 @@ class NvnmdConfig():
         return jdata
 
     def init_nbit(self, jdata: dict, jdata_parent: dict = {}) -> dict:
-        """ initial members about quantification precision
+        r"""Initial members about quantification precision
         """
         Na = jdata_parent['size']['Na']
         NaX = jdata_parent['size']['NaX']
@@ -183,7 +183,7 @@ class NvnmdConfig():
         return jdata
 
     def save(self, file_name=None):
-        """ save all configuration to file
+        r"""Save all configuration to file
         """
         if file_name is None:
             file_name = self.save_path
@@ -192,7 +192,7 @@ class NvnmdConfig():
         FioDic().save(file_name, self.config)
 
     def get_dscp_jdata(self):
-        """ generate `model/descriptor` in input script
+        r"""Generate `model/descriptor` in input script
         """
         dscp = self.dscp
         jdata = jdata_deepmd_input['model']['descriptor']
@@ -205,7 +205,7 @@ class NvnmdConfig():
         return jdata
 
     def get_fitn_jdata(self):
-        """ generate `model/fitting_net` in input script
+        r"""Generate `model/fitting_net` in input script
         """
         fitn = self.fitn
         jdata = jdata_deepmd_input['model']['fitting_net']
@@ -213,7 +213,7 @@ class NvnmdConfig():
         return jdata
 
     def get_model_jdata(self):
-        """ generate `model` in input script
+        r"""Generate `model` in input script
         """
         jdata = jdata_deepmd_input['model']
         jdata['descriptor'] = self.get_dscp_jdata()
@@ -221,7 +221,7 @@ class NvnmdConfig():
         return jdata
 
     def get_nvnmd_jdata(self):
-        """ generate `nvnmd` in input script
+        r"""Generate `nvnmd` in input script
         """
         jdata = jdata_deepmd_input['nvnmd']
         jdata['net_size'] = self.net_size
@@ -236,22 +236,22 @@ class NvnmdConfig():
         return jdata
 
     def get_learning_rate_jdata(self):
-        """ generate `learning_rate` in input script
+        r"""Generate `learning_rate` in input script
         """
         return jdata_deepmd_input['learning_rate']
 
     def get_loss_jdata(self):
-        """ generate `loss` in input script
+        r"""Generate `loss` in input script
         """
         return jdata_deepmd_input['loss']
 
     def get_training_jdata(self):
-        """ generate `training` in input script
+        r"""Generate `training` in input script
         """
         return jdata_deepmd_input['training']
 
     def get_deepmd_jdata(self):
-        """ generate input script with member element one by one
+        r"""Generate input script with member element one by one
         """
         jdata = jdata_deepmd_input.copy()
         jdata['model'] = self.get_model_jdata()
@@ -262,7 +262,7 @@ class NvnmdConfig():
         return jdata
 
     def disp_message(self):
-        """ display the log of NVNMD
+        r"""Display the log of NVNMD
         """
         NVNMD_CONFIG = (
             f"enable: {self.enable}",

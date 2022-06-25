@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 
 
 class MapTable:
-    r""" Generate the mapping table describing the relastionship of
+    r"""Generate the mapping table describing the relastionship of
     atomic distance, cutoff function, and embedding matrix.
 
     three mapping table will be built:
