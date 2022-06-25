@@ -1,6 +1,6 @@
 # Overall
 
-A model has two parts, a descriptor that maps atomic configuration to a set of symmetry invariant features, and a fitting net that takes descriptor as input and predicts the atomic contribution to the target physical property. It's defined in the `model` section of the `input.json`, for example,
+A model has two parts, a descriptor that maps atomic configuration to a set of symmetry invariant features, and a fitting net that takes descriptor as input and predicts the atomic contribution to the target physical property. It's defined in the {ref}`model <model>` section of the `input.json`, for example,
 ```json
     "model": {
         "type_map":	["O", "H"],
@@ -12,9 +12,9 @@ A model has two parts, a descriptor that maps atomic configuration to a set of s
         }
     }
 ```
-The two subsections, `descriptor` and `fitting_net`, define the descriptor and the fitting net, respectively.
+The two subsections, {ref}`descriptor <model/descriptor>` and {ref}`fitting_net <model/fitting_net>`, define the descriptor and the fitting net, respectively.
 
-The `type_map` is optional, which provides the element names (but not necessarily same with the actual name of the element) of the corresponding atom types. A model for water, as in this example, has two kinds of atoms. The atom types are internally recorded as integers, e.g., `0` for oxygen and `1` for hydrogen here. A mapping from the atom type to their names is provided by `type_map`. 
+The {ref}`type_map <model/type_map>` is optional, which provides the element names (but not necessarily same with the actual name of the element) of the corresponding atom types. A model for water, as in this example, has two kinds of atoms. The atom types are internally recorded as integers, e.g., `0` for oxygen and `1` for hydrogen here. A mapping from the atom type to their names is provided by {ref}`type_map <model/type_map>`. 
 
 DeePMD-kit implements the following descriptors:
 1. [`se_e2_a`](train-se-e2-a.md): DeepPot-SE constructed from all information (both angular and radial) of atomic configurations. The embedding takes the distance between atoms as input.
