@@ -19,7 +19,7 @@ void deepmd::soft_min_switch_virial_grad_cpu(
 {
   // reset the frame to 0
   for (int ii = 0; ii < nloc; ++ii){
-    grad_net[ii] = 0;
+    grad_net[ii] = (FPTYPE)0.;
   }      
 
   // compute grad of one frame

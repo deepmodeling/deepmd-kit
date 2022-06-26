@@ -64,7 +64,7 @@ class DPPath(ABC):
     
     @abstractmethod
     def rglob(self, pattern: str) -> List["DPPath"]:
-        """This is like calling :metd:`DPPath.glob()` with `**/` added in front
+        """This is like calling :meth:`DPPath.glob()` with `**/` added in front
         of the given relative pattern.
         
         Parameters
@@ -161,7 +161,7 @@ class DPOSPath(DPPath):
         return list([type(self)(p) for p in self.path.glob(pattern)])
 
     def rglob(self, pattern: str) -> List["DPPath"]:
-        """This is like calling :metd:`DPPath.glob()` with `**/` added in front
+        """This is like calling :meth:`DPPath.glob()` with `**/` added in front
         of the given relative pattern.
         
         Parameters
@@ -277,7 +277,7 @@ class DPH5Path(DPPath):
         return list([type(self)("%s#%s"%(self.root_path, pp)) for pp in globfilter(subpaths, self._connect_path(pattern))])
 
     def rglob(self, pattern: str) -> List["DPPath"]:
-        """This is like calling :metd:`DPPath.glob()` with `**/` added in front
+        """This is like calling :meth:`DPPath.glob()` with `**/` added in front
         of the given relative pattern.
         
         Parameters

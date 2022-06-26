@@ -102,7 +102,7 @@ def compress(
         10 * step,
         int(frequency),
     ]
-    jdata["training"]["save_ckpt"] = "model-compression/model.ckpt"
+    jdata["training"]["save_ckpt"] = os.path.join("model-compression", "model.ckpt")
     jdata = update_deepmd_input(jdata)
     jdata = normalize(jdata)
 
@@ -134,6 +134,9 @@ def compress(
             "exceeding protobuf's limitation (2 GB). You should try to "
             "increase the step size." % step
         ) from e
+
+    # reset the graph, otherwise the size limitation will be only 2 GB / 2 = 1 GB
+    tf.reset_default_graph()
 
     # stage 2: freeze the model
     log.info("\n\n")

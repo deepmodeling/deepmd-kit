@@ -12,6 +12,8 @@ jobs:
         - variant: cpu
         - variant: cuda
     steps:
+    - name: work around permission issue
+      run: git config --global --add safe.directory /__w/deepmd-kit/deepmd-kit
     - uses: actions/checkout@master
       with:
         submodules: true

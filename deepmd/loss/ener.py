@@ -5,10 +5,17 @@ from deepmd.common import ClassArg, add_data_requirement
 from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import global_cvt_2_ener_float
 from deepmd.utils.sess import run_sess
+from .loss import Loss
 
-class EnerStdLoss () :
+
+class EnerStdLoss (Loss) :
     """
     Standard loss function for DP models
+
+    Parameters
+    ----------
+    enable_atom_ener_coeff : bool
+        if true, the energy will be computed as \sum_i c_i E_i
     """
     def __init__ (self, 
                   starter_learning_rate : float, 
@@ -22,7 +29,8 @@ class EnerStdLoss () :
                   limit_pref_ae : float = 0.0,
                   start_pref_pf : float = 0.0,
                   limit_pref_pf : float = 0.0,
-                  relative_f : float = None 
+                  relative_f : float = None,
+                  enable_atom_ener_coeff: bool=False,
     ) -> None:
         self.starter_learning_rate = starter_learning_rate
         self.start_pref_e = start_pref_e
@@ -36,6 +44,7 @@ class EnerStdLoss () :
         self.start_pref_pf = start_pref_pf
         self.limit_pref_pf = limit_pref_pf
         self.relative_f = relative_f
+        self.enable_atom_ener_coeff = enable_atom_ener_coeff
         self.has_e = (self.start_pref_e != 0.0 or self.limit_pref_e != 0.0)
         self.has_f = (self.start_pref_f != 0.0 or self.limit_pref_f != 0.0)
         self.has_v = (self.start_pref_v != 0.0 or self.limit_pref_v != 0.0)
@@ -47,6 +56,8 @@ class EnerStdLoss () :
         add_data_requirement('virial', 9, atomic=False, must=False, high_prec=False)
         add_data_requirement('atom_ener', 1, atomic=True, must=False, high_prec=False)
         add_data_requirement('atom_pref', 1, atomic=True, must=False, high_prec=False, repeat=3)
+        if self.enable_atom_ener_coeff:
+            add_data_requirement('atom_ener_coeff', 1, atomic=True, must=False, high_prec=False, default=1.)
 
     def build (self, 
                learning_rate,
@@ -69,6 +80,18 @@ class EnerStdLoss () :
         find_atom_ener = label_dict['find_atom_ener']                
         find_atom_pref = label_dict['find_atom_pref']                
 
+        if self.enable_atom_ener_coeff:
+            # when ener_coeff (\nu) is defined, the energy is defined as 
+            # E = \sum_i \nu_i E_i
+            # instead of the sum of atomic energies.
+            #
+            # A case is that we want to train reaction energy
+            # A + B -> C + D
+            # E = - E(A) - E(B) + E(C) + E(D)
+            # A, B, C, D could be put far away from each other
+            atom_ener_coeff = label_dict['atom_ener_coeff']
+            atom_ener_coeff = tf.reshape(atom_ener_coeff, tf.shape(atom_ener))
+            energy = tf.reduce_sum(atom_ener_coeff * atom_ener, 1)
         l2_ener_loss = tf.reduce_mean( tf.square(energy - energy_hat), name='l2_'+suffix)
 
         force_reshape = tf.reshape (force, [-1])
@@ -221,7 +244,7 @@ class EnerStdLoss () :
         return print_str      
 
 
-class EnerDipoleLoss () :
+class EnerDipoleLoss (Loss) :
     def __init__ (self, 
                   starter_learning_rate : float,
                   start_pref_e : float = 0.1,

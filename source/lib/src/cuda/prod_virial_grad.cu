@@ -6,7 +6,7 @@ __device__ inline FPTYPE dev_dot9(
     const FPTYPE * arr1, 
     const FPTYPE * arr2) 
 {
-    FPTYPE result = 0.0;
+    FPTYPE result = (FPTYPE)0.0;
     for(int ii=0; ii<9; ii++){
         result += arr1[ii] * arr2[ii];
     }
@@ -25,7 +25,7 @@ __global__ void virial_grad_wrt_neighbors_a(
 {
     // idy -> nnei
     const unsigned int tid = threadIdx.x;
-    const unsigned int idx = blockIdx.x * blockDim.x + tid;
+    const int_64 idx = blockIdx.x * blockDim.x + tid;
     const unsigned int idy = blockIdx.y;
     const unsigned int idw = threadIdx.y;
     const int ndescrpt = nnei * 4;
@@ -47,7 +47,7 @@ __global__ void virial_grad_wrt_neighbors_a(
             tmp[dd0 * 3 + dd1] = rij[idx * nnei * 3 + idy * 3 + dd1] * env_deriv[idx * ndescrpt * 3 + idy * 4 * 3 + idw * 3 + dd0];
         }
     }
-    grad_net[idx * ndescrpt + idy * 4 + idw] -= -1.0 * dev_dot9(grad_one, tmp);
+    grad_net[idx * ndescrpt + idy * 4 + idw] -= (FPTYPE)-1.0 * dev_dot9(grad_one, tmp);
 }
 
 template<typename FPTYPE>
@@ -62,7 +62,7 @@ __global__ void virial_grad_wrt_neighbors_r(
 {
     // idy -> nnei
     const unsigned int tid = threadIdx.x;
-    const unsigned int idx = blockIdx.x * blockDim.x + tid;
+    const int_64 idx = blockIdx.x * blockDim.x + tid;
     const unsigned int idy = blockIdx.y;
     const int ndescrpt = nnei;
     __shared__ FPTYPE grad_one[9];
@@ -83,7 +83,7 @@ __global__ void virial_grad_wrt_neighbors_r(
             tmp[dd0 * 3 + dd1] = rij[idx * nnei * 3 + idy * 3 + dd1] * env_deriv[idx * ndescrpt * 3 + idy * 3 + dd0];
         }
     }
-    grad_net[idx * ndescrpt + idy] -= -1.0 * dev_dot9(grad_one, tmp);
+    grad_net[idx * ndescrpt + idy] -= (FPTYPE)-1.0 * dev_dot9(grad_one, tmp);
 }
 
 namespace deepmd {

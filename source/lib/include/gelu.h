@@ -1,4 +1,5 @@
 #pragma once
+#include "device.h"
 
 namespace deepmd{
 
@@ -6,14 +7,14 @@ template<typename FPTYPE>
 void gelu_cpu(
     FPTYPE * out, 
     const FPTYPE * xx, 
-    const int size);
+    const int_64 size);
 
 template<typename FPTYPE>
 void gelu_grad_cpu(
     FPTYPE * out, 
     const FPTYPE * xx,
     const FPTYPE * dy, 
-    const int size);
+    const int_64 size);
 
 template<typename FPTYPE>
 void gelu_grad_grad_cpu(
@@ -21,21 +22,21 @@ void gelu_grad_grad_cpu(
     const FPTYPE * xx,
     const FPTYPE * dy, 
     const FPTYPE * dy_2,
-    const int size);
+    const int_64 size);
 
 #if GOOGLE_CUDA
 template<typename FPTYPE>
 void gelu_gpu_cuda(
     FPTYPE * out, 
     const FPTYPE * xx, 
-    const int size);
+    const int_64 size);
 
 template<typename FPTYPE>
 void gelu_grad_gpu_cuda(
     FPTYPE * out, 
     const FPTYPE * xx,
     const FPTYPE * dy, 
-    const int size);
+    const int_64 size);
 
 template<typename FPTYPE>
 void gelu_grad_grad_gpu_cuda(
@@ -43,7 +44,7 @@ void gelu_grad_grad_gpu_cuda(
     const FPTYPE * xx,
     const FPTYPE * dy, 
     const FPTYPE * dy_2,
-    const int size);
+    const int_64 size);
 #endif // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
@@ -51,14 +52,14 @@ template<typename FPTYPE>
 void gelu_gpu_rocm(
     FPTYPE * out, 
     const FPTYPE * xx, 
-    const int size);
+    const int_64 size);
 
 template<typename FPTYPE>
 void gelu_grad_gpu_rocm(
     FPTYPE * out, 
     const FPTYPE * xx,
     const FPTYPE * dy, 
-    const int size);
+    const int_64 size);
 
 template<typename FPTYPE>
 void gelu_grad_grad_gpu_rocm(
@@ -66,7 +67,7 @@ void gelu_grad_grad_gpu_rocm(
     const FPTYPE * xx,
     const FPTYPE * dy, 
     const FPTYPE * dy_2,
-    const int size);
+    const int_64 size);
 
 #endif//TENSORFLOW_USE_ROCM
 }

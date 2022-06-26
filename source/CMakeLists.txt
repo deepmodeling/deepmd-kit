@@ -56,6 +56,7 @@ endif()
 
 # define USE_CUDA_TOOLKIT
 if (USE_CUDA_TOOLKIT)
+  set(CUDA_USE_STATIC_CUDA_RUNTIME OFF CACHE INTERNAL "")
   find_package(CUDA REQUIRED)
   add_definitions("-DGOOGLE_CUDA")
   message(STATUS "Found CUDA in ${CUDA_TOOLKIT_ROOT_DIR}, build nv GPU support")

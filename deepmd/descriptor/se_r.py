@@ -2,8 +2,7 @@ import numpy as np
 from typing import Tuple, List
 
 from deepmd.env import tf
-from deepmd.common import get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, cast_precision
-from deepmd.utils.argcheck import list_to_doc
+from deepmd.common import get_activation_func, get_precision, cast_precision
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import op_module
@@ -46,13 +45,12 @@ class DescrptSeR (DescrptSe):
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     activation_function
-            The activation function in the embedding net. Supported options are {0}
+            The activation function in the embedding net. Supported options are |ACTIVATION_FN|
     precision
-            The precision of the embedding net parameters. Supported options are {1}
+            The precision of the embedding net parameters. Supported options are |PRECISION|
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
     """
-    @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   rcut: float,
                   rcut_smth: float,
@@ -415,7 +413,7 @@ class DescrptSeR (DescrptSe):
         """
         [net_deriv] = tf.gradients (atom_ener, self.descrpt_reshape)
         tf.summary.histogram('net_derivative', net_deriv)
-        net_deriv_reshape = tf.reshape (net_deriv, [-1, natoms[0] * self.ndescrpt])        
+        net_deriv_reshape = tf.reshape (net_deriv, [np.cast['int64'](-1), natoms[0] * np.cast['int64'](self.ndescrpt)])        
         force \
             = op_module.prod_force_se_r (net_deriv_reshape,
                                          self.descrpt_deriv,
@@ -441,13 +439,13 @@ class DescrptSeR (DescrptSe):
                      suffix = '', 
                      trainable = True) :
         start_index = 0
-        inputs = tf.reshape(inputs, [-1, self.ndescrpt * natoms[0]])
+        inputs = tf.reshape(inputs, [-1, natoms[0], self.ndescrpt])
         output = []
         if not (self.type_one_side and len(self.exclude_types) == 0):
             for type_i in range(self.ntypes):
                 inputs_i = tf.slice (inputs,
-                                     [ 0, start_index*      self.ndescrpt],
-                                     [-1, natoms[2+type_i]* self.ndescrpt] )
+                                     [ 0, start_index, 0],
+                                     [-1, natoms[2+type_i], -1] )
                 inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
                 if self.type_one_side:
                     # reuse NN parameters for all types to support type_one_side along with exclude_types
@@ -456,7 +454,7 @@ class DescrptSeR (DescrptSe):
                 else:
                     filter_name = 'filter_type_'+str(type_i)+suffix
                 layer = self._filter_r(inputs_i, type_i, name=filter_name, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
-                layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_out()])
+                layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i], self.get_dim_out()])
                 output.append(layer)
                 start_index += natoms[2+type_i]
         else :
@@ -464,7 +462,7 @@ class DescrptSeR (DescrptSe):
             inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
             type_i = -1
             layer = self._filter_r(inputs_i, type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
-            layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0] * self.get_dim_out()])
+            layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0], self.get_dim_out()])
             output.append(layer)
         output = tf.concat(output, axis = 1)
         return output
@@ -540,8 +538,8 @@ class DescrptSeR (DescrptSe):
                 # with (natom x nei_type_i) x 1
                 xyz_scatter = tf.reshape(inputs_i, [-1, 1])
                 if self.compress and ((type_input, type_i) not in self.exclude_types):
-                    info = [self.lower, self.upper, self.upper * self.table_config[0], self.table_config[1], self.table_config[2], self.table_config[3]]
                     net = 'filter_' + str(type_input) + '_net_' + str(type_i)
+                    info = [self.lower[net], self.upper[net], self.upper[net] * self.table_config[0], self.table_config[1], self.table_config[2], self.table_config[3]]
                     xyz_scatter = op_module.tabulate_fusion_se_r(tf.cast(self.table.data[net], self.filter_precision), info, inputs_i, last_layer_size = outputs_size[-1]) 
                 elif (type_input, type_i) not in self.exclude_types:
                     xyz_scatter = embedding_net(xyz_scatter, 

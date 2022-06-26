@@ -83,6 +83,28 @@ def convert_10_to_21(input_model: str, output_model: str):
     print("the converted output model (2.1 support) is saved in %s" % output_model)
 
 
+def convert_012_to_21(input_model: str, output_model: str):
+    """Convert DP 0.12 graph to 2.1 graph.
+    
+    Parameters
+    ----------
+    input_model : str
+        filename of the input graph
+    output_model : str
+        filename of the output graph
+    """
+    convert_pb_to_pbtxt(input_model, 'frozen_model.pbtxt')
+    convert_dp012_to_dp10('frozen_model.pbtxt')
+    convert_dp10_to_dp11('frozen_model.pbtxt')
+    convert_dp12_to_dp13('frozen_model.pbtxt')
+    convert_dp13_to_dp20('frozen_model.pbtxt')
+    convert_dp20_to_dp21('frozen_model.pbtxt')
+    convert_pbtxt_to_pb('frozen_model.pbtxt', output_model)
+    if os.path.isfile('frozen_model.pbtxt'):
+        os.remove('frozen_model.pbtxt')
+    print("the converted output model (2.1 support) is saved in %s" % output_model)
+
+
 def convert_20_to_21(input_model: str, output_model: str):
     """Convert DP 2.0 graph to 2.1 graph.
     
@@ -132,6 +154,24 @@ def convert_pbtxt_to_pb(pbtxtfile: str, pbfile: str):
         # Merges the human-readable string in `file_content` into `graph_def`.
         text_format.Merge(file_content, graph_def)
         tf.train.write_graph(graph_def, './', pbfile, as_text=False)
+
+
+def convert_dp012_to_dp10(file: str):
+    """Convert DP 1.0 graph text to 1.1 graph text.
+    
+    Parameters
+    ----------
+    file : str
+        filename of the graph text
+    """
+    with open(file) as fp:
+        file_content = fp.read()
+    file_content = file_content\
+                   .replace('DescrptNorot', 'DescrptSeA') \
+                   .replace('ProdForceNorot', 'ProdForceSeA') \
+                   .replace('ProdVirialNorot', 'ProdVirialSeA')
+    with open(file, 'w') as fp:
+        fp.write(file_content)
 
 
 def convert_dp10_to_dp11(file: str):

@@ -11,10 +11,10 @@ __global__ void force_deriv_wrt_center_atom(
     const int ndescrpt)
 {
   __shared__ FPTYPE data[THREADS_PER_BLOCK * 3];
-  unsigned int bid = blockIdx.x;
+  int_64 bid = blockIdx.x;
   unsigned int tid = threadIdx.x;
   for (int ii = tid; ii < THREADS_PER_BLOCK * 3; ii += THREADS_PER_BLOCK) {
-    data[ii] = 0.f;
+    data[ii] = (FPTYPE)0.;
   }
   for (int ii = tid; ii < ndescrpt; ii += THREADS_PER_BLOCK) {
     for (int jj = 0; jj < 3; jj++) {
@@ -49,7 +49,7 @@ __global__ void force_deriv_wrt_neighbors_a(
     const int nnei)
 {  
     // idy -> nnei
-    const unsigned int idx = blockIdx.x;
+    const int_64 idx = blockIdx.x;
     const unsigned int idy = blockIdx.y * blockDim.x + threadIdx.x;
     const unsigned int idz = threadIdx.y;
     const int ndescrpt = nnei * 4;
@@ -61,7 +61,7 @@ __global__ void force_deriv_wrt_neighbors_a(
     if (j_idx < 0) {
         return;
     }
-    FPTYPE force_tmp = 0.f;
+    FPTYPE force_tmp = (FPTYPE)0.;
     for (int idw = 0; idw < 4; ++idw) {
         force_tmp += net_deriv[idx * ndescrpt + idy * 4 + idw] * in_deriv[idx * ndescrpt * 3 + (idy * 4 + idw) * 3 + idz];
     }
@@ -78,7 +78,7 @@ __global__ void force_deriv_wrt_neighbors_r(
 		const int nnei)
 {  
     // idy -> nnei
-    const unsigned int idx = blockIdx.x;
+    const int_64 idx = blockIdx.x;
     const unsigned int idy = blockIdx.y * blockDim.x + threadIdx.x;
     const unsigned int idz = threadIdx.y;
     const int ndescrpt = nnei * 1;

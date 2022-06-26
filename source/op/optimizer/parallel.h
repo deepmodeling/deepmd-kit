@@ -16,6 +16,11 @@ class DPParallel : public CustomGraphOptimizer {
   bool UsesFunctionLibrary() const override { return false; }
   Status Optimize(Cluster* cluster, const GrapplerItem& item,
                   GraphDef* optimized_graph) override;
+#if TF_MAJOR_VERSION >= 2 && TF_MINOR_VERSION < 6
+// TF 3457a2b122e50b4d44ceaaed5a663d635e5c22df
+  void Feedback(Cluster* cluster, const GrapplerItem& item,
+                const GraphDef& optimized_graph, double result) override {}
+#endif
 };
 
 #endif  // DP_REMAPPER_H_

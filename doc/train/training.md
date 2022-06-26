@@ -1,4 +1,4 @@
-# Training a model
+# Train a model
 
 Several examples of training can be found at the `examples` directory:
 ```bash
@@ -26,9 +26,9 @@ DEEPMD INFO                                        system  natoms  bch_sz   n_bc
 DEEPMD INFO                          ../data_water/data_3     192       1      80  1.000    T
 DEEPMD INFO    --------------------------------------------------------------------------------------
 ```
-The DeePMD-kit prints detailed information on the training and validation data sets. The data sets are defined by `"training_data"` and `"validation_data"` defined in the `"training"` section of the input script. The training data set is composed by three data systems, while the validation data set is composed by one data system. The number of atoms, batch size, number of batches in the system and the probability of using the system are all shown on the screen. The last column presents if the periodic boundary condition is assumed for the system. 
+The DeePMD-kit prints detailed information on the training and validation data sets. The data sets are defined by {ref}`training_data <training/training_data>` and {ref}`validation_data <training/validation_data>` defined in the {ref}`training <training>` section of the input script. The training data set is composed by three data systems, while the validation data set is composed by one data system. The number of atoms, batch size, number of batches in the system and the probability of using the system are all shown on the screen. The last column presents if the periodic boundary condition is assumed for the system. 
 
-During the training, the error of the model is tested every `disp_freq` training steps with the batch used to train the model and with `numb_btch` batches from the validating data. The training error and validation error are printed correspondingly in the file `disp_file` (default is `lcurve.out`). The batch size can be set in the input script by the key `batch_size` in the corresponding sections for training and validation data set. An example of the output 
+During the training, the error of the model is tested every {ref}`disp_freq <training/disp_freq>` training steps with the batch used to train the model and with {ref}`numb_btch <training/validation_data/numb_btch>` batches from the validating data. The training error and validation error are printed correspondingly in the file {ref}`disp_file <training/disp_file>` (default is `lcurve.out`). The batch size can be set in the input script by the key {ref}`batch_size <training/training_data/batch_size>` in the corresponding sections for training and validation data set. An example of the output 
 ```bash
 #  step      rmse_val    rmse_trn    rmse_e_val  rmse_e_trn    rmse_f_val  rmse_f_trn         lr
       0      3.33e+01    3.41e+01      1.03e+01    1.03e+01      8.39e-01    8.72e-01    1.0e-03
@@ -56,7 +56,7 @@ plt.grid()
 plt.show()
 ```
 
-Checkpoints will be written to files with prefix `save_ckpt` every `save_freq` training steps. 
+Checkpoints will be written to files with prefix {ref}`save_ckpt <training/save_ckpt>` every {ref}`save_freq <training/save_freq>` training steps. 
 
 ## Warning
 It is warned that the example water data (in folder `examples/water/data`) is of very limited amount, is provided only for testing purpose, and should not be used to train a production model.
