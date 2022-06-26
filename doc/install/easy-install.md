@@ -24,18 +24,18 @@ DeePMD-kit is avaiable with [conda](https://github.com/conda/conda). Install [An
 
 One may create an environment that contains the CPU version of DeePMD-kit and LAMMPS:
 ```bash
-conda create -n deepmd deepmd-kit=*=*cpu libdeepmd=*=*cpu lammps-dp -c https://conda.deepmodeling.com
+conda create -n deepmd deepmd-kit=*=*cpu libdeepmd=*=*cpu lammps -c https://conda.deepmodeling.com
 ```
 
 Or one may want to create a GPU environment containing [CUDA Toolkit](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver):
 ```bash
-conda create -n deepmd deepmd-kit=*=*gpu libdeepmd=*=*gpu lammps-dp cudatoolkit=11.6 horovod -c https://conda.deepmodeling.com
+conda create -n deepmd deepmd-kit=*=*gpu libdeepmd=*=*gpu lammps cudatoolkit=11.6 horovod -c https://conda.deepmodeling.com
 ```
 One could change the CUDA Toolkit version from `10.2` or `11.6`.
 
 One may speficy the DeePMD-kit version such as `2.1.1` using
 ```bash
-conda create -n deepmd deepmd-kit=2.1.1=*cpu libdeepmd=2.1.1=*cpu lammps-dp horovod -c https://conda.deepmodeling.com
+conda create -n deepmd deepmd-kit=2.1.1=*cpu libdeepmd=2.1.1=*cpu lammps horovod -c https://conda.deepmodeling.com
 ```
 
 One may enable the environment using
