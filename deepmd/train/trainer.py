@@ -699,4 +699,6 @@ class DPTrainer (object):
             ) from e
         else:
             self.model_type = bytes.decode(t_model_type)
+        if self.model_type == 'compressed_model':
+            self.frz_model = self.run_opt.init_frz_model
         self.model.init_variables(graph, graph_def, model_type=self.model_type)

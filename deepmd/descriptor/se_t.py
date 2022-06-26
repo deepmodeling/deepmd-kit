@@ -2,8 +2,7 @@ import numpy as np
 from typing import Tuple, List
 
 from deepmd.env import tf
-from deepmd.common import get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, cast_precision
-from deepmd.utils.argcheck import list_to_doc
+from deepmd.common import get_activation_func, get_precision, cast_precision
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import op_module
@@ -44,13 +43,12 @@ class DescrptSeT (DescrptSe):
     set_davg_zero
             Set the shift of embedding net input to zero.
     activation_function
-            The activation function in the embedding net. Supported options are {0}
+            The activation function in the embedding net. Supported options are |ACTIVATION_FN|
     precision
-            The precision of the embedding net parameters. Supported options are {1}
+            The precision of the embedding net parameters. Supported options are |PRECISION|
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
     """
-    @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   rcut: float,
                   rcut_smth: float,
@@ -414,7 +412,7 @@ class DescrptSeT (DescrptSe):
                 The atomic virial
         """
         [net_deriv] = tf.gradients (atom_ener, self.descrpt_reshape)
-        net_deriv_reshape = tf.reshape (net_deriv, [-1, natoms[0] * self.ndescrpt])        
+        net_deriv_reshape = tf.reshape (net_deriv, [np.cast['int64'](-1), natoms[0] * np.cast['int64'](self.ndescrpt)])        
         force \
             = op_module.prod_force_se_a (net_deriv_reshape,
                                           self.descrpt_deriv,
@@ -442,14 +440,14 @@ class DescrptSeT (DescrptSe):
                      suffix = '', 
                      trainable = True) :
         start_index = 0
-        inputs = tf.reshape(inputs, [-1, self.ndescrpt * natoms[0]])
+        inputs = tf.reshape(inputs, [-1, natoms[0], self.ndescrpt])
         output = []
         output_qmat = []
         inputs_i = inputs
         inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
         type_i = -1
         layer, qmat = self._filter(inputs_i, type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
-        layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0] * self.get_dim_out()])
+        layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0], self.get_dim_out()])
         # qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[0] * self.get_dim_rot_mat_1() * 3])
         output.append(layer)
         # output_qmat.append(qmat)
@@ -559,8 +557,8 @@ class DescrptSeT (DescrptSe):
                     # with (natom x nei_type_i x nei_type_j)
                     ebd_env_ij = tf.reshape(env_ij, [-1, 1])
                     if self.compress:
-                        info = [self.lower, self.upper, self.upper * self.table_config[0], self.table_config[1], self.table_config[2], self.table_config[3]]
                         net = 'filter_' + str(type_i) + '_net_' + str(type_j)
+                        info = [self.lower[net], self.upper[net], self.upper[net] * self.table_config[0], self.table_config[1], self.table_config[2], self.table_config[3]]
                         res_ij = op_module.tabulate_fusion_se_t(tf.cast(self.table.data[net], self.filter_precision), info, ebd_env_ij, env_ij, last_layer_size = outputs_size[-1]) 
                     else:
                         # with (natom x nei_type_i x nei_type_j) x out_size

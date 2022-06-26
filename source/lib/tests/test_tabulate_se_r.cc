@@ -122,7 +122,7 @@ TEST_F(TestTabulateSeR, tabulate_fusion_se_r_grad_gpu_cuda)
   std::vector<double> dy_dem(em.size(), 0.0);
   std::vector<double> dy(nloc * nnei * last_layer_size, 1.0);
 
-  * dy_dem_dev = NULL, * table_dev = NULL, * em_dev = NULL, * dy_dev = NULL;
+  double * dy_dem_dev = NULL, * table_dev = NULL, * em_dev = NULL, * dy_dev = NULL;
   deepmd::malloc_device_memory_sync(dy_dem_dev, dy_dem);
   deepmd::malloc_device_memory_sync(table_dev, table);
   deepmd::malloc_device_memory_sync(em_dev, em);

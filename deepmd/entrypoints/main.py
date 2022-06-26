@@ -20,7 +20,7 @@ from deepmd.entrypoints import (
 )
 from deepmd.loggers import set_log_handles
 
-__all__ = ["main", "parse_args", "get_ll"]
+__all__ = ["main", "parse_args", "get_ll", "main_parser"]
 
 
 def get_ll(log_level: str) -> int:
@@ -44,14 +44,13 @@ def get_ll(log_level: str) -> int:
     return int_level
 
 
-def parse_args(args: Optional[List[str]] = None):
+def main_parser() -> argparse.ArgumentParser:
     """DeePMD-Kit commandline options argument parser.
 
-    Parameters
-    ----------
-    args: List[str]
-        list of command line arguments, main purpose is testing default option None
-        takes arguments from sys.argv
+    Returns
+    -------
+    argparse.ArgumentParser
+        main parser of DeePMD-kit
     """
     parser = argparse.ArgumentParser(
         description="DeePMD-kit: A deep learning package for many-body potential energy"
@@ -383,7 +382,6 @@ def parse_args(args: Optional[List[str]] = None):
     )
 
     # * convert models
-    # supported: 1.2->2.0, 1.3->2.0
     parser_transform = subparsers.add_parser(
         'convert-from',
         parents=[parser_log],
@@ -392,7 +390,7 @@ def parse_args(args: Optional[List[str]] = None):
     parser_transform.add_argument(
         'FROM',
         type = str,
-        choices = ['1.0', '1.1', '1.2', '1.3', '2.0'],
+        choices = ['0.12', '1.0', '1.1', '1.2', '1.3', '2.0'],
         help="The original model compatibility",
     )
     parser_transform.add_argument(
@@ -441,7 +439,24 @@ def parse_args(args: Optional[List[str]] = None):
         
     # --version
     parser.add_argument('--version', action='version', version='DeePMD-kit v%s' % __version__)
+    return parser
 
+
+def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
+    """Parse arguments and convert argument strings to objects.
+
+    Parameters
+    ----------
+    args: List[str]
+        list of command line arguments, main purpose is testing default option None
+        takes arguments from sys.argv
+
+    Returns
+    -------
+    argparse.Namespace
+        the populated namespace
+    """
+    parser = main_parser()
     parsed_args = parser.parse_args(args=args)
     if parsed_args.command is None:
         parser.print_help()

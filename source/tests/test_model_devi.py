@@ -30,12 +30,12 @@ class TestMakeModelDevi(unittest.TestCase):
     
     def test_calc_model_devi(self):
         model_devi = calc_model_devi(self.coord,
-                                     self.box, 
+                                     None, 
                                      self.atype, 
                                      self.graphs,
                                      frequency=self.freq,
-                                     nopbc=True,
-                                     fname=self.output)
+                                     fname=self.output,
+                                     )
         self.assertAlmostEqual(model_devi[0][0], 0)
         self.assertAlmostEqual(model_devi[1][0], self.freq)
         np.testing.assert_almost_equal(model_devi[0][1:7], self.expect[1:7], 6)

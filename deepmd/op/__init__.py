@@ -13,8 +13,8 @@ log = logging.getLogger(__name__)
 def import_ops():
     """Import all custom TF ops that are present in this submodule.
 
-    Note
-    ----
+    Notes
+    -----
     Initialy this subdir is unpopulated. CMake will install all the op module python
     files and shared libs.
     """

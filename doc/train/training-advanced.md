@@ -4,7 +4,7 @@ In this section, we will take `$deepmd_source_dir/examples/water/se_e2_a/input.j
 
 ## Learning rate
 
-The `learning_rate` section in `input.json` is given as follows
+The {ref}`learning_rate <learning_rate>` section in `input.json` is given as follows
 ```json
     "learning_rate" :{
 	"type":		"exp",
@@ -14,17 +14,21 @@ The `learning_rate` section in `input.json` is given as follows
 	"_comment":	"that's all"
     }
 ```
-* `start_lr` gives the learning rate at the beginning of the training.
-* `stop_lr` gives the learning rate at the end of the training. It should be small enough to ensure that the network parameters satisfactorily converge. 
-* During the training, the learning rate decays exponentially from `start_lr` to `stop_lr` following the formula.
+* {ref}`start_lr <learning_rate[exp]/start_lr>` gives the learning rate at the beginning of the training.
+* {ref}`stop_lr <learning_rate[exp]/stop_lr>` gives the learning rate at the end of the training. It should be small enough to ensure that the network parameters satisfactorily converge. 
+* During the training, the learning rate decays exponentially from {ref}`start_lr <learning_rate[exp]/start_lr>` to {ref}`stop_lr <learning_rate[exp]/stop_lr>` following the formula:
+
+$$ \alpha(t) = \alpha_0 \lambda ^ { t / \tau } $$
+
+where $t$ is the training step, $\alpha$ is the learning rate, $\alpha_0$ is the starting learning rate (set by {ref}`start_lr <learning_rate[exp]/start_lr>`), $\lambda$ is the decay rate, and $\tau$ is the decay steps, i.e.
+
     ```
     lr(t) = start_lr * decay_rate ^ ( t / decay_steps )
     ```
-    where `t` is the training step.
 
 ## Training parameters
 
-Other training parameters are given in the `training` section.
+Other training parameters are given in the {ref}`training <training>` section.
 ```json
     "training": {
  	"training_data": {
@@ -41,18 +45,18 @@ Other training parameters are given in the `training` section.
 	    "compute_prec":     "float16"
 	},
 
-	"numb_step":	1000000,
+	"numb_steps":	1000000,
 	"seed":		1,
 	"disp_file":	"lcurve.out",
 	"disp_freq":	100,
 	"save_freq":	1000
     }
 ```
-The sections `"training_data"` and `"validation_data"` give the training dataset and validation dataset, respectively. Taking the training dataset for example, the keys are explained below:
-* `systems` provide paths of the training data systems. DeePMD-kit allows you to provide multiple systems with different numbers of atoms. This key can be a `list` or a `str`.
-    * `list`: `systems` gives the training data systems.
-    * `str`: `systems` should be a valid path. DeePMD-kit will recursively search all data systems in this path.
-* At each training step, DeePMD-kit randomly pick `batch_size` frame(s) from one of the systems. The probability of using a system is by default in proportion to the number of batches in the system. More optional are available for automatically determining the probability of using systems. One can set the key `auto_prob` to
+The sections {ref}`training_data <training/training_data>` and {ref}`validation_data <training/validation_data>` give the training dataset and validation dataset, respectively. Taking the training dataset for example, the keys are explained below:
+* {ref}`systems <training/training_data/systems>` provide paths of the training data systems. DeePMD-kit allows you to provide multiple systems with different numbers of atoms. This key can be a `list` or a `str`.
+    * `list`: {ref}`systems <training/training_data/systems>` gives the training data systems.
+    * `str`: {ref}`systems <training/training_data/systems>` should be a valid path. DeePMD-kit will recursively search all data systems in this path.
+* At each training step, DeePMD-kit randomly pick {ref}`batch_size <training/training_data/batch_size>` frame(s) from one of the systems. The probability of using a system is by default in proportion to the number of batches in the system. More optional are available for automatically determining the probability of using systems. One can set the key {ref}`auto_prob <training/training_data/auto_prob>` to
     * `"prob_uniform"` all systems are used with the same probability.
     * `"prob_sys_size"` the probability of using a system is in proportional to its size (number of frames).
     * `"prob_sys_size; sidx_0:eidx_0:w_0; sidx_1:eidx_1:w_1;..."` the `list` of systems are divided into blocks. The block `i` has systems ranging from `sidx_i` to `eidx_i`. The probability of using a system from block `i` is in proportional to `w_i`. Within one block, the probability of using a system is in proportional to its size.
@@ -64,34 +68,34 @@ The sections `"training_data"` and `"validation_data"` give the training dataset
 	    "batch_size":	"auto"
 	}
 ```
-* The probability of using systems can also be specified explicitly with key `"sys_prob"` that is a list having the length of the number of systems. For example
+* The probability of using systems can also be specified explicitly with key {ref}`sys_probs <training/training_data/sys_probs>` that is a list having the length of the number of systems. For example
 ```json
  	"training_data": {
 	    "systems":		["../data_water/data_0/", "../data_water/data_1/", "../data_water/data_2/"],
-	    "sys_prob":	[0.5, 0.3, 0.2],
+	    "sys_probs":	[0.5, 0.3, 0.2],
 	    "batch_size":	"auto:32"
 	}
 ```
-* The key `batch_size` specifies the number of frames used to train or validate the model in a training step. It can be set to
-    * `list`: the length of which is the same as the `systems`. The batch size of each system is given by the elements of the list.
+* The key {ref}`batch_size <training/training_data/batch_size>` specifies the number of frames used to train or validate the model in a training step. It can be set to
+    * `list`: the length of which is the same as the {ref}`systems`. The batch size of each system is given by the elements of the list.
     * `int`: all systems use the same batch size.
     * `"auto"`: the same as `"auto:32"`, see `"auto:N"`
-    * `"auto:N"`: automatically determines the batch size so that the `batch_size` times the number of atoms in the system is no less than `N`.
-* The key `numb_batch` in `validate_data` gives the number of batches of model validation. Note that the batches may not be from the same system
+    * `"auto:N"`: automatically determines the batch size so that the {ref}`batch_size <training/training_data/batch_size>` times the number of atoms in the system is no less than `N`.
+* The key {ref}`numb_batch <training/validation_data/numb_btch>` in {ref}`validate_data <training/validation_data>` gives the number of batches of model validation. Note that the batches may not be from the same system
 
-The section `mixed_precision` specifies the mixed precision settings, which will enable the mixed precision training workflow for deepmd-kit. The keys are explained below:
-* `output_prec`  precision used in the output tensors, only `float32` is supported currently.
-* `compute_prec` precision used in the computing tensors, only `float16` is supported currently.
+The section {ref}`mixed_precision <training/mixed_precision>` specifies the mixed precision settings, which will enable the mixed precision training workflow for deepmd-kit. The keys are explained below:
+* {ref}`output_prec <training/mixed_precision/output_prec>`  precision used in the output tensors, only `float32` is supported currently.
+* {ref}`compute_prec <training/mixed_precision/compute_prec>` precision used in the computing tensors, only `float16` is supported currently.
 Note there are severial limitations about the mixed precision training:
-* Only 'se_e2_a' type descriptor is supported by the mixed precision training workflow.
+* Only {ref}`se_e2_a <model/descriptor[se_e2_a]>` type descriptor is supported by the mixed precision training workflow.
 * The precision of embedding net and fitting net are forced to be set to `float32`.
 
-Other keys in the `training` section are explained below:
-* `numb_step` The number of training steps.
-* `seed` The random seed for getting frames from the training data set.
-* `disp_file` The file for printing learning curve.
-* `disp_freq` The frequency of printing learning curve. Set in the unit of training steps
-* `save_freq` The frequency of saving check point.
+Other keys in the {ref}`training <training>` section are explained below:
+* {ref}`numb_steps <training/numb_steps>` The number of training steps.
+* {ref}`seed <training/seed>` The random seed for getting frames from the training data set.
+* {ref}`disp_file <training/disp_file>` The file for printing learning curve.
+* {ref}`disp_freq <training/disp_freq>` The frequency of printing learning curve. Set in the unit of training steps
+* {ref}`save_freq <training/save_freq>` The frequency of saving check point.
 
 ## Options and environment variables
 

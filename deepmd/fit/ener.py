@@ -4,8 +4,7 @@ from typing import Tuple, List
 from packaging.version import Version
 
 from deepmd.env import tf
-from deepmd.common import add_data_requirement, get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, cast_precision
-from deepmd.utils.argcheck import list_to_doc
+from deepmd.common import add_data_requirement, get_activation_func, get_precision, cast_precision
 from deepmd.utils.network import one_layer, one_layer_rand_seed_shift
 from deepmd.utils.type_embed import embed_atom_type
 from deepmd.utils.graph import get_fitting_net_variables_from_graph_def, load_graph_def, get_tensor_by_name_from_graph
@@ -72,13 +71,12 @@ class EnerFitting (Fitting):
     atom_ener
             Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
     activation_function
-            The activation function :math:`\boldsymbol{\phi}` in the embedding net. Supported options are {0}
+            The activation function :math:`\boldsymbol{\phi}` in the embedding net. Supported options are |ACTIVATION_FN|
     precision
-            The precision of the embedding net parameters. Supported options are {1}                
+            The precision of the embedding net parameters. Supported options are |PRECISION|
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
     """
-    @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   descrpt : tf.Tensor,
                   neuron : List[int] = [120,120,120],
@@ -276,8 +274,8 @@ class EnerFitting (Fitting):
     ):
         # cut-out inputs
         inputs_i = tf.slice (inputs,
-                             [ 0, start_index*      self.dim_descrpt],
-                             [-1, natoms* self.dim_descrpt] )
+                             [ 0, start_index, 0],
+                             [-1, natoms, -1] )
         inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
         layer = inputs_i
         if fparam is not None:
@@ -378,10 +376,16 @@ class EnerFitting (Fitting):
         if input_dict is None:
             input_dict = {}
         bias_atom_e = self.bias_atom_e
-        if self.numb_fparam > 0 and ( self.fparam_avg is None or self.fparam_inv_std is None ):
-            raise RuntimeError('No data stat result. one should do data statisitic, before build')
-        if self.numb_aparam > 0 and ( self.aparam_avg is None or self.aparam_inv_std is None ):
-            raise RuntimeError('No data stat result. one should do data statisitic, before build')
+        if self.numb_fparam > 0:
+            if self.fparam_avg is None:
+                self.fparam_avg = 0.
+            if self.fparam_inv_std is None:
+                self.fparam_inv_std = 1.
+        if self.numb_aparam > 0:
+            if self.aparam_avg is None:
+                self.aparam_avg = 0.
+            if self.aparam_inv_std is None:
+                self.aparam_inv_std = 1.
 
         with tf.variable_scope('fitting_attr' + suffix, reuse = reuse) :
             t_dfparam = tf.constant(self.numb_fparam, 
@@ -413,13 +417,13 @@ class EnerFitting (Fitting):
                                                 trainable = False,
                                                 initializer = tf.constant_initializer(self.aparam_inv_std))
             
-        inputs = tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]])
+        inputs = tf.reshape(inputs, [-1, natoms[0], self.dim_descrpt])
         if len(self.atom_ener):
             # only for atom_ener
             nframes = input_dict.get('nframes')
             if nframes is not None:
                 # like inputs, but we don't want to add a dependency on inputs
-                inputs_zero = tf.zeros((nframes, self.dim_descrpt * natoms[0]), dtype=self.fitting_precision)
+                inputs_zero = tf.zeros((nframes, natoms[0], self.dim_descrpt), dtype=self.fitting_precision)
             else:
                 inputs_zero = tf.zeros_like(inputs, dtype=self.fitting_precision)
         
@@ -484,7 +488,7 @@ class EnerFitting (Fitting):
                 axis=1
             )
             self.dim_descrpt = self.dim_descrpt + type_shape[1]
-            inputs = tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]])
+            inputs = tf.reshape(inputs, [-1, natoms[0], self.dim_descrpt])
             final_layer = self._build_lower(
                 0, natoms[0], 
                 inputs, fparam, aparam, 
@@ -527,7 +531,12 @@ class EnerFitting (Fitting):
             suffix to name scope
         """
         self.fitting_net_variables = get_fitting_net_variables_from_graph_def(graph_def)
-
+        if self.numb_fparam > 0:
+            self.fparam_avg = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_fparam_avg' % suffix)
+            self.fparam_inv_std = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_fparam_istd' % suffix)
+        if self.numb_aparam > 0:
+            self.aparam_avg = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_aparam_avg' % suffix)
+            self.aparam_inv_std = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_aparam_istd' % suffix)
 
     def enable_compression(self,
                            model_file: str,

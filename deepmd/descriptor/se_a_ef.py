@@ -2,8 +2,7 @@ import numpy as np
 from typing import Tuple, List
 
 from deepmd.env import tf
-from deepmd.common import add_data_requirement,get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter
-from deepmd.utils.argcheck import list_to_doc
+from deepmd.common import add_data_requirement
 from deepmd.utils.sess import run_sess
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
@@ -43,13 +42,12 @@ class DescrptSeAEf (Descriptor):
     set_davg_zero
             Set the shift of embedding net input to zero.
     activation_function
-            The activation function in the embedding net. Supported options are {0}
+            The activation function in the embedding net. Supported options are |ACTIVATION_FN|
     precision
-            The precision of the embedding net parameters. Supported options are {1}
+            The precision of the embedding net parameters. Supported options are |PRECISION|
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
     """
-    @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__(self,
                  rcut: float,
                  rcut_smth: float,
@@ -230,7 +228,7 @@ class DescrptSeAEf (Descriptor):
         self.dout_vert = tf.reshape(self.dout_vert, [nframes * natoms[0], self.descrpt_vert.get_dim_out()])
         self.dout_para = tf.reshape(self.dout_para, [nframes * natoms[0], self.descrpt_para.get_dim_out()])
         self.dout = tf.concat([self.dout_vert, self.dout_para], axis = 1)
-        self.dout = tf.reshape(self.dout, [nframes, natoms[0] * self.get_dim_out()])
+        self.dout = tf.reshape(self.dout, [nframes, natoms[0], self.get_dim_out()])
         self.qmat = self.descrpt_vert.qmat + self.descrpt_para.qmat
 
         tf.summary.histogram('embedding_net_output', self.dout)

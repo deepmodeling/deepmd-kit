@@ -3,8 +3,7 @@ import numpy as np
 from typing import Tuple, List
 
 from deepmd.env import tf
-from deepmd.common import add_data_requirement, cast_precision, get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter
-from deepmd.utils.argcheck import list_to_doc
+from deepmd.common import add_data_requirement, cast_precision, get_activation_func, get_precision
 from deepmd.utils.network import one_layer, one_layer_rand_seed_shift
 from deepmd.utils.graph import get_fitting_net_variables_from_graph_def
 from deepmd.descriptor import DescrptLocFrame
@@ -56,7 +55,7 @@ class PolarFittingLocFrame () :
                reuse = None,
                suffix = '') :
         start_index = 0
-        inputs = tf.cast(tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]]), self.fitting_precision)
+        inputs = tf.cast(tf.reshape(input_d, [-1, natoms[0], self.dim_descrpt]), self.fitting_precision)
         rot_mat = tf.reshape(rot_mat, [-1, 9 * natoms[0]])
 
         count = 0
@@ -64,8 +63,8 @@ class PolarFittingLocFrame () :
         for type_i in range(self.ntypes):
             # cut-out inputs
             inputs_i = tf.slice (inputs,
-                                 [ 0, start_index*      self.dim_descrpt],
-                                 [-1, natoms[2+type_i]* self.dim_descrpt] )
+                                 [ 0, start_index, 0],
+                                 [-1, natoms[2+type_i], -1] )
             inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
             rot_mat_i = tf.slice (rot_mat,
                                   [ 0, start_index*      9],
@@ -105,8 +104,33 @@ class PolarFittingLocFrame () :
 class PolarFittingSeA (Fitting) :
     """
     Fit the atomic polarizability with descriptor se_a
+
+    Parameters
+    ----------
+    descrpt : tf.Tensor
+            The descrptor
+    neuron : List[int]
+            Number of neurons in each hidden layer of the fitting net
+    resnet_dt : bool
+            Time-step `dt` in the resnet construction:
+            y = x + dt * \phi (Wx + b)
+    sel_type : List[int]
+            The atom types selected to have an atomic polarizability prediction. If is None, all atoms are selected.
+    fit_diag : bool
+            Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to normal polarizability matrix by contracting with the rotation matrix.
+    scale : List[float]
+            The output of the fitting net (polarizability matrix) for type i atom will be scaled by scale[i]
+    diag_shift : List[float]
+            The diagonal part of the polarizability matrix of type i will be shifted by diag_shift[i]. The shift operation is carried out after scale.        
+    seed : int
+            Random seed for initializing the network parameters.
+    activation_function : str
+            The activation function in the embedding net. Supported options are |ACTIVATION_FN|
+    precision : str
+            The precision of the embedding net parameters. Supported options are |PRECISION|
+    uniform_seed
+            Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
     """
-    @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   descrpt : tf.Tensor,
                   neuron : List[int] = [120,120,120],
@@ -123,32 +147,6 @@ class PolarFittingSeA (Fitting) :
     ) -> None:
         """
         Constructor
-
-        Parameters
-        ----------
-        descrpt : tf.Tensor
-                The descrptor
-        neuron : List[int]
-                Number of neurons in each hidden layer of the fitting net
-        resnet_dt : bool
-                Time-step `dt` in the resnet construction:
-                y = x + dt * \phi (Wx + b)
-        sel_type : List[int]
-                The atom types selected to have an atomic polarizability prediction. If is None, all atoms are selected.
-        fit_diag : bool
-                Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to normal polarizability matrix by contracting with the rotation matrix.
-        scale : List[float]
-                The output of the fitting net (polarizability matrix) for type i atom will be scaled by scale[i]
-        diag_shift : List[float]
-                The diagonal part of the polarizability matrix of type i will be shifted by diag_shift[i]. The shift operation is carried out after scale.        
-        seed : int
-                Random seed for initializing the network parameters.
-        activation_function : str
-                The activation function in the embedding net. Supported options are {0}
-        precision : str
-                The precision of the embedding net parameters. Supported options are {1}                
-        uniform_seed
-                Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
         """
         if not isinstance(descrpt, DescrptSeA) :
             raise RuntimeError('PolarFittingSeA only supports DescrptSeA')
@@ -431,11 +429,10 @@ class GlobalPolarFittingSeA () :
     seed : int
             Random seed for initializing the network parameters.
     activation_function : str
-            The activation function in the embedding net. Supported options are {0}
+            The activation function in the embedding net. Supported options are |ACTIVATION_FN|
     precision : str
-            The precision of the embedding net parameters. Supported options are {1}    
+            The precision of the embedding net parameters. Supported options are |PRECISION|
     """
-    @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   descrpt : tf.Tensor,
                   neuron : List[int] = [120,120,120],

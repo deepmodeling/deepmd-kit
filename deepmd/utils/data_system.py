@@ -205,14 +205,17 @@ class DeepmdDataSystem() :
         """
         Add items to the data system by a `dict`.
         `adict` should have items like
-        adict[key] = {
+        .. code-block:: python
+
+           adict[key] = {
                    'ndof': ndof, 
                    'atomic': atomic,
                    'must': must, 
                    'high_prec': high_prec,
                    'type_sel': type_sel,
                    'repeat': repeat,
-        }        
+           }
+
         For the explaination of the keys see `add`
         """
         for kk in adict :
@@ -222,7 +225,9 @@ class DeepmdDataSystem() :
                      must=adict[kk]['must'], 
                      high_prec=adict[kk]['high_prec'], 
                      type_sel=adict[kk]['type_sel'], 
-                     repeat=adict[kk]['repeat'])
+                     repeat=adict[kk]['repeat'],
+                     default=adict[kk]['default'],
+                     )
 
     def add(self, 
             key : str, 
@@ -231,7 +236,8 @@ class DeepmdDataSystem() :
             must : bool = False, 
             high_prec : bool = False,
             type_sel : List[int] = None,
-            repeat : int = 1
+            repeat : int = 1,
+            default: float=0.,
     ) :
         """
         Add a data item that to be loaded
@@ -255,9 +261,11 @@ class DeepmdDataSystem() :
                 Select certain type of atoms
         repeat
                 The data will be repeated `repeat` times.
+        default, default=0.
+                Default value of data
         """
         for ii in self.data_systems:
-            ii.add(key, ndof, atomic=atomic, must=must, high_prec=high_prec, repeat=repeat, type_sel=type_sel)
+            ii.add(key, ndof, atomic=atomic, must=must, high_prec=high_prec, repeat=repeat, type_sel=type_sel, default=default)
 
     def reduce(self, key_out, key_in):
         """
