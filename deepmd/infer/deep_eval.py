@@ -1,6 +1,6 @@
 import os
 from typing import List, Optional, TYPE_CHECKING, Union
-from itertools import lru_cache
+from functools import lru_cache
 
 import numpy as np
 from deepmd.common import make_default_mesh
