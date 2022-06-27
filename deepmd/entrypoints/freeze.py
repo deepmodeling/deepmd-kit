@@ -7,7 +7,9 @@ https://blog.metaflow.fr/tensorflow-how-to-freeze-a-model-and-serve-it-with-a-py
 """
 
 import logging
+import google.protobuf.message
 from deepmd.env import tf, FITTING_NET_PATTERN
+from deepmd.utils.errors import GraphTooLargeError
 from deepmd.utils.sess import run_sess
 from deepmd.utils.graph import get_pattern_nodes_from_graph_def
 from os.path import abspath

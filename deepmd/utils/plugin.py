@@ -32,8 +32,8 @@ class Plugin:
     def register(self, key : str) -> Callable[[object], object]:
         """Register a plugin.
         
-        Parameter
-        ---------
+        Parameters
+        ----------
         key : str
             key of the plugin
         
@@ -52,7 +52,7 @@ class Plugin:
         
         Parameters
         ----------
-        key ： str
+        key : str
             key of the plugin
         
         Returns

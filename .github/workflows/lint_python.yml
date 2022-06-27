@@ -11,6 +11,8 @@ jobs:
         python-version: [3.8]
 
     steps:
+    - name: work around permission issue
+      run: git config --global --add safe.directory /__w/deepmd-kit/deepmd-kit
     - uses: actions/checkout@v1
     - uses: actions/setup-python@v2
       with:

@@ -2,9 +2,9 @@
 
 In this section, we will take `$deepmd_source_dir/examples/water/se_e2_a/input.json` as an example of the input file.
 
-## Fitting network
+## The fitting network
 
-The construction of the fitting net is give by section `fitting_net`
+The construction of the fitting net is give by section {ref}`fitting_net <model/fitting_net>`
 ```json
 	"fitting_net" : {
 	    "neuron":		[240, 240, 240],
@@ -12,23 +12,26 @@ The construction of the fitting net is give by section `fitting_net`
 	    "seed":		1
 	},
 ```
-* `neuron` specifies the size of the fitting net. If two neighboring layers are of the same size, then a [ResNet architecture](https://arxiv.org/abs/1512.03385) is built between them. 
-* If the option `resnet_dt` is set `true`, then a timestep is used in the ResNet. 
-* `seed` gives the random seed that is used to generate random numbers when initializing the model parameters.
+* {ref}`neuron <model/fitting_net[ener]/neuron>` specifies the size of the fitting net. If two neighboring layers are of the same size, then a [ResNet architecture](https://arxiv.org/abs/1512.03385) is built between them. 
+* If the option {ref}`resnet_dt <model/fitting_net[ener]/resnet_dt>` is set to `true`, then a timestep is used in the ResNet. 
+* {ref}`seed <model/fitting_net[ener]/seed>` gives the random seed that is used to generate random numbers when initializing the model parameters.
 
 ## Loss
 
-The loss function for training energy is given by
-```
-loss = pref_e * loss_e + pref_f * loss_f + pref_v * loss_v
-```
-where `loss_e`, `loss_f` and `loss_v` denote the loss in energy, force and virial, respectively. `pref_e`, `pref_f` and `pref_v` give the prefactors of the energy, force and virial losses. The prefectors may not be a constant, rather it changes linearly with the learning rate. Taking the force prefactor for example, at training step `t`, it is given by
+The loss function $L$ for training energy is given by
+
+$$L = p_e L_e + p_f L_f + p_v L_v$$
+
+where $L_e$, $L_f$, and $L_v$ denote the loss in energy, force and virial, respectively. $p_e$, $p_f$, and $p_v$ give the prefactors of the energy, force and virial losses. The prefectors may not be a constant, rather it changes linearly with the learning rate. Taking the force prefactor for example, at training step $t$, it is given by
+
+$$p_f(t) = p_f^0 \frac{ \alpha(t) }{ \alpha(0) } + p_f^\infty ( 1 - \frac{ \alpha(t) }{ \alpha(0) })$$
+
+where $\alpha(t)$ denotes the learning rate at step $t$. $p_f^0$ and $p_f^\infty$ specifies the $p_f$ at the start of the training and at the limit of $t \to \infty$ (set by {ref}`start_pref_f <loss[ener]/start_pref_f>` and {ref}`limit_pref_f <loss[ener]/limit_pref_f>`, respectively), i.e.
 ```math
 pref_f(t) = start_pref_f * ( lr(t) / start_lr ) + limit_pref_f * ( 1 - lr(t) / start_lr )
 ```
-where `lr(t)` denotes the learning rate at step `t`. `start_pref_f` and `limit_pref_f` specifies the `pref_f` at the start of the training and at the limit of `t -> inf`.
 
-The `loss` section in the `input.json` is 
+The {ref}`loss <loss>` section in the `input.json` is 
 ```json
     "loss" : {
 	"start_pref_e":	0.02,
@@ -39,6 +42,6 @@ The `loss` section in the `input.json` is
 	"limit_pref_v":	0
     }
 ```
-The options `start_pref_e`, `limit_pref_e`, `start_pref_f`, `limit_pref_f`, `start_pref_v` and `limit_pref_v` determine the start and limit prefactors of energy, force and virial, respectively.
+The options {ref}`start_pref_e <loss[ener]/start_pref_e>`, {ref}`limit_pref_e <loss[ener]/limit_pref_e>`, {ref}`start_pref_f <loss[ener]/start_pref_f>`, {ref}`limit_pref_f <loss[ener]/limit_pref_f>`, {ref}`start_pref_v <loss[ener]/start_pref_v>` and {ref}`limit_pref_v <loss[ener]/limit_pref_v>` determine the start and limit prefactors of energy, force and virial, respectively.
 
-If one does not want to train with virial, then he/she may set the virial prefactors `start_pref_v` and `limit_pref_v` to 0.
+If one does not want to train with virial, then he/she may set the virial prefactors {ref}`start_pref_v <loss[ener]/start_pref_v>` and {ref}`limit_pref_v <loss[ener]/limit_pref_v>` to 0.

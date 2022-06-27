@@ -11,7 +11,10 @@ from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 
 class TestProdForce(tf.test.TestCase):
     def setUp(self):
-        self.sess = self.test_session().__enter__()
+        config = tf.ConfigProto()
+        if int(os.environ.get("DP_AUTO_PARALLELIZATION", 0)):
+            config.graph_options.rewrite_options.custom_optimizers.add().name = "dpparallel"
+        self.sess = self.test_session(config=config).__enter__()
         self.nframes = 2
         self.dcoord = [
             12.83, 2.56, 2.18,
@@ -92,6 +95,37 @@ class TestProdForce(tf.test.TestCase):
                 self.tnatoms, 
                 n_a_sel=self.nnei,
                 n_r_sel=0)
+        self.sess.run (tf.global_variables_initializer())
+        dforce = self.sess.run(
+            tforce,
+            feed_dict = {
+                self.tnet_deriv: self.dnet_deriv,
+                self.tem_deriv: self.dem_deriv,
+                self.tnlist: self.dnlist,
+                self.tnatoms: self.dnatoms}
+        )
+        self.assertEqual(dforce.shape, (self.nframes, self.nall*3))
+        for ff in range(self.nframes):
+            np.testing.assert_almost_equal(dforce[ff], self.expected_force, 5)
+    
+    @unittest.skipIf(tf.test.is_gpu_available(), reason="Not supported in GPUs")
+    def test_prod_force_parallel(self):
+        forces = []
+        for ii in range(4):
+            tforce \
+                = op_module.parallel_prod_force_se_a(
+                    self.tnet_deriv,
+                    self.tem_deriv,
+                    self.tnlist,
+                    self.tnatoms, 
+                    n_a_sel=self.nnei,
+                    n_r_sel=0,
+                    parallel=True,
+                    start_frac = ii/4,
+                    end_frac = (ii+1)/4,
+                    )
+            forces.append(tforce)
+        tforce = tf.add_n(forces)
         self.sess.run (tf.global_variables_initializer())
         dforce = self.sess.run(
             tforce,

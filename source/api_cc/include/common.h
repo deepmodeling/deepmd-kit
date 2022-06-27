@@ -109,12 +109,19 @@ select_map_inv(typename std::vector<VT >::iterator out,
 
 /**
 * @brief Get the number of threads from the environment variable.
+* @details A warning will be thrown if environmental variables are not set.
 * @param[out] num_intra_nthreads The number of intra threads. Read from TF_INTRA_OP_PARALLELISM_THREADS.
 * @param[out] num_inter_nthreads The number of inter threads. Read from TF_INTER_OP_PARALLELISM_THREADS.
 **/
 void
 get_env_nthreads(int & num_intra_nthreads,
 		 int & num_inter_nthreads);
+
+/**
+ * @brief Dynamically load OP library. This should be called before loading graphs.
+ */
+void
+load_op_library();
 
 /** @struct deepmd::deepmd_exception
  **/

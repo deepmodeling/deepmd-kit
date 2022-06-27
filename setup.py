@@ -1,6 +1,7 @@
 """Setup script for DeePMD-kit package."""
 
 import os
+import site
 from distutils.util import get_platform
 from importlib.machinery import FileFinder
 from importlib.util import find_spec
@@ -18,7 +19,7 @@ setup_requires = ["setuptools_scm", "scikit-build"]
 
 # read readme to markdown
 readme_file = Path(__file__).parent / "README.md"
-readme = readme_file.read_text()
+readme = readme_file.read_text(encoding="utf-8")
 
 tf_version = os.environ.get("TENSORFLOW_VERSION", "")
 
@@ -58,6 +59,13 @@ else:
 
 # get tensorflow spec
 tf_spec = find_spec("tensorflow")
+
+if not tf_spec and site.ENABLE_USER_SITE:
+    # first search TF from user site-packages before global site-packages
+    site_packages = site.getusersitepackages()
+    if site_packages:
+        tf_spec = FileFinder(site_packages).find_spec("tensorflow")
+
 if not tf_spec:
     # purelib gets site-packages path
     site_packages = get_path("purelib")
@@ -127,7 +135,7 @@ setup(
     cmake_minimum_required_version="3.0",
     extras_require={
         "test": ["dpdata>=0.1.9", "ase", "pytest", "pytest-cov", "pytest-sugar"],
-        "docs": ["sphinx>=3.1.1", "recommonmark", "sphinx_rtd_theme>=1.0.0rc1", "sphinx_markdown_tables", "myst-parser", "breathe", "exhale", "numpydoc", "ase"],
+        "docs": ["sphinx>=3.1.1", "recommonmark", "sphinx_rtd_theme>=1.0.0rc1", "sphinx_markdown_tables", "myst-parser", "breathe", "exhale", "numpydoc", "ase", "deepmodeling-sphinx", "dargs>=0.3.1", "sphinx-argparse"],
         **extras_require,
     },
     entry_points={"console_scripts": ["dp = deepmd.entrypoints.main:main"]},
