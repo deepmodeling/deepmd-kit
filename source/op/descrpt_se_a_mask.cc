@@ -4,6 +4,7 @@
 #include "neighbor_list.h"
 #include "fmt_nlist.h"
 #include "errors.h"
+#include <cmath>
 
 typedef double boxtensor_t;
 typedef double compute_t;
@@ -162,7 +163,7 @@ public:
                 }
 
                 // Build the neighbor list for atom ii.
-                fill(sorted_nlist.begin(), sorted_nlist.end(), -1);
+                std::fill(sorted_nlist.begin(), sorted_nlist.end(), -1);
                 buildAndSortNeighborList(ii, d_coord3, d_type, d_mask, sorted_nlist, total_atom_num);
 
                 // Set the center atom coordinates.
@@ -177,9 +178,9 @@ public:
                 std::vector<compute_t> descrpt_deriv_atom(natoms * 12);
                 std::vector<compute_t> rij_atom(natoms * 3);
 
-                fill(descrpt_deriv_atom.begin(), descrpt_deriv_atom.end(), 0.0);
-                fill(descrpt_atom.begin(), descrpt_atom.end(), 0.0);
-                fill(rij_atom.begin(), rij_atom.end(), 0.0);
+                std::fill(descrpt_deriv_atom.begin(), descrpt_deriv_atom.end(), 0.0);
+                std::fill(descrpt_atom.begin(), descrpt_atom.end(), 0.0);
+                std::fill(rij_atom.begin(), rij_atom.end(), 0.0);
 
                 // Compute the each environment std::vector for each atom.
                 for (int jj = 0; jj < natoms; jj++)
@@ -318,7 +319,7 @@ private:
             }
             sel_nei.push_back(deepmd::NeighborInfo(d_type[j_idx], rr, j_idx));
         }
-        sort(sel_nei.begin(), sel_nei.end());
+        std::sort(sel_nei.begin(), sel_nei.end());
         // Save the sorted atom index.
         for (int jj = 0; jj < sel_nei.size(); jj++)
         {
