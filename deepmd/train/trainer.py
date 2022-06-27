@@ -9,7 +9,7 @@ import google.protobuf.message
 import numpy as np
 from packaging.version import Version
 
-from deepmd.env import tf
+from deepmd.env import tf, tfv2
 from deepmd.env import get_tf_session_config
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
@@ -22,7 +22,7 @@ from deepmd.utils.learning_rate import LearningRateExp
 from deepmd.utils.neighbor_stat import NeighborStat
 from deepmd.utils.sess import run_sess
 from deepmd.utils.type_embed import TypeEmbedNet
-from deepmd.utils.graph import get_tensor_by_name
+from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph
 
 from tensorflow.python.client import timeline
 from deepmd.env import op_module, TF_VERSION
@@ -229,6 +229,7 @@ class DPTrainer (object):
         self.timing_in_training  = tr_data.get('time_training', True)
         self.profiling = self.run_opt.is_chief and tr_data.get('profiling', False)
         self.profiling_file = tr_data.get('profiling_file', 'timeline.json')
+        self.enable_profiler = tr_data.get('enable_profiler', False)
         self.tensorboard = self.run_opt.is_chief and tr_data.get('tensorboard', False)
         self.tensorboard_log_dir = tr_data.get('tensorboard_log_dir', 'log')
         self.tensorboard_freq = tr_data.get('tensorboard_freq', 1)
@@ -284,7 +285,11 @@ class DPTrainer (object):
                 ))
             self.type_map = data.get_type_map()
             self.batch_size = data.get_batch_size()
-            self.model.data_stat(data)
+            if self.run_opt.init_mode not in ('init_from_model', 'restart', 'init_from_frz_model'):
+                # self.saver.restore (in self._init_session) will restore avg and std variables, so data_stat is useless
+                # init_from_frz_model will restore data_stat variables in `init_variables` method
+                log.info("data stating... (this step may take long time)")
+                self.model.data_stat(data)
 
             # config the init_frz_model command
             if self.run_opt.init_mode == 'init_from_frz_model':
@@ -294,8 +299,9 @@ class DPTrainer (object):
             # TODO: this is a simple fix but we should have a clear
             #       architecture to call neighbor stat
         else :
+            graph, graph_def = load_graph_def(self.model_param['compress']['model_file'])
             self.descrpt.enable_compression(self.model_param['compress']["min_nbor_dist"], self.model_param['compress']['model_file'], self.model_param['compress']['table_config'][0], self.model_param['compress']['table_config'][1], self.model_param['compress']['table_config'][2], self.model_param['compress']['table_config'][3])
-            self.fitting.init_variables(self.model_param['compress']['model_file'])
+            self.fitting.init_variables(graph, graph_def)
             # for fparam or aparam settings in 'ener' type fitting net
             if self.fitting_type == 'ener':
                 self.fitting.enable_compression(self.model_param['compress']['model_file'])
@@ -376,7 +382,7 @@ class DPTrainer (object):
         if self.mixed_prec is not None:
             _TF_VERSION = Version(TF_VERSION)
             # check the TF_VERSION, when TF < 1.12, mixed precision is not allowed 
-            if _TF_VERSION < Version('1.12.0'):
+            if _TF_VERSION < Version('1.14.0'):
                 raise RuntimeError("TensorFlow version %s is not compatible with the mixed precision setting. Please consider upgrading your TF version!" % TF_VERSION)
             elif _TF_VERSION < Version('2.4.0'):
                 optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
@@ -490,6 +496,9 @@ class DPTrainer (object):
         else:
             tb_train_writer = None
             tb_valid_writer = None
+        if self.enable_profiler:
+            # https://www.tensorflow.org/guide/profiler
+            tfv2.profiler.experimental.start(self.tensorboard_log_dir)
         
         train_time = 0
 
@@ -533,26 +542,9 @@ class DPTrainer (object):
                                   % (cur_batch, train_time, test_time))
                     train_time = 0
                 if self.save_freq > 0 and cur_batch % self.save_freq == 0 and self.saver is not None:
-                    try:
-                        ckpt_prefix = self.saver.save (self.sess, os.path.join(os.getcwd(), self.save_ckpt), global_step=cur_batch)
-                    except google.protobuf.message.DecodeError as e:
-                        raise GraphTooLargeError(
-                            "The graph size exceeds 2 GB, the hard limitation of protobuf."
-                            " Then a DecodeError was raised by protobuf. You should "
-                            "reduce the size of your model."
-                        ) from e
-                    # make symlinks from prefix with step to that without step to break nothing
-                    # get all checkpoint files
-                    original_files = glob.glob(ckpt_prefix + ".*")
-                    for ori_ff in original_files:
-                        new_ff = self.save_ckpt + ori_ff[len(ckpt_prefix):]
-                        try:
-                            # remove old one
-                            os.remove(new_ff)
-                        except OSError:
-                            pass
-                        os.symlink(ori_ff, new_ff)
-                    log.info("saved checkpoint %s" % self.save_ckpt)
+                    self.save_checkpoint(cur_batch)
+        if (self.save_freq == 0 or cur_batch == 0 or cur_batch % self.save_freq != 0) and self.saver is not None:
+            self.save_checkpoint(cur_batch)
         if self.run_opt.is_chief: 
             fp.close ()
         if self.profiling and self.run_opt.is_chief :
@@ -560,6 +552,30 @@ class DPTrainer (object):
             chrome_trace = fetched_timeline.generate_chrome_trace_format()
             with open(self.profiling_file, 'w') as f:
                 f.write(chrome_trace)
+        if self.enable_profiler and self.run_opt.is_chief:
+            tfv2.profiler.experimental.stop()
+
+    def save_checkpoint(self, cur_batch: int):
+        try:
+            ckpt_prefix = self.saver.save (self.sess, os.path.join(os.getcwd(), self.save_ckpt), global_step=cur_batch)
+        except google.protobuf.message.DecodeError as e:
+            raise GraphTooLargeError(
+                "The graph size exceeds 2 GB, the hard limitation of protobuf."
+                " Then a DecodeError was raised by protobuf. You should "
+                "reduce the size of your model."
+            ) from e
+        # make symlinks from prefix with step to that without step to break nothing
+        # get all checkpoint files
+        original_files = glob.glob(ckpt_prefix + ".*")
+        for ori_ff in original_files:
+            new_ff = self.save_ckpt + ori_ff[len(ckpt_prefix):]
+            try:
+                # remove old one
+                os.remove(new_ff)
+            except OSError:
+                pass
+            os.symlink(ori_ff, new_ff)
+        log.info("saved checkpoint %s" % self.save_ckpt)
 
     def get_feed_dict(self, batch, is_training):
         feed_dict = {}
@@ -675,34 +691,24 @@ class DPTrainer (object):
             self.place_holders['find_' + kk] = tf.placeholder(tf.float32, name = 't_find_' + kk)
 
     def _init_from_frz_model(self):
+        try:
+            graph, graph_def = load_graph_def(self.run_opt.init_frz_model)
+        except FileNotFoundError as e:
+            # throw runtime error if there's no frozen model
+            raise RuntimeError(
+                "The input frozen model %s (%s) does not exist! Please check the path of the frozen model. " % (self.run_opt.init_frz_model, os.path.abspath(self.run_opt.init_frz_model))
+            ) from e
         # get the model type from the frozen model(self.run_opt.init_frz_model)
         try:
-            t_model_type = get_tensor_by_name(self.run_opt.init_frz_model, 'model_type')
-            self.model_type = bytes.decode(t_model_type)
+            t_model_type = get_tensor_by_name_from_graph(graph, 'model_type')
         except GraphWithoutTensorError as e:
-            # throw runtime error if there's no frozen model
-            if not os.path.exists(self.run_opt.init_frz_model):
-                raise RuntimeError(
-                    "The input frozen model %s (%s) does not exist! Please check the path of the frozen model. " % (self.run_opt.init_frz_model, os.path.abspath(self.run_opt.init_frz_model))
-                ) from e
             # throw runtime error if the frozen_model has no model type information...
-            else:
-                raise RuntimeError(
-                    "The input frozen model: %s has no 'model_type' information, "
-                    "which is not supported by the 'dp train init-frz-model' interface. " % self.run_opt.init_frz_model
-                ) from e
-        
-        if self.fitting_type != 'ener':
-            raise RuntimeError("The 'dp train init-frz-model' command only supports the 'ener' type fitting net currently!")
-        # self.frz_model will control the self.model to import the descriptor from the given frozen model instead of building from scratch...
-        # initialize fitting net with the given compressed frozen model
-        if self.model_type == 'original_model':
-            self.descrpt.init_variables(self.run_opt.init_frz_model)
-            self.fitting.init_variables(self.run_opt.init_frz_model)
-            tf.constant("original_model", name = 'model_type', dtype = tf.string)
-        elif self.model_type == 'compressed_model':
-            self.frz_model = self.run_opt.init_frz_model
-            self.fitting.init_variables(self.frz_model)
-            tf.constant("compressed_model", name = 'model_type', dtype = tf.string)
+            raise RuntimeError(
+                "The input frozen model: %s has no 'model_type' information, "
+                "which is not supported by the 'dp train init-frz-model' interface. " % self.run_opt.init_frz_model
+            ) from e
         else:
-            raise RuntimeError("Unknown model type %s" % self.model_type)
+            self.model_type = bytes.decode(t_model_type)
+        if self.model_type == 'compressed_model':
+            self.frz_model = self.run_opt.init_frz_model
+        self.model.init_variables(graph, graph_def, model_type=self.model_type)

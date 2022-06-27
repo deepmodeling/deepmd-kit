@@ -12,6 +12,18 @@ REGISTER_OP("ProdVirialSeA")
     .Attr("n_r_sel: int")
     .Output("virial: T")
     .Output("atom_virial: T");
+// compatible with v0.12
+REGISTER_OP("ProdVirialNorot")
+    .Attr("T: {float, double} = DT_DOUBLE")
+    .Input("net_deriv: T")
+    .Input("in_deriv: T")
+    .Input("rij: T")
+    .Input("nlist: int32")
+    .Input("natoms: int32")
+    .Attr("n_a_sel: int")
+    .Attr("n_r_sel: int")
+    .Output("virial: T")
+    .Output("atom_virial: T");
 
 REGISTER_OP("ProdVirialSeR")
     .Attr("T: {float, double} = DT_DOUBLE")
@@ -56,8 +68,8 @@ class ProdVirialSeAOp : public OpKernel {
     OP_REQUIRES (context, (nframes == in_deriv_tensor.shape().dim_size(0)), errors::InvalidArgument ("number of samples should match"));
     OP_REQUIRES (context, (nframes == rij_tensor.shape().dim_size(0)),      errors::InvalidArgument ("number of samples should match"));
     OP_REQUIRES (context, (nframes == nlist_tensor.shape().dim_size(0)),    errors::InvalidArgument ("number of samples should match"));
-    OP_REQUIRES (context, (nloc * ndescrpt * 3 == in_deriv_tensor.shape().dim_size(1)), errors::InvalidArgument ("number of descriptors should match"));
-    OP_REQUIRES (context, (nloc * nnei * 3 == rij_tensor.shape().dim_size(1)),  errors::InvalidArgument ("dim of rij should be nnei * 3"));
+    OP_REQUIRES (context, (int_64(nloc) * ndescrpt * 3 == in_deriv_tensor.shape().dim_size(1)), errors::InvalidArgument ("number of descriptors should match"));
+    OP_REQUIRES (context, (int_64(nloc) * nnei * 3 == rij_tensor.shape().dim_size(1)),  errors::InvalidArgument ("dim of rij should be nnei * 3"));
     // Create an output tensor
     TensorShape virial_shape ;
     virial_shape.AddDim (nframes);
@@ -88,7 +100,7 @@ class ProdVirialSeAOp : public OpKernel {
     const FPTYPE * p_rij = rij_tensor.flat<FPTYPE>().data();
     const int * p_nlist = nlist_tensor.flat<int>().data();
     
-    for(int kk = 0; kk < nframes; ++kk){
+    for(int_64 kk = 0; kk < nframes; ++kk){
       FPTYPE * virial = p_virial + kk * 9;
       FPTYPE * atom_virial = p_atom_virial + kk * nall * 9;
       const FPTYPE * net_deriv = p_net_deriv + kk * nloc * ndescrpt;
@@ -152,8 +164,8 @@ class ProdVirialSeROp : public OpKernel {
     OP_REQUIRES (context, (nframes == in_deriv_tensor.shape().dim_size(0)), errors::InvalidArgument ("number of samples should match"));
     OP_REQUIRES (context, (nframes == rij_tensor.shape().dim_size(0)),      errors::InvalidArgument ("number of samples should match"));
     OP_REQUIRES (context, (nframes == nlist_tensor.shape().dim_size(0)),    errors::InvalidArgument ("number of samples should match"));
-    OP_REQUIRES (context, (nloc * ndescrpt * 3 == in_deriv_tensor.shape().dim_size(1)), errors::InvalidArgument ("number of descriptors should match"));
-    OP_REQUIRES (context, (nloc * nnei * 3 == rij_tensor.shape().dim_size(1)),  errors::InvalidArgument ("dim of rij should be nnei * 3"));
+    OP_REQUIRES (context, (int_64(nloc) * ndescrpt * 3 == in_deriv_tensor.shape().dim_size(1)), errors::InvalidArgument ("number of descriptors should match"));
+    OP_REQUIRES (context, (int_64(nloc) * nnei * 3 == rij_tensor.shape().dim_size(1)),  errors::InvalidArgument ("dim of rij should be nnei * 3"));
     // Create an output tensor
     TensorShape virial_shape ;
     virial_shape.AddDim (nframes);
@@ -184,7 +196,7 @@ class ProdVirialSeROp : public OpKernel {
     const FPTYPE * p_rij = rij_tensor.flat<FPTYPE>().data();
     const int * p_nlist = nlist_tensor.flat<int>().data();
     
-    for(int kk = 0; kk < nframes; ++kk){
+    for(int_64 kk = 0; kk < nframes; ++kk){
       FPTYPE * virial = p_virial + kk * 9;
       FPTYPE * atom_virial = p_atom_virial + kk * nall * 9;
       const FPTYPE * net_deriv = p_net_deriv + kk * nloc * ndescrpt;
@@ -221,6 +233,9 @@ REGISTER_KERNEL_BUILDER(                                                        
     Name("ProdVirialSeA").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
     ProdVirialSeAOp<CPUDevice, T>);                                                       \
 REGISTER_KERNEL_BUILDER(                                                                  \
+    Name("ProdVirialNorot").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
+    ProdVirialSeAOp<CPUDevice, T>);                                                       \
+REGISTER_KERNEL_BUILDER(                                                                  \
     Name("ProdVirialSeR").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
     ProdVirialSeROp<CPUDevice, T>);
 REGISTER_CPU(float);
@@ -230,6 +245,9 @@ REGISTER_CPU(double);
 #define REGISTER_GPU(T)                                                                   \
 REGISTER_KERNEL_BUILDER(                                                                  \
     Name("ProdVirialSeA").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms"), \
+    ProdVirialSeAOp<GPUDevice, T>);                                                       \
+REGISTER_KERNEL_BUILDER(                                                                  \
+    Name("ProdVirialNorot").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms"), \
     ProdVirialSeAOp<GPUDevice, T>);                                                       \
 REGISTER_KERNEL_BUILDER(                                                                  \
     Name("ProdVirialSeR").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms"), \

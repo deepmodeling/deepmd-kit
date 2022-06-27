@@ -5,8 +5,10 @@ from deepmd.common import ClassArg, add_data_requirement
 from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import global_cvt_2_ener_float
 from deepmd.utils.sess import run_sess
+from .loss import Loss
 
-class TensorLoss () :
+
+class TensorLoss(Loss) :
     """
     Loss function for tensorial properties.
     """

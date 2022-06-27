@@ -5,7 +5,7 @@
 #include <gtest/gtest.h>
 #include "utilities.h"
 
-class TestTabulate : public ::testing::Test
+class TestTabulateSeA : public ::testing::Test
 {
 protected:
   // em_x = tf.random.uniform([4, 16], minval=0, maxval=0.2, dtype = tf.float64)
@@ -144,7 +144,7 @@ protected:
   }
 };
 
-TEST_F(TestTabulate, tabulate_fusion_se_a_cpu)
+TEST_F(TestTabulateSeA, tabulate_fusion_se_a_cpu)
 {
   std::vector<double> xyz_scatter(nloc * nnei * last_layer_size);
   deepmd::tabulate_fusion_se_a_cpu<double>(&xyz_scatter[0], &table[0], &info[0], &em_x[0], &em[0], nloc, nnei, last_layer_size);
@@ -155,7 +155,7 @@ TEST_F(TestTabulate, tabulate_fusion_se_a_cpu)
   }
 }
 
-TEST_F(TestTabulate, tabulate_fusion_se_a_grad_cpu)
+TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_cpu)
 {
   std::vector<double> dy_dem_x(em_x.size());
   std::vector<double> dy_dem(em.size());
@@ -174,7 +174,7 @@ TEST_F(TestTabulate, tabulate_fusion_se_a_grad_cpu)
 }
 
 #if GOOGLE_CUDA
-TEST_F(TestTabulate, tabulate_fusion_se_a_gpu_cuda)
+TEST_F(TestTabulateSeA, tabulate_fusion_se_a_gpu_cuda)
 {
   std::vector<double> xyz_scatter(nloc * nnei * last_layer_size, 0.0);
 
@@ -197,7 +197,7 @@ TEST_F(TestTabulate, tabulate_fusion_se_a_gpu_cuda)
   }
 }
 
-TEST_F(TestTabulate, tabulate_fusion_se_a_grad_gpu_cuda)
+TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_gpu_cuda)
 {
   std::vector<double> dy_dem_x(em_x.size(), 0.0);
   std::vector<double> dy_dem(em.size(), 0.0);
@@ -234,7 +234,7 @@ TEST_F(TestTabulate, tabulate_fusion_se_a_grad_gpu_cuda)
 #endif // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
-TEST_F(TestTabulate, tabulate_fusion_se_a_gpu_rocm)
+TEST_F(TestTabulateSeA, tabulate_fusion_se_a_gpu_rocm)
 {
   std::vector<double> xyz_scatter(nloc * nnei * last_layer_size, 0.0);
 
@@ -257,7 +257,7 @@ TEST_F(TestTabulate, tabulate_fusion_se_a_gpu_rocm)
   }
 }
 
-TEST_F(TestTabulate, tabulate_fusion_se_a_grad_gpu_rocm)
+TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_gpu_rocm)
 {
   std::vector<double> dy_dem_x(em_x.size(), 0.0);
   std::vector<double> dy_dem(em.size(), 0.0);

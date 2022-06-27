@@ -11,7 +11,7 @@ __global__ void force_deriv_wrt_center_atom(
     const int ndescrpt)
 {
   __shared__ FPTYPE data[THREADS_PER_BLOCK * 3];
-  unsigned int bid = blockIdx.x;
+  int_64 bid = blockIdx.x;
   unsigned int tid = threadIdx.x;
   for (int ii = tid; ii < THREADS_PER_BLOCK * 3; ii += THREADS_PER_BLOCK) {
     data[ii] = 0.f;
@@ -49,7 +49,7 @@ __global__ void force_deriv_wrt_neighbors_a(
     const int nnei)
 {  
     // idy -> nnei
-    const unsigned int idx = blockIdx.x;
+    const int_64 idx = blockIdx.x;
     const unsigned int idy = blockIdx.y * blockDim.x + threadIdx.x;
     const unsigned int idz = threadIdx.y;
     const int ndescrpt = nnei * 4;
@@ -78,7 +78,7 @@ __global__ void force_deriv_wrt_neighbors_r(
 		const int nnei)
 {  
     // idy -> nnei
-    const unsigned int idx = blockIdx.x;
+    const int_64 idx = blockIdx.x;
     const unsigned int idy = blockIdx.y * blockDim.x + threadIdx.x;
     const unsigned int idz = threadIdx.y;
     const int ndescrpt = nnei * 1;
@@ -109,7 +109,7 @@ void prod_force_a_gpu_cuda(
   const int ndescrpt = nnei * 4;
   DPErrcheck(cudaMemset(
       force, 
-      0.0, sizeof(FPTYPE) * nall * 3));
+      0, sizeof(FPTYPE) * nall * 3));
 
   force_deriv_wrt_center_atom<FPTYPE, TPB> <<<nloc, TPB>>>(
       force, 
@@ -141,7 +141,7 @@ void prod_force_r_gpu_cuda(
   const int ndescrpt = nnei * 1;
   DPErrcheck(cudaMemset(
       force, 
-      0.0, sizeof(FPTYPE) * nall * 3));
+      0, sizeof(FPTYPE) * nall * 3));
 
   force_deriv_wrt_center_atom<FPTYPE, TPB> <<<nloc, TPB>>>(
       force, 

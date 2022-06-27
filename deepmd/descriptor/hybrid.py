@@ -189,7 +189,7 @@ class DescrptHybrid (Descriptor):
             dout = tf.reshape(dout, [-1, ii.get_dim_out()])
             all_dout.append(dout)
         dout = tf.concat(all_dout, axis = 1)
-        dout = tf.reshape(dout, [-1, natoms[0] * self.get_dim_out()])
+        dout = tf.reshape(dout, [-1, natoms[0], self.get_dim_out()])
         return dout
         
 
@@ -279,7 +279,8 @@ class DescrptHybrid (Descriptor):
 
 
     def init_variables(self,
-                       model_file : str,
+                       graph: tf.Graph,
+                       graph_def: tf.GraphDef,
                        suffix : str = "",
     ) -> None:
         """
@@ -287,13 +288,15 @@ class DescrptHybrid (Descriptor):
 
         Parameters
         ----------
-        model_file : str
-            The input frozen model file
+        graph : tf.Graph
+            The input frozen model graph
+        graph_def : tf.GraphDef
+            The input frozen model graph_def
         suffix : str, optional
             The suffix of the scope
         """
         for idx, ii in enumerate(self.descrpt_list):
-            ii.init_variables(model_file, suffix=f"{suffix}_{idx}")
+            ii.init_variables(graph, graph_def, suffix=f"{suffix}_{idx}")
 
     def get_tensor_names(self, suffix : str = "") -> Tuple[str]:
         """Get names of tensors.

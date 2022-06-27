@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 3.9)
 project(deepmd_api_test)
-set(CMAKE_LINK_WHAT_YOU_USE TRUE)
 
 if (NOT DEFINED BUILD_CPP_IF) 
   set(BUILD_CPP_IF TRUE)
@@ -37,7 +36,6 @@ set(opname "deepmd_op")
 set(OP_BASE_DIR ${CMAKE_SOURCE_DIR}/../../op)
 # file(GLOB OP_SRC ${OP_BASE_DIR}/*.cc)
 file(GLOB OP_SRC ${OP_BASE_DIR}/custom_op.cc ${OP_BASE_DIR}/prod_force.cc ${OP_BASE_DIR}/prod_virial.cc ${OP_BASE_DIR}/descrpt.cc ${OP_BASE_DIR}/descrpt_se_a_ef.cc ${OP_BASE_DIR}/descrpt_se_a_ef.cc ${OP_BASE_DIR}/descrpt_se_a_ef_para.cc ${OP_BASE_DIR}/descrpt_se_a_ef_vert.cc ${OP_BASE_DIR}/pair_tab.cc ${OP_BASE_DIR}/prod_force_multi_device.cc ${OP_BASE_DIR}/prod_virial_multi_device.cc ${OP_BASE_DIR}/soft_min.cc ${OP_BASE_DIR}/soft_min_force.cc ${OP_BASE_DIR}/soft_min_virial.cc ${OP_BASE_DIR}/ewald_recp.cc ${OP_BASE_DIR}/gelu_multi_device.cc ${OP_BASE_DIR}/map_aparam.cc ${OP_BASE_DIR}/neighbor_stat.cc ${OP_BASE_DIR}/unaggregated_grad.cc ${OP_BASE_DIR}/tabulate_multi_device.cc ${OP_BASE_DIR}/prod_env_mat_multi_device.cc)
-add_library(${opname} SHARED ${OP_SRC})
 
 list (APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/../../cmake/)
 find_package(tensorflow REQUIRED)
@@ -47,6 +45,7 @@ else()
   set (CMAKE_CXX_STANDARD 11)
 endif()
 include_directories(${TensorFlow_INCLUDE_DIRS})
+add_library(${opname} SHARED ${OP_SRC})
 
 find_package(Threads)
 # find openmp
@@ -99,11 +98,11 @@ else()
 endif()
 
 if (USE_CUDA_TOOLKIT)
-  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} rt deepmd_op_cuda coverage_config)
+  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} pthread ${TensorFlow_LIBRARY} rt deepmd_op_cuda coverage_config)
 elseif(USE_ROCM_TOOLKIT)
-  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} rt deepmd_op_rocm coverage_config)
+  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} pthread ${TensorFlow_LIBRARY} rt deepmd_op_rocm coverage_config)
 else()
-  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} ${opname} pthread ${TensorFlow_LIBRARY} rt coverage_config)
+  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} pthread ${TensorFlow_LIBRARY} rt coverage_config)
 endif()
 
 find_package(Protobuf)
@@ -134,3 +133,16 @@ if(NOT GTEST_LIBRARIES)
 else ()
   include_directories(${GTEST_INCLUDE_DIRS})
 endif ()
+
+set_target_properties(
+  runUnitTests
+  PROPERTIES 
+  INSTALL_RPATH "$ORIGIN/../lib"
+)
+set_target_properties(
+  ${apiname}
+  PROPERTIES 
+  INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}"
+)
+install(TARGETS runUnitTests DESTINATION bin/)
+install(TARGETS ${libname} ${apiname} ${opname} DESTINATION lib/)

@@ -17,7 +17,7 @@ __global__ void force_grad_wrt_center_atom(
     const int ndescrpt)
 {
     __shared__ FPTYPE grad_one[3];
-    unsigned int center_idx = blockIdx.x;
+    int_64 center_idx = blockIdx.x;
     unsigned int tid = threadIdx.x;
     if(tid < 3){
         grad_one[tid] = grad[center_idx * 3 + tid];
@@ -39,7 +39,7 @@ __global__ void force_grad_wrt_neighbors_a(
     const int nnei)
 {
     // idy -> nnei
-    const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const int_64 idx = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned int idy = blockIdx.y;
     const unsigned int idw = threadIdx.y;
     if (idx >= nloc) {
@@ -63,7 +63,7 @@ __global__ void force_grad_wrt_neighbors_r(
     const int nnei)
 {
     // idy -> nnei
-    const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const int_64 idx = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned int idy = blockIdx.y;
     if (idx >= nloc) {
         return;
@@ -89,7 +89,7 @@ void prod_force_grad_a_gpu_rocm(
     const int ndescrpt = nnei * 4;
     DPErrcheck(hipMemset(
         grad_net, 
-        0.0, sizeof(FPTYPE) * nloc * ndescrpt));
+        0, sizeof(FPTYPE) * nloc * ndescrpt));
     const int nblock = (ndescrpt + TPB - 1) / TPB;
     dim3 block_grid(nloc, nblock);
     dim3 thread_grid(TPB, 1);
@@ -121,7 +121,7 @@ void prod_force_grad_r_gpu_rocm(
     const int ndescrpt = nnei * 1;
     DPErrcheck(hipMemset(
         grad_net, 
-        0.0, sizeof(FPTYPE) * nloc * ndescrpt));
+        0, sizeof(FPTYPE) * nloc * ndescrpt));
     const int nblock = (ndescrpt + TPB - 1) / TPB;
     dim3 block_grid(nloc, nblock);
     dim3 thread_grid(TPB, 1);

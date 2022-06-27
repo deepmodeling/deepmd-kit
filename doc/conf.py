@@ -15,6 +15,9 @@ import subprocess
 import sys
 import recommonmark
 from recommonmark.transform import AutoStructify
+from datetime import date
+from deepmd.common import ACTIVATION_FN_DICT, PRECISION_DICT
+from deepmd.utils.argcheck import list_to_doc
 
 def mkindex(dirname):
     dirname = dirname + "/"
@@ -106,33 +109,8 @@ def classify_index_TS():
 # -- Project information -----------------------------------------------------
 
 project = 'DeePMD-kit'
-copyright = '2017-2021, Deep Modeling'
-author = 'Deep Modeling'
-
-def run_doxygen(folder):
-    """Run the doxygen make command in the designated folder"""
-
-    try:
-        retcode = subprocess.call("cd %s; doxygen Doxyfile" % folder, shell=True)
-        if retcode < 0:
-            sys.stderr.write("doxygen terminated by signal %s" % (-retcode))
-    except OSError as e:
-        sys.stderr.write("doxygen execution failed: %s" % e)
-
-
-def generate_doxygen_xml(app):
-    """Run the doxygen make commands if we're on the ReadTheDocs server"""
-
-    read_the_docs_build = os.environ.get('READTHEDOCS', None) == 'True'
-
-    if read_the_docs_build:
-        run_doxygen("./")
-    else:
-        subprocess.call("doxygen Doxyfile", shell=True)
-
-def generate_train_input(app):
-    with open("train-input-auto.rst", 'w') as f:
-        f.write(subprocess.check_output((sys.executable, "-m", "deepmd", "doc-train-input"), universal_newlines=True))
+copyright = '2017-%d, DeepModeling' % date.today().year
+author = 'DeepModeling'
 
 def run_apidoc(_):
     from sphinx.ext.apidoc import main
@@ -145,9 +123,7 @@ def run_apidoc(_):
 def setup(app):
 
     # Add hook for building doxygen xml when needed
-    app.connect("builder-inited", generate_doxygen_xml)
     app.connect('builder-inited', run_apidoc)
-    app.connect('builder-inited', generate_train_input)
 
 # -- General configuration ---------------------------------------------------
 
@@ -167,12 +143,15 @@ def setup(app):
 #classify_index_TS()
 
 extensions = [
+    "deepmodeling_sphinx",
+    "dargs.sphinx",
     "sphinx_rtd_theme",
     'myst_parser',
     'sphinx.ext.autosummary',
     'sphinx.ext.mathjax',
     'sphinx.ext.viewcode',
     'sphinx.ext.intersphinx',
+    'sphinxarg.ext',
     'numpydoc',
     'breathe',
     'exhale'
@@ -233,6 +212,11 @@ import typing
 for typing_type in typing.__all__:
     numpydoc_xref_aliases[typing_type] = "typing.%s" % typing_type
 
+rst_epilog = """
+.. |ACTIVATION_FN| replace:: %s
+.. |PRECISION| replace:: %s
+""" % (list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
+
 # -- Options for HTML output -------------------------------------------------
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
@@ -249,3 +233,16 @@ html_css_files = ['css/custom.css']
 autodoc_default_flags = ['members']
 autosummary_generate = True
 master_doc = 'index'
+mathjax_path = 'https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.0/es5/tex-mml-chtml.min.js'
+myst_enable_extensions = [
+    'dollarmath',
+]
+# fix emoji issue in pdf
+latex_engine = "xelatex"
+latex_elements = {
+    'fontpkg': r'''
+\usepackage{fontspec}
+\setmainfont{Symbola}
+''',
+}
+

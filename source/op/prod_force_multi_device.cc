@@ -1,5 +1,6 @@
 #include "custom_op.h"
 #include "prod_force.h"
+#include "errors.h"
 
 REGISTER_OP("ProdForceSeA")
     .Attr("T: {float, double} = DT_DOUBLE")
@@ -9,6 +10,31 @@ REGISTER_OP("ProdForceSeA")
     .Input("natoms: int32")
     .Attr("n_a_sel: int")
     .Attr("n_r_sel: int")
+    .Output("force: T");
+
+// compatible with v0.12
+REGISTER_OP("ProdForceNorot")
+    .Attr("T: {float, double} = DT_DOUBLE")
+    .Input("net_deriv: T")
+    .Input("in_deriv: T")
+    .Input("nlist: int32")
+    .Input("natoms: int32")
+    .Attr("n_a_sel: int")
+    .Attr("n_r_sel: int")
+    .Output("force: T");
+
+// rename temp op
+REGISTER_OP("ParallelProdForceSeA")
+    .Attr("T: {float, double} = DT_DOUBLE")
+    .Input("net_deriv: T")
+    .Input("in_deriv: T")
+    .Input("nlist: int32")
+    .Input("natoms: int32")
+    .Attr("n_a_sel: int")
+    .Attr("n_r_sel: int")
+    .Attr("parallel: bool = false")
+    .Attr("start_frac: float = 0.")
+    .Attr("end_frac: float = 1.")
     .Output("force: T");
 
 REGISTER_OP("ProdForceSeR")
@@ -22,7 +48,11 @@ REGISTER_OP("ProdForceSeR")
 template<typename Device, typename FPTYPE>
 class ProdForceSeAOp : public OpKernel {
 public:
-  explicit ProdForceSeAOp(OpKernelConstruction* context) : OpKernel(context) {}
+  explicit ProdForceSeAOp(OpKernelConstruction* context) : OpKernel(context) {
+    if(context->HasAttr("parallel")) OP_REQUIRES_OK(context, context->GetAttr("parallel", &parallel));
+    if(context->HasAttr("start_frac")) OP_REQUIRES_OK(context, context->GetAttr("start_frac", &start_frac));
+    if(context->HasAttr("end_frac")) OP_REQUIRES_OK(context, context->GetAttr("end_frac", &end_frac));
+  }
 
   void Compute(OpKernelContext* context) override {
     deepmd::safe_compute(context, [this](OpKernelContext* context) {this->_Compute(context);});
@@ -50,7 +80,7 @@ public:
     // check the sizes
     OP_REQUIRES (context, (nframes == in_deriv_tensor.shape().dim_size(0)), errors::InvalidArgument ("number of samples should match"));
     OP_REQUIRES (context, (nframes == nlist_tensor.shape().dim_size(0)),    errors::InvalidArgument ("number of samples should match"));
-    OP_REQUIRES (context, (nloc * ndescrpt * 3 == in_deriv_tensor.shape().dim_size(1)), errors::InvalidArgument ("number of descriptors should match"));
+    OP_REQUIRES (context, (int_64(nloc) * ndescrpt * 3 == in_deriv_tensor.shape().dim_size(1)), errors::InvalidArgument ("number of descriptors should match"));
     // Create an output tensor
     TensorShape force_shape ;
     force_shape.AddDim (nframes);
@@ -81,7 +111,20 @@ public:
     const FPTYPE * p_in_deriv = in_deriv_tensor.flat<FPTYPE>().data();
     const int * p_nlist = nlist_tensor.flat<int>().data();
 
-    for(int kk = 0; kk < nframes; ++kk){
+    int start_index = 0, end_index = nloc, nloc_loc = nloc;
+    if (parallel) {
+      if (device != "CPU")
+        throw deepmd::deepmd_exception("Auto parallelization for ProdForceA is not supported on GPUs!");
+      // we split in_deriv, net_deriv, and nlist along nloc
+      // compute start and end index along nloc
+      // frac belongs to [0, 1]
+      // end_index will be not visited, only visit end_index-1
+      start_index = lround(start_frac * nloc);
+      end_index = lround(end_frac * nloc);
+      nloc_loc = end_index - start_index;
+    }
+
+    for(int_64 kk = 0; kk < nframes; ++kk){
       FPTYPE * force = p_force + kk * nall * 3;
       const FPTYPE * net_deriv = p_net_deriv + kk * nloc * ndescrpt;
       const FPTYPE * in_deriv = p_in_deriv + kk * nloc * ndescrpt * 3;
@@ -102,12 +145,15 @@ public:
     else if (device == "CPU") {
       deepmd::prod_force_a_cpu(    
           force, 
-          net_deriv, in_deriv, nlist, nloc, nall, nnei);
+          net_deriv, in_deriv, nlist, nloc_loc, nall, nnei, start_index=start_index);
     }
     }
   }
  private:
   std::string device;
+  bool parallel = false;
+  float start_frac = 0.f;
+  float end_frac = 1.f;
 };
 
 template<typename Device, typename FPTYPE>
@@ -166,7 +212,7 @@ public:
     const FPTYPE * p_in_deriv = in_deriv_tensor.flat<FPTYPE>().data();
     const int * p_nlist = nlist_tensor.flat<int>().data();
 
-    for(int kk = 0; kk < nframes; ++kk){
+    for(int_64 kk = 0; kk < nframes; ++kk){
       FPTYPE * force = p_force + kk * nall * 3;
       const FPTYPE * net_deriv = p_net_deriv + kk * nloc * ndescrpt;
       const FPTYPE * in_deriv = p_in_deriv + kk * nloc * ndescrpt * 3;
@@ -201,6 +247,12 @@ REGISTER_KERNEL_BUILDER(                                                        
     Name("ProdForceSeA").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
     ProdForceSeAOp<CPUDevice, T>);                                                       \
 REGISTER_KERNEL_BUILDER(                                                                 \
+    Name("ProdForceNorot").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
+    ProdForceSeAOp<CPUDevice, T>);                                                       \
+REGISTER_KERNEL_BUILDER(                                                                 \
+    Name("ParallelProdForceSeA").Device(DEVICE_CPU).TypeConstraint<T>("T"),             \
+    ProdForceSeAOp<CPUDevice, T>);                                                       \
+REGISTER_KERNEL_BUILDER(                                                                 \
     Name("ProdForceSeR").Device(DEVICE_CPU).TypeConstraint<T>("T"),                      \
     ProdForceSeROp<CPUDevice, T>); 
 REGISTER_CPU(float);
@@ -210,6 +262,9 @@ REGISTER_CPU(double);
 #define REGISTER_GPU(T)                                                                  \
 REGISTER_KERNEL_BUILDER(                                                                 \
     Name("ProdForceSeA").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms"), \
+    ProdForceSeAOp<GPUDevice, T>);                                                       \
+REGISTER_KERNEL_BUILDER(                                                                 \
+    Name("ProdForceNorot").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms"), \
     ProdForceSeAOp<GPUDevice, T>);                                                       \
 REGISTER_KERNEL_BUILDER(                                                                 \
     Name("ProdForceSeR").Device(DEVICE_GPU).TypeConstraint<T>("T").HostMemory("natoms"), \

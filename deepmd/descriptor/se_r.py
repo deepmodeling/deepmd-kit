@@ -2,12 +2,13 @@ import numpy as np
 from typing import Tuple, List
 
 from deepmd.env import tf
-from deepmd.common import get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter
-from deepmd.utils.argcheck import list_to_doc
+from deepmd.common import get_activation_func, get_precision, cast_precision
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
+from deepmd.utils.tabulate import DPTabulate
+from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph
 from deepmd.utils.network import embedding_net, embedding_net_rand_seed_shift
 from deepmd.utils.sess import run_sess
 from .descriptor import Descriptor
@@ -44,13 +45,12 @@ class DescrptSeR (DescrptSe):
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     activation_function
-            The activation function in the embedding net. Supported options are {0}
+            The activation function in the embedding net. Supported options are |ACTIVATION_FN|
     precision
-            The precision of the embedding net parameters. Supported options are {1}
+            The precision of the embedding net parameters. Supported options are |PRECISION|
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
     """
-    @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   rcut: float,
                   rcut_smth: float,
@@ -118,6 +118,7 @@ class DescrptSeR (DescrptSe):
         self.useBN = False
         self.davg = None
         self.dstd = None
+        self.compress=False
         self.embedding_net_variables = None
 
         self.place_holders = {}
@@ -229,6 +230,60 @@ class DescrptSeR (DescrptSe):
             self.davg = np.array(all_davg)
         self.dstd = np.array(all_dstd)
 
+    def enable_compression(self,
+                           min_nbor_dist : float,
+                           model_file : str = 'frozon_model.pb',
+                           table_extrapolate : float = 5,
+                           table_stride_1 : float = 0.01,
+                           table_stride_2 : float = 0.1,
+                           check_frequency : int = -1,
+                           suffix : str = "",
+    ) -> None:
+        """
+        Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+
+        Parameters
+        ----------
+        min_nbor_dist
+                The nearest distance between atoms
+        model_file
+                The original frozen model, which will be compressed by the program
+        table_extrapolate
+                The scale of model extrapolation
+        table_stride_1
+                The uniform stride of the first table
+        table_stride_2
+                The uniform stride of the second table
+        check_frequency
+                The overflow check frequency
+        suffix : str, optional
+                The suffix of the scope
+        """
+        assert (
+            not self.filter_resnet_dt
+        ), "Model compression error: descriptor resnet_dt must be false!"
+
+        for ii in range(len(self.filter_neuron) - 1):
+            if self.filter_neuron[ii] * 2 != self.filter_neuron[ii + 1]:
+                raise NotImplementedError(
+                    "Model Compression error: descriptor neuron [%s] is not supported by model compression! "
+                    "The size of the next layer of the neural network must be twice the size of the previous layer." 
+                    % ','.join([str(item) for item in self.filter_neuron])
+                )
+
+        self.compress = True
+        self.table = DPTabulate(
+            self, self.filter_neuron, model_file, activation_fn = self.filter_activation_fn, suffix=suffix)
+        self.table_config = [table_extrapolate, table_stride_1, table_stride_2, check_frequency]
+        self.lower, self.upper \
+            = self.table.build(min_nbor_dist, 
+                               table_extrapolate, 
+                               table_stride_1, 
+                               table_stride_2)
+        
+        graph, _ = load_graph_def(model_file)
+        self.davg = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_avg' % suffix)
+        self.dstd = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_std' % suffix)
 
     def build (self, 
                coord_ : tf.Tensor, 
@@ -358,7 +413,7 @@ class DescrptSeR (DescrptSe):
         """
         [net_deriv] = tf.gradients (atom_ener, self.descrpt_reshape)
         tf.summary.histogram('net_derivative', net_deriv)
-        net_deriv_reshape = tf.reshape (net_deriv, [-1, natoms[0] * self.ndescrpt])        
+        net_deriv_reshape = tf.reshape (net_deriv, [np.cast['int64'](-1), natoms[0] * np.cast['int64'](self.ndescrpt)])        
         force \
             = op_module.prod_force_se_r (net_deriv_reshape,
                                          self.descrpt_deriv,
@@ -384,24 +439,30 @@ class DescrptSeR (DescrptSe):
                      suffix = '', 
                      trainable = True) :
         start_index = 0
-        inputs = tf.reshape(inputs, [-1, self.ndescrpt * natoms[0]])
+        inputs = tf.reshape(inputs, [-1, natoms[0], self.ndescrpt])
         output = []
-        if not self.type_one_side:
+        if not (self.type_one_side and len(self.exclude_types) == 0):
             for type_i in range(self.ntypes):
                 inputs_i = tf.slice (inputs,
-                                     [ 0, start_index*      self.ndescrpt],
-                                     [-1, natoms[2+type_i]* self.ndescrpt] )
+                                     [ 0, start_index, 0],
+                                     [-1, natoms[2+type_i], -1] )
                 inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
-                layer = self._filter_r(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
-                layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_out()])
+                if self.type_one_side:
+                    # reuse NN parameters for all types to support type_one_side along with exclude_types
+                    reuse = tf.AUTO_REUSE
+                    filter_name = 'filter_type_all'+suffix
+                else:
+                    filter_name = 'filter_type_'+str(type_i)+suffix
+                layer = self._filter_r(inputs_i, type_i, name=filter_name, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
+                layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i], self.get_dim_out()])
                 output.append(layer)
                 start_index += natoms[2+type_i]
         else :
             inputs_i = inputs
             inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
             type_i = -1
-            layer = self._filter_r(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
-            layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0] * self.get_dim_out()])
+            layer = self._filter_r(inputs_i, type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
+            layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0], self.get_dim_out()])
             output.append(layer)
         output = tf.concat(output, axis = 1)
         return output
@@ -450,7 +511,7 @@ class DescrptSeR (DescrptSe):
             val = 1e-2
         return val
 
-
+    @cast_precision
     def _filter_r(self, 
                   inputs, 
                   type_input,
@@ -476,7 +537,11 @@ class DescrptSeR (DescrptSe):
                 shape_i = inputs_i.get_shape().as_list()
                 # with (natom x nei_type_i) x 1
                 xyz_scatter = tf.reshape(inputs_i, [-1, 1])
-                if (type_input, type_i) not in self.exclude_types:
+                if self.compress and ((type_input, type_i) not in self.exclude_types):
+                    net = 'filter_' + str(type_input) + '_net_' + str(type_i)
+                    info = [self.lower[net], self.upper[net], self.upper[net] * self.table_config[0], self.table_config[1], self.table_config[2], self.table_config[3]]
+                    xyz_scatter = op_module.tabulate_fusion_se_r(tf.cast(self.table.data[net], self.filter_precision), info, inputs_i, last_layer_size = outputs_size[-1]) 
+                elif (type_input, type_i) not in self.exclude_types:
                     xyz_scatter = embedding_net(xyz_scatter, 
                                                 self.filter_neuron, 
                                                 self.filter_precision, 
@@ -495,7 +560,7 @@ class DescrptSeR (DescrptSe):
                     xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1], outputs_size[-1]))
                 else:
                     natom = tf.shape(inputs)[0]
-                    xyz_scatter = tf.cast(tf.fill((natom, shape_i[1], outputs_size[-1]), 0.), GLOBAL_TF_FLOAT_PRECISION)
+                    xyz_scatter = tf.cast(tf.fill((natom, shape_i[1], outputs_size[-1]), 0.), self.filter_precision)
                 xyz_scatter_total.append(xyz_scatter)
 
             # natom x nei x outputs_size

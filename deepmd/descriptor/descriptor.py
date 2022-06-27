@@ -351,7 +351,8 @@ class Descriptor(PluginVariant):
         return feed_dict
 
     def init_variables(self,
-                       model_file: str,
+                       graph: tf.Graph,
+                       graph_def: tf.GraphDef,
                        suffix : str = "",
     ) -> None:
         """
@@ -359,8 +360,10 @@ class Descriptor(PluginVariant):
 
         Parameters
         ----------
-        model_file : str
-            The input model file
+        graph : tf.Graph
+            The input frozen model graph
+        graph_def : tf.GraphDef
+            The input frozen model graph_def
         suffix : str, optional
             The suffix of the scope
         

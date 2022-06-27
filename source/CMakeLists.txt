@@ -1,8 +1,5 @@
 cmake_minimum_required(VERSION 3.7)
 project(DeePMD)
-if (CMAKE_COMPILER_IS_GNUCXX)
-  set(CMAKE_LINK_WHAT_YOU_USE TRUE)
-endif ()
 
 # build cpp or python interfaces
 if (NOT DEFINED BUILD_CPP_IF) 
@@ -59,6 +56,7 @@ endif()
 
 # define USE_CUDA_TOOLKIT
 if (USE_CUDA_TOOLKIT)
+  set(CUDA_USE_STATIC_CUDA_RUNTIME OFF CACHE INTERNAL "")
   find_package(CUDA REQUIRED)
   add_definitions("-DGOOGLE_CUDA")
   message(STATUS "Found CUDA in ${CUDA_TOOLKIT_ROOT_DIR}, build nv GPU support")

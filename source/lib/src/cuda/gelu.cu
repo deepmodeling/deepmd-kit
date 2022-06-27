@@ -1,17 +1,20 @@
 #include "gelu.h"
 #include "device.h"
 
+__device__ inline double _tanh(double x) {return tanh(x);}
+__device__ inline float _tanh(float x) {return tanhf(x);}
+
 template <typename FPTYPE>
 __global__ void gelu(
     FPTYPE * out, 
     const FPTYPE * xx, 
-    int const size) 
+    const int_64 size) 
 {
-  int const idx = blockIdx.x * blockDim.x + threadIdx.x;
+  const int_64 idx = int_64(blockIdx.x) * blockDim.x + threadIdx.x;
   if (idx >= size) {
     return;
   }
-  out[idx] = xx[idx] * 0.5 * (1.0 + tanh(SQRT_2_PI * (xx[idx] + 0.044715 * xx[idx] * xx[idx] *xx[idx])));
+  out[idx] = xx[idx] * (FPTYPE)0.5 * ((FPTYPE)1.0 + _tanh((FPTYPE)SQRT_2_PI * (xx[idx] + (FPTYPE)0.044715 * xx[idx] * xx[idx] *xx[idx])));
 }
 
 template <typename FPTYPE>
@@ -19,15 +22,15 @@ __global__ void gelu_grad(
     FPTYPE * out, 
     const FPTYPE * xx, 
     const FPTYPE * dy, 
-    int const size) 
+    const int_64 size) 
 {
-  const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  const int_64 idx = int_64(blockIdx.x) * blockDim.x + threadIdx.x;
   if (idx >= size) {
     return;
   }
   // out[idx] = xx[idx] * 0.5 * (1.0 + tanh(SQRT_2_PI * (xx[idx] + 0.044715 * xx[idx] * xx[idx] *xx[idx])));
-  const FPTYPE var = tanh(SQRT_2_PI * (xx[idx] + 0.044715 * xx[idx] * xx[idx] *xx[idx]));
-  out[idx] = dy[idx] * (0.5 * SQRT_2_PI * xx[idx] * (1 - var * var) * (0.134145 * xx[idx] * xx[idx] + 1) + 0.5 * var + 0.5);
+  const FPTYPE var = _tanh((FPTYPE)SQRT_2_PI * (xx[idx] + (FPTYPE)0.044715 * xx[idx] * xx[idx] *xx[idx]));
+  out[idx] = dy[idx] * ((FPTYPE)0.5 * SQRT_2_PI * xx[idx] * ((FPTYPE)1. - var * var) * ((FPTYPE)0.134145 * xx[idx] * xx[idx] + 1) + (FPTYPE)0.5 * var + (FPTYPE)0.5);
 }
 
 template <typename FPTYPE>
@@ -36,16 +39,16 @@ __global__ void gelu_grad_grad(
     const FPTYPE * xx, 
     const FPTYPE * dy, 
     const FPTYPE * dy_2,
-    int const size) 
+    const int_64 size) 
 {
-  const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  const int_64 idx = int_64(blockIdx.x) * blockDim.x + threadIdx.x;
   if (idx >= size) {
     return;
   }
   // out[idx] = xx[idx] * 0.5 * (1.0 + tanh(SQRT_2_PI * (xx[idx] + 0.044715 * xx[idx] * xx[idx] *xx[idx])));
-  const FPTYPE var1 = tanh(SQRT_2_PI * (xx[idx] + 0.044715 * xx[idx] * xx[idx] *xx[idx]));
-  const FPTYPE var2 = SQRT_2_PI * (1 - var1 * var1) * (0.134145 * xx[idx] * xx[idx] + 1);
-  out[idx] = dy[idx] * dy_2[idx] * (0.134145 * SQRT_2_PI * xx[idx] * xx[idx] * (1 - var1 * var1) - SQRT_2_PI * xx[idx] * var2 * (0.134145 * xx[idx] * xx[idx] + 1) * var1 + var2);
+  const FPTYPE var1 = _tanh((FPTYPE)SQRT_2_PI * (xx[idx] + (FPTYPE)0.044715 * xx[idx] * xx[idx] *xx[idx]));
+  const FPTYPE var2 = (FPTYPE)SQRT_2_PI * ((FPTYPE)1. - var1 * var1) * ((FPTYPE)0.134145 * xx[idx] * xx[idx] + (FPTYPE)1.);
+  out[idx] = dy[idx] * dy_2[idx] * ((FPTYPE)0.134145 * (FPTYPE)SQRT_2_PI * xx[idx] * xx[idx] * ((FPTYPE)1. - var1 * var1) - (FPTYPE)SQRT_2_PI * xx[idx] * var2 * ((FPTYPE)0.134145 * xx[idx] * xx[idx] + (FPTYPE)1.) * var1 + var2);
 }
 
 namespace deepmd {
@@ -53,7 +56,7 @@ template<typename FPTYPE>
 void gelu_gpu_cuda(
     FPTYPE * out, 
     const FPTYPE * xx, 
-    const int size)
+    const int_64 size)
 {
   if(size <= 0){
     return;
@@ -71,7 +74,7 @@ void gelu_grad_gpu_cuda(
     FPTYPE * out, 
     const FPTYPE * xx,
     const FPTYPE * dy, 
-    const int size)
+    const int_64 size)
 {
   if(size <= 0){
     return;
@@ -90,7 +93,7 @@ void gelu_grad_grad_gpu_cuda(
     const FPTYPE * xx,
     const FPTYPE * dy, 
     const FPTYPE * dy_2,
-    const int size)
+    const int_64 size)
 {
   if(size <= 0){
     return;
@@ -103,10 +106,10 @@ void gelu_grad_grad_gpu_cuda(
   DPErrcheck(cudaDeviceSynchronize());
 }
 
-template void gelu_gpu_cuda<float>(float * out, const float * x, const int size);
-template void gelu_gpu_cuda<double>(double * out, const double * x, const int size);
-template void gelu_grad_gpu_cuda<float>(float * out, const float * x, const float * dy, const int size);
-template void gelu_grad_gpu_cuda<double>(double * out, const double * x, const double * dy, const int size);
-template void gelu_grad_grad_gpu_cuda<float>(float * out, const float * x, const float * dy, const float * dy_2, const int size);
-template void gelu_grad_grad_gpu_cuda<double>(double * out, const double * x, const double * dy, const double * dy_2, const int size);
+template void gelu_gpu_cuda<float>(float * out, const float * x, const int_64 size);
+template void gelu_gpu_cuda<double>(double * out, const double * x, const int_64 size);
+template void gelu_grad_gpu_cuda<float>(float * out, const float * x, const float * dy, const int_64 size);
+template void gelu_grad_gpu_cuda<double>(double * out, const double * x, const double * dy, const int_64 size);
+template void gelu_grad_grad_gpu_cuda<float>(float * out, const float * x, const float * dy, const float * dy_2, const int_64 size);
+template void gelu_grad_grad_gpu_cuda<double>(double * out, const double * x, const double * dy, const double * dy_2, const int_64 size);
 }

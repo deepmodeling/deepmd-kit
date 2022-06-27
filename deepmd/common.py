@@ -2,6 +2,7 @@
 
 import json
 import warnings
+import tensorflow
 from functools import wraps
 from pathlib import Path
 from typing import (
@@ -20,6 +21,7 @@ import numpy as np
 import yaml
 
 from deepmd.env import op_module, tf
+from tensorflow.python.framework import tensor_util
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION, GLOBAL_NP_FLOAT_PRECISION
 from deepmd.utils.sess import run_sess
 from deepmd.utils.errors import GraphWithoutTensorError
@@ -63,7 +65,12 @@ def gelu(x: tf.Tensor) -> tf.Tensor:
     Original paper
     https://arxiv.org/abs/1606.08415
     """
-    return op_module.gelu(x)
+    def gelu_wrapper(x):
+        try:
+            return tensorflow.nn.gelu(x, approximate=True)
+        except AttributeError:
+            return op_module.gelu(x)
+    return (lambda x: gelu_wrapper(x))(x)
 
 
 # TODO this is not a good way to do things. This is some global variable to which
@@ -88,6 +95,7 @@ def add_data_requirement(
     high_prec: bool = False,
     type_sel: bool = None,
     repeat: int = 1,
+    default: float = 0.,
 ):
     """Specify data requirements for training.
 
@@ -109,6 +117,8 @@ def add_data_requirement(
         select only certain type of atoms, by default None
     repeat : int, optional
         if specify repaeat data `repeat` times, by default 1
+    default : float, optional, default=0.
+        default value of data
     """
     data_requirement[key] = {
         "ndof": ndof,
@@ -117,6 +127,7 @@ def add_data_requirement(
         "high_prec": high_prec,
         "type_sel": type_sel,
         "repeat": repeat,
+        "default": default,
     }
 
 
@@ -437,28 +448,6 @@ def expand_sys_str(root_dir: Union[str, Path]) -> List[str]:
     return matches
 
 
-def docstring_parameter(*sub: Tuple[str, ...]):
-    """Add parameters to object docstring.
-
-    Parameters
-    ----------
-    sub: Tuple[str, ...]
-        list of strings that will be inserted into prepared locations in docstring.
-
-    Note
-    ----
-    Can be used on both object and classes.
-    """
-
-    @wraps
-    def dec(obj: "_OBJ") -> "_OBJ":
-        if obj.__doc__ is not None:
-            obj.__doc__ = obj.__doc__.format(*sub)
-        return obj
-
-    return dec
-
-
 def get_np_precision(precision: "_PRECISION") -> np.dtype:
     """Get numpy precision constant from string.
 
@@ -487,3 +476,77 @@ def get_np_precision(precision: "_PRECISION") -> np.dtype:
         return np.float64
     else:
         raise RuntimeError(f"{precision} is not a valid precision")
+
+
+def safe_cast_tensor(input: tf.Tensor,
+                     from_precision: tf.DType,
+                     to_precision: tf.DType) -> tf.Tensor:
+    """Convert a Tensor from a precision to another precision.
+
+    If input is not a Tensor or without the specific precision, the method will not
+    cast it.
+
+    Parameters
+    ----------
+    input: tf.Tensor
+        input tensor
+    precision : tf.DType
+        Tensor data type that casts to
+
+    Returns
+    -------
+    tf.Tensor
+        casted Tensor
+    """
+    if tensor_util.is_tensor(input) and input.dtype == from_precision:
+        return tf.cast(input, to_precision)
+    return input
+
+
+def cast_precision(func: Callable) -> Callable:
+    """A decorator that casts and casts back the input
+    and output tensor of a method.
+
+    The decorator should be used in a classmethod.
+
+    The decorator will do the following thing:
+    (1) It casts input Tensors from `GLOBAL_TF_FLOAT_PRECISION`
+    to precision defined by property `precision`.
+    (2) It casts output Tensors from `precision` to
+    `GLOBAL_TF_FLOAT_PRECISION`.
+    (3) It checks inputs and outputs and only casts when
+    input or output is a Tensor and its dtype matches
+    `GLOBAL_TF_FLOAT_PRECISION` and `precision`, respectively.
+    If it does not match (e.g. it is an integer), the decorator
+    will do nothing on it.
+
+    Returns
+    -------
+    Callable
+        a decorator that casts and casts back the input and
+        output tensor of a method
+
+    Examples
+    --------
+    >>> class A:
+    ...   @property
+    ...   def precision(self):
+    ...     return tf.float32
+    ...
+    ...   @cast_precision
+    ...   def f(x: tf.Tensor, y: tf.Tensor) -> tf.Tensor:
+    ...     return x ** 2 + y
+    """
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        # only convert tensors
+        returned_tensor = func(
+            self,
+            *[safe_cast_tensor(vv, GLOBAL_TF_FLOAT_PRECISION, self.precision) for vv in args],
+            **{kk: safe_cast_tensor(vv, GLOBAL_TF_FLOAT_PRECISION, self.precision) for kk, vv in kwargs.items()},
+        )
+        if isinstance(returned_tensor, tuple):
+            return tuple((safe_cast_tensor(vv, self.precision, GLOBAL_TF_FLOAT_PRECISION) for vv in returned_tensor))
+        else:
+            return safe_cast_tensor(returned_tensor, self.precision, GLOBAL_TF_FLOAT_PRECISION)
+    return wrapper

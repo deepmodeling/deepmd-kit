@@ -9,9 +9,8 @@ from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.utils.network import  embedding_net
 
-import math
-from deepmd.common import get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, get_np_precision
-from deepmd.utils.argcheck import list_to_doc
+from deepmd.utils.graph import get_type_embedding_net_variables_from_graph_def
+from deepmd.common import get_activation_func, get_precision
 
 
 def embed_atom_type(
@@ -64,9 +63,9 @@ class TypeEmbedNet():
             Time-step `dt` in the resnet construction:
             y = x + dt * \phi (Wx + b)
     activation_function
-            The activation function in the embedding net. Supported options are {0}
+            The activation function in the embedding net. Supported options are |ACTIVATION_FN|
     precision
-            The precision of the embedding net parameters. Supported options are {1}        
+            The precision of the embedding net parameters. Supported options are |PRECISION| 
     trainable
             If the weights of embedding net are trainable.
     seed
@@ -74,7 +73,6 @@ class TypeEmbedNet():
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
     """
-    @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__(
             self,
             neuron: List[int]=[],
@@ -95,6 +93,7 @@ class TypeEmbedNet():
         self.filter_activation_fn = get_activation_func(activation_function)
         self.trainable = trainable
         self.uniform_seed = uniform_seed
+        self.type_embedding_net_variables = None
 
 
     def build(
@@ -136,9 +135,27 @@ class TypeEmbedNet():
                 resnet_dt = self.filter_resnet_dt,
                 seed = self.seed,
                 trainable = self.trainable, 
+                initial_variables = self.type_embedding_net_variables,
                 uniform_seed = self.uniform_seed)
         ebd_type = tf.reshape(ebd_type, [-1, self.neuron[-1]]) # nnei * neuron[-1]
         self.ebd_type = tf.identity(ebd_type, name ='t_typeebd')
         return self.ebd_type 
 
+    def init_variables(self,
+                       graph: tf.Graph,
+                       graph_def: tf.GraphDef,
+                       suffix = '',
+    ) -> None:
+        """
+        Init the type embedding net variables with the given dict
 
+        Parameters
+        ----------
+        graph : tf.Graph
+            The input frozen model graph
+        graph_def : tf.GraphDef
+            The input frozen model graph_def
+        suffix
+            Name suffix to identify this descriptor
+        """
+        self.type_embedding_net_variables = get_type_embedding_net_variables_from_graph_def(graph_def, suffix = suffix)
