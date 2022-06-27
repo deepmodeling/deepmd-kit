@@ -75,8 +75,13 @@ class ArgsPlugin:
             alias = tuple(alias)
         return self.__plugin.register((name, alias))
 
-    def get_all_argument(self) -> List[Argument]:
+    def get_all_argument(self, exclude_hybrid: bool = False) -> List[Argument]:
         """Get all arguments.
+
+        Parameters
+        ----------
+        exclude_hybrid : bool
+            exclude hybrid descriptor to prevent circular calls
         
         Returns
         -------
@@ -85,6 +90,8 @@ class ArgsPlugin:
         """
         arguments = []
         for (name, alias), metd in self.__plugin.plugins.items():
+            if exclude_hybrid and name == "hybrid":
+                continue
             arguments.append(Argument(name=name, dtype=dict, sub_fields=metd(), alias=alias))
         return arguments
 
@@ -232,7 +239,7 @@ def descrpt_hybrid_args():
     ]
 
 
-def descrpt_variant_type_args():
+def descrpt_variant_type_args(exclude_hybrid: bool = False) -> Variant:
     link_lf = make_link('loc_frame', 'model/descriptor[loc_frame]')
     link_se_e2_a = make_link('se_e2_a', 'model/descriptor[se_e2_a]')
     link_se_e2_r = make_link('se_e2_r', 'model/descriptor[se_e2_r]')

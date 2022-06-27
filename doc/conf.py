@@ -16,6 +16,8 @@ import sys
 import recommonmark
 from recommonmark.transform import AutoStructify
 from datetime import date
+from deepmd.common import ACTIVATION_FN_DICT, PRECISION_DICT
+from deepmd.utils.argcheck import list_to_doc
 
 def mkindex(dirname):
     dirname = dirname + "/"
@@ -110,27 +112,6 @@ project = 'DeePMD-kit'
 copyright = '2017-%d, DeepModeling' % date.today().year
 author = 'DeepModeling'
 
-def run_doxygen(folder):
-    """Run the doxygen make command in the designated folder"""
-
-    try:
-        retcode = subprocess.call("cd %s; doxygen Doxyfile" % folder, shell=True)
-        if retcode < 0:
-            sys.stderr.write("doxygen terminated by signal %s" % (-retcode))
-    except OSError as e:
-        sys.stderr.write("doxygen execution failed: %s" % e)
-
-
-def generate_doxygen_xml(app):
-    """Run the doxygen make commands if we're on the ReadTheDocs server"""
-
-    read_the_docs_build = os.environ.get('READTHEDOCS', None) == 'True'
-
-    if read_the_docs_build:
-        run_doxygen("./")
-    else:
-        subprocess.call("doxygen Doxyfile", shell=True)
-
 def run_apidoc(_):
     from sphinx.ext.apidoc import main
     import sys
@@ -142,7 +123,6 @@ def run_apidoc(_):
 def setup(app):
 
     # Add hook for building doxygen xml when needed
-    app.connect("builder-inited", generate_doxygen_xml)
     app.connect('builder-inited', run_apidoc)
 
 # -- General configuration ---------------------------------------------------
@@ -231,6 +211,11 @@ numpydoc_xref_aliases = {}
 import typing
 for typing_type in typing.__all__:
     numpydoc_xref_aliases[typing_type] = "typing.%s" % typing_type
+
+rst_epilog = """
+.. |ACTIVATION_FN| replace:: %s
+.. |PRECISION| replace:: %s
+""" % (list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
 
 # -- Options for HTML output -------------------------------------------------
 
