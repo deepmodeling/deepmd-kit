@@ -3,7 +3,7 @@ import numpy as np
 from typing import Tuple, List, Dict, Any
 
 from deepmd.env import tf
-from deepmd.common import get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter
+from deepmd.common import get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT
 from deepmd.utils.argcheck import list_to_doc
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
@@ -23,42 +23,6 @@ class DescrptSeAMask (Descriptor):
     r"""DeepPot-SE constructed from all information (both angular and radial) of
     atomic configurations. The embedding takes the distance between atoms as input.
 
-    The descriptor :math:`\mathcal{D}^i \in \mathcal{R}^{M_1 \times M_2}` is given by [1]_
-
-    .. math::
-        \mathcal{D}^i = (\mathcal{G}^i)^T \mathcal{R}^i (\mathcal{R}^i)^T \mathcal{G}^i_<
-
-    where :math:`\mathcal{R}^i \in \mathbb{R}^{N \times 4}` is the coordinate
-    matrix, and each row of :math:`\mathcal{R}^i` can be constructed as follows
-
-    .. math::
-        (\mathcal{R}^i)_j = [
-        \begin{array}{c}
-            s(r_{ji}) & \frac{s(r_{ji})x_{ji}}{r_{ji}} & \frac{s(r_{ji})y_{ji}}{r_{ji}} & \frac{s(r_{ji})z_{ji}}{r_{ji}}
-        \end{array}
-        ]
-
-    where :math:`\mathbf{R}_{ji}=\mathbf{R}_j-\mathbf{R}_i = (x_{ji}, y_{ji}, z_{ji})` is 
-    the relative coordinate and :math:`r_{ji}=\lVert \mathbf{R}_{ji} \lVert` is its norm.
-    The switching function :math:`s(r)` is defined as:
-
-    .. math::
-        s(r)=
-        \begin{cases}
-        \frac{1}{r}, & r<r_s \\
-        \frac{1}{r} \{ {(\frac{r - r_s}{ r_c - r_s})}^3 (-6 {(\frac{r - r_s}{ r_c - r_s})}^2 +15 \frac{r - r_s}{ r_c - r_s} -10) +1 \}, & r_s \leq r<r_c \\
-        0, & r \geq r_c
-        \end{cases}
-
-    Each row of the embedding matrix  :math:`\mathcal{G}^i \in \mathbb{R}^{N \times M_1}` consists of outputs
-    of a embedding network :math:`\mathcal{N}` of :math:`s(r_{ji})`:
-
-    .. math::
-        (\mathcal{G}^i)_j = \mathcal{N}(s(r_{ji}))
-
-    :math:`\mathcal{G}^i_< \in \mathbb{R}^{N \times M_2}` takes first :math:`M_2`$` columns of
-    :math:`\mathcal{G}^i`$`. The equation of embedding network :math:`\mathcal{N}` can be found at
-    :meth:`deepmd.utils.network.embedding_net`.
 
     Parameters
     ----------
@@ -93,17 +57,10 @@ class DescrptSeAMask (Descriptor):
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
     
-    References
-    ----------
-    .. [1] Linfeng Zhang, Jiequn Han, Han Wang, Wissam A. Saidi, Roberto Car, and E. Weinan. 2018.
-       End-to-end symmetry preserving inter-atomic potential energy model for finite and extended
-       systems. In Proceedings of the 32nd International Conference on Neural Information Processing
-       Systems (NIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4441–4451.
     """
-    @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
+    #@docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   rcut: float,
-                  rcut_smth: float,
                   sel: List[str],
                   neuron: List[int] = [24,48,96],
                   axis_neuron: int = 8,
