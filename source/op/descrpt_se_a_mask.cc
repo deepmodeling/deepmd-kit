@@ -298,7 +298,7 @@ private:
     void buildAndSortNeighborList(int i_idx, const std::vector<compute_t> d_coord3, std::vector<int> &d_type, std::vector<int> &d_mask, std::vector<int> &sorted_nlist, int total_atom_num)
     {
         //sorted_nlist.resize(total_atom_num);
-        std::vector<deepmd::NeighborInfo> sel_nei;
+        std::vector<deepmd::NeighborInfo<double>> sel_nei;
         for (int jj = 0; jj < total_atom_num; jj++)
         {
             compute_t diff[3];
@@ -317,7 +317,7 @@ private:
             {
                 rr = sqrt(deepmd::dot3<compute_t>(diff, diff));
             }
-            sel_nei.push_back(deepmd::NeighborInfo(d_type[j_idx], rr, j_idx));
+            sel_nei.push_back(deepmd::NeighborInfo<double>(d_type[j_idx], rr, j_idx));
         }
         std::sort(sel_nei.begin(), sel_nei.end());
         // Save the sorted atom index.

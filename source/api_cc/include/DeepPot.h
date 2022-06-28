@@ -489,9 +489,9 @@ private:
   int ntypes;
   int dfparam;
   int daparam;
-  void validate_fparam_aparam(const int & nloc,
-			      const std::vector<VALUETYPE> &fparam,
-			      const std::vector<VALUETYPE> &aparam)const ;
+  //void validate_fparam_aparam(const int & nloc,
+	//		      const std::vector<VALUETYPE> &fparam,
+	//		      const std::vector<VALUETYPE> &aparam)const ;
   void compute_inner (ENERGYTYPE &			ener,
 		      std::vector<VALUETYPE> &		force,
 		      std::vector<VALUETYPE> &		virial,

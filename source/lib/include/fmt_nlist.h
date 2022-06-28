@@ -6,6 +6,7 @@
 
 namespace deepmd{
 
+template<typename FPTYPE> 
 struct NeighborInfo 
 {
   int type;

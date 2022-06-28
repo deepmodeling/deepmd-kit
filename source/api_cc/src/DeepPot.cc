@@ -1023,7 +1023,7 @@ compute(ENERGYTYPE &			dener,
     int nloc = nall;
     atommap = deepmd::AtomMap<VALUETYPE> (datype_.begin(), datype_.begin() + nloc);
     assert (nloc == atommap.get_type().size());
-    validate_fparam_aparam(nloc, fparam, aparam);
+    //validate_fparam_aparam(nloc, fparam, aparam);
 
     std::vector<std::pair<std::string, Tensor>> input_tensors;
     int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dmask_, cell_size, fparam, aparam, atommap);

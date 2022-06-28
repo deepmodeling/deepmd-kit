@@ -8,7 +8,7 @@
 
 using namespace deepmd;
 
-template<typename FPTYPE> 
+/*template<typename FPTYPE> 
 struct NeighborInfo 
 {
   int type;
@@ -29,7 +29,7 @@ struct NeighborInfo
 		 (dist < b.dist || 
 		  (dist == b.dist && index < b.index) ) ) );
       }
-};
+};*/
 
 int format_nlist_i_fill_a (
     std::vector<int > &			fmt_nei_idx_a,
