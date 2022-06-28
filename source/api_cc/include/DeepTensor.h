@@ -160,7 +160,7 @@ private:
   tensorflow::Session* session;
   std::string name_scope;
   int num_intra_nthreads, num_inter_nthreads;
-  tensorflow::GraphDef graph_def;
+  tensorflow::GraphDef* graph_def;
   bool inited;
   VALUETYPE rcut;
   VALUETYPE cell_size;

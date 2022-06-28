@@ -26,6 +26,10 @@ include_directories(${API_BASE_DIR}/include)
 include_directories(${CMAKE_SOURCE_DIR})
 file(GLOB API_SRC ${API_BASE_DIR}/src/*.cc ${API_BASE_DIR}/src/*.cpp)
 add_library(${apiname} SHARED ${API_SRC})
+target_compile_definitions(${apiname}
+  PRIVATE TF_PRIVATE
+)
+target_include_directories(${apiname} PRIVATE ${TensorFlow_INCLUDE_DIRS})
 configure_file(
   ${API_BASE_DIR}/include/version.h.in
   ${CMAKE_SOURCE_DIR}/version.h
@@ -44,8 +48,8 @@ if (TENSORFLOW_VERSION GREATER_EQUAL 2.7)
 else()
   set (CMAKE_CXX_STANDARD 11)
 endif()
-include_directories(${TensorFlow_INCLUDE_DIRS})
 add_library(${opname} SHARED ${OP_SRC})
+target_include_directories(${opname} PRIVATE ${TensorFlow_INCLUDE_DIRS})
 
 find_package(Threads)
 # find openmp
@@ -103,12 +107,6 @@ elseif(USE_ROCM_TOOLKIT)
   target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} pthread ${TensorFlow_LIBRARY} rt deepmd_op_rocm coverage_config)
 else()
   target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} pthread ${TensorFlow_LIBRARY} rt coverage_config)
-endif()
-
-find_package(Protobuf)
-if(Protobuf_FOUND)
-  include_directories(${Protobuf_INCLUDE_DIRS})
-  target_link_libraries(runUnitTests ${Protobuf_LIBRARIES})
 endif()
 
 add_test( runUnitTests runUnitTests )
