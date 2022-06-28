@@ -8,6 +8,40 @@ add_definitions ("-DHIGH_PREC")
 
 enable_testing()
 
+set(DEEPMD_SOURCE_DIR ${PROJECT_SOURCE_DIR}/../../..)
+list (APPEND CMAKE_MODULE_PATH ${DEEPMD_SOURCE_DIR}/source/cmake/)
+
+# setup tensorflow libraries by python
+if (USE_TF_PYTHON_LIBS)
+  set(DEEPMD_SOURCE_DIR ${PROJECT_SOURCE_DIR}/../../..)
+  find_package (Python COMPONENTS Interpreter Development REQUIRED)
+  # find tensorflow, I need tf abi info
+  find_package(tensorflow REQUIRED)
+  # auto op_cxx_abi
+  try_run(
+    CPP_CXX_ABI_RUN_RESULT_VAR CPP_CXX_ABI_COMPILE_RESULT_VAR
+    ${CMAKE_CURRENT_BINARY_DIR}/tf_cxx_abi
+    "${DEEPMD_SOURCE_DIR}/source/cmake/tf_cxx_abi.cpp"
+    LINK_LIBRARIES ${TensorFlowFramework_LIBRARY}
+    CMAKE_FLAGS "-DINCLUDE_DIRECTORIES:STRING=${TensorFlow_INCLUDE_DIRS}"
+    RUN_OUTPUT_VARIABLE CPP_CXX_ABI
+    COMPILE_OUTPUT_VARIABLE CPP_CXX_ABI_COMPILE_OUTPUT_VAR
+  )
+  if (NOT ${CPP_CXX_ABI_COMPILE_RESULT_VAR})
+    message(FATAL_ERROR "Failed to compile: \n ${CPP_CXX_ABI_COMPILE_OUTPUT_VAR}" )
+  endif()
+  if (NOT ${CPP_CXX_ABI_RUN_RESULT_VAR} EQUAL "0")
+    message(FATAL_ERROR "Failed to run, return code: ${CPP_CXX_ABI}" )
+  endif()
+  if (DEFINED PY_CXX_ABI)
+    if (NOT (${CPP_CXX_ABI} EQUAL ${PY_CXX_ABI}))
+	    message (WARNNING "NOT consistent CXX_ABIs: python interface of tf uses ${PY_CXX_ABI}, while c++ interface of tf uses ${CPP_CXX_ABI}, we follow c++ interface ")
+    endif()
+  endif()
+  set(OP_CXX_ABI ${CPP_CXX_ABI})
+  message (STATUS "Automatically determined OP_CXX_ABI=${OP_CXX_ABI} ")
+  add_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
+endif(USE_TF_PYTHON_LIBS)
 
 # model version
 file(READ ${PROJECT_SOURCE_DIR}/../../config/MODEL_VER MODEL_VERSION)
@@ -32,12 +66,15 @@ configure_file(
   @ONLY
 )
 
+if (USE_TF_PYTHON_LIBS)
+  target_link_libraries (${apiname} PUBLIC ${Python_LIBRARIES})
+endif()
+
 set(opname "deepmd_op")
 set(OP_BASE_DIR ${CMAKE_SOURCE_DIR}/../../op)
 # file(GLOB OP_SRC ${OP_BASE_DIR}/*.cc)
 file(GLOB OP_SRC ${OP_BASE_DIR}/custom_op.cc ${OP_BASE_DIR}/prod_force.cc ${OP_BASE_DIR}/prod_virial.cc ${OP_BASE_DIR}/descrpt.cc ${OP_BASE_DIR}/descrpt_se_a_ef.cc ${OP_BASE_DIR}/descrpt_se_a_ef.cc ${OP_BASE_DIR}/descrpt_se_a_ef_para.cc ${OP_BASE_DIR}/descrpt_se_a_ef_vert.cc ${OP_BASE_DIR}/pair_tab.cc ${OP_BASE_DIR}/prod_force_multi_device.cc ${OP_BASE_DIR}/prod_virial_multi_device.cc ${OP_BASE_DIR}/soft_min.cc ${OP_BASE_DIR}/soft_min_force.cc ${OP_BASE_DIR}/soft_min_virial.cc ${OP_BASE_DIR}/ewald_recp.cc ${OP_BASE_DIR}/gelu_multi_device.cc ${OP_BASE_DIR}/map_aparam.cc ${OP_BASE_DIR}/neighbor_stat.cc ${OP_BASE_DIR}/unaggregated_grad.cc ${OP_BASE_DIR}/tabulate_multi_device.cc ${OP_BASE_DIR}/prod_env_mat_multi_device.cc)
 
-list (APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/../../cmake/)
 find_package(tensorflow REQUIRED)
 if (TENSORFLOW_VERSION GREATER_EQUAL 2.7)
   set (CMAKE_CXX_STANDARD 14)
@@ -67,6 +104,7 @@ if (USE_CUDA_TOOLKIT)
   message(STATUS "Found CUDA in ${CUDA_TOOLKIT_ROOT_DIR}, build nv GPU support")
   include_directories(${CUDA_INCLUDE_DIRS})
   add_subdirectory(${LIB_BASE_DIR}/src/cuda cuda_binary_dir)
+  target_link_libraries(${opname} PUBLIC deepmd_op_cuda)
 else()
   message(STATUS "Will not build nv GPU support")
 endif(USE_CUDA_TOOLKIT)
@@ -78,6 +116,7 @@ if (USE_ROCM_TOOLKIT)
   add_compile_definitions(__HIP_PLATFORM_HCC__)
   include_directories(${ROCM_INCLUDE_DIRS})
   add_subdirectory(${LIB_BASE_DIR}/src/rocm rocm_binary_dir)
+  target_link_libraries(${opname} PUBLIC deepmd_op_rocm)
 else()
   message(STATUS "Will not build AMD GPU support")
 endif (USE_ROCM_TOOLKIT)
@@ -97,13 +136,7 @@ else()
   target_link_libraries(coverage_config INTERFACE --coverage)
 endif()
 
-if (USE_CUDA_TOOLKIT)
-  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} pthread ${TensorFlow_LIBRARY} rt deepmd_op_cuda coverage_config)
-elseif(USE_ROCM_TOOLKIT)
-  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} pthread ${TensorFlow_LIBRARY} rt deepmd_op_rocm coverage_config)
-else()
-  target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} pthread ${TensorFlow_LIBRARY} rt coverage_config)
-endif()
+target_link_libraries(runUnitTests gtest gtest_main ${libname} ${apiname} pthread ${TensorFlow_LIBRARY} rt coverage_config)
 
 find_package(Protobuf)
 if(Protobuf_FOUND)

@@ -37,8 +37,8 @@ if (BUILD_CPP_IF AND USE_TF_PYTHON_LIBS)
   endif ()
   # execute install script
   execute_process(
-	  COMMAND sh ${CMAKE_SOURCE_DIR}/install/install_tf.sh ${Python_SITELIB} ${TENSORFLOW_ROOT}
-	  )
+    COMMAND sh ${DEEPMD_SOURCE_DIR}/source/install/install_tf.sh ${Python_SITELIB} ${TENSORFLOW_ROOT}
+    )
 endif ()
 
 if(DEFINED TENSORFLOW_ROOT)

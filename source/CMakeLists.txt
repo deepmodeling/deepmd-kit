@@ -74,6 +74,8 @@ else()
   message(STATUS "Will not build AMD GPU support")  
 endif (USE_ROCM_TOOLKIT)
 
+set(DEEPMD_SOURCE_DIR ${PROJECT_SOURCE_DIR}/..)
+
 # setup tensorflow libraries by python
 if (USE_TF_PYTHON_LIBS)
   find_package (Python COMPONENTS Interpreter Development REQUIRED)
