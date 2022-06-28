@@ -12,7 +12,7 @@
 +    set (GMX_DEEPMD_ROOT /usr/local)
 +endif()
 +if (NOT DEFINED GMX_TENSORFLOW_ROOT)
-+    set (GMX_TENSORFLOW_ROOT /home/dingye/.local/tensorflow/v2.4.1)
++    set (GMX_TENSORFLOW_ROOT /usr/local)
 +endif()
 +include_directories(${GMX_DEEPMD_ROOT}/include)
 +include_directories(${GMX_TENSORFLOW_ROOT}/include)
