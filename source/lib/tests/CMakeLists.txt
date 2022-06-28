@@ -94,6 +94,11 @@ set_target_properties(
 #                 TEST_SUFFIX .noArgs
 #                 TEST_LIST   noArgsTests
 # )
+if (USE_GITEE_GTEST)
+  set(GTEST_REPO_ADDRESS "https://gitee.com/mirrors/googletest.git")
+else ()
+  set(GTEST_REPO_ADDRESS "https://github.com/google/googletest.git")
+endif()
 
 find_package(GTest)
 if(NOT GTEST_LIBRARIES)
