@@ -6,7 +6,7 @@ except ImportError:  # for Python<3.8
     import importlib_metadata as metadata
 import deepmd.utils.network as network
 
-from . import cluster, descriptor, fit, loss, utils
+from . import cluster, descriptor, fit, loss, utils, nvnmd
 from .env import set_mkl
 from .infer import DeepEval, DeepPotential
 from .infer.data_modifier import DipoleChargeModifier
@@ -32,4 +32,5 @@ __all__ = [
     "DeepEval",
     "DeepPotential",
     "DipoleChargeModifier",
+    "nvnmd",
 ]
