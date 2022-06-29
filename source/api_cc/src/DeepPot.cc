@@ -162,13 +162,15 @@ static void run_model (ENERGYTYPE   &		dener,
 
 DeepPot::
 DeepPot ()
-    : inited (false), init_nbor (false)
+    : inited (false), init_nbor (false),
+      graph_def(new GraphDef())
 {
 }
 
 DeepPot::
 DeepPot (const std::string & model, const int & gpu_rank, const std::string & file_content)
-    : inited (false), init_nbor (false)
+    : inited (false), init_nbor (false),
+      graph_def(new GraphDef())
 {
   init(model, gpu_rank, file_content);  
 }
@@ -190,9 +192,9 @@ init (const std::string & model, const int & gpu_rank, const std::string & file_
   deepmd::load_op_library();
 
   if(file_content.size() == 0)
-    check_status (ReadBinaryProto(Env::Default(), model, &graph_def));
+    check_status (ReadBinaryProto(Env::Default(), model, graph_def));
   else
-    graph_def.ParseFromString(file_content);
+    (*graph_def).ParseFromString(file_content);
   int gpu_num = -1;
   #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   DPGetDeviceCount(gpu_num); // check current device environment
@@ -203,11 +205,11 @@ init (const std::string & model, const int & gpu_rank, const std::string & file_
     DPErrcheck(DPSetDevice(gpu_rank % gpu_num));
     std::string str = "/gpu:";
     str += std::to_string(gpu_rank % gpu_num);
-    graph::SetDefaultDevice(str, &graph_def);
+    graph::SetDefaultDevice(str, graph_def);
   }
   #endif // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   check_status (NewSession(options, &session));
-  check_status (session->Create(graph_def));
+  check_status (session->Create(*graph_def));
   rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
   cell_size = rcut;
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
@@ -282,7 +284,7 @@ std::string graph_info(const GraphDef & graph_def) {
 // init the tmp array data
 std::vector<int> DeepPot::get_sel_a () const {
     std::vector<int> sel_a;
-    std::istringstream is(graph_info(graph_def));
+    std::istringstream is(graph_info(*graph_def));
     std::string line = "";
     while(is >> line) {
         if (line.find("sel_a") != line.npos) {
@@ -548,10 +550,11 @@ init (const std::vector<std::string> & models, const int & gpu_rank, const std::
   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
   for (unsigned ii = 0; ii < numb_models; ++ii){
+    graph_defs[ii] = new GraphDef();
     if (file_contents.size() == 0)
-      check_status (ReadBinaryProto(Env::Default(), models[ii], &graph_defs[ii]));
+      check_status (ReadBinaryProto(Env::Default(), models[ii], graph_defs[ii]));
     else
-      graph_defs[ii].ParseFromString(file_contents[ii]);
+      (*graph_defs[ii]).ParseFromString(file_contents[ii]);
   }
   #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   if (gpu_num > 0) {
@@ -566,10 +569,10 @@ init (const std::vector<std::string> & models, const int & gpu_rank, const std::
     if (gpu_num > 0) {
       std::string str = "/gpu:";
       str += std::to_string(gpu_rank % gpu_num);
-      graph::SetDefaultDevice(str, &graph_defs[ii]);
+      graph::SetDefaultDevice(str, &(*graph_defs[ii]));
     }
     check_status (NewSession(options, &(sessions[ii])));
-    check_status (sessions[ii]->Create(graph_defs[ii]));
+    check_status (sessions[ii]->Create(*graph_defs[ii]));
   }
   rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
   cell_size = rcut;
@@ -620,7 +623,7 @@ get_sel () const
     std::vector<std::vector<int> > sec;
     for (int ii = 0; ii < numb_models; ii++) {
         std::vector<int> sel;
-        std::istringstream is(graph_info(graph_defs[ii]));
+        std::istringstream is(graph_info(*graph_defs[ii]));
         std::string line = "";
         while(is >> line) {
             if (line.find("sel") != line.npos) {
@@ -643,20 +646,6 @@ get_sel () const
     return sec;
 }
 
-void  
-DeepPotModelDevi::
-cum_sum (const std::vector<std::vector<int32> > n_sel) 
-{
-    for (int ii = 0; ii < numb_models; ++ii) {
-        std::vector<int> _sec;
-        _sec.resize (n_sel[ii].size() + 1);
-        _sec[0] = 0;
-        for (int jj = 1; jj < _sec.size(); ++jj) {
-            _sec[jj] = _sec[jj-1] + n_sel[ii][jj-1];
-        }
-        sec.push_back(_sec);
-    }
-}
 
 void
 DeepPotModelDevi::

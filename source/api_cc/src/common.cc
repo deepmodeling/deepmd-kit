@@ -2,6 +2,9 @@
 #include "AtomMap.h"
 #include "device.h"
 #include <dlfcn.h>
+#include <fcntl.h>
+#include "google/protobuf/text_format.h"
+#include "google/protobuf/io/zero_copy_stream_impl.h"
 
 using namespace tensorflow;
 
@@ -984,3 +987,25 @@ select_map_inv<deepmd::STRINGTYPE >(
     const typename std::vector<deepmd::STRINGTYPE >::const_iterator in, 
     const std::vector<int > & idx_map, 
     const int & stride);
+
+
+void
+deepmd::
+read_file_to_string(std::string model, std::string & file_content)
+{
+  deepmd::check_status(tensorflow::ReadFileToString(tensorflow::Env::Default(), model, &file_content));
+}
+
+
+void
+deepmd::
+convert_pbtxt_to_pb(std::string fn_pb_txt, std::string fn_pb)
+{
+    int fd = open(fn_pb_txt.c_str(), O_RDONLY);
+    tensorflow::protobuf::io::ZeroCopyInputStream* input = new tensorflow::protobuf::io::FileInputStream(fd);
+    tensorflow::GraphDef graph_def;
+    tensorflow::protobuf::TextFormat::Parse(input, &graph_def);
+    delete input;
+    std::fstream output(fn_pb, std::ios::out | std::ios::trunc | std::ios::binary);
+    graph_def.SerializeToOstream(&output);
+}

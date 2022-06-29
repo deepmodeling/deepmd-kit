@@ -7,8 +7,6 @@
 #include "neighbor_list.h"
 #include "test_utils.h"
 
-#include "google/protobuf/text_format.h"
-#include "google/protobuf/io/zero_copy_stream_impl.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>  
@@ -39,16 +37,7 @@ protected:
 
   void SetUp() override {
     std::string file_name = "../../tests/infer/deeppolar.pbtxt";
-    int fd = open(file_name.c_str(), O_RDONLY);
-    tensorflow::protobuf::io::ZeroCopyInputStream* input = new tensorflow::protobuf::io::FileInputStream(fd);
-    tensorflow::GraphDef graph_def;
-    tensorflow::protobuf::TextFormat::Parse(input, &graph_def);
-    delete input;
-    std::fstream output("deeppolar.pb", std::ios::out | std::ios::trunc | std::ios::binary);
-    graph_def.SerializeToOstream(&output);
-    // check the string by the following commands
-    // string txt;
-    // tensorflow::protobuf::TextFormat::PrintToString(graph_def, &txt);
+    deepmd::convert_pbtxt_to_pb("../../tests/infer/deeppolar.pbtxt", "deeppolar.pb");
 
     dp.init("deeppolar.pb");
 
@@ -141,16 +130,7 @@ protected:
 
   void SetUp() override {
     std::string file_name = "../../tests/infer/deeppolar_new.pbtxt";
-    int fd = open(file_name.c_str(), O_RDONLY);
-    tensorflow::protobuf::io::ZeroCopyInputStream* input = new tensorflow::protobuf::io::FileInputStream(fd);
-    tensorflow::GraphDef graph_def;
-    tensorflow::protobuf::TextFormat::Parse(input, &graph_def);
-    delete input;
-    std::fstream output("deeppolar_new.pb", std::ios::out | std::ios::trunc | std::ios::binary);
-    graph_def.SerializeToOstream(&output);
-    // check the string by the following commands
-    // string txt;
-    // tensorflow::protobuf::TextFormat::PrintToString(graph_def, &txt);
+    deepmd::convert_pbtxt_to_pb("../../tests/infer/deeppolar_new.pbtxt", "deeppolar_new.pb");
     dp.init("deeppolar_new.pb");
     odim = dp.output_dim ();
 

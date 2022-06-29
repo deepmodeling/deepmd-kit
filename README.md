@@ -124,6 +124,7 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [Run path-integral MD with i-PI](doc/third-party/ipi.md)
     - [Run MD with GROMACS](doc/third-party/gromacs.md)
     - [Interfaces out of DeePMD-kit](doc/third-party/out-of-deepmd-kit.md)
+- [Use NVNMD](doc/nvnmd/index.md)
 
 # Code structure
 

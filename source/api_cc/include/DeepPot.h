@@ -179,7 +179,7 @@ public:
 private:
   tensorflow::Session* session;
   int num_intra_nthreads, num_inter_nthreads;
-  tensorflow::GraphDef graph_def;
+  tensorflow::GraphDef* graph_def;
   bool inited;
   template<class VT> VT get_scalar(const std::string & name) const;
   // VALUETYPE get_rcut () const;
@@ -401,7 +401,7 @@ private:
   unsigned numb_models;
   std::vector<tensorflow::Session*> sessions;
   int num_intra_nthreads, num_inter_nthreads;
-  std::vector<tensorflow::GraphDef> graph_defs;
+  std::vector<tensorflow::GraphDef*> graph_defs;
   bool inited;
   template<class VT> VT get_scalar(const std::string name) const;
   // VALUETYPE get_rcut () const;
@@ -426,7 +426,6 @@ private:
 
   // function used for nborlist copy
   std::vector<std::vector<int> > get_sel() const;
-  void cum_sum(const std::vector<std::vector<tensorflow::int32> > n_sel);
 };
 
 class DeepPotMaskModel: public DeepPot{
