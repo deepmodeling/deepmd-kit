@@ -144,8 +144,8 @@ The code is organized as follows:
 
 - [Model compatibility](doc/troubleshooting/model-compatability.md)
 - [Installation](doc/troubleshooting/installation.md)
-- [The temperature undulates violently during early stages of MD](doc/troubleshooting/md_energy_undulation.md)
-- [MD: cannot run LAMMPS after installing a new version of DeePMD-kit](doc/troubleshooting/md_version_compatibility.md)
+- [The temperature undulates violently during early stages of MD](doc/troubleshooting/md-energy-undulation.md)
+- [MD: cannot run LAMMPS after installing a new version of DeePMD-kit](doc/troubleshooting/md-version-compatibility.md)
 - [Do we need to set rcut < half boxsize?](doc/troubleshooting/howtoset_rcut.md)
 - [How to set sel?](doc/troubleshooting/howtoset_sel.md)
 - [How to control the number of nodes used by a job?](doc/troubleshooting/howtoset_num_nodes.md)
