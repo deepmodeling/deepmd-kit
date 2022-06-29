@@ -58,7 +58,8 @@ def gelu(x: tf.Tensor) -> tf.Tensor:
 
     Returns
     -------
-    `x` with the GELU activation applied
+    tf.Tensor
+        `x` with the GELU activation applied
 
     References
     ----------
@@ -80,7 +81,8 @@ def gelu_tf(x: tf.Tensor) -> tf.Tensor:
 
     Returns
     -------
-    `x` with the GELU activation applied
+    tf.Tensor
+        `x` with the GELU activation applied
 
     References
     ----------

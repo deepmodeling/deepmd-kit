@@ -268,7 +268,7 @@ model:
             | type: ``str``, optional, default: ``tanh``
             | argument path: ``model/descriptor[se_e2_a]/activation_function``
 
-            The activation function in the embedding net. Supported activation functions are "relu", "relu6", "softplus", "sigmoid", "tanh", "gelu", "gelu_tf". Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF statdard version.
+            The activation function in the embedding net. Supported activation functions are "relu", "relu6", "softplus", "sigmoid", "tanh", "gelu".
 
         .. _`model/descriptor[se_e2_a]/resnet_dt`: 
 
@@ -373,7 +373,7 @@ model:
             | type: ``str``, optional, default: ``tanh``
             | argument path: ``model/descriptor[se_e2_r]/activation_function``
 
-            The activation function in the embedding net. Supported activation functions are "relu", "relu6", "softplus", "sigmoid", "tanh", "gelu", "gelu_tf". Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF statdard version.
+            The activation function in the embedding net. Supported activation functions are "relu", "relu6", "softplus", "sigmoid", "tanh", "gelu". 
 
         .. _`model/descriptor[se_e2_r]/resnet_dt`: 
 
