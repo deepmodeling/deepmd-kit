@@ -2,6 +2,12 @@ cmake_minimum_required(VERSION 2.8.2)
 
 project(googletest-download NONE)
 
+if (USE_GITEE_GTEST)
+  set(GTEST_REPO_ADDRESS "https://gitee.com/mirrors/googletest.git")
+else ()
+  set(GTEST_REPO_ADDRESS "https://github.com/google/googletest.git")
+endif()
+
 include(ExternalProject)
 ExternalProject_Add(googletest
   GIT_REPOSITORY    ${GTEST_REPO_ADDRESS}
