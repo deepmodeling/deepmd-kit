@@ -373,7 +373,7 @@ model:
             | type: ``str``, optional, default: ``tanh``
             | argument path: ``model/descriptor[se_e2_r]/activation_function``
 
-            The activation function in the embedding net. Supported activation functions are "relu", "relu6", "softplus", "sigmoid", "tanh", "gelu". 
+            The activation function in the embedding net. Supported activation functions are "relu", "relu6", "softplus", "sigmoid", "tanh", "gelu".
 
         .. _`model/descriptor[se_e2_r]/resnet_dt`: 
 
