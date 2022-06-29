@@ -75,13 +75,13 @@ except (AttributeError, TypeError, IndexError):
     # setuptools will re-find tensorflow after installing setup_requires
     tf_install_dir = None
 
-# add cmake as a build requirement if cmake>3.7 is not installed
+# add cmake as a build requirement if cmake>3.12 is not installed
 try:
     cmake_version = get_cmake_version()
 except SKBuildError:
     setup_requires.append("cmake")
 else:
-    if cmake_version in SpecifierSet("<3.7"):
+    if cmake_version in SpecifierSet("<3.12"):
         setup_requires.append("cmake")
 
 Path("deepmd").mkdir(exist_ok=True)
