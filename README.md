@@ -142,7 +142,7 @@ The code is organized as follows:
 
 # Troubleshooting
 
-- [Model compatibility](doc/troubleshooting/model_compatability.md)
+- [Model compatibility](doc/troubleshooting/model-compatability.md)
 - [Installation](doc/troubleshooting/installation.md)
 - [The temperature undulates violently during early stages of MD](doc/troubleshooting/md_energy_undulation.md)
 - [MD: cannot run LAMMPS after installing a new version of DeePMD-kit](doc/troubleshooting/md_version_compatibility.md)
