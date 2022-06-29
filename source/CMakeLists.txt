@@ -148,6 +148,9 @@ else ()
   message (STATUS "Set GLIBCXX_USE_CXX_ABI=1 when compiling ops")
 endif ()
 
+# set _GLIBCXX_USE_CXX11_ABI flag globally
+add_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
+
 # define USE_TTM
 if (NOT DEFINED USE_TTM)
   set(USE_TTM FALSE)
@@ -207,13 +210,9 @@ if (BUILD_CPP_IF)
   add_subdirectory (api_cc/)
   add_subdirectory (lmp/)
   if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 4.8)
-  # add_subdirectory (md/)
-    if (${OP_CXX_ABI} EQUAL 0 AND USE_TF_PYTHON_LIBS)
-      add_subdirectory (gmx/)
-    else()
-      add_subdirectory (ipi/)
-      add_subdirectory (gmx/)
-    endif()
+    # add_subdirectory (md/)
+    add_subdirectory (ipi/)
+    add_subdirectory (gmx/)
   endif ()
 endif (BUILD_CPP_IF)
 
