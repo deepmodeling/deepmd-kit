@@ -17,6 +17,9 @@ from deepmd.utils.errors import GraphWithoutTensorError
 from .descriptor import Descriptor
 from .se import DescrptSe
 
+from deepmd.nvnmd.descriptor.se_a import descrpt2r4, build_davg_dstd, build_op_descriptor, filter_lower_R42GR, filter_GR2D
+from deepmd.nvnmd.utils.config import nvnmd_cfg 
+
 @Descriptor.register("se_e2_a")
 @Descriptor.register("se_a")
 class DescrptSeA (DescrptSe):
@@ -412,6 +415,7 @@ class DescrptSeA (DescrptSe):
         """
         davg = self.davg
         dstd = self.dstd
+        if nvnmd_cfg.enable and nvnmd_cfg.restore_descriptor: davg, dstd = build_davg_dstd()
         with tf.variable_scope('descrpt_attr' + suffix, reuse = reuse) :
             if davg is None:
                 davg = np.zeros([self.ntypes, self.ndescrpt]) 
@@ -448,8 +452,9 @@ class DescrptSeA (DescrptSe):
         box   = tf.reshape (box_, [-1, 9])
         atype = tf.reshape (atype_, [-1, natoms[1]])
 
+        op_descriptor = build_op_descriptor() if nvnmd_cfg.enable else op_module.prod_env_mat_a
         self.descrpt, self.descrpt_deriv, self.rij, self.nlist \
-            = op_module.prod_env_mat_a (coord,
+            = op_descriptor           (coord,
                                        atype,
                                        natoms,
                                        box,
@@ -576,6 +581,8 @@ class DescrptSeA (DescrptSe):
             inputs_i = inputs
             inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
             type_i = -1
+            if nvnmd_cfg.enable and nvnmd_cfg.quantize_descriptor: 
+                inputs_i = descrpt2r4(inputs_i, natoms)
             layer, qmat = self._filter(inputs_i, type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn, type_embedding=type_embedding)
             layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0], self.get_dim_out()])
             qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[0], self.get_dim_rot_mat_1() * 3])
@@ -717,6 +724,14 @@ class DescrptSeA (DescrptSe):
             if self.compress:
                 raise RuntimeError('compression of type embedded descriptor is not supported at the moment')
         # natom x 4 x outputs_size
+        if nvnmd_cfg.enable:
+          return filter_lower_R42GR(
+            type_i, type_input, inputs_i, is_exclude,
+            activation_fn, bavg, stddev, trainable, 
+            suffix, self.seed, self.seed_shift, self.uniform_seed,
+            self.filter_neuron, self.filter_precision, self.filter_resnet_dt,
+            self.embedding_net_variables
+          )
         if self.compress and (not is_exclude):
             if self.type_one_side:
                 net = 'filter_-1_net_' + str(type_i)
@@ -825,6 +840,7 @@ class DescrptSeA (DescrptSe):
                   stddev = stddev,
                   bavg = bavg,
                   trainable = trainable)
+          if nvnmd_cfg.enable: return filter_GR2D(xyz_scatter_1)
           # natom x nei x outputs_size
           # xyz_scatter = tf.concat(xyz_scatter_total, axis=1)
           # natom x nei x 4

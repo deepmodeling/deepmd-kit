@@ -5,13 +5,17 @@ from packaging.version import Version
 
 from deepmd.env import tf
 from deepmd.common import add_data_requirement, get_activation_func, get_precision, cast_precision
-from deepmd.utils.network import one_layer, one_layer_rand_seed_shift
+from deepmd.utils.network import one_layer_rand_seed_shift
+from deepmd.utils.network import one_layer as one_layer_deepmd
 from deepmd.utils.type_embed import embed_atom_type
 from deepmd.utils.graph import get_fitting_net_variables_from_graph_def, load_graph_def, get_tensor_by_name_from_graph
 from deepmd.fit.fitting import Fitting
 
 from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION, TF_VERSION
+
+from deepmd.nvnmd.utils.config import nvnmd_cfg
+from deepmd.nvnmd.fit.ener import one_layer_nvnmd
 
 class EnerFitting (Fitting):
     r"""Fitting the energy of the system. The force and the virial can also be trained.
@@ -291,8 +295,12 @@ class EnerFitting (Fitting):
             ext_aparam = tf.cast(ext_aparam,self.fitting_precision)
             layer = tf.concat([layer, ext_aparam], axis = 1)
 
+        if nvnmd_cfg.enable: 
+            one_layer = one_layer_nvnmd
+        else:
+            one_layer = one_layer_deepmd
         for ii in range(0,len(self.n_neuron)) :
-            if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
+            if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] and (not nvnmd_cfg.enable):
                 layer+= one_layer(
                     layer,
                     self.n_neuron[ii],

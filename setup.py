@@ -117,6 +117,12 @@ setup(
         "deepmd/op",
         "deepmd/model",
         "deepmd/train",
+        "deepmd/nvnmd",
+        "deepmd/nvnmd/data",
+        "deepmd/nvnmd/descriptor",
+        "deepmd/nvnmd/entrypoints",
+        "deepmd/nvnmd/fit",
+        "deepmd/nvnmd/utils",
     ],
     python_requires=">=3.6",
     classifiers=[

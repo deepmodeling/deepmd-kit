@@ -5,7 +5,8 @@ using namespace tensorflow;
 
 DipoleChargeModifier::
 DipoleChargeModifier()
-    : inited (false)
+    : inited (false),
+      graph_def(new GraphDef())
 {
 }
 
@@ -13,7 +14,8 @@ DipoleChargeModifier::
 DipoleChargeModifier(const std::string & model, 
 	     const int & gpu_rank, 
 	     const std::string &name_scope_)
-    : inited (false), name_scope(name_scope_)
+    : inited (false), name_scope(name_scope_),
+      graph_def(new GraphDef())
 {
   init(model, gpu_rank);  
 }
@@ -35,8 +37,8 @@ init (const std::string & model,
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
   deepmd::load_op_library();
   deepmd::check_status(NewSession(options, &session));
-  deepmd::check_status(ReadBinaryProto(Env::Default(), model, &graph_def));
-  deepmd::check_status(session->Create(graph_def));  
+  deepmd::check_status(ReadBinaryProto(Env::Default(), model, graph_def));
+  deepmd::check_status(session->Create(*graph_def));  
   // int nnodes = graph_def.node_size();
   // for (int ii = 0; ii < nnodes; ++ii){
   //   cout << ii << " \t " << graph_def.node(ii).name() << endl;
