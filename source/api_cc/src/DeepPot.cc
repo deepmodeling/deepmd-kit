@@ -958,9 +958,9 @@ init(const std::string & model, const int & gpu_rank, const std::string & file_c
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
 
   if(file_content.size() == 0)
-    check_status (ReadBinaryProto(Env::Default(), model, &graph_def));
+    check_status (ReadBinaryProto(Env::Default(), model, graph_def));
   else
-    graph_def.ParseFromString(file_content);
+    (*graph_def).ParseFromString(file_content);
   int gpu_num = -1;
   #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   DPGetDeviceCount(gpu_num); // check current device environment
@@ -971,11 +971,11 @@ init(const std::string & model, const int & gpu_rank, const std::string & file_c
     DPErrcheck(DPSetDevice(gpu_rank % gpu_num));
     std::string str = "/gpu:";
     str += std::to_string(gpu_rank % gpu_num);
-    graph::SetDefaultDevice(str, &graph_def);
+    graph::SetDefaultDevice(str, graph_def);
   }
   #endif // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   check_status (NewSession(options, &session));
-  check_status (session->Create(graph_def));
+  check_status (session->Create(*graph_def));
   cell_size = rcut;
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
   dfparam = get_scalar<int>("fitting_attr/dfparam");

@@ -476,7 +476,7 @@ public:
 private:
   tensorflow::Session* session;
   int num_intra_nthreads, num_inter_nthreads;
-  tensorflow::GraphDef graph_def;
+  tensorflow::GraphDef* graph_def;
   bool inited;
   template<class VT> VT get_scalar(const std::string & name) const;
   // VALUETYPE get_rcut () const;
