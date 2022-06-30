@@ -179,7 +179,7 @@ public:
 private:
   tensorflow::Session* session;
   int num_intra_nthreads, num_inter_nthreads;
-  tensorflow::GraphDef graph_def;
+  tensorflow::GraphDef* graph_def;
   bool inited;
   template<class VT> VT get_scalar(const std::string & name) const;
   // VALUETYPE get_rcut () const;
@@ -226,16 +226,16 @@ public:
   ~DeepPotModelDevi() ;
   /**
   * @brief DP model deviation constructor with initialization.
-  * @param[in] model The names of the frozen model files.
+  * @param[in] models The names of the frozen model files.
   * @param[in] gpu_rank The GPU rank. Default is 0.
-  * @param[in] file_content The contents of the model files. If it is not empty, DP will read from the strings instead of the files.
+  * @param[in] file_contents The contents of the model files. If it is not empty, DP will read from the strings instead of the files.
   **/
   DeepPotModelDevi  (const std::vector<std::string> & models, const int & gpu_rank = 0, const std::vector<std::string> & file_contents = std::vector<std::string>());
   /**
   * @brief Initialize the DP model deviation contrcutor.
-  * @param[in] model The names of the frozen model files.
+  * @param[in] models The names of the frozen model files.
   * @param[in] gpu_rank The GPU rank. Default is 0.
-  * @param[in] file_content The contents of the model files. If it is not empty, DP will read from the strings instead of the files.
+  * @param[in] file_contents The contents of the model files. If it is not empty, DP will read from the strings instead of the files.
   **/
   void init (const std::vector<std::string> & models, const int & gpu_rank = 0, const std::vector<std::string> & file_contents = std::vector<std::string>());
 public:
@@ -401,7 +401,7 @@ private:
   unsigned numb_models;
   std::vector<tensorflow::Session*> sessions;
   int num_intra_nthreads, num_inter_nthreads;
-  std::vector<tensorflow::GraphDef> graph_defs;
+  std::vector<tensorflow::GraphDef*> graph_defs;
   bool inited;
   template<class VT> VT get_scalar(const std::string name) const;
   // VALUETYPE get_rcut () const;
@@ -426,7 +426,6 @@ private:
 
   // function used for nborlist copy
   std::vector<std::vector<int> > get_sel() const;
-  void cum_sum(const std::vector<std::vector<tensorflow::int32> > n_sel);
 };
 }
 

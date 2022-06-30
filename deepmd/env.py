@@ -281,13 +281,21 @@ def get_module(module_name: str) -> "ModuleType":
                         TF_VERSION,
                         tf_py_version,
                     )) from e
-            raise RuntimeError(
+            error_message = (
                 "This deepmd-kit package is inconsitent with TensorFlow "
                 "Runtime, thus an error is raised when loading %s. "
                 "You need to rebuild deepmd-kit against this TensorFlow "
                 "runtime." % (
                     module_name,
-                )) from e
+                )
+            )
+            if TF_CXX11_ABI_FLAG == 1:
+                # #1791
+                error_message += (
+                    "\nWARNING: devtoolset on RHEL6 and RHEL7 does not support _GLIBCXX_USE_CXX11_ABI=1. "
+                    "See https://bugzilla.redhat.com/show_bug.cgi?id=1546704"
+                )
+            raise RuntimeError(error_message) from e
         return module
 
 

@@ -8,6 +8,7 @@ FixStyle(dplr,FixDPLR)
 #define LMP_FIX_DPLR_H
 
 #include <stdio.h>
+#include <map>
 #include "fix.h"
 #include "pair_deepmd.h"
 #ifdef LMPPLUGIN
