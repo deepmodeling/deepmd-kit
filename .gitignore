@@ -28,6 +28,7 @@ _build
 _templates
 API_CC
 doc/api_py/
+doc/api_core/
 dp/
 dp_test/
 dp_test_cc/

@@ -43,8 +43,6 @@ public:
   void make_inlist(InputNlist & inlist);
 };
 
-/** @struct deepmd::InputNlist
- **/
 
 /**
 * @brief Check if the model version is supported.
