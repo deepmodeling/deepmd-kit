@@ -1,5 +1,6 @@
 import numpy as np
 from typing import Tuple, List
+from deepmd.descriptor.se_a_mask import DescrptSeAMask
 
 from deepmd.env import tf
 from deepmd.utils.pair_tab import PairTab
@@ -232,7 +233,7 @@ class EnerModel(Model) :
         energy = tf.reduce_sum(global_cvt_2_ener_float(energy_raw), axis=1, name='o_energy'+suffix)
 
         
-        if hasattr(self.descrpt, 'descrpt_type') and self.descrpt.descrpt_type == "se_a_mask":
+        if isinstance(self.descrpt, DescrptSeAMask):
             force, virial, atom_virial \
                 = self.descrpt.prod_force_virial (atom_ener, natoms, input_dict["mask_matrix"])
         else:    
@@ -265,7 +266,7 @@ class EnerModel(Model) :
                      + tf.reduce_sum(tf.reshape(tab_atom_virial, [-1, natoms[1], 9]), axis = 1)
                      
         # se_a_mask is not supported for virial
-        if hasattr(self.descrpt, 'descrpt_type') and self.descrpt.descrpt_type == "se_a_mask":
+        if isinstance(self.descrpt, DescrptSeAMask):
             virial = None
             atom_virial = None
         else:

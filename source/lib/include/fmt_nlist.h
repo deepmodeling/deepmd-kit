@@ -10,7 +10,7 @@ template<typename FPTYPE>
 struct NeighborInfo 
 {
   int type;
-  double dist;
+  FPTYPE dist;
   int index;
   NeighborInfo () 
       : type (0), dist(0), index(0) 

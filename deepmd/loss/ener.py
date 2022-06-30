@@ -384,27 +384,37 @@ class EnerDipoleLoss (Loss) :
         return print_str   
 
 
-class EnerForcesMaskLoss():
-    def __init__(self, jdata, **kwarg)-> None :
-        model = kwarg.get('model', None)
+class EnerForcesMaskLoss(Loss):
+    """
+    EnerForcesMaskLoss is a concise version of the loss function for DP models.
+    Forces Difference with be multiplied by a `mask4force_matrix: [#frame, #atoms * 3]`.
+    User can specifiy on the forces on which atoms to be fitted by setting `mask4force_matrix`.
+
+    Parameters
+    ----------
+
+    """
+    def __init__(self,
+                 starter_learning_rate : float, 
+                  start_pref_e : float = 0.02,
+                  limit_pref_e : float = 1.00,
+                  start_pref_f : float = 1000,
+                  limit_pref_f : float = 1.00, 
+                  **kwargs)-> None :
+        model = kwargs.get('model', None)
         if model is not None:
             self.ntypes = model.ntypes
             self.type_map = model.type_map
         else:
-            self.type_sel = None
-        self.model = model
-        
-        if jdata is not None:
-            self.starter_learning_rate = jdata.get('starter_learning_rate')
-            self.start_pref_e = jdata.get('start_pref_e')
-            self.limit_pref_e = jdata.get('limit_pref_e')
-            self.start_pref_f = jdata.get('start_pref_f')
-            self.limit_pref_f = jdata.get('limit_pref_f')
-            self.has_e = (self.start_pref_e != 0.0 or self.limit_pref_e != 0.0)
-            self.has_f = (self.start_pref_f != 0.0 or self.limit_pref_f != 0.0)
-        else:
-            raise RuntimeError("Json data for learning prefactors are not provided.")
-        
+            self.type_map = None
+        self.starter_learning_rate = starter_learning_rate
+        self.start_pref_e = start_pref_e
+        self.limit_pref_e = limit_pref_e
+        self.start_pref_f = start_pref_f
+        self.limit_pref_f = limit_pref_f
+        self.has_e = (self.start_pref_e != 0.0 or self.limit_pref_e != 0.0)
+        self.has_f = (self.start_pref_f != 0.0 or self.limit_pref_f != 0.0)
+    
         self.debug_op = []
         
         # data required
@@ -414,7 +424,6 @@ class EnerForcesMaskLoss():
         add_data_requirement('mask_matrix4force', 3, atomic=True, must=False, high_prec=False)
         add_data_requirement('atom_num4element', len(self.type_map), atomic=False, must=False, high_prec=False)
         add_data_requirement('atom_num4frame', 1, atomic=False, must=False, high_prec=False)
-        #add_data_requirement('atom_pref', 1, atomic=True, must=False, high_prec=False, repeat=3)
         return None
     
     def build(self, 
@@ -541,9 +550,3 @@ class EnerForcesMaskLoss():
         
         return results
     
-    
-    def print_header(self):
-        return None
-    
-    def print_on_training(self):
-        return None

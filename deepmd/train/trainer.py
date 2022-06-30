@@ -197,7 +197,7 @@ class DPTrainer (object):
             elif loss_type == 'ener_dipole':
                 self.loss = EnerDipoleLoss(**loss_param)
             elif loss_type == 'masked_energy_forces':
-                self.loss = EnerForcesMaskLoss(loss_param, model = self.model)
+                self.loss = EnerForcesMaskLoss(**loss_param, model = self.model)
             else:
                 raise RuntimeError('unknow loss type')
         elif fitting_type == 'wfc':

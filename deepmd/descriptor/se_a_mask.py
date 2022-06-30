@@ -15,15 +15,31 @@ from deepmd.utils.type_embed import embed_atom_type
 from deepmd.utils.sess import run_sess
 from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph
 from .descriptor import Descriptor
-from .se import DescrptSe
+from .se_a import DescrptSeA
 
 
-@Descriptor.register("se_a_mask")
-class DescrptSeAMask (Descriptor):
+@Descriptor.register("se_e2_a_mask")
+class DescrptSeAMask (DescrptSeA):
     r"""DeepPot-SE constructed from all information (both angular and radial) of
     atomic configurations. The embedding takes the distance between atoms as input.
 
-
+    DescrptSeAMask is a subclass of DescrptSeA.
+    Specifically, DescrptSeAMask is a concise version of DescrptSeA.
+    The initialization of DescrptSeAMask is similar to DescrptSeA.
+    In the running phase (training or testing and inference), DescrptSeAMask required an mask_matrix to be provided.
+    
+    `mask_matrix` [#frames, #total_atoms] is matrix of 0,1 to indicate the atoms that are real particles or not.
+    Thus, this op can accept the frames with different number of atoms for each type without splitting dataset.
+    The DescrptSeAMask op is designed for non-pbc systems.
+    All the atoms in the system is the neighbors of each other.
+    Attention that `rcut` and `rcut_smth` values are needed since the inheritance from DescrptSeA.
+    But these two values will not be used in descriptor calculation.
+    The most affordable atoms for each type are defined in `sel`. 
+    For example, `sel: [20, 10]` for `type_map:["H", "O"]` means the dataset for the first type `H` has 20 atoms at most and the second type `O` has 10 atoms at most. 
+    
+    The returned descrptor values are zero for the vritual atoms.
+    Both the angular and radial information are included in descrptor matrix.
+    
     Parameters
     ----------
     rcut
@@ -61,12 +77,14 @@ class DescrptSeAMask (Descriptor):
     #@docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   rcut: float,
+                  rcut_smth: float,
                   sel: List[str],
                   neuron: List[int] = [24,48,96],
                   axis_neuron: int = 8,
                   resnet_dt: bool = False,
                   trainable: bool = True,
                   seed: int = None,
+                  type_one_side: bool = True,
                   exclude_types: List[List[int]] = [],
                   set_davg_zero: bool = True,
                   activation_function: str = 'tanh',
@@ -77,12 +95,13 @@ class DescrptSeAMask (Descriptor):
         Constructor
         """
         self.sel_a = sel
+        self.cum_sel_a = np.concatenate((np.array([0]), np.cumsum(self.sel_a)))
         self.total_atom_num = np.cumsum(self.sel_a)[-1]
         self.ntypes = len(self.sel_a)
         self.descrpt_type = "se_a_mask"
         # rcut and rcut_smth will not be used in se_a_mask op.
-        self.rcut = rcut
-        self.rcut_smth = rcut_smth
+        self.rcut_r = rcut
+        self.rcut_r_smth = rcut_smth
         self.type_one_side = False
         self.type_embedding = None
         
@@ -116,6 +135,7 @@ class DescrptSeAMask (Descriptor):
         self.davg = None
         self.compress = False
         self.embedding_net_variables = None
+        self.mixed_prec = None
         self.place_holders = {}
         nei_type = np.array([])
         for ii in range(self.ntypes):
@@ -139,45 +159,8 @@ class DescrptSeAMask (Descriptor):
                                          self.place_holders['mask_matrix'],
                                          total_atom_num = self.total_atom_num)
         self.sub_sess = tf.Session(graph = sub_graph, config=default_tf_session_config)
+        self.original_sel = None
 
-    def get_rcut (self) -> float:
-        """
-        Returns the cut-off radius
-        """
-        return self.rcut
-
-    def get_ntypes (self) -> int:
-        """
-        Returns the number of atom types
-        """
-        return self.ntypes
-
-    def get_dim_out (self) -> int:
-        """
-        Returns the output dimension of this descriptor
-        """
-        return self.filter_neuron[-1] * self.n_axis_neuron
-
-    def get_dim_rot_mat_1 (self) -> int:
-        """
-        Returns the first dimension of the rotation matrix. The rotation is of shape dim_1 x 3
-        """
-        return self.filter_neuron[-1]
-
-    def get_nlist (self) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
-        """
-        Returns
-        -------
-        nlist
-                Neighbor list
-        rij
-                The relative distance between the neighbor and the center atom.
-        sel_a
-                The number of neighbors with full information
-        sel_r
-                The number of neighbors with only radial information
-        """
-        return self.nlist, self.rij, self.sel_a, self.sel_r
 
     def compute_input_stats (self,
                              data_coord : list, 
@@ -228,15 +211,15 @@ class DescrptSeAMask (Descriptor):
             sumr2 = np.sum(sumr2, axis = 0)
             suma2 = np.sum(suma2, axis = 0)
             for type_i in range(self.ntypes) :
-                #davgunit = [sumr[type_i]/(sumn[type_i]+1e-15), 0, 0, 0]
-                #dstdunit = [self._compute_std(sumr2[type_i], sumr[type_i], sumn[type_i]), 
-                #            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
-                #            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
-                #            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i])
-                #            ]
+                davgunit = [sumr[type_i]/(sumn[type_i]+1e-15), 0, 0, 0]
+                dstdunit = [self._compute_std(sumr2[type_i], sumr[type_i], sumn[type_i]), 
+                            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
+                            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
+                            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i])
+                            ]
                 
-                davg = np.tile(0, self.ndescrpt // 4)
-                dstd = np.tile(1, self.ndescrpt // 4)
+                davg = np.tile(davgunit, self.ndescrpt // 4)
+                dstd = np.tile(dstdunit, self.ndescrpt // 4)
                 all_davg.append(davg)
                 all_dstd.append(dstd)
 
@@ -324,6 +307,7 @@ class DescrptSeAMask (Descriptor):
         atype = tf.reshape (atype_, [-1, natoms[1]])
         mask_matrix = input_dict["mask_matrix"]
         mask_matrix = tf.reshape (mask_matrix, [-1, natoms[1]])
+        mask_matrix = tf.cast(mask_matrix, tf.int32)
         
         self.descrpt, self.descrpt_deriv, self.rij, self.nlist \
             = op_module.descrpt_se_a_mask (coord,
@@ -349,12 +333,6 @@ class DescrptSeAMask (Descriptor):
         # only used when tensorboard was set as true
         tf.summary.histogram('embedding_net_output', self.dout)
         return self.dout
-    
-    def get_rot_mat(self) -> tf.Tensor:
-        """
-        Get rotational matrix
-        """
-        return self.qmat
 
     def prod_force_virial(self, 
                           atom_ener : tf.Tensor, 
@@ -386,7 +364,8 @@ class DescrptSeAMask (Descriptor):
         [net_deriv] = tf.gradients (atom_ener, self.descrpt_reshape)
         tf.summary.histogram('net_derivative', net_deriv)
         net_deriv_reshape = tf.reshape (net_deriv, [-1, natoms[0] * self.ndescrpt])
-        mask_matrix = tf.reshape(mask_matrix, [-1, natoms[0]])        
+        mask_matrix = tf.reshape(mask_matrix, [-1, natoms[0]])
+        mask_matrix = tf.cast(mask_matrix, tf.int32)        
         force \
             = op_module.prod_force_se_a_mask (net_deriv_reshape,
                                           self.descrpt_deriv,
@@ -401,48 +380,6 @@ class DescrptSeAMask (Descriptor):
         return force, None, None
         
 
-    def _pass_filter(self, 
-                     inputs,
-                     atype,
-                     natoms,
-                     input_dict,
-                     reuse = None,
-                     suffix = '', 
-                     trainable = True) :
-        if input_dict is not None:
-            type_embedding = input_dict.get('type_embedding', None)
-        else:
-            type_embedding = None
-        start_index = 0
-        inputs = tf.reshape(inputs, [-1, self.ndescrpt * natoms[0]])
-        output = []
-        output_qmat = []
-        if not self.type_one_side and type_embedding is None:
-            for type_i in range(self.ntypes):
-                inputs_i = tf.slice (inputs,
-                                     [ 0, start_index*      self.ndescrpt],
-                                     [-1, natoms[2+type_i]* self.ndescrpt] )
-                inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
-                layer, qmat = self._filter(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_'+str(type_i)+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
-                layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_out()])
-                qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_rot_mat_1() * 3])
-                output.append(layer)
-                output_qmat.append(qmat)
-                start_index += natoms[2+type_i]
-        else :
-            inputs_i = inputs
-            inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
-            type_i = -1
-            layer, qmat = self._filter(tf.cast(inputs_i, self.filter_precision), type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn, type_embedding=type_embedding)
-            layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0] * self.get_dim_out()])
-            qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[0] * self.get_dim_rot_mat_1() * 3])
-            output.append(layer)
-            output_qmat.append(qmat)
-        output = tf.concat(output, axis = 1)
-        output_qmat = tf.concat(output_qmat, axis = 1)
-        return output, output_qmat
-
-
     def _compute_dstats_sys_smth (self,
                                  data_coord, 
                                  data_atype,                             
@@ -456,26 +393,31 @@ class DescrptSeAMask (Descriptor):
                                     self.place_holders['mask_matrix']: data_mask_matrix
                                     #self.place_holders['box']: data_box,
                                 })
-        #natoms = self.total_atom_num
         dd_all = np.reshape(dd_all, [-1, self.ndescrpt * natoms[0]])
         start_index = 0
+        num4mask = np.sum(data_mask_matrix, axis = 1)
         sysr = []
         sysa = []
         sysn = []
         sysr2 = []
         sysa2 = []
+        
         for type_i in range(self.ntypes):
             end_index = start_index + self.ndescrpt * natoms[2+type_i]
             dd = dd_all[:, start_index:end_index]
             dd = np.reshape(dd, [-1, self.ndescrpt])
-            start_index = end_index        
+            start_index = end_index
+            ## Calculate the sumn with real atoms.
+            mask4type_i = data_mask_matrix[:, self.cum_sel_a[type_i]:self.cum_sel_a[type_i+1]]
+            num4type_i = np.sum(mask4type_i, axis = 1)                        
+            
             # compute
             dd = np.reshape (dd, [-1, 4])
             ddr = dd[:,:1]
             dda = dd[:,1:]
             sumr = np.sum(ddr)
             suma = np.sum(dda) / 3.
-            sumn = dd.shape[0]
+            sumn = np.sum(num4type_i * num4mask)
             sumr2 = np.sum(np.multiply(ddr, ddr))
             suma2 = np.sum(np.multiply(dda, dda)) / 3.
             sysr.append(sumr)
@@ -485,238 +427,3 @@ class DescrptSeAMask (Descriptor):
             sysa2.append(suma2)
         return sysr, sysr2, sysa, sysa2, sysn
 
-
-    def _compute_std (self,sumv2, sumv, sumn) :
-        if sumn == 0:
-            return 1e-2
-        val = np.sqrt(sumv2/sumn - np.multiply(sumv/sumn, sumv/sumn))
-        if np.abs(val) < 1e-2:
-            val = 1e-2
-        return val
-
-
-    def _concat_type_embedding(
-            self,
-            xyz_scatter,
-            nframes,
-            natoms,
-            type_embedding,
-    ):
-        '''Concatenate `type_embedding` of neighbors and `xyz_scatter`.
-        If not self.type_one_side, concatenate `type_embedding` of center atoms as well.
-
-        Parameters
-        ----------
-        xyz_scatter:
-                shape is [nframes*natoms[0]*self.nnei, 1]
-        nframes:
-                shape is []
-        natoms:
-                shape is [1+1+self.ntypes]
-        type_embedding:
-                shape is [self.ntypes, Y] where Y=jdata['type_embedding']['neuron'][-1]
-
-        Returns
-        -------
-            embedding:
-                environment of each atom represented by embedding.
-        '''
-        te_out_dim = type_embedding.get_shape().as_list()[-1]        
-        nei_embed = tf.nn.embedding_lookup(type_embedding,tf.cast(self.nei_type,dtype=tf.int32))  # shape is [self.nnei, 1+te_out_dim]
-        nei_embed = tf.tile(nei_embed,(nframes*natoms[0],1))  # shape is [nframes*natoms[0]*self.nnei, te_out_dim]
-        nei_embed = tf.reshape(nei_embed,[-1,te_out_dim])
-        embedding_input = tf.concat([xyz_scatter,nei_embed],1)  # shape is [nframes*natoms[0]*self.nnei, 1+te_out_dim]
-        if not self.type_one_side:
-            atm_embed = embed_atom_type(self.ntypes, natoms, type_embedding)  # shape is [natoms[0], te_out_dim]
-            atm_embed = tf.tile(atm_embed,(nframes,self.nnei))  # shape is [nframes*natoms[0], self.nnei*te_out_dim]
-            atm_embed = tf.reshape(atm_embed,[-1,te_out_dim])  # shape is [nframes*natoms[0]*self.nnei, te_out_dim]
-            embedding_input = tf.concat([embedding_input,atm_embed],1)  # shape is [nframes*natoms[0]*self.nnei, 1+te_out_dim+te_out_dim]
-        return embedding_input
-
-
-    def _filter_lower(
-            self,
-            type_i,
-            type_input,
-            start_index,
-            incrs_index,
-            inputs,
-            nframes,
-            natoms,
-            type_embedding=None,
-            is_exclude = False,
-            activation_fn = None,
-            bavg = 0.0,
-            stddev = 1.0,
-            trainable = True,
-            suffix = '',
-    ):
-        """
-        input env matrix, returns R.G
-        """
-        outputs_size = [1] + self.filter_neuron
-        # cut-out inputs
-        # with natom x (nei_type_i x 4)  
-        inputs_i = tf.slice (inputs,
-                             [ 0, start_index* 4],
-                             [-1, incrs_index* 4] )
-        shape_i = inputs_i.get_shape().as_list()
-        natom = tf.shape(inputs_i)[0]
-        # with (natom x nei_type_i) x 4
-        inputs_reshape = tf.reshape(inputs_i, [-1, 4])
-        # with (natom x nei_type_i) x 1
-        xyz_scatter = tf.reshape(tf.slice(inputs_reshape, [0,0],[-1,1]),[-1,1])
-        if type_embedding is not None:
-            type_embedding = tf.cast(type_embedding, self.filter_precision)
-            xyz_scatter = self._concat_type_embedding(
-                xyz_scatter, nframes, natoms, type_embedding)
-            if self.compress:
-                raise RuntimeError('compression of type embedded descriptor is not supported at the moment')
-        # with (natom x nei_type_i) x out_size
-        if self.compress and (not is_exclude):
-          info = [self.lower, self.upper, self.upper * self.table_config[0], self.table_config[1], self.table_config[2], self.table_config[3]]
-          if self.type_one_side:
-            net = 'filter_-1_net_' + str(type_i)
-          else:
-            net = 'filter_' + str(type_input) + '_net_' + str(type_i)
-          return op_module.tabulate_fusion_se_a(tf.cast(self.table.data[net], self.filter_precision), info, xyz_scatter, tf.reshape(inputs_i, [natom, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])  
-        else:
-          if (not is_exclude):
-              xyz_scatter = embedding_net(
-                  xyz_scatter, 
-                  self.filter_neuron, 
-                  self.filter_precision, 
-                  activation_fn = activation_fn, 
-                  resnet_dt = self.filter_resnet_dt,
-                  name_suffix = suffix,
-                  stddev = stddev,
-                  bavg = bavg,
-                  seed = self.seed,
-                  trainable = trainable, 
-                  uniform_seed = self.uniform_seed,
-                  initial_variables = self.embedding_net_variables)
-              if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
-          else:
-            # we can safely return the final xyz_scatter filled with zero directly
-            return tf.cast(tf.fill((natom, 4, outputs_size[-1]), 0.), GLOBAL_TF_FLOAT_PRECISION)
-          # natom x nei_type_i x out_size
-          xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1]//4, outputs_size[-1]))  
-          # When using tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]) below
-          # [588 24] -> [588 6 4] correct
-          # but if sel is zero
-          # [588 0] -> [147 0 4] incorrect; the correct one is [588 0 4]
-          # So we need to explicitly assign the shape to tf.shape(inputs_i)[0] instead of -1
-          return tf.matmul(tf.reshape(inputs_i, [natom, shape_i[1]//4, 4]), xyz_scatter, transpose_a = True)
-
-
-    def _filter(
-            self, 
-            inputs, 
-            type_input,
-            natoms,
-            type_embedding = None,
-            activation_fn=tf.nn.tanh, 
-            stddev=1.0,
-            bavg=0.0,
-            name='linear', 
-            reuse=None,
-            trainable = True):
-        nframes = tf.shape(tf.reshape(inputs, [-1, natoms[0], self.ndescrpt]))[0]
-        # natom x (nei x 4)
-        shape = inputs.get_shape().as_list()
-        outputs_size = [1] + self.filter_neuron
-        outputs_size_2 = self.n_axis_neuron
-        all_excluded = all([(type_input, type_i) in self.exclude_types for type_i in range(self.ntypes)])
-        if all_excluded:
-            # all types are excluded so result and qmat should be zeros
-            # we can safaly return a zero matrix...
-            # See also https://stackoverflow.com/a/34725458/9567349
-            # result: natom x outputs_size x outputs_size_2
-            # qmat: natom x outputs_size x 3
-            natom = tf.shape(inputs)[0]
-            result = tf.cast(tf.fill((natom, outputs_size_2, outputs_size[-1]), 0.), GLOBAL_TF_FLOAT_PRECISION)
-            qmat = tf.cast(tf.fill((natom, outputs_size[-1], 3), 0.), GLOBAL_TF_FLOAT_PRECISION)
-            return result, qmat
-            
-        with tf.variable_scope(name, reuse=reuse):
-          start_index = 0
-          type_i = 0
-          # natom x 4 x outputs_size
-          if type_embedding is None:
-              for type_i in range(self.ntypes):
-                  ret = self._filter_lower(
-                      type_i, type_input,
-                      start_index, self.sel_a[type_i],
-                      inputs,
-                      nframes,
-                      natoms,
-                      type_embedding = type_embedding,
-                      is_exclude = (type_input, type_i) in self.exclude_types,
-                      activation_fn = activation_fn,
-                      stddev = stddev,
-                      bavg = bavg,
-                      trainable = trainable,
-                      suffix = "_"+str(type_i))
-                  if type_i == 0:
-                      xyz_scatter_1 = ret
-                  elif (type_input, type_i) not in self.exclude_types:
-                      # add zero is meaningless; skip
-                      xyz_scatter_1+= ret
-                  start_index += self.sel_a[type_i]
-          else :
-              xyz_scatter_1 = self._filter_lower(
-                  type_i, type_input,
-                  start_index, np.cumsum(self.sel_a)[-1],
-                  inputs,
-                  nframes,
-                  natoms,
-                  type_embedding = type_embedding,
-                  is_exclude = False,
-                  activation_fn = activation_fn,
-                  stddev = stddev,
-                  bavg = bavg,
-                  trainable = trainable)
-          # natom x nei x outputs_size
-          # xyz_scatter = tf.concat(xyz_scatter_total, axis=1)
-          # natom x nei x 4
-          # inputs_reshape = tf.reshape(inputs, [-1, shape[1]//4, 4])
-          # natom x 4 x outputs_size
-          # xyz_scatter_1 = tf.matmul(inputs_reshape, xyz_scatter, transpose_a = True)
-          xyz_scatter_1 = xyz_scatter_1 * (4.0 / shape[1])
-          # natom x 4 x outputs_size_2
-          xyz_scatter_2 = tf.slice(xyz_scatter_1, [0,0,0],[-1,-1,outputs_size_2])
-          # # natom x 3 x outputs_size_2
-          # qmat = tf.slice(xyz_scatter_2, [0,1,0], [-1, 3, -1])
-          # natom x 3 x outputs_size_1
-          qmat = tf.slice(xyz_scatter_1, [0,1,0], [-1, 3, -1])
-          # natom x outputs_size_1 x 3
-          qmat = tf.transpose(qmat, perm = [0, 2, 1])
-          # natom x outputs_size x outputs_size_2
-          result = tf.matmul(xyz_scatter_1, xyz_scatter_2, transpose_a = True)
-          # natom x (outputs_size x outputs_size_2)
-          result = tf.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
-
-        return result, qmat
-    
-    def _identity_tensors(self, suffix : str = "") -> None:
-        """Identify tensors which are expected to be stored and restored.
-        
-        Notes
-        -----
-        These tensors will be indentitied:
-            self.descrpt_reshape : o_rmat
-            self.descrpt_deriv : o_rmat_deriv
-            self.rij : o_rij
-            self.nlist : o_nlist
-        Thus, this method should be called during building the descriptor and
-        after these tensors are initialized.
-
-        Parameters
-        ----------
-        suffix : str
-            The suffix of the scope
-        """
-        self.descrpt_reshape = tf.identity(self.descrpt_reshape, name = 'o_rmat' + suffix)
-        self.descrpt_deriv = tf.identity(self.descrpt_deriv, name = 'o_rmat_deriv' + suffix)
-        self.rij = tf.identity(self.rij, name = 'o_rij' + suffix)
-        self.nlist = tf.identity(self.nlist, name = 'o_nlist' + suffix)
