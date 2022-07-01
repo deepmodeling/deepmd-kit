@@ -151,6 +151,7 @@ extensions = [
     'sphinx.ext.mathjax',
     'sphinx.ext.viewcode',
     'sphinx.ext.intersphinx',
+    'sphinx.ext.napoleon',
     'sphinxarg.ext',
     'numpydoc',
     'breathe',
@@ -246,3 +247,6 @@ latex_elements = {
 ''',
 }
 
+# For TF automatic generated OP docs
+napoleon_google_docstring = True
+napoleon_numpy_docstring = False
