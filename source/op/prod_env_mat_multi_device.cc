@@ -34,6 +34,18 @@ Each row of the environment matrix :math:`\mathcal{R}^i` can be constructed as f
         \end{array}
         ]
 
+where :math:`\mathbf{R}_{ji}=\mathbf{R}_j-\mathbf{R}_i = (x_{ji}, y_{ji}, z_{ji})` is 
+the relative coordinate and :math:`r_{ji}=\lVert \mathbf{R}_{ji} \lVert` is its norm.
+The switching function :math:`s(r)` is defined as:
+
+    .. math::
+        s(r)=
+        \begin{cases}
+        \frac{1}{r}, & r<r_s \\
+        \frac{1}{r} \{ {(\frac{r - r_s}{ r_c - r_s})}^3 (-6 {(\frac{r - r_s}{ r_c - r_s})}^2 +15 \frac{r - r_s}{ r_c - r_s} -10) +1 \}, & r_s \leq r<r_c \\
+        0, & r \geq r_c
+        \end{cases}
+
 Note that the environment matrix is normalized by davg and dstd.
 coord: The coordinates of atoms.
 type: The types of atoms.
