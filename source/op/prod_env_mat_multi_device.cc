@@ -34,7 +34,7 @@ Each row of the environment matrix :math:`\mathcal{R}^i` can be constructed as f
         \end{array}
         ]
 
-where :math:`\mathbf{R}_{ji}=\mathbf{R}_j-\mathbf{R}_i = (x_{ji}, y_{ji}, z_{ji})` is 
+In the above equation, :math:`\mathbf{R}_{ji}=\mathbf{R}_j-\mathbf{R}_i = (x_{ji}, y_{ji}, z_{ji})` is 
 the relative coordinate and :math:`r_{ji}=\lVert \mathbf{R}_{ji} \lVert` is its norm.
 The switching function :math:`s(r)` is defined as:
 
