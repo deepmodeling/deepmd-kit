@@ -20,6 +20,8 @@ from deepmd.entrypoints import (
 )
 from deepmd.loggers import set_log_handles
 
+from deepmd.nvnmd.entrypoints.train import train_nvnmd
+
 __all__ = ["main", "parse_args", "get_ll", "main_parser"]
 
 
@@ -203,6 +205,13 @@ def main_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="the frozen nodes, if not set, determined from the model type",
+    )
+    parser_frz.add_argument(
+        "-w",
+        "--nvnmd-weight",
+        type=str,
+        default=None,
+        help="the name of weight file (.npy), if set, save the model's weight into the file",
     )
 
     # * test script ********************************************************************
@@ -436,9 +445,28 @@ def main_parser() -> argparse.ArgumentParser:
         required=True,
         help="type map",
     )
-        
+
     # --version
     parser.add_argument('--version', action='version', version='DeePMD-kit v%s' % __version__)
+
+    # * train nvnmd script ******************************************************************
+    parser_train_nvnmd = subparsers.add_parser(
+        "train-nvnmd",
+        parents=[parser_log],
+        help="train nvnmd model",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser_train_nvnmd.add_argument(
+        "INPUT", help="the input parameter file in json format"
+    )
+    parser_train_nvnmd.add_argument(
+        "-s",
+        "--step",
+        default="s1",
+        type=str,
+        choices=['s1', 's2'],
+        help="steps to train model of NVNMD: s1 (train CNN), s2 (train QNN)"
+    )
     return parser
 
 
@@ -504,6 +532,8 @@ def main():
         convert(**dict_args)
     elif args.command == "neighbor-stat":
         neighbor_stat(**dict_args)
+    elif args.command == "train-nvnmd":  # nvnmd
+        train_nvnmd(**dict_args)
     elif args.command is None:
         pass
     else:

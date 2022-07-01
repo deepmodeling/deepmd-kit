@@ -19,6 +19,8 @@ import deepmd.op
 
 from typing import List, Optional
 
+from deepmd.nvnmd.entrypoints.freeze import save_weight
+
 __all__ = ["freeze"]
 
 log = logging.getLogger(__name__)
@@ -160,7 +162,7 @@ def _make_node_names(model_type: str, modifier_type: Optional[str] = None) -> Li
 
 
 def freeze(
-    *, checkpoint_folder: str, output: str, node_names: Optional[str] = None, **kwargs
+    *, checkpoint_folder: str, output: str, node_names: Optional[str] = None, nvnmd_weight: Optional[str] = None, **kwargs
 ):
     """Freeze the graph in supplied folder.
 
@@ -236,6 +238,9 @@ def freeze(
         else:
             output_node_list = node_names.split(",")
         log.info(f"The following nodes will be frozen: {output_node_list}")
+
+        if nvnmd_weight is not None:
+            save_weight(sess, nvnmd_weight) # nvnmd
 
         # We use a built-in TF helper to export variables to constants
         output_graph_def = tf.graph_util.convert_variables_to_constants(

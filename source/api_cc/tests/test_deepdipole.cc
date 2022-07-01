@@ -7,8 +7,6 @@
 #include "neighbor_list.h"
 #include "test_utils.h"
 
-#include "google/protobuf/text_format.h"
-#include "google/protobuf/io/zero_copy_stream_impl.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>  
@@ -38,17 +36,7 @@ protected:
   deepmd::DeepTensor dp;
 
   void SetUp() override {
-    std::string file_name = "../../tests/infer/deepdipole.pbtxt";
-    int fd = open(file_name.c_str(), O_RDONLY);
-    tensorflow::protobuf::io::ZeroCopyInputStream* input = new tensorflow::protobuf::io::FileInputStream(fd);
-    tensorflow::GraphDef graph_def;
-    tensorflow::protobuf::TextFormat::Parse(input, &graph_def);
-    delete input;
-    std::fstream output("deepdipole.pb", std::ios::out | std::ios::trunc | std::ios::binary);
-    graph_def.SerializeToOstream(&output);
-    // check the string by the following commands
-    // string txt;
-    // tensorflow::protobuf::TextFormat::PrintToString(graph_def, &txt);
+    deepmd::convert_pbtxt_to_pb("../../tests/infer/deepdipole.pbtxt", "deepdipole.pb");
 
     dp.init("deepdipole.pb");
   };
@@ -139,16 +127,7 @@ protected:
 
   void SetUp() override {
     std::string file_name = "../../tests/infer/deepdipole_new.pbtxt";
-    int fd = open(file_name.c_str(), O_RDONLY);
-    tensorflow::protobuf::io::ZeroCopyInputStream* input = new tensorflow::protobuf::io::FileInputStream(fd);
-    tensorflow::GraphDef graph_def;
-    tensorflow::protobuf::TextFormat::Parse(input, &graph_def);
-    delete input;
-    std::fstream output("deepdipole_new.pb", std::ios::out | std::ios::trunc | std::ios::binary);
-    graph_def.SerializeToOstream(&output);
-    // check the string by the following commands
-    // string txt;
-    // tensorflow::protobuf::TextFormat::PrintToString(graph_def, &txt);
+    deepmd::convert_pbtxt_to_pb("../../tests/infer/deepdipole_new.pbtxt", "deepdipole_new.pb");
     dp.init("deepdipole_new.pb");
     odim = dp.output_dim ();
 
@@ -339,17 +318,7 @@ protected:
   deepmd::DeepTensor dp;
 
   void SetUp() override {
-    std::string file_name = "../../tests/infer/deepdipole_fake.pbtxt";
-    int fd = open(file_name.c_str(), O_RDONLY);
-    tensorflow::protobuf::io::ZeroCopyInputStream* input = new tensorflow::protobuf::io::FileInputStream(fd);
-    tensorflow::GraphDef graph_def;
-    tensorflow::protobuf::TextFormat::Parse(input, &graph_def);
-    delete input;
-    std::fstream output("deepdipole_fake.pb", std::ios::out | std::ios::trunc | std::ios::binary);
-    graph_def.SerializeToOstream(&output);
-    // check the string by the following commands
-    // string txt;
-    // tensorflow::protobuf::TextFormat::PrintToString(graph_def, &txt);
+    deepmd::convert_pbtxt_to_pb("../../tests/infer/deepdipole_fake.pbtxt", "deepdipole_fake.pb");
 
     dp.init("deepdipole_fake.pb");
   };
