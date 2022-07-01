@@ -16,7 +16,7 @@ struct NeighborInfo
       : type (0), dist(0), index(0) 
       {
       }
-  NeighborInfo (int tt, double dd, int ii) 
+  NeighborInfo (int tt, FPTYPE dd, int ii) 
       : type (tt), dist(dd), index(ii) 
       {
       }

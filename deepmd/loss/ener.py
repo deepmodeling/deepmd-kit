@@ -398,7 +398,7 @@ class EnerForcesMaskLoss(Loss):
                  starter_learning_rate : float, 
                   start_pref_e : float = 0.02,
                   limit_pref_e : float = 1.00,
-                  start_pref_f : float = 1000,
+                  start_pref_f : float = 1.00,
                   limit_pref_f : float = 1.00, 
                   **kwargs)-> None :
         model = kwargs.get('model', None)
@@ -421,7 +421,7 @@ class EnerForcesMaskLoss(Loss):
         add_data_requirement('energy', 1, atomic=False, must=False, high_prec=True)
         add_data_requirement('force',  3, atomic=True,  must=False, high_prec=False)
         add_data_requirement('mask_matrix', 1, atomic=True, must=True, high_prec=False)
-        add_data_requirement('mask_matrix4force', 3, atomic=True, must=False, high_prec=False)
+        add_data_requirement('mask_matrix4force', 3, atomic=True, must=False, high_prec=False, default = 1.0)
         add_data_requirement('atom_num4element', len(self.type_map), atomic=False, must=False, high_prec=False)
         add_data_requirement('atom_num4frame', 1, atomic=False, must=False, high_prec=False)
         return None

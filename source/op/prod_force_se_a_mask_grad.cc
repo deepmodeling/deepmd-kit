@@ -5,7 +5,7 @@ REGISTER_OP("ProdForceSeAMaskGrad")
     .Input("grad: T")
     .Input("net_deriv: T")
     .Input("in_deriv: T")
-    .Input("mask: int32")
+    .Input("mask: bool")
     .Input("nlist: int32")
     .Attr("total_atom_num: int")
     .Output("grad_net: T");
@@ -76,7 +76,7 @@ public:
         auto grad = grad_tensor.flat<FPTYPE>();
         auto net_deriv = net_deriv_tensor.flat<FPTYPE>();
         auto in_deriv = in_deriv_tensor.flat<FPTYPE>();
-        auto mask = mask_tensor.flat<int>();
+        auto mask = mask_tensor.flat<bool>();
         auto nlist = nlist_tensor.flat<int>();
         auto grad_net = grad_net_tensor->flat<FPTYPE>();
 

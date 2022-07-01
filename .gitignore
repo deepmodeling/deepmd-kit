@@ -35,3 +35,4 @@ build_lammps/
 .idea/
 build_tests/
 build_cc_tests
+source/gmx/patches/2020.2/CMakeLists.txt.patch

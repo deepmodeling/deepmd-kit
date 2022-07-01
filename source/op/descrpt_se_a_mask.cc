@@ -13,7 +13,7 @@ REGISTER_OP("DescrptSeAMask")
     .Attr("T: {float, double} = DT_DOUBLE")
     .Input("coord: T")
     .Input("type: int32")
-    .Input("mask: int32")
+    .Input("mask: bool")
     .Attr("total_atom_num: int")
     .Output("descrpt: T")
     .Output("descrpt_deriv: T")
@@ -91,7 +91,7 @@ public:
 
         auto coord = coord_tensor.matrix<FPTYPE>();
         auto type = type_tensor.matrix<int>();
-        auto mask_matrix = mask_matrix_tensor.matrix<int>();
+        auto mask_matrix = mask_matrix_tensor.matrix<bool>();
 
         auto descrpt = descrpt_tensor->matrix<FPTYPE>();
         auto descrpt_deriv = descrpt_deriv_tensor->matrix<FPTYPE>();
@@ -128,7 +128,7 @@ public:
                 d_type[ii] = type(kk, ii);
             }
 
-            std::vector<int> d_mask(natoms);
+            std::vector<bool> d_mask(natoms);
             for (int ii = 0; ii < natoms; ++ii)
             {
                 d_mask[ii] = mask_matrix(kk, ii);
@@ -139,7 +139,7 @@ public:
             {
                 // Check this atom is virtual atom or not. If it is, set the virtual atom's
                 // environment descriptor and derivation on descriptor to be zero directly.
-                if (mask_matrix(kk, ii) == 0)
+                if (!mask_matrix(kk, ii))
                 {
                     for (int jj = 0; jj < natoms * 4; ++jj)
                     {
@@ -194,7 +194,7 @@ public:
                     // Once ii == j_idx, the descriptor and derivation should be set to zero.
                     // Or if the atom jj is an virtual atom. The descriptor and derivation should be
                     // zero also.
-                    if (ii == j_idx || mask_matrix(kk, j_idx) == 0)
+                    if (ii == j_idx || !mask_matrix(kk, j_idx) )
                     {
                         // 1./rr, cos(theta), cos(phi), sin(phi)
                         descrpt_atom[jj * 4 + 0] = 0.;
@@ -248,7 +248,7 @@ public:
                     // 1/r^3
                     compute_t inr3 = inr * inr2;
                     // 1./rr, cos(theta), cos(phi), sin(phi)
-                    descrpt_atom[jj * 4 + 0] = 1. / nr;
+                    descrpt_atom[jj * 4 + 0] = compute_t(1.) / nr;
                     descrpt_atom[jj * 4 + 1] = x / nr2;
                     descrpt_atom[jj * 4 + 2] = y / nr2;
                     descrpt_atom[jj * 4 + 3] = z / nr2;
@@ -257,17 +257,17 @@ public:
                     descrpt_deriv_atom[jj * 12 + 1] = y * inr3;
                     descrpt_deriv_atom[jj * 12 + 2] = z * inr3;
                     // derive of the component x/r2
-                    descrpt_deriv_atom[jj * 12 + 3] = 2. * x * x * inr4 - inr2; // on x.
-                    descrpt_deriv_atom[jj * 12 + 4] = 2. * x * y * inr4;        // on y.
-                    descrpt_deriv_atom[jj * 12 + 5] = 2. * x * z * inr4;        // on z.
+                    descrpt_deriv_atom[jj * 12 + 3] = compute_t(2.) * x * x * inr4 - inr2; // on x.
+                    descrpt_deriv_atom[jj * 12 + 4] = compute_t(2.) * x * y * inr4;        // on y.
+                    descrpt_deriv_atom[jj * 12 + 5] = compute_t(2.) * x * z * inr4;        // on z.
                     // derive of the component y/r2
-                    descrpt_deriv_atom[jj * 12 + 6] = 2. * y * x * inr4;        // on x.
-                    descrpt_deriv_atom[jj * 12 + 7] = 2. * y * y * inr4 - inr2; // on y.
-                    descrpt_deriv_atom[jj * 12 + 8] = 2. * y * z * inr4;        // on z.
+                    descrpt_deriv_atom[jj * 12 + 6] = compute_t(2.) * y * x * inr4;        // on x.
+                    descrpt_deriv_atom[jj * 12 + 7] = compute_t(2.) * y * y * inr4 - inr2; // on y.
+                    descrpt_deriv_atom[jj * 12 + 8] = compute_t(2.) * y * z * inr4;        // on z.
                     // derive of the component z/r2
-                    descrpt_deriv_atom[jj * 12 + 9] = 2. * z * x * inr4;         // on x.
-                    descrpt_deriv_atom[jj * 12 + 10] = 2. * z * y * inr4;        // on y.
-                    descrpt_deriv_atom[jj * 12 + 11] = 2. * z * z * inr4 - inr2; // on z.
+                    descrpt_deriv_atom[jj * 12 + 9] = compute_t(2.) * z * x * inr4;         // on x.
+                    descrpt_deriv_atom[jj * 12 + 10] = compute_t(2.) * z * y * inr4;        // on y.
+                    descrpt_deriv_atom[jj * 12 + 11] = compute_t(2.) * z * z * inr4 - inr2; // on z.
                 }
 
                 for (int jj = 0; jj < natoms * 4; ++jj)
@@ -295,7 +295,7 @@ public:
 private:
     int total_atom_num;
     compute_t max_distance = 10000.0;
-    void buildAndSortNeighborList(int i_idx, const std::vector<compute_t> d_coord3, std::vector<int> &d_type, std::vector<int> &d_mask, std::vector<int> &sorted_nlist, int total_atom_num)
+    void buildAndSortNeighborList(int i_idx, const std::vector<compute_t> d_coord3, std::vector<int> &d_type, std::vector<bool> &d_mask, std::vector<int> &sorted_nlist, int total_atom_num)
     {
         //sorted_nlist.resize(total_atom_num);
         std::vector<deepmd::NeighborInfo<double>> sel_nei;
@@ -309,7 +309,7 @@ private:
             }
             // Check if j_idx atom is virtual particle or not.
             compute_t rr = 0.0;
-            if (d_mask[j_idx] == 0 || j_idx == i_idx)
+            if (!d_mask[j_idx] || j_idx == i_idx)
             {
                 rr = max_distance;
             }

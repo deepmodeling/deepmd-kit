@@ -4,7 +4,7 @@ REGISTER_OP("ProdForceSeAMask")
     .Attr("T: {float, double} = DT_DOUBLE")
     .Input("net_deriv: T")
     .Input("in_deriv: T")
-    .Input("mask: int32")
+    .Input("mask: bool")
     .Input("nlist: int32")
     .Attr("total_atom_num: int")
     .Output("force: T");
@@ -66,7 +66,7 @@ public:
         auto net_deriv = net_deriv_tensor.flat<FPTYPE>();
         auto in_deriv = in_deriv_tensor.flat<FPTYPE>();
         auto nlist = nlist_tensor.flat<int>();
-        auto mask = mask_tensor.flat<int>();
+        auto mask = mask_tensor.flat<bool>();
         auto force = force_tensor->flat<FPTYPE>();
 
 // loop over samples
@@ -94,7 +94,7 @@ public:
             {
                 int i_idx = ii;
                 // Check if the atom ii is virtual particle or not.
-                if (mask(mask_iter + i_idx) == 0)
+                if (!mask(mask_iter + i_idx) )
                 {
                     continue;
                 }

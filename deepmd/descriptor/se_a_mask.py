@@ -150,7 +150,7 @@ class DescrptSeAMask (DescrptSeA):
             for ii in ['coord']:
                 self.place_holders[ii] = tf.placeholder(GLOBAL_NP_FLOAT_PRECISION, [None, None], name = name_pfx+'t_'+ii)
             self.place_holders['type'] = tf.placeholder(tf.int32, [None, None], name=name_pfx+'t_type')
-            self.place_holders['mask_matrix'] = tf.placeholder(tf.int32, [None, None], name=name_pfx+'t_mask')
+            self.place_holders['mask_matrix'] = tf.placeholder(tf.bool, [None, None], name=name_pfx+'t_mask')
             self.place_holders['natoms_vec'] = tf.placeholder(tf.int32, [self.ntypes+2], name=name_pfx+'t_natoms')
             self.place_holders['default_mesh'] = tf.placeholder(tf.int32, [None], name=name_pfx+'t_mesh')
             self.stat_descrpt, descrpt_deriv, rij, nlist \
@@ -211,15 +211,15 @@ class DescrptSeAMask (DescrptSeA):
             sumr2 = np.sum(sumr2, axis = 0)
             suma2 = np.sum(suma2, axis = 0)
             for type_i in range(self.ntypes) :
-                davgunit = [sumr[type_i]/(sumn[type_i]+1e-15), 0, 0, 0]
-                dstdunit = [self._compute_std(sumr2[type_i], sumr[type_i], sumn[type_i]), 
-                            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
-                            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
-                            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i])
-                            ]
+                #davgunit = [sumr[type_i]/(sumn[type_i]+1e-15), 0, 0, 0]
+                #dstdunit = [self._compute_std(sumr2[type_i], sumr[type_i], sumn[type_i]), 
+                #            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
+                #            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
+                #            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i])
+                #            ]
                 
-                davg = np.tile(davgunit, self.ndescrpt // 4)
-                dstd = np.tile(dstdunit, self.ndescrpt // 4)
+                davg = np.tile(0., self.ndescrpt // 4)
+                dstd = np.tile(1., self.ndescrpt // 4)
                 all_davg.append(davg)
                 all_dstd.append(dstd)
 
@@ -307,7 +307,7 @@ class DescrptSeAMask (DescrptSeA):
         atype = tf.reshape (atype_, [-1, natoms[1]])
         mask_matrix = input_dict["mask_matrix"]
         mask_matrix = tf.reshape (mask_matrix, [-1, natoms[1]])
-        mask_matrix = tf.cast(mask_matrix, tf.int32)
+        mask_matrix = tf.cast(mask_matrix, tf.bool)
         
         self.descrpt, self.descrpt_deriv, self.rij, self.nlist \
             = op_module.descrpt_se_a_mask (coord,
@@ -365,7 +365,7 @@ class DescrptSeAMask (DescrptSeA):
         tf.summary.histogram('net_derivative', net_deriv)
         net_deriv_reshape = tf.reshape (net_deriv, [-1, natoms[0] * self.ndescrpt])
         mask_matrix = tf.reshape(mask_matrix, [-1, natoms[0]])
-        mask_matrix = tf.cast(mask_matrix, tf.int32)        
+        mask_matrix = tf.cast(mask_matrix, tf.bool)        
         force \
             = op_module.prod_force_se_a_mask (net_deriv_reshape,
                                           self.descrpt_deriv,
