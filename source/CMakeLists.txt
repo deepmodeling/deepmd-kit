@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.7)
+cmake_minimum_required(VERSION 3.12)
 project(DeePMD)
 
 # build cpp or python interfaces
@@ -74,6 +74,12 @@ else()
   message(STATUS "Will not build AMD GPU support")  
 endif (USE_ROCM_TOOLKIT)
 
+set(DEEPMD_SOURCE_DIR ${PROJECT_SOURCE_DIR}/..)
+
+# setup tensorflow libraries by python
+if (USE_TF_PYTHON_LIBS)
+  find_package (Python COMPONENTS Interpreter Development REQUIRED)
+endif(USE_TF_PYTHON_LIBS)
 
 # find tensorflow, I need tf abi info
 find_package(tensorflow REQUIRED)
@@ -142,6 +148,9 @@ else ()
   message (STATUS "Set GLIBCXX_USE_CXX_ABI=1 when compiling ops")
 endif ()
 
+# set _GLIBCXX_USE_CXX11_ABI flag globally
+add_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
+
 # define USE_TTM
 if (NOT DEFINED USE_TTM)
   set(USE_TTM FALSE)
@@ -201,7 +210,7 @@ if (BUILD_CPP_IF)
   add_subdirectory (api_cc/)
   add_subdirectory (lmp/)
   if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 4.8)
-#   add_subdirectory (md/)
+    # add_subdirectory (md/)
     add_subdirectory (ipi/)
     add_subdirectory (gmx/)
   endif ()

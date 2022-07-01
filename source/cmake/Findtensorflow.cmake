@@ -29,6 +29,18 @@ if (BUILD_CPP_IF AND INSTALL_TENSORFLOW)
 	  )
 endif ()
 
+if (BUILD_CPP_IF AND USE_TF_PYTHON_LIBS)
+  # Here we try to install libtensorflow_cc.so as well as libtensorflow_framework.so using libs within the python site-package tensorflow folder.
+
+  if (NOT DEFINED TENSORFLOW_ROOT)
+    set (TENSORFLOW_ROOT ${CMAKE_INSTALL_PREFIX})
+  endif ()
+  # execute install script
+  execute_process(
+    COMMAND sh ${DEEPMD_SOURCE_DIR}/source/install/install_tf.sh ${Python_SITELIB} ${TENSORFLOW_ROOT}
+    )
+endif ()
+
 if(DEFINED TENSORFLOW_ROOT)
   string(REPLACE "lib64" "lib" TENSORFLOW_ROOT_NO64 ${TENSORFLOW_ROOT})
 endif(DEFINED TENSORFLOW_ROOT)
