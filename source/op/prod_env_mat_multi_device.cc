@@ -10,7 +10,7 @@ REGISTER_OP("ProdEnvMatA")
     .Attr("T: {float, double} = DT_DOUBLE")
     .Input("coord: T")          //atomic coordinates
     .Input("type: int32")       //atomic type
-    .Input("natoms: int32")     //local atomic number; each type atomic number; daizheyingxiangqude atomic numbers
+    .Input("natoms: int32")     //local atomic number; each type atomic number
     .Input("box : T")
     .Input("mesh : int32")
     .Input("davg: T")           //average value of data
@@ -23,8 +23,52 @@ REGISTER_OP("ProdEnvMatA")
     .Output("descrpt: T")
     .Output("descrpt_deriv: T")
     .Output("rij: T")
-    .Output("nlist: int32");
-    // only sel_a and rcut_r uesd.
+    .Output("nlist: int32")
+    .Doc(R"(Compute the environment matrix for descriptor se_e2_a.
+Each row of the environment matrix :math:`\mathcal{R}^i` can be constructed as follows
+
+    .. math::
+        (\mathcal{R}^i)_j = [
+        \begin{array}{c}
+            s(r_{ji}) & \frac{s(r_{ji})x_{ji}}{r_{ji}} & \frac{s(r_{ji})y_{ji}}{r_{ji}} & \frac{s(r_{ji})z_{ji}}{r_{ji}}
+        \end{array}
+        ]
+
+In the above equation, :math:`\mathbf{R}_{ji}=\mathbf{R}_j-\mathbf{R}_i = (x_{ji}, y_{ji}, z_{ji})` is 
+the relative coordinate and :math:`r_{ji}=\lVert \mathbf{R}_{ji} \lVert` is its norm.
+The switching function :math:`s(r)` is defined as:
+
+    .. math::
+        s(r)=
+        \begin{cases}
+        \frac{1}{r}, & r<r_s \\
+        \frac{1}{r} \{ {(\frac{r - r_s}{ r_c - r_s})}^3 (-6 {(\frac{r - r_s}{ r_c - r_s})}^2 +15 \frac{r - r_s}{ r_c - r_s} -10) +1 \}, & r_s \leq r<r_c \\
+        0, & r \geq r_c
+        \end{cases}
+
+Note that the environment matrix is normalized by davg and dstd.
+coord: The coordinates of atoms.
+type: The types of atoms.
+natoms: The number of atoms. This tensor has the length of Ntypes + 2.
+  natoms[0]: number of local atoms.
+  natoms[1]: total number of atoms held by this processor.
+  natoms[i]: 2 <= i < Ntypes+2, number of type i atoms.
+box: The box of frames.
+mesh: Gor historical reasons, only the length of the Tensor matters.
+  If size of mesh == 6, pbc is assumed.
+  If size of mesh == 0, no-pbc is assumed.
+davg: Average value of the environment matrix for normalization.
+dstd: Standard deviation of the environment matrix for normalization.
+rcut_a: This argument is not used.
+rcut_r: The cutoff radius for the environment matrix.
+rcut_r_smth: From where the environment matrix should be smoothed.
+sel_a: sel_a[i] specifies the maxmum number of type i atoms in the cut-off radius.
+sel_r: This argument is not used.
+descrpt: The environment matrix.
+descrpt_deriv: The derivative of the environment matrix.
+rij: The distance between the atoms.
+nlist: The neighbor list of each atom.)");
+    // only sel_a and rcut_r used.
 
 // an alias of ProdEnvMatA -- Compatible with v1.3
 REGISTER_OP("DescrptSeA")

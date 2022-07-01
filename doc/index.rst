@@ -47,6 +47,7 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
 
    development/*
    api_py/api_py
+   api_op
    API_CC/api_cc
    api_core/api_core
 
