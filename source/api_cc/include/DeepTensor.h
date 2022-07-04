@@ -14,6 +14,7 @@ public:
   * @brief Deep Tensor constructor without initialization.
   **/
   DeepTensor();
+  ~DeepTensor();
   /**
   * @brief Deep Tensor constructor with initialization..
   * @param[in] model The name of the frozen model file.

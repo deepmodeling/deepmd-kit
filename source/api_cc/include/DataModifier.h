@@ -10,7 +10,7 @@ public:
   DipoleChargeModifier(const std::string & model, 
 	       const int & gpu_rank = 0, 
 	       const std::string & name_scope = "");
-  ~DipoleChargeModifier () {};
+  ~DipoleChargeModifier ();
   void init (const std::string & model, 
 	     const int & gpu_rank = 0, 
 	     const std::string & name_scope = "");
