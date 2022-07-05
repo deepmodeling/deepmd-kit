@@ -3,6 +3,12 @@ project(libdeepmd_test)
 
 enable_testing()
 
+find_package(OpenMP)
+if (OPENMP_FOUND)
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+endif()
+
 set(libname "deepmd")
 set(BUILD_CPP_IF TRUE)
 set(LIB_DEEPMD ${libname})
@@ -60,7 +66,7 @@ if (OPENMP_FOUND)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
 endif()
 
-target_link_libraries(runUnitTests gtest gtest_main ${libname} pthread coverage_config)
+target_link_libraries(runUnitTests gtest gtest_main ${libname} coverage_config)
 add_test( runUnitTests runUnitTests )
 
 set_target_properties(
