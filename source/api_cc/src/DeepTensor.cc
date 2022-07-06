@@ -20,6 +20,10 @@ DeepTensor(const std::string & model,
   init(model, gpu_rank);  
 }
 
+DeepTensor::~DeepTensor() {
+  delete graph_def;
+}
+
 void
 DeepTensor::
 init (const std::string & model, 

@@ -175,7 +175,9 @@ DeepPot (const std::string & model, const int & gpu_rank, const std::string & fi
   init(model, gpu_rank, file_content);  
 }
 
-DeepPot::~DeepPot() {}
+DeepPot::~DeepPot() {
+  delete graph_def;
+}
 
 void
 DeepPot::
@@ -526,7 +528,11 @@ DeepPotModelDevi (const std::vector<std::string> & models, const int & gpu_rank,
   init(models, gpu_rank, file_contents);
 }
 
-DeepPotModelDevi::~DeepPotModelDevi() {}
+DeepPotModelDevi::~DeepPotModelDevi() {
+  for (unsigned ii = 0; ii < numb_models; ++ii){
+    delete graph_defs[ii];
+  }
+}
 
 void
 DeepPotModelDevi::

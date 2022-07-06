@@ -20,6 +20,11 @@ DipoleChargeModifier(const std::string & model,
   init(model, gpu_rank);  
 }
 
+DipoleChargeModifier::
+~DipoleChargeModifier () {
+  delete graph_def;
+};
+
 void
 DipoleChargeModifier::
 init (const std::string & model, 
