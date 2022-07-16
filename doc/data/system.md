@@ -25,7 +25,7 @@ ID                     | Property                 | Raw file                 | U
 ---------------------- | -----------------------  | ------------------------ | ----   | -----------------------  | -----------
 energy                 | Frame energies           | energy.raw               | eV     | Nframes                  | 
 force                  | Atomic forces            | force.raw                | eV/Å   | Nframes \* Natoms \* 3   | 
-virial                 | Frame virial             | virial.raw               | eV     | Nframes \* 3             | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`
+virial                 | Frame virial             | virial.raw               | eV     | Nframes \* 9             | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`
 atom_ener              | Atomic energies          | atom_ener.raw            | eV     | Nframes \* Natoms        |
 atom_pref              | Weights of atomic forces | atom_pref.raw            | 1      | Nframes \* Natoms        |
 dipole                 | Frame dipole             | dipole.raw               | Any    | Nframes \* 3             |
