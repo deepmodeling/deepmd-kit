@@ -24,6 +24,8 @@ input_files = (
     p_examples / "water_tensor" / "polar" / "polar_input.json",
     p_examples / "fparam" / "train" / "input.json",
     p_examples / "fparam" / "train" / "input_aparam.json",
+    p_examples / "nvnmd" / "train" / "train_cnn.json",
+    p_examples / "nvnmd" / "train" / "train_qnn.json",
 )
 
 
