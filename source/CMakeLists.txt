@@ -90,6 +90,16 @@ else()
   set (CMAKE_CXX_STANDARD 11)
 endif()
 
+if (MSVC)
+  # see TF .bazelrc
+  add_compile_options(/W0 /Zc:__cplusplus /D_USE_MATH_DEFINES /d2ReducedOptimizeHugeFunctions)
+  set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS TRUE)
+endif()
+if (TENSORFLOW_VERSION GREATER_EQUAL 2.4 AND MSVC)
+  # see TF 2.4 release notes
+  add_compile_options(/Zc:preprocessor)
+endif()
+
 # find threads
 find_package(Threads)
 
@@ -97,7 +107,8 @@ find_package(Threads)
 if (NOT DEFINED OP_CXX_ABI)
   if (BUILD_PY_IF) 
     if (DEFINED TENSORFLOW_ROOT)
-      set(FIND_ABI_CMD "import sys,os; sys.path.insert(0, os.path.join('${TENSORFLOW_ROOT}', '..')); import tensorflow; print(tensorflow.CXX11_ABI_FLAG if 'CXX11_ABI_FLAG' in tensorflow.__dict__ else tensorflow.sysconfig.CXX11_ABI_FLAG, end = '')" )
+      # note \ in windows path
+      set(FIND_ABI_CMD "import sys,os; sys.path.insert(0, os.path.join(r'${TENSORFLOW_ROOT}', '..')); import tensorflow; print(tensorflow.CXX11_ABI_FLAG if 'CXX11_ABI_FLAG' in tensorflow.__dict__ else tensorflow.sysconfig.CXX11_ABI_FLAG, end = '')" )
     else()
       set(FIND_ABI_CMD "import tensorflow; print(tensorflow.CXX11_ABI_FLAG if 'CXX11_ABI_FLAG' in tensorflow.__dict__ else tensorflow.sysconfig.CXX11_ABI_FLAG, end = '')")
     endif()
