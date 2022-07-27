@@ -114,16 +114,26 @@ endif (BUILD_CPP_IF)
 
 # tensorflow_framework
 if (NOT TensorFlowFramework_FIND_COMPONENTS)
+  if (WIN32)
+    set(TensorFlowFramework_FIND_COMPONENTS _pywrap_tensorflow_internal)
+    set(TF_SUFFIX "")
+  else ()
   set(TensorFlowFramework_FIND_COMPONENTS tensorflow_framework)
+    set(TF_SUFFIX lib)
+  endif ()
 endif ()
 # the lib
+if (WIN32)
+  list(APPEND TensorFlow_search_PATHS ${TENSORFLOW_ROOT}/python)
+else ()
 list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.1)
 list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.2)
+endif()
 set (TensorFlowFramework_LIBRARY_PATH "")
 foreach (module ${TensorFlowFramework_FIND_COMPONENTS})
   find_library(TensorFlowFramework_LIBRARY_${module}
     NAMES ${module}
-    PATHS ${TensorFlow_search_PATHS} PATH_SUFFIXES lib NO_DEFAULT_PATH
+    PATHS ${TensorFlow_search_PATHS} PATH_SUFFIXES ${TF_SUFFIX} NO_DEFAULT_PATH
     )
   if (TensorFlowFramework_LIBRARY_${module})
     list(APPEND TensorFlowFramework_LIBRARY ${TensorFlowFramework_LIBRARY_${module}})
