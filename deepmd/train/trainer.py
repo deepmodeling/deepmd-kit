@@ -3,6 +3,7 @@ from deepmd.descriptor.descriptor import Descriptor
 import logging
 import os
 import glob
+import platform
 import time
 import shutil
 import google.protobuf.message
@@ -35,6 +36,8 @@ from deepmd.common import j_must_have, ClassArg, data_requirement, get_precision
 
 log = logging.getLogger(__name__)
 
+# nvnmd
+from deepmd.nvnmd.utils.config import nvnmd_cfg
 
 def _is_subdir(path, directory):
     path = os.path.realpath(path)
@@ -62,6 +65,14 @@ class DPTrainer (object):
         typeebd_param = model_param.get('type_embedding', None)
         self.model_param    = model_param
         self.descrpt_param  = descrpt_param
+        
+        # nvnmd
+        self.nvnmd_param = jdata.get('nvnmd', {})
+        nvnmd_cfg.init_from_jdata(self.nvnmd_param)
+        nvnmd_cfg.init_from_deepmd_input(model_param)
+        if nvnmd_cfg.enable:
+            nvnmd_cfg.disp_message()
+            nvnmd_cfg.save()
         
         # descriptor
         try:
@@ -564,7 +575,11 @@ class DPTrainer (object):
                 os.remove(new_ff)
             except OSError:
                 pass
-            os.symlink(ori_ff, new_ff)
+            if platform.system() != 'Windows':
+                # by default one does not have access to create symlink on Windows
+                os.symlink(ori_ff, new_ff)
+            else:
+                shutil.copyfile(ori_ff, new_ff)
         log.info("saved checkpoint %s" % self.save_ckpt)
 
     def get_feed_dict(self, batch, is_training):

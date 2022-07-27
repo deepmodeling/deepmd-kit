@@ -5,7 +5,8 @@ using namespace tensorflow;
 
 DeepTensor::
 DeepTensor()
-    : inited (false)
+    : inited (false),
+      graph_def(new GraphDef())
 {
 }
 
@@ -13,9 +14,14 @@ DeepTensor::
 DeepTensor(const std::string & model, 
 	   const int & gpu_rank, 
 	   const std::string &name_scope_)
-    : inited (false), name_scope(name_scope_)
+    : inited (false), name_scope(name_scope_),
+      graph_def(new GraphDef())
 {
   init(model, gpu_rank);  
+}
+
+DeepTensor::~DeepTensor() {
+  delete graph_def;
 }
 
 void
@@ -35,8 +41,8 @@ init (const std::string & model,
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
   deepmd::load_op_library();
   deepmd::check_status (NewSession(options, &session));
-  deepmd::check_status (ReadBinaryProto(Env::Default(), model, &graph_def));
-  deepmd::check_status (session->Create(graph_def));  
+  deepmd::check_status (ReadBinaryProto(Env::Default(), model, graph_def));
+  deepmd::check_status (session->Create(*graph_def));  
   rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
   cell_size = rcut;
   ntypes = get_scalar<int>("descrpt_attr/ntypes");

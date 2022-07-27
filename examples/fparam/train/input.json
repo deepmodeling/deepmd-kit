@@ -37,10 +37,12 @@
 
     "_comment": " traing controls",
     "training" : {
-	"systems":	["../data/e3000_i2000/", "../data/e8000_i2000/"],
-	"set_prefix":	"set",
+		"training_data": {
+			"systems": ["../data/e3000_i2000/", "../data/e8000_i2000/"],
+			"set_prefix":	"set",
+			"batch_size":	1
+		},
 	"stop_batch":	1000000,
-	"batch_size":	1,
 
 	"seed":		1,
 
@@ -48,7 +50,6 @@
 	"_comment": " frequencies counted in batch",
 	"disp_file":	"lcurve.out",
 	"disp_freq":	100,
-	"numb_test":	10,
 	"save_freq":	1000,
 	"save_ckpt":	"model.ckpt",
 	"disp_training":true,

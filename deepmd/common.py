@@ -34,7 +34,7 @@ if TYPE_CHECKING:
         from typing import Literal  # python >3.6
     except ImportError:
         from typing_extensions import Literal  # type: ignore
-    _ACTIVATION = Literal["relu", "relu6", "softplus", "sigmoid", "tanh", "gelu"]
+    _ACTIVATION = Literal["relu", "relu6", "softplus", "sigmoid", "tanh", "gelu", "gelu_tf"]
     _PRECISION = Literal["default", "float16", "float32", "float64"]
 
 # define constants
@@ -49,7 +49,7 @@ PRECISION_DICT = {
 def gelu(x: tf.Tensor) -> tf.Tensor:
     """Gaussian Error Linear Unit.
 
-    This is a smoother version of the RELU.
+    This is a smoother version of the RELU, implemented by custom operator.
 
     Parameters
     ----------
@@ -58,7 +58,31 @@ def gelu(x: tf.Tensor) -> tf.Tensor:
 
     Returns
     -------
-    `x` with the GELU activation applied
+    tf.Tensor
+        `x` with the GELU activation applied
+
+    References
+    ----------
+    Original paper
+    https://arxiv.org/abs/1606.08415
+    """
+    return op_module.gelu(x)
+
+
+def gelu_tf(x: tf.Tensor) -> tf.Tensor:
+    """Gaussian Error Linear Unit.
+
+    This is a smoother version of the RELU, implemented by TF.
+
+    Parameters
+    ----------
+    x : tf.Tensor
+        float Tensor to perform activation
+
+    Returns
+    -------
+    tf.Tensor
+        `x` with the GELU activation applied
 
     References
     ----------
@@ -69,9 +93,9 @@ def gelu(x: tf.Tensor) -> tf.Tensor:
         try:
             return tensorflow.nn.gelu(x, approximate=True)
         except AttributeError:
+            warnings.warn("TensorFlow does not provide an implementation of gelu, please upgrade your TensorFlow version. Fallback to the custom gelu operator.")
             return op_module.gelu(x)
     return (lambda x: gelu_wrapper(x))(x)
-
 
 # TODO this is not a good way to do things. This is some global variable to which
 # TODO anyone can write and there is no good way to keep track of the changes
@@ -84,6 +108,7 @@ ACTIVATION_FN_DICT = {
     "sigmoid": tf.sigmoid,
     "tanh": tf.nn.tanh,
     "gelu": gelu,
+    "gelu_tf": gelu_tf,
 }
 
 
@@ -95,6 +120,7 @@ def add_data_requirement(
     high_prec: bool = False,
     type_sel: bool = None,
     repeat: int = 1,
+    default: float = 0.,
 ):
     """Specify data requirements for training.
 
@@ -116,6 +142,8 @@ def add_data_requirement(
         select only certain type of atoms, by default None
     repeat : int, optional
         if specify repaeat data `repeat` times, by default 1
+    default : float, optional, default=0.
+        default value of data
     """
     data_requirement[key] = {
         "ndof": ndof,
@@ -124,6 +152,7 @@ def add_data_requirement(
         "high_prec": high_prec,
         "type_sel": type_sel,
         "repeat": repeat,
+        "default": default,
     }
 
 
@@ -442,28 +471,6 @@ def expand_sys_str(root_dir: Union[str, Path]) -> List[str]:
     if (root_dir / "type.raw").is_file():
         matches.append(str(root_dir))
     return matches
-
-
-def docstring_parameter(*sub: Tuple[str, ...]):
-    """Add parameters to object docstring.
-
-    Parameters
-    ----------
-    sub: Tuple[str, ...]
-        list of strings that will be inserted into prepared locations in docstring.
-
-    Note
-    ----
-    Can be used on both object and classes.
-    """
-
-    @wraps
-    def dec(obj: "_OBJ") -> "_OBJ":
-        if obj.__doc__ is not None:
-            obj.__doc__ = obj.__doc__.format(*sub)
-        return obj
-
-    return dec
 
 
 def get_np_precision(precision: "_PRECISION") -> np.dtype:

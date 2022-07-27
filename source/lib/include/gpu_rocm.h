@@ -13,7 +13,7 @@
 inline void DPAssert(hipError_t code, const char *file, int line, bool abort=true) {
     if (code != hipSuccess) {
         fprintf(stderr,"hip assert: %s %s %d\n", hipGetErrorString(code), file, line);
-        if (abort) throw deepmd::deepmd_exception("CUDA Assert");
+        if (abort) throw deepmd::deepmd_exception("HIP Assert");
     }
 }
 
@@ -21,7 +21,7 @@ inline void DPAssert(hipError_t code, const char *file, int line, bool abort=tru
 inline void nborAssert(hipError_t code, const char *file, int line, bool abort=true) {
     if (code != hipSuccess) {
         fprintf(stderr,"hip assert: %s %s %d\n", "DeePMD-kit:\tillegal nbor list sorting", file, line);
-        if (abort) throw deepmd::deepmd_exception("CUDA Assert");
+        if (abort) throw deepmd::deepmd_exception("HIP Assert: illegal nbor list sorting");
     }
 }
 

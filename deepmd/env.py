@@ -224,13 +224,15 @@ def get_module(module_name: str) -> "ModuleType":
     """
     if platform.system() == "Windows":
         ext = ".dll"
+        prefix = ""
     #elif platform.system() == "Darwin":
     #    ext = ".dylib"
     else:
         ext = ".so"
+        prefix = "lib"
 
     module_file = (
-        (Path(__file__).parent / SHARED_LIB_MODULE / module_name)
+        (Path(__file__).parent / SHARED_LIB_MODULE / (prefix + module_name))
         .with_suffix(ext)
         .resolve()
     )
@@ -281,13 +283,21 @@ def get_module(module_name: str) -> "ModuleType":
                         TF_VERSION,
                         tf_py_version,
                     )) from e
-            raise RuntimeError(
+            error_message = (
                 "This deepmd-kit package is inconsitent with TensorFlow "
                 "Runtime, thus an error is raised when loading %s. "
                 "You need to rebuild deepmd-kit against this TensorFlow "
                 "runtime." % (
                     module_name,
-                )) from e
+                )
+            )
+            if TF_CXX11_ABI_FLAG == 1:
+                # #1791
+                error_message += (
+                    "\nWARNING: devtoolset on RHEL6 and RHEL7 does not support _GLIBCXX_USE_CXX11_ABI=1. "
+                    "See https://bugzilla.redhat.com/show_bug.cgi?id=1546704"
+                )
+            raise RuntimeError(error_message) from e
         return module
 
 
@@ -316,8 +326,8 @@ MODEL_VERSION = GLOBAL_CONFIG["model_version"]
 TF_VERSION = GLOBAL_CONFIG["tf_version"]
 TF_CXX11_ABI_FLAG = int(GLOBAL_CONFIG["tf_cxx11_abi_flag"])
 
-op_module = get_module("libop_abi")
-op_grads_module = get_module("libop_grads")
+op_module = get_module("op_abi")
+op_grads_module = get_module("op_grads")
 
 # FLOAT_PREC
 dp_float_prec = os.environ.get("DP_INTERFACE_PREC", "high").lower()

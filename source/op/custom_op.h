@@ -1,6 +1,7 @@
 #include <vector>
 #include <string>
 #include <iostream>
+#include "device.h"
 
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/op_kernel.h"

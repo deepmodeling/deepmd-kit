@@ -14,11 +14,12 @@ public:
   * @brief Deep Tensor constructor without initialization.
   **/
   DeepTensor();
+  ~DeepTensor();
   /**
   * @brief Deep Tensor constructor with initialization..
   * @param[in] model The name of the frozen model file.
   * @param[in] gpu_rank The GPU rank. Default is 0.
-  * @param[in] file_content The content of the model file. If it is not empty, DP will read from the string instead of the file.
+  * @param[in] name_scope Name scopes of operations.
   **/
   DeepTensor(const std::string & model, 
 	     const int & gpu_rank = 0, 
@@ -27,7 +28,7 @@ public:
   * @brief Initialize the Deep Tensor.
   * @param[in] model The name of the frozen model file.
   * @param[in] gpu_rank The GPU rank. Default is 0.
-  * @param[in] file_content The content of the model file. If it is not empty, DP will read from the string instead of the file.
+  * @param[in] name_scope Name scopes of operations.
   **/
   void init (const std::string & model, 
 	     const int & gpu_rank = 0, 
@@ -160,7 +161,7 @@ private:
   tensorflow::Session* session;
   std::string name_scope;
   int num_intra_nthreads, num_inter_nthreads;
-  tensorflow::GraphDef graph_def;
+  tensorflow::GraphDef* graph_def;
   bool inited;
   VALUETYPE rcut;
   VALUETYPE cell_size;

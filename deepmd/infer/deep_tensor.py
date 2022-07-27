@@ -81,8 +81,6 @@ class DeepTensor(DeepEval):
             self.tensors.update(optional_tensors)
             self._support_gfv = True
             
-        # start a tf session associated to the graph
-        self.sess = tf.Session(graph=self.graph, config=default_tf_session_config)
         self._run_default_sess()
         self.tmap = self.tmap.decode('UTF-8').split()
 

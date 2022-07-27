@@ -10,7 +10,7 @@ REGISTER_OP("ProdEnvMatA")
     .Attr("T: {float, double} = DT_DOUBLE")
     .Input("coord: T")          //atomic coordinates
     .Input("type: int32")       //atomic type
-    .Input("natoms: int32")     //local atomic number; each type atomic number; daizheyingxiangqude atomic numbers
+    .Input("natoms: int32")     //local atomic number; each type atomic number
     .Input("box : T")
     .Input("mesh : int32")
     .Input("davg: T")           //average value of data
@@ -23,8 +23,52 @@ REGISTER_OP("ProdEnvMatA")
     .Output("descrpt: T")
     .Output("descrpt_deriv: T")
     .Output("rij: T")
-    .Output("nlist: int32");
-    // only sel_a and rcut_r uesd.
+    .Output("nlist: int32")
+    .Doc(R"(Compute the environment matrix for descriptor se_e2_a.
+Each row of the environment matrix :math:`\mathcal{R}^i` can be constructed as follows
+
+    .. math::
+        (\mathcal{R}^i)_j = [
+        \begin{array}{c}
+            s(r_{ji}) & \frac{s(r_{ji})x_{ji}}{r_{ji}} & \frac{s(r_{ji})y_{ji}}{r_{ji}} & \frac{s(r_{ji})z_{ji}}{r_{ji}}
+        \end{array}
+        ]
+
+In the above equation, :math:`\mathbf{R}_{ji}=\mathbf{R}_j-\mathbf{R}_i = (x_{ji}, y_{ji}, z_{ji})` is 
+the relative coordinate and :math:`r_{ji}=\lVert \mathbf{R}_{ji} \lVert` is its norm.
+The switching function :math:`s(r)` is defined as:
+
+    .. math::
+        s(r)=
+        \begin{cases}
+        \frac{1}{r}, & r<r_s \\
+        \frac{1}{r} \{ {(\frac{r - r_s}{ r_c - r_s})}^3 (-6 {(\frac{r - r_s}{ r_c - r_s})}^2 +15 \frac{r - r_s}{ r_c - r_s} -10) +1 \}, & r_s \leq r<r_c \\
+        0, & r \geq r_c
+        \end{cases}
+
+Note that the environment matrix is normalized by davg and dstd.
+coord: The coordinates of atoms.
+type: The types of atoms.
+natoms: The number of atoms. This tensor has the length of Ntypes + 2.
+  natoms[0]: number of local atoms.
+  natoms[1]: total number of atoms held by this processor.
+  natoms[i]: 2 <= i < Ntypes+2, number of type i atoms.
+box: The box of frames.
+mesh: Gor historical reasons, only the length of the Tensor matters.
+  If size of mesh == 6, pbc is assumed.
+  If size of mesh == 0, no-pbc is assumed.
+davg: Average value of the environment matrix for normalization.
+dstd: Standard deviation of the environment matrix for normalization.
+rcut_a: This argument is not used.
+rcut_r: The cutoff radius for the environment matrix.
+rcut_r_smth: From where the environment matrix should be smoothed.
+sel_a: sel_a[i] specifies the maxmum number of type i atoms in the cut-off radius.
+sel_r: This argument is not used.
+descrpt: The environment matrix.
+descrpt_deriv: The derivative of the environment matrix.
+rij: The distance between the atoms.
+nlist: The neighbor list of each atom.)");
+    // only sel_a and rcut_r used.
 
 // an alias of ProdEnvMatA -- Compatible with v1.3
 REGISTER_OP("DescrptSeA")
@@ -413,16 +457,16 @@ public:
     // Create output tensors
     TensorShape descrpt_shape ;
     descrpt_shape.AddDim (nsamples);
-    descrpt_shape.AddDim (nloc * ndescrpt);
+    descrpt_shape.AddDim (int_64(nloc) * ndescrpt);
     TensorShape descrpt_deriv_shape ;
     descrpt_deriv_shape.AddDim (nsamples);
-    descrpt_deriv_shape.AddDim (nloc * ndescrpt * 3);
+    descrpt_deriv_shape.AddDim (int_64(nloc) * ndescrpt * 3);
     TensorShape rij_shape ;
     rij_shape.AddDim (nsamples);
-    rij_shape.AddDim (nloc * nnei * 3);
+    rij_shape.AddDim (int_64(nloc) * nnei * 3);
     TensorShape nlist_shape ;
     nlist_shape.AddDim (nsamples);
-    nlist_shape.AddDim (nloc * nnei);
+    nlist_shape.AddDim (int_64(nloc) * nnei);
     // define output tensor
     int context_output_index = 0;
     Tensor* descrpt_tensor = NULL;
@@ -457,7 +501,7 @@ public:
     const int * p_type = type_tensor.flat<int>().data();
 
     // loop over samples
-    for(int ff = 0; ff < nsamples; ++ff){
+    for(int_64 ff = 0; ff < nsamples; ++ff){
       FPTYPE * em = p_em + ff*nloc*ndescrpt;
       FPTYPE * em_deriv = p_em_deriv + ff*nloc*ndescrpt*3;
       FPTYPE * rij = p_rij + ff*nloc*nnei*3;
@@ -488,11 +532,11 @@ public:
       // allocate temp memory, temp memory must not be used after this operation!
       Tensor int_temp;
       TensorShape int_shape;
-      int_shape.AddDim(sec_a.size() + nloc * sec_a.size() + nloc);
+      int_shape.AddDim(sec_a.size() + int_64(nloc) * sec_a.size() + nloc);
       OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, int_shape, &int_temp));
       Tensor uint64_temp;
       TensorShape uint64_shape;
-      uint64_shape.AddDim(nloc * GPU_MAX_NBOR_SIZE * 2);
+      uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
       OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape, &uint64_temp));
       array_int = int_temp.flat<int>().data(); 
       array_longlong = uint64_temp.flat<unsigned long long>().data();
@@ -526,11 +570,11 @@ public:
       // allocate temp memory, temp memory must not be used after this operation!
       Tensor int_temp;
       TensorShape int_shape;
-      int_shape.AddDim(sec_a.size() + nloc * sec_a.size() + nloc);
+      int_shape.AddDim(sec_a.size() + int_64(nloc) * sec_a.size() + nloc);
       OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, int_shape, &int_temp));
       Tensor uint64_temp;
       TensorShape uint64_shape;
-      uint64_shape.AddDim(nloc * GPU_MAX_NBOR_SIZE * 2);
+      uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
       OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape, &uint64_temp));
       array_int = int_temp.flat<int>().data(); 
       array_longlong = uint64_temp.flat<unsigned long long>().data();
@@ -677,16 +721,16 @@ public:
     // Create an output tensor
     TensorShape descrpt_shape ;
     descrpt_shape.AddDim (nsamples);
-    descrpt_shape.AddDim (nloc * ndescrpt);
+    descrpt_shape.AddDim (int_64(nloc) * ndescrpt);
     TensorShape descrpt_deriv_shape ;
     descrpt_deriv_shape.AddDim (nsamples);
-    descrpt_deriv_shape.AddDim (nloc * ndescrpt * 3);
+    descrpt_deriv_shape.AddDim (int_64(nloc) * ndescrpt * 3);
     TensorShape rij_shape ;
     rij_shape.AddDim (nsamples);
-    rij_shape.AddDim (nloc * nnei * 3);
+    rij_shape.AddDim (int_64(nloc) * nnei * 3);
     TensorShape nlist_shape ;
     nlist_shape.AddDim (nsamples);
-    nlist_shape.AddDim (nloc * nnei);
+    nlist_shape.AddDim (int_64(nloc) * nnei);
 
     int context_output_index = 0;
     Tensor* descrpt_tensor = NULL;
@@ -721,7 +765,7 @@ public:
     const int * p_type = type_tensor.flat<int>().data();
 
     // loop over samples
-    for(int ff = 0; ff < nsamples; ++ff){
+    for(int_64 ff = 0; ff < nsamples; ++ff){
       FPTYPE * em = p_em + ff*nloc*ndescrpt;
       FPTYPE * em_deriv = p_em_deriv + ff*nloc*ndescrpt*3;
       FPTYPE * rij = p_rij + ff*nloc*nnei*3;
@@ -752,11 +796,11 @@ public:
       // allocate temp memory, temp memory must not be used after this operation!
       Tensor int_temp;
       TensorShape int_shape;
-      int_shape.AddDim(sec.size() + nloc * sec.size() + nloc);
+      int_shape.AddDim(sec.size() + int_64(nloc) * sec.size() + nloc);
       OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, int_shape, &int_temp));
       Tensor uint64_temp;
       TensorShape uint64_shape;
-      uint64_shape.AddDim(nloc * GPU_MAX_NBOR_SIZE * 2);
+      uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
       OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape, &uint64_temp));
       array_int = int_temp.flat<int>().data(); 
       array_longlong = uint64_temp.flat<unsigned long long>().data();
@@ -791,11 +835,11 @@ public:
       // allocate temp memory, temp memory must not be used after this operation!
       Tensor int_temp;
       TensorShape int_shape;
-      int_shape.AddDim(sec.size() + nloc * sec.size() + nloc);
+      int_shape.AddDim(sec.size() + int_64(nloc) * sec.size() + nloc);
       OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, int_shape, &int_temp));
       Tensor uint64_temp;
       TensorShape uint64_shape;
-      uint64_shape.AddDim(nloc * GPU_MAX_NBOR_SIZE * 2);
+      uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
       OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape, &uint64_temp));
       array_int = int_temp.flat<int>().data(); 
       array_longlong = uint64_temp.flat<unsigned long long>().data();
@@ -935,8 +979,8 @@ _map_nlist_cpu(
     const int & nloc,
     const int & nnei)
 {
-  for (int ii = 0; ii < nloc; ++ii){
-    for (int jj = 0; jj < nnei; ++jj){
+  for (int_64 ii = 0; ii < nloc; ++ii){
+    for (int_64 jj = 0; jj < nnei; ++jj){
       int record = nlist[ii*nnei+jj];
       if (record >= 0) {		
 	nlist[ii*nnei+jj] = idx_mapping[record];	      
@@ -1112,11 +1156,11 @@ _build_nlist_gpu(
   int tt;
   for(tt = 0; tt < max_nnei_trial; ++tt){
     TensorShape jlist_shape;
-    jlist_shape.AddDim(3*nloc*mem_nnei);
+    jlist_shape.AddDim(3*int_64(nloc)*mem_nnei);
     context->allocate_temp(DT_INT32, jlist_shape, tensor_list+1);
     jlist = (*(tensor_list+1)).flat<int>().data();
     ind_data = jlist + nloc * mem_nnei;
-    for(int ii = 0; ii < nloc; ++ii){
+    for(int_64 ii = 0; ii < nloc; ++ii){
       firstneigh_host[ii] = jlist + ii * mem_nnei;
     }
     deepmd::memcpy_host_to_device(firstneigh, firstneigh_host);
@@ -1210,7 +1254,7 @@ _prepare_coord_nlist_gpu(
     deepmd::env_mat_nbor_update(
         inlist_temp, inlist, max_nbor_size, nbor_list_dev,
         mesh_tensor_data, mesh_tensor_size);
-    OP_REQUIRES (context, (max_numneigh(inlist_temp) <= GPU_MAX_NBOR_SIZE), errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_numneigh(inlist_temp)) + " is larger than " + std::to_string(GPU_MAX_NBOR_SIZE) + ", which currently is not supported by deepmd-kit."));
+    OP_REQUIRES (context, (max_numneigh(inlist_temp) <= max_nbor_size), errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_numneigh(inlist_temp)) + " is larger than " + std::to_string(max_nbor_size) + ", which currently is not supported by deepmd-kit."));
   }
 }
 #endif  // GOOGLE_CUDA
@@ -1327,11 +1371,11 @@ _build_nlist_gpu_rocm(
   int tt;
   for(tt = 0; tt < max_nnei_trial; ++tt){
     TensorShape jlist_shape;
-    jlist_shape.AddDim(3*nloc*mem_nnei);
+    jlist_shape.AddDim(3*int_64(nloc)*mem_nnei);
     context->allocate_temp(DT_INT32, jlist_shape, tensor_list+1);
     jlist = (*(tensor_list+1)).flat<int>().data();
     ind_data = jlist + nloc * mem_nnei;
-    for(int ii = 0; ii < nloc; ++ii){
+    for(int_64 ii = 0; ii < nloc; ++ii){
       firstneigh_host[ii] = jlist + ii * mem_nnei;
     }
     deepmd::memcpy_host_to_device(firstneigh, firstneigh_host);
@@ -1425,7 +1469,7 @@ _prepare_coord_nlist_gpu_rocm(
     deepmd::env_mat_nbor_update(
         inlist_temp, inlist, max_nbor_size, nbor_list_dev,
         mesh_tensor_data, mesh_tensor_size);
-    OP_REQUIRES (context, (max_numneigh(inlist_temp) <= GPU_MAX_NBOR_SIZE), errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_numneigh(inlist_temp)) + " is larger than " + std::to_string(GPU_MAX_NBOR_SIZE) + ", which currently is not supported by deepmd-kit."));
+    OP_REQUIRES (context, (max_numneigh(inlist_temp) <= max_nbor_size), errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_numneigh(inlist_temp)) + " is larger than " + std::to_string(max_nbor_size) + ", which currently is not supported by deepmd-kit."));
   }
 }
 #endif  // TENSORFLOW_USE_ROCM

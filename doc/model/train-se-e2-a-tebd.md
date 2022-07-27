@@ -2,10 +2,10 @@
  
 We generate specific type embedding vector for each atom type, so that we can share one descriptor embedding net and one fitting net in total, which decline training complexity largely. 
 
-The training input script is similar to that of [`se_e2_a`](train-se-e2-a.md#the-training-input-script), but different by adding the `type_embedding` section. 
+The training input script is similar to that of [`se_e2_a`](train-se-e2-a.md), but different by adding the {ref}`type_embedding <model/type_embedding>` section. 
 
 ## Type embedding net
-The `model` defines how the model is constructed, adding a section of type embedding net:
+The {ref}`model <model>` defines how the model is constructed, adding a section of type embedding net:
 ```json
     "model": {
 	"type_map":	["O", "H"],
@@ -22,7 +22,7 @@ The `model` defines how the model is constructed, adding a section of type embed
 ```
 Model will automatically apply type embedding approach and generate type embedding vectors. If type embedding vector is detected, descriptor and fitting net would take it as a part of input.
 
-The construction of type embedding net is given by `type_embedding`. An example of `type_embedding` is provided as follows
+The construction of type embedding net is given by {ref}`type_embedding <model/type_embedding>`. An example of {ref}`type_embedding <model/type_embedding>` is provided as follows
 ```json
 	"type_embedding":{
 	    "neuron":		[2, 4, 8],
@@ -30,9 +30,9 @@ The construction of type embedding net is given by `type_embedding`. An example 
 	    "seed":		1
 	}
 ```
-* The `neuron` specifies the size of the type embedding net. From left to right the members denote the sizes of each hidden layer from input end to the output end, respectively. It takes one-hot vector as input and output dimension equals to the last dimension of the `neuron` list. If the outer layer is of twice size as the inner layer, then the inner layer is copied and concatenated, then a [ResNet architecture](https://arxiv.org/abs/1512.03385) is built between them.
-* If the option `resnet_dt` is set `true`, then a timestep is used in the ResNet.
-* `seed` gives the random seed that is used to generate random numbers when initializing the model parameters.
+* The {ref}`neuron <model/type_embedding/neuron>` specifies the size of the type embedding net. From left to right the members denote the sizes of each hidden layer from input end to the output end, respectively. It takes one-hot vector as input and output dimension equals to the last dimension of the {ref}`neuron <model/type_embedding/neuron>` list. If the outer layer is of twice size as the inner layer, then the inner layer is copied and concatenated, then a [ResNet architecture](https://arxiv.org/abs/1512.03385) is built between them.
+* If the option {ref}`resnet_dt <model/type_embedding/resnet_dt>` is set to `true`, then a timestep is used in the ResNet.
+* {ref}`seed <model/type_embedding/seed>` gives the random seed that is used to generate random numbers when initializing the model parameters.
 
 
 A complete training input script of this example can be find in the directory. 

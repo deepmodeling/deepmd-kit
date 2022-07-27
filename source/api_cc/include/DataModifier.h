@@ -10,7 +10,7 @@ public:
   DipoleChargeModifier(const std::string & model, 
 	       const int & gpu_rank = 0, 
 	       const std::string & name_scope = "");
-  ~DipoleChargeModifier () {};
+  ~DipoleChargeModifier ();
   void init (const std::string & model, 
 	     const int & gpu_rank = 0, 
 	     const std::string & name_scope = "");
@@ -32,7 +32,7 @@ private:
   tensorflow::Session* session;
   std::string name_scope, name_prefix;
   int num_intra_nthreads, num_inter_nthreads;
-  tensorflow::GraphDef graph_def;
+  tensorflow::GraphDef* graph_def;
   bool inited;
   VALUETYPE rcut;
   VALUETYPE cell_size;

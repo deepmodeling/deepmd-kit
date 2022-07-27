@@ -4,15 +4,18 @@ from typing import Tuple, List
 from packaging.version import Version
 
 from deepmd.env import tf
-from deepmd.common import add_data_requirement, get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, cast_precision
-from deepmd.utils.argcheck import list_to_doc
-from deepmd.utils.network import one_layer, one_layer_rand_seed_shift
+from deepmd.common import add_data_requirement, get_activation_func, get_precision, cast_precision
+from deepmd.utils.network import one_layer_rand_seed_shift
+from deepmd.utils.network import one_layer as one_layer_deepmd
 from deepmd.utils.type_embed import embed_atom_type
 from deepmd.utils.graph import get_fitting_net_variables_from_graph_def, load_graph_def, get_tensor_by_name_from_graph
 from deepmd.fit.fitting import Fitting
 
 from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION, TF_VERSION
+
+from deepmd.nvnmd.utils.config import nvnmd_cfg
+from deepmd.nvnmd.fit.ener import one_layer_nvnmd
 
 class EnerFitting (Fitting):
     r"""Fitting the energy of the system. The force and the virial can also be trained.
@@ -72,13 +75,12 @@ class EnerFitting (Fitting):
     atom_ener
             Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
     activation_function
-            The activation function :math:`\boldsymbol{\phi}` in the embedding net. Supported options are {0}
+            The activation function :math:`\boldsymbol{\phi}` in the embedding net. Supported options are |ACTIVATION_FN|
     precision
-            The precision of the embedding net parameters. Supported options are {1}                
+            The precision of the embedding net parameters. Supported options are |PRECISION|
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
     """
-    @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   descrpt : tf.Tensor,
                   neuron : List[int] = [120,120,120],
@@ -276,8 +278,8 @@ class EnerFitting (Fitting):
     ):
         # cut-out inputs
         inputs_i = tf.slice (inputs,
-                             [ 0, start_index*      self.dim_descrpt],
-                             [-1, natoms* self.dim_descrpt] )
+                             [ 0, start_index, 0],
+                             [-1, natoms, -1] )
         inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
         layer = inputs_i
         if fparam is not None:
@@ -293,8 +295,12 @@ class EnerFitting (Fitting):
             ext_aparam = tf.cast(ext_aparam,self.fitting_precision)
             layer = tf.concat([layer, ext_aparam], axis = 1)
 
+        if nvnmd_cfg.enable: 
+            one_layer = one_layer_nvnmd
+        else:
+            one_layer = one_layer_deepmd
         for ii in range(0,len(self.n_neuron)) :
-            if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
+            if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] and (not nvnmd_cfg.enable):
                 layer+= one_layer(
                     layer,
                     self.n_neuron[ii],
@@ -419,13 +425,13 @@ class EnerFitting (Fitting):
                                                 trainable = False,
                                                 initializer = tf.constant_initializer(self.aparam_inv_std))
             
-        inputs = tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]])
+        inputs = tf.reshape(inputs, [-1, natoms[0], self.dim_descrpt])
         if len(self.atom_ener):
             # only for atom_ener
             nframes = input_dict.get('nframes')
             if nframes is not None:
                 # like inputs, but we don't want to add a dependency on inputs
-                inputs_zero = tf.zeros((nframes, self.dim_descrpt * natoms[0]), dtype=self.fitting_precision)
+                inputs_zero = tf.zeros((nframes, natoms[0], self.dim_descrpt), dtype=self.fitting_precision)
             else:
                 inputs_zero = tf.zeros_like(inputs, dtype=self.fitting_precision)
         
@@ -490,7 +496,7 @@ class EnerFitting (Fitting):
                 axis=1
             )
             self.dim_descrpt = self.dim_descrpt + type_shape[1]
-            inputs = tf.reshape(inputs, [-1, self.dim_descrpt * natoms[0]])
+            inputs = tf.reshape(inputs, [-1, natoms[0], self.dim_descrpt])
             final_layer = self._build_lower(
                 0, natoms[0], 
                 inputs, fparam, aparam, 
