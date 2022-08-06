@@ -1,6 +1,6 @@
 add_subdirectory(plugin)
 if (NOT DEFINED LAMMPS_VERSION_NUMBER)
-    # set the default to stable_23Jun2022
+    # set the default to stable_23Jun2022_update1
     set(LAMMPS_VERSION_NUMBER 20220623)
 endif()
 message(STATUS "LAMMPS version is ${LAMMPS_VERSION_NUMBER}")
