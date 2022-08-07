@@ -1,3 +1,7 @@
+#ifndef LAMMPS_VERSION_NUMBER
+#error Please define LAMMPS_VERSION_NUMBER to yyyymmdd
+#endif
+
 #ifdef PAIR_CLASS
 
 PairStyle(deepmd,PairDeepMD)
