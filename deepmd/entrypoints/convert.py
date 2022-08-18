@@ -1,4 +1,4 @@
-from deepmd.utils.convert import convert_012_to_21, convert_10_to_21, convert_20_to_21, convert_13_to_21, convert_12_to_21 
+from deepmd.utils.convert import convert_012_to_21, convert_10_to_21, convert_20_to_21, convert_13_to_21, convert_12_to_21, convert_org_to_ascend
 
 def convert(
     *,
@@ -18,5 +18,7 @@ def convert(
         convert_13_to_21(input_model, output_model)
     elif FROM == '2.0':
         convert_20_to_21(input_model, output_model)
+    elif FROM == 'convert_org_to_ascend':
+        convert_20_to_21(input_model, output_model, **kwargs)
     else:
         raise RuntimeError('unsupported model version ' + FROM)
