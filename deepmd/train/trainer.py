@@ -288,7 +288,8 @@ class DPTrainer (object):
                stop_batch = 0) :
         self.ntypes = self.model.get_ntypes()
         self.stop_batch = stop_batch
-        if data.large_batch_mode:
+
+        if not self.is_compress and data.large_batch_mode:
             assert self.descrpt_type in ['se_atten'], 'Data in large_batch_mode must use attention descriptor!'
             assert self.fitting_type in ['ener'], 'Data in large_batch_mode must use ener fitting!'
 
