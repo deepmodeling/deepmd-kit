@@ -432,7 +432,7 @@ def main_parser() -> argparse.ArgumentParser:
     # * convert models
     parser_transform = subparsers.add_parser(
         'convert-from',
-        parents=[parser_log],
+        parents=[parser_log, parser_mpi_log],
         help='convert lower model version to supported version',
         formatter_class=RawTextArgumentDefaultsHelpFormatter,
         epilog=textwrap.dedent("""\
@@ -443,7 +443,7 @@ def main_parser() -> argparse.ArgumentParser:
     parser_transform.add_argument(
         'FROM',
         type = str,
-        choices = ['0.12', '1.0', '1.1', '1.2', '1.3', '2.0', 'pbtxt'],
+        choices = ['0.12', '1.0', '1.1', '1.2', '1.3', '2.0', 'pbtxt', 'convert_org_to_ascend'],
         help="The original model compatibility",
     )
     parser_transform.add_argument(
@@ -459,6 +459,20 @@ def main_parser() -> argparse.ArgumentParser:
         default = "convert_out.pb",
         type=str, 
 		help='the output model',
+    )
+    parser_transform.add_argument(
+        "-c",
+        "--checkpoint-folder",
+        default = "model-transfer",
+        type=str, 
+		help='path to checkpoint folder',
+    )
+    parser_transform.add_argument(
+        "-t",
+        "--training-script",
+        type=str,
+        default=None,
+        help="The training script of the input frozen model",
     )
 
     # neighbor_stat
