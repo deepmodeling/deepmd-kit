@@ -19,6 +19,6 @@ def convert(
     elif FROM == '2.0':
         convert_20_to_21(input_model, output_model)
     elif FROM == 'convert_org_to_ascend':
-        convert_20_to_21(input_model, output_model, **kwargs)
+        convert_org_to_ascend(input_model, output_model, **kwargs)
     else:
         raise RuntimeError('unsupported model version ' + FROM)

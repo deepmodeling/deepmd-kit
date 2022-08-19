@@ -1,7 +1,8 @@
 import os
+import json
+import logging
 from deepmd.env import tf
 from google.protobuf import text_format
-
 
 def convert_13_to_21(input_model: str, output_model: str):
     """Convert DP 1.3 graph to 2.1 graph.
