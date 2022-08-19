@@ -68,5 +68,6 @@ jobs:
         CC: gcc-${{ matrix.gcc }}
         CXX: g++-${{ matrix.gcc }}
         TENSORFLOW_VERSION: ${{ matrix.tf }}
+        SETUPTOOLS_ENABLE_FEATURES: "legacy-editable"
     - run: dp --version
     - run: pytest --cov=deepmd source/tests && codecov
