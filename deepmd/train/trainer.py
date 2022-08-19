@@ -3,6 +3,7 @@ from deepmd.descriptor.descriptor import Descriptor
 import logging
 import os
 import glob
+import platform
 import time
 import shutil
 import google.protobuf.message
@@ -574,7 +575,11 @@ class DPTrainer (object):
                 os.remove(new_ff)
             except OSError:
                 pass
-            os.symlink(ori_ff, new_ff)
+            if platform.system() != 'Windows':
+                # by default one does not have access to create symlink on Windows
+                os.symlink(ori_ff, new_ff)
+            else:
+                shutil.copyfile(ori_ff, new_ff)
         log.info("saved checkpoint %s" % self.save_ckpt)
 
     def get_feed_dict(self, batch, is_training):

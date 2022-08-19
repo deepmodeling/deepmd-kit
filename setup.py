@@ -83,13 +83,13 @@ except (AttributeError, TypeError, IndexError):
     # setuptools will re-find tensorflow after installing setup_requires
     tf_install_dir = None
 
-# add cmake as a build requirement if cmake>3.7 is not installed
+# add cmake as a build requirement if cmake>3.12 is not installed
 try:
     cmake_version = get_cmake_version()
 except SKBuildError:
     setup_requires.append("cmake")
 else:
-    if cmake_version in SpecifierSet("<3.7"):
+    if cmake_version in SpecifierSet("<3.12"):
         setup_requires.append("cmake")
 
 Path("deepmd").mkdir(exist_ok=True)
@@ -141,7 +141,20 @@ setup(
     cmake_minimum_required_version="3.0",
     extras_require={
         "test": ["dpdata>=0.1.9", "ase", "pytest", "pytest-cov", "pytest-sugar"],
-        "docs": ["sphinx>=3.1.1", "recommonmark", "sphinx_rtd_theme>=1.0.0rc1", "sphinx_markdown_tables", "myst-parser", "breathe", "exhale", "numpydoc", "ase", "deepmodeling-sphinx", "dargs>=0.3.1", "sphinx-argparse"],
+        "docs": [
+            "sphinx>=3.1.1",
+            "recommonmark",
+            "sphinx_rtd_theme>=1.0.0rc1",
+            "sphinx_markdown_tables",
+            "myst-parser",
+            "breathe",
+            "exhale",
+            "numpydoc",
+            "ase",
+            "deepmodeling-sphinx>=0.1.0",
+            "dargs>=0.3.1",
+            "sphinx-argparse",
+            ],
         **extras_require,
     },
     entry_points={"console_scripts": ["dp = deepmd.entrypoints.main:main"]},

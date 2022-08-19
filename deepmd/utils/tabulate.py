@@ -77,7 +77,7 @@ class DPTabulate():
         self.activation_fn = activation_fn
 
         self.graph, self.graph_def = load_graph_def(self.model_file)
-        self.sess = tf.Session(graph = self.graph)
+        #self.sess = tf.Session(graph = self.graph)
 
         self.sub_graph, self.sub_graph_def = self._load_sub_graph()
         self.sub_sess = tf.Session(graph = self.sub_graph)

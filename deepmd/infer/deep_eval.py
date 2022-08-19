@@ -70,8 +70,7 @@ class DeepEval:
         :type:str
         """
         t_mt = self._get_tensor("model_attr/model_type:0")
-        sess = tf.Session(graph=self.graph, config=default_tf_session_config)
-        [mt] = run_sess(sess, [t_mt], feed_dict={})
+        [mt] = run_sess(self.sess, [t_mt], feed_dict={})
         return mt.decode("utf-8")
 
     @property
@@ -90,9 +89,15 @@ class DeepEval:
             # For deepmd-kit version 0.x - 1.x, set model version to 0.0
             return "0.0"
         else:
-            sess = tf.Session(graph=self.graph, config=default_tf_session_config)
-            [mt] = run_sess(sess, [t_mt], feed_dict={})
+            [mt] = run_sess(self.sess, [t_mt], feed_dict={})
             return mt.decode("utf-8")
+
+    @property
+    @lru_cache(maxsize=None)
+    def sess(self) -> tf.Session:
+        """Get TF session."""
+        # start a tf session associated to the graph
+        return tf.Session(graph=self.graph, config=default_tf_session_config)
 
     def _graph_compatable(
         self

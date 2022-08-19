@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.7)
+cmake_minimum_required(VERSION 3.12)
 project(DeePMD)
 
 # build cpp or python interfaces
@@ -53,6 +53,7 @@ message(STATUS "Supported model version: ${MODEL_VERSION}")
 if (USE_ROCM_TOOLKIT AND USE_CUDA_TOOLKIT)
   message (FATAL_ERROR "Devices that have both ROCM and CUDA are not currently supported")
 endif()
+set(DP_VARIANT "cpu")
 
 # define USE_CUDA_TOOLKIT
 if (USE_CUDA_TOOLKIT)
@@ -60,6 +61,7 @@ if (USE_CUDA_TOOLKIT)
   find_package(CUDA REQUIRED)
   add_definitions("-DGOOGLE_CUDA")
   message(STATUS "Found CUDA in ${CUDA_TOOLKIT_ROOT_DIR}, build nv GPU support")
+  set(DP_VARIANT "cuda")
 else()
   message(STATUS "Will not build nv GPU support")
 endif(USE_CUDA_TOOLKIT)
@@ -70,10 +72,17 @@ if (USE_ROCM_TOOLKIT)
   add_definitions("-DTENSORFLOW_USE_ROCM")
   add_compile_definitions(__HIP_PLATFORM_HCC__)
   message(STATUS "Found ROCM in ${ROCM_ROOT}, build AMD GPU support")
+  set(DP_VARIANT "rocm")
 else()
   message(STATUS "Will not build AMD GPU support")  
 endif (USE_ROCM_TOOLKIT)
 
+set(DEEPMD_SOURCE_DIR ${PROJECT_SOURCE_DIR}/..)
+
+# setup tensorflow libraries by python
+if (USE_TF_PYTHON_LIBS)
+  find_package (Python COMPONENTS Interpreter Development REQUIRED)
+endif(USE_TF_PYTHON_LIBS)
 
 # find tensorflow, I need tf abi info
 find_package(tensorflow REQUIRED)
@@ -84,6 +93,16 @@ else()
   set (CMAKE_CXX_STANDARD 11)
 endif()
 
+if (MSVC)
+  # see TF .bazelrc
+  add_compile_options(/W0 /Zc:__cplusplus /D_USE_MATH_DEFINES /d2ReducedOptimizeHugeFunctions)
+  set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS TRUE)
+endif()
+if (TENSORFLOW_VERSION GREATER_EQUAL 2.4 AND MSVC)
+  # see TF 2.4 release notes
+  add_compile_options(/Zc:preprocessor)
+endif()
+
 # find threads
 find_package(Threads)
 
@@ -91,7 +110,8 @@ find_package(Threads)
 if (NOT DEFINED OP_CXX_ABI)
   if (BUILD_PY_IF) 
     if (DEFINED TENSORFLOW_ROOT)
-      set(FIND_ABI_CMD "import sys,os; sys.path.insert(0, os.path.join('${TENSORFLOW_ROOT}', '..')); import tensorflow; print(tensorflow.CXX11_ABI_FLAG if 'CXX11_ABI_FLAG' in tensorflow.__dict__ else tensorflow.sysconfig.CXX11_ABI_FLAG, end = '')" )
+      # note \ in windows path
+      set(FIND_ABI_CMD "import sys,os; sys.path.insert(0, os.path.join(r'${TENSORFLOW_ROOT}', '..')); import tensorflow; print(tensorflow.CXX11_ABI_FLAG if 'CXX11_ABI_FLAG' in tensorflow.__dict__ else tensorflow.sysconfig.CXX11_ABI_FLAG, end = '')" )
     else()
       set(FIND_ABI_CMD "import tensorflow; print(tensorflow.CXX11_ABI_FLAG if 'CXX11_ABI_FLAG' in tensorflow.__dict__ else tensorflow.sysconfig.CXX11_ABI_FLAG, end = '')")
     endif()
@@ -141,6 +161,9 @@ else ()
   set (OP_CXX_ABI 1)
   message (STATUS "Set GLIBCXX_USE_CXX_ABI=1 when compiling ops")
 endif ()
+
+# set _GLIBCXX_USE_CXX11_ABI flag globally
+add_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
 
 # define USE_TTM
 if (NOT DEFINED USE_TTM)
@@ -201,7 +224,7 @@ if (BUILD_CPP_IF)
   add_subdirectory (api_cc/)
   add_subdirectory (lmp/)
   if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 4.8)
-#   add_subdirectory (md/)
+    # add_subdirectory (md/)
     add_subdirectory (ipi/)
     add_subdirectory (gmx/)
   endif ()

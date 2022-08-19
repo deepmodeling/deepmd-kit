@@ -175,7 +175,9 @@ DeepPot (const std::string & model, const int & gpu_rank, const std::string & fi
   init(model, gpu_rank, file_content);  
 }
 
-DeepPot::~DeepPot() {}
+DeepPot::~DeepPot() {
+  delete graph_def;
+}
 
 void
 DeepPot::
@@ -246,6 +248,13 @@ print_summary(const std::string &pre) const
   std::cout << pre << "source commit at:   " + global_git_date << std::endl;
   std::cout << pre << "surpport model ver.:" + global_model_version << std::endl;
   std::cout << pre << "build float prec:   " + global_float_prec << std::endl;
+#if defined(GOOGLE_CUDA)
+  std::cout << pre << "build variant:      cuda" << std::endl;
+#elif defined(TENSORFLOW_USE_ROCM)
+  std::cout << pre << "build variant:      rocm" << std::endl;
+#else
+  std::cout << pre << "build variant:      cpu" << std::endl;
+#endif
   std::cout << pre << "build with tf inc:  " + global_tf_include_dir << std::endl;
   std::cout << pre << "build with tf lib:  " + global_tf_lib << std::endl;
   std::cout << pre << "set tf intra_op_parallelism_threads: " <<  num_intra_nthreads << std::endl;
@@ -526,7 +535,11 @@ DeepPotModelDevi (const std::vector<std::string> & models, const int & gpu_rank,
   init(models, gpu_rank, file_contents);
 }
 
-DeepPotModelDevi::~DeepPotModelDevi() {}
+DeepPotModelDevi::~DeepPotModelDevi() {
+  for (unsigned ii = 0; ii < numb_models; ++ii){
+    delete graph_defs[ii];
+  }
+}
 
 void
 DeepPotModelDevi::

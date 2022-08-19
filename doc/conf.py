@@ -19,6 +19,9 @@ from datetime import date
 from deepmd.common import ACTIVATION_FN_DICT, PRECISION_DICT
 from deepmd.utils.argcheck import list_to_doc
 
+sys.path.append(os.path.dirname(__file__))
+import sphinx_contrib_exhale_multiproject as _
+
 def mkindex(dirname):
     dirname = dirname + "/"
     oldfindex = open(dirname + "index.md", "r")
@@ -151,6 +154,7 @@ extensions = [
     'sphinx.ext.mathjax',
     'sphinx.ext.viewcode',
     'sphinx.ext.intersphinx',
+    'sphinx.ext.napoleon',
     'sphinxarg.ext',
     'numpydoc',
     'breathe',
@@ -160,22 +164,38 @@ extensions = [
 # breathe_domain_by_extension = {
 #         "h" : "cpp",
 # }
-breathe_projects = {"myproject": "_build/xml/"}
-breathe_default_project = "myproject"
+breathe_projects = {
+    "cc": "_build/cc/xml/",
+    "core": "_build/core/xml/",
+}
+breathe_default_project = "cc"
 
 exhale_args = {
-   "containmentFolder":     "./API_CC",
-    "rootFileName":          "api_cc.rst",
-    "rootFileTitle":         "C++ API",
     "doxygenStripFromPath":  "..",
     # Suggested optional arguments
     # "createTreeView":        True,
     # TIP: if using the sphinx-bootstrap-theme, you need
     # "treeViewIsBootstrap": True,
     "exhaleExecutesDoxygen": True,
-    "exhaleDoxygenStdin":    "INPUT = ../source/api_cc/include/",
     # "unabridgedOrphanKinds": {"namespace"}
     # "listingExclude": [r"namespace_*"]
+}
+exhale_projects_args = {
+    "cc": {
+        "containmentFolder": "./API_CC",
+        "exhaleDoxygenStdin": "INPUT = ../source/api_cc/include/",
+        "rootFileTitle": "C++ API",
+        "rootFileName": "api_cc.rst",
+    },
+    "core": {
+        "containmentFolder": "./api_core",
+        "exhaleDoxygenStdin": """INPUT = ../source/lib/include/
+                                 PREDEFINED = GOOGLE_CUDA
+                                              TENSORFLOW_USE_ROCM
+        """,
+        "rootFileTitle": "Core API",
+        "rootFileName": "api_core.rst",
+    },
 }
 
 # Tell sphinx what the primary language being documented is.
@@ -246,3 +266,6 @@ latex_elements = {
 ''',
 }
 
+# For TF automatic generated OP docs
+napoleon_google_docstring = True
+napoleon_numpy_docstring = False

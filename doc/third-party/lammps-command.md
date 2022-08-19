@@ -96,7 +96,7 @@ dump            1 all custom 100 water.dump id type c_dipole[1] c_dipole[2] c_di
 The reciprocal space part of the long-range interaction can be calculated by LAMMPS command `kspace_style`. To use it with DeePMD-kit, one writes 
 ```bash
 pair_style	deepmd graph.pb
-pair_coeff
+pair_coeff  * *
 kspace_style	pppm 1.0e-5
 kspace_modify	gewald 0.45
 ```
