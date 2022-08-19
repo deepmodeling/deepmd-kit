@@ -84,6 +84,7 @@ class DeepmdDataSystem() :
                     modifier = modifier, 
                     trn_all_set = trn_all_set
                 ))
+        self.large_batch_mode = self.data_systems[0].large_batch_mode
         # batch size
         self.batch_size = batch_size
         if isinstance(self.batch_size, int):

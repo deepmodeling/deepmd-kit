@@ -671,6 +671,46 @@ void prod_env_mat_r_gpu_cuda(
 }
 
 template <typename FPTYPE>
+void prod_env_mat_a_mix_gpu_cuda(    
+    FPTYPE * em, 
+    FPTYPE * em_deriv, 
+    FPTYPE * rij, 
+    int * nlist, 
+    const FPTYPE * coord, 
+    const int * f_type, 
+    const int * type, 
+    const InputNlist & gpu_inlist, 
+    int * array_int, 
+    uint_64 * array_longlong,
+    const int max_nbor_size,
+    const FPTYPE * avg, 
+    const FPTYPE * std, 
+    const int nloc, 
+    const int nall, 
+    const float rcut, 
+    const float rcut_smth, 
+    const std::vector<int> sec)
+{
+  const int nnei = sec.back();
+  const int ndescrpt = nnei * 4;
+  DPErrcheck(cudaMemset(em, 0, sizeof(FPTYPE) * int_64(nloc) * ndescrpt));
+  DPErrcheck(cudaMemset(em_deriv, 0, sizeof(FPTYPE) * int_64(nloc) * ndescrpt * 3));
+  DPErrcheck(cudaMemset(rij, 0, sizeof(FPTYPE) * int_64(nloc) * nnei * 3));
+
+  format_nbor_list_gpu_cuda(
+      nlist, 
+      coord, f_type, gpu_inlist, array_int, array_longlong, max_nbor_size, nloc, nall, rcut, sec);
+  nborErrcheck(cudaGetLastError());
+  nborErrcheck(cudaDeviceSynchronize());
+
+  compute_env_mat_a<FPTYPE, TPB> <<<nloc, TPB>>> (
+      em, em_deriv, rij, 
+      coord, avg, std, type, nlist, nnei, rcut_smth, rcut);
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
+}
+
+template <typename FPTYPE>
 void test_encoding_decoding_nbor_info_gpu_cuda(
     uint_64 * key,
     int * out_type,
@@ -692,6 +732,8 @@ template void prod_env_mat_a_gpu_cuda<float>(float * em, float * em_deriv, float
 template void prod_env_mat_a_gpu_cuda<double>(double * em, double * em_deriv, double * rij, int * nlist, const double * coord, const int * type, const InputNlist & gpu_inlist, int * array_int, unsigned long long * array_longlong, const int max_nbor_size, const double * avg, const double * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec);
 template void prod_env_mat_r_gpu_cuda<float>(float * em, float * em_deriv, float * rij, int * nlist, const float * coord, const int * type, const InputNlist & gpu_inlist, int * array_int, unsigned long long * array_longlong, const int max_nbor_size, const float * avg, const float * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec);
 template void prod_env_mat_r_gpu_cuda<double>(double * em, double * em_deriv, double * rij, int * nlist, const double * coord, const int * type, const InputNlist & gpu_inlist, int * array_int, unsigned long long * array_longlong, const int max_nbor_size, const double * avg, const double * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec);
+template void prod_env_mat_a_mix_gpu_cuda<float>(float * em, float * em_deriv, float * rij, int * nlist, const float * coord, const int * f_type, const int * type, const InputNlist & gpu_inlist, int * array_int, unsigned long long * array_longlong, const int max_nbor_size, const float * avg, const float * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec);
+template void prod_env_mat_a_mix_gpu_cuda<double>(double * em, double * em_deriv, double * rij, int * nlist, const double * coord, const int * f_type, const int * type, const InputNlist & gpu_inlist, int * array_int, unsigned long long * array_longlong, const int max_nbor_size, const double * avg, const double * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec);
 template void format_nbor_list_gpu_cuda<float>(int * nlist, const float * coord, const int * type, const deepmd::InputNlist & gpu_inlist,int * array_int,uint_64 * array_longlong,const int max_nbor_size,const int nloc, const int nall, const float rcut, const std::vector<int> sec);
 template void format_nbor_list_gpu_cuda<double>(int * nlist, const double * coord, const int * type, const deepmd::InputNlist & gpu_inlist,int * array_int,uint_64 * array_longlong,const int max_nbor_size,const int nloc, const int nall, const float rcut, const std::vector<int> sec);
 template void test_encoding_decoding_nbor_info_gpu_cuda(uint_64 * key, int * out_type, int * out_index, const int * in_type, const float * in_dist, const int * in_index, const int size_of_array);

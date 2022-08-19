@@ -144,6 +144,60 @@ __global__ void map_nlist(
     }
 }
 
+template<typename FPTYPE>
+__global__ void map_nei_info(
+    int * nlist,
+    int * ntype,
+    FPTYPE * nmask,
+    const int * type,
+    const int * nlist_map,
+    const int nloc,
+    const int nnei,
+    const int ntypes
+)
+{
+    int atom_idx=blockIdx.x;
+    int nei_idx=blockIdx.y*blockDim.y+threadIdx.y;
+    if(nei_idx>=nnei){return;}
+    int nlist_idx=atom_idx*nnei+nei_idx;
+    int nlist_item=nlist[nlist_idx];
+    int temp=0;
+    if(nlist_item!=-1){
+        temp=nlist_map[nlist_item];
+        nlist[nlist_idx]=temp;
+        ntype[nlist_idx]=type[temp];
+        nmask[nlist_idx]=1.;
+    }
+    else{
+        ntype[nlist_idx]=ntypes;
+    }
+}
+
+template<typename FPTYPE>
+__global__ void map_nei_info_noconvert(
+    int * nlist,
+    int * ntype,
+    FPTYPE * nmask,
+    const int * type,
+    const int nloc,
+    const int nnei,
+    const int ntypes
+)
+{
+    int atom_idx=blockIdx.x;
+    int nei_idx=blockIdx.y*blockDim.y+threadIdx.y;
+    if(nei_idx>=nnei){return;}
+    int nlist_idx=atom_idx*nnei+nei_idx;
+    int nlist_item=nlist[nlist_idx];
+    if(nlist_item!=-1){
+        ntype[nlist_idx]=type[nlist_item];
+        nmask[nlist_idx]=1.;
+    }
+    else{
+        ntype[nlist_idx]=ntypes;
+    }
+}
+
 namespace deepmd {
 template <typename FPTYPE>
 int build_nlist_gpu(
@@ -220,6 +274,35 @@ void use_nlist_map(
     DPErrcheck(cudaDeviceSynchronize());
 }
 
+template <typename FPTYPE>
+void use_nei_info_gpu(
+    int * nlist,
+    int * ntype,
+    FPTYPE * nmask,
+    const int * type,
+    const int * nlist_map, 
+    const int nloc, 
+    const int nnei,
+    const int ntypes,
+    const bool b_nlist_map)
+{
+    int nblock=(nnei+TPB-1)/TPB;
+    dim3 block_grid(nloc, nblock);
+    dim3 thread_grid(1, TPB);
+    DPErrcheck(cudaMemset(ntype, 0, sizeof(int) * nloc * nnei));
+    DPErrcheck(cudaMemset(nmask, 0, sizeof(FPTYPE) * nloc * nnei));
+    if (b_nlist_map){
+        map_nei_info<<<block_grid,thread_grid>>>(nlist, ntype, nmask, type, nlist_map, nloc, nnei, ntypes);
+    }
+    else{
+        map_nei_info_noconvert<<<block_grid,thread_grid>>>(nlist, ntype, nmask, type, nloc, nnei, ntypes);
+    }
+    DPErrcheck(cudaGetLastError());
+    DPErrcheck(cudaDeviceSynchronize());
+}
+
 template int build_nlist_gpu<float>(InputNlist & nlist, int * max_list_size, int * nlist_data, const float * c_cpy, const int & nloc, const int & nall, const int & mem_size, const float & rcut);
 template int build_nlist_gpu<double>(InputNlist & nlist, int * max_list_size, int * nlist_data, const double * c_cpy, const int & nloc, const int & nall, const int & mem_size, const float & rcut);
+template void use_nei_info_gpu<float>(int * nlist, int * ntype, float * nmask, const int * type, const int * nlist_map, const int nloc, const int nnei, const int ntypes, const bool b_nlist_map);
+template void use_nei_info_gpu<double>(int * nlist, int * ntype, double * nmask, const int * type, const int * nlist_map, const int nloc, const int nnei, const int ntypes, const bool b_nlist_map);
 }

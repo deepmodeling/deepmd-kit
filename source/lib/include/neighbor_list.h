@@ -85,6 +85,18 @@ build_nlist_cpu(
     const int & mem_size,
     const float & rcut);
 
+template <typename FPTYPE>
+void use_nei_info_cpu(
+    int * nlist, 
+    int * ntype,
+    FPTYPE * nmask,
+    const int * type,
+    const int * nlist_map, 
+    const int nloc, 
+    const int nnei,
+    const int ntypes,
+    const bool b_nlist_map);
+
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 /**
  *@brief              Convert the a host memory InputNlist to a device memory InputNlist
@@ -140,6 +152,18 @@ build_nlist_gpu(
     const int & mem_size,
     const float & rcut);
 
+template <typename FPTYPE>
+void use_nei_info_gpu(
+    int * nlist, 
+    int * ntype,
+    FPTYPE * nmask,
+    const int * type,
+    const int * nlist_map, 
+    const int nloc, 
+    const int nnei,
+    const int ntypes,
+    const bool b_nlist_map);
+
 #endif // GOOGLE_CUDA
 
 
@@ -167,6 +191,18 @@ build_nlist_gpu_rocm(
     const int & mem_size,
     const float & rcut);
 	
+template <typename FPTYPE>
+void use_nei_info_gpu_rocm(
+    int * nlist, 
+    int * ntype,
+    FPTYPE * nmask,
+    const int * type,
+    const int * nlist_map, 
+    const int nloc, 
+    const int nnei,
+    const int ntypes,
+    const bool b_nlist_map);
+
 #endif // TENSORFLOW_USE_ROCM
 
 } // namespace deepmd

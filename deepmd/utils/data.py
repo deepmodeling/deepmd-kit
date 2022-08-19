@@ -48,6 +48,7 @@ class DeepmdData() :
         root = DPPath(sys_path)
         self.dirs = root.glob(set_prefix + ".*")
         self.dirs.sort()
+        self.large_batch_mode = self._check_mode(sys_path)
         # load atom type
         self.atom_type = self._load_type(root)
         self.natoms = len(self.atom_type)
@@ -408,8 +409,7 @@ class DeepmdData() :
             if type(data[kk]) == np.ndarray and \
                len(data[kk].shape) == 2 and \
                data[kk].shape[0] == nframes and \
-               not('find_' in kk) and \
-               'type' != kk:
+               not('find_' in kk):
                 ret[kk] = data[kk][idx]
             else :
                 ret[kk] = data[kk]
@@ -430,7 +430,6 @@ class DeepmdData() :
         assert(coord.shape[1] == self.data_dict['coord']['ndof'] * self.natoms)
         # load keys
         data = {}
-        data['type'] = np.tile (self.atom_type[self.idx_map], (nframes, 1))
         for kk in self.data_dict.keys():
             if self.data_dict[kk]['reduce'] is None :
                 data['find_'+kk], data[kk] \
@@ -452,6 +451,17 @@ class DeepmdData() :
                 data['find_'+kk] = data['find_'+k_in]
                 tmp_in = data[k_in].astype(GLOBAL_ENER_FLOAT_PRECISION)
                 data[kk] = np.sum(np.reshape(tmp_in, [nframes, self.natoms, ndof]), axis = 1)
+
+        if self.large_batch_mode:
+            type_path = set_name / "real_atom_types.npy"
+            data['type'] = type_path.load_numpy().astype(np.int32).reshape([nframes, -1])
+            natoms = data['type'].shape[1]
+            vec_path = set_name / "real_atom_numbs.npy"
+            tmp = vec_path.load_numpy().astype(np.int32).reshape([nframes, -1])
+            data['real_natoms_vec'] = np.concatenate((np.tile(np.array([natoms, natoms], dtype=np.int32), (nframes, 1)),
+                                                      tmp), axis=-1)
+        else:
+            data['type'] = np.tile(self.atom_type[self.idx_map], (nframes, 1))
 
         return data
 
@@ -523,6 +533,12 @@ class DeepmdData() :
         if (sys_path / 'nopbc').is_file() :
             pbc = False
         return pbc
+
+    def _check_mode(self, sys_path):
+        large_batch_mode = False
+        if os.path.isfile(os.path.join(sys_path, 'set.000', 'real_atom_types.npy')):
+            large_batch_mode = True
+        return large_batch_mode
 
 
 class DataSets (object):

@@ -239,6 +239,48 @@ def descrpt_hybrid_args():
     ]
 
 
+@descrpt_args_plugin.register("se_atten")
+def descrpt_se_atten_args():
+    doc_sel = 'This parameter set the number of selected neighbors. Note that this parameter is a little different from that in other descriptors. Instead of separating each type of atoms, only the summation matters. And this number is highly related with the efficiency, thus one should not make it too large. Usually 200 or less is enough, far away from the GPU limitation 4096. It can be:\n\n\
+    - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
+    - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. Only the summation of `sel[i]` matters, and it is recommended to be less than 200.'
+    doc_rcut = 'The cut-off radius.'
+    doc_rcut_smth = 'Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`'
+    doc_neuron = 'Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.'
+    doc_axis_neuron = 'Size of the submatrix of G (embedding matrix).'
+    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}. Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
+    doc_type_one_side = 'Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets'
+    doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision.'
+    doc_trainable = 'If the parameters in the embedding net is trainable'
+    doc_seed = 'Random seed for parameter initialization'
+    doc_exclude_types = 'The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1.'
+    doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
+    doc_attn = 'The length of hidden vectors in attention layers'
+    doc_attn_layer = 'The number of attention layers'
+    doc_attn_dotr = 'Whether to do dot product with the normalized relative coordinates'
+    doc_attn_mask = 'Whether to do mask on the diagonal in the attention matrix'
+
+    return [
+        Argument("sel", [int, list], optional=True, default=200, doc=doc_sel),
+        Argument("rcut", float, optional=True, default=6.0, doc=doc_rcut),
+        Argument("rcut_smth", float, optional=True, default=0.5, doc=doc_rcut_smth),
+        Argument("neuron", list, optional=True, default=[10, 20, 40], doc=doc_neuron),
+        Argument("axis_neuron", int, optional=True, default=4, alias=['n_axis_neuron'], doc=doc_axis_neuron),
+        Argument("activation_function", str, optional=True, default='tanh', doc=doc_activation_function),
+        Argument("resnet_dt", bool, optional=True, default=False, doc=doc_resnet_dt),
+        Argument("type_one_side", bool, optional=True, default=False, doc=doc_type_one_side),
+        Argument("precision", str, optional=True, default="default", doc=doc_precision),
+        Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
+        Argument("seed", [int, None], optional=True, doc=doc_seed),
+        Argument("exclude_types", list, optional=True, default=[], doc=doc_exclude_types),
+        Argument("set_davg_zero", bool, optional=True, default=False, doc=doc_set_davg_zero),
+        Argument("attn", int, optional=True, default=100, doc=doc_attn),
+        Argument("attn_layer", int, optional=True, default=4, doc=doc_attn_layer),
+        Argument("attn_dotr", bool, optional=True, default=False, doc=doc_attn_dotr),
+        Argument("attn_mask", bool, optional=True, default=False, doc=doc_attn_mask)
+    ]
+
 def descrpt_variant_type_args(exclude_hybrid: bool = False) -> Variant:
     link_lf = make_link('loc_frame', 'model/descriptor[loc_frame]')
     link_se_e2_a = make_link('se_e2_a', 'model/descriptor[se_e2_a]')
@@ -246,12 +288,14 @@ def descrpt_variant_type_args(exclude_hybrid: bool = False) -> Variant:
     link_se_e3 = make_link('se_e3', 'model/descriptor[se_e3]')
     link_se_a_tpe = make_link('se_a_tpe', 'model/descriptor[se_a_tpe]')
     link_hybrid = make_link('hybrid', 'model/descriptor[hybrid]')
+    link_se_atten = make_link('se_atten', 'model/descriptor[se_atten]')
     doc_descrpt_type = f'The type of the descritpor. See explanation below. \n\n\
 - `loc_frame`: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.\n\n\
 - `se_e2_a`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor.\n\n\
 - `se_e2_r`: Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor.\n\n\
 - `se_e3`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Three-body embedding will be used by this descriptor.\n\n\
 - `se_a_tpe`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Type embedding will be used by this descriptor.\n\n\
+- `se_atten`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Attention mechanism will be used by this descriptor.\n\n\
 - `hybrid`: Concatenate of a list of descriptors as a new descriptor.'
     
     return Variant("type", descrpt_args_plugin.get_all_argument(), doc = doc_descrpt_type)
