@@ -99,7 +99,10 @@ This may lead to sparse frame number in those rare systems.
 
 An ideal way is to put systems with same total number of atoms together, which is the way we trained DPA-1 on OC2M. This API will be uploaded on dpdata soon for a more convenient experience.
 
-
+# Training example
+Here we upload the AlMgCu example showed in the paper, you can download here:
+[Baidu disk](https://pan.baidu.com/s/1Ip0_UZHi8ZM_KMnvGKmxKg?pwd=zurf);
+[Google disk](https://drive.google.com/file/d/1AjiXLWeytrkpz1y9QQrPQERStVnkHpTd/view?usp=sharing).
 
 
 
