@@ -1,10 +1,12 @@
 import math
 import numpy as np
 from typing import Tuple, List, Dict, Any
+from packaging.version import Version
 
 from deepmd.env import tf
 from deepmd.common import get_activation_func, get_precision, cast_precision
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import TF_VERSION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
@@ -508,7 +510,10 @@ class DescrptSeAtten(DescrptSeA):
             trainable=True,
             uniform_seed=self.uniform_seed)
         input_xyz += residual
-        input_xyz = tf.keras.layers.LayerNormalization()(input_xyz)
+        if Version(TF_VERSION) < Version('2'):
+            input_xyz = tf.contrib.layers.layer_norm(input_xyz)
+        else:
+            input_xyz = tf.keras.layers.LayerNormalization()(input_xyz)
         return input_xyz
 
     def _scaled_dot_attn(self, Q, K, V, temperature, input_r, dotr=False, do_mask=False, layer=0, save_weights=True):
@@ -609,8 +614,10 @@ class DescrptSeAtten(DescrptSeA):
                     precision=self.filter_precision,
                     trainable=trainable,
                     uniform_seed=self.uniform_seed)
-                # natom x nei_type_i x out_size
-                input_xyz = tf.keras.layers.LayerNormalization()(input_xyz)
+                if Version(TF_VERSION) < Version('2'):
+                    input_xyz = tf.contrib.layers.layer_norm(input_xyz)
+                else:
+                    input_xyz = tf.keras.layers.LayerNormalization()(input_xyz)
                 # input_xyz = self._feedforward(input_xyz, outputs_size[-1], self.att_n)
         return input_xyz
 
