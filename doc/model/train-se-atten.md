@@ -46,7 +46,6 @@ An example of the descriptor is provided as follows
           "rcut":		6.00,
           "sel":		120,
           "neuron":		[25, 50, 100],
-          "type_one_side":	true,
           "axis_neuron":	16,
           "resnet_dt":	false,
           "attn":	128,
@@ -60,7 +59,6 @@ An example of the descriptor is provided as follows
 * {ref}`rcut <model/descriptor[se_atten]/rcut>` is the cut-off radius for neighbor searching, and the {ref}`rcut_smth <model/descriptor[se_atten]/rcut_smth>` gives where the smoothing starts. 
 * **{ref}`sel <model/descriptor[se_atten]/sel>`** gives the maximum possible number of neighbors in the cut-off radius. It is an int. Note that this number highly effects the efficiency of training, which we usually use less than 200. (We use 120 for training 56 elements in [OC2M dataset](https://github.com/Open-Catalyst-Project/ocp/blob/main/DATASET.md))
 * The {ref}`neuron <model/descriptor[se_atten]/neuron>` specifies the size of the embedding net. From left to right the members denote the sizes of each hidden layer from input end to the output end, respectively. If the outer layer is of twice size as the inner layer, then the inner layer is copied and concatenated, then a [ResNet architecture](https://arxiv.org/abs/1512.03385) is built between them.
-* If the option {ref}`type_one_side <model/descriptor[se_atten]/type_one_side>` is set to `true`, then descriptor will consider the types of neighbor atoms. Otherwise, both the types of centric and  neighbor atoms are considered.
 * The {ref}`axis_neuron <model/descriptor[se_atten]/axis_neuron>` specifies the size of submatrix of the embedding matrix, the axis matrix as explained in the [DeepPot-SE paper](https://arxiv.org/abs/1805.09003) 
 * If the option {ref}`resnet_dt <model/descriptor[se_atten]/resnet_dt>` is set to `true`, then a timestep is used in the ResNet.
 * {ref}`seed <model/descriptor[se_atten]/seed>` gives the random seed that is used to generate random numbers when initializing the model parameters.
