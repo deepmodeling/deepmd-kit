@@ -100,8 +100,8 @@ An ideal way is to put systems with same total number of atoms together, which i
 
 # Training example
 Here we upload the AlMgCu example showed in the paper, you can download here:
-[Baidu disk](https://pan.baidu.com/s/1Ip0_UZHi8ZM_KMnvGKmxKg?pwd=zurf);
-[Google disk](https://drive.google.com/file/d/1AjiXLWeytrkpz1y9QQrPQERStVnkHpTd/view?usp=sharing).
+[Baidu disk](https://pan.baidu.com/s/1Mk9CihPHCmf8quwaMhT-nA?pwd=d586);
+[Google disk](https://drive.google.com/file/d/11baEpRrvHoqxORFPSdJiGWusb3Y4AnRE/view?usp=sharing).
 
 
 
