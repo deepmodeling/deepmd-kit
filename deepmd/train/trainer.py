@@ -66,7 +66,7 @@ class DPTrainer (object):
         typeebd_param = model_param.get('type_embedding', None)
         self.model_param    = model_param
         self.descrpt_param  = descrpt_param
-        self.is_transfer = model_param.get('transfered_from_model', None)
+        self.is_ascend_transfer = model_param.get('transfered_from_model', None)
         
         # nvnmd
         self.nvnmd_param = jdata.get('nvnmd', {})
@@ -303,7 +303,7 @@ class DPTrainer (object):
         else:
             log.info("training without frame parameter")
 
-        if self.is_transfer:
+        if self.is_ascend_transfer:
             self._init_from_frz_model()
             
         elif not self.is_compress:
@@ -365,7 +365,7 @@ class DPTrainer (object):
 
     def _build_network(self, data, suffix=""):
         self.place_holders = {}
-        if self.is_compress or self.is_transfer :
+        if self.is_compress or self.is_ascend_transfer :
             for kk in ['coord', 'box']:
                 self.place_holders[kk] = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], 't_' + kk)
             self._get_place_horders(data_requirement)
