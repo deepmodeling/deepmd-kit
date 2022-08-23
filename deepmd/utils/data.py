@@ -48,7 +48,7 @@ class DeepmdData() :
         root = DPPath(sys_path)
         self.dirs = root.glob(set_prefix + ".*")
         self.dirs.sort()
-        self.large_batch_mode = self._check_mode(sys_path)
+        self.mixed_type = self._check_mode(self.dirs[0])  # mixed_type format only has one set
         # load atom type
         self.atom_type = self._load_type(root)
         self.natoms = len(self.atom_type)
@@ -452,7 +452,7 @@ class DeepmdData() :
                 tmp_in = data[k_in].astype(GLOBAL_ENER_FLOAT_PRECISION)
                 data[kk] = np.sum(np.reshape(tmp_in, [nframes, self.natoms, ndof]), axis = 1)
 
-        if self.large_batch_mode:
+        if self.mixed_type:
             type_path = set_name / "real_atom_types.npy"
             data['type'] = type_path.load_numpy().astype(np.int32).reshape([nframes, -1])
             natoms = data['type'].shape[1]
@@ -534,11 +534,8 @@ class DeepmdData() :
             pbc = False
         return pbc
 
-    def _check_mode(self, sys_path):
-        large_batch_mode = False
-        if os.path.isfile(os.path.join(sys_path, 'set.000', 'real_atom_types.npy')):
-            large_batch_mode = True
-        return large_batch_mode
+    def _check_mode(self, set_path: DPPath):
+        return (set_path / 'real_atom_types.npy').is_file()
 
 
 class DataSets (object):

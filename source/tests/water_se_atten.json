@@ -3,7 +3,7 @@
     "model" : {
     "type_map":     ["O", "H"],
 	"type_embedding":{
-	    "neuron":		[2,4,8],
+	    "neuron":		[8],
 	    "resnet_dt":	false,
 	    "seed":		1
 	},

@@ -10,6 +10,7 @@ from typing import Tuple, List
 from deepmd.utils import random as dp_random
 from deepmd.utils.data import DataSets
 from deepmd.utils.data import DeepmdData
+from IPython import embed
 
 log = logging.getLogger(__name__)
 
@@ -84,7 +85,12 @@ class DeepmdDataSystem() :
                     modifier = modifier, 
                     trn_all_set = trn_all_set
                 ))
-        self.large_batch_mode = self.data_systems[0].large_batch_mode
+        if self.data_systems[0].mixed_type:
+            for data_sys in self.data_systems[1:]:
+                assert data_sys.mixed_type, "all systems must have the same format for mixed_type!"
+            self.mixed_type = True
+        else:
+            self.mixed_type = False
         # batch size
         self.batch_size = batch_size
         if isinstance(self.batch_size, int):

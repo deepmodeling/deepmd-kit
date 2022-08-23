@@ -1166,9 +1166,9 @@ public:
       array_longlong = uint64_temp.flat<unsigned long long>().data();
 
       // launch the gpu(nv) compute function
-      deepmd::prod_env_mat_a_mix_gpu_cuda(
+      deepmd::prod_env_mat_a_gpu_cuda(
           em, em_deriv, rij, nlist, 
-          coord, f_type, type, gpu_inlist, array_int, array_longlong, max_nbor_size, avg, std, nloc, frame_nall, rcut_r, rcut_r_smth, sec_a);
+          coord, type, gpu_inlist, array_int, array_longlong, max_nbor_size, avg, std, nloc, frame_nall, rcut_r, rcut_r_smth, sec_a, f_type);
       _map_nei_info_gpu(nlist, ntype, nmask, type, idx_mapping, nloc, nnei, ntypes, b_nlist_map);
       deepmd::delete_device_memory(firstneigh);
       #endif //GOOGLE_CUDA
@@ -1210,9 +1210,9 @@ public:
       array_longlong = uint64_temp.flat<unsigned long long>().data();
 
       // launch the gpu(nv) compute function
-      deepmd::prod_env_mat_a_mix_gpu_rocm(
+      deepmd::prod_env_mat_a_gpu_rocm(
           em, em_deriv, rij, nlist, 
-          coord, f_type, type, gpu_inlist, array_int, array_longlong, max_nbor_size, avg, std, nloc, frame_nall, rcut_r, rcut_r_smth, sec_a);
+          coord, type, gpu_inlist, array_int, array_longlong, max_nbor_size, avg, std, nloc, frame_nall, rcut_r, rcut_r_smth, sec_a, f_type);
       _map_nei_info_gpu_rocm(nlist, ntype, nmask, type, idx_mapping, nloc, nnei, ntypes, b_nlist_map);
       deepmd::delete_device_memory(firstneigh);
       #endif //TENSORFLOW_USE_ROCM
@@ -1236,9 +1236,9 @@ public:
 	  frame_nall, mem_cpy, mem_nnei, max_nbor_size,
 	  box, mesh_tensor.flat<int>().data(), nloc, nei_mode, rcut_r, max_cpy_trial, max_nnei_trial);
       // launch the cpu compute function
-      deepmd::prod_env_mat_a_mix_cpu(
+      deepmd::prod_env_mat_a_cpu(
 	  em, em_deriv, rij, nlist, 
-	  coord, f_type, type, inlist, max_nbor_size, avg, std, nloc, frame_nall, rcut_r, rcut_r_smth, sec_a);
+	  coord, type, inlist, max_nbor_size, avg, std, nloc, frame_nall, rcut_r, rcut_r_smth, sec_a, f_type);
       // do nlist mapping if coords were copied
     _map_nei_info_cpu(nlist, ntype, nmask, type, &idx_mapping[0], nloc, nnei, ntypes, b_nlist_map);
     }

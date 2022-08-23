@@ -11,27 +11,27 @@ from deepmd.fit import EnerFitting
 from deepmd.model import EnerModel
 from deepmd.utils.type_embed import TypeEmbedNet
 from deepmd.common import j_must_have
+from common import tf
+from packaging.version import parse as parse_version
 
 GLOBAL_ENER_FLOAT_PRECISION = tf.float64
 GLOBAL_TF_FLOAT_PRECISION = tf.float64
 GLOBAL_NP_FLOAT_PRECISION = np.float64
 
 
+@unittest.skipIf(parse_version(tf.__version__) < parse_version("1.15"),
+    f"The current tf version {tf.__version__} is too low to run the new testing model.")
 class TestDataLargeBatch(tf.test.TestCase):
     def setUp(self):
-        gen_data(large_batch_mode=True)
+        gen_data(mixed_type=True)
 
-    def test_data_large_batch(self):
-        jfile = 'water_se_atten_large_batch.json'
+    def test_data_mixed_type(self):
+        jfile = 'water_se_atten_mixed_type.json'
         jdata = j_loader(jfile)
 
         systems = j_must_have(jdata, 'systems')
-        set_pfx = j_must_have(jdata, 'set_prefix')
-        batch_size = j_must_have(jdata, 'batch_size')
-        test_size = j_must_have(jdata, 'numb_test')
         batch_size = 1
         test_size = 1
-        stop_batch = j_must_have(jdata, 'stop_batch')
         rcut = j_must_have(jdata['model']['descriptor'], 'rcut')
 
         data = DeepmdDataSystem(systems, batch_size, test_size, rcut)
@@ -84,9 +84,9 @@ class TestDataLargeBatch(tf.test.TestCase):
         typeebd = TypeEmbedNet(
             neuron=typeebd_param['neuron'],
             resnet_dt=typeebd_param['resnet_dt'],
+            activation_function=None,
             seed=typeebd_param['seed'],
             uniform_seed=True,
-            use_linear=True,
             padding=True)
         model = EnerModel(descrpt, fitting, typeebd)
 
@@ -98,7 +98,7 @@ class TestDataLargeBatch(tf.test.TestCase):
                       'default_mesh': [test_data['default_mesh']],
                       'real_natoms_vec': [test_data['real_natoms_vec']]
                       }
-        model._compute_input_stat(input_data, large_batch_mode=True)
+        model._compute_input_stat(input_data, mixed_type=True)
         model.descrpt.bias_atom_e = np.array([0.,  0.])
 
         t_energy = tf.placeholder(GLOBAL_ENER_FLOAT_PRECISION, [None], name='t_energy')

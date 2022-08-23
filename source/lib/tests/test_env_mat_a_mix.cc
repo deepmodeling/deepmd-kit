@@ -443,13 +443,12 @@ TEST_F(TestEnvMatAMix, prod_cpu)
   std::vector<double > nmask(nloc * nnei);
   std::vector<double > avg(ntypes * ndescrpt, 0);
   std::vector<double > std(ntypes * ndescrpt, 1);
-  deepmd::prod_env_mat_a_mix_cpu(
+  deepmd::prod_env_mat_a_cpu(
       &em[0],
       &em_deriv[0],
       &rij[0],
       &nlist[0],
       &posi_cpy[0],
-      &f_atype_cpy[0],
       &atype[0],
       inlist,
       max_nbor_size,
@@ -459,7 +458,8 @@ TEST_F(TestEnvMatAMix, prod_cpu)
       nall,
       rc, 
       rc_smth,
-      sec_a);
+      sec_a,
+      &f_atype_cpy[0]);
   deepmd::use_nei_info_cpu(
       &nlist[0],
       &ntype[0],
@@ -503,13 +503,12 @@ TEST_F(TestEnvMatAMix, prod_cpu_equal_cpu)
   std::vector<int> nlist(nloc * nnei);
   std::vector<double > avg(ntypes * ndescrpt, 0);
   std::vector<double > std(ntypes * ndescrpt, 1);
-  deepmd::prod_env_mat_a_mix_cpu(
+  deepmd::prod_env_mat_a_cpu(
       &em[0],
       &em_deriv[0],
       &rij[0],
       &nlist[0],
       &posi_cpy[0],
-      &f_atype_cpy[0],
       &atype[0],
       inlist,
       max_nbor_size,
@@ -519,7 +518,8 @@ TEST_F(TestEnvMatAMix, prod_cpu_equal_cpu)
       nall,
       rc, 
       rc_smth,
-      sec_a);
+      sec_a,
+      &f_atype_cpy[0]);
 
   std::vector<int> fmt_nlist_a_1, fmt_nlist_r_1;
   std::vector<double> env_1, env_deriv_1, rij_a_1;
@@ -615,13 +615,12 @@ TEST_F(TestEnvMatAMix, prod_gpu_cuda)
   deepmd::malloc_device_memory(memory_dev, nloc * max_nbor_size);
   deepmd::convert_nlist_gpu_device(gpu_inlist, inlist, memory_dev, max_nbor_size);
 
-  deepmd::prod_env_mat_a_mix_gpu_cuda(    
+  deepmd::prod_env_mat_a_gpu_cuda(    
       em_dev, 
       em_deriv_dev, 
       rij_dev, 
       nlist_dev, 
       posi_cpy_dev, 
-      f_atype_cpy_dev, 
       atype_dev,
       gpu_inlist,
       array_int_dev, 
@@ -633,7 +632,8 @@ TEST_F(TestEnvMatAMix, prod_gpu_cuda)
       nall,
       rc, 
       rc_smth,
-      sec_a);
+      sec_a,
+      f_atype_cpy_dev);
 
   deepmd::use_nei_info_gpu(
       nlist_dev,
@@ -728,13 +728,12 @@ TEST_F(TestEnvMatAMix, prod_gpu_cuda_equal_cpu)
   deepmd::malloc_device_memory(memory_dev, nloc * max_nbor_size);
   deepmd::convert_nlist_gpu_device(gpu_inlist, inlist, memory_dev, max_nbor_size);
 
-  deepmd::prod_env_mat_a_mix_gpu_cuda(    
+  deepmd::prod_env_mat_a_gpu_cuda(    
       em_dev, 
       em_deriv_dev, 
       rij_dev, 
       nlist_dev, 
-      posi_cpy_dev, 
-      f_atype_cpy_dev, 
+      posi_cpy_dev,  
       atype_dev,
       gpu_inlist,
       array_int_dev, 
@@ -746,7 +745,8 @@ TEST_F(TestEnvMatAMix, prod_gpu_cuda_equal_cpu)
       nall,
       rc, 
       rc_smth,
-      sec_a);
+      sec_a,
+      f_atype_cpy_dev);
   deepmd::memcpy_device_to_host(em_dev, em);
   deepmd::memcpy_device_to_host(em_deriv_dev, em_deriv);
   deepmd::memcpy_device_to_host(rij_dev, rij);
@@ -858,13 +858,12 @@ TEST_F(TestEnvMatAMix, prod_gpu_rocm)
   deepmd::malloc_device_memory(memory_dev, nloc * max_nbor_size);
   deepmd::convert_nlist_gpu_device(gpu_inlist, inlist, memory_dev, max_nbor_size);
 
-  deepmd::prod_env_mat_a_mix_gpu_rocm(    
+  deepmd::prod_env_mat_a_gpu_rocm(    
       em_dev, 
       em_deriv_dev, 
       rij_dev, 
       nlist_dev, 
       posi_cpy_dev, 
-      f_atype_cpy_dev, 
       atype_dev,
       gpu_inlist,
       array_int_dev, 
@@ -876,7 +875,8 @@ TEST_F(TestEnvMatAMix, prod_gpu_rocm)
       nall,
       rc, 
       rc_smth,
-      sec_a);
+      sec_a,
+      f_atype_cpy_dev);
 
   deepmd::use_nei_info_gpu_rocm(
       nlist_dev,
@@ -971,13 +971,12 @@ TEST_F(TestEnvMatAMix, prod_gpu_rocm_equal_cpu)
   deepmd::malloc_device_memory(memory_dev, nloc * max_nbor_size);
   deepmd::convert_nlist_gpu_device(gpu_inlist, inlist, memory_dev, max_nbor_size);
 
-  deepmd::prod_env_mat_a_mix_gpu_rocm(    
+  deepmd::prod_env_mat_a_gpu_rocm(    
       em_dev, 
       em_deriv_dev, 
       rij_dev, 
       nlist_dev, 
       posi_cpy_dev, 
-      f_atype_cpy_dev, 
       atype_dev,
       gpu_inlist,
       array_int_dev, 
@@ -989,7 +988,8 @@ TEST_F(TestEnvMatAMix, prod_gpu_rocm_equal_cpu)
       nall,
       rc, 
       rc_smth,
-      sec_a);
+      sec_a,
+      f_atype_cpy_dev);
   deepmd::memcpy_device_to_host(em_dev, em);
   deepmd::memcpy_device_to_host(em_deriv_dev, em_deriv);
   deepmd::memcpy_device_to_host(rij_dev, rij);

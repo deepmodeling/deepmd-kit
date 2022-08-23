@@ -115,10 +115,8 @@ class DPTrainer (object):
             raise RuntimeError('unknow fitting type ' + fitting_type)
 
         # type embedding
-        use_linear = False
         padding = False
         if descrpt_type == 'se_atten':
-            use_linear = True
             padding = True
         if typeebd_param is not None:
             self.typeebd = TypeEmbedNet(
@@ -128,14 +126,13 @@ class DPTrainer (object):
                 precision=typeebd_param['precision'],
                 trainable=typeebd_param['trainable'],
                 seed=typeebd_param['seed'],
-                use_linear=use_linear,
                 padding=padding
             )
         elif descrpt_type == 'se_atten':
             self.typeebd = TypeEmbedNet(
-                neuron=[2, 4, 8],
+                neuron=[8],
+                activation_function=None,
                 seed=1,
-                use_linear=use_linear,
                 padding=padding
             )
         else:
@@ -289,9 +286,9 @@ class DPTrainer (object):
         self.ntypes = self.model.get_ntypes()
         self.stop_batch = stop_batch
 
-        if not self.is_compress and data.large_batch_mode:
-            assert self.descrpt_type in ['se_atten'], 'Data in large_batch_mode must use attention descriptor!'
-            assert self.fitting_type in ['ener'], 'Data in large_batch_mode must use ener fitting!'
+        if not self.is_compress and data.mixed_type:
+            assert self.descrpt_type in ['se_atten'], 'Data in mixed_type format must use attention descriptor!'
+            assert self.fitting_type in ['ener'], 'Data in mixed_type format must use ener fitting!'
 
         if self.numb_fparam > 0 :
             log.info("training with %d frame parameter(s)" % self.numb_fparam)

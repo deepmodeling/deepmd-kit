@@ -21,7 +21,8 @@ void prod_env_mat_a_cpu(
     const int nall, 
     const float rcut, 
     const float rcut_smth, 
-    const std::vector<int> sec);
+    const std::vector<int> sec,
+    const int * f_type = NULL);
 
 template<typename FPTYPE>
 void prod_env_mat_r_cpu(
@@ -30,25 +31,6 @@ void prod_env_mat_r_cpu(
     FPTYPE * rij, 
     int * nlist, 
     const FPTYPE * coord, 
-    const int * type, 
-    const InputNlist & inlist,
-    const int max_nbor_size,
-    const FPTYPE * avg, 
-    const FPTYPE * std, 
-    const int nloc, 
-    const int nall, 
-    const float rcut, 
-    const float rcut_smth, 
-    const std::vector<int> sec);
-
-template<typename FPTYPE>
-void prod_env_mat_a_mix_cpu(
-    FPTYPE * em, 
-    FPTYPE * em_deriv, 
-    FPTYPE * rij, 
-    int * nlist, 
-    const FPTYPE * coord, 
-    const int * f_type, 
     const int * type, 
     const InputNlist & inlist,
     const int max_nbor_size,
@@ -79,7 +61,8 @@ void prod_env_mat_a_gpu_cuda(
     const int nall, 
     const float rcut, 
     const float rcut_smth, 
-    const std::vector<int> sec);
+    const std::vector<int> sec,
+    const int * f_type=NULL);
 
 template<typename FPTYPE> 
 void prod_env_mat_r_gpu_cuda(    
@@ -88,27 +71,6 @@ void prod_env_mat_r_gpu_cuda(
     FPTYPE * rij, 
     int * nlist, 
     const FPTYPE * coord, 
-    const int * type, 
-    const InputNlist & gpu_inlist,
-    int * array_int, 
-    unsigned long long * array_longlong,
-    const int max_nbor_size,
-    const FPTYPE * avg, 
-    const FPTYPE * std, 
-    const int nloc, 
-    const int nall, 
-    const float rcut, 
-    const float rcut_smth, 
-    const std::vector<int> sec);
-
-template<typename FPTYPE> 
-void prod_env_mat_a_mix_gpu_cuda(    
-    FPTYPE * em, 
-    FPTYPE * em_deriv, 
-    FPTYPE * rij, 
-    int * nlist, 
-    const FPTYPE * coord, 
-    const int * f_type, 
     const int * type, 
     const InputNlist & gpu_inlist,
     int * array_int, 
@@ -150,7 +112,8 @@ void prod_env_mat_a_gpu_rocm(
     const int nall, 
     const float rcut, 
     const float rcut_smth, 
-    const std::vector<int> sec);
+    const std::vector<int> sec,
+    const int * f_type=NULL);
 
 template<typename FPTYPE> 
 void prod_env_mat_r_gpu_rocm(    
@@ -160,27 +123,6 @@ void prod_env_mat_r_gpu_rocm(
     int * nlist, 
     const FPTYPE * coord, 
     const int * type, 
-    const InputNlist & gpu_inlist,
-    int * array_int, 
-    unsigned long long * array_longlong,
-    const int max_nbor_size,
-    const FPTYPE * avg, 
-    const FPTYPE * std, 
-    const int nloc, 
-    const int nall, 
-    const float rcut, 
-    const float rcut_smth, 
-    const std::vector<int> sec);
-
-template<typename FPTYPE> 
-void prod_env_mat_a_mix_gpu_rocm(    
-    FPTYPE * em, 
-    FPTYPE * em_deriv, 
-    FPTYPE * rij, 
-    int * nlist, 
-    const FPTYPE * coord, 
-    const int * f_type, 
-    const int * type,
     const InputNlist & gpu_inlist,
     int * array_int, 
     unsigned long long * array_longlong,

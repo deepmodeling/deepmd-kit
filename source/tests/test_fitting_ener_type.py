@@ -76,14 +76,17 @@ class TestModel(tf.test.TestCase):
                     0.0005154794374703516,-0.00019422534512034776,-0.00019422534512034776,7.318151797939947e-05,-0.0013576642997136488,0.0005115548790018505,-0.0010275333676074971,0.00038716440070070385,0.0005376426714609369,-0.00020257810468163985,
                     0.0004482204892297628,-0.00016887749501640607,-0.00016887749501640607,6.364643102775375e-05,-0.001181345877677835,0.0004452029242063362,-0.0008941636427724908,0.0003369586197174627,0.0004677878512312651,-0.00017625260641095753])
         type_embedding = np.array([1.4916816460764615,0.2720153234707013,-2.4385153754181985,-1.8454294510880027,2.874575701113528,1.1225116575801295,0.4204818970813372,-2.3784087249787587,-1.5053748251050598,2.769329403073084])
+        atype = np.array([0, 0, 1, 1, 1, 1], dtype=np.int32)
 
         dout= dout.reshape([-1,10])
         type_embedding = type_embedding.reshape([ntypes,-1])
+        atype = atype.reshape([-1])
         atom_ener = fitting.build(tf.convert_to_tensor(dout),
                                   t_natoms, 
-                                  {'type_embedding':tf.convert_to_tensor(type_embedding)},
-                                  reuse = False,
-                                  suffix = "se_a_type_fit_")
+                                  {'type_embedding':tf.convert_to_tensor(type_embedding),
+                                   'atype':tf.convert_to_tensor(atype)},
+                                  reuse=False,
+                                  suffix="se_a_type_fit_")
 
         feed_dict_test = {t_prop_c:        test_data['prop_c'],
                           t_energy:        test_data['energy']              [:numb_test],

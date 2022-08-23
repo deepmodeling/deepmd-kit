@@ -3,7 +3,7 @@
     "model" : {
     "type_map":     ["O", "H"],
 	"type_embedding":{
-	    "neuron":		[2,4,8],
+	    "neuron":		[8],
 	    "resnet_dt":	false,
 	    "seed":		1
 	},
@@ -31,7 +31,7 @@
 
 
     "_comment": " traing controls",
-    "systems":		["system_large_batch"],
+    "systems":		["system_mixed_type"],
     "set_prefix":	"set",
     "stop_batch":	1000000,
     "batch_size":	1,

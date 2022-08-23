@@ -10,12 +10,16 @@ from deepmd.fit import EnerFitting
 from deepmd.model import EnerModel
 from deepmd.common import j_must_have
 from deepmd.utils.type_embed import embed_atom_type, TypeEmbedNet
+from common import tf
+from packaging.version import parse as parse_version
 
 GLOBAL_ENER_FLOAT_PRECISION = tf.float64
 GLOBAL_TF_FLOAT_PRECISION = tf.float64
 GLOBAL_NP_FLOAT_PRECISION = np.float64
 
 
+@unittest.skipIf(parse_version(tf.__version__) < parse_version("1.15"),
+    f"The current tf version {tf.__version__} is too low to run the new testing model.")
 class TestModel(tf.test.TestCase):
     def setUp(self):
         gen_data(nframes=2)
@@ -43,7 +47,7 @@ class TestModel(tf.test.TestCase):
         # set parameters
         jdata['model']['descriptor']['neuron'] = [5, 5, 5]
         jdata['model']['descriptor']['axis_neuron'] = 2
-        typeebd_param = {'neuron': [5, 5, 5],
+        typeebd_param = {'neuron': [5],
                          'resnet_dt': False,
                          'seed': 1,
                          }
@@ -51,10 +55,10 @@ class TestModel(tf.test.TestCase):
         # init models
         typeebd = TypeEmbedNet(
             neuron=typeebd_param['neuron'],
+            activation_function=None,
             resnet_dt=typeebd_param['resnet_dt'],
             seed=typeebd_param['seed'],
             uniform_seed=True,
-            use_linear=True,
             padding=True
         )
 
@@ -86,7 +90,7 @@ class TestModel(tf.test.TestCase):
 
         type_embedding = typeebd.build(
             ntypes,
-            suffix="_se_a_type_des_ebd_2sdies"
+            suffix="_se_atten_type_des_ebd_2sdies"
         )
 
         dout \
@@ -98,7 +102,7 @@ class TestModel(tf.test.TestCase):
             t_mesh,
             {'type_embedding': type_embedding},
             reuse=False,
-            suffix="_se_a_type_des_2sides"
+            suffix="_se_atten_type_des_2sides"
         )
 
         feed_dict_test = {t_prop_c: test_data['prop_c'],
@@ -155,7 +159,7 @@ class TestModel(tf.test.TestCase):
         jdata['model']['descriptor']['neuron'] = [5, 5, 5]
         jdata['model']['descriptor']['axis_neuron'] = 2
         jdata['model']['descriptor']['type_one_side'] = True
-        typeebd_param = {'neuron': [5, 5, 5],
+        typeebd_param = {'neuron': [5],
                          'resnet_dt': False,
                          'seed': 1,
                          }
@@ -163,10 +167,10 @@ class TestModel(tf.test.TestCase):
         # init models
         typeebd = TypeEmbedNet(
             neuron=typeebd_param['neuron'],
+            activation_function=None,
             resnet_dt=typeebd_param['resnet_dt'],
             seed=typeebd_param['seed'],
             uniform_seed=True,
-            use_linear=True,
             padding=True
         )
 
@@ -198,7 +202,7 @@ class TestModel(tf.test.TestCase):
 
         type_embedding = typeebd.build(
             ntypes,
-            suffix="_se_a_type_des_ebd_1side"
+            suffix="_se_atten_type_des_ebd_1side"
         )
 
         dout \
@@ -210,7 +214,7 @@ class TestModel(tf.test.TestCase):
             t_mesh,
             {'type_embedding': type_embedding},
             reuse=False,
-            suffix="_se_a_type_des_1side"
+            suffix="_se_atten_type_des_1side"
         )
 
         feed_dict_test = {t_prop_c: test_data['prop_c'],

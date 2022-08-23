@@ -10,12 +10,16 @@ from deepmd.fit import EnerFitting
 from deepmd.model import EnerModel
 from deepmd.utils.type_embed import TypeEmbedNet
 from deepmd.common import j_must_have
+from common import tf
+from packaging.version import parse as parse_version
 
 GLOBAL_ENER_FLOAT_PRECISION = tf.float64
 GLOBAL_TF_FLOAT_PRECISION = tf.float64
 GLOBAL_NP_FLOAT_PRECISION = np.float64
 
 
+@unittest.skipIf(parse_version(tf.__version__) < parse_version("1.15"),
+    f"The current tf version {tf.__version__} is too low to run the new testing model.")
 class TestModel(tf.test.TestCase):
     def setUp(self):
         gen_data()
@@ -46,10 +50,10 @@ class TestModel(tf.test.TestCase):
         typeebd_param = jdata['model']['type_embedding']
         typeebd = TypeEmbedNet(
             neuron=typeebd_param['neuron'],
+            activation_function=None,
             resnet_dt=typeebd_param['resnet_dt'],
             seed=typeebd_param['seed'],
             uniform_seed=True,
-            use_linear=True,
             padding=True)
         model = EnerModel(descrpt, fitting, typeebd)
 

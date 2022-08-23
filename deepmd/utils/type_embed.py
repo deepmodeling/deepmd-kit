@@ -72,17 +72,18 @@ class TypeEmbedNet():
             Random seed for initializing the network parameters.
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
+    padding
+            Concat the zero padding to the output, as the default embedding of empty type.
     """
     def __init__(
             self,
             neuron: List[int]=[],
             resnet_dt: bool = False,
-            activation_function: str = 'tanh',
+            activation_function='tanh',
             precision: str = 'default',
             trainable: bool = True,
             seed: int = None,
             uniform_seed: bool = False,
-            use_linear: bool = False,
             padding: bool = False,
     )->None:
         """
@@ -92,11 +93,13 @@ class TypeEmbedNet():
         self.seed = seed
         self.filter_resnet_dt = resnet_dt
         self.filter_precision = get_precision(precision)
-        self.filter_activation_fn = get_activation_func(activation_function)
+        if activation_function is not None:
+            self.filter_activation_fn = get_activation_func(activation_function)
+        else:
+            self.filter_activation_fn = None
         self.trainable = trainable
         self.uniform_seed = uniform_seed
         self.type_embedding_net_variables = None
-        self.use_linear = use_linear
         self.padding = padding
 
 
@@ -130,33 +133,21 @@ class TypeEmbedNet():
         ebd_type = tf.cast(tf.one_hot(tf.cast(types,dtype=tf.int32),int(ntypes)), self.filter_precision)
         ebd_type = tf.reshape(ebd_type, [-1, ntypes])
         name = 'type_embed_net' + suffix
-        if not self.use_linear:
-            with tf.variable_scope(name, reuse=reuse):
-                ebd_type = embedding_net(
-                    ebd_type,
-                    self.neuron,
-                    activation_fn = self.filter_activation_fn,
-                    precision = self.filter_precision,
-                    resnet_dt = self.filter_resnet_dt,
-                    seed = self.seed,
-                    trainable = self.trainable,
-                    initial_variables = self.type_embedding_net_variables,
-                    uniform_seed = self.uniform_seed)
-        else:
-            ebd_type = one_layer(
+        with tf.variable_scope(name, reuse=reuse):
+            ebd_type = embedding_net(
                 ebd_type,
-                self.neuron[-1],
-                name=name,
-                reuse=reuse,
-                seed=self.seed,
-                activation_fn=None,
-                precision=self.filter_precision,
+                self.neuron,
+                activation_fn = self.filter_activation_fn,
+                precision = self.filter_precision,
+                resnet_dt = self.filter_resnet_dt,
+                seed = self.seed,
                 trainable = self.trainable,
-                uniform_seed=self.uniform_seed)
+                initial_variables = self.type_embedding_net_variables,
+                uniform_seed = self.uniform_seed)
         ebd_type = tf.reshape(ebd_type, [-1, self.neuron[-1]])  # ntypes * neuron[-1]
         if self.padding:
             last_type = tf.cast(tf.zeros([1, self.neuron[-1]]), self.filter_precision)
-            ebd_type = tf.concat([ebd_type, last_type], 0)
+            ebd_type = tf.concat([ebd_type, last_type], 0)  # (ntypes + 1) * neuron[-1]
         self.ebd_type = tf.identity(ebd_type, name ='t_typeebd')
         return self.ebd_type 
 

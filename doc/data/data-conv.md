@@ -30,6 +30,8 @@ O H
 ```
 The type `0` is named by `"O"` and the type `1` is named by `"H"`.
 
+For training models with descriptor `se_atten`, a [new system format](../model/train-se-atten.md#data-format) is supported to put together the frame-sparse systems with the same atom number.
+
 ## HDF5 format
 
 A system with the HDF5 format has the same strucutre as the Numpy format, but in a HDF5 file, a system is organized as an [HDF5 group](https://docs.h5py.org/en/stable/high/group.html). The file name of a Numpy file is the key in a HDF5 file, and the data is the value to the key. One need to use `#` in a DP path to divide the path to the HDF5 file and the HDF5 key:

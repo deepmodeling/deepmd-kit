@@ -169,7 +169,7 @@ class EnerFitting (Fitting):
 
     def compute_output_stats(self, 
                              all_stat: dict,
-                             large_batch_mode: bool = False
+                             mixed_type: bool = False
     ) -> None:
         """
         Compute the ouput statistics
@@ -180,10 +180,14 @@ class EnerFitting (Fitting):
                 must have the following components:
                 all_stat['energy'] of shape n_sys x n_batch x n_frame
                 can be prepared by model.make_stat_input
+        mixed_type
+                Whether to perform the mixed_type mode.
+                If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
+                in which frames in a system may have different natoms_vec(s), with the same nloc.
         """
-        self.bias_atom_e = self._compute_output_stats(all_stat, rcond=self.rcond, large_batch_mode=large_batch_mode)
+        self.bias_atom_e = self._compute_output_stats(all_stat, rcond=self.rcond, mixed_type=mixed_type)
 
-    def _compute_output_stats(self, all_stat, rcond=1e-3, large_batch_mode=False):
+    def _compute_output_stats(self, all_stat, rcond=1e-3, mixed_type=False):
         data = all_stat['energy']
         # data[sys_idx][batch_idx][frame_idx]
         sys_ener = np.array([])
@@ -195,7 +199,7 @@ class EnerFitting (Fitting):
             sys_data = np.concatenate(sys_data)
             sys_ener = np.append(sys_ener, np.average(sys_data))
         sys_tynatom = np.array([])
-        if large_batch_mode:
+        if mixed_type:
             data = all_stat['real_natoms_vec']
             nsys = len(data)
             for ss in range(len(data)):
@@ -396,11 +400,6 @@ class EnerFitting (Fitting):
         if input_dict is None:
             input_dict = {}
         bias_atom_e = self.bias_atom_e
-        self.bias_atom_e_t = tf.get_variable('t_bias_atom_e',
-                            self.bias_atom_e.shape,
-                            dtype=GLOBAL_TF_FLOAT_PRECISION,
-                            trainable=False,
-                            initializer=tf.constant_initializer(self.bias_atom_e))
         if self.numb_fparam > 0:
             if self.fparam_avg is None:
                 self.fparam_avg = 0.
@@ -419,6 +418,11 @@ class EnerFitting (Fitting):
             t_daparam = tf.constant(self.numb_aparam, 
                                     name = 'daparam', 
                                     dtype = tf.int32)
+            self.t_bias_atom_e = tf.get_variable('t_bias_atom_e',
+                                            self.bias_atom_e.shape,
+                                            dtype=GLOBAL_TF_FLOAT_PRECISION,
+                                            trainable=False,
+                                            initializer=tf.constant_initializer(self.bias_atom_e))
             if self.numb_fparam > 0: 
                 t_fparam_avg = tf.get_variable('t_fparam_avg', 
                                                self.numb_fparam,
@@ -516,7 +520,6 @@ class EnerFitting (Fitting):
                 [tf.reshape(inputs,[-1,self.dim_descrpt]),atype_embed],
                 axis=1
             )
-            self.tmp_input = inputs
             self.dim_descrpt = self.dim_descrpt + type_shape[1]
             inputs = tf.reshape(inputs, [-1, natoms[0], self.dim_descrpt])
             final_layer = self._build_lower(
@@ -527,7 +530,7 @@ class EnerFitting (Fitting):
             outs = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[0]])
             # add bias
             self.atom_ener_before = outs
-            self.add_type = tf.reshape(tf.nn.embedding_lookup(self.bias_atom_e_t, self.atype_nloc), [tf.shape(inputs)[0], natoms[0]])
+            self.add_type = tf.reshape(tf.nn.embedding_lookup(self.t_bias_atom_e, self.atype_nloc), [tf.shape(inputs)[0], natoms[0]])
             outs = outs + self.add_type
             self.atom_ener_after = outs
 
