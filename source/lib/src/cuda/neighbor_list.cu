@@ -166,7 +166,7 @@ __global__ void map_nei_info(
         temp=nlist_map[nlist_item];
         nlist[nlist_idx]=temp;
         ntype[nlist_idx]=type[temp];
-        nmask[nlist_idx]=1.;
+        nmask[nlist_idx]=(FPTYPE)1.;
     }
     else{
         ntype[nlist_idx]=ntypes;
@@ -191,7 +191,7 @@ __global__ void map_nei_info_noconvert(
     int nlist_item=nlist[nlist_idx];
     if(nlist_item!=-1){
         ntype[nlist_idx]=type[nlist_item];
-        nmask[nlist_idx]=1.;
+        nmask[nlist_idx]=(FPTYPE)1.;
     }
     else{
         ntype[nlist_idx]=ntypes;

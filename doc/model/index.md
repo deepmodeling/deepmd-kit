@@ -4,6 +4,7 @@
 - [Descriptor `"se_e2_a"`](train-se-e2-a.md)
 - [Descriptor `"se_e2_r"`](train-se-e2-r.md)
 - [Descriptor `"se_e3"`](train-se-e3.md)
+- [Descriptor `"se_atten"`](train-se-atten.md)
 - [Descriptor `"hybrid"`](train-hybrid.md)
 - [Descriptor `sel`](sel.md)
 - [Fit energy](train-energy.md)

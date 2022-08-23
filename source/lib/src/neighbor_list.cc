@@ -843,11 +843,11 @@ use_nei_info_cpu(
           int temp = nlist_map[record];
           nlist[nlist_idx] = temp;	  
           ntype[nlist_idx]=type[temp];
-          nmask[nlist_idx]=1.;    
+          nmask[nlist_idx]=(FPTYPE)1.;    
         }
         else{
           ntype[nlist_idx]=ntypes;
-          nmask[nlist_idx]=0.;
+          nmask[nlist_idx]=(FPTYPE)0.;
         }
       }
     } 
@@ -859,11 +859,11 @@ use_nei_info_cpu(
         int record = nlist[nlist_idx];
         if (record >= 0){		  
           ntype[nlist_idx]=type[record];
-          nmask[nlist_idx]=1.;    
+          nmask[nlist_idx]=(FPTYPE)1.;    
         }
         else{
           ntype[nlist_idx]=ntypes;
-          nmask[nlist_idx]=0.;
+          nmask[nlist_idx]=(FPTYPE)0.;
         }
       }
     } 
