@@ -10,7 +10,6 @@ from typing import Tuple, List
 from deepmd.utils import random as dp_random
 from deepmd.utils.data import DataSets
 from deepmd.utils.data import DeepmdData
-from IPython import embed
 
 log = logging.getLogger(__name__)
 
