@@ -72,9 +72,9 @@ def gen_data(nframes = 1, mixed_type=False) :
 
 
 class Data():
-    def __init__ (self,
-                  rand_pert = 0.1,
-                  seed = 1,
+    def __init__ (self, 
+                  rand_pert = 0.1, 
+                  seed = 1, 
                   box_scale = 20,
                   nframes = 1):
         coord = [[0.0, 0.0, 0.1], [1.1, 0.0, 0.1], [0.0, 1.1, 0.1],
