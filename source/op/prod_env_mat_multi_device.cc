@@ -166,7 +166,16 @@ REGISTER_OP("ProdEnvMatAMix")
     .Output("rij: T")
     .Output("nlist: int32")
     .Output("ntype: int32")
-    .Output("nmask: T");;
+    .Output("nmask: bool")
+    .Doc(R"(Compute the environment matrix mixing the atom types.
+The sorting of neighbor atoms depends not on atom types, but on the distance and index. 
+The atoms in nlist matrix will gather forward and thus save space for gaps of types in ProdEnvMatA, 
+resulting in optimized and relative small sel_a.
+
+The additional outputs are listed as following:
+ntype: The corresponding atom types in nlist.
+nmask: The atom mask in nlist.
+)");
 
 template<typename FPTYPE>
 static int
@@ -205,12 +214,11 @@ _map_nlist_cpu(
     const int & nloc,
     const int & nnei);
 
-template <typename FPTYPE>
 static void
 _map_nei_info_cpu(
     int * nlist,
     int * ntype,
-    FPTYPE * nmask,
+    bool * nmask,
     const int * type,
     const int * idx_mapping,
     const int & nloc,
@@ -286,12 +294,11 @@ _map_nlist_gpu(
     const int & nloc,
     const int & nnei);
 
-template <typename FPTYPE>
 static void
 _map_nei_info_gpu(
     int * nlist,
     int * ntype,
-    FPTYPE * nmask,
+    bool * nmask,
     const int * type,
     const int * idx_mapping,
     const int & nloc,
@@ -373,12 +380,11 @@ _map_nlist_gpu_rocm(
     const int & nloc,
     const int & nnei);
 
-template <typename FPTYPE>
 static void
 _map_nei_info_gpu_rocm(
     int * nlist,
     int * ntype,
-    FPTYPE * nmask,
+    bool * nmask,
     const int * type,
     const int * idx_mapping,
     const int & nloc,
@@ -1109,7 +1115,7 @@ public:
     FPTYPE * p_rij = rij_tensor->flat<FPTYPE>().data();
     int * p_nlist = nlist_tensor->flat<int>().data();
     int * p_ntype = ntype_tensor->flat<int>().data();
-    FPTYPE * p_nmask = nmask_tensor->flat<FPTYPE>().data();
+    bool * p_nmask = nmask_tensor->flat<bool>().data();
     const FPTYPE * p_coord = coord_tensor.flat<FPTYPE>().data();
     const FPTYPE * p_box = box_tensor.flat<FPTYPE>().data();
     const FPTYPE * avg = avg_tensor.flat<FPTYPE>().data();
@@ -1123,7 +1129,7 @@ public:
       FPTYPE * rij = p_rij + ff*nloc*nnei*3;
       int * nlist = p_nlist + ff*nloc*nnei;
       int * ntype = p_ntype + ff*nloc*nnei;
-      FPTYPE * nmask = p_nmask + ff*nloc*nnei;
+      bool * nmask = p_nmask + ff*nloc*nnei;
       const FPTYPE * coord = p_coord + ff*nall*3;
       const FPTYPE * box = p_box + ff*9;
       const int * type = p_type + ff*nall;
@@ -1356,12 +1362,11 @@ _map_nlist_cpu(
   }  
 }
 
-template <typename FPTYPE>
 static void
 _map_nei_info_cpu(
     int * nlist,
     int * ntype,
-    FPTYPE * nmask,
+    bool * nmask,
     const int * type,
     const int * idx_mapping,
     const int & nloc,
@@ -1571,12 +1576,11 @@ _map_nlist_gpu(
   deepmd::use_nlist_map(nlist, idx_mapping, nloc, nnei);
 }
 
-template <typename FPTYPE>
 static void
 _map_nei_info_gpu(
     int * nlist,
     int * ntype,
-    FPTYPE * nmask,
+    bool * nmask,
     const int * type,
     const int * idx_mapping,
     const int & nloc,
@@ -1802,12 +1806,11 @@ _map_nlist_gpu_rocm(
   deepmd::use_nlist_map(nlist, idx_mapping, nloc, nnei);
 }
 
-template <typename FPTYPE>
 static void
 _map_nei_info_gpu_rocm(
     int * nlist,
     int * ntype,
-    FPTYPE * nmask,
+    bool * nmask,
     const int * type,
     const int * idx_mapping,
     const int & nloc,

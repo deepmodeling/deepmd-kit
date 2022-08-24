@@ -820,13 +820,12 @@ build_nlist_cpu(
   return 0;
 }
 
-template <typename FPTYPE>
 void 
 deepmd::
 use_nei_info_cpu(
     int * nlist, 
     int * ntype,
-    FPTYPE * nmask,
+    bool * nmask,
     const int * type,
     const int * nlist_map, 
     const int nloc, 
@@ -843,11 +842,11 @@ use_nei_info_cpu(
           int temp = nlist_map[record];
           nlist[nlist_idx] = temp;	  
           ntype[nlist_idx]=type[temp];
-          nmask[nlist_idx]=(FPTYPE)1.;    
+          nmask[nlist_idx]=true;    
         }
         else{
           ntype[nlist_idx]=ntypes;
-          nmask[nlist_idx]=(FPTYPE)0.;
+          nmask[nlist_idx]=false;
         }
       }
     } 
@@ -859,11 +858,11 @@ use_nei_info_cpu(
         int record = nlist[nlist_idx];
         if (record >= 0){		  
           ntype[nlist_idx]=type[record];
-          nmask[nlist_idx]=(FPTYPE)1.;    
+          nmask[nlist_idx]=true;    
         }
         else{
           ntype[nlist_idx]=ntypes;
-          nmask[nlist_idx]=(FPTYPE)0.;
+          nmask[nlist_idx]=false;
         }
       }
     } 
@@ -893,34 +892,6 @@ build_nlist_cpu<float>(
     const int & nall, 
     const int & mem_size,
     const float & rcut);
-
-template
-void 
-deepmd::
-use_nei_info_cpu<double>(
-    int * nlist, 
-    int * ntype,
-    double * nmask,
-    const int * type,
-    const int * nlist_map, 
-    const int nloc, 
-    const int nnei,
-    const int ntypes,
-    const bool b_nlist_map);
-
-template
-void 
-deepmd::
-use_nei_info_cpu<float>(
-    int * nlist, 
-    int * ntype,
-    float * nmask,
-    const int * type,
-    const int * nlist_map, 
-    const int nloc, 
-    const int nnei,
-    const int ntypes,
-    const bool b_nlist_map);
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 void deepmd::convert_nlist_gpu_device(

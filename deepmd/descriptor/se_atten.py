@@ -324,7 +324,7 @@ class DescrptSeAtten(DescrptSeA):
                                            sel_a=self.sel_all_a,
                                            sel_r=self.sel_all_r)
         self.nei_type_vec = tf.reshape(self.nei_type_vec, [-1])
-        self.nmask = tf.reshape(self.nmask, [-1, 1, self.sel_all_a[0]])
+        self.nmask = tf.cast(tf.reshape(self.nmask, [-1, 1, self.sel_all_a[0]]), GLOBAL_TF_FLOAT_PRECISION)
         self.negative_mask = -(2 << 32) * (1.0 - self.nmask)
         # only used when tensorboard was set as true
         tf.summary.histogram('descrpt', self.descrpt)

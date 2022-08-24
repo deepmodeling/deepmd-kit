@@ -85,11 +85,10 @@ build_nlist_cpu(
     const int & mem_size,
     const float & rcut);
 
-template <typename FPTYPE>
 void use_nei_info_cpu(
     int * nlist, 
     int * ntype,
-    FPTYPE * nmask,
+    bool * nmask,
     const int * type,
     const int * nlist_map, 
     const int nloc, 
@@ -152,11 +151,10 @@ build_nlist_gpu(
     const int & mem_size,
     const float & rcut);
 
-template <typename FPTYPE>
 void use_nei_info_gpu(
     int * nlist, 
     int * ntype,
-    FPTYPE * nmask,
+    bool * nmask,
     const int * type,
     const int * nlist_map, 
     const int nloc, 
@@ -191,11 +189,10 @@ build_nlist_gpu_rocm(
     const int & mem_size,
     const float & rcut);
 	
-template <typename FPTYPE>
 void use_nei_info_gpu_rocm(
     int * nlist, 
     int * ntype,
-    FPTYPE * nmask,
+    bool * nmask,
     const int * type,
     const int * nlist_map, 
     const int nloc, 

@@ -144,11 +144,10 @@ __global__ void map_nlist(
     }
 }
 
-template<typename FPTYPE>
 __global__ void map_nei_info(
     int * nlist,
     int * ntype,
-    FPTYPE * nmask,
+    bool * nmask,
     const int * type,
     const int * nlist_map,
     const int nloc,
@@ -166,18 +165,17 @@ __global__ void map_nei_info(
         temp=nlist_map[nlist_item];
         nlist[nlist_idx]=temp;
         ntype[nlist_idx]=type[temp];
-        nmask[nlist_idx]=(FPTYPE)1.;
+        nmask[nlist_idx]=true;
     }
     else{
         ntype[nlist_idx]=ntypes;
     }
 }
 
-template<typename FPTYPE>
 __global__ void map_nei_info_noconvert(
     int * nlist,
     int * ntype,
-    FPTYPE * nmask,
+    bool * nmask,
     const int * type,
     const int nloc,
     const int nnei,
@@ -191,7 +189,7 @@ __global__ void map_nei_info_noconvert(
     int nlist_item=nlist[nlist_idx];
     if(nlist_item!=-1){
         ntype[nlist_idx]=type[nlist_item];
-        nmask[nlist_idx]=(FPTYPE)1.;
+        nmask[nlist_idx]=true;
     }
     else{
         ntype[nlist_idx]=ntypes;
@@ -275,11 +273,10 @@ void use_nlist_map(
     DPErrcheck(hipDeviceSynchronize());
 }
 
-template <typename FPTYPE>
 void use_nei_info_gpu_rocm(
     int * nlist,
     int * ntype,
-    FPTYPE * nmask,
+    bool * nmask,
     const int * type,
     const int * nlist_map, 
     const int nloc, 
@@ -304,6 +301,4 @@ void use_nei_info_gpu_rocm(
 
 template int build_nlist_gpu_rocm<float>(InputNlist & nlist, int * max_list_size, int * nlist_data, const float * c_cpy, const int & nloc, const int & nall, const int & mem_size, const float & rcut);
 template int build_nlist_gpu_rocm<double>(InputNlist & nlist, int * max_list_size, int * nlist_data, const double * c_cpy, const int & nloc, const int & nall, const int & mem_size, const float & rcut);
-template void use_nei_info_gpu_rocm<float>(int * nlist, int * ntype, float * nmask, const int * type, const int * nlist_map, const int nloc, const int nnei, const int ntypes, const bool b_nlist_map);
-template void use_nei_info_gpu_rocm<double>(int * nlist, int * ntype, double * nmask, const int * type, const int * nlist_map, const int nloc, const int nnei, const int ntypes, const bool b_nlist_map);
 }

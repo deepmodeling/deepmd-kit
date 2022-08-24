@@ -1,4 +1,6 @@
-# DPA-1: Pretraining of Attention-based Deep Potential Model for Molecular Simulation 
+# Descriptor `"se_atten"`
+
+## DPA-1: Pretraining of Attention-based Deep Potential Model for Molecular Simulation 
 
 ![ALT](../images/model_se_atten.png "model_se_atten")
 
@@ -6,14 +8,14 @@ Here we propose DPA-1, a Deep Potential model with a novel attention mechanism, 
 
 See [this paper](https://arxiv.org/abs/2208.08236) for more information. DPA-1 is implemented as a new descriptor `"se_atten"` for model training, which can be used after simply editing the input.json.
 
-# Installation 
+## Installation 
 Follow the [standard installation](../install/install-from-source.md#install-the-python-interface) of python interface in DeePMD-kit.
 After that, you can smoothly use the DPA-1 model with following instructions.
 
-# Introduction to new features of DPA-1
+## Introduction to new features of DPA-1
 Next we will list the detail settings in input.json and the data format, especially for large systems with dozens of elements. An example of DPA-1 input can be found in [here](../../examples/water/se_atten/input.json).
 
-## Descriptor `"se_atten"`
+### Descriptor `"se_atten"`
 
 The notation of `se_atten` is short for the smooth edition of Deep Potential with an attention mechanism.
 This descriptor was described in detail in [the DPA-1 paper](https://arxiv.org/abs/2208.08236) and the images above.
@@ -53,10 +55,10 @@ An example of the DPA-1 descriptor is provided as follows
 * {ref}`attn_mask <model/descriptor[se_atten]/attn_mask>` determines whether to mask the diagonal in the attention weights and False is recommended.
 * {ref}`attn_dotr <model/descriptor[se_atten]/attn_dotr>` determines whether to dot the relative coordinates on the attention weights as a gated scheme, True is recommended.
 
-## Fitting `"ener"`
+### Fitting `"ener"`
 DPA-1 only support `"ener"` fitting type, and you can refer [here](train-energy.md) for detail information.
 
-## Type embedding
+### Type embedding
 DPA-1 only support models with type embeddings on. And the default setting is as follows:
 ```json
 "type_embedding":{
@@ -68,7 +70,7 @@ DPA-1 only support models with type embeddings on. And the default setting is as
 You can add these settings in input.json if you want to change the default ones, see [here](train-se-e2-a-tebd.md) for detail information.
 
 
-## Type map
+### Type map
 For training a large systems, especially those with dozens of elements, the {ref}`type <model/type_map>` determines the element index of training data:
 ```json
 "type_map": [
@@ -109,7 +111,7 @@ With these edited files, one can put together frames with the same `Natoms`, ins
 
 The API to generate or transfer to `mixed_type` format will be uploaded on [dpdata](https://github.com/deepmodeling/dpdata) soon for a more convenient experience.
 
-# Training example
+## Training example
 Here we upload the AlMgCu example showed in the paper, you can download here:
 [Baidu disk](https://pan.baidu.com/s/1Mk9CihPHCmf8quwaMhT-nA?pwd=d586);
 [Google disk](https://drive.google.com/file/d/11baEpRrvHoqxORFPSdJiGWusb3Y4AnRE/view?usp=sharing).

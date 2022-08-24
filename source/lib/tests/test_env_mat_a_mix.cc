@@ -52,13 +52,13 @@ protected:
     0, 1, 1, 0, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
     0, 1, 1, 0, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
   }; 
-  std::vector<double > expected_nmask = {
-    1., 1., 1., 1., 1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-    1., 1., 1., 1., 1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-    1., 1., 1., 1., 1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-    1., 1., 1., 1., 1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-    1., 1., 1., 1., 1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-    1., 1., 1., 1., 1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+  std::vector<bool > expected_nmask = {
+    1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   }; 
   
   void SetUp() override {
@@ -128,13 +128,13 @@ protected:
     0, 1, 1, 0,
     0, 1, 1, 0,
   }; 
-  std::vector<double > expected_nmask = {
-    1., 1., 1., 1.,
-    1., 1., 1., 1.,
-    1., 1., 1., 1.,
-    1., 1., 1., 1.,
-    1., 1., 1., 1.,
-    1., 1., 1., 1.,
+  std::vector<bool > expected_nmask = {
+    1, 1, 1, 1,
+    1, 1, 1, 1,
+    1, 1, 1, 1,
+    1, 1, 1, 1,
+    1, 1, 1, 1,
+    1, 1, 1, 1,
   }; 
   
   void SetUp() override {
@@ -440,7 +440,8 @@ TEST_F(TestEnvMatAMix, prod_cpu)
   std::vector<double > em(nloc * ndescrpt), em_deriv(nloc * ndescrpt * 3), rij(nloc * nnei * 3);
   std::vector<int> nlist(nloc * nnei);
   std::vector<int> ntype(nloc * nnei);
-  std::vector<double > nmask(nloc * nnei);
+  bool * nmask = new bool [nloc * nnei];
+  memset(nmask, 0, sizeof(bool) * nloc * nnei);
   std::vector<double > avg(ntypes * ndescrpt, 0);
   std::vector<double > std(ntypes * ndescrpt, 1);
   deepmd::prod_env_mat_a_cpu(
@@ -463,7 +464,7 @@ TEST_F(TestEnvMatAMix, prod_cpu)
   deepmd::use_nei_info_cpu(
       &nlist[0],
       &ntype[0],
-      &nmask[0],
+      nmask,
       &atype[0],
       &mapping[0],
       nloc,
@@ -479,9 +480,10 @@ TEST_F(TestEnvMatAMix, prod_cpu)
 		  1e-5);
       }
       EXPECT_EQ(ntype[ii*nnei+jj], expected_ntype[ii*nnei+jj]);
-      EXPECT_LT(fabs(nmask[ii*nnei+jj] - expected_nmask[ii*nnei+jj]), 1e-5);
+      EXPECT_EQ(nmask[ii*nnei+jj], expected_nmask[ii*nnei+jj]);
     }    
   }
+  free(nmask);
 }
 
 TEST_F(TestEnvMatAMix, prod_cpu_equal_cpu)
@@ -590,11 +592,13 @@ TEST_F(TestEnvMatAMix, prod_gpu_cuda)
   std::vector<double > em(nloc * ndescrpt, 0.0), em_deriv(nloc * ndescrpt * 3, 0.0), rij(nloc * nnei * 3, 0.0);
   std::vector<int> nlist(nloc * nnei, 0);
   std::vector<int> ntype(nloc * nnei, 0);
-  std::vector<double> nmask(nloc * nnei, 0.);
+  bool * nmask = new bool [nloc * nnei];
+  memset(nmask, 0, sizeof(bool) * nloc * nnei);
   std::vector<double > avg(ntypes * ndescrpt, 0);
   std::vector<double > std(ntypes * ndescrpt, 1);
 
-  double * em_dev = NULL, * em_deriv_dev = NULL, * rij_dev = NULL, * nmask_dev = NULL;
+  double * em_dev = NULL, * em_deriv_dev = NULL, * rij_dev = NULL;
+  bool * nmask_dev = NULL;
   double * posi_cpy_dev = NULL, * avg_dev = NULL, * std_dev = NULL;
   int * f_atype_cpy_dev = NULL, * atype_dev = NULL, * nlist_dev = NULL, * ntype_dev = NULL, * mapping_dev = NULL, * array_int_dev = NULL, * memory_dev = NULL;
   uint_64 * array_longlong_dev = NULL;
@@ -609,7 +613,7 @@ TEST_F(TestEnvMatAMix, prod_gpu_cuda)
   deepmd::malloc_device_memory_sync(nlist_dev, nlist);
   deepmd::malloc_device_memory_sync(ntype_dev, ntype);
   deepmd::malloc_device_memory_sync(mapping_dev, mapping);
-  deepmd::malloc_device_memory_sync(nmask_dev, nmask);
+  deepmd::malloc_device_memory_sync(nmask_dev, nmask, nloc * nnei);
   deepmd::malloc_device_memory(array_int_dev, sec_a.size() + nloc * sec_a.size() + nloc);
   deepmd::malloc_device_memory(array_longlong_dev, nloc * GPU_MAX_NBOR_SIZE * 2);
   deepmd::malloc_device_memory(memory_dev, nloc * max_nbor_size);
@@ -647,7 +651,7 @@ TEST_F(TestEnvMatAMix, prod_gpu_cuda)
       true);
   deepmd::memcpy_device_to_host(em_dev, em);
   deepmd::memcpy_device_to_host(ntype_dev, ntype);
-  deepmd::memcpy_device_to_host(nmask_dev, nmask);
+  deepmd::memcpy_device_to_host(nmask_dev, nmask, nloc * nnei);
   deepmd::delete_device_memory(em_dev);
   deepmd::delete_device_memory(em_deriv_dev);
   deepmd::delete_device_memory(rij_dev);
@@ -673,9 +677,10 @@ TEST_F(TestEnvMatAMix, prod_gpu_cuda)
 		  1e-5);
       }
       EXPECT_EQ(ntype[ii*nnei+jj], expected_ntype[ii*nnei+jj]);
-      EXPECT_LT(fabs(nmask[ii*nnei+jj] - expected_nmask[ii*nnei+jj]), 1e-5);
+      EXPECT_EQ(nmask[ii*nnei+jj], expected_nmask[ii*nnei+jj]);
     }    
   }
+  free(nmask);
 }
 
 
@@ -833,7 +838,8 @@ TEST_F(TestEnvMatAMix, prod_gpu_rocm)
   std::vector<double > em(nloc * ndescrpt, 0.0), em_deriv(nloc * ndescrpt * 3, 0.0), rij(nloc * nnei * 3, 0.0);
   std::vector<int> nlist(nloc * nnei, 0);
   std::vector<int> ntype(nloc * nnei, 0);
-  std::vector<double> nmask(nloc * nnei, 0.);
+  bool * nmask = new bool [nloc * nnei];
+  memset(nmask, 0, sizeof(bool) * nloc * nnei);
   std::vector<double > avg(ntypes * ndescrpt, 0);
   std::vector<double > std(ntypes * ndescrpt, 1);
 
@@ -852,7 +858,7 @@ TEST_F(TestEnvMatAMix, prod_gpu_rocm)
   deepmd::malloc_device_memory_sync(nlist_dev, nlist);
   deepmd::malloc_device_memory_sync(ntype_dev, ntype);
   deepmd::malloc_device_memory_sync(mapping_dev, mapping);
-  deepmd::malloc_device_memory_sync(nmask_dev, nmask);
+  deepmd::malloc_device_memory_sync(nmask_dev, nmask, nloc * nnei);
   deepmd::malloc_device_memory(array_int_dev, sec_a.size() + nloc * sec_a.size() + nloc);
   deepmd::malloc_device_memory(array_longlong_dev, nloc * GPU_MAX_NBOR_SIZE * 2);
   deepmd::malloc_device_memory(memory_dev, nloc * max_nbor_size);
@@ -890,7 +896,7 @@ TEST_F(TestEnvMatAMix, prod_gpu_rocm)
       true);
   deepmd::memcpy_device_to_host(em_dev, em);
   deepmd::memcpy_device_to_host(ntype_dev, ntype);
-  deepmd::memcpy_device_to_host(nmask_dev, nmask);
+  deepmd::memcpy_device_to_host(nmask_dev, nmask, nloc * nnei);
   deepmd::delete_device_memory(em_dev);
   deepmd::delete_device_memory(em_deriv_dev);
   deepmd::delete_device_memory(rij_dev);
@@ -916,9 +922,10 @@ TEST_F(TestEnvMatAMix, prod_gpu_rocm)
 		  1e-5);
       }
       EXPECT_EQ(ntype[ii*nnei+jj], expected_ntype[ii*nnei+jj]);
-      EXPECT_LT(fabs(nmask[ii*nnei+jj] - expected_nmask[ii*nnei+jj]), 1e-5);
+      EXPECT_EQ(nmask[ii*nnei+jj], expected_nmask[ii*nnei+jj]);
     }    
   }
+  free(nmask);
 }
 
 

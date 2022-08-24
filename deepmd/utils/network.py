@@ -204,7 +204,7 @@ def embedding_net(xx,
             xx = tf.cast(xx, get_precision(mixed_prec['compute_prec']))
             w  = tf.cast(w,  get_precision(mixed_prec['compute_prec']))
             b  = tf.cast(b,  get_precision(mixed_prec['compute_prec']))
-        if activation_fn != None:
+        if activation_fn is not None:
             hidden = tf.reshape(activation_fn(tf.nn.bias_add(tf.matmul(xx, w), b)), [-1, outputs_size[ii]])
         else:
             hidden = tf.reshape(tf.nn.bias_add(tf.matmul(xx, w), b), [-1, outputs_size[ii]])
