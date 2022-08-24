@@ -1,7 +1,6 @@
 import os
 from deepmd.env import tf
 from google.protobuf import text_format
-from tensorflow.python.platform import gfile
 
 
 def convert_13_to_21(input_model: str, output_model: str):
@@ -132,7 +131,7 @@ def convert_pb_to_pbtxt(pbfile: str, pbtxtfile: str):
     pbtxtfile : str
         filename of the output graph text
     """
-    with gfile.FastGFile(pbfile, 'rb') as f:
+    with tf.gfile.GFile(pbfile, 'rb') as f:
         graph_def = tf.GraphDef()
         graph_def.ParseFromString(f.read())
         tf.import_graph_def(graph_def, name='')
@@ -148,7 +147,7 @@ def convert_pbtxt_to_pb(pbtxtfile: str, pbfile: str):
     pbfile : str
         filename of the output graph
     """
-    with tf.gfile.FastGFile(pbtxtfile, 'r') as f:
+    with tf.gfile.GFile(pbtxtfile, 'r') as f:
         graph_def = tf.GraphDef()
         file_content = f.read()
         # Merges the human-readable string in `file_content` into `graph_def`.
