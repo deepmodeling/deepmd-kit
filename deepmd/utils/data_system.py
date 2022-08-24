@@ -84,11 +84,16 @@ class DeepmdDataSystem() :
                     modifier = modifier, 
                     trn_all_set = trn_all_set
                 ))
+        # check mix_type format
+        error_format_msg = "if one of the system is of mixed_type format, " \
+                           "then all of the systems should be of mixed_type format!"
         if self.data_systems[0].mixed_type:
             for data_sys in self.data_systems[1:]:
-                assert data_sys.mixed_type, "all systems must have the same format for mixed_type!"
+                assert data_sys.mixed_type, error_format_msg
             self.mixed_type = True
         else:
+            for data_sys in self.data_systems[1:]:
+                assert not data_sys.mixed_type, error_format_msg
             self.mixed_type = False
         # batch size
         self.batch_size = batch_size

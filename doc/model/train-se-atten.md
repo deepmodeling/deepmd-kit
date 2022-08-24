@@ -95,17 +95,15 @@ set.000/box.npy
 set.000/coord.npy
 set.000/energy.npy
 set.000/force.npy
-set.000/real_atom_numbs.npy
 set.000/real_atom_types.npy
 ```
 This system contains `Nframes` frames with the same atom number `Natoms`, the total number of element types contained in all frames is `Ntypes`. Note that we put all the frames in one set `set.000`. Most files are the same as those in [standard format](../data/system.md), here we only list the distinct ones:
 
-ID         | Property                         | File                | Required/Optional    | Shape                    | Description
----------- | -------------------------------- | ------------------- | -------------------- | -----------------------  | -----------
-fake_type  | Atom type indexes (place holder) | type.raw            | Required             | Natoms                   | All zeros to fake the type input
-type_map   | Atom type names                  | type_map.raw        | Required             | Ntypes                   | Atom names that map to atom type contained in all the frames, which is unnecessart to be contained in the periodic table
-real_type  | Atom type indexes of each frame  | real_atom_types.npy | Required             | Nframes \* Natoms        | Integers that describe atom types in each frame, corresponding to indexes in type_map
-type_number| Number of atoms in each type     | real_atom_numbs.npy | Required             | Nframes \* Ntypes        | Integers that describe the totoal number of atoms with the same type in each frame
+ID             | Property                         | File                | Required/Optional    | Shape                    | Description
+----------     | -------------------------------- | ------------------- | -------------------- | -----------------------  | -----------
+/              | Atom type indexes (place holder) | type.raw            | Required             | Natoms                   | All zeros to fake the type input
+type_map       | Atom type names                  | type_map.raw        | Required             | Ntypes                   | Atom names that map to atom type contained in all the frames, which is unnecessart to be contained in the periodic table
+type           | Atom type indexes of each frame  | real_atom_types.npy | Required             | Nframes \* Natoms        | Integers that describe atom types in each frame, corresponding to indexes in type_map
 
 With these edited files, one can put together frames with the same `Natoms`, instead of the same formula (like `H2O`). Note that this `mixed_type` format only supports `se_atten` descriptor.
 

@@ -60,9 +60,12 @@ class DeepmdData() :
         self.pbc = self._check_pbc(root)
         # enforce type_map if necessary
         if type_map is not None and self.type_map is not None:
-            atom_type_ = [type_map.index(self.type_map[ii]) for ii in self.atom_type]
-            self.atom_type = np.array(atom_type_, dtype = np.int32)
+            if not self.mixed_type:
+                atom_type_ = [type_map.index(self.type_map[ii]) for ii in self.atom_type]
+                self.atom_type = np.array(atom_type_, dtype = np.int32)
             self.type_map = type_map
+        if type_map is None and self.type_map is None and self.mixed_type:
+            raise RuntimeError('mixed_type format must have type_map!')
         # make idx map
         self.idx_map = self._make_idx_map(self.atom_type)
         # train dirs
@@ -454,12 +457,12 @@ class DeepmdData() :
 
         if self.mixed_type:
             type_path = set_name / "real_atom_types.npy"
-            data['type'] = type_path.load_numpy().astype(np.int32).reshape([nframes, -1])
+            real_type = type_path.load_numpy().astype(np.int32).reshape([nframes, -1])
+            data['type'] = real_type
             natoms = data['type'].shape[1]
-            vec_path = set_name / "real_atom_numbs.npy"
-            tmp = vec_path.load_numpy().astype(np.int32).reshape([nframes, -1])
             data['real_natoms_vec'] = np.concatenate((np.tile(np.array([natoms, natoms], dtype=np.int32), (nframes, 1)),
-                                                      tmp), axis=-1)
+                                 np.array([(real_type == i).sum(axis=-1) for i in range(self.get_ntypes())],
+                                          dtype=np.int32).T), axis=-1)
         else:
             data['type'] = np.tile(self.atom_type[self.idx_map], (nframes, 1))
 

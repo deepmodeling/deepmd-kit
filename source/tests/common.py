@@ -59,12 +59,8 @@ def gen_data_mixed_type(nframes = 1):
     sys.data['energies'] = np.zeros([nframes, 1])
     sys.data['forces'] = np.zeros([nframes, natoms, 3])
     sys.to_deepmd_npy('system_mixed_type', prec=np.float64)
-    real_atom_numbs = np.array([0 for i in range(len(real_type_map))])
-    for i in range(len(real_type_map)):
-        real_atom_numbs[i] = (tmpdata.atype == i).sum()
     np.savetxt('system_mixed_type/type_map.raw', real_type_map, fmt='%s')
     np.save('system_mixed_type/set.000/real_atom_types.npy', tmpdata.atype.reshape(1, -1).repeat(nframes, 0))
-    np.save('system_mixed_type/set.000/real_atom_numbs.npy', real_atom_numbs.reshape(1, -1).repeat(nframes, 0))
     np.save('system_mixed_type/set.000/fparam.npy', tmpdata.fparam)
     np.save('system_mixed_type/set.000/aparam.npy', tmpdata.aparam.reshape([nframes, natoms, 2]))
 

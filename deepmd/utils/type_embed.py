@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Tuple, List
+from typing import Tuple, List, Union
 
 from deepmd.env import tf
 from deepmd.utils.network import one_layer
@@ -79,7 +79,7 @@ class TypeEmbedNet():
             self,
             neuron: List[int]=[],
             resnet_dt: bool = False,
-            activation_function='tanh',
+            activation_function: Union[str, None] = 'tanh',
             precision: str = 'default',
             trainable: bool = True,
             seed: int = None,
@@ -93,10 +93,7 @@ class TypeEmbedNet():
         self.seed = seed
         self.filter_resnet_dt = resnet_dt
         self.filter_precision = get_precision(precision)
-        if activation_function is not None:
-            self.filter_activation_fn = get_activation_func(activation_function)
-        else:
-            self.filter_activation_fn = None
+        self.filter_activation_fn = get_activation_func(activation_function)
         self.trainable = trainable
         self.uniform_seed = uniform_seed
         self.type_embedding_net_variables = None
