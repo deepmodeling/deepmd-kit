@@ -24,6 +24,7 @@ from deepmd.utils.neighbor_stat import NeighborStat
 from deepmd.utils.sess import run_sess
 from deepmd.utils.type_embed import TypeEmbedNet
 from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph
+from deepmd.utils.argcheck import type_embedding_args
 
 from tensorflow.python.client import timeline
 from deepmd.env import op_module, TF_VERSION
@@ -129,10 +130,15 @@ class DPTrainer (object):
                 padding=padding
             )
         elif descrpt_type == 'se_atten':
+            default_args = type_embedding_args()
+            default_args_dict = {i.name: i.default for i in default_args}
             self.typeebd = TypeEmbedNet(
-                neuron=[8],
-                activation_function=None,
-                seed=1,
+                neuron=default_args_dict['neuron'],
+                resnet_dt=default_args_dict['resnet_dt'],
+                activation_function=default_args_dict['activation_function'],
+                precision=default_args_dict['precision'],
+                trainable=default_args_dict['trainable'],
+                seed=default_args_dict['seed'],
                 padding=padding
             )
         else:

@@ -33,12 +33,12 @@ def type_embedding_args():
     doc_trainable = 'If the parameters in the embedding net are trainable'
     
     return [
-        Argument("neuron", list, optional = True, default = [2, 4, 8], doc = doc_neuron),
-        Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
+        Argument("neuron", list, optional = True, default = [8], doc = doc_neuron),
+        Argument("activation_function", str, optional = True, default = None, doc = doc_activation_function),
         Argument("resnet_dt", bool, optional = True, default = False, doc = doc_resnet_dt),
         Argument("precision", str, optional = True, default = "default", doc = doc_precision),
         Argument("trainable", bool, optional = True, default = True, doc = doc_trainable),
-        Argument("seed", [int,None], optional = True, doc = doc_seed),
+        Argument("seed", [int,None], optional = True, default = None, doc = doc_seed),
     ]        
 
 
