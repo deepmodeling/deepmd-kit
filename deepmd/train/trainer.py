@@ -135,7 +135,7 @@ class DPTrainer (object):
             self.typeebd = TypeEmbedNet(
                 neuron=default_args_dict['neuron'],
                 resnet_dt=default_args_dict['resnet_dt'],
-                activation_function=default_args_dict['activation_function'],
+                activation_function=None,
                 precision=default_args_dict['precision'],
                 trainable=default_args_dict['trainable'],
                 seed=default_args_dict['seed'],
