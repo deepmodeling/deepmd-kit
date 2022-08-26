@@ -405,8 +405,8 @@ def j_loader(filename: Union[str, Path]) -> Dict[str, Any]:
 
 
 def get_activation_func(
-    activation_fn: "_ACTIVATION",
-) -> Callable[[tf.Tensor], tf.Tensor]:
+    activation_fn: Union["_ACTIVATION", None],
+) -> Union[Callable[[tf.Tensor], tf.Tensor], None]:
     """Get activation function callable based on string name.
 
     Parameters
@@ -424,6 +424,8 @@ def get_activation_func(
     RuntimeError
         if unknown activation function is specified
     """
+    if activation_fn is None or activation_fn in ['none', 'None']:
+        return None
     if activation_fn not in ACTIVATION_FN_DICT:
         raise RuntimeError(f"{activation_fn} is not a valid activation function")
     return ACTIVATION_FN_DICT[activation_fn]

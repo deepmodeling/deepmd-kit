@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Tuple, List
+from typing import Tuple, List, Union
 
 from deepmd.env import tf
 from deepmd.utils.network import one_layer
@@ -72,16 +72,19 @@ class TypeEmbedNet():
             Random seed for initializing the network parameters.
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
+    padding
+            Concat the zero padding to the output, as the default embedding of empty type.
     """
     def __init__(
             self,
             neuron: List[int]=[],
             resnet_dt: bool = False,
-            activation_function: str = 'tanh',
+            activation_function: Union[str, None] = 'tanh',
             precision: str = 'default',
             trainable: bool = True,
             seed: int = None,
             uniform_seed: bool = False,
+            padding: bool = False,
     )->None:
         """
         Constructor
@@ -94,6 +97,7 @@ class TypeEmbedNet():
         self.trainable = trainable
         self.uniform_seed = uniform_seed
         self.type_embedding_net_variables = None
+        self.padding = padding
 
 
     def build(
@@ -134,10 +138,13 @@ class TypeEmbedNet():
                 precision = self.filter_precision,
                 resnet_dt = self.filter_resnet_dt,
                 seed = self.seed,
-                trainable = self.trainable, 
+                trainable = self.trainable,
                 initial_variables = self.type_embedding_net_variables,
                 uniform_seed = self.uniform_seed)
-        ebd_type = tf.reshape(ebd_type, [-1, self.neuron[-1]]) # nnei * neuron[-1]
+        ebd_type = tf.reshape(ebd_type, [-1, self.neuron[-1]])  # ntypes * neuron[-1]
+        if self.padding:
+            last_type = tf.cast(tf.zeros([1, self.neuron[-1]]), self.filter_precision)
+            ebd_type = tf.concat([ebd_type, last_type], 0)  # (ntypes + 1) * neuron[-1]
         self.ebd_type = tf.identity(ebd_type, name ='t_typeebd')
         return self.ebd_type 
 

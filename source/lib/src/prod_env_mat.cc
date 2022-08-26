@@ -25,8 +25,12 @@ prod_env_mat_a_cpu(
     const int nall, 
     const float rcut, 
     const float rcut_smth, 
-    const std::vector<int> sec) 
+    const std::vector<int> sec,
+    const int * f_type)
 {
+  if (f_type == NULL){
+    f_type = type;
+  }
   const int nnei = sec.back();
   const int nem = nnei * 4;
 
@@ -39,11 +43,11 @@ prod_env_mat_a_cpu(
   }
 
   // set type
-  std::vector<int> d_type (nall);
+  std::vector<int> d_f_type(nall);
   for (int ii = 0; ii < nall; ++ii) {
-    d_type[ii] = type[ii];
+    d_f_type[ii] = f_type[ii];
   }
-    
+  
   // build nlist
   std::vector<std::vector<int > > d_nlist_a(nloc);
 
@@ -62,13 +66,13 @@ prod_env_mat_a_cpu(
 #pragma omp parallel for 
   for (int ii = 0; ii < nloc; ++ii) {
     std::vector<int> fmt_nlist_a;
-    int ret = format_nlist_i_cpu(fmt_nlist_a, d_coord3, d_type, ii, d_nlist_a[ii], rcut, sec);
+    int ret = format_nlist_i_cpu(fmt_nlist_a, d_coord3, d_f_type, ii, d_nlist_a[ii], rcut, sec);
     std::vector<FPTYPE> d_em_a;
     std::vector<FPTYPE> d_em_a_deriv;
     std::vector<FPTYPE> d_em_r;
     std::vector<FPTYPE> d_em_r_deriv;
     std::vector<FPTYPE> d_rij_a;
-    env_mat_a_cpu (d_em_a, d_em_a_deriv, d_rij_a, d_coord3, d_type, ii, fmt_nlist_a, sec, rcut_smth, rcut);
+    env_mat_a_cpu (d_em_a, d_em_a_deriv, d_rij_a, d_coord3, d_f_type, ii, fmt_nlist_a, sec, rcut_smth, rcut);
 
     // check sizes
     assert (d_em_a.size() == nem);
@@ -77,10 +81,10 @@ prod_env_mat_a_cpu(
     assert (fmt_nlist_a.size() == nnei);
     // record outputs
     for (int jj = 0; jj < nem; ++jj) {
-      em[ii * nem + jj] = (d_em_a[jj] - avg[d_type[ii] * nem + jj]) / std[d_type[ii] * nem + jj];
+      em[ii * nem + jj] = (d_em_a[jj] - avg[type[ii] * nem + jj]) / std[type[ii] * nem + jj];
     }
     for (int jj = 0; jj < nem * 3; ++jj) {
-      em_deriv[ii * nem * 3 + jj] = d_em_a_deriv[jj] / std[d_type[ii] * nem + jj / 3];
+      em_deriv[ii * nem * 3 + jj] = d_em_a_deriv[jj] / std[type[ii] * nem + jj / 3];
     }
     for (int jj = 0; jj < nnei * 3; ++jj) {
       rij[ii * nnei * 3 + jj] = d_rij_a[jj];
@@ -175,7 +179,6 @@ prod_env_mat_r_cpu(
   }
 }
 
-
 template
 void 
 deepmd::
@@ -194,7 +197,8 @@ prod_env_mat_a_cpu<double>(
     const int nall, 
     const float rcut, 
     const float rcut_smth, 
-    const std::vector<int> sec);
+    const std::vector<int> sec,
+    const int * f_type);
 
 template
 void
@@ -214,7 +218,8 @@ prod_env_mat_a_cpu<float>(
     const int nall, 
     const float rcut, 
     const float rcut_smth, 
-    const std::vector<int> sec);
+    const std::vector<int> sec,
+    const int * f_type);
 
 template
 void

@@ -48,6 +48,7 @@ class DeepmdData() :
         root = DPPath(sys_path)
         self.dirs = root.glob(set_prefix + ".*")
         self.dirs.sort()
+        self.mixed_type = self._check_mode(self.dirs[0])  # mixed_type format only has one set
         # load atom type
         self.atom_type = self._load_type(root)
         self.natoms = len(self.atom_type)
@@ -59,9 +60,12 @@ class DeepmdData() :
         self.pbc = self._check_pbc(root)
         # enforce type_map if necessary
         if type_map is not None and self.type_map is not None:
-            atom_type_ = [type_map.index(self.type_map[ii]) for ii in self.atom_type]
-            self.atom_type = np.array(atom_type_, dtype = np.int32)
+            if not self.mixed_type:
+                atom_type_ = [type_map.index(self.type_map[ii]) for ii in self.atom_type]
+                self.atom_type = np.array(atom_type_, dtype = np.int32)
             self.type_map = type_map
+        if type_map is None and self.type_map is None and self.mixed_type:
+            raise RuntimeError('mixed_type format must have type_map!')
         # make idx map
         self.idx_map = self._make_idx_map(self.atom_type)
         # train dirs
@@ -408,8 +412,7 @@ class DeepmdData() :
             if type(data[kk]) == np.ndarray and \
                len(data[kk].shape) == 2 and \
                data[kk].shape[0] == nframes and \
-               not('find_' in kk) and \
-               'type' != kk:
+               not('find_' in kk):
                 ret[kk] = data[kk][idx]
             else :
                 ret[kk] = data[kk]
@@ -430,7 +433,6 @@ class DeepmdData() :
         assert(coord.shape[1] == self.data_dict['coord']['ndof'] * self.natoms)
         # load keys
         data = {}
-        data['type'] = np.tile (self.atom_type[self.idx_map], (nframes, 1))
         for kk in self.data_dict.keys():
             if self.data_dict[kk]['reduce'] is None :
                 data['find_'+kk], data[kk] \
@@ -452,6 +454,17 @@ class DeepmdData() :
                 data['find_'+kk] = data['find_'+k_in]
                 tmp_in = data[k_in].astype(GLOBAL_ENER_FLOAT_PRECISION)
                 data[kk] = np.sum(np.reshape(tmp_in, [nframes, self.natoms, ndof]), axis = 1)
+
+        if self.mixed_type:
+            type_path = set_name / "real_atom_types.npy"
+            real_type = type_path.load_numpy().astype(np.int32).reshape([nframes, -1])
+            data['type'] = real_type
+            natoms = data['type'].shape[1]
+            data['real_natoms_vec'] = np.concatenate((np.tile(np.array([natoms, natoms], dtype=np.int32), (nframes, 1)),
+                                 np.array([(real_type == i).sum(axis=-1) for i in range(self.get_ntypes())],
+                                          dtype=np.int32).T), axis=-1)
+        else:
+            data['type'] = np.tile(self.atom_type[self.idx_map], (nframes, 1))
 
         return data
 
@@ -523,6 +536,9 @@ class DeepmdData() :
         if (sys_path / 'nopbc').is_file() :
             pbc = False
         return pbc
+
+    def _check_mode(self, set_path: DPPath):
+        return (set_path / 'real_atom_types.npy').is_file()
 
 
 class DataSets (object):

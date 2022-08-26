@@ -90,7 +90,10 @@ def train(
 
     jdata = normalize(jdata)
 
-    if not is_compress and not skip_neighbor_stat:
+    if jdata['model']['descriptor']['type'] in ['se_atten'] and isinstance(jdata['model']['descriptor']['sel'], list):
+        jdata['model']['descriptor']['sel'] = sum(jdata['model']['descriptor']['sel'])
+
+    if not is_compress and not skip_neighbor_stat and jdata['model']['descriptor']['type'] not in ['se_atten']:
         jdata = update_sel(jdata)
 
     with open(output, "w") as fp:

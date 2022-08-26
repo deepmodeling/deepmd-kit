@@ -92,23 +92,36 @@ class EnerModel(Model) :
     def data_stat(self, data):
         all_stat = make_stat_input(data, self.data_stat_nbatch, merge_sys = False)
         m_all_stat = merge_sys_stat(all_stat)
-        self._compute_input_stat(m_all_stat, protection = self.data_stat_protect)
-        self._compute_output_stat(all_stat)
+        self._compute_input_stat(m_all_stat, protection=self.data_stat_protect, mixed_type=data.mixed_type)
+        self._compute_output_stat(all_stat, mixed_type=data.mixed_type)
         # self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
-    def _compute_input_stat (self, all_stat, protection = 1e-2) :
-        self.descrpt.compute_input_stats(all_stat['coord'],
-                                         all_stat['box'],
-                                         all_stat['type'],
-                                         all_stat['natoms_vec'],
-                                         all_stat['default_mesh'], 
-                                         all_stat)
-        self.fitting.compute_input_stats(all_stat, protection = protection)
+    def _compute_input_stat (self, all_stat, protection=1e-2, mixed_type=False):
+        if mixed_type:
+            self.descrpt.compute_input_stats(all_stat['coord'],
+                                             all_stat['box'],
+                                             all_stat['type'],
+                                             all_stat['natoms_vec'],
+                                             all_stat['default_mesh'],
+                                             all_stat,
+                                             mixed_type,
+                                             all_stat['real_natoms_vec'])
+        else:
+            self.descrpt.compute_input_stats(all_stat['coord'],
+                                             all_stat['box'],
+                                             all_stat['type'],
+                                             all_stat['natoms_vec'],
+                                             all_stat['default_mesh'],
+                                             all_stat)
+        self.fitting.compute_input_stats(all_stat, protection=protection)
 
-    def _compute_output_stat (self, all_stat) :
-        self.fitting.compute_output_stats(all_stat)
+    def _compute_output_stat (self, all_stat, mixed_type=False):
+        if mixed_type:
+            self.fitting.compute_output_stats(all_stat, mixed_type=mixed_type)
+        else:
+            self.fitting.compute_output_stats(all_stat)
 
-    
+
     def build (self, 
                coord_, 
                atype_,
@@ -158,6 +171,7 @@ class EnerModel(Model) :
                 suffix = suffix,
             )
             input_dict['type_embedding'] = type_embedding
+            input_dict['atype'] = atype_
 
         if frz_model == None:
             dout \
@@ -195,6 +209,7 @@ class EnerModel(Model) :
                                         input_dict, 
                                         reuse = reuse, 
                                         suffix = suffix)
+        self.atom_ener = atom_ener
 
         if self.srtab is not None :
             sw_lambda, sw_deriv \
