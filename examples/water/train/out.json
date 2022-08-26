@@ -1,0 +1,88 @@
+{
+    "model": {
+        "type_map": [
+            "O",
+            "H"
+        ],
+        "descriptor": {
+            "type": "se_a",
+            "sel": [
+                46,
+                92
+            ],
+            "rcut_smth": 5.8,
+            "rcut": 6.0,
+            "neuron": [
+                25,
+                50,
+                100
+            ],
+            "resnet_dt": false,
+            "axis_neuron": 16,
+            "seed": 1,
+            "activation_function": "tanh",
+            "type_one_side": false,
+            "precision": "float64",
+            "trainable": true,
+            "exclude_types": [],
+            "set_davg_zero": false
+        },
+        "fitting_net": {
+            "neuron": [
+                240,
+                240,
+                240
+            ],
+            "resnet_dt": true,
+            "seed": 1,
+            "type": "ener",
+            "numb_fparam": 0,
+            "numb_aparam": 0,
+            "activation_function": "tanh",
+            "precision": "float64",
+            "trainable": true,
+            "rcond": 0.001,
+            "atom_ener": []
+        },
+        "data_stat_nbatch": 10,
+        "data_stat_protect": 0.01
+    },
+    "learning_rate": {
+        "type": "exp",
+        "decay_steps": 5000,
+        "start_lr": 0.001,
+        "stop_lr": 3.51e-08
+    },
+    "loss": {
+        "start_pref_e": 0.02,
+        "limit_pref_e": 1,
+        "start_pref_f": 1000,
+        "limit_pref_f": 1,
+        "start_pref_v": 0,
+        "limit_pref_v": 0,
+        "type": "ener",
+        "start_pref_ae": 0.0,
+        "limit_pref_ae": 0.0
+    },
+    "training": {
+        "systems": [
+            "../data/"
+        ],
+        "set_prefix": "set",
+        "stop_batch": 1000000,
+        "batch_size": 1,
+        "seed": 1,
+        "disp_file": "lcurve.out",
+        "disp_freq": 100,
+        "numb_test": 10,
+        "save_ckpt": "model.ckpt",
+        "load_ckpt": "model.ckpt",
+        "disp_training": true,
+        "time_training": true,
+        "tensorboard": false,
+        "tensorboard_log_dir": "log",
+        "profiling": false,
+        "profiling_file": "timeline.json",
+        "save_freq": 10000
+    }
+}

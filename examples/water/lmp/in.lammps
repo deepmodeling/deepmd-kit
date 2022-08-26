@@ -11,11 +11,13 @@ read_data	water.lmp
 mass 		1 16
 mass		2 2
 
-pair_style	deepmd model.pdmodel model.pdiparams
+pair_style	deepmd model.ckpt/model.pdmodel model.ckpt/model.pdiparams
 pair_coeff	
 
 velocity        all create 330.0 23456789
+duplicate       10 10 10
 
+write_data      init.data
 fix             1 all nvt temp 330.0 330.0 0.5
 timestep        0.0005
 thermo_style    custom step pe ke etotal temp press vol
