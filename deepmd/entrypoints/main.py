@@ -19,6 +19,7 @@ from deepmd.entrypoints import (
     make_model_devi,
     convert,
     neighbor_stat,
+    transfer_to_ascend
 )
 from deepmd.loggers import set_log_handles
 
@@ -432,7 +433,7 @@ def main_parser() -> argparse.ArgumentParser:
     # * convert models
     parser_transform = subparsers.add_parser(
         'convert-from',
-        parents=[parser_log, parser_mpi_log],
+        parents=[parser_log],
         help='convert lower model version to supported version',
         formatter_class=RawTextArgumentDefaultsHelpFormatter,
         epilog=textwrap.dedent("""\
@@ -459,20 +460,6 @@ def main_parser() -> argparse.ArgumentParser:
         default = "convert_out.pb",
         type=str, 
 		help='the output model',
-    )
-    parser_transform.add_argument(
-        "-c",
-        "--checkpoint-folder",
-        default = "model-transfer",
-        type=str, 
-		help='path to checkpoint folder',
-    )
-    parser_transform.add_argument(
-        "-t",
-        "--training-script",
-        type=str,
-        default=None,
-        help="The training script of the input frozen model",
     )
 
     # neighbor_stat
@@ -535,6 +522,48 @@ def main_parser() -> argparse.ArgumentParser:
         type=str,
         choices=['s1', 's2'],
         help="steps to train model of NVNMD: s1 (train CNN), s2 (train QNN)"
+    )
+
+    # * transfer to ascend models  ***********************************************************
+    parser_trans_to_ascend = subparsers.add_parser(
+        'transfer-to-ascend',
+        parents=[parser_log, parser_mpi_log],
+        help='transfer original model to ascend NPU supported mix precision version',
+    )
+    parser_trans_to_ascend.add_argument(
+        'TO',
+        type = str,
+        default = 'mix_precision',
+        choices = ['mix_precision'],
+        help="The new model version",
+    )
+    parser_trans_to_ascend.add_argument(
+        '-i',
+        "--input-model",
+        default = "model.pb",
+        type=str, 
+		help = "the input model",
+    )
+    parser_trans_to_ascend.add_argument(
+        "-o",
+        "--output-model",
+        default = "Ascend_transfer.pb",
+        type=str, 
+		help='the output model',
+    )
+    parser_trans_to_ascend.add_argument(
+        "-c",
+        "--checkpoint-folder",
+        default = "model-transfer",
+        type=str, 
+		help='path to checkpoint folder',
+    )
+    parser_trans_to_ascend.add_argument(
+        "-t",
+        "--training-script",
+        type=str,
+        default=None,
+        help="The training script of the input frozen model",
     )
     return parser
 
@@ -612,6 +641,8 @@ def main(args: Optional[List[str]] = None):
         neighbor_stat(**dict_args)
     elif args.command == "train-nvnmd":  # nvnmd
         train_nvnmd(**dict_args)
+    elif args.command == "transfer-to-ascend":
+        transfer_to_ascend(**dict_args)
     elif args.command is None:
         pass
     else:

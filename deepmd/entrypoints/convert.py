@@ -7,7 +7,6 @@ from deepmd.utils.convert import (
     convert_pbtxt_to_pb,
     convert_org_to_ascend
 )
-from deepmd.utils.convert import convert_012_to_21, convert_10_to_21, convert_20_to_21, convert_13_to_21, convert_12_to_21, convert_org_to_ascend
 
 def convert(
     *,
