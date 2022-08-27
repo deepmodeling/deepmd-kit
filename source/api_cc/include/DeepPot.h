@@ -33,6 +33,24 @@ public:
   * @brief Print the DP summary to the screen.
   * @param[in] pre The prefix to each line.
   **/
+  #if HUAWEI_ASCEND
+  DeepPot  (const std::string & model, const int & nloc, const int & gpu_rank = 0);
+  /**
+  * @brief Initialize the DP.
+  * @param[in] model The name of the frozen model file.
+  * @param[in] gpu_rank The GPU rank. Default is 0.
+  **/
+  void init (const std::string & model, const int & nloc, const int & gpu_rank = 0);
+  /**
+  * @brief Print the DP summary to the screen.
+  * @param[in] pre The prefix to each line.
+  **/
+  void init_graph (const std::string & model, const std::vector<int > & type_count, const std::string & file_content = "");
+  /**
+  * @brief Print the DP summary to the screen.
+  * @param[in] pre The prefix to each line.
+  **/
+  #endif //HUAWEI_ASCEND
   void print_summary(const std::string &pre) const;
 public:
   /**
@@ -208,6 +226,7 @@ private:
   // copy neighbor list info from host
   bool init_nbor;
   std::vector<int> sec_a;
+  std::vector<int> natoms_padding;
   NeighborListData nlist_data;
   InputNlist nlist;
   AtomMap<VALUETYPE> atommap;

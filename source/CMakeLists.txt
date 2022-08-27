@@ -77,6 +77,61 @@ else()
   message(STATUS "Will not build AMD GPU support")  
 endif (USE_ROCM_TOOLKIT)
 
+#define USE_ASCEND, find tensorflow abi info
+if (USE_ASCEND)
+  add_definitions("-DHUAWEI_ASCEND")
+endif(USE_ASCEND)
+if (USE_ASCEND AND BUILD_CPP_IF)
+  set(PYTHON_EXECUTABLE "python3.7")
+  set(FIND_TENSORFLOW_INC "import tensorflow as tf; print(tf.sysconfig.get_compile_flags()[0],end='')")
+  execute_process(
+    COMMAND ${PYTHON_EXECUTABLE} "-c" "${FIND_TENSORFLOW_INC}"
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    OUTPUT_VARIABLE OUTPUT_VAR
+    RESULT_VARIABLE RESULT_VAR
+    ERROR_VARIABLE ERROR_VAR
+  )
+  string(REPLACE "-I" "" TensorFlow_INCLUDE_DIRS ${OUTPUT_VAR})
+  if (NOT ${RESULT_VAR} EQUAL 0)
+    message(FATAL_ERROR "Cannot determine tensorflow include dir, error message: ${ERROR_VAR}")
+  endif()
+
+  set(FIND_TENSORFLOW_LINK "import tensorflow as tf; print(tf.sysconfig.get_link_flags()[0],end='')")
+  execute_process(
+    COMMAND ${PYTHON_EXECUTABLE} "-c" "${FIND_TENSORFLOW_LINK}"
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    OUTPUT_VARIABLE OUTPUT_VAR
+    RESULT_VARIABLE RESULT_VAR
+    ERROR_VARIABLE ERROR_VAR
+  )
+  string(REPLACE "-L" "" TensorFlow_LIBRARY_PATH ${OUTPUT_VAR})
+  set (TensorFlowFramework_LIBRARY "${TensorFlow_LIBRARY_PATH}/libtensorflow_framework.so.1")
+  set (TensorFlow_LIBRARY "${TensorFlow_LIBRARY_PATH}/python/_pywrap_tensorflow_internal.so")
+  if (NOT ${RESULT_VAR} EQUAL 0)
+    message(FATAL_ERROR "Cannot determine tensorflow link dir, error message: ${ERROR_VAR}")
+  endif()
+
+  set(FIND_PY_LIB "from distutils import sysconfig; print(sysconfig.get_config_var('LIBDIR'),end='')")
+  execute_process(
+    COMMAND ${PYTHON_EXECUTABLE} "-c" "${FIND_PY_LIB}"
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    OUTPUT_VARIABLE OUTPUT_VAR
+    RESULT_VARIABLE RESULT_VAR
+    ERROR_VARIABLE ERROR_VAR
+  )
+  string(REPLACE "-I" "" PY_LIB_DIRS ${OUTPUT_VAR})
+  set (PY_LIBRARY "${PY_LIB_DIRS}/libpython3.7m.so")
+  if (NOT ${RESULT_VAR} EQUAL 0)
+    message(FATAL_ERROR "Cannot determine python lib dir, error message: ${ERROR_VAR}")
+  endif()
+  set (OP_CXX_ABI 0)
+  add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
+  message(STATUS "Build Ascend NPU support")
+else()
+  message(STATUS "Will not build Ascend NPU support")
+  find_package(tensorflow REQUIRED)
+endif(USE_ASCEND AND BUILD_CPP_IF)
+
 set(DEEPMD_SOURCE_DIR ${PROJECT_SOURCE_DIR}/..)
 
 # setup tensorflow libraries by python

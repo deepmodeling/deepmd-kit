@@ -181,6 +181,23 @@ session_input_tensors (std::vector<std::pair<std::string, tensorflow::Tensor>> &
 		       const int			ago,
 		       const std::string		scope = "");
 
+#if HUAWEI_ASCEND
+int
+session_input_tensors (std::vector<std::pair<std::string, tensorflow::Tensor>> & input_tensors,
+		       const std::vector<VALUETYPE> &	dcoord_,
+		       const int &			ntypes,
+		       const std::vector<int> &		datype_,
+		       const std::vector<VALUETYPE> &	dbox,		    
+		       InputNlist &		dlist, 
+		       const std::vector<VALUETYPE> &	fparam_,
+		       const std::vector<VALUETYPE> &	aparam_,
+		       const deepmd::AtomMap<VALUETYPE>&atommap,
+		       const int			nghost,
+		       const int			ago,
+			   const std::vector<int> &		natoms_padding,
+		       const std::string		scope = "");
+#endif //HUAWEI_ASCEND
+
 /**
 * @brief Read model file to a string.
 * @param[in] model Path to the model.

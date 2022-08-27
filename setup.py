@@ -42,7 +42,7 @@ cmake_args = []
 # get variant option from the environment varibles, available: cpu, cuda, rocm
 dp_variant = os.environ.get("DP_VARIANT", "cpu").lower()
 if dp_variant == "cpu" or dp_variant == "":
-    pass
+    cmake_args.append("-DUSE_CPU:BOOL=TRUE")
 elif dp_variant == "cuda":
     cmake_args.append("-DUSE_CUDA_TOOLKIT:BOOL=TRUE")
     cuda_root = os.environ.get("CUDA_TOOLKIT_ROOT_DIR")
@@ -53,6 +53,8 @@ elif dp_variant == "rocm":
     rocm_root = os.environ.get("ROCM_ROOT")
     if rocm_root:
         cmake_args.append(f"-DROCM_ROOT:STRING={rocm_root}")
+elif dp_variant == "ascend":
+    cmake_args.append("-DUSE_ASCEND:BOOL=TRUE")
 else:
     raise RuntimeError("Unsupported DP_VARIANT option: %s" % dp_variant)
 

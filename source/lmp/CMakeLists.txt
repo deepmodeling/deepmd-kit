@@ -1,7 +1,7 @@
 add_subdirectory(plugin)
 if (NOT DEFINED LAMMPS_VERSION_NUMBER)
     # set the default to stable_23Jun2022_update1
-    set(LAMMPS_VERSION_NUMBER 20220623)
+    set(LAMMPS_VERSION_NUMBER 20210923)
 endif()
 message(STATUS "LAMMPS version is ${LAMMPS_VERSION_NUMBER}")
 
@@ -17,6 +17,8 @@ list (APPEND LMP_INSTALL_FILES ${LMP_SHSCRIPT})
 function(_add_lmp_variant variant_name prec_def)
 if (USE_TF_PYTHON_LIBS)
     configure_file("env_py.sh.in" "env${variant_name}.sh" @ONLY)
+elseif (USE_ASCEND)
+    configure_file("ascend_env.sh.in" "env${variant_name}.sh" @ONLY)
 else()
     configure_file("env.sh.in" "env${variant_name}.sh" @ONLY)
 endif()
