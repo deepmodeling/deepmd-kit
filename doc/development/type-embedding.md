@@ -73,4 +73,6 @@ build -> _pass_filter -> _filter -> _filter_lower
 In `fitting net`, it take the descriptor vector as input, whose dimension is [natoms, $M_1\times M_2$]. Because we need to involve information of centric atom in this step, we need to generate a matrix named as `atype_embed` (of dim [natoms, nchanl]), in which each row is the type embedding vector of the specific centric atom. The input is sorted by type of centric atom, we also know the number of a particular atom type (stored in `natoms[2+i]`), thus we get the type vector of centric atom. In the build phrase of fitting net, it will check whether type embedding exist in `input_dict` and fetch them. After that calling `embed_atom_type` function to lookup embedding vector for type vector of centric atom to obtain `atype_embed`, and concat input with it ([input, atype_embed]). The modified input go through `fitting net` to get predicted energy.
 
 
-**P.S.: You can't apply compression method while using atom type embedding**
+:::{note}
+You can't apply compression method while using atom type embedding.
+:::

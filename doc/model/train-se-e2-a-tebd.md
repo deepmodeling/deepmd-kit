@@ -41,6 +41,6 @@ $deepmd_source_dir/examples/water/se_e2_a_tebd/input.json
 ```
 See [here](../development/type-embedding.md) for further explanation of `type embedding`.
 
-...{note}
+:::{note}
 You can't apply compression method while using atom type embedding.
-...
+:::
