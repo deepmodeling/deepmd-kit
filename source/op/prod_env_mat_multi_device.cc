@@ -6,6 +6,7 @@
 #include "prod_env_mat.h"
 #include "errors.h"
 
+#ifndef HUAWEI_ASCEND
 REGISTER_OP("ProdEnvMatA")
     .Attr("T: {float, double} = DT_DOUBLE")
     .Input("coord: T")          //atomic coordinates
@@ -68,9 +69,9 @@ descrpt: The environment matrix.
 descrpt_deriv: The derivative of the environment matrix.
 rij: The distance between the atoms.
 nlist: The neighbor list of each atom.)");
-    // only sel_a and rcut_r used.
+cd     // only sel_a and rcut_r used.
 
-#if HUAWEI_ASCEND
+#else
 // alias of ProdEnvMatAMesh, only used in Ascend device inference.
 REGISTER_OP("ProdEnvMatAMesh")
     .Attr("T: {float, double} = DT_DOUBLE")
