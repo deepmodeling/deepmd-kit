@@ -13,7 +13,7 @@ from deepmd.utils.batch_size import AutoBatchSize
 from deepmd.env import op_module
 
 # import Ascend npu ops
-dp_variant = os.environ.get("DP_VARIANT").lower()
+dp_variant = os.environ.get("DP_VARIANT", "cpu").lower()
 if dp_variant == "ascend":
     from npu_bridge.estimator import npu_ops
     from tensorflow.core.protobuf.rewriter_config_pb2 import RewriterConfig
