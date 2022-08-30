@@ -247,6 +247,8 @@ def embedding_net(xx,
         elif outputs_size[ii] == outputs_size[ii-1] * 2: 
             I_diag = np.diag(np.array(outputs_size[ii-1] * [1.0]))
             II_diag = tf.constant(np.concatenate((I_diag, I_diag), axis=1), dtype=precision)
+            if mixed_prec is not None:
+                II_diag = tf.cast(II_diag, get_precision(mixed_prec['compute_prec']))
             if resnet_dt :
                 xx = tf.matmul(xx, II_diag) + hidden * idt
             else :
