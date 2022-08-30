@@ -69,7 +69,7 @@ descrpt: The environment matrix.
 descrpt_deriv: The derivative of the environment matrix.
 rij: The distance between the atoms.
 nlist: The neighbor list of each atom.)");
-cd     // only sel_a and rcut_r used.
+// only sel_a and rcut_r used.
 
 #else
 // alias of ProdEnvMatAMesh, only used in Ascend device inference.
