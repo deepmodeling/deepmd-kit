@@ -321,6 +321,10 @@ class EnerModel(Model) :
         elif model_type == 'compressed_model':
             self.fitting.init_variables(graph, graph_def, suffix=suffix)
             tf.constant("compressed_model", name = 'model_type', dtype = tf.string)
+        elif model_type == 'ascend_transfer_model':
+            self.descrpt.init_variables(graph, graph_def, suffix=suffix)
+            self.fitting.init_variables(graph, graph_def, suffix=suffix)
+            tf.constant("ascend_transfer_model", name = 'model_type', dtype = tf.string)
         else:
             raise RuntimeError("Unknown model type %s" % model_type)
         if self.typeebd is not None:

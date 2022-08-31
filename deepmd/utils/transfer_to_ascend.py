@@ -54,10 +54,10 @@ def mix_precision(
     except GraphWithoutTensorError as e:
         if training_script == None:
             raise RuntimeError(
-                "The input frozen model: %s has no training script or min_nbor_dist information, "
-                "which is not supported by the model compression interface. "
-                "Please consider using the --training-script command within the model compression interface to provide the training script of the input frozen model. "
-                "Note that the input training script must contain the correct path to the training data." % input
+                "The input transfering model: %s has no training script or min_nbor_dist information, "
+                "which is not supported by the transfer_to_ascend interface. "
+                "Please consider using the --training-script command within the transfer_to_ascend interface to provide the training script of the input transfering model. "
+                "Note that the input transfering script must contain the correct path to the training data." % input
             ) from e
         elif not os.path.exists(training_script):
             raise RuntimeError(
@@ -140,4 +140,4 @@ def _check_transfer_model_type(model_file):
         t_model_type = None
     
     if t_model_type == "ascend_transfer_model":
-        raise RuntimeError("The input model %s has already been compressed! Please do not compress the model repeatedly. " % model_file)
+        raise RuntimeError("The input model %s has already been transfered to ascend mix-precision model! Please do not transfer the model repeatedly. " % model_file)

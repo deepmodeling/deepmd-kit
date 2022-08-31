@@ -294,7 +294,7 @@ class DPTrainer (object):
         self.ntypes = self.model.get_ntypes()
         self.stop_batch = stop_batch
 
-        if not self.is_compress and data.mixed_type:
+        if not self.is_compress and data and data.mixed_type:
             assert self.descrpt_type in ['se_atten'], 'Data in mixed_type format must use attention descriptor!'
             assert self.fitting_type in ['ener'], 'Data in mixed_type format must use ener fitting!'
 
@@ -752,4 +752,6 @@ class DPTrainer (object):
             self.model_type = bytes.decode(t_model_type)
         if self.model_type == 'compressed_model':
             self.frz_model = self.run_opt.init_frz_model
+        if self.is_ascend_transfer:
+            self.model_type = 'ascend_transfer_model'
         self.model.init_variables(graph, graph_def, model_type=self.model_type)

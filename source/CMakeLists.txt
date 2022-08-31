@@ -129,6 +129,7 @@ if (USE_ASCEND AND BUILD_CPP_IF)
   message(STATUS "Build Ascend NPU support")
 else()
   message(STATUS "Will not build Ascend NPU support")
+  # find tensorflow, I need tf abi info
   find_package(tensorflow REQUIRED)
 endif(USE_ASCEND AND BUILD_CPP_IF)
 

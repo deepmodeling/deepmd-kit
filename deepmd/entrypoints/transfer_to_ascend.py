@@ -10,4 +10,4 @@ def transfer_to_ascend(
     if TO == 'mix_precision':
         mix_precision(input_model, output_model, **kwargs)
     else:
-        raise RuntimeError('unsupported trasnfering version' + FROM)
+        raise RuntimeError('unsupported trasnfering type' + FROM)

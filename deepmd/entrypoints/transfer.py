@@ -116,14 +116,12 @@ def modify_const_op(new_graph_def: tf.Graph) -> tf.Graph:
             node.op = "Const"
             natoms_shape = node.attr["shape"]
             shape_val = [dim.size for dim in natoms_shape.shape.dim]
-            if os.path.exists("natoms_val.txt"):
-                with open('./natoms_val.txt', 'r') as f:
-                    curr_line = f.readline()
-                    natoms_list = curr_line.strip().split()
-            else:
+            try:
+                natoms_list = np.loadtxt("natoms_val.txt")
+            except Exception as e:
                 explanation = "natoms_val.txt file is not exist, one shold put padding natoms in it. Values are separated by SPACE." 
                 log.error(explanation)
-                raise ValueError(explanation)
+                raise FileNotFoundError from e
             
             assert shape_val[0] == len(natoms_list)
             del node.attr["shape"]

@@ -1,6 +1,4 @@
 import os
-import json
-import logging
 from deepmd.env import tf
 from google.protobuf import text_format
 
