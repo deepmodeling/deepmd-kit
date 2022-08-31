@@ -463,7 +463,7 @@ def model_args ():
     doc_sw_rmin = 'The lower boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.'
     doc_sw_rmax = 'The upper boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.'
     doc_compress_config = 'Model compression configurations'
-    doc_ascend_transfer = 'Model trasnfer to ascend mix-precision model'
+    doc_ascend_transfer = 'Model transfer to ascend mix-precision model'
 
     ca = Argument("model", dict, 
                   [Argument("type_map", list, optional = True, doc = doc_type_map),

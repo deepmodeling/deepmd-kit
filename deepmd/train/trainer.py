@@ -940,6 +940,8 @@ class DPTrainer (object):
             self.model_type = bytes.decode(t_model_type)
         if self.model_type == 'compressed_model':
             self.frz_model = self.run_opt.init_frz_model
+        if self.is_ascend_transfer:
+            self.model_type = 'ascend_transfer_model'
         self.model.init_variables(graph, graph_def, model_type=self.model_type)
 
     def _init_from_pretrained_model(self, data, origin_type_map=None, bias_shift='delta'):

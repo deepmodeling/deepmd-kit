@@ -15,11 +15,10 @@ set (libname "${LIB_DEEPMD_CC}")
 add_library(${libname} SHARED ${LIB_SRC})
 
 if (USE_ASCEND)
-  target_link_libraries (${libname} PUBLIC ${LIB_DEEPMD} 
-    ${TensorFlow_LIBRARY} 
-    ${TensorFlowFramework_LIBRARY}
-    ${PY_LIBRARY}
-    dl)
+  # link: libdeepmd libdeepmd_op libtensorflow_cc libtensorflow_framework
+  target_link_libraries (${libname} PUBLIC ${LIB_DEEPMD} ${TensorFlow_LIBRARY} ${TensorFlowFramework_LIBRARY})
+  # link: libdeepmd libpython3.7m dl for Ascend platfrom
+  target_link_libraries (${libname} PUBLIC ${PY_LIBRARY} dl)
 else()
   # link: libdeepmd libdeepmd_op libtensorflow_cc libtensorflow_framework
   target_link_libraries (${libname} PUBLIC ${LIB_DEEPMD})

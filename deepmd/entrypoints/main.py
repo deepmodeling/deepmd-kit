@@ -535,7 +535,7 @@ def main_parser() -> argparse.ArgumentParser:
         type = str,
         default = 'mix_precision',
         choices = ['mix_precision'],
-        help="The new model version",
+        help="The transfer type of transfer-to-ascend module",
     )
     parser_trans_to_ascend.add_argument(
         '-i',

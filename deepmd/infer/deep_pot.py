@@ -10,10 +10,10 @@ from deepmd.infer.data_modifier import DipoleChargeModifier
 from deepmd.infer.deep_eval import DeepEval
 from deepmd.utils.sess import run_sess
 from deepmd.utils.batch_size import AutoBatchSize
-from deepmd.env import op_module
+from deepmd.env import op_module, GLOBAL_CONFIG
 
 # import Ascend npu ops
-dp_variant = os.environ.get("DP_VARIANT", "cpu").lower()
+dp_variant = GLOBAL_CONFIG.get("dp_variant", "cpu")
 if dp_variant == "ascend":
     from npu_bridge.estimator import npu_ops
     from tensorflow.core.protobuf.rewriter_config_pb2 import RewriterConfig
