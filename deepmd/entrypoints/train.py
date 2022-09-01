@@ -351,6 +351,5 @@ def update_sel(jdata):
                 descrpt_data['list'][ii] = update_one_sel(jdata, descrpt_data['list'][ii])
     elif descrpt_data['type'] != 'loc_frame':
         descrpt_data = update_one_sel(jdata, descrpt_data)
-        print(descrpt_data)
     jdata['model']['descriptor'] = descrpt_data
     return jdata
