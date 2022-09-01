@@ -243,7 +243,8 @@ def descrpt_hybrid_args():
 def descrpt_se_atten_args():
     doc_sel = 'This parameter set the number of selected neighbors. Note that this parameter is a little different from that in other descriptors. Instead of separating each type of atoms, only the summation matters. And this number is highly related with the efficiency, thus one should not make it too large. Usually 200 or less is enough, far away from the GPU limitation 4096. It can be:\n\n\
     - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
-    - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. Only the summation of `sel[i]` matters, and it is recommended to be less than 200.'
+    - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. Only the summation of `sel[i]` matters, and it is recommended to be less than 200.\
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
     doc_rcut = 'The cut-off radius.'
     doc_rcut_smth = 'Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`'
     doc_neuron = 'Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.'
@@ -262,7 +263,7 @@ def descrpt_se_atten_args():
     doc_attn_mask = 'Whether to do mask on the diagonal in the attention matrix'
 
     return [
-        Argument("sel", [int, list], optional=True, default=200, doc=doc_sel),
+        Argument("sel", [int, list, str], optional=True, default="auto", doc=doc_sel),
         Argument("rcut", float, optional=True, default=6.0, doc=doc_rcut),
         Argument("rcut_smth", float, optional=True, default=0.5, doc=doc_rcut_smth),
         Argument("neuron", list, optional=True, default=[10, 20, 40], doc=doc_neuron),

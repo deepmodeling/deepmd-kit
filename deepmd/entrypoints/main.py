@@ -445,6 +445,12 @@ def main_parser() -> argparse.ArgumentParser:
         required=True,
         help="type map",
     )
+    parser_neighbor_stat.add_argument(
+        "--one-type",
+        action="store_true",
+        default=False,
+        help="treat all types as a single type. Used with se_atten descriptor.",
+    )
 
     # --version
     parser.add_argument('--version', action='version', version='DeePMD-kit v%s' % __version__)
