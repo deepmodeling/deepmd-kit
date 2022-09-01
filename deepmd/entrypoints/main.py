@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import textwrap
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -44,6 +45,11 @@ def get_ll(log_level: str) -> int:
         int_level = getattr(logging, log_level)
 
     return int_level
+
+class RawTextArgumentDefaultsHelpFormatter(
+    argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter
+):
+    """This formatter is used to print multile-line help message with default value."""
 
 
 def main_parser() -> argparse.ArgumentParser:
@@ -139,7 +145,13 @@ def main_parser() -> argparse.ArgumentParser:
         "train",
         parents=[parser_log, parser_mpi_log],
         help="train a model",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent("""\
+        examples:
+            dp train input.json
+            dp train input.json -r model.ckpt
+            dp train input.json -i model.ckpt
+        """),
     )
     parser_train.add_argument(
         "INPUT", help="the input parameter file in json or yaml format"
@@ -183,7 +195,12 @@ def main_parser() -> argparse.ArgumentParser:
         "freeze",
         parents=[parser_log],
         help="freeze the model",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent("""\
+        examples:
+            dp freeze
+            dp freeze -o graph.pb
+        """),
     )
     parser_frz.add_argument(
         "-c",
@@ -219,7 +236,11 @@ def main_parser() -> argparse.ArgumentParser:
         "test",
         parents=[parser_log],
         help="test the model",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent("""\
+        examples:
+            dp test -m graph.pb -s /path/to/system -n 30
+        """),
     )
     parser_tst.add_argument(
         "-m",
@@ -274,7 +295,12 @@ def main_parser() -> argparse.ArgumentParser:
         "compress",
         parents=[parser_log, parser_mpi_log],
         help="compress a model",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent("""\
+        examples:
+            dp compress
+            dp compress -i graph.pb -o compressed.pb
+        """),
     )
     parser_compress.add_argument(
         "-i",
@@ -355,7 +381,11 @@ def main_parser() -> argparse.ArgumentParser:
         "model-devi",
         parents=[parser_log],
         help="calculate model deviation",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent("""\
+        examples:
+            dp model-devi -m graph.000.pb graph.001.pb graph.002.pb graph.003.pb -s ./data -o model_devi.out
+        """),
     )
     parser_model_devi.add_argument(
         "-m",
@@ -395,6 +425,11 @@ def main_parser() -> argparse.ArgumentParser:
         'convert-from',
         parents=[parser_log],
         help='convert lower model version to supported version',
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent("""\
+        examples:
+            dp convert-from 1.0 -i graph.pb -o graph_new.pb
+        """),
     )
     parser_transform.add_argument(
         'FROM',
@@ -422,6 +457,11 @@ def main_parser() -> argparse.ArgumentParser:
         'neighbor-stat',
         parents=[parser_log],
         help='Calculate neighbor statistics',
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent("""\
+        examples:
+            dp neighbor-stat -s data -r 6.0 -t O H
+        """),
     )
     parser_neighbor_stat.add_argument(
         "-s",
