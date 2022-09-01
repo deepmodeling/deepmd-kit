@@ -317,6 +317,8 @@ def wrap_up_4(xx):
 
 
 def update_one_sel(jdata, descriptor):
+    if descriptor['type'] == 'loc_frame':
+        return descriptor
     rcut = descriptor['rcut']
     tmp_sel = get_sel(jdata, rcut, one_type=descriptor['type'] in ('se_atten',))
     sel = descriptor['sel']
@@ -325,7 +327,7 @@ def update_one_sel(jdata, descriptor):
         sel = [sel]
     if parse_auto_sel(descriptor['sel']) :
         ratio = parse_auto_sel_ratio(descriptor['sel'])
-        descriptor['sel'] = [int(wrap_up_4(ii * ratio)) for ii in tmp_sel]
+        descriptor['sel'] = sel = [int(wrap_up_4(ii * ratio)) for ii in tmp_sel]
     else:
         # sel is set by user
         for ii, (tt, dd) in enumerate(zip(tmp_sel, sel)):
@@ -338,7 +340,7 @@ def update_one_sel(jdata, descriptor):
                     " of your model may get worse." %(ii, tt, dd)
                 )
     if descriptor['type'] in ('se_atten',):
-        descriptor['sel'] = sum(sel)
+        descriptor['sel'] = sel = sum(sel)
     return descriptor
 
 
@@ -347,9 +349,8 @@ def update_sel(jdata):
     descrpt_data = jdata['model']['descriptor']
     if descrpt_data['type'] == 'hybrid':
         for ii in range(len(descrpt_data['list'])):
-            if descrpt_data['list'][ii]['type'] != 'loc_frame':
-                descrpt_data['list'][ii] = update_one_sel(jdata, descrpt_data['list'][ii])
-    elif descrpt_data['type'] != 'loc_frame':
+            descrpt_data['list'][ii] = update_one_sel(jdata, descrpt_data['list'][ii])
+    else:
         descrpt_data = update_one_sel(jdata, descrpt_data)
     jdata['model']['descriptor'] = descrpt_data
     return jdata
