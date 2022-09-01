@@ -238,7 +238,7 @@ def get_embedding_net_variables(model_file : str, suffix: str = "") -> Dict:
     return get_embedding_net_variables_from_graph_def(graph_def, suffix=suffix)
 
 
-def get_fitting_net_nodes_from_graph_def(graph_def: tf.GraphDef) -> Dict:
+def get_fitting_net_nodes_from_graph_def(graph_def: tf.GraphDef, suffix: str = "") -> Dict:
     """
     Get the fitting net nodes with the given tf.GraphDef object
 
@@ -252,7 +252,14 @@ def get_fitting_net_nodes_from_graph_def(graph_def: tf.GraphDef) -> Dict:
     Dict
         The fitting net nodes within the given tf.GraphDef object
     """
-    fitting_net_nodes = get_pattern_nodes_from_graph_def(graph_def, FITTING_NET_PATTERN)
+    if suffix != "":
+        fitting_net_pattern = FITTING_NET_PATTERN\
+            .replace('/idt',    suffix + '/idt')\
+            .replace('/bias',   suffix + '/bias')\
+            .replace('/matrix', suffix + '/matrix')
+    else:
+        fitting_net_pattern = FITTING_NET_PATTERN
+    fitting_net_nodes = get_pattern_nodes_from_graph_def(graph_def, fitting_net_pattern)
     for key in fitting_net_nodes.keys():
         assert key.find('bias') > 0 or key.find('matrix') > 0 or key.find(
             'idt') > 0, "currently, only support weight matrix, bias and idt at the model compression process!"
@@ -277,7 +284,7 @@ def get_fitting_net_nodes(model_file : str) -> Dict:
     return get_fitting_net_nodes_from_graph_def(graph_def)
 
 
-def get_fitting_net_variables_from_graph_def(graph_def : tf.GraphDef) -> Dict:
+def get_fitting_net_variables_from_graph_def(graph_def : tf.GraphDef, suffix: str = "") -> Dict:
     """
     Get the fitting net variables with the given tf.GraphDef object
 
@@ -285,6 +292,8 @@ def get_fitting_net_variables_from_graph_def(graph_def : tf.GraphDef) -> Dict:
     ----------
     graph_def
         The input tf.GraphDef object
+    suffix
+        suffix of the scope
     
     Returns
     ----------
@@ -292,7 +301,7 @@ def get_fitting_net_variables_from_graph_def(graph_def : tf.GraphDef) -> Dict:
         The fitting net variables within the given tf.GraphDef object 
     """
     fitting_net_variables = {}
-    fitting_net_nodes = get_fitting_net_nodes_from_graph_def(graph_def)
+    fitting_net_nodes = get_fitting_net_nodes_from_graph_def(graph_def, suffix=suffix)
     for item in fitting_net_nodes:
         node = fitting_net_nodes[item]
         dtype= tf.as_dtype(node.dtype).as_numpy_dtype
@@ -304,7 +313,7 @@ def get_fitting_net_variables_from_graph_def(graph_def : tf.GraphDef) -> Dict:
         fitting_net_variables[item] = np.reshape(tensor_value, tensor_shape)
     return fitting_net_variables
 
-def get_fitting_net_variables(model_file : str) -> Dict:
+def get_fitting_net_variables(model_file : str, suffix: str = "") -> Dict:
     """
     Get the fitting net variables with the given frozen model(model_file)
 
@@ -319,7 +328,7 @@ def get_fitting_net_variables(model_file : str) -> Dict:
         The fitting net variables within the given frozen model
     """
     _, graph_def = load_graph_def(model_file)
-    return get_fitting_net_variables_from_graph_def(graph_def)
+    return get_fitting_net_variables_from_graph_def(graph_def, suffix=suffix)
 
 
 def get_type_embedding_net_nodes_from_graph_def(graph_def: tf.GraphDef, suffix: str = "") -> Dict:
