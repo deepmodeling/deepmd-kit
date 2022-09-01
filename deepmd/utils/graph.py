@@ -246,6 +246,8 @@ def get_fitting_net_nodes_from_graph_def(graph_def: tf.GraphDef, suffix: str = "
     ----------
     graph_def
         The input tf.GraphDef object
+    suffix
+        suffix of the scope
     
     Returns
     ----------
@@ -321,6 +323,8 @@ def get_fitting_net_variables(model_file : str, suffix: str = "") -> Dict:
     ----------
     model_file
         The input frozen model path
+    suffix
+        suffix of the scope
     
     Returns
     ----------
