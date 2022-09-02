@@ -563,7 +563,7 @@ class EnerFitting (Fitting):
         suffix : str
             suffix to name scope
         """
-        self.fitting_net_variables = get_fitting_net_variables_from_graph_def(graph_def)
+        self.fitting_net_variables = get_fitting_net_variables_from_graph_def(graph_def, suffix=suffix)
         if self.numb_fparam > 0:
             self.fparam_avg = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_fparam_avg' % suffix)
             self.fparam_inv_std = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_fparam_istd' % suffix)
