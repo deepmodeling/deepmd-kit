@@ -1,7 +1,7 @@
 import re
 import numpy as np
 from typing import Tuple, Dict
-from deepmd.env import tf, EMBEDDING_NET_PATTERN, FITTING_NET_PATTERN, TYPE_EMBEDDING_PATTERN
+from deepmd.env import tf, EMBEDDING_NET_PATTERN, FITTING_NET_PATTERN, TYPE_EMBEDDING_PATTERN, ATTENTION_LAYER_PATTERN
 from deepmd.utils.sess import run_sess
 from deepmd.utils.errors import GraphWithoutTensorError
 
@@ -378,3 +378,63 @@ def get_type_embedding_net_variables_from_graph_def(graph_def: tf.GraphDef, suff
             tensor_value = get_tensor_by_type(node, dtype)
         type_embedding_net_variables[item] = np.reshape(tensor_value, tensor_shape)
     return type_embedding_net_variables
+
+
+def get_attention_layer_nodes_from_graph_def(graph_def: tf.GraphDef, suffix: str = "") -> Dict:
+    """
+    Get the attention layer nodes with the given tf.GraphDef object
+
+    Parameters
+    ----------
+    graph_def
+        The input tf.GraphDef object
+    suffix : str, optional
+        The scope suffix
+
+    Returns
+    ----------
+    Dict
+        The attention layer nodes within the given tf.GraphDef object
+    """
+    if suffix != "":
+        attention_layer_pattern = ATTENTION_LAYER_PATTERN \
+            .replace('/c_query', suffix + '/c_query') \
+            .replace('/c_key', suffix + '/c_key') \
+            .replace('/c_value', suffix + '/c_value') \
+            .replace('/c_out', suffix + '/c_out') \
+            .replace('/layer_normalization', suffix + '/layer_normalization')
+    else:
+        attention_layer_pattern = ATTENTION_LAYER_PATTERN
+
+    attention_layer_nodes = get_pattern_nodes_from_graph_def(graph_def, attention_layer_pattern)
+    return attention_layer_nodes
+
+
+def get_attention_layer_variables_from_graph_def(graph_def: tf.GraphDef, suffix: str = "") -> Dict:
+    """
+    Get the attention layer variables with the given tf.GraphDef object
+
+    Parameters
+    ----------
+    graph_def : tf.GraphDef
+        The input tf.GraphDef object
+    suffix : str, optional
+        The suffix of the scope
+
+    Returns
+    ----------
+    Dict
+        The attention layer variables within the given tf.GraphDef object
+    """
+    attention_layer_variables = {}
+    attention_layer_net_nodes = get_attention_layer_nodes_from_graph_def(graph_def, suffix=suffix)
+    for item in attention_layer_net_nodes:
+        node = attention_layer_net_nodes[item]
+        dtype = tf.as_dtype(node.dtype).as_numpy_dtype
+        tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
+        if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
+            tensor_value = np.frombuffer(node.tensor_content, dtype=tf.as_dtype(node.dtype).as_numpy_dtype)
+        else:
+            tensor_value = get_tensor_by_type(node, dtype)
+        attention_layer_variables[item] = np.reshape(tensor_value, tensor_shape)
+    return attention_layer_variables
