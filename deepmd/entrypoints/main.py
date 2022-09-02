@@ -149,8 +149,8 @@ def main_parser() -> argparse.ArgumentParser:
         epilog=textwrap.dedent("""\
         examples:
             dp train input.json
-            dp train input.json -r model.ckpt
-            dp train input.json -i model.ckpt
+            dp train input.json --restart model.ckpt
+            dp train input.json --init-model model.ckpt
         """),
     )
     parser_train.add_argument(
