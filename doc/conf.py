@@ -256,6 +256,7 @@ master_doc = 'index'
 mathjax_path = 'https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.0/es5/tex-mml-chtml.min.js'
 myst_enable_extensions = [
     'dollarmath',
+    'colon_fence',
 ]
 # fix emoji issue in pdf
 latex_engine = "xelatex"

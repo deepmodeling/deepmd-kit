@@ -47,6 +47,7 @@ BUILD = (
     f"source commit:        {GLOBAL_CONFIG['git_hash']}",
     f"source commit at:     {GLOBAL_CONFIG['git_date']}",
     f"build float prec:     {global_float_prec}",
+    f"build variant:        {GLOBAL_CONFIG['dp_variant']}",
     f"build with tf inc:    {GLOBAL_CONFIG['tf_include_dir']}",
     f"build with tf lib:    {GLOBAL_CONFIG['tf_libs'].replace(';', _sep)}"  # noqa
 )

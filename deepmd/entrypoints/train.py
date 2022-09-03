@@ -100,7 +100,8 @@ def train(
         json.dump(jdata, fp, indent=4)
 
     # save the training script into the graph
-    tf.constant(json.dumps(jdata), name='train_attr/training_script', dtype=tf.string)
+    # remove white spaces as it is not compressed
+    tf.constant(json.dumps(jdata, separators=(',', ':')), name='train_attr/training_script', dtype=tf.string)
 
     for message in WELCOME + CITATION + BUILD:
         log.info(message)

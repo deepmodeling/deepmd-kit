@@ -14,12 +14,12 @@ make lammps
 DeePMD-kit will generate a module called `USER-DEEPMD` in the `build` directory. If you need the low precision version, move `env_low.sh` to `env.sh` in the directory. Now download the LAMMPS code, and uncompress it. The LAMMPS version should be the same as what is specified as the CMAKE argument `LAMMPS_VERSION_NUMBER`.
 ```bash
 cd /some/workspace
-wget https://github.com/lammps/lammps/archive/stable_23Jun2022.tar.gz
-tar xf stable_23Jun2022.tar.gz
+wget https://github.com/lammps/lammps/archive/stable_23Jun2022_update1.tar.gz
+tar xf stable_23Jun2022_update1.tar.gz
 ```
-The source code of LAMMPS is stored in directory `lammps-stable_23Jun2022`. Now go into the LAMMPS code and copy the DeePMD-kit module like this
+The source code of LAMMPS is stored in directory `lammps-stable_23Jun2022_update1`. Now go into the LAMMPS code and copy the DeePMD-kit module like this
 ```bash
-cd lammps-stable_23Jun2022/src/
+cd lammps-stable_23Jun2022_update1/src/
 cp -r $deepmd_source_dir/source/build/USER-DEEPMD .
 make yes-kspace
 make yes-user-deepmd
@@ -45,15 +45,15 @@ Starting from `8Apr2021`, LAMMPS also provides a plugin mode, allowing one to bu
 Now download the LAMMPS code (`8Apr2021` or later), and uncompress it:
 ```bash
 cd /some/workspace
-wget https://github.com/lammps/lammps/archive/stable_23Jun2022.tar.gz
-tar xf stable_23Jun2022.tar.gz
+wget https://github.com/lammps/lammps/archive/stable_23Jun2022_update1.tar.gz
+tar xf stable_23Jun2022_update1.tar.gz
 ```
 
-The source code of LAMMPS is stored in directory `lammps-stable_23Jun2022`. The directory of the source code should be specified as the CMAKE argument `LAMMPS_SOURCE_ROOT` during installation of the DeePMD-kit C++ interface. Now go into the LAMMPS directory and create a directory called `build`
+The source code of LAMMPS is stored in directory `lammps-stable_23Jun2022_update1`. The directory of the source code should be specified as the CMAKE argument `LAMMPS_SOURCE_ROOT` during installation of the DeePMD-kit C++ interface. Now go into the LAMMPS directory and create a directory called `build`
 
 ```bash
-mkdir -p lammps-stable_23Jun2022/build/
-cd lammps-stable_23Jun2022/build/
+mkdir -p lammps-stable_23Jun2022_update1/build/
+cd lammps-stable_23Jun2022_update1/build/
 ```
 Now build LAMMPS. Note that `PLUGIN` and `KSPACE` package must be enabled, and `BUILD_SHARED_LIBS` must be set to `yes`. You can install any other package you want.
 ```bash
