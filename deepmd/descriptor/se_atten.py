@@ -15,7 +15,6 @@ from deepmd.utils.tabulate import DPTabulate
 from deepmd.utils.type_embed import embed_atom_type
 from deepmd.utils.sess import run_sess
 from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph, get_tensor_by_name
-from deepmd.utils.graph import get_attention_layer_variables_from_graph_def
 from deepmd.utils.errors import GraphWithoutTensorError
 from .descriptor import Descriptor
 from .se_a import DescrptSeA
@@ -118,9 +117,6 @@ class DescrptSeAtten(DescrptSeA):
         self.sel_all_r = [0]
         avg_zero = np.zeros([self.ntypes, self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
         std_ones = np.ones([self.ntypes, self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
-        self.beta = np.zeros([self.attn_layer, self.filter_neuron[-1]]).astype(GLOBAL_NP_FLOAT_PRECISION)
-        self.gamma = np.ones([self.attn_layer, self.filter_neuron[-1]]).astype(GLOBAL_NP_FLOAT_PRECISION)
-        self.attention_layer_variables = None
         sub_graph = tf.Graph()
         with sub_graph.as_default():
             name_pfx = 'd_sea_'
@@ -309,6 +305,10 @@ class DescrptSeAtten(DescrptSeA):
         self.attn_weight = [None for i in range(self.attn_layer)]
         self.angular_weight = [None for i in range(self.attn_layer)]
         self.attn_weight_final = [None for i in range(self.attn_layer)]
+        self.G = None
+        self.qs = [None for i in range(self.attn_layer)]
+        self.ks = [None for i in range(self.attn_layer)]
+        self.vs = [None for i in range(self.attn_layer)]
 
         self.descrpt, self.descrpt_deriv, self.rij, self.nlist, self.nei_type_vec, self.nmask \
             = op_module.prod_env_mat_a_mix(coord,
@@ -365,8 +365,8 @@ class DescrptSeAtten(DescrptSeA):
         inputs_i = inputs
         inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
         type_i = -1
-        layer, qmat = self._filter(inputs_i, type_i, natoms, name='filter_type_all' + suffix, suffix=suffix,
-                                   reuse=reuse, trainable=trainable, activation_fn=self.filter_activation_fn,
+        layer, qmat = self._filter(inputs_i, type_i, natoms, name='filter_type_all' + suffix, reuse=reuse,
+                                   trainable=trainable, activation_fn=self.filter_activation_fn,
                                    type_embedding=type_embedding, atype=atype)
         layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0], self.get_dim_out()])
         qmat = tf.reshape(qmat, [tf.shape(inputs)[0], natoms[0], self.get_dim_rot_mat_1() * 3])
@@ -508,8 +508,7 @@ class DescrptSeAtten(DescrptSeA):
             activation_fn=None,
             precision=self.filter_precision,
             trainable=True,
-            uniform_seed=self.uniform_seed,
-            initial_variables=self.attention_layer_variables))
+            uniform_seed=self.uniform_seed))
         input_xyz = one_layer(
             input_xyz,
             d_in,
@@ -519,8 +518,7 @@ class DescrptSeAtten(DescrptSeA):
             activation_fn=None,
             precision=self.filter_precision,
             trainable=True,
-            uniform_seed=self.uniform_seed,
-            initial_variables=self.attention_layer_variables)
+            uniform_seed=self.uniform_seed)
         input_xyz += residual
         input_xyz = tf.keras.layers.LayerNormalization()(input_xyz)
         return input_xyz
@@ -555,75 +553,75 @@ class DescrptSeAtten(DescrptSeA):
             input_r,
             dotr=False,
             do_mask=False,
-            trainable=True,
-            suffix=''
+            trainable=True
     ):
         sd_k = tf.sqrt(tf.cast(1., dtype=self.filter_precision))
+        self.G = tf.reshape(input_xyz, (-1, shape_i[1] // 4, outputs_size[-1]))[0]
         for i in range(layer_num):
-            name = 'attention_layer_{}{}'.format(i, suffix)
-            with tf.variable_scope(name, reuse=tf.AUTO_REUSE):
+            with tf.variable_scope('attention_layer{}_'.format(i), reuse=tf.AUTO_REUSE):
                 # input_xyz_in = tf.nn.l2_normalize(input_xyz, -1)
                 Q_c = one_layer(
                     input_xyz,
                     self.att_n,
                     name='c_query',
-                    scope=name+'/',
                     reuse=tf.AUTO_REUSE,
                     seed=self.seed,
                     activation_fn=None,
                     precision=self.filter_precision,
                     trainable=trainable,
-                    uniform_seed=self.uniform_seed,
-                    initial_variables=self.attention_layer_variables)
+                    uniform_seed=self.uniform_seed)
                 K_c = one_layer(
                     input_xyz,
                     self.att_n,
                     name='c_key',
-                    scope=name+'/',
                     reuse=tf.AUTO_REUSE,
                     seed=self.seed,
                     activation_fn=None,
                     precision=self.filter_precision,
                     trainable=trainable,
-                    uniform_seed=self.uniform_seed,
-                    initial_variables=self.attention_layer_variables)
+                    uniform_seed=self.uniform_seed)
                 V_c = one_layer(
                     input_xyz,
                     self.att_n,
                     name='c_value',
-                    scope=name+'/',
                     reuse=tf.AUTO_REUSE,
                     seed=self.seed,
                     activation_fn=None,
                     precision=self.filter_precision,
                     trainable=trainable,
-                    uniform_seed=self.uniform_seed,
-                    initial_variables=self.attention_layer_variables)
+                    uniform_seed=self.uniform_seed)
                 # # natom x nei_type_i x out_size
                 # xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1] // 4, outputs_size[-1]))
                 # natom x nei_type_i x att_n
                 Q_c = tf.nn.l2_normalize(tf.reshape(Q_c, (-1, shape_i[1] // 4, self.att_n)), -1)
                 K_c = tf.nn.l2_normalize(tf.reshape(K_c, (-1, shape_i[1] // 4, self.att_n)), -1)
                 V_c = tf.nn.l2_normalize(tf.reshape(V_c, (-1, shape_i[1] // 4, self.att_n)), -1)
+                # Q_c = tf.reshape(Q_c, (-1, shape_i[1] // 4, self.att_n))
+                # K_c = tf.reshape(K_c, (-1, shape_i[1] // 4, self.att_n))
+                # V_c = tf.reshape(V_c, (-1, shape_i[1] // 4, self.att_n))
+                self.qs[i] = Q_c[0]
+                self.ks[i] = K_c[0]
+                self.vs[i] = V_c[0]
 
                 input_att = self._scaled_dot_attn(Q_c, K_c, V_c, sd_k, input_r, dotr=dotr, do_mask=do_mask, layer=i)
                 input_att = tf.reshape(input_att, (-1, self.att_n))
+
+                # A_c = tf.nn.softmax(tf.matmul(Q_c, K_c, transpose_b=True)/sd_k)
+                # # (natom x nei_type_i) x att_n
+                # input_att = tf.reshape(tf.matmul(A_c, V_c), (-1, self.att_n))
 
                 # (natom x nei_type_i) x out_size
                 input_xyz += one_layer(
                     input_att,
                     outputs_size[-1],
                     name='c_out',
-                    scope=name+'/',
                     reuse=tf.AUTO_REUSE,
                     seed=self.seed,
                     activation_fn=None,
                     precision=self.filter_precision,
                     trainable=trainable,
-                    uniform_seed=self.uniform_seed,
-                    initial_variables=self.attention_layer_variables)
-                input_xyz = tf.keras.layers.LayerNormalization(beta_initializer=tf.constant_initializer(self.beta[i]),
-                                                gamma_initializer=tf.constant_initializer(self.gamma[i]))(input_xyz)
+                    uniform_seed=self.uniform_seed)
+                input_xyz = tf.keras.layers.LayerNormalization()(input_xyz)
                 # input_xyz = self._feedforward(input_xyz, outputs_size[-1], self.att_n)
         return input_xyz
 
@@ -690,7 +688,7 @@ class DescrptSeAtten(DescrptSeA):
             # natom x nei_type_i x out_size
             xyz_scatter_att = tf.reshape(
                 self._attention_layers(xyz_scatter, self.attn_layer, shape_i, outputs_size, input_r,
-                                       dotr=self.attn_dotr, do_mask=self.attn_mask, trainable=trainable, suffix=suffix),
+                                       dotr=self.attn_dotr, do_mask=self.attn_mask, trainable=trainable),
                 (-1, shape_i[1] // 4, outputs_size[-1]))
             # xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1] // 4, outputs_size[-1]))
         else:
@@ -714,7 +712,6 @@ class DescrptSeAtten(DescrptSeA):
             activation_fn=tf.nn.tanh,
             stddev=1.0,
             bavg=0.0,
-            suffix='',
             name='linear',
             reuse=None,
             trainable=True):
@@ -748,7 +745,6 @@ class DescrptSeAtten(DescrptSeA):
             stddev=stddev,
             bavg=bavg,
             trainable=trainable,
-            suffix=suffix,
             name=name,
             reuse=reuse,
             atype=atype)
@@ -779,31 +775,3 @@ class DescrptSeAtten(DescrptSeA):
         result = tf.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
 
         return result, qmat
-
-    def init_variables(self,
-                       graph: tf.Graph,
-                       graph_def: tf.GraphDef,
-                       suffix: str = "",
-                       ) -> None:
-        """
-        Init the embedding net variables with the given dict
-
-        Parameters
-        ----------
-        graph : tf.Graph
-            The input frozen model graph
-        graph_def : tf.GraphDef
-            The input frozen model graph_def
-        suffix : str, optional
-            The suffix of the scope
-        """
-        super().init_variables(graph=graph, graph_def=graph_def, suffix=suffix)
-        self.attention_layer_variables = get_attention_layer_variables_from_graph_def(graph_def, suffix=suffix)
-        if self.attn_layer > 0:
-            self.beta[0] = self.attention_layer_variables['attention_layer_0{}/layer_normalization/beta'.format(suffix)]
-            self.gamma[0] = self.attention_layer_variables['attention_layer_0{}/layer_normalization/gamma'.format(suffix)]
-            for i in range(1, self.attn_layer):
-                self.beta[i] = self.attention_layer_variables[
-                    'attention_layer_{}{}/layer_normalization_{}/beta'.format(i, suffix, i)]
-                self.gamma[i] = self.attention_layer_variables[
-                    'attention_layer_{}{}/layer_normalization_{}/gamma'.format(i, suffix, i)]
