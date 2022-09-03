@@ -164,10 +164,9 @@ class DescrptSeA (DescrptSe):
         self.embedding_net_variables = None
         self.mixed_prec = None
         self.place_holders = {}
-        nei_type = np.array([])
+        self.nei_type = np.array([])
         for ii in range(self.ntypes):
-            nei_type = np.append(nei_type, ii * np.ones(self.sel_a[ii])) # like a mask 
-        self.nei_type = tf.constant(nei_type, dtype = tf.int32)
+            self.nei_type = np.append(self.nei_type, ii * np.ones(self.sel_a[ii])) # like a mask
 
         avg_zero = np.zeros([self.ntypes,self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
         std_ones = np.ones ([self.ntypes,self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
@@ -673,8 +672,9 @@ class DescrptSeA (DescrptSe):
             embedding:
                 environment of each atom represented by embedding.
         '''
-        te_out_dim = type_embedding.get_shape().as_list()[-1]        
-        nei_embed = tf.nn.embedding_lookup(type_embedding,tf.cast(self.nei_type,dtype=tf.int32))  # shape is [self.nnei, 1+te_out_dim]
+        te_out_dim = type_embedding.get_shape().as_list()[-1]
+        self.t_nei_type = tf.constant(self.nei_type, dtype=tf.int32)
+        nei_embed = tf.nn.embedding_lookup(type_embedding,tf.cast(self.t_nei_type,dtype=tf.int32))  # shape is [self.nnei, 1+te_out_dim]
         nei_embed = tf.tile(nei_embed,(nframes*natoms[0],1))  # shape is [nframes*natoms[0]*self.nnei, te_out_dim]
         nei_embed = tf.reshape(nei_embed,[-1,te_out_dim])
         embedding_input = tf.concat([xyz_scatter,nei_embed],1)  # shape is [nframes*natoms[0]*self.nnei, 1+te_out_dim]

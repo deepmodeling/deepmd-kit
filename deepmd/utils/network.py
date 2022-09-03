@@ -13,7 +13,8 @@ def one_layer(inputs,
               precision = GLOBAL_TF_FLOAT_PRECISION, 
               stddev=1.0,
               bavg=0.0,
-              name='linear', 
+              name='linear',
+              scope='',
               reuse=None,
               seed=None, 
               use_timestep = False, 
@@ -36,8 +37,8 @@ def one_layer(inputs,
                             mean=bavg,
                             seed=seed if (seed is None or uniform_seed) else seed + 1)
         if initial_variables is not None:
-            w_initializer = tf.constant_initializer(initial_variables[name + '/matrix'])
-            b_initializer = tf.constant_initializer(initial_variables[name + '/bias'])
+            w_initializer = tf.constant_initializer(initial_variables[scope + name + '/matrix'])
+            b_initializer = tf.constant_initializer(initial_variables[scope + name + '/bias'])
         w = tf.get_variable('matrix', 
                             [shape[1], outputs_size], 
                             precision,
@@ -63,7 +64,7 @@ def one_layer(inputs,
                                     mean=0.1,
                                     seed=seed if (seed is None or uniform_seed) else seed + 2)
             if initial_variables is not None:
-                idt_initializer = tf.constant_initializer(initial_variables[name + '/idt'])
+                idt_initializer = tf.constant_initializer(initial_variables[scope + name + '/idt'])
             idt = tf.get_variable('idt',
                                   [outputs_size],
                                   precision,
