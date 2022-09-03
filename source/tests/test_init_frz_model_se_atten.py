@@ -10,6 +10,7 @@ from deepmd.utils.compat import update_deepmd_input
 from deepmd.utils.data_system import DeepmdDataSystem
 
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION, tf
+from packaging.version import parse as parse_version
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
     default_places = 4
@@ -111,7 +112,8 @@ def _init_models():
 
 INPUT, FROZEN_MODEL, CKPT_TRAINER, FRZ_TRAINER, VALID_DATA, STOP_BATCH = _init_models()
 
-
+@unittest.skipIf(parse_version(tf.__version__) < parse_version("1.15"),
+    f"The current tf version {tf.__version__} is too low to run the new testing model.")
 class TestDeepPotAPBC(unittest.TestCase):
     @classmethod
     def setUpClass(self):
