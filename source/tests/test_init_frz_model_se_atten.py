@@ -110,7 +110,9 @@ def _init_models():
     return INPUT, frozen_model, model_ckpt, model_frz, data, stop_batch
 
 
-INPUT, FROZEN_MODEL, CKPT_TRAINER, FRZ_TRAINER, VALID_DATA, STOP_BATCH = _init_models()
+if not parse_version(tf.__version__) < parse_version("1.15"):
+    INPUT, FROZEN_MODEL, CKPT_TRAINER, FRZ_TRAINER, VALID_DATA, STOP_BATCH = _init_models()
+
 
 @unittest.skipIf(parse_version(tf.__version__) < parse_version("1.15"),
     f"The current tf version {tf.__version__} is too low to run the new testing model.")
