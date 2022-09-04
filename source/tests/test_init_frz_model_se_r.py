@@ -40,13 +40,15 @@ class TestInitFrzModelA(unittest.TestCase):
     def setUpClass(self):
         data_file = str(tests_path / os.path.join("init_frz_model", "data"))
         frozen_model = str(tests_path / "dp-frozen.pb")
-        ckpt = str(tests_path / "model.ckpt")
+        ckpt_name = "init_frz_se_r.ckpt"
+        ckpt = str(tests_path / ckpt_name)
         run_opt_ckpt = RunOptions(init_model=ckpt, log_level=20)
         run_opt_frz = RunOptions(init_frz_model=frozen_model, log_level=20)
         INPUT = str(tests_path / "input.json")
         jdata = j_loader(str(tests_path / os.path.join("init_frz_model", "input.json")))
         jdata["training"]["training_data"]["systems"] = data_file
         jdata["training"]["validation_data"]["systems"] = data_file
+        jdata["training"]["save_ckpt"] = ckpt_name
         jdata["model"]["descriptor"] = {}
         jdata["model"]["descriptor"]["type"] = "se_e2_r"
         jdata["model"]["descriptor"]["sel"] = [46, 92]
@@ -123,15 +125,15 @@ class TestInitFrzModelA(unittest.TestCase):
         _file_delete("dp-frozen.pb")
         _file_delete("out.json")
         _file_delete("checkpoint")
-        _file_delete("model.ckpt.meta")
-        _file_delete("model.ckpt.index")
-        _file_delete("model.ckpt.data-00000-of-00001")
-        _file_delete("model.ckpt-0.meta")
-        _file_delete("model.ckpt-0.index")
-        _file_delete("model.ckpt-0.data-00000-of-00001")
-        _file_delete("model.ckpt-1.meta")
-        _file_delete("model.ckpt-1.index")
-        _file_delete("model.ckpt-1.data-00000-of-00001")
+        _file_delete("init_frz_se_r.ckpt.meta")
+        _file_delete("init_frz_se_r.ckpt.index")
+        _file_delete("init_frz_se_r.ckpt.data-00000-of-00001")
+        _file_delete("init_frz_se_r.ckpt-0.meta")
+        _file_delete("init_frz_se_r.ckpt-0.index")
+        _file_delete("init_frz_se_r.ckpt-0.data-00000-of-00001")
+        _file_delete("init_frz_se_r.ckpt-1.meta")
+        _file_delete("init_frz_se_r.ckpt-1.index")
+        _file_delete("init_frz_se_r.ckpt-1.data-00000-of-00001")
         _file_delete("input_v2_compat.json")
         _file_delete("lcurve.out")
 
