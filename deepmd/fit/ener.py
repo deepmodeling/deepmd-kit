@@ -9,6 +9,7 @@ from deepmd.utils.network import one_layer_rand_seed_shift
 from deepmd.utils.network import one_layer as one_layer_deepmd
 from deepmd.utils.type_embed import embed_atom_type
 from deepmd.utils.graph import get_fitting_net_variables_from_graph_def, load_graph_def, get_tensor_by_name_from_graph
+from deepmd.utils.errors import GraphWithoutTensorError
 from deepmd.fit.fitting import Fitting
 
 from deepmd.env import global_cvt_2_tf_float
@@ -573,7 +574,8 @@ class EnerFitting (Fitting):
             self.aparam_inv_std = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_aparam_istd' % suffix)
         try:
             self.bias_atom_e = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_bias_atom_e' % suffix)
-        except:
+        except GraphWithoutTensorError:
+            # model without type_embedding has no t_bias_atom_e
             pass
 
     def enable_compression(self,
