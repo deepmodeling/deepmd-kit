@@ -118,7 +118,7 @@ def _init_models():
 INPUT, FROZEN_MODEL, CKPT_TRAINER, FRZ_TRAINER, VALID_DATA, STOP_BATCH = _init_models()
 
 
-class TestDeepPotAPBC(unittest.TestCase):
+class TestInitFrzModelR(unittest.TestCase):
     @classmethod
     def setUpClass(self):
         self.dp_ckpt = CKPT_TRAINER
@@ -135,13 +135,12 @@ class TestDeepPotAPBC(unittest.TestCase):
         _file_delete("model.ckpt.meta")
         _file_delete("model.ckpt.index")
         _file_delete("model.ckpt.data-00000-of-00001")
-        _file_delete("model.ckpt-100.meta")
-        _file_delete("model.ckpt-100.index")
-        _file_delete("model.ckpt-100.data-00000-of-00001")
-        _file_delete("init_frz_model/checkpoint")
-        _file_delete("init_frz_model/model.ckpt.meta")
-        _file_delete("init_frz_model/model.ckpt.index")
-        _file_delete("init_frz_model/model.ckpt.data-00000-of-00001")
+        _file_delete("model.ckpt-0.meta")
+        _file_delete("model.ckpt-0.index")
+        _file_delete("model.ckpt-0.data-00000-of-00001")
+        _file_delete("model.ckpt-1.meta")
+        _file_delete("model.ckpt-1.index")
+        _file_delete("model.ckpt-1.data-00000-of-00001")
         _file_delete("input_v2_compat.json")
         _file_delete("lcurve.out")
 
