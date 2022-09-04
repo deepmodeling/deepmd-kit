@@ -35,97 +35,88 @@ def _subprocess_run(command):
     return popen.returncode
 
 
-def _init_models():
-    data_file = str(tests_path / os.path.join("init_frz_model", "data"))
-    frozen_model = str(tests_path / "dp-frozen.pb")
-    ckpt = str(tests_path / "model.ckpt")
-    run_opt_ckpt = RunOptions(init_model=ckpt, log_level=20)
-    run_opt_frz = RunOptions(init_frz_model=frozen_model, log_level=20)
-    INPUT = str(tests_path / "input.json")
-    jdata = j_loader(str(tests_path / os.path.join("init_frz_model", "input.json")))
-    jdata["training"]["training_data"]["systems"] = data_file
-    jdata["training"]["validation_data"]["systems"] = data_file
-    type_embed = {}
-    type_embed['neuron'] = [2, 4, 8]
-    type_embed['resnet_dt'] = False
-    jdata['model']["type_embedding"] = type_embed
-    with open(INPUT, "w") as fp:
-        json.dump(jdata, fp, indent=4)
-    ret = _subprocess_run("dp train " + INPUT)
-    np.testing.assert_equal(ret, 0, 'DP train failed!')
-    ret = _subprocess_run("dp freeze -o " + frozen_model)
-    np.testing.assert_equal(ret, 0, 'DP freeze failed!')
+class TestInitFrzModelA(unittest.TestCase):
+    @classmethod
+    def setUpClass(self):
+        data_file = str(tests_path / os.path.join("init_frz_model", "data"))
+        frozen_model = str(tests_path / "dp-frozen.pb")
+        ckpt = str(tests_path / "model.ckpt")
+        run_opt_ckpt = RunOptions(init_model=ckpt, log_level=20)
+        run_opt_frz = RunOptions(init_frz_model=frozen_model, log_level=20)
+        INPUT = str(tests_path / "input.json")
+        jdata = j_loader(str(tests_path / os.path.join("init_frz_model", "input.json")))
+        jdata["training"]["training_data"]["systems"] = data_file
+        jdata["training"]["validation_data"]["systems"] = data_file
+        type_embed = {}
+        type_embed['neuron'] = [2, 4, 8]
+        type_embed['resnet_dt'] = False
+        jdata['model']["type_embedding"] = type_embed
+        with open(INPUT, "w") as fp:
+            json.dump(jdata, fp, indent=4)
+        ret = _subprocess_run("dp train " + INPUT)
+        np.testing.assert_equal(ret, 0, 'DP train failed!')
+        ret = _subprocess_run("dp freeze -o " + frozen_model)
+        np.testing.assert_equal(ret, 0, 'DP freeze failed!')
 
-    jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
-    jdata = normalize(jdata)
-    model_ckpt = DPTrainer(jdata, run_opt=run_opt_ckpt)
-    model_frz = DPTrainer(jdata, run_opt=run_opt_frz)
-    rcut = model_ckpt.model.get_rcut()
-    type_map = model_ckpt.model.get_type_map()
-    data = DeepmdDataSystem(
-        systems=[data_file],
-        batch_size=1,
-        test_size=1,
-        rcut=rcut,
-        type_map=type_map,
-        trn_all_set=True
-    )
-    data_requirement = {'energy': {'ndof': 1,
-                                   'atomic': False,
-                                   'must': False,
-                                   'high_prec': True,
-                                   'type_sel': None,
-                                   'repeat': 1,
-                                   'default': 0.0},
-                        'force': {'ndof': 3,
-                                  'atomic': True,
-                                  'must': False,
-                                  'high_prec': False,
-                                  'type_sel': None,
-                                  'repeat': 1,
-                                  'default': 0.0},
-                        'virial': {'ndof': 9,
-                                   'atomic': False,
-                                   'must': False,
-                                   'high_prec': False,
-                                   'type_sel': None,
-                                   'repeat': 1,
-                                   'default': 0.0},
-                        'atom_ener': {'ndof': 1,
+        jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
+        jdata = normalize(jdata)
+        model_ckpt = DPTrainer(jdata, run_opt=run_opt_ckpt)
+        model_frz = DPTrainer(jdata, run_opt=run_opt_frz)
+        rcut = model_ckpt.model.get_rcut()
+        type_map = model_ckpt.model.get_type_map()
+        data = DeepmdDataSystem(
+            systems=[data_file],
+            batch_size=1,
+            test_size=1,
+            rcut=rcut,
+            type_map=type_map,
+            trn_all_set=True
+        )
+        data_requirement = {'energy': {'ndof': 1,
+                                       'atomic': False,
+                                       'must': False,
+                                       'high_prec': True,
+                                       'type_sel': None,
+                                       'repeat': 1,
+                                       'default': 0.0},
+                            'force': {'ndof': 3,
                                       'atomic': True,
                                       'must': False,
                                       'high_prec': False,
                                       'type_sel': None,
                                       'repeat': 1,
                                       'default': 0.0},
-                        'atom_pref': {'ndof': 1,
-                                      'atomic': True,
-                                      'must': False,
-                                      'high_prec': False,
-                                      'type_sel': None,
-                                      'repeat': 3,
-                                      'default': 0.0}}
-    data.add_dict(data_requirement)
-    stop_batch = jdata["training"]["numb_steps"]
-
-    return INPUT, frozen_model, model_ckpt, model_frz, data, stop_batch
-
-
-INPUT, FROZEN_MODEL, CKPT_TRAINER, FRZ_TRAINER, VALID_DATA, STOP_BATCH = _init_models()
-
-
-class TestInitFrzModelAType(unittest.TestCase):
-    @classmethod
-    def setUpClass(self):
-        self.dp_ckpt = CKPT_TRAINER
-        self.dp_frz = FRZ_TRAINER
-        self.valid_data = VALID_DATA
-        self.stop_batch = STOP_BATCH
+                            'virial': {'ndof': 9,
+                                       'atomic': False,
+                                       'must': False,
+                                       'high_prec': False,
+                                       'type_sel': None,
+                                       'repeat': 1,
+                                       'default': 0.0},
+                            'atom_ener': {'ndof': 1,
+                                          'atomic': True,
+                                          'must': False,
+                                          'high_prec': False,
+                                          'type_sel': None,
+                                          'repeat': 1,
+                                          'default': 0.0},
+                            'atom_pref': {'ndof': 1,
+                                          'atomic': True,
+                                          'must': False,
+                                          'high_prec': False,
+                                          'type_sel': None,
+                                          'repeat': 3,
+                                          'default': 0.0}}
+        data.add_dict(data_requirement)
+        self.valid_data = data
+        self.stop_batch = jdata["training"]["numb_steps"]
+        self.dp_ckpt = model_ckpt
+        self.dp_frz = model_frz
 
     @classmethod
     def tearDownClass(self):
-        _file_delete(INPUT)
-        _file_delete(FROZEN_MODEL)
+        _file_delete("input.json")
+        _file_delete("dp-frozen.pb")
         _file_delete("out.json")
         _file_delete("checkpoint")
         _file_delete("model.ckpt.meta")
