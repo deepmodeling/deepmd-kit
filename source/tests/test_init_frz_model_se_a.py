@@ -50,7 +50,7 @@ def _init_models():
         json.dump(jdata, fp, indent=4)
     ret = _subprocess_run("dp train " + INPUT)
     np.testing.assert_equal(ret, 0, 'DP train failed!')
-    ret = _subprocess_run("dp freeze -o " + frozen_model)
+    ret = _subprocess_run("dp freeze -c " + str(tests_path) + " -o " + frozen_model)
     np.testing.assert_equal(ret, 0, 'DP freeze failed!')
 
     jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
