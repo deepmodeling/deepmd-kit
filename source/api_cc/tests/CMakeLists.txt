@@ -60,11 +60,12 @@ set(apiname "deepmd_api")
 set(opname "deepmd_op")
 
 find_package(tensorflow REQUIRED)
-if (TENSORFLOW_VERSION GREATER_EQUAL 2.7)
+if (TENSORFLOW_VERSION VERSION_GREATER_EQUAL 2.10)
+  set (CMAKE_CXX_STANDARD 17)
+elseif (TENSORFLOW_VERSION VERSION_GREATER_EQUAL 2.7)
   set (CMAKE_CXX_STANDARD 14)
 else()
   set (CMAKE_CXX_STANDARD 11)
-endif()
 
 find_package(Threads)
 # find openmp
