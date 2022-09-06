@@ -18,7 +18,7 @@ if (USE_ASCEND)
   # link: libdeepmd libdeepmd_op libtensorflow_cc libtensorflow_framework
   target_link_libraries (${libname} PUBLIC ${LIB_DEEPMD} ${TensorFlow_LIBRARY} ${TensorFlowFramework_LIBRARY})
   # link: libdeepmd libpython3.7m dl for Ascend platfrom
-  target_link_libraries (${libname} PUBLIC ${PY_LIBRARY} dl)
+  target_link_libraries (${libname} PUBLIC ${Python_LIBRARIES} dl)
 else()
   # link: libdeepmd libdeepmd_op libtensorflow_cc libtensorflow_framework
   target_link_libraries (${libname} PUBLIC ${LIB_DEEPMD})

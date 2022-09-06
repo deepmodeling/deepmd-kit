@@ -111,6 +111,7 @@ endif (USE_ROCM_TOOLKIT)
 #define USE_ASCEND, find tensorflow abi info
 if (USE_ASCEND)
   add_definitions("-DHUAWEI_ASCEND")
+  set(DP_VARIANT "ascend")
 endif(USE_ASCEND)
 if (USE_ASCEND AND BUILD_CPP_IF)
   set(PYTHON_EXECUTABLE "python3.7")
@@ -142,22 +143,7 @@ if (USE_ASCEND AND BUILD_CPP_IF)
     message(FATAL_ERROR "Cannot determine tensorflow link dir, error message: ${ERROR_VAR}")
   endif()
 
-  set(FIND_PY_LIB "from distutils import sysconfig; print(sysconfig.get_config_var('LIBDIR'),end='')")
-  execute_process(
-    COMMAND ${PYTHON_EXECUTABLE} "-c" "${FIND_PY_LIB}"
-    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-    OUTPUT_VARIABLE OUTPUT_VAR
-    RESULT_VARIABLE RESULT_VAR
-    ERROR_VARIABLE ERROR_VAR
-  )
-  string(REPLACE "-I" "" PY_LIB_DIRS ${OUTPUT_VAR})
-  set (PY_LIBRARY "${PY_LIB_DIRS}/libpython3.7m.so")
-  if (NOT ${RESULT_VAR} EQUAL 0)
-    message(FATAL_ERROR "Cannot determine python lib dir, error message: ${ERROR_VAR}")
-  endif()
-  set (OP_CXX_ABI 0)
-  add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
-  message(STATUS "Build Ascend NPU support")
+  find_package(Python REQUIRED COMPONENTS Interpreter Development)
 else()
   message(STATUS "Will not build Ascend NPU support")
   # find tensorflow, I need tf abi info
