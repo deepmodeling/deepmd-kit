@@ -38,14 +38,15 @@ def _subprocess_run(command):
 
 def _init_models():
     data_file = str(tests_path / os.path.join("init_frz_model", "data"))
-    frozen_model = str(tests_path / "dp-frozen.pb")
-    ckpt = str(tests_path / "model.ckpt")
+    frozen_model = str(tests_path / "init_frz_se_atten.pb")
+    ckpt = str(tests_path / "init_frz_se_atten.ckpt")
     run_opt_ckpt = RunOptions(init_model=ckpt, log_level=20)
     run_opt_frz = RunOptions(init_frz_model=frozen_model, log_level=20)
     INPUT = str(tests_path / "input.json")
     jdata = j_loader(str(tests_path / os.path.join("init_frz_model", "input.json")))
     jdata["training"]["training_data"]["systems"] = data_file
     jdata["training"]["validation_data"]["systems"] = data_file
+    jdata["training"]["save_ckpt"] = ckpt
     jdata['model']["descriptor"]['type'] = 'se_atten'
     jdata['model']["descriptor"]['sel'] = 120
     with open(INPUT, "w") as fp:
@@ -107,11 +108,11 @@ def _init_models():
     data.add_dict(data_requirement)
     stop_batch = jdata["training"]["numb_steps"]
 
-    return INPUT, frozen_model, model_ckpt, model_frz, data, stop_batch
+    return INPUT, ckpt, frozen_model, model_ckpt, model_frz, data, stop_batch
 
 
 if not parse_version(tf.__version__) < parse_version("1.15"):
-    INPUT, FROZEN_MODEL, CKPT_TRAINER, FRZ_TRAINER, VALID_DATA, STOP_BATCH = _init_models()
+    INPUT, CKPT, FROZEN_MODEL, CKPT_TRAINER, FRZ_TRAINER, VALID_DATA, STOP_BATCH = _init_models()
 
 
 @unittest.skipIf(parse_version(tf.__version__) < parse_version("1.15"),
@@ -129,16 +130,16 @@ class TestInitFrzModelAtten(unittest.TestCase):
         _file_delete(INPUT)
         _file_delete(FROZEN_MODEL)
         _file_delete("out.json")
-        _file_delete("checkpoint")
-        _file_delete("model.ckpt.meta")
-        _file_delete("model.ckpt.index")
-        _file_delete("model.ckpt.data-00000-of-00001")
-        _file_delete("model.ckpt-0.meta")
-        _file_delete("model.ckpt-0.index")
-        _file_delete("model.ckpt-0.data-00000-of-00001")
-        _file_delete("model.ckpt-1.meta")
-        _file_delete("model.ckpt-1.index")
-        _file_delete("model.ckpt-1.data-00000-of-00001")
+        _file_delete(str(tests_path / "checkpoint"))
+        _file_delete(CKPT+".meta")
+        _file_delete(CKPT+".index")
+        _file_delete(CKPT+".data-00000-of-00001")
+        _file_delete(CKPT+"-0.meta")
+        _file_delete(CKPT+"-0.index")
+        _file_delete(CKPT+"-0.data-00000-of-00001")
+        _file_delete(CKPT+"-1.meta")
+        _file_delete(CKPT+"-1.index")
+        _file_delete(CKPT+"-1.data-00000-of-00001")
         _file_delete("input_v2_compat.json")
         _file_delete("lcurve.out")
 
