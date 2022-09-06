@@ -87,9 +87,9 @@ REGISTER_OP("ProdEnvMatAMesh")
     .Attr("rcut_r_smth: float")
     .Attr("sel_a: list(int)")
     .Attr("sel_r: list(int)")   //all zero
-    .Output("descrpt: T")
-    .Output("descrpt_deriv: T")
-    .Output("rij: T")
+    .Output("trans_coord: T")
+    .Output("trans_type: T")
+    .Output("idx_mapping: T")
     .Output("nlist: int32");
     // only sel_a and rcut_r uesd.
 #endif //HUAWEI_ASCEND 
@@ -744,10 +744,12 @@ public:
     nnei_r = sec_r.back();
     nnei = nnei_a + nnei_r;
     max_nbor_size = 1024;
+    neigh_len = 1024;
     max_cpy_trial = 100;
     mem_cpy = 256;
     max_nnei_trial = 100;
     mem_nnei = 256;
+    nall_up_limit = 10000;
   }
 
   void Compute(OpKernelContext* context) override {
@@ -818,47 +820,47 @@ public:
     else {
       throw deepmd::deepmd_exception("invalid mesh tensor");
     }
-
+    
     // Create output tensors
-    TensorShape descrpt_shape ;
-    descrpt_shape.AddDim (nsamples);
-    descrpt_shape.AddDim (nloc * ndescrpt);
-    TensorShape descrpt_deriv_shape ;
-    descrpt_deriv_shape.AddDim (nsamples);
-    descrpt_deriv_shape.AddDim (nloc * ndescrpt * 3);
-    TensorShape rij_shape ;
-    rij_shape.AddDim (nsamples);
-    rij_shape.AddDim (nloc * nnei * 3);
-    TensorShape nlist_shape ;
+    TensorShape trans_coord_shape;
+    trans_coord_shape.AddDim (nsamples);
+    trans_coord_shape.AddDim (nall_up_limit * 3);
+    TensorShape trans_type_shape;
+    trans_type_shape.AddDim (nsamples);
+    trans_type_shape.AddDim (nall_up_limit);
+    TensorShape atom_mapping_shape;
+    atom_mapping_shape.AddDim (nsamples);
+    atom_mapping_shape.AddDim (nall_up_limit);
+    TensorShape nlist_shape;
     nlist_shape.AddDim (nsamples);
-    nlist_shape.AddDim (nloc * 1026 + 1);
+    nlist_shape.AddDim (nloc * (neigh_len + 2) + 1);
 //    nlist_shape.AddDim (nloc * nnei);
     // define output tensor
     int context_output_index = 0;
-    Tensor* descrpt_tensor = NULL;
-    Tensor* descrpt_deriv_tensor = NULL;
-    Tensor* rij_tensor = NULL;
+    Tensor* trans_coord_tensor = NULL;
+    Tensor* trans_type_tensor = NULL;
+    Tensor* atom_mapping_tensor = NULL;
     Tensor* nlist_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(
         context_output_index++,
-        descrpt_shape,
-        &descrpt_tensor));
+        trans_coord_shape,
+        &trans_coord_tensor));
     OP_REQUIRES_OK(context, context->allocate_output(
         context_output_index++,
-        descrpt_deriv_shape,
-        &descrpt_deriv_tensor));
+        trans_type_shape,
+        &trans_type_tensor));
     OP_REQUIRES_OK(context, context->allocate_output(
         context_output_index++,
-        rij_shape,
-        &rij_tensor));
+        atom_mapping_shape,
+        &atom_mapping_tensor));
     OP_REQUIRES_OK(context, context->allocate_output(
         context_output_index++,
         nlist_shape,
         &nlist_tensor));
 
-    FPTYPE * p_em = descrpt_tensor->flat<FPTYPE>().data();
-    FPTYPE * p_em_deriv = descrpt_deriv_tensor->flat<FPTYPE>().data();
-    FPTYPE * p_rij = rij_tensor->flat<FPTYPE>().data();
+    FPTYPE * p_trans_coord = trans_coord_tensor->flat<FPTYPE>().data();
+    FPTYPE * p_trans_type = trans_type_tensor->flat<FPTYPE>().data();
+    FPTYPE * p_atom_mapping = atom_mapping_tensor->flat<FPTYPE>().data();
     int * p_nlist = nlist_tensor->flat<int>().data();
     const FPTYPE * p_coord = coord_tensor.flat<FPTYPE>().data();
     const FPTYPE * p_box = box_tensor.flat<FPTYPE>().data();
@@ -868,93 +870,15 @@ public:
 
     // loop over samples
     for(int ff = 0; ff < nsamples; ++ff){
-      FPTYPE * em = p_em + ff*nloc*ndescrpt;
-      FPTYPE * em_deriv = p_em_deriv + ff*nloc*ndescrpt*3;
-      FPTYPE * rij = p_rij + ff*nloc*nnei*3;
-//      int * nlist = p_nlist + ff*nloc*nnei;
-      int * nlist = p_nlist + ff*(nloc * 1026 + 1);
-      const FPTYPE * coord = p_coord + ff*nall*3;
-      const FPTYPE * box = p_box + ff*9;
-      const int * type = p_type + ff*nall;
-
-    if(device == "GPU") {
-      #if GOOGLE_CUDA
-      int * idx_mapping = NULL;
-      int * ilist = NULL, * numneigh = NULL;
-      int ** firstneigh = NULL;
-      deepmd::malloc_device_memory(firstneigh, nloc);
-      int * jlist = NULL;
-      FPTYPE * coord_cpy;
-      int * type_cpy;
-      int frame_nall = nall;
-      int mesh_tensor_size = static_cast<int>(mesh_tensor.NumElements());
-      std::vector<Tensor> tensor_list(7);
-      // prepare coord and nlist
-      _prepare_coord_nlist_gpu<FPTYPE>(
-          context, &tensor_list[0], &coord, coord_cpy, &type, type_cpy, idx_mapping, 
-          gpu_inlist, ilist, numneigh, firstneigh, jlist, nbor_list_dev,
-          frame_nall, mem_cpy, mem_nnei, max_nbor_size,
-          box, mesh_tensor.flat<int>().data(), mesh_tensor_size, nloc, nei_mode, rcut_r, max_cpy_trial, max_nnei_trial);
-
-      // allocate temp memory, temp memory must not be used after this operation!
-      Tensor int_temp;
-      TensorShape int_shape;
-      int_shape.AddDim(sec_a.size() + nloc * sec_a.size() + nloc);
-      OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, int_shape, &int_temp));
-      Tensor uint64_temp;
-      TensorShape uint64_shape;
-      uint64_shape.AddDim(nloc * GPU_MAX_NBOR_SIZE * 2);
-      OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape, &uint64_temp));
-      array_int = int_temp.flat<int>().data(); 
-      array_longlong = uint64_temp.flat<unsigned long long>().data();
-
-      // launch the gpu(nv) compute function
-      deepmd::prod_env_mat_a_gpu_cuda(
-          em, em_deriv, rij, nlist, 
-          coord, type, gpu_inlist, array_int, array_longlong, max_nbor_size, avg, std, nloc, frame_nall, rcut_r, rcut_r_smth, sec_a);
-      if(b_nlist_map) _map_nlist_gpu(nlist, idx_mapping, nloc, nnei);
-      deepmd::delete_device_memory(firstneigh);
-      #endif //GOOGLE_CUDA
-
-      #if TENSORFLOW_USE_ROCM
-      int * idx_mapping = NULL;
-      int * ilist = NULL, * numneigh = NULL;
-      int ** firstneigh = NULL;
-      deepmd::malloc_device_memory(firstneigh, nloc);
-      int * jlist = NULL;
-      FPTYPE * coord_cpy;
-      int * type_cpy;
-      int frame_nall = nall;
-      int mesh_tensor_size = static_cast<int>(mesh_tensor.NumElements());
-      std::vector<Tensor> tensor_list(7);
-      // prepare coord and nlist
-      _prepare_coord_nlist_gpu_rocm<FPTYPE>(
-          context, &tensor_list[0], &coord, coord_cpy, &type, type_cpy, idx_mapping, 
-          gpu_inlist, ilist, numneigh, firstneigh, jlist, nbor_list_dev,
-          frame_nall, mem_cpy, mem_nnei, max_nbor_size,
-          box, mesh_tensor.flat<int>().data(), mesh_tensor_size, nloc, nei_mode, rcut_r, max_cpy_trial, max_nnei_trial);
-
-      // allocate temp memory, temp memory must not be used after this operation!
-      Tensor int_temp;
-      TensorShape int_shape;
-      int_shape.AddDim(sec_a.size() + nloc * sec_a.size() + nloc);
-      OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, int_shape, &int_temp));
-      Tensor uint64_temp;
-      TensorShape uint64_shape;
-      uint64_shape.AddDim(nloc * GPU_MAX_NBOR_SIZE * 2);
-      OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape, &uint64_temp));
-      array_int = int_temp.flat<int>().data(); 
-      array_longlong = uint64_temp.flat<unsigned long long>().data();
-
-      // launch the gpu(nv) compute function
-      deepmd::prod_env_mat_a_gpu_rocm(
-          em, em_deriv, rij, nlist, 
-          coord, type, gpu_inlist, array_int, array_longlong, max_nbor_size, avg, std, nloc, frame_nall, rcut_r, rcut_r_smth, sec_a);
-      if(b_nlist_map) _map_nlist_gpu_rocm(nlist, idx_mapping, nloc, nnei);
-      deepmd::delete_device_memory(firstneigh);
-      #endif //TENSORFLOW_USE_ROCM
-    }
-    else if (device == "CPU") {
+      FPTYPE * trans_coord = p_trans_coord + ff * nall_up_limit * 3;
+      FPTYPE * trans_type = p_trans_type + ff * nall_up_limit;
+      FPTYPE * atom_mapping = p_atom_mapping + ff * nall_up_limit;
+      int * nlist = p_nlist + ff * (nloc * (neigh_len + 2) + 1);
+      const FPTYPE * coord = p_coord + ff * nall * 3;
+      const FPTYPE * box = p_box + ff * 9;
+      const int * type = p_type + ff * nall;
+    
+      assert (device == "CPU");
       deepmd::InputNlist inlist;
       // some buffers, be freed after the evaluation of this frame
       std::vector<int> idx_mapping;
@@ -964,23 +888,25 @@ public:
       std::vector<FPTYPE> coord_cpy;
       std::vector<int> type_cpy;
       int frame_nall = nall;
-      // prepare coord and nlist
+        // prepare coord and nlist
       _prepare_coord_nlist_cpu<FPTYPE>(
-	  context, &coord, coord_cpy, &type, type_cpy, idx_mapping, 
-	  inlist, ilist, numneigh, firstneigh, jlist,
-	  frame_nall, mem_cpy, mem_nnei, max_nbor_size,
-	  box, mesh_tensor.flat<int>().data(), nloc, nei_mode, rcut_r, max_cpy_trial, max_nnei_trial);
-	  rij[0] = frame_nall;
-	  for (int jj = 0; jj < frame_nall; ++jj) {
-        em[jj*3] = coord[jj*3];
-        em[jj*3+1] = coord[jj*3+1];
-        em[jj*3+2] = coord[jj*3+2];
-        em_deriv[jj] = type[jj];
-        rij[jj+1] = idx_mapping[jj];
+      context, &coord, coord_cpy, &type, type_cpy, idx_mapping, 
+      inlist, ilist, numneigh, firstneigh, jlist,
+      frame_nall, mem_cpy, mem_nnei, max_nbor_size,
+      box, mesh_tensor.flat<int>().data(), nloc, nei_mode, rcut_r, max_cpy_trial, max_nnei_trial);
+
+      
+      assert (frame_nall < nall_up_limit);
+      atom_mapping[0] = frame_nall;
+      for (int jj = 0; jj < frame_nall; ++jj) {
+          trans_coord[jj*3] = coord[jj * 3];
+          trans_coord[jj*3+1] = coord[jj * 3 + 1];
+          trans_coord[jj*3+2] = coord[jj * 3 + 2];
+          trans_type[jj] = type[jj];
+          atom_mapping[jj+1] = idx_mapping[jj];
       }
 
-      int neigh_len = 1024;
-      for (int atom_i = 0; atom_i < (neigh_len+2)*nloc + 1; ++atom_i) {
+      for (int atom_i = 0; atom_i < (neigh_len+2) * nloc + 1; ++atom_i) {
             nlist[atom_i] = -1;
       }
       nlist[0] = nloc;
@@ -993,7 +919,6 @@ public:
           }
       }
     }
-    }
   }
 private:
   float rcut_a;
@@ -1004,7 +929,8 @@ private:
   std::vector<int> sec_a;
   std::vector<int> sec_r;
   int ndescrpt, ndescrpt_a, ndescrpt_r;
-  int nnei, nnei_a, nnei_r, nloc, nall, max_nbor_size;
+  int nnei, nnei_a, nnei_r, nloc, nall, max_nbor_size, neigh_len;
+  int nall_up_limit;
   int mem_cpy, max_cpy_trial;
   int mem_nnei, max_nnei_trial;
   std::string device;

@@ -45,7 +45,7 @@ def one_layer(inputs,
                             w_initializer, 
                             trainable = trainable)
         variable_summaries(w, 'matrix')
-        if final_layer and GLOBAL_ASCEND_OUT_PRECISION:
+        if final_layer and GLOBAL_ASCEND_OUT_PRECISION is not None:
             b = tf.get_variable('bias', 
                                 [outputs_size], 
                                 GLOBAL_ASCEND_OUT_PRECISION,
@@ -65,7 +65,7 @@ def one_layer(inputs,
             w = tf.cast(w, get_precision(mixed_prec['compute_prec']))
             b = tf.cast(b, get_precision(mixed_prec['compute_prec']))
 
-        if final_layer and GLOBAL_ASCEND_OUT_PRECISION:
+        if final_layer and GLOBAL_ASCEND_OUT_PRECISION is not None:
             hidden = tf.cast(tf.matmul(inputs, w), dtype=GLOBAL_ASCEND_OUT_PRECISION)
         else:
             hidden = tf.matmul(inputs, w)

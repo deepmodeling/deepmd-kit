@@ -71,7 +71,7 @@ def transfer(*, old_model: str, raw_model: str, output: str, **kwargs):
     dp_float_prec = os.environ.get("DP_INTERFACE_PREC", "high").lower()
     if dp_float_prec == "ascend_mix":
         const_graph_def = modify_const_op(new_graph_def)
-        if output.endswith("pb"):
+        if output.endswith(".pb"):
             const_out = output[:-3] + "_const.pb"
         else:
             const_out = output + "_const"
