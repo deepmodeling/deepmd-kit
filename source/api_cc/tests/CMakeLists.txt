@@ -66,6 +66,7 @@ elseif (TENSORFLOW_VERSION VERSION_GREATER_EQUAL 2.7)
   set (CMAKE_CXX_STANDARD 14)
 else()
   set (CMAKE_CXX_STANDARD 11)
+endif()
 
 find_package(Threads)
 # find openmp
