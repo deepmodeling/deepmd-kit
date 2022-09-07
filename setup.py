@@ -2,7 +2,6 @@
 
 import os
 import site
-from distutils.util import get_platform
 from importlib.machinery import FileFinder
 from importlib.util import find_spec
 from pathlib import Path
