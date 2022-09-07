@@ -1,6 +1,7 @@
 """Setup script for DeePMD-kit package."""
 
 import os
+import site
 from distutils.util import get_platform
 from importlib.machinery import FileFinder
 from importlib.util import find_spec
@@ -58,6 +59,13 @@ else:
 
 # get tensorflow spec
 tf_spec = find_spec("tensorflow")
+
+if not tf_spec and site.ENABLE_USER_SITE:
+    # first search TF from user site-packages before global site-packages
+    site_packages = site.getusersitepackages()
+    if site_packages:
+        tf_spec = FileFinder(site_packages).find_spec("tensorflow")
+
 if not tf_spec:
     # purelib gets site-packages path
     site_packages = get_path("purelib")

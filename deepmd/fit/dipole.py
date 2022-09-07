@@ -3,8 +3,7 @@ import numpy as np
 from typing import Tuple, List
 
 from deepmd.env import tf
-from deepmd.common import add_data_requirement, get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, cast_precision
-from deepmd.utils.argcheck import list_to_doc
+from deepmd.common import add_data_requirement, get_activation_func, get_precision, cast_precision
 from deepmd.utils.network import one_layer, one_layer_rand_seed_shift
 from deepmd.utils.graph import get_fitting_net_variables_from_graph_def
 from deepmd.descriptor import DescrptSeA
@@ -31,13 +30,12 @@ class DipoleFittingSeA (Fitting) :
     seed : int
             Random seed for initializing the network parameters.
     activation_function : str
-            The activation function in the embedding net. Supported options are {0}
+            The activation function in the embedding net. Supported options are |ACTIVATION_FN|
     precision : str
-            The precision of the embedding net parameters. Supported options are {1}        
+            The precision of the embedding net parameters. Supported options are |PRECISION|
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
     """
-    @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   descrpt : tf.Tensor,
                   neuron : List[int] = [120,120,120], 

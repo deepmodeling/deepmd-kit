@@ -448,28 +448,6 @@ def expand_sys_str(root_dir: Union[str, Path]) -> List[str]:
     return matches
 
 
-def docstring_parameter(*sub: Tuple[str, ...]):
-    """Add parameters to object docstring.
-
-    Parameters
-    ----------
-    sub: Tuple[str, ...]
-        list of strings that will be inserted into prepared locations in docstring.
-
-    Notes
-    -----
-    Can be used on both object and classes.
-    """
-
-    @wraps
-    def dec(obj: "_OBJ") -> "_OBJ":
-        if obj.__doc__ is not None:
-            obj.__doc__ = obj.__doc__.format(*sub)
-        return obj
-
-    return dec
-
-
 def get_np_precision(precision: "_PRECISION") -> np.dtype:
     """Get numpy precision constant from string.
 

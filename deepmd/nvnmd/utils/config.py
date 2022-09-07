@@ -111,7 +111,7 @@ class NvnmdConfig():
                 log.error("NVNMD: don't have the configure of net_size")
 
     def init_from_deepmd_input(self, jdata):
-        """ initial members with input script of deepmd
+        r"""Initial members with input script of deepmd
         """
         fioObj = FioDic()
         self.config['dscp'] = fioObj.update(jdata['descriptor'], self.config['dscp'])
