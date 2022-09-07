@@ -18,7 +18,7 @@ from deepmd.utils.errors import GraphWithoutTensorError
 from .descriptor import Descriptor
 from .se import DescrptSe
 
-from deepmd.nvnmd.descriptor.se_a import descrpt2r4, build_davg_dstd, build_op_descriptor, filter_lower_R42GR, filter_GR2D
+from deepmd.nvnmd.descriptor.se_a import descrpt2r4, build_davg_dstd, check_switch_range, build_op_descriptor, filter_lower_R42GR, filter_GR2D
 from deepmd.nvnmd.utils.config import nvnmd_cfg 
 
 @Descriptor.register("se_e2_a")
@@ -417,7 +417,10 @@ class DescrptSeA (DescrptSe):
         """
         davg = self.davg
         dstd = self.dstd
-        if nvnmd_cfg.enable and nvnmd_cfg.restore_descriptor: davg, dstd = build_davg_dstd()
+        if nvnmd_cfg.enable:
+            if nvnmd_cfg.restore_descriptor:
+                davg, dstd = build_davg_dstd()
+            check_switch_range(davg, dstd)
         with tf.variable_scope('descrpt_attr' + suffix, reuse = reuse) :
             if davg is None:
                 davg = np.zeros([self.ntypes, self.ndescrpt]) 

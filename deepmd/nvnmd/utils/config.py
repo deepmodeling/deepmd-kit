@@ -34,7 +34,7 @@ class NvnmdConfig():
         self.init_from_jdata(jdata)
 
     def init_from_jdata(self, jdata: dict = {}):
-        """ initial this class with `jdata` loaded from input script
+        r"""Initial this class with `jdata` loaded from input script
         """
         if jdata == {}:
             return None
@@ -62,16 +62,17 @@ class NvnmdConfig():
             self.init_net_size()
 
     def init_value(self):
-        """ initial member with dict
+        r"""Initial member with dict
         """
         self.dscp = self.config['dscp']
         self.fitn = self.config['fitn']
+        self.dpin = self.config['dpin']
         self.size = self.config['size']
         self.ctrl = self.config['ctrl']
         self.nbit = self.config['nbit']
 
     def init_train_mode(self, mod='cnn'):
-        """ configure for taining cnn or qnn
+        r"""Configure for taining cnn or qnn
         """
         if mod == 'cnn':
             self.restore_descriptor = False
@@ -85,18 +86,19 @@ class NvnmdConfig():
             self.quantize_fitting_net = True
 
     def init_from_config(self, jdata):
-        """ initial member element one by one
+        r"""Initial member element one by one
         """
         self.config = FioDic().update(jdata, self.config)
         self.config['dscp'] = self.init_dscp(self.config['dscp'], self.config)
         self.config['fitn'] = self.init_fitn(self.config['fitn'], self.config)
+        self.config['dpin'] = self.init_dpin(self.config['dpin'], self.config)
         self.config['size'] = self.init_size(self.config['size'], self.config)
         self.config['ctrl'] = self.init_ctrl(self.config['ctrl'], self.config)
         self.config['nbit'] = self.init_nbit(self.config['nbit'], self.config)
         self.init_value()
 
     def init_net_size(self):
-        """ initial net_size
+        r"""Initial net_size
         """
         # self.net_size = self.fitn['neuron'][0]
         self.net_size = self.config['fitn']['neuron'][0]
@@ -111,32 +113,42 @@ class NvnmdConfig():
     def init_from_deepmd_input(self, jdata):
         """ initial members with input script of deepmd
         """
-        self.config['dscp'] = FioDic().update(jdata['descriptor'], self.config['dscp'])
-        self.config['fitn'] = FioDic().update(jdata['fitting_net'], self.config['fitn'])
+        fioObj = FioDic()
+        self.config['dscp'] = fioObj.update(jdata['descriptor'], self.config['dscp'])
+        self.config['fitn'] = fioObj.update(jdata['fitting_net'], self.config['fitn'])
         self.config['dscp'] = self.init_dscp(self.config['dscp'], self.config)
         self.config['fitn'] = self.init_fitn(self.config['fitn'], self.config)
+        dp_in = {
+            "type_map": fioObj.get(jdata, 'type_map', [])
+        }
+        self.config['dpin'] = fioObj.update(dp_in, self.config['dpin'])
         #
         self.init_net_size()
         self.init_value()
 
     def init_dscp(self, jdata: dict, jdata_parent: dict = {}) -> dict:
-        """ initial members about descriptor
+        r"""Initial members about descriptor
         """
+        # embedding
         jdata['M1'] = jdata['neuron'][-1]
         jdata['M2'] = jdata['axis_neuron']
+        jdata['SEL'] = (jdata['sel'] + [0, 0, 0, 0])[0:4]
         jdata['NNODE_FEAS'] = [1] + jdata['neuron']
         jdata['nlayer_fea'] = len(jdata['neuron'])
         jdata['same_net'] = int(1) if jdata['type_one_side'] else int(0)
+        # neighbor
         jdata['NIDP'] = int(np.sum(jdata['sel']))
         jdata['NIX'] = 2 ** int(np.ceil(np.log2(jdata['NIDP'] / 1.5)))
-        jdata['SEL'] = (jdata['sel'] + [0, 0, 0, 0])[0:4]
+        # type
         jdata['ntype'] = len(jdata['sel'])
         jdata['ntypex'] = 1 if(jdata['same_net']) else jdata['ntype']
-
+        # mapping table
+        jdata['NUM_U2S'] = jdata['rc_max'] ** 2
+        jdata['NUM_S2G'] = 14 - (-2)
         return jdata
 
     def init_fitn(self, jdata: dict, jdata_parent: dict = {}) -> dict:
-        """ initial members about fitting network
+        r"""Initial members about fitting network
         """
         M1 = jdata_parent['dscp']['M1']
         M2 = jdata_parent['dscp']['M2']
@@ -147,15 +159,22 @@ class NvnmdConfig():
 
         return jdata
 
-    def init_size(self, jdata: dict, jdata_parent: dict = {}) -> dict:
-        """ initial members about ram capacity
+    def init_dpin(self, jdata: dict, jdata_parent: dict = {}) -> dict:
+        """ initial members about other deepmd input
         """
-        jdata['Na'] = jdata['NSPU']
-        jdata['NaX'] = jdata['MSPU']
+
+        return jdata
+
+    def init_size(self, jdata: dict, jdata_parent: dict = {}) -> dict:
+        r"""Initial members about ram capacity
+        """
+        jdata['NAEXT'] = jdata['Na']
+        jdata['NTYPE'] = jdata_parent['dscp']['ntype_max']
+        jdata['NTYPEX'] = jdata_parent['dscp']['ntypex_max']
         return jdata
 
     def init_ctrl(self, jdata: dict, jdata_parent: dict = {}) -> dict:
-        """ initial members about control signal
+        r"""Initial members about control signal
         """
         ntype_max = jdata_parent['dscp']['ntype_max']
         jdata['NSADV'] = jdata['NSTDM'] + 1
@@ -165,25 +184,37 @@ class NvnmdConfig():
         return jdata
 
     def init_nbit(self, jdata: dict, jdata_parent: dict = {}) -> dict:
-        """ initial members about quantification precision
+        r"""Initial members about quantification precision
         """
         Na = jdata_parent['size']['Na']
         NaX = jdata_parent['size']['NaX']
-        jdata['NBIT_CRD'] = jdata['NBIT_DATA'] * 3
+        ntype_max = jdata_parent['dscp']['ntype_max']
+        NUM_MAPT = jdata_parent['dscp']['NUM_MAPT']
+        NUM_U2S = jdata_parent['dscp']['NUM_U2S']
+        NUM_S2G = jdata_parent['dscp']['NUM_S2G']
+        NSEL = jdata_parent['ctrl']['NSEL']
+        # atom
+        jdata['NBIT_SPE'] = int(np.ceil(np.log2(ntype_max)))
         jdata['NBIT_LST'] = int(np.ceil(np.log2(NaX)))
-        jdata['NBIT_ATOM'] = jdata['NBIT_SPE'] + jdata['NBIT_CRD']
-        jdata['NBIT_LONG_ATOM'] = jdata['NBIT_SPE'] + jdata['NBIT_LONG_DATA'] * 3
+        jdata['NBIT_CRD3'] = jdata['NBIT_CRD'] * 3
+        jdata['NBIT_ATOM'] = jdata['NBIT_SPE'] + jdata['NBIT_CRD3']
+        jdata['NBIT_FRC_FL'] = jdata['NBIT_LLONG_FL']
+        jdata['NBIT_VRL_FL'] = jdata['NBIT_LLONG_FL']
+        # middle result
+        jdata['NBIT_SEL'] = int(np.ceil(np.log2(NSEL)))
         jdata['NBIT_RIJ'] = jdata['NBIT_DATA_FL'] + 5
-        jdata['NBIT_SUM'] = jdata['NBIT_DATA_FL'] + 8
         jdata['NBIT_DATA2'] = jdata['NBIT_DATA'] + jdata['NBIT_DATA_FL']
         jdata['NBIT_DATA2_FL'] = 2 * jdata['NBIT_DATA_FL']
-        jdata['NBIT_DATA_FEA'] = jdata['NBIT_DATA'] + jdata['NBIT_FEA_FL']
-        jdata['NBIT_DATA_FEA_FL'] = jdata['NBIT_DATA_FL'] + jdata['NBIT_FEA_FL']
-        jdata['NBIT_FORCE_FL'] = 2 * jdata['NBIT_DATA_FL'] - 1
+        jdata['NBIT_DATA_SHORT'] = jdata['NBIT_DATA'] + jdata['NBIT_SHORT_FL']
+        jdata['NBIT_DATA_SHORT_FL'] = jdata['NBIT_DATA_FL'] + jdata['NBIT_SHORT_FL']
+        # mapping table
+        jdata['NBIT_MAPT_XK'] = int(np.ceil(np.log2(NUM_MAPT)))
+        jdata['NBIT_MAPT_XK_U2S_FL'] = int(np.ceil(np.log2(NUM_MAPT / NUM_U2S)))
+        jdata['NBIT_MAPT_XK_S2G_FL'] = int(np.ceil(np.log2(NUM_MAPT / NUM_S2G)))
         return jdata
 
     def save(self, file_name=None):
-        """ save all configuration to file
+        r"""Save all configuration to file
         """
         if file_name is None:
             file_name = self.save_path
@@ -192,7 +223,7 @@ class NvnmdConfig():
         FioDic().save(file_name, self.config)
 
     def get_dscp_jdata(self):
-        """ generate `model/descriptor` in input script
+        r"""Generate `model/descriptor` in input script
         """
         dscp = self.dscp
         jdata = jdata_deepmd_input['model']['descriptor']
@@ -205,7 +236,7 @@ class NvnmdConfig():
         return jdata
 
     def get_fitn_jdata(self):
-        """ generate `model/fitting_net` in input script
+        r"""Generate `model/fitting_net` in input script
         """
         fitn = self.fitn
         jdata = jdata_deepmd_input['model']['fitting_net']
@@ -213,15 +244,17 @@ class NvnmdConfig():
         return jdata
 
     def get_model_jdata(self):
-        """ generate `model` in input script
+        r"""Generate `model` in input script
         """
         jdata = jdata_deepmd_input['model']
         jdata['descriptor'] = self.get_dscp_jdata()
         jdata['fitting_net'] = self.get_fitn_jdata()
+        if len(self.dpin['type_map']) > 0:
+            jdata['type_map'] = self.dpin['type_map']
         return jdata
 
     def get_nvnmd_jdata(self):
-        """ generate `nvnmd` in input script
+        r"""Generate `nvnmd` in input script
         """
         jdata = jdata_deepmd_input['nvnmd']
         jdata['net_size'] = self.net_size
@@ -236,22 +269,22 @@ class NvnmdConfig():
         return jdata
 
     def get_learning_rate_jdata(self):
-        """ generate `learning_rate` in input script
+        r"""Generate `learning_rate` in input script
         """
         return jdata_deepmd_input['learning_rate']
 
     def get_loss_jdata(self):
-        """ generate `loss` in input script
+        r"""Generate `loss` in input script
         """
         return jdata_deepmd_input['loss']
 
     def get_training_jdata(self):
-        """ generate `training` in input script
+        r"""Generate `training` in input script
         """
         return jdata_deepmd_input['training']
 
     def get_deepmd_jdata(self):
-        """ generate input script with member element one by one
+        r"""Generate input script with member element one by one
         """
         jdata = jdata_deepmd_input.copy()
         jdata['model'] = self.get_model_jdata()
@@ -262,7 +295,7 @@ class NvnmdConfig():
         return jdata
 
     def disp_message(self):
-        """ display the log of NVNMD
+        r"""Display the log of NVNMD
         """
         NVNMD_CONFIG = (
             f"enable: {self.enable}",

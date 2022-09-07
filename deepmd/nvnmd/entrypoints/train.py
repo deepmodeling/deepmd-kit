@@ -22,7 +22,7 @@ jdata_cmd_train = {
     "init_frz_model": None,
     "mpi_log": "master",
     "log_level": 2,
-    "log_path": None,
+    "log_path": "train.log",
     "is_compress": False
 }
 
@@ -34,20 +34,8 @@ jdata_cmd_freeze = {
 }
 
 
-def replace_path(p, p2):
-    pars = p.split(os.sep)
-    pars[-2] = p2
-    return os.path.join(*pars)
-
-
-def add_path(p, p2):
-    pars = p.split('/')
-    pars.insert(-1, p2)
-    return os.path.join(*pars)
-
-
 def normalized_input(fn, PATH_CNN):
-    """ normalize a input script file for continuous neural network
+    r"""Normalize a input script file for continuous neural network
     """
     f = FioDic()
     jdata = f.load(fn, jdata_deepmd_input)
@@ -66,7 +54,10 @@ def normalized_input(fn, PATH_CNN):
         },
         "fitting_net": {
             "seed": 1
-        }}
+        },
+        "type_map": []
+        }
+    jdata_model['type_map'] = f.get(jdata_nvnmd_, 'type_map', [])
     nvnmd_cfg.init_from_jdata(jdata_nvnmd)
     nvnmd_cfg.init_from_deepmd_input(jdata_model)
     nvnmd_cfg.init_train_mode('cnn')
@@ -75,8 +66,8 @@ def normalized_input(fn, PATH_CNN):
     jdata_train['disp_training'] = True
     jdata_train['time_training'] = True
     jdata_train['profiling'] = False
-    jdata_train['disp_file'] = add_path(jdata_train['disp_file'], PATH_CNN)
-    jdata_train['save_ckpt'] = add_path(jdata_train['save_ckpt'], PATH_CNN)
+    jdata_train['disp_file'] = os.path.join(PATH_CNN, os.path.split(jdata_train['disp_file'])[1])
+    jdata_train['save_ckpt'] = os.path.join(PATH_CNN, os.path.split(jdata_train['save_ckpt'])[1])
     #
     jdata['model'] = nvnmd_cfg.get_model_jdata()
     jdata['nvnmd'] = nvnmd_cfg.get_nvnmd_jdata()
@@ -84,7 +75,7 @@ def normalized_input(fn, PATH_CNN):
 
 
 def normalized_input_qnn(jdata, PATH_QNN, CONFIG_CNN, WEIGHT_CNN, MAP_CNN):
-    """ normalize a input script file for quantize neural network
+    r"""Normalize a input script file for quantize neural network
     """
     #
     jdata_nvnmd = jdata_deepmd_input['nvnmd']
@@ -97,8 +88,8 @@ def normalized_input_qnn(jdata, PATH_QNN, CONFIG_CNN, WEIGHT_CNN, MAP_CNN):
     jdata['nvnmd'] = nvnmd_cfg.get_nvnmd_jdata()
     # training
     jdata2 = jdata['training']
-    jdata2['disp_file'] = replace_path(jdata2['disp_file'], PATH_QNN)
-    jdata2['save_ckpt'] = replace_path(jdata2['save_ckpt'], PATH_QNN)
+    jdata2['disp_file'] = os.path.join(PATH_QNN, os.path.split(jdata2['disp_file'])[1])
+    jdata2['save_ckpt'] = os.path.join(PATH_QNN, os.path.split(jdata2['save_ckpt'])[1])
     jdata['training'] = jdata2
     return jdata
 
@@ -119,6 +110,7 @@ def train_nvnmd(
     WEIGHT_CNN = os.path.join(PATH_CNN, 'weight.npy')
     FRZ_MODEL_CNN = os.path.join(PATH_CNN, 'frozen_model.pb')
     MAP_CNN = os.path.join(PATH_CNN, 'map.npy')
+    LOG_CNN = os.path.join(PATH_CNN, 'train.log')
     if step == "s1":
         # normailize input file
         jdata = normalized_input(INPUT, PATH_CNN)
@@ -127,6 +119,7 @@ def train_nvnmd(
         # train cnn
         jdata = jdata_cmd_train.copy()
         jdata['INPUT'] = INPUT_CNN
+        jdata['log_path'] = LOG_CNN
         train(**jdata)
         tf.reset_default_graph()
         # freeze
@@ -151,6 +144,7 @@ def train_nvnmd(
     WEIGHT_QNN = os.path.join(PATH_QNN, 'weight.npy')
     FRZ_MODEL_QNN = os.path.join(PATH_QNN, 'frozen_model.pb')
     MODEL_QNN = os.path.join(PATH_QNN, 'model.pb')
+    LOG_QNN = os.path.join(PATH_QNN, 'train.log')
 
     if step == "s2":
         # normailize input file
@@ -161,6 +155,7 @@ def train_nvnmd(
         # train qnn
         jdata = jdata_cmd_train.copy()
         jdata['INPUT'] = INPUT_QNN
+        jdata['log_path'] = LOG_QNN
         train(**jdata)
         tf.reset_default_graph()
         # freeze

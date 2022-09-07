@@ -15,7 +15,7 @@ log = logging.getLogger(__name__)
 
 
 class Wrap():
-    r""" Generate the binary model file (model.pb)
+    r"""Generate the binary model file (model.pb)
     the model file can be use to run the NVNMD with lammps
     the pair style need set as:
 
@@ -126,9 +126,9 @@ class Wrap():
         NCFG = len(hcfg)
         NNET = len(hfps)
         NFEA = len(hfea)
-        nvnmd_cfg.nbit['NCFG'] = NCFG
-        nvnmd_cfg.nbit['NNET'] = NNET
-        nvnmd_cfg.nbit['NFEA'] = NFEA
+        nvnmd_cfg.size['NCFG'] = NCFG
+        nvnmd_cfg.size['NNET'] = NNET
+        nvnmd_cfg.size['NFEA'] = NFEA
         nvnmd_cfg.save(nvnmd_cfg.config_file)
         head = self.wrap_head(NCFG, NNET, NFEA)
         #
@@ -164,13 +164,15 @@ class Wrap():
         return hs
 
     def wrap_dscp(self):
+        r"""Wrap the configuration of descriptor
+        """
         dscp = nvnmd_cfg.dscp
         nbit = nvnmd_cfg.nbit
         maps = nvnmd_cfg.map
-        NBIT_FEA_X = nbit['NBIT_FEA_X']
-        NBIT_FEA_X_FL = nbit['NBIT_FEA_X_FL']
-        NBIT_FEA_X2_FL = nbit['NBIT_FEA_X2_FL']
-        NBIT_FEA_FL = nbit['NBIT_FEA_FL']
+        NBIT_MAPT_XK = nbit['NBIT_MAPT_XK']
+        NBIT_MAPT_XK_U2S_FL = nbit['NBIT_MAPT_XK_U2S_FL']
+        NBIT_MAPT_XK_S2G_FL = nbit['NBIT_MAPT_XK_S2G_FL']
+        NBIT_SHORT_FL = nbit['NBIT_SHORT_FL']
         NBIT_LST = nbit['NBIT_LST']
         NBIT_SHIFT = nbit['NBIT_SHIFT']
 
@@ -197,23 +199,23 @@ class Wrap():
             for tt2 in range(ntype_max):
                 if (tt < ntype) and (tt2 < ntype):
                     s = maps[f's_t{0}_t{tt}'][0][0]
-                    s = e.qf(s, NBIT_FEA_FL) / (2**NBIT_FEA_FL)
+                    s = e.qf(s, NBIT_SHORT_FL) / (2**NBIT_SHORT_FL)
                     s_min = -2.0
                     yk, dyk = maps[f'G_t{0}_t{tt2}']
-                    prec = 1 / (2 ** NBIT_FEA_X2_FL)
+                    prec = 1 / (2 ** NBIT_MAPT_XK_S2G_FL)
                     G = map_nvnmd(s - s_min, yk, dyk / prec, prec)
-                    G = e.qf(G, NBIT_FEA_FL) / (2**NBIT_FEA_FL)
+                    G = e.qf(G, NBIT_SHORT_FL) / (2**NBIT_SHORT_FL)
                     v = s * G
                 else:
                     v = np.zeros(M1)
                 for ii in range(M1):
-                    GSs.extend(e.dec2bin(e.qr(v[ii], 2 * NBIT_FEA_FL), 27, True))
+                    GSs.extend(e.dec2bin(e.qr(v[ii], 2 * NBIT_SHORT_FL), 27, True))
         sGSs = ''.join(GSs[::-1])
         bs = sGSs + bs
         return bs
 
     def wrap_fitn(self):
-        """: wrap the weights of fitting net
+        r"""Wrap the weights of fitting net
         """
         dscp = nvnmd_cfg.dscp
         fitn = nvnmd_cfg.fitn
@@ -225,7 +227,7 @@ class Wrap():
         ntype_max = dscp['ntype_max']
         nlayer_fit = fitn['nlayer_fit']
         NNODE_FITS = fitn['NNODE_FITS']
-        NBIT_SUM = nbit['NBIT_SUM']
+        NBIT_DATA = nbit['NBIT_DATA']
         NBIT_DATA_FL = nbit['NBIT_DATA_FL']
         NBIT_WEIGHT = nbit['NBIT_WEIGHT']
         NBIT_WEIGHT_FL = nbit['NBIT_WEIGHT_FL']
@@ -248,7 +250,7 @@ class Wrap():
                 # restrict the shift value of energy
                 if (ll == (nlayer_fit - 1)):
                     b = b * 0
-                bbi = self.wrap_bias(b, NBIT_SUM, NBIT_DATA_FL)
+                bbi = self.wrap_bias(b, NBIT_DATA, NBIT_DATA_FL)
                 bwi = self.wrap_weight(w, NBIT_WEIGHT, NBIT_WEIGHT_FL)
                 bbt.append(bbi)
                 bwt.append(bwi)
@@ -305,10 +307,10 @@ class Wrap():
             bbps.append(bbp)
         return bfps, bbps
 
-    def wrap_bias(self, bias, NBIT_SUM, NBIT_DATA_FL):
+    def wrap_bias(self, bias, NBIT_DATA, NBIT_DATA_FL):
         e = Encode()
         bias = e.qr(bias, NBIT_DATA_FL)
-        Bs = e.dec2bin(bias, NBIT_SUM, True)
+        Bs = e.dec2bin(bias, NBIT_DATA, True)
         return Bs
 
     def wrap_weight(self, weight, NBIT_WEIGHT, NBIT_WEIGHT_FL):
@@ -321,14 +323,16 @@ class Wrap():
         return Ws
 
     def wrap_map(self):
+        r"""Wrap the mapping table of embedding network
+        """
         dscp = nvnmd_cfg.dscp
         maps = nvnmd_cfg.map
         nbit = nvnmd_cfg.nbit
 
         M1 = dscp['M1']
         ntype = dscp['ntype']
-        NBIT_FEA = nbit['NBIT_FEA']
-        NBIT_FEA_FL = nbit['NBIT_FEA_FL']
+        NBIT_SHORT = nbit['NBIT_SHORT']
+        NBIT_SHORT_FL = nbit['NBIT_SHORT_FL']
 
         keys = 's,sr,G'.split(',')
         keys2 = 'ds_dr2,dsr_dr2,dG_ds'.split(',')
@@ -350,17 +354,17 @@ class Wrap():
 
         for key in (keys + keys2):
             datas[key] = np.vstack(datas[key])
-            datas[key] = e.qr(datas[key], NBIT_FEA_FL)
+            datas[key] = e.qr(datas[key], NBIT_SHORT_FL)
 
             datas2[key] = np.vstack(datas2[key])
-            datas2[key] = e.qr(datas2[key], NBIT_FEA_FL)
+            datas2[key] = e.qr(datas2[key], NBIT_SHORT_FL)
         # fea
         dat = [datas[key] for key in keys] + [datas2[key] for key in keys]
         idx = np.int32(np.arange(0, int((M1 + 2) * 2)).reshape([2, -1]).transpose().reshape(-1))
         dat = np.hstack(dat)
         dat = dat[:, ::-1]
         dat = dat[:, idx]  # data consists of value and delta_value
-        bs = e.dec2bin(dat, NBIT_FEA, True, 'fea')
+        bs = e.dec2bin(dat, NBIT_SHORT, True, 'fea')
         bs = e.merge_bin(bs, (M1 + 2) * 2)
         bfea = bs
         # gra
@@ -368,7 +372,7 @@ class Wrap():
         dat = np.hstack(dat)
         dat = dat[:, ::-1]
         dat = dat[:, idx]
-        bs = e.dec2bin(dat, NBIT_FEA, True, 'gra')
+        bs = e.dec2bin(dat, NBIT_SHORT, True, 'gra')
         bs = e.merge_bin(bs, (M1 + 2) * 2)
         bgra = bs
         return bfea, bgra

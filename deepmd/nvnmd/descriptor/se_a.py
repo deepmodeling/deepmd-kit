@@ -1,28 +1,68 @@
 import numpy as np
+import logging
 
 from deepmd.env import tf
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import op_module
 from deepmd.utils.network import embedding_net
-
+from deepmd.utils.graph import get_tensor_by_name_from_graph
 
 #
 from deepmd.nvnmd.utils.config import nvnmd_cfg
 from deepmd.nvnmd.utils.network import matmul3_qq
-from deepmd.nvnmd.utils.weight import get_normalize, get_rng_s
+from deepmd.nvnmd.utils.weight import get_normalize
 
+log = logging.getLogger(__name__)
 
 def build_davg_dstd():
-    """ get the davg and dstd from the dictionary nvnmd_cfg.
+    r"""Get the davg and dstd from the dictionary nvnmd_cfg.
     The davg and dstd have been obtained by training CNN
     """
     davg, dstd = get_normalize(nvnmd_cfg.weight)
     return davg, dstd
 
+def check_switch_range(davg, dstd):
+    r"""Check the range of switch, let it in range [-2, 14]
+    """
+    def r2s(r, rmin, rmax):
+        v = 0.0
+        if (r > 0.01) and (r <= rmin):
+            v = 1.0 / r
+        elif (r > rmin) and (r <= rmax):
+            uu = (r - rmin) / (rmax - rmin)
+            v = (uu*uu*uu * (-6 * uu*uu + 15 * uu - 10) + 1) / r
+        return v
+    #
+    rmin = nvnmd_cfg.dscp['rcut_smth']
+    rmax = nvnmd_cfg.dscp['rcut']
+    ntype = nvnmd_cfg.dscp['ntype']
+    namelist = [n.name for n in tf.get_default_graph().as_graph_def().node]
+    if 'train_attr/min_nbor_dist' in namelist:
+        min_dist = get_tensor_by_name_from_graph(tf.get_default_graph(), 'train_attr/min_nbor_dist')
+    else:
+        min_dist = rmin
+    #
+    smin = 1e6
+    smax = -1e6
+    for tt in range(ntype):
+        smin_ = -davg[tt, 0] / dstd[tt, 0]
+        smax_ = (r2s(min_dist, rmin, rmax) -davg[tt, 0]) / dstd[tt, 0]
+        smin = smin_ if (smin_ < smin) else smin
+        smax = smax_ if (smax_ > smax) else smax
+    #
+    nvnmd_cfg.dscp['smin'] = smin
+    nvnmd_cfg.dscp['smax'] = smax
+    nvnmd_cfg.save()
+    # check
+    log.info(f"the range of s is [{smin}, {smax}]")
+    if (smin < -2.0) or (smax > 14.0):
+        log.warning(f"the range of s is over the limit [-2.0, 14.0]")
+        log.warning(f"Please reset the rcut_smth as a bigger value to fix this warning")
+
 
 def build_op_descriptor():
-    """ replace se_a.py/DescrptSeA/build
+    r"""Replace se_a.py/DescrptSeA/build
     """
     if nvnmd_cfg.quantize_descriptor:
         return op_module.prod_env_mat_a_nvnmd_quantize
@@ -31,14 +71,16 @@ def build_op_descriptor():
 
 
 def descrpt2r4(inputs, natoms):
-    """ replace :math:`r_{ji} \rightarrow r'_{ji}`
+    r"""Replace :math:`r_{ji} \rightarrow r'_{ji}`
     where :math:`r_{ji} = (x_{ji}, y_{ji}, z_{ji})` and
     :math:`r'_{ji} = (s_{ji}, \frac{s_{ji} x_{ji}}{r_{ji}}, \frac{s_{ji} y_{ji}}{r_{ji}}, \frac{s_{ji} z_{ji}}{r_{ji}})`
     """
     NBIT_DATA_FL = nvnmd_cfg.nbit['NBIT_DATA_FL']
-    NBIT_FEA_X_FL = nvnmd_cfg.nbit['NBIT_FEA_X_FL']
-    NBIT_FEA_FL = nvnmd_cfg.nbit['NBIT_FEA_FL']
-    prec = 1.0 / (2 ** NBIT_FEA_X_FL)
+    NBIT_LLONG_FL = nvnmd_cfg.nbit['NBIT_LLONG_FL']
+    NBIT_FRC_FL = nvnmd_cfg.nbit['NBIT_FRC_FL']
+    NBIT_SHORT_FL = nvnmd_cfg.nbit['NBIT_SHORT_FL']
+    NBIT_MAPT_XK_U2S_FL = nvnmd_cfg.nbit['NBIT_MAPT_XK_U2S_FL']
+    prec = 1.0 / (2 ** NBIT_MAPT_XK_U2S_FL)
 
     ntypes = nvnmd_cfg.dscp['ntype']
     NIDP = nvnmd_cfg.dscp['NIDP']
@@ -54,13 +96,14 @@ def descrpt2r4(inputs, natoms):
         # u (i.e., r^2)
         u = tf.reshape(tf.slice(inputs_reshape, [0, 0], [-1, 1]), [-1, 1])
         with tf.variable_scope('u', reuse=True):
-            u = op_module.quantize_nvnmd(u, 0, -1, NBIT_DATA_FL, -1)
+            u = op_module.quantize_nvnmd(u, 0, -1, NBIT_LLONG_FL, -1) # changed for better accuracy of virial
         # print('u:', u)
         u = tf.reshape(u, [-1, natoms[0] * NIDP])
+        sh0 = tf.shape(u)[0]
         # rij
         rij = tf.reshape(tf.slice(inputs_reshape, [0, 1], [-1, 3]), [-1, 3])
         with tf.variable_scope('rij', reuse=True):
-            rij = op_module.quantize_nvnmd(rij, 0, NBIT_DATA_FL, -1, -1)
+            rij = op_module.quantize_nvnmd(rij, 0, NBIT_DATA_FL, NBIT_FRC_FL, -1)
         # print('rij:', rij)
         s = []
         sr = []
@@ -84,11 +127,13 @@ def descrpt2r4(inputs, natoms):
                     map_tables[ii][1] / prec,
                     map_tables2[ii][0],
                     map_tables2[ii][1] / prec,
-                    prec, NBIT_FEA_FL))
+                    prec, NBIT_SHORT_FL))
 
             s_i, sr_i = map_outs
-            s_i = tf.reshape(s_i, [-1, natoms[2 + type_i] * NIDP])
-            sr_i = tf.reshape(sr_i, [-1, natoms[2 + type_i] * NIDP])
+            # reshape shape to sh0 for fixing bug.
+            # This bug occurs if the number of atoms of an element is zero.
+            s_i = tf.reshape(s_i, [sh0, natoms[2 + type_i] * NIDP])
+            sr_i = tf.reshape(sr_i, [sh0, natoms[2 + type_i] * NIDP])
             s.append(s_i)
             sr.append(sr_i)
             start_index += natoms[2 + type_i]
@@ -97,10 +142,10 @@ def descrpt2r4(inputs, natoms):
         sr = tf.concat(sr, axis=1)
 
         with tf.variable_scope('s', reuse=True):
-            s = op_module.quantize_nvnmd(s, 0, NBIT_FEA_FL, NBIT_DATA_FL, -1)
+            s = op_module.quantize_nvnmd(s, 0, NBIT_SHORT_FL, NBIT_DATA_FL, -1)
 
         with tf.variable_scope('sr', reuse=True):
-            sr = op_module.quantize_nvnmd(sr, 0, NBIT_FEA_FL, NBIT_DATA_FL, -1)
+            sr = op_module.quantize_nvnmd(sr, 0, NBIT_SHORT_FL, NBIT_DATA_FL, -1)
 
         s = tf.reshape(s, [-1, 1])
         sr = tf.reshape(sr, [-1, 1])
@@ -134,7 +179,7 @@ def filter_lower_R42GR(
         filter_precision,
         filter_resnet_dt,
         embedding_net_variables):
-    """ replace se_a.py/DescrptSeA/_filter_lower
+    r"""Replace se_a.py/DescrptSeA/_filter_lower
     """
     shape_i = inputs_i.get_shape().as_list()
     inputs_reshape = tf.reshape(inputs_i, [-1, 4])
@@ -142,19 +187,16 @@ def filter_lower_R42GR(
     M1 = nvnmd_cfg.dscp['M1']
 
     NBIT_DATA_FL = nvnmd_cfg.nbit['NBIT_DATA_FL']
-    NBIT_FEA_X_FL = nvnmd_cfg.nbit['NBIT_FEA_X_FL']
-    NBIT_FEA_X2_FL = nvnmd_cfg.nbit['NBIT_FEA_X2_FL']
-    NBIT_FEA_FL = nvnmd_cfg.nbit['NBIT_FEA_FL']
-    prec = 1.0 / (2 ** NBIT_FEA_X2_FL)
+    NBIT_MAPT_XK_S2G_FL = nvnmd_cfg.nbit['NBIT_MAPT_XK_S2G_FL']
+    NBIT_SHORT_FL = nvnmd_cfg.nbit['NBIT_SHORT_FL']
+    prec = 1.0 / (2 ** NBIT_MAPT_XK_S2G_FL)
     type_input = 0 if (type_input < 0) else type_input
     postfix = f"_t{type_input}_t{type_i}"
 
     if (nvnmd_cfg.quantize_descriptor):
-        s_min, smax = get_rng_s(nvnmd_cfg.weight)
-        s_min = -2.0
-        # s_min = np.floor(s_min)
+        rng_s_min = -2.0 # range of s is [-2, 14]
         s = tf.reshape(tf.slice(inputs_reshape, [0, 0], [-1, 1]), [-1, 1])
-        s = op_module.quantize_nvnmd(s, 0, NBIT_FEA_FL, NBIT_DATA_FL, -1)
+        s = op_module.quantize_nvnmd(s, 0, NBIT_SHORT_FL, NBIT_DATA_FL, -1)
         # G
         keys = 'G'.split(',')
         map_tables = [nvnmd_cfg.map[key + postfix] for key in keys]
@@ -163,11 +205,11 @@ def filter_lower_R42GR(
         for ii in range(len(keys)):
             with tf.variable_scope(keys[ii], reuse=True):
                 map_outs.append(op_module.map_nvnmd(
-                    s - s_min,
+                    s - rng_s_min,
                     map_tables[ii][0], map_tables[ii][1] / prec,
                     map_tables2[ii][0], map_tables2[ii][1] / prec,
-                    prec, NBIT_FEA_FL))
-                map_outs[ii] = op_module.quantize_nvnmd(map_outs[ii], 0, NBIT_FEA_FL, NBIT_DATA_FL, -1)
+                    prec, NBIT_SHORT_FL))
+                map_outs[ii] = op_module.quantize_nvnmd(map_outs[ii], 0, NBIT_SHORT_FL, NBIT_DATA_FL, -1)
         G = map_outs
         # G
         xyz_scatter = G
@@ -218,7 +260,7 @@ def filter_lower_R42GR(
 
 
 def filter_GR2D(xyz_scatter_1):
-    """ replace se_a.py/_filter
+    r"""Replace se_a.py/_filter
     """
     NIX = nvnmd_cfg.dscp['NIX']
     NBIT_DATA_FL = nvnmd_cfg.nbit['NBIT_DATA_FL']

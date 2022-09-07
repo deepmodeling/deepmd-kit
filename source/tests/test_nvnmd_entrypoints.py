@@ -23,7 +23,8 @@ class TestNvnmdFreeze(tf.test.TestCase):
         self.sess = self.test_session(config=config).__enter__()
 
     def test_freeze(self):
-        namelist = (
+        #
+        namelist1 = [
             "descrpt_attr/t_avg",
             "descrpt_attr/t_std",
             "filter_type_0/matrix_0_0",
@@ -32,16 +33,26 @@ class TestNvnmdFreeze(tf.test.TestCase):
             "layer_0_type_0/bias",
             "final_layer_type_0/matrix",
             "final_layer_type_0/bias",
-        )
+        ]
+        namelist2 = [
+            "train_attr/min_nbor_dist"
+        ]
+        namelist = namelist1 + namelist2
+        #
         tvlist = []
         save_path = str(tests_path / os.path.join("nvnmd", "weight.npy"))
         vinit = tf.random_normal_initializer(stddev=1.0, seed=0)
         for sname in namelist:
             scope, name = sname.split('/')[0:2]
             with tf.variable_scope(scope, reuse=False):
-                tv = tf.get_variable(name, [1], tf.float32, vinit)
-                tvlist.append(tv)
-        #
+                if sname in namelist1:
+                    tv = tf.get_variable(name, [1], tf.float32, vinit)
+                    tvlist.append(tv)
+                elif sname in namelist2:
+                    ts = tf.constant(2.0,
+                        name = name,
+                        dtype = tf.float64)
+        # test
         self.sess.run(tf.global_variables_initializer())
         save_weight(self.sess, save_path)
         weight = FioNpyDic().load(save_path)

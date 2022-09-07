@@ -7,7 +7,7 @@ from deepmd.utils.sess import run_sess
 
 from deepmd.nvnmd.utils.fio import FioDic
 from deepmd.nvnmd.utils.config import nvnmd_cfg
-from deepmd.nvnmd.utils.weight import get_normalize, get_rng_s, get_filter_weight
+from deepmd.nvnmd.utils.weight import get_normalize, get_filter_weight
 from deepmd.nvnmd.utils.network import get_sess
 
 from deepmd.nvnmd.data.data import jdata_deepmd_input
@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 
 
 class MapTable:
-    r""" Generate the mapping table describing the relastionship of
+    r"""Generate the mapping table describing the relastionship of
     atomic distance, cutoff function, and embedding matrix.
 
     three mapping table will be built:
@@ -76,10 +76,10 @@ class MapTable:
         nvnmd_cfg.init_from_jdata(jdata)
         # map_table = self.build_map()
 
-    def qqq(self, dat, NBIT_FEA_FL, NBIT_FEA_X, is_set_zero=False):
+    def qqq(self, dat, NBIT_SHORT_FL, NBIT_MAPT_XK, is_set_zero=False):
         dat = dat if isinstance(dat, list) else [dat]
-        prec = 2 ** NBIT_FEA_FL
-        N = int(2 ** NBIT_FEA_X)
+        prec = 2 ** NBIT_SHORT_FL
+        N = int(2 ** NBIT_MAPT_XK)
         #
         dat2 = []
         for ii in range(len(dat)):
@@ -102,14 +102,14 @@ class MapTable:
     def build_map(self):
         ntypex = nvnmd_cfg.dscp['ntypex']
         ntype = nvnmd_cfg.dscp['ntype']
-        NBIT_FEA_FL = nvnmd_cfg.nbit['NBIT_FEA_FL']
-        NBIT_FEA_X = nvnmd_cfg.nbit['NBIT_FEA_X']
+        NBIT_SHORT_FL = nvnmd_cfg.nbit['NBIT_SHORT_FL']
+        NBIT_MAPT_XK = nvnmd_cfg.nbit['NBIT_MAPT_XK']
 
         dic = self.run_u2s()
         dic.update(self.run_s2G(dic))
 
         # quantize s and G
-        prec = 2**NBIT_FEA_FL
+        prec = 2**NBIT_SHORT_FL
         for tt in range(ntypex):
             dic['s'][tt][0] = np.round(dic['s'][tt][0] * prec) / prec
             dic['sr'][tt][0] = np.round(dic['sr'][tt][0] * prec) / prec
@@ -121,10 +121,10 @@ class MapTable:
         keys = 's,sr,ds_dr2,dsr_dr2,G,dG_ds'.split(',')
         keys2 = 'G,dG_ds'.split(',')
         for key in keys:
-            val = self.qqq(dic[key], NBIT_FEA_FL, NBIT_FEA_X, key not in keys2)
+            val = self.qqq(dic[key], NBIT_SHORT_FL, NBIT_MAPT_XK, key not in keys2)
             maps[key] = val
 
-        N = int(2**NBIT_FEA_X)
+        N = int(2**NBIT_MAPT_XK)
         maps2 = {}
         maps2['r2'] = dic['r2'][0:N]
         maps2['s2'] = dic['s2'][0:N]
@@ -201,14 +201,14 @@ class MapTable:
         ntype = nvnmd_cfg.dscp['ntype']
         avg, std = get_normalize(nvnmd_cfg.weight)
         avg, std = np.float32(avg), np.float32(std)
-        NBIT_FEA_X = nvnmd_cfg.nbit['NBIT_FEA_X']
-        NBIT_FEA_X_FL = nvnmd_cfg.nbit['NBIT_FEA_X_FL']
+        NBIT_MAPT_XK = nvnmd_cfg.nbit['NBIT_MAPT_XK']
+        NBIT_MAPT_XK_U2S_FL = nvnmd_cfg.nbit['NBIT_MAPT_XK_U2S_FL']
 
         dic_ph = self.build_r2s_r2ds()
         sess = get_sess()
 
-        N = 2 ** NBIT_FEA_X
-        N2 = 2 ** NBIT_FEA_X_FL
+        N = 2 ** NBIT_MAPT_XK
+        N2 = 2 ** NBIT_MAPT_XK_U2S_FL
         # N+1 ranther than N for calculating defference
         r2 = 1.0 * np.arange(0, N + 1) / N2
         r2 = np.reshape(r2, [-1, 1])
@@ -290,25 +290,25 @@ class MapTable:
         return dic_ph
 
     def run_s2G(self, dat):
-        NBIT_FEA_FL = nvnmd_cfg.nbit['NBIT_FEA_FL']
-        NBIT_FEA_X = nvnmd_cfg.nbit['NBIT_FEA_X']
-        NBIT_FEA_X2_FL = nvnmd_cfg.nbit['NBIT_FEA_X2_FL']
-        prec = 2 ** NBIT_FEA_FL
+        NBIT_SHORT_FL = nvnmd_cfg.nbit['NBIT_SHORT_FL']
+        NBIT_MAPT_XK = nvnmd_cfg.nbit['NBIT_MAPT_XK']
+        NBIT_MAPT_XK_S2G_FL = nvnmd_cfg.nbit['NBIT_MAPT_XK_S2G_FL']
+        prec = 2 ** NBIT_SHORT_FL
 
         dic_ph = self.build_s2G_s2dG()
         sess = get_sess()
 
-        N = 2 ** NBIT_FEA_X
-        N2 = 2 ** NBIT_FEA_X2_FL
-        s_min, s_max = get_rng_s(nvnmd_cfg.weight)
-        #
-        if (s_min < -2.0) or (s_max > 14.0):
-            log.warning(f"the range of s [{s_min}, {s_max}] is over the limit [-2.0, 14.0]")
-        s_min = -2.0
-        s = s_min + np.arange(0, N + 1) / N2
+        N = 2 ** NBIT_MAPT_XK
+        N2 = 2 ** NBIT_MAPT_XK_S2G_FL
+        smin = nvnmd_cfg.dscp['smin']
+        smax = nvnmd_cfg.dscp['smax']
+        log.info(f"the range of s is [{smin}, {smax}]")
+        # check
+        if (smin < -2.0) or (smax > 14.0):
+            log.warning(f"the range of s is over the limit [-2.0, 14.0]")
+        smin = -2.0
+        s = smin + np.arange(0, N + 1) / N2
         s = np.reshape(s, [-1, 1])
-        feed_dic = {dic_ph['s2']: s}
-
         feed_dic = {dic_ph['s2']: s}
         key = 's2,G,dG_ds'
         tlst = [dic_ph[k] for k in key.split(',')]

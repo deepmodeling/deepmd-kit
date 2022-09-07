@@ -18,7 +18,7 @@ def get_sess():
 
 
 def matmul2_qq(a, b, nbit):
-    """ quantized matmul operation for 2d tensor.
+    r"""Quantized matmul operation for 2d tensor.
     a and b is input tensor, nbit represent quantification precision
     """
     sh_a = a.get_shape().as_list()
@@ -32,7 +32,7 @@ def matmul2_qq(a, b, nbit):
 
 
 def matmul3_qq(a, b, nbit):
-    """ quantized matmul operation for 3d tensor.
+    r"""Quantized matmul operation for 3d tensor.
     a and b is input tensor, nbit represent quantification precision
     """
     sh_a = a.get_shape().as_list()
@@ -49,7 +49,7 @@ def matmul3_qq(a, b, nbit):
 
 
 def qf(x, nbit):
-    """ quantize and floor tensor `x` with quantification precision `nbit`.
+    r"""Quantize and floor tensor `x` with quantification precision `nbit`.
     """
     prec = 2**nbit
 
@@ -59,7 +59,7 @@ def qf(x, nbit):
 
 
 def qr(x, nbit):
-    """ quantize and round tensor `x` with quantification precision `nbit`.
+    r"""Quantize and round tensor `x` with quantification precision `nbit`.
     """
     prec = 2**nbit
 
@@ -70,7 +70,7 @@ def qr(x, nbit):
 
 # fitting_net
 def tanh2(x, nbit=-1, nbit2=-1):
-    """ user-defined activation function tanh2
+    r"""User-defined activation function tanh2
 
     Parameter
     ---------
@@ -86,7 +86,7 @@ def tanh2(x, nbit=-1, nbit2=-1):
 
 
 def tanh4(x, nbit=-1, nbit2=-1):
-    """ user-defined activation function tanh4
+    r"""User-defined activation function tanh4
 
     Parameter
     ---------
@@ -161,7 +161,7 @@ def one_layer(inputs,
               initial_variables=None,
               mixed_prec=None,
               final_layer=False):
-    """ build one layer with continuous or quantized value.
+    r"""Build one layer with continuous or quantized value.
     Its weight and bias can be initialed with random or constant value.
     """
     if activation_fn is not None:
