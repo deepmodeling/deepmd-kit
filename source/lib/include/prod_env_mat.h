@@ -21,7 +21,8 @@ void prod_env_mat_a_cpu(
     const int nall, 
     const float rcut, 
     const float rcut_smth, 
-    const std::vector<int> sec);
+    const std::vector<int> sec,
+    const int * f_type = NULL);
 
 template<typename FPTYPE>
 void prod_env_mat_r_cpu(
@@ -60,7 +61,8 @@ void prod_env_mat_a_gpu_cuda(
     const int nall, 
     const float rcut, 
     const float rcut_smth, 
-    const std::vector<int> sec);
+    const std::vector<int> sec,
+    const int * f_type=NULL);
 
 template<typename FPTYPE> 
 void prod_env_mat_r_gpu_cuda(    
@@ -110,7 +112,8 @@ void prod_env_mat_a_gpu_rocm(
     const int nall, 
     const float rcut, 
     const float rcut_smth, 
-    const std::vector<int> sec);
+    const std::vector<int> sec,
+    const int * f_type=NULL);
 
 template<typename FPTYPE> 
 void prod_env_mat_r_gpu_rocm(    

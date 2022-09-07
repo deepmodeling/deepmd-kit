@@ -34,7 +34,7 @@ if TYPE_CHECKING:
         from typing import Literal  # python >3.6
     except ImportError:
         from typing_extensions import Literal  # type: ignore
-    _ACTIVATION = Literal["relu", "relu6", "softplus", "sigmoid", "tanh", "gelu"]
+    _ACTIVATION = Literal["relu", "relu6", "softplus", "sigmoid", "tanh", "gelu", "gelu_tf"]
     _PRECISION = Literal["default", "float16", "float32", "float64"]
 
 # define constants
@@ -49,7 +49,7 @@ PRECISION_DICT = {
 def gelu(x: tf.Tensor) -> tf.Tensor:
     """Gaussian Error Linear Unit.
 
-    This is a smoother version of the RELU.
+    This is a smoother version of the RELU, implemented by custom operator.
 
     Parameters
     ----------
@@ -58,7 +58,31 @@ def gelu(x: tf.Tensor) -> tf.Tensor:
 
     Returns
     -------
-    `x` with the GELU activation applied
+    tf.Tensor
+        `x` with the GELU activation applied
+
+    References
+    ----------
+    Original paper
+    https://arxiv.org/abs/1606.08415
+    """
+    return op_module.gelu(x)
+
+
+def gelu_tf(x: tf.Tensor) -> tf.Tensor:
+    """Gaussian Error Linear Unit.
+
+    This is a smoother version of the RELU, implemented by TF.
+
+    Parameters
+    ----------
+    x : tf.Tensor
+        float Tensor to perform activation
+
+    Returns
+    -------
+    tf.Tensor
+        `x` with the GELU activation applied
 
     References
     ----------
@@ -69,9 +93,9 @@ def gelu(x: tf.Tensor) -> tf.Tensor:
         try:
             return tensorflow.nn.gelu(x, approximate=True)
         except AttributeError:
+            warnings.warn("TensorFlow does not provide an implementation of gelu, please upgrade your TensorFlow version. Fallback to the custom gelu operator.")
             return op_module.gelu(x)
     return (lambda x: gelu_wrapper(x))(x)
-
 
 # TODO this is not a good way to do things. This is some global variable to which
 # TODO anyone can write and there is no good way to keep track of the changes
@@ -84,6 +108,7 @@ ACTIVATION_FN_DICT = {
     "sigmoid": tf.sigmoid,
     "tanh": tf.nn.tanh,
     "gelu": gelu,
+    "gelu_tf": gelu_tf,
 }
 
 
@@ -380,8 +405,8 @@ def j_loader(filename: Union[str, Path]) -> Dict[str, Any]:
 
 
 def get_activation_func(
-    activation_fn: "_ACTIVATION",
-) -> Callable[[tf.Tensor], tf.Tensor]:
+    activation_fn: Union["_ACTIVATION", None],
+) -> Union[Callable[[tf.Tensor], tf.Tensor], None]:
     """Get activation function callable based on string name.
 
     Parameters
@@ -399,6 +424,8 @@ def get_activation_func(
     RuntimeError
         if unknown activation function is specified
     """
+    if activation_fn is None or activation_fn in ['none', 'None']:
+        return None
     if activation_fn not in ACTIVATION_FN_DICT:
         raise RuntimeError(f"{activation_fn} is not a valid activation function")
     return ACTIVATION_FN_DICT[activation_fn]

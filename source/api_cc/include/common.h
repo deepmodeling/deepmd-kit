@@ -8,20 +8,14 @@
 #include "AtomMap.h"
 #include "errors.h"
 
-#include "tensorflow/core/platform/env.h"
-#include "tensorflow/core/public/session.h"
-#include "tensorflow/core/public/version.h"
-#include <tensorflow/core/graph/default_device.h>
-#include <tensorflow/core/graph/graph_def_builder.h>
+#ifdef TF_PRIVATE
+#include "tf_private.h"
+#else
+#include "tf_public.h"
+#endif
 
 
 namespace deepmd{
-
-#if TF_MAJOR_VERSION >= 2 && TF_MINOR_VERSION >= 2
-typedef tensorflow::tstring STRINGTYPE;
-#else
-typedef std::string STRINGTYPE;
-#endif
 
 #ifdef HIGH_PREC
 typedef double VALUETYPE;
@@ -49,8 +43,6 @@ public:
   void make_inlist(InputNlist & inlist);
 };
 
-/** @struct deepmd::InputNlist
- **/
 
 /**
 * @brief Check if the model version is supported.
@@ -188,5 +180,22 @@ session_input_tensors (std::vector<std::pair<std::string, tensorflow::Tensor>> &
 		       const int			nghost,
 		       const int			ago,
 		       const std::string		scope = "");
+
+/**
+* @brief Read model file to a string.
+* @param[in] model Path to the model.
+* @param[out] file_content Content of the model file.
+**/
+void
+read_file_to_string(std::string model, std::string & file_content);
+
+
+/**
+* @brief Convert pbtxt to pb.
+* @param[in] fn_pb_txt Filename of the pb txt file.
+* @param[out] fn_pb Filename of the pb file.
+**/
+void
+convert_pbtxt_to_pb(std::string fn_pb_txt, std::string fn_pb);
 }
 

@@ -10,8 +10,6 @@
 #include "neighbor_list.h"
 #include "test_utils.h"
 
-#include "google/protobuf/text_format.h"
-#include "google/protobuf/io/zero_copy_stream_impl.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>  
@@ -58,20 +56,8 @@ protected:
 
   void SetUp() override {
     std::string file_name = "../../tests/infer/dipolecharge_e.pbtxt";
-    int fd = open(file_name.c_str(), O_RDONLY);
-    tensorflow::protobuf::io::ZeroCopyInputStream* input = new tensorflow::protobuf::io::FileInputStream(fd);
-    tensorflow::GraphDef graph_def;
-    tensorflow::protobuf::TextFormat::Parse(input, &graph_def);
-    delete input;
     std::string model = "dipolecharge_e.pb";
-    std::fstream output(model.c_str(), std::ios::out | std::ios::trunc | std::ios::binary);
-    graph_def.SerializeToOstream(&output);
-    // check the string by the following commands
-    // string txt;
-    // tensorflow::protobuf::TextFormat::PrintToString(graph_def, &txt);
-
-    // dp.init("dipolecharge_d.pb");
-    // dm.init("dipolecharge_d.pb");
+    deepmd::convert_pbtxt_to_pb(file_name, model);
     dp.init(model, 0, "dipole_charge");
     dm.init(model, 0, "dipole_charge");
 

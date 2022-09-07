@@ -1,5 +1,6 @@
 import os
 from typing import List, Optional, TYPE_CHECKING, Union
+from functools import lru_cache
 
 import numpy as np
 from deepmd.common import make_default_mesh
@@ -27,8 +28,6 @@ class DeepEval:
         as the initial batch size.
     """
 
-    _model_type: Optional[str] = None
-    _model_version: Optional[str] = None
     load_prefix: str  # set by subclass
 
     def __init__(
@@ -64,19 +63,18 @@ class DeepEval:
             raise TypeError("auto_batch_size should be bool, int, or AutoBatchSize")
 
     @property
+    @lru_cache(maxsize=None)
     def model_type(self) -> str:
         """Get type of model.
 
         :type:str
         """
-        if not self._model_type:
-            t_mt = self._get_tensor("model_attr/model_type:0")
-            sess = tf.Session(graph=self.graph, config=default_tf_session_config)
-            [mt] = run_sess(sess, [t_mt], feed_dict={})
-            self._model_type = mt.decode("utf-8")
-        return self._model_type
+        t_mt = self._get_tensor("model_attr/model_type:0")
+        [mt] = run_sess(self.sess, [t_mt], feed_dict={})
+        return mt.decode("utf-8")
 
     @property
+    @lru_cache(maxsize=None)
     def model_version(self) -> str:
         """Get version of model.
 
@@ -85,17 +83,21 @@ class DeepEval:
         str
             version of model
         """
-        if not self._model_version:
-            try:
-                t_mt = self._get_tensor("model_attr/model_version:0")
-            except KeyError:
-                # For deepmd-kit version 0.x - 1.x, set model version to 0.0
-                self._model_version = "0.0"
-            else:
-                sess = tf.Session(graph=self.graph, config=default_tf_session_config)
-                [mt] = run_sess(sess, [t_mt], feed_dict={})
-                self._model_version = mt.decode("utf-8")
-        return self._model_version    
+        try:
+            t_mt = self._get_tensor("model_attr/model_version:0")
+        except KeyError:
+            # For deepmd-kit version 0.x - 1.x, set model version to 0.0
+            return "0.0"
+        else:
+            [mt] = run_sess(self.sess, [t_mt], feed_dict={})
+            return mt.decode("utf-8")
+
+    @property
+    @lru_cache(maxsize=None)
+    def sess(self) -> tf.Session:
+        """Get TF session."""
+        # start a tf session associated to the graph
+        return tf.Session(graph=self.graph, config=default_tf_session_config)
 
     def _graph_compatable(
         self

@@ -17,13 +17,22 @@ add_library(${libname} SHARED ${LIB_SRC})
 
 # link: libdeepmd libdeepmd_op libtensorflow_cc libtensorflow_framework
 target_link_libraries (${libname} PUBLIC ${LIB_DEEPMD}	${TensorFlow_LIBRARY} ${TensorFlowFramework_LIBRARY})
-target_include_directories(${libname} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR} ${TensorFlow_INCLUDE_DIRS})
+target_include_directories(${libname} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(${libname} PRIVATE ${TensorFlow_INCLUDE_DIRS})
+
+# link: libpython3.x.so
+if (USE_TF_PYTHON_LIBS)
+  target_link_libraries (${libname} PUBLIC ${Python_LIBRARIES})
+endif(USE_TF_PYTHON_LIBS)
 
 set_target_properties(
   ${libname} 
   PROPERTIES 
-  COMPILE_DEFINITIONS ${prec_def}
   INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}"
+)
+target_compile_definitions(${libname}
+  PUBLIC ${prec_def}
+  PRIVATE TF_PRIVATE
 )
 
 install(TARGETS ${libname} DESTINATION lib/)

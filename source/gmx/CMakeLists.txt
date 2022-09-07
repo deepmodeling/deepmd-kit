@@ -15,7 +15,6 @@ file(GLOB INC_SRC include/*.h)
 
 add_library(${libgmxname} SHARED ${LIB_SRC})
 target_link_libraries(${libgmxname} ${LIB_DEEPMD_CC} ${LIB_DEEPMD} ${TensorFlow_LIBRARY} ${TensorFlowFramework_LIBRARY})
-target_include_directories(${libgmxname} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../api_cc/include)
 target_include_directories(${libgmxname} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(${libgmxname} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/)
 

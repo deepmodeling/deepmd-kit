@@ -610,8 +610,12 @@ void prod_env_mat_a_gpu_cuda(
     const int nall, 
     const float rcut, 
     const float rcut_smth, 
-    const std::vector<int> sec)
+    const std::vector<int> sec,
+    const int * f_type)
 {
+  if (f_type == NULL){
+    f_type = type;
+  }
   const int nnei = sec.back();
   const int ndescrpt = nnei * 4;
   DPErrcheck(cudaMemset(em, 0, sizeof(FPTYPE) * int_64(nloc) * ndescrpt));
@@ -620,7 +624,7 @@ void prod_env_mat_a_gpu_cuda(
 
   format_nbor_list_gpu_cuda(
       nlist, 
-      coord, type, gpu_inlist, array_int, array_longlong, max_nbor_size, nloc, nall, rcut, sec);
+      coord, f_type, gpu_inlist, array_int, array_longlong, max_nbor_size, nloc, nall, rcut, sec);
   nborErrcheck(cudaGetLastError());
   nborErrcheck(cudaDeviceSynchronize());
 
@@ -688,8 +692,8 @@ void test_encoding_decoding_nbor_info_gpu_cuda(
   DPErrcheck(cudaDeviceSynchronize());
 }
 
-template void prod_env_mat_a_gpu_cuda<float>(float * em, float * em_deriv, float * rij, int * nlist, const float * coord, const int * type, const InputNlist & gpu_inlist, int * array_int, unsigned long long * array_longlong, const int max_nbor_size, const float * avg, const float * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec);
-template void prod_env_mat_a_gpu_cuda<double>(double * em, double * em_deriv, double * rij, int * nlist, const double * coord, const int * type, const InputNlist & gpu_inlist, int * array_int, unsigned long long * array_longlong, const int max_nbor_size, const double * avg, const double * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec);
+template void prod_env_mat_a_gpu_cuda<float>(float * em, float * em_deriv, float * rij, int * nlist, const float * coord, const int * type, const InputNlist & gpu_inlist, int * array_int, unsigned long long * array_longlong, const int max_nbor_size, const float * avg, const float * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec, const int * f_type);
+template void prod_env_mat_a_gpu_cuda<double>(double * em, double * em_deriv, double * rij, int * nlist, const double * coord, const int * type, const InputNlist & gpu_inlist, int * array_int, unsigned long long * array_longlong, const int max_nbor_size, const double * avg, const double * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec, const int * f_type);
 template void prod_env_mat_r_gpu_cuda<float>(float * em, float * em_deriv, float * rij, int * nlist, const float * coord, const int * type, const InputNlist & gpu_inlist, int * array_int, unsigned long long * array_longlong, const int max_nbor_size, const float * avg, const float * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec);
 template void prod_env_mat_r_gpu_cuda<double>(double * em, double * em_deriv, double * rij, int * nlist, const double * coord, const int * type, const InputNlist & gpu_inlist, int * array_int, unsigned long long * array_longlong, const int max_nbor_size, const double * avg, const double * std, const int nloc, const int nall, const float rcut, const float rcut_smth, const std::vector<int> sec);
 template void format_nbor_list_gpu_cuda<float>(int * nlist, const float * coord, const int * type, const deepmd::InputNlist & gpu_inlist,int * array_int,uint_64 * array_longlong,const int max_nbor_size,const int nloc, const int nall, const float rcut, const std::vector<int> sec);

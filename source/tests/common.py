@@ -24,9 +24,11 @@ def j_loader(filename):
 def del_data():
     if os.path.isdir('system'):
         shutil.rmtree('system')
+    if os.path.isdir('system_mixed_type'):
+        shutil.rmtree('system_mixed_type')
 
-def gen_data(nframes = 1) :
-    tmpdata = Data(rand_pert = 0.1, seed = 1, nframes = nframes)
+def gen_data_type_specific(nframes = 1):
+    tmpdata = Data(rand_pert=0.1, seed=1, nframes=nframes)
     sys = dpdata.LabeledSystem()
     sys.data['atom_names'] = ['foo', 'bar']
     sys.data['coords'] = tmpdata.coord
@@ -34,13 +36,40 @@ def gen_data(nframes = 1) :
     sys.data['cells'] = tmpdata.cell
     nframes = tmpdata.nframes
     natoms = tmpdata.natoms
-    sys.data['coords'] = sys.data['coords'].reshape([nframes,natoms,3])
-    sys.data['cells'] = sys.data['cells'].reshape([nframes,3,3])
-    sys.data['energies'] = np.zeros([nframes,1])
-    sys.data['forces'] = np.zeros([nframes,natoms,3])
-    sys.to_deepmd_npy('system', prec=np.float64)    
+    sys.data['coords'] = sys.data['coords'].reshape([nframes, natoms, 3])
+    sys.data['cells'] = sys.data['cells'].reshape([nframes, 3, 3])
+    sys.data['energies'] = np.zeros([nframes, 1])
+    sys.data['forces'] = np.zeros([nframes, natoms, 3])
+    sys.to_deepmd_npy('system', prec=np.float64)
     np.save('system/set.000/fparam.npy', tmpdata.fparam)
     np.save('system/set.000/aparam.npy', tmpdata.aparam.reshape([nframes, natoms, 2]))
+
+def gen_data_mixed_type(nframes = 1):
+    tmpdata = Data(rand_pert=0.1, seed=1, nframes=nframes)
+    sys = dpdata.LabeledSystem()
+    real_type_map = ['foo', 'bar']
+    sys.data['atom_names'] = ['X']
+    sys.data['coords'] = tmpdata.coord
+    sys.data['atom_types'] = np.zeros_like(tmpdata.atype)
+    sys.data['cells'] = tmpdata.cell
+    nframes = tmpdata.nframes
+    natoms = tmpdata.natoms
+    sys.data['coords'] = sys.data['coords'].reshape([nframes, natoms, 3])
+    sys.data['cells'] = sys.data['cells'].reshape([nframes, 3, 3])
+    sys.data['energies'] = np.zeros([nframes, 1])
+    sys.data['forces'] = np.zeros([nframes, natoms, 3])
+    sys.to_deepmd_npy('system_mixed_type', prec=np.float64)
+    np.savetxt('system_mixed_type/type_map.raw', real_type_map, fmt='%s')
+    np.save('system_mixed_type/set.000/real_atom_types.npy', tmpdata.atype.reshape(1, -1).repeat(nframes, 0))
+    np.save('system_mixed_type/set.000/fparam.npy', tmpdata.fparam)
+    np.save('system_mixed_type/set.000/aparam.npy', tmpdata.aparam.reshape([nframes, natoms, 2]))
+
+def gen_data(nframes = 1, mixed_type=False) :
+    if not mixed_type:
+        gen_data_type_specific(nframes)
+    else:
+        gen_data_mixed_type(nframes)
+
 
 class Data():
     def __init__ (self, 
