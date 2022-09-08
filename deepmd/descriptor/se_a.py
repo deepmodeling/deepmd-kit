@@ -164,9 +164,7 @@ class DescrptSeA (DescrptSe):
         self.embedding_net_variables = None
         self.mixed_prec = None
         self.place_holders = {}
-        self.nei_type = np.array([])
-        for ii in range(self.ntypes):
-            self.nei_type = np.append(self.nei_type, ii * np.ones(self.sel_a[ii])) # like a mask
+        self.nei_type = np.repeat(np.arange(self.ntypes), self.sel_a)  # like a mask
 
         avg_zero = np.zeros([self.ntypes,self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
         std_ones = np.ones ([self.ntypes,self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
