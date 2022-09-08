@@ -6,6 +6,7 @@ from deepmd.utils.compat import convert_input_v0_v1, convert_input_v1_v2
 from common import j_loader
 
 class TestConvertInput (unittest.TestCase) :
+    maxDiff = None
     def test_convert_smth(self):
         jdata0 = j_loader(os.path.join('compat_inputs', 'water_se_a_v0.json'))
         jdata1 = j_loader(os.path.join('compat_inputs', 'water_se_a_v1.json'))
