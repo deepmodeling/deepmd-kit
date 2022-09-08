@@ -90,10 +90,7 @@ def train(
 
     jdata = normalize(jdata)
 
-    if jdata['model']['descriptor']['type'] in ['se_atten'] and isinstance(jdata['model']['descriptor']['sel'], list):
-        jdata['model']['descriptor']['sel'] = sum(jdata['model']['descriptor']['sel'])
-
-    if not is_compress and not skip_neighbor_stat and jdata['model']['descriptor']['type'] not in ['se_atten']:
+    if not is_compress and not skip_neighbor_stat:
         jdata = update_sel(jdata)
 
     with open(output, "w") as fp:
@@ -253,7 +250,7 @@ def get_type_map(jdata):
     return jdata['model'].get('type_map', None)
 
 
-def get_nbor_stat(jdata, rcut):
+def get_nbor_stat(jdata, rcut, one_type: bool = False):
     max_rcut = get_rcut(jdata)
     type_map = get_type_map(jdata)
 
@@ -268,7 +265,7 @@ def get_nbor_stat(jdata, rcut):
         map_ntypes = data_ntypes
     ntypes = max([map_ntypes, data_ntypes])
 
-    neistat = NeighborStat(ntypes, rcut)
+    neistat = NeighborStat(ntypes, rcut, one_type=one_type)
 
     min_nbor_dist, max_nbor_size = neistat.get_stat(train_data)
 
@@ -283,8 +280,8 @@ def get_nbor_stat(jdata, rcut):
         dtype = tf.int32)
     return min_nbor_dist, max_nbor_size
 
-def get_sel(jdata, rcut):
-    _, max_nbor_size = get_nbor_stat(jdata, rcut)
+def get_sel(jdata, rcut, one_type: bool = False):
+    _, max_nbor_size = get_nbor_stat(jdata, rcut, one_type=one_type)
     return max_nbor_size
 
 def get_min_nbor_dist(jdata, rcut):
@@ -320,14 +317,20 @@ def wrap_up_4(xx):
 
 
 def update_one_sel(jdata, descriptor):
+    if descriptor['type'] == 'loc_frame':
+        return descriptor
     rcut = descriptor['rcut']
-    tmp_sel = get_sel(jdata, rcut)
+    tmp_sel = get_sel(jdata, rcut, one_type=descriptor['type'] in ('se_atten',))
+    sel = descriptor['sel']
+    if isinstance(sel, int):
+        # convert to list and finnally convert back to int
+        sel = [sel]
     if parse_auto_sel(descriptor['sel']) :
         ratio = parse_auto_sel_ratio(descriptor['sel'])
-        descriptor['sel'] = [int(wrap_up_4(ii * ratio)) for ii in tmp_sel]
+        descriptor['sel'] = sel = [int(wrap_up_4(ii * ratio)) for ii in tmp_sel]
     else:
         # sel is set by user
-        for ii, (tt, dd) in enumerate(zip(tmp_sel, descriptor['sel'])):
+        for ii, (tt, dd) in enumerate(zip(tmp_sel, sel)):
             if dd and tt > dd:
                 # we may skip warning for sel=0, where the user is likely
                 # to exclude such type in the descriptor
@@ -336,6 +339,8 @@ def update_one_sel(jdata, descriptor):
                     "not less than %d, but you set it to %d. The accuracy"
                     " of your model may get worse." %(ii, tt, dd)
                 )
+    if descriptor['type'] in ('se_atten',):
+        descriptor['sel'] = sel = sum(sel)
     return descriptor
 
 
@@ -344,9 +349,8 @@ def update_sel(jdata):
     descrpt_data = jdata['model']['descriptor']
     if descrpt_data['type'] == 'hybrid':
         for ii in range(len(descrpt_data['list'])):
-            if descrpt_data['list'][ii]['type'] != 'loc_frame':
-                descrpt_data['list'][ii] = update_one_sel(jdata, descrpt_data['list'][ii])
-    elif descrpt_data['type'] != 'loc_frame':
+            descrpt_data['list'][ii] = update_one_sel(jdata, descrpt_data['list'][ii])
+    else:
         descrpt_data = update_one_sel(jdata, descrpt_data)
     jdata['model']['descriptor'] = descrpt_data
     return jdata

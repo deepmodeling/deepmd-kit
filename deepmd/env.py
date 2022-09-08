@@ -5,7 +5,7 @@ import os
 import re
 import platform
 from configparser import ConfigParser
-from imp import reload
+from importlib import reload
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 from packaging.version import Version
