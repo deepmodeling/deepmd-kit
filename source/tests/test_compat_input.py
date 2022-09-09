@@ -22,7 +22,15 @@ class TestConvertInput (unittest.TestCase) :
         jdata0 = j_loader(os.path.join('compat_inputs', 'water_v1.json'))
         jdata1 = j_loader(os.path.join('compat_inputs', 'water_v2.json'))
         jdata = convert_input_v1_v2(jdata0, warning = False, dump = None)
-        self.assertAlmostEqual(jdata, jdata1)
+        self.assertDictAlmostEqual(jdata, jdata1)
+
+    def assertDictAlmostEqual(self, d1, d2, msg=None, places=7):
+        self.assertEqual(d1.keys(), d2.keys())
+        for kk, vv in d1.items():
+            if isinstance(vv, dict):
+                self.assertDictAlmostEqual(d1[kk], d2[kk], msg=msg)
+            else:
+                self.assertAlmostEqual(d1[kk], d2[kk], places=places, msg=msg)
 
     def test_json_yaml_equal(self):
 
