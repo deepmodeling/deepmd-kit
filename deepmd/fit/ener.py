@@ -9,6 +9,7 @@ from deepmd.utils.network import one_layer_rand_seed_shift
 from deepmd.utils.network import one_layer as one_layer_deepmd
 from deepmd.utils.type_embed import embed_atom_type
 from deepmd.utils.graph import get_fitting_net_variables_from_graph_def, load_graph_def, get_tensor_by_name_from_graph
+from deepmd.utils.errors import GraphWithoutTensorError
 from deepmd.fit.fitting import Fitting
 
 from deepmd.env import global_cvt_2_tf_float
@@ -400,6 +401,8 @@ class EnerFitting (Fitting):
         if input_dict is None:
             input_dict = {}
         bias_atom_e = self.bias_atom_e
+        type_embedding = input_dict.get('type_embedding', None)
+        atype = input_dict.get('atype', None)
         if self.numb_fparam > 0:
             if self.fparam_avg is None:
                 self.fparam_avg = 0.
@@ -418,9 +421,10 @@ class EnerFitting (Fitting):
             t_daparam = tf.constant(self.numb_aparam, 
                                     name = 'daparam', 
                                     dtype = tf.int32)
-            self.t_bias_atom_e = tf.get_variable('t_bias_atom_e',
+            if type_embedding is not None:
+                self.t_bias_atom_e = tf.get_variable('t_bias_atom_e',
                                             self.bias_atom_e.shape,
-                                            dtype=GLOBAL_TF_FLOAT_PRECISION,
+                                            dtype=self.fitting_precision,
                                             trainable=False,
                                             initializer=tf.constant_initializer(self.bias_atom_e))
             if self.numb_fparam > 0: 
@@ -471,9 +475,7 @@ class EnerFitting (Fitting):
             aparam = tf.reshape(aparam, [-1, self.numb_aparam])
             aparam = (aparam - t_aparam_avg) * t_aparam_istd
             aparam = tf.reshape(aparam, [-1, self.numb_aparam * natoms[0]])
-            
-        type_embedding = input_dict.get('type_embedding', None)
-        atype = input_dict.get('atype', None)
+
         if type_embedding is not None:
             atype_nall = tf.reshape(atype, [-1, natoms[1]])
             self.atype_nloc = tf.reshape(tf.slice(atype_nall, [0, 0], [-1, natoms[0]]), [-1])  ## lammps will make error
@@ -570,6 +572,11 @@ class EnerFitting (Fitting):
         if self.numb_aparam > 0:
             self.aparam_avg = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_aparam_avg' % suffix)
             self.aparam_inv_std = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_aparam_istd' % suffix)
+        try:
+            self.bias_atom_e = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_bias_atom_e' % suffix)
+        except GraphWithoutTensorError:
+            # model without type_embedding has no t_bias_atom_e
+            pass
 
     def enable_compression(self,
                            model_file: str,

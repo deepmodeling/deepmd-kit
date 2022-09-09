@@ -288,7 +288,8 @@ class DPTrainer (object):
 
     def build (self, 
                data = None, 
-               stop_batch = 0) :
+               stop_batch = 0,
+               suffix = "") :
         self.ntypes = self.model.get_ntypes()
         self.stop_batch = stop_batch
 
@@ -348,7 +349,7 @@ class DPTrainer (object):
             self.fitting.enable_mixed_precision(self.mixed_prec)
 
         self._build_lr()
-        self._build_network(data)
+        self._build_network(data, suffix)
         self._build_training()
 
 
@@ -358,7 +359,7 @@ class DPTrainer (object):
         self.learning_rate = self.lr.build(self.global_step, self.stop_batch)
         log.info("built lr")
 
-    def _build_network(self, data):        
+    def _build_network(self, data, suffix=""):
         self.place_holders = {}
         if self.is_compress :
             for kk in ['coord', 'box']:
@@ -379,7 +380,7 @@ class DPTrainer (object):
                                 self.place_holders['default_mesh'],
                                 self.place_holders,
                                 self.frz_model,
-                                suffix = "", 
+                                suffix = suffix,
                                 reuse = False)
 
         self.l2_l, self.l2_more\

@@ -276,9 +276,9 @@ def descrpt_se_atten_args():
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument("exclude_types", list, optional=True, default=[], doc=doc_exclude_types),
         Argument("set_davg_zero", bool, optional=True, default=False, doc=doc_set_davg_zero),
-        Argument("attn", int, optional=True, default=100, doc=doc_attn),
-        Argument("attn_layer", int, optional=True, default=4, doc=doc_attn_layer),
-        Argument("attn_dotr", bool, optional=True, default=False, doc=doc_attn_dotr),
+        Argument("attn", int, optional=True, default=128, doc=doc_attn),
+        Argument("attn_layer", int, optional=True, default=2, doc=doc_attn_layer),
+        Argument("attn_dotr", bool, optional=True, default=True, doc=doc_attn_dotr),
         Argument("attn_mask", bool, optional=True, default=False, doc=doc_attn_mask)
     ]
 
