@@ -257,21 +257,9 @@ DeepPot (const std::string & model, const int & gpu_rank, const std::string & fi
   init(model, gpu_rank, file_content);  
 }
 
-#if HUAWEI_ASCEND
-DeepPot::
-DeepPot (const std::string & model, const int & nloc, const int & npu_rank)
-    : inited (false), init_nbor (false),
-      graph_def(new GraphDef())
-{
-  init(model, nloc, npu_rank);  
-}
-#endif //HUAWEI_ASCEND
-
 DeepPot::~DeepPot() {
   delete graph_def;
-  #if HUAWEI_ASCEND
   delete session;
-  #endif //HUAWEI_ASCEND
 }
 
 void
@@ -335,7 +323,7 @@ init (const std::string & model, const int & gpu_rank, const std::string & file_
 #if HUAWEI_ASCEND
 void
 DeepPot::
-init (const std::string & model, const int & nloc, const int & npu_rank)
+init (const int & npu_rank)
 {
   if (inited){
     std::cerr << "WARNING: deepmd-kit should not be initialized twice, do nothing at the second call of initializer" << std::endl;

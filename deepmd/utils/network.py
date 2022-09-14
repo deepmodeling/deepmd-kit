@@ -1,7 +1,7 @@
 import numpy as np
 
 from deepmd.env import tf
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION, GLOBAL_ASCEND_OUT_PRECISION
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.common import get_precision
 
 def one_layer_rand_seed_shift():
@@ -11,6 +11,7 @@ def one_layer(inputs,
               outputs_size, 
               activation_fn=tf.nn.tanh, 
               precision = GLOBAL_TF_FLOAT_PRECISION, 
+              out_precision = GLOBAL_TF_FLOAT_PRECISION,
               stddev=1.0,
               bavg=0.0,
               name='linear',
@@ -45,28 +46,27 @@ def one_layer(inputs,
                             w_initializer, 
                             trainable = trainable)
         variable_summaries(w, 'matrix')
-        if final_layer and GLOBAL_ASCEND_OUT_PRECISION is not None:
+        if final_layer:
             b = tf.get_variable('bias', 
                                 [outputs_size], 
-                                GLOBAL_ASCEND_OUT_PRECISION,
+                                out_precision,
                                 b_initializer, 
                                 trainable = trainable)
-            variable_summaries(b, 'bias')
         else:
             b = tf.get_variable('bias', 
                                 [outputs_size], 
                                 precision,
                                 b_initializer, 
                                 trainable = trainable)
-            variable_summaries(b, 'bias')
+        variable_summaries(b, 'bias')
 
         if mixed_prec is not None and not final_layer:
             inputs = tf.cast(inputs, get_precision(mixed_prec['compute_prec']))
             w = tf.cast(w, get_precision(mixed_prec['compute_prec']))
             b = tf.cast(b, get_precision(mixed_prec['compute_prec']))
 
-        if final_layer and GLOBAL_ASCEND_OUT_PRECISION is not None:
-            hidden = tf.cast(tf.matmul(inputs, w), dtype=GLOBAL_ASCEND_OUT_PRECISION)
+        if final_layer:
+            hidden = tf.cast(tf.matmul(inputs, w), dtype=out_precision)
         else:
             hidden = tf.matmul(inputs, w)
         hidden = tf.nn.bias_add(hidden, b)

@@ -29,28 +29,24 @@ public:
   * @param[in] file_content The content of the model file. If it is not empty, DP will read from the string instead of the file.
   **/
   void init (const std::string & model, const int & gpu_rank = 0, const std::string & file_content = "");
-  /**
-  * @brief Print the DP summary to the screen.
-  * @param[in] pre The prefix to each line.
-  **/
   #if HUAWEI_ASCEND
-  DeepPot  (const std::string & model, const int & nloc, const int & gpu_rank = 0);
   /**
-  * @brief Initialize the DP.
-  * @param[in] model The name of the frozen model file.
-  * @param[in] gpu_rank The GPU rank. Default is 0.
+  * @brief Initialize the DP on Ascend platform.
+  * @param[in] npu_rank The NPU rank. Default is 0.
   **/
-  void init (const std::string & model, const int & nloc, const int & gpu_rank = 0);
+  void init (const int & npu_rank = 0);
   /**
-  * @brief Print the DP summary to the screen.
-  * @param[in] pre The prefix to each line.
+  * @brief Initialize and modify the graph excute on the Ascend platform.
+  * @param[in] model The name of the frozen model file.
+  * @param[in] type_count The number of atoms of each type.
+  * @param[in] file_content The content of the model file. If it is not empty, DP will read from the string instead of the file.
   **/
   void init_graph (const std::string & model, const std::vector<int > & type_count, const std::string & file_content = "");
+  #endif //HUAWEI_ASCEND
   /**
   * @brief Print the DP summary to the screen.
   * @param[in] pre The prefix to each line.
   **/
-  #endif //HUAWEI_ASCEND
   void print_summary(const std::string &pre) const;
 public:
   /**
