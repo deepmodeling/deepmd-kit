@@ -20,11 +20,11 @@ namespace LAMMPS_NS {
 class ComputeDeeptensorAtom : public Compute {
  public:
   ComputeDeeptensorAtom(class LAMMPS *, int, char **);
-  ~ComputeDeeptensorAtom();
-  void init();
-  void compute_peratom();
-  double memory_usage();
-  void init_list(int, class NeighList *);
+  ~ComputeDeeptensorAtom() override;
+  void init() override;
+  void compute_peratom() override;
+  double memory_usage() override;
+  void init_list(int, class NeighList *) override;
 
  private:
   int nmax;

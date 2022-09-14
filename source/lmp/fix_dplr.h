@@ -29,17 +29,17 @@ namespace LAMMPS_NS {
   class FixDPLR : public Fix {
 public:
     FixDPLR(class LAMMPS *, int, char **);
-    virtual ~FixDPLR() {};
-    int setmask();
-    void init();
-    void setup(int);
-    void post_integrate();
-    void pre_force(int);
-    void post_force(int);
-    int pack_reverse_comm(int, int, double *);
-    void unpack_reverse_comm(int, int *, double *);
-    double compute_scalar(void);
-    double compute_vector(int);
+    ~FixDPLR() override {};
+    int setmask() override;
+    void init() override;
+    void setup(int) override;
+    void post_integrate() override;
+    void pre_force(int) override;
+    void post_force(int) override;
+    int pack_reverse_comm(int, int, double *) override;
+    void unpack_reverse_comm(int, int *, double *) override;
+    double compute_scalar(void) override;
+    double compute_vector(int) override;
 private:
     PairDeepMD * pair_deepmd;
     deepmd::DeepTensor dpt;
