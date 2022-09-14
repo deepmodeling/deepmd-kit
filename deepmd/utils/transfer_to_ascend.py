@@ -130,7 +130,11 @@ def mix_precision(
     # stage 3: transfer the mix-precision model
     log.info("\n\n")
     log.info("stage 3: transfer the mix-precision model")
-    transfer(old_model=input, raw_model=output, output=output)
+    if output.endswith(".pb"):
+        const_out = output[:-3] + "_const.pb"
+    else:
+        const_out = output + "_const"
+    transfer(old_model=input, raw_model=output, output=output, ascend_graph=const_out)
 
 def _check_transfer_model_type(model_file):
     try:

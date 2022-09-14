@@ -141,6 +141,14 @@ def main_parser() -> argparse.ArgumentParser:
         type=str,
         help="the model after passing parameters",
     )
+    parser_transfer.add_argument(
+        "-a",
+        "--ascend-graph",
+        default="",
+        type=str,
+        help="the model with constant natoms input, which is onle used for Ascend platform",
+    )
+
 
     # * config parser ******************************************************************
     parser_train = subparsers.add_parser(

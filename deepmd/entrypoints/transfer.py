@@ -69,15 +69,11 @@ def transfer(*, old_model: str, raw_model: str, output: str, **kwargs):
         f.write(new_graph_def.SerializeToString())
     log.info("the output model is saved in " + output)
     dp_float_prec = os.environ.get("DP_INTERFACE_PREC", "high").lower()
-    if dp_float_prec == "ascend_mix":
+    if kwargs['ascend_graph']:
         const_graph_def = modify_const_op(new_graph_def)
-        if output.endswith(".pb"):
-            const_out = output[:-3] + "_const.pb"
-        else:
-            const_out = output + "_const"
-        with tf.gfile.GFile(const_out, mode="wb") as f:
+        with tf.gfile.GFile(kwargs['ascend_graph'], mode="wb") as f:
             f.write(const_graph_def.SerializeToString())
-        log.info("the dp test model is saved in " + const_out)
+        log.info("the dp test model is saved in " + kwargs['ascend_graph'])
 
 
 def load_graph(graph_name: str) -> tf.Graph:
@@ -108,6 +104,8 @@ def modify_const_op(new_graph_def: tf.Graph) -> tf.Graph:
     new_graph : tf.Graph 
         orginal new graph
     Returns :
+    -------
+    tf.Graph
         natoms transfer to a const op for Ascend platform
     -------
     """
