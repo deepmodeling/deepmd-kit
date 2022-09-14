@@ -48,17 +48,17 @@ namespace LAMMPS_NS {
 class PairDeepMD : public Pair {
  public:
   PairDeepMD(class LAMMPS *);
-  virtual ~PairDeepMD();
-  virtual void compute(int, int);
-  virtual void *extract(const char *, int &);
-  void settings(int, char **);
-  virtual void coeff(int, char **);
-  void init_style();
-  virtual void write_restart(FILE *);
-  virtual void read_restart(FILE *);
-  double init_one(int i, int j);
-  int pack_reverse_comm(int, int, double *);
-  void unpack_reverse_comm(int, int *, double *);
+  ~PairDeepMD() override;
+  void compute(int, int) override;
+  void *extract(const char *, int &) override;
+  void settings(int, char **) override;
+  void coeff(int, char **) override;
+  void init_style() override;
+  void write_restart(FILE *) override;
+  void read_restart(FILE *) override;
+  double init_one(int i, int j) override;
+  int pack_reverse_comm(int, int, double *) override;
+  void unpack_reverse_comm(int, int *, double *) override;
   void print_summary(const std::string pre) const;
   int get_node_rank();
   std::string get_file_content(const std::string & model);

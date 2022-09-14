@@ -47,11 +47,17 @@ endif(DEFINED TENSORFLOW_ROOT)
 
 # define the search path
 list(APPEND TensorFlow_search_PATHS ${TENSORFLOW_ROOT})
-list(APPEND TensorFlow_search_PATHS "${TENSORFLOW_ROOT}/../tensorflow_core")
+if(BUILD_CPP_IF)
 list(APPEND TensorFlow_search_PATHS ${TENSORFLOW_ROOT_NO64})
-list(APPEND TensorFlow_search_PATHS "${TENSORFLOW_ROOT_NO64}/../tensorflow_core")
 list(APPEND TensorFlow_search_PATHS "/usr/")
 list(APPEND TensorFlow_search_PATHS "/usr/local/")
+endif()
+if(BUILD_PY_IF)
+	# here TENSORFLOW_ROOT is path to site-packages/tensorflow
+	# for conda libraries, append extra paths
+	list(APPEND TensorFlow_search_PATHS "${TENSORFLOW_ROOT}/../tensorflow_core")
+	list(APPEND TensorFlow_search_PATHS "${TENSORFLOW_ROOT}/../../../..")
+endif()
 
 # includes
 find_path(TensorFlow_INCLUDE_DIRS
@@ -65,7 +71,6 @@ find_path(TensorFlow_INCLUDE_DIRS
   PATH_SUFFIXES "/include"
   NO_DEFAULT_PATH
   )
-if (BUILD_CPP_IF)
 find_path(TensorFlow_INCLUDE_DIRS_GOOGLE
   NAMES 
   google/protobuf/type.pb.h
@@ -74,11 +79,10 @@ find_path(TensorFlow_INCLUDE_DIRS_GOOGLE
   NO_DEFAULT_PATH
   )
 list(APPEND TensorFlow_INCLUDE_DIRS ${TensorFlow_INCLUDE_DIRS_GOOGLE})
-endif ()
   
 if (NOT TensorFlow_INCLUDE_DIRS AND tensorflow_FIND_REQUIRED)
   message(FATAL_ERROR 
-    "Not found 'tensorflow/core/public/session.h' directory in path '${TensorFlow_search_PATHS}' "
+    "Not found 'include/tensorflow/core/public/session.h' directory or other header files in path '${TensorFlow_search_PATHS}' "
     "You can manually set the tensorflow install path by -DTENSORFLOW_ROOT ")
 endif ()
 
