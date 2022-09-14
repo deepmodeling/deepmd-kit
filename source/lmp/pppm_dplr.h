@@ -27,9 +27,9 @@ public:
 #else
     PPPMDPLR(class LAMMPS *);
 #endif
-    ~PPPMDPLR () {} override;
+    ~PPPMDPLR () override {};
     void init() override;
-    const std::vector<double > & get_fele() const {return fele;} override;
+    const std::vector<double > & get_fele() const {return fele;};
 protected:
     void compute(int, int) override;
     void fieldforce_ik() override;

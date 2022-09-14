@@ -29,7 +29,7 @@ namespace LAMMPS_NS {
   class FixDPLR : public Fix {
 public:
     FixDPLR(class LAMMPS *, int, char **);
-    ~FixDPLR() {} override;
+    ~FixDPLR() override {};
     int setmask() override;
     void init() override;
     void setup(int) override;
