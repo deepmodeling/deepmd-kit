@@ -105,10 +105,8 @@ def mix_precision(
         )
     except GraphTooLargeError as e:
         raise RuntimeError(
-            "The uniform step size of the tabulation's first table is %f, " 
-            "which is too small. This leads to a very large graph size, "
-            "exceeding protobuf's limitation (2 GB). You should try to "
-            "increase the step size." % step
+            "The ascend transfered mix-precision model size is too large, "
+            "exceeding protobuf's limitation (2 GB)."
         ) from e
 
     # reset the graph, otherwise the size limitation will be only 2 GB / 2 = 1 GB
@@ -121,10 +119,8 @@ def mix_precision(
         freeze(checkpoint_folder=checkpoint_folder, output=output, node_names=None)
     except GraphTooLargeError as e:
         raise RuntimeError(
-            "The uniform step size of the tabulation's first table is %f, " 
-            "which is too small. This leads to a very large graph size, "
-            "exceeding protobuf's limitation (2 GB). You should try to "
-            "increase the step size." % step
+            "The ascend transfered mix-precision model size is too large, "
+            "exceeding protobuf's limitation (2 GB)."
         ) from e
 
     # stage 3: transfer the mix-precision model

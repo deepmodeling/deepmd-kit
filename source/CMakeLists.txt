@@ -83,7 +83,9 @@ if (USE_ASCEND)
   set(DP_VARIANT "ascend")
 endif(USE_ASCEND)
 if (USE_ASCEND AND BUILD_CPP_IF)
-  set(PYTHON_EXECUTABLE "python3.7")
+  if (NOT DEFINED ${PYTHON_EXECUTABLE})
+    set(PYTHON_EXECUTABLE "python3.7")
+  endif()
   set(FIND_TENSORFLOW_INC "import tensorflow as tf; print(tf.sysconfig.get_compile_flags()[0],end='')")
   execute_process(
     COMMAND ${PYTHON_EXECUTABLE} "-c" "${FIND_TENSORFLOW_INC}"
@@ -125,9 +127,6 @@ set(DEEPMD_SOURCE_DIR ${PROJECT_SOURCE_DIR}/..)
 if (USE_TF_PYTHON_LIBS)
   find_package (Python COMPONENTS Interpreter Development REQUIRED)
 endif(USE_TF_PYTHON_LIBS)
-
-# find tensorflow, I need tf abi info
-find_package(tensorflow REQUIRED)
 
 if (TENSORFLOW_VERSION VERSION_GREATER_EQUAL 2.10)
   set (CMAKE_CXX_STANDARD 17)
