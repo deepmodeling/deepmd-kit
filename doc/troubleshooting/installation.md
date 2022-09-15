@@ -9,7 +9,8 @@ export CXX=/path/to/gcc-7.2.0/bin/g++
 ## Build files left in DeePMD-kit
 When you try to build a second time when installing DeePMD-kit, files produced before may contribute to failure. Thus, you may clear them by
 ```bash
+# in the latest version, using _skbuild instead of build
 cd build
 rm -r *
 ```
-and redo the `cmake` process.
+and redo the installation process.
