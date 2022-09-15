@@ -107,7 +107,6 @@ def modify_const_op(new_graph_def: tf.Graph) -> tf.Graph:
     -------
     tf.Graph
         natoms transfer to a const op for Ascend platform
-    -------
     """
     for node in new_graph_def.node:
         if "t_natoms" in node.name:
