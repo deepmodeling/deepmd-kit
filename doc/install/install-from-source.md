@@ -29,6 +29,12 @@ source $tensorflow_venv/bin/activate
 pip install --upgrade pip
 pip install --upgrade tensorflow
 ```
+If you prefer to use previous versions of TensorFlow, all packages related to TensorFlow must share the same version, e.g.,
+```bash
+source $tensorflow_venv/bin/activate
+pip install --upgrade pip
+pip install tensorflow==2.9.* tensorflow-estimator==2.9.* keras==2.9.*
+```
 It is important that everytime a new shell is started and one wants to use `DeePMD-kit`, the virtual environment should be activated by 
 ```bash
 source $tensorflow_venv/bin/activate
@@ -77,6 +83,10 @@ One may set the following environment variables before executing `pip`:
 | CUDA_TOOLKIT_ROOT_DIR | Path                   | Detected automatically | The path to the CUDA toolkit directory. CUDA 7.0 or later is supported. NVCC is required. |
 | ROCM_ROOT             | Path                   | Detected automatically | The path to the ROCM toolkit directory. |
 
+For example, CUDA support can be installed with the command
+```bash
+DP_VARIANT=cuda pip install .
+```
 To test the installation, one should firstly jump out of the source directory
 ```
 cd /some/other/workspace
@@ -139,6 +149,7 @@ Available Tensor Operations:
     [X] MPI
     [X] Gloo
 ```
+Be careful with the version of Horovod when you installed TensorFlow with specific version. Some versions are incompatible, so you won't see `X` on `TensorFlow` after invoking the `horovodrun --check-build`. In that case, you have to downgrade the version of Horovod.
 
 From version 2.0.1, Horovod and mpi4py with MPICH support is shipped with the installer.
 
