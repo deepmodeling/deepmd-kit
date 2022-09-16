@@ -1,8 +1,11 @@
 import numpy as np
+import os
 
 from deepmd.env import tf
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.common import get_precision
+
+dp_float_prec = os.environ.get("DP_INTERFACE_PREC", "high").lower()
 
 def one_layer_rand_seed_shift():
     return 3
@@ -46,7 +49,7 @@ def one_layer(inputs,
                             w_initializer, 
                             trainable = trainable)
         variable_summaries(w, 'matrix')
-        if final_layer:
+        if final_layer and dp_float_prec == "ascend_mix":
             b = tf.get_variable('bias', 
                                 [outputs_size], 
                                 out_precision,
@@ -65,7 +68,7 @@ def one_layer(inputs,
             w = tf.cast(w, get_precision(mixed_prec['compute_prec']))
             b = tf.cast(b, get_precision(mixed_prec['compute_prec']))
 
-        if final_layer:
+        if final_layer and dp_float_prec == "ascend_mix":
             hidden = tf.cast(tf.matmul(inputs, w), dtype=out_precision)
         else:
             hidden = tf.matmul(inputs, w)
