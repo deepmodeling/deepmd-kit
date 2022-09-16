@@ -15,6 +15,7 @@ from deepmd.entrypoints.train import train, get_rcut, get_min_nbor_dist
 from deepmd.entrypoints.transfer import transfer
 
 log = logging.getLogger(__name__)
+dp_float_prec = os.environ.get("DP_INTERFACE_PREC", "high").lower()
 
 def mix_precision(
     input: str,
@@ -47,6 +48,8 @@ def mix_precision(
     log_level : int
         logging level
     """
+    assert (dp_float_prec == "ascend_mix"), \
+        "Transfering Ascend_transfer mix-precision model needs to set environment variable DP_INTERFACE_PREC=ascend-mix!"
     try:
         t_jdata = get_tensor_by_name(input, 'train_attr/training_script')
         t_min_nbor_dist = get_tensor_by_name(input, 'train_attr/min_nbor_dist')
