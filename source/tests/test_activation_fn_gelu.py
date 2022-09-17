@@ -7,7 +7,7 @@ from deepmd.env import tf
 from deepmd.utils.network import embedding_net
 from deepmd.common import get_activation_func
 
-class Inter(tf.test.TestCase):
+class TestGelu(tf.test.TestCase):
     def setUp (self) :
         self.places = 6
         self.sess = self.test_session().__enter__()
