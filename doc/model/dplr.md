@@ -53,7 +53,7 @@ The training of the DPLR model is very similar to the standard short-range DP mo
 ```
 The {ref}`model_name <model/modifier[dipole_charge]/model_name>` specifies which DW model is used to predict the position of WCs. {ref}`model_charge_map <model/modifier[dipole_charge]/model_charge_map>` gives the amount of charge assigned to WCs. {ref}`sys_charge_map <model/modifier[dipole_charge]/sys_charge_map>` provides the nuclear charge of oxygen (type 0) and hydrogen (type 1) atoms. {ref}`ewald_beta <model/modifier[dipole_charge]/ewald_beta>` (unit $\text{Å}^{-1}$) gives the spread parameter controls the spread of Gaussian charges, and {ref}`ewald_h <model/modifier[dipole_charge]/ewald_h>`  (unit Å) assigns the grid size of Fourier transform. 
 The DPLR model can be trained and frozen by (from the example directory)
-```
+```bash
 dp train ener.json && dp freeze -o ener.pb
 ```
 
@@ -108,7 +108,7 @@ An example input script is provided in
 $deepmd_source_dir/examples/water/dplr/lmp/in.lammps
 ```
 Here are some explanations
-```
+```lammps
 # groups of real and virtual atoms
 group           real_atom type 1 2
 group           virtual_atom type 3
@@ -124,7 +124,7 @@ special_bonds   lj/coul 1 1 1 angle no
 ```
 Type 1 and 2 (O and H) are `real_atom`s, while type 3 (WCs) are `virtual_atom`s. The model file `ener.pb` stores both the DW and DPLR models, so the position of WCs and the energy can be inferred from it. A virtual bond type is specified by `bond_style zero`. The `special_bonds` command switches off the exclusion of intramolecular interactions.
 
-```
+```lammps
 # kspace_style "pppm/dplr" should be used. in addition the
 # gewald(1/distance) should be set the same as that used in
 # training. Currently only ik differentiation is supported.
@@ -133,7 +133,7 @@ kspace_modify	gewald ${BETA} diff ik mesh ${KMESH} ${KMESH} ${KMESH}
 ```
 The long-range part is calculated by the `kspace` support of LAMMPS. The `kspace_style` `pppm/dplr` is required. The spread parameter set by variable `BETA` should be set the same as that used in training. The `KMESH` should be set dense enough so the long-range calculation is converged. 
 
-```
+```lammps
 # "fix dplr" set the position of the virtual atom, and spread the
 # electrostatic interaction asserting on the virtual atom to the real
 # atoms. "type_associate" associates the real atom type its
@@ -144,7 +144,7 @@ fix_modify	0 virial yes
 ```
 The fix command `dplr` calculates the position of WCs by the DW model and back-propagates the long-range interaction on virtual atoms to real toms. 
 
-```
+```lammps
 # compute the temperature of real atoms, excluding virtual atom contribution
 compute		real_temp real_atom temp
 compute		real_press all pressure real_temp
@@ -152,12 +152,12 @@ fix		1 real_atom nvt temp ${TEMP} ${TEMP} ${TAU_T}
 fix_modify	1 temp real_temp
 ```
 The temperature of the system should be computed from the real atoms. The kinetic contribution in the pressure tensor is also computed from the real atoms. The thermostat is applied to only real atoms. The computed temperature and pressure of real atoms can be accessed by, e.g.
-```
+```lammps
 fix             thermo_print all print ${THERMO_FREQ} "$(step) $(pe) $(ke) $(etotal) $(enthalpy) $(c_real_temp) $(c_real_press) $(vol) $(c_real_press[1]) $(c_real_press[2]) $(c_real_press[3])" append thermo.out screen no title "# step pe ke etotal enthalpy temp press vol pxx pyy pzz"
 ```
 
 The LAMMPS simulation can be started from the example directory by 
-```
+```bash
 lmp -i in.lammps
 ```
 If LAMMPS complains that no model file `ener.pb` exists, it can be copied from the training example directory. 

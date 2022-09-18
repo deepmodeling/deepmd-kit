@@ -4,7 +4,7 @@
 
 If you are using the plugin mode, enable DeePMD-kit package in LAMMPS with `plugin` command:
 
-```
+```lammps
 plugin load libdeepmd_lmp.so
 ```
 
@@ -22,7 +22,7 @@ The built-in mode doesn't need this step.
 
 The DeePMD-kit package provides the pair_style `deepmd`
 
-```
+```lammps
 pair_style deepmd models ... keyword value ...
 ```
 - deepmd = style of this pair_style
@@ -44,7 +44,7 @@ and the model deviation will be computed among all models every `out_freq` times
 </pre>
 
 ### Examples
-```
+```lammps
 pair_style deepmd graph.pb
 pair_style deepmd graph.pb fparam 1.2
 pair_style deepmd graph_0.pb graph_1.pb graph_2.pb out_file md.out out_freq 10 atomic relative 1.0
@@ -71,7 +71,7 @@ where $D_{f_i}$ is the absolute model deviation of the force on atom $i$, $f_i$ 
 
 The DeePMD-kit package provide the compute `deeptensor/atom` for computing atomic tensorial properties. 
 
-```
+```lammps
 compute ID group-ID deeptensor/atom model_file
 ```
 - ID: user-assigned name of the computation
@@ -80,11 +80,11 @@ compute ID group-ID deeptensor/atom model_file
 - model_file: the name of the binary model file.
 
 ### Examples
-```
+```lammps
 compute         dipole all deeptensor/atom dipole.pb
 ```
 The result of the compute can be dump to trajctory file by 
-```
+```lammps
 dump            1 all custom 100 water.dump id type c_dipole[1] c_dipole[2] c_dipole[3] 
 ```
 
@@ -94,7 +94,7 @@ dump            1 all custom 100 water.dump id type c_dipole[1] c_dipole[2] c_di
 
 ## Long-range interaction
 The reciprocal space part of the long-range interaction can be calculated by LAMMPS command `kspace_style`. To use it with DeePMD-kit, one writes 
-```bash
+```lammps
 pair_style	deepmd graph.pb
 pair_coeff  * *
 kspace_style	pppm 1.0e-5
@@ -111,13 +111,13 @@ $$dvatom=\sum_{m}( \mathbf{r}_n- \mathbf{r}_m) \frac{de_m}{d\mathbf{r}_n}$$
 Where $\mathbf{r}_n$ is the atomic position of nth atom, $\mathbf{v}_n$ velocity of atom and $\frac{de_m}{d\mathbf{r}_n}$ the derivative of the atomic energy.
 
 In LAMMPS one can get the per-atom stress using the command `centroid/stress/atom`:
-```bash
+```lammps
 compute ID group-ID centroid/stress/atom NULL virial
 ```
 see [LAMMPS doc page](https://docs.lammps.org/compute_stress_atom.html#thompson2) for more detailes on the meaning of the keywords.
 ### Examples
 In order of computing the 9-component per-atom stress
-```bash
+```lammps
 compute stress all centroid/stress/atom NULL virial
 ```
 Thus `c_stress` is an array with 9 component in the order `xx,yy,zz,xy,xz,yz,yx,zx,zy`.
@@ -130,7 +130,7 @@ Using per-atom stress tensor one can, for example, compute the heat flux defined
 $$\mathbf J = \sum_n e_n \mathbf v_n + \sum_{n,m} ( \mathbf r_m- \mathbf r_n) \frac{de_m}{d\mathbf r_n} \mathbf v_n$$
 
 to compute the heat flux with LAMMPS: 
-```bash
+```lammps
 compute ke_ID all ke/atom
 compute pe_ID all pe/atom
 compute stress_ID group-ID centroid/stress/atom NULL virial
@@ -139,7 +139,7 @@ compute flux_ID all heat/flux ke_ID pe_ID stress_ID
 
 ### Examples
 
-```bash
+```lammps
 compute ke all ke/atom
 compute pe all pe/atom
 compute stress all centroid/stress/atom NULL virial
