@@ -496,17 +496,18 @@ class DeepmdDataSystem() :
         sys_probs = np.array(sys_probs)
         type_filter = sys_probs >= 0
         assigned_sum_prob = np.sum(type_filter * sys_probs)
-        assert assigned_sum_prob <= 1, "the sum of assigned probability should be less than 1"
+        # 1e-8 is to handle floating point error; See #1917
+        assert assigned_sum_prob <= 1. + 1e-8, "the sum of assigned probability should be less than 1"
         rest_sum_prob = 1. - assigned_sum_prob
-        if rest_sum_prob != 0 :
+        if not np.isclose(rest_sum_prob, 0):
             rest_nbatch = (1 - type_filter) * self.nbatches
             rest_prob = rest_sum_prob * rest_nbatch / np.sum(rest_nbatch)
             ret_prob = rest_prob + type_filter * sys_probs
         else :
             ret_prob = sys_probs
-        assert np.sum(ret_prob) == 1, "sum of probs should be 1"
+        assert np.isclose(np.sum(ret_prob), 1), "sum of probs should be 1"
         return ret_prob
-    
+
     def _prob_sys_size_ext(self, keywords):
         block_str = keywords.split(';')[1:]
         block_stt = []
