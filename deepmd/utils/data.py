@@ -52,6 +52,9 @@ class DeepmdData() :
         # load atom type
         self.atom_type = self._load_type(root)
         self.natoms = len(self.atom_type)
+        if self.mixed_type:
+            # nframes x natoms
+            self.atom_type_mix = self._load_type_mix(self.dirs[0])
         # load atom type map
         self.type_map = self._load_type_map(root)
         if self.type_map is not None:
@@ -63,6 +66,14 @@ class DeepmdData() :
             if not self.mixed_type:
                 atom_type_ = [type_map.index(self.type_map[ii]) for ii in self.atom_type]
                 self.atom_type = np.array(atom_type_, dtype = np.int32)
+            else:
+                type_idx_map = np.searchsorted(type_map, self.type_map)
+                try:
+                    atom_type_mix_ = np.array(type_idx_map)[self.atom_type_mix].astype(np.int32)
+                except RuntimeError as e:
+                    raise RuntimeError("some types in 'real_atom_types.npy' of sys {} are not contained in {} types!"
+                                       .format(self.dirs[0], self.get_ntypes())) from e
+                self.atom_type_mix = atom_type_mix_
             self.type_map = type_map
         if type_map is None and self.type_map is None and self.mixed_type:
             raise RuntimeError('mixed_type format must have type_map!')
@@ -456,13 +467,17 @@ class DeepmdData() :
                 data[kk] = np.sum(np.reshape(tmp_in, [nframes, self.natoms, ndof]), axis = 1)
 
         if self.mixed_type:
-            type_path = set_name / "real_atom_types.npy"
-            real_type = type_path.load_numpy().astype(np.int32).reshape([nframes, -1])
+            real_type = self.atom_type_mix.reshape([nframes, self.natoms])
             data['type'] = real_type
             natoms = data['type'].shape[1]
+            # nframes x ntypes
+            atom_type_nums = np.array([(real_type == i).sum(axis=-1) for i in range(self.get_ntypes())],
+                                      dtype=np.int32).T
+            assert (atom_type_nums.sum(axis=-1) == natoms).all(), \
+                "some types in 'real_atom_types.npy' of sys {} are not contained in {} types!" \
+                .format(self.dirs[0], self.get_ntypes())
             data['real_natoms_vec'] = np.concatenate((np.tile(np.array([natoms, natoms], dtype=np.int32), (nframes, 1)),
-                                 np.array([(real_type == i).sum(axis=-1) for i in range(self.get_ntypes())],
-                                          dtype=np.int32).T), axis=-1)
+                                                      atom_type_nums), axis=-1)
         else:
             data['type'] = np.tile(self.atom_type[self.idx_map], (nframes, 1))
 
@@ -517,6 +532,11 @@ class DeepmdData() :
     def _load_type (self, sys_path: DPPath) :
         atom_type = (sys_path / "type.raw").load_txt(dtype=np.int32, ndmin=1)
         return atom_type
+
+    def _load_type_mix(self, set_name: DPPath):
+        type_path = set_name / "real_atom_types.npy"
+        real_type = type_path.load_numpy().astype(np.int32).reshape([-1, self.natoms])
+        return real_type
 
     def _make_idx_map(self, atom_type):
         natoms = atom_type.shape[0]
