@@ -168,7 +168,54 @@ def convert_dp012_to_dp10(file: str):
     file_content = file_content\
                    .replace('DescrptNorot', 'DescrptSeA') \
                    .replace('ProdForceNorot', 'ProdForceSeA') \
-                   .replace('ProdVirialNorot', 'ProdVirialSeA')
+                   .replace('ProdVirialNorot', 'ProdVirialSeA') \
+                   .replace('t_rcut', 'descrpt_attr/rcut') \
+                   .replace('t_ntypes', 'descrpt_attr/ntypes')
+    file_content += """
+node {
+  name: "fitting_attr/dfparam"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 0
+      }
+    }                                                                                                                                                 }
+}
+"""
+    file_content += """
+node {
+  name: "model_attr/model_type"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_STRING
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_STRING
+        tensor_shape {
+        }
+        string_val: "ener"
+      }
+    }
+  }
+}
+"""
     with open(file, 'w') as fp:
         fp.write(file_content)
 
