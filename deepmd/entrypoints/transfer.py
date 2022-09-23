@@ -71,9 +71,10 @@ def transfer(*, old_model: str, raw_model: str, output: str, **kwargs):
     dp_float_prec = os.environ.get("DP_INTERFACE_PREC", "high").lower()
     if kwargs['ascend_graph']:
         const_graph_def = modify_const_op(new_graph_def)
-        with tf.gfile.GFile(kwargs['ascend_graph'], mode="wb") as f:
-            f.write(const_graph_def.SerializeToString())
-        log.info("the dp test model is saved in " + kwargs['ascend_graph'])
+        if const_graph_def != new_graph_def:
+            with tf.gfile.GFile(kwargs['ascend_graph'], mode="wb") as f:
+                f.write(const_graph_def.SerializeToString())
+            log.info("the dp test model is saved in " + kwargs['ascend_graph'])
 
 
 def load_graph(graph_name: str) -> tf.Graph:
@@ -103,7 +104,7 @@ def modify_const_op(new_graph_def: tf.Graph) -> tf.Graph:
     ----------
     new_graph : tf.Graph 
         orginal new graph
-    Returns :
+    Returns
     -------
     tf.Graph
         natoms transfer to a const op for Ascend platform
@@ -113,18 +114,16 @@ def modify_const_op(new_graph_def: tf.Graph) -> tf.Graph:
             node.op = "Const"
             natoms_shape = node.attr["shape"]
             shape_val = [dim.size for dim in natoms_shape.shape.dim]
-            try:
+            if os.path.exists("natoms_val.txt"):
                 natoms_list = np.loadtxt("natoms_val.txt")
-            except Exception as e:
+                assert shape_val[0] == len(natoms_list)
+                del node.attr["shape"]
+                node.attr["value"].CopyFrom(tf.AttrValue(tensor=tf.make_tensor_proto([int(i) for i in natoms_list],
+                tf.int32, [shape_val[0]])))
+                log.info(f"{node.name} is passed from a placeholder to a const")
+            else:
                 explanation = "natoms_val.txt file is not exist, one shold put padding natoms in it. Values are separated by SPACE." 
-                log.error(explanation)
-                raise FileNotFoundError from e
-            
-            assert shape_val[0] == len(natoms_list)
-            del node.attr["shape"]
-            node.attr["value"].CopyFrom(tf.AttrValue(tensor=tf.make_tensor_proto([int(i) for i in natoms_list],
-             tf.int32, [shape_val[0]])))
-            log.info(f"{node.name} is passed from a placeholder to a const")
+                log.warning(explanation)
 
     return new_graph_def
 
@@ -192,10 +191,10 @@ def transform_graph(raw_graph: tf.Graph, old_graph: tf.Graph) -> tf.Graph:
 
             elif old_graph_dtype == np.float16:
                 if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
-                    tensor = convertMatrix(np.array(old_node.half_val), tensor_shape).astype(raw_graph_dtype)
+                    tensor = convert_matrix(np.array(old_node.half_val), tensor_shape).astype(raw_graph_dtype)
                     cp_attr.from_str(tensor)
                 else:
-                    tensor = convertMatrix(np.array(old_node.half_val), tensor_shape).astype(raw_graph_dtype)
+                    tensor = convert_matrix(np.array(old_node.half_val), tensor_shape).astype(raw_graph_dtype)
                     cp_attr.from_array(tensor, raw_graph_dtype)
 
     return raw_graph_def
