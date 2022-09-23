@@ -89,6 +89,7 @@ class RunOptions:
         self,
         init_model: Optional[str] = None,
         init_frz_model: Optional[str] = None,
+        finetune: Optional[str] = None,
         restart: Optional[str] = None,
         log_path: Optional[str] = None,
         log_level: int = 0,
@@ -100,10 +101,15 @@ class RunOptions:
             raise RuntimeError(
                 "--init-model and --restart should not be set at the same time"
             )
+        if all((init_frz_model, finetune)):
+            raise RuntimeError(
+                "--init-frz-model and --finetune should not be set at the same time"
+            )
 
         # model init options
         self.restart = restart
         self.init_model = init_model
+        self.finetune = finetune
         self.init_mode = "init_from_scratch"
 
         if restart is not None:
@@ -115,6 +121,9 @@ class RunOptions:
         elif init_frz_model is not None:
             self.init_frz_model = os.path.abspath(init_frz_model)
             self.init_mode = "init_from_frz_model"
+        elif finetune is not None:
+            self.finetune = os.path.abspath(finetune)
+            self.init_mode = "finetune"
 
         self._setup_logger(Path(log_path) if log_path else None, log_level, mpi_log)
 

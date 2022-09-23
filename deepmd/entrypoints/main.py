@@ -185,6 +185,13 @@ def main_parser() -> argparse.ArgumentParser:
         help="Initialize the training from the frozen model.",
     )
     parser_train.add_argument(
+        "-t",
+        "--finetune",
+        type=str,
+        default=None,
+        help="Finetune the frozen pretrained model.",
+    )
+    parser_train.add_argument(
         "--skip-neighbor-stat",
         action="store_true",
         help="Skip calculating neighbor statistics. Sel checking, automatic sel, and model compression will be disabled.",

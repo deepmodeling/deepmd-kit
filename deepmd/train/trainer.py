@@ -289,6 +289,7 @@ class DPTrainer (object):
     def build (self, 
                data = None, 
                stop_batch = 0,
+               origin_type_map = None,
                suffix = "") :
         self.ntypes = self.model.get_ntypes()
         self.stop_batch = stop_batch
@@ -318,7 +319,7 @@ class DPTrainer (object):
                 ))
             self.type_map = data.get_type_map()
             self.batch_size = data.get_batch_size()
-            if self.run_opt.init_mode not in ('init_from_model', 'restart', 'init_from_frz_model'):
+            if self.run_opt.init_mode not in ('init_from_model', 'restart', 'init_from_frz_model', 'finetune'):
                 # self.saver.restore (in self._init_session) will restore avg and std variables, so data_stat is useless
                 # init_from_frz_model will restore data_stat variables in `init_variables` method
                 log.info("data stating... (this step may take long time)")
@@ -327,7 +328,10 @@ class DPTrainer (object):
             # config the init_frz_model command
             if self.run_opt.init_mode == 'init_from_frz_model':
                 self._init_from_frz_model()
-            
+
+            if self.run_opt.init_mode == 'finetune':
+                self._init_from_pretrained_model(data=data, origin_type_map=origin_type_map)
+
             # neighbor_stat is moved to train.py as duplicated
             # TODO: this is a simple fix but we should have a clear
             #       architecture to call neighbor stat
@@ -455,6 +459,11 @@ class DPTrainer (object):
                 run_sess(self.sess, init_op)
                 fp = open(self.disp_file, "w")
                 fp.close ()
+            elif self.run_opt.init_mode == 'finetune' :
+                log.info("initialize training from the frozen pretrained model")
+                run_sess(self.sess, init_op)
+                fp = open(self.disp_file, "w")
+                fp.close()
             else :
                 raise RuntimeError ("unkown init mode")
         else:
@@ -742,3 +751,51 @@ class DPTrainer (object):
         if self.model_type == 'compressed_model':
             self.frz_model = self.run_opt.init_frz_model
         self.model.init_variables(graph, graph_def, model_type=self.model_type)
+
+    def _init_from_pretrained_model(self, data, origin_type_map=None, bias_shift='delta'):
+        """
+        Init the embedding net variables with the given frozen model
+
+        Parameters
+        ----------
+        data : DeepmdDataSystem
+            The training data.
+        origin_type_map : list
+            The original type_map in dataset, they are targets to change the energy bias.
+        bias_shift : str
+            The mode for changing energy bias : ['delta', 'statistic']
+            'delta' : perform predictions on energies of target dataset,
+                    and do least sqaure on the errors to obtain the target shift as bias.
+            'statistic' : directly use the statistic energy bias in the target dataset.
+        """
+        try:
+            graph, graph_def = load_graph_def(self.run_opt.finetune)
+        except FileNotFoundError as e:
+            # throw runtime error if there's no frozen model
+            raise RuntimeError(
+                "The input frozen pretrained model %s (%s) does not exist! "
+                "Please check the path of the frozen pretrained model. " % (self.run_opt.finetune,
+                                                                            os.path.abspath(self.run_opt.finetune))
+            ) from e
+        # get the model type from the frozen model(self.run_opt.finetune)
+        try:
+            t_model_type = get_tensor_by_name_from_graph(graph, 'model_type')
+        except GraphWithoutTensorError as e:
+            # throw runtime error if the frozen_model has no model type information...
+            raise RuntimeError(
+                "The input frozen pretrained model: %s has no 'model_type' information, "
+                "which is not supported by the 'dp train finetune' interface. " % self.run_opt.finetune
+            ) from e
+        else:
+            self.model_type = bytes.decode(t_model_type)
+        assert self.model_type != 'compressed_model', "Compressed models are not supported for finetuning!"
+        self.model.init_variables(graph, graph_def, model_type=self.model_type)
+        log.info("Changing energy bias in pretrained model for types {}... "
+                 "(this step may take long time)".format(str(origin_type_map)))
+        self._change_energy_bias(data, self.run_opt.finetune, origin_type_map, bias_shift)
+
+    def _change_energy_bias(self, data, frozen_model, origin_type_map, bias_shift='delta'):
+        full_type_map = data.get_type_map()
+        assert self.fitting_type == 'ener', "energy bias changing only supports 'ener' fitting net!"
+        self.model.fitting.change_energy_bias(data, frozen_model, origin_type_map, full_type_map,
+                                              bias_shift=bias_shift, ntest=self.model_param.get('data_bias_ntest', 10))

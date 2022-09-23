@@ -21,6 +21,7 @@ from deepmd.utils.data_system import DeepmdDataSystem
 from deepmd.utils.sess import run_sess
 from deepmd.utils.neighbor_stat import NeighborStat
 from deepmd.utils.path import DPPath
+from deepmd.utils.finetune import compat_jdata_with_pretrained_model
 
 __all__ = ["train"]
 
@@ -34,6 +35,7 @@ def train(
     restart: Optional[str],
     output: str,
     init_frz_model: str,
+    finetune: str,
     mpi_log: str,
     log_level: int,
     log_path: Optional[str],
@@ -55,6 +57,8 @@ def train(
         path for dump file with arguments
     init_frz_model : str
         path to frozen model or None
+    finetune : str
+        path to pretrained model or None
     mpi_log : str
         mpi logging mode
     log_level : int
@@ -75,6 +79,7 @@ def train(
         init_model=init_model,
         restart=restart,
         init_frz_model=init_frz_model,
+        finetune=finetune,
         log_path=log_path,
         log_level=log_level,
         mpi_log=mpi_log
@@ -85,6 +90,10 @@ def train(
 
     # load json database
     jdata = j_loader(INPUT)
+
+    origin_type_map = None
+    if run_opt.finetune is not None:
+        jdata, origin_type_map = compat_jdata_with_pretrained_model(jdata, run_opt.finetune)
 
     jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
 
@@ -104,6 +113,8 @@ def train(
         log.info(message)
 
     run_opt.print_resource_summary()
+    if origin_type_map is not None:
+        jdata['model']['origin_type_map'] = origin_type_map
     _do_work(jdata, run_opt, is_compress)
 
 
@@ -160,7 +171,8 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
 
     # get training info
     stop_batch = j_must_have(jdata["training"], "numb_steps")
-    model.build(train_data, stop_batch)
+    origin_type_map = jdata["model"].get("origin_type_map", None)
+    model.build(train_data, stop_batch, origin_type_map=origin_type_map)
 
     if not is_compress:
         # train the model with the provided systems in a cyclic way

@@ -450,6 +450,7 @@ def model_args ():
     doc_type_map = 'A list of strings. Give the name to each type of atoms. It is noted that the number of atom type of training system must be less than 128 in a GPU environment.'
     doc_data_stat_nbatch = 'The model determines the normalization from the statistics of the data. This key specifies the number of `frames` in each `system` used for statistics.'
     doc_data_stat_protect = 'Protect parameter for atomic energy regression.'
+    doc_data_bias_ntest = 'The number of test samples in a system to change the energy bias.'
     doc_type_embedding = "The type embedding."
     doc_descrpt = 'The descriptor of atomic environment.'
     doc_fitting = 'The fitting of physical properties.'
@@ -464,6 +465,7 @@ def model_args ():
                   [Argument("type_map", list, optional = True, doc = doc_type_map),
                    Argument("data_stat_nbatch", int, optional = True, default = 10, doc = doc_data_stat_nbatch),
                    Argument("data_stat_protect", float, optional = True, default = 1e-2, doc = doc_data_stat_protect),
+                   Argument("data_bias_ntest", int, optional=True, default=10, doc=doc_data_bias_ntest),
                    Argument("use_srtab", str, optional = True, doc = doc_use_srtab),
                    Argument("smin_alpha", float, optional = True, doc = doc_smin_alpha),
                    Argument("sw_rmin", float, optional = True, doc = doc_sw_rmin),
