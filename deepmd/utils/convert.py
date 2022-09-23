@@ -1,4 +1,5 @@
 import os
+import textwrap
 from deepmd.env import tf
 from google.protobuf import text_format
 
@@ -165,10 +166,65 @@ def convert_dp012_to_dp10(file: str):
     """
     with open(file) as fp:
         file_content = fp.read()
+    # note: atom_energy must be put before energy,
+    # otherwise atom_energy_test -> atom_o_energy
     file_content = file_content\
                    .replace('DescrptNorot', 'DescrptSeA') \
                    .replace('ProdForceNorot', 'ProdForceSeA') \
-                   .replace('ProdVirialNorot', 'ProdVirialSeA')
+                   .replace('ProdVirialNorot', 'ProdVirialSeA') \
+                   .replace('t_rcut', 'descrpt_attr/rcut') \
+                   .replace('t_ntypes', 'descrpt_attr/ntypes') \
+                   .replace('atom_energy_test', 'o_atom_energy') \
+                   .replace('atom_virial_test', 'o_atom_virial') \
+                   .replace('energy_test', 'o_energy') \
+                   .replace('force_test', 'o_force') \
+                   .replace('virial_test', 'o_virial')
+    file_content += textwrap.dedent("""\
+      node {
+        name: "fitting_attr/dfparam"
+        op: "Const"
+        attr {
+          key: "dtype"
+          value {
+            type: DT_INT32
+          }
+        }
+        attr {
+          key: "value"
+          value {
+            tensor {
+              dtype: DT_INT32
+              tensor_shape {
+              }
+              int_val: 0
+            }
+          }
+        }
+      }
+      """)
+    file_content += textwrap.dedent("""\
+      node {
+        name: "model_attr/model_type"
+        op: "Const"
+        attr {
+          key: "dtype"
+          value {
+            type: DT_STRING
+          }
+        }
+        attr {
+          key: "value"
+          value {
+            tensor {
+              dtype: DT_STRING
+              tensor_shape {
+              }
+              string_val: "ener"
+            }
+          }
+        }
+      }
+      """)
     with open(file, 'w') as fp:
         fp.write(file_content)
 
@@ -182,28 +238,28 @@ def convert_dp10_to_dp11(file: str):
         filename of the graph text
     """
     with open(file, 'a') as f:
-        f.write("""
-node {
-  name: "fitting_attr/daparam"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-        }
-        int_val: 0
-      }
-    }                                                                                                                                                 }
-}
-""")
+        f.write(textwrap.dedent("""\
+          node {
+            name: "fitting_attr/daparam"
+            op: "Const"
+            attr {
+              key: "dtype"
+              value {
+                type: DT_INT32
+              }
+            }
+            attr {
+              key: "value"
+              value {
+                tensor {
+                  dtype: DT_INT32
+                  tensor_shape {
+                  }
+                  int_val: 0
+                }
+              }                                                                                                                                                 }
+          }
+          """))
 
 
 def convert_dp12_to_dp13(file: str):
@@ -246,29 +302,29 @@ def convert_dp13_to_dp20(fname: str):
     """
     with open(fname) as fp:
         file_content = fp.read()
-    file_content += """
-node {
-  name: "model_attr/model_version"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_STRING
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_STRING
-        tensor_shape {
+    file_content += textwrap.dedent("""\
+      node {
+        name: "model_attr/model_version"
+        op: "Const"
+        attr {
+          key: "dtype"
+          value {
+            type: DT_STRING
+          }
         }
-        string_val: "1.0"
+        attr {
+          key: "value"
+          value {
+            tensor {
+              dtype: DT_STRING
+              tensor_shape {
+              }
+              string_val: "1.0"
+            }
+          }
+        }
       }
-    }
-  }
-}
-"""
+      """)
     file_content = file_content\
                    .replace('DescrptSeA', 'ProdEnvMatA')\
                    .replace('DescrptSeR', 'ProdEnvMatR')
@@ -278,52 +334,52 @@ node {
 def convert_dp20_to_dp21(fname: str):
     with open(fname) as fp:
         file_content = fp.read()
-    old_model_version_node = """
-node {
-  name: "model_attr/model_version"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_STRING
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_STRING
-        tensor_shape {
+    old_model_version_node = textwrap.dedent("""\
+      node {
+        name: "model_attr/model_version"
+        op: "Const"
+        attr {
+          key: "dtype"
+          value {
+            type: DT_STRING
+          }
         }
-        string_val: "1.0"
-      }
-    }
-  }
-}
-"""
-    new_model_version_node = """
-node {
-  name: "model_attr/model_version"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_STRING
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_STRING
-        tensor_shape {
+        attr {
+          key: "value"
+          value {
+            tensor {
+              dtype: DT_STRING
+              tensor_shape {
+              }
+              string_val: "1.0"
+            }
+          }
         }
-        string_val: "1.1"
       }
-    }
-  }
-}
-"""
+      """)
+    new_model_version_node = textwrap.dedent("""\
+      node {
+        name: "model_attr/model_version"
+        op: "Const"
+        attr {
+          key: "dtype"
+          value {
+            type: DT_STRING
+          }
+        }
+        attr {
+          key: "value"
+          value {
+            tensor {
+              dtype: DT_STRING
+              tensor_shape {
+              }
+              string_val: "1.1"
+            }
+          }
+        }
+      }
+      """)
     file_content = file_content\
                    .replace(old_model_version_node, new_model_version_node)\
                    .replace('TabulateFusion', 'TabulateFusionSeA')\
