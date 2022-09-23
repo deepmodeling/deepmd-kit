@@ -64,15 +64,15 @@ def _init_models():
 
     ret = _subprocess_run("dp train " + INPUT_PRE)
     np.testing.assert_equal(ret, 0, 'DP train failed!')
-    ret = _subprocess_run("dp freeze -c " + str(tests_path) + " -o " + pretrained_model)
+    ret = _subprocess_run("dp freeze -o " + pretrained_model)
     np.testing.assert_equal(ret, 0, 'DP freeze failed!')
     ret = _subprocess_run("dp train " + INPUT_FINETUNE + " -t " + pretrained_model)
     np.testing.assert_equal(ret, 0, 'DP finetune failed!')
-    ret = _subprocess_run("dp freeze -c " + str(tests_path) + " -o " + finetuned_model)
+    ret = _subprocess_run("dp freeze -o " + finetuned_model)
     np.testing.assert_equal(ret, 0, 'DP freeze failed!')
     ret = _subprocess_run("dp train " + INPUT_FINETUNE_MIX + " -t " + pretrained_model)
     np.testing.assert_equal(ret, 0, 'DP finetune failed!')
-    ret = _subprocess_run("dp freeze -c " + str(tests_path) + " -o " + finetuned_model_mixed_type)
+    ret = _subprocess_run("dp freeze -o " + finetuned_model_mixed_type)
     np.testing.assert_equal(ret, 0, 'DP freeze failed!')
 
     jdata_pre = update_deepmd_input(jdata_pre, warning=True, dump="input_v2_compat.json")
