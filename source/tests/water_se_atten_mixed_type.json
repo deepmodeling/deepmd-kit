@@ -1,7 +1,7 @@
 {
     "_comment": " model parameters",
     "model" : {
-    "type_map":     ["O", "H"],
+    "type_map":     ["foo", "bar"],
 	"type_embedding":{
 	    "neuron":		[8],
 	    "resnet_dt":	false,

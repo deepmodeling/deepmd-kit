@@ -33,8 +33,9 @@ class TestDataLargeBatch(tf.test.TestCase):
         batch_size = 1
         test_size = 1
         rcut = j_must_have(jdata['model']['descriptor'], 'rcut')
+        type_map = j_must_have(jdata['model'], 'type_map')
 
-        data = DeepmdDataSystem(systems, batch_size, test_size, rcut)
+        data = DeepmdDataSystem(systems, batch_size, test_size, rcut, type_map=type_map)
         data_requirement = {'energy': {'ndof': 1,
                     'atomic': False,
                     'must': False,
