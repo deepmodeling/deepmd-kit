@@ -5,7 +5,7 @@ import os
 import re
 import platform
 from configparser import ConfigParser
-from imp import reload
+from importlib import reload
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 from packaging.version import Version
@@ -44,6 +44,8 @@ __all__ = [
     "TRANSFER_PATTERN",
     "FITTING_NET_PATTERN",
     "EMBEDDING_NET_PATTERN",
+    "TYPE_EMBEDDING_PATTERN",
+    "ATTENTION_LAYER_PATTERN",
     "TF_VERSION"
 ]
 
@@ -59,18 +61,26 @@ EMBEDDING_NET_PATTERN = str(
     r"filter_type_\d+/matrix_\d+_\d+|"
     r"filter_type_\d+/bias_\d+_\d+|"
     r"filter_type_\d+/idt_\d+_\d+|"
+    r"filter_type_all/matrix_\d+|"
     r"filter_type_all/matrix_\d+_\d+|"
     r"filter_type_all/matrix_\d+_\d+_\d+|"
+    r"filter_type_all/bias_\d+|"
     r"filter_type_all/bias_\d+_\d+|"
     r"filter_type_all/bias_\d+_\d+_\d+|"
+    r"filter_type_all/idt_\d+|"
     r"filter_type_all/idt_\d+_\d+|"
 )
 
 FITTING_NET_PATTERN = str(
+    r"layer_\d+/matrix|"
     r"layer_\d+_type_\d+/matrix|"
+    r"layer_\d+/bias|"
     r"layer_\d+_type_\d+/bias|"
+    r"layer_\d+/idt|"
     r"layer_\d+_type_\d+/idt|"
+    r"final_layer/matrix|"
     r"final_layer_type_\d+/matrix|"
+    r"final_layer/bias|"
     r"final_layer_type_\d+/bias|"
 )
 
@@ -78,6 +88,21 @@ TYPE_EMBEDDING_PATTERN = str(
     r"type_embed_net+/matrix_\d+|"
     r"type_embed_net+/bias_\d+|"
     r"type_embed_net+/idt_\d+|"
+)
+
+ATTENTION_LAYER_PATTERN = str(
+    r"attention_layer_\d+/c_query/matrix|"
+    r"attention_layer_\d+/c_query/bias|"
+    r"attention_layer_\d+/c_key/matrix|"
+    r"attention_layer_\d+/c_key/bias|"
+    r"attention_layer_\d+/c_value/matrix|"
+    r"attention_layer_\d+/c_value/bias|"
+    r"attention_layer_\d+/c_out/matrix|"
+    r"attention_layer_\d+/c_out/bias|"
+    r"attention_layer_\d+/layer_normalization/beta|"
+    r"attention_layer_\d+/layer_normalization/gamma|"
+    r"attention_layer_\d+/layer_normalization_\d+/beta|"
+    r"attention_layer_\d+/layer_normalization_\d+/gamma|"
 )
 
 TRANSFER_PATTERN = \

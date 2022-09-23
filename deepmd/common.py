@@ -66,7 +66,7 @@ def gelu(x: tf.Tensor) -> tf.Tensor:
     Original paper
     https://arxiv.org/abs/1606.08415
     """
-    return op_module.gelu(x)
+    return op_module.gelu_custom(x)
 
 
 def gelu_tf(x: tf.Tensor) -> tf.Tensor:
@@ -94,7 +94,7 @@ def gelu_tf(x: tf.Tensor) -> tf.Tensor:
             return tensorflow.nn.gelu(x, approximate=True)
         except AttributeError:
             warnings.warn("TensorFlow does not provide an implementation of gelu, please upgrade your TensorFlow version. Fallback to the custom gelu operator.")
-            return op_module.gelu(x)
+            return op_module.gelu_custom(x)
     return (lambda x: gelu_wrapper(x))(x)
 
 # TODO this is not a good way to do things. This is some global variable to which
@@ -405,8 +405,8 @@ def j_loader(filename: Union[str, Path]) -> Dict[str, Any]:
 
 
 def get_activation_func(
-    activation_fn: "_ACTIVATION",
-) -> Callable[[tf.Tensor], tf.Tensor]:
+    activation_fn: Union["_ACTIVATION", None],
+) -> Union[Callable[[tf.Tensor], tf.Tensor], None]:
     """Get activation function callable based on string name.
 
     Parameters
@@ -424,6 +424,8 @@ def get_activation_func(
     RuntimeError
         if unknown activation function is specified
     """
+    if activation_fn is None or activation_fn in ['none', 'None']:
+        return None
     if activation_fn not in ACTIVATION_FN_DICT:
         raise RuntimeError(f"{activation_fn} is not a valid activation function")
     return ACTIVATION_FN_DICT[activation_fn]

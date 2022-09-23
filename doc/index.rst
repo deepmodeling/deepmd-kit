@@ -38,6 +38,17 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
    nvnmd/index
    troubleshooting/index
 
+
+.. _tutorial:
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Tutorial
+   :glob:  
+
+   Tutorials <https://tutorials.deepmodeling.com/>
+   Publications <https://deepmodeling.com/blog/papers/deepmd-kit/>
+
 .. _developer-guide:
 
 .. toctree::

@@ -2,7 +2,6 @@
 
 import os
 import site
-from distutils.util import get_platform
 from importlib.machinery import FileFinder
 from importlib.util import find_spec
 from pathlib import Path
@@ -154,6 +153,7 @@ setup(
             "deepmodeling-sphinx>=0.1.0",
             "dargs>=0.3.1",
             "sphinx-argparse",
+            "pygments-lammps",
             ],
         **extras_require,
     },

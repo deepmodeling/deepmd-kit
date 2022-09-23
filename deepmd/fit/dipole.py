@@ -182,7 +182,7 @@ class DipoleFittingSeA (Fitting) :
         suffix : str
             suffix to name scope
         """
-        self.fitting_net_variables = get_fitting_net_variables_from_graph_def(graph_def)
+        self.fitting_net_variables = get_fitting_net_variables_from_graph_def(graph_def, suffix=suffix)
 
 
     def enable_mixed_precision(self, mixed_prec : dict = None) -> None:

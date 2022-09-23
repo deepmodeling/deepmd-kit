@@ -24,6 +24,7 @@ from deepmd.utils.neighbor_stat import NeighborStat
 from deepmd.utils.sess import run_sess
 from deepmd.utils.type_embed import TypeEmbedNet
 from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph
+from deepmd.utils.argcheck import type_embedding_args
 
 from tensorflow.python.client import timeline
 from deepmd.env import op_module, TF_VERSION
@@ -69,17 +70,20 @@ class DPTrainer (object):
         # nvnmd
         self.nvnmd_param = jdata.get('nvnmd', {})
         nvnmd_cfg.init_from_jdata(self.nvnmd_param)
-        nvnmd_cfg.init_from_deepmd_input(model_param)
         if nvnmd_cfg.enable:
+            nvnmd_cfg.init_from_deepmd_input(model_param)
             nvnmd_cfg.disp_message()
             nvnmd_cfg.save()
         
         # descriptor
         try:
             descrpt_type = descrpt_param['type']
+            self.descrpt_type = descrpt_type
         except KeyError:
             raise KeyError('the type of descriptor should be set by `type`')
 
+        if descrpt_param['type'] in ['se_atten']:
+            descrpt_param['ntypes'] = len(model_param['type_map'])
         self.descrpt = Descriptor(**descrpt_param)
 
         # fitting net
@@ -112,6 +116,9 @@ class DPTrainer (object):
             raise RuntimeError('unknow fitting type ' + fitting_type)
 
         # type embedding
+        padding = False
+        if descrpt_type == 'se_atten':
+            padding = True
         if typeebd_param is not None:
             self.typeebd = TypeEmbedNet(
                 neuron=typeebd_param['neuron'],
@@ -119,7 +126,20 @@ class DPTrainer (object):
                 activation_function=typeebd_param['activation_function'],
                 precision=typeebd_param['precision'],
                 trainable=typeebd_param['trainable'],
-                seed=typeebd_param['seed']
+                seed=typeebd_param['seed'],
+                padding=padding
+            )
+        elif descrpt_type == 'se_atten':
+            default_args = type_embedding_args()
+            default_args_dict = {i.name: i.default for i in default_args}
+            self.typeebd = TypeEmbedNet(
+                neuron=default_args_dict['neuron'],
+                resnet_dt=default_args_dict['resnet_dt'],
+                activation_function=None,
+                precision=default_args_dict['precision'],
+                trainable=default_args_dict['trainable'],
+                seed=default_args_dict['seed'],
+                padding=padding
             )
         else:
             self.typeebd = None
@@ -268,9 +288,14 @@ class DPTrainer (object):
 
     def build (self, 
                data = None, 
-               stop_batch = 0) :
+               stop_batch = 0,
+               suffix = "") :
         self.ntypes = self.model.get_ntypes()
         self.stop_batch = stop_batch
+
+        if not self.is_compress and data.mixed_type:
+            assert self.descrpt_type in ['se_atten'], 'Data in mixed_type format must use attention descriptor!'
+            assert self.fitting_type in ['ener'], 'Data in mixed_type format must use ener fitting!'
 
         if self.numb_fparam > 0 :
             log.info("training with %d frame parameter(s)" % self.numb_fparam)
@@ -324,7 +349,7 @@ class DPTrainer (object):
             self.fitting.enable_mixed_precision(self.mixed_prec)
 
         self._build_lr()
-        self._build_network(data)
+        self._build_network(data, suffix)
         self._build_training()
 
 
@@ -334,7 +359,7 @@ class DPTrainer (object):
         self.learning_rate = self.lr.build(self.global_step, self.stop_batch)
         log.info("built lr")
 
-    def _build_network(self, data):        
+    def _build_network(self, data, suffix=""):
         self.place_holders = {}
         if self.is_compress :
             for kk in ['coord', 'box']:
@@ -355,7 +380,7 @@ class DPTrainer (object):
                                 self.place_holders['default_mesh'],
                                 self.place_holders,
                                 self.frz_model,
-                                suffix = "", 
+                                suffix = suffix,
                                 reuse = False)
 
         self.l2_l, self.l2_more\
@@ -585,7 +610,7 @@ class DPTrainer (object):
     def get_feed_dict(self, batch, is_training):
         feed_dict = {}
         for kk in batch.keys():
-            if kk == 'find_type' or kk == 'type':
+            if kk == 'find_type' or kk == 'type' or kk == 'real_natoms_vec':
                 continue
             if 'find_' in kk:
                 feed_dict[self.place_holders[kk]] = batch[kk]
