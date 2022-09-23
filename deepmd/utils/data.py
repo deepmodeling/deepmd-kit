@@ -67,7 +67,8 @@ class DeepmdData() :
                 atom_type_ = [type_map.index(self.type_map[ii]) for ii in self.atom_type]
                 self.atom_type = np.array(atom_type_, dtype = np.int32)
             else:
-                type_idx_map = np.searchsorted(type_map, self.type_map)
+                sorter = np.argsort(type_map)
+                type_idx_map = sorter[np.searchsorted(type_map, self.type_map, sorter=sorter)]
                 try:
                     atom_type_mix_ = np.array(type_idx_map)[self.atom_type_mix].astype(np.int32)
                 except RuntimeError as e:
