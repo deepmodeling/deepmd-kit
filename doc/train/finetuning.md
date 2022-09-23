@@ -28,7 +28,7 @@ Note that the elements in training dataset must be contained in the pretrained d
 The finetune procedure will inherit the model structures in `pretrained.pb`, 
 and thus it will ignore the model parameters in `input.json`, 
 such as {ref}`descriptor <model/descriptor>`, {ref}`fitting_net <model/fitting_net>`, 
-{ref}`fitting_net <model/type_embedding>` and {ref}`type_embedding <model/type_map>`.
+{ref}`type_embedding <model/type_embedding>` and {ref}`type_map <model/type_map>`.
 However, you can still set the `trainable` parameters in each part of `input.json` to control the training procedure.
 
 To obtain a more simplified script, for example, you can change the {ref}`model <model>` part in `input.json` to preform finetuning:
