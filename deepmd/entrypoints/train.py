@@ -35,12 +35,12 @@ def train(
     restart: Optional[str],
     output: str,
     init_frz_model: str,
-    finetune: str,
     mpi_log: str,
     log_level: int,
     log_path: Optional[str],
     is_compress: bool = False,
     skip_neighbor_stat: bool = False,
+    finetune: Optional[str] = None,
     **kwargs,
 ):
     """Run DeePMD model training.
