@@ -57,8 +57,6 @@ def train(
         path for dump file with arguments
     init_frz_model : str
         path to frozen model or None
-    finetune : str
-        path to pretrained model or None
     mpi_log : str
         mpi logging mode
     log_level : int
@@ -69,6 +67,8 @@ def train(
         indicates whether in the model compress mode
     skip_neighbor_stat : bool, default=False
         skip checking neighbor statistics
+    finetune : Optional[str]
+        path to pretrained model or None
 
     Raises
     ------
