@@ -277,7 +277,7 @@ class DeepPot(DeepEval):
             temp_type = feed_dict[self.sess.graph.get_tensor_by_name('load/t_type:0')]
             type_sub = np.reshape(np.array(temp_type, dtype=np.int32), [-1, natoms_vec[1]])
             box_sub = np.reshape(feed_dict[self.sess.graph.get_tensor_by_name('load/t_box:0')], [-1, 9])
-            descrpt, descrpt_deriv, rij, nlist \
+            coord_new, type_new, idx_mapping, nlist_new \
                 = op_module.ProdEnvMatAMesh(coord=tf.constant(coord_tensor),
                                             type=tf.constant(type_tensor),
                                             natoms=tf.constant(t_natoms),
@@ -421,10 +421,10 @@ class DeepPot(DeepEval):
 
         Parameters
         ----------
-        feed_dict : dict of tensor
-            Session original feed_dict includes coord, type, box, mesh, natoms.
         t_out : list of tensor
             Output tensor includes energy, force, virial, atom_force, atom_virial.
+        feed_dict : dict of tensor
+            Session original feed_dict includes coord, type, box, mesh.
         nframes : int
             Number of samples in one dataset.
         atomic : bool

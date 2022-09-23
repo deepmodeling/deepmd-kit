@@ -383,8 +383,16 @@ class DPTrainer (object):
                     log.info("fitting net %s training without frame parameter" % fitting_key)
 
         if self.is_ascend_transfer:
-            self._init_from_frz_model()
-            
+            try:
+                graph, graph_def = load_graph_def(self.run_opt.init_frz_model)
+            except FileNotFoundError as e:
+                # throw runtime error if there's no frozen model
+                raise RuntimeError(
+                    "The input frozen model %s (%s) does not exist! Please check the path of the frozen model. " \
+                    % (self.run_opt.init_frz_model, os.path.abspath(self.run_opt.init_frz_model))
+                ) from e
+            self.model_type = 'ascend_transfer_model'
+            self.model.init_variables(graph, graph_def, model_type=self.model_type)
         elif not self.is_compress:
             # Usually, the type number of the model should be equal to that of the data
             # However, nt_model > nt_data should be allowed, since users may only want to 
@@ -940,8 +948,6 @@ class DPTrainer (object):
             self.model_type = bytes.decode(t_model_type)
         if self.model_type == 'compressed_model':
             self.frz_model = self.run_opt.init_frz_model
-        if self.is_ascend_transfer:
-            self.model_type = 'ascend_transfer_model'
         self.model.init_variables(graph, graph_def, model_type=self.model_type)
 
     def _init_from_pretrained_model(self, data, origin_type_map=None, bias_shift='delta'):

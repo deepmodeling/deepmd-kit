@@ -49,7 +49,7 @@ def mix_precision(
         logging level
     """
     assert (dp_float_prec == "ascend_mix"), \
-        "Transfering Ascend_transfer mix-precision model needs to set environment variable DP_INTERFACE_PREC=ascend-mix!"
+        "Transfering Ascend_transfer mix-precision model needs to set environment variable DP_INTERFACE_PREC=ascend_mix!"
     try:
         t_jdata = get_tensor_by_name(input, 'train_attr/training_script')
         t_min_nbor_dist = get_tensor_by_name(input, 'train_attr/min_nbor_dist')
@@ -72,6 +72,7 @@ def mix_precision(
             jdata = update_deepmd_input(jdata)
             t_min_nbor_dist = get_min_nbor_dist(jdata, get_rcut(jdata))
 
+    _check_descrpt_type(jdata)
     _check_transfer_model_type(input)
 
     tf.constant(t_min_nbor_dist,
@@ -144,3 +145,13 @@ def _check_transfer_model_type(model_file):
     
     if t_model_type == "ascend_transfer_model":
         raise RuntimeError("The input model %s has already been transfered to ascend mix-precision model! Please do not transfer the model repeatedly. " % model_file)
+
+def _check_descrpt_type(t_jdata):
+    try:
+        descrpt_type = t_jdata["model"]["descriptor"]["type"]
+    except GraphWithoutTensorError as e:
+        # Compatible with the upgraded model, which has no 'model_type' info
+        descrpt_type = "se_a"
+    
+    if descrpt_type != "se_a" and descrpt_type != "se_e2_a":
+        raise RuntimeError("Now the Ascend platform only supports se_a descriptor. There will be more descriptor support in the future!")
