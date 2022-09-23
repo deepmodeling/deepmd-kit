@@ -11,10 +11,7 @@ from infer.convert2pb import convert_pbtxt_to_pb
 from deepmd.utils.graph import get_tensor_by_name
 
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
-if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
-    default_places = 4
-else :
-    default_places = 10
+os.environ["DP_INTERFACE_PREC"] = "ascend_mix"
 
 def _file_delete(file) :
     if os.path.exists(file):
@@ -61,7 +58,7 @@ class TestTransform(unittest.TestCase) :
 
     def test_attrs(self):
         self.assertEqual(self.dp.get_ntypes(), 2)
-        self.assertAlmostEqual(self.dp.get_rcut(), 6.0, places = default_places)
+        self.assertAlmostEqual(self.dp.get_rcut(), 6.0, places = 4)
         self.assertEqual(self.dp.get_type_map(), ['O', 'H'])
         self.assertEqual(self.dp.get_dim_fparam(), 0)
         self.assertEqual(self.dp.get_dim_aparam(), 0)
