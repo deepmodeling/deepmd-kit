@@ -57,6 +57,7 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.13)
 else()
   target_link_libraries(coverage_config INTERFACE --coverage)
 endif()
+target_link_libraries(${libname} coverage_config)
 
 find_package(Threads)
 # find openmp
