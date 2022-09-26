@@ -35,7 +35,7 @@ target_compile_definitions(${libname}
   PRIVATE TF_PRIVATE
 )
 if (CMAKE_TESTING_ENABLED)
-  target_link_libraries(${libname} coverage_config)
+  target_link_libraries(${libname} PRIVATE coverage_config)
 endif()
 
 install(TARGETS ${libname} DESTINATION lib/)

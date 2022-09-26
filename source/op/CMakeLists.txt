@@ -58,7 +58,7 @@ if (BUILD_PY_IF)
 endif (BUILD_PY_IF)
 
 if (CMAKE_TESTING_ENABLED)
-  target_link_libraries(${libname} coverage_config)
+  target_link_libraries(${libname} PRIVATE coverage_config)
 endif()
 
 if (BUILD_CPP_IF)
