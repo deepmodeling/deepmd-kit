@@ -33,6 +33,7 @@ if (DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
   include(${LAMMPS_SOURCE_ROOT}/cmake/Modules/LAMMPSUtils.cmake)
   get_lammps_version(${LAMMPS_HEADER_DIR}/version.h LAMMPS_VERSION_NUMBER)
   set(LAMMPS_VERSION_NUMBER ${LAMMPS_VERSION_NUMBER} PARENT_SCOPE)
+  message(STATUS "LAMMPS version is ${LAMMPS_VERSION_NUMBER}")
 
   configure_file("../pair_deepmd.h.in" "${CMAKE_CURRENT_BINARY_DIR}/pair_deepmd.h" @ONLY)
 
