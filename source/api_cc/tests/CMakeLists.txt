@@ -7,6 +7,7 @@ endif (NOT DEFINED BUILD_CPP_IF)
 add_definitions ("-DHIGH_PREC")
 
 enable_testing()
+add_subdirectory(${CMAKE_SOURCE_DIR}/../../cmake/coverage_config)
 
 find_package(OpenMP)
 if (OPENMP_FOUND)
@@ -115,17 +116,6 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/../../op op)
 file(GLOB TEST_SRC test_*.cc)
 add_executable( runUnitTests ${TEST_SRC} )
 
-add_library(coverage_config INTERFACE)
-target_compile_options(coverage_config INTERFACE
-  -O0        # no optimization
-  -g         # generate debug info
-  --coverage # sets all required flags
-)
-if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.13)
-  target_link_options(coverage_config INTERFACE --coverage)
-else()
-  target_link_libraries(coverage_config INTERFACE --coverage)
-endif()
 
 target_link_libraries(runUnitTests gtest gtest_main ${apiname} rt coverage_config)
 

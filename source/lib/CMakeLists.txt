@@ -27,6 +27,10 @@ endif()
 
 set_target_properties(${libname} PROPERTIES INSTALL_RPATH $ORIGIN)
 
+if (CMAKE_TESTING_ENABLED)
+  target_link_libraries(${libname} coverage_config)
+endif()
+
 if(BUILD_PY_IF)
   install(TARGETS ${libname} DESTINATION deepmd/op/)
 endif(BUILD_PY_IF)

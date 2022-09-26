@@ -57,6 +57,10 @@ if (BUILD_PY_IF)
   endif ()
 endif (BUILD_PY_IF)
 
+if (CMAKE_TESTING_ENABLED)
+  target_link_libraries(${libname} coverage_config)
+endif()
+
 if (BUILD_CPP_IF)
   install(TARGETS ${LIB_DEEPMD_OP}		DESTINATION lib/)
 endif (BUILD_CPP_IF)
