@@ -7,7 +7,7 @@ endif (NOT DEFINED BUILD_CPP_IF)
 add_definitions ("-DHIGH_PREC")
 
 enable_testing()
-add_subdirectory(${CMAKE_SOURCE_DIR}/../../cmake/coverage_config)
+add_subdirectory(${CMAKE_SOURCE_DIR}/../../cmake/coverage_config coverage_config)
 
 find_package(OpenMP)
 if (OPENMP_FOUND)

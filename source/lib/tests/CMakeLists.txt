@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.9)
 project(libdeepmd_test)
 
 enable_testing()
-add_subdirectory(${CMAKE_SOURCE_DIR}/../../cmake/coverage_config)
+add_subdirectory(${CMAKE_SOURCE_DIR}/../../cmake/coverage_config coverage_config)
 
 find_package(OpenMP)
 if (OPENMP_FOUND)
