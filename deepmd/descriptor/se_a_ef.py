@@ -101,10 +101,10 @@ class DescrptSeAEf (Descriptor):
             precision,
             uniform_seed,
         )
-        
+
     def get_rcut (self) -> float:
         """
-        Returns the cut-off radisu
+        Returns the cut-off radius
         """
         return self.descrpt_vert.rcut_r
 

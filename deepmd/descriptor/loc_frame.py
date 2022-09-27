@@ -99,7 +99,7 @@ class DescrptLocFrame (Descriptor) :
 
     def get_rcut (self) -> float:
         """
-        Returns the cut-off radisu
+        Returns the cut-off radius
         """
         return self.rcut_r
 
