@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.9)
 project(libdeepmd_test)
 
 enable_testing()
+add_subdirectory(${CMAKE_SOURCE_DIR}/../../cmake/coverage_config coverage_config)
 
 find_package(OpenMP)
 if (OPENMP_FOUND)
@@ -46,17 +47,6 @@ endif (USE_ROCM_TOOLKIT)
 file(GLOB TEST_SRC test_*.cc)
 add_executable( runUnitTests ${TEST_SRC} )
 
-add_library(coverage_config INTERFACE)
-target_compile_options(coverage_config INTERFACE
-  -O0        # no optimization
-  -g         # generate debug info
-  --coverage # sets all required flags
-)
-if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.13)
-  target_link_options(coverage_config INTERFACE --coverage)
-else()
-  target_link_libraries(coverage_config INTERFACE --coverage)
-endif()
 
 find_package(Threads)
 # find openmp
