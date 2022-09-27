@@ -617,7 +617,7 @@ class EnerFitting (Fitting):
         sorter = np.argsort(full_type_map)
         idx_type_map = sorter[np.searchsorted(full_type_map, origin_type_map, sorter=sorter)]
         mixed_type = data.mixed_type
-        numb_type = len(origin_type_map)
+        numb_type = len(full_type_map)
         dp = None
         if bias_shift == 'delta':
             # init model
@@ -636,7 +636,7 @@ class EnerFitting (Fitting):
             if mixed_type:
                 type_numbs.append(np.array([(atype == i).sum(axis=-1) for i in idx_type_map], dtype=np.int32).T)
             else:
-                type_numbs.append(np.tile(np.bincount(atype)[idx_type_map], (numb_test, 1)))
+                type_numbs.append(np.tile(np.bincount(atype, minlength=numb_type)[idx_type_map], (numb_test, 1)))
             if bias_shift == 'delta':
                 coord = test_data["coord"][:numb_test].reshape([numb_test, -1])
                 box = test_data["box"][:numb_test]
