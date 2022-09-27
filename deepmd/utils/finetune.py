@@ -16,8 +16,8 @@ from deepmd.descriptor import Descriptor
 log = logging.getLogger(__name__)
 
 
-def compat_jdata_with_pretrained_model(jdata: Dict[str, Any], pretrained_model: str):
-    """Compat the input script with pretrained model.
+def replace_model_params_with_pretrained_model(jdata: Dict[str, Any], pretrained_model: str):
+    """Replace the model params in input script according to pretrained model.
 
     Parameters
     ----------
@@ -29,13 +29,13 @@ def compat_jdata_with_pretrained_model(jdata: Dict[str, Any], pretrained_model: 
     # Get the input script from the pretrained model
     try:
         t_jdata = get_tensor_by_name(pretrained_model, 'train_attr/training_script')
-        pretrained_jdata = json.loads(t_jdata)
     except GraphWithoutTensorError as e:
         raise RuntimeError(
-            "The input frozen pretrained model: %s has no training script,"
+            "The input frozen pretrained model: %s has no training script, "
             "which is not supported to perform finetuning. "
             "Please use the model pretrained with v2.1.5 or higher version of DeePMD-kit." % input
         ) from e
+    pretrained_jdata = json.loads(t_jdata)
 
     # Check the model type
     assert pretrained_jdata['model']['descriptor']['type'] in ['se_atten'] and \
@@ -44,7 +44,7 @@ def compat_jdata_with_pretrained_model(jdata: Dict[str, Any], pretrained_model: 
 
     # Check the type map
     pretrained_type_map = pretrained_jdata['model']['type_map']
-    cur_type_map = jdata['model']['type_map']
+    cur_type_map = jdata['model'].get("type_map", [])
     out_line_type = []
     for i in cur_type_map:
         if i not in pretrained_type_map:

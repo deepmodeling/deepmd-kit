@@ -797,5 +797,5 @@ class DPTrainer (object):
     def _change_energy_bias(self, data, frozen_model, origin_type_map, bias_shift='delta'):
         full_type_map = data.get_type_map()
         assert self.fitting_type == 'ener', "energy bias changing only supports 'ener' fitting net!"
-        self.model.fitting.change_energy_bias(data, frozen_model, origin_type_map, full_type_map,
-                                              bias_shift=bias_shift, ntest=self.model_param.get('data_bias_ntest', 10))
+        self.model.fitting.change_energy_bias(data, frozen_model, origin_type_map, full_type_map, bias_shift=bias_shift,
+                                              ntest=self.model_param.get('data_bias_nsample', 10))

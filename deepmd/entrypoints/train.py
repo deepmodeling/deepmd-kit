@@ -21,7 +21,7 @@ from deepmd.utils.data_system import DeepmdDataSystem
 from deepmd.utils.sess import run_sess
 from deepmd.utils.neighbor_stat import NeighborStat
 from deepmd.utils.path import DPPath
-from deepmd.utils.finetune import compat_jdata_with_pretrained_model
+from deepmd.utils.finetune import replace_model_params_with_pretrained_model
 
 __all__ = ["train"]
 
@@ -93,7 +93,7 @@ def train(
 
     origin_type_map = None
     if run_opt.finetune is not None:
-        jdata, origin_type_map = compat_jdata_with_pretrained_model(jdata, run_opt.finetune)
+        jdata, origin_type_map = replace_model_params_with_pretrained_model(jdata, run_opt.finetune)
 
     jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
 
@@ -172,6 +172,8 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
     # get training info
     stop_batch = j_must_have(jdata["training"], "numb_steps")
     origin_type_map = jdata["model"].get("origin_type_map", None)
+    if origin_type_map is not None and not origin_type_map:  # get the type_map from data if not provided
+        origin_type_map = get_data(jdata["training"]["training_data"], rcut, None, modifier).get_type_map()
     model.build(train_data, stop_batch, origin_type_map=origin_type_map)
 
     if not is_compress:

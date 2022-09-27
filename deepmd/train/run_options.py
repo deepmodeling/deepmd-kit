@@ -97,15 +97,6 @@ class RunOptions:
     ):
         self._try_init_distrib()
 
-        if all((init_model, restart)):
-            raise RuntimeError(
-                "--init-model and --restart should not be set at the same time"
-            )
-        if all((init_frz_model, finetune)):
-            raise RuntimeError(
-                "--init-frz-model and --finetune should not be set at the same time"
-            )
-
         # model init options
         self.restart = restart
         self.init_model = init_model
