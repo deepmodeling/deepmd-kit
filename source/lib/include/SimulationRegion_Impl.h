@@ -6,6 +6,7 @@
 #include <limits>
 #include <typeinfo>
 #include <stdexcept>
+#include <cmath>
 #include "errors.h"
 
 // using namespace std;

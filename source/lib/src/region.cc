@@ -1,5 +1,6 @@
 #include <stdexcept>
 #include <algorithm>
+#include <cmath>
 #include "region.h"
 #include "errors.h"
 #define BOXT_DIM 9
