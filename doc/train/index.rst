@@ -10,3 +10,4 @@ Training
    parallel-training
    tensorboard
    gpu-limitations
+   finetuning
