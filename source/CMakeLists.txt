@@ -110,26 +110,6 @@ find_package(Threads)
 
 # auto op_cxx_abi
 if (NOT DEFINED OP_CXX_ABI)
-  if (BUILD_PY_IF) 
-    if (DEFINED TENSORFLOW_ROOT)
-      # note \ in windows path
-      set(FIND_ABI_CMD "import sys,os; sys.path.insert(0, os.path.join(r'${TENSORFLOW_ROOT}', '..')); import tensorflow; print(tensorflow.CXX11_ABI_FLAG if 'CXX11_ABI_FLAG' in tensorflow.__dict__ else tensorflow.sysconfig.CXX11_ABI_FLAG, end = '')" )
-    else()
-      set(FIND_ABI_CMD "import tensorflow; print(tensorflow.CXX11_ABI_FLAG if 'CXX11_ABI_FLAG' in tensorflow.__dict__ else tensorflow.sysconfig.CXX11_ABI_FLAG, end = '')")
-    endif()
-    execute_process(
-      COMMAND ${PYTHON_EXECUTABLE} "-c" "${FIND_ABI_CMD}"
-      WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-      OUTPUT_VARIABLE PY_CXX_ABI
-      RESULT_VARIABLE PY_CXX_ABI_RESULT_VAR
-      ERROR_VARIABLE PY_CXX_ABI_ERROR_VAR
-      )
-    if (NOT ${PY_CXX_ABI_RESULT_VAR} EQUAL 0)
-      message(FATAL_ERROR "Cannot determine cxx abi, error message: ${PY_CXX_ABI_ERROR_VAR}")
-    endif()
-    set(OP_CXX_ABI ${PY_CXX_ABI})
-  endif()
-  if (BUILD_CPP_IF)
     try_run(
       CPP_CXX_ABI_RUN_RESULT_VAR CPP_CXX_ABI_COMPILE_RESULT_VAR
       ${CMAKE_CURRENT_BINARY_DIR}/tf_cxx_abi
@@ -145,13 +125,7 @@ if (NOT DEFINED OP_CXX_ABI)
     if (NOT ${CPP_CXX_ABI_RUN_RESULT_VAR} EQUAL "0")
       message(FATAL_ERROR "Failed to run, return code: ${CPP_CXX_ABI}" )
     endif()
-    if (DEFINED PY_CXX_ABI)
-      if (NOT (${CPP_CXX_ABI} EQUAL ${PY_CXX_ABI}))
-	message (WARNNING "NOT consistent CXX_ABIs: python interface of tf uses ${PY_CXX_ABI}, while c++ interface of tf uses ${CPP_CXX_ABI}, we follow c++ interface ")
-      endif()
-    endif()
     set(OP_CXX_ABI ${CPP_CXX_ABI})
-  endif()
   message (STATUS "Automatically determined OP_CXX_ABI=${OP_CXX_ABI} ")
 else()
   message (STATUS "User set OP_CXX_ABI=${OP_CXX_ABI} ")  
