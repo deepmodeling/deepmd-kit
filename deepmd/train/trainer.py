@@ -263,10 +263,10 @@ class DPTrainer (object):
         self.tensorboard_freq = tr_data.get('tensorboard_freq', 1)
         self.mixed_prec = tr_data.get('mixed_precision', None)
         if self.mixed_prec is not None:
-            if (self.mixed_prec['compute_prec'] != 'float16' or self.mixed_prec['output_prec'] != 'float32'):
+            if (self.mixed_prec['compute_prec'] not in ('float16', 'bfloat16') or self.mixed_prec['output_prec'] != 'float32'):
                 raise RuntimeError(
                     "Unsupported mixed precision option [output_prec, compute_prec]: [%s, %s], "
-                    " Supported: [float32, float16], Please set mixed precision option correctly!"
+                    " Supported: [float32, float16/bfloat16], Please set mixed precision option correctly!"
                      % (self.mixed_prec['output_prec'], self.mixed_prec['compute_prec']))
         # self.sys_probs = tr_data['sys_probs']
         # self.auto_prob_style = tr_data['auto_prob']
