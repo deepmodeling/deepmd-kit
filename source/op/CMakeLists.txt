@@ -58,6 +58,10 @@ if (BUILD_PY_IF)
     INSTALL_RPATH $ORIGIN
     )
   endif ()
+  if (CMAKE_TESTING_ENABLED)
+    target_link_libraries(op_abi PRIVATE coverage_config)
+    target_link_libraries(op_grads PRIVATE coverage_config)
+  endif()
 endif (BUILD_PY_IF)
 
 if (BUILD_CPP_IF)
