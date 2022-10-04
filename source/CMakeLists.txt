@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.12)
 project(DeePMD)
 
+option(BUILD_TESTING "Enable converage" OFF)
+if(BUILD_TESTING)
+  enable_testing()
+  add_subdirectory(${CMAKE_SOURCE_DIR}/cmake/coverage_config coverage_config)
+endif()
+
 # build cpp or python interfaces
 if (NOT DEFINED BUILD_CPP_IF) 
   set(BUILD_CPP_IF TRUE)
