@@ -56,6 +56,9 @@ elif dp_variant == "rocm":
 else:
     raise RuntimeError("Unsupported DP_VARIANT option: %s" % dp_variant)
 
+if os.environ.get("DP_BUILD_TESTING", "0") == "1":
+    cmake_args.append("-DBUILD_TESTING:BOOL=TRUE")
+
 # get tensorflow spec
 tf_spec = find_spec("tensorflow")
 
