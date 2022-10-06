@@ -174,7 +174,6 @@ if (NOT TensorFlow_INCLUDE_DIRS_GOOGLE)
   # assume the include directory is ../include
   set(Protobuf_INCLUDE_DIR ${Protobuf_LIBRARY_DIRECTORY}/../include)
   find_package(Protobuf REQUIRED)
-  message(STATUS ${Protobuf_INCLUDE_DIR})
   set(TensorFlow_INCLUDE_DIRS_GOOGLE ${Protobuf_INCLUDE_DIRS})
 endif()
 list(APPEND TensorFlow_INCLUDE_DIRS ${TensorFlow_INCLUDE_DIRS_GOOGLE})
