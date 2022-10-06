@@ -56,7 +56,6 @@ if(BUILD_PY_IF)
 	# here TENSORFLOW_ROOT is path to site-packages/tensorflow
 	# for conda libraries, append extra paths
 	list(APPEND TensorFlow_search_PATHS "${TENSORFLOW_ROOT}/../tensorflow_core")
-	list(APPEND TensorFlow_search_PATHS "${TENSORFLOW_ROOT}/../../../..")
 endif()
 
 # includes
@@ -71,14 +70,6 @@ find_path(TensorFlow_INCLUDE_DIRS
   PATH_SUFFIXES "/include"
   NO_DEFAULT_PATH
   )
-find_path(TensorFlow_INCLUDE_DIRS_GOOGLE
-  NAMES 
-  google/protobuf/type.pb.h
-  PATHS ${TensorFlow_search_PATHS} 
-  PATH_SUFFIXES "/include"
-  NO_DEFAULT_PATH
-  )
-list(APPEND TensorFlow_INCLUDE_DIRS ${TensorFlow_INCLUDE_DIRS_GOOGLE})
   
 if (NOT TensorFlow_INCLUDE_DIRS AND tensorflow_FIND_REQUIRED)
   message(FATAL_ERROR 
@@ -149,6 +140,44 @@ foreach (module ${TensorFlowFramework_FIND_COMPONENTS})
       "You can manually set the tensorflow install path by -DTENSORFLOW_ROOT ")
   endif ()
 endforeach ()
+
+# find protobuf header
+find_path(TensorFlow_INCLUDE_DIRS_GOOGLE
+  NAMES 
+  google/protobuf/type.pb.h
+  PATHS ${TensorFlow_search_PATHS} 
+  PATH_SUFFIXES "/include"
+  NO_DEFAULT_PATH
+  )
+message(STATUS proto ${TensorFlow_INCLUDE_DIRS_GOOGLE})
+if (NOT TensorFlow_INCLUDE_DIRS_GOOGLE)
+  message(STATUS "Protobuf headers are not found in the directory of TensorFlow, assuming external protobuf was used to build TensorFlow")
+  # try to find from ldd list of TF library
+  # a warning is threw here, just ignore it
+  file(GET_RUNTIME_DEPENDENCIES
+    RESOLVED_DEPENDENCIES_VAR TensorFlow_LINKED_LIBRARIES
+    LIBRARIES ${TensorFlowFramework_LIBRARY}
+    POST_INCLUDE_REGEXES "^.+protobuf\..+$"
+  )
+  # search protobuf from linked libraries
+  foreach(_lib ${TensorFlow_LINKED_LIBRARIES})
+      string(REGEX MATCH "^.+protobuf\..+$" _protobuf_lib ${_lib})
+      if (_protobuf_lib)
+        set(Protobuf_LIBRARY ${_protobuf_lib})
+        break()
+      endif()
+  endforeach()
+  if (NOT Protobuf_LIBRARY)
+    message(FATAL_ERROR "TensorFlow is not linked to protobuf")
+  endif()
+  get_filename_component(Protobuf_LIBRARY_DIRECTORY ${Protobuf_LIBRARY} DIRECTORY)
+  # assume the include directory is ../include
+  set(Protobuf_INCLUDE_DIR ${Protobuf_LIBRARY_DIRECTORY}/../include)
+  find_package(Protobuf REQUIRED)
+  message(STATUS ${Protobuf_INCLUDE_DIR})
+  set(TensorFlow_INCLUDE_DIRS_GOOGLE ${Protobuf_INCLUDE_DIRS})
+endif()
+list(APPEND TensorFlow_INCLUDE_DIRS ${TensorFlow_INCLUDE_DIRS_GOOGLE})
 
 if (BUILD_CPP_IF)
   # define the output variable

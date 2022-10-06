@@ -1,4 +1,5 @@
-cmake_minimum_required(VERSION 3.12)
+# new in 3.16: GET_RUNTIME_DEPENDENCIES
+cmake_minimum_required(VERSION 3.16)
 project(DeePMD)
 
 option(BUILD_TESTING "Enable converage" OFF)
