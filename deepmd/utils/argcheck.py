@@ -663,7 +663,7 @@ def mixed_precision_args():  # ! added by Denghui.
         "supported options are float32 only currently.'
     doc_compute_prec  = 'The precision for mixed precision compute. " \
         "The compute precision during the mixed precision training process, "" \
-        "supported options are float16 only currently.'
+        "supported options are float16 and bfloat16 currently.'
 
     args = [
         Argument("output_prec", str, optional=True, default="float32", doc=doc_output_prec),
