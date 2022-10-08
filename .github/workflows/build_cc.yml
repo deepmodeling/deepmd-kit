@@ -26,3 +26,25 @@ jobs:
         CC: gcc-7
         CXX: g++-7
         CONDA_OVERRIDE_CUDA: 11.3
+    # test lammps
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3'
+      if: matrix.variant == 'cpu'
+    - run: source/install/build_lammps.sh
+      env:
+        CC: gcc-7
+        CXX: g++-7
+      if: matrix.variant == 'cpu'
+    - run: pip install -e .[cpu,test]
+      env:
+        CC: gcc-${{ matrix.gcc }}
+        CXX: g++-${{ matrix.gcc }}
+        TENSORFLOW_VERSION: ${{ matrix.tf }}
+        SETUPTOOLS_ENABLE_FEATURES: "legacy-editable"
+        DP_BUILD_TESTING: 1
+      if: matrix.variant == 'cpu'
+    - run: pytest --cov=deepmd source/lmp/tests
+      if: matrix.variant == 'cpu'
+    - run: source/install/codecov.sh
+      if: matrix.variant == 'cpu'
