@@ -35,6 +35,7 @@ jobs:
       env:
         CC: gcc-7
         CXX: g++-7
+        LD_LIBRARY_PATH: ${{ github.workspace }}/dp/lib
       if: matrix.variant == 'cpu'
     - run: pip install -e .[cpu,test]
       env:
