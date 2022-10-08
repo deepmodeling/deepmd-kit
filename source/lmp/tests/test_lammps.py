@@ -20,7 +20,6 @@ sp.check_output("{} -m deepmd convert-from pbtxt -i {} -o {}".format(
 @pytest.fixture
 def lammps() -> PyLammps:
     lammps = PyLammps()
-    lammps.plugin("load libdeepmd_lmp.so")
     lammps.units("metal")
     lammps.boundary("p p p")
     lammps.atom_style("atomic")

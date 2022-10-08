@@ -44,6 +44,8 @@ jobs:
         DP_BUILD_TESTING: 1
       if: matrix.variant == 'cpu'
     - run: pytest --cov=deepmd source/lmp/tests
+      env:
+        LAMMPS_PLUGIN_PATH: ${GITHUB_WORKSPACE}/dp/lib/deepmd_lmp
       if: matrix.variant == 'cpu'
     - run: source/install/codecov.sh
       if: matrix.variant == 'cpu'
