@@ -153,12 +153,14 @@ if (NOT TensorFlow_INCLUDE_DIRS_GOOGLE)
   message(STATUS "Protobuf headers are not found in the directory of TensorFlow, assuming external protobuf was used to build TensorFlow")
   # try to find from ldd list of TF library
   # a warning is threw here, just ignore it
+  # https://stackoverflow.com/a/49738486/9567349
+  string(REPLACE ":" ";" _LD_LIBRARY_DIRS $ENV{LD_LIBRARY_PATH})
   file(GET_RUNTIME_DEPENDENCIES
     RESOLVED_DEPENDENCIES_VAR TensorFlow_LINKED_LIBRARIES
     UNRESOLVED_DEPENDENCIES_VAR TensorFlow_LINKED_LIBRARIES_UNRESOLVED
     LIBRARIES ${TensorFlowFramework_LIBRARY}
     POST_INCLUDE_REGEXES "^.+protobuf\..+$"
-    DIRECTORIES $ENV{LD_LIBRARY_PATH}
+    DIRECTORIES ${_LD_LIBRARY_DIRS}
   )
   # search protobuf from linked libraries
   foreach(_lib ${TensorFlow_LINKED_LIBRARIES})
