@@ -154,7 +154,9 @@ if (NOT TensorFlow_INCLUDE_DIRS_GOOGLE)
   # try to find from ldd list of TF library
   # a warning is threw here, just ignore it
   # https://stackoverflow.com/a/49738486/9567349
-  string(REPLACE ":" ";" _LD_LIBRARY_DIRS $ENV{LD_LIBRARY_PATH})
+  if ($ENV{LD_LIBRARY_PATH})
+    string(REPLACE ":" ";" _LD_LIBRARY_DIRS $ENV{LD_LIBRARY_PATH})
+  endif()
   file(GET_RUNTIME_DEPENDENCIES
     RESOLVED_DEPENDENCIES_VAR TensorFlow_LINKED_LIBRARIES
     UNRESOLVED_DEPENDENCIES_VAR TensorFlow_LINKED_LIBRARIES_UNRESOLVED
