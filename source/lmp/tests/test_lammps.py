@@ -92,6 +92,16 @@ def lammps() -> PyLammps:
 def test_pair_deepmd(lammps):
     lammps.pair_style("deepmd {}".format(pb_file.resolve()))
     lammps.pair_coeff("* *")
+    lammps.run(0)
+    assert lammps.eval("pe") == pytest.approx(expected_e)
+    for ii in range(6):
+        assert lammps.atoms[ii].force == pytest.approx(expected_f[ii])
+    lammps.run(1)
+
+
+def test_pair_deepmd_virial(lammps):
+    lammps.pair_style("deepmd {}".format(pb_file.resolve()))
+    lammps.pair_coeff("* *")
     lammps.compute("virial all centroid/stress/atom NULL pair")
     for ii in range(9):
         jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
@@ -103,7 +113,6 @@ def test_pair_deepmd(lammps):
         assert lammps.atoms[ii].force == pytest.approx(expected_f[ii])
     for ii in range(9):
         assert np.array(lammps.variables[f'virial{ii}'].value) / nktv2p == pytest.approx(expected_v[:, ii])
-    lammps.run(1)
 
 
 def test_pair_deepmd_model_devi(lammps):
@@ -113,6 +122,33 @@ def test_pair_deepmd_model_devi(lammps):
     assert lammps.eval("pe") == pytest.approx(expected_e)
     for ii in range(6):
         assert lammps.atoms[ii].force == pytest.approx(expected_f[ii])
+    # load model devi
+    md = np.loadtxt(md_file.resolve())
+    expected_md_f = np.linalg.norm(np.std([expected_f, expected_f2], axis=0), axis=1)
+    assert md[7:] == pytest.approx(expected_md_f)
+    assert md[4] == pytest.approx(np.max(expected_md_f))
+    assert md[5] == pytest.approx(np.min(expected_md_f))
+    assert md[6] == pytest.approx(np.mean(expected_md_f))
+    expected_md_v = np.std([np.sum(expected_v, axis=0), np.sum(expected_v2, axis=0)], axis=0) / 6
+    assert md[1] == pytest.approx(np.max(expected_md_v))
+    assert md[2] == pytest.approx(np.min(expected_md_v))
+    assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))))
+
+
+def test_pair_deepmd_model_devi_virial(lammps):
+    lammps.pair_style("deepmd {} {} out_file {} out_freq 1 atomic".format(pb_file.resolve(), pb_file2.resolve(), md_file.resolve()))
+    lammps.pair_coeff("* *")
+    lammps.compute("virial all centroid/stress/atom NULL pair")
+    for ii in range(9):
+        jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
+        lammps.variable(f"virial{jj} atom c_virial[{ii+1}]")
+    lammps.dump("1 all custom 1 dump id " + " ".join([f"v_virial{ii}" for ii in range(9)]))
+    lammps.run(0)
+    assert lammps.eval("pe") == pytest.approx(expected_e)
+    for ii in range(6):
+        assert lammps.atoms[ii].force == pytest.approx(expected_f[ii])
+    for ii in range(9):
+        assert np.array(lammps.variables[f'virial{ii}'].value) / nktv2p == pytest.approx(expected_v[:, ii])
     # load model devi
     md = np.loadtxt(md_file.resolve())
     expected_md_f = np.linalg.norm(np.std([expected_f, expected_f2], axis=0), axis=1)
