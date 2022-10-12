@@ -21,7 +21,7 @@ target_include_directories(${libname} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
 target_include_directories(${libname} PRIVATE ${TensorFlow_INCLUDE_DIRS})
 
 if(Protobuf_LIBRARY)
-  target_link_libraries(op_abi PRIVATE ${Protobuf_LIBRARY})
+  target_link_libraries(${libname} PRIVATE ${Protobuf_LIBRARY})
 endif()
 
 # link: libpython3.x.so
