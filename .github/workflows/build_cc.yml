@@ -23,7 +23,7 @@ jobs:
       if: matrix.variant == 'cpu'
     - run: apt-get update && apt-get install -y nvidia-cuda-toolkit
       if: matrix.variant == 'cuda'
-    - run: echo 'deb [arch=amd64] https://repo.radeon.com/rocm/apt/4.1/ ubuntu main' | tee /etc/apt/sources.list.d/rocm.list && apt-get update && apt-get install -y rocm-dkms
+    - run: echo 'deb [arch=amd64] https://repo.radeon.com/rocm/apt/5.3/ ubuntu main' | tee /etc/apt/sources.list.d/rocm.list && apt-get update && apt-get install -y rocm-dkms
     - run: source/install/build_cc.sh
       env:
         DP_VARIANT: ${{ matrix.variant }}
