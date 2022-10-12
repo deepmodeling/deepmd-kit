@@ -24,7 +24,8 @@ jobs:
     - run: apt-get update && apt-get install -y nvidia-cuda-toolkit
       if: matrix.variant == 'cuda'
     - run: |
-         echo 'deb [arch=amd64] https://repo.radeon.com/rocm/apt/5.3/ ubuntu main' | tee /etc/apt/sources.list.d/rocm.list \
+         apt-get update && apt-get install -y gnupg2 \
+         && echo 'deb [arch=amd64] https://repo.radeon.com/rocm/apt/5.3/ ubuntu main' | tee /etc/apt/sources.list.d/rocm.list \
          && curl -s https://repo.radeon.com/rocm/rocm.gpg.key | apt-key add - \
          && apt-get update \
          && apt-get install -y rocm-dkms
