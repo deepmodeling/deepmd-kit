@@ -25,7 +25,7 @@ jobs:
       if: matrix.variant == 'cuda'
     - run: |
          apt-get update && apt-get install -y gnupg2 \
-         && echo 'deb [arch=amd64] https://repo.radeon.com/rocm/apt/5.3/ ubuntu main' | tee /etc/apt/sources.list.d/rocm.list \
+         && echo 'deb [arch=amd64] https://repo.radeon.com/rocm/apt/5.3/ jammy main' | tee /etc/apt/sources.list.d/rocm.list \
          && curl -s https://repo.radeon.com/rocm/rocm.gpg.key | apt-key add - \
          && apt-get update \
          && apt-get install -y rocm-dkms
