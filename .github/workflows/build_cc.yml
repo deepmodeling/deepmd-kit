@@ -28,7 +28,7 @@ jobs:
          && echo 'deb [arch=amd64] https://repo.radeon.com/rocm/apt/5.3/ jammy main' | tee /etc/apt/sources.list.d/rocm.list \
          && curl -s https://repo.radeon.com/rocm/rocm.gpg.key | apt-key add - \
          && apt-get update \
-         && apt-get install -y rocm-dev
+         && apt-get install -y --no-install-recommends rocm-dev
     - run: source/install/build_cc.sh
       env:
         DP_VARIANT: ${{ matrix.variant }}
