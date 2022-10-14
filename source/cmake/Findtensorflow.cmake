@@ -149,8 +149,6 @@ find_path(TensorFlow_INCLUDE_DIRS_GOOGLE
   PATH_SUFFIXES "/include"
   NO_DEFAULT_PATH
   )
-if (NOT TensorFlow_INCLUDE_DIRS_GOOGLE)
-  message(STATUS "Protobuf headers are not found in the directory of TensorFlow, assuming external protobuf was used to build TensorFlow")
   # try to find from ldd list of TF library
   # a warning is threw here, just ignore it
   # https://stackoverflow.com/a/49738486/9567349
@@ -172,6 +170,8 @@ if (NOT TensorFlow_INCLUDE_DIRS_GOOGLE)
         break()
       endif()
   endforeach()
+if (NOT TensorFlow_INCLUDE_DIRS_GOOGLE)
+  message(STATUS "Protobuf headers are not found in the directory of TensorFlow, assuming external protobuf was used to build TensorFlow")
   if (NOT Protobuf_LIBRARY)
     message(FATAL_ERROR "TensorFlow is not linked to protobuf")
   endif()
