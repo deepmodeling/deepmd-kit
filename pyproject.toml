@@ -11,7 +11,7 @@ requires = [
 
 [tool.cibuildwheel]
 test-command = "dp -h"
-build = ["cp36-*", "cp37-*", "cp38-*", "cp39-*", "cp310-*""]
+build = ["cp36-*", "cp37-*", "cp38-*", "cp39-*", "cp310-*"]
 skip = ["*-win32", "*-manylinux_i686", "*-musllinux*"]
 manylinux-x86_64-image = "ghcr.io/deepmodeling/manylinux_2_28_x86_64_tensorflow"
 before-build = "pip install tensorflow"
