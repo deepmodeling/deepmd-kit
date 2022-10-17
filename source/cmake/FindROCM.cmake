@@ -8,12 +8,9 @@
 
 # define the search path
 list(APPEND ROCM_search_PATHS ${ROCM_ROOT})
+list(APPEND ROCM_search_PATHS $ENV{ROCM_PATH})
 list(APPEND ROCM_search_PATHS "/opt/rocm/")
 
-# define the libs to find
-if (NOT ROCM_FIND_COMPONENTS)
-  set(ROCM_FIND_COMPONENTS hip_hcc hiprtc)
-endif ()
 
 # includes
 find_path (ROCM_INCLUDE_DIRS
@@ -30,21 +27,6 @@ if (NOT ROCM_INCLUDE_DIRS AND ROCM_FIND_REQUIRED)
     "Not found 'hip' or 'rocprim' or 'hipcub' directory in path '${ROCM_search_PATHS}' "
     "You can manually set the ROCM install path by -DROCM_ROOT ")
 endif ()
-
-# libs
-foreach (module ${ROCM_FIND_COMPONENTS})
-  find_library(ROCM_LIBRARIES_${module}
-    NAMES ${module}
-    PATHS ${ROCM_search_PATHS} PATH_SUFFIXES "lib" NO_DEFAULT_PATH
-    )
-  if (ROCM_LIBRARIES_${module})
-    list(APPEND ROCM_LIBRARIES ${ROCM_LIBRARIES_${module}})
-  elseif (ROCM_FIND_REQUIRED)
-    message(FATAL_ERROR 
-      "Not found lib/'${module}' in '${ROCM_search_PATHS}' "
-      "You can manually set the ROCM install path by -DROCM_ROOT ")
-  endif ()
-endforeach ()
 
 # FindHIP.cmake
 find_path (HIP_CMAKE
@@ -63,6 +45,30 @@ endif ()
 
 list (APPEND CMAKE_MODULE_PATH ${HIP_CMAKE})
 find_package(HIP) 
+
+# define the libs to find
+if (NOT ROCM_FIND_COMPONENTS)
+  if (HIP_VERSION VERSION_GREATER_EQUAL 3.5.1)
+    set(ROCM_FIND_COMPONENTS amd_comgr amdhip64)
+  else()
+    set(ROCM_FIND_COMPONENTS hip-hcc hiprtc)
+  endif()
+endif ()
+
+# libs
+foreach (module ${ROCM_FIND_COMPONENTS})
+  find_library(ROCM_LIBRARIES_${module}
+    NAMES ${module}
+    PATHS ${ROCM_search_PATHS} PATH_SUFFIXES "lib" NO_DEFAULT_PATH
+    )
+  if (ROCM_LIBRARIES_${module})
+    list(APPEND ROCM_LIBRARIES ${ROCM_LIBRARIES_${module}})
+  elseif (ROCM_FIND_REQUIRED)
+    message(FATAL_ERROR 
+      "Not found lib/'${module}' in '${ROCM_search_PATHS}' "
+      "You can manually set the ROCM install path by -DROCM_ROOT ")
+  endif ()
+endforeach ()
 
 # define the output variable
 if (ROCM_INCLUDE_DIRS AND ROCM_LIBRARIES AND HIP_CMAKE)
