@@ -7,10 +7,9 @@
 # ROCM_LIBRARIES
 
 # define the search path
-list(APPEND ROCM_search_PATHS ${ROCM_ROOT})
-list(APPEND ROCM_search_PATHS $ENV{ROCM_PATH})
-list(APPEND ROCM_search_PATHS "/opt/rocm/")
-
+cmake_minimum_required(VERSION 3.21)
+include(CMakeDetermineHIPCompiler)
+set(ROCM_search_PATHS ${CMAKE_HIP_COMPILER_ROCM_ROOT})
 
 # includes
 find_path (ROCM_INCLUDE_DIRS
