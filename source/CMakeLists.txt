@@ -94,59 +94,8 @@ endif(USE_TF_PYTHON_LIBS)
 # find tensorflow, I need tf abi info
 find_package(tensorflow REQUIRED)
 
-if (TENSORFLOW_VERSION VERSION_GREATER_EQUAL 2.10)
-  set (CMAKE_CXX_STANDARD 17)
-elseif (TENSORFLOW_VERSION VERSION_GREATER_EQUAL 2.7)
-  set (CMAKE_CXX_STANDARD 14)
-else()
-  set (CMAKE_CXX_STANDARD 11)
-endif()
-
-if (MSVC)
-  # see TF .bazelrc
-  add_compile_options(/W0 /Zc:__cplusplus /D_USE_MATH_DEFINES /d2ReducedOptimizeHugeFunctions)
-  set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS TRUE)
-endif()
-if (TENSORFLOW_VERSION VERSION_GREATER_EQUAL 2.4 AND MSVC)
-  # see TF 2.4 release notes
-  add_compile_options(/Zc:preprocessor)
-endif()
-
 # find threads
 find_package(Threads)
-
-# auto op_cxx_abi
-if (NOT DEFINED OP_CXX_ABI)
-    try_run(
-      CPP_CXX_ABI_RUN_RESULT_VAR CPP_CXX_ABI_COMPILE_RESULT_VAR
-      ${CMAKE_CURRENT_BINARY_DIR}/tf_cxx_abi
-      "${CMAKE_CURRENT_SOURCE_DIR}/cmake/tf_cxx_abi.cpp"
-      LINK_LIBRARIES ${TensorFlowFramework_LIBRARY}
-      CMAKE_FLAGS "-DINCLUDE_DIRECTORIES:STRING=${TensorFlow_INCLUDE_DIRS}"
-      RUN_OUTPUT_VARIABLE CPP_CXX_ABI
-      COMPILE_OUTPUT_VARIABLE CPP_CXX_ABI_COMPILE_OUTPUT_VAR
-      )
-    if (NOT ${CPP_CXX_ABI_COMPILE_RESULT_VAR})
-      message(FATAL_ERROR "Failed to compile: \n ${CPP_CXX_ABI_COMPILE_OUTPUT_VAR}" )
-    endif()
-    if (NOT ${CPP_CXX_ABI_RUN_RESULT_VAR} EQUAL "0")
-      message(FATAL_ERROR "Failed to run, return code: ${CPP_CXX_ABI}" )
-    endif()
-    set(OP_CXX_ABI ${CPP_CXX_ABI})
-  message (STATUS "Automatically determined OP_CXX_ABI=${OP_CXX_ABI} ")
-else()
-  message (STATUS "User set OP_CXX_ABI=${OP_CXX_ABI} ")  
-endif()    
-# message the cxx_abi used during compiling
-if (${OP_CXX_ABI} EQUAL 0) 
-  message (STATUS "Set GLIBCXX_USE_CXX_ABI=0 when compiling ops")
-else ()
-  set (OP_CXX_ABI 1)
-  message (STATUS "Set GLIBCXX_USE_CXX_ABI=1 when compiling ops")
-endif ()
-
-# set _GLIBCXX_USE_CXX11_ABI flag globally
-add_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
 
 # define USE_TTM
 if (NOT DEFINED USE_TTM)

@@ -22,32 +22,6 @@ list (APPEND CMAKE_MODULE_PATH ${DEEPMD_SOURCE_DIR}/source/cmake/)
 if (USE_TF_PYTHON_LIBS)
   set(DEEPMD_SOURCE_DIR ${PROJECT_SOURCE_DIR}/../../..)
   find_package (Python COMPONENTS Interpreter Development REQUIRED)
-  # find tensorflow, I need tf abi info
-  find_package(tensorflow REQUIRED)
-  # auto op_cxx_abi
-  try_run(
-    CPP_CXX_ABI_RUN_RESULT_VAR CPP_CXX_ABI_COMPILE_RESULT_VAR
-    ${CMAKE_CURRENT_BINARY_DIR}/tf_cxx_abi
-    "${DEEPMD_SOURCE_DIR}/source/cmake/tf_cxx_abi.cpp"
-    LINK_LIBRARIES ${TensorFlowFramework_LIBRARY}
-    CMAKE_FLAGS "-DINCLUDE_DIRECTORIES:STRING=${TensorFlow_INCLUDE_DIRS}"
-    RUN_OUTPUT_VARIABLE CPP_CXX_ABI
-    COMPILE_OUTPUT_VARIABLE CPP_CXX_ABI_COMPILE_OUTPUT_VAR
-  )
-  if (NOT ${CPP_CXX_ABI_COMPILE_RESULT_VAR})
-    message(FATAL_ERROR "Failed to compile: \n ${CPP_CXX_ABI_COMPILE_OUTPUT_VAR}" )
-  endif()
-  if (NOT ${CPP_CXX_ABI_RUN_RESULT_VAR} EQUAL "0")
-    message(FATAL_ERROR "Failed to run, return code: ${CPP_CXX_ABI}" )
-  endif()
-  if (DEFINED PY_CXX_ABI)
-    if (NOT (${CPP_CXX_ABI} EQUAL ${PY_CXX_ABI}))
-	    message (WARNNING "NOT consistent CXX_ABIs: python interface of tf uses ${PY_CXX_ABI}, while c++ interface of tf uses ${CPP_CXX_ABI}, we follow c++ interface ")
-    endif()
-  endif()
-  set(OP_CXX_ABI ${CPP_CXX_ABI})
-  message (STATUS "Automatically determined OP_CXX_ABI=${OP_CXX_ABI} ")
-  add_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
 endif(USE_TF_PYTHON_LIBS)
 
 # model version
@@ -61,13 +35,6 @@ set(apiname "deepmd_api")
 set(opname "deepmd_op")
 
 find_package(tensorflow REQUIRED)
-if (TENSORFLOW_VERSION VERSION_GREATER_EQUAL 2.10)
-  set (CMAKE_CXX_STANDARD 17)
-elseif (TENSORFLOW_VERSION VERSION_GREATER_EQUAL 2.7)
-  set (CMAKE_CXX_STANDARD 14)
-else()
-  set (CMAKE_CXX_STANDARD 11)
-endif()
 
 find_package(Threads)
 # find openmp

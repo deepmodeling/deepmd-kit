@@ -221,3 +221,82 @@ if (NOT TensorFlow_FIND_QUIETLY)
 endif ()
 
 unset(TensorFlow_search_PATHS)
+
+if (TENSORFLOW_VERSION VERSION_GREATER_EQUAL 2.10)
+  set (CMAKE_CXX_STANDARD 17)
+elseif (TENSORFLOW_VERSION VERSION_GREATER_EQUAL 2.7)
+  set (CMAKE_CXX_STANDARD 14)
+else()
+  set (CMAKE_CXX_STANDARD 11)
+endif()
+
+if (MSVC)
+  # see TF .bazelrc
+  add_compile_options(/W0 /Zc:__cplusplus /D_USE_MATH_DEFINES /d2ReducedOptimizeHugeFunctions)
+  set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS TRUE)
+endif()
+if (TENSORFLOW_VERSION VERSION_GREATER_EQUAL 2.4 AND MSVC)
+  # see TF 2.4 release notes
+  add_compile_options(/Zc:preprocessor)
+endif()
+
+# auto op_cxx_abi
+if (NOT DEFINED OP_CXX_ABI)
+  if (TENSORFLOW_VERSION VERSION_GREATER_EQUAL 2.9)
+    # TF 2.9 removes the tf_cxx11_abi_flag function, which is really bad...
+    # try compiling with both 0 and 1, and see which one works
+    try_compile(
+      CPP_CXX_ABI_COMPILE_RESULT_VAR0
+      ${CMAKE_CURRENT_BINARY_DIR}/tf_cxx_abi0
+      "${CMAKE_CURRENT_LIST_DIR}/test_cxx_abi.cpp"
+      LINK_LIBRARIES ${TensorFlowFramework_LIBRARY}
+      CMAKE_FLAGS "-DINCLUDE_DIRECTORIES:STRING=${TensorFlow_INCLUDE_DIRS}"
+      COMPILE_DEFINITIONS -D_GLIBCXX_USE_CXX11_ABI=0
+      )
+    try_compile(
+      CPP_CXX_ABI_COMPILE_RESULT_VAR1
+      ${CMAKE_CURRENT_BINARY_DIR}/tf_cxx_abi1
+      "${CMAKE_CURRENT_LIST_DIR}/test_cxx_abi.cpp"
+      LINK_LIBRARIES ${TensorFlowFramework_LIBRARY}
+      CMAKE_FLAGS "-DINCLUDE_DIRECTORIES:STRING=${TensorFlow_INCLUDE_DIRS}"
+      COMPILE_DEFINITIONS -D_GLIBCXX_USE_CXX11_ABI=1
+      )
+    if (NOT ${CPP_CXX_ABI_COMPILE_RESULT_VAR0} AND ${CPP_CXX_ABI_COMPILE_RESULT_VAR1})
+      set(OP_CXX_ABI 1)
+    elseif(NOT ${CPP_CXX_ABI_COMPILE_RESULT_VAR0} AND ${CPP_CXX_ABI_COMPILE_RESULT_VAR1})
+      set(OP_CXX_ABI 0)
+    else()
+      message(FATAL_ERROR "Failed to detect OP_CXX_ABI, please set it manually")
+    endif()
+  else()
+    try_run(
+      CPP_CXX_ABI_RUN_RESULT_VAR CPP_CXX_ABI_COMPILE_RESULT_VAR
+      ${CMAKE_CURRENT_BINARY_DIR}/tf_cxx_abi
+      "${CMAKE_CURRENT_LIST_DIR}/tf_cxx_abi.cpp"
+      LINK_LIBRARIES ${TensorFlowFramework_LIBRARY}
+      CMAKE_FLAGS "-DINCLUDE_DIRECTORIES:STRING=${TensorFlow_INCLUDE_DIRS}"
+      RUN_OUTPUT_VARIABLE CPP_CXX_ABI
+      COMPILE_OUTPUT_VARIABLE CPP_CXX_ABI_COMPILE_OUTPUT_VAR
+      )
+    if (NOT ${CPP_CXX_ABI_COMPILE_RESULT_VAR})
+      message(FATAL_ERROR "Failed to compile: \n ${CPP_CXX_ABI_COMPILE_OUTPUT_VAR}" )
+    endif()
+    if (NOT ${CPP_CXX_ABI_RUN_RESULT_VAR} EQUAL "0")
+      message(FATAL_ERROR "Failed to run, return code: ${CPP_CXX_ABI}" )
+    endif()
+    set(OP_CXX_ABI ${CPP_CXX_ABI})
+  endif()
+  message (STATUS "Automatically determined OP_CXX_ABI=${OP_CXX_ABI} ")
+else()
+  message (STATUS "User set OP_CXX_ABI=${OP_CXX_ABI} ")  
+endif()    
+# message the cxx_abi used during compiling
+if (${OP_CXX_ABI} EQUAL 0) 
+  message (STATUS "Set GLIBCXX_USE_CXX_ABI=0")
+else ()
+  set (OP_CXX_ABI 1)
+  message (STATUS "Set GLIBCXX_USE_CXX_ABI=1")
+endif ()
+
+# set _GLIBCXX_USE_CXX11_ABI flag globally
+add_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
