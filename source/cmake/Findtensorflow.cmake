@@ -160,7 +160,7 @@ find_path(TensorFlow_INCLUDE_DIRS_GOOGLE
     UNRESOLVED_DEPENDENCIES_VAR TensorFlow_LINKED_LIBRARIES_UNRESOLVED
     LIBRARIES ${TensorFlowFramework_LIBRARY}
     POST_INCLUDE_REGEXES "^.+protobuf\..+$"
-    DIRECTORIES ${_LD_LIBRARY_DIRS}
+    DIRECTORIES "${_LD_LIBRARY_DIRS}"
   )
   # search protobuf from linked libraries
   foreach(_lib ${TensorFlow_LINKED_LIBRARIES})
