@@ -30,7 +30,7 @@ jobs:
          && printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600' | tee /etc/apt/preferences.d/rocm-pin-600 \
          && curl -s https://repo.radeon.com/rocm/rocm.gpg.key | apt-key add - \
          && apt-get update \
-         && apt-get install -y rocm-dev
+         && apt-get install -y rocm-dev hipcub-dev
       if: matrix.variant == 'rocm'
     - run: apt-get update && apt-get install -y clang
       if: matrix.variant == 'clang'  
