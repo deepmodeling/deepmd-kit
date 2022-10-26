@@ -26,7 +26,7 @@ jobs:
     - run: |
          apt-get update && apt-get install -y gnupg2 \
          && echo 'deb [arch=amd64] https://repo.radeon.com/rocm/apt/5.3/ jammy main' | tee /etc/apt/sources.list.d/rocm.list \
-         && echo -e 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600' | tee /etc/apt/preferences.d/rocm-pin-600 \
+         && printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600' | tee /etc/apt/preferences.d/rocm-pin-600 \
          && curl -s https://repo.radeon.com/rocm/rocm.gpg.key | apt-key add - \
          && apt-get update \
          && apt-get install -y --no-install-recommends rocm-dev
