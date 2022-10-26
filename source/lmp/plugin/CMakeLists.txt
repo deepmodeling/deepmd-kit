@@ -64,6 +64,9 @@ if (DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
     ${LAMMPS_SOURCE_ROOT}/src/KSPACE
     ${LAMMPS_SOURCE_ROOT}/src
   )
+  if(CMAKE_SYSTEM_NAME STREQUAL Darwin)
+    set_target_properties(${libname} PROPERTIES LINK_FLAGS "-Wl,-undefined,dynamic_lookup")
+  endif()
 
   set_target_properties(
     ${libname} 

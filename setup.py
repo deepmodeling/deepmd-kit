@@ -52,7 +52,7 @@ elif dp_variant == "rocm":
     cmake_args.append("-DUSE_ROCM_TOOLKIT:BOOL=TRUE")
     rocm_root = os.environ.get("ROCM_ROOT")
     if rocm_root:
-        cmake_args.append(f"-DROCM_ROOT:STRING={rocm_root}")
+        cmake_args.append(f"-DCMAKE_HIP_COMPILER_ROCM_ROOT:STRING={rocm_root}")
 else:
     raise RuntimeError("Unsupported DP_VARIANT option: %s" % dp_variant)
 

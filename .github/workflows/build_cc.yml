@@ -13,6 +13,7 @@ jobs:
         - variant: cpu
         - variant: cuda
         - variant: rocm
+        - variant: clang
     steps:
     - name: work around permission issue
       run: git config --global --add safe.directory /__w/deepmd-kit/deepmd-kit
@@ -29,12 +30,22 @@ jobs:
          && printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600' | tee /etc/apt/preferences.d/rocm-pin-600 \
          && curl -s https://repo.radeon.com/rocm/rocm.gpg.key | apt-key add - \
          && apt-get update \
-         && apt-get install -y --no-install-recommends rocm-dev
+         && apt-get install -y rocm-dev
       if: matrix.variant == 'rocm'
+    - run: apt-get update && apt-get install -y clang
+      if: matrix.variant == 'clang'  
     - run: source/install/build_cc.sh
       env:
         DP_VARIANT: ${{ matrix.variant }}
         DOWNLOAD_TENSORFLOW: "FALSE"
+      if: matrix.variant != 'clang'
+    - run: source/install/build_cc.sh
+      env:
+        DP_VARIANT: cpu
+        DOWNLOAD_TENSORFLOW: "FALSE"
+        CC: clang
+        CXX: clang++
+      if: matrix.variant == 'clang'
     # test lammps
     - run: source/install/build_lammps.sh
       if: matrix.variant == 'cpu'

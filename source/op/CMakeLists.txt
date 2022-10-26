@@ -33,6 +33,9 @@ if (BUILD_PY_IF)
   target_link_libraries(
     op_grads PRIVATE ${TensorFlowFramework_LIBRARY}
     )
+  if(Protobuf_LIBRARY)
+    target_link_libraries(op_abi PRIVATE ${Protobuf_LIBRARY})
+  endif()
   target_include_directories(op_abi PUBLIC ${TensorFlow_INCLUDE_DIRS})
   target_include_directories(op_grads PUBLIC ${TensorFlow_INCLUDE_DIRS})
   if (APPLE)
