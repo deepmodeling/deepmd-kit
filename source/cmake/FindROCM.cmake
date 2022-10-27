@@ -9,6 +9,7 @@
 # define the search path
 cmake_minimum_required(VERSION 3.21)
 include(CMakeDetermineHIPCompiler)
+set(ROCM_PATH ${CMAKE_HIP_COMPILER_ROCM_ROOT})
 set(ROCM_search_PATHS ${CMAKE_HIP_COMPILER_ROCM_ROOT})
 
 # includes
