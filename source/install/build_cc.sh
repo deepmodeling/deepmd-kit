@@ -1,8 +1,11 @@
 set -e
 
-if [ "$DP_VARIANT" == "cuda" ]
+if [ "$DP_VARIANT" = "cuda" ]
 then
   CUDA_ARGS="-DUSE_CUDA_TOOLKIT=TRUE"
+elif [ "$DP_VARIANT" = "rocm" ]
+then
+  CUDA_ARGS="-DUSE_ROCM_TOOLKIT=TRUE"
 fi
 #------------------
 
