@@ -284,6 +284,12 @@ def test_ener(
             header="%s: data_e pred_e" % system,
             append=append_detail,
         )
+        pe_atom = pe / natoms
+        save_txt_file(
+            detail_path.with_suffix(".e_peratom.out"),
+            pe_atom,
+            header = "%s: data_e pred_e" % system,
+        )
         pf = np.concatenate(
             (
                 np.reshape(test_data["force"][:numb_test], [-1, 3]),
@@ -312,6 +318,15 @@ def test_ener(
             "pred_vyy pred_vyz pred_vzx pred_vzy pred_vzz",
             append=append_detail,
         )
+        pv_atom = pv / natoms
+        save_txt_file(
+            detail_path.with_suffix(".v_peratom.out"),
+            pv_atom,
+            header=f"{system}: data_vxx data_vxy data_vxz data_vyx data_vyy "
+            "data_vyz data_vzx data_vzy data_vzz pred_vxx pred_vxy pred_vxz pred_vyx "
+            "pred_vyy pred_vyz pred_vzx pred_vzy pred_vzz",
+            append=append_detail,
+        )        
     return {
         "rmse_ea" : (rmse_ea, energy.size),
         "rmse_f" : (rmse_f, force.size),
