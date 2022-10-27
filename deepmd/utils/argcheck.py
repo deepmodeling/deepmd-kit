@@ -107,9 +107,9 @@ def descrpt_local_frame_args ():
 - axis_rule[i*6+0]: class of the atom defining the first axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.\n\n\
 - axis_rule[i*6+1]: type of the atom defining the first axis of type-i atom.\n\n\
 - axis_rule[i*6+2]: index of the axis atom defining the first axis. Note that the neighbors with the same class and type are sorted according to their relative distance.\n\n\
-- axis_rule[i*6+3]: class of the atom defining the first axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.\n\n\
+- axis_rule[i*6+3]: class of the atom defining the second axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.\n\n\
 - axis_rule[i*6+4]: type of the atom defining the second axis of type-i atom.\n\n\
-- axis_rule[i*6+5]: class of the atom defining the second axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.'
+- axis_rule[i*6+5]: index of the axis atom defining the second axis. Note that the neighbors with the same class and type are sorted according to their relative distance.'
     
     return [
         Argument("sel_a", list, optional = False, doc = doc_sel_a),
@@ -450,6 +450,7 @@ def model_args ():
     doc_type_map = 'A list of strings. Give the name to each type of atoms. It is noted that the number of atom type of training system must be less than 128 in a GPU environment.'
     doc_data_stat_nbatch = 'The model determines the normalization from the statistics of the data. This key specifies the number of `frames` in each `system` used for statistics.'
     doc_data_stat_protect = 'Protect parameter for atomic energy regression.'
+    doc_data_bias_nsample = 'The number of training samples in a system to compute and change the energy bias.'
     doc_type_embedding = "The type embedding."
     doc_descrpt = 'The descriptor of atomic environment.'
     doc_fitting = 'The fitting of physical properties.'
@@ -464,6 +465,7 @@ def model_args ():
                   [Argument("type_map", list, optional = True, doc = doc_type_map),
                    Argument("data_stat_nbatch", int, optional = True, default = 10, doc = doc_data_stat_nbatch),
                    Argument("data_stat_protect", float, optional = True, default = 1e-2, doc = doc_data_stat_protect),
+                   Argument("data_bias_nsample", int, optional=True, default=10, doc=doc_data_bias_nsample),
                    Argument("use_srtab", str, optional = True, doc = doc_use_srtab),
                    Argument("smin_alpha", float, optional = True, doc = doc_smin_alpha),
                    Argument("sw_rmin", float, optional = True, doc = doc_sw_rmin),
@@ -661,7 +663,7 @@ def mixed_precision_args():  # ! added by Denghui.
         "supported options are float32 only currently.'
     doc_compute_prec  = 'The precision for mixed precision compute. " \
         "The compute precision during the mixed precision training process, "" \
-        "supported options are float16 only currently.'
+        "supported options are float16 and bfloat16 currently.'
 
     args = [
         Argument("output_prec", str, optional=True, default="float32", doc=doc_output_prec),

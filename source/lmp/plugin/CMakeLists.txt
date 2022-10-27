@@ -33,6 +33,7 @@ if (DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
   include(${LAMMPS_SOURCE_ROOT}/cmake/Modules/LAMMPSUtils.cmake)
   get_lammps_version(${LAMMPS_HEADER_DIR}/version.h LAMMPS_VERSION_NUMBER)
   set(LAMMPS_VERSION_NUMBER ${LAMMPS_VERSION_NUMBER} PARENT_SCOPE)
+  message(STATUS "LAMMPS version is ${LAMMPS_VERSION_NUMBER}")
 
   configure_file("../pair_deepmd.h.in" "${CMAKE_CURRENT_BINARY_DIR}/pair_deepmd.h" @ONLY)
 
@@ -63,6 +64,9 @@ if (DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
     ${LAMMPS_SOURCE_ROOT}/src/KSPACE
     ${LAMMPS_SOURCE_ROOT}/src
   )
+  if(CMAKE_SYSTEM_NAME STREQUAL Darwin)
+    set_target_properties(${libname} PROPERTIES LINK_FLAGS "-Wl,-undefined,dynamic_lookup")
+  endif()
 
   set_target_properties(
     ${libname} 
@@ -75,6 +79,10 @@ if (DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
     PRIVATE "LMPPLUGIN" # fix header path
     PRIVATE "LAMMPS_VERSION_NUMBER=${LAMMPS_VERSION_NUMBER}"
   )
+
+  if (CMAKE_TESTING_ENABLED)
+    target_link_libraries(${libname} PRIVATE coverage_config)
+  endif()
 
   install(TARGETS ${libname} DESTINATION lib/)
 

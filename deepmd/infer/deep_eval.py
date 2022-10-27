@@ -180,7 +180,7 @@ class DeepEval:
 
     @staticmethod
     def sort_input(
-        coord : np.ndarray, atom_type : np.ndarray, sel_atoms : List[int] = None
+        coord : np.ndarray, atom_type : np.ndarray, sel_atoms : List[int] = None, mixed_type : bool = False
     ):
         """
         Sort atoms in the system according their types.
@@ -193,8 +193,12 @@ class DeepEval:
         atom_type
                 The type of atoms
                 Should be of shape [natoms]
-        sel_atom
+        sel_atoms
                 The selected atoms by type
+        mixed_type
+                Whether to perform the mixed_type mode.
+                If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
+                in which frames in a system may have different natoms_vec(s), with the same nloc.
         
         Returns
         -------
@@ -212,6 +216,11 @@ class DeepEval:
                 Only output if sel_atoms is not None
                 The index mapping from the selected atoms to sorted selected atoms.
         """
+        if mixed_type:
+            # mixed_type need not to resort
+            natoms = atom_type[0].size
+            idx_map = np.arange(natoms)
+            return coord, atom_type, idx_map
         if sel_atoms is not None:
             selection = [False] * np.size(atom_type)
             for ii in sel_atoms:
@@ -256,13 +265,17 @@ class DeepEval:
         return ret
 
 
-    def make_natoms_vec(self, atom_types : np.ndarray) -> np.ndarray :
+    def make_natoms_vec(self, atom_types : np.ndarray, mixed_type : bool = False) -> np.ndarray :
         """Make the natom vector used by deepmd-kit.
 
         Parameters
         ----------
         atom_types
                 The type of atoms
+        mixed_type
+                Whether to perform the mixed_type mode.
+                If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
+                in which frames in a system may have different natoms_vec(s), with the same nloc.
         
         Returns
         -------
@@ -274,9 +287,15 @@ class DeepEval:
   
         """
         natoms_vec = np.zeros (self.ntypes+2).astype(int)
-        natoms = atom_types.size
+        if mixed_type:
+            natoms = atom_types[0].size
+        else:
+            natoms = atom_types.size
         natoms_vec[0] = natoms
         natoms_vec[1] = natoms
+        if mixed_type:
+            natoms_vec[2] = natoms
+            return natoms_vec
         for ii in range (self.ntypes) :
             natoms_vec[ii+2] = np.count_nonzero(atom_types == ii)
         return natoms_vec

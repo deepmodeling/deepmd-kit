@@ -148,7 +148,7 @@ class DescrptSeR (DescrptSe):
 
     def get_rcut (self) :
         """
-        Returns the cut-off radisu
+        Returns the cut-off radius
         """
         return self.rcut
 

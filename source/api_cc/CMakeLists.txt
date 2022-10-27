@@ -20,6 +20,10 @@ target_link_libraries (${libname} PUBLIC ${LIB_DEEPMD}	${TensorFlow_LIBRARY} ${T
 target_include_directories(${libname} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR})
 target_include_directories(${libname} PRIVATE ${TensorFlow_INCLUDE_DIRS})
 
+if(Protobuf_LIBRARY)
+  target_link_libraries(${libname} PRIVATE ${Protobuf_LIBRARY})
+endif()
+
 # link: libpython3.x.so
 if (USE_TF_PYTHON_LIBS)
   target_link_libraries (${libname} PUBLIC ${Python_LIBRARIES})
@@ -34,6 +38,9 @@ target_compile_definitions(${libname}
   PUBLIC ${prec_def}
   PRIVATE TF_PRIVATE
 )
+if (CMAKE_TESTING_ENABLED)
+  target_link_libraries(${libname} PRIVATE coverage_config)
+endif()
 
 install(TARGETS ${libname} DESTINATION lib/)
 

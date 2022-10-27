@@ -7,6 +7,7 @@ endif (NOT DEFINED BUILD_CPP_IF)
 add_definitions ("-DHIGH_PREC")
 
 enable_testing()
+add_subdirectory(${CMAKE_SOURCE_DIR}/../../cmake/coverage_config coverage_config)
 
 find_package(OpenMP)
 if (OPENMP_FOUND)
@@ -21,32 +22,6 @@ list (APPEND CMAKE_MODULE_PATH ${DEEPMD_SOURCE_DIR}/source/cmake/)
 if (USE_TF_PYTHON_LIBS)
   set(DEEPMD_SOURCE_DIR ${PROJECT_SOURCE_DIR}/../../..)
   find_package (Python COMPONENTS Interpreter Development REQUIRED)
-  # find tensorflow, I need tf abi info
-  find_package(tensorflow REQUIRED)
-  # auto op_cxx_abi
-  try_run(
-    CPP_CXX_ABI_RUN_RESULT_VAR CPP_CXX_ABI_COMPILE_RESULT_VAR
-    ${CMAKE_CURRENT_BINARY_DIR}/tf_cxx_abi
-    "${DEEPMD_SOURCE_DIR}/source/cmake/tf_cxx_abi.cpp"
-    LINK_LIBRARIES ${TensorFlowFramework_LIBRARY}
-    CMAKE_FLAGS "-DINCLUDE_DIRECTORIES:STRING=${TensorFlow_INCLUDE_DIRS}"
-    RUN_OUTPUT_VARIABLE CPP_CXX_ABI
-    COMPILE_OUTPUT_VARIABLE CPP_CXX_ABI_COMPILE_OUTPUT_VAR
-  )
-  if (NOT ${CPP_CXX_ABI_COMPILE_RESULT_VAR})
-    message(FATAL_ERROR "Failed to compile: \n ${CPP_CXX_ABI_COMPILE_OUTPUT_VAR}" )
-  endif()
-  if (NOT ${CPP_CXX_ABI_RUN_RESULT_VAR} EQUAL "0")
-    message(FATAL_ERROR "Failed to run, return code: ${CPP_CXX_ABI}" )
-  endif()
-  if (DEFINED PY_CXX_ABI)
-    if (NOT (${CPP_CXX_ABI} EQUAL ${PY_CXX_ABI}))
-	    message (WARNNING "NOT consistent CXX_ABIs: python interface of tf uses ${PY_CXX_ABI}, while c++ interface of tf uses ${CPP_CXX_ABI}, we follow c++ interface ")
-    endif()
-  endif()
-  set(OP_CXX_ABI ${CPP_CXX_ABI})
-  message (STATUS "Automatically determined OP_CXX_ABI=${OP_CXX_ABI} ")
-  add_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
 endif(USE_TF_PYTHON_LIBS)
 
 # model version
@@ -60,13 +35,6 @@ set(apiname "deepmd_api")
 set(opname "deepmd_op")
 
 find_package(tensorflow REQUIRED)
-if (TENSORFLOW_VERSION VERSION_GREATER_EQUAL 2.10)
-  set (CMAKE_CXX_STANDARD 17)
-elseif (TENSORFLOW_VERSION VERSION_GREATER_EQUAL 2.7)
-  set (CMAKE_CXX_STANDARD 14)
-else()
-  set (CMAKE_CXX_STANDARD 11)
-endif()
 
 find_package(Threads)
 # find openmp
@@ -115,17 +83,6 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/../../op op)
 file(GLOB TEST_SRC test_*.cc)
 add_executable( runUnitTests ${TEST_SRC} )
 
-add_library(coverage_config INTERFACE)
-target_compile_options(coverage_config INTERFACE
-  -O0        # no optimization
-  -g         # generate debug info
-  --coverage # sets all required flags
-)
-if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.13)
-  target_link_options(coverage_config INTERFACE --coverage)
-else()
-  target_link_libraries(coverage_config INTERFACE --coverage)
-endif()
 
 target_link_libraries(runUnitTests gtest gtest_main ${apiname} rt coverage_config)
 
@@ -133,7 +90,7 @@ add_test( runUnitTests runUnitTests )
 
 find_package(GTest)
 if(NOT GTEST_LIBRARIES)
-  configure_file(../../cmake/googletest.cmake.in googletest-download/CMakeLists.txt)
+  configure_file(../../cmake/googletest.cmake.in googletest-download/CMakeLists.txt @ONLY)
   execute_process(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" .
     RESULT_VARIABLE result
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/googletest-download )

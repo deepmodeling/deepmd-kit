@@ -199,8 +199,11 @@ class DeepPot(DeepEval):
             eval_func = inner_func
         return eval_func
 
-    def _get_natoms_and_nframes(self, coords: np.ndarray, atom_types: List[int]) -> Tuple[int, int]:
-        natoms = len(atom_types)
+    def _get_natoms_and_nframes(self, coords: np.ndarray, atom_types: Union[List[int], np.ndarray], mixed_type: bool = False) -> Tuple[int, int]:
+        if mixed_type:
+            natoms = len(atom_types[0])
+        else:
+            natoms = len(atom_types)
         coords = np.reshape(np.array(coords), [-1, natoms * 3])
         nframes = coords.shape[0]
         return natoms, nframes
@@ -214,6 +217,7 @@ class DeepPot(DeepEval):
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
         efield: Optional[np.ndarray] = None,
+        mixed_type: bool = False,
     ) -> Tuple[np.ndarray, ...]:
         """Evaluate the energy, force and virial by using this DP.
 
@@ -245,7 +249,10 @@ class DeepPot(DeepEval):
         efield
             The external field on atoms.
             The array should be of size nframes x natoms x 3
-
+        mixed_type
+            Whether to perform the mixed_type mode.
+            If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
+            in which frames in a system may have different natoms_vec(s), with the same nloc.
         Returns
         -------
         energy
@@ -260,8 +267,8 @@ class DeepPot(DeepEval):
             The atomic virial. Only returned when atomic == True
         """
         # reshape coords before getting shape
-        natoms, numb_test = self._get_natoms_and_nframes(coords, atom_types)
-        output = self._eval_func(self._eval_inner, numb_test, natoms)(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield)
+        natoms, numb_test = self._get_natoms_and_nframes(coords, atom_types, mixed_type=mixed_type)
+        output = self._eval_func(self._eval_inner, numb_test, natoms)(coords, cells, atom_types, fparam = fparam, aparam = aparam, atomic = atomic, efield = efield, mixed_type=mixed_type)
 
         if self.modifier_type is not None:
             if atomic:
@@ -283,11 +290,15 @@ class DeepPot(DeepEval):
         fparam=None,
         aparam=None,
         atomic=False,
-        efield=None
+        efield=None,
+        mixed_type=False
     ):
         # standarize the shape of inputs
-        natoms, nframes = self._get_natoms_and_nframes(coords, atom_types)
-        atom_types = np.array(atom_types, dtype = int).reshape([-1])
+        natoms, nframes = self._get_natoms_and_nframes(coords, atom_types, mixed_type=mixed_type)
+        if mixed_type:
+            atom_types = np.array(atom_types, dtype=int).reshape([-1, natoms])
+        else:
+            atom_types = np.array(atom_types, dtype = int).reshape([-1])
         coords = np.reshape(np.array(coords), [-1, natoms * 3])
         if cells is None:
             pbc = False
@@ -328,20 +339,23 @@ class DeepPot(DeepEval):
                 raise RuntimeError('got wrong size of frame param, should be either %d x %d x %d or %d x %d or %d' % (nframes, natoms, fdim, natoms, fdim, fdim))
 
         # sort inputs
-        coords, atom_types, imap = self.sort_input(coords, atom_types)
+        coords, atom_types, imap = self.sort_input(coords, atom_types, mixed_type=mixed_type)
         if self.has_efield:
             efield = np.reshape(efield, [nframes, natoms, 3])
             efield = efield[:,imap,:]
             efield = np.reshape(efield, [nframes, natoms*3])            
 
         # make natoms_vec and default_mesh
-        natoms_vec = self.make_natoms_vec(atom_types)
+        natoms_vec = self.make_natoms_vec(atom_types, mixed_type=mixed_type)
         assert(natoms_vec[0] == natoms)
 
         # evaluate
         feed_dict_test = {}
         feed_dict_test[self.t_natoms] = natoms_vec
-        feed_dict_test[self.t_type  ] = np.tile(atom_types, [nframes, 1]).reshape([-1])
+        if mixed_type:
+            feed_dict_test[self.t_type] = atom_types.reshape([-1])
+        else:
+            feed_dict_test[self.t_type] = np.tile(atom_types, [nframes, 1]).reshape([-1])
         feed_dict_test[self.t_coord] = np.reshape(coords, [-1])
         feed_dict_test[self.t_box  ] = np.reshape(cells , [-1])
         if self.has_efield:
@@ -364,10 +378,11 @@ class DeepPot(DeepEval):
         fparam=None,
         aparam=None,
         atomic=False,
-        efield=None
+        efield=None,
+        mixed_type=False
     ):
-        natoms, nframes = self._get_natoms_and_nframes(coords, atom_types)
-        feed_dict_test, imap = self._prepare_feed_dict(coords, cells, atom_types, fparam, aparam, efield)
+        natoms, nframes = self._get_natoms_and_nframes(coords, atom_types, mixed_type=mixed_type)
+        feed_dict_test, imap = self._prepare_feed_dict(coords, cells, atom_types, fparam, aparam, efield, mixed_type=mixed_type)
         t_out = [self.t_energy, 
                  self.t_force, 
                  self.t_virial]
@@ -406,6 +421,7 @@ class DeepPot(DeepEval):
             fparam: Optional[np.ndarray] = None,
             aparam: Optional[np.ndarray] = None,
             efield: Optional[np.ndarray] = None,
+            mixed_type: bool = False,
             ) -> np.array:
         """Evaluate descriptors by using this DP.
 
@@ -435,14 +451,18 @@ class DeepPot(DeepEval):
         efield
             The external field on atoms.
             The array should be of size nframes x natoms x 3
+        mixed_type
+            Whether to perform the mixed_type mode.
+            If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
+            in which frames in a system may have different natoms_vec(s), with the same nloc.
 
         Returns
         -------
         descriptor
             Descriptors.
         """
-        natoms, numb_test = self._get_natoms_and_nframes(coords, atom_types)
-        descriptor = self._eval_func(self._eval_descriptor_inner, numb_test, natoms)(coords, cells, atom_types, fparam = fparam, aparam = aparam, efield = efield)
+        natoms, numb_test = self._get_natoms_and_nframes(coords, atom_types, mixed_type=mixed_type)
+        descriptor = self._eval_func(self._eval_descriptor_inner, numb_test, natoms)(coords, cells, atom_types, fparam = fparam, aparam = aparam, efield = efield, mixed_type=mixed_type)
         return descriptor
     
     def _eval_descriptor_inner(self,
@@ -452,8 +472,9 @@ class DeepPot(DeepEval):
             fparam: Optional[np.ndarray] = None,
             aparam: Optional[np.ndarray] = None,
             efield: Optional[np.ndarray] = None,
+            mixed_type: bool = False,
             ) -> np.array:
-        natoms, nframes = self._get_natoms_and_nframes(coords, atom_types)
-        feed_dict_test, imap = self._prepare_feed_dict(coords, cells, atom_types, fparam, aparam, efield)
+        natoms, nframes = self._get_natoms_and_nframes(coords, atom_types, mixed_type=mixed_type)
+        feed_dict_test, imap = self._prepare_feed_dict(coords, cells, atom_types, fparam, aparam, efield, mixed_type=mixed_type)
         descriptor, = run_sess(self.sess, [self.t_descriptor], feed_dict = feed_dict_test)
         return self.reverse_map(np.reshape(descriptor, [nframes, natoms, -1]), imap)

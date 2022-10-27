@@ -76,18 +76,18 @@ spline5_switch (
     const float & rmax)
 {
   if (xx < rmin) {
-    dd = 0;
-    vv = 1;
+    dd = (FPTYPE)0.;
+    vv = (FPTYPE)1.;
   }
   else if (xx < rmax) {
     FPTYPE uu = (xx - rmin) / (rmax - rmin) ;
-    FPTYPE du = 1. / (rmax - rmin) ;
-    vv = uu*uu*uu * (-6 * uu*uu + 15 * uu - 10) + 1;
-    dd = ( 3 * uu*uu * (-6 * uu*uu + 15 * uu - 10) + uu*uu*uu * (-12 * uu + 15) ) * du;
+    FPTYPE du = (FPTYPE)1. / (rmax - rmin) ;
+    vv = uu*uu*uu * ((FPTYPE)-6. * uu*uu + (FPTYPE)15. * uu - (FPTYPE)10.) + (FPTYPE)1.;
+    dd = ( (FPTYPE)3. * uu*uu * ((FPTYPE)-6. * uu*uu + (FPTYPE)15. * uu - (FPTYPE)10.) + uu*uu*uu * ((FPTYPE)-12. * uu + (FPTYPE)15.) ) * du;
   }
   else {
-    dd = 0;
-    vv = 0;
+    dd = (FPTYPE)0.;
+    vv = (FPTYPE)0.;
   }
 }
 

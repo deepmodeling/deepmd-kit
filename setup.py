@@ -52,9 +52,12 @@ elif dp_variant == "rocm":
     cmake_args.append("-DUSE_ROCM_TOOLKIT:BOOL=TRUE")
     rocm_root = os.environ.get("ROCM_ROOT")
     if rocm_root:
-        cmake_args.append(f"-DROCM_ROOT:STRING={rocm_root}")
+        cmake_args.append(f"-DCMAKE_HIP_COMPILER_ROCM_ROOT:STRING={rocm_root}")
 else:
     raise RuntimeError("Unsupported DP_VARIANT option: %s" % dp_variant)
+
+if os.environ.get("DP_BUILD_TESTING", "0") == "1":
+    cmake_args.append("-DBUILD_TESTING:BOOL=TRUE")
 
 # get tensorflow spec
 tf_spec = find_spec("tensorflow")
@@ -82,13 +85,13 @@ except (AttributeError, TypeError, IndexError):
     # setuptools will re-find tensorflow after installing setup_requires
     tf_install_dir = None
 
-# add cmake as a build requirement if cmake>3.12 is not installed
+# add cmake as a build requirement if cmake>=3.16 is not installed
 try:
     cmake_version = get_cmake_version()
 except SKBuildError:
     setup_requires.append("cmake")
 else:
-    if cmake_version in SpecifierSet("<3.12"):
+    if cmake_version in SpecifierSet("<3.16"):
         setup_requires.append("cmake")
 
 Path("deepmd").mkdir(exist_ok=True)

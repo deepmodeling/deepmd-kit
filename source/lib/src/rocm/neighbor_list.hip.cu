@@ -288,7 +288,7 @@ void use_nei_info_gpu_rocm(
     dim3 block_grid(nloc, nblock);
     dim3 thread_grid(1, TPB);
     DPErrcheck(hipMemset(ntype, 0, sizeof(int) * nloc * nnei));
-    DPErrcheck(hipMemset(nmask, 0, sizeof(FPTYPE) * nloc * nnei));
+    DPErrcheck(hipMemset(nmask, 0, sizeof(bool) * nloc * nnei));
     if (b_nlist_map){
         hipLaunchKernelGGL(map_nei_info, block_grid, thread_grid, 0, 0, nlist, ntype, nmask, type, nlist_map, nloc, nnei, ntypes);
     }

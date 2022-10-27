@@ -156,19 +156,34 @@ def main_parser() -> argparse.ArgumentParser:
     parser_train.add_argument(
         "INPUT", help="the input parameter file in json or yaml format"
     )
-    parser_train.add_argument(
+    parser_train_subgroup = parser_train.add_mutually_exclusive_group()
+    parser_train_subgroup.add_argument(
         "-i",
         "--init-model",
         type=str,
         default=None,
         help="Initialize the model by the provided checkpoint.",
     )
-    parser_train.add_argument(
+    parser_train_subgroup.add_argument(
         "-r",
         "--restart",
         type=str,
         default=None,
         help="Restart the training from the provided checkpoint.",
+    )
+    parser_train_subgroup.add_argument(
+        "-f",
+        "--init-frz-model",
+        type=str,
+        default=None,
+        help="Initialize the training from the frozen model.",
+    )
+    parser_train_subgroup.add_argument(
+        "-t",
+        "--finetune",
+        type=str,
+        default=None,
+        help="Finetune the frozen pretrained model.",
     )
     parser_train.add_argument(
         "-o",
@@ -176,13 +191,6 @@ def main_parser() -> argparse.ArgumentParser:
         type=str,
         default="out.json",
         help="The output file of the parameters used in training.",
-    )
-    parser_train.add_argument(
-        "-f",
-        "--init-frz-model",
-        type=str,
-        default=None,
-        help="Initialize the training from the frozen model.",
     )
     parser_train.add_argument(
         "--skip-neighbor-stat",
@@ -434,7 +442,7 @@ def main_parser() -> argparse.ArgumentParser:
     parser_transform.add_argument(
         'FROM',
         type = str,
-        choices = ['0.12', '1.0', '1.1', '1.2', '1.3', '2.0'],
+        choices = ['0.12', '1.0', '1.1', '1.2', '1.3', '2.0', 'pbtxt'],
         help="The original model compatibility",
     )
     parser_transform.add_argument(
