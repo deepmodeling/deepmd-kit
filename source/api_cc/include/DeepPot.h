@@ -185,6 +185,7 @@ private:
   // VALUETYPE get_rcut () const;
   // int get_ntypes () const;
   VALUETYPE rcut;
+  int dtype;
   VALUETYPE cell_size;
   std::string model_type;
   std::string model_version;
@@ -408,6 +409,7 @@ private:
   // int get_ntypes () const;
   VALUETYPE rcut;
   VALUETYPE cell_size;
+  int dtype;
   std::string model_type;
   std::string model_version;
   int ntypes;

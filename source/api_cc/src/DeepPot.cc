@@ -18,6 +18,7 @@ std::vector<int> cum_sum (const std::vector<int32> & n_sel) {
 }
 
 
+template <typename MODELTYPE>
 static void 
 run_model (ENERGYTYPE &			dener,
 	   std::vector<VALUETYPE> &	dforce_,
@@ -52,8 +53,8 @@ run_model (ENERGYTYPE &			dener,
   Tensor output_av = output_tensors[3];
 
   auto oe = output_e.flat <ENERGYTYPE> ();
-  auto of = output_f.flat <VALUETYPE> ();
-  auto oav = output_av.flat <VALUETYPE> ();
+  auto of = output_f.flat <MODELTYPE> ();
+  auto oav = output_av.flat <MODELTYPE> ();
 
   dener = oe(0);
   std::vector<VALUETYPE> dforce (3 * nall);
@@ -78,6 +79,7 @@ run_model (ENERGYTYPE &			dener,
   atommap.backward (dforce_.begin(), dforce.begin(), 3);
 }
 
+template <typename MODELTYPE>
 static void run_model (ENERGYTYPE   &		dener,
 		       std::vector<VALUETYPE>&	dforce_,
 		       std::vector<VALUETYPE>&	dvirial,	   
@@ -120,9 +122,9 @@ static void run_model (ENERGYTYPE   &		dener,
     Tensor output_av = output_tensors[3];
 
     auto oe = output_e.flat <ENERGYTYPE> ();
-    auto of = output_f.flat <VALUETYPE> ();
-    auto oae = output_ae.flat <VALUETYPE> ();
-    auto oav = output_av.flat <VALUETYPE> ();
+    auto of = output_f.flat <MODELTYPE> ();
+    auto oae = output_ae.flat <MODELTYPE> ();
+    auto oav = output_av.flat <MODELTYPE> ();
 
     dener = oe(0);
     std::vector<VALUETYPE> dforce (3 * nall);
@@ -212,7 +214,12 @@ init (const std::string & model, const int & gpu_rank, const std::string & file_
   #endif // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   check_status (NewSession(options, &session));
   check_status (session->Create(*graph_def));
-  rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
+  dtype = session_get_dtype(session, "descrpt_attr/rcut");
+  if (dtype == tensorflow::DT_DOUBLE) {
+    rcut = get_scalar<double>("descrpt_attr/rcut");
+  } else {
+    rcut = get_scalar<float>("descrpt_attr/rcut");
+  }
   cell_size = rcut;
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
   dfparam = get_scalar<int>("fitting_attr/dfparam");
@@ -346,10 +353,16 @@ compute (ENERGYTYPE &			dener,
   validate_fparam_aparam(nloc, fparam, aparam);
 
   std::vector<std::pair<std::string, Tensor>> input_tensors;
-  int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, aparam, atommap);
-  assert (ret == nloc);
 
-  run_model (dener, dforce_, dvirial, session, input_tensors, atommap);
+  if (dtype == tensorflow::DT_DOUBLE) {
+    int ret = session_input_tensors<double> (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, aparam, atommap);
+    assert (ret == nloc);
+    run_model<double> (dener, dforce_, dvirial, session, input_tensors, atommap);
+  } else {
+    int ret = session_input_tensors<float> (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, aparam, atommap);
+    assert (ret == nloc);
+    run_model<float> (dener, dforce_, dvirial, session, input_tensors, atommap);
+  }
 }
 
 void
@@ -418,9 +431,15 @@ compute_inner (ENERGYTYPE &			dener,
       nlist_data.shuffle(atommap);
       nlist_data.make_inlist(nlist);
     }
-    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
-    assert (nloc == ret);
-    run_model (dener, dforce_, dvirial, session, input_tensors, atommap, nghost);
+    if (dtype == tensorflow::DT_DOUBLE) {
+      int ret = session_input_tensors<double> (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
+      assert (nloc == ret);
+      run_model<double> (dener, dforce_, dvirial, session, input_tensors, atommap, nghost);
+    } else {
+      int ret = session_input_tensors<float> (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
+      assert (nloc == ret);
+      run_model<float> (dener, dforce_, dvirial, session, input_tensors, atommap, nghost);
+    }
 }
 
 
@@ -441,9 +460,14 @@ compute (ENERGYTYPE &			dener,
   validate_fparam_aparam(atommap.get_type().size(), fparam, aparam);
 
   std::vector<std::pair<std::string, Tensor>> input_tensors;
-  int nloc = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, aparam, atommap);
 
-  run_model (dener, dforce_, dvirial, datom_energy_, datom_virial_, session, input_tensors, atommap);
+  if (dtype == tensorflow::DT_DOUBLE) {
+    int nloc = session_input_tensors<double> (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, aparam, atommap);
+    run_model<double> (dener, dforce_, dvirial, datom_energy_, datom_virial_, session, input_tensors, atommap);
+  } else {
+    int nloc = session_input_tensors<float> (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, fparam, aparam, atommap);
+    run_model<float> (dener, dforce_, dvirial, datom_energy_, datom_virial_, session, input_tensors, atommap);
+  }
 }
 
 
@@ -497,9 +521,14 @@ compute (ENERGYTYPE &			dener,
 	nlist_data.make_inlist(nlist);
     }
 
-  int ret = session_input_tensors (input_tensors, dcoord, ntypes, datype, dbox, nlist, fparam, aparam, atommap, nghost_real, ago);
   assert (nloc_real == ret);
-  run_model (dener, dforce, dvirial, datom_energy, datom_virial, session, input_tensors, atommap, nghost_real);
+  if (dtype == tensorflow::DT_DOUBLE) {
+    int ret = session_input_tensors<double> (input_tensors, dcoord, ntypes, datype, dbox, nlist, fparam, aparam, atommap, nghost_real, ago);
+    run_model<double> (dener, dforce, dvirial, datom_energy, datom_virial, session, input_tensors, atommap, nghost_real);
+  } else {
+    int ret = session_input_tensors<float> (input_tensors, dcoord, ntypes, datype, dbox, nlist, fparam, aparam, atommap, nghost_real, ago);
+    run_model<float> (dener, dforce, dvirial, datom_energy, datom_virial, session, input_tensors, atommap, nghost_real);
+  }
 
   // bkw map
   dforce_.resize(fwd_map.size() * 3);
@@ -587,7 +616,12 @@ init (const std::vector<std::string> & models, const int & gpu_rank, const std::
     check_status (NewSession(options, &(sessions[ii])));
     check_status (sessions[ii]->Create(*graph_defs[ii]));
   }
-  rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
+  dtype = session_get_dtype(sessions[0], "descrpt_attr/rcut");
+  if (dtype == tensorflow::DT_DOUBLE) {
+    rcut = get_scalar<double>("descrpt_attr/rcut");
+  } else {
+    rcut = get_scalar<float>("descrpt_attr/rcut");
+  }
   cell_size = rcut;
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
   dfparam = get_scalar<int>("fitting_attr/dfparam");
@@ -750,14 +784,21 @@ compute (std::vector<ENERGYTYPE> &		all_energy,
         nlist_data.shuffle(atommap);
 	nlist_data.make_inlist(nlist);
     }
-    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
 
     all_energy.resize (numb_models);
     all_force.resize (numb_models);
     all_virial.resize (numb_models);
-    assert (nloc == ret);
+
     for (unsigned ii = 0; ii < numb_models; ++ii) {
-        run_model (all_energy[ii], all_force[ii], all_virial[ii], sessions[ii], input_tensors, atommap, nghost);
+      if (dtype == tensorflow::DT_DOUBLE) {
+        int ret = session_input_tensors <double> (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
+        assert (nloc == ret);
+        run_model<double> (all_energy[ii], all_force[ii], all_virial[ii], sessions[ii], input_tensors, atommap, nghost);
+      } else {
+        int ret = session_input_tensors <float> (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
+        assert (nloc == ret);
+        run_model<float> (all_energy[ii], all_force[ii], all_virial[ii], sessions[ii], input_tensors, atommap, nghost);
+      }
     }
 }
 
@@ -792,16 +833,23 @@ compute (std::vector<ENERGYTYPE> &		all_energy,
         nlist_data.shuffle(atommap);
 	nlist_data.make_inlist(nlist);
     }
-    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
 
     all_energy.resize (numb_models);
     all_force .resize (numb_models);
     all_virial.resize (numb_models);
     all_atom_energy.resize (numb_models);
     all_atom_virial.resize (numb_models); 
-    assert (nloc == ret);
+
     for (unsigned ii = 0; ii < numb_models; ++ii) {
-        run_model (all_energy[ii], all_force[ii], all_virial[ii], all_atom_energy[ii], all_atom_virial[ii], sessions[ii], input_tensors, atommap, nghost);
+      if (dtype == tensorflow::DT_DOUBLE) {
+        int ret = session_input_tensors <double> (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
+        assert (nloc == ret);
+        run_model<double> (all_energy[ii], all_force[ii], all_virial[ii], all_atom_energy[ii], all_atom_virial[ii], sessions[ii], input_tensors, atommap, nghost);
+      } else {
+        int ret = session_input_tensors <float> (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
+        assert (nloc == ret);
+        run_model<float> (all_energy[ii], all_force[ii], all_virial[ii], all_atom_energy[ii], all_atom_virial[ii], sessions[ii], input_tensors, atommap, nghost);
+      }
     }
 }
 

@@ -156,6 +156,13 @@ session_get_vector(
     const std::string scope = "");
 
 int
+session_get_dtype(
+	tensorflow::Session* session,
+	const std::string name,
+	const std::string scope = "");
+
+template <typename MODELTYPE>
+int
 session_input_tensors (std::vector<std::pair<std::string, tensorflow::Tensor>> & input_tensors,
 		       const std::vector<VALUETYPE> &	dcoord_,
 		       const int &			ntypes,
@@ -167,6 +174,7 @@ session_input_tensors (std::vector<std::pair<std::string, tensorflow::Tensor>> &
 		       const deepmd::AtomMap<VALUETYPE>&atommap,
 		       const std::string		scope = "");
 
+template <typename MODELTYPE>
 int
 session_input_tensors (std::vector<std::pair<std::string, tensorflow::Tensor>> & input_tensors,
 		       const std::vector<VALUETYPE> &	dcoord_,

@@ -43,7 +43,12 @@ init (const std::string & model,
   deepmd::check_status (NewSession(options, &session));
   deepmd::check_status (ReadBinaryProto(Env::Default(), model, graph_def));
   deepmd::check_status (session->Create(*graph_def));  
-  rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
+  dtype = session_get_dtype(session, "descrpt_attr/rcut");
+  if (dtype == tensorflow::DT_DOUBLE) {
+    rcut = get_scalar<double>("descrpt_attr/rcut");
+  } else {
+    rcut = get_scalar<float>("descrpt_attr/rcut");
+  }
   cell_size = rcut;
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
   odim = get_scalar<int>("model_attr/output_dim");
@@ -92,6 +97,7 @@ get_vector (std::vector<VT> & vec, const std::string & name) const
   session_get_vector<VT>(vec, session, name, name_scope);
 }
 
+template <typename MODELTYPE>
 void 
 DeepTensor::
 run_model (std::vector<VALUETYPE> &	d_tensor_,
@@ -118,7 +124,7 @@ run_model (std::vector<VALUETYPE> &	d_tensor_,
   Tensor output_t = output_tensors[0];
   // Yixiao: newer model may output rank 2 tensor [nframes x (natoms x noutdim)]
   // assert (output_t.dims() == 1), "dim of output tensor should be 1";
-  auto ot = output_t.flat<VALUETYPE> ();
+  auto ot = output_t.flat<MODELTYPE> ();
   // this is an Eigen Tensor
   int o_size = ot.size();
 
@@ -137,6 +143,26 @@ run_model (std::vector<VALUETYPE> &	d_tensor_,
   select_map<VALUETYPE>(d_tensor_, d_tensor, sel_srt, odim);
 }
 
+template
+void
+DeepTensor::
+run_model<double> (std::vector<VALUETYPE> &	d_tensor_,
+		  Session *			session, 
+		  const std::vector<std::pair<std::string, Tensor>> & input_tensors,
+		  const AtomMap<VALUETYPE> &atommap, 
+		  const std::vector<int> &	sel_fwd,
+		  const int			nghost);
+template
+void
+DeepTensor::
+run_model<float> (std::vector<VALUETYPE> &	d_tensor_,
+		  Session *			session, 
+		  const std::vector<std::pair<std::string, Tensor>> & input_tensors,
+		  const AtomMap<VALUETYPE> &atommap, 
+		  const std::vector<int> &	sel_fwd,
+		  const int			nghost);
+
+template <typename MODELTYPE>
 void
 DeepTensor::
 run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
@@ -195,10 +221,10 @@ run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
   assert (output_av.dim_size(1) == odim * nall * 9), "dof of atomic virial should be odim * nall * 9";  
 
   auto ogt = output_gt.flat <ENERGYTYPE> ();
-  auto of = output_f.flat <VALUETYPE> ();
-  auto ov = output_v.flat <VALUETYPE> ();
-  auto oat = output_at.flat<VALUETYPE> ();
-  auto oav = output_av.flat<VALUETYPE> ();
+  auto of = output_f.flat <MODELTYPE> ();
+  auto ov = output_v.flat <MODELTYPE> ();
+  auto oat = output_at.flat<MODELTYPE> ();
+  auto oav = output_av.flat<MODELTYPE> ();
 
   // global tensor
   dglobal_tensor_.resize(odim);
@@ -244,6 +270,32 @@ run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
   }
 }
 
+template
+void
+DeepTensor::
+run_model<double> (std::vector<VALUETYPE> &		dglobal_tensor_,
+		  std::vector<VALUETYPE> &	dforce_,
+		  std::vector<VALUETYPE> &	dvirial_,
+		  std::vector<VALUETYPE> &	datom_tensor_,
+		  std::vector<VALUETYPE> &	datom_virial_,
+		  tensorflow::Session *			session, 
+		  const std::vector<std::pair<std::string, tensorflow::Tensor>> & input_tensors,
+		  const AtomMap<VALUETYPE> &		atommap, 
+		  const std::vector<int> &		sel_fwd,
+		  const int				nghost);
+template
+void
+DeepTensor::
+run_model<float> (std::vector<VALUETYPE> &		dglobal_tensor_,
+		  std::vector<VALUETYPE> &	dforce_,
+		  std::vector<VALUETYPE> &	dvirial_,
+		  std::vector<VALUETYPE> &	datom_tensor_,
+		  std::vector<VALUETYPE> &	datom_virial_,
+		  tensorflow::Session *			session, 
+		  const std::vector<std::pair<std::string, tensorflow::Tensor>> & input_tensors,
+		  const AtomMap<VALUETYPE> &		atommap, 
+		  const std::vector<int> &		sel_fwd,
+		  const int				nghost);
 
 void
 DeepTensor::
@@ -416,10 +468,16 @@ compute_inner (std::vector<VALUETYPE> &		dtensor_,
   select_by_type(sel_fwd, sel_bkw, nghost_sel, dcoord_, datype_, 0, sel_type);
 
   std::vector<std::pair<std::string, Tensor>> input_tensors;
-  int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, name_scope);
-  assert (ret == nloc);
 
-  run_model (dtensor_, session, input_tensors, atommap, sel_fwd);
+  if (dtype == tensorflow::DT_DOUBLE) {
+    int ret = session_input_tensors <double> (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, name_scope);
+    assert (ret == nloc);
+    run_model<double> (dtensor_, session, input_tensors, atommap, sel_fwd);
+  } else {
+    int ret = session_input_tensors <float> (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, name_scope);
+    assert (ret == nloc);
+    run_model<float> (dtensor_, session, input_tensors, atommap, sel_fwd);
+  }
 }
 
 void
@@ -449,10 +507,16 @@ compute_inner (std::vector<VALUETYPE> &		dtensor_,
   nlist_data.make_inlist(nlist);
 
   std::vector<std::pair<std::string, Tensor>> input_tensors;
-  int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, nghost, 0, name_scope);
-  assert (nloc == ret);
 
-  run_model (dtensor_, session, input_tensors, atommap, sel_fwd, nghost);
+  if (dtype == tensorflow::DT_DOUBLE) {
+    int ret = session_input_tensors <double> (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, nghost, 0, name_scope);
+    assert (nloc == ret);
+    run_model<double> (dtensor_, session, input_tensors, atommap, sel_fwd, nghost);
+  } else {
+    int ret = session_input_tensors <float> (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, nghost, 0, name_scope);
+    assert (nloc == ret);
+    run_model<float> (dtensor_, session, input_tensors, atommap, sel_fwd, nghost);
+  }
 }
 
 void
@@ -477,10 +541,16 @@ compute_inner (std::vector<VALUETYPE> &		dglobal_tensor_,
   select_by_type(sel_fwd, sel_bkw, nghost_sel, dcoord_, datype_, 0, sel_type);
 
   std::vector<std::pair<std::string, Tensor>> input_tensors;
-  int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, name_scope);
-  assert (ret == nloc);
 
-  run_model (dglobal_tensor_, dforce_, dvirial_, datom_tensor_, datom_virial_, session, input_tensors, atommap, sel_fwd);
+  if (dtype == tensorflow::DT_DOUBLE) {
+    int ret = session_input_tensors <double> (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, name_scope);
+    assert (ret == nloc);
+    run_model<double> (dglobal_tensor_, dforce_, dvirial_, datom_tensor_, datom_virial_, session, input_tensors, atommap, sel_fwd);
+  } else {
+    int ret = session_input_tensors <float> (input_tensors, dcoord_, ntypes, datype_, dbox, cell_size, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, name_scope);
+    assert (ret == nloc);
+    run_model<float> (dglobal_tensor_, dforce_, dvirial_, datom_tensor_, datom_virial_, session, input_tensors, atommap, sel_fwd);
+  }
 }
 
 void
@@ -514,9 +584,15 @@ compute_inner (std::vector<VALUETYPE> &		dglobal_tensor_,
   nlist_data.make_inlist(nlist);
 
   std::vector<std::pair<std::string, Tensor>> input_tensors;
-  int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, nghost, 0, name_scope);
-  assert (nloc == ret);
 
-  run_model (dglobal_tensor_, dforce_, dvirial_, datom_tensor_, datom_virial_, session, input_tensors, atommap, sel_fwd, nghost);
+  if (dtype == tensorflow::DT_DOUBLE) {
+    int ret = session_input_tensors <double> (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, nghost, 0, name_scope);
+    assert (nloc == ret);
+    run_model<double> (dglobal_tensor_, dforce_, dvirial_, datom_tensor_, datom_virial_, session, input_tensors, atommap, sel_fwd, nghost);
+  } else {
+    int ret = session_input_tensors <float> (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, nghost, 0, name_scope);
+    assert (nloc == ret);
+    run_model<float> (dglobal_tensor_, dforce_, dvirial_, datom_tensor_, datom_virial_, session, input_tensors, atommap, sel_fwd, nghost);
+  }
 }
 
