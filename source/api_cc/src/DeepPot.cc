@@ -521,12 +521,13 @@ compute (ENERGYTYPE &			dener,
 	nlist_data.make_inlist(nlist);
     }
 
-  assert (nloc_real == ret);
   if (dtype == tensorflow::DT_DOUBLE) {
     int ret = session_input_tensors<double> (input_tensors, dcoord, ntypes, datype, dbox, nlist, fparam, aparam, atommap, nghost_real, ago);
+    assert (nloc_real == ret);
     run_model<double> (dener, dforce, dvirial, datom_energy, datom_virial, session, input_tensors, atommap, nghost_real);
   } else {
     int ret = session_input_tensors<float> (input_tensors, dcoord, ntypes, datype, dbox, nlist, fparam, aparam, atommap, nghost_real, ago);
+    assert (nloc_real == ret);
     run_model<float> (dener, dforce, dvirial, datom_energy, datom_virial, session, input_tensors, atommap, nghost_real);
   }
 
