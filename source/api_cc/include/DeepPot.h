@@ -51,7 +51,7 @@ public:
       * natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
       * dim_aparam. Then all frames and atoms are provided with the same aparam.
   **/
-  void compute (ENERGYTYPE &			ener,
+  template<typename VALUETYPE> void compute (ENERGYTYPE &			ener,
 		std::vector<VALUETYPE> &	force,
 		std::vector<VALUETYPE> &	virial,
 		const std::vector<VALUETYPE> &	coord,
@@ -78,7 +78,7 @@ public:
       * natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
       * dim_aparam. Then all frames and atoms are provided with the same aparam.
   **/
-  void compute (ENERGYTYPE &			ener,
+  template<typename VALUETYPE> void compute (ENERGYTYPE &			ener,
 		std::vector<VALUETYPE> &	force,
 		std::vector<VALUETYPE> &	virial,
 		const std::vector<VALUETYPE> &	coord,
@@ -107,7 +107,7 @@ public:
       * natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
       * dim_aparam. Then all frames and atoms are provided with the same aparam.
   **/
-  void compute (ENERGYTYPE &			ener,
+  template<typename VALUETYPE> void compute (ENERGYTYPE &			ener,
 		std::vector<VALUETYPE> &	force,
 		std::vector<VALUETYPE> &	virial,
 		std::vector<VALUETYPE> &	atom_energy,
@@ -138,7 +138,7 @@ public:
       * natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
       * dim_aparam. Then all frames and atoms are provided with the same aparam.
   **/
-  void compute (ENERGYTYPE &			ener,
+  template<typename VALUETYPE> void compute (ENERGYTYPE &			ener,
 		std::vector<VALUETYPE> &	force,
 		std::vector<VALUETYPE> &	virial,
 		std::vector<VALUETYPE> &	atom_energy,
@@ -155,7 +155,7 @@ public:
   * @brief Get the cutoff radius.
   * @return The cutoff radius.
   **/
-  VALUETYPE cutoff () const {assert(inited); return rcut;};
+  template<typename VALUETYPE> VALUETYPE cutoff () const {assert(inited); return (VALUETYPE) rcut;};
   /**
   * @brief Get the number of types.
   * @return The number of types.
@@ -184,18 +184,18 @@ private:
   template<class VT> VT get_scalar(const std::string & name) const;
   // VALUETYPE get_rcut () const;
   // int get_ntypes () const;
-  VALUETYPE rcut;
+  double rcut;
   int dtype;
-  VALUETYPE cell_size;
+  double cell_size;
   std::string model_type;
   std::string model_version;
   int ntypes;
   int dfparam;
   int daparam;
-  void validate_fparam_aparam(const int & nloc,
+  template<typename VALUETYPE> void validate_fparam_aparam(const int & nloc,
 			      const std::vector<VALUETYPE> &fparam,
 			      const std::vector<VALUETYPE> &aparam)const ;
-  void compute_inner (ENERGYTYPE &			ener,
+  template<typename VALUETYPE> void compute_inner (ENERGYTYPE &			ener,
 		      std::vector<VALUETYPE> &		force,
 		      std::vector<VALUETYPE> &		virial,
 		      const std::vector<VALUETYPE> &	coord,
