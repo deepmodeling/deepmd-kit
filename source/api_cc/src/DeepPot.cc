@@ -785,19 +785,20 @@ compute (std::vector<ENERGYTYPE> &		all_energy,
         nlist_data.shuffle(atommap);
 	nlist_data.make_inlist(nlist);
     }
-
+    int ret;
+    if (dtype == tensorflow::DT_DOUBLE) {
+      ret = session_input_tensors <double> (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
+    } else {
+      ret = session_input_tensors <float> (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
+    }
     all_energy.resize (numb_models);
     all_force.resize (numb_models);
     all_virial.resize (numb_models);
-
+    assert (nloc == ret);
     for (unsigned ii = 0; ii < numb_models; ++ii) {
       if (dtype == tensorflow::DT_DOUBLE) {
-        int ret = session_input_tensors <double> (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
-        assert (nloc == ret);
         run_model<double> (all_energy[ii], all_force[ii], all_virial[ii], sessions[ii], input_tensors, atommap, nghost);
       } else {
-        int ret = session_input_tensors <float> (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
-        assert (nloc == ret);
         run_model<float> (all_energy[ii], all_force[ii], all_virial[ii], sessions[ii], input_tensors, atommap, nghost);
       }
     }
@@ -834,21 +835,23 @@ compute (std::vector<ENERGYTYPE> &		all_energy,
         nlist_data.shuffle(atommap);
 	nlist_data.make_inlist(nlist);
     }
+    int ret;
+    if (dtype == tensorflow::DT_DOUBLE) {
+      ret = session_input_tensors <double> (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
+    } else {
+      ret = session_input_tensors <float> (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
+    }
 
     all_energy.resize (numb_models);
     all_force .resize (numb_models);
     all_virial.resize (numb_models);
     all_atom_energy.resize (numb_models);
     all_atom_virial.resize (numb_models); 
-
+    assert (nloc == ret);
     for (unsigned ii = 0; ii < numb_models; ++ii) {
       if (dtype == tensorflow::DT_DOUBLE) {
-        int ret = session_input_tensors <double> (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
-        assert (nloc == ret);
         run_model<double> (all_energy[ii], all_force[ii], all_virial[ii], all_atom_energy[ii], all_atom_virial[ii], sessions[ii], input_tensors, atommap, nghost);
       } else {
-        int ret = session_input_tensors <float> (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
-        assert (nloc == ret);
         run_model<float> (all_energy[ii], all_force[ii], all_virial[ii], all_atom_energy[ii], all_atom_virial[ii], sessions[ii], input_tensors, atommap, nghost);
       }
     }
