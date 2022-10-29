@@ -10,7 +10,7 @@
 class TestInferEwald : public ::testing::Test
 {  
 protected:  
-  std::vector<double> coord = {
+  std::vector<VALUETYPE> coord = {
     12.83, 2.56, 2.18,
     12.09, 2.87, 2.74,
     00.25, 3.32, 1.68,
@@ -18,10 +18,10 @@ protected:
     3.51, 2.51, 2.60,
     4.27, 3.22, 1.56 
   };
-  std::vector<double> charge = {
+  std::vector<VALUETYPE> charge = {
     -2, 1, 1, -2, 1, 1
   };
-  std::vector<double> box = {
+  std::vector<VALUETYPE> box = {
     13., 0., 0., 0., 13., 0., 0., 0., 13.
   };
   void SetUp() override {
@@ -32,31 +32,31 @@ protected:
 
 TEST_F(TestInferEwald, cpu_numfv)
 {
-  class MyModel : public EnergyModelTest<double>
+  class MyModel : public EnergyModelTest<VALUETYPE>
   {
-    const std::vector<double > & charge;
-    deepmd::EwaldParameters<double> eparam;    
+    const std::vector<VALUETYPE > & charge;
+    deepmd::EwaldParameters<VALUETYPE> eparam;    
 public:
     MyModel(
-	const std::vector<double> & charge_
+	const std::vector<VALUETYPE> & charge_
 	) : charge(charge_) {
       eparam.beta = 0.4;
     };
     virtual void compute (
 	double & ener,
-	std::vector<double> &	force,
-	std::vector<double> &	virial,
-	const std::vector<double> & coord,
-	const std::vector<double> & box) {
-      deepmd::Region<double> region;
+	std::vector<VALUETYPE> &	force,
+	std::vector<VALUETYPE> &	virial,
+	const std::vector<VALUETYPE> & coord,
+	const std::vector<VALUETYPE> & box) {
+      deepmd::Region<VALUETYPE> region;
       init_region_cpu(region, &box[0]);
-      ewald_recp(ener, force, virial, coord, charge, region, eparam);
+      ewald_recp((VALUETYPE &)ener, force, virial, coord, charge, region, eparam);
     }
   };
   MyModel model(charge);
   model.test_f(coord, box);
   model.test_v(coord, box);
-  std::vector<double> box_(box);
+  std::vector<VALUETYPE> box_(box);
   box_[1] -= 0.2;
   model.test_f(coord, box_);
   model.test_v(coord, box_);

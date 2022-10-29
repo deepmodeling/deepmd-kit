@@ -237,10 +237,19 @@ compute (std::vector<VALUETYPE> &		dfcorr_,
   extf_shape.AddDim (nframes);
   extf_shape.AddDim (dextf.size());
   Tensor extf_tensor	((tensorflow::DataType) dtype, extf_shape);
-  auto extf = extf_tensor.matrix<VALUETYPE> ();
-  for (int ii = 0; ii < nframes; ++ii){
-    for (int jj = 0; jj < extf.size(); ++jj){
-      extf(ii,jj) = dextf[jj];
+  if (dtype == tensorflow::DT_DOUBLE) {
+    auto extf = extf_tensor.matrix<double> ();
+    for (int ii = 0; ii < nframes; ++ii){
+      for (int jj = 0; jj < extf.size(); ++jj){
+        extf(ii,jj) = dextf[jj];
+      }
+    }
+  } else {
+    auto extf = extf_tensor.matrix<int> ();
+    for (int ii = 0; ii < nframes; ++ii){
+      for (int jj = 0; jj < extf.size(); ++jj){
+        extf(ii,jj) = dextf[jj];
+      }
     }
   }
   // append extf to input tensor
