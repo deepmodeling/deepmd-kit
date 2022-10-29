@@ -86,8 +86,8 @@ class EnergyModelTest
   double hh = 1e-5;
   double level = 1e-6;
 #else 
-  double hh = 1e-1;
-  double level = 2; // expected?
+  double hh = 1e-2;
+  double level = 1e-2; // expected?
 #endif
 public:
   virtual void compute (
@@ -161,7 +161,11 @@ public:
       }
     }
     for(int ii = 0; ii < 9; ++ii){
+#ifdef HIGH_PREC
       EXPECT_LT(fabs(num_virial[ii] - virial[ii]), level);
+#else
+      EXPECT_LT(fabs(num_virial[ii] - virial[ii]), 2); // expected?
+#endif
     }
   }
 };

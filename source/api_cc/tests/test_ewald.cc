@@ -50,7 +50,9 @@ public:
 	const std::vector<VALUETYPE> & box) {
       deepmd::Region<VALUETYPE> region;
       init_region_cpu(region, &box[0]);
-      ewald_recp((VALUETYPE &)ener, force, virial, coord, charge, region, eparam);
+      VALUETYPE ener_;
+      ewald_recp(ener_, force, virial, coord, charge, region, eparam);
+      ener = ener_;
     }
   };
   MyModel model(charge);
