@@ -245,7 +245,7 @@ compute (std::vector<VALUETYPE> &		dfcorr_,
       }
     }
   } else {
-    auto extf = extf_tensor.matrix<int> ();
+    auto extf = extf_tensor.matrix<float> ();
     for (int ii = 0; ii < nframes; ++ii){
       for (int jj = 0; jj < extf.size(); ++jj){
         extf(ii,jj) = dextf[jj];
