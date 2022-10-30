@@ -32,7 +32,7 @@ struct NeighborListData
 public:
   void copy_from_nlist(const InputNlist & inlist);
   void shuffle(const std::vector<int> & fwd_map);
-  template<typename VALUETYPE> void shuffle(const deepmd::AtomMap<VALUETYPE> & map);
+  void shuffle(const deepmd::AtomMap & map);
   void shuffle_exclude_empty(const std::vector<int> & fwd_map);
   void make_inlist(InputNlist & inlist);
 };
@@ -198,10 +198,10 @@ session_input_tensors (std::vector<std::pair<std::string, tensorflow::Tensor>> &
 		       const int &			ntypes,
 		       const std::vector<int> &		datype_,
 		       const std::vector<VALUETYPE> &	dbox, 
-		       const VALUETYPE &		cell_size,
+		       const double &		cell_size,
 		       const std::vector<VALUETYPE> &	fparam_,
 		       const std::vector<VALUETYPE> &	aparam_,
-		       const deepmd::AtomMap<VALUETYPE>&atommap,
+		       const deepmd::AtomMap&atommap,
 		       const std::string		scope = "");
 
 /**
@@ -228,7 +228,7 @@ session_input_tensors (std::vector<std::pair<std::string, tensorflow::Tensor>> &
 		       InputNlist &		dlist, 
 		       const std::vector<VALUETYPE> &	fparam_,
 		       const std::vector<VALUETYPE> &	aparam_,
-		       const deepmd::AtomMap<VALUETYPE>&atommap,
+		       const deepmd::AtomMap&atommap,
 		       const int			nghost,
 		       const int			ago,
 		       const std::string		scope = "");

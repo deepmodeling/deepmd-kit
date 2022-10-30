@@ -78,14 +78,14 @@ get_vector (std::vector<VT> & vec, const std::string & name) const
   session_get_vector<VT>(vec, session, name, name_scope);
 }
 
-template <typename MODELTYPE>
+template <typename MODELTYPE, typename VALUETYPE>
 void 
 DipoleChargeModifier::
 run_model (std::vector<VALUETYPE> &		dforce,
 	   std::vector<VALUETYPE> &		dvirial,
 	   Session *				session, 
 	   const std::vector<std::pair<std::string, Tensor>> & input_tensors,
-	   const AtomMap<VALUETYPE> &	atommap, 
+	   const AtomMap &	atommap, 
 	   const int				nghost)
 {
   unsigned nloc = atommap.get_type().size();
@@ -133,23 +133,44 @@ run_model (std::vector<VALUETYPE> &		dforce,
 template
 void 
 DipoleChargeModifier::
-run_model <double> (std::vector<VALUETYPE> &		dforce,
-	   std::vector<VALUETYPE> &		dvirial,
+run_model <double, double> (std::vector<double> &		dforce,
+	   std::vector<double> &		dvirial,
 	   Session *				session, 
 	   const std::vector<std::pair<std::string, Tensor>> & input_tensors,
-	   const AtomMap<VALUETYPE> &	atommap, 
+	   const AtomMap &	atommap, 
 	   const int				nghost);
 
 template
 void 
 DipoleChargeModifier::
-run_model <float> (std::vector<VALUETYPE> &		dforce,
-	   std::vector<VALUETYPE> &		dvirial,
+run_model <float, double> (std::vector<double> &		dforce,
+	   std::vector<double> &		dvirial,
 	   Session *				session, 
 	   const std::vector<std::pair<std::string, Tensor>> & input_tensors,
-	   const AtomMap<VALUETYPE> &	atommap, 
+	   const AtomMap &	atommap, 
 	   const int				nghost);
 
+template
+void 
+DipoleChargeModifier::
+run_model <double, float> (std::vector<float> &		dforce,
+	   std::vector<float> &		dvirial,
+	   Session *				session, 
+	   const std::vector<std::pair<std::string, Tensor>> & input_tensors,
+	   const AtomMap &	atommap, 
+	   const int				nghost);
+
+template
+void 
+DipoleChargeModifier::
+run_model <float, float> (std::vector<float> &		dforce,
+	   std::vector<float> &		dvirial,
+	   Session *				session, 
+	   const std::vector<std::pair<std::string, Tensor>> & input_tensors,
+	   const AtomMap &	atommap, 
+	   const int				nghost);
+
+template <typename VALUETYPE>
 void
 DipoleChargeModifier::
 compute (std::vector<VALUETYPE> &		dfcorr_,
@@ -193,7 +214,7 @@ compute (std::vector<VALUETYPE> &		dfcorr_,
   nlist_data.copy_from_nlist(lmp_list);
   nlist_data.shuffle_exclude_empty(real_fwd_map);  
   // sort atoms
-  AtomMap<VALUETYPE> atommap (datype_real.begin(), datype_real.begin() + nloc_real);
+  AtomMap atommap (datype_real.begin(), datype_real.begin() + nloc_real);
   assert (nloc_real == atommap.get_type().size());
   const std::vector<int> & sort_fwd_map(atommap.get_fwd_map());
   const std::vector<int> & sort_bkw_map(atommap.get_bkw_map());
@@ -264,7 +285,7 @@ compute (std::vector<VALUETYPE> &		dfcorr_,
   assert(dfcorr.size() == nall_real * 3);
   // back map force
   std::vector<VALUETYPE> dfcorr_1 = dfcorr;
-  atommap.backward (dfcorr_1.begin(), dfcorr.begin(), 3);
+  atommap.backward<VALUETYPE> (dfcorr_1.begin(), dfcorr.begin(), 3);
   assert(dfcorr_1.size() == nall_real * 3);
   // resize to all and clear
   std::vector<VALUETYPE> dfcorr_2(nall*3);
@@ -296,3 +317,29 @@ compute (std::vector<VALUETYPE> &		dfcorr_,
   }
   dvcorr_ = dvcorr;
 }
+
+template
+void
+DipoleChargeModifier::
+compute <double> (std::vector<double> &		dfcorr_,
+	 std::vector<double> &		dvcorr_,
+	 const std::vector<double> &		dcoord_,
+	 const std::vector<int> &		datype_,
+	 const std::vector<double> &		dbox, 
+	 const std::vector<std::pair<int,int>>&	pairs,
+	 const std::vector<double> &		delef_, 
+	 const int				nghost,
+	 const InputNlist &		lmp_list);
+
+template
+void
+DipoleChargeModifier::
+compute <float> (std::vector<float> &		dfcorr_,
+	 std::vector<float> &		dvcorr_,
+	 const std::vector<float> &		dcoord_,
+	 const std::vector<int> &		datype_,
+	 const std::vector<float> &		dbox, 
+	 const std::vector<std::pair<int,int>>&	pairs,
+	 const std::vector<float> &		delef_, 
+	 const int				nghost,
+	 const InputNlist &		lmp_list);

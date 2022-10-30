@@ -25,7 +25,7 @@ public:
 		const std::vector<VALUETYPE> &	delef_, 
 		const int			nghost,
 		const InputNlist &	lmp_list);
-  template<typename VALUETYPE> VALUETYPE cutoff () const {assert(inited); return (VALUETYPE)rcut;};
+  double cutoff () const {assert(inited); return rcut;};
   int numb_types () const {assert(inited); return ntypes;};
   std::vector<int> sel_types () const {assert(inited); return sel_type;};
 private:
@@ -46,7 +46,7 @@ private:
 		  std::vector<VALUETYPE> &		dvirial,
 		  tensorflow::Session *			session,
 		  const std::vector<std::pair<std::string, tensorflow::Tensor>> & input_tensors,
-		  const AtomMap<VALUETYPE> &	atommap,
+		  const AtomMap &	atommap,
 		  const int			nghost);
 };
 }

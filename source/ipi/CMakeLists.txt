@@ -13,7 +13,7 @@ target_include_directories(${libipiname} PUBLIC ${MD_INCLUDE_PATH})
 set(DRIVER_SOURCE_FILES driver.cc)
 add_executable(${ipiname} ${DRIVER_SOURCE_FILES})
 # link: libdeepmd_cc
-target_link_libraries(${ipiname} PRIVATE ${libipiname} ${LIB_DEEPMD_CC}${variant_name})
+target_link_libraries(${ipiname} PRIVATE ${libipiname} ${LIB_DEEPMD_CC})
 target_include_directories(${ipiname} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/)
 
 if (APPLE)
