@@ -48,7 +48,12 @@ init (const std::string & model,
   // for (int ii = 0; ii < nnodes; ++ii){
   //   cout << ii << " \t " << graph_def.node(ii).name() << endl;
   // }
-  rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
+  dtype = session_get_dtype(session, "descrpt_attr/rcut");
+  if (dtype == tensorflow::DT_DOUBLE) {
+    rcut = get_scalar<double>("descrpt_attr/rcut");
+  } else {
+    rcut = get_scalar<float>("descrpt_attr/rcut");
+  }
   cell_size = rcut;
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
   model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
@@ -73,6 +78,7 @@ get_vector (std::vector<VT> & vec, const std::string & name) const
   session_get_vector<VT>(vec, session, name, name_scope);
 }
 
+template <typename MODELTYPE>
 void 
 DipoleChargeModifier::
 run_model (std::vector<VALUETYPE> &		dforce,
@@ -111,8 +117,8 @@ run_model (std::vector<VALUETYPE> &		dforce,
   assert (output_av.dim_size(0) == nframes), "nframes should match";
   assert (output_av.dim_size(1) == natoms * 9), "dof of atom virial should be 9 * natoms";  
 
-  auto of = output_f.flat<VALUETYPE> ();
-  auto ov = output_v.flat<VALUETYPE> ();
+  auto of = output_f.flat<MODELTYPE> ();
+  auto ov = output_v.flat<MODELTYPE> ();
 
   dforce.resize(nall*3);
   dvirial.resize(9);
@@ -124,7 +130,25 @@ run_model (std::vector<VALUETYPE> &		dforce,
   }
 }
 
+template
+void 
+DipoleChargeModifier::
+run_model <double> (std::vector<VALUETYPE> &		dforce,
+	   std::vector<VALUETYPE> &		dvirial,
+	   Session *				session, 
+	   const std::vector<std::pair<std::string, Tensor>> & input_tensors,
+	   const AtomMap<VALUETYPE> &	atommap, 
+	   const int				nghost);
 
+template
+void 
+DipoleChargeModifier::
+run_model <float> (std::vector<VALUETYPE> &		dforce,
+	   std::vector<VALUETYPE> &		dvirial,
+	   Session *				session, 
+	   const std::vector<std::pair<std::string, Tensor>> & input_tensors,
+	   const AtomMap<VALUETYPE> &	atommap, 
+	   const int				nghost);
 
 void
 DipoleChargeModifier::
@@ -179,7 +203,12 @@ compute (std::vector<VALUETYPE> &		dfcorr_,
   nlist_data.make_inlist(nlist);
   // make input tensors
   std::vector<std::pair<std::string, Tensor>> input_tensors;
-  int ret = session_input_tensors (input_tensors, dcoord_real, ntypes, datype_real, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, nghost_real, 0, name_scope);
+  int ret;
+  if (dtype == tensorflow::DT_DOUBLE) {
+    ret = session_input_tensors<double> (input_tensors, dcoord_real, ntypes, datype_real, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, nghost_real, 0, name_scope);
+  } else {
+    ret = session_input_tensors<float> (input_tensors, dcoord_real, ntypes, datype_real, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, nghost_real, 0, name_scope);
+  }
   assert (nloc_real == ret);
   // make bond idx map
   std::vector<int > bd_idx(nall, -1);
@@ -207,22 +236,31 @@ compute (std::vector<VALUETYPE> &		dfcorr_,
   TensorShape extf_shape ;
   extf_shape.AddDim (nframes);
   extf_shape.AddDim (dextf.size());
-#ifdef HIGH_PREC
-  Tensor extf_tensor	(DT_DOUBLE, extf_shape);
-#else
-  Tensor extf_tensor	(DT_FLOAT, extf_shape);
-#endif
-  auto extf = extf_tensor.matrix<VALUETYPE> ();
-  for (int ii = 0; ii < nframes; ++ii){
-    for (int jj = 0; jj < extf.size(); ++jj){
-      extf(ii,jj) = dextf[jj];
+  Tensor extf_tensor	((tensorflow::DataType) dtype, extf_shape);
+  if (dtype == tensorflow::DT_DOUBLE) {
+    auto extf = extf_tensor.matrix<double> ();
+    for (int ii = 0; ii < nframes; ++ii){
+      for (int jj = 0; jj < extf.size(); ++jj){
+        extf(ii,jj) = dextf[jj];
+      }
+    }
+  } else {
+    auto extf = extf_tensor.matrix<float> ();
+    for (int ii = 0; ii < nframes; ++ii){
+      for (int jj = 0; jj < extf.size(); ++jj){
+        extf(ii,jj) = dextf[jj];
+      }
     }
   }
   // append extf to input tensor
   input_tensors.push_back({"t_ef", extf_tensor});  
   // run model
   std::vector<VALUETYPE> dfcorr, dvcorr;
-  run_model (dfcorr, dvcorr, session, input_tensors, atommap, nghost_real);
+  if (dtype == tensorflow::DT_DOUBLE) {
+    run_model <double> (dfcorr, dvcorr, session, input_tensors, atommap, nghost_real);
+  } else {
+    run_model <float> (dfcorr, dvcorr, session, input_tensors, atommap, nghost_real);
+  }
   assert(dfcorr.size() == nall_real * 3);
   // back map force
   std::vector<VALUETYPE> dfcorr_1 = dfcorr;

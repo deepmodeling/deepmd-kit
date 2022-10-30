@@ -164,6 +164,7 @@ private:
   tensorflow::GraphDef* graph_def;
   bool inited;
   VALUETYPE rcut;
+  int dtype;
   VALUETYPE cell_size;
   int ntypes;
   std::string model_type;
@@ -172,13 +173,13 @@ private:
   std::vector<int> sel_type;
   template<class VT> VT get_scalar(const std::string & name) const;
   template<class VT> void get_vector (std::vector<VT> & vec, const std::string & name) const;
-  void run_model (std::vector<VALUETYPE> &		d_tensor_,
+  template<typename MODELTYPE> void run_model (std::vector<VALUETYPE> &		d_tensor_,
 		  tensorflow::Session *			session, 
 		  const std::vector<std::pair<std::string, tensorflow::Tensor>> & input_tensors,
 		  const AtomMap<VALUETYPE> &		atommap, 
 		  const std::vector<int> &		sel_fwd,
 		  const int				nghost = 0);
-  void run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
+  template<typename MODELTYPE> void run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
 		  std::vector<VALUETYPE> &	dforce_,
 		  std::vector<VALUETYPE> &	dvirial_,
 		  std::vector<VALUETYPE> &	datom_tensor_,

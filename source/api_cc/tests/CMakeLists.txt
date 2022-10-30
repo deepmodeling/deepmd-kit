@@ -4,7 +4,6 @@ project(deepmd_api_test)
 if (NOT DEFINED BUILD_CPP_IF) 
   set(BUILD_CPP_IF TRUE)
 endif (NOT DEFINED BUILD_CPP_IF)
-add_definitions ("-DHIGH_PREC")
 
 enable_testing()
 add_subdirectory(${CMAKE_SOURCE_DIR}/../../cmake/coverage_config coverage_config)
@@ -81,12 +80,6 @@ set(LIB_DEEPMD_OP ${opname})
 add_subdirectory(${CMAKE_SOURCE_DIR}/../../op op)
 
 file(GLOB TEST_SRC test_*.cc)
-add_executable( runUnitTests ${TEST_SRC} )
-
-
-target_link_libraries(runUnitTests gtest gtest_main ${apiname} rt coverage_config)
-
-add_test( runUnitTests runUnitTests )
 
 find_package(GTest)
 if(NOT GTEST_LIBRARIES)
@@ -109,14 +102,26 @@ else ()
   include_directories(${GTEST_INCLUDE_DIRS})
 endif ()
 
+function(_add_apicc_test_variant variant_name prec_def)
+add_executable( runUnitTests${variant_name} ${TEST_SRC} )
+target_link_libraries(runUnitTests${variant_name} gtest gtest_main ${apiname}${variant_name} rt coverage_config)
+add_test( runUnitTests${variant_name} runUnitTests${variant_name} )
 set_target_properties(
-  runUnitTests
+  runUnitTests${variant_name}
   PROPERTIES 
   INSTALL_RPATH "$ORIGIN/../lib"
 )
 set_target_properties(
-  ${apiname}
+  ${apiname}${variant_name}
   PROPERTIES 
   INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}"
 )
-install(TARGETS runUnitTests DESTINATION bin/)
+target_compile_definitions(
+  ${apiname}${variant_name}
+  PUBLIC ${prec_def}
+)
+install(TARGETS runUnitTests${variant_name} DESTINATION bin/)
+endfunction()
+
+_add_apicc_test_variant("${HIGH_PREC_VARIANT}" "${HIGH_PREC_DEF}")
+_add_apicc_test_variant("${LOW_PREC_VARIANT}" "${LOW_PREC_DEF}")
