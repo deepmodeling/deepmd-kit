@@ -32,3 +32,4 @@ make install
 #------------------
 cd ${SCRIPT_PATH}/../api_cc/tests
 ${INSTALL_PREFIX}/bin/runUnitTests
+${INSTALL_PREFIX}/bin/runUnitTests_low

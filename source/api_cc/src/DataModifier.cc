@@ -203,13 +203,13 @@ compute (std::vector<VALUETYPE> &		dfcorr_,
   nlist_data.make_inlist(nlist);
   // make input tensors
   std::vector<std::pair<std::string, Tensor>> input_tensors;
+  int ret;
   if (dtype == tensorflow::DT_DOUBLE) {
-    int ret = session_input_tensors<double> (input_tensors, dcoord_real, ntypes, datype_real, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, nghost_real, 0, name_scope);
-    assert (nloc_real == ret);
+    ret = session_input_tensors<double> (input_tensors, dcoord_real, ntypes, datype_real, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, nghost_real, 0, name_scope);
   } else {
-    int ret = session_input_tensors<float> (input_tensors, dcoord_real, ntypes, datype_real, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, nghost_real, 0, name_scope);
-    assert (nloc_real == ret);
+    ret = session_input_tensors<float> (input_tensors, dcoord_real, ntypes, datype_real, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, nghost_real, 0, name_scope);
   }
+  assert (nloc_real == ret);
   // make bond idx map
   std::vector<int > bd_idx(nall, -1);
   for (int ii = 0; ii < pairs.size(); ++ii){
@@ -237,10 +237,19 @@ compute (std::vector<VALUETYPE> &		dfcorr_,
   extf_shape.AddDim (nframes);
   extf_shape.AddDim (dextf.size());
   Tensor extf_tensor	((tensorflow::DataType) dtype, extf_shape);
-  auto extf = extf_tensor.matrix<VALUETYPE> ();
-  for (int ii = 0; ii < nframes; ++ii){
-    for (int jj = 0; jj < extf.size(); ++jj){
-      extf(ii,jj) = dextf[jj];
+  if (dtype == tensorflow::DT_DOUBLE) {
+    auto extf = extf_tensor.matrix<double> ();
+    for (int ii = 0; ii < nframes; ++ii){
+      for (int jj = 0; jj < extf.size(); ++jj){
+        extf(ii,jj) = dextf[jj];
+      }
+    }
+  } else {
+    auto extf = extf_tensor.matrix<float> ();
+    for (int ii = 0; ii < nframes; ++ii){
+      for (int jj = 0; jj < extf.size(); ++jj){
+        extf(ii,jj) = dextf[jj];
+      }
     }
   }
   // append extf to input tensor
