@@ -133,8 +133,12 @@ class RunOptions:
             log.info(f"node list:            {self.nodelist}")
         log.info(f"running on:           {self.nodename}")
         log.info(f"computing device:     {self.my_device}")
-        env_value = os.environ.get('CUDA_VISIBLE_DEVICES', 'unset')
-        log.info(f"CUDA_VISIBLE_DEVICES: {env_value}")
+        if tf.test.is_built_with_cuda():
+            env_value = os.environ.get('CUDA_VISIBLE_DEVICES', 'unset')
+            log.info(f"CUDA_VISIBLE_DEVICES: {env_value}")
+        if hasattr(tf.test, 'is_built_with_rocm') and tf.test.is_built_with_rocm():
+            env_value = os.environ.get('HIP_VISIBLE_DEVICES', 'unset')
+            log.info(f"HIP_VISIBLE_DEVICES:  {env_value}")
         log.info(f"Count of visible GPU: {len(self.gpus or [])}")
         intra, inter = get_tf_default_nthreads()
         log.info(f"num_intra_threads:    {intra:d}")
