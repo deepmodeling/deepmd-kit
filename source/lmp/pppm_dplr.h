@@ -21,19 +21,19 @@ namespace LAMMPS_NS {
 
   class PPPMDPLR : public PPPM {
 public:
-#if LAMMPS_VERSION_NUMBER<20190201
+#if LAMMPS_VERSION_NUMBER<20181109
 // See lammps/lammps#1165
     PPPMDPLR(class LAMMPS *, int, char **);
 #else
     PPPMDPLR(class LAMMPS *);
 #endif
-    virtual ~PPPMDPLR () {};
-    void init();
+    ~PPPMDPLR () override {};
+    void init() override;
     const std::vector<double > & get_fele() const {return fele;};
 protected:
-    virtual void compute(int, int);
-    virtual void fieldforce_ik();
-    virtual void fieldforce_ad();    
+    void compute(int, int) override;
+    void fieldforce_ik() override;
+    void fieldforce_ad() override;
 private:
     std::vector<double > fele;
   };

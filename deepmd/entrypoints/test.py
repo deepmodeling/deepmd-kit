@@ -12,7 +12,7 @@ from deepmd.utils.weight_avg import weighted_average
 
 if TYPE_CHECKING:
     from deepmd.infer import DeepDipole, DeepPolar, DeepPot, DeepWFC
-    from deepmd.infer.deep_eval import DeepTensor
+    from deepmd.infer.deep_tensor import DeepTensor
 
 __all__ = ["test"]
 
@@ -204,6 +204,7 @@ def test_ener(
         data.add("aparam", dp.get_dim_aparam(), atomic=True, must=True, high_prec=False)
 
     test_data = data.get_test()
+    mixed_type = data.mixed_type
     natoms = len(test_data["type"][0])
     nframes = test_data["box"].shape[0]
     numb_test = min(nframes, numb_test)
@@ -216,7 +217,10 @@ def test_ener(
         efield = None
     if not data.pbc:
         box = None
-    atype = test_data["type"][0]
+    if mixed_type:
+        atype = test_data["type"][:numb_test].reshape([numb_test, -1])
+    else:
+        atype = test_data["type"][0]
     if dp.get_dim_fparam() > 0:
         fparam = test_data["fparam"][:numb_test]
     else:
@@ -234,6 +238,7 @@ def test_ener(
         aparam=aparam,
         atomic=has_atom_ener,
         efield=efield,
+        mixed_type=mixed_type
     )
     energy = ret[0]
     force = ret[1]
@@ -262,8 +267,9 @@ def test_ener(
     log.info(f"Energy RMSE        : {rmse_e:e} eV")
     log.info(f"Energy RMSE/Natoms : {rmse_ea:e} eV")
     log.info(f"Force  RMSE        : {rmse_f:e} eV/A")
-    log.info(f"Virial RMSE        : {rmse_v:e} eV")
-    log.info(f"Virial RMSE/Natoms : {rmse_va:e} eV")
+    if data.pbc:
+        log.info(f"Virial RMSE        : {rmse_v:e} eV")
+        log.info(f"Virial RMSE/Natoms : {rmse_va:e} eV")
     if has_atom_ener:
         log.info(f"Atomic ener RMSE   : {rmse_ae:e} eV")
 
@@ -282,6 +288,12 @@ def test_ener(
             pe,
             header="%s: data_e pred_e" % system,
             append=append_detail,
+        )
+        pe_atom = pe / natoms
+        save_txt_file(
+            detail_path.with_suffix(".e_peratom.out"),
+            pe_atom,
+            header = "%s: data_e pred_e" % system,
         )
         pf = np.concatenate(
             (
@@ -311,6 +323,15 @@ def test_ener(
             "pred_vyy pred_vyz pred_vzx pred_vzy pred_vzz",
             append=append_detail,
         )
+        pv_atom = pv / natoms
+        save_txt_file(
+            detail_path.with_suffix(".v_peratom.out"),
+            pv_atom,
+            header=f"{system}: data_vxx data_vxy data_vxz data_vyx data_vyy "
+            "data_vyz data_vzx data_vzy data_vzz pred_vxx pred_vxy pred_vxz pred_vyx "
+            "pred_vyy pred_vyz pred_vzx pred_vzy pred_vzz",
+            append=append_detail,
+        )        
     return {
         "rmse_ea" : (rmse_ea, energy.size),
         "rmse_f" : (rmse_f, force.size),

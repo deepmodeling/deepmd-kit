@@ -157,11 +157,11 @@ deepmd::pair_tab_cpu(
   }
   for (int ii = 0; ii < nall; ++ii){
     int i_idx = ii;
-    force[i_idx * 3 + 0] = 0;
-    force[i_idx * 3 + 1] = 0;
-    force[i_idx * 3 + 2] = 0;
+    force[i_idx * 3 + 0] = (FPTYPE)0.;
+    force[i_idx * 3 + 1] = (FPTYPE)0.;
+    force[i_idx * 3 + 2] = (FPTYPE)0.;
     for (int dd = 0; dd < 9; ++dd) {
-      virial[i_idx * 9 + dd] = 0;
+      virial[i_idx * 9 + dd] = (FPTYPE)0.;
     }
   }
   // compute force of a frame

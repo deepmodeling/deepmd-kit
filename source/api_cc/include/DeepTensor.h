@@ -14,11 +14,12 @@ public:
   * @brief Deep Tensor constructor without initialization.
   **/
   DeepTensor();
+  ~DeepTensor();
   /**
   * @brief Deep Tensor constructor with initialization..
   * @param[in] model The name of the frozen model file.
   * @param[in] gpu_rank The GPU rank. Default is 0.
-  * @param[in] file_content The content of the model file. If it is not empty, DP will read from the string instead of the file.
+  * @param[in] name_scope Name scopes of operations.
   **/
   DeepTensor(const std::string & model, 
 	     const int & gpu_rank = 0, 
@@ -27,7 +28,7 @@ public:
   * @brief Initialize the Deep Tensor.
   * @param[in] model The name of the frozen model file.
   * @param[in] gpu_rank The GPU rank. Default is 0.
-  * @param[in] file_content The content of the model file. If it is not empty, DP will read from the string instead of the file.
+  * @param[in] name_scope Name scopes of operations.
   **/
   void init (const std::string & model, 
 	     const int & gpu_rank = 0, 
@@ -160,9 +161,10 @@ private:
   tensorflow::Session* session;
   std::string name_scope;
   int num_intra_nthreads, num_inter_nthreads;
-  tensorflow::GraphDef graph_def;
+  tensorflow::GraphDef* graph_def;
   bool inited;
   VALUETYPE rcut;
+  int dtype;
   VALUETYPE cell_size;
   int ntypes;
   std::string model_type;
@@ -171,13 +173,13 @@ private:
   std::vector<int> sel_type;
   template<class VT> VT get_scalar(const std::string & name) const;
   template<class VT> void get_vector (std::vector<VT> & vec, const std::string & name) const;
-  void run_model (std::vector<VALUETYPE> &		d_tensor_,
+  template<typename MODELTYPE> void run_model (std::vector<VALUETYPE> &		d_tensor_,
 		  tensorflow::Session *			session, 
 		  const std::vector<std::pair<std::string, tensorflow::Tensor>> & input_tensors,
 		  const AtomMap<VALUETYPE> &		atommap, 
 		  const std::vector<int> &		sel_fwd,
 		  const int				nghost = 0);
-  void run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
+  template<typename MODELTYPE> void run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
 		  std::vector<VALUETYPE> &	dforce_,
 		  std::vector<VALUETYPE> &	dvirial_,
 		  std::vector<VALUETYPE> &	datom_tensor_,

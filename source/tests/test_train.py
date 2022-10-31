@@ -29,6 +29,7 @@ class TestTrain (unittest.TestCase) :
         sel_mock.return_value = [10,20]
         jdata = {}
         descriptor = {
+            'type': 'se_e2_a',
             'rcut': 6,
             'sel': "auto"
         }
@@ -36,6 +37,7 @@ class TestTrain (unittest.TestCase) :
         # self.assertEqual(descriptor['sel'], [11,22])
         self.assertEqual(descriptor['sel'], [12,24])
         descriptor = {
+            'type': 'se_e2_a',
             'rcut': 6,
             'sel': "auto:1.5"
         }
@@ -53,10 +55,12 @@ class TestTrain (unittest.TestCase) :
                     'type' : 'hybrid',
                     'list' : [
                         {
+                            'type': 'se_e2_a',
                             'rcut': 6,
                             'sel': "auto"                            
                         },
                         {
+                            'type': 'se_e2_a',
                             'rcut': 6,
                             'sel': "auto:1.5"
                         }
@@ -70,10 +74,12 @@ class TestTrain (unittest.TestCase) :
                     'type' : 'hybrid',
                     'list' : [
                         {
+                            'type': 'se_e2_a',
                             'rcut': 6,
                             'sel': [12,24] 
                         },
                         {
+                            'type': 'se_e2_a',
                             'rcut': 6,
                             'sel': [16,32]
                         }
@@ -109,7 +115,98 @@ class TestTrain (unittest.TestCase) :
         jdata = update_sel(jdata)
         self.assertEqual(jdata, expected_out)
 
-    
+    @patch("deepmd.entrypoints.train.get_sel")
+    def test_update_sel_atten_auto(self, sel_mock):
+        sel_mock.return_value = [25]
+        jdata = {
+            'model' : {
+                'descriptor': {
+                    'type' : 'se_atten',
+                    'sel' : "auto",
+                    'rcut': 6,
+                }
+            }
+        }
+        expected_out = {
+            'model' : {
+                'descriptor': {
+                    'type' : 'se_atten',
+                    'sel' : 28,
+                    'rcut': 6,
+                }
+            }
+        }
+        jdata = update_sel(jdata)
+        self.assertEqual(jdata, expected_out)
+
+    @patch("deepmd.entrypoints.train.get_sel")
+    def test_update_sel_atten_int(self, sel_mock):
+        sel_mock.return_value = [25]
+        jdata = {
+            'model' : {
+                'descriptor': {
+                    'type' : 'se_atten',
+                    'sel' : 30,
+                    'rcut': 6,
+                }
+            }
+        }
+        expected_out = {
+            'model' : {
+                'descriptor': {
+                    'type' : 'se_atten',
+                    'sel' : 30,
+                    'rcut': 6,
+                }
+            }
+        }
+        jdata = update_sel(jdata)
+        self.assertEqual(jdata, expected_out)
+
+    @patch("deepmd.entrypoints.train.get_sel")
+    def test_update_sel_atten_list(self, sel_mock):
+        sel_mock.return_value = [25]
+        jdata = {
+            'model' : {
+                'descriptor': {
+                    'type' : 'se_atten',
+                    'sel' : 30,
+                    'rcut': 6,
+                }
+            }
+        }
+        expected_out = {
+            'model' : {
+                'descriptor': {
+                    'type' : 'se_atten',
+                    'sel' : 30,
+                    'rcut': 6,
+                }
+            }
+        }
+        jdata = update_sel(jdata)
+        self.assertEqual(jdata, expected_out)
+
+    def test_skip_loc_frame(self):
+        jdata = {
+            'model' : {
+                'descriptor': {
+                    'type' : 'loc_frame',
+                    'rcut': 6,
+                }
+            }
+        }
+        expected_out = {
+            'model' : {
+                'descriptor': {
+                    'type' : 'loc_frame',
+                    'rcut': 6,
+                }
+            }
+        }
+        jdata = update_sel(jdata)
+        self.assertEqual(jdata, expected_out)
+
     def test_wrap_up_4(self):
         self.assertEqual(wrap_up_4(12), 3 * 4)
         self.assertEqual(wrap_up_4(13), 4 * 4)

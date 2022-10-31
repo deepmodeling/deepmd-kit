@@ -10,6 +10,7 @@ import logging
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.utils import random as dp_random
+from deepmd.utils.path import DPPath
 
 log = logging.getLogger(__name__)
 
@@ -44,22 +45,39 @@ class DeepmdData() :
         """
         Constructor
         """
-        self.dirs = glob.glob (os.path.join(sys_path, set_prefix + ".*"))
+        root = DPPath(sys_path)
+        self.dirs = root.glob(set_prefix + ".*")
         self.dirs.sort()
+        self.mixed_type = self._check_mode(self.dirs[0])  # mixed_type format only has one set
         # load atom type
-        self.atom_type = self._load_type(sys_path)
+        self.atom_type = self._load_type(root)
         self.natoms = len(self.atom_type)
+        if self.mixed_type:
+            # nframes x natoms
+            self.atom_type_mix = self._load_type_mix(self.dirs[0])
         # load atom type map
-        self.type_map = self._load_type_map(sys_path)
+        self.type_map = self._load_type_map(root)
         if self.type_map is not None:
             assert(len(self.type_map) >= max(self.atom_type)+1)
         # check pbc
-        self.pbc = self._check_pbc(sys_path)
+        self.pbc = self._check_pbc(root)
         # enforce type_map if necessary
         if type_map is not None and self.type_map is not None:
-            atom_type_ = [type_map.index(self.type_map[ii]) for ii in self.atom_type]
-            self.atom_type = np.array(atom_type_, dtype = np.int32)
+            if not self.mixed_type:
+                atom_type_ = [type_map.index(self.type_map[ii]) for ii in self.atom_type]
+                self.atom_type = np.array(atom_type_, dtype = np.int32)
+            else:
+                sorter = np.argsort(type_map)
+                type_idx_map = sorter[np.searchsorted(type_map, self.type_map, sorter=sorter)]
+                try:
+                    atom_type_mix_ = np.array(type_idx_map)[self.atom_type_mix].astype(np.int32)
+                except RuntimeError as e:
+                    raise RuntimeError("some types in 'real_atom_types.npy' of sys {} are not contained in {} types!"
+                                       .format(self.dirs[0], self.get_ntypes())) from e
+                self.atom_type_mix = atom_type_mix_
             self.type_map = type_map
+        if type_map is None and self.type_map is None and self.mixed_type:
+            raise RuntimeError('mixed_type format must have type_map!')
         # make idx map
         self.idx_map = self._make_idx_map(self.atom_type)
         # train dirs
@@ -90,7 +108,8 @@ class DeepmdData() :
             must : bool = False, 
             high_prec : bool = False,
             type_sel : List[int] = None,
-            repeat : int = 1
+            repeat : int = 1,
+            default: float=0.,
     ) :
         """
         Add a data item that to be loaded
@@ -114,6 +133,8 @@ class DeepmdData() :
                 Select certain type of atoms
         repeat
                 The data will be repeated `repeat` times.
+        default : float, default=0.
+                default value of data
         """
         self.data_dict[key] = {'ndof': ndof, 
                                'atomic': atomic,
@@ -122,6 +143,7 @@ class DeepmdData() :
                                'type_sel': type_sel,
                                'repeat': repeat,
                                'reduce': None,
+                               'default': default,
         }
         return self
 
@@ -167,9 +189,9 @@ class DeepmdData() :
         """
         for ii in self.train_dirs :
             if self.data_dict['coord']['high_prec'] :
-                tmpe = np.load(os.path.join(ii, "coord.npy")).astype(GLOBAL_ENER_FLOAT_PRECISION)
+                tmpe = (ii / "coord.npy").load_numpy().astype(GLOBAL_ENER_FLOAT_PRECISION)
             else:
-                tmpe = np.load(os.path.join(ii, "coord.npy")).astype(GLOBAL_NP_FLOAT_PRECISION)
+                tmpe = (ii / "coord.npy").load_numpy().astype(GLOBAL_NP_FLOAT_PRECISION)
             if tmpe.ndim == 1:
                 tmpe = tmpe.reshape([1,-1])            
             if tmpe.shape[0] < batch_size :
@@ -181,9 +203,9 @@ class DeepmdData() :
         Check if the system can get a test dataset with `test_size` frames.
         """
         if self.data_dict['coord']['high_prec'] :
-            tmpe = np.load(os.path.join(self.test_dir, "coord.npy")).astype(GLOBAL_ENER_FLOAT_PRECISION)
+            tmpe = (self.test_dir / "coord.npy").load_numpy().astype(GLOBAL_ENER_FLOAT_PRECISION)
         else:
-            tmpe = np.load(os.path.join(self.test_dir, "coord.npy")).astype(GLOBAL_NP_FLOAT_PRECISION)            
+            tmpe = (self.test_dir / "coord.npy").load_numpy().astype(GLOBAL_NP_FLOAT_PRECISION)            
         if tmpe.ndim == 1:
             tmpe = tmpe.reshape([1,-1])            
         if tmpe.shape[0] < test_size :
@@ -377,7 +399,7 @@ class DeepmdData() :
         return new_data
 
     def _load_batch_set (self,
-                         set_name) :
+                         set_name: DPPath) :
         self.batch_set = self._load_set(set_name)
         self.batch_set, _ = self._shuffle_data(self.batch_set)
         self.reset_get_batch()
@@ -386,7 +408,7 @@ class DeepmdData() :
         self.iterator = 0
 
     def _load_test_set (self,
-                       set_name, 
+                       set_name: DPPath, 
                        shuffle_test) :
         self.test_set = self._load_set(set_name)        
         if shuffle_test :
@@ -402,27 +424,27 @@ class DeepmdData() :
             if type(data[kk]) == np.ndarray and \
                len(data[kk].shape) == 2 and \
                data[kk].shape[0] == nframes and \
-               not('find_' in kk) and \
-               'type' != kk:
+               not('find_' in kk):
                 ret[kk] = data[kk][idx]
             else :
                 ret[kk] = data[kk]
         return ret, idx
 
-    def _load_set(self, set_name) :
+    def _load_set(self, set_name: DPPath) :
         # get nframes
-        path = os.path.join(set_name, "coord.npy")
+        if not isinstance(set_name, DPPath):
+            set_name = DPPath(set_name)
+        path = set_name / "coord.npy"
         if self.data_dict['coord']['high_prec'] :
-            coord = np.load(path).astype(GLOBAL_ENER_FLOAT_PRECISION)
+            coord = path.load_numpy().astype(GLOBAL_ENER_FLOAT_PRECISION)
         else:
-            coord = np.load(path).astype(GLOBAL_NP_FLOAT_PRECISION)            
+            coord = path.load_numpy().astype(GLOBAL_NP_FLOAT_PRECISION)            
         if coord.ndim == 1:
             coord = coord.reshape([1,-1])
         nframes = coord.shape[0]
         assert(coord.shape[1] == self.data_dict['coord']['ndof'] * self.natoms)
         # load keys
         data = {}
-        data['type'] = np.tile (self.atom_type[self.idx_map], (nframes, 1))
         for kk in self.data_dict.keys():
             if self.data_dict[kk]['reduce'] is None :
                 data['find_'+kk], data[kk] \
@@ -434,7 +456,9 @@ class DeepmdData() :
                                       high_prec = self.data_dict[kk]['high_prec'],
                                       must = self.data_dict[kk]['must'], 
                                       type_sel = self.data_dict[kk]['type_sel'],
-                                      repeat = self.data_dict[kk]['repeat'])
+                                      repeat = self.data_dict[kk]['repeat'],
+                                      default=self.data_dict[kk]['default'],
+                                      )
         for kk in self.data_dict.keys():
             if self.data_dict[kk]['reduce'] is not None :
                 k_in = self.data_dict[kk]['reduce']
@@ -443,10 +467,25 @@ class DeepmdData() :
                 tmp_in = data[k_in].astype(GLOBAL_ENER_FLOAT_PRECISION)
                 data[kk] = np.sum(np.reshape(tmp_in, [nframes, self.natoms, ndof]), axis = 1)
 
+        if self.mixed_type:
+            real_type = self.atom_type_mix.reshape([nframes, self.natoms])
+            data['type'] = real_type
+            natoms = data['type'].shape[1]
+            # nframes x ntypes
+            atom_type_nums = np.array([(real_type == i).sum(axis=-1) for i in range(self.get_ntypes())],
+                                      dtype=np.int32).T
+            assert (atom_type_nums.sum(axis=-1) == natoms).all(), \
+                "some types in 'real_atom_types.npy' of sys {} are not contained in {} types!" \
+                .format(self.dirs[0], self.get_ntypes())
+            data['real_natoms_vec'] = np.concatenate((np.tile(np.array([natoms, natoms], dtype=np.int32), (nframes, 1)),
+                                                      atom_type_nums), axis=-1)
+        else:
+            data['type'] = np.tile(self.atom_type[self.idx_map], (nframes, 1))
+
         return data
 
 
-    def _load_data(self, set_name, key, nframes, ndof_, atomic = False, must = True, repeat = 1, high_prec = False, type_sel = None):
+    def _load_data(self, set_name, key, nframes, ndof_, atomic = False, must = True, repeat = 1, high_prec = False, type_sel = None, default: float=0.):
         if atomic:
             natoms = self.natoms
             idx_map = self.idx_map
@@ -459,12 +498,12 @@ class DeepmdData() :
             ndof = ndof_ * natoms
         else:
             ndof = ndof_
-        path = os.path.join(set_name, key+".npy")
-        if os.path.isfile (path) :
+        path = set_name / (key+".npy")
+        if path.is_file() :
             if high_prec :
-                data = np.load(path).astype(GLOBAL_ENER_FLOAT_PRECISION)
+                data = path.load_numpy().astype(GLOBAL_ENER_FLOAT_PRECISION)
             else:
-                data = np.load(path).astype(GLOBAL_NP_FLOAT_PRECISION)
+                data = path.load_numpy().astype(GLOBAL_NP_FLOAT_PRECISION)
             try:    # YWolfeee: deal with data shape error
                 if atomic :
                     data = data.reshape([nframes, natoms, -1])
@@ -483,17 +522,22 @@ class DeepmdData() :
             raise RuntimeError("%s not found!" % path)
         else:
             if high_prec :
-                data = np.zeros([nframes,ndof]).astype(GLOBAL_ENER_FLOAT_PRECISION)                
+                data = np.full([nframes, ndof], default, dtype=GLOBAL_ENER_FLOAT_PRECISION)                
             else :
-                data = np.zeros([nframes,ndof]).astype(GLOBAL_NP_FLOAT_PRECISION)
+                data = np.full([nframes, ndof], default, dtype=GLOBAL_NP_FLOAT_PRECISION)
             if repeat != 1:
                 data = np.repeat(data, repeat).reshape([nframes, -1])
             return np.float32(0.0), data
 
         
-    def _load_type (self, sys_path) :
-        atom_type = np.loadtxt (os.path.join(sys_path, "type.raw"), dtype=np.int32, ndmin=1)
+    def _load_type (self, sys_path: DPPath) :
+        atom_type = (sys_path / "type.raw").load_txt(dtype=np.int32, ndmin=1)
         return atom_type
+
+    def _load_type_mix(self, set_name: DPPath):
+        type_path = set_name / "real_atom_types.npy"
+        real_type = type_path.load_numpy().astype(np.int32).reshape([-1, self.natoms])
+        return real_type
 
     def _make_idx_map(self, atom_type):
         natoms = atom_type.shape[0]
@@ -501,19 +545,21 @@ class DeepmdData() :
         idx_map = np.lexsort ((idx, atom_type))
         return idx_map
 
-    def _load_type_map(self, sys_path) :
-        fname = os.path.join(sys_path, 'type_map.raw')
-        if os.path.isfile(fname) :            
-            with open(os.path.join(sys_path, 'type_map.raw')) as fp:
-                return fp.read().split()                
+    def _load_type_map(self, sys_path: DPPath) :
+        fname = sys_path / 'type_map.raw'
+        if fname.is_file() :            
+            return fname.load_txt(dtype=str, ndmin=1).tolist()
         else :
             return None
 
-    def _check_pbc(self, sys_path):
+    def _check_pbc(self, sys_path: DPPath):
         pbc = True
-        if os.path.isfile(os.path.join(sys_path, 'nopbc')) :
+        if (sys_path / 'nopbc').is_file() :
             pbc = False
         return pbc
+
+    def _check_mode(self, set_path: DPPath):
+        return (set_path / 'real_atom_types.npy').is_file()
 
 
 class DataSets (object):

@@ -54,7 +54,7 @@ class DP(Calculator):
     """
 
     name = "DP"
-    implemented_properties = ["energy", "forces", "virial", "stress"]
+    implemented_properties = ["energy", "free_energy", "forces", "virial", "stress"]
 
     def __init__(
         self,
@@ -102,6 +102,8 @@ class DP(Calculator):
         atype = [self.type_dict[k] for k in symbols]
         e, f, v = self.dp.eval(coords=coord, cells=cell, atom_types=atype)
         self.results['energy'] = e[0][0]
+        # see https://gitlab.com/ase/ase/-/merge_requests/2485
+        self.results['free_energy'] = e[0][0]
         self.results['forces'] = f[0]
         self.results['virial'] = v[0].reshape(3, 3)
 

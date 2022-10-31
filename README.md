@@ -2,6 +2,7 @@
 ========
 [![GitHub release](https://img.shields.io/github/release/deepmodeling/deepmd-kit.svg?maxAge=86400)](https://github.com/deepmodeling/deepmd-kit/releases)
 [![doi:10.1016/j.cpc.2018.03.016](https://img.shields.io/badge/DOI-10.1016%2Fj.cpc.2018.03.016-blue)](https://doi.org/10.1016/j.cpc.2020.107206)
+![Citations](https://citations.njzjz.win/10.1016/j.cpc.2018.03.016)
 [![offline packages](https://img.shields.io/github/downloads/deepmodeling/deepmd-kit/total?label=offline%20packages)](https://github.com/deepmodeling/deepmd-kit/releases)
 [![conda install](https://img.shields.io/badge/downloads-9k%20total-green.svg?style=round-square&label=conda%20install)](https://anaconda.org/deepmodeling/deepmd-kit)
 [![pip install](https://img.shields.io/pypi/dm/deepmd-kit?label=pip%20install)](https://pypi.org/project/deepmd-kit)
@@ -60,7 +61,7 @@ Please follow our [GitHub](https://github.com/deepmodeling/deepmd-kit) webpage t
 
 DeePMD-kit offers multiple installation methods. It is recommend using easily methods like [offline packages](doc/install/easy-install.md#offline-packages), [conda](doc/install/easy-install.md#with-conda) and [docker](doc/install/easy-install.md#with-docker). 
 
-One may manually install DeePMD-kit by following the instuctions on [installing the Python interface](doc/install/install-from-source.md#install-the-python-interface) and [installing the C++ interface](doc/install/install-from-source.md#install-the-c-interface). The C++ interface is necessary when using DeePMD-kit with LAMMPS and i-PI.
+One may manually install DeePMD-kit by following the instuctions on [installing the Python interface](doc/install/install-from-source.md#install-the-python-interface) and [installing the C++ interface](doc/install/install-from-source.md#install-the-c-interface). The C++ interface is necessary when using DeePMD-kit with LAMMPS, i-PI or GROMACS.
 
 
 # Use DeePMD-kit
@@ -71,7 +72,7 @@ A quick-start on using DeePMD-kit can be found as follows:
 - [Training a model](doc/train/training.md)
 - [Freeze a model](doc/freeze/freeze.md)
 - [Test a model](doc/test/test.md)
-- [Running MD with LAMMPS](doc/third-party/lammps.md)
+- [Run MD with LAMMPS](doc/third-party/lammps.md)
 
 A full [document](doc/train/train-input-auto.rst) on options in the training input script is available.
 
@@ -82,19 +83,25 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [Install from source code](doc/install/install-from-source.md)
     - [Install LAMMPS](doc/install/install-lammps.md)
     - [Install i-PI](doc/install/install-ipi.md)
+    - [Install GROMACS](doc/install/install-gromacs.md)
     - [Building conda packages](doc/install/build-conda.md)
 - [Data](doc/data/index.md)
-    - [Data conversion](doc/data/data-conv.md)
+    - [System](doc/data/system.md)
+    - [Formats of a system](doc/data/data-conv.md)
     - [Prepare data with dpdata](doc/data/dpdata.md)
 - [Model](doc/model/index.md)
     - [Overall](doc/model/overall.md)
     - [Descriptor `"se_e2_a"`](doc/model/train-se-e2-a.md)
     - [Descriptor `"se_e2_r"`](doc/model/train-se-e2-r.md)
     - [Descriptor `"se_e3"`](doc/model/train-se-e3.md)
+    - [Descriptor `"se_atten"`](doc/model/train-se-atten.md)
     - [Descriptor `"hybrid"`](doc/model/train-hybrid.md)
+    - [Descriptor `sel`](doc/model/sel.md)
     - [Fit energy](doc/model/train-energy.md)
     - [Fit `tensor` like `Dipole` and `Polarizability`](doc/model/train-fitting-tensor.md)
     - [Train a Deep Potential model using `type embedding` approach](doc/model/train-se-e2-a-tebd.md)
+    - [Deep potential long-range](doc/model/dplr.md)
+    - [Deep Potential - Range Correction (DPRc)](doc/model/dprc.md)
 - [Training](doc/train/index.md)
     - [Training a model](doc/train/training.md)
     - [Advanced options](doc/train/training-advanced.md)
@@ -113,39 +120,36 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [C++ interface](doc/inference/cxx.md)
 - [Integrate with third-party packages](doc/third-party/index.rst)
     - [Use deep potential with ASE](doc/third-party/ase.md)
-    - [Running MD with LAMMPS](doc/third-party/lammps.md)
+    - [Run MD with LAMMPS](doc/third-party/lammps.md)
     - [LAMMPS commands](doc/third-party/lammps-command.md)
     - [Run path-integral MD with i-PI](doc/third-party/ipi.md)
-
+    - [Run MD with GROMACS](doc/third-party/gromacs.md)
+    - [Interfaces out of DeePMD-kit](doc/third-party/out-of-deepmd-kit.md)
+- [Use NVNMD](doc/nvnmd/index.md)
 
 # Code structure
+
 The code is organized as follows:
 
 * `data/raw`: tools manipulating the raw data files.
-
 * `examples`: examples.
-
 * `deepmd`: DeePMD-kit python modules.
-
 * `source/api_cc`: source code of DeePMD-kit C++ API.
-
 * `source/ipi`: source code of i-PI client.
-
 * `source/lib`: source code of DeePMD-kit library.
-
 * `source/lmp`: source code of Lammps module.
-
+* `source/gmx`: source code of Gromacs plugin.
 * `source/op`: tensorflow op implementation. working with library.
 
 
 # Troubleshooting
 
-- [Model compatibility](doc/troubleshooting/model-compatability.md)
+- [Model compatibility](doc/troubleshooting/model_compatability.md)
 - [Installation](doc/troubleshooting/installation.md)
-- [The temperature undulates violently during early stages of MD](doc/troubleshooting/md-energy-undulation.md)
-- [MD: cannot run LAMMPS after installing a new version of DeePMD-kit](doc/troubleshooting/md-version-compatibility.md)
-- [Do we need to set rcut < half boxsize?](doc/troubleshooting/howtoset-rcut.md)
-- [How to set sel?](doc/troubleshooting/howtoset-sel.md)
+- [The temperature undulates violently during early stages of MD](doc/troubleshooting/md_energy_undulation.md)
+- [MD: cannot run LAMMPS after installing a new version of DeePMD-kit](doc/troubleshooting/md_version_compatibility.md)
+- [Do we need to set rcut < half boxsize?](doc/troubleshooting/howtoset_rcut.md)
+- [How to set sel?](doc/troubleshooting/howtoset_sel.md)
 - [How to control the number of nodes used by a job?](doc/troubleshooting/howtoset_num_nodes.md)
 - [How to tune Fitting/embedding-net size?](doc/troubleshooting/howtoset_netsize.md)
 

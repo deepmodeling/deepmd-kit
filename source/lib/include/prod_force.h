@@ -10,7 +10,8 @@ void prod_force_a_cpu(
     const int * nlist, 
     const int nloc, 
     const int nall, 
-    const int nnei);
+    const int nnei,
+    const int start_index=0);
 
 template<typename FPTYPE>
 void prod_force_r_cpu(

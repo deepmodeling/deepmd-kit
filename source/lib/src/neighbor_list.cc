@@ -1,6 +1,7 @@
 #include "neighbor_list.h"
 #include "device.h"
 #include <iostream>
+#include <limits>
 // #include <iomanip> 
 
 // using namespace std;
@@ -817,6 +818,55 @@ build_nlist_cpu(
     }
   }
   return 0;
+}
+
+void 
+deepmd::
+use_nei_info_cpu(
+    int * nlist, 
+    int * ntype,
+    bool * nmask,
+    const int * type,
+    const int * nlist_map, 
+    const int nloc, 
+    const int nnei,
+    const int ntypes,
+    const bool b_nlist_map)
+{
+    if(b_nlist_map){
+    for (int ii = 0; ii < nloc; ++ii){
+      for (int jj = 0; jj < nnei; ++jj){
+        int nlist_idx = ii*nnei+jj;
+        int record = nlist[nlist_idx];
+        if (record >= 0){	
+          int temp = nlist_map[record];
+          nlist[nlist_idx] = temp;	  
+          ntype[nlist_idx]=type[temp];
+          nmask[nlist_idx]=true;    
+        }
+        else{
+          ntype[nlist_idx]=ntypes;
+          nmask[nlist_idx]=false;
+        }
+      }
+    } 
+  }
+  else{
+    for (int ii = 0; ii < nloc; ++ii){
+      for (int jj = 0; jj < nnei; ++jj){
+        int nlist_idx = ii*nnei+jj;
+        int record = nlist[nlist_idx];
+        if (record >= 0){		  
+          ntype[nlist_idx]=type[record];
+          nmask[nlist_idx]=true;    
+        }
+        else{
+          ntype[nlist_idx]=ntypes;
+          nmask[nlist_idx]=false;
+        }
+      }
+    } 
+  }
 }
 
 template

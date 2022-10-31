@@ -1,27 +1,41 @@
 import os
-from typing import List, Optional, TYPE_CHECKING
+from typing import List, Optional, TYPE_CHECKING, Union
+from functools import lru_cache
 
 import numpy as np
 from deepmd.common import make_default_mesh
 from deepmd.env import default_tf_session_config, tf, MODEL_VERSION
 from deepmd.utils.sess import run_sess
+from deepmd.utils.batch_size import AutoBatchSize
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
 class DeepEval:
-    """Common methods for DeepPot, DeepWFC, DeepPolar, ..."""
+    """Common methods for DeepPot, DeepWFC, DeepPolar, ...
+    
+    Parameters
+    ----------
+    model_file : Path
+        The name of the frozen model file.
+    load_prefix: str
+        The prefix in the load computational graph
+    default_tf_graph : bool
+        If uses the default tf graph, otherwise build a new tf graph for evaluation
+    auto_batch_size : bool or int or AutomaticBatchSize, default: False
+        If True, automatic batch size will be used. If int, it will be used
+        as the initial batch size.
+    """
 
-    _model_type: Optional[str] = None
-    _model_version: Optional[str] = None
     load_prefix: str  # set by subclass
 
     def __init__(
         self,
         model_file: "Path",
         load_prefix: str = "load",
-        default_tf_graph: bool = False
+        default_tf_graph: bool = False,
+        auto_batch_size: Union[bool, int, AutoBatchSize] = False,
     ):
         self.graph = self._load_graph(
             model_file, prefix=load_prefix, default_tf_graph=default_tf_graph
@@ -34,21 +48,33 @@ class DeepEval:
                 f"model in graph (version {self.model_version}) is incompatible"
                 f"with the model (version {MODEL_VERSION}) supported by the current code."
             )
+        
+        # set default to False, as subclasses may not support
+        if isinstance(auto_batch_size, bool):
+            if auto_batch_size:
+                self.auto_batch_size = AutoBatchSize()
+            else:
+                self.auto_batch_size = None
+        elif isinstance(auto_batch_size, int):
+            self.auto_batch_size = AutoBatchSize(auto_batch_size)
+        elif isinstance(auto_batch_size, AutoBatchSize):
+            self.auto_batch_size = auto_batch_size
+        else:
+            raise TypeError("auto_batch_size should be bool, int, or AutoBatchSize")
 
     @property
+    @lru_cache(maxsize=None)
     def model_type(self) -> str:
         """Get type of model.
 
         :type:str
         """
-        if not self._model_type:
-            t_mt = self._get_tensor("model_attr/model_type:0")
-            sess = tf.Session(graph=self.graph, config=default_tf_session_config)
-            [mt] = run_sess(sess, [t_mt], feed_dict={})
-            self._model_type = mt.decode("utf-8")
-        return self._model_type
+        t_mt = self._get_tensor("model_attr/model_type:0")
+        [mt] = run_sess(self.sess, [t_mt], feed_dict={})
+        return mt.decode("utf-8")
 
     @property
+    @lru_cache(maxsize=None)
     def model_version(self) -> str:
         """Get version of model.
 
@@ -57,17 +83,21 @@ class DeepEval:
         str
             version of model
         """
-        if not self._model_version:
-            try:
-                t_mt = self._get_tensor("model_attr/model_version:0")
-            except KeyError:
-                # For deepmd-kit version 0.x - 1.x, set model version to 0.0
-                self._model_version = "0.0"
-            else:
-                sess = tf.Session(graph=self.graph, config=default_tf_session_config)
-                [mt] = run_sess(sess, [t_mt], feed_dict={})
-                self._model_version = mt.decode("utf-8")
-        return self._model_version    
+        try:
+            t_mt = self._get_tensor("model_attr/model_version:0")
+        except KeyError:
+            # For deepmd-kit version 0.x - 1.x, set model version to 0.0
+            return "0.0"
+        else:
+            [mt] = run_sess(self.sess, [t_mt], feed_dict={})
+            return mt.decode("utf-8")
+
+    @property
+    @lru_cache(maxsize=None)
+    def sess(self) -> tf.Session:
+        """Get TF session."""
+        # start a tf session associated to the graph
+        return tf.Session(graph=self.graph, config=default_tf_session_config)
 
     def _graph_compatable(
         self
@@ -150,7 +180,7 @@ class DeepEval:
 
     @staticmethod
     def sort_input(
-        coord : np.ndarray, atom_type : np.ndarray, sel_atoms : List[int] = None
+        coord : np.ndarray, atom_type : np.ndarray, sel_atoms : List[int] = None, mixed_type : bool = False
     ):
         """
         Sort atoms in the system according their types.
@@ -163,8 +193,12 @@ class DeepEval:
         atom_type
                 The type of atoms
                 Should be of shape [natoms]
-        sel_atom
+        sel_atoms
                 The selected atoms by type
+        mixed_type
+                Whether to perform the mixed_type mode.
+                If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
+                in which frames in a system may have different natoms_vec(s), with the same nloc.
         
         Returns
         -------
@@ -182,6 +216,11 @@ class DeepEval:
                 Only output if sel_atoms is not None
                 The index mapping from the selected atoms to sorted selected atoms.
         """
+        if mixed_type:
+            # mixed_type need not to resort
+            natoms = atom_type[0].size
+            idx_map = np.arange(natoms)
+            return coord, atom_type, idx_map
         if sel_atoms is not None:
             selection = [False] * np.size(atom_type)
             for ii in sel_atoms:
@@ -226,13 +265,17 @@ class DeepEval:
         return ret
 
 
-    def make_natoms_vec(self, atom_types : np.ndarray) -> np.ndarray :
+    def make_natoms_vec(self, atom_types : np.ndarray, mixed_type : bool = False) -> np.ndarray :
         """Make the natom vector used by deepmd-kit.
 
         Parameters
         ----------
         atom_types
                 The type of atoms
+        mixed_type
+                Whether to perform the mixed_type mode.
+                If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
+                in which frames in a system may have different natoms_vec(s), with the same nloc.
         
         Returns
         -------
@@ -244,9 +287,15 @@ class DeepEval:
   
         """
         natoms_vec = np.zeros (self.ntypes+2).astype(int)
-        natoms = atom_types.size
+        if mixed_type:
+            natoms = atom_types[0].size
+        else:
+            natoms = atom_types.size
         natoms_vec[0] = natoms
         natoms_vec[1] = natoms
+        if mixed_type:
+            natoms_vec[2] = natoms
+            return natoms_vec
         for ii in range (self.ntypes) :
             natoms_vec[ii+2] = np.count_nonzero(atom_types == ii)
         return natoms_vec

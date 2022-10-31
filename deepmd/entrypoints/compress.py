@@ -5,10 +5,10 @@ import json
 import logging
 from typing import Optional
 
-from deepmd.env import tf
-from deepmd.common import j_loader, GLOBAL_TF_FLOAT_PRECISION
+from deepmd.common import j_loader
+from deepmd.env import tf, GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.utils.argcheck import normalize
-from deepmd.utils.compat import updata_deepmd_input
+from deepmd.utils.compat import update_deepmd_input
 from deepmd.utils.errors import GraphTooLargeError, GraphWithoutTensorError
 from deepmd.utils.graph import get_tensor_by_name
 
@@ -85,14 +85,15 @@ def compress(
         else:
             log.info("stage 0: compute the min_nbor_dist")
             jdata = j_loader(training_script)
+            jdata = update_deepmd_input(jdata)
             t_min_nbor_dist = get_min_nbor_dist(jdata, get_rcut(jdata))
+
+    _check_compress_type(input)
 
     tf.constant(t_min_nbor_dist,
         name = 'train_attr/min_nbor_dist',
-        dtype = GLOBAL_TF_FLOAT_PRECISION)
+        dtype = GLOBAL_ENER_FLOAT_PRECISION)
     jdata["model"]["compress"] = {}
-    jdata["model"]["compress"]["type"] = 'se_e2_a'
-    jdata["model"]["compress"]["compress"] = True
     jdata["model"]["compress"]["model_file"] = input
     jdata["model"]["compress"]["min_nbor_dist"] = t_min_nbor_dist
     jdata["model"]["compress"]["table_config"] = [
@@ -101,7 +102,8 @@ def compress(
         10 * step,
         int(frequency),
     ]
-    jdata["training"]["save_ckpt"] = "model-compression/model.ckpt"
+    jdata["training"]["save_ckpt"] = os.path.join("model-compression", "model.ckpt")
+    jdata = update_deepmd_input(jdata)
     jdata = normalize(jdata)
 
     # check the descriptor info of the input file
@@ -133,7 +135,28 @@ def compress(
             "increase the step size." % step
         ) from e
 
+    # reset the graph, otherwise the size limitation will be only 2 GB / 2 = 1 GB
+    tf.reset_default_graph()
+
     # stage 2: freeze the model
     log.info("\n\n")
     log.info("stage 2: freeze the model")
-    freeze(checkpoint_folder=checkpoint_folder, output=output, node_names=None)
+    try:
+        freeze(checkpoint_folder=checkpoint_folder, output=output, node_names=None)
+    except GraphTooLargeError as e:
+        raise RuntimeError(
+            "The uniform step size of the tabulation's first table is %f, " 
+            "which is too small. This leads to a very large graph size, "
+            "exceeding protobuf's limitation (2 GB). You should try to "
+            "increase the step size." % step
+        ) from e
+
+def _check_compress_type(model_file):
+    try:
+        t_model_type = bytes.decode(get_tensor_by_name(model_file, 'model_type'))
+    except GraphWithoutTensorError as e:
+        # Compatible with the upgraded model, which has no 'model_type' info
+        t_model_type = None
+    
+    if t_model_type == "compressed_model":
+        raise RuntimeError("The input frozen model %s has already been compressed! Please do not compress the model repeatedly. " % model_file)

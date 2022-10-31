@@ -12,7 +12,7 @@ mass 		1 16
 
 # pair_style	deepmd frozen_model.pb fparam 0.68938740
 pair_style	deepmd frozen_model.pb fparam 0.25852028
-pair_coeff	
+pair_coeff	* *
 
 velocity        all create 2000 23456789
 

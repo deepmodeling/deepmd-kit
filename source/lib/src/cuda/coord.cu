@@ -51,6 +51,10 @@ __device__ inline int compute_pbc_shift(
     return shift;
 }
 
+__device__ inline double _fmod(double x, double y) {return fmod(x, y);}
+__device__ inline float _fmod(float x, float y) {return fmodf(x, y);}
+
+
 template<typename FPTYPE>
 __global__ void normalize_one(
     FPTYPE *out_c,
@@ -64,8 +68,8 @@ __global__ void normalize_one(
     FPTYPE inter[3];
     phys2Inter(inter,out_c+idy*3,rec_boxt);
     for (int dd = 0; dd < 3; ++dd) {
-        inter[dd]=(FPTYPE)fmod((double)inter[dd], 1.);
-        if (inter[dd] <  0.) inter[dd] += 1.;
+        inter[dd]=_fmod(inter[dd], (FPTYPE)1.);
+        if (inter[dd] <  (FPTYPE)0.) inter[dd] += (FPTYPE)1.;
     }
     inter2Phys(out_c+idy*3,inter,boxt);
 }
@@ -93,7 +97,7 @@ __global__ void _fill_idx_cellmap(
         ext_ncell[dd] = ext_end[dd] - ext_stt[dd];
         global_grid[dd] = nat_end[dd] - nat_stt[dd];
         idx_orig_shift[dd] = nat_stt[dd] - ext_stt[dd];
-        cell_size[dd] = 1./global_grid[dd];
+        cell_size[dd] = (FPTYPE)1./global_grid[dd];
         nat_orig[dd] = nat_stt[dd] * cell_size[dd];
     }
     if (idy<nloc)
@@ -104,7 +108,7 @@ __global__ void _fill_idx_cellmap(
         phys2Inter(inter,in_c+idy*3,rec_boxt);
         for (int dd = 0; dd < 3; ++dd){
             idx_noshift[dd] = (inter[dd] - nat_orig[dd]) / cell_size[dd];
-            if (inter[dd] - nat_orig[dd] < 0.) idx_noshift[dd] --;
+            if (inter[dd] - nat_orig[dd] < (FPTYPE)0.) idx_noshift[dd] --;
             if (idx_noshift[dd] < nat_stt[dd]) 
             {
                 idx_noshift[dd] = nat_stt[dd];

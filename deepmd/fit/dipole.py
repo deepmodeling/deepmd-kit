@@ -3,15 +3,16 @@ import numpy as np
 from typing import Tuple, List
 
 from deepmd.env import tf
-from deepmd.common import add_data_requirement, get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter
-from deepmd.utils.argcheck import list_to_doc
+from deepmd.common import add_data_requirement, get_activation_func, get_precision, cast_precision
 from deepmd.utils.network import one_layer, one_layer_rand_seed_shift
+from deepmd.utils.graph import get_fitting_net_variables_from_graph_def
 from deepmd.descriptor import DescrptSeA
+from deepmd.fit.fitting import Fitting
 
 from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 
-class DipoleFittingSeA () :
+class DipoleFittingSeA (Fitting) :
     """
     Fit the atomic dipole with descriptor se_a
     
@@ -29,13 +30,12 @@ class DipoleFittingSeA () :
     seed : int
             Random seed for initializing the network parameters.
     activation_function : str
-            The activation function in the embedding net. Supported options are {0}
+            The activation function in the embedding net. Supported options are |ACTIVATION_FN|
     precision : str
-            The precision of the embedding net parameters. Supported options are {1}        
+            The precision of the embedding net parameters. Supported options are |PRECISION|
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
     """
-    @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   descrpt : tf.Tensor,
                   neuron : List[int] = [120,120,120], 
@@ -66,7 +66,6 @@ class DipoleFittingSeA () :
         self.sel_type = sel_type
         if self.sel_type is None:
             self.sel_type = [ii for ii in range(self.ntypes)]
-        self.sel_type = sel_type
         self.seed = seed
         self.uniform_seed = uniform_seed
         self.seed_shift = one_layer_rand_seed_shift()
@@ -75,6 +74,8 @@ class DipoleFittingSeA () :
         self.dim_rot_mat_1 = descrpt.get_dim_rot_mat_1()
         self.dim_rot_mat = self.dim_rot_mat_1 * 3
         self.useBN = False
+        self.fitting_net_variables = None
+        self.mixed_prec = None
 
     def get_sel_type(self) -> int:
         """
@@ -88,6 +89,7 @@ class DipoleFittingSeA () :
         """
         return 3
 
+    @cast_precision
     def build (self, 
                input_d : tf.Tensor,
                rot_mat : tf.Tensor,
@@ -119,19 +121,20 @@ class DipoleFittingSeA () :
                 The atomic dipole.
         """
         start_index = 0
-        inputs = tf.cast(tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]]), self.fitting_precision)
-        rot_mat = tf.reshape(rot_mat, [-1, self.dim_rot_mat * natoms[0]])
+        inputs = tf.reshape(input_d, [-1, natoms[0], self.dim_descrpt])
+        rot_mat = tf.reshape(rot_mat, [-1, natoms[0], self.dim_rot_mat])
 
         count = 0
+        outs_list = []
         for type_i in range(self.ntypes):
             # cut-out inputs
             inputs_i = tf.slice (inputs,
-                                 [ 0, start_index*      self.dim_descrpt],
-                                 [-1, natoms[2+type_i]* self.dim_descrpt] )
+                                 [ 0, start_index, 0],
+                                 [-1, natoms[2+type_i], -1] )
             inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
             rot_mat_i = tf.slice (rot_mat,
-                                  [ 0, start_index*      self.dim_rot_mat],
-                                  [-1, natoms[2+type_i]* self.dim_rot_mat] )
+                                  [ 0, start_index, 0],
+                                  [-1, natoms[2+type_i], -1] )
             rot_mat_i = tf.reshape(rot_mat_i, [-1, self.dim_rot_mat_1, 3])
             start_index += natoms[2+type_i]
             if not type_i in self.sel_type :
@@ -139,12 +142,12 @@ class DipoleFittingSeA () :
             layer = inputs_i
             for ii in range(0,len(self.n_neuron)) :
                 if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
-                    layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, uniform_seed = self.uniform_seed)
+                    layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, uniform_seed = self.uniform_seed, initial_variables = self.fitting_net_variables, mixed_prec = self.mixed_prec)
                 else :
-                    layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, uniform_seed = self.uniform_seed)
+                    layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, uniform_seed = self.uniform_seed, initial_variables = self.fitting_net_variables, mixed_prec = self.mixed_prec)
                 if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
             # (nframes x natoms) x naxis
-            final_layer = one_layer(layer, self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, precision = self.fitting_precision, uniform_seed = self.uniform_seed)
+            final_layer = one_layer(layer, self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, precision = self.fitting_precision, uniform_seed = self.uniform_seed, initial_variables = self.fitting_net_variables, mixed_prec = self.mixed_prec, final_layer = True)
             if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
             # (nframes x natoms) x 1 * naxis
             final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], 1, self.dim_rot_mat_1])
@@ -154,12 +157,42 @@ class DipoleFittingSeA () :
             final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i], 3])
 
             # concat the results
-            if count == 0:
-                outs = final_layer
-            else:
-                outs = tf.concat([outs, final_layer], axis = 1)
+            outs_list.append(final_layer)
             count += 1
+        outs = tf.concat(outs_list, axis = 1)
 
         tf.summary.histogram('fitting_net_output', outs)
-        return tf.cast(tf.reshape(outs, [-1]),  GLOBAL_TF_FLOAT_PRECISION)
+        return tf.reshape(outs, [-1])
         # return tf.reshape(outs, [tf.shape(inputs)[0] * natoms[0] * 3 // 3])
+
+    def init_variables(self,
+                       graph: tf.Graph,
+                       graph_def: tf.GraphDef,
+                       suffix : str = "",
+    ) -> None:
+        """
+        Init the fitting net variables with the given dict
+
+        Parameters
+        ----------
+        graph : tf.Graph
+            The input frozen model graph
+        graph_def : tf.GraphDef
+            The input frozen model graph_def
+        suffix : str
+            suffix to name scope
+        """
+        self.fitting_net_variables = get_fitting_net_variables_from_graph_def(graph_def, suffix=suffix)
+
+
+    def enable_mixed_precision(self, mixed_prec : dict = None) -> None:
+        """
+        Reveive the mixed precision setting.
+
+        Parameters
+        ----------
+        mixed_prec
+                The mixed precision setting used in the embedding net
+        """
+        self.mixed_prec = mixed_prec
+        self.fitting_precision = get_precision(mixed_prec['output_prec'])

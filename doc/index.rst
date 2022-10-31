@@ -33,8 +33,21 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
    freeze/index
    test/index
    inference/index
+   cli
    third-party/index
+   nvnmd/index
    troubleshooting/index
+
+
+.. _tutorial:
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Tutorial
+   :glob:  
+
+   Tutorials <https://tutorials.deepmodeling.com/>
+   Publications <https://deepmodeling.com/blog/papers/deepmd-kit/>
 
 .. _developer-guide:
 
@@ -45,7 +58,9 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
 
    development/*
    api_py/api_py
+   api_op
    API_CC/api_cc
+   api_core/api_core
 
 
 .. _project-details:

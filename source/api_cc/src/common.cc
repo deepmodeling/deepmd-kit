@@ -1,6 +1,10 @@
 #include "common.h"
 #include "AtomMap.h"
 #include "device.h"
+#include <dlfcn.h>
+#include <fcntl.h>
+#include "google/protobuf/text_format.h"
+#include "google/protobuf/io/zero_copy_stream_impl.h"
 
 using namespace tensorflow;
 
@@ -27,10 +31,10 @@ model_compatable(
   std::vector<std::string> words_mv = split(model_version, ".");
   std::vector<std::string> words_gmv = split(global_model_version, ".");
   if(words_mv.size() != 2){
-    throw std::runtime_error("invalid graph model version string " + model_version);
+    throw deepmd::deepmd_exception("invalid graph model version string " + model_version);
   }
   if(words_gmv.size() != 2){
-    throw std::runtime_error("invalid supported model version string " + global_model_version);
+    throw deepmd::deepmd_exception("invalid supported model version string " + global_model_version);
   }
   int model_version_major = atoi(words_mv[0].c_str());
   int model_version_minor = atoi(words_mv[1].c_str());
@@ -201,8 +205,16 @@ deepmd::
 check_status(const tensorflow::Status& status) {
   if (!status.ok()) {
     std::cout << status.ToString() << std::endl;
-    throw deepmd::tf_exception();
+    throw deepmd::tf_exception(status.ToString());
   }
+}
+
+void
+throw_env_not_set_warning(std::string env_name)
+{
+  std::cerr << "DeePMD-kit WARNING: Environmental variable " << env_name << " is not set. "
+    << "Tune " << env_name << " for the best performance."
+    << std::endl;
 }
 
 void
@@ -214,17 +226,40 @@ get_env_nthreads(int & num_intra_nthreads,
   num_inter_nthreads = 0;
   const char* env_intra_nthreads = std::getenv("TF_INTRA_OP_PARALLELISM_THREADS");
   const char* env_inter_nthreads = std::getenv("TF_INTER_OP_PARALLELISM_THREADS");
+  const char* env_omp_nthreads = std::getenv("OMP_NUM_THREADS");
   if (env_intra_nthreads && 
       std::string(env_intra_nthreads) != std::string("") && 
       atoi(env_intra_nthreads) >= 0
       ) {
     num_intra_nthreads = atoi(env_intra_nthreads);
+  } else {
+    throw_env_not_set_warning("TF_INTRA_OP_PARALLELISM_THREADS");
   }
   if (env_inter_nthreads && 
       std::string(env_inter_nthreads) != std::string("") &&
       atoi(env_inter_nthreads) >= 0
       ) {
     num_inter_nthreads = atoi(env_inter_nthreads);
+  } else {
+    throw_env_not_set_warning("TF_INTER_OP_PARALLELISM_THREADS");
+  }
+  if (!(env_omp_nthreads && 
+      std::string(env_omp_nthreads) != std::string("") &&
+      atoi(env_omp_nthreads) >= 0
+      )) {
+    throw_env_not_set_warning("OMP_NUM_THREADS");
+  }
+}
+
+void
+deepmd::
+load_op_library()
+{
+  tensorflow::Env* env = tensorflow::Env::Default();
+  std::string dso_path = env->FormatLibraryFileName("deepmd_op", "");
+  void* dso_handle = dlopen(dso_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+  if (!dso_handle) {
+    throw deepmd::deepmd_exception(dso_path + " is not found! You can add the library directory to LD_LIBRARY_PATH");
   }
 }
 
@@ -239,6 +274,7 @@ name_prefix(const std::string & scope)
   return prefix;
 }
 
+template <typename MODELTYPE>
 int
 deepmd::
 session_input_tensors (
@@ -292,28 +328,32 @@ session_input_tensors (
   aparam_shape.AddDim (nframes);
   aparam_shape.AddDim (aparam_.size());
   
-#ifdef HIGH_PREC
-  Tensor coord_tensor	(DT_DOUBLE, coord_shape);
-  Tensor box_tensor	(DT_DOUBLE, box_shape);
-  Tensor fparam_tensor  (DT_DOUBLE, fparam_shape);
-  Tensor aparam_tensor  (DT_DOUBLE, aparam_shape);
-#else
-  Tensor coord_tensor	(DT_FLOAT, coord_shape);
-  Tensor box_tensor	(DT_FLOAT, box_shape);
-  Tensor fparam_tensor  (DT_FLOAT, fparam_shape);
-  Tensor aparam_tensor  (DT_FLOAT, aparam_shape);
-#endif
+  tensorflow::DataType model_type;
+  if(std::is_same<MODELTYPE, double>::value){
+    model_type = tensorflow::DT_DOUBLE;
+  }
+  else if(std::is_same<MODELTYPE, float>::value){
+    model_type = tensorflow::DT_FLOAT;
+  }
+  else{
+    throw deepmd::deepmd_exception("unsupported data type");
+  }
+  Tensor coord_tensor	(model_type, coord_shape);
+  Tensor box_tensor	(model_type, box_shape);
+  Tensor fparam_tensor  (model_type, fparam_shape);
+  Tensor aparam_tensor  (model_type, aparam_shape);
+
   Tensor type_tensor	(DT_INT32, type_shape);
   Tensor mesh_tensor	(DT_INT32, mesh_shape);
   Tensor natoms_tensor	(DT_INT32, natoms_shape);
 
-  auto coord = coord_tensor.matrix<deepmd::VALUETYPE> ();
+  auto coord = coord_tensor.matrix<MODELTYPE> ();
   auto type = type_tensor.matrix<int> ();
-  auto box = box_tensor.matrix<deepmd::VALUETYPE> ();
+  auto box = box_tensor.matrix<MODELTYPE> ();
   auto mesh = mesh_tensor.flat<int> ();
   auto natoms = natoms_tensor.flat<int> ();  
-  auto fparam = fparam_tensor.matrix<deepmd::VALUETYPE> ();
-  auto aparam = aparam_tensor.matrix<deepmd::VALUETYPE> ();
+  auto fparam = fparam_tensor.matrix<MODELTYPE> ();
+  auto aparam = aparam_tensor.matrix<MODELTYPE> ();
 
   std::vector<deepmd::VALUETYPE> dcoord (dcoord_);
   atommap.forward (dcoord.begin(), dcoord_.begin(), 3);
@@ -374,6 +414,7 @@ session_input_tensors (
   return nloc;
 }
 
+template <typename MODELTYPE>
 int
 deepmd::
 session_input_tensors (
@@ -424,28 +465,32 @@ session_input_tensors (
   aparam_shape.AddDim (nframes);
   aparam_shape.AddDim (aparam_.size());
   
-#ifdef HIGH_PREC
-  Tensor coord_tensor	(DT_DOUBLE, coord_shape);
-  Tensor box_tensor	(DT_DOUBLE, box_shape);
-  Tensor fparam_tensor  (DT_DOUBLE, fparam_shape);
-  Tensor aparam_tensor  (DT_DOUBLE, aparam_shape);
-#else
-  Tensor coord_tensor	(DT_FLOAT, coord_shape);
-  Tensor box_tensor	(DT_FLOAT, box_shape);
-  Tensor fparam_tensor  (DT_FLOAT, fparam_shape);
-  Tensor aparam_tensor  (DT_FLOAT, aparam_shape);
-#endif
+  tensorflow::DataType model_type;
+  if(std::is_same<MODELTYPE, double>::value){
+    model_type = tensorflow::DT_DOUBLE;
+  }
+  else if(std::is_same<MODELTYPE, float>::value){
+    model_type = tensorflow::DT_FLOAT;
+  }
+  else{
+    throw deepmd::deepmd_exception("unsupported data type");
+  }
+  Tensor coord_tensor	(model_type, coord_shape);
+  Tensor box_tensor	(model_type, box_shape);
+  Tensor fparam_tensor  (model_type, fparam_shape);
+  Tensor aparam_tensor  (model_type, aparam_shape);
+
   Tensor type_tensor	(DT_INT32, type_shape);
   Tensor mesh_tensor	(DT_INT32, mesh_shape);
   Tensor natoms_tensor	(DT_INT32, natoms_shape);
 
-  auto coord = coord_tensor.matrix<deepmd::VALUETYPE> ();
+  auto coord = coord_tensor.matrix<MODELTYPE> ();
   auto type = type_tensor.matrix<int> ();
-  auto box = box_tensor.matrix<deepmd::VALUETYPE> ();
+  auto box = box_tensor.matrix<MODELTYPE> ();
   auto mesh = mesh_tensor.flat<int> ();
   auto natoms = natoms_tensor.flat<int> ();
-  auto fparam = fparam_tensor.matrix<deepmd::VALUETYPE> ();
-  auto aparam = aparam_tensor.matrix<deepmd::VALUETYPE> ();
+  auto fparam = fparam_tensor.matrix<MODELTYPE> ();
+  auto aparam = aparam_tensor.matrix<MODELTYPE> ();
 
   std::vector<deepmd::VALUETYPE> dcoord (dcoord_);
   atommap.forward (dcoord.begin(), dcoord_.begin(), 3);
@@ -546,6 +591,25 @@ session_get_vector(std::vector<VT> & o_vec, Session* session, const std::string 
   for (int ii = 0; ii < dof; ++ii){
     o_vec[ii] = orc(ii);
   }  
+}
+
+
+int
+deepmd::
+session_get_dtype(tensorflow::Session* session, const std::string name_, const std::string scope) 
+{
+  std::string name = name_;
+  if (scope != "") {
+    name = scope + "/" + name;
+  }
+  std::vector<Tensor> output_tensors;
+  deepmd::check_status (session->Run(std::vector<std::pair<std::string, Tensor>> ({}), 
+			    {name.c_str()}, 
+			    {}, 
+			    &output_tensors));
+  Tensor output_rc = output_tensors[0];
+  // cast enum to int
+  return (int)output_rc.dtype();
 }
 
 
@@ -823,3 +887,82 @@ select_map_inv<deepmd::STRINGTYPE >(
     const typename std::vector<deepmd::STRINGTYPE >::const_iterator in, 
     const std::vector<int > & idx_map, 
     const int & stride);
+
+
+void
+deepmd::
+read_file_to_string(std::string model, std::string & file_content)
+{
+  deepmd::check_status(tensorflow::ReadFileToString(tensorflow::Env::Default(), model, &file_content));
+}
+
+
+void
+deepmd::
+convert_pbtxt_to_pb(std::string fn_pb_txt, std::string fn_pb)
+{
+    int fd = open(fn_pb_txt.c_str(), O_RDONLY);
+    tensorflow::protobuf::io::ZeroCopyInputStream* input = new tensorflow::protobuf::io::FileInputStream(fd);
+    tensorflow::GraphDef graph_def;
+    tensorflow::protobuf::TextFormat::Parse(input, &graph_def);
+    delete input;
+    std::fstream output(fn_pb, std::ios::out | std::ios::trunc | std::ios::binary);
+    graph_def.SerializeToOstream(&output);
+}
+
+template
+int
+deepmd::
+session_input_tensors<double> (std::vector<std::pair<std::string, tensorflow::Tensor>> & input_tensors,
+		       const std::vector<VALUETYPE> &	dcoord_,
+		       const int &			ntypes,
+		       const std::vector<int> &		datype_,
+		       const std::vector<VALUETYPE> &	dbox, 
+		       const VALUETYPE &		cell_size,
+		       const std::vector<VALUETYPE> &	fparam_,
+		       const std::vector<VALUETYPE> &	aparam_,
+		       const deepmd::AtomMap<VALUETYPE>&atommap,
+		       const std::string		scope);
+template
+int
+deepmd::
+session_input_tensors<float> (std::vector<std::pair<std::string, tensorflow::Tensor>> & input_tensors,
+		       const std::vector<VALUETYPE> &	dcoord_,
+		       const int &			ntypes,
+		       const std::vector<int> &		datype_,
+		       const std::vector<VALUETYPE> &	dbox, 
+		       const VALUETYPE &		cell_size,
+		       const std::vector<VALUETYPE> &	fparam_,
+		       const std::vector<VALUETYPE> &	aparam_,
+		       const deepmd::AtomMap<VALUETYPE>&atommap,
+		       const std::string		scope);
+template
+int
+deepmd::
+session_input_tensors<double> (std::vector<std::pair<std::string, tensorflow::Tensor>> & input_tensors,
+		       const std::vector<VALUETYPE> &	dcoord_,
+		       const int &			ntypes,
+		       const std::vector<int> &		datype_,
+		       const std::vector<VALUETYPE> &	dbox,		    
+		       InputNlist &		dlist, 
+		       const std::vector<VALUETYPE> &	fparam_,
+		       const std::vector<VALUETYPE> &	aparam_,
+		       const deepmd::AtomMap<VALUETYPE>&atommap,
+		       const int			nghost,
+		       const int			ago,
+		       const std::string		scope);
+template
+int
+deepmd::
+session_input_tensors<float> (std::vector<std::pair<std::string, tensorflow::Tensor>> & input_tensors,
+		       const std::vector<VALUETYPE> &	dcoord_,
+		       const int &			ntypes,
+		       const std::vector<int> &		datype_,
+		       const std::vector<VALUETYPE> &	dbox,		    
+		       InputNlist &		dlist, 
+		       const std::vector<VALUETYPE> &	fparam_,
+		       const std::vector<VALUETYPE> &	aparam_,
+		       const deepmd::AtomMap<VALUETYPE>&atommap,
+		       const int			nghost,
+		       const int			ago,
+		       const std::string		scope);

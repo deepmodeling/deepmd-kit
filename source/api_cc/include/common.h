@@ -6,21 +6,16 @@
 #include "version.h"
 #include "neighbor_list.h"
 #include "AtomMap.h"
+#include "errors.h"
 
-#include "tensorflow/core/platform/env.h"
-#include "tensorflow/core/public/session.h"
-#include "tensorflow/core/public/version.h"
-#include <tensorflow/core/graph/default_device.h>
-#include <tensorflow/core/graph/graph_def_builder.h>
+#ifdef TF_PRIVATE
+#include "tf_private.h"
+#else
+#include "tf_public.h"
+#endif
 
 
 namespace deepmd{
-
-#if TF_MAJOR_VERSION >= 2 && TF_MINOR_VERSION >= 2
-typedef tensorflow::tstring STRINGTYPE;
-#else
-typedef std::string STRINGTYPE;
-#endif
 
 #ifdef HIGH_PREC
 typedef double VALUETYPE;
@@ -48,8 +43,6 @@ public:
   void make_inlist(InputNlist & inlist);
 };
 
-/** @struct deepmd::InputNlist
- **/
 
 /**
 * @brief Check if the model version is supported.
@@ -108,6 +101,7 @@ select_map_inv(typename std::vector<VT >::iterator out,
 
 /**
 * @brief Get the number of threads from the environment variable.
+* @details A warning will be thrown if environmental variables are not set.
 * @param[out] num_intra_nthreads The number of intra threads. Read from TF_INTRA_OP_PARALLELISM_THREADS.
 * @param[out] num_inter_nthreads The number of inter threads. Read from TF_INTER_OP_PARALLELISM_THREADS.
 **/
@@ -115,8 +109,23 @@ void
 get_env_nthreads(int & num_intra_nthreads,
 		 int & num_inter_nthreads);
 
+/**
+ * @brief Dynamically load OP library. This should be called before loading graphs.
+ */
+void
+load_op_library();
+
+/** @struct deepmd::deepmd_exception
+ **/
+
+/**
+* @brief Throw exception if TensorFlow doesn't work.
+**/
 struct
-tf_exception: public std::exception {
+tf_exception: public deepmd::deepmd_exception {
+public:
+	tf_exception(): deepmd::deepmd_exception("TensorFlow Error!") {};
+	tf_exception(const std::string& msg): deepmd::deepmd_exception(std::string("TensorFlow Error: ") + msg) {};
 };
 
 /**
@@ -131,6 +140,13 @@ std::string
 name_prefix(
     const std::string & name_scope);
 
+/**
+* @brief Get the value of a tensor.
+* @param[in] session TensorFlow session.
+* @param[in] name The name of the tensor.
+* @param[in] scope The scope of the tensor.
+* @return The value of the tensor.
+**/
 template<typename VT>
 VT
 session_get_scalar(
@@ -138,6 +154,13 @@ session_get_scalar(
     const std::string name, 
     const std::string scope = "");
 
+/**
+* @brief Get the vector of a tensor.
+* @param[out] o_vec The output vector.
+* @param[in] session TensorFlow session.
+* @param[in] name The name of the tensor.
+* @param[in] scope The scope of the tensor.
+**/
 template<typename VT>
 void
 session_get_vector(
@@ -146,6 +169,33 @@ session_get_vector(
     const std::string name_, 
     const std::string scope = "");
 
+/**
+* @brief Get the type of a tensor.
+* @param[in] session TensorFlow session.
+* @param[in] name The name of the tensor.
+* @param[in] scope The scope of the tensor.
+* @return The type of the tensor as int.
+**/
+int
+session_get_dtype(
+	tensorflow::Session* session,
+	const std::string name,
+	const std::string scope = "");
+
+/**
+* @brief Get input tensors.
+* @param[out] input_tensors Input tensors.
+* @param[in] dcoord_ Coordinates of atoms.
+* @param[in] ntypes Number of atom types.
+* @param[in] datype_ Atom types.
+* @param[in] dbox Box matrix.
+* @param[in] cell_size Cell size.
+* @param[in] fparam_ Frame parameters.
+* @param[in] aparam_ Atom parameters.
+* @param[in] atommap Atom map.
+* @param[in] scope The scope of the tensors.
+*/
+template <typename MODELTYPE>
 int
 session_input_tensors (std::vector<std::pair<std::string, tensorflow::Tensor>> & input_tensors,
 		       const std::vector<VALUETYPE> &	dcoord_,
@@ -158,6 +208,21 @@ session_input_tensors (std::vector<std::pair<std::string, tensorflow::Tensor>> &
 		       const deepmd::AtomMap<VALUETYPE>&atommap,
 		       const std::string		scope = "");
 
+/**
+* @brief Get input tensors.
+* @param[out] input_tensors Input tensors.
+* @param[in] dcoord_ Coordinates of atoms.
+* @param[in] ntypes Number of atom types.
+* @param[in] datype_ Atom types.
+* @param[in] dlist Neighbor list.
+* @param[in] fparam_ Frame parameters.
+* @param[in] aparam_ Atom parameters.
+* @param[in] atommap Atom map.
+* @param[in] nghost Number of ghost atoms.
+* @param[in] ago Update the internal neighbour list if ago is 0.
+* @param[in] scope The scope of the tensors.
+*/
+template <typename MODELTYPE>
 int
 session_input_tensors (std::vector<std::pair<std::string, tensorflow::Tensor>> & input_tensors,
 		       const std::vector<VALUETYPE> &	dcoord_,
@@ -171,5 +236,22 @@ session_input_tensors (std::vector<std::pair<std::string, tensorflow::Tensor>> &
 		       const int			nghost,
 		       const int			ago,
 		       const std::string		scope = "");
+
+/**
+* @brief Read model file to a string.
+* @param[in] model Path to the model.
+* @param[out] file_content Content of the model file.
+**/
+void
+read_file_to_string(std::string model, std::string & file_content);
+
+
+/**
+* @brief Convert pbtxt to pb.
+* @param[in] fn_pb_txt Filename of the pb txt file.
+* @param[out] fn_pb Filename of the pb file.
+**/
+void
+convert_pbtxt_to_pb(std::string fn_pb_txt, std::string fn_pb);
 }
 

@@ -1,7 +1,7 @@
 """Setup script for DeePMD-kit package."""
 
 import os
-from distutils.util import get_platform
+import site
 from importlib.machinery import FileFinder
 from importlib.util import find_spec
 from pathlib import Path
@@ -18,7 +18,7 @@ setup_requires = ["setuptools_scm", "scikit-build"]
 
 # read readme to markdown
 readme_file = Path(__file__).parent / "README.md"
-readme = readme_file.read_text()
+readme = readme_file.read_text(encoding="utf-8")
 
 tf_version = os.environ.get("TENSORFLOW_VERSION", "")
 
@@ -52,12 +52,22 @@ elif dp_variant == "rocm":
     cmake_args.append("-DUSE_ROCM_TOOLKIT:BOOL=TRUE")
     rocm_root = os.environ.get("ROCM_ROOT")
     if rocm_root:
-        cmake_args.append(f"-DROCM_ROOT:STRING={rocm_root}")
+        cmake_args.append(f"-DCMAKE_HIP_COMPILER_ROCM_ROOT:STRING={rocm_root}")
 else:
     raise RuntimeError("Unsupported DP_VARIANT option: %s" % dp_variant)
 
+if os.environ.get("DP_BUILD_TESTING", "0") == "1":
+    cmake_args.append("-DBUILD_TESTING:BOOL=TRUE")
+
 # get tensorflow spec
 tf_spec = find_spec("tensorflow")
+
+if not tf_spec and site.ENABLE_USER_SITE:
+    # first search TF from user site-packages before global site-packages
+    site_packages = site.getusersitepackages()
+    if site_packages:
+        tf_spec = FileFinder(site_packages).find_spec("tensorflow")
+
 if not tf_spec:
     # purelib gets site-packages path
     site_packages = get_path("purelib")
@@ -75,13 +85,13 @@ except (AttributeError, TypeError, IndexError):
     # setuptools will re-find tensorflow after installing setup_requires
     tf_install_dir = None
 
-# add cmake as a build requirement if cmake>3.7 is not installed
+# add cmake as a build requirement if cmake>=3.16 is not installed
 try:
     cmake_version = get_cmake_version()
 except SKBuildError:
     setup_requires.append("cmake")
 else:
-    if cmake_version in SpecifierSet("<3.7"):
+    if cmake_version in SpecifierSet("<3.16"):
         setup_requires.append("cmake")
 
 Path("deepmd").mkdir(exist_ok=True)
@@ -109,6 +119,12 @@ setup(
         "deepmd/op",
         "deepmd/model",
         "deepmd/train",
+        "deepmd/nvnmd",
+        "deepmd/nvnmd/data",
+        "deepmd/nvnmd/descriptor",
+        "deepmd/nvnmd/entrypoints",
+        "deepmd/nvnmd/fit",
+        "deepmd/nvnmd/utils",
     ],
     python_requires=">=3.6",
     classifiers=[
@@ -127,7 +143,21 @@ setup(
     cmake_minimum_required_version="3.0",
     extras_require={
         "test": ["dpdata>=0.1.9", "ase", "pytest", "pytest-cov", "pytest-sugar"],
-        "docs": ["sphinx>=3.1.1,<4.1.0", "recommonmark", "sphinx_rtd_theme>=1.0.0rc1", "sphinx_markdown_tables", "myst-parser", "breathe", "exhale", "numpydoc", "ase"],
+        "docs": [
+            "sphinx>=3.1.1",
+            "recommonmark",
+            "sphinx_rtd_theme>=1.0.0rc1",
+            "sphinx_markdown_tables",
+            "myst-parser",
+            "breathe",
+            "exhale",
+            "numpydoc",
+            "ase",
+            "deepmodeling-sphinx>=0.1.0",
+            "dargs>=0.3.1",
+            "sphinx-argparse",
+            "pygments-lammps",
+            ],
         **extras_require,
     },
     entry_points={"console_scripts": ["dp = deepmd.entrypoints.main:main"]},

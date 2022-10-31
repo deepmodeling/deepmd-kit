@@ -1,9 +1,4 @@
 add_subdirectory(plugin)
-if (NOT DEFINED LAMMPS_VERSION_NUMBER)
-    # set the default to 29 Oct 2020
-    set(LAMMPS_VERSION_NUMBER 20201029)
-endif()
-message(STATUS "LAMMPS version is ${LAMMPS_VERSION_NUMBER}")
 
 file(GLOB LMP_HEADER *.h)
 file(GLOB LMP_SRC *.cpp)
@@ -15,7 +10,11 @@ list (APPEND LMP_INSTALL_FILES ${LMP_SRC})
 list (APPEND LMP_INSTALL_FILES ${LMP_SHSCRIPT})
 
 function(_add_lmp_variant variant_name prec_def)
-configure_file("env.sh.in" "env${variant_name}.sh" @ONLY)
+if (USE_TF_PYTHON_LIBS)
+    configure_file("env_py.sh.in" "env${variant_name}.sh" @ONLY)
+else()
+    configure_file("env.sh.in" "env${variant_name}.sh" @ONLY)
+endif()
 endfunction()
 _add_lmp_variant("${HIGH_PREC_VARIANT}" "${HIGH_PREC_DEF}")
 _add_lmp_variant("${LOW_PREC_VARIANT}" "${LOW_PREC_DEF}")

@@ -6,6 +6,12 @@ jobs:
   testpython:
     name: Test C++
     runs-on: ubuntu-latest
+    container: ghcr.io/deepmodeling/deepmd-kit-test-cc:latest
     steps:
+    - name: work around permission issue
+      run: git config --global --add safe.directory /__w/deepmd-kit/deepmd-kit
     - uses: actions/checkout@master
-    - run: source/install/test_cc.sh
+    - run: source/install/test_cc_local.sh
+      env:
+        tensorflow_root: /usr/local
+    - run: source/install/codecov.sh

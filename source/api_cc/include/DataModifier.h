@@ -10,7 +10,7 @@ public:
   DipoleChargeModifier(const std::string & model, 
 	       const int & gpu_rank = 0, 
 	       const std::string & name_scope = "");
-  ~DipoleChargeModifier () {};
+  ~DipoleChargeModifier ();
   void init (const std::string & model, 
 	     const int & gpu_rank = 0, 
 	     const std::string & name_scope = "");
@@ -32,16 +32,17 @@ private:
   tensorflow::Session* session;
   std::string name_scope, name_prefix;
   int num_intra_nthreads, num_inter_nthreads;
-  tensorflow::GraphDef graph_def;
+  tensorflow::GraphDef* graph_def;
   bool inited;
   VALUETYPE rcut;
+  int dtype;
   VALUETYPE cell_size;
   int ntypes;
   std::string model_type;
   std::vector<int> sel_type;
   template<class VT> VT get_scalar(const std::string & name) const;
   template<class VT> void get_vector(std::vector<VT> & vec, const std::string & name) const;
-  void run_model (std::vector<VALUETYPE> &		dforce,
+  template<typename MODELTYPE> void run_model (std::vector<VALUETYPE> &		dforce,
 		  std::vector<VALUETYPE> &		dvirial,
 		  tensorflow::Session *			session,
 		  const std::vector<std::pair<std::string, tensorflow::Tensor>> & input_tensors,

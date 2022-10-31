@@ -1,8 +1,8 @@
-# Running MD with LAMMPS
+# Run MD with LAMMPS
 
 Running an MD simulation with LAMMPS is simpler. In the LAMMPS input file, one needs to specify the pair style as follows
 
-```
+```lammps
 pair_style     deepmd graph.pb
 pair_coeff     * *
 ```

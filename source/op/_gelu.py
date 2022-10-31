@@ -2,14 +2,26 @@
 """
 First-order derivatives and second-order derivatives for gelu function.
 """
-
+import tensorflow
 from tensorflow.python.framework import ops
 from deepmd.env import op_module
 
-@ops.RegisterGradient("Gelu")
-def _gelu_cc (op, dy) :
-    return op_module.gelu_grad(dy, op.inputs[0])     
+try:
+    gelu = tensorflow.nn.gelu
+except AttributeError:
+    @ops.RegisterGradient("Gelu")
+    def _gelu_cc (op, dy) :
+        return op_module.gelu_grad_custom(dy, op.inputs[0])    
 
-@ops.RegisterGradient("GeluGrad")
-def _gelu_grad_cc (op, dy) :
-    return [op_module.gelu_grad(dy, op.inputs[1]), op_module.gelu_grad_grad(dy, op.inputs[0], op.inputs[1])]
+    @ops.RegisterGradient("GeluGrad")
+    def _gelu_grad_cc (op, dy) :
+        return [op_module.gelu_grad_custom(dy, op.inputs[1]), op_module.gelu_grad_grad_custom(dy, op.inputs[0], op.inputs[1])]
+
+
+@ops.RegisterGradient("GeluCustom")
+def _gelu_custom_cc (op, dy):
+    return op_module.gelu_grad_custom(dy, op.inputs[0])      
+
+@ops.RegisterGradient("GeluGradCustom")
+def _gelu_grad_custom_cc (op, dy) :
+    return [op_module.gelu_grad_custom(dy, op.inputs[1]), op_module.gelu_grad_grad_custom(dy, op.inputs[0], op.inputs[1])]

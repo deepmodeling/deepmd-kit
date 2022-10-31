@@ -4,9 +4,17 @@
 
 If you are using the plugin mode, enable DeePMD-kit package in LAMMPS with `plugin` command:
 
+```lammps
+plugin load libdeepmd_lmp.so
 ```
-plugin load path/to/deepmd/lib/libdeepmd_lmp.so
+
+After LAMMPS version `patch_24Mar2022`, another way to load plugins is to set the environmental variable `LAMMPS_PLUGIN_PATH`:
+
+```sh
+LAMMPS_PLUGIN_PATH=$deepmd_root/lib/deepmd_lmp
 ```
+
+where `$deepmd_root` is the directory to [install C++ interface](../install/install-from-source.md).
 
 The built-in mode doesn't need this step.
 
@@ -14,11 +22,13 @@ The built-in mode doesn't need this step.
 
 The DeePMD-kit package provides the pair_style `deepmd`
 
-```
+```lammps
 pair_style deepmd models ... keyword value ...
 ```
 - deepmd = style of this pair_style
-- models = frozen model(s) to compute the interaction. If multiple models are provided, then the model deviation will be computed
+- models = frozen model(s) to compute the interaction. 
+If multiple models are provided, then only the first model serves to provide energy and force prediction for each timestep of molecular dynamics, 
+and the model deviation will be computed among all models every `out_freq` timesteps.
 - keyword = *out_file* or *out_freq* or *fparam* or *atomic* or *relative*
 <pre>
     <i>out_file</i> value = filename
@@ -34,7 +44,7 @@ pair_style deepmd models ... keyword value ...
 </pre>
 
 ### Examples
-```
+```lammps
 pair_style deepmd graph.pb
 pair_style deepmd graph.pb fparam 1.2
 pair_style deepmd graph_0.pb graph_1.pb graph_2.pb out_file md.out out_freq 10 atomic relative 1.0
@@ -47,13 +57,11 @@ This pair style takes the deep potential defined in a model file that usually ha
 
 The model deviation evalulate the consistency of the force predictions from multiple models. By default, only the maximal, minimal and averge model deviations are output. If the key `atomic` is set, then the model deviation of force prediction of each atom will be output.
 
-By default, the model deviation is output in absolute value. If the keyword `relative` is set, then the relative model deviation will be output. The relative model deviation of the force on atom `i` is defined by
-```math
-           |Df_i|
-Ef_i = -------------
-       |f_i| + level
-```
-where `Df_i` is the absolute model deviation of the force on atom `i`, `|f_i|` is the norm of the the force and `level` is provided as the parameter of the keyword `relative`.
+By default, the model deviation is output in absolute value. If the keyword `relative` is set, then the relative model deviation will be output. The relative model deviation of the force on atom $i$ is defined by
+
+$$E_{f_i}=\frac{\left|D_{f_i}\right|}{\left|f_i\right|+l}$$
+
+where $D_{f_i}$ is the absolute model deviation of the force on atom $i$, $f_i$ is the norm of the the force and $l$ is provided as the parameter of the keyword `relative`.
 
 ### Restrictions
 - The `deepmd` pair style is provided in the USER-DEEPMD package, which is compiled from the DeePMD-kit, visit the [DeePMD-kit website](https://github.com/deepmodeling/deepmd-kit) for more information.
@@ -63,7 +71,7 @@ where `Df_i` is the absolute model deviation of the force on atom `i`, `|f_i|` i
 
 The DeePMD-kit package provide the compute `deeptensor/atom` for computing atomic tensorial properties. 
 
-```
+```lammps
 compute ID group-ID deeptensor/atom model_file
 ```
 - ID: user-assigned name of the computation
@@ -72,11 +80,11 @@ compute ID group-ID deeptensor/atom model_file
 - model_file: the name of the binary model file.
 
 ### Examples
-```
+```lammps
 compute         dipole all deeptensor/atom dipole.pb
 ```
 The result of the compute can be dump to trajctory file by 
-```
+```lammps
 dump            1 all custom 100 water.dump id type c_dipole[1] c_dipole[2] c_dipole[3] 
 ```
 
@@ -86,9 +94,9 @@ dump            1 all custom 100 water.dump id type c_dipole[1] c_dipole[2] c_di
 
 ## Long-range interaction
 The reciprocal space part of the long-range interaction can be calculated by LAMMPS command `kspace_style`. To use it with DeePMD-kit, one writes 
-```bash
+```lammps
 pair_style	deepmd graph.pb
-pair_coeff
+pair_coeff  * *
 kspace_style	pppm 1.0e-5
 kspace_modify	gewald 0.45
 ```
@@ -98,18 +106,18 @@ Please notice that the DeePMD does nothing to the direct space part of the elect
 
 The [DeePMD-kit](https://github.com/deepmodeling/deepmd-kit) allows also the computation of per-atom stress tensor defined as:
 
-<img src="https://render.githubusercontent.com/render/math?math=dvatom=\sum_{m}( \mathbf{r}_n- \mathbf{r}_m) \frac{de_m}{d\mathbf{r}_n} ">
+$$dvatom=\sum_{m}( \mathbf{r}_n- \mathbf{r}_m) \frac{de_m}{d\mathbf{r}_n}$$
 
-Where <img src="https://render.githubusercontent.com/render/math?math=\mathbf{r}_n "> is the atomic position of nth atom, <img src="https://render.githubusercontent.com/render/math?math=\mathbf{v}_n "> velocity of atom and <img src="https://render.githubusercontent.com/render/math?math=\frac{de_m}{d\mathbf{r}_n} "> the derivative of the atomic energy.
+Where $\mathbf{r}_n$ is the atomic position of nth atom, $\mathbf{v}_n$ velocity of atom and $\frac{de_m}{d\mathbf{r}_n}$ the derivative of the atomic energy.
 
 In LAMMPS one can get the per-atom stress using the command `centroid/stress/atom`:
-```bash
+```lammps
 compute ID group-ID centroid/stress/atom NULL virial
 ```
 see [LAMMPS doc page](https://docs.lammps.org/compute_stress_atom.html#thompson2) for more detailes on the meaning of the keywords.
 ### Examples
 In order of computing the 9-component per-atom stress
-```bash
+```lammps
 compute stress all centroid/stress/atom NULL virial
 ```
 Thus `c_stress` is an array with 9 component in the order `xx,yy,zz,xy,xz,yz,yx,zx,zy`.
@@ -119,10 +127,10 @@ If you use this feature please cite [D. Tisi, L. Zhang, R. Bertossa, H. Wang, R.
 ## Computation of heat flux
 Using per-atom stress tensor one can, for example, compute the heat flux defined as:
 
-<img src="https://render.githubusercontent.com/render/math?math=\mathbf{J}=\sum_n e_n \mathbf{v}_n + \sum_{nm}( \mathbf{r}_m- \mathbf{r}_n) \frac{de_m}{d\mathbf{r}_n} \mathbf{v}_n">
+$$\mathbf J = \sum_n e_n \mathbf v_n + \sum_{n,m} ( \mathbf r_m- \mathbf r_n) \frac{de_m}{d\mathbf r_n} \mathbf v_n$$
 
 to compute the heat flux with LAMMPS: 
-```bash
+```lammps
 compute ke_ID all ke/atom
 compute pe_ID all pe/atom
 compute stress_ID group-ID centroid/stress/atom NULL virial
@@ -131,13 +139,13 @@ compute flux_ID all heat/flux ke_ID pe_ID stress_ID
 
 ### Examples
 
-```bash
+```lammps
 compute ke all ke/atom
 compute pe all pe/atom
 compute stress all centroid/stress/atom NULL virial
 compute flux all heat/flux ke pe stress
 ```
-`c_flux` is a global vector of length 6. The first three components are the `x`, `y` and `z` components of the full heat flux vector. The others are the components of the so-called convective portion, see [LAMMPS doc page](https://docs.lammps.org/compute_heat_flux.html) for more detailes.
+`c_flux` is a global vector of length 6. The first three components are the $x$, $y$ and $z$ components of the full heat flux vector. The others are the components of the so-called convective portion, see [LAMMPS doc page](https://docs.lammps.org/compute_heat_flux.html) for more detailes.
 
 If you use these features please cite [D. Tisi, L. Zhang, R. Bertossa, H. Wang, R. Car, S. Baroni - arXiv preprint arXiv:2108.10850, 2021](https://arxiv.org/abs/2108.10850)
 

@@ -144,6 +144,58 @@ __global__ void map_nlist(
     }
 }
 
+__global__ void map_nei_info(
+    int * nlist,
+    int * ntype,
+    bool * nmask,
+    const int * type,
+    const int * nlist_map,
+    const int nloc,
+    const int nnei,
+    const int ntypes
+)
+{
+    int atom_idx=blockIdx.x;
+    int nei_idx=blockIdx.y*blockDim.y+threadIdx.y;
+    if(nei_idx>=nnei){return;}
+    int nlist_idx=atom_idx*nnei+nei_idx;
+    int nlist_item=nlist[nlist_idx];
+    int temp=0;
+    if(nlist_item!=-1){
+        temp=nlist_map[nlist_item];
+        nlist[nlist_idx]=temp;
+        ntype[nlist_idx]=type[temp];
+        nmask[nlist_idx]=true;
+    }
+    else{
+        ntype[nlist_idx]=ntypes;
+    }
+}
+
+__global__ void map_nei_info_noconvert(
+    int * nlist,
+    int * ntype,
+    bool * nmask,
+    const int * type,
+    const int nloc,
+    const int nnei,
+    const int ntypes
+)
+{
+    int atom_idx=blockIdx.x;
+    int nei_idx=blockIdx.y*blockDim.y+threadIdx.y;
+    if(nei_idx>=nnei){return;}
+    int nlist_idx=atom_idx*nnei+nei_idx;
+    int nlist_item=nlist[nlist_idx];
+    if(nlist_item!=-1){
+        ntype[nlist_idx]=type[nlist_item];
+        nmask[nlist_idx]=true;
+    }
+    else{
+        ntype[nlist_idx]=ntypes;
+    }
+}
+
 namespace deepmd {
 template <typename FPTYPE>
 int build_nlist_gpu_rocm(
@@ -217,6 +269,32 @@ void use_nlist_map(
     dim3 block_grid(nloc, nblock);
     dim3 thread_grid(1, TPB);
     hipLaunchKernelGGL(map_nlist, block_grid, thread_grid, 0, 0, nlist, nlist_map, nloc, nnei);
+    DPErrcheck(hipGetLastError());
+    DPErrcheck(hipDeviceSynchronize());
+}
+
+void use_nei_info_gpu_rocm(
+    int * nlist,
+    int * ntype,
+    bool * nmask,
+    const int * type,
+    const int * nlist_map, 
+    const int nloc, 
+    const int nnei,
+    const int ntypes,
+    const bool b_nlist_map)
+{
+    int nblock=(nnei+TPB-1)/TPB;
+    dim3 block_grid(nloc, nblock);
+    dim3 thread_grid(1, TPB);
+    DPErrcheck(hipMemset(ntype, 0, sizeof(int) * nloc * nnei));
+    DPErrcheck(hipMemset(nmask, 0, sizeof(bool) * nloc * nnei));
+    if (b_nlist_map){
+        hipLaunchKernelGGL(map_nei_info, block_grid, thread_grid, 0, 0, nlist, ntype, nmask, type, nlist_map, nloc, nnei, ntypes);
+    }
+    else{
+        hipLaunchKernelGGL(map_nei_info_noconvert, block_grid, thread_grid, 0, 0, nlist, ntype, nmask, type, nloc, nnei, ntypes);
+    }
     DPErrcheck(hipGetLastError());
     DPErrcheck(hipDeviceSynchronize());
 }

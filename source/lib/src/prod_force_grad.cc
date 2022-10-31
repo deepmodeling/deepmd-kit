@@ -37,11 +37,12 @@ prod_force_grad_a_cpu(
   // reset the frame to 0
   for (int ii = 0; ii < nloc; ++ii){
     for (int aa = 0; aa < ndescrpt; ++aa){
-      grad_net[ii * ndescrpt + aa] = 0;
+      grad_net[ii * ndescrpt + aa] = (FPTYPE)0.;
     }
   }      
 
   // compute grad of one frame
+  #pragma omp parallel for
   for (int ii = 0; ii < nloc; ++ii){
     int i_idx = ii;
 	
@@ -115,11 +116,12 @@ prod_force_grad_r_cpu(
   // reset the frame to 0
   for (int ii = 0; ii < nloc; ++ii){
     for (int aa = 0; aa < ndescrpt; ++aa){
-      grad_net[ii * ndescrpt + aa] = 0;
+      grad_net[ii * ndescrpt + aa] = (FPTYPE)0.;
     }
   }      
 
   // compute grad of one frame
+  #pragma omp parallel for
   for (int ii = 0; ii < nloc; ++ii){
     int i_idx = ii;
 	

@@ -8,7 +8,9 @@ from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.utils.sess import run_sess
 from .descriptor import Descriptor
+from deepmd.utils.graph import get_tensor_by_name_from_graph
 
+@Descriptor.register("loc_frame")
 class DescrptLocFrame (Descriptor) :
     """Defines a local frame at each atom, and the compute the descriptor as local
     coordinates under this frame.
@@ -31,9 +33,9 @@ class DescrptLocFrame (Descriptor) :
             - axis_rule[i*6+0]: class of the atom defining the first axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.\n\n\
             - axis_rule[i*6+1]: type of the atom defining the first axis of type-i atom.\n\n\
             - axis_rule[i*6+2]: index of the axis atom defining the first axis. Note that the neighbors with the same class and type are sorted according to their relative distance.\n\n\
-            - axis_rule[i*6+3]: class of the atom defining the first axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.\n\n\
+            - axis_rule[i*6+3]: class of the atom defining the second axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.\n\n\
             - axis_rule[i*6+4]: type of the atom defining the second axis of type-i atom.\n\n\
-            - axis_rule[i*6+5]: class of the atom defining the second axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.    
+            - axis_rule[i*6+5]: index of the axis atom defining the second axis. Note that the neighbors with the same class and type are sorted according to their relative distance.
     """
     def __init__(self, 
                  rcut: float,
@@ -97,7 +99,7 @@ class DescrptLocFrame (Descriptor) :
 
     def get_rcut (self) -> float:
         """
-        Returns the cut-off radisu
+        Returns the cut-off radius
         """
         return self.rcut_r
 
@@ -303,7 +305,7 @@ class DescrptLocFrame (Descriptor) :
         """
         [net_deriv] = tf.gradients (atom_ener, self.descrpt)
         tf.summary.histogram('net_derivative', net_deriv)
-        net_deriv_reshape = tf.reshape (net_deriv, [-1, natoms[0] * self.ndescrpt])
+        net_deriv_reshape = tf.reshape (net_deriv, [np.cast['int64'](-1), natoms[0] * np.cast['int64'](self.ndescrpt)])
         force = op_module.prod_force (net_deriv_reshape,
                                       self.descrpt_deriv,
                                       self.nlist,
@@ -366,4 +368,22 @@ class DescrptLocFrame (Descriptor) :
     def _compute_std (self,sumv2, sumv, sumn) :
         return np.sqrt(sumv2/sumn - np.multiply(sumv/sumn, sumv/sumn))
 
-    
+    def init_variables(self,
+                       graph: tf.Graph,
+                       graph_def: tf.GraphDef,
+                       suffix : str = "",
+    ) -> None:
+        """
+        Init the embedding net variables with the given dict
+
+        Parameters
+        ----------
+        graph : tf.Graph
+            The input frozen model graph
+        graph_def : tf.GraphDef
+            The input frozen model graph_def
+        suffix : str, optional
+            The suffix of the scope
+        """
+        self.davg = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_avg' % suffix)
+        self.dstd = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_std' % suffix)

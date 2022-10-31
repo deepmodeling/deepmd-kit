@@ -7,8 +7,6 @@
 #include "neighbor_list.h"
 #include "test_utils.h"
 
-#include "google/protobuf/text_format.h"
-#include "google/protobuf/io/zero_copy_stream_impl.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>  
@@ -16,7 +14,7 @@
 class TestInferDeepPotModeDevi : public ::testing::Test
 {  
 protected:  
-  std::vector<double> coord = {
+  std::vector<VALUETYPE> coord = {
     12.83, 2.56, 2.18,
     12.09, 2.87, 2.74,
     00.25, 3.32, 1.68,
@@ -27,7 +25,7 @@ protected:
   std::vector<int> atype = {
     0, 1, 1, 0, 1, 1
   };
-  std::vector<double> box = {
+  std::vector<VALUETYPE> box = {
     13., 0., 0., 0., 13., 0., 0., 0., 13.
   };
   int natoms;
@@ -39,24 +37,12 @@ protected:
   void SetUp() override {
     {
       std::string file_name = "../../tests/infer/deeppot.pbtxt";
-      int fd = open(file_name.c_str(), O_RDONLY);
-      tensorflow::protobuf::io::ZeroCopyInputStream* input = new tensorflow::protobuf::io::FileInputStream(fd);
-      tensorflow::GraphDef graph_def;
-      tensorflow::protobuf::TextFormat::Parse(input, &graph_def);
-      delete input;
-      std::fstream output("deeppot.pb", std::ios::out | std::ios::trunc | std::ios::binary);
-      graph_def.SerializeToOstream(&output);
+      deepmd::convert_pbtxt_to_pb("../../tests/infer/deeppot.pbtxt", "deeppot.pb");
       dp0.init("deeppot.pb");
     }
     {
       std::string file_name = "../../tests/infer/deeppot-1.pbtxt";
-      int fd = open(file_name.c_str(), O_RDONLY);
-      tensorflow::protobuf::io::ZeroCopyInputStream* input = new tensorflow::protobuf::io::FileInputStream(fd);
-      tensorflow::GraphDef graph_def;
-      tensorflow::protobuf::TextFormat::Parse(input, &graph_def);
-      delete input;
-      std::fstream output("deeppot-1.pb", std::ios::out | std::ios::trunc | std::ios::binary);
-      graph_def.SerializeToOstream(&output);
+      deepmd::convert_pbtxt_to_pb("../../tests/infer/deeppot-1.pbtxt", "deeppot-1.pb");
       dp1.init("deeppot-1.pb");
     }
     dp_md.init(std::vector<std::string>({"deeppot.pb", "deeppot-1.pb"}));
@@ -72,7 +58,7 @@ protected:
 class TestInferDeepPotModeDeviPython : public ::testing::Test
 {  
 protected:  
-  std::vector<double> coord = {
+  std::vector<VALUETYPE> coord = {
     4.170220047025740423e-02,7.203244934421580703e-02,1.000114374817344942e-01,
     4.053881673400336005e+00,4.191945144032948461e-02,6.852195003967595510e-02,
     1.130233257263184132e+00,1.467558908171130543e-02,1.092338594768797883e-01,
@@ -83,14 +69,14 @@ protected:
   std::vector<int> atype = {
     0, 0, 1, 1, 1, 1
   };
-  std::vector<double> box = {
+  std::vector<VALUETYPE> box = {
     20., 0., 0., 0., 20., 0., 0., 0., 20.
   };
   int natoms;
-  std::vector<double> expected_md_f = {
+  std::vector<VALUETYPE> expected_md_f = {
     0.509504727653, 0.458424067748, 0.481978258466
   }; // max min avg
-  std::vector<double> expected_md_v = {
+  std::vector<VALUETYPE> expected_md_v = {
     0.167004837423,0.00041822790564,0.0804864867641
   }; // max min avg
 
@@ -101,24 +87,12 @@ protected:
   void SetUp() override {
     {
       std::string file_name = "../../tests/infer/deeppot.pbtxt";
-      int fd = open(file_name.c_str(), O_RDONLY);
-      tensorflow::protobuf::io::ZeroCopyInputStream* input = new tensorflow::protobuf::io::FileInputStream(fd);
-      tensorflow::GraphDef graph_def;
-      tensorflow::protobuf::TextFormat::Parse(input, &graph_def);
-      delete input;
-      std::fstream output("deeppot.pb", std::ios::out | std::ios::trunc | std::ios::binary);
-      graph_def.SerializeToOstream(&output);
+      deepmd::convert_pbtxt_to_pb("../../tests/infer/deeppot.pbtxt", "deeppot.pb");
       dp0.init("deeppot.pb");
     }
     {
       std::string file_name = "../../tests/infer/deeppot-1.pbtxt";
-      int fd = open(file_name.c_str(), O_RDONLY);
-      tensorflow::protobuf::io::ZeroCopyInputStream* input = new tensorflow::protobuf::io::FileInputStream(fd);
-      tensorflow::GraphDef graph_def;
-      tensorflow::protobuf::TextFormat::Parse(input, &graph_def);
-      delete input;
-      std::fstream output("deeppot-1.pb", std::ios::out | std::ios::trunc | std::ios::binary);
-      graph_def.SerializeToOstream(&output);
+      deepmd::convert_pbtxt_to_pb("../../tests/infer/deeppot-1.pbtxt", "deeppot-1.pb");
       dp1.init("deeppot-1.pb");
     }
     dp_md.init(std::vector<std::string>({"deeppot.pb", "deeppot-1.pb"}));
@@ -147,7 +121,7 @@ TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list)
 {
   float rc = dp_md.cutoff();
   int nloc = coord.size() / 3;  
-  std::vector<double> coord_cpy;
+  std::vector<VALUETYPE> coord_cpy;
   std::vector<int> atype_cpy, mapping;  
   std::vector<std::vector<int > > nlist_data;
   _build_nlist(nlist_data, coord_cpy, atype_cpy, mapping,
@@ -160,7 +134,7 @@ TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list)
 
   int nmodel = 2;
   std::vector<double > edir(nmodel), emd;
-  std::vector<std::vector<double> > fdir_(nmodel), fdir(nmodel), vdir(nmodel), fmd_, fmd(nmodel), vmd;
+  std::vector<std::vector<VALUETYPE> > fdir_(nmodel), fdir(nmodel), vdir(nmodel), fmd_, fmd(nmodel), vmd;
   dp0.compute(edir[0], fdir_[0], vdir[0], coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
   dp1.compute(edir[1], fdir_[1], vdir[1], coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
   dp_md.compute(emd, fmd_, vmd, coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
@@ -177,12 +151,12 @@ TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list)
     EXPECT_EQ(vdir[kk].size(), vmd[kk].size());
   }  
   for(int kk = 0; kk < nmodel; ++kk){
-    EXPECT_LT(fabs(edir[kk] - emd[kk]), 1e-10);
+    EXPECT_LT(fabs(edir[kk] - emd[kk]), EPSILON);
     for(int ii = 0; ii < fdir[0].size(); ++ii){
-      EXPECT_LT(fabs(fdir[kk][ii] - fmd[kk][ii]), 1e-10);
+      EXPECT_LT(fabs(fdir[kk][ii] - fmd[kk][ii]), EPSILON);
     }
     for(int ii = 0; ii < vdir[0].size(); ++ii){
-      EXPECT_LT(fabs(vdir[kk][ii] - vmd[kk][ii]), 1e-10);
+      EXPECT_LT(fabs(vdir[kk][ii] - vmd[kk][ii]), EPSILON);
     }
   }
 }
@@ -192,7 +166,7 @@ TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list_atomic)
 {
   float rc = dp_md.cutoff();
   int nloc = coord.size() / 3;  
-  std::vector<double> coord_cpy;
+  std::vector<VALUETYPE> coord_cpy;
   std::vector<int> atype_cpy, mapping;  
   std::vector<std::vector<int > > nlist_data;
   _build_nlist(nlist_data, coord_cpy, atype_cpy, mapping,
@@ -205,7 +179,7 @@ TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list_atomic)
 
   int nmodel = 2;
   std::vector<double > edir(nmodel), emd;
-  std::vector<std::vector<double> > fdir_(nmodel), fdir(nmodel), vdir(nmodel), fmd_, fmd(nmodel), vmd, aedir(nmodel), aemd, avdir(nmodel), avdir_(nmodel), avmd(nmodel), avmd_;
+  std::vector<std::vector<VALUETYPE> > fdir_(nmodel), fdir(nmodel), vdir(nmodel), fmd_, fmd(nmodel), vmd, aedir(nmodel), aemd, avdir(nmodel), avdir_(nmodel), avmd(nmodel), avmd_;
   dp0.compute(edir[0], fdir_[0], vdir[0], aedir[0], avdir_[0], coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
   dp1.compute(edir[1], fdir_[1], vdir[1], aedir[1], avdir_[1], coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
   dp_md.compute(emd, fmd_, vmd, aemd, avmd_, coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
@@ -228,18 +202,18 @@ TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list_atomic)
     EXPECT_EQ(avdir[kk].size(), avmd[kk].size());
   }  
   for(int kk = 0; kk < nmodel; ++kk){
-    EXPECT_LT(fabs(edir[kk] - emd[kk]), 1e-10);
+    EXPECT_LT(fabs(edir[kk] - emd[kk]), EPSILON);
     for(int ii = 0; ii < fdir[0].size(); ++ii){
-      EXPECT_LT(fabs(fdir[kk][ii] - fmd[kk][ii]), 1e-10);
+      EXPECT_LT(fabs(fdir[kk][ii] - fmd[kk][ii]), EPSILON);
     }
     for(int ii = 0; ii < vdir[0].size(); ++ii){
-      EXPECT_LT(fabs(vdir[kk][ii] - vmd[kk][ii]), 1e-10);
+      EXPECT_LT(fabs(vdir[kk][ii] - vmd[kk][ii]), EPSILON);
     }
     for(int ii = 0; ii < aedir[0].size(); ++ii){
-      EXPECT_LT(fabs(aedir[kk][ii] - aemd[kk][ii]), 1e-10);
+      EXPECT_LT(fabs(aedir[kk][ii] - aemd[kk][ii]), EPSILON);
     }
     for(int ii = 0; ii < avdir[0].size(); ++ii){
-      EXPECT_LT(fabs(avdir[kk][ii] - avmd[kk][ii]), 1e-10);
+      EXPECT_LT(fabs(avdir[kk][ii] - avmd[kk][ii]), EPSILON);
     }
   }
 }
@@ -249,7 +223,7 @@ TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list_std)
 {
   float rc = dp_md.cutoff();
   int nloc = coord.size() / 3;  
-  std::vector<double> coord_cpy;
+  std::vector<VALUETYPE> coord_cpy;
   std::vector<int> atype_cpy, mapping;  
   std::vector<std::vector<int > > nlist_data;
   _build_nlist(nlist_data, coord_cpy, atype_cpy, mapping,
@@ -262,8 +236,8 @@ TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list_std)
 
   int nmodel = 2;
   std::vector<double > edir(nmodel), emd;
-  std::vector<std::vector<double> > fdir_(nmodel), fdir(nmodel), vdir(nmodel), fmd_, fmd(nmodel), vmd;
-  std::vector<std::vector<double> > aemd(nmodel), aemd_, avmd(nmodel), avmd_;
+  std::vector<std::vector<VALUETYPE> > fdir_(nmodel), fdir(nmodel), vdir(nmodel), fmd_, fmd(nmodel), vmd;
+  std::vector<std::vector<VALUETYPE> > aemd(nmodel), aemd_, avmd(nmodel), avmd_;
   dp0.compute(edir[0], fdir_[0], vdir[0], coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
   dp1.compute(edir[1], fdir_[1], vdir[1], coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
   dp_md.compute(emd, fmd_, vmd, aemd_, avmd_, coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
@@ -278,7 +252,7 @@ TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list_std)
   }  
 
   // dp compute std e
-  std::vector<double > avg_e, std_e;
+  std::vector<VALUETYPE > avg_e, std_e;
   dp_md.compute_avg(avg_e, aemd);
   dp_md.compute_std_e(std_e, avg_e, aemd);
 
@@ -301,36 +275,36 @@ TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list_std)
   }
   EXPECT_EQ(manual_std_e.size(), std_e.size());
   for(int ii = 0; ii < std_e.size(); ++ii){
-    EXPECT_LT(fabs(manual_avg_e[ii] - avg_e[ii]), 1e-10);
-    EXPECT_LT(fabs(manual_std_e[ii] - std_e[ii]), 1e-10);
+    EXPECT_LT(fabs(manual_avg_e[ii] - avg_e[ii]), EPSILON);
+    EXPECT_LT(fabs(manual_std_e[ii] - std_e[ii]), EPSILON);
   }
   
   // dp compute std f
-  std::vector<double > avg_f, std_f;
+  std::vector<VALUETYPE > avg_f, std_f;
   dp_md.compute_avg(avg_f, fmd);
   dp_md.compute_std_f(std_f, avg_f, fmd);
 
   // manual compute std f
-  std::vector<double > manual_std_f(nloc);
-  std::vector<double > manual_rel_std_f(nloc);
-  double eps = 0.2;
+  std::vector<VALUETYPE > manual_std_f(nloc);
+  std::vector<VALUETYPE > manual_rel_std_f(nloc);
+  VALUETYPE eps = 0.2;
   EXPECT_EQ(fmd[0].size(), nloc * 3);
   for(int ii = 0; ii < nloc; ++ii){
-    std::vector<double > avg_f(3, 0.0);
+    std::vector<VALUETYPE > avg_f(3, 0.0);
     for(int dd = 0; dd < 3; ++dd){
       for(int kk = 0; kk < nmodel; ++kk){
 	avg_f[dd] += fmd[kk][ii*3+dd];
       }
       avg_f[dd] /= (nmodel) * 1.0;
     }
-    double std = 0.;
+    VALUETYPE std = 0.;
     for(int kk = 0; kk < nmodel; ++kk){
       for(int dd = 0; dd < 3; ++dd){
-	double tmp = fmd[kk][ii*3+dd] - avg_f[dd];
+	VALUETYPE tmp = fmd[kk][ii*3+dd] - avg_f[dd];
 	std += tmp * tmp;
       }
     }
-    double f_norm = 0;
+    VALUETYPE f_norm = 0;
     for (int dd = 0; dd < 3; ++dd){
       f_norm += avg_f[dd] * avg_f[dd];
     }
@@ -342,18 +316,18 @@ TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list_std)
 
   EXPECT_EQ(manual_std_f.size(), std_f.size());
   for(int ii = 0; ii < std_f.size(); ++ii){
-    EXPECT_LT(fabs(manual_std_f[ii] - std_f[ii]), 1e-10);
+    EXPECT_LT(fabs(manual_std_f[ii] - std_f[ii]), EPSILON);
   }
   dp_md.compute_relative_std_f(std_f, avg_f, eps);
   EXPECT_EQ(manual_std_f.size(), std_f.size());
   for(int ii = 0; ii < std_f.size(); ++ii){  
-    EXPECT_LT(fabs(manual_rel_std_f[ii] - std_f[ii]), 1e-10);
+    EXPECT_LT(fabs(manual_rel_std_f[ii] - std_f[ii]), EPSILON);
   }
 }
 
-inline double mymax(const std::vector<double > & xx)
+inline VALUETYPE mymax(const std::vector<VALUETYPE > & xx)
 {
-  double ret = 0;
+  VALUETYPE ret = 0;
   for (int ii = 0; ii < xx.size(); ++ii){
     if (xx[ii] > ret) {
       ret = xx[ii];
@@ -361,9 +335,9 @@ inline double mymax(const std::vector<double > & xx)
   }
   return ret;
 };  
-inline double mymin(const std::vector<double > & xx)
+inline VALUETYPE mymin(const std::vector<VALUETYPE > & xx)
 {
-  double ret = 1e10;
+  VALUETYPE ret = 1e10;
   for (int ii = 0; ii < xx.size(); ++ii){
     if (xx[ii] < ret) {
       ret = xx[ii];
@@ -371,17 +345,17 @@ inline double mymin(const std::vector<double > & xx)
   }
   return ret;
 };
-inline double myavg(const std::vector<double > & xx)
+inline VALUETYPE myavg(const std::vector<VALUETYPE > & xx)
 {
-  double ret = 0;
+  VALUETYPE ret = 0;
   for (int ii = 0; ii < xx.size(); ++ii){
     ret += xx[ii];
   }
   return (ret / xx.size());
 };
-inline double mystd(const std::vector<double > & xx)
+inline VALUETYPE mystd(const std::vector<VALUETYPE > & xx)
 {
-  double ret = 0;
+  VALUETYPE ret = 0;
   for (int ii = 0; ii < xx.size(); ++ii){
     ret += xx[ii] * xx[ii];
   }
@@ -392,7 +366,7 @@ TEST_F(TestInferDeepPotModeDeviPython, cpu_lmp_list_std)
 {
   float rc = dp_md.cutoff();
   int nloc = coord.size() / 3;  
-  std::vector<double> coord_cpy;
+  std::vector<VALUETYPE> coord_cpy;
   std::vector<int> atype_cpy, mapping;  
   std::vector<std::vector<int > > nlist_data;
   _build_nlist(nlist_data, coord_cpy, atype_cpy, mapping,
@@ -405,8 +379,8 @@ TEST_F(TestInferDeepPotModeDeviPython, cpu_lmp_list_std)
 
   int nmodel = 2;
   std::vector<double > edir(nmodel), emd;
-  std::vector<std::vector<double> > fdir_(nmodel), fdir(nmodel), vdir(nmodel), fmd_, fmd(nmodel), vmd;
-  std::vector<std::vector<double> > aemd(nmodel), aemd_, avmd(nmodel), avmd_;
+  std::vector<std::vector<VALUETYPE> > fdir_(nmodel), fdir(nmodel), vdir(nmodel), fmd_, fmd(nmodel), vmd;
+  std::vector<std::vector<VALUETYPE> > aemd(nmodel), aemd_, avmd(nmodel), avmd_;
   dp0.compute(edir[0], fdir_[0], vdir[0], coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
   dp1.compute(edir[1], fdir_[1], vdir[1], coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
   dp_md.compute(emd, fmd_, vmd, aemd_, avmd_, coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
@@ -421,29 +395,29 @@ TEST_F(TestInferDeepPotModeDeviPython, cpu_lmp_list_std)
   }  
 
   // dp compute std e
-  std::vector<double > avg_e, std_e;
+  std::vector<VALUETYPE > avg_e, std_e;
   dp_md.compute_avg(avg_e, aemd);
   dp_md.compute_std_e(std_e, avg_e, aemd);  
   
   // dp compute std f
-  std::vector<double > avg_f, std_f;
+  std::vector<VALUETYPE > avg_f, std_f;
   dp_md.compute_avg(avg_f, fmd);
   dp_md.compute_std_f(std_f, avg_f, fmd);
-  EXPECT_LT(fabs(mymax(std_f) - expected_md_f[0]), 1e-10);
-  EXPECT_LT(fabs(mymin(std_f) - expected_md_f[1]), 1e-10);
-  EXPECT_LT(fabs(myavg(std_f) - expected_md_f[2]), 1e-10);
+  EXPECT_LT(fabs(mymax(std_f) - expected_md_f[0]), EPSILON);
+  EXPECT_LT(fabs(mymin(std_f) - expected_md_f[1]), EPSILON);
+  EXPECT_LT(fabs(myavg(std_f) - expected_md_f[2]), EPSILON);
 
   // dp compute std v
   // we normalize v by number of atoms
   for (int ii = 0; ii < vmd.size(); ++ii){
     for(int jj = 0; jj < vmd[ii].size(); ++jj){
-      vmd[ii][jj] /= double(atype.size());
+      vmd[ii][jj] /= VALUETYPE(atype.size());
     }
   }
-  std::vector<double > avg_v, std_v;  
+  std::vector<VALUETYPE > avg_v, std_v;  
   dp_md.compute_avg(avg_v, vmd);
   dp_md.compute_std(std_v, avg_v, vmd, 1);
-  EXPECT_LT(fabs(mymax(std_v) - expected_md_v[0]), 1e-10);
-  EXPECT_LT(fabs(mymin(std_v) - expected_md_v[1]), 1e-10);
-  EXPECT_LT(fabs(mystd(std_v) - expected_md_v[2]), 1e-10);
+  EXPECT_LT(fabs(mymax(std_v) - expected_md_v[0]), EPSILON);
+  EXPECT_LT(fabs(mymin(std_v) - expected_md_v[1]), EPSILON);
+  EXPECT_LT(fabs(mystd(std_v) - expected_md_v[2]), EPSILON);
 }

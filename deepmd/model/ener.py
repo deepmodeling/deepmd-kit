@@ -3,13 +3,15 @@ from typing import Tuple, List
 
 from deepmd.env import tf
 from deepmd.utils.pair_tab import PairTab
-from deepmd.utils.graph import load_graph_def
+from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph
+from deepmd.utils.errors import GraphWithoutTensorError
 from deepmd.common import ClassArg
 from deepmd.env import global_cvt_2_ener_float, MODEL_VERSION, GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import op_module
+from .model import Model
 from .model_stat import make_stat_input, merge_sys_stat
 
-class EnerModel() :
+class EnerModel(Model) :
     """Energy model.
     
     Parameters
@@ -90,23 +92,36 @@ class EnerModel() :
     def data_stat(self, data):
         all_stat = make_stat_input(data, self.data_stat_nbatch, merge_sys = False)
         m_all_stat = merge_sys_stat(all_stat)
-        self._compute_input_stat(m_all_stat, protection = self.data_stat_protect)
-        self._compute_output_stat(all_stat)
+        self._compute_input_stat(m_all_stat, protection=self.data_stat_protect, mixed_type=data.mixed_type)
+        self._compute_output_stat(all_stat, mixed_type=data.mixed_type)
         # self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
-    def _compute_input_stat (self, all_stat, protection = 1e-2) :
-        self.descrpt.compute_input_stats(all_stat['coord'],
-                                         all_stat['box'],
-                                         all_stat['type'],
-                                         all_stat['natoms_vec'],
-                                         all_stat['default_mesh'], 
-                                         all_stat)
-        self.fitting.compute_input_stats(all_stat, protection = protection)
+    def _compute_input_stat (self, all_stat, protection=1e-2, mixed_type=False):
+        if mixed_type:
+            self.descrpt.compute_input_stats(all_stat['coord'],
+                                             all_stat['box'],
+                                             all_stat['type'],
+                                             all_stat['natoms_vec'],
+                                             all_stat['default_mesh'],
+                                             all_stat,
+                                             mixed_type,
+                                             all_stat['real_natoms_vec'])
+        else:
+            self.descrpt.compute_input_stats(all_stat['coord'],
+                                             all_stat['box'],
+                                             all_stat['type'],
+                                             all_stat['natoms_vec'],
+                                             all_stat['default_mesh'],
+                                             all_stat)
+        self.fitting.compute_input_stats(all_stat, protection=protection)
 
-    def _compute_output_stat (self, all_stat) :
-        self.fitting.compute_output_stats(all_stat)
+    def _compute_output_stat (self, all_stat, mixed_type=False):
+        if mixed_type:
+            self.fitting.compute_output_stats(all_stat, mixed_type=mixed_type)
+        else:
+            self.fitting.compute_output_stats(all_stat)
 
-    
+
     def build (self, 
                coord_, 
                atype_,
@@ -117,7 +132,9 @@ class EnerModel() :
                frz_model = None,
                suffix = '', 
                reuse = None):
-
+ 
+        if input_dict is None:
+            input_dict = {}
         with tf.variable_scope('model_attr' + suffix, reuse = reuse) :
             t_tmap = tf.constant(' '.join(self.type_map), 
                                  name = 'tmap', 
@@ -144,6 +161,7 @@ class EnerModel() :
 
         coord = tf.reshape (coord_, [-1, natoms[1] * 3])
         atype = tf.reshape (atype_, [-1, natoms[1]])
+        input_dict['nframes'] = tf.shape(coord)[0]
 
         # type embedding if any
         if self.typeebd is not None:
@@ -153,6 +171,7 @@ class EnerModel() :
                 suffix = suffix,
             )
             input_dict['type_embedding'] = type_embedding
+            input_dict['atype'] = atype_
 
         if frz_model == None:
             dout \
@@ -173,10 +192,11 @@ class EnerModel() :
                 name = 'descrpt_attr/ntypes',
                 dtype = tf.int32)
             feed_dict = self.descrpt.get_feed_dict(coord_, atype_, natoms, box, mesh)
-            return_elements = ['o_rmat:0', 'o_rmat_deriv:0', 'o_rij:0', 'o_nlist:0', 'o_descriptor:0']
-            descrpt_reshape, descrpt_deriv, rij, nlist, dout \
+            return_elements = [*self.descrpt.get_tensor_names(), 'o_descriptor:0']
+            imported_tensors \
                 = self._import_graph_def_from_frz_model(frz_model, feed_dict, return_elements)
-            self.descrpt.pass_tensors_from_frz_model(descrpt_reshape, descrpt_deriv, rij, nlist)
+            dout = imported_tensors[-1]
+            self.descrpt.pass_tensors_from_frz_model(*imported_tensors[:-1])
 
 
         if self.srtab is not None :
@@ -189,6 +209,7 @@ class EnerModel() :
                                         input_dict, 
                                         reuse = reuse, 
                                         suffix = suffix)
+        self.atom_ener = atom_ener
 
         if self.srtab is not None :
             sw_lambda, sw_deriv \
@@ -269,4 +290,38 @@ class EnerModel() :
 
     def _import_graph_def_from_frz_model(self, frz_model, feed_dict, return_elements):
         graph, graph_def = load_graph_def(frz_model)
-        return tf.import_graph_def(graph_def, input_map = feed_dict, return_elements = return_elements)
+        return tf.import_graph_def(graph_def, input_map = feed_dict, return_elements = return_elements, name = "")
+
+    def init_variables(self,
+                       graph : tf.Graph,
+                       graph_def : tf.GraphDef,
+                       model_type : str = "original_model",
+                       suffix : str = "",
+    ) -> None:
+        """
+        Init the embedding net variables with the given frozen model
+
+        Parameters
+        ----------
+        graph : tf.Graph
+            The input frozen model graph
+        graph_def : tf.GraphDef
+            The input frozen model graph_def
+        model_type : str
+            the type of the model
+        suffix : str
+            suffix to name scope
+        """
+        # self.frz_model will control the self.model to import the descriptor from the given frozen model instead of building from scratch...
+        # initialize fitting net with the given compressed frozen model
+        if model_type == 'original_model':
+            self.descrpt.init_variables(graph, graph_def, suffix=suffix)
+            self.fitting.init_variables(graph, graph_def, suffix=suffix)
+            tf.constant("original_model", name = 'model_type', dtype = tf.string)
+        elif model_type == 'compressed_model':
+            self.fitting.init_variables(graph, graph_def, suffix=suffix)
+            tf.constant("compressed_model", name = 'model_type', dtype = tf.string)
+        else:
+            raise RuntimeError("Unknown model type %s" % model_type)
+        if self.typeebd is not None:
+            self.typeebd.init_variables(graph, graph_def, suffix=suffix)

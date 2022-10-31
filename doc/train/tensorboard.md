@@ -19,7 +19,7 @@ DeePMD-kit can now use most of the interesting features enabled by tensorboard!
 ## How to use Tensorboard with DeePMD-kit
 
 Before running TensorBoard, make sure you have generated summary data in a log
-directory by modifying the the input script, set "tensorboard" true in training
+directory by modifying the the input script, set {ref}`tensorboard <training/tensorboard>` to true in training
 subsection will enable the tensorboard data analysis. eg. **water_se_a.json**.
 
 ```json

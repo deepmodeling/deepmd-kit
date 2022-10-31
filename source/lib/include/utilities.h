@@ -73,7 +73,7 @@ template <>
 inline float
 invsqrt<float> (const float x) 
 {
-  return 1./sqrtf (x);
+  return 1.f/sqrtf (x);
 }
 
 }
