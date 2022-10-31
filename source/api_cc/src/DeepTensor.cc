@@ -74,7 +74,6 @@ print_summary(const std::string &pre) const
   std::cout << pre << "source commit:      " + global_git_hash << std::endl;
   std::cout << pre << "source commit at:   " + global_git_date << std::endl;
   std::cout << pre << "surpport model ver.:" + global_model_version << std::endl;
-  std::cout << pre << "build float prec:   " + global_float_prec << std::endl;
   std::cout << pre << "build with tf inc:  " + global_tf_include_dir << std::endl;
   std::cout << pre << "build with tf lib:  " + global_tf_lib << std::endl;
   std::cout << pre << "set tf intra_op_parallelism_threads: " <<  num_intra_nthreads << std::endl;

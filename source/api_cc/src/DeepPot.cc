@@ -337,7 +337,6 @@ print_summary(const std::string &pre) const
   std::cout << pre << "source commit:      " + global_git_hash << std::endl;
   std::cout << pre << "source commit at:   " + global_git_date << std::endl;
   std::cout << pre << "surpport model ver.:" + global_model_version << std::endl;
-  std::cout << pre << "build float prec:   " + global_float_prec << std::endl;
 #if defined(GOOGLE_CUDA)
   std::cout << pre << "build variant:      cuda" << std::endl;
 #elif defined(TENSORFLOW_USE_ROCM)
