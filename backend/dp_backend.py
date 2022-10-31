@@ -1,5 +1,5 @@
 """A PEP-517 backend to find TensorFlow."""
-from typing import List, Dict
+from typing import List
 # TODO: switch to scikit_build_core after it is available
 from setuptools import build_meta as _orig
 
@@ -24,7 +24,7 @@ build_sdist = _orig.build_sdist
 get_requires_for_build_sdist = _orig.get_requires_for_build_sdist
 
 def get_requires_for_build_wheel(
-    config_settings: Dict[str, str | List[str]] | None = None,
+    config_settings: dict,
 ) -> List[str]:
     return _orig.get_requires_for_build_sdist(config_settings) + find_tensorflow()[1]
 

@@ -57,7 +57,6 @@ setup(
         "deepmd/nvnmd/entrypoints",
         "deepmd/nvnmd/fit",
         "deepmd/nvnmd/utils",
-        "deepmd/pkg_config",
     ],
     cmake_args=[
         f"-DTENSORFLOW_ROOT:PATH={tf_install_dir}",
