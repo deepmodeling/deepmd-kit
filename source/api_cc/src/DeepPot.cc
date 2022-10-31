@@ -80,7 +80,7 @@ run_model (ENERGYTYPE &			dener,
 }
 
 template
-static void
+void
 run_model <double, double> (ENERGYTYPE &			dener,
 	   std::vector<double> &	dforce_,
 	   std::vector<double> &	dvirial,
@@ -90,7 +90,7 @@ run_model <double, double> (ENERGYTYPE &			dener,
 	   const int			nghost = 0);
 
 template
-static void
+void
 run_model <double, float> (ENERGYTYPE &			dener,
      std::vector<float> &	dforce_,
      std::vector<float> &	dvirial,
@@ -100,7 +100,7 @@ run_model <double, float> (ENERGYTYPE &			dener,
      const int			nghost = 0);
 
 template
-static void
+void
 run_model <float, double> (ENERGYTYPE &			dener,
 	   std::vector<double> &	dforce_,
 	   std::vector<double> &	dvirial,
@@ -110,7 +110,7 @@ run_model <float, double> (ENERGYTYPE &			dener,
 	   const int			nghost = 0);
 
 template
-static void
+void
 run_model <float, float> (ENERGYTYPE &			dener,
      std::vector<float> &	dforce_,
      std::vector<float> &	dvirial,
@@ -202,7 +202,7 @@ static void run_model (ENERGYTYPE   &		dener,
 }
 
 template
-static void run_model <double, double> (ENERGYTYPE   &		dener,
+void run_model <double, double> (ENERGYTYPE   &		dener,
     std::vector<double>&	dforce_,
     std::vector<double>&	dvirial,	   
     std::vector<double>&	datom_energy_,
@@ -213,7 +213,7 @@ static void run_model <double, double> (ENERGYTYPE   &		dener,
     const int&		nghost = 0);
 
 template
-static void run_model <double, float> (ENERGYTYPE   &		dener,
+void run_model <double, float> (ENERGYTYPE   &		dener,
     std::vector<float>&	dforce_,
     std::vector<float>&	dvirial,	   
     std::vector<float>&	datom_energy_,
@@ -224,7 +224,7 @@ static void run_model <double, float> (ENERGYTYPE   &		dener,
     const int&		nghost = 0);
 
 template
-static void run_model <float, double> (ENERGYTYPE   &		dener,
+void run_model <float, double> (ENERGYTYPE   &		dener,
     std::vector<double>&	dforce_,
     std::vector<double>&	dvirial,	   
     std::vector<double>&	datom_energy_,
@@ -235,7 +235,7 @@ static void run_model <float, double> (ENERGYTYPE   &		dener,
     const int&		nghost = 0);
 
 template
-static void run_model <float, float> (ENERGYTYPE   &		dener,
+void run_model <float, float> (ENERGYTYPE   &		dener,
     std::vector<float>&	dforce_,
     std::vector<float>&	dvirial,	   
     std::vector<float>&	datom_energy_,
