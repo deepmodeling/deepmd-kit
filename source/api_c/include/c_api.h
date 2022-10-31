@@ -22,28 +22,26 @@ typedef struct DP_DeepPot DP_DeepPot;
 extern DP_DeepPot* DP_NewDeepPot(const char* c_model);
 
 /**
-* @brief The compute result of a DP.
-**/
-struct DP_ComputeResult {
-    const ENERGYTYPE energy;
-    const VALUETYPE* force;
-    const VALUETYPE* virial;
-};
-typedef struct DP_ComputeResult DP_ComputeResult;
-
-/**
 * @brief Evaluate the energy, force and virial by using a DP.
 * @param[in] dp The DP to use.
-* @param[in] natom The number of atoms.
+* @param[in] natoms The number of atoms.
 * @param[in] coord The coordinates of atoms. The array should be of size nframes x natoms x 3.
 * @param[in] atype The atom types. The array should contain natoms ints.
 * @param[in] box The cell of the region. The array should be of size nframes x 9.
+* @param[out] energy Output energy.
+* @param[out] force Output force.
+* @param[out] virial Output virial.
   **/
-extern DP_ComputeResult DP_DeepPotCompute (DP_DeepPot* dp,
-                        const int natom,
-                        const VALUETYPE* coord,
-                        const int* atype,
-                        const VALUETYPE* cell);
+extern void DP_DeepPotCompute (
+  DP_DeepPot* dp,
+  const int natom,
+  const VALUETYPE* coord,
+  const int* atype,
+  const VALUETYPE* cell,
+  const ENERGYTYPE* energy,
+  const VALUETYPE* force,
+  const VALUETYPE* virial
+  );
 
 #ifdef __cplusplus
 } /* end extern "C" */

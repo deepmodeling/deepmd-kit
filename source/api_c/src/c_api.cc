@@ -16,23 +16,24 @@ DP_DeepPot* DP_NewDeepPot(const char* c_model) {
     return new_dp;
 }
 
-DP_ComputeResult DP_DeepPotCompute (DP_DeepPot* dp,
-                        const int natom,
-                        const VALUETYPE* coord,
-                        const int* atype,
-                        const VALUETYPE* cell) {
-    std::vector<VALUETYPE> coord_(coord, coord+natom*3);
+void DP_DeepPotCompute (
+    DP_DeepPot* dp,
+    const int natoms,
+    const VALUETYPE* coord,
+    const int* atype,
+    const VALUETYPE* cell,
+    const ENERGYTYPE* energy,
+    const VALUETYPE* force,
+    const VALUETYPE* virial
+    ) {
+    std::vector<VALUETYPE> coord_(coord, coord+natoms*3);
     std::vector<int> atype_(atype, atype+natom);
     std::vector<VALUETYPE> cell_(cell, cell+9);
-    double e;
-    std::vector<VALUETYPE> f, v;
+    energy = new double;
+    force = new std::vector<VALUETYPE>;
+    virial = new std::vector<VALUETYPE>;
 
     dp->dp.compute(e, f, v, coord_, atype_, cell_);
-
-    DP_ComputeResult result = {
-        e, &f[0], &v[0]
-    };
-    return result;
 }
 
 }

@@ -32,12 +32,11 @@ An example `infer_water.c` is given below:
 
 int main(){
   char* model = "graph.pb";
-  DP_DeepPot* dp = DP_NewDeepPot(model);
   double coord[] = {1., 0., 0., 0., 0., 1.5, 1. ,0. ,3.};
   double cell[] = {10., 0., 0., 0., 10., 0., 0., 0., 10.};
   int atype[] = {1, 0, 1};
-  DP_ComputeResult result = DP_DeepPotCompute (dp, 3, &coord[0], &atype[0], &cell[0]);
-  const double e = result.energy, *f = (double*)result.force, *v = (double*)result.virial;
+  double *energy, *force, *virial;
+  DP_DeepPotCompute (dp, 3, &coord[0], &atype[0], &cell[0], e, f, v);
 }
 ```
 
