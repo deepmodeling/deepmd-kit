@@ -62,7 +62,7 @@ def find_tensorflow() -> Tuple[Optional[str], List[str]]:
         # TypeError if submodule_search_locations are None
         # IndexError if submodule_search_locations is an empty list
     except (AttributeError, TypeError, IndexError):
-        requires.append(get_tf_requirement()['cpu'])
+        requires.extend(get_tf_requirement()['cpu'])
         # setuptools will re-find tensorflow after installing setup_requires
         tf_install_dir = None
     return tf_install_dir, requires
