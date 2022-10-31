@@ -36,7 +36,7 @@ dependencies = [
     'wcmatch',
     'packaging',
 ]
-requires-python = ">=3.6"
+requires-python = ">=3.7"
 readme = "README.md"
 keywords = ["deepmd"]
 
