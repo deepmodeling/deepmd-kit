@@ -27,6 +27,6 @@ optional arguments:
                         The random seed
   --shuffle-test        Shuffle test data
   -d DETAIL_FILE, --detail-file DETAIL_FILE
-                        The file containing details of energy force and virial
-                        accuracy
+                        Files where details of energy, force and virial accuracy/accuracy per atom will be written
+  -a, --atomic          Test the accuracy of atomic label, i.e. energy / tensor (dipole, polar)
 ```
