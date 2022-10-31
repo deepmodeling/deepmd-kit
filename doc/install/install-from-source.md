@@ -76,6 +76,7 @@ One may set the following environment variables before executing `pip`:
 | DP_VARIANT            | `cpu`, `cuda`, `rocm`  | `cpu`         | Build CPU variant or GPU variant with CUDA or ROCM support. |
 | CUDA_TOOLKIT_ROOT_DIR | Path                   | Detected automatically | The path to the CUDA toolkit directory. CUDA 7.0 or later is supported. NVCC is required. |
 | ROCM_ROOT             | Path                   | Detected automatically | The path to the ROCM toolkit directory. |
+| TENSORFLOW_ROOT       | Path                   | Detected automatically | The path to TensorFlow Python library. By default the installer only finds TensorFlow under user site-package directory (`site.getusersitepackages()`) or system site-package directory (`sysconfig.get_path("purelib")`). If not found, the latest TensorFlow from PyPI will be built against.|
 
 To test the installation, one should firstly jump out of the source directory
 ```

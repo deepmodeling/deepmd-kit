@@ -1,13 +1,52 @@
 [build-system]
 requires = [
-    "setuptools",
-    "setuptools_scm",
+    "setuptools>=61",
+    "setuptools_scm[toml]>=6.2",
     "wheel",
     "scikit-build",
     "cmake",
     # see https://github.com/scikit-build/scikit-build/releases/tag/0.13.1
     "ninja; platform_system!='Windows'",
 ]
+build-backend = "dp_backend"
+backend-path = ["backend"]
+
+[project]
+name = "deepmd-kit"
+dynamic = ["version", "optional-dependencies", "entry-points"]
+description = "A deep learning package for many-body potential energy representation and molecular dynamics"
+authors = [
+  {name = "DeepModeling"},
+  {name = "Han Wang", email = "wang_han@iapcm.ac.cn"},
+]
+license = {file = "LICENSE"}
+classifiers = [
+    "Programming Language :: Python :: 3.6",
+    "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
+]
+dependencies = [
+    'numpy',
+    'scipy',
+    'pyyaml',
+    'dargs >= 0.2.6',
+    'python-hostlist >= 1.21',
+    'typing_extensions; python_version < "3.7"',
+    'importlib_metadata>=1.4; python_version < "3.8"',
+    'h5py',
+    'wcmatch',
+    'packaging',
+]
+requires-python = ">=3.6"
+readme = "README.md"
+keywords = ["deepmd"]
+
+[project.urls]
+Homepage = "https://github.com/deepmodeling/deepmd-kit"
+documentation = "https://docs.deepmodeling.com/projects/deepmd-kit"
+repository = "https://github.com/deepmodeling/deepmd-kit"
+
+[tool.setuptools_scm]
+write_to = "deepmd/_version.py"
 
 [tool.cibuildwheel]
 test-command = "dp -h"

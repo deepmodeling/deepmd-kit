@@ -51,7 +51,6 @@ jobs:
       if: matrix.variant == 'cpu'
     - run: python -m pip install -e .[cpu,test]
       env:
-        SETUPTOOLS_ENABLE_FEATURES: "legacy-editable"
         DP_BUILD_TESTING: 1
       if: matrix.variant == 'cpu'
     - run: pytest --cov=deepmd source/lmp/tests
