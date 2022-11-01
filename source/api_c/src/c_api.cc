@@ -15,14 +15,16 @@ DP_DeepPot* DP_NewDeepPot(const char* c_model) {
     DP_DeepPot* new_dp = new DP_DeepPot(dp);
     return new_dp;
 }
+} // extern "C"
 
-void DP_DeepPotCompute (
+template <typename VALUETYPE>
+void DP_DeepPotCompute_variant (
     DP_DeepPot* dp,
     const int natoms,
     const VALUETYPE* coord,
     const int* atype,
     const VALUETYPE* cell,
-    ENERGYTYPE* energy,
+    double* energy,
     VALUETYPE* force,
     VALUETYPE* virial
     ) {
@@ -30,7 +32,7 @@ void DP_DeepPotCompute (
     std::vector<VALUETYPE> coord_(coord, coord+natoms*3);
     std::vector<int> atype_(atype, atype+natoms);
     std::vector<VALUETYPE> cell_(cell, cell+9);
-    ENERGYTYPE e;
+    double e;
     std::vector<VALUETYPE> f, v;
 
     dp->dp.compute(e, f, v, coord_, atype_, cell_);
@@ -40,4 +42,56 @@ void DP_DeepPotCompute (
     std::copy(v.begin(), v.end(), virial);
 }
 
+template
+void DP_DeepPotCompute_variant <double> (
+    DP_DeepPot* dp,
+    const int natoms,
+    const double* coord,
+    const int* atype,
+    const double* cell,
+    double* energy,
+    double* force,
+    double* virial
+    );
+
+template
+void DP_DeepPotCompute_variant <float> (
+    DP_DeepPot* dp,
+    const int natoms,
+    const float* coord,
+    const int* atype,
+    const float* cell,
+    double* energy,
+    float* force,
+    float* virial
+    );
+
+extern "C" {
+
+void DP_DeepPotCompute (
+    DP_DeepPot* dp,
+    const int natoms,
+    const double* coord,
+    const int* atype,
+    const double* cell,
+    double* energy,
+    double* force,
+    double* virial
+    ) {
+    DP_DeepPotCompute_variant<double>(dp, natoms, coord, atype, cell, energy, force, virial);
 }
+
+void DP_DeepPotComputef (
+    DP_DeepPot* dp,
+    const int natoms,
+    const float* coord,
+    const int* atype,
+    const float* cell,
+    double* energy,
+    float* force,
+    float* virial
+    ) {
+    DP_DeepPotCompute_variant<float>(dp, natoms, coord, atype, cell, energy, force, virial);
+}
+
+} // extern "C"
