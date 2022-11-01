@@ -2,6 +2,7 @@
 
 #include <vector>
 #include "c_api_internal.h"
+#include "common.h"
 #include "DeepPot.h"
 
 extern "C" {
@@ -92,6 +93,15 @@ void DP_DeepPotComputef (
     float* virial
     ) {
     DP_DeepPotCompute_variant<float>(dp, natoms, coord, atype, cell, energy, force, virial);
+}
+
+void DP_ConvertPbtxtToPb(
+    const char* c_pbtxt,
+    const char* c_pb
+    ) {
+    std::string pbtxt(c_pbtxt);
+    std::string pb(c_pb);
+    deepmd::convert_pbtxt_to_pb(pbtxt, pb);
 }
 
 } // extern "C"

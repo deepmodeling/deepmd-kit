@@ -1,7 +1,7 @@
 file(GLOB LIB_SRC src/*.cc src/*.cpp)
 file(GLOB INC_SRC include/*.h)
 
-set (libname "${LIB_DEEPMD_C}${variant_name}")
+set (libname "${LIB_DEEPMD_C}")
 
 add_library(${libname} SHARED ${LIB_SRC})
 

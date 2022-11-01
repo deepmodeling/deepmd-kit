@@ -57,6 +57,16 @@ extern void DP_DeepPotComputef (
   float* virial
   );
 
+/**
+* @brief Convert PBtxt to PB.
+* @param[in] c_pbtxt The name of the PBtxt file.
+* @param[in] c_pb The name of the PB file.
+  **/
+extern void DP_ConvertPbtxtToPb(
+  const char* c_pbtxt,
+  const char* c_pb
+  );
+
 #ifdef __cplusplus
 } /* end extern "C" */
 #endif

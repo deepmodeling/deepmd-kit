@@ -27,7 +27,7 @@ and then run the program:
 
 ## C interface
 
-Compared to C++ interface, C library will not be affected by C++ compilers.
+Although C is harder to write, C library will not be affected by different versions of C++ compilers.
 
 An example `infer_water.c` is given below:
 ```cpp
