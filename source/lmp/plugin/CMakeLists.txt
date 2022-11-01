@@ -52,7 +52,7 @@ if (DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
   # link: libdeepmd libtensorflow_cc libtensorflow_framework
   target_link_libraries (${libname} PUBLIC
     lammps_interface
-    ${LIB_DEEPMD_CC}${variant_name}
+    ${LIB_DEEPMD_CC}
     ${TensorFlow_LIBRARY}
     ${TensorFlowFramework_LIBRARY}
   )

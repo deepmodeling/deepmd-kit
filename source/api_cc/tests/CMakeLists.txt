@@ -102,22 +102,23 @@ else ()
   include_directories(${GTEST_INCLUDE_DIRS})
 endif ()
 
+set_target_properties(
+  ${apiname}
+  PROPERTIES 
+  INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}"
+)
+
 function(_add_apicc_test_variant variant_name prec_def)
 add_executable( runUnitTests${variant_name} ${TEST_SRC} )
-target_link_libraries(runUnitTests${variant_name} gtest gtest_main ${apiname}${variant_name} rt coverage_config)
+target_link_libraries(runUnitTests${variant_name} gtest gtest_main ${apiname} rt coverage_config)
 add_test( runUnitTests${variant_name} runUnitTests${variant_name} )
 set_target_properties(
   runUnitTests${variant_name}
   PROPERTIES 
   INSTALL_RPATH "$ORIGIN/../lib"
 )
-set_target_properties(
-  ${apiname}${variant_name}
-  PROPERTIES 
-  INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}"
-)
 target_compile_definitions(
-  ${apiname}${variant_name}
+  runUnitTests${variant_name}
   PUBLIC ${prec_def}
 )
 install(TARGETS runUnitTests${variant_name} DESTINATION bin/)

@@ -46,6 +46,7 @@ public:
   * @param[in] atype The atom types. The list should contain natoms ints.
   * @param[in] box The cell of the region. The array should be of size 9.
   **/
+  template <typename VALUETYPE>
   void compute (std::vector<VALUETYPE> &	value,
 		const std::vector<VALUETYPE> &	coord,
 		const std::vector<int> &	atype,
@@ -59,6 +60,7 @@ public:
   * @param[in] nghost The number of ghost atoms.
   * @param[in] inlist The input neighbour list.
   **/
+  template <typename VALUETYPE>
   void compute (std::vector<VALUETYPE> &	value,
 		const std::vector<VALUETYPE> &	coord,
 		const std::vector<int> &	atype,
@@ -74,6 +76,7 @@ public:
   * @param[in] atype The atom types. The list should contain natoms ints.
   * @param[in] box The cell of the region. The array should be of size 9.
   **/
+  template <typename VALUETYPE>
   void compute (std::vector<VALUETYPE> &	global_tensor,
 		std::vector<VALUETYPE> &	force,
 		std::vector<VALUETYPE> &	virial,
@@ -91,6 +94,7 @@ public:
   * @param[in] nghost The number of ghost atoms.
   * @param[in] inlist The input neighbour list.
   **/
+  template <typename VALUETYPE>
   void compute (std::vector<VALUETYPE> &	global_tensor,
 		std::vector<VALUETYPE> &	force,
 		std::vector<VALUETYPE> &	virial,
@@ -110,6 +114,7 @@ public:
   * @param[in] atype The atom types. The list should contain natoms ints.
   * @param[in] box The cell of the region. The array should be of size 9.
   **/
+  template <typename VALUETYPE>
   void compute (std::vector<VALUETYPE> &	global_tensor,
 		std::vector<VALUETYPE> &	force,
 		std::vector<VALUETYPE> &	virial,
@@ -131,6 +136,7 @@ public:
   * @param[in] nghost The number of ghost atoms.
   * @param[in] inlist The input neighbour list.
   **/
+  template <typename VALUETYPE>
   void compute (std::vector<VALUETYPE> &	global_tensor,
 		std::vector<VALUETYPE> &	force,
 		std::vector<VALUETYPE> &	virial,
@@ -145,7 +151,7 @@ public:
   * @brief Get the cutoff radius.
   * @return The cutoff radius.
   **/
-  VALUETYPE cutoff () const {assert(inited); return rcut;};
+  double cutoff () const {assert(inited); return rcut;};
   /**
   * @brief Get the number of types.
   * @return The number of types.
@@ -163,9 +169,9 @@ private:
   int num_intra_nthreads, num_inter_nthreads;
   tensorflow::GraphDef* graph_def;
   bool inited;
-  VALUETYPE rcut;
+  double rcut;
   int dtype;
-  VALUETYPE cell_size;
+  double cell_size;
   int ntypes;
   std::string model_type;
   std::string model_version;
@@ -173,32 +179,37 @@ private:
   std::vector<int> sel_type;
   template<class VT> VT get_scalar(const std::string & name) const;
   template<class VT> void get_vector (std::vector<VT> & vec, const std::string & name) const;
-  template<typename MODELTYPE> void run_model (std::vector<VALUETYPE> &		d_tensor_,
+  template<typename MODELTYPE, typename VALUETYPE>
+  void run_model (std::vector<VALUETYPE> &		d_tensor_,
 		  tensorflow::Session *			session, 
 		  const std::vector<std::pair<std::string, tensorflow::Tensor>> & input_tensors,
-		  const AtomMap<VALUETYPE> &		atommap, 
+		  const AtomMap &		atommap, 
 		  const std::vector<int> &		sel_fwd,
 		  const int				nghost = 0);
-  template<typename MODELTYPE> void run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
+  template<typename MODELTYPE, typename VALUETYPE>
+  void run_model (std::vector<VALUETYPE> &		dglobal_tensor_,
 		  std::vector<VALUETYPE> &	dforce_,
 		  std::vector<VALUETYPE> &	dvirial_,
 		  std::vector<VALUETYPE> &	datom_tensor_,
 		  std::vector<VALUETYPE> &	datom_virial_,
 		  tensorflow::Session *			session, 
 		  const std::vector<std::pair<std::string, tensorflow::Tensor>> & input_tensors,
-		  const AtomMap<VALUETYPE> &		atommap, 
+		  const AtomMap &		atommap, 
 		  const std::vector<int> &		sel_fwd,
 		  const int				nghost = 0);
+  template<typename VALUETYPE>
   void compute_inner (std::vector<VALUETYPE> &		value,
 		      const std::vector<VALUETYPE> &	coord,
 		      const std::vector<int> &		atype,
 		      const std::vector<VALUETYPE> &	box);
+  template<typename VALUETYPE>
   void compute_inner (std::vector<VALUETYPE> &		value,
 		      const std::vector<VALUETYPE> &	coord,
 		      const std::vector<int> &		atype,
 		      const std::vector<VALUETYPE> &	box, 
 		      const int				nghost,
 		      const InputNlist&			inlist);
+  template<typename VALUETYPE>
   void compute_inner (std::vector<VALUETYPE> &		global_tensor,
 		      std::vector<VALUETYPE> &	force,
 		      std::vector<VALUETYPE> &	virial,
@@ -207,6 +218,7 @@ private:
 		      const std::vector<VALUETYPE> &	coord,
 		      const std::vector<int> &		atype,
 		      const std::vector<VALUETYPE> &	box);
+  template<typename VALUETYPE>
   void compute_inner (std::vector<VALUETYPE> &		global_tensor,
 		      std::vector<VALUETYPE> &	force,
 		      std::vector<VALUETYPE> &	virial,

@@ -10,8 +10,7 @@ file(GLOB LIB_SRC src/*.cc src/*.cpp)
 file(GLOB INC_SRC include/*.h ${CMAKE_CURRENT_BINARY_DIR}/version.h)
 
 
-function(_add_libapicc_variant variant_name prec_def)
-set (libname "${LIB_DEEPMD_CC}${variant_name}")
+set (libname "${LIB_DEEPMD_CC}")
 
 add_library(${libname} SHARED ${LIB_SRC})
 
@@ -35,7 +34,6 @@ set_target_properties(
   INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}"
 )
 target_compile_definitions(${libname}
-  PUBLIC ${prec_def}
   PRIVATE TF_PRIVATE
 )
 if (CMAKE_TESTING_ENABLED)
@@ -49,7 +47,10 @@ install(
   DESTINATION	include/deepmd
 )
 
-endfunction()
-
-_add_libapicc_variant("${HIGH_PREC_VARIANT}" "${HIGH_PREC_DEF}")
-_add_libapicc_variant("${LOW_PREC_VARIANT}" "${LOW_PREC_DEF}")
+# make a link to libdeepmd_cc_low.so for compatibility
+INSTALL(CODE "execute_process( \
+COMMAND ${CMAKE_COMMAND} -E create_symlink \
+${CMAKE_SHARED_LIBRARY_PREFIX}${libname}${CMAKE_SHARED_LIBRARY_SUFFIX} \
+${CMAKE_INSTALL_PREFIX}/lib/${CMAKE_SHARED_LIBRARY_PREFIX}${libname}${LOW_PREC_VARIANT}${CMAKE_SHARED_LIBRARY_SUFFIX}   \
+)"
+)
