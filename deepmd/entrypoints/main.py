@@ -281,7 +281,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--detail-file",
         type=str,
         default=None,
-        help="Files where details of energy, force and virial accuracy/accuracy per atom will be written",
+        help="The prefix to files where details of energy, force and virial accuracy/accuracy per atom will be written",
     )
     parser_tst.add_argument(
         "-a",
