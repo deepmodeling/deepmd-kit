@@ -15,6 +15,7 @@ int main(){
 }
 ```
 where `e`, `f` and `v` are predicted energy, force and virial of the system, respectively.
+See {cpp:class}`deepmd::DeepPot` for details.
 
 You can compile `infer_water.cpp` using `gcc`:
 ```sh
@@ -62,6 +63,7 @@ int main(){
 ```
 
 where `e`, `f` and `v` are predicted energy, force and virial of the system, respectively.
+See {cpp:func}`DP_DeepPotCompute` for details.
 
 You can compile `infer_water.c` using `gcc`:
 ```sh
