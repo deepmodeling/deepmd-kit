@@ -38,9 +38,9 @@ extern void DP_DeepPotCompute (
   const VALUETYPE* coord,
   const int* atype,
   const VALUETYPE* cell,
-  const ENERGYTYPE* energy,
-  const VALUETYPE* force,
-  const VALUETYPE* virial
+  ENERGYTYPE* energy,
+  VALUETYPE* force,
+  VALUETYPE* virial
   );
 
 #ifdef __cplusplus

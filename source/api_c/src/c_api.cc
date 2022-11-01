@@ -22,18 +22,22 @@ void DP_DeepPotCompute (
     const VALUETYPE* coord,
     const int* atype,
     const VALUETYPE* cell,
-    const ENERGYTYPE* energy,
-    const VALUETYPE* force,
-    const VALUETYPE* virial
+    ENERGYTYPE* energy,
+    VALUETYPE* force,
+    VALUETYPE* virial
     ) {
+    // init C++ vectors from C arrays
     std::vector<VALUETYPE> coord_(coord, coord+natoms*3);
-    std::vector<int> atype_(atype, atype+natom);
+    std::vector<int> atype_(atype, atype+natoms);
     std::vector<VALUETYPE> cell_(cell, cell+9);
-    energy = new double;
-    force = new std::vector<VALUETYPE>;
-    virial = new std::vector<VALUETYPE>;
+    ENERGYTYPE e;
+    std::vector<VALUETYPE> f, v;
 
     dp->dp.compute(e, f, v, coord_, atype_, cell_);
+    // copy from C++ vectors to C arrays
+    *energy = e;
+    std::copy(f.begin(), f.end(), force);
+    std::copy(v.begin(), v.end(), virial);
 }
 
 }

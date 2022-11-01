@@ -28,15 +28,33 @@ and then run the program:
 ## C interface
 An example `infer_water.c` is given below:
 ```cpp
+#include <stdio.h>
+#include <stdlib.h>
 #include "deepmd/c_api.h"
 
 int main(){
-  char* model = "graph.pb";
+  const char* model = "graph.pb";
   double coord[] = {1., 0., 0., 0., 0., 1.5, 1. ,0. ,3.};
   double cell[] = {10., 0., 0., 0., 10., 0., 0., 0., 10.};
   int atype[] = {1, 0, 1};
-  double *energy, *force, *virial;
-  DP_DeepPotCompute (dp, 3, &coord[0], &atype[0], &cell[0], e, f, v);
+  // init C pointers with given memory
+  double* e = malloc(sizeof(*e));
+  double* f = malloc(sizeof(*f) * 9);
+  double* v = malloc(sizeof(*v) * 9);
+  // DP model
+  DP_DeepPot* dp = DP_NewDeepPot(model);
+  DP_DeepPotCompute (dp, 3, coord, atype, cell, e, f, v);
+  // print results
+  printf("energy: %f\n", *e);
+  for (int ii = 0; ii < 9; ++ii)
+    printf("force[%d]: %f\n", ii, f[ii]);
+  for (int ii = 0; ii < 9; ++ii)
+    printf("force[%d]: %f\n", ii, v[ii]);
+  // free memory
+  free(e);
+  free(f);
+  free(v);
+  free(dp);
 }
 ```
 
