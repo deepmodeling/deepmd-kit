@@ -5,12 +5,10 @@
 
 using namespace deepmd;
 
-template <typename VALUETYPE>
-AtomMap<VALUETYPE>::
+AtomMap::
 AtomMap() {}
 
-template <typename VALUETYPE>
-AtomMap<VALUETYPE>::
+AtomMap::
 AtomMap(const std::vector<int >::const_iterator in_begin, 
 	   const std::vector<int >::const_iterator in_end)
 {
@@ -33,7 +31,7 @@ AtomMap(const std::vector<int >::const_iterator in_begin,
 
 template <typename VALUETYPE>
 void
-AtomMap<VALUETYPE>::
+AtomMap::
 forward (typename std::vector<VALUETYPE >::iterator out,
 	 const typename std::vector<VALUETYPE >::const_iterator in, 
 	 const int stride) const 
@@ -50,7 +48,7 @@ forward (typename std::vector<VALUETYPE >::iterator out,
 
 template <typename VALUETYPE>
 void
-AtomMap<VALUETYPE>::
+AtomMap::
 backward (typename std::vector<VALUETYPE >::iterator out,
 	  const typename std::vector<VALUETYPE >::const_iterator in, 
 	  const int stride) const 
@@ -65,6 +63,30 @@ backward (typename std::vector<VALUETYPE >::iterator out,
   }
 }
 
-template class deepmd::AtomMap<float>;
-template class deepmd::AtomMap<double>;
+template
+void
+AtomMap::
+forward <double> (typename std::vector<double >::iterator out,
+	 const typename std::vector<double >::const_iterator in, 
+	 const int stride) const ;
 
+template
+void
+AtomMap::
+forward <float> (typename std::vector<float >::iterator out,
+	 const typename std::vector<float >::const_iterator in, 
+	 const int stride) const ;
+
+template
+void
+AtomMap::
+backward <double> (typename std::vector<double >::iterator out,
+	  const typename std::vector<double >::const_iterator in, 
+	  const int stride) const ;
+
+template
+void
+AtomMap::
+backward <float> (typename std::vector<float >::iterator out,
+	  const typename std::vector<float >::const_iterator in, 
+	  const int stride) const ;

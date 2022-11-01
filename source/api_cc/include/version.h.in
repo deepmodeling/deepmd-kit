@@ -3,11 +3,6 @@
 #include <string>
 // using namespace std;
 
-#ifdef HIGH_PREC
-const std::string global_float_prec="double";
-#else 
-const std::string global_float_prec="float";
-#endif
 
 const std::string global_install_prefix="@CMAKE_INSTALL_PREFIX@";
 const std::string global_git_summ="@GIT_SUMM@";
