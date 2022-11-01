@@ -14,6 +14,9 @@ set_target_properties(
   PROPERTIES 
   INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}"
 )
+if (CMAKE_TESTING_ENABLED)
+  target_link_libraries(${libname} PRIVATE coverage_config)
+endif()
 
 install(TARGETS ${libname} DESTINATION lib/)
 
