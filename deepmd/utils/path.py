@@ -302,7 +302,7 @@ class DPH5Path(DPPath):
     def _file_keys(cls, file: h5py.File) -> List[str]:
         """Walk all groups and dataset"""
         l = []
-        file.visit(lambda x: l.append("/" + x))
+        file.visit(lambda x: l.append(x))
         return l
 
     def is_file(self) -> bool:
