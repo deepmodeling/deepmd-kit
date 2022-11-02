@@ -43,12 +43,12 @@ void DP_DeepPotCompute_variant (
     std::vector<VALUETYPE> f, v, ae, av;
 
     dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_);
-    // copy from C++ vectors to C arrays
-    *energy = e;
-    std::copy(f.begin(), f.end(), force);
-    std::copy(v.begin(), v.end(), virial);
-    std::copy(ae.begin(), ae.end(), atomic_energy);
-    std::copy(av.begin(), av.end(), atomic_virial);
+    // copy from C++ vectors to C arrays, if not NULL pointer
+    if(energy) *energy = e;
+    if(force) std::copy(f.begin(), f.end(), force);
+    if(virial) std::copy(v.begin(), v.end(), virial);
+    if(atomic_energy) std::copy(ae.begin(), ae.end(), atomic_energy);
+    if(atomic_virial) std::copy(av.begin(), av.end(), atomic_virial);
 }
 
 template
