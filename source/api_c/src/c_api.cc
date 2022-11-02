@@ -27,20 +27,24 @@ void DP_DeepPotCompute_variant (
     const VALUETYPE* cell,
     double* energy,
     VALUETYPE* force,
-    VALUETYPE* virial
+    VALUETYPE* virial,
+    VALUETYPE* atomic_energy,
+    VALUETYPE* atomic_virial
     ) {
     // init C++ vectors from C arrays
     std::vector<VALUETYPE> coord_(coord, coord+natoms*3);
     std::vector<int> atype_(atype, atype+natoms);
     std::vector<VALUETYPE> cell_(cell, cell+9);
     double e;
-    std::vector<VALUETYPE> f, v;
+    std::vector<VALUETYPE> f, v, ae, av;
 
-    dp->dp.compute(e, f, v, coord_, atype_, cell_);
+    dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_);
     // copy from C++ vectors to C arrays
     *energy = e;
     std::copy(f.begin(), f.end(), force);
     std::copy(v.begin(), v.end(), virial);
+    std::copy(ae.begin(), ae.end(), atomic_energy);
+    std::copy(av.begin(), av.end(), atomic_virial);
 }
 
 template
@@ -52,7 +56,9 @@ void DP_DeepPotCompute_variant <double> (
     const double* cell,
     double* energy,
     double* force,
-    double* virial
+    double* virial,
+    double* atomic_energy,
+    double* atomic_virial
     );
 
 template
@@ -64,7 +70,9 @@ void DP_DeepPotCompute_variant <float> (
     const float* cell,
     double* energy,
     float* force,
-    float* virial
+    float* virial,
+    float* atomic_energy,
+    float* atomic_virial
     );
 
 extern "C" {
@@ -77,9 +85,11 @@ void DP_DeepPotCompute (
     const double* cell,
     double* energy,
     double* force,
-    double* virial
+    double* virial,
+    double* atomic_energy,
+    double* atomic_virial
     ) {
-    DP_DeepPotCompute_variant<double>(dp, natoms, coord, atype, cell, energy, force, virial);
+    DP_DeepPotCompute_variant<double>(dp, natoms, coord, atype, cell, energy, force, virial, atomic_energy, atomic_virial);
 }
 
 void DP_DeepPotComputef (
@@ -90,9 +100,11 @@ void DP_DeepPotComputef (
     const float* cell,
     double* energy,
     float* force,
-    float* virial
+    float* virial,
+    float* atomic_energy,
+    float* atomic_virial
     ) {
-    DP_DeepPotCompute_variant<float>(dp, natoms, coord, atype, cell, energy, force, virial);
+    DP_DeepPotCompute_variant<float>(dp, natoms, coord, atype, cell, energy, force, virial, atomic_energy, atomic_virial);
 }
 
 void DP_ConvertPbtxtToPb(

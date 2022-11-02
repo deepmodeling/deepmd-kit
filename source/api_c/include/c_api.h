@@ -23,6 +23,8 @@ extern DP_DeepPot* DP_NewDeepPot(const char* c_model);
 * @param[out] energy Output energy.
 * @param[out] force Output force.
 * @param[out] virial Output virial.
+* @param[out] atomic_energy Output atomic energy.
+* @param[out] atomic_virial Output atomic virial.
   **/
 extern void DP_DeepPotCompute (
   DP_DeepPot* dp,
@@ -32,7 +34,9 @@ extern void DP_DeepPotCompute (
   const double* cell,
   double* energy,
   double* force,
-  double* virial
+  double* virial,
+  double* atomic_energy,
+  double* atomic_virial
   );
 
 /**
@@ -45,6 +49,8 @@ extern void DP_DeepPotCompute (
 * @param[out] energy Output energy.
 * @param[out] force Output force.
 * @param[out] virial Output virial.
+* @param[out] atomic_energy Output atomic energy.
+* @param[out] atomic_virial Output atomic virial.
   **/
 extern void DP_DeepPotComputef (
   DP_DeepPot* dp,
@@ -54,7 +60,9 @@ extern void DP_DeepPotComputef (
   const float* cell,
   double* energy,
   float* force,
-  float* virial
+  float* virial,
+  float* atomic_energy,
+  float* atomic_virial
   );
 
 /**

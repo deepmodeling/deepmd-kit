@@ -79,11 +79,16 @@ TEST_F(TestInferDeepPotA, double_infer)
   double* ener_ = new double;
   double* force_ = new double[natoms * 3];
   double* virial_ = new double[9];
-  DP_DeepPotCompute (dp, natoms, coord, atype, box, ener_, force_, virial_);
+  double* atomic_ener_ = new double[natoms];
+  double* atomic_virial_ = new double[natoms * 9];
+
+  DP_DeepPotCompute (dp, natoms, coord, atype, box, ener_, force_, virial_, atomic_ener_, atomic_virial_);
 
   double ener = *ener_;
   std::vector<double> force(force_, force_ + natoms * 3);
   std::vector<double> virial(virial_, virial_ + 9);
+  std::vector<double> atomic_ener(atomic_ener_, atomic_ener_ + natoms);
+  std::vector<double> atomic_virial(atomic_virial_, atomic_virial_ + natoms * 9);
 
   EXPECT_LT(fabs(ener - expected_tot_e), 1e-10);
   for(int ii = 0; ii < natoms*3; ++ii){
@@ -92,6 +97,12 @@ TEST_F(TestInferDeepPotA, double_infer)
   for(int ii = 0; ii < 3*3; ++ii){
     EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), 1e-10);
   }
+  for(int ii = 0; ii < natoms; ++ii){
+    EXPECT_LT(fabs(atomic_ener[ii] - expected_e[ii]), 1e-10);
+  }
+  for(int ii = 0; ii < natoms * 9; ++ii){
+    EXPECT_LT(fabs(atomic_virial[ii] - expected_v[ii]), 1e-10);
+  }
 }
 
 TEST_F(TestInferDeepPotA, float_infer)
@@ -99,12 +110,16 @@ TEST_F(TestInferDeepPotA, float_infer)
   double* ener_ = new double;
   float* force_ = new float[natoms * 3];
   float* virial_ = new float[9];
+  float* atomic_ener_ = new float[natoms];
+  float* atomic_virial_ = new float[natoms * 9];
 
-  DP_DeepPotComputef (dp, natoms, coordf, atype, boxf, ener_, force_, virial_);
+  DP_DeepPotComputef (dp, natoms, coordf, atype, boxf, ener_, force_, virial_, atomic_ener_, atomic_virial_);
 
   double ener = *ener_;
   std::vector<float> force(force_, force_ + natoms * 3);
   std::vector<float> virial(virial_, virial_ + 9);
+  std::vector<float> atomic_ener(atomic_ener_, atomic_ener_ + natoms);
+  std::vector<float> atomic_virial(atomic_virial_, atomic_virial_ + natoms * 9);
 
   EXPECT_LT(fabs(ener - expected_tot_e), 1e-6);
   for(int ii = 0; ii < natoms*3; ++ii){
@@ -112,5 +127,12 @@ TEST_F(TestInferDeepPotA, float_infer)
   }
   for(int ii = 0; ii < 3*3; ++ii){
     EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), 1e-6);
+  }
+
+  for(int ii = 0; ii < natoms; ++ii){
+    EXPECT_LT(fabs(atomic_ener[ii] - expected_e[ii]), 1e-5);
+  }
+  for(int ii = 0; ii < natoms * 9; ++ii){
+    EXPECT_LT(fabs(atomic_virial[ii] - expected_v[ii]), 1e-6);
   }
 }

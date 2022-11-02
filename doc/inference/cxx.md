@@ -43,11 +43,13 @@ int main(){
   int atype[] = {1, 0, 1};
   // init C pointers with given memory
   double* e = malloc(sizeof(*e));
-  double* f = malloc(sizeof(*f) * 9);
+  double* f = malloc(sizeof(*f) * 9); // natoms * 3
   double* v = malloc(sizeof(*v) * 9);
+  double* ae = malloc(sizeof(*ae) * 9); // natoms
+  double* av = malloc(sizeof(*av) * 27); // natoms * 9
   // DP model
   DP_DeepPot* dp = DP_NewDeepPot(model);
-  DP_DeepPotCompute (dp, 3, coord, atype, cell, e, f, v);
+  DP_DeepPotCompute (dp, 3, coord, atype, cell, e, f, v, ae, av);
   // print results
   printf("energy: %f\n", *e);
   for (int ii = 0; ii < 9; ++ii)
@@ -58,11 +60,14 @@ int main(){
   free(e);
   free(f);
   free(v);
+  free(ae);
+  free(av);
   free(dp);
 }
 ```
 
 where `e`, `f` and `v` are predicted energy, force and virial of the system, respectively.
+`ae` and `av` are atomic energy and atomic virial, respectively.
 See {cpp:func}`DP_DeepPotCompute` for details.
 
 You can compile `infer_water.c` using `gcc`:
