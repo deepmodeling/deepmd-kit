@@ -34,7 +34,11 @@ void DP_DeepPotCompute_variant (
     // init C++ vectors from C arrays
     std::vector<VALUETYPE> coord_(coord, coord+natoms*3);
     std::vector<int> atype_(atype, atype+natoms);
-    std::vector<VALUETYPE> cell_(cell, cell+9);
+    std::vector<VALUETYPE> cell_;
+    if (cell) {
+        // pbc
+        cell_.assign(cell, cell+9);
+    }
     double e;
     std::vector<VALUETYPE> f, v, ae, av;
 

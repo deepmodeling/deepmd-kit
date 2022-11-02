@@ -19,12 +19,13 @@ extern DP_DeepPot* DP_NewDeepPot(const char* c_model);
 * @param[in] natoms The number of atoms.
 * @param[in] coord The coordinates of atoms. The array should be of size nframes x natoms x 3.
 * @param[in] atype The atom types. The array should contain natoms ints.
-* @param[in] box The cell of the region. The array should be of size nframes x 9.
-* @param[out] energy Output energy.
-* @param[out] force Output force.
-* @param[out] virial Output virial.
-* @param[out] atomic_energy Output atomic energy.
-* @param[out] atomic_virial Output atomic virial.
+* @param[in] box The cell of the region. The array should be of size nframes x 9. Pass NULL if pbc is not used.
+* @param[out] energy Output energy. The array should be of size nframes.
+* @param[out] force Output force. The array should be of size nframes x natoms x 3.
+* @param[out] virial Output virial. The array should be of size nframes x 9.
+* @param[out] atomic_energy Output atomic energy. The array should be of size nframes x natoms.
+* @param[out] atomic_virial Output atomic virial. The array should be of size nframes x natoms x 9.
+* @warning The output arrays should be allocated before calling this function.
   **/
 extern void DP_DeepPotCompute (
   DP_DeepPot* dp,
@@ -45,12 +46,13 @@ extern void DP_DeepPotCompute (
 * @param[in] natoms The number of atoms.
 * @param[in] coord The coordinates of atoms. The array should be of size nframes x natoms x 3.
 * @param[in] atype The atom types. The array should contain natoms ints.
-* @param[in] box The cell of the region. The array should be of size nframes x 9.
-* @param[out] energy Output energy.
-* @param[out] force Output force.
-* @param[out] virial Output virial.
-* @param[out] atomic_energy Output atomic energy.
-* @param[out] atomic_virial Output atomic virial.
+* @param[in] box The cell of the region. The array should be of size nframes x 9. Pass NULL if pbc is not used.
+* @param[out] energy Output energy. The array should be of size nframes.
+* @param[out] force Output force. The array should be of size nframes x natoms x 3.
+* @param[out] virial Output virial. The array should be of size nframes x 9.
+* @param[out] atomic_energy Output atomic energy. The array should be of size nframes x natoms.
+* @param[out] atomic_virial Output atomic virial. The array should be of size nframes x natoms x 9.
+* @warning The output arrays should be allocated before calling this function.
   **/
 extern void DP_DeepPotComputef (
   DP_DeepPot* dp,
