@@ -1,4 +1,3 @@
-import os
 from typing import List, Optional, TYPE_CHECKING, Union
 from functools import lru_cache
 
@@ -137,7 +136,8 @@ class DeepEval:
         tf.Tensor
             loaded tensor
         """
-        tensor_path = os.path.join(self.load_prefix, tensor_name)
+        # do not use os.path.join as it doesn't work on Windows
+        tensor_path = "/".join((self.load_prefix, tensor_name))
         tensor = self.graph.get_tensor_by_name(tensor_path)
         if attr_name:
             setattr(self, attr_name, tensor)
