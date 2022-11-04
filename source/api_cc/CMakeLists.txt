@@ -23,11 +23,6 @@ if(Protobuf_LIBRARY)
   target_link_libraries(${libname} PRIVATE ${Protobuf_LIBRARY})
 endif()
 
-# link: libpython3.x.so
-if (USE_TF_PYTHON_LIBS)
-  target_link_libraries (${libname} PUBLIC ${Python_LIBRARIES})
-endif(USE_TF_PYTHON_LIBS)
-
 set_target_properties(
   ${libname} 
   PROPERTIES 

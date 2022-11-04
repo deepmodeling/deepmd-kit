@@ -327,4 +327,8 @@ if(BUILD_CPP_IF)
   target_include_directories(TensorFlow::tensorflow_cc INTERFACE ${TensorFlow_INCLUDE_DIRS})
   target_compile_definitions(TensorFlow::tensorflow_cc INTERFACE
                             -D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
+  if (USE_TF_PYTHON_LIBS)
+    # link: libpython3.x.so
+    target_link_libraries (TensorFlow::tensorflow_cc INTERFACE ${Python_LIBRARIES})
+  endif()
 endif()
