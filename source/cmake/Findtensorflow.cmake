@@ -320,7 +320,7 @@ target_compile_definitions(TensorFlow::tensorflow_framework INTERFACE
 # TensorFlow::tensorflow_cc
 add_library(TensorFlow::tensorflow_cc SHARED IMPORTED GLOBAL)
 set_property(TARGET TensorFlow::tensorflow_cc PROPERTY
-             IMPORTED_LOCATION ${TensorFlowFramework_LIBRARY})
+             IMPORTED_LOCATION ${TensorFlow_LIBRARY})
 set_property(TARGET TensorFlow::tensorflow_cc PROPERTY
              CXX_STANDARD ${CMAKE_CXX_STANDARD})
 target_include_directories(TensorFlow::tensorflow_cc INTERFACE ${TensorFlow_INCLUDE_DIRS})
