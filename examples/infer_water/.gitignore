@@ -3,3 +3,4 @@ Makefile
 CMakeCache.txt
 CMakeFiles
 infer_water_cc
+infer_water_c
