@@ -17,8 +17,10 @@
 #include "modify.h"
 #include "fix.h"
 #include "citeme.h"
-#ifdef USE_TTM
-#include "fix_ttm_mod.h"
+#if LAMMPS_VERSION_NUMBER>=20210831
+// in lammps #2902, fix_ttm members turns from private to protected
+#define USE_TTM 1
+#include "fix_ttm_dp.h"
 #endif
 
 #include "pair_deepmd.h"
@@ -188,10 +190,10 @@ void PairDeepMD::make_ttm_aparam(
 {
   assert(do_ttm);
   // get ttm_fix
-  const FixTTMMod * ttm_fix = NULL;
+  const FixTTMDP * ttm_fix = NULL;
   for (int ii = 0; ii < modify->nfix; ii++) {
     if (string(modify->fix[ii]->id) == ttm_fix_id){
-      ttm_fix = dynamic_cast<FixTTMMod*>(modify->fix[ii]);
+      ttm_fix = dynamic_cast<FixTTMDP*>(modify->fix[ii]);
     }
   }
   assert(ttm_fix);
@@ -916,7 +918,7 @@ void PairDeepMD::settings(int narg, char **arg)
       ttm_fix_id = arg[iarg+1];
       iarg += 1 + 1;
 #else
-      error->all(FLERR, "The deepmd-kit was compiled without support for TTM, please rebuild it with -DUSE_TTM");
+      error->all(FLERR, "The deepmd-kit was compiled without support for TTM, please rebuild it with LAMMPS version >=20210831");
 #endif      
     }
     else if (string(arg[iarg]) == string("atomic")) {

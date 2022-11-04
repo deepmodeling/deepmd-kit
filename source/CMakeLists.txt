@@ -97,15 +97,6 @@ find_package(tensorflow REQUIRED)
 # find threads
 find_package(Threads)
 
-# define USE_TTM
-if (NOT DEFINED USE_TTM)
-  set(USE_TTM FALSE)
-endif (NOT DEFINED USE_TTM)
-if (USE_TTM)
-  message(STATUS "Use TTM")
-  set(TTM_DEF "-DUSE_TTM")
-endif (USE_TTM)
-
 # define build type
 if ((NOT DEFINED CMAKE_BUILD_TYPE) OR CMAKE_BUILD_TYPE STREQUAL "")
    set (CMAKE_BUILD_TYPE release)
