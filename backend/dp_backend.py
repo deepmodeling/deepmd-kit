@@ -26,7 +26,7 @@ get_requires_for_build_sdist = _orig.get_requires_for_build_sdist
 def get_requires_for_build_wheel(
     config_settings: dict,
 ) -> List[str]:
-    return _orig.get_requires_for_build_sdist(config_settings) + find_tensorflow()[1]
+    return _orig.get_requires_for_build_wheel(config_settings) + find_tensorflow()[1]
 
 # TODO: export get_requires_for_build_editable, prepare_metadata_for_build_editable, build_editable
 # after scikit-build is ready

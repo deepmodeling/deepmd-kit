@@ -17,7 +17,12 @@ add_library(${libname} SHARED ${LIB_SRC})
 # link: libdeepmd libdeepmd_op libtensorflow_cc libtensorflow_framework
 target_link_libraries (${libname} PUBLIC ${LIB_DEEPMD})
 target_link_libraries (${libname} PRIVATE TensorFlow::tensorflow_cc TensorFlow::tensorflow_framework)
-target_include_directories(${libname} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(
+  ${libname} PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+  $<INSTALL_INTERFACE:include>
+  )
 
 if(Protobuf_LIBRARY)
   target_link_libraries(${libname} PRIVATE ${Protobuf_LIBRARY})
@@ -34,8 +39,13 @@ target_compile_definitions(${libname}
 if (CMAKE_TESTING_ENABLED)
   target_link_libraries(${libname} PRIVATE coverage_config)
 endif()
+target_compile_features(${libname} PUBLIC cxx_std_11)
 
-install(TARGETS ${libname} DESTINATION lib/)
+install(
+  TARGETS ${libname}
+  EXPORT ${CMAKE_PROJECT_NAME}Targets
+  DESTINATION lib/
+)
 
 install(
   FILES		${INC_SRC}
