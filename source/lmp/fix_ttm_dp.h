@@ -1,4 +1,4 @@
-#include "EXTRA-FIX/fix_ttm.h"
+#include "fix_ttm.h"
 #include <vector>
 
 namespace LAMMPS_NS {
