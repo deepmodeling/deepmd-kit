@@ -116,10 +116,19 @@ endif()
 file (GLOB SOURCE_FILES "*.cu" )
 
 cuda_add_library(deepmd_op_cuda SHARED ${SOURCE_FILES})
-target_include_directories(deepmd_op_cuda PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../include/)
+target_include_directories(
+    deepmd_op_cuda
+    PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../include/>
+    $<INSTALL_INTERFACE:include>
+)
 
 if (BUILD_CPP_IF)
-    install(TARGETS deepmd_op_cuda DESTINATION lib/)
+    install(
+        TARGETS deepmd_op_cuda
+        EXPORT ${CMAKE_PROJECT_NAME}Targets
+        DESTINATION lib/
+    )
 endif (BUILD_CPP_IF)
 if (BUILD_PY_IF)
     install(TARGETS deepmd_op_cuda DESTINATION deepmd/op/)
