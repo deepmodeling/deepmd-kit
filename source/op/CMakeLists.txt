@@ -10,9 +10,8 @@ file(GLOB OP_REMAPPER_SRC optimizer/parallel.cc)
 if (BUILD_CPP_IF) 
   add_library(${LIB_DEEPMD_OP} MODULE ${OP_SRC})
   # link: libdeepmd libtensorflow_cc libtensorflow_framework
-  target_link_libraries (${LIB_DEEPMD_OP} PUBLIC ${TensorFlow_LIBRARY} ${TensorFlowFramework_LIBRARY})
+  target_link_libraries (${LIB_DEEPMD_OP} PRIVATE TensorFlow::tensorflow_cc TensorFlow::tensorflow_framework)
   target_link_libraries (${LIB_DEEPMD_OP} PRIVATE ${LIB_DEEPMD})
-  target_include_directories(${LIB_DEEPMD_OP} PUBLIC ${TensorFlow_INCLUDE_DIRS})
   set_target_properties(${LIB_DEEPMD_OP} PROPERTIES INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}")
   if (CMAKE_TESTING_ENABLED)
     target_link_libraries(${LIB_DEEPMD_OP} PRIVATE coverage_config)
@@ -23,21 +22,18 @@ if (BUILD_PY_IF)
   add_library(op_abi MODULE ${OP_SRC} ${OP_LIB} ${OP_REMAPPER_SRC})
   add_library(op_grads MODULE ${OP_GRADS_SRC})
   
-  message(STATUS ${TensorFlowFramework_LIBRARY})
   # link: libdeepmd libtensorflow_framework
   target_link_libraries(op_abi PRIVATE ${LIB_DEEPMD})
   target_link_libraries(op_grads PRIVATE ${LIB_DEEPMD})
   target_link_libraries(
-    op_abi PRIVATE ${TensorFlowFramework_LIBRARY}
+    op_abi PRIVATE TensorFlow::tensorflow_framework
     )
   target_link_libraries(
-    op_grads PRIVATE ${TensorFlowFramework_LIBRARY}
+    op_grads PRIVATE TensorFlow::tensorflow_framework
     )
   if(Protobuf_LIBRARY)
     target_link_libraries(op_abi PRIVATE ${Protobuf_LIBRARY})
   endif()
-  target_include_directories(op_abi PUBLIC ${TensorFlow_INCLUDE_DIRS})
-  target_include_directories(op_grads PUBLIC ${TensorFlow_INCLUDE_DIRS})
   if (APPLE)
     set_target_properties(
       op_abi 

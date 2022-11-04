@@ -9,7 +9,10 @@
 # TensorFlow_LIBRARY_PATH
 # TensorFlowFramework_LIBRARY    
 # TensorFlowFramework_LIBRARY_PATH
-
+#
+# Target:
+# TensorFlow::tensorflow_framework
+# TensorFlow::tensorflow_cc
 
 if (BUILD_CPP_IF AND INSTALL_TENSORFLOW)
   # Here we try to install libtensorflow_cc using conda install.
@@ -300,3 +303,32 @@ endif ()
 
 # set _GLIBCXX_USE_CXX11_ABI flag globally
 add_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
+
+# set import libraries
+# https://cmake.org/cmake/help/latest/guide/importing-exporting/
+# TensorFlow::tensorflow_framework
+
+add_library(TensorFlow::tensorflow_framework SHARED IMPORTED GLOBAL)
+set_property(TARGET TensorFlow::tensorflow_framework PROPERTY
+             IMPORTED_LOCATION ${TensorFlowFramework_LIBRARY})
+set_property(TARGET TensorFlow::tensorflow_framework PROPERTY
+             CXX_STANDARD ${CMAKE_CXX_STANDARD})
+target_include_directories(TensorFlow::tensorflow_framework INTERFACE ${TensorFlow_INCLUDE_DIRS})
+target_compile_definitions(TensorFlow::tensorflow_framework INTERFACE
+                           -D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
+
+# TensorFlow::tensorflow_cc
+if(BUILD_CPP_IF)
+  add_library(TensorFlow::tensorflow_cc SHARED IMPORTED GLOBAL)
+  set_property(TARGET TensorFlow::tensorflow_cc PROPERTY
+              IMPORTED_LOCATION ${TensorFlow_LIBRARY_tensorflow_cc})
+  set_property(TARGET TensorFlow::tensorflow_cc PROPERTY
+              CXX_STANDARD ${CMAKE_CXX_STANDARD})
+  target_include_directories(TensorFlow::tensorflow_cc INTERFACE ${TensorFlow_INCLUDE_DIRS})
+  target_compile_definitions(TensorFlow::tensorflow_cc INTERFACE
+                            -D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
+  if (USE_TF_PYTHON_LIBS)
+    # link: libpython3.x.so
+    target_link_libraries (TensorFlow::tensorflow_cc INTERFACE ${Python_LIBRARIES})
+  endif()
+endif()

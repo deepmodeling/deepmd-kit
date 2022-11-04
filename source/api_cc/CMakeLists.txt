@@ -15,23 +15,18 @@ set (libname "${LIB_DEEPMD_CC}")
 add_library(${libname} SHARED ${LIB_SRC})
 
 # link: libdeepmd libdeepmd_op libtensorflow_cc libtensorflow_framework
-target_link_libraries (${libname} PUBLIC ${LIB_DEEPMD}	${TensorFlow_LIBRARY} ${TensorFlowFramework_LIBRARY})
+target_link_libraries (${libname} PUBLIC ${LIB_DEEPMD})
+target_link_libraries (${libname} PRIVATE TensorFlow::tensorflow_cc TensorFlow::tensorflow_framework)
 target_include_directories(
   ${libname} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
   $<INSTALL_INTERFACE:include>
   )
-target_include_directories(${libname} PRIVATE ${TensorFlow_INCLUDE_DIRS})
 
 if(Protobuf_LIBRARY)
   target_link_libraries(${libname} PRIVATE ${Protobuf_LIBRARY})
 endif()
-
-# link: libpython3.x.so
-if (USE_TF_PYTHON_LIBS)
-  target_link_libraries (${libname} PUBLIC ${Python_LIBRARIES})
-endif(USE_TF_PYTHON_LIBS)
 
 set_target_properties(
   ${libname} 
