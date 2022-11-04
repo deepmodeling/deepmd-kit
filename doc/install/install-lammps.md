@@ -22,6 +22,7 @@ The source code of LAMMPS is stored in directory `lammps-stable_23Jun2022_update
 cd lammps-stable_23Jun2022_update2/src/
 cp -r $deepmd_source_dir/source/build/USER-DEEPMD .
 make yes-kspace
+make yes-extra-fix
 make yes-user-deepmd
 ```
 You can enable any other package you want. Now build LAMMPS
