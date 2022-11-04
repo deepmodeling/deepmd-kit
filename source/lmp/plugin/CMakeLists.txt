@@ -49,17 +49,14 @@ if (DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
 
   add_library(${libname} MODULE ${LMP_SRC})
 
-  # link: libdeepmd libtensorflow_cc libtensorflow_framework
+  # link: libdeepmd
   target_link_libraries (${libname} PUBLIC
     lammps_interface
     ${LIB_DEEPMD_CC}
-    ${TensorFlow_LIBRARY}
-    ${TensorFlowFramework_LIBRARY}
   )
   target_include_directories(${libname} PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/..
-    ${TensorFlow_INCLUDE_DIRS}
     ${LAMMPS_SOURCE_ROOT}/src/PLUGIN
     ${LAMMPS_SOURCE_ROOT}/src/KSPACE
     ${LAMMPS_SOURCE_ROOT}/src
