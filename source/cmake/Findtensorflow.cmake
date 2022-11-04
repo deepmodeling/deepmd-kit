@@ -318,11 +318,13 @@ target_compile_definitions(TensorFlow::tensorflow_framework INTERFACE
                            -D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
 
 # TensorFlow::tensorflow_cc
-add_library(TensorFlow::tensorflow_cc SHARED IMPORTED GLOBAL)
-set_property(TARGET TensorFlow::tensorflow_cc PROPERTY
-             IMPORTED_LOCATION ${TensorFlow_LIBRARY})
-set_property(TARGET TensorFlow::tensorflow_cc PROPERTY
-             CXX_STANDARD ${CMAKE_CXX_STANDARD})
-target_include_directories(TensorFlow::tensorflow_cc INTERFACE ${TensorFlow_INCLUDE_DIRS})
-target_compile_definitions(TensorFlow::tensorflow_cc INTERFACE
-                           -D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
+if(BUILD_CPP_IF)
+  add_library(TensorFlow::tensorflow_cc SHARED IMPORTED GLOBAL)
+  set_property(TARGET TensorFlow::tensorflow_cc PROPERTY
+              IMPORTED_LOCATION ${TensorFlow_LIBRARY_tensorflow_cc})
+  set_property(TARGET TensorFlow::tensorflow_cc PROPERTY
+              CXX_STANDARD ${CMAKE_CXX_STANDARD})
+  target_include_directories(TensorFlow::tensorflow_cc INTERFACE ${TensorFlow_INCLUDE_DIRS})
+  target_compile_definitions(TensorFlow::tensorflow_cc INTERFACE
+                            -D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
+endif()
