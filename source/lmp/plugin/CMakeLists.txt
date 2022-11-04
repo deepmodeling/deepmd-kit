@@ -43,6 +43,9 @@ if (DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
     ${LAMMPS_SOURCE_ROOT}/src/kspace.cpp # for pppm_dplr
     ${LAMMPS_SOURCE_ROOT}/src/KSPACE/pppm.cpp
   )
+  if (LAMMPS_VERSION_NUMBER GREATER 20210831)
+    list(APPEND LMP_SRC ${LAMMPS_SOURCE_ROOT}/src/EXTRA-FIX/fix_ttm.cpp) # for ttm
+  endif()
 
   function(_add_lmp_plugin_variant variant_name prec_def)
   set (libname "deepmd_lmp${variant_name}")
