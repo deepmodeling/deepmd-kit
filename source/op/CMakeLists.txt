@@ -10,7 +10,7 @@ file(GLOB OP_REMAPPER_SRC optimizer/parallel.cc)
 if (BUILD_CPP_IF) 
   add_library(${LIB_DEEPMD_OP} MODULE ${OP_SRC})
   # link: libdeepmd libtensorflow_cc libtensorflow_framework
-  target_link_libraries (${LIB_DEEPMD_OP} PUBLIC TensorFlow::tensorflow_cc TensorFlow::tensorflow_framework)
+  target_link_libraries (${LIB_DEEPMD_OP} PRIVATE TensorFlow::tensorflow_cc TensorFlow::tensorflow_framework)
   target_link_libraries (${LIB_DEEPMD_OP} PRIVATE ${LIB_DEEPMD})
   set_target_properties(${LIB_DEEPMD_OP} PROPERTIES INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}")
   if (CMAKE_TESTING_ENABLED)
