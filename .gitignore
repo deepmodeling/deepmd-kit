@@ -32,7 +32,9 @@ doc/api_core/
 dp/
 dp_test/
 dp_test_cc/
+dp_test_c/
 build_lammps/
 .idea/
 build_tests/
 build_cc_tests
+build_c_tests
