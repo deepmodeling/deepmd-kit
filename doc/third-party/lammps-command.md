@@ -29,7 +29,7 @@ pair_style deepmd models ... keyword value ...
 - models = frozen model(s) to compute the interaction. 
 If multiple models are provided, then only the first model serves to provide energy and force prediction for each timestep of molecular dynamics, 
 and the model deviation will be computed among all models every `out_freq` timesteps.
-- keyword = *out_file* or *out_freq* or *fparam* or *atomic* or *relative*
+- keyword = *out_file* or *out_freq* or *fparam* or *atomic* or *relative* or *relative_v* or *aparam* or *ttm*
 <pre>
     <i>out_file</i> value = filename
         filename = The file name for the model deviation output. Default is model_devi.out
@@ -40,7 +40,13 @@ and the model deviation will be computed among all models every `out_freq` times
     <i>atomic</i> = no value is required. 
         If this keyword is set, the model deviation of each atom will be output.
     <i>relative</i> value = level
-        level = The level parameter for computing the relative model deviation
+        level = The level parameter for computing the relative model deviation of the force
+    <i>relative_v</i> value = level
+        level = The level parameter for computing the relative model deviation of the virial
+    <i>aparam</i> value = parameters
+        parameters = one or more atomic parameters of each atom required for model evaluation
+    <i>ttm</i> value = id
+        id = fix ID of fix ttm
 </pre>
 
 ### Examples
@@ -57,11 +63,18 @@ This pair style takes the deep potential defined in a model file that usually ha
 
 The model deviation evalulate the consistency of the force predictions from multiple models. By default, only the maximal, minimal and averge model deviations are output. If the key `atomic` is set, then the model deviation of force prediction of each atom will be output.
 
-By default, the model deviation is output in absolute value. If the keyword `relative` is set, then the relative model deviation will be output. The relative model deviation of the force on atom $i$ is defined by
+By default, the model deviation is output in absolute value. If the keyword `relative` is set, then the relative model deviation of the force will be output, including values output by the keyword `atomic`. The relative model deviation of the force on atom $i$ is defined by
 
 $$E_{f_i}=\frac{\left|D_{f_i}\right|}{\left|f_i\right|+l}$$
 
-where $D_{f_i}$ is the absolute model deviation of the force on atom $i$, $f_i$ is the norm of the the force and $l$ is provided as the parameter of the keyword `relative`.
+where $D_{f_i}$ is the absolute model deviation of the force on atom $i$, $f_i$ is the norm of the force and $l$ is provided as the parameter of the keyword `relative`.
+If the keyword `relative_v` is set, then the relative model deviation of the virial will be output instead of the absolute value, with the same defination of that of the force:
+
+$$E_{v_i}=\frac{\left|D_{v_i}\right|}{\left|v_i\right|+l}$$
+
+If the keyword `fparam` is set, the given frame parameter(s) will be feed to the model.
+If the keyword `aparam` is set, the given atomic parameter(s) will be feed to the model, where each atom is assumed to have the same atomic parameter(s). 
+If the keyword `ttm` is set, electronic temperatures from [fix ttm command](https://docs.lammps.org/fix_ttm.html) will be feed to the model as the atomic parameters.
 
 ### Restrictions
 - The `deepmd` pair style is provided in the USER-DEEPMD package, which is compiled from the DeePMD-kit, visit the [DeePMD-kit website](https://github.com/deepmodeling/deepmd-kit) for more information.
