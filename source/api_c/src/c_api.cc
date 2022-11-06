@@ -1,6 +1,7 @@
 #include "c_api.h"
 
 #include <vector>
+#include <string>
 #include "c_api_internal.h"
 #include "common.h"
 #include "DeepPot.h"
@@ -109,6 +110,32 @@ void DP_DeepPotComputef (
     float* atomic_virial
     ) {
     DP_DeepPotCompute_variant<float>(dp, natoms, coord, atype, cell, energy, force, virial, atomic_energy, atomic_virial);
+}
+
+const char* DP_DeepPotGetTypeMap(
+    DP_DeepPot* dp
+    ) {
+    std::string type_map;
+    dp->dp.get_type_map(type_map);
+    // copy from string to char*
+    const std::string::size_type size = type_map.size();
+    // +1 for '\0'
+    char *buffer = new char[size + 1];
+    std::copy(type_map.begin(), type_map.end(), buffer);
+    buffer[size] = '\0';
+    return buffer;
+}
+
+double DP_DeepPotGetCutoff(
+    DP_DeepPot* dp
+    ) {
+    return dp->dp.cutoff();
+}
+
+int DP_DeepPotGetNumbTypes(
+    DP_DeepPot* dp
+    ) {
+    return dp->dp.numb_types();
 }
 
 void DP_ConvertPbtxtToPb(
