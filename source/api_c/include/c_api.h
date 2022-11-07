@@ -68,6 +68,27 @@ extern void DP_DeepPotComputef (
   );
 
 /**
+ * @brief Get the type map of a DP.
+ * @param[in] dp The DP to use.
+ * @return The cutoff radius.
+*/
+double DP_DeepPotGetCutoff(DP_DeepPot* dp);
+
+/**
+ * @brief Get the type map of a DP.
+ * @param[in] dp The DP to use.
+ * @return The number of types of the DP.
+*/
+int DP_DeepPotGetNumbTypes(DP_DeepPot* dp);
+
+/**
+ * @brief Get the type map of a DP.
+ * @param[in] dp The DP to use.
+ * @return The type map of the DP.
+*/
+const char* DP_DeepPotGetTypeMap(DP_DeepPot* dp);
+
+/**
 * @brief Convert PBtxt to PB.
 * @param[in] c_pbtxt The name of the PBtxt file.
 * @param[in] c_pb The name of the PB file.
