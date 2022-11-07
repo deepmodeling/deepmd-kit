@@ -532,7 +532,7 @@ class BuildTensorFlow(Build):
 
     Parameters
     ----------
-    version : str, default=2.10.0
+    version : str
         TensorFlow version
     enable_mkl : bool, default=True
         enable OneDNN
@@ -542,7 +542,7 @@ class BuildTensorFlow(Build):
         Enable ROCm build
     """
 
-    def __init__(self, version: str ="2.10.0", enable_mkl: bool=True, enable_cuda: bool=False, enable_rocm: bool = False) -> None:
+    def __init__(self, version: str ="2.9.1", enable_mkl: bool=True, enable_cuda: bool=False, enable_rocm: bool = False) -> None:
         self.version = version
         self.enable_mkl = enable_mkl
         self.enable_cuda = enable_cuda
