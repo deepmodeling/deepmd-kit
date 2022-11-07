@@ -1,6 +1,6 @@
-# infer_water based on C++ API
+# infer_water based on C/C++ API
 
-This is a project based on C++ API described in the documentation.
+This is a project based on C/C++ API described in the documentation.
 
 Build the project using
 
