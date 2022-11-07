@@ -575,7 +575,7 @@ class BuildTensorFlow(Build):
         with set_directory(src):
             # configure -- need bazelisk in PATH
             call([str(src / "configure")], env={
-                "PATH": list2env([PREFIX / "bin", "/usr/bin"]),
+                "PATH": list2env([PREFIX / "bin", "/usr/bin", "/bin"]),
                 **self._environments,
             })
             # bazel build
@@ -586,11 +586,11 @@ class BuildTensorFlow(Build):
                 *self._build_opts,
                 *self._build_targets,
             ], env={
-                "PATH": list2env(["/usr/bin"]),
+                "PATH": list2env(["/usr/bin", "/bin"]),
                 "HOME": os.environ.get("HOME"),
                 "TEST_TMPDIR": str(PACKAGE_DIR / "bazelcache"),
                 # for libstdc++
-                "LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH"),
+                "LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH", ""),
                 "CC": str(Path(GCC).resolve()),
                 "CXX": str(Path(GXX).resolve()),
             })
