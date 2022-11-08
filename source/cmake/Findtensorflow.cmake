@@ -244,10 +244,7 @@ if (TENSORFLOW_VERSION VERSION_GREATER_EQUAL 2.4 AND MSVC)
 endif()
 
 # auto op_cxx_abi
-if(MSVC OR APPLE)
-  # skip on windows or osx
-  set(OP_CXX_ABI 0)
-elseif (NOT DEFINED OP_CXX_ABI)
+if (NOT DEFINED OP_CXX_ABI)
   if (TENSORFLOW_VERSION VERSION_GREATER_EQUAL 2.9)
     # TF 2.9 removes the tf_cxx11_abi_flag function, which is really bad...
     # try compiling with both 0 and 1, and see which one works
