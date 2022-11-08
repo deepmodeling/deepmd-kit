@@ -33,3 +33,42 @@ install(
   FILES		${INC_SRC}
   DESTINATION	include/deepmd
 )
+
+if (PACKAGE_C)
+  MESSAGE(STATUS "Packaging C API library")
+  # follow pypa/auditwheel convention
+  install(CODE [[
+    file(GET_RUNTIME_DEPENDENCIES
+      LIBRARIES $<TARGET_FILE:deepmd_c>
+      RESOLVED_DEPENDENCIES_VAR _r_deps
+      PRE_EXCLUDE_REGEXES "libgcc_s\\.so.*"
+                          "libstdc\\+\\+\\.so.*"
+                          "libm\\.so.*"
+                          "libdl\\.so.*"
+                          "librt\\.so.*"
+                          "libc\\.so.*"
+                          "libpthread\\.so.*"
+                          "ld-.*\\.so.*"
+                          "libgomp\\.so.*"
+      )
+    message(STATUS "Runtime dependencies: ${_r_deps}")
+    foreach(_file ${_r_deps})
+      file(INSTALL ${_file} DESTINATION libdeepmd_c/lib
+        FOLLOW_SYMLINK_CHAIN
+      )
+    endforeach()
+    ]]
+  )
+  install(
+    FILES ${INC_SRC}
+    DESTINATION	${CMAKE_BINARY_DIR}/libdeepmd_c/include/deepmd
+  )
+  install(
+    TARGETS ${libname}
+    DESTINATION	${CMAKE_BINARY_DIR}/libdeepmd_c/lib
+  )
+  install(
+    TARGETS ${LIB_DEEPMD_OP}
+    DESTINATION	${CMAKE_BINARY_DIR}/libdeepmd_c/lib
+  )
+endif()
