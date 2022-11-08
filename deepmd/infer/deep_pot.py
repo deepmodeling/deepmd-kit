@@ -160,7 +160,7 @@ class DeepPot(DeepEval):
         """Get the cut-off radius of this model."""
         return self.rcut
 
-    def get_type_map(self) -> List[int]:
+    def get_type_map(self) -> List[str]:
         """Get the type map (element name of the atom types) of this model."""
         return self.tmap
 
