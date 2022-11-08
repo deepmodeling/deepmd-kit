@@ -244,8 +244,8 @@ if (TENSORFLOW_VERSION VERSION_GREATER_EQUAL 2.4 AND MSVC)
 endif()
 
 # auto op_cxx_abi
-if(MSVC OR APPLE)
-  # skip on windows or osx
+if(NOT "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Intel")
+  # skip if the compiler is not gcc or icc
   set(OP_CXX_ABI 0)
 elseif (NOT DEFINED OP_CXX_ABI)
   if (TENSORFLOW_VERSION VERSION_GREATER_EQUAL 2.9)
