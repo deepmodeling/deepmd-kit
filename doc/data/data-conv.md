@@ -34,11 +34,11 @@ For training models with descriptor `se_atten`, a [new system format](../model/t
 
 ## HDF5 format
 
-A system with the HDF5 format has the same strucutre as the Numpy format, but in a HDF5 file, a system is organized as an [HDF5 group](https://docs.h5py.org/en/stable/high/group.html). The file name of a Numpy file is the key in a HDF5 file, and the data is the value to the key. One need to use `#` in a DP path to divide the path to the HDF5 file and the HDF5 key:
+A system with the HDF5 format has the same strucutre as the Numpy format, but in a HDF5 file, a system is organized as an [HDF5 group](https://docs.h5py.org/en/stable/high/group.html). The file name of a Numpy file is the key in a HDF5 file, and the data is the value to the key. One need to use `#` in a DP path to divide the path to the HDF5 file and the HDF5 path:
 ```
-/path/to/data.hdf5#H2O
+/path/to/data.hdf5#/H2O
 ```
-Here, `/path/to/data.hdf5` is the path and `H2O` is the key. There should be some data in the `H2O` group, such as `H2O/type.raw` and `H2O/set.000/force.npy`.
+Here, `/path/to/data.hdf5` is the path and `/H2O` is the path. All HDF5 paths should start with `/`. There should be some data in the `H2O` group, such as `/H2O/type.raw` and `/H2O/set.000/force.npy`.
 
 A HDF5 files with a large number of systems has better performance than multiple NumPy files in a large cluster.
 
