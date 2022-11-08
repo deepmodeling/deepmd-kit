@@ -39,7 +39,7 @@ if (PACKAGE_C)
   # follow pypa/auditwheel convention
   install(CODE [[
     file(GET_RUNTIME_DEPENDENCIES
-      LIBRARIES $<TARGET_FILE:deepmd_c>
+      LIBRARIES $<TARGET_FILE:deepmd_c> $<TARGET_FILE:deepmd_op>
       RESOLVED_DEPENDENCIES_VAR _r_deps
       PRE_EXCLUDE_REGEXES "libgcc_s\\.so.*"
                           "libstdc\\+\\+\\.so.*"
