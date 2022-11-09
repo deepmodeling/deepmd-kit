@@ -6,59 +6,72 @@ on:
 
 jobs:
   build_wheels:
-    name: Build wheels on ${{ matrix.os }}
+    name: Build wheels for cp${{ matrix.python }}-${{ matrix.platform_id }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-18.04]  #, windows-latest, macos-latest]
-
+        include:
+          # linux-64
+          - os: ubuntu-latest
+            python: 37
+            platform_id: manylinux_x86_64
+          - os: ubuntu-latest
+            python: 38
+            platform_id: manylinux_x86_64
+          - os: ubuntu-latest
+            python: 39
+            platform_id: manylinux_x86_64
+          - os: ubuntu-latest
+            python: 310
+            platform_id: manylinux_x86_64
     steps:
-      - name: work around permission issue
-        run: git config --global --add safe.directory /__w/deepmd-kit/deepmd-kit
       - uses: actions/checkout@v2
+        with:
+          submodules: true
       - uses: actions/setup-python@v2
         name: Install Python
         with:
           python-version: '3.8'
 
-      - name: Install cibuildwheel
-        run: |
-          python -m pip install cibuildwheel
-
+      - run: python -m pip install cibuildwheel==2.11.2
       - name: Build wheels
-        run: |
-          python -m cibuildwheel --output-dir wheelhouse
+        run: python -m cibuildwheel --output-dir wheelhouse
+        env:
+          CIBW_BUILD_VERBOSITY: 1
+          CIBW_ARCHS: all
+          CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.platform_id }}
       - uses: actions/upload-artifact@v2
         with:
           path: ./wheelhouse/*.whl
-
   build_sdist:
     name: Build source distribution
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-python@v2
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - uses: actions/setup-python@v4
         name: Install Python
         with:
-          python-version: '3.8'
-      - run: pip install -U scikit-build tensorflow setuptools_scm
+          python-version: '3.10'
+      - run: python -m pip install build
       - name: Build sdist
-        run: python setup.py sdist
+        run: python -m build --sdist
 
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v3
         with:
           path: dist/*.tar.gz
 
   upload_pypi:
     needs: [build_wheels, build_sdist]
     runs-on: ubuntu-latest
-    if: startsWith(github.event.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags/v')
     steps:
-      - uses: actions/download-artifact@v2
+      - uses: actions/download-artifact@v3
         with:
           name: artifact
           path: dist
-
       - uses: pypa/gh-action-pypi-publish@master
         with:
           user: __token__
