@@ -2,6 +2,8 @@
 
 The notation of `se_e2_a` is short for the Deep Potential Smooth Edition (DeepPot-SE) constructed from all information (both angular and radial) of atomic configurations. The `e2` stands for the embedding with two-atoms information. This descriptor was described in detail in [the DeepPot-SE paper](https://arxiv.org/abs/1805.09003).
 
+Note that it is sometimes called "two-atom embedding descriptor" that means the input of the embedding net is atomic distances. The descriptor **does** encodes multi-body information (both angular and radial information of neighboring atoms).
+
 In this example we will train a DeepPot-SE model for a water system.  A complete training input script of this example can be find in the directory. 
 ```bash
 $deepmd_source_dir/examples/water/se_e2_a/input.json
