@@ -58,6 +58,8 @@ manylinux-x86_64-image = "quay.io/pypa/manylinux_2_28_x86_64"
 [tool.cibuildwheel.linux]
 repair-wheel-command = "auditwheel repair --exclude libtensorflow_framework.so.2 --exclude libtensorflow_framework.so.1 --exclude libtensorflow_framework.so -w {dest_dir} {wheel}"
 environment-pass = ["CIBW_BUILD"]
+environment = { DP_VARIANT="cuda" }
+before-all = "dnf install -y cuda-toolkit-11"
 
 # selectively turn of lintner warnings, always include reasoning why any warning should
 # be silenced
