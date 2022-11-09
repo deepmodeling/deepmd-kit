@@ -1,6 +1,6 @@
 file(GLOB LIB_SRC src/*.cc src/*.cpp)
 # only install public headers
-file(GLOB INC_SRC include/c_api.h)
+file(GLOB INC_SRC include/c_api.h include/deepmd.hpp)
 
 set (libname "${LIB_DEEPMD_C}")
 
