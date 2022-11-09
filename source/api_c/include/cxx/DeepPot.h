@@ -9,7 +9,6 @@
 #include "common.h"
 #include "neighbor_list.h"
 
-
 template <typename FPTYPE>
 inline void _DP_DeepPotCompute(
     DP_DeepPot *dp,
@@ -55,7 +54,6 @@ inline void _DP_DeepPotCompute<float>(
     DP_DeepPotComputef(dp, natom, coord, atype, cell, energy, force, virial, atomic_energy, atomic_virial);
 }
 
-
 namespace deepmd
 {
     /**
@@ -67,15 +65,15 @@ namespace deepmd
         /**
          * @brief DP constructor without initialization.
          **/
-        DeepPot();
-        ~DeepPot();
+        DeepPot() : inited(false){};
+        ~DeepPot(){};
         /**
          * @brief DP constructor with initialization.
          * @param[in] model The name of the frozen model file.
          * @param[in] gpu_rank The GPU rank. Default is 0.
          * @param[in] file_content The content of the model file. If it is not empty, DP will read from the string instead of the file.
          **/
-        DeepPot(const std::string &model, const int &gpu_rank = 0, const std::string &file_content = "")
+        DeepPot(const std::string &model, const int &gpu_rank = 0, const std::string &file_content = "") : inited(false)
         {
             init(model, gpu_rank, file_content);
         };
@@ -150,6 +148,10 @@ namespace deepmd
             ener = *ener_;
             force.assign(force_, force_ + natoms * 3);
             virial.assign(virial_, virial_ + 9);
+
+            delete ener_;
+            delete[] force_;
+            delete[] virial_;
         };
         /**
          * @brief Evaluate the energy, force and virial by using this DP.
@@ -237,6 +239,12 @@ namespace deepmd
             virial.assign(virial_, virial_ + 9);
             atom_energy.assign(atomic_ener_, atomic_ener_ + natoms);
             atom_virial.assign(atomic_virial_, atomic_virial_ + natoms * 9);
+
+            delete ener_;
+            delete[] force_;
+            delete[] virial_;
+            delete[] atomic_ener_;
+            delete[] atomic_virial_;
         };
         /**
          * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial by using this DP.

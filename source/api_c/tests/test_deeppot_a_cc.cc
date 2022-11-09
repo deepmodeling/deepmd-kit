@@ -6,10 +6,6 @@
 #include "DeepPot.h"
 #include "neighbor_list.h"
 
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>  
-
 typedef double VALUETYPE;
 #define EPSILON 1e-10
 
