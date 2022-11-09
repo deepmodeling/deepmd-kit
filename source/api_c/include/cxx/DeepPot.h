@@ -9,6 +9,53 @@
 #include "common.h"
 #include "neighbor_list.h"
 
+
+template <typename FPTYPE>
+inline void _DP_DeepPotCompute(
+    DP_DeepPot *dp,
+    const int natom,
+    const FPTYPE *coord,
+    const int *atype,
+    const FPTYPE *cell,
+    double *energy,
+    FPTYPE *force,
+    FPTYPE *virial,
+    FPTYPE *atomic_energy,
+    FPTYPE *atomic_virial);
+
+template <>
+inline void _DP_DeepPotCompute<double>(
+    DP_DeepPot *dp,
+    const int natom,
+    const double *coord,
+    const int *atype,
+    const double *cell,
+    double *energy,
+    double *force,
+    double *virial,
+    double *atomic_energy,
+    double *atomic_virial)
+{
+    DP_DeepPotCompute(dp, natom, coord, atype, cell, energy, force, virial, atomic_energy, atomic_virial);
+}
+
+template <>
+inline void _DP_DeepPotCompute<float>(
+    DP_DeepPot *dp,
+    const int natom,
+    const float *coord,
+    const int *atype,
+    const float *cell,
+    double *energy,
+    float *force,
+    float *virial,
+    float *atomic_energy,
+    float *atomic_virial)
+{
+    DP_DeepPotComputef(dp, natom, coord, atype, cell, energy, force, virial, atomic_energy, atomic_virial);
+}
+
+
 namespace deepmd
 {
     /**
@@ -90,9 +137,9 @@ namespace deepmd
                 throw deepmd::deepmd_exception("Not implemented!");
             }
             int natoms = coord.size() / 3;
-            VALUETYPE *coord_ = &coord[0];
-            VALUETYPE *box_ = &box[0];
-            int *atype_ = &atype[0];
+            const VALUETYPE *coord_ = &coord[0];
+            const VALUETYPE *box_ = &box[0];
+            const int *atype_ = &atype[0];
 
             double *ener_ = new double;
             VALUETYPE *force_ = new VALUETYPE[natoms * 3];
@@ -173,9 +220,9 @@ namespace deepmd
                 throw deepmd::deepmd_exception("Not implemented!");
             }
             int natoms = coord.size() / 3;
-            VALUETYPE *coord_ = &coord[0];
-            VALUETYPE *box_ = &box[0];
-            int *atype_ = &atype[0];
+            const VALUETYPE *coord_ = &coord[0];
+            const VALUETYPE *box_ = &box[0];
+            const int *atype_ = &atype[0];
 
             double *ener_ = new double;
             VALUETYPE *force_ = new VALUETYPE[natoms * 3];
@@ -188,8 +235,8 @@ namespace deepmd
             ener = *ener_;
             force.assign(force_, force_ + natoms * 3);
             virial.assign(virial_, virial_ + 9);
-            atomic_ener.assign(atomic_ener_, atomic_ener_ + natoms);
-            atomic_virial.assign(atomic_virial_, atomic_virial_ + natoms * 9);
+            atom_energy.assign(atomic_ener_, atomic_ener_ + natoms);
+            atom_virial.assign(atomic_virial_, atomic_virial_ + natoms * 9);
         };
         /**
          * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial by using this DP.
@@ -280,49 +327,4 @@ namespace deepmd
         DP_DeepPot *dp;
         bool inited;
     };
-}
-
-template <typename FPTYPE>
-inline void _DP_DeepPotCompute(
-    DP_DeepPot *dp,
-    const int natom,
-    const FPTYPE *coord,
-    const int *atype,
-    const FPTYPE *cell,
-    double *energy,
-    FPTYPE *force,
-    FPTYPE *virial,
-    FPTYPE *atomic_energy,
-    FPTYPE *atomic_virial);
-
-template <>
-inline void _DP_DeepPotCompute<double>(
-    DP_DeepPot *dp,
-    const int natom,
-    const double *coord,
-    const int *atype,
-    const double *cell,
-    double *energy,
-    double *force,
-    double *virial,
-    double *atomic_energy,
-    double *atomic_virial)
-{
-    DP_DeepPotCompute(dp, natom, coord, atype, cell, energy, force, virial, atomic_energy, atomic_virial);
-}
-
-template <>
-inline void _DP_DeepPotCompute<float>(
-    DP_DeepPot *dp,
-    const int natom,
-    const float *coord,
-    const int *atype,
-    const float *cell,
-    double *energy,
-    float *force,
-    float *virial,
-    float *atomic_energy,
-    float *atomic_virial)
-{
-    DP_DeepPotComputef(dp, natom, coord, atype, cell, energy, force, virial, atomic_energy, atomic_virial);
 }

@@ -5,7 +5,6 @@
 #include <vector>
 #include "DeepPot.h"
 #include "neighbor_list.h"
-#include "test_utils.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
