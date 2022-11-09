@@ -89,7 +89,7 @@ namespace deepmd
             {
                 throw deepmd::deepmd_exception("Not implemented!");
             }
-            int natoms = coord_.size() / 3;
+            int natoms = coord.size() / 3;
             VALUETYPE *coord_ = &coord[0];
             VALUETYPE *box_ = &box[0];
             int *atype_ = &atype[0];
@@ -172,7 +172,7 @@ namespace deepmd
             {
                 throw deepmd::deepmd_exception("Not implemented!");
             }
-            int natoms = coord_.size() / 3;
+            int natoms = coord.size() / 3;
             VALUETYPE *coord_ = &coord[0];
             VALUETYPE *box_ = &box[0];
             int *atype_ = &atype[0];
