@@ -3,14 +3,13 @@
 #include <algorithm>
 #include <fstream>
 #include <vector>
-#include "DeepPot.h"
-#include "neighbor_list.h"
+#include "deepmd.hpp"
 
 typedef double VALUETYPE;
 #define EPSILON 1e-10
 
 
-class TestInferDeepPotA : public ::testing::Test
+class TestInferDeepPotAHPP : public ::testing::Test
 {  
 protected:  
   std::vector<VALUETYPE> coord = {
@@ -36,15 +35,15 @@ protected:
   std::vector<VALUETYPE> expected_v = {
     -2.912234126853306959e-01,-3.800610846612756388e-02,2.776624987489437202e-01,-5.053761003913598976e-02,-3.152373041953385746e-01,1.060894290092162379e-01,2.826389131596073745e-01,1.039129970665329250e-01,-2.584378792325942586e-01,-3.121722367954994914e-01,8.483275876786681990e-02,2.524662342344257682e-01,4.142176771106586414e-02,-3.820285230785245428e-02,-2.727311173065460545e-02,2.668859789777112135e-01,-6.448243569420382404e-02,-2.121731470426218846e-01,-8.624335220278558922e-02,-1.809695356746038597e-01,1.529875294531883312e-01,-1.283658185172031341e-01,-1.992682279795223999e-01,1.409924999632362341e-01,1.398322735274434292e-01,1.804318474574856390e-01,-1.470309318999652726e-01,-2.593983661598450730e-01,-4.236536279233147489e-02,3.386387920184946720e-02,-4.174017537818433543e-02,-1.003500282164128260e-01,1.525690815194478966e-01,3.398976109910181037e-02,1.522253908435125536e-01,-2.349125581341701963e-01,9.515545977581392825e-04,-1.643218849228543846e-02,1.993234765412972564e-02,6.027265332209678569e-04,-9.563256398907417355e-02,1.510815124001868293e-01,-7.738094816888557714e-03,1.502832772532304295e-01,-2.380965783745832010e-01,-2.309456719810296654e-01,-6.666961081213038098e-02,7.955566551234216632e-02,-8.099093777937517447e-02,-3.386641099800401927e-02,4.447884755740908608e-02,1.008593228579038742e-01,4.556718179228393811e-02,-6.078081273849572641e-02
   };
-  int natoms;
+  unsigned int natoms;
   VALUETYPE expected_tot_e;
   std::vector<VALUETYPE>expected_tot_v;
 
-  deepmd::DeepPot dp;
+  deepmd::hpp::DeepPot dp;
 
   void SetUp() override {
     std::string file_name = "../../tests/infer/deeppot.pbtxt";
-    deepmd::convert_pbtxt_to_pb("../../tests/infer/deeppot.pbtxt", "deeppot.pb");
+    deepmd::hpp::convert_pbtxt_to_pb("../../tests/infer/deeppot.pbtxt", "deeppot.pb");
 
     dp.init("deeppot.pb");
 
@@ -54,10 +53,10 @@ protected:
     expected_tot_e = 0.;
     expected_tot_v.resize(9);
     std::fill(expected_tot_v.begin(), expected_tot_v.end(), 0.);
-    for(int ii = 0; ii < natoms; ++ii){
+    for(unsigned int ii = 0; ii < natoms; ++ii){
       expected_tot_e += expected_e[ii];
     }
-    for(int ii = 0; ii < natoms; ++ii){
+    for(unsigned int ii = 0; ii < natoms; ++ii){
       for(int dd = 0; dd < 9; ++dd){
 	expected_tot_v[dd] += expected_v[ii*9+dd];
       }
@@ -69,10 +68,11 @@ protected:
   };
 };
 
-TEST_F(TestInferDeepPotA, cpu_build_nlist)
+TEST_F(TestInferDeepPotAHPP, cpu_build_nlist)
 {
   double ener;
   std::vector<VALUETYPE> force, virial;
+
   dp.compute(ener, force, virial, coord, atype, box);
 
   EXPECT_EQ(force.size(), natoms*3);
@@ -88,7 +88,7 @@ TEST_F(TestInferDeepPotA, cpu_build_nlist)
 }
 
 
-TEST_F(TestInferDeepPotA, cpu_build_nlist_atomic)
+TEST_F(TestInferDeepPotAHPP, cpu_build_nlist_atomic)
 {
   double ener;
   std::vector<VALUETYPE> force, virial, atom_ener, atom_vir;
@@ -115,7 +115,7 @@ TEST_F(TestInferDeepPotA, cpu_build_nlist_atomic)
 }
 
 
-class TestInferDeepPotANoPbc : public ::testing::Test
+class TestInferDeepPotANoPbcHPP : public ::testing::Test
 {  
 protected:  
   std::vector<VALUETYPE> coord = {
@@ -139,15 +139,15 @@ protected:
   std::vector<VALUETYPE> expected_v = {
     -7.042445481792056761e-01,2.950213647777754078e-01,5.329418202437231633e-01,2.950213647777752968e-01,-1.235900311906896754e-01,-2.232594111831812944e-01,5.329418202437232743e-01,-2.232594111831813499e-01,-4.033073234276823849e-01,-8.949230984097404917e-01,3.749002169013777030e-01,6.772391014992630298e-01,3.749002169013777586e-01,-1.570527935667933583e-01,-2.837082722496912512e-01,6.772391014992631408e-01,-2.837082722496912512e-01,-5.125052659994422388e-01,4.858210330291591605e-02,-6.902596153269104431e-03,6.682612642430500391e-03,-5.612247004554610057e-03,9.767795567660207592e-04,-9.773758942738038254e-04,5.638322117219018645e-03,-9.483806049779926932e-04,8.493873281881353637e-04,-2.941738570564985666e-01,-4.482529909499673171e-02,4.091569840186781021e-02,-4.509020615859140463e-02,-1.013919988807244071e-01,1.551440772665269030e-01,4.181857726606644232e-02,1.547200233064863484e-01,-2.398213304685777592e-01,-3.218625798524068354e-02,-1.012438450438508421e-02,1.271639330380921855e-02,3.072814938490859779e-03,-9.556241797915024372e-02,1.512251983492413077e-01,-8.277872384009607454e-03,1.505412040827929787e-01,-2.386150620881526407e-01,-2.312295470054945568e-01,-6.631490213524345034e-02,7.932427266386249398e-02,-8.053754366323923053e-02,-3.294595881137418747e-02,4.342495071150231922e-02,1.004599500126941436e-01,4.450400364869536163e-02,-5.951077548033092968e-02
   };
-  int natoms;
+  unsigned int natoms;
   VALUETYPE expected_tot_e;
   std::vector<VALUETYPE>expected_tot_v;
 
-  deepmd::DeepPot dp;
+  deepmd::hpp::DeepPot dp;
 
   void SetUp() override {
     std::string file_name = "../../tests/infer/deeppot.pbtxt";
-    deepmd::convert_pbtxt_to_pb(file_name, "deeppot.pb");
+    deepmd::hpp::convert_pbtxt_to_pb(file_name, "deeppot.pb");
 
     dp.init("deeppot.pb");
 
@@ -157,10 +157,10 @@ protected:
     expected_tot_e = 0.;
     expected_tot_v.resize(9);
     std::fill(expected_tot_v.begin(), expected_tot_v.end(), 0.);
-    for(int ii = 0; ii < natoms; ++ii){
+    for(unsigned int ii = 0; ii < natoms; ++ii){
       expected_tot_e += expected_e[ii];
     }
-    for(int ii = 0; ii < natoms; ++ii){
+    for(unsigned int ii = 0; ii < natoms; ++ii){
       for(int dd = 0; dd < 9; ++dd){
 	expected_tot_v[dd] += expected_v[ii*9+dd];
       }
@@ -172,7 +172,7 @@ protected:
   };
 };
 
-TEST_F(TestInferDeepPotANoPbc, cpu_build_nlist)
+TEST_F(TestInferDeepPotANoPbcHPP, cpu_build_nlist)
 {
   double ener;
   std::vector<VALUETYPE> force, virial;
@@ -182,10 +182,10 @@ TEST_F(TestInferDeepPotANoPbc, cpu_build_nlist)
   EXPECT_EQ(virial.size(), 9);
 
   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
-  for(int ii = 0; ii < natoms*3; ++ii){
+  for(unsigned int ii = 0; ii < natoms*3; ++ii){
     EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);    
   }
-  for(int ii = 0; ii < 3*3; ++ii){
+  for(unsigned int ii = 0; ii < 3*3; ++ii){
     EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
   }
 }

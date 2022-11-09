@@ -1,6 +1,6 @@
 file(GLOB LIB_SRC src/*.cc src/*.cpp)
 # only install public headers
-file(GLOB INC_SRC include/c_api.h)
+file(GLOB INC_SRC include/c_api.h include/deepmd.hpp)
 
 set (libname "${LIB_DEEPMD_C}")
 
@@ -12,11 +12,6 @@ target_include_directories(
   ${libname} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
-)
-target_include_directories(
-  ${libname} PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/cxx>
-  #$<INSTALL_INTERFACE:include>
 )
 
 set_target_properties(
