@@ -245,7 +245,7 @@ read_file_to_string(std::string model, std::string & file_content);
 /**
 * @brief Convert pbtxt to pb.
 * @param[in] fn_pb_txt Filename of the pb txt file.
-* @param[out] fn_pb Filename of the pb file.
+* @param[in] fn_pb Filename of the pb file.
 **/
 void
 convert_pbtxt_to_pb(std::string fn_pb_txt, std::string fn_pb);
