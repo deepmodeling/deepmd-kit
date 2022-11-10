@@ -8,7 +8,7 @@ from skbuild import setup
 topdir = os.path.abspath(os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(topdir, 'backend'))
 
-from find_tensorflow import find_tensorflow, get_tf_requirement
+from find_tensorflow import find_tensorflow, get_tf_requirement, get_tf_version
 
 
 cmake_args = []
@@ -33,6 +33,7 @@ if os.environ.get("DP_BUILD_TESTING", "0") == "1":
     cmake_args.append("-DBUILD_TESTING:BOOL=TRUE")
 
 tf_install_dir, _ = find_tensorflow()
+tf_version = get_tf_version(tf_install_dir)
 
 
 # TODO: migrate packages and entry_points to pyproject.toml after scikit-build supports it
@@ -83,7 +84,7 @@ setup(
             "sphinx-argparse",
             "pygments-lammps",
             ],
-        **get_tf_requirement(),
+        **get_tf_requirement(tf_version),
     },
     entry_points={"console_scripts": ["dp = deepmd.entrypoints.main:main"]},
 )

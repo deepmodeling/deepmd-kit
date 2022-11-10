@@ -4,7 +4,7 @@ from importlib.util import find_spec
 from importlib.machinery import FileFinder
 from sysconfig import get_path
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 from packaging.specifiers import SpecifierSet
 
 
@@ -68,17 +68,23 @@ def find_tensorflow() -> Tuple[Optional[str], List[str]]:
     return tf_install_dir, requires
 
 
-def get_tf_requirement() -> dict:
+def get_tf_requirement(tf_version: str = "") -> dict:
     """Get TensorFlow requirement (CPU) when TF is not installed.
     
-    If the environment variable `TENSORFLOW_VERSION` is set, use it as the requirement.
+    If tf_version is not given and the environment variable `TENSORFLOW_VERSION` is set, use it as the requirement.
+
+    Parameters
+    ----------
+    tf_version : str, optional
+        TF version
 
     Returns
     -------
     dict
         TensorFlow requirement, including cpu and gpu.
     """
-    tf_version = os.environ.get("TENSORFLOW_VERSION", "")
+    if tf_version == "":
+        tf_version = os.environ.get("TENSORFLOW_VERSION", "")
 
     if tf_version == "":
         return {
@@ -95,3 +101,33 @@ def get_tf_requirement() -> dict:
             "cpu": [f"tensorflow-cpu=={tf_version}"],
             "gpu": [f"tensorflow=={tf_version}"],
         }
+
+
+def get_tf_version(tf_path: Union[str, Path]) -> str:
+    """Get TF version from a TF Python library path.
+    
+    Parameters
+    ----------
+    tf_path : str or Path
+        TF Python library path
+
+    Returns
+    -------
+    str
+        version
+    """
+    if tf_path is None:
+        return ""
+    version_file = Path(tf_path) / "include" / "tensorflow" / "core" / "public" / "version.h"
+    major = minor = patch = None
+    with open(version_file) as f:
+        for line in f:
+            if line.startswith("#define TF_MAJOR_VERSION"):
+                major = line.split()[-1]
+            elif line.startswith("#define TF_MINOR_VERSION"):
+                minor = line.split()[-1]
+            elif line.startswith("#define TF_PATCH_VERSION"):
+                patch = line.split()[-1]
+    if None in (major, minor, patch):
+        raise RuntimeError("Failed to read TF version")
+    return ".".join((major, minor, patch))
