@@ -116,7 +116,7 @@ def get_tf_version(tf_path: Union[str, Path]) -> str:
     str
         version
     """
-    if tf_path is None:
+    if tf_path is None or tf_path == "":
         return ""
     version_file = Path(tf_path) / "include" / "tensorflow" / "core" / "public" / "version.h"
     major = minor = patch = None
