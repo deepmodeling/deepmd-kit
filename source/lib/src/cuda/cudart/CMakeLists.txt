@@ -4,6 +4,7 @@ target_include_directories(
     PUBLIC
     ${CUDA_INCLUDE_DIRS}
 )
+get_filename_component(CUDA_LIBRARY_DIR ${CUDA_cudart_static_LIBRARY} DIRECTORY)
 set_target_properties(
     deepmd_dyn_cudart
     PROPERTIES
