@@ -38,7 +38,7 @@ A system with the HDF5 format has the same strucutre as the Numpy format, but in
 ```
 /path/to/data.hdf5#/H2O
 ```
-Here, `/path/to/data.hdf5` is the path and `/H2O` is the path. All HDF5 paths should start with `/`. There should be some data in the `H2O` group, such as `/H2O/type.raw` and `/H2O/set.000/force.npy`.
+Here, `/path/to/data.hdf5` is the file path and `/H2O` is the HDF5 path. All HDF5 paths should start with `/`. There should be some data in the `H2O` group, such as `/H2O/type.raw` and `/H2O/set.000/force.npy`.
 
 A HDF5 files with a large number of systems has better performance than multiple NumPy files in a large cluster.
 
