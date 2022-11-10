@@ -128,6 +128,19 @@ target_include_directories(
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../include/>
     $<INSTALL_INTERFACE:include>
 )
+if(APPLE)
+    set_target_properties(
+        deepmd_op_cuda 
+        PROPERTIES 
+        INSTALL_RPATH @loader_path
+    )
+else()
+    set_target_properties(
+        deepmd_op_cuda
+        PROPERTIES
+        INSTALL_RPATH "$ORIGIN"
+    )
+endif()
 
 if (BUILD_CPP_IF)
     install(
