@@ -38,19 +38,6 @@ jobs:
           - os: macos-latest
             python: 310
             platform_id: macosx_x86_64
-          # macos-arm64
-          - os: macos-latest
-            bitness: 64
-            python: 38
-            platform_id: macosx_arm64
-          - os: macos-latest
-            bitness: 64
-            python: 39
-            platform_id: macosx_arm64
-          - os: macos-latest
-            bitness: 64
-            python: 310
-            platform_id: macosx_arm64
           # win-64
           - os: windows-2019
             python: 37
