@@ -13,3 +13,8 @@ target_link_libraries(infer_water_cc PRIVATE DeePMD::deepmd_cc)
 add_executable(infer_water_c infer_water.c)
 # link DeePMD-kit C API
 target_link_libraries(infer_water_c PRIVATE DeePMD::deepmd_c)
+
+# header-only example
+add_executable(infer_water_c infer_water_hpp.c)
+# link DeePMD-kit C API
+target_link_libraries(infer_water_hpp PRIVATE DeePMD::deepmd_c)
