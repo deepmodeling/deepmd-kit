@@ -9,6 +9,12 @@ if (NOT CUDA_FOUND)
     message(STATUS "CUDA not found. Project will not be built.")
 endif(NOT CUDA_FOUND)
 
+# take dynamic open cudart library replace of static one
+# so it's not required when using CPUs
+add_subdirectory(cudart)
+# important: it must be before cuda_add_library and any link target to cudart
+set(CUDA_LIBRARIES deepmd_dyn_cudart)
+
 # set c++ version c++11
 SET(CMAKE_CXX_STANDARD 11)
 SET(CMAKE_CUDA_STANDARD 11)

@@ -13,7 +13,6 @@ endif()
 set(libname "deepmd")
 set(BUILD_CPP_IF TRUE)
 set(LIB_DEEPMD ${libname})
-add_subdirectory(${CMAKE_SOURCE_DIR}/.. lib)
 
 message(status "${CMAKE_SOURCE_DIR}")
 
@@ -42,6 +41,7 @@ if (USE_ROCM_TOOLKIT)
 else()
   message(STATUS "Will not build AMD GPU support")
 endif (USE_ROCM_TOOLKIT)
+add_subdirectory(${CMAKE_SOURCE_DIR}/.. lib)
 
 
 file(GLOB TEST_SRC test_*.cc)
