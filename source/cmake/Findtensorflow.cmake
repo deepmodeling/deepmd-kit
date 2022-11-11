@@ -312,8 +312,15 @@ add_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
 # TensorFlow::tensorflow_framework
 
 add_library(TensorFlow::tensorflow_framework SHARED IMPORTED GLOBAL)
+if(WIN32)
+  string(REGEX REPLACE "[.]lib" ".dll" _DLL_FILE ${TensorFlowFramework_LIBRARY})
+  set_target_properties(TensorFlow::tensorflow_framework PROPERTIES
+               IMPORTED_IMPLIB ${TensorFlowFramework_LIBRARY}
+               IMPORTED_LOCATION ${_DLL_FILE})
+else()
 set_property(TARGET TensorFlow::tensorflow_framework PROPERTY
              IMPORTED_LOCATION ${TensorFlowFramework_LIBRARY})
+endif()
 set_property(TARGET TensorFlow::tensorflow_framework PROPERTY
              CXX_STANDARD ${CMAKE_CXX_STANDARD})
 target_include_directories(TensorFlow::tensorflow_framework INTERFACE ${TensorFlow_INCLUDE_DIRS})
@@ -323,8 +330,15 @@ target_compile_definitions(TensorFlow::tensorflow_framework INTERFACE
 # TensorFlow::tensorflow_cc
 if(BUILD_CPP_IF)
   add_library(TensorFlow::tensorflow_cc SHARED IMPORTED GLOBAL)
-  set_property(TARGET TensorFlow::tensorflow_cc PROPERTY
-              IMPORTED_LOCATION ${TensorFlow_LIBRARY_tensorflow_cc})
+  if(WIN32)
+    string(REGEX REPLACE "[.]lib" ".dll" _DLL_FILE ${TensorFlow_LIBRARY_tensorflow_cc})
+    set_target_properties(TensorFlow::tensorflow_cc PROPERTIES
+                 IMPORTED_IMPLIB ${TensorFlow_LIBRARY_tensorflow_cc}
+                 IMPORTED_LOCATION ${_DLL_FILE})
+  else()
+    set_property(TARGET TensorFlow::tensorflow_cc PROPERTY
+                IMPORTED_LOCATION ${TensorFlow_LIBRARY_tensorflow_cc})
+  endif()
   set_property(TARGET TensorFlow::tensorflow_cc PROPERTY
               CXX_STANDARD ${CMAKE_CXX_STANDARD})
   target_include_directories(TensorFlow::tensorflow_cc INTERFACE ${TensorFlow_INCLUDE_DIRS})
