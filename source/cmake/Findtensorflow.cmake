@@ -314,7 +314,7 @@ add_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
 add_library(TensorFlow::tensorflow_framework SHARED IMPORTED GLOBAL)
 if(WIN32)
   string(REGEX REPLACE "[.]lib" ".dll" _DLL_FILE ${TensorFlowFramework_LIBRARY})
-  set_property(TARGET TensorFlow::tensorflow_framework PROPERTY
+  set_target_properties(TensorFlow::tensorflow_framework PROPERTIES
                IMPORTED_IMPLIB ${TensorFlowFramework_LIBRARY}
                IMPORTED_LOCATION ${_DLL_FILE})
 else()
@@ -332,7 +332,7 @@ if(BUILD_CPP_IF)
   add_library(TensorFlow::tensorflow_cc SHARED IMPORTED GLOBAL)
   if(WIN32)
     string(REGEX REPLACE "[.]lib" ".dll" _DLL_FILE ${TensorFlow_LIBRARY_tensorflow_cc})
-    set_property(TARGET TensorFlow::tensorflow_cc PROPERTY
+    set_target_properties(TensorFlow::tensorflow_cc PROPERTIES
                  IMPORTED_IMPLIB ${TensorFlow_LIBRARY_tensorflow_cc}
                  IMPORTED_LOCATION ${_DLL_FILE})
   else()
