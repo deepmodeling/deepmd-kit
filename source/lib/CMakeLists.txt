@@ -15,7 +15,7 @@ if (USE_CUDA_TOOLKIT)
   add_definitions("-DGOOGLE_CUDA")
   add_subdirectory(src/cuda)
   set (EXTRA_LIBS ${EXTRA_LIBS} deepmd_op_cuda)
-  target_link_libraries (${libname} INTERFACE ${CUDA_LIBRARIES} ${EXTRA_LIBS})
+  target_link_libraries (${libname} INTERFACE deepmd_dyn_cudart ${EXTRA_LIBS})
   # gpu_cuda.h
   target_include_directories(
     ${libname} PUBLIC
