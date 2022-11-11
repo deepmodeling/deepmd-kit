@@ -59,7 +59,7 @@ manylinux-x86_64-image = "quay.io/pypa/manylinux_2_28_x86_64"
 repair-wheel-command = "auditwheel repair --exclude libtensorflow_framework.so.2 --exclude libtensorflow_framework.so.1 --exclude libtensorflow_framework.so -w {dest_dir} {wheel}"
 environment-pass = ["CIBW_BUILD"]
 environment = { DP_VARIANT="cuda" }
-before-all = "yum config-manager --add-repo http://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo && yum install -y cuda-11-2"
+before-all = "yum config-manager --add-repo http://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo && yum install -y cuda-11-8"
 
 # selectively turn of lintner warnings, always include reasoning why any warning should
 # be silenced
