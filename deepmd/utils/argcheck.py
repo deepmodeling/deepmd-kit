@@ -751,11 +751,13 @@ def gen_doc(*, make_anchor=True, make_link=True, **kwargs):
     ma = model_args()
     lra = learning_rate_args()
     la = loss_args()
+    lda = loss_dict_args()
     ta = training_args()
     nvnmda = nvnmd_args()
     ptr = []
     ptr.append(ma.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
     ptr.append(la.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
+    ptr.append(lda.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
     ptr.append(lra.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
     ptr.append(ta.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
     ptr.append(nvnmda.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
@@ -773,6 +775,7 @@ def gen_json(**kwargs):
         model_args(),
         learning_rate_args(),
         loss_args(),
+        loss_dict_args(),
         training_args(),
         nvnmd_args(),
     ), cls=ArgumentEncoder)
