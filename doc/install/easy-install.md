@@ -86,5 +86,5 @@ The supported platform includes Linux x86-64 with GNU C Library 2.28 or above, m
 A specific version of TensorFlow which is compatible with DeePMD-kit will be also installed.
 
 :::{Warning}
-If your platform is not supported, or want to build against the installed TensorFlow, or want to enable ROCM support, please [build from source](build-from-source.md).
+If your platform is not supported, or want to build against the installed TensorFlow, or want to enable ROCM support, please [build from source](install-from-source.md).
 :::
