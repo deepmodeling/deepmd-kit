@@ -25,6 +25,19 @@ jobs:
           - os: ubuntu-latest
             python: 310
             platform_id: manylinux_x86_64
+          # macos-x86-64
+          - os: macos-latest
+            python: 37
+            platform_id: macosx_x86_64
+          - os: macos-latest
+            python: 38
+            platform_id: macosx_x86_64
+          - os: macos-latest
+            python: 39
+            platform_id: macosx_x86_64
+          - os: macos-latest
+            python: 310
+            platform_id: macosx_x86_64
           # win-64
           - os: windows-2019
             python: 37
