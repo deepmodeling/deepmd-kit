@@ -71,7 +71,7 @@ docker pull deepmodeling/dpmdkit-rocm:dp2.0.3-rocm4.5.2-tf2.6-lmp29Sep2021
 
 ## Install Python interface with pip
 
-If you only want to install the Python interface and have no existing TensorFlow installed, you can use `pip` to install the pre-built package of the Python interface with CUDA supported:
+If you only want to install the Python interface and have no existing TensorFlow installed, you can use `pip` to install the pre-built package of the Python interface with CUDA 11 supported:
 
 ```bash
 pip install deepmd-kit[gpu]
@@ -83,6 +83,7 @@ pip install deepmd-kit[cpu]
 ```
 
 The supported platform includes Linux x86-64 with GNU C Library 2.28 or above, macOS x86-64, and Windows x86-64.
+A specific version of TensorFlow which is compatible with DeePMD-kit will be also installed.
 
 :::{Warning}
 If your platform is not supported, or want to build against the installed TensorFlow, or want to enable ROCM support, please [build from source](build-from-source.md).
