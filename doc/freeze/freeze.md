@@ -5,3 +5,7 @@ The trained neural network is extracted from a checkpoint and dumped into a data
 $ dp freeze -o graph.pb
 ```
 in the folder where the model is trained. The output database is called `graph.pb`.
+
+In [multi-task mode](../train/multi-task-training.md), this process will output several databases, each of which contains the common descriptor and 
+one specific fitting net `fitting_key` and is called `graph_{fitting_key}.pb`. 
+Those frozen models are exactly the same as single-task output with fitting net `fitting_key`.
