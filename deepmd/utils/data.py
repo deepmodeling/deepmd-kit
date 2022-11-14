@@ -30,6 +30,8 @@ class DeepmdData() :
             If the test data are shuffled
     type_map
             Gives the name of different atom types
+    optional_type_map
+            If the type_map.raw in each system is optional
     modifier
             Data modifier that has the method `modify_data`
     trn_all_set
@@ -39,7 +41,8 @@ class DeepmdData() :
                   sys_path : str, 
                   set_prefix : str = 'set',
                   shuffle_test : bool = True, 
-                  type_map : List[str] = None, 
+                  type_map : List[str] = None,
+                  optional_type_map : bool = True,
                   modifier = None,
                   trn_all_set : bool = False) :
         """
@@ -57,6 +60,8 @@ class DeepmdData() :
             self.atom_type_mix = self._load_type_mix(self.dirs[0])
         # load atom type map
         self.type_map = self._load_type_map(root)
+        assert optional_type_map or self.type_map is not None, \
+            'System {} must have type_map.raw in this mode! '.format(sys_path)
         if self.type_map is not None:
             assert(len(self.type_map) >= max(self.atom_type)+1)
         # check pbc

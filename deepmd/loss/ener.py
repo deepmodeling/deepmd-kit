@@ -142,10 +142,10 @@ class EnerStdLoss (Loss) :
         more_loss['l2_pref_force_loss'] = l2_pref_force_loss
 
         # only used when tensorboard was set as true
-        self.l2_loss_summary = tf.summary.scalar('l2_loss', tf.sqrt(l2_loss))
-        self.l2_loss_ener_summary = tf.summary.scalar('l2_ener_loss', global_cvt_2_tf_float(tf.sqrt(l2_ener_loss)) / global_cvt_2_tf_float(natoms[0]))
-        self.l2_loss_force_summary = tf.summary.scalar('l2_force_loss', tf.sqrt(l2_force_loss))
-        self.l2_loss_virial_summary = tf.summary.scalar('l2_virial_loss', tf.sqrt(l2_virial_loss) / global_cvt_2_tf_float(natoms[0]))
+        self.l2_loss_summary = tf.summary.scalar('l2_loss_' + suffix, tf.sqrt(l2_loss))
+        self.l2_loss_ener_summary = tf.summary.scalar('l2_ener_loss_' + suffix, global_cvt_2_tf_float(tf.sqrt(l2_ener_loss)) / global_cvt_2_tf_float(natoms[0]))
+        self.l2_loss_force_summary = tf.summary.scalar('l2_force_loss_' + suffix, tf.sqrt(l2_force_loss))
+        self.l2_loss_virial_summary = tf.summary.scalar('l2_virial_loss_' + suffix, tf.sqrt(l2_virial_loss) / global_cvt_2_tf_float(natoms[0]))
 
         self.l2_l = l2_loss
         self.l2_more = more_loss
@@ -308,9 +308,9 @@ class EnerDipoleLoss (Loss) :
         more_loss['l2_ener_loss'] = l2_ener_loss
         more_loss['l2_ener_dipole_loss'] = l2_ener_dipole_loss
 
-        self.l2_loss_summary = tf.summary.scalar('l2_loss', tf.sqrt(l2_loss))
-        self.l2_loss_ener_summary = tf.summary.scalar('l2_ener_loss', tf.sqrt(l2_ener_loss) / global_cvt_2_tf_float(natoms[0]))
-        self.l2_ener_dipole_loss_summary = tf.summary.scalar('l2_ener_dipole_loss', tf.sqrt(l2_ener_dipole_loss))
+        self.l2_loss_summary = tf.summary.scalar('l2_loss_' + suffix, tf.sqrt(l2_loss))
+        self.l2_loss_ener_summary = tf.summary.scalar('l2_ener_loss_' + suffix, tf.sqrt(l2_ener_loss) / global_cvt_2_tf_float(natoms[0]))
+        self.l2_ener_dipole_loss_summary = tf.summary.scalar('l2_ener_dipole_loss_' + suffix, tf.sqrt(l2_ener_dipole_loss))
 
         self.l2_l = l2_loss
         self.l2_more = more_loss

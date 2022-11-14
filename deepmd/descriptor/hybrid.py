@@ -30,7 +30,8 @@ class DescrptHybrid (Descriptor):
             Build a descriptor from the concatenation of the list of descriptors.
     """
     def __init__ (self, 
-                  list : list
+                  list : list,
+                  multi_task: bool = False
     ) -> None :
         """
         Constructor
@@ -40,10 +41,13 @@ class DescrptHybrid (Descriptor):
         if descrpt_list == [] or descrpt_list is None:
             raise RuntimeError('cannot build descriptor from an empty list of descriptors.')
         formatted_descript_list = []
+        self.multi_task = multi_task
         for ii in descrpt_list:
             if isinstance(ii, Descriptor):
                 formatted_descript_list.append(ii)
             elif isinstance(ii, dict):
+                if multi_task:
+                    ii['multi_task'] = True
                 formatted_descript_list.append(Descriptor(**ii))
             else:
                 raise NotImplementedError
@@ -134,7 +138,28 @@ class DescrptHybrid (Descriptor):
         """
         for ii in self.descrpt_list:
             ii.compute_input_stats(data_coord, data_box, data_atype, natoms_vec, mesh, input_dict)
-    
+
+    def merge_input_stats(self, stat_dict):
+        """
+        Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
+
+        Parameters
+        ----------
+        stat_dict
+                The dict of statisitcs computed from compute_input_stats, including:
+            sumr
+                    The sum of radial statisitcs.
+            suma
+                    The sum of relative coord statisitcs.
+            sumn
+                    The sum of neighbor numbers.
+            sumr2
+                    The sum of square of radial statisitcs.
+            suma2
+                    The sum of square of relative coord statisitcs.
+        """
+        for ii in self.descrpt_list:
+            ii.merge_input_stats(stat_dict)
 
     def build (self, 
                coord_ : tf.Tensor, 

@@ -46,6 +46,7 @@ __all__ = [
     "EMBEDDING_NET_PATTERN",
     "TYPE_EMBEDDING_PATTERN",
     "ATTENTION_LAYER_PATTERN",
+    "REMOVE_SUFFIX_DICT",
     "TF_VERSION"
 ]
 
@@ -119,6 +120,29 @@ TRANSFER_PATTERN = \
         r"model_attr/t_tab_info|"
         r"model_attr/t_tab_data|"
 )
+
+REMOVE_SUFFIX_DICT = {
+    "model_attr/sel_type_{}": "model_attr/sel_type",
+    "model_attr/output_dim_{}": "model_attr/output_dim",
+    "_{}/": "/",
+    "o_energy_{}": "o_energy",
+    "o_force_{}": "o_force",
+    "o_virial_{}": "o_virial",
+    "o_atom_energy_{}": "o_atom_energy",
+    "o_atom_virial_{}": "o_atom_virial",
+    "o_dipole_{}": "o_dipole",
+    "o_global_dipole_{}": "o_global_dipole",
+    "o_polar_{}": "o_polar",
+    "o_global_polar_{}": "o_global_polar",
+    "o_rmat_{}": "o_rmat",
+    "o_rmat_deriv_{}": "o_rmat_deriv",
+    "o_nlist_{}": "o_nlist",
+    "o_rij_{}": "o_rij",
+    "o_dm_force_{}": "o_dm_force",
+    "o_dm_virial_{}": "o_dm_virial",
+    "o_dm_av_{}": "o_dm_av",
+    "o_wfc_{}": "o_wfc",
+}
 
 def set_env_if_empty(key: str, value: str, verbose: bool = True):
     """Set environment variable only if it is empty.
