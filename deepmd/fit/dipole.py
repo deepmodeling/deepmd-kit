@@ -131,9 +131,9 @@ class DipoleFittingSeA (Fitting) :
         inputs = tf.reshape(input_d, [-1, natoms[0], self.dim_descrpt])
         rot_mat = tf.reshape(rot_mat, [-1, natoms[0], self.dim_rot_mat])
 
-        nloc_mask = tf.reshape(tf.tile(tf.repeat(self.sel_mask, natoms[2:]), [nframes]), [nframes, -1])
 
         if type_embedding is not None:
+            nloc_mask = tf.reshape(tf.tile(tf.repeat(self.sel_mask, natoms[2:]), [nframes]), [nframes, -1])
             atype_nall = tf.reshape(atype, [-1, natoms[1]])
             # (nframes x nloc_masked)
             self.atype_nloc_masked = tf.reshape(tf.slice(atype_nall, [0, 0], [-1, natoms[0]])[nloc_mask], [-1])  ## lammps will make error

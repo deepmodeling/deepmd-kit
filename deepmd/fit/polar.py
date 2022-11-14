@@ -315,17 +315,18 @@ class PolarFittingSeA (Fitting) :
         start_index = 0
         inputs = tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]])
         rot_mat = tf.reshape(rot_mat, [-1, self.dim_rot_mat * natoms[0]])
-        # nframes x nloc
-        nloc_mask = tf.reshape(tf.tile(tf.repeat(self.sel_mask, natoms[2:]), [nframes]), [nframes, -1])
-        # nframes x nloc_masked
-        scale = tf.reshape(tf.reshape(tf.tile(tf.repeat(self.scale, natoms[2:]), [nframes]), [nframes, -1])[nloc_mask],
-                           [nframes, -1])
-        if self.shift_diag:
-            # nframes x nloc_masked
-            constant_matrix = tf.reshape(tf.reshape(tf.tile(tf.repeat(
-                self.constant_matrix, natoms[2:]), [nframes]), [nframes, -1])[nloc_mask], [nframes, -1])
 
         if type_embedding is not None:
+            # nframes x nloc
+            nloc_mask = tf.reshape(tf.tile(tf.repeat(self.sel_mask, natoms[2:]), [nframes]), [nframes, -1])
+            # nframes x nloc_masked
+            scale = tf.reshape(
+                tf.reshape(tf.tile(tf.repeat(self.scale, natoms[2:]), [nframes]), [nframes, -1])[nloc_mask],
+                [nframes, -1])
+            if self.shift_diag:
+                # nframes x nloc_masked
+                constant_matrix = tf.reshape(tf.reshape(tf.tile(tf.repeat(
+                    self.constant_matrix, natoms[2:]), [nframes]), [nframes, -1])[nloc_mask], [nframes, -1])
             atype_nall = tf.reshape(atype, [-1, natoms[1]])
             # (nframes x nloc_masked)
             self.atype_nloc_masked = tf.reshape(tf.slice(atype_nall, [0, 0], [-1, natoms[0]])[nloc_mask], [-1])  ## lammps will make error
