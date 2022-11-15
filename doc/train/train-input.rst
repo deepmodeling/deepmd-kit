@@ -17,6 +17,10 @@ Training Parameters
 
 .. dargs::
    :module: deepmd.utils.argcheck
+   :func: loss_dict_args
+
+.. dargs::
+   :module: deepmd.utils.argcheck
    :func: training_args
 
 .. dargs::

@@ -20,9 +20,9 @@ The training procedure will automatically choose single-task or multi-task mode,
 Note that parameters of single-task mode and multi-task mode can not be mixed.
 
 The supported descriptors for multi-task mode are listed:
-- {ref}`se_a(se_e2_a) <model/descriptor[se_e2_a]>`
-- {ref}`se_r(se_e2_r) <model/descriptor[se_e2_r]>`
-- {ref}`se_t(se_e2_t) <model/descriptor[se_e2_t]>`
+- {ref}`se_a (se_e2_a) <model/descriptor[se_e2_a]>`
+- {ref}`se_r (se_e2_r) <model/descriptor[se_e2_r]>`
+- {ref}`se_at (se_e3) <model/descriptor[se_e3]>`
 - {ref}`se_atten <model/descriptor[se_atten]>`
 - {ref}`hybrid <model/descriptor[hybrid]>`
 
