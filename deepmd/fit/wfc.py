@@ -57,6 +57,7 @@ class WFCFitting () :
                input_d,
                rot_mat,
                natoms,
+               input_dict = None,
                reuse = None,
                suffix = '') :
         start_index = 0

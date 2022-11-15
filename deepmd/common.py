@@ -146,16 +146,15 @@ def add_data_requirement(
     default : float, optional, default=0.
         default value of data
     """
-    if key not in data_requirement:
-        data_requirement[key] = {
-            "ndof": ndof,
-            "atomic": atomic,
-            "must": must,
-            "high_prec": high_prec,
-            "type_sel": type_sel,
-            "repeat": repeat,
-            "default": default,
-        }
+    data_requirement[key] = {
+        "ndof": ndof,
+        "atomic": atomic,
+        "must": must,
+        "high_prec": high_prec,
+        "type_sel": type_sel,
+        "repeat": repeat,
+        "default": default,
+    }
 
 
 def select_idx_map(
