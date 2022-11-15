@@ -30,6 +30,8 @@ conda activate /path/to/deepmd-kit
 ## Install with conda
 DeePMD-kit is avaiable with [conda](https://github.com/conda/conda). Install [Anaconda](https://www.anaconda.com/distribution/#download-section) or [Miniconda](https://docs.conda.io/en/latest/miniconda.html) first.
 
+### Offical channel
+
 One may create an environment that contains the CPU version of DeePMD-kit and LAMMPS:
 ```bash
 conda create -n deepmd deepmd-kit=*=*cpu libdeepmd=*=*cpu lammps -c https://conda.deepmodeling.com -c defaults
@@ -50,6 +52,16 @@ One may enable the environment using
 ```bash
 conda activate deepmd
 ```
+
+### conda-forge channel
+
+DeePMD-kit is also available on the [conda-forge](https://conda-forge.org/) channel:
+
+```bash
+conda create -n deepmd deepmd-kit lammps -c conda-forge
+```
+
+Read [conda-forge FAQ](https://conda-forge.org/docs/user/tipsandtricks.html#installing-cuda-enabled-packages-like-tensorflow-and-pytorch) to learn how to install CUDA-enabled packages.
 
 ## Install with docker
 A docker for installing the DeePMD-kit is available [here](https://github.com/orgs/deepmodeling/packages/container/package/deepmd-kit).
