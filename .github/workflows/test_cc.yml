@@ -14,4 +14,4 @@ jobs:
     - run: source/install/test_cc_local.sh
       env:
         tensorflow_root: /usr/local
-    - run: source/install/codecov.sh
+    - uses: codecov/codecov-action@v3

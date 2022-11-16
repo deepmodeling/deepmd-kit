@@ -40,11 +40,12 @@ jobs:
       run: git config --global --add safe.directory /__w/deepmd-kit/deepmd-kit
     - uses: actions/checkout@master
     - run: python -m pip install -U pip>=21.3.1
-    - run: pip install -e .[cpu,test] codecov
+    - run: pip install -e .[cpu,test]
       env:
         CC: gcc-${{ matrix.gcc }}
         CXX: g++-${{ matrix.gcc }}
         TENSORFLOW_VERSION: ${{ matrix.tf }}
         DP_BUILD_TESTING: 1
     - run: dp --version
-    - run: pytest --cov=deepmd source/tests && codecov
+    - run: pytest --cov=deepmd source/tests
+    - uses: codecov/codecov-action@v3
