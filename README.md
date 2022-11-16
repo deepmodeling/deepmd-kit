@@ -150,7 +150,7 @@ The code is organized as follows:
 - [MD: cannot run LAMMPS after installing a new version of DeePMD-kit](doc/troubleshooting/md_version_compatibility.md)
 - [Do we need to set rcut < half boxsize?](doc/troubleshooting/howtoset_rcut.md)
 - [How to set sel?](doc/troubleshooting/howtoset_sel.md)
-- [How to control the number of nodes used by a job?](doc/troubleshooting/howtoset_num_nodes.md)
+- [How to control the parallelism of a job?](doc/troubleshooting/howtoset_num_nodes.md)
 - [How to tune Fitting/embedding-net size?](doc/troubleshooting/howtoset_netsize.md)
 
 
