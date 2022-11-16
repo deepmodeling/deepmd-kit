@@ -16,4 +16,4 @@ jobs:
         tensorflow_root: /usr/local
     - uses: codecov/codecov-action@v3
       with:
-        directory: ./source/install/
+        gcov: true

@@ -62,3 +62,5 @@ jobs:
       if: matrix.variant == 'cpu'
     - uses: codecov/codecov-action@v3
       if: matrix.variant == 'cpu'
+      with:
+        gcov: true
