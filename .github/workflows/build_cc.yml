@@ -20,8 +20,6 @@ jobs:
     - uses: actions/checkout@master
       with:
         submodules: true
-    - run: apt-get update && apt-get install -y python3-pip python3-venv
-      if: matrix.variant == 'cpu'
     - run: apt-get update && apt-get install -y nvidia-cuda-toolkit
       if: matrix.variant == 'cuda'
     - run: |
