@@ -20,7 +20,7 @@ void locate_xx(
 {
   if (xx < lower) {
     table_idx = 0;
-    xx = 0;
+    xx = (FPTYPE)0.;
   }
   else if (xx < upper) {
     table_idx = (int)((xx - lower) / stride0);
@@ -33,7 +33,7 @@ void locate_xx(
   }
   else {
     table_idx = int((upper - lower) / stride0) + (int)((max - upper) / stride1) - 1;
-    xx = 0;
+    xx = (FPTYPE)0.;
   }
 }
 
@@ -51,7 +51,7 @@ void locate_xx_se_t(
 {
   if (xx < min) {
     table_idx = 0;
-    xx = 0;
+    xx = (FPTYPE)0.;
   }
   else if (xx < lower) {
     table_idx = (int)((xx - min) / stride1);
@@ -69,7 +69,7 @@ void locate_xx_se_t(
   }
   else {
     table_idx = int((lower - min) / stride1) + int((upper - lower) / stride0) + (int)((max - upper) / stride1) - 1;
-    xx = 0;
+    xx = (FPTYPE)0.;
   }
 }
 
@@ -110,14 +110,14 @@ __global__ void tabulate_fusion_se_a_fifth_order_polynomial(
     const int last_layer_size) 
 {
   HIP_DYNAMIC_SHARED( int, _data)
-  const int block_idx = blockIdx.x;   // nloc
+  const int_64 block_idx = blockIdx.x;   // nloc
   const int thread_idx = threadIdx.x; // last_layer_size
   FPTYPE ago = __shfl(em_x[block_idx * nnei + nnei - 1], 0);
   bool unloop = false;
   int breakpoint = nnei - 1;
   FPTYPE * iteratorC = (FPTYPE*) &_data[0];
   for (int kk = 0; kk < MTILE; kk++)
-    iteratorC[kk * last_layer_size + thread_idx] = 0.f;
+    iteratorC[kk * last_layer_size + thread_idx] = (FPTYPE)0.;
   __syncthreads();
 
   for (int ii = 0; ii < nnei; ii++) {
@@ -167,7 +167,7 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
     const int last_layer_size) 
 {
   HIP_DYNAMIC_SHARED( int, _data)
-  const int block_idx = blockIdx.x;  // nloc
+  const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x; // KTILE * WARP_SIZE, usally 128 here~
   int warp_idx = __shfl(threadIdx.x / 64, 0);
   int lane_idx = threadIdx.x % 64;
@@ -190,8 +190,8 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
     
     int table_idx = 0;
     locate_xx(xx, table_idx, lower, upper, max, stride0, stride1);
-    FPTYPE sum[KTILE] = {0.f};
-    FPTYPE Csub = 0.f;
+    FPTYPE sum[KTILE] = {(FPTYPE)0.};
+    FPTYPE Csub = (FPTYPE)0.;
     for (int jj = lane_idx; jj < last_layer_size; jj += WARP_SIZE) {
       FPTYPE var[6]; 
       // load iteratorB through table 
@@ -210,7 +210,7 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
       res += em[block_idx * nnei * MTILE + (ii + warp_idx) * 4 + 1] * iteratorA[1 * last_layer_size + jj];
       res += em[block_idx * nnei * MTILE + (ii + warp_idx) * 4 + 2] * iteratorA[2 * last_layer_size + jj];
       res += em[block_idx * nnei * MTILE + (ii + warp_idx) * 4 + 3] * iteratorA[3 * last_layer_size + jj];
-      Csub += (nnei - breakpoint) * (var[1] + (2 * var[2] + (3 * var[3] + (4 * var[4] + 5 * var[5] * xx) * xx) * xx) * xx) * res;
+      Csub += (nnei - breakpoint) * (var[1] + ((FPTYPE)2. * var[2] + ((FPTYPE)3. * var[3] + ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) * xx) * xx) * res;
     }
     //__syncwarp();->syncwrap
     __syncthreads();
@@ -248,14 +248,14 @@ __global__ void tabulate_fusion_se_a_grad_grad_fifth_order_polynomial(
     const int last_layer_size)
 {
   extern __shared__ int _data[];
-  const int block_idx = blockIdx.x;   // nloc
+  const int_64 block_idx = blockIdx.x;   // nloc
   const int thread_idx = threadIdx.x; // last_layer_size
   FPTYPE ago = __shfl( em_x[block_idx * nnei + nnei - 1], 0);
   bool unloop = false;
   int breakpoint = nnei - 1;
   FPTYPE * iteratorC = (FPTYPE*) &_data[0];
   for (int kk = 0; kk < MTILE; kk++)
-    iteratorC[kk * last_layer_size + thread_idx] = 0.f;
+    iteratorC[kk * last_layer_size + thread_idx] = (FPTYPE)0.;
   __syncthreads();
 
   for (int ii = 0; ii < nnei; ii++) {
@@ -275,7 +275,7 @@ __global__ void tabulate_fusion_se_a_grad_grad_fifth_order_polynomial(
     var[4] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 4];
     var[5] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 5];
     FPTYPE res = var[0] + (var[1] + (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) * xx;
-    FPTYPE res_grad = var[1] + (2 * var[2] + (3 * var[3] + (4 * var[4] + 5 * var[5] * xx) * xx) * xx) * xx;
+    FPTYPE res_grad = var[1] + ((FPTYPE)2. * var[2] + ((FPTYPE)3. * var[3] + ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) * xx) * xx;
 
     for (int kk = 0; kk < MTILE; kk++) {
       int em_index = block_idx * nnei * MTILE + ii * MTILE + kk;
@@ -307,10 +307,10 @@ __global__ void tabulate_fusion_se_t_fifth_order_polynomial(
     const int last_layer_size) 
 {
   HIP_DYNAMIC_SHARED( int, _data)
-  const int block_idx = blockIdx.x;   // nloc
+  const int_64 block_idx = blockIdx.x;   // nloc
   const int thread_idx = threadIdx.x; // last_layer_size
 
-  FPTYPE sum = 0.f;
+  FPTYPE sum = (FPTYPE)0.;
   for (int ii = 0; ii < nnei_i; ii++) {
     FPTYPE ago = __shfl(em_x[block_idx * nnei_i * nnei_j + ii * nnei_j + nnei_j - 1], 0);
     int breakpoint = nnei_j - 1;
@@ -361,7 +361,7 @@ __global__ void tabulate_fusion_se_t_grad_fifth_order_polynomial(
     const int last_layer_size) 
 {
   HIP_DYNAMIC_SHARED( int, _data)
-  const int block_idx = blockIdx.x;  // nloc
+  const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x; // KTILE * WARP_SIZE, usally 128 here~
   int warp_idx = __shfl(threadIdx.x / 64, 0);
   int lane_idx = threadIdx.x % 64;
@@ -382,8 +382,8 @@ __global__ void tabulate_fusion_se_t_grad_fifth_order_polynomial(
       }
       int table_idx = 0;
       locate_xx_se_t(xx, table_idx, lower, upper, -max, max, stride0, stride1);
-      FPTYPE sum  = 0.f;
-      FPTYPE Csub = 0.f;
+      FPTYPE sum  = (FPTYPE)0.;
+      FPTYPE Csub = (FPTYPE)0.;
       for (int kk = lane_idx; kk < last_layer_size; kk += WARP_SIZE) {
         FPTYPE var[6]; 
         // load iteratorB through table 
@@ -396,7 +396,7 @@ __global__ void tabulate_fusion_se_t_grad_fifth_order_polynomial(
         FPTYPE res = var[0] + (var[1] + (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) * xx;
 
         sum  += iteratorA[kk] * res;
-        Csub += iteratorA[kk] * tmp * (var[1] + (2 * var[2] + (3 * var[3] + (4 * var[4] + 5 * var[5] * xx) * xx) * xx) * xx);
+        Csub += iteratorA[kk] * tmp * (var[1] + ((FPTYPE)2. * var[2] + ((FPTYPE)3. * var[3] + ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) * xx) * xx);
       }
       __syncthreads();
       warp_reduce(sum);
@@ -430,10 +430,10 @@ __global__ void tabulate_fusion_se_t_grad_grad_fifth_order_polynomial(
     const int nnei_j,
     const int last_layer_size)
 {
-  const int block_idx  = blockIdx.x;   // nloc
+  const int_64 block_idx  = blockIdx.x;   // nloc
   const int thread_idx = threadIdx.x; // last_layer_size
 
-  FPTYPE sum = 0.f;
+  FPTYPE sum = (FPTYPE)0.;
   for (int ii = 0; ii < nnei_i; ii++) { 
     FPTYPE ago = __shfl(em_x[block_idx * nnei_i * nnei_j + ii * nnei_j + nnei_j - 1], 0);
     bool unloop = false;
@@ -456,7 +456,7 @@ __global__ void tabulate_fusion_se_t_grad_grad_fifth_order_polynomial(
       var[4] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 4];
       var[5] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 5];
       FPTYPE res = var[0] + (var[1] + (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) * xx;
-      FPTYPE res_grad = var[1] + (2 * var[2] + (3 * var[3] + (4 * var[4] + 5 * var[5] * xx) * xx) * xx) * xx;
+      FPTYPE res_grad = var[1] + ((FPTYPE)2. * var[2] + ((FPTYPE)3. * var[3] + ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) * xx) * xx;
   
       sum += (tmp * res_grad * dz_xx + dz_em * res);
       if (unloop) break;
@@ -482,7 +482,7 @@ __global__ void tabulate_fusion_se_r_fifth_order_polynomial(
     const int last_layer_size) 
 {
   HIP_DYNAMIC_SHARED( int, _data)
-  const int block_idx = blockIdx.x;   // nloc
+  const int_64 block_idx = blockIdx.x;   // nloc
   const int thread_idx = threadIdx.x; // last_layer_size
   
   for (int ii = 0; ii < nnei; ii++) {
@@ -519,19 +519,10 @@ __global__ void tabulate_fusion_se_r_grad_fifth_order_polynomial(
     const int last_layer_size) 
 {
   HIP_DYNAMIC_SHARED( int, _data)
-  const int block_idx = blockIdx.x;  // nloc
+  const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x; // KTILE * WARP_SIZE, usally 128 here~
   int warp_idx = __shfl(threadIdx.x / 64, 0);
   int lane_idx = threadIdx.x % 64;
-
-  bool unloop = false;
-  FPTYPE * iteratorA = (FPTYPE *)&_data[0]; // dy
-  for (int ii = 0; ii < MTILE; ii++) {
-    for (int jj = thread_idx; jj < last_layer_size; jj += blockDim.x) {
-      iteratorA[ii * last_layer_size + jj] = ;
-    }
-  }
-  __syncthreads();
 
   for (int ii = 0; ii < nnei; ii += KTILE) {
     FPTYPE xx = em[block_idx * nnei + ii + warp_idx];
@@ -548,7 +539,7 @@ __global__ void tabulate_fusion_se_r_grad_fifth_order_polynomial(
       var[3]  = table[table_idx * last_layer_size * 6 + 6 * jj + 3];
       var[4]  = table[table_idx * last_layer_size * 6 + 6 * jj + 4];
       var[5]  = table[table_idx * last_layer_size * 6 + 6 * jj + 5];
-      Csub +=(var[1] + (2 * var[2] + (3 * var[3] + (4 * var[4] + 5 * var[5] * xx) * xx) * xx) * xx) * dy[block_idx * nnei * last_layer_size + ii * last_layer_size + jj];
+      Csub +=(var[1] + ((FPTYPE)2. * var[2] + ((FPTYPE)3. * var[3] + ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) * xx) * xx) * dy[block_idx * nnei * last_layer_size + ii * last_layer_size + jj];
     }
     //__syncwarp();->syncwrap
     __syncthreads();
@@ -578,7 +569,7 @@ __global__ void tabulate_fusion_se_r_grad_grad_fifth_order_polynomial(
     const int last_layer_size)
 {
   extern __shared__ int _data[];
-  const int block_idx = blockIdx.x;   // nloc
+  const int_64 block_idx = blockIdx.x;   // nloc
   const int thread_idx = threadIdx.x; // last_layer_size
 
   __syncthreads();
@@ -594,7 +585,7 @@ __global__ void tabulate_fusion_se_r_grad_grad_fifth_order_polynomial(
     var[3] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 3];
     var[4] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 4];
     var[5] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 5];
-    FPTYPE res_grad = var[1] + (2 * var[2] + (3 * var[3] + (4 * var[4] + 5 * var[5] * xx) * xx) * xx) * xx;
+    FPTYPE res_grad = var[1] + ((FPTYPE)2. * var[2] + ((FPTYPE)3. * var[3] + ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) * xx) * xx;
     dz_dy[block_idx * nnei * last_layer_size + ii * last_layer_size + thread_idx] = dz_dy_dem[block_idx * nnei + ii]*res_grad;
 
   }

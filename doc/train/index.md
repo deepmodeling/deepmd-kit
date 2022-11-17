@@ -6,3 +6,4 @@
 - [TensorBoard Usage](tensorboard.md)
 - [Known limitations of using GPUs](gpu-limitations.md)
 - [Training Parameters](../train-input-auto.rst)
+- [Finetuning the Pretrained Model](finetuning.md)

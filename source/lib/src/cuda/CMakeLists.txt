@@ -9,6 +9,12 @@ if (NOT CUDA_FOUND)
     message(STATUS "CUDA not found. Project will not be built.")
 endif(NOT CUDA_FOUND)
 
+# take dynamic open cudart library replace of static one
+# so it's not required when using CPUs
+add_subdirectory(cudart)
+# important: it must be before cuda_add_library and any link target to cudart
+set(CUDA_LIBRARIES deepmd_dyn_cudart)
+
 # set c++ version c++11
 SET(CMAKE_CXX_STANDARD 11)
 SET(CMAKE_CUDA_STANDARD 11)
@@ -116,10 +122,32 @@ endif()
 file (GLOB SOURCE_FILES "*.cu" )
 
 cuda_add_library(deepmd_op_cuda SHARED ${SOURCE_FILES})
-target_include_directories(deepmd_op_cuda PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../include/)
+target_include_directories(
+    deepmd_op_cuda
+    PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../include/>
+    $<INSTALL_INTERFACE:include>
+)
+if(APPLE)
+    set_target_properties(
+        deepmd_op_cuda 
+        PROPERTIES 
+        INSTALL_RPATH @loader_path
+    )
+else()
+    set_target_properties(
+        deepmd_op_cuda
+        PROPERTIES
+        INSTALL_RPATH "$ORIGIN"
+    )
+endif()
 
 if (BUILD_CPP_IF)
-    install(TARGETS deepmd_op_cuda DESTINATION lib/)
+    install(
+        TARGETS deepmd_op_cuda
+        EXPORT ${CMAKE_PROJECT_NAME}Targets
+        DESTINATION lib/
+    )
 endif (BUILD_CPP_IF)
 if (BUILD_PY_IF)
     install(TARGETS deepmd_op_cuda DESTINATION deepmd/op/)

@@ -1,4 +1,4 @@
-### Run path-integral MD with i-PI
+# Run path-integral MD with i-PI
 The i-PI works in a client-server model. The i-PI provides the server for integrating the replica positions of atoms, while the DeePMD-kit provides a client named `dp_ipi` (or `dp_ipi_low` for low precision) that computes the interactions (including energy, force and virial). The server and client communicates via the Unix domain socket or the Internet socket. Installation instructions of i-PI can be found [here](../install/install-ipi.md). The client can be started by
 ```bash
 i-pi input.xml &

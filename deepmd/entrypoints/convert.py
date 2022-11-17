@@ -1,4 +1,11 @@
-from deepmd.utils.convert import convert_10_to_21, convert_20_to_21, convert_13_to_21, convert_12_to_21 
+from deepmd.utils.convert import (
+    convert_012_to_21,
+    convert_10_to_21,
+    convert_20_to_21,
+    convert_13_to_21,
+    convert_12_to_21,
+    convert_pbtxt_to_pb,
+)
 
 def convert(
     *,
@@ -7,7 +14,9 @@ def convert(
     output_model: str,
     **kwargs,
 ):
-    if FROM == '1.0':
+    if FROM == '0.12':
+        convert_012_to_21(input_model, output_model)
+    elif FROM == '1.0':
         convert_10_to_21(input_model, output_model)
     elif FROM in ['1.1', '1.2']:
         # no difference between 1.1 and 1.2
@@ -16,5 +25,7 @@ def convert(
         convert_13_to_21(input_model, output_model)
     elif FROM == '2.0':
         convert_20_to_21(input_model, output_model)
+    elif FROM == 'pbtxt':
+        convert_pbtxt_to_pb(input_model, output_model)
     else:
         raise RuntimeError('unsupported model version ' + FROM)

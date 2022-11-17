@@ -6,7 +6,7 @@ The method of DPLR is described in [this paper][1]. One is recommended to read t
 
 In the following, we take the DPLR model for example to introduce the training and LAMMPS simulation with the DPLR model. The DPLR model is training in two steps.
 
-### Train a deep Wannier model for Wannier centroids
+## Train a deep Wannier model for Wannier centroids
 
 We use the deep Wannier model (DW) to represent the relative position of the Wannier centroid (WC) with the atom to which it is associated. One may consult the introduction of the [dipole model](train-fitting-tensor.md) for a detailed introduction. An example input `wc.json` and a small dataset `data` for tutorial purposes can be found in
 ```bash
@@ -22,7 +22,7 @@ Two settings make the training input script different from an energy training in
 	    "seed":		1
 	},
 ```
-The type of fitting is set to `"dipole"`. The dipole is associate to type 0 atoms (oxygens), by the setting `"dipole_type": [0]`. What we trained is the displacement of the WC from the corresponding oxygen atom. It shares the same training input as atomic dipole because both are 3-dimensional vectors defined on atoms. 
+The type of fitting is set to {ref}`dipole <model/fitting_net[dipole]>`. The dipole is associate to type 0 atoms (oxygens), by the setting `"dipole_type": [0]`. What we trained is the displacement of the WC from the corresponding oxygen atom. It shares the same training input as atomic dipole because both are 3-dimensional vectors defined on atoms. 
 The loss section is provided as follows
 ```json
     "loss": {
@@ -38,7 +38,7 @@ The training and freezing can be started from the example directory by
 dp train dw.json && dp freeze -o dw.pb
 ```
 
-### Train the DPLR model
+## Train the DPLR model
 
 The training of the DPLR model is very similar to the standard short-range DP models. An example input script can be found in the example directory. The following section is introduced to compute the long-range energy contribution of the DPLR model, and modify the short-range DP model by this part. 
 ```json
@@ -51,9 +51,9 @@ The training of the DPLR model is very similar to the standard short-range DP mo
             "ewald_beta":       0.40
         },
 ```
-The `"model_name"` specifies which DW model is used to predict the position of WCs. `"model_charge_map"` gives the amount of charge assigned to WCs. `"sys_charge_map"` provides the nuclear charge of oxygen (type 0) and hydrogen (type 1) atoms. `"ewald_beta"` (unit A^{-1}) gives the spread parameter controls the spread of Gaussian charges, and `"ewald_h"`  (unit A) assigns the grid size of Fourier transform. 
+The {ref}`model_name <model/modifier[dipole_charge]/model_name>` specifies which DW model is used to predict the position of WCs. {ref}`model_charge_map <model/modifier[dipole_charge]/model_charge_map>` gives the amount of charge assigned to WCs. {ref}`sys_charge_map <model/modifier[dipole_charge]/sys_charge_map>` provides the nuclear charge of oxygen (type 0) and hydrogen (type 1) atoms. {ref}`ewald_beta <model/modifier[dipole_charge]/ewald_beta>` (unit $\text{Å}^{-1}$) gives the spread parameter controls the spread of Gaussian charges, and {ref}`ewald_h <model/modifier[dipole_charge]/ewald_h>`  (unit Å) assigns the grid size of Fourier transform. 
 The DPLR model can be trained and frozen by (from the example directory)
-```
+```bash
 dp train ener.json && dp freeze -o ener.pb
 ```
 
@@ -108,7 +108,7 @@ An example input script is provided in
 $deepmd_source_dir/examples/water/dplr/lmp/in.lammps
 ```
 Here are some explanations
-```
+```lammps
 # groups of real and virtual atoms
 group           real_atom type 1 2
 group           virtual_atom type 3
@@ -124,7 +124,7 @@ special_bonds   lj/coul 1 1 1 angle no
 ```
 Type 1 and 2 (O and H) are `real_atom`s, while type 3 (WCs) are `virtual_atom`s. The model file `ener.pb` stores both the DW and DPLR models, so the position of WCs and the energy can be inferred from it. A virtual bond type is specified by `bond_style zero`. The `special_bonds` command switches off the exclusion of intramolecular interactions.
 
-```
+```lammps
 # kspace_style "pppm/dplr" should be used. in addition the
 # gewald(1/distance) should be set the same as that used in
 # training. Currently only ik differentiation is supported.
@@ -133,7 +133,7 @@ kspace_modify	gewald ${BETA} diff ik mesh ${KMESH} ${KMESH} ${KMESH}
 ```
 The long-range part is calculated by the `kspace` support of LAMMPS. The `kspace_style` `pppm/dplr` is required. The spread parameter set by variable `BETA` should be set the same as that used in training. The `KMESH` should be set dense enough so the long-range calculation is converged. 
 
-```
+```lammps
 # "fix dplr" set the position of the virtual atom, and spread the
 # electrostatic interaction asserting on the virtual atom to the real
 # atoms. "type_associate" associates the real atom type its
@@ -144,7 +144,7 @@ fix_modify	0 virial yes
 ```
 The fix command `dplr` calculates the position of WCs by the DW model and back-propagates the long-range interaction on virtual atoms to real toms. 
 
-```
+```lammps
 # compute the temperature of real atoms, excluding virtual atom contribution
 compute		real_temp real_atom temp
 compute		real_press all pressure real_temp
@@ -152,12 +152,12 @@ fix		1 real_atom nvt temp ${TEMP} ${TEMP} ${TAU_T}
 fix_modify	1 temp real_temp
 ```
 The temperature of the system should be computed from the real atoms. The kinetic contribution in the pressure tensor is also computed from the real atoms. The thermostat is applied to only real atoms. The computed temperature and pressure of real atoms can be accessed by, e.g.
-```
+```lammps
 fix             thermo_print all print ${THERMO_FREQ} "$(step) $(pe) $(ke) $(etotal) $(enthalpy) $(c_real_temp) $(c_real_press) $(vol) $(c_real_press[1]) $(c_real_press[2]) $(c_real_press[3])" append thermo.out screen no title "# step pe ke etotal enthalpy temp press vol pxx pyy pzz"
 ```
 
 The LAMMPS simulation can be started from the example directory by 
-```
+```bash
 lmp -i in.lammps
 ```
 If LAMMPS complains that no model file `ener.pb` exists, it can be copied from the training example directory. 

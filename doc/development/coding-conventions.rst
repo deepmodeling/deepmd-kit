@@ -27,7 +27,7 @@ Rules
 =====
 
 The code must be compatible with the oldest supported version of python
-which is 3.6
+which is 3.7
 
 The project follows the generic coding conventions as
 specified in the `Style Guide for Python Code`_, `Docstring

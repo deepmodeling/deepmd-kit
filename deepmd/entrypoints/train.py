@@ -21,6 +21,7 @@ from deepmd.utils.data_system import DeepmdDataSystem
 from deepmd.utils.sess import run_sess
 from deepmd.utils.neighbor_stat import NeighborStat
 from deepmd.utils.path import DPPath
+from deepmd.utils.finetune import replace_model_params_with_pretrained_model
 
 __all__ = ["train"]
 
@@ -39,6 +40,7 @@ def train(
     log_path: Optional[str],
     is_compress: bool = False,
     skip_neighbor_stat: bool = False,
+    finetune: Optional[str] = None,
     **kwargs,
 ):
     """Run DeePMD model training.
@@ -65,6 +67,8 @@ def train(
         indicates whether in the model compress mode
     skip_neighbor_stat : bool, default=False
         skip checking neighbor statistics
+    finetune : Optional[str]
+        path to pretrained model or None
 
     Raises
     ------
@@ -75,6 +79,7 @@ def train(
         init_model=init_model,
         restart=restart,
         init_frz_model=init_frz_model,
+        finetune=finetune,
         log_path=log_path,
         log_level=log_level,
         mpi_log=mpi_log
@@ -85,6 +90,10 @@ def train(
 
     # load json database
     jdata = j_loader(INPUT)
+
+    origin_type_map = None
+    if run_opt.finetune is not None:
+        jdata, origin_type_map = replace_model_params_with_pretrained_model(jdata, run_opt.finetune)
 
     jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
 
@@ -97,12 +106,15 @@ def train(
         json.dump(jdata, fp, indent=4)
 
     # save the training script into the graph
-    tf.constant(json.dumps(jdata), name='train_attr/training_script', dtype=tf.string)
+    # remove white spaces as it is not compressed
+    tf.constant(json.dumps(jdata, separators=(',', ':')), name='train_attr/training_script', dtype=tf.string)
 
     for message in WELCOME + CITATION + BUILD:
         log.info(message)
 
     run_opt.print_resource_summary()
+    if origin_type_map is not None:
+        jdata['model']['origin_type_map'] = origin_type_map
     _do_work(jdata, run_opt, is_compress)
 
 
@@ -154,12 +166,15 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
         train_data = get_data(jdata["training"]["training_data"], rcut, ipt_type_map, modifier)
         train_data.print_summary("training")
         if jdata["training"].get("validation_data", None) is not None:
-            valid_data = get_data(jdata["training"]["validation_data"], rcut, ipt_type_map, modifier)
+            valid_data = get_data(jdata["training"]["validation_data"], rcut, train_data.type_map, modifier)
             valid_data.print_summary("validation")
 
     # get training info
     stop_batch = j_must_have(jdata["training"], "numb_steps")
-    model.build(train_data, stop_batch)
+    origin_type_map = jdata["model"].get("origin_type_map", None)
+    if origin_type_map is not None and not origin_type_map:  # get the type_map from data if not provided
+        origin_type_map = get_data(jdata["training"]["training_data"], rcut, None, modifier).get_type_map()
+    model.build(train_data, stop_batch, origin_type_map=origin_type_map)
 
     if not is_compress:
         # train the model with the provided systems in a cyclic way
@@ -249,7 +264,7 @@ def get_type_map(jdata):
     return jdata['model'].get('type_map', None)
 
 
-def get_nbor_stat(jdata, rcut):
+def get_nbor_stat(jdata, rcut, one_type: bool = False):
     max_rcut = get_rcut(jdata)
     type_map = get_type_map(jdata)
 
@@ -264,7 +279,7 @@ def get_nbor_stat(jdata, rcut):
         map_ntypes = data_ntypes
     ntypes = max([map_ntypes, data_ntypes])
 
-    neistat = NeighborStat(ntypes, rcut)
+    neistat = NeighborStat(ntypes, rcut, one_type=one_type)
 
     min_nbor_dist, max_nbor_size = neistat.get_stat(train_data)
 
@@ -279,8 +294,8 @@ def get_nbor_stat(jdata, rcut):
         dtype = tf.int32)
     return min_nbor_dist, max_nbor_size
 
-def get_sel(jdata, rcut):
-    _, max_nbor_size = get_nbor_stat(jdata, rcut)
+def get_sel(jdata, rcut, one_type: bool = False):
+    _, max_nbor_size = get_nbor_stat(jdata, rcut, one_type=one_type)
     return max_nbor_size
 
 def get_min_nbor_dist(jdata, rcut):
@@ -316,14 +331,20 @@ def wrap_up_4(xx):
 
 
 def update_one_sel(jdata, descriptor):
+    if descriptor['type'] == 'loc_frame':
+        return descriptor
     rcut = descriptor['rcut']
-    tmp_sel = get_sel(jdata, rcut)
+    tmp_sel = get_sel(jdata, rcut, one_type=descriptor['type'] in ('se_atten',))
+    sel = descriptor['sel']
+    if isinstance(sel, int):
+        # convert to list and finnally convert back to int
+        sel = [sel]
     if parse_auto_sel(descriptor['sel']) :
         ratio = parse_auto_sel_ratio(descriptor['sel'])
-        descriptor['sel'] = [int(wrap_up_4(ii * ratio)) for ii in tmp_sel]
+        descriptor['sel'] = sel = [int(wrap_up_4(ii * ratio)) for ii in tmp_sel]
     else:
         # sel is set by user
-        for ii, (tt, dd) in enumerate(zip(tmp_sel, descriptor['sel'])):
+        for ii, (tt, dd) in enumerate(zip(tmp_sel, sel)):
             if dd and tt > dd:
                 # we may skip warning for sel=0, where the user is likely
                 # to exclude such type in the descriptor
@@ -332,6 +353,8 @@ def update_one_sel(jdata, descriptor):
                     "not less than %d, but you set it to %d. The accuracy"
                     " of your model may get worse." %(ii, tt, dd)
                 )
+    if descriptor['type'] in ('se_atten',):
+        descriptor['sel'] = sel = sum(sel)
     return descriptor
 
 
@@ -340,9 +363,8 @@ def update_sel(jdata):
     descrpt_data = jdata['model']['descriptor']
     if descrpt_data['type'] == 'hybrid':
         for ii in range(len(descrpt_data['list'])):
-            if descrpt_data['list'][ii]['type'] != 'loc_frame':
-                descrpt_data['list'][ii] = update_one_sel(jdata, descrpt_data['list'][ii])
-    elif descrpt_data['type'] != 'loc_frame':
+            descrpt_data['list'][ii] = update_one_sel(jdata, descrpt_data['list'][ii])
+    else:
         descrpt_data = update_one_sel(jdata, descrpt_data)
     jdata['model']['descriptor'] = descrpt_data
     return jdata

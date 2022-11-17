@@ -1,0 +1,14 @@
+Python:
+- deepmd/**/*
+- source/tests/**/*
+Docs: doc/**/*
+Examples: examples/**/*
+Core: source/lib/**/*
+CUDA: source/lib/src/cuda/**/*
+ROCM: source/lib/src/rocm/**/*
+OP: source/op/**/*
+C++: source/api_cc/**/*
+C: source/api_c/**/*
+LAMMPS: source/lmp/**/*
+Gromacs: source/gmx/**/*
+i-Pi: source/ipi/**/*

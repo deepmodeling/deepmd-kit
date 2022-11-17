@@ -10,8 +10,6 @@
 #include "neighbor_list.h"
 #include "test_utils.h"
 
-#include "google/protobuf/text_format.h"
-#include "google/protobuf/io/zero_copy_stream_impl.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>  
@@ -19,7 +17,7 @@
 class TestDipoleCharge : public ::testing::Test
 {  
 protected:  
-  std::vector<double> coord = {
+  std::vector<VALUETYPE> coord = {
     4.6067455554,    8.8719311819,    6.3886531197,
     4.0044515745,    4.2449530507,    7.7902855220,
     2.6453069446,    0.8772647726,    1.2804446790,
@@ -32,46 +30,34 @@ protected:
   std::vector<int> atype = {
     0,3,2,1,3,4,1,4
   };
-  std::vector<double> box = {
+  std::vector<VALUETYPE> box = {
     10., 0., 0., 0., 10., 0., 0., 0., 10.
   };
   std::vector<double> expected_e = {
     3.671081837126222158e+00
   };
-  std::vector<double> expected_f = {
+  std::vector<VALUETYPE> expected_f = {
     8.786854427753210128e-01,-1.590752486903602159e-01,-2.709225006303785932e-01,-4.449513960033193438e-01,-1.564291540964127813e-01,2.139031741772115178e-02,1.219699614140521193e+00,-5.580358618499958734e-02,-3.878662478349682585e-01,-1.286685244990778854e+00,1.886475802950296488e-01,3.904450515493615437e-01,1.605017382138404849e-02,2.138016869742287995e-01,-2.617514921203008965e-02,2.877081057057793712e-01,-3.846449683844421763e-01,3.048855616906603894e-02,-9.075632811311897807e-01,-6.509653472431625731e-03,2.302010972126376787e-01,2.370565856822822726e-01,3.600133435593881881e-01,1.243887532859055609e-02
   };
-  std::vector<double> expected_v = {
+  std::vector<VALUETYPE> expected_v = {
     3.714071471995848417e-01,6.957130186032146613e-01,-1.158289779017217302e+00,6.957130186032139951e-01,-1.400130091653774933e+01,-3.631620234653316626e-01,-1.158289779017217302e+00,-3.631620234653316626e-01,3.805077486043773050e+00
   };
-  std::vector<double> charge_map = {
+  std::vector<VALUETYPE> charge_map = {
     1., 1., 1., 1., 1., -1., -3.
   };
   int natoms;
   int ntypes;
   std::vector<int> type_asso;
   double expected_tot_e;
-  std::vector<double>expected_tot_v;
+  std::vector<VALUETYPE>expected_tot_v;
 
   deepmd::DeepTensor dp;
   deepmd::DipoleChargeModifier dm;
 
   void SetUp() override {
     std::string file_name = "../../tests/infer/dipolecharge_e.pbtxt";
-    int fd = open(file_name.c_str(), O_RDONLY);
-    tensorflow::protobuf::io::ZeroCopyInputStream* input = new tensorflow::protobuf::io::FileInputStream(fd);
-    tensorflow::GraphDef graph_def;
-    tensorflow::protobuf::TextFormat::Parse(input, &graph_def);
-    delete input;
     std::string model = "dipolecharge_e.pb";
-    std::fstream output(model.c_str(), std::ios::out | std::ios::trunc | std::ios::binary);
-    graph_def.SerializeToOstream(&output);
-    // check the string by the following commands
-    // string txt;
-    // tensorflow::protobuf::TextFormat::PrintToString(graph_def, &txt);
-
-    // dp.init("dipolecharge_d.pb");
-    // dm.init("dipolecharge_d.pb");
+    deepmd::convert_pbtxt_to_pb(file_name, model);
     dp.init(model, 0, "dipole_charge");
     dm.init(model, 0, "dipole_charge");
 
@@ -107,7 +93,7 @@ TEST_F(TestDipoleCharge, cpu_lmp_nlist)
   // float rc = dp.cutoff();
   float rc = 4.0;
   int nloc = coord.size() / 3;  
-  std::vector<double> coord_cpy;
+  std::vector<VALUETYPE> coord_cpy;
   std::vector<int> atype_cpy, mapping;  
   std::vector<std::vector<int > > nlist_data;
   _build_nlist(nlist_data, coord_cpy, atype_cpy, mapping,
@@ -120,7 +106,7 @@ TEST_F(TestDipoleCharge, cpu_lmp_nlist)
   convert_nlist(inlist, nlist_data);  
 
   // evaluate dipole
-  std::vector<double> dipole, dipole_recd(nloc*3, 0.0);
+  std::vector<VALUETYPE> dipole, dipole_recd(nloc*3, 0.0);
   dp.compute(dipole, coord_cpy, atype_cpy, box, nall-nloc, inlist);
 
   // add virtual atoms to the system
@@ -138,7 +124,7 @@ TEST_F(TestDipoleCharge, cpu_lmp_nlist)
   // const std::vector<int> & sort_fwd_map(nnp_map.get_fwd_map());
 
   // // add coords
-  std::vector<double > add_coord;
+  std::vector<VALUETYPE > add_coord;
   std::vector<int > add_atype;
   std::vector<std::pair<int,int>> pairs;
   for(int ii = 0; ii < nloc; ++ii){
@@ -146,7 +132,7 @@ TEST_F(TestDipoleCharge, cpu_lmp_nlist)
       // Yixiao: the sort map is no longer needed
       // int res_idx = sort_fwd_map[sel_fwd[ii]];
       int res_idx = sel_fwd[ii];
-      std::vector<double > tmp_coord(3);
+      std::vector<VALUETYPE > tmp_coord(3);
       for(int dd = 0; dd < 3; ++dd){
 	tmp_coord[dd] = coord[ii*3+dd] + dipole[res_idx*3+dd];
 	dipole_recd[ii*3+dd] = dipole[res_idx*3+dd];
@@ -169,17 +155,17 @@ TEST_F(TestDipoleCharge, cpu_lmp_nlist)
   EXPECT_EQ(atype.size()*3, coord.size());
 
   // get charge value
-  std::vector<double> charge(nloc);
+  std::vector<VALUETYPE> charge(nloc);
   for(int ii = 0; ii < nloc; ++ii){
     charge[ii] = charge_map[atype[ii]];
   }
   
   // compute the recp part of the ele interaction
-  double eener;
-  std::vector<double> eforce, evirial;
-  deepmd::Region<double> region;
+  VALUETYPE eener;
+  std::vector<VALUETYPE> eforce, evirial;
+  deepmd::Region<VALUETYPE> region;
   init_region_cpu(region, &box[0]);
-  deepmd::EwaldParameters<double> eparam;
+  deepmd::EwaldParameters<VALUETYPE> eparam;
   eparam.beta = 0.2;
   eparam.spacing = 4;
   ewald_recp(eener, eforce, evirial, coord, charge, region, eparam);
@@ -203,7 +189,7 @@ TEST_F(TestDipoleCharge, cpu_lmp_nlist)
   convert_nlist(inlist, nlist_data);
 
   // compute force and virial
-  std::vector<double > force_, force, virial;
+  std::vector<VALUETYPE > force_, force, virial;
   dm.compute(force_, virial, coord_cpy, atype_cpy, box, pairs, eforce, nghost, inlist);
   // for(int ii = 0; ii < force_.size(); ++ii){
   //   std::cout << force_[ii] << " " ;

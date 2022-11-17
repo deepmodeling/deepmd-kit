@@ -7,7 +7,7 @@ from deepmd.env import op_module
 from deepmd.env import default_tf_session_config
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.utils.data_system import DeepmdDataSystem
-from deepmd.utils.sess import run_sess
+from deepmd.utils.parallel_op import ParallelOp
 
 log = logging.getLogger(__name__)
 
@@ -23,30 +23,49 @@ class NeighborStat():
             The num of atom types
     rcut
             The cut-off radius
+    one_type : bool, optional, default=False
+        Treat all types as a single type.
     """
     def __init__(self,
                  ntypes : int,
-                 rcut: float) -> None:
+                 rcut: float,
+                 one_type : bool = False,
+                 ) -> None:
         """
         Constructor
         """
         self.rcut = rcut
         self.ntypes = ntypes
-        self.place_holders = {}
+        self.one_type = one_type
         sub_graph = tf.Graph()
-        with sub_graph.as_default():
+
+        def builder():
+            place_holders = {}
             for ii in ['coord', 'box']:
-                self.place_holders[ii] = tf.placeholder(GLOBAL_NP_FLOAT_PRECISION, [None, None], name='t_'+ii)
-            self.place_holders['type'] = tf.placeholder(tf.int32, [None, None], name='t_type')
-            self.place_holders['natoms_vec'] = tf.placeholder(tf.int32, [self.ntypes+2], name='t_natoms')
-            self.place_holders['default_mesh'] = tf.placeholder(tf.int32, [None], name='t_mesh')
-            self._max_nbor_size, self._min_nbor_dist \
-                = op_module.neighbor_stat(self.place_holders['coord'],
-                                         self.place_holders['type'],
-                                         self.place_holders['natoms_vec'],
-                                         self.place_holders['box'],
-                                         self.place_holders['default_mesh'],
+                place_holders[ii] = tf.placeholder(GLOBAL_NP_FLOAT_PRECISION, [None, None], name='t_'+ii)
+            place_holders['type'] = tf.placeholder(tf.int32, [None, None], name='t_type')
+            place_holders['natoms_vec'] = tf.placeholder(tf.int32, [self.ntypes+2], name='t_natoms')
+            place_holders['default_mesh'] = tf.placeholder(tf.int32, [None], name='t_mesh')
+            t_type = place_holders['type']
+            t_natoms = place_holders['natoms_vec']
+            if self.one_type:
+                # all types = 0, natoms_vec = [natoms, natoms, natoms]
+                t_type = tf.zeros_like(t_type, dtype=tf.int32)
+                t_natoms = tf.repeat(t_natoms[0], 3)
+
+            _max_nbor_size, _min_nbor_dist \
+                = op_module.neighbor_stat(place_holders['coord'],
+                                         t_type,
+                                         t_natoms,
+                                         place_holders['box'],
+                                         place_holders['default_mesh'],
                                          rcut = self.rcut)
+            place_holders['dir'] = tf.placeholder(tf.string)
+            return place_holders, (_max_nbor_size, _min_nbor_dist, place_holders['dir'])
+
+        with sub_graph.as_default():
+            self.p = ParallelOp(builder, config=default_tf_session_config)
+
         self.sub_sess = tf.Session(graph = sub_graph, config=default_tf_session_config)
 
     def get_stat(self,
@@ -67,41 +86,41 @@ class NeighborStat():
                 A list with ntypes integers, denotes the actual achieved max sel
         """
         self.min_nbor_dist = 100.0
-        self.max_nbor_size = [0] * self.ntypes
+        self.max_nbor_size = [0]
+        if not self.one_type:
+            self.max_nbor_size *= self.ntypes            
 
-        # for ii in tqdm(range(len(data.system_dirs)), desc = 'DEEPMD INFO    |-> deepmd.utils.neighbor_stat\t\t\tgetting neighbor status'):
-        for ii in range(len(data.system_dirs)):
-            for jj in data.data_systems[ii].dirs:
-                data_set = data.data_systems[ii]._load_set(jj)
-                for kk in range(np.array(data_set['type']).shape[0]):
-                    mn, dt \
-                        = run_sess(self.sub_sess, [self._max_nbor_size, self._min_nbor_dist], 
-                                            feed_dict = {
-                                                self.place_holders['coord']: np.array(data_set['coord'])[kk].reshape([-1, data.natoms[ii] * 3]),
-                                                self.place_holders['type']: np.array(data_set['type'])[kk].reshape([-1, data.natoms[ii]]),
-                                                self.place_holders['natoms_vec']: np.array(data.natoms_vec[ii]),
-                                                self.place_holders['box']: np.array(data_set['box'])[kk].reshape([-1, 9]),
-                                                self.place_holders['default_mesh']: np.array(data.default_mesh[ii]),
-                                            })
-                    if dt.size != 0:
-                        dt = np.min(dt)              
-                    else:
-                        dt = self.rcut
-                        log.warning("Atoms with no neighbors found in %s. Please make sure it's what you expected."%jj)
-                        
-                    if dt < self.min_nbor_dist:
-                        if math.isclose(dt, 0., rel_tol=1e-6):
-                            # it's unexpected that the distance between two atoms is zero
-                            # zero distance will cause nan (#874) 
-                            raise RuntimeError(
-                                "Some atoms in %s are overlapping. Please check your"
-                                " training data to remove duplicated atoms." % jj
-                            )
-                        self.min_nbor_dist = dt
-                    for ww in range(self.ntypes):
-                        var = np.max(mn[:, ww])
-                        if var > self.max_nbor_size[ww]:
-                            self.max_nbor_size[ww] = var
+        def feed():
+            for ii in range(len(data.system_dirs)):
+                for jj in data.data_systems[ii].dirs:
+                    data_set = data.data_systems[ii]._load_set(jj)
+                    for kk in range(np.array(data_set['type']).shape[0]):
+                        yield {
+                            'coord': np.array(data_set['coord'])[kk].reshape([-1, data.natoms[ii] * 3]),
+                            'type': np.array(data_set['type'])[kk].reshape([-1, data.natoms[ii]]),
+                            'natoms_vec': np.array(data.natoms_vec[ii]),
+                            'box': np.array(data_set['box'])[kk].reshape([-1, 9]),
+                            'default_mesh': np.array(data.default_mesh[ii]),
+                            'dir': str(jj),
+                        }
+
+        for mn, dt, jj in self.p.generate(self.sub_sess, feed()):
+            if dt.size != 0:
+                dt = np.min(dt)
+            else:
+                dt = self.rcut
+                log.warning("Atoms with no neighbors found in %s. Please make sure it's what you expected." % jj)
+            if dt < self.min_nbor_dist:
+                if math.isclose(dt, 0., rel_tol=1e-6):
+                    # it's unexpected that the distance between two atoms is zero
+                    # zero distance will cause nan (#874) 
+                    raise RuntimeError(
+                        "Some atoms are overlapping in %s. Please check your"
+                        " training data to remove duplicated atoms." % jj
+                    )
+                self.min_nbor_dist = dt
+            var = np.max(mn, axis=0)
+            self.max_nbor_size = np.maximum(var, self.max_nbor_size)
 
         log.info('training data with min nbor dist: ' + str(self.min_nbor_dist))
         log.info('training data with max nbor size: ' + str(self.max_nbor_size))

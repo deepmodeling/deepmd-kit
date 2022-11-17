@@ -3,6 +3,7 @@ from deepmd.descriptor.descriptor import Descriptor
 import logging
 import os
 import glob
+import platform
 import time
 import shutil
 import google.protobuf.message
@@ -23,6 +24,7 @@ from deepmd.utils.neighbor_stat import NeighborStat
 from deepmd.utils.sess import run_sess
 from deepmd.utils.type_embed import TypeEmbedNet
 from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph
+from deepmd.utils.argcheck import type_embedding_args
 
 from tensorflow.python.client import timeline
 from deepmd.env import op_module, TF_VERSION
@@ -35,6 +37,8 @@ from deepmd.common import j_must_have, ClassArg, data_requirement, get_precision
 
 log = logging.getLogger(__name__)
 
+# nvnmd
+from deepmd.nvnmd.utils.config import nvnmd_cfg
 
 def _is_subdir(path, directory):
     path = os.path.realpath(path)
@@ -63,12 +67,23 @@ class DPTrainer (object):
         self.model_param    = model_param
         self.descrpt_param  = descrpt_param
         
+        # nvnmd
+        self.nvnmd_param = jdata.get('nvnmd', {})
+        nvnmd_cfg.init_from_jdata(self.nvnmd_param)
+        if nvnmd_cfg.enable:
+            nvnmd_cfg.init_from_deepmd_input(model_param)
+            nvnmd_cfg.disp_message()
+            nvnmd_cfg.save()
+        
         # descriptor
         try:
             descrpt_type = descrpt_param['type']
+            self.descrpt_type = descrpt_type
         except KeyError:
             raise KeyError('the type of descriptor should be set by `type`')
 
+        if descrpt_param['type'] in ['se_atten']:
+            descrpt_param['ntypes'] = len(model_param['type_map'])
         self.descrpt = Descriptor(**descrpt_param)
 
         # fitting net
@@ -101,6 +116,9 @@ class DPTrainer (object):
             raise RuntimeError('unknow fitting type ' + fitting_type)
 
         # type embedding
+        padding = False
+        if descrpt_type == 'se_atten':
+            padding = True
         if typeebd_param is not None:
             self.typeebd = TypeEmbedNet(
                 neuron=typeebd_param['neuron'],
@@ -108,7 +126,20 @@ class DPTrainer (object):
                 activation_function=typeebd_param['activation_function'],
                 precision=typeebd_param['precision'],
                 trainable=typeebd_param['trainable'],
-                seed=typeebd_param['seed']
+                seed=typeebd_param['seed'],
+                padding=padding
+            )
+        elif descrpt_type == 'se_atten':
+            default_args = type_embedding_args()
+            default_args_dict = {i.name: i.default for i in default_args}
+            self.typeebd = TypeEmbedNet(
+                neuron=default_args_dict['neuron'],
+                resnet_dt=default_args_dict['resnet_dt'],
+                activation_function=None,
+                precision=default_args_dict['precision'],
+                trainable=default_args_dict['trainable'],
+                seed=default_args_dict['seed'],
+                padding=padding
             )
         else:
             self.typeebd = None
@@ -232,10 +263,10 @@ class DPTrainer (object):
         self.tensorboard_freq = tr_data.get('tensorboard_freq', 1)
         self.mixed_prec = tr_data.get('mixed_precision', None)
         if self.mixed_prec is not None:
-            if (self.mixed_prec['compute_prec'] != 'float16' or self.mixed_prec['output_prec'] != 'float32'):
+            if (self.mixed_prec['compute_prec'] not in ('float16', 'bfloat16') or self.mixed_prec['output_prec'] != 'float32'):
                 raise RuntimeError(
                     "Unsupported mixed precision option [output_prec, compute_prec]: [%s, %s], "
-                    " Supported: [float32, float16], Please set mixed precision option correctly!"
+                    " Supported: [float32, float16/bfloat16], Please set mixed precision option correctly!"
                      % (self.mixed_prec['output_prec'], self.mixed_prec['compute_prec']))
         # self.sys_probs = tr_data['sys_probs']
         # self.auto_prob_style = tr_data['auto_prob']
@@ -257,9 +288,15 @@ class DPTrainer (object):
 
     def build (self, 
                data = None, 
-               stop_batch = 0) :
+               stop_batch = 0,
+               origin_type_map = None,
+               suffix = "") :
         self.ntypes = self.model.get_ntypes()
         self.stop_batch = stop_batch
+
+        if not self.is_compress and data.mixed_type:
+            assert self.descrpt_type in ['se_atten'], 'Data in mixed_type format must use attention descriptor!'
+            assert self.fitting_type in ['ener'], 'Data in mixed_type format must use ener fitting!'
 
         if self.numb_fparam > 0 :
             log.info("training with %d frame parameter(s)" % self.numb_fparam)
@@ -282,7 +319,7 @@ class DPTrainer (object):
                 ))
             self.type_map = data.get_type_map()
             self.batch_size = data.get_batch_size()
-            if self.run_opt.init_mode not in ('init_from_model', 'restart', 'init_from_frz_model'):
+            if self.run_opt.init_mode not in ('init_from_model', 'restart', 'init_from_frz_model', 'finetune'):
                 # self.saver.restore (in self._init_session) will restore avg and std variables, so data_stat is useless
                 # init_from_frz_model will restore data_stat variables in `init_variables` method
                 log.info("data stating... (this step may take long time)")
@@ -291,7 +328,10 @@ class DPTrainer (object):
             # config the init_frz_model command
             if self.run_opt.init_mode == 'init_from_frz_model':
                 self._init_from_frz_model()
-            
+
+            if self.run_opt.init_mode == 'finetune':
+                self._init_from_pretrained_model(data=data, origin_type_map=origin_type_map)
+
             # neighbor_stat is moved to train.py as duplicated
             # TODO: this is a simple fix but we should have a clear
             #       architecture to call neighbor stat
@@ -313,7 +353,7 @@ class DPTrainer (object):
             self.fitting.enable_mixed_precision(self.mixed_prec)
 
         self._build_lr()
-        self._build_network(data)
+        self._build_network(data, suffix)
         self._build_training()
 
 
@@ -323,7 +363,7 @@ class DPTrainer (object):
         self.learning_rate = self.lr.build(self.global_step, self.stop_batch)
         log.info("built lr")
 
-    def _build_network(self, data):        
+    def _build_network(self, data, suffix=""):
         self.place_holders = {}
         if self.is_compress :
             for kk in ['coord', 'box']:
@@ -344,7 +384,7 @@ class DPTrainer (object):
                                 self.place_holders['default_mesh'],
                                 self.place_holders,
                                 self.frz_model,
-                                suffix = "", 
+                                suffix = suffix,
                                 reuse = False)
 
         self.l2_l, self.l2_more\
@@ -419,6 +459,11 @@ class DPTrainer (object):
                 run_sess(self.sess, init_op)
                 fp = open(self.disp_file, "w")
                 fp.close ()
+            elif self.run_opt.init_mode == 'finetune' :
+                log.info("initialize training from the frozen pretrained model")
+                run_sess(self.sess, init_op)
+                fp = open(self.disp_file, "w")
+                fp.close()
             else :
                 raise RuntimeError ("unkown init mode")
         else:
@@ -564,13 +609,17 @@ class DPTrainer (object):
                 os.remove(new_ff)
             except OSError:
                 pass
-            os.symlink(ori_ff, new_ff)
+            if platform.system() != 'Windows':
+                # by default one does not have access to create symlink on Windows
+                os.symlink(ori_ff, new_ff)
+            else:
+                shutil.copyfile(ori_ff, new_ff)
         log.info("saved checkpoint %s" % self.save_ckpt)
 
     def get_feed_dict(self, batch, is_training):
         feed_dict = {}
         for kk in batch.keys():
-            if kk == 'find_type' or kk == 'type':
+            if kk == 'find_type' or kk == 'type' or kk == 'real_natoms_vec':
                 continue
             if 'find_' in kk:
                 feed_dict[self.place_holders[kk]] = batch[kk]
@@ -699,4 +748,54 @@ class DPTrainer (object):
             ) from e
         else:
             self.model_type = bytes.decode(t_model_type)
+        if self.model_type == 'compressed_model':
+            self.frz_model = self.run_opt.init_frz_model
         self.model.init_variables(graph, graph_def, model_type=self.model_type)
+
+    def _init_from_pretrained_model(self, data, origin_type_map=None, bias_shift='delta'):
+        """
+        Init the embedding net variables with the given frozen model
+
+        Parameters
+        ----------
+        data : DeepmdDataSystem
+            The training data.
+        origin_type_map : list
+            The original type_map in dataset, they are targets to change the energy bias.
+        bias_shift : str
+            The mode for changing energy bias : ['delta', 'statistic']
+            'delta' : perform predictions on energies of target dataset,
+                    and do least sqaure on the errors to obtain the target shift as bias.
+            'statistic' : directly use the statistic energy bias in the target dataset.
+        """
+        try:
+            graph, graph_def = load_graph_def(self.run_opt.finetune)
+        except FileNotFoundError as e:
+            # throw runtime error if there's no frozen model
+            raise RuntimeError(
+                "The input frozen pretrained model %s (%s) does not exist! "
+                "Please check the path of the frozen pretrained model. " % (self.run_opt.finetune,
+                                                                            os.path.abspath(self.run_opt.finetune))
+            ) from e
+        # get the model type from the frozen model(self.run_opt.finetune)
+        try:
+            t_model_type = get_tensor_by_name_from_graph(graph, 'model_type')
+        except GraphWithoutTensorError as e:
+            # throw runtime error if the frozen_model has no model type information...
+            raise RuntimeError(
+                "The input frozen pretrained model: %s has no 'model_type' information, "
+                "which is not supported by the 'dp train finetune' interface. " % self.run_opt.finetune
+            ) from e
+        else:
+            self.model_type = bytes.decode(t_model_type)
+        assert self.model_type != 'compressed_model', "Compressed models are not supported for finetuning!"
+        self.model.init_variables(graph, graph_def, model_type=self.model_type)
+        log.info("Changing energy bias in pretrained model for types {}... "
+                 "(this step may take long time)".format(str(origin_type_map)))
+        self._change_energy_bias(data, self.run_opt.finetune, origin_type_map, bias_shift)
+
+    def _change_energy_bias(self, data, frozen_model, origin_type_map, bias_shift='delta'):
+        full_type_map = data.get_type_map()
+        assert self.fitting_type == 'ener', "energy bias changing only supports 'ener' fitting net!"
+        self.model.fitting.change_energy_bias(data, frozen_model, origin_type_map, full_type_map, bias_shift=bias_shift,
+                                              ntest=self.model_param.get('data_bias_nsample', 10))
