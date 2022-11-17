@@ -3,7 +3,6 @@ cmake_minimum_required(VERSION 3.16)
 project(DeePMD)
 
 option(BUILD_TESTING "Build test and enable converage" OFF)
-include(CTest)
 if(BUILD_TESTING)
   enable_testing()
   add_subdirectory(${CMAKE_SOURCE_DIR}/cmake/coverage_config coverage_config)
