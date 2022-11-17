@@ -60,5 +60,7 @@ jobs:
         LAMMPS_PLUGIN_PATH: ${{ github.workspace }}/dp/lib/deepmd_lmp
         LD_LIBRARY_PATH: ${{ github.workspace }}/dp/lib
       if: matrix.variant == 'cpu'
-    - run: source/install/codecov.sh
+    - uses: codecov/codecov-action@v3
       if: matrix.variant == 'cpu'
+      with:
+        gcov: true
