@@ -57,6 +57,9 @@ jobs:
       if: matrix.variant == 'cpu'
     - run: pytest --cov=deepmd source/lmp/tests
       env:
+        OMP_NUM_THREADS: 1
+        TF_INTRA_OP_PARALLELISM_THREADS: 1
+        TF_INTER_OP_PARALLELISM_THREADS: 1
         LAMMPS_PLUGIN_PATH: ${{ github.workspace }}/dp/lib/deepmd_lmp
         LD_LIBRARY_PATH: ${{ github.workspace }}/dp/lib
       if: matrix.variant == 'cpu'

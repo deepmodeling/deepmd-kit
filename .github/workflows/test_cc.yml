@@ -13,5 +13,8 @@ jobs:
     - uses: actions/checkout@master
     - run: source/install/test_cc_local.sh
       env:
+        OMP_NUM_THREADS: 1
+        TF_INTRA_OP_PARALLELISM_THREADS: 1
+        TF_INTER_OP_PARALLELISM_THREADS: 1
         tensorflow_root: /usr/local
     - run: source/install/codecov.sh

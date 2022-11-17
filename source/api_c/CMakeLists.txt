@@ -72,3 +72,7 @@ if (PACKAGE_C)
     DESTINATION	${CMAKE_BINARY_DIR}/libdeepmd_c/lib
   )
 endif()
+
+if (CMAKE_TESTING_ENABLED)
+  add_subdirectory(tests)
+endif()
