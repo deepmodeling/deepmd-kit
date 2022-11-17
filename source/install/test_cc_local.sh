@@ -2,6 +2,11 @@ set -e
 
 #------------------
 
+SCRIPT_PATH=$(dirname $(realpath -s $0))
+NPROC=$(nproc --all)
+
+#------------------
+
 echo "try to find tensorflow in ${tensorflow_root}"
 INSTALL_PREFIX=${SCRIPT_PATH}/../../dp_test
 BUILD_TMP_DIR=${SCRIPT_PATH}/../build_tests
