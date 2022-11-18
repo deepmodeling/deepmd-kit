@@ -31,7 +31,8 @@ set_target_properties(
 )
 
 add_executable( runUnitTests_c ${TEST_SRC} )
-target_link_libraries(runUnitTests_c GTest::gtest_main ${LIB_DEEPMD_C} rt coverage_config)
+target_link_libraries(runUnitTests_c PRIVATE GTest::gtest_main ${LIB_DEEPMD_C} rt coverage_config)
+target_link_libraries(runUnitTests_c PRIVATE ${LIB_DEEPMD})
 add_test( runUnitTests_c runUnitTests_c )
 set_target_properties(
   runUnitTests_c
