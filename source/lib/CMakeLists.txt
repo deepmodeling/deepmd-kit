@@ -58,3 +58,6 @@ if(BUILD_CPP_IF)
     )
 endif(BUILD_CPP_IF)
 
+if (BUILD_CPP_IF AND CMAKE_TESTING_ENABLED)
+  add_subdirectory(tests)
+endif()
