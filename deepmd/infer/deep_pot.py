@@ -123,7 +123,11 @@ class DeepPot(DeepEval):
 
         # now load tensors to object attributes
         for attr_name, tensor_name in self.tensors.items():
-            self._get_tensor(tensor_name, attr_name)
+            try:
+                self._get_tensor(tensor_name, attr_name)
+            except KeyError:
+                if attr_name != "t_descriptor":
+                    raise
 
         self._run_default_sess()
         self.tmap = self.tmap.decode('UTF-8').split()        
@@ -353,21 +357,21 @@ class DeepPot(DeepEval):
         feed_dict_test = {}
         feed_dict_test[self.t_natoms] = natoms_vec
         if mixed_type:
-            feed_dict_test[self.t_type] = atom_types.reshape([-1])
+            feed_dict_test[self.t_type] = np.reshape(atom_types, [-1])
         else:
-            feed_dict_test[self.t_type] = np.tile(atom_types, [nframes, 1]).reshape([-1])
-        feed_dict_test[self.t_coord] = np.reshape(coords, [-1])
-        feed_dict_test[self.t_box  ] = np.reshape(cells , [-1])
+            feed_dict_test[self.t_type] = (np.tile(atom_types, [nframes, 1])).reshape([-1])
+        feed_dict_test[self.t_coord] = coords.reshape([-1])
+        feed_dict_test[self.t_box  ] = cells
         if self.has_efield:
-            feed_dict_test[self.t_efield]= np.reshape(efield, [-1])
+            feed_dict_test[self.t_efield]= efield
         if pbc:
             feed_dict_test[self.t_mesh ] = make_default_mesh(cells)
         else:
             feed_dict_test[self.t_mesh ] = np.array([], dtype = np.int32)
         if self.has_fparam:
-            feed_dict_test[self.t_fparam] = np.reshape(fparam, [-1])
+            feed_dict_test[self.t_fparam] = fparam
         if self.has_aparam:
-            feed_dict_test[self.t_aparam] = np.reshape(aparam, [-1])
+            feed_dict_test[self.t_aparam] = aparam
         return feed_dict_test, imap
 
     def _eval_inner(
