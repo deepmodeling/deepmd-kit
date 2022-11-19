@@ -21,7 +21,7 @@ if ((NOT BUILD_PY_IF) AND (NOT BUILD_CPP_IF))
 endif()
 
 if (BUILD_CPP_IF AND BUILD_TESTING)
-  if (NOT DOWNLOAD_TENSORFLOW)
+  if (NOT INSTALL_TENSORFLOW)
     # some errors in conda packages...
     find_package(GTest)
   endif()
