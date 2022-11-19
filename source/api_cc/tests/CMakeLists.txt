@@ -1,127 +1,22 @@
 cmake_minimum_required(VERSION 3.9)
 project(deepmd_api_test)
 
-if (NOT DEFINED BUILD_CPP_IF) 
-  set(BUILD_CPP_IF TRUE)
-endif (NOT DEFINED BUILD_CPP_IF)
-
-enable_testing()
-add_subdirectory(${CMAKE_SOURCE_DIR}/../../cmake/coverage_config coverage_config)
-
-find_package(OpenMP)
-if (OPENMP_FOUND)
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-endif()
-
-set(DEEPMD_SOURCE_DIR ${PROJECT_SOURCE_DIR}/../../..)
-list (APPEND CMAKE_MODULE_PATH ${DEEPMD_SOURCE_DIR}/source/cmake/)
-
-# setup tensorflow libraries by python
-if (USE_TF_PYTHON_LIBS)
-  set(DEEPMD_SOURCE_DIR ${PROJECT_SOURCE_DIR}/../../..)
-  find_package (Python COMPONENTS Interpreter Development REQUIRED)
-endif(USE_TF_PYTHON_LIBS)
-
-# model version
-file(READ ${PROJECT_SOURCE_DIR}/../../config/MODEL_VER MODEL_VERSION)
-string(REPLACE "\n" " " MODEL_VERSION ${MODEL_VERSION})
-message(STATUS "Supported model version: ${MODEL_VERSION}")
-
-set(libname "deepmd")
-set(apiname "deepmd_api")
-
-set(opname "deepmd_op")
-
-find_package(tensorflow REQUIRED)
-
-find_package(Threads)
-# find openmp
-find_package(OpenMP)
-if (OPENMP_FOUND)
-  set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
-  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-endif()
-
-# Devices that have both ROCM and CUDA are not currently supported
-if (USE_ROCM_TOOLKIT AND USE_CUDA_TOOLKIT)
-  message (FATAL_ERROR "Devices that have both ROCM and CUDA are not currently supported")
-endif()
-
-# define USE_CUDA_TOOLKIT
-if (USE_CUDA_TOOLKIT)
-  find_package(CUDA REQUIRED)
-  add_definitions("-DGOOGLE_CUDA")
-  message(STATUS "Found CUDA in ${CUDA_TOOLKIT_ROOT_DIR}, build nv GPU support")
-else()
-  message(STATUS "Will not build nv GPU support")
-endif(USE_CUDA_TOOLKIT)
-
-#define USE_ROCM_TOOLKIT
-if (USE_ROCM_TOOLKIT)
-  find_package(ROCM REQUIRED)
-  add_definitions("-DTENSORFLOW_USE_ROCM")
-  add_compile_definitions(__HIP_PLATFORM_HCC__)
-else()
-  message(STATUS "Will not build AMD GPU support")
-endif (USE_ROCM_TOOLKIT)
-
-set(LIB_DEEPMD ${libname})
-add_subdirectory(${CMAKE_SOURCE_DIR}/../../lib lib)
-
-set(HIGH_PREC_DEF "HIGH_PREC")
-set(LOW_PREC_DEF "LOW_PREC")
-set(HIGH_PREC_VARIANT "")
-set(LOW_PREC_VARIANT "_low")
-set(LIB_DEEPMD_CC ${apiname})
-add_subdirectory(${CMAKE_SOURCE_DIR}/.. api_cc)
-
-set(LIB_DEEPMD_OP ${opname})
-add_subdirectory(${CMAKE_SOURCE_DIR}/../../op op)
-
 file(GLOB TEST_SRC test_*.cc)
 
-find_package(GTest)
-if(NOT GTEST_LIBRARIES)
-  configure_file(../../cmake/googletest.cmake.in googletest-download/CMakeLists.txt @ONLY)
-  execute_process(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" .
-    RESULT_VARIABLE result
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/googletest-download )
-  if(result)
-    message(FATAL_ERROR "CMake step for googletest failed: ${result}")
-  endif()
-  execute_process(COMMAND ${CMAKE_COMMAND} --build .
-    RESULT_VARIABLE result
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/googletest-download )
-  if(result)
-    message(FATAL_ERROR "Build step for googletest failed: ${result}")
-  endif()
-  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-  add_subdirectory(${CMAKE_CURRENT_BINARY_DIR}/googletest-src ${CMAKE_CURRENT_BINARY_DIR}/googletest-build EXCLUDE_FROM_ALL)
-else ()
-  include_directories(${GTEST_INCLUDE_DIRS})
-endif ()
-
-set_target_properties(
-  ${apiname}
-  PROPERTIES 
-  INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}"
-)
-
 function(_add_apicc_test_variant variant_name prec_def)
-add_executable( runUnitTests${variant_name} ${TEST_SRC} )
-target_link_libraries(runUnitTests${variant_name} gtest gtest_main ${apiname} rt coverage_config)
-add_test( runUnitTests${variant_name} runUnitTests${variant_name} )
+add_executable( runUnitTests_cc${variant_name} ${TEST_SRC} )
+target_link_libraries(runUnitTests_cc${variant_name} GTest::gtest_main ${LIB_DEEPMD_CC} rt coverage_config)
+add_test( runUnitTest_cc${variant_name} runUnitTests_cc${variant_name} )
 set_target_properties(
-  runUnitTests${variant_name}
+  runUnitTests_cc${variant_name}
   PROPERTIES 
   INSTALL_RPATH "$ORIGIN/../lib"
 )
 target_compile_definitions(
-  runUnitTests${variant_name}
+  runUnitTests_cc${variant_name}
   PUBLIC ${prec_def}
 )
-install(TARGETS runUnitTests${variant_name} DESTINATION bin/)
+install(TARGETS runUnitTests_cc${variant_name} DESTINATION bin/)
 endfunction()
 
 _add_apicc_test_variant("${HIGH_PREC_VARIANT}" "${HIGH_PREC_DEF}")
