@@ -138,7 +138,7 @@ def convert_pbtxt_to_pb(pbtxtfile: str, pbfile: str):
 
 
 def convert_dp012_to_dp10(file: str):
-    """Convert DP 1.0 graph text to 1.1 graph text.
+    """Convert DP 0.12 graph text to 1.0 graph text.
     
     Parameters
     ----------
@@ -205,6 +205,29 @@ def convert_dp012_to_dp10(file: str):
           }
         }
       }
+      """)
+    file_content += textwrap.dedent("""\
+      node {
+        name: "model_attr/tmap"
+        op: "Const"
+        attr {
+          key: "dtype"
+          value {
+            type: DT_STRING
+          }
+        }
+        attr {
+          key: "value"
+          value {
+            tensor {
+              dtype: DT_STRING
+              tensor_shape {
+              }
+              string_val: ""
+            }
+          }
+        }
+      }      
       """)
     with open(file, 'w') as fp:
         fp.write(file_content)
