@@ -78,3 +78,35 @@ and then run the program:
 ```sh
 ./infer_water
 ```
+
+## Header-only C++ library interface (recommended)
+
+The header-only C++ library is built based on the C library.
+Thus, it has the same ABI compatibility as the C library, but provides powerful C++ interface.
+To use it, include `deepmd/deepmd.hpp`.
+
+```cpp
+#include "deepmd/deepmd.hpp"
+
+int main(){
+  deepmd::hpp::DeepPot dp ("graph.pb");
+  std::vector<double > coord = {1., 0., 0., 0., 0., 1.5, 1. ,0. ,3.};
+  std::vector<double > cell = {10., 0., 0., 0., 10., 0., 0., 0., 10.};
+  std::vector<int > atype = {1, 0, 1};
+  double e;
+  std::vector<double > f, v;
+  dp.compute (e, f, v, coord, atype, cell);
+}
+```
+
+Note that the feature of the header-only C++ library is still limited compared to the original C++ library.
+See {cpp:class}`deepmd::hpp::DeepPot` for details.
+
+You can compile `infer_water_hpp.cpp` using `gcc`:
+```sh
+gcc infer_water_hpp.hpp -L $deepmd_root/lib -L $tensorflow_root/lib -I $deepmd_root/include -Wl,--no-as-needed -ldeepmd_c -Wl,-rpath=$deepmd_root/lib -Wl,-rpath=$tensorflow_root/lib -o infer_water_hpp
+```
+and then run the program:
+```sh
+./infer_water_hpp
+```

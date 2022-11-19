@@ -6,7 +6,7 @@
 #include "pair_deepmd.h"
 #include "fix_dplr.h"
 #include "compute_deeptensor_atom.h"
-#if LAMMPS_VERSION_NUMBER>=20220328
+#if LAMMPS_VERSION_NUMBER>=20220324
 #include "pppm_dplr.h"
 #endif
 
@@ -27,7 +27,7 @@ static Fix *fixdplr(LAMMPS *lmp, int narg, char **arg)
   return new FixDPLR(lmp, narg, arg);
 }
 
-#if LAMMPS_VERSION_NUMBER>=20220328
+#if LAMMPS_VERSION_NUMBER>=20220324
 static KSpace *pppmdplr(LAMMPS *lmp)
 {
   return new PPPMDPLR(lmp);
@@ -60,7 +60,7 @@ extern "C" void lammpsplugin_init(void *lmp, void *handle, void *regfunc)
   plugin.creator.v2 = (lammpsplugin_factory2 *) &fixdplr;
   (*register_plugin)(&plugin, lmp);
 
-#if LAMMPS_VERSION_NUMBER>=20220328
+#if LAMMPS_VERSION_NUMBER>=20220324
   // lammps/lammps#
   plugin.style = "kspace";
   plugin.name = "pppm/dplr";

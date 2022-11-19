@@ -5,7 +5,7 @@ if (DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
     cmake_minimum_required(VERSION 3.11)
     include(FetchContent)
     FetchContent_Declare(lammps_download
-      GIT_REPOSITORY    https://github.com/lammps/lammps
+      GIT_REPOSITORY    https://github.com/Yi-FanLi/lammps
       GIT_TAG           ${LAMMPS_VERSION}
     )
     FetchContent_GetProperties(lammps_download)

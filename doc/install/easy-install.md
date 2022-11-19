@@ -11,6 +11,7 @@ Note: The off-line packages and conda packages require the [GNU C Library](https
 - [Install off-line packages](#install-off-line-packages)
 - [Install with conda](#install-with-conda)
 - [Install with docker](#install-with-docker)
+- [Install Python interface with pip](#install-python-interface-with-pip)
 
 
 ## Install off-line packages
@@ -28,6 +29,8 @@ conda activate /path/to/deepmd-kit
 
 ## Install with conda
 DeePMD-kit is avaiable with [conda](https://github.com/conda/conda). Install [Anaconda](https://www.anaconda.com/distribution/#download-section) or [Miniconda](https://docs.conda.io/en/latest/miniconda.html) first.
+
+### Offical channel
 
 One may create an environment that contains the CPU version of DeePMD-kit and LAMMPS:
 ```bash
@@ -50,6 +53,17 @@ One may enable the environment using
 conda activate deepmd
 ```
 
+### conda-forge channel
+
+DeePMD-kit is also available on the [conda-forge](https://conda-forge.org/) channel:
+
+```bash
+conda create -n deepmd deepmd-kit lammps -c conda-forge
+```
+
+The supported platform includes Linux x86-64, macOS x86-64, and macOS arm64.
+Read [conda-forge FAQ](https://conda-forge.org/docs/user/tipsandtricks.html#installing-cuda-enabled-packages-like-tensorflow-and-pytorch) to learn how to install CUDA-enabled packages.
+
 ## Install with docker
 A docker for installing the DeePMD-kit is available [here](https://github.com/orgs/deepmodeling/packages/container/package/deepmd-kit).
 
@@ -67,3 +81,23 @@ To pull the ROCm version:
 ```bash
 docker pull deepmodeling/dpmdkit-rocm:dp2.0.3-rocm4.5.2-tf2.6-lmp29Sep2021
 ```
+
+## Install Python interface with pip
+
+If you only want to install the Python interface and have no existing TensorFlow installed, you can use `pip` to install the pre-built package of the Python interface with CUDA 11 supported:
+
+```bash
+pip install deepmd-kit[gpu]
+```
+
+Or install the CPU version without CUDA supported:
+```bash
+pip install deepmd-kit[cpu]
+```
+
+The supported platform includes Linux x86-64 with GNU C Library 2.28 or above, macOS x86-64, and Windows x86-64.
+A specific version of TensorFlow which is compatible with DeePMD-kit will be also installed.
+
+:::{Warning}
+If your platform is not supported, or want to build against the installed TensorFlow, or want to enable ROCM support, please [build from source](install-from-source.md).
+:::
