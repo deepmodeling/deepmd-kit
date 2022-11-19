@@ -447,8 +447,8 @@ TYPED_TEST(TestInferDeepPotA, cpu_lmp_nlist_type_sel)
 
   // dp compute
   double ener;
-  std::vector<VALUETYPE> force_(nall*3, 0.0), virial(9, 0.0);
-  dp.compute(ener, force_, virial, coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
+  std::vector<VALUETYPE> force_(nall*3, 0.0), virial(9, 0.0), atomic_energy(nall, 0.0), atomic_virial(nall*9, 0.0);
+  dp.compute(ener, force_, virial, atomic_energy, atomic_virial, coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
   // fold back
   std::vector<VALUETYPE> force;
   _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3);
