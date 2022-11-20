@@ -697,11 +697,9 @@ compute (ENERGYTYPE &			dener,
   int nloc_real = nall_real - nghost_real;
   dcoord.resize(nall_real * 3);
   datype.resize(nall_real);
-  datom_energy.resize(nall_real);
   // fwd map
   select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3);
   select_map<int>(datype, datype_, fwd_map, 1);
-  select_map<VALUETYPE>(datom_energy, datom_energy_, fwd_map, 1);
   // aparam
   if (daparam > 0){
     aparam.resize(nloc_real);
