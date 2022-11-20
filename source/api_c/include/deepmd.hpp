@@ -116,6 +116,9 @@ namespace deepmd
 {
     namespace hpp
     {
+        /**
+        * @brief Neighbor list.
+        **/
         struct InputNlist
         {
             InputNlist () 
@@ -130,10 +133,15 @@ namespace deepmd
                 : inum(inum_), ilist(ilist_), numneigh(numneigh_), firstneigh(firstneigh_),
                 nl(DP_NewNlist(inum_, ilist_, numneigh_, firstneigh_))
             {};
+            /// @brief C API neighbor list.
             DP_Nlist* nl;
+            /// @brief Number of core region atoms
             int inum;
+            /// @brief Array stores the core region atom's index
             int *ilist;
+            /// @brief Array stores the core region atom's neighbor atom number
             int *numneigh;
+            /// @brief Array stores the core region atom's neighbor index
             int **firstneigh;
         };
 
@@ -150,7 +158,8 @@ namespace deepmd
         /**
          * @brief Convert int vector to InputNlist.
          * @param[out] to_nlist InputNlist.
-         * @param[in] from_nlist int vector.
+         * @param[in] from_nlist 2D int vector. The first axis represents the centeral atoms
+         *                      and the second axis represents the neighbor atoms.
         */
         void
         convert_nlist(
