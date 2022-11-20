@@ -154,6 +154,99 @@ extern void DP_DeepPotComputeNListf (
   float* atomic_virial
   );
 
+
+/**
+* @brief The deep potential model deviation.
+**/
+typedef struct DP_DeepPotModelDevi DP_DeepPotModelDevi;
+
+/**
+* @brief DP model deviation constructor with initialization.
+* @param[in] c_models The array of the name of the frozen model file.
+* @param[in] nmodels The number of models.
+**/
+extern DP_DeepPotModelDevi* DP_NewDeepPotModelDevi(const char** c_models, int n_models);
+
+/**
+* @brief Evaluate the energy, force and virial by using a DP model deviation with neighbor list. (double version)
+* @param[in] dp The DP model deviation to use.
+* @param[in] natoms The number of atoms.
+* @param[in] coord The coordinates of atoms. The array should be of size natoms x 3.
+* @param[in] atype The atom types. The array should contain natoms ints.
+* @param[in] box The cell of the region. The array should be of size 9. Pass NULL if pbc is not used.
+* @param[in] nghost The number of ghost atoms.
+* @param[in] nlist The neighbor list.
+* @param[in] ago Update the internal neighbour list if ago is 0.
+* @param[out] energy Output energy.
+* @param[out] force Output force. The array should be of size natoms x 3.
+* @param[out] virial Output virial. The array should be of size 9.
+* @param[out] atomic_energy Output atomic energy. The array should be of size natoms.
+* @param[out] atomic_virial Output atomic virial. The array should be of size natoms x 9.
+* @warning The output arrays should be allocated before calling this function. Pass NULL if not required.
+  **/
+extern void DP_DeepPotModelDeviComputeNList (
+  DP_DeepPotModelDevi* dp,
+  const int natom,
+  const double* coord,
+  const int* atype,
+  const double* cell,
+  const int nghost,
+  const DP_Nlist* nlist,
+  const int ago,
+  double* energy,
+  double* force,
+  double* virial,
+  double* atomic_energy,
+  double* atomic_virial
+  );
+
+/**
+* @brief Evaluate the energy, force and virial by using a DP model deviation with neighbor list. (float version)
+* @param[in] dp The DP model deviation to use.
+* @param[in] natoms The number of atoms.
+* @param[in] coord The coordinates of atoms. The array should be of size natoms x 3.
+* @param[in] atype The atom types. The array should contain natoms ints.
+* @param[in] box The cell of the region. The array should be of size 9. Pass NULL if pbc is not used.
+* @param[in] nghost The number of ghost atoms.
+* @param[in] nlist The neighbor list.
+* @param[in] ago Update the internal neighbour list if ago is 0.
+* @param[out] energy Output energy.
+* @param[out] force Output force. The array should be of size natoms x 3.
+* @param[out] virial Output virial. The array should be of size 9.
+* @param[out] atomic_energy Output atomic energy. The array should be of size natoms.
+* @param[out] atomic_virial Output atomic virial. The array should be of size natoms x 9.
+* @warning The output arrays should be allocated before calling this function. Pass NULL if not required.
+  **/
+extern void DP_DeepPotModelDeviComputeNListf (
+  DP_DeepPotModelDevi* dp,
+  const int natom,
+  const float* coord,
+  const int* atype,
+  const float* cell,
+  const int nghost,
+  const DP_Nlist* nlist,
+  const int ago,
+  double* energy,
+  float* force,
+  float* virial,
+  float* atomic_energy,
+  float* atomic_virial
+  );
+
+/**
+ * @brief Get the type map of a DP model deviation.
+ * @param[in] dp The DP model deviation to use.
+ * @return The cutoff radius.
+*/
+double DP_DeepPotModelDeviGetCutoff(DP_DeepPotModelDevi* dp);
+
+/**
+ * @brief Get the type map of a DP model deviation.
+ * @param[in] dp The DP model deviation to use.
+ * @return The number of types of the DP model deviation.
+*/
+int DP_DeepPotModelDeviGetNumbTypes(DP_DeepPotModelDevi* dp);
+
 /**
  * @brief Get the type map of a DP.
  * @param[in] dp The DP to use.
