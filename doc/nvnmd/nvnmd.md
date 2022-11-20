@@ -2,19 +2,19 @@
 
 NVNMD stands for non-von Neumann molecular dynamics.
 
-This is the training code we used to generate the results in our paper entitled "Accurate and Efficient Molecular Dynamics based on Machine Learning and Non Von Neumann Architecture", which has been accepted by npj Computational Materials ([DOI: 10.1038/s41524-022-00773-z](https://www.nature.com/articles/s41524-022-00773-z)).
+This is the training code we used to generate the results in our paper entitled "Accurate and Efficient Molecular Dynamics based on Machine Learning and non von Neumann Architecture", which has been accepted by npj Computational Materials ([DOI: 10.1038/s41524-022-00773-z](https://www.nature.com/articles/s41524-022-00773-z)).
 
 Any user can follow two consecutive steps to run molecular dynamics (MD) on the proposed NVNMD computer, which has been released online: (i) to train a machine learning (ML) model that can decently reproduce the potential energy surface (PES); and (ii) to deploy the trained ML model on the proposed NVNMD computer, then run MD there to obtain the atomistic trajectories.
 
 # Training
 
-Our training procedure consists of not only the continuous neural network (CNN) training, but also the quantized neural network (QNN) training which uses the results of CNN as inputs. It is performed on CPU or GPU by using the training codes we open-sourced online.
+Our training procedure consists of not only continuous neural network (CNN) training but also quantized neural network (QNN) training which uses the results of CNN as inputs. It is performed on CPU or GPU by using the training codes we open-sourced online.
 
-To train a ML model that can decently reproduce the PES, training and testing data set should be prepared first. This can be done by using either the state-of-the-art active learning tools, or the outdated (i.e., less efficient) brute-force density functional theory (DFT)-based ab-initio molecular dynamics (AIMD) sampling.
+To train an ML model that can decently reproduce the PES, a training and testing data set should be prepared first. This can be done by using either the state-of-the-art active learning tools or the outdated (i.e., less efficient) brute-force density functional theory (DFT)-based ab-initio molecular dynamics (AIMD) sampling.
 
 If you just want to simply test the training function, you can use the example in the `$deepmd_source_dir/examples/nvnmd` directory. If you want to fully experience training and running MD functions, you can download the complete example from the [website](https://github.com/LiuGroupHNU/nvnmd-example).
 
-Then, copy the data set to working directory
+Then, copy the data set to the working directory
 
 ```bash
 mkdir -p $workspace
@@ -23,7 +23,7 @@ mkdir -p data
 cp -r $dataset data
 ```
 
-where `$dataset` is the path to the data set and `$workspace` is the path to working directory. 
+where `$dataset` is the path to the data set and `$workspace` is the path to the working directory. 
 
 ## Input script
 
@@ -170,7 +170,7 @@ dp train-nvnmd train_cnn.json -s s1
 dp train-nvnmd train_qnn.json -s s2
 ```
 
-After training process, you will get two folders: `nvnmd_cnn` and `nvnmd_qnn`. The `nvnmd_cnn` contains the model after continuous neural network (CNN) training. The `nvnmd_qnn` contains the model after quantized neural network (QNN) training. The binary file `nvnmd_qnn/model.pb` is the model file which is used to performs NVNMD in server [http://nvnmd.picp.vip]
+After the training process, you will get two folders: `nvnmd_cnn` and `nvnmd_qnn`. The `nvnmd_cnn` contains the model after continuous neural network (CNN) training. The `nvnmd_qnn` contains the model after quantized neural network (QNN) training. The binary file `nvnmd_qnn/model.pb` is the model file that is used to perform NVNMD in the server [http://nvnmd.picp.vip].
 
 
 # Testing
@@ -182,7 +182,7 @@ mkdir test
 dp test -m ./nvnmd_qnn/frozen_model.pb -s path/to/system -d ./test/detail -n 99999 -l test/output.log
 ```
 
-where the frozen model file to import is given via the `-m` command line flag, the path to the testing data set is given via the `-s` command line flag, the file containing details of energy, force and virial accuracy is given via the `-d` command line flag, the amount of data for testing is given via the `-n` command line flag.
+where the frozen model file to import is given via the `-m` command line flag, the path to the testing data set is given via the `-s` command line flag, and the file containing details of energy, forces and virials accuracy is given via the `-d` command line flag, the amount of data for testing is given via the `-n` command line flag.
 
 # Running MD
 
@@ -210,7 +210,7 @@ The homepage displays the remaining calculation time and all calculation records
 <center>Figure.3 The interface for adding a new task</center>
 
 - Task name: name of the task
-- Upload mode: two modes of uploading results to online data storage, including `Manual upload` and `Automatic upload`. Results need to be uploaded manually to online data storage with `Manual upload` mode, and will be uploaded automatically with `Automatic upload` mode.
+- Upload mode: two modes of uploading results to online data storage, including `Manual upload` and `Automatic upload`. Results need to be uploaded manually to online data storage with `Manual upload` mode and will be uploaded automatically with `Automatic upload` mode.
 - Input script: input file of the MD simulation.
 
 In the input script, one needs to specify the pair style as follows
@@ -221,7 +221,7 @@ pair_coeff * *
 ```
 
 - Model file: the ML model named `model.pb` obtained by QNN training.
-- Data files: data files containing information required for running an MD simulation (e.g., `coord.lmp` containing initial atom coordinates).
+- Data files: data files containing the information required for running an MD simulation (e.g., `coord.lmp` containing initial atom coordinates).
 
 Next, you can click `Submit` to submit the task and then automatically return to the homepage (Figure.4).
 
@@ -235,7 +235,7 @@ Then, click `Refresh` to view the latest status of all calculation tasks.
 For the task whose calculation status is `Pending` and `Running`, you can click the corresponding `Cancel` on the homepage to stop the calculation (Figure.5).
 
 ![ALT](./figure_5.png "The homepage with a cancelled task")
-<center>Figure.5 The homepage with a cancelled task</center>
+<center>Figure.5 The homepage with a canceled task</center>
 
 ## Downloading results
 

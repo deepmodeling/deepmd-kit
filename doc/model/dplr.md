@@ -4,11 +4,11 @@ Notice: **The interfaces of DPLR are not stable and subject to change**
 
 The method of DPLR is described in [this paper][1]. One is recommended to read the paper before using the DPLR.
 
-In the following, we take the DPLR model for example to introduce the training and LAMMPS simulation with the DPLR model. The DPLR model is training in two steps.
+In the following, we take the DPLR model for example to introduce the training and LAMMPS simulation with the DPLR model. The DPLR model is trained in two steps.
 
 ## Train a deep Wannier model for Wannier centroids
 
-We use the deep Wannier model (DW) to represent the relative position of the Wannier centroid (WC) with the atom to which it is associated. One may consult the introduction of the [dipole model](train-fitting-tensor.md) for a detailed introduction. An example input `wc.json` and a small dataset `data` for tutorial purposes can be found in
+We use the deep Wannier model (DW) to represent the relative position of the Wannier centroid (WC) with the atom with which it is associated. One may consult the introduction of the [dipole model](train-fitting-tensor.md) for a detailed introduction. An example input `wc.json` and a small dataset `data` for tutorial purposes can be found in
 ```bash
 $deepmd_source_dir/examples/water/dplr/train/
 ```
@@ -22,7 +22,7 @@ Two settings make the training input script different from an energy training in
 	    "seed":		1
 	},
 ```
-The type of fitting is set to {ref}`dipole <model/fitting_net[dipole]>`. The dipole is associate to type 0 atoms (oxygens), by the setting `"dipole_type": [0]`. What we trained is the displacement of the WC from the corresponding oxygen atom. It shares the same training input as atomic dipole because both are 3-dimensional vectors defined on atoms. 
+The type of fitting is set to {ref}`dipole <model/fitting_net[dipole]>`. The dipole is associated with type 0 atoms (oxygens), by the setting `"dipole_type": [0]`. What we trained is the displacement of the WC from the corresponding oxygen atom. It shares the same training input as the atomic dipole because both are 3-dimensional vectors defined on atoms. 
 The loss section is provided as follows
 ```json
     "loss": {
@@ -31,7 +31,7 @@ The loss section is provided as follows
 	"pref_atomic":	1.0
     },
 ```
-so that the atomic dipole is trained as labels. Note that the numpy compressed file `atomic_dipole.npy` should be provided in each dataset. 
+so that the atomic dipole is trained as labels. Note that the NumPy compressed file `atomic_dipole.npy` should be provided in each dataset. 
 
 The training and freezing can be started from the example directory by
 ```bash
@@ -51,7 +51,7 @@ The training of the DPLR model is very similar to the standard short-range DP mo
             "ewald_beta":       0.40
         },
 ```
-The {ref}`model_name <model/modifier[dipole_charge]/model_name>` specifies which DW model is used to predict the position of WCs. {ref}`model_charge_map <model/modifier[dipole_charge]/model_charge_map>` gives the amount of charge assigned to WCs. {ref}`sys_charge_map <model/modifier[dipole_charge]/sys_charge_map>` provides the nuclear charge of oxygen (type 0) and hydrogen (type 1) atoms. {ref}`ewald_beta <model/modifier[dipole_charge]/ewald_beta>` (unit $\text{Å}^{-1}$) gives the spread parameter controls the spread of Gaussian charges, and {ref}`ewald_h <model/modifier[dipole_charge]/ewald_h>`  (unit Å) assigns the grid size of Fourier transform. 
+The {ref}`model_name <model/modifier[dipole_charge]/model_name>` specifies which DW model is used to predict the position of WCs. {ref}`model_charge_map <model/modifier[dipole_charge]/model_charge_map>` gives the amount of charge assigned to WCs. {ref}`sys_charge_map <model/modifier[dipole_charge]/sys_charge_map>` provides the nuclear charge of oxygen (type 0) and hydrogen (type 1) atoms. {ref}`ewald_beta <model/modifier[dipole_charge]/ewald_beta>` (unit $\text{Å}^{-1}$) gives the spread parameter controls the spread of Gaussian charges, and {ref}`ewald_h <model/modifier[dipole_charge]/ewald_h>`  (unit Å) assigns the grid size of Fourier transformation. 
 The DPLR model can be trained and frozen by (from the example directory)
 ```bash
 dp train ener.json && dp freeze -o ener.pb
@@ -61,12 +61,12 @@ dp train ener.json && dp freeze -o ener.pb
 
 In MD simulations, the long-range part of the DPLR is calculated by the LAMMPS `kspace` support. Then the long-range interaction is back-propagated to atoms by DeePMD-kit. This setup is commonly used in classical molecular dynamics simulations as the "virtual site". Unfortunately, LAMMPS does not natively support virtual sites, so we have to hack the LAMMPS code, which makes the input configuration and script a little wired. 
 
-An example of input configuration file and script can be found in 
+An example of an input configuration file and script can be found in 
 ```bash
 $deepmd_source_dir/examples/water/dplr/lmp/
 ```
 
-We use `atom_style full` for DPLR simulations. the coordinates of the WCs are explicitly written to the configuration file. Moreover, a virtual bond is established between the oxygens and the WCs to indicate they are associated together. The configuration file containing 128 H2O molecules is thus written as
+We use `atom_style full` for DPLR simulations. the coordinates of the WCs are explicitly written in the configuration file. Moreover, a virtual bond is established between the oxygens and the WCs to indicate they are associated together. The configuration file containing 128 H2O molecules is thus written as
 ```
 
 512 atoms
@@ -162,9 +162,9 @@ lmp -i in.lammps
 ```
 If LAMMPS complains that no model file `ener.pb` exists, it can be copied from the training example directory. 
 
-The MD simulation lasts for only 20 steps. If one runs a longer simulation, it will blow up, because the model is trained with a very limited dataset for a very short training steps, thus is of poor quality. 
+The MD simulation lasts for only 20 steps. If one runs a longer simulation, it will blow up, because the model is trained with a very limited dataset for very short training steps, thus is of poor quality. 
 
-Another restriction should be noted is that the energies printed at the zero step is not correct. This is because at the zero step the position of the WC has not been updated with the DW model. The energies printed in later steps are correct. 
+Another restriction that should be noted is that the energies printed at the zero steps are not correct. This is because at the zero steps the position of the WC has not been updated with the DW model. The energies printed in later steps are correct. 
 
 
 
