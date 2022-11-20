@@ -710,7 +710,7 @@ compute (ENERGYTYPE &			dener,
     assert (nloc_real == atommap.get_type().size());
 
         nlist_data.copy_from_nlist(lmp_list);
-        nlist_data.shuffle_exclude_empty(atommap);
+        nlist_data.shuffle_exclude_empty(fwd_map);
 	nlist_data.make_inlist(nlist);
     }
 
