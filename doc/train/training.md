@@ -1,6 +1,6 @@
 # Train a model
 
-Several examples of training can be found in the `examples`` directory:
+Several examples of training can be found in the `examples` directory:
 ```bash
 $ cd $deepmd_source_dir/examples/water/se_e2_a/
 ```

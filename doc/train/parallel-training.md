@@ -19,7 +19,7 @@ In some cases, it won't work well when scaling the learning rate by worker count
 
 ## Scaling test
 
-Testing `examples/water/`se_e2_a` on an 8-GPU host, linear acceleration can be observed with the increasing number of cards.
+Testing `examples/water/se_e2_a` on an 8-GPU host, linear acceleration can be observed with the increasing number of cards.
 
 | Num of GPU cards | Seconds every 100 samples | Samples per second | Speed up |
 |  --  | -- | -- | -- |
