@@ -1,14 +1,12 @@
 #pragma once
 #include <cmath>
+#include "gtest/gtest.h"
 
-#ifdef HIGH_PREC
-typedef double VALUETYPE;
-#define EPSILON 1e-10
-#else 
-typedef float  VALUETYPE;
-#define EPSILON 1e-4
-#endif
+#define EPSILON (std::is_same<VALUETYPE, double>::value ? 1e-10 : 1e-4)
 
+typedef testing::Types<double, float> ValueTypes;
+
+template<typename VALUETYPE>
 inline void 
 _fold_back(
     typename std::vector<VALUETYPE >::iterator out,
@@ -29,6 +27,7 @@ _fold_back(
   }
 }
 
+template<typename VALUETYPE>
 inline void 
 _fold_back(
     std::vector<VALUETYPE > &out,
@@ -39,9 +38,10 @@ _fold_back(
     const int ndim)
 {
   out.resize(nloc*ndim);
-  _fold_back(out.begin(), in.begin(), mapping, nloc, nall, ndim);
+  _fold_back<VALUETYPE>(out.begin(), in.begin(), mapping, nloc, nall, ndim);
 }
 
+template<typename VALUETYPE>
 inline void
 _build_nlist(
     std::vector<std::vector<int>> &nlist_data,
@@ -82,13 +82,8 @@ _build_nlist(
 template<typename VALUETYPE>
 class EnergyModelTest
 {
-#ifdef HIGH_PREC
-  double hh = 1e-5;
-  double level = 1e-6;
-#else 
-  double hh = 1e-2;
-  double level = 1e-2; // expected?
-#endif
+  double hh = std::is_same<VALUETYPE, double>::value ? 1e-5 : 1e-2;
+  double level = std::is_same<VALUETYPE, double>::value ? 1e-6 : 1e-2; // expected?
 public:
   virtual void compute (
       double & ener,

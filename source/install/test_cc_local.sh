@@ -24,5 +24,4 @@ cd ${BUILD_TMP_DIR}/exec_tests
 
 ${INSTALL_PREFIX}/bin/runUnitTests_lib
 ${INSTALL_PREFIX}/bin/runUnitTests_cc
-${INSTALL_PREFIX}/bin/runUnitTests_cc_low
 ${INSTALL_PREFIX}/bin/runUnitTests_c
