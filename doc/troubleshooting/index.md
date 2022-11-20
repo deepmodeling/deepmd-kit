@@ -12,3 +12,4 @@ If other unexpected problems occur, you’re welcome to contact us for help.
 - [How to set sel?](howtoset-sel.md)
 - [How to control the number of nodes used by a job?](howtoset_num_nodes.md)
 - [How to tune Fitting/embedding-net size?](howtoset_netsize.md)
+- [Why does a model have low precision?](precision.md)
