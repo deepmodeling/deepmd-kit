@@ -291,8 +291,6 @@ TEST_F(TestInferDeepPotAHPP, cpu_lmp_nlist_2rc)
 
 TEST_F(TestInferDeepPotAHPP, cpu_lmp_nlist_type_sel)
 {
-  // TODO: remove the following line when #2105 is fixed
-  GTEST_SKIP();
   float rc = dp.cutoff();
 
   // add vir atoms
