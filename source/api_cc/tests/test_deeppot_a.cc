@@ -466,6 +466,68 @@ TYPED_TEST(TestInferDeepPotA, cpu_lmp_nlist_type_sel)
 }
 
 
+TYPED_TEST(TestInferDeepPotA, cpu_lmp_nlist_type_sel_atomic)
+{
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_e = this->expected_e;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  std::vector<VALUETYPE>& expected_v = this->expected_v;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  std::vector<VALUETYPE>&expected_tot_v = this->expected_tot_v;
+  deepmd::DeepPot& dp = this->dp;
+  float rc = dp.cutoff();
+
+  // add vir atoms
+  int nvir = 2;
+  std::vector<VALUETYPE> coord_vir(nvir*3);
+  std::vector<int> atype_vir(nvir, 2);
+  for(int ii = 0; ii < nvir; ++ii){
+    coord_vir[ii] = coord[ii];
+  }  
+  coord.insert(coord.begin(), coord_vir.begin(), coord_vir.end());
+  atype.insert(atype.begin(), atype_vir.begin(), atype_vir.end());
+  natoms += nvir;
+  std::vector<VALUETYPE> expected_f_vir(nvir*3, 0.0);
+  expected_f.insert(expected_f.begin(), expected_f_vir.begin(), expected_f_vir.end());
+
+  // build nlist
+  int nloc = coord.size() / 3;  
+  std::vector<VALUETYPE> coord_cpy;
+  std::vector<int> atype_cpy, mapping;  
+  std::vector<std::vector<int > > nlist_data;
+  _build_nlist<VALUETYPE>(nlist_data, coord_cpy, atype_cpy, mapping,
+	       coord, atype, box, rc);
+  int nall = coord_cpy.size() / 3;
+  std::vector<int> ilist(nloc), numneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  convert_nlist(inlist, nlist_data);  
+
+  // dp compute
+  double ener;
+  std::vector<VALUETYPE> force_(nall*3, 0.0), virial(9, 0.0), atomic_energy, atomic_virial;
+  dp.compute(ener, force_, virial, atomic_energy, atomic_virial, coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
+  // fold back
+  std::vector<VALUETYPE> force;
+  _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3);
+
+  EXPECT_EQ(force.size(), natoms*3);
+  EXPECT_EQ(virial.size(), 9);
+
+  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  for(int ii = 0; ii < natoms*3; ++ii){
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);    
+  }
+  for(int ii = 0; ii < 3*3; ++ii){
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
+}
+
+
 template <class VALUETYPE>
 class TestInferDeepPotANoPbc : public ::testing::Test
 {  
