@@ -4,6 +4,7 @@
 #include <fstream>
 #include <vector>
 #include "deepmd.hpp"
+#include "test_utils.h"
 
 typedef double VALUETYPE;
 #define EPSILON 1e-10
@@ -111,6 +112,230 @@ TEST_F(TestInferDeepPotAHPP, cpu_build_nlist_atomic)
   }
   for(int ii = 0; ii < natoms*9; ++ii){
     EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
+  }
+}
+
+
+
+TEST_F(TestInferDeepPotAHPP, cpu_lmp_nlist)
+{
+  float rc = dp.cutoff();
+  int nloc = coord.size() / 3;  
+  std::vector<VALUETYPE> coord_cpy;
+  std::vector<int> atype_cpy, mapping;  
+  std::vector<std::vector<int > > nlist_data;
+  _build_nlist(nlist_data, coord_cpy, atype_cpy, mapping,
+	       coord, atype, box, rc);
+  int nall = coord_cpy.size() / 3;
+  std::vector<int> ilist(nloc), numneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
+  deepmd::hpp::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  deepmd::hpp::convert_nlist(inlist, nlist_data);  
+  double ener;
+  std::vector<VALUETYPE> force_, virial;
+  dp.compute(ener, force_, virial, coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
+  std::vector<VALUETYPE> force;
+  _fold_back(force, force_, mapping, nloc, nall, 3);
+
+  EXPECT_EQ(force.size(), natoms*3);
+  EXPECT_EQ(virial.size(), 9);
+
+  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  for(int ii = 0; ii < natoms*3; ++ii){
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);    
+  }
+  for(int ii = 0; ii < 3*3; ++ii){
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
+  ener = 0.;
+  std::fill(force_.begin(), force_.end(), 0.0);
+  std::fill(virial.begin(), virial.end(), 0.0);
+  dp.compute(ener, force_, virial, coord_cpy, atype_cpy, box, nall-nloc, inlist, 1);
+  _fold_back(force, force_, mapping, nloc, nall, 3);
+  EXPECT_EQ(force.size(), natoms*3);
+  EXPECT_EQ(virial.size(), 9);
+
+  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  for(int ii = 0; ii < natoms*3; ++ii){
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);    
+  }
+  for(int ii = 0; ii < 3*3; ++ii){
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
+}
+
+
+TEST_F(TestInferDeepPotAHPP, cpu_lmp_nlist_atomic)
+{
+  float rc = dp.cutoff();
+  int nloc = coord.size() / 3;  
+  std::vector<VALUETYPE> coord_cpy;
+  std::vector<int> atype_cpy, mapping;  
+  std::vector<std::vector<int > > nlist_data;
+  _build_nlist(nlist_data, coord_cpy, atype_cpy, mapping,
+	       coord, atype, box, rc);
+  int nall = coord_cpy.size() / 3;
+  std::vector<int> ilist(nloc), numneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
+  deepmd::hpp::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  deepmd::hpp::convert_nlist(inlist, nlist_data);  
+  
+  double ener;
+  std::vector<VALUETYPE> force_, atom_ener_, atom_vir_, virial;
+  std::vector<VALUETYPE> force, atom_ener, atom_vir;
+  dp.compute(ener, force_, virial, atom_ener_, atom_vir_, coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
+  _fold_back(force, force_, mapping, nloc, nall, 3);
+  _fold_back(atom_ener, atom_ener_, mapping, nloc, nall, 1);
+  _fold_back(atom_vir, atom_vir_, mapping, nloc, nall, 9);
+
+  EXPECT_EQ(force.size(), natoms*3);
+  EXPECT_EQ(virial.size(), 9);
+  EXPECT_EQ(atom_ener.size(), natoms);
+  EXPECT_EQ(atom_vir.size(), natoms*9);
+
+  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  for(int ii = 0; ii < natoms*3; ++ii){
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);    
+  }
+  for(int ii = 0; ii < 3*3; ++ii){
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
+  for(int ii = 0; ii < natoms; ++ii){
+    EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
+  }
+  for(int ii = 0; ii < natoms*9; ++ii){
+    EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
+  }
+
+  ener = 0.;
+  std::fill(force_.begin(), force_.end(), 0.0);
+  std::fill(virial.begin(), virial.end(), 0.0);
+  std::fill(atom_ener_.begin(), atom_ener_.end(), 0.0);
+  std::fill(atom_vir_.begin(), atom_vir_.end(), 0.0);  
+  dp.compute(ener, force_, virial, atom_ener_, atom_vir_, coord_cpy, atype_cpy, box, nall-nloc, inlist, 1);
+  _fold_back(force, force_, mapping, nloc, nall, 3);
+  _fold_back(atom_ener, atom_ener_, mapping, nloc, nall, 1);
+  _fold_back(atom_vir, atom_vir_, mapping, nloc, nall, 9);
+
+  EXPECT_EQ(force.size(), natoms*3);
+  EXPECT_EQ(virial.size(), 9);
+  EXPECT_EQ(atom_ener.size(), natoms);
+  EXPECT_EQ(atom_vir.size(), natoms*9);
+
+  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  for(int ii = 0; ii < natoms*3; ++ii){
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);    
+  }
+  for(int ii = 0; ii < 3*3; ++ii){
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
+  for(int ii = 0; ii < natoms; ++ii){
+    EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
+  }
+  for(int ii = 0; ii < natoms*9; ++ii){
+    EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
+  }
+}
+
+
+TEST_F(TestInferDeepPotAHPP, cpu_lmp_nlist_2rc)
+{
+  float rc = dp.cutoff();
+  int nloc = coord.size() / 3;  
+  std::vector<VALUETYPE> coord_cpy;
+  std::vector<int> atype_cpy, mapping;  
+  std::vector<std::vector<int > > nlist_data;
+  _build_nlist(nlist_data, coord_cpy, atype_cpy, mapping,
+	       coord, atype, box, rc*2);
+  int nall = coord_cpy.size() / 3;
+  std::vector<int> ilist(nloc), numneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
+  deepmd::hpp::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  deepmd::hpp::convert_nlist(inlist, nlist_data);  
+  
+  double ener;
+  std::vector<VALUETYPE> force_(nall*3, 0.0), virial(9, 0.0);
+  dp.compute(ener, force_, virial, coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
+  std::vector<VALUETYPE> force;
+  _fold_back(force, force_, mapping, nloc, nall, 3);
+
+  EXPECT_EQ(force.size(), natoms*3);
+  EXPECT_EQ(virial.size(), 9);
+
+  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  for(int ii = 0; ii < natoms*3; ++ii){
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);    
+  }
+  for(int ii = 0; ii < 3*3; ++ii){
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
+
+  ener = 0.;
+  std::fill(force_.begin(), force_.end(), 0.0);
+  std::fill(virial.begin(), virial.end(), 0.0);
+  dp.compute(ener, force_, virial, coord_cpy, atype_cpy, box, nall-nloc, inlist, 1);
+  _fold_back(force, force_, mapping, nloc, nall, 3);
+
+  EXPECT_EQ(force.size(), natoms*3);
+  EXPECT_EQ(virial.size(), 9);
+
+  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  for(int ii = 0; ii < natoms*3; ++ii){
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);    
+  }
+  for(int ii = 0; ii < 3*3; ++ii){
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
+}
+
+
+TEST_F(TestInferDeepPotAHPP, cpu_lmp_nlist_type_sel)
+{
+  float rc = dp.cutoff();
+
+  // add vir atoms
+  int nvir = 2;
+  std::vector<VALUETYPE> coord_vir(nvir*3);
+  std::vector<int> atype_vir(nvir, 2);
+  for(int ii = 0; ii < nvir; ++ii){
+    coord_vir[ii] = coord[ii];
+  }  
+  coord.insert(coord.begin(), coord_vir.begin(), coord_vir.end());
+  atype.insert(atype.begin(), atype_vir.begin(), atype_vir.end());
+  natoms += nvir;
+  std::vector<VALUETYPE> expected_f_vir(nvir*3, 0.0);
+  expected_f.insert(expected_f.begin(), expected_f_vir.begin(), expected_f_vir.end());
+
+  // build nlist
+  int nloc = coord.size() / 3;  
+  std::vector<VALUETYPE> coord_cpy;
+  std::vector<int> atype_cpy, mapping;  
+  std::vector<std::vector<int > > nlist_data;
+  _build_nlist(nlist_data, coord_cpy, atype_cpy, mapping,
+	       coord, atype, box, rc);
+  int nall = coord_cpy.size() / 3;
+  std::vector<int> ilist(nloc), numneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
+  deepmd::hpp::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  deepmd::hpp::convert_nlist(inlist, nlist_data);
+
+  // dp compute
+  double ener;
+  std::vector<VALUETYPE> force_(nall*3, 0.0), virial(9, 0.0);
+  dp.compute(ener, force_, virial, coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
+  // fold back
+  std::vector<VALUETYPE> force;
+  _fold_back(force, force_, mapping, nloc, nall, 3);
+
+  EXPECT_EQ(force.size(), natoms*3);
+  EXPECT_EQ(virial.size(), 9);
+
+  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  for(int ii = 0; ii < natoms*3; ++ii){
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);    
+  }
+  for(int ii = 0; ii < 3*3; ++ii){
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
   }
 }
 

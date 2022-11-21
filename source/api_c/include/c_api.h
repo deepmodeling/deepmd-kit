@@ -3,6 +3,25 @@
 extern "C" {
 #endif
 
+/** 
+ * @brief Neighbor list.
+*/
+typedef struct DP_Nlist DP_Nlist;
+
+/**
+* @brief Create a new neighbor list.
+* @param[in] inum_ Number of core region atoms
+* @param[in] Array stores the core region atom's index
+* @param[in] Array stores the core region atom's neighbor atom number
+* @param[in] Array stores the core region atom's neighbor index
+* @returns A pointer to the neighbor list.
+**/
+extern DP_Nlist* DP_NewNlist(
+  int inum_, 
+  int * ilist_,
+  int * numneigh_, 
+  int ** firstneigh_);
+
 /**
 * @brief The deep potential.
 **/
@@ -11,6 +30,7 @@ typedef struct DP_DeepPot DP_DeepPot;
 /**
 * @brief DP constructor with initialization.
 * @param[in] c_model The name of the frozen model file.
+* @returns A pointer to the deep potential.
 **/
 extern DP_DeepPot* DP_NewDeepPot(const char* c_model);
 
@@ -61,6 +81,72 @@ extern void DP_DeepPotComputef (
   const float* coord,
   const int* atype,
   const float* cell,
+  double* energy,
+  float* force,
+  float* virial,
+  float* atomic_energy,
+  float* atomic_virial
+  );
+
+/**
+* @brief Evaluate the energy, force and virial by using a DP with the neighbor list. (double version)
+* @param[in] dp The DP to use.
+* @param[in] natoms The number of atoms.
+* @param[in] coord The coordinates of atoms. The array should be of size natoms x 3.
+* @param[in] atype The atom types. The array should contain natoms ints.
+* @param[in] box The cell of the region. The array should be of size 9. Pass NULL if pbc is not used.
+* @param[in] nghost The number of ghost atoms.
+* @param[in] nlist The neighbor list.
+* @param[in] ago Update the internal neighbour list if ago is 0.
+* @param[out] energy Output energy.
+* @param[out] force Output force. The array should be of size natoms x 3.
+* @param[out] virial Output virial. The array should be of size 9.
+* @param[out] atomic_energy Output atomic energy. The array should be of size natoms.
+* @param[out] atomic_virial Output atomic virial. The array should be of size natoms x 9.
+* @warning The output arrays should be allocated before calling this function. Pass NULL if not required.
+  **/
+extern void DP_DeepPotComputeNList (
+  DP_DeepPot* dp,
+  const int natom,
+  const double* coord,
+  const int* atype,
+  const double* cell,
+  const int nghost,
+  const DP_Nlist* nlist,
+  const int ago,
+  double* energy,
+  double* force,
+  double* virial,
+  double* atomic_energy,
+  double* atomic_virial
+  );
+
+/**
+* @brief Evaluate the energy, force and virial by using a DP with the neighbor list. (float version)
+* @param[in] dp The DP to use.
+* @param[in] natoms The number of atoms.
+* @param[in] coord The coordinates of atoms. The array should be of size natoms x 3.
+* @param[in] atype The atom types. The array should contain natoms ints.
+* @param[in] box The cell of the region. The array should be of size 9. Pass NULL if pbc is not used.
+* @param[in] nghost The number of ghost atoms.
+* @param[in] nlist The neighbor list.
+* @param[in] ago Update the internal neighbour list if ago is 0.
+* @param[out] energy Output energy.
+* @param[out] force Output force. The array should be of size natoms x 3.
+* @param[out] virial Output virial. The array should be of size 9.
+* @param[out] atomic_energy Output atomic energy. The array should be of size natoms.
+* @param[out] atomic_virial Output atomic virial. The array should be of size natoms x 9.
+* @warning The output arrays should be allocated before calling this function. Pass NULL if not required.
+  **/
+extern void DP_DeepPotComputeNListf (
+  DP_DeepPot* dp,
+  const int natom,
+  const float* coord,
+  const int* atype,
+  const float* cell,
+  const int nghost,
+  const DP_Nlist* nlist,
+  const int ago,
   double* energy,
   float* force,
   float* virial,
