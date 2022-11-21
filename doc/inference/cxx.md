@@ -1,6 +1,6 @@
 # C/C++ interface
 ## C++ interface
-The C++ interface of DeePMD-kit is also avaiable for model interface, which is considered faster than Python interface. An example `infer_water.cpp` is given below:
+The C++ interface of DeePMD-kit is also available for the model interface, which is considered faster than the Python interface. An example `infer_water.cpp` is given below:
 ```cpp
 #include "deepmd/DeepPot.h"
 
@@ -28,7 +28,7 @@ and then run the program:
 
 ## C interface
 
-Although C is harder to write, C library will not be affected by different versions of C++ compilers.
+Although C is harder to write, the C library will not be affected by different versions of C++ compilers.
 
 An example `infer_water.c` is given below:
 ```cpp
@@ -67,7 +67,7 @@ int main(){
 ```
 
 where `e`, `f` and `v` are predicted energy, force and virial of the system, respectively.
-`ae` and `av` are atomic energy and atomic virial, respectively.
+`ae` and `av` are atomic energy and atomic virials, respectively.
 See {cpp:func}`DP_DeepPotCompute` for details.
 
 You can compile `infer_water.c` using `gcc`:
@@ -82,7 +82,7 @@ and then run the program:
 ## Header-only C++ library interface (recommended)
 
 The header-only C++ library is built based on the C library.
-Thus, it has the same ABI compatibility as the C library, but provides powerful C++ interface.
+Thus, it has the same ABI compatibility as the C library but provides a powerful C++ interface.
 To use it, include `deepmd/deepmd.hpp`.
 
 ```cpp

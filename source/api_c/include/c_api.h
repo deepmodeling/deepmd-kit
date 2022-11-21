@@ -154,7 +154,6 @@ extern void DP_DeepPotComputeNListf (
   float* atomic_virial
   );
 
-
 /**
 * @brief The deep potential model deviation.
 **/
