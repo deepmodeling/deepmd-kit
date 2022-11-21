@@ -706,7 +706,7 @@ compute (ENERGYTYPE &			dener,
     select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam);
   }
     if (ago == 0) {
-    atommap = AtomMap (datype.begin(), datype.begin() + nloc_real);
+    atommap = deepmd::AtomMap (datype.begin(), datype.begin() + nloc_real);
     assert (nloc_real == atommap.get_type().size());
 
         nlist_data.copy_from_nlist(lmp_list);
