@@ -3,7 +3,7 @@
 Pretraining-and-finetuning is a widely used approach in other fields such as Computer Vision (CV) or Natural Language Processing (NLP) 
 to vastly reduce the training cost, while it's not trivial in potential models.
 Compositions and configurations of data samples or even computational parameters in upstream software (such as VASP) 
-may be different between the pretrained and target datasets, leading to energy shift or other diversities of training data.
+may be different between the pretrained and target datasets, leading to energy shifts or other diversities of training data.
 
 Recently the emerging of methods such as [DPA-1](https://arxiv.org/abs/2208.08236) has brought us to a new stage where we can
 perform similar pretraining-finetuning approaches.
@@ -18,11 +18,11 @@ DPA-1 [paper](https://arxiv.org/abs/2208.08236)), a finetuning strategy can be p
 $ dp train input.json --finetune pretrained.pb
 ```
 
-The command above will change the energy bias in the last layer of fitting net in `pretrained.pb`, 
+The command above will change the energy bias in the last layer of the fitting net in `pretrained.pb`, 
 according to the training dataset in input.json. 
 
 :::{warning}
-Note that the elements in training dataset must be contained in the pretrained dataset.
+Note that the elements in the training dataset must be contained in the pretrained dataset.
 :::
 
 The finetune procedure will inherit the model structures in `pretrained.pb`, 

@@ -1,9 +1,9 @@
 # Create a model
 
-If you'd like to create a new model that isn't covered by the existing DeePMD-kit library, but reuse DeePMD-kit's other efficient module such as data processing, trainner, etc, you may want to read this section.
+If you'd like to create a new model that isn't covered by the existing DeePMD-kit library, but reuse DeePMD-kit's other efficient modules such as data processing, trainner, etc, you may want to read this section.
 
 To incorporate your custom model you'll need to:
-1. Register and implement new components (e.g. descriptor) in a Python file. You may also want to regiester new TensorFlow OPs if necessary.
+1. Register and implement new components (e.g. descriptor) in a Python file. You may also want to register new TensorFlow OPs if necessary.
 2. Register new arguments for user inputs.
 3. Package new codes into a Python package.
 4. Test new models.
@@ -24,7 +24,7 @@ class SomeDescript(Descriptor):
 
 ## Register new arguments
 
-To let some one uses your new component in their input file, you need to create a new methods that returns some `Argument` of your new component, and then register new arguments. For example, the code below
+To let someone uses your new component in their input file, you need to create a new method that returns some `Argument` of your new component, and then register new arguments. For example, the code below
 
 ```py
 from typing import List
@@ -50,11 +50,11 @@ allows one to use your new descriptor as below:
 }
 ```
 
-The arguments here should be consistent with the class arguments of your new componenet.
+The arguments here should be consistent with the class arguments of your new component.
 
 ## Package new codes
 
-You may use `setuptools` to package new codes into a new Python package. It's crirical to add your new component to `entry_points['deepmd']` in `setup.py`:
+You may use `setuptools` to package new codes into a new Python package. It's crucial to add your new component to `entry_points['deepmd']` in `setup.py`:
 
 ```py
     entry_points={

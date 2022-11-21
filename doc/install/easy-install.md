@@ -43,7 +43,7 @@ conda create -n deepmd deepmd-kit=*=*gpu libdeepmd=*=*gpu lammps cudatoolkit=11.
 ```
 One could change the CUDA Toolkit version from `10.2` or `11.6`.
 
-One may speficy the DeePMD-kit version such as `2.1.1` using
+One may specify the DeePMD-kit version such as `2.1.1` using
 ```bash
 conda create -n deepmd deepmd-kit=2.1.1=*cpu libdeepmd=2.1.1=*cpu lammps horovod -c https://conda.deepmodeling.com -c defaults
 ```

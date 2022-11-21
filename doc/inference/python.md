@@ -12,7 +12,7 @@ e, f, v = dp.eval(coord, cell, atype)
 ```
 where `e`, `f` and `v` are predicted energy, force and virial of the system, respectively.
 
-Furthermore, one can use the python interface to calulate model deviation.
+Furthermore, one can use the python interface to calculate model deviation.
 ```python
 from deepmd.infer import calc_model_devi
 from deepmd.infer import DeepPot as DP
