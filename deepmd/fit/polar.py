@@ -98,7 +98,7 @@ class PolarFittingLocFrame () :
         outs = tf.concat(outs_list, axis = 1)
 
         tf.summary.histogram('fitting_net_output', outs)
-        return tf.cast(tf.reshape(outs, [-1]),  GLOBAL_TF_FLOAT_PRECISION)
+        return tf.cast(tf.reshape(outs, [-1]),  self.fitting_precision)
 
 
 class PolarFittingSeA (Fitting) :
@@ -175,7 +175,7 @@ class PolarFittingSeA (Fitting) :
         self.fitting_precision = get_precision(precision)
         if self.sel_type is None:
             self.sel_type = [ii for ii in range(self.ntypes)]
-        self.sel_mask = np.array([1 if ii in self.sel_type else 0 for ii in range(self.ntypes)], dtype=np.bool)
+        self.sel_mask = np.array([ii in self.sel_type for ii in range(self.ntypes)], dtype=bool)
         if self.scale is None:
             self.scale = [1.0 for ii in range(self.ntypes)]
         #if self.diag_shift is None:
@@ -392,7 +392,7 @@ class PolarFittingSeA (Fitting) :
                 # shift and scale
                 sel_type_idx = self.sel_type.index(type_i)
                 final_layer = final_layer * self.scale[sel_type_idx]
-                final_layer = final_layer + self.constant_matrix[sel_type_idx] * tf.eye(3, batch_shape=[tf.shape(inputs)[0], natoms[2+type_i]], dtype = GLOBAL_TF_FLOAT_PRECISION)
+                final_layer = final_layer + self.constant_matrix[sel_type_idx] * tf.eye(3, batch_shape=[tf.shape(inputs)[0], natoms[2+type_i]], dtype = self.fitting_precision)
 
                 # concat the results
                 outs_list.append(final_layer)
@@ -466,7 +466,7 @@ class PolarFittingSeA (Fitting) :
             final_layer *= tf.expand_dims(tf.expand_dims(scale, -1), -1)
             if self.shift_diag:
                 final_layer += tf.expand_dims(tf.expand_dims(constant_matrix, -1), -1) * \
-                               tf.eye(3, batch_shape=[1, 1], dtype=GLOBAL_TF_FLOAT_PRECISION)
+                               tf.eye(3, batch_shape=[1, 1], dtype=self.fitting_precision)
             outs = final_layer
 
         tf.summary.histogram('fitting_net_output', outs)

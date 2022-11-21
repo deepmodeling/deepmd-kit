@@ -144,6 +144,7 @@ REMOVE_SUFFIX_DICT = {
     "o_wfc_{}": "o_wfc",
 }
 
+
 def set_env_if_empty(key: str, value: str, verbose: bool = True):
     """Set environment variable only if it is empty.
 

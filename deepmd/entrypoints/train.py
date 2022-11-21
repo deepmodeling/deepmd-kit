@@ -232,7 +232,7 @@ def get_data(jdata: Dict[str, Any], rcut, type_map, modifier, multi_task_mode=Fa
     batch_size = j_must_have(jdata, "batch_size")
     sys_probs = jdata.get("sys_probs", None)
     auto_prob = jdata.get("auto_prob", "prob_sys_size")
-    optional_type_map = True if not multi_task_mode else False
+    optional_type_map = not multi_task_mode
 
     data = DeepmdDataSystem(
         systems=systems,

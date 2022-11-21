@@ -18,7 +18,11 @@ class MultiModel(Model):
     descrpt
             Descriptor
     fitting_dict
-            Fitting net dict
+            Dictionary of fitting nets
+    fitting_type_dict
+            Dictionary of types of fitting nets
+    typeebd
+            Type embedding net
     type_map
             Mapping atom type to the name (str) of the type.
             For example `type_map[1]` gives the name of the type 1.
@@ -193,30 +197,16 @@ class MultiModel(Model):
             input_dict['type_embedding'] = type_embedding
             input_dict['atype'] = atype_
 
-        if frz_model == None:
-            dout \
-                = self.descrpt.build(coord_,
-                                     atype_,
-                                     natoms,
-                                     box,
-                                     mesh,
-                                     input_dict,
-                                     suffix=suffix,
-                                     reuse=reuse)
-            dout = tf.identity(dout, name='o_descriptor')
-        else:
-            tf.constant(self.rcut,
-                        name='descrpt_attr/rcut',
-                        dtype=GLOBAL_TF_FLOAT_PRECISION)
-            tf.constant(self.ntypes,
-                        name='descrpt_attr/ntypes',
-                        dtype=tf.int32)
-            feed_dict = self.descrpt.get_feed_dict(coord_, atype_, natoms, box, mesh)
-            return_elements = [*self.descrpt.get_tensor_names(), 'o_descriptor:0']
-            imported_tensors \
-                = self._import_graph_def_from_frz_model(frz_model, feed_dict, return_elements)
-            dout = imported_tensors[-1]
-            self.descrpt.pass_tensors_from_frz_model(*imported_tensors[:-1])
+        dout \
+            = self.descrpt.build(coord_,
+                                 atype_,
+                                 natoms,
+                                 box,
+                                 mesh,
+                                 input_dict,
+                                 suffix=suffix,
+                                 reuse=reuse)
+        dout = tf.identity(dout, name='o_descriptor')
 
         if self.srtab is not None:
             nlist, rij, sel_a, sel_r = self.descrpt.get_nlist()
@@ -360,7 +350,3 @@ class MultiModel(Model):
                     model_dict[fitting_key]["atom_virial"] = atom_virial
 
         return model_dict
-
-    def _import_graph_def_from_frz_model(self, frz_model, feed_dict, return_elements):
-        graph, graph_def = load_graph_def(frz_model)
-        return tf.import_graph_def(graph_def, input_map=feed_dict, return_elements=return_elements, name="")

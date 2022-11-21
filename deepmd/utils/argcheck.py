@@ -456,7 +456,7 @@ def model_args ():
     doc_type_embedding = "The type embedding."
     doc_descrpt = 'The descriptor of atomic environment.'
     doc_fitting = 'The fitting of physical properties.'
-    doc_fitting_net_dict = 'The dict of multiple fitting nets of physical properties in multi-task training.'
+    doc_fitting_net_dict = 'The dictionary of multiple fitting nets in multi-task mode. Each fitting_net_dict[fitting_key] is the single definition of fitting of physical properties with user-defined name `fitting_key`.'
     doc_modifier = 'The modifier of model output.'
     doc_use_srtab = 'The table for the short-range pairwise interaction added on top of DP. The table is a text data file with (N_t + 1) * N_t / 2 + 1 columes. The first colume is the distance between atoms. The second to the last columes are energies for pairs of certain types. For example we have two atom types, 0 and 1. The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly.'
     doc_smin_alpha = 'The short-range tabulated interaction will be swithed according to the distance of the nearest neighbor. This distance is calculated by softmin. This parameter is the decaying parameter in the softmin. It is only required when `use_srtab` is provided.'
@@ -591,8 +591,8 @@ def loss_args():
 
 
 def loss_dict_args():
-    doc_loss_dict = 'The definition of multiple loss functions. ' \
-                    'Each loss type should be set to `tensor`, `ener` or left unset.\n\.'
+    doc_loss_dict = 'The dictionary of definitions of multiple loss functions in multi-task mode. ' \
+                    'Each loss_dict[fitting_key], with user-defined name `fitting_key` in `model/fitting_net_dict`, is the single definition of loss function, whose type should be set to `tensor`, `ener` or left unset.\n\.'
     ca = Argument('loss_dict', dict, [], [],
                   optional = True,
                   doc = doc_loss_dict)
@@ -703,10 +703,14 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     doc_tensorboard = 'Enable tensorboard'
     doc_tensorboard_log_dir = 'The log directory of tensorboard outputs'
     doc_tensorboard_freq = 'The frequency of writing tensorboard events.'
-    doc_data_dict = 'The dict of multi DataSystems with keys of FittingNetName for training in multi-task mode. '
-    doc_fitting_weight = 'The weights of probability to choose different fitting nets. ' \
-                              'Weights will be normalized and minus ones will be ignored. ' \
-                              'If not set, each FittingNet will be equally selected when training.'
+    doc_data_dict = 'The dictionary of multi DataSystems in multi-task mode. ' \
+                    'Each data_dict[fitting_key], with user-defined name `fitting_key` in `model/fitting_net_dict`, ' \
+                    'contains training data and optional validation data definitions.'
+    doc_fitting_weight = 'Each fitting_weight[fitting_key], with user-defined name `fitting_key` in `model/fitting_net_dict`, ' \
+                         'is the training weight of fitting net `fitting_key`. ' \
+                         'Fitting nets with higher weights will be selected with higher probabilities to be trained in one step. ' \
+                         'Weights will be normalized and minus ones will be ignored. ' \
+                         'If not set, each fitting net will be equally selected when training.'
 
     arg_training_data = training_data_args()
     arg_validation_data = validation_data_args()

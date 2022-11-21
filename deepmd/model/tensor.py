@@ -20,6 +20,8 @@ class TensorModel(Model) :
             Descriptor
     fitting
             Fitting net
+    typeebd
+            Type embedding net
     type_map
             Mapping atom type to the name (str) of the type.
             For example `type_map[1]` gives the name of the type 1.
@@ -247,51 +249,20 @@ class TensorModel(Model) :
 
 
 class WFCModel(TensorModel):
-    def __init__(
-            self, 
-            descrpt, 
-            fitting,
-            typeebd=None,
-            type_map : List[str] = None, 
-            data_stat_nbatch : int = 10, 
-            data_stat_protect : float = 1e-2
-    ) -> None:
-        TensorModel.__init__(self, 'wfc', descrpt, fitting, typeebd, type_map, data_stat_nbatch, data_stat_protect)
+    def __init__(self, *args, **kwargs) -> None:
+        TensorModel.__init__(self, 'wfc', *args, **kwargs)
+
 
 class DipoleModel(TensorModel):
-    def __init__(
-            self, 
-            descrpt, 
-            fitting,
-            typeebd=None,
-            type_map : List[str] = None, 
-            data_stat_nbatch : int = 10, 
-            data_stat_protect : float = 1e-2
-    ) -> None:
-        TensorModel.__init__(self, 'dipole', descrpt, fitting, typeebd, type_map, data_stat_nbatch, data_stat_protect)
+    def __init__(self, *args, **kwargs) -> None:
+        TensorModel.__init__(self, 'dipole', *args, **kwargs)
+
 
 class PolarModel(TensorModel):
-    def __init__(
-            self, 
-            descrpt, 
-            fitting,
-            typeebd=None,
-            type_map : List[str] = None, 
-            data_stat_nbatch : int = 10, 
-            data_stat_protect : float = 1e-2
-    ) -> None:
-        TensorModel.__init__(self, 'polar', descrpt, fitting, typeebd, type_map, data_stat_nbatch, data_stat_protect)
+    def __init__(self, *args, **kwargs) -> None:
+        TensorModel.__init__(self, 'polar', *args, **kwargs)
+
 
 class GlobalPolarModel(TensorModel):
-    def __init__(
-            self, 
-            descrpt, 
-            fitting,
-            typeebd=None,
-            type_map : List[str] = None, 
-            data_stat_nbatch : int = 10, 
-            data_stat_protect : float = 1e-2
-    ) -> None:
-        TensorModel.__init__(self, 'global_polar', descrpt, fitting, typeebd, type_map, data_stat_nbatch, data_stat_protect)
-
-
+    def __init__(self, *args, **kwargs) -> None:
+        TensorModel.__init__(self, 'global_polar', *args, **kwargs)
