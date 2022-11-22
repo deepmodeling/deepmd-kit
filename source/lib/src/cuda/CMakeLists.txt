@@ -1,5 +1,5 @@
 # required cmake version
-cmake_minimum_required(VERSION 3.7)
+cmake_minimum_required(VERSION 3.16)
 # project name
 project(deepmd_op_cuda)
 
@@ -128,6 +128,7 @@ target_include_directories(
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../include/>
     $<INSTALL_INTERFACE:include>
 )
+target_precompile_headers(deepmd_op_cuda PUBLIC device.h)
 if(APPLE)
     set_target_properties(
         deepmd_op_cuda 
