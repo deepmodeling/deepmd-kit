@@ -23,7 +23,7 @@ target_include_directories(
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
   $<INSTALL_INTERFACE:include>
   )
-target_precompile_headers(op_grads PUBLIC common.h)
+target_precompile_headers(${libname} PUBLIC common.h)
 
 if(Protobuf_LIBRARY)
   target_link_libraries(${libname} PRIVATE ${Protobuf_LIBRARY})
