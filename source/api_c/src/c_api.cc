@@ -187,7 +187,7 @@ void flatten_vector(std::vector<VALUETYPE> & onedv, const std::vector<std::vecto
 
 
 template <typename VALUETYPE>
-void DP_DeepPotModelDeviComputeNlist_variant (
+void DP_DeepPotModelDeviComputeNList_variant (
     DP_DeepPotModelDevi* dp,
     const int natoms,
     const VALUETYPE* coord,
@@ -242,7 +242,7 @@ void DP_DeepPotModelDeviComputeNlist_variant (
 }
 
 template
-void DP_DeepPotModelDeviComputeNlist_variant <double> (
+void DP_DeepPotModelDeviComputeNList_variant <double> (
     DP_DeepPotModelDevi* dp,
     const int natoms,
     const double* coord,
@@ -259,7 +259,7 @@ void DP_DeepPotModelDeviComputeNlist_variant <double> (
     );
 
 template
-void DP_DeepPotModelDeviComputeNlist_variant <float> (
+void DP_DeepPotModelDeviComputeNList_variant <float> (
     DP_DeepPotModelDevi* dp,
     const int natoms,
     const float* coord,
@@ -369,7 +369,7 @@ int DP_DeepPotGetNumbTypes(
     return dp->dp.numb_types();
 }
 
-void DP_DeepPotModelDeviComputeNlist (
+void DP_DeepPotModelDeviComputeNList (
     DP_DeepPotModelDevi* dp,
     const int natoms,
     const double* coord,
@@ -384,10 +384,10 @@ void DP_DeepPotModelDeviComputeNlist (
     double* atomic_energy,
     double* atomic_virial
     ) {
-    DP_DeepPotModelDeviComputeNlist_variant<double>(dp, natoms, coord, atype, cell, nghost, nlist, ago, energy, force, virial, atomic_energy, atomic_virial);
+    DP_DeepPotModelDeviComputeNList_variant<double>(dp, natoms, coord, atype, cell, nghost, nlist, ago, energy, force, virial, atomic_energy, atomic_virial);
 }
 
-void DP_DeepPotModelDeviComputeNlistf (
+void DP_DeepPotModelDeviComputeNListf (
     DP_DeepPotModelDevi* dp,
     const int natoms,
     const float* coord,
@@ -402,7 +402,7 @@ void DP_DeepPotModelDeviComputeNlistf (
     float* atomic_energy,
     float* atomic_virial
     ) {
-    DP_DeepPotModelDeviComputeNlist_variant<float>(dp, natoms, coord, atype, cell, nghost, nlist, ago, energy, force, virial, atomic_energy, atomic_virial);
+    DP_DeepPotModelDeviComputeNList_variant<float>(dp, natoms, coord, atype, cell, nghost, nlist, ago, energy, force, virial, atomic_energy, atomic_virial);
 }
 
 double DP_DeepPotModelDeviGetCutoff(
