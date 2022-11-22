@@ -10,5 +10,5 @@ If other unexpected problems occur, you’re welcome to contact us for help.
 - [MD: cannot run LAMMPS after installing a new version of DeePMD-kit](md-version-compatibility.md)
 - [Do we need to set rcut < half boxsize?](howtoset-rcut.md)
 - [How to set sel?](howtoset-sel.md)
-- [How to control the number of nodes used by a job?](howtoset_num_nodes.md)
+- [How to control the parallelism of a job?](howtoset_num_nodes.md)
 - [How to tune Fitting/embedding-net size?](howtoset_netsize.md)
