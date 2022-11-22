@@ -6,6 +6,7 @@ from deepmd.env import tf
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.common import j_loader as dp_j_loader
 from deepmd.utils import random as dp_random
+from deepmd.entrypoints.main import main
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
     global_default_fv_hh = 1e-2
@@ -407,3 +408,28 @@ def strerch_box(old_coord, old_box, new_box):
     nbox = new_box.reshape(3,3)
     ncoord = ocoord @ np.linalg.inv(obox) @ nbox
     return ncoord.reshape(old_coord.shape)
+
+
+def run_dp(cmd: str) -> int:
+    """Run DP directly from the entry point instead of the subprocess.
+    
+    It is quite slow to start DeePMD-kit with subprocess.
+
+    Parameters
+    ----------
+    cmd : str
+        The command to run.
+
+    Returns
+    -------
+    int
+        Always returns 0.
+    """
+    cmds = cmd.split()
+    if cmds[0] == 'dp':
+        cmds = cmds[1:]
+    else:
+        raise RuntimeError('The command is not dp')
+
+    main(cmds)
+    return 0

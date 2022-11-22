@@ -6,7 +6,7 @@ from packaging.version import Version
 
 from deepmd.infer import DeepPot
 # from deepmd.entrypoints.compress import compress
-from common import j_loader, tests_path
+from common import j_loader, tests_path, run_dp
 from deepmd.env import TF_VERSION
 
 
@@ -43,7 +43,7 @@ class TestMixedPrecTraining(unittest.TestCase):
         _TF_VERSION = Version(TF_VERSION)
         # check the TF_VERSION, when TF < 1.12, mixed precision is not allowed 
         if _TF_VERSION >= Version('1.14.0'):
-            ret = _subprocess_run("dp train " + self.INPUT)
+            ret = run_dp("dp train " + self.INPUT)
             np.testing.assert_equal(ret, 0, 'DP train failed!')
 
     def tearDown(self):
