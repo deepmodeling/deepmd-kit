@@ -785,12 +785,12 @@ def gen_json(**kwargs):
     ), cls=ArgumentEncoder)
 
 def gen_args(**kwargs):
-    return [model_args(),
-            learning_rate_args(),
-            loss_args(),
-            loss_dict_args(),
+    return [nvnmd_args(),
             training_args(),
-            nvnmd_args()]
+            loss_dict_args(),
+            loss_args(),
+            learning_rate_args(),
+            model_args()]  # show in reverse order
 
 def normalize_hybrid_list(hy_list):
     new_list = []
