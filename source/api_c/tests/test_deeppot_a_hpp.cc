@@ -107,7 +107,7 @@ TYPED_TEST(TestInferDeepPotAHPP, cpu_build_nlist_numfv)
   std::vector<VALUETYPE>& expected_e = this->expected_e;
   std::vector<VALUETYPE>& expected_f = this->expected_f;
   std::vector<VALUETYPE>& expected_v = this->expected_v;
-  int& natoms = this->natoms;
+  unsigned int& natoms = this->natoms;
   double& expected_tot_e = this->expected_tot_e;
   std::vector<VALUETYPE>&expected_tot_v = this->expected_tot_v;
   deepmd::hpp::DeepPot& dp = this->dp;
@@ -163,7 +163,7 @@ TYPED_TEST(TestInferDeepPotAHPP, cpu_build_nlist_atomic)
   std::vector<VALUETYPE>& expected_e = this->expected_e;
   std::vector<VALUETYPE>& expected_f = this->expected_f;
   std::vector<VALUETYPE>& expected_v = this->expected_v;
-  int& natoms = this->natoms;
+  unsigned int& natoms = this->natoms;
   double& expected_tot_e = this->expected_tot_e;
   std::vector<VALUETYPE>&expected_tot_v = this->expected_tot_v;
   deepmd::hpp::DeepPot& dp = this->dp;
@@ -201,7 +201,7 @@ TYPED_TEST(TestInferDeepPotAHPP, cpu_lmp_nlist)
   std::vector<VALUETYPE>& expected_e = this->expected_e;
   std::vector<VALUETYPE>& expected_f = this->expected_f;
   std::vector<VALUETYPE>& expected_v = this->expected_v;
-  int& natoms = this->natoms;
+  unsigned int& natoms = this->natoms;
   double& expected_tot_e = this->expected_tot_e;
   std::vector<VALUETYPE>&expected_tot_v = this->expected_tot_v;
   deepmd::hpp::DeepPot& dp = this->dp;
@@ -262,7 +262,7 @@ TYPED_TEST(TestInferDeepPotAHPP, cpu_lmp_nlist_atomic)
   std::vector<VALUETYPE>& expected_e = this->expected_e;
   std::vector<VALUETYPE>& expected_f = this->expected_f;
   std::vector<VALUETYPE>& expected_v = this->expected_v;
-  int& natoms = this->natoms;
+  unsigned int& natoms = this->natoms;
   double& expected_tot_e = this->expected_tot_e;
   std::vector<VALUETYPE>&expected_tot_v = this->expected_tot_v;
   deepmd::hpp::DeepPot& dp = this->dp;
@@ -346,7 +346,7 @@ TYPED_TEST(TestInferDeepPotAHPP, cpu_lmp_nlist_2rc)
   std::vector<VALUETYPE>& expected_e = this->expected_e;
   std::vector<VALUETYPE>& expected_f = this->expected_f;
   std::vector<VALUETYPE>& expected_v = this->expected_v;
-  int& natoms = this->natoms;
+  unsigned int& natoms = this->natoms;
   double& expected_tot_e = this->expected_tot_e;
   std::vector<VALUETYPE>&expected_tot_v = this->expected_tot_v;
   deepmd::hpp::DeepPot& dp = this->dp;
@@ -408,7 +408,7 @@ TYPED_TEST(TestInferDeepPotAHPP, cpu_lmp_nlist_type_sel)
   std::vector<VALUETYPE>& expected_e = this->expected_e;
   std::vector<VALUETYPE>& expected_f = this->expected_f;
   std::vector<VALUETYPE>& expected_v = this->expected_v;
-  int& natoms = this->natoms;
+  unsigned int& natoms = this->natoms;
   double& expected_tot_e = this->expected_tot_e;
   std::vector<VALUETYPE>&expected_tot_v = this->expected_tot_v;
   deepmd::hpp::DeepPot& dp = this->dp;
@@ -530,7 +530,7 @@ TYPED_TEST(TestInferDeepPotANoPbcHPP, cpu_build_nlist)
   std::vector<VALUETYPE>& expected_e = this->expected_e;
   std::vector<VALUETYPE>& expected_f = this->expected_f;
   std::vector<VALUETYPE>& expected_v = this->expected_v;
-  int& natoms = this->natoms;
+  unsigned int& natoms = this->natoms;
   double& expected_tot_e = this->expected_tot_e;
   std::vector<VALUETYPE>&expected_tot_v = this->expected_tot_v;
   deepmd::hpp::DeepPot& dp = this->dp;
