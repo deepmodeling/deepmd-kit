@@ -2,6 +2,8 @@
 #include <cmath>
 #include "gtest/gtest.h"
 #include "SimulationRegion.h"
+#include "region.h"
+#include "neighbor_list.h"
 
 #define EPSILON (std::is_same<VALUETYPE, double>::value ? 1e-10 : 1e-4)
 
