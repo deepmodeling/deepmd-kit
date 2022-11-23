@@ -31,7 +31,7 @@ class DescrptSeAEbd (DescrptSeA):
             Number of the axis neuron (number of columns of the sub-matrix of the embedding matrix)
     resnet_dt
             Time-step `dt` in the resnet construction:
-            y = x + dt * \phi (Wx + b)
+            y = x + dt * \\phi (Wx + b)
     trainable
             If the weights of embedding net are trainable.
     seed
