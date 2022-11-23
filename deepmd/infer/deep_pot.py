@@ -123,7 +123,11 @@ class DeepPot(DeepEval):
 
         # now load tensors to object attributes
         for attr_name, tensor_name in self.tensors.items():
-            self._get_tensor(tensor_name, attr_name)
+            try:
+                self._get_tensor(tensor_name, attr_name)
+            except KeyError:
+                if attr_name != "t_descriptor":
+                    raise
 
         self._run_default_sess()
         self.tmap = self.tmap.decode('UTF-8').split()        
@@ -357,7 +361,13 @@ class DeepPot(DeepEval):
         else:
             feed_dict_test[self.t_type] = np.tile(atom_types, [nframes, 1]).reshape([-1])
         feed_dict_test[self.t_coord] = np.reshape(coords, [-1])
-        feed_dict_test[self.t_box  ] = np.reshape(cells , [-1])
+        
+        if len(self.t_box.shape) == 1:
+            feed_dict_test[self.t_box  ] = np.reshape(cells , [-1])
+        elif len(self.t_box.shape) == 2:
+            feed_dict_test[self.t_box  ] = cells
+        else:
+            raise RuntimeError
         if self.has_efield:
             feed_dict_test[self.t_efield]= np.reshape(efield, [-1])
         if pbc:

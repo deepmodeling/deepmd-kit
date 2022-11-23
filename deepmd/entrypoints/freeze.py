@@ -29,9 +29,9 @@ log = logging.getLogger(__name__)
 def _transfer_fitting_net_trainable_variables(sess, old_graph_def, raw_graph_def):
     old_pattern = FITTING_NET_PATTERN
     raw_pattern = FITTING_NET_PATTERN\
-        .replace('idt',    'idt+_\d+')\
-        .replace('bias',   'bias+_\d+')\
-        .replace('matrix', 'matrix+_\d+')
+        .replace('idt',    r'idt+_\d+')\
+        .replace('bias',   r'bias+_\d+')\
+        .replace('matrix', r'matrix+_\d+')
     old_graph_nodes = get_pattern_nodes_from_graph_def(
         old_graph_def, 
         old_pattern

@@ -1,15 +1,15 @@
 # Parallel training
 
-Currently, parallel training is enabled in a sychoronized way with help of [Horovod](https://github.com/horovod/horovod).
-Depend on the number of training processes (according to MPI context) and number of GPU cards avaliable, DeePMD-kit will decide whether to launch the training in parallel (distributed) mode or in serial mode. Therefore, no additional options is specified in your JSON/YAML input file.
+Currently, parallel training is enabled in a synchronized way with help of [Horovod](https://github.com/horovod/horovod).
+Depending on the number of training processes (according to MPI context) and the number of GPU cards available, DeePMD-kit will decide whether to launch the training in parallel (distributed) mode or in serial mode. Therefore, no additional options are specified in your JSON/YAML input file.
 
 ## Tuning learning rate
 
 Horovod works in the data-parallel mode, resulting in a larger global batch size. For example, the real batch size is 8 when {ref}`batch_size <training/training_data/batch_size>` is set to 2 in the input file and you launch 4 workers. Thus, {ref}`learning_rate <learning_rate>` is automatically scaled by the number of workers for better convergence. Technical details of such heuristic rule are discussed at [Accurate, Large Minibatch SGD: Training ImageNet in 1 Hour](https://arxiv.org/abs/1706.02677).
 
-The number of decay steps required to achieve same accuracy can decrease by the number of cards (e.g., 1/2 of steps in the above case), but needs to be scaled manually in the input file.
+The number of decay steps required to achieve the same accuracy can decrease by the number of cards (e.g., 1/2 of steps in the above case), but needs to be scaled manually in the input file.
 
-In some cases, it won't work well when scale learning rate by worker count in a `linear` way. Then you can try `sqrt` or `none` by setting argument {ref}`scale_by_worker <learning_rate/scale_by_worker>` like below.
+In some cases, it won't work well when scaling the learning rate by worker count in a `linear` way. Then you can try `sqrt` or `none` by setting argument {ref}`scale_by_worker <learning_rate/scale_by_worker>` like below.
 ```json
     "learning_rate" :{
         "scale_by_worker": "none",
@@ -19,7 +19,7 @@ In some cases, it won't work well when scale learning rate by worker count in a 
 
 ## Scaling test
 
-Testing `examples/water/se_e2_a` on a 8-GPU host, linear acceleration can be observed with increasing number of cards.
+Testing `examples/water/se_e2_a` on an 8-GPU host, linear acceleration can be observed with the increasing number of cards.
 
 | Num of GPU cards | Seconds every 100 samples | Samples per second | Speed up |
 |  --  | -- | -- | -- |
@@ -37,18 +37,18 @@ CUDA_VISIBLE_DEVICES=4,5,6,7 horovodrun -np 4 \
     dp train --mpi-log=workers input.json
 ```
 
-Need to mention, environment variable `CUDA_VISIBLE_DEVICES` must be set to control parallelism on the occupied host where one process is bound to one GPU card.
+Need to mention, the environment variable `CUDA_VISIBLE_DEVICES`` must be set to control parallelism on the occupied host where one process is bound to one GPU card.
 
-Note that `OMP_NUM_THREADS`, `TF_INTRA_OP_PARALLELISM_THREADS`, and `TF_INTER_OP_PARALLELISM_THREADS` should be carefully adjusted to achieve the best performance.
+To maximize the performance, one should follow [FAQ: How to control the parallelism of a job](../troubleshooting/howtoset_num_nodes.md) to control the number of threads.
 
-When using MPI with Horovod, `horovodrun` is a simple wrapper around `mpirun`. In the case where fine-grained control over options passed to `mpirun`, [`mpirun` can be invoked directly](https://horovod.readthedocs.io/en/stable/mpi_include.html), and it will be detected automatically by Horovod, e.g.,
+When using MPI with Horovod, `horovodrun` is a simple wrapper around `mpirun`. In the case where fine-grained control over options is passed to `mpirun`, [`mpirun` can be invoked directly](https://horovod.readthedocs.io/en/stable/mpi_include.html), and it will be detected automatically by Horovod, e.g.,
 ```bash
 CUDA_VISIBLE_DEVICES=4,5,6,7 mpirun -l -launcher=fork -hosts=localhost -np 4 \
     dp train --mpi-log=workers input.json
 ```
-this is sometimes neccessary on HPC environment.
+this is sometimes necessary for an HPC environment.
 
-Whether distributed workers are initiated can be observed at the "Summary of the training" section in the log (`world size` > 1, and `distributed`).
+Whether distributed workers are initiated can be observed in the "Summary of the training" section in the log (`world size` > 1, and `distributed`).
 ```
 [0] DEEPMD INFO    ---Summary of the training---------------------------------------
 [0] DEEPMD INFO    distributed
@@ -66,7 +66,7 @@ Whether distributed workers are initiated can be observed at the "Summary of the
 
 ## Logging
 
-What's more, 2 command-line arguments are defined to control the logging behvaior when performing parallel training with MPI.
+What's more, 2 command-line arguments are defined to control the logging behavior when performing parallel training with MPI.
 ```
 optional arguments:
   -l LOG_PATH, --log-path LOG_PATH

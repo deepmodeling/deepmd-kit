@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(DeePMD)
 
-option(BUILD_TESTING "Enable converage" OFF)
+option(BUILD_TESTING "Build test and enable converage" OFF)
 if(BUILD_TESTING)
   enable_testing()
   add_subdirectory(${CMAKE_SOURCE_DIR}/cmake/coverage_config coverage_config)
@@ -18,6 +18,30 @@ endif (NOT DEFINED BUILD_PY_IF)
 if ((NOT BUILD_PY_IF) AND (NOT BUILD_CPP_IF))
   # nothing to do
   message(FATAL_ERROR "Nothing to do.")
+endif()
+
+if (BUILD_CPP_IF AND BUILD_TESTING)
+  if (NOT INSTALL_TENSORFLOW)
+    # some errors in conda packages...
+    find_package(GTest)
+  endif()
+  if(NOT GTEST_LIBRARIES)
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/googletest.cmake.in googletest-download/CMakeLists.txt @ONLY)
+    execute_process(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" .
+      RESULT_VARIABLE result
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/googletest-download )
+    if(result)
+      message(FATAL_ERROR "CMake step for googletest failed: ${result}")
+    endif()
+    execute_process(COMMAND ${CMAKE_COMMAND} --build .
+      RESULT_VARIABLE result
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/googletest-download )
+    if(result)
+      message(FATAL_ERROR "Build step for googletest failed: ${result}")
+    endif()
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    add_subdirectory(${CMAKE_CURRENT_BINARY_DIR}/googletest-src ${CMAKE_CURRENT_BINARY_DIR}/googletest-build EXCLUDE_FROM_ALL)
+  endif ()
 endif()
 
 find_package(Git)

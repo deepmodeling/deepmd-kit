@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>  
 
+template <class VALUETYPE>
 class TestInferDeepPolar : public ::testing::Test
 {  
 protected:  
@@ -49,9 +50,18 @@ protected:
   };
 };
 
+TYPED_TEST_SUITE(TestInferDeepPolar, ValueTypes);
 
-TEST_F(TestInferDeepPolar, cpu_build_nlist)
+TYPED_TEST(TestInferDeepPolar, cpu_build_nlist)
 {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this -> coord;
+  std::vector<int>& atype = this -> atype;
+  std::vector<VALUETYPE>& box = this -> box;
+  std::vector<VALUETYPE>& expected_d = this -> expected_d;
+  int& natoms = this -> natoms;
+  deepmd::DeepTensor& dp = this -> dp;
+
   EXPECT_EQ(dp.cutoff(), 6.);
   EXPECT_EQ(dp.numb_types(), 2);
   EXPECT_EQ(dp.output_dim(), 9);
@@ -69,8 +79,15 @@ TEST_F(TestInferDeepPolar, cpu_build_nlist)
 }
 
 
-TEST_F(TestInferDeepPolar, cpu_lmp_nlist)
+TYPED_TEST(TestInferDeepPolar, cpu_lmp_nlist)
 {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this -> coord;
+  std::vector<int>& atype = this -> atype;
+  std::vector<VALUETYPE>& box = this -> box;
+  std::vector<VALUETYPE>& expected_d = this -> expected_d;
+  int& natoms = this -> natoms;
+  deepmd::DeepTensor& dp = this -> dp;
   float rc = dp.cutoff();
   int nloc = coord.size() / 3;  
   std::vector<VALUETYPE> coord_cpy;
@@ -79,7 +96,7 @@ TEST_F(TestInferDeepPolar, cpu_lmp_nlist)
   std::vector<int*> firstneigh(nloc);
   std::vector<std::vector<int > > nlist_data;
   deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
-  _build_nlist(nlist_data, coord_cpy, atype_cpy, mapping,
+  _build_nlist<VALUETYPE>(nlist_data, coord_cpy, atype_cpy, mapping,
 	       coord, atype, box, rc);
   int nall = coord_cpy.size() / 3;
   convert_nlist(inlist, nlist_data);  
@@ -94,7 +111,7 @@ TEST_F(TestInferDeepPolar, cpu_lmp_nlist)
 }
 
 
-
+template <class VALUETYPE>
 class TestInferDeepPolarNew : public ::testing::Test
 {  
 protected:  
@@ -156,9 +173,23 @@ protected:
   };
 };
 
+TYPED_TEST_SUITE(TestInferDeepPolarNew, ValueTypes);
 
-TEST_F(TestInferDeepPolarNew, cpu_build_nlist)
+TYPED_TEST(TestInferDeepPolarNew, cpu_build_nlist)
 {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_t = this->expected_t;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  std::vector<VALUETYPE>& expected_v = this->expected_v;
+  std::vector<VALUETYPE>& expected_gt = this->expected_gt;
+  std::vector<VALUETYPE>& expected_gv = this->expected_gv;
+  int& natoms = this->natoms;
+  int& nsel = this->nsel;
+  int& odim = this->odim;
+  deepmd::DeepTensor& dp = this->dp;
   EXPECT_EQ(dp.cutoff(), 6.);
   EXPECT_EQ(dp.numb_types(), 2);
   EXPECT_EQ(dp.output_dim(), 9);
@@ -212,8 +243,21 @@ TEST_F(TestInferDeepPolarNew, cpu_build_nlist)
 }
 
 
-TEST_F(TestInferDeepPolarNew, cpu_lmp_nlist)
+TYPED_TEST(TestInferDeepPolarNew, cpu_lmp_nlist)
 {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_t = this->expected_t;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  std::vector<VALUETYPE>& expected_v = this->expected_v;
+  std::vector<VALUETYPE>& expected_gt = this->expected_gt;
+  std::vector<VALUETYPE>& expected_gv = this->expected_gv;
+  int& natoms = this->natoms;
+  int& nsel = this->nsel;
+  int& odim = this->odim;
+  deepmd::DeepTensor& dp = this->dp;
   float rc = dp.cutoff();
   int nloc = coord.size() / 3;  
   std::vector<VALUETYPE> coord_cpy;
@@ -222,7 +266,7 @@ TEST_F(TestInferDeepPolarNew, cpu_lmp_nlist)
   std::vector<int*> firstneigh(nloc);
   std::vector<std::vector<int > > nlist_data;
   deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
-  _build_nlist(nlist_data, coord_cpy, atype_cpy, mapping,
+  _build_nlist<VALUETYPE>(nlist_data, coord_cpy, atype_cpy, mapping,
 	       coord, atype, box, rc);
   int nall = coord_cpy.size() / 3;
   convert_nlist(inlist, nlist_data);  
@@ -246,7 +290,7 @@ TEST_F(TestInferDeepPolarNew, cpu_lmp_nlist)
   // remove ghost atoms
   std::vector<VALUETYPE> rff (odim * nloc * 3);
   for(int kk = 0; kk < odim; ++kk){
-    _fold_back(rff.begin() + kk * nloc * 3, ff.begin() + kk * nall * 3, mapping, nloc, nall, 3);
+    _fold_back<VALUETYPE>(rff.begin() + kk * nloc * 3, ff.begin() + kk * nall * 3, mapping, nloc, nall, 3);
   }
   EXPECT_EQ(rff.size(), expected_f.size());
   for(int ii = 0; ii < expected_f.size(); ++ii){
@@ -267,7 +311,7 @@ TEST_F(TestInferDeepPolarNew, cpu_lmp_nlist)
   }
   // remove ghost atoms
   for(int kk = 0; kk < odim; ++kk){
-    _fold_back(rff.begin() + kk * nloc * 3, ff.begin() + kk * nall * 3, mapping, nloc, nall, 3);
+    _fold_back<VALUETYPE>(rff.begin() + kk * nloc * 3, ff.begin() + kk * nall * 3, mapping, nloc, nall, 3);
   }
   EXPECT_EQ(rff.size(), expected_f.size());
   for(int ii = 0; ii < expected_f.size(); ++ii){
@@ -286,7 +330,7 @@ TEST_F(TestInferDeepPolarNew, cpu_lmp_nlist)
   // atom virial
   std::vector<VALUETYPE> rav (odim * nloc * 9);
   for(int kk = 0; kk < odim; ++kk){
-    _fold_back(rav.begin() + kk * nloc * 9, av.begin() + kk * nall * 9, mapping, nloc, nall, 9);
+    _fold_back<VALUETYPE>(rav.begin() + kk * nloc * 9, av.begin() + kk * nall * 9, mapping, nloc, nall, 9);
   }
   EXPECT_EQ(rav.size(), expected_v.size());
   for(int ii = 0; ii < expected_v.size(); ++ii){

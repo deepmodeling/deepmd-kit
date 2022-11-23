@@ -2,7 +2,7 @@ import os, sys, platform, shutil, dpdata, json
 import numpy as np
 import unittest
 import subprocess as sp
-from common import j_loader, tests_path
+from common import j_loader, tests_path, run_dp
 from deepmd.utils.graph import get_tensor_by_name
 from deepmd.utils.argcheck import normalize
 from deepmd.utils.compat import update_deepmd_input
@@ -62,17 +62,17 @@ def _init_models():
     with open(INPUT_FINETUNE_MIX, "w") as fp:
         json.dump(jdata_finetune, fp, indent=4)
 
-    ret = _subprocess_run("dp train " + INPUT_PRE)
+    ret = run_dp("dp train " + INPUT_PRE)
     np.testing.assert_equal(ret, 0, 'DP train failed!')
-    ret = _subprocess_run("dp freeze -o " + pretrained_model)
+    ret = run_dp("dp freeze -o " + pretrained_model)
     np.testing.assert_equal(ret, 0, 'DP freeze failed!')
-    ret = _subprocess_run("dp train " + INPUT_FINETUNE + " -t " + pretrained_model)
+    ret = run_dp("dp train " + INPUT_FINETUNE + " -t " + pretrained_model)
     np.testing.assert_equal(ret, 0, 'DP finetune failed!')
-    ret = _subprocess_run("dp freeze -o " + finetuned_model)
+    ret = run_dp("dp freeze -o " + finetuned_model)
     np.testing.assert_equal(ret, 0, 'DP freeze failed!')
-    ret = _subprocess_run("dp train " + INPUT_FINETUNE_MIX + " -t " + pretrained_model)
+    ret = run_dp("dp train " + INPUT_FINETUNE_MIX + " -t " + pretrained_model)
     np.testing.assert_equal(ret, 0, 'DP finetune failed!')
-    ret = _subprocess_run("dp freeze -o " + finetuned_model_mixed_type)
+    ret = run_dp("dp freeze -o " + finetuned_model_mixed_type)
     np.testing.assert_equal(ret, 0, 'DP freeze failed!')
 
     jdata_pre = update_deepmd_input(jdata_pre, warning=True, dump="input_v2_compat.json")

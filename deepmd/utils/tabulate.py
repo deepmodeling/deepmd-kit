@@ -19,7 +19,7 @@ class DPTabulate():
     Class for tabulation.
 
     Compress a model, which including tabulating the embedding-net. 
-    The table is composed of fifth-order polynomial coefficients and is assembled from two sub-tables. The first table takes the stride(parameter) as it\'s uniform stride, while the second table takes 10 * stride as it\s uniform stride 
+    The table is composed of fifth-order polynomial coefficients and is assembled from two sub-tables. The first table takes the stride(parameter) as it\'s uniform stride, while the second table takes 10 * stride as it\'s uniform stride 
     The range of the first table is automatically detected by deepmd-kit, while the second table ranges from the first table\'s upper boundary(upper) to the extrapolate(parameter) * upper.
 
     Parameters
@@ -27,7 +27,7 @@ class DPTabulate():
     descrpt
             Descriptor of the original model
     neuron
-            Number of neurons in each hidden layers of the embedding net :math:`\mathcal{N}`
+            Number of neurons in each hidden layers of the embedding net :math:`\\mathcal{N}`
     model_file
             The frozen model
     type_one_side
@@ -143,7 +143,7 @@ class DPTabulate():
         stride1
                 The uniform stride of the second table
         neuron
-            Number of neurons in each hidden layers of the embedding net :math:`\mathcal{N}`
+            Number of neurons in each hidden layers of the embedding net :math:`\\mathcal{N}`
 
         Returns
         ----------

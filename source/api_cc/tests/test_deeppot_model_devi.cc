@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>  
 
+template <class VALUETYPE>
 class TestInferDeepPotModeDevi : public ::testing::Test
 {  
 protected:  
@@ -54,7 +55,9 @@ protected:
   };
 };
 
+TYPED_TEST_SUITE(TestInferDeepPotModeDevi, ValueTypes);
 
+template <class VALUETYPE>
 class TestInferDeepPotModeDeviPython : public ::testing::Test
 {  
 protected:  
@@ -104,9 +107,19 @@ protected:
   };
 };
 
+TYPED_TEST_SUITE(TestInferDeepPotModeDeviPython, ValueTypes);
 
-TEST_F(TestInferDeepPotModeDevi, attrs)
+
+TYPED_TEST(TestInferDeepPotModeDevi, attrs)
 {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  int& natoms = this->natoms;
+  deepmd::DeepPot& dp0 = this->dp0;
+  deepmd::DeepPot& dp1 = this->dp1;
+  deepmd::DeepPotModelDevi& dp_md = this->dp_md;
   EXPECT_EQ(dp0.cutoff(), dp_md.cutoff());
   EXPECT_EQ(dp0.numb_types(), dp_md.numb_types());
   EXPECT_EQ(dp0.dim_fparam(), dp_md.dim_fparam());
@@ -117,14 +130,22 @@ TEST_F(TestInferDeepPotModeDevi, attrs)
   EXPECT_EQ(dp1.dim_aparam(), dp_md.dim_aparam());
 }
 
-TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list)
+TYPED_TEST(TestInferDeepPotModeDevi, cpu_lmp_list)
 {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  int& natoms = this->natoms;
+  deepmd::DeepPot& dp0 = this->dp0;
+  deepmd::DeepPot& dp1 = this->dp1;
+  deepmd::DeepPotModelDevi& dp_md = this->dp_md;
   float rc = dp_md.cutoff();
   int nloc = coord.size() / 3;  
   std::vector<VALUETYPE> coord_cpy;
   std::vector<int> atype_cpy, mapping;  
   std::vector<std::vector<int > > nlist_data;
-  _build_nlist(nlist_data, coord_cpy, atype_cpy, mapping,
+  _build_nlist<VALUETYPE>(nlist_data, coord_cpy, atype_cpy, mapping,
 	       coord, atype, box, rc);
   int nall = coord_cpy.size() / 3;
   std::vector<int> ilist(nloc), numneigh(nloc);
@@ -139,8 +160,8 @@ TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list)
   dp1.compute(edir[1], fdir_[1], vdir[1], coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
   dp_md.compute(emd, fmd_, vmd, coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
   for(int kk = 0; kk < nmodel; ++kk){
-    _fold_back(fdir[kk], fdir_[kk], mapping, nloc, nall, 3);
-    _fold_back(fmd[kk], fmd_[kk], mapping, nloc, nall, 3);
+    _fold_back<VALUETYPE>(fdir[kk], fdir_[kk], mapping, nloc, nall, 3);
+    _fold_back<VALUETYPE>(fmd[kk], fmd_[kk], mapping, nloc, nall, 3);
   }  
 
   EXPECT_EQ(edir.size(), emd.size());
@@ -162,14 +183,22 @@ TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list)
 }
 
 
-TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list_atomic)
+TYPED_TEST(TestInferDeepPotModeDevi, cpu_lmp_list_atomic)
 {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  int& natoms = this->natoms;
+  deepmd::DeepPot& dp0 = this->dp0;
+  deepmd::DeepPot& dp1 = this->dp1;
+  deepmd::DeepPotModelDevi& dp_md = this->dp_md;
   float rc = dp_md.cutoff();
   int nloc = coord.size() / 3;  
   std::vector<VALUETYPE> coord_cpy;
   std::vector<int> atype_cpy, mapping;  
   std::vector<std::vector<int > > nlist_data;
-  _build_nlist(nlist_data, coord_cpy, atype_cpy, mapping,
+  _build_nlist<VALUETYPE>(nlist_data, coord_cpy, atype_cpy, mapping,
 	       coord, atype, box, rc);
   int nall = coord_cpy.size() / 3;
   std::vector<int> ilist(nloc), numneigh(nloc);
@@ -184,10 +213,10 @@ TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list_atomic)
   dp1.compute(edir[1], fdir_[1], vdir[1], aedir[1], avdir_[1], coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
   dp_md.compute(emd, fmd_, vmd, aemd, avmd_, coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
   for(int kk = 0; kk < nmodel; ++kk){
-    _fold_back(fdir[kk], fdir_[kk], mapping, nloc, nall, 3);
-    _fold_back(fmd[kk], fmd_[kk], mapping, nloc, nall, 3);
-    _fold_back(avdir[kk], avdir_[kk], mapping, nloc, nall, 9);
-    _fold_back(avmd[kk], avmd_[kk], mapping, nloc, nall, 9);
+    _fold_back<VALUETYPE>(fdir[kk], fdir_[kk], mapping, nloc, nall, 3);
+    _fold_back<VALUETYPE>(fmd[kk], fmd_[kk], mapping, nloc, nall, 3);
+    _fold_back<VALUETYPE>(avdir[kk], avdir_[kk], mapping, nloc, nall, 9);
+    _fold_back<VALUETYPE>(avmd[kk], avmd_[kk], mapping, nloc, nall, 9);
   }  
 
   EXPECT_EQ(edir.size(), emd.size());
@@ -219,14 +248,22 @@ TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list_atomic)
 }
 
 
-TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list_std)
+TYPED_TEST(TestInferDeepPotModeDevi, cpu_lmp_list_std)
 {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  int& natoms = this->natoms;
+  deepmd::DeepPot& dp0 = this->dp0;
+  deepmd::DeepPot& dp1 = this->dp1;
+  deepmd::DeepPotModelDevi& dp_md = this->dp_md;
   float rc = dp_md.cutoff();
   int nloc = coord.size() / 3;  
   std::vector<VALUETYPE> coord_cpy;
   std::vector<int> atype_cpy, mapping;  
   std::vector<std::vector<int > > nlist_data;
-  _build_nlist(nlist_data, coord_cpy, atype_cpy, mapping,
+  _build_nlist<VALUETYPE>(nlist_data, coord_cpy, atype_cpy, mapping,
 	       coord, atype, box, rc);
   int nall = coord_cpy.size() / 3;
   std::vector<int> ilist(nloc), numneigh(nloc);
@@ -242,9 +279,9 @@ TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list_std)
   dp1.compute(edir[1], fdir_[1], vdir[1], coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
   dp_md.compute(emd, fmd_, vmd, aemd_, avmd_, coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
   for(int kk = 0; kk < nmodel; ++kk){
-    _fold_back(fdir[kk], fdir_[kk], mapping, nloc, nall, 3);
-    _fold_back(fmd[kk], fmd_[kk], mapping, nloc, nall, 3);
-    _fold_back(avmd[kk], avmd_[kk], mapping, nloc, nall, 9);
+    _fold_back<VALUETYPE>(fdir[kk], fdir_[kk], mapping, nloc, nall, 3);
+    _fold_back<VALUETYPE>(fmd[kk], fmd_[kk], mapping, nloc, nall, 3);
+    _fold_back<VALUETYPE>(avmd[kk], avmd_[kk], mapping, nloc, nall, 9);
     aemd[kk].resize(nloc);
     for(int ii = 0; ii < nloc; ++ii){
       aemd[kk][ii] = aemd_[kk][ii];
@@ -325,6 +362,7 @@ TEST_F(TestInferDeepPotModeDevi, cpu_lmp_list_std)
   }
 }
 
+template <class VALUETYPE>
 inline VALUETYPE mymax(const std::vector<VALUETYPE > & xx)
 {
   VALUETYPE ret = 0;
@@ -335,6 +373,7 @@ inline VALUETYPE mymax(const std::vector<VALUETYPE > & xx)
   }
   return ret;
 };  
+template <class VALUETYPE>
 inline VALUETYPE mymin(const std::vector<VALUETYPE > & xx)
 {
   VALUETYPE ret = 1e10;
@@ -345,6 +384,7 @@ inline VALUETYPE mymin(const std::vector<VALUETYPE > & xx)
   }
   return ret;
 };
+template <class VALUETYPE>
 inline VALUETYPE myavg(const std::vector<VALUETYPE > & xx)
 {
   VALUETYPE ret = 0;
@@ -353,6 +393,7 @@ inline VALUETYPE myavg(const std::vector<VALUETYPE > & xx)
   }
   return (ret / xx.size());
 };
+template <class VALUETYPE>
 inline VALUETYPE mystd(const std::vector<VALUETYPE > & xx)
 {
   VALUETYPE ret = 0;
@@ -362,14 +403,24 @@ inline VALUETYPE mystd(const std::vector<VALUETYPE > & xx)
   return sqrt(ret / xx.size());
 };
 
-TEST_F(TestInferDeepPotModeDeviPython, cpu_lmp_list_std)
+TYPED_TEST(TestInferDeepPotModeDeviPython, cpu_lmp_list_std)
 {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  int& natoms = this->natoms;
+  deepmd::DeepPot& dp0 = this->dp0;
+  deepmd::DeepPot& dp1 = this->dp1;
+  deepmd::DeepPotModelDevi& dp_md = this->dp_md;
+  std::vector<VALUETYPE>& expected_md_f = this->expected_md_f;
+  std::vector<VALUETYPE>& expected_md_v = this->expected_md_v;
   float rc = dp_md.cutoff();
   int nloc = coord.size() / 3;  
   std::vector<VALUETYPE> coord_cpy;
   std::vector<int> atype_cpy, mapping;  
   std::vector<std::vector<int > > nlist_data;
-  _build_nlist(nlist_data, coord_cpy, atype_cpy, mapping,
+  _build_nlist<VALUETYPE>(nlist_data, coord_cpy, atype_cpy, mapping,
 	       coord, atype, box, rc);
   int nall = coord_cpy.size() / 3;
   std::vector<int> ilist(nloc), numneigh(nloc);
@@ -385,9 +436,9 @@ TEST_F(TestInferDeepPotModeDeviPython, cpu_lmp_list_std)
   dp1.compute(edir[1], fdir_[1], vdir[1], coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
   dp_md.compute(emd, fmd_, vmd, aemd_, avmd_, coord_cpy, atype_cpy, box, nall-nloc, inlist, 0);
   for(int kk = 0; kk < nmodel; ++kk){
-    _fold_back(fdir[kk], fdir_[kk], mapping, nloc, nall, 3);
-    _fold_back(fmd[kk], fmd_[kk], mapping, nloc, nall, 3);
-    _fold_back(avmd[kk], avmd_[kk], mapping, nloc, nall, 9);
+    _fold_back<VALUETYPE>(fdir[kk], fdir_[kk], mapping, nloc, nall, 3);
+    _fold_back<VALUETYPE>(fmd[kk], fmd_[kk], mapping, nloc, nall, 3);
+    _fold_back<VALUETYPE>(avmd[kk], avmd_[kk], mapping, nloc, nall, 9);
     aemd[kk].resize(nloc);
     for(int ii = 0; ii < nloc; ++ii){
       aemd[kk][ii] = aemd_[kk][ii];

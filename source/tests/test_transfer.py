@@ -5,7 +5,7 @@ import subprocess as sp
 
 from deepmd.env import tf
 from deepmd.infer import DeepPot
-from common import j_loader, tests_path
+from common import j_loader, tests_path, run_dp
 from infer.convert2pb import convert_pbtxt_to_pb
 from deepmd.entrypoints.transfer import load_graph, transform_graph
 
@@ -37,7 +37,7 @@ class TestTransform(unittest.TestCase) :
         self.new_model = str(tests_path / "dp-new.pb")
         convert_pbtxt_to_pb(str(tests_path / os.path.join("infer","deeppot.pbtxt")), self.old_model)
         convert_pbtxt_to_pb(str(tests_path / os.path.join("infer","deeppot-1.pbtxt")), self.raw_model)
-        ret = _subprocess_run("dp transfer -O " + self.old_model + " -r " + self.raw_model + " -o " + self.new_model)
+        ret = run_dp("dp transfer -O " + self.old_model + " -r " + self.raw_model + " -o " + self.new_model)
         np.testing.assert_equal(ret, 0, 'DP transfer failed!')
 
         self.dp = DeepPot(self.new_model)

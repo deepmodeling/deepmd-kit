@@ -28,7 +28,7 @@ if (BUILD_CPP_IF AND INSTALL_TENSORFLOW)
   endif ()
   # execute conda install
   execute_process(
-	  COMMAND conda install libtensorflow_cc=*=${VARIANT}* -c deepmodeling -y -p ${TENSORFLOW_ROOT}
+	  COMMAND conda create libtensorflow_cc=*=${VARIANT}* -c deepmodeling -y -p ${TENSORFLOW_ROOT}
 	  )
 endif ()
 

@@ -16,15 +16,15 @@ By inferring with the DP model `frozen_model_compressed.pb`, dpdata will generat
 
 ## OpenMM plugin for DeePMD-kit
 
-An [OpenMM](https://github.com/openmm/openmm) plugin is provided from [JingHuangLab/openmm_deepmd_plugin](https://github.com/JingHuangLab/openmm_deepmd_plugin), written by the [Huang Lab](http://www.compbiophysics.org/) at the Westlake University.
+An [OpenMM](https://github.com/openmm/openmm) plugin is provided from [JingHuangLab/openmm_deepmd_plugin](https://github.com/JingHuangLab/openmm_deepmd_plugin), written by the [Huang Lab](http://www.compbiophysics.org/) at Westlake University.
 
 ## AMBER interface to DeePMD-kit
 
-An [AMBER](https://ambermd.org/) interface to DeePMD-kit is written by the [York Lab](https://theory.rutgers.edu/) from the Rutgers University. It is open-source at [GitLab RutgersLBSR/AmberDPRc](https://gitlab.com/RutgersLBSR/AmberDPRc/). Details can be found in [this paper](https://doi.org/10.1021/acs.jctc.1c00201).
+An [AMBER](https://ambermd.org/) interface to DeePMD-kit is written by the [York [Lab](https://theory.rutgers.edu/) from Rutgers University. It is open-source at [GitLab RutgersLBSR/AmberDPRc](https://gitlab.com/RutgersLBSR/AmberDPRc/). Details can be found in [this paper](https://doi.org/10.1021/acs.jctc.1c00201).
 
 ## DP-GEN
 
-[DP-GEN](https://github.com/deepmodeling/dpgen) provides a workflow to generate accurate DP models by calling DeePMD-kit's command line interface (CLI) in the local or the remote server. Details can be found in [this paper](https://doi.org/10.1016/j.cpc.2020.107206).
+[DP-GEN](https://github.com/deepmodeling/dpgen) provides a workflow to generate accurate DP models by calling DeePMD-kit's command line interface (CLI) in the local or remote server. Details can be found in [this paper](https://doi.org/10.1016/j.cpc.2020.107206).
 
 ## MLatom
 

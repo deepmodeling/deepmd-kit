@@ -352,14 +352,14 @@ def get_module(module_name: str) -> "ModuleType":
 
 
 def _get_package_constants(
-    config_file: Path = Path(__file__).parent / "pkg_config/run_config.ini",
+    config_file: Path = Path(__file__).parent / "run_config.ini",
 ) -> Dict[str, str]:
     """Read package constants set at compile time by CMake to dictionary.
 
     Parameters
     ----------
     config_file : str, optional
-        path to CONFIG file, by default "pkg_config/run_config.ini"
+        path to CONFIG file, by default "run_config.ini"
 
     Returns
     -------

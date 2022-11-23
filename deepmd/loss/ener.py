@@ -15,7 +15,7 @@ class EnerStdLoss (Loss) :
     Parameters
     ----------
     enable_atom_ener_coeff : bool
-        if true, the energy will be computed as \sum_i c_i E_i
+        if true, the energy will be computed as \\sum_i c_i E_i
     """
     def __init__ (self, 
                   starter_learning_rate : float, 
