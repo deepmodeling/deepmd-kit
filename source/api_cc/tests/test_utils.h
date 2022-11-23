@@ -1,6 +1,7 @@
 #pragma once
 #include <cmath>
 #include "gtest/gtest.h"
+#include "SimulationRegion.h"
 
 #define EPSILON (std::is_same<VALUETYPE, double>::value ? 1e-10 : 1e-4)
 
