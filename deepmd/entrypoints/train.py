@@ -208,7 +208,7 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
 
 
 def get_data(jdata: Dict[str, Any], rcut, type_map, modifier, multi_task_mode=False):
-    systems = j_must_have(jdata, "systems")
+    systems = j_must_have(jdata, "systems").copy()
     if isinstance(systems, str):
         systems = expand_sys_str(systems)
     help_msg = 'Please check your setting for data systems'
@@ -295,37 +295,32 @@ def get_nbor_stat(jdata, rcut, one_type: bool = False):
     if not multi_task_mode:
         train_data = get_data(jdata["training"]["training_data"], max_rcut, type_map, None)
         train_data.get_batch()
-        data_ntypes = train_data.get_ntypes()
-        if type_map is not None:
-            map_ntypes = len(type_map)
-        else:
-            map_ntypes = data_ntypes
-        ntypes = max([map_ntypes, data_ntypes])
-
-        neistat = NeighborStat(ntypes, rcut, one_type=one_type)
-
-        min_nbor_dist, max_nbor_size = neistat.get_stat(train_data)
     else:
         assert type_map is not None, 'Data stat in multi-task mode must have available type_map! '
-        train_data_list = []
+        train_data = None
         for systems in jdata["training"]["data_dict"]:
             tmp_data = get_data(jdata["training"]["data_dict"][systems]["training_data"], max_rcut, type_map, None)
             tmp_data.get_batch()
             assert tmp_data.get_type_map(), \
                 "In multi-task mode, 'type_map.raw' must be defined in data systems {}! ".format(systems)
-            train_data_list.append(tmp_data)
-        ntypes = len(type_map)
-        neistat = NeighborStat(ntypes, rcut, one_type=one_type)
-        min_nbor_dist = []
-        max_nbor_size = []
-        for train_data in train_data_list:
-            tmp_min_nbor_dist, tmp_max_nbor_size = neistat.get_stat(train_data)
-            min_nbor_dist.append(tmp_min_nbor_dist)
-            max_nbor_size.append(tmp_max_nbor_size)
-        min_nbor_dist = min(min_nbor_dist)
-        max_nbor_size = np.array(max_nbor_size).max(axis=0)
-        log.info('total min nbor dist: ' + str(min_nbor_dist))
-        log.info('total max nbor size: ' + str(max_nbor_size))
+            if train_data is None:
+                train_data = tmp_data
+            else:
+                train_data.system_dirs += tmp_data.system_dirs
+                train_data.data_systems += tmp_data.data_systems
+                train_data.natoms += tmp_data.natoms
+                train_data.natoms_vec += tmp_data.natoms_vec
+                train_data.default_mesh += tmp_data.default_mesh
+    data_ntypes = train_data.get_ntypes()
+    if type_map is not None:
+        map_ntypes = len(type_map)
+    else:
+        map_ntypes = data_ntypes
+    ntypes = max([map_ntypes, data_ntypes])
+
+    neistat = NeighborStat(ntypes, rcut, one_type=one_type)
+
+    min_nbor_dist, max_nbor_size = neistat.get_stat(train_data)
 
     # moved from traier.py as duplicated
     # TODO: this is a simple fix but we should have a clear

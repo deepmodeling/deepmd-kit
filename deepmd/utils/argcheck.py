@@ -592,7 +592,7 @@ def loss_args():
 
 def loss_dict_args():
     doc_loss_dict = 'The dictionary of definitions of multiple loss functions in multi-task mode. ' \
-                    'Each loss_dict[fitting_key], with user-defined name `fitting_key` in `model/fitting_net_dict`, is the single definition of loss function, whose type should be set to `tensor`, `ener` or left unset.\n\.'
+                    'Each loss_dict[fitting_key], with user-defined name `fitting_key` in `model/fitting_net_dict`, is the single definition of loss function, whose type should be set to `tensor`, `ener` or left unset.\n'
     ca = Argument('loss_dict', dict, [], [],
                   optional = True,
                   doc = doc_loss_dict)
@@ -783,6 +783,14 @@ def gen_json(**kwargs):
         training_args(),
         nvnmd_args(),
     ), cls=ArgumentEncoder)
+
+def gen_args(**kwargs):
+    return [model_args(),
+            learning_rate_args(),
+            loss_args(),
+            loss_dict_args(),
+            training_args(),
+            nvnmd_args()]
 
 def normalize_hybrid_list(hy_list):
     new_list = []
