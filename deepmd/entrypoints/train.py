@@ -208,10 +208,11 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
 
 
 def get_data(jdata: Dict[str, Any], rcut, type_map, modifier, multi_task_mode=False):
-    systems = j_must_have(jdata, "systems").copy()
+    systems = j_must_have(jdata, "systems")
     if isinstance(systems, str):
         systems = expand_sys_str(systems)
     help_msg = 'Please check your setting for data systems'
+    systems = systems.copy()
     # check length of systems
     if len(systems) == 0:
         msg = 'cannot find valid a data system'
