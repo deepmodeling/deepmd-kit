@@ -539,7 +539,7 @@ namespace deepmd
                 std::vector<double> energy_flat(numb_models);
                 std::vector<VALUETYPE> force_flat(numb_models * natoms * 3);
                 std::vector<VALUETYPE> virial_flat(numb_models * 9);
-                VALUETYPE *ener_ = &energy_flat[0];
+                double *ener_ = &energy_flat[0];
                 VALUETYPE *force_ = &force_flat[0];
                 VALUETYPE *virial_ = &virial_flat[0];
 
