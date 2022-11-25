@@ -19,10 +19,11 @@ It is neccessary to check them carefully to avoid inconsistent data.
 ### SCF coverage and data accuracy
 
 The accuracy of models will not exceed the accuracy of training data, so the training data should reach enough accuracy.
-On one hand, SCF should converge to a suitable threshold for all points in the training data.
-Sometimes, QM software may generate unstable outliers, which should be removed.
-On the other hand, the data should be extracted with enough digits and stored with the proper precision.
-Large energies may have low precision when they are stored as the single-precision floating-point format (FP32).
+Here is a checklist for the accuracy of data:
+- SCF should converge to a suitable threshold for all points in the training data.
+- The convergence of the energy, force and virial with respect to the energy cutoff and k-spacing sample is checked. 
+- Sometimes, QM software may generate unstable outliers, which should be removed.
+- The data should be extracted with enough digits and stored with the proper precision. Large energies may have low precision when they are stored as the single-precision floating-point format (FP32).
 
 ### Enough data
 
