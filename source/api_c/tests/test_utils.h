@@ -1,4 +1,5 @@
 #pragma once
+#include <gtest/gtest.h>
 #include <cmath>
 #include "coord.h"
 #include "neighbor_list.h"
