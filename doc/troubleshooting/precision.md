@@ -35,7 +35,8 @@ If the model deviation of these data is high for some data, try to collect more 
 
 One should be aware that the errors of some data is also affected by the absolute values of this data.
 Stable structures tend to be more precise than unstable structures because unstable structures may have larger forces.
-This is the expected behavior and does not mean that the precision of the model is low.
+Also, errors will be introduced in the Projector augmented wave (PAW) DFT calculations when the atoms are very close due to the overlap of pseudo-potentials.
+It is expected to see that data with large forces has larger errors and it is better to compare different models only with the same data.
 
 ## Model
 
