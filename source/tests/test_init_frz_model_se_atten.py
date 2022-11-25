@@ -2,7 +2,7 @@ import os, sys, platform, shutil, dpdata, json
 import numpy as np
 import unittest
 import subprocess as sp
-from common import j_loader, tests_path
+from common import j_loader, tests_path, run_dp
 from deepmd.train.trainer import DPTrainer
 from deepmd.train.run_options import RunOptions
 from deepmd.utils.argcheck import normalize
@@ -51,9 +51,9 @@ def _init_models():
     jdata['model']["descriptor"]['sel'] = 120
     with open(INPUT, "w") as fp:
         json.dump(jdata, fp, indent=4)
-    ret = _subprocess_run("dp train " + INPUT)
+    ret = run_dp("dp train " + INPUT)
     np.testing.assert_equal(ret, 0, 'DP train failed!')
-    ret = _subprocess_run("dp freeze -c " + str(tests_path) + " -o " + frozen_model)
+    ret = run_dp("dp freeze -c " + str(tests_path) + " -o " + frozen_model)
     np.testing.assert_equal(ret, 0, 'DP freeze failed!')
 
     jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from deepmd import __version__
+from deepmd.common import clear_session
 from deepmd.entrypoints import (
     compress,
     config,
@@ -548,15 +549,24 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
     return parsed_args
 
 
-def main():
+def main(args: Optional[List[str]] = None):
     """DeePMD-Kit entry point.
+
+    Parameters
+    ----------
+    args: List[str], optional
+        list of command line arguments, used to avoid calling from the subprocess,
+        as it is quite slow to import tensorflow
 
     Raises
     ------
     RuntimeError
         if no command was input
     """
-    args = parse_args()
+    if args is not None:
+        clear_session()
+
+    args = parse_args(args=args)
 
     # do not set log handles for None, it is useless
     # log handles for train will be set separatelly
@@ -592,3 +602,6 @@ def main():
         pass
     else:
         raise RuntimeError(f"unknown command {args.command}")
+
+    if args is not None:
+        clear_session()

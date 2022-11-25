@@ -61,7 +61,7 @@ class TypeEmbedNet():
             Number of neurons in each hidden layers of the embedding net
     resnet_dt
             Time-step `dt` in the resnet construction:
-            y = x + dt * \phi (Wx + b)
+            y = x + dt * \\phi (Wx + b)
     activation_function
             The activation function in the embedding net. Supported options are |ACTIVATION_FN|
     precision

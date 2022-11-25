@@ -24,7 +24,7 @@ class DipoleFittingSeA (Fitting) :
             Number of neurons in each hidden layer of the fitting net
     resnet_dt : bool
             Time-step `dt` in the resnet construction:
-            y = x + dt * \phi (Wx + b)
+            y = x + dt * \\phi (Wx + b)
     sel_type : List[int]
             The atom types selected to have an atomic dipole prediction. If is None, all atoms are selected.
     seed : int

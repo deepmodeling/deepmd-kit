@@ -113,7 +113,7 @@ class PolarFittingSeA (Fitting) :
             Number of neurons in each hidden layer of the fitting net
     resnet_dt : bool
             Time-step `dt` in the resnet construction:
-            y = x + dt * \phi (Wx + b)
+            y = x + dt * \\phi (Wx + b)
     sel_type : List[int]
             The atom types selected to have an atomic polarizability prediction. If is None, all atoms are selected.
     fit_diag : bool
@@ -417,7 +417,7 @@ class GlobalPolarFittingSeA () :
             Number of neurons in each hidden layer of the fitting net
     resnet_dt : bool
             Time-step `dt` in the resnet construction:
-            y = x + dt * \phi (Wx + b)
+            y = x + dt * \\phi (Wx + b)
     sel_type : List[int]
             The atom types selected to have an atomic polarizability prediction
     fit_diag : bool

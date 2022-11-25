@@ -697,21 +697,20 @@ compute (ENERGYTYPE &			dener,
   int nloc_real = nall_real - nghost_real;
   dcoord.resize(nall_real * 3);
   datype.resize(nall_real);
-  datom_energy.resize(nall_real);
   // fwd map
   select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3);
   select_map<int>(datype, datype_, fwd_map, 1);
-  select_map<VALUETYPE>(datom_energy, datom_energy_, fwd_map, 1);
   // aparam
   if (daparam > 0){
     aparam.resize(nloc_real);
     select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam);
   }
     if (ago == 0) {
-    atommap = AtomMap (datype.begin(), datype.begin() + nloc_real);
+    atommap = deepmd::AtomMap (datype.begin(), datype.begin() + nloc_real);
     assert (nloc_real == atommap.get_type().size());
 
         nlist_data.copy_from_nlist(lmp_list);
+        nlist_data.shuffle_exclude_empty(fwd_map);
         nlist_data.shuffle(atommap);
 	nlist_data.make_inlist(nlist);
     }

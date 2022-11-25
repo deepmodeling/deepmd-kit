@@ -1,4 +1,4 @@
-# new in 3.16: GET_RUNTIME_DEPENDENCIES
+# new in 3.16: GET_RUNTIME_DEPENDENCIES, target_precompile_headers
 cmake_minimum_required(VERSION 3.16)
 project(DeePMD)
 
