@@ -273,77 +273,6 @@ class PolarFittingSeA (Fitting) :
             for itype in range(len(self.sel_type)):
                 self.constant_matrix[self.sel_type[itype]] = np.mean(np.diagonal(atom_polar[itype].reshape((3,3))))
 
-    def _build_lower(self,
-                     start_index,
-                     natoms,
-                     inputs,
-                     rot_mat,
-                     suffix='',
-                     reuse=None):
-        # cut-out inputs
-        inputs_i = tf.slice(inputs,
-                            [0, start_index * self.dim_descrpt],
-                            [-1, natoms * self.dim_descrpt])
-        inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
-        rot_mat_i = tf.slice(rot_mat,
-                             [0, start_index * self.dim_rot_mat],
-                             [-1, natoms * self.dim_rot_mat])
-        rot_mat_i = tf.reshape(rot_mat_i, [-1, self.dim_rot_mat_1, 3])
-        layer = inputs_i
-        for ii in range(0, len(self.n_neuron)):
-            if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii - 1]:
-                layer += one_layer(layer, self.n_neuron[ii], name='layer_' + str(ii) + suffix,
-                                   reuse=reuse, seed=self.seed, use_timestep=self.resnet_dt,
-                                   activation_fn=self.fitting_activation_fn, precision=self.fitting_precision,
-                                   uniform_seed=self.uniform_seed, initial_variables=self.fitting_net_variables,
-                                   mixed_prec=self.mixed_prec)
-            else:
-                layer = one_layer(layer, self.n_neuron[ii], name='layer_' + str(ii) + suffix,
-                                  reuse=reuse, seed=self.seed, activation_fn=self.fitting_activation_fn,
-                                  precision=self.fitting_precision, uniform_seed=self.uniform_seed,
-                                  initial_variables=self.fitting_net_variables, mixed_prec=self.mixed_prec)
-            if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
-        if self.fit_diag:
-            bavg = np.zeros(self.dim_rot_mat_1)
-            # bavg[0] = self.avgeig[0]
-            # bavg[1] = self.avgeig[1]
-            # bavg[2] = self.avgeig[2]
-            # (nframes x natoms) x naxis
-            final_layer = one_layer(layer, self.dim_rot_mat_1, activation_fn=None,
-                                    name='final_layer' + suffix, reuse=reuse, seed=self.seed,
-                                    bavg=bavg, precision=self.fitting_precision, uniform_seed=self.uniform_seed,
-                                    initial_variables=self.fitting_net_variables, mixed_prec=self.mixed_prec,
-                                    final_layer=True)
-            if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
-            # (nframes x natoms) x naxis
-            final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms, self.dim_rot_mat_1])
-            # (nframes x natoms) x naxis x naxis
-            final_layer = tf.matrix_diag(final_layer)
-        else:
-            bavg = np.zeros(self.dim_rot_mat_1 * self.dim_rot_mat_1)
-            # bavg[0*self.dim_rot_mat_1+0] = self.avgeig[0]
-            # bavg[1*self.dim_rot_mat_1+1] = self.avgeig[1]
-            # bavg[2*self.dim_rot_mat_1+2] = self.avgeig[2]
-            # (nframes x natoms) x (naxis x naxis)
-            final_layer = one_layer(layer, self.dim_rot_mat_1 * self.dim_rot_mat_1, activation_fn=None,
-                                    name='final_layer' + suffix, reuse=reuse, seed=self.seed,
-                                    bavg=bavg, precision=self.fitting_precision, uniform_seed=self.uniform_seed,
-                                    initial_variables=self.fitting_net_variables, mixed_prec=self.mixed_prec,
-                                    final_layer=True)
-            if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
-            # (nframes x natoms) x naxis x naxis
-            final_layer = tf.reshape(final_layer,
-                                     [tf.shape(inputs)[0] * natoms, self.dim_rot_mat_1, self.dim_rot_mat_1])
-            # (nframes x natoms) x naxis x naxis
-            final_layer = final_layer + tf.transpose(final_layer, perm=[0, 2, 1])
-        # (nframes x natoms) x naxis x 3(coord)
-        final_layer = tf.matmul(final_layer, rot_mat_i)
-        # (nframes x natoms) x 3(coord) x 3(coord)
-        final_layer = tf.matmul(rot_mat_i, final_layer, transpose_a=True)
-        # nframes x natoms x 3 x 3
-        final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms, 3, 3])
-        return final_layer
-
     @cast_precision
     def build (self, 
                input_d : tf.Tensor,
@@ -401,7 +330,6 @@ class PolarFittingSeA (Fitting) :
             atype_nall = tf.reshape(atype, [-1, natoms[1]])
             # (nframes x nloc_masked)
             self.atype_nloc_masked = tf.reshape(tf.slice(atype_nall, [0, 0], [-1, natoms[0]])[nloc_mask], [-1])  ## lammps will make error
-            self.nloc_masked = tf.shape(tf.reshape(self.atype_nloc_masked, [nframes, -1]))[1]
             atype_embed = tf.nn.embedding_lookup(type_embedding, self.atype_nloc_masked)
         else:
             atype_embed = None
@@ -412,12 +340,55 @@ class PolarFittingSeA (Fitting) :
             count = 0
             outs_list = []
             for type_i in range(self.ntypes):
-                if type_i not in self.sel_type:
-                    start_index += natoms[2+type_i]
+                # cut-out inputs
+                inputs_i = tf.slice (inputs,
+                                     [ 0, start_index*      self.dim_descrpt],
+                                     [-1, natoms[2+type_i]* self.dim_descrpt] )
+                inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
+                rot_mat_i = tf.slice (rot_mat,
+                                      [ 0, start_index*      self.dim_rot_mat],
+                                      [-1, natoms[2+type_i]* self.dim_rot_mat] )
+                rot_mat_i = tf.reshape(rot_mat_i, [-1, self.dim_rot_mat_1, 3])
+                start_index += natoms[2+type_i]
+                if not type_i in self.sel_type :
                     continue
-                final_layer = self._build_lower(
-                    start_index, natoms[2+type_i],
-                    inputs, rot_mat, suffix='_type_'+str(type_i)+suffix, reuse=reuse)
+                layer = inputs_i
+                for ii in range(0,len(self.n_neuron)) :
+                    if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
+                        layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, uniform_seed = self.uniform_seed, initial_variables = self.fitting_net_variables, mixed_prec = self.mixed_prec)
+                    else :
+                        layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, uniform_seed = self.uniform_seed, initial_variables = self.fitting_net_variables, mixed_prec = self.mixed_prec)
+                    if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
+                if self.fit_diag :
+                    bavg = np.zeros(self.dim_rot_mat_1)
+                    # bavg[0] = self.avgeig[0]
+                    # bavg[1] = self.avgeig[1]
+                    # bavg[2] = self.avgeig[2]
+                    # (nframes x natoms) x naxis
+                    final_layer = one_layer(layer, self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, bavg = bavg, precision = self.fitting_precision, uniform_seed = self.uniform_seed, initial_variables = self.fitting_net_variables, mixed_prec = self.mixed_prec, final_layer = True)
+                    if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
+                    # (nframes x natoms) x naxis
+                    final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], self.dim_rot_mat_1])
+                    # (nframes x natoms) x naxis x naxis
+                    final_layer = tf.matrix_diag(final_layer)
+                else :
+                    bavg = np.zeros(self.dim_rot_mat_1*self.dim_rot_mat_1)
+                    # bavg[0*self.dim_rot_mat_1+0] = self.avgeig[0]
+                    # bavg[1*self.dim_rot_mat_1+1] = self.avgeig[1]
+                    # bavg[2*self.dim_rot_mat_1+2] = self.avgeig[2]
+                    # (nframes x natoms) x (naxis x naxis)
+                    final_layer = one_layer(layer, self.dim_rot_mat_1*self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, bavg = bavg, precision = self.fitting_precision, uniform_seed = self.uniform_seed, initial_variables = self.fitting_net_variables, mixed_prec = self.mixed_prec, final_layer = True)
+                    if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
+                    # (nframes x natoms) x naxis x naxis
+                    final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], self.dim_rot_mat_1, self.dim_rot_mat_1])
+                    # (nframes x natoms) x naxis x naxis
+                    final_layer = final_layer + tf.transpose(final_layer, perm = [0,2,1])
+                # (nframes x natoms) x naxis x 3(coord)
+                final_layer = tf.matmul(final_layer, rot_mat_i)
+                # (nframes x natoms) x 3(coord) x 3(coord)
+                final_layer = tf.matmul(rot_mat_i, final_layer, transpose_a = True)
+                # nframes x natoms x 3 x 3
+                final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i], 3, 3])
                 # shift and scale
                 sel_type_idx = self.sel_type.index(type_i)
                 final_layer = final_layer * self.scale[sel_type_idx]
@@ -430,16 +401,67 @@ class PolarFittingSeA (Fitting) :
         else:
             inputs = tf.reshape(tf.reshape(inputs, [nframes, natoms[0], self.dim_descrpt])[nloc_mask],
                                 [-1, self.dim_descrpt])
-            rot_mat = tf.reshape(tf.reshape(rot_mat, [nframes, natoms[0], self.dim_rot_mat])[nloc_mask],
-                                 [-1, self.dim_rot_mat * self.nloc_masked])
+            rot_mat = tf.reshape(tf.reshape(rot_mat, [nframes, natoms[0], self.dim_rot_mat_1 * 3])[nloc_mask],
+                                 [-1, self.dim_rot_mat_1, 3])
             atype_embed = tf.cast(atype_embed, self.fitting_precision)
             type_shape = atype_embed.get_shape().as_list()
             inputs = tf.concat([inputs, atype_embed], axis=1)
             self.dim_descrpt = self.dim_descrpt + type_shape[1]
-            inputs = tf.reshape(inputs, [-1, self.dim_descrpt * self.nloc_masked])
-            final_layer = self._build_lower(
-                0, self.nloc_masked,
-                inputs, rot_mat, suffix=suffix, reuse=reuse)
+
+            layer = tf.reshape(inputs, [-1, self.dim_descrpt])
+            for ii in range(0, len(self.n_neuron)):
+                if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii - 1]:
+                    layer += one_layer(layer, self.n_neuron[ii],
+                                       name='layer_' + str(ii) + suffix, reuse=reuse,
+                                       seed=self.seed, use_timestep=self.resnet_dt,
+                                       activation_fn=self.fitting_activation_fn, precision=self.fitting_precision,
+                                       uniform_seed=self.uniform_seed, initial_variables=self.fitting_net_variables,
+                                       mixed_prec=self.mixed_prec)
+                else:
+                    layer = one_layer(layer, self.n_neuron[ii],
+                                      name='layer_' + str(ii) + suffix, reuse=reuse,
+                                      seed=self.seed, activation_fn=self.fitting_activation_fn,
+                                      precision=self.fitting_precision, uniform_seed=self.uniform_seed,
+                                      initial_variables=self.fitting_net_variables, mixed_prec=self.mixed_prec)
+                if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
+            if self.fit_diag:
+                bavg = np.zeros(self.dim_rot_mat_1)
+                # bavg[0] = self.avgeig[0]
+                # bavg[1] = self.avgeig[1]
+                # bavg[2] = self.avgeig[2]
+                # (nframes x natoms) x naxis
+                final_layer = one_layer(layer, self.dim_rot_mat_1, activation_fn=None,
+                                        name='final_layer' + suffix, reuse=reuse, seed=self.seed,
+                                        bavg=bavg, precision=self.fitting_precision, uniform_seed=self.uniform_seed,
+                                        initial_variables=self.fitting_net_variables, mixed_prec=self.mixed_prec,
+                                        final_layer=True)
+                if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
+                # (nframes x natoms) x naxis
+                final_layer = tf.reshape(final_layer, [-1, self.dim_rot_mat_1])
+                # (nframes x natoms) x naxis x naxis
+                final_layer = tf.matrix_diag(final_layer)
+            else:
+                bavg = np.zeros(self.dim_rot_mat_1 * self.dim_rot_mat_1)
+                # bavg[0*self.dim_rot_mat_1+0] = self.avgeig[0]
+                # bavg[1*self.dim_rot_mat_1+1] = self.avgeig[1]
+                # bavg[2*self.dim_rot_mat_1+2] = self.avgeig[2]
+                # (nframes x natoms) x (naxis x naxis)
+                final_layer = one_layer(layer, self.dim_rot_mat_1 * self.dim_rot_mat_1, activation_fn=None,
+                                        name='final_layer' + suffix, reuse=reuse, seed=self.seed,
+                                        bavg=bavg, precision=self.fitting_precision, uniform_seed=self.uniform_seed,
+                                        initial_variables=self.fitting_net_variables, mixed_prec=self.mixed_prec,
+                                        final_layer=True)
+                if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
+                # (nframes x natoms) x naxis x naxis
+                final_layer = tf.reshape(final_layer, [-1, self.dim_rot_mat_1, self.dim_rot_mat_1])
+                # (nframes x natoms) x naxis x naxis
+                final_layer = final_layer + tf.transpose(final_layer, perm=[0, 2, 1])
+                # (nframes x natoms) x naxis x 3(coord)
+            final_layer = tf.matmul(final_layer, rot_mat)
+            # (nframes x natoms) x 3(coord) x 3(coord)
+            final_layer = tf.matmul(rot_mat, final_layer, transpose_a=True)
+            # nframes x natoms x 3 x 3
+            final_layer = tf.reshape(final_layer, [nframes, -1, 3, 3])
             # shift and scale
             final_layer *= tf.expand_dims(tf.expand_dims(scale, -1), -1)
             if self.shift_diag:
