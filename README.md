@@ -153,7 +153,7 @@ The code is organized as follows:
 - [How to set sel?](doc/troubleshooting/howtoset_sel.md)
 - [How to control the parallelism of a job?](doc/troubleshooting/howtoset_num_nodes.md)
 - [How to tune Fitting/embedding-net size?](doc/troubleshooting/howtoset_netsize.md)
-
+- [Why does a model have low precision?](doc/troubleshooting/precision.md)
 
 # Contributing
 

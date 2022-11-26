@@ -5,6 +5,7 @@ file(GLOB TEST_SRC test_*.cc)
 
 add_executable( runUnitTests_cc ${TEST_SRC} )
 target_link_libraries(runUnitTests_cc GTest::gtest_main ${LIB_DEEPMD_CC} rt coverage_config)
+target_precompile_headers(runUnitTests_cc PRIVATE test_utils.h)
 add_test( runUnitTest_cc runUnitTests_cc )
 set_target_properties(
   runUnitTests_cc
