@@ -80,7 +80,7 @@ setup(
             "numpydoc",
             "ase",
             "deepmodeling-sphinx>=0.1.0",
-            "dargs>=0.3.1",
+            "dargs>=0.3.4",
             "sphinx-argparse",
             "pygments-lammps",
             ],
