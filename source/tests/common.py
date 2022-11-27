@@ -2,7 +2,7 @@ import os, sys, dpdata, shutil
 import numpy as np
 import pathlib
 import collections
-from glob import glob
+import glob
 
 from deepmd.env import tf
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
