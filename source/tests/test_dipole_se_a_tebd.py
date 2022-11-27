@@ -4,7 +4,7 @@ from deepmd.env import tf
 from common import Data, gen_data, j_loader
 from common import finite_difference, strerch_box
 
-from deepmd.utils.data_system import DataSystem
+from common import DataSystem
 from deepmd.descriptor import DescrptSeA
 from deepmd.fit import DipoleFittingSeA
 from deepmd.utils.type_embed import TypeEmbedNet
