@@ -532,3 +532,20 @@ class DeepmdDataSystem() :
             tmp_prob = [float(i) for i in nbatch_block] / np.sum(nbatch_block)
             sys_probs[block_stt[ii]:block_end[ii]] = tmp_prob * block_probs[ii]
         return sys_probs
+
+
+# some tests still use this class
+class DataSystem (DeepmdDataSystem) :
+    """
+    Outdated class for the data systems.
+    .. deprecated:: 2.0.0
+        This class is not maintained any more.  
+    """
+    def __init__ (self,
+                  systems,
+                  set_prefix,
+                  batch_size,
+                  test_size,
+                  rcut, 
+                  run_opt = None) : 
+        super().__init__(systems, batch_size, test_size, rcut, set_prefix=set_prefix)
