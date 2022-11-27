@@ -1,6 +1,6 @@
 import numpy as np
 from deepmd.env import tf
-from deepmd.common import ClassArg, add_data_requirement
+from deepmd.common import add_data_requirement
 
 from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import global_cvt_2_ener_float
@@ -134,64 +134,3 @@ class TensorLoss(Loss) :
         if self.global_weight > 0.0:
             results["rmse_gl"] = np.sqrt(error_gl) / atoms
         return results
-
-    def print_header(self):  # depreciated
-        prop_fmt = '   %11s %11s'
-        print_str = ''
-        print_str += prop_fmt % ('rmse_tst', 'rmse_trn')
-        if self.local_weight > 0.0:
-            print_str += prop_fmt % ('rmse_lc_tst', 'rmse_lc_trn')
-        if self.global_weight > 0.0:
-            print_str += prop_fmt % ('rmse_gl_tst', 'rmse_gl_trn')
-        return print_str
-
-    def print_on_training(self, 
-                          tb_writer,
-                          cur_batch,
-                          sess, 
-                          natoms,
-                          feed_dict_test,
-                          feed_dict_batch) :  # depreciated
-
-        # YHT: added to calculate the atoms number
-        atoms = 0
-        if self.type_sel is not None:
-            for w in self.type_sel:
-                atoms += natoms[2+w]                   
-        else:
-            atoms = natoms[0]
-
-        run_data = [self.l2_l, self.l2_more['local_loss'], self.l2_more['global_loss']]
-        summary_list = [self.l2_loss_summary]
-        if self.local_weight > 0.0:
-            summary_list.append(self.l2_loss_local_summary)
-        if self.global_weight > 0.0:
-            summary_list.append(self.l2_loss_global_summary)
-
-        # first train data
-        error_train = run_sess(sess, run_data, feed_dict=feed_dict_batch)
-
-        # than test data, if tensorboard log writter is present, commpute summary
-        # and write tensorboard logs
-        if tb_writer:
-            #summary_merged_op = tf.summary.merge([self.l2_loss_summary])
-            summary_merged_op = tf.summary.merge(summary_list)
-            run_data.insert(0, summary_merged_op)
-
-        test_out = run_sess(sess, run_data, feed_dict=feed_dict_test)
-
-        if tb_writer:
-            summary = test_out.pop(0)
-            tb_writer.add_summary(summary, cur_batch)
-
-        error_test = test_out  
-        
-        print_str = ""
-        prop_fmt = "   %11.2e %11.2e"
-        print_str += prop_fmt % (np.sqrt(error_test[0]), np.sqrt(error_train[0]))
-        if self.local_weight > 0.0:
-            print_str += prop_fmt % (np.sqrt(error_test[1]), np.sqrt(error_train[1]) )
-        if self.global_weight > 0.0:
-            print_str += prop_fmt % (np.sqrt(error_test[2])/atoms, np.sqrt(error_train[2])/atoms)
-
-        return print_str

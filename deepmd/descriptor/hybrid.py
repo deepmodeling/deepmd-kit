@@ -2,7 +2,6 @@ import numpy as np
 from typing import Tuple, List
 
 from deepmd.env import tf
-from deepmd.common import ClassArg
 from deepmd.env import op_module
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
@@ -51,10 +50,6 @@ class DescrptHybrid (Descriptor):
                 formatted_descript_list.append(Descriptor(**ii))
             else:
                 raise NotImplementedError
-        # args = ClassArg()\
-        #        .add('list', list, must = True)
-        # class_data = args.parse(jdata)
-        # dict_list = class_data['list']
         self.descrpt_list = formatted_descript_list
         self.numb_descrpt = len(self.descrpt_list)
         for ii in range(1, self.numb_descrpt):

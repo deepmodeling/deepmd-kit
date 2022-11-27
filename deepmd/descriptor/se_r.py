@@ -70,20 +70,6 @@ class DescrptSeR (DescrptSe):
         """
         Constructor
         """
-        # args = ClassArg()\
-        #        .add('sel',      list,   must = True) \
-        #        .add('rcut',     float,  default = 6.0) \
-        #        .add('rcut_smth',float,  default = 0.5) \
-        #        .add('neuron',   list,   default = [10, 20, 40]) \
-        #        .add('resnet_dt',bool,   default = False) \
-        #        .add('trainable',bool,   default = True) \
-        #        .add('seed',     int) \
-        #        .add('type_one_side', bool, default = False) \
-        #        .add('exclude_types', list, default = []) \
-        #        .add('set_davg_zero', bool, default = False) \
-        #        .add("activation_function", str, default = "tanh") \
-        #        .add("precision",           str, default = "default")
-        # class_data = args.parse(jdata)
         if rcut < rcut_smth:
             raise RuntimeError("rcut_smth (%f) should be no more than rcut (%f)!" % (rcut_smth, rcut))
         self.sel_r = sel

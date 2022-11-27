@@ -2,7 +2,7 @@ import numpy as np
 from typing import Tuple, List
 
 from deepmd.env import tf
-from deepmd.common import ClassArg, get_activation_func, get_precision, add_data_requirement
+from deepmd.common import get_activation_func, get_precision, add_data_requirement
 from deepmd.utils.network import one_layer
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
@@ -75,12 +75,6 @@ class DescrptSeAEbd (DescrptSeA):
         """
         Constructor
         """
-        # args = ClassArg()\
-        #        .add('type_nchanl',      int,    default = 4) \
-        #        .add('type_nlayer',      int,    default = 2) \
-        #        .add('type_one_side',    bool,   default = True) \
-        #        .add('numb_aparam',      int,    default = 0)
-        # class_data = args.parse(jdata)
         DescrptSeA.__init__(self, 
                             rcut,
                             rcut_smth,

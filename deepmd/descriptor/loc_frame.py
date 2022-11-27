@@ -46,12 +46,6 @@ class DescrptLocFrame (Descriptor) :
         """
         Constructor    
         """
-        # args = ClassArg()\
-        #        .add('sel_a',    list,   must = True) \
-        #        .add('sel_r',    list,   must = True) \
-        #        .add('rcut',     float,  default = 6.0) \
-        #        .add('axis_rule',list,   must = True)
-        # class_data = args.parse(jdata)
         self.sel_a = sel_a
         self.sel_r = sel_r
         self.axis_rule = axis_rule

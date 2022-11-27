@@ -2,7 +2,6 @@ import numpy as np
 from typing import Tuple, List
 
 from deepmd.env import tf
-from deepmd.common import ClassArg
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION

@@ -5,7 +5,6 @@ from deepmd.env import tf
 from deepmd.utils.pair_tab import PairTab
 from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph
 from deepmd.utils.errors import GraphWithoutTensorError
-from deepmd.common import ClassArg
 from deepmd.env import global_cvt_2_ener_float, MODEL_VERSION, GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import op_module
 from .model import Model

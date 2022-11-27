@@ -14,93 +14,6 @@ from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 
 
-class PolarFittingLocFrame () :
-    """
-    Fitting polarizability with local frame descriptor.
-
-    .. deprecated:: 2.0.0
-        This class is not supported any more.
-    """
-    def __init__ (self, jdata, descrpt) :
-        if not isinstance(descrpt, DescrptLocFrame) :
-            raise RuntimeError('PolarFittingLocFrame only supports DescrptLocFrame')
-        self.ntypes = descrpt.get_ntypes()
-        self.dim_descrpt = descrpt.get_dim_out()
-        args = ClassArg()\
-               .add('neuron',           list, default = [120,120,120], alias = 'n_neuron')\
-               .add('resnet_dt',        bool, default = True)\
-               .add('sel_type',         [list,int], default = [ii for ii in range(self.ntypes)], alias = 'pol_type')\
-               .add('seed',             int)\
-               .add("activation_function", str, default = "tanh")\
-               .add('precision',           str,    default = "default")    
-        class_data = args.parse(jdata)
-        self.n_neuron = class_data['neuron']
-        self.resnet_dt = class_data['resnet_dt']
-        self.sel_type = class_data['sel_type']
-        self.seed = class_data['seed']
-        self.fitting_activation_fn = get_activation_func(class_data["activation_function"])
-        self.fitting_precision = get_precision(class_data['precision'])
-        self.useBN = False
-
-    def get_sel_type(self):
-        return self.sel_type
-
-    def get_out_size(self):
-        return 9
-
-    def build (self, 
-               input_d,
-               rot_mat,
-               natoms,
-               reuse = None,
-               suffix = '') :
-        start_index = 0
-        inputs = tf.cast(tf.reshape(input_d, [-1, natoms[0], self.dim_descrpt]), self.fitting_precision)
-        rot_mat = tf.reshape(rot_mat, [-1, 9 * natoms[0]])
-
-        count = 0
-        outs_list = []
-        for type_i in range(self.ntypes):
-            # cut-out inputs
-            inputs_i = tf.slice (inputs,
-                                 [ 0, start_index, 0],
-                                 [-1, natoms[2+type_i], -1] )
-            inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
-            rot_mat_i = tf.slice (rot_mat,
-                                  [ 0, start_index*      9],
-                                  [-1, natoms[2+type_i]* 9] )
-            rot_mat_i = tf.reshape(rot_mat_i, [-1, 3, 3])
-            start_index += natoms[2+type_i]
-            if not type_i in self.sel_type :
-                continue
-            layer = inputs_i
-            for ii in range(0,len(self.n_neuron)) :
-                if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
-                    layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision)
-                else :
-                    layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision)
-            # (nframes x natoms) x 9
-            final_layer = one_layer(layer, 9, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, precision = self.fitting_precision, final_layer = True)
-            # (nframes x natoms) x 3 x 3
-            final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], 3, 3])
-            # (nframes x natoms) x 3 x 3
-            final_layer = final_layer + tf.transpose(final_layer, perm = [0,2,1])
-            # (nframes x natoms) x 3 x 3(coord)
-            final_layer = tf.matmul(final_layer, rot_mat_i)
-            # (nframes x natoms) x 3(coord) x 3(coord)
-            final_layer = tf.matmul(rot_mat_i, final_layer, transpose_a = True)
-            # nframes x natoms x 3 x 3
-            final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i], 3, 3])
-
-            # concat the results
-            outs_list.append(final_layer)
-            count += 1
-        outs = tf.concat(outs_list, axis = 1)
-
-        tf.summary.histogram('fitting_net_output', outs)
-        return tf.cast(tf.reshape(outs, [-1]),  self.fitting_precision)
-
-
 class PolarFittingSeA (Fitting) :
     """
     Fit the atomic polarizability with descriptor se_a
@@ -150,17 +63,6 @@ class PolarFittingSeA (Fitting) :
         """
         self.ntypes = descrpt.get_ntypes()
         self.dim_descrpt = descrpt.get_dim_out()
-        # args = ClassArg()\
-        #        .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\
-        #        .add('resnet_dt',        bool,   default = True)\
-        #        .add('fit_diag',         bool,   default = True)\
-        #        .add('diag_shift',       [list,float], default = [0.0 for ii in range(self.ntypes)])\
-        #        .add('scale',            [list,float], default = [1.0 for ii in range(self.ntypes)])\
-        #        .add('sel_type',         [list,int],   default = [ii for ii in range(self.ntypes)], alias = 'pol_type')\
-        #        .add('seed',             int)\
-        #        .add("activation_function", str ,   default = "tanh")\
-        #        .add('precision',           str,    default = "default")
-        # class_data = args.parse(jdata)
         self.n_neuron = neuron
         self.resnet_dt = resnet_dt
         self.sel_type = sel_type
