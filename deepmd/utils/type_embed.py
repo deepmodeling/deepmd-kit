@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Tuple, List, Union
+from typing import Optional, Tuple, List, Union
 
 from deepmd.env import tf
 from deepmd.utils.network import one_layer
@@ -82,7 +82,7 @@ class TypeEmbedNet():
             activation_function: Union[str, None] = 'tanh',
             precision: str = 'default',
             trainable: bool = True,
-            seed: int = None,
+            seed: Optional[int] = None,
             uniform_seed: bool = False,
             padding: bool = False,
     )->None:

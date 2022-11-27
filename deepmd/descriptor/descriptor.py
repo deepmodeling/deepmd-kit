@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Tuple
+from typing import Optional, Any, Dict, List, Tuple
 
 import numpy as np
 from deepmd.env import tf
@@ -185,7 +185,7 @@ class Descriptor(PluginVariant):
               box_: tf.Tensor,
               mesh: tf.Tensor,
               input_dict: Dict[str, Any],
-              reuse: bool = None,
+              reuse: Optional[bool] = None,
               suffix: str = '',
               ) -> tf.Tensor:
         """
@@ -262,7 +262,7 @@ class Descriptor(PluginVariant):
         raise NotImplementedError(
             "Descriptor %s doesn't support compression!" % type(self).__name__)
 
-    def enable_mixed_precision(self, mixed_prec: dict = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
         """
         Reveive the mixed precision setting.
 

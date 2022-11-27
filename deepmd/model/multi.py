@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Tuple, List
+from typing import Optional, Tuple, List
 
 from deepmd.env import tf
 from deepmd.utils.pair_tab import PairTab
@@ -47,13 +47,13 @@ class MultiModel(Model):
             fitting_dict,
             fitting_type_dict,
             typeebd=None,
-            type_map: List[str] = None,
+            type_map: Optional[List[str]] = None,
             data_stat_nbatch: int = 10,
             data_stat_protect: float = 1e-2,
-            use_srtab: str = None,  # all the ener fitting will do this
-            smin_alpha: float = None,
-            sw_rmin: float = None,
-            sw_rmax: float = None
+            use_srtab: Optional[str] = None,  # all the ener fitting will do this
+            smin_alpha: Optional[float] = None,
+            sw_rmin: Optional[float] = None,
+            sw_rmax: Optional[float] = None
     ) -> None:
         """
         Constructor

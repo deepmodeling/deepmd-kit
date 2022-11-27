@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Tuple, List
+from typing import Optional, Tuple, List
 
 from deepmd.env import tf
 from deepmd.common import ClassArg, get_activation_func, get_precision, add_data_requirement
@@ -62,7 +62,7 @@ class DescrptSeAEbd (DescrptSeA):
                   axis_neuron: int = 8,
                   resnet_dt: bool = False,
                   trainable: bool = True,
-                  seed: int = None,
+                  seed: Optional[int] = None,
                   type_one_side: bool = True,
                   type_nchanl : int = 2,
                   type_nlayer : int = 1,
