@@ -21,6 +21,10 @@ def get_gpus():
     Optional[List[int]]
         List of available GPU IDs. Otherwise, None.
     """
+    if (not tf.test.is_built_with_cuda() and 
+        not (hasattr(tf.test, 'is_built_with_rocm') and tf.test.is_built_with_rocm())):
+        # TF is built with CPU only, skip expensive subprocess call
+        return None
     test_cmd = 'from tensorflow.python.client import device_lib; ' \
                'devices = device_lib.list_local_devices(); ' \
                'gpus = [d.name for d in devices if d.device_type == "GPU"]; ' \

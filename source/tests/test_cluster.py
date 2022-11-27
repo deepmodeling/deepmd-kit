@@ -23,24 +23,36 @@ class FakePopen(object):
 
 class TestGPU(unittest.TestCase):
     @mock.patch('subprocess.Popen')
-    def test_none(self, mock_Popen):
+    @mock.patch('tf.test.is_built_with_cuda')
+    def test_none(self, mock_Popen, mock_is_built_with_cuda):
         mock_Popen.return_value.__enter__.return_value = FakePopen(b'0', b'')
+        mock_is_built_with_cuda.return_value = True
         gpus = local.get_gpus()
         self.assertIsNone(gpus)
 
     @mock.patch('subprocess.Popen')
-    def test_valid(self, mock_Popen):
+    @mock.patch('tf.test.is_built_with_cuda')
+    def test_valid(self, mock_Popen, mock_is_built_with_cuda):
         mock_Popen.return_value.__enter__.return_value = FakePopen(b'2', b'')
+        mock_is_built_with_cuda.return_value = True
         gpus = local.get_gpus()
         self.assertEqual(gpus, [0, 1])
 
     @mock.patch('subprocess.Popen')
-    def test_error(self, mock_Popen):
+    @mock.patch('tf.test.is_built_with_cuda')
+    def test_error(self, mock_Popen, mock_is_built_with_cuda):
         mock_Popen.return_value.__enter__.return_value = \
             FakePopen(stderr=b'!', returncode=1)
+        mock_is_built_with_cuda.return_value = True
         with self.assertRaises(RuntimeError) as cm:
             _ = local.get_gpus()
             self.assertIn('Failed to detect', str(cm.exception))
+
+    @mock.patch('tf.test.is_built_with_cuda')
+    def test_cpu(self, mock_is_built_with_cuda):
+        mock_is_built_with_cuda.return_value = False
+        gpus = local.get_gpus()
+        self.assertIsNone(gpus)
 
 
 class TestLocal(unittest.TestCase):
