@@ -1,6 +1,7 @@
 import unittest
 
 from deepmd.cluster import local, slurm
+from deepmd.env import tf
 from unittest import mock
 
 
@@ -23,7 +24,7 @@ class FakePopen(object):
 
 class TestGPU(unittest.TestCase):
     @mock.patch('subprocess.Popen')
-    @mock.patch('tf.test.is_built_with_cuda')
+    @mock.patch('tensorflow.compat.v1.test.is_built_with_cuda')
     def test_none(self, mock_Popen, mock_is_built_with_cuda):
         mock_Popen.return_value.__enter__.return_value = FakePopen(b'0', b'')
         mock_is_built_with_cuda.return_value = True
@@ -31,7 +32,7 @@ class TestGPU(unittest.TestCase):
         self.assertIsNone(gpus)
 
     @mock.patch('subprocess.Popen')
-    @mock.patch('tf.test.is_built_with_cuda')
+    @mock.patch('tensorflow.compat.v1.test.is_built_with_cuda')
     def test_valid(self, mock_Popen, mock_is_built_with_cuda):
         mock_Popen.return_value.__enter__.return_value = FakePopen(b'2', b'')
         mock_is_built_with_cuda.return_value = True
@@ -39,7 +40,7 @@ class TestGPU(unittest.TestCase):
         self.assertEqual(gpus, [0, 1])
 
     @mock.patch('subprocess.Popen')
-    @mock.patch('tf.test.is_built_with_cuda')
+    @mock.patch('tensorflow.compat.v1.test.is_built_with_cuda')
     def test_error(self, mock_Popen, mock_is_built_with_cuda):
         mock_Popen.return_value.__enter__.return_value = \
             FakePopen(stderr=b'!', returncode=1)
@@ -48,7 +49,7 @@ class TestGPU(unittest.TestCase):
             _ = local.get_gpus()
             self.assertIn('Failed to detect', str(cm.exception))
 
-    @mock.patch('tf.test.is_built_with_cuda')
+    @mock.patch('tensorflow.compat.v1.test.is_built_with_cuda')
     def test_cpu(self, mock_is_built_with_cuda):
         mock_is_built_with_cuda.return_value = False
         gpus = local.get_gpus()
