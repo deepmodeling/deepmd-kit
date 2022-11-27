@@ -49,9 +49,11 @@ class TestGPU(unittest.TestCase):
             _ = local.get_gpus()
             self.assertIn('Failed to detect', str(cm.exception))
 
+    @mock.patch('tensorflow.compat.v1.test.is_built_with_rocm', create=True)
     @mock.patch('tensorflow.compat.v1.test.is_built_with_cuda')
-    def test_cpu(self, mock_is_built_with_cuda):
+    def test_cpu(self, mock_is_built_with_cuda, mock_is_built_with_rocm):
         mock_is_built_with_cuda.return_value = False
+        mock_is_built_with_rocm.return_value = False
         gpus = local.get_gpus()
         self.assertIsNone(gpus)
 
