@@ -864,35 +864,36 @@ class DPTrainer (object):
         fp.write(print_str)
         fp.flush()
 
+    @staticmethod
+    def eval_single_list(single_batch_list, loss, sess, get_feed_dict_func, prefix=''):
+        if single_batch_list is None:
+            return None
+        numb_batch = len(single_batch_list)
+        sum_results = {}  # sum of losses on all atoms
+        sum_natoms = 0
+        for i in range(numb_batch):
+            batch = single_batch_list[i]
+            natoms = batch["natoms_vec"]
+            feed_dict = get_feed_dict_func(batch, is_training=False)
+            results = loss.eval(sess, feed_dict, natoms)
+
+            for k, v in results.items():
+                if k == "natoms":
+                    sum_natoms += v
+                else:
+                    sum_results[k] = sum_results.get(k, 0.) + v * results["natoms"]
+        single_results = {prefix + k: v / sum_natoms for k, v in sum_results.items() if not k == "natoms"}
+        return single_results
+
     def get_evaluation_results(self, batch_list):
-        def eval_single_list(single_batch_list, loss, sess, get_feed_dict_func, prefix=''):
-            if single_batch_list is None:
-                return None
-            numb_batch = len(single_batch_list)
-            sum_results = {}    # sum of losses on all atoms
-            sum_natoms = 0
-            for i in range(numb_batch):
-                batch = single_batch_list[i]
-                natoms = batch["natoms_vec"]
-                feed_dict = get_feed_dict_func(batch, is_training=False)
-                results = loss.eval(sess, feed_dict, natoms)
-
-                for k, v in results.items():
-                    if k == "natoms":
-                        sum_natoms += v
-                    else:
-                        sum_results[k] = sum_results.get(k, 0.) + v * results["natoms"]
-            single_results = {prefix + k: v / sum_natoms for k, v in sum_results.items() if not k == "natoms"}
-            return single_results
-
         if not self.multi_task_mode:
-            avg_results = eval_single_list(batch_list, self.loss, self.sess, self.get_feed_dict)
+            avg_results = self.eval_single_list(batch_list, self.loss, self.sess, self.get_feed_dict)
         else:
             avg_results = {}
             for fitting_key in batch_list:
                 avg_results[fitting_key] = \
-                    eval_single_list(batch_list[fitting_key], self.loss_dict[fitting_key], self.sess,
-                                     self.get_feed_dict, prefix='{}_'.format(fitting_key))
+                    self.eval_single_list(batch_list[fitting_key], self.loss_dict[fitting_key], self.sess,
+                                          self.get_feed_dict, prefix='{}_'.format(fitting_key))
         return avg_results
     
     def save_compressed(self):
