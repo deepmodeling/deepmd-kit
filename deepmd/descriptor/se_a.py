@@ -95,6 +95,8 @@ class DescrptSeA (DescrptSe):
             The precision of the embedding net parameters. Supported options are |PRECISION|
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
+    multi_task
+            If the model has multi fitting nets to train.
     
     References
     ----------
@@ -117,7 +119,8 @@ class DescrptSeA (DescrptSe):
                   set_davg_zero: bool = False,
                   activation_function: str = 'tanh',
                   precision: str = 'default',
-                  uniform_seed: bool = False
+                  uniform_seed: bool = False,
+                  multi_task: bool = False
     ) -> None:
         """
         Constructor
@@ -191,7 +194,9 @@ class DescrptSeA (DescrptSe):
                                          sel_r = self.sel_r)
         self.sub_sess = tf.Session(graph = sub_graph, config=default_tf_session_config)
         self.original_sel = None
-
+        self.multi_task = multi_task
+        if multi_task:
+            self.stat_dict = {'sumr': [], 'suma': [], 'sumn': [], 'sumr2': [], 'suma2': []}
 
     def get_rcut (self) -> float:
         """
@@ -258,8 +263,6 @@ class DescrptSeA (DescrptSe):
         input_dict
                 Dictionary for additional input
         """
-        all_davg = []
-        all_dstd = []
         if True:
             sumr = []
             suma = []
@@ -274,23 +277,53 @@ class DescrptSeA (DescrptSe):
                 sumn.append(sysn)
                 sumr2.append(sysr2)
                 suma2.append(sysa2)
-            sumr = np.sum(sumr, axis = 0)
-            suma = np.sum(suma, axis = 0)
-            sumn = np.sum(sumn, axis = 0)
-            sumr2 = np.sum(sumr2, axis = 0)
-            suma2 = np.sum(suma2, axis = 0)
-            for type_i in range(self.ntypes) :
-                davgunit = [sumr[type_i]/(sumn[type_i]+1e-15), 0, 0, 0]
-                dstdunit = [self._compute_std(sumr2[type_i], sumr[type_i], sumn[type_i]), 
-                            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
-                            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
-                            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i])
-                            ]
-                davg = np.tile(davgunit, self.ndescrpt // 4)
-                dstd = np.tile(dstdunit, self.ndescrpt // 4)
-                all_davg.append(davg)
-                all_dstd.append(dstd)
+            if not self.multi_task:
+                stat_dict = {'sumr': sumr, 'suma': suma, 'sumn': sumn, 'sumr2': sumr2, 'suma2': suma2}
+                self.merge_input_stats(stat_dict)
+            else:
+                self.stat_dict['sumr'] += sumr
+                self.stat_dict['suma'] += suma
+                self.stat_dict['sumn'] += sumn
+                self.stat_dict['sumr2'] += sumr2
+                self.stat_dict['suma2'] += suma2
 
+    def merge_input_stats(self, stat_dict):
+        """
+        Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
+
+        Parameters
+        ----------
+        stat_dict
+                The dict of statisitcs computed from compute_input_stats, including:
+            sumr
+                    The sum of radial statisitcs.
+            suma
+                    The sum of relative coord statisitcs.
+            sumn
+                    The sum of neighbor numbers.
+            sumr2
+                    The sum of square of radial statisitcs.
+            suma2
+                    The sum of square of relative coord statisitcs.
+        """
+        all_davg = []
+        all_dstd = []
+        sumr = np.sum(stat_dict['sumr'], axis = 0)
+        suma = np.sum(stat_dict['suma'], axis = 0)
+        sumn = np.sum(stat_dict['sumn'], axis = 0)
+        sumr2 = np.sum(stat_dict['sumr2'], axis = 0)
+        suma2 = np.sum(stat_dict['suma2'], axis = 0)
+        for type_i in range(self.ntypes) :
+            davgunit = [sumr[type_i]/(sumn[type_i]+1e-15), 0, 0, 0]
+            dstdunit = [self._compute_std(sumr2[type_i], sumr[type_i], sumn[type_i]),
+                        self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]),
+                        self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]),
+                        self._compute_std(suma2[type_i], suma[type_i], sumn[type_i])
+                        ]
+            davg = np.tile(davgunit, self.ndescrpt // 4)
+            dstd = np.tile(dstdunit, self.ndescrpt // 4)
+            all_davg.append(davg)
+            all_dstd.append(dstd)
         if not self.set_davg_zero:
             self.davg = np.array(all_davg)
         self.dstd = np.array(all_dstd)

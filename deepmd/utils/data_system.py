@@ -28,6 +28,7 @@ class DeepmdDataSystem() :
                   set_prefix : str = 'set',
                   shuffle_test : bool = True,
                   type_map : List[str] = None,
+                  optional_type_map : bool = True,
                   modifier = None,
                   trn_all_set = False,
                   sys_probs = None,
@@ -51,6 +52,8 @@ class DeepmdDataSystem() :
                 If the test data are shuffled
         type_map
                 Gives the name of different atom types
+        optional_type_map
+                If the type_map.raw in each system is optional
         modifier
                 Data modifier that has the method `modify_data`        
         trn_all_set
@@ -80,7 +83,8 @@ class DeepmdDataSystem() :
                     ii, 
                     set_prefix=set_prefix, 
                     shuffle_test=shuffle_test, 
-                    type_map = type_map, 
+                    type_map = type_map,
+                    optional_type_map = optional_type_map,
                     modifier = modifier, 
                     trn_all_set = trn_all_set
                 ))

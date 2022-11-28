@@ -106,6 +106,7 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [Training a model](doc/train/training.md)
     - [Advanced options](doc/train/training-advanced.md)
     - [Parallel training](doc/train/parallel-training.md)
+    - [Multi-task training](doc/train/multi-task-training.md)
     - [TensorBoard Usage](doc/train/tensorboard.md)
     - [Known limitations of using GPUs](doc/train/gpu-limitations.md)
     - [Training Parameters](doc/train/train-input-auto.rst)

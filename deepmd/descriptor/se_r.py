@@ -64,7 +64,8 @@ class DescrptSeR (DescrptSe):
                   set_davg_zero: bool = False,
                   activation_function: str = 'tanh',
                   precision: str = 'default',
-                  uniform_seed: bool = False
+                  uniform_seed: bool = False,
+                  multi_task: bool = False
     ) -> None:
         """
         Constructor
@@ -144,7 +145,9 @@ class DescrptSeR (DescrptSe):
                                          rcut_smth = self.rcut_smth,
                                          sel = self.sel_r)
             self.sub_sess = tf.Session(graph = sub_graph, config=default_tf_session_config)
-
+        self.multi_task = multi_task
+        if multi_task:
+            self.stat_dict = {'sumr': [], 'sumn': [], 'sumr2': []}
 
     def get_rcut (self) :
         """
@@ -204,8 +207,6 @@ class DescrptSeR (DescrptSe):
         input_dict
                 Dictionary for additional input
         """
-        all_davg = []
-        all_dstd = []
         sumr = []
         sumn = []
         sumr2 = []
@@ -215,11 +216,36 @@ class DescrptSeR (DescrptSe):
             sumr.append(sysr)
             sumn.append(sysn)
             sumr2.append(sysr2)
-        sumr = np.sum(sumr, axis = 0)
-        sumn = np.sum(sumn, axis = 0)
-        sumr2 = np.sum(sumr2, axis = 0)
-        for type_i in range(self.ntypes) :
-            davgunit = [sumr[type_i]/sumn[type_i]]
+        if not self.multi_task:
+            stat_dict = {'sumr': sumr, 'sumn': sumn, 'sumr2': sumr2}
+            self.merge_input_stats(stat_dict)
+        else:
+            self.stat_dict['sumr'] += sumr
+            self.stat_dict['sumn'] += sumn
+            self.stat_dict['sumr2'] += sumr2
+
+    def merge_input_stats(self, stat_dict):
+        """
+        Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
+
+        Parameters
+        ----------
+        stat_dict
+                The dict of statisitcs computed from compute_input_stats, including:
+            sumr
+                    The sum of radial statisitcs.
+            sumn
+                    The sum of neighbor numbers.
+            sumr2
+                    The sum of square of radial statisitcs.
+        """
+        all_davg = []
+        all_dstd = []
+        sumr = np.sum(stat_dict['sumr'], axis=0)
+        sumn = np.sum(stat_dict['sumn'], axis=0)
+        sumr2 = np.sum(stat_dict['sumr2'], axis=0)
+        for type_i in range(self.ntypes):
+            davgunit = [sumr[type_i] / sumn[type_i]]
             dstdunit = [self._compute_std(sumr2[type_i], sumr[type_i], sumn[type_i])]
             davg = np.tile(davgunit, self.ndescrpt // 1)
             dstd = np.tile(dstdunit, self.ndescrpt // 1)

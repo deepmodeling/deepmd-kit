@@ -49,8 +49,6 @@ class DipoleFittingSeA (Fitting) :
         """
         Constructor
         """
-        if not isinstance(descrpt, DescrptSeA) :
-            raise RuntimeError('DipoleFittingSeA only supports DescrptSeA')
         self.ntypes = descrpt.get_ntypes()
         self.dim_descrpt = descrpt.get_dim_out()
         # args = ClassArg()\
@@ -66,6 +64,7 @@ class DipoleFittingSeA (Fitting) :
         self.sel_type = sel_type
         if self.sel_type is None:
             self.sel_type = [ii for ii in range(self.ntypes)]
+        self.sel_mask = np.array([ii in self.sel_type for ii in range(self.ntypes)], dtype=bool)
         self.seed = seed
         self.uniform_seed = uniform_seed
         self.seed_shift = one_layer_rand_seed_shift()
@@ -89,11 +88,58 @@ class DipoleFittingSeA (Fitting) :
         """
         return 3
 
+    def _build_lower(self,
+                     start_index,
+                     natoms,
+                     inputs,
+                     rot_mat,
+                     suffix='',
+                     reuse=None
+                     ):
+        # cut-out inputs
+        inputs_i = tf.slice(inputs,
+                            [0, start_index, 0],
+                            [-1, natoms, -1])
+        inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
+        rot_mat_i = tf.slice(rot_mat,
+                             [0, start_index, 0],
+                             [-1, natoms, -1])
+        rot_mat_i = tf.reshape(rot_mat_i, [-1, self.dim_rot_mat_1, 3])
+        layer = inputs_i
+        for ii in range(0, len(self.n_neuron)):
+            if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii - 1]:
+                layer += one_layer(layer, self.n_neuron[ii], name='layer_' + str(ii) + suffix,
+                                   reuse=reuse, seed=self.seed, use_timestep=self.resnet_dt,
+                                   activation_fn=self.fitting_activation_fn, precision=self.fitting_precision,
+                                   uniform_seed=self.uniform_seed, initial_variables=self.fitting_net_variables,
+                                   mixed_prec=self.mixed_prec)
+            else:
+                layer = one_layer(layer, self.n_neuron[ii], name='layer_' + str(ii) + suffix,
+                                  reuse=reuse, seed=self.seed, activation_fn=self.fitting_activation_fn,
+                                  precision=self.fitting_precision, uniform_seed=self.uniform_seed,
+                                  initial_variables=self.fitting_net_variables, mixed_prec=self.mixed_prec)
+            if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
+        # (nframes x natoms) x naxis
+        final_layer = one_layer(layer, self.dim_rot_mat_1, activation_fn=None,
+                                name='final_layer' + suffix, reuse=reuse, seed=self.seed,
+                                precision=self.fitting_precision, uniform_seed=self.uniform_seed,
+                                initial_variables=self.fitting_net_variables, mixed_prec=self.mixed_prec,
+                                final_layer=True)
+        if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
+        # (nframes x natoms) x 1 * naxis
+        final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms, 1, self.dim_rot_mat_1])
+        # (nframes x natoms) x 1 x 3(coord)
+        final_layer = tf.matmul(final_layer, rot_mat_i)
+        # nframes x natoms x 3
+        final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms, 3])
+        return final_layer
+
     @cast_precision
     def build (self, 
                input_d : tf.Tensor,
                rot_mat : tf.Tensor,
                natoms : tf.Tensor,
+               input_dict: dict = None,
                reuse : bool = None,
                suffix : str = '') -> tf.Tensor:
         """
@@ -110,6 +156,8 @@ class DipoleFittingSeA (Fitting) :
                 natoms[0]: number of local atoms
                 natoms[1]: total number of atoms held by this processor
                 natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+        input_dict
+                Additional dict for inputs.
         reuse
                 The weights in the networks should be reused when get the variable.
         suffix
@@ -120,46 +168,58 @@ class DipoleFittingSeA (Fitting) :
         dipole
                 The atomic dipole.
         """
+        if input_dict is None:
+            input_dict = {}
+        type_embedding = input_dict.get('type_embedding', None)
+        atype = input_dict.get('atype', None)
+        nframes = input_dict.get('nframes')
         start_index = 0
         inputs = tf.reshape(input_d, [-1, natoms[0], self.dim_descrpt])
         rot_mat = tf.reshape(rot_mat, [-1, natoms[0], self.dim_rot_mat])
 
-        count = 0
-        outs_list = []
-        for type_i in range(self.ntypes):
-            # cut-out inputs
-            inputs_i = tf.slice (inputs,
-                                 [ 0, start_index, 0],
-                                 [-1, natoms[2+type_i], -1] )
-            inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
-            rot_mat_i = tf.slice (rot_mat,
-                                  [ 0, start_index, 0],
-                                  [-1, natoms[2+type_i], -1] )
-            rot_mat_i = tf.reshape(rot_mat_i, [-1, self.dim_rot_mat_1, 3])
-            start_index += natoms[2+type_i]
-            if not type_i in self.sel_type :
-                continue
-            layer = inputs_i
-            for ii in range(0,len(self.n_neuron)) :
-                if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] :
-                    layer+= one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, use_timestep = self.resnet_dt, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, uniform_seed = self.uniform_seed, initial_variables = self.fitting_net_variables, mixed_prec = self.mixed_prec)
-                else :
-                    layer = one_layer(layer, self.n_neuron[ii], name='layer_'+str(ii)+'_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, activation_fn = self.fitting_activation_fn, precision = self.fitting_precision, uniform_seed = self.uniform_seed, initial_variables = self.fitting_net_variables, mixed_prec = self.mixed_prec)
-                if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
-            # (nframes x natoms) x naxis
-            final_layer = one_layer(layer, self.dim_rot_mat_1, activation_fn = None, name='final_layer_type_'+str(type_i)+suffix, reuse=reuse, seed = self.seed, precision = self.fitting_precision, uniform_seed = self.uniform_seed, initial_variables = self.fitting_net_variables, mixed_prec = self.mixed_prec, final_layer = True)
-            if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
-            # (nframes x natoms) x 1 * naxis
-            final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0] * natoms[2+type_i], 1, self.dim_rot_mat_1])
-            # (nframes x natoms) x 1 x 3(coord)
-            final_layer = tf.matmul(final_layer, rot_mat_i)
-            # nframes x natoms x 3
-            final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i], 3])
+        if type_embedding is not None:
+            nloc_mask = tf.reshape(tf.tile(tf.repeat(self.sel_mask, natoms[2:]), [nframes]), [nframes, -1])
+            atype_nall = tf.reshape(atype, [-1, natoms[1]])
+            # (nframes x nloc_masked)
+            self.atype_nloc_masked = tf.reshape(tf.slice(atype_nall, [0, 0], [-1, natoms[0]])[nloc_mask], [-1])  ## lammps will make error
+            self.nloc_masked = tf.shape(tf.reshape(self.atype_nloc_masked, [nframes, -1]))[1]
+            atype_embed = tf.nn.embedding_lookup(type_embedding, self.atype_nloc_masked)
+        else:
+            atype_embed = None
 
-            # concat the results
-            outs_list.append(final_layer)
-            count += 1
-        outs = tf.concat(outs_list, axis = 1)
+        self.atype_embed = atype_embed
+
+        if atype_embed is None:
+            count = 0
+            outs_list = []
+            for type_i in range(self.ntypes):
+                if type_i not in self.sel_type:
+                    start_index += natoms[2+type_i]
+                    continue
+                final_layer = self._build_lower(
+                    start_index, natoms[2+type_i],
+                    inputs, rot_mat, suffix='_type_'+str(type_i)+suffix, reuse=reuse)
+                start_index += natoms[2 + type_i]
+                # concat the results
+                outs_list.append(final_layer)
+                count += 1
+            outs = tf.concat(outs_list, axis = 1)
+        else:
+            inputs = tf.reshape(tf.reshape(inputs, [nframes, natoms[0], self.dim_descrpt])[nloc_mask],
+                                [-1, self.dim_descrpt])
+            rot_mat = tf.reshape(tf.reshape(rot_mat, [nframes, natoms[0], self.dim_rot_mat_1 * 3])[nloc_mask],
+                                 [-1, self.dim_rot_mat_1, 3])
+            atype_embed = tf.cast(atype_embed, self.fitting_precision)
+            type_shape = atype_embed.get_shape().as_list()
+            inputs = tf.concat([inputs, atype_embed], axis=1)
+            self.dim_descrpt = self.dim_descrpt + type_shape[1]
+            inputs = tf.reshape(inputs, [nframes, self.nloc_masked, self.dim_descrpt])
+            rot_mat = tf.reshape(rot_mat, [nframes, self.nloc_masked, self.dim_rot_mat_1 * 3])
+            final_layer = self._build_lower(
+                0, self.nloc_masked,
+                inputs, rot_mat, suffix=suffix, reuse=reuse)
+            # nframes x natoms x 3
+            outs = tf.reshape(final_layer, [nframes, self.nloc_masked, 3])
 
         tf.summary.histogram('fitting_net_output', outs)
         return tf.reshape(outs, [-1])

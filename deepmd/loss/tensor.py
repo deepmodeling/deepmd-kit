@@ -77,7 +77,7 @@ class TensorLoss(Loss) :
             local_loss = global_cvt_2_tf_float(find_atomic) * tf.reduce_mean( tf.square(self.scale*(polar - atomic_polar_hat)), name='l2_'+suffix)
             more_loss['local_loss'] = local_loss
             l2_loss += self.local_weight * local_loss
-            self.l2_loss_local_summary = tf.summary.scalar('l2_local_loss', 
+            self.l2_loss_local_summary = tf.summary.scalar('l2_local_loss_' + suffix,
                                             tf.sqrt(more_loss['local_loss']))
         
 
@@ -101,7 +101,7 @@ class TensorLoss(Loss) :
             global_loss = global_cvt_2_tf_float(find_global) * tf.reduce_mean( tf.square(self.scale*(global_polar - polar_hat)), name='l2_'+suffix)
 
             more_loss['global_loss'] = global_loss
-            self.l2_loss_global_summary = tf.summary.scalar('l2_global_loss', 
+            self.l2_loss_global_summary = tf.summary.scalar('l2_global_loss_' + suffix,
                                             tf.sqrt(more_loss['global_loss']) / global_cvt_2_tf_float(atoms))
 
             # YWolfeee: should only consider atoms with dipole, i.e. atoms
@@ -114,7 +114,7 @@ class TensorLoss(Loss) :
         self.l2_more = more_loss
         self.l2_l = l2_loss
 
-        self.l2_loss_summary = tf.summary.scalar('l2_loss', tf.sqrt(l2_loss))
+        self.l2_loss_summary = tf.summary.scalar('l2_loss_' + suffix, tf.sqrt(l2_loss))
         return l2_loss, more_loss
 
     def eval(self, sess, feed_dict, natoms):
