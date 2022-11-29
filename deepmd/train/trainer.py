@@ -14,7 +14,7 @@ from deepmd.env import tf, tfv2
 from deepmd.env import get_tf_session_config
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
-from deepmd.fit import EnerFitting, WFCFitting, PolarFittingLocFrame, PolarFittingSeA, GlobalPolarFittingSeA, DipoleFittingSeA
+from deepmd.fit import EnerFitting, PolarFittingSeA, DipoleFittingSeA
 from deepmd.descriptor import Descriptor
 from deepmd.model import EnerModel, WFCModel, DipoleModel, PolarModel, GlobalPolarModel, MultiModel
 from deepmd.loss import EnerStdLoss, EnerDipoleLoss, TensorLoss
@@ -34,7 +34,7 @@ from deepmd.utils.errors import GraphWithoutTensorError
 # load grad of force module
 import deepmd.op
 
-from deepmd.common import j_must_have, ClassArg, data_requirement, get_precision
+from deepmd.common import j_must_have, data_requirement, get_precision
 
 log = logging.getLogger(__name__)
 
@@ -95,13 +95,9 @@ class DPTrainer (object):
         def fitting_net_init(fitting_type_, descrpt_type_, params):
             if fitting_type_ == 'ener':
                 return EnerFitting(**params)
-            # elif fitting_type == 'wfc':
-            #     self.fitting = WFCFitting(fitting_param, self.descrpt)
             elif fitting_type_ == 'dipole':
                 return DipoleFittingSeA(**params)
             elif fitting_type_ == 'polar':
-                # if descrpt_type == 'loc_frame':
-                #     self.fitting = PolarFittingLocFrame(fitting_param, self.descrpt)
                 return PolarFittingSeA(**params)
             # elif fitting_type_ == 'global_polar':
             #     if descrpt_type_ == 'se_e2_a':

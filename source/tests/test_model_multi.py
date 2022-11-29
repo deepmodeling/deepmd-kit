@@ -3,7 +3,7 @@ import numpy as np
 from deepmd.env import tf
 from common import Data, gen_data, del_data, j_loader, finite_difference, strerch_box
 
-from deepmd.utils.data_system import DataSystem
+from common import DataSystem
 from deepmd.descriptor import DescrptSeA
 from deepmd.fit import EnerFitting, DipoleFittingSeA
 from deepmd.model import MultiModel

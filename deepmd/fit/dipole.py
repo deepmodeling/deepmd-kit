@@ -51,14 +51,6 @@ class DipoleFittingSeA (Fitting) :
         """
         self.ntypes = descrpt.get_ntypes()
         self.dim_descrpt = descrpt.get_dim_out()
-        # args = ClassArg()\
-        #        .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\
-        #        .add('resnet_dt',        bool,   default = True)\
-        #        .add('sel_type',         [list,int],   default = [ii for ii in range(self.ntypes)], alias = 'dipole_type')\
-        #        .add('seed',             int)\
-        #        .add("activation_function", str, default = "tanh")\
-        #        .add('precision',           str,    default = "default")
-        # class_data = args.parse(jdata)
         self.n_neuron = neuron
         self.resnet_dt = resnet_dt
         self.sel_type = sel_type

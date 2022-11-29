@@ -2,7 +2,6 @@ import numpy as np
 from typing import Tuple, List
 
 from deepmd.env import tf
-from deepmd.common import ClassArg
 from deepmd.env import global_cvt_2_ener_float, MODEL_VERSION, GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import op_module
 from deepmd.utils.graph import load_graph_def

@@ -309,25 +309,6 @@ class DescrptSeAEfLower (DescrptSeA):
             precision,
             uniform_seed
         )
-        # DescrptSeA.__init__(self, **jdata)
-        # args = ClassArg()\
-        #        .add('sel',      list,   must = True) \
-        #        .add('rcut',     float,  default = 6.0) \
-        #        .add('rcut_smth',float,  default = 5.5) \
-        #        .add('neuron',   list,   default = [10, 20, 40]) \
-        #        .add('axis_neuron', int, default = 4, alias = 'n_axis_neuron') \
-        #        .add('resnet_dt',bool,   default = False) \
-        #        .add('trainable',bool,   default = True) \
-        #        .add('seed',     int) 
-        # class_data = args.parse(jdata)
-        # self.sel_a = class_data['sel']
-        # self.rcut_r = class_data['rcut']
-        # self.rcut_r_smth = class_data['rcut_smth']
-        # self.filter_neuron = class_data['neuron']
-        # self.n_axis_neuron = class_data['axis_neuron']
-        # self.filter_resnet_dt = class_data['resnet_dt']
-        # self.seed = class_data['seed']
-        # self.trainable = class_data['trainable']
         self.sel_a = sel
         self.rcut_r = rcut
         self.rcut_r_smth = rcut_smth
