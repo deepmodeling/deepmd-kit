@@ -119,7 +119,7 @@ def add_data_requirement(
     atomic: bool = False,
     must: bool = False,
     high_prec: bool = False,
-    type_sel: bool = None,
+    type_sel: Optional[bool] = None,
     repeat: int = 1,
     default: float = 0.,
 ):

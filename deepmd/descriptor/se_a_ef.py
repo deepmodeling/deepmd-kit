@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Tuple, List
+from typing import Optional, Tuple, List
 
 from deepmd.env import tf
 from deepmd.common import add_data_requirement
@@ -56,7 +56,7 @@ class DescrptSeAEf (Descriptor):
                  axis_neuron: int = 8,
                  resnet_dt: bool = False,
                  trainable: bool = True,
-                 seed: int = None,
+                 seed: Optional[int] = None,
                  type_one_side: bool = True,
                  exclude_types: List[List[int]] = [],
                  set_davg_zero: bool = False,
@@ -284,7 +284,7 @@ class DescrptSeAEfLower (DescrptSeA):
                   axis_neuron: int = 8,
                   resnet_dt: bool = False,
                   trainable: bool = True,
-                  seed: int = None,
+                  seed: Optional[int] = None,
                   type_one_side: bool = True,
                   exclude_types: List[List[int]] = [],
                   set_davg_zero: bool = False,

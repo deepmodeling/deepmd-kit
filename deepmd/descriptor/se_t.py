@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Tuple, List
+from typing import Optional, Tuple, List
 
 from deepmd.env import tf
 from deepmd.common import get_activation_func, get_precision, cast_precision
@@ -56,7 +56,7 @@ class DescrptSeT (DescrptSe):
                   neuron: List[int] = [24,48,96],
                   resnet_dt: bool = False,
                   trainable: bool = True,
-                  seed: int = None,
+                  seed: Optional[int] = None,
                   set_davg_zero: bool = False,
                   activation_function: str = 'tanh',
                   precision: str = 'default',

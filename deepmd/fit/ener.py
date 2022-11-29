@@ -1,7 +1,7 @@
 import logging
 import warnings
 import numpy as np
-from typing import Tuple, List
+from typing import Optional, Tuple, List
 from packaging.version import Version
 
 from deepmd.env import tf
@@ -686,7 +686,7 @@ class EnerFitting (Fitting):
             self.aparam_inv_std = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_aparam_istd' % suffix)
  
 
-    def enable_mixed_precision(self, mixed_prec: dict = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
         """
         Reveive the mixed precision setting.
 
