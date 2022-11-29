@@ -51,3 +51,8 @@ jobs:
     - uses: codecov/codecov-action@v3
       with:
         gcov: true
+  pass:
+    needs: [testpython]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "All jobs passed"
