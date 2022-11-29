@@ -1,4 +1,4 @@
-from typing import Callable, Generator, Tuple, Dict, Any
+from typing import Optional, Callable, Generator, Tuple, Dict, Any
 
 from deepmd.env import tf
 from deepmd.utils.sess import run_sess
@@ -32,7 +32,7 @@ class ParallelOp:
     >>> print(*p.generate(tf.Session(), feed()))
     [1] [2] [3] [4] [5] [6] [7] [8] [9] [10]
     """
-    def __init__(self, builder: Callable[..., Tuple[Dict[str, tf.Tensor], Tuple[tf.Tensor]]], nthreads: int = None, config: tf.ConfigProto = None) -> None:
+    def __init__(self, builder: Callable[..., Tuple[Dict[str, tf.Tensor], Tuple[tf.Tensor]]], nthreads: Optional[int] = None, config: Optional[tf.ConfigProto] = None) -> None:
         if nthreads is not None:
             self.nthreads = nthreads
         elif config is not None:

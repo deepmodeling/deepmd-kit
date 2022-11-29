@@ -1,6 +1,6 @@
 import warnings
 import numpy as np
-from typing import Tuple, List
+from typing import Optional, Tuple, List
 
 from deepmd.env import tf
 from deepmd.common import add_data_requirement, cast_precision, get_activation_func, get_precision
@@ -349,7 +349,7 @@ class PolarFittingSeA (Fitting) :
                input_d : tf.Tensor,
                rot_mat : tf.Tensor,
                natoms : tf.Tensor,
-               input_dict: dict = None,
+               input_dict: Optional[dict] = None,
                reuse : bool = None,
                suffix : str = '') :
         """
@@ -558,7 +558,7 @@ class GlobalPolarFittingSeA () :
                input_d,
                rot_mat,
                natoms,
-               input_dict: dict = None,
+               input_dict: Optional[dict] = None,
                reuse = None,
                suffix = '') -> tf.Tensor:
         """

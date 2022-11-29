@@ -1,6 +1,6 @@
 import warnings
 import numpy as np
-from typing import Tuple, List
+from typing import Optional, Tuple, List
 
 from deepmd.env import tf
 from deepmd.common import add_data_requirement, get_activation_func, get_precision, cast_precision
@@ -139,7 +139,7 @@ class DipoleFittingSeA (Fitting) :
                input_d : tf.Tensor,
                rot_mat : tf.Tensor,
                natoms : tf.Tensor,
-               input_dict: dict = None,
+               input_dict: Optional[dict] = None,
                reuse : bool = None,
                suffix : str = '') -> tf.Tensor:
         """

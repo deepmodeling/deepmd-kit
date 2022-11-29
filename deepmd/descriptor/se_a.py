@@ -1,6 +1,6 @@
 import math
 import numpy as np
-from typing import Tuple, List, Dict, Any
+from typing import Optional, Tuple, List, Dict, Any
 
 from deepmd.env import tf
 from deepmd.common import get_activation_func, get_precision, cast_precision
@@ -113,7 +113,7 @@ class DescrptSeA (DescrptSe):
                   axis_neuron: int = 8,
                   resnet_dt: bool = False,
                   trainable: bool = True,
-                  seed: int = None,
+                  seed: Optional[int] = None,
                   type_one_side: bool = True,
                   exclude_types: List[List[int]] = [],
                   set_davg_zero: bool = False,

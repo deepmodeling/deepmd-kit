@@ -119,7 +119,7 @@ def add_data_requirement(
     atomic: bool = False,
     must: bool = False,
     high_prec: bool = False,
-    type_sel: bool = None,
+    type_sel: Optional[bool] = None,
     repeat: int = 1,
     default: float = 0.,
 ):
@@ -237,7 +237,7 @@ class ClassArg:
         key: str,
         types_: Union[type, List[type]],
         alias: Optional[Union[str, List[str]]] = None,
-        default: Any = None,
+        default: Optional[Any] = None,
         must: bool = False,
     ) -> "ClassArg":
         """Add key to be parsed.

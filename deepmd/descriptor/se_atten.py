@@ -1,6 +1,6 @@
 import math
 import numpy as np
-from typing import Tuple, List, Dict, Any
+from typing import Optional, Tuple, List, Dict, Any
 from packaging.version import Version
 
 from deepmd.env import tf
@@ -77,7 +77,7 @@ class DescrptSeAtten(DescrptSeA):
                  axis_neuron: int = 8,
                  resnet_dt: bool = False,
                  trainable: bool = True,
-                 seed: int = None,
+                 seed: Optional[int] = None,
                  type_one_side: bool = True,
                  exclude_types: List[List[int]] = [],
                  set_davg_zero: bool = False,
@@ -157,7 +157,7 @@ class DescrptSeAtten(DescrptSeA):
                             mesh: list,
                             input_dict: dict,
                             mixed_type: bool = False,
-                            real_natoms_vec: list = None
+                            real_natoms_vec: Optional[list] = None
                             ) -> None:
         """
         Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
@@ -227,7 +227,7 @@ class DescrptSeAtten(DescrptSeA):
               box_: tf.Tensor,
               mesh: tf.Tensor,
               input_dict: dict,
-              reuse: bool = None,
+              reuse: Optional[bool] = None,
               suffix: str = ''
               ) -> tf.Tensor:
         """
