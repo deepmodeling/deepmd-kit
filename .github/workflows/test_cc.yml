@@ -3,7 +3,7 @@ on:
   pull_request:
 name: Test C++
 jobs:
-  testpython:
+  testcc:
     name: Test C++
     runs-on: ubuntu-latest
     container: ghcr.io/deepmodeling/deepmd-kit-test-cc:latest
@@ -35,3 +35,8 @@ jobs:
     - uses: codecov/codecov-action@v3
       with:
         gcov: true
+  pass:
+    needs: [testcc]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "All jobs passed"

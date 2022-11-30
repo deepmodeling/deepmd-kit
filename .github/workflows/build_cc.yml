@@ -3,7 +3,7 @@ on:
   pull_request:
 name: Build C++
 jobs:
-  testpython:
+  buildcc:
     name: Build C++
     runs-on: ubuntu-latest
     container: ghcr.io/deepmodeling/deepmd-kit-test-cc:latest
@@ -44,3 +44,8 @@ jobs:
         CC: clang
         CXX: clang++
       if: matrix.variant == 'clang'
+  pass:
+    needs: [buildcc]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "All jobs passed"
