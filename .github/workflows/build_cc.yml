@@ -45,6 +45,7 @@ jobs:
         CXX: clang++
       if: matrix.variant == 'clang'
   pass:
+    name: Pass building C++
     needs: [buildcc]
     runs-on: ubuntu-latest
     steps:

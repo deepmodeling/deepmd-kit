@@ -36,6 +36,7 @@ jobs:
       with:
         gcov: true
   pass:
+    name: Pass testing C++
     needs: [testcc]
     runs-on: ubuntu-latest
     steps:
