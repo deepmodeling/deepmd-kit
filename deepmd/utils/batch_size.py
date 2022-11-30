@@ -46,6 +46,7 @@ class AutoBatchSize:
         self.current_batch_size = initial_batch_size
         DP_INFER_BATCH_SIZE = int(os.environ.get('DP_INFER_BATCH_SIZE', 0))
         if DP_INFER_BATCH_SIZE > 0:
+            self.current_batch_size = DP_INFER_BATCH_SIZE
             self.maximum_working_batch_size = DP_INFER_BATCH_SIZE
             self.minimal_not_working_batch_size = self.maximum_working_batch_size + 1
         else:
