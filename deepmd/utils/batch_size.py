@@ -4,7 +4,12 @@ from typing import Callable, Tuple
 
 import numpy as np
 
+from deepmd.env import tf
 from deepmd.utils.errors import OutOfMemoryError
+
+
+log = logging.getLogger(__name__)
+
 
 class AutoBatchSize:
     """This class allows DeePMD-kit to automatically decide the maximum
@@ -13,15 +18,16 @@ class AutoBatchSize:
     Notes
     -----
     In some CPU environments, the program may be directly killed when OOM. In
-    this case, the environment variable `DP_INFER_BATCH_SIZE` is used as the
-    batch size.
+    this case, by default the batch size will not be increased for CPUs. The
+    environment variable `DP_INFER_BATCH_SIZE` can be set as the batch size.
 
     In other cases, we assume all OOM error will raise :class:`OutOfMemoryError`.
 
     Parameters
     ----------
     initial_batch_size : int, default: 1024
-        initial batch size (number of total atoms)
+        initial batch size (number of total atoms) when DP_INFER_BATCH_SIZE
+        is not set
     factor : float, default: 2.
         increased factor
 
@@ -41,10 +47,19 @@ class AutoBatchSize:
         DP_INFER_BATCH_SIZE = int(os.environ.get('DP_INFER_BATCH_SIZE', 0))
         if DP_INFER_BATCH_SIZE > 0:
             self.maximum_working_batch_size = DP_INFER_BATCH_SIZE
-            self.minimal_not_working_batch_size = DP_INFER_BATCH_SIZE + 1
+            self.minimal_not_working_batch_size = self.maximum_working_batch_size + 1
         else:
             self.maximum_working_batch_size = initial_batch_size
-            self.minimal_not_working_batch_size = 2**31
+            if tf.test.is_gpu_available():
+                self.minimal_not_working_batch_size = 2**31
+            else:
+                self.minimal_not_working_batch_size = self.maximum_working_batch_size + 1
+                log.warning(
+                    "You can use the environment variable DP_INFER_BATCH_SIZE to"
+                    "control the inference batch size (nframes * natoms). "
+                    "The default value is %d." % initial_batch_size
+                )
+
         self.factor = factor
 
     def execute(self, callable: Callable, start_index: int, natoms: int) -> Tuple[int, tuple]:
@@ -96,7 +111,7 @@ class AutoBatchSize:
     def _adjust_batch_size(self, factor: float):
         old_batch_size = self.current_batch_size
         self.current_batch_size = int(self.current_batch_size * factor)
-        logging.info("Adjust batch size from %d to %d" % (old_batch_size, self.current_batch_size))
+        log.info("Adjust batch size from %d to %d" % (old_batch_size, self.current_batch_size))
 
     def execute_all(self, callable: Callable, total_size: int, natoms: int, *args, **kwargs) -> Tuple[np.ndarray]:
         """Excuate a method with all given data. 
