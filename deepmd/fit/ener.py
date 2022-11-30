@@ -661,31 +661,7 @@ class EnerFitting (Fitting):
             raise RuntimeError('Unknown bias_shift mode: ' + bias_shift)
         log.info("Change energy bias of {} from {} to {}.".format(str(origin_type_map), str(old_bias),
                                                                          str(self.bias_atom_e[idx_type_map])))
-
-    def enable_compression(self,
-                           model_file: str,
-                           suffix: str = ""
-    ) -> None:
-        """
-        Set the fitting net attributes from the frozen model_file when fparam or aparam is not zero
-
-        Parameters
-        ----------
-        model_file : str
-            The input frozen model file
-        suffix : str, optional
-                The suffix of the scope
-        """
-        if self.numb_fparam > 0 or self.numb_aparam > 0:
-            graph, _ = load_graph_def(model_file)
-        if self.numb_fparam > 0:
-            self.fparam_avg = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_fparam_avg' % suffix)
-            self.fparam_inv_std = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_fparam_istd' % suffix)
-        if self.numb_aparam > 0:
-            self.aparam_avg = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_aparam_avg' % suffix)
-            self.aparam_inv_std = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_aparam_istd' % suffix)
  
-
     def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
         """
         Reveive the mixed precision setting.

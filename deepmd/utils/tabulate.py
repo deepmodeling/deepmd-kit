@@ -8,7 +8,7 @@ from scipy.special import comb
 from deepmd.env import tf
 from deepmd.env import op_module
 from deepmd.common import ACTIVATION_FN_DICT
-from deepmd.utils.graph import get_tensor_by_name_from_graph, load_graph_def 
+from deepmd.utils.graph import get_tensor_by_name_from_graph 
 from deepmd.utils.graph import get_embedding_net_nodes_from_graph_def
 from deepmd.descriptor import Descriptor
 
@@ -28,8 +28,10 @@ class DPTabulate():
             Descriptor of the original model
     neuron
             Number of neurons in each hidden layers of the embedding net :math:`\\mathcal{N}`
-    model_file
-            The frozen model
+    graph : tf.Graph
+            The graph of the original model
+    graph_def : tf.GraphDef
+            The graph_def of the original model
     type_one_side
             Try to build N_types tables. Otherwise, building N_types^2 tables
     exclude_types : List[List[int]]
@@ -43,7 +45,8 @@ class DPTabulate():
     def __init__(self,
                  descrpt : Descriptor,
                  neuron : List[int],
-                 model_file : str,
+                 graph: tf.Graph,
+                 graph_def: tf.GraphDef,
                  type_one_side : bool = False,
                  exclude_types : List[List[int]] = [],
                  activation_fn : Callable[[tf.Tensor], tf.Tensor] = tf.nn.tanh,
@@ -54,7 +57,8 @@ class DPTabulate():
         """
         self.descrpt = descrpt
         self.neuron = neuron
-        self.model_file = model_file
+        self.graph = graph
+        self.graph_def = graph_def
         self.type_one_side = type_one_side
         self.exclude_types = exclude_types
         self.suffix = suffix
@@ -76,7 +80,6 @@ class DPTabulate():
             raise RuntimeError("Unknown actication function type!")
         self.activation_fn = activation_fn
 
-        self.graph, self.graph_def = load_graph_def(self.model_file)
         #self.sess = tf.Session(graph = self.graph)
 
         self.sub_graph, self.sub_graph_def = self._load_sub_graph()

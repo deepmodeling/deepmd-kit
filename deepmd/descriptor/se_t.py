@@ -260,7 +260,8 @@ class DescrptSeT (DescrptSe):
 
     def enable_compression(self,
                            min_nbor_dist : float,
-                           model_file : str = 'frozon_model.pb',
+                           graph: tf.Graph,
+                           graph_def: tf.GraphDef,
                            table_extrapolate : float = 5,
                            table_stride_1 : float = 0.01,
                            table_stride_2 : float = 0.1,
@@ -274,8 +275,10 @@ class DescrptSeT (DescrptSe):
         ----------
         min_nbor_dist
                 The nearest distance between atoms
-        model_file
-                The original frozen model, which will be compressed by the program
+        grapf : tf.Graph
+                The graph of the model
+        graph_def : tf.GraphDef
+                The graph_def of the model
         table_extrapolate
                 The scale of model extrapolation
         table_stride_1
@@ -301,7 +304,7 @@ class DescrptSeT (DescrptSe):
 
         self.compress = True
         self.table = DPTabulate(
-            self, self.filter_neuron, model_file, activation_fn = self.filter_activation_fn, suffix=suffix)
+            self, self.filter_neuron, graph, graph_def, activation_fn = self.filter_activation_fn, suffix=suffix)
         self.table_config = [table_extrapolate, table_stride_1 * 10, table_stride_2 * 10, check_frequency]
         self.lower, self.upper \
             = self.table.build(min_nbor_dist, 
@@ -309,7 +312,6 @@ class DescrptSeT (DescrptSe):
                                table_stride_1 * 10, 
                                table_stride_2 * 10)
         
-        graph, _ = load_graph_def(model_file)
         self.davg = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_avg' % suffix)
         self.dstd = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_std' % suffix)
 
