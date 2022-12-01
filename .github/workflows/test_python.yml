@@ -52,6 +52,7 @@ jobs:
       with:
         gcov: true
   pass:
+    name: Pass testing Python
     needs: [testpython]
     runs-on: ubuntu-latest
     steps:
