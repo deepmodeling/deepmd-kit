@@ -1,3 +1,4 @@
+import os
 import logging
 from typing import Callable, Tuple
 
@@ -11,7 +12,11 @@ class AutoBatchSize:
 
     Notes
     -----
-    We assume all OOM error will raise :class:`OutOfMemoryError`.
+    In some CPU environments, the program may be directly killed when OOM. In
+    this case, the environment variable `DP_INFER_BATCH_SIZE` is used as the
+    batch size.
+
+    In other cases, we assume all OOM error will raise :class:`OutOfMemoryError`.
 
     Parameters
     ----------
@@ -33,8 +38,13 @@ class AutoBatchSize:
         # See also PyTorchLightning/pytorch-lightning#1638
         # TODO: discuss a proper initial batch size
         self.current_batch_size = initial_batch_size
-        self.maximum_working_batch_size = 0
-        self.minimal_not_working_batch_size = 2**31
+        DP_INFER_BATCH_SIZE = int(os.environ.get('DP_INFER_BATCH_SIZE', 0))
+        if DP_INFER_BATCH_SIZE > 0:
+            self.maximum_working_batch_size = DP_INFER_BATCH_SIZE
+            self.minimal_not_working_batch_size = DP_INFER_BATCH_SIZE + 1
+        else:
+            self.maximum_working_batch_size = initial_batch_size
+            self.minimal_not_working_batch_size = 2**31
         self.factor = factor
 
     def execute(self, callable: Callable, start_index: int, natoms: int) -> Tuple[int, tuple]:
