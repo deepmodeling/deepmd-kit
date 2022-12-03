@@ -253,7 +253,8 @@ class DescrptHybrid (Descriptor):
 
     def enable_compression(self,
                            min_nbor_dist: float,
-                           model_file: str = 'frozon_model.pb',
+                           graph: tf.Graph,
+                           graph_def: tf.GraphDef,
                            table_extrapolate: float = 5.,
                            table_stride_1: float = 0.01,
                            table_stride_2: float = 0.1,
@@ -268,8 +269,10 @@ class DescrptHybrid (Descriptor):
         ----------
         min_nbor_dist : float
                 The nearest distance between atoms
-        model_file : str, default: 'frozon_model.pb'
-                The original frozen model, which will be compressed by the program
+        graph : tf.Graph
+                The graph of the model
+        graph_def : tf.GraphDef
+                The graph_def of the model
         table_extrapolate : float, default: 5.
                 The scale of model extrapolation
         table_stride_1 : float, default: 0.01
@@ -282,7 +285,7 @@ class DescrptHybrid (Descriptor):
                 The suffix of the scope
         """
         for idx, ii in enumerate(self.descrpt_list):
-            ii.enable_compression(min_nbor_dist, model_file, table_extrapolate, table_stride_1, table_stride_2, check_frequency, suffix=f"{suffix}_{idx}")
+            ii.enable_compression(min_nbor_dist, graph, graph_def, table_extrapolate, table_stride_1, table_stride_2, check_frequency, suffix=f"{suffix}_{idx}")
 
 
     def enable_mixed_precision(self, mixed_prec : dict = None) -> None:
