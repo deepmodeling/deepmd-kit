@@ -31,6 +31,8 @@ else:
 
 if os.environ.get("DP_BUILD_TESTING", "0") == "1":
     cmake_args.append("-DBUILD_TESTING:BOOL=TRUE")
+if os.environ.get("DP_ENABLE_NATIVE_OPTIMIZATION", "0") == "1":
+    cmake_args.append("-DENABLE_NATIVE_OPTIMIZATION:BOOL=TRUE")
 
 tf_install_dir, _ = find_tensorflow()
 tf_version = get_tf_version(tf_install_dir)
