@@ -140,6 +140,13 @@ if (OPENMP_FOUND)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
 endif()
 
+# optimize flags
+option(ENABLE_NATIVE_OPTIMIZATION "Enable native optimization" OFF)
+if (ENABLE_NATIVE_OPTIMIZATION)
+  set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=native -mtune=native")
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native -mtune=native")
+endif()
+
 # define names of libs
 set (LIB_DEEPMD		"deepmd")
 if (BUILD_CPP_IF)
