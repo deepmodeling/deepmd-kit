@@ -67,3 +67,11 @@ If everything works fine, you will end up with an executable `${deepmd_root}/bin
 ```bash
 ${deepmd_root}/bin/lmp -h
 ```
+
+:::{note}
+If `${tensorflow_root}` or `${deepmd_root}` is different from the prefix of LAMMPS, you need to append the library path to [`RUNPATH`](https://man7.org/linux/man-pages/man8/ld.so.8.html) of `liblammps.so`. For example,
+
+```sh
+patchelf --set-rpath "${tensorflow_root}/lib" liblammps.so
+```
+:::
