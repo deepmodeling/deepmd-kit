@@ -987,15 +987,16 @@ void PairDeepMD::settings(int narg, char **arg)
       for (int ii = 0; ii < dim_fparam; ++ii){
 	cout << fparam[ii] << "  " ;
       }
-      cout << endl;
+      cout << "\n";
     }
     if (aparam.size() > 0) {
       cout << pre << "using aparam(s):    " ;
       for (int ii = 0; ii < aparam.size(); ++ii){
 	cout << aparam[ii] << "  " ;
       }
-      cout << endl;
+      cout << "\n";
     }
+    cout << std::flush;
   }
   
   comm_reverse = numb_models * 3;
