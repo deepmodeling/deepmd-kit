@@ -51,6 +51,7 @@ class PairDeepMD : public Pair {
   ~PairDeepMD() override;
   void compute(int, int) override;
   void *extract(const char *, int &) override;
+  void finish() override;
   void settings(int, char **) override;
   void coeff(int, char **) override;
   void init_style() override;

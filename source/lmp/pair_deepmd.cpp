@@ -1003,6 +1003,11 @@ void PairDeepMD::settings(int narg, char **arg)
   all_force.resize(numb_models);
 }
 
+void PairDeepMD::finish()
+{
+  if(fp) fp << std::flush;
+}
+
 void PairDeepMD::read_restart(FILE *)
 {
   is_restart = true;
