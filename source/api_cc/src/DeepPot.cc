@@ -331,22 +331,22 @@ void
 DeepPot::
 print_summary(const std::string &pre) const
 {
-  std::cout << pre << "installed to:       " + global_install_prefix << std::endl;
-  std::cout << pre << "source:             " + global_git_summ << std::endl;
-  std::cout << pre << "source branch:       " + global_git_branch << std::endl;
-  std::cout << pre << "source commit:      " + global_git_hash << std::endl;
-  std::cout << pre << "source commit at:   " + global_git_date << std::endl;
-  std::cout << pre << "surpport model ver.:" + global_model_version << std::endl;
+  std::cout << pre << "installed to:       " + global_install_prefix << "\n";
+  std::cout << pre << "source:             " + global_git_summ << "\n";
+  std::cout << pre << "source branch:       " + global_git_branch << "\n";
+  std::cout << pre << "source commit:      " + global_git_hash << "\n";
+  std::cout << pre << "source commit at:   " + global_git_date << "\n";
+  std::cout << pre << "surpport model ver.:" + global_model_version << "\n";
 #if defined(GOOGLE_CUDA)
-  std::cout << pre << "build variant:      cuda" << std::endl;
+  std::cout << pre << "build variant:      cuda" << "\n";
 #elif defined(TENSORFLOW_USE_ROCM)
-  std::cout << pre << "build variant:      rocm" << std::endl;
+  std::cout << pre << "build variant:      rocm" << "\n";
 #else
-  std::cout << pre << "build variant:      cpu" << std::endl;
+  std::cout << pre << "build variant:      cpu" << "\n";
 #endif
-  std::cout << pre << "build with tf inc:  " + global_tf_include_dir << std::endl;
-  std::cout << pre << "build with tf lib:  " + global_tf_lib << std::endl;
-  std::cout << pre << "set tf intra_op_parallelism_threads: " <<  num_intra_nthreads << std::endl;
+  std::cout << pre << "build with tf inc:  " + global_tf_include_dir << "\n";
+  std::cout << pre << "build with tf lib:  " + global_tf_lib << "\n";
+  std::cout << pre << "set tf intra_op_parallelism_threads: " <<  num_intra_nthreads << "\n";
   std::cout << pre << "set tf inter_op_parallelism_threads: " <<  num_inter_nthreads << std::endl;
 }
 

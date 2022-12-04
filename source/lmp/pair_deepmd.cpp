@@ -280,17 +280,17 @@ PairDeepMD::print_summary(const string pre) const
     std::streambuf *sbuf = std::cout.rdbuf();
     std::cout.rdbuf(buffer.rdbuf());
 
-    cout << "Summary of lammps deepmd module ..." << endl;
-    cout << pre << ">>> Info of deepmd-kit:" << endl;
+    cout << "Summary of lammps deepmd module ..." << "\n";
+    cout << pre << ">>> Info of deepmd-kit:" << "\n";
     deep_pot.print_summary(pre);
-    cout << pre << ">>> Info of lammps module:" << endl;
-    cout << pre << "use deepmd-kit at:  " << STR_DEEPMD_ROOT << endl;
-    cout << pre << "source:             " << STR_GIT_SUMM << endl;
-    cout << pre << "source branch:      " << STR_GIT_BRANCH << endl;
-    cout << pre << "source commit:      " << STR_GIT_HASH << endl;
-    cout << pre << "source commit at:   " << STR_GIT_DATE << endl;
-    cout << pre << "build float prec:   " << STR_FLOAT_PREC << endl;
-    cout << pre << "build with tf inc:  " << STR_TensorFlow_INCLUDE_DIRS << endl;
+    cout << pre << ">>> Info of lammps module:" << "\n";
+    cout << pre << "use deepmd-kit at:  " << STR_DEEPMD_ROOT << "\n";
+    cout << pre << "source:             " << STR_GIT_SUMM << "\n";
+    cout << pre << "source branch:      " << STR_GIT_BRANCH << "\n";
+    cout << pre << "source commit:      " << STR_GIT_HASH << "\n";
+    cout << pre << "source commit at:   " << STR_GIT_DATE << "\n";
+    cout << pre << "build float prec:   " << STR_FLOAT_PREC << "\n";
+    cout << pre << "build with tf inc:  " << STR_TensorFlow_INCLUDE_DIRS << "\n";
     cout << pre << "build with tf lib:  " << STR_TensorFlow_LIBRARY << endl;
 
     std::cout.rdbuf(sbuf);
@@ -713,7 +713,7 @@ void PairDeepMD::compute(int eflag, int vflag)
 	  }
 	}
 	if (rank == 0) {
-	  fp << endl;
+	  fp << "\n";
 	}
       }
     }
@@ -962,14 +962,14 @@ void PairDeepMD::settings(int narg, char **arg)
 	 << setw(18+1) << "max_devi_f"
 	 << setw(18+1) << "min_devi_f"
 	 << setw(18+1) << "avg_devi_f"
-	 << endl;
+	 << "\n";
       } else {
         fp.open (out_file, std::ofstream::out | std::ofstream::app);
         fp << scientific;
       }
     }
     string pre = "  ";
-    cout << pre << ">>> Info of model(s):" << endl
+    cout << pre << ">>> Info of model(s):" << "\n"
 	 << pre << "using " << setw(3) << numb_models << " model(s): ";
     if (narg == 1) {
       cout << arg[0] << " ";
@@ -979,9 +979,9 @@ void PairDeepMD::settings(int narg, char **arg)
       	cout << models[ii] << " ";
       }
     }
-    cout << endl
-	 << pre << "rcut in model:      " << cutoff << endl
-	 << pre << "ntypes in model:    " << numb_types << endl;
+    cout << "\n"
+	 << pre << "rcut in model:      " << cutoff << "\n"
+	 << pre << "ntypes in model:    " << numb_types << "\n";
     if (dim_fparam > 0) {
       cout << pre << "using fparam(s):    " ;
       for (int ii = 0; ii < dim_fparam; ++ii){
