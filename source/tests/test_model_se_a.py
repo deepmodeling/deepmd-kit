@@ -9,6 +9,7 @@ from deepmd.descriptor import DescrptSeA
 from deepmd.fit import EnerFitting
 from deepmd.model import EnerModel
 from deepmd.common import j_must_have
+from deepmd.utils.type_embed import TypeEmbedNet
 
 GLOBAL_ENER_FLOAT_PRECISION = tf.float64
 GLOBAL_TF_FLOAT_PRECISION = tf.float64
@@ -215,7 +216,7 @@ class TestModel(tf.test.TestCase):
         jdata = j_loader(jfile)
         set_atom_ener = [0.02, 0.01]        
         jdata['model']['fitting_net']['atom_ener'] = set_atom_ener
-        jdata['model']['type_embbeding'] = {"neuron": [2]}
+        jdata['model']['type_embeding'] = {"neuron": [2]}
 
         sys = dpdata.LabeledSystem()
         sys.data['atom_names'] = ['foo', 'bar']
@@ -243,11 +244,12 @@ class TestModel(tf.test.TestCase):
         test_data = data.get_test ()
         numb_test = 1
 
+        typeebd = TypeEmbedNet(**jdata['model']['type_embeding'])
         jdata['model']['descriptor'].pop('type', None)        
         descrpt = DescrptSeA(**jdata['model']['descriptor'], uniform_seed=True)
         jdata['model']['fitting_net']['descrpt'] = descrpt
         fitting = EnerFitting(**jdata['model']['fitting_net'], uniform_seed=True)
-        model = EnerModel(descrpt, fitting)
+        model = EnerModel(descrpt, fitting, typeebd=typeebd)
 
         test_data['natoms_vec'] = [1, 1, 1, 0]
 
