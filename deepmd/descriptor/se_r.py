@@ -393,7 +393,7 @@ class DescrptSeR (DescrptSe):
         tf.summary.histogram('rij', self.rij)
         tf.summary.histogram('nlist', self.nlist)
 
-        self.dout = self._pass_filter(self.descrpt_reshape, natoms, suffix = suffix, reuse = reuse, trainable = self.trainable)
+        self.dout = self._pass_filter(self.descrpt_reshape, atype, natoms, suffix = suffix, reuse = reuse, trainable = self.trainable)
         tf.summary.histogram('embedding_net_output', self.dout)
 
         return self.dout
@@ -448,6 +448,7 @@ class DescrptSeR (DescrptSe):
 
     def _pass_filter(self, 
                      inputs,
+                     atype,
                      natoms,
                      reuse = None,
                      suffix = '', 
@@ -470,7 +471,7 @@ class DescrptSeR (DescrptSe):
             inputs_i = inputs
             inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
             type_i = -1
-            if self.exclude_types is not None:
+            if len(self.exclude_types):
                 # generate a mask
                 type_mask = np.array([
                     [1 if (tt_i, tt_j) not in self.exclude_types else 0

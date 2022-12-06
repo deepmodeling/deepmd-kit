@@ -610,7 +610,7 @@ class DescrptSeA (DescrptSe):
             type_i = -1
             if nvnmd_cfg.enable and nvnmd_cfg.quantize_descriptor: 
                 inputs_i = descrpt2r4(inputs_i, natoms)
-            if self.exclude_types is not None:
+            if len(self.exclude_types):
                 # generate a mask
                 type_mask = np.array([
                     [1 if (tt_i, tt_j) not in self.exclude_types else 0
