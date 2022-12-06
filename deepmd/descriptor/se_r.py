@@ -455,18 +455,13 @@ class DescrptSeR (DescrptSe):
         start_index = 0
         inputs = tf.reshape(inputs, [-1, natoms[0], self.ndescrpt])
         output = []
-        if not (self.type_one_side and len(self.exclude_types) == 0):
+        if not self.type_one_side:
             for type_i in range(self.ntypes):
                 inputs_i = tf.slice (inputs,
                                      [ 0, start_index, 0],
                                      [-1, natoms[2+type_i], -1] )
                 inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
-                if self.type_one_side:
-                    # reuse NN parameters for all types to support type_one_side along with exclude_types
-                    reuse = tf.AUTO_REUSE
-                    filter_name = 'filter_type_all'+suffix
-                else:
-                    filter_name = 'filter_type_'+str(type_i)+suffix
+                filter_name = 'filter_type_'+str(type_i)+suffix
                 layer = self._filter_r(inputs_i, type_i, name=filter_name, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
                 layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i], self.get_dim_out()])
                 output.append(layer)
@@ -475,6 +470,33 @@ class DescrptSeR (DescrptSe):
             inputs_i = inputs
             inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
             type_i = -1
+            if self.exclude_types is not None:
+                # generate a mask
+                type_mask = np.array([
+                    [1 if (tt_i, tt_j) not in self.exclude_types else 0
+                    for tt_i in range(self.ntypes)]
+                    for tt_j in range(self.ntypes)
+                ], dtype = bool)
+                type_mask = tf.convert_to_tensor(type_mask, dtype = GLOBAL_TF_FLOAT_PRECISION)
+                type_mask = tf.reshape(type_mask, [-1])
+
+                # (nbatch * natoms, 1)
+                atype_expand = tf.reshape(atype, [-1, 1])
+                # (nbatch * natoms, ndescrpt)
+                idx_i = tf.tile(atype_expand * self.ntypes, (1, self.ndescrpt))
+                atype_descrpt = np.repeat(np.arange(self.ntypes), np.array(self.sel_r))
+                atype_descrpt = tf.convert_to_tensor(atype_descrpt, dtype = tf.int32)
+                # (1, ndescrpt)
+                atype_descrpt = tf.reshape(atype_descrpt, (1, self.ndescrpt))
+                # (nbatch * natoms, ndescrpt)
+                idx_j = tf.tile(atype_descrpt, (tf.shape(inputs_i)[0], 1))
+                # the index to mask (row index * ntypes + col index)
+                idx = idx_i + idx_j
+                idx = tf.reshape(idx, [-1])
+                mask = tf.nn.embedding_lookup(type_mask, idx)
+                # same as inputs_i, (nbatch * natoms, ndescrpt)
+                mask = tf.reshape(mask, [-1, self.ndescrpt])
+                inputs_i *= mask
             layer = self._filter_r(inputs_i, type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
             layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0], self.get_dim_out()])
             output.append(layer)
