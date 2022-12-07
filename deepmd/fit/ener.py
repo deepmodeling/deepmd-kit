@@ -518,14 +518,13 @@ class EnerFitting (Fitting):
             outs = tf.concat(outs_list, axis = 1)
         # with type embedding
         else:
-            if len(self.atom_ener) > 0:
-                raise RuntimeError("setting atom_ener is not supported by type embedding")
             atype_embed = tf.cast(atype_embed, self.fitting_precision)
             type_shape = atype_embed.get_shape().as_list()
             inputs = tf.concat(
                 [tf.reshape(inputs,[-1,self.dim_descrpt]),atype_embed],
                 axis=1
             )
+            original_dim_descrpt = self.dim_descrpt
             self.dim_descrpt = self.dim_descrpt + type_shape[1]
             inputs = tf.reshape(inputs, [-1, natoms[0], self.dim_descrpt])
             final_layer = self._build_lower(
@@ -533,6 +532,20 @@ class EnerFitting (Fitting):
                 inputs, fparam, aparam, 
                 bias_atom_e=0.0, suffix=suffix, reuse=reuse
             )
+            if len(self.atom_ener):
+                # remove contribution in vacuum
+                inputs_zero = tf.concat(
+                    [tf.reshape(inputs_zero, [-1, original_dim_descrpt]), atype_embed],
+                    axis=1
+                )
+                inputs_zero = tf.reshape(inputs_zero, [-1, natoms[0], self.dim_descrpt])
+                zero_layer = self._build_lower(
+                    0, natoms[0],
+                    inputs_zero, fparam, aparam,
+                    bias_atom_e=0.0, suffix=suffix, reuse=True,
+                )
+                # atomic energy will be stored in `self.t_bias_atom_e` which is not trainable
+                final_layer -= zero_layer
             outs = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[0]])
             # add bias
             self.atom_ener_before = outs

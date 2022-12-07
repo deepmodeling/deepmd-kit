@@ -591,18 +591,13 @@ class DescrptSeA (DescrptSe):
         inputs = tf.reshape(inputs, [-1, natoms[0], self.ndescrpt])
         output = []
         output_qmat = []
-        if not (self.type_one_side and len(self.exclude_types) == 0) and type_embedding is None:
+        if not self.type_one_side and type_embedding is None:
             for type_i in range(self.ntypes):
                 inputs_i = tf.slice (inputs,
                                      [ 0, start_index, 0],
                                      [-1, natoms[2+type_i], -1] )
                 inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
-                if self.type_one_side:
-                    # reuse NN parameters for all types to support type_one_side along with exclude_types
-                    reuse = tf.AUTO_REUSE
-                    filter_name = 'filter_type_all'+suffix
-                else:
-                    filter_name = 'filter_type_'+str(type_i)+suffix
+                filter_name = 'filter_type_'+str(type_i)+suffix
                 layer, qmat = self._filter(inputs_i, type_i, name=filter_name, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
                 layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i], self.get_dim_out()])
                 qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[2+type_i], self.get_dim_rot_mat_1() * 3])
@@ -615,6 +610,17 @@ class DescrptSeA (DescrptSe):
             type_i = -1
             if nvnmd_cfg.enable and nvnmd_cfg.quantize_descriptor: 
                 inputs_i = descrpt2r4(inputs_i, natoms)
+            if len(self.exclude_types):
+                mask = self.build_type_exclude_mask(
+                    self.exclude_types,
+                    self.ntypes,
+                    self.sel_a,
+                    self.ndescrpt,
+                    atype,
+                    tf.shape(inputs_i)[0],
+                )
+                inputs_i *= mask
+
             layer, qmat = self._filter(inputs_i, type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn, type_embedding=type_embedding)
             layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0], self.get_dim_out()])
             qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[0], self.get_dim_rot_mat_1() * 3])

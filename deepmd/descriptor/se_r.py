@@ -393,7 +393,7 @@ class DescrptSeR (DescrptSe):
         tf.summary.histogram('rij', self.rij)
         tf.summary.histogram('nlist', self.nlist)
 
-        self.dout = self._pass_filter(self.descrpt_reshape, natoms, suffix = suffix, reuse = reuse, trainable = self.trainable)
+        self.dout = self._pass_filter(self.descrpt_reshape, atype, natoms, suffix = suffix, reuse = reuse, trainable = self.trainable)
         tf.summary.histogram('embedding_net_output', self.dout)
 
         return self.dout
@@ -448,6 +448,7 @@ class DescrptSeR (DescrptSe):
 
     def _pass_filter(self, 
                      inputs,
+                     atype,
                      natoms,
                      reuse = None,
                      suffix = '', 
@@ -455,18 +456,13 @@ class DescrptSeR (DescrptSe):
         start_index = 0
         inputs = tf.reshape(inputs, [-1, natoms[0], self.ndescrpt])
         output = []
-        if not (self.type_one_side and len(self.exclude_types) == 0):
+        if not self.type_one_side:
             for type_i in range(self.ntypes):
                 inputs_i = tf.slice (inputs,
                                      [ 0, start_index, 0],
                                      [-1, natoms[2+type_i], -1] )
                 inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
-                if self.type_one_side:
-                    # reuse NN parameters for all types to support type_one_side along with exclude_types
-                    reuse = tf.AUTO_REUSE
-                    filter_name = 'filter_type_all'+suffix
-                else:
-                    filter_name = 'filter_type_'+str(type_i)+suffix
+                filter_name = 'filter_type_'+str(type_i)+suffix
                 layer = self._filter_r(inputs_i, type_i, name=filter_name, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
                 layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i], self.get_dim_out()])
                 output.append(layer)
@@ -475,6 +471,16 @@ class DescrptSeR (DescrptSe):
             inputs_i = inputs
             inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
             type_i = -1
+            if len(self.exclude_types):
+                mask = self.build_type_exclude_mask(
+                    self.exclude_types,
+                    self.ntypes,
+                    self.sel_r,
+                    self.ndescrpt,
+                    atype,
+                    tf.shape(inputs_i)[0],
+                )
+                inputs_i *= mask
             layer = self._filter_r(inputs_i, type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
             layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0], self.get_dim_out()])
             output.append(layer)
