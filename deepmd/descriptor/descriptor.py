@@ -417,7 +417,7 @@ class Descriptor(PluginVariant):
                                 ndescrpt: int,
                                 atype: tf.Tensor,
                                 shape0: tf.Tensor) -> tf.Tensor:
-        """Build the type exclude mask for the descriptor.
+        r"""Build the type exclude mask for the descriptor.
 
         Notes
         -----
