@@ -69,7 +69,7 @@ class TestModel(tf.test.TestCase):
                       'default_mesh' : [test_data['default_mesh']]
         }
         model._compute_input_stat(input_data)
-        model.descrpt.bias_atom_e = data.compute_energy_shift()
+        model.fitting.bias_atom_e = np.array(set_atom_ener)
 
         t_prop_c           = tf.placeholder(tf.float32, [5],    name='t_prop_c')
         t_energy           = tf.placeholder(GLOBAL_ENER_FLOAT_PRECISION, [None], name='t_energy')
