@@ -195,7 +195,7 @@ class MultiModel(Model):
                 suffix=suffix,
             )
             input_dict['type_embedding'] = type_embedding
-            input_dict['atype'] = atype_
+        input_dict['atype'] = atype_
 
         dout \
             = self.descrpt.build(coord_,

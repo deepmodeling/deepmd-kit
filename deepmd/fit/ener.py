@@ -140,7 +140,7 @@ class EnerFitting (Fitting):
         self.atom_ener_v = atom_ener
         for at, ae in enumerate(atom_ener):
             if ae is not None:
-                self.atom_ener.append(tf.constant(ae, self.fitting_precision, name = "atom_%d_ener" % at))
+                self.atom_ener.append(tf.constant(ae, GLOBAL_TF_FLOAT_PRECISION, name = "atom_%d_ener" % at))
             else:
                 self.atom_ener.append(None)
         self.useBN = False
@@ -286,6 +286,7 @@ class EnerFitting (Fitting):
     def _compute_std (self, sumv2, sumv, sumn) :
         return np.sqrt(sumv2/sumn - np.multiply(sumv/sumn, sumv/sumn))
 
+    @cast_precision
     def _build_lower(
             self,
             start_index,
@@ -368,7 +369,6 @@ class EnerFitting (Fitting):
         return final_layer
             
             
-    @cast_precision
     def build (self, 
                inputs : tf.Tensor,
                natoms : tf.Tensor,
@@ -425,12 +425,11 @@ class EnerFitting (Fitting):
             t_daparam = tf.constant(self.numb_aparam, 
                                     name = 'daparam', 
                                     dtype = tf.int32)
-            if type_embedding is not None:
-                self.t_bias_atom_e = tf.get_variable('t_bias_atom_e',
-                                            self.bias_atom_e.shape,
-                                            dtype=self.fitting_precision,
-                                            trainable=False,
-                                            initializer=tf.constant_initializer(self.bias_atom_e))
+            self.t_bias_atom_e = tf.get_variable('t_bias_atom_e',
+                                        self.bias_atom_e.shape,
+                                        dtype=GLOBAL_TF_FLOAT_PRECISION,
+                                        trainable=False,
+                                        initializer=tf.constant_initializer(self.bias_atom_e))
             if self.numb_fparam > 0: 
                 t_fparam_avg = tf.get_variable('t_fparam_avg', 
                                                self.numb_fparam,
@@ -460,9 +459,9 @@ class EnerFitting (Fitting):
             nframes = input_dict.get('nframes')
             if nframes is not None:
                 # like inputs, but we don't want to add a dependency on inputs
-                inputs_zero = tf.zeros((nframes, natoms[0], self.dim_descrpt), dtype=self.fitting_precision)
+                inputs_zero = tf.zeros((nframes, natoms[0], self.dim_descrpt), dtype=GLOBAL_TF_FLOAT_PRECISION)
             else:
-                inputs_zero = tf.zeros_like(inputs, dtype=self.fitting_precision)
+                inputs_zero = tf.zeros_like(inputs, dtype=GLOBAL_TF_FLOAT_PRECISION)
         
 
         if bias_atom_e is not None :
@@ -480,9 +479,9 @@ class EnerFitting (Fitting):
             aparam = (aparam - t_aparam_avg) * t_aparam_istd
             aparam = tf.reshape(aparam, [-1, self.numb_aparam * natoms[0]])
 
+        atype_nall = tf.reshape(atype, [-1, natoms[1]])
+        self.atype_nloc = tf.reshape(tf.slice(atype_nall, [0, 0], [-1, natoms[0]]), [-1])  ## lammps will make error
         if type_embedding is not None:
-            atype_nall = tf.reshape(atype, [-1, natoms[1]])
-            self.atype_nloc = tf.reshape(tf.slice(atype_nall, [0, 0], [-1, natoms[0]]), [-1])  ## lammps will make error
             atype_embed = tf.nn.embedding_lookup(type_embedding, self.atype_nloc)
         else:
             atype_embed = None
@@ -493,23 +492,19 @@ class EnerFitting (Fitting):
             start_index = 0
             outs_list = []
             for type_i in range(self.ntypes):
-                if bias_atom_e is None :
-                    type_bias_ae = 0.0
-                else :
-                    type_bias_ae = bias_atom_e[type_i]
                 final_layer = self._build_lower(
                     start_index, natoms[2+type_i], 
                     inputs, fparam, aparam, 
-                    bias_atom_e=type_bias_ae, suffix='_type_'+str(type_i)+suffix, reuse=reuse
+                    bias_atom_e=0., suffix='_type_'+str(type_i)+suffix, reuse=reuse
                 )
                 # concat the results
                 if type_i < len(self.atom_ener) and self.atom_ener[type_i] is not None:                
                     zero_layer = self._build_lower(
                         start_index, natoms[2+type_i], 
                         inputs_zero, fparam, aparam, 
-                        bias_atom_e=type_bias_ae, suffix='_type_'+str(type_i)+suffix, reuse=True
+                        bias_atom_e=0., suffix='_type_'+str(type_i)+suffix, reuse=True
                     )
-                    final_layer += self.atom_ener[type_i] - zero_layer
+                    final_layer -= zero_layer
                 final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i]])
                 outs_list.append(final_layer)
                 start_index += natoms[2+type_i]
@@ -518,7 +513,7 @@ class EnerFitting (Fitting):
             outs = tf.concat(outs_list, axis = 1)
         # with type embedding
         else:
-            atype_embed = tf.cast(atype_embed, self.fitting_precision)
+            atype_embed = tf.cast(atype_embed, GLOBAL_TF_FLOAT_PRECISION)
             type_shape = atype_embed.get_shape().as_list()
             inputs = tf.concat(
                 [tf.reshape(inputs,[-1,self.dim_descrpt]),atype_embed],
@@ -547,11 +542,11 @@ class EnerFitting (Fitting):
                 # atomic energy will be stored in `self.t_bias_atom_e` which is not trainable
                 final_layer -= zero_layer
             outs = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[0]])
-            # add bias
-            self.atom_ener_before = outs
-            self.add_type = tf.reshape(tf.nn.embedding_lookup(self.t_bias_atom_e, self.atype_nloc), [tf.shape(inputs)[0], natoms[0]])
-            outs = outs + self.add_type
-            self.atom_ener_after = outs
+        # add bias
+        self.atom_ener_before = outs
+        self.add_type = tf.reshape(tf.nn.embedding_lookup(self.t_bias_atom_e, self.atype_nloc), [tf.shape(inputs)[0], natoms[0]])
+        outs = outs + self.add_type
+        self.atom_ener_after = outs
 
         if self.tot_ener_zero:
             force_tot_ener = 0.0
