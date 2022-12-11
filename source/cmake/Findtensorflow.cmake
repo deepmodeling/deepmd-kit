@@ -35,7 +35,7 @@ endif ()
 if (BUILD_CPP_IF AND USE_TF_PYTHON_LIBS AND NOT SKBUILD)
   # Here we try to install libtensorflow_cc.so as well as libtensorflow_framework.so using libs within the python site-package tensorflow folder.
   execute_process(
-    COMMAND ${PYTHON_EXECUTABLE} -c "import tensorflow; print(tensorflow.sysconfig.get_lib())"
+    COMMAND ${Python_EXECUTABLE} -c "import tensorflow; print(tensorflow.sysconfig.get_lib())"
     WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
     OUTPUT_VARIABLE TENSORFLOW_ROOT
     RESULT_VARIABLE TENSORFLOW_ROOT_RESULT_VAR
@@ -108,9 +108,9 @@ if (BUILD_CPP_IF AND NOT USE_TF_PYTHON_LIBS)
 	"You can manually set the tensorflow install path by -DTENSORFLOW_ROOT ")
     endif ()
   endforeach ()
-else (BUILD_CPP_IF)
+else (BUILD_CPP_IF AND NOT USE_TF_PYTHON_LIBS)
   message (STATUS "Disabled cpp interface build, looking for tensorflow_framework")
-endif (BUILD_CPP_IF)
+endif (BUILD_CPP_IF AND NOT USE_TF_PYTHON_LIBS)
 
 
 # tensorflow_framework
@@ -130,19 +130,19 @@ else ()
 list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.1)
 list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.2)
 endif()
-set (TensorFlow_LIBRARY_PATH "")
+set (TensorFlowFramework_LIBRARY_PATH "")
 foreach (module ${TensorFlowFramework_FIND_COMPONENTS})
-  find_library(TensorFlow_LIBRARY_${module}
+  find_library(TensorFlowFramework_LIBRARY_${module}
     NAMES ${module}
     PATHS ${TensorFlow_search_PATHS} PATH_SUFFIXES ${TF_SUFFIX} NO_DEFAULT_PATH
     )
-  if (TensorFlow_LIBRARY_${module})
-    list(APPEND TensorFlow_LIBRARY ${TensorFlow_LIBRARY_${module}})
-    get_filename_component(TensorFlow_LIBRARY_PATH_${module} ${TensorFlow_LIBRARY_${module}} PATH)
-    list(APPEND TensorFlow_LIBRARY_PATH ${TensorFlow_LIBRARY_PATH_${module}})
+  if (TensorFlowFramework_LIBRARY_${module})
+    list(APPEND TensorFlowFramework_LIBRARY ${TensorFlowFramework_LIBRARY_${module}})
+    get_filename_component(TensorFlowFramework_LIBRARY_PATH_${module} ${TensorFlowFramework_LIBRARY_${module}} PATH)
+    list(APPEND TensorFlow_LIBRARY_PATH ${TensorFlowFramework_LIBRARY_PATH_${module}})
   elseif (tensorflow_FIND_REQUIRED)
     message(FATAL_ERROR 
-      "Not found ${TF_SUFFIX}/${module} in '${TensorFlow_search_PATHS}' "
+      "Not found ${TF_SUFFIX}${module} in '${TensorFlow_search_PATHS}' "
       "You can manually set the tensorflow install path by -DTENSORFLOW_ROOT ")
   endif ()
 endforeach ()
@@ -150,19 +150,19 @@ endforeach ()
 if (BUILD_CPP_IF AND USE_TF_PYTHON_LIBS)
   list(APPEND TensorFlow_search_PATHS ${TENSORFLOW_ROOT}/python)
   set(TF_SUFFIX "")
-  set(TensorFlowFramework_FIND_COMPONENTS _pywrap_tensorflow_internal)
-  foreach (module ${TensorFlowFramework_FIND_COMPONENTS})
-    find_library(TensorFlowFramework_LIBRARY_${module}
+  set(TensorFlow_FIND_COMPONENTS _pywrap_tensorflow_internal)
+  foreach (module ${TensorFlow_FIND_COMPONENTS})
+    find_library(TensorFlow_LIBRARY_${module}
       NAMES ${module}
       PATHS ${TensorFlow_search_PATHS} PATH_SUFFIXES ${TF_SUFFIX} NO_DEFAULT_PATH
       )
-    if (TensorFlowFramework_LIBRARY_${module})
-      list(APPEND TensorFlowFramework_LIBRARY ${TensorFlowFramework_LIBRARY_${module}})
-      get_filename_component(TensorFlowFramework_LIBRARY_PATH_${module} ${TensorFlowFramework_LIBRARY_${module}} PATH)
-      list(APPEND TensorFlowFramework_LIBRARY_PATH ${TensorFlowFramework_LIBRARY_PATH_${module}})
+    if (TensorFlow_LIBRARY_${module})
+      list(APPEND TensorFlow_LIBRARY ${TensorFlow_LIBRARY_${module}})
+      get_filename_component(TensorFlow_LIBRARY_PATH_${module} ${TensorFlow_LIBRARY_${module}} PATH)
+      list(APPEND TensorFlow_LIBRARY_PATH ${TensorFlow_LIBRARY_PATH_${module}})
     elseif (tensorflow_FIND_REQUIRED)
       message(FATAL_ERROR 
-        "Not found ${TF_SUFFIX}/${module} in '${TensorFlow_search_PATHS}' ")
+        "Not found ${TF_SUFFIX}${module} in '${TensorFlow_search_PATHS}' ")
     endif ()
   endforeach ()
 endif()
