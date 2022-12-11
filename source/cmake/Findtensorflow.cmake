@@ -35,11 +35,12 @@ endif ()
 if (BUILD_CPP_IF AND USE_TF_PYTHON_LIBS AND NOT SKBUILD)
   # Here we try to install libtensorflow_cc.so as well as libtensorflow_framework.so using libs within the python site-package tensorflow folder.
   execute_process(
-    COMMAND "${PYTHON_EXECUTABLE}" -c "import tensorflow; print(tensorflow.sysconfig.get_lib())"
+    COMMAND ${PYTHON_EXECUTABLE} -c "import tensorflow; print(tensorflow.sysconfig.get_lib())"
     WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
     OUTPUT_VARIABLE TENSORFLOW_ROOT
     RESULT_VARIABLE TENSORFLOW_ROOT_RESULT_VAR
     ERROR_VARIABLE TENSORFLOW_ROOT_ERROR_VAR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
   )
   if (NOT ${TENSORFLOW_ROOT_RESULT_VAR} EQUAL 0)
     message(FATAL_ERROR "Cannot determine tensorflow root, error code: ${TENSORFLOW_ROOT_RESULT_VAR}, error message: ${TENSORFLOW_ROOT_ERROR_VAR}")
