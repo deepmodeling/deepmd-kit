@@ -42,7 +42,7 @@ if (BUILD_CPP_IF AND USE_TF_PYTHON_LIBS AND NOT SKBUILD)
     ERROR_VARIABLE TENSORFLOW_ROOT_ERROR_VAR
   )
   if (NOT ${TENSORFLOW_ROOT_RESULT_VAR} EQUAL 0)
-    message(FATAL_ERROR "Cannot determine tensorflow root, error message: ${TENSORFLOW_ROOT_ERROR_VAR}")
+    message(FATAL_ERROR "Cannot determine tensorflow root, error code: ${TENSORFLOW_ROOT_RESULT_VAR}, error message: ${TENSORFLOW_ROOT_ERROR_VAR}")
   endif()
 endif ()
 
