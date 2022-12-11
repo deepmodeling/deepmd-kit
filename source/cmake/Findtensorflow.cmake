@@ -369,6 +369,6 @@ if(BUILD_CPP_IF)
                             -D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
   if (USE_TF_PYTHON_LIBS)
     # link: libpython3.x.so
-    target_link_libraries (TensorFlow::tensorflow_cc INTERFACE Python::python)
+    target_link_libraries (TensorFlow::tensorflow_cc INTERFACE ${Python_LIBRARIES})
   endif()
 endif()
