@@ -156,17 +156,16 @@ if (BUILD_CPP_IF AND USE_TF_PYTHON_LIBS)
       NAMES ${module}
       PATHS ${TensorFlow_search_PATHS} PATH_SUFFIXES ${TF_SUFFIX} NO_DEFAULT_PATH
       )
-    message(STATUS ${TensorFlow_LIBRARY_${module}})
     if (TensorFlow_LIBRARY_${module})
       list(APPEND TensorFlow_LIBRARY ${TensorFlow_LIBRARY_${module}})
       get_filename_component(TensorFlow_LIBRARY_PATH_${module} ${TensorFlow_LIBRARY_${module}} PATH)
       list(APPEND TensorFlow_LIBRARY_PATH ${TensorFlow_LIBRARY_PATH_${module}})
+      set (TensorFlow_LIBRARY_tensorflow_cc ${TensorFlow_LIBRARY_${module}})
     elseif (tensorflow_FIND_REQUIRED)
       message(FATAL_ERROR 
         "Not found ${TF_SUFFIX}/${module} in '${TensorFlow_search_PATHS}' ")
     endif ()
   endforeach ()
-  set (TensorFlow_LIBRARY_tensorflow_cc ${TensorFlow_LIBRARY__pywrap_tensorflow_internal})
 endif()
 
 
