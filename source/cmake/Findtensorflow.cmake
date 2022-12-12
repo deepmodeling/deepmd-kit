@@ -142,27 +142,27 @@ foreach (module ${TensorFlowFramework_FIND_COMPONENTS})
     list(APPEND TensorFlow_LIBRARY_PATH ${TensorFlowFramework_LIBRARY_PATH_${module}})
   elseif (tensorflow_FIND_REQUIRED)
     message(FATAL_ERROR 
-      "Not found ${TF_SUFFIX}${module} in '${TensorFlow_search_PATHS}' "
+      "Not found ${TF_SUFFIX}/${module} in '${TensorFlow_search_PATHS}' "
       "You can manually set the tensorflow install path by -DTENSORFLOW_ROOT ")
   endif ()
 endforeach ()
 
 if (BUILD_CPP_IF AND USE_TF_PYTHON_LIBS)
-  list(APPEND TensorFlow_search_PATHS ${TENSORFLOW_ROOT}/python)
-  set(TF_SUFFIX "")
-  set(TensorFlow_FIND_COMPONENTS _pywrap_tensorflow_internal)
+  set(TF_SUFFIX python)
+  set(TensorFlow_FIND_COMPONENTS _pywrap_tensorflow_internal.so)
   foreach (module ${TensorFlow_FIND_COMPONENTS})
     find_library(TensorFlow_LIBRARY_${module}
       NAMES ${module}
       PATHS ${TensorFlow_search_PATHS} PATH_SUFFIXES ${TF_SUFFIX} NO_DEFAULT_PATH
       )
+    message(STATUS ${TensorFlow_LIBRARY_${module}})
     if (TensorFlow_LIBRARY_${module})
       list(APPEND TensorFlow_LIBRARY ${TensorFlow_LIBRARY_${module}})
       get_filename_component(TensorFlow_LIBRARY_PATH_${module} ${TensorFlow_LIBRARY_${module}} PATH)
       list(APPEND TensorFlow_LIBRARY_PATH ${TensorFlow_LIBRARY_PATH_${module}})
     elseif (tensorflow_FIND_REQUIRED)
       message(FATAL_ERROR 
-        "Not found ${TF_SUFFIX}${module} in '${TensorFlow_search_PATHS}' ")
+        "Not found ${TF_SUFFIX}/${module} in '${TensorFlow_search_PATHS}' ")
     endif ()
   endforeach ()
 endif()
