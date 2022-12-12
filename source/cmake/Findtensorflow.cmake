@@ -150,7 +150,7 @@ endforeach ()
 # find _pywrap_tensorflow_internal and set it as tensorflow_cc
 if (BUILD_CPP_IF AND USE_TF_PYTHON_LIBS)
   set(TF_SUFFIX python)
-  set(TensorFlow_FIND_COMPONENTS _pywrap_tensorflow_internal.so)
+  set(TensorFlow_FIND_COMPONENTS _pywrap_tensorflow_internal${CMAKE_SHARED_LIBRARY_SUFFIX})
   foreach (module ${TensorFlow_FIND_COMPONENTS})
     find_library(TensorFlow_LIBRARY_${module}
       NAMES ${module}
