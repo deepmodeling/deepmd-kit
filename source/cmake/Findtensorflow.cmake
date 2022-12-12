@@ -147,6 +147,7 @@ foreach (module ${TensorFlowFramework_FIND_COMPONENTS})
   endif ()
 endforeach ()
 
+# find _pywrap_tensorflow_internal and set it as tensorflow_cc
 if (BUILD_CPP_IF AND USE_TF_PYTHON_LIBS)
   set(TF_SUFFIX python)
   set(TensorFlow_FIND_COMPONENTS _pywrap_tensorflow_internal.so)
@@ -165,6 +166,7 @@ if (BUILD_CPP_IF AND USE_TF_PYTHON_LIBS)
         "Not found ${TF_SUFFIX}/${module} in '${TensorFlow_search_PATHS}' ")
     endif ()
   endforeach ()
+  set (TensorFlow_LIBRARY_tensorflow_cc ${TensorFlow_LIBRARY__pywrap_tensorflow_internal})
 endif()
 
 
