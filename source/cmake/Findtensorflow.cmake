@@ -139,7 +139,7 @@ foreach (module ${TensorFlowFramework_FIND_COMPONENTS})
   if (TensorFlowFramework_LIBRARY_${module})
     list(APPEND TensorFlowFramework_LIBRARY ${TensorFlowFramework_LIBRARY_${module}})
     get_filename_component(TensorFlowFramework_LIBRARY_PATH_${module} ${TensorFlowFramework_LIBRARY_${module}} PATH)
-    list(APPEND TensorFlow_LIBRARY_PATH ${TensorFlowFramework_LIBRARY_PATH_${module}})
+    list(APPEND TensorFlowFramework_LIBRARY_PATH ${TensorFlowFramework_LIBRARY_PATH_${module}})
   elseif (tensorflow_FIND_REQUIRED)
     message(FATAL_ERROR 
       "Not found ${TF_SUFFIX}/${module} in '${TensorFlow_search_PATHS}' "
