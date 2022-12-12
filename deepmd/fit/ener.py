@@ -587,7 +587,7 @@ class EnerFitting (Fitting):
         try:
             self.bias_atom_e = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_bias_atom_e' % suffix)
         except GraphWithoutTensorError:
-            # model without type_embedding has no t_bias_atom_e
+            # for compatibility, old models has no t_bias_atom_e
             pass
 
     def change_energy_bias(self,
