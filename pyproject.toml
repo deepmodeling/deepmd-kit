@@ -49,7 +49,7 @@ repository = "https://github.com/deepmodeling/deepmd-kit"
 write_to = "deepmd/_version.py"
 
 [tool.distutils.bdist_wheel]
-universal = true
+python-tag = "py3"
 
 [tool.cibuildwheel]
 test-command = "dp -h"
