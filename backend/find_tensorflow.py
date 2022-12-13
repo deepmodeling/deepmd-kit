@@ -1,5 +1,6 @@
 import site
 import os
+import platform
 from importlib.util import find_spec
 from importlib.machinery import FileFinder
 from sysconfig import get_path
@@ -85,8 +86,19 @@ def get_tf_requirement(tf_version: str = "") -> dict:
     """
     if tf_version == "":
         tf_version = os.environ.get("TENSORFLOW_VERSION", "")
+    machine = platform.uname().machine
 
-    if tf_version == "":
+    if machine == 'aarch64' and tf_version == "":
+        return {
+            "cpu": ["tensorflow"],
+            "gpu": ["tensorflow"],
+        }
+    elif machine == 'aarch64':
+        return {
+            "cpu": ["tensorflow=={tf_version}"],
+            "gpu": ["tensorflow=={tf_version}"],
+        }
+    elif tf_version == "":
         return {
             "cpu": ["tensorflow-cpu"],
             "gpu": ["tensorflow"],
