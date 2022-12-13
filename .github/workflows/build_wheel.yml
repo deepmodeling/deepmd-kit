@@ -51,16 +51,32 @@ jobs:
           - os: windows-2019
             python: 310
             platform_id: win_amd64
+          # linux-aarch64
+          - os: ubuntu-latest
+            python: 37
+            platform_id: manylinux_aarch64
+          - os: ubuntu-latest
+            python: 38
+            platform_id: manylinux_aarch64
+          - os: ubuntu-latest
+            python: 39
+            platform_id: manylinux_aarch64
+          - os: ubuntu-latest
+            python: 310
+            platform_id: manylinux_aarch64
     steps:
       - uses: actions/checkout@v2
         with:
           submodules: true
+      - uses: docker/setup-qemu-action@v2
+        name: Setup QEMU
+        if: matrix.platform_id == 'manylinux_aarch64'
       - uses: actions/setup-python@v2
         name: Install Python
         with:
           python-version: '3.8'
 
-      - run: python -m pip install cibuildwheel==2.11.2
+      - run: python -m pip install cibuildwheel==2.11.3
       - name: Build wheels
         run: python -m cibuildwheel --output-dir wheelhouse
         env:
