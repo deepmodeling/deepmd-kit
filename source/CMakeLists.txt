@@ -108,6 +108,11 @@ else()
   message(STATUS "Will not build AMD GPU support")  
 endif (USE_ROCM_TOOLKIT)
 
+# setup tensorflow libraries by python
+if (USE_TF_PYTHON_LIBS)
+  find_package (Python COMPONENTS Interpreter Development REQUIRED)
+endif(USE_TF_PYTHON_LIBS)
+
 #define USE_ASCEND, find tensorflow abi info
 if (USE_ASCEND)
   add_definitions("-DHUAWEI_ASCEND")
@@ -153,14 +158,6 @@ else()
 endif(USE_ASCEND AND BUILD_CPP_IF)
 
 set(DEEPMD_SOURCE_DIR ${PROJECT_SOURCE_DIR}/..)
-
-# setup tensorflow libraries by python
-if (USE_TF_PYTHON_LIBS)
-  find_package (Python COMPONENTS Interpreter Development REQUIRED)
-endif(USE_TF_PYTHON_LIBS)
-
-# find tensorflow, I need tf abi info
-find_package(tensorflow REQUIRED)
 
 # find threads
 find_package(Threads)
