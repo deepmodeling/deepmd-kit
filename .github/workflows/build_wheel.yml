@@ -14,68 +14,20 @@ jobs:
         include:
           # linux-64
           - os: ubuntu-latest
-            python: 37
-            platform_id: manylinux_x86_64
-            dp_variant: cuda
-          - os: ubuntu-latest
-            python: 38
-            platform_id: manylinux_x86_64
-            dp_variant: cuda
-          - os: ubuntu-latest
-            python: 39
-            platform_id: manylinux_x86_64
-            dp_variant: cuda
-          - os: ubuntu-latest
             python: 310
             platform_id: manylinux_x86_64
             dp_variant: cuda
           # macos-x86-64
-          - os: macos-latest
-            python: 37
-            platform_id: macosx_x86_64
-            dp_variant: cpu
-          - os: macos-latest
-            python: 38
-            platform_id: macosx_x86_64
-            dp_variant: cpu
-          - os: macos-latest
-            python: 39
-            platform_id: macosx_x86_64
-            dp_variant: cpu
           - os: macos-latest
             python: 310
             platform_id: macosx_x86_64
             dp_variant: cpu
           # win-64
           - os: windows-2019
-            python: 37
-            platform_id: win_amd64
-            dp_variant: cpu
-          - os: windows-2019
-            python: 38
-            platform_id: win_amd64
-            dp_variant: cpu
-          - os: windows-2019
-            python: 39
-            platform_id: win_amd64
-            dp_variant: cpu
-          - os: windows-2019
             python: 310
             platform_id: win_amd64
             dp_variant: cpu
           # linux-aarch64
-          - os: ubuntu-latest
-            python: 37
-            platform_id: manylinux_aarch64
-            dp_variant: cpu
-          - os: ubuntu-latest
-            python: 38
-            platform_id: manylinux_aarch64
-            dp_variant: cpu
-          - os: ubuntu-latest
-            python: 39
-            platform_id: manylinux_aarch64
-            dp_variant: cpu
           - os: ubuntu-latest
             python: 310
             platform_id: manylinux_aarch64
