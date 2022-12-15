@@ -33,6 +33,7 @@ set_target_properties(
 )
 endif()
 
+if(BUILD_PY_IF)
 install(
   TARGETS	${libipiname}
   DESTINATION	lib/
@@ -41,6 +42,16 @@ install(
   TARGETS	${ipiname}
   DESTINATION	bin/
 )
+else(BUILD_PY_IF)
+  install(
+    TARGETS	${libipiname}
+    DESTINATION	deepmd/op/
+  )
+  install(
+    TARGETS	${ipiname}
+    DESTINATION	deepmd/op/
+  )
+endif(BUILD_PY_IF)
 endfunction()
 _add_ipi_variant("${HIGH_PREC_VARIANT}" "${HIGH_PREC_DEF}")
 _add_ipi_variant("${LOW_PREC_VARIANT}" "${LOW_PREC_DEF}")

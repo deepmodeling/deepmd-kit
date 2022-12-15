@@ -149,8 +149,8 @@ endif()
 
 # define names of libs
 set (LIB_DEEPMD		"deepmd")
+set (LIB_DEEPMD_OP		"deepmd_op")
 if (BUILD_CPP_IF)
-  set (LIB_DEEPMD_OP		"deepmd_op")
   set (LIB_DEEPMD_CC		"deepmd_cc")
   set (LIB_DEEPMD_C     "deepmd_c")
   if (USE_CUDA_TOOLKIT)
@@ -181,8 +181,10 @@ if (BUILD_CPP_IF)
   add_subdirectory (lmp/)
   if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 4.8)
     # add_subdirectory (md/)
+    if(NOT BUILD_PY_IF)
     add_subdirectory (ipi/)
     add_subdirectory (gmx/)
+    endif()
   endif ()
 endif (BUILD_CPP_IF)
 
@@ -205,7 +207,7 @@ add_custom_target(lammps
     COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_lammps.cmake)
 
 # add configure file
-if(BUILD_CPP_IF)
+if(BUILD_CPP_IF AND NOT BUILD_PY_IF)
   include(CMakePackageConfigHelpers)
   set(targets_export_name ${CMAKE_PROJECT_NAME}Targets CACHE INTERNAL "")
   set(generated_dir "${CMAKE_CURRENT_BINARY_DIR}/generated" CACHE INTERNAL "")
@@ -220,4 +222,4 @@ if(BUILD_CPP_IF)
     "${config_file}" INSTALL_DESTINATION ${cmake_files_install_dir})
   install(FILES ${version_file} ${config_file}
     DESTINATION ${cmake_files_install_dir})
-endif(BUILD_CPP_IF)
+endif(BUILD_CPP_IF AND NOT BUILD_PY_IF)

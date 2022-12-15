@@ -87,6 +87,9 @@ if (DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
     target_link_libraries(${libname} PRIVATE coverage_config)
   endif()
 
+  if(BUILD_PY_IF)
+    install(TARGETS ${libname} DESTINATION deepmd/op/)
+  else(BUILD_PY_IF)
   install(TARGETS ${libname} DESTINATION lib/)
 
   if (${LAMMPS_VERSION_NUMBER} GREATER_EQUAL 20220324)
@@ -103,10 +106,15 @@ if (DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
         )"
     )
   endif()
+  endif(BUILD_PY_IF)
 
   endfunction()
+  if(BUILD_PY_IF)
+    _add_lmp_plugin_variant("plugin" "${HIGH_PREC_DEF}")
+  else(BUILD_PY_IF)
   _add_lmp_plugin_variant("${HIGH_PREC_VARIANT}" "${HIGH_PREC_DEF}")
   _add_lmp_plugin_variant("${LOW_PREC_VARIANT}" "${LOW_PREC_DEF}")
+  endif()
 
 else()
   message(STATUS "disable LAMMPS plugin mode")

@@ -34,6 +34,13 @@ if os.environ.get("DP_BUILD_TESTING", "0") == "1":
     cmake_args.append("-DBUILD_TESTING:BOOL=TRUE")
 if os.environ.get("DP_ENABLE_NATIVE_OPTIMIZATION", "0") == "1":
     cmake_args.append("-DENABLE_NATIVE_OPTIMIZATION:BOOL=TRUE")
+dp_lammps_version = os.environ.get("DP_LAMMPS_VERSION", "")
+if dp_lammps_version != "":
+    cmake_args.append("-DBUILD_CPP_IF:BOOL=TRUE")
+    cmake_args.append("-DUSE_TF_PYTHON_LIBS:BOOL=TRUE")
+    cmake_args.append(f"-DLAMMPS_VERSION={dp_lammps_version}")
+else:
+    cmake_args.append("-DBUILD_CPP_IF:BOOL=FALSE")
 
 tf_install_dir, _ = find_tensorflow()
 tf_version = get_tf_version(tf_install_dir)
@@ -73,7 +80,6 @@ setup(
     cmake_args=[
         f"-DTENSORFLOW_ROOT:PATH={tf_install_dir}",
         "-DBUILD_PY_IF:BOOL=TRUE",
-        "-DBUILD_CPP_IF:BOOL=FALSE",
         *cmake_args,
     ],
     cmake_source_dir="source",
@@ -95,6 +101,7 @@ setup(
             "sphinx-argparse",
             "pygments-lammps",
             ],
+        "lmp": "lammps",
         **get_tf_requirement(tf_version),
     },
     entry_points={"console_scripts": ["dp = deepmd.entrypoints.main:main"]},

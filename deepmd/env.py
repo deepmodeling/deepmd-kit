@@ -376,7 +376,7 @@ MODEL_VERSION = GLOBAL_CONFIG["model_version"]
 TF_VERSION = GLOBAL_CONFIG["tf_version"]
 TF_CXX11_ABI_FLAG = int(GLOBAL_CONFIG["tf_cxx11_abi_flag"])
 
-op_module = get_module("op_abi")
+op_module = get_module("deepmd_op")
 op_grads_module = get_module("op_grads")
 
 # FLOAT_PREC
