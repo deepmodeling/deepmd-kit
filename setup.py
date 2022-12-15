@@ -4,6 +4,7 @@ import os
 import sys
 
 from skbuild import setup
+from wheel.bdist_wheel import bdist_wheel
 
 topdir = os.path.abspath(os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(topdir, 'backend'))
@@ -36,6 +37,14 @@ if os.environ.get("DP_ENABLE_NATIVE_OPTIMIZATION", "0") == "1":
 
 tf_install_dir, _ = find_tensorflow()
 tf_version = get_tf_version(tf_install_dir)
+
+
+class bdist_wheel_abi3(bdist_wheel):
+    def get_tag(self):
+        python, abi, plat = super().get_tag()
+        if python.startswith("cp"):
+            return "py37", "none", plat
+        return python, abi, plat
 
 
 # TODO: migrate packages and entry_points to pyproject.toml after scikit-build supports it
@@ -89,4 +98,7 @@ setup(
         **get_tf_requirement(tf_version),
     },
     entry_points={"console_scripts": ["dp = deepmd.entrypoints.main:main"]},
+    cmdclass = {
+        "bdist_wheel": bdist_wheel_abi3,
+    },
 )
