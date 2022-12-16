@@ -10,6 +10,7 @@ This header-only library provides a C++ 11 interface to the DeePMD-kit C API.
 #include <vector>
 #include <iostream>
 #include <cassert>
+#include <algorithm>
 
 #include "c_api.h"
 
@@ -164,6 +165,186 @@ inline void _DP_DeepPotModelDeviComputeNList<float>(
     float *atomic_virial)
 {
     DP_DeepPotModelDeviComputeNListf(dp, natom, coord, atype, cell, nghost, nlist, ago, energy, force, virial, atomic_energy, atomic_virial);
+}
+
+template <typename FPTYPE>
+inline void _DP_DeepTensorComputeTensor(
+    DP_DeepTensor *dt,
+    const int natom,
+    const FPTYPE *coord,
+    const int *atype,
+    const FPTYPE *cell,
+    FPTYPE **tensor,
+    int* size);
+
+template <>
+inline void _DP_DeepTensorComputeTensor<double>(
+    DP_DeepTensor *dt,
+    const int natom,
+    const double *coord,
+    const int *atype,
+    const double *cell,
+    double **tensor,
+    int* size)
+{
+    DP_DeepTensorComputeTensor(dt, natom, coord, atype, cell, tensor, size);
+}
+
+template <>
+inline void _DP_DeepTensorComputeTensor<float>(
+    DP_DeepTensor *dt,
+    const int natom,
+    const float *coord,
+    const int *atype,
+    const float *cell,
+    float **tensor,
+    int* size)
+{
+    DP_DeepTensorComputeTensorf(dt, natom, coord, atype, cell, tensor, size);
+}
+
+template <typename FPTYPE>
+inline void _DP_DeepTensorComputeTensorNList(
+    DP_DeepTensor *dt,
+    const int natom,
+    const FPTYPE *coord,
+    const int *atype,
+    const FPTYPE *cell,
+    const int nghost,
+    const DP_Nlist *nlist,
+    FPTYPE **tensor,
+    int* size);
+
+template <>
+inline void _DP_DeepTensorComputeTensorNList<double>(
+    DP_DeepTensor *dt,
+    const int natom,
+    const double *coord,
+    const int *atype,
+    const double *cell,
+    const int nghost,
+    const DP_Nlist *nlist,
+    double **tensor,
+    int* size)
+{
+    DP_DeepTensorComputeTensorNList(dt, natom, coord, atype, cell, nghost, nlist, tensor, size);
+}
+
+template <>
+inline void _DP_DeepTensorComputeTensorNList<float>(
+    DP_DeepTensor *dt,
+    const int natom,
+    const float *coord,
+    const int *atype,
+    const float *cell,
+    const int nghost,
+    const DP_Nlist *nlist,
+    float **tensor,
+    int* size)
+{
+    DP_DeepTensorComputeTensorNListf(dt, natom, coord, atype, cell, nghost, nlist, tensor, size);
+}
+
+template <typename FPTYPE>
+inline void _DP_DeepTensorCompute(
+    DP_DeepTensor *dt,
+    const int natom,
+    const FPTYPE *coord,
+    const int *atype,
+    const FPTYPE *cell,
+    FPTYPE *global_tensor,
+    FPTYPE *force,
+    FPTYPE *virial,
+    FPTYPE **atomic_energy,
+    FPTYPE *atomic_virial,
+    int* size_at);
+
+template <>
+inline void _DP_DeepTensorCompute<double>(
+    DP_DeepTensor *dt,
+    const int natom,
+    const double *coord,
+    const int *atype,
+    const double *cell,
+    double *global_tensor,
+    double *force,
+    double *virial,
+    double **atomic_tensor,
+    double *atomic_virial,
+    int* size_at)
+{
+    DP_DeepTensorCompute(dt, natom, coord, atype, cell, global_tensor, force, virial, atomic_tensor, atomic_virial, size_at);
+}
+
+template <>
+inline void _DP_DeepTensorCompute<float>(
+    DP_DeepTensor *dt,
+    const int natom,
+    const float *coord,
+    const int *atype,
+    const float *cell,
+    float *global_tensor,
+    float *force,
+    float *virial,
+    float **atomic_tensor,
+    float *atomic_virial,
+    int* size_at)
+{
+    DP_DeepTensorComputef(dt, natom, coord, atype, cell, global_tensor, force, virial, atomic_tensor, atomic_virial, size_at);
+}
+
+template <typename FPTYPE>
+inline void _DP_DeepTensorComputeNList(
+    DP_DeepTensor *dt,
+    const int natom,
+    const FPTYPE *coord,
+    const int *atype,
+    const FPTYPE *cell,
+    const int nghost,
+    const DP_Nlist *nlist,
+    FPTYPE *global_tensor,
+    FPTYPE *force,
+    FPTYPE *virial,
+    FPTYPE **atomic_energy,
+    FPTYPE *atomic_virial,
+    int* size_at);
+
+template <>
+inline void _DP_DeepTensorComputeNList<double>(
+    DP_DeepTensor *dt,
+    const int natom,
+    const double *coord,
+    const int *atype,
+    const double *cell,
+    const int nghost,
+    const DP_Nlist *nlist,
+    double *global_tensor,
+    double *force,
+    double *virial,
+    double **atomic_tensor,
+    double *atomic_virial,
+    int* size_at)
+{
+    DP_DeepTensorComputeNList(dt, natom, coord, atype, cell, nghost, nlist, global_tensor, force, virial, atomic_tensor, atomic_virial, size_at);
+}
+
+template <>
+inline void _DP_DeepTensorComputeNList<float>(
+    DP_DeepTensor *dt,
+    const int natom,
+    const float *coord,
+    const int *atype,
+    const float *cell,
+    const int nghost,
+    const DP_Nlist *nlist,
+    float *global_tensor,
+    float *force,
+    float *virial,
+    float **atomic_tensor,
+    float *atomic_virial,
+    int* size_at)
+{
+    DP_DeepTensorComputeNListf(dt, natom, coord, atype, cell, nghost, nlist, global_tensor, force, virial, atomic_tensor, atomic_virial, size_at);
 }
 
 namespace deepmd
@@ -651,6 +832,334 @@ namespace deepmd
         private:
             DP_DeepPotModelDevi *dp;
             int numb_models;
+        };
+
+        /**
+         * @brief Deep Tensor.
+         **/
+        class DeepTensor
+        {
+        public:
+            /**
+             * @brief Deep Tensor constructor without initialization.
+             **/
+            DeepTensor() : dt(nullptr) {};
+            ~DeepTensor(){};
+            /**
+             * @brief DeepTensor constructor with initialization.
+             * @param[in] model The name of the frozen model file.
+             **/
+            DeepTensor(const std::string &model) : dt(nullptr)
+            {
+                init(model);
+            };
+            /**
+             * @brief Initialize the DeepTensor.
+             * @param[in] model The name of the frozen model file.
+             **/
+            void init(const std::string &model)
+            {
+                if (dt)
+                {
+                    std::cerr << "WARNING: deepmd-kit should not be initialized twice, do nothing at the second call of initializer" << std::endl;
+                    return;
+                }
+                dt = DP_NewDeepTensor(model.c_str());
+                odim = output_dim();
+                nsel_types = DP_DeepTensorGetNumbSelTypes(dt);
+            };
+
+            /**
+             * @brief Evaluate the tensor, force and virial by using this Deep Tensor.
+             * @param[out] tensor The atomic tensor.
+             * @param[in] coord The coordinates of atoms. The array should be of size nframes x natoms x 3.
+             * @param[in] atype The atom types. The list should contain natoms ints.
+             * @param[in] box The cell of the region. The array should be of size nframes x 9 (PBC) or empty (no PBC).
+             **/
+            template <typename VALUETYPE>
+            void compute(std::vector<VALUETYPE> &tensor,
+                         const std::vector<VALUETYPE> &coord,
+                         const std::vector<int> &atype,
+                         const std::vector<VALUETYPE> &box)
+            {
+                unsigned int natoms = atype.size();
+                assert(natoms * 3 == coord.size());
+                if (!box.empty()) {
+                    assert(box.size() == 9);
+                }
+                const VALUETYPE *coord_ = &coord[0];
+                const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
+                const int *atype_ = &atype[0];
+
+                VALUETYPE *tensor_;
+                VALUETYPE **p_tensor = &tensor_;
+                int size;
+                int *p_size = &size;
+
+                _DP_DeepTensorComputeTensor<VALUETYPE>(dt, natoms, coord_, atype_, box_, p_tensor, p_size);
+
+                tensor.resize(size);
+                std::copy(tensor_, tensor_ + size, tensor.begin());
+                delete[] tensor_;
+            };
+
+            /**
+             * @brief Evaluate the tensor, force and virial by using this Deep Tensor with the neighbor list.
+             * @param[out] tensor The tensor.
+             * @param[in] coord The coordinates of atoms. The array should be of size nframes x natoms x 3.
+             * @param[in] atype The atom types. The list should contain natoms ints.
+             * @param[in] box The cell of the region. The array should be of size nframes x 9 (PBC) or empty (no PBC).
+             * @param[in] nghost The number of ghost atoms.
+             * @param[in] nlist The neighbor list.
+             **/
+            template <typename VALUETYPE>
+            void compute(std::vector<VALUETYPE> &tensor,
+                         const std::vector<VALUETYPE> &coord,
+                         const std::vector<int> &atype,
+                         const std::vector<VALUETYPE> &box,
+                         const int nghost,
+                         const InputNlist &lmp_list)
+            {
+                unsigned int natoms = atype.size();
+                assert(natoms * 3 == coord.size());
+                if (!box.empty())
+                {
+                    assert(box.size() == 9);
+                }
+                const VALUETYPE *coord_ = &coord[0];
+                const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
+                const int *atype_ = &atype[0];
+
+                VALUETYPE *tensor_;
+                VALUETYPE **p_tensor = &tensor_;
+                int size;
+                int *p_size = &size;
+
+                _DP_DeepTensorComputeTensorNList<VALUETYPE>(dt, natoms, coord_, atype_, box_, nghost, lmp_list.nl, p_tensor, p_size);
+
+                tensor.resize(size);
+                std::copy(tensor_, tensor_ + size, tensor.begin());
+                delete[] tensor_;
+            };
+
+            /**
+             * @brief Evaluate the global tensor, force and virial by using this Deep Tensor.
+             * @param[out] global_tensor The global tensor.
+             * @param[out] force The force on each atom.
+             * @param[out] virial The virial.
+             * @param[in] coord The coordinates of atoms. The array should be of size nframes x natoms x 3.
+             * @param[in] atype The atom types. The list should contain natoms ints.
+             * @param[in] box The cell of the region. The array should be of size nframes x 9 (PBC) or empty (no PBC).
+             **/
+            template <typename VALUETYPE>
+            void compute(std::vector<VALUETYPE> &global_tensor,
+                         std::vector<VALUETYPE> &force,
+                         std::vector<VALUETYPE> &virial,
+                         const std::vector<VALUETYPE> &coord,
+                         const std::vector<int> &atype,
+                         const std::vector<VALUETYPE> &box)
+            {
+                unsigned int natoms = atype.size();
+                assert(natoms * 3 == coord.size());
+                if (!box.empty()) {
+                    assert(box.size() == 9);
+                }
+                const VALUETYPE *coord_ = &coord[0];
+                const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
+                const int *atype_ = &atype[0];
+                global_tensor.resize(odim);
+                force.resize(odim * natoms * 3);
+                virial.resize(odim * 9);
+                VALUETYPE *global_tensor_ = &global_tensor[0];
+                VALUETYPE *force_ = &force[0];
+                VALUETYPE *virial_ = &virial[0];
+
+                _DP_DeepTensorCompute<VALUETYPE>(dt, natoms, coord_, atype_, box_, global_tensor_, force_, virial_, nullptr, nullptr, nullptr);
+            };
+            /**
+             * @brief Evaluate the global tensor, force, virial, atomic tensor, and atomic virial by using this Deep Tensor.
+             * @param[out] global_tensor The global tensor.
+             * @param[out] force The force on each atom.
+             * @param[out] virial The virial.
+             * @param[out] atom_tensor The atomic tensor.
+             * @param[out] atom_virial The atomic virial.
+             * @param[in] coord The coordinates of atoms. The array should be of size nframes x natoms x 3.
+             * @param[in] atype The atom types. The list should contain natoms ints.
+             * @param[in] box The cell of the region. The array should be of size nframes x 9 (PBC) or empty (no PBC).
+             **/
+            template <typename VALUETYPE>
+            void compute(std::vector<VALUETYPE> &global_tensor,
+                         std::vector<VALUETYPE> &force,
+                         std::vector<VALUETYPE> &virial,
+                         std::vector<VALUETYPE> &atom_tensor,
+                         std::vector<VALUETYPE> &atom_virial,
+                         const std::vector<VALUETYPE> &coord,
+                         const std::vector<int> &atype,
+                         const std::vector<VALUETYPE> &box)
+            {
+                unsigned int natoms = atype.size();
+                assert(natoms * 3 == coord.size());
+                if (!box.empty()) {
+                    assert(box.size() == 9);
+                }
+                const VALUETYPE *coord_ = &coord[0];
+                const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
+                const int *atype_ = &atype[0];
+
+                global_tensor.resize(odim);
+                force.resize(odim * natoms * 3);
+                virial.resize(odim * 9);
+                atom_virial.resize(odim * natoms * 9);
+                VALUETYPE *global_tensor_ = &global_tensor[0];
+                VALUETYPE *force_ = &force[0];
+                VALUETYPE *virial_ = &virial[0];
+                VALUETYPE *atomic_virial_ = &atom_virial[0];
+
+                VALUETYPE *atomic_tensor_;
+                VALUETYPE **p_atomic_tensor = &atomic_tensor_;
+                int size_at;
+                int *p_size_at = &size_at;
+
+                _DP_DeepTensorCompute<VALUETYPE>(dt, natoms, coord_, atype_, box_, global_tensor_, force_, virial_, p_atomic_tensor, atomic_virial_, p_size_at);
+
+                atom_tensor.resize(size_at);
+                std::copy(atomic_tensor_, atomic_tensor_ + size_at, atom_tensor.begin());
+                delete[] atomic_tensor_;
+            };
+
+            /**
+             * @brief Evaluate the global tensor, force and virial by using this Deep Tensor with the neighbor list.
+             * @param[out] global_tensor The global tensor.
+             * @param[out] force The force on each atom.
+             * @param[out] virial The virial.
+             * @param[in] coord The coordinates of atoms. The array should be of size nframes x natoms x 3.
+             * @param[in] atype The atom types. The list should contain natoms ints.
+             * @param[in] box The cell of the region. The array should be of size nframes x 9 (PBC) or empty (no PBC).
+             * @param[in] nghost The number of ghost atoms.
+             * @param[in] nlist The neighbor list.
+             **/
+            template <typename VALUETYPE>
+            void compute(std::vector<VALUETYPE> &global_tensor,
+                         std::vector<VALUETYPE> &force,
+                         std::vector<VALUETYPE> &virial,
+                         const std::vector<VALUETYPE> &coord,
+                         const std::vector<int> &atype,
+                         const std::vector<VALUETYPE> &box,
+                         const int nghost,
+                         const InputNlist &lmp_list)
+            {
+                unsigned int natoms = atype.size();
+                assert(natoms * 3 == coord.size());
+                if (!box.empty())
+                {
+                    assert(box.size() == 9);
+                }
+                const VALUETYPE *coord_ = &coord[0];
+                const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
+                const int *atype_ = &atype[0];
+                global_tensor.resize(odim);
+                force.resize(odim * natoms * 3);
+                virial.resize(odim * 9);
+                VALUETYPE *global_tensor_ = &global_tensor[0];
+                VALUETYPE *force_ = &force[0];
+                VALUETYPE *virial_ = &virial[0];
+
+                _DP_DeepTensorComputeNList<VALUETYPE>(dt, natoms, coord_, atype_, box_, nghost, lmp_list.nl, global_tensor_, force_, virial_, nullptr, nullptr, nullptr);
+            };
+            /**
+             * @brief Evaluate the global tensor, force, virial, atomic tensor, and atomic virial by using this Deep Tensor with the neighbor list.
+             * @param[out] global_tensor The global tensor.
+             * @param[out] force The force on each atom.
+             * @param[out] virial The virial.
+             * @param[out] atom_tensor The atomic tensor.
+             * @param[out] atom_virial The atomic virial.
+             * @param[in] coord The coordinates of atoms. The array should be of size nframes x natoms x 3.
+             * @param[in] atype The atom types. The list should contain natoms ints.
+             * @param[in] box The cell of the region. The array should be of size nframes x 9 (PBC) or empty (no PBC).
+             * @param[in] nghost The number of ghost atoms.
+             * @param[in] nlist The neighbor list.
+             **/
+            template <typename VALUETYPE>
+            void compute(std::vector<VALUETYPE> &global_tensor,
+                         std::vector<VALUETYPE> &force,
+                         std::vector<VALUETYPE> &virial,
+                         std::vector<VALUETYPE> &atom_tensor,
+                         std::vector<VALUETYPE> &atom_virial,
+                         const std::vector<VALUETYPE> &coord,
+                         const std::vector<int> &atype,
+                         const std::vector<VALUETYPE> &box,
+                         const int nghost,
+                         const InputNlist &lmp_list)
+            {
+                unsigned int natoms = atype.size();
+                assert(natoms * 3 == coord.size());
+                if (!box.empty())
+                {
+                    assert(box.size() == 9);
+                }
+                const VALUETYPE *coord_ = &coord[0];
+                const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
+                const int *atype_ = &atype[0];
+
+                global_tensor.resize(odim);
+                force.resize(odim * natoms * 3);
+                virial.resize(odim * 9);
+                atom_virial.resize(odim * natoms * 9);
+                VALUETYPE *global_tensor_ = &global_tensor[0];
+                VALUETYPE *force_ = &force[0];
+                VALUETYPE *virial_ = &virial[0];
+                VALUETYPE *atomic_virial_ = &atom_virial[0];
+
+                VALUETYPE *atomic_tensor_;
+                VALUETYPE **p_atomic_tensor = &atomic_tensor_;
+                int size_at;
+                int *p_size_at = &size_at;
+
+                _DP_DeepTensorComputeNList<VALUETYPE>(dt, natoms, coord_, atype_, box_, nghost, lmp_list.nl, global_tensor_, force_, virial_, p_atomic_tensor, atomic_virial_, p_size_at);
+
+                atom_tensor.resize(size_at);
+                std::copy(atomic_tensor_, atomic_tensor_ + size_at, atom_tensor.begin());
+                delete[] atomic_tensor_;
+            };
+            /**
+             * @brief Get the cutoff radius.
+             * @return The cutoff radius.
+             **/
+            double cutoff() const
+            {
+                assert(dt);
+                return DP_DeepTensorGetCutoff(dt);
+            };
+            /**
+             * @brief Get the number of types.
+             * @return The number of types.
+             **/
+            int numb_types() const
+            {
+                assert(dt);
+                return DP_DeepTensorGetNumbTypes(dt);
+            };
+            /**
+             * @brief Get the output dimension.
+             * @return The output dimension.
+             **/
+            int output_dim() const
+            {
+                assert(dt);
+                return DP_DeepTensorGetOutputDim(dt);
+            }
+
+            std::vector<int> sel_types() const
+            {
+                int* sel_types_arr = DP_DeepTensorGetSelTypes(dt);
+                std::vector<int> sel_types_vec = std::vector<int>(sel_types_arr, sel_types_arr + nsel_types);
+                return sel_types_vec;
+            }
+
+        private:
+            DP_DeepTensor *dt;
+            int odim;
+            int nsel_types;
         };
     }
 }
