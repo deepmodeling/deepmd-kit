@@ -88,8 +88,8 @@ def get_tf_requirement(tf_version: str = "") -> dict:
 
     if tf_version == "":
         return {
-            "cpu": ["tensorflow-cpu; platform_machine!='aarch64'", f"tensorflow; platform_machine=='aarch64'"],
-            "gpu": ["tensorflow; platform_machine!='aarch64'", f"tensorflow; platform_machine=='aarch64'"],
+            "cpu": ["tensorflow-cpu; platform_machine!='aarch64'", "tensorflow; platform_machine=='aarch64'"],
+            "gpu": ["tensorflow; platform_machine!='aarch64'", "tensorflow; platform_machine=='aarch64'"],
         }
     elif tf_version in SpecifierSet("<1.15") or tf_version in SpecifierSet(">=2.0,<2.1"):
         return {
