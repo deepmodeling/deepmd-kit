@@ -63,7 +63,7 @@ repair-wheel-command = "delocate-wheel --require-archs {delocate_archs} -w {dest
 [tool.cibuildwheel.linux]
 repair-wheel-command = "auditwheel repair --exclude libtensorflow_framework.so.2 --exclude libtensorflow_framework.so.1 --exclude libtensorflow_framework.so -w {dest_dir} {wheel}"
 environment-pass = ["CIBW_BUILD"]
-environment = { DP_VARIANT="cuda" }
+environment = { DP_VARIANT="cuda", DP_LAMMPS_VERSION="stable_23Jun2022_update2" }
 before-all = "yum config-manager --add-repo http://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo && yum install -y cuda-11-8"
 
 # selectively turn of lintner warnings, always include reasoning why any warning should
