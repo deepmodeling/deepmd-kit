@@ -104,7 +104,10 @@ setup(
         "lmp": "lammps",
         **get_tf_requirement(tf_version),
     },
-    entry_points={"console_scripts": ["dp = deepmd.entrypoints.main:main"]},
+    entry_points={
+        "console_scripts": ["dp = deepmd.entrypoints.main:main"],
+        "lammps.plugins": ["deepmd = deepmd.lmp:get_op_dir"],
+    },
     cmdclass = {
         "bdist_wheel": bdist_wheel_abi3,
     },
