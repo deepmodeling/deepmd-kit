@@ -55,6 +55,7 @@ build = ["cp310-*"]
 skip = ["*-win32", "*-manylinux_i686", "*-musllinux*"]
 # TODO: bump to "latest" tag when CUDA supports GCC 12
 manylinux-x86_64-image = "quay.io/pypa/manylinux_2_28_x86_64:2022-11-19-1b19e81"
+environment = { DP_LAMMPS_VERSION="stable_23Jun2022_update2" }
 
 [tool.cibuildwheel.macos]
 repair-wheel-command = "delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel} --ignore-missing-dependencies"
