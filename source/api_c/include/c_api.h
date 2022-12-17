@@ -268,6 +268,264 @@ int DP_DeepPotGetNumbTypes(DP_DeepPot* dp);
 const char* DP_DeepPotGetTypeMap(DP_DeepPot* dp);
 
 /**
+* @brief The deep tensor.
+**/
+typedef struct DP_DeepTensor DP_DeepTensor;
+
+/**
+* @brief Deep Tensor constructor with initialization.
+* @param[in] c_model The name of the frozen model file.
+* @returns A pointer to the deep tensor.
+**/
+extern DP_DeepTensor* DP_NewDeepTensor(const char* c_model);
+
+/**
+* @brief Evaluate the tensor by using a DP. (double version)
+* @param[in] dt The Deep Tensor to use.
+* @param[in] natoms The number of atoms.
+* @param[in] coord The coordinates of atoms. The array should be of size natoms x 3.
+* @param[in] atype The atom types. The array should contain natoms ints.
+* @param[in] box The cell of the region. The array should be of size 9. Pass NULL if pbc is not used.
+* @param[out] tensor Output tensor.
+  **/
+extern void DP_DeepTensorComputeTensor (
+  DP_DeepTensor* dt,
+  const int natom,
+  const double* coord,
+  const int* atype,
+  const double* cell,
+  double** tensor,
+  int* size
+  );
+
+/**
+* @brief Evaluate the tensor by using a DP. (float version)
+* @param[in] dt The Deep Tensor to use.
+* @param[in] natoms The number of atoms.
+* @param[in] coord The coordinates of atoms. The array should be of size natoms x 3.
+* @param[in] atype The atom types. The array should contain natoms ints.
+* @param[in] box The cell of the region. The array should be of size 9. Pass NULL if pbc is not used.
+* @param[out] tensor Output tensor.
+* @param[out] size Output size of the tensor.
+  **/
+extern void DP_DeepTensorComputeTensorf (
+  DP_DeepTensor* dt,
+  const int natom,
+  const float* coord,
+  const int* atype,
+  const float* cell,
+  float** tensor,
+  int* size
+  );
+
+/**
+* @brief Evaluate the tensor by using a DP with the neighbor list. (double version)
+* @param[in] dt The Deep Tensor to use.
+* @param[in] natoms The number of atoms.
+* @param[in] coord The coordinates of atoms. The array should be of size natoms x 3.
+* @param[in] atype The atom types. The array should contain natoms ints.
+* @param[in] box The cell of the region. The array should be of size 9. Pass NULL if pbc is not used.
+* @param[in] nghost The number of ghost atoms.
+* @param[in] nlist The neighbor list.
+* @param[out] tensor Output tensor.
+* @param[out] size Output size of the tensor.
+  **/
+extern void DP_DeepTensorComputeTensorNList (
+  DP_DeepTensor* dt,
+  const int natom,
+  const double* coord,
+  const int* atype,
+  const double* cell,
+  const int nghost,
+  const DP_Nlist* nlist,
+  double** tensor,
+  int* size
+  );
+
+/**
+* @brief Evaluate the tensor by using a DP with the neighbor list. (float version)
+* @param[in] dt The Deep Tensor to use.
+* @param[in] natoms The number of atoms.
+* @param[in] coord The coordinates of atoms. The array should be of size natoms x 3.
+* @param[in] atype The atom types. The array should contain natoms ints.
+* @param[in] box The cell of the region. The array should be of size 9. Pass NULL if pbc is not used.
+* @param[in] nghost The number of ghost atoms.
+* @param[in] nlist The neighbor list.
+* @param[out] tensor Output tensor.
+* @param[out] size Output size of the tensor.
+  **/
+extern void DP_DeepTensorComputeTensorNListf (
+  DP_DeepTensor* dt,
+  const int natom,
+  const float* coord,
+  const int* atype,
+  const float* cell,
+  const int nghost,
+  const DP_Nlist* nlist,
+  float** tensor,
+  int* size
+  );
+
+/**
+* @brief Evaluate the global tensor, force and virial by using a DP. (double version)
+* @param[in] dt The Deep Tensor to use.
+* @param[in] natoms The number of atoms.
+* @param[in] coord The coordinates of atoms. The array should be of size natoms x 3.
+* @param[in] atype The atom types. The array should contain natoms ints.
+* @param[in] box The cell of the region. The array should be of size 9. Pass NULL if pbc is not used.
+* @param[out] global_tensor Output global tensor.
+* @param[out] force Output force. The array should be of size natoms x 3.
+* @param[out] virial Output virial. The array should be of size 9.
+* @param[out] atomic_tensor Output atomic tensor. The array should be of size natoms.
+* @param[out] atomic_virial Output atomic virial. The array should be of size natoms x 9.
+* @param[out] size_at Output size of atomic tensor.
+* @warning The output arrays should be allocated before calling this function. Pass NULL if not required.
+  **/
+extern void DP_DeepTensorCompute (
+  DP_DeepTensor* dt,
+  const int natom,
+  const double* coord,
+  const int* atype,
+  const double* cell,
+  double* global_tensor,
+  double* force,
+  double* virial,
+  double** atomic_tensor,
+  double* atomic_virial,
+  int* size_at
+  );
+
+/**
+* @brief Evaluate the global tensor, force and virial by using a DP. (float version)
+* @param[in] dt The Deep Tensor to use.
+* @param[in] natoms The number of atoms.
+* @param[in] coord The coordinates of atoms. The array should be of size natoms x 3.
+* @param[in] atype The atom types. The array should contain natoms ints.
+* @param[in] box The cell of the region. The array should be of size 9. Pass NULL if pbc is not used.
+* @param[out] global_tensor Output global tensor.
+* @param[out] force Output force. The array should be of size natoms x 3.
+* @param[out] virial Output virial. The array should be of size 9.
+* @param[out] atomic_tensor Output atomic tensor. The array should be of size natoms.
+* @param[out] atomic_virial Output atomic virial. The array should be of size natoms x 9.
+* @param[out] size_at Output size of atomic tensor.
+* @warning The output arrays should be allocated before calling this function. Pass NULL if not required.
+  **/
+extern void DP_DeepTensorComputef (
+  DP_DeepTensor* dt,
+  const int natom,
+  const float* coord,
+  const int* atype,
+  const float* cell,
+  float* global_tensor,
+  float* force,
+  float* virial,
+  float** atomic_tensor,
+  float* atomic_virial,
+  int* size_at
+  );
+
+/**
+* @brief Evaluate the global tensor, force and virial by using a DP with the neighbor list. (double version)
+* @param[in] dt The Deep Tensor to use.
+* @param[in] natoms The number of atoms.
+* @param[in] coord The coordinates of atoms. The array should be of size natoms x 3.
+* @param[in] atype The atom types. The array should contain natoms ints.
+* @param[in] box The cell of the region. The array should be of size 9. Pass NULL if pbc is not used.
+* @param[in] nghost The number of ghost atoms.
+* @param[in] nlist The neighbor list.
+* @param[out] global_tensor Output global tensor.
+* @param[out] force Output force. The array should be of size natoms x 3.
+* @param[out] virial Output virial. The array should be of size 9.
+* @param[out] atomic_tensor Output atomic tensor. The array should be of size natoms.
+* @param[out] atomic_virial Output atomic virial. The array should be of size natoms x 9.
+* @param[out] size_at Output size of atomic tensor.
+* @warning The output arrays should be allocated before calling this function. Pass NULL if not required.
+  **/
+extern void DP_DeepTensorComputeNList (
+  DP_DeepTensor* dt,
+  const int natom,
+  const double* coord,
+  const int* atype,
+  const double* cell,
+  const int nghost,
+  const DP_Nlist* nlist,
+  double* global_tensor,
+  double* force,
+  double* virial,
+  double** atomic_tensor,
+  double* atomic_virial,
+  int* size_at
+  );
+
+/**
+* @brief Evaluate the global tensor, force and virial by using a DP with the neighbor list. (float version)
+* @param[in] dt The Deep Tensor to use.
+* @param[in] natoms The number of atoms.
+* @param[in] coord The coordinates of atoms. The array should be of size natoms x 3.
+* @param[in] atype The atom types. The array should contain natoms ints.
+* @param[in] box The cell of the region. The array should be of size 9. Pass NULL if pbc is not used.
+* @param[in] nghost The number of ghost atoms.
+* @param[in] nlist The neighbor list.
+* @param[out] global_tensor Output global tensor.
+* @param[out] force Output force. The array should be of size natoms x 3.
+* @param[out] virial Output virial. The array should be of size 9.
+* @param[out] atomic_tensor Output atomic tensor. The array should be of size natoms.
+* @param[out] atomic_virial Output atomic virial. The array should be of size natoms x 9.
+* @param[out] size_at Output size of atomic tensor.
+* @warning The output arrays should be allocated before calling this function. Pass NULL if not required.
+  **/
+extern void DP_DeepTensorComputeNListf (
+  DP_DeepTensor* dt,
+  const int natom,
+  const float* coord,
+  const int* atype,
+  const float* cell,
+  const int nghost,
+  const DP_Nlist* nlist,
+  float* global_tensor,
+  float* force,
+  float* virial,
+  float** atomic_tensor,
+  float* atomic_virial,
+  int* size_at
+  );
+
+/**
+ * @brief Get the type map of a Deep Tensor.
+ * @param[in] dt The Deep Tensor to use.
+ * @return The cutoff radius.
+*/
+double DP_DeepTensorGetCutoff(DP_DeepTensor* dt);
+
+/**
+ * @brief Get the type map of a Deep Tensor.
+ * @param[in] dt The Deep Tensor to use.
+ * @return The number of types of the Deep Tensor.
+*/
+int DP_DeepTensorGetNumbTypes(DP_DeepTensor* dt);
+
+/**
+ * @brief Get the output dimension of a Deep Tensor.
+ * @param[in] dt The Deep Tensor to use.
+ * @return The output dimension of the Deep Tensor.
+*/
+int DP_DeepTensorGetOutputDim(DP_DeepTensor* dt);
+
+/**
+ * @brief Get sel types of a Deep Tensor.
+ * @param[in] dt The Deep Tensor to use.
+ * @return The sel types
+*/
+int* DP_DeepTensorGetSelTypes(DP_DeepTensor* dt);
+
+/**
+ * @brief Get the number of sel types of a Deep Tensor.
+ * @param[in] dt The Deep Tensor to use.
+ * @return The number of sel types
+*/
+int DP_DeepTensorGetNumbSelTypes(DP_DeepTensor* dt);
+
+/**
 * @brief Convert PBtxt to PB.
 * @param[in] c_pbtxt The name of the PBtxt file.
 * @param[in] c_pb The name of the PB file.
