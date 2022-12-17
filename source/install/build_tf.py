@@ -576,6 +576,7 @@ class BuildTensorFlow(Build):
             # configure -- need bazelisk in PATH
             call([str(src / "configure")], env={
                 "PATH": list2env([PREFIX / "bin", "/usr/bin", "/bin"]),
+                "LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH", ""),
                 **self._environments,
             })
             # bazel build
