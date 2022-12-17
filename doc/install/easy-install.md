@@ -95,7 +95,7 @@ Or install the CPU version without CUDA supported:
 pip install deepmd-kit[cpu]
 ```
 
-The supported platform includes Linux x86-64 with GNU C Library 2.28 or above, macOS x86-64, and Windows x86-64.
+The supported platform includes Linux x86-64 and aarch64 with GNU C Library 2.28 or above, macOS x86-64, and Windows x86-64.
 A specific version of TensorFlow which is compatible with DeePMD-kit will be also installed.
 
 :::{Warning}

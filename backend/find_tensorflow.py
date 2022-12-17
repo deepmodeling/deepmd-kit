@@ -88,18 +88,18 @@ def get_tf_requirement(tf_version: str = "") -> dict:
 
     if tf_version == "":
         return {
-            "cpu": ["tensorflow-cpu"],
-            "gpu": ["tensorflow"],
+            "cpu": ["tensorflow-cpu; platform_machine!='aarch64'", "tensorflow; platform_machine=='aarch64'"],
+            "gpu": ["tensorflow; platform_machine!='aarch64'", "tensorflow; platform_machine=='aarch64'"],
         }
     elif tf_version in SpecifierSet("<1.15") or tf_version in SpecifierSet(">=2.0,<2.1"):
         return {
-            "cpu": [f"tensorflow=={tf_version}"],
-            "gpu": [f"tensorflow-gpu=={tf_version}"],
+            "cpu": [f"tensorflow=={tf_version}; platform_machine!='aarch64'", f"tensorflow=={tf_version}; platform_machine=='aarch64'"],
+            "gpu": [f"tensorflow-gpu=={tf_version}; platform_machine!='aarch64'", f"tensorflow=={tf_version}; platform_machine=='aarch64'"],
         }
     else:
         return {
-            "cpu": [f"tensorflow-cpu=={tf_version}"],
-            "gpu": [f"tensorflow=={tf_version}"],
+            "cpu": [f"tensorflow-cpu=={tf_version}; platform_machine!='aarch64'", f"tensorflow=={tf_version}; platform_machine=='aarch64'"],
+            "gpu": [f"tensorflow=={tf_version}; platform_machine!='aarch64'", f"tensorflow=={tf_version}; platform_machine=='aarch64'"],
         }
 
 
