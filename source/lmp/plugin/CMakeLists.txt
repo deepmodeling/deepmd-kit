@@ -24,6 +24,7 @@ if (DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
     set(LAMMPS_MPI_INCLUDE_DIRS ${MPI_CXX_INCLUDE_DIRS})
     # LAMMPS has linked MPI; do not link twice
     # target_link_libraries(lammps_interface INTERFACE MPI::MPI_CXX)
+    target_include_directories(lammps_interface INTERFACE ${LAMMPS_MPI_INCLUDE_DIRS})
   else()
     # Use LAMMPS serial mpi.h header
     target_include_directories(lammps_interface INTERFACE "${LAMMPS_HEADER_DIR}/STUBS")
