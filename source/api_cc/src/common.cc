@@ -313,10 +313,11 @@ deepmd::
 load_op_library()
 {
   tensorflow::Env* env = tensorflow::Env::Default();
-  std::string dso_path = env->FormatLibraryFileName("deepmd_op", "");
 #if defined(_WIN32)
+  std::string dso_path = "deepmd_op.dll";
   void* dso_handle = LoadLibrary(dso_path.c_str());
 #else
+  std::string dso_path = "libdeepmd_op.so";
   void* dso_handle = dlopen(dso_path.c_str(), RTLD_NOW | RTLD_LOCAL);
 #endif
   if (!dso_handle) {
