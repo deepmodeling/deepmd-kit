@@ -382,15 +382,7 @@ if(BUILD_CPP_IF)
   target_compile_definitions(TensorFlow::tensorflow_cc INTERFACE
                             -D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
   if (USE_TF_PYTHON_LIBS)
-    if (NOT SKBUILD)
-      # link: libpython3.x.so
-      target_link_libraries (TensorFlow::tensorflow_cc INTERFACE ${Python_LIBRARIES})
-    else()
-      # link: libpython3.x.a
-      # Note: here, the version of the static Python library does not
-      # need to match that in the runtime, as we don't call TF from
-      # Python.
-      target_link_libraries (TensorFlow::tensorflow_cc INTERFACE ${Python_LIBRARY})
-    endif()
+    # link: libpython3.x.so
+    target_link_libraries (TensorFlow::tensorflow_cc INTERFACE ${Python_LIBRARIES})
   endif()
 endif()

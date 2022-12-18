@@ -102,7 +102,7 @@ setup(
             "pygments-lammps",
             ],
         "lmp": [
-            "lammps_manylinux_2_28~=2022.6.23.2.2; platform_system=='Linux'",
+            "lammps-manylinux-2-28~=2022.6.23.2.2; platform_system=='Linux'",
             "lammps~=2022.6.23.2.2; platform_system!='Linux'",
         ],
         **get_tf_requirement(tf_version),

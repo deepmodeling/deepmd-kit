@@ -74,12 +74,6 @@ before-all = [
     "yum install -y mpich-devel",
 ]
 
-# temporarily disable lammps tests on linux
-test-extras = ["cpu"]
-test-command = [
-    "dp -h",
-]
-
 [tool.cibuildwheel.windows]
 # bypass lammps, does not work
 test-extras = ["cpu"]
