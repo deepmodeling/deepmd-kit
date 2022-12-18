@@ -150,11 +150,7 @@ endforeach ()
 # find _pywrap_tensorflow_internal and set it as tensorflow_cc
 if (BUILD_CPP_IF AND USE_TF_PYTHON_LIBS)
   set(TF_SUFFIX python)
-  if(WIN32)
-    set(TensorFlow_FIND_COMPONENTS _pywrap_tensorflow_internal.pyd)
-  else ()
-    set(TensorFlow_FIND_COMPONENTS _pywrap_tensorflow_internal${CMAKE_SHARED_MODULE_SUFFIX})
-  endif()
+  set(TensorFlow_FIND_COMPONENTS _pywrap_tensorflow_internal${CMAKE_SHARED_MODULE_SUFFIX})
   foreach (module ${TensorFlow_FIND_COMPONENTS})
     find_library(TensorFlow_LIBRARY_${module}
       NAMES ${module}
@@ -342,7 +338,11 @@ add_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
 
 add_library(TensorFlow::tensorflow_framework SHARED IMPORTED GLOBAL)
 if(WIN32)
-  string(REGEX REPLACE "[.]lib" ".dll" _DLL_FILE ${TensorFlowFramework_LIBRARY})
+  if(USE_TF_PYTHON_LIBS)
+    string(REGEX REPLACE "[.]lib" ".pyd" _DLL_FILE ${TensorFlowFramework_LIBRARY})
+  else()
+    string(REGEX REPLACE "[.]lib" ".dll" _DLL_FILE ${TensorFlowFramework_LIBRARY})
+  endif()
   set_target_properties(TensorFlow::tensorflow_framework PROPERTIES
                IMPORTED_IMPLIB ${TensorFlowFramework_LIBRARY}
                IMPORTED_LOCATION ${_DLL_FILE})
@@ -360,7 +360,11 @@ target_compile_definitions(TensorFlow::tensorflow_framework INTERFACE
 if(BUILD_CPP_IF)
   add_library(TensorFlow::tensorflow_cc SHARED IMPORTED GLOBAL)
   if(WIN32)
-    string(REGEX REPLACE "[.]lib" ".dll" _DLL_FILE ${TensorFlow_LIBRARY_tensorflow_cc})
+    if(USE_TF_PYTHON_LIBS)
+      string(REGEX REPLACE "[.]lib" ".pyd" _DLL_FILE ${TensorFlow_LIBRARY_tensorflow_cc})
+    else()
+      string(REGEX REPLACE "[.]lib" ".dll" _DLL_FILE ${TensorFlow_LIBRARY_tensorflow_cc})
+    endif()
     set_target_properties(TensorFlow::tensorflow_cc PROPERTIES
                  IMPORTED_IMPLIB ${TensorFlow_LIBRARY_tensorflow_cc}
                  IMPORTED_LOCATION ${_DLL_FILE})

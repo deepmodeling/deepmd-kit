@@ -69,14 +69,14 @@ if (DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
   endif()
   if(CMAKE_SYSTEM_NAME STREQUAL Darwin)
     set_target_properties(${libname} PROPERTIES LINK_FLAGS "-Wl,-undefined,dynamic_lookup")
-  endif()
-
+  else()
   set_target_properties(
     ${libname} 
     PROPERTIES 
     INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}"
     LINK_FLAGS "-rdynamic"
   )
+  endif()
   target_compile_definitions(${libname}
     PUBLIC ${prec_def}
     PRIVATE "LMPPLUGIN" # fix header path
