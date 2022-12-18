@@ -111,9 +111,9 @@ endif (USE_ROCM_TOOLKIT)
 set(DEEPMD_SOURCE_DIR ${PROJECT_SOURCE_DIR}/..)
 
 # setup tensorflow libraries by python
-if (USE_TF_PYTHON_LIBS)
+if (USE_TF_PYTHON_LIBS AND NOT SKBUILD)
   find_package (Python COMPONENTS Interpreter Development REQUIRED)
-endif(USE_TF_PYTHON_LIBS)
+endif(USE_TF_PYTHON_LIBS AND NOT SKBUILD)
 
 # find tensorflow, I need tf abi info
 find_package(tensorflow REQUIRED)

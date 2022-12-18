@@ -150,7 +150,11 @@ endforeach ()
 # find _pywrap_tensorflow_internal and set it as tensorflow_cc
 if (BUILD_CPP_IF AND USE_TF_PYTHON_LIBS)
   set(TF_SUFFIX python)
-  set(TensorFlow_FIND_COMPONENTS _pywrap_tensorflow_internal${CMAKE_SHARED_LIBRARY_SUFFIX})
+  if(WIN32)
+    set(TensorFlow_FIND_COMPONENTS _pywrap_tensorflow_internal.pyd)
+  else ()
+    set(TensorFlow_FIND_COMPONENTS _pywrap_tensorflow_internal${CMAKE_SHARED_MODULE_SUFFIX})
+  endif()
   foreach (module ${TensorFlow_FIND_COMPONENTS})
     find_library(TensorFlow_LIBRARY_${module}
       NAMES ${module}
@@ -370,7 +374,15 @@ if(BUILD_CPP_IF)
   target_compile_definitions(TensorFlow::tensorflow_cc INTERFACE
                             -D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
   if (USE_TF_PYTHON_LIBS)
-    # link: libpython3.x.so
-    target_link_libraries (TensorFlow::tensorflow_cc INTERFACE ${Python_LIBRARIES})
+    if (NOT SKBUILD)
+      # link: libpython3.x.so
+      target_link_libraries (TensorFlow::tensorflow_cc INTERFACE ${Python_LIBRARIES})
+    else()
+      # link: libpython3.x.a
+      # Note: here, the version of the static Python library does not
+      # need to match that in the runtime, as we don't call TF from
+      # Python.
+      target_link_libraries (TensorFlow::tensorflow_cc INTERFACE ${Python_LIBRARY})
+    endif()
   endif()
 endif()
