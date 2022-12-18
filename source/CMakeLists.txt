@@ -119,8 +119,8 @@ if (USE_TF_PYTHON_LIBS)
     # Note: here, the version of the static Python library does not
     # need to match that in the runtime, as we don't call TF from
     # Python.
-    set(Python_USE_STATIC_LIBS ON)
-    find_package (Python COMPONENTS Development.Module REQUIRED)
+    set(CMAKE_FIND_LIBRARY_SUFFIXES ".a" ".so")
+    find_package(PythonLibs REQUIRED)
   endif()
 endif(USE_TF_PYTHON_LIBS)
 
