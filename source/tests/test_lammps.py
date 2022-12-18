@@ -3,7 +3,7 @@ import os
 import subprocess
 
 from pathlib import Path
-from deepmd.convert import convert_pbtxt_to_pb
+from deepmd.utils.convert import convert_pbtxt_to_pb
 
 @unittest.skipIf(os.environ.get("CIBUILDWHEEL", "0") != "1", "Only test under cibuildwheel environment")
 class TestLAMMPS(unittest.TestCase):
