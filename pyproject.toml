@@ -53,7 +53,7 @@ test-command = [
     "dp -h",
     "pytest {project}/source/tests/test_lammps.py"
 ]
-test-extras = ["cpu", "test", "lmp"]
+test-extras = ["cpu"]
 build = ["cp310-*"]
 skip = ["*-win32", "*-manylinux_i686", "*-musllinux*"]
 # TODO: bump to "latest" tag when CUDA supports GCC 12
@@ -64,6 +64,11 @@ manylinux-aarch64-image = "quay.io/pypa/manylinux_2_28_aarch64:2022-11-19-1b19e8
 environment = { DP_LAMMPS_VERSION="stable_23Jun2022_update2" }
 before-all = ["brew install mpich"]
 repair-wheel-command = "delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel} --ignore-missing-dependencies"
+test-extras = ["cpu", "test", "lmp"]
+test-command = [
+    "dp -h",
+    "pytest {project}/source/tests/test_lammps.py"
+]
 
 [tool.cibuildwheel.linux]
 repair-wheel-command = "auditwheel repair --exclude libtensorflow_framework.so.2 --exclude libtensorflow_framework.so.1 --exclude libtensorflow_framework.so --exclude _pywrap_tensorflow_internal.so -w {dest_dir} {wheel}"
@@ -74,12 +79,6 @@ before-all = [
     "yum install -y mpich-devel",
 ]
 
-[tool.cibuildwheel.windows]
-# bypass lammps, does not work
-test-extras = ["cpu"]
-test-command = [
-    "dp -h",
-]
 
 # selectively turn of lintner warnings, always include reasoning why any warning should
 # be silenced
