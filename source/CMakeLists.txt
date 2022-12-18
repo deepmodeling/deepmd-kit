@@ -115,19 +115,7 @@ if (USE_TF_PYTHON_LIBS)
   if(NOT $ENV{CIBUILDWHEEL} STREQUAL "1")
     find_package (Python COMPONENTS Interpreter Development REQUIRED)
   else()
-    # hack for cibuildwheel
-    # link: libpython3.x.a
-    # Note: here, the version of the static Python library does not
-    # need to match that in the runtime, as we don't call TF from
-    # Python.
-    if(APPLE)
-      # find static library
-      set(Python_USE_STATIC_LIBS TRUE)
-      find_package (Python COMPONENTS Development REQUIRED)
-    else()
-      # Python_LIBRARY is already the static library
-      set(Python_LIBRARIES ${Python_LIBRARY})
-    endif()
+    set(Python_LIBRARIES ${Python_LIBRARY})
   endif()
 endif(USE_TF_PYTHON_LIBS)
 

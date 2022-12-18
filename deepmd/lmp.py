@@ -3,6 +3,8 @@ import os
 import platform
 from pathlib import Path
 
+from find_libpython import find_libpython
+
 from deepmd.env import tf
 
 if platform.system() == "Linux":
@@ -22,6 +24,18 @@ os.environ[lib_env] = ":".join((
     op_dir,
 ))
 
+# preload python library
+libpython = find_libpython()
+if platform.system() == "Linux":
+    preload_env = "LD_PRELOAD"
+elif platform.system() == "Darwin":
+    preload_env = "DYLD_INSERT_LIBRARIES"
+else:
+    raise RuntimeError("Unsupported platform")
+os.environ[preload_env] = ":".join((
+    os.environ.get(preload_env, ""),
+    libpython,
+))
 
 def get_op_dir() -> str:
     """Get the directory of the deepmd-kit OP library"""
