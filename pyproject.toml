@@ -51,7 +51,6 @@ write_to = "deepmd/_version.py"
 [tool.cibuildwheel]
 test-command = [
     "dp -h",
-    "yum install -y mpich",
     "pytest {project}/source/tests/test_lammps.py"
 ]
 test-extras = ["cpu", "test", "lmp"]
