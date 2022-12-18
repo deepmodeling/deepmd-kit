@@ -99,6 +99,7 @@ pip install deepmd-kit[cpu]
 ```bash
 pip install deepmd-kit[gpu,lmp]
 ```
+MPICH is required to run LAMMPS.
 
 It is suggested to install the package into an isolated environment.
 The supported platform includes Linux x86-64 and aarch64 with GNU C Library 2.28 or above, macOS x86-64, and Windows x86-64.

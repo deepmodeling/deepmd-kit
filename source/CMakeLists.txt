@@ -112,7 +112,7 @@ set(DEEPMD_SOURCE_DIR ${PROJECT_SOURCE_DIR}/..)
 
 # setup tensorflow libraries by python
 if (USE_TF_PYTHON_LIBS)
-  if(NOT SKBUIKD)
+  if(NOT SKBUILD)
     find_package (Python COMPONENTS Interpreter Development REQUIRED)
   else()
     # link: libpython3.x.a

@@ -19,4 +19,4 @@ class TestLAMMPS(unittest.TestCase):
 
     def test_lmp(self):
         in_file = (self.work_dir / "in.test").absolute()
-        subprocess.check_call(["lmp", "-in", str(in_file)], cwd=str(self.work_dir))
+        subprocess.check_call(["mpirun", "-n", "1", "lmp", "-in", str(in_file)], cwd=str(self.work_dir))
