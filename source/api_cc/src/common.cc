@@ -1,8 +1,13 @@
 #include "common.h"
 #include "AtomMap.h"
 #include "device.h"
+#if defined(_WIN32_WINNT)
+#include <windows.h>
+#else
+// not windows
 #include <dlfcn.h>
 #include <fcntl.h>
+#endif
 #include "google/protobuf/text_format.h"
 #include "google/protobuf/io/zero_copy_stream_impl.h"
 
