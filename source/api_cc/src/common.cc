@@ -10,6 +10,8 @@
 #define _WIN32_WINNT _WIN32_WINNT_WIN7
 #define PSAPI_VERSION 2
 #include <windows.h>
+#include <io.h>
+#define O_RDONLY _O_RDONLY
 #else
 // not windows
 #include <dlfcn.h>
