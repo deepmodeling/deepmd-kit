@@ -1,7 +1,14 @@
 #include "common.h"
 #include "AtomMap.h"
 #include "device.h"
+#if defined(_WIN32)
 #if defined(_WIN32_WINNT)
+#undef _WIN32_WINNT
+#endif
+
+// target Windows version is windows 7 and later
+#define _WIN32_WINNT _WIN32_WINNT_WIN7
+#define PSAPI_VERSION 2
 #include <windows.h>
 #else
 // not windows
