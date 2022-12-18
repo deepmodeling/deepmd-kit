@@ -51,7 +51,6 @@ write_to = "deepmd/_version.py"
 [tool.cibuildwheel]
 test-command = [
     "dp -h",
-    "pytest {project}/source/tests/test_lammps.py"
 ]
 test-extras = ["cpu"]
 build = ["cp310-*"]
