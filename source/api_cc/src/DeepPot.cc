@@ -87,7 +87,7 @@ run_model <double, double> (ENERGYTYPE &			dener,
 	   Session *			session, 
 	   const std::vector<std::pair<std::string, Tensor>> & input_tensors,
 	   const AtomMap&	atommap, 
-	   const int			nghost = 0);
+	   const int			nghost);
 
 template
 void
@@ -97,7 +97,7 @@ run_model <double, float> (ENERGYTYPE &			dener,
      Session *			session, 
      const std::vector<std::pair<std::string, Tensor>> & input_tensors,
      const AtomMap&	atommap, 
-     const int			nghost = 0);
+     const int			nghost);
 
 template
 void
@@ -107,7 +107,7 @@ run_model <float, double> (ENERGYTYPE &			dener,
 	   Session *			session, 
 	   const std::vector<std::pair<std::string, Tensor>> & input_tensors,
 	   const AtomMap&	atommap, 
-	   const int			nghost = 0);
+	   const int			nghost);
 
 template
 void
@@ -117,7 +117,7 @@ run_model <float, float> (ENERGYTYPE &			dener,
      Session *			session, 
      const std::vector<std::pair<std::string, Tensor>> & input_tensors,
      const AtomMap&	atommap, 
-     const int			nghost = 0);
+     const int			nghost);
 
 template <typename MODELTYPE, typename VALUETYPE>
 static void run_model (ENERGYTYPE   &		dener,
@@ -210,7 +210,7 @@ void run_model <double, double> (ENERGYTYPE   &		dener,
     Session*			session, 
     const std::vector<std::pair<std::string, Tensor>> & input_tensors,
     const deepmd::AtomMap &   atommap, 
-    const int&		nghost = 0);
+    const int&		nghost);
 
 template
 void run_model <double, float> (ENERGYTYPE   &		dener,
@@ -221,7 +221,7 @@ void run_model <double, float> (ENERGYTYPE   &		dener,
     Session*			session, 
     const std::vector<std::pair<std::string, Tensor>> & input_tensors,
     const deepmd::AtomMap &   atommap, 
-    const int&		nghost = 0);
+    const int&		nghost);
 
 template
 void run_model <float, double> (ENERGYTYPE   &		dener,
@@ -232,7 +232,7 @@ void run_model <float, double> (ENERGYTYPE   &		dener,
     Session*			session, 
     const std::vector<std::pair<std::string, Tensor>> & input_tensors,
     const deepmd::AtomMap &   atommap, 
-    const int&		nghost = 0);
+    const int&		nghost);
 
 template
 void run_model <float, float> (ENERGYTYPE   &		dener,
@@ -243,7 +243,7 @@ void run_model <float, float> (ENERGYTYPE   &		dener,
     Session*			session, 
     const std::vector<std::pair<std::string, Tensor>> & input_tensors,
     const deepmd::AtomMap &   atommap, 
-    const int&		nghost = 0);
+    const int&		nghost);
 
 DeepPot::
 DeepPot ()
