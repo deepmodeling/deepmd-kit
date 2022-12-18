@@ -13,14 +13,16 @@ else:
     raise RuntimeError("Unsupported platform")
 
 tf_dir = tf.sysconfig.get_lib()
+op_dir = str((Path(__file__).parent / "op").absolute())
 # set LD_LIBRARY_PATH
 os.environ[lib_env] = ":".join((
     os.environ.get(lib_env, ""),
     tf_dir,
     os.path.join(tf_dir, "python"),
+    op_dir,
 ))
 
 
 def get_op_dir() -> str:
     """Get the directory of the deepmd-kit OP library"""
-    return str((Path(__file__).parent / "op").absolute())
+    return op_dir
