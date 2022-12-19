@@ -6,6 +6,8 @@ from deepmd.nvnmd.data.data import jdata_config, jdata_configs, jdata_deepmd_inp
 from deepmd.nvnmd.data.data import NVNMD_WELCOME, NVNMD_CITATION
 from deepmd.nvnmd.utils.fio import FioDic
 
+from deepmd.nvnmd.utils.op import r2s
+
 log = logging.getLogger(__name__)
 
 
@@ -142,9 +144,6 @@ class NvnmdConfig():
         # type
         jdata['ntype'] = len(jdata['sel'])
         jdata['ntypex'] = 1 if(jdata['same_net']) else jdata['ntype']
-        # mapping table
-        jdata['NUM_U2S'] = jdata['rc_max'] ** 2
-        jdata['NUM_S2G'] = 14 - (-2)
         return jdata
 
     def init_fitn(self, jdata: dict, jdata_parent: dict = {}) -> dict:
@@ -189,28 +188,18 @@ class NvnmdConfig():
         Na = jdata_parent['size']['Na']
         NaX = jdata_parent['size']['NaX']
         ntype_max = jdata_parent['dscp']['ntype_max']
-        NUM_MAPT = jdata_parent['dscp']['NUM_MAPT']
-        NUM_U2S = jdata_parent['dscp']['NUM_U2S']
-        NUM_S2G = jdata_parent['dscp']['NUM_S2G']
         NSEL = jdata_parent['ctrl']['NSEL']
+        # general
+        jdata['NBIT_FLTM'] = 1+jdata['NBIT_FLTF']
+        jdata['NBIT_FLTH'] = 1+jdata['NBIT_FLTM']
         # atom
+        jdata['NBIT_ENE_FL'] = jdata['NBIT_FIT_DATA_FL']
         jdata['NBIT_SPE'] = int(np.ceil(np.log2(ntype_max)))
         jdata['NBIT_LST'] = int(np.ceil(np.log2(NaX)))
         jdata['NBIT_CRD3'] = jdata['NBIT_CRD'] * 3
         jdata['NBIT_ATOM'] = jdata['NBIT_SPE'] + jdata['NBIT_CRD3']
-        jdata['NBIT_FRC_FL'] = jdata['NBIT_LLONG_FL']
-        jdata['NBIT_VRL_FL'] = jdata['NBIT_LLONG_FL']
         # middle result
         jdata['NBIT_SEL'] = int(np.ceil(np.log2(NSEL)))
-        jdata['NBIT_RIJ'] = jdata['NBIT_DATA_FL'] + 5
-        jdata['NBIT_DATA2'] = jdata['NBIT_DATA'] + jdata['NBIT_DATA_FL']
-        jdata['NBIT_DATA2_FL'] = 2 * jdata['NBIT_DATA_FL']
-        jdata['NBIT_DATA_SHORT'] = jdata['NBIT_DATA'] + jdata['NBIT_SHORT_FL']
-        jdata['NBIT_DATA_SHORT_FL'] = jdata['NBIT_DATA_FL'] + jdata['NBIT_SHORT_FL']
-        # mapping table
-        jdata['NBIT_MAPT_XK'] = int(np.ceil(np.log2(NUM_MAPT)))
-        jdata['NBIT_MAPT_XK_U2S_FL'] = int(np.ceil(np.log2(NUM_MAPT / NUM_U2S)))
-        jdata['NBIT_MAPT_XK_S2G_FL'] = int(np.ceil(np.log2(NUM_MAPT / NUM_S2G)))
         return jdata
 
     def save(self, file_name=None):
@@ -221,6 +210,29 @@ class NvnmdConfig():
         else:
             self.save_path = file_name
         FioDic().save(file_name, self.config)
+    
+    def get_s_range(self, davg, dstd):
+        rmin = nvnmd_cfg.dscp['rcut_smth']
+        rmax = nvnmd_cfg.dscp['rcut']
+        ntype = self.dscp['ntype']
+        dmin = self.dscp['dmin']
+        #
+        smin = 1e6
+        smax = -1e6
+        for tt in range(ntype):
+            smin_ = -davg[tt, 0] / dstd[tt, 0]
+            smax_ = (r2s(dmin, rmin, rmax) - davg[tt, 0]) / dstd[tt, 0]
+            smin = smin_ if (smin_ < smin) else smin
+            smax = smax_ if (smax_ > smax) else smax
+        self.dscp['smin'] = smin
+        self.dscp['smax'] = smax
+        nvnmd_cfg.save()
+        # check
+        log.info(f"the range of s is [{smin}, {smax}]")
+        if (smax - smin > 16.0):
+            log.warning(f"the range of s is over the limit (smax - smin) > 16.0")
+            log.warning(f"Please reset the rcut_smth as a bigger value to fix this warning")
+
 
     def get_dscp_jdata(self):
         r"""Generate `model/descriptor` in input script

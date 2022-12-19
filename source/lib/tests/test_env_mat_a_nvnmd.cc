@@ -133,11 +133,10 @@ TEST_F(TestEnvMatANvnmd, cpu)
   std::vector<int> fmt_nlist_a, fmt_nlist_r;
   std::vector<double> env, env_deriv, rij_a;
   bool pbc = false;
-  double precs[3] = {8192, 1024, 16}; // NBIT_DATA_FL, NBIT_FEA_X, NBIT_FEA_X_FL
   for(int ii = 0; ii < nloc; ++ii){
     int ret = format_nlist_i_cpu<double>(fmt_nlist_a, posi_cpy, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);    
     EXPECT_EQ(ret, -1);
-    deepmd::env_mat_a_nvnmd_quantize_cpu<double>(env, env_deriv, rij_a, posi_cpy, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc, precs);    
+    deepmd::env_mat_a_nvnmd_quantize_cpu<double>(env, env_deriv, rij_a, posi_cpy, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
     EXPECT_EQ(env.size(), sec_a[2]*4);
     EXPECT_EQ(env.size(), env_deriv.size()/3);
     EXPECT_EQ(rij_a.size(), sec_a[2]*3);
@@ -163,11 +162,10 @@ TEST_F(TestEnvMatANvnmdShortSel, cpu)
   std::vector<int> fmt_nlist_a, fmt_nlist_r;
   std::vector<double> env, env_deriv, rij_a;
   bool pbc = false;
-  double precs[3] = {8192, 1024, 16}; // NBIT_DATA_FL, NBIT_FEA_X, NBIT_FEA_X_FL
   for(int ii = 0; ii < nloc; ++ii){
     int ret = format_nlist_i_cpu<double>(fmt_nlist_a, posi_cpy, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);    
     EXPECT_EQ(ret, 1);
-    deepmd::env_mat_a_nvnmd_quantize_cpu<double>(env, env_deriv, rij_a, posi_cpy, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc, precs);    
+    deepmd::env_mat_a_nvnmd_quantize_cpu<double>(env, env_deriv, rij_a, posi_cpy, atype_cpy, ii, fmt_nlist_a, sec_a, rc_smth, rc);    
     EXPECT_EQ(env.size(), sec_a[2]*4);
     EXPECT_EQ(env.size(), env_deriv.size()/3);
     EXPECT_EQ(rij_a.size(), sec_a[2]*3);
@@ -185,7 +183,6 @@ TEST_F(TestEnvMatANvnmd, prod_cpu)
   EXPECT_EQ(nlist_r_cpy.size(), nloc);
   int tot_nnei = 0;
   int max_nbor_size = 0;
-  double precs[3] = {8192, 1024, 16}; // NBIT_DATA_FL, NBIT_FEA_X, NBIT_FEA_X_FL
   for(int ii = 0; ii < nlist_a_cpy.size(); ++ii){
     tot_nnei += nlist_a_cpy[ii].size();
     if (nlist_a_cpy[ii].size() > max_nbor_size){
@@ -216,8 +213,7 @@ TEST_F(TestEnvMatANvnmd, prod_cpu)
       nall,
       rc, 
       rc_smth,
-      sec_a,
-      precs);
+      sec_a);
 
   for(int ii = 0; ii < nloc; ++ii){
     for (int jj = 0; jj < nnei; ++jj){
@@ -236,7 +232,6 @@ TEST_F(TestEnvMatANvnmd, prod_cpu_equal_cpu)
   EXPECT_EQ(nlist_r_cpy.size(), nloc);
   int tot_nnei = 0;
   int max_nbor_size = 0;
-  double precs[3] = {8192, 1024, 16}; // NBIT_DATA_FL, NBIT_FEA_X, NBIT_FEA_X_FL
   for(int ii = 0; ii < nlist_a_cpy.size(); ++ii){
     tot_nnei += nlist_a_cpy[ii].size();
     if (nlist_a_cpy[ii].size() > max_nbor_size){
@@ -266,15 +261,14 @@ TEST_F(TestEnvMatANvnmd, prod_cpu_equal_cpu)
       nall,
       rc, 
       rc_smth,
-      sec_a,
-      precs);
+      sec_a);
 
   std::vector<int> fmt_nlist_a_1, fmt_nlist_r_1;
   std::vector<double> env_1, env_deriv_1, rij_a_1;
   for(int ii = 0; ii < nloc; ++ii){
     int ret_1 = format_nlist_i_cpu<double>(fmt_nlist_a_1, posi_cpy, atype_cpy, ii, nlist_a_cpy[ii], rc, sec_a);  
     EXPECT_EQ(ret_1, -1);
-    deepmd::env_mat_a_nvnmd_quantize_cpu<double>(env_1, env_deriv_1, rij_a_1, posi_cpy, atype_cpy, ii, fmt_nlist_a_1, sec_a, rc_smth, rc, precs);
+    deepmd::env_mat_a_nvnmd_quantize_cpu<double>(env_1, env_deriv_1, rij_a_1, posi_cpy, atype_cpy, ii, fmt_nlist_a_1, sec_a, rc_smth, rc);
     EXPECT_EQ(env_1.size(), nnei * 4);
     EXPECT_EQ(env_deriv_1.size(), nnei * 4 * 3);
     EXPECT_EQ(rij_a_1.size(), nnei * 3);

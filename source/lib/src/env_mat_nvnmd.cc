@@ -42,8 +42,7 @@ env_mat_a_nvnmd_quantize_cpu (
     const std::vector<int > &		fmt_nlist_a,
     const std::vector<int > &		sec_a, 
     const float &			rmin,
-    const float &			rmax,
-    const FPTYPE precs[3])
+    const float &			rmax)
 {  
     // compute the diff of the neighbors
     rij_a.resize (sec_a.back() * 3);
@@ -63,12 +62,8 @@ env_mat_a_nvnmd_quantize_cpu (
     // deriv wrt center: 3
     descrpt_a_deriv.resize (sec_a.back() * 4 * 3);
     fill (descrpt_a_deriv.begin(), descrpt_a_deriv.end(), 0.0);
-
-    /*
-    precs: NBIT_DATA_FL, NBIT_FEA_X, NBIT_FEA_FL
-    */
-   const double rc2 = rmax * rmax;
-
+    U_Flt64_Int64 ufi;
+    int64_t expo_max;
 
     for (int sec_iter = 0; sec_iter < int(sec_a.size()) - 1; ++sec_iter) {
         for (int nei_iter = sec_a[sec_iter]; nei_iter < sec_a[sec_iter+1]; ++nei_iter) {      
@@ -77,20 +72,13 @@ env_mat_a_nvnmd_quantize_cpu (
 
             // NVNMD
             FPTYPE rij[3];
-            rij[0] = round(rr[0] * precs[0]) / precs[0];
-            rij[1] = round(rr[1] * precs[0]) / precs[0];
-            rij[2] = round(rr[2] * precs[0]) / precs[0];
-            FPTYPE nr2 = deepmd::dot3(rij, rij);
-            nr2 = floor(nr2 * precs[0]) / precs[0];
+            ufi.nflt = rr[0]; ufi.nint &= FLT_MASK; rij[0] = ufi.nflt;
+            ufi.nflt = rr[1]; ufi.nint &= FLT_MASK; rij[1] = ufi.nflt;
+            ufi.nflt = rr[2]; ufi.nint &= FLT_MASK; rij[2] = ufi.nflt;
+            
+            FPTYPE nr2;
+            dotmul_flt_nvnmd(nr2, rij, rij, 3);
 
-            // FPTYPE nr2 = deepmd::dot3(rr, rr);
-            // FPTYPE inr = 1./sqrt(nr2);
-            // FPTYPE nr = nr2 * inr;
-            // FPTYPE inr2 = inr * inr;
-            // FPTYPE inr4 = inr2 * inr2;
-            // FPTYPE inr3 = inr4 * nr;
-            // FPTYPE sw, dsw;
-            // deepmd::spline5_switch(sw, dsw, nr, rmin, rmax);
             int idx_deriv = nei_iter * 4 * 3;	// 4 components time 3 directions
             int idx_value = nei_iter * 4;	// 4 components
             // 4 value components
@@ -137,8 +125,7 @@ env_mat_a_nvnmd_quantize_cpu<double> (
     const std::vector<int > &		fmt_nlist,
     const std::vector<int > &		sec, 
     const float &			rmin,
-    const float &			rmax,
-    const double      precs[3]);
+    const float &			rmax);
 
 
 template
@@ -154,7 +141,6 @@ env_mat_a_nvnmd_quantize_cpu<float> (
     const std::vector<int > &		fmt_nlist,
     const std::vector<int > &		sec, 
     const float &			rmin,
-    const float &			rmax,
-    const float       precs[3]);
+    const float &			rmax);
 
 

@@ -58,8 +58,7 @@ prod_env_mat_a_nvnmd_quantize_cpu(
     const int nall, 
     const float rcut, 
     const float rcut_smth, 
-    const std::vector<int> sec,
-    const FPTYPE precs[3]) 
+    const std::vector<int> sec) 
 {
   const int nnei = sec.back();
   const int nem = nnei * 4;
@@ -102,7 +101,7 @@ prod_env_mat_a_nvnmd_quantize_cpu(
     std::vector<FPTYPE> d_em_r;
     std::vector<FPTYPE> d_em_r_deriv;
     std::vector<FPTYPE> d_rij_a;
-    env_mat_a_nvnmd_quantize_cpu (d_em_a, d_em_a_deriv, d_rij_a, d_coord3, d_type, ii, fmt_nlist_a, sec, rcut_smth, rcut, precs);
+    env_mat_a_nvnmd_quantize_cpu (d_em_a, d_em_a_deriv, d_rij_a, d_coord3, d_type, ii, fmt_nlist_a, sec, rcut_smth, rcut);
 
     // check sizes
     assert (d_em_a.size() == nem);
@@ -147,8 +146,7 @@ prod_env_mat_a_nvnmd_quantize_cpu<double>(
     const int nall, 
     const float rcut, 
     const float rcut_smth, 
-    const std::vector<int> sec,
-    const double precs[3]);
+    const std::vector<int> sec);
 
 template
 void
@@ -168,8 +166,7 @@ prod_env_mat_a_nvnmd_quantize_cpu<float>(
     const int nall, 
     const float rcut, 
     const float rcut_smth, 
-    const std::vector<int> sec,
-    const float precs[3]);
+    const std::vector<int> sec);
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 // UNDEFINE

@@ -35,7 +35,7 @@ class TestNvnmdNetwork(tf.test.TestCase):
         # build
         x = np.array([-0.313429, 1.436861, 0.324769, -1.4823674, 
         0.783452, -0.171208, -0.033421, -1.324673]).reshape([2, 4])
-        y = np.array([0.19897461, -0.86706543]).reshape([-1])
+        y = np.array([0.19909, -0.86702]).reshape([-1])
         ty = one_layer(
             tf.constant(x),
             1,

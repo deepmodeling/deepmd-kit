@@ -9,8 +9,8 @@ from deepmd.utils.network import embedding_net
 from deepmd.utils.graph import get_tensor_by_name_from_graph
 
 #
+from deepmd.nvnmd.data.data import jdata_sys
 from deepmd.nvnmd.utils.config import nvnmd_cfg
-from deepmd.nvnmd.utils.network import matmul3_qq
 from deepmd.nvnmd.utils.weight import get_normalize
 
 log = logging.getLogger(__name__)
@@ -25,40 +25,21 @@ def build_davg_dstd():
 def check_switch_range(davg, dstd):
     r"""Check the range of switch, let it in range [-2, 14]
     """
-    def r2s(r, rmin, rmax):
-        v = 0.0
-        if (r > 0.01) and (r <= rmin):
-            v = 1.0 / r
-        elif (r > rmin) and (r <= rmax):
-            uu = (r - rmin) / (rmax - rmin)
-            v = (uu*uu*uu * (-6 * uu*uu + 15 * uu - 10) + 1) / r
-        return v
-    #
     rmin = nvnmd_cfg.dscp['rcut_smth']
-    rmax = nvnmd_cfg.dscp['rcut']
-    ntype = nvnmd_cfg.dscp['ntype']
+    #
     namelist = [n.name for n in tf.get_default_graph().as_graph_def().node]
     if 'train_attr/min_nbor_dist' in namelist:
         min_dist = get_tensor_by_name_from_graph(tf.get_default_graph(), 'train_attr/min_nbor_dist')
+    elif 'train_attr.min_nbor_dist' in nvnmd_cfg.weight.keys():
+        if nvnmd_cfg.weight['train_attr.min_nbor_dist'] < 1e-6:
+            min_dist = rmin
+        else:
+            min_dist = nvnmd_cfg.weight['train_attr.min_nbor_dist']
     else:
         min_dist = rmin
-    #
-    smin = 1e6
-    smax = -1e6
-    for tt in range(ntype):
-        smin_ = -davg[tt, 0] / dstd[tt, 0]
-        smax_ = (r2s(min_dist, rmin, rmax) -davg[tt, 0]) / dstd[tt, 0]
-        smin = smin_ if (smin_ < smin) else smin
-        smax = smax_ if (smax_ > smax) else smax
-    #
-    nvnmd_cfg.dscp['smin'] = smin
-    nvnmd_cfg.dscp['smax'] = smax
-    nvnmd_cfg.save()
-    # check
-    log.info(f"the range of s is [{smin}, {smax}]")
-    if (smin < -2.0) or (smax > 14.0):
-        log.warning(f"the range of s is over the limit [-2.0, 14.0]")
-        log.warning(f"Please reset the rcut_smth as a bigger value to fix this warning")
+    
+    nvnmd_cfg.dscp['dmin'] = min_dist
+    nvnmd_cfg.get_s_range(davg, dstd)
 
 
 def build_op_descriptor():
@@ -75,20 +56,11 @@ def descrpt2r4(inputs, natoms):
     where :math:`r_{ji} = (x_{ji}, y_{ji}, z_{ji})` and
     :math:`r'_{ji} = (s_{ji}, \frac{s_{ji} x_{ji}}{r_{ji}}, \frac{s_{ji} y_{ji}}{r_{ji}}, \frac{s_{ji} z_{ji}}{r_{ji}})`
     """
-    NBIT_DATA_FL = nvnmd_cfg.nbit['NBIT_DATA_FL']
-    NBIT_LLONG_FL = nvnmd_cfg.nbit['NBIT_LLONG_FL']
-    NBIT_FRC_FL = nvnmd_cfg.nbit['NBIT_FRC_FL']
-    NBIT_SHORT_FL = nvnmd_cfg.nbit['NBIT_SHORT_FL']
-    NBIT_MAPT_XK_U2S_FL = nvnmd_cfg.nbit['NBIT_MAPT_XK_U2S_FL']
-    prec = 1.0 / (2 ** NBIT_MAPT_XK_U2S_FL)
-
     ntypes = nvnmd_cfg.dscp['ntype']
     NIDP = nvnmd_cfg.dscp['NIDP']
     ndescrpt = NIDP * 4
     start_index = 0
 
-    # (nf, na*nd)
-    shape = inputs.get_shape().as_list()
     # (nf*na*ni, 4)
     inputs_reshape = tf.reshape(inputs, [-1, 4])
 
@@ -96,65 +68,69 @@ def descrpt2r4(inputs, natoms):
         # u (i.e., r^2)
         u = tf.reshape(tf.slice(inputs_reshape, [0, 0], [-1, 1]), [-1, 1])
         with tf.variable_scope('u', reuse=True):
-            u = op_module.quantize_nvnmd(u, 0, -1, NBIT_LLONG_FL, -1) # changed for better accuracy of virial
-        # print('u:', u)
+            u = op_module.flt_nvnmd(u)
+            if jdata_sys['debug']: print('#u:', u)
+            u = tf.ensure_shape(u, [None, 1])
         u = tf.reshape(u, [-1, natoms[0] * NIDP])
         sh0 = tf.shape(u)[0]
         # rij
         rij = tf.reshape(tf.slice(inputs_reshape, [0, 1], [-1, 3]), [-1, 3])
         with tf.variable_scope('rij', reuse=True):
-            rij = op_module.quantize_nvnmd(rij, 0, NBIT_DATA_FL, NBIT_FRC_FL, -1)
-        # print('rij:', rij)
+            rij = op_module.flt_nvnmd(rij)
+            rij = tf.ensure_shape(rij, [None, 3])
+            if jdata_sys['debug']: print('#rij:', rij)
         s = []
-        sr = []
+        h = []
         for type_i in range(ntypes):
             type_input = 0
-            postfix = f"_t{type_input}_t{type_i}"
             u_i = tf.slice(
                 u,
                 [0, start_index * NIDP],
                 [-1, natoms[2 + type_i] * NIDP])
             u_i = tf.reshape(u_i, [-1, 1])
-            #
-            keys = 's,sr'.split(',')
-            map_tables = [nvnmd_cfg.map[key + postfix] for key in keys]
-            map_tables2 = [nvnmd_cfg.map[f"d{key}_dr2" + postfix] for key in keys]
-            map_outs = []
-            for ii in range(len(keys)):
-                map_outs.append(op_module.map_nvnmd(
-                    u_i,
-                    map_tables[ii][0],
-                    map_tables[ii][1] / prec,
-                    map_tables2[ii][0],
-                    map_tables2[ii][1] / prec,
-                    prec, NBIT_SHORT_FL))
+            # s
+            table = GLOBAL_NP_FLOAT_PRECISION(np.concatenate([nvnmd_cfg.map['s'][type_i], nvnmd_cfg.map['h'][type_i]], axis=1))
+            table_grad = GLOBAL_NP_FLOAT_PRECISION(np.concatenate([nvnmd_cfg.map['s_grad'][type_i], nvnmd_cfg.map['h_grad'][type_i]], axis=1))
+            table_info =  GLOBAL_NP_FLOAT_PRECISION(np.reshape(nvnmd_cfg.map['cfg_u2s'], [-1]))
 
-            s_i, sr_i = map_outs
+            s_h_i = op_module.map_flt_nvnmd(u_i, table, table_grad, table_info)
+            s_h_i = tf.ensure_shape(s_h_i, [None, 1, 2])
+            s_i = tf.slice(s_h_i, [0, 0, 0], [-1, -1, 1])
+            h_i = tf.slice(s_h_i, [0, 0, 1], [-1, -1, 1])
             # reshape shape to sh0 for fixing bug.
             # This bug occurs if the number of atoms of an element is zero.
             s_i = tf.reshape(s_i, [sh0, natoms[2 + type_i] * NIDP])
-            sr_i = tf.reshape(sr_i, [sh0, natoms[2 + type_i] * NIDP])
+            h_i = tf.reshape(h_i, [sh0, natoms[2 + type_i] * NIDP])
             s.append(s_i)
-            sr.append(sr_i)
+            h.append(h_i)
             start_index += natoms[2 + type_i]
 
         s = tf.concat(s, axis=1)
-        sr = tf.concat(sr, axis=1)
-
-        with tf.variable_scope('s', reuse=True):
-            s = op_module.quantize_nvnmd(s, 0, NBIT_SHORT_FL, NBIT_DATA_FL, -1)
-
-        with tf.variable_scope('sr', reuse=True):
-            sr = op_module.quantize_nvnmd(sr, 0, NBIT_SHORT_FL, NBIT_DATA_FL, -1)
+        h = tf.concat(h, axis=1)
 
         s = tf.reshape(s, [-1, 1])
-        sr = tf.reshape(sr, [-1, 1])
+        h = tf.reshape(h, [-1, 1])
+
+        with tf.variable_scope('s', reuse=True):
+            s = op_module.flt_nvnmd(s)
+            if jdata_sys['debug']: print('#s:', s)
+            s = tf.ensure_shape(s, [None, 1])
+
+        with tf.variable_scope('h', reuse=True):
+            h = op_module.flt_nvnmd(h)
+            if jdata_sys['debug']: print('#h:', h)
+            h = tf.ensure_shape(h, [None, 1])
+
 
         # R2R4
         Rs = s
-        Rxyz = sr * rij
+        # Rxyz = h * rij
+        Rxyz = op_module.mul_flt_nvnmd(h, rij)
+        Rxyz = tf.ensure_shape(Rxyz, [None, 3])
         with tf.variable_scope('Rxyz', reuse=True):
-            Rxyz = op_module.quantize_nvnmd(Rxyz, 0, NBIT_DATA_FL, NBIT_DATA_FL, -1)
+            Rxyz = op_module.flt_nvnmd(Rxyz)
+            if jdata_sys['debug']: print('#Rxyz:', Rxyz)
+            Rxyz = tf.ensure_shape(Rxyz, [None, 3])
         R4 = tf.concat([Rs, Rxyz], axis=1)
         R4 = tf.reshape(R4, [-1, NIDP, 4])
         inputs_reshape = R4
@@ -186,38 +162,35 @@ def filter_lower_R42GR(
     natom = tf.shape(inputs_i)[0]
     M1 = nvnmd_cfg.dscp['M1']
 
-    NBIT_DATA_FL = nvnmd_cfg.nbit['NBIT_DATA_FL']
-    NBIT_MAPT_XK_S2G_FL = nvnmd_cfg.nbit['NBIT_MAPT_XK_S2G_FL']
-    NBIT_SHORT_FL = nvnmd_cfg.nbit['NBIT_SHORT_FL']
-    prec = 1.0 / (2 ** NBIT_MAPT_XK_S2G_FL)
     type_input = 0 if (type_input < 0) else type_input
-    postfix = f"_t{type_input}_t{type_i}"
 
     if (nvnmd_cfg.quantize_descriptor):
-        rng_s_min = -2.0 # range of s is [-2, 14]
+        # copy
+        inputs_reshape = op_module.flt_nvnmd(inputs_reshape)
+        inputs_reshape = tf.ensure_shape(inputs_reshape, [None, 4])
+
+        inputs_reshape, inputs_reshape2 = op_module.copy_flt_nvnmd(inputs_reshape)
+        inputs_reshape = tf.ensure_shape(inputs_reshape, [None, 4])
+        inputs_reshape2 = tf.ensure_shape(inputs_reshape2, [None, 4])
+        # s
         s = tf.reshape(tf.slice(inputs_reshape, [0, 0], [-1, 1]), [-1, 1])
-        s = op_module.quantize_nvnmd(s, 0, NBIT_SHORT_FL, NBIT_DATA_FL, -1)
         # G
-        keys = 'G'.split(',')
-        map_tables = [nvnmd_cfg.map[key + postfix] for key in keys]
-        map_tables2 = [nvnmd_cfg.map[f"d{key}_ds" + postfix] for key in keys]
-        map_outs = []
-        for ii in range(len(keys)):
-            with tf.variable_scope(keys[ii], reuse=True):
-                map_outs.append(op_module.map_nvnmd(
-                    s - rng_s_min,
-                    map_tables[ii][0], map_tables[ii][1] / prec,
-                    map_tables2[ii][0], map_tables2[ii][1] / prec,
-                    prec, NBIT_SHORT_FL))
-                map_outs[ii] = op_module.quantize_nvnmd(map_outs[ii], 0, NBIT_SHORT_FL, NBIT_DATA_FL, -1)
-        G = map_outs
+        table = GLOBAL_NP_FLOAT_PRECISION(nvnmd_cfg.map['g'][type_i])
+        table_grad = GLOBAL_NP_FLOAT_PRECISION(nvnmd_cfg.map['g_grad'][type_i])
+        table_info =  GLOBAL_NP_FLOAT_PRECISION(np.reshape(nvnmd_cfg.map['cfg_s2g'], [-1]))
+        with tf.variable_scope('g', reuse=True):
+            G = op_module.map_flt_nvnmd(s, table, table_grad, table_info)
+            G = tf.ensure_shape(G, [None, 1, M1])
+            G = op_module.flt_nvnmd(G)
+            G = tf.ensure_shape(G, [None, 1, M1])
+            if jdata_sys['debug']: print('#g:', G)
         # G
         xyz_scatter = G
         xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1] // 4, M1))
         # GR
-        inputs_reshape = tf.reshape(inputs_reshape, [-1, shape_i[1] // 4, 4])
-        GR = matmul3_qq(tf.transpose(inputs_reshape, [0, 2, 1]), xyz_scatter, -1)
-        GR = tf.reshape(GR, [-1, 4 * M1])
+        inputs_reshape2 = tf.reshape(inputs_reshape2, [-1, shape_i[1] // 4, 4])
+        GR = op_module.matmul_flt2fix_nvnmd(tf.transpose(inputs_reshape2, [0, 2, 1]), xyz_scatter, 23)
+        GR = tf.ensure_shape(GR, [None, 4, M1])
         return GR
 
     else:
@@ -263,17 +236,19 @@ def filter_GR2D(xyz_scatter_1):
     r"""Replace se_a.py/_filter
     """
     NIX = nvnmd_cfg.dscp['NIX']
-    NBIT_DATA_FL = nvnmd_cfg.nbit['NBIT_DATA_FL']
     M1 = nvnmd_cfg.dscp['M1']
     M2 = nvnmd_cfg.dscp['M2']
+    NBIT_DATA_FL = nvnmd_cfg.nbit['NBIT_FIXD_FL']
 
     if (nvnmd_cfg.quantize_descriptor):
         xyz_scatter_1 = tf.reshape(xyz_scatter_1, [-1, 4 * M1])
         # fix the number of bits of gradient
-        xyz_scatter_1 = op_module.quantize_nvnmd(xyz_scatter_1, 0, -1, NBIT_DATA_FL, -1)
         xyz_scatter_1 = xyz_scatter_1 * (1.0 / NIX)
-        with tf.variable_scope('GR', reuse=True):
-            xyz_scatter_1 = op_module.quantize_nvnmd(xyz_scatter_1, 0, NBIT_DATA_FL, NBIT_DATA_FL, -1)
+        
+        with tf.variable_scope('gr', reuse=True):
+            xyz_scatter_1 = op_module.flt_nvnmd(xyz_scatter_1)
+            if jdata_sys['debug']: print('#gr:', xyz_scatter_1)
+            xyz_scatter_1 = tf.ensure_shape(xyz_scatter_1, [None, 4 * M1])
         xyz_scatter_1 = tf.reshape(xyz_scatter_1, [-1, 4, M1])
 
         # natom x 4 x outputs_size_2
@@ -283,7 +258,9 @@ def filter_GR2D(xyz_scatter_1):
         # natom x outputs_size_2 x 3
         qmat = tf.transpose(qmat, perm=[0, 2, 1])
         # D': natom x outputs_size x outputs_size_2
-        result = tf.matmul(xyz_scatter_1, xyz_scatter_2, transpose_a=True)
+        xyz_scatter_1_T = tf.transpose(xyz_scatter_1, [0, 2, 1])
+        result = op_module.matmul_flt_nvnmd(xyz_scatter_1_T, xyz_scatter_2, 1*16+0, 1*16+0)
+        result = tf.ensure_shape(result, [None, M1, M1])
         # D': natom x (outputs_size x outputs_size_2)
         result = tf.reshape(result, [-1, M1 * M1])
         #
@@ -295,7 +272,12 @@ def filter_GR2D(xyz_scatter_1):
         result = tf.gather(result, index_subset, axis=1)
 
         with tf.variable_scope('d', reuse=True):
-            result = op_module.quantize_nvnmd(result, 0, NBIT_DATA_FL, NBIT_DATA_FL, -1)
+            result = op_module.flt_nvnmd(result)
+            if jdata_sys['debug']: print('#d:', result)
+            result = tf.ensure_shape(result, [None, M1*M2])
+
+        result = op_module.quantize_nvnmd(result, 0, NBIT_DATA_FL, NBIT_DATA_FL, -1)
+        result = tf.ensure_shape(result, [None, M1*M2])
     else:
         # natom x 4 x outputs_size
         xyz_scatter_1 = xyz_scatter_1 * (1.0 / NIX)

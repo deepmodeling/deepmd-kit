@@ -166,19 +166,20 @@ class FioBin():
             log.warning(f"can not find {file_name}")
             return default_value
 
-    def save(self, file_name: str = '', data: str = ''):
+    def save(self, file_name: str = '', data: list = []):
         r"""Save hex string into binary file
         """
         log.info(f"write binary to {file_name}")
         Fio().create_file_path(file_name)
+        # si is H->L
+        # bytearray is L->H
+        # so need '[::-1]'
+        buff = []
+        for si in data:
+            buff.extend(list(bytearray.fromhex(si))[::-1])
+        #
         with open(file_name, 'wb') as fp:
-            for si in data:
-                # one byte consists of two hex chars
-                for ii in range(len(si) // 2):
-                    v = int(si[2 * ii: 2 * (ii + 1)], 16)
-                    v = struct.pack('B', v)
-                    fp.write(v)
-
+            fp.write(struct.pack('%sB' % len(buff), *buff))
 
 class FioTxt():
     r"""Input and output for .txt file with string

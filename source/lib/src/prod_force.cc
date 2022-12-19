@@ -2,6 +2,7 @@
 #include <cstring>
 #include "prod_force.h"
 #include "errors.h"
+#include <math.h>
 
 inline void
 make_index_range (
@@ -51,9 +52,9 @@ prod_force_a_cpu(
       int aa_start, aa_end;
       make_index_range (aa_start, aa_end, jj, nnei);
       for (int aa = aa_start; aa < aa_end; ++aa) {
-	force[j_idx * 3 + 0] += net_deriv[i_idx * ndescrpt + aa] * env_deriv[i_idx * ndescrpt * 3 + aa * 3 + 0];
-	force[j_idx * 3 + 1] += net_deriv[i_idx * ndescrpt + aa] * env_deriv[i_idx * ndescrpt * 3 + aa * 3 + 1];
-	force[j_idx * 3 + 2] += net_deriv[i_idx * ndescrpt + aa] * env_deriv[i_idx * ndescrpt * 3 + aa * 3 + 2];
+        force[j_idx * 3 + 0] += net_deriv[i_idx * ndescrpt + aa] * env_deriv[i_idx * ndescrpt * 3 + aa * 3 + 0];
+        force[j_idx * 3 + 1] += net_deriv[i_idx * ndescrpt + aa] * env_deriv[i_idx * ndescrpt * 3 + aa * 3 + 1];
+        force[j_idx * 3 + 2] += net_deriv[i_idx * ndescrpt + aa] * env_deriv[i_idx * ndescrpt * 3 + aa * 3 + 2];
       }
     }
   }

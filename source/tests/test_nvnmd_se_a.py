@@ -70,15 +70,15 @@ class TestModel(tf.test.TestCase):
         tf.reset_default_graph()
         # open NVNMD
         jdata_cf = jdata_deepmd_input['nvnmd']
-        jdata_cf['config_file'] = str(tests_path / os.path.join("nvnmd", "config_ref.npy"))
-        jdata_cf['weight_file'] = str(tests_path / os.path.join("nvnmd", "weight_ref.npy"))
+        jdata_cf['config_file'] = str(tests_path / os.path.join("nvnmd", "config.npy"))
+        jdata_cf['weight_file'] = str(tests_path / os.path.join("nvnmd", "weight.npy"))
         jdata_cf['map_file'] = str(tests_path / os.path.join("nvnmd", "map.npy"))
         jdata_cf['enable'] = True
         nvnmd_cfg.init_from_jdata(jdata_cf)
         nvnmd_cfg.quantize_descriptor = True
         nvnmd_cfg.restore_descriptor = True
         # load input
-        jfile = str(tests_path / os.path.join("nvnmd", "train_ref2.json"))
+        jfile = str(tests_path / os.path.join("nvnmd", "train_cnn.json"))
         jdata = j_loader(jfile)
         ntypes = nvnmd_cfg.dscp['ntype']
 
@@ -119,8 +119,9 @@ class TestModel(tf.test.TestCase):
         model_dout = model_dout.reshape([-1])
         # compare
         ref_dout = [
-            0.0067138671875, 0.0078125, -0.02587890625, 0.0081787109375, 0.0091552734375, 
-            -0.0302734375, 0.0096435546875, 0.01220703125, 0.0986328125, -0.03173828125
+            0.0136348009,  0.0083287954, -0.0639076233,  0.0129181147,
+            0.0050876141, -0.0390379429,  0.0078909397,  0.0022796392,
+            0.2995386124, -0.0605480671
         ]
         places = 10
         np.testing.assert_almost_equal(model_dout[0:10], ref_dout, places)
