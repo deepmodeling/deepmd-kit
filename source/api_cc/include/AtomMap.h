@@ -5,16 +5,17 @@
 // using namespace std;
 
 namespace deepmd{
-template <typename VALUETYPE>
 class AtomMap 
 {
 public:
   AtomMap();
   AtomMap(const std::vector<int >::const_iterator in_begin, 
 	     const std::vector<int >::const_iterator in_end);
+  template <typename VALUETYPE>
   void forward (typename std::vector<VALUETYPE >::iterator out,
 		const typename std::vector<VALUETYPE >::const_iterator in, 
 		const int stride = 1) const ;
+  template <typename VALUETYPE>
   void backward (typename std::vector<VALUETYPE >::iterator out,
 		 const typename std::vector<VALUETYPE >::const_iterator in, 
 		 const int stride = 1) const ;

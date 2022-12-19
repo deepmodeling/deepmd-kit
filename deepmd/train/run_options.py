@@ -26,12 +26,12 @@ log = logging.getLogger(__name__)
 
 # http://patorjk.com/software/taag. Font:Big"
 WELCOME = (  # noqa
-    " _____               _____   __  __  _____           _     _  _   ",
-    "|  __ \             |  __ \ |  \/  ||  __ \         | |   (_)| |  ",
-    "| |  | |  ___   ___ | |__) || \  / || |  | | ______ | | __ _ | |_ ",
-    "| |  | | / _ \ / _ \|  ___/ | |\/| || |  | ||______|| |/ /| || __|",
-    "| |__| ||  __/|  __/| |     | |  | || |__| |        |   < | || |_ ",
-    "|_____/  \___| \___||_|     |_|  |_||_____/         |_|\_\|_| \__|",
+    r" _____               _____   __  __  _____           _     _  _   ",
+    r"|  __ \             |  __ \ |  \/  ||  __ \         | |   (_)| |  ",
+    r"| |  | |  ___   ___ | |__) || \  / || |  | | ______ | | __ _ | |_ ",
+    r"| |  | | / _ \ / _ \|  ___/ | |\/| || |  | ||______|| |/ /| || __|",
+    r"| |__| ||  __/|  __/| |     | |  | || |__| |        |   < | || |_ ",
+    r"|_____/  \___| \___||_|     |_|  |_||_____/         |_|\_\|_| \__|",
 )
 
 CITATION = (
@@ -89,6 +89,7 @@ class RunOptions:
         self,
         init_model: Optional[str] = None,
         init_frz_model: Optional[str] = None,
+        finetune: Optional[str] = None,
         restart: Optional[str] = None,
         log_path: Optional[str] = None,
         log_level: int = 0,
@@ -96,14 +97,10 @@ class RunOptions:
     ):
         self._try_init_distrib()
 
-        if all((init_model, restart)):
-            raise RuntimeError(
-                "--init-model and --restart should not be set at the same time"
-            )
-
         # model init options
         self.restart = restart
         self.init_model = init_model
+        self.finetune = finetune
         self.init_mode = "init_from_scratch"
 
         if restart is not None:
@@ -115,6 +112,9 @@ class RunOptions:
         elif init_frz_model is not None:
             self.init_frz_model = os.path.abspath(init_frz_model)
             self.init_mode = "init_from_frz_model"
+        elif finetune is not None:
+            self.finetune = os.path.abspath(finetune)
+            self.init_mode = "finetune"
 
         self._setup_logger(Path(log_path) if log_path else None, log_level, mpi_log)
 
@@ -133,8 +133,12 @@ class RunOptions:
             log.info(f"node list:            {self.nodelist}")
         log.info(f"running on:           {self.nodename}")
         log.info(f"computing device:     {self.my_device}")
-        env_value = os.environ.get('CUDA_VISIBLE_DEVICES', 'unset')
-        log.info(f"CUDA_VISIBLE_DEVICES: {env_value}")
+        if tf.test.is_built_with_cuda():
+            env_value = os.environ.get('CUDA_VISIBLE_DEVICES', 'unset')
+            log.info(f"CUDA_VISIBLE_DEVICES: {env_value}")
+        if hasattr(tf.test, 'is_built_with_rocm') and tf.test.is_built_with_rocm():
+            env_value = os.environ.get('HIP_VISIBLE_DEVICES', 'unset')
+            log.info(f"HIP_VISIBLE_DEVICES:  {env_value}")
         log.info(f"Count of visible GPU: {len(self.gpus or [])}")
         intra, inter = get_tf_default_nthreads()
         log.info(f"num_intra_threads:    {intra:d}")

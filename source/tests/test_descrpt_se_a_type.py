@@ -5,7 +5,7 @@ from deepmd.env import tf
 import pickle
 from common import Data,gen_data, j_loader
 
-from deepmd.utils.data_system import DataSystem
+from common import DataSystem
 from deepmd.descriptor import DescrptSeA
 from deepmd.fit import EnerFitting
 from deepmd.model import EnerModel

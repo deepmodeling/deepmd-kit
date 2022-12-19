@@ -47,10 +47,15 @@ PREFIX = None
 CPU_COUNT = os.cpu_count()
 nvcc_path = shutil.which("nvcc")
 if nvcc_path is not None:
-    CUDA_PATH = Path(shutil.which("nvcc")).parent.parent
+    CUDA_PATH = Path(nvcc_path).parent.parent
 else:
     CUDA_PATH = None
 CUDNN_PATH = Path("/usr") if os.path.isfile("/usr/include/cudnn.h") else None
+hipcc_path = shutil.which("hipcc")
+if hipcc_path is not None:
+    ROCM_PATH = Path(hipcc_path).parent.parent
+else:
+    ROCM_PATH = None
 GCC = shutil.which("gcc")
 GXX = shutil.which("g++")
 
@@ -135,7 +140,26 @@ class OnlineResource:
             self.path.chmod(self.path.stat().st_mode | stat.S_IEXEC)
         if self.gzip is not None:
             with tarfile.open(self.path) as tar:
-                tar.extractall(path=self.gzip_path)
+                def is_within_directory(directory, target):
+                    
+                    abs_directory = os.path.abspath(directory)
+                    abs_target = os.path.abspath(target)
+                
+                    prefix = os.path.commonprefix([abs_directory, abs_target])
+                    
+                    return prefix == abs_directory
+                
+                def safe_extract(tar, path=".", members=None, *, numeric_owner=False):
+                
+                    for member in tar.getmembers():
+                        member_path = os.path.join(path, member.name)
+                        if not is_within_directory(path, member_path):
+                            raise Exception("Attempted Path Traversal in Tar File")
+                
+                    tar.extractall(path, members, numeric_owner=numeric_owner) 
+                    
+                
+                safe_extract(tar, path=self.gzip_path)
 
     def download(self):
         """Download the target file."""
@@ -349,6 +373,12 @@ RESOURCES = {
         "6eaf86ead73e23988fe192da1db68f4d3828bcdd0f3a9dc195935e339c95dbdc",
         gzip="tensorflow",
     ),
+    "tensorflow-2.10.0": OnlineResource(
+        "tensorflow-2.10.0.tar.gz",
+        "https://github.com/tensorflow/tensorflow/archive/refs/tags/v2.10.0.tar.gz",
+        "b5a1bb04c84b6fe1538377e5a1f649bb5d5f0b2e3625a3c526ff3a8af88633e8",
+        gzip="tensorflow",
+    ),
 }
 
 
@@ -477,23 +507,46 @@ class BuildCUDA(Build):
             raise RuntimeError("Unsupported CUDA version")
 
 
+class BuildROCM(Build):
+    """Find ROCm."""
+    @property
+    @lru_cache()
+    def resources(self) -> Dict[str, OnlineResource]:
+        return {}
+
+    @property
+    @lru_cache()
+    def dependencies(self) -> Dict[str, Build]:
+        return {}
+
+    def build(self):
+        raise RuntimeError("ROCm is not found!")
+
+    @property
+    def built(self):
+        return ROCM_PATH is not None
+
+
 class BuildTensorFlow(Build):
     """Build TensorFlow C++ interface.
 
     Parameters
     ----------
-    version : str, default=2.9.1
+    version : str
         TensorFlow version
     enable_mkl : bool, default=True
         enable OneDNN
     enable_cuda : bool, default=False
         Enable CUDA build
+    enable_rocm : bool, default=False
+        Enable ROCm build
     """
 
-    def __init__(self, version: str ="2.9.1", enable_mkl: bool=True, enable_cuda: bool=False) -> None:
+    def __init__(self, version: str ="2.9.1", enable_mkl: bool=True, enable_cuda: bool=False, enable_rocm: bool = False) -> None:
         self.version = version
         self.enable_mkl = enable_mkl
         self.enable_cuda = enable_cuda
+        self.enable_rocm = enable_rocm
 
     @property
     @lru_cache()
@@ -508,6 +561,8 @@ class BuildTensorFlow(Build):
         optional_dep = {}
         if self.enable_cuda:
             optional_dep['cuda'] = BuildCUDA()
+        if self.enable_rocm:
+            optional_dep['rocm'] = BuildROCM()
         return {
             "bazelisk": BuildBazelisk(),
             "numpy": BuildNumpy(),
@@ -520,7 +575,8 @@ class BuildTensorFlow(Build):
         with set_directory(src):
             # configure -- need bazelisk in PATH
             call([str(src / "configure")], env={
-                "PATH": list2env([PREFIX / "bin", "/usr/bin"]),
+                "PATH": list2env([PREFIX / "bin", "/usr/bin", "/bin"]),
+                "LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH", ""),
                 **self._environments,
             })
             # bazel build
@@ -531,11 +587,11 @@ class BuildTensorFlow(Build):
                 *self._build_opts,
                 *self._build_targets,
             ], env={
-                "PATH": list2env(["/usr/bin"]),
+                "PATH": list2env(["/usr/bin", "/bin"]),
                 "HOME": os.environ.get("HOME"),
                 "TEST_TMPDIR": str(PACKAGE_DIR / "bazelcache"),
                 # for libstdc++
-                "LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH"),
+                "LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH", ""),
                 "CC": str(Path(GCC).resolve()),
                 "CXX": str(Path(GXX).resolve()),
             })
@@ -603,6 +659,15 @@ class BuildTensorFlow(Build):
             cuda_env = {
                 "TF_NEED_CUDA": "0",
             }
+        if self.enable_rocm:
+            rocm_env = {
+                "TF_NEED_ROCM": "1",
+                "ROCM_PATH": ROCM_PATH,
+            }
+        else:
+            rocm_env = {
+                "TF_NEED_ROCM": "0",
+            }
         return {
             "TF_ENABLE_XLA": "1",
             "CC_OPT_FLAGS": "-Wno-sign-compare",
@@ -621,6 +686,7 @@ class BuildTensorFlow(Build):
             "TF_SET_ANDROID_WORKSPACE": "0",
             "TF_CONFIGURE_IOS": "0",
             ** cuda_env,
+            ** rocm_env,
         }
 
     @property
@@ -674,6 +740,7 @@ def env() -> Dict[str, str]:
         "Python": sys.executable,
         "CUDA": CUDA_PATH,
         "cuDNN": CUDNN_PATH,
+        "ROCm": ROCM_PATH,
         "gcc": GCC,
         "g++": GXX,
         "Install prefix": PREFIX,
@@ -715,10 +782,11 @@ def parse_args(args: Optional[List[str]] = None):
         default=str(PACKAGE_DIR),
         help="Path to download packages.",
     )
-    parser.add_argument(
+    parser_variant = parser.add_mutually_exclusive_group()
+    parser_variant.add_argument(
         "--cuda",
         action='store_true',
-        help="Enable CUDA for TensorFlow and DeePMD-kit",
+        help="Enable CUDA for TensorFlow",
     )
     parser.add_argument(
         "--cuda-path",
@@ -731,6 +799,17 @@ def parse_args(args: Optional[List[str]] = None):
         type=str,
         default=CUDNN_PATH,
         help="path to cuDNN",
+    )
+    parser_variant.add_argument(
+        "--rocm",
+        action='store_true',
+        help="Enable ROCm for TensorFlow",
+    )
+    parser.add_argument(
+        "--rocm-path",
+        type=str,
+        default=ROCM_PATH,
+        help="path to ROCm Toolkit",
     )
     parser.add_argument(
         "--gcc",
@@ -774,6 +853,7 @@ if __name__ == "__main__":
     CPU_COUNT = args.cpus
     CUDA_PATH = str_to_path_if_not_none(args.cuda_path)
     CUDNN_PATH = str_to_path_if_not_none(args.cudnn_path)
+    ROCM_PATH = str_to_path_if_not_none(args.rocm_path)
     GCC = args.gcc
     GXX = args.gxx
     assert GCC is not None
@@ -786,7 +866,7 @@ if __name__ == "__main__":
     PREFIX.mkdir(exist_ok=True)
 
     # start to build
-    BuildTensorFlow(enable_cuda=args.cuda)()
+    BuildTensorFlow(enable_cuda=args.cuda, enable_rocm=args.rocm)()
     dlog.info("Build TensorFlow C++ Library successfully!")
 
     # clean

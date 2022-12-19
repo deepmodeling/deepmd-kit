@@ -11,9 +11,10 @@ endif()
 include(ExternalProject)
 ExternalProject_Add(googletest
   GIT_REPOSITORY    ${GTEST_REPO_ADDRESS}
-  GIT_TAG           main
-  SOURCE_DIR        "${CMAKE_CURRENT_BINARY_DIR}/googletest-src"
-  BINARY_DIR        "${CMAKE_CURRENT_BINARY_DIR}/googletest-build"
+  GIT_TAG           release-1.12.1
+  GIT_SHALLOW       TRUE
+  SOURCE_DIR        "@CMAKE_CURRENT_BINARY_DIR@/googletest-src"
+  BINARY_DIR        "@CMAKE_CURRENT_BINARY_DIR@/googletest-build"
   CONFIGURE_COMMAND ""
   BUILD_COMMAND     ""
   INSTALL_COMMAND   ""

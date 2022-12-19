@@ -2,7 +2,6 @@ import numpy as np
 from typing import Tuple, List
 
 from deepmd.env import tf
-from deepmd.common import ClassArg
 from deepmd.env import global_cvt_2_ener_float, MODEL_VERSION, GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import op_module
 from deepmd.utils.graph import load_graph_def
@@ -20,6 +19,8 @@ class TensorModel(Model) :
             Descriptor
     fitting
             Fitting net
+    typeebd
+            Type embedding net
     type_map
             Mapping atom type to the name (str) of the type.
             For example `type_map[1]` gives the name of the type 1.
@@ -32,7 +33,8 @@ class TensorModel(Model) :
             self, 
             tensor_name : str,
             descrpt, 
-            fitting, 
+            fitting,
+            typeebd=None,
             type_map : List[str] = None,
             data_stat_nbatch : int = 10,
             data_stat_protect : float = 1e-2,
@@ -47,6 +49,8 @@ class TensorModel(Model) :
         self.ntypes = self.descrpt.get_ntypes()
         # fitting
         self.fitting = fitting
+        # type embedding
+        self.typeebd = typeebd
         # other params
         if type_map is None:
             self.type_map = []
@@ -100,6 +104,9 @@ class TensorModel(Model) :
                frz_model = None,         
                suffix = '', 
                reuse = None):
+
+        if input_dict is None:
+            input_dict = {}
         with tf.variable_scope('model_attr' + suffix, reuse = reuse) :
             t_tmap = tf.constant(' '.join(self.type_map), 
                                  name = 'tmap', 
@@ -119,6 +126,20 @@ class TensorModel(Model) :
 
         natomsel = sum(natoms[2+type_i] for type_i in self.get_sel_type())
         nout = self.get_out_size()
+
+        coord = tf.reshape(coord_, [-1, natoms[1] * 3])
+        atype = tf.reshape(atype_, [-1, natoms[1]])
+        input_dict['nframes'] = tf.shape(coord)[0]
+
+        # type embedding if any
+        if self.typeebd is not None:
+            type_embedding = self.typeebd.build(
+                self.ntypes,
+                reuse=reuse,
+                suffix=suffix,
+            )
+            input_dict['type_embedding'] = type_embedding
+            input_dict['atype'] = atype_
 
         if frz_model == None:
             dout \
@@ -150,7 +171,8 @@ class TensorModel(Model) :
 
         output = self.fitting.build (dout, 
                                      rot_mat,
-                                     natoms, 
+                                     natoms,
+                                     input_dict,
                                      reuse = reuse, 
                                      suffix = suffix)
         framesize = nout if "global" in self.model_type else natomsel * nout
@@ -226,47 +248,20 @@ class TensorModel(Model) :
 
 
 class WFCModel(TensorModel):
-    def __init__(
-            self, 
-            descrpt, 
-            fitting, 
-            type_map : List[str] = None, 
-            data_stat_nbatch : int = 10, 
-            data_stat_protect : float = 1e-2
-    ) -> None:
-        TensorModel.__init__(self, 'wfc', descrpt, fitting, type_map, data_stat_nbatch, data_stat_protect)
+    def __init__(self, *args, **kwargs) -> None:
+        TensorModel.__init__(self, 'wfc', *args, **kwargs)
+
 
 class DipoleModel(TensorModel):
-    def __init__(
-            self, 
-            descrpt, 
-            fitting, 
-            type_map : List[str] = None, 
-            data_stat_nbatch : int = 10, 
-            data_stat_protect : float = 1e-2
-    ) -> None:
-        TensorModel.__init__(self, 'dipole', descrpt, fitting, type_map, data_stat_nbatch, data_stat_protect)
+    def __init__(self, *args, **kwargs) -> None:
+        TensorModel.__init__(self, 'dipole', *args, **kwargs)
+
 
 class PolarModel(TensorModel):
-    def __init__(
-            self, 
-            descrpt, 
-            fitting, 
-            type_map : List[str] = None, 
-            data_stat_nbatch : int = 10, 
-            data_stat_protect : float = 1e-2
-    ) -> None:
-        TensorModel.__init__(self, 'polar', descrpt, fitting, type_map, data_stat_nbatch, data_stat_protect)
+    def __init__(self, *args, **kwargs) -> None:
+        TensorModel.__init__(self, 'polar', *args, **kwargs)
+
 
 class GlobalPolarModel(TensorModel):
-    def __init__(
-            self, 
-            descrpt, 
-            fitting, 
-            type_map : List[str] = None, 
-            data_stat_nbatch : int = 10, 
-            data_stat_protect : float = 1e-2
-    ) -> None:
-        TensorModel.__init__(self, 'global_polar', descrpt, fitting, type_map, data_stat_nbatch, data_stat_protect)
-
-
+    def __init__(self, *args, **kwargs) -> None:
+        TensorModel.__init__(self, 'global_polar', *args, **kwargs)

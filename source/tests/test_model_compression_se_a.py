@@ -6,7 +6,7 @@ import subprocess as sp
 from deepmd.infer import DeepPot
 from deepmd.env import MODEL_VERSION
 # from deepmd.entrypoints.compress import compress
-from common import j_loader, tests_path
+from common import j_loader, tests_path, run_dp
 
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
@@ -41,11 +41,11 @@ def _init_models():
     with open(INPUT, "w") as fp:
         json.dump(jdata, fp, indent=4)
 
-    ret = _subprocess_run("dp train " + INPUT)
+    ret = run_dp("dp train " + INPUT)
     np.testing.assert_equal(ret, 0, 'DP train failed!')
-    ret = _subprocess_run("dp freeze -o " + frozen_model)
+    ret = run_dp("dp freeze -o " + frozen_model)
     np.testing.assert_equal(ret, 0, 'DP freeze failed!')
-    ret = _subprocess_run("dp compress " + " -i " + frozen_model + " -o " + compressed_model)
+    ret = run_dp("dp compress " + " -i " + frozen_model + " -o " + compressed_model)
     np.testing.assert_equal(ret, 0, 'DP model compression failed!')
     return INPUT, frozen_model, compressed_model
 

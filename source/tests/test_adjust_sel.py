@@ -6,7 +6,7 @@ import subprocess as sp
 from deepmd.infer import DeepPot
 from deepmd.env import MODEL_VERSION
 # from deepmd.entrypoints.compress import compress
-from common import j_loader, tests_path
+from common import j_loader, tests_path, run_dp
 
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
@@ -44,26 +44,26 @@ def _init_models():
     with open(INPUT, "w") as fp:
         json.dump(jdata, fp, indent=4)
 
-    ret = _subprocess_run("dp train " + INPUT + " --skip-neighbor-stat")
+    ret = run_dp("dp train " + INPUT + " --skip-neighbor-stat")
     np.testing.assert_equal(ret, 0, 'DP train failed!')
-    ret = _subprocess_run("dp freeze -o " + frozen_model)
+    ret = run_dp("dp freeze -o " + frozen_model)
     np.testing.assert_equal(ret, 0, 'DP freeze failed!')
 
     jdata["training"]["numb_steps"] = 0
     jdata["model"]["descriptor"]["sel"] = [2, 4] # equal to data
     with open(INPUT, "w") as fp:
         json.dump(jdata, fp, indent=4)
-    ret = _subprocess_run("dp train " + INPUT + " -f " + frozen_model + " --skip-neighbor-stat")
+    ret = run_dp("dp train " + INPUT + " -f " + frozen_model + " --skip-neighbor-stat")
     np.testing.assert_equal(ret, 0, 'DP model adjust sel failed!')
-    ret = _subprocess_run("dp freeze -o " + decreased_model)
+    ret = run_dp("dp freeze -o " + decreased_model)
     np.testing.assert_equal(ret, 0, 'DP freeze failed!')
 
     jdata["model"]["descriptor"]["sel"] = [300, 300] # equal to data
     with open(INPUT, "w") as fp:
         json.dump(jdata, fp, indent=4)
-    ret = _subprocess_run("dp train " + INPUT + " -f " + frozen_model + " --skip-neighbor-stat")
+    ret = run_dp("dp train " + INPUT + " -f " + frozen_model + " --skip-neighbor-stat")
     np.testing.assert_equal(ret, 0, 'DP model adjust sel failed!')
-    ret = _subprocess_run("dp freeze -o " + increased_model)
+    ret = run_dp("dp freeze -o " + increased_model)
     np.testing.assert_equal(ret, 0, 'DP freeze failed!')
     return INPUT, frozen_model, decreased_model, increased_model
 
