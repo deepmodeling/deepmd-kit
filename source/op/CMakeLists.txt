@@ -5,40 +5,28 @@ file(GLOB OP_GRADS_SRC custom_op.cc prod_force_grad.cc prod_force_grad_multi_dev
 file(GLOB OP_PY *.py)
 file(GLOB OP_REMAPPER_SRC optimizer/parallel.cc)
 
-if (BUILD_CPP_IF) 
-  add_library(${LIB_DEEPMD_OP} MODULE ${OP_SRC})
-  # link: libdeepmd libtensorflow_cc libtensorflow_framework
-  target_link_libraries (${LIB_DEEPMD_OP} PRIVATE TensorFlow::tensorflow_cc TensorFlow::tensorflow_framework)
-  target_link_libraries (${LIB_DEEPMD_OP} PRIVATE ${LIB_DEEPMD})
+add_library(${LIB_DEEPMD_OP} MODULE ${OP_SRC} ${OP_REMAPPER_SRC})
+# link: libdeepmd libtensorflow_cc libtensorflow_framework
+target_link_libraries (${LIB_DEEPMD_OP} PRIVATE TensorFlow::tensorflow_framework)
+target_link_libraries (${LIB_DEEPMD_OP} PRIVATE ${LIB_DEEPMD})
+if(APPLE)
+  set_target_properties(${LIB_DEEPMD_OP} PROPERTIES INSTALL_RPATH "@loader_path;${TensorFlow_LIBRARY_PATH}")
+else()
   set_target_properties(${LIB_DEEPMD_OP} PROPERTIES INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}")
-  if (CMAKE_TESTING_ENABLED)
-    target_link_libraries(${LIB_DEEPMD_OP} PRIVATE coverage_config)
-  endif()
-  target_precompile_headers(${LIB_DEEPMD_OP} PRIVATE custom_op.h)
-endif (BUILD_CPP_IF)
+endif()
+if (CMAKE_TESTING_ENABLED)
+  target_link_libraries(${LIB_DEEPMD_OP} PRIVATE coverage_config)
+endif()
+target_precompile_headers(${LIB_DEEPMD_OP} PRIVATE custom_op.h)
 
 if (BUILD_PY_IF)
-  add_library(op_abi MODULE ${OP_SRC} ${OP_REMAPPER_SRC})
   add_library(op_grads MODULE ${OP_GRADS_SRC})
-  
   # link: libdeepmd libtensorflow_framework
-  target_link_libraries(op_abi PRIVATE ${LIB_DEEPMD})
   target_link_libraries(op_grads PRIVATE ${LIB_DEEPMD})
-  target_link_libraries(
-    op_abi PRIVATE TensorFlow::tensorflow_framework
-    )
   target_link_libraries(
     op_grads PRIVATE TensorFlow::tensorflow_framework
     )
-  if(Protobuf_LIBRARY)
-    target_link_libraries(op_abi PRIVATE ${Protobuf_LIBRARY})
-  endif()
-  if (APPLE)
-    set_target_properties(
-      op_abi 
-      PROPERTIES 
-      INSTALL_RPATH @loader_path
-      )
+  if(APPLE)
     set_target_properties(
       op_grads
       PROPERTIES
@@ -46,30 +34,22 @@ if (BUILD_PY_IF)
       )
   else()
   set_target_properties(
-    op_abi 
-    PROPERTIES 
-    INSTALL_RPATH $ORIGIN
-    )
-  set_target_properties(
     op_grads
     PROPERTIES
     INSTALL_RPATH $ORIGIN
     )
   endif ()
   if (CMAKE_TESTING_ENABLED)
-    target_link_libraries(op_abi PRIVATE coverage_config)
     target_link_libraries(op_grads PRIVATE coverage_config)
   endif()
-  target_precompile_headers(op_abi PRIVATE custom_op.h)
   target_precompile_headers(op_grads PRIVATE custom_op.h)
 endif (BUILD_PY_IF)
 
-if (BUILD_CPP_IF)
-  install(TARGETS ${LIB_DEEPMD_OP}		DESTINATION lib/)
-endif (BUILD_CPP_IF)
 if (BUILD_PY_IF)
-  install(TARGETS op_abi			DESTINATION deepmd/op/)
+  install(TARGETS ${LIB_DEEPMD_OP}		DESTINATION deepmd/op/)
   install(TARGETS op_grads			DESTINATION deepmd/op/)
   install(FILES  ${OP_PY}			DESTINATION deepmd/op/)
+else(BUILD_PY_IF)
+  install(TARGETS ${LIB_DEEPMD_OP}		DESTINATION lib/)
 endif (BUILD_PY_IF)
 

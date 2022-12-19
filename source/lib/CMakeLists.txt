@@ -45,8 +45,7 @@ endif()
 
 if(BUILD_PY_IF)
   install(TARGETS ${libname} DESTINATION deepmd/op/)
-endif(BUILD_PY_IF)
-if(BUILD_CPP_IF)
+else(BUILD_PY_IF)
   install(
     TARGETS
     ${libname}
@@ -56,7 +55,7 @@ if(BUILD_CPP_IF)
     FILES	${INC_SRC}
     DESTINATION	include/deepmd
     )
-endif(BUILD_CPP_IF)
+endif(BUILD_PY_IF)
 
 if (BUILD_CPP_IF AND CMAKE_TESTING_ENABLED)
   add_subdirectory(tests)

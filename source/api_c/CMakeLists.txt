@@ -23,6 +23,12 @@ if (CMAKE_TESTING_ENABLED)
   target_link_libraries(${libname} PRIVATE coverage_config)
 endif()
 
+if(BUILD_PY_IF)
+  install(
+    TARGETS ${libname}
+    DESTINATION deepmd/op/
+  )
+else(BUILD_PY_IF)
 install(
   TARGETS ${libname}
   EXPORT ${CMAKE_PROJECT_NAME}Targets
@@ -33,6 +39,7 @@ install(
   FILES		${INC_SRC}
   DESTINATION	include/deepmd
 )
+endif(BUILD_PY_IF)
 
 if (PACKAGE_C)
   MESSAGE(STATUS "Packaging C API library")

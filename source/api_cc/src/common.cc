@@ -1,8 +1,22 @@
 #include "common.h"
 #include "AtomMap.h"
 #include "device.h"
-#include <dlfcn.h>
 #include <fcntl.h>
+#if defined(_WIN32)
+#if defined(_WIN32_WINNT)
+#undef _WIN32_WINNT
+#endif
+
+// target Windows version is windows 7 and later
+#define _WIN32_WINNT _WIN32_WINNT_WIN7
+#define PSAPI_VERSION 2
+#include <windows.h>
+#include <io.h>
+#define O_RDONLY _O_RDONLY
+#else
+// not windows
+#include <dlfcn.h>
+#endif
 #include "google/protobuf/text_format.h"
 #include "google/protobuf/io/zero_copy_stream_impl.h"
 
@@ -299,10 +313,11 @@ deepmd::
 load_op_library()
 {
   tensorflow::Env* env = tensorflow::Env::Default();
-  std::string dso_path = env->FormatLibraryFileName("deepmd_op", "");
 #if defined(_WIN32)
+  std::string dso_path = "deepmd_op.dll";
   void* dso_handle = LoadLibrary(dso_path.c_str());
 #else
+  std::string dso_path = "libdeepmd_op.so";
   void* dso_handle = dlopen(dso_path.c_str(), RTLD_NOW | RTLD_LOCAL);
 #endif
   if (!dso_handle) {
