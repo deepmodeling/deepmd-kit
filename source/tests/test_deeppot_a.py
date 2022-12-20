@@ -5,7 +5,7 @@ import unittest
 from infer.convert2pb import convert_pbtxt_to_pb
 from deepmd.infer import DeepPot
 from deepmd.env import MODEL_VERSION
-from common import tests_path
+from common import tests_path, run_dp
 
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 if GLOBAL_NP_FLOAT_PRECISION == np.float32 :
@@ -322,3 +322,25 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase) :
         np.testing.assert_almost_equal(ff.ravel(), self.expected_f.ravel(), default_places)
         expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis = 1)
         np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
+
+
+class TestModelConvert(unittest.TestCase):
+    def setUp(self):
+        self.coords = np.array([12.83, 2.56, 2.18,
+                                12.09, 2.87, 2.74,
+                                00.25, 3.32, 1.68,
+                                3.36, 3.00, 1.81,
+                                3.51, 2.51, 2.60,
+                                4.27, 3.22, 1.56])
+        self.atype = [0, 1, 1, 0, 1, 1]
+        self.box = np.array([13., 0., 0., 0., 13., 0., 0., 0., 13.])
+
+    def test_convert_012(self):
+        old_model = "deeppot.pb"
+        new_model = "deeppot.pbtxt"
+        convert_pbtxt_to_pb(str(tests_path / "infer" / "sea_012.pbtxt"), old_model)
+        run_dp(f"dp convert-from 0.12 -i {old_model} -o {new_model}")
+        dp = DeepPot(new_model)
+        _, _, _, _, _ = dp.eval(self.coords, self.box, self.atype, atomic=True)
+        os.remove(old_model)
+        os.remove(new_model)

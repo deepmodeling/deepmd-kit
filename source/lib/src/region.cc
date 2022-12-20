@@ -1,5 +1,6 @@
 #include <stdexcept>
 #include <algorithm>
+#include <cmath>
 #include "region.h"
 #include "errors.h"
 #define BOXT_DIM 9
@@ -33,9 +34,7 @@ compute_volume(const FPTYPE * boxt)
       boxt[0*3+0] * (boxt[1*3+1]*boxt[2*3+2] - boxt[2*3+1]*boxt[1*3+2]) - 
       boxt[0*3+1] * (boxt[1*3+0]*boxt[2*3+2] - boxt[2*3+0]*boxt[1*3+2]) +
       boxt[0*3+2] * (boxt[1*3+0]*boxt[2*3+1] - boxt[2*3+0]*boxt[1*3+1]);
-  if (volume < 0) {
-    throw deepmd::deepmd_exception("Negative volume detected. Please make sure the simulation cell obeys the right-hand rule.");
-  }
+  volume = std::abs(volume);
   return volume;
 }
 

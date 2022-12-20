@@ -12,7 +12,7 @@ e, f, v = dp.eval(coord, cell, atype)
 ```
 where `e`, `f` and `v` are predicted energy, force and virial of the system, respectively.
 
-Furthermore, one can use the python interface to calulate model deviation.
+Furthermore, one can use the python interface to calculate model deviation.
 ```python
 from deepmd.infer import calc_model_devi
 from deepmd.infer import DeepPot as DP
@@ -24,3 +24,5 @@ atype = [1,0,1]
 graphs = [DP("graph.000.pb"), DP("graph.001.pb")]
 model_devi = calc_model_devi(coord, cell, atype, graphs)
 ```
+
+Note that if the model inference or model deviation is performed cyclically, one should avoid calling the same model multiple times. Otherwise, tensorFlow will never release the memory and this may lead to an out-of-memory (OOM) error.

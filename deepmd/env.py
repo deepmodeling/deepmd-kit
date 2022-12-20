@@ -44,6 +44,9 @@ __all__ = [
     "TRANSFER_PATTERN",
     "FITTING_NET_PATTERN",
     "EMBEDDING_NET_PATTERN",
+    "TYPE_EMBEDDING_PATTERN",
+    "ATTENTION_LAYER_PATTERN",
+    "REMOVE_SUFFIX_DICT",
     "TF_VERSION"
 ]
 
@@ -59,18 +62,26 @@ EMBEDDING_NET_PATTERN = str(
     r"filter_type_\d+/matrix_\d+_\d+|"
     r"filter_type_\d+/bias_\d+_\d+|"
     r"filter_type_\d+/idt_\d+_\d+|"
+    r"filter_type_all/matrix_\d+|"
     r"filter_type_all/matrix_\d+_\d+|"
     r"filter_type_all/matrix_\d+_\d+_\d+|"
+    r"filter_type_all/bias_\d+|"
     r"filter_type_all/bias_\d+_\d+|"
     r"filter_type_all/bias_\d+_\d+_\d+|"
+    r"filter_type_all/idt_\d+|"
     r"filter_type_all/idt_\d+_\d+|"
 )
 
 FITTING_NET_PATTERN = str(
+    r"layer_\d+/matrix|"
     r"layer_\d+_type_\d+/matrix|"
+    r"layer_\d+/bias|"
     r"layer_\d+_type_\d+/bias|"
+    r"layer_\d+/idt|"
     r"layer_\d+_type_\d+/idt|"
+    r"final_layer/matrix|"
     r"final_layer_type_\d+/matrix|"
+    r"final_layer/bias|"
     r"final_layer_type_\d+/bias|"
 )
 
@@ -78,6 +89,21 @@ TYPE_EMBEDDING_PATTERN = str(
     r"type_embed_net+/matrix_\d+|"
     r"type_embed_net+/bias_\d+|"
     r"type_embed_net+/idt_\d+|"
+)
+
+ATTENTION_LAYER_PATTERN = str(
+    r"attention_layer_\d+/c_query/matrix|"
+    r"attention_layer_\d+/c_query/bias|"
+    r"attention_layer_\d+/c_key/matrix|"
+    r"attention_layer_\d+/c_key/bias|"
+    r"attention_layer_\d+/c_value/matrix|"
+    r"attention_layer_\d+/c_value/bias|"
+    r"attention_layer_\d+/c_out/matrix|"
+    r"attention_layer_\d+/c_out/bias|"
+    r"attention_layer_\d+/layer_normalization/beta|"
+    r"attention_layer_\d+/layer_normalization/gamma|"
+    r"attention_layer_\d+/layer_normalization_\d+/beta|"
+    r"attention_layer_\d+/layer_normalization_\d+/gamma|"
 )
 
 TRANSFER_PATTERN = \
@@ -94,6 +120,30 @@ TRANSFER_PATTERN = \
         r"model_attr/t_tab_info|"
         r"model_attr/t_tab_data|"
 )
+
+REMOVE_SUFFIX_DICT = {
+    "model_attr/sel_type_{}": "model_attr/sel_type",
+    "model_attr/output_dim_{}": "model_attr/output_dim",
+    "_{}/": "/",
+    "o_energy_{}": "o_energy",
+    "o_force_{}": "o_force",
+    "o_virial_{}": "o_virial",
+    "o_atom_energy_{}": "o_atom_energy",
+    "o_atom_virial_{}": "o_atom_virial",
+    "o_dipole_{}": "o_dipole",
+    "o_global_dipole_{}": "o_global_dipole",
+    "o_polar_{}": "o_polar",
+    "o_global_polar_{}": "o_global_polar",
+    "o_rmat_{}": "o_rmat",
+    "o_rmat_deriv_{}": "o_rmat_deriv",
+    "o_nlist_{}": "o_nlist",
+    "o_rij_{}": "o_rij",
+    "o_dm_force_{}": "o_dm_force",
+    "o_dm_virial_{}": "o_dm_virial",
+    "o_dm_av_{}": "o_dm_av",
+    "o_wfc_{}": "o_wfc",
+}
+
 
 def set_env_if_empty(key: str, value: str, verbose: bool = True):
     """Set environment variable only if it is empty.
@@ -302,14 +352,14 @@ def get_module(module_name: str) -> "ModuleType":
 
 
 def _get_package_constants(
-    config_file: Path = Path(__file__).parent / "pkg_config/run_config.ini",
+    config_file: Path = Path(__file__).parent / "run_config.ini",
 ) -> Dict[str, str]:
     """Read package constants set at compile time by CMake to dictionary.
 
     Parameters
     ----------
     config_file : str, optional
-        path to CONFIG file, by default "pkg_config/run_config.ini"
+        path to CONFIG file, by default "run_config.ini"
 
     Returns
     -------
@@ -326,7 +376,7 @@ MODEL_VERSION = GLOBAL_CONFIG["model_version"]
 TF_VERSION = GLOBAL_CONFIG["tf_version"]
 TF_CXX11_ABI_FLAG = int(GLOBAL_CONFIG["tf_cxx11_abi_flag"])
 
-op_module = get_module("op_abi")
+op_module = get_module("deepmd_op")
 op_grads_module = get_module("op_grads")
 
 # FLOAT_PREC

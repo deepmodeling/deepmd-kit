@@ -1,14 +1,17 @@
+import logging
 import warnings
 import numpy as np
-from typing import Tuple, List
+from typing import Optional, Tuple, List
 from packaging.version import Version
 
 from deepmd.env import tf
+from deepmd.infer import DeepPotential
 from deepmd.common import add_data_requirement, get_activation_func, get_precision, cast_precision
 from deepmd.utils.network import one_layer_rand_seed_shift
 from deepmd.utils.network import one_layer as one_layer_deepmd
 from deepmd.utils.type_embed import embed_atom_type
 from deepmd.utils.graph import get_fitting_net_variables_from_graph_def, load_graph_def, get_tensor_by_name_from_graph
+from deepmd.utils.errors import GraphWithoutTensorError
 from deepmd.fit.fitting import Fitting
 
 from deepmd.env import global_cvt_2_tf_float
@@ -16,6 +19,8 @@ from deepmd.env import GLOBAL_TF_FLOAT_PRECISION, TF_VERSION
 
 from deepmd.nvnmd.utils.config import nvnmd_cfg
 from deepmd.nvnmd.fit.ener import one_layer_nvnmd
+
+log = logging.getLogger(__name__)
 
 class EnerFitting (Fitting):
     r"""Fitting the energy of the system. The force and the virial can also be trained.
@@ -135,7 +140,7 @@ class EnerFitting (Fitting):
         self.atom_ener_v = atom_ener
         for at, ae in enumerate(atom_ener):
             if ae is not None:
-                self.atom_ener.append(tf.constant(ae, self.fitting_precision, name = "atom_%d_ener" % at))
+                self.atom_ener.append(tf.constant(ae, GLOBAL_TF_FLOAT_PRECISION, name = "atom_%d_ener" % at))
             else:
                 self.atom_ener.append(None)
         self.useBN = False
@@ -281,6 +286,7 @@ class EnerFitting (Fitting):
     def _compute_std (self, sumv2, sumv, sumn) :
         return np.sqrt(sumv2/sumn - np.multiply(sumv/sumn, sumv/sumn))
 
+    @cast_precision
     def _build_lower(
             self,
             start_index,
@@ -363,7 +369,6 @@ class EnerFitting (Fitting):
         return final_layer
             
             
-    @cast_precision
     def build (self, 
                inputs : tf.Tensor,
                natoms : tf.Tensor,
@@ -400,6 +405,8 @@ class EnerFitting (Fitting):
         if input_dict is None:
             input_dict = {}
         bias_atom_e = self.bias_atom_e
+        type_embedding = input_dict.get('type_embedding', None)
+        atype = input_dict.get('atype', None)
         if self.numb_fparam > 0:
             if self.fparam_avg is None:
                 self.fparam_avg = 0.
@@ -419,10 +426,10 @@ class EnerFitting (Fitting):
                                     name = 'daparam', 
                                     dtype = tf.int32)
             self.t_bias_atom_e = tf.get_variable('t_bias_atom_e',
-                                            self.bias_atom_e.shape,
-                                            dtype=GLOBAL_TF_FLOAT_PRECISION,
-                                            trainable=False,
-                                            initializer=tf.constant_initializer(self.bias_atom_e))
+                                        self.bias_atom_e.shape,
+                                        dtype=GLOBAL_TF_FLOAT_PRECISION,
+                                        trainable=False,
+                                        initializer=tf.constant_initializer(self.bias_atom_e))
             if self.numb_fparam > 0: 
                 t_fparam_avg = tf.get_variable('t_fparam_avg', 
                                                self.numb_fparam,
@@ -452,9 +459,9 @@ class EnerFitting (Fitting):
             nframes = input_dict.get('nframes')
             if nframes is not None:
                 # like inputs, but we don't want to add a dependency on inputs
-                inputs_zero = tf.zeros((nframes, natoms[0], self.dim_descrpt), dtype=self.fitting_precision)
+                inputs_zero = tf.zeros((nframes, natoms[0], self.dim_descrpt), dtype=GLOBAL_TF_FLOAT_PRECISION)
             else:
-                inputs_zero = tf.zeros_like(inputs, dtype=self.fitting_precision)
+                inputs_zero = tf.zeros_like(inputs, dtype=GLOBAL_TF_FLOAT_PRECISION)
         
 
         if bias_atom_e is not None :
@@ -471,12 +478,10 @@ class EnerFitting (Fitting):
             aparam = tf.reshape(aparam, [-1, self.numb_aparam])
             aparam = (aparam - t_aparam_avg) * t_aparam_istd
             aparam = tf.reshape(aparam, [-1, self.numb_aparam * natoms[0]])
-            
-        type_embedding = input_dict.get('type_embedding', None)
-        atype = input_dict.get('atype', None)
+
+        atype_nall = tf.reshape(atype, [-1, natoms[1]])
+        self.atype_nloc = tf.reshape(tf.slice(atype_nall, [0, 0], [-1, natoms[0]]), [-1])  ## lammps will make error
         if type_embedding is not None:
-            atype_nall = tf.reshape(atype, [-1, natoms[1]])
-            self.atype_nloc = tf.reshape(tf.slice(atype_nall, [0, 0], [-1, natoms[0]]), [-1])  ## lammps will make error
             atype_embed = tf.nn.embedding_lookup(type_embedding, self.atype_nloc)
         else:
             atype_embed = None
@@ -487,23 +492,19 @@ class EnerFitting (Fitting):
             start_index = 0
             outs_list = []
             for type_i in range(self.ntypes):
-                if bias_atom_e is None :
-                    type_bias_ae = 0.0
-                else :
-                    type_bias_ae = bias_atom_e[type_i]
                 final_layer = self._build_lower(
                     start_index, natoms[2+type_i], 
                     inputs, fparam, aparam, 
-                    bias_atom_e=type_bias_ae, suffix='_type_'+str(type_i)+suffix, reuse=reuse
+                    bias_atom_e=0., suffix='_type_'+str(type_i)+suffix, reuse=reuse
                 )
                 # concat the results
                 if type_i < len(self.atom_ener) and self.atom_ener[type_i] is not None:                
                     zero_layer = self._build_lower(
                         start_index, natoms[2+type_i], 
                         inputs_zero, fparam, aparam, 
-                        bias_atom_e=type_bias_ae, suffix='_type_'+str(type_i)+suffix, reuse=True
+                        bias_atom_e=0., suffix='_type_'+str(type_i)+suffix, reuse=True
                     )
-                    final_layer += self.atom_ener[type_i] - zero_layer
+                    final_layer -= zero_layer
                 final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i]])
                 outs_list.append(final_layer)
                 start_index += natoms[2+type_i]
@@ -512,14 +513,13 @@ class EnerFitting (Fitting):
             outs = tf.concat(outs_list, axis = 1)
         # with type embedding
         else:
-            if len(self.atom_ener) > 0:
-                raise RuntimeError("setting atom_ener is not supported by type embedding")
-            atype_embed = tf.cast(atype_embed, self.fitting_precision)
+            atype_embed = tf.cast(atype_embed, GLOBAL_TF_FLOAT_PRECISION)
             type_shape = atype_embed.get_shape().as_list()
             inputs = tf.concat(
                 [tf.reshape(inputs,[-1,self.dim_descrpt]),atype_embed],
                 axis=1
             )
+            original_dim_descrpt = self.dim_descrpt
             self.dim_descrpt = self.dim_descrpt + type_shape[1]
             inputs = tf.reshape(inputs, [-1, natoms[0], self.dim_descrpt])
             final_layer = self._build_lower(
@@ -527,12 +527,26 @@ class EnerFitting (Fitting):
                 inputs, fparam, aparam, 
                 bias_atom_e=0.0, suffix=suffix, reuse=reuse
             )
+            if len(self.atom_ener):
+                # remove contribution in vacuum
+                inputs_zero = tf.concat(
+                    [tf.reshape(inputs_zero, [-1, original_dim_descrpt]), atype_embed],
+                    axis=1
+                )
+                inputs_zero = tf.reshape(inputs_zero, [-1, natoms[0], self.dim_descrpt])
+                zero_layer = self._build_lower(
+                    0, natoms[0],
+                    inputs_zero, fparam, aparam,
+                    bias_atom_e=0.0, suffix=suffix, reuse=True,
+                )
+                # atomic energy will be stored in `self.t_bias_atom_e` which is not trainable
+                final_layer -= zero_layer
             outs = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[0]])
-            # add bias
-            self.atom_ener_before = outs
-            self.add_type = tf.reshape(tf.nn.embedding_lookup(self.t_bias_atom_e, self.atype_nloc), [tf.shape(inputs)[0], natoms[0]])
-            outs = outs + self.add_type
-            self.atom_ener_after = outs
+        # add bias
+        self.atom_ener_before = outs
+        self.add_type = tf.reshape(tf.nn.embedding_lookup(self.t_bias_atom_e, self.atype_nloc), [tf.shape(inputs)[0], natoms[0]])
+        outs = outs + self.add_type
+        self.atom_ener_after = outs
 
         if self.tot_ener_zero:
             force_tot_ener = 0.0
@@ -570,32 +584,93 @@ class EnerFitting (Fitting):
         if self.numb_aparam > 0:
             self.aparam_avg = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_aparam_avg' % suffix)
             self.aparam_inv_std = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_aparam_istd' % suffix)
+        try:
+            self.bias_atom_e = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_bias_atom_e' % suffix)
+        except GraphWithoutTensorError:
+            # for compatibility, old models has no t_bias_atom_e
+            pass
 
-    def enable_compression(self,
-                           model_file: str,
-                           suffix: str = ""
+    def change_energy_bias(self,
+                           data,
+                           frozen_model,
+                           origin_type_map,
+                           full_type_map,
+                           bias_shift='delta',
+                           ntest=10
     ) -> None:
         """
-        Set the fitting net attributes from the frozen model_file when fparam or aparam is not zero
+        Change the energy bias according to the input data and the pretrained model.
 
         Parameters
         ----------
-        model_file : str
-            The input frozen model file
-        suffix : str, optional
-                The suffix of the scope
+        data : DeepmdDataSystem
+            The training data.
+        frozen_model : str
+            The path file of frozen model.
+        origin_type_map : list
+            The original type_map in dataset, they are targets to change the energy bias.
+        full_type_map : str
+            The full type_map in pretrained model
+        bias_shift : str
+            The mode for changing energy bias : ['delta', 'statistic']
+            'delta' : perform predictions on energies of target dataset,
+                    and do least sqaure on the errors to obtain the target shift as bias.
+            'statistic' : directly use the statistic energy bias in the target dataset.
+        ntest : int
+            The number of test samples in a system to change the energy bias.
         """
-        if self.numb_fparam > 0 or self.numb_aparam > 0:
-            graph, _ = load_graph_def(model_file)
-        if self.numb_fparam > 0:
-            self.fparam_avg = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_fparam_avg' % suffix)
-            self.fparam_inv_std = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_fparam_istd' % suffix)
-        if self.numb_aparam > 0:
-            self.aparam_avg = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_aparam_avg' % suffix)
-            self.aparam_inv_std = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_aparam_istd' % suffix)
+        type_numbs = []
+        energy_ground_truth = []
+        energy_predict = []
+        sorter = np.argsort(full_type_map)
+        idx_type_map = sorter[np.searchsorted(full_type_map, origin_type_map, sorter=sorter)]
+        mixed_type = data.mixed_type
+        numb_type = len(full_type_map)
+        dp = None
+        if bias_shift == 'delta':
+            # init model
+            dp = DeepPotential(frozen_model)
+        for sys in data.data_systems:
+            test_data = sys.get_test()
+            nframes = test_data["box"].shape[0]
+            numb_test = min(nframes, ntest)
+            if mixed_type:
+                atype = test_data["type"][:numb_test].reshape([numb_test, -1])
+            else:
+                atype = test_data["type"][0]
+            assert np.array([i in idx_type_map for i in list(set(atype.reshape(-1)))]).all(), \
+                "Some types are not in 'type_map'!"
+            energy_ground_truth.append(test_data["energy"][:numb_test].reshape([numb_test, 1]))
+            if mixed_type:
+                type_numbs.append(np.array([(atype == i).sum(axis=-1) for i in idx_type_map], dtype=np.int32).T)
+            else:
+                type_numbs.append(np.tile(np.bincount(atype, minlength=numb_type)[idx_type_map], (numb_test, 1)))
+            if bias_shift == 'delta':
+                coord = test_data["coord"][:numb_test].reshape([numb_test, -1])
+                box = test_data["box"][:numb_test]
+                ret = dp.eval(coord, box, atype, mixed_type=mixed_type)
+                energy_predict.append(ret[0].reshape([numb_test, 1]))
+        type_numbs = np.concatenate(type_numbs)
+        energy_ground_truth = np.concatenate(energy_ground_truth)
+        old_bias = self.bias_atom_e[idx_type_map]
+        if bias_shift == 'delta':
+            energy_predict = np.concatenate(energy_predict)
+            bias_diff = energy_ground_truth - energy_predict
+            delta_bias = np.linalg.lstsq(type_numbs, bias_diff, rcond=None)[0]
+            unbias_e = energy_predict + type_numbs @ delta_bias
+            atom_numbs = type_numbs.sum(-1)
+            rmse_ae = (np.sqrt(np.square(unbias_e - energy_ground_truth)) / atom_numbs).mean()
+            self.bias_atom_e[idx_type_map] += delta_bias.reshape(-1)
+            log.info("RMSE of atomic energy after linear regression is: {} eV/atom.".format(rmse_ae))
+        elif bias_shift == 'statistic':
+            statistic_bias = np.linalg.lstsq(type_numbs, energy_ground_truth, rcond=None)[0]
+            self.bias_atom_e[idx_type_map] = statistic_bias.reshape(-1)
+        else:
+            raise RuntimeError('Unknown bias_shift mode: ' + bias_shift)
+        log.info("Change energy bias of {} from {} to {}.".format(str(origin_type_map), str(old_bias),
+                                                                         str(self.bias_atom_e[idx_type_map])))
  
-
-    def enable_mixed_precision(self, mixed_prec: dict = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
         """
         Reveive the mixed precision setting.
 

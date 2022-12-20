@@ -3,6 +3,7 @@ import os
 import numpy as np
 import json
 import struct
+from typing import List
 
 import logging
 log = logging.getLogger(__name__)
@@ -166,7 +167,7 @@ class FioBin():
             log.warning(f"can not find {file_name}")
             return default_value
 
-    def save(self, file_name: str = '', data: list = []):
+    def save(self, file_name: str, data: List[str]):
         r"""Save hex string into binary file
         """
         log.info(f"write binary to {file_name}")

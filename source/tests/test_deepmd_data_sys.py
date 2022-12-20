@@ -289,4 +289,39 @@ class TestDataSystem (unittest.TestCase) :
         for idx,ii in enumerate(all_find) :
             self.assertTrue(ii, msg = 'does not find frame %d in array' % idx)
 
-                
+    def test_sys_prob_floating_point_error(self):
+        # test floating point error; See #1917
+        sys_probs = [
+            0.010,                                                           
+            0.010,
+            0.010,
+            0.010,
+            0.010,
+            0.010,
+            0.010,
+            0.010,
+            0.010,
+            0.150,
+            0.100,
+            0.100,
+            0.050,
+            0.050,
+            0.020,
+            0.015,
+            0.015,
+            0.050,
+            0.020,
+            0.015,
+            0.040,
+            0.055,
+            0.025,
+            0.025,
+            0.015,
+            0.025,
+            0.055,
+            0.040,
+            0.040,
+            0.005,
+            ]
+        ds = DeepmdDataSystem(self.sys_name, 3, 2, 2.0, sys_probs=sys_probs)
+        self.assertEqual(ds.sys_probs.size, len(sys_probs))

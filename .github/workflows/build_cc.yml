@@ -3,26 +3,50 @@ on:
   pull_request:
 name: Build C++
 jobs:
-  testpython:
+  buildcc:
     name: Build C++
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
+    container: ghcr.io/deepmodeling/deepmd-kit-test-cc:latest
     strategy:  
       matrix:
         include:
         - variant: cpu
         - variant: cuda
+        - variant: rocm
+        - variant: clang
     steps:
     - name: work around permission issue
       run: git config --global --add safe.directory /__w/deepmd-kit/deepmd-kit
     - uses: actions/checkout@master
       with:
         submodules: true
-    - run: sudo apt update && sudo apt install g++-7
-    - run: sudo apt install nvidia-cuda-toolkit
+    - run: apt-get update && apt-get install -y nvidia-cuda-toolkit
       if: matrix.variant == 'cuda'
+    - run: |
+         apt-get update && apt-get install -y gnupg2 \
+         && echo 'deb [arch=amd64] https://repo.radeon.com/rocm/apt/5.3/ jammy main' | tee /etc/apt/sources.list.d/rocm.list \
+         && printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600' | tee /etc/apt/preferences.d/rocm-pin-600 \
+         && curl -s https://repo.radeon.com/rocm/rocm.gpg.key | apt-key add - \
+         && apt-get update \
+         && apt-get install -y rocm-dev hipcub-dev
+      if: matrix.variant == 'rocm'
+    - run: apt-get update && apt-get install -y clang
+      if: matrix.variant == 'clang'  
     - run: source/install/build_cc.sh
       env:
         DP_VARIANT: ${{ matrix.variant }}
-        CC: gcc-7
-        CXX: g++-7
-        CONDA_OVERRIDE_CUDA: 11.3
+        DOWNLOAD_TENSORFLOW: "FALSE"
+      if: matrix.variant != 'clang'
+    - run: source/install/build_cc.sh
+      env:
+        DP_VARIANT: cpu
+        DOWNLOAD_TENSORFLOW: "FALSE"
+        CC: clang
+        CXX: clang++
+      if: matrix.variant == 'clang'
+  pass:
+    name: Pass building C++
+    needs: [buildcc]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "All jobs passed"

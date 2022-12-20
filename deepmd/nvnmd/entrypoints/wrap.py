@@ -24,8 +24,10 @@ class Wrap():
     the model file can be use to run the NVNMD with lammps
     the pair style need set as:
 
-    | :code:`pair_style nvnmd model.pb`
-    | :code:`pair_coeff * *`
+    .. code-block:: lammps
+
+        pair_style nvnmd model.pb
+        pair_coeff * *
 
     Parameters
     ----------
