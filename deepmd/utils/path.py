@@ -1,6 +1,6 @@
 import os
 from abc import ABC, abstractmethod
-from typing import List
+from typing import Optional, List
 from pathlib import Path
 from functools import lru_cache
 
@@ -246,7 +246,7 @@ class DPH5Path(DPPath):
         """
         return self.root[self.name][:]
     
-    def load_txt(self, dtype: np.dtype = None, **kwargs) -> np.ndarray:
+    def load_txt(self, dtype: Optional[np.dtype] = None, **kwargs) -> np.ndarray:
         """Load NumPy array from text.
         
         Returns

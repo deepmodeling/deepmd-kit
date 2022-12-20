@@ -1,5 +1,12 @@
-cmake_minimum_required(VERSION 3.12)
+# new in 3.16: GET_RUNTIME_DEPENDENCIES, target_precompile_headers
+cmake_minimum_required(VERSION 3.16)
 project(DeePMD)
+
+option(BUILD_TESTING "Build test and enable converage" OFF)
+if(BUILD_TESTING)
+  enable_testing()
+  add_subdirectory(${CMAKE_SOURCE_DIR}/cmake/coverage_config coverage_config)
+endif()
 
 # build cpp or python interfaces
 if (NOT DEFINED BUILD_CPP_IF) 
@@ -11,6 +18,30 @@ endif (NOT DEFINED BUILD_PY_IF)
 if ((NOT BUILD_PY_IF) AND (NOT BUILD_CPP_IF))
   # nothing to do
   message(FATAL_ERROR "Nothing to do.")
+endif()
+
+if (BUILD_CPP_IF AND BUILD_TESTING)
+  if (NOT INSTALL_TENSORFLOW)
+    # some errors in conda packages...
+    find_package(GTest)
+  endif()
+  if(NOT GTEST_LIBRARIES)
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/googletest.cmake.in googletest-download/CMakeLists.txt @ONLY)
+    execute_process(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" .
+      RESULT_VARIABLE result
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/googletest-download )
+    if(result)
+      message(FATAL_ERROR "CMake step for googletest failed: ${result}")
+    endif()
+    execute_process(COMMAND ${CMAKE_COMMAND} --build .
+      RESULT_VARIABLE result
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/googletest-download )
+    if(result)
+      message(FATAL_ERROR "Build step for googletest failed: ${result}")
+    endif()
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    add_subdirectory(${CMAKE_CURRENT_BINARY_DIR}/googletest-src ${CMAKE_CURRENT_BINARY_DIR}/googletest-build EXCLUDE_FROM_ALL)
+  endif ()
 endif()
 
 find_package(Git)
@@ -53,6 +84,7 @@ message(STATUS "Supported model version: ${MODEL_VERSION}")
 if (USE_ROCM_TOOLKIT AND USE_CUDA_TOOLKIT)
   message (FATAL_ERROR "Devices that have both ROCM and CUDA are not currently supported")
 endif()
+set(DP_VARIANT "cpu")
 
 # define USE_CUDA_TOOLKIT
 if (USE_CUDA_TOOLKIT)
@@ -60,6 +92,7 @@ if (USE_CUDA_TOOLKIT)
   find_package(CUDA REQUIRED)
   add_definitions("-DGOOGLE_CUDA")
   message(STATUS "Found CUDA in ${CUDA_TOOLKIT_ROOT_DIR}, build nv GPU support")
+  set(DP_VARIANT "cuda")
 else()
   message(STATUS "Will not build nv GPU support")
 endif(USE_CUDA_TOOLKIT)
@@ -70,6 +103,7 @@ if (USE_ROCM_TOOLKIT)
   add_definitions("-DTENSORFLOW_USE_ROCM")
   add_compile_definitions(__HIP_PLATFORM_HCC__)
   message(STATUS "Found ROCM in ${ROCM_ROOT}, build AMD GPU support")
+  set(DP_VARIANT "rocm")
 else()
   message(STATUS "Will not build AMD GPU support")  
 endif (USE_ROCM_TOOLKIT)
@@ -78,98 +112,18 @@ set(DEEPMD_SOURCE_DIR ${PROJECT_SOURCE_DIR}/..)
 
 # setup tensorflow libraries by python
 if (USE_TF_PYTHON_LIBS)
-  find_package (Python COMPONENTS Interpreter Development REQUIRED)
+  if(NOT $ENV{CIBUILDWHEEL} STREQUAL "1")
+    find_package (Python COMPONENTS Interpreter Development REQUIRED)
+  else()
+    set(Python_LIBRARIES ${Python_LIBRARY})
+  endif()
 endif(USE_TF_PYTHON_LIBS)
 
 # find tensorflow, I need tf abi info
 find_package(tensorflow REQUIRED)
 
-if (TENSORFLOW_VERSION GREATER_EQUAL 2.7)
-  set (CMAKE_CXX_STANDARD 14)
-else()
-  set (CMAKE_CXX_STANDARD 11)
-endif()
-
-if (MSVC)
-  # see TF .bazelrc
-  add_compile_options(/W0 /Zc:__cplusplus /D_USE_MATH_DEFINES /d2ReducedOptimizeHugeFunctions)
-  set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS TRUE)
-endif()
-if (TENSORFLOW_VERSION GREATER_EQUAL 2.4 AND MSVC)
-  # see TF 2.4 release notes
-  add_compile_options(/Zc:preprocessor)
-endif()
-
 # find threads
 find_package(Threads)
-
-# auto op_cxx_abi
-if (NOT DEFINED OP_CXX_ABI)
-  if (BUILD_PY_IF) 
-    if (DEFINED TENSORFLOW_ROOT)
-      # note \ in windows path
-      set(FIND_ABI_CMD "import sys,os; sys.path.insert(0, os.path.join(r'${TENSORFLOW_ROOT}', '..')); import tensorflow; print(tensorflow.CXX11_ABI_FLAG if 'CXX11_ABI_FLAG' in tensorflow.__dict__ else tensorflow.sysconfig.CXX11_ABI_FLAG, end = '')" )
-    else()
-      set(FIND_ABI_CMD "import tensorflow; print(tensorflow.CXX11_ABI_FLAG if 'CXX11_ABI_FLAG' in tensorflow.__dict__ else tensorflow.sysconfig.CXX11_ABI_FLAG, end = '')")
-    endif()
-    execute_process(
-      COMMAND ${PYTHON_EXECUTABLE} "-c" "${FIND_ABI_CMD}"
-      WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-      OUTPUT_VARIABLE PY_CXX_ABI
-      RESULT_VARIABLE PY_CXX_ABI_RESULT_VAR
-      ERROR_VARIABLE PY_CXX_ABI_ERROR_VAR
-      )
-    if (NOT ${PY_CXX_ABI_RESULT_VAR} EQUAL 0)
-      message(FATAL_ERROR "Cannot determine cxx abi, error message: ${PY_CXX_ABI_ERROR_VAR}")
-    endif()
-    set(OP_CXX_ABI ${PY_CXX_ABI})
-  endif()
-  if (BUILD_CPP_IF)
-    try_run(
-      CPP_CXX_ABI_RUN_RESULT_VAR CPP_CXX_ABI_COMPILE_RESULT_VAR
-      ${CMAKE_CURRENT_BINARY_DIR}/tf_cxx_abi
-      "${CMAKE_CURRENT_SOURCE_DIR}/cmake/tf_cxx_abi.cpp"
-      LINK_LIBRARIES ${TensorFlowFramework_LIBRARY}
-      CMAKE_FLAGS "-DINCLUDE_DIRECTORIES:STRING=${TensorFlow_INCLUDE_DIRS}"
-      RUN_OUTPUT_VARIABLE CPP_CXX_ABI
-      COMPILE_OUTPUT_VARIABLE CPP_CXX_ABI_COMPILE_OUTPUT_VAR
-      )
-    if (NOT ${CPP_CXX_ABI_COMPILE_RESULT_VAR})
-      message(FATAL_ERROR "Failed to compile: \n ${CPP_CXX_ABI_COMPILE_OUTPUT_VAR}" )
-    endif()
-    if (NOT ${CPP_CXX_ABI_RUN_RESULT_VAR} EQUAL "0")
-      message(FATAL_ERROR "Failed to run, return code: ${CPP_CXX_ABI}" )
-    endif()
-    if (DEFINED PY_CXX_ABI)
-      if (NOT (${CPP_CXX_ABI} EQUAL ${PY_CXX_ABI}))
-	message (WARNNING "NOT consistent CXX_ABIs: python interface of tf uses ${PY_CXX_ABI}, while c++ interface of tf uses ${CPP_CXX_ABI}, we follow c++ interface ")
-      endif()
-    endif()
-    set(OP_CXX_ABI ${CPP_CXX_ABI})
-  endif()
-  message (STATUS "Automatically determined OP_CXX_ABI=${OP_CXX_ABI} ")
-else()
-  message (STATUS "User set OP_CXX_ABI=${OP_CXX_ABI} ")  
-endif()    
-# message the cxx_abi used during compiling
-if (${OP_CXX_ABI} EQUAL 0) 
-  message (STATUS "Set GLIBCXX_USE_CXX_ABI=0 when compiling ops")
-else ()
-  set (OP_CXX_ABI 1)
-  message (STATUS "Set GLIBCXX_USE_CXX_ABI=1 when compiling ops")
-endif ()
-
-# set _GLIBCXX_USE_CXX11_ABI flag globally
-add_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
-
-# define USE_TTM
-if (NOT DEFINED USE_TTM)
-  set(USE_TTM FALSE)
-endif (NOT DEFINED USE_TTM)
-if (USE_TTM)
-  message(STATUS "Use TTM")
-  set(TTM_DEF "-DUSE_TTM")
-endif (USE_TTM)
 
 # define build type
 if ((NOT DEFINED CMAKE_BUILD_TYPE) OR CMAKE_BUILD_TYPE STREQUAL "")
@@ -190,11 +144,19 @@ if (OPENMP_FOUND)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
 endif()
 
+# optimize flags
+option(ENABLE_NATIVE_OPTIMIZATION "Enable native optimization" OFF)
+if (ENABLE_NATIVE_OPTIMIZATION)
+  set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=native -mtune=native")
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native -mtune=native")
+endif()
+
 # define names of libs
 set (LIB_DEEPMD		"deepmd")
+set (LIB_DEEPMD_OP		"deepmd_op")
 if (BUILD_CPP_IF)
-  set (LIB_DEEPMD_OP		"deepmd_op")
   set (LIB_DEEPMD_CC		"deepmd_cc")
+  set (LIB_DEEPMD_C     "deepmd_c")
   if (USE_CUDA_TOOLKIT)
     set (LIB_DEEPMD_OP_DEVICE		"deepmd_op_cuda")
   elseif (USE_ROCM_TOOLKIT)
@@ -219,11 +181,14 @@ if (BUILD_PY_IF)
 endif (BUILD_PY_IF)
 if (BUILD_CPP_IF) 
   add_subdirectory (api_cc/)
+  add_subdirectory (api_c/)
   add_subdirectory (lmp/)
   if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 4.8)
     # add_subdirectory (md/)
+    if(NOT BUILD_PY_IF)
     add_subdirectory (ipi/)
     add_subdirectory (gmx/)
+    endif()
   endif ()
 endif (BUILD_CPP_IF)
 
@@ -245,3 +210,20 @@ configure_file(
 add_custom_target(lammps
     COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_lammps.cmake)
 
+# add configure file
+if(BUILD_CPP_IF AND NOT BUILD_PY_IF)
+  include(CMakePackageConfigHelpers)
+  set(targets_export_name ${CMAKE_PROJECT_NAME}Targets CACHE INTERNAL "")
+  set(generated_dir "${CMAKE_CURRENT_BINARY_DIR}/generated" CACHE INTERNAL "")
+  set(cmake_files_install_dir "${CMAKE_INSTALL_PREFIX}/lib/cmake/${CMAKE_PROJECT_NAME}")
+  set(version_file "${generated_dir}/${CMAKE_PROJECT_NAME}ConfigVersion.cmake")
+  write_basic_package_version_file(${version_file} VERSION $<IF:${GIT_SUMM}?${GIT_SUMM}:"0.0.0"> COMPATIBILITY AnyNewerVersion)
+  install(EXPORT ${targets_export_name}
+    NAMESPACE ${CMAKE_PROJECT_NAME}::
+    DESTINATION ${cmake_files_install_dir})
+  set(config_file "${generated_dir}/${CMAKE_PROJECT_NAME}Config.cmake")
+  configure_package_config_file("${CMAKE_CURRENT_SOURCE_DIR}/cmake/Config.cmake.in"
+    "${config_file}" INSTALL_DESTINATION ${cmake_files_install_dir})
+  install(FILES ${version_file} ${config_file}
+    DESTINATION ${cmake_files_install_dir})
+endif(BUILD_CPP_IF AND NOT BUILD_PY_IF)

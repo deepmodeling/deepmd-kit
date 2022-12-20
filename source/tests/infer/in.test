@@ -1,0 +1,22 @@
+# test cibuildwheel
+
+units           metal
+boundary        p p p
+atom_style      atomic
+
+neighbor        2.0 bin
+neigh_modify    every 10 delay 0 check no
+
+read_data	../../../examples/water/lmp/water.lmp
+mass 		1 16
+mass		2 2
+
+pair_style	deepmd deep_pot.pb
+pair_coeff  * *	
+
+velocity        all create 330.0 23456789
+
+fix             1 all nve
+timestep        0.0005
+
+run             1

@@ -1,5 +1,5 @@
 # Install TensorFlow's C++ interface 
-The tensorflow's C++ interface will be compiled from the source code. Firstly one installs bazel. [bazelisk](https://github.com/bazelbuild/bazelisk) can be lanuched to use [bazel](https://github.com/bazelbuild/bazel).
+TensorFlow's C++ interface will be compiled from the source code. Firstly one installs Bazel. [bazelisk](https://github.com/bazelbuild/bazelisk) can be lanuched to use [bazel](https://github.com/bazelbuild/bazel).
 
 ```bash
 wget https://github.com/bazelbuild/bazelisk/releases/download/v1.11.0/bazelisk-linux-amd64 -O /some/workspace/bazel/bin/bazel
@@ -73,17 +73,17 @@ Configuration finished
 
 The library path for Python should be set accordingly.
 
-Now build the shared library of tensorflow:
+Now build the shared library of TensorFlow:
 ```bash
 bazel build -c opt --verbose_failures //tensorflow:libtensorflow_cc.so
 ```
-You may want to add options `--copt=-msse4.2`,  `--copt=-mavx`, `--copt=-mavx2` and `--copt=-mfma` to enable SSE4.2, AVX, AVX2 and FMA SIMD accelerations, respectively. It is noted that these options should be chosen according to the CPU architecture. If the RAM becomes an issue of your machine, you may limit the RAM usage by using `--local_resources 2048,.5,1.0`. If you want to enable [oneDNN optimization](https://www.oneapi.io/blog/tensorflow-and-onednn-in-partnership/), add `--config=mkl`.
+You may want to add options `--copt=-msse4.2`,  `--copt=-mavx`, `--copt=-mavx2` and `--copt=-mfma` to enable SSE4.2, AVX, AVX2 and FMA SIMD accelerations, respectively. It is noted that these options should be chosen according to the CPU architecture. If the RAM becomes an issue for your machine, you may limit the RAM usage by using `--local_resources 2048,.5,1.0`. If you want to enable [oneDNN optimization](https://www.oneapi.io/blog/tensorflow-and-onednn-in-partnership/), add `--config=mkl`.
 
 Now I assume you want to install TensorFlow in directory `$tensorflow_root`. Create the directory if it does not exist
 ```bash
 mkdir -p $tensorflow_root
 ```
-Now, copy the libraries to the tensorflow's installation directory:
+Now, copy the libraries to the TensorFlow's installation directory:
 ```bash
 mkdir -p $tensorflow_root/lib
 cp -d bazel-bin/tensorflow/libtensorflow_cc.so* $tensorflow_root/lib/
@@ -112,4 +112,4 @@ cp -d bazel-out/k8-opt/bin/external/llvm_openmp/libiomp5.so $tensorflow_root/lib
 ```bash
 git: unknown command -C ...
 ```
-This may be an issue with your git version issue. Early versions of git do not support this command, in this case upgrading your git to a newer version may resolve any issues.
+This may be an issue with your Git version issue. Early versions of Git do not support this command, in this case upgrading your Git to a newer version may resolve any issues.

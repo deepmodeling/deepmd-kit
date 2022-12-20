@@ -3,6 +3,7 @@ import os
 import numpy as np
 import json
 import struct
+from typing import List
 
 import logging
 log = logging.getLogger(__name__)
@@ -166,18 +167,18 @@ class FioBin():
             log.warning(f"can not find {file_name}")
             return default_value
 
-    def save(self, file_name: str = '', data: str = ''):
+    def save(self, file_name: str, data: List[str]):
         r"""Save hex string into binary file
         """
         log.info(f"write binary to {file_name}")
         Fio().create_file_path(file_name)
+
+        buff = []
+        for si in data:
+            buff.extend(list(bytearray.fromhex(si)))
+
         with open(file_name, 'wb') as fp:
-            for si in data:
-                # one byte consists of two hex chars
-                for ii in range(len(si) // 2):
-                    v = int(si[2 * ii: 2 * (ii + 1)], 16)
-                    v = struct.pack('B', v)
-                    fp.write(v)
+            fp.write(struct.pack('%sB' % len(buff), *buff))
 
 
 class FioTxt():

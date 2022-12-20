@@ -17,11 +17,13 @@ input_files = (
     p_examples / "water" / "se_e3" / "input.json",
     p_examples / "water" / "se_e2_a_tebd" / "input.json",
     p_examples / "water" / "se_e2_a_mixed_prec" / "input.json",
+    p_examples / "water" / "se_atten" / "input.json",
     p_examples / "water" / "dplr" / "train" / "dw.json",
     p_examples / "water" / "dplr" / "train" / "ener.json",
     p_examples / "nopbc" / "train" / "input.json",
     p_examples / "water_tensor" / "dipole" / "dipole_input.json",
     p_examples / "water_tensor" / "polar" / "polar_input.json",
+    p_examples / "water_multi_task" / "ener_dipole" / "input.json",
     p_examples / "fparam" / "train" / "input.json",
     p_examples / "fparam" / "train" / "input_aparam.json",
 )

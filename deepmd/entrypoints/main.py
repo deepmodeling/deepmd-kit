@@ -2,10 +2,12 @@
 
 import argparse
 import logging
+import textwrap
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from deepmd import __version__
+from deepmd.common import clear_session
 from deepmd.entrypoints import (
     compress,
     config,
@@ -44,6 +46,11 @@ def get_ll(log_level: str) -> int:
         int_level = getattr(logging, log_level)
 
     return int_level
+
+class RawTextArgumentDefaultsHelpFormatter(
+    argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter
+):
+    """This formatter is used to print multile-line help message with default value."""
 
 
 def main_parser() -> argparse.ArgumentParser:
@@ -139,24 +146,45 @@ def main_parser() -> argparse.ArgumentParser:
         "train",
         parents=[parser_log, parser_mpi_log],
         help="train a model",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent("""\
+        examples:
+            dp train input.json
+            dp train input.json --restart model.ckpt
+            dp train input.json --init-model model.ckpt
+        """),
     )
     parser_train.add_argument(
         "INPUT", help="the input parameter file in json or yaml format"
     )
-    parser_train.add_argument(
+    parser_train_subgroup = parser_train.add_mutually_exclusive_group()
+    parser_train_subgroup.add_argument(
         "-i",
         "--init-model",
         type=str,
         default=None,
         help="Initialize the model by the provided checkpoint.",
     )
-    parser_train.add_argument(
+    parser_train_subgroup.add_argument(
         "-r",
         "--restart",
         type=str,
         default=None,
         help="Restart the training from the provided checkpoint.",
+    )
+    parser_train_subgroup.add_argument(
+        "-f",
+        "--init-frz-model",
+        type=str,
+        default=None,
+        help="Initialize the training from the frozen model.",
+    )
+    parser_train_subgroup.add_argument(
+        "-t",
+        "--finetune",
+        type=str,
+        default=None,
+        help="Finetune the frozen pretrained model.",
     )
     parser_train.add_argument(
         "-o",
@@ -164,13 +192,6 @@ def main_parser() -> argparse.ArgumentParser:
         type=str,
         default="out.json",
         help="The output file of the parameters used in training.",
-    )
-    parser_train.add_argument(
-        "-f",
-        "--init-frz-model",
-        type=str,
-        default=None,
-        help="Initialize the training from the frozen model.",
     )
     parser_train.add_argument(
         "--skip-neighbor-stat",
@@ -183,7 +204,12 @@ def main_parser() -> argparse.ArgumentParser:
         "freeze",
         parents=[parser_log],
         help="freeze the model",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent("""\
+        examples:
+            dp freeze
+            dp freeze -o graph.pb
+        """),
     )
     parser_frz.add_argument(
         "-c",
@@ -219,7 +245,11 @@ def main_parser() -> argparse.ArgumentParser:
         "test",
         parents=[parser_log],
         help="test the model",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent("""\
+        examples:
+            dp test -m graph.pb -s /path/to/system -n 30
+        """),
     )
     parser_tst.add_argument(
         "-m",
@@ -252,7 +282,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--detail-file",
         type=str,
         default=None,
-        help="File where details of energy force and virial accuracy will be written",
+        help="The prefix to files where details of energy, force and virial accuracy/accuracy per atom will be written",
     )
     parser_tst.add_argument(
         "-a",
@@ -274,7 +304,12 @@ def main_parser() -> argparse.ArgumentParser:
         "compress",
         parents=[parser_log, parser_mpi_log],
         help="compress a model",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent("""\
+        examples:
+            dp compress
+            dp compress -i graph.pb -o compressed.pb
+        """),
     )
     parser_compress.add_argument(
         "-i",
@@ -355,7 +390,11 @@ def main_parser() -> argparse.ArgumentParser:
         "model-devi",
         parents=[parser_log],
         help="calculate model deviation",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent("""\
+        examples:
+            dp model-devi -m graph.000.pb graph.001.pb graph.002.pb graph.003.pb -s ./data -o model_devi.out
+        """),
     )
     parser_model_devi.add_argument(
         "-m",
@@ -395,11 +434,16 @@ def main_parser() -> argparse.ArgumentParser:
         'convert-from',
         parents=[parser_log],
         help='convert lower model version to supported version',
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent("""\
+        examples:
+            dp convert-from 1.0 -i graph.pb -o graph_new.pb
+        """),
     )
     parser_transform.add_argument(
         'FROM',
         type = str,
-        choices = ['0.12', '1.0', '1.1', '1.2', '1.3', '2.0'],
+        choices = ['0.12', '1.0', '1.1', '1.2', '1.3', '2.0', 'pbtxt'],
         help="The original model compatibility",
     )
     parser_transform.add_argument(
@@ -422,6 +466,11 @@ def main_parser() -> argparse.ArgumentParser:
         'neighbor-stat',
         parents=[parser_log],
         help='Calculate neighbor statistics',
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent("""\
+        examples:
+            dp neighbor-stat -s data -r 6.0 -t O H
+        """),
     )
     parser_neighbor_stat.add_argument(
         "-s",
@@ -444,6 +493,12 @@ def main_parser() -> argparse.ArgumentParser:
         nargs='+',
         required=True,
         help="type map",
+    )
+    parser_neighbor_stat.add_argument(
+        "--one-type",
+        action="store_true",
+        default=False,
+        help="treat all types as a single type. Used with se_atten descriptor.",
     )
 
     # --version
@@ -494,15 +549,24 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
     return parsed_args
 
 
-def main():
+def main(args: Optional[List[str]] = None):
     """DeePMD-Kit entry point.
+
+    Parameters
+    ----------
+    args: List[str], optional
+        list of command line arguments, used to avoid calling from the subprocess,
+        as it is quite slow to import tensorflow
 
     Raises
     ------
     RuntimeError
         if no command was input
     """
-    args = parse_args()
+    if args is not None:
+        clear_session()
+
+    args = parse_args(args=args)
 
     # do not set log handles for None, it is useless
     # log handles for train will be set separatelly
@@ -538,3 +602,6 @@ def main():
         pass
     else:
         raise RuntimeError(f"unknown command {args.command}")
+
+    if args is not None:
+        clear_session()

@@ -1,3 +1,4 @@
+import logging
 from typing import List, Callable
 
 from dargs import dargs, Argument, Variant, ArgumentEncoder
@@ -8,6 +9,7 @@ import json
 
 from deepmd.nvnmd.utils.argcheck import nvnmd_args
 
+log = logging.getLogger(__name__)
 def list_to_doc(xx):
     items = []
     for ii in xx:
@@ -28,17 +30,17 @@ def type_embedding_args():
     doc_neuron = 'Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_seed = 'Random seed for parameter initialization'
-    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}. Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
+    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
     doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision.'
     doc_trainable = 'If the parameters in the embedding net are trainable'
     
     return [
-        Argument("neuron", list, optional = True, default = [2, 4, 8], doc = doc_neuron),
+        Argument("neuron", list, optional = True, default = [8], doc = doc_neuron),
         Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
         Argument("resnet_dt", bool, optional = True, default = False, doc = doc_resnet_dt),
         Argument("precision", str, optional = True, default = "default", doc = doc_precision),
         Argument("trainable", bool, optional = True, default = True, doc = doc_trainable),
-        Argument("seed", [int,None], optional = True, doc = doc_seed),
+        Argument("seed", [int,None], optional = True, default = None, doc = doc_seed),
     ]        
 
 
@@ -107,9 +109,9 @@ def descrpt_local_frame_args ():
 - axis_rule[i*6+0]: class of the atom defining the first axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.\n\n\
 - axis_rule[i*6+1]: type of the atom defining the first axis of type-i atom.\n\n\
 - axis_rule[i*6+2]: index of the axis atom defining the first axis. Note that the neighbors with the same class and type are sorted according to their relative distance.\n\n\
-- axis_rule[i*6+3]: class of the atom defining the first axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.\n\n\
+- axis_rule[i*6+3]: class of the atom defining the second axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.\n\n\
 - axis_rule[i*6+4]: type of the atom defining the second axis of type-i atom.\n\n\
-- axis_rule[i*6+5]: class of the atom defining the second axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.'
+- axis_rule[i*6+5]: index of the axis atom defining the second axis. Note that the neighbors with the same class and type are sorted according to their relative distance.'
     
     return [
         Argument("sel_a", list, optional = False, doc = doc_sel_a),
@@ -128,7 +130,7 @@ def descrpt_se_a_args():
     doc_rcut_smth = 'Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`'
     doc_neuron = 'Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.'
     doc_axis_neuron = 'Size of the submatrix of G (embedding matrix).'
-    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}. Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
+    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_type_one_side = 'Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets'
     doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision.'
@@ -162,7 +164,7 @@ def descrpt_se_t_args():
     doc_rcut = 'The cut-off radius.'
     doc_rcut_smth = 'Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`'
     doc_neuron = 'Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.'
-    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}. Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
+    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision.'
     doc_trainable = 'If the parameters in the embedding net are trainable'
@@ -205,7 +207,7 @@ def descrpt_se_r_args():
     doc_rcut = 'The cut-off radius.'
     doc_rcut_smth = 'Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`'
     doc_neuron = 'Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.'
-    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}. Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
+    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_type_one_side = 'Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets'
     doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision.'
@@ -239,6 +241,49 @@ def descrpt_hybrid_args():
     ]
 
 
+@descrpt_args_plugin.register("se_atten")
+def descrpt_se_atten_args():
+    doc_sel = 'This parameter set the number of selected neighbors. Note that this parameter is a little different from that in other descriptors. Instead of separating each type of atoms, only the summation matters. And this number is highly related with the efficiency, thus one should not make it too large. Usually 200 or less is enough, far away from the GPU limitation 4096. It can be:\n\n\
+    - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
+    - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. Only the summation of `sel[i]` matters, and it is recommended to be less than 200.\
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
+    doc_rcut = 'The cut-off radius.'
+    doc_rcut_smth = 'Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`'
+    doc_neuron = 'Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.'
+    doc_axis_neuron = 'Size of the submatrix of G (embedding matrix).'
+    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
+    doc_type_one_side = 'Whether to consider the information from only one side or both sides.'
+    doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision.'
+    doc_trainable = 'If the parameters in the embedding net is trainable'
+    doc_seed = 'Random seed for parameter initialization'
+    doc_exclude_types = 'The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1.'
+    doc_set_davg_zero = 'Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used'
+    doc_attn = 'The length of hidden vectors in attention layers'
+    doc_attn_layer = 'The number of attention layers'
+    doc_attn_dotr = 'Whether to do dot product with the normalized relative coordinates'
+    doc_attn_mask = 'Whether to do mask on the diagonal in the attention matrix'
+
+    return [
+        Argument("sel", [int, list, str], optional=True, default="auto", doc=doc_sel),
+        Argument("rcut", float, optional=True, default=6.0, doc=doc_rcut),
+        Argument("rcut_smth", float, optional=True, default=0.5, doc=doc_rcut_smth),
+        Argument("neuron", list, optional=True, default=[10, 20, 40], doc=doc_neuron),
+        Argument("axis_neuron", int, optional=True, default=4, alias=['n_axis_neuron'], doc=doc_axis_neuron),
+        Argument("activation_function", str, optional=True, default='tanh', doc=doc_activation_function),
+        Argument("resnet_dt", bool, optional=True, default=False, doc=doc_resnet_dt),
+        Argument("type_one_side", bool, optional=True, default=False, doc=doc_type_one_side),
+        Argument("precision", str, optional=True, default="default", doc=doc_precision),
+        Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
+        Argument("seed", [int, None], optional=True, doc=doc_seed),
+        Argument("exclude_types", list, optional=True, default=[], doc=doc_exclude_types),
+        Argument("set_davg_zero", bool, optional=True, default=False, doc=doc_set_davg_zero),
+        Argument("attn", int, optional=True, default=128, doc=doc_attn),
+        Argument("attn_layer", int, optional=True, default=2, doc=doc_attn_layer),
+        Argument("attn_dotr", bool, optional=True, default=True, doc=doc_attn_dotr),
+        Argument("attn_mask", bool, optional=True, default=False, doc=doc_attn_mask)
+    ]
+
 def descrpt_variant_type_args(exclude_hybrid: bool = False) -> Variant:
     link_lf = make_link('loc_frame', 'model/descriptor[loc_frame]')
     link_se_e2_a = make_link('se_e2_a', 'model/descriptor[se_e2_a]')
@@ -246,12 +291,14 @@ def descrpt_variant_type_args(exclude_hybrid: bool = False) -> Variant:
     link_se_e3 = make_link('se_e3', 'model/descriptor[se_e3]')
     link_se_a_tpe = make_link('se_a_tpe', 'model/descriptor[se_a_tpe]')
     link_hybrid = make_link('hybrid', 'model/descriptor[hybrid]')
+    link_se_atten = make_link('se_atten', 'model/descriptor[se_atten]')
     doc_descrpt_type = f'The type of the descritpor. See explanation below. \n\n\
 - `loc_frame`: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.\n\n\
 - `se_e2_a`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor.\n\n\
 - `se_e2_r`: Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor.\n\n\
 - `se_e3`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Three-body embedding will be used by this descriptor.\n\n\
 - `se_a_tpe`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Type embedding will be used by this descriptor.\n\n\
+- `se_atten`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Attention mechanism will be used by this descriptor.\n\n\
 - `hybrid`: Concatenate of a list of descriptors as a new descriptor.'
     
     return Variant("type", descrpt_args_plugin.get_all_argument(), doc = doc_descrpt_type)
@@ -262,7 +309,7 @@ def fitting_ener():
     doc_numb_fparam = 'The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams.'
     doc_numb_aparam = 'The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams.'
     doc_neuron = 'The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.'
-    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}. Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
+    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
     doc_precision = f'The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_trainable = 'Whether the parameters in the fitting net are trainable. This option can be\n\n\
@@ -288,7 +335,7 @@ def fitting_ener():
 
 def fitting_polar():
     doc_neuron = 'The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.'
-    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}. Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
+    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_precision = f'The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision.'
     doc_scale = 'The output of the fitting net (polarizability matrix) will be scaled by ``scale``'
@@ -320,7 +367,7 @@ def fitting_polar():
 
 def fitting_dipole():
     doc_neuron = 'The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.'
-    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}. Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
+    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_precision = f'The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision.'
     doc_sel_type = 'The atom types for which the atomic dipole will be provided. If not set, all types will be selected.'
@@ -405,9 +452,11 @@ def model_args ():
     doc_type_map = 'A list of strings. Give the name to each type of atoms. It is noted that the number of atom type of training system must be less than 128 in a GPU environment.'
     doc_data_stat_nbatch = 'The model determines the normalization from the statistics of the data. This key specifies the number of `frames` in each `system` used for statistics.'
     doc_data_stat_protect = 'Protect parameter for atomic energy regression.'
+    doc_data_bias_nsample = 'The number of training samples in a system to compute and change the energy bias.'
     doc_type_embedding = "The type embedding."
     doc_descrpt = 'The descriptor of atomic environment.'
     doc_fitting = 'The fitting of physical properties.'
+    doc_fitting_net_dict = 'The dictionary of multiple fitting nets in multi-task mode. Each fitting_net_dict[fitting_key] is the single definition of fitting of physical properties with user-defined name `fitting_key`.'
     doc_modifier = 'The modifier of model output.'
     doc_use_srtab = 'The table for the short-range pairwise interaction added on top of DP. The table is a text data file with (N_t + 1) * N_t / 2 + 1 columes. The first colume is the distance between atoms. The second to the last columes are energies for pairs of certain types. For example we have two atom types, 0 and 1. The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly.'
     doc_smin_alpha = 'The short-range tabulated interaction will be swithed according to the distance of the nearest neighbor. This distance is calculated by softmin. This parameter is the decaying parameter in the softmin. It is only required when `use_srtab` is provided.'
@@ -419,13 +468,15 @@ def model_args ():
                   [Argument("type_map", list, optional = True, doc = doc_type_map),
                    Argument("data_stat_nbatch", int, optional = True, default = 10, doc = doc_data_stat_nbatch),
                    Argument("data_stat_protect", float, optional = True, default = 1e-2, doc = doc_data_stat_protect),
+                   Argument("data_bias_nsample", int, optional=True, default=10, doc=doc_data_bias_nsample),
                    Argument("use_srtab", str, optional = True, doc = doc_use_srtab),
                    Argument("smin_alpha", float, optional = True, doc = doc_smin_alpha),
                    Argument("sw_rmin", float, optional = True, doc = doc_sw_rmin),
                    Argument("sw_rmax", float, optional = True, doc = doc_sw_rmax),
                    Argument("type_embedding", dict, type_embedding_args(), [], optional = True, doc = doc_type_embedding),
                    Argument("descriptor", dict, [], [descrpt_variant_type_args()], doc = doc_descrpt),
-                   Argument("fitting_net", dict, [], [fitting_variant_type_args()], doc = doc_fitting),
+                   Argument("fitting_net", dict, [], [fitting_variant_type_args()], optional=True, doc=doc_fitting),
+                   Argument("fitting_net_dict", dict, optional=True, doc=doc_fitting_net_dict),
                    Argument("modifier", dict, [], [modifier_variant_type_args()], optional = True, doc = doc_modifier),
                    Argument("compress", dict, [], [model_compression_type_args()], optional = True, doc = doc_compress_config)
                   ])
@@ -487,7 +538,7 @@ def loss_ener():
     doc_start_pref_pf = start_pref('atom_pref')
     doc_limit_pref_pf = limit_pref('atom_pref')
     doc_relative_f = 'If provided, relative force error will be used in the loss. The difference of force will be normalized by the magnitude of the force in the label with a shift given by `relative_f`, i.e. DF_i / ( || F || + relative_f ) with DF denoting the difference between prediction and label and || F || denoting the L2 norm of the label.'
-    doc_enable_atom_ener_coeff = "If true, the energy will be computed as \sum_i c_i E_i. c_i should be provided by file atom_ener_coeff.npy in each data system, otherwise it's 1."
+    doc_enable_atom_ener_coeff = "If true, the energy will be computed as \\sum_i c_i E_i. c_i should be provided by file atom_ener_coeff.npy in each data system, otherwise it's 1."
     return [
         Argument("start_pref_e", [float,int], optional = True, default = 0.02, doc = doc_start_pref_e),
         Argument("limit_pref_e", [float,int], optional = True, default = 1.00, doc = doc_limit_pref_e),
@@ -516,7 +567,7 @@ def loss_tensor():
 
 
 def loss_variant_type_args():
-    doc_loss = 'The type of the loss. When the fitting type is `ener`, the loss type should be set to `ener` or left unset. When the fitting type is `dipole` or `polar`, the loss type should be set to `tensor`. \n\.'
+    doc_loss = 'The type of the loss. When the fitting type is `ener`, the loss type should be set to `ener` or left unset. When the fitting type is `dipole` or `polar`, the loss type should be set to `tensor`.'
 
     
     return Variant("type", 
@@ -531,11 +582,20 @@ def loss_variant_type_args():
 
 
 def loss_args():
-    doc_loss = 'The definition of loss function. The loss type should be set to `tensor`, `ener` or left unset.\n\.'
+    doc_loss = 'The definition of loss function. The loss type should be set to `tensor`, `ener` or left unset.'
     ca = Argument('loss', dict, [], 
                   [loss_variant_type_args()],
                   optional = True,
                   doc = doc_loss)
+    return ca
+
+
+def loss_dict_args():
+    doc_loss_dict = 'The dictionary of definitions of multiple loss functions in multi-task mode. ' \
+                    'Each loss_dict[fitting_key], with user-defined name `fitting_key` in `model/fitting_net_dict`, is the single definition of loss function, whose type should be set to `tensor`, `ener` or left unset.\n'
+    ca = Argument('loss_dict', dict, [], [],
+                  optional = True,
+                  doc = doc_loss_dict)
     return ca
 
 
@@ -570,7 +630,7 @@ def training_data_args():  # ! added by Ziyao: new specification style for data 
     ]
 
     doc_training_data = "Configurations of training data."
-    return Argument("training_data", dict, optional=False,
+    return Argument("training_data", dict, optional=True,
                     sub_fields=args, sub_variants=[], doc=doc_training_data)
 
 
@@ -616,7 +676,7 @@ def mixed_precision_args():  # ! added by Denghui.
         "supported options are float32 only currently.'
     doc_compute_prec  = 'The precision for mixed precision compute. " \
         "The compute precision during the mixed precision training process, "" \
-        "supported options are float16 only currently.'
+        "supported options are float16 and bfloat16 currently.'
 
     args = [
         Argument("output_prec", str, optional=True, default="float32", doc=doc_output_prec),
@@ -643,6 +703,14 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     doc_tensorboard = 'Enable tensorboard'
     doc_tensorboard_log_dir = 'The log directory of tensorboard outputs'
     doc_tensorboard_freq = 'The frequency of writing tensorboard events.'
+    doc_data_dict = 'The dictionary of multi DataSystems in multi-task mode. ' \
+                    'Each data_dict[fitting_key], with user-defined name `fitting_key` in `model/fitting_net_dict`, ' \
+                    'contains training data and optional validation data definitions.'
+    doc_fitting_weight = 'Each fitting_weight[fitting_key], with user-defined name `fitting_key` in `model/fitting_net_dict`, ' \
+                         'is the training weight of fitting net `fitting_key`. ' \
+                         'Fitting nets with higher weights will be selected with higher probabilities to be trained in one step. ' \
+                         'Weights will be normalized and minus ones will be ignored. ' \
+                         'If not set, each fitting net will be equally selected when training.'
 
     arg_training_data = training_data_args()
     arg_validation_data = validation_data_args()
@@ -666,6 +734,8 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
         Argument("tensorboard", bool, optional=True, default=False, doc=doc_tensorboard),
         Argument("tensorboard_log_dir", str, optional=True, default='log', doc=doc_tensorboard_log_dir),
         Argument("tensorboard_freq", int, optional=True, default=1, doc=doc_tensorboard_freq),
+        Argument("data_dict", dict, optional=True, doc=doc_data_dict),
+        Argument("fitting_weight", dict, optional=True, doc=doc_fitting_weight),
     ]
 
     doc_training = 'The training options.'
@@ -685,11 +755,13 @@ def gen_doc(*, make_anchor=True, make_link=True, **kwargs):
     ma = model_args()
     lra = learning_rate_args()
     la = loss_args()
+    lda = loss_dict_args()
     ta = training_args()
     nvnmda = nvnmd_args()
     ptr = []
     ptr.append(ma.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
     ptr.append(la.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
+    ptr.append(lda.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
     ptr.append(lra.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
     ptr.append(ta.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
     ptr.append(nvnmda.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
@@ -707,9 +779,18 @@ def gen_json(**kwargs):
         model_args(),
         learning_rate_args(),
         loss_args(),
+        loss_dict_args(),
         training_args(),
         nvnmd_args(),
     ), cls=ArgumentEncoder)
+
+def gen_args(**kwargs):
+    return [model_args(),
+            learning_rate_args(),
+            loss_args(),
+            loss_dict_args(),
+            training_args(),
+            nvnmd_args()]
 
 def normalize_hybrid_list(hy_list):
     new_list = []
@@ -720,19 +801,143 @@ def normalize_hybrid_list(hy_list):
         new_list.append(data)
     return new_list
 
+def normalize_multi_task(data):
+    # single-task or multi-task mode
+    single_fitting_net = "fitting_net" in data["model"].keys()
+    single_training_data = "training_data" in data["training"].keys()
+    single_valid_data = "validation_data" in data["training"].keys()
+    single_loss = "loss" in data.keys()
+    multi_fitting_net = "fitting_net_dict" in data["model"].keys()
+    multi_training_data = "data_dict" in data["training"].keys()
+    multi_loss = "loss_dict" in data.keys()
+    multi_fitting_weight = "fitting_weight" in data["training"].keys()
+    assert (single_fitting_net == single_training_data) and \
+           (multi_fitting_net == multi_training_data), \
+            "In single-task mode, 'model/fitting_net' and 'training/training_data' must be defined at the same time! " \
+            "While in multi-task mode, 'model/fitting_net_dict', 'training/data_dict' " \
+            "must be defined at the same time! Please check your input script. "
+    assert not (single_fitting_net and multi_fitting_net), \
+        "Single-task mode and multi-task mode can not be performed together. " \
+        "Please check your input script and choose just one format! "
+    assert single_fitting_net or multi_fitting_net, "Please define your fitting net and training data! "
+    if multi_fitting_net:
+        assert not single_valid_data, "In multi-task mode, 'training/validation_data' should not appear " \
+                                      "outside 'training/data_dict'! Please check your input script."
+        assert not single_loss, "In multi-task mode, please use 'model/loss_dict' in stead of 'model/loss'! "
+        assert "type_map" in data["model"], "In multi-task mode, 'model/type_map' must be defined! "
+        data["model"]["fitting_net_dict"] = normalize_fitting_net_dict(data["model"]["fitting_net_dict"])
+        data["training"]["data_dict"] = normalize_data_dict(data["training"]["data_dict"])
+        data["loss_dict"] = normalize_loss_dict(data["model"]["fitting_net_dict"].keys(),
+                                                data["loss_dict"]) if multi_loss else {}
+        fitting_weight = data["training"]["fitting_weight"] if multi_fitting_weight else None
+        data["training"]["fitting_weight"] = \
+            normalize_fitting_weight(data["model"]["fitting_net_dict"].keys(),
+                                     data["training"]["data_dict"].keys(),
+                                     fitting_weight=fitting_weight)
+    else:
+        assert not multi_loss, "In single-task mode, please use 'model/loss' in stead of 'model/loss_dict'! "
+    return data
+
+
+def normalize_fitting_net_dict(fitting_net_dict):
+    new_dict = {}
+    base = Argument("base", dict, [], [fitting_variant_type_args()], doc="")
+    for fitting_key_item in fitting_net_dict:
+        data = base.normalize_value(fitting_net_dict[fitting_key_item], trim_pattern="_*")
+        base.check_value(data, strict=True)
+        new_dict[fitting_key_item] = data
+    return new_dict
+
+
+def normalize_data_dict(data_dict):
+    new_dict = {}
+    base = Argument("base", dict, [training_data_args(), validation_data_args()], [], doc="")
+    for data_system_key_item in data_dict:
+        data = base.normalize_value(data_dict[data_system_key_item], trim_pattern="_*")
+        base.check_value(data, strict=True)
+        new_dict[data_system_key_item] = data
+    return new_dict
+
+
+def normalize_loss_dict(fitting_keys, loss_dict):
+    # check the loss dict
+    failed_loss_keys = [item for item in loss_dict if item not in fitting_keys]
+    assert not failed_loss_keys, \
+        "Loss dict key(s) {} not have corresponding fitting keys in {}! ".format(
+            str(failed_loss_keys), str(list(fitting_keys)))
+    new_dict = {}
+    base = Argument('base', dict, [], [loss_variant_type_args()], doc="")
+    for item in loss_dict:
+        data = base.normalize_value(loss_dict[item], trim_pattern="_*")
+        base.check_value(data, strict=True)
+        new_dict[item] = data
+    return new_dict
+
+
+def normalize_fitting_weight(fitting_keys, data_keys, fitting_weight=None):
+    # check the mapping
+    failed_data_keys = [item for item in data_keys if item not in fitting_keys]
+    assert not failed_data_keys, \
+        "Data dict key(s) {} not have corresponding fitting keys in {}! ".format(
+            str(failed_data_keys), str(list(fitting_keys)))
+    empty_fitting_keys = []
+    valid_fitting_keys = []
+    for item in fitting_keys:
+        if item not in data_keys:
+            empty_fitting_keys.append(item)
+        else:
+            valid_fitting_keys.append(item)
+    if empty_fitting_keys:
+        log.warning("Fitting net(s) {} have no data and will not be used in training.".format(str(empty_fitting_keys)))
+    num_pair = len(valid_fitting_keys)
+    assert num_pair > 0, "No valid training data systems for fitting nets!"
+
+    # check and normalize the fitting weight
+    new_weight = {}
+    if fitting_weight is None:
+        equal_weight = 1. / num_pair
+        for item in fitting_keys:
+            new_weight[item] = equal_weight if item in valid_fitting_keys else 0.
+    else:
+        failed_weight_keys = [item for item in fitting_weight if item not in fitting_keys]
+        assert not failed_weight_keys, \
+            "Fitting weight key(s) {} not have corresponding fitting keys in {}! ".format(
+                str(failed_weight_keys), str(list(fitting_keys)))
+        sum_prob = 0.
+        for item in fitting_keys:
+            if item in valid_fitting_keys:
+                if item in fitting_weight \
+                        and isinstance(fitting_weight[item], (int, float)) and fitting_weight[item] > 0.:
+                    sum_prob += fitting_weight[item]
+                    new_weight[item] = fitting_weight[item]
+                else:
+                    valid_fitting_keys.pop(item)
+                    log.warning("Fitting net '{}' has zero or invalid weight "
+                                "and will not be used in training.".format(item))
+                    new_weight[item] = 0.
+            else:
+                new_weight[item] = 0.
+        assert sum_prob > 0., "No valid training weight for fitting nets!"
+        # normalize
+        for item in new_weight:
+            new_weight[item] /= sum_prob
+    return new_weight
+
 
 def normalize(data):
     if "hybrid" == data["model"]["descriptor"]["type"]:
         data["model"]["descriptor"]["list"] \
             = normalize_hybrid_list(data["model"]["descriptor"]["list"])
 
+    data = normalize_multi_task(data)
     ma = model_args()
     lra = learning_rate_args()
     la = loss_args()
+    lda = loss_dict_args()
     ta = training_args()
     nvnmda = nvnmd_args()
 
-    base = Argument("base", dict, [ma, lra, la, ta, nvnmda])
+    base = Argument("base", dict, [ma, lra, la, lda, ta, nvnmda])
     data = base.normalize_value(data, trim_pattern="_*")
     base.check_value(data, strict=True)
 
