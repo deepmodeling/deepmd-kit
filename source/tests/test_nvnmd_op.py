@@ -3,6 +3,8 @@ import sys
 import numpy as np
 import unittest
 
+from common import tests_path
+
 import deepmd.op
 from deepmd.env import tf
 from deepmd.env import op_module
@@ -144,7 +146,8 @@ class TestOpMapFltNvnmd(tf.test.TestCase):
         self.sess = self.test_session(config=config).__enter__()
 
     def test_op(self):
-        mapt = np.load('nvnmd/map.npy', allow_pickle=True)[0]
+        map_path = str(tests_path / os.path.join("nvnmd", "map.npy"))
+        mapt = np.load(map_path, allow_pickle=True)[0]
         table = GLOBAL_NP_FLOAT_PRECISION(np.concatenate([mapt['s'][0], mapt['h'][0]], axis=1))
         table_grad = GLOBAL_NP_FLOAT_PRECISION(np.concatenate([mapt['s_grad'][0], mapt['h_grad'][0]], axis=1))
         table_info =  GLOBAL_NP_FLOAT_PRECISION(np.reshape(mapt['cfg_u2s'], [-1]))
