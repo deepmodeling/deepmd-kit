@@ -88,18 +88,45 @@ def get_tf_requirement(tf_version: str = "") -> dict:
 
     if tf_version == "":
         return {
-            "cpu": ["tensorflow-cpu; platform_machine!='aarch64'", "tensorflow; platform_machine=='aarch64'"],
-            "gpu": ["tensorflow; platform_machine!='aarch64'", "tensorflow; platform_machine=='aarch64'"],
+            "cpu": [
+                "tensorflow-cpu; platform_machine!='aarch64'",
+                "tensorflow; platform_machine=='aarch64'",
+                "tensorflow-macos; platform_machine == 'arm64' and platform_system == 'Darwin'",
+            ],
+            "gpu": [
+                "tensorflow; platform_machine!='aarch64' and (platform_machine != 'arm64' or platform_system != 'Darwin')",
+                "tensorflow; platform_machine=='aarch64'",
+                "tensorflow-macos; platform_machine=='arm64' and platform_system == 'Darwin'",
+                "tensorflow-metal; platform_machine=='arm64' and platform_system == 'Darwin'",
+            ],
         }
     elif tf_version in SpecifierSet("<1.15") or tf_version in SpecifierSet(">=2.0,<2.1"):
         return {
-            "cpu": [f"tensorflow=={tf_version}; platform_machine!='aarch64'", f"tensorflow=={tf_version}; platform_machine=='aarch64'"],
-            "gpu": [f"tensorflow-gpu=={tf_version}; platform_machine!='aarch64'", f"tensorflow=={tf_version}; platform_machine=='aarch64'"],
+            "cpu": [
+                f"tensorflow=={tf_version}; platform_machine!='aarch64' and (platform_machine != 'arm64' or platform_system != 'Darwin')",
+                f"tensorflow=={tf_version}; platform_machine=='aarch64'",
+                f"tensorflow-macos=={tf_version}; platform_machine == 'arm64' and platform_system == 'Darwin'",
+            ],
+            "gpu": [
+                f"tensorflow-gpu=={tf_version}; platform_machine!='aarch64' and (platform_machine != 'arm64' or platform_system != 'Darwin')",
+                f"tensorflow=={tf_version}; platform_machine=='aarch64'",
+                f"tensorflow-macos=={tf_version}; platform_machine=='arm64' and platform_system == 'Darwin'",
+                f"tensorflow-metal; platform_machine=='arm64' and platform_system == 'Darwin'",
+            ],
         }
     else:
         return {
-            "cpu": [f"tensorflow-cpu=={tf_version}; platform_machine!='aarch64'", f"tensorflow=={tf_version}; platform_machine=='aarch64'"],
-            "gpu": [f"tensorflow=={tf_version}; platform_machine!='aarch64'", f"tensorflow=={tf_version}; platform_machine=='aarch64'"],
+            "cpu": [
+                f"tensorflow-cpu=={tf_version}; platform_machine!='aarch64' and (platform_machine != 'arm64' or platform_system != 'Darwin')",
+                f"tensorflow=={tf_version}; platform_machine=='aarch64'",
+                f"tensorflow-macos=={tf_version}; platform_machine == 'arm64' and platform_system == 'Darwin'",
+            ],
+            "gpu": [
+                f"tensorflow=={tf_version}; platform_machine!='aarch64' and (platform_machine != 'arm64' or platform_system != 'Darwin')",
+                f"tensorflow=={tf_version}; platform_machine=='aarch64'",
+                f"tensorflow-macos=={tf_version}; platform_machine=='arm64' and platform_system == 'Darwin'",
+                f"tensorflow-metal; platform_machine=='arm64' and platform_system == 'Darwin'",
+            ],
         }
 
 

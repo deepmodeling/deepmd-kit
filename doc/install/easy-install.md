@@ -102,7 +102,7 @@ pip install deepmd-kit[gpu,lmp]
 MPICH is required for parallel running.
 
 It is suggested to install the package into an isolated environment.
-The supported platform includes Linux x86-64 and aarch64 with GNU C Library 2.28 or above, macOS x86-64, and Windows x86-64.
+The supported platform includes Linux x86-64 and aarch64 with GNU C Library 2.28 or above, macOS x86-64 and arm64, and Windows x86-64.
 A specific version of TensorFlow which is compatible with DeePMD-kit will be also installed.
 
 :::{Warning}
