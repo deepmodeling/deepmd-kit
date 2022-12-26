@@ -138,7 +138,7 @@ def add_data_requirement(
     must : bool, optional
         specifi if the `*.npy` data file must exist, by default False
     high_prec : bool, optional
-        if tru load data to `np.float64` else `np.float32`, by default False
+        if true load data to `np.float64` else `np.float32`, by default False
     type_sel : bool, optional
         select only certain type of atoms, by default None
     repeat : int, optional

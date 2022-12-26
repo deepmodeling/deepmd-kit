@@ -109,7 +109,7 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [Multi-task training](doc/train/multi-task-training.md)
     - [TensorBoard Usage](doc/train/tensorboard.md)
     - [Known limitations of using GPUs](doc/train/gpu-limitations.md)
-    - [Training Parameters](doc/train/train-input-auto.rst)
+    - [Training Parameters](doc/train-input-auto.rst)
 - [Freeze and Compress](doc/freeze/index.rst)
     - [Freeze a model](doc/freeze/freeze.md)
     - [Compress a model](doc/freeze/compress.md)
