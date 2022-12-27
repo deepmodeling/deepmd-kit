@@ -5,6 +5,8 @@
 #include <vector>
 #include "deepmd.hpp"
 #include "test_utils.h"
+#include "ewald.h"
+#include "region.h"
 
 template <class VALUETYPE>
 class TestDipoleCharge : public ::testing::Test
@@ -124,11 +126,11 @@ TYPED_TEST(TestDipoleCharge, cpu_lmp_nlist)
   std::vector<int> sel_types = dp.sel_types();
   std::vector<int> sel_fwd, sel_bwd;
   int sel_nghost;
-  deepmd::hpp::select_by_type(sel_fwd, sel_bwd, sel_nghost, coord_cpy, atype_cpy, nghost, sel_types);
+  deepmd::select_by_type(sel_fwd, sel_bwd, sel_nghost, coord_cpy, atype_cpy, nghost, sel_types);
   int sel_nall = sel_bwd.size();
   int sel_nloc = sel_nall - sel_nghost;
   std::vector<int> sel_atype(sel_bwd.size());
-  deepmd::hpp::select_map<int>(sel_atype, atype, sel_fwd, 1);
+  deepmd::select_map<int>(sel_atype, atype, sel_fwd, 1);
   // Yixiao: because the deeptensor already return the correct order, the following map is no longer needed
   // deepmd::AtomMap<double> nnp_map(sel_atype.begin(), sel_atype.begin() + sel_nloc);
   // const std::vector<int> & sort_fwd_map(nnp_map.get_fwd_map());
@@ -173,9 +175,9 @@ TYPED_TEST(TestDipoleCharge, cpu_lmp_nlist)
   // compute the recp part of the ele interaction
   VALUETYPE eener;
   std::vector<VALUETYPE> eforce, evirial;
-  deepmd::hpp::Region<VALUETYPE> region;
+  deepmd::Region<VALUETYPE> region;
   init_region_cpu(region, &box[0]);
-  deepmd::hpp::EwaldParameters<VALUETYPE> eparam;
+  deepmd::EwaldParameters<VALUETYPE> eparam;
   eparam.beta = 0.2;
   eparam.spacing = 4;
   ewald_recp(eener, eforce, evirial, coord, charge, region, eparam);
