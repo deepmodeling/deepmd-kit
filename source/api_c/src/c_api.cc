@@ -33,6 +33,15 @@ DP_DeepPot* DP_NewDeepPot(const char* c_model) {
     return new_dp;
 }
 
+DP_DeepPot* DP_NewDeepPotWithParam(
+        const char* c_model, const int gpu_rank, const char* c_name_scope) {
+    std::string model(c_model);
+    std::string name_scope(c_name_scope);
+    deepmd::DeepPot dp(model, gpu_rank, name_scope);
+    DP_DeepPot* new_dp = new DP_DeepPot(dp);
+    return new_dp;
+}
+
 DP_DeepPotModelDevi::DP_DeepPotModelDevi(deepmd::DeepPotModelDevi& dp)
     : dp(dp) {}
 
@@ -53,12 +62,30 @@ DP_DeepTensor* DP_NewDeepTensor(const char* c_model) {
     return new_dt;
 }
 
+DP_DeepTensor* DP_NewDeepTensorWithParam(
+        const char* c_model, const int gpu_rank, const char* c_name_scope) {
+    std::string model(c_model);
+    std::string name_scope(c_name_scope);
+    deepmd::DeepTensor dt(model, gpu_rank, name_scope);
+    DP_DeepTensor* new_dt = new DP_DeepTensor(dt);
+    return new_dt;
+}
+
 DP_DipoleChargeModifier::DP_DipoleChargeModifier(deepmd::DipoleChargeModifier& dcm)
     : dcm(dcm) {}
 
 DP_DipoleChargeModifier* DP_NewDipoleChargeModifier(const char* c_model) {
     std::string model(c_model);
     deepmd::DipoleChargeModifier dcm(model);
+    DP_DipoleChargeModifier* new_dcm = new DP_DipoleChargeModifier(dcm);
+    return new_dcm;
+}
+
+DP_DipoleChargeModifier* DP_NewDipoleChargeModifierWithParam(
+        const char* c_model, const int gpu_rank, const char* c_name_scope) {
+    std::string model(c_model);
+    std::string name_scope(c_name_scope);
+    deepmd::DipoleChargeModifier dcm(model, gpu_rank, name_scope);
     DP_DipoleChargeModifier* new_dcm = new DP_DipoleChargeModifier(dcm);
     return new_dcm;
 }

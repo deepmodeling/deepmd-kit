@@ -486,22 +486,22 @@ namespace deepmd
              * @brief DP constructor with initialization.
              * @param[in] model The name of the frozen model file.
              **/
-            DeepPot(const std::string &model) : dp(nullptr)
+            DeepPot(const std::string &model, const int &gpu_rank = 0, const std::string &name_scope = "") : dp(nullptr)
             {
-                init(model);
+                init(model, gpu_rank, name_scope);
             };
             /**
              * @brief Initialize the DP.
              * @param[in] model The name of the frozen model file.
              **/
-            void init(const std::string &model)
+            void init(const std::string &model, const int &gpu_rank = 0, const std::string &name_scope = "")
             {
                 if (dp)
                 {
                     std::cerr << "WARNING: deepmd-kit should not be initialized twice, do nothing at the second call of initializer" << std::endl;
                     return;
                 }
-                dp = DP_NewDeepPot(model.c_str());
+                dp = DP_NewDeepPotWithParam(model.c_str(), gpu_rank, name_scope.c_str());
             };
 
             /**
@@ -903,22 +903,22 @@ namespace deepmd
              * @brief DeepTensor constructor with initialization.
              * @param[in] model The name of the frozen model file.
              **/
-            DeepTensor(const std::string &model) : dt(nullptr)
+            DeepTensor(const std::string &model, const int &gpu_rank = 0, const std::string &name_scope = "") : dt(nullptr)
             {
-                init(model);
+                init(model, gpu_rank, name_scope);
             };
             /**
              * @brief Initialize the DeepTensor.
              * @param[in] model The name of the frozen model file.
              **/
-            void init(const std::string &model)
+            void init(const std::string &model, const int &gpu_rank = 0, const std::string &name_scope = "")
             {
                 if (dt)
                 {
                     std::cerr << "WARNING: deepmd-kit should not be initialized twice, do nothing at the second call of initializer" << std::endl;
                     return;
                 }
-                dt = DP_NewDeepTensor(model.c_str());
+                dt = DP_NewDeepTensorWithParam(model.c_str(), gpu_rank, name_scope.c_str());
                 odim = output_dim();
                 nsel_types = DP_DeepTensorGetNumbSelTypes(dt);
             };
@@ -1227,23 +1227,27 @@ namespace deepmd
             /**
              * @brief DipoleChargeModifier constructor with initialization.
              * @param[in] model The name of the frozen model file.
+             * @param[in] gpu_rank The rank of the GPU to be used.
+             * @param[in] name_scope The name scope of the model.
              **/
-            DipoleChargeModifier(const std::string &model) : dcm(nullptr)
+            DipoleChargeModifier(const std::string &model, const int &gpu_rank = 0, const std::string &name_scope = "") : dcm(nullptr)
             {
-                init(model);
+                init(model, gpu_rank, name_scope);
             };
             /**
              * @brief Initialize the DipoleChargeModifier.
              * @param[in] model The name of the frozen model file.
+             * @param[in] gpu_rank The rank of the GPU to be used.
+             * @param[in] name_scope The name scope of the model.
              **/
-            void init(const std::string &model)
+            void init(const std::string &model, const int &gpu_rank = 0, const std::string &name_scope = "")
             {
                 if (dcm)
                 {
                     std::cerr << "WARNING: deepmd-kit should not be initialized twice, do nothing at the second call of initializer" << std::endl;
                     return;
                 }
-                dcm = DP_NewDipoleChargeModifier(model.c_str());
+                dcm = DP_NewDipoleChargeModifierWithParam(model.c_str(), gpu_rank, name_scope.c_str());
                 nsel_types = DP_DipoleChargeModifierGetNumbSelTypes(dcm);
             };
             /**
@@ -1287,7 +1291,7 @@ namespace deepmd
                 VALUETYPE *dfcorr = &dfcorr_[0];
                 VALUETYPE *dvcorr = &dvcorr_[0];
 
-                _DP_DipoleChargeModifierComputeNList<VALUETYPE>(dcm, natoms, dcoord, datype, dbox_, npairs, dpairs, delef, nghost, lmp_list.nl, dfcorr, dvcorr);
+                _DP_DipoleChargeModifierComputeNList<VALUETYPE>(dcm, natoms, dcoord, datype, dbox_, dpairs, npairs, delef, nghost, lmp_list.nl, dfcorr, dvcorr);
             };
             /**
              * @brief Get the cutoff radius.

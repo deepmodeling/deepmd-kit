@@ -35,6 +35,17 @@ typedef struct DP_DeepPot DP_DeepPot;
 extern DP_DeepPot* DP_NewDeepPot(const char* c_model);
 
 /**
+ * @brief DP constructor with initialization.
+ * 
+ * @param c_model The name of the frozen model file.
+ * @param gpu_rank The rank of the GPU.
+ * @param c_name_scope The name scope.
+ * @return DP_DeepPot* A pointer to the deep potential.
+ */
+extern DP_DeepPot* DP_NewDeepPotWithParam(
+        const char* c_model, const int gpu_rank, const char* c_name_scope);
+
+/**
 * @brief Evaluate the energy, force and virial by using a DP. (double version)
 * @param[in] dp The DP to use.
 * @param[in] natoms The number of atoms.
@@ -278,6 +289,17 @@ typedef struct DP_DeepTensor DP_DeepTensor;
 * @returns A pointer to the deep tensor.
 **/
 extern DP_DeepTensor* DP_NewDeepTensor(const char* c_model);
+
+/**
+ * @brief Deep Tensor constructor with initialization.
+ * 
+ * @param c_model The name of the frozen model file.
+ * @param gpu_rank The rank of the GPU.
+ * @param c_name_scope The name scope.
+ * @return DP_DeepTensor* A pointer to the deep tensor.
+ */
+extern DP_DeepTensor* DP_NewDeepTensorWithParam(
+        const char* c_model, const int gpu_rank, const char* c_name_scope);
 
 /**
 * @brief Evaluate the tensor by using a DP. (double version)
@@ -536,6 +558,17 @@ typedef struct DP_DipoleChargeModifier DP_DipoleChargeModifier;
 * @returns A pointer to the dipole charge modifier.
 **/
 extern DP_DipoleChargeModifier* DP_NewDipoleChargeModifier(const char* c_model);
+
+/**
+ * @brief Dipole charge modifier constructor with initialization.
+ * 
+ * @param c_model The name of the frozen model file.
+ * @param gpu_rank The rank of the GPU.
+ * @param c_name_scope The name scope.
+ * @return DP_DipoleChargeModifier* A pointer to the dipole charge modifier.
+ */
+extern DP_DipoleChargeModifier* DP_NewDipoleChargeModifierWithParam(
+        const char* c_model, const int gpu_rank, const char* c_name_scope);
 
 /**
 * @brief Evaluate the force and virial correction by using a dipole charge modifier with the neighbor list. (double version)

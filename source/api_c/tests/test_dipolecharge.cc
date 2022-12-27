@@ -5,6 +5,7 @@
 #include <vector>
 #include "deepmd.hpp"
 #include "test_utils.h"
+#include "common.h"
 #include "ewald.h"
 #include "region.h"
 
