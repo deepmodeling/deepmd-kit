@@ -7,6 +7,7 @@
 #include "common.h"
 #include "DeepPot.h"
 #include "DeepTensor.h"
+#include "DataModifier.h"
 
 extern "C" {
 
@@ -50,6 +51,16 @@ DP_DeepTensor* DP_NewDeepTensor(const char* c_model) {
     deepmd::DeepTensor dt(model);
     DP_DeepTensor* new_dt = new DP_DeepTensor(dt);
     return new_dt;
+}
+
+DP_DipoleChargeModifier::DP_DipoleChargeModifier(deepmd::DipoleChargeModifier& dcm)
+    : dt(dt) {}
+
+DP_DipoleChargeModifier* DP_DipoleChargeModifier(const char* c_model) {
+    std::string model(c_model);
+    deepmd::DipoleChargeModifier dcm(model);
+    DP_DipoleChargeModifier* new_dcm = new DP_DipoleChargeModifier(dcm);
+    return new_dcm;
 }
 
 } // extern "C"
@@ -536,6 +547,77 @@ void DP_DeepTensorComputeNList_variant <float> (
     int* size_at
     );
 
+template <typename VALUETYPE>
+inline
+void DP_DipoleChargeModifierComputeNList_variant (
+  DP_DipoleChargeModifier* dcm,
+  const int natom,
+  const VALUETYPE* coord,
+  const int* atype,
+  const VALUETYPE* cell,
+  const int* pairs,
+  const int npairs,
+  const VALUETYPE* delef,
+  const int nghost,
+  const DP_Nlist* nlist,
+  VALUETYPE* dfcorr_,
+  VALUETYPE* dvcorr_
+  ){
+    // init C++ vectors from C arrays
+    std::vector<VALUETYPE> coord_(coord, coord+natoms*3);
+    std::vector<int> atype_(atype, atype+natoms);
+    std::vector<VALUETYPE> cell_;
+    if (cell) {
+        // pbc
+        cell_.assign(cell, cell+9);
+    }
+    // pairs
+    std::vector<std::pair<int, int> > pairs_;
+    for (int i = 0; i < npairs; i++) {
+        pairs_.push_back(std::make_pair(pairs[i*2], pairs[i*2+1]));
+    }
+    std::vector<VALUETYPE> delef_(delef, delef+natoms*3);
+    std::vector<VALUETYPE> df, dv;
+
+    dcm->dcm.compute(df, dv, coord_, atype_, cell_, pairs_, delef_, nghost, nlist->nl);
+    // copy from C++ vectors to C arrays, if not NULL pointer
+    if(dfcorr_) std::copy(df.begin(), df.end(), dfcorr_);
+    if(dvcorr_) std::copy(dv.begin(), dv.end(), dvcorr_);
+}
+
+template
+void DP_DipoleChargeModifierComputeNList_variant <double> (
+  DP_DipoleChargeModifier* dcm,
+  const int natom,
+  const double* coord,
+  const int* atype,
+  const double* cell,
+  const int* pairs,
+  const int npairs,
+  const double* delef,
+  const int nghost,
+  const DP_Nlist* nlist,
+  double* dfcorr_,
+  double* dvcorr_
+  );
+
+template
+void DP_DipoleChargeModifierComputeNList_variant <float> (
+  DP_DipoleChargeModifier* dcm,
+  const int natom,
+  const float* coord,
+  const int* atype,
+  const float* cell,
+  const int* pairs,
+  const int npairs,
+  const float* delef,
+  const int nghost,
+  const DP_Nlist* nlist,
+  float* dfcorr_,
+  float* dvcorr_
+  );
+
+
 extern "C" {
 
 void DP_DeepPotCompute (
@@ -826,6 +908,64 @@ int DP_DeepTensorGetNumbSelTypes(
     DP_DeepTensor* dt
     ) {
     return dt->dt.sel_types().size();
+}
+
+void DP_DipoleChargeModifierComputeNList (
+  DP_DipoleChargeModifier* dcm,
+  const int natom,
+  const double* coord,
+  const int* atype,
+  const double* cell,
+  const int* pairs,
+  const int npairs,
+  const double* delef_,
+  const int nghost,
+  const DP_Nlist* nlist,
+  double* dfcorr_,
+  double* dvcorr_
+  ){
+    DP_DipoleChargeModifierComputeNList_variant<double>(dcm, natom, coord, atype, cell, pairs, npairs, delef_, nghost, nlist, dfcorr_, dvcorr_);
+}
+
+void DP_DipoleChargeModifierComputeNListf (
+  DP_DipoleChargeModifier* dcm,
+  const int natom,
+  const float* coord,
+  const int* atype,
+  const float* cell,
+  const int* pairs,
+  const int npairs,
+  const float* delef_,
+  const int nghost,
+  const DP_Nlist* nlist,
+  float* dfcorr_,
+  float* dvcorr_
+  ){
+    DP_DipoleChargeModifierComputeNList_variant<float>(dcm, natom, coord, atype, cell, pairs, npairs, delef_, nghost, nlist, dfcorr_, dvcorr_);
+}
+
+double DP_DipoleChargeModifierGetCutoff(
+    DP_DipoleChargeModifier* dcm
+    ) {
+    return dcm->dcm.cutoff();
+}
+
+int DP_DipoleChargeModifierGetNumbTypes(
+    DP_DipoleChargeModifier* dcm
+    ) {
+    return dcm->dcm.numb_types();
+}
+
+int* DP_DipoleChargeModifierGetSelTypes(
+    DP_DipoleChargeModifier* dcm
+    ) {
+    return (int*) &(dcm->dcm.sel_types())[0];
+}
+
+int DP_DipoleChargeModifierGetNumbSelTypes(
+    DP_DipoleChargeModifier* dcm
+    ) {
+    return dcm->dcm.sel_types().size();
 }
 
 void DP_ConvertPbtxtToPb(

@@ -347,6 +347,60 @@ inline void _DP_DeepTensorComputeNList<float>(
     DP_DeepTensorComputeNListf(dt, natom, coord, atype, cell, nghost, nlist, global_tensor, force, virial, atomic_tensor, atomic_virial, size_at);
 }
 
+template <typename FPTYPE>
+inline void _DP_DipoleChargeModifierCompute(
+    DP_DipoleChargeModifier* dcm,
+    const int natom,
+    const FPTYPE* coord,
+    const int* atype,
+    const FPTYPE* cell,
+    const int* pairs,
+    const int npairs,
+    const FPTYPE* delef_,
+    const int nghost,
+    const DP_Nlist* nlist,
+    FPTYPE* dfcorr_,
+    FPTYPE* dvcorr_
+)
+
+template <>
+inline void _DP_DipoleChargeModifierCompute<double>(
+    DP_DipoleChargeModifier* dcm,
+    const int natom,
+    const double* coord,
+    const int* atype,
+    const double* cell,
+    const int* pairs,
+    const int npairs,
+    const double* delef_,
+    const int nghost,
+    const DP_Nlist* nlist,
+    double* dfcorr_,
+    double* dvcorr_
+)
+{
+    DP_DipoleChargeModifierCompute(dcm, natom, coord, atype, cell, pairs, npairs, delef_, nghost, nlist, dfcorr_, dvcorr_);
+}
+
+template <>
+inline void _DP_DipoleChargeModifierCompute<float>(
+    DP_DipoleChargeModifier* dcm,
+    const int natom,
+    const float* coord,
+    const int* atype,
+    const float* cell,
+    const int* pairs,
+    const int npairs,
+    const float* delef_,
+    const int nghost,
+    const DP_Nlist* nlist,
+    float* dfcorr_,
+    float* dvcorr_
+)
+{
+    DP_DipoleChargeModifierComputef(dcm, natom, coord, atype, cell, pairs, npairs, delef_, nghost, nlist, dfcorr_, dvcorr_);
+}
+
 namespace deepmd
 {
     namespace hpp
@@ -1160,6 +1214,108 @@ namespace deepmd
             DP_DeepTensor *dt;
             int odim;
             int nsel_types;
+        };
+
+        class DipoleChargeModifier
+        {
+        public:
+            /**
+             * @brief DipoleChargeModifier constructor without initialization.
+             **/
+            DipoleChargeModifier() : dcm(nullptr) {};
+            ~DipoleChargeModifier(){};
+            /**
+             * @brief DipoleChargeModifier constructor with initialization.
+             * @param[in] model The name of the frozen model file.
+             **/
+            DipoleChargeModifier(const std::string &model) : dt(nullptr)
+            {
+                init(model);
+            };
+            /**
+             * @brief Initialize the DipoleChargeModifier.
+             * @param[in] model The name of the frozen model file.
+             **/
+            void init(const std::string &model)
+            {
+                if (dcm)
+                {
+                    std::cerr << "WARNING: deepmd-kit should not be initialized twice, do nothing at the second call of initializer" << std::endl;
+                    return;
+                }
+                dcm = DP_NewDipoleChargeModifier(model.c_str());
+                nsel_types = DP_DipoleChargeModifierGetNumbSelTypes(dcm);
+            };
+            /**
+             * @brief Evaluate the force and virial correction by using this dipole charge modifier.
+             * @param[out] dfcorr_ The force correction on each atom.
+             * @param[out] dvcorr_ The virial correction.
+             * @param[in] dcoord_ The coordinates of atoms. The array should be of size natoms x 3.
+             * @param[in] datype_ The atom types. The list should contain natoms ints.
+             * @param[in] dbox The cell of the region. The array should be of size 9.
+             * @param[in] pairs The pairs of atoms. The list should contain npairs pairs of ints.
+             * @param[in] delef_ The electric field on each atom. The array should be of size natoms x 3.
+             * @param[in] nghost The number of ghost atoms.
+             * @param[in] lmp_list The neighbor list.
+             **/
+            template<typename VALUETYPE>
+            void compute (std::vector<VALUETYPE> &		dfcorr_,
+                    std::vector<VALUETYPE> &		dvcorr_,
+                    const std::vector<VALUETYPE> &	dcoord_,
+                    const std::vector<int> &		datype_,
+                    const std::vector<VALUETYPE> &	dbox, 
+                    const std::vector<std::pair<int,int>> &	pairs,
+                    const std::vector<VALUETYPE> &	delef_, 
+                    const int			nghost,
+                    const InputNlist &	lmp_list)
+            {
+                unsigned int natoms = datype_.size();
+                assert(natoms * 3 == dcoord_.size());
+                if (!dbox.empty())
+                {
+                    assert(dbox.size() == 9);
+                }
+                const VALUETYPE *dcoord = &dcoord_[0];
+                const VALUETYPE *dbox_ = !dbox.empty() ? &dbox[0] : nullptr;
+                const int *datype = &datype_[0];
+                const int npairs = pairs.size();
+                const int *dpairs = reinterpret_cast<const int *>(&pairs[0]);
+                const VALUETYPE *delef = &delef_[0];
+
+                dfcorr_.resize(natoms * 3);
+                dvcorr_.resize(9);
+                VALUETYPE *dfcorr = &dfcorr_[0];
+                VALUETYPE *dvcorr = &dvcorr_[0];
+
+                _DP_DipoleChargeModifierCompute<VALUETYPE>(dcm, natoms, dcoord, datype, dbox_, npairs, dpairs, delef, nghost, lmp_list.nl, dfcorr, dvcorr);
+            };
+            /**
+             * @brief Get the cutoff radius.
+             * @return The cutoff radius.
+             **/
+            double cutoff() const
+            {
+                assert(dcm);
+                return DP_DipoleChargeModifierGetCutoff(dcm);
+            };
+            /**
+             * @brief Get the number of types.
+             * @return The number of types.
+             **/
+            int numb_types() const
+            {
+                assert(dcm);
+                return DP_DipoleChargeModifierGetNumbTypes(dcm);
+            };
+
+            std::vector<int> sel_types() const
+            {
+                int* sel_types_arr = DP_DipoleChargeModifierGetSelTypes(dt);
+                std::vector<int> sel_types_vec = std::vector<int>(sel_types_arr, sel_types_arr + nsel_types);
+                return sel_types_vec;
+            }
+        private:
+            DP_DipoleChargeModifier *dcm;
         };
     }
 }
