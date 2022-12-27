@@ -1020,7 +1020,7 @@ namespace deepmd
                 const VALUETYPE *coord_ = &coord[0];
                 const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
                 const int *atype_ = &atype[0];
-                const int odim = output_dim();
+                odim = output_dim();
                 global_tensor.resize(odim);
                 force.resize(odim * natoms * 3);
                 virial.resize(odim * 9);
@@ -1060,7 +1060,7 @@ namespace deepmd
                 const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
                 const int *atype_ = &atype[0];
                 
-                const int odim = output_dim();
+                odim = output_dim();
                 global_tensor.resize(odim);
                 force.resize(odim * natoms * 3);
                 virial.resize(odim * 9);
@@ -1112,7 +1112,7 @@ namespace deepmd
                 const VALUETYPE *coord_ = &coord[0];
                 const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
                 const int *atype_ = &atype[0];
-                const int odim = output_dim();
+                odim = output_dim();
                 global_tensor.resize(odim);
                 force.resize(odim * natoms * 3);
                 virial.resize(odim * 9);
@@ -1157,7 +1157,7 @@ namespace deepmd
                 const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
                 const int *atype_ = &atype[0];
 
-                const int odim = output_dim();
+                odim = output_dim();
                 global_tensor.resize(odim);
                 force.resize(odim * natoms * 3);
                 virial.resize(odim * 9);
