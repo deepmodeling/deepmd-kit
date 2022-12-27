@@ -348,7 +348,7 @@ inline void _DP_DeepTensorComputeNList<float>(
 }
 
 template <typename FPTYPE>
-inline void _DP_DipoleChargeModifierCompute(
+inline void _DP_DipoleChargeModifierComputeNList(
     DP_DipoleChargeModifier* dcm,
     const int natom,
     const FPTYPE* coord,
@@ -361,10 +361,10 @@ inline void _DP_DipoleChargeModifierCompute(
     const DP_Nlist* nlist,
     FPTYPE* dfcorr_,
     FPTYPE* dvcorr_
-)
+);
 
 template <>
-inline void _DP_DipoleChargeModifierCompute<double>(
+inline void _DP_DipoleChargeModifierComputeNList<double>(
     DP_DipoleChargeModifier* dcm,
     const int natom,
     const double* coord,
@@ -379,11 +379,11 @@ inline void _DP_DipoleChargeModifierCompute<double>(
     double* dvcorr_
 )
 {
-    DP_DipoleChargeModifierCompute(dcm, natom, coord, atype, cell, pairs, npairs, delef_, nghost, nlist, dfcorr_, dvcorr_);
+    DP_DipoleChargeModifierComputeNList(dcm, natom, coord, atype, cell, pairs, npairs, delef_, nghost, nlist, dfcorr_, dvcorr_);
 }
 
 template <>
-inline void _DP_DipoleChargeModifierCompute<float>(
+inline void _DP_DipoleChargeModifierComputeNList<float>(
     DP_DipoleChargeModifier* dcm,
     const int natom,
     const float* coord,
@@ -398,7 +398,7 @@ inline void _DP_DipoleChargeModifierCompute<float>(
     float* dvcorr_
 )
 {
-    DP_DipoleChargeModifierComputef(dcm, natom, coord, atype, cell, pairs, npairs, delef_, nghost, nlist, dfcorr_, dvcorr_);
+    DP_DipoleChargeModifierComputeNListf(dcm, natom, coord, atype, cell, pairs, npairs, delef_, nghost, nlist, dfcorr_, dvcorr_);
 }
 
 namespace deepmd
@@ -1228,7 +1228,7 @@ namespace deepmd
              * @brief DipoleChargeModifier constructor with initialization.
              * @param[in] model The name of the frozen model file.
              **/
-            DipoleChargeModifier(const std::string &model) : dt(nullptr)
+            DipoleChargeModifier(const std::string &model) : dcm(nullptr)
             {
                 init(model);
             };
@@ -1287,7 +1287,7 @@ namespace deepmd
                 VALUETYPE *dfcorr = &dfcorr_[0];
                 VALUETYPE *dvcorr = &dvcorr_[0];
 
-                _DP_DipoleChargeModifierCompute<VALUETYPE>(dcm, natoms, dcoord, datype, dbox_, npairs, dpairs, delef, nghost, lmp_list.nl, dfcorr, dvcorr);
+                _DP_DipoleChargeModifierComputeNList<VALUETYPE>(dcm, natoms, dcoord, datype, dbox_, npairs, dpairs, delef, nghost, lmp_list.nl, dfcorr, dvcorr);
             };
             /**
              * @brief Get the cutoff radius.
@@ -1310,12 +1310,13 @@ namespace deepmd
 
             std::vector<int> sel_types() const
             {
-                int* sel_types_arr = DP_DipoleChargeModifierGetSelTypes(dt);
+                int* sel_types_arr = DP_DipoleChargeModifierGetSelTypes(dcm);
                 std::vector<int> sel_types_vec = std::vector<int>(sel_types_arr, sel_types_arr + nsel_types);
                 return sel_types_vec;
             }
         private:
             DP_DipoleChargeModifier *dcm;
+            int nsel_types;
         };
     }
 }
