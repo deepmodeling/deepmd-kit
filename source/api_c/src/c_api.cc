@@ -54,7 +54,7 @@ DP_DeepTensor* DP_NewDeepTensor(const char* c_model) {
 }
 
 DP_DipoleChargeModifier::DP_DipoleChargeModifier(deepmd::DipoleChargeModifier& dcm)
-    : dt(dt) {}
+    : dcm(dcm) {}
 
 DP_DipoleChargeModifier* DP_DipoleChargeModifier(const char* c_model) {
     std::string model(c_model);
@@ -551,7 +551,7 @@ template <typename VALUETYPE>
 inline
 void DP_DipoleChargeModifierComputeNList_variant (
   DP_DipoleChargeModifier* dcm,
-  const int natom,
+  const int natoms,
   const VALUETYPE* coord,
   const int* atype,
   const VALUETYPE* cell,
@@ -588,7 +588,7 @@ void DP_DipoleChargeModifierComputeNList_variant (
 template
 void DP_DipoleChargeModifierComputeNList_variant <double> (
   DP_DipoleChargeModifier* dcm,
-  const int natom,
+  const int natoms,
   const double* coord,
   const int* atype,
   const double* cell,
@@ -604,7 +604,7 @@ void DP_DipoleChargeModifierComputeNList_variant <double> (
 template
 void DP_DipoleChargeModifierComputeNList_variant <float> (
   DP_DipoleChargeModifier* dcm,
-  const int natom,
+  const int natoms,
   const float* coord,
   const int* atype,
   const float* cell,
