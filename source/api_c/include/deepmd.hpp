@@ -919,6 +919,7 @@ namespace deepmd
                     return;
                 }
                 dt = DP_NewDeepTensorWithParam(model.c_str(), gpu_rank, name_scope.c_str());
+                odim = output_dim();
                 nsel_types = DP_DeepTensorGetNumbSelTypes(dt);
             };
 
@@ -1020,7 +1021,6 @@ namespace deepmd
                 const VALUETYPE *coord_ = &coord[0];
                 const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
                 const int *atype_ = &atype[0];
-                odim = output_dim();
                 global_tensor.resize(odim);
                 force.resize(odim * natoms * 3);
                 virial.resize(odim * 9);
@@ -1059,8 +1059,7 @@ namespace deepmd
                 const VALUETYPE *coord_ = &coord[0];
                 const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
                 const int *atype_ = &atype[0];
-                
-                odim = output_dim();
+
                 global_tensor.resize(odim);
                 force.resize(odim * natoms * 3);
                 virial.resize(odim * 9);
@@ -1112,7 +1111,6 @@ namespace deepmd
                 const VALUETYPE *coord_ = &coord[0];
                 const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
                 const int *atype_ = &atype[0];
-                odim = output_dim();
                 global_tensor.resize(odim);
                 force.resize(odim * natoms * 3);
                 virial.resize(odim * 9);
@@ -1157,7 +1155,6 @@ namespace deepmd
                 const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
                 const int *atype_ = &atype[0];
 
-                odim = output_dim();
                 global_tensor.resize(odim);
                 force.resize(odim * natoms * 3);
                 virial.resize(odim * 9);
@@ -1215,6 +1212,7 @@ namespace deepmd
 
         private:
             DP_DeepTensor *dt;
+            int odim;
             int nsel_types;
         };
 
