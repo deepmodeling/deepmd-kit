@@ -34,10 +34,10 @@ DP_DeepPot* DP_NewDeepPot(const char* c_model) {
 }
 
 DP_DeepPot* DP_NewDeepPotWithParam(
-        const char* c_model, const int gpu_rank, const char* c_name_scope) {
+        const char* c_model, const int gpu_rank, const char* c_file_content) {
     std::string model(c_model);
-    std::string name_scope(c_name_scope);
-    deepmd::DeepPot dp(model, gpu_rank, name_scope);
+    std::string file_content(c_file_content);
+    deepmd::DeepPot dp(model, gpu_rank, file_content);
     DP_DeepPot* new_dp = new DP_DeepPot(dp);
     return new_dp;
 }

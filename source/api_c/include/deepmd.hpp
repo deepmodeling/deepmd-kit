@@ -485,23 +485,27 @@ namespace deepmd
             /**
              * @brief DP constructor with initialization.
              * @param[in] model The name of the frozen model file.
+             * @param[in] gpu_rank The GPU rank.
+             * @param[in] file_content The content of the frozen model file.
              **/
-            DeepPot(const std::string &model, const int &gpu_rank = 0, const std::string &name_scope = "") : dp(nullptr)
+            DeepPot(const std::string &model, const int &gpu_rank = 0, const std::string &file_content = "") : dp(nullptr)
             {
-                init(model, gpu_rank, name_scope);
+                init(model, gpu_rank, file_content);
             };
             /**
              * @brief Initialize the DP.
              * @param[in] model The name of the frozen model file.
+             * @param[in] gpu_rank The GPU rank.
+             * @param[in] file_content The content of the frozen model file.
              **/
-            void init(const std::string &model, const int &gpu_rank = 0, const std::string &name_scope = "")
+            void init(const std::string &model, const int &gpu_rank = 0, const std::string &file_content = "")
             {
                 if (dp)
                 {
                     std::cerr << "WARNING: deepmd-kit should not be initialized twice, do nothing at the second call of initializer" << std::endl;
                     return;
                 }
-                dp = DP_NewDeepPotWithParam(model.c_str(), gpu_rank, name_scope.c_str());
+                dp = DP_NewDeepPotWithParam(model.c_str(), gpu_rank, file_content.c_str());
             };
 
             /**

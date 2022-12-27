@@ -39,11 +39,11 @@ extern DP_DeepPot* DP_NewDeepPot(const char* c_model);
  * 
  * @param c_model The name of the frozen model file.
  * @param gpu_rank The rank of the GPU.
- * @param c_name_scope The name scope.
+ * @param c_file_content The content of the model file.
  * @return DP_DeepPot* A pointer to the deep potential.
  */
 extern DP_DeepPot* DP_NewDeepPotWithParam(
-        const char* c_model, const int gpu_rank, const char* c_name_scope);
+        const char* c_model, const int gpu_rank, const char* c_file_content);
 
 /**
 * @brief Evaluate the energy, force and virial by using a DP. (double version)
