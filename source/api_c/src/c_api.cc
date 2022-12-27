@@ -56,7 +56,7 @@ DP_DeepTensor* DP_NewDeepTensor(const char* c_model) {
 DP_DipoleChargeModifier::DP_DipoleChargeModifier(deepmd::DipoleChargeModifier& dcm)
     : dcm(dcm) {}
 
-DP_DipoleChargeModifier* DP_DipoleChargeModifier(const char* c_model) {
+DP_DipoleChargeModifier* DP_NewDipoleChargeModifier(const char* c_model) {
     std::string model(c_model);
     deepmd::DipoleChargeModifier dcm(model);
     DP_DipoleChargeModifier* new_dcm = new DP_DipoleChargeModifier(dcm);
