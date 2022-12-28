@@ -191,7 +191,7 @@ class TestData (unittest.TestCase) :
         data = dd._load_set(os.path.join(self.data_name, 'set.foo'))
         data_bk = copy.deepcopy(data)
         data, idx = dd._shuffle_data(data)
-        assert idx.size == prob.size
+        assert idx.size == np.sum(prob)
         self._comp_np_mat2(data_bk['coord'][idx,:], 
                            data['coord'])
         self._comp_np_mat2(data_bk['test_atomic'][idx,:], 
