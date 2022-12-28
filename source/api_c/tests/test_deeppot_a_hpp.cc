@@ -463,7 +463,7 @@ TYPED_TEST(TestInferDeepPotAHPP, cpu_lmp_nlist_type_sel)
 TYPED_TEST(TestInferDeepPotAHPP, print_summary)
 {
   deepmd::DeepPot& dp = this->dp;
-  dp.print_summary();
+  dp.print_summary("");
 }
 
 

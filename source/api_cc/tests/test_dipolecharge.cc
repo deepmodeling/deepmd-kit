@@ -248,5 +248,5 @@ TYPED_TEST(TestDipoleCharge, cpu_lmp_nlist)
 TYPED_TEST(TestDipoleCharge, print_summary)
 {
   deepmd::DipoleChargeModifier& dm = this->dm;
-  dm.print_summary();
+  dm.print_summary("");
 }
