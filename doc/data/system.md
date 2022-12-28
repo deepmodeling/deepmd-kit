@@ -18,8 +18,9 @@ coord    | Atomic coordinates      | coord.raw      | Å    | Required          
 box      | Boxes                   | box.raw        | Å    | Required if periodic | Nframes \* 3 \* 3        | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`
 fparam   | Extra frame parameters  | fparam.raw     | Any  | Optional             | Nframes \* Any           |
 aparam   | Extra atomic parameters | aparam.raw     | Any  | Optional             | Nframes \* aparam \* Any |
+prob     | Probability of each frame | prob.raw     | 1    | Optional             | Nframes                  | Integer; Default is 1 for all frames
 
-The labeled frame properties is listed as follows, all of which will be used for training if and only if the loss function contains such property:
+The labeled frame properties are listed as follows, all of which will be used for training if and only if the loss function contains such property:
 
 ID                     | Property                 | Raw file                 | Unit   | Shape                    | Description
 ---------------------- | -----------------------  | ------------------------ | ----   | -----------------------  | -----------
