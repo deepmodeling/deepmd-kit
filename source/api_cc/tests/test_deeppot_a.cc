@@ -530,7 +530,7 @@ TYPED_TEST(TestInferDeepPotA, cpu_lmp_nlist_type_sel_atomic)
 TYPED_TEST(TestInferDeepPotA, print_summary)
 {
   deepmd::DeepPot& dp = this->dp;
-  dp.print_summary();
+  dp.print_summary("");
 }
 
 
