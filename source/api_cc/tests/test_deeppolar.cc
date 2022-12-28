@@ -338,3 +338,8 @@ TYPED_TEST(TestInferDeepPolarNew, cpu_lmp_nlist)
   }
 }
 
+TYPED_TEST(TestInferDeepPolarNew, print_summary)
+{
+  deepmd::DeepTensor& dp = this->dp;
+  dp.print_summary();
+}

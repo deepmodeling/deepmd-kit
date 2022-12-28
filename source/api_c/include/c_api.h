@@ -671,6 +671,14 @@ extern void DP_ConvertPbtxtToPb(
   const char* c_pb
   );
 
+/**
+ * @brief Print the summary of DeePMD-kit, including the version and the build information.
+ * @param[in] c_pre The prefix to each line.
+ */
+extern void DP_PrintSummary(
+  const char* c_pre
+  );
+
 #ifdef __cplusplus
 } /* end extern "C" */
 #endif
