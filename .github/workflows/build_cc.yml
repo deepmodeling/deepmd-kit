@@ -11,9 +11,15 @@ jobs:
       matrix:
         include:
         - variant: cpu
+          dp_variant: cpu
         - variant: cuda
+          dp_variant: cuda
+        - variant: cuda120
+          dp_variant: cuda
         - variant: rocm
+          dp_variant: rocm
         - variant: clang
+          dp_variant: clang
     steps:
     - name: work around permission issue
       run: git config --global --add safe.directory /__w/deepmd-kit/deepmd-kit
@@ -22,6 +28,16 @@ jobs:
         submodules: true
     - run: apt-get update && apt-get install -y nvidia-cuda-toolkit
       if: matrix.variant == 'cuda'
+    - run: |
+         apt-get update \
+         && apt-get -y install wget \
+         && wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb \
+         && dpkg -i cuda-keyring_1.0-1_all.deb \
+         && apt-get update \
+         && apt-get -y install cuda
+      if: matrix.variant == 'cuda120'
+      env:
+        DEBIAN_FRONTEND: noninteractive
     - run: |
          apt-get update && apt-get install -y gnupg2 \
          && echo 'deb [arch=amd64] https://repo.radeon.com/rocm/apt/5.3/ jammy main' | tee /etc/apt/sources.list.d/rocm.list \
@@ -34,7 +50,7 @@ jobs:
       if: matrix.variant == 'clang'  
     - run: source/install/build_cc.sh
       env:
-        DP_VARIANT: ${{ matrix.variant }}
+        DP_VARIANT: ${{ matrix.dp_variant }}
         DOWNLOAD_TENSORFLOW: "FALSE"
       if: matrix.variant != 'clang'
     - run: source/install/build_cc.sh
