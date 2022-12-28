@@ -4,7 +4,7 @@ import time
 import glob
 import numpy as np
 import os.path
-from typing import Tuple, List
+from typing import Optional, Tuple, List
 import logging
 
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
@@ -98,6 +98,8 @@ class DeepmdData() :
         # add box and coord
         self.add('box', 9, must = self.pbc)
         self.add('coord', 3, atomic = True, must = True)
+        # probability (frequency) of each frame
+        self.add('prob', 1, must=False, default=1, dtype=int)
         # set counters
         self.set_count = 0
         self.iterator = 0
@@ -115,6 +117,7 @@ class DeepmdData() :
             type_sel : List[int] = None,
             repeat : int = 1,
             default: float=0.,
+            dtype: Optional[np.dtype] = None,
     ) :
         """
         Add a data item that to be loaded
@@ -140,6 +143,8 @@ class DeepmdData() :
                 The data will be repeated `repeat` times.
         default : float, default=0.
                 default value of data
+        dtype : np.dtype, optional
+                the dtype of data, overwrites `high_prec` if provided
         """
         self.data_dict[key] = {'ndof': ndof, 
                                'atomic': atomic,
@@ -149,6 +154,7 @@ class DeepmdData() :
                                'repeat': repeat,
                                'reduce': None,
                                'default': default,
+                               'dtype': dtype,
         }
         return self
 
@@ -424,6 +430,8 @@ class DeepmdData() :
         ret = {}
         nframes = data['coord'].shape[0]
         idx = np.arange (nframes)
+        # probability (frequency, the number of visiting) of each frame
+        idx = np.repeat(idx, data['prob'])
         dp_random.shuffle(idx)
         for kk in data :
             if type(data[kk]) == np.ndarray and \
@@ -463,6 +471,7 @@ class DeepmdData() :
                                       type_sel = self.data_dict[kk]['type_sel'],
                                       repeat = self.data_dict[kk]['repeat'],
                                       default=self.data_dict[kk]['default'],
+                                      dtype=self.data_dict[kk]['dtype'],
                                       )
         for kk in self.data_dict.keys():
             if self.data_dict[kk]['reduce'] is not None :
@@ -490,7 +499,19 @@ class DeepmdData() :
         return data
 
 
-    def _load_data(self, set_name, key, nframes, ndof_, atomic = False, must = True, repeat = 1, high_prec = False, type_sel = None, default: float=0.):
+    def _load_data(self,
+                  set_name,
+                  key,
+                  nframes,
+                  ndof_,
+                  atomic = False,
+                  must = True,
+                  repeat = 1,
+                  high_prec = False,
+                  type_sel = None,
+                  default: float = 0.,
+                  dtype: Optional[np.dtype] = None,
+                ):
         if atomic:
             natoms = self.natoms
             idx_map = self.idx_map
@@ -503,12 +524,15 @@ class DeepmdData() :
             ndof = ndof_ * natoms
         else:
             ndof = ndof_
+        if dtype is not None:
+            pass
+        elif high_prec :
+            dtype = GLOBAL_ENER_FLOAT_PRECISION
+        else:
+            dtype = GLOBAL_NP_FLOAT_PRECISION
         path = set_name / (key+".npy")
         if path.is_file() :
-            if high_prec :
-                data = path.load_numpy().astype(GLOBAL_ENER_FLOAT_PRECISION)
-            else:
-                data = path.load_numpy().astype(GLOBAL_NP_FLOAT_PRECISION)
+            data = path.load_numpy().astype(dtype)
             try:    # YWolfeee: deal with data shape error
                 if atomic :
                     data = data.reshape([nframes, natoms, -1])
@@ -526,10 +550,7 @@ class DeepmdData() :
         elif must:
             raise RuntimeError("%s not found!" % path)
         else:
-            if high_prec :
-                data = np.full([nframes, ndof], default, dtype=GLOBAL_ENER_FLOAT_PRECISION)                
-            else :
-                data = np.full([nframes, ndof], default, dtype=GLOBAL_NP_FLOAT_PRECISION)
+            data = np.full([nframes, ndof], default, dtype=dtype)
             if repeat != 1:
                 data = np.repeat(data, repeat).reshape([nframes, -1])
             return np.float32(0.0), data
