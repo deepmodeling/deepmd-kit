@@ -1092,6 +1092,8 @@ void
 deepmd::
 print_summary(const std::string &pre) const
 {
+  int num_intra_nthreads, num_inter_nthreads;
+  deepmd::get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   std::cout << pre << "installed to:       " + global_install_prefix << "\n";
   std::cout << pre << "source:             " + global_git_summ << "\n";
   std::cout << pre << "source branch:       " + global_git_branch << "\n";
