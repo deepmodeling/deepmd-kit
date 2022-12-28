@@ -1090,7 +1090,7 @@ session_input_tensors<float, float> (std::vector<std::pair<std::string, tensorfl
 
 void
 deepmd::
-print_summary(const std::string &pre) const
+print_summary(const std::string &pre)
 {
   int num_intra_nthreads, num_inter_nthreads;
   deepmd::get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
