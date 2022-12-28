@@ -431,7 +431,7 @@ class DeepmdData() :
         nframes = data['coord'].shape[0]
         idx = np.arange (nframes)
         # probability (frequency, the number of visiting) of each frame
-        idx = np.repeat(idx, data['prob'])
+        idx = np.repeat(idx, np.reshape(data['prob'], (nframes,)))
         dp_random.shuffle(idx)
         for kk in data :
             if type(data[kk]) == np.ndarray and \
