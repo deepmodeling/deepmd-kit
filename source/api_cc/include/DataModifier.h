@@ -17,7 +17,7 @@ public:
   * @brief Dipole charge modifier without initialization.
   * @param[in] model The name of the frozen model file.
   * @param[in] gpu_rank The GPU rank. Default is 0.
-  * @param[in] file_content The content of the model file. If it is not empty, DP will read from the string instead of the file.
+  * @param[in] name_scope The name scope.
   **/
   DipoleChargeModifier(const std::string & model, 
 	       const int & gpu_rank = 0, 
@@ -27,7 +27,7 @@ public:
   * @brief Initialize the dipole charge modifier.
   * @param[in] model The name of the frozen model file.
   * @param[in] gpu_rank The GPU rank. Default is 0.
-  * @param[in] file_content The content of the model file. If it is not empty, DP will read from the string instead of the file.
+  * @param[in] name_scope The name scope.
   **/
   void init (const std::string & model, 
 	     const int & gpu_rank = 0, 
