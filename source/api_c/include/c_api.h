@@ -35,6 +35,17 @@ typedef struct DP_DeepPot DP_DeepPot;
 extern DP_DeepPot* DP_NewDeepPot(const char* c_model);
 
 /**
+ * @brief DP constructor with initialization.
+ * 
+ * @param c_model The name of the frozen model file.
+ * @param gpu_rank The rank of the GPU.
+ * @param c_file_content The content of the model file.
+ * @return DP_DeepPot* A pointer to the deep potential.
+ */
+extern DP_DeepPot* DP_NewDeepPotWithParam(
+        const char* c_model, const int gpu_rank, const char* c_file_content);
+
+/**
 * @brief Evaluate the energy, force and virial by using a DP. (double version)
 * @param[in] dp The DP to use.
 * @param[in] natoms The number of atoms.
@@ -278,6 +289,17 @@ typedef struct DP_DeepTensor DP_DeepTensor;
 * @returns A pointer to the deep tensor.
 **/
 extern DP_DeepTensor* DP_NewDeepTensor(const char* c_model);
+
+/**
+ * @brief Deep Tensor constructor with initialization.
+ * 
+ * @param c_model The name of the frozen model file.
+ * @param gpu_rank The rank of the GPU.
+ * @param c_name_scope The name scope.
+ * @return DP_DeepTensor* A pointer to the deep tensor.
+ */
+extern DP_DeepTensor* DP_NewDeepTensorWithParam(
+        const char* c_model, const int gpu_rank, const char* c_name_scope);
 
 /**
 * @brief Evaluate the tensor by using a DP. (double version)
@@ -524,6 +546,120 @@ int* DP_DeepTensorGetSelTypes(DP_DeepTensor* dt);
  * @return The number of sel types
 */
 int DP_DeepTensorGetNumbSelTypes(DP_DeepTensor* dt);
+
+/**
+* @brief The dipole charge modifier.
+**/
+typedef struct DP_DipoleChargeModifier DP_DipoleChargeModifier;
+
+/**
+* @brief Dipole charge modifier constructor with initialization.
+* @param[in] c_model The name of the frozen model file.
+* @returns A pointer to the dipole charge modifier.
+**/
+extern DP_DipoleChargeModifier* DP_NewDipoleChargeModifier(const char* c_model);
+
+/**
+ * @brief Dipole charge modifier constructor with initialization.
+ * 
+ * @param c_model The name of the frozen model file.
+ * @param gpu_rank The rank of the GPU.
+ * @param c_name_scope The name scope.
+ * @return DP_DipoleChargeModifier* A pointer to the dipole charge modifier.
+ */
+extern DP_DipoleChargeModifier* DP_NewDipoleChargeModifierWithParam(
+        const char* c_model, const int gpu_rank, const char* c_name_scope);
+
+/**
+* @brief Evaluate the force and virial correction by using a dipole charge modifier with the neighbor list. (double version)
+* @param[in] dcm The dipole charge modifier to use.
+* @param[in] natoms The number of atoms.
+* @param[in] coord The coordinates of atoms. The array should be of size natoms x 3.
+* @param[in] atype The atom types. The array should contain natoms ints.
+* @param[in] cell The cell of the region. The array should be of size 9. Pass NULL if pbc is not used.
+* @param[in] pairs The pairs of atoms. The list should contain npairs pairs of ints.
+* @param[in] npairs The number of pairs.
+* @param[in] delef_ The electric field on each atom. The array should be of size nframes x natoms x 3.
+* @param[in] nghost The number of ghost atoms.
+* @param[in] nlist The neighbor list.
+* @param[out] dfcorr_ Output force correction. The array should be of size natoms x 3.
+* @param[out] dvcorr_ Output virial correction. The array should be of size 9.
+* @warning The output arrays should be allocated before calling this function. Pass NULL if not required.
+  **/
+extern void DP_DipoleChargeModifierComputeNList (
+  DP_DipoleChargeModifier* dcm,
+  const int natom,
+  const double* coord,
+  const int* atype,
+  const double* cell,
+  const int* pairs,
+  const int npairs,
+  const double* delef_,
+  const int nghost,
+  const DP_Nlist* nlist,
+  double* dfcorr_,
+  double* dvcorr_
+  );
+
+
+/**
+* @brief Evaluate the force and virial correction by using a dipole charge modifier with the neighbor list. (float version)
+* @param[in] dcm The dipole charge modifier to use.
+* @param[in] natoms The number of atoms.
+* @param[in] coord The coordinates of atoms. The array should be of size natoms x 3.
+* @param[in] atype The atom types. The array should contain natoms ints.
+* @param[in] cell The cell of the region. The array should be of size 9. Pass NULL if pbc is not used.
+* @param[in] pairs The pairs of atoms. The list should contain npairs pairs of ints.
+* @param[in] npairs The number of pairs.
+* @param[in] delef_ The electric field on each atom. The array should be of size nframes x natoms x 3.
+* @param[in] nghost The number of ghost atoms.
+* @param[in] nlist The neighbor list.
+* @param[out] dfcorr_ Output force correction. The array should be of size natoms x 3.
+* @param[out] dvcorr_ Output virial correction. The array should be of size 9.
+* @warning The output arrays should be allocated before calling this function. Pass NULL if not required.
+  **/
+extern void DP_DipoleChargeModifierComputeNListf (
+  DP_DipoleChargeModifier* dcm,
+  const int natom,
+  const float* coord,
+  const int* atype,
+  const float* cell,
+  const int* pairs,
+  const int npairs,
+  const float* delef_,
+  const int nghost,
+  const DP_Nlist* nlist,
+  float* dfcorr_,
+  float* dvcorr_
+  );
+
+/**
+ * @brief Get the type map of a DipoleChargeModifier.
+ * @param[in] dcm The DipoleChargeModifier to use.
+ * @return The cutoff radius.
+*/
+double DP_DipoleChargeModifierGetCutoff(DP_DipoleChargeModifier* dt);
+
+/**
+ * @brief Get the type map of a DipoleChargeModifier.
+ * @param[in] dcm The DipoleChargeModifier to use.
+ * @return The number of types of the DipoleChargeModifier.
+*/
+int DP_DipoleChargeModifierGetNumbTypes(DP_DipoleChargeModifier* dt);
+
+/**
+ * @brief Get sel types of a DipoleChargeModifier.
+ * @param[in] dcm The DipoleChargeModifier to use.
+ * @return The sel types
+*/
+int* DP_DipoleChargeModifierGetSelTypes(DP_DipoleChargeModifier* dt);
+
+/**
+ * @brief Get the number of sel types of a DipoleChargeModifier.
+ * @param[in] dcm The DipoleChargeModifier to use.
+ * @return The number of sel types
+*/
+int DP_DipoleChargeModifierGetNumbSelTypes(DP_DipoleChargeModifier* dt);
 
 /**
 * @brief Convert PBtxt to PB.
