@@ -239,6 +239,12 @@ def main_parser() -> argparse.ArgumentParser:
         default=None,
         help="the name of weight file (.npy), if set, save the model's weight into the file",
     )
+    parser_frz.add_argument(
+        "--unit-model",
+        action="store_true",
+        default=False,
+        help="When in multi-task mode, freeze all nodes into one unit model",
+    )
 
     # * test script ********************************************************************
     parser_tst = subparsers.add_parser(

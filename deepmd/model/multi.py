@@ -8,6 +8,8 @@ from deepmd.env import global_cvt_2_ener_float, MODEL_VERSION, GLOBAL_TF_FLOAT_P
 from deepmd.env import op_module
 from .model import Model
 from .model_stat import make_stat_input, merge_sys_stat
+from deepmd.utils.graph import get_tensor_by_name_from_graph
+import json
 
 
 class MultiModel(Model):
@@ -350,3 +352,37 @@ class MultiModel(Model):
                     model_dict[fitting_key]["atom_virial"] = atom_virial
 
         return model_dict
+
+    def init_variables(self,
+                       graph: tf.Graph,
+                       graph_def: tf.GraphDef,
+                       model_type: str = "original_model",
+                       suffix: str = "",
+                       ) -> None:
+        """
+        Init the embedding net variables with the given frozen model
+
+        Parameters
+        ----------
+        graph : tf.Graph
+            The input frozen model graph
+        graph_def : tf.GraphDef
+            The input frozen model graph_def
+        model_type : str
+            the type of the model
+        suffix : str
+            suffix to name scope
+        """
+        # self.frz_model will control the self.model to import the descriptor from the given frozen model instead of building from scratch...
+        # initialize fitting net with the given compressed frozen model
+        assert model_type == 'original_model', 'Initialization in multi-task mode does not support compressed model!'
+        self.descrpt.init_variables(graph, graph_def, suffix=suffix)
+        old_jdata = json.loads(get_tensor_by_name_from_graph(graph, 'train_attr/training_script'))
+        old_fitting_keys = list(old_jdata['model']['fitting_net_dict'].keys())
+        newly_added_fittings = set(self.fitting_dict.keys()) - set(old_fitting_keys)
+        reused_fittings = set(self.fitting_dict.keys()) - newly_added_fittings
+        for fitting_key in reused_fittings:
+            self.fitting_dict[fitting_key].init_variables(graph, graph_def, suffix=f'_{fitting_key}' + suffix)
+        tf.constant("original_model", name='model_type', dtype=tf.string)
+        if self.typeebd is not None:
+            self.typeebd.init_variables(graph, graph_def, suffix=suffix)
