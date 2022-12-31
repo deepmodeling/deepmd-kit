@@ -181,8 +181,8 @@ class TestData (unittest.TestCase) :
         self._comp_np_mat2(data_bk['test_frame'][idx,:], 
                            data['test_frame'])
 
-    def test_shuffle_with_prob(self):
-        path = os.path.join(self.data_name, 'set.foo', 'prob.npy')
+    def test_shuffle_with_numb_copy(self):
+        path = os.path.join(self.data_name, 'set.foo', 'numb_copy.npy')
         prob = np.arange(self.nframes)
         np.save(path, prob)
         dd = DeepmdData(self.data_name)\
