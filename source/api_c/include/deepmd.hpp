@@ -701,6 +701,14 @@ namespace deepmd
                 type_map.assign(type_map_c);
                 delete[] type_map_c;
             };
+            /**
+             * @brief Print the summary of DeePMD-kit, including the version and the build information.
+             * @param[in] pre The prefix to each line.
+             */
+            void print_summary(const std::string &pre) const
+            {
+                DP_PrintSummary(pre.c_str());
+            }
 
         private:
             DP_DeepPot *dp;
@@ -1213,6 +1221,14 @@ namespace deepmd
                 std::vector<int> sel_types_vec = std::vector<int>(sel_types_arr, sel_types_arr + nsel_types);
                 return sel_types_vec;
             }
+            /**
+             * @brief Print the summary of DeePMD-kit, including the version and the build information.
+             * @param[in] pre The prefix to each line.
+             */
+            void print_summary(const std::string &pre) const
+            {
+                DP_PrintSummary(pre.c_str());
+            }
 
         private:
             DP_DeepTensor *dt;
@@ -1321,6 +1337,15 @@ namespace deepmd
                 int* sel_types_arr = DP_DipoleChargeModifierGetSelTypes(dcm);
                 std::vector<int> sel_types_vec = std::vector<int>(sel_types_arr, sel_types_arr + nsel_types);
                 return sel_types_vec;
+            }
+
+            /**
+             * @brief Print the summary of DeePMD-kit, including the version and the build information.
+             * @param[in] pre The prefix to each line.
+             */
+            void print_summary(const std::string &pre) const
+            {
+                DP_PrintSummary(pre.c_str());
             }
         private:
             DP_DipoleChargeModifier *dcm;

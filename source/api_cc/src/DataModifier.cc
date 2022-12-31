@@ -343,3 +343,10 @@ compute <float> (std::vector<float> &		dfcorr_,
 	 const std::vector<float> &		delef_, 
 	 const int				nghost,
 	 const InputNlist &		lmp_list);
+
+void 
+DipoleChargeModifier::
+print_summary(const std::string &pre) const
+{
+  deepmd::print_summary(pre);
+}
