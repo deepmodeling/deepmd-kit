@@ -98,8 +98,8 @@ class DeepmdData() :
         # add box and coord
         self.add('box', 9, must = self.pbc)
         self.add('coord', 3, atomic = True, must = True)
-        # probability (frequency) of each frame
-        self.add('prob', 1, must=False, default=1, dtype=int)
+        # the training times of each frame
+        self.add('numb_copy', 1, must=False, default=1, dtype=int)
         # set counters
         self.set_count = 0
         self.iterator = 0
@@ -430,8 +430,8 @@ class DeepmdData() :
         ret = {}
         nframes = data['coord'].shape[0]
         idx = np.arange (nframes)
-        # probability (frequency, the number of visiting) of each frame
-        idx = np.repeat(idx, np.reshape(data['prob'], (nframes,)))
+        # the training times of each frame
+        idx = np.repeat(idx, np.reshape(data['numb_copy'], (nframes,)))
         dp_random.shuffle(idx)
         for kk in data :
             if type(data[kk]) == np.ndarray and \
