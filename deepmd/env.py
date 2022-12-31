@@ -83,6 +83,13 @@ FITTING_NET_PATTERN = str(
     r"final_layer_type_\d+/matrix|"
     r"final_layer/bias|"
     r"final_layer_type_\d+/bias|"
+    # layer_name 
+    r"share_.+_type_\d/matrix|"
+    r"share_.+_type_\d/bias|"
+    r"share_.+_type_\d/idt|"
+    r"share_.+/matrix|"
+    r"share_.+/bias|"
+    r"share_.+/idt|"
 )
 
 TYPE_EMBEDDING_PATTERN = str(
