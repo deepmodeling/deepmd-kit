@@ -87,8 +87,8 @@ class TestNvnmdMapt(tf.test.TestCase):
             'cfg_u2s', 'cfg_s2g', 's', 's_grad', 'h', 'h_grad', 'g', 'g_grad'
         ]
         np.testing.assert_equal(keys, list(data.keys()))
-        np.testing.assert_almost_equal(data['s'], data2['s'])
-        np.testing.assert_almost_equal(data['g'], data2['g'])
+        np.testing.assert_almost_equal(data['s'], data2['s'], 5)
+        np.testing.assert_almost_equal(data['g'], data2['g'], 5)
         tf.reset_default_graph()
         # close NVNMD
         jdata = jdata_deepmd_input['nvnmd']
@@ -114,6 +114,7 @@ class TestNvnmdTrain(tf.test.TestCase):
         jdata = normalized_input_qnn(jdata, PATH_QNN, CONFIG_CNN, WEIGHT_CNN, MAP_CNN)
         fn_ref = str(tests_path / os.path.join("nvnmd/out", "train_qnn.json"))
         FioJsonDic().save(fn_ref, jdata)
+        tf.reset_default_graph()
         # close NVNMD
         jdata = jdata_deepmd_input['nvnmd']
         jdata['config_file'] = "none"

@@ -91,7 +91,9 @@ def descrpt2r4(inputs, natoms):
             # s
             table = GLOBAL_NP_FLOAT_PRECISION(np.concatenate([nvnmd_cfg.map['s'][type_i], nvnmd_cfg.map['h'][type_i]], axis=1))
             table_grad = GLOBAL_NP_FLOAT_PRECISION(np.concatenate([nvnmd_cfg.map['s_grad'][type_i], nvnmd_cfg.map['h_grad'][type_i]], axis=1))
-            table_info =  GLOBAL_NP_FLOAT_PRECISION(np.reshape(nvnmd_cfg.map['cfg_u2s'], [-1]))
+            table_info = nvnmd_cfg.map['cfg_u2s']
+            table_info = np.array([np.float64(v) for vs in table_info for v in vs])
+            table_info =  GLOBAL_NP_FLOAT_PRECISION(table_info)
 
             s_h_i = op_module.map_flt_nvnmd(u_i, table, table_grad, table_info)
             s_h_i = tf.ensure_shape(s_h_i, [None, 1, 2])
@@ -177,7 +179,9 @@ def filter_lower_R42GR(
         # G
         table = GLOBAL_NP_FLOAT_PRECISION(nvnmd_cfg.map['g'][type_i])
         table_grad = GLOBAL_NP_FLOAT_PRECISION(nvnmd_cfg.map['g_grad'][type_i])
-        table_info =  GLOBAL_NP_FLOAT_PRECISION(np.reshape(nvnmd_cfg.map['cfg_s2g'], [-1]))
+        table_info = nvnmd_cfg.map['cfg_s2g']
+        table_info = np.array([np.float64(v) for vs in table_info for v in vs])
+        table_info = GLOBAL_NP_FLOAT_PRECISION(table_info)
         with tf.variable_scope('g', reuse=True):
             G = op_module.map_flt_nvnmd(s, table, table_grad, table_info)
             G = tf.ensure_shape(G, [None, 1, M1])

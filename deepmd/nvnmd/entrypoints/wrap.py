@@ -204,22 +204,24 @@ class Wrap():
                     # s
                     mi = mapt['s'][tt]
                     cfgs = mapt['cfg_u2s']
+                    cfgs = np.array([np.float64(v) for vs in cfgs for v in vs])
                     feed_dict = {
                         t_x : np.ones([1, 1]) * 0.0,
                         t_table : mi,
                         t_table_grad : mi * 0.0,
-                        t_table_info : np.reshape(np.array(cfgs, dtype=np.float64), [-1])
+                        t_table_info : cfgs
                     }
                     si = run_sess(sess, t_y, feed_dict=feed_dict)
                     si = np.reshape(si, [-1])[0]
                     # G
                     mi = mapt['g'][tt2]
                     cfgs = mapt['cfg_s2g']
+                    cfgs = np.array([np.float64(v) for vs in cfgs for v in vs])
                     feed_dict = {
                         t_x : np.ones([1, 1]) * si,
                         t_table : mi,
                         t_table_grad : mi * 0.0,
-                        t_table_info : np.reshape(np.array(cfgs, dtype=np.float64), [-1])
+                        t_table_info : cfgs
                     }
                     gi = run_sess(sess, t_y, feed_dict=feed_dict)
                     gsi = np.reshape(si, [-1]) * np.reshape(gi, [-1])
