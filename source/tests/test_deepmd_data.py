@@ -181,6 +181,24 @@ class TestData (unittest.TestCase) :
         self._comp_np_mat2(data_bk['test_frame'][idx,:], 
                            data['test_frame'])
 
+    def test_shuffle_with_numb_copy(self):
+        path = os.path.join(self.data_name, 'set.foo', 'numb_copy.npy')
+        prob = np.arange(self.nframes)
+        np.save(path, prob)
+        dd = DeepmdData(self.data_name)\
+             .add('test_atomic', 7, atomic=True, must=True)\
+             .add('test_frame', 5, atomic=False, must=True)
+        data = dd._load_set(os.path.join(self.data_name, 'set.foo'))
+        data_bk = copy.deepcopy(data)
+        data, idx = dd._shuffle_data(data)
+        assert idx.size == np.sum(prob)
+        self._comp_np_mat2(data_bk['coord'][idx,:], 
+                           data['coord'])
+        self._comp_np_mat2(data_bk['test_atomic'][idx,:], 
+                           data['test_atomic'])
+        self._comp_np_mat2(data_bk['test_frame'][idx,:], 
+                           data['test_frame'])
+
     def test_reduce(self) :
         dd = DeepmdData(self.data_name)\
              .add('test_atomic', 7, atomic=True, must=True)

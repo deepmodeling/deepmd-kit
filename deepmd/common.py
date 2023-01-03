@@ -122,6 +122,7 @@ def add_data_requirement(
     type_sel: Optional[bool] = None,
     repeat: int = 1,
     default: float = 0.,
+    dtype: Optional[np.dtype] = None,
 ):
     """Specify data requirements for training.
 
@@ -138,13 +139,15 @@ def add_data_requirement(
     must : bool, optional
         specifi if the `*.npy` data file must exist, by default False
     high_prec : bool, optional
-        if tru load data to `np.float64` else `np.float32`, by default False
+        if true load data to `np.float64` else `np.float32`, by default False
     type_sel : bool, optional
         select only certain type of atoms, by default None
     repeat : int, optional
         if specify repaeat data `repeat` times, by default 1
     default : float, optional, default=0.
         default value of data
+    dtype : np.dtype, optional
+        the dtype of data, overwrites `high_prec` if provided
     """
     data_requirement[key] = {
         "ndof": ndof,
@@ -154,6 +157,7 @@ def add_data_requirement(
         "type_sel": type_sel,
         "repeat": repeat,
         "default": default,
+        "dtype": dtype,
     }
 
 
