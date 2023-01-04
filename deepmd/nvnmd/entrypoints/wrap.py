@@ -116,7 +116,6 @@ class Wrap():
             # DEVELOP_DEBUG
             if jdata_sys['debug']:
                 log.info("%s: %d x % d bit" % (k, h, w*4))
-                print("%s: %d x % d bit" % (k, h, w*4))
                 FioTxt().save('nvnmd/wrap/h%s.txt'%(k), d)
             datas[ii] = d 
         #
@@ -180,7 +179,6 @@ class Wrap():
         # shift_idx_s2g
         x_st, x_ed, x_dt, N0, N1 = mapt['cfg_s2g'][0]
         shift_idx_s2g = int(np.round(- x_st / x_dt))
-        print("shift_idx_s2g", shift_idx_s2g)
         bs = e.dec2bin(shift_idx_s2g, NBIT_IDX_S2G)[0] + bs
         # sel
         SEL = dscp['SEL']
@@ -332,7 +330,6 @@ class Wrap():
         NBIT_WEIGHT: nbits of mantissa of weights
         """
         NBIT_WEIGHT_FL = NBIT_WEIGHT - 2
-        # print(NBIT_WEIGHT, NBIT_WEIGHT_FL)
         sh = weight.shape
         nr, nc = sh[0], sh[1]
         nrs = np.zeros(nr)
@@ -354,14 +351,10 @@ class Wrap():
             wcs[:, ii] = wi
         NRs = e.dec2bin(nrs, NBIT_DISP)
         NCs = e.dec2bin(ncs, NBIT_DISP)
-        # print(np.max(np.abs(wrs)))
         wrs = e.qr(wrs, NBIT_WEIGHT_FL)
-        # print(np.max(np.abs(wrs)))
         WRs = e.dec2bin(wrs, NBIT_WEIGHT, True)
         WRs = [[WRs[nc * rr + cc] for cc in range(nc)] for rr in range(nr)]
-        # print(np.max(np.abs(wcs)))
         wcs = e.qr(wcs, NBIT_WEIGHT_FL)
-        # print(np.max(np.abs(wcs)))
         WCs = e.dec2bin(wcs, NBIT_WEIGHT, True)
         WCs = [[WCs[nc * rr + cc] for cc in range(nc)] for rr in range(nr)]
         return NRs, NCs, WRs, WCs

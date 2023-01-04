@@ -71,12 +71,10 @@ class Encode():
         else:
             s = '1' if h[0] == '-' else '0'
             e = int(h[ed:]) + int(2**(nbit_expo-1) + 2**nbit_expo)
-            # print(h[ed:], e, bin(e))
             e = bin(e)[3:] # 0b1xxxxxxx
             fh = h[st+2:ed-1]
             fb = self.hex2bin_str(fh)
             f = fb[0:nbit_frac]
-            # print(s, e, f)
             return s+e+f
     
     def flt2bin(self, data, nbit_expo, nbit_frac):

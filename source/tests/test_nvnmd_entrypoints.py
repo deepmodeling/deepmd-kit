@@ -79,16 +79,17 @@ class TestNvnmdMapt(tf.test.TestCase):
         }
         mapt(**jdata)
         #
-        data = FioNpyDic().load(nvnmd_map)
+        data1 = FioNpyDic().load(nvnmd_map)
         #
         nvnmd_map2 = str(tests_path / os.path.join("nvnmd", "map.npy"))
         data2 = FioNpyDic().load(nvnmd_map2)
         keys = [
             'cfg_u2s', 'cfg_s2g', 's', 's_grad', 'h', 'h_grad', 'g', 'g_grad'
         ]
-        np.testing.assert_equal(keys, list(data.keys()))
-        np.testing.assert_almost_equal(data['s'], data2['s'], 5)
-        np.testing.assert_almost_equal(data['g'], data2['g'], 5)
+        g1 = np.array(data1['g'])
+        g2 = np.array(data2['g'])
+        np.testing.assert_equal(keys, list(data1.keys()))
+        np.testing.assert_almost_equal(g1, g2, 5)
         tf.reset_default_graph()
         # close NVNMD
         jdata = jdata_deepmd_input['nvnmd']

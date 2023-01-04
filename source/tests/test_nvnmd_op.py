@@ -150,7 +150,9 @@ class TestOpMapFltNvnmd(tf.test.TestCase):
         mapt = np.load(map_path, allow_pickle=True)[0]
         table = GLOBAL_NP_FLOAT_PRECISION(np.concatenate([mapt['s'][0], mapt['h'][0]], axis=1))
         table_grad = GLOBAL_NP_FLOAT_PRECISION(np.concatenate([mapt['s_grad'][0], mapt['h_grad'][0]], axis=1))
-        table_info =  GLOBAL_NP_FLOAT_PRECISION(np.reshape(mapt['cfg_u2s'], [-1]))
+        table_info = mapt['cfg_u2s']
+        table_info = np.array([np.float64(v) for vs in table_info for v in vs])
+        table_info = GLOBAL_NP_FLOAT_PRECISION(table_info)
         # graph
         t_x = tf.placeholder(tf.float64, [None, 1], 't_x')
         t_table = tf.placeholder(tf.float64, [None, None], 't_table')

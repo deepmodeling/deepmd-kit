@@ -151,17 +151,14 @@ def one_layer(inputs,
             # w
             with tf.variable_scope('w', reuse=reuse):
                 w = op_module.quantize_nvnmd(w, 1, NBIT_DATA_FL, NBIT_DATA_FL, -1)
-                if jdata_sys['debug']: print('#w:', w)
                 w = tf.ensure_shape(w, [shape[1], outputs_size])
             # b
             with tf.variable_scope('b', reuse=reuse):
                 b = op_module.quantize_nvnmd(b, 1, NBIT_DATA_FL, NBIT_DATA_FL, -1)
-                if jdata_sys['debug']: print('#b:', b)
                 b = tf.ensure_shape(b, [outputs_size])
             # x
             with tf.variable_scope('x', reuse=reuse):
                 x = op_module.quantize_nvnmd(inputs, 1, NBIT_DATA_FL, NBIT_DATA_FL, -1)
-                if jdata_sys['debug']: print('#x:', x)
                 inputs = tf.ensure_shape(x, [None, shape[1]])
             # wx
             # normlize weight mode: 0 all | 1 column
@@ -170,15 +167,12 @@ def one_layer(inputs,
 
             with tf.variable_scope('wx', reuse=reuse):
                 wx = op_module.quantize_nvnmd(wx, 1, NBIT_DATA_FL, NBIT_DATA_FL-2, -1)
-                # wx = op_module.quantize_nvnmd(wx, 1, NBIT_DATA_FL, NBIT_DATA_FL, -1)
-                if jdata_sys['debug']: print('#wx:', wx)
                 wx = tf.ensure_shape(wx, [None, outputs_size])
             # wxb
             wxb = wx + b
 
             with tf.variable_scope('wxb', reuse=reuse):
                 wxb = op_module.quantize_nvnmd(wxb, 1, NBIT_DATA_FL, NBIT_DATA_FL, -1)
-                if jdata_sys['debug']: print('#wxb:', wxb)
                 wxb = tf.ensure_shape(wxb, [None, outputs_size])
             # actfun
             if activation_fn is not None:
@@ -188,7 +182,6 @@ def one_layer(inputs,
 
             with tf.variable_scope('actfun', reuse=reuse):
                 y = op_module.quantize_nvnmd(y, 1, NBIT_DATA_FL, NBIT_DATA_FL, -1)
-                if jdata_sys['debug']: print('#actfun:', y)
                 y = tf.ensure_shape(y, [None, outputs_size])
         else:
             hidden = tf.matmul(inputs, w) + b
