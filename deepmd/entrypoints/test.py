@@ -294,6 +294,7 @@ def test_ener(
             detail_path.with_suffix(".e_peratom.out"),
             pe_atom,
             header = "%s: data_e pred_e" % system,
+            append=append_detail,
         )
         pf = np.concatenate(
             (
