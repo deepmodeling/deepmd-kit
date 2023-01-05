@@ -1004,4 +1004,11 @@ void DP_ConvertPbtxtToPb(
     deepmd::convert_pbtxt_to_pb(pbtxt, pb);
 }
 
+void DP_PrintSummary(
+    const char* c_pre
+    ) {
+    std::string pre(c_pre);
+    deepmd::print_summary(pre);
+}
+
 } // extern "C"
