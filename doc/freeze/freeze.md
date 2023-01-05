@@ -10,5 +10,5 @@ In [multi-task mode](../train/multi-task-training.md):
 - This process will in default output several models, each of which contains the common descriptor and 
 one of the user-defined fitting nets in {ref}`fitting_net_dict <model/fitting_net_dict>`, let's name it `fitting_key`, together frozen in `graph_{fitting_key}.pb`. 
 Those frozen models are exactly the same as single-task output with fitting net `fitting_key`. 
-- If you add `--unit-model` option in this situation, 
+- If you add `--united-model` option in this situation, 
 the total multi-task model will be frozen into one unit `graph.pb`, which is mainly for multi-task initialization and can not be used directly for inference.

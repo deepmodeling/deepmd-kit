@@ -41,7 +41,7 @@ class MultiModel(Model):
     sw_rmin
             The upper boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
     """
-    model_type = 'multi-task'
+    model_type = 'multi_task'
 
     def __init__(
             self,

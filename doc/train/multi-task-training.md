@@ -67,7 +67,7 @@ You can first train a multi-task model using input script with the following {re
 ```
 After training, you can freeze this multi-task model into one unit graph:
 ```bash
-$ dp freeze -o graph.pb --unit-model
+$ dp freeze -o graph.pb --united-model
 ```
 Then if you want to transfer the trained descriptor and some fitting nets (take `water_ener` for example) to newly added datasets with new fitting net `water_ener_2`, 
 you can modify the {ref}`model <model>` part of the new input script in a more simplified way:

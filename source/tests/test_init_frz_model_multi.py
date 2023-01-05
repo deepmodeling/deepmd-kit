@@ -26,17 +26,6 @@ def _file_delete(file):
         os.remove(file)
 
 
-def _subprocess_run(command):
-    popen = sp.Popen(command.split(), shell=False, stdout=sp.PIPE, stderr=sp.STDOUT)
-    for line in iter(popen.stdout.readline, b''):
-        if hasattr(line, 'decode'):
-            line = line.decode('utf-8')
-        line = line.rstrip()
-        print(line)
-    popen.wait()
-    return popen.returncode
-
-
 def _init_models():
     data_file = str(tests_path / os.path.join("init_frz_model", "data"))
     frozen_model = str(tests_path / "init_frz_multi_unit.pb")
@@ -64,7 +53,7 @@ def _init_models():
         json.dump(jdata, fp, indent=4)
     ret = run_dp("dp train " + INPUT)
     np.testing.assert_equal(ret, 0, 'DP train failed!')
-    ret = run_dp("dp freeze -c " + str(tests_path) + " -o " + frozen_model + " --unit-model")
+    ret = run_dp("dp freeze -c " + str(tests_path) + " -o " + frozen_model + " --united-model")
     np.testing.assert_equal(ret, 0, 'DP freeze failed!')
     jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
     jdata = normalize(jdata)
@@ -144,7 +133,6 @@ INPUT, CKPT, FROZEN_MODEL, CKPT_TRAINER, FRZ_TRAINER, VALID_DATA, STOP_BATCH = _
 
 
 class TestInitFrzModelMulti(unittest.TestCase):
-    @classmethod
     def setUpClass(self):
         self.dp_ckpt = CKPT_TRAINER
         self.dp_frz = FRZ_TRAINER
@@ -152,7 +140,6 @@ class TestInitFrzModelMulti(unittest.TestCase):
         self.valid_data_dict_new = {"water_ener": VALID_DATA, "water_ener_new": VALID_DATA}
         self.stop_batch = STOP_BATCH
 
-    @classmethod
     def tearDownClass(self):
         _file_delete(INPUT)
         _file_delete(FROZEN_MODEL)

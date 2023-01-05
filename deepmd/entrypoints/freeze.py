@@ -221,8 +221,10 @@ def _make_node_names(model_type: str, modifier_type: Optional[str] = None, out_s
             "model_attr/sel_type",
             "model_attr/output_dim",
         ]
-    elif node_names is None or model_type != "multi-task":
-        raise RuntimeError(f"unknow model type {model_type}")
+    elif model_type == "multi_task":
+        assert node_names is not None, "node_names must be defined in multi-task united model! "
+    else:
+        raise RuntimeError(f"unknown model type {model_type}")
     if modifier_type == "dipole_charge":
         nodes += [
             "modifier_attr/type",
@@ -250,7 +252,7 @@ def _make_node_names(model_type: str, modifier_type: Optional[str] = None, out_s
         elif isinstance(node_names, list):
             nodes = node_names
         else:
-            raise RuntimeError(f"unknow node names type {type(node_names)}")
+            raise RuntimeError(f"unknown node names type {type(node_names)}")
     if out_suffix != '':
         for ind in range(len(nodes)):
             if (nodes[ind][:2] == 'o_' and nodes[ind] not in ["o_rmat", "o_rmat_deriv", "o_nlist", "o_rij"]) \
@@ -319,7 +321,7 @@ def freeze_graph(sess, input_graph, input_node, freeze_type, modifier, out_graph
     log.info(f"{len(output_graph_def.node):d} ops in the final graph.")
 
 
-def freeze_graph_multi(sess, input_graph, input_node, modifier, out_graph_name, node_names, unit_model: bool=False):
+def freeze_graph_multi(sess, input_graph, input_node, modifier, out_graph_name, node_names, united_model: bool=False):
     """Freeze multiple graphs for multi-task model.
 
     Parameters
@@ -336,12 +338,12 @@ def freeze_graph_multi(sess, input_graph, input_node, modifier, out_graph_name, 
         The output graph.
     node_names : Optional[str], optional
         Names of nodes to output, by default None.
-    unit_model : bool
+    united_model : bool
         If freeze all nodes into one unit model
     """
     input_script = json.loads(run_sess(sess, "train_attr/training_script:0", feed_dict={}))
     assert 'model' in input_script.keys() and 'fitting_net_dict' in input_script['model']
-    if not unit_model:
+    if not united_model:
         for fitting_key in input_script['model']['fitting_net_dict']:
             fitting_type = input_script['model']['fitting_net_dict'][fitting_key]['type']
             if out_graph_name[-3:] == '.pb':
@@ -358,11 +360,11 @@ def freeze_graph_multi(sess, input_graph, input_node, modifier, out_graph_name, 
         node_multi = list(set(node_multi))
         if node_names is not None:
             node_multi = node_names
-        freeze_graph(sess, input_graph, input_node, 'multi-task', modifier, out_graph_name, node_multi)
+        freeze_graph(sess, input_graph, input_node, 'multi_task', modifier, out_graph_name, node_multi)
 
 
 def freeze(
-    *, checkpoint_folder: str, output: str, node_names: Optional[str] = None, nvnmd_weight: Optional[str] = None, unit_model: bool = False, **kwargs
+    *, checkpoint_folder: str, output: str, node_names: Optional[str] = None, nvnmd_weight: Optional[str] = None, united_model: bool = False, **kwargs
 ):
     """Freeze the graph in supplied folder.
 
@@ -374,7 +376,7 @@ def freeze(
         output file name
     node_names : Optional[str], optional
         names of nodes to output, by default None
-    unit_model : bool
+    united_model : bool
         when in multi-task mode, freeze all nodes into one unit model
     """
     # We retrieve our checkpoint fullpath
@@ -428,7 +430,7 @@ def freeze(
             modifier_type = None
         if nvnmd_weight is not None:
             save_weight(sess, nvnmd_weight) # nvnmd
-        if model_type != 'multi-task':
+        if model_type != 'multi_task':
             freeze_graph(sess, input_graph_def, nodes, model_type, modifier_type, output_graph, node_names)
         else:
-            freeze_graph_multi(sess, input_graph_def, nodes, modifier_type, output_graph, node_names, unit_model=unit_model)
+            freeze_graph_multi(sess, input_graph_def, nodes, modifier_type, output_graph, node_names, united_model=united_model)

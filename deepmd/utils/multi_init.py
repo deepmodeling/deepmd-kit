@@ -17,14 +17,14 @@ log = logging.getLogger(__name__)
 
 
 def replace_model_params_with_frz_multi_model(jdata: Dict[str, Any], pretrained_model: str):
-    """Replace the model params in input script according to pretrained frozen multi-task unit_model.
+    """Replace the model params in input script according to pretrained frozen multi-task united model.
 
     Parameters
     ----------
     jdata: Dict[str, Any]
         input script
     pretrained_model: str
-        filename of the pretrained frozen multi-task unit_model
+        filename of the pretrained frozen multi-task united model
     """
     # Get the input script from the pretrained model
     try:
@@ -39,8 +39,8 @@ def replace_model_params_with_frz_multi_model(jdata: Dict[str, Any], pretrained_
 
     # Check the model type
     assert "fitting_net_dict" in pretrained_jdata["model"], \
-           "The multi-task init process only supports models trained in multi-task mode and frozen into unit_model!" \
-           "Please use '--unit_model' argument in 'dp freeze' command."
+           "The multi-task init process only supports models trained in multi-task mode and frozen into united model!" \
+           "Please use '--united-model' argument in 'dp freeze' command."
 
     # Check the type map
     pretrained_type_map = pretrained_jdata['model']['type_map']
