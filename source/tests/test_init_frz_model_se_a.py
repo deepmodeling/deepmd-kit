@@ -101,13 +101,15 @@ INPUT, CKPT, FROZEN_MODEL, CKPT_TRAINER, FRZ_TRAINER, VALID_DATA, STOP_BATCH = _
 
 
 class TestInitFrzModelA(unittest.TestCase):
-    def setUpClass(self):
-        self.dp_ckpt = CKPT_TRAINER
-        self.dp_frz = FRZ_TRAINER
-        self.valid_data = VALID_DATA
-        self.stop_batch = STOP_BATCH
+    @classmethod
+    def setUpClass(cls):
+        cls.dp_ckpt = CKPT_TRAINER
+        cls.dp_frz = FRZ_TRAINER
+        cls.valid_data = VALID_DATA
+        cls.stop_batch = STOP_BATCH
 
-    def tearDownClass(self):
+    @classmethod
+    def tearDownClass(cls):
         _file_delete(INPUT)
         _file_delete(FROZEN_MODEL)
         _file_delete("out.json")
