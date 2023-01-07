@@ -120,7 +120,7 @@ void dotmul_flt_nvnmd(T &y, T *x1, T *x2, int64_t M) {
   find_max_expo(expo_max1, x1, M);
   find_max_expo(expo_max2, x2, M);
   //
-  int64_t s;
+  int64_t s=0;
   for (jj=0; jj<M; jj++) {
     // x1
     split_flt(x1[jj], sign1, expo1, mant1);
