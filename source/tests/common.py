@@ -857,7 +857,7 @@ class DataSystem (object) :
                 elif style == "prob_uniform" :
                     prob = None
                 else :
-                    raise RuntimeError("unkown get_batch style")
+                    raise RuntimeError("unknown get_batch style")
             else :
                 prob = self.process_sys_weights(sys_weights)
             self.pick_idx = dp_random.choice(np.arange(self.nsystems), p=prob)
