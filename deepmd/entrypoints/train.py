@@ -75,7 +75,7 @@ def train(
     Raises
     ------
     RuntimeError
-        if distributed training job nem is wrong
+        if distributed training job name is wrong
     """
     run_opt = RunOptions(
         init_model=init_model,
