@@ -1,6 +1,7 @@
 #include "neighbor_list.h"
 #include "DeepPot.h"
 #include "DeepTensor.h"
+#include "DataModifier.h"
 
 struct DP_Nlist {
   DP_Nlist(deepmd::InputNlist& nl);
@@ -24,4 +25,10 @@ struct DP_DeepTensor {
   DP_DeepTensor(deepmd::DeepTensor& dt);
 
   deepmd::DeepTensor dt;
+};
+
+struct DP_DipoleChargeModifier {
+  DP_DipoleChargeModifier(deepmd::DipoleChargeModifier& dcm);
+
+  deepmd::DipoleChargeModifier dcm;
 };

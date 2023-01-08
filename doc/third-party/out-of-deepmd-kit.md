@@ -29,3 +29,7 @@ An [AMBER](https://ambermd.org/) interface to DeePMD-kit is written by the [York
 ## MLatom
 
 [Mlatom](http://mlatom.com/) provides an interface to the DeePMD-kit within MLatom's workflow by calling DeePMD-kit's CLI. Details can be found in [this paper](https://doi.org/10.1007/s41061-021-00339-5).
+
+## ABACUS
+
+[ABACUS](https://github.com/deepmodeling/abacus-develop/) can run molecular dynamics with a DP model. User is required to [build ABACUS with DeePMD-kit](https://abacus.deepmodeling.com/en/latest/advanced/install.html#build-with-deepmd-kit).

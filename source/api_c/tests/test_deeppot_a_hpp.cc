@@ -460,6 +460,12 @@ TYPED_TEST(TestInferDeepPotAHPP, cpu_lmp_nlist_type_sel)
   }
 }
 
+TYPED_TEST(TestInferDeepPotAHPP, print_summary)
+{
+  deepmd::hpp::DeepPot& dp = this->dp;
+  dp.print_summary("");
+}
+
 
 template <class VALUETYPE>
 class TestInferDeepPotANoPbcHPP : public ::testing::Test

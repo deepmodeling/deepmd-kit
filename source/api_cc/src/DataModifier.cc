@@ -17,7 +17,7 @@ DipoleChargeModifier(const std::string & model,
     : inited (false), name_scope(name_scope_),
       graph_def(new GraphDef())
 {
-  init(model, gpu_rank);  
+  init(model, gpu_rank, name_scope_);  
 }
 
 DipoleChargeModifier::
@@ -343,3 +343,10 @@ compute <float> (std::vector<float> &		dfcorr_,
 	 const std::vector<float> &		delef_, 
 	 const int				nghost,
 	 const InputNlist &		lmp_list);
+
+void 
+DipoleChargeModifier::
+print_summary(const std::string &pre) const
+{
+  deepmd::print_summary(pre);
+}

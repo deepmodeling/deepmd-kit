@@ -3,16 +3,11 @@
 #include <algorithm>
 #include <fstream>
 #include <vector>
-#include "DeepTensor.h"
-#include "DataModifier.h"
-#include "SimulationRegion.h"
-#include "ewald.h"
-#include "neighbor_list.h"
+#include "deepmd.hpp"
 #include "test_utils.h"
-
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>  
+#include "common.h"
+#include "ewald.h"
+#include "region.h"
 
 template <class VALUETYPE>
 class TestDipoleCharge : public ::testing::Test
@@ -52,13 +47,13 @@ protected:
   double expected_tot_e;
   std::vector<VALUETYPE>expected_tot_v;
 
-  deepmd::DeepTensor dp;
-  deepmd::DipoleChargeModifier dm;
+  deepmd::hpp::DeepTensor dp;
+  deepmd::hpp::DipoleChargeModifier dm;
 
   void SetUp() override {
     std::string file_name = "../../tests/infer/dipolecharge_e.pbtxt";
     std::string model = "dipolecharge_e.pb";
-    deepmd::convert_pbtxt_to_pb(file_name, model);
+    deepmd::hpp::convert_pbtxt_to_pb(file_name, model);
     dp.init(model, 0, "dipole_charge");
     dm.init(model, 0, "dipole_charge");
 
@@ -105,8 +100,8 @@ TYPED_TEST(TestDipoleCharge, cpu_lmp_nlist)
   std::vector<int>& type_asso = this->type_asso;
   double& expected_tot_e = this->expected_tot_e;
   std::vector<VALUETYPE>&expected_tot_v = this->expected_tot_v;
-  deepmd::DeepTensor& dp = this->dp;
-  deepmd::DipoleChargeModifier& dm = this->dm;
+  deepmd::hpp::DeepTensor& dp = this->dp;
+  deepmd::hpp::DipoleChargeModifier& dm = this->dm;
   // build nlist
   // float rc = dp.cutoff();
   float rc = 4.0;
@@ -120,7 +115,7 @@ TYPED_TEST(TestDipoleCharge, cpu_lmp_nlist)
   int nghost = nall - nloc;
   std::vector<int> ilist(nloc), numneigh(nloc);
   std::vector<int*> firstneigh(nloc);
-  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  deepmd::hpp::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
   convert_nlist(inlist, nlist_data);  
 
   // evaluate dipole
@@ -247,6 +242,6 @@ TYPED_TEST(TestDipoleCharge, cpu_lmp_nlist)
 
 TYPED_TEST(TestDipoleCharge, print_summary)
 {
-  deepmd::DipoleChargeModifier& dm = this->dm;
+  deepmd::hpp::DipoleChargeModifier& dm = this->dm;
   dm.print_summary("");
 }

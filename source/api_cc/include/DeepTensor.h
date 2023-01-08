@@ -162,6 +162,10 @@ public:
   * @return The output dimension.
   **/
   int output_dim () const {assert(inited); return odim;};
+  /**
+   * @brief Get the list of sel types.
+   * @return The list of sel types.
+   */
   const std::vector<int> & sel_types () const {assert(inited); return sel_type;};
 private:
   tensorflow::Session* session;

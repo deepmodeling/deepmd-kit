@@ -100,6 +100,7 @@ class RunOptions:
         # model init options
         self.restart = restart
         self.init_model = init_model
+        self.init_frz_model = init_frz_model
         self.finetune = finetune
         self.init_mode = "init_from_scratch"
 

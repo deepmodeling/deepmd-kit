@@ -249,5 +249,12 @@ read_file_to_string(std::string model, std::string & file_content);
 **/
 void
 convert_pbtxt_to_pb(std::string fn_pb_txt, std::string fn_pb);
+
+/**
+ * @brief Print the summary of DeePMD-kit, including the version and the build information.
+ * @param[in] pre The prefix to each line.
+ */
+void
+print_summary(const std::string &pre);
 }
 
