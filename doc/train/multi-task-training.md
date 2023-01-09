@@ -32,3 +32,31 @@ The supported fitting nets for multi-task mode are listed:
 - {ref}`polar <model/fitting_net[polar]>`
 
 The output of `dp freeze` command in multi-task mode can be seen in [freeze command](../freeze/freeze.md).
+
+## Share layers among energy fitting networks
+
+The multi-task training can be used to train multiple levels of energies (e.g. DFT and CCSD(T)) at the same time.
+In this situation, one can set {ref}`model/fitting_net[ener]/layer_name>` to share some of layers among fitting networks.
+The architecture of the layers with the same name should be the same.
+
+For example, if one want to share the first and the third layers for two three-hidden-layer fitting networks, the following parameters should be set.
+```json
+"fitting_net_dict": {
+    "ccsd": {
+        "neuron": [
+            240,
+            240,
+            240
+        ],
+        "layer_name": ["l0", null, "l2", null]
+    },  
+    "wb97m": {
+        "neuron": [
+            240,
+            240,
+            240 
+        ],
+        "layer_name": ["l0", null, "l2", null]
+    }   
+}
+```
