@@ -1,5 +1,6 @@
 
 import os
+from typing import Dict, List, Optional, Any
 import logging
 
 from deepmd.env import tf
@@ -34,7 +35,7 @@ jdata_cmd_freeze = {
 }
 
 
-def normalized_input(fn, PATH_CNN):
+def normalized_input(fn, PATH_CNN, CONFIG_CNN):
     r"""Normalize a input script file for continuous neural network
     """
     f = FioDic()
@@ -42,6 +43,7 @@ def normalized_input(fn, PATH_CNN):
     # nvnmd
     jdata_nvnmd = jdata_deepmd_input['nvnmd']
     jdata_nvnmd['enable'] = True
+    jdata_nvnmd['config_file'] = CONFIG_CNN
     jdata_nvnmd_ = f.get(jdata, 'nvnmd', jdata_nvnmd)
     jdata_nvnmd = f.update(jdata_nvnmd_, jdata_nvnmd)
     # model
@@ -97,6 +99,7 @@ def normalized_input_qnn(jdata, PATH_QNN, CONFIG_CNN, WEIGHT_CNN, MAP_CNN):
 def train_nvnmd(
     *,
     INPUT: str,
+    restart: Optional[str],
     step: str,
     **kwargs,
 ):
@@ -113,13 +116,14 @@ def train_nvnmd(
     LOG_CNN = os.path.join(PATH_CNN, 'train.log')
     if step == "s1":
         # normailize input file
-        jdata = normalized_input(INPUT, PATH_CNN)
+        jdata = normalized_input(INPUT, PATH_CNN, CONFIG_CNN)
         FioDic().save(INPUT_CNN, jdata)
         nvnmd_cfg.save(CONFIG_CNN)
         # train cnn
         jdata = jdata_cmd_train.copy()
         jdata['INPUT'] = INPUT_CNN
         jdata['log_path'] = LOG_CNN
+        jdata['restart'] = restart
         train(**jdata)
         tf.reset_default_graph()
         # freeze
@@ -148,7 +152,7 @@ def train_nvnmd(
 
     if step == "s2":
         # normailize input file
-        jdata = normalized_input(INPUT, PATH_CNN)
+        jdata = normalized_input(INPUT, PATH_CNN, CONFIG_CNN)
         jdata = normalized_input_qnn(jdata, PATH_QNN, CONFIG_CNN, WEIGHT_CNN, MAP_CNN)
         FioDic().save(INPUT_QNN, jdata)
         nvnmd_cfg.save(CONFIG_QNN)

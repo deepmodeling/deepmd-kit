@@ -341,7 +341,7 @@ class MapTable:
         min_dist = 0.5 if (min_dist > 0.5) else (min_dist - 0.1)
         #
         avg, std = get_normalize(nvnmd_cfg.weight)
-        avg, std = np.float32(avg), np.float32(std)
+        avg, std = np.float64(avg), np.float64(std)
         r = tf.sqrt(r2)
         r_ = tf.clip_by_value(r, rmin, rmax)
         r__ = tf.clip_by_value(r, min_dist, rmax)
@@ -368,7 +368,7 @@ class MapTable:
         ntype = nvnmd_cfg.dscp['ntype']
         #
         dic_ph = {}
-        dic_ph['u'] = tf.placeholder(tf.float32, [None, 1], 't_u')
+        dic_ph['u'] = tf.placeholder(tf.float64, [None, 1], 't_u')
         dic_ph['s'], dic_ph['h'] = self.build_u2s(dic_ph['u'])
         dic_ph['s_grad'], dic_ph['s_grad_grad'] = self.build_grad(dic_ph['u'], dic_ph['s'], ntype, 1)
         dic_ph['h_grad'], dic_ph['h_grad_grad'] = self.build_grad(dic_ph['u'], dic_ph['h'], ntype, 1)
@@ -380,7 +380,7 @@ class MapTable:
         # ntypex = nvnmd_cfg.dscp['ntypex']
         ntype = nvnmd_cfg.dscp['ntype']
         avg, std = get_normalize(nvnmd_cfg.weight)
-        avg, std = np.float32(avg), np.float32(std)
+        avg, std = np.float64(avg), np.float64(std)
         rc_max = nvnmd_cfg.dscp['rc_max']
 
         tf.reset_default_graph()
@@ -438,7 +438,7 @@ class MapTable:
                 xyz_scatter = s
                 for ll in range(1, len(outputs_size)):
                     w, b = get_filter_weight(nvnmd_cfg.weight, tt, tt2, ll)
-                    w, b = np.float32(w), np.float32(b)
+                    w, b = np.float64(w), np.float64(b)
                     if outputs_size[ll] == outputs_size[ll - 1]:
                         xyz_scatter += activation_fn(tf.matmul(xyz_scatter, w) + b)
                     elif outputs_size[ll] == outputs_size[ll - 1] * 2:
@@ -456,7 +456,7 @@ class MapTable:
         M1 = nvnmd_cfg.dscp['M1']
         #
         dic_ph = {}
-        dic_ph['s'] = tf.placeholder(tf.float32, [None, 1], 't_s')
+        dic_ph['s'] = tf.placeholder(tf.float64, [None, 1], 't_s')
         dic_ph['g'] = self.build_s2g(dic_ph['s'])
         dic_ph['g_grad'], dic_ph['g_grad_grad'] = self.build_grad(dic_ph['s'], dic_ph['g'], ntypex*ntype, M1)
         return dic_ph

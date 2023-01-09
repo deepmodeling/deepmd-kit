@@ -86,9 +86,12 @@ class TestNvnmdMapt(tf.test.TestCase):
         keys = [
             'cfg_u2s', 'cfg_s2g', 's', 's_grad', 'h', 'h_grad', 'g', 'g_grad'
         ]
-        g1 = np.array(data1['g'])
-        g2 = np.array(data2['g'])
+        s1 = np.reshape(np.array(data1['s']), [-1, 4])
+        s2 = np.reshape(np.array(data2['s']), [-1, 4])
+        g1 = np.reshape(np.array(data1['g']), [-1, 4])
+        g2 = np.reshape(np.array(data2['g']), [-1, 4])
         np.testing.assert_equal(keys, list(data1.keys()))
+        np.testing.assert_almost_equal(s1, s2, 5)
         np.testing.assert_almost_equal(g1, g2, 5)
         tf.reset_default_graph()
         # close NVNMD

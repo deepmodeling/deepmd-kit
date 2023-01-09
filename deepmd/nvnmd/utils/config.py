@@ -72,6 +72,16 @@ class NvnmdConfig():
         self.size = self.config['size']
         self.ctrl = self.config['ctrl']
         self.nbit = self.config['nbit']
+    
+    def update_config(self):
+        r"""Update config from dict
+        """
+        self.config['dscp'] = self.dscp
+        self.config['fitn'] = self.fitn
+        self.config['dpin'] = self.dpin
+        self.config['size'] = self.size
+        self.config['ctrl'] = self.ctrl
+        self.config['nbit'] = self.nbit
 
     def init_train_mode(self, mod='cnn'):
         r"""Configure for taining cnn or qnn
@@ -209,6 +219,7 @@ class NvnmdConfig():
             file_name = self.save_path
         else:
             self.save_path = file_name
+        self.update_config()
         FioDic().save(file_name, self.config)
     
     def get_s_range(self, davg, dstd):
