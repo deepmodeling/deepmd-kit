@@ -1,7 +1,6 @@
 
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.colors as cs
+# import matplotlib.pyplot as plt
 import logging
 
 from deepmd.env import tf
@@ -206,18 +205,17 @@ class MapTable:
                     val1_i = val1[ii]
                     val2_i = val2[ii]
                     nc = np.shape(val1_i)[1]
-                    plt.figure
-                    for jj in range(nc):
-                        c1 = 'r'
-                        c2 = 'k'
-                        plt.plot(x, val1_i[:,jj], '-', color=c1, linewidth=6)
-                        plt.plot(x, val2_i[:,jj], '-', color=c2, linewidth=2)
-                    # plt.xlim([-0.5, 0.5])
-                    plt.title(key)
-                    plt.grid()
-                    plt.savefig('mapt_'+key+'-'+str(ii)+'.png')
-                    # plt.show()
-                    plt.close()
+                    # For debug
+                    # plt.figure
+                    # for jj in range(nc):
+                    #     c1 = 'r'
+                    #     c2 = 'k'
+                    #     plt.plot(x, val1_i[:,jj], '-', color=c1, linewidth=6)
+                    #     plt.plot(x, val2_i[:,jj], '-', color=c2, linewidth=2)
+                    # plt.title(key)
+                    # plt.grid()
+                    # plt.savefig('mapt_'+key+'-'+str(ii)+'.png')
+                    # plt.close()
 
     def build_map_coef(self, cfgs, x, ys, grads, grad_grads, Nr, Nc, rank=4):
         """ Build mapping table coefficient
