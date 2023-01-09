@@ -299,3 +299,34 @@ class DeepEval:
         for ii in range (self.ntypes) :
             natoms_vec[ii+2] = np.count_nonzero(atom_types == ii)
         return natoms_vec
+
+    def eval_typeebd(self) -> np.ndarray:
+        """Evaluate output of type embedding network by using this model.
+
+        Returns
+        -------
+        np.ndarray
+            The output of type embedding network. The shape is [ntypes, o_size],
+            where ntypes is the number of types, and o_size is the number of nodes
+            in the output layer.
+        
+        Raises
+        ------
+        KeyError
+            If the model does not enable type embedding.
+
+        See Also
+        --------
+        deepmd.utils.type_embed.TypeEmbedNet : The type embedding network.
+
+        Examples
+        --------
+        Get the output of type embedding network of `graph.pb`:
+
+        >>> from deepmd.infer import DeepPotential
+        >>> dp = DeepPotential('graph.pb')
+        >>> dp.eval_typeebd()
+        """
+        t_typeebd = self._get_tensor("t_typeebd:0")
+        [typeebd] = run_sess(self.sess, [t_typeebd], feed_dict={})
+        return typeebd
