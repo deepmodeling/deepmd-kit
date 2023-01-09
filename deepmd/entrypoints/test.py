@@ -23,6 +23,7 @@ def test(
     *,
     model: str,
     system: str,
+    datalist: str,
     set_prefix: str,
     numb_test: int,
     rand_seed: Optional[int],
@@ -39,6 +40,8 @@ def test(
         path where model is stored
     system : str
         system directory
+    datalist: str
+        the path to the list of systems to test
     set_prefix : str
         string prefix of set
     numb_test : int
@@ -57,11 +60,15 @@ def test(
     RuntimeError
         if no valid system was found
     """
-    all_sys = expand_sys_str(system)
-    if len(all_sys) == 0:
-        raise RuntimeError("Did not find valid system")
-    err_coll = []
-    siz_coll = []
+    if(datalist is not None):
+        all_sys = open(datalist, 'r')
+        all_sys = [i.strip() for i in all_sys.readlines()]
+    else:
+        all_sys = expand_sys_str(system)
+        if len(all_sys) == 0:
+            raise RuntimeError("Did not find valid system")
+        err_coll = []
+        siz_coll = []
 
     # init random seed
     if rand_seed is not None:

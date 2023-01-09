@@ -272,6 +272,13 @@ def main_parser() -> argparse.ArgumentParser:
         help="The system dir. Recursively detect systems in this directory",
     )
     parser_tst.add_argument(
+        "-l",
+        "--datalist",
+        default=None,
+        type=str,
+        help="The list of systems to test.",
+    )
+    parser_tst.add_argument(
         "-S", "--set-prefix", default="set", type=str, help="The set prefix"
     )
     parser_tst.add_argument(
