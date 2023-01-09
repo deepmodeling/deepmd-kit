@@ -107,7 +107,7 @@ class TestNvnmdTrain(tf.test.TestCase):
         # test1: train cnn
         INPUT = str(tests_path / os.path.join("nvnmd", "train.json"))
         PATH_CNN = "nvnmd_cnn"
-        jdata = normalized_input(INPUT, PATH_CNN)
+        jdata = normalized_input(INPUT, PATH_CNN, 'none')
         fn_ref = str(tests_path / os.path.join("nvnmd/out", "train_cnn.json"))
         FioJsonDic().save(fn_ref, jdata)
         # test2: train qnn
