@@ -326,7 +326,7 @@ class DeepmdDataSystem() :
             elif auto_prob_style[:14] == "prob_sys_size;" :
                 prob = self._prob_sys_size_ext(auto_prob_style)
             else :
-                raise RuntimeError("unkown style " + auto_prob_style )
+                raise RuntimeError("unknown style " + auto_prob_style )
         else :
             prob = self._process_sys_probs(sys_probs)
         return prob

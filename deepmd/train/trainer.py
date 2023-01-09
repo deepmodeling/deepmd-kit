@@ -105,7 +105,7 @@ class DPTrainer (object):
             #     else:
             #         raise RuntimeError('fitting global_polar only supports descrptors: loc_frame and se_e2_a')
             else:
-                raise RuntimeError('unknow fitting type ' + fitting_type_)
+                raise RuntimeError('unknown fitting type ' + fitting_type_)
 
         if not self.multi_task_mode:
             fitting_type = fitting_param.get('type', 'ener')
@@ -244,7 +244,7 @@ class DPTrainer (object):
                 elif _loss_type == 'ener_dipole':
                     loss = EnerDipoleLoss(**_loss_param)
                 else:
-                    raise RuntimeError('unknow loss type')
+                    raise RuntimeError('unknown loss type')
             elif _fitting_type == 'wfc':
                 loss = TensorLoss(_loss_param,
                                   model=_fitting,
@@ -581,7 +581,7 @@ class DPTrainer (object):
                 fp = open(self.disp_file, "w")
                 fp.close()
             else :
-                raise RuntimeError ("unkown init mode")
+                raise RuntimeError ("unknown init mode")
         else:
             run_sess(self.sess, init_op)
             self.saver = None

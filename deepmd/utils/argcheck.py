@@ -919,7 +919,7 @@ def normalize_fitting_weight(fitting_keys, data_keys, fitting_weight=None):
                     sum_prob += fitting_weight[item]
                     new_weight[item] = fitting_weight[item]
                 else:
-                    valid_fitting_keys.pop(item)
+                    valid_fitting_keys.remove(item)
                     log.warning("Fitting net '{}' has zero or invalid weight "
                                 "and will not be used in training.".format(item))
                     new_weight[item] = 0.

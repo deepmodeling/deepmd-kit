@@ -4,8 +4,9 @@ import logging
 import os
 import re
 import platform
+import ctypes
 from configparser import ConfigParser
-from importlib import reload
+from importlib import reload, import_module
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 from packaging.version import Version
@@ -14,6 +15,39 @@ import numpy as np
 
 if TYPE_CHECKING:
     from types import ModuleType
+
+
+def dlopen_library(module: str, filename: str):
+    """Dlopen a library from a module.
+    
+    Parameters
+    ----------
+    module : str
+        The module name.
+    filename : str
+        The library filename pattern.
+    """
+    try:
+        m = import_module(module)
+    except ModuleNotFoundError:
+        pass
+    else:
+        libs = sorted(Path(m.__file__).parent.glob(filename))
+        # hope that there is only one version installed...
+        if len(libs):
+            ctypes.CDLL(str(libs[0].absolute()))
+
+# dlopen pip cuda library before tensorflow
+if platform.system() == "Linux":
+    dlopen_library("nvidia.cuda_runtime.lib", "libcudart.so*")
+    dlopen_library("nvidia.cublas.lib", "libcublas.so*")
+    dlopen_library("nvidia.cublas.lib", "libcublasLt.so*")
+    dlopen_library("nvidia.cufft.lib", "libcufft.so*")
+    dlopen_library("nvidia.curand.lib", "libcurand.so*")
+    dlopen_library("nvidia.cusolver.lib", "libcusolver.so*")
+    dlopen_library("nvidia.cusparse.lib", "libcusparse.so*")
+    dlopen_library("nvidia.cudnn.lib", "libcudnn.so*")
+
 
 # import tensorflow v1 compatability
 try:
