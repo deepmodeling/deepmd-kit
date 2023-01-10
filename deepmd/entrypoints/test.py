@@ -60,13 +60,15 @@ def test(
     RuntimeError
         if no valid system was found
     """
-    if(datafile is not None):
+    if datafile is not None:
         all_sys = open(datafile, 'r')
         all_sys = [i.strip() for i in all_sys.readlines()]
+        datafile.close()
     else:
         all_sys = expand_sys_str(system)
-        if len(all_sys) == 0:
-            raise RuntimeError("Did not find valid system")
+
+    if len(all_sys) == 0:
+        raise RuntimeError("Did not find valid system")
     err_coll = []
     siz_coll = []
 
