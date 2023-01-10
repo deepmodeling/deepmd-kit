@@ -93,3 +93,31 @@ Finally, you can perform the modified multi-task training from the frozen model 
 ```bash
 $ dp train input.json --init_frz_model graph.pb
 ```
+
+## Share layers among energy fitting networks
+
+The multi-task training can be used to train multiple levels of energies (e.g. DFT and CCSD(T)) at the same time.
+In this situation, one can set {ref}`model/fitting_net[ener]/layer_name>` to share some of layers among fitting networks.
+The architecture of the layers with the same name should be the same.
+
+For example, if one want to share the first and the third layers for two three-hidden-layer fitting networks, the following parameters should be set.
+```json
+"fitting_net_dict": {
+    "ccsd": {
+        "neuron": [
+            240,
+            240,
+            240
+        ],
+        "layer_name": ["l0", null, "l2", null]
+    },  
+    "wb97m": {
+        "neuron": [
+            240,
+            240,
+            240 
+        ],
+        "layer_name": ["l0", null, "l2", null]
+    }   
+}
+```

@@ -318,6 +318,13 @@ def fitting_ener():
     doc_rcond = 'The condition number used to determine the inital energy shift for each type of atoms.'
     doc_seed = 'Random seed for parameter initialization of the fitting net'
     doc_atom_ener = 'Specify the atomic energy in vacuum for each type'
+    doc_layer_name = (
+        "The name of the each layer. The length of this list should be equal to n_neuron + 1. "
+        "If two layers, either in the same fitting or different fittings, "
+        "have the same name, they will share the same neural network parameters. "
+        "The shape of these layers should be the same. "
+        "If null is given for a layer, parameters will not be shared."
+    )
 
     return [
         Argument("numb_fparam", int, optional = True, default = 0, doc = doc_numb_fparam),
@@ -329,7 +336,8 @@ def fitting_ener():
         Argument("trainable", [list,bool], optional = True, default = True, doc = doc_trainable),
         Argument("rcond", float, optional = True, default = 1e-3, doc = doc_rcond),
         Argument("seed", [int,None], optional = True, doc = doc_seed),
-        Argument("atom_ener", list, optional = True, default = [], doc = doc_atom_ener)
+        Argument("atom_ener", list, optional = True, default = [], doc = doc_atom_ener),
+        Argument("layer_name", list, optional = True, doc = doc_layer_name),
     ]
 
 
