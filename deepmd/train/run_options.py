@@ -54,7 +54,7 @@ BUILD = (
 
 
 class RunOptions:
-    """Class with inf oon how to run training (cluster, MPI and GPU config).
+    """Class with info on how to run training (cluster, MPI and GPU config).
 
     Attributes
     ----------
