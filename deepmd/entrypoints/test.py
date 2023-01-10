@@ -61,9 +61,9 @@ def test(
         if no valid system was found
     """
     if datafile is not None:
-        all_sys = open(datafile, 'r')
-        all_sys = all_sys.read().splitlines()
-        datafile.close()
+        datalist = open(datafile, 'r')
+        all_sys = datalist.read().splitlines()
+        datalist.close()
     else:
         all_sys = expand_sys_str(system)
 
