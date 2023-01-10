@@ -272,8 +272,8 @@ def main_parser() -> argparse.ArgumentParser:
         help="The system dir. Recursively detect systems in this directory",
     )
     parser_tst.add_argument(
-        "-l",
-        "--datalist",
+        "-f",
+        "--datafile",
         default=None,
         type=str,
         help="The list of systems to test.",
