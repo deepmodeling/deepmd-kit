@@ -277,7 +277,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--datafile",
         default=None,
         type=str,
-        help="The list of systems to test.",
+        help="The path to file of test list.",
     )
     parser_tst.add_argument(
         "-S", "--set-prefix", default="set", type=str, help="The set prefix"

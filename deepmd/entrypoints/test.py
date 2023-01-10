@@ -40,7 +40,7 @@ def test(
         path where model is stored
     system : str
         system directory
-    datafile: str
+    datafile : str
         the path to the list of systems to test
     set_prefix : str
         string prefix of set
@@ -62,7 +62,7 @@ def test(
     """
     if datafile is not None:
         all_sys = open(datafile, 'r')
-        all_sys = [i.strip() for i in all_sys.readlines()]
+        all_sys = all_sys.read().splitlines()
         datafile.close()
     else:
         all_sys = expand_sys_str(system)
