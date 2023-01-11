@@ -99,7 +99,10 @@ class EnerFitting (Fitting):
                   atom_ener : List[float] = [],
                   activation_function : str = 'tanh',
                   precision : str = 'default',
-                  uniform_seed: bool = False
+                  uniform_seed: bool = False,
+                  use_spin: List[bool] = None,
+                  spin_norm: List[float] = None,
+                  virtual_len: List[float] = None
     ) -> None:
         """
         Constructor
@@ -126,6 +129,10 @@ class EnerFitting (Fitting):
         self.rcond = rcond
         self.seed = seed
         self.uniform_seed = uniform_seed
+        self.use_spin = use_spin
+        self.spin_norm = spin_norm
+        self.virtual_len = virtual_len
+        self.ntypes_spin = descrpt.get_ntypes_spin()
         self.seed_shift = one_layer_rand_seed_shift()
         self.tot_ener_zero = tot_ener_zero
         self.fitting_activation_fn = get_activation_func(activation_function)
@@ -491,20 +498,32 @@ class EnerFitting (Fitting):
         if atype_embed is None:
             start_index = 0
             outs_list = []
+            ntypes_atom = self.ntypes - self.ntypes_spin
             for type_i in range(self.ntypes):
+                if type_i >= ntypes_atom:
+                    break 
+                if bias_atom_e is None :
+                    type_bias_ae = 0.0
+                elif self.use_spin is None:
+                    type_bias_ae = bias_atom_e[type_i]
+                else :
+                    if self.use_spin[type_i]:
+                        type_bias_ae = bias_atom_e[type_i] + bias_atom_e[type_i + ntypes_atom]
+                    else:
+                        type_bias_ae = bias_atom_e[type_i]
                 final_layer = self._build_lower(
                     start_index, natoms[2+type_i], 
                     inputs, fparam, aparam, 
-                    bias_atom_e=0., suffix='_type_'+str(type_i)+suffix, reuse=reuse
+                    bias_atom_e=type_bias_ae, suffix='_type_'+str(type_i)+suffix, reuse=reuse
                 )
                 # concat the results
                 if type_i < len(self.atom_ener) and self.atom_ener[type_i] is not None:                
                     zero_layer = self._build_lower(
                         start_index, natoms[2+type_i], 
                         inputs_zero, fparam, aparam, 
-                        bias_atom_e=0., suffix='_type_'+str(type_i)+suffix, reuse=True
+                        bias_atom_e=type_bias_ae, suffix='_type_'+str(type_i)+suffix, reuse=True
                     )
-                    final_layer -= zero_layer
+                    final_layer += self.atom_ener[type_i] - zero_layer
                 final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i]])
                 outs_list.append(final_layer)
                 start_index += natoms[2+type_i]

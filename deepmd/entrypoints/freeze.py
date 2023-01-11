@@ -178,6 +178,7 @@ def _make_node_names(model_type: str, modifier_type: Optional[str] = None, out_s
             "o_virial",
             "o_atom_energy",
             "o_atom_virial",
+            "descrpt_attr/ntypes_spin",
             "fitting_attr/dfparam",
             "fitting_attr/daparam",
         ]
