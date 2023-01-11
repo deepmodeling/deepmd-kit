@@ -14,16 +14,17 @@ A model has two parts, a descriptor that maps atomic configuration to a set of s
 ```
 The two subsections, {ref}`descriptor <model/descriptor>` and {ref}`fitting_net <model/fitting_net>`, define the descriptor and the fitting net, respectively.
 
-The {ref}`type_map <model/type_map>` is optional, which provides the element names (but not necessarily same as the actual name of the element) of the corresponding atom types. A water model, as in this example, has two kinds of atoms. The atom types are internally recorded as integers, e.g., `0` for oxygen and `1` for hydrogen here. A mapping from the atom type to their names is provided by {ref}`type_map <model/type_map>`. 
+The {ref}`type_map <model/type_map>` is optional, which provides the element names (but not necessarily same with the actual name of the element) of the corresponding atom types. A model for water, as in this example, has two kinds of atoms. The atom types are internally recorded as integers, e.g., `0` for oxygen and `1` for hydrogen here. A mapping from the atom type to their names is provided by {ref}`type_map <model/type_map>`. 
 
 DeePMD-kit implements the following descriptors:
 1. [`se_e2_a`](train-se-e2-a.md): DeepPot-SE constructed from all information (both angular and radial) of atomic configurations. The embedding takes the distance between atoms as input.
 2. [`se_e2_r`](train-se-e2-r.md): DeepPot-SE constructed from radial information of atomic configurations. The embedding takes the distance between atoms as input.
 3. [`se_e3`](train-se-e3.md): DeepPot-SE constructed from all information (both angular and radial) of atomic configurations. The embedding takes angles between two neighboring atoms as input.
-4. `loc_frame`: Defines a local frame at each atom and compute the descriptor as local coordinates under this frame.
+4. `loc_frame`: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.
 5. [`hybrid`](train-hybrid.md): Concate a list of descriptors to form a new descriptor.
 
-The fitting of the following physical properties is supported
+The fitting of the following physical properties are supported
 1. [`ener`](train-energy.md): Fit the energy of the system. The force (derivative with atom positions) and the virial (derivative with the box tensor) can also be trained.
-2. [`dipole`](train-fitting-tensor.md): The dipole moment.
-3. [`polar`](train-fitting-tensor.md): The polarizability.
+2. [`ener_spin`](train-energy-spin.md): Fit the energy of the spin system. The atomic force and the magnetic force can also be trained.
+3. [`dipole`](train-fitting-tensor.md): The dipole moment.
+4. [`polar`](train-fitting-tensor.md): The polarizability.
