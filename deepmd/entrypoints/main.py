@@ -264,12 +264,20 @@ def main_parser() -> argparse.ArgumentParser:
         type=str,
         help="Frozen model file to import",
     )
-    parser_tst.add_argument(
+    parser_tst_subgroup = parser_tst.add_mutually_exclusive_group()
+    parser_tst_subgroup.add_argument(
         "-s",
         "--system",
         default=".",
         type=str,
         help="The system dir. Recursively detect systems in this directory",
+    )
+    parser_tst_subgroup.add_argument(
+        "-f",
+        "--datafile",
+        default=None,
+        type=str,
+        help="The path to file of test list.",
     )
     parser_tst.add_argument(
         "-S", "--set-prefix", default="set", type=str, help="The set prefix"
