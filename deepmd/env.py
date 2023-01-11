@@ -166,6 +166,8 @@ REMOVE_SUFFIX_DICT = {
     "model_attr/sel_type_{}": "model_attr/sel_type",
     "model_attr/output_dim_{}": "model_attr/output_dim",
     "_{}/": "/",
+    # when atom_ener is set
+    "_{}_1/": "_1/",
     "o_energy_{}": "o_energy",
     "o_force_{}": "o_force",
     "o_virial_{}": "o_virial",
