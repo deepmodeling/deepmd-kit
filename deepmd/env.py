@@ -40,8 +40,8 @@ def dlopen_library(module: str, filename: str):
 # dlopen pip cuda library before tensorflow
 if platform.system() == "Linux":
     dlopen_library("nvidia.cuda_runtime.lib", "libcudart.so*")
-    dlopen_library("nvidia.cublas.lib", "libcublas.so*")
     dlopen_library("nvidia.cublas.lib", "libcublasLt.so*")
+    dlopen_library("nvidia.cublas.lib", "libcublas.so*")
     dlopen_library("nvidia.cufft.lib", "libcufft.so*")
     dlopen_library("nvidia.curand.lib", "libcurand.so*")
     dlopen_library("nvidia.cusolver.lib", "libcusolver.so*")
