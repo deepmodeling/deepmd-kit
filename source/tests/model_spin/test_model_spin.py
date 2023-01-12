@@ -1,9 +1,7 @@
-import dpdata,os,sys,unittest
+import dpdata, os,sys,unittest
 import numpy as np
 from deepmd.env import tf
-from common import Data, gen_data, del_data, j_loader
-
-from deepmd.utils.data_system import DataSystem
+from common import Data, gen_data, del_data, j_loader, DataSystem
 from deepmd.descriptor import DescrptSeA
 from deepmd.fit import EnerFitting
 from deepmd.model import EnerModel

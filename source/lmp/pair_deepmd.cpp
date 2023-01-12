@@ -330,20 +330,6 @@ void PairDeepMD::compute(int eflag, int vflag)
   double **x = atom->x;
   double **f = atom->f;
 
-  // spin initialize
-  if (atom->sp_flag){
-    double **sp = atom->sp;
-    double **fm = atom->fm;
-    vector<double > dspin (nall * 3, 0.);
-    vector<double > dfm (nall * 3, 0.);
-    // get spin 
-    for (int ii = 0; ii < nall; ++ii) {
-      for (int dd = 0; dd < 3; ++dd) {
-        dspin[ii*3+dd] = sp[ii][dd];
-      }
-    }
-  }
-
   int *type = atom->type;
   int nlocal = atom->nlocal;
   int nghost = 0;
@@ -352,6 +338,20 @@ void PairDeepMD::compute(int eflag, int vflag)
   }
   int nall = nlocal + nghost;
   int newton_pair = force->newton_pair;
+  
+  vector<double > dspin (nall * 3, 0.);
+  vector<double > dfm (nall * 3, 0.);
+  double **sp = atom->sp;
+  double **fm = atom->fm;
+  // spin initialize
+  if (atom->sp_flag){
+    // get spin 
+    for (int ii = 0; ii < nall; ++ii) {
+      for (int dd = 0; dd < 3; ++dd) {
+        dspin[ii*3+dd] = sp[ii][dd];
+      }
+    }
+  }
 
   vector<int > dtype (nall);
   for (int ii = 0; ii < nall; ++ii){
@@ -730,8 +730,7 @@ void PairDeepMD::compute(int eflag, int vflag)
 	std_e.resize(std_e_.size());
 	for (int dd = 0; dd < std_e_.size(); ++dd) std_e[dd] = std_e_[dd];
 #endif	
-  max_e = 0, avg_e = 0;
-  double min_e = numeric_limits<double>::max();
+  double min_e = numeric_limits<double>::max(), max_e = 0, avg_e = 0;
   ana_st(max_e, min_e, avg_e, std_e, 0, nlocal);
 	double all_e_min = 0, all_e_max = 0, all_e_avg = 0;
   MPI_Reduce (&min_e, &all_e_min, 1, MPI_DOUBLE, MPI_MIN, 0, world);

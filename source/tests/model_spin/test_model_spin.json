@@ -45,12 +45,12 @@
     "training" : {
 	"training_data": {
 	    "systems":		["./data/"],
-	    "batch_size":	25
+	    "batch_size":	1
 	},
 	"validation_data":{
 	    "systems":		["./data/"],
 	    "batch_size":	1,
-	    "numb_btch":	25
+	    "numb_btch":	1
 	},
         "set_prefix":   "set",
 	"numb_steps":	1,

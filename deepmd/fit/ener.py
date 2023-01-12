@@ -562,10 +562,10 @@ class EnerFitting (Fitting):
                 final_layer -= zero_layer
             outs = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[0]])
         # add bias
-        self.atom_ener_before = outs
-        self.add_type = tf.reshape(tf.nn.embedding_lookup(self.t_bias_atom_e, self.atype_nloc), [tf.shape(inputs)[0], natoms[0]])
-        outs = outs + self.add_type
-        self.atom_ener_after = outs
+        # self.atom_ener_before = outs
+        # self.add_type = tf.reshape(tf.nn.embedding_lookup(self.t_bias_atom_e, self.atype_nloc), [tf.shape(inputs)[0], natoms[0]])
+        # outs = outs + self.add_type
+        # self.atom_ener_after = outs
 
         if self.tot_ener_zero:
             force_tot_ener = 0.0

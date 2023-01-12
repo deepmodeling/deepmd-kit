@@ -258,7 +258,7 @@ class DPTrainer (object):
                 elif _loss_type == 'ener_dipole':
                     loss = EnerDipoleLoss(**_loss_param)
                 elif _loss_type == 'ener_spin':
-                    self.loss = EnerSpinLoss(**loss_param, 
+                    loss = EnerSpinLoss(**loss_param, 
                                              use_spin = self.spin['use_spin'])
                 else:
                     raise RuntimeError('unknow loss type')
