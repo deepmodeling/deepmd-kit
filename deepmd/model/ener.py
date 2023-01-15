@@ -129,6 +129,7 @@ class EnerModel(Model) :
                mesh,
                input_dict,
                frz_model = None,
+               ckpt_meta = None,
                suffix = '', 
                reuse = None):
  
@@ -172,7 +173,7 @@ class EnerModel(Model) :
             input_dict['type_embedding'] = type_embedding
         input_dict['atype'] = atype_
 
-        if frz_model == None:
+        if frz_model is None and ckpt_meta is None:
             dout \
                 = self.descrpt.build(coord_,
                                      atype_,
@@ -192,8 +193,14 @@ class EnerModel(Model) :
                 dtype = tf.int32)
             feed_dict = self.descrpt.get_feed_dict(coord_, atype_, natoms, box, mesh)
             return_elements = [*self.descrpt.get_tensor_names(), 'o_descriptor:0']
-            imported_tensors \
-                = self._import_graph_def_from_frz_model(frz_model, feed_dict, return_elements)
+            if frz_model is not None:
+                imported_tensors \
+                    = self._import_graph_def_from_frz_model(frz_model, feed_dict, return_elements)
+            elif ckpt_meta is not None:
+                imported_tensors \
+                    = self._import_graph_def_from_ckpt_meta(ckpt_meta, feed_dict, return_elements)
+            else:
+                raise RuntimeError("should not reach here")  # pragma: no cover
             dout = imported_tensors[-1]
             self.descrpt.pass_tensors_from_frz_model(*imported_tensors[:-1])
 
@@ -288,8 +295,18 @@ class EnerModel(Model) :
         return model_dict
 
     def _import_graph_def_from_frz_model(self, frz_model, feed_dict, return_elements):
+        return_nodes = [x[:-2] for x in return_elements]
         graph, graph_def = load_graph_def(frz_model)
-        return tf.import_graph_def(graph_def, input_map = feed_dict, return_elements = return_elements, name = "")
+        sub_graph_def = tf.graph_util.extract_sub_graph(graph_def, return_nodes)
+        return tf.import_graph_def(sub_graph_def, input_map = feed_dict, return_elements = return_elements, name = "")
+
+    def _import_graph_def_from_ckpt_meta(self, ckpt_meta: str, feed_dict: dict, return_elements: List[str]):
+        return_nodes = [x[:-2] for x in return_elements]
+        with tf.Graph().as_default() as graph:
+            tf.train.import_meta_graph(f"{ckpt_meta}.meta", clear_devices=True)
+            graph_def = graph.as_graph_def()
+            sub_graph_def = tf.graph_util.extract_sub_graph(graph_def, return_nodes)
+        return tf.import_graph_def(sub_graph_def, input_map = feed_dict, return_elements = return_elements, name = "")
 
     def init_variables(self,
                        graph : tf.Graph,
