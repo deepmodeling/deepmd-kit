@@ -2,6 +2,7 @@
 #include "json.hpp"
 #include <iostream>
 #include <fstream>
+#include <sstream>
 
 using namespace deepmd;
 

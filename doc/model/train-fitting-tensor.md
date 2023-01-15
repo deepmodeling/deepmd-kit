@@ -1,6 +1,6 @@
 # Fit `tensor` like `Dipole` and `Polarizability`
 
-Unlike `energy`, which is a scalar, one may want to fit some high dimensional physical quantity, like `dipole` (vector) and `polarizability` (matrix, shorted as `polar`). Deep Potential has provided different APIs to do this. In this example, we will show you how to train a model to fit them for a water system. A complete training input script of the examples can be found in 
+Unlike `energy`, which is a scalar, one may want to fit some high dimensional physical quantity, like `dipole` (vector) and `polarizability` (matrix, shorted as `polar`). Deep Potential has provided different APIs to do this. In this example, we will show you how to train a model to fit a water system. A complete training input script of the examples can be found in 
 
 ```bash
 $deepmd_source_dir/examples/water_tensor/dipole/dipole_input.json
@@ -9,13 +9,13 @@ $deepmd_source_dir/examples/water_tensor/polar/polar_input.json
 
 The training and validation data are also provided our examples. But note that **the data provided along with the examples are of limited amount, and should not be used to train a production model.**
 
-Similar to the `input.json` used in `ener` mode, training json is also divided into `model`, `learning_rate`, `loss` and `training`. Most keywords remains the same as `ener` mode, and their meaning can be found [here](train-se-e2-a.md). To fit a tensor, one need to modify `model.fitting_net` and `loss`.
+Similar to the `input.json` used in `ener` mode, training JSON is also divided into {ref}`model <model>`, {ref}`learning_rate <learning_rate>`, {ref}`loss <loss>` and {ref}`training <training>`. Most keywords remain the same as `ener` mode, and their meaning can be found [here](train-se-e2-a.md). To fit a tensor, one needs to modify {ref}`model/fitting_net <model/fitting_net>` and {ref}`loss <loss>`.
 
 ## The fitting Network
 
-The `fitting_net` section tells DP which fitting net to use.
+The {ref}`fitting_net <model/fitting_net>` section tells DP which fitting net to use.
 
-The json of `dipole` type should be provided like
+The JSON of `dipole` type should be provided like
 
 ```json
 	"fitting_net" : {
@@ -27,7 +27,7 @@ The json of `dipole` type should be provided like
 	},
 ```
 
-The json of `polar` type should be provided like
+The JSON of `polar` type should be provided like
 
 ```json
 	"fitting_net" : {
@@ -40,14 +40,14 @@ The json of `polar` type should be provided like
 ```
 
 -   `type` specifies which type of fitting net should be used. It should be either `dipole` or `polar`. Note that `global_polar` mode in version 1.x is already **deprecated** and is merged into `polar`. To specify whether a system is global or atomic, please see [here](train-se-e2-a.md).
--   `sel_type` is a list specifying which type of atoms have the quantity you want to fit. For example, in water system, `sel_type` is `[0]` since `0` represents for atom `O`. If left unset, all type of atoms will be fitted.
--   The rest `args` has the same meaning as they do in `ener` mode.
+-   `sel_type` is a list specifying which type of atoms have the quantity you want to fit. For example, in the water system, `sel_type` is `[0]` since `0` represents atom `O`. If left unset, all types of atoms will be fitted.
+-   The rest arguments have the same meaning as they do in `ener` mode.
 
 ## Loss
 
-DP supports a combinational training of global system (only a global `tensor` label, i.e. dipole or polar, is provided in a frame) and atomic system (labels for **each** atom included in `sel_type` are provided). In a global system, each frame has just **one** `tensor` label. For example, when fitting `polar`, each frame will just provide a `1 x 9` vector which gives the elements of the polarizability tensor of that frame in order XX, XY, XZ, YX, YY, YZ, XZ, ZY, ZZ. By contrast, in a atomic system, each atom in `sel_type` has a `tensor` label. For example, when fitting dipole, each frame will provide a `#sel_atom x 3` matrix, where `#sel_atom` is the number of atoms whose type are in `sel_type`.
+DP supports a combinational training of the global system (only a global `tensor` label, i.e. dipole or polar, is provided in a frame) and atomic system (labels for **each** atom included in `sel_type` are provided). In a global system, each frame has just **one** `tensor` label. For example, when fitting `polar`, each frame will just provide a `1 x 9` vector which gives the elements of the polarizability tensor of that frame in order XX, XY, XZ, YX, YY, YZ, XZ, ZY, ZZ. By contrast, in an atomic system, each atom in `sel_type` has a `tensor` label. For example, when fitting a dipole, each frame will provide a `#sel_atom x 3` matrices, where `#sel_atom` is the number of atoms whose type are in `sel_type`.
 
-The `loss` section tells DP the weight of this two kind of loss, i.e.
+The {ref}`loss <loss>` section tells DP the weight of these two kinds of loss, i.e.
 
 ```python
 loss = pref * global_loss + pref_atomic * atomic_loss
@@ -63,18 +63,18 @@ The loss section should be provided like
 	},
 ```
 
--   `type` should be written as `tensor` as a distinction from `ener` mode.
--   `pref` and `pref_atomic` respectively specify the weight of global loss and atomic loss. It can not be left unset. If set to 0, system with corresponding label will NOT be included in the training process.
+-   {ref}`type <loss/type>` should be written as `tensor` as a distinction from `ener` mode.
+-   {ref}`pref <loss[tensor]/pref>` and {ref}`pref_atomic <loss[tensor]/pref_atomic>` respectively specify the weight of global loss and atomic loss. It can not be left unset. If set to 0, the corresponding label will NOT be included in the training process.
 
 ## Training Data Preparation
 
-In tensor mode, the identification of label's type (global or atomic) is derived from the file name. The global label should be named as `dipole.npy/raw` or `polarizability.npy/raw`, while the atomic label should be named as `atomic_dipole.npy/raw` or `atomic_polarizability.npy/raw`. If wrongly named, DP will report an error
+In tensor mode, the identification of the label's type (global or atomic) is derived from the file name. The global label should be named `dipole.npy/raw` or `polarizability.npy/raw`, while the atomic label should be named `atomic_dipole.npy/raw` or `atomic_polarizability.npy/raw`. If wrongly named, DP will report an error
 
 ```bash
 ValueError: cannot reshape array of size xxx into shape (xx,xx). This error may occur when your label mismatch it's name, i.e. you might store global tensor in `atomic_tensor.npy` or atomic tensor in `tensor.npy`.
 ```
 
-In this case, please check the file name of label.
+In this case, please check the file name of the label.
 
 ## Train the Model
 
@@ -111,7 +111,7 @@ The detailed loss can be found in `lcurve.out`:
   2000     2.59e-02   5.71e-02   1.03e-02   5.71e-02    1.94e-03    0.00e+00   1.0e-08
 ```
 
-One may notice that in each step, some of local loss and global loss will be `0.0`. This is because our training data and validation data consist of global system and atomic system, i.e.
+One may notice that in each step, some of the local loss and global loss will be `0.0`. This is because our training data and validation data consist of the global system and atomic system, i.e.
 ```
 	--training_data
 		>atomic_system
@@ -120,6 +120,6 @@ One may notice that in each step, some of local loss and global loss will be `0.
 		>atomic_system
 		>global_system
 ```
-During training, at each step when the lcurve.out is printed, the system used for evaluating the training (validation) error may be either with only global or only atomic labels, thus the corresponding atomic or global errors are missing and are printed as zeros. 
+During training, at each step when the `lcurve.out` is printed, the system used for evaluating the training (validation) error may be either with only global or only atomic labels, thus the corresponding atomic or global errors are missing and are printed as zeros. 
 
 

@@ -1,9 +1,8 @@
 import numpy as np
-from typing import Tuple, List
+from typing import Optional, Tuple, List
 
 from deepmd.env import tf
-from deepmd.common import get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, cast_precision
-from deepmd.utils.argcheck import list_to_doc
+from deepmd.common import get_activation_func, get_precision, cast_precision
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import op_module
@@ -35,7 +34,7 @@ class DescrptSeR (DescrptSe):
             Number of neurons in each hidden layers of the embedding net
     resnet_dt
             Time-step `dt` in the resnet construction:
-            y = x + dt * \phi (Wx + b)
+            y = x + dt * \\phi (Wx + b)
     trainable
             If the weights of embedding net are trainable.
     seed
@@ -46,13 +45,12 @@ class DescrptSeR (DescrptSe):
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     activation_function
-            The activation function in the embedding net. Supported options are {0}
+            The activation function in the embedding net. Supported options are |ACTIVATION_FN|
     precision
-            The precision of the embedding net parameters. Supported options are {1}
+            The precision of the embedding net parameters. Supported options are |PRECISION|
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
     """
-    @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   rcut: float,
                   rcut_smth: float,
@@ -60,31 +58,18 @@ class DescrptSeR (DescrptSe):
                   neuron: List[int] = [24,48,96],
                   resnet_dt: bool = False,
                   trainable: bool = True,
-                  seed: int = None,
+                  seed: Optional[int] = None,
                   type_one_side: bool = True,
                   exclude_types: List[List[int]] = [],
                   set_davg_zero: bool = False,
                   activation_function: str = 'tanh',
                   precision: str = 'default',
-                  uniform_seed: bool = False
+                  uniform_seed: bool = False,
+                  multi_task: bool = False
     ) -> None:
         """
         Constructor
         """
-        # args = ClassArg()\
-        #        .add('sel',      list,   must = True) \
-        #        .add('rcut',     float,  default = 6.0) \
-        #        .add('rcut_smth',float,  default = 0.5) \
-        #        .add('neuron',   list,   default = [10, 20, 40]) \
-        #        .add('resnet_dt',bool,   default = False) \
-        #        .add('trainable',bool,   default = True) \
-        #        .add('seed',     int) \
-        #        .add('type_one_side', bool, default = False) \
-        #        .add('exclude_types', list, default = []) \
-        #        .add('set_davg_zero', bool, default = False) \
-        #        .add("activation_function", str, default = "tanh") \
-        #        .add("precision",           str, default = "default")
-        # class_data = args.parse(jdata)
         if rcut < rcut_smth:
             raise RuntimeError("rcut_smth (%f) should be no more than rcut (%f)!" % (rcut_smth, rcut))
         self.sel_r = sel
@@ -146,11 +131,13 @@ class DescrptSeR (DescrptSe):
                                          rcut_smth = self.rcut_smth,
                                          sel = self.sel_r)
             self.sub_sess = tf.Session(graph = sub_graph, config=default_tf_session_config)
-
+        self.multi_task = multi_task
+        if multi_task:
+            self.stat_dict = {'sumr': [], 'sumn': [], 'sumr2': []}
 
     def get_rcut (self) :
         """
-        Returns the cut-off radisu
+        Returns the cut-off radius
         """
         return self.rcut
 
@@ -206,8 +193,6 @@ class DescrptSeR (DescrptSe):
         input_dict
                 Dictionary for additional input
         """
-        all_davg = []
-        all_dstd = []
         sumr = []
         sumn = []
         sumr2 = []
@@ -217,11 +202,36 @@ class DescrptSeR (DescrptSe):
             sumr.append(sysr)
             sumn.append(sysn)
             sumr2.append(sysr2)
-        sumr = np.sum(sumr, axis = 0)
-        sumn = np.sum(sumn, axis = 0)
-        sumr2 = np.sum(sumr2, axis = 0)
-        for type_i in range(self.ntypes) :
-            davgunit = [sumr[type_i]/sumn[type_i]]
+        if not self.multi_task:
+            stat_dict = {'sumr': sumr, 'sumn': sumn, 'sumr2': sumr2}
+            self.merge_input_stats(stat_dict)
+        else:
+            self.stat_dict['sumr'] += sumr
+            self.stat_dict['sumn'] += sumn
+            self.stat_dict['sumr2'] += sumr2
+
+    def merge_input_stats(self, stat_dict):
+        """
+        Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
+
+        Parameters
+        ----------
+        stat_dict
+                The dict of statisitcs computed from compute_input_stats, including:
+            sumr
+                    The sum of radial statisitcs.
+            sumn
+                    The sum of neighbor numbers.
+            sumr2
+                    The sum of square of radial statisitcs.
+        """
+        all_davg = []
+        all_dstd = []
+        sumr = np.sum(stat_dict['sumr'], axis=0)
+        sumn = np.sum(stat_dict['sumn'], axis=0)
+        sumr2 = np.sum(stat_dict['sumr2'], axis=0)
+        for type_i in range(self.ntypes):
+            davgunit = [sumr[type_i] / sumn[type_i]]
             dstdunit = [self._compute_std(sumr2[type_i], sumr[type_i], sumn[type_i])]
             davg = np.tile(davgunit, self.ndescrpt // 1)
             dstd = np.tile(dstdunit, self.ndescrpt // 1)
@@ -234,7 +244,8 @@ class DescrptSeR (DescrptSe):
 
     def enable_compression(self,
                            min_nbor_dist : float,
-                           model_file : str = 'frozon_model.pb',
+                           graph: tf.Graph,
+                           graph_def: tf.GraphDef,
                            table_extrapolate : float = 5,
                            table_stride_1 : float = 0.01,
                            table_stride_2 : float = 0.1,
@@ -248,8 +259,10 @@ class DescrptSeR (DescrptSe):
         ----------
         min_nbor_dist
                 The nearest distance between atoms
-        model_file
-                The original frozen model, which will be compressed by the program
+        grapf : tf.Graph
+                The graph of the model
+        graph_def : tf.GraphDef
+                The graph_def of the model
         table_extrapolate
                 The scale of model extrapolation
         table_stride_1
@@ -275,7 +288,7 @@ class DescrptSeR (DescrptSe):
 
         self.compress = True
         self.table = DPTabulate(
-            self, self.filter_neuron, model_file, activation_fn = self.filter_activation_fn, suffix=suffix)
+            self, self.filter_neuron, graph, graph_def, activation_fn = self.filter_activation_fn, suffix=suffix)
         self.table_config = [table_extrapolate, table_stride_1, table_stride_2, check_frequency]
         self.lower, self.upper \
             = self.table.build(min_nbor_dist, 
@@ -283,7 +296,6 @@ class DescrptSeR (DescrptSe):
                                table_stride_1, 
                                table_stride_2)
         
-        graph, _ = load_graph_def(model_file)
         self.davg = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_avg' % suffix)
         self.dstd = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_std' % suffix)
 
@@ -381,7 +393,7 @@ class DescrptSeR (DescrptSe):
         tf.summary.histogram('rij', self.rij)
         tf.summary.histogram('nlist', self.nlist)
 
-        self.dout = self._pass_filter(self.descrpt_reshape, natoms, suffix = suffix, reuse = reuse, trainable = self.trainable)
+        self.dout = self._pass_filter(self.descrpt_reshape, atype, natoms, suffix = suffix, reuse = reuse, trainable = self.trainable)
         tf.summary.histogram('embedding_net_output', self.dout)
 
         return self.dout
@@ -415,7 +427,7 @@ class DescrptSeR (DescrptSe):
         """
         [net_deriv] = tf.gradients (atom_ener, self.descrpt_reshape)
         tf.summary.histogram('net_derivative', net_deriv)
-        net_deriv_reshape = tf.reshape (net_deriv, [-1, natoms[0] * self.ndescrpt])        
+        net_deriv_reshape = tf.reshape (net_deriv, [np.cast['int64'](-1), natoms[0] * np.cast['int64'](self.ndescrpt)])        
         force \
             = op_module.prod_force_se_r (net_deriv_reshape,
                                          self.descrpt_deriv,
@@ -436,35 +448,41 @@ class DescrptSeR (DescrptSe):
 
     def _pass_filter(self, 
                      inputs,
+                     atype,
                      natoms,
                      reuse = None,
                      suffix = '', 
                      trainable = True) :
         start_index = 0
-        inputs = tf.reshape(inputs, [-1, self.ndescrpt * natoms[0]])
+        inputs = tf.reshape(inputs, [-1, natoms[0], self.ndescrpt])
         output = []
-        if not (self.type_one_side and len(self.exclude_types) == 0):
+        if not self.type_one_side:
             for type_i in range(self.ntypes):
                 inputs_i = tf.slice (inputs,
-                                     [ 0, start_index*      self.ndescrpt],
-                                     [-1, natoms[2+type_i]* self.ndescrpt] )
+                                     [ 0, start_index, 0],
+                                     [-1, natoms[2+type_i], -1] )
                 inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
-                if self.type_one_side:
-                    # reuse NN parameters for all types to support type_one_side along with exclude_types
-                    reuse = tf.AUTO_REUSE
-                    filter_name = 'filter_type_all'+suffix
-                else:
-                    filter_name = 'filter_type_'+str(type_i)+suffix
+                filter_name = 'filter_type_'+str(type_i)+suffix
                 layer = self._filter_r(inputs_i, type_i, name=filter_name, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
-                layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_out()])
+                layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i], self.get_dim_out()])
                 output.append(layer)
                 start_index += natoms[2+type_i]
         else :
             inputs_i = inputs
             inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
             type_i = -1
+            if len(self.exclude_types):
+                mask = self.build_type_exclude_mask(
+                    self.exclude_types,
+                    self.ntypes,
+                    self.sel_r,
+                    self.ndescrpt,
+                    atype,
+                    tf.shape(inputs_i)[0],
+                )
+                inputs_i *= mask
             layer = self._filter_r(inputs_i, type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
-            layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0] * self.get_dim_out()])
+            layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0], self.get_dim_out()])
             output.append(layer)
         output = tf.concat(output, axis = 1)
         return output
@@ -540,8 +558,8 @@ class DescrptSeR (DescrptSe):
                 # with (natom x nei_type_i) x 1
                 xyz_scatter = tf.reshape(inputs_i, [-1, 1])
                 if self.compress and ((type_input, type_i) not in self.exclude_types):
-                    info = [self.lower, self.upper, self.upper * self.table_config[0], self.table_config[1], self.table_config[2], self.table_config[3]]
                     net = 'filter_' + str(type_input) + '_net_' + str(type_i)
+                    info = [self.lower[net], self.upper[net], self.upper[net] * self.table_config[0], self.table_config[1], self.table_config[2], self.table_config[3]]
                     xyz_scatter = op_module.tabulate_fusion_se_r(tf.cast(self.table.data[net], self.filter_precision), info, inputs_i, last_layer_size = outputs_size[-1]) 
                 elif (type_input, type_i) not in self.exclude_types:
                     xyz_scatter = embedding_net(xyz_scatter, 

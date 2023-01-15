@@ -13,7 +13,8 @@ def one_layer(inputs,
               precision = GLOBAL_TF_FLOAT_PRECISION, 
               stddev=1.0,
               bavg=0.0,
-              name='linear', 
+              name='linear',
+              scope='',
               reuse=None,
               seed=None, 
               use_timestep = False, 
@@ -36,8 +37,8 @@ def one_layer(inputs,
                             mean=bavg,
                             seed=seed if (seed is None or uniform_seed) else seed + 1)
         if initial_variables is not None:
-            w_initializer = tf.constant_initializer(initial_variables[name + '/matrix'])
-            b_initializer = tf.constant_initializer(initial_variables[name + '/bias'])
+            w_initializer = tf.constant_initializer(initial_variables[scope + name + '/matrix'])
+            b_initializer = tf.constant_initializer(initial_variables[scope + name + '/bias'])
         w = tf.get_variable('matrix', 
                             [shape[1], outputs_size], 
                             precision,
@@ -63,7 +64,7 @@ def one_layer(inputs,
                                     mean=0.1,
                                     seed=seed if (seed is None or uniform_seed) else seed + 2)
             if initial_variables is not None:
-                idt_initializer = tf.constant_initializer(initial_variables[name + '/idt'])
+                idt_initializer = tf.constant_initializer(initial_variables[scope + name + '/idt'])
             idt = tf.get_variable('idt',
                                   [outputs_size],
                                   precision,
@@ -204,7 +205,10 @@ def embedding_net(xx,
             xx = tf.cast(xx, get_precision(mixed_prec['compute_prec']))
             w  = tf.cast(w,  get_precision(mixed_prec['compute_prec']))
             b  = tf.cast(b,  get_precision(mixed_prec['compute_prec']))
-        hidden = tf.reshape(activation_fn(tf.nn.bias_add(tf.matmul(xx, w), b)), [-1, outputs_size[ii]])
+        if activation_fn is not None:
+            hidden = tf.reshape(activation_fn(tf.nn.bias_add(tf.matmul(xx, w), b)), [-1, outputs_size[ii]])
+        else:
+            hidden = tf.reshape(tf.nn.bias_add(tf.matmul(xx, w), b), [-1, outputs_size[ii]])
         if resnet_dt :
             idt_initializer = tf.random_normal_initializer(
                                   stddev=0.001, 

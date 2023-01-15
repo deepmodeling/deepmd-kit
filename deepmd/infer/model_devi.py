@@ -89,7 +89,7 @@ def calc_model_devi(coord,
                     models,
                     fname=None,
                     frequency=1, 
-                    nopbc=True):
+                    ):
     '''
     Python interface to calculate model deviation
 
@@ -107,8 +107,6 @@ def calc_model_devi(coord,
         File to dump results, default None
     frequency : int
         Steps between frames (if the system is given by molecular dynamics engine), default 1
-    nopbc : bool
-        Whether to use pbc conditions
     
     Returns
     -------
@@ -127,8 +125,10 @@ def calc_model_devi(coord,
     >>> graphs = [DP("graph.000.pb"), DP("graph.001.pb")]
     >>> model_devi = calc_model_devi(coord, cell, atype, graphs)
     '''
-    if nopbc:
-        box = None
+    if box is not None:
+        nopbc = True
+    else:
+        nopbc = False
 
     forces = []
     virials = []
@@ -197,10 +197,6 @@ def make_model_devi(
     for system in all_sys:
         # create data-system
         dp_data = DeepmdData(system, set_prefix, shuffle_test=False, type_map=tmap)
-        if dp_data.pbc:
-            nopbc = False
-        else:
-            nopbc = True
 
         data_sets = [dp_data._load_set(set_name) for set_name in dp_data.dirs]
         nframes_tot = 0
@@ -209,7 +205,9 @@ def make_model_devi(
             coord = data["coord"]
             box = data["box"]
             atype = data["type"][0] 
-            devi = calc_model_devi(coord, box, atype, dp_models, nopbc=nopbc)
+            if not dp_data.pbc:
+                box = None
+            devi = calc_model_devi(coord, box, atype, dp_models)
             nframes_tot += coord.shape[0]
             devis.append(devi)
         devis = np.vstack(devis)

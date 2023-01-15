@@ -10,7 +10,7 @@ from deepmd.env import tf, GLOBAL_ENER_FLOAT_PRECISION
 from deepmd.utils.argcheck import normalize
 from deepmd.utils.compat import update_deepmd_input
 from deepmd.utils.errors import GraphTooLargeError, GraphWithoutTensorError
-from deepmd.utils.graph import get_tensor_by_name
+from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph
 
 from .freeze import freeze
 from .train import train, get_rcut, get_min_nbor_dist
@@ -66,9 +66,10 @@ def compress(
     log_level : int
         logging level
     """
+    graph, _ = load_graph_def(input)
     try:
-        t_jdata = get_tensor_by_name(input, 'train_attr/training_script')
-        t_min_nbor_dist = get_tensor_by_name(input, 'train_attr/min_nbor_dist')
+        t_jdata = get_tensor_by_name_from_graph(graph, 'train_attr/training_script')
+        t_min_nbor_dist = get_tensor_by_name_from_graph(graph, 'train_attr/min_nbor_dist')
         jdata = json.loads(t_jdata)
     except GraphWithoutTensorError as e:
         if training_script == None:
@@ -88,7 +89,7 @@ def compress(
             jdata = update_deepmd_input(jdata)
             t_min_nbor_dist = get_min_nbor_dist(jdata, get_rcut(jdata))
 
-    _check_compress_type(input)
+    _check_compress_type(graph)
 
     tf.constant(t_min_nbor_dist,
         name = 'train_attr/min_nbor_dist',
@@ -102,7 +103,7 @@ def compress(
         10 * step,
         int(frequency),
     ]
-    jdata["training"]["save_ckpt"] = "model-compression/model.ckpt"
+    jdata["training"]["save_ckpt"] = os.path.join("model-compression", "model.ckpt")
     jdata = update_deepmd_input(jdata)
     jdata = normalize(jdata)
 
@@ -151,9 +152,9 @@ def compress(
             "increase the step size." % step
         ) from e
 
-def _check_compress_type(model_file):
+def _check_compress_type(graph: tf.Graph):
     try:
-        t_model_type = bytes.decode(get_tensor_by_name(model_file, 'model_type'))
+        t_model_type = bytes.decode(get_tensor_by_name_from_graph(graph, 'model_type'))
     except GraphWithoutTensorError as e:
         # Compatible with the upgraded model, which has no 'model_type' info
         t_model_type = None

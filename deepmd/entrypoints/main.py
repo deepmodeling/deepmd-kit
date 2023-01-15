@@ -2,10 +2,12 @@
 
 import argparse
 import logging
+import textwrap
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from deepmd import __version__
+from deepmd.common import clear_session
 from deepmd.entrypoints import (
     compress,
     config,
@@ -20,7 +22,9 @@ from deepmd.entrypoints import (
 )
 from deepmd.loggers import set_log_handles
 
-__all__ = ["main", "parse_args", "get_ll"]
+from deepmd.nvnmd.entrypoints.train import train_nvnmd
+
+__all__ = ["main", "parse_args", "get_ll", "main_parser"]
 
 
 def get_ll(log_level: str) -> int:
@@ -43,15 +47,19 @@ def get_ll(log_level: str) -> int:
 
     return int_level
 
+class RawTextArgumentDefaultsHelpFormatter(
+    argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter
+):
+    """This formatter is used to print multile-line help message with default value."""
 
-def parse_args(args: Optional[List[str]] = None):
+
+def main_parser() -> argparse.ArgumentParser:
     """DeePMD-Kit commandline options argument parser.
 
-    Parameters
-    ----------
-    args: List[str]
-        list of command line arguments, main purpose is testing default option None
-        takes arguments from sys.argv
+    Returns
+    -------
+    argparse.ArgumentParser
+        main parser of DeePMD-kit
     """
     parser = argparse.ArgumentParser(
         description="DeePMD-kit: A deep learning package for many-body potential energy"
@@ -138,24 +146,45 @@ def parse_args(args: Optional[List[str]] = None):
         "train",
         parents=[parser_log, parser_mpi_log],
         help="train a model",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent("""\
+        examples:
+            dp train input.json
+            dp train input.json --restart model.ckpt
+            dp train input.json --init-model model.ckpt
+        """),
     )
     parser_train.add_argument(
         "INPUT", help="the input parameter file in json or yaml format"
     )
-    parser_train.add_argument(
+    parser_train_subgroup = parser_train.add_mutually_exclusive_group()
+    parser_train_subgroup.add_argument(
         "-i",
         "--init-model",
         type=str,
         default=None,
         help="Initialize the model by the provided checkpoint.",
     )
-    parser_train.add_argument(
+    parser_train_subgroup.add_argument(
         "-r",
         "--restart",
         type=str,
         default=None,
         help="Restart the training from the provided checkpoint.",
+    )
+    parser_train_subgroup.add_argument(
+        "-f",
+        "--init-frz-model",
+        type=str,
+        default=None,
+        help="Initialize the training from the frozen model.",
+    )
+    parser_train_subgroup.add_argument(
+        "-t",
+        "--finetune",
+        type=str,
+        default=None,
+        help="Finetune the frozen pretrained model.",
     )
     parser_train.add_argument(
         "-o",
@@ -163,13 +192,6 @@ def parse_args(args: Optional[List[str]] = None):
         type=str,
         default="out.json",
         help="The output file of the parameters used in training.",
-    )
-    parser_train.add_argument(
-        "-f",
-        "--init-frz-model",
-        type=str,
-        default=None,
-        help="Initialize the training from the frozen model.",
     )
     parser_train.add_argument(
         "--skip-neighbor-stat",
@@ -182,7 +204,12 @@ def parse_args(args: Optional[List[str]] = None):
         "freeze",
         parents=[parser_log],
         help="freeze the model",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent("""\
+        examples:
+            dp freeze
+            dp freeze -o graph.pb
+        """),
     )
     parser_frz.add_argument(
         "-c",
@@ -205,13 +232,30 @@ def parse_args(args: Optional[List[str]] = None):
         default=None,
         help="the frozen nodes, if not set, determined from the model type",
     )
+    parser_frz.add_argument(
+        "-w",
+        "--nvnmd-weight",
+        type=str,
+        default=None,
+        help="the name of weight file (.npy), if set, save the model's weight into the file",
+    )
+    parser_frz.add_argument(
+        "--united-model",
+        action="store_true",
+        default=False,
+        help="When in multi-task mode, freeze all nodes into one united model",
+    )
 
     # * test script ********************************************************************
     parser_tst = subparsers.add_parser(
         "test",
         parents=[parser_log],
         help="test the model",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent("""\
+        examples:
+            dp test -m graph.pb -s /path/to/system -n 30
+        """),
     )
     parser_tst.add_argument(
         "-m",
@@ -220,12 +264,20 @@ def parse_args(args: Optional[List[str]] = None):
         type=str,
         help="Frozen model file to import",
     )
-    parser_tst.add_argument(
+    parser_tst_subgroup = parser_tst.add_mutually_exclusive_group()
+    parser_tst_subgroup.add_argument(
         "-s",
         "--system",
         default=".",
         type=str,
         help="The system dir. Recursively detect systems in this directory",
+    )
+    parser_tst_subgroup.add_argument(
+        "-f",
+        "--datafile",
+        default=None,
+        type=str,
+        help="The path to file of test list.",
     )
     parser_tst.add_argument(
         "-S", "--set-prefix", default="set", type=str, help="The set prefix"
@@ -244,7 +296,7 @@ def parse_args(args: Optional[List[str]] = None):
         "--detail-file",
         type=str,
         default=None,
-        help="File where details of energy force and virial accuracy will be written",
+        help="The prefix to files where details of energy, force and virial accuracy/accuracy per atom will be written",
     )
     parser_tst.add_argument(
         "-a",
@@ -266,7 +318,12 @@ def parse_args(args: Optional[List[str]] = None):
         "compress",
         parents=[parser_log, parser_mpi_log],
         help="compress a model",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent("""\
+        examples:
+            dp compress
+            dp compress -i graph.pb -o compressed.pb
+        """),
     )
     parser_compress.add_argument(
         "-i",
@@ -347,7 +404,11 @@ def parse_args(args: Optional[List[str]] = None):
         "model-devi",
         parents=[parser_log],
         help="calculate model deviation",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent("""\
+        examples:
+            dp model-devi -m graph.000.pb graph.001.pb graph.002.pb graph.003.pb -s ./data -o model_devi.out
+        """),
     )
     parser_model_devi.add_argument(
         "-m",
@@ -383,16 +444,20 @@ def parse_args(args: Optional[List[str]] = None):
     )
 
     # * convert models
-    # supported: 1.2->2.0, 1.3->2.0
     parser_transform = subparsers.add_parser(
         'convert-from',
         parents=[parser_log],
         help='convert lower model version to supported version',
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent("""\
+        examples:
+            dp convert-from 1.0 -i graph.pb -o graph_new.pb
+        """),
     )
     parser_transform.add_argument(
         'FROM',
         type = str,
-        choices = ['1.0', '1.1', '1.2', '1.3', '2.0'],
+        choices = ['0.12', '1.0', '1.1', '1.2', '1.3', '2.0', 'pbtxt'],
         help="The original model compatibility",
     )
     parser_transform.add_argument(
@@ -415,6 +480,11 @@ def parse_args(args: Optional[List[str]] = None):
         'neighbor-stat',
         parents=[parser_log],
         help='Calculate neighbor statistics',
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent("""\
+        examples:
+            dp neighbor-stat -s data -r 6.0 -t O H
+        """),
     )
     parser_neighbor_stat.add_argument(
         "-s",
@@ -438,10 +508,52 @@ def parse_args(args: Optional[List[str]] = None):
         required=True,
         help="type map",
     )
-        
+    parser_neighbor_stat.add_argument(
+        "--one-type",
+        action="store_true",
+        default=False,
+        help="treat all types as a single type. Used with se_atten descriptor.",
+    )
+
     # --version
     parser.add_argument('--version', action='version', version='DeePMD-kit v%s' % __version__)
 
+    # * train nvnmd script ******************************************************************
+    parser_train_nvnmd = subparsers.add_parser(
+        "train-nvnmd",
+        parents=[parser_log],
+        help="train nvnmd model",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser_train_nvnmd.add_argument(
+        "INPUT", help="the input parameter file in json format"
+    )
+    parser_train_nvnmd.add_argument(
+        "-s",
+        "--step",
+        default="s1",
+        type=str,
+        choices=['s1', 's2'],
+        help="steps to train model of NVNMD: s1 (train CNN), s2 (train QNN)"
+    )
+    return parser
+
+
+def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
+    """Parse arguments and convert argument strings to objects.
+
+    Parameters
+    ----------
+    args: List[str]
+        list of command line arguments, main purpose is testing default option None
+        takes arguments from sys.argv
+
+    Returns
+    -------
+    argparse.Namespace
+        the populated namespace
+    """
+    parser = main_parser()
     parsed_args = parser.parse_args(args=args)
     if parsed_args.command is None:
         parser.print_help()
@@ -451,15 +563,24 @@ def parse_args(args: Optional[List[str]] = None):
     return parsed_args
 
 
-def main():
+def main(args: Optional[List[str]] = None):
     """DeePMD-Kit entry point.
+
+    Parameters
+    ----------
+    args: List[str], optional
+        list of command line arguments, used to avoid calling from the subprocess,
+        as it is quite slow to import tensorflow
 
     Raises
     ------
     RuntimeError
         if no command was input
     """
-    args = parse_args()
+    if args is not None:
+        clear_session()
+
+    args = parse_args(args=args)
 
     # do not set log handles for None, it is useless
     # log handles for train will be set separatelly
@@ -489,7 +610,12 @@ def main():
         convert(**dict_args)
     elif args.command == "neighbor-stat":
         neighbor_stat(**dict_args)
+    elif args.command == "train-nvnmd":  # nvnmd
+        train_nvnmd(**dict_args)
     elif args.command is None:
         pass
     else:
         raise RuntimeError(f"unknown command {args.command}")
+
+    if args is not None:
+        clear_session()

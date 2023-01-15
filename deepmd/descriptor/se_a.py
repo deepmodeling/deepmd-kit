@@ -1,10 +1,9 @@
 import math
 import numpy as np
-from typing import Tuple, List, Dict, Any
+from typing import Optional, Tuple, List, Dict, Any
 
 from deepmd.env import tf
-from deepmd.common import get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, cast_precision
-from deepmd.utils.argcheck import list_to_doc
+from deepmd.common import get_activation_func, get_precision, cast_precision
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import op_module
@@ -17,6 +16,9 @@ from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph, ge
 from deepmd.utils.errors import GraphWithoutTensorError
 from .descriptor import Descriptor
 from .se import DescrptSe
+
+from deepmd.nvnmd.descriptor.se_a import descrpt2r4, build_davg_dstd, build_op_descriptor, filter_lower_R42GR, filter_GR2D
+from deepmd.nvnmd.utils.config import nvnmd_cfg 
 
 @Descriptor.register("se_e2_a")
 @Descriptor.register("se_a")
@@ -88,11 +90,13 @@ class DescrptSeA (DescrptSe):
     set_davg_zero
             Set the shift of embedding net input to zero.
     activation_function
-            The activation function in the embedding net. Supported options are {0}
+            The activation function in the embedding net. Supported options are |ACTIVATION_FN|
     precision
-            The precision of the embedding net parameters. Supported options are {1}
+            The precision of the embedding net parameters. Supported options are |PRECISION|
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
+    multi_task
+            If the model has multi fitting nets to train.
     
     References
     ----------
@@ -101,7 +105,6 @@ class DescrptSeA (DescrptSe):
        systems. In Proceedings of the 32nd International Conference on Neural Information Processing
        Systems (NIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4441–4451.
     """
-    @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   rcut: float,
                   rcut_smth: float,
@@ -110,13 +113,14 @@ class DescrptSeA (DescrptSe):
                   axis_neuron: int = 8,
                   resnet_dt: bool = False,
                   trainable: bool = True,
-                  seed: int = None,
+                  seed: Optional[int] = None,
                   type_one_side: bool = True,
                   exclude_types: List[List[int]] = [],
                   set_davg_zero: bool = False,
                   activation_function: str = 'tanh',
                   precision: str = 'default',
-                  uniform_seed: bool = False
+                  uniform_seed: bool = False,
+                  multi_task: bool = False
     ) -> None:
         """
         Constructor
@@ -163,10 +167,7 @@ class DescrptSeA (DescrptSe):
         self.embedding_net_variables = None
         self.mixed_prec = None
         self.place_holders = {}
-        nei_type = np.array([])
-        for ii in range(self.ntypes):
-            nei_type = np.append(nei_type, ii * np.ones(self.sel_a[ii])) # like a mask 
-        self.nei_type = tf.constant(nei_type, dtype = tf.int32)
+        self.nei_type = np.repeat(np.arange(self.ntypes), self.sel_a)  # like a mask
 
         avg_zero = np.zeros([self.ntypes,self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
         std_ones = np.ones ([self.ntypes,self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
@@ -193,7 +194,9 @@ class DescrptSeA (DescrptSe):
                                          sel_r = self.sel_r)
         self.sub_sess = tf.Session(graph = sub_graph, config=default_tf_session_config)
         self.original_sel = None
-
+        self.multi_task = multi_task
+        if multi_task:
+            self.stat_dict = {'sumr': [], 'suma': [], 'sumn': [], 'sumr2': [], 'suma2': []}
 
     def get_rcut (self) -> float:
         """
@@ -260,8 +263,6 @@ class DescrptSeA (DescrptSe):
         input_dict
                 Dictionary for additional input
         """
-        all_davg = []
-        all_dstd = []
         if True:
             sumr = []
             suma = []
@@ -276,30 +277,61 @@ class DescrptSeA (DescrptSe):
                 sumn.append(sysn)
                 sumr2.append(sysr2)
                 suma2.append(sysa2)
-            sumr = np.sum(sumr, axis = 0)
-            suma = np.sum(suma, axis = 0)
-            sumn = np.sum(sumn, axis = 0)
-            sumr2 = np.sum(sumr2, axis = 0)
-            suma2 = np.sum(suma2, axis = 0)
-            for type_i in range(self.ntypes) :
-                davgunit = [sumr[type_i]/(sumn[type_i]+1e-15), 0, 0, 0]
-                dstdunit = [self._compute_std(sumr2[type_i], sumr[type_i], sumn[type_i]), 
-                            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
-                            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
-                            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i])
-                            ]
-                davg = np.tile(davgunit, self.ndescrpt // 4)
-                dstd = np.tile(dstdunit, self.ndescrpt // 4)
-                all_davg.append(davg)
-                all_dstd.append(dstd)
+            if not self.multi_task:
+                stat_dict = {'sumr': sumr, 'suma': suma, 'sumn': sumn, 'sumr2': sumr2, 'suma2': suma2}
+                self.merge_input_stats(stat_dict)
+            else:
+                self.stat_dict['sumr'] += sumr
+                self.stat_dict['suma'] += suma
+                self.stat_dict['sumn'] += sumn
+                self.stat_dict['sumr2'] += sumr2
+                self.stat_dict['suma2'] += suma2
 
+    def merge_input_stats(self, stat_dict):
+        """
+        Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
+
+        Parameters
+        ----------
+        stat_dict
+                The dict of statisitcs computed from compute_input_stats, including:
+            sumr
+                    The sum of radial statisitcs.
+            suma
+                    The sum of relative coord statisitcs.
+            sumn
+                    The sum of neighbor numbers.
+            sumr2
+                    The sum of square of radial statisitcs.
+            suma2
+                    The sum of square of relative coord statisitcs.
+        """
+        all_davg = []
+        all_dstd = []
+        sumr = np.sum(stat_dict['sumr'], axis = 0)
+        suma = np.sum(stat_dict['suma'], axis = 0)
+        sumn = np.sum(stat_dict['sumn'], axis = 0)
+        sumr2 = np.sum(stat_dict['sumr2'], axis = 0)
+        suma2 = np.sum(stat_dict['suma2'], axis = 0)
+        for type_i in range(self.ntypes) :
+            davgunit = [sumr[type_i]/(sumn[type_i]+1e-15), 0, 0, 0]
+            dstdunit = [self._compute_std(sumr2[type_i], sumr[type_i], sumn[type_i]),
+                        self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]),
+                        self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]),
+                        self._compute_std(suma2[type_i], suma[type_i], sumn[type_i])
+                        ]
+            davg = np.tile(davgunit, self.ndescrpt // 4)
+            dstd = np.tile(dstdunit, self.ndescrpt // 4)
+            all_davg.append(davg)
+            all_dstd.append(dstd)
         if not self.set_davg_zero:
             self.davg = np.array(all_davg)
         self.dstd = np.array(all_dstd)
 
     def enable_compression(self,
                            min_nbor_dist : float,
-                           model_file : str = 'frozon_model.pb',
+                           graph: tf.Graph,
+                           graph_def: tf.GraphDef,
                            table_extrapolate : float = 5,
                            table_stride_1 : float = 0.01,
                            table_stride_2 : float = 0.1,
@@ -313,8 +345,10 @@ class DescrptSeA (DescrptSe):
         ----------
         min_nbor_dist
                 The nearest distance between atoms
-        model_file
-                The original frozen model, which will be compressed by the program
+        grapf : tf.Graph
+                The graph of the model
+        graph_def : tf.GraphDef
+                The graph_def of the model
         table_extrapolate
                 The scale of model extrapolation
         table_stride_1
@@ -346,7 +380,7 @@ class DescrptSeA (DescrptSe):
 
         self.compress = True
         self.table = DPTabulate(
-            self, self.filter_neuron, model_file, self.type_one_side, self.exclude_types, self.compress_activation_fn, suffix=suffix)
+            self, self.filter_neuron, graph, graph_def, self.type_one_side, self.exclude_types, self.compress_activation_fn, suffix=suffix)
         self.table_config = [table_extrapolate, table_stride_1, table_stride_2, check_frequency]
         self.lower, self.upper \
             = self.table.build(min_nbor_dist, 
@@ -354,7 +388,6 @@ class DescrptSeA (DescrptSe):
                                table_stride_1, 
                                table_stride_2)
         
-        graph, _ = load_graph_def(model_file)
         self.davg = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_avg' % suffix)
         self.dstd = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_std' % suffix)
 
@@ -414,6 +447,7 @@ class DescrptSeA (DescrptSe):
         """
         davg = self.davg
         dstd = self.dstd
+        if nvnmd_cfg.enable and nvnmd_cfg.restore_descriptor: davg, dstd = build_davg_dstd()
         with tf.variable_scope('descrpt_attr' + suffix, reuse = reuse) :
             if davg is None:
                 davg = np.zeros([self.ntypes, self.ndescrpt]) 
@@ -450,8 +484,9 @@ class DescrptSeA (DescrptSe):
         box   = tf.reshape (box_, [-1, 9])
         atype = tf.reshape (atype_, [-1, natoms[1]])
 
+        op_descriptor = build_op_descriptor() if nvnmd_cfg.enable else op_module.prod_env_mat_a
         self.descrpt, self.descrpt_deriv, self.rij, self.nlist \
-            = op_module.prod_env_mat_a (coord,
+            = op_descriptor           (coord,
                                        atype,
                                        natoms,
                                        box,
@@ -517,7 +552,7 @@ class DescrptSeA (DescrptSe):
         """
         [net_deriv] = tf.gradients (atom_ener, self.descrpt_reshape)
         tf.summary.histogram('net_derivative', net_deriv)
-        net_deriv_reshape = tf.reshape (net_deriv, [-1, natoms[0] * self.ndescrpt])        
+        net_deriv_reshape = tf.reshape (net_deriv, [np.cast['int64'](-1), natoms[0] * np.cast['int64'](self.ndescrpt)])        
         force \
             = op_module.prod_force_se_a (net_deriv_reshape,
                                           self.descrpt_deriv,
@@ -553,24 +588,19 @@ class DescrptSeA (DescrptSe):
         else:
             type_embedding = None
         start_index = 0
-        inputs = tf.reshape(inputs, [-1, self.ndescrpt * natoms[0]])
+        inputs = tf.reshape(inputs, [-1, natoms[0], self.ndescrpt])
         output = []
         output_qmat = []
-        if not (self.type_one_side and len(self.exclude_types) == 0) and type_embedding is None:
+        if not self.type_one_side and type_embedding is None:
             for type_i in range(self.ntypes):
                 inputs_i = tf.slice (inputs,
-                                     [ 0, start_index*      self.ndescrpt],
-                                     [-1, natoms[2+type_i]* self.ndescrpt] )
+                                     [ 0, start_index, 0],
+                                     [-1, natoms[2+type_i], -1] )
                 inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
-                if self.type_one_side:
-                    # reuse NN parameters for all types to support type_one_side along with exclude_types
-                    reuse = tf.AUTO_REUSE
-                    filter_name = 'filter_type_all'+suffix
-                else:
-                    filter_name = 'filter_type_'+str(type_i)+suffix
+                filter_name = 'filter_type_'+str(type_i)+suffix
                 layer, qmat = self._filter(inputs_i, type_i, name=filter_name, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
-                layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_out()])
-                qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[2+type_i] * self.get_dim_rot_mat_1() * 3])
+                layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[2+type_i], self.get_dim_out()])
+                qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[2+type_i], self.get_dim_rot_mat_1() * 3])
                 output.append(layer)
                 output_qmat.append(qmat)
                 start_index += natoms[2+type_i]
@@ -578,9 +608,22 @@ class DescrptSeA (DescrptSe):
             inputs_i = inputs
             inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
             type_i = -1
+            if nvnmd_cfg.enable and nvnmd_cfg.quantize_descriptor: 
+                inputs_i = descrpt2r4(inputs_i, natoms)
+            if len(self.exclude_types):
+                mask = self.build_type_exclude_mask(
+                    self.exclude_types,
+                    self.ntypes,
+                    self.sel_a,
+                    self.ndescrpt,
+                    atype,
+                    tf.shape(inputs_i)[0],
+                )
+                inputs_i *= mask
+
             layer, qmat = self._filter(inputs_i, type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn, type_embedding=type_embedding)
-            layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0] * self.get_dim_out()])
-            qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[0] * self.get_dim_rot_mat_1() * 3])
+            layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0], self.get_dim_out()])
+            qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[0], self.get_dim_rot_mat_1() * 3])
             output.append(layer)
             output_qmat.append(qmat)
         output = tf.concat(output, axis = 1)
@@ -635,7 +678,7 @@ class DescrptSeA (DescrptSe):
 
     def _compute_std (self,sumv2, sumv, sumn) :
         if sumn == 0:
-            return 1e-2
+            return 1. / self.rcut_r
         val = np.sqrt(sumv2/sumn - np.multiply(sumv/sumn, sumv/sumn))
         if np.abs(val) < 1e-2:
             val = 1e-2
@@ -668,8 +711,9 @@ class DescrptSeA (DescrptSe):
             embedding:
                 environment of each atom represented by embedding.
         '''
-        te_out_dim = type_embedding.get_shape().as_list()[-1]        
-        nei_embed = tf.nn.embedding_lookup(type_embedding,tf.cast(self.nei_type,dtype=tf.int32))  # shape is [self.nnei, 1+te_out_dim]
+        te_out_dim = type_embedding.get_shape().as_list()[-1]
+        self.t_nei_type = tf.constant(self.nei_type, dtype=tf.int32)
+        nei_embed = tf.nn.embedding_lookup(type_embedding,tf.cast(self.t_nei_type,dtype=tf.int32))  # shape is [self.nnei, 1+te_out_dim]
         nei_embed = tf.tile(nei_embed,(nframes*natoms[0],1))  # shape is [nframes*natoms[0]*self.nnei, te_out_dim]
         nei_embed = tf.reshape(nei_embed,[-1,te_out_dim])
         embedding_input = tf.concat([xyz_scatter,nei_embed],1)  # shape is [nframes*natoms[0]*self.nnei, 1+te_out_dim]
@@ -719,13 +763,21 @@ class DescrptSeA (DescrptSe):
             if self.compress:
                 raise RuntimeError('compression of type embedded descriptor is not supported at the moment')
         # natom x 4 x outputs_size
+        if nvnmd_cfg.enable:
+          return filter_lower_R42GR(
+            type_i, type_input, inputs_i, is_exclude,
+            activation_fn, bavg, stddev, trainable, 
+            suffix, self.seed, self.seed_shift, self.uniform_seed,
+            self.filter_neuron, self.filter_precision, self.filter_resnet_dt,
+            self.embedding_net_variables
+          )
         if self.compress and (not is_exclude):
-          info = [self.lower, self.upper, self.upper * self.table_config[0], self.table_config[1], self.table_config[2], self.table_config[3]]
-          if self.type_one_side:
-            net = 'filter_-1_net_' + str(type_i)
-          else:
-            net = 'filter_' + str(type_input) + '_net_' + str(type_i)
-          return op_module.tabulate_fusion_se_a(tf.cast(self.table.data[net], self.filter_precision), info, xyz_scatter, tf.reshape(inputs_i, [natom, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])  
+            if self.type_one_side:
+                net = 'filter_-1_net_' + str(type_i)
+            else:
+                net = 'filter_' + str(type_input) + '_net_' + str(type_i)
+            info = [self.lower[net], self.upper[net], self.upper[net] * self.table_config[0], self.table_config[1], self.table_config[2], self.table_config[3]]
+            return op_module.tabulate_fusion_se_a(tf.cast(self.table.data[net], self.filter_precision), info, xyz_scatter, tf.reshape(inputs_i, [natom, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])  
         else:
           if (not is_exclude):
               # with (natom x nei_type_i) x out_size
@@ -827,6 +879,7 @@ class DescrptSeA (DescrptSe):
                   stddev = stddev,
                   bavg = bavg,
                   trainable = trainable)
+          if nvnmd_cfg.enable: return filter_GR2D(xyz_scatter_1)
           # natom x nei x outputs_size
           # xyz_scatter = tf.concat(xyz_scatter_total, axis=1)
           # natom x nei x 4

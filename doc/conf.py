@@ -16,6 +16,11 @@ import sys
 import recommonmark
 from recommonmark.transform import AutoStructify
 from datetime import date
+from deepmd.common import ACTIVATION_FN_DICT, PRECISION_DICT
+from deepmd.utils.argcheck import list_to_doc
+
+sys.path.append(os.path.dirname(__file__))
+import sphinx_contrib_exhale_multiproject as _
 
 def mkindex(dirname):
     dirname = dirname + "/"
@@ -110,31 +115,6 @@ project = 'DeePMD-kit'
 copyright = '2017-%d, DeepModeling' % date.today().year
 author = 'DeepModeling'
 
-def run_doxygen(folder):
-    """Run the doxygen make command in the designated folder"""
-
-    try:
-        retcode = subprocess.call("cd %s; doxygen Doxyfile" % folder, shell=True)
-        if retcode < 0:
-            sys.stderr.write("doxygen terminated by signal %s" % (-retcode))
-    except OSError as e:
-        sys.stderr.write("doxygen execution failed: %s" % e)
-
-
-def generate_doxygen_xml(app):
-    """Run the doxygen make commands if we're on the ReadTheDocs server"""
-
-    read_the_docs_build = os.environ.get('READTHEDOCS', None) == 'True'
-
-    if read_the_docs_build:
-        run_doxygen("./")
-    else:
-        subprocess.call("doxygen Doxyfile", shell=True)
-
-def generate_train_input(app):
-    with open("train-input-auto.rst", 'w') as f:
-        f.write(subprocess.check_output((sys.executable, "-m", "deepmd", "doc-train-input"), universal_newlines=True))
-
 def run_apidoc(_):
     from sphinx.ext.apidoc import main
     import sys
@@ -146,9 +126,7 @@ def run_apidoc(_):
 def setup(app):
 
     # Add hook for building doxygen xml when needed
-    app.connect("builder-inited", generate_doxygen_xml)
     app.connect('builder-inited', run_apidoc)
-    app.connect('builder-inited', generate_train_input)
 
 # -- General configuration ---------------------------------------------------
 
@@ -169,12 +147,15 @@ def setup(app):
 
 extensions = [
     "deepmodeling_sphinx",
+    "dargs.sphinx",
     "sphinx_rtd_theme",
     'myst_parser',
     'sphinx.ext.autosummary',
     'sphinx.ext.mathjax',
     'sphinx.ext.viewcode',
     'sphinx.ext.intersphinx',
+    'sphinx.ext.napoleon',
+    'sphinxarg.ext',
     'numpydoc',
     'breathe',
     'exhale'
@@ -183,22 +164,45 @@ extensions = [
 # breathe_domain_by_extension = {
 #         "h" : "cpp",
 # }
-breathe_projects = {"myproject": "_build/xml/"}
-breathe_default_project = "myproject"
+breathe_projects = {
+    "cc": "_build/cc/xml/",
+    "c": "_build/c/xml/",
+    "core": "_build/core/xml/",
+}
+breathe_default_project = "cc"
 
 exhale_args = {
-   "containmentFolder":     "./API_CC",
-    "rootFileName":          "api_cc.rst",
-    "rootFileTitle":         "C++ API",
     "doxygenStripFromPath":  "..",
     # Suggested optional arguments
     # "createTreeView":        True,
     # TIP: if using the sphinx-bootstrap-theme, you need
     # "treeViewIsBootstrap": True,
     "exhaleExecutesDoxygen": True,
-    "exhaleDoxygenStdin":    "INPUT = ../source/api_cc/include/",
     # "unabridgedOrphanKinds": {"namespace"}
     # "listingExclude": [r"namespace_*"]
+}
+exhale_projects_args = {
+    "cc": {
+        "containmentFolder": "./API_CC",
+        "exhaleDoxygenStdin": "INPUT = ../source/api_cc/include/",
+        "rootFileTitle": "C++ API",
+        "rootFileName": "api_cc.rst",
+    },
+    "c": {
+        "containmentFolder": "./api_c",
+        "exhaleDoxygenStdin": "INPUT = ../source/api_c/include/",
+        "rootFileTitle": "C API",
+        "rootFileName": "api_c.rst",
+    },
+    "core": {
+        "containmentFolder": "./api_core",
+        "exhaleDoxygenStdin": """INPUT = ../source/lib/include/
+                                 PREDEFINED += GOOGLE_CUDA
+                                              TENSORFLOW_USE_ROCM
+        """,
+        "rootFileTitle": "Core API",
+        "rootFileName": "api_core.rst",
+    },
 }
 
 # Tell sphinx what the primary language being documented is.
@@ -235,6 +239,11 @@ import typing
 for typing_type in typing.__all__:
     numpydoc_xref_aliases[typing_type] = "typing.%s" % typing_type
 
+rst_epilog = """
+.. |ACTIVATION_FN| replace:: %s
+.. |PRECISION| replace:: %s
+""" % (list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
+
 # -- Options for HTML output -------------------------------------------------
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
@@ -252,3 +261,19 @@ autodoc_default_flags = ['members']
 autosummary_generate = True
 master_doc = 'index'
 mathjax_path = 'https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.0/es5/tex-mml-chtml.min.js'
+myst_enable_extensions = [
+    'dollarmath',
+    'colon_fence',
+]
+# fix emoji issue in pdf
+latex_engine = "xelatex"
+latex_elements = {
+    'fontpkg': r'''
+\usepackage{fontspec}
+\setmainfont{Symbola}
+''',
+}
+
+# For TF automatic generated OP docs
+napoleon_google_docstring = True
+napoleon_numpy_docstring = False

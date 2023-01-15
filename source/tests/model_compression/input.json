@@ -53,11 +53,11 @@
 		"numb_btch":	3,
 		"_comment":		"that's all"
 },
-"numb_steps":	100,
+"numb_steps":	1,
 "seed":		10,
 "disp_file":	"lcurve.out",
-"disp_freq":	100,
-"save_freq":	100,
+"disp_freq":	1,
+"save_freq":	1,
 "_comment":	"that's all"
 	},    
 

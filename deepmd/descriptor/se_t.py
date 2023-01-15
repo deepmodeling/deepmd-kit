@@ -1,9 +1,8 @@
 import numpy as np
-from typing import Tuple, List
+from typing import Optional, Tuple, List
 
 from deepmd.env import tf
-from deepmd.common import get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter, cast_precision
-from deepmd.utils.argcheck import list_to_doc
+from deepmd.common import get_activation_func, get_precision, cast_precision
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import op_module
@@ -36,7 +35,7 @@ class DescrptSeT (DescrptSe):
             Number of neurons in each hidden layers of the embedding net
     resnet_dt
             Time-step `dt` in the resnet construction:
-            y = x + dt * \phi (Wx + b)
+            y = x + dt * \\phi (Wx + b)
     trainable
             If the weights of embedding net are trainable.
     seed
@@ -44,13 +43,12 @@ class DescrptSeT (DescrptSe):
     set_davg_zero
             Set the shift of embedding net input to zero.
     activation_function
-            The activation function in the embedding net. Supported options are {0}
+            The activation function in the embedding net. Supported options are |ACTIVATION_FN|
     precision
-            The precision of the embedding net parameters. Supported options are {1}
+            The precision of the embedding net parameters. Supported options are |PRECISION|
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
     """
-    @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__ (self, 
                   rcut: float,
                   rcut_smth: float,
@@ -58,11 +56,12 @@ class DescrptSeT (DescrptSe):
                   neuron: List[int] = [24,48,96],
                   resnet_dt: bool = False,
                   trainable: bool = True,
-                  seed: int = None,
+                  seed: Optional[int] = None,
                   set_davg_zero: bool = False,
                   activation_function: str = 'tanh',
                   precision: str = 'default',
-                  uniform_seed: bool = False
+                  uniform_seed: bool = False,
+                  multi_task: bool = False
     ) -> None:
         """
         Constructor
@@ -130,11 +129,13 @@ class DescrptSeT (DescrptSe):
                                          sel_a = self.sel_a,
                                          sel_r = self.sel_r)
         self.sub_sess = tf.Session(graph = sub_graph, config=default_tf_session_config)
-
+        self.multi_task = multi_task
+        if multi_task:
+            self.stat_dict = {'sumr': [], 'suma': [], 'sumn': [], 'sumr2': [], 'suma2': []}
 
     def get_rcut (self) -> float:
         """
-        Returns the cut-off radisu
+        Returns the cut-off radius
         """
         return self.rcut_r
 
@@ -191,8 +192,6 @@ class DescrptSeT (DescrptSe):
         input_dict
                 Dictionary for additional input
         """
-        all_davg = []
-        all_dstd = []
         if True:
             sumr = []
             suma = []
@@ -207,23 +206,53 @@ class DescrptSeT (DescrptSe):
                 sumn.append(sysn)
                 sumr2.append(sysr2)
                 suma2.append(sysa2)
-            sumr = np.sum(sumr, axis = 0)
-            suma = np.sum(suma, axis = 0)
-            sumn = np.sum(sumn, axis = 0)
-            sumr2 = np.sum(sumr2, axis = 0)
-            suma2 = np.sum(suma2, axis = 0)
-            for type_i in range(self.ntypes) :
-                davgunit = [sumr[type_i]/sumn[type_i], 0, 0, 0]
-                dstdunit = [self._compute_std(sumr2[type_i], sumr[type_i], sumn[type_i]), 
-                            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
-                            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]), 
-                            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i])
-                            ]
-                davg = np.tile(davgunit, self.ndescrpt // 4)
-                dstd = np.tile(dstdunit, self.ndescrpt // 4)
-                all_davg.append(davg)
-                all_dstd.append(dstd)
+            if not self.multi_task:
+                stat_dict = {'sumr': sumr, 'suma': suma, 'sumn': sumn, 'sumr2': sumr2, 'suma2': suma2}
+                self.merge_input_stats(stat_dict)
+            else:
+                self.stat_dict['sumr'] += sumr
+                self.stat_dict['suma'] += suma
+                self.stat_dict['sumn'] += sumn
+                self.stat_dict['sumr2'] += sumr2
+                self.stat_dict['suma2'] += suma2
 
+    def merge_input_stats(self, stat_dict):
+        """
+        Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
+
+        Parameters
+        ----------
+        stat_dict
+                The dict of statisitcs computed from compute_input_stats, including:
+            sumr
+                    The sum of radial statisitcs.
+            suma
+                    The sum of relative coord statisitcs.
+            sumn
+                    The sum of neighbor numbers.
+            sumr2
+                    The sum of square of radial statisitcs.
+            suma2
+                    The sum of square of relative coord statisitcs.
+        """
+        all_davg = []
+        all_dstd = []
+        sumr = np.sum(stat_dict['sumr'], axis = 0)
+        suma = np.sum(stat_dict['suma'], axis = 0)
+        sumn = np.sum(stat_dict['sumn'], axis = 0)
+        sumr2 = np.sum(stat_dict['sumr2'], axis = 0)
+        suma2 = np.sum(stat_dict['suma2'], axis = 0)
+        for type_i in range(self.ntypes) :
+            davgunit = [sumr[type_i]/(sumn[type_i]+1e-15), 0, 0, 0]
+            dstdunit = [self._compute_std(sumr2[type_i], sumr[type_i], sumn[type_i]),
+                        self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]),
+                        self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]),
+                        self._compute_std(suma2[type_i], suma[type_i], sumn[type_i])
+                        ]
+            davg = np.tile(davgunit, self.ndescrpt // 4)
+            dstd = np.tile(dstdunit, self.ndescrpt // 4)
+            all_davg.append(davg)
+            all_dstd.append(dstd)
         if not self.set_davg_zero:
             self.davg = np.array(all_davg)
         self.dstd = np.array(all_dstd)
@@ -231,7 +260,8 @@ class DescrptSeT (DescrptSe):
 
     def enable_compression(self,
                            min_nbor_dist : float,
-                           model_file : str = 'frozon_model.pb',
+                           graph: tf.Graph,
+                           graph_def: tf.GraphDef,
                            table_extrapolate : float = 5,
                            table_stride_1 : float = 0.01,
                            table_stride_2 : float = 0.1,
@@ -245,8 +275,10 @@ class DescrptSeT (DescrptSe):
         ----------
         min_nbor_dist
                 The nearest distance between atoms
-        model_file
-                The original frozen model, which will be compressed by the program
+        grapf : tf.Graph
+                The graph of the model
+        graph_def : tf.GraphDef
+                The graph_def of the model
         table_extrapolate
                 The scale of model extrapolation
         table_stride_1
@@ -272,7 +304,7 @@ class DescrptSeT (DescrptSe):
 
         self.compress = True
         self.table = DPTabulate(
-            self, self.filter_neuron, model_file, activation_fn = self.filter_activation_fn, suffix=suffix)
+            self, self.filter_neuron, graph, graph_def, activation_fn = self.filter_activation_fn, suffix=suffix)
         self.table_config = [table_extrapolate, table_stride_1 * 10, table_stride_2 * 10, check_frequency]
         self.lower, self.upper \
             = self.table.build(min_nbor_dist, 
@@ -280,7 +312,6 @@ class DescrptSeT (DescrptSe):
                                table_stride_1 * 10, 
                                table_stride_2 * 10)
         
-        graph, _ = load_graph_def(model_file)
         self.davg = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_avg' % suffix)
         self.dstd = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_std' % suffix)
 
@@ -414,7 +445,7 @@ class DescrptSeT (DescrptSe):
                 The atomic virial
         """
         [net_deriv] = tf.gradients (atom_ener, self.descrpt_reshape)
-        net_deriv_reshape = tf.reshape (net_deriv, [-1, natoms[0] * self.ndescrpt])        
+        net_deriv_reshape = tf.reshape (net_deriv, [np.cast['int64'](-1), natoms[0] * np.cast['int64'](self.ndescrpt)])        
         force \
             = op_module.prod_force_se_a (net_deriv_reshape,
                                           self.descrpt_deriv,
@@ -442,14 +473,14 @@ class DescrptSeT (DescrptSe):
                      suffix = '', 
                      trainable = True) :
         start_index = 0
-        inputs = tf.reshape(inputs, [-1, self.ndescrpt * natoms[0]])
+        inputs = tf.reshape(inputs, [-1, natoms[0], self.ndescrpt])
         output = []
         output_qmat = []
         inputs_i = inputs
         inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
         type_i = -1
         layer, qmat = self._filter(inputs_i, type_i, name='filter_type_all'+suffix, natoms=natoms, reuse=reuse, trainable = trainable, activation_fn = self.filter_activation_fn)
-        layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0] * self.get_dim_out()])
+        layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0], self.get_dim_out()])
         # qmat  = tf.reshape(qmat,  [tf.shape(inputs)[0], natoms[0] * self.get_dim_rot_mat_1() * 3])
         output.append(layer)
         # output_qmat.append(qmat)
@@ -559,8 +590,8 @@ class DescrptSeT (DescrptSe):
                     # with (natom x nei_type_i x nei_type_j)
                     ebd_env_ij = tf.reshape(env_ij, [-1, 1])
                     if self.compress:
-                        info = [self.lower, self.upper, self.upper * self.table_config[0], self.table_config[1], self.table_config[2], self.table_config[3]]
                         net = 'filter_' + str(type_i) + '_net_' + str(type_j)
+                        info = [self.lower[net], self.upper[net], self.upper[net] * self.table_config[0], self.table_config[1], self.table_config[2], self.table_config[3]]
                         res_ij = op_module.tabulate_fusion_se_t(tf.cast(self.table.data[net], self.filter_precision), info, ebd_env_ij, env_ij, last_layer_size = outputs_size[-1]) 
                     else:
                         # with (natom x nei_type_i x nei_type_j) x out_size

@@ -51,6 +51,7 @@ public:
       * natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
       * dim_aparam. Then all frames and atoms are provided with the same aparam.
   **/
+  template<typename VALUETYPE>
   void compute (ENERGYTYPE &			ener,
 		std::vector<VALUETYPE> &	force,
 		std::vector<VALUETYPE> &	virial,
@@ -78,6 +79,7 @@ public:
       * natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
       * dim_aparam. Then all frames and atoms are provided with the same aparam.
   **/
+  template<typename VALUETYPE>
   void compute (ENERGYTYPE &			ener,
 		std::vector<VALUETYPE> &	force,
 		std::vector<VALUETYPE> &	virial,
@@ -107,6 +109,7 @@ public:
       * natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
       * dim_aparam. Then all frames and atoms are provided with the same aparam.
   **/
+  template<typename VALUETYPE>
   void compute (ENERGYTYPE &			ener,
 		std::vector<VALUETYPE> &	force,
 		std::vector<VALUETYPE> &	virial,
@@ -138,6 +141,7 @@ public:
       * natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
       * dim_aparam. Then all frames and atoms are provided with the same aparam.
   **/
+  template<typename VALUETYPE>
   void compute (ENERGYTYPE &			ener,
 		std::vector<VALUETYPE> &	force,
 		std::vector<VALUETYPE> &	virial,
@@ -155,7 +159,7 @@ public:
   * @brief Get the cutoff radius.
   * @return The cutoff radius.
   **/
-  VALUETYPE cutoff () const {assert(inited); return rcut;};
+  double cutoff () const {assert(inited); return rcut;};
   /**
   * @brief Get the number of types.
   * @return The number of types.
@@ -179,21 +183,24 @@ public:
 private:
   tensorflow::Session* session;
   int num_intra_nthreads, num_inter_nthreads;
-  tensorflow::GraphDef graph_def;
+  tensorflow::GraphDef* graph_def;
   bool inited;
   template<class VT> VT get_scalar(const std::string & name) const;
   // VALUETYPE get_rcut () const;
   // int get_ntypes () const;
-  VALUETYPE rcut;
-  VALUETYPE cell_size;
+  double rcut;
+  int dtype;
+  double cell_size;
   std::string model_type;
   std::string model_version;
   int ntypes;
   int dfparam;
   int daparam;
+  template<typename VALUETYPE>
   void validate_fparam_aparam(const int & nloc,
 			      const std::vector<VALUETYPE> &fparam,
 			      const std::vector<VALUETYPE> &aparam)const ;
+  template<typename VALUETYPE>
   void compute_inner (ENERGYTYPE &			ener,
 		      std::vector<VALUETYPE> &		force,
 		      std::vector<VALUETYPE> &		virial,
@@ -210,7 +217,7 @@ private:
   std::vector<int> sec_a;
   NeighborListData nlist_data;
   InputNlist nlist;
-  AtomMap<VALUETYPE> atommap;
+  AtomMap atommap;
 
   // function used for neighbor list copy
   std::vector<int> get_sel_a() const;
@@ -226,16 +233,16 @@ public:
   ~DeepPotModelDevi() ;
   /**
   * @brief DP model deviation constructor with initialization.
-  * @param[in] model The names of the frozen model files.
+  * @param[in] models The names of the frozen model files.
   * @param[in] gpu_rank The GPU rank. Default is 0.
-  * @param[in] file_content The contents of the model files. If it is not empty, DP will read from the strings instead of the files.
+  * @param[in] file_contents The contents of the model files. If it is not empty, DP will read from the strings instead of the files.
   **/
   DeepPotModelDevi  (const std::vector<std::string> & models, const int & gpu_rank = 0, const std::vector<std::string> & file_contents = std::vector<std::string>());
   /**
   * @brief Initialize the DP model deviation contrcutor.
-  * @param[in] model The names of the frozen model files.
+  * @param[in] models The names of the frozen model files.
   * @param[in] gpu_rank The GPU rank. Default is 0.
-  * @param[in] file_content The contents of the model files. If it is not empty, DP will read from the strings instead of the files.
+  * @param[in] file_contents The contents of the model files. If it is not empty, DP will read from the strings instead of the files.
   **/
   void init (const std::vector<std::string> & models, const int & gpu_rank = 0, const std::vector<std::string> & file_contents = std::vector<std::string>());
 public:
@@ -258,6 +265,7 @@ public:
       * natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
       * dim_aparam. Then all frames and atoms are provided with the same aparam.
   **/
+  template<typename VALUETYPE>
   void compute (std::vector<ENERGYTYPE> &		all_ener,
 		std::vector<std::vector<VALUETYPE> > &	all_force,
 		std::vector<std::vector<VALUETYPE> > &	all_virial,
@@ -290,6 +298,7 @@ public:
       * natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
       * dim_aparam. Then all frames and atoms are provided with the same aparam.
   **/
+  template<typename VALUETYPE>
   void compute (std::vector<ENERGYTYPE> &		all_ener,
 		std::vector<std::vector<VALUETYPE> > &	all_force,
 		std::vector<std::vector<VALUETYPE> > &	all_virial,
@@ -307,7 +316,7 @@ public:
   * @brief Get the cutoff radius.
   * @return The cutoff radius.
   **/
-  VALUETYPE cutoff () const {assert(inited); return rcut;};
+  double cutoff () const {assert(inited); return rcut;};
   /**
   * @brief Get the number of types.
   * @return The number of types.
@@ -323,20 +332,12 @@ public:
   * @return The dimension of the atomic parameter.
   **/
   int dim_aparam () const {assert(inited); return daparam;};
-#ifndef HIGH_PREC
   /**
   * @brief Compute the average energy.
   * @param[out] dener The average energy.
   * @param[in] all_energy The energies of all models.
   **/
-  void compute_avg (ENERGYTYPE &		dener,
-		    const std::vector<ENERGYTYPE > &	all_energy);
-#endif
-  /**
-  * @brief Compute the average energy.
-  * @param[out] dener The average energy.
-  * @param[in] all_energy The energies of all models.
-  **/
+  template <typename VALUETYPE>
   void compute_avg (VALUETYPE &			dener,
 		    const std::vector<VALUETYPE > &	all_energy);
   /**
@@ -344,6 +345,7 @@ public:
   * @param[out] avg The average of vectors.
   * @param[in] xx The vectors of all models.
   **/
+  template <typename VALUETYPE>
   void compute_avg (std::vector<VALUETYPE> &		avg,
 		    const std::vector<std::vector<VALUETYPE> > &	xx);
   /**
@@ -353,6 +355,7 @@ public:
   * @param[in] xx The vectors of all models.
   * @param[in] stride The stride to compute the deviation.
   **/
+  template <typename VALUETYPE>
   void compute_std (
       std::vector<VALUETYPE> & std,
       const std::vector<VALUETYPE> & avg,
@@ -365,6 +368,7 @@ public:
   * @param[in] eps The level parameter for computing the deviation.
   * @param[in] stride The stride to compute the deviation.
   **/
+  template <typename VALUETYPE>
   void compute_relative_std (
       std::vector<VALUETYPE> & std,
       const std::vector<VALUETYPE> & avg,
@@ -376,6 +380,7 @@ public:
   * @param[in] avg The average of atomic energies.
   * @param[in] xx The vectors of all atomic energies.
   **/
+  template <typename VALUETYPE>
   void compute_std_e (std::vector<VALUETYPE> &		std,
 		      const std::vector<VALUETYPE> &		avg,
 		      const std::vector<std::vector<VALUETYPE> >&	xx);
@@ -385,6 +390,7 @@ public:
   * @param[in] avg The average of forces.
   * @param[in] xx The vectors of all forces.
   **/
+  template <typename VALUETYPE>
   void compute_std_f (std::vector<VALUETYPE> &		std,
 		      const std::vector<VALUETYPE> &		avg,
 		      const std::vector<std::vector<VALUETYPE> >& xx);
@@ -394,6 +400,7 @@ public:
   * @param[in] avg The relative average of forces.
   * @param[in] eps The level parameter for computing the deviation.
   **/
+  template <typename VALUETYPE>
   void compute_relative_std_f (std::vector<VALUETYPE> &		std,
 		      const std::vector<VALUETYPE> &		avg,
 		      const VALUETYPE eps);
@@ -401,18 +408,20 @@ private:
   unsigned numb_models;
   std::vector<tensorflow::Session*> sessions;
   int num_intra_nthreads, num_inter_nthreads;
-  std::vector<tensorflow::GraphDef> graph_defs;
+  std::vector<tensorflow::GraphDef*> graph_defs;
   bool inited;
   template<class VT> VT get_scalar(const std::string name) const;
   // VALUETYPE get_rcut () const;
   // int get_ntypes () const;
-  VALUETYPE rcut;
-  VALUETYPE cell_size;
+  double rcut;
+  double cell_size;
+  int dtype;
   std::string model_type;
   std::string model_version;
   int ntypes;
   int dfparam;
   int daparam;
+  template <typename VALUETYPE>
   void validate_fparam_aparam(const int & nloc,
 			      const std::vector<VALUETYPE> &fparam,
 			      const std::vector<VALUETYPE> &aparam)const ;
@@ -420,13 +429,12 @@ private:
   // copy neighbor list info from host
   bool init_nbor;
   std::vector<std::vector<int> > sec;
-  deepmd::AtomMap<VALUETYPE> atommap;
+  deepmd::AtomMap atommap;
   NeighborListData nlist_data;
   InputNlist nlist;
 
   // function used for nborlist copy
   std::vector<std::vector<int> > get_sel() const;
-  void cum_sum(const std::vector<std::vector<tensorflow::int32> > n_sel);
 };
 }
 

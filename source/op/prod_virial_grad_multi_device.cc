@@ -76,14 +76,14 @@ public:
     OP_REQUIRES (context, (nframes == nlist_shape.dim_size(0)),		errors::InvalidArgument ("number of frames should match"));
     
     OP_REQUIRES (context, (9 == grad_shape.dim_size(1)),		errors::InvalidArgument ("input grad shape should be 3 x natoms"));
-    OP_REQUIRES (context, (nloc * ndescrpt * 3 == in_deriv_shape.dim_size(1)),errors::InvalidArgument ("number of descriptors should match"));
-    OP_REQUIRES (context, (nloc * nnei * 3 == rij_shape.dim_size(1)),	errors::InvalidArgument ("dim of rij should be  nnei * 3"));
+    OP_REQUIRES (context, (int_64(nloc) * ndescrpt * 3 == in_deriv_shape.dim_size(1)),errors::InvalidArgument ("number of descriptors should match"));
+    OP_REQUIRES (context, (int_64(nloc) * nnei * 3 == rij_shape.dim_size(1)),	errors::InvalidArgument ("dim of rij should be  nnei * 3"));
     OP_REQUIRES (context, (nnei == n_a_sel + n_r_sel),			errors::InvalidArgument ("number of neighbors should match"));
 
     // Create an output tensor
     TensorShape grad_net_shape ;
     grad_net_shape.AddDim (nframes);
-    grad_net_shape.AddDim (nloc * ndescrpt);
+    grad_net_shape.AddDim (int_64(nloc) * ndescrpt);
 
     // allocate the output tensor
     Tensor* grad_net_tensor = NULL;
@@ -119,7 +119,7 @@ public:
     const int * p_nlist	= nlist_tensor.flat<int>().data();
 
     // loop over frames
-    for (int kk = 0; kk < nframes; ++kk){
+    for (int_64 kk = 0; kk < nframes; ++kk){
       FPTYPE * grad_net = p_grad_net + kk * nloc * ndescrpt;
       const FPTYPE * grad = p_grad + kk * 9;
       const FPTYPE * in_deriv = p_in_deriv + kk * nloc * ndescrpt * 3;
@@ -199,13 +199,13 @@ public:
     OP_REQUIRES (context, (nframes == nlist_shape.dim_size(0)),		errors::InvalidArgument ("number of frames should match"));
     
     OP_REQUIRES (context, (9 == grad_shape.dim_size(1)),		errors::InvalidArgument ("input grad shape should be 3 x natoms"));
-    OP_REQUIRES (context, (nloc * ndescrpt * 3 == in_deriv_shape.dim_size(1)),errors::InvalidArgument ("number of descriptors should match"));
-    OP_REQUIRES (context, (nloc * nnei * 3 == rij_shape.dim_size(1)),	errors::InvalidArgument ("dim of rij should be  nnei * 3"));
+    OP_REQUIRES (context, (int_64(nloc) * ndescrpt * 3 == in_deriv_shape.dim_size(1)),errors::InvalidArgument ("number of descriptors should match"));
+    OP_REQUIRES (context, (int_64(nloc) * nnei * 3 == rij_shape.dim_size(1)),	errors::InvalidArgument ("dim of rij should be  nnei * 3"));
 
     // Create an output tensor
     TensorShape grad_net_shape ;
     grad_net_shape.AddDim (nframes);
-    grad_net_shape.AddDim (nloc * ndescrpt);
+    grad_net_shape.AddDim (int_64(nloc) * ndescrpt);
 
     // allocate the output tensor
     Tensor* grad_net_tensor = NULL;
@@ -241,7 +241,7 @@ public:
     const int * p_nlist	= nlist_tensor.flat<int>().data();
 
     // loop over frames
-    for (int kk = 0; kk < nframes; ++kk){
+    for (int_64 kk = 0; kk < nframes; ++kk){
       FPTYPE * grad_net = p_grad_net + kk * nloc * ndescrpt;
       const FPTYPE * grad = p_grad + kk * 9;
       const FPTYPE * in_deriv = p_in_deriv + kk * nloc * ndescrpt * 3;
