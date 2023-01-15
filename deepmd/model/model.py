@@ -1,4 +1,4 @@
-from typing import Optional, Union
+from typing import Optional, Union, List
 from abc import ABC, abstractmethod
 from enum import Enum
 
