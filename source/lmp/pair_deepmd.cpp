@@ -1087,7 +1087,7 @@ void PairDeepMD::settings(int narg, char **arg)
       cout << endl;
     }
     if (do_compute){
-      cout << pre << "using compute compute:      " ;
+      cout << pre << "using compute id:      " ;
       cout << compute_id << "  " << endl;
     }
     if (aparam.size() > 0) {
