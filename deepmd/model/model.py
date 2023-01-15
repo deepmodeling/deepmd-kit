@@ -148,7 +148,7 @@ class Model(ABC):
             self.descrpt.pass_tensors_from_frz_model(*imported_tensors[:-1])
         return dout
 
-    def _import_graph_def_from_frz_model(self, frz_model, feed_dict, return_elements):
+    def _import_graph_def_from_frz_model(self, frz_model: str, feed_dict: dict, return_elements: List[str]):
         return_nodes = [x[:-2] for x in return_elements]
         graph, graph_def = load_graph_def(frz_model)
         sub_graph_def = tf.graph_util.extract_sub_graph(graph_def, return_nodes)
@@ -159,5 +159,5 @@ class Model(ABC):
         with tf.Graph().as_default() as graph:
             tf.train.import_meta_graph(f"{ckpt_meta}.meta", clear_devices=True)
             graph_def = graph.as_graph_def()
-            sub_graph_def = tf.graph_util.extract_sub_graph(graph_def, return_nodes)
+        sub_graph_def = tf.graph_util.extract_sub_graph(graph_def, return_nodes)
         return tf.import_graph_def(sub_graph_def, input_map = feed_dict, return_elements = return_elements, name = "")
