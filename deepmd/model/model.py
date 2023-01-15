@@ -1,5 +1,6 @@
 from typing import Optional, Union
 from abc import ABC, abstractmethod
+from enum import Enum
 
 from deepmd.env import tf, GLOBAL_TF_FLOAT_PRECISION
 from deepmd.utils.graph import load_graph_def
@@ -17,7 +18,7 @@ class Model(ABC):
         frz_model: Optional[str] = None,
         ckpt_meta: Optional[str] = None,
         suffix: str = '', 
-        reuse: Optional[Union[bool, tf.AUTO_REUSE]] = None
+        reuse: Optional[Union[bool, Enum]] = None
     ):
         """Build the model.
 
@@ -83,7 +84,7 @@ class Model(ABC):
             frz_model: Optional[str] = None,
             ckpt_meta: Optional[str] = None,
             suffix: str = '', 
-            reuse: Optional[Union[bool, tf.AUTO_REUSE]] = None
+            reuse: Optional[Union[bool, Enum]] = None
         ):
         """Build the descriptor part of the model.
 
