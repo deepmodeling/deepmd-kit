@@ -660,7 +660,7 @@ def validation_data_args():  # ! added by Ziyao: new specification style for dat
     doc_sys_probs = "A list of float if specified. " \
                     "Should be of the same length as `systems`, " \
                     "specifying the probability of each system."
-    doc_numb_btch = "An integer that specifies the number of systems to be sampled for each validation period."
+    doc_numb_btch = "An integer that specifies the number of batches to be sampled for each validation period."
 
     args = [
         Argument("systems", [list, str], optional=False, default=".", doc=doc_systems),
