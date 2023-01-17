@@ -180,7 +180,7 @@ make_uniform_aparam(
   }
 }
 
-void PairDeepMD::make_compute_fparam(
+void PairDeepMD::make_fparam_from_compute(
 #ifdef HIGH_PREC
   vector<double > & fparam
 #else
@@ -220,10 +220,10 @@ void PairDeepMD::make_ttm_fparam(
 {
   assert(do_ttm);
   // get ttm_fix
-  const FixTTMMod * ttm_fix = NULL;
+  const FixTTMDP * ttm_fix = NULL;
   for (int ii = 0; ii < modify->nfix; ii++) {
     if (string(modify->fix[ii]->id) == ttm_fix_id){
-      ttm_fix = dynamic_cast<FixTTMMod*>(modify->fix[ii]);
+      ttm_fix = dynamic_cast<FixTTMDP*>(modify->fix[ii]);
     }
   }
   assert(ttm_fix);
@@ -449,7 +449,7 @@ void PairDeepMD::compute(int eflag, int vflag)
   }
 	
   if (do_compute){
-    make_compute_fparam(fparam);
+    make_fparam_from_compute(fparam);
   }
 
   // int ago = numb_models > 1 ? 0 : neighbor->ago;

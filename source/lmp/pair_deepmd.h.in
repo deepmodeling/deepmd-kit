@@ -98,7 +98,7 @@ private:
   float eps_v;
 #endif
 
-  void make_compute_fparam(
+  void make_fparam_from_compute(
 #ifdef HIGH_PREC
       std::vector<double > & fparam
 #else
