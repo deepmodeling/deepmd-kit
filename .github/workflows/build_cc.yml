@@ -23,7 +23,7 @@ jobs:
     steps:
     - name: work around permission issue
       run: git config --global --add safe.directory /__w/deepmd-kit/deepmd-kit
-    - uses: actions/checkout@master
+    - uses: actions/checkout@v3
       with:
         submodules: true
     - run: apt-get update && apt-get install -y nvidia-cuda-toolkit
