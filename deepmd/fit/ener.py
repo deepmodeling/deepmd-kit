@@ -203,15 +203,16 @@ class EnerFitting (Fitting):
     def _compute_output_stats(self, all_stat, rcond=1e-3, mixed_type=False):
         data = all_stat['energy']
         # data[sys_idx][batch_idx][frame_idx]
-        sys_ener = np.array([])
+        sys_ener = []
         for ss in range(len(data)):
             sys_data = []
             for ii in range(len(data[ss])):
                 for jj in range(len(data[ss][ii])):
                     sys_data.append(data[ss][ii][jj])
             sys_data = np.concatenate(sys_data)
-            sys_ener = np.append(sys_ener, np.average(sys_data))
-        sys_tynatom = np.array([])
+            sys_ener.append(np.average(sys_data))
+        sys_ener = np.array(sys_ener)
+        sys_tynatom = []
         if mixed_type:
             data = all_stat['real_natoms_vec']
             nsys = len(data)
@@ -221,12 +222,13 @@ class EnerFitting (Fitting):
                     for jj in range(len(data[ss][ii])):
                         tmp_tynatom.append(data[ss][ii][jj].astype(np.float64))
                 tmp_tynatom = np.average(np.array(tmp_tynatom), axis=0)
-                sys_tynatom = np.append(sys_tynatom, tmp_tynatom)
+                sys_tynatom.append(tmp_tynatom)
         else:
             data = all_stat['natoms_vec']
             nsys = len(data)
             for ss in range(len(data)):
-                sys_tynatom = np.append(sys_tynatom, data[ss][0].astype(np.float64))
+                sys_tynatom.append(data[ss][0].astype(np.float64))
+        sys_tynatom = np.array(sys_tynatom)
         sys_tynatom = np.reshape(sys_tynatom, [nsys,-1])
         sys_tynatom = sys_tynatom[:,2:]
         if len(self.atom_ener) > 0:

@@ -9,6 +9,7 @@ from typing import Tuple, List
 
 from deepmd.utils import random as dp_random
 from deepmd.utils.data import DeepmdData
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 
 log = logging.getLogger(__name__)
 
@@ -205,10 +206,11 @@ class DeepmdDataSystem() :
 
 
     def compute_energy_shift(self, rcond = 1e-3, key = 'energy') :
-        sys_ener = np.array([])
+        sys_ener = []
         for ss in self.data_systems :
-            sys_ener = np.append(sys_ener, ss.avg(key))
-        sys_tynatom = np.array(self.natoms_vec, dtype = float)
+            sys_ener.append(ss.avg(key))
+        sys_ener = np.array(sys_ener)
+        sys_tynatom = np.array(self.natoms_vec, dtype=GLOBAL_NP_FLOAT_PRECISION)
         sys_tynatom = np.reshape(sys_tynatom, [self.nsystems,-1])
         sys_tynatom = sys_tynatom[:,2:]
         energy_shift,resd,rank,s_value \

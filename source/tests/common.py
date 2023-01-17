@@ -525,12 +525,13 @@ class DataSets (object):
         return len (self.train_dirs)
 
     def stats_energy (self) :
-        eners = np.array([])
+        eners = []
         for ii in self.train_dirs:
             ener_file = os.path.join(ii, "energy.npy")
             if os.path.isfile(ener_file) :
                 ei = np.load(ener_file)
-                eners = np.append(eners, ei)
+                eners.append(ei)
+        eners = np.concatenate(eners)
         if eners.size == 0 :
             return 0
         else :
@@ -822,10 +823,11 @@ class DataSystem (object) :
         #log.info(tmp_msg)
 
     def compute_energy_shift(self) :
-        sys_ener = np.array([])
+        sys_ener = []
         for ss in self.data_systems :
-            sys_ener = np.append(sys_ener, ss.get_ener())
-        sys_tynatom = np.array(self.natoms_vec, dtype = float)
+            sys_ener.append(ss.get_ener())
+        sys_ener = np.array(sys_ener)
+        sys_tynatom = np.array(self.natoms_vec, dtype=GLOBAL_NP_FLOAT_PRECISION)
         sys_tynatom = np.reshape(sys_tynatom, [self.nsystems,-1])
         sys_tynatom = sys_tynatom[:,2:]
         energy_shift,resd,rank,s_value \

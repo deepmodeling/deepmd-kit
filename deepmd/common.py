@@ -183,10 +183,10 @@ def select_idx_map(
     `select_types` array will be sorted before finding indices in `atom_types`
     """
     sort_select_types = np.sort(select_types)
-    idx_map = np.array([], dtype=int)
+    idx_map = []
     for ii in sort_select_types:
-        idx_map = np.append(idx_map, np.where(atom_types == ii))
-    return idx_map
+        idx_map.append(np.where(atom_types == ii))
+    return np.concatenate(idx_map)
 
 
 # TODO not really sure if the docstring is right the purpose of this is a bit unclear
