@@ -209,7 +209,7 @@ class DeepmdDataSystem() :
         sys_ener = []
         for ss in self.data_systems :
             sys_ener.append(ss.avg(key))
-        sys_ener = np.array(sys_ener)
+        sys_ener = np.concatenate(sys_ener)
         sys_tynatom = np.array(self.natoms_vec, dtype=GLOBAL_NP_FLOAT_PRECISION)
         sys_tynatom = np.reshape(sys_tynatom, [self.nsystems,-1])
         sys_tynatom = sys_tynatom[:,2:]
