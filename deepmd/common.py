@@ -185,7 +185,7 @@ def select_idx_map(
     sort_select_types = np.sort(select_types)
     idx_map = []
     for ii in sort_select_types:
-        idx_map.append(np.where(atom_types == ii))
+        idx_map.append(np.where(atom_types == ii)[0])
     return np.concatenate(idx_map)
 
 
