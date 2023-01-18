@@ -101,11 +101,13 @@ class DeepmdDataSystem() :
             self.mixed_type = False
         # batch size
         self.batch_size = batch_size
+        is_auto_bs = False
         if isinstance(self.batch_size, int):
             self.batch_size = self.batch_size * np.ones(self.nsystems, dtype=int)
         elif isinstance(self.batch_size, str):
             words = self.batch_size.split(':')
             if 'auto' == words[0] :
+                is_auto_bs = True
                 rule = 32
                 if len(words) == 2 :
                     rule = int(words[1])
@@ -169,11 +171,11 @@ class DeepmdDataSystem() :
         # check batch and test size
         for ii in range(self.nsystems) :
             chk_ret = self.data_systems[ii].check_batch_size(self.batch_size[ii])
-            if chk_ret is not None :
+            if chk_ret is not None and not is_auto_bs:
                 warnings.warn("system %s required batch size is larger than the size of the dataset %s (%d > %d)" % \
                               (self.system_dirs[ii], chk_ret[0], self.batch_size[ii], chk_ret[1]))
             chk_ret = self.data_systems[ii].check_test_size(self.test_size[ii])
-            if chk_ret is not None :
+            if chk_ret is not None and not is_auto_bs:
                 warnings.warn("system %s required test size is larger than the size of the dataset %s (%d > %d)" % \
                               (self.system_dirs[ii], chk_ret[0], self.test_size[ii], chk_ret[1]))
 
