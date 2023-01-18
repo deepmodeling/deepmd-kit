@@ -137,6 +137,7 @@ One can set other environmental variables:
 | --------------------- | ---------------------- | ------------- | -------------------------- |
 | DP_INTERFACE_PREC     | `high`, `low`          | `high`        | Control high (double) or low (float) precision of training. |
 | DP_AUTO_PARALLELIZATION | 0, 1                 | 0             | Enable auto parallelization for CPU operators. |
+| DP_JIT                | 0, 1                   | 0             | Enable JIT. Note that this option may either improve or decrease the performance. Requires TensorFlow supports JIT.  |
 
 
 ## Adjust `sel` of a frozen model
