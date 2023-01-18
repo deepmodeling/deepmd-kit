@@ -19,6 +19,24 @@ REGISTER_OP("GeluGradGrad")
     .Input("x: T")
     .Output("output: T");
 
+REGISTER_OP("GeluCustom")
+    .Attr("T: {float, double} = DT_DOUBLE")
+    .Input("x: T")
+    .Output("output: T");
+
+REGISTER_OP("GeluGradCustom")
+    .Attr("T: {float, double} = DT_DOUBLE")
+    .Input("dy: T")
+    .Input("x: T")
+    .Output("output: T");
+
+REGISTER_OP("GeluGradGradCustom")
+    .Attr("T: {float, double} = DT_DOUBLE")
+    .Input("dy: T")
+    .Input("dy_: T")
+    .Input("x: T")
+    .Output("output: T");
+
 // OpKernel definition.
 // template parameter <FPTYPE> is the datatype of the tensors.
 template <typename Device, typename FPTYPE>
@@ -45,7 +63,7 @@ class GeluOp : public OpKernel {
     // flat the tensors
     FPTYPE * out = output_tensor->flat<FPTYPE>().data();
     const FPTYPE * x = x_tensor.flat<FPTYPE>().data();
-    const int size = static_cast<int>(output_tensor->NumElements());
+    const int_64 size = static_cast<int_64>(output_tensor->NumElements());
 
     if (device == "GPU") {
       #if GOOGLE_CUDA
@@ -98,7 +116,7 @@ class GeluGradOp : public OpKernel {
     FPTYPE * out = output_tensor->flat<FPTYPE>().data();
     const FPTYPE * x = x_tensor.flat<FPTYPE>().data();
     const FPTYPE * dy = dy_tensor.flat<FPTYPE>().data();
-    const int size = static_cast<int>(output_tensor->NumElements());
+    const int_64 size = static_cast<int_64>(output_tensor->NumElements());
 
     if (device == "GPU") {
       #if GOOGLE_CUDA
@@ -153,7 +171,7 @@ class GeluGradGradOp : public OpKernel {
     const FPTYPE * x = x_tensor.flat<FPTYPE>().data();
     const FPTYPE * dy = dy_tensor.flat<FPTYPE>().data();
     const FPTYPE * dy_2 = dy_2_tensor.flat<FPTYPE>().data();
-    const int size = static_cast<int>(output_tensor->NumElements());
+    const int_64 size = static_cast<int_64>(output_tensor->NumElements());
 
     if (device == "GPU") {
       #if GOOGLE_CUDA
@@ -178,29 +196,47 @@ class GeluGradGradOp : public OpKernel {
   std::string device;
 };
 
-#define REGISTER_CPU(T)                                                 \
-REGISTER_KERNEL_BUILDER(                                                \
-    Name("Gelu").Device(DEVICE_CPU).TypeConstraint<T>("T"),             \
-    GeluOp<CPUDevice, T>);                                              \
-REGISTER_KERNEL_BUILDER(                                                \
-    Name("GeluGrad").Device(DEVICE_CPU).TypeConstraint<T>("T"),         \
-    GeluGradOp<CPUDevice, T>);                                          \
-REGISTER_KERNEL_BUILDER(                                                \
-    Name("GeluGradGrad").Device(DEVICE_CPU).TypeConstraint<T>("T"),     \
-    GeluGradGradOp<CPUDevice, T>);                                      
+#define REGISTER_CPU(T)                                                   \
+REGISTER_KERNEL_BUILDER(                                                  \
+    Name("Gelu").Device(DEVICE_CPU).TypeConstraint<T>("T"),               \
+    GeluOp<CPUDevice, T>);                                                \
+REGISTER_KERNEL_BUILDER(                                                  \
+    Name("GeluGrad").Device(DEVICE_CPU).TypeConstraint<T>("T"),           \
+    GeluGradOp<CPUDevice, T>);                                            \
+REGISTER_KERNEL_BUILDER(                                                  \
+    Name("GeluGradGrad").Device(DEVICE_CPU).TypeConstraint<T>("T"),       \
+    GeluGradGradOp<CPUDevice, T>);                                        \
+REGISTER_KERNEL_BUILDER(                                                  \
+    Name("GeluCustom").Device(DEVICE_CPU).TypeConstraint<T>("T"),         \
+    GeluOp<CPUDevice, T>);                                                \
+REGISTER_KERNEL_BUILDER(                                                  \
+    Name("GeluGradCustom").Device(DEVICE_CPU).TypeConstraint<T>("T"),     \
+    GeluGradOp<CPUDevice, T>);                                            \
+REGISTER_KERNEL_BUILDER(                                                  \
+    Name("GeluGradGradCustom").Device(DEVICE_CPU).TypeConstraint<T>("T"), \
+    GeluGradGradOp<CPUDevice, T>);                                     
 REGISTER_CPU(float);
 REGISTER_CPU(double);
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-#define REGISTER_GPU(T)                                                 \
-REGISTER_KERNEL_BUILDER(                                                \
-    Name("Gelu").Device(DEVICE_GPU).TypeConstraint<T>("T"),             \
-    GeluOp<GPUDevice, T>);                                              \
-REGISTER_KERNEL_BUILDER(                                                \
-    Name("GeluGrad").Device(DEVICE_GPU).TypeConstraint<T>("T"),         \
-    GeluGradOp<GPUDevice, T>);                                          \
-REGISTER_KERNEL_BUILDER(                                                \
-    Name("GeluGradGrad").Device(DEVICE_GPU).TypeConstraint<T>("T"),     \
+#define REGISTER_GPU(T)                                                   \
+REGISTER_KERNEL_BUILDER(                                                  \
+    Name("Gelu").Device(DEVICE_GPU).TypeConstraint<T>("T"),               \
+    GeluOp<GPUDevice, T>);                                                \
+REGISTER_KERNEL_BUILDER(                                                  \
+    Name("GeluGrad").Device(DEVICE_GPU).TypeConstraint<T>("T"),           \
+    GeluGradOp<GPUDevice, T>);                                            \
+REGISTER_KERNEL_BUILDER(                                                  \
+    Name("GeluGradGrad").Device(DEVICE_GPU).TypeConstraint<T>("T"),       \
+    GeluGradGradOp<GPUDevice, T>);                                        \
+REGISTER_KERNEL_BUILDER(                                                  \
+    Name("GeluCustom").Device(DEVICE_GPU).TypeConstraint<T>("T"),         \
+    GeluOp<GPUDevice, T>);                                                \
+REGISTER_KERNEL_BUILDER(                                                  \
+    Name("GeluGradCustom").Device(DEVICE_GPU).TypeConstraint<T>("T"),     \
+    GeluGradOp<GPUDevice, T>);                                            \
+REGISTER_KERNEL_BUILDER(                                                  \
+    Name("GeluGradGradCustom").Device(DEVICE_GPU).TypeConstraint<T>("T"), \
     GeluGradGradOp<GPUDevice, T>);                                      
 REGISTER_GPU(float);
 REGISTER_GPU(double);

@@ -1,3 +1,103 @@
 [build-system]
-requires = ["setuptools", "setuptools_scm", "wheel", "scikit-build", "cmake", "ninja"]
+requires = [
+    "setuptools>=61",
+    "setuptools_scm[toml]>=6.2",
+    "wheel",
+    "scikit-build",
+    "cmake",
+    # see https://github.com/scikit-build/scikit-build/releases/tag/0.13.1
+    "ninja; platform_system!='Windows'",
+]
+build-backend = "dp_backend"
+backend-path = ["backend"]
 
+[project]
+name = "deepmd-kit"
+dynamic = ["version", "optional-dependencies", "entry-points"]
+description = "A deep learning package for many-body potential energy representation and molecular dynamics"
+authors = [
+  {name = "DeepModeling"},
+  {name = "Han Wang", email = "wang_han@iapcm.ac.cn"},
+]
+license = {file = "LICENSE"}
+classifiers = [
+    "Programming Language :: Python :: 3.7",
+    "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
+]
+dependencies = [
+    'numpy',
+    'scipy',
+    'pyyaml',
+    'dargs >= 0.2.9',
+    'python-hostlist >= 1.21',
+    'typing_extensions; python_version < "3.7"',
+    'importlib_metadata>=1.4; python_version < "3.8"',
+    'h5py',
+    'wcmatch',
+    'packaging',
+]
+requires-python = ">=3.7"
+readme = "README.md"
+keywords = ["deepmd"]
+
+[project.urls]
+Homepage = "https://github.com/deepmodeling/deepmd-kit"
+documentation = "https://docs.deepmodeling.com/projects/deepmd-kit"
+repository = "https://github.com/deepmodeling/deepmd-kit"
+
+[tool.setuptools_scm]
+write_to = "deepmd/_version.py"
+
+[tool.cibuildwheel]
+test-command = [
+    "dp -h",
+]
+test-extras = ["cpu"]
+build = ["cp310-*"]
+skip = ["*-win32", "*-manylinux_i686", "*-musllinux*"]
+# TODO: bump to "latest" tag when CUDA supports GCC 12
+manylinux-x86_64-image = "quay.io/pypa/manylinux_2_28_x86_64:2022-11-19-1b19e81"
+manylinux-aarch64-image = "quay.io/pypa/manylinux_2_28_aarch64:2022-11-19-1b19e81"
+
+[tool.cibuildwheel.macos]
+environment = { DP_LAMMPS_VERSION="stable_23Jun2022_update2" }
+before-all = ["brew install mpich"]
+repair-wheel-command = "delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel} --ignore-missing-dependencies"
+test-extras = ["cpu", "test", "lmp"]
+test-command = [
+    "dp -h",
+    "pytest {project}/source/tests/test_lammps.py"
+]
+
+[tool.cibuildwheel.linux]
+repair-wheel-command = "auditwheel repair --exclude libtensorflow_framework.so.2 --exclude libtensorflow_framework.so.1 --exclude libtensorflow_framework.so --exclude _pywrap_tensorflow_internal.so -w {dest_dir} {wheel}"
+environment-pass = ["CIBW_BUILD", "DP_VARIANT"]
+environment = { DP_VARIANT="cuda", DP_LAMMPS_VERSION="stable_23Jun2022_update2", MPI_HOME="/usr/lib64/mpich", PATH="/usr/lib64/mpich/bin:$PATH" }
+before-all = [
+    """{ if [ "$(uname -m)" = "x86_64" ] ; then yum config-manager --add-repo http://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo && yum install -y cuda-11-8; fi }""",
+    "yum install -y mpich-devel",
+]
+
+
+# selectively turn of lintner warnings, always include reasoning why any warning should
+# be silenced
+
+# W504 - line break after binary operator - there is conflict between W503 and W504 in
+# some lintners. One recomends line bread after and one before binary operator so we
+# swith W504 off and recomend this coding style:
+# a = (b +     -> instead of -> a = (b
+#      c)                            + c)
+[tool.autopep8]
+ignore = "W504"
+
+# D413 - Missing blank line after last section - makes no sense only adds empy lines in
+# docstrings
+# D416 - Section name should end with a colon - only applicable to RST type docstrings,
+# we are using numpy style
+# D203 - 1 blank line required before class docstring - only adds unnecessary empty space
+# D107 - Missing docstring in __init__ - Nupmy style documents __init__ parameters in
+# class docstring
+# D213 - Multi-line docstring summary should start at the second line - unnecessary waste
+# of space, start on the first line
+[tool.pydocstyle]
+ignore = "D413, D416, D203, D107, D213"

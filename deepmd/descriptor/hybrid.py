@@ -2,7 +2,6 @@ import numpy as np
 from typing import Tuple, List
 
 from deepmd.env import tf
-from deepmd.common import ClassArg
 from deepmd.env import op_module
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
@@ -30,7 +29,8 @@ class DescrptHybrid (Descriptor):
             Build a descriptor from the concatenation of the list of descriptors.
     """
     def __init__ (self, 
-                  list : list
+                  list : list,
+                  multi_task: bool = False
     ) -> None :
         """
         Constructor
@@ -40,17 +40,16 @@ class DescrptHybrid (Descriptor):
         if descrpt_list == [] or descrpt_list is None:
             raise RuntimeError('cannot build descriptor from an empty list of descriptors.')
         formatted_descript_list = []
+        self.multi_task = multi_task
         for ii in descrpt_list:
             if isinstance(ii, Descriptor):
                 formatted_descript_list.append(ii)
             elif isinstance(ii, dict):
+                if multi_task:
+                    ii['multi_task'] = True
                 formatted_descript_list.append(Descriptor(**ii))
             else:
                 raise NotImplementedError
-        # args = ClassArg()\
-        #        .add('list', list, must = True)
-        # class_data = args.parse(jdata)
-        # dict_list = class_data['list']
         self.descrpt_list = formatted_descript_list
         self.numb_descrpt = len(self.descrpt_list)
         for ii in range(1, self.numb_descrpt):
@@ -134,7 +133,28 @@ class DescrptHybrid (Descriptor):
         """
         for ii in self.descrpt_list:
             ii.compute_input_stats(data_coord, data_box, data_atype, natoms_vec, mesh, input_dict)
-    
+
+    def merge_input_stats(self, stat_dict):
+        """
+        Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
+
+        Parameters
+        ----------
+        stat_dict
+                The dict of statisitcs computed from compute_input_stats, including:
+            sumr
+                    The sum of radial statisitcs.
+            suma
+                    The sum of relative coord statisitcs.
+            sumn
+                    The sum of neighbor numbers.
+            sumr2
+                    The sum of square of radial statisitcs.
+            suma2
+                    The sum of square of relative coord statisitcs.
+        """
+        for ii in self.descrpt_list:
+            ii.merge_input_stats(stat_dict)
 
     def build (self, 
                coord_ : tf.Tensor, 
@@ -189,7 +209,7 @@ class DescrptHybrid (Descriptor):
             dout = tf.reshape(dout, [-1, ii.get_dim_out()])
             all_dout.append(dout)
         dout = tf.concat(all_dout, axis = 1)
-        dout = tf.reshape(dout, [-1, natoms[0] * self.get_dim_out()])
+        dout = tf.reshape(dout, [-1, natoms[0], self.get_dim_out()])
         return dout
         
 
@@ -233,7 +253,8 @@ class DescrptHybrid (Descriptor):
 
     def enable_compression(self,
                            min_nbor_dist: float,
-                           model_file: str = 'frozon_model.pb',
+                           graph: tf.Graph,
+                           graph_def: tf.GraphDef,
                            table_extrapolate: float = 5.,
                            table_stride_1: float = 0.01,
                            table_stride_2: float = 0.1,
@@ -248,8 +269,10 @@ class DescrptHybrid (Descriptor):
         ----------
         min_nbor_dist : float
                 The nearest distance between atoms
-        model_file : str, default: 'frozon_model.pb'
-                The original frozen model, which will be compressed by the program
+        graph : tf.Graph
+                The graph of the model
+        graph_def : tf.GraphDef
+                The graph_def of the model
         table_extrapolate : float, default: 5.
                 The scale of model extrapolation
         table_stride_1 : float, default: 0.01
@@ -262,7 +285,7 @@ class DescrptHybrid (Descriptor):
                 The suffix of the scope
         """
         for idx, ii in enumerate(self.descrpt_list):
-            ii.enable_compression(min_nbor_dist, model_file, table_extrapolate, table_stride_1, table_stride_2, check_frequency, suffix=f"{suffix}_{idx}")
+            ii.enable_compression(min_nbor_dist, graph, graph_def, table_extrapolate, table_stride_1, table_stride_2, check_frequency, suffix=f"{suffix}_{idx}")
 
 
     def enable_mixed_precision(self, mixed_prec : dict = None) -> None:

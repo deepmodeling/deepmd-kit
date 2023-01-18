@@ -59,7 +59,6 @@
 	"_comment": " frequencies counted in batch",
 	"disp_file":	"lcurve.out",
 	"disp_freq":	10,
-	"numb_test":	4,
 	"save_freq":	1000,
 	"save_ckpt":	"model.ckpt",
 	"disp_training":true,

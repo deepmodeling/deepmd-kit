@@ -23,15 +23,20 @@ class NeighborStat():
             The num of atom types
     rcut
             The cut-off radius
+    one_type : bool, optional, default=False
+        Treat all types as a single type.
     """
     def __init__(self,
                  ntypes : int,
-                 rcut: float) -> None:
+                 rcut: float,
+                 one_type : bool = False,
+                 ) -> None:
         """
         Constructor
         """
         self.rcut = rcut
         self.ntypes = ntypes
+        self.one_type = one_type
         sub_graph = tf.Graph()
 
         def builder():
@@ -41,10 +46,17 @@ class NeighborStat():
             place_holders['type'] = tf.placeholder(tf.int32, [None, None], name='t_type')
             place_holders['natoms_vec'] = tf.placeholder(tf.int32, [self.ntypes+2], name='t_natoms')
             place_holders['default_mesh'] = tf.placeholder(tf.int32, [None], name='t_mesh')
+            t_type = place_holders['type']
+            t_natoms = place_holders['natoms_vec']
+            if self.one_type:
+                # all types = 0, natoms_vec = [natoms, natoms, natoms]
+                t_type = tf.zeros_like(t_type, dtype=tf.int32)
+                t_natoms = tf.repeat(t_natoms[0], 3)
+
             _max_nbor_size, _min_nbor_dist \
                 = op_module.neighbor_stat(place_holders['coord'],
-                                         place_holders['type'],
-                                         place_holders['natoms_vec'],
+                                         t_type,
+                                         t_natoms,
                                          place_holders['box'],
                                          place_holders['default_mesh'],
                                          rcut = self.rcut)
@@ -74,7 +86,9 @@ class NeighborStat():
                 A list with ntypes integers, denotes the actual achieved max sel
         """
         self.min_nbor_dist = 100.0
-        self.max_nbor_size = [0] * self.ntypes
+        self.max_nbor_size = [0]
+        if not self.one_type:
+            self.max_nbor_size *= self.ntypes            
 
         def feed():
             for ii in range(len(data.system_dirs)):

@@ -34,7 +34,7 @@ if TYPE_CHECKING:
         from typing import Literal  # python >3.6
     except ImportError:
         from typing_extensions import Literal  # type: ignore
-    _ACTIVATION = Literal["relu", "relu6", "softplus", "sigmoid", "tanh", "gelu"]
+    _ACTIVATION = Literal["relu", "relu6", "softplus", "sigmoid", "tanh", "gelu", "gelu_tf"]
     _PRECISION = Literal["default", "float16", "float32", "float64"]
 
 # define constants
@@ -43,13 +43,14 @@ PRECISION_DICT = {
     "float16": tf.float16,
     "float32": tf.float32,
     "float64": tf.float64,
+    "bfloat16": tf.bfloat16,
 }
 
 
 def gelu(x: tf.Tensor) -> tf.Tensor:
     """Gaussian Error Linear Unit.
 
-    This is a smoother version of the RELU.
+    This is a smoother version of the RELU, implemented by custom operator.
 
     Parameters
     ----------
@@ -58,7 +59,31 @@ def gelu(x: tf.Tensor) -> tf.Tensor:
 
     Returns
     -------
-    `x` with the GELU activation applied
+    tf.Tensor
+        `x` with the GELU activation applied
+
+    References
+    ----------
+    Original paper
+    https://arxiv.org/abs/1606.08415
+    """
+    return op_module.gelu_custom(x)
+
+
+def gelu_tf(x: tf.Tensor) -> tf.Tensor:
+    """Gaussian Error Linear Unit.
+
+    This is a smoother version of the RELU, implemented by TF.
+
+    Parameters
+    ----------
+    x : tf.Tensor
+        float Tensor to perform activation
+
+    Returns
+    -------
+    tf.Tensor
+        `x` with the GELU activation applied
 
     References
     ----------
@@ -69,9 +94,9 @@ def gelu(x: tf.Tensor) -> tf.Tensor:
         try:
             return tensorflow.nn.gelu(x, approximate=True)
         except AttributeError:
-            return op_module.gelu(x)
+            warnings.warn("TensorFlow does not provide an implementation of gelu, please upgrade your TensorFlow version. Fallback to the custom gelu operator.")
+            return op_module.gelu_custom(x)
     return (lambda x: gelu_wrapper(x))(x)
-
 
 # TODO this is not a good way to do things. This is some global variable to which
 # TODO anyone can write and there is no good way to keep track of the changes
@@ -84,6 +109,7 @@ ACTIVATION_FN_DICT = {
     "sigmoid": tf.sigmoid,
     "tanh": tf.nn.tanh,
     "gelu": gelu,
+    "gelu_tf": gelu_tf,
 }
 
 
@@ -93,8 +119,10 @@ def add_data_requirement(
     atomic: bool = False,
     must: bool = False,
     high_prec: bool = False,
-    type_sel: bool = None,
+    type_sel: Optional[bool] = None,
     repeat: int = 1,
+    default: float = 0.,
+    dtype: Optional[np.dtype] = None,
 ):
     """Specify data requirements for training.
 
@@ -111,11 +139,15 @@ def add_data_requirement(
     must : bool, optional
         specifi if the `*.npy` data file must exist, by default False
     high_prec : bool, optional
-        if tru load data to `np.float64` else `np.float32`, by default False
+        if true load data to `np.float64` else `np.float32`, by default False
     type_sel : bool, optional
         select only certain type of atoms, by default None
     repeat : int, optional
         if specify repaeat data `repeat` times, by default 1
+    default : float, optional, default=0.
+        default value of data
+    dtype : np.dtype, optional
+        the dtype of data, overwrites `high_prec` if provided
     """
     data_requirement[key] = {
         "ndof": ndof,
@@ -124,6 +156,8 @@ def add_data_requirement(
         "high_prec": high_prec,
         "type_sel": type_sel,
         "repeat": repeat,
+        "default": default,
+        "dtype": dtype,
     }
 
 
@@ -180,141 +214,6 @@ def make_default_mesh(
     default_mesh = np.zeros(6, dtype=np.int32)
     default_mesh[3:6] = ncell
     return default_mesh
-
-
-# TODO not an ideal approach, every class uses this to parse arguments on its own, json
-# TODO should be parsed once and the parsed result passed to all objects that need it
-class ClassArg:
-    """Class that take care of input json/yaml parsing.
-
-    The rules for parsing are defined by the `add` method, than `parse` is called to
-    process the supplied dict
-
-    Attributes
-    ----------
-    arg_dict: Dict[str, Any]
-        dictionary containing parsing rules
-    alias_map: Dict[str, Any]
-        dictionary with keyword aliases
-    """
-
-    def __init__(self) -> None:
-        self.arg_dict = {}
-        self.alias_map = {}
-
-    def add(
-        self,
-        key: str,
-        types_: Union[type, List[type]],
-        alias: Optional[Union[str, List[str]]] = None,
-        default: Any = None,
-        must: bool = False,
-    ) -> "ClassArg":
-        """Add key to be parsed.
-
-        Parameters
-        ----------
-        key : str
-            key name
-        types_ : Union[type, List[type]]
-            list of allowed key types
-        alias : Optional[Union[str, List[str]]], optional
-            alias for the key, by default None
-        default : Any, optional
-            default value for the key, by default None
-        must : bool, optional
-            if the key is mandatory, by default False
-
-        Returns
-        -------
-        ClassArg
-            instance with added key
-        """
-        if not isinstance(types_, list):
-            types = [types_]
-        else:
-            types = types_
-        if alias is not None:
-            if not isinstance(alias, list):
-                alias_ = [alias]
-            else:
-                alias_ = alias
-        else:
-            alias_ = []
-
-        self.arg_dict[key] = {
-            "types": types,
-            "alias": alias_,
-            "value": default,
-            "must": must,
-        }
-        for ii in alias_:
-            self.alias_map[ii] = key
-
-        return self
-
-    def _add_single(self, key: str, data: Any):
-        vtype = type(data)
-        if data is None:
-            return data
-        if not (vtype in self.arg_dict[key]["types"]):
-            for tp in self.arg_dict[key]["types"]:
-                try:
-                    vv = tp(data)
-                except TypeError:
-                    pass
-                else:
-                    break
-            else:
-                raise TypeError(
-                    f"cannot convert provided key {key} to type(s) "
-                    f'{self.arg_dict[key]["types"]} '
-                )
-        else:
-            vv = data
-        self.arg_dict[key]["value"] = vv
-
-    def _check_must(self):
-        for kk in self.arg_dict:
-            if self.arg_dict[kk]["must"] and self.arg_dict[kk]["value"] is None:
-                raise RuntimeError(f"key {kk} must be provided")
-
-    def parse(self, jdata: Dict[str, Any]) -> Dict[str, Any]:
-        """Parse input dictionary, use the rules defined by add method.
-
-        Parameters
-        ----------
-        jdata : Dict[str, Any]
-            loaded json/yaml data
-
-        Returns
-        -------
-        Dict[str, Any]
-            parsed dictionary
-        """
-        for kk in jdata.keys():
-            if kk in self.arg_dict:
-                key = kk
-                self._add_single(key, jdata[kk])
-            else:
-                if kk in self.alias_map:
-                    key = self.alias_map[kk]
-                    self._add_single(key, jdata[kk])
-        self._check_must()
-        return self.get_dict()
-
-    def get_dict(self) -> Dict[str, Any]:
-        """Get dictionary built from rules defined by add method.
-
-        Returns
-        -------
-        Dict[str, Any]
-            settings dictionary with default values
-        """
-        ret = {}
-        for kk in self.arg_dict.keys():
-            ret[kk] = self.arg_dict[kk]["value"]
-        return ret
 
 
 # TODO maybe rename this to j_deprecated and only warn about deprecated keys,
@@ -376,8 +275,8 @@ def j_loader(filename: Union[str, Path]) -> Dict[str, Any]:
 
 
 def get_activation_func(
-    activation_fn: "_ACTIVATION",
-) -> Callable[[tf.Tensor], tf.Tensor]:
+    activation_fn: Union["_ACTIVATION", None],
+) -> Union[Callable[[tf.Tensor], tf.Tensor], None]:
     """Get activation function callable based on string name.
 
     Parameters
@@ -395,6 +294,8 @@ def get_activation_func(
     RuntimeError
         if unknown activation function is specified
     """
+    if activation_fn is None or activation_fn in ['none', 'None']:
+        return None
     if activation_fn not in ACTIVATION_FN_DICT:
         raise RuntimeError(f"{activation_fn} is not a valid activation function")
     return ACTIVATION_FN_DICT[activation_fn]
@@ -442,28 +343,6 @@ def expand_sys_str(root_dir: Union[str, Path]) -> List[str]:
     if (root_dir / "type.raw").is_file():
         matches.append(str(root_dir))
     return matches
-
-
-def docstring_parameter(*sub: Tuple[str, ...]):
-    """Add parameters to object docstring.
-
-    Parameters
-    ----------
-    sub: Tuple[str, ...]
-        list of strings that will be inserted into prepared locations in docstring.
-
-    Note
-    ----
-    Can be used on both object and classes.
-    """
-
-    @wraps
-    def dec(obj: "_OBJ") -> "_OBJ":
-        if obj.__doc__ is not None:
-            obj.__doc__ = obj.__doc__.format(*sub)
-        return obj
-
-    return dec
 
 
 def get_np_precision(precision: "_PRECISION") -> np.dtype:
@@ -568,3 +447,10 @@ def cast_precision(func: Callable) -> Callable:
         else:
             return safe_cast_tensor(returned_tensor, self.precision, GLOBAL_TF_FLOAT_PRECISION)
     return wrapper
+
+
+def clear_session():
+    """Reset all state generated by DeePMD-kit."""
+    tf.reset_default_graph()
+    # TODO: remove this line when data_requirement is not a global variable
+    data_requirement.clear()

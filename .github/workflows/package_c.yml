@@ -1,0 +1,26 @@
+name: Build C library
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build_c:
+    name: Build C library
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: Package C library
+        run: ./source/install/docker_package_c.sh
+      - name: Test C library
+        run: ./source/install/docker_test_package_c.sh
+      # for download and debug
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          path: ./libdeepmd_c.tar.gz
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: libdeepmd_c.tar.gz

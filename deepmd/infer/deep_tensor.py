@@ -81,8 +81,6 @@ class DeepTensor(DeepEval):
             self.tensors.update(optional_tensors)
             self._support_gfv = True
             
-        # start a tf session associated to the graph
-        self.sess = tf.Session(graph=self.graph, config=default_tf_session_config)
         self._run_default_sess()
         self.tmap = self.tmap.decode('UTF-8').split()
 
@@ -100,7 +98,7 @@ class DeepTensor(DeepEval):
         """Get the cut-off radius of this model."""
         return self.rcut
 
-    def get_type_map(self) -> List[int]:
+    def get_type_map(self) -> List[str]:
         """Get the type map (element name of the atom types) of this model."""
         return self.tmap
 
@@ -124,7 +122,8 @@ class DeepTensor(DeepEval):
         atomic: bool = True,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
-        efield: Optional[np.ndarray] = None
+        efield: Optional[np.ndarray] = None,
+        mixed_type: bool = False,
     ) -> np.ndarray:
         """Evaluate the model.
 
@@ -149,6 +148,10 @@ class DeepTensor(DeepEval):
             Not used in this model
         efield
             Not used in this model
+        mixed_type
+            Whether to perform the mixed_type mode.
+            If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
+            in which frames in a system may have different natoms_vec(s), with the same nloc.
 
         Returns
         -------
@@ -158,8 +161,12 @@ class DeepTensor(DeepEval):
                 else of size nframes x natoms x output_dim
         """
         # standarize the shape of inputs
-        atom_types = np.array(atom_types, dtype = int).reshape([-1])
-        natoms = atom_types.size
+        if mixed_type:
+            natoms = atom_types[0].size
+            atom_types = np.array(atom_types, dtype=int).reshape([-1, natoms])
+        else:
+            atom_types = np.array(atom_types, dtype = int).reshape([-1])
+            natoms = atom_types.size
         coords = np.reshape(np.array(coords), [-1, natoms * 3])
         nframes = coords.shape[0]
         if cells is None:
@@ -170,16 +177,20 @@ class DeepTensor(DeepEval):
             cells = np.array(cells).reshape([nframes, 9])
 
         # sort inputs
-        coords, atom_types, imap, sel_at, sel_imap = self.sort_input(coords, atom_types, sel_atoms = self.get_sel_type())
+        coords, atom_types, imap, sel_at, sel_imap = \
+            self.sort_input(coords, atom_types, sel_atoms=self.get_sel_type(), mixed_type=mixed_type)
 
         # make natoms_vec and default_mesh
-        natoms_vec = self.make_natoms_vec(atom_types)
+        natoms_vec = self.make_natoms_vec(atom_types, mixed_type=mixed_type)
         assert(natoms_vec[0] == natoms)
 
         # evaluate
         feed_dict_test = {}
         feed_dict_test[self.t_natoms] = natoms_vec
-        feed_dict_test[self.t_type  ] = np.tile(atom_types, [nframes,1]).reshape([-1])
+        if mixed_type:
+            feed_dict_test[self.t_type] = atom_types.reshape([-1])
+        else:
+            feed_dict_test[self.t_type] = np.tile(atom_types, [nframes, 1]).reshape([-1])
         feed_dict_test[self.t_coord] = np.reshape(coords, [-1])
         feed_dict_test[self.t_box  ] = np.reshape(cells , [-1])
         if pbc:
@@ -216,7 +227,8 @@ class DeepTensor(DeepEval):
         atomic: bool = False,
         fparam: Optional[np.array] = None,
         aparam: Optional[np.array] = None,
-        efield: Optional[np.array] = None
+        efield: Optional[np.array] = None,
+        mixed_type: bool = False,
     ) -> Tuple[np.ndarray, ...]:
         """Evaluate the model with interface similar to the energy model.
         Will return global tensor, component-wise force and virial
@@ -242,6 +254,10 @@ class DeepTensor(DeepEval):
             Not used in this model
         efield
             Not used in this model
+        mixed_type
+            Whether to perform the mixed_type mode.
+            If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
+            in which frames in a system may have different natoms_vec(s), with the same nloc.
 
         Returns
         -------
@@ -265,8 +281,12 @@ class DeepTensor(DeepEval):
             f"do not support eval_full with old tensor model"
 
         # standarize the shape of inputs
-        atom_types = np.array(atom_types, dtype = int).reshape([-1])
-        natoms = atom_types.size
+        if mixed_type:
+            natoms = atom_types[0].size
+            atom_types = np.array(atom_types, dtype =int).reshape([-1, natoms])
+        else:
+            atom_types = np.array(atom_types, dtype=int).reshape([-1])
+            natoms = atom_types.size
         coords = np.reshape(np.array(coords), [-1, natoms * 3])
         nframes = coords.shape[0]
         if cells is None:
@@ -278,16 +298,20 @@ class DeepTensor(DeepEval):
         nout = self.output_dim
 
         # sort inputs
-        coords, atom_types, imap, sel_at, sel_imap = self.sort_input(coords, atom_types, sel_atoms = self.get_sel_type())
+        coords, atom_types, imap, sel_at, sel_imap = self.sort_input(
+            coords, atom_types, sel_atoms=self.get_sel_type(), mixed_type=mixed_type)
 
         # make natoms_vec and default_mesh
-        natoms_vec = self.make_natoms_vec(atom_types)
+        natoms_vec = self.make_natoms_vec(atom_types, mixed_type=mixed_type)
         assert(natoms_vec[0] == natoms)
 
         # evaluate
         feed_dict_test = {}
         feed_dict_test[self.t_natoms] = natoms_vec
-        feed_dict_test[self.t_type  ] = np.tile(atom_types, [nframes,1]).reshape([-1])
+        if mixed_type:
+            feed_dict_test[self.t_type] = atom_types.reshape([-1])
+        else:
+            feed_dict_test[self.t_type] = np.tile(atom_types, [nframes, 1]).reshape([-1])
         feed_dict_test[self.t_coord] = np.reshape(coords, [-1])
         feed_dict_test[self.t_box  ] = np.reshape(cells , [-1])
         if pbc:

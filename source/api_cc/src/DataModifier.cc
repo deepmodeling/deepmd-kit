@@ -5,7 +5,8 @@ using namespace tensorflow;
 
 DipoleChargeModifier::
 DipoleChargeModifier()
-    : inited (false)
+    : inited (false),
+      graph_def(new GraphDef())
 {
 }
 
@@ -13,10 +14,16 @@ DipoleChargeModifier::
 DipoleChargeModifier(const std::string & model, 
 	     const int & gpu_rank, 
 	     const std::string &name_scope_)
-    : inited (false), name_scope(name_scope_)
+    : inited (false), name_scope(name_scope_),
+      graph_def(new GraphDef())
 {
-  init(model, gpu_rank);  
+  init(model, gpu_rank, name_scope_);  
 }
+
+DipoleChargeModifier::
+~DipoleChargeModifier () {
+  delete graph_def;
+};
 
 void
 DipoleChargeModifier::
@@ -35,13 +42,18 @@ init (const std::string & model,
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
   deepmd::load_op_library();
   deepmd::check_status(NewSession(options, &session));
-  deepmd::check_status(ReadBinaryProto(Env::Default(), model, &graph_def));
-  deepmd::check_status(session->Create(graph_def));  
+  deepmd::check_status(ReadBinaryProto(Env::Default(), model, graph_def));
+  deepmd::check_status(session->Create(*graph_def));  
   // int nnodes = graph_def.node_size();
   // for (int ii = 0; ii < nnodes; ++ii){
   //   cout << ii << " \t " << graph_def.node(ii).name() << endl;
   // }
-  rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
+  dtype = session_get_dtype(session, "descrpt_attr/rcut");
+  if (dtype == tensorflow::DT_DOUBLE) {
+    rcut = get_scalar<double>("descrpt_attr/rcut");
+  } else {
+    rcut = get_scalar<float>("descrpt_attr/rcut");
+  }
   cell_size = rcut;
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
   model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
@@ -66,13 +78,14 @@ get_vector (std::vector<VT> & vec, const std::string & name) const
   session_get_vector<VT>(vec, session, name, name_scope);
 }
 
+template <typename MODELTYPE, typename VALUETYPE>
 void 
 DipoleChargeModifier::
 run_model (std::vector<VALUETYPE> &		dforce,
 	   std::vector<VALUETYPE> &		dvirial,
 	   Session *				session, 
 	   const std::vector<std::pair<std::string, Tensor>> & input_tensors,
-	   const AtomMap<VALUETYPE> &	atommap, 
+	   const AtomMap &	atommap, 
 	   const int				nghost)
 {
   unsigned nloc = atommap.get_type().size();
@@ -104,8 +117,8 @@ run_model (std::vector<VALUETYPE> &		dforce,
   assert (output_av.dim_size(0) == nframes), "nframes should match";
   assert (output_av.dim_size(1) == natoms * 9), "dof of atom virial should be 9 * natoms";  
 
-  auto of = output_f.flat<VALUETYPE> ();
-  auto ov = output_v.flat<VALUETYPE> ();
+  auto of = output_f.flat<MODELTYPE> ();
+  auto ov = output_v.flat<MODELTYPE> ();
 
   dforce.resize(nall*3);
   dvirial.resize(9);
@@ -117,8 +130,47 @@ run_model (std::vector<VALUETYPE> &		dforce,
   }
 }
 
+template
+void 
+DipoleChargeModifier::
+run_model <double, double> (std::vector<double> &		dforce,
+	   std::vector<double> &		dvirial,
+	   Session *				session, 
+	   const std::vector<std::pair<std::string, Tensor>> & input_tensors,
+	   const AtomMap &	atommap, 
+	   const int				nghost);
 
+template
+void 
+DipoleChargeModifier::
+run_model <float, double> (std::vector<double> &		dforce,
+	   std::vector<double> &		dvirial,
+	   Session *				session, 
+	   const std::vector<std::pair<std::string, Tensor>> & input_tensors,
+	   const AtomMap &	atommap, 
+	   const int				nghost);
 
+template
+void 
+DipoleChargeModifier::
+run_model <double, float> (std::vector<float> &		dforce,
+	   std::vector<float> &		dvirial,
+	   Session *				session, 
+	   const std::vector<std::pair<std::string, Tensor>> & input_tensors,
+	   const AtomMap &	atommap, 
+	   const int				nghost);
+
+template
+void 
+DipoleChargeModifier::
+run_model <float, float> (std::vector<float> &		dforce,
+	   std::vector<float> &		dvirial,
+	   Session *				session, 
+	   const std::vector<std::pair<std::string, Tensor>> & input_tensors,
+	   const AtomMap &	atommap, 
+	   const int				nghost);
+
+template <typename VALUETYPE>
 void
 DipoleChargeModifier::
 compute (std::vector<VALUETYPE> &		dfcorr_,
@@ -162,7 +214,7 @@ compute (std::vector<VALUETYPE> &		dfcorr_,
   nlist_data.copy_from_nlist(lmp_list);
   nlist_data.shuffle_exclude_empty(real_fwd_map);  
   // sort atoms
-  AtomMap<VALUETYPE> atommap (datype_real.begin(), datype_real.begin() + nloc_real);
+  AtomMap atommap (datype_real.begin(), datype_real.begin() + nloc_real);
   assert (nloc_real == atommap.get_type().size());
   const std::vector<int> & sort_fwd_map(atommap.get_fwd_map());
   const std::vector<int> & sort_bkw_map(atommap.get_bkw_map());
@@ -172,7 +224,12 @@ compute (std::vector<VALUETYPE> &		dfcorr_,
   nlist_data.make_inlist(nlist);
   // make input tensors
   std::vector<std::pair<std::string, Tensor>> input_tensors;
-  int ret = session_input_tensors (input_tensors, dcoord_real, ntypes, datype_real, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, nghost_real, 0, name_scope);
+  int ret;
+  if (dtype == tensorflow::DT_DOUBLE) {
+    ret = session_input_tensors<double> (input_tensors, dcoord_real, ntypes, datype_real, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, nghost_real, 0, name_scope);
+  } else {
+    ret = session_input_tensors<float> (input_tensors, dcoord_real, ntypes, datype_real, dbox, nlist, std::vector<VALUETYPE>(), std::vector<VALUETYPE>(), atommap, nghost_real, 0, name_scope);
+  }
   assert (nloc_real == ret);
   // make bond idx map
   std::vector<int > bd_idx(nall, -1);
@@ -200,26 +257,35 @@ compute (std::vector<VALUETYPE> &		dfcorr_,
   TensorShape extf_shape ;
   extf_shape.AddDim (nframes);
   extf_shape.AddDim (dextf.size());
-#ifdef HIGH_PREC
-  Tensor extf_tensor	(DT_DOUBLE, extf_shape);
-#else
-  Tensor extf_tensor	(DT_FLOAT, extf_shape);
-#endif
-  auto extf = extf_tensor.matrix<VALUETYPE> ();
-  for (int ii = 0; ii < nframes; ++ii){
-    for (int jj = 0; jj < extf.size(); ++jj){
-      extf(ii,jj) = dextf[jj];
+  Tensor extf_tensor	((tensorflow::DataType) dtype, extf_shape);
+  if (dtype == tensorflow::DT_DOUBLE) {
+    auto extf = extf_tensor.matrix<double> ();
+    for (int ii = 0; ii < nframes; ++ii){
+      for (int jj = 0; jj < extf.size(); ++jj){
+        extf(ii,jj) = dextf[jj];
+      }
+    }
+  } else {
+    auto extf = extf_tensor.matrix<float> ();
+    for (int ii = 0; ii < nframes; ++ii){
+      for (int jj = 0; jj < extf.size(); ++jj){
+        extf(ii,jj) = dextf[jj];
+      }
     }
   }
   // append extf to input tensor
   input_tensors.push_back({"t_ef", extf_tensor});  
   // run model
   std::vector<VALUETYPE> dfcorr, dvcorr;
-  run_model (dfcorr, dvcorr, session, input_tensors, atommap, nghost_real);
+  if (dtype == tensorflow::DT_DOUBLE) {
+    run_model <double> (dfcorr, dvcorr, session, input_tensors, atommap, nghost_real);
+  } else {
+    run_model <float> (dfcorr, dvcorr, session, input_tensors, atommap, nghost_real);
+  }
   assert(dfcorr.size() == nall_real * 3);
   // back map force
   std::vector<VALUETYPE> dfcorr_1 = dfcorr;
-  atommap.backward (dfcorr_1.begin(), dfcorr.begin(), 3);
+  atommap.backward<VALUETYPE> (dfcorr_1.begin(), dfcorr.begin(), 3);
   assert(dfcorr_1.size() == nall_real * 3);
   // resize to all and clear
   std::vector<VALUETYPE> dfcorr_2(nall*3);
@@ -250,4 +316,37 @@ compute (std::vector<VALUETYPE> &		dfcorr_,
     }    
   }
   dvcorr_ = dvcorr;
+}
+
+template
+void
+DipoleChargeModifier::
+compute <double> (std::vector<double> &		dfcorr_,
+	 std::vector<double> &		dvcorr_,
+	 const std::vector<double> &		dcoord_,
+	 const std::vector<int> &		datype_,
+	 const std::vector<double> &		dbox, 
+	 const std::vector<std::pair<int,int>>&	pairs,
+	 const std::vector<double> &		delef_, 
+	 const int				nghost,
+	 const InputNlist &		lmp_list);
+
+template
+void
+DipoleChargeModifier::
+compute <float> (std::vector<float> &		dfcorr_,
+	 std::vector<float> &		dvcorr_,
+	 const std::vector<float> &		dcoord_,
+	 const std::vector<int> &		datype_,
+	 const std::vector<float> &		dbox, 
+	 const std::vector<std::pair<int,int>>&	pairs,
+	 const std::vector<float> &		delef_, 
+	 const int				nghost,
+	 const InputNlist &		lmp_list);
+
+void 
+DipoleChargeModifier::
+print_summary(const std::string &pre) const
+{
+  deepmd::print_summary(pre);
 }

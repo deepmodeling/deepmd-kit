@@ -3,7 +3,7 @@ on:
   pull_request:
 name: Test C++
 jobs:
-  testpython:
+  testcc:
     name: Test C++
     runs-on: ubuntu-latest
     container: ghcr.io/deepmodeling/deepmd-kit-test-cc:latest
@@ -13,5 +13,35 @@ jobs:
     - uses: actions/checkout@master
     - run: source/install/test_cc_local.sh
       env:
+        OMP_NUM_THREADS: 1
+        TF_INTRA_OP_PARALLELISM_THREADS: 1
+        TF_INTER_OP_PARALLELISM_THREADS: 1
         tensorflow_root: /usr/local
-    - run: source/install/codecov.sh
+    # test lammps
+    - run: apt-get update && apt-get install -y python3-pip python3-venv
+    - run: source/install/build_lammps.sh
+    - run: |
+        python -m pip install -U pip
+        python -m pip install -e .[cpu,test]
+      env:
+        DP_BUILD_TESTING: 1
+    - run: pytest --cov=deepmd source/lmp/tests
+      env:
+        OMP_NUM_THREADS: 1
+        TF_INTRA_OP_PARALLELISM_THREADS: 1
+        TF_INTER_OP_PARALLELISM_THREADS: 1
+        LAMMPS_PLUGIN_PATH: ${{ github.workspace }}/dp_test/lib/deepmd_lmp
+        LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib
+    - uses: codecov/codecov-action@v3
+      with:
+        gcov: true
+  pass:
+    name: Pass testing C++
+    needs: [testcc]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+    - name: Decide whether the needed jobs succeeded or failed
+      uses: re-actors/alls-green@release/v1
+      with:
+        jobs: ${{ toJSON(needs) }}

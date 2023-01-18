@@ -82,6 +82,7 @@ class TestDataSystem (unittest.TestCase) :
         ds = DeepmdDataSystem(self.sys_name, batch_size, test_size, 2.0)
         ds.add('test', self.test_ndof, atomic = True, must = True)
         ds.add('null', self.test_ndof, atomic = True, must = False)
+        ds.add('ones', self.test_ndof, atomic = True, must = False, default=1.)
         sys_idx = 0
         data = ds.get_test(sys_idx=sys_idx)
         self.assertEqual(list(data['type'][0]), list(np.sort(self.atom_type[sys_idx])))
@@ -97,6 +98,11 @@ class TestDataSystem (unittest.TestCase) :
                                                         self.natoms[sys_idx]*self.test_ndof])
                                               -
                                               data['null']
+        ), 0.0)
+        self.assertAlmostEqual(np.linalg.norm(np.ones([self.nframes[sys_idx]+2,
+                                                self.natoms[sys_idx]*self.test_ndof])
+                                        -
+                                        data['ones']
         ), 0.0)
 
         sys_idx = 2
@@ -283,4 +289,39 @@ class TestDataSystem (unittest.TestCase) :
         for idx,ii in enumerate(all_find) :
             self.assertTrue(ii, msg = 'does not find frame %d in array' % idx)
 
-                
+    def test_sys_prob_floating_point_error(self):
+        # test floating point error; See #1917
+        sys_probs = [
+            0.010,                                                           
+            0.010,
+            0.010,
+            0.010,
+            0.010,
+            0.010,
+            0.010,
+            0.010,
+            0.010,
+            0.150,
+            0.100,
+            0.100,
+            0.050,
+            0.050,
+            0.020,
+            0.015,
+            0.015,
+            0.050,
+            0.020,
+            0.015,
+            0.040,
+            0.055,
+            0.025,
+            0.025,
+            0.015,
+            0.025,
+            0.055,
+            0.040,
+            0.040,
+            0.005,
+            ]
+        ds = DeepmdDataSystem(self.sys_name, 3, 2, 2.0, sys_probs=sys_probs)
+        self.assertEqual(ds.sys_probs.size, len(sys_probs))

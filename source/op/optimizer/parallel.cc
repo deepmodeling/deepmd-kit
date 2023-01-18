@@ -1,5 +1,7 @@
 // only support v1.15 or v2
 #include "tensorflow/core/public/version.h"
+// skip windows
+#ifndef _WIN32
 #if TF_MAJOR_VERSION >= 2 || (TF_MAJOR_VERSION == 1 && TF_MINOR_VERSION >= 15)
 
 #if TF_MAJOR_VERSION >= 2 && TF_MINOR_VERSION >= 7
@@ -58,13 +60,13 @@ Status ParallelProdForce(RemapperContext *ctx, int node_index,
                          std::vector<bool> *nodes_to_delete) {
   // skip on GPUs
   if (GetNumAvailableGPUs() > 0)
-    return Status::OK();
+    return Status();
 
   const NodeDef *ori_node = ctx->graph_view.GetNode(node_index)->node();
   auto &src_attr = ori_node->attr();
   TF_INT64 tot = GetNThreads();
   if (tot <= 1)
-    return Status::OK();
+    return Status();
 
   NodeDef sum_node;
   sum_node.set_name(ori_node->name());
@@ -102,7 +104,7 @@ Status ParallelProdForce(RemapperContext *ctx, int node_index,
   TF_RETURN_IF_ERROR(mutation->Apply());
   (*invalidated_nodes)[node_index] = true;
 
-  return Status::OK();
+  return Status();
 }
 
 Status DPParallel::Optimize(Cluster *cluster, const GrapplerItem &item,
@@ -151,9 +153,10 @@ Status DPParallel::Optimize(Cluster *cluster, const GrapplerItem &item,
 
   *optimized_graph = std::move(mutable_item.graph);
 
-  return Status::OK();
+  return Status();
 }
 
 REGISTER_GRAPH_OPTIMIZER_AS(DPParallel, "dpparallel");
 
+#endif
 #endif

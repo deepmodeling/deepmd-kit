@@ -25,7 +25,7 @@ __global__ void virial_grad_wrt_neighbors_a(
 {
     // idy -> nnei
     const unsigned int tid = threadIdx.x;
-    const unsigned int idx = blockIdx.x * blockDim.x + tid;
+    const int_64 idx = blockIdx.x * blockDim.x + tid;
     const unsigned int idy = blockIdx.y;
     const unsigned int idw = threadIdx.y;
     const int ndescrpt = nnei * 4;
@@ -62,7 +62,7 @@ __global__ void virial_grad_wrt_neighbors_r(
 {
     // idy -> nnei
     const unsigned int tid = threadIdx.x;
-    const unsigned int idx = blockIdx.x * blockDim.x + tid;
+    const int_64 idx = blockIdx.x * blockDim.x + tid;
     const unsigned int idy = blockIdx.y;
     const int ndescrpt = nnei;
     __shared__ FPTYPE grad_one[9];

@@ -12,6 +12,7 @@ def neighbor_stat(
     system: str,
     rcut: float,
     type_map: List[str],
+    one_type: bool = False,
     **kwargs,
 ):
     """Calculate neighbor statistics.
@@ -24,6 +25,8 @@ def neighbor_stat(
         cutoff radius
     type_map : list[str]
         type map
+    one_type : bool, optional, default=False
+        treat all types as a single type
 
     Examples
     --------
@@ -42,7 +45,7 @@ def neighbor_stat(
         type_map=type_map,
     )
     data.get_batch()
-    nei = NeighborStat(data.get_ntypes(), rcut)
+    nei = NeighborStat(data.get_ntypes(), rcut, one_type=one_type)
     min_nbor_dist, max_nbor_size = nei.get_stat(data)
     log.info("min_nbor_dist: %f" % min_nbor_dist)
     log.info("max_nbor_size: %s" % str(max_nbor_size))

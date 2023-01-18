@@ -1,17 +1,17 @@
 # TensorBoard Usage
 
 TensorBoard provides the visualization and tooling needed for machine learning
-experimentation. A full instruction of tensorboard can be found
+experimentation. Full instructions for TensorBoard can be found
 [here](https://tensorflow.google.cn/tensorboard).
 
 ## Highlighted features
 
-DeePMD-kit can now use most of the interesting features enabled by tensorboard!
+DeePMD-kit can now use most of the interesting features enabled by TensorBoard!
 
 * **Tracking and visualizing metrics,** such as l2_loss, l2_energy_loss and l2_force_loss
 * **Visualizing the model graph** (ops and layers)
 * **Viewing histograms of weights, biases, or other tensors as they change over time.**
-* **Viewing summaries of trainable viriables**
+* **Viewing summaries of trainable variables**
   
 <!-- * **Projecting embeddings to a lower dimensional space.**
 * **Precision curves.** -->
@@ -19,8 +19,7 @@ DeePMD-kit can now use most of the interesting features enabled by tensorboard!
 ## How to use Tensorboard with DeePMD-kit
 
 Before running TensorBoard, make sure you have generated summary data in a log
-directory by modifying the the input script, set "tensorboard" true in training
-subsection will enable the tensorboard data analysis. eg. **water_se_a.json**.
+directory by modifying the input script, setting {ref}`tensorboard <training/tensorboard>` to true in the training subsection will enable the TensorBoard data analysis. eg. **water_se_a.json**.
 
 ```json
     "training" : {
@@ -53,7 +52,7 @@ subsection will enable the tensorboard data analysis. eg. **water_se_a.json**.
 Once you have event files, run TensorBoard and provide the log directory. This
 should print that TensorBoard has started. Next, connect to http://tensorboard_server_ip:6006.
 
-TensorBoard requires a logdir to read logs from. For info on configuring TensorBoard, run tensorboard --help.
+TensorBoard requires a logdir to read logs from. For info on configuring TensorBoard, run TensorBoard --help.
 One can easily change the log name with "tensorboard_log_dir" and the sampling frequency with "tensorboard_freq".
 
 ```bash
@@ -64,24 +63,24 @@ tensorboard --logdir path/to/logs
 
 ### Tracking and visualizing loss metrics(red:train, blue:test)
 
-![ALT](../images/l2_loss.png "l2 loss")
+![l2 loss](../images/l2_loss.png)
 
-![ALT](../images/l2_energy_loss.png "l2 energy loss")
+![l2 energy loss](../images/l2_energy_loss.png)
 
-![ALT](../images/l2_force_loss.png "l2 force loss")
+![l2 force loss](../images/l2_force_loss.png)
 
-### Visualizing deepmd-kit model graph
+### Visualizing DeePMD-kit model graph
 
-![ALT](../images/tensorboard-graph.png "deepmd-kit graph")
+![DeePMD-kit graph](../images/tensorboard-graph.png)
 
 ### Viewing histograms of weights, biases, or other tensors as they change over time
 
-![ALT](../images/tensorboard-histograms.png "deepmd-kit histograms")
+![DeePMD-kit histograms](../images/tensorboard-histograms.png)
 
-![ALT](../images/tensorboard-distribution.png "deepmd-kit distribution")
+![DeePMD-kit distribution](../images/tensorboard-distribution.png)
 
 ### Viewing summaries of trainable variables
-![ALT](../images/tensorboard-scalar.png "deepmd-kit scalar")
+![DeePMD-kit scalar](../images/tensorboard-scalar.png)
 
 ## Attention
 

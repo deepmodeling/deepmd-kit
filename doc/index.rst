@@ -7,7 +7,7 @@
 DeePMD-kit's documentation
 ==========================
 
-DeePMD-kit is a package written in Python/C++, designed to minimize the effort required to build deep learning based model of interatomic potential energy and force field and to perform molecular dynamics (MD). This brings new hopes to addressing the accuracy-versus-efficiency dilemma in molecular simulations. Applications of DeePMD-kit span from finite molecules to extended systems and from metallic systems to chemically bonded systems.
+DeePMD-kit is a package written in Python/C++, designed to minimize the effort required to build deep learning-based models of interatomic potential energy and force field and to perform molecular dynamics (MD). This brings new hopes to addressing the accuracy-versus-efficiency dilemma in molecular simulations. Applications of DeePMD-kit span from finite molecules to extended systems and from metallic systems to chemically bonded systems.
 
 .. Important:: The project DeePMD-kit is licensed under `GNU LGPLv3.0 <https://github.com/deepmodeling/deepmd-kit/blob/master/LICENSE>`_. If you use this code in any future publications, please cite this using *Han Wang, Linfeng Zhang, Jiequn Han, and Weinan E. "DeePMD-kit: A deep learning package for many-body potential energy representation and molecular dynamics." Computer Physics Communications 228 (2018): 178-184.*
 
@@ -33,8 +33,21 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
    freeze/index
    test/index
    inference/index
+   cli
    third-party/index
+   nvnmd/index
    troubleshooting/index
+
+
+.. _tutorial:
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Tutorial
+   :glob:  
+
+   Tutorials <https://tutorials.deepmodeling.com/>
+   Publications <https://deepmodeling.com/blog/papers/deepmd-kit/>
 
 .. _developer-guide:
 
@@ -45,7 +58,10 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
 
    development/*
    api_py/api_py
+   api_op
    API_CC/api_cc
+   api_c/api_c
+   api_core/api_core
 
 
 .. _project-details:

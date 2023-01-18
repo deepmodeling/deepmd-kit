@@ -1,4 +1,5 @@
 #include <iostream>
+#include <sstream>
 #include <string.h>
 #include <iomanip>
 #include <limits>
@@ -16,8 +17,10 @@
 #include "modify.h"
 #include "fix.h"
 #include "citeme.h"
-#ifdef USE_TTM
-#include "fix_ttm_mod.h"
+#if LAMMPS_VERSION_NUMBER>=20210831
+// in lammps #2902, fix_ttm members turns from private to protected
+#define USE_TTM 1
+#include "fix_ttm_dp.h"
 #endif
 
 #include "pair_deepmd.h"
@@ -111,7 +114,7 @@ std::string PairDeepMD::get_file_content(const std::string & model) {
   int nchar = 0;
   std::string file_content;
   if (myrank == root) {
-    deepmd::check_status(tensorflow::ReadFileToString(tensorflow::Env::Default(), model, &file_content));
+    deepmd::read_file_to_string(model, file_content);
     nchar = file_content.size();
   }
   MPI_Bcast(&nchar, 1, MPI_INT, root, MPI_COMM_WORLD);  
@@ -187,10 +190,10 @@ void PairDeepMD::make_ttm_aparam(
 {
   assert(do_ttm);
   // get ttm_fix
-  const FixTTMMod * ttm_fix = NULL;
+  const FixTTMDP * ttm_fix = NULL;
   for (int ii = 0; ii < modify->nfix; ii++) {
     if (string(modify->fix[ii]->id) == ttm_fix_id){
-      ttm_fix = dynamic_cast<FixTTMMod*>(modify->fix[ii]);
+      ttm_fix = dynamic_cast<FixTTMDP*>(modify->fix[ii]);
     }
   }
   assert(ttm_fix);
@@ -309,6 +312,7 @@ void PairDeepMD::compute(int eflag, int vflag)
 {
   if (numb_models == 0) return;
   if (eflag || vflag) ev_setup(eflag,vflag);
+  if (vflag_atom) error->all(FLERR, "6-element atomic virial is not supported. Use compute centroid/stress/atom command for 9-element atomic virial.");
   bool do_ghost = true;
   
   double **x = atom->x;
@@ -914,7 +918,7 @@ void PairDeepMD::settings(int narg, char **arg)
       ttm_fix_id = arg[iarg+1];
       iarg += 1 + 1;
 #else
-      error->all(FLERR, "The deepmd-kit was compiled without support for TTM, please rebuild it with -DUSE_TTM");
+      error->all(FLERR, "The deepmd-kit was compiled without support for TTM, please rebuild it with LAMMPS version >=20210831");
 #endif      
     }
     else if (string(arg[iarg]) == string("atomic")) {

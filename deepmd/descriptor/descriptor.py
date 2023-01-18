@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Tuple
+from typing import Optional, Any, Dict, List, Tuple
 
 import numpy as np
-from deepmd.env import tf
+from deepmd.env import tf, GLOBAL_TF_FLOAT_PRECISION
 from deepmd.utils import Plugin, PluginVariant
 
 
@@ -185,7 +185,7 @@ class Descriptor(PluginVariant):
               box_: tf.Tensor,
               mesh: tf.Tensor,
               input_dict: Dict[str, Any],
-              reuse: bool = None,
+              reuse: Optional[bool] = None,
               suffix: str = '',
               ) -> tf.Tensor:
         """
@@ -227,7 +227,8 @@ class Descriptor(PluginVariant):
 
     def enable_compression(self,
                            min_nbor_dist: float,
-                           model_file: str = 'frozon_model.pb',
+                           graph: tf.Graph,
+                           graph_def: tf.GraphDef,
                            table_extrapolate: float = 5.,
                            table_stride_1: float = 0.01,
                            table_stride_2: float = 0.1,
@@ -242,8 +243,10 @@ class Descriptor(PluginVariant):
         ----------
         min_nbor_dist : float
                 The nearest distance between atoms
-        model_file : str, default: 'frozon_model.pb'
-                The original frozen model, which will be compressed by the program
+        graph : tf.Graph
+                The graph of the model
+        graph_def : tf.GraphDef
+                The graph definition of the model
         table_extrapolate : float, default: 5.
                 The scale of model extrapolation
         table_stride_1 : float, default: 0.01
@@ -262,7 +265,7 @@ class Descriptor(PluginVariant):
         raise NotImplementedError(
             "Descriptor %s doesn't support compression!" % type(self).__name__)
 
-    def enable_mixed_precision(self, mixed_prec: dict = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
         """
         Reveive the mixed precision setting.
 
@@ -406,3 +409,92 @@ class Descriptor(PluginVariant):
         :meth:`get_tensor_names`.
         """
         raise NotImplementedError("Descriptor %s doesn't support this method!" % type(self).__name__)
+
+    def build_type_exclude_mask(self,
+                                exclude_types: List[Tuple[int, int]],
+                                ntypes: int,
+                                sel: List[int],
+                                ndescrpt: int,
+                                atype: tf.Tensor,
+                                shape0: tf.Tensor) -> tf.Tensor:
+        r"""Build the type exclude mask for the descriptor.
+
+        Notes
+        -----
+        To exclude the interaction between two types, the derivative of energy with
+        respect to distances (or angles) between two atoms should be zero[1]_, i.e.
+
+        .. math::
+            \forall i \in \text{type 1}, j \in \text{type 2},
+            \frac{\partial{E}}{\partial{r_{ij}}} = 0
+
+        When embedding networks between every two types are built, we can just remove
+        that network. But when `type_one_side` is enabled, a network may be built for
+        multiple pairs of types. In this case, we need to build a mask to exclude the
+        interaction between two types.
+
+        The mask assumes the descriptors are sorted by neighbro type with the fixed
+        number of given `sel` and each neighbor has the same number of descriptors
+        (for example 4).
+
+        Parameters
+        ----------
+        exclude_types : List[Tuple[int, int]]
+            The list of excluded types, e.g. [(0, 1), (1, 0)] means the interaction
+            between type 0 and type 1 is excluded.
+        ntypes : int
+            The number of types.
+        sel : List[int]
+            The list of the number of selected neighbors for each type.
+        ndescrpt : int
+            The number of descriptors for each atom.
+        atype : tf.Tensor
+            The type of atoms, with the size of shape0.
+        shape0 : tf.Tensor
+            The shape of the first dimension of the inputs, which is equal to
+            nsamples * natoms.
+
+        Returns
+        -------
+        tf.Tensor
+            The type exclude mask, with the shape of (shape0, ndescrpt), and the
+            precision of GLOBAL_TF_FLOAT_PRECISION. The mask has the value of 1 if the
+            interaction between two types is not excluded, and 0 otherwise.
+
+        References
+        ----------
+        .. [1] Jinzhe Zeng, Timothy J. Giese, ̧Sölen Ekesan, Darrin M. York,
+           Development of Range-Corrected Deep Learning Potentials for Fast,
+           Accurate Quantum Mechanical/molecular Mechanical Simulations of
+           Chemical Reactions in Solution, J. Chem. Theory Comput., 2021,
+           17 (11), 6993-7009.
+        """
+        # generate a mask
+        type_mask = np.array([
+            [1 if (tt_i, tt_j) not in exclude_types else 0
+            for tt_i in range(ntypes)]
+            for tt_j in range(ntypes)
+        ], dtype = bool)
+        type_mask = tf.convert_to_tensor(type_mask, dtype = GLOBAL_TF_FLOAT_PRECISION)
+        type_mask = tf.reshape(type_mask, [-1])
+
+        # (nsamples * natoms, 1)
+        atype_expand = tf.reshape(atype, [-1, 1])
+        # (nsamples * natoms, ndescrpt)
+        idx_i = tf.tile(atype_expand * ntypes, (1, ndescrpt))
+        ndescrpt_per_neighbor = ndescrpt // np.sum(sel)
+        # assume the number of neighbors for each type is the same
+        assert ndescrpt_per_neighbor * np.sum(sel) == ndescrpt
+        atype_descrpt = np.repeat(np.arange(ntypes), np.array(sel) * ndescrpt_per_neighbor)
+        atype_descrpt = tf.convert_to_tensor(atype_descrpt, dtype = tf.int32)
+        # (1, ndescrpt)
+        atype_descrpt = tf.reshape(atype_descrpt, (1, ndescrpt))
+        # (nsamples * natoms, ndescrpt)
+        idx_j = tf.tile(atype_descrpt, (shape0, 1))
+        # the index to mask (row index * ntypes + col index)
+        idx = idx_i + idx_j
+        idx = tf.reshape(idx, [-1])
+        mask = tf.nn.embedding_lookup(type_mask, idx)
+        # same as inputs_i, (nsamples * natoms, ndescrpt)
+        mask = tf.reshape(mask, [-1, ndescrpt])
+        return mask

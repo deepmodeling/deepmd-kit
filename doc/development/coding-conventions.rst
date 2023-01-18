@@ -7,27 +7,27 @@ Coding Conventions
 Preface
 =======
 
-The aim of these coding standards is to help create a codebase with defined and
+The aim of these coding standards is to help create a codebase with a defined and
 consistent coding style that every contributor can get easily familiar with. This
 will in enhance code readability as there will be no different coding styles from
-different contributors and everything will be documented. Also PR diffs will be smaller
-because of unified coding style. Finally static typing will help in hunting down
+different contributors and everything will be documented. Also, PR diffs will be smaller
+because of the unified coding style. Finally, static typing will help in hunting down
 potential bugs before the code is even run.
 
 Contributed code will not be refused merely because it does not
 strictly adhere to these conditions; as long as it's internally
 consistent, clean, and correct, it probably will be accepted.  But
-don't be surprised if the "offending" code gets fiddled over time to
+don't be surprised if the "offending" code gets fiddled with overtime to
 conform to these conventions.
 
-There are also github actions CI checks for python code style which will annotate the
+There are also GitHub actions CI checks for python code style which will annotate the
 PR diff for you to see the areas where your code is lacking compared to the set standard.
 
 Rules
 =====
 
 The code must be compatible with the oldest supported version of python
-which is 3.6
+which is 3.7
 
 The project follows the generic coding conventions as
 specified in the `Style Guide for Python Code`_, `Docstring
@@ -41,8 +41,8 @@ Conventions`_ and `Typing Conventions`_ PEPs, clarified and extended as follows:
 * No one-liner compound statements (i.e., no ``if x: return``: use two
   lines).
 
-* Maximum line length is 88 characters as recomended by
-  `black <https://github.com/psf/black>`_ wich is less strict than 
+* Maximum line length is 88 characters as recommended by
+  `black <https://github.com/psf/black>`_ which is less strict than 
   `Docstring Conventions`_ suggests.
 
 * Use "StudlyCaps" for class names.
@@ -88,7 +88,7 @@ Python is not C/C++ so whitespace  should be used sparingly to maintain code rea
 * You should have blank spaces after commas, colons, and semi-colons if it isn’t
   trailing next to the end of a bracket, brace, or parentheses.
   
-* With any operators you should use a space in on both sides of the operator.
+* With any operators you should use space on both sides of the operator.
 
 * Colons for slicing are considered a binary operator, and should not have any spaces
   between them.
@@ -130,7 +130,7 @@ Here is an example of how to write good docstrings:
 
     https://github.com/numpy/numpy/blob/master/doc/example.py
 
-The numpy doctring documentation can be found `here <https://numpydoc.readthedocs.io/en/latest/format.html>`_
+The NumPy docstring documentation can be found `here <https://numpydoc.readthedocs.io/en/latest/format.html>`_
 
 It is a good practice to run `pydocstyle <https://github.com/PyCQA/pydocstyle>`_
 check on your code or use a text editor that does it automatically):
@@ -182,7 +182,7 @@ Run black on your code
 
 Another method of enforcing PEP8_ is using a tool such as
 `black <https://github.com/psf/black>`_. These tools tend to be
-very effective at cleaning up code, but should be used carefully and code
+very effective at cleaning up code but should be used carefully and code
 should be retested after cleaning it. Try:
 
 .. code-block:: bash

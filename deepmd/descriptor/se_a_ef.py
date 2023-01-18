@@ -1,9 +1,8 @@
 import numpy as np
-from typing import Tuple, List
+from typing import Optional, Tuple, List
 
 from deepmd.env import tf
-from deepmd.common import add_data_requirement,get_activation_func, get_precision, ACTIVATION_FN_DICT, PRECISION_DICT, docstring_parameter
-from deepmd.utils.argcheck import list_to_doc
+from deepmd.common import add_data_requirement
 from deepmd.utils.sess import run_sess
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
@@ -30,7 +29,7 @@ class DescrptSeAEf (Descriptor):
             Number of the axis neuron (number of columns of the sub-matrix of the embedding matrix)
     resnet_dt
             Time-step `dt` in the resnet construction:
-            y = x + dt * \phi (Wx + b)
+            y = x + dt * \\phi (Wx + b)
     trainable
             If the weights of embedding net are trainable.
     seed
@@ -43,13 +42,12 @@ class DescrptSeAEf (Descriptor):
     set_davg_zero
             Set the shift of embedding net input to zero.
     activation_function
-            The activation function in the embedding net. Supported options are {0}
+            The activation function in the embedding net. Supported options are |ACTIVATION_FN|
     precision
-            The precision of the embedding net parameters. Supported options are {1}
+            The precision of the embedding net parameters. Supported options are |PRECISION|
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
     """
-    @docstring_parameter(list_to_doc(ACTIVATION_FN_DICT.keys()), list_to_doc(PRECISION_DICT.keys()))
     def __init__(self,
                  rcut: float,
                  rcut_smth: float,
@@ -58,7 +56,7 @@ class DescrptSeAEf (Descriptor):
                  axis_neuron: int = 8,
                  resnet_dt: bool = False,
                  trainable: bool = True,
-                 seed: int = None,
+                 seed: Optional[int] = None,
                  type_one_side: bool = True,
                  exclude_types: List[List[int]] = [],
                  set_davg_zero: bool = False,
@@ -103,10 +101,10 @@ class DescrptSeAEf (Descriptor):
             precision,
             uniform_seed,
         )
-        
+
     def get_rcut (self) -> float:
         """
-        Returns the cut-off radisu
+        Returns the cut-off radius
         """
         return self.descrpt_vert.rcut_r
 
@@ -230,7 +228,7 @@ class DescrptSeAEf (Descriptor):
         self.dout_vert = tf.reshape(self.dout_vert, [nframes * natoms[0], self.descrpt_vert.get_dim_out()])
         self.dout_para = tf.reshape(self.dout_para, [nframes * natoms[0], self.descrpt_para.get_dim_out()])
         self.dout = tf.concat([self.dout_vert, self.dout_para], axis = 1)
-        self.dout = tf.reshape(self.dout, [nframes, natoms[0] * self.get_dim_out()])
+        self.dout = tf.reshape(self.dout, [nframes, natoms[0], self.get_dim_out()])
         self.qmat = self.descrpt_vert.qmat + self.descrpt_para.qmat
 
         tf.summary.histogram('embedding_net_output', self.dout)
@@ -286,7 +284,7 @@ class DescrptSeAEfLower (DescrptSeA):
                   axis_neuron: int = 8,
                   resnet_dt: bool = False,
                   trainable: bool = True,
-                  seed: int = None,
+                  seed: Optional[int] = None,
                   type_one_side: bool = True,
                   exclude_types: List[List[int]] = [],
                   set_davg_zero: bool = False,
@@ -311,25 +309,6 @@ class DescrptSeAEfLower (DescrptSeA):
             precision,
             uniform_seed
         )
-        # DescrptSeA.__init__(self, **jdata)
-        # args = ClassArg()\
-        #        .add('sel',      list,   must = True) \
-        #        .add('rcut',     float,  default = 6.0) \
-        #        .add('rcut_smth',float,  default = 5.5) \
-        #        .add('neuron',   list,   default = [10, 20, 40]) \
-        #        .add('axis_neuron', int, default = 4, alias = 'n_axis_neuron') \
-        #        .add('resnet_dt',bool,   default = False) \
-        #        .add('trainable',bool,   default = True) \
-        #        .add('seed',     int) 
-        # class_data = args.parse(jdata)
-        # self.sel_a = class_data['sel']
-        # self.rcut_r = class_data['rcut']
-        # self.rcut_r_smth = class_data['rcut_smth']
-        # self.filter_neuron = class_data['neuron']
-        # self.n_axis_neuron = class_data['axis_neuron']
-        # self.filter_resnet_dt = class_data['resnet_dt']
-        # self.seed = class_data['seed']
-        # self.trainable = class_data['trainable']
         self.sel_a = sel
         self.rcut_r = rcut
         self.rcut_r_smth = rcut_smth
