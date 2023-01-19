@@ -5,6 +5,7 @@ from deepmd.utils.convert import (
     convert_13_to_21,
     convert_12_to_21,
     convert_pbtxt_to_pb,
+    convert_org_to_ascend
 )
 
 def convert(
@@ -27,5 +28,7 @@ def convert(
         convert_20_to_21(input_model, output_model)
     elif FROM == 'pbtxt':
         convert_pbtxt_to_pb(input_model, output_model)
+    elif FROM == 'convert_org_to_ascend':
+        convert_org_to_ascend(input_model, output_model, **kwargs)
     else:
         raise RuntimeError('unsupported model version ' + FROM)

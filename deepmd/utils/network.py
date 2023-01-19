@@ -1,8 +1,11 @@
 import numpy as np
+import os
 
 from deepmd.env import tf
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.common import get_precision
+
+dp_float_prec = os.environ.get("DP_INTERFACE_PREC", "high").lower()
 
 def one_layer_rand_seed_shift():
     return 3
@@ -11,6 +14,7 @@ def one_layer(inputs,
               outputs_size, 
               activation_fn=tf.nn.tanh, 
               precision = GLOBAL_TF_FLOAT_PRECISION, 
+              out_precision = GLOBAL_TF_FLOAT_PRECISION,
               stddev=1.0,
               bavg=0.0,
               name='linear',
@@ -45,11 +49,18 @@ def one_layer(inputs,
                             w_initializer, 
                             trainable = trainable)
         variable_summaries(w, 'matrix')
-        b = tf.get_variable('bias', 
-                            [outputs_size], 
-                            precision,
-                            b_initializer, 
-                            trainable = trainable)
+        if final_layer and dp_float_prec == "ascend_mix":
+            b = tf.get_variable('bias', 
+                                [outputs_size], 
+                                out_precision,
+                                b_initializer, 
+                                trainable = trainable)
+        else:
+            b = tf.get_variable('bias', 
+                                [outputs_size], 
+                                precision,
+                                b_initializer, 
+                                trainable = trainable)
         variable_summaries(b, 'bias')
 
         if mixed_prec is not None and not final_layer:
@@ -57,7 +68,11 @@ def one_layer(inputs,
             w = tf.cast(w, get_precision(mixed_prec['compute_prec']))
             b = tf.cast(b, get_precision(mixed_prec['compute_prec']))
 
-        hidden = tf.nn.bias_add(tf.matmul(inputs, w), b)
+        if final_layer and dp_float_prec == "ascend_mix":
+            hidden = tf.cast(tf.matmul(inputs, w), dtype=out_precision)
+        else:
+            hidden = tf.matmul(inputs, w)
+        hidden = tf.nn.bias_add(hidden, b)
         if activation_fn != None and use_timestep :
             idt_initializer = tf.random_normal_initializer(
                                     stddev=0.001,
@@ -233,10 +248,14 @@ def embedding_net(xx,
             else :
                 xx += hidden
         elif outputs_size[ii] == outputs_size[ii-1] * 2: 
+            I_diag = np.diag(np.array(outputs_size[ii-1] * [1.0]))
+            II_diag = tf.constant(np.concatenate((I_diag, I_diag), axis=1), dtype=precision)
+            if mixed_prec is not None:
+                II_diag = tf.cast(II_diag, get_precision(mixed_prec['compute_prec']))
             if resnet_dt :
-                xx = tf.concat([xx,xx], 1) + hidden * idt
+                xx = tf.matmul(xx, II_diag) + hidden * idt
             else :
-                xx = tf.concat([xx,xx], 1) + hidden
+                xx = tf.matmul(xx, II_diag) + hidden
         else:
             xx = hidden
     if mixed_prec is not None:
