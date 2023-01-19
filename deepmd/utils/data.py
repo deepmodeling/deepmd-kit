@@ -409,7 +409,8 @@ class DeepmdData() :
 
     def _load_batch_set (self,
                          set_name: DPPath) :
-        self.batch_set = self._load_set(set_name)
+        if not hasattr(self, 'batch_set') or self.get_numb_set() > 1:
+            self.batch_set = self._load_set(set_name)
         self.batch_set, _ = self._shuffle_data(self.batch_set)
         self.reset_get_batch()
 
