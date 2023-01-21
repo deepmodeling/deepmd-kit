@@ -1057,8 +1057,7 @@ void PairDeepMD::coeff(int narg, char **arg)
     }
 
     type_idx_map.clear();
-    while (iarg+1 < narg && !is_key(arg[iarg+1])) {
-      iarg += 1;
+    while (iarg < narg) {
       std::string type_name = arg[iarg];
       bool found_element = false;
       for (int ii = 0; ii < type_map.size(); ++ii) {
@@ -1071,6 +1070,7 @@ void PairDeepMD::coeff(int narg, char **arg)
       if (!found_element) {
         error->all(FLERR, "pair_coeff: element " + type_name + " not found in the model");
       }
+      iarg += 1;
     }
     numb_types = type_idx_map.size();
   }
