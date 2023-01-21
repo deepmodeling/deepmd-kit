@@ -978,6 +978,7 @@ void PairDeepMD::settings(int narg, char **arg)
           error->all(FLERR, "type_map: element " + type_name + " not found in the model");
         }
       }
+      iarg += 1;
     }
   }
   if (out_freq < 0) error->all(FLERR,"Illegal out_freq, should be >= 0");

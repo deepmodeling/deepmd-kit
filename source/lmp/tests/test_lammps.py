@@ -90,6 +90,7 @@ def lammps(data_file=data_file) -> PyLammps:
     yield lammps
 
 
+@pytest.fixture
 def lammps_type_map():
     lammps(data_file=data_type_map_file)
 
