@@ -13,6 +13,7 @@ pb_file = Path(__file__).parent / "graph.pb"
 pb_file2 = Path(__file__).parent / "graph2.pb"
 system_file = Path(__file__).parent.parent.parent / "tests"
 data_file = Path(__file__).parent / "data.lmp"
+data_type_map_file = Path(__file__).parent / "data_type_map.lmp"
 md_file = Path(__file__).parent / "md.out"
 
 # this is as the same as python and c++ tests, test_deeppot_a.py
@@ -74,7 +75,7 @@ sp.check_output("{} -m deepmd convert-from pbtxt -i {} -o {}".format(
 
 
 @pytest.fixture
-def lammps() -> PyLammps:
+def lammps(data_file=data_file) -> PyLammps:
     lammps = PyLammps()
     lammps.units("metal")
     lammps.boundary("p p p")
@@ -87,6 +88,10 @@ def lammps() -> PyLammps:
     lammps.timestep(0.0005)
     lammps.fix("1 all nve")
     yield lammps
+
+
+def lammps_type_map():
+    lammps(data_file=data_type_map_file)
 
 
 def test_pair_deepmd(lammps):
@@ -205,3 +210,12 @@ def test_pair_deepmd_model_devi_atomic_relative_v(lammps):
     assert md[1] == pytest.approx(np.max(expected_md_v))
     assert md[2] == pytest.approx(np.min(expected_md_v))
     assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))))
+
+def test_pair_deepmd_type_map(lammps_type_map):
+    lammps_type_map.pair_style("deepmd {} type_map H O".format(pb_file.resolve()))
+    lammps_type_map.pair_coeff("* *")
+    lammps_type_map.run(0)
+    assert lammps_type_map.eval("pe") == pytest.approx(expected_e)
+    for ii in range(6):
+        assert lammps_type_map.atoms[ii].force == pytest.approx(expected_f[ii])
+    lammps_type_map.run(1)
