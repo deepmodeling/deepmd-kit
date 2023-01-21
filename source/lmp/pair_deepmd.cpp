@@ -810,7 +810,6 @@ is_key (const string& input)
   keys.push_back("atomic");
   keys.push_back("relative");
   keys.push_back("relative_v");
-  keys.push_back("type_map");
 
   for (int ii = 0; ii < keys.size(); ++ii){
     if (input == keys[ii]) {
@@ -863,10 +862,6 @@ void PairDeepMD::settings(int narg, char **arg)
     assert(numb_types == deep_pot.numb_types());
     assert(dim_fparam == deep_pot.dim_fparam());
     assert(dim_aparam == deep_pot.dim_aparam());
-  }
-  type_idx_map.resize(numb_types);
-  for (int ii = 0; ii < numb_types; ++ii){
-    type_idx_map[ii] = ii;
   }
 
   out_freq = 100;
@@ -947,38 +942,6 @@ void PairDeepMD::settings(int narg, char **arg)
       eps_v = strtof(arg[iarg+1], NULL);
 #endif
       iarg += 2;
-    }
-    else if (string(arg[iarg]) == string("type_map")) {
-      // type_map is a list of strings with undetermined length
-      // note: although we have numb_types from the model, we do not require
-      // the number of types in the system matches that in the model
-      std::vector<std::string> type_map;
-      std::string type_map_str;
-      deep_pot.get_type_map(type_map_str);
-      // convert the string to a vector of strings
-      std::istringstream iss(type_map_str);
-      std::string type_name;
-      while (iss >> type_name) {
-        type_map.push_back(type_name);
-      }
-
-      type_idx_map.clear();
-      while (iarg+1 < narg && !is_key(arg[iarg+1])) {
-        iarg += 1;
-        std::string type_name = arg[iarg];
-        bool found_element = false;
-        for (int ii = 0; ii < type_map.size(); ++ii) {
-          if (type_map[ii] == type_name) {
-            type_idx_map.push_back(ii);
-            found_element = true;
-            break;
-          }
-        }
-        if (!found_element) {
-          error->all(FLERR, "type_map: element " + type_name + " not found in the model");
-        }
-      }
-      iarg += 1;
     }
   }
   if (out_freq < 0) error->all(FLERR,"Illegal out_freq, should be >= 0");
@@ -1065,13 +1028,55 @@ void PairDeepMD::coeff(int narg, char **arg)
   jlo = 0;
   ihi = n;
   jhi = n;
-  if (narg == 2) {
+  if (narg >= 2) {
     utils::bounds(FLERR,arg[0],1,atom->ntypes,ilo,ihi,error);
     utils::bounds(FLERR,arg[1],1,atom->ntypes,jlo,jhi,error);
     if (ilo != 1 || jlo != 1 || ihi != n || jhi != n) {
       error->all(FLERR,"deepmd requires that the scale should be set to all atom types, i.e. pair_coeff * *.");
     }
-  }  
+  }
+  if (narg <= 2) {
+    type_idx_map.resize(numb_types);
+    for (int ii = 0; ii < numb_types; ++ii){
+      type_idx_map[ii] = ii;
+    }
+  } else {
+    int iarg = 2;
+
+    // type_map is a list of strings with undetermined length
+    // note: although we have numb_types from the model, we do not require
+    // the number of types in the system matches that in the model
+    std::vector<std::string> type_map;
+    std::string type_map_str;
+    deep_pot.get_type_map(type_map_str);
+    // convert the string to a vector of strings
+    std::istringstream iss(type_map_str);
+    std::string type_name;
+    while (iss >> type_name) {
+      type_map.push_back(type_name);
+    }
+
+    type_idx_map.clear();
+    while (iarg+1 < narg && !is_key(arg[iarg+1])) {
+      iarg += 1;
+      std::string type_name = arg[iarg];
+      bool found_element = false;
+      for (int ii = 0; ii < type_map.size(); ++ii) {
+        if (type_map[ii] == type_name) {
+          type_idx_map.push_back(ii);
+          found_element = true;
+          break;
+        }
+      }
+      if (!found_element) {
+        error->all(FLERR, "pair_coeff: element " + type_name + " not found in the model");
+      }
+    }
+    numb_types = type_idx_map.size();
+  }
+  if (numb_types < n) {
+    error->all(FLERR, "number of types assigned by pair_coeff or in the model is less than the number of types in the system");
+  }
   for (int i = ilo; i <= ihi; i++) {
     for (int j = MAX(jlo,i); j <= jhi; j++) {
       setflag[i][j] = 1;

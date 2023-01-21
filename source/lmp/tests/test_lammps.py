@@ -215,8 +215,8 @@ def test_pair_deepmd_model_devi_atomic_relative_v(lammps):
     assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))))
 
 def test_pair_deepmd_type_map(lammps_type_map):
-    lammps_type_map.pair_style("deepmd {} type_map H O".format(pb_file.resolve()))
-    lammps_type_map.pair_coeff("* *")
+    lammps_type_map.pair_style("deepmd {}".format(pb_file.resolve()))
+    lammps_type_map.pair_coeff("* * H O")
     lammps_type_map.run(0)
     assert lammps_type_map.eval("pe") == pytest.approx(expected_e)
     for ii in range(6):
