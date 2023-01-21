@@ -94,7 +94,7 @@ def lammps():
 
 @pytest.fixture
 def lammps_type_map():
-    yield lammps(data_file=data_type_map_file)
+    yield _lammps(data_file=data_type_map_file)
 
 
 def test_pair_deepmd(lammps):
