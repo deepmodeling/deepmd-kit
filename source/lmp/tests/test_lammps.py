@@ -73,9 +73,7 @@ sp.check_output("{} -m deepmd convert-from pbtxt -i {} -o {}".format(
     ).split())
 
 
-
-@pytest.fixture
-def lammps(data_file=data_file) -> PyLammps:
+def _lammps(data_file) -> PyLammps:
     lammps = PyLammps()
     lammps.units("metal")
     lammps.boundary("p p p")
@@ -91,8 +89,12 @@ def lammps(data_file=data_file) -> PyLammps:
 
 
 @pytest.fixture
+def lammps():
+    yield _lammps(data_file=data_file)
+
+@pytest.fixture
 def lammps_type_map():
-    lammps(data_file=data_type_map_file)
+    yield lammps(data_file=data_type_map_file)
 
 
 def test_pair_deepmd(lammps):
