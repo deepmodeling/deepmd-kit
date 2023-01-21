@@ -14,7 +14,7 @@ mass		2 2
 # load the deepmd plugin
 plugin load libdeepmd_lmp.so
 
-pair_style	deepmd frozen_model.pb
+pair_style	deepmd frozen_model.pb type_map O H
 pair_coeff  * *	
 
 velocity        all create 330.0 23456789

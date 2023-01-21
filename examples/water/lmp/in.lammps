@@ -11,7 +11,7 @@ read_data	water.lmp
 mass 		1 16
 mass		2 2
 
-pair_style	deepmd frozen_model.pb
+pair_style	deepmd frozen_model.pb type_map O H
 pair_coeff  * *	
 
 velocity        all create 330.0 23456789

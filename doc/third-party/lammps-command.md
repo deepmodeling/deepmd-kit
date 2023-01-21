@@ -29,8 +29,10 @@ pair_style deepmd models ... keyword value ...
 - models = frozen model(s) to compute the interaction. 
 If multiple models are provided, then only the first model serves to provide energy and force prediction for each timestep of molecular dynamics, 
 and the model deviation will be computed among all models every `out_freq` timesteps.
-- keyword = *out_file* or *out_freq* or *fparam* or *atomic* or *relative* or *relative_v* or *aparam* or *ttm*
+- keyword = *type_map* or *out_file* or *out_freq* or *fparam* or *atomic* or *relative* or *relative_v* or *aparam* or *ttm*
 <pre>
+    <i>type_map</i> value = types
+        types = Atom names that map to LAMMPS atom type. Default follows the type map of the model
     <i>out_file</i> value = filename
         filename = The file name for the model deviation output. Default is model_devi.out
     <i>out_freq</i> value = freq
@@ -60,6 +62,10 @@ pair_style deepmd graph_0.pb graph_1.pb graph_2.pb out_file md.out out_freq 10 a
 Evaluate the interaction of the system by using [Deep Potential][DP] or [Deep Potential Smooth Edition][DP-SE]. It is noticed that deep potential is not a "pairwise" interaction, but a multi-body interaction. 
 
 This pair style takes the deep potential defined in a model file that usually has the .pb extension. The model can be trained and frozen by package [DeePMD-kit](https://github.com/deepmodeling/deepmd-kit).
+
+`type_map` maps atom names with LAMMPS atom types (integers from 1 to Ntypes).
+If the `pair_style` argument `type_map` is not set, the training parameter {ref}`type_map <model/type_map>` will be used by default.
+If the training parameter {ref}`type_map <model/type_map>` is not set, the `pair_style` argument `type_map` cannot be used. In this case, atom type indexes in [`type.raw`](../data/system.md) (integers from 0 to Ntypes-1) will map with LAMMPS atom types.
 
 The model deviation evalulates the consistency of the force predictions from multiple models. By default, only the maximal, minimal and average model deviations are output. If the key `atomic` is set, then the model deviation of force prediction of each atom will be output.
 
@@ -91,6 +97,8 @@ compute ID group-ID deeptensor/atom model_file
 - group-ID: ID of the group of atoms to compute
 - deeptensor/atom: the style of this compute
 - model_file: the name of the binary model file.
+
+At this time, the training parameter {ref}`type_map <model/type_map>` will be used to map with LAMMPS atom types.
 
 ### Examples
 ```lammps
