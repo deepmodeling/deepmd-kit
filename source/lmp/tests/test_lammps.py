@@ -85,7 +85,7 @@ def _lammps(data_file) -> PyLammps:
     lammps.mass("2 2")
     lammps.timestep(0.0005)
     lammps.fix("1 all nve")
-    yield lammps
+    return lammps
 
 
 @pytest.fixture
