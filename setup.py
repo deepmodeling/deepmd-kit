@@ -27,6 +27,9 @@ elif dp_variant == "rocm":
     rocm_root = os.environ.get("ROCM_ROOT")
     if rocm_root:
         cmake_args.append(f"-DCMAKE_HIP_COMPILER_ROCM_ROOT:STRING={rocm_root}")
+    hipcc_flags = os.environ.get("HIP_HIPCC_FLAGS")
+    if hipcc_flags:
+        cmake_args.append(f"-DHIP_HIPCC_FLAGS:STRING={hipcc_flags}")
 else:
     raise RuntimeError("Unsupported DP_VARIANT option: %s" % dp_variant)
 
