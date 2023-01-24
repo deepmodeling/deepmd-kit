@@ -6,7 +6,7 @@ A system should contain system properties, input frame properties, and labeled f
 
 ID       | Property                | Raw file     | Required/Optional    | Shape                    | Description
 -------- | ----------------------  | ------------ | -------------------- | -----------------------  | -----------
-type     | Atom type indexes       | type.raw     | Required             | Natoms                   | Integers that start with 0. If the training parameter {ref}`type_map <model/type_map>` is set and `type_map.raw` is provided, type indexes map to `type_map.raw`; otherwise, the system type indexes map to model type indexes (whether {ref}`type_map <model/type_map>` is set or not)
+type     | Atom type indexes       | type.raw     | Required             | Natoms                   | Integers that start with 0. If both the training parameter {ref}`type_map <model/type_map>` is set and `type_map.raw` is provided, the system atom type should be mapped to `type_map.raw` in `type.raw` and will be mapped to the model atom type when training; otherwise, the system atom type will be always mapped to the model atom type (whether {ref}`type_map <model/type_map>` is set or not)
 type_map | Atom type names         | type_map.raw | Optional             | Ntypes                   | Atom names that map to atom type, which is unnecessary to be contained in the periodic table. Only works when the training parameter {ref}`type_map <model/type_map>` is set
 nopbc    | Non-periodic system     | nopbc        | Optional             | 1                        | If True, this system is non-periodic; otherwise it's periodic
 
