@@ -7,6 +7,5 @@ from deepmd.env import tf
 @ops.RegisterGradient("FltNvnmd")
 def _FltNvnmdGrad(op, grad):
     dx = op_module.flt_nvnmd(grad)
-    # print(op.outputs[0], dx)
     return [dx]
 

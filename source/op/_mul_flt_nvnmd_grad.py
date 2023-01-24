@@ -23,5 +23,4 @@ def _MulFltNvnmdGrad(op, grad):
     # add shapes
     dx = tf.ensure_shape(dx, shx)
     dw = tf.ensure_shape(dw, shw)
-    # print(op.outputs[0], dx, dw)
     return [dx, dw]

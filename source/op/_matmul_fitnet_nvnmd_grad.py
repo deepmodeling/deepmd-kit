@@ -13,5 +13,4 @@ def _MatmulFitnetNvnmdGrad(op, grad):
     normw = op.get_attr("normw")
     dx = op_module.matmul_fitnet_nvnmd(grad, tf.transpose(w), nbitx, nbitw, normw)
     dw = tf.matmul(tf.transpose(x), grad)
-    # print(op.outputs[0], dx, dw)
     return [dx, dw]

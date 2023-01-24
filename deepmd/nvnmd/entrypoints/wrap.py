@@ -325,7 +325,7 @@ class Wrap():
         return Bs
 
     def wrap_weight(self, weight, NBIT_DISP, NBIT_WEIGHT):
-        """ weight: weights of fittingNet
+        r""" weight: weights of fittingNet
         NBIT_DISP: nbits of exponent of weight max value
         NBIT_WEIGHT: nbits of mantissa of weights
         """

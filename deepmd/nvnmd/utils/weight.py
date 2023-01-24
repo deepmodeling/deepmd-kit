@@ -42,10 +42,8 @@ def get_filter_weight(weights: dict, spe_i: int, spe_j: int, layer_l: int):
         layer order in embedding network
         1~nlayer
     """
-    # key = f"filter_type_{spe_i}.matrix_{layer_l}_{spe_j}" # type_one_side = false
     key = f"filter_type_all.matrix_{layer_l}_{spe_j}"  # type_one_side = true
     weight = get_weight(weights, key)
-    # key = f"filter_type_{spe_i}.bias_{layer_l}_{spe_j}" # type_one_side = false
     key = f"filter_type_all.bias_{layer_l}_{spe_j}"  # type_one_side = true
     bias = get_weight(weights, key)
     return weight, bias

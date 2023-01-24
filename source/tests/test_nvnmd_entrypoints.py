@@ -38,21 +38,23 @@ class TestNvnmdFreeze(tf.test.TestCase):
             "train_attr/min_nbor_dist"
         ]
         namelist = namelist1 + namelist2
-        # crete variable as namelist
+        # crete variable according to namelist
         tvlist = []
-        save_path = str(tests_path / os.path.join("nvnmd/out", "weight.npy"))
+        save_path = str(tests_path / "nvnmd" / "out" / "weight.npy")
         vinit = tf.random_normal_initializer(stddev=1.0, seed=0)
         for sname in namelist:
             scope, name = sname.split('/')[0:2]
             with tf.variable_scope(scope, reuse=False):
                 if sname in namelist1:
+                    # create variable
                     tv = tf.get_variable(name, [1], tf.float32, vinit)
                     tvlist.append(tv)
                 elif sname in namelist2:
+                    # create constant tensor
                     ts = tf.constant(2.0,
                         name = name,
                         dtype = tf.float64)
-        # test
+        # save variable and test
         self.sess.run(tf.global_variables_initializer())
         save_weight(self.sess, save_path)
         weight = FioNpyDic().load(save_path)
@@ -69,9 +71,9 @@ class TestNvnmdMapt(tf.test.TestCase):
         self.sess = self.test_session(config=config).__enter__()
 
     def test_mapt(self):
-        nvnmd_config = str(tests_path / os.path.join("nvnmd", "config.npy"))
-        nvnmd_weight = str(tests_path / os.path.join("nvnmd", "weight.npy"))
-        nvnmd_map = str(tests_path / os.path.join("nvnmd/out", "map.npy"))
+        nvnmd_config = str(tests_path / "nvnmd" / "config.npy")
+        nvnmd_weight = str(tests_path / "nvnmd" / "weight.npy")
+        nvnmd_map = str(tests_path / "nvnmd" / "out" / "map.npy")
         jdata = {
             'nvnmd_config': nvnmd_config,
             'nvnmd_weight': nvnmd_weight,
@@ -81,7 +83,7 @@ class TestNvnmdMapt(tf.test.TestCase):
         #
         data1 = FioNpyDic().load(nvnmd_map)
         #
-        nvnmd_map2 = str(tests_path / os.path.join("nvnmd", "map.npy"))
+        nvnmd_map2 = str(tests_path / "nvnmd" / "map.npy")
         data2 = FioNpyDic().load(nvnmd_map2)
         keys = [
             'cfg_u2s', 'cfg_s2g', 's', 's_grad', 'h', 'h_grad', 'g', 'g_grad'
@@ -105,10 +107,10 @@ class TestNvnmdMapt(tf.test.TestCase):
 class TestNvnmdTrain(tf.test.TestCase):
     def test_train_input(self):
         # test1: train cnn
-        INPUT = str(tests_path / os.path.join("nvnmd", "train.json"))
+        INPUT = str(tests_path / "nvnmd" / "train.json")
         PATH_CNN = "nvnmd_cnn"
         jdata = normalized_input(INPUT, PATH_CNN, 'none')
-        fn_ref = str(tests_path / os.path.join("nvnmd/out", "train_cnn.json"))
+        fn_ref = str(tests_path / "nvnmd" / "out" / "train_cnn.json")
         FioJsonDic().save(fn_ref, jdata)
         # test2: train qnn
         PATH_QNN = "nvnmd_qnn"
@@ -116,7 +118,7 @@ class TestNvnmdTrain(tf.test.TestCase):
         WEIGHT_CNN = "none"
         MAP_CNN = "none"
         jdata = normalized_input_qnn(jdata, PATH_QNN, CONFIG_CNN, WEIGHT_CNN, MAP_CNN)
-        fn_ref = str(tests_path / os.path.join("nvnmd/out", "train_qnn.json"))
+        fn_ref = str(tests_path / "nvnmd" / "out" / "train_qnn.json")
         FioJsonDic().save(fn_ref, jdata)
         tf.reset_default_graph()
         # close NVNMD
@@ -129,10 +131,10 @@ class TestNvnmdTrain(tf.test.TestCase):
 
 class TestNvnmdWrap(tf.test.TestCase):
     def test_wrap(self):
-        nvnmd_config = str(tests_path / os.path.join("nvnmd", "config.npy"))
-        nvnmd_weight = str(tests_path / os.path.join("nvnmd", "weight.npy"))
-        nvnmd_map = str(tests_path / os.path.join("nvnmd", "map.npy"))
-        nvnmd_model = str(tests_path / os.path.join("nvnmd/out", "model.pb"))
+        nvnmd_config = str(tests_path / "nvnmd" / "config.npy")
+        nvnmd_weight = str(tests_path / "nvnmd" / "weight.npy")
+        nvnmd_map = str(tests_path / "nvnmd" / "map.npy")
+        nvnmd_model = str(tests_path / "nvnmd" / "out" / "model.pb")
         jdata = {
             'nvnmd_config': nvnmd_config,
             'nvnmd_weight': nvnmd_weight,

@@ -1,6 +1,5 @@
 
 import numpy as np
-# import matplotlib.pyplot as plt
 import logging
 
 from deepmd.env import tf
@@ -120,7 +119,7 @@ class MapTable:
         return self.map
 
     def mapping(self, x, dic_map, cfgs, rank=4):
-        """ Evaluate value by mapping table operation of tensorflow
+        r""" Evaluate value by mapping table operation of tensorflow
         """
         n = len(x)
         dic_val = {}
@@ -160,7 +159,7 @@ class MapTable:
         return dic_val
 
     def mapping2(self, x, dic_map, cfgs, rank=4):
-        """ Evaluate value by mapping table of numpy   
+        r""" Evaluate value by mapping table of numpy   
         """
         tf.reset_default_graph()
         t_x = tf.placeholder(tf.float64, [None, 1], 't_x')
@@ -191,7 +190,7 @@ class MapTable:
         return dic_val
 
     def plot_lines(self, x, dic1, dic2=None):
-        """ Plot lines to see accuracy
+        r""" Plot lines to see accuracy
         """
         for key in dic1.keys():
             val1 = dic1[key]
@@ -205,20 +204,9 @@ class MapTable:
                     val1_i = val1[ii]
                     val2_i = val2[ii]
                     nc = np.shape(val1_i)[1]
-                    # For debug
-                    # plt.figure
-                    # for jj in range(nc):
-                    #     c1 = 'r'
-                    #     c2 = 'k'
-                    #     plt.plot(x, val1_i[:,jj], '-', color=c1, linewidth=6)
-                    #     plt.plot(x, val2_i[:,jj], '-', color=c2, linewidth=2)
-                    # plt.title(key)
-                    # plt.grid()
-                    # plt.savefig('mapt_'+key+'-'+str(ii)+'.png')
-                    # plt.close()
 
     def build_map_coef(self, cfgs, x, ys, grads, grad_grads, Nr, Nc, rank=4):
-        """ Build mapping table coefficient
+        r""" Build mapping table coefficient
         cfgs: cfg list
         cfg = x0, x1, dx
 
@@ -305,7 +293,7 @@ class MapTable:
         return coefs, coef_grads                
 
     def build_grad(self, x, y, Nr, Nc):
-        """: Build gradient of tensor y of x
+        r""": Build gradient of tensor y of x
         """
         grads = []
         grad_grads = []
@@ -326,7 +314,7 @@ class MapTable:
         return grads, grad_grads
 
     def build_u2s(self, r2):
-        """ Build tensor s, s=s(r2)
+        r""" Build tensor s, s=s(r2)
         """
         rmin = nvnmd_cfg.dscp['rcut_smth']
         rmax = nvnmd_cfg.dscp['rcut']
@@ -361,7 +349,7 @@ class MapTable:
         return sl, hl
 
     def build_u2s_grad(self):
-        """ Build gradient of s with respect to u (r^2)
+        r""" Build gradient of s with respect to u (r^2)
         """
         ntype = nvnmd_cfg.dscp['ntype']
         #
@@ -373,7 +361,7 @@ class MapTable:
         return dic_ph
 
     def run_u2s(self):
-        """ Build u->s graph and run it to get value of mapping table
+        r""" Build u->s graph and run it to get value of mapping table
         """
         # ntypex = nvnmd_cfg.dscp['ntypex']
         ntype = nvnmd_cfg.dscp['ntype']
@@ -420,7 +408,7 @@ class MapTable:
         return res_dic, res_dic2
 
     def build_s2g(self, s):
-        """ Build s->G
+        r""" Build s->G
         s is switch function
         G is embedding net output
         """
@@ -447,7 +435,7 @@ class MapTable:
         return xyz_scatters
 
     def build_s2g_grad(self):
-        """ Build gradient of G with respect to s
+        r""" Build gradient of G with respect to s
         """
         ntypex = nvnmd_cfg.dscp['ntypex']
         ntype = nvnmd_cfg.dscp['ntype']
@@ -460,7 +448,7 @@ class MapTable:
         return dic_ph
 
     def run_s2g(self):
-        """ Build s-> graph and run it to get value of mapping table
+        r""" Build s-> graph and run it to get value of mapping table
         """
         smin = nvnmd_cfg.dscp['smin']
         smax = nvnmd_cfg.dscp['smax']
@@ -475,7 +463,6 @@ class MapTable:
         # check
         if (smax - smin) > 16.0:
             log.warning(f"the range of s is over the limit (smax - smin) > 16.0")
-        # smin_ = -2.0
         prec = N / N2
         smin_ = np.floor(smin * prec - 1) / prec
         #

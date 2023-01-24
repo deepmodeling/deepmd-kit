@@ -169,7 +169,7 @@ class NvnmdConfig():
         return jdata
 
     def init_dpin(self, jdata: dict, jdata_parent: dict = {}) -> dict:
-        """ initial members about other deepmd input
+        r""" initial members about other deepmd input
         """
 
         return jdata
@@ -228,13 +228,11 @@ class NvnmdConfig():
         ntype = self.dscp['ntype']
         dmin = self.dscp['dmin']
         #
-        smin = 1e6
-        smax = -1e6
-        for tt in range(ntype):
-            smin_ = -davg[tt, 0] / dstd[tt, 0]
-            smax_ = (r2s(dmin, rmin, rmax) - davg[tt, 0]) / dstd[tt, 0]
-            smin = smin_ if (smin_ < smin) else smin
-            smax = smax_ if (smax_ > smax) else smax
+        s0 = r2s(dmin, rmin, rmax)
+        smin_ = -davg[:ntype, 0] / dstd[:ntype, 0]
+        smax_ = (s0 - davg[:ntype, 0]) / dstd[:ntype, 0]
+        smin = np.min(smin_)
+        smax = np.max(smax_)
         self.dscp['smin'] = smin
         self.dscp['smax'] = smax
         nvnmd_cfg.save()

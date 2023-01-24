@@ -25,5 +25,4 @@ def _Tanh4FltNvnmdGrad(op, grad):
     gradhi = grad + tf.stop_gradient( tf.floor(grad * prechi) / prechi - grad) 
     dx = dydxlo * gradhi
     dx = dx + tf.stop_gradient( tf.floor(dx * prechi) / prechi - dx )
-    # print(op.outputs[0], dx)
     return dx

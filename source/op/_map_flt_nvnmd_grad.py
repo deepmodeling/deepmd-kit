@@ -24,14 +24,9 @@ def _MapFltNvnmdGrad(op, grad):
     # calculate
     dx = op_module.dotmul_flt_nvnmd(dydx, grad)
     dx = tf.reshape(dx, [-1, D])
-    # dx = dydx*grad
-    # dx = tf.reshape(dx, [-1, M])
-    # dx = tf.reduce_sum(dx, axis=1)
-    # dx = tf.reshape(dx, [-1, D])
     # other grad
     d_table = None
     d_table_grad = None
     d_table_info = None
-    # print(op.outputs[0], dx)
     return [dx, d_table, d_table_grad, d_table_info]
 

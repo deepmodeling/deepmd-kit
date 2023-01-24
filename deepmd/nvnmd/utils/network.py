@@ -71,12 +71,13 @@ def qr(x, nbit):
     return y
 
 def tanh4(x):
-    sign = tf.sign(x)
-    xclp = tf.clip_by_value(x, -2, 2)
-    xabs = tf.abs(xclp)
-    y1 = (1.0/16.0) * tf.pow(xabs, 4) + (-1.0/4.0) * tf.pow(xabs, 3) + xabs
-    y2 = y1 * sign
-    return y2
+    with tf.name_scope("some_name"):
+        sign = tf.sign(x)
+        xclp = tf.clip_by_value(x, -2, 2)
+        xabs = tf.abs(xclp)
+        y1 = (1.0/16.0) * tf.pow(xabs, 4) + (-1.0/4.0) * tf.pow(xabs, 3) + xabs
+        y2 = y1 * sign
+        return y2
 
 def one_layer_wb(
     shape,
@@ -121,7 +122,6 @@ def one_layer_wb(
 
     return w, b
 
-# def one_layer_fitnet(inputs,
 def one_layer(inputs,
               outputs_size,
               activation_fn=tf.nn.tanh,
@@ -176,6 +176,7 @@ def one_layer(inputs,
                 wxb = tf.ensure_shape(wxb, [None, outputs_size])
             # actfun
             if activation_fn is not None:
+                # set activation function as tanh4
                 y = op_module.tanh4_flt_nvnmd(wxb)
             else:
                 y = wxb
@@ -185,6 +186,7 @@ def one_layer(inputs,
                 y = tf.ensure_shape(y, [None, outputs_size])
         else:
             hidden = tf.matmul(inputs, w) + b
+            # set activation function as tanh4
             y = tanh4(hidden) if (activation_fn is not None) else hidden
     # 'reshape' is necessary
     # the next layer needs shape of input tensor to build weight
